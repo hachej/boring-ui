@@ -1,26 +1,62 @@
-import type {
-  WorkspaceBridgeCallRequest,
-  WorkspaceBridgeCallResponse,
+import {
   WorkspaceBridgeErrorCode,
+  type WorkspaceBridgeCallFailure,
+  type WorkspaceBridgeCallRequest,
+  type WorkspaceBridgeCallResponse,
+  type WorkspaceBridgeCallSuccess,
+  type WorkspaceBridgeError,
 } from "../shared/workspace-bridge-rpc"
+
+export {
+  WorkspaceBridgeErrorCode,
+  type WorkspaceBridgeCallFailure,
+  type WorkspaceBridgeCallRequest,
+  type WorkspaceBridgeCallResponse,
+  type WorkspaceBridgeCallSuccess,
+  type WorkspaceBridgeError,
+}
 
 export const WORKSPACE_BRIDGE_URL_ENV = "BORING_WORKSPACE_BRIDGE_URL"
 export const WORKSPACE_BRIDGE_TOKEN_ENV = "BORING_WORKSPACE_BRIDGE_TOKEN"
 export const WORKSPACE_BRIDGE_DISABLED_ENV = "BORING_WORKSPACE_BRIDGE_DISABLED"
 
+export enum WorkspaceBridgeClientErrorCode {
+  Config = "WORKSPACE_BRIDGE_CLIENT_CONFIG_ERROR",
+  InvalidResponse = "WORKSPACE_BRIDGE_INVALID_RESPONSE",
+  Transport = "WORKSPACE_BRIDGE_TRANSPORT_ERROR",
+  Timeout = "WORKSPACE_BRIDGE_TIMEOUT",
+  Aborted = "WORKSPACE_BRIDGE_ABORTED",
+  HttpError = "WORKSPACE_BRIDGE_HTTP_ERROR",
+}
+
+export interface WorkspaceBridgeTokenProviderContext {
+  /** True when the previous attempt failed with a 401 and the client is retrying once. */
+  refresh: boolean
+}
+
+export type WorkspaceBridgeTokenProvider = (
+  context: WorkspaceBridgeTokenProviderContext,
+) => string | Promise<string>
+
+export type WorkspaceBridgeClientToken = string | WorkspaceBridgeTokenProvider
+
 export interface WorkspaceBridgeClientOptions {
   url: string
-  token: string
+  token: WorkspaceBridgeClientToken
   fetch?: typeof fetch
+  /** Default per-call timeout. Defaults to 30s. */
+  defaultTimeoutMs?: number
 }
 
 export interface WorkspaceBridgeClientCallOptions {
   requestId?: string
   idempotencyKey?: string
+  timeoutMs?: number
+  signal?: AbortSignal
 }
 
 export class WorkspaceBridgeClientConfigError extends Error {
-  readonly code = "WORKSPACE_BRIDGE_CLIENT_CONFIG_ERROR"
+  readonly code = WorkspaceBridgeClientErrorCode.Config
   readonly missingVar?: string
 
   constructor(message: string, options: { missingVar?: string } = {}) {
@@ -31,41 +67,58 @@ export class WorkspaceBridgeClientConfigError extends Error {
 }
 
 export class WorkspaceBridgeClientError extends Error {
-  readonly code: WorkspaceBridgeErrorCode | string
+  readonly code: WorkspaceBridgeErrorCode | WorkspaceBridgeClientErrorCode
   readonly status?: number
   readonly requestId?: string
 
-  constructor(message: string, options: { code: WorkspaceBridgeErrorCode | string; status?: number; requestId?: string }) {
+  constructor(
+    message: string,
+    options: {
+      code: WorkspaceBridgeErrorCode | WorkspaceBridgeClientErrorCode
+      status?: number
+      requestId?: string
+      cause?: unknown
+    },
+  ) {
     super(message)
     this.name = "WorkspaceBridgeClientError"
     this.code = options.code
     this.status = options.status
     this.requestId = options.requestId
+    if (options.cause !== undefined) {
+      ;(this as Error & { cause?: unknown }).cause = options.cause
+    }
   }
 }
 
 export class WorkspaceBridgeClient {
   readonly url: string
-  private readonly token: string
+  private readonly token: WorkspaceBridgeClientToken
   private readonly fetchImpl: typeof fetch
+  private readonly defaultTimeoutMs: number
 
   constructor(options: WorkspaceBridgeClientOptions) {
     this.url = normalizeBridgeUrl(options.url)
     this.token = options.token
     this.fetchImpl = options.fetch ?? globalThis.fetch
+    this.defaultTimeoutMs = options.defaultTimeoutMs ?? 30_000
+    assertTimeoutMs(this.defaultTimeoutMs, "defaultTimeoutMs")
     if (!this.fetchImpl) {
       throw new WorkspaceBridgeClientConfigError("WorkspaceBridge client requires a fetch implementation")
     }
   }
 
-  static fromEnv(env: Record<string, string | undefined> = readProcessEnv(), options: { fetch?: typeof fetch } = {}): WorkspaceBridgeClient {
+  static fromEnv(
+    env: Record<string, string | undefined> = readProcessEnv(),
+    options: { fetch?: typeof fetch; token?: WorkspaceBridgeClientToken; defaultTimeoutMs?: number } = {},
+  ): WorkspaceBridgeClient {
     const disabled = env[WORKSPACE_BRIDGE_DISABLED_ENV]
     if (disabled) {
       throw new WorkspaceBridgeClientConfigError(`WorkspaceBridge runtime env is disabled: ${disabled}`)
     }
     const url = requireEnv(env, WORKSPACE_BRIDGE_URL_ENV)
-    const token = requireEnv(env, WORKSPACE_BRIDGE_TOKEN_ENV)
-    return new WorkspaceBridgeClient({ url, token, fetch: options.fetch })
+    const token = options.token ?? requireEnv(env, WORKSPACE_BRIDGE_TOKEN_ENV)
+    return new WorkspaceBridgeClient({ url, token, fetch: options.fetch, defaultTimeoutMs: options.defaultTimeoutMs })
   }
 
   async call<TOutput = unknown, TInput = unknown>(
@@ -79,33 +132,87 @@ export class WorkspaceBridgeClient {
       ...(options.requestId ? { requestId: options.requestId } : {}),
       ...(options.idempotencyKey ? { idempotencyKey: options.idempotencyKey } : {}),
     }
-    const response = await this.fetchImpl(this.url, {
-      method: "POST",
-      headers: {
-        "content-type": "application/json",
-        authorization: `Bearer ${this.token}`,
-      },
-      body: JSON.stringify(request),
-    })
-
-    let body: WorkspaceBridgeCallResponse | undefined
     try {
-      body = await response.json() as WorkspaceBridgeCallResponse
-    } catch {
-      throw new WorkspaceBridgeClientError("WorkspaceBridge response was not valid JSON", {
-        code: "WORKSPACE_BRIDGE_INVALID_RESPONSE",
-        status: response.status,
-      })
+      return await this.callOnce<TOutput>(request, options, false)
+    } catch (error) {
+      if (this.shouldRetryWithFreshToken(error)) {
+        return await this.callOnce<TOutput>(request, options, true)
+      }
+      throw error
     }
+  }
 
-    if (!body.ok) {
-      throw new WorkspaceBridgeClientError(body.error.message, {
-        code: body.error.code,
-        status: response.status,
-        requestId: body.requestId,
+  private async callOnce<TOutput>(
+    request: WorkspaceBridgeCallRequest,
+    options: WorkspaceBridgeClientCallOptions,
+    refreshToken: boolean,
+  ): Promise<TOutput> {
+    const timeoutMs = options.timeoutMs ?? this.defaultTimeoutMs
+    assertTimeoutMs(timeoutMs, "timeoutMs")
+    const token = await this.resolveToken(refreshToken)
+    const abort = createAbortController({ signal: options.signal, timeoutMs })
+    try {
+      const response = await this.fetchImpl(this.url, {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify(request),
+        signal: abort.signal,
       })
+
+      const body = await readJsonResponse(response, abort)
+      const envelope = parseBridgeEnvelope(body)
+      if (!envelope) {
+        if (!httpOk(response)) {
+          throw new WorkspaceBridgeClientError(httpErrorMessage(response, body), {
+            code: WorkspaceBridgeClientErrorCode.HttpError,
+            status: response.status,
+          })
+        }
+        throw new WorkspaceBridgeClientError("WorkspaceBridge response envelope was invalid", {
+          code: WorkspaceBridgeClientErrorCode.InvalidResponse,
+          status: response.status,
+        })
+      }
+
+      if (!envelope.ok) {
+        throw new WorkspaceBridgeClientError(envelope.error.message, {
+          code: envelope.error.code,
+          status: response.status,
+          requestId: envelope.requestId,
+        })
+      }
+
+      if (!httpOk(response)) {
+        throw new WorkspaceBridgeClientError(httpErrorMessage(response, body), {
+          code: WorkspaceBridgeClientErrorCode.HttpError,
+          status: response.status,
+          requestId: envelope.requestId,
+        })
+      }
+
+      return envelope.output as TOutput
+    } catch (error) {
+      if (error instanceof WorkspaceBridgeClientError) throw error
+      throw fetchError(error, abort)
+    } finally {
+      abort.cleanup()
     }
-    return body.output as TOutput
+  }
+
+  private async resolveToken(refresh: boolean): Promise<string> {
+    const value = typeof this.token === "function" ? await this.token({ refresh }) : this.token
+    if (!value) {
+      throw new WorkspaceBridgeClientConfigError("WorkspaceBridge token provider returned an empty token")
+    }
+    return value
+  }
+
+  private shouldRetryWithFreshToken(error: unknown): boolean {
+    if (typeof this.token !== "function") return false
+    return error instanceof WorkspaceBridgeClientError && error.status === 401
   }
 }
 
@@ -127,4 +234,121 @@ function normalizeBridgeUrl(value: string): string {
 
 function readProcessEnv(): Record<string, string | undefined> {
   return (globalThis as { process?: { env?: Record<string, string | undefined> } }).process?.env ?? {}
+}
+
+function assertTimeoutMs(value: number, name: string): void {
+  if (!Number.isFinite(value) || value <= 0) {
+    throw new WorkspaceBridgeClientConfigError(`WorkspaceBridge client ${name} must be a positive finite number`)
+  }
+}
+
+type AbortState = {
+  signal: AbortSignal
+  timedOut: () => boolean
+  callerAborted: () => boolean
+  cleanup: () => void
+}
+
+function createAbortController(options: { signal?: AbortSignal; timeoutMs: number }): AbortState {
+  const controller = new AbortController()
+  let timedOut = false
+  let callerAborted = Boolean(options.signal?.aborted)
+  const abortFromCaller = () => {
+    callerAborted = true
+    controller.abort(options.signal?.reason)
+  }
+  if (options.signal?.aborted) abortFromCaller()
+  else options.signal?.addEventListener("abort", abortFromCaller, { once: true })
+  const timeout = setTimeout(() => {
+    timedOut = true
+    controller.abort(new Error("WorkspaceBridge request timed out"))
+  }, options.timeoutMs)
+  return {
+    signal: controller.signal,
+    timedOut: () => timedOut,
+    callerAborted: () => callerAborted,
+    cleanup: () => {
+      clearTimeout(timeout)
+      options.signal?.removeEventListener("abort", abortFromCaller)
+    },
+  }
+}
+
+function fetchError(error: unknown, abort: AbortState): WorkspaceBridgeClientError {
+  if (abort.timedOut()) {
+    return new WorkspaceBridgeClientError("WorkspaceBridge request timed out", {
+      code: WorkspaceBridgeClientErrorCode.Timeout,
+      cause: error,
+    })
+  }
+  if (abort.callerAborted()) {
+    return new WorkspaceBridgeClientError("WorkspaceBridge request was aborted", {
+      code: WorkspaceBridgeClientErrorCode.Aborted,
+      cause: error,
+    })
+  }
+  return new WorkspaceBridgeClientError("WorkspaceBridge transport failed", {
+    code: WorkspaceBridgeClientErrorCode.Transport,
+    cause: error,
+  })
+}
+
+async function readJsonResponse(response: Response, abort: AbortState): Promise<unknown> {
+  try {
+    return await response.json()
+  } catch (error) {
+    if (abort.timedOut() || abort.callerAborted()) throw fetchError(error, abort)
+    throw new WorkspaceBridgeClientError("WorkspaceBridge response was not valid JSON", {
+      code: WorkspaceBridgeClientErrorCode.InvalidResponse,
+      status: response.status,
+      cause: error,
+    })
+  }
+}
+
+type ParsedBridgeEnvelope =
+  | { ok: true; op: string; requestId?: string; output: unknown }
+  | { ok: false; op: string; requestId?: string; error: WorkspaceBridgeError }
+
+function parseBridgeEnvelope(value: unknown): ParsedBridgeEnvelope | null {
+  if (!value || typeof value !== "object") return null
+  const raw = value as Record<string, unknown>
+  const requestId = raw.requestId === undefined || typeof raw.requestId === "string" ? raw.requestId : undefined
+  if (raw.ok === true) {
+    return {
+      ok: true,
+      op: typeof raw.op === "string" ? raw.op : "",
+      ...(requestId ? { requestId } : {}),
+      output: raw.output,
+    }
+  }
+  if (raw.ok === false && raw.error && typeof raw.error === "object") {
+    const error = raw.error as Record<string, unknown>
+    if (typeof error.message !== "string" || !isWorkspaceBridgeErrorCode(error.code)) return null
+    return {
+      ok: false,
+      op: typeof raw.op === "string" ? raw.op : "",
+      ...(requestId ? { requestId } : {}),
+      error: { code: error.code, message: error.message },
+    }
+  }
+  return null
+}
+
+const WORKSPACE_BRIDGE_ERROR_CODES = new Set<string>(Object.values(WorkspaceBridgeErrorCode))
+
+function isWorkspaceBridgeErrorCode(value: unknown): value is WorkspaceBridgeErrorCode {
+  return typeof value === "string" && WORKSPACE_BRIDGE_ERROR_CODES.has(value)
+}
+
+function httpOk(response: Response): boolean {
+  return typeof response.ok === "boolean" ? response.ok : response.status >= 200 && response.status < 300
+}
+
+function httpErrorMessage(response: Response, body: unknown): string {
+  if (body && typeof body === "object" && typeof (body as { message?: unknown }).message === "string") {
+    return (body as { message: string }).message
+  }
+  const statusText = typeof response.statusText === "string" && response.statusText ? ` ${response.statusText}` : ""
+  return `WorkspaceBridge HTTP ${response.status}${statusText}`
 }

@@ -16,6 +16,7 @@ import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { createWorkspaceAgentServer } from '@hachej/boring-workspace/app/server'
+import { WorkspaceBridgeClient } from '@hachej/boring-workspace/bridge-client'
 import { defineServerPlugin, mintWorkspaceBridgeRuntimeToken } from '@hachej/boring-workspace/server'
 import { createAskUserServerPlugin } from '@hachej/boring-ask-user/server'
 import { ASK_USER_BRIDGE_CAPABILITIES, ASK_USER_BRIDGE_OPS } from '@hachej/boring-ask-user/shared'
@@ -129,11 +130,12 @@ async function main() {
       check('T2 unknown op → 404 OpNotFound', r.status === 404 && r.json.error?.code === 'BRIDGE_OP_NOT_FOUND', `status=${r.status} code=${r.json.error?.code}`)
     }
 
-    // T3 — runtime-class dispatch with a minted token
+    // T3 — runtime-class dispatch with a minted token through the public client.
     {
       const token = mintWorkspaceBridgeRuntimeToken({ secret: SECRET, workspaceId: 'default', capabilities: [], runtimeId: 'e2e-runtime' })
-      const r = await post({ op: 'example.v1.echo', input: { hi: 'runtime' }, idempotencyKey: 'k-runtime-1' }, { authorization: `Bearer ${token}` })
-      check('T3 runtime token dispatch', r.status === 200 && r.json.ok === true && r.json.output?.echoed?.hi === 'runtime', `status=${r.status} seq=${r.json.output?.seq}`)
+      const client = new WorkspaceBridgeClient({ url, token, fetch })
+      const output = await client.call<{ echoed?: { hi?: string }; seq?: number }>('example.v1.echo', { hi: 'runtime' }, { idempotencyKey: 'k-runtime-1' })
+      check('T3 runtime token dispatch via client', output?.echoed?.hi === 'runtime', `seq=${output?.seq}`)
     }
 
     // T4 — invalid runtime token → 401
@@ -142,19 +144,27 @@ async function main() {
       check('T4 invalid token → 401', r.status === 401, `status=${r.status} code=${r.json.error?.code}`)
     }
 
-    // T5 — idempotency replay: same key returns the cached response (same seq)
+    // T5 — idempotency replay: same key returns the cached response (same seq), through the public client.
     {
-      const r1 = await post({ op: 'example.v1.echo', input: { n: 5 }, idempotencyKey: 'k-replay' })
-      const r2 = await post({ op: 'example.v1.echo', input: { n: 5 }, idempotencyKey: 'k-replay' })
-      check('T5 idempotency replay (cached, same seq)', r1.json.ok && r2.json.ok && r1.json.output?.seq === r2.json.output?.seq, `seq1=${r1.json.output?.seq} seq2=${r2.json.output?.seq}`)
+      const token = mintWorkspaceBridgeRuntimeToken({ secret: SECRET, workspaceId: 'default', capabilities: [], runtimeId: 'e2e-runtime' })
+      const client = new WorkspaceBridgeClient({ url, token, fetch })
+      const r1 = await client.call<{ seq?: number }>('example.v1.echo', { n: 5 }, { idempotencyKey: 'k-replay' })
+      const r2 = await client.call<{ seq?: number }>('example.v1.echo', { n: 5 }, { idempotencyKey: 'k-replay' })
+      check('T5 idempotency replay via client (cached, same seq)', r1.seq === r2.seq, `seq1=${r1.seq} seq2=${r2.seq}`)
     }
 
-    // T6 — failure releases the key: first call fails, retry with SAME key succeeds
+    // T6 — failure releases the key: first call fails, retry with SAME key succeeds, through the public client.
     {
-      const r1 = await post({ op: 'example.v1.fail', input: { x: 1 }, idempotencyKey: 'k-fail' })
-      const r2 = await post({ op: 'example.v1.fail', input: { x: 1 }, idempotencyKey: 'k-fail' })
-      const failedThenRecovered = r1.json.ok === false && r2.json.ok === true && r2.json.output?.recovered === true
-      check('T6 failure releases key (retry re-executes, not cached failure)', failedThenRecovered, `attempt1.ok=${r1.json.ok} attempt2.ok=${r2.json.ok} recovered=${r2.json.output?.recovered}`)
+      const token = mintWorkspaceBridgeRuntimeToken({ secret: SECRET, workspaceId: 'default', capabilities: [], runtimeId: 'e2e-runtime' })
+      const client = new WorkspaceBridgeClient({ url, token, fetch })
+      let firstFailed = false
+      try {
+        await client.call('example.v1.fail', { x: 1 }, { idempotencyKey: 'k-fail' })
+      } catch {
+        firstFailed = true
+      }
+      const r2 = await client.call<{ recovered?: boolean; attempt?: number }>('example.v1.fail', { x: 1 }, { idempotencyKey: 'k-fail' })
+      check('T6 failure releases key via client (retry re-executes, not cached failure)', firstFailed && r2.recovered === true, `attempt1.failed=${firstFailed} attempt2.recovered=${r2.recovered}`)
     }
 
     // T7 — trusted boot-time plugin contribution registers a host bridge op.
@@ -172,16 +182,13 @@ async function main() {
         capabilities: [ASK_USER_BRIDGE_CAPABILITIES.request],
         runtimeId: 'ask-user-e2e-runtime',
       })
-      const requestPromise = post({
-        op: ASK_USER_BRIDGE_OPS.request,
-        requestId: 'ask-user-e2e-request',
-        input: {
-          sessionId: 's1',
-          title: 'Bridge question',
-          schema: { wireVersion: 1, fields: [{ type: 'text', name: 'answer', label: 'Answer', required: true }] },
-          timeoutMs: 60_000,
-        },
-      }, { authorization: `Bearer ${token}` })
+      const askClient = new WorkspaceBridgeClient({ url, token, fetch })
+      const requestPromise = askClient.call<any>(ASK_USER_BRIDGE_OPS.request, {
+        sessionId: 's1',
+        title: 'Bridge question',
+        schema: { wireVersion: 1, fields: [{ type: 'text', name: 'answer', label: 'Answer', required: true }] },
+        timeoutMs: 60_000,
+      }, { requestId: 'ask-user-e2e-request', timeoutMs: 65_000 })
 
       let pending: any = null
       for (let i = 0; i < 40; i++) {
@@ -199,9 +206,9 @@ async function main() {
       }, { 'x-boring-session-id': 's1' })
       const request = await requestPromise
       check(
-        'T9 ask-user answer resolves runtime request',
-        answer.status === 200 && answer.json.ok === true && request.status === 200 && request.json.output?.status === 'answered' && request.json.output?.answer?.values?.answer === 'yes',
-        `answer.status=${answer.status} request.status=${request.status} result=${request.json.output?.status}`,
+        'T9 ask-user answer resolves runtime client request',
+        answer.status === 200 && answer.json.ok === true && request?.status === 'answered' && request?.answer?.values?.answer === 'yes',
+        `answer.status=${answer.status} result=${request?.status}`,
       )
     }
   } finally {

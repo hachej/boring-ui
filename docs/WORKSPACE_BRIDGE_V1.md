@@ -102,17 +102,45 @@ Remote runtimes, such as `vercel-sandbox`, require an HTTPS non-localhost bridge
 
 ## Runtime client
 
-TypeScript runtime code should use the package client:
+TypeScript runtime code should use the package client. It defaults to a 30s per-call timeout, accepts an `AbortSignal`, and wraps bridge/transport failures in stable `WorkspaceBridgeClientError` codes:
 
 ```ts
-import { WorkspaceBridgeClient } from "@hachej/boring-workspace/bridge-client"
+import {
+  WorkspaceBridgeClient,
+  WorkspaceBridgeClientError,
+  WorkspaceBridgeClientErrorCode,
+  WorkspaceBridgeErrorCode,
+} from "@hachej/boring-workspace/bridge-client"
 
 const bridge = WorkspaceBridgeClient.fromEnv()
-await bridge.call("example.v1.write", {
-  id: "output-1",
-  title: "Generated output",
-}, { idempotencyKey: "example-write:output-1" })
+try {
+  await bridge.call("example.v1.write", {
+    id: "output-1",
+    title: "Generated output",
+  }, { idempotencyKey: "example-write:output-1", timeoutMs: 30_000 })
+} catch (error) {
+  if (error instanceof WorkspaceBridgeClientError) {
+    if (error.code === WorkspaceBridgeErrorCode.ExpiredToken) {
+      // Recreate the client with a fresh token, or use a token provider below.
+    }
+    if (error.code === WorkspaceBridgeClientErrorCode.Timeout) {
+      // Host did not respond within the configured timeout.
+    }
+  }
+  throw error
+}
 ```
+
+Runtime env injection provides a static bearer token. Tokens expire (default 5 minutes; hosts may configure TTL), and static env tokens cannot refresh themselves in long-lived remote sandboxes. Long-running tools should pass a token provider; when a call receives a 401 bridge auth error, the client invokes the provider once with `{ refresh: true }` and retries the call once:
+
+```ts
+const bridge = new WorkspaceBridgeClient({
+  url: process.env.BORING_WORKSPACE_BRIDGE_URL!,
+  token: async ({ refresh }) => refresh ? await fetchFreshBridgeToken() : cachedBridgeToken,
+})
+```
+
+A token provider is only a client-side seam; the host still needs to expose a safe app-specific way to mint a fresh scoped token if it wants remote runtimes to refresh without reprovisioning.
 
 Non-TypeScript runtimes can call the HTTP transport directly:
 
