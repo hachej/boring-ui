@@ -8,6 +8,8 @@ import {
   type WorkspaceBridgeError,
   type WorkspaceBridgeOperationDefinition,
 } from "../../shared/workspace-bridge-rpc"
+import { stableStringify } from "./json"
+export { stableStringify } from "./json"
 
 export type IdempotencyRecordStatus = "pending" | "completed"
 
@@ -202,12 +204,6 @@ function semanticKey<TInput>(options: BeginIdempotencyOptions<TInput>): string |
 
 export function hashNormalizedInput(input: unknown): string {
   return hashString(stableStringify(input))
-}
-
-export function stableStringify(value: unknown): string {
-  if (value === null || typeof value !== "object") return JSON.stringify(value)
-  if (Array.isArray(value)) return `[${value.map(stableStringify).join(",")}]`
-  return `{${Object.keys(value as Record<string, unknown>).sort().map((key) => `${JSON.stringify(key)}:${stableStringify((value as Record<string, unknown>)[key])}`).join(",")}}`
 }
 
 function createPendingRecord(

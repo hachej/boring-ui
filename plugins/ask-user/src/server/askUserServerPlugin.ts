@@ -7,7 +7,6 @@ import { FileAskUserStore, type AskUserStore } from "./askUserStore"
 import { AskUserStatePublisher } from "./askUserStatePublisher"
 import { createAskUserTool } from "./createAskUserTool"
 import { createAskUserBridgeHandlers } from "./askUserBridgeHandlers"
-import type { QuestionsRoutesOptions } from "./questionsRoutes"
 
 export type AskUserServerPluginOptions = {
   workspaceRoot?: string
@@ -15,17 +14,11 @@ export type AskUserServerPluginOptions = {
   runtime?: AskUserRuntime
   store?: AskUserStore
   sessionId?: string | (() => string)
-  /**
-   * @deprecated Normal setup no longer registers plugin-owned HTTP command
-   * routes. Use WorkspaceBridge `ask-user.v1.*` handlers instead. The
-   * `questionsRoutes` export remains available for manual legacy wiring.
-   */
-  routes?: Omit<QuestionsRoutesOptions, "runtime" | "store">
   onClose?: () => void
 }
 
 export function createAskUserServerPlugin(options: AskUserServerPluginOptions): WorkspaceServerPlugin {
-  if (options.routes) {
+  if ((options as { routes?: unknown }).routes) {
     throw new Error("createAskUserServerPlugin no longer registers /api/v1/questions/commands; use WorkspaceBridge ask-user.v1.* handlers or import questionsRoutes for manual legacy wiring")
   }
   const store = options.store ?? createDefaultStore(options.workspaceRoot)

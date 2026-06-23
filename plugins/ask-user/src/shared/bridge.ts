@@ -58,6 +58,8 @@ export type AskUserBridgeMutationOutput = {
   status: string
 }
 
+export type AskUserBridgeAnswerOutput = AskUserBridgeMutationOutput
+
 export type AskUserBridgePendingOutput = {
   pending: AskUserQuestion | null
 }
@@ -65,8 +67,6 @@ export type AskUserBridgePendingOutput = {
 export type AskUserBridgeTranscriptOutput = {
   events: AskUserTranscriptEvent[]
 }
-
-export type AskUserBridgeAnswerOutput = AskUserBridgeMutationOutput
 
 /** @deprecated Use ASK_USER_BRIDGE_OPS. */
 export const HUMAN_INPUT_OPS = ASK_USER_BRIDGE_OPS
@@ -93,3 +93,4 @@ export type HumanInputPendingOutput = AskUserBridgePendingOutput
 export type HumanInputTranscriptOutput = AskUserBridgeTranscriptOutput
 /** @deprecated Use AskUserBridgeAnswerOutput. */
 export type HumanInputAnswerOutput = AskUserBridgeAnswerOutput
+

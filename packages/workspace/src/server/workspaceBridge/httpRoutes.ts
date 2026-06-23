@@ -10,6 +10,7 @@ import type { BridgeAuthPolicy } from "./authPolicy"
 import type { WorkspaceBridgeIdempotencyStore } from "./idempotency"
 import { runWithWorkspaceBridgeIdempotency } from "./idempotency"
 import type { WorkspaceBridgeRegistry } from "./registry"
+import { measureJsonBytes } from "./json"
 import { verifyWorkspaceBridgeRuntimeToken } from "./runtimeToken"
 
 const bridgeCallBodySchema = z.object({
@@ -42,7 +43,7 @@ export function workspaceBridgeHttpRoutes(
       return sendBridgeError(reply, 415, undefined, WorkspaceBridgeErrorCode.InvalidRequest, "WorkspaceBridge transport requires application/json")
     }
 
-    const rawBodySize = estimateBodyBytes(request.body)
+    const rawBodySize = measureJsonBytes(request.body)
     if (opts.maxBodyBytes && rawBodySize > opts.maxBodyBytes) {
       return sendBridgeError(reply, 413, undefined, WorkspaceBridgeErrorCode.InputTooLarge, "WorkspaceBridge request body is too large")
     }
@@ -152,10 +153,6 @@ function statusForBridgeError(code: WorkspaceBridgeErrorCode): number {
   if (code === WorkspaceBridgeErrorCode.OpNotFound) return 404
   if (code === WorkspaceBridgeErrorCode.InputTooLarge || code === WorkspaceBridgeErrorCode.OutputTooLarge) return 413
   return 400
-}
-
-function estimateBodyBytes(body: unknown): number {
-  try { return new TextEncoder().encode(JSON.stringify(body)).byteLength } catch { return Number.POSITIVE_INFINITY }
 }
 
 function firstHeader(value: string | string[] | undefined): string | undefined {

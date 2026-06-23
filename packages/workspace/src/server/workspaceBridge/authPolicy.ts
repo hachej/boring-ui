@@ -59,6 +59,11 @@ export interface BrowserBridgeAuthPolicyOptions {
     request?: BridgeAuthPolicyRequestLike
   }): Promise<BridgeWorkspaceGrant> | BridgeWorkspaceGrant
   allowedOrigins?: readonly string[]
+  /**
+   * Require a non-empty x-csrf-token header as a non-simple-request proof.
+   * This policy does not validate a signed token value; hosts that need
+   * cryptographic CSRF tokens should verify them before/inside getPrincipal.
+   */
   requireCsrfHeader?: boolean
 }
 

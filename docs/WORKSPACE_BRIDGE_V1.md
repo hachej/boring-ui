@@ -7,7 +7,7 @@ It adds a bounded RPC lane next to the existing UI bridge lane:
 - **UI lane:** `postUiCommand(...)` is the canonical browser UI command dispatch API.
 - **RPC lane:** `call(op, input, options)` / registered handlers provide request-response host capability RPC.
 
-The RPC lane is not a generic HTTP proxy. Handlers must be explicitly registered with an operation definition, allowed caller classes, capability requirements, size limits, timeout, and idempotency policy. Operation schemas may be Zod-like validators (`safeParse`) or lightweight JSON-schema-shaped type guards; plugin/domain handlers must still perform domain validation for invariants that are not captured by those schemas.
+The RPC lane is not a generic HTTP proxy. Handlers must be explicitly registered with an operation definition, allowed caller classes, capability requirements, size limits, timeout, and idempotency policy. Operation schemas may be Zod-like validators (`safeParse`) or the bridge's supported JSON-schema-shaped subset (`type`, `required`, `properties`, `items`, `enum`, `const`, `additionalProperties: false`); plugin/domain handlers must still perform domain validation for invariants that are not captured by those schemas.
 
 ## Handler registration
 
@@ -134,7 +134,7 @@ resp.raise_for_status()
 
 ## Auth and safety model
 
-Bridge calls are authorized by caller class plus capabilities. Capabilities are scoped grants issued by the host/runtime-token policy; they are not a substitute for resource ownership checks inside domain handlers.
+Bridge calls are authorized by caller class plus capabilities. Capabilities are scoped grants issued by the host/runtime-token policy; they are not a substitute for resource ownership checks inside domain handlers. Browser CSRF protection in the stock policy is a required non-empty `x-csrf-token` header plus origin/app auth policy checks; hosts that require signed CSRF token validation should verify that in app auth middleware or the policy's principal resolver.
 
 - `browser` calls use app/browser auth policy.
 - `runtime` calls use scoped bearer tokens minted from the runtime bridge secret.

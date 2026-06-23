@@ -19,7 +19,11 @@ export interface WorkspaceBridgeRuntimeEnvOptions {
   bridgeUrl?: string
   /** Allow plain HTTP for local/dev endpoints. Remote runtimes still require HTTPS. */
   allowInsecureHttp?: boolean
-  /** Required explicit runtime token capability scope. */
+  /**
+   * Explicit capability strings minted into runtime bridge tokens. These are
+   * grants the registry checks at call time, not resource-ownership checks;
+   * operation handlers must still enforce their own domain/resource scope.
+   */
   capabilities?: readonly string[]
   /** Runtime token TTL. Defaults to the token primitive default. */
   tokenTtlMs?: number

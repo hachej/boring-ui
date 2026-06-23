@@ -10,6 +10,7 @@ import {
   type WorkspaceBridgeOperationDefinition,
 } from "../../shared/workspace-bridge-rpc"
 import type { WorkspaceBridge, UiCommand, CommandResult } from "../../shared/ui-bridge"
+import { measureJsonBytes, stableStringify } from "./json"
 
 export interface WorkspaceBridgeCallContext extends BridgeAuthContext {
   requestId?: string
@@ -113,13 +114,50 @@ function validateSchemaDefinition(
     throw invalidDefinition(`WorkspaceBridge operation ${op} ${field} must be a schema object`)
   }
   if (hasSafeParse(schema)) return
-  const type = (schema as { type?: unknown }).type
-  if (!isSupportedJsonSchemaType(type)) {
-    throw invalidDefinition(`WorkspaceBridge operation ${op} ${field}.type must be a supported JSON schema type`)
+  validateJsonSchemaDefinition(schema, `${op} ${field}`)
+}
+
+const SUPPORTED_JSON_SCHEMA_KEYS = new Set(["type", "properties", "required", "items", "enum", "const", "additionalProperties", "description", "title"])
+
+function validateJsonSchemaDefinition(schema: unknown, label: string): void {
+  if (!isPlainSchemaObject(schema)) {
+    throw invalidDefinition(`WorkspaceBridge operation ${label} must be a schema object`)
+  }
+  for (const key of Object.keys(schema)) {
+    if (!SUPPORTED_JSON_SCHEMA_KEYS.has(key)) {
+      throw invalidDefinition(`WorkspaceBridge operation ${label}.${key} is not supported by the bridge schema subset`)
+    }
+  }
+  if (!isSupportedJsonSchemaType(schema.type)) {
+    throw invalidDefinition(`WorkspaceBridge operation ${label}.type must be a supported JSON schema type`)
+  }
+  if (schema.required !== undefined && (!Array.isArray(schema.required) || schema.required.some((item) => typeof item !== "string"))) {
+    throw invalidDefinition(`WorkspaceBridge operation ${label}.required must be an array of strings`)
+  }
+  if (schema.required !== undefined && schema.type !== "object") {
+    throw invalidDefinition(`WorkspaceBridge operation ${label}.required is only supported for object schemas`)
+  }
+  if (schema.enum !== undefined && !Array.isArray(schema.enum)) {
+    throw invalidDefinition(`WorkspaceBridge operation ${label}.enum must be an array`)
+  }
+  if (schema.additionalProperties !== undefined && schema.additionalProperties !== false && schema.additionalProperties !== true) {
+    throw invalidDefinition(`WorkspaceBridge operation ${label}.additionalProperties must be boolean when provided`)
+  }
+  if (schema.additionalProperties !== undefined && schema.type !== "object") {
+    throw invalidDefinition(`WorkspaceBridge operation ${label}.additionalProperties is only supported for object schemas`)
+  }
+  if (schema.properties !== undefined) {
+    if (schema.type !== "object") throw invalidDefinition(`WorkspaceBridge operation ${label}.properties is only supported for object schemas`)
+    if (!isRecord(schema.properties)) throw invalidDefinition(`WorkspaceBridge operation ${label}.properties must be an object`)
+    for (const [key, child] of Object.entries(schema.properties)) validateJsonSchemaDefinition(child, `${label}.properties.${key}`)
+  }
+  if (schema.items !== undefined) {
+    if (schema.type !== "array") throw invalidDefinition(`WorkspaceBridge operation ${label}.items is only supported for array schemas`)
+    validateJsonSchemaDefinition(schema.items, `${label}.items`)
   }
 }
 
-function isSupportedJsonSchemaType(type: unknown): type is string {
+function isSupportedJsonSchemaType(type: unknown): type is JsonSchemaType {
   return type === "object"
     || type === "array"
     || type === "string"
@@ -133,6 +171,29 @@ function hasSafeParse(schema: unknown): schema is { safeParse: (value: unknown) 
   return (typeof schema === "object" || typeof schema === "function")
     && schema !== null
     && typeof (schema as { safeParse?: unknown }).safeParse === "function"
+}
+
+type JsonSchemaType = "object" | "array" | "string" | "number" | "integer" | "boolean" | "null"
+type JsonSchemaObject = {
+  type?: unknown
+  properties?: unknown
+  required?: unknown
+  items?: unknown
+  enum?: unknown
+  const?: unknown
+  additionalProperties?: unknown
+}
+
+function isPlainSchemaObject(value: unknown): value is JsonSchemaObject {
+  return isRecord(value)
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return !!value && typeof value === "object" && !Array.isArray(value)
+}
+
+function hasOwn(record: Record<string, unknown>, key: string): boolean {
+  return Object.prototype.hasOwnProperty.call(record, key)
 }
 
 function assertPositiveFiniteNumber(op: string, field: "timeoutMs" | "maxInputBytes" | "maxOutputBytes", value: unknown): void {
@@ -350,42 +411,74 @@ function validateSchema(schema: unknown, value: unknown): SchemaResult {
     const result = schema.safeParse(value)
     return result.success ? { success: true } : { success: false, message: result.error?.message }
   }
-  if (typeof schema === "object" && schema !== null) {
-    const type = (schema as { type?: unknown }).type
-    return validateJsonSchemaType(type, value)
-  }
+  if (isPlainSchemaObject(schema)) return validateJsonSchema(schema, value, "$")
   return { success: false, message: "Unsupported schema" }
 }
 
-function validateJsonSchemaType(type: unknown, value: unknown): SchemaResult {
+function validateJsonSchema(schema: JsonSchemaObject, value: unknown, path: string): SchemaResult {
+  if (schema.const !== undefined && !jsonEqual(value, schema.const)) {
+    return { success: false, message: `${path}: Expected const value` }
+  }
+  if (Array.isArray(schema.enum) && !schema.enum.some((candidate) => jsonEqual(value, candidate))) {
+    return { success: false, message: `${path}: Expected one of enum values` }
+  }
+  const typeValidation = validateJsonSchemaType(schema.type, value, path)
+  if (!typeValidation.success) return typeValidation
+
+  if (schema.type === "object") {
+    if (!isRecord(value)) return { success: false, message: `${path}: Expected object` }
+    const properties = isRecord(schema.properties) ? schema.properties : {}
+    const required = Array.isArray(schema.required) ? schema.required.filter((item): item is string => typeof item === "string") : []
+    for (const key of required) {
+      if (!hasOwn(value, key)) return { success: false, message: `${path}.${key}: Required property missing` }
+    }
+    if (schema.additionalProperties === false) {
+      for (const key of Object.keys(value)) {
+        if (!hasOwn(properties, key)) return { success: false, message: `${path}.${key}: Additional properties are not allowed` }
+      }
+    }
+    for (const [key, child] of Object.entries(properties)) {
+      if (hasOwn(value, key)) {
+        const childResult = validateJsonSchema(child as JsonSchemaObject, value[key], `${path}.${key}`)
+        if (!childResult.success) return childResult
+      }
+    }
+  }
+
+  if (schema.type === "array" && schema.items !== undefined) {
+    if (!Array.isArray(value)) return { success: false, message: `${path}: Expected array` }
+    for (let i = 0; i < value.length; i += 1) {
+      const childResult = validateJsonSchema(schema.items as JsonSchemaObject, value[i], `${path}[${i}]`)
+      if (!childResult.success) return childResult
+    }
+  }
+
+  return { success: true }
+}
+
+function validateJsonSchemaType(type: unknown, value: unknown, path: string): SchemaResult {
   switch (type) {
     case "object":
-      return value !== null && typeof value === "object" && !Array.isArray(value)
-        ? { success: true }
-        : { success: false, message: "Expected object" }
+      return isRecord(value) ? { success: true } : { success: false, message: `${path}: Expected object` }
     case "array":
-      return Array.isArray(value) ? { success: true } : { success: false, message: "Expected array" }
+      return Array.isArray(value) ? { success: true } : { success: false, message: `${path}: Expected array` }
     case "string":
-      return typeof value === "string" ? { success: true } : { success: false, message: "Expected string" }
+      return typeof value === "string" ? { success: true } : { success: false, message: `${path}: Expected string` }
     case "number":
-      return typeof value === "number" && Number.isFinite(value) ? { success: true } : { success: false, message: "Expected number" }
+      return typeof value === "number" && Number.isFinite(value) ? { success: true } : { success: false, message: `${path}: Expected number` }
     case "integer":
-      return Number.isInteger(value) ? { success: true } : { success: false, message: "Expected integer" }
+      return Number.isInteger(value) ? { success: true } : { success: false, message: `${path}: Expected integer` }
     case "boolean":
-      return typeof value === "boolean" ? { success: true } : { success: false, message: "Expected boolean" }
+      return typeof value === "boolean" ? { success: true } : { success: false, message: `${path}: Expected boolean` }
     case "null":
-      return value === null ? { success: true } : { success: false, message: "Expected null" }
+      return value === null ? { success: true } : { success: false, message: `${path}: Expected null` }
     default:
-      return { success: false, message: "Unsupported schema type" }
+      return { success: false, message: `${path}: Unsupported schema type` }
   }
 }
 
-function measureJsonBytes(value: unknown): number {
-  try {
-    return new TextEncoder().encode(JSON.stringify(value)).byteLength
-  } catch {
-    return Number.POSITIVE_INFINITY
-  }
+function jsonEqual(a: unknown, b: unknown): boolean {
+  return stableStringify(a) === stableStringify(b)
 }
 
 function createRequestId(): string {

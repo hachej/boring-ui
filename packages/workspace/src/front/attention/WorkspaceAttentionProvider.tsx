@@ -9,9 +9,8 @@ export type WorkspaceAttentionBlockerAction = {
   label: string
 }
 
-// Legacy compatibility only. New plugins must provide `sessionBadge` and must
-// not depend on workspace interpreting reason strings. Remove after all
-// pre-sessionBadge callers have migrated.
+// Deprecated public constant for existing plugins. New plugins must provide
+// `sessionBadge` and must not depend on workspace interpreting reason strings.
 export const LEGACY_WORKSPACE_INPUT_ATTENTION_REASON = "waiting_for_user_input" as const
 
 export type WorkspaceAttentionSessionBadge = {
@@ -52,8 +51,8 @@ export function emitWorkspaceAttentionAction(detail: WorkspaceAttentionActionDet
 
 export function workspaceAttentionSessionBadgeForBlocker(blocker: Pick<WorkspaceAttentionBlocker, "reason" | "sessionBadge">): WorkspaceAttentionSessionBadge | null {
   if (blocker.sessionBadge) return blocker.sessionBadge
-  // Compatibility for pre-sessionBadge callers. New plugins should provide
-  // their own plugin-specific sessionBadge instead of relying on reason strings.
+  // Runtime compatibility for older blockers. Do not export this reason as a
+  // public constant: new plugins must provide their own sessionBadge.
   if (blocker.reason === LEGACY_WORKSPACE_INPUT_ATTENTION_REASON) return { kind: "needs-input", label: "needs input", tone: "attention", priority: -1 }
   return null
 }

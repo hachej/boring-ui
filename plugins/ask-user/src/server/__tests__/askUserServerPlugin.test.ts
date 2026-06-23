@@ -128,9 +128,9 @@ describe("createAskUserServerPlugin", () => {
     ])
   })
 
-  it("rejects legacy route options instead of silently ignoring them", async () => {
+  it("rejects legacy route options from JavaScript/config callers instead of silently ignoring them", async () => {
     const { store, runtime } = await fixture()
-    expect(() => createAskUserServerPlugin({ store, runtime, routes: {} })).toThrow(/no longer registers/)
+    expect(() => createAskUserServerPlugin({ store, runtime, routes: {} } as unknown as Parameters<typeof createAskUserServerPlugin>[0])).toThrow(/no longer registers/)
   })
 
   it("does not register the legacy plugin-owned question command route by default", async () => {

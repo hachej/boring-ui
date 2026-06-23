@@ -58,11 +58,25 @@ describe("WorkspaceBridgeRegistry", () => {
     delete missingMaxInputBytes.maxInputBytes
     const nullInputSchema = createTestBridgeOperationDefinition({ op: "test.v1.null-schema" }) as unknown as Record<string, unknown>
     nullInputSchema.inputSchema = null
+    const unsupportedKeyword = createTestBridgeOperationDefinition({
+      op: "test.v1.unsupported-schema-key",
+      inputSchema: { type: "string", minLength: 1 },
+    })
+    const unsupportedAdditionalPropertiesSchema = createTestBridgeOperationDefinition({
+      op: "test.v1.unsupported-additional-properties-schema",
+      inputSchema: { type: "object", additionalProperties: { type: "string" } },
+    })
 
     expect(() => registry.registerHandler(missingMaxInputBytes as never, () => ({}))).toThrow(
       expect.objectContaining({ code: WorkspaceBridgeErrorCode.InvalidRequest }),
     )
     expect(() => registry.registerHandler(nullInputSchema as never, () => ({}))).toThrow(
+      expect.objectContaining({ code: WorkspaceBridgeErrorCode.InvalidRequest }),
+    )
+    expect(() => registry.registerHandler(unsupportedKeyword, () => ({}))).toThrow(
+      expect.objectContaining({ code: WorkspaceBridgeErrorCode.InvalidRequest }),
+    )
+    expect(() => registry.registerHandler(unsupportedAdditionalPropertiesSchema, () => ({}))).toThrow(
       expect.objectContaining({ code: WorkspaceBridgeErrorCode.InvalidRequest }),
     )
   })
@@ -145,6 +159,78 @@ describe("WorkspaceBridgeRegistry", () => {
       { op: "test.v1.big-output", input: { value: "ok" }, requestId: "req_output_size" },
       context,
     )).resolves.toMatchObject({ ok: false, error: { code: WorkspaceBridgeErrorCode.OutputTooLarge } })
+  })
+
+  it("validates nested JSON-schema-shaped schemas", async () => {
+    const registry = createWorkspaceBridgeRegistry()
+    registry.registerHandler(
+      createTestBridgeOperationDefinition({
+        op: "test.v1.json-schema",
+        inputSchema: {
+          type: "object",
+          required: ["record"],
+          additionalProperties: false,
+          properties: {
+            record: {
+              type: "object",
+              required: ["id", "tags"],
+              properties: {
+                id: { type: "string" },
+                tags: { type: "array", items: { type: "string" } },
+                status: { type: "string", enum: ["open", "closed"] },
+              },
+              additionalProperties: false,
+            },
+          },
+        },
+        outputSchema: { type: "object" },
+      }),
+      ({ input }) => input,
+    )
+    registry.registerHandler(
+      createTestBridgeOperationDefinition({
+        op: "test.v1.json-schema-const",
+        inputSchema: { type: "object", const: { a: 1, b: 2 } },
+        outputSchema: { type: "object" },
+      }),
+      ({ input }) => input,
+    )
+
+    const context = createTestBridgeContext()
+    await expect(registry.call(
+      { op: "test.v1.json-schema", input: { record: { id: "r1", tags: ["a"], status: "open" } }, requestId: "req_json_ok" },
+      context,
+    )).resolves.toMatchObject({ ok: true })
+
+    await expect(registry.call(
+      { op: "test.v1.json-schema-const", input: { b: 2, a: 1 }, requestId: "req_json_const_order" },
+      context,
+    )).resolves.toMatchObject({ ok: true })
+
+    await expect(registry.call(
+      { op: "test.v1.json-schema", input: { record: { tags: ["a"] } }, requestId: "req_json_required" },
+      context,
+    )).resolves.toMatchObject({ ok: false, error: { code: WorkspaceBridgeErrorCode.SchemaInvalid } })
+
+    await expect(registry.call(
+      { op: "test.v1.json-schema", input: { record: { id: "r1", tags: [1] } }, requestId: "req_json_items" },
+      context,
+    )).resolves.toMatchObject({ ok: false, error: { code: WorkspaceBridgeErrorCode.SchemaInvalid } })
+
+    await expect(registry.call(
+      { op: "test.v1.json-schema", input: { record: { id: "r1", tags: [], extra: true } }, requestId: "req_json_extra" },
+      context,
+    )).resolves.toMatchObject({ ok: false, error: { code: WorkspaceBridgeErrorCode.SchemaInvalid } })
+
+    await expect(registry.call(
+      { op: "test.v1.json-schema", input: { record: { id: "r1", tags: [], toString: true } }, requestId: "req_json_proto_extra" },
+      context,
+    )).resolves.toMatchObject({ ok: false, error: { code: WorkspaceBridgeErrorCode.SchemaInvalid } })
+
+    await expect(registry.call(
+      { op: "test.v1.json-schema", input: { record: { id: "r1", tags: [], status: "stale" } }, requestId: "req_json_enum" },
+      context,
+    )).resolves.toMatchObject({ ok: false, error: { code: WorkspaceBridgeErrorCode.SchemaInvalid } })
   })
 
   it("enforces timeouts and redacts handler failures", async () => {

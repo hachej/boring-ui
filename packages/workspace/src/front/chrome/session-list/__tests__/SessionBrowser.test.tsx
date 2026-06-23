@@ -173,7 +173,7 @@ describe("SessionBrowser", () => {
     expect(document.querySelector('[data-boring-badge="working"]')).toBeNull()
   })
 
-  it("shows a legacy needs-input badge for older waiting-for-input blockers", () => {
+  it("shows a needs-input badge for older waiting-for-input blockers", () => {
     function BlockSession({ sessionId }: { sessionId: string }) {
       const { addBlocker, removeBlocker } = useWorkspaceAttention()
       useEffect(() => {
