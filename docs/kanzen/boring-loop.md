@@ -141,6 +141,8 @@ then record the new state/gate.
 - PR review pane focuses one PR: diff, findings, fixes, reviewed SHA, proof.
 - Demo proof pane starts the app when useful and tells Julien exactly what to
   verify.
+- Owner review card shows PR, issue, risk, proof, demo URL when relevant, and
+  the exact decision needed.
 
 ## Maintenance
 
