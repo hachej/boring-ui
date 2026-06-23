@@ -1,4 +1,4 @@
-import type { RuntimeEnvContribution, RuntimeModeId } from "@hachej/boring-agent/server"
+import type { RuntimeBundle, RuntimeEnvContribution, RuntimeEnvContributionContext, RuntimeModeId } from "@hachej/boring-agent/server"
 import type { WorkspaceBridgeRegistry } from "./registry"
 import { mintWorkspaceBridgeRuntimeRefreshToken, mintWorkspaceBridgeRuntimeToken } from "./runtimeToken"
 
@@ -34,6 +34,8 @@ export interface WorkspaceBridgeRuntimeEnvOptions {
   sessionId?: string
 }
 
+export type WorkspaceBridgeRuntimePlacement = "local" | "remote"
+
 export interface CreateWorkspaceBridgeRuntimeEnvContributionOptions {
   workspaceId: string
   runtimeMode: RuntimeModeId
@@ -41,6 +43,8 @@ export interface CreateWorkspaceBridgeRuntimeEnvContributionOptions {
   runtimeTokenSecret?: string
   runtimeRefreshTokenSecret?: string
   runtimeEnv?: WorkspaceBridgeRuntimeEnvOptions
+  /** Provider-neutral fallback used when getEnv is called without a RuntimeEnvContributionContext (mostly tests). */
+  runtimePlacement?: WorkspaceBridgeRuntimePlacement
 }
 
 export function createWorkspaceBridgeRuntimeEnvContribution(
@@ -52,17 +56,18 @@ export function createWorkspaceBridgeRuntimeEnvContribution(
   const bridgeUrl = resolveBridgeCallUrl(options.runtimeEnv?.bridgeUrl)
   const tokenUrl = resolveBridgeTokenUrl(options.runtimeEnv?.bridgeUrl)
   const capabilities = options.runtimeEnv?.capabilities
-  const disabledReason = validateRuntimeBridgeUrl({
-    bridgeUrl,
-    runtimeMode: options.runtimeMode,
-    allowInsecureHttp: options.runtimeEnv?.allowInsecureHttp,
-    hasRuntimeTokenSecret: Boolean(options.runtimeTokenSecret),
-    hasCapabilities: Array.isArray(capabilities) && capabilities.length > 0,
-  })
 
   return {
     id: "workspace-bridge-runtime-env",
-    getEnv: (): Record<string, string> => {
+    getEnv: (ctx?: RuntimeEnvContributionContext): Record<string, string> => {
+      const runtimePlacement = resolveRuntimePlacement(ctx?.runtimeBundle, options.runtimePlacement)
+      const disabledReason = validateRuntimeBridgeUrl({
+        bridgeUrl,
+        runtimePlacement,
+        allowInsecureHttp: options.runtimeEnv?.allowInsecureHttp,
+        hasRuntimeTokenSecret: Boolean(options.runtimeTokenSecret),
+        hasCapabilities: Array.isArray(capabilities) && capabilities.length > 0,
+      })
       if (disabledReason) {
         return { BORING_WORKSPACE_BRIDGE_DISABLED: disabledReason }
       }
@@ -133,9 +138,17 @@ function isLoopbackHost(hostname: string): boolean {
   return hostname === "localhost" || hostname === "127.0.0.1" || hostname === "::1" || hostname === "[::1]"
 }
 
+function resolveRuntimePlacement(
+  runtimeBundle: RuntimeBundle | undefined,
+  fallback: WorkspaceBridgeRuntimePlacement | undefined,
+): WorkspaceBridgeRuntimePlacement {
+  if (runtimeBundle?.filesystem?.kind === "remote-workspace" || runtimeBundle?.bash?.kind === "remote") return "remote"
+  return fallback ?? "local"
+}
+
 function validateRuntimeBridgeUrl(options: {
   bridgeUrl: string | undefined
-  runtimeMode: RuntimeModeId
+  runtimePlacement: WorkspaceBridgeRuntimePlacement
   allowInsecureHttp?: boolean
   hasRuntimeTokenSecret: boolean
   hasCapabilities: boolean
@@ -149,7 +162,7 @@ function validateRuntimeBridgeUrl(options: {
   } catch {
     return "bridge-url-invalid"
   }
-  const isRemote = options.runtimeMode === "vercel-sandbox"
+  const isRemote = options.runtimePlacement === "remote"
   const isLocalhost = isLoopbackHost(url.hostname)
   if (isRemote && url.protocol !== "https:") return "remote-bridge-url-must-be-https"
   if (isRemote && isLocalhost) return "remote-bridge-url-must-not-be-localhost"

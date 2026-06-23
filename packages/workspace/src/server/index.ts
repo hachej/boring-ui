@@ -124,6 +124,7 @@ export type {
   CreateWorkspaceBridgeRuntimeEnvContributionOptions,
   WorkspaceBridgeRuntimeEnvDisabledReason,
   WorkspaceBridgeRuntimeEnvOptions,
+  WorkspaceBridgeRuntimePlacement,
 } from "./workspaceBridge/runtimeEnv"
 export type {
   TrustedDomainBridgeHandlerOptions,

@@ -801,6 +801,7 @@ export async function createWorkspaceAgentServer(
     runtimeTokenSecret: opts.workspaceBridge?.runtimeTokenSecret,
     runtimeRefreshTokenSecret: opts.workspaceBridge?.runtimeRefreshTokenSecret,
     runtimeEnv: opts.workspaceBridge?.runtimeEnv,
+    runtimePlacement: workspaceFsCapability === "strong" ? "local" : "remote",
   })
 
   const app = await createAgentApp({

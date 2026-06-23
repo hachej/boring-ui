@@ -331,11 +331,15 @@ export default {
     await app.close()
   })
 
-  test("disables WorkspaceBridge runtime env for vercel sandbox without public HTTPS URL", async () => {
+  test("disables WorkspaceBridge runtime env for remote-placement runtimes without public HTTPS URL", async () => {
     mockCreateAgentAppOnce(async () => Fastify())
     const app = await createWorkspaceAgentServer({
-      workspaceRoot: await makeTempDir("bridge-runtime-env-vercel-"),
-      mode: "vercel-sandbox",
+      workspaceRoot: await makeTempDir("bridge-runtime-env-remote-"),
+      runtimeModeAdapter: {
+        id: "custom-remote-runtime",
+        workspaceFsCapability: "best-effort",
+        async create() { throw new Error("not used by this composition test") },
+      },
       provisionWorkspace: false,
       workspaceBridge: {
         allowInsecureLocalCliBrowserAuth: true,

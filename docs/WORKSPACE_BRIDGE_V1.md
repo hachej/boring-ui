@@ -102,7 +102,7 @@ When enabled and valid, agent/runtime executions receive:
 - `BORING_WORKSPACE_ID`
 - `BORING_AGENT_SESSION_ID`
 
-Remote runtimes, such as `vercel-sandbox`, require an HTTPS non-localhost bridge URL. If the bridge cannot be enabled safely, the runtime receives `BORING_WORKSPACE_BRIDGE_DISABLED=<reason>` instead of a URL/token.
+Remote-placement runtimes (runtime bundles with remote bash or remote-workspace filesystem strategies) require an HTTPS non-localhost bridge URL. If the bridge cannot be enabled safely, the runtime receives `BORING_WORKSPACE_BRIDGE_DISABLED=<reason>` instead of a URL/token.
 
 ## Runtime client
 
