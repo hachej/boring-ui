@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it } from 'vitest'
 import { createCoreApp } from '../../app/createCoreApp'
 import type { CoreConfig } from '../../../shared/types'
-import { withBeadId } from '../../__tests__/_setup'
+import { withTaskId } from '../../__tests__/_setup'
 import { DEFAULT_RATE_LIMIT_RULES } from '../rateLimit'
 
 const BASE_CONFIG: CoreConfig = {
@@ -118,7 +118,7 @@ describe('rate limiting hardening (xzhz)', () => {
 
     it(
       `${endpoint.url} — ${endpoint.limit + 1}th request returns 429 with envelope`,
-      withBeadId('boring-ui-v2-xzhz', async ({ logEvent, assertionPassed }) => {
+      withTaskId('boring-ui-v2-xzhz', async ({ logEvent, assertionPassed }) => {
         app = await createCoreApp(createConfig(), { manageShutdown: false })
         app.post(endpoint.url, async () => ({ ok: true }))
         await app.ready()
@@ -147,7 +147,7 @@ describe('rate limiting hardening (xzhz)', () => {
 
   it(
     'workspace-scoped invite limit uses workspace key (not per-IP)',
-    withBeadId('boring-ui-v2-xzhz', async ({ assertionPassed }) => {
+    withTaskId('boring-ui-v2-xzhz', async ({ assertionPassed }) => {
       app = await createCoreApp(createConfig(), { manageShutdown: false })
       app.post('/api/v1/workspaces/:id/invites', async () => ({ ok: true }))
       await app.ready()
@@ -171,7 +171,7 @@ describe('rate limiting hardening (xzhz)', () => {
 
   it(
     'different workspaces are isolated for invite limits',
-    withBeadId('boring-ui-v2-xzhz', async ({ assertionPassed }) => {
+    withTaskId('boring-ui-v2-xzhz', async ({ assertionPassed }) => {
       app = await createCoreApp(createConfig(), { manageShutdown: false })
       app.post('/api/v1/workspaces/:id/invites', async () => ({ ok: true }))
       await app.ready()
@@ -195,7 +195,7 @@ describe('rate limiting hardening (xzhz)', () => {
 
   it(
     'window expiry allows requests again after configured window',
-    withBeadId('boring-ui-v2-xzhz', async ({ assertionPassed }) => {
+    withTaskId('boring-ui-v2-xzhz', async ({ assertionPassed }) => {
       app = await createCoreApp(
         createConfig({
           rateLimit: {
@@ -230,7 +230,7 @@ describe('rate limiting hardening (xzhz)', () => {
 
   it(
     '/auth/sign-out pass-through remains unrestricted',
-    withBeadId('boring-ui-v2-xzhz', async ({ assertionPassed }) => {
+    withTaskId('boring-ui-v2-xzhz', async ({ assertionPassed }) => {
       app = await createCoreApp(createConfig(), { manageShutdown: false })
       app.post('/auth/sign-out', async () => ({ ok: true }))
       await app.ready()

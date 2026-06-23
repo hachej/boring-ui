@@ -40,8 +40,8 @@ function testName(): string {
   return expect.getState().currentTestName ?? 'unknown-test'
 }
 
-function keyFor(test: string, beadId: string): string {
-  return `${test}::${beadId}`
+function keyFor(test: string, taskId: string): string {
+  return `${test}::${taskId}`
 }
 
 function ensureBuffer(key: string): string[] {
@@ -87,20 +87,20 @@ function clearBuffer(key: string): void {
 function logEvent(
   key: string,
   event: TestEventName,
-  beadId: string,
+  taskId: string,
   fields?: LogFields,
 ): void {
   const logger = ensureLogger(key)
   logger.info({
     event,
-    beadId,
+    taskId,
     test: testName(),
     ...fields,
   })
 }
 
-export interface BeadTestContext {
-  readonly beadId: string
+export interface TaskTestContext {
+  readonly taskId: string
   readonly test: string
   readonly logger: Logger
   logEvent(event: TestEventName, fields?: LogFields): void
@@ -108,24 +108,24 @@ export interface BeadTestContext {
   assertionFailed(assertion: string, fields?: LogFields): void
 }
 
-export function withBeadId(
-  beadId: string,
-  run: (ctx: BeadTestContext) => Promise<void> | void,
+export function withTaskId(
+  taskId: string,
+  run: (ctx: TaskTestContext) => Promise<void> | void,
 ) {
   return async () => {
     const test = testName()
-    const key = keyFor(test, beadId)
+    const key = keyFor(test, taskId)
     const logger = ensureLogger(key)
 
-    const ctx: BeadTestContext = {
-      beadId,
+    const ctx: TaskTestContext = {
+      taskId,
       test,
       logger,
-      logEvent: (event, fields) => logEvent(key, event, beadId, fields),
+      logEvent: (event, fields) => logEvent(key, event, taskId, fields),
       assertionPassed: (assertion, fields) =>
-        logEvent(key, 'assertion.passed', beadId, { assertion, ...fields }),
+        logEvent(key, 'assertion.passed', taskId, { assertion, ...fields }),
       assertionFailed: (assertion, fields) =>
-        logEvent(key, 'assertion.failed', beadId, { assertion, ...fields }),
+        logEvent(key, 'assertion.failed', taskId, { assertion, ...fields }),
     }
 
     ctx.logEvent('setup.start')
@@ -158,12 +158,12 @@ export function __peekFlushedLogs(): Array<{ key: string; lines: string[] }> {
 }
 
 beforeEach(() => {
-  // Keep log buffers isolated even for tests that do not use withBeadId.
+  // Keep log buffers isolated even for tests that do not use withTaskId.
   __resetTestLogState()
 })
 
 afterEach(() => {
-  // If a test used withBeadId and failed, logs were already flushed.
+  // If a test used withTaskId and failed, logs were already flushed.
   // Passing tests should not leak any log lines into subsequent tests.
   for (const key of [...buffers.keys()]) {
     clearBuffer(key)

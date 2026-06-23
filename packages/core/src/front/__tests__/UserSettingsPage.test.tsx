@@ -26,13 +26,13 @@ vi.mock('better-auth/client/plugins', () => ({
   magicLinkClient: () => ({ id: 'magic-link' }),
 }))
 
-import { withBeadId } from '../../server/__tests__/_setup'
+import { withTaskId } from '../../server/__tests__/_setup'
 import { AuthProvider } from '../auth/AuthProvider'
 import { UserIdentityProvider } from '../auth/UserIdentityProvider'
 import { UserSettingsPage } from '../auth/UserSettingsPage'
 import { useMswHandler } from './_setup'
 
-const BEAD_ID = 'boring-ui-v2-wqza'
+const TASK_ID = 'boring-ui-v2-wqza'
 
 const MOCK_USER = {
   id: 'user-1',
@@ -96,7 +96,7 @@ afterEach(() => {
 describe('UserSettingsPage', () => {
   it(
     'displays user profile info',
-    withBeadId(BEAD_ID, async ({ assertionPassed }) => {
+    withTaskId(TASK_ID, async ({ assertionPassed }) => {
       render(<UserSettingsPage />, { wrapper: Wrapper })
 
       await waitFor(() =>
@@ -110,7 +110,7 @@ describe('UserSettingsPage', () => {
 
   it(
     'links the top-left brand to home',
-    withBeadId(BEAD_ID, async ({ assertionPassed }) => {
+    withTaskId(TASK_ID, async ({ assertionPassed }) => {
       render(<UserSettingsPage />, { wrapper: Wrapper })
       await waitFor(() => expect(screen.getByText('test@test.dev')).toBeTruthy())
       const homeLink = screen.getByRole('link', { name: /home/i })
@@ -121,7 +121,7 @@ describe('UserSettingsPage', () => {
 
   it(
     'renders host-provided extra sections with their own nav entry (stays feature-agnostic)',
-    withBeadId(BEAD_ID, async ({ assertionPassed }) => {
+    withTaskId(TASK_ID, async ({ assertionPassed }) => {
       render(
         <UserSettingsPage
           extraSections={[
@@ -140,7 +140,7 @@ describe('UserSettingsPage', () => {
 
   it(
     'omits extra-section nav entries when none are provided',
-    withBeadId(BEAD_ID, async ({ assertionPassed }) => {
+    withTaskId(TASK_ID, async ({ assertionPassed }) => {
       render(<UserSettingsPage />, { wrapper: Wrapper })
       await waitFor(() => expect(screen.getByText('test@test.dev')).toBeTruthy())
       expect(screen.queryByRole('link', { name: /Billing/i })).toBeNull()
@@ -150,7 +150,7 @@ describe('UserSettingsPage', () => {
 
   it(
     'renders change password form fields',
-    withBeadId(BEAD_ID, async ({ assertionPassed }) => {
+    withTaskId(TASK_ID, async ({ assertionPassed }) => {
       render(<UserSettingsPage />, { wrapper: Wrapper })
 
       await waitFor(() =>
@@ -165,7 +165,7 @@ describe('UserSettingsPage', () => {
 
   it(
     'validates mismatched passwords client-side',
-    withBeadId(BEAD_ID, async ({ assertionPassed }) => {
+    withTaskId(TASK_ID, async ({ assertionPassed }) => {
       render(<UserSettingsPage />, { wrapper: Wrapper })
 
       await waitFor(() =>
@@ -188,7 +188,7 @@ describe('UserSettingsPage', () => {
 
   it(
     'validates short new password client-side',
-    withBeadId(BEAD_ID, async ({ assertionPassed }) => {
+    withTaskId(TASK_ID, async ({ assertionPassed }) => {
       render(<UserSettingsPage />, { wrapper: Wrapper })
 
       await waitFor(() =>
@@ -211,7 +211,7 @@ describe('UserSettingsPage', () => {
 
   it(
     'calls changePassword on valid submission',
-    withBeadId(BEAD_ID, async ({ assertionPassed }) => {
+    withTaskId(TASK_ID, async ({ assertionPassed }) => {
       render(<UserSettingsPage />, { wrapper: Wrapper })
 
       await waitFor(() =>
@@ -237,7 +237,7 @@ describe('UserSettingsPage', () => {
 
   it(
     'shows success message after password change',
-    withBeadId(BEAD_ID, async ({ assertionPassed }) => {
+    withTaskId(TASK_ID, async ({ assertionPassed }) => {
       render(<UserSettingsPage />, { wrapper: Wrapper })
 
       await waitFor(() =>
@@ -259,7 +259,7 @@ describe('UserSettingsPage', () => {
 
   it(
     'shows error on password change failure',
-    withBeadId(BEAD_ID, async ({ assertionPassed }) => {
+    withTaskId(TASK_ID, async ({ assertionPassed }) => {
       mockChangePassword.mockResolvedValue({
         data: null,
         error: { status: 400, message: 'Current password is incorrect' },
@@ -286,7 +286,7 @@ describe('UserSettingsPage', () => {
 
   it(
     'renders delete account button in danger zone',
-    withBeadId(BEAD_ID, async ({ assertionPassed }) => {
+    withTaskId(TASK_ID, async ({ assertionPassed }) => {
       render(<UserSettingsPage />, { wrapper: Wrapper })
 
       await waitFor(() =>
@@ -299,7 +299,7 @@ describe('UserSettingsPage', () => {
 
   it(
     'opens delete confirmation dialog and requires typing DELETE',
-    withBeadId(BEAD_ID, async ({ assertionPassed }) => {
+    withTaskId(TASK_ID, async ({ assertionPassed }) => {
       render(<UserSettingsPage />, { wrapper: Wrapper })
 
       await waitFor(() =>
@@ -325,7 +325,7 @@ describe('UserSettingsPage', () => {
 
   it(
     'calls DELETE /api/v1/me with email confirmation on delete',
-    withBeadId(BEAD_ID, async ({ assertionPassed }) => {
+    withTaskId(TASK_ID, async ({ assertionPassed }) => {
       let deleteCalled = false
       let deleteBody: string | null = null
 
@@ -382,7 +382,7 @@ describe('UserSettingsPage', () => {
 
   it(
     'shows sole-owner error on 409 delete response',
-    withBeadId(BEAD_ID, async ({ assertionPassed }) => {
+    withTaskId(TASK_ID, async ({ assertionPassed }) => {
       useMswHandler(async (input, init) => {
         const url =
           typeof input === 'string'
@@ -440,7 +440,7 @@ describe('UserSettingsPage', () => {
 
   it(
     'shows loading state when no user data yet',
-    withBeadId(BEAD_ID, async ({ assertionPassed }) => {
+    withTaskId(TASK_ID, async ({ assertionPassed }) => {
       mockUseSession.mockReturnValue({
         data: null,
         isPending: true,
