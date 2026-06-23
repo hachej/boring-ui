@@ -23,39 +23,37 @@ Kanzen routes GitHub work into this workflow; it does not replace it.
 
 | Tool | Purpose | Key commands |
 | --- | --- | --- |
-| `br` | Issue tracking / source of truth | `br ready`, `br show <id>`, `br update <id> -s <status>`, `br close <id>`, `br sync --flush-only` |
-| `bv` | Triage sidecar | Use only `bv --robot-*`; never launch bare `bv` |
-| `git` | Atomic commits per bead | `git status`, `git diff --staged`, `git add`, `git commit` |
+| GitHub issues/PRs | Work source of truth | read latest issue/PR state, labels, reviews, CI, and owner comments |
+| `git` | Atomic commits | `git status`, `git diff --staged`, `git add`, `git commit` |
 | `cc -p` | Claude review for Codex agents | non-interactive print mode |
 | `cod exec` | Codex review for Claude agents | non-interactive exec mode |
-| MCP Agent Mail | Peer coordination, claims, reservations | register, fetch inbox, send `[CLAIM]` / `[DONE]` |
 | `vault kv get/list` | Read-only secrets for agent/shared paths | never commit or log secrets |
 
 Workflow guardrails:
 
 - Root hard rules live in [`AGENTS.md`](../AGENTS.md) and always apply.
-- Never launch bare `bv`; use only `bv --robot-*`.
-- Never edit `.beads/*.jsonl` by hand.
+- Use GitHub issues, PRs, labels, and comments for tracked repo work.
 - Never commit or log secrets.
 - Use MCP tools natively; do not wrap them with ad hoc HTTP clients.
 
 ## Session startup
 
-1. Read `AGENTS.md`, then this file if you are doing bead work.
-2. Register with Agent Mail and fetch inbox.
-3. Skim relevant package docs (`packages/<pkg>/docs/README.md`).
-4. Pick work with `bv --robot-next` or `br ready`.
-5. Check for collisions: inbox `[CLAIM]` messages and file reservations.
+1. Read `AGENTS.md`, then this file before coding.
+2. Skim relevant package docs (`packages/<pkg>/docs/README.md`).
+3. Identify the active task from the user request, GitHub issue/PR, or Kanzen
+   triage state.
+4. Check branch, dirty state, latest owner comments, reviews, CI, and labels
+   before touching files.
 
-## Per-bead loop
+## Task Loop
 
-1. `br show <id>` — note goal, acceptance, paths, deps, reference files.
-2. Claim: `br update <id> -s in_progress`, broadcast `[CLAIM]`, reserve files.
-3. Implement code + tests together.
+1. Note the goal, acceptance criteria, paths, constraints, and proof required.
+2. Keep GitHub labels/current state accurate before routing or implementing.
+3. Implement code and tests together.
 4. Verify locally with relevant quality gates.
-5. Cross-review with the opposite model.
+5. Cross-review non-trivial work before marking the PR ready.
 6. Commit atomically.
-7. Close bead, announce `[DONE]`, release reservations.
+7. Update the issue/PR with proof, remaining gaps, and the next state.
 
 ## Cross-review
 
@@ -68,7 +66,7 @@ Verdicts:
 
 - `ship` → commit + close.
 - `revise` → fix, re-verify, re-request (cap 3 rounds).
-- `reject` → mark blocked and escalate via Agent Mail.
+- `reject` → mark blocked and ask the owner for a decision.
 
 Never self-review for closure.
 
@@ -84,19 +82,18 @@ Co-Authored-By: <agent-name> <noreply@anthropic.com>
 
 Types: `feat`, `fix`, `docs`, `chore`, `refactor`, `test`, `polish`.
 
-Common scopes: `plan`, `beads`, `agent`, `workspace`, `core`, `cli`, `plugin`.
+Common scopes: `plan`, `agent`, `workspace`, `core`, `cli`, `plugin`.
 
-Reference bead IDs in subject/body. Keep commits atomic per bead. If bead state changed, run `br sync --flush-only` and include `.beads/issues.jsonl`.
+Reference GitHub issue/PR IDs in the subject or body when useful. Keep commits
+atomic by task.
 
 ## Session end
 
-1. File beads for unfinished discoveries.
+1. File GitHub issues for unfinished discoveries that should not be lost.
 2. Run relevant quality gates.
-3. Update bead status.
-4. `br sync --flush-only`.
-5. Commit atomically if needed.
-6. Send Agent Mail `[STATUS]` handoff.
-7. Release file reservations.
+3. Update GitHub labels, issue/PR comments, and proof notes.
+4. Commit and push atomically if needed.
+5. Leave a handoff comment when work is blocked or needs owner review.
 
 ## Credentials
 

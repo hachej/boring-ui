@@ -147,7 +147,7 @@ Research and drafting are the large, parallelizable phases. The partition is the
 | Solo | 1 worker, serial phases | <20 source files |
 | Pair | 2 workers, small fan-out | Typical OSS lib |
 | Squad | 4–6 workers, multi-model polish | SDK / framework |
-| Swarm | 8–12+ workers, beads-driven + triangulation | Platform / monorepo |
+| Swarm | 8–12+ workers, issue-driven + triangulation | Platform / monorepo |
 
 Triangulation (Claude + Codex + Gemini) is reserved for Phase 4 polish and Phase 7 fresh-eyes, where independent reads produce the highest signal. Prompt diversification ("modes of reasoning" — literal/skeptical/junior/expert/adversarial readers) composes with model diversification; see [ORCHESTRATION.md §Modes-of-reasoning](references/ORCHESTRATION.md).
 
@@ -311,7 +311,7 @@ Canonical, paste-ready code for every one of these: **[NEXTRA.md](references/NEX
 ### Process & lifecycle
 | Need | File |
 |------|------|
-| Multi-agent orchestration (tiers, fan-out, triangulation, NTM+mail+beads) | [ORCHESTRATION.md](references/ORCHESTRATION.md) |
+| Multi-agent orchestration (tiers, fan-out, triangulation, NTM+mail+issues) | [ORCHESTRATION.md](references/ORCHESTRATION.md) |
 | Six-layer validation regime (build/link/code-in-docs/lint/fresh-eyes/user-lens) | [TESTING-DOCS.md](references/TESTING-DOCS.md) |
 | Post-launch maintenance, staleness, release-train coupling, sunset | [LIFECYCLE.md](references/LIFECYCLE.md) |
 | Docs-as-code team workflows (CI, CODEOWNERS, preview deploys, freeze) | [TEAM-WORKFLOWS.md](references/TEAM-WORKFLOWS.md) |

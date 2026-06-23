@@ -33,4 +33,4 @@ These docs are for:
 
 ## What this is not
 
-This is not a generated API reference and not a bead tracker. For exact specs, see the package docs in `packages/*/docs/` and the archived design plans under `docs/plans/archive/`.
+This is not a generated API reference and not a task tracker. For exact specs, see the package docs in `packages/*/docs/` and the archived design plans under `docs/plans/archive/`.
