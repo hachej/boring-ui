@@ -10,7 +10,9 @@ in [`AGENT_WORKFLOW.md`](AGENT_WORKFLOW.md).
 - No secrets in git. Do not paste tokens into commits or logs.
 - No broad rewrite scripts/codemods without approval.
 - No file variants (`*_v2.*`, `*_improved.*`) — edit in place.
-- Never work directly on `main` unless explicitly authorized. Use a short-lived branch or worktree.
+- Never work directly on `main` unless explicitly authorized. Use a short-lived
+  branch or worktree; see
+  [`docs/procedures/branch-worktree.md`](procedures/branch-worktree.md).
 - Run relevant lint/typecheck/tests before considering work done.
 - Never stash, revert, or overwrite another agent's uncommitted work. Investigate unexpected changes first.
 

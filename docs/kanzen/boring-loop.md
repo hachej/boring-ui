@@ -44,6 +44,19 @@ The UI should show this as chips plus one sentence, not a wall of text.
 - [`sources/theo_loop.md`](sources/theo_loop.md): source transcript.
 - [`sources/steinberger_loop.md`](sources/steinberger_loop.md): source notes.
 
+## Procedures
+
+Keep the loop about routing and gates. Put mechanics here:
+
+- [`../procedures/branch-worktree.md`](../procedures/branch-worktree.md):
+  branch, worktree, lane, and stacked-PR mechanics.
+- [`../procedures/review-loop.md`](../procedures/review-loop.md):
+  autoreview and thermo review loop.
+- [`../procedures/proof-of-work.md`](../procedures/proof-of-work.md):
+  proof comment, demo workspace proof, and evidence.
+- [`../procedures/owner-review-card.md`](../procedures/owner-review-card.md):
+  human review handoff.
+
 ## Labels
 
 Use labels for routing, not judgment essays.
@@ -121,14 +134,10 @@ useful plan. Use an inline plan for small work. Use a plan file plus
 thermo-nuclear review for important, risky, or multi-PR work.
 
 [`/loop-implement`](../../.agents/skills/loop-implement/SKILL.md): implement
-the plan, open/update the PR, run review/fix rounds, run thermo-nuclear
-implementation review when non-trivial, and collect proof.
+the plan, open/update the PR, run review/fix rounds, and collect proof.
 
-One implementation lane owns one issue/PR, one branch/worktree, and one final
-proof trail. That lane can use bounded helpers for isolated subfeatures,
-thermo review, narrow investigation, or demo proof. Helpers report back to the
-lane; they do not merge, change labels, ask Julien directly, or create more
-lanes.
+One implementation lane owns one issue/PR and may use bounded helpers. Use
+procedures for branch/worktree, review, proof, and owner handoff details.
 
 `/triage`: orchestrate the queue. It should perform one next action per issue,
 then record the new state/gate.

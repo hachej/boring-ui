@@ -69,7 +69,13 @@ standalone (`createAgentApp`) with zero core dependency.
 - [`TAILWIND-V4-STYLE-ISOLATION.md`](TAILWIND-V4-STYLE-ISOLATION.md) — how packages share Tailwind v4 tokens: workspace owns `--boring-*` `:root` tokens; agent inherits them scoped to `[data-boring-agent]` (test-enforced).
 - [`PERFORMANCE.md`](PERFORMANCE.md) — historical Vercel-sandbox vs local FS latency benchmarks (harness removed; kept for reference).
 - [`kanzen/`](kanzen/) — analysis of a 5-minute maintainer triage loop for repo routing, worker lanes, proof gates, owner decisions, and budgeted autonomy.
+- [`procedures/branch-worktree.md`](procedures/branch-worktree.md) — branch,
+  worktree, lane, and stacked-PR mechanics.
+- [`procedures/review-loop.md`](procedures/review-loop.md) — autoreview,
+  thermo review, fix, and re-review loop.
 - [`procedures/proof-of-work.md`](procedures/proof-of-work.md) — required GitHub proof-of-work procedure for PRs.
+- [`procedures/owner-review-card.md`](procedures/owner-review-card.md) — human
+  review handoff card for PRs that need owner review.
 - [`web/`](web/README.md) — human-oriented guide: architecture overview, full package map, getting started, composition guide, design FAQ, troubleshooting map, per-package explainers, glossary. Orientation, not normative spec — canonical specs live in `packages/*/docs/`.
 
 ## Normative specs (code cites these)
