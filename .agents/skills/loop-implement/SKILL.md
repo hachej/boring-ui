@@ -1,6 +1,6 @@
 ---
 name: loop-implement
-description: "Use for /loop-implement or gate:implementation: run one accountable Kanzen implementation lane for one issue or PR, optionally use bounded helpers, review/fix, prove, and stop before merge unless fast-track policy is explicitly satisfied."
+description: "Use for /loop-implement or the implementation gate: run one accountable Kanzen implementation lane for one issue or PR, optionally use bounded helpers, review/fix, prove, and stop before merge unless fast-track policy is explicitly satisfied."
 ---
 
 # Loop Implement
@@ -28,6 +28,9 @@ merge by default.
 | Proof | post final proof using the proof-of-work procedure |
 | PR | open/update PR; use owner-review-card procedure when human review is needed |
 
+In read-only/dry-run mode, report the next blocked action instead of claiming a
+comment, label, PR, or proof was posted.
+
 ## Review Loop
 
 Use `coding-autoreview` on the current target: local mode for dirty work, branch
@@ -47,12 +50,12 @@ a split or stacked-PR plan to triage.
 
 ## Exit
 
-| Result | Labels / Gate |
-| --- | --- |
-| owner input needed | `state:blocked phase:implement gate:clarity` |
-| accepted review finding remains | `state:active phase:review gate:implementation` |
-| proof still needed | `state:active phase:review gate:proof` |
-| review/proof clean | `state:ready phase:merge gate:merge` |
+| Result | Labels | Gate |
+| --- | --- | --- |
+| owner input needed | `state:blocked phase:implement` | `clarity` |
+| accepted review finding remains | `state:active phase:review` | `implementation` |
+| proof still needed | `state:active phase:review` | `proof` |
+| review/proof clean | `state:ready phase:merge` | `merge` |
 
 Fast track only applies after triage confirms `track:fast` and all merge gates
 pass.

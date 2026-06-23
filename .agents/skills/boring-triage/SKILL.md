@@ -27,27 +27,41 @@ Triage answers: what is the first unmet gate, then does one next action.
 
 ## Gate Table
 
-| Situation | Labels / Gate |
-| --- | --- |
-| duplicate, invalid, out of scope | `state:done` |
-| unclear | `state:blocked phase:grill gate:clarity` |
-| risk classification | keep `track:owner`; upgrade to `track:fast` only if eligible |
-| needs design or sequencing | `state:active phase:plan gate:plan` |
-| clear and no PR | `state:active phase:implement gate:implementation` |
-| PR lacks review run, has unresolved comments, or accepted findings remain | `state:active phase:review gate:implementation` |
-| final proof comment, tests, CI, or demo proof missing | `state:active phase:review gate:proof` |
-| all gates pass | `state:ready phase:merge gate:merge` |
+| Situation | Labels | Gate |
+| --- | --- | --- |
+| weak issue body or unsafe intake | `state:queued phase:triage` | `intake` |
+| queued issue is ready to classify | `state:queued phase:triage` | `triage` |
+| duplicate, invalid, out of scope | `state:done` | none |
+| unclear | `state:blocked phase:grill` | `clarity` |
+| risk classification | keep `track:owner`; upgrade to `track:fast` only if eligible | `risk` |
+| needs design or sequencing | `state:active phase:plan` | `plan` |
+| clear and no PR | `state:active phase:implement` | `implementation` |
+| PR lacks current review, has unresolved comments, or accepted findings remain | `state:active phase:review` | `implementation` |
+| final proof comment, tests, CI, or demo proof missing | `state:active phase:review` | `proof` |
+| all gates pass | `state:ready phase:merge` | `merge` |
 
 ## Gate Actions
 
 | Gate | Action |
 | --- | --- |
+| `intake` | repair the issue using `docs/kanzen/procedures/well-documented-issue.md` |
 | `clarity` | use `loop-grill`: grill-me plus ask-user; stay `state:blocked phase:grill` |
+| `triage` | classify risk, plan need, implementation state, proof, and merge readiness |
 | `risk` | keep `track:owner`; upgrade to `track:fast` only when all fast-track rules pass |
 | `plan` | use `loop-plan`: smallest useful plan; plan file plus thermo review for risky or multi-PR work |
 | `implementation` | use `loop-implement`: one accountable lane for one issue/PR |
 | `proof` | follow `docs/kanzen/procedures/proof-of-work.md`; PR body proof is not a substitute for the final proof comment |
 | `merge` | fast-track merge or `docs/kanzen/procedures/owner-review-card.md` |
+
+Current review means a review artifact for the current head SHA: a GitHub
+review, a PR comment/body section that names the reviewed SHA, or a recorded
+`coding-autoreview`/thermo result. Stale reviews and unresolved accepted
+findings fail the implementation gate.
+
+Current proof means a final issue/PR comment for the current head SHA. PR body
+proof is helpful context, but it does not pass the proof gate by itself. In a
+read-only or dry-run sweep, report the exact comment/label/merge action that
+would happen and leave the gate unchanged.
 
 ## Fast Track
 
@@ -59,9 +73,10 @@ public API, releases, broad refactors, destructive/deletion-heavy changes,
 unclear requirements, or untrusted authors.
 
 Auto-merge only when labels include `state:ready phase:merge track:fast`, the
-author/agent is trusted, the PR is non-draft on a worker-owned branch, CI/tests
-and proof are current, no restricted area is touched, and a proof comment is
-posted. Otherwise keep `track:owner` and prepare a short owner review brief.
+author/agent is trusted, the PR is non-draft on a branch owned by one lane or
+explicitly trusted owner/agent, CI/tests and proof are current, no restricted
+area is touched, and a proof comment is posted. Otherwise keep `track:owner`
+and prepare a short owner review brief.
 
 ## Worker Rule
 

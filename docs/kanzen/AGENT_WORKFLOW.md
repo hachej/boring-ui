@@ -127,13 +127,14 @@ Kanzen-managed issues are the exception. When an issue is created or routed by
 one state:* + one phase:* + one track:*
 ```
 
-Do not mix `status:*` and Kanzen state labels on the same issue. See
+Keep `gate` as structured state, not a GitHub label. Do not mix `status:*` and
+Kanzen state labels on the same issue. See
 [`docs/kanzen/boring-loop.md`](boring-loop.md) for the Kanzen gates and
 label values.
 
 Package labels: `package:core`, `package:agent`, `package:workspace`, `package:ui`, `package:cli`, `package:pi`.
 
-Plugin labels: `plugin:ask-user`, `plugin:data-catalog`, `plugin:data-explorer`, `plugin:deck`.
+Plugin labels: `plugin:ask-user`, `plugin:data-catalog`, `plugin:data-explorer`, `plugin:deck`, `plugin:filesystem`.
 
 ## GitHub proof of work
 
