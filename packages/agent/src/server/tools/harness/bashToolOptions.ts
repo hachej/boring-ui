@@ -5,11 +5,11 @@ import {
   createLocalBashOperations,
 } from '@mariozechner/pi-coding-agent'
 
-import { buildBwrapArgs } from '../sandbox/bwrap/buildBwrapArgs'
-import { withWorkspacePythonEnv } from '../sandbox/workspacePythonEnv'
-import { remoteSandboxBashOps } from '../tools/operations/remoteSandbox'
-import { mergeRuntimeProvisioningEnv, type RuntimeProvisioningOptions } from './env'
-import { getRuntimeBundleStorageRoot, type RuntimeBashStrategy, type RuntimeBundle } from './mode'
+import { buildBwrapArgs } from '../../sandbox/bwrap/buildBwrapArgs'
+import { withWorkspacePythonEnv } from '../../sandbox/workspacePythonEnv'
+import { remoteSandboxBashOps } from '../operations/remoteSandbox'
+import { mergeRuntimeProvisioningEnv, type RuntimeProvisioningOptions } from '../../runtime/env'
+import { getRuntimeBundleStorageRoot, type RuntimeBashStrategy, type RuntimeBundle } from '../../runtime/mode'
 
 function shellEscape(s: string): string {
   return `'${s.replace(/'/g, "'\\''")}'`

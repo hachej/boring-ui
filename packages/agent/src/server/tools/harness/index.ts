@@ -4,7 +4,7 @@ import { createBashToolDefinition } from '@mariozechner/pi-coding-agent'
 import type { Sandbox } from '../../../shared/sandbox'
 import type { AgentTool, ToolReadinessRequirement, ToolResult } from '../../../shared/tool'
 import { runtimeNotReadyToolResult, type ToolReadinessState } from '../../catalog/toolReadiness'
-import { createBashToolOptionsForRuntime } from '../../runtime/bashToolOptions'
+import { createBashToolOptionsForRuntime } from './bashToolOptions'
 import type { RuntimeProvisioningOptions, RuntimeProvisioningSnapshot } from '../../runtime/env'
 import type { RuntimeBundle } from '../../runtime/mode'
 
