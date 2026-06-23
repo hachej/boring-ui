@@ -93,8 +93,6 @@ packages/workspace/src/plugins/eval-*/
 !/.agents/skills/
 !/.agents/skills/boring-feedback/
 !/.agents/skills/boring-feedback/**
-!/.agents/skills/boring-orchestration/
-!/.agents/skills/boring-orchestration/**
 !/.agents/skills/boring-triage/
 !/.agents/skills/boring-triage/**
 !/.agents/skills/loop-grill/

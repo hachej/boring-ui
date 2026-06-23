@@ -23,7 +23,7 @@ Goal: produce a proved PR. Do not spawn workers and do not merge by default.
 | Read | issue, plan, acceptance, proof requirement, repo invariants |
 | Code | make the smallest change that satisfies acceptance |
 | Test | run focused tests and demo workspace proof when UI/workspace behavior changes |
-| Review | run review/fix/re-review; use thermo-nuclear review for non-trivial code |
+| Review | run review, fix every accepted finding, and re-review until clean or blocked; use thermo-nuclear review for non-trivial code |
 | PR | open/update PR with proof, known gaps, and issue link |
 
 ## Exit
@@ -31,7 +31,8 @@ Goal: produce a proved PR. Do not spawn workers and do not merge by default.
 | Result | Labels / Gate |
 | --- | --- |
 | owner input needed | `state:blocked phase:implement gate:clarity` |
-| fixes or proof still needed | `state:active phase:review gate:proof` |
+| accepted review finding remains | `state:active phase:review gate:implementation` |
+| proof still needed | `state:active phase:review gate:proof` |
 | review/proof clean | `state:ready phase:merge gate:merge` |
 
 Fast track only applies after triage confirms `track:fast` and all merge gates
