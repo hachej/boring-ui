@@ -179,7 +179,42 @@ Canonical layering:
 - **TipTap session adapter:** filesystem plugin front markdown editor module; owns ProseMirror/TipTap mutation details.
 - **Headless file adapter:** filesystem plugin/server-side helper for closed markdown files where semantic edits are possible.
 
-### B. Narrow open-document session registry
+### B. Correct abstraction: shared document session, not human vs agent tools
+
+The important boundary is not "human edits" vs "agent edits". Both are actors mutating the same document. The correct abstraction is a **document session mutation kernel**:
+
+```text
+Human UI intent ─┐
+Agent tool call ─┼─> MarkdownEditCoordinator ─> MarkdownDocumentSession ─> TipTap/text adapter ─> persistence
+System sync   ───┘
+```
+
+Actors differ only by metadata and permissions, not by edit path:
+
+```ts
+type EditActor =
+  | { kind: "human"; userId: string; surface: "keyboard" | "toolbar" | "paste" | "raw" }
+  | { kind: "agent"; sessionId: string; toolCallId?: string; confidence?: "apply" | "review" }
+  | { kind: "system"; source: "reload" | "migration" | "collaboration-sync" }
+
+interface MarkdownEditRequest {
+  path: string
+  actor: EditActor
+  operations: MarkdownOperation[]
+  base?: { contentHash?: string; docVersion?: string }
+}
+```
+
+Human keyboard/toolbar edits may still enter TipTap through native ProseMirror handlers for latency, but they must be observed by the same session state: versioning, dirty state, save projection, status badges, and conflict policy. Agent operations enter through the coordinator because they originate outside the editor process. Both paths converge at `MarkdownDocumentSession`, which owns the current document version and emits the same change events.
+
+This avoids discrepancy:
+
+- the agent does not have a separate "file edit" tool for opened rich documents;
+- the human does not have a separate persistence path;
+- both actors update one session state and one saved markdown projection;
+- UI review/status is based on actor metadata, not on a separate editing subsystem.
+
+### C. Narrow open-document session registry
 
 Add a front-end registry owned by the filesystem plugin, but do **not** expose raw TipTap `Editor` handles.
 
@@ -209,7 +244,7 @@ Multiple-pane invariant for Phase 1:
 
 Yjs can later replace this with a true shared session, but Phase 1 must not allow multiple independent live authorities for one path.
 
-### C. Small typed command surface
+### D. Small typed command surface
 
 Extend the existing `UiBridge.postCommand` contract with a minimal markdown command set. Keep operations inside one canonical request shape instead of adding a bridge command for every edit flavor.
 
@@ -243,7 +278,7 @@ Phase 1 supports only direct apply. Do **not** add `preview` to shared contracts
 
 The operation executor is the canonical abstraction. Agent tools map onto `MarkdownOperation[]`; UI bridge commands transport `MarkdownOperation[]`; TipTap and headless adapters execute `MarkdownOperation[]`. Multi-operation requests must be preflighted and applied atomically, or rejected before mutation. No implementation may partially apply an operation batch and then return an error.
 
-### D. Document mode policy
+### E. Document mode policy
 
 Raw mode is a first-class document mode, not an escape-hatch branch.
 
@@ -262,7 +297,7 @@ Policy:
 
 Initial scope: plain `.md` may use `rich-tiptap`; `.mdx`, frontmatter-heavy, and custom-directive documents should default to raw/unsupported until explicit parser/serializer tests exist.
 
-### E. Transparent user experience
+### F. Transparent user experience
 
 Do not expose "TipTap vs filesystem writes" as a user-facing concept. The user-facing abstraction is:
 
@@ -292,7 +327,7 @@ Default behavior matrix:
 
 User prompts should be rare. The normal path is automatic. Prompt only when applying would risk lossy serialization, ambiguous target selection, or overwriting active human edits.
 
-### F. Agentic document tools
+### G. Agentic document tools
 
 Create OSS-compatible tools mirroring TipTap AI Toolkit concepts, but make them thin wrappers over the coordinator:
 
@@ -305,7 +340,7 @@ Avoid a second parallel taxonomy such as separate agent-level `replace_document`
 
 Tool execution never manually calls `markdown.getState` to decide routing. It sends the request to the coordinator, which chooses open session vs file adapter.
 
-### G. Review / suggestion UX
+### H. Review / suggestion UX
 
 Do not implement full tracked changes in phase 1.
 
@@ -325,7 +360,7 @@ Phase 3:
 
 Avoid adopting paid TipTap Tracked Changes unless product requirements justify it.
 
-### H. Persistence and conflict handling
+### I. Persistence and conflict handling
 
 For open markdown docs after Phase 1:
 
@@ -342,7 +377,7 @@ Fix current stale suppression as part of phase 1:
 - suppress a server mtime change only when the fetched content/hash equals the last saved content/hash;
 - if content differs, treat it as an external edit even inside the suppression window.
 
-### I. Future Yjs/Hocuspocus mode
+### J. Future Yjs/Hocuspocus mode
 
 Once command routing is stable, introduce optional collaboration:
 
