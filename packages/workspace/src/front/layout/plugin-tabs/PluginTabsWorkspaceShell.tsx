@@ -1,6 +1,6 @@
 "use client"
 
-import { useCallback, useRef, type PointerEvent as ReactPointerEvent, type ReactNode } from "react"
+import { useCallback, useRef, useState, type PointerEvent as ReactPointerEvent, type ReactNode } from "react"
 import { PanelLeftClose, PanelLeftOpen } from "lucide-react"
 import { cn } from "../../lib/utils"
 import { PaneCollapseButton } from "../paneCollapseButton"
@@ -63,6 +63,10 @@ export function PluginTabsWorkspaceShell({
   onResizeLeftPane,
   className,
 }: PluginTabsWorkspaceShellProps) {
+  // Ephemeral peek: when the pane is collapsed, hovering the left edge slides
+  // the pane in as an overlay (it does not push the content or pin open). It
+  // retracts when the pointer leaves the overlay.
+  const [peek, setPeek] = useState(false)
   return (
     <div
       data-boring-workspace-part="plugin-tabs-shell"
@@ -74,6 +78,30 @@ export function PluginTabsWorkspaceShell({
       <div className="relative min-w-0 flex-1">
         {children}
       </div>
+
+      {/* Ephemeral peek (collapsed only). The thin edge strip opens it; the
+          overlay retracts on mouse-leave. */}
+      {collapsed ? (
+        <>
+          <div
+            data-boring-workspace-part="app-left-peek-trigger"
+            className="absolute inset-y-0 left-0 z-[60] w-2.5"
+            onMouseEnter={() => setPeek(true)}
+            aria-hidden="true"
+          />
+          <div
+            data-boring-workspace-part="app-left-peek"
+            data-boring-state={peek ? "open" : "closed"}
+            onMouseLeave={() => setPeek(false)}
+            className={cn(
+              "absolute inset-y-0 left-0 z-[65] flex shadow-2xl transition-transform duration-150 ease-out motion-reduce:transition-none",
+              peek ? "translate-x-0" : "pointer-events-none -translate-x-full",
+            )}
+          >
+            {leftPane}
+          </div>
+        </>
+      ) : null}
 
       {/* One collapse rule: same place and style in both states; only the
           quiet panel glyph changes to show open vs close mode. The app pane

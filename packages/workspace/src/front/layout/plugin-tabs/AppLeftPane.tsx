@@ -53,7 +53,12 @@ export interface AppLeftPaneProps {
   showSkills?: boolean
   onOpenPlugins: () => void
   onOpenSkills: () => void
-
+  /**
+   * single-project: workspace shown below the app-title logo, no Workspaces
+   * section — just the session list. multi-project: the Workspaces/projects
+   * tree (PR2). Defaults to single-project.
+   */
+  layoutMode?: "single-project" | "multi-project"
 }
 
 type SessionRowState = "normal" | "open" | "active"
@@ -83,6 +88,7 @@ export function AppLeftPane({
   showSkills = true,
   onOpenPlugins,
   onOpenSkills,
+  layoutMode = "single-project",
 }: AppLeftPaneProps) {
   const openSet = useMemo(() => new Set(openSessionIds), [openSessionIds])
   const pinnedSet = useMemo(() => new Set(pinnedSessionIds), [pinnedSessionIds])
@@ -123,20 +129,26 @@ export function AppLeftPane({
       style={{ width, minWidth: width, maxWidth: width }}
       aria-label="App navigation"
     >
-      {/* Top row: current project label (or host topSlot). The fixed-position
-          app-nav collapse/expand button is rendered by PluginTabsWorkspaceShell
-          at the same x/y in both states, so reserve the same quiet leading
-          space here instead of moving the button into this row. */}
-      <div className="flex h-12 shrink-0 items-center gap-2 border-b border-border/60 py-2 pl-11 pr-2">
-        <div className="min-w-0 flex-1">
-          {topSlot ? (
-            topSlot
-          ) : (
-            <span className="truncate px-1 text-[12px] font-semibold uppercase tracking-[0.12em] text-muted-foreground/70">
-              {appTitle || "Boring UI"}
-            </span>
-          )}
+      {/* Brand + workspace, stacked. The app-title logo sits on the first line
+          (leading space reserved for the fixed collapse button rendered by the
+          shell); the current workspace sits BELOW it — the host topSlot
+          (workspace switcher) when provided, else a plain label. */}
+      <div className="shrink-0 border-b border-border/60 px-2 pb-2 pt-2.5">
+        <div className="flex h-7 items-center pl-9">
+          <span className="truncate text-[13px] font-semibold tracking-tight text-foreground" data-boring-workspace-part="app-left-pane-brand">
+            {appTitle || "Boring UI"}
+          </span>
         </div>
+        {topSlot ? (
+          <div className="mt-1 min-w-0" data-boring-workspace-part="app-left-pane-workspace">{topSlot}</div>
+        ) : workspaceLabel ? (
+          <div
+            className="mt-1 flex min-h-8 items-center gap-2 rounded-lg px-2 text-[13px] font-medium text-foreground/85"
+            data-boring-workspace-part="app-left-pane-workspace"
+          >
+            <span className="truncate">{workspaceLabel}</span>
+          </div>
+        ) : null}
       </div>
 
       <nav className="shrink-0 space-y-1 border-b border-border/60 px-2 py-2" aria-label="Primary workspace actions">
@@ -147,8 +159,11 @@ export function AppLeftPane({
       </nav>
 
       <div className="boring-scrollbar-discreet min-h-0 flex-1 overflow-y-auto px-2 py-2">
-        <CollapsibleSection title={workspaceSectionTitle} defaultOpen={projectItems.length > 0}>
-          {projectItems.length > 0 ? (
+        {/* Multi-project (PR2): the Workspaces/projects tree. Single-project
+            shows no projects section — the workspace lives in the header above
+            and the body is just the session list. */}
+        {layoutMode === "multi-project" && projectItems.length > 0 ? (
+          <CollapsibleSection title={workspaceSectionTitle} defaultOpen>
             <ProjectOverview
               projects={projectItems}
               activeProjectId={activeProjectId}
@@ -157,12 +172,8 @@ export function AppLeftPane({
               onOpenProjectSession={onOpenProjectSession}
               onShowMoreProjectSessions={onShowMoreProjectSessions}
             />
-          ) : (
-            <div className="flex min-h-9 w-full items-center gap-2 rounded-lg bg-foreground/[0.06] px-2.5 py-1.5 text-[13px] font-medium text-foreground">
-              <span className="truncate">{workspaceLabel || appTitle || "Boring UI"}</span>
-            </div>
-          )}
-        </CollapsibleSection>
+          </CollapsibleSection>
+        ) : null}
         <CollapsibleSection title="Chats" defaultOpen>
           <SessionSubSection title="Pinned" empty="No pinned sessions yet.">
             {pinnedSessions.map((session) => renderSession(session, true))}
