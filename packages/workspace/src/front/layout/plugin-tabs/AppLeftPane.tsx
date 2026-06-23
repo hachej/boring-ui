@@ -123,10 +123,11 @@ export function AppLeftPane({
       }
     })
   }, [activeProjectId, layoutMode, projects, regularSessions])
-  const renderSession = (session: AppLeftPaneSession, pinned: boolean) => {
-    const state: SessionRowState = session.id === activeSessionId
+  const renderSession = (session: AppLeftPaneSession, pinned: boolean, projectId = activeProjectId ?? undefined) => {
+    const isActiveProjectSession = !projectId || projectId === activeProjectId
+    const state: SessionRowState = isActiveProjectSession && session.id === activeSessionId
       ? "active"
-      : openSet.has(session.id)
+      : isActiveProjectSession && openSet.has(session.id)
         ? "open"
         : "normal"
     return (
@@ -135,8 +136,8 @@ export function AppLeftPane({
         session={session}
         state={state}
         pinned={pinned}
-        onSwitch={onSwitchSession}
-        onOpenAsPane={onOpenSessionAsPane}
+        onSwitch={isActiveProjectSession ? onSwitchSession : () => onOpenProjectSession?.(projectId, session.id)}
+        onOpenAsPane={isActiveProjectSession ? onOpenSessionAsPane : () => onOpenProjectSession?.(projectId, session.id)}
         onTogglePinned={onToggleSessionPinned}
       />
     )
@@ -214,11 +215,11 @@ export function AppLeftPane({
                   else onOpenProjectSession?.(projectId, sessionId)
                 }}
                 onShowMoreProjectSessions={onShowMoreProjectSessions}
-                renderActiveProjectSession={(session) => renderSession({
+                renderProjectSession={(project, session) => renderSession({
                   id: session.id,
                   title: session.title,
                   updatedAt: session.updatedAt,
-                }, pinnedSet.has(session.id))}
+                }, pinnedSet.has(session.id), project.id)}
               />
             </CollapsibleSection>
           </div>
@@ -248,7 +249,7 @@ function ProjectOverview({
   onSwitchProject,
   onOpenProjectSession,
   onShowMoreProjectSessions,
-  renderActiveProjectSession,
+  renderProjectSession,
 }: {
   projects: AppLeftPaneProject[]
   activeProjectId?: string | null
@@ -256,7 +257,7 @@ function ProjectOverview({
   onSwitchProject?: (projectId: string) => void
   onOpenProjectSession?: (projectId: string, sessionId: string) => void
   onShowMoreProjectSessions?: (projectId: string) => void
-  renderActiveProjectSession?: (session: AppLeftPaneProjectSession) => ReactNode
+  renderProjectSession?: (project: AppLeftPaneProject, session: AppLeftPaneProjectSession) => ReactNode
 }) {
   const [expandedIds, setExpandedIds] = useState<ReadonlySet<string>>(() => (
     activeProjectId ? new Set([activeProjectId]) : new Set(projects[0]?.id ? [projects[0].id] : [])
@@ -316,21 +317,18 @@ function ProjectOverview({
                   <div className="px-1 py-1.5 text-xs text-muted-foreground/70">No sessions yet.</div>
                 ) : (
                   sessions.map((session) => (
-                    active && renderActiveProjectSession ? (
-                      <div key={session.id} className="-ml-8">
-                        {renderActiveProjectSession(session)}
-                      </div>
-                    ) : (
-                      <button
-                        key={session.id}
-                        type="button"
-                        onClick={() => onOpenProjectSession?.(project.id, session.id)}
-                        className="flex min-h-8 w-full items-center gap-2 rounded-md px-1 py-1 text-left text-[13px] text-foreground/78 hover:bg-foreground/[0.045] hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
-                      >
-                        <span className="min-w-0 flex-1 truncate">{session.title || "Untitled"}</span>
-                        {session.updatedAt ? <span className="shrink-0 text-xs text-muted-foreground/70">{relativeSessionTime(session.updatedAt)}</span> : null}
-                      </button>
-                    )
+                    <div key={session.id}>
+                      {renderProjectSession ? renderProjectSession(project, session) : (
+                        <AppSessionRow
+                          session={session}
+                          state="normal"
+                          pinned={false}
+                          onSwitch={() => onOpenProjectSession?.(project.id, session.id)}
+                          onOpenAsPane={() => onOpenProjectSession?.(project.id, session.id)}
+                          onTogglePinned={() => undefined}
+                        />
+                      )}
+                    </div>
                   ))
                 )}
                 {project.hasMoreSessions ? (
@@ -349,22 +347,6 @@ function ProjectOverview({
       })}
     </div>
   )
-}
-
-function relativeSessionTime(value: string | number): string {
-  const timestamp = typeof value === "number" ? value : Date.parse(value)
-  if (!Number.isFinite(timestamp)) return ""
-  const diffMs = Date.now() - timestamp
-  if (diffMs < 60_000) return "now"
-  const minutes = Math.floor(diffMs / 60_000)
-  if (minutes < 60) return `${minutes}m`
-  const hours = Math.floor(minutes / 60)
-  if (hours < 24) return `${hours}h`
-  const days = Math.floor(hours / 24)
-  if (days < 14) return `${days}d`
-  const weeks = Math.floor(days / 7)
-  if (weeks < 10) return `${weeks}w`
-  return `${Math.floor(days / 30)}mo`
 }
 
 function PrimaryAction({ icon, label, onClick }: { icon: ReactNode; label: string; onClick: () => void }) {
