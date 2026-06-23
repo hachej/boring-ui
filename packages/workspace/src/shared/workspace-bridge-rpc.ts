@@ -47,6 +47,13 @@ export interface WorkspaceBridgeOperationDefinition<
   owner: string
   callerClassesAllowed: readonly BridgeCallerClass[]
   requiredCapabilities: readonly string[]
+  /**
+   * Allow a caller authenticated for one workspace to invoke this operation on
+   * a registry owned by another workspace. Keep false/omitted for normal
+   * tenant-scoped operations; cross-workspace ops must perform their own
+   * explicit resource authorization.
+   */
+  allowCrossWorkspace?: boolean
   inputSchema: unknown
   outputSchema?: unknown
   timeoutMs: number

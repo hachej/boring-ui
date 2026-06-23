@@ -7,9 +7,10 @@ import {
 } from "../../shared/workspace-bridge-rpc"
 
 export const WORKSPACE_BRIDGE_TOKEN_AUDIENCE = "workspace-bridge"
+export const WORKSPACE_BRIDGE_REFRESH_TOKEN_AUDIENCE = "workspace-bridge-refresh"
 
-export interface WorkspaceBridgeRuntimeTokenClaims {
-  aud: typeof WORKSPACE_BRIDGE_TOKEN_AUDIENCE
+interface WorkspaceBridgeTokenClaimsBase {
+  aud: string
   workspaceId: string
   sessionId?: string
   runtimeId?: string
@@ -17,6 +18,17 @@ export interface WorkspaceBridgeRuntimeTokenClaims {
   iat: number
   exp: number
   jti: string
+  tokenTtlMs?: number
+}
+
+export interface WorkspaceBridgeRuntimeTokenClaims extends WorkspaceBridgeTokenClaimsBase {
+  aud: typeof WORKSPACE_BRIDGE_TOKEN_AUDIENCE
+}
+
+export interface WorkspaceBridgeRuntimeRefreshTokenClaims extends WorkspaceBridgeTokenClaimsBase {
+  aud: typeof WORKSPACE_BRIDGE_REFRESH_TOKEN_AUDIENCE
+  /** Short-lived call-token TTL to use when this refresh token re-mints. */
+  tokenTtlMs?: number
 }
 
 export interface MintWorkspaceBridgeRuntimeTokenOptions {
@@ -30,10 +42,20 @@ export interface MintWorkspaceBridgeRuntimeTokenOptions {
   jti?: string
 }
 
+export interface MintWorkspaceBridgeRuntimeRefreshTokenOptions extends MintWorkspaceBridgeRuntimeTokenOptions {
+  /** Short-lived call-token TTL to use when this refresh token re-mints. */
+  tokenTtlMs?: number
+}
+
 export interface VerifyWorkspaceBridgeRuntimeTokenOptions {
   secret: string
   nowMs?: number
   requiredCapabilities?: readonly string[]
+}
+
+export interface VerifyWorkspaceBridgeRuntimeRefreshTokenOptions {
+  secret: string
+  nowMs?: number
 }
 
 export interface VerifiedWorkspaceBridgeRuntimeToken {
@@ -41,23 +63,31 @@ export interface VerifiedWorkspaceBridgeRuntimeToken {
   authContext: BridgeAuthContext
 }
 
+export interface VerifiedWorkspaceBridgeRuntimeRefreshToken {
+  claims: WorkspaceBridgeRuntimeRefreshTokenClaims
+}
+
 export function mintWorkspaceBridgeRuntimeToken(
   options: MintWorkspaceBridgeRuntimeTokenOptions,
 ): string {
-  assertUsableSecret(options.secret)
-  const nowMs = options.nowMs ?? Date.now()
-  const ttlMs = options.ttlMs ?? 5 * 60_000
-  const claims: WorkspaceBridgeRuntimeTokenClaims = {
-    aud: WORKSPACE_BRIDGE_TOKEN_AUDIENCE,
-    workspaceId: options.workspaceId,
-    sessionId: options.sessionId,
-    runtimeId: options.runtimeId,
-    capabilities: [...options.capabilities],
-    iat: Math.floor(nowMs / 1000),
-    exp: Math.floor((nowMs + ttlMs) / 1000),
-    jti: options.jti ?? randomUUID(),
-  }
-  return signClaims(claims, options.secret)
+  return mintWorkspaceBridgeToken({
+    ...options,
+    audience: WORKSPACE_BRIDGE_TOKEN_AUDIENCE,
+    ttlMs: options.ttlMs ?? 5 * 60_000,
+  })
+}
+
+export function mintWorkspaceBridgeRuntimeRefreshToken(
+  options: MintWorkspaceBridgeRuntimeRefreshTokenOptions,
+): string {
+  return mintWorkspaceBridgeToken({
+    ...options,
+    audience: WORKSPACE_BRIDGE_REFRESH_TOKEN_AUDIENCE,
+    // Refresh tokens intentionally outlive short call tokens, but remain
+    // sandbox-bound by workspace/session/runtime/capabilities claims.
+    ttlMs: options.ttlMs ?? 24 * 60 * 60_000,
+    tokenTtlMs: options.tokenTtlMs,
+  })
 }
 
 export function verifyWorkspaceBridgeRuntimeToken(
@@ -67,15 +97,7 @@ export function verifyWorkspaceBridgeRuntimeToken(
   assertUsableSecret(options.secret)
   const claims = parseAndVerifyToken(token, options.secret)
   const now = Math.floor((options.nowMs ?? Date.now()) / 1000)
-  if (claims.aud !== WORKSPACE_BRIDGE_TOKEN_AUDIENCE) {
-    throw bridgeTokenError(WorkspaceBridgeErrorCode.InvalidToken, "Runtime bridge token has invalid audience")
-  }
-  if (claims.exp <= now) {
-    throw bridgeTokenError(WorkspaceBridgeErrorCode.ExpiredToken, "Runtime bridge token has expired")
-  }
-  if (claims.iat > now + 60) {
-    throw bridgeTokenError(WorkspaceBridgeErrorCode.InvalidToken, "Runtime bridge token is not valid yet")
-  }
+  ensureLiveTokenClaims(claims, now, WORKSPACE_BRIDGE_TOKEN_AUDIENCE, "Runtime bridge token")
 
   const missingCapability = (options.requiredCapabilities ?? []).find(
     (capability) => !claims.capabilities.includes(capability),
@@ -84,10 +106,22 @@ export function verifyWorkspaceBridgeRuntimeToken(
     throw bridgeTokenError(WorkspaceBridgeErrorCode.CapabilityDenied, "Runtime bridge token is missing a required capability")
   }
 
+  const runtimeClaims = claims as WorkspaceBridgeRuntimeTokenClaims
   return {
-    claims,
-    authContext: runtimeClaimsToBridgeAuthContext(claims),
+    claims: runtimeClaims,
+    authContext: runtimeClaimsToBridgeAuthContext(runtimeClaims),
   }
+}
+
+export function verifyWorkspaceBridgeRuntimeRefreshToken(
+  token: string,
+  options: VerifyWorkspaceBridgeRuntimeRefreshTokenOptions,
+): VerifiedWorkspaceBridgeRuntimeRefreshToken {
+  assertUsableSecret(options.secret)
+  const claims = parseAndVerifyToken(token, options.secret)
+  const now = Math.floor((options.nowMs ?? Date.now()) / 1000)
+  ensureLiveTokenClaims(claims, now, WORKSPACE_BRIDGE_REFRESH_TOKEN_AUDIENCE, "Runtime bridge refresh token")
+  return { claims: claims as WorkspaceBridgeRuntimeRefreshTokenClaims }
 }
 
 export function runtimeClaimsToBridgeAuthContext(
@@ -111,7 +145,44 @@ export function runtimeClaimsToBridgeAuthContext(
   }
 }
 
-function signClaims(claims: WorkspaceBridgeRuntimeTokenClaims, secret: string): string {
+function mintWorkspaceBridgeToken(options: MintWorkspaceBridgeRuntimeTokenOptions & {
+  audience: typeof WORKSPACE_BRIDGE_TOKEN_AUDIENCE | typeof WORKSPACE_BRIDGE_REFRESH_TOKEN_AUDIENCE
+  tokenTtlMs?: number
+}): string {
+  assertUsableSecret(options.secret)
+  const nowMs = options.nowMs ?? Date.now()
+  const claims: WorkspaceBridgeTokenClaimsBase = {
+    aud: options.audience,
+    workspaceId: options.workspaceId,
+    sessionId: options.sessionId,
+    runtimeId: options.runtimeId,
+    capabilities: [...options.capabilities],
+    iat: Math.floor(nowMs / 1000),
+    exp: Math.floor((nowMs + options.ttlMs!) / 1000),
+    jti: options.jti ?? randomUUID(),
+    ...(options.tokenTtlMs !== undefined ? { tokenTtlMs: options.tokenTtlMs } : {}),
+  }
+  return signClaims(claims, options.secret)
+}
+
+function ensureLiveTokenClaims(
+  claims: WorkspaceBridgeTokenClaimsBase,
+  now: number,
+  expectedAudience: typeof WORKSPACE_BRIDGE_TOKEN_AUDIENCE | typeof WORKSPACE_BRIDGE_REFRESH_TOKEN_AUDIENCE,
+  label: string,
+): void {
+  if (claims.aud !== expectedAudience) {
+    throw bridgeTokenError(WorkspaceBridgeErrorCode.InvalidToken, `${label} has invalid audience`)
+  }
+  if (claims.exp <= now) {
+    throw bridgeTokenError(WorkspaceBridgeErrorCode.ExpiredToken, `${label} has expired`)
+  }
+  if (claims.iat > now + 60) {
+    throw bridgeTokenError(WorkspaceBridgeErrorCode.InvalidToken, `${label} is not valid yet`)
+  }
+}
+
+function signClaims(claims: WorkspaceBridgeTokenClaimsBase, secret: string): string {
   const header = { alg: "HS256", typ: "JWT" }
   const encodedHeader = base64UrlEncode(JSON.stringify(header))
   const encodedPayload = base64UrlEncode(JSON.stringify(claims))
@@ -119,7 +190,7 @@ function signClaims(claims: WorkspaceBridgeRuntimeTokenClaims, secret: string): 
   return `${signingInput}.${hmac(signingInput, secret)}`
 }
 
-function parseAndVerifyToken(token: string, secret: string): WorkspaceBridgeRuntimeTokenClaims {
+function parseAndVerifyToken(token: string, secret: string): WorkspaceBridgeTokenClaimsBase {
   const parts = token.split(".")
   if (parts.length !== 3 || parts.some((part) => part.length === 0)) {
     throw bridgeTokenError(WorkspaceBridgeErrorCode.InvalidToken, "Runtime bridge token is malformed")
@@ -145,7 +216,7 @@ function parseAndVerifyToken(token: string, secret: string): WorkspaceBridgeRunt
   return parseClaims(payload)
 }
 
-function parseClaims(payload: unknown): WorkspaceBridgeRuntimeTokenClaims {
+function parseClaims(payload: unknown): WorkspaceBridgeTokenClaimsBase {
   if (!payload || typeof payload !== "object") {
     throw bridgeTokenError(WorkspaceBridgeErrorCode.InvalidToken, "Runtime bridge token claims are invalid")
   }
@@ -161,8 +232,11 @@ function parseClaims(payload: unknown): WorkspaceBridgeRuntimeTokenClaims {
   ) {
     throw bridgeTokenError(WorkspaceBridgeErrorCode.InvalidToken, "Runtime bridge token claims are invalid")
   }
+  if (claims.tokenTtlMs !== undefined && (typeof claims.tokenTtlMs !== "number" || !Number.isFinite(claims.tokenTtlMs) || claims.tokenTtlMs <= 0)) {
+    throw bridgeTokenError(WorkspaceBridgeErrorCode.InvalidToken, "Runtime bridge token claims are invalid")
+  }
   return {
-    aud: claims.aud as typeof WORKSPACE_BRIDGE_TOKEN_AUDIENCE,
+    aud: claims.aud,
     workspaceId: claims.workspaceId,
     sessionId: optionalString(claims.sessionId),
     runtimeId: optionalString(claims.runtimeId),
@@ -170,6 +244,7 @@ function parseClaims(payload: unknown): WorkspaceBridgeRuntimeTokenClaims {
     iat: claims.iat,
     exp: claims.exp,
     jti: claims.jti,
+    ...(typeof claims.tokenTtlMs === "number" ? { tokenTtlMs: claims.tokenTtlMs } : {}),
   }
 }
 

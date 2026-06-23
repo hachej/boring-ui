@@ -48,6 +48,7 @@ import {
   InMemoryWorkspaceBridgeIdempotencyStore,
   createWorkspaceBridgeRuntimeEnvContribution,
   workspaceBridgeHttpRoutes,
+  type BridgeAuthPolicy,
   type WorkspaceBridgeHandler,
   type WorkspaceBridgeOperationDefinition,
   type WorkspaceBridgeRegistry,
@@ -134,6 +135,15 @@ export interface CreateWorkspaceAgentServerOptions
   workspaceBridge?: {
     registry?: WorkspaceBridgeRegistry
     runtimeTokenSecret?: string
+    runtimeRefreshTokenSecret?: string
+    browserAuthPolicy?: BridgeAuthPolicy
+    /**
+     * Dev-only escape hatch for standalone/local CLI usage. When omitted,
+     * createWorkspaceAgentServer uses this unauthenticated policy only outside
+     * NODE_ENV=production. Production hosts must provide browserAuthPolicy or
+     * explicitly set this insecure local/dev opt-in.
+     */
+    allowInsecureLocalCliBrowserAuth?: boolean
     handlers?: Array<{
       definition: WorkspaceBridgeOperationDefinition
       handler: WorkspaceBridgeHandler
@@ -596,6 +606,41 @@ export function readWorkspacePluginPackagePiSnapshot(pluginDirs: BoringPluginSou
   }
 }
 
+function resolveWorkspaceBridgeBrowserAuthPolicy(
+  opts: CreateWorkspaceAgentServerOptions,
+  registry: WorkspaceBridgeRegistry,
+): BridgeAuthPolicy {
+  if (opts.workspaceBridge?.browserAuthPolicy) return opts.workspaceBridge.browserAuthPolicy
+
+  const explicitlyAllowed = opts.workspaceBridge?.allowInsecureLocalCliBrowserAuth === true
+  const isProduction = process.env.NODE_ENV === "production"
+  if (isProduction && !explicitlyAllowed) {
+    throw new Error(
+      "createWorkspaceAgentServer requires workspaceBridge.browserAuthPolicy in production. " +
+      "createLocalCliBridgeAuthPolicy is unauthenticated and dev-only; set allowInsecureLocalCliBrowserAuth only for local/dev tools that are not exposed to a network.",
+    )
+  }
+
+  emitLocalCliBridgeAuthWarning(explicitlyAllowed, isProduction)
+  return createLocalCliBridgeAuthPolicy({
+    workspaceId: "default",
+    capabilities: registry.listDefinitions().flatMap((definition) => [...definition.requiredCapabilities]),
+  })
+}
+
+function emitLocalCliBridgeAuthWarning(explicitlyAllowed: boolean, isProduction: boolean): void {
+  const message = "createWorkspaceAgentServer is using createLocalCliBridgeAuthPolicy for WorkspaceBridge browser calls. This policy is unauthenticated, grants registered bridge capabilities to a fixed local-cli principal, and is intended only for local/dev CLI usage. Provide workspaceBridge.browserAuthPolicy before exposing this server."
+  if (typeof process.emitWarning === "function") {
+    process.emitWarning(message, {
+      code: isProduction && explicitlyAllowed
+        ? "BORING_WORKSPACE_BRIDGE_INSECURE_AUTH_PRODUCTION_OPT_IN"
+        : "BORING_WORKSPACE_BRIDGE_INSECURE_AUTH",
+    })
+    return
+  }
+  console.warn(message)
+}
+
 export async function createWorkspaceAgentServer(
   opts: CreateWorkspaceAgentServerOptions = {},
 ): Promise<FastifyInstance> {
@@ -652,6 +697,7 @@ export async function createWorkspaceAgentServer(
 
   const { registry: workspaceBridgeRegistry } = createWorkspaceBridgeRuntimeCore({
     registry: opts.workspaceBridge?.registry,
+    ownerWorkspaceId: "default",
     handlers: [
       ...(opts.workspaceBridge?.handlers ?? []),
       ...(pluginCollection.workspaceBridgeHandlers ?? []),
@@ -764,6 +810,7 @@ export async function createWorkspaceAgentServer(
     runtimeMode: resolvedMode,
     registry: workspaceBridgeRegistry,
     runtimeTokenSecret: opts.workspaceBridge?.runtimeTokenSecret,
+    runtimeRefreshTokenSecret: opts.workspaceBridge?.runtimeRefreshTokenSecret,
     runtimeEnv: opts.workspaceBridge?.runtimeEnv,
   })
 
@@ -876,11 +923,10 @@ export async function createWorkspaceAgentServer(
   await app.register(workspaceBridgeHttpRoutes, {
     registry: workspaceBridgeRegistry,
     runtimeTokenSecret: opts.workspaceBridge?.runtimeTokenSecret,
+    runtimeRefreshTokenSecret: opts.workspaceBridge?.runtimeRefreshTokenSecret,
+    ownerWorkspaceId: "default",
     idempotencyStore: new InMemoryWorkspaceBridgeIdempotencyStore(),
-    browserAuthPolicy: createLocalCliBridgeAuthPolicy({
-      workspaceId: "default",
-      capabilities: workspaceBridgeRegistry.listDefinitions().flatMap((definition) => [...definition.requiredCapabilities]),
-    }),
+    browserAuthPolicy: resolveWorkspaceBridgeBrowserAuthPolicy(opts, workspaceBridgeRegistry),
   })
   // Internal handles exposed on the Fastify instance for external callers /
   // tests (e.g. the CLI reads __boringAssetManager). The rebuild closure is

@@ -31,6 +31,7 @@ interface CoreWorkspaceBridgeRuntime {
 export interface CoreWorkspaceBridgeOptions {
   workspaceBridge?: {
     runtimeTokenSecret?: string
+    runtimeRefreshTokenSecret?: string
     runtimeEnv?: WorkspaceBridgeRuntimeEnvOptions
     handlers?: ReadonlyArray<{ definition: WorkspaceBridgeOperationDefinition; handler: WorkspaceBridgeHandler }>
   }
@@ -87,6 +88,7 @@ export function createCoreWorkspaceBridge(options: CoreWorkspaceBridgeOptions): 
       const sessionOwners = new Map<string, string>()
       const core = createWorkspaceBridgeRuntimeCore({
         handlers: options.workspaceBridge?.handlers,
+        ownerWorkspaceId: safeWorkspaceId,
       })
       runtime = {
         registry: core.registry,
@@ -187,6 +189,7 @@ export function createCoreWorkspaceBridge(options: CoreWorkspaceBridgeOptions): 
               runtimeMode: ctx.runtimeMode,
               registry: getRuntime(ctx.workspaceId).registry,
               runtimeTokenSecret: options.workspaceBridge?.runtimeTokenSecret,
+              runtimeRefreshTokenSecret: options.workspaceBridge?.runtimeRefreshTokenSecret,
               runtimeEnv: options.workspaceBridge?.runtimeEnv,
             })
             return contribution ? await contribution.getEnv(ctx) : {}
@@ -199,6 +202,8 @@ export function createCoreWorkspaceBridge(options: CoreWorkspaceBridgeOptions): 
       getRegistry: async (request) => getRuntime(await resolveBridgeWorkspaceId(request)).registry,
       getIdempotencyStore: async (request) => getRuntime(await resolveBridgeWorkspaceId(request)).idempotencyStore,
       runtimeTokenSecret: options.workspaceBridge?.runtimeTokenSecret,
+      runtimeRefreshTokenSecret: options.workspaceBridge?.runtimeRefreshTokenSecret,
+      getOwnerWorkspaceId: async (request) => await resolveBridgeWorkspaceId(request),
       browserAuthPolicy: createBrowserBridgeAuthPolicy({
         getPrincipal: (input) => {
           const user = input.request?.user as { id?: string; email?: string | null; name?: string | null } | null | undefined

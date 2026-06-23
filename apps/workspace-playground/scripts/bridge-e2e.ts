@@ -7,7 +7,7 @@
  * Exercises the generic bridge paths this PR owns:
  *   - runtimeCore registry bootstrap + dispatch
  *   - browser auth (createLocalCliBridgeAuthPolicy)
- *   - runtime token mint/verify
+ *   - runtime token mint/verify + refresh-token re-mint endpoint
  *   - idempotency replay + failure-releases-key
  *   - trusted boot-time server-plugin handler contribution
  *   - plugin-owned ask-user request→answer cycle
@@ -17,11 +17,12 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { createWorkspaceAgentServer } from '@hachej/boring-workspace/app/server'
 import { WorkspaceBridgeClient } from '@hachej/boring-workspace/bridge-client'
-import { defineServerPlugin, mintWorkspaceBridgeRuntimeToken } from '@hachej/boring-workspace/server'
+import { defineServerPlugin, mintWorkspaceBridgeRuntimeRefreshToken, mintWorkspaceBridgeRuntimeToken } from '@hachej/boring-workspace/server'
 import { createAskUserServerPlugin } from '@hachej/boring-ask-user/server'
 import { ASK_USER_BRIDGE_CAPABILITIES, ASK_USER_BRIDGE_OPS } from '@hachej/boring-ask-user/shared'
 
 const SECRET = 'e2e-test-secret-do-not-use-in-prod'
+const REFRESH_SECRET = 'e2e-refresh-secret-do-not-use-prod'
 const results: { name: string; ok: boolean; detail: string }[] = []
 function check(name: string, ok: boolean, detail = '') {
   results.push({ name, ok, detail })
@@ -96,6 +97,7 @@ async function main() {
     ],
     workspaceBridge: {
       runtimeTokenSecret: SECRET,
+      runtimeRefreshTokenSecret: REFRESH_SECRET,
       handlers: [
         { definition: echoDef, handler: echoHandler },
         { definition: failDef, handler: failHandler },
@@ -106,6 +108,7 @@ async function main() {
   const address = await app.listen({ port: 0, host: '127.0.0.1' })
   const base = address.replace('127.0.0.1', '127.0.0.1')
   const url = `${base}/api/v1/workspace-bridge/call`
+  const tokenUrl = `${base}/api/v1/workspace-bridge/token`
   console.log(`\n[bridge-e2e] server listening at ${base}\n`)
 
   const post = async (body: unknown, headers: Record<string, string> = {}) => {
@@ -173,7 +176,17 @@ async function main() {
       check('T7 trusted server-plugin bridge handler contribution', r.status === 200 && r.json.ok === true && r.json.output?.pluginEchoed?.from === 'plugin', `status=${r.status}`)
     }
 
-    // T8/T9 — ask-user owns and registers ask-user.v1.* bridge handlers.
+    // T8 — refresh endpoint re-mints a runtime token that the public client can use.
+    {
+      const refreshToken = mintWorkspaceBridgeRuntimeRefreshToken({ secret: REFRESH_SECRET, workspaceId: 'default', capabilities: [], runtimeId: 'e2e-runtime', tokenTtlMs: 60_000 })
+      const tokenRes = await fetch(tokenUrl, { method: 'POST', headers: { authorization: `Bearer ${refreshToken}`, 'content-type': 'application/json' }, body: '{}' })
+      const tokenJson = await tokenRes.json() as any
+      const client = new WorkspaceBridgeClient({ url, token: tokenJson.token, fetch })
+      const output = await client.call<{ echoed?: { hi?: string } }>('example.v1.echo', { hi: 'refresh' }, { idempotencyKey: 'k-refresh' })
+      check('T8 refresh endpoint re-mints usable runtime token', tokenRes.status === 200 && tokenJson.ok === true && output?.echoed?.hi === 'refresh', `status=${tokenRes.status}`)
+    }
+
+    // T9/T10 — ask-user owns and registers ask-user.v1.* bridge handlers.
     {
       const token = mintWorkspaceBridgeRuntimeToken({
         secret: SECRET,
@@ -197,7 +210,7 @@ async function main() {
         if (pending?.questionId) break
         await new Promise((resolve) => setTimeout(resolve, 50))
       }
-      check('T8 ask-user pending via plugin bridge', pending?.title === 'Bridge question' && typeof pending?.answerToken === 'string', `questionId=${pending?.questionId ?? 'none'}`)
+      check('T9 ask-user pending via plugin bridge', pending?.title === 'Bridge question' && typeof pending?.answerToken === 'string', `questionId=${pending?.questionId ?? 'none'}`)
 
       const answer = await post({
         op: ASK_USER_BRIDGE_OPS.answer,
@@ -206,7 +219,7 @@ async function main() {
       }, { 'x-boring-session-id': 's1' })
       const request = await requestPromise
       check(
-        'T9 ask-user answer resolves runtime client request',
+        'T10 ask-user answer resolves runtime client request',
         answer.status === 200 && answer.json.ok === true && request?.status === 'answered' && request?.answer?.values?.answer === 'yes',
         `answer.status=${answer.status} result=${request?.status}`,
       )

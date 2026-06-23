@@ -31,6 +31,7 @@ beforeEach(() => {
 })
 
 afterEach(async () => {
+  vi.unstubAllEnvs()
   await Promise.all(tempDirs.splice(0).map((dir) => rm(dir, { recursive: true, force: true })))
 })
 
@@ -198,6 +199,54 @@ export default {
   })
 
 
+
+  test("injects WorkspaceBridge refresh token env when refresh secret is configured", async () => {
+    const { createTestBridgeOperationDefinition } = await import("../../../server/workspaceBridge/testing/harness")
+    const definition = createTestBridgeOperationDefinition({
+      op: "test.v1.runtime-env-refresh",
+      callerClassesAllowed: ["runtime"],
+      requiredCapabilities: ["test:runtime-env"],
+    })
+    mockCreateAgentAppOnce(async () => Fastify())
+    const app = await createWorkspaceAgentServer({
+      workspaceRoot: await makeTempDir("bridge-runtime-env-refresh-"),
+      mode: "direct",
+      provisionWorkspace: false,
+      workspaceBridge: {
+        runtimeTokenSecret: "12345678901234567890123456789012",
+        runtimeRefreshTokenSecret: "abcdefghijklmnopqrstuvwxyz1234567890",
+        runtimeEnv: {
+          bridgeUrl: "http://localhost:7777",
+          allowInsecureHttp: true,
+          capabilities: ["test:runtime-env"],
+        },
+        handlers: [{ definition, handler: () => ({ ok: true }) }],
+      },
+    })
+
+    const [agentOptions] = agentServerMock.createAgentApp.mock.calls.at(-1) as unknown as [{
+      runtimeEnvContributions?: Array<{ id: string; getEnv: () => Promise<Record<string, string>> | Record<string, string> }>
+    }]
+    const env = await agentOptions.runtimeEnvContributions?.find((entry) => entry.id === "workspace-bridge-runtime-env")?.getEnv()
+
+    expect(env).toMatchObject({
+      BORING_WORKSPACE_BRIDGE_URL: "http://localhost:7777/api/v1/workspace-bridge/call",
+      BORING_WORKSPACE_BRIDGE_TOKEN_URL: "http://localhost:7777/api/v1/workspace-bridge/token",
+      BORING_WORKSPACE_ID: "default",
+    })
+    expect(env?.BORING_WORKSPACE_BRIDGE_TOKEN).toEqual(expect.any(String))
+    expect(env?.BORING_WORKSPACE_BRIDGE_REFRESH_TOKEN).toEqual(expect.any(String))
+    await app.close()
+  })
+
+  test("requires explicit browser bridge auth in production", async () => {
+    vi.stubEnv("NODE_ENV", "production")
+    mockCreateAgentAppOnce(async () => Fastify())
+    await expect(createWorkspaceAgentServer({
+      workspaceRoot: await makeTempDir("bridge-prod-auth-"),
+      provisionWorkspace: false,
+    })).rejects.toThrow(/workspaceBridge\.browserAuthPolicy/)
+  })
 
   test("disables WorkspaceBridge runtime env when capabilities are omitted", async () => {
     mockCreateAgentAppOnce(async () => Fastify())

@@ -4,11 +4,12 @@ import { WorkspaceBridgeErrorCode } from "../../../shared/workspace-bridge-rpc"
 import { createBrowserBridgeAuthPolicy } from "../authPolicy"
 import { InMemoryWorkspaceBridgeIdempotencyStore } from "../idempotency"
 import { createWorkspaceBridgeRegistry } from "../registry"
-import { mintWorkspaceBridgeRuntimeToken } from "../runtimeToken"
+import { mintWorkspaceBridgeRuntimeRefreshToken, mintWorkspaceBridgeRuntimeToken, verifyWorkspaceBridgeRuntimeToken } from "../runtimeToken"
 import { workspaceBridgeHttpRoutes } from "../httpRoutes"
 import { assertNoSensitiveBridgeLeaks, createTestBridgeOperationDefinition } from "../testing/harness"
 
 const SECRET = "workspace-bridge-runtime-token-secret-32bytes"
+const REFRESH_SECRET = "workspace-bridge-runtime-refresh-secret-32bytes"
 
 async function makeApp() {
   const registry = createWorkspaceBridgeRegistry()
@@ -35,6 +36,8 @@ async function makeApp() {
   await app.register(workspaceBridgeHttpRoutes, {
     registry,
     runtimeTokenSecret: SECRET,
+    runtimeRefreshTokenSecret: REFRESH_SECRET,
+    ownerWorkspaceId: "workspace-1",
     idempotencyStore: new InMemoryWorkspaceBridgeIdempotencyStore(),
     browserAuthPolicy: createBrowserBridgeAuthPolicy({
       getPrincipal: () => ({ userId: "user-1" }),
@@ -107,6 +110,55 @@ describe("workspaceBridgeHttpRoutes", () => {
     })
     expect(denied.statusCode).toBe(403)
     expect(denied.json()).toMatchObject({ ok: false, error: { code: WorkspaceBridgeErrorCode.CallerNotAllowed } })
+  })
+
+  it("rejects runtime tokens scoped to another workspace", async () => {
+    const app = await makeApp()
+    const token = mintWorkspaceBridgeRuntimeToken({
+      secret: SECRET,
+      workspaceId: "workspace-2",
+      capabilities: ["runtime:echo"],
+      ttlMs: 60_000,
+    })
+    const response = await app.inject({
+      method: "POST",
+      url: "/api/v1/workspace-bridge/call",
+      headers: { "content-type": "application/json", authorization: `Bearer ${token}` },
+      payload: { op: "runtime.v1.echo", input: {} },
+    })
+    expect(response.statusCode).toBe(403)
+    expect(response.json()).toMatchObject({ ok: false, error: { code: WorkspaceBridgeErrorCode.ResourceScopeDenied } })
+  })
+
+  it("re-mints scoped runtime tokens from sandbox refresh tokens", async () => {
+    const app = await makeApp()
+    const refreshToken = mintWorkspaceBridgeRuntimeRefreshToken({
+      secret: REFRESH_SECRET,
+      workspaceId: "workspace-1",
+      sessionId: "session-1",
+      runtimeId: "runtime-1",
+      capabilities: ["runtime:echo"],
+      ttlMs: 60_000,
+      tokenTtlMs: 30_000,
+    })
+    const response = await app.inject({
+      method: "POST",
+      url: "/api/v1/workspace-bridge/token",
+      headers: { authorization: `Bearer ${refreshToken}` },
+      payload: {},
+    })
+
+    expect(response.statusCode).toBe(200)
+    expect(response.headers["cache-control"]).toBe("no-store")
+    const body = response.json()
+    expect(body).toMatchObject({ ok: true, token: expect.any(String) })
+    const verified = verifyWorkspaceBridgeRuntimeToken(body.token, { secret: SECRET, requiredCapabilities: ["runtime:echo"] })
+    expect(verified.authContext).toMatchObject({
+      callerClass: "runtime",
+      workspaceId: "workspace-1",
+      sessionId: "session-1",
+      capabilities: ["runtime:echo"],
+    })
   })
 
   it("rejects expired and missing-capability runtime tokens", async () => {

@@ -51,6 +51,7 @@ export type {
   WorkspaceBridgeCallContext,
   WorkspaceBridgeHandler,
   WorkspaceBridgeHandlerArgs,
+  WorkspaceBridgeRegistryCallOptions,
   WorkspaceBridgeRegistryLogger,
   WorkspaceBridgeRegistryOptions,
 } from "./workspaceBridge/registry"
@@ -85,20 +86,28 @@ export type {
   WorkspaceBridgeIdempotencyStore,
 } from "./workspaceBridge/idempotency"
 export {
+  WORKSPACE_BRIDGE_REFRESH_TOKEN_AUDIENCE,
   WORKSPACE_BRIDGE_TOKEN_AUDIENCE,
+  mintWorkspaceBridgeRuntimeRefreshToken,
   mintWorkspaceBridgeRuntimeToken,
   runtimeClaimsToBridgeAuthContext,
+  verifyWorkspaceBridgeRuntimeRefreshToken,
   verifyWorkspaceBridgeRuntimeToken,
 } from "./workspaceBridge/runtimeToken"
 export type {
+  MintWorkspaceBridgeRuntimeRefreshTokenOptions,
   MintWorkspaceBridgeRuntimeTokenOptions,
+  VerifiedWorkspaceBridgeRuntimeRefreshToken,
   VerifiedWorkspaceBridgeRuntimeToken,
+  VerifyWorkspaceBridgeRuntimeRefreshTokenOptions,
   VerifyWorkspaceBridgeRuntimeTokenOptions,
+  WorkspaceBridgeRuntimeRefreshTokenClaims,
   WorkspaceBridgeRuntimeTokenClaims,
 } from "./workspaceBridge/runtimeToken"
 export {
   createWorkspaceBridgeRuntimeEnvContribution,
   resolveBridgeCallUrl,
+  resolveBridgeTokenUrl,
 } from "./workspaceBridge/runtimeEnv"
 export { defineTrustedDomainBridgeHandler } from "./workspaceBridge/trustedDomainHandler"
 export type {

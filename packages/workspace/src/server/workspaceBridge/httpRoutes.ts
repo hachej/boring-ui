@@ -3,6 +3,7 @@ import { z } from "zod"
 import {
   WorkspaceBridgeErrorCode,
   createWorkspaceBridgeError,
+  type BridgeAuthContext,
   type WorkspaceBridgeCallRequest,
   type WorkspaceBridgeCallResponse,
 } from "../../shared/workspace-bridge-rpc"
@@ -11,7 +12,11 @@ import type { WorkspaceBridgeIdempotencyStore } from "./idempotency"
 import { runWithWorkspaceBridgeIdempotency } from "./idempotency"
 import type { WorkspaceBridgeRegistry } from "./registry"
 import { measureJsonBytes } from "./json"
-import { verifyWorkspaceBridgeRuntimeToken } from "./runtimeToken"
+import {
+  mintWorkspaceBridgeRuntimeToken,
+  verifyWorkspaceBridgeRuntimeRefreshToken,
+  verifyWorkspaceBridgeRuntimeToken,
+} from "./runtimeToken"
 
 const bridgeCallBodySchema = z.object({
   op: z.string().min(1),
@@ -25,6 +30,9 @@ export interface WorkspaceBridgeHttpRoutesOptions {
   getRegistry?: (request: FastifyRequest, body: WorkspaceBridgeCallRequest) => WorkspaceBridgeRegistry | Promise<WorkspaceBridgeRegistry>
   browserAuthPolicy?: BridgeAuthPolicy
   runtimeTokenSecret?: string
+  runtimeRefreshTokenSecret?: string
+  ownerWorkspaceId?: string
+  getOwnerWorkspaceId?: (request: FastifyRequest, body: WorkspaceBridgeCallRequest, auth: BridgeAuthContext) => string | undefined | Promise<string | undefined>
   idempotencyStore?: WorkspaceBridgeIdempotencyStore
   getIdempotencyStore?: (request: FastifyRequest, body: WorkspaceBridgeCallRequest) => WorkspaceBridgeIdempotencyStore | undefined | Promise<WorkspaceBridgeIdempotencyStore | undefined>
   maxBodyBytes?: number
@@ -68,18 +76,53 @@ export function workspaceBridgeHttpRoutes(
       const idempotencyStore = opts.getIdempotencyStore
         ? await opts.getIdempotencyStore(request, body)
         : opts.idempotencyStore
+      const expectedWorkspaceId = opts.getOwnerWorkspaceId
+        ? await opts.getOwnerWorkspaceId(request, body, authContext)
+        : opts.ownerWorkspaceId
 
       const response = await runWithWorkspaceBridgeIdempotency(idempotencyStore, {
         definition,
         request: body,
         auth: authContext,
-      }, async () => await registry.call(body, authContext))
+      }, async () => await registry.call(body, authContext, { expectedWorkspaceId }))
       return await sendResponse(reply, response)
     } catch (err) {
       const bridgeError = isBridgeError(err)
         ? err
         : createWorkspaceBridgeError(WorkspaceBridgeErrorCode.HandlerFailed, "WorkspaceBridge transport failed")
       return sendBridgeError(reply, statusForBridgeError(bridgeError.code), body.requestId, bridgeError.code, bridgeError.message)
+    }
+  })
+
+  app.post("/api/v1/workspace-bridge/token", async (request, reply) => {
+    reply.header("Cache-Control", "no-store")
+
+    const authHeader = firstHeader(request.headers.authorization)
+    if (!authHeader?.startsWith("Bearer ")) {
+      return sendBridgeError(reply, 401, undefined, WorkspaceBridgeErrorCode.AuthRequired, "WorkspaceBridge refresh token is required")
+    }
+    if (!opts.runtimeTokenSecret || !opts.runtimeRefreshTokenSecret) {
+      return sendBridgeError(reply, 401, undefined, WorkspaceBridgeErrorCode.AuthRequired, "WorkspaceBridge token refresh is not configured")
+    }
+
+    try {
+      const verified = verifyWorkspaceBridgeRuntimeRefreshToken(authHeader.slice("Bearer ".length), {
+        secret: opts.runtimeRefreshTokenSecret,
+      })
+      const token = mintWorkspaceBridgeRuntimeToken({
+        secret: opts.runtimeTokenSecret,
+        workspaceId: verified.claims.workspaceId,
+        sessionId: verified.claims.sessionId,
+        runtimeId: verified.claims.runtimeId,
+        capabilities: verified.claims.capabilities,
+        ttlMs: verified.claims.tokenTtlMs,
+      })
+      return reply.code(200).send({ ok: true, token })
+    } catch (err) {
+      const bridgeError = isBridgeError(err)
+        ? err
+        : createWorkspaceBridgeError(WorkspaceBridgeErrorCode.InvalidToken, "WorkspaceBridge refresh token is invalid")
+      return sendBridgeError(reply, statusForBridgeError(bridgeError.code), undefined, bridgeError.code, bridgeError.message)
     }
   })
   done()

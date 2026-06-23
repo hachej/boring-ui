@@ -18,6 +18,8 @@ export {
 
 export const WORKSPACE_BRIDGE_URL_ENV = "BORING_WORKSPACE_BRIDGE_URL"
 export const WORKSPACE_BRIDGE_TOKEN_ENV = "BORING_WORKSPACE_BRIDGE_TOKEN"
+export const WORKSPACE_BRIDGE_TOKEN_URL_ENV = "BORING_WORKSPACE_BRIDGE_TOKEN_URL"
+export const WORKSPACE_BRIDGE_REFRESH_TOKEN_ENV = "BORING_WORKSPACE_BRIDGE_REFRESH_TOKEN"
 export const WORKSPACE_BRIDGE_DISABLED_ENV = "BORING_WORKSPACE_BRIDGE_DISABLED"
 
 export enum WorkspaceBridgeClientErrorCode {
@@ -32,6 +34,8 @@ export enum WorkspaceBridgeClientErrorCode {
 export interface WorkspaceBridgeTokenProviderContext {
   /** True when the previous attempt failed with a 401 and the client is retrying once. */
   refresh: boolean
+  /** Aborts when the per-attempt timeout or caller AbortSignal fires. */
+  signal?: AbortSignal
 }
 
 export type WorkspaceBridgeTokenProvider = (
@@ -117,7 +121,7 @@ export class WorkspaceBridgeClient {
       throw new WorkspaceBridgeClientConfigError(`WorkspaceBridge runtime env is disabled: ${disabled}`)
     }
     const url = requireEnv(env, WORKSPACE_BRIDGE_URL_ENV)
-    const token = options.token ?? requireEnv(env, WORKSPACE_BRIDGE_TOKEN_ENV)
+    const token = options.token ?? tokenFromEnv(env, options.fetch ?? globalThis.fetch)
     return new WorkspaceBridgeClient({ url, token, fetch: options.fetch, defaultTimeoutMs: options.defaultTimeoutMs })
   }
 
@@ -151,7 +155,7 @@ export class WorkspaceBridgeClient {
     assertTimeoutMs(timeoutMs, "timeoutMs")
     const abort = createAbortController({ signal: options.signal, timeoutMs })
     try {
-      const token = await runWithAbort(() => this.resolveToken(refreshToken), abort)
+      const token = await runWithAbort(() => this.resolveToken(refreshToken, abort.signal), abort)
       const response = await runWithAbort(() => this.fetchImpl(this.url, {
         method: "POST",
         headers: {
@@ -202,8 +206,8 @@ export class WorkspaceBridgeClient {
     }
   }
 
-  private async resolveToken(refresh: boolean): Promise<string> {
-    const value = typeof this.token === "function" ? await this.token({ refresh }) : this.token
+  private async resolveToken(refresh: boolean, signal: AbortSignal): Promise<string> {
+    const value = typeof this.token === "function" ? await this.token({ refresh, signal }) : this.token
     if (!value) {
       throw new WorkspaceBridgeClientConfigError("WorkspaceBridge token provider returned an empty token")
     }
@@ -214,6 +218,70 @@ export class WorkspaceBridgeClient {
     if (typeof this.token !== "function") return false
     return error instanceof WorkspaceBridgeClientError && error.status === 401
   }
+}
+
+function tokenFromEnv(env: Record<string, string | undefined>, fetchImpl: typeof fetch | undefined): WorkspaceBridgeClientToken {
+  const initialToken = requireEnv(env, WORKSPACE_BRIDGE_TOKEN_ENV)
+  const tokenUrl = env[WORKSPACE_BRIDGE_TOKEN_URL_ENV]
+  const refreshToken = env[WORKSPACE_BRIDGE_REFRESH_TOKEN_ENV]
+  if (!tokenUrl && !refreshToken) return initialToken
+  if (!tokenUrl) {
+    throw new WorkspaceBridgeClientConfigError(`WorkspaceBridge client missing required env var ${WORKSPACE_BRIDGE_TOKEN_URL_ENV}`, { missingVar: WORKSPACE_BRIDGE_TOKEN_URL_ENV })
+  }
+  if (!refreshToken) {
+    throw new WorkspaceBridgeClientConfigError(`WorkspaceBridge client missing required env var ${WORKSPACE_BRIDGE_REFRESH_TOKEN_ENV}`, { missingVar: WORKSPACE_BRIDGE_REFRESH_TOKEN_ENV })
+  }
+  if (!fetchImpl) {
+    throw new WorkspaceBridgeClientConfigError("WorkspaceBridge refresh token provider requires a fetch implementation")
+  }
+  const normalizedTokenUrl = normalizeBridgeUrl(tokenUrl)
+  let cachedToken = initialToken
+  return async ({ refresh, signal }) => {
+    if (!refresh) return cachedToken
+    cachedToken = await fetchRefreshedToken({ tokenUrl: normalizedTokenUrl, refreshToken, fetchImpl, signal })
+    return cachedToken
+  }
+}
+
+async function fetchRefreshedToken(options: {
+  tokenUrl: string
+  refreshToken: string
+  fetchImpl: typeof fetch
+  signal?: AbortSignal
+}): Promise<string> {
+  const response = await options.fetchImpl(options.tokenUrl, {
+    method: "POST",
+    headers: {
+      "content-type": "application/json",
+      authorization: `Bearer ${options.refreshToken}`,
+    },
+    body: "{}",
+    signal: options.signal,
+  })
+  const body = await response.json()
+  if (isTokenResponse(body)) return body.token
+  const envelope = parseBridgeEnvelope(body)
+  if (envelope && !envelope.ok) {
+    throw new WorkspaceBridgeClientError(envelope.error.message, {
+      code: envelope.error.code,
+      status: response.status,
+      requestId: envelope.requestId,
+    })
+  }
+  if (!httpOk(response)) {
+    throw new WorkspaceBridgeClientError(httpErrorMessage(response, body), {
+      code: WorkspaceBridgeClientErrorCode.HttpError,
+      status: response.status,
+    })
+  }
+  throw new WorkspaceBridgeClientError("WorkspaceBridge token response envelope was invalid", {
+    code: WorkspaceBridgeClientErrorCode.InvalidResponse,
+    status: response.status,
+  })
+}
+
+function isTokenResponse(value: unknown): value is { ok: true; token: string } {
+  return !!value && typeof value === "object" && (value as { ok?: unknown }).ok === true && typeof (value as { token?: unknown }).token === "string"
 }
 
 function requireEnv(env: Record<string, string | undefined>, name: string): string {

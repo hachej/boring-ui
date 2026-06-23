@@ -1,8 +1,9 @@
 import type { RuntimeEnvContribution, RuntimeModeId } from "@hachej/boring-agent/server"
 import type { WorkspaceBridgeRegistry } from "./registry"
-import { mintWorkspaceBridgeRuntimeToken } from "./runtimeToken"
+import { mintWorkspaceBridgeRuntimeRefreshToken, mintWorkspaceBridgeRuntimeToken } from "./runtimeToken"
 
 const BRIDGE_CALL_PATH = "/api/v1/workspace-bridge/call"
+const BRIDGE_TOKEN_PATH = "/api/v1/workspace-bridge/token"
 
 export type WorkspaceBridgeRuntimeEnvDisabledReason =
   | "bridge-url-missing"
@@ -25,8 +26,10 @@ export interface WorkspaceBridgeRuntimeEnvOptions {
    * operation handlers must still enforce their own domain/resource scope.
    */
   capabilities?: readonly string[]
-  /** Runtime token TTL. Defaults to the token primitive default. */
+  /** Runtime call-token TTL. Defaults to the token primitive default. */
   tokenTtlMs?: number
+  /** Runtime refresh-token TTL. Defaults to the token primitive default. */
+  refreshTokenTtlMs?: number
   /** Optional audit/session claim. */
   sessionId?: string
 }
@@ -36,6 +39,7 @@ export interface CreateWorkspaceBridgeRuntimeEnvContributionOptions {
   runtimeMode: RuntimeModeId
   registry: WorkspaceBridgeRegistry
   runtimeTokenSecret?: string
+  runtimeRefreshTokenSecret?: string
   runtimeEnv?: WorkspaceBridgeRuntimeEnvOptions
 }
 
@@ -46,6 +50,7 @@ export function createWorkspaceBridgeRuntimeEnvContribution(
   if (!enabled) return undefined
 
   const bridgeUrl = resolveBridgeCallUrl(options.runtimeEnv?.bridgeUrl)
+  const tokenUrl = resolveBridgeTokenUrl(options.runtimeEnv?.bridgeUrl)
   const capabilities = options.runtimeEnv?.capabilities
   const disabledReason = validateRuntimeBridgeUrl({
     bridgeUrl,
@@ -69,9 +74,24 @@ export function createWorkspaceBridgeRuntimeEnvContribution(
         capabilities: capabilities!,
         ttlMs: options.runtimeEnv?.tokenTtlMs,
       })
+      const refreshToken = options.runtimeRefreshTokenSecret && tokenUrl
+        ? mintWorkspaceBridgeRuntimeRefreshToken({
+            secret: options.runtimeRefreshTokenSecret,
+            workspaceId: options.workspaceId,
+            sessionId: options.runtimeEnv?.sessionId,
+            runtimeId: options.runtimeMode,
+            capabilities: capabilities!,
+            ttlMs: options.runtimeEnv?.refreshTokenTtlMs,
+            tokenTtlMs: options.runtimeEnv?.tokenTtlMs,
+          })
+        : undefined
       return {
         BORING_WORKSPACE_BRIDGE_URL: bridgeUrl!,
         BORING_WORKSPACE_BRIDGE_TOKEN: token,
+        ...(refreshToken ? {
+          BORING_WORKSPACE_BRIDGE_TOKEN_URL: tokenUrl!,
+          BORING_WORKSPACE_BRIDGE_REFRESH_TOKEN: refreshToken,
+        } : {}),
         BORING_WORKSPACE_ID: options.workspaceId,
         BORING_AGENT_SESSION_ID: options.runtimeEnv?.sessionId ?? options.workspaceId,
       }
@@ -80,11 +100,19 @@ export function createWorkspaceBridgeRuntimeEnvContribution(
 }
 
 export function resolveBridgeCallUrl(value: string | undefined): string | undefined {
+  return resolveBridgeUrl(value, BRIDGE_CALL_PATH)
+}
+
+export function resolveBridgeTokenUrl(value: string | undefined): string | undefined {
+  return resolveBridgeUrl(value, BRIDGE_TOKEN_PATH)
+}
+
+function resolveBridgeUrl(value: string | undefined, path: string): string | undefined {
   if (!value?.trim()) return undefined
   try {
     const url = new URL(value)
-    if (url.pathname === "" || url.pathname === "/") {
-      url.pathname = BRIDGE_CALL_PATH
+    if (url.pathname === "" || url.pathname === "/" || url.pathname === BRIDGE_CALL_PATH || url.pathname === BRIDGE_TOKEN_PATH) {
+      url.pathname = path
     }
     return url.toString()
   } catch {

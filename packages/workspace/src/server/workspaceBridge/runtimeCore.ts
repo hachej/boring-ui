@@ -6,6 +6,8 @@ export interface WorkspaceBridgeRuntimeCoreOptions {
   registry?: WorkspaceBridgeRegistry
   /** Host/app/internal plugin bridge handlers to register at boot. */
   handlers?: ReadonlyArray<{ definition: WorkspaceBridgeOperationDefinition; handler: WorkspaceBridgeHandler }>
+  /** Workspace that owns a newly-created registry. Ignored when registry is provided. */
+  ownerWorkspaceId?: string
 }
 
 export interface WorkspaceBridgeRuntimeCore {
@@ -20,7 +22,7 @@ export interface WorkspaceBridgeRuntimeCore {
 export function createWorkspaceBridgeRuntimeCore(
   options: WorkspaceBridgeRuntimeCoreOptions = {},
 ): WorkspaceBridgeRuntimeCore {
-  const registry = options.registry ?? createWorkspaceBridgeRegistry()
+  const registry = options.registry ?? createWorkspaceBridgeRegistry({ ownerWorkspaceId: options.ownerWorkspaceId })
   for (const entry of options.handlers ?? []) {
     registry.registerHandler(entry.definition, entry.handler)
   }

@@ -26,7 +26,9 @@ createWorkspaceAgentServer({
 })
 ```
 
-`createCoreWorkspaceAgentServer(...)` accepts the same `workspaceBridge` shape.
+`createCoreWorkspaceAgentServer(...)` accepts the same `workspaceBridge` shape. For the standalone/base factory, exposed or production hosts must provide `workspaceBridge.browserAuthPolicy`; the fallback `createLocalCliBridgeAuthPolicy` is unauthenticated and is only for local/dev CLI usage. `NODE_ENV=production` fails closed unless the host supplies a real browser policy or explicitly opts into the insecure local-cli policy for a local-only dev tool.
+
+Runtime callers are also bounded to the workspace that owns the bridge registry. A token minted for workspace A cannot call a registry owned by workspace B; the registry returns `BRIDGE_RESOURCE_SCOPE_DENIED` unless an operation explicitly sets `allowCrossWorkspace: true`. Cross-workspace operations must do their own explicit resource authorization.
 
 Trusted boot-time server plugins can also contribute handlers:
 
@@ -95,6 +97,8 @@ When enabled and valid, agent/runtime executions receive:
 
 - `BORING_WORKSPACE_BRIDGE_URL`
 - `BORING_WORKSPACE_BRIDGE_TOKEN`
+- `BORING_WORKSPACE_BRIDGE_TOKEN_URL` (when refresh is configured)
+- `BORING_WORKSPACE_BRIDGE_REFRESH_TOKEN` (when refresh is configured)
 - `BORING_WORKSPACE_ID`
 - `BORING_AGENT_SESSION_ID`
 
@@ -131,16 +135,16 @@ try {
 }
 ```
 
-Runtime env injection provides a static bearer token. Tokens expire (default 5 minutes; hosts may configure TTL), and static env tokens cannot refresh themselves in long-lived remote sandboxes. Long-running tools should pass a token provider; when a call receives a 401 bridge auth error, the client invokes the provider once with `{ refresh: true }` and retries the call once. The timeout is per attempt, so a call that refresh-retries can take up to roughly `2 * timeoutMs` wall-clock time:
+Runtime env injection provides a short-lived bearer token. Tokens expire (default 5 minutes; hosts may configure TTL). When the host configures `runtimeRefreshTokenSecret`, env injection also provides `BORING_WORKSPACE_BRIDGE_TOKEN_URL` and `BORING_WORKSPACE_BRIDGE_REFRESH_TOKEN`; `WorkspaceBridgeClient.fromEnv()` uses those automatically to re-mint once after a 401 bridge auth error. Custom long-running tools may also pass a token provider; when a call receives a 401 bridge auth error, the client invokes the provider once with `{ refresh: true }` and retries the call once. The timeout is per attempt, so a call that refresh-retries can take up to roughly `2 * timeoutMs` wall-clock time:
 
 ```ts
 const bridge = new WorkspaceBridgeClient({
   url: process.env.BORING_WORKSPACE_BRIDGE_URL!,
-  token: async ({ refresh }) => refresh ? await fetchFreshBridgeToken() : cachedBridgeToken,
+  token: async ({ refresh, signal }) => refresh ? await fetchFreshBridgeToken({ signal }) : cachedBridgeToken,
 })
 ```
 
-A token provider is only a client-side seam; the host still needs to expose a safe app-specific way to mint a fresh scoped token if it wants remote runtimes to refresh without reprovisioning.
+The stock refresh endpoint is `POST /api/v1/workspace-bridge/token` with `Authorization: Bearer $BORING_WORKSPACE_BRIDGE_REFRESH_TOKEN`. It returns `{ ok: true, token }`. Refresh tokens are sandbox-bound by signed workspace/session/runtime/capability claims and should be treated as secrets; never log them.
 
 Non-TypeScript runtimes can call the HTTP transport directly:
 
@@ -168,7 +172,7 @@ Bridge calls are authorized by caller class plus capabilities. Capabilities are 
 - `runtime` calls use scoped bearer tokens minted from the runtime bridge secret.
 - `server` calls use trusted in-process context.
 
-Runtime tokens are scoped to the workspace/session/runtime/capability set and expiry. They protect the host and other workspaces from the sandbox; they are not secret from code already running inside that sandbox.
+Runtime tokens are scoped to the workspace/session/runtime/capability set and expiry, and the bridge rejects calls whose token workspace does not match the registry owner. They protect the host and other workspaces from the sandbox; they are not secret from code already running inside that sandbox. Domain handlers must still scope all reads/writes by `context.workspaceId` and must not trust input-supplied workspace, record, path, or session ids as authorization proof.
 
 Never log tokens, Authorization headers, full payloads, host paths, user answers, or sensitive SQL. Mutating/retryable operations should require an idempotency key.
 

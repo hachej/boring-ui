@@ -1,6 +1,8 @@
 import { describe, expect, test, vi } from "vitest"
 import {
+  WORKSPACE_BRIDGE_REFRESH_TOKEN_ENV,
   WORKSPACE_BRIDGE_TOKEN_ENV,
+  WORKSPACE_BRIDGE_TOKEN_URL_ENV,
   WORKSPACE_BRIDGE_URL_ENV,
   WorkspaceBridgeClient,
   WorkspaceBridgeClientConfigError,
@@ -110,8 +112,8 @@ describe("WorkspaceBridgeClient", () => {
 
     await expect(client.call("example.v1.records.read", {})).resolves.toEqual({ value: "ok" })
     expect(tokenProvider).toHaveBeenCalledTimes(2)
-    expect(tokenProvider).toHaveBeenNthCalledWith(1, { refresh: false })
-    expect(tokenProvider).toHaveBeenNthCalledWith(2, { refresh: true })
+    expect(tokenProvider).toHaveBeenNthCalledWith(1, { refresh: false, signal: expect.any(AbortSignal) })
+    expect(tokenProvider).toHaveBeenNthCalledWith(2, { refresh: true, signal: expect.any(AbortSignal) })
     expect((fetchMock.mock.calls[0]?.[1] as RequestInit).headers).toMatchObject({ authorization: "Bearer expired-token" })
     expect((fetchMock.mock.calls[1]?.[1] as RequestInit).headers).toMatchObject({ authorization: "Bearer fresh-token" })
   })
@@ -131,6 +133,46 @@ describe("WorkspaceBridgeClient", () => {
     })
     expect(tokenProvider).toHaveBeenCalledTimes(1)
     expect(fetchMock).not.toHaveBeenCalled()
+  })
+
+  test("fromEnv uses refresh env vars to re-mint after a 401", async () => {
+    const fetchMock = makeSequenceFetch([
+      {
+        status: 401,
+        body: { ok: false, error: { code: WorkspaceBridgeErrorCode.ExpiredToken, message: "expired" }, requestId: "req-1" },
+      },
+      { status: 200, body: { ok: true, token: "fresh-token" } },
+      { status: 200, body: { ok: true, output: { value: "ok" }, requestId: "req-1" } },
+    ])
+    const client = WorkspaceBridgeClient.fromEnv({
+      BORING_WORKSPACE_BRIDGE_URL: "https://example.test/api/v1/workspace-bridge/call",
+      BORING_WORKSPACE_BRIDGE_TOKEN: "expired-token",
+      BORING_WORKSPACE_BRIDGE_TOKEN_URL: "https://example.test/api/v1/workspace-bridge/token",
+      BORING_WORKSPACE_BRIDGE_REFRESH_TOKEN: "refresh-token",
+    }, { fetch: fetchMock })
+
+    await expect(client.call("example.v1.records.read", {})).resolves.toEqual({ value: "ok" })
+    expect(fetchMock).toHaveBeenCalledTimes(3)
+    expect(fetchMock.mock.calls[0]?.[0]).toBe("https://example.test/api/v1/workspace-bridge/call")
+    expect((fetchMock.mock.calls[0]?.[1] as RequestInit).headers).toMatchObject({ authorization: "Bearer expired-token" })
+    expect(fetchMock.mock.calls[1]?.[0]).toBe("https://example.test/api/v1/workspace-bridge/token")
+    expect((fetchMock.mock.calls[1]?.[1] as RequestInit).headers).toMatchObject({ authorization: "Bearer refresh-token" })
+    expect(fetchMock.mock.calls[2]?.[0]).toBe("https://example.test/api/v1/workspace-bridge/call")
+    expect((fetchMock.mock.calls[2]?.[1] as RequestInit).headers).toMatchObject({ authorization: "Bearer fresh-token" })
+  })
+
+  test("fromEnv requires both refresh env vars when either is present", () => {
+    expect(() => WorkspaceBridgeClient.fromEnv({
+      BORING_WORKSPACE_BRIDGE_URL: "https://example.test/api/v1/workspace-bridge/call",
+      BORING_WORKSPACE_BRIDGE_TOKEN: "expired-token",
+      BORING_WORKSPACE_BRIDGE_REFRESH_TOKEN: "refresh-token",
+    }, { fetch: makeFetch({ ok: true, output: null }) })).toThrowError(WORKSPACE_BRIDGE_TOKEN_URL_ENV)
+
+    expect(() => WorkspaceBridgeClient.fromEnv({
+      BORING_WORKSPACE_BRIDGE_URL: "https://example.test/api/v1/workspace-bridge/call",
+      BORING_WORKSPACE_BRIDGE_TOKEN: "expired-token",
+      BORING_WORKSPACE_BRIDGE_TOKEN_URL: "https://example.test/api/v1/workspace-bridge/token",
+    }, { fetch: makeFetch({ ok: true, output: null }) })).toThrowError(WORKSPACE_BRIDGE_REFRESH_TOKEN_ENV)
   })
 
   test("does not retry static expired tokens", async () => {
