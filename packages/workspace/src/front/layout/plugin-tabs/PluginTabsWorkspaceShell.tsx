@@ -79,27 +79,28 @@ export function PluginTabsWorkspaceShell({
         {children}
       </div>
 
-      {/* Ephemeral peek (collapsed only). The thin edge strip opens it; the
-          overlay retracts on mouse-leave. */}
+      {/* Ephemeral peek (collapsed only): hover the left edge to reveal the
+          pane as an overlay. The overlay is mounted ONLY while peeking, so the
+          collapsed state is genuinely empty otherwise (an always-mounted,
+          transform-hidden overlay left the pane visible). */}
       {collapsed ? (
         <>
           <div
             data-boring-workspace-part="app-left-peek-trigger"
-            className="absolute inset-y-0 left-0 z-[60] w-2.5"
+            className="absolute inset-y-0 left-0 z-[60] w-3"
             onMouseEnter={() => setPeek(true)}
             aria-hidden="true"
           />
-          <div
-            data-boring-workspace-part="app-left-peek"
-            data-boring-state={peek ? "open" : "closed"}
-            onMouseLeave={() => setPeek(false)}
-            className={cn(
-              "absolute inset-y-0 left-0 z-[65] flex shadow-2xl transition-transform duration-150 ease-out motion-reduce:transition-none",
-              peek ? "translate-x-0" : "pointer-events-none -translate-x-full",
-            )}
-          >
-            {leftPane}
-          </div>
+          {peek ? (
+            <div
+              data-boring-workspace-part="app-left-peek"
+              data-boring-state="open"
+              onMouseLeave={() => setPeek(false)}
+              className="absolute inset-y-0 left-0 z-[65] flex shadow-2xl"
+            >
+              {leftPane}
+            </div>
+          ) : null}
         </>
       ) : null}
 

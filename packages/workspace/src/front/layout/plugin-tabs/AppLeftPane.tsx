@@ -129,21 +129,28 @@ export function AppLeftPane({
       style={{ width, minWidth: width, maxWidth: width }}
       aria-label="App navigation"
     >
-      {/* Brand + workspace, stacked. The app-title logo sits on the first line
-          (leading space reserved for the fixed collapse button rendered by the
-          shell); the current workspace sits BELOW it — the host topSlot
-          (workspace switcher) when provided, else a plain label. */}
-      <div className="shrink-0 border-b border-border/60 px-2 pb-2 pt-2.5">
-        <div className="flex h-7 items-center pl-9">
-          <span className="truncate text-[13px] font-semibold tracking-tight text-foreground" data-boring-workspace-part="app-left-pane-brand">
+      {/* Brand (glyph + app name) on the first line — leading padding clears
+          the fixed collapse button rendered by the shell at top-left. The
+          current workspace sits BELOW it, showing only the workspace name (never
+          the app title, so it never reads "Seneca AI / Seneca AI"). In
+          multi-project mode the host topSlot (switcher) can replace the label. */}
+      <div className="shrink-0 border-b border-border/60 px-2 pb-2 pt-2">
+        <div className="flex h-9 items-center gap-2 pl-10 pr-1">
+          <span
+            aria-hidden="true"
+            className="grid size-6 shrink-0 place-items-center rounded-md bg-foreground text-[11px] font-semibold text-background"
+          >
+            {(appTitle || "B").charAt(0).toUpperCase()}
+          </span>
+          <span className="truncate text-[14px] font-semibold tracking-tight text-foreground" data-boring-workspace-part="app-left-pane-brand">
             {appTitle || "Boring UI"}
           </span>
         </div>
-        {topSlot ? (
+        {layoutMode === "multi-project" && topSlot ? (
           <div className="mt-1 min-w-0" data-boring-workspace-part="app-left-pane-workspace">{topSlot}</div>
-        ) : workspaceLabel ? (
+        ) : workspaceLabel && workspaceLabel !== appTitle ? (
           <div
-            className="mt-1 flex min-h-8 items-center gap-2 rounded-lg px-2 text-[13px] font-medium text-foreground/85"
+            className="mt-0.5 flex min-h-8 items-center gap-2 rounded-md px-2 text-[13px] text-foreground/72"
             data-boring-workspace-part="app-left-pane-workspace"
           >
             <span className="truncate">{workspaceLabel}</span>
