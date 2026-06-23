@@ -26,6 +26,46 @@ function bridge(): UiBridge & { commands: UiCommand[] } {
   }
 }
 
+class FailingCancelStore extends MemoryAskUserStore {
+  override async cancel(questionId: string): Promise<void> {
+    await super.getByQuestionId(questionId)
+    throw new Error("cancel write failed")
+  }
+}
+
+class DelayedAnsweredTranscriptStore extends MemoryAskUserStore {
+  readonly answerPersisted: Promise<void>
+  private answerPersistedResolve!: () => void
+  private readonly transcriptRelease: Promise<void>
+  releaseAnsweredTranscript!: () => void
+
+  constructor() {
+    super()
+    this.answerPersisted = new Promise<void>((resolve) => { this.answerPersistedResolve = resolve })
+    this.transcriptRelease = new Promise<void>((resolve) => { this.releaseAnsweredTranscript = resolve })
+  }
+
+  override async answer(...args: Parameters<MemoryAskUserStore["answer"]>): Promise<void> {
+    await super.answer(...args)
+    this.answerPersistedResolve()
+  }
+
+  override async cancel(questionId: string): Promise<void> {
+    const question = await super.getByQuestionId(questionId)
+    if (question?.status === "answered") {
+      const error = new Error("question already answered") as Error & { code: string }
+      error.code = ASK_USER_ERROR_CODES.ALREADY_ANSWERED
+      throw error
+    }
+    await super.cancel(questionId)
+  }
+
+  override async appendTranscriptEvent(...args: Parameters<MemoryAskUserStore["appendTranscriptEvent"]>): Promise<void> {
+    if (args[0].type === "answered") await this.transcriptRelease
+    await super.appendTranscriptEvent(...args)
+  }
+}
+
 class DelayedCreateStore extends MemoryAskUserStore {
   readonly createStarted: Promise<void>
   private readonly createRelease: Promise<void>
@@ -149,6 +189,34 @@ describe("AskUserRuntime", () => {
     await expect(result).resolves.toMatchObject({ status: "cancelled", reason: "aborted" })
     await expect(store.getPending("s1")).resolves.toBeNull()
     expect(ui.commands).toEqual([])
+  })
+
+  it("settles the waiter even if persisting cancellation fails", async () => {
+    const store = new FailingCancelStore()
+    const runtime = new AskUserRuntime({ store })
+    const result = runtime.ask({ sessionId: "s1", title: "T", schema })
+    const question = await pendingQuestion(store, "s1")
+    await waitForRuntimeWaiter(runtime, question.questionId)
+
+    await expect(runtime.cancelQuestion(question.questionId, "s1", "user_cancelled")).rejects.toThrow("cancel write failed")
+    await expect(result).resolves.toMatchObject({ status: "cancelled", reason: "user_cancelled" })
+    expect(runtime.coordinator.hasWaiter(question.questionId)).toBe(false)
+  })
+
+  it("does not let a concurrent cancel override an already-persisted answer", async () => {
+    const store = new DelayedAnsweredTranscriptStore()
+    const runtime = new AskUserRuntime({ store })
+    const result = runtime.ask({ sessionId: "s1", title: "T", schema })
+    const question = await pendingQuestion(store, "s1")
+    await waitForRuntimeWaiter(runtime, question.questionId)
+
+    const submit = runtime.submitAnswer(question.questionId, "s1", { answer: "accepted" })
+    await store.answerPersisted
+    await expect(runtime.cancelQuestion(question.questionId, "s1", "user_cancelled")).rejects.toMatchObject({ code: ASK_USER_ERROR_CODES.ALREADY_ANSWERED })
+    store.releaseAnsweredTranscript()
+
+    await expect(submit).resolves.toBe("answered")
+    await expect(result).resolves.toMatchObject({ status: "answered", answer: { values: { answer: "accepted" } } })
   })
 
   it("cancels on timeout and abort", async () => {

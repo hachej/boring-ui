@@ -1,7 +1,7 @@
 export { createBridge } from "./createBridge"
 export { createBridgeClient } from "./client"
 export { dispatchUiCommand, WORKSPACE_COMMAND_NOTIFY_EVENT, WORKSPACE_SURFACE_OPEN_SKIPPED_EVENT } from "./uiCommandDispatcher"
-export { UI_COMMAND_EVENT, emitUiEffect, postUiCommand } from "./uiCommandBus"
+export { UI_COMMAND_EVENT, postUiCommand } from "./uiCommandBus"
 export { WorkspaceLink, workspaceLinkCommand, workspaceLinkHref } from "./WorkspaceLink"
 export type { WorkspaceLinkProps, WorkspaceLinkTarget } from "./WorkspaceLink"
 export { startUiCommandStream } from "./uiCommandStream"

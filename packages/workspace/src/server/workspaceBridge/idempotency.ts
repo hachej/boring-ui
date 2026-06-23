@@ -58,6 +58,7 @@ export interface WorkspaceBridgeIdempotencyStore {
 
 export class InMemoryWorkspaceBridgeIdempotencyStore implements WorkspaceBridgeIdempotencyStore {
   private readonly records = new Map<string, WorkspaceBridgeIdempotencyRecord>()
+  private lastGcMs = 0
 
   async begin<TInput, TOutput>(
     options: BeginIdempotencyOptions<TInput>,
@@ -65,6 +66,10 @@ export class InMemoryWorkspaceBridgeIdempotencyStore implements WorkspaceBridgeI
     const prepared = prepareIdempotency(options)
     if ("error" in prepared) return { action: "reject", error: prepared.error }
     const nowMs = options.nowMs ?? Date.now()
+    if (nowMs - this.lastGcMs >= DEFAULT_IDEMPOTENCY_GC_INTERVAL_MS) {
+      await this.gc(nowMs)
+      this.lastGcMs = nowMs
+    }
     const existing = this.records.get(prepared.scopeKey)
     if (existing && Date.parse(existing.expiresAt) > nowMs) {
       if (existing.inputHash !== prepared.inputHash) {
@@ -150,16 +155,19 @@ export async function runWithWorkspaceBridgeIdempotency<TInput, TOutput>(
       nowMs: options.nowMs,
       ttlMs: options.ttlMs,
     })
-  } else {
-    // Do not memoize failures: release the key so a retry with the same
-    // idempotency key can re-execute instead of replaying the cached failure
-    // for the record's TTL. A deterministic failure simply fails again.
+  } else if (response.error.code !== WorkspaceBridgeErrorCode.Timeout) {
+    // Do not memoize non-timeout failures: release the key so a retry with the
+    // same idempotency key can re-execute instead of replaying the cached
+    // failure for the record's TTL. Timeouts are different: the handler may
+    // still be in flight after the timeout response, so keep the pending record
+    // to prevent a same-key retry from double-executing the mutation.
     await store.release(begin.scopeKey, begin.inputHash)
   }
   return response
 }
 
 const DEFAULT_IDEMPOTENCY_TTL_MS = 15 * 60_000
+const DEFAULT_IDEMPOTENCY_GC_INTERVAL_MS = 60_000
 
 function prepareIdempotency<TInput>(options: BeginIdempotencyOptions<TInput>):
   | { scopeKey: string; inputHash: string }

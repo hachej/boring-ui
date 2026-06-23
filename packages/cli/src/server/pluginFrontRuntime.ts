@@ -147,7 +147,7 @@ const WORKSPACE_ROOT_SINGLETON_EXPORTS = [
   "dismissToast",
   "createBridge",
   "createBridgeClient",
-  "emitUiEffect",
+  "postUiCommand",
   "UI_COMMAND_EVENT",
   "WorkspaceLink",
   "workspaceLinkCommand",

@@ -4,10 +4,10 @@ WorkspaceBridge v1 lets sandboxed runtimes call host-owned workspace operations 
 
 It adds a bounded RPC lane next to the existing UI bridge lane:
 
-- **UI lane:** `postCommand(...)` remains the canonical UI command dispatch API. `emitUiEffect(...)` is kept as a compatibility alias where older bridge callers use that name.
+- **UI lane:** `postUiCommand(...)` is the canonical browser UI command dispatch API.
 - **RPC lane:** `call(op, input, options)` / registered handlers provide request-response host capability RPC.
 
-The RPC lane is not a generic HTTP proxy. Handlers must be explicitly registered with an operation definition, allowed caller classes, capability requirements, size limits, timeout, and idempotency policy.
+The RPC lane is not a generic HTTP proxy. Handlers must be explicitly registered with an operation definition, allowed caller classes, capability requirements, size limits, timeout, and idempotency policy. Operation schemas may be Zod-like validators (`safeParse`) or lightweight JSON-schema-shaped type guards; plugin/domain handlers must still perform domain validation for invariants that are not captured by those schemas.
 
 ## Handler registration
 
@@ -134,7 +134,7 @@ resp.raise_for_status()
 
 ## Auth and safety model
 
-Bridge calls are authorized by caller class plus capabilities:
+Bridge calls are authorized by caller class plus capabilities. Capabilities are scoped grants issued by the host/runtime-token policy; they are not a substitute for resource ownership checks inside domain handlers.
 
 - `browser` calls use app/browser auth policy.
 - `runtime` calls use scoped bearer tokens minted from the runtime bridge secret.

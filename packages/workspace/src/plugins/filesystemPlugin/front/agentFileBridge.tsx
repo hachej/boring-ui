@@ -3,7 +3,7 @@
 import { useEffect } from "react"
 import { events, agentMeta, workspaceEvents } from "../../../front/events"
 import { useEvent } from "../../../front/events/useEvent"
-import { emitUiEffect } from "../../../front/bridge"
+import { postUiCommand } from "../../../front/bridge"
 import { filesystemEvents } from "../shared/events"
 import type { FilesystemEventMeta } from "../shared/events"
 
@@ -123,7 +123,7 @@ export function FilesystemAgentFileBridge() {
   }, [])
 
   useAutoOpenAgentFiles((path) => {
-    emitUiEffect({ kind: "openFile", params: { path } })
+    postUiCommand({ kind: "openFile", params: { path } })
   })
 
   return null

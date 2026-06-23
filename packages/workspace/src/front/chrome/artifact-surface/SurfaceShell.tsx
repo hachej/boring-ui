@@ -325,7 +325,7 @@ export function SurfaceShell({
     // agent's "openPanel({component:'chart'})" produced a blank workbench
     // with no error signal in either direction. Refuse loudly here so the
     // failure is visible at the call site and (when called via exec_ui)
-    // surfaces back to the LLM through bridge.emitUiEffect error.
+    // surfaces back to the LLM through the UI bridge error path.
     const registry = panelRegistryRef.current
     if (!registry.has(config.component)) {
       const known = registry.list().map((p) => p.id).join(", ")

@@ -9,6 +9,3 @@ export function postUiCommand(command: UiCommand): void {
     globalThis.dispatchEvent(new CustomEvent(UI_COMMAND_EVENT, { detail: command }))
   }
 }
-
-/** @deprecated Use postUiCommand. */
-export const emitUiEffect = postUiCommand

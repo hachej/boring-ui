@@ -278,6 +278,22 @@ describe('buildHarnessAgentTools', () => {
     expect(result.content[0].text).toContain('mounted')
   })
 
+  test('remote bash defaults to sandbox.exec when a custom remote bundle omits an explicit bash strategy', async () => {
+    const bundle = mockBundle('custom-remote')
+    bundle.sandbox = { ...bundle.sandbox, placement: 'remote', provider: 'custom-remote' }
+    bundle.storageRoot = undefined
+    delete bundle.bash
+    const tools = buildHarnessAgentTools(bundle)
+    const bashTool = tools.find((t) => t.name === 'bash')!
+
+    await bashTool.execute(
+      { command: 'echo remote', timeout: 10 },
+      { abortSignal: new AbortController().signal, toolCallId: 'test-custom-remote-default' },
+    )
+
+    expect(bundle.sandbox.exec).toHaveBeenCalledWith('echo remote', expect.objectContaining({ timeoutMs: 10_000 }))
+  })
+
   test('vercel-sandbox bash forwards to sandbox.exec with dynamic runtime env', async () => {
     const bundle = mockBundle('vercel-sandbox')
     let macroUrl = 'http://macro-v1'

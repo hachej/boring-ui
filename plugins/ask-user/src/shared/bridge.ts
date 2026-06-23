@@ -1,5 +1,4 @@
 import type {
-  AskUserAnswer,
   AskUserAnswerValue,
   AskUserFormSchema,
   AskUserQuestion,
@@ -67,10 +66,7 @@ export type AskUserBridgeTranscriptOutput = {
   events: AskUserTranscriptEvent[]
 }
 
-export type AskUserBridgeAnswerOutput = {
-  status: "answered"
-  answer: AskUserAnswer
-}
+export type AskUserBridgeAnswerOutput = AskUserBridgeMutationOutput
 
 /** @deprecated Use ASK_USER_BRIDGE_OPS. */
 export const HUMAN_INPUT_OPS = ASK_USER_BRIDGE_OPS

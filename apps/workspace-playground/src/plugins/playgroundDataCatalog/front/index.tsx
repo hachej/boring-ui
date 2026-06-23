@@ -1,6 +1,6 @@
 import {
   WORKSPACE_OPEN_PATH_SURFACE_KIND,
-  emitUiEffect,
+  postUiCommand,
 } from "@hachej/boring-workspace"
 import type { BoringFrontFactoryWithId } from "@hachej/boring-workspace/plugin"
 import {
@@ -55,7 +55,7 @@ function openDataset(row: ExplorerItem, context: DataCatalogSelectContext): void
     return
   }
 
-  emitUiEffect({
+  postUiCommand({
     kind: "openSurface",
     params: {
       kind: WORKSPACE_OPEN_PATH_SURFACE_KIND,

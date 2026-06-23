@@ -1166,7 +1166,7 @@ export function WorkspaceAgentFront<
   }, [onWorkspaceWarmupStatusChange, workspaceId])
 
   useEffect(() => {
-    // emitUiEffect also emits a browser CustomEvent so app/plugin bundles
+    // postUiCommand also emits a browser CustomEvent so app/plugin bundles
     // loaded through different module graphs can still reach this shell.
     const handler = (event: Event) => {
       const command = (event as CustomEvent).detail

@@ -111,6 +111,23 @@ describe("WorkspaceBridge idempotency primitives", () => {
     expect(calls).toBe(2)
   })
 
+  it("keeps timeout failures pending so same-key retries do not double-execute", async () => {
+    const store = new InMemoryWorkspaceBridgeIdempotencyStore()
+    const request = { op: requiredDefinition.op, input: { value: "a" }, idempotencyKey: "idem-timeout" }
+    let calls = 0
+    const execute = async (): Promise<WorkspaceBridgeCallResponse<{ ok: boolean }>> => {
+      calls += 1
+      return { ok: false, op: requiredDefinition.op, requestId: "req-timeout", error: { code: WorkspaceBridgeErrorCode.Timeout, message: "timed out" } }
+    }
+
+    const first = await runWithWorkspaceBridgeIdempotency(store, { definition: requiredDefinition, request, auth, nowMs }, execute)
+    const second = await runWithWorkspaceBridgeIdempotency(store, { definition: requiredDefinition, request, auth, nowMs: nowMs + 100 }, execute)
+
+    expect(first).toMatchObject({ ok: false, error: { code: WorkspaceBridgeErrorCode.Timeout } })
+    expect(second).toMatchObject({ ok: false, error: { code: WorkspaceBridgeErrorCode.IdempotencyConflict } })
+    expect(calls).toBe(1)
+  })
+
   it("normalizes input hashing independent of object key order", () => {
     expect(hashNormalizedInput({ a: 1, b: { c: 2, d: 3 } })).toBe(
       hashNormalizedInput({ b: { d: 3, c: 2 }, a: 1 }),
@@ -145,6 +162,27 @@ describe("WorkspaceBridge idempotency primitives", () => {
 
     expect(await store.gc(nowMs + 11)).toBe(1)
     expect(await store.gc(nowMs + 12)).toBe(0)
+  })
+
+  it("opportunistically garbage collects expired records on begin", async () => {
+    const store = new InMemoryWorkspaceBridgeIdempotencyStore()
+    await store.begin({
+      definition: requiredDefinition,
+      request: { op: requiredDefinition.op, input: { value: "a" }, idempotencyKey: "idem-expiring" },
+      auth,
+      nowMs,
+      ttlMs: 10,
+    })
+
+    const result = await store.begin({
+      definition: requiredDefinition,
+      request: { op: requiredDefinition.op, input: { value: "b" }, idempotencyKey: "idem-new" },
+      auth,
+      nowMs: nowMs + 60_001,
+    })
+
+    expect(result).toMatchObject({ action: "execute" })
+    expect(await store.gc(nowMs + 60_002)).toBe(0)
   })
 
   it("disables required mutations with a stable diagnostic when no atomic store exists", async () => {

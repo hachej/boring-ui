@@ -167,9 +167,14 @@ export class AskUserRuntime {
       return "abandoned"
     }
     const answer: AskUserAnswer = { questionId, sessionId, values, submittedAt: this.isoNow() }
-    await this.store.answer(questionId, answer)
-    await this.store.appendTranscriptEvent({ type: "answered", answer, at: this.isoNow() })
-    this.coordinator.resolveAnswered(questionId, answer)
+    let answerPersisted = false
+    try {
+      await this.store.answer(questionId, answer)
+      answerPersisted = true
+      await this.store.appendTranscriptEvent({ type: "answered", answer, at: this.isoNow() })
+    } finally {
+      if (answerPersisted) this.coordinator.resolveAnswered(questionId, answer)
+    }
     return "answered"
   }
 
@@ -180,9 +185,17 @@ export class AskUserRuntime {
       await this.abandon(questionId, sessionId)
       return
     }
-    await this.store.cancel(questionId)
-    await this.store.appendTranscriptEvent({ type: "cancelled", questionId, sessionId, reason, at: this.isoNow() })
-    this.coordinator.resolveCancelled(questionId, reason)
+    let cancelPersisted = false
+    try {
+      await this.store.cancel(questionId)
+      cancelPersisted = true
+      await this.store.appendTranscriptEvent({ type: "cancelled", questionId, sessionId, reason, at: this.isoNow() })
+    } catch (error) {
+      if (!cancelPersisted) await this.resolveCancelledUnlessAnswered(questionId, reason)
+      throw error
+    } finally {
+      if (cancelPersisted) this.coordinator.resolveCancelled(questionId, reason)
+    }
   }
 
   private async openQuestionSurface(question: AskUserQuestion): Promise<void> {
@@ -219,6 +232,12 @@ export class AskUserRuntime {
       signal?.removeEventListener("abort", onAbort)
       if (timeout) clearTimeout(timeout)
     }
+  }
+
+  private async resolveCancelledUnlessAnswered(questionId: string, reason: AskUserCancelReason): Promise<void> {
+    const latest = await this.store.getByQuestionId(questionId).catch(() => null)
+    if (latest?.status === "answered") return
+    this.coordinator.resolveCancelled(questionId, reason)
   }
 
   private async abandon(questionId: string, sessionId: string): Promise<void> {

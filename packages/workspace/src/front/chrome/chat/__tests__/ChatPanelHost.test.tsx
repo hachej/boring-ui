@@ -165,7 +165,7 @@ describe("ChatPanelHost", () => {
     }
   })
 
-  it("opens blocker surfaces through the workbench", () => {
+  it("opens blocker surfaces through the workbench", async () => {
     const openSurface = vi.fn()
     const surface: SurfaceShellApi = {
       openFile: vi.fn(),
@@ -178,9 +178,10 @@ describe("ChatPanelHost", () => {
     render(
       <WorkspaceProvider chatPanel={FakeChatPanel} persistenceEnabled={false}>
         <Blocker sessionId="s1" />
-        <ChatPanelHost sessionId="s1" surfaceDispatch={{ surface: () => surface, isWorkbenchOpen: () => true, openWorkbench: vi.fn() }} />
+        <ChatPanelHost sessionId="s1" surfaceDispatch={{ surface: () => surface, isWorkbenchOpen: () => true, openWorkbench: vi.fn(), shouldOpenSurface: () => true }} />
       </WorkspaceProvider>,
     )
+    expect(await screen.findByTestId("blocker-count")).toHaveTextContent("1")
     fireEvent.click(screen.getByRole("button", { name: "open blocker" }))
     expect(openSurface).toHaveBeenCalledWith(expect.objectContaining({ kind: "questions", target: "q1", meta: { sessionId: "s1", openOnlyWhenSessionOpen: true } }))
   })

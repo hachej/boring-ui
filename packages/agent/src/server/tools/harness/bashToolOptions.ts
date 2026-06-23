@@ -104,12 +104,18 @@ function remoteBashToolOptions(
   }
 }
 
+function defaultBashStrategyForBundle(bundle: RuntimeBundle): RuntimeBashStrategy {
+  return bundle.sandbox.placement === 'remote'
+    ? { kind: 'remote' }
+    : { kind: 'host', preserveHostHome: true }
+}
+
 export function createBashToolOptionsForRuntime(
   bundle: RuntimeBundle,
   runtime?: RuntimeProvisioningOptions,
   executionRuntimeEnv?: Record<string, string>,
 ): BashToolOptions {
-  const strategy = bundle.bash ?? { kind: 'host' as const, preserveHostHome: true }
+  const strategy = bundle.bash ?? defaultBashStrategyForBundle(bundle)
   switch (strategy.kind) {
     case 'host':
       return hostBashToolOptions(bundle, runtime, strategy)
