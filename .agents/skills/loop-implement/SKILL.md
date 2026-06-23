@@ -26,7 +26,7 @@ merge by default.
 | Code | make the smallest change; optionally delegate isolated helper work |
 | Test | run focused tests and demo workspace proof when UI/workspace behavior changes |
 | Review | run the review loop below until clean or blocked |
-| PR | open/update PR with proof, known gaps, and issue link |
+| PR | open/update PR with proof, known gaps, issue link, and review card |
 
 ## Review Loop
 
@@ -45,6 +45,27 @@ For non-trivial code, also run a bounded helper with the
 real code, fix every accepted finding, rerun affected tests/proof, then rerun
 the same review command until it exits clean or the remaining finding is
 explicitly rejected or blocked.
+
+## Land The Plane
+
+When human review is needed, leave a review card in the PR and final thread:
+
+```text
+PR:
+Issue:
+What changed:
+Why:
+Risk:
+Proof:
+Demo: URL or N/A
+Please test:
+Decision needed:
+```
+
+Use a demo/dev URL when UI or workspace behavior can be validated manually. If
+no demo is available, say why and list the closest proof. Make `Please test`
+concrete enough that Julien can approve or reject without reconstructing the
+whole PR.
 
 ## Helpers
 
