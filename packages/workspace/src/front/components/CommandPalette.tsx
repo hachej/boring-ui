@@ -222,7 +222,7 @@ export function CommandPalette({ sessionSearch }: CommandPaletteProps = {}) {
       >
         <DialogHeader className="sr-only">
           <DialogTitle>Command Palette</DialogTitle>
-          <DialogDescription>Search catalogs or switch to commands</DialogDescription>
+          <DialogDescription>Search sources or switch to commands</DialogDescription>
         </DialogHeader>
         <Command shouldFilter={false} className="flex min-h-0 flex-1 flex-col bg-transparent">
           <PaletteSearchHeader
@@ -348,7 +348,7 @@ function PaletteSearchHeader({
               ? "Run a command..."
               : isChatMode
                 ? "Search chats..."
-                : "Search catalogs or type > for commands"
+                : "Search sources or type > for commands"
           }
           value={query}
           onValueChange={onQueryChange}

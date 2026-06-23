@@ -3,7 +3,7 @@ import type { CommandConfig } from '../registry/types'
 import type { RecentEntry } from './recent'
 
 export const MAX_RESULTS = 50
-export const CATALOG_MODE_LABEL = 'Catalogs'
+export const CATALOG_MODE_LABEL = 'Sources'
 
 export type PaletteMode = 'chats' | 'catalogs' | 'commands'
 

@@ -3,6 +3,7 @@
 import { useMemo, useState, type ReactNode } from "react"
 import { ChevronRight, Clock3, Folder, FolderOpen, MessageSquarePlus, Pin, Plug, Plus, Search, Sparkles } from "lucide-react"
 import { cn } from "../../lib/utils"
+import { CHAT_SESSION_DRAG_TYPE } from "../ChatPaneStage"
 
 export interface AppLeftPaneSession {
   id: string
@@ -418,6 +419,14 @@ function AppSessionRow({
       data-boring-workspace-part="app-session-row"
       data-boring-session-state={state}
       onClick={activate}
+      // Drag a session onto the chat stage to open it as a split pane (the
+      // stage accepts CHAT_SESSION_DRAG_TYPE; see ChatPaneStageDock).
+      draggable
+      onDragStart={(event) => {
+        event.dataTransfer.setData(CHAT_SESSION_DRAG_TYPE, session.id)
+        event.dataTransfer.setData("text/plain", title)
+        event.dataTransfer.effectAllowed = "copyMove"
+      }}
       onKeyDown={(event) => {
         if (event.key !== "Enter" && event.key !== " ") return
         event.preventDefault()
