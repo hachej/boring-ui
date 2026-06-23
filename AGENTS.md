@@ -3,7 +3,8 @@
 Read this first. Re-read after compaction.
 
 This file is intentionally lean: it contains only hard rules and routing pointers.
-The canonical coding workflow lives in [`docs/AGENT_WORKFLOW.md`](docs/AGENT_WORKFLOW.md).
+The canonical coding workflow lives in
+[`docs/kanzen/AGENT_WORKFLOW.md`](docs/kanzen/AGENT_WORKFLOW.md).
 Detailed coding practices, architecture, and package docs live under `docs/`.
 
 ## Hard rules
@@ -22,8 +23,8 @@ Detailed coding practices, architecture, and package docs live under `docs/`.
 | Need | Read |
 | --- | --- |
 | Project/package map | [`docs/README.md`](docs/README.md) |
-| Coding best practices, invariants, commands | [`docs/CODING_PRACTICES.md`](docs/CODING_PRACTICES.md) |
-| Canonical coding workflow, review, commit, GitHub labels | [`docs/AGENT_WORKFLOW.md`](docs/AGENT_WORKFLOW.md) |
+| Coding best practices, invariants, commands | [`docs/kanzen/CODING_PRACTICES.md`](docs/kanzen/CODING_PRACTICES.md) |
+| Canonical coding workflow, review, commit, GitHub labels | [`docs/kanzen/AGENT_WORKFLOW.md`](docs/kanzen/AGENT_WORKFLOW.md) |
 | Architecture decisions | [`docs/DECISIONS.md`](docs/DECISIONS.md) |
 | Agent ↔ workspace contract | [`docs/WORKSPACE_CONTRACT.md`](docs/WORKSPACE_CONTRACT.md) |
 | Proof-of-work comments | [`docs/kanzen/procedures/proof-of-work.md`](docs/kanzen/procedures/proof-of-work.md) |
@@ -48,7 +49,7 @@ Detailed coding practices, architecture, and package docs live under `docs/`.
 
 ## Non-negotiable architectural invariants
 
-See [`docs/CODING_PRACTICES.md`](docs/CODING_PRACTICES.md#critical-architectural-invariants) for detail. Short version:
+See [`docs/kanzen/CODING_PRACTICES.md`](docs/kanzen/CODING_PRACTICES.md#critical-architectural-invariants) for detail. Short version:
 
 1. No `node:*` imports in `src/shared/**`.
 2. No `Buffer` in `src/shared/**`; use `Uint8Array`.
@@ -62,5 +63,5 @@ See [`docs/CODING_PRACTICES.md`](docs/CODING_PRACTICES.md#critical-architectural
 
 ## When coding
 
-Follow [`docs/AGENT_WORKFLOW.md`](docs/AGENT_WORKFLOW.md). Do not add alternate
+Follow [`docs/kanzen/AGENT_WORKFLOW.md`](docs/kanzen/AGENT_WORKFLOW.md). Do not add alternate
 coding workflow steps here; keep this file to hard rules and routing.

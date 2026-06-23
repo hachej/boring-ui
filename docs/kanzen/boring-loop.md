@@ -11,7 +11,7 @@ Autonomy is not a mood. It is a label plus passed gates.
 
 Boundary: Boring Loop decides what should happen next for GitHub work. Actual
 coding work still follows the canonical workflow in
-[`../AGENT_WORKFLOW.md`](../AGENT_WORKFLOW.md).
+[`AGENT_WORKFLOW.md`](AGENT_WORKFLOW.md).
 
 ## One Screen
 
@@ -135,7 +135,7 @@ thermo-nuclear review for important, risky, or multi-PR work.
 the plan, run review/fix rounds, open/update the PR, and collect proof.
 
 One implementation lane owns one issue/PR and may use bounded helpers. Use
-procedures for branch/worktree, review, proof, and owner handoff details.
+procedures for branch/worktree, proof, and owner handoff details.
 
 `/triage`: orchestrate the queue. It should perform one next action per issue,
 then record the new state/gate.

@@ -7,9 +7,8 @@ architecture, abstractions, and decisions. Read this file first, then descend
 only into the package you're working on.
 
 Agent hard rules and routing live in [`AGENTS.md`](../AGENTS.md) (imported by
-`CLAUDE.md`). The canonical coding workflow lives in
-[`AGENT_WORKFLOW.md`](AGENT_WORKFLOW.md). Engineering practices and invariants
-live in [`CODING_PRACTICES.md`](CODING_PRACTICES.md).
+`CLAUDE.md`). Agent workflow, coding process, review history, and proof
+procedures live in [`kanzen/`](kanzen/).
 
 ## What this is
 
@@ -57,23 +56,13 @@ standalone (`createAgentApp`) with zero core dependency.
 
 ## Cross-cutting docs (this folder)
 
-- [`CODING_PRACTICES.md`](CODING_PRACTICES.md) — engineering rules,
-  simplicity/surgical-change guidance, commands, and invariant details
-  referenced by `AGENTS.md`; not a workflow doc.
-- [`AGENT_WORKFLOW.md`](AGENT_WORKFLOW.md) — single source of truth for the
-  coding workflow: issue/PR selection, cross-review, commits, labels, and
-  proof-of-work pointers.
 - [`DECISIONS.md`](DECISIONS.md) — locked architectural decisions registry for the agent runtime (what/why/rationale/re-evaluate-when). Changing a locked decision requires updating this doc.
-- [`REVIEW_DECISIONS.md`](REVIEW_DECISIONS.md) — what was adopted vs deferred from external reviews; check before re-litigating "why don't we have X".
 - [`WORKSPACE_CONTRACT.md`](WORKSPACE_CONTRACT.md) — the agent ↔ workspace integration contract: HTTP routes, component exports, UiBridge/UiCommand semantics, import boundaries.
 - [`TAILWIND-V4-STYLE-ISOLATION.md`](TAILWIND-V4-STYLE-ISOLATION.md) — how packages share Tailwind v4 tokens: workspace owns `--boring-*` `:root` tokens; agent inherits them scoped to `[data-boring-agent]` (test-enforced).
 - [`PERFORMANCE.md`](PERFORMANCE.md) — historical Vercel-sandbox vs local FS latency benchmarks (harness removed; kept for reference).
-- [`kanzen/`](kanzen/) — analysis of a 5-minute maintainer triage loop for repo routing, worker lanes, proof gates, owner decisions, and budgeted autonomy.
-- [`kanzen/procedures/branch-worktree.md`](kanzen/procedures/branch-worktree.md) — branch,
-  worktree, lane, and stacked-PR mechanics.
-- [`kanzen/procedures/proof-of-work.md`](kanzen/procedures/proof-of-work.md) — required GitHub proof-of-work procedure for PRs.
-- [`kanzen/procedures/owner-review-card.md`](kanzen/procedures/owner-review-card.md) — human
-  review handoff card for PRs that need owner review.
+- [`kanzen/`](kanzen/) — agent workflow, maintainer loop, coding practices,
+  review history, procedures, proof gates, owner decisions, and budgeted
+  autonomy.
 - [`web/`](web/README.md) — human-oriented guide: architecture overview, full package map, getting started, composition guide, design FAQ, troubleshooting map, per-package explainers, glossary. Orientation, not normative spec — canonical specs live in `packages/*/docs/`.
 
 ## Normative specs (code cites these)

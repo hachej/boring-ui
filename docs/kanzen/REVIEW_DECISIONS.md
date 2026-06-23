@@ -2,13 +2,13 @@
 
 Tracks what was adopted vs deferred from two external reviews during v1 planning. If you're wondering "why don't we have X?" -- check here before re-litigating.
 
-See also: [DECISIONS.md](./DECISIONS.md) for the locked architectural decisions.
+See also: [DECISIONS.md](../DECISIONS.md) for the locked architectural decisions.
 
 > **Reader note (historical log; entries reflect the April 2026 reviews and are not rewritten):**
 > the published package scope is now `@hachej/boring-*` (not `@boring/*`); `@boring/cloud`
 > remains a planned, not-yet-extracted package; and the chat UI export names referenced here
 > (`SessionToolbar`, `<Tool>`, `theme.css`) predate the pi-native chat rewrite — see
-> [WORKSPACE_CONTRACT.md](./WORKSPACE_CONTRACT.md) for the current surface.
+> [WORKSPACE_CONTRACT.md](../WORKSPACE_CONTRACT.md) for the current surface.
 
 ---
 
