@@ -15,7 +15,6 @@ steps there.
 | Coding workflow | this file |
 | Engineering invariants | [`docs/CODING_PRACTICES.md`](CODING_PRACTICES.md) |
 | Branch/worktree mechanics | [`docs/kanzen/procedures/branch-worktree.md`](kanzen/procedures/branch-worktree.md) |
-| Review loop | [`docs/kanzen/procedures/review-loop.md`](kanzen/procedures/review-loop.md) |
 | Proof comments | [`docs/kanzen/procedures/proof-of-work.md`](kanzen/procedures/proof-of-work.md) |
 | Owner review handoff | [`docs/kanzen/procedures/owner-review-card.md`](kanzen/procedures/owner-review-card.md) |
 | Kanzen maintainer loop | [`docs/kanzen/boring-loop.md`](kanzen/boring-loop.md) |

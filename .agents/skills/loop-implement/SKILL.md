@@ -13,7 +13,6 @@ merge by default.
 | Need | Read |
 | --- | --- |
 | branch/worktree | `docs/kanzen/procedures/branch-worktree.md` |
-| review loop | `docs/kanzen/procedures/review-loop.md` |
 | proof | `docs/kanzen/procedures/proof-of-work.md` |
 | owner handoff | `docs/kanzen/procedures/owner-review-card.md` |
 
@@ -25,9 +24,18 @@ merge by default.
 | Prepare | use the branch/worktree procedure |
 | Code | make the smallest change; optionally delegate isolated helper work |
 | Test | run focused tests and proof-of-work demo steps when UI/workspace behavior changes |
-| Review | follow the review-loop procedure until clean or blocked |
+| Review | run the review loop below until clean or blocked |
 | Proof | post final proof using the proof-of-work procedure |
 | PR | open/update PR; use owner-review-card procedure when human review is needed |
+
+## Review Loop
+
+Use `coding-autoreview` on the current target: local mode for dirty work, branch
+mode for PR/branch work, or commit mode for one finished commit. For
+non-trivial code, also use `coding-thermo-nuclear-code-quality-review` as a
+bounded helper. Verify every finding, fix accepted findings, rerun affected
+tests/proof, then rerun review until clean or blocked. Record the reviewed head
+SHA.
 
 ## Helpers
 
