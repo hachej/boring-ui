@@ -262,7 +262,37 @@ Policy:
 
 Initial scope: plain `.md` may use `rich-tiptap`; `.mdx`, frontmatter-heavy, and custom-directive documents should default to raw/unsupported until explicit parser/serializer tests exist.
 
-### E. Agentic document tools
+### E. Transparent user experience
+
+Do not expose "TipTap vs filesystem writes" as a user-facing concept. The user-facing abstraction is:
+
+> Can the agent safely edit this document live, or should the user review a diff first?
+
+The coordinator should choose the safe path automatically and surface only small status indicators.
+
+Recommended pane status pills:
+
+| Status | Meaning | Default behavior |
+| --- | --- | --- |
+| `Rich live` | Normal `.md`; TipTap is live authority. | Agent edits appear in the rendered editor and autosave. |
+| `Raw safe` | Byte-preserving markdown mode. | Agent edits use raw/text operations and preserve exact source. |
+| `Needs review` | Operation is risky, ambiguous, or user is actively editing. | Show preview diff with accept/reject. |
+| `Stale` | Uncoordinated external disk write happened. | Offer compare/reload/keep mine. |
+
+Default behavior matrix:
+
+| Situation | User experience |
+| --- | --- |
+| Plain `.md`, open, clean | Agent edit appears live; subtle "Agent edited · saved" marker. |
+| Plain `.md`, open, user actively typing | Agent edit becomes suggestion/diff unless operation is trivially non-overlapping. |
+| `.mdx`, frontmatter-heavy, custom directives, raw HTML risk | Pane enters `Raw safe` / `unsupported-rich`; exact text is preserved. |
+| Ambiguous diff/range/context | No silent mutation; show `Needs review` diff or ask agent to re-read with stronger anchor. |
+| Direct external disk write while open | Show `Stale`; do not pretend disk is a second collaboration channel. |
+| Same file opened twice | Same session updates both panes, or duplicate pane is read-only/stale until shared sessions exist. |
+
+User prompts should be rare. The normal path is automatic. Prompt only when applying would risk lossy serialization, ambiguous target selection, or overwriting active human edits.
+
+### F. Agentic document tools
 
 Create OSS-compatible tools mirroring TipTap AI Toolkit concepts, but make them thin wrappers over the coordinator:
 
@@ -275,7 +305,7 @@ Avoid a second parallel taxonomy such as separate agent-level `replace_document`
 
 Tool execution never manually calls `markdown.getState` to decide routing. It sends the request to the coordinator, which chooses open session vs file adapter.
 
-### F. Review / suggestion UX
+### G. Review / suggestion UX
 
 Do not implement full tracked changes in phase 1.
 
@@ -295,7 +325,7 @@ Phase 3:
 
 Avoid adopting paid TipTap Tracked Changes unless product requirements justify it.
 
-### G. Persistence and conflict handling
+### H. Persistence and conflict handling
 
 For open markdown docs after Phase 1:
 
@@ -312,7 +342,7 @@ Fix current stale suppression as part of phase 1:
 - suppress a server mtime change only when the fetched content/hash equals the last saved content/hash;
 - if content differs, treat it as an external edit even inside the suppression window.
 
-### H. Future Yjs/Hocuspocus mode
+### I. Future Yjs/Hocuspocus mode
 
 Once command routing is stable, introduce optional collaboration:
 
@@ -365,12 +395,14 @@ Tasks:
 3. Add the minimal typed `UiCommand` variants: `getState`, `read`, `applyOperations`, `flush`.
 4. Implement command dispatch as a thin transport into the registered session.
 5. Route agent markdown-edit tools through the coordinator; do not duplicate open/closed checks in tools.
-6. Add tests for open editor routing and closed-file fallback.
+6. Add transparent pane status indicators: `Rich live`, `Raw safe`, `Needs review`, `Stale`.
+7. Add tests for open editor routing, closed-file fallback, and mode/status selection.
 
 Acceptance:
 
-- Agent operation against an open markdown file updates the visible editor immediately.
+- Agent operation against an open rich `.md` file updates the visible editor immediately.
 - Autosave persists the TipTap result to disk.
+- Risky documents route to raw-safe/review behavior without asking the user to understand internals.
 - Closed file behavior remains unchanged.
 
 ### Phase 2 — semantic operations and agent tools
