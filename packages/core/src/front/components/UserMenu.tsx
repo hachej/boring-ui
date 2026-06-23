@@ -10,6 +10,7 @@ import {
 } from '@hachej/boring-ui-kit'
 import {
   ChevronDown,
+  ChevronsUpDown,
   Check,
   LogOut,
   Monitor,
@@ -32,6 +33,9 @@ export interface UserMenuProps {
   /** Dropdown side relative to the trigger. Use "top" when the trigger lives in an app-left footer. */
   contentSide?: UserMenuContentSide
   contentAlign?: UserMenuContentAlign
+  /** 'compact' (default): avatar + chevron, for top bars. 'bar': full-width
+   * avatar + name + chevron, for the app-left footer account row. */
+  variant?: 'compact' | 'bar'
 }
 
 const THEME_ORDER: ThemePreference[] = ['light', 'dark', 'system']
@@ -61,7 +65,7 @@ function initialsFor(name: string | null, email: string): string {
   return email.slice(0, 2).toUpperCase()
 }
 
-export function UserMenu({ contentSide = 'bottom', contentAlign = 'end' }: UserMenuProps = {}) {
+export function UserMenu({ contentSide = 'bottom', contentAlign = 'end', variant = 'compact' }: UserMenuProps = {}) {
   const identity = useUser()
   const signOut = useSignOut()
   const navigate = useNavigate()
@@ -88,17 +92,35 @@ export function UserMenu({ contentSide = 'bottom', contentAlign = 'end' }: UserM
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
-        <Button
-          type="button"
-          variant="ghost"
-          aria-label="User menu"
-          className="h-8 rounded-md border border-transparent bg-transparent px-1 pr-1.5 text-foreground shadow-none hover:bg-foreground/5 focus-visible:ring-1 focus-visible:ring-ring"
-        >
-          <span className="inline-flex h-7 w-7 items-center justify-center rounded-md bg-foreground text-[11px] font-semibold text-background">
-            {initials}
-          </span>
-          <ChevronDown className="h-3.5 w-3.5 text-muted-foreground" aria-hidden="true" />
-        </Button>
+        {variant === 'bar' ? (
+          <Button
+            type="button"
+            variant="ghost"
+            aria-label="Account menu"
+            className="h-11 w-full justify-start gap-2.5 rounded-lg border border-transparent bg-transparent px-2 text-left text-foreground shadow-none hover:bg-foreground/[0.06] focus-visible:ring-1 focus-visible:ring-ring"
+          >
+            <span className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-foreground text-[11px] font-semibold text-background">
+              {initials}
+            </span>
+            <span className="flex min-w-0 flex-1 flex-col leading-tight">
+              <span className="truncate text-[13px] font-medium text-foreground">{userName}</span>
+              <span className="truncate text-[11px] text-muted-foreground">{userEmail}</span>
+            </span>
+            <ChevronsUpDown className="h-3.5 w-3.5 shrink-0 text-muted-foreground/55" aria-hidden="true" />
+          </Button>
+        ) : (
+          <Button
+            type="button"
+            variant="ghost"
+            aria-label="User menu"
+            className="h-8 rounded-md border border-transparent bg-transparent px-1 pr-1.5 text-foreground shadow-none hover:bg-foreground/5 focus-visible:ring-1 focus-visible:ring-ring"
+          >
+            <span className="inline-flex h-7 w-7 items-center justify-center rounded-md bg-foreground text-[11px] font-semibold text-background">
+              {initials}
+            </span>
+            <ChevronDown className="h-3.5 w-3.5 text-muted-foreground" aria-hidden="true" />
+          </Button>
+        )}
       </DropdownMenuTrigger>
 
       <DropdownMenuContent

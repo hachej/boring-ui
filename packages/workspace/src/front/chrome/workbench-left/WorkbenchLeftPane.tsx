@@ -255,7 +255,10 @@ export function WorkbenchLeftPane({
               }}
               className={cn(
                 "relative flex h-8 w-8 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-background/70 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40",
-                active && "rounded-r-none bg-muted/35 text-foreground shadow-none hover:bg-muted/35 before:absolute before:-right-1.5 before:top-0 before:h-full before:w-1.5 before:bg-muted/35",
+                // Open plugin must be obvious: accent-coloured icon on a clearly
+                // elevated chip (the previous bg-muted/35 matched the rail, so
+                // the active state was invisible).
+                active && "bg-foreground/[0.10] text-[color:var(--accent)] shadow-sm hover:bg-foreground/[0.10] hover:text-[color:var(--accent)]",
               )}
             >
               {entry.icon}

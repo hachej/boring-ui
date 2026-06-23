@@ -136,10 +136,10 @@ export function AppLeftPane({
           the app title, so it never reads "Seneca AI / Seneca AI"). In
           multi-project mode the host topSlot (switcher) can replace the label. */}
       <div className="shrink-0 border-b border-border/60 px-2 pb-2 pt-2">
-        <div className="flex h-9 items-center gap-2 pl-10 pr-1">
+        <div className="flex h-8 items-center gap-2.5 pl-11 pr-1">
           <span
             aria-hidden="true"
-            className="grid size-6 shrink-0 place-items-center rounded-md bg-foreground text-[11px] font-semibold text-background"
+            className="grid size-7 shrink-0 place-items-center rounded-md bg-foreground text-[12px] font-semibold text-background"
           >
             {(appTitle || "B").charAt(0).toUpperCase()}
           </span>
