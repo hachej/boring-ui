@@ -10,6 +10,9 @@ Kanzen is the boring-ui maintainer loop:
 Keep it simple: state says whether work can move, phase says what kind of work
 is next, gates say why it cannot move yet.
 
+Boundary: Kanzen is a maintainer routing loop. Coding execution still follows
+the canonical workflow in [`../AGENT_WORKFLOW.md`](../AGENT_WORKFLOW.md).
+
 Read:
 
 - [`boring-loop.md`](boring-loop.md) - clean model, labels, gates, and product

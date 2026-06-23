@@ -3,7 +3,8 @@
 Read this first. Re-read after compaction.
 
 This file is intentionally lean: it contains only hard rules and routing pointers.
-Detailed coding practices, workflow, architecture, and package docs live under `docs/`.
+The canonical coding workflow lives in [`docs/AGENT_WORKFLOW.md`](docs/AGENT_WORKFLOW.md).
+Detailed coding practices, architecture, and package docs live under `docs/`.
 
 ## Hard rules
 
@@ -11,31 +12,20 @@ Detailed coding practices, workflow, architecture, and package docs live under `
 2. **No file deletion without explicit written permission.**
 3. **No destructive git/filesystem ops without explicit instruction:** no `rm -rf`, `git reset --hard`, `git clean -fd`, `git push --force`.
 4. **No secrets in git/logs.** Never paste tokens into commits, comments, or logs.
-5. **Never push directly to remote `main`.** Use a branch/worktree unless the
-   owner or Kanzen trunk procedure explicitly authorizes local-main work; keep
-   local `main` green.
+5. **Never work directly on `main`** unless explicitly authorized. Use a branch/worktree.
 6. **Do not overwrite other agents' work.** Investigate unexpected changes before editing.
 7. **Run relevant quality gates** before calling work done.
-8. **Session history is host app user data:** Pi chat transcripts/session lists
-   are owned by the deployed core app host, not by the sandbox/workspace
-   runtime. Store them on the host app's durable volume via
-   `BORING_AGENT_SESSION_ROOT` (typically `/data/pi-sessions`), not in
-   container home/root. If host-side `BORING_AGENT_WORKSPACE_ROOT=/data/workspaces`,
-   keep the host session root as sibling `/data/pi-sessions` unless the user
-   explicitly chooses another mounted volume.
-9. **Default communication style:** concise, direct, high-signal. Honor user
-   requests for `stop caveman`, `normal mode`, or any other explicit tone
-   change.
+8. **Never launch bare `bv`; use only `bv --robot-*`.**
+9. **Never edit `.beads/*.jsonl` by hand.** Use `br` commands.
+10. **Default communication mode:** caveman skill, full intensity, unless user says `stop caveman` or `normal mode`.
 
 ## Start here
 
 | Need | Read |
 | --- | --- |
 | Project/package map | [`docs/README.md`](docs/README.md) |
-| Coding rules | [`docs/kanzen/procedures/coding-rules.md`](docs/kanzen/procedures/coding-rules.md) |
-| Coding invariants | [`docs/kanzen/procedures/coding-invariants.md`](docs/kanzen/procedures/coding-invariants.md) |
-| Repo commands | [`docs/kanzen/procedures/repo-commands.md`](docs/kanzen/procedures/repo-commands.md) |
-| Kanzen agent loop, review, commit, GitHub labels | [`docs/kanzen/boring-loop.md`](docs/kanzen/boring-loop.md) |
+| Coding best practices, invariants, commands | [`docs/CODING_PRACTICES.md`](docs/CODING_PRACTICES.md) |
+| Canonical coding workflow, review, commit, GitHub labels | [`docs/AGENT_WORKFLOW.md`](docs/AGENT_WORKFLOW.md) |
 | Architecture decisions | [`docs/DECISIONS.md`](docs/DECISIONS.md) |
 | Agent ↔ workspace contract | [`docs/WORKSPACE_CONTRACT.md`](docs/WORKSPACE_CONTRACT.md) |
 | Proof-of-work comments | [`docs/procedures/proof-of-work.md`](docs/procedures/proof-of-work.md) |
@@ -60,7 +50,7 @@ Detailed coding practices, workflow, architecture, and package docs live under `
 
 ## Non-negotiable architectural invariants
 
-See [`docs/kanzen/procedures/coding-invariants.md`](docs/kanzen/procedures/coding-invariants.md) for detail. Short version:
+See [`docs/CODING_PRACTICES.md`](docs/CODING_PRACTICES.md#critical-architectural-invariants) for detail. Short version:
 
 1. No `node:*` imports in `src/shared/**`.
 2. No `Buffer` in `src/shared/**`; use `Uint8Array`.
@@ -74,8 +64,5 @@ See [`docs/kanzen/procedures/coding-invariants.md`](docs/kanzen/procedures/codin
 
 ## When coding
 
-1. State assumptions if the task is ambiguous.
-2. Make surgical, minimal changes.
-3. Add/update tests for behavior changes.
-4. Run relevant checks.
-5. For Kanzen issue/PR work, follow [`docs/kanzen/boring-loop.md`](docs/kanzen/boring-loop.md).
+Follow [`docs/AGENT_WORKFLOW.md`](docs/AGENT_WORKFLOW.md). Do not add alternate
+coding workflow steps here; keep this file to hard rules and routing.
