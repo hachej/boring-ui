@@ -34,8 +34,8 @@ import { withTaskId } from '../../server/__tests__/_setup'
 import { AuthProvider } from '../auth/AuthProvider'
 import { SignInPage } from '../auth/SignInPage'
 
-const TASK_ID = 'boring-ui-v2-1pas'
-const GOOGLE_TASK_ID = 'boring-ui-v2-reorg-mip7'
+const EMAIL_AUTH_TASK_ID = 'boring-ui-v2-1pas'
+const GOOGLE_AUTH_TASK_ID = 'boring-ui-v2-reorg-mip7'
 
 function Wrapper({ children }: { children: ReactNode }) {
   return <AuthProvider>{children}</AuthProvider>
@@ -56,7 +56,7 @@ afterEach(() => {
 describe('SignInPage', () => {
   it(
     'submits email + password and calls signIn.email',
-    withTaskId(TASK_ID, async ({ assertionPassed }) => {
+    withTaskId(EMAIL_AUTH_TASK_ID, async ({ assertionPassed }) => {
       mockSignInEmail.mockResolvedValue({ data: { user: { id: 'u1' } }, error: null })
 
       render(<SignInPage />, { wrapper: Wrapper })
@@ -78,7 +78,7 @@ describe('SignInPage', () => {
 
   it(
     'displays server error on bad credentials',
-    withTaskId(TASK_ID, async ({ assertionPassed }) => {
+    withTaskId(EMAIL_AUTH_TASK_ID, async ({ assertionPassed }) => {
       mockSignInEmail.mockResolvedValue({
         error: { message: 'Invalid email or password' },
       })
@@ -99,7 +99,7 @@ describe('SignInPage', () => {
 
   it(
     'shows client-side validation for invalid email',
-    withTaskId(TASK_ID, async ({ assertionPassed }) => {
+    withTaskId(EMAIL_AUTH_TASK_ID, async ({ assertionPassed }) => {
       render(<SignInPage />, { wrapper: Wrapper })
 
       const user = userEvent.setup()
@@ -117,7 +117,7 @@ describe('SignInPage', () => {
 
   it(
     'shows Google sign-in only when enabled and clicks through social sign-in',
-    withTaskId(GOOGLE_TASK_ID, async ({ assertionPassed }) => {
+    withTaskId(GOOGLE_AUTH_TASK_ID, async ({ assertionPassed }) => {
       mockUseOptionalConfig.mockReturnValue({ features: { googleOauth: true } })
       mockSignInSocial.mockResolvedValue({ data: null, error: null })
 
@@ -139,7 +139,7 @@ describe('SignInPage', () => {
 
   it(
     'shows an inline error when Google sign-in initiation fails before redirect',
-    withTaskId(GOOGLE_TASK_ID, async ({ assertionPassed }) => {
+    withTaskId(GOOGLE_AUTH_TASK_ID, async ({ assertionPassed }) => {
       mockUseOptionalConfig.mockReturnValue({ features: { googleOauth: true } })
       mockSignInSocial.mockResolvedValue({
         data: null,
@@ -160,7 +160,7 @@ describe('SignInPage', () => {
 
   it(
     'hides Google sign-in when google OAuth is disabled',
-    withTaskId(GOOGLE_TASK_ID, async ({ assertionPassed }) => {
+    withTaskId(GOOGLE_AUTH_TASK_ID, async ({ assertionPassed }) => {
       render(<SignInPage />, { wrapper: Wrapper })
 
       expect(screen.queryByRole('button', { name: /continue with google/i })).toBeNull()
@@ -170,7 +170,7 @@ describe('SignInPage', () => {
 
   it(
     'does NOT render a GitHub sign-in button',
-    withTaskId(TASK_ID, async ({ assertionPassed }) => {
+    withTaskId(EMAIL_AUTH_TASK_ID, async ({ assertionPassed }) => {
       render(<SignInPage />, { wrapper: Wrapper })
 
       expect(screen.queryByText(/sign in with github/i)).toBeNull()
@@ -181,7 +181,7 @@ describe('SignInPage', () => {
 
   it(
     'has links to forgot-password and sign-up',
-    withTaskId(TASK_ID, async ({ assertionPassed }) => {
+    withTaskId(EMAIL_AUTH_TASK_ID, async ({ assertionPassed }) => {
       render(<SignInPage />, { wrapper: Wrapper })
 
       expect(screen.getByText(/forgot password/i).closest('a')?.getAttribute('href')).toBe(
@@ -196,7 +196,7 @@ describe('SignInPage', () => {
 
   it(
     'shows a helpful error when Google redirects back with an OAuth error',
-    withTaskId(GOOGLE_TASK_ID, async ({ assertionPassed }) => {
+    withTaskId(GOOGLE_AUTH_TASK_ID, async ({ assertionPassed }) => {
       window.history.pushState({}, '', '/auth/signin?error=access_denied&error_description=cancelled')
 
       render(<SignInPage />, { wrapper: Wrapper })
