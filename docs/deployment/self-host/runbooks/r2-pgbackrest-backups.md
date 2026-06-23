@@ -8,7 +8,7 @@ This follows the Healio backup shape: pgbackrest continuous WAL archiving + sche
 
 - Backup target: Cloudflare R2 EU jurisdiction bucket `boring-ui-full-app-pgbackrest-eu`.
 - Bucket create smoke: `wrangler r2 bucket create boring-ui-full-app-pgbackrest-eu --jurisdiction eu` succeeded from the local operator machine.
-- Remote object write smoke: `wrangler r2 object put ... --remote --jurisdiction eu` succeeded. Immediate readback hit Cloudflare API rate limiting (`429` / code `971`), so re-run readback after the rate window clears.
+- Remote object write/read smoke: `wrangler r2 object put/get ... --remote --jurisdiction eu` succeeded after a brief Cloudflare API rate-limit window cleared.
 - Fallback: another EU-compatible S3 target with equivalent durability and access controls if restore drills or immutability requirements fail on R2.
 - Mandatory encryption: pgbackrest `repo1-cipher-type=aes-256-cbc` and `PGBACKREST_CIPHER_PASS` from vault plus offline recovery copy.
 - Initial retention: 4 weekly full backups + 14 daily differential backups.
