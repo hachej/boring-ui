@@ -37,7 +37,7 @@ Skills this documentation pipeline will invoke or cite if present:
 | `multi-pass-bug-hunting` | Phase 7 | the three fresh-eyes prompts are inlined |
 | `gh-actions` | Phase 8 CI | workflow YAML in [DEPLOY.md#d-connecting-the-pipelines](DEPLOY.md#d-connecting-the-pipelines) |
 | `agent-mail` | Phase 2/4 coordination | single-agent mode if missing |
-| GitHub issues | Phase 10 follow-ups | use `gh issue create` or the GitHub connector |
+| `beads-workflow` / `br` / `bv` | Phase 10 follow-ups | file GitHub issues instead |
 | `ntm` | multi-agent orchestration | serial mode if missing |
 | `cass` | research prior sessions | skip; doesn't block any phase |
 | `readme-writing` | Phase 3 | inline patterns in [CONTENT-TEMPLATES.md](CONTENT-TEMPLATES.md) |​​‌‌​​​​​‌‌​​‌​​​​‌‌​​‌‌
@@ -228,13 +228,11 @@ When writing new content in this skill, honor this invariant: every time you ref
 
 ---
 
-## Agent Mail + GitHub Issues — the special cases
+## Agent Mail + Beads — the special cases
 
 **Agent Mail** is strictly optional. If the user has the MCP server set up (`mcp-agent-mail`), Phase 2 and Phase 4 polishers use file reservations to avoid stomping on each other. Without Agent Mail, run those phases with one section per pass (serialized) to avoid conflicts. The phase prompts in [AGENT-PROMPTS.md](AGENT-PROMPTS.md) handle both cases by saying "reserve if agent-mail is available; otherwise proceed alone".
 
-**GitHub issues** are the only follow-up tracker for Phase 10. Open one issue
-per suggestion with `gh issue create` or the GitHub connector so follow-ups
-become tracked work, not stranded markdown.
+**Beads (`br` / `bv`)** is optional for Phase 10 follow-ups. If present, the user-lens agent files beads; if absent, open GitHub issues with `gh issue create`. Either way, follow-ups become tracked work, not stranded markdown.
 
 ---
 
