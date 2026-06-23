@@ -203,6 +203,45 @@ describe("WorkbenchLeftPane", () => {
     expect(screen.getByText("file tree body")).toBeInTheDocument()
   })
 
+  test("workspace-page accent follows the active surface tab and stays mutually exclusive with an open source", () => {
+    const panelRegistry = new PanelRegistry()
+    const sources = new WorkspaceSourceRegistry()
+    sources.register("files", {
+      title: "Files",
+      component: () => <div>file tree body</div>,
+    })
+    panelRegistry.register("macro.page", {
+      title: "Macro",
+      placement: "workspace-page",
+      component: () => <div>macro page body</div>,
+    })
+
+    const { rerender } = renderLeftPane({
+      panels: panelRegistry,
+      sources,
+      children: <WorkbenchLeftPane defaultTab="files" activePanelId="macro.page" />,
+    })
+
+    const filesButton = screen.getByRole("button", { name: "Files" })
+    const macroButton = screen.getByRole("button", { name: "Macro" })
+    expect(filesButton).toHaveStyle({ color: "var(--accent)" })
+    expect(macroButton).not.toHaveStyle({ color: "var(--accent)" })
+
+    rerender(
+      <RegistryProvider
+        panelRegistry={panelRegistry}
+        workspaceSourceRegistry={sources}
+        commandRegistry={new CommandRegistry()}
+        surfaceResolverRegistry={new SurfaceResolverRegistry()}
+      >
+        <WorkbenchLeftPane defaultTab="files" activePanelId="macro.page" railOnly />
+      </RegistryProvider>,
+    )
+
+    expect(screen.getByRole("button", { name: "Files" })).not.toHaveStyle({ color: "var(--accent)" })
+    expect(screen.getByRole("button", { name: "Macro" })).toHaveStyle({ color: "var(--accent)" })
+  })
+
   test("clicking the active source icon untoggles the source pane", () => {
     const sources = new WorkspaceSourceRegistry()
     sources.register("files", {

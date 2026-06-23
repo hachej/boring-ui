@@ -195,7 +195,7 @@ describe("CommandPalette", () => {
       await waitFor(() => {
         expect(screen.getByRole("dialog")).toBeInTheDocument()
       })
-      const newInput = screen.getByPlaceholderText(/Search catalogs/)
+      const newInput = screen.getByPlaceholderText(/Search sources/)
       expect(newInput).toHaveValue("")
     })
 
@@ -296,7 +296,7 @@ describe("CommandPalette", () => {
       fireKeydown("k", { metaKey: true })
       await waitFor(() => expect(screen.getByRole("dialog")).toBeInTheDocument())
       expect(screen.getByRole("button", { name: "Chats" })).toHaveAttribute("aria-pressed", "true")
-      expect(screen.getByRole("button", { name: "Catalogs" })).toBeInTheDocument()
+      expect(screen.getByRole("button", { name: "Sources" })).toBeInTheDocument()
       expect(screen.getByRole("button", { name: "Commands" })).toBeInTheDocument()
 
       await typePaletteQuery(user, "beta")
@@ -461,7 +461,7 @@ describe("CommandPalette", () => {
         expect(screen.getByRole("dialog")).toBeInTheDocument()
       })
 
-      expect(screen.getByRole("button", { name: "Catalogs" })).toHaveAttribute("aria-pressed", "true")
+      expect(screen.getByRole("button", { name: "Sources" })).toHaveAttribute("aria-pressed", "true")
       await user.click(screen.getByRole("button", { name: "Commands" }))
 
       expect(screen.getByPlaceholderText(/Run a command/)).toBeInTheDocument()
@@ -489,7 +489,7 @@ describe("CommandPalette", () => {
       expect(screen.getByText("Test Command")).toBeInTheDocument()
 
       await user.keyboard("{Tab}")
-      expect(input.getAttribute("placeholder")).toMatch(/Search catalogs/)
+      expect(input.getAttribute("placeholder")).toMatch(/Search sources/)
       expect(screen.queryByText("Test Command")).not.toBeInTheDocument()
     })
 

@@ -356,7 +356,7 @@ describe("WorkspaceAgentFront", () => {
     await user.click(within(appNav).getByRole("button", { name: "New chat" }))
     expect(onCreateSession).toHaveBeenCalledOnce()
     expect(screen.queryByRole("button", { name: "Sessions" })).not.toBeInTheDocument()
-    expect(screen.getByText("Workspaces")).toBeInTheDocument()
+    expect(screen.queryByText("Workspaces")).not.toBeInTheDocument()
     expect(screen.queryByText("Codex mobile")).not.toBeInTheDocument()
     expect(screen.queryByText("Automations")).not.toBeInTheDocument()
 
