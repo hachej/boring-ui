@@ -2,10 +2,11 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react"
 import type { DockviewApi } from "dockview-react"
-import { ChevronRight, Menu } from "lucide-react"
+import { ChevronRight, PanelLeftOpen } from "lucide-react"
 import { ControlTooltip } from "../../components/ControlTooltip"
 import { IconButton } from "@hachej/boring-ui-kit"
 import { cn } from "../../lib/utils"
+import { PaneCollapseButton } from "../../layout/paneCollapseButton"
 import { ArtifactSurfacePane } from "./ArtifactSurfacePane"
 import type { WorkspaceBridge, CommandResult, BridgeEventMap } from "../../bridge/types"
 import type { WorkspaceState, PanelState } from "../../store/types"
@@ -48,7 +49,7 @@ export interface OpenPanelConfig {
 
 export interface SurfaceShellApi {
   /** Open a file in the workbench. Idempotent — re-activates an existing pane for the same path. */
-  openFile: (path: string) => void
+  openFile: (path: string, opts?: { mode?: "view" | "edit" | "diff" }) => void
   /** Open a plugin-defined surface target through the registered surface resolvers. */
   openSurface: (request: SurfaceOpenRequest) => void
   /**
@@ -78,6 +79,8 @@ export interface SurfaceShellProps {
   onChange?: (snapshot: SurfaceShellSnapshot) => void
   /** Optional close action for hosts that model the workbench as collapsible. */
   onClose?: () => void
+  /** Render the built-in top-right close affordance. Hosts can set false when they provide their own chrome. */
+  showCloseAction?: boolean
   /**
    * Extra panel ids (registered via WorkspaceProvider's `panels` prop) that
    * this workbench is allowed to render. Defaults to the built-in
@@ -186,10 +189,12 @@ let seqCounter = 0
 function fileBackedParams(
   params: Record<string, unknown> | undefined,
   path: string,
+  opts?: { mode?: "view" | "edit" | "diff" },
 ): Record<string, unknown> {
   return {
     ...(params ?? {}),
     path: typeof params?.path === "string" ? params.path : path,
+    ...(opts?.mode ? { mode: opts.mode } : {}),
     [FILE_BACKED_PARAM]: true,
   }
 }
@@ -210,6 +215,7 @@ export function SurfaceShell({
   onReady,
   onChange,
   onClose,
+  showCloseAction = true,
   extraPanels,
   defaultLeftTab,
   onReloadAgentPlugins,
@@ -333,7 +339,7 @@ export function SurfaceShell({
     if (component) applyPanelPlacementTransition(component)
   }, [applyPanelPlacementTransition])
 
-  const openFileSync = useCallback((path: string) => {
+  const openFileSync = useCallback((path: string, opts?: { mode?: "view" | "edit" | "diff" }) => {
     const api = apiRef.current
     if (!api) {
       console.warn("[SurfaceShell] openFile: surface not ready (dockview not initialized)")
@@ -356,7 +362,7 @@ export function SurfaceShell({
         id: panelId,
         component: resolved.component,
         title: resolved.title ?? normalizedPath.split("/").pop() ?? normalizedPath,
-        params: fileBackedParams(resolved.params, normalizedPath),
+        params: fileBackedParams(resolved.params, normalizedPath, opts),
       })
       return
     }
@@ -389,8 +395,13 @@ export function SurfaceShell({
       fileBackedPanelIdsRef.current.add(panelId)
     }
     const closeWorkbenchOnDone = normalizedRequest.meta?.closeWorkbenchOnDone === true
+    const surfaceMode = normalizedRequest.meta?.mode
     const baseParams = normalizedRequest.kind === WORKSPACE_OPEN_PATH_SURFACE_KIND
-      ? fileBackedParams(resolved.params, normalizedRequest.target)
+      ? fileBackedParams(
+          resolved.params,
+          normalizedRequest.target,
+          surfaceMode === "view" || surfaceMode === "edit" || surfaceMode === "diff" ? { mode: surfaceMode } : undefined,
+        )
       : resolved.params
     const resolvedParams = closeWorkbenchOnDone && onCloseRef.current
       ? { ...(baseParams ?? {}), __closeWorkbenchOnDone: onCloseRef.current }
@@ -539,7 +550,7 @@ export function SurfaceShell({
 
 
   const openFile = useCallback(
-    async (path: string): Promise<CommandResult> => {
+    async (path: string, opts?: { mode?: "view" | "edit" | "diff" }): Promise<CommandResult> => {
       try {
         const api = apiRef.current
         if (!api) return err("not-ready", "surface not ready")
@@ -562,7 +573,7 @@ export function SurfaceShell({
             id: panelId,
             component: resolved.component,
             title: resolved.title ?? normalizedPath.split("/").pop() ?? normalizedPath,
-            params: fileBackedParams(resolved.params, normalizedPath),
+            params: fileBackedParams(resolved.params, normalizedPath, opts),
           })
           return ok()
         }
@@ -794,23 +805,14 @@ export function SurfaceShell({
           className="pointer-events-none absolute inset-x-0 top-0 flex items-center justify-between"
           style={{ height: 44, zIndex: 2000 }}
         >
-          <div>
+          <div className="self-start pl-1.5 pt-2">
             {leftBlockCollapsed && (
-              <ControlTooltip label="Show workspace menu" side="right">
-                <IconButton
-                  type="button"
-                  variant="ghost"
-                  size="icon-xs"
-                  onClick={expandLeftBlock}
-                  className="pointer-events-auto ml-2"
-                  aria-label="Show workspace menu"
-                >
-                  <Menu className="h-4 w-4" strokeWidth={1.75} />
-                </IconButton>
-              </ControlTooltip>
+              <PaneCollapseButton label="Show workspace menu" side="right" onClick={expandLeftBlock}>
+                <PanelLeftOpen className="h-4 w-4" strokeWidth={1.75} />
+              </PaneCollapseButton>
             )}
           </div>
-          {onClose && <WorkbenchCloseAction onClose={onClose} />}
+          {showCloseAction && onClose && <WorkbenchCloseAction onClose={onClose} />}
         </div>
         <EmptyWorkbenchOverlay api={api} />
       </div>

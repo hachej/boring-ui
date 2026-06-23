@@ -70,6 +70,12 @@ describe("CliWorkspaceShell", () => {
           headers: { "Content-Type": "application/json" },
         })
       }
+      if (url.includes("/api/v1/agent/pi-chat/sessions")) {
+        return new Response(JSON.stringify([]), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        })
+      }
       throw new Error(`unexpected fetch: ${url}`)
     }) as typeof fetch
   }
@@ -90,7 +96,11 @@ describe("CliWorkspaceShell", () => {
 
     // Must mount the URL workspace, never the fallback.
     await waitFor(() => expect(workspaceAgentFrontSpy).toHaveBeenCalled())
-    expect(workspaceAgentFrontSpy.mock.calls.at(-1)?.[0]).toMatchObject({ workspaceId: "target" })
+    expect(workspaceAgentFrontSpy.mock.calls.at(-1)?.[0]).toMatchObject({
+      workspaceId: "target",
+      workspaceLayout: "plugin-tabs",
+      workspaceSectionTitle: "Projects",
+    })
     expect(window.location.pathname).toBe("/workspace/target")
   })
 
@@ -156,6 +166,8 @@ describe("CliWorkspaceShell", () => {
     await waitFor(() => expect(workspaceAgentFrontSpy).toHaveBeenCalled())
     expect(workspaceAgentFrontSpy.mock.calls.at(-1)?.[0]).toMatchObject({
       frontPluginHotReload: "vite",
+      workspaceLayout: "plugin-tabs",
+      workspaceSectionTitle: "Project",
       appTitle: "Folder Workspace",
       plugins: [expect.objectContaining({ pluginId: "ask-user" })],
     })
@@ -240,6 +252,15 @@ describe("CliWorkspaceShell", () => {
           headers: { "Content-Type": "application/json" },
         })
       }
+      if (url.includes("/api/v1/agent/pi-chat/sessions")) {
+        return new Response(JSON.stringify([
+          { id: "chat-1", title: "Check Qwen compatibility", updatedAt: "2026-06-15T00:00:00.000Z" },
+          { id: "chat-2", title: "Research account deletion", updatedAt: "2026-06-14T00:00:00.000Z" },
+        ]), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        })
+      }
       throw new Error(`unexpected fetch: ${url}`)
     }) as typeof fetch
 
@@ -248,10 +269,18 @@ describe("CliWorkspaceShell", () => {
     await waitFor(() => expect(workspaceAgentFrontSpy).toHaveBeenCalled())
     // The tab title comes from workspaceLabel; it must be the friendly name,
     // not the slug+hash workspace id.
-    expect(workspaceAgentFrontSpy.mock.calls.at(-1)?.[0]).toMatchObject({
+    await waitFor(() => expect(workspaceAgentFrontSpy.mock.calls.at(-1)?.[0]).toMatchObject({
       workspaceId: "ws-alpha-be8d3c24",
       workspaceLabel: "Alpha Project",
-    })
+      workspaceLayout: "plugin-tabs",
+      workspaceSectionTitle: "Projects",
+      appLeftProjects: expect.arrayContaining([expect.objectContaining({
+        id: "ws-alpha-be8d3c24",
+        name: "Alpha Project",
+        sessionCount: 2,
+        sessions: expect.arrayContaining([expect.objectContaining({ id: "chat-1", title: "Check Qwen compatibility" })]),
+      })]),
+    }))
   })
 
   test("recovers from a transient local-workspaces fetch failure instead of latching the empty state", async () => {
@@ -278,6 +307,12 @@ describe("CliWorkspaceShell", () => {
         return new Response(JSON.stringify({
           workspaces: [{ id: "ws-alpha-be8d3c24", name: "Alpha Project", path: "/tmp/ws-alpha", available: true }],
         }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        })
+      }
+      if (url.includes("/api/v1/agent/pi-chat/sessions")) {
+        return new Response(JSON.stringify([]), {
           status: 200,
           headers: { "Content-Type": "application/json" },
         })

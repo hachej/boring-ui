@@ -5,7 +5,7 @@ import type { RecentEntry } from './recent'
 export const MAX_RESULTS = 50
 export const CATALOG_MODE_LABEL = 'Catalogs'
 
-export type PaletteMode = 'catalogs' | 'commands'
+export type PaletteMode = 'chats' | 'catalogs' | 'commands'
 
 export interface CatalogSearchGroup {
   catalog: CatalogConfig

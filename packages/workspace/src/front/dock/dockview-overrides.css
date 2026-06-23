@@ -64,16 +64,26 @@
   padding-left: 44px !important;
 }
 
-/* The workbench renders a "close workspace" control as an absolute overlay on
-   the right edge of the tab strip (see SurfaceShell's WorkbenchCloseAction:
-   a 24px icon button + 4px margins each side = ~32px wide, vertically centred
-   in the 44px bar). Reserve room at the right of the tab strip so dockview's
-   built-in "open tabs" overflow dropdown trigger (the ⌄ chevron at the end of
-   the tab row) sits clearly LEFT of that control with a visible gap, instead of
-   tucking right under it. 32px control + ~8px gap + the chevron's own width. */
+/* Plugin-tabs shell: when the app-navigation left pane is collapsed, the
+   fixed top-left "Open app navigation" corner control (24px at left-3,
+   right edge x=36) overlays the chat stage. Reserve header-only space on the
+   chat stage's flat pane header so the session title clears that control
+   instead of sitting underneath it. Only applies in the collapsed state; when
+   the left pane is open the control sits over the app-nav header, not the
+   chat. 48px = control right edge (36) + 12px gap. */
+[data-boring-workspace-part="plugin-tabs-shell"][data-boring-state="collapsed"] .dv-chat-stage .dv-tabs-and-actions-container,
+[data-boring-workspace-part="plugin-tabs-shell"][data-boring-state="collapsed"] .dv-chat-stage .tabs-and-actions-container {
+  padding-left: 48px !important;
+}
+
+/* The app shell renders fixed top-right workbench/full-workspace controls
+   over this 44px tab strip. Reserve enough room so dockview's built-in open-tabs
+   overflow trigger sits left of that chrome instead of underneath it.
+   Two 24px controls + 4px gap anchored at right-3 (12px) reach ~64px from the
+   right edge; 72px keeps them clear with breathing room. */
 .workbench-dockview .dv-tabs-and-actions-container,
 .workbench-dockview .tabs-and-actions-container {
-  padding-right: 44px !important;
+  padding-right: 72px !important;
 }
 
 /* Tab base — pill-style, rounded top */

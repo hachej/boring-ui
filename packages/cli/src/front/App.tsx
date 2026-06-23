@@ -41,6 +41,21 @@ interface LocalWorkspace {
   available: boolean
 }
 
+interface ProjectSessionSummary {
+  id: string
+  title?: string | null
+  updatedAt?: string | number
+}
+
+interface ProjectSessionOverview {
+  sessions: ProjectSessionSummary[]
+  loading: boolean
+  error?: string
+}
+
+const PROJECT_SESSION_PREVIEW_INITIAL_LIMIT = 5
+const PROJECT_SESSION_PREVIEW_FETCH_LIMIT = 25
+
 export function workspaceIdFromCliUrl(pathname: string): string | null {
   const match = pathname.match(/^\/workspace\/([^/?#]+)/)
   if (!match?.[1]) return null
@@ -97,6 +112,33 @@ function areWorkspacesEqual(a: LocalWorkspace[], b: LocalWorkspace[]): boolean {
   })
 }
 
+function piActiveSessionStorageKey(workspaceId: string): string {
+  return `boring-agent:v2:${workspaceId}:activeSessionId`
+}
+
+function toProjectSessionSummary(value: unknown): ProjectSessionSummary | null {
+  if (typeof value !== "object" || value === null) return null
+  const record = value as Record<string, unknown>
+  if (typeof record.id !== "string" || record.id.length === 0) return null
+  return {
+    id: record.id,
+    title: typeof record.title === "string" ? record.title : "Untitled",
+    updatedAt: typeof record.updatedAt === "string" || typeof record.updatedAt === "number" ? record.updatedAt : undefined,
+  }
+}
+
+async function fetchProjectSessionOverview(workspaceId: string): Promise<ProjectSessionSummary[]> {
+  const query = new URLSearchParams({ limit: String(PROJECT_SESSION_PREVIEW_FETCH_LIMIT) })
+  const response = await fetch(`/api/v1/agent/pi-chat/sessions?${query.toString()}`, {
+    headers: { "x-boring-workspace-id": workspaceId },
+  })
+  if (!response.ok) throw new Error(`sessions ${response.status}`)
+  const payload = await response.json()
+  return Array.isArray(payload)
+    ? payload.map(toProjectSessionSummary).filter((session): session is ProjectSessionSummary => Boolean(session))
+    : []
+}
+
 export function CliVersionBadge({ version }: { version?: string | null }) {
   const label = version?.trim()
   if (!label) return null
@@ -130,6 +172,8 @@ export function CliWorkspaceShell() {
   // and retry) so a transient error never strands the page on the empty state.
   const [workspacesLoaded, setWorkspacesLoaded] = useState(false)
   const [runtimePluginFrontLoadingEnabled, setRuntimePluginFrontLoadingEnabled] = useState(false)
+  const [projectSessionOverviews, setProjectSessionOverviews] = useState<Record<string, ProjectSessionOverview>>({})
+  const [projectSessionPreviewLimits, setProjectSessionPreviewLimits] = useState<Record<string, number>>({})
 
   const refreshWorkspacesRef = useRef<(() => void) | null>(null)
 
@@ -267,6 +311,70 @@ export function CliWorkspaceShell() {
     () => activeWorkspaceId ? { "x-boring-workspace-id": activeWorkspaceId } : null,
     [activeWorkspaceId],
   )
+  const availableWorkspaceIdsKey = useMemo(
+    () => workspaces.filter((workspace) => workspace.available).map((workspace) => workspace.id).sort().join("\n"),
+    [workspaces],
+  )
+
+  useEffect(() => {
+    if (!workspacesMode || !availableWorkspaceIdsKey) return
+    const ids = availableWorkspaceIdsKey.split("\n").filter(Boolean)
+    let cancelled = false
+    setProjectSessionOverviews((current) => {
+      const next: Record<string, ProjectSessionOverview> = {}
+      for (const id of ids) next[id] = current[id] ?? { sessions: [], loading: true }
+      return next
+    })
+    for (const id of ids) {
+      void fetchProjectSessionOverview(id)
+        .then((sessions) => {
+          if (cancelled) return
+          setProjectSessionOverviews((current) => ({
+            ...current,
+            [id]: { sessions, loading: false },
+          }))
+        })
+        .catch((error) => {
+          if (cancelled) return
+          setProjectSessionOverviews((current) => ({
+            ...current,
+            [id]: {
+              sessions: current[id]?.sessions ?? [],
+              loading: false,
+              error: error instanceof Error ? error.message : "sessions failed",
+            },
+          }))
+        })
+    }
+    return () => { cancelled = true }
+  }, [availableWorkspaceIdsKey, workspacesMode])
+
+  const appLeftProjects = useMemo(() => workspaces.map((workspace) => {
+    const overview = projectSessionOverviews[workspace.id]
+    const limit = projectSessionPreviewLimits[workspace.id] ?? PROJECT_SESSION_PREVIEW_INITIAL_LIMIT
+    const sessions = overview?.sessions ?? []
+    return {
+      id: workspace.id,
+      name: workspace.name,
+      available: workspace.available,
+      sessions: sessions.slice(0, limit),
+      sessionCount: sessions.length,
+      hasMoreSessions: sessions.length > limit,
+      loadingSessions: overview?.loading ?? (workspace.available && !overview),
+    }
+  }), [projectSessionOverviews, projectSessionPreviewLimits, workspaces])
+
+  const openProjectSession = useCallback((workspaceId: string, sessionId: string) => {
+    window.localStorage.setItem(piActiveSessionStorageKey(workspaceId), sessionId)
+    setActiveWorkspaceId(workspaceId)
+  }, [])
+
+  const showMoreProjectSessions = useCallback((workspaceId: string) => {
+    setProjectSessionPreviewLimits((current) => ({
+      ...current,
+      [workspaceId]: (current[workspaceId] ?? PROJECT_SESSION_PREVIEW_INITIAL_LIMIT) + PROJECT_SESSION_PREVIEW_INITIAL_LIMIT,
+    }))
+  }, [])
 
   if (!metaLoaded) {
     return <div className="h-screen w-screen bg-background" />
@@ -328,6 +436,16 @@ export function CliWorkspaceShell() {
         key={activeWorkspace.id}
         workspaceId={activeWorkspace.id}
         workspaceLabel={activeWorkspace.name}
+        workspaceSectionTitle="Projects"
+        workspaceLayout="plugin-tabs"
+        appLeftProjects={appLeftProjects}
+        appLeftActiveProjectId={activeWorkspace.id}
+        onSwitchAppLeftProject={(workspaceId) => {
+          window.localStorage.setItem("boring-ui:local-workspace-id", workspaceId)
+          setActiveWorkspaceId(workspaceId)
+        }}
+        onOpenAppLeftProjectSession={openProjectSession}
+        onShowMoreAppLeftProjectSessions={showMoreProjectSessions}
         requestHeaders={requestHeaders}
         authHeaders={requestHeaders}
         plugins={plugins}
@@ -371,6 +489,9 @@ export function CliWorkspaceShell() {
       persistenceEnabled
       providerStorageKey={`boring-ui-v2:layout:${projectName}`}
       appTitle={projectName}
+      workspaceLabel={projectName}
+      workspaceSectionTitle="Project"
+      workspaceLayout="plugin-tabs"
       defaultSessionTitle={projectName}
       activeSessionId={initialSessionId ?? undefined}
       chatParams={{ thinkingControl: true }}

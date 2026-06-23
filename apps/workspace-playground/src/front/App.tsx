@@ -159,7 +159,6 @@ export function WorkspaceShell() {
       workspaceId={showcase ? "playground" : workspaceId}
       apiBaseUrl=""
       persistenceEnabled
-      debug
       providerStorageKey={showcase ? "boring-ui-v2:layout:playground" : `boring-ui-v2:layout:playground:${workspaceId}`}
       workspaceLayout="plugin-tabs"
       appTitle={showcase ? "Boring" : projectName}

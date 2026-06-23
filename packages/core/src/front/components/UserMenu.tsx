@@ -25,6 +25,15 @@ import { routes } from '../utils.js'
 
 type ThemePreference = 'light' | 'dark' | 'system'
 
+type UserMenuContentSide = 'top' | 'right' | 'bottom' | 'left'
+type UserMenuContentAlign = 'start' | 'center' | 'end'
+
+export interface UserMenuProps {
+  /** Dropdown side relative to the trigger. Use "top" when the trigger lives in an app-left footer. */
+  contentSide?: UserMenuContentSide
+  contentAlign?: UserMenuContentAlign
+}
+
 const THEME_ORDER: ThemePreference[] = ['light', 'dark', 'system']
 
 function labelForTheme(preference: ThemePreference): string {
@@ -52,7 +61,7 @@ function initialsFor(name: string | null, email: string): string {
   return email.slice(0, 2).toUpperCase()
 }
 
-export function UserMenu() {
+export function UserMenu({ contentSide = 'bottom', contentAlign = 'end' }: UserMenuProps = {}) {
   const identity = useUser()
   const signOut = useSignOut()
   const navigate = useNavigate()
@@ -93,7 +102,8 @@ export function UserMenu() {
       </DropdownMenuTrigger>
 
       <DropdownMenuContent
-        align="end"
+        align={contentAlign}
+        side={contentSide}
         sideOffset={8}
         className="w-80 rounded-lg border-border/70 bg-[color:var(--surface-workbench-left)] p-2 shadow-2xl"
       >

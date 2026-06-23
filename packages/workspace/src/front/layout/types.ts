@@ -22,6 +22,8 @@ export interface ChatLayoutProps {
   flashChatPaneId?: string | null
   surface?: string | null
   surfaceParams?: Record<string, unknown>
+  /** Opaque overlay rendered over the full chat stage only (not over the workbench). */
+  chatOverlay?: ReactNode
   surfaceOverlay?: ReactNode
   sidebar?: string | null
   sidebarParams?: Record<string, unknown>

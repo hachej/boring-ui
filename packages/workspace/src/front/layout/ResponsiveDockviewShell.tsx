@@ -1,5 +1,5 @@
 import { Suspense, useCallback, useEffect, useMemo, useState, useSyncExternalStore } from "react"
-import { MenuIcon, PanelLeftCloseIcon, PanelLeftOpenIcon, PinIcon } from "lucide-react"
+import { MenuIcon, PanelLeftIcon, PinIcon } from "lucide-react"
 import { DockviewShell } from "../dock"
 import type { LayoutConfig } from "../dock"
 import { useRegistry } from "../registry"
@@ -138,7 +138,7 @@ export function ResponsiveDockviewShell({
         <div
           className={cn(
             "absolute z-30",
-            isMobile ? "left-2 top-2" : "left-1 top-2",
+            "left-2 top-2",
           )}
         >
           <Button
@@ -148,7 +148,7 @@ export function ResponsiveDockviewShell({
             onClick={handleOpenOverlay}
             aria-label={isMobile ? "Open sidebar menu" : "Open collapsed sidebar"}
           >
-            {isMobile ? <MenuIcon className="h-4 w-4" /> : <PanelLeftOpenIcon className="h-4 w-4" />}
+            {isMobile ? <MenuIcon className="h-4 w-4" /> : <PanelLeftIcon className="h-4 w-4" />}
           </Button>
         </div>
       )}
@@ -162,7 +162,7 @@ export function ResponsiveDockviewShell({
             onClick={handleCollapseToRail}
             aria-label="Collapse sidebar"
           >
-            <PanelLeftCloseIcon className="h-4 w-4" />
+            <PanelLeftIcon className="h-4 w-4" />
           </Button>
         </div>
       )}

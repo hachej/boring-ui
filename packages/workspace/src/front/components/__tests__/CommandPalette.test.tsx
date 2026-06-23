@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest"
 import { act, render, screen, waitFor } from "@testing-library/react"
 import userEvent from "@testing-library/user-event"
 import { CommandPalette } from "../CommandPalette"
+import { UI_COMMAND_EVENT, type UiCommand } from "../../bridge"
 import { RegistryProvider } from "../../registry/RegistryProvider"
 import { PanelRegistry } from "../../registry/PanelRegistry"
 import { CommandRegistry } from "../../../shared/plugins/CommandRegistry"
@@ -141,6 +142,7 @@ beforeEach(() => {
 
 afterEach(() => {
   vi.restoreAllMocks()
+  vi.unstubAllGlobals()
 })
 
 describe("CommandPalette", () => {
@@ -237,6 +239,39 @@ describe("CommandPalette", () => {
   })
 
   describe("chat session search", () => {
+    it("uses an injected session search adapter before rendering chat results", async () => {
+      const user = userEvent.setup()
+      const onSwitch = vi.fn()
+      const onOpenAsTab = vi.fn()
+      const search = vi.fn((sessions: readonly { id: string; title?: string | null }[], query: string) => (
+        query === "bbp" ? sessions.filter((session) => session.id === "session-b") : [...sessions]
+      ))
+
+      render(
+        <CommandPalette
+          sessionSearch={{
+            sessions: [
+              { id: "session-a", title: "Alpha plan" },
+              { id: "session-b", title: "Beta build polish" },
+            ],
+            activeId: "session-a",
+            openIds: ["session-a"],
+            search,
+            onSwitch,
+            onOpenAsTab,
+          }}
+        />,
+        { wrapper: createWrapper() },
+      )
+
+      fireKeydown("k", { metaKey: true })
+      await waitFor(() => expect(screen.getByRole("dialog")).toBeInTheDocument())
+      await typePaletteQuery(user, "bbp")
+      expect(search).toHaveBeenLastCalledWith(expect.any(Array), "bbp")
+      expect(screen.getByRole("option", { name: /Beta build polish/ })).toBeInTheDocument()
+      expect(screen.queryByRole("option", { name: /Alpha plan/ })).not.toBeInTheDocument()
+    })
+
     it("shows session results and routes select/split actions", async () => {
       const user = userEvent.setup()
       const onSwitch = vi.fn()
@@ -260,7 +295,9 @@ describe("CommandPalette", () => {
 
       fireKeydown("k", { metaKey: true })
       await waitFor(() => expect(screen.getByRole("dialog")).toBeInTheDocument())
-      expect(screen.getByText("Chat session search")).toBeInTheDocument()
+      expect(screen.getByRole("button", { name: "Chats" })).toHaveAttribute("aria-pressed", "true")
+      expect(screen.getByRole("button", { name: "Catalogs" })).toBeInTheDocument()
+      expect(screen.getByRole("button", { name: "Commands" })).toBeInTheDocument()
 
       await typePaletteQuery(user, "beta")
       await user.click(screen.getByRole("option", { name: /Beta build/ }))
@@ -295,6 +332,39 @@ describe("CommandPalette", () => {
         expect(getFileOption("/src/App.tsx")).toBeInTheDocument()
         expect(getFileOption("/src/index.ts")).toBeInTheDocument()
       })
+    })
+
+    it("falls back to workspace file search when no files catalog is registered", async () => {
+      const user = userEvent.setup()
+      vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {
+        const url = String(input)
+        if (url.includes("/api/v1/files/search")) {
+          return new Response(JSON.stringify({ results: ["README.md", "src/readme-helper.ts"] }), {
+            status: 200,
+            headers: { "Content-Type": "application/json" },
+          })
+        }
+        return new Response(null, { status: 404 })
+      }))
+      const commands: UiCommand[] = []
+      const onUiCommand = (event: Event) => commands.push((event as CustomEvent<UiCommand>).detail)
+      window.addEventListener(UI_COMMAND_EVENT, onUiCommand)
+      try {
+        render(<CommandPalette />, { wrapper: createWrapper() })
+        fireKeydown("p", { metaKey: true })
+        await waitFor(() => {
+          expect(screen.getByRole("dialog")).toBeInTheDocument()
+        })
+        await typePaletteQuery(user, "readme")
+        await waitFor(() => {
+          expect(getFileOption("README.md")).toBeInTheDocument()
+          expect(getFileOption("src/readme-helper.ts")).toBeInTheDocument()
+        })
+        await user.click(getFileOption("README.md"))
+        expect(commands).toContainEqual({ kind: "openFile", params: { path: "README.md" } })
+      } finally {
+        window.removeEventListener(UI_COMMAND_EVENT, onUiCommand)
+      }
     })
 
     it("calls catalog onSelect when row is selected", async () => {

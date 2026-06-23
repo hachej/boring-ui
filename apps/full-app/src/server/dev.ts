@@ -14,6 +14,7 @@ function pluginAuthoringEnabledFromEnv(): boolean {
 
 startCoreWorkspaceAgentDevServer({
   appRoot,
+  frontendPort: Number(process.env.FULL_APP_FRONTEND_PORT ?? '5173'),
   buildServer: async (options) => {
     const credits = buildCreditsWiring()
     const app = await createCoreWorkspaceAgentServer({

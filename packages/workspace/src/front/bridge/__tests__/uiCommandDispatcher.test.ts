@@ -3,24 +3,24 @@ import { dispatchUiCommand, type DispatchContext } from "../uiCommandDispatcher"
 import type { SurfaceShellApi, SurfaceShellSnapshot } from "../../chrome/artifact-surface/SurfaceShell"
 
 function fakeSurface(): SurfaceShellApi & {
-  __opened: string[]
+  __opened: Array<{ path: string; opts?: { mode?: "view" | "edit" | "diff" } }>
   __surfaces: unknown[]
   __panels: unknown[]
   __expanded: string[]
   __leftClosed: number
 } {
-  const opened: string[] = []
+  const opened: Array<{ path: string; opts?: { mode?: "view" | "edit" | "diff" } }> = []
   const surfaces: unknown[] = []
   const panels: unknown[] = []
   const expanded: string[] = []
   const surface: SurfaceShellApi & {
-    __opened: string[]
+    __opened: Array<{ path: string; opts?: { mode?: "view" | "edit" | "diff" } }>
     __surfaces: unknown[]
     __panels: unknown[]
     __expanded: string[]
     __leftClosed: number
   } = {
-    openFile: (path: string) => opened.push(path),
+    openFile: (path: string, opts?: { mode?: "view" | "edit" | "diff" }) => opened.push({ path, opts }),
     openSurface: (request: unknown) => surfaces.push(request),
     openPanel: (cfg: unknown) => panels.push(cfg),
     expandToFile: (path: string) => expanded.push(path),
@@ -54,7 +54,13 @@ describe("dispatchUiCommand", () => {
   it("openFile calls surface.openFile with the path", () => {
     const c = ctx()
     dispatchUiCommand({ kind: "openFile", params: { path: "greeter.ts" } }, c)
-    expect(c.__surface.__opened).toEqual(["greeter.ts"])
+    expect(c.__surface.__opened).toEqual([{ path: "greeter.ts", opts: undefined }])
+  })
+
+  it("openFile forwards view/edit/diff mode to the surface", () => {
+    const c = ctx()
+    dispatchUiCommand({ kind: "openFile", params: { path: "SKILL.md", mode: "view" } }, c)
+    expect(c.__surface.__opened).toEqual([{ path: "SKILL.md", opts: { mode: "view" } }])
   })
 
   it("openFile is a no-op when path is missing or non-string", () => {
@@ -115,7 +121,7 @@ describe("dispatchUiCommand", () => {
       }
       flushRaf()
       flushRaf()
-      expect(surface.__opened).toEqual(["greeter.ts"])
+      expect(surface.__opened).toEqual([{ path: "greeter.ts", opts: undefined }])
     } finally {
       global.requestAnimationFrame = originalRaf
     }
@@ -286,7 +292,7 @@ describe("dispatchUiCommand", () => {
       expect(openedSurface.__opened).toEqual([])
       surface = openedSurface
       rafQueue.shift()?.(0)
-      expect(openedSurface.__opened).toEqual(["x.ts"])
+      expect(openedSurface.__opened).toEqual([{ path: "x.ts", opts: undefined }])
     } finally {
       global.requestAnimationFrame = originalRaf
     }

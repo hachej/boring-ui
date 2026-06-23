@@ -116,11 +116,16 @@ export function dispatchUiCommand(cmd: UiCommand, ctx: DispatchContext): void {
     case "openFile": {
       const path = strParam(cmd.params, "path")
       if (!path) return
+      const mode = strParam(cmd.params, "mode")
+      let openMode: "view" | "edit" | "diff" | undefined
+      if (mode === "view" || mode === "edit" || mode === "diff") openMode = mode
+      const openOpts = openMode ? { mode: openMode } : undefined
       const wasClosed = !ctx.isWorkbenchOpen()
       if (wasClosed) ctx.openWorkbench()
       const run = (surface: SurfaceShellApi) => {
         try {
-          surface.openFile(path)
+          if (openOpts) surface.openFile(path, openOpts)
+          else surface.openFile(path)
         } catch (err) {
           // eslint-disable-next-line no-console -- intentional dev signal
           console.warn(

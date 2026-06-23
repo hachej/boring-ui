@@ -100,6 +100,8 @@ describe("WorkspaceAgentFront", () => {
         return new Response(JSON.stringify([]), { status: 200 })
       }
       if (url.includes("/api/v1/ready-status")) return new Response(null, { status: 200 })
+      if (url.includes("/api/v1/agent-plugins")) return new Response(JSON.stringify([]), { status: 200 })
+      if (url.includes("/api/v1/agent/reload")) return new Response(JSON.stringify({ reloaded: true }), { status: 200 })
       if (url.includes("/api/v1/ui/commands/next")) return new Response(JSON.stringify([]), { status: 200 })
       return new Response(null, { status: 204 })
     }))
@@ -351,8 +353,10 @@ describe("WorkspaceAgentFront", () => {
     expect(within(appNav).getByRole("button", { name: "Search" })).toBeInTheDocument()
     expect(within(appNav).getByRole("button", { name: "Plugins" })).toBeInTheDocument()
     expect(within(appNav).getByRole("button", { name: "Skills" })).toBeInTheDocument()
+    await user.click(within(appNav).getByRole("button", { name: "New chat" }))
+    expect(onCreateSession).toHaveBeenCalledOnce()
     expect(screen.queryByRole("button", { name: "Sessions" })).not.toBeInTheDocument()
-    expect(screen.queryByText("Projects")).not.toBeInTheDocument()
+    expect(screen.getByText("Workspaces")).toBeInTheDocument()
     expect(screen.queryByText("Codex mobile")).not.toBeInTheDocument()
     expect(screen.queryByText("Automations")).not.toBeInTheDocument()
 
@@ -360,6 +364,7 @@ describe("WorkspaceAgentFront", () => {
     const firstRow = appRows.find((row) => row.textContent?.includes("First session"))
     const secondRow = appRows.find((row) => row.textContent?.includes("Second session"))
     expect(firstRow).toHaveAttribute("data-boring-session-state", "active")
+    expect(firstRow?.className).not.toContain("border-l-2")
     expect(secondRow).toHaveAttribute("data-boring-session-state", "normal")
 
     await user.click(within(secondRow!).getByText("Second session"))
@@ -374,105 +379,157 @@ describe("WorkspaceAgentFront", () => {
     await user.click(within(appNav).getByRole("button", { name: "Open Third session in new chat pane" }))
     expect(onSwitchSession).toHaveBeenCalledWith("s3")
 
-    await user.click(within(appNav).getByRole("button", { name: "Collapse app navigation" }))
+    await user.click(screen.getByRole("button", { name: "Hide app navigation" }))
     expect(screen.queryByLabelText("App navigation")).not.toBeInTheDocument()
     expect(document.querySelector('[data-boring-workspace-part="app-left-pane"]')).toBeNull()
     expect(screen.getByRole("button", { name: "Open app navigation" })).toBeInTheDocument()
   })
 
-  it("focuses the current workspace-page instance from Plugins", async () => {
-    const user = userEvent.setup()
-
-    function FallbackPluginPage() {
-      return <div>Fallback plugin page body</div>
-    }
-    function CurrentPluginPage() {
-      return <div>Current plugin page body</div>
-    }
-
+  it("can hide plugin-tabs Skills and Plugins actions", () => {
     render(
       <WorkspaceAgentFront
-        workspaceId="plugin-tabs-current-page"
+        workspaceId="plugin-tabs-hidden-overlays"
         workspaceLayout="plugin-tabs"
         chatPanel={SessionIdChatPanel}
         sessions={[{ id: "s1", title: "First session" }]}
         activeSessionId="s1"
-        panels={[
-          {
-            id: "plugin.fallback",
-            title: "Fallback Plugin",
-            placement: "workspace-page",
-            source: "plugin",
-            component: FallbackPluginPage,
-          },
-          {
-            id: "plugin.current",
-            title: "Current Plugin",
-            placement: "workspace-page",
-            source: "plugin",
-            component: CurrentPluginPage,
-          },
-        ]}
-        surfaceInitialPanels={[{
-          id: "current-instance",
-          component: "plugin.current",
-          title: "Current Plugin Instance",
-        }]}
-        defaultSurfaceOpen
+        showSkills={false}
+        showPlugins={false}
         persistenceEnabled={false}
       />,
     )
 
-    await waitFor(() => expect(screen.getByText("Current plugin page body")).toBeInTheDocument())
-    await user.click(within(screen.getByLabelText("App navigation")).getByRole("button", { name: "Plugins" }))
-    await waitFor(() => expect(screen.getByText("Current plugin page body")).toBeInTheDocument())
-    expect(screen.queryByText("Fallback plugin page body")).not.toBeInTheDocument()
+    const appNav = screen.getByLabelText("App navigation")
+    expect(within(appNav).getByRole("button", { name: "New chat" })).toBeInTheDocument()
+    expect(within(appNav).getByRole("button", { name: "Search" })).toBeInTheDocument()
+    expect(within(appNav).queryByRole("button", { name: "Skills" })).not.toBeInTheDocument()
+    expect(within(appNav).queryByRole("button", { name: "Plugins" })).not.toBeInTheDocument()
   })
 
-  it("opens plugin-tabs workspace pages from Plugins and Skills", async () => {
+  it("opens the Plugins overlay from the app nav and lists external plugins only", async () => {
+    const user = userEvent.setup()
+    vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input)
+      if (url.includes("/api/v1/tree")) return new Response(JSON.stringify({ entries: [] }), { status: 200 })
+      if (url.includes("/api/v1/ready-status")) return new Response(null, { status: 200 })
+      if (url.includes("/api/v1/agent-plugins")) {
+        return new Response(JSON.stringify([{ id: "external-plugin", boring: { label: "External Plugin" }, version: "1.2.3", revision: 4, frontTarget: { kind: "module-url", revision: 4 } }]), { status: 200 })
+      }
+      if (url.includes("/api/v1/agent/reload")) return new Response(JSON.stringify({ reloaded: true }), { status: 200 })
+      if (url.includes("/api/v1/ui/commands/next")) return new Response(JSON.stringify([]), { status: 200 })
+      return new Response(null, { status: 204 })
+    }))
+
+    function PluginPanel() {
+      return <div>Demo plugin panel body</div>
+    }
+    const plugin = definePlugin({
+      id: "demo-plugin",
+      label: "Demo Plugin",
+      panels: [{ id: "demo-plugin.panel", label: "Demo Panel", placement: "workspace-page", component: PluginPanel }],
+    })
+
+    render(
+      <WorkspaceAgentFront
+        workspaceId="plugin-tabs-plugins-overlay"
+        workspaceLayout="plugin-tabs"
+        chatPanel={SessionIdChatPanel}
+        sessions={[{ id: "s1", title: "First session" }]}
+        activeSessionId="s1"
+        plugins={[plugin]}
+        persistenceEnabled={false}
+      />,
+    )
+
+    await user.click(within(screen.getByLabelText("App navigation")).getByRole("button", { name: "Plugins" }))
+    const overlay = document.querySelector('[data-boring-workspace-part="plugins-overlay"]')
+    expect(overlay).not.toBeNull()
+    await waitFor(() => expect(overlay!).toHaveTextContent("External Plugin"))
+    expect(overlay!).toHaveTextContent("external-plugin")
+    expect(overlay!).not.toHaveTextContent("Demo Plugin")
+    expect(overlay!).not.toHaveTextContent("Demo Panel")
+
+    await user.click(within(screen.getByLabelText("App navigation")).getByRole("button", { name: "New chat" }))
+    expect(document.querySelector('[data-boring-workspace-part="plugins-overlay"]')).toBeNull()
+  })
+
+  it("opens Skills as a chat overlay and uses the UI bridge to open a skill", async () => {
     const user = userEvent.setup()
     vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {
       const url = String(input)
       if (url.includes("/api/v1/tree")) return new Response(JSON.stringify({ entries: [] }), { status: 200 })
       if (url.includes("/api/v1/ready-status")) return new Response(null, { status: 200 })
       if (url.includes("/api/v1/agent/skills")) {
-        return new Response(JSON.stringify({ skills: [{ name: "review", description: "Review the current diff", source: "project" }] }), {
+        return new Response(JSON.stringify({
+          skills: [{
+            name: "review",
+            description: "Review the current diff",
+            source: "project",
+            filePath: ".agents/skills/review/SKILL.md",
+          }],
+        }), {
           status: 200,
           headers: { "Content-Type": "application/json" },
         })
       }
+      if (url.includes("/api/v1/agent-plugins")) {
+        return new Response(JSON.stringify([{ id: "external-overlay-plugin", boring: { label: "External Overlay" }, revision: 2 }]), { status: 200 })
+      }
+      if (url.includes("/api/v1/agent/reload")) return new Response(JSON.stringify({ reloaded: true }), { status: 200 })
       if (url.includes("/api/v1/ui/commands/next")) return new Response(JSON.stringify([]), { status: 200 })
       return new Response(null, { status: 204 })
     }))
 
-    function PluginPage() {
-      return <div>Plugin workspace page body</div>
+    function PluginPanel() {
+      return <div>Plugin panel body</div>
     }
+    const plugin = definePlugin({
+      id: "overlay-plugin",
+      label: "Demo Plugin",
+      panels: [{ id: "overlay-plugin.panel", label: "Demo Panel", placement: "workspace-page", component: PluginPanel }],
+    })
 
-    render(
-      <WorkspaceAgentFront
-        workspaceId="plugin-tabs-pages"
-        workspaceLayout="plugin-tabs"
-        chatPanel={SessionIdChatPanel}
-        sessions={[{ id: "s1", title: "First session" }]}
-        activeSessionId="s1"
-        panels={[{
-          id: "plugin.page",
-          title: "Plugin Page",
-          placement: "workspace-page",
-          source: "plugin",
-          component: PluginPage,
-        }]}
-        persistenceEnabled={false}
-      />,
-    )
+    const commands: UiCommand[] = []
+    const onUiCommand = (event: Event) => commands.push((event as CustomEvent<UiCommand>).detail)
+    window.addEventListener(UI_COMMAND_EVENT, onUiCommand)
+    try {
+      render(
+        <WorkspaceAgentFront
+          workspaceId="plugin-tabs-overlays"
+          workspaceLayout="plugin-tabs"
+          chatPanel={SessionIdChatPanel}
+          sessions={[{ id: "s1", title: "First session" }]}
+          activeSessionId="s1"
+          plugins={[plugin]}
+          persistenceEnabled={false}
+        />,
+      )
 
-    await user.click(within(screen.getByLabelText("App navigation")).getByRole("button", { name: "Plugins" }))
-    await waitFor(() => expect(screen.getByText("Plugin workspace page body")).toBeInTheDocument())
+      await user.click(within(screen.getByLabelText("App navigation")).getByRole("button", { name: "Skills" }))
+      await waitFor(() => expect(screen.getByText("/review")).toBeInTheDocument())
+      expect(screen.getByText("Review the current diff")).toBeInTheDocument()
 
-    await user.click(within(screen.getByLabelText("App navigation")).getByRole("button", { name: "Skills" }))
-    await waitFor(() => expect(screen.getByText("/review")).toBeInTheDocument())
-    expect(screen.getByText("Review the current diff")).toBeInTheDocument()
+      await user.click(screen.getByRole("button", { name: "Open skill review in workspace" }))
+      expect(commands).toContainEqual({
+        kind: "openFile",
+        params: { path: ".agents/skills/review/SKILL.md", mode: "view" },
+      })
+      expect(screen.getByText("/review")).toBeInTheDocument()
+
+      await user.click(screen.getByRole("button", { name: "Hide app navigation" }))
+      expect(screen.getByText("Skills").closest("header")?.className).toContain("pl-12")
+
+      await user.click(screen.getByRole("button", { name: "Close skills" }))
+      expect(screen.queryByText("/review")).not.toBeInTheDocument()
+      await user.click(screen.getByRole("button", { name: "Open app navigation" }))
+      await user.click(within(screen.getByLabelText("App navigation")).getByRole("button", { name: "Skills" }))
+      await waitFor(() => expect(screen.getByText("/review")).toBeInTheDocument())
+      await user.click(within(screen.getByLabelText("App navigation")).getByRole("button", { name: "New chat" }))
+      expect(screen.queryByText("/review")).not.toBeInTheDocument()
+
+    } finally {
+      window.removeEventListener(UI_COMMAND_EVENT, onUiCommand)
+    }
   })
 
   it("opens a controlled void-created session as a pane to the right", async () => {
@@ -972,7 +1029,7 @@ describe("WorkspaceAgentFront", () => {
     )
 
     expect(screen.getByText("Preparing workspace…")).toBeInTheDocument()
-    expect(screen.getByRole("button", { name: "Workbench" })).toBeInTheDocument()
+    expect(screen.getByRole("button", { name: "Open workbench" })).toBeInTheDocument()
   })
 
   it("does not start default remote session warmup when provisioning is disabled", async () => {
