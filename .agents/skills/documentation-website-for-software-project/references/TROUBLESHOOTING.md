@@ -218,8 +218,7 @@ Fix: outer fence → 4 backticks. See the upfront pattern in [NEXTRA.md](NEXTRA.
 
 Cause: the issue is actually with the source code, not the docs.
 
-Fix: file the issue as a bug on the source repo (via `gh issue create` or the
-GitHub connector). Docs describe the system as it is; don't paper over bugs.
+Fix: file the issue as a bug on the source repo (via `gh issue create` or `br create`). Docs describe the system as it is; don't paper over bugs.
 
 ### Phase 8 Vercel login fails in a SSH session
 

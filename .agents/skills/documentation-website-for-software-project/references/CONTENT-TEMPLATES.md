@@ -464,7 +464,7 @@ cd <repo>
 
 ## Filing issues
 
-<Where bugs go (GitHub issues? Linear?). Template/labels. SLA if any.>
+<Where bugs go (GitHub issues? linear? beads?). Template/labels. SLA if any.>
 
 ## Where to start
 

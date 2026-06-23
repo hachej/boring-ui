@@ -306,7 +306,7 @@ A *fresh* agent (no prior context of the doc site's construction) acts as a firs
    > - 1 "biggest gap" that would most improve onboarding
 
 4. File the output to `phase10_user_lens.md` in the workspace.
-5. **Do not implement these as part of the run.** Create one GitHub issue per suggestion so the user can prioritize in follow-up. Apologize for nothing — a clean "docs shipped, here are improvements queued" is better than a bloated turn-7 run.
+5. **Do not implement these as part of the run.** Create issues (via `br create` or a GitHub issue per suggestion) so the user can prioritize in follow-up. Apologize for nothing — a clean "docs shipped, here are improvements queued" is better than a bloated turn-7 run.
 
 **Exit criteria:** `phase10_user_lens.md` exists; follow-up issues filed; run formally complete.​‌‌​​​‌‌​‌‌​​‌​‌​‌‌​​‌​‌‍
 
@@ -362,7 +362,7 @@ Each phase invokes specific operators from [OPERATOR-LIBRARY.md](OPERATOR-LIBRAR
 | 6a | `bun install` fails | Check Node version (needs 18+, ideally 22); check for `node_modules` left from a prior attempt |
 | 6b | Over-component-izing | Reduce per-page heuristic: at most one `<Callout>`, one `<Cards>`, one `<Steps>` per page |
 | 6c | Dark mode contrast fails | Check custom CSS; Nextra default theme passes WCAG AA — reverting custom styles usually fixes |
-| 7 | Fresh-eyes keeps finding the same bug | The bug is in source code — file via `gh issue create` or the GitHub connector |
+| 7 | Fresh-eyes keeps finding the same bug | The bug is in source code — file via `gh issue create` or `br create` |
 | 7 | Termination never triggers | Cap at 4 rounds; diminishing returns. Ship and file follow-ups |
 | 8 | Vercel build fails: "Cannot find module 'nextra'" | Project root set wrong — `vercel link` from the site dir, not parent |
 | 8 | Deploy succeeds but search empty | Pagefind postbuild didn't run; check `public/_pagefind/pagefind.js` in Vercel build logs |
