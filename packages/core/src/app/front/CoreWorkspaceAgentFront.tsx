@@ -172,7 +172,7 @@ function HomeRedirect<TSession extends WorkspaceAgentSession = WorkspaceAgentSes
 }) {
   const config = useConfig()
   const resolvedAppTitle = appTitle ?? config.appName
-  const resolvedTopBarLeft = topBarLeft === undefined ? <WorkspaceSwitcher appTitle={resolvedAppTitle} /> : topBarLeft
+  const resolvedTopBarLeft = topBarLeft === undefined ? <WorkspaceSwitcher appTitle={resolvedAppTitle} displayMode="workspace" /> : topBarLeft
   const resolvedLoadingFallback = loadingFallback ?? (
     <WorkspaceLoadingPage
       appTitle={resolvedAppTitle}
@@ -264,7 +264,7 @@ function WorkspaceRoute<
 }) {
   const config = useConfig()
   const resolvedAppTitle = appTitle ?? config.appName
-  const resolvedTopBarLeft = topBarLeft === undefined ? <WorkspaceSwitcher appTitle={resolvedAppTitle} /> : topBarLeft
+  const resolvedTopBarLeft = topBarLeft === undefined ? <WorkspaceSwitcher appTitle={resolvedAppTitle} displayMode="workspace" /> : topBarLeft
   const resolvedLoadingFallback = loadingFallback ?? (
     <WorkspaceLoadingPage
       appTitle={resolvedAppTitle}

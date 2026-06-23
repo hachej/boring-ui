@@ -146,7 +146,10 @@ export function AppLeftPane({
             {appTitle || "Boring UI"}
           </span>
         </div>
-        {layoutMode === "multi-project" && topSlot ? (
+        {topSlot ? (
+          /* Workspace switcher (workspace-only display) — a dropdown that
+             switches workspaces when there are several, and reads as a label
+             when there's one. */
           <div className="mt-1 min-w-0" data-boring-workspace-part="app-left-pane-workspace">{topSlot}</div>
         ) : workspaceLabel && workspaceLabel !== appTitle ? (
           <div
@@ -181,14 +184,27 @@ export function AppLeftPane({
             />
           </CollapsibleSection>
         ) : null}
-        <CollapsibleSection title="Chats" defaultOpen>
-          <SessionSubSection title="Pinned" empty="No pinned sessions yet.">
-            {pinnedSessions.map((session) => renderSession(session, true))}
-          </SessionSubSection>
-          <SessionSubSection title="Sessions" empty="No sessions yet.">
-            {regularSessions.map((session) => renderSession(session, false))}
-          </SessionSubSection>
-        </CollapsibleSection>
+        {layoutMode === "multi-project" ? (
+          <CollapsibleSection title="Chats" defaultOpen>
+            <SessionSubSection title="Pinned" empty="No pinned sessions yet.">
+              {pinnedSessions.map((session) => renderSession(session, true))}
+            </SessionSubSection>
+            <SessionSubSection title="Sessions" empty="No sessions yet.">
+              {regularSessions.map((session) => renderSession(session, false))}
+            </SessionSubSection>
+          </CollapsibleSection>
+        ) : (
+          /* Single-project: no "Chats" wrapper — the session list is the whole
+             point of the body, so show Pinned + Sessions directly. */
+          <div className="space-y-3 py-1">
+            <SessionSubSection title="Pinned" empty="No pinned sessions yet.">
+              {pinnedSessions.map((session) => renderSession(session, true))}
+            </SessionSubSection>
+            <SessionSubSection title="Sessions" empty="No sessions yet.">
+              {regularSessions.map((session) => renderSession(session, false))}
+            </SessionSubSection>
+          </div>
+        )}
       </div>
 
       {bottomSlot ? <footer className="shrink-0 border-t border-border/60 p-2">{bottomSlot}</footer> : null}
