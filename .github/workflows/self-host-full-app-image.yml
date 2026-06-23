@@ -117,8 +117,7 @@ jobs:
             -e BETTER_AUTH_URL=http://localhost:3000 \
             -e CORS_ORIGINS=http://localhost:3000 \
             -e WORKSPACE_SETTINGS_ENCRYPTION_KEY=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa \
-            -e MAIL_FROM=noreply@example.test \
-            -e MAIL_TRANSPORT_URL=console:// \
+            -e SEND_WELCOME_EMAIL=false \
             -e BORING_AGENT_MODE=vercel-sandbox \
             -e BORING_AGENT_WORKSPACE_ROOT=/data/workspaces \
             -e BORING_AGENT_SESSION_ROOT=/data/pi-sessions \
