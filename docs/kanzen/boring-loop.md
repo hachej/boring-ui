@@ -48,13 +48,13 @@ The UI should show this as chips plus one sentence, not a wall of text.
 
 Keep the loop about routing and gates. Put mechanics here:
 
-- [`../procedures/branch-worktree.md`](../procedures/branch-worktree.md):
+- [`procedures/branch-worktree.md`](procedures/branch-worktree.md):
   branch, worktree, lane, and stacked-PR mechanics.
-- [`../procedures/review-loop.md`](../procedures/review-loop.md):
+- [`procedures/review-loop.md`](procedures/review-loop.md):
   autoreview and thermo review loop.
-- [`../procedures/proof-of-work.md`](../procedures/proof-of-work.md):
+- [`procedures/proof-of-work.md`](procedures/proof-of-work.md):
   proof comment, demo workspace proof, and evidence.
-- [`../procedures/owner-review-card.md`](../procedures/owner-review-card.md):
+- [`procedures/owner-review-card.md`](procedures/owner-review-card.md):
   human review handoff.
 
 ## Labels
@@ -152,7 +152,7 @@ then record the new state/gate.
   verify.
 - Owner review card shows PR, issue, risk, proof, demo URL when relevant, and
   the exact decision needed.
-- Proof follows [`../procedures/proof-of-work.md`](../procedures/proof-of-work.md);
+- Proof follows [`procedures/proof-of-work.md`](procedures/proof-of-work.md);
   the review card summarizes that proof instead of replacing it.
 
 ## Maintenance

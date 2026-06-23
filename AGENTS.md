@@ -26,7 +26,7 @@ Detailed coding practices, architecture, and package docs live under `docs/`.
 | Canonical coding workflow, review, commit, GitHub labels | [`docs/AGENT_WORKFLOW.md`](docs/AGENT_WORKFLOW.md) |
 | Architecture decisions | [`docs/DECISIONS.md`](docs/DECISIONS.md) |
 | Agent ↔ workspace contract | [`docs/WORKSPACE_CONTRACT.md`](docs/WORKSPACE_CONTRACT.md) |
-| Proof-of-work comments | [`docs/procedures/proof-of-work.md`](docs/procedures/proof-of-work.md) |
+| Proof-of-work comments | [`docs/kanzen/procedures/proof-of-work.md`](docs/kanzen/procedures/proof-of-work.md) |
 | Troubleshooting map | [`docs/web/reference/troubleshooting.md`](docs/web/reference/troubleshooting.md) |
 | Design FAQ | [`docs/web/reference/design-faq.md`](docs/web/reference/design-faq.md) |
 

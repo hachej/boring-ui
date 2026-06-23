@@ -25,6 +25,8 @@ Read:
 - [`loop-plan`](../../.agents/skills/loop-plan/SKILL.md) - planning loop.
 - [`loop-implement`](../../.agents/skills/loop-implement/SKILL.md)
   - implementation loop.
+- [`procedures/`](procedures/README.md) - branch/worktree, review, proof, and owner
+  handoff procedures.
 
 Source notes live in [`sources/`](sources/):
 

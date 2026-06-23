@@ -12,10 +12,10 @@ merge by default.
 
 | Need | Read |
 | --- | --- |
-| branch/worktree | `docs/procedures/branch-worktree.md` |
-| review loop | `docs/procedures/review-loop.md` |
-| proof | `docs/procedures/proof-of-work.md` |
-| owner handoff | `docs/procedures/owner-review-card.md` |
+| branch/worktree | `docs/kanzen/procedures/branch-worktree.md` |
+| review loop | `docs/kanzen/procedures/review-loop.md` |
+| proof | `docs/kanzen/procedures/proof-of-work.md` |
+| owner handoff | `docs/kanzen/procedures/owner-review-card.md` |
 
 ## Flow
 
