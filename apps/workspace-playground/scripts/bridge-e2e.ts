@@ -187,6 +187,30 @@ async function main() {
       check('T8 refresh endpoint re-mints usable runtime token', tokenRes.status === 200 && tokenJson.ok === true && output?.echoed?.hi === 'refresh', `status=${tokenRes.status}`)
     }
 
+    // T11 — the published SDK's env-driven path: fromEnv() reads the injected
+    //        url/token/token-url/refresh-token and, on a 401 from an expired
+    //        call token, auto-refreshes against /token and retries. This is the
+    //        exact code a downstream runtime tool imports.
+    {
+      const expiredToken = mintWorkspaceBridgeRuntimeToken({ secret: SECRET, workspaceId: 'default', capabilities: [], runtimeId: 'e2e-runtime', ttlMs: 1_000, nowMs: Date.now() - 60_000 })
+      const refreshToken = mintWorkspaceBridgeRuntimeRefreshToken({ secret: REFRESH_SECRET, workspaceId: 'default', capabilities: [], runtimeId: 'e2e-runtime', tokenTtlMs: 60_000 })
+      const client = WorkspaceBridgeClient.fromEnv({
+        BORING_WORKSPACE_BRIDGE_URL: url,
+        BORING_WORKSPACE_BRIDGE_TOKEN: expiredToken,
+        BORING_WORKSPACE_BRIDGE_TOKEN_URL: tokenUrl,
+        BORING_WORKSPACE_BRIDGE_REFRESH_TOKEN: refreshToken,
+      }, { fetch })
+      let recovered = false
+      try {
+        const output = await client.call<{ echoed?: { hi?: string } }>('example.v1.echo', { hi: 'fromEnv' }, { idempotencyKey: 'k-fromenv-refresh' })
+        recovered = output?.echoed?.hi === 'fromEnv'
+      } catch (err) {
+        recovered = false
+        console.error('[bridge-e2e] T11 fromEnv refresh error:', err)
+      }
+      check('T11 published SDK fromEnv() auto-refreshes an expired token', recovered)
+    }
+
     // T9/T10 — ask-user owns and registers ask-user.v1.* bridge handlers.
     {
       const token = mintWorkspaceBridgeRuntimeToken({
