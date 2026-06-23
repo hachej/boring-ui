@@ -9,7 +9,8 @@ Triage answers: what is the first unmet gate, then does one next action.
 
 ## Sweep
 
-1. Refresh issue/PR body, comments, labels, CI, reviews, proof, and head SHA.
+1. Refresh issue/PR body, comments, current labels, CI, reviews, proof comment,
+   and head SHA.
 2. Read newest Julien/owner instruction before touching the item.
 3. Read enough code/docs to know risk and proof path.
 4. Pick queued or stale work, then stop at the first unmet gate.
@@ -33,8 +34,8 @@ Triage answers: what is the first unmet gate, then does one next action.
 | risk classification | keep `track:owner`; upgrade to `track:fast` only if eligible |
 | needs design or sequencing | `state:active phase:plan gate:plan` |
 | clear and no PR | `state:active phase:implement gate:implementation` |
-| PR needs review or fixes | `state:active phase:review gate:implementation` |
-| tests, CI, or demo proof missing | `state:active phase:review gate:proof` |
+| PR lacks review run, has unresolved comments, or accepted findings remain | `state:active phase:review gate:implementation` |
+| final proof comment, tests, CI, or demo proof missing | `state:active phase:review gate:proof` |
 | all gates pass | `state:ready phase:merge gate:merge` |
 
 ## Gate Actions
@@ -45,7 +46,7 @@ Triage answers: what is the first unmet gate, then does one next action.
 | `risk` | keep `track:owner`; upgrade to `track:fast` only when all fast-track rules pass |
 | `plan` | use `loop-plan`: smallest useful plan; plan file plus thermo review for risky or multi-PR work |
 | `implementation` | use `loop-implement`: one accountable lane for one issue/PR |
-| `proof` | follow `docs/kanzen/procedures/proof-of-work.md` |
+| `proof` | follow `docs/kanzen/procedures/proof-of-work.md`; PR body proof is not a substitute for the final proof comment |
 | `merge` | fast-track merge or `docs/kanzen/procedures/owner-review-card.md` |
 
 ## Fast Track
@@ -77,7 +78,8 @@ Return:
 ```text
 URL:
 What:
-Labels:
+Current labels:
+Recommended labels:
 Gate:
 Track:
 Proof:
