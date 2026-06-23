@@ -1,0 +1,94 @@
+---
+- name: Assert pgbackrest secrets are configured
+  ansible.builtin.assert:
+    that:
+      - pgbackrest_s3_bucket | default('') | length > 0
+      - pgbackrest_s3_endpoint | default('') | length > 0
+      - pgbackrest_s3_key | default('') | length > 0
+      - pgbackrest_s3_secret | default('') | length > 0
+      - pgbackrest_cipher_pass | default('') | length > 0
+    fail_msg: pgbackrest_enabled=true requires S3-compatible repo credentials and cipher passphrase from the secret store.
+  no_log: true
+
+- name: Install pgbackrest
+  ansible.builtin.apt:
+    name: pgbackrest
+    state: present
+
+- name: Create pgbackrest config directory
+  ansible.builtin.file:
+    path: /etc/pgbackrest
+    state: directory
+    owner: root
+    group: postgres
+    mode: "0750"
+
+- name: Template pgbackrest.conf
+  ansible.builtin.template:
+    src: pgbackrest.conf.j2
+    dest: /etc/pgbackrest/pgbackrest.conf
+    owner: root
+    group: postgres
+    mode: "0640"
+  no_log: true
+
+- name: Check stanza
+  ansible.builtin.command:
+    cmd: "pgbackrest --stanza={{ pgbackrest_stanza }} check"
+  become_user: postgres
+  register: pgbackrest_check
+  changed_when: false
+  failed_when: false
+
+- name: Create stanza when missing
+  ansible.builtin.command:
+    cmd: "pgbackrest --stanza={{ pgbackrest_stanza }} stanza-create"
+  become_user: postgres
+  when: pgbackrest_check.rc != 0
+
+- name: Enable archive_mode for pgbackrest
+  ansible.builtin.lineinfile:
+    path: "/etc/postgresql/{{ pg_version }}/main/postgresql.conf"
+    regexp: '^archive_mode\s*='
+    line: 'archive_mode = on'
+
+- name: Set pgbackrest archive_command
+  ansible.builtin.lineinfile:
+    path: "/etc/postgresql/{{ pg_version }}/main/postgresql.conf"
+    regexp: '^archive_command\s*='
+    line: "archive_command = 'pgbackrest --stanza={{ pgbackrest_stanza }} archive-push %p'"
+
+- name: Set WAL archive timeout
+  ansible.builtin.lineinfile:
+    path: "/etc/postgresql/{{ pg_version }}/main/postgresql.conf"
+    regexp: '^archive_timeout\s*='
+    line: 'archive_timeout = 60'
+
+- name: Reload PostgreSQL to activate WAL archiving
+  ansible.builtin.systemd:
+    name: "postgresql@{{ pg_version }}-main"
+    state: reloaded
+
+- name: Verify pgbackrest after WAL archiving is active
+  ansible.builtin.command:
+    cmd: "pgbackrest --stanza={{ pgbackrest_stanza }} check"
+  become_user: postgres
+  changed_when: false
+
+- name: Configure weekly full backup cron
+  ansible.builtin.cron:
+    name: pgbackrest full backup
+    user: postgres
+    minute: "0"
+    hour: "2"
+    weekday: "0"
+    job: "pgbackrest --stanza={{ pgbackrest_stanza }} backup --type=full{% if healthcheck_backup_full_url | default('') | length > 0 %} && curl -fsS --retry 3 '{{ healthcheck_backup_full_url }}' > /dev/null 2>&1{% endif %}"
+
+- name: Configure daily differential backup cron
+  ansible.builtin.cron:
+    name: pgbackrest diff backup
+    user: postgres
+    minute: "0"
+    hour: "2"
+    weekday: "1-6"
+    job: "pgbackrest --stanza={{ pgbackrest_stanza }} backup --type=diff{% if healthcheck_backup_diff_url | default('') | length > 0 %} && curl -fsS --retry 3 '{{ healthcheck_backup_diff_url }}' > /dev/null 2>&1{% endif %}"

@@ -1,0 +1,47 @@
+---
+- name: Update apt cache
+  ansible.builtin.apt:
+    update_cache: true
+    cache_valid_time: 3600
+
+- name: Install base packages
+  ansible.builtin.apt:
+    name: "{{ base_packages }}"
+    state: present
+
+- name: Set timezone
+  community.general.timezone:
+    name: "{{ timezone }}"
+
+- name: Generate locale
+  community.general.locale_gen:
+    name: "{{ locale }}"
+    state: present
+
+- name: Configure ufw default deny incoming
+  community.general.ufw:
+    direction: incoming
+    policy: deny
+
+- name: Configure ufw default allow outgoing
+  community.general.ufw:
+    direction: outgoing
+    policy: allow
+
+- name: Allow all traffic on tailscale0
+  community.general.ufw:
+    rule: allow
+    interface: tailscale0
+    direction: in
+
+- name: Enable ufw
+  community.general.ufw:
+    state: enabled
+
+- name: Configure unattended-upgrades
+  ansible.builtin.template:
+    src: 50unattended-upgrades.j2
+    dest: /etc/apt/apt.conf.d/50unattended-upgrades
+    owner: root
+    group: root
+    mode: "0644"

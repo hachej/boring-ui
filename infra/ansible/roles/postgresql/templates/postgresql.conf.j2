@@ -1,0 +1,26 @@
+# Managed by Ansible — do not edit manually.
+data_directory = '/var/lib/postgresql/{{ pg_version }}/main'
+
+shared_buffers = {{ pg_shared_buffers }}
+work_mem = {{ pg_work_mem }}
+maintenance_work_mem = {{ pg_maintenance_work_mem }}
+effective_cache_size = {{ pg_effective_cache_size }}
+
+wal_level = replica
+# pgbackrest role enables archive_mode only after pgbackrest is installed and configured.
+archive_mode = off
+max_wal_size = 1GB
+min_wal_size = 256MB
+checkpoint_timeout = 5min
+checkpoint_completion_target = 0.9
+
+listen_addresses = '*'
+max_connections = {{ pg_max_connections }}
+
+log_min_duration_statement = {{ pg_log_min_duration_statement }}
+log_checkpoints = on
+log_connections = on
+log_disconnections = on
+log_lock_waits = on
+
+shared_preload_libraries = 'pg_stat_statements'

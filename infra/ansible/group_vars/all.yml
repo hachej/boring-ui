@@ -1,0 +1,18 @@
+---
+timezone: UTC
+locale: en_US.UTF-8
+admin_user: debian
+base_packages:
+  - ca-certificates
+  - curl
+  - gnupg
+  - lsb-release
+  - ufw
+  - unattended-upgrades
+  - apt-listchanges
+
+# Slack webhook; set from vault/secret store in real inventory before use.
+alert_webhook_url: ""
+
+unattended_origins_common:
+  - 'origin=${distro_id},codename=${distro_codename},label=${distro_id}-Security'
