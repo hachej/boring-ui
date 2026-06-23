@@ -15,9 +15,7 @@ Detailed coding practices, architecture, and package docs live under `docs/`.
 5. **Never work directly on `main`** unless explicitly authorized. Use a branch/worktree.
 6. **Do not overwrite other agents' work.** Investigate unexpected changes before editing.
 7. **Run relevant quality gates** before calling work done.
-8. **Never launch bare `bv`; use only `bv --robot-*`.**
-9. **Never edit `.beads/*.jsonl` by hand.** Use `br` commands.
-10. **Default communication mode:** caveman skill, full intensity, unless user says `stop caveman` or `normal mode`.
+8. **Default communication mode:** caveman skill, full intensity, unless user says `stop caveman` or `normal mode`.
 
 ## Start here
 

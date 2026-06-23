@@ -2,7 +2,7 @@
 
 ## Contents
 - [Orchestration tiers](#orchestration-tiers) — Solo/Pair/Squad/Swarm sizing.
-- [Three substrates](#three-orchestration-substrates) — subagent fan-out, NTM+Agent Mail, Beads graph.
+- [Two substrates](#two-orchestration-substrates) — subagent fan-out and NTM+Agent Mail.
 - [Phase-by-phase orchestration](#phase-by-phase-orchestration) — what parallelizes and what doesn't.
 - [Triangulation recipe](#triangulation-recipe) — multiple models on the same artifact.
 - [Modes of reasoning](#modes-of-reasoning-prompt-diversification) — stance-diversified reviewers.
@@ -42,9 +42,9 @@ Solo exists only for unit testing the pipeline — in practice always use Pair o
 
 ---
 
-## Three orchestration substrates
+## Two orchestration substrates
 
-The skill supports three concurrent execution substrates. They compose: you pick the one that fits the coordination shape.
+The skill supports two concurrent execution substrates. They compose: you pick the one that fits the coordination shape.
 
 ### 1. Subagent fan-out (default)
 
@@ -74,31 +74,20 @@ Key MCP tools:
 
 When to escalate from Tier 1 to this: Phase 5 polish when two polishers might touch the same MDX, Phase 7 Nextra-uplift when layout changes span many files, cross-agent review where a polisher wants to cite a drafter's rationale before finalizing.
 
-### 3. Beads + `br`/`bv` task graph
+### GitHub Issue Follow-Ups
 
-[beads](https://github.com/steveyegge/beads) (`bd` CLI) builds a dependency graph of atomic tasks; `br` (ready) surfaces what's unblocked; `bv` (visualize) prints the graph. When documentation work has non-trivial dependencies (Phase 1 partition → Phase 3 drafts → Phase 4 synthesis → …), you can encode those tasks into bd and let a swarm of workers each claim the next ready task via `br --claim`.
+The documentation run itself tracks phase state in workspace artifacts. For
+follow-up work discovered during Phase 10 or fresh-eyes review, create GitHub
+issues. Do not introduce a separate task graph.
 
-Schema we use:
+Useful issue shape:
 
 ```jsonl
-{"id":"doc-partition","phase":1,"deps":[],"artifact":"partition.json"}
-{"id":"doc-section-install","phase":3,"deps":["doc-partition"],"artifact":"content/getting-started/install.mdx"}
-{"id":"doc-section-quickstart","phase":3,"deps":["doc-partition"],"artifact":"content/getting-started/quickstart.mdx"}
-{"id":"doc-synthesize-gs","phase":4,"deps":["doc-section-install","doc-section-quickstart"],"artifact":"content/getting-started/_meta.tsx"}
-...
+{"title":"Docs: clarify plugin install failure modes","labels":["docs","source:docs-run"],"body":"Context, evidence, suggested fix, source files."}
 ```
 
-Then workers run a standard worker loop:
-
-```bash
-while task=$(br --claim --worker "$WORKER_ID" --tier docs); do
-  phase=$(echo "$task" | jq -r .phase)
-  subagent_for_phase_$phase "$task"
-  bd close "$(echo "$task" | jq -r .id)"
-done
-```
-
-When to use: Tier = Swarm, or Pair/Squad when the user has existing bd workflow. The graph persists through session restarts; `bv` gives a visual of completion.
+When to use: after the docs run has produced actionable improvements that
+should outlive the current session.
 
 ---
 
@@ -298,7 +287,7 @@ The skill never silently exceeds a budget — if Phase 3 fan-out would exceed th
 - **Contradictions the synthesizer can't resolve**: escalate to the main agent, which asks the user. Record decision in `workspace/adr/`.
 - **Phase 3 fan-out exceeds budget**: serialize; emit `workspace/notes/serial-draft.md` explaining why.
 - **One model provider down during triangulation**: drop to 2-model triangulation; note in `workspace/phase_metrics.json` that triangulation was degraded for this run.
-- **Beads worker stuck on a task**: `bd reset <task>`; another worker claims.
+- **Follow-up issue not filed**: create the GitHub issue from the run summary before closing the docs run.
 - **Agent Mail reservation held by dead worker**: `force_release_file_reservation` after confirming worker is gone.
 
 ---

@@ -34,9 +34,6 @@ REFERENCED_SKILLS=(
   multi-pass-bug-hunting
   gh-actions
   agent-mail
-  beads-workflow
-  br
-  bv
   ntm
   cass
   readme-writing

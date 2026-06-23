@@ -253,5 +253,5 @@ Before closing bead `boring-ui-v2-reorg-twdn`, verify:
 ```bash
 rg "ChatPanel\.test\.tsx|useAgentChat\.test\.ts|useSessions\.test\.ts|piChatProjection\.test\.ts|piNativeFollowUpQueue\.test\.ts|tool-call-group\.test\.tsx|toolRenderers\.test\.tsx|chat\.test\.ts|sessions\.test\.ts|sessions\.integration\.test\.ts|sessionChangesTracker\.test\.ts|tool-ui\.test\.ts|ChatPanelHost\.test\.tsx|SessionBrowser\.test\.tsx|plugin-integration\.test\.tsx|ModelSelect\.test\.tsx|builtins\.test\.ts|prompt-input-upload\.test\.tsx|bareToolRenderers/__tests__/renderers\.test\.tsx|WorkspaceAgentFront\.test\.tsx|registerAgentPlugin\.test\.tsx|CoreWorkspaceAgentFront\.test\.tsx" docs/plans/pi-native-chat-ui-rewrite-test-inventory.md
 rg "Active reload|active reload|reload while" docs/plans/pi-native-chat-ui-rewrite-test-inventory.md
-br show boring-ui-v2-reorg-twdn | rg "IN_PROGRESS|in_progress"
+gh issue view <issue-number> --json state,labels
 ```

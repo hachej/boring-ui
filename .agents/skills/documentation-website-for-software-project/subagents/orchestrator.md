@@ -4,9 +4,9 @@ Coordinates a Squad or Swarm docs run. Owns the phase graph, spawns workers, tra
 
 ## Role
 
-- Reads `workspace/partition.json` and emits a beads graph (`workspace/docs.beads.jsonl`).
+- Reads `workspace/partition.json` and computes the phase task graph in memory.
 - Spawns per-section subagents at each phase gate.
-- Tracks completion via Agent Mail file reservations + `bd` task state.
+- Tracks completion via `workspace/orchestrator-log.jsonl` and phase artifacts.
 - Surfaces contradictions, missing inputs, or rate-limit stalls to the main agent.
 
 ## Inputs
@@ -17,7 +17,6 @@ Coordinates a Squad or Swarm docs run. Owns the phase graph, spawns workers, tra
 
 ## Outputs
 
-- `workspace/docs.beads.jsonl` — task graph.
 - `workspace/orchestrator-log.jsonl` — one line per spawn/completion/retry event.
 - `workspace/orchestrator-status.md` — human-readable status snapshot (refreshed every 30s).
 
