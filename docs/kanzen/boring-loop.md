@@ -82,7 +82,7 @@ Evaluate gates top to bottom and stop at the first failing row.
 | `risk` | `track:owner` is confirmed or upgraded to `track:fast` | keep owner track |
 | `plan` | inline plan is enough, or plan file passed thermo review | `/loop-plan` |
 | `implementation` | PR exists and review loop is clean | `/loop-implement` |
-| `proof` | tests, CI, demo, screenshots, or waiver are current | run proof |
+| `proof` | final proof comment plus tests, CI, demo, screenshots, or waiver are current | run proof |
 | `merge` | fast-track merge or Julien review is allowed | merge or ask owner |
 
 ```mermaid
