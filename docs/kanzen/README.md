@@ -19,10 +19,8 @@ Read:
   shape.
 - [`boring-feedback`](../../.agents/skills/boring-feedback/SKILL.md)
   - `/feedback` intake skill.
-- [`boring-orchestration`](../../.agents/skills/boring-orchestration/SKILL.md)
-  - orchestration skill.
-- [`boring-triage`](../../.agents/skills/boring-triage/SKILL.md) - triage
-  skill.
+- [`boring-triage`](../../.agents/skills/boring-triage/SKILL.md) - `/triage`,
+  gates, routing, proof, and merge decisions.
 - [`loop-grill`](../../.agents/skills/loop-grill/SKILL.md) - clarity loop.
 - [`loop-plan`](../../.agents/skills/loop-plan/SKILL.md) - planning loop.
 - [`loop-implement`](../../.agents/skills/loop-implement/SKILL.md)
