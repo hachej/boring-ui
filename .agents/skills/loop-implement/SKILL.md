@@ -25,8 +25,26 @@ merge by default.
 | Read | issue, plan, acceptance, proof requirement, repo invariants |
 | Code | make the smallest change; optionally delegate isolated helper work |
 | Test | run focused tests and demo workspace proof when UI/workspace behavior changes |
-| Review | run review, fix every accepted finding, and re-review until clean or blocked; use thermo-nuclear review for non-trivial code |
+| Review | run the review loop below until clean or blocked |
 | PR | open/update PR with proof, known gaps, and issue link |
+
+## Review Loop
+
+For PR/branch work:
+
+```bash
+base=$(gh pr view --json baseRefName --jq .baseRefName 2>/dev/null || echo main)
+/home/ubuntu/.agents/skills/coding-autoreview/scripts/autoreview --mode branch --base "origin/$base"
+```
+
+Use `--mode local` only for dirty uncommitted work. Use
+`--mode commit --commit HEAD` for one finished commit.
+
+For non-trivial code, also run a bounded helper with the
+`coding-thermo-nuclear-code-quality-review` skill. Verify each finding in the
+real code, fix every accepted finding, rerun affected tests/proof, then rerun
+the same review command until it exits clean or the remaining finding is
+explicitly rejected or blocked.
 
 ## Helpers
 
