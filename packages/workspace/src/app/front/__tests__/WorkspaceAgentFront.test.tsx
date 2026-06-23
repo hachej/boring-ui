@@ -406,6 +406,41 @@ describe("WorkspaceAgentFront", () => {
     expect(within(appNav).queryByRole("button", { name: "Plugins" })).not.toBeInTheDocument()
   })
 
+  it("renders multi-project app navigation with pinned sessions above the inline projects tree", () => {
+    const sessions = [
+      { id: "s1", title: "Active project session", updatedAt: Date.now() - 1_000 },
+      { id: "s2", title: "Pinned session", updatedAt: Date.now() - 2_000 },
+    ]
+
+    localStorage.setItem("boring-workspace:pinned-sessions:project-a", JSON.stringify({ ids: ["s2"] }))
+
+    render(
+      <WorkspaceAgentFront
+        workspaceId="project-a"
+        workspaceLayout="plugin-tabs"
+        appLeftLayoutMode="multi-project"
+        workspaceSectionTitle="Projects"
+        chatPanel={SessionIdChatPanel}
+        sessions={sessions}
+        activeSessionId="s1"
+        appLeftProjects={[
+          { id: "project-a", name: "Project Alpha" },
+          { id: "project-b", name: "Project Beta", sessions: [{ id: "b1", title: "Beta kickoff" }] },
+        ]}
+      />,
+    )
+
+    const appNav = screen.getByLabelText("App navigation")
+    expect(within(appNav).queryByText("Default workspace")).not.toBeInTheDocument()
+    expect(within(appNav).getByText("Pinned")).toBeInTheDocument()
+    expect(within(appNav).getByText("Projects")).toBeInTheDocument()
+    expect(within(appNav).getByText("Project Alpha")).toBeInTheDocument()
+    expect(within(appNav).getByText("Project Beta")).toBeInTheDocument()
+    expect(within(appNav).getByText("Active project session")).toBeInTheDocument()
+    expect(within(appNav).getByText("Pinned session")).toBeInTheDocument()
+    expect(within(appNav).queryByText("Chats")).not.toBeInTheDocument()
+  })
+
   it("opens the Plugins overlay from the app nav and lists external plugins only", async () => {
     const user = userEvent.setup()
     vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {

@@ -17,7 +17,7 @@ import type {
 } from "../../front/chrome/artifact-surface/SurfaceShell"
 import { SkillsPage } from "../../front/chrome/skills/SkillsPage"
 import { PluginsOverlay } from "../../front/chrome/plugins/PluginsOverlay"
-import { AppLeftPane, type AppLeftPaneProject } from "../../front/layout/plugin-tabs/AppLeftPane"
+import { AppLeftPane, type AppLeftPaneLayoutMode, type AppLeftPaneProject } from "../../front/layout/plugin-tabs/AppLeftPane"
 import { PluginTabsWorkspaceShell } from "../../front/layout/plugin-tabs/PluginTabsWorkspaceShell"
 import { useRegistry, useSurfaceResolverRegistry } from "../../front/registry"
 import { captureFrontPlugin } from "../../shared/plugins/frontFactory"
@@ -117,6 +117,8 @@ export interface WorkspaceAgentFrontProps<
   workspaceLabel?: string
   /** App-left workspace/project section title. Defaults to "Workspaces". */
   workspaceSectionTitle?: string
+  /** App-left layout mode. single-project uses the workspace dropdown; multi-project renders workspaces inline. */
+  appLeftLayoutMode?: AppLeftPaneLayoutMode
   /** Optional cross-project overview rendered in the app-left workspace/project section. */
   appLeftProjects?: AppLeftPaneProject[]
   appLeftActiveProjectId?: string | null
@@ -507,6 +509,7 @@ export function WorkspaceAgentFront<
   appTitle = "Boring UI",
   workspaceLabel,
   workspaceSectionTitle = "Workspaces",
+  appLeftLayoutMode = "single-project",
   appLeftProjects,
   appLeftActiveProjectId,
   onSwitchAppLeftProject,
@@ -1520,6 +1523,7 @@ export function WorkspaceAgentFront<
           appTitle={appTitle}
           workspaceLabel={workspaceLabel}
           workspaceSectionTitle={workspaceSectionTitle}
+          layoutMode={appLeftLayoutMode}
           projects={appLeftProjects}
           activeProjectId={appLeftActiveProjectId ?? workspaceId}
           onSwitchProject={onSwitchAppLeftProject}

@@ -28,6 +28,8 @@ export interface AppLeftPaneProject {
   loadingSessions?: boolean
 }
 
+export type AppLeftPaneLayoutMode = "single-project" | "multi-project"
+
 export interface AppLeftPaneProps {
   width?: number
   appTitle?: string
@@ -59,7 +61,7 @@ export interface AppLeftPaneProps {
    * section — just the session list. multi-project: the Workspaces/projects
    * tree (PR2). Defaults to single-project.
    */
-  layoutMode?: "single-project" | "multi-project"
+  layoutMode?: AppLeftPaneLayoutMode
 }
 
 type SessionRowState = "normal" | "open" | "active"
@@ -103,7 +105,22 @@ export function AppLeftPane({
     () => sessions.filter((session) => !pinnedSet.has(session.id)),
     [pinnedSet, sessions],
   )
-  const projectItems = useMemo(() => projects ?? [], [projects])
+  const projectItems = useMemo(() => {
+    const source = projects ?? []
+    if (layoutMode !== "multi-project") return source
+    return source.map((project) => {
+      if (project.id !== activeProjectId) return project
+      return {
+        ...project,
+        sessions: project.sessions ?? regularSessions.map((session) => ({
+          id: session.id,
+          title: session.title,
+          updatedAt: session.updatedAt,
+        })),
+        sessionCount: project.sessionCount ?? regularSessions.length,
+      }
+    })
+  }, [activeProjectId, layoutMode, projects, regularSessions])
   const renderSession = (session: AppLeftPaneSession, pinned: boolean) => {
     const state: SessionRowState = session.id === activeSessionId
       ? "active"
@@ -145,12 +162,12 @@ export function AppLeftPane({
             {appTitle || "Boring UI"}
           </span>
         </div>
-        {topSlot ? (
+        {layoutMode === "single-project" && topSlot ? (
           /* Workspace switcher (workspace-only display) — a dropdown that
              switches workspaces when there are several, and reads as a label
              when there's one. */
           <div className="mt-1 min-w-0" data-boring-workspace-part="app-left-pane-workspace">{topSlot}</div>
-        ) : workspaceLabel && workspaceLabel !== appTitle ? (
+        ) : layoutMode === "single-project" && workspaceLabel && workspaceLabel !== appTitle ? (
           <div
             className="mt-0.5 flex min-h-8 items-center gap-2 rounded-md px-2 text-[13px] text-foreground/72"
             data-boring-workspace-part="app-left-pane-workspace"
@@ -171,27 +188,25 @@ export function AppLeftPane({
         {/* Multi-project (PR2): the Workspaces/projects tree. Single-project
             shows no projects section — the workspace lives in the header above
             and the body is just the session list. */}
-        {layoutMode === "multi-project" && projectItems.length > 0 ? (
-          <CollapsibleSection title={workspaceSectionTitle} defaultOpen>
-            <ProjectOverview
-              projects={projectItems}
-              activeProjectId={activeProjectId}
-              fallbackName={workspaceLabel || appTitle || "Boring UI"}
-              onSwitchProject={onSwitchProject}
-              onOpenProjectSession={onOpenProjectSession}
-              onShowMoreProjectSessions={onShowMoreProjectSessions}
-            />
-          </CollapsibleSection>
-        ) : null}
         {layoutMode === "multi-project" ? (
-          <CollapsibleSection title="Chats" defaultOpen>
+          <div className="space-y-3 py-1">
             <SessionSubSection title="Pinned" empty="No pinned sessions yet.">
               {pinnedSessions.map((session) => renderSession(session, true))}
             </SessionSubSection>
-            <SessionSubSection title="Sessions" empty="No sessions yet.">
-              {regularSessions.map((session) => renderSession(session, false))}
-            </SessionSubSection>
-          </CollapsibleSection>
+            <CollapsibleSection title={workspaceSectionTitle} defaultOpen>
+              <ProjectOverview
+                projects={projectItems}
+                activeProjectId={activeProjectId}
+                fallbackName={workspaceLabel || appTitle || "Boring UI"}
+                onSwitchProject={onSwitchProject}
+                onOpenProjectSession={(projectId, sessionId) => {
+                  if (projectId === activeProjectId) onSwitchSession(sessionId)
+                  else onOpenProjectSession?.(projectId, sessionId)
+                }}
+                onShowMoreProjectSessions={onShowMoreProjectSessions}
+              />
+            </CollapsibleSection>
+          </div>
         ) : (
           /* Single-project: no "Chats" wrapper — the session list is the whole
              point of the body, so show Pinned + Sessions directly. */

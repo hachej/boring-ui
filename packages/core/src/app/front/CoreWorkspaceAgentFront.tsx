@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState, type ReactNode } from 'react'
-import { Navigate, Route, useLocation, useParams } from 'react-router-dom'
+import { useQuery } from '@tanstack/react-query'
+import { Navigate, Route, useLocation, useNavigate, useParams } from 'react-router-dom'
 import { WorkspaceProvider } from '@hachej/boring-workspace'
 import { ErrorState } from '@hachej/boring-ui-kit'
 import {
@@ -10,6 +11,7 @@ import {
   useCurrentWorkspace,
   useSession,
   useWorkspaceRouteStatus,
+  apiFetchJson,
   type CoreFrontAuthPagesOverride,
 } from '../../front/index.js'
 import {
@@ -23,6 +25,7 @@ import {
 import { ChatFirstAuthenticatedShell } from './chatFirst/ChatFirstAuthenticatedShell.js'
 import { ChatFirstPublicShell, type ChatFirstPublicShellOptions } from './chatFirst/ChatFirstPublicShell.js'
 import { installVitePreloadRecovery } from './vitePreloadRecovery.js'
+import type { Workspace } from '../../shared/types.js'
 import {
   clearPendingChatEntry,
   DEFAULT_CHAT_FIRST_PENDING_WORKSPACE_ID,
@@ -41,6 +44,17 @@ const DEFAULT_FULL_PAGE_BASE_PATH = '/full-page'
 
 type ChatEntryMode = 'auth-first' | 'chat-first'
 type RoutedWorkspaceAgentProps<TSession extends WorkspaceAgentSession = WorkspaceAgentSession> = Omit<WorkspaceAgentFrontProps<TSession>, 'workspaceId' | 'frontPluginHotReload' | 'hotReloadEnabled'>
+
+const WORKSPACES_QUERY_KEY = ['workspaces'] as const
+
+async function fetchWorkspaces(): Promise<Workspace[]> {
+  const data = await apiFetchJson<{ workspaces: Workspace[] }>('/api/v1/workspaces')
+  return data.workspaces
+}
+
+function useWorkspacesList(enabled: boolean): Workspace[] {
+  return useQuery({ queryKey: WORKSPACES_QUERY_KEY, queryFn: fetchWorkspaces, enabled }).data ?? []
+}
 
 export interface CoreWorkspaceAgentFrontProps<
   TSession extends WorkspaceAgentSession = WorkspaceAgentSession,
@@ -247,6 +261,7 @@ function WorkspaceRoute<
   topBarLeft,
   topBarRight,
   workspaceRoute,
+  workspaceHref,
   chatFirstPublicShell,
   chatFirstPublicWorkspaceProps,
 }: {
@@ -259,6 +274,7 @@ function WorkspaceRoute<
   topBarLeft?: ReactNode
   topBarRight?: ReactNode
   workspaceRoute: string
+  workspaceHref: (workspaceId: string) => string
   chatFirstPublicShell?: ChatFirstPublicShellOptions
   chatFirstPublicWorkspaceProps?: Partial<RoutedWorkspaceAgentProps<TSession>>
 }) {
@@ -280,11 +296,26 @@ function WorkspaceRoute<
   }
   const params = useParams()
   const location = useLocation()
+  const navigate = useNavigate()
   const session = useSession()
   const pendingChatEntry = usePendingChatDraft()
   const currentWorkspace = useCurrentWorkspace()
+  const workspaces = useWorkspacesList(Boolean(session.data?.user))
   const routeStatus = useWorkspaceRouteStatus()
   const workspaceId = params[workspaceIdParam]?.trim() ?? workspaceIdFromPath(location.pathname, workspaceRoute, workspaceIdParam) ?? ''
+  const inlineWorkspaceSource = workspaces.length > 0
+    ? workspaces
+    : currentWorkspace
+      ? [currentWorkspace]
+      : []
+  const inlineWorkspaceProjects = workspaceProps.appLeftLayoutMode === 'multi-project'
+    ? inlineWorkspaceSource.map((workspace) => ({
+      id: workspace.id,
+      name: workspace.name,
+      available: true,
+      sessionCount: workspace.id === workspaceId ? workspaceProps.sessions?.length : undefined,
+    }))
+    : undefined
   const pendingDraftTargetsWorkspace = !pendingChatEntry?.intendedWorkspaceId || pendingChatEntry.intendedWorkspaceId === workspaceId
   const restorePendingDraft = pendingDraftTargetsWorkspace && (
     pendingChatEntryMatchesLocation(
@@ -365,6 +396,9 @@ function WorkspaceRoute<
       authHeaders={authHeaders}
       fullPageBasePath={scopedFullPageBasePath}
       chatParams={chatParams}
+      appLeftProjects={resolvedWorkspaceProps.appLeftProjects ?? inlineWorkspaceProjects}
+      appLeftActiveProjectId={resolvedWorkspaceProps.appLeftActiveProjectId ?? workspaceId}
+      onSwitchAppLeftProject={resolvedWorkspaceProps.onSwitchAppLeftProject ?? ((nextWorkspaceId) => navigate(workspaceHref(nextWorkspaceId)))}
       bootPreloadPaths={bootPreloadPaths}
       frontPluginHotReload={false}
       hotReloadEnabled={false}
@@ -573,6 +607,7 @@ export function CoreWorkspaceAgentFront<
             topBarLeft={topBarLeft}
             topBarRight={topBarRight}
             workspaceRoute={workspaceRoute}
+            workspaceHref={workspaceHref}
             chatFirstPublicShell={chatFirstPublicShell}
             chatFirstPublicWorkspaceProps={chatFirstPublicWorkspaceProps}
           />
