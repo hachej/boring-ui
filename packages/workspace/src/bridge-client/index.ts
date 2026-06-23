@@ -44,7 +44,7 @@ export interface WorkspaceBridgeClientOptions {
   url: string
   token: WorkspaceBridgeClientToken
   fetch?: typeof fetch
-  /** Default per-call timeout. Defaults to 30s. */
+  /** Default per-attempt timeout. Defaults to 30s. */
   defaultTimeoutMs?: number
 }
 
@@ -149,10 +149,10 @@ export class WorkspaceBridgeClient {
   ): Promise<TOutput> {
     const timeoutMs = options.timeoutMs ?? this.defaultTimeoutMs
     assertTimeoutMs(timeoutMs, "timeoutMs")
-    const token = await this.resolveToken(refreshToken)
     const abort = createAbortController({ signal: options.signal, timeoutMs })
     try {
-      const response = await this.fetchImpl(this.url, {
+      const token = await runWithAbort(() => this.resolveToken(refreshToken), abort)
+      const response = await runWithAbort(() => this.fetchImpl(this.url, {
         method: "POST",
         headers: {
           "content-type": "application/json",
@@ -160,7 +160,7 @@ export class WorkspaceBridgeClient {
         },
         body: JSON.stringify(request),
         signal: abort.signal,
-      })
+      }), abort)
 
       const body = await readJsonResponse(response, abort)
       const envelope = parseBridgeEnvelope(body)
@@ -195,7 +195,7 @@ export class WorkspaceBridgeClient {
 
       return envelope.output as TOutput
     } catch (error) {
-      if (error instanceof WorkspaceBridgeClientError) throw error
+      if (error instanceof WorkspaceBridgeClientError || error instanceof WorkspaceBridgeClientConfigError) throw error
       throw fetchError(error, abort)
     } finally {
       abort.cleanup()
@@ -293,10 +293,35 @@ function fetchError(error: unknown, abort: AbortState): WorkspaceBridgeClientErr
   })
 }
 
+async function runWithAbort<T>(operation: () => T | Promise<T>, abort: AbortState): Promise<T> {
+  if (abort.signal.aborted) throw fetchError(undefined, abort)
+
+  return await new Promise<T>((resolve, reject) => {
+    let settled = false
+    const cleanup = () => abort.signal.removeEventListener("abort", onAbort)
+    const settle = (callback: () => void) => {
+      if (settled) return
+      settled = true
+      cleanup()
+      callback()
+    }
+    const onAbort = () => settle(() => reject(fetchError(undefined, abort)))
+
+    abort.signal.addEventListener("abort", onAbort, { once: true })
+    Promise.resolve()
+      .then(operation)
+      .then(
+        (value) => settle(() => resolve(value)),
+        (error) => settle(() => reject(error)),
+      )
+  })
+}
+
 async function readJsonResponse(response: Response, abort: AbortState): Promise<unknown> {
   try {
-    return await response.json()
+    return await runWithAbort(() => response.json(), abort)
   } catch (error) {
+    if (error instanceof WorkspaceBridgeClientError) throw error
     if (abort.timedOut() || abort.callerAborted()) throw fetchError(error, abort)
     throw new WorkspaceBridgeClientError("WorkspaceBridge response was not valid JSON", {
       code: WorkspaceBridgeClientErrorCode.InvalidResponse,

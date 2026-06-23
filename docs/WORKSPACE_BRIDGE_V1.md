@@ -102,7 +102,7 @@ Remote runtimes, such as `vercel-sandbox`, require an HTTPS non-localhost bridge
 
 ## Runtime client
 
-TypeScript runtime code should use the package client. It defaults to a 30s per-call timeout, accepts an `AbortSignal`, and wraps bridge/transport failures in stable `WorkspaceBridgeClientError` codes:
+TypeScript runtime code should use the package client. It defaults to a 30s per-attempt timeout (covering token-provider resolution, the HTTP request, and response-body parsing), accepts an `AbortSignal`, and wraps bridge/transport failures in stable `WorkspaceBridgeClientError` codes:
 
 ```ts
 import {
@@ -131,7 +131,7 @@ try {
 }
 ```
 
-Runtime env injection provides a static bearer token. Tokens expire (default 5 minutes; hosts may configure TTL), and static env tokens cannot refresh themselves in long-lived remote sandboxes. Long-running tools should pass a token provider; when a call receives a 401 bridge auth error, the client invokes the provider once with `{ refresh: true }` and retries the call once:
+Runtime env injection provides a static bearer token. Tokens expire (default 5 minutes; hosts may configure TTL), and static env tokens cannot refresh themselves in long-lived remote sandboxes. Long-running tools should pass a token provider; when a call receives a 401 bridge auth error, the client invokes the provider once with `{ refresh: true }` and retries the call once. The timeout is per attempt, so a call that refresh-retries can take up to roughly `2 * timeoutMs` wall-clock time:
 
 ```ts
 const bridge = new WorkspaceBridgeClient({

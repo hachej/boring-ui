@@ -116,6 +116,23 @@ describe("WorkspaceBridgeClient", () => {
     expect((fetchMock.mock.calls[1]?.[1] as RequestInit).headers).toMatchObject({ authorization: "Bearer fresh-token" })
   })
 
+  test("applies timeoutMs to token provider resolution", async () => {
+    const fetchMock = makeFetch({ ok: true, output: { value: "unused" } })
+    const tokenProvider = vi.fn(() => new Promise<string>(() => {}))
+    const client = new WorkspaceBridgeClient({
+      url: "https://example.test/api/v1/workspace-bridge/call",
+      token: tokenProvider,
+      fetch: fetchMock,
+      defaultTimeoutMs: 1,
+    })
+
+    await expect(client.call("example.v1.records.read", {})).rejects.toMatchObject({
+      code: WorkspaceBridgeClientErrorCode.Timeout,
+    })
+    expect(tokenProvider).toHaveBeenCalledTimes(1)
+    expect(fetchMock).not.toHaveBeenCalled()
+  })
+
   test("does not retry static expired tokens", async () => {
     const fetchMock = makeFetch({
       ok: false,
