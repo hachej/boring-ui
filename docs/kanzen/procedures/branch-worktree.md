@@ -8,7 +8,8 @@ Use this for any issue/PR implementation lane.
 - One lane owns one GitHub issue/PR, one branch, and one checkout/worktree.
 - Default branch: `issue-<number>-<slug>`; if no issue exists, use
   `<short-slug>`.
-- Prefer a sibling worktree when parallel work or another dirty checkout exists.
+- Prefer a repo-local `.worktrees/<branch>` worktree when parallel work or
+  another dirty checkout exists.
 - Inspect dirty state before editing and do not overwrite another agent's work.
 - Stacked PRs use one branch per layer; each layer has its own review and proof.
 
@@ -24,8 +25,9 @@ git switch -c issue-123-short-slug
 For an isolated worktree:
 
 ```bash
-git worktree add ../boring-ui-v2-issue-123 -b issue-123-short-slug main
-cd ../boring-ui-v2-issue-123
+mkdir -p .worktrees
+git worktree add .worktrees/issue-123-short-slug -b issue-123-short-slug main
+cd .worktrees/issue-123-short-slug
 git status --short --branch
 ```
 

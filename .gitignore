@@ -70,6 +70,7 @@ packages/agent/bench-results/
 **/vitest.config.ts.timestamp-*.mjs
 **/vitest.config.js.timestamp-*.mjs
 .claude/worktrees/
+/.worktrees/
 
 # LLM eval scratch directories (plugins/CSVs created by live-LLM tests)
 **/.eval/
