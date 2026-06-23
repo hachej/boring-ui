@@ -35,8 +35,8 @@ import { withTaskId } from '../../server/__tests__/_setup'
 import { AuthProvider } from '../auth/AuthProvider'
 import { SignUpPage } from '../auth/SignUpPage'
 
-const TASK_ID = 'boring-ui-v2-1pas'
-const GOOGLE_TASK_ID = 'boring-ui-v2-reorg-mip7'
+const EMAIL_AUTH_TASK_ID = 'boring-ui-v2-1pas'
+const GOOGLE_AUTH_TASK_ID = 'boring-ui-v2-reorg-mip7'
 
 function Wrapper({ children }: { children: ReactNode }) {
   return (
@@ -66,7 +66,7 @@ afterEach(() => {
 describe('SignUpPage', () => {
   it(
     'submits name + email + password and calls signUp.email',
-    withTaskId(TASK_ID, async ({ assertionPassed }) => {
+    withTaskId(EMAIL_AUTH_TASK_ID, async ({ assertionPassed }) => {
       mockSignUpEmail.mockResolvedValue({ data: { user: { id: 'u1' } }, error: null })
 
       render(<SignUpPage />, { wrapper: Wrapper })
@@ -89,7 +89,7 @@ describe('SignUpPage', () => {
 
   it(
     'shows "check your email" success state after signup',
-    withTaskId(TASK_ID, async ({ assertionPassed }) => {
+    withTaskId(EMAIL_AUTH_TASK_ID, async ({ assertionPassed }) => {
       mockSignUpEmail.mockResolvedValue({ data: { user: { id: 'u1' } }, error: null })
 
       render(<SignUpPage />, { wrapper: Wrapper })
@@ -109,7 +109,7 @@ describe('SignUpPage', () => {
 
   it(
     'redirects to email verification flow after signup when email verification is enabled',
-    withTaskId(TASK_ID, async ({ assertionPassed }) => {
+    withTaskId(EMAIL_AUTH_TASK_ID, async ({ assertionPassed }) => {
       mockUseOptionalConfig.mockReturnValue({ features: { googleOauth: false, emailVerification: true } })
       mockSignUpEmail.mockResolvedValue({ data: { user: { id: 'u1' } }, error: null })
 
@@ -136,7 +136,7 @@ describe('SignUpPage', () => {
 
   it(
     'shows Google sign-up on the normal signup flow when enabled',
-    withTaskId(GOOGLE_TASK_ID, async ({ assertionPassed }) => {
+    withTaskId(GOOGLE_AUTH_TASK_ID, async ({ assertionPassed }) => {
       mockUseOptionalConfig.mockReturnValue({ features: { googleOauth: true } })
 
       render(<SignUpPage />, { wrapper: Wrapper })
@@ -148,7 +148,7 @@ describe('SignUpPage', () => {
 
   it(
     'passes the signup route as the Google OAuth error callback URL',
-    withTaskId(GOOGLE_TASK_ID, async ({ assertionPassed }) => {
+    withTaskId(GOOGLE_AUTH_TASK_ID, async ({ assertionPassed }) => {
       mockUseOptionalConfig.mockReturnValue({ features: { googleOauth: true } })
       mockSignInSocial.mockResolvedValue({ data: null, error: null })
 
@@ -170,7 +170,7 @@ describe('SignUpPage', () => {
 
   it(
     'forwards invite_token as x-invite-token header and hides Google sign-up',
-    withTaskId(GOOGLE_TASK_ID, async ({ assertionPassed }) => {
+    withTaskId(GOOGLE_AUTH_TASK_ID, async ({ assertionPassed }) => {
       mockUseOptionalConfig.mockReturnValue({ features: { googleOauth: true } })
       mockSignUpEmail.mockResolvedValue({ data: { user: { id: 'u1' } }, error: null })
       window.history.pushState({}, '', '/auth/signup?invite_token=test-token-abc')
@@ -197,7 +197,7 @@ describe('SignUpPage', () => {
 
   it(
     'displays server error inline',
-    withTaskId(TASK_ID, async ({ assertionPassed }) => {
+    withTaskId(EMAIL_AUTH_TASK_ID, async ({ assertionPassed }) => {
       mockSignUpEmail.mockResolvedValue({
         error: { message: 'Email already registered' },
       })
@@ -219,7 +219,7 @@ describe('SignUpPage', () => {
 
   it(
     'client-side validation rejects short password',
-    withTaskId(TASK_ID, async ({ assertionPassed }) => {
+    withTaskId(EMAIL_AUTH_TASK_ID, async ({ assertionPassed }) => {
       render(<SignUpPage />, { wrapper: Wrapper })
 
       const user = userEvent.setup()
@@ -238,7 +238,7 @@ describe('SignUpPage', () => {
 
   it(
     'hides Google sign-up when google OAuth is disabled',
-    withTaskId(GOOGLE_TASK_ID, async ({ assertionPassed }) => {
+    withTaskId(GOOGLE_AUTH_TASK_ID, async ({ assertionPassed }) => {
       render(<SignUpPage />, { wrapper: Wrapper })
 
       expect(screen.queryByRole('button', { name: /continue with google/i })).toBeNull()
@@ -248,7 +248,7 @@ describe('SignUpPage', () => {
 
   it(
     'does NOT render a GitHub sign-up button',
-    withTaskId(TASK_ID, async ({ assertionPassed }) => {
+    withTaskId(EMAIL_AUTH_TASK_ID, async ({ assertionPassed }) => {
       render(<SignUpPage />, { wrapper: Wrapper })
 
       expect(screen.queryByText(/github/i)).toBeNull()
@@ -258,7 +258,7 @@ describe('SignUpPage', () => {
 
   it(
     'shows a helpful error when Google redirects back with an OAuth error',
-    withTaskId(GOOGLE_TASK_ID, async ({ assertionPassed }) => {
+    withTaskId(GOOGLE_AUTH_TASK_ID, async ({ assertionPassed }) => {
       window.history.pushState({}, '', '/auth/signup?error=access_denied&error_description=cancelled')
 
       render(<SignUpPage />, { wrapper: Wrapper })
