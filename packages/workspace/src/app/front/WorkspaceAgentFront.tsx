@@ -125,6 +125,7 @@ export interface WorkspaceAgentFrontProps<
   onSwitchAppLeftProject?: (projectId: string) => void
   onOpenAppLeftProjectSession?: (projectId: string, sessionId: string) => void
   onShowMoreAppLeftProjectSessions?: (projectId: string) => void
+  onCreateAppLeftProject?: () => void
   defaultSessionTitle?: string
   /**
    * Opt into the Phase 2 app/session left-pane shell. Defaults to the
@@ -515,6 +516,7 @@ export function WorkspaceAgentFront<
   onSwitchAppLeftProject,
   onOpenAppLeftProjectSession,
   onShowMoreAppLeftProjectSessions,
+  onCreateAppLeftProject,
   defaultSessionTitle = "New session",
   workspaceLayout = "classic",
   navEnabled = true,
@@ -1529,6 +1531,7 @@ export function WorkspaceAgentFront<
           onSwitchProject={onSwitchAppLeftProject}
           onOpenProjectSession={onOpenAppLeftProjectSession}
           onShowMoreProjectSessions={onShowMoreAppLeftProjectSessions}
+          onCreateProject={onCreateAppLeftProject}
           sessionTitle={remoteSessionsTransitioning ? "Loading sessions…" : resolvedSessionTitle ?? defaultSessionTitle}
           topSlot={topBarLeft}
           bottomSlot={showThemeToggle || topBarRight != null ? <div className="flex w-full min-w-0 items-center gap-2">{topBarRightContent}</div> : undefined}

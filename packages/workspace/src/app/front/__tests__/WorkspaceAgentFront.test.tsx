@@ -427,6 +427,7 @@ describe("WorkspaceAgentFront", () => {
           { id: "project-a", name: "Project Alpha" },
           { id: "project-b", name: "Project Beta", sessions: [{ id: "b1", title: "Beta kickoff" }] },
         ]}
+        onCreateAppLeftProject={vi.fn()}
       />,
     )
 
@@ -434,11 +435,19 @@ describe("WorkspaceAgentFront", () => {
     expect(within(appNav).queryByText("Default workspace")).not.toBeInTheDocument()
     expect(within(appNav).getByText("Pinned")).toBeInTheDocument()
     expect(within(appNav).getByText("Projects")).toBeInTheDocument()
-    expect(within(appNav).getByText("Project Alpha")).toBeInTheDocument()
+    expect(within(appNav).getByRole("button", { name: "Create project" })).toBeInTheDocument()
+    const activeProject = within(appNav).getByRole("button", { name: /Project Alpha/ })
+    expect(activeProject).toHaveAttribute("aria-expanded", "true")
     expect(within(appNav).getByText("Project Beta")).toBeInTheDocument()
     expect(within(appNav).getByText("Active project session")).toBeInTheDocument()
+    expect(within(appNav).getByRole("button", { name: "Open Active project session in new chat pane" })).toBeInTheDocument()
+    expect(within(appNav).getByRole("button", { name: "Pin Active project session" })).toBeInTheDocument()
     expect(within(appNav).getByText("Pinned session")).toBeInTheDocument()
     expect(within(appNav).queryByText("Chats")).not.toBeInTheDocument()
+
+    fireEvent.click(activeProject)
+    expect(activeProject).toHaveAttribute("aria-expanded", "false")
+    expect(within(appNav).queryByText("Active project session")).not.toBeInTheDocument()
   })
 
   it("opens the Plugins overlay from the app nav and lists external plugins only", async () => {

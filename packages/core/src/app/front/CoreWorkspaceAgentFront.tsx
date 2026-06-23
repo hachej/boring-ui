@@ -1,5 +1,5 @@
-import { useEffect, useMemo, useState, type ReactNode } from 'react'
-import { useQuery } from '@tanstack/react-query'
+import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Navigate, Route, useLocation, useNavigate, useParams } from 'react-router-dom'
 import { WorkspaceProvider } from '@hachej/boring-workspace'
 import { ErrorState } from '@hachej/boring-ui-kit'
@@ -12,6 +12,7 @@ import {
   useSession,
   useWorkspaceRouteStatus,
   apiFetchJson,
+  getHttpErrorDetail,
   type CoreFrontAuthPagesOverride,
 } from '../../front/index.js'
 import {
@@ -297,6 +298,7 @@ function WorkspaceRoute<
   const params = useParams()
   const location = useLocation()
   const navigate = useNavigate()
+  const queryClient = useQueryClient()
   const session = useSession()
   const pendingChatEntry = usePendingChatDraft()
   const currentWorkspace = useCurrentWorkspace()
@@ -316,6 +318,25 @@ function WorkspaceRoute<
       sessionCount: workspace.id === workspaceId ? workspaceProps.sessions?.length : undefined,
     }))
     : undefined
+  const createInlineWorkspaceProject = useCallback(async () => {
+    const name = globalThis.prompt?.('Project name')?.trim()
+    if (!name) return
+    try {
+      const data = await apiFetchJson<{ workspace: Workspace }>('/api/v1/workspaces', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ name }),
+      })
+      queryClient.setQueryData<Workspace[]>(WORKSPACES_QUERY_KEY, (current = []) => {
+        if (current.some((workspace) => workspace.id === data.workspace.id)) return current
+        return [...current, data.workspace]
+      })
+      void queryClient.invalidateQueries({ queryKey: WORKSPACES_QUERY_KEY })
+      navigate(workspaceHref(data.workspace.id))
+    } catch (error) {
+      globalThis.alert?.(getHttpErrorDetail(error).message)
+    }
+  }, [navigate, queryClient, workspaceHref])
   const pendingDraftTargetsWorkspace = !pendingChatEntry?.intendedWorkspaceId || pendingChatEntry.intendedWorkspaceId === workspaceId
   const restorePendingDraft = pendingDraftTargetsWorkspace && (
     pendingChatEntryMatchesLocation(
@@ -399,6 +420,7 @@ function WorkspaceRoute<
       appLeftProjects={resolvedWorkspaceProps.appLeftProjects ?? inlineWorkspaceProjects}
       appLeftActiveProjectId={resolvedWorkspaceProps.appLeftActiveProjectId ?? workspaceId}
       onSwitchAppLeftProject={resolvedWorkspaceProps.onSwitchAppLeftProject ?? ((nextWorkspaceId) => navigate(workspaceHref(nextWorkspaceId)))}
+      onCreateAppLeftProject={resolvedWorkspaceProps.onCreateAppLeftProject ?? (workspaceProps.appLeftLayoutMode === 'multi-project' ? createInlineWorkspaceProject : undefined)}
       bootPreloadPaths={bootPreloadPaths}
       frontPluginHotReload={false}
       hotReloadEnabled={false}

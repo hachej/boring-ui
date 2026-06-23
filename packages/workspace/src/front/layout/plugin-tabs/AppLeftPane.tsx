@@ -40,6 +40,7 @@ export interface AppLeftPaneProps {
   onSwitchProject?: (projectId: string) => void
   onOpenProjectSession?: (projectId: string, sessionId: string) => void
   onShowMoreProjectSessions?: (projectId: string) => void
+  onCreateProject?: () => void
   sessionTitle?: string
   topSlot?: ReactNode
   bottomSlot?: ReactNode
@@ -76,6 +77,7 @@ export function AppLeftPane({
   onSwitchProject,
   onOpenProjectSession,
   onShowMoreProjectSessions,
+  onCreateProject,
   topSlot,
   bottomSlot,
   sessions,
@@ -193,7 +195,15 @@ export function AppLeftPane({
             <SessionSubSection title="Pinned" empty="No pinned sessions yet.">
               {pinnedSessions.map((session) => renderSession(session, true))}
             </SessionSubSection>
-            <CollapsibleSection title={workspaceSectionTitle} defaultOpen>
+            <CollapsibleSection
+              title={workspaceSectionTitle}
+              defaultOpen
+              action={onCreateProject ? {
+                label: "Create project",
+                icon: <Plus className="h-3.5 w-3.5" strokeWidth={1.75} />,
+                onClick: onCreateProject,
+              } : undefined}
+            >
               <ProjectOverview
                 projects={projectItems}
                 activeProjectId={activeProjectId}
@@ -204,6 +214,11 @@ export function AppLeftPane({
                   else onOpenProjectSession?.(projectId, sessionId)
                 }}
                 onShowMoreProjectSessions={onShowMoreProjectSessions}
+                renderActiveProjectSession={(session) => renderSession({
+                  id: session.id,
+                  title: session.title,
+                  updatedAt: session.updatedAt,
+                }, pinnedSet.has(session.id))}
               />
             </CollapsibleSection>
           </div>
@@ -233,6 +248,7 @@ function ProjectOverview({
   onSwitchProject,
   onOpenProjectSession,
   onShowMoreProjectSessions,
+  renderActiveProjectSession,
 }: {
   projects: AppLeftPaneProject[]
   activeProjectId?: string | null
@@ -240,6 +256,7 @@ function ProjectOverview({
   onSwitchProject?: (projectId: string) => void
   onOpenProjectSession?: (projectId: string, sessionId: string) => void
   onShowMoreProjectSessions?: (projectId: string) => void
+  renderActiveProjectSession?: (session: AppLeftPaneProjectSession) => ReactNode
 }) {
   const [expandedIds, setExpandedIds] = useState<ReadonlySet<string>>(() => (
     activeProjectId ? new Set([activeProjectId]) : new Set(projects[0]?.id ? [projects[0].id] : [])
@@ -251,7 +268,7 @@ function ProjectOverview({
     <div className="space-y-1">
       {projects.map((project) => {
         const active = project.id === activeId
-        const expanded = expandedIds.has(project.id) || active
+        const expanded = expandedIds.has(project.id)
         const sessions = project.sessions ?? []
         const count = project.sessionCount ?? sessions.length
         const unavailable = project.available === false
@@ -265,7 +282,7 @@ function ProjectOverview({
                 if (!active && !unavailable) onSwitchProject?.(project.id)
                 setExpandedIds((current) => {
                   const next = new Set(current)
-                  if (next.has(project.id) && !active) next.delete(project.id)
+                  if (next.has(project.id)) next.delete(project.id)
                   else next.add(project.id)
                   return next
                 })
@@ -299,15 +316,21 @@ function ProjectOverview({
                   <div className="px-1 py-1.5 text-xs text-muted-foreground/70">No sessions yet.</div>
                 ) : (
                   sessions.map((session) => (
-                    <button
-                      key={session.id}
-                      type="button"
-                      onClick={() => onOpenProjectSession?.(project.id, session.id)}
-                      className="flex min-h-8 w-full items-center gap-2 rounded-md px-1 py-1 text-left text-[13px] text-foreground/78 hover:bg-foreground/[0.045] hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
-                    >
-                      <span className="min-w-0 flex-1 truncate">{session.title || "Untitled"}</span>
-                      {session.updatedAt ? <span className="shrink-0 text-xs text-muted-foreground/70">{relativeSessionTime(session.updatedAt)}</span> : null}
-                    </button>
+                    active && renderActiveProjectSession ? (
+                      <div key={session.id} className="-ml-8">
+                        {renderActiveProjectSession(session)}
+                      </div>
+                    ) : (
+                      <button
+                        key={session.id}
+                        type="button"
+                        onClick={() => onOpenProjectSession?.(project.id, session.id)}
+                        className="flex min-h-8 w-full items-center gap-2 rounded-md px-1 py-1 text-left text-[13px] text-foreground/78 hover:bg-foreground/[0.045] hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
+                      >
+                        <span className="min-w-0 flex-1 truncate">{session.title || "Untitled"}</span>
+                        {session.updatedAt ? <span className="shrink-0 text-xs text-muted-foreground/70">{relativeSessionTime(session.updatedAt)}</span> : null}
+                      </button>
+                    )
                   ))
                 )}
                 {project.hasMoreSessions ? (
@@ -365,28 +388,47 @@ function PrimaryAction({ icon, label, onClick }: { icon: ReactNode; label: strin
 function CollapsibleSection({
   title,
   defaultOpen = true,
+  action,
   children,
 }: {
   title: string
   defaultOpen?: boolean
+  action?: { label: string; icon: ReactNode; onClick: () => void }
   children: ReactNode
 }) {
   const [open, setOpen] = useState(defaultOpen)
   return (
     <section data-boring-workspace-part="app-left-pane-section" className="py-1">
-      <button
-        type="button"
-        onClick={() => setOpen((o) => !o)}
-        aria-expanded={open}
-        className="flex w-full items-center gap-1.5 rounded-md px-2 py-1.5 text-left text-[11px] font-semibold uppercase tracking-[0.16em] text-muted-foreground/70 transition-colors hover:bg-foreground/[0.04] hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
-      >
-        <ChevronRight
-          className={cn("h-3.5 w-3.5 shrink-0 transition-transform duration-150", open && "rotate-90")}
-          strokeWidth={1.75}
-          aria-hidden="true"
-        />
-        <span>{title}</span>
-      </button>
+      <div className="flex items-center gap-1">
+        <button
+          type="button"
+          onClick={() => setOpen((o) => !o)}
+          aria-expanded={open}
+          className="flex min-w-0 flex-1 items-center gap-1.5 rounded-md px-2 py-1.5 text-left text-[11px] font-semibold uppercase tracking-[0.16em] text-muted-foreground/70 transition-colors hover:bg-foreground/[0.04] hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
+        >
+          <ChevronRight
+            className={cn("h-3.5 w-3.5 shrink-0 transition-transform duration-150", open && "rotate-90")}
+            strokeWidth={1.75}
+            aria-hidden="true"
+          />
+          <span className="truncate">{title}</span>
+        </button>
+        {action ? (
+          <button
+            type="button"
+            aria-label={action.label}
+            title={action.label}
+            onClick={(event) => {
+              event.preventDefault()
+              event.stopPropagation()
+              action.onClick()
+            }}
+            className="grid size-7 shrink-0 place-items-center rounded-md text-muted-foreground transition-colors hover:bg-foreground/[0.055] hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
+          >
+            {action.icon}
+          </button>
+        ) : null}
+      </div>
       {open ? <div className="mt-0.5 space-y-1.5 pl-5">{children}</div> : null}
     </section>
   )
