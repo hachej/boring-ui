@@ -45,8 +45,8 @@ Triage answers: what is the first unmet gate, then does one next action.
 | `risk` | keep `track:owner`; upgrade to `track:fast` only when all fast-track rules pass |
 | `plan` | use `loop-plan`: smallest useful plan; plan file plus thermo review for risky or multi-PR work |
 | `implementation` | use `loop-implement`: one accountable lane for one issue/PR |
-| `proof` | run tests, CI, screenshots, and demo workspace proof when useful |
-| `merge` | fast-track merge or owner review |
+| `proof` | follow `docs/procedures/proof-of-work.md` |
+| `merge` | fast-track merge or `docs/procedures/owner-review-card.md` |
 
 ## Fast Track
 
@@ -65,10 +65,10 @@ posted. Otherwise keep `track:owner` and prepare a short owner review brief.
 ## Worker Rule
 
 One lane means one accountable Codex/Kanzen thread/run, one branch/worktree, one
-GitHub item. The lane may use bounded helpers for isolated subfeatures, review,
-investigation, or proof, but helpers do not own labels, merge decisions, owner
-questions, or additional lanes. Stop for missing owner input, missing access,
-destructive actions, release/publish work, or merge without policy permission.
+GitHub item. Use `docs/procedures/branch-worktree.md` for mechanics. Helpers
+may assist, but they do not own labels, merge decisions, owner questions, or
+additional lanes. Stop for missing owner input, missing access, destructive
+actions, release/publish work, or merge without policy permission.
 
 ## Card
 

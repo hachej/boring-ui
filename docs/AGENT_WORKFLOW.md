@@ -14,7 +14,10 @@ steps there.
 | Hard rules and routing | [`AGENTS.md`](../AGENTS.md) |
 | Coding workflow | this file |
 | Engineering invariants | [`docs/CODING_PRACTICES.md`](CODING_PRACTICES.md) |
+| Branch/worktree mechanics | [`docs/procedures/branch-worktree.md`](procedures/branch-worktree.md) |
+| Review loop | [`docs/procedures/review-loop.md`](procedures/review-loop.md) |
 | Proof comments | [`docs/procedures/proof-of-work.md`](procedures/proof-of-work.md) |
+| Owner review handoff | [`docs/procedures/owner-review-card.md`](procedures/owner-review-card.md) |
 | Kanzen maintainer loop | [`docs/kanzen/boring-loop.md`](kanzen/boring-loop.md) |
 
 Kanzen routes GitHub work into this workflow; it does not replace it.
@@ -138,3 +141,7 @@ Plugin labels: `plugin:ask-user`, `plugin:data-catalog`, `plugin:data-explorer`,
 For issue/PR implementations, follow [`docs/procedures/proof-of-work.md`](procedures/proof-of-work.md).
 
 A PR is not ready for human review until the final proof comment includes tests, manual validation, artifacts/screenshots where relevant, workspace-playground details for UI/workspace behavior, and known gaps. Never post host/IP addresses in the public repo.
+
+When owner review is needed, follow
+[`docs/procedures/owner-review-card.md`](procedures/owner-review-card.md) after
+posting the proof comment.
