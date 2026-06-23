@@ -11,13 +11,13 @@ steps there.
 
 | Concern | Source |
 | --- | --- |
-| Hard rules and routing | [`AGENTS.md`](../AGENTS.md) |
+| Hard rules and routing | [`AGENTS.md`](../../AGENTS.md) |
 | Coding workflow | this file |
-| Engineering invariants | [`docs/CODING_PRACTICES.md`](CODING_PRACTICES.md) |
-| Branch/worktree mechanics | [`docs/kanzen/procedures/branch-worktree.md`](kanzen/procedures/branch-worktree.md) |
-| Proof comments | [`docs/kanzen/procedures/proof-of-work.md`](kanzen/procedures/proof-of-work.md) |
-| Owner review handoff | [`docs/kanzen/procedures/owner-review-card.md`](kanzen/procedures/owner-review-card.md) |
-| Kanzen maintainer loop | [`docs/kanzen/boring-loop.md`](kanzen/boring-loop.md) |
+| Engineering invariants | [`docs/kanzen/CODING_PRACTICES.md`](CODING_PRACTICES.md) |
+| Branch/worktree mechanics | [`docs/kanzen/procedures/branch-worktree.md`](procedures/branch-worktree.md) |
+| Proof comments | [`docs/kanzen/procedures/proof-of-work.md`](procedures/proof-of-work.md) |
+| Owner review handoff | [`docs/kanzen/procedures/owner-review-card.md`](procedures/owner-review-card.md) |
+| Kanzen maintainer loop | [`docs/kanzen/boring-loop.md`](boring-loop.md) |
 
 Kanzen routes GitHub work into this workflow; it does not replace it.
 
@@ -33,7 +33,7 @@ Kanzen routes GitHub work into this workflow; it does not replace it.
 
 Workflow guardrails:
 
-- Root hard rules live in [`AGENTS.md`](../AGENTS.md) and always apply.
+- Root hard rules live in [`AGENTS.md`](../../AGENTS.md) and always apply.
 - Use GitHub issues, PRs, labels, and comments for tracked repo work.
 - Never commit or log secrets.
 - Use MCP tools natively; do not wrap them with ad hoc HTTP clients.
@@ -128,7 +128,7 @@ one state:* + one phase:* + one track:*
 ```
 
 Do not mix `status:*` and Kanzen state labels on the same issue. See
-[`docs/kanzen/boring-loop.md`](kanzen/boring-loop.md) for the Kanzen gates and
+[`docs/kanzen/boring-loop.md`](boring-loop.md) for the Kanzen gates and
 label values.
 
 Package labels: `package:core`, `package:agent`, `package:workspace`, `package:ui`, `package:cli`, `package:pi`.
@@ -137,10 +137,10 @@ Plugin labels: `plugin:ask-user`, `plugin:data-catalog`, `plugin:data-explorer`,
 
 ## GitHub proof of work
 
-For issue/PR implementations, follow [`docs/kanzen/procedures/proof-of-work.md`](kanzen/procedures/proof-of-work.md).
+For issue/PR implementations, follow [`docs/kanzen/procedures/proof-of-work.md`](procedures/proof-of-work.md).
 
 A PR is not ready for human review until the final proof comment includes tests, manual validation, artifacts/screenshots where relevant, workspace-playground details for UI/workspace behavior, and known gaps. Never post host/IP addresses in the public repo.
 
 When owner review is needed, follow
-[`docs/kanzen/procedures/owner-review-card.md`](kanzen/procedures/owner-review-card.md) after
+[`docs/kanzen/procedures/owner-review-card.md`](procedures/owner-review-card.md) after
 posting the proof comment.

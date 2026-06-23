@@ -12,7 +12,7 @@ in [`AGENT_WORKFLOW.md`](AGENT_WORKFLOW.md).
 - No file variants (`*_v2.*`, `*_improved.*`) — edit in place.
 - Never work directly on `main` unless explicitly authorized. Use a short-lived
   branch or worktree; see
-  [`docs/kanzen/procedures/branch-worktree.md`](kanzen/procedures/branch-worktree.md).
+  [`docs/kanzen/procedures/branch-worktree.md`](procedures/branch-worktree.md).
 - Run relevant lint/typecheck/tests before considering work done.
 - Never stash, revert, or overwrite another agent's uncommitted work. Investigate unexpected changes first.
 
@@ -110,7 +110,7 @@ pnpm --filter @hachej/boring-workspace build && pnpm --filter workspace-playgrou
 
 ## Package-specific docs
 
-Start at [`docs/README.md`](README.md), then descend into the relevant package:
+Start at [`docs/README.md`](../README.md), then descend into the relevant package:
 
 - Core: `packages/core/docs/README.md`
 - Agent: `packages/agent/docs/README.md`
