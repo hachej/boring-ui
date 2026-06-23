@@ -74,7 +74,7 @@ export function createWorkspaceBridgeRuntimeEnvContribution(
         capabilities: capabilities!,
         ttlMs: options.runtimeEnv?.tokenTtlMs,
       })
-      const refreshToken = options.runtimeRefreshTokenSecret && tokenUrl
+      const refreshToken = options.runtimeRefreshTokenSecret && tokenUrl && isRefreshTokenUrlSafe(tokenUrl)
         ? mintWorkspaceBridgeRuntimeRefreshToken({
             secret: options.runtimeRefreshTokenSecret,
             workspaceId: options.workspaceId,
@@ -120,6 +120,19 @@ function resolveBridgeUrl(value: string | undefined, path: string): string | und
   }
 }
 
+function isRefreshTokenUrlSafe(value: string): boolean {
+  try {
+    const url = new URL(value)
+    return url.protocol === "https:" || (url.protocol === "http:" && isLoopbackHost(url.hostname))
+  } catch {
+    return false
+  }
+}
+
+function isLoopbackHost(hostname: string): boolean {
+  return hostname === "localhost" || hostname === "127.0.0.1" || hostname === "::1" || hostname === "[::1]"
+}
+
 function validateRuntimeBridgeUrl(options: {
   bridgeUrl: string | undefined
   runtimeMode: RuntimeModeId
@@ -137,7 +150,7 @@ function validateRuntimeBridgeUrl(options: {
     return "bridge-url-invalid"
   }
   const isRemote = options.runtimeMode === "vercel-sandbox"
-  const isLocalhost = url.hostname === "localhost" || url.hostname === "127.0.0.1" || url.hostname === "::1"
+  const isLocalhost = isLoopbackHost(url.hostname)
   if (isRemote && url.protocol !== "https:") return "remote-bridge-url-must-be-https"
   if (isRemote && isLocalhost) return "remote-bridge-url-must-not-be-localhost"
   if (url.protocol === "http:" && !options.allowInsecureHttp && !isLocalhost) return "remote-bridge-url-must-be-https"

@@ -26,7 +26,7 @@ createWorkspaceAgentServer({
 })
 ```
 
-`createCoreWorkspaceAgentServer(...)` accepts the same `workspaceBridge` shape. For the standalone/base factory, exposed or production hosts must provide `workspaceBridge.browserAuthPolicy`; the fallback `createLocalCliBridgeAuthPolicy` is unauthenticated and is only for local/dev CLI usage. `NODE_ENV=production` fails closed unless the host supplies a real browser policy or explicitly opts into the insecure local-cli policy for a local-only dev tool.
+`createCoreWorkspaceAgentServer(...)` accepts the same `workspaceBridge` shape. For the standalone/base factory, browser bridge calls fail closed unless the host provides `workspaceBridge.browserAuthPolicy` or explicitly opts into `allowInsecureLocalCliBrowserAuth` for a local-only dev tool. `createLocalCliBridgeAuthPolicy` is unauthenticated and dev-only; it is never selected implicitly.
 
 Runtime callers are also bounded to the workspace that owns the bridge registry. A token minted for workspace A cannot call a registry owned by workspace B; the registry returns `BRIDGE_RESOURCE_SCOPE_DENIED` unless an operation explicitly sets `allowCrossWorkspace: true`. Cross-workspace operations must do their own explicit resource authorization.
 
@@ -144,7 +144,7 @@ const bridge = new WorkspaceBridgeClient({
 })
 ```
 
-The stock refresh endpoint is `POST /api/v1/workspace-bridge/token` with `Authorization: Bearer $BORING_WORKSPACE_BRIDGE_REFRESH_TOKEN`. It returns `{ ok: true, token }`. Refresh tokens are sandbox-bound by signed workspace/session/runtime/capability claims and should be treated as secrets; never log them.
+The stock refresh endpoint is `POST /api/v1/workspace-bridge/token` with `Authorization: Bearer $BORING_WORKSPACE_BRIDGE_REFRESH_TOKEN`. It returns `{ ok: true, token }`. Refresh tokens are sandbox-bound by signed workspace/session/runtime/capability claims, default to a 1h TTL, are checked against a per-jti revocation/rate-limit store, and should be treated as secrets; never log them. Refresh env vars are not injected over plaintext non-loopback HTTP even when short-lived call-token env is allowed for local development.
 
 Non-TypeScript runtimes can call the HTTP transport directly:
 

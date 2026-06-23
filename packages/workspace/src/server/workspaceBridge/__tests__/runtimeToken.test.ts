@@ -2,8 +2,13 @@ import { createHmac } from "node:crypto"
 import { describe, expect, it } from "vitest"
 import { WorkspaceBridgeErrorCode } from "../../../shared/workspace-bridge-rpc"
 import {
+  DEFAULT_WORKSPACE_BRIDGE_RUNTIME_REFRESH_TOKEN_TTL_MS,
+  MAX_WORKSPACE_BRIDGE_RUNTIME_TOKEN_TTL_MS,
+  WORKSPACE_BRIDGE_REFRESH_TOKEN_AUDIENCE,
   WORKSPACE_BRIDGE_TOKEN_AUDIENCE,
+  mintWorkspaceBridgeRuntimeRefreshToken,
   mintWorkspaceBridgeRuntimeToken,
+  verifyWorkspaceBridgeRuntimeRefreshToken,
   verifyWorkspaceBridgeRuntimeToken,
 } from "../runtimeToken"
 import { assertNoSensitiveBridgeLeaks } from "../testing/harness"
@@ -76,6 +81,26 @@ describe("WorkspaceBridge runtime token primitives", () => {
       secret: SECRET,
       nowMs: NOW,
     })).toThrow(expect.objectContaining({ code: WorkspaceBridgeErrorCode.InvalidToken }))
+  })
+
+  it("mints refresh tokens with bounded defaults and call-token ttl claims", () => {
+    const refreshToken = mintWorkspaceBridgeRuntimeRefreshToken({
+      secret: SECRET,
+      workspaceId: "workspace-1",
+      capabilities: ["example:records.read"],
+      nowMs: NOW,
+      tokenTtlMs: 999 * 60_000,
+      jti: "refresh-jti",
+    })
+    const verified = verifyWorkspaceBridgeRuntimeRefreshToken(refreshToken, { secret: SECRET, nowMs: NOW + 1_000 })
+
+    expect(verified.claims).toMatchObject({
+      aud: WORKSPACE_BRIDGE_REFRESH_TOKEN_AUDIENCE,
+      workspaceId: "workspace-1",
+      jti: "refresh-jti",
+      tokenTtlMs: MAX_WORKSPACE_BRIDGE_RUNTIME_TOKEN_TTL_MS,
+    })
+    expect((verified.claims.exp - verified.claims.iat) * 1000).toBe(DEFAULT_WORKSPACE_BRIDGE_RUNTIME_REFRESH_TOKEN_TTL_MS)
   })
 
   it("rejects missing capabilities", () => {

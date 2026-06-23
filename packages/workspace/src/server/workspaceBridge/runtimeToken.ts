@@ -8,6 +8,9 @@ import {
 
 export const WORKSPACE_BRIDGE_TOKEN_AUDIENCE = "workspace-bridge"
 export const WORKSPACE_BRIDGE_REFRESH_TOKEN_AUDIENCE = "workspace-bridge-refresh"
+export const DEFAULT_WORKSPACE_BRIDGE_RUNTIME_TOKEN_TTL_MS = 5 * 60_000
+export const DEFAULT_WORKSPACE_BRIDGE_RUNTIME_REFRESH_TOKEN_TTL_MS = 60 * 60_000
+export const MAX_WORKSPACE_BRIDGE_RUNTIME_TOKEN_TTL_MS = 15 * 60_000
 
 interface WorkspaceBridgeTokenClaimsBase {
   aud: string
@@ -73,7 +76,7 @@ export function mintWorkspaceBridgeRuntimeToken(
   return mintWorkspaceBridgeToken({
     ...options,
     audience: WORKSPACE_BRIDGE_TOKEN_AUDIENCE,
-    ttlMs: options.ttlMs ?? 5 * 60_000,
+    ttlMs: options.ttlMs ?? DEFAULT_WORKSPACE_BRIDGE_RUNTIME_TOKEN_TTL_MS,
   })
 }
 
@@ -85,8 +88,8 @@ export function mintWorkspaceBridgeRuntimeRefreshToken(
     audience: WORKSPACE_BRIDGE_REFRESH_TOKEN_AUDIENCE,
     // Refresh tokens intentionally outlive short call tokens, but remain
     // sandbox-bound by workspace/session/runtime/capabilities claims.
-    ttlMs: options.ttlMs ?? 24 * 60 * 60_000,
-    tokenTtlMs: options.tokenTtlMs,
+    ttlMs: options.ttlMs ?? DEFAULT_WORKSPACE_BRIDGE_RUNTIME_REFRESH_TOKEN_TTL_MS,
+    tokenTtlMs: clampWorkspaceBridgeRuntimeTokenTtlMs(options.tokenTtlMs),
   })
 }
 
@@ -122,6 +125,12 @@ export function verifyWorkspaceBridgeRuntimeRefreshToken(
   const now = Math.floor((options.nowMs ?? Date.now()) / 1000)
   ensureLiveTokenClaims(claims, now, WORKSPACE_BRIDGE_REFRESH_TOKEN_AUDIENCE, "Runtime bridge refresh token")
   return { claims: claims as WorkspaceBridgeRuntimeRefreshTokenClaims }
+}
+
+export function clampWorkspaceBridgeRuntimeTokenTtlMs(ttlMs: number | undefined): number | undefined {
+  if (ttlMs === undefined) return undefined
+  if (!Number.isFinite(ttlMs) || ttlMs <= 0) return undefined
+  return Math.min(ttlMs, MAX_WORKSPACE_BRIDGE_RUNTIME_TOKEN_TTL_MS)
 }
 
 export function runtimeClaimsToBridgeAuthContext(
@@ -244,7 +253,7 @@ function parseClaims(payload: unknown): WorkspaceBridgeTokenClaimsBase {
     iat: claims.iat,
     exp: claims.exp,
     jti: claims.jti,
-    ...(typeof claims.tokenTtlMs === "number" ? { tokenTtlMs: claims.tokenTtlMs } : {}),
+    ...(typeof claims.tokenTtlMs === "number" ? { tokenTtlMs: clampWorkspaceBridgeRuntimeTokenTtlMs(claims.tokenTtlMs) } : {}),
   }
 }
 

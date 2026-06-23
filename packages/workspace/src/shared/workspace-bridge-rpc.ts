@@ -106,6 +106,7 @@ export enum WorkspaceBridgeErrorCode {
   IdempotencyRequired = "BRIDGE_IDEMPOTENCY_REQUIRED",
   IdempotencyConflict = "BRIDGE_IDEMPOTENCY_CONFLICT",
   ReplayRejected = "BRIDGE_REPLAY_REJECTED",
+  RateLimited = "BRIDGE_RATE_LIMITED",
   InvalidToken = "BRIDGE_INVALID_TOKEN",
   ExpiredToken = "BRIDGE_EXPIRED_TOKEN",
   InvalidRequest = "BRIDGE_INVALID_REQUEST",

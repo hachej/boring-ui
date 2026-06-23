@@ -127,6 +127,7 @@ vi.mock('@hachej/boring-workspace/server', () => {
     return await execute()
   }),
   InMemoryWorkspaceBridgeIdempotencyStore: class InMemoryWorkspaceBridgeIdempotencyStore {},
+  InMemoryWorkspaceBridgeRuntimeRefreshTokenStore: class InMemoryWorkspaceBridgeRuntimeRefreshTokenStore {},
   uiRoutes: async () => {},
   verifyWorkspaceBridgeRuntimeToken: vi.fn((token: string) => {
     workspaceServerMock.runtimeTokenVerifications.push(token)

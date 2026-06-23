@@ -1,10 +1,11 @@
 import Fastify from "fastify"
-import { describe, expect, it } from "vitest"
+import { describe, expect, it, vi } from "vitest"
 import { WorkspaceBridgeErrorCode } from "../../../shared/workspace-bridge-rpc"
 import { createBrowserBridgeAuthPolicy } from "../authPolicy"
 import { InMemoryWorkspaceBridgeIdempotencyStore } from "../idempotency"
+import { InMemoryWorkspaceBridgeRuntimeRefreshTokenStore } from "../refreshTokenStore"
 import { createWorkspaceBridgeRegistry } from "../registry"
-import { mintWorkspaceBridgeRuntimeRefreshToken, mintWorkspaceBridgeRuntimeToken, verifyWorkspaceBridgeRuntimeToken } from "../runtimeToken"
+import { mintWorkspaceBridgeRuntimeRefreshToken, mintWorkspaceBridgeRuntimeToken, verifyWorkspaceBridgeRuntimeRefreshToken, verifyWorkspaceBridgeRuntimeToken } from "../runtimeToken"
 import { workspaceBridgeHttpRoutes } from "../httpRoutes"
 import { assertNoSensitiveBridgeLeaks, createTestBridgeOperationDefinition } from "../testing/harness"
 
@@ -153,12 +154,112 @@ describe("workspaceBridgeHttpRoutes", () => {
     const body = response.json()
     expect(body).toMatchObject({ ok: true, token: expect.any(String) })
     const verified = verifyWorkspaceBridgeRuntimeToken(body.token, { secret: SECRET, requiredCapabilities: ["runtime:echo"] })
+    const refreshClaims = verifyWorkspaceBridgeRuntimeRefreshToken(refreshToken, { secret: REFRESH_SECRET }).claims
+    expect(verified.claims.exp).toBeLessThanOrEqual(refreshClaims.exp)
     expect(verified.authContext).toMatchObject({
       callerClass: "runtime",
       workspaceId: "workspace-1",
       sessionId: "session-1",
       capabilities: ["runtime:echo"],
     })
+  })
+
+  it("rejects refresh tokens that expire while async refresh-store checks run", async () => {
+    const nowMs = Date.parse("2026-01-01T00:00:00.000Z")
+    const dateNow = vi.spyOn(Date, "now").mockReturnValue(nowMs)
+    try {
+      const registry = createWorkspaceBridgeRegistry()
+      const app = Fastify()
+      await app.register(workspaceBridgeHttpRoutes, {
+        registry,
+        runtimeTokenSecret: SECRET,
+        runtimeRefreshTokenSecret: REFRESH_SECRET,
+        getRuntimeRefreshTokenStore: async () => ({
+          revoke: async () => {},
+          recordUse: async () => {
+            dateNow.mockReturnValue(nowMs + 2_000)
+            return { allowed: true as const }
+          },
+        }),
+      })
+      const refreshToken = mintWorkspaceBridgeRuntimeRefreshToken({
+        secret: REFRESH_SECRET,
+        workspaceId: "workspace-1",
+        capabilities: [],
+        nowMs,
+        ttlMs: 1_000,
+      })
+
+      const response = await app.inject({ method: "POST", url: "/api/v1/workspace-bridge/token", headers: { authorization: `Bearer ${refreshToken}` }, payload: {} })
+      expect(response.statusCode).toBe(401)
+      expect(response.json()).toMatchObject({ ok: false, error: { code: WorkspaceBridgeErrorCode.ExpiredToken } })
+    } finally {
+      dateNow.mockRestore()
+    }
+  })
+
+  it("rate-limits and revokes runtime refresh tokens by jti", async () => {
+    const registry = createWorkspaceBridgeRegistry()
+    const store = new InMemoryWorkspaceBridgeRuntimeRefreshTokenStore()
+    const app = Fastify()
+    await app.register(workspaceBridgeHttpRoutes, {
+      registry,
+      runtimeTokenSecret: SECRET,
+      runtimeRefreshTokenSecret: REFRESH_SECRET,
+      runtimeRefreshTokenStore: store,
+      refreshTokenRateLimit: { maxUses: 1, windowMs: 60_000 },
+    })
+    const refreshToken = mintWorkspaceBridgeRuntimeRefreshToken({
+      secret: REFRESH_SECRET,
+      workspaceId: "workspace-1",
+      capabilities: [],
+      ttlMs: 60_000,
+      jti: "refresh-jti-1",
+    })
+
+    const first = await app.inject({ method: "POST", url: "/api/v1/workspace-bridge/token", headers: { authorization: `Bearer ${refreshToken}` }, payload: {} })
+    const second = await app.inject({ method: "POST", url: "/api/v1/workspace-bridge/token", headers: { authorization: `Bearer ${refreshToken}` }, payload: {} })
+    expect(first.statusCode).toBe(200)
+    expect(second.statusCode).toBe(429)
+    expect(second.json()).toMatchObject({ ok: false, error: { code: WorkspaceBridgeErrorCode.RateLimited } })
+
+    store.revoke("refresh-jti-1")
+    const revoked = await app.inject({ method: "POST", url: "/api/v1/workspace-bridge/token", headers: { authorization: `Bearer ${refreshToken}` }, payload: {} })
+    expect(revoked.statusCode).toBe(401)
+    expect(revoked.json()).toMatchObject({ ok: false, error: { code: WorkspaceBridgeErrorCode.InvalidToken } })
+  })
+
+  it("rejects runtime tokens that try to select another workspace registry", async () => {
+    const left = createWorkspaceBridgeRegistry({ ownerWorkspaceId: "workspace-left" })
+    const right = createWorkspaceBridgeRegistry({ ownerWorkspaceId: "workspace-right" })
+    for (const registry of [left, right]) {
+      registry.registerHandler(createTestBridgeOperationDefinition({
+        op: "runtime.v1.echo",
+        callerClassesAllowed: ["runtime"],
+        requiredCapabilities: ["runtime:echo"],
+      }), ({ context }) => ({ workspaceId: context.workspaceId }))
+    }
+    const app = Fastify()
+    await app.register(workspaceBridgeHttpRoutes, {
+      getRegistry: (request) => request.headers["x-boring-workspace-id"] === "workspace-right" ? right : left,
+      getOwnerWorkspaceId: (request) => String(request.headers["x-boring-workspace-id"] ?? "workspace-left"),
+      runtimeTokenSecret: SECRET,
+    })
+    const token = mintWorkspaceBridgeRuntimeToken({
+      secret: SECRET,
+      workspaceId: "workspace-left",
+      capabilities: ["runtime:echo"],
+      ttlMs: 60_000,
+    })
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/api/v1/workspace-bridge/call",
+      headers: { "content-type": "application/json", authorization: `Bearer ${token}`, "x-boring-workspace-id": "workspace-right" },
+      payload: { op: "runtime.v1.echo", input: {} },
+    })
+    expect(response.statusCode).toBe(403)
+    expect(response.json()).toMatchObject({ ok: false, error: { code: WorkspaceBridgeErrorCode.ResourceScopeDenied } })
   })
 
   it("rejects expired and missing-capability runtime tokens", async () => {

@@ -138,10 +138,10 @@ export interface CreateWorkspaceAgentServerOptions
     runtimeRefreshTokenSecret?: string
     browserAuthPolicy?: BridgeAuthPolicy
     /**
-     * Dev-only escape hatch for standalone/local CLI usage. When omitted,
-     * createWorkspaceAgentServer uses this unauthenticated policy only outside
-     * NODE_ENV=production. Production hosts must provide browserAuthPolicy or
-     * explicitly set this insecure local/dev opt-in.
+     * Dev-only escape hatch for standalone/local CLI usage. This is never
+     * enabled implicitly: exposed hosts must provide browserAuthPolicy, and
+     * local tools that intentionally rely on the unauthenticated local-cli
+     * policy must opt in explicitly.
      */
     allowInsecureLocalCliBrowserAuth?: boolean
     handlers?: Array<{
@@ -609,33 +609,22 @@ export function readWorkspacePluginPackagePiSnapshot(pluginDirs: BoringPluginSou
 function resolveWorkspaceBridgeBrowserAuthPolicy(
   opts: CreateWorkspaceAgentServerOptions,
   registry: WorkspaceBridgeRegistry,
-): BridgeAuthPolicy {
+): BridgeAuthPolicy | undefined {
   if (opts.workspaceBridge?.browserAuthPolicy) return opts.workspaceBridge.browserAuthPolicy
 
-  const explicitlyAllowed = opts.workspaceBridge?.allowInsecureLocalCliBrowserAuth === true
-  const isProduction = process.env.NODE_ENV === "production"
-  if (isProduction && !explicitlyAllowed) {
-    throw new Error(
-      "createWorkspaceAgentServer requires workspaceBridge.browserAuthPolicy in production. " +
-      "createLocalCliBridgeAuthPolicy is unauthenticated and dev-only; set allowInsecureLocalCliBrowserAuth only for local/dev tools that are not exposed to a network.",
-    )
-  }
+  if (opts.workspaceBridge?.allowInsecureLocalCliBrowserAuth !== true) return undefined
 
-  emitLocalCliBridgeAuthWarning(explicitlyAllowed, isProduction)
+  emitLocalCliBridgeAuthWarning()
   return createLocalCliBridgeAuthPolicy({
     workspaceId: "default",
     capabilities: registry.listDefinitions().flatMap((definition) => [...definition.requiredCapabilities]),
   })
 }
 
-function emitLocalCliBridgeAuthWarning(explicitlyAllowed: boolean, isProduction: boolean): void {
+function emitLocalCliBridgeAuthWarning(): void {
   const message = "createWorkspaceAgentServer is using createLocalCliBridgeAuthPolicy for WorkspaceBridge browser calls. This policy is unauthenticated, grants registered bridge capabilities to a fixed local-cli principal, and is intended only for local/dev CLI usage. Provide workspaceBridge.browserAuthPolicy before exposing this server."
   if (typeof process.emitWarning === "function") {
-    process.emitWarning(message, {
-      code: isProduction && explicitlyAllowed
-        ? "BORING_WORKSPACE_BRIDGE_INSECURE_AUTH_PRODUCTION_OPT_IN"
-        : "BORING_WORKSPACE_BRIDGE_INSECURE_AUTH",
-    })
+    process.emitWarning(message, { code: "BORING_WORKSPACE_BRIDGE_INSECURE_AUTH" })
     return
   }
   console.warn(message)

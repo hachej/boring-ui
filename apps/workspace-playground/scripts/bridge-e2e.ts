@@ -96,6 +96,7 @@ async function main() {
       createAskUserServerPlugin({ workspaceRoot, sessionId: 's1' }),
     ],
     workspaceBridge: {
+      allowInsecureLocalCliBrowserAuth: true,
       runtimeTokenSecret: SECRET,
       runtimeRefreshTokenSecret: REFRESH_SECRET,
       handlers: [

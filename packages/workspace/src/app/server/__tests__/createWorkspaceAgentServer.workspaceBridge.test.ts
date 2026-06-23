@@ -59,13 +59,13 @@ describe("createWorkspaceAgentServer — WorkspaceBridge RPC composition", () =>
     const appA = await createWorkspaceAgentServer({
       workspaceRoot: workspaceA.root,
       provisionWorkspace: false,
-      workspaceBridge: { handlers: [{ definition, handler: ({ input }) => ({ value: `a:${(input as { value: string }).value}` }) }] },
+      workspaceBridge: { allowInsecureLocalCliBrowserAuth: true, handlers: [{ definition, handler: ({ input }) => ({ value: `a:${(input as { value: string }).value}` }) }] },
     })
     mockCreateAgentAppOnce(async () => Fastify())
     const appB = await createWorkspaceAgentServer({
       workspaceRoot: workspaceB.root,
       provisionWorkspace: false,
-      workspaceBridge: { handlers: [{ definition, handler: ({ input }) => ({ value: `b:${(input as { value: string }).value}` }) }] },
+      workspaceBridge: { allowInsecureLocalCliBrowserAuth: true, handlers: [{ definition, handler: ({ input }) => ({ value: `b:${(input as { value: string }).value}` }) }] },
     })
 
     const callA = await appA.inject({
@@ -103,6 +103,7 @@ describe("createWorkspaceAgentServer — WorkspaceBridge RPC composition", () =>
     const app = await createWorkspaceAgentServer({
       workspaceRoot: await makeTempDir("bridge-plugin-handler-"),
       provisionWorkspace: false,
+      workspaceBridge: { allowInsecureLocalCliBrowserAuth: true },
       plugins: [defineServerPlugin({
         id: "trusted-plugin",
         workspaceBridgeHandlers: [{ definition, handler: ({ input }) => ({ value: `plugin:${(input as { value: string }).value}` }) }],
@@ -172,6 +173,7 @@ export default {
       mode,
       provisionWorkspace: false,
       workspaceBridge: {
+        allowInsecureLocalCliBrowserAuth: true,
         runtimeTokenSecret: "12345678901234567890123456789012",
         runtimeEnv: {
           bridgeUrl: "http://localhost:7777",
@@ -213,6 +215,7 @@ export default {
       mode: "direct",
       provisionWorkspace: false,
       workspaceBridge: {
+        allowInsecureLocalCliBrowserAuth: true,
         runtimeTokenSecret: "12345678901234567890123456789012",
         runtimeRefreshTokenSecret: "abcdefghijklmnopqrstuvwxyz1234567890",
         runtimeEnv: {
@@ -239,13 +242,68 @@ export default {
     await app.close()
   })
 
-  test("requires explicit browser bridge auth in production", async () => {
-    vi.stubEnv("NODE_ENV", "production")
+  test("fails closed for browser bridge calls unless browser auth or dev opt-in is explicit", async () => {
+    const { createTestBridgeOperationDefinition } = await import("../../../server/workspaceBridge/testing/harness")
+    const definition = createTestBridgeOperationDefinition({
+      op: "test.v1.browser-denied",
+      callerClassesAllowed: ["browser"],
+      requiredCapabilities: [],
+    })
     mockCreateAgentAppOnce(async () => Fastify())
-    await expect(createWorkspaceAgentServer({
-      workspaceRoot: await makeTempDir("bridge-prod-auth-"),
+    const app = await createWorkspaceAgentServer({
+      workspaceRoot: await makeTempDir("bridge-explicit-auth-"),
       provisionWorkspace: false,
-    })).rejects.toThrow(/workspaceBridge\.browserAuthPolicy/)
+      workspaceBridge: { handlers: [{ definition, handler: () => ({ ok: true }) }] },
+    })
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/api/v1/workspace-bridge/call",
+      headers: { "content-type": "application/json" },
+      payload: { op: "test.v1.browser-denied", input: {} },
+    })
+    expect(response.statusCode).toBe(401)
+    expect(response.json()).toMatchObject({ ok: false, error: { code: "BRIDGE_AUTH_REQUIRED" } })
+    await app.close()
+  })
+
+  test("does not inject refresh tokens over plaintext non-loopback HTTP", async () => {
+    const { createTestBridgeOperationDefinition } = await import("../../../server/workspaceBridge/testing/harness")
+    const definition = createTestBridgeOperationDefinition({
+      op: "test.v1.runtime-env-refresh-http",
+      callerClassesAllowed: ["runtime"],
+      requiredCapabilities: ["test:runtime-env"],
+    })
+    mockCreateAgentAppOnce(async () => Fastify())
+    const app = await createWorkspaceAgentServer({
+      workspaceRoot: await makeTempDir("bridge-runtime-env-refresh-http-"),
+      mode: "direct",
+      provisionWorkspace: false,
+      workspaceBridge: {
+        allowInsecureLocalCliBrowserAuth: true,
+        runtimeTokenSecret: "12345678901234567890123456789012",
+        runtimeRefreshTokenSecret: "abcdefghijklmnopqrstuvwxyz1234567890",
+        runtimeEnv: {
+          bridgeUrl: "http://example.test",
+          allowInsecureHttp: true,
+          capabilities: ["test:runtime-env"],
+        },
+        handlers: [{ definition, handler: () => ({ ok: true }) }],
+      },
+    })
+
+    const [agentOptions] = agentServerMock.createAgentApp.mock.calls.at(-1) as unknown as [{
+      runtimeEnvContributions?: Array<{ id: string; getEnv: () => Promise<Record<string, string>> | Record<string, string> }>
+    }]
+    const env = await agentOptions.runtimeEnvContributions?.find((entry) => entry.id === "workspace-bridge-runtime-env")?.getEnv()
+
+    expect(env).toMatchObject({
+      BORING_WORKSPACE_BRIDGE_URL: "http://example.test/api/v1/workspace-bridge/call",
+      BORING_WORKSPACE_BRIDGE_TOKEN: expect.any(String),
+    })
+    expect(env?.BORING_WORKSPACE_BRIDGE_TOKEN_URL).toBeUndefined()
+    expect(env?.BORING_WORKSPACE_BRIDGE_REFRESH_TOKEN).toBeUndefined()
+    await app.close()
   })
 
   test("disables WorkspaceBridge runtime env when capabilities are omitted", async () => {
@@ -255,6 +313,7 @@ export default {
       mode: "direct",
       provisionWorkspace: false,
       workspaceBridge: {
+        allowInsecureLocalCliBrowserAuth: true,
         runtimeTokenSecret: "12345678901234567890123456789012",
         runtimeEnv: {
           bridgeUrl: "http://localhost:7777",
@@ -279,6 +338,7 @@ export default {
       mode: "vercel-sandbox",
       provisionWorkspace: false,
       workspaceBridge: {
+        allowInsecureLocalCliBrowserAuth: true,
         runtimeTokenSecret: "12345678901234567890123456789012",
         runtimeEnv: { bridgeUrl: "http://localhost:7777", allowInsecureHttp: true, capabilities: ["test:runtime-env"] },
       },
