@@ -6,18 +6,19 @@ This follows the Healio backup shape: pgbackrest continuous WAL archiving + sche
 
 ## Current decision
 
-- Preferred backup target: Cloudflare R2 **only if an EU jurisdiction bucket is available and verified**.
-- Fallback: another EU-compatible S3 target with equivalent durability and access controls.
+- Backup target: Cloudflare R2 EU jurisdiction bucket `boring-ui-full-app-pgbackrest-eu`.
+- Bucket create smoke: `wrangler r2 bucket create boring-ui-full-app-pgbackrest-eu --jurisdiction eu` succeeded from the local operator machine.
+- Remote object write smoke: `wrangler r2 object put ... --remote --jurisdiction eu` succeeded. Immediate readback hit Cloudflare API rate limiting (`429` / code `971`), so re-run readback after the rate window clears.
+- Fallback: another EU-compatible S3 target with equivalent durability and access controls if restore drills or immutability requirements fail on R2.
 - Mandatory encryption: pgbackrest `repo1-cipher-type=aes-256-cbc` and `PGBACKREST_CIPHER_PASS` from vault plus offline recovery copy.
 - Initial retention: 4 weekly full backups + 14 daily differential backups.
 
 ## Cloudflare R2 checks before production
 
-Verify in the Cloudflare account/docs before creating the production repo:
+Verify in the Cloudflare account/docs before enabling production backups:
 
-- EU jurisdiction bucket support is available for this account.
 - The S3 endpoint is the jurisdiction-specific EU endpoint for the account.
-- Access key is scoped only to the backup bucket/repo operations needed by pgbackrest.
+- Access key is scoped only to bucket `boring-ui-full-app-pgbackrest-eu` and only to the repo operations needed by pgbackrest.
 - Lifecycle/retention policy is explicit.
 - Object-lock/immutable replica story is decided. If R2 cannot provide the required immutable replica behavior, add a second EU backup target before public production.
 
@@ -50,7 +51,7 @@ The Ansible role is fail-closed: `pgbackrest_enabled` defaults false and the rol
 Operator flow:
 
 1. Fill real DB host vars from vault outside git.
-2. Set `pgbackrest_enabled: true` only after R2 EU endpoint and credentials are ready.
+2. Set `pgbackrest_enabled: true` only after R2 EU endpoint, scoped S3 credentials, and `PGBACKREST_CIPHER_PASS` are ready.
 3. Run the DB backup playbook against the DB VM inventory:
 
    ```bash

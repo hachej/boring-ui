@@ -11,7 +11,7 @@ Status: living decision record for the first public `full-app` self-host deploym
 | Tailscale network | Current owner tailnet | VM bootstrap joins the existing Tailscale network. No Tailscale OAuth secret in GitHub Actions for v1. |
 | VM provider | OVH France / Gravelines | Use OVH for App VM and DB VM. OVH API credentials are stored in vault at `secret/shared/ovh` with `application_key`, `application_secret`, and `consumer_key`. Keep the first deployment small; exact OVH flavor can be adjusted during provisioning. |
 | Domain | No public domain for now | Domain exists in Cloudflare, but v0 should not depend on a public hostname. Pick app/deploy hostnames later before public cutover. |
-| Backup object store | Cloudflare R2 if EU jurisdiction is available | Use pgbackrest encryption like Healio: repo encryption via `repo1-cipher-type=aes-256-cbc` plus a vault/offline `PGBACKREST_CIPHER_PASS`. R2 also encrypts at rest, but pgbackrest encryption is still required. |
+| Backup object store | Cloudflare R2 EU jurisdiction bucket | Created bucket `boring-ui-full-app-pgbackrest-eu` in the Cloudflare R2 EU jurisdiction. Use pgbackrest encryption like Healio: repo encryption via `repo1-cipher-type=aes-256-cbc` plus a vault/offline `PGBACKREST_CIPHER_PASS`. R2 also encrypts at rest, but pgbackrest encryption is still required. |
 
 ## Still needed before real provisioning
 
@@ -21,7 +21,7 @@ Status: living decision record for the first public `full-app` self-host deploym
 | App VM size | Small baseline: about 2 vCPU, 4 GB RAM, 40 GB disk. Confirm exact OVH flavor. |
 | DB VM size | Small baseline: about 2 vCPU, 4-8 GB RAM, 80 GB disk. Confirm exact OVH flavor and upgrade path. |
 | DB disk | Confirm disk size/type, separate data disk, and LUKS yes/no. |
-| R2 bucket details | Confirm EU jurisdiction bucket support, endpoint, object-lock/immutability/replica story, and lifecycle policy. |
+| R2 bucket details | Bucket exists: `boring-ui-full-app-pgbackrest-eu` in EU jurisdiction. Still need scoped S3 Access Key ID / Secret Access Key from Cloudflare R2 token UI/API-token flow, object-lock/immutability/replica story, and lifecycle policy. |
 | Production hostnames | Deferred: no domain for now. Pick app hostname and deploy webhook hostname later from the Cloudflare zone. |
 | GitHub tag protection | Configure ruleset for `prod-*` so only trusted maintainers can create production tags. |
 | RPO/RTO | Confirm DB RPO/RTO targets after backup target is chosen. |

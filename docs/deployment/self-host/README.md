@@ -19,6 +19,7 @@ Start with these artifacts:
 - [Detailed todo](../../plans/self-host-app-db-vercel-sandbox-todo.md)
 - [Remote sandbox analysis](../../plans/remote-sandbox-self-host-analysis.md)
 - [Broader deployment plan](../../plans/self-host-vm-boring-deploy-plan.md)
+- [Live OVH inventory](live-ovh-inventory.md)
 - [Environment inventory template](environment-inventory.template.md)
 - [Secrets inventory template](secrets-inventory.template.md)
 - [Owner decisions](owner-decisions.md)
@@ -36,7 +37,7 @@ Start with these artifacts:
 - App container must run as non-root.
 - PostgreSQL runs natively on DB VM.
 - pgbackrest is the DB backup/PITR system.
-- Backup target is Cloudflare R2 if an EU jurisdiction bucket is available; pgbackrest repo encryption is mandatory even if R2 encrypts at rest.
+- Backup target is Cloudflare R2 EU jurisdiction bucket `boring-ui-full-app-pgbackrest-eu`; pgbackrest repo encryption is mandatory even if R2 encrypts at rest.
 - Vercel Sandbox remains the remote execution backend for now.
 - Alerts go to Slack via a vault-managed webhook.
 - Cloudflare credentials live in the vault; no public domain is required for the first no-domain v0.
