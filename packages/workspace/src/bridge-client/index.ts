@@ -1,4 +1,9 @@
 import {
+  WORKSPACE_BRIDGE_DISABLED_ENV,
+  WORKSPACE_BRIDGE_REFRESH_TOKEN_ENV,
+  WORKSPACE_BRIDGE_TOKEN_ENV,
+  WORKSPACE_BRIDGE_TOKEN_URL_ENV,
+  WORKSPACE_BRIDGE_URL_ENV,
   WorkspaceBridgeErrorCode,
   type WorkspaceBridgeCallFailure,
   type WorkspaceBridgeCallRequest,
@@ -8,6 +13,14 @@ import {
 } from "../shared/workspace-bridge-rpc"
 
 export {
+  // Canonical env var names live in ../shared so the runtimeEnv producer and
+  // this SDK consumer share one source of truth; re-exported here to keep the
+  // bridge-client public API surface stable for downstream integrators.
+  WORKSPACE_BRIDGE_DISABLED_ENV,
+  WORKSPACE_BRIDGE_REFRESH_TOKEN_ENV,
+  WORKSPACE_BRIDGE_TOKEN_ENV,
+  WORKSPACE_BRIDGE_TOKEN_URL_ENV,
+  WORKSPACE_BRIDGE_URL_ENV,
   WorkspaceBridgeErrorCode,
   type WorkspaceBridgeCallFailure,
   type WorkspaceBridgeCallRequest,
@@ -15,12 +28,6 @@ export {
   type WorkspaceBridgeCallSuccess,
   type WorkspaceBridgeError,
 }
-
-export const WORKSPACE_BRIDGE_URL_ENV = "BORING_WORKSPACE_BRIDGE_URL"
-export const WORKSPACE_BRIDGE_TOKEN_ENV = "BORING_WORKSPACE_BRIDGE_TOKEN"
-export const WORKSPACE_BRIDGE_TOKEN_URL_ENV = "BORING_WORKSPACE_BRIDGE_TOKEN_URL"
-export const WORKSPACE_BRIDGE_REFRESH_TOKEN_ENV = "BORING_WORKSPACE_BRIDGE_REFRESH_TOKEN"
-export const WORKSPACE_BRIDGE_DISABLED_ENV = "BORING_WORKSPACE_BRIDGE_DISABLED"
 
 export enum WorkspaceBridgeClientErrorCode {
   Config = "WORKSPACE_BRIDGE_CLIENT_CONFIG_ERROR",

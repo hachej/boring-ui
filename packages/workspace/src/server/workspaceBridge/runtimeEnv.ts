@@ -1,4 +1,11 @@
 import type { RuntimeBundle, RuntimeEnvContribution, RuntimeEnvContributionContext, RuntimeModeId } from "@hachej/boring-agent/server"
+import {
+  WORKSPACE_BRIDGE_DISABLED_ENV,
+  WORKSPACE_BRIDGE_REFRESH_TOKEN_ENV,
+  WORKSPACE_BRIDGE_TOKEN_ENV,
+  WORKSPACE_BRIDGE_TOKEN_URL_ENV,
+  WORKSPACE_BRIDGE_URL_ENV,
+} from "../../shared/workspace-bridge-rpc"
 import type { WorkspaceBridgeRegistry } from "./registry"
 import { mintWorkspaceBridgeRuntimeRefreshToken, mintWorkspaceBridgeRuntimeToken } from "./runtimeToken"
 
@@ -69,7 +76,7 @@ export function createWorkspaceBridgeRuntimeEnvContribution(
         hasCapabilities: Array.isArray(capabilities) && capabilities.length > 0,
       })
       if (disabledReason) {
-        return { BORING_WORKSPACE_BRIDGE_DISABLED: disabledReason }
+        return { [WORKSPACE_BRIDGE_DISABLED_ENV]: disabledReason }
       }
       const token = mintWorkspaceBridgeRuntimeToken({
         secret: options.runtimeTokenSecret!,
@@ -91,11 +98,11 @@ export function createWorkspaceBridgeRuntimeEnvContribution(
           })
         : undefined
       return {
-        BORING_WORKSPACE_BRIDGE_URL: bridgeUrl!,
-        BORING_WORKSPACE_BRIDGE_TOKEN: token,
+        [WORKSPACE_BRIDGE_URL_ENV]: bridgeUrl!,
+        [WORKSPACE_BRIDGE_TOKEN_ENV]: token,
         ...(refreshToken ? {
-          BORING_WORKSPACE_BRIDGE_TOKEN_URL: tokenUrl!,
-          BORING_WORKSPACE_BRIDGE_REFRESH_TOKEN: refreshToken,
+          [WORKSPACE_BRIDGE_TOKEN_URL_ENV]: tokenUrl!,
+          [WORKSPACE_BRIDGE_REFRESH_TOKEN_ENV]: refreshToken,
         } : {}),
         BORING_WORKSPACE_ID: options.workspaceId,
         BORING_AGENT_SESSION_ID: options.runtimeEnv?.sessionId ?? options.workspaceId,

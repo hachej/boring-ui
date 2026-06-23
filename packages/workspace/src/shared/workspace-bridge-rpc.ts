@@ -5,6 +5,18 @@
  * Node-only types/imports and keep stable bridge error codes centralized here.
  */
 
+/**
+ * Canonical WorkspaceBridge runtime env var names. Defined in this browser- and
+ * server-safe module so the producer (server runtimeEnv injection) and the
+ * consumer (bridge-client SDK) share one source of truth and cannot drift on
+ * string equality.
+ */
+export const WORKSPACE_BRIDGE_URL_ENV = "BORING_WORKSPACE_BRIDGE_URL"
+export const WORKSPACE_BRIDGE_TOKEN_ENV = "BORING_WORKSPACE_BRIDGE_TOKEN"
+export const WORKSPACE_BRIDGE_TOKEN_URL_ENV = "BORING_WORKSPACE_BRIDGE_TOKEN_URL"
+export const WORKSPACE_BRIDGE_REFRESH_TOKEN_ENV = "BORING_WORKSPACE_BRIDGE_REFRESH_TOKEN"
+export const WORKSPACE_BRIDGE_DISABLED_ENV = "BORING_WORKSPACE_BRIDGE_DISABLED"
+
 export type BridgeCallerClass = "browser" | "runtime" | "server"
 
 export type BridgeActorKind = "human" | "agent" | "system" | "service"

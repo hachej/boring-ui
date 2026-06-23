@@ -262,6 +262,42 @@ describe('createCoreWorkspaceAgentServer workspace bridge wiring', () => {
     await app.close()
   })
 
+  it('wires the runtime refresh-token secret and a per-workspace refresh-token store into the core host', async () => {
+    const app = await createCoreWorkspaceAgentServer({
+      serveFrontend: false,
+      workspaceBridge: {
+        runtimeTokenSecret: '12345678901234567890123456789012',
+        runtimeRefreshTokenSecret: 'refresh-secret-1234567890123456789012',
+        runtimeEnv: {
+          bridgeUrl: 'https://bridge.test',
+          capabilities: ['test:runtime-env'],
+        },
+      },
+    })
+
+    const httpOpts = workspaceServerMock.httpRouteOpts.at(-1)
+    expect(httpOpts).toMatchObject({
+      runtimeTokenSecret: '12345678901234567890123456789012',
+      runtimeRefreshTokenSecret: 'refresh-secret-1234567890123456789012',
+    })
+
+    const getStore = httpOpts?.getRuntimeRefreshTokenStore as
+      | ((request: unknown, claims: { workspaceId: string }) => unknown)
+      | undefined
+    expect(typeof getStore).toBe('function')
+    const storeOne = getStore!({ headers: {} }, { workspaceId: 'workspace-1' })
+    const storeTwo = getStore!({ headers: {} }, { workspaceId: 'workspace-2' })
+    const storeOneAgain = getStore!({ headers: {} }, { workspaceId: 'workspace-1' })
+    expect(storeOne).toBeTruthy()
+    expect(storeTwo).toBeTruthy()
+    // Per-workspace isolation: distinct workspaces get distinct stores...
+    expect(storeOne).not.toBe(storeTwo)
+    // ...and the same workspace reuses one store (revoke/rate-limit state persists).
+    expect(storeOne).toBe(storeOneAgain)
+
+    await app.close()
+  })
+
   it('exposes bridge-aware Pi context so app shells do not need adapter tools', async () => {
     const app = await createCoreWorkspaceAgentServer({
       serveFrontend: false,
