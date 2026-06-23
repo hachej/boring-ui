@@ -50,6 +50,8 @@ Keep the loop about routing and gates. Put mechanics here:
 
 - [`procedures/branch-worktree.md`](procedures/branch-worktree.md):
   branch, worktree, lane, and stacked-PR mechanics.
+- [`procedures/well-documented-issue.md`](procedures/well-documented-issue.md):
+  issue intake shape, context, acceptance, proof path, and first plan.
 - [`procedures/proof-of-work.md`](procedures/proof-of-work.md):
   proof comment, demo workspace proof, and evidence.
 - [`procedures/owner-review-card.md`](procedures/owner-review-card.md):

@@ -7,13 +7,16 @@ description: "Use when a user submits /feedback or asks to capture product feedb
 
 Goal: `/feedback` creates the GitHub issue. It never implements.
 
+Issue shape: follow
+`docs/kanzen/procedures/well-documented-issue.md`.
+
 ## Steps
 
 | Step | Output |
 | --- | --- |
 | Capture | report, route, panel/plugin, selected item, branch/SHA, app/browser context, redacted errors, optional screenshot |
 | Redact | preview before publish; no secrets, cookies, auth headers, private data, unrelated transcripts, or full local paths |
-| Issue | title, report, observed/expected, context, artifacts, redaction note |
+| Issue | create the well-documented issue |
 | First plan | likely area, acceptance criteria, proof path |
 | Labels | `source:feedback`, one `state:*`, one `phase:*`, `track:owner`, useful taxonomy |
 
