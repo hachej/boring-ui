@@ -33,9 +33,8 @@ The UI should show this as chips plus one sentence, not a wall of text.
 - [`boring-feedback`](../../.agents/skills/boring-feedback/SKILL.md):
   create the enriched issue.
 - [`boring-triage`](../../.agents/skills/boring-triage/SKILL.md):
-  classify state, track, and next gate.
-- [`boring-orchestration`](../../.agents/skills/boring-orchestration/SKILL.md):
-  run `/triage`, workers, review, proof, and merge decisions.
+  run `/triage`; classify state, track, next gate, routing, proof, and merge
+  decisions.
 - [`loop-grill`](../../.agents/skills/loop-grill/SKILL.md):
   clarify blocked issues through grill-me and ask-user.
 - [`loop-plan`](../../.agents/skills/loop-plan/SKILL.md):

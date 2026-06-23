@@ -34,5 +34,5 @@ Goal: produce a proved PR. Do not spawn workers and do not merge by default.
 | fixes or proof still needed | `state:active phase:review gate:proof` |
 | review/proof clean | `state:ready phase:merge gate:merge` |
 
-Fast track only applies after triage/orchestration confirms `track:fast` and all
-merge gates pass.
+Fast track only applies after triage confirms `track:fast` and all merge gates
+pass.

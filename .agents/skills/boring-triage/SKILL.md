@@ -1,16 +1,19 @@
 ---
 name: boring-triage
-description: "Use to classify boring-ui GitHub issues and PRs into simple state/phase/track labels, choose the first unmet gate, and decide fast-track versus owner-review routing."
+description: "Use for /triage in boring-ui: refresh GitHub state, classify issues/PRs, choose the first unmet gate, route grill/plan/implement/proof/merge, and decide fast-track versus owner-review routing."
 ---
 
 # Boring Triage
 
-Triage answers: what is the first unmet gate?
+Triage answers: what is the first unmet gate, then does one next action.
 
-## Read
+## Sweep
 
-Read issue/PR body, comments, owner instructions, related PRs, changed files,
-CI, reviews, head SHA, and enough code/docs to know risk and proof path.
+1. Refresh issue/PR body, comments, labels, CI, reviews, proof, and head SHA.
+2. Read newest Julien/owner instruction before touching the item.
+3. Read enough code/docs to know risk and proof path.
+4. Pick queued or stale work, then stop at the first unmet gate.
+5. Record labels, gate, proof, reviewed SHA, and next action.
 
 ## Labels
 
@@ -34,6 +37,17 @@ CI, reviews, head SHA, and enough code/docs to know risk and proof path.
 | tests, CI, or demo proof missing | `state:active phase:review gate:proof` |
 | all gates pass | `state:ready phase:merge gate:merge` |
 
+## Gate Actions
+
+| Gate | Action |
+| --- | --- |
+| `clarity` | use `loop-grill`: grill-me plus ask-user; stay `state:blocked phase:grill` |
+| `risk` | keep `track:owner`; upgrade to `track:fast` only when all fast-track rules pass |
+| `plan` | use `loop-plan`: smallest useful plan; plan file plus thermo review for risky or multi-PR work |
+| `implementation` | use `loop-implement`: one worker lane for one issue/PR |
+| `proof` | run tests, CI, screenshots, and demo workspace proof when useful |
+| `merge` | fast-track merge or owner review |
+
 ## Fast Track
 
 Use `track:fast` only for trusted-author low-risk work with small blast radius,
@@ -42,6 +56,17 @@ obvious acceptance criteria, clean review, green CI, and current proof.
 Use `track:owner` for auth, billing, permissions, privacy, secrets, migrations,
 public API, releases, broad refactors, destructive/deletion-heavy changes,
 unclear requirements, or untrusted authors.
+
+Auto-merge only when labels include `state:ready phase:merge track:fast`, the
+author/agent is trusted, the PR is non-draft on a worker-owned branch, CI/tests
+and proof are current, no restricted area is touched, and a proof comment is
+posted. Otherwise keep `track:owner` and prepare a short owner review brief.
+
+## Worker Rule
+
+One lane means one Codex/Kanzen thread/run, one branch/worktree, one GitHub
+item. Stop for missing owner input, missing access, destructive actions,
+release/publish work, or merge without policy permission.
 
 ## Card
 

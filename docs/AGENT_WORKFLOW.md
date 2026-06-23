@@ -119,8 +119,7 @@ status:to-plan → status:to-plan-review → status:to-code → status:to-code-r
 ```
 
 Kanzen-managed issues are the exception. When an issue is created or routed by
-`/feedback`, `boring-triage`, or `boring-orchestration`, use the Kanzen label
-set instead of `status:*`:
+`/feedback` or `boring-triage`, use the Kanzen label set instead of `status:*`:
 
 ```text
 one state:* + one phase:* + one track:*
