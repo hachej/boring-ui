@@ -13,11 +13,13 @@ context.
 - Expected: what should have happened.
 - Context: route, panel/plugin, selected item, branch/SHA, browser/app state.
 - Artifacts: screenshots, logs, console output, reproduction data, or `N/A`.
+  Use safe attachment names or URLs; do not publish host-local file paths.
 - Redaction note: say what was removed or that no sensitive data was present.
 - Acceptance: how the fix/change will be judged done.
 - Proof path: tests, demo workspace, screenshot, manual steps, or waiver.
 - First plan: likely area, smallest next step, known uncertainty.
-- Labels/state: source/taxonomy plus Kanzen `state:*`, `phase:*`, `track:*`.
+- Routing: source/taxonomy labels plus Kanzen `state:*`, `phase:*`, `track:*`,
+  and a structured `gate` field. `gate` is not a GitHub label.
 
 ## Template
 
@@ -45,7 +47,15 @@ context.
 ## First Plan
 
 ## Open Questions
+
+## Routing
+- Labels:
+- Gate:
 ```
 
 If the issue lacks information that changes routing, create it as
-`state:blocked phase:grill gate:clarity` and ask through the grill loop.
+labels `state:blocked phase:grill track:owner` with gate `clarity`, then ask
+through the grill loop.
+
+If the issue is well documented and ready for the next sweep, use labels
+`state:queued phase:triage track:owner` with gate `triage`.

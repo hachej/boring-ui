@@ -8,6 +8,9 @@ Use this for any issue/PR implementation lane.
 - One lane owns one GitHub issue/PR, one branch, and one checkout/worktree.
 - Default branch: `issue-<number>-<slug>`; if no issue exists, use
   `<short-slug>`.
+- If a PR branch already exists, inspect and use that branch as the lane target;
+  create a repo-local worktree for it only when the checkout is dirty, shared,
+  or needed in parallel.
 - Prefer a repo-local `.worktrees/<branch>` worktree when parallel work or
   another dirty checkout exists.
 - Inspect dirty state before editing and do not overwrite another agent's work.

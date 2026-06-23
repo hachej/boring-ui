@@ -22,11 +22,12 @@ Every issue card should be understandable from these columns:
 | State | Can work move? | `queued`, `blocked`, `active`, `ready`, `done` |
 | Phase | What is next? | `triage`, `grill`, `plan`, `implement`, `review`, `merge` |
 | Track | Who merges? | `fast` or `owner` |
-| Gate | Why stopped? | `clarity`, `plan`, `proof`, `merge` |
+| Gate | Why stopped? | `triage`, `clarity`, `plan`, `proof`, `merge` |
 | Proof | Is it verified? | tests, CI, demo, screenshot, waiver |
 | Next | One action | `/loop-grill`, `/loop-plan`, `/loop-implement` |
 
 The UI should show this as chips plus one sentence, not a wall of text.
+`gate` is structured state, not a GitHub label.
 
 ## Skills
 
@@ -78,6 +79,7 @@ Evaluate gates top to bottom and stop at the first failing row.
 | Gate | Passes When | If It Fails |
 | --- | --- | --- |
 | `intake` | issue has context, tags, redaction note, first plan | fix issue body |
+| `triage` | queued issue has been classified into the first real gate | `/triage` |
 | `clarity` | issue is clear enough | `/loop-grill` |
 | `risk` | `track:owner` is confirmed or upgraded to `track:fast` | keep owner track |
 | `plan` | inline plan is enough, or plan file passed thermo review | `/loop-plan` |
@@ -87,7 +89,7 @@ Evaluate gates top to bottom and stop at the first failing row.
 
 ```mermaid
 flowchart LR
-  Feedback["/feedback"] --> Issue["GitHub issue\nstate:queued phase:triage"]
+  Feedback["/feedback"] --> Issue["GitHub issue\nstate:queued phase:triage\ngate:triage"]
   Issue --> Triage["/triage"]
   Triage -->|"unclear"| Grill["/loop-grill\nstate:blocked phase:grill"]
   Grill --> Triage
@@ -109,7 +111,8 @@ automatically once every gate passes."
 
 Allowed only when all are true:
 
-- author/agent is trusted by repo policy;
+- author/agent is trusted by repo policy and the branch is owned by one lane or
+  explicitly trusted owner/agent;
 - small low-risk diff with reduced blast radius;
 - no auth, billing, permissions, secrets, migrations, public API, release,
   deletion-heavy, or broad refactor work;
@@ -123,7 +126,7 @@ before merge.
 
 `/feedback`: create a GitHub issue directly, enriched with safe context,
 correct labels, and a first plan. If the report is unclear, create the issue as
-`state:blocked phase:grill`.
+`state:blocked phase:grill` with gate `clarity`.
 
 [`/loop-grill`](../../.agents/skills/loop-grill/SKILL.md): use the grill-me
 skill and ask-user pane. This can run now or wait asynchronously in the pending
