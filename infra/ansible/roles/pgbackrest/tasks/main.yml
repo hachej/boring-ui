@@ -10,10 +10,18 @@
     fail_msg: pgbackrest_enabled=true requires S3-compatible repo credentials and cipher passphrase from the secret store.
   no_log: true
 
-- name: Install pgbackrest
+- name: Install pgbackrest and cron
   ansible.builtin.apt:
-    name: pgbackrest
+    name:
+      - pgbackrest
+      - cron
     state: present
+
+- name: Ensure cron is running
+  ansible.builtin.systemd:
+    name: cron
+    enabled: true
+    state: started
 
 - name: Create pgbackrest config directory
   ansible.builtin.file:

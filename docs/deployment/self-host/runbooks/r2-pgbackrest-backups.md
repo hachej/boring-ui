@@ -9,6 +9,9 @@ This follows the Healio backup shape: pgbackrest continuous WAL archiving + sche
 - Backup target: Cloudflare R2 EU jurisdiction bucket `boring-ui-full-app-pgbackrest-eu`.
 - Bucket create smoke: `wrangler r2 bucket create boring-ui-full-app-pgbackrest-eu --jurisdiction eu` succeeded from the local operator machine.
 - Remote object write/read smoke: `wrangler r2 object put/get ... --remote --jurisdiction eu` succeeded after a brief Cloudflare API rate-limit window cleared.
+- pgBackRest S3 endpoint must be the EU jurisdiction endpoint (`<account>.eu.r2.cloudflarestorage.com`), not the global R2 endpoint.
+- Live initial full backup succeeded on 2026-06-24 with stanza `boring_full_app`; `pgbackrest check` successfully archived WAL to R2.
+- Live restore materialization drill succeeded on 2026-06-24 by restoring the backup into an isolated `/tmp/boring_pg_restore_drill_*` path and verifying restored files. A full alternate-port PostgreSQL startup drill is still recommended before final production.
 - Fallback: another EU-compatible S3 target with equivalent durability and access controls if restore drills or immutability requirements fail on R2.
 - Mandatory encryption: pgbackrest `repo1-cipher-type=aes-256-cbc` and `PGBACKREST_CIPHER_PASS` from vault plus offline recovery copy.
 - Initial retention: 4 weekly full backups + 14 daily differential backups.
@@ -32,6 +35,8 @@ Record only references, not values, in the environment inventory:
 - backup healthcheck URL vault item.
 
 ## Required vault items
+
+Live vault reference: `secret/agent/app/boring-ui/self-host-backups`.
 
 | Secret | Purpose |
 | --- | --- |
@@ -84,7 +89,7 @@ Then confirm:
 
 Do not run restore tests against the production data directory.
 
-Minimum drill before public production:
+A live restore materialization drill has already restored files into an isolated `/tmp/boring_pg_restore_drill_*` path. Minimum full drill before final production:
 
 1. Provision an isolated DB restore VM or isolated restore path.
 2. Install matching PostgreSQL major version and pgbackrest.
