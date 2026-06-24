@@ -87,8 +87,8 @@ createRoot(document.getElementById('root')!).render(
       workspaceLayout="plugin-tabs"
       appLeftLayoutMode="multi-project"
       workspaceSectionTitle="Projects"
-      showSkills={false}
-      showPlugins={false}
+      showSkills
+      showPlugins
       chatEntryMode="chat-first"
       publicPaths={[]}
       chatFirstPublicShell={{
@@ -132,7 +132,7 @@ createRoot(document.getElementById('root')!).render(
       authPages={{ userSettings: AccountSettingsPage }}
       topBarRight={
         <div className="flex w-full min-w-0 flex-col gap-1">
-          <div className="flex items-center justify-between gap-2 rounded-lg px-2 py-1 text-[12px] text-muted-foreground">
+          <div className="flex items-center justify-between gap-2 rounded-lg px-2 py-0.5 text-[11px] text-muted-foreground/70">
             <span>Credits</span>
             <CreditBalanceBadge buyEnabled={buyEnabled} />
           </div>
