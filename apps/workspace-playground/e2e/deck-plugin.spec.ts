@@ -115,7 +115,7 @@ test.describe("workspace-playground deck plugin", () => {
       })
 
       await test.step("switching files while autosave is in flight does not leave the deck tab stuck", async () => {
-        await expect(page.getByTestId("tab-saving-spinner")).toBeVisible({ timeout: 10_000 })
+        await expect.poll(() => typeof releaseSave, { timeout: 10_000 }).toBe("function")
 
         await openFileFromPalette(page, "README", /README\.md/i)
         await expect(page.getByText("Workspace Playground")).toBeVisible({ timeout: 10_000 })

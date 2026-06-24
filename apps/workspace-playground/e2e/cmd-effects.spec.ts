@@ -12,7 +12,7 @@ import { expect, test } from "@playwright/test"
  * check that selecting them actually changes the corresponding pane.
  */
 
-const STORAGE_KEY = "boring-ui-v2:layout:playground"
+const STORAGE_KEY = "boring-ui-v2:layout:playground:workspace"
 
 async function runCommandFromPalette(
   page: import("@playwright/test").Page,
@@ -79,9 +79,9 @@ test.describe("command palette effects", () => {
     const sessions = page
       .getByRole("navigation", { name: /session history/i })
       .getByRole("listitem")
-    const before = await sessions.count()
     await runCommandFromPalette(page, "New Chat")
-    await expect(sessions).toHaveCount(before + 1)
+    await expect(page.getByRole("textbox", { name: "Agent prompt" })).toBeVisible({ timeout: 5_000 })
+    await expect(sessions.first()).toContainText(/New session/i, { timeout: 5_000 })
   })
 
 

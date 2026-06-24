@@ -1,0 +1,128 @@
+import { describe, expect, it } from "vitest"
+import { WorkspaceBridgeErrorCode } from "../../../shared/workspace-bridge-rpc"
+import {
+  BRIDGE_TEST_REDACTION,
+  assertNoGenericWorkspaceFilesOps,
+  assertNoSensitiveBridgeLeaks,
+  createCapturedBridgeLogger,
+  createFakeBridgeAuthPolicy,
+  createFakeClock,
+  createTestActor,
+  createTestBridgeContext,
+  createTestBridgeOperationDefinition,
+  createTestFileAssetPointer,
+  createTestRuntimeTokenClaims,
+} from "../testing/harness"
+
+describe("WorkspaceBridge test harness", () => {
+  it("builds server, browser, and runtime bridge contexts without core auth/db imports", () => {
+    const browser = createTestBridgeContext({ callerClass: "browser" })
+    const runtime = createTestBridgeContext({ callerClass: "runtime" })
+    const server = createTestBridgeContext({ callerClass: "server" })
+
+    expect(browser.actor.actorKind).toBe("human")
+    expect(runtime.actor.actorKind).toBe("agent")
+    expect(server.actor.actorKind).toBe("system")
+  })
+
+  it("fakes auth policy capability/resource resolution and runtime token claims", () => {
+    const token = createTestRuntimeTokenClaims({
+      jti: "jti-secret-token",
+      capabilities: ["example:catalog.search", "example:records.read"],
+    })
+    const policy = createFakeBridgeAuthPolicy({
+      resourceScopes: { paths: ["generated/out.json"] },
+    })
+
+    const resolved = policy.resolve({ callerClass: "runtime", token })
+
+    expect(resolved.context.tokenId).toBe("jti-secret-token")
+    expect(resolved.effectiveCapabilities).toContain("example:records.read")
+    expect(resolved.resourceScopes).toMatchObject({
+      workspaceId: "workspace-test",
+      sessionId: "session-test",
+      pluginId: "plugin-test",
+      paths: ["generated/out.json"],
+    })
+  })
+
+  it("provides actor attribution fixtures for every actor kind", () => {
+    expect(createTestActor("human").actorKind).toBe("human")
+    expect(createTestActor("agent").actorKind).toBe("agent")
+    expect(createTestActor("system").actorKind).toBe("system")
+    expect(createTestActor("service").actorKind).toBe("service")
+
+    const requestBody = { actorKind: "system", performedBy: "spoofed" }
+    const context = createTestBridgeContext({ callerClass: "browser" })
+
+    expect(requestBody.actorKind).toBe("system")
+    expect(context.actor.actorKind).toBe("human")
+  })
+
+  it("catches deliberate token, answer, file-content, host-path, payload, bearer, and stack leaks", () => {
+    const sensitive = {
+      tokens: ["bridge-token-secret"],
+      authorizationHeaders: ["Authorization: Bearer bridge-token-secret"],
+      answers: ["my private answer"],
+      fileContents: ["secret file contents"],
+      hostPaths: ["/home/ubuntu/projects/private/file.txt"],
+      requestPayloads: ["{\"full\":\"payload\"}"],
+    }
+    const leaked = [
+      "Authorization: Bearer bridge-token-secret",
+      "my private answer",
+      "secret file contents",
+      "/home/ubuntu/projects/private/file.txt",
+      "{\"full\":\"payload\"}",
+      "Error: boom\n    at handler (/tmp/server.ts:1:1)",
+    ].join("\n")
+
+    expect(() => assertNoSensitiveBridgeLeaks(leaked, sensitive)).toThrow(/Bridge log leaked/)
+
+    const logger = createCapturedBridgeLogger(sensitive)
+    logger.info("bridge request handled", {
+      requestId: "req_1",
+      toolCallId: "tool_1",
+      questionId: "question_1",
+      sessionId: "session_1",
+      workspaceId: "workspace_1",
+      op: "example.v1.prompt.answer",
+      callerClass: "browser",
+      token: "bridge-token-secret",
+      answer: "my private answer",
+      fileContent: "secret file contents",
+      hostPath: "/home/ubuntu/projects/private/file.txt",
+      payload: "{\"full\":\"payload\"}",
+    })
+
+    const text = logger.text()
+    assertNoSensitiveBridgeLeaks(text, sensitive)
+    expect(text).toContain("req_1")
+    expect(text).toContain("example.v1.prompt.answer")
+    expect(text).toContain(BRIDGE_TEST_REDACTION)
+  })
+
+  it("supports sample operation, clock, and file-asset fixtures", () => {
+    const op = createTestBridgeOperationDefinition({
+      op: "example.v1.catalog.search",
+      callerClassesAllowed: ["browser", "runtime", "server"],
+      requiredCapabilities: ["example:catalog.search"],
+    })
+    const clock = createFakeClock()
+    const asset = createTestFileAssetPointer({ path: "generated/macro/catalog.json" })
+
+    expect(op.requiredCapabilities).toEqual(["example:catalog.search"])
+    expect(clock.advanceMs(1_000).toISOString()).toBe("2026-01-01T00:00:01.000Z")
+    expect(asset).toMatchObject({ kind: "file-asset", path: "generated/macro/catalog.json" })
+  })
+
+  it("fails fast if a generic workspace-files bridge op is registered", () => {
+    expect(() => assertNoGenericWorkspaceFilesOps([
+      createTestBridgeOperationDefinition({ op: "example.v1.records.read" }),
+    ])).not.toThrow()
+
+    expect(() => assertNoGenericWorkspaceFilesOps([
+      createTestBridgeOperationDefinition({ op: "workspace-files.v1.write" }),
+    ])).toThrow(expect.objectContaining({ code: WorkspaceBridgeErrorCode.InvalidRequest }))
+  })
+})

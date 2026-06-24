@@ -25,6 +25,12 @@ export interface DirPluginEntry {
   dir: string
   options?: unknown
   hotReload?: boolean
+  /**
+   * Directory-source plugins are untrusted for host bridge handler registration
+   * unless the app explicitly marks the entry as internal at boot. This keeps
+   * user/workspace plugin packages from self-registering privileged host RPCs.
+   */
+  trust?: "internal"
 }
 
 type MaybePromise<T> = T | Promise<T>
@@ -114,6 +120,27 @@ async function resolveDirServerPlugin(
 
 export function isDirEntry(entry: unknown): entry is DirPluginEntry {
   return typeof entry === "object" && entry !== null && "dir" in entry
+}
+
+export function isTrustedWorkspaceBridgeHandlerEntry(entry: unknown): boolean {
+  // Pre-built plugin objects can only be supplied by host/app code, not by a
+  // user-authored package manifest, so they are trusted at this boundary.
+  if (!isDirEntry(entry)) return true
+  return entry.trust === "internal"
+}
+
+export function assertWorkspaceBridgeHandlersTrusted(
+  plugin: WorkspaceServerPlugin,
+  entry: unknown,
+): void {
+  if ((plugin.workspaceBridgeHandlers?.length ?? 0) === 0) return
+  if (isTrustedWorkspaceBridgeHandlerEntry(entry)) return
+  const label = isDirEntry(entry) ? resolve(entry.dir) : plugin.id
+  throw new Error(
+    `server plugin "${plugin.id}" from ${label} declares workspaceBridgeHandlers, ` +
+      `but host bridge handlers are only allowed for pre-built host plugins or ` +
+      `directory entries marked trust: "internal"`,
+  )
 }
 
 /**

@@ -11,7 +11,27 @@
  * - `types/` — pure type definitions, zero runtime
  * - `plugins/` — shared plugin internals used by the public `/plugin` subpath and bootstrap
  */
-export type { UiBridge, UiState, UiCommand, CommandResult } from "./ui-bridge"
+export type { WorkspaceBridge, UiState, UiCommand, CommandResult } from "./ui-bridge"
+export {
+  WorkspaceBridgeErrorCode,
+  createWorkspaceBridgeError,
+} from "./workspace-bridge-rpc"
+export type {
+  BridgeActorAttribution,
+  BridgeActorKind,
+  BridgeAuthContext,
+  BridgeCallerClass,
+  BridgeIdempotencyPolicy,
+  BridgeRedactedActorRef,
+  WorkspaceBridgeCallFailure,
+  WorkspaceBridgeCallRequest,
+  WorkspaceBridgeCallResponse,
+  WorkspaceBridgeCallSuccess,
+  WorkspaceBridgeError,
+  WorkspaceBridgeFileAssetPointer,
+  WorkspaceBridgeJsonValue,
+  WorkspaceBridgeOperationDefinition,
+} from "./workspace-bridge-rpc"
 export type { PanelConfig, CommandConfig, PaneProps, PanelRegistration } from "./types/panel"
 export type {
   SurfaceOpenRequest,
