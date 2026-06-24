@@ -16,6 +16,11 @@ SECRETS_DB_ENV="${BORING_DB_ENV_FILE:-${APP_DIR}/../secrets/db.env}"
 APP_ENV_FILE="${BORING_APP_ENV_FILE:-${APP_DIR}/.env}"
 HEALTH_URL="${BORING_HEALTH_URL:-http://127.0.0.1:3000/health}"
 
+if [[ "${BORING_ENABLE_LEGACY_BRANCH_DEPLOY:-}" != "1" ]]; then
+  echo "legacy branch auto deploy is disabled; use GHCR manifest + Kamal/deployd path" >&2
+  exit 1
+fi
+
 exec 9>"${LOCK_FILE}"
 flock -n 9 || exit 0
 

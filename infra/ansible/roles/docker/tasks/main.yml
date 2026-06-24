@@ -28,6 +28,17 @@
     enabled: true
     state: started
 
+- name: Ensure full-app data directories are writable by non-root runtime user
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    owner: "10001"
+    group: "10001"
+    mode: "0750"
+  loop:
+    - /data/workspaces
+    - /data/pi-sessions
+
 - name: Configure Docker daemon log rotation
   ansible.builtin.copy:
     dest: /etc/docker/daemon.json

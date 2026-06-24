@@ -35,15 +35,8 @@ servers:
 ssh:
   user: debian
 
-builder:
-  arch: amd64
-  context: .
-  dockerfile: apps/full-app/Dockerfile
-  target: web-runtime
-  args:
-    REVISION: <%= ENV.fetch("BORING_DEPLOY_COMMIT") %>
-    SOURCE: https://github.com/hachej/boring-ui
-
+# No builder section in the production template: GitHub Actions builds and
+# smokes the image, and the operator/deployd deploys that prebuilt tag only.
 env:
   clear:
     NODE_ENV: production
