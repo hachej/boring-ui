@@ -18,8 +18,8 @@ type ButtonVariant = "outline" | "ghost" | "secondary"
 type ButtonSize = "xs" | "icon-xs"
 
 const buttonVariantClass: Record<ButtonVariant, string> = {
-  outline: "border border-border bg-background hover:bg-muted/60",
-  ghost: "hover:bg-muted/60 hover:text-foreground",
+  outline: "border border-border bg-background text-foreground hover:bg-muted/60",
+  ghost: "text-foreground hover:bg-muted/60",
   secondary: "bg-secondary text-secondary-foreground hover:bg-secondary/80",
 }
 
