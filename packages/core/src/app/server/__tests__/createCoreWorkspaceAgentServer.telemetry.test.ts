@@ -59,15 +59,23 @@ vi.mock('@hachej/boring-workspace/app/server', () => ({
 }))
 
 vi.mock('@hachej/boring-workspace/server', () => ({
+  createBrowserBridgeAuthPolicy: () => vi.fn(),
   createInMemoryBridge: () => ({
     drainCommands: vi.fn(),
     getState: vi.fn(),
-    postCommand: vi.fn(),
+    emitUiEffect: vi.fn(),
     setState: vi.fn(),
     subscribeCommands: vi.fn(),
   }),
+  createWorkspaceBridgeRegistry: () => ({
+    call: vi.fn(),
+    getDefinition: vi.fn(),
+    registerHandler: vi.fn(),
+  }),
   createWorkspaceUiTools: () => [],
+  InMemoryWorkspaceBridgeIdempotencyStore: class InMemoryWorkspaceBridgeIdempotencyStore {},
   uiRoutes: async () => {},
+  workspaceBridgeHttpRoutes: async () => {},
 }))
 
 vi.mock('../../../server/auth/index.js', () => ({
@@ -108,6 +116,7 @@ vi.mock('../../../server/db/index.js', () => ({
 vi.mock('../../../server/config/index.js', () => ({
   loadConfig: async () => ({
     appId: 'test-app',
+    cors: { origins: ['http://localhost:3000'], credentials: true },
     auth: { url: 'http://localhost:3000' },
     encryption: { workspaceSettingsKey: 'test-key' },
     stores: 'postgres',

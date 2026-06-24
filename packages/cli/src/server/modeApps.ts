@@ -345,6 +345,7 @@ export async function createFolderModeApp(opts: {
   mode: RuntimeMode
   projectName?: string
   provisionWorkspace?: boolean
+  allowInsecureLocalBridgeAuth?: boolean
 }): Promise<FastifyInstance> {
   const workspaceRoot = resolve(opts.workspaceRoot)
   const projectName = opts.projectName ?? (basename(workspaceRoot) || "workspace")
@@ -379,6 +380,7 @@ export async function createFolderModeApp(opts: {
     // additionalBoringPluginDirs only feeds the asset-manager scan.
     defaultPluginPackages: pluginDiscovery.resolveCliDefaultPluginPackagePaths(),
     additionalBoringPluginDirs: pluginDirs,
+    workspaceBridge: { allowInsecureLocalCliBrowserAuth: opts.allowInsecureLocalBridgeAuth === true },
     boringPluginFrontTargetResolver: runtimeHost.createFrontTargetResolver(FOLDER_RUNTIME_PLUGIN_WORKSPACE_ID),
   })
   await runtimeHost.registerRoutes(app as FastifyInstance)
