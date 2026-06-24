@@ -1,10 +1,11 @@
 import { spawnSync } from 'node:child_process'
 
 import { getEnv } from '../config/env'
+import type { SandboxHandleStore } from '../../shared/sandbox-handle-store'
 import type { BuiltinRuntimeModeId, RuntimeModeAdapter, RuntimeModeId } from './mode'
 import { directModeAdapter } from './modes/direct'
 import { localModeAdapter } from './modes/local'
-import { vercelSandboxModeAdapter } from './modes/vercel-sandbox'
+import { createVercelSandboxModeAdapter, vercelSandboxModeAdapter } from './modes/vercel-sandbox'
 
 const MODE_ADAPTERS: Record<BuiltinRuntimeModeId, RuntimeModeAdapter> = {
   direct: directModeAdapter,
@@ -38,7 +39,17 @@ export function autoDetectMode(): RuntimeModeId {
   return 'direct'
 }
 
-export function resolveMode(mode: RuntimeModeId = autoDetectMode()): RuntimeModeAdapter {
+export interface ResolveModeOptions {
+  sandboxHandleStore?: SandboxHandleStore
+}
+
+export function resolveMode(mode: RuntimeModeId = autoDetectMode(), opts: ResolveModeOptions = {}): RuntimeModeAdapter {
+  if (mode === 'vercel-sandbox' && opts.sandboxHandleStore) {
+    return createVercelSandboxModeAdapter({
+      store: opts.sandboxHandleStore,
+      orphanGuardMaxIdleMs: null,
+    })
+  }
   if (isBuiltinRuntimeModeId(mode)) return MODE_ADAPTERS[mode]
   throw new Error(`Runtime mode "${mode}" has no built-in adapter. Pass runtimeModeAdapter to use a custom sandbox mode.`)
 }

@@ -3,6 +3,7 @@ import type { FastifyPluginAsync } from "fastify"
 import type { AgentTool } from "../../shared/types/agent-tool"
 import {
   validateServerPlugin,
+  type WorkspaceBridgeHandlerContribution,
   type WorkspaceServerPlugin,
 } from "./defineServerPlugin"
 import {
@@ -15,7 +16,7 @@ export {
 } from "./defineServerPlugin"
 export { compactPiPackages } from "./piPackages"
 export { definePluginAsset, resolvePluginAssetPath } from "./assets"
-export type { WorkspaceServerPlugin, WorkspaceServerPluginAsset } from "./defineServerPlugin"
+export type { WorkspaceBridgeHandlerContribution, WorkspaceServerPlugin, WorkspaceServerPluginAsset } from "./defineServerPlugin"
 export type { WorkspacePiPackageSource } from "./piPackages"
 
 export interface ServerBootstrapOptions {
@@ -45,6 +46,7 @@ export interface ServerBootstrapResult {
   runtimePlugins: WorkspaceRuntimeProvisioningInput[]
   provisioningContributions: WorkspaceProvisioningContribution[]
   routeContributions: WorkspaceRouteContribution[]
+  workspaceBridgeHandlers: WorkspaceBridgeHandlerContribution[]
   preservedUiStateKeys: string[]
 }
 
@@ -94,6 +96,8 @@ export function bootstrapServer(options: ServerBootstrapOptions): ServerBootstra
     .filter((p) => p.routes)
     .map((p) => ({ id: p.id, routes: p.routes! }))
 
+  const workspaceBridgeHandlers = finalPlugins.flatMap((p) => p.workspaceBridgeHandlers ?? [])
+
   const preservedUiStateKeys = [...new Set(finalPlugins.flatMap((p) => p.preservedUiStateKeys ?? []))]
 
   return {
@@ -105,6 +109,7 @@ export function bootstrapServer(options: ServerBootstrapOptions): ServerBootstra
     runtimePlugins,
     provisioningContributions,
     routeContributions,
+    workspaceBridgeHandlers,
     preservedUiStateKeys,
   }
 }
