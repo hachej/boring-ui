@@ -1,5 +1,6 @@
 import Fastify from 'fastify'
 import { beforeEach, expect, test, vi } from 'vitest'
+import type { CoreConfig } from '../../../shared/types.js'
 import { createTestCoreConfig } from '../../../server/__tests__/createTestApp.js'
 
 const mocks = vi.hoisted(() => ({
@@ -31,13 +32,21 @@ vi.mock('@hachej/boring-workspace/app/server', () => ({
 }))
 
 vi.mock('@hachej/boring-workspace/server', () => ({
-  createInMemoryBridge: () => ({ postCommand: vi.fn() }),
+  createBrowserBridgeAuthPolicy: () => vi.fn(),
+  createInMemoryBridge: () => ({ postCommand: vi.fn(), drainCommands: vi.fn(), getState: vi.fn(), emitUiEffect: vi.fn(), setState: vi.fn(), subscribeCommands: vi.fn() }),
+  createWorkspaceBridgeRegistry: () => ({ call: vi.fn(), getDefinition: vi.fn(), registerHandler: vi.fn() }),
   createWorkspaceUiTools: mocks.createWorkspaceUiTools,
+  InMemoryWorkspaceBridgeIdempotencyStore: class InMemoryWorkspaceBridgeIdempotencyStore {},
   uiRoutes: async () => {},
+  workspaceBridgeHttpRoutes: async () => {},
 }))
 
 vi.mock('../../../server/app/index.js', () => ({
-  createCoreApp: async () => Fastify({ logger: false }),
+  createCoreApp: async (config: CoreConfig) => {
+    const app = Fastify({ logger: false })
+    app.decorate('config', config)
+    return app
+  },
   registerRoutes: async () => {},
 }))
 
