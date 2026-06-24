@@ -334,7 +334,7 @@ export function AppLeftPane({
                 {pinnedSessions.map((session) => renderSession(session, true))}
               </SessionSubSection>
             ) : null}
-            <SessionSubSection title="Sessions" empty="No sessions yet.">
+            <SessionSubSection title="Chats" empty="No chats yet.">
               {regularSessions.map((session) => renderSession(session, false))}
             </SessionSubSection>
           </div>

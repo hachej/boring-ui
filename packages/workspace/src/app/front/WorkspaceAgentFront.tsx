@@ -1311,6 +1311,15 @@ export function WorkspaceAgentFront<
     return resolvedDelete(sessionId)
   }, [chatPaneState, chatSessionId, resolvedDelete, resolvedSwitch, workspaceId])
 
+  // "New chat" from the left bar. With a split already open, the new session
+  // gets its OWN dedicated pane (inserted after the active one) so the existing
+  // panes are never hijacked; with a single pane it just becomes the active
+  // chat — no gratuitous split for the common case.
+  const createChatSessionPreferNewPane = useCallback(() => {
+    if (chatPaneIds.length >= 2) return createChatPaneAfter(activeChatPaneId)
+    return createChatSession()
+  }, [activeChatPaneId, chatPaneIds.length, createChatPaneAfter, createChatSession])
+
   const [autoSubmitHydrationDisabled, setAutoSubmitHydrationDisabled] = useState(requestedAutoSubmitInitialDraft)
   const autoSubmitHydrationWorkspaceRef = useRef(workspaceId)
   useEffect(() => {
@@ -1418,14 +1427,38 @@ export function WorkspaceAgentFront<
     () => makeCenterParams(chatSessionId),
     [chatSessionId, makeCenterParams],
   )
-  const chatPanes = useMemo(() => (
-    chatPaneIds.map((id) => ({
-      id,
-      title: sessionTitleById.get(id) ?? (id === "default" ? defaultSessionTitle : id),
-      panel: "chat",
-      params: makeCenterParams(id, { bridgeEnabled: id === activeChatPaneId }),
-    }))
-  ), [activeChatPaneId, chatPaneIds, defaultSessionTitle, makeCenterParams, sessionTitleById])
+  // Stabilise each pane's params by (sessionId, bridgeEnabled). Switching the
+  // active pane only flips one pane's bridge flag, so every *other* open pane
+  // must keep its exact same params object — otherwise it re-renders with a
+  // fresh-identity-but-equal params and reloads its transcript, which read as
+  // "the other pane changed too" when opening a third session. The cache resets
+  // whenever makeCenterParams changes (i.e. a real input changed), so genuine
+  // updates still flow to every pane.
+  const paneParamsCacheRef = useRef<{
+    make: typeof makeCenterParams
+    cache: Map<string, ReturnType<typeof makeCenterParams>>
+  } | null>(null)
+  const chatPanes = useMemo(() => {
+    if (!paneParamsCacheRef.current || paneParamsCacheRef.current.make !== makeCenterParams) {
+      paneParamsCacheRef.current = { make: makeCenterParams, cache: new Map() }
+    }
+    const { cache } = paneParamsCacheRef.current
+    return chatPaneIds.map((id) => {
+      const bridgeEnabled = id === activeChatPaneId
+      const cacheKey = `${id}:${bridgeEnabled}`
+      let params = cache.get(cacheKey)
+      if (!params) {
+        params = makeCenterParams(id, { bridgeEnabled })
+        cache.set(cacheKey, params)
+      }
+      return {
+        id,
+        title: sessionTitleById.get(id) ?? (id === "default" ? defaultSessionTitle : id),
+        panel: "chat",
+        params,
+      }
+    })
+  }, [activeChatPaneId, chatPaneIds, defaultSessionTitle, makeCenterParams, sessionTitleById])
   const surfaceParams = useMemo<SurfaceShellProps>(() => ({
     storageKey: resolvedSurfaceStorageKey,
     defaultLeftTab: defaultWorkbenchLeftTab,
@@ -1582,7 +1615,7 @@ export function WorkspaceAgentFront<
             // without a switch needs the pending-entry contract (plan §5.1) — deferred.
             if (projectId === (appLeftActiveProjectId ?? workspaceId)) {
               setLeftOverlay(null)
-              void createChatSession()
+              void createChatSessionPreferNewPane()
             } else {
               onSwitchAppLeftProject?.(projectId)
             }
@@ -1598,7 +1631,7 @@ export function WorkspaceAgentFront<
           pinnedSessionIds={pinnedIds}
           onCreateSession={() => {
             setLeftOverlay(null)
-            void createChatSession()
+            void createChatSessionPreferNewPane()
           }}
           onOpenCommandPalette={openCommandPalette}
           onSwitchSession={switchToChatPane}

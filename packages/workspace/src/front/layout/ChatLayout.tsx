@@ -542,16 +542,6 @@ export function ChatLayout(props: ChatLayoutProps) {
           pulse={chatRailPulse || activeBlockers.length > 0}
         />
       ) : null}
-      {!surfaceOpen && props.onOpenSurface ? (
-        <FloatingEdgeButton
-          side="right"
-          icon="workbench"
-          onClick={props.onOpenSurface}
-          label="Workbench"
-          hint="⌘2"
-          bottomOffset={props.surfaceButtonBottomOffset}
-        />
-      ) : null}
     </div>
   )
 }
