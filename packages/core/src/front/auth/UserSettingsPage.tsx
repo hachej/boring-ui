@@ -33,6 +33,7 @@ import {
 } from 'lucide-react'
 import { useSession, useSignOut, useChangePassword } from './AuthProvider.js'
 import { useUser } from './UserIdentityProvider.js'
+import { useOptionalConfig } from '../ConfigProvider.js'
 import { apiFetch } from '../utils.js'
 
 const changePasswordSchema = z
@@ -87,21 +88,30 @@ function formatMemberSince(value: string): string {
 }
 
 function SettingsTopBar() {
+  const config = useOptionalConfig()
+  const appTitle = config?.appName ?? 'Boring UI'
+  const appInitial = (appTitle.trim().charAt(0) || 'B').toUpperCase()
   return (
     <header
       className="relative flex h-[52px] items-center justify-between gap-3 border-b border-border/40 bg-background px-4"
       aria-label="App top bar"
     >
       <div className="flex min-w-0 flex-1 items-center gap-2.5">
-        <div
-          aria-hidden="true"
-          className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-foreground text-[12px] font-semibold text-background"
+        <a
+          href="/"
+          aria-label={`${appTitle} home`}
+          className="flex min-w-0 items-center gap-2.5 rounded-md outline-none transition-opacity hover:opacity-80 focus-visible:ring-2 focus-visible:ring-ring"
         >
-          S
-        </div>
-        <span className="truncate text-[13px] font-medium tracking-tight text-foreground">
-          Sovereign Workspace
-        </span>
+          <div
+            aria-hidden="true"
+            className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-foreground text-[12px] font-semibold text-background"
+          >
+            {appInitial}
+          </div>
+          <span className="truncate text-[13px] font-medium tracking-tight text-foreground">
+            {appTitle}
+          </span>
+        </a>
         <span aria-hidden="true" className="text-muted-foreground/30">/</span>
         <span className="truncate text-[13px] text-muted-foreground">Account settings</span>
       </div>

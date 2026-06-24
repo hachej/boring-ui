@@ -48,6 +48,42 @@ async function createTemplate(
   return root
 }
 
+
+
+test('createAgentApp direct bash receives runtime env contributions without persisting values', async () => {
+  const workspaceRoot = await makeTempDir('boring-agent-direct-runtime-env-')
+  let capturedTools: import('../../shared/tool').AgentTool[] = []
+  const app = await createAgentApp({
+    workspaceRoot,
+    mode: 'direct',
+    logger: false,
+    telemetry: { capture: vi.fn() },
+    runtimeEnvContributions: [{ id: 'direct-runtime-env-test', getEnv: () => ({ GENERIC_DIRECT_RUNTIME_ENV: 'visible' }) }],
+    harnessFactory: async (input) => {
+      capturedTools = input.tools
+      return {
+        id: 'direct-env-harness',
+        placement: 'server' as const,
+        sessions: {
+          async list() { return [] },
+          async create() { const now = new Date().toISOString(); return { id: 's', title: 'S', createdAt: now, updatedAt: now, turnCount: 0 } },
+          async load() { const now = new Date().toISOString(); return { id: 's', title: 'S', createdAt: now, updatedAt: now, turnCount: 0, messages: [] } },
+          async delete() {},
+        },
+        async *sendMessage() {},
+      }
+    },
+  })
+
+  const result = await capturedTools.find((tool) => tool.name === 'bash')!.execute(
+    { command: 'printf "%s" "$GENERIC_DIRECT_RUNTIME_ENV"' },
+    { abortSignal: new AbortController().signal, toolCallId: 'direct-env' },
+  )
+
+  expect(result.content.map((part) => part.text).join('')).toContain('visible')
+  await app.close()
+})
+
 test('createAgentApp provisions from templatePath option', async () => {
   const parent = await makeTempDir('boring-ui-app-parent-')
   const workspaceRoot = join(parent, 'workspace')

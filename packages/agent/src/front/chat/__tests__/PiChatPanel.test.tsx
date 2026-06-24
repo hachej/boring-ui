@@ -290,6 +290,31 @@ describe('PiChatPanel sandbox shell', () => {
     })
   })
 
+  test('stop clears local submitted state when no stream events arrived yet', async () => {
+    const remote = new FakeRemotePiSession(remoteState({ status: 'idle', lastSeq: 7 }))
+    const promptReceipt = deferred<{ accepted: true; cursor: number; clientNonce: string }>()
+    remote.prompt.mockImplementationOnce(async () => promptReceipt.promise)
+    const fetchMock = vi.fn().mockResolvedValue(jsonResponse([session('pi-1')]))
+    render(<PiChatPanel serverResourcesEnabled={false} storageScope="scope-a" fetch={fetchMock as unknown as typeof fetch} createRemoteSession={remoteFactory(remote)} />)
+
+    const textarea = await screen.findByLabelText('Agent prompt') as HTMLTextAreaElement
+    fireEvent.change(textarea, { target: { value: 'will be stopped before events' } })
+    fireEvent.keyDown(textarea, { key: 'Enter' })
+    await waitFor(() => expect(remote.prompt).toHaveBeenCalledWith(expect.objectContaining({ message: 'will be stopped before events' })))
+
+    await act(async () => {
+      promptReceipt.resolve({ accepted: true, cursor: 8, clientNonce: 'nonce' })
+      await promptReceipt.promise
+    })
+
+    await screen.findByTestId('chat-working')
+    fireEvent.click(screen.getByRole('button', { name: 'Stop' }))
+
+    await waitFor(() => expect(remote.stop).toHaveBeenCalledTimes(1))
+    await waitFor(() => expect(screen.queryByTestId('chat-working')).toBeNull())
+    await screen.findByRole('button', { name: 'Submit' })
+  })
+
   test('does not hold submitted state when stream events catch up before prompt receipt resolves', async () => {
     const remote = new FakeRemotePiSession(remoteState({ status: 'idle', lastSeq: 7 }))
     const promptReceipt = deferred<{ accepted: true; cursor: number; clientNonce: string }>()
@@ -1406,6 +1431,37 @@ describe('PiChatPanel sandbox shell', () => {
     // echoed into the input placeholder (which would duplicate the same line).
     expect(textarea.getAttribute('placeholder')).toBe('')
     expect(screen.getAllByText('Select a file before chatting').length).toBe(1)
+  })
+
+  test('renders open and cancel composer blocker actions as accessible icon buttons', async () => {
+    const remote = new FakeRemotePiSession(remoteState({ status: 'idle' }))
+    const onAction = vi.fn()
+    render(
+      <PiChatPanel
+        sessionId="pi-external"
+        hydrateMessages={false}
+        serverResourcesEnabled={false}
+        storageScope="scope-a"
+        composerBlockers={[{
+          id: 'ask-user:q1',
+          label: 'Answer the question in Questions to continue',
+          actions: [{ id: 'open', label: 'Open Questions' }, { id: 'cancel', label: 'Cancel question' }],
+        }]}
+        onComposerBlockerAction={onAction}
+        createRemoteSession={remoteFactory(remote)}
+      />,
+    )
+
+    await screen.findByText('Answer the question in Questions to continue')
+    const open = screen.getByRole('button', { name: 'Open Questions' })
+    const cancel = screen.getByRole('button', { name: 'Cancel question' })
+    expect(screen.queryByText('Open Questions')).toBeNull()
+    expect(screen.queryByText('Cancel question')).toBeNull()
+
+    fireEvent.click(open)
+    fireEvent.click(cancel)
+    expect(onAction).toHaveBeenCalledWith(expect.objectContaining({ id: 'ask-user:q1' }), 'open')
+    expect(onAction).toHaveBeenCalledWith(expect.objectContaining({ id: 'ask-user:q1' }), 'cancel')
   })
 
   test('/reset does not race empty-session auto-create into duplicate session creation', async () => {

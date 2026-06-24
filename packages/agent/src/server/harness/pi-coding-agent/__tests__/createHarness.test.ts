@@ -369,6 +369,25 @@ describe("PiSessionStore", () => {
     expect(() => new PiSessionStore("/tmp", { sessionNamespace: "../bad" })).toThrow("session namespace");
   });
 
+  it("honors BORING_AGENT_SESSION_ROOT for namespaced session stores", async () => {
+    const previous = process.env.BORING_AGENT_SESSION_ROOT;
+    process.env.BORING_AGENT_SESSION_ROOT = tmpDir;
+    try {
+      const store = new PiSessionStore("/workspace", { sessionNamespace: "workspace-a" });
+      expect(store.getSessionDir()).toBe(join(tmpDir, "workspace-a"));
+
+      const session = await store.create(ctx, { title: "Persistent" });
+      await expect(readFile(join(tmpDir, "workspace-a", `${session.id}.jsonl`), "utf-8"))
+        .resolves.toContain("Persistent");
+    } finally {
+      if (previous === undefined) {
+        delete process.env.BORING_AGENT_SESSION_ROOT;
+      } else {
+        process.env.BORING_AGENT_SESSION_ROOT = previous;
+      }
+    }
+  });
+
   it("can store session files under host cwd while writing runtime cwd in session header", async () => {
     const store = new PiSessionStore("/workspace", { storageCwd: "/tmp/host-storage-root", sessionDir: tmpDir });
     const session = await store.create(ctx, { title: "Runtime cwd" });
@@ -489,6 +508,23 @@ describe("PiSessionStore", () => {
     await store.delete(ctx, nativeSessionId);
     await expect(readFile(boringPath, "utf-8")).resolves.toContain("\"pi_session_file\"");
     await expect(readFile(nativePath, "utf-8")).resolves.toContain("\"native-linked\"");
+  });
+
+
+  it("loads pi session file mappings from legacy timestamp-prefixed Boring session files", async () => {
+    const store = new PiSessionStore("/tmp", tmpDir);
+    const sessionId = "visible-session";
+    const piFile = join(tmpDir, "native-pi-session.jsonl");
+    const boringFile = join(tmpDir, `20260524_${sessionId}.jsonl`);
+    await writeFile(piFile, "", "utf-8");
+    await writeFile(boringFile, [
+      JSON.stringify({ type: "session", version: 1, id: sessionId, timestamp: "2026-05-24T00:00:00.000Z", cwd: "/tmp" }),
+      JSON.stringify({ type: "pi_session_file", timestamp: "2026-05-24T00:00:01.000Z", path: piFile }),
+      "",
+    ].join("\n"), "utf-8");
+
+    expect(store.loadPiSessionFileSync(sessionId)).toBe(piFile);
+    await expect(store.loadPiSessionFile(ctx, sessionId)).resolves.toBe(piFile);
   });
 
   it("deletes a session", async () => {

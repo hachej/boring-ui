@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { Button, Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle, Input, Label } from '@hachej/boring-ui-kit'
-import { useSession, useSendVerificationEmail, useVerifyEmail } from './AuthProvider.js'
+import { useSession, useSendVerificationEmail, useSignOut, useVerifyEmail } from './AuthProvider.js'
 import { routes } from '../utils.js'
 
 type VerifyStatus = 'verifying' | 'verified' | 'expired' | 'invalid' | 'no-token'
@@ -14,10 +14,17 @@ function deleteCookie(name: string) {
   document.cookie = `${name}=; path=/; expires=Thu, 01 Jan 1970 00:00:00 GMT`
 }
 
+function navigateToSignIn() {
+  if (typeof window === 'undefined') return
+  window.history.replaceState({}, '', routes.signin)
+  window.dispatchEvent(new PopStateEvent('popstate'))
+}
+
 export function VerifyEmailPage() {
   const session = useSession()
   const verifyEmail = useVerifyEmail()
   const sendVerificationEmail = useSendVerificationEmail()
+  const signOut = useSignOut()
 
   const token = typeof window !== 'undefined'
     ? new URLSearchParams(window.location.search).get('token')
@@ -28,6 +35,7 @@ export function VerifyEmailPage() {
   const [cooldown, setCooldown] = useState(0)
   const [resendEmail, setResendEmail] = useState('')
   const [resendSent, setResendSent] = useState(false)
+  const [isSigningOut, setIsSigningOut] = useState(false)
   const verifiedRef = useRef(false)
 
   const sessionEmail = session.data?.user?.email ?? null
@@ -88,6 +96,16 @@ export function VerifyEmailPage() {
     setResendSent(true)
     setCooldown(60)
   }, [sessionEmail, resendEmail, cooldown, sendVerificationEmail])
+
+  const handleBackToSignIn = useCallback(async () => {
+    if (isSigningOut) return
+    setIsSigningOut(true)
+    try {
+      await signOut()
+    } finally {
+      navigateToSignIn()
+    }
+  }, [isSigningOut, signOut])
 
   const resendButton = (
     <Button
@@ -182,14 +200,22 @@ export function VerifyEmailPage() {
           </CardHeader>
           <CardContent>{resendSection}</CardContent>
           <CardFooter>
-            <a href={routes.signin} className="text-sm text-muted-foreground hover:underline">
-              Back to sign in
-            </a>
+            <Button
+              type="button"
+              variant="link"
+              className="h-auto p-0 text-sm text-muted-foreground hover:underline"
+              disabled={isSigningOut}
+              onClick={handleBackToSignIn}
+            >
+              {isSigningOut ? 'Signing out…' : 'Back to sign in'}
+            </Button>
           </CardFooter>
         </Card>
       </div>
     )
   }
+
+  const isWaitingForEmailClick = status === 'no-token' && Boolean(sessionEmail)
 
   // 'invalid' or 'no-token'
   return (
@@ -203,18 +229,26 @@ export function VerifyEmailPage() {
           </div>
         )}
         <CardHeader>
-          <CardTitle>Invalid verification link</CardTitle>
+          <CardTitle>{isWaitingForEmailClick ? 'Check your email' : 'Invalid verification link'}</CardTitle>
           <CardDescription>
-            {status === 'no-token'
-              ? 'No verification token found. Check the link in your email.'
-              : 'This verification link is invalid. Request a new one below.'}
+            {isWaitingForEmailClick
+              ? 'We sent a verification link to your email address. Please check your inbox to continue.'
+              : status === 'no-token'
+                ? 'No verification token found. Check the link in your email.'
+                : 'This verification link is invalid. Request a new one below.'}
           </CardDescription>
         </CardHeader>
         <CardContent>{resendSection}</CardContent>
         <CardFooter>
-          <a href={routes.signin} className="text-sm text-muted-foreground hover:underline">
-            Back to sign in
-          </a>
+          <Button
+            type="button"
+            variant="link"
+            className="h-auto p-0 text-sm text-muted-foreground hover:underline"
+            disabled={isSigningOut}
+            onClick={handleBackToSignIn}
+          >
+            {isSigningOut ? 'Signing out…' : 'Back to sign in'}
+          </Button>
         </CardFooter>
       </Card>
     </div>

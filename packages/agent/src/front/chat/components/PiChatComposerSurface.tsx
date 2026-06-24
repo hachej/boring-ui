@@ -2,7 +2,6 @@
 
 import type { CSSProperties, ChangeEvent, KeyboardEvent as ReactKeyboardEvent, RefObject } from 'react'
 import { useCallback, useLayoutEffect } from 'react'
-import type { FileUIPart } from 'ai'
 import { motion } from 'motion/react'
 import type { QueuedUserMessage } from '../../../shared/chat'
 import type { AvailableModel, ModelSelection, ThinkingLevel } from '../../chatPanelSettings'
@@ -24,6 +23,7 @@ import {
   PromptInputFooter,
   PromptInputSubmit,
   PromptInputTextarea,
+  type PromptInputFilePart,
 } from '../../primitives/prompt-input'
 import { SlashCommandPicker } from '../../primitives/slash-command-picker'
 import type { SlashCommand } from '../../slashCommands'
@@ -62,7 +62,9 @@ function hasSoftWrappedLine(node: HTMLTextAreaElement, style: CSSStyleDeclaratio
   })
 }
 
-export interface PiChatComposerSurfaceProps {
+export interface PiChatComposerSurfaceProps<
+  TComposerBlocker extends ComposerBlocker = ComposerBlocker,
+> {
   chrome: boolean
   isStreaming: boolean
   status: string
@@ -74,8 +76,8 @@ export interface PiChatComposerSurfaceProps {
   composerPlaceholder?: string
   composerStatusNotice: { title: string; detail?: string; code?: string } | null
   workspaceWarmupBlocked: boolean
-  primaryComposerBlocker?: ComposerBlocker
-  onComposerBlockerAction?: (blocker: ComposerBlocker, action: string) => void
+  primaryComposerBlocker?: TComposerBlocker
+  onComposerBlockerAction?: (blocker: TComposerBlocker, action: string) => void
   queuePreview: QueuedUserMessage[]
   onEditQueued: () => void
   hotReloadEnabled: boolean
@@ -117,11 +119,13 @@ export interface PiChatComposerSurfaceProps {
   textareaRef: RefObject<HTMLTextAreaElement | null>
   onTextareaChange: (event: ChangeEvent<HTMLTextAreaElement>) => void
   onTextareaKeyDown: (event: ReactKeyboardEvent<HTMLTextAreaElement>) => void
-  onSubmitMessage: (payload: { text: string; files: FileUIPart[] }) => false | void | Promise<false | void>
+  onSubmitMessage: (payload: { text: string; files: PromptInputFilePart[] }) => false | void | Promise<false | void>
   onStop: () => void
 }
 
-export function PiChatComposerSurface({
+export function PiChatComposerSurface<
+  TComposerBlocker extends ComposerBlocker = ComposerBlocker,
+>({
   chrome,
   isStreaming,
   status,
@@ -178,12 +182,14 @@ export function PiChatComposerSurface({
   onTextareaKeyDown,
   onSubmitMessage,
   onStop,
-}: PiChatComposerSurfaceProps) {
+}: PiChatComposerSurfaceProps<TComposerBlocker>) {
+  const workspaceRequestId = getHeaderValue(requestHeaders, 'x-boring-workspace-id')
   const uploadAttachment = useCallback((file: File) => uploadFile(file, {
     apiBaseUrl,
-    workspaceRequestId: requestHeaders?.['x-boring-workspace-id'],
+    workspaceRequestId,
+    responseUrl: 'raw',
     fetch,
-  }), [apiBaseUrl, fetch, requestHeaders])
+  }), [apiBaseUrl, fetch, workspaceRequestId])
 
   const resizeTextarea = useCallback((node: HTMLTextAreaElement | null) => {
     if (!node) return
@@ -391,7 +397,7 @@ export function PiChatComposerSurface({
                   className={cn(
                     'h-8 w-8 shrink-0 rounded-full',
                     'bg-foreground',
-                    '!text-background',
+                    'text-background',
                     'transition-all duration-150 ease-[cubic-bezier(0.22,1,0.36,1)]',
                     'hover:bg-foreground/90 hover:shadow-[0_0_0_3px_oklch(from_var(--foreground)_l_c_h/0.12)] hover:scale-[1.04]',
                     'active:scale-[0.93] active:brightness-95',
@@ -447,3 +453,9 @@ export function PiChatComposerSurface({
     </div>
   )
 }
+
+function getHeaderValue(headers: Record<string, string> | undefined, name: string): string | undefined {
+  if (!headers) return undefined
+  return headers[name] ?? Object.entries(headers).find(([key]) => key.toLowerCase() === name.toLowerCase())?.[1]
+}
+

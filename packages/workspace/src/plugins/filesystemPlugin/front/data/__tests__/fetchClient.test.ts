@@ -75,6 +75,18 @@ describe("FetchClient", () => {
     expect(JSON.parse(opts.body)).toEqual({ path: "/a.ts", content: "code" })
   })
 
+  it("POST /api/v1/files forwards returnMtimeMs opt-out when supplied", async () => {
+    mockFetch.mockReturnValue(ok({ ok: true }))
+    const client = new FetchClient({ apiBaseUrl: "" })
+    const result = await client.writeFile("/a.ts", "code", { returnMtimeMs: false })
+    expect(JSON.parse(mockFetch.mock.calls[0][1].body)).toEqual({
+      path: "/a.ts",
+      content: "code",
+      returnMtimeMs: false,
+    })
+    expect(result).toEqual({ mtimeMs: undefined })
+  })
+
   it("POST /api/v1/files forwards expectedMtimeMs when supplied", async () => {
     mockFetch.mockReturnValue(ok({ ok: true, mtimeMs: 12345 }))
     const client = new FetchClient({ apiBaseUrl: "" })

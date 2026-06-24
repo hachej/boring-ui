@@ -26,6 +26,8 @@ const requiredFiles = [
   "dist/server.d.ts",
   "dist/shared.js",
   "dist/shared.d.ts",
+  "dist/bridge-client.js",
+  "dist/bridge-client.d.ts",
   "dist/events.js",
   "dist/events.d.ts",
   "dist/workspace.css",

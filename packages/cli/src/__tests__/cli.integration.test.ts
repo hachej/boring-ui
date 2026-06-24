@@ -48,6 +48,16 @@ test("installed boring-ui --help exits without starting a workspace", async () =
   await expect(runCli(["--help"], {})).resolves.toMatchObject({
     stdout: expect.stringContaining("Usage: boring-ui"),
   })
+  const result = await runCli(["--help"], {})
+  expect(result.stdout).toContain("Listen host (default: 127.0.0.1)")
+  expect(result.stdout).toContain("--allow-insecure-local-bridge")
+})
+
+
+test("boring-ui refuses non-loopback host without explicit insecure bridge opt-in", async () => {
+  await expect(runCli(["--host", "0.0.0.0"], {})).rejects.toMatchObject({
+    stderr: expect.stringContaining("--allow-insecure-local-bridge"),
+  })
 })
 
 test("boring-ui plugin reuses plugin CLI install/list/remove handlers", async () => {

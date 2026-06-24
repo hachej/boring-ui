@@ -56,7 +56,8 @@ Common optional:
 | `CORS_ORIGINS` | `http://localhost:3000,http://localhost:5173` | Allowed origins |
 | `BORING_PLUGIN_AUTHORING` | `0` | `1` installs the plugin-authoring surface |
 | `RESEND_API_KEY` | — | Resend mail transport |
-| `BORING_AGENT_WORKSPACE_ROOT` | — | Override the agent workspace root |
+| `BORING_AGENT_WORKSPACE_ROOT` | — | Host/control-plane workspace root. In `vercel-sandbox` prod this is `/data/workspaces`; it is not the sandbox cwd. Agent files live in sandbox `/workspace`. |
+| `BORING_AGENT_SESSION_ROOT` | — | Durable Pi chat transcript root. In Fly prod use a mounted-volume path such as `/data/pi-sessions`; do not rely on container `/root/.pi`. |
 | `BORING_AGENT_DEFAULT_MODEL_PROVIDER`, `BORING_AGENT_DEFAULT_MODEL_ID`, `INFOMANIAK_API_TOKEN`, `BORING_AGENT_INFOMANIAK_PRODUCT_ID`, `BORING_AGENT_INFOMANIAK_MODEL` | — | Default chat model, incl. OpenAI-compatible Infomaniak endpoint |
 | `BORING_AGENT_MODE` | `local` | Set `vercel-sandbox` to run the agent in a Vercel Firecracker microVM. Also configure Vercel credentials such as `VERCEL_TEAM_ID`, `VERCEL_PROJECT_ID`, and local/dev auth via `VERCEL_TOKEN` when OIDC is not available. |
 
@@ -66,6 +67,21 @@ The post-deploy smoke script reads `DEPLOY_URL` plus a family of `SMOKE_*` vars 
 
 - **Fly.io**: `fly.toml` (app `boring-full-app`, region `cdg`, `/health` checks, `release_command` runs `migrate.js`, mounted `workspace_data` volume at `/data`). Secrets via `fly secrets set`.
 - **Docker**: `Dockerfile` builds the app; run with `-p 3000:3000 --env-file apps/full-app/.env`.
+
+In the production Docker image, `BORING_AGENT_MODE=vercel-sandbox` splits storage:
+
+```txt
+Fly volume:
+  /data/workspaces/<workspaceId>   host/control-plane anchor, normally empty in sandbox mode
+  /data/pi-sessions/<workspaceId>  durable chat transcripts
+
+Vercel sandbox:
+  /workspace                       actual agent cwd, file tree, and shell workspace
+```
+
+Do not debug missing sandbox files by looking under `/data/workspaces/<id>`; inspect
+the Vercel sandbox `/workspace` instead. Do inspect `/data/pi-sessions/<id>` when
+checking whether chat history survives Fly deploy/restart.
 
 After deploy, run `pnpm --filter full-app smoke:post-deploy` (with `DEPLOY_URL` set) to verify the live instance.
 

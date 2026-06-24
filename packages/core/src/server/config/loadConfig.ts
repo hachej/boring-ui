@@ -1,6 +1,7 @@
 import { readFileSync, existsSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { parse as parseTOML } from 'smol-toml'
+import { isCoreEmailVerificationEnabled } from '../../shared/authPolicy.js'
 import type { CoreConfig, RuntimeConfig } from '../../shared/types.js'
 import { ConfigValidationError } from '../../shared/errors.js'
 import { coreConfigSchema } from './schema.js'
@@ -277,6 +278,7 @@ export function buildRuntimeConfigPayload(config: CoreConfig): RuntimeConfig {
       googleOauth: isGoogleOauthUsable(config),
       invitesEnabled: config.features.invitesEnabled,
       sendWelcomeEmail: config.features.sendWelcomeEmail,
+      emailVerification: isCoreEmailVerificationEnabled(config),
     },
   }
 }

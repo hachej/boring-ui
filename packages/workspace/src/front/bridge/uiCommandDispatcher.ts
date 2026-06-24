@@ -15,6 +15,7 @@ import type { SurfaceOpenRequest } from "../../shared/types/surface"
  * `WORKSPACE_COMMAND_NOTIFY_EVENT` in `@hachej/boring-agent/shared`.
  */
 export const WORKSPACE_COMMAND_NOTIFY_EVENT = "boring-ui:command-notify"
+export const WORKSPACE_SURFACE_OPEN_SKIPPED_EVENT = "boring-workspace:surface-open-skipped"
 
 export interface DispatchContext {
   /**
@@ -31,6 +32,15 @@ export interface DispatchContext {
   openWorkbenchSources?: () => void
   /** Close the workbench pane when a command opened it only for an ephemeral task. */
   closeWorkbench?: () => void
+  /**
+   * Park an op that couldn't run because the surface never mounted within the
+   * retry budget (collapsed surface / warmup overlay). The host flushes parked
+   * ops when the SurfaceShell next becomes ready. Without this the op is
+   * silently dropped.
+   */
+  enqueue?: (run: (surface: SurfaceShellApi) => void) => void
+  /** Optional host policy hook for surface requests that are only relevant in a visible/open context. */
+  shouldOpenSurface?: (request: SurfaceOpenRequest) => boolean
 }
 
 const KNOWN_KINDS = new Set([
@@ -60,6 +70,12 @@ function recordParam(
   return undefined
 }
 
+function notifySurfaceOpenSkipped(request: SurfaceOpenRequest): void {
+  if (typeof globalThis.dispatchEvent === "function" && typeof CustomEvent !== "undefined") {
+    globalThis.dispatchEvent(new CustomEvent(WORKSPACE_SURFACE_OPEN_SKIPPED_EVENT, { detail: request }))
+  }
+}
+
 function surfaceRequestParam(params: Record<string, unknown>): SurfaceOpenRequest | null {
   const kind = strParam(params, "kind")
   const target = strParam(params, "target")
@@ -83,7 +99,14 @@ function runWhenSurfaceReady(
     run(surface)
     return
   }
-  if (!ctx.isWorkbenchOpen() || attempts <= 0) return
+  if (!ctx.isWorkbenchOpen()) return
+  if (attempts <= 0) {
+    // Out of retry budget but the workbench is open and just hasn't mounted
+    // its SurfaceShell yet (collapsed / warming up). Park the op so it replays
+    // on surface ready instead of being silently dropped.
+    ctx.enqueue?.(run)
+    return
+  }
   requestAnimationFrame(() => runWhenSurfaceReady(ctx, run, attempts - 1))
 }
 
@@ -126,6 +149,14 @@ export function dispatchUiCommand(cmd: UiCommand, ctx: DispatchContext): void {
     case "openSurface": {
       const request = surfaceRequestParam(cmd.params)
       if (!request) return
+      if (request.meta?.openOnlyWhenSessionOpen === true && !ctx.shouldOpenSurface) {
+        notifySurfaceOpenSkipped(request)
+        return
+      }
+      if (ctx.shouldOpenSurface?.(request) === false) {
+        notifySurfaceOpenSkipped(request)
+        return
+      }
       const wasClosed = !ctx.isWorkbenchOpen()
       if (wasClosed) {
         request.meta = { ...(request.meta ?? {}), closeWorkbenchOnDone: true }

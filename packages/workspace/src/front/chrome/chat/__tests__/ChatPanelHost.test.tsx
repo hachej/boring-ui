@@ -1,7 +1,7 @@
 import { fireEvent, render, screen } from "@testing-library/react"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 import { useEffect } from "react"
-import { WorkspaceProvider, useWorkspaceAttention } from "../../../provider"
+import { WORKSPACE_ATTENTION_ACTION_EVENT, WorkspaceProvider, useWorkspaceAttention } from "../../../provider"
 import { events } from "../../../events"
 import { filesystemEvents } from "../../../../plugins/filesystemPlugin/shared/events"
 import type { SurfaceShellApi } from "../../artifact-surface/SurfaceShell"
@@ -42,6 +42,9 @@ function FakeChatPanel({ onData, onOpenArtifact, composerBlockers, onComposerSto
       <button type="button" onClick={() => composerBlockers?.[0] && onComposerBlockerAction?.(composerBlockers[0], "open")}>
         open blocker
       </button>
+      <button type="button" onClick={() => composerBlockers?.[0] && onComposerBlockerAction?.(composerBlockers[0], "approve")}>
+        custom blocker action
+      </button>
     </div>
   )
 }
@@ -49,7 +52,7 @@ function FakeChatPanel({ onData, onOpenArtifact, composerBlockers, onComposerSto
 function Blocker({ sessionId = "s1" }: { sessionId?: string }) {
   const { addBlocker, removeBlocker } = useWorkspaceAttention()
   useEffect(() => {
-    addBlocker({ id: `test:${sessionId}`, reason: "test", sessionId, label: "Blocked", surfaceKind: "questions", target: "q1", actions: [{ id: "open", label: "Open Questions" }] })
+    addBlocker({ id: `test:${sessionId}`, reason: "test", sessionId, label: "Blocked", surfaceKind: "questions", target: "q1", actions: [{ id: "open", label: "Open Questions" }, { id: "approve", label: "Approve" }] })
     return () => removeBlocker(`test:${sessionId}`)
   }, [addBlocker, removeBlocker, sessionId])
   return null
@@ -129,14 +132,40 @@ describe("ChatPanelHost", () => {
         </WorkspaceProvider>,
       )
       fireEvent.click(screen.getByRole("button", { name: "stop composer" }))
-      expect(observed).toHaveBeenCalledWith(expect.objectContaining({ detail: { sessionId: "s1" } }))
+      expect(observed).toHaveBeenCalledWith(expect.objectContaining({ detail: expect.objectContaining({ sessionId: "s1", reason: "user-stop" }) }))
       expect(onStop).toHaveBeenCalled()
     } finally {
       window.removeEventListener("boring:workspace-composer-stop", observed)
     }
   })
 
-  it("opens blocker surfaces through the workbench", () => {
+  it("emits generic attention action events for plugin-defined blocker actions", () => {
+    const observed = vi.fn()
+    window.addEventListener(WORKSPACE_ATTENTION_ACTION_EVENT, observed)
+    try {
+      render(
+        <WorkspaceProvider chatPanel={FakeChatPanel} persistenceEnabled={false}>
+          <Blocker sessionId="s1" />
+          <ChatPanelHost sessionId="s1" />
+        </WorkspaceProvider>,
+      )
+
+      fireEvent.click(screen.getByRole("button", { name: "custom blocker action" }))
+
+      expect(observed).toHaveBeenCalledWith(expect.objectContaining({
+        detail: expect.objectContaining({
+          blockerId: "test:s1",
+          actionId: "approve",
+          sessionId: "s1",
+          blocker: expect.objectContaining({ reason: "test", target: "q1" }),
+        }),
+      }))
+    } finally {
+      window.removeEventListener(WORKSPACE_ATTENTION_ACTION_EVENT, observed)
+    }
+  })
+
+  it("opens blocker surfaces through the workbench", async () => {
     const openSurface = vi.fn()
     const surface: SurfaceShellApi = {
       openFile: vi.fn(),
@@ -149,11 +178,12 @@ describe("ChatPanelHost", () => {
     render(
       <WorkspaceProvider chatPanel={FakeChatPanel} persistenceEnabled={false}>
         <Blocker sessionId="s1" />
-        <ChatPanelHost sessionId="s1" getSurface={() => surface} isWorkbenchOpen={() => true} openWorkbench={vi.fn()} />
+        <ChatPanelHost sessionId="s1" surfaceDispatch={{ surface: () => surface, isWorkbenchOpen: () => true, openWorkbench: vi.fn(), shouldOpenSurface: () => true }} />
       </WorkspaceProvider>,
     )
+    expect(await screen.findByTestId("blocker-count")).toHaveTextContent("1")
     fireEvent.click(screen.getByRole("button", { name: "open blocker" }))
-    expect(openSurface).toHaveBeenCalledWith(expect.objectContaining({ kind: "questions", target: "q1" }))
+    expect(openSurface).toHaveBeenCalledWith(expect.objectContaining({ kind: "questions", target: "q1", meta: { sessionId: "s1", openOnlyWhenSessionOpen: true } }))
   })
 
   it("composes workspace artifact opening with caller onOpenArtifact", () => {
@@ -181,9 +211,7 @@ describe("ChatPanelHost", () => {
           <ChatPanelHost
             sessionId="s1"
             onOpenArtifact={onOpenArtifact}
-            getSurface={() => surface}
-            isWorkbenchOpen={() => false}
-            openWorkbench={() => setSurfaceOpen(true)}
+            surfaceDispatch={{ surface: () => surface, isWorkbenchOpen: () => false, openWorkbench: () => setSurfaceOpen(true) }}
           />
         </WorkspaceProvider>,
       )

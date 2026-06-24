@@ -1,6 +1,6 @@
 {
   "name": "@hachej/boring-core",
-  "version": "0.1.45",
+  "version": "0.1.55",
   "type": "module",
   "license": "MIT",
   "description": "Foundation package for boring-ui-v2 apps: DB, auth, config, HTTP app factory, and frontend app shell.",
@@ -53,7 +53,8 @@
     "drizzle"
   ],
   "scripts": {
-    "build": "tsup && cp src/front/theme.css dist/front/theme.css && mkdir -p dist/app/front && cp src/app/front/styles.css dist/app/front/styles.css",
+    "build": "tsup && pnpm run build:assert",
+    "build:assert": "node ./scripts/assert-build-artifacts.mjs",
     "dev": "tsup --watch",
     "test": "vitest run --no-file-parallelism",
     "test:watch": "vitest",
