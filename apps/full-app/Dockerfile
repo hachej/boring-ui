@@ -19,9 +19,12 @@ COPY apps/full-app/ apps/full-app/
 # Build packages in dependency order.
 # ui and agent need dts so workspace's vite-plugin-dts can resolve their types.
 # workspace tsup skips dts (vite-plugin-dts covers the front entries instead).
+# tsup's onSuccess hook copies core's hand-authored CSS (theme.css, styles.css,
+# chatFirst/*) into dist, so this stays in sync with `pnpm build` automatically.
+# build:assert (dts-agnostic) then verifies every exported artifact + CSS @import
+# is present in dist, so a drift fails the image build instead of reaching prod.
 RUN pnpm --filter @hachej/boring-core exec tsup --no-dts \
-  && cp packages/core/src/front/theme.css packages/core/dist/front/theme.css \
-  && cp packages/core/src/app/front/styles.css packages/core/dist/app/front/styles.css
+  && pnpm --filter @hachej/boring-core run build:assert
 
 RUN pnpm --filter @hachej/boring-ui-kit exec tsup \
   && pnpm --filter @hachej/boring-ui-kit exec node scripts/build-styles.mjs
@@ -70,15 +73,18 @@ COPY --from=build /app/packages/workspace/package.json packages/workspace/packag
 COPY --from=build /app/packages/workspace/node_modules/ packages/workspace/node_modules/
 
 COPY --from=build /app/apps/full-app/dist/ apps/full-app/dist/
+COPY --from=build /app/apps/full-app/boring.app.toml apps/full-app/boring.app.toml
 COPY --from=build /app/apps/full-app/package.json apps/full-app/package.json
 COPY --from=build /app/apps/full-app/node_modules/ apps/full-app/node_modules/
 
 # BORING_AGENT_MODE=vercel-sandbox: even on Fly.io the server itself runs here
 # but agent tool execution (bash/files) runs in remote Vercel sandbox containers.
-# BORING_AGENT_WORKSPACE_ROOT and model config come from fly secrets.
+# Store chat transcripts on the Fly volume; the container root filesystem is ephemeral.
+# Model config comes from Fly secrets.
 ENV NODE_ENV=production \
   BORING_AGENT_MODE=vercel-sandbox \
-  BORING_AGENT_WORKSPACE_ROOT=/data/workspaces
+  BORING_AGENT_WORKSPACE_ROOT=/data/workspaces \
+  BORING_AGENT_SESSION_ROOT=/data/pi-sessions
 EXPOSE 3000
 
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \

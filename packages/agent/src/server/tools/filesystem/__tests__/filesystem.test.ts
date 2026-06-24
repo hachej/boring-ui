@@ -69,6 +69,7 @@ function mockBundle(provider: string, root = '/workspace', storageRoot?: string)
     workspace: mockWorkspace(root),
     sandbox: { ...mockSandbox(provider), runtimeContext },
     fileSearch: mockFileSearch(),
+    filesystem: provider === 'vercel-sandbox' ? { kind: 'remote-workspace' } : { kind: 'host' },
   }
 }
 
@@ -112,6 +113,48 @@ describe('buildFilesystemAgentTools', () => {
       expect.stringContaining('rg '),
       expect.objectContaining({ timeoutMs: 30_000 }),
     )
+  })
+
+  test('remote filesystem defaults to workspace operations when a custom remote bundle omits an explicit filesystem strategy', async () => {
+    const bundle = mockBundle('custom-remote', '/workspace', undefined)
+    bundle.storageRoot = undefined
+    bundle.sandbox = { ...bundle.sandbox, placement: 'remote' }
+    delete bundle.filesystem
+    vi.mocked(bundle.workspace.readFile).mockResolvedValueOnce('implicit remote content')
+
+    const tools = buildFilesystemAgentTools(bundle)
+    const read = tools.find((tool) => tool.name === 'read')
+    expect(read).toBeDefined()
+
+    const result = await read!.execute(
+      { path: 'remote-default.txt' },
+      { abortSignal: new AbortController().signal, toolCallId: 'read-custom-remote-default' },
+    )
+
+    expect(result.isError).toBe(false)
+    expect(result.content[0].text).toContain('implicit remote content')
+    expect(bundle.workspace.readFile).toHaveBeenCalledWith('remote-default.txt')
+  })
+
+  test('uses runtime-provided remote filesystem tools without a provider-name allowlist', async () => {
+    const bundle = mockBundle('custom-remote', '/workspace', undefined)
+    bundle.storageRoot = undefined
+    bundle.sandbox = { ...bundle.sandbox, placement: 'remote' }
+    bundle.filesystem = { kind: 'remote-workspace' }
+    vi.mocked(bundle.workspace.readFile).mockResolvedValueOnce('remote content')
+
+    const tools = buildFilesystemAgentTools(bundle)
+    const read = tools.find((tool) => tool.name === 'read')
+    expect(read).toBeDefined()
+
+    const result = await read!.execute(
+      { path: 'remote.txt' },
+      { abortSignal: new AbortController().signal, toolCallId: 'read-custom-remote' },
+    )
+
+    expect(result.isError).toBe(false)
+    expect(result.content[0].text).toContain('remote content')
+    expect(bundle.workspace.readFile).toHaveBeenCalledWith('remote.txt')
   })
 
   test('switching modes returns fresh tool objects', () => {

@@ -29,6 +29,7 @@ import {
   useCurrentWorkspace,
   workspaceQueryKey,
 } from '../WorkspaceAuthProvider.js'
+import { useOptionalConfig } from '../ConfigProvider.js'
 import { apiFetchJson, getHttpErrorDetail } from '../utils.js'
 
 const workspaceNameSchema = z.object({
@@ -106,9 +107,11 @@ function OpenInNewTabIcon({ className }: { className?: string }) {
 }
 
 export function WorkspaceSwitcher({
-  appTitle = 'Sovereign Workspace',
+  appTitle,
   workspacePathPrefix = '/workspace',
 }: WorkspaceSwitcherProps) {
+  const config = useOptionalConfig()
+  const resolvedAppTitle = appTitle ?? config?.appName ?? 'Boring UI'
   const navigate = useNavigate()
   const queryClient = useQueryClient()
   const { toast } = useToastCompat()
@@ -208,7 +211,7 @@ export function WorkspaceSwitcher({
             aria-hidden="true"
             className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-foreground text-[12px] font-semibold text-background"
           >
-            {appTitle.charAt(0).toUpperCase()}
+            {resolvedAppTitle.charAt(0).toUpperCase()}
           </span>
           <span className="text-[13px] font-medium text-foreground">
             Create your first workspace
@@ -227,11 +230,11 @@ export function WorkspaceSwitcher({
                 aria-hidden="true"
                 className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-foreground text-[12px] font-semibold text-background"
               >
-                {appTitle.charAt(0).toUpperCase()}
+                {resolvedAppTitle.charAt(0).toUpperCase()}
               </span>
               <span className="flex min-w-0 items-center gap-1.5">
                 <span className="truncate text-[13px] font-medium text-foreground">
-                  {appTitle}
+                  {resolvedAppTitle}
                 </span>
                 <span aria-hidden="true" className="text-muted-foreground/30">/</span>
                 <span className="truncate text-[13px] font-normal text-muted-foreground">

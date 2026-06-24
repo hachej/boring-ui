@@ -26,6 +26,7 @@ vi.mock('../utils.js', async (importOriginal) => {
   }
 })
 
+import { ConfigProvider } from '../ConfigProvider'
 import { AuthProvider } from '../auth/AuthProvider'
 import { UserIdentityProvider, useUser } from '../auth/UserIdentityProvider'
 
@@ -33,13 +34,17 @@ beforeEach(() => {
   vi.clearAllMocks()
 })
 
-function createWrapper() {
+function createWrapper(opts?: { withConfig?: boolean }) {
   return function Wrapper({ children }: { children: ReactNode }) {
-    return (
+    const content = (
       <AuthProvider baseURL="http://localhost:3000">
         <UserIdentityProvider>{children}</UserIdentityProvider>
       </AuthProvider>
     )
+
+    return opts?.withConfig
+      ? <ConfigProvider retryBackoff={[]}>{content}</ConfigProvider>
+      : content
   }
 }
 
@@ -55,6 +60,47 @@ describe('UserIdentityProvider', () => {
       wrapper: createWrapper(),
     })
 
+    expect(result.current).toBeNull()
+  })
+
+  it('does not fetch /api/v1/me when email verification is required and session is unverified', async () => {
+    mockApiFetchJson.mockImplementation(async (url: string) => {
+      if (url === '/api/v1/config') {
+        return {
+          appId: 'test-app',
+          appName: 'Test App',
+          appLogo: null,
+          apiBase: '',
+          features: {
+            githubOauth: false,
+            googleOauth: false,
+            invitesEnabled: true,
+            sendWelcomeEmail: true,
+            emailVerification: true,
+          },
+        }
+      }
+      throw new Error(`Unexpected fetch: ${url}`)
+    })
+
+    mockUseSession.mockReturnValue({
+      data: {
+        user: { id: 'u1', email: 'test@test.dev', name: 'Test User', emailVerified: false },
+        session: { expiresAt: new Date('2026-02-01') },
+      },
+      isPending: false,
+      error: null,
+    })
+
+    const { result } = renderHook(() => useUser(), {
+      wrapper: createWrapper({ withConfig: true }),
+    })
+
+    await waitFor(() => {
+      expect(mockApiFetchJson).toHaveBeenCalledWith('/api/v1/config')
+    })
+
+    expect(mockApiFetchJson).not.toHaveBeenCalledWith('/api/v1/me')
     expect(result.current).toBeNull()
   })
 

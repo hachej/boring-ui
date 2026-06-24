@@ -64,6 +64,9 @@ export function CreditsSettingsPanel({ apiBaseUrl = '', locale }: CreditsSetting
   const low = inDebt || isLowBalance(balance.remainingMicros)
   const showBuy = balance.checkoutEnabled ?? false
   const packs: CreditPack[] = balance.packs ?? []
+  // Display the balance/history in the configured purchase currency (1 credit-unit = 1
+  // major unit); fall back to EUR when no purchase provider is wired.
+  const currency = packs[0]?.currency ?? 'EUR'
   const activePack = selectedPack ?? packs.find((p) => p.isDefault)?.id ?? packs[0]?.id ?? null
   const activePackObj = packs.find((p) => p.id === activePack) ?? null
 
@@ -98,13 +101,13 @@ export function CreditsSettingsPanel({ apiBaseUrl = '', locale }: CreditsSetting
           <DetailLine label="Remaining balance">
             <p style={{ fontVariantNumeric: 'tabular-nums', fontWeight: 600 }}>
               {inDebt
-                ? `−${formatCreditMicros(balance.debtMicros, locale)}`
-                : formatCreditMicros(balance.remainingMicros, locale)}
+                ? `−${formatCreditMicros(balance.debtMicros, currency, locale)}`
+                : formatCreditMicros(balance.remainingMicros, currency, locale)}
               {updating && <span className="ml-2 text-[11px] font-normal text-muted-foreground" aria-live="polite">Updating…</span>}
             </p>
           </DetailLine>
           <DetailLine label="Used so far">
-            <p style={{ fontVariantNumeric: 'tabular-nums' }}>{formatCreditMicros(balance.usedMicros, locale)}</p>
+            <p style={{ fontVariantNumeric: 'tabular-nums' }}>{formatCreditMicros(balance.usedMicros, currency, locale)}</p>
           </DetailLine>
         </DetailList>
 
@@ -137,7 +140,7 @@ export function CreditsSettingsPanel({ apiBaseUrl = '', locale }: CreditsSetting
                         <span style={{ fontVariantNumeric: 'tabular-nums' }}>
                           {formatMinorPrice(p.priceMinor, p.currency, locale)}
                         </span>
-                        <span className="text-muted-foreground">· {formatCreditMicros(p.creditMicros, locale)}</span>
+                        <span className="text-muted-foreground">· {formatCreditMicros(p.creditMicros, p.currency, locale)}</span>
                       </>
                     )}
                   </label>
@@ -190,7 +193,7 @@ export function CreditsSettingsPanel({ apiBaseUrl = '', locale }: CreditsSetting
                       style={{ fontVariantNumeric: 'tabular-nums' }}
                       className={e.amountMicros >= 0 ? 'text-foreground' : 'text-muted-foreground'}
                     >
-                      {formatSignedCreditMicros(e.amountMicros, locale)}
+                      {formatSignedCreditMicros(e.amountMicros, currency, locale)}
                     </span>
                   </li>
                 ))}

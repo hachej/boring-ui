@@ -345,6 +345,7 @@ export async function createFolderModeApp(opts: {
   mode: RuntimeMode
   projectName?: string
   provisionWorkspace?: boolean
+  allowInsecureLocalBridgeAuth?: boolean
 }): Promise<FastifyInstance> {
   const workspaceRoot = resolve(opts.workspaceRoot)
   const projectName = opts.projectName ?? (basename(workspaceRoot) || "workspace")
@@ -379,6 +380,7 @@ export async function createFolderModeApp(opts: {
     // additionalBoringPluginDirs only feeds the asset-manager scan.
     defaultPluginPackages: pluginDiscovery.resolveCliDefaultPluginPackagePaths(),
     additionalBoringPluginDirs: pluginDirs,
+    workspaceBridge: { allowInsecureLocalCliBrowserAuth: opts.allowInsecureLocalBridgeAuth === true },
     boringPluginFrontTargetResolver: runtimeHost.createFrontTargetResolver(FOLDER_RUNTIME_PLUGIN_WORKSPACE_ID),
   })
   await runtimeHost.registerRoutes(app as FastifyInstance)
@@ -638,7 +640,14 @@ export async function createWorkspacesModeApp(opts: {
     },
     getWorkspaceId: async (request) => (await workspaceFromRequest(request)).id,
     getWorkspaceRoot: async (workspaceId) => (await requireWorkspace(workspaceId)).path,
-    getSessionNamespace: async ({ workspaceId }) => `local-workspace-${workspaceId}`,
+    // Intentionally NOT namespaced by workspace id. Returning undefined makes the
+    // session store fall back to defaultSessionDir(workspaceRoot), whose cwd-encoding
+    // is byte-identical to pi-coding-agent's getDefaultSessionDirPath. So CLI-mode
+    // sessions land in the exact ~/.pi/agent/sessions/--<path>-- folder a standalone
+    // `pi` run in the same workspace uses, and the two share one session list both
+    // ways. Trade-off: sessions are keyed by filesystem path, not registry id — moving
+    // a workspace orphans its old sessions (acceptable; unification is the goal).
+    getSessionNamespace: async () => undefined,
     provisionRuntime: async ({ workspaceId, workspaceRoot, runtimeMode, runtimeLayout, provisioningAdapter }) => {
       if (runtimeProvisioningByWorkspace.has(workspaceId)) {
         return runtimeProvisioningByWorkspace.get(workspaceId)

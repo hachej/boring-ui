@@ -1,4 +1,5 @@
-import { useEffect, useRef } from 'react'
+import { useEffect, useMemo, useRef } from 'react'
+import { useConfig } from '@hachej/boring-core/front'
 import { definePanel, postUiCommand, workspaceLinkCommand } from '@hachej/boring-workspace'
 import { definePlugin } from '@hachej/boring-workspace/plugin'
 
@@ -6,6 +7,35 @@ const calendlyUrl = 'https://calendly.com/julien-hurault-sumeo/30min'
 const githubUrl = 'https://github.com/hachej/boring-ui'
 const linkedinUrl = 'https://www.linkedin.com/in/julienhuraultanalytics/'
 const consultingUrl = 'https://consulting.senecaapp.ai'
+
+function shortBrandName(appName: string): string {
+  const trimmed = appName.trim()
+  return trimmed.replace(/\s+AI$/i, '') || trimmed || 'Boring UI'
+}
+
+function escapeHtml(value: string): string {
+  return value.replace(/[&<>"']/g, (char) => {
+    switch (char) {
+      case '&': return '&amp;'
+      case '<': return '&lt;'
+      case '>': return '&gt;'
+      case '"': return '&quot;'
+      case "'": return '&#39;'
+      default: return char
+    }
+  })
+}
+
+export function PublicHeroDescription() {
+  const { appName } = useConfig()
+  const brandName = shortBrandName(appName)
+  return (
+    <>
+      Choose the AI you <em className="public-hero-trust">trust</em>.<br />
+      {brandName} gives it a private remote computer where it can read files, run tasks, make changes, and show you the work for review.
+    </>
+  )
+}
 
 function openPublicPanel(
   containerApi: import('@hachej/boring-workspace').PaneProps['containerApi'],
@@ -42,12 +72,18 @@ function PublicPagesPane({ containerApi }: import('@hachej/boring-workspace').Pa
   )
 }
 
-const landingPageHtml = `<!doctype html>
+function createLandingPageHtml(appName: string): string {
+  const brandName = shortBrandName(appName)
+  const productName = appName.trim() || brandName
+  const escapedAppName = escapeHtml(productName)
+  const escapedBrandName = escapeHtml(brandName)
+  const brandInitial = (brandName.trim().charAt(0) || 'B').toUpperCase()
+  return `<!doctype html>
 <html lang="en">
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Seneca AI — the open-source AI workspace</title>
+  <title>${escapedAppName} — the open-source AI workspace</title>
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&family=Spectral:ital,wght@0,500;0,600;1,500&display=swap" rel="stylesheet" />
@@ -56,13 +92,13 @@ const landingPageHtml = `<!doctype html>
 <body>
   <header class="topbar" id="top">
     <div class="wrap bar">
-      <a class="wordmark" href="#top"><span class="sq"></span>Seneca AI</a>
+      <a class="wordmark" href="#top"><span class="sq"></span>${escapedAppName}</a>
       <nav class="nav" aria-label="Sections">
-        <a class="nav-link" href="#why">Why Seneca</a>
+        <a class="nav-link" href="#why">Why ${escapedBrandName}</a>
         <a class="nav-link" href="#models">Models</a>
         <a class="nav-link" href="#consulting">Consulting</a>
         <span class="nav-sep"></span>
-        <a class="nav-icon" href="${githubUrl}" target="_blank" rel="noreferrer" aria-label="Seneca on GitHub">
+        <a class="nav-icon" href="${githubUrl}" target="_blank" rel="noreferrer" aria-label="${escapedBrandName} on GitHub">
           <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 1.3a10.7 10.7 0 0 0-3.38 20.86c.53.1.73-.23.73-.51v-1.8c-2.97.65-3.6-1.43-3.6-1.43-.49-1.24-1.19-1.57-1.19-1.57-.97-.66.08-.65.08-.65 1.07.08 1.64 1.1 1.64 1.1.95 1.64 2.5 1.17 3.11.89.1-.69.37-1.17.68-1.44-2.37-.27-4.86-1.19-4.86-5.27 0-1.16.42-2.12 1.1-2.86-.11-.27-.48-1.35.1-2.82 0 0 .9-.29 2.95 1.1a10.2 10.2 0 0 1 5.36 0c2.04-1.39 2.94-1.1 2.94-1.1.59 1.47.22 2.55.11 2.82.69.74 1.1 1.7 1.1 2.86 0 4.09-2.49 4.99-4.87 5.26.38.33.72.98.72 1.98v2.93c0 .29.2.62.74.51A10.7 10.7 0 0 0 12 1.3"/></svg>
         </a>
         <a class="nav-icon" href="${linkedinUrl}" target="_blank" rel="noreferrer" aria-label="Julien Hurault on LinkedIn">
@@ -75,9 +111,9 @@ const landingPageHtml = `<!doctype html>
 
   <div class="wrap">
     <section class="hero">
-      <p class="kicker">Open source · Private · Model-agnostic</p>
-      <h1>An AI workspace you <em>own</em>.</h1>
-      <p class="lead">Seneca is the open-source alternative to Claude Desktop and Codex App: a private workspace where an agent reads your files, runs your tools, and builds real things. Run it on local models, open models hosted in Europe, or US frontier models — you choose the model, and where your data lives.</p>
+      <p class="kicker">Open source · Private · Works with any model</p>
+      <h1>One workspace. <em>Any AI provider</em>.</h1>
+      <p class="lead">${escapedBrandName} gives the AI of your choice a private remote computer to do real work for you: read files, run tasks, make changes, and show you what changed.<br /><br />Don’t let one provider own your workflow. ${escapedBrandName} is open source and model-agnostic. Use local models, European-hosted models, or frontier labs — and switch whenever you need.</p>
       <div class="actions">
         <a class="btn primary" href="${githubUrl}" target="_blank" rel="noreferrer">
           <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 1.3a10.7 10.7 0 0 0-3.38 20.86c.53.1.73-.23.73-.51v-1.8c-2.97.65-3.6-1.43-3.6-1.43-.49-1.24-1.19-1.57-1.19-1.57-.97-.66.08-.65.08-.65 1.07.08 1.64 1.1 1.64 1.1.95 1.64 2.5 1.17 3.11.89.1-.69.37-1.17.68-1.44-2.37-.27-4.86-1.19-4.86-5.27 0-1.16.42-2.12 1.1-2.86-.11-.27-.48-1.35.1-2.82 0 0 .9-.29 2.95 1.1a10.2 10.2 0 0 1 5.36 0c2.04-1.39 2.94-1.1 2.94-1.1.59 1.47.22 2.55.11 2.82.69.74 1.1 1.7 1.1 2.86 0 4.09-2.49 4.99-4.87 5.26.38.33.72.98.72 1.98v2.93c0 .29.2.62.74.51A10.7 10.7 0 0 0 12 1.3"/></svg>
@@ -118,9 +154,9 @@ const landingPageHtml = `<!doctype html>
     </div>
 
     <section class="band" id="why">
-      <span class="eyebrow-row">Why Seneca</span>
+      <span class="eyebrow-row">Why ${escapedBrandName}</span>
       <h2>Open, private, and yours to deploy anywhere.</h2>
-      <p class="section-lead">When access to a tool can be revoked overnight — by a provider, or a policy — you need software that answers to you. Seneca is built so nothing about your AI workspace is borrowed.</p>
+      <p class="section-lead">When access to a tool can be revoked overnight — by a provider, or a policy — you need software that answers to you. ${escapedBrandName} is built so nothing about your AI workspace is borrowed.</p>
       <div class="grid">
         <div class="card">
           <div class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 18l6-6-6-6"/><path d="M8 6l-6 6 6 6"/></svg></div>
@@ -135,7 +171,7 @@ const landingPageHtml = `<!doctype html>
         <div class="card">
           <div class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3M5 5l2 2M17 17l2 2M19 5l-2 2M7 17l-2 2"/></svg></div>
           <h3>Model-agnostic</h3>
-          <p>Swap models without rewriting anything. Local, open, or frontier — Seneca isn't tied to one provider or one country.</p>
+          <p>Swap models without rewriting anything. Local, open, or frontier — ${escapedBrandName} isn't tied to one provider or one country.</p>
         </div>
         <div class="card">
           <div class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6L9 17l-5-5"/></svg></div>
@@ -170,7 +206,7 @@ const landingPageHtml = `<!doctype html>
     <section class="band">
       <span class="eyebrow-row">Built to extend</span>
       <h2>The real power comes from your environment.</h2>
-      <p class="section-lead">Seneca extends through plugins from day one — add panels, tools, and commands to connect it to the tools and data your work already runs on:</p>
+      <p class="section-lead">${escapedBrandName} extends through plugins from day one — add panels, tools, and commands to connect it to the tools and data your work already runs on:</p>
       <div class="chips">
         <span class="chip"><span class="d"></span>Documents</span>
         <span class="chip"><span class="d"></span>Databases</span>
@@ -186,7 +222,7 @@ const landingPageHtml = `<!doctype html>
       <div class="consult">
         <div class="consult-copy">
           <h2>Want it built for your team?</h2>
-          <p class="section-lead">Seneca Consulting designs and ships custom private AI agents — wired to your tools, running on your models and your infrastructure. Fixed scope, fixed price, hosted in Switzerland if you want it there.</p>
+          <p class="section-lead">${escapedBrandName} Consulting designs and ships custom private AI agents — wired to your tools, running on your models and your infrastructure. Fixed scope, fixed price, hosted in Switzerland if you want it there.</p>
         </div>
         <div class="consult-cta">
           <a class="btn primary" href="${consultingUrl}" target="_blank" rel="noreferrer">Explore consulting<span class="arrow">→</span></a>
@@ -205,7 +241,7 @@ const landingPageHtml = `<!doctype html>
     </section>
 
     <footer>
-      <div class="brand"><span class="mark">S</span><span>Seneca AI</span></div>
+      <div class="brand"><span class="mark">${brandInitial}</span><span>${escapedAppName}</span></div>
       <div class="foot-links">
         <a href="${githubUrl}" target="_blank" rel="noreferrer">GitHub</a>
         <a href="#book" data-ws="book-call">Book a call</a>
@@ -216,6 +252,7 @@ const landingPageHtml = `<!doctype html>
   <script src="/landing.js"></script>
 </body>
 </html>`
+}
 
 const openLetsChatPanel = () =>
   postUiCommand(
@@ -228,6 +265,8 @@ const openLetsChatPanel = () =>
   )
 
 export function LandingPageDemo() {
+  const { appName } = useConfig()
+  const landingPageHtml = useMemo(() => createLandingPageHtml(appName), [appName])
   const frameRef = useRef<HTMLIFrameElement>(null)
   useEffect(() => {
     const onMessage = (event: MessageEvent) => {
@@ -243,7 +282,7 @@ export function LandingPageDemo() {
   return (
     <iframe
       ref={frameRef}
-      title="Seneca AI landing page"
+      title={`${appName} landing page`}
       srcDoc={landingPageHtml}
       className="public-html-preview"
       sandbox="allow-same-origin allow-scripts allow-popups allow-popups-to-escape-sandbox"
@@ -252,9 +291,10 @@ export function LandingPageDemo() {
 }
 
 export function LetsChatDemo() {
+  const { appName } = useConfig()
   return (
     <iframe
-      title="Schedule a Seneca AI walkthrough"
+      title={`Schedule a ${appName} walkthrough`}
       src={calendlyUrl}
       className="calendly-frame calendly-frame-full"
       loading="lazy"

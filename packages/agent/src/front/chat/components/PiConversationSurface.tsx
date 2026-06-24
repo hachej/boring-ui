@@ -1,7 +1,7 @@
 "use client"
 
-import type { FileUIPart } from 'ai'
 import type { ReactNode } from 'react'
+import type { PromptInputFilePart } from '../../primitives/prompt-input'
 import { Loader2 } from 'lucide-react'
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { useStickToBottomContext } from 'use-stick-to-bottom'
@@ -32,7 +32,7 @@ export interface PiConversationSurfaceProps {
   emptyState?: {
     eyebrow?: string
     title?: string
-    description?: string
+    description?: ReactNode
     footer?: ReactNode
   }
   suggestions: ChatSuggestion[]
@@ -45,7 +45,7 @@ export interface PiConversationSurfaceProps {
    * code. Forwarded to RuntimeNoticeMessages. */
   renderNoticeAction?: (notice: PanelNotice) => ReactNode
   onScrollToBottomReady: (scrollToBottom: () => void) => void
-  onSuggestionSubmit: (payload: { text: string; files: FileUIPart[]; source: 'suggestion' }) => Promise<false | void>
+  onSuggestionSubmit: (payload: { text: string; files: PromptInputFilePart[]; source: 'suggestion' }) => Promise<false | void>
   onRestoreDraft: (text: string) => void
   /** Changes when the active session changes; resets the history window to the latest page. */
   windowResetKey?: string

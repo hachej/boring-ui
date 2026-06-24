@@ -16,6 +16,8 @@ import {
   renderMagicLink,
 } from '../mail/templates/index.js'
 import { createPostSignupHook } from './postSignupHook.js'
+import { isCoreEmailVerificationEnabled } from '../../shared/authPolicy.js'
+import { safeCapture, noopTelemetry, type TelemetrySink } from '../../shared/telemetry.js'
 
 const MIN_ZXCVBN_SCORE = 2
 
@@ -58,12 +60,16 @@ function buildMailTransport(config: CoreConfig): MailTransport | null {
 export interface CreateAuthOptions {
   workspaceStore?: WorkspaceStore
   logger?: { warn: (obj: Record<string, unknown>, msg: string) => void }
+  /** Telemetry sink for auth.signed_up / auth.session_started (defaults to noop). */
+  telemetry?: TelemetrySink
 }
 
 export function createAuth(config: CoreConfig, db: Database, opts?: CreateAuthOptions): Auth<any> {
   const transport = buildMailTransport(config)
+  const telemetry = opts?.telemetry ?? noopTelemetry
+  const emailVerificationEnabled = isCoreEmailVerificationEnabled(config)
 
-  const emailVerificationConfig = transport
+  const emailVerificationConfig = emailVerificationEnabled && transport
     ? {
         sendOnSignUp: true as const,
         sendVerificationEmail: async (data: any) => {
@@ -140,15 +146,35 @@ export function createAuth(config: CoreConfig, db: Database, opts?: CreateAuthOp
     baseURL: config.auth.url,
     basePath: '/auth',
     trustedOrigins: config.cors.origins,
-    databaseHooks: postSignupHook
-      ? {
-          user: {
-            create: {
-              after: postSignupHook as any,
-            },
+    databaseHooks: {
+      user: {
+        create: {
+          // auth.signed_up is emitted here (not in postSignupHook) so it fires for ALL
+          // signups, independent of whether workspace post-signup setup is wired.
+          // distinctId = user id; no properties (no PII, nothing the DB sink would drop).
+          after: async (user: { id?: string } & Record<string, unknown>, ctx: unknown) => {
+            safeCapture(telemetry, {
+              name: 'auth.signed_up',
+              distinctId: typeof user?.id === 'string' ? user.id : undefined,
+            })
+            if (postSignupHook) await postSignupHook(user as any, ctx)
           },
-        }
-      : undefined,
+        },
+      },
+      // Fires for every new session — sign-in AND the session minted on sign-up — so the
+      // name reflects that (a true returning-sign-in count = session_started minus the
+      // first session per user, derivable in SQL). distinctId = user id; no properties.
+      session: {
+        create: {
+          after: async (session: { userId?: string } & Record<string, unknown>) => {
+            safeCapture(telemetry, {
+              name: 'auth.session_started',
+              distinctId: typeof session?.userId === 'string' ? session.userId : undefined,
+            })
+          },
+        },
+      },
+    },
     advanced: {
       database: {
         generateId: 'uuid',

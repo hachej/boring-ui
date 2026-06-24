@@ -206,7 +206,7 @@ describe('grantPurchaseOnce (global per-order idempotency)', () => {
     let rows = await sqlClient`SELECT status, pending_refund_ppm FROM boring_credit_purchases WHERE order_id = 'ord-part'`
     expect(rows[0]?.status).toBe('refund_pending')
     expect(Number(rows[0]?.pending_refund_ppm)).toBe(500_000)
-    expect(await store.grantPurchaseOnce({ orderId: 'ord-part', userId: USER, amountMicros: 10_000_000 })).toEqual({ granted: true })
+    expect(await store.grantPurchaseOnce({ orderId: 'ord-part', userId: USER, amountMicros: 10_000_000 })).toEqual({ granted: true, refundAppliedMicros: 5_000_000 })
     expect((await store.getBalance(USER)).remainingMicros).toBe(5_000_000)
     rows = await sqlClient`SELECT status, pending_refund_ppm, refunded_micros FROM boring_credit_purchases WHERE order_id = 'ord-part'`
     expect(rows[0]?.status).toBe('granted')
@@ -225,7 +225,7 @@ describe('grantPurchaseOnce (global per-order idempotency)', () => {
     expect(rows[0]?.status).toBe('refund_pending') // NOT wrongly tombstoned to refunded
     expect(Number(rows[0]?.pending_refund_ppm)).toBe(800_000)
     // Later grant mints €10 then revokes 80% (€8) → net €2.
-    expect(await store.grantPurchaseOnce({ orderId: 'ord-multi', userId: USER, amountMicros: 10_000_000 })).toEqual({ granted: true })
+    expect(await store.grantPurchaseOnce({ orderId: 'ord-multi', userId: USER, amountMicros: 10_000_000 })).toEqual({ granted: true, refundAppliedMicros: 8_000_000 })
     expect((await store.getBalance(USER)).remainingMicros).toBe(2_000_000)
   })
 

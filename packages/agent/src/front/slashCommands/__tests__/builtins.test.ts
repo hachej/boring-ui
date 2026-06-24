@@ -56,18 +56,19 @@ describe('/clear', () => {
 })
 
 describe('/help', () => {
-  test('renders commands as a GFM table (one row per command)', () => {
+  test('renders commands as a plain-text list (one line per command)', () => {
     const ctx = makeContext()
     const result = getBuiltin('help').handler('', ctx) as string
     expect(result).toContain('/clear')
     expect(result).toContain('/reset')
     expect(result).toContain('/reload')
     expect(result).toContain('/help')
-    // GFM table so Streamdown renders each command on its own row.
-    expect(result).toContain('| Command | Description |')
-    expect(result).toContain('| --- | --- |')
-    expect(result).toContain('| `/clear` |')
-    expect(result.split('\n').filter((l) => l.startsWith('| `/')).length).toBeGreaterThanOrEqual(3)
+    // Command results render as a plain-text notice (white-space: pre-wrap),
+    // not Streamdown — so no GFM table markup, one command per line.
+    expect(result).not.toContain('|')
+    expect(result.startsWith('Available commands:')).toBe(true)
+    expect(result).toContain('/clear — Hide messages from display')
+    expect(result.split('\n').filter((l) => l.startsWith('/')).length).toBeGreaterThanOrEqual(3)
   })
 
   test('returns message when no commands', () => {
@@ -111,7 +112,7 @@ describe('/model', () => {
   })
 })
 
-describe('/thinking and /think', () => {
+describe('/thinking', () => {
   test('/thinking opens thinking picker when no args', () => {
     const openThinkingPicker = vi.fn(() => true)
     const ctx = makeContext({ openThinkingPicker })
@@ -119,16 +120,13 @@ describe('/thinking and /think', () => {
     expect(openThinkingPicker).toHaveBeenCalledOnce()
   })
 
-  test('/think is an alias for /thinking', () => {
-    const selectComposerThinking = vi.fn()
-    const ctx = makeContext({ selectComposerThinking })
-    getBuiltin('think').handler('high', ctx)
-    expect(selectComposerThinking).toHaveBeenCalledWith('high')
+  test('does not register the old /think alias', () => {
+    expect(builtinCommands.find((c) => c.name === 'think')).toBeUndefined()
   })
 })
 
 describe('all builtins registered', () => {
-  test.each(['reset', 'clear', 'reload', 'model', 'thinking', 'think', 'help'])('includes /%s', (name) => {
+  test.each(['reset', 'clear', 'reload', 'model', 'thinking', 'help'])('includes /%s', (name) => {
     expect(builtinCommands.find((c) => c.name === name)).toBeDefined()
   })
 

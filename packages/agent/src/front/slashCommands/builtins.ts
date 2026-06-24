@@ -46,28 +46,20 @@ export const builtinCommands: SlashCommand[] = [
     },
   },
   {
-    name: 'think',
-    description: 'Alias for /thinking',
-    handler(args, ctx) {
-      const query = args.trim()
-      if (query) return ctx.selectComposerThinking?.(query)
-      if (ctx.openThinkingPicker?.() === false) return { preserveDraft: true }
-    },
-  },
-  {
     name: 'help',
     description: 'Show available commands',
     handler(_, ctx) {
       const cmds = ctx.listCommands()
       if (cmds.length === 0) return 'No commands available.'
-      // Render as a GFM table. The chat renders assistant messages through
-      // Streamdown (GFM), so a plain "\n"-joined list would collapse into one
-      // run-on line; a table keeps each command on its own row.
-      const escape = (text: string) => text.replace(/\|/g, '\\|').replace(/\n/g, ' ')
+      // Command results render as a plain-text notice (RuntimeNotices uses
+      // `white-space: pre-wrap`, not Streamdown), so a GFM table would show as
+      // raw pipes. A "\n"-joined list keeps each command on its own line.
       return [
-        '| Command | Description |',
-        '| --- | --- |',
-        ...cmds.map((c) => `| \`/${c.name}\` | ${escape(c.description ?? '')} |`),
+        'Available commands:',
+        ...cmds.map((c) => {
+          const desc = (c.description ?? '').replace(/\s+/g, ' ').trim()
+          return desc ? `/${c.name} — ${desc}` : `/${c.name}`
+        }),
       ].join('\n')
     },
   },

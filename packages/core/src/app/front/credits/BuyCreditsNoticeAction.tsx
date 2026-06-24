@@ -35,7 +35,13 @@ export function BuyCreditsNoticeAction({ apiBaseUrl = '', label = 'Buy credits' 
 
   return (
     <div className="flex shrink-0 flex-col items-end gap-1">
-      <Button type="button" size="sm" onClick={() => void onBuy()} disabled={buying}>
+      <Button
+        type="button"
+        size="sm"
+        onClick={() => void onBuy()}
+        disabled={buying}
+        className="boring-buy-credits-notice-button"
+      >
         {buying ? 'Opening…' : label}
       </Button>
       {error ? <span role="alert" className="text-xs text-destructive">{error}</span> : null}

@@ -14,6 +14,8 @@ export interface UseFilePaneOptions {
   panelId?: string
   /** Initial content (optional, for draft/unsaved files). */
   initialContent?: string
+  /** When supplied, auto-create the file with this content if it does not exist. */
+  createIfMissing?: string
 }
 
 export interface UseFilePaneReturn {
@@ -72,12 +74,13 @@ export interface UseFilePaneReturn {
  * ```
  */
 export function useFilePane(options: UseFilePaneOptions): UseFilePaneReturn {
-  const { path, panelId, initialContent = null } = options
+  const { path, panelId, initialContent = null, createIfMissing } = options
   const activePath = /\S/.test(path) ? path : null
   const fallbackPanelIdRef = useRef(panelId ?? `file-pane:${nextFallbackPanelId++}`)
   const lifecyclePanelId = panelId ?? fallbackPanelIdRef.current
 
-  const { data: fileData, isLoading, error, refetch: refetchFileData } = useFileContent(activePath)
+  const fileContentOptions = createIfMissing === undefined ? undefined : { createIfMissing }
+  const { data: fileData, isLoading, error, refetch: refetchFileData } = useFileContent(activePath, fileContentOptions)
   const { mutateAsync: writeFile } = useFileWrite()
 
   // Local content state

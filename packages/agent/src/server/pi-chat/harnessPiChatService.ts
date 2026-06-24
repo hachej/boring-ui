@@ -1,5 +1,6 @@
 import type { AgentHarness, RunContext, SendMessageInput } from '../../shared/harness'
 import type { SessionListOptions, SessionStore } from '../../shared/session'
+import type { Workspace } from '../../shared/workspace'
 import type { BoringChatMessage, BoringChatPart, ChatError, FollowUpPayload, FollowUpReceipt, InterruptPayload, PiChatEvent, PiChatSnapshot, PromptPayload, PromptReceipt, QueuedUserMessage, QueueClearPayload, QueueClearReceipt, StopPayload, StopReceipt } from '../../shared/chat'
 import { ErrorCode } from '../../shared/error-codes'
 import type { PiChatSessionService, PiChatEventSubscriber, PiChatEventStreamResult } from '../http/routes/piChat'
@@ -16,6 +17,9 @@ type PiNativeHarness = AgentHarness & {
   getPiSessionAdapter?: (input: SendMessageInput, ctx: RunContext) => Promise<PiAgentSessionAdapter>
   hasPiSession?: (sessionId: string) => boolean
 }
+
+const MAX_PROMPT_IMAGE_BYTES = 10 * 1024 * 1024
+const PROMPT_IMAGE_EXTENSIONS = new Set(['.avif', '.gif', '.jpg', '.jpeg', '.png', '.webp'])
 
 /** Pi session stores additionally expose the raw persisted message entries so
  * the cold-load path can run them through the same buildPiChatHistory mapping
@@ -42,6 +46,7 @@ export interface HarnessPiChatServiceOptions {
   harness: AgentHarness
   sessionStore: SessionStore
   workdir: string
+  workspace?: Workspace
   /**
    * Optional host billing sink. When set, accepted prompts/follow-ups reserve
    * before execution (a rejecting sink blocks the request), native assistant
@@ -57,6 +62,7 @@ export class HarnessPiChatService implements PiChatSessionService {
   private readonly harness: PiNativeHarness
   private readonly sessionStore: PiSessionStoreLike
   private readonly workdir: string
+  private readonly workspace?: Workspace
   private readonly channels = new Map<string, LiveSessionChannel>()
   // Single-flight guard so concurrent cold callers (e.g. two browser tabs each
   // opening /events while the session is still being created) converge on one
@@ -73,6 +79,7 @@ export class HarnessPiChatService implements PiChatSessionService {
     this.harness = options.harness as PiNativeHarness
     this.sessionStore = options.sessionStore
     this.workdir = options.workdir
+    this.workspace = options.workspace
     this.metering = options.metering
       ? new PiChatMeteringCoordinator(options.metering, options.meteringLogger)
       : undefined
@@ -191,7 +198,8 @@ export class HarnessPiChatService implements PiChatSessionService {
     const channel = this.channels.get(sessionId)
     const receiptCursor = nextPromptReceiptCursor(channel)
     try {
-      const run = this.trackActiveRun(sessionId, adapter.prompt(toPiPromptInput(payload)))
+      const input = await toPiPromptInput(payload, this.workspace)
+      const run = this.trackActiveRun(sessionId, adapter.prompt(input))
       run.catch((error) => {
         this.metering?.failPromptRun(sessionId, payload.clientNonce)
         if (!this.messageMetadata.hasPrompt(sessionId, { clientNonce: payload.clientNonce, displayText: payload.displayMessage ?? payload.message })) return
@@ -543,6 +551,7 @@ function promptPayloadFileParts(payload: PromptPayload, messageId: string): Bori
     filename: attachment.filename,
     mediaType: attachment.mediaType,
     url: attachment.url,
+    path: attachment.path,
   }))
 }
 
@@ -584,21 +593,74 @@ function messageTime(message: BoringChatMessage): number | undefined {
   return Number.isFinite(timestamp) ? timestamp : undefined
 }
 
-function toPiPromptInput(payload: PromptPayload): PiAgentPromptInput {
-  const images = promptImagesFromAttachments(payload.attachments)
+async function toPiPromptInput(payload: PromptPayload, workspace?: Workspace): Promise<PiAgentPromptInput> {
+  const images = await promptImagesFromAttachments(payload.attachments, workspace)
   if (images.length === 0) return payload.message
   return { text: payload.message, options: { images } }
 }
 
-function promptImagesFromAttachments(attachments: PromptPayload['attachments']): Array<{ type: 'image'; mimeType: string; data: string }> {
+async function promptImagesFromAttachments(
+  attachments: PromptPayload['attachments'],
+  workspace?: Workspace,
+): Promise<Array<{ type: 'image'; mimeType: string; data: string }>> {
   const images: Array<{ type: 'image'; mimeType: string; data: string }> = []
   for (const attachment of attachments ?? []) {
     const match = attachment.url.match(/^data:(image\/[^;]+);base64,(.+)$/)
-    if (!match) continue
-    const [, mimeType, data] = match
-    images.push({ type: 'image', mimeType, data })
+    if (match) {
+      const [, mimeType, data] = match
+      images.push({ type: 'image', mimeType, data })
+      continue
+    }
+
+    if (!workspace?.readBinaryFile || !isWorkspaceImageAttachment(attachment)) continue
+    try {
+      const stat = await workspace.stat(attachment.path)
+      if (stat.kind !== 'file' || stat.size <= 0 || stat.size > MAX_PROMPT_IMAGE_BYTES) continue
+      const bytes = await workspace.readBinaryFile(attachment.path)
+      if (bytes.byteLength <= 0 || bytes.byteLength > MAX_PROMPT_IMAGE_BYTES) continue
+      const detectedMimeType = detectPromptImageMimeType(bytes)
+      if (!detectedMimeType) continue
+      images.push({
+        type: 'image',
+        mimeType: detectedMimeType,
+        data: Buffer.from(bytes).toString('base64'),
+      })
+    } catch {
+      // Best effort: the enriched prompt still points the agent at the
+      // workspace path, so a transient read miss must not reject the turn.
+    }
   }
   return images
+}
+
+function isWorkspaceImageAttachment(
+  attachment: NonNullable<PromptPayload['attachments']>[number],
+): attachment is NonNullable<PromptPayload['attachments']>[number] & { mediaType: string; path: string } {
+  if (!attachment.mediaType?.startsWith('image/') || !attachment.path) return false
+  const lowerPath = attachment.path.toLowerCase()
+  return [...PROMPT_IMAGE_EXTENSIONS].some((ext) => lowerPath.endsWith(ext))
+}
+
+function detectPromptImageMimeType(bytes: Uint8Array): string | null {
+  const buffer = Buffer.from(bytes)
+  if (buffer.length >= 8 && buffer.subarray(0, 8).equals(Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]))) {
+    return 'image/png'
+  }
+  if (buffer.length >= 3 && buffer[0] === 0xff && buffer[1] === 0xd8 && buffer[2] === 0xff) {
+    return 'image/jpeg'
+  }
+  if (buffer.length >= 6) {
+    const gif = buffer.subarray(0, 6).toString('ascii')
+    if (gif === 'GIF87a' || gif === 'GIF89a') return 'image/gif'
+  }
+  if (buffer.length >= 12 && buffer.subarray(0, 4).toString('ascii') === 'RIFF' && buffer.subarray(8, 12).toString('ascii') === 'WEBP') {
+    return 'image/webp'
+  }
+  if (buffer.length >= 12 && buffer.subarray(4, 8).toString('ascii') === 'ftyp') {
+    const brand = buffer.subarray(8, 12).toString('ascii')
+    if (brand === 'avif' || brand === 'avis') return 'image/avif'
+  }
+  return null
 }
 
 function removedFollowUps(before: readonly string[], after: readonly string[]): string[] {
