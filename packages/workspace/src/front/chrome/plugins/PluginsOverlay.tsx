@@ -68,10 +68,19 @@ export function PluginsOverlay({ onClose, onReloadExternalPlugins, headerInsetSt
         : []
       setState({ status: "ready", plugins: sorted })
     } catch (error) {
+      const message = error instanceof Error ? error.message : "Failed to load external plugins."
+      // A 404 means this deployment doesn't expose the external-plugins API at
+      // all (e.g. a locked-down public app with externalPlugins: false). That's
+      // not an error — there simply are no external plugins. Show the clean
+      // empty state instead of a scary failure.
+      if (/\(404\)/.test(message)) {
+        setState({ status: "ready", plugins: [] })
+        return
+      }
       setState((current) => ({
         status: "error",
         plugins: current.plugins,
-        error: error instanceof Error ? error.message : "Failed to load external plugins.",
+        error: message,
       }))
     }
   }, [client])

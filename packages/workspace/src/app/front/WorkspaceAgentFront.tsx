@@ -7,6 +7,7 @@ import {
   type ToolRendererOverrides,
 } from "@hachej/boring-agent/front"
 import { WorkspaceProvider, type WorkspaceProviderProps } from "../../front/provider/WorkspaceProvider"
+import { useWorkspaceAttention } from "../../front/attention"
 import { ChatLayout, TopBar, ThemeToggle, type ChatLayoutProps } from "../../front/layout"
 import type { WorkspaceChatPanelProps } from "../../front/chrome/chat/types"
 import type {
@@ -126,6 +127,10 @@ export interface WorkspaceAgentFrontProps<
   onOpenAppLeftProjectSession?: (projectId: string, sessionId: string) => void
   onShowMoreAppLeftProjectSessions?: (projectId: string) => void
   onCreateAppLeftProject?: () => void
+  /** Open a project's workspace settings (host wires routing — workspace pkg has no router). */
+  onOpenAppLeftProjectSettings?: (projectId: string) => void
+  /** Open a project in a new browser tab (host builds the href). */
+  onOpenAppLeftProjectInNewTab?: (projectId: string) => void
   defaultSessionTitle?: string
   /**
    * Opt into the Phase 2 app/session left-pane shell. Defaults to the
@@ -473,6 +478,24 @@ function WorkspaceUiStateSync({
   return null
 }
 
+/**
+ * When an ask-user question opens (an attention blocker with reason
+ * "waiting_for_user_input" appears), close the workbench's default-open left
+ * pane so the question isn't hidden behind it. Fires only on the transition
+ * into "waiting" so re-opening the pane while a question is pending isn't
+ * fought. Renders inside WorkspaceProvider (needs the attention context).
+ */
+function CloseLeftPaneOnQuestion({ onQuestionOpen }: { onQuestionOpen: () => void }) {
+  const { blockers } = useWorkspaceAttention()
+  const waiting = blockers.some((blocker) => blocker.reason === "waiting_for_user_input")
+  const prevWaitingRef = useRef(false)
+  useEffect(() => {
+    if (waiting && !prevWaitingRef.current) onQuestionOpen()
+    prevWaitingRef.current = waiting
+  }, [waiting, onQuestionOpen])
+  return null
+}
+
 export function WorkspaceAgentFront<
   TSession extends WorkspaceAgentSession = WorkspaceAgentSession,
 >({
@@ -517,6 +540,8 @@ export function WorkspaceAgentFront<
   onOpenAppLeftProjectSession,
   onShowMoreAppLeftProjectSessions,
   onCreateAppLeftProject,
+  onOpenAppLeftProjectSettings,
+  onOpenAppLeftProjectInNewTab,
   defaultSessionTitle = "New session",
   workspaceLayout = "classic",
   navEnabled = true,
@@ -883,6 +908,12 @@ export function WorkspaceAgentFront<
   )
   const [workbenchLeftExplicitOpen, setWorkbenchLeftExplicitOpen] = useState(() => defaultWorkbenchLeftOpen ?? false)
   const effectiveWorkbenchLeftOpen = defaultWorkbenchLeftOpen === false ? workbenchLeftExplicitOpen : workbenchLeftOpen
+  // When a question opens, get it out from behind any default-open left pane.
+  const handleQuestionOpen = useCallback(() => {
+    setWorkbenchLeftOpen(false)
+    setWorkbenchLeftExplicitOpen(false)
+    setLeftOverlay(null)
+  }, [setWorkbenchLeftOpen])
   const autoCreateSessionRef = useRef(false)
   const pendingCreatePaneRef = useRef<PendingCreatePane | null>(null)
   const surfaceOpenRef = useRef(surfaceOpen)
@@ -1532,6 +1563,19 @@ export function WorkspaceAgentFront<
           onOpenProjectSession={onOpenAppLeftProjectSession}
           onShowMoreProjectSessions={onShowMoreAppLeftProjectSessions}
           onCreateProject={onCreateAppLeftProject}
+          onCreateProjectSession={(projectId) => {
+            // Active project → create a chat in place. Other project → switch to
+            // it (lands in a fresh "new chat" surface). Cross-project new-session
+            // without a switch needs the pending-entry contract (plan §5.1) — deferred.
+            if (projectId === (appLeftActiveProjectId ?? workspaceId)) {
+              setLeftOverlay(null)
+              void createChatSession()
+            } else {
+              onSwitchAppLeftProject?.(projectId)
+            }
+          }}
+          onOpenProjectSettings={onOpenAppLeftProjectSettings}
+          onOpenProjectInNewTab={onOpenAppLeftProjectInNewTab}
           sessionTitle={remoteSessionsTransitioning ? "Loading sessions…" : resolvedSessionTitle ?? defaultSessionTitle}
           topSlot={topBarLeft}
           bottomSlot={showThemeToggle || topBarRight != null ? <div className="flex w-full min-w-0 items-center gap-2">{topBarRightContent}</div> : undefined}
@@ -1618,6 +1662,7 @@ export function WorkspaceAgentFront<
           surfaceReady={surfaceReady}
           snapshot={surfaceSnapshot}
         />
+        <CloseLeftPaneOnQuestion onQuestionOpen={handleQuestionOpen} />
         {shellContent}
         {afterShell}
       </WorkspaceProvider>

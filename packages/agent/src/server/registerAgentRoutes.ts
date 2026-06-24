@@ -976,6 +976,23 @@ export const registerAgentRoutes: FastifyPluginAsync<RegisterAgentRoutesOptions>
       return binding.piChatService
     },
   })
+  // No-boot per-workspace session list: resolves the host session store
+  // (readdir) WITHOUT provisioning the runtime, so the multi-project nav can
+  // browse ANY accessible workspace's chats without loading that workspace.
+  // The workspace is scoped by the x-boring-workspace-id header, same as every
+  // other agent route, so the auth/workspace-context hooks still apply.
+  // (See docs/plans/multi-project-left-bar.md §0 / P0.)
+  app.get('/api/v1/agent/pi-chat/session-list', async (request, reply) => {
+    try {
+      const store = await getSessionStoreForRequest(request)
+      const workspaceId = getRequestWorkspaceId(request)
+      const sessions = await store.list({ workspaceId })
+      return reply.send(sessions)
+    } catch (err) {
+      request.log?.error?.({ err }, 'list workspace sessions (no-boot) failed')
+      return reply.code(500).send({ error: 'list workspace sessions failed' })
+    }
+  })
   await app.register(systemPromptRoutes, {
     getHarness: async (request) => (await getBindingForRequest(request)).harness,
   })

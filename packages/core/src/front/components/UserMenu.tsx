@@ -97,14 +97,14 @@ export function UserMenu({ contentSide = 'bottom', contentAlign = 'end', variant
             type="button"
             variant="ghost"
             aria-label="Account menu"
-            className="h-11 w-full justify-start gap-2.5 rounded-lg border border-transparent bg-transparent px-2 text-left text-foreground shadow-none hover:bg-foreground/[0.06] focus-visible:ring-1 focus-visible:ring-ring"
+            className="h-10 w-full justify-start gap-2.5 rounded-lg border border-transparent bg-transparent px-2 text-left text-foreground shadow-none hover:bg-foreground/[0.06] focus-visible:ring-1 focus-visible:ring-ring"
           >
-            <span className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-foreground text-[11px] font-semibold text-background">
+            <span className="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-full border border-border/60 bg-foreground/[0.12] text-[10px] font-semibold text-foreground">
               {initials}
             </span>
-            <span className="flex min-w-0 flex-1 flex-col leading-tight">
+            <span className="flex min-w-0 flex-1 flex-col gap-0.5 leading-snug">
               <span className="truncate text-[13px] font-medium text-foreground">{userName}</span>
-              <span className="truncate text-[11px] text-muted-foreground">{userEmail}</span>
+              <span className="truncate text-[11px] text-muted-foreground/80">{userEmail}</span>
             </span>
             <ChevronsUpDown className="h-3.5 w-3.5 shrink-0 text-muted-foreground/55" aria-hidden="true" />
           </Button>

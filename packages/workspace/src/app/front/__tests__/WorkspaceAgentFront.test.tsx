@@ -435,18 +435,27 @@ describe("WorkspaceAgentFront", () => {
     expect(within(appNav).queryByText("Default workspace")).not.toBeInTheDocument()
     expect(within(appNav).getByText("Pinned")).toBeInTheDocument()
     expect(within(appNav).getByText("Projects")).toBeInTheDocument()
-    expect(within(appNav).getByRole("button", { name: "Create project" })).toBeInTheDocument()
-    const activeProject = within(appNav).getByRole("button", { name: /Project Alpha/ })
-    expect(activeProject).toHaveAttribute("aria-expanded", "true")
+    expect(within(appNav).getByRole("button", { name: "New project" })).toBeInTheDocument()
+    // Expansion is decoupled from switching: a dedicated chevron owns the
+    // open/closed state, and the active project starts expanded.
+    const collapseAlpha = within(appNav).getByRole("button", { name: "Collapse Project Alpha" })
+    expect(collapseAlpha).toHaveAttribute("aria-expanded", "true")
+    expect(within(appNav).getByRole("button", { name: "Project Alpha" })).toBeInTheDocument()
     expect(within(appNav).getByText("Project Beta")).toBeInTheDocument()
     expect(within(appNav).getByText("Active project session")).toBeInTheDocument()
-    expect(within(appNav).getByRole("button", { name: "Open Active project session in new chat pane" })).toBeInTheDocument()
+    // The active session is already open, so it offers no "open in a new pane".
+    expect(within(appNav).queryByRole("button", { name: "Open Active project session in new chat pane" })).not.toBeInTheDocument()
+    // A session that isn't open still does.
+    expect(within(appNav).getByRole("button", { name: "Open Pinned session in new chat pane" })).toBeInTheDocument()
     expect(within(appNav).getByRole("button", { name: "Pin Active project session" })).toBeInTheDocument()
     expect(within(appNav).getByText("Pinned session")).toBeInTheDocument()
     expect(within(appNav).queryByText("Chats")).not.toBeInTheDocument()
+    // Per-project action: start a new chat inside a specific project.
+    expect(within(appNav).getByRole("button", { name: "New chat in Project Alpha" })).toBeInTheDocument()
 
-    fireEvent.click(activeProject)
-    expect(activeProject).toHaveAttribute("aria-expanded", "false")
+    // The chevron (not the row) toggles expansion.
+    fireEvent.click(collapseAlpha)
+    expect(within(appNav).getByRole("button", { name: "Expand Project Alpha" })).toHaveAttribute("aria-expanded", "false")
     expect(within(appNav).queryByText("Active project session")).not.toBeInTheDocument()
   })
 
