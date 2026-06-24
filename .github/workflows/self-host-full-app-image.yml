@@ -98,6 +98,7 @@ jobs:
             --build-arg SOURCE="https://github.com/${GITHUB_REPOSITORY}" \
             --label org.opencontainers.image.revision="${GITHUB_SHA}" \
             --label org.opencontainers.image.source="https://github.com/${GITHUB_REPOSITORY}" \
+            --label service="boring-full-app" \
             --label boring.role="web" \
             --tag "${{ steps.image.outputs.name }}:${GITHUB_SHA}" \
             .
@@ -139,6 +140,7 @@ jobs:
         shell: bash
         run: |
           test "$(docker inspect --format '{{ index .Config.Labels "boring.role" }}' "${{ steps.image.outputs.name }}:${GITHUB_SHA}")" = "web"
+          test "$(docker inspect --format '{{ index .Config.Labels "service" }}' "${{ steps.image.outputs.name }}:${GITHUB_SHA}")" = "boring-full-app"
           test "$(docker inspect --format '{{ index .Config.Labels "org.opencontainers.image.revision" }}' "${{ steps.image.outputs.name }}:${GITHUB_SHA}")" = "${GITHUB_SHA}"
 
   publish-prod-image:
@@ -174,6 +176,7 @@ jobs:
             --build-arg SOURCE="https://github.com/${GITHUB_REPOSITORY}" \
             --label org.opencontainers.image.revision="${GITHUB_SHA}" \
             --label org.opencontainers.image.source="https://github.com/${GITHUB_REPOSITORY}" \
+            --label service="boring-full-app" \
             --label boring.role="web" \
             --tag "${{ steps.image.outputs.name }}:${GITHUB_SHA}" \
             .
