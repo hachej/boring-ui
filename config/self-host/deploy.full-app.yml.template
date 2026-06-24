@@ -3,10 +3,13 @@
 # the App VM Tailscale hostname plus vault-backed env files before use.
 #
 # Important: deployd/operator must verify the GHCR digest and provenance before
-# running Kamal. Kamal deploys the commit tag only after that digest check passes.
+# running Kamal. Kamal deploys the prod-* tag only after that digest check passes.
+# The GHCR image must include Docker label service=boring-full-app for Kamal.
 
 service: boring-full-app
-image: ghcr.io/OWNER/boring-ui-full-app
+image: OWNER/boring-ui-full-app
+
+deploy_timeout: 120
 
 registry:
   server: ghcr.io
@@ -19,12 +22,15 @@ servers:
   web:
     hosts:
       - REPLACE_WITH_APP_VM_TAILSCALE_HOSTNAME
+    proxy: false
     options:
+      publish:
+        - "3000:3000"
       security-opt: no-new-privileges:true
       read-only: false
 
-# No public proxy/domain for v0. Access should be over Tailscale or an explicit
-# local tunnel only. Add proxy/Cloudflare hostnames later at public cutover.
+# No public proxy/domain for v0. The live-test publishes host port 3000 directly.
+# Replace this with Cloudflare/Kamal proxy routing later at public hostname cutover.
 
 ssh:
   user: debian
@@ -42,7 +48,7 @@ env:
   clear:
     NODE_ENV: production
     HOST: 0.0.0.0
-    PORT: 3000
+    PORT: "3000"
     BORING_AGENT_MODE: vercel-sandbox
     BORING_AGENT_WORKSPACE_ROOT: /data/workspaces
     BORING_AGENT_SESSION_ROOT: /data/pi-sessions
@@ -61,8 +67,6 @@ env:
     - INFOMANIAK_API_TOKEN
     - BORING_AGENT_INFOMANIAK_PRODUCT_ID
     - BORING_AGENT_INFOMANIAK_MODEL
-    - VERCEL_TEAM_ID
-    - VERCEL_PROJECT_ID
     - VERCEL_TOKEN
     - BORING_AGENT_VERCEL_SANDBOX_TIMEOUT_MS
 
