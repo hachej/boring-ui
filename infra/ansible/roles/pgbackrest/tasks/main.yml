@@ -54,28 +54,18 @@
   become_user: postgres
   when: pgbackrest_check.rc != 0
 
-- name: Enable archive_mode for pgbackrest
-  ansible.builtin.lineinfile:
-    path: "/etc/postgresql/{{ pg_version }}/main/postgresql.conf"
-    regexp: '^archive_mode\s*='
-    line: 'archive_mode = on'
+- name: Assert PostgreSQL archive settings match pgbackrest
+  ansible.builtin.assert:
+    that:
+      - pg_archive_mode | default('off') == 'on'
+      - pg_archive_command | default('') == "pgbackrest --stanza={{ pgbackrest_stanza }} archive-push %p"
+      - pg_archive_timeout | default('') | string | length > 0
+    fail_msg: pgbackrest_enabled=true requires the postgresql role to render archive_mode/archive_command/archive_timeout from inventory; run DB provisioning with pg_archive_* vars before enabling backups.
 
-- name: Set pgbackrest archive_command
-  ansible.builtin.lineinfile:
-    path: "/etc/postgresql/{{ pg_version }}/main/postgresql.conf"
-    regexp: '^archive_command\s*='
-    line: "archive_command = 'pgbackrest --stanza={{ pgbackrest_stanza }} archive-push %p'"
-
-- name: Set WAL archive timeout
-  ansible.builtin.lineinfile:
-    path: "/etc/postgresql/{{ pg_version }}/main/postgresql.conf"
-    regexp: '^archive_timeout\s*='
-    line: 'archive_timeout = 60'
-
-- name: Reload PostgreSQL to activate WAL archiving
+- name: Restart PostgreSQL to ensure WAL archiving is active
   ansible.builtin.systemd:
     name: "postgresql@{{ pg_version }}-main"
-    state: reloaded
+    state: restarted
 
 - name: Verify pgbackrest after WAL archiving is active
   ansible.builtin.command:
@@ -91,6 +81,7 @@
     hour: "2"
     weekday: "0"
     job: "pgbackrest --stanza={{ pgbackrest_stanza }} backup --type=full{% if healthcheck_backup_full_url | default('') | length > 0 %} && curl -fsS --retry 3 '{{ healthcheck_backup_full_url }}' > /dev/null 2>&1{% endif %}"
+  no_log: "{{ (healthcheck_backup_full_url | default('') | length) > 0 }}"
 
 - name: Configure daily differential backup cron
   ansible.builtin.cron:
@@ -100,3 +91,4 @@
     hour: "2"
     weekday: "1-6"
     job: "pgbackrest --stanza={{ pgbackrest_stanza }} backup --type=diff{% if healthcheck_backup_diff_url | default('') | length > 0 %} && curl -fsS --retry 3 '{{ healthcheck_backup_diff_url }}' > /dev/null 2>&1{% endif %}"
+  no_log: "{{ (healthcheck_backup_diff_url | default('') | length) > 0 }}"

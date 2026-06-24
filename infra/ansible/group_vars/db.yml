@@ -1,6 +1,6 @@
 ---
 pg_enabled: true
-pg_version: "18"
+pg_version: "17"
 pg_database: boring_full_app
 pg_app_tailscale_ip: "REPLACE_WITH_APP_VM_TAILSCALE_IP"
 pg_shared_buffers: 1GB
@@ -9,6 +9,9 @@ pg_maintenance_work_mem: 256MB
 pg_effective_cache_size: 3GB
 pg_max_connections: 100
 pg_log_min_duration_statement: 500ms
+pg_archive_mode: "on"
+pg_archive_command: "pgbackrest --stanza=boring_full_app archive-push %p"
+pg_archive_timeout: "60"
 pgbackrest_stanza: boring_full_app
 pgbackrest_retention_full: 4
 pgbackrest_retention_diff: 14
