@@ -9,6 +9,7 @@ import {
 import { WorkspaceProvider, type WorkspaceProviderProps } from "../../front/provider/WorkspaceProvider"
 import { useWorkspaceAttention } from "../../front/attention"
 import { ChatLayout, TopBar, ThemeToggle, type ChatLayoutProps } from "../../front/layout"
+import { WORKSPACE_COMPOSER_STOP_REASONS, emitWorkspaceComposerStop } from "../../front/chrome/chat/composerStop"
 import type { WorkspaceChatPanelProps } from "../../front/chrome/chat/types"
 import type {
   OpenPanelConfig,
@@ -847,7 +848,7 @@ export function WorkspaceAgentFront<
     : sessionApi?.switch ?? onSwitchSession ?? localSessionStore.switchTo
   const resolvedSwitch = useCallback((nextSessionId: string) => {
     if (effectiveActiveSessionId && nextSessionId !== effectiveActiveSessionId) {
-      window.dispatchEvent(new CustomEvent("boring:workspace-composer-stop", { detail: { sessionId: effectiveActiveSessionId } }))
+      emitWorkspaceComposerStop({ sessionId: effectiveActiveSessionId, reason: WORKSPACE_COMPOSER_STOP_REASONS.sessionSwitch })
     }
     return rawSwitch(nextSessionId)
   }, [effectiveActiveSessionId, rawSwitch])
@@ -1035,6 +1036,14 @@ export function WorkspaceAgentFront<
     setSurfaceReady(false)
     setSurfaceOpen(false)
   }, [setSurfaceOpen])
+  const openChatSessionIdsRef = useRef<ReadonlySet<string>>(new Set())
+  const shouldOpenSurface = useCallback<NonNullable<DispatchContext["shouldOpenSurface"]>>((request) => {
+    const meta = request.meta
+    if (!meta || meta.openOnlyWhenSessionOpen !== true) return true
+    const sessionId = typeof meta.sessionId === "string" ? meta.sessionId : null
+    if (!sessionId) return false
+    return openChatSessionIdsRef.current.has(sessionId)
+  }, [])
 
   // One source of truth for the agent → UI command dispatch context, shared by
   // the file-tree bridge, the window CustomEvent handler, and the chat host
@@ -1046,7 +1055,8 @@ export function WorkspaceAgentFront<
     openWorkbenchSources,
     closeWorkbench,
     enqueue: enqueueSurfaceOp,
-  }), [getSurface, isWorkbenchOpen, openWorkbench, openWorkbenchSources, closeWorkbench, enqueueSurfaceOp])
+    shouldOpenSurface,
+  }), [getSurface, isWorkbenchOpen, openWorkbench, openWorkbenchSources, closeWorkbench, enqueueSurfaceOp, shouldOpenSurface])
 
   const openWorkspacePanel = useCallback((panel?: OpenPanelConfig) => {
     surfaceOpenRef.current = true
@@ -1159,6 +1169,9 @@ export function WorkspaceAgentFront<
     ? chatPaneState
     : { workspaceId, ids: [], activeId: null }
   const chatPaneIds = activeChatPaneState.ids.length > 0 ? activeChatPaneState.ids : [chatSessionId]
+  useEffect(() => {
+    openChatSessionIdsRef.current = new Set(chatPaneIds)
+  }, [chatPaneIds])
   const activeChatPaneId = activeChatPaneState.activeId ?? chatPaneIds[0] ?? chatSessionId
 
   const switchToChatPane = useCallback((nextSessionId: string) => {
@@ -1631,6 +1644,8 @@ export function WorkspaceAgentFront<
         apiBaseUrl={apiBaseUrl}
         authHeaders={resolvedAuthHeaders}
         apiTimeout={apiTimeout}
+        activeSessionId={activeChatPaneId}
+        openSessionIds={chatPaneIds}
         defaultTheme={defaultTheme}
         onThemeChange={onThemeChange}
         workspaceId={workspaceId}

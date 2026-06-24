@@ -421,6 +421,26 @@ export function SurfaceShell({
   }, [activateDockviewPanel])
 
   const openPanelSync = useCallback((config: OpenPanelConfig) => {
+    const api = apiRef.current
+    if (!api) return
+    const existing = api.getPanel(config.id)
+    if (existing) {
+      // Re-activate, and update params if they changed (so callers can drive
+      // pane state by re-issuing openPanel with new params — same panel, new
+      // input).
+      if (config.params) {
+        existing.api.updateParameters(config.params)
+      }
+      existing.api.setActive()
+      return
+    }
+    // Validate the component is actually registered. Without this check,
+    // dockview happily creates an empty tab when handed an unknown
+    // component name (it falls back to a no-op renderer). That's how the
+    // agent's "openPanel({component:'chart'})" produced a blank workbench
+    // with no error signal in either direction. Refuse loudly here so the
+    // failure is visible at the call site and (when called via exec_ui)
+    // surfaces back to the LLM through the UI bridge error path.
     const registry = panelRegistryRef.current
     if (!registry.has(config.component)) {
       const known = registry.list().map((p) => p.id).join(", ")

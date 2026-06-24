@@ -80,6 +80,7 @@ export async function startPlaygroundServer(): Promise<void> {
       // tree so clicking it can use the UI bridge openFile command against a
       // normal workspace-relative path.
       pi: { additionalSkillPaths: [playgroundSkillsDir] },
+      workspaceBridge: { allowInsecureLocalCliBrowserAuth: true },
     })
     app.get("/api/v1/workspace/meta", async () => {
       const localName = basename(workspaceRoot) || "Workspace"

@@ -115,7 +115,9 @@ const HELP_TEXT = [
   "",
   "Options:",
   "  -p, --port <port>       HTTP port (default: 5200)",
-  "      --host <host>       Listen host (default: 0.0.0.0)",
+  "      --host <host>       Listen host (default: 127.0.0.1)",
+  "      --allow-insecure-local-bridge",
+  "                            Allow unauthenticated local-cli bridge auth when binding a non-loopback host",
   "  -m, --mode <mode>       local-sandbox or local (default: local)",
   "  -h, --help              Show this help",
 ].join("\n")
@@ -145,6 +147,15 @@ async function checkAuth(): Promise<number> {
   return registry.getAvailable().length
 }
 
+function isLoopbackHost(host: string): boolean {
+  const normalized = host.trim().toLowerCase()
+  return normalized === "localhost" || normalized === "127.0.0.1" || normalized === "::1" || normalized === "[::1]"
+}
+
+function truthyEnv(value: string | undefined): boolean {
+  return value === "1" || value?.toLowerCase() === "true" || value?.toLowerCase() === "yes"
+}
+
 
 
 async function startFolderMode(opts: {
@@ -154,6 +165,7 @@ async function startFolderMode(opts: {
   host: string
   cliMode: CliMode
   mode: RuntimeMode
+  allowInsecureLocalBridgeAuth: boolean
 }) {
   const workspaceRoot = process.env.BORING_AGENT_WORKSPACE_ROOT ?? resolve(opts.folderArg ?? process.cwd())
   const projectName = basename(resolve(workspaceRoot)) || "workspace"
@@ -172,6 +184,7 @@ async function startFolderMode(opts: {
     workspaceRoot,
     mode: opts.mode,
     projectName,
+    allowInsecureLocalBridgeAuth: opts.allowInsecureLocalBridgeAuth,
   })
 
   await registerStatic(app as FastifyInstance, opts.publicDir)
@@ -275,6 +288,7 @@ export async function runCli(options: RunCliOptions): Promise<void> {
       workspace: { type: "string" as const },
       "panel-id": { type: "string" as const },
       "timeout-ms": { type: "string" as const },
+      "allow-insecure-local-bridge": { type: "boolean" as const },
       help: { type: "boolean", short: "h" },
     },
     allowPositionals: true,
@@ -287,7 +301,9 @@ export async function runCli(options: RunCliOptions): Promise<void> {
   }
 
   const port = Number(args.port ?? process.env.PORT) || 5200
-  const host = (args.host as string | undefined) ?? process.env.HOST ?? "0.0.0.0"
+  const explicitHost = args.host !== undefined || process.env.HOST !== undefined
+  const host = (args.host as string | undefined) ?? process.env.HOST ?? "127.0.0.1"
+  const allowInsecureLocalBridgeAuth = isLoopbackHost(host) || truthyEnv(process.env.BORING_UI_ALLOW_INSECURE_LOCAL_BRIDGE) || args["allow-insecure-local-bridge"] === true
   const rawMode = (args.mode as string | undefined) ?? process.env.BORING_MODE
   let cliMode: CliMode
   let mode: RuntimeMode
@@ -307,12 +323,18 @@ export async function runCli(options: RunCliOptions): Promise<void> {
     mode = "direct"
   }
 
+  const startsServer = positionals[0] !== "workspaces" || !new Set(["add", "list", "remove", "rename"]).has(positionals[1] ?? "")
+  if (startsServer && !isLoopbackHost(host) && (!explicitHost || !allowInsecureLocalBridgeAuth)) {
+    throw new Error("Binding boring-ui to a non-loopback host requires --host plus --allow-insecure-local-bridge. The local CLI WorkspaceBridge browser auth is unauthenticated.")
+  }
+
   const base = {
     publicDir: options.publicDir,
     port,
     host,
     cliMode,
     mode,
+    allowInsecureLocalBridgeAuth,
   }
 
 

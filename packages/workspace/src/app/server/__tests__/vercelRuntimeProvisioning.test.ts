@@ -151,8 +151,8 @@ function createFakeVercelMode(state: {
         },
       })
     },
-    async create() {
-      return { workspace, sandbox, fileSearch: { search: async () => [] } }
+    async create(ctx) {
+      return { storageRoot: ctx.workspaceRoot, workspace, sandbox, fileSearch: { search: async () => [] } }
     },
   }
 }
