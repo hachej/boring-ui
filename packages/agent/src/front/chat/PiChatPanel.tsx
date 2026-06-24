@@ -406,7 +406,10 @@ export function PiChatPanel<
   const runtimeDependenciesNotice = composerNoticeForRuntimeDependencies(workspaceWarmupStatus)
   const workspaceWarmupBlocked = Boolean(warmupNotice)
   const activeBlockers = useMemo(
-    () => composerBlockers.filter((blocker) => !blocker.sessionId || blocker.sessionId === activeSessionId),
+    // A missing active session id means a single/sessionless chat host. In that
+    // mode, keep scoped blockers visible instead of hiding the only attention UI.
+    // Multi-session hosts should pass a session id so unrelated blockers filter out.
+    () => composerBlockers.filter((blocker) => !blocker.sessionId || !activeSessionId || blocker.sessionId === activeSessionId),
     [activeSessionId, composerBlockers],
   )
   const canonicalMessages = selectedChatState ? selectMessagesForRender(selectedChatState) : []

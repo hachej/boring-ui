@@ -233,7 +233,7 @@ export type {
 // Bridge
 export { createBridge } from "./front/bridge"
 export { createBridgeClient } from "./front/bridge"
-export { postUiCommand, UI_COMMAND_EVENT, WorkspaceLink, workspaceLinkCommand, workspaceLinkHref } from "./front/bridge"
+export { postUiCommand, UI_COMMAND_EVENT, WORKSPACE_SURFACE_OPEN_SKIPPED_EVENT, WorkspaceLink, workspaceLinkCommand, workspaceLinkHref } from "./front/bridge"
 export type {
   BridgeClient,
   BridgeClientOptions,
@@ -293,6 +293,20 @@ export type {
   WorkspaceChatPanelComponent,
   WorkspaceChatPanelProps,
 } from "./front/chrome/chat/types"
+export {
+  WORKSPACE_COMPOSER_STOP_EVENT,
+  WORKSPACE_COMPOSER_STOP_REASONS,
+  emitWorkspaceComposerStop,
+  isWorkspaceComposerStopDetail,
+  isWorkspaceComposerStopReason,
+  workspaceComposerStopAppliesToSession,
+  workspaceComposerStopTargetSessionId,
+} from "./front/chrome/chat/composerStop"
+export type {
+  WorkspaceComposerStopDetail,
+  WorkspaceComposerStopMatchOptions,
+  WorkspaceComposerStopReason,
+} from "./front/chrome/chat/composerStop"
 export type {
   SurfaceShellProps,
   SurfaceShellApi,
@@ -314,7 +328,10 @@ export {
   useWorkspaceContext,
   useWorkspaceContextOptional,
   useWorkspaceChatPanel,
+  WORKSPACE_ATTENTION_ACTION_EVENT,
+  emitWorkspaceAttentionAction,
   useWorkspaceAttention,
+  workspaceAttentionSessionBadgeForBlocker,
 } from "./front/provider"
 export type {
   WorkspaceProviderProps,
@@ -322,8 +339,11 @@ export type {
   ThemeProviderProps,
   WorkspaceBridgeContextValue,
   WorkspaceContextValue,
+  WorkspaceAttentionActionDetail,
   WorkspaceAttentionBlocker,
+  WorkspaceAttentionBlockerAction,
   WorkspaceAttentionContextValue,
+  WorkspaceAttentionSessionBadge,
 } from "./front/provider"
 
 // Store (selectors only — store itself is NOT exported)
