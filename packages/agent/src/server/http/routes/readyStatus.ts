@@ -1,5 +1,5 @@
 import type { FastifyInstance, FastifyRequest } from 'fastify'
-import type { ReadyStatusTracker } from '../../sandbox/vercel-sandbox/readyStatus'
+import type { ReadyStatusTracker } from '../../runtime/readyStatus'
 
 export interface ReadyStatusRouteOptions {
   tracker?: ReadyStatusTracker

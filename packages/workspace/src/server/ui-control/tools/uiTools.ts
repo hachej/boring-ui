@@ -1,8 +1,8 @@
 /**
- * Workspace-side LLM tool factories that wrap the in-memory UiBridge.
+ * Workspace-side LLM tool factories that wrap the in-memory WorkspaceBridge.
  *
  * These tools used to live inside `@hachej/boring-agent`'s standardCatalog under
- * a conditional `if (uiBridge) {...}` branch. They moved here because the
+ * a conditional `if (workspaceBridge) {...}` branch. They moved here because the
  * tools encode workspace-specific concerns (UI state shape, command kinds
  * like `openFile` / `openPanel`) — `@hachej/boring-agent` is now a pure tool
  * harness with no UI knowledge. Hosts that want UI-aware agent tools
@@ -13,7 +13,7 @@
 import { stat } from "node:fs/promises"
 import { resolve, isAbsolute, relative, win32 } from "node:path"
 import type { AgentTool, ToolResult } from "../../../shared/types/agent-tool"
-import type { UiBridge, UiCommand, UiState } from "../../../shared/ui-bridge"
+import type { WorkspaceBridge, UiCommand, UiState } from "../../../shared/ui-bridge"
 
 function makeError(message: string): ToolResult {
   return {
@@ -121,7 +121,7 @@ async function validateExistingPath(
   }
 }
 
-export function createGetUiStateTool(uiBridge: UiBridge): AgentTool {
+export function createGetUiStateTool(workspaceBridge: WorkspaceBridge): AgentTool {
   return {
     name: "get_ui_state",
     readinessRequirements: ["ui-bridge"],
@@ -147,7 +147,7 @@ export function createGetUiStateTool(uiBridge: UiBridge): AgentTool {
     },
     async execute(): Promise<ToolResult> {
       try {
-        const state = await uiBridge.getState()
+        const state = await workspaceBridge.getState()
         return {
           content: [{ type: "text", text: JSON.stringify(state ?? {}) }],
           details: state,
@@ -190,7 +190,7 @@ function isVerified(
 }
 
 export function createExecUiTool(
-  uiBridge: UiBridge,
+  workspaceBridge: WorkspaceBridge,
   opts: ExecUiToolOptions = {},
 ): AgentTool {
   const { workspaceRoot, resolvePathKind } = opts
@@ -368,7 +368,7 @@ export function createExecUiTool(
 
       try {
         const command: UiCommand = { kind: effectiveKind, params: cmdParams }
-        const result = await uiBridge.postCommand(command)
+        const result = await workspaceBridge.emitUiEffect(command)
         if (result.status === "error") {
           return {
             content: [{ type: "text", text: JSON.stringify(result) }],
@@ -383,11 +383,11 @@ export function createExecUiTool(
         // slow renders or network jitter don't produce stale snapshots.
         if (verifyDelayMs > 0 && VERIFIABLE_KINDS.has(effectiveKind)) {
           await new Promise<void>((r) => setTimeout(r, verifyDelayMs))
-          let uiState = await uiBridge.getState()
+          let uiState = await workspaceBridge.getState()
           for (let i = 0; i < verifyRetries; i++) {
             if (uiState === null || isVerified(effectiveKind, cmdParams, uiState)) break
             await new Promise<void>((r) => setTimeout(r, verifyIntervalMs))
-            uiState = await uiBridge.getState()
+            uiState = await workspaceBridge.getState()
           }
           const combined = { ...result, uiState }
           return {
@@ -421,8 +421,8 @@ export function createExecUiTool(
  *   await app.register(uiRoutes, { bridge })
  */
 export function createWorkspaceUiTools(
-  uiBridge: UiBridge,
+  workspaceBridge: WorkspaceBridge,
   opts: ExecUiToolOptions = {},
 ): AgentTool[] {
-  return [createGetUiStateTool(uiBridge), createExecUiTool(uiBridge, opts)]
+  return [createGetUiStateTool(workspaceBridge), createExecUiTool(workspaceBridge, opts)]
 }

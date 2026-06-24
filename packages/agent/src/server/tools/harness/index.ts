@@ -1,112 +1,45 @@
-import {
-  type BashSpawnHook,
-  type BashToolOptions,
-  createBashToolDefinition,
-  createLocalBashOperations,
-} from '@mariozechner/pi-coding-agent'
+import { unlink } from 'node:fs/promises'
+import { createBashToolDefinition } from '@mariozechner/pi-coding-agent'
 
 import type { Sandbox } from '../../../shared/sandbox'
 import type { AgentTool, ToolReadinessRequirement, ToolResult } from '../../../shared/tool'
 import { runtimeNotReadyToolResult, type ToolReadinessState } from '../../catalog/toolReadiness'
-import { getRuntimeBundleStorageRoot, type RuntimeBundle } from '../../runtime/mode'
-import { buildBwrapArgs } from '../../sandbox/bwrap/buildBwrapArgs'
-import { withWorkspacePythonEnv } from '../../sandbox/workspacePythonEnv'
-import { vercelBashOps } from '../operations/vercel'
+import { createBashToolOptionsForRuntime } from './bashToolOptions'
+import type { RuntimeProvisioningOptions, RuntimeProvisioningSnapshot } from '../../runtime/env'
+import type { RuntimeBundle } from '../../runtime/mode'
 
-function shellEscape(s: string): string {
-  return `'${s.replace(/'/g, "'\\''")}'`
-}
+export type HarnessRuntimeProvisioningSnapshot = RuntimeProvisioningSnapshot
 
-export interface HarnessRuntimeProvisioningSnapshot {
-  env?: Record<string, string>
-  pathEntries?: string[]
-}
-
-export interface HarnessRuntimeProvisioningOptions extends HarnessRuntimeProvisioningSnapshot {
-  getCurrent?: () => HarnessRuntimeProvisioningSnapshot | undefined
+export interface HarnessRuntimeProvisioningOptions extends RuntimeProvisioningOptions {
   getReadiness?: () => ToolReadinessState
 }
 
-function mergeRuntimeEnv(
-  runtime: HarnessRuntimeProvisioningOptions | undefined,
-  commandEnv: Record<string, string | undefined> | undefined,
-): Record<string, string | undefined> | undefined {
-  const current = runtime?.getCurrent?.() ?? runtime
-  if (!current?.env && !current?.pathEntries?.length) return commandEnv
-  const merged: Record<string, string | undefined> = {
-    ...(current.env ?? {}),
-    ...(commandEnv ?? {}),
-  }
-  const pathParts = [...(current.pathEntries ?? [])]
-  if (current.env?.PATH) pathParts.push(current.env.PATH)
-  if (commandEnv?.PATH) pathParts.push(commandEnv.PATH)
-  if (pathParts.length > 0) merged.PATH = pathParts.join(':')
-  return merged
-}
-
-function bwrapSpawnHook(
-  workspaceRoot: string,
-  runtime?: HarnessRuntimeProvisioningOptions,
-): BashSpawnHook {
-  const args = buildBwrapArgs(workspaceRoot)
-  const bwrapPrefix = ['bwrap', ...args].map(shellEscape).join(' ')
-  return (context) => ({
-    ...context,
-    command: `${bwrapPrefix} bash -lc ${shellEscape(context.command)}`,
-    env: withWorkspacePythonEnv({
-      workspaceRoot,
-      env: mergeRuntimeEnv(runtime, context.env),
-      sandboxRoot: '/workspace',
-    }),
-  })
-}
-
-function directSpawnHook(
-  workspaceRoot: string,
-  runtime?: HarnessRuntimeProvisioningOptions,
-): BashSpawnHook {
-  return (context) => ({
-    ...context,
-    env: withWorkspacePythonEnv({
-      workspaceRoot,
-      env: mergeRuntimeEnv(runtime, context.env),
-      preserveHostHome: true,
-    }),
-  })
-}
-
-const VERCEL_SAFE_DEFAULT_PATH = '/vercel/runtimes/node24/bin:/vercel/runtimes/node22/bin:/usr/local/bin:/usr/bin:/bin'
-
-function bashOptionsForMode(
+function bashOptionsForBundle(
   bundle: RuntimeBundle,
   runtime?: HarnessRuntimeProvisioningOptions,
-): BashToolOptions {
-  switch (bundle.sandbox.provider) {
-    case 'vercel-sandbox':
-    case 'remote-worker':
-      return {
-        operations: vercelBashOps(bundle.sandbox, {
-          // The pi bash tool's env may include the host process env. Never
-          // forward host secrets into a remote sandbox; provide only the
-          // provisioned runtime env plus a conservative remote PATH tail.
-          mergeEnv: () => mergeRuntimeEnv(runtime, { PATH: VERCEL_SAFE_DEFAULT_PATH }),
-        }),
-      }
-    case 'bwrap': {
-      const storageRoot = getRuntimeBundleStorageRoot(bundle)
-      return {
-        operations: createLocalBashOperations(),
-        spawnHook: bwrapSpawnHook(storageRoot, runtime),
-      }
-    }
-    default: {
-      const storageRoot = getRuntimeBundleStorageRoot(bundle)
-      return {
-        operations: createLocalBashOperations(),
-        spawnHook: directSpawnHook(storageRoot, runtime),
-      }
-    }
-  }
+  executionRuntimeEnv?: Record<string, string>,
+) {
+  return createBashToolOptionsForRuntime(bundle, runtime, executionRuntimeEnv)
+}
+
+function runtimeSecretValues(env: Record<string, string> | undefined): string[] {
+  return Object.entries(env ?? {})
+    .filter(([key, value]) => key !== 'PATH' && /TOKEN|SECRET|PASSWORD|API_KEY|PRIVATE_KEY/i.test(key) && value.length > 0)
+    .map(([, value]) => value)
+}
+
+function redactSecretsInString(text: string, secrets: readonly string[]): string {
+  return secrets.reduce((current, secret) => current.split(secret).join('[REDACTED]'), text)
+}
+
+function redactSecrets<T>(value: T, secrets: readonly string[]): T {
+  if (secrets.length === 0) return value
+  if (typeof value === 'string') return redactSecretsInString(value, secrets) as T
+  if (Array.isArray(value)) return value.map((item) => redactSecrets(item, secrets)) as T
+  if (!value || typeof value !== 'object') return value
+  return Object.fromEntries(
+    Object.entries(value as Record<string, unknown>).map(([key, child]) => [key, redactSecrets(child, secrets)]),
+  ) as T
 }
 
 function isRuntimeReady(readiness: ToolReadinessState | undefined): boolean {
@@ -129,26 +62,48 @@ function runtimeRequirementForFailure(text: string): ToolReadinessRequirement | 
   return undefined
 }
 
+function runtimeNotReadyFromState(
+  requirement: ToolReadinessRequirement,
+  readiness: ToolReadinessState | undefined,
+): ToolResult {
+  return runtimeNotReadyToolResult(requirement,
+    readiness && typeof readiness === 'object' && readiness.ready === false
+      ? readiness
+      : { ready: false, state: 'preparing', retryable: true })
+}
+
 function adaptPiTool(
-  piTool: ReturnType<typeof createBashToolDefinition>,
+  bundle: RuntimeBundle,
   runtime?: HarnessRuntimeProvisioningOptions,
 ): AgentTool {
+  const template = createBashToolDefinition(bundle.workspace.root, bashOptionsForBundle(bundle, runtime))
   return {
-    name: piTool.name,
-    description: piTool.description,
-    promptSnippet: piTool.promptSnippet,
-    parameters: piTool.parameters as unknown as Record<string, unknown>,
+    name: template.name,
+    description: template.description,
+    promptSnippet: template.promptSnippet,
+    parameters: template.parameters as unknown as Record<string, unknown>,
     readinessRequirements: ['sandbox-exec'],
     async execute(params, ctx) {
       const command = typeof params.command === 'string' ? params.command : ''
       const readiness = runtime?.getReadiness?.()
       const commandRuntimeRequirement = command ? runtimeRequirementForCommand(command) : undefined
       if (commandRuntimeRequirement && !isRuntimeReady(readiness)) {
-        return runtimeNotReadyToolResult(commandRuntimeRequirement,
-          readiness && typeof readiness === 'object' && readiness.ready === false
-            ? readiness
-            : { ready: false, state: 'preparing', retryable: true })
+        return runtimeNotReadyFromState(commandRuntimeRequirement, readiness)
       }
+
+      const runtimeEnv = await bundle.getRuntimeEnv?.()
+      const secrets = runtimeSecretValues(runtimeEnv)
+      const executionBundle = runtimeEnv === undefined
+        ? bundle
+        : {
+            ...bundle,
+            getRuntimeEnv: async () => runtimeEnv,
+          }
+      const piTool = createBashToolDefinition(
+        bundle.workspace.root,
+        bashOptionsForBundle(executionBundle, runtime, runtimeEnv),
+      )
+      let emittedRedactionNotice = false
       let result: Awaited<ReturnType<typeof piTool.execute>>
       try {
         result = await piTool.execute(
@@ -161,7 +116,14 @@ function adaptPiTool(
                   .filter((c): c is { type: 'text'; text: string } => c.type === 'text')
                   .map((c) => c.text)
                   .join('')
-                ctx.onUpdate!(text)
+                if (secrets.length === 0) {
+                  ctx.onUpdate!(text)
+                  return
+                }
+                if (!emittedRedactionNotice) {
+                  emittedRedactionNotice = true
+                  ctx.onUpdate!('[streaming output redacted while runtime secrets are in scope]')
+                }
               }
             : undefined,
           {} as never,
@@ -171,29 +133,32 @@ function adaptPiTool(
         const latestReadiness = runtime?.getReadiness?.()
         const failureRuntimeRequirement = runtimeRequirementForFailure(message)
         if (command && failureRuntimeRequirement && !isRuntimeReady(latestReadiness)) {
-          return runtimeNotReadyToolResult(failureRuntimeRequirement,
-            latestReadiness && typeof latestReadiness === 'object' && latestReadiness.ready === false
-              ? latestReadiness
-              : { ready: false, state: 'preparing', retryable: true })
+          return runtimeNotReadyFromState(failureRuntimeRequirement, latestReadiness)
         }
-        throw error
+        return {
+          content: [{ type: 'text', text: redactSecretsInString(message, secrets) }],
+          isError: true,
+          details: {},
+        }
+      }
+
+      if (secrets.length > 0 && result.details && typeof result.details === 'object' && 'fullOutputPath' in result.details && typeof (result.details as { fullOutputPath?: unknown }).fullOutputPath === 'string') {
+        await unlink((result.details as { fullOutputPath: string }).fullOutputPath).catch(() => undefined)
+        delete (result.details as { fullOutputPath?: string }).fullOutputPath
       }
       const textContent = (result.content ?? [])
         .filter((c): c is { type: 'text'; text: string } => c.type === 'text')
-        .map((c) => ({ type: 'text' as const, text: c.text }))
+        .map((c) => ({ type: 'text' as const, text: redactSecretsInString(c.text, secrets) }))
       const text = textContent.map((part) => part.text).join('\n')
       const latestReadiness = runtime?.getReadiness?.()
       const failureRuntimeRequirement = runtimeRequirementForFailure(text)
       if (command && failureRuntimeRequirement && !isRuntimeReady(latestReadiness)) {
-        return runtimeNotReadyToolResult(failureRuntimeRequirement,
-          latestReadiness && typeof latestReadiness === 'object' && latestReadiness.ready === false
-            ? latestReadiness
-            : { ready: false, state: 'preparing', retryable: true })
+        return runtimeNotReadyFromState(failureRuntimeRequirement, latestReadiness)
       }
       return {
         content: textContent.length > 0 ? textContent : [{ type: 'text', text: '' }],
         isError: Boolean((result as { isError?: unknown }).isError),
-        details: result.details,
+        details: redactSecrets(result.details, secrets),
       }
     },
   }
@@ -262,7 +227,7 @@ export function buildHarnessAgentTools(
   runtime?: HarnessRuntimeProvisioningOptions,
 ): AgentTool[] {
   const tools: AgentTool[] = [
-    adaptPiTool(createBashToolDefinition(bundle.workspace.root, bashOptionsForMode(bundle, runtime)), runtime),
+    adaptPiTool(bundle, runtime),
   ]
 
   if (bundle.sandbox.capabilities.includes('isolated-code')) {

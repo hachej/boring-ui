@@ -12,7 +12,7 @@ import { useCommandRegistry, useRegistry } from "../registry"
 import type { PaneProps } from "../registry/types"
 import { readStoredNumber, writeStoredNumber } from "../store/localStorageValues"
 import type { ChatLayoutProps } from "./types"
-import { useWorkspaceAttention, useWorkspaceContext } from "../provider"
+import { useWorkspaceAttention, useWorkspaceContext, workspaceAttentionSessionBadgeForBlocker } from "../provider"
 import { ChatPaneStage } from "./ChatPaneStage"
 
 export function buildChatLayout(props: ChatLayoutProps = {}): LayoutConfig {
@@ -98,6 +98,15 @@ export function ChatLayout(props: ChatLayoutProps) {
   )
   const [chatRailPulse, setChatRailPulse] = useState(false)
   const { blockers } = useWorkspaceAttention()
+  const activeSessionId = (props.activeChatPaneId ?? props.centerParams?.sessionId) as string | undefined
+  const activeBlockers = useMemo(
+    () => blockers.filter((blocker) => !blocker.sessionId || !activeSessionId || blocker.sessionId === activeSessionId),
+    [activeSessionId, blockers],
+  )
+  const hasSessionAttention = useMemo(
+    () => blockers.some((blocker) => !!blocker.sessionId && !!workspaceAttentionSessionBadgeForBlocker(blocker)),
+    [blockers],
+  )
   const commandRegistry = useCommandRegistry()
   const effectiveNavWidth = clamp(navWidth, 200, 360)
   const surfaceMax = Math.max(480, Math.floor(viewport * 0.72))
@@ -107,6 +116,7 @@ export function ChatLayout(props: ChatLayoutProps) {
   const uiOpenWorkbench = getFunction<() => void>(props.centerParams, "openWorkbench")
   const uiOpenWorkbenchSources = getFunction<() => void>(props.centerParams, "openWorkbenchSources")
   const uiCloseWorkbench = getFunction<() => void>(props.centerParams, "closeWorkbench")
+  const uiSurfaceDispatch = getDispatchContext(props.centerParams, "surfaceDispatch")
   const closeNav = getCallback(props.navParams, "onClose")
   const closeSurface = getCallback(props.surfaceParams, "onClose")
   const closeSidebar = getCallback(props.sidebarParams, "onClose")
@@ -258,18 +268,27 @@ export function ChatLayout(props: ChatLayoutProps) {
   ])
 
   useEffect(() => {
-    if (!uiSurface || !uiIsWorkbenchOpen || !uiOpenWorkbench) return
-    const ctx: DispatchContext = {
-      surface: uiSurface,
-      isWorkbenchOpen: uiIsWorkbenchOpen,
-      openWorkbench: uiOpenWorkbench,
-      openWorkbenchSources: uiOpenWorkbenchSources,
-      closeWorkbench: uiCloseWorkbench,
-    }
+    const ctx: DispatchContext | undefined = uiSurfaceDispatch ?? (
+      uiSurface && uiIsWorkbenchOpen && uiOpenWorkbench
+        ? {
+            surface: uiSurface,
+            isWorkbenchOpen: uiIsWorkbenchOpen,
+            openWorkbench: uiOpenWorkbench,
+            openWorkbenchSources: uiOpenWorkbenchSources,
+            closeWorkbench: uiCloseWorkbench,
+            // Fallback dispatch has no host-owned open-session set. Treat
+            // session-gated requests as closed instead of accidentally opening
+            // UI for a background session. Full shells should pass
+            // `surfaceDispatch.shouldOpenSurface` to make this gate precise.
+            shouldOpenSurface: (request) => request.meta?.openOnlyWhenSessionOpen === true ? false : true,
+          }
+        : undefined
+    )
+    if (!ctx) return
     return events.on(workspaceEvents.uiCommand, ({ command }) => {
       dispatchUiCommand(command, ctx)
     })
-  }, [uiSurface, uiIsWorkbenchOpen, uiOpenWorkbench, uiOpenWorkbenchSources, uiCloseWorkbench])
+  }, [uiSurfaceDispatch, uiSurface, uiIsWorkbenchOpen, uiOpenWorkbench, uiOpenWorkbenchSources, uiCloseWorkbench])
 
   useEvent(workspaceEvents.agentData, () => {
     if (chatCollapsed) setChatRailPulse(true)
@@ -280,17 +299,16 @@ export function ChatLayout(props: ChatLayoutProps) {
       setChatRailPulse(false)
       return
     }
-    if (blockers.length > 0) {
+    if (activeBlockers.length > 0) {
       setChatCollapsed(false)
       setChatRailPulse(false)
       scheduleComposerFocus()
     }
-  }, [blockers.length, chatCollapsed, setChatCollapsed])
+  }, [activeBlockers.length, chatCollapsed, setChatCollapsed])
 
   // Switching to a different session re-opens the chat if it was collapsed, so
   // the newly selected conversation is visible. Skips the initial mount (only
   // reacts to an actual change of the active session id).
-  const activeSessionId = (props.activeChatPaneId ?? props.centerParams?.sessionId) as string | undefined
   const prevSessionIdRef = useRef(activeSessionId)
   useEffect(() => {
     const prev = prevSessionIdRef.current
@@ -493,6 +511,7 @@ export function ChatLayout(props: ChatLayoutProps) {
           onClick={props.onOpenNav}
           label="Sessions"
           hint="⌘1"
+          pulse={hasSessionAttention}
         />
       ) : null}
       {!chatCollapsed && !navOpen && hasChatPanes && props.onCreateChatPaneAfter ? (
@@ -520,7 +539,7 @@ export function ChatLayout(props: ChatLayoutProps) {
           // stays pinned to the left even when the session drawer is open and
           // pushes the content rightward.
           stackIndex={1}
-          pulse={chatRailPulse || blockers.length > 0}
+          pulse={chatRailPulse || activeBlockers.length > 0}
         />
       ) : null}
       {!surfaceOpen && props.onOpenSurface ? (
@@ -658,10 +677,19 @@ function ResizeHandle({ side, ariaLabel, onResize }: ResizeHandleProps) {
         "absolute -top-px -bottom-px z-20 w-3 bg-transparent hover:!bg-transparent active:!bg-transparent",
         "after:absolute after:inset-y-2 after:left-1/2 after:w-px after:-translate-x-1/2 after:rounded-full after:bg-border/55",
         "after:transition-[width,background-color] after:duration-150 hover:after:w-1 hover:after:bg-foreground/35 active:after:w-1 active:after:bg-foreground/50",
-        side === "drawer-right" ? "-right-1.5" : "-left-1.5",
+        side === "drawer-right" ? "right-0" : "-left-1.5",
       )}
     />
   )
+}
+
+function getDispatchContext(params: Record<string, unknown> | undefined, key: string): DispatchContext | undefined {
+  const value = params?.[key]
+  if (!value || typeof value !== "object") return undefined
+  const candidate = value as Partial<DispatchContext>
+  return typeof candidate.surface === "function" && typeof candidate.isWorkbenchOpen === "function" && typeof candidate.openWorkbench === "function"
+    ? candidate as DispatchContext
+    : undefined
 }
 
 function getFunction<T extends (...args: unknown[]) => unknown>(
@@ -788,10 +816,15 @@ function FloatingEdgeButton({
       }
     >
       {icon === "sessions" ? (
-        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-          <circle cx="12" cy="12" r="9" stroke="currentColor" strokeWidth="1.8" />
-          <path d="M12 7v5l3.2 2" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
-        </svg>
+        <span className="relative flex items-center justify-center">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+            <circle cx="12" cy="12" r="9" stroke="currentColor" strokeWidth="1.8" />
+            <path d="M12 7v5l3.2 2" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
+          </svg>
+          {pulse ? (
+            <span className="absolute -right-1.5 -top-1.5 h-2 w-2 rounded-full bg-[color:var(--accent)]" aria-hidden="true" data-boring-workspace-part="edge-attention-dot" />
+          ) : null}
+        </span>
       ) : icon === "chat" ? (
         <span className="relative flex items-center justify-center">
           <MessageSquare className="h-[15px] w-[15px]" strokeWidth={1.8} aria-hidden="true" />

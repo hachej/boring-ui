@@ -1,6 +1,8 @@
 import type { PluginSkillSource, ProvisionWorkspaceRuntimeOptions } from "@hachej/boring-agent/server"
 import type { FastifyPluginAsync } from "fastify"
+import type { WorkspaceBridgeOperationDefinition } from "../../shared/workspace-bridge-rpc"
 import type { AgentTool } from "../../shared/types/agent-tool"
+import { validateWorkspaceBridgeOperationDefinition, type WorkspaceBridgeHandler } from "../workspaceBridge/registry"
 
 import {
   PI_PACKAGE_RESOURCE_FILTERS,
@@ -16,6 +18,11 @@ export interface WorkspaceServerPluginAsset {
   source: string | URL
   /** Optional runtime target path within this plugin's asset namespace. Defaults to name. */
   target?: string
+}
+
+export interface WorkspaceBridgeHandlerContribution {
+  definition: WorkspaceBridgeOperationDefinition
+  handler: WorkspaceBridgeHandler
 }
 
 export interface WorkspaceServerPlugin {
@@ -36,6 +43,8 @@ export interface WorkspaceServerPlugin {
   systemPrompt?: string
   skills?: PluginSkillSource[]
   agentTools?: AgentTool[]
+  /** Trusted boot-time host RPC handlers. Only app/internal server plugins should provide these. */
+  workspaceBridgeHandlers?: WorkspaceBridgeHandlerContribution[]
   provisioning?: WorkspaceRuntimeProvisioning
   /** Static filesystem assets this plugin needs in production/serverless bundles. */
   assets?: WorkspaceServerPluginAsset[]
@@ -134,6 +143,29 @@ function validatePluginAssets(pluginId: string, assets: WorkspaceServerPluginAss
     }
     if (asset.target !== undefined && (!asset.target || typeof asset.target !== "string")) {
       fail(pluginId, `assets[${i}].target must be a non-empty string when provided`)
+    }
+  }
+}
+
+function validateWorkspaceBridgeHandlers(pluginId: string, handlers: WorkspaceBridgeHandlerContribution[]): void {
+  for (let i = 0; i < handlers.length; i++) {
+    const entry = handlers[i]
+    if (!entry || typeof entry !== "object") {
+      fail(pluginId, `workspaceBridgeHandlers[${i}] must be an object`)
+    }
+    if (!entry.definition || typeof entry.definition !== "object") {
+      fail(pluginId, `workspaceBridgeHandlers[${i}].definition must be an object`)
+    }
+    try {
+      validateWorkspaceBridgeOperationDefinition(entry.definition)
+    } catch (error) {
+      const message = error && typeof error === "object" && "message" in error
+        ? String((error as { message?: unknown }).message)
+        : "invalid WorkspaceBridge operation definition"
+      fail(pluginId, `workspaceBridgeHandlers[${i}].definition invalid: ${message}`)
+    }
+    if (typeof entry.handler !== "function") {
+      fail(pluginId, `workspaceBridgeHandlers[${i}].handler must be a function`)
     }
   }
 }
@@ -270,6 +302,12 @@ export function validateServerPlugin(plugin: WorkspaceServerPlugin): void {
       fail(plugin.id, "assets must be an array when provided")
     }
     validatePluginAssets(plugin.id, plugin.assets)
+  }
+  if (plugin.workspaceBridgeHandlers !== undefined) {
+    if (!Array.isArray(plugin.workspaceBridgeHandlers)) {
+      fail(plugin.id, "workspaceBridgeHandlers must be an array when provided")
+    }
+    validateWorkspaceBridgeHandlers(plugin.id, plugin.workspaceBridgeHandlers)
   }
   if (plugin.routes !== undefined && typeof plugin.routes !== "function") {
     fail(plugin.id, "routes must be a Fastify plugin function when provided")

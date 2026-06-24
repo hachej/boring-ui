@@ -12,6 +12,7 @@ import { resolve, relative } from 'node:path'
 import type { Sandbox } from '../../shared/sandbox'
 import type { AgentTool, ToolExecContext, ToolResult } from '../../shared/tool'
 import { bytesWritten, decode, makeError } from '../catalog/tools/_shared'
+import type { RemoteWorkspacePathOptions } from './operations/remoteWorkspace'
 
 const PI_GREP_TOOL = createGrepToolDefinition('/')
 const DEFAULT_LIMIT = 100
@@ -48,7 +49,7 @@ function optionalStringParam(value: unknown): string | undefined {
   return typeof value === 'string' && value.length > 0 ? value : undefined
 }
 
-function buildRgCommand(params: Record<string, unknown>): string {
+function buildRgCommand(params: Record<string, unknown>, searchPath: string): string {
   const args = ['--json', '--line-number', '--color=never', '--hidden']
   if (params.ignoreCase === true) args.push('--ignore-case')
   if (params.literal === true) args.push('--fixed-strings')
@@ -60,13 +61,12 @@ function buildRgCommand(params: Record<string, unknown>): string {
   if (context > 0) args.push('--context', String(context))
 
   const pattern = params.pattern as string
-  const searchPath = optionalStringParam(params.path) ?? '.'
   args.push('--', quoteShell(pattern), quoteShell(searchPath))
 
   return `rg ${args.join(' ')}`
 }
 
-function parseRgJson(stdout: string, limit: number): ParsedGrep {
+function parseRgJson(stdout: string, limit: number, pathOptions?: RemoteWorkspacePathOptions): ParsedGrep {
   const outputLines: string[] = []
   let matchCount = 0
   let matchLimitReached = false
@@ -108,7 +108,7 @@ function parseRgJson(stdout: string, limit: number): ParsedGrep {
     if (wasTruncated) linesTruncated = true
 
     const separator = isMatch ? ':' : '-'
-    outputLines.push(`${filePath}${separator}${lineNumber}${separator} ${text}`)
+    outputLines.push(`${pathOptions?.toRuntimePath?.(filePath) ?? filePath}${separator}${lineNumber}${separator} ${text}`)
   }
 
   return { outputLines, matchCount, matchLimitReached, linesTruncated }
@@ -130,6 +130,39 @@ function syntheticExecTruncation(output: string): TruncationResult {
     maxLines: Number.MAX_SAFE_INTEGER,
     maxBytes: GREP_MAX_OUTPUT_BYTES,
   }
+}
+
+function isOutsideWorkspace(rel: string): boolean {
+  return rel === '..' || rel.startsWith('../') || rel.startsWith('..\\') || rel.startsWith('/')
+}
+
+function isUnderRoot(root: string, path: string): boolean {
+  const rel = relative(root, path)
+  return !isOutsideWorkspace(rel)
+}
+
+function normalizeSearchPath(
+  rawPath: unknown,
+  workspaceRoot: string | undefined,
+  pathOptions: RemoteWorkspacePathOptions | undefined,
+): { ok: true; path: string } | { ok: false; message: string } {
+  const path = optionalStringParam(rawPath) ?? '.'
+  if (!workspaceRoot) return { ok: true, path: pathOptions?.toRemotePath?.(path) ?? path }
+
+  if (!path.startsWith('/')) {
+    const resolved = resolve(workspaceRoot, path)
+    const rel = relative(workspaceRoot, resolved)
+    if (isOutsideWorkspace(rel)) return { ok: false, message: `path "${path}" is outside workspace` }
+    return { ok: true, path }
+  }
+
+  const roots = [workspaceRoot, ...(pathOptions?.rootAliases ?? [])]
+  if (!roots.some((root) => isUnderRoot(root, path))) return { ok: false, message: `path "${path}" is outside workspace` }
+  return { ok: true, path: pathOptions?.toRemotePath?.(path) ?? path }
+}
+
+function sanitizeErrorMessage(message: string, pathOptions: RemoteWorkspacePathOptions | undefined): string {
+  return pathOptions?.sanitizeErrorText?.(message) ?? message
 }
 
 function buildSuccessResult(
@@ -177,7 +210,11 @@ function buildSuccessResult(
   }
 }
 
-export function vercelGrepTool(sandbox: Sandbox, workspaceRoot?: string): AgentTool {
+export function remoteWorkspaceGrepTool(
+  sandbox: Sandbox,
+  workspaceRoot?: string,
+  pathOptions?: RemoteWorkspacePathOptions,
+): AgentTool {
   return {
     name: PI_GREP_TOOL.name,
     description: PI_GREP_TOOL.description,
@@ -193,35 +230,31 @@ export function vercelGrepTool(sandbox: Sandbox, workspaceRoot?: string): AgentT
         return makeError('pattern is required')
       }
 
-      if (workspaceRoot && typeof params.path === 'string' && params.path.length > 0) {
-        const resolved = resolve(workspaceRoot, params.path)
-        const rel = relative(workspaceRoot, resolved)
-        if (rel.startsWith('..') || rel.startsWith('/')) {
-          return makeError(`path "${params.path}" is outside workspace`)
-        }
-      }
+      const searchPath = normalizeSearchPath(params.path, workspaceRoot, pathOptions)
+      if (!searchPath.ok) return makeError(searchPath.message)
 
       try {
-        const result = await sandbox.exec(buildRgCommand(params), {
+        const result = await sandbox.exec(buildRgCommand(params, searchPath.path), {
           signal: ctx.abortSignal,
           timeoutMs: GREP_TIMEOUT_MS,
           maxOutputBytes: GREP_MAX_OUTPUT_BYTES,
         })
 
         if (result.exitCode !== 0 && result.exitCode !== 1) {
-          const stderr = decode(result.stderr).trim()
+          const stderr = sanitizeErrorMessage(decode(result.stderr).trim(), pathOptions)
           const message = stderr || `ripgrep exited with code ${result.exitCode}`
           return makeError(`grep failed: ${message}`)
         }
 
         const limit = numberParam(params.limit, DEFAULT_LIMIT)
-        const parsed = parseRgJson(decode(result.stdout), limit)
+        const parsed = parseRgJson(decode(result.stdout), limit, pathOptions)
         return buildSuccessResult(parsed, limit, result.truncated)
       } catch (error) {
         const message =
-          error instanceof Error ? error.message : 'unknown error'
+          error instanceof Error ? sanitizeErrorMessage(error.message, pathOptions) : 'unknown error'
         return makeError(`grep failed: ${message}`)
       }
     },
   }
 }
+

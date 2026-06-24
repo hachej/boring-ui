@@ -36,6 +36,8 @@ export function createRemoteWorkerModeAdapter(opts: RemoteWorkerModeAdapterOptio
       await sandbox.init?.({ workspace, sessionId: ctx.sessionId })
       return {
         runtimeContext: { runtimeCwd: REMOTE_WORKER_RUNTIME_CWD },
+        bash: { kind: 'remote' },
+        filesystem: { kind: 'remote-workspace' },
         workspace,
         sandbox,
         fileSearch: createServerFileSearch(workspace, sandbox),

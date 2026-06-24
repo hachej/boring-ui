@@ -54,8 +54,8 @@ test.describe("workspace-playground auth-free boot", () => {
     await page.waitForTimeout(1500)
 
     // The workspace shell should be visible without a core app wrapper.
-    await expect(page.getByLabel("Chat stage")).toBeVisible()
-    await expect(page.getByLabel("Session browser")).toBeVisible()
+    await expect(page.getByRole("main", { name: "Chat" })).toBeVisible()
+    await expect(page.getByRole("textbox", { name: "Agent prompt" })).toBeVisible()
 
     // AppErrorBoundary surfaces "Something went wrong" — must NOT be
     // present. Was the visible failure mode when normalizeUser

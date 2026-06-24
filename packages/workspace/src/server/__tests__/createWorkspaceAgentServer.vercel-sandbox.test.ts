@@ -17,7 +17,7 @@ import { join } from "node:path"
 import { afterEach, beforeEach, expect, test, describe, vi } from "vitest"
 import { createWorkspaceAgentServer } from "../../app/server/createWorkspaceAgentServer"
 import type { ExecUiToolOptions } from "../ui-control/tools/uiTools"
-import type { UiBridge } from "../../shared/ui-bridge"
+import type { WorkspaceBridge } from "../../shared/ui-bridge"
 
 // ── spies ─────────────────────────────────────────────────────────────────────
 // Captures the workspaceRoot that createAgentApp receives so we can assert bash
@@ -41,7 +41,7 @@ vi.mock("../ui-control/tools/uiTools", async (importOriginal) => {
   const mod = await importOriginal<typeof import("../ui-control/tools/uiTools")>()
   return {
     ...mod,
-    createWorkspaceUiTools: (bridge: UiBridge, opts?: ExecUiToolOptions) => {
+    createWorkspaceUiTools: (bridge: WorkspaceBridge, opts?: ExecUiToolOptions) => {
       capturedUiWorkspaceRoot = opts?.workspaceRoot
       return mod.createWorkspaceUiTools(bridge, opts)
     },

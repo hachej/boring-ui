@@ -3,8 +3,9 @@ import type { AgentTool } from '../shared/tool'
 import type { AgentHarness, AgentHarnessFactory } from '../shared/harness'
 import type { TelemetrySink } from '../shared/telemetry'
 import { getEnv } from './config/env'
-import type { RuntimeModeAdapter, RuntimeModeId } from './runtime/mode'
-import { getRuntimeBundleStorageRoot } from './runtime/mode'
+import type { RuntimeBundle, RuntimeModeAdapter, RuntimeModeId } from './runtime/mode'
+import { getOptionalRuntimeBundleStorageRoot } from './runtime/mode'
+import { withRuntimeEnvContributions, type RuntimeEnvContribution } from './runtimeEnvContributions'
 import { resolveMode, autoDetectMode } from './runtime/resolveMode'
 import { createPiCodingAgentHarness, withPiHarnessDefaults } from './harness/pi-coding-agent/createHarness'
 import type { PiHarnessOptions } from './harness/pi-coding-agent/createHarness'
@@ -29,7 +30,7 @@ import { reloadRoutes } from './http/routes/reload'
 import { searchRoutes } from './http/routes/search'
 import { gitRoutes } from './http/routes/git'
 import { InMemorySessionChangesTracker } from './http/sessionChangesTracker'
-import { ReadyStatusTracker } from './sandbox/vercel-sandbox/readyStatus'
+import { createRuntimeReadyStatusTracker } from './runtime/modeReadiness'
 import { HarnessPiChatService } from './pi-chat/harnessPiChatService'
 import type { AgentMeteringSink } from './pi-chat/metering'
 import { createPluginDiagnosticsTool } from './tools/pluginDiagnostics'
@@ -72,6 +73,14 @@ export interface CreateAgentAppOptions {
   telemetry?: TelemetrySink
   /** Optional billing sink for native Pi usage (see AgentMeteringSink). */
   metering?: AgentMeteringSink
+  /** Generic runtime env contributors. Agent stays workspace-neutral; hosts decide env names/values. */
+  runtimeEnvContributions?: RuntimeEnvContribution[]
+  /** Runtime-aware provisioning hook. Runs after Workspace/Sandbox creation and before tools/harness. */
+  runtimeProvisioner?: (ctx: {
+    workspaceRoot: string
+    runtimeMode: RuntimeModeId
+    runtimeBundle: RuntimeBundle
+  }) => Promise<void>
   /** Optional explicit file-backed session directory. Mostly for tests/hosts. */
   sessionDir?: string
   /**
@@ -118,10 +127,23 @@ export async function createAgentApp(
 
   const resolvedMode = opts.runtimeModeAdapter?.id ?? opts.mode ?? autoDetectMode()
   const modeAdapter = opts.runtimeModeAdapter ?? resolveMode(resolvedMode)
-  const runtimeBundle = await modeAdapter.create({
+  let runtimeBundle = await modeAdapter.create({
     workspaceRoot,
     sessionId,
     templatePath,
+  })
+  if (opts.runtimeEnvContributions && opts.runtimeEnvContributions.length > 0) {
+    runtimeBundle = withRuntimeEnvContributions(runtimeBundle, {
+      workspaceId: sessionId,
+      workspaceRoot,
+      runtimeMode: resolvedMode,
+      runtimeBundle,
+    }, opts.runtimeEnvContributions, opts.telemetry)
+  }
+  await opts.runtimeProvisioner?.({
+    workspaceRoot,
+    runtimeMode: resolvedMode,
+    runtimeBundle,
   })
 
   // UI-aware tools (get_ui_state, exec_ui) and the /api/v1/ui/* routes
@@ -196,13 +218,9 @@ export async function createAgentApp(
   harnessRef = harness
   const sessionChangesTracker = new InMemorySessionChangesTracker()
 
-  const readyTracker = new ReadyStatusTracker({
-    sandboxReady: resolvedMode !== 'vercel-sandbox',
+  const readyTracker = createRuntimeReadyStatusTracker(modeAdapter, {
     harnessReady: true,
   })
-  if (resolvedMode === 'vercel-sandbox') {
-    queueMicrotask(() => readyTracker.markSandboxReady())
-  }
 
   app.addHook(
     'onRequest',
@@ -230,10 +248,7 @@ export async function createAgentApp(
   // (where .git lives), not workspace.root — in sandbox modes the latter is the
   // in-sandbox cwd (e.g. /workspace) and git would not find the repo.
   await app.register(gitRoutes, {
-    getWorkspaceRoot: () => {
-      if (runtimeBundle.sandbox.provider === 'remote-worker') return undefined
-      return getRuntimeBundleStorageRoot(runtimeBundle)
-    },
+    getWorkspaceRoot: () => getOptionalRuntimeBundleStorageRoot(runtimeBundle),
   })
   const piChatService = new HarnessPiChatService({
     harness,

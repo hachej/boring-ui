@@ -1433,6 +1433,37 @@ describe('PiChatPanel sandbox shell', () => {
     expect(screen.getAllByText('Select a file before chatting').length).toBe(1)
   })
 
+  test('renders open and cancel composer blocker actions as accessible icon buttons', async () => {
+    const remote = new FakeRemotePiSession(remoteState({ status: 'idle' }))
+    const onAction = vi.fn()
+    render(
+      <PiChatPanel
+        sessionId="pi-external"
+        hydrateMessages={false}
+        serverResourcesEnabled={false}
+        storageScope="scope-a"
+        composerBlockers={[{
+          id: 'ask-user:q1',
+          label: 'Answer the question in Questions to continue',
+          actions: [{ id: 'open', label: 'Open Questions' }, { id: 'cancel', label: 'Cancel question' }],
+        }]}
+        onComposerBlockerAction={onAction}
+        createRemoteSession={remoteFactory(remote)}
+      />,
+    )
+
+    await screen.findByText('Answer the question in Questions to continue')
+    const open = screen.getByRole('button', { name: 'Open Questions' })
+    const cancel = screen.getByRole('button', { name: 'Cancel question' })
+    expect(screen.queryByText('Open Questions')).toBeNull()
+    expect(screen.queryByText('Cancel question')).toBeNull()
+
+    fireEvent.click(open)
+    fireEvent.click(cancel)
+    expect(onAction).toHaveBeenCalledWith(expect.objectContaining({ id: 'ask-user:q1' }), 'open')
+    expect(onAction).toHaveBeenCalledWith(expect.objectContaining({ id: 'ask-user:q1' }), 'cancel')
+  })
+
   test('/reset does not race empty-session auto-create into duplicate session creation', async () => {
     vi.stubGlobal('confirm', vi.fn(() => true))
     const remote = new FakeRemotePiSession(remoteState())

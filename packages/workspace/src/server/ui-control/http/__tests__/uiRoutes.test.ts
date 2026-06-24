@@ -2,13 +2,13 @@ import Fastify from "fastify"
 import { describe, expect, test } from "vitest"
 import { uiRoutes } from "../uiRoutes"
 import { createInMemoryBridge } from "../../../bridge/createInMemoryBridge"
-import type { UiBridge } from "../../../../shared/ui-bridge"
+import type { WorkspaceBridge } from "../../../../shared/ui-bridge"
 
 describe("uiRoutes", () => {
   test("getBridge scopes UI state by request", async () => {
     const app = Fastify({ logger: false })
-    const bridges = new Map<string, UiBridge>()
-    const getBridge = (workspaceId: string): UiBridge => {
+    const bridges = new Map<string, WorkspaceBridge>()
+    const getBridge = (workspaceId: string): WorkspaceBridge => {
       let bridge = bridges.get(workspaceId)
       if (!bridge) {
         bridge = createInMemoryBridge()

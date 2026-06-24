@@ -30,6 +30,8 @@ export const localModeAdapter: RuntimeModeAdapter = {
     return {
       runtimeContext,
       storageRoot: ctx.workspaceRoot,
+      bash: { kind: 'local-sandbox', sandboxRoot: '/workspace' },
+      filesystem: { kind: 'host' },
       workspace,
       sandbox,
       fileSearch: createServerFileSearch(workspace, sandbox),

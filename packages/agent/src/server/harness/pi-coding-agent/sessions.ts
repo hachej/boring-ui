@@ -347,11 +347,34 @@ export class PiSessionStore implements SessionStore {
   }
 
   async loadPiSessionFile(_ctx: SessionCtx, sessionId: string): Promise<string | null> {
+    if (!SAFE_ID.test(sessionId)) return null;
     try {
-      const filepath = await this.resolveSessionFile(sessionId);
-      const content = await readFile(filepath, "utf-8");
-      return extractPiSessionFilePath(safeParseEntries(content))
-        ?? (isTimestampNamedPiSessionFile(filepath, sessionId) ? filepath : null);
+      const direct = join(this.sessionDir, `${sessionId}.jsonl`);
+      let filepath = direct;
+      let content: string;
+      try {
+        content = await readFile(direct, "utf-8");
+      } catch {
+        const files = await readdir(this.sessionDir).catch(() => []);
+        const match = files.find((f) =>
+          f.endsWith(`_${sessionId}.jsonl`) || f === `${sessionId}.jsonl`,
+        );
+        if (!match) return null;
+        filepath = join(this.sessionDir, match);
+        content = await readFile(filepath, "utf-8");
+      }
+      const entries = safeParseEntries(content);
+      const linkedPiFile = extractPiSessionFilePath(entries);
+      if (linkedPiFile) return linkedPiFile;
+      if (!isTimestampNamedPiSessionFile(filepath, sessionId)) return null;
+      const existingWrapper = await this.findWrapperReferencingNativeSession(filepath);
+      if (existingWrapper) {
+        const wrapperSessionId = await this.readSessionFileId(existingWrapper);
+        if (wrapperSessionId !== sessionId) return null;
+        const wrapperEntries = parseJsonlPrefixEntries(await readJsonlPrefix(existingWrapper));
+        return extractPiSessionFilePath(wrapperEntries);
+      }
+      return await this.ensureWrapperForNativeSession(sessionId, filepath);
     } catch {
       return null;
     }

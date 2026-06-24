@@ -25,6 +25,7 @@ describe("bootstrapServer", () => {
       runtimePlugins: [],
       provisioningContributions: [],
       routeContributions: [],
+      workspaceBridgeHandlers: [],
       preservedUiStateKeys: [],
     })
   })
@@ -154,6 +155,34 @@ describe("bootstrapServer", () => {
     })
 
     expect(result.routeContributions).toEqual([{ id: "routes", routes }])
+  })
+
+  it("collects trusted server plugin WorkspaceBridge handlers", () => {
+    const handler = vi.fn()
+    const definition = {
+      op: "example.v1.records.write",
+      version: 1,
+      owner: "example",
+      callerClassesAllowed: ["runtime" as const],
+      requiredCapabilities: ["example:records.write"],
+      inputSchema: { type: "object" },
+      timeoutMs: 1_000,
+      maxInputBytes: 1_024,
+      maxOutputBytes: 1_024,
+      idempotencyPolicy: "required" as const,
+    }
+    const result = bootstrapServer({
+      plugins: [{ id: "example", workspaceBridgeHandlers: [{ definition, handler }] }],
+    })
+
+    expect(result.workspaceBridgeHandlers).toEqual([{ definition, handler }])
+  })
+
+  it("rejects malformed WorkspaceBridge handler contributions", () => {
+    expect(() => defineServerPlugin({
+      id: "bad-bridge",
+      workspaceBridgeHandlers: [{ definition: { op: "" }, handler: vi.fn() } as never],
+    })).toThrow("workspaceBridgeHandlers[0].definition invalid: WorkspaceBridge operation definition op must be a non-empty string")
   })
 
   it("collects plugin-owned preserved UI state keys", () => {

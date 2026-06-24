@@ -6,9 +6,41 @@ import type { Workspace } from '../../shared/workspace'
 import { getNodeWorkspaceHostRoot } from '../workspace/createNodeWorkspace'
 import type { BoringAgentRuntimePaths } from '../workspace/runtimeLayout'
 import type { WorkspaceProvisioningAdapter } from '../workspace/provisioning'
+import type { CapabilityReadinessDetail, ReadyStatusTracker } from './readyStatus'
 
 export type BuiltinRuntimeModeId = 'direct' | 'local' | 'vercel-sandbox'
 export type RuntimeModeId = BuiltinRuntimeModeId | (string & {})
+
+export interface RuntimeModeReadinessHooks {
+  initialSandboxReady?: boolean
+  initialWorkspaceReadiness?: CapabilityReadinessDetail
+  onTrackerCreated?: (tracker: ReadyStatusTracker) => void
+}
+
+export type RuntimeCachedBindingHealthCheckResult =
+  | { state: 'ok' }
+  | { state: 'recreate'; message?: string; error?: unknown }
+
+export interface RuntimeCachedBindingHealthCheck {
+  intervalMs?: number
+  check(ctx: { runtimeBundle: RuntimeBundle; workspaceId: string }): Promise<RuntimeCachedBindingHealthCheckResult>
+}
+
+export type RuntimeBashStrategy =
+  | { kind: 'host'; preserveHostHome?: boolean }
+  | { kind: 'local-sandbox'; sandboxRoot: string }
+  | { kind: 'remote'; defaultPath?: string }
+
+export interface RuntimeRemoteWorkspacePathOptions {
+  rootAliases?: string[]
+  toRemotePath?: (value: string) => string
+  toRuntimePath?: (value: string) => string
+  sanitizeErrorText?: (value: string) => string
+}
+
+export type RuntimeFilesystemStrategy =
+  | { kind: 'host' }
+  | { kind: 'remote-workspace'; pathOptions?: RuntimeRemoteWorkspacePathOptions }
 
 export interface RuntimeModeAdapter {
   readonly id: RuntimeModeId
@@ -18,8 +50,12 @@ export interface RuntimeModeAdapter {
    * host-side fs checks/prompts are safe without hard-coding sandbox IDs.
    */
   readonly workspaceFsCapability?: Workspace['fsCapability']
+  readonly readiness?: RuntimeModeReadinessHooks
+  readonly cachedBindingHealthCheck?: RuntimeCachedBindingHealthCheck
   create(ctx: ModeContext): Promise<RuntimeBundle>
   createProvisioningAdapter?(runtimeLayout: BoringAgentRuntimePaths, ctx?: ModeContext): WorkspaceProvisioningAdapter
+  getRuntimeLayoutRoot?(ctx: ModeContext): string
+  evictCachedRuntime?(ctx: { workspaceId: string }): void
   dispose?(): Promise<void>
 }
 
@@ -43,14 +79,21 @@ export interface RuntimeBundle {
   workspace: Workspace
   sandbox: Sandbox
   fileSearch: FileSearch
+  /** Optional per-execution runtime env provider for local/direct operations that do not call Sandbox.exec. */
+  getRuntimeEnv?: () => Promise<Record<string, string>>
+  /** Runtime-owned bash execution strategy, consumed by the agent bash tool builder. */
+  bash?: RuntimeBashStrategy
+  /** Runtime-owned filesystem strategy, consumed by the agent filesystem tool builder. */
+  filesystem?: RuntimeFilesystemStrategy
+}
+
+export function getOptionalRuntimeBundleStorageRoot(bundle: RuntimeBundle): string | undefined {
+  return bundle.storageRoot ?? getNodeWorkspaceHostRoot(bundle.workspace) ?? undefined
 }
 
 export function getRuntimeBundleStorageRoot(bundle: RuntimeBundle): string {
-  const hostRoot = bundle.storageRoot ?? getNodeWorkspaceHostRoot(bundle.workspace)
+  const hostRoot = getOptionalRuntimeBundleStorageRoot(bundle)
   if (hostRoot) return hostRoot
-
-  // vercel-sandbox: no host filesystem — tools use workspace methods instead.
-  if (bundle.sandbox.provider === 'vercel-sandbox') return bundle.workspace.root
 
   throw new Error(
     'RuntimeBundle.storageRoot is required for host-filesystem tools. ' +

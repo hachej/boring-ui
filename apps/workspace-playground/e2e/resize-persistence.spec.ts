@@ -12,7 +12,7 @@ import { expect, test } from "@playwright/test"
  *              evaluated computed style picks up the right value
  */
 
-const STORAGE_KEY = "boring-ui-v2:layout:playground"
+const STORAGE_KEY = "boring-ui-v2:layout:playground:workspace"
 const DRAWER_KEY = `${STORAGE_KEY}:drawerWidth`
 const SURFACE_KEY = `${STORAGE_KEY}:surfaceWidth`
 const DRAWER_OPEN_KEY = `${STORAGE_KEY}:drawer`
@@ -21,6 +21,7 @@ const SURFACE_OPEN_KEY = `${STORAGE_KEY}:surface`
 async function openBothPanes(page: import("@playwright/test").Page) {
   // The shell hides handles when the pane is collapsed (width=0). Toggle
   // both panes open via the floating edge buttons before each test.
+  await expect(page.getByRole("main", { name: "Chat" })).toBeVisible({ timeout: 10_000 })
   const sessionsBtn = page.getByRole("button", { name: /^sessions$/i })
   if (await sessionsBtn.isVisible().catch(() => false)) {
     await sessionsBtn.click()
@@ -29,6 +30,8 @@ async function openBothPanes(page: import("@playwright/test").Page) {
   if (await workbenchBtn.isVisible().catch(() => false)) {
     await workbenchBtn.click()
   }
+  await expect(page.locator('aside[aria-label="Surface"]')).toBeVisible({ timeout: 10_000 })
+  await expect(page.locator('[aria-label="Resize workbench"]')).toBeVisible({ timeout: 10_000 })
   await page.waitForTimeout(400) // let the open transition settle
 }
 

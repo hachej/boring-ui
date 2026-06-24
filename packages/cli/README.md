@@ -28,6 +28,9 @@ npx @hachej/boring-ui-cli ~/projects/foo
 
 # Custom port / host
 npx @hachej/boring-ui-cli --port 8080 --host 127.0.0.1
+
+# Exposing beyond loopback requires an explicit unsafe local-bridge opt-in
+npx @hachej/boring-ui-cli --host 0.0.0.0 --allow-insecure-local-bridge
 ```
 
 The CLI does not take an API key flag. On first run, if no LLM provider is
@@ -58,7 +61,7 @@ boring-ui plugin <subcommand> …         Plugin authoring (delegates to boring-
 | Flag | Default | Description |
 |------|---------|-------------|
 | `-p, --port <port>` | `5200` (or `$PORT`) | HTTP port |
-| `--host <host>` | `0.0.0.0` (or `$HOST`) | Listen host |
+| `--host <host>` | `127.0.0.1` (or `$HOST`) | Listen host. Non-loopback hosts require `--allow-insecure-local-bridge` because the standalone CLI uses unauthenticated local-only bridge browser auth. |
 | `-m, --mode <mode>` | `local` | `local` (no sandbox, full network) or `local-sandbox` (bwrap-isolated, no network, Linux only) |
 | `-h, --help` | | Show help |
 
@@ -69,6 +72,7 @@ boring-ui plugin <subcommand> …         Plugin authoring (delegates to boring-
 | `PORT`, `HOST` | Fallbacks for `--port` / `--host` |
 | `BORING_MODE` | Fallback for `--mode` |
 | `BORING_AGENT_WORKSPACE_ROOT` | Overrides the folder argument in folder mode |
+| `BORING_UI_ALLOW_INSECURE_LOCAL_BRIDGE` | `1`/`true`/`yes` to allow non-loopback binding with the unauthenticated local CLI bridge auth |
 | `BORING_UI_WORKSPACES_PATH` | Path to the workspaces registry (default `~/.boring-ui/workspaces.yaml`) |
 | `BORING_USE_LOCAL_PACKAGES` | `1` to resolve the bundled plugin-cli runtime from the local monorepo checkout |
 

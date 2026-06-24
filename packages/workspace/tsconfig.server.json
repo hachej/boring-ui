@@ -23,6 +23,7 @@
     "src/server/**/*",
     "src/app/server/**/*",
     "src/shared/**/*",
+    "src/bridge-client/index.ts",
     "src/plugins/**/server/**/*",
     "src/plugins/**/agent/**/*",
     "src/plugins/**/shared/**/*",

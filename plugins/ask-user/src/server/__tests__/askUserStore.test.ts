@@ -42,16 +42,35 @@ describe("FileAskUserStore", () => {
 
     const reloaded = new FileAskUserStore(join(dir, "ask-user.json"))
     await expect(reloaded.getByQuestionId("q1")).resolves.toMatchObject({ questionId: "q1", sessionId: "s1" })
+    await expect(reloaded.getPending("s1")).resolves.toMatchObject({ questionId: "q1", sessionId: "s1", status: "ready" })
   })
 
-  it("enforces one pending question globally", async () => {
+  it("shares one initial load across concurrent first read/write callers", async () => {
+    const initialRead = store.listPending()
+    await Promise.all([
+      initialRead,
+      store.createPending(question()),
+    ])
+    await store.appendTranscriptEvent({ type: "created", question: question(), at: new Date(0).toISOString() })
+
+    await expect(store.getPending("s1")).resolves.toMatchObject({ questionId: "q1", status: "ready" })
+    const raw = JSON.parse(await readFile(join(dir, "ask-user.json"), "utf8"))
+    expect(raw.questions.q1).toMatchObject({ sessionId: "s1", status: "ready" })
+    expect(raw.transcriptsBySession.s1).toHaveLength(1)
+  })
+
+  it("enforces one pending question per session and persists multiple pending sessions", async () => {
     await store.createPending(question())
     await expect(store.createPending(question({ questionId: "q2" }))).rejects.toMatchObject({
       code: ASK_USER_ERROR_CODES.PENDING_EXISTS,
     })
-    await expect(store.createPending(question({ questionId: "q3", sessionId: "s2" }))).rejects.toMatchObject({
-      code: ASK_USER_ERROR_CODES.PENDING_EXISTS,
-    })
+    await expect(store.createPending(question({ questionId: "q3", sessionId: "s2" }))).resolves.toBeUndefined()
+
+    await expect(store.getPending("s1")).resolves.toMatchObject({ questionId: "q1" })
+    await expect(store.getPending("s2")).resolves.toMatchObject({ questionId: "q3" })
+    const reloaded = new FileAskUserStore(join(dir, "ask-user.json"))
+    await expect(reloaded.getPending("s1")).resolves.toMatchObject({ questionId: "q1" })
+    await expect(reloaded.getPending("s2")).resolves.toMatchObject({ questionId: "q3" })
   })
 
   it("rejects answers that do not match the question/session", async () => {
