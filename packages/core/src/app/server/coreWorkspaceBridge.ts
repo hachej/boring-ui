@@ -5,6 +5,7 @@ import {
   createWorkspaceBridgeRuntimeCore,
   createWorkspaceBridgeRuntimeEnvContribution,
   InMemoryWorkspaceBridgeIdempotencyStore,
+  InMemoryWorkspaceBridgeRuntimeRefreshTokenStore,
   runWithWorkspaceBridgeIdempotency,
   verifyWorkspaceBridgeRuntimeToken,
   workspaceBridgeHttpRoutes,
@@ -14,6 +15,7 @@ import {
   type WorkspaceBridgeCallResponse,
   type WorkspaceBridgeHandler,
   type WorkspaceBridgeIdempotencyStore,
+  type WorkspaceBridgeRuntimeRefreshTokenStore,
   type WorkspaceBridgeOperationDefinition,
   type WorkspaceBridgeRegistry,
   type WorkspaceBridgeRuntimeEnvOptions,
@@ -25,12 +27,14 @@ const MAX_SESSION_OWNER_CACHE = 5_000
 interface CoreWorkspaceBridgeRuntime {
   registry: WorkspaceBridgeRegistry
   idempotencyStore: WorkspaceBridgeIdempotencyStore
+  refreshTokenStore: WorkspaceBridgeRuntimeRefreshTokenStore
   sessionOwners: Map<string, string>
 }
 
 export interface CoreWorkspaceBridgeOptions {
   workspaceBridge?: {
     runtimeTokenSecret?: string
+    runtimeRefreshTokenSecret?: string
     runtimeEnv?: WorkspaceBridgeRuntimeEnvOptions
     handlers?: ReadonlyArray<{ definition: WorkspaceBridgeOperationDefinition; handler: WorkspaceBridgeHandler }>
   }
@@ -87,10 +91,12 @@ export function createCoreWorkspaceBridge(options: CoreWorkspaceBridgeOptions): 
       const sessionOwners = new Map<string, string>()
       const core = createWorkspaceBridgeRuntimeCore({
         handlers: options.workspaceBridge?.handlers,
+        ownerWorkspaceId: safeWorkspaceId,
       })
       runtime = {
         registry: core.registry,
         idempotencyStore: new InMemoryWorkspaceBridgeIdempotencyStore(),
+        refreshTokenStore: new InMemoryWorkspaceBridgeRuntimeRefreshTokenStore(),
         sessionOwners,
       }
       runtimes.set(safeWorkspaceId, runtime)
@@ -187,6 +193,7 @@ export function createCoreWorkspaceBridge(options: CoreWorkspaceBridgeOptions): 
               runtimeMode: ctx.runtimeMode,
               registry: getRuntime(ctx.workspaceId).registry,
               runtimeTokenSecret: options.workspaceBridge?.runtimeTokenSecret,
+              runtimeRefreshTokenSecret: options.workspaceBridge?.runtimeRefreshTokenSecret,
               runtimeEnv: options.workspaceBridge?.runtimeEnv,
             })
             return contribution ? await contribution.getEnv(ctx) : {}
@@ -199,6 +206,9 @@ export function createCoreWorkspaceBridge(options: CoreWorkspaceBridgeOptions): 
       getRegistry: async (request) => getRuntime(await resolveBridgeWorkspaceId(request)).registry,
       getIdempotencyStore: async (request) => getRuntime(await resolveBridgeWorkspaceId(request)).idempotencyStore,
       runtimeTokenSecret: options.workspaceBridge?.runtimeTokenSecret,
+      runtimeRefreshTokenSecret: options.workspaceBridge?.runtimeRefreshTokenSecret,
+      getRuntimeRefreshTokenStore: (_request, claims) => getRuntime(claims.workspaceId).refreshTokenStore,
+      getOwnerWorkspaceId: async (request) => await resolveBridgeWorkspaceId(request),
       browserAuthPolicy: createBrowserBridgeAuthPolicy({
         getPrincipal: (input) => {
           const user = input.request?.user as { id?: string; email?: string | null; name?: string | null } | null | undefined

@@ -48,6 +48,7 @@ import {
   InMemoryWorkspaceBridgeIdempotencyStore,
   createWorkspaceBridgeRuntimeEnvContribution,
   workspaceBridgeHttpRoutes,
+  type BridgeAuthPolicy,
   type WorkspaceBridgeHandler,
   type WorkspaceBridgeOperationDefinition,
   type WorkspaceBridgeRegistry,
@@ -134,6 +135,15 @@ export interface CreateWorkspaceAgentServerOptions
   workspaceBridge?: {
     registry?: WorkspaceBridgeRegistry
     runtimeTokenSecret?: string
+    runtimeRefreshTokenSecret?: string
+    browserAuthPolicy?: BridgeAuthPolicy
+    /**
+     * Dev-only escape hatch for standalone/local CLI usage. This is never
+     * enabled implicitly: exposed hosts must provide browserAuthPolicy, and
+     * local tools that intentionally rely on the unauthenticated local-cli
+     * policy must opt in explicitly.
+     */
+    allowInsecureLocalCliBrowserAuth?: boolean
     handlers?: Array<{
       definition: WorkspaceBridgeOperationDefinition
       handler: WorkspaceBridgeHandler
@@ -596,6 +606,30 @@ export function readWorkspacePluginPackagePiSnapshot(pluginDirs: BoringPluginSou
   }
 }
 
+function resolveWorkspaceBridgeBrowserAuthPolicy(
+  opts: CreateWorkspaceAgentServerOptions,
+  registry: WorkspaceBridgeRegistry,
+): BridgeAuthPolicy | undefined {
+  if (opts.workspaceBridge?.browserAuthPolicy) return opts.workspaceBridge.browserAuthPolicy
+
+  if (opts.workspaceBridge?.allowInsecureLocalCliBrowserAuth !== true) return undefined
+
+  emitLocalCliBridgeAuthWarning()
+  return createLocalCliBridgeAuthPolicy({
+    workspaceId: "default",
+    capabilities: registry.listDefinitions().flatMap((definition) => [...definition.requiredCapabilities]),
+  })
+}
+
+function emitLocalCliBridgeAuthWarning(): void {
+  const message = "createWorkspaceAgentServer is using createLocalCliBridgeAuthPolicy for WorkspaceBridge browser calls. This policy is unauthenticated, grants registered bridge capabilities to a fixed local-cli principal, and is intended only for local/dev CLI usage. Provide workspaceBridge.browserAuthPolicy before exposing this server."
+  if (typeof process.emitWarning === "function") {
+    process.emitWarning(message, { code: "BORING_WORKSPACE_BRIDGE_INSECURE_AUTH" })
+    return
+  }
+  console.warn(message)
+}
+
 export async function createWorkspaceAgentServer(
   opts: CreateWorkspaceAgentServerOptions = {},
 ): Promise<FastifyInstance> {
@@ -652,6 +686,7 @@ export async function createWorkspaceAgentServer(
 
   const { registry: workspaceBridgeRegistry } = createWorkspaceBridgeRuntimeCore({
     registry: opts.workspaceBridge?.registry,
+    ownerWorkspaceId: "default",
     handlers: [
       ...(opts.workspaceBridge?.handlers ?? []),
       ...(pluginCollection.workspaceBridgeHandlers ?? []),
@@ -764,7 +799,9 @@ export async function createWorkspaceAgentServer(
     runtimeMode: resolvedMode,
     registry: workspaceBridgeRegistry,
     runtimeTokenSecret: opts.workspaceBridge?.runtimeTokenSecret,
+    runtimeRefreshTokenSecret: opts.workspaceBridge?.runtimeRefreshTokenSecret,
     runtimeEnv: opts.workspaceBridge?.runtimeEnv,
+    runtimePlacement: workspaceFsCapability === "strong" ? "local" : "remote",
   })
 
   const app = await createAgentApp({
@@ -876,11 +913,10 @@ export async function createWorkspaceAgentServer(
   await app.register(workspaceBridgeHttpRoutes, {
     registry: workspaceBridgeRegistry,
     runtimeTokenSecret: opts.workspaceBridge?.runtimeTokenSecret,
+    runtimeRefreshTokenSecret: opts.workspaceBridge?.runtimeRefreshTokenSecret,
+    ownerWorkspaceId: "default",
     idempotencyStore: new InMemoryWorkspaceBridgeIdempotencyStore(),
-    browserAuthPolicy: createLocalCliBridgeAuthPolicy({
-      workspaceId: "default",
-      capabilities: workspaceBridgeRegistry.listDefinitions().flatMap((definition) => [...definition.requiredCapabilities]),
-    }),
+    browserAuthPolicy: resolveWorkspaceBridgeBrowserAuthPolicy(opts, workspaceBridgeRegistry),
   })
   // Internal handles exposed on the Fastify instance for external callers /
   // tests (e.g. the CLI reads __boringAssetManager). The rebuild closure is

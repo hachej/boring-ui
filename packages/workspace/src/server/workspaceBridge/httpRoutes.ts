@@ -3,6 +3,7 @@ import { z } from "zod"
 import {
   WorkspaceBridgeErrorCode,
   createWorkspaceBridgeError,
+  type BridgeAuthContext,
   type WorkspaceBridgeCallRequest,
   type WorkspaceBridgeCallResponse,
 } from "../../shared/workspace-bridge-rpc"
@@ -11,7 +12,18 @@ import type { WorkspaceBridgeIdempotencyStore } from "./idempotency"
 import { runWithWorkspaceBridgeIdempotency } from "./idempotency"
 import type { WorkspaceBridgeRegistry } from "./registry"
 import { measureJsonBytes } from "./json"
-import { verifyWorkspaceBridgeRuntimeToken } from "./runtimeToken"
+import {
+  DEFAULT_WORKSPACE_BRIDGE_RUNTIME_TOKEN_TTL_MS,
+  clampWorkspaceBridgeRuntimeTokenTtlMs,
+  mintWorkspaceBridgeRuntimeToken,
+  verifyWorkspaceBridgeRuntimeRefreshToken,
+  verifyWorkspaceBridgeRuntimeToken,
+  type WorkspaceBridgeRuntimeRefreshTokenClaims,
+} from "./runtimeToken"
+import {
+  InMemoryWorkspaceBridgeRuntimeRefreshTokenStore,
+  type WorkspaceBridgeRuntimeRefreshTokenStore,
+} from "./refreshTokenStore"
 
 const bridgeCallBodySchema = z.object({
   op: z.string().min(1),
@@ -25,16 +37,26 @@ export interface WorkspaceBridgeHttpRoutesOptions {
   getRegistry?: (request: FastifyRequest, body: WorkspaceBridgeCallRequest) => WorkspaceBridgeRegistry | Promise<WorkspaceBridgeRegistry>
   browserAuthPolicy?: BridgeAuthPolicy
   runtimeTokenSecret?: string
+  runtimeRefreshTokenSecret?: string
+  runtimeRefreshTokenStore?: WorkspaceBridgeRuntimeRefreshTokenStore
+  getRuntimeRefreshTokenStore?: (request: FastifyRequest, claims: WorkspaceBridgeRuntimeRefreshTokenClaims) => WorkspaceBridgeRuntimeRefreshTokenStore | undefined | Promise<WorkspaceBridgeRuntimeRefreshTokenStore | undefined>
+  refreshTokenRateLimit?: { maxUses?: number; windowMs?: number }
+  ownerWorkspaceId?: string
+  getOwnerWorkspaceId?: (request: FastifyRequest, body: WorkspaceBridgeCallRequest, auth: BridgeAuthContext) => string | undefined | Promise<string | undefined>
   idempotencyStore?: WorkspaceBridgeIdempotencyStore
   getIdempotencyStore?: (request: FastifyRequest, body: WorkspaceBridgeCallRequest) => WorkspaceBridgeIdempotencyStore | undefined | Promise<WorkspaceBridgeIdempotencyStore | undefined>
   maxBodyBytes?: number
 }
+
+const DEFAULT_REFRESH_TOKEN_RATE_LIMIT_MAX_USES = 30
+const DEFAULT_REFRESH_TOKEN_RATE_LIMIT_WINDOW_MS = 60_000
 
 export function workspaceBridgeHttpRoutes(
   app: FastifyInstance,
   opts: WorkspaceBridgeHttpRoutesOptions,
   done: (err?: Error) => void,
 ): void {
+  const defaultRefreshTokenStore = opts.runtimeRefreshTokenStore ?? new InMemoryWorkspaceBridgeRuntimeRefreshTokenStore()
   app.post("/api/v1/workspace-bridge/call", async (request, reply) => {
     reply.header("Cache-Control", "no-store")
 
@@ -68,18 +90,76 @@ export function workspaceBridgeHttpRoutes(
       const idempotencyStore = opts.getIdempotencyStore
         ? await opts.getIdempotencyStore(request, body)
         : opts.idempotencyStore
+      const expectedWorkspaceId = opts.getOwnerWorkspaceId
+        ? await opts.getOwnerWorkspaceId(request, body, authContext)
+        : opts.ownerWorkspaceId
 
       const response = await runWithWorkspaceBridgeIdempotency(idempotencyStore, {
         definition,
         request: body,
         auth: authContext,
-      }, async () => await registry.call(body, authContext))
+      }, async () => await registry.call(body, authContext, { expectedWorkspaceId }))
       return await sendResponse(reply, response)
     } catch (err) {
       const bridgeError = isBridgeError(err)
         ? err
         : createWorkspaceBridgeError(WorkspaceBridgeErrorCode.HandlerFailed, "WorkspaceBridge transport failed")
       return sendBridgeError(reply, statusForBridgeError(bridgeError.code), body.requestId, bridgeError.code, bridgeError.message)
+    }
+  })
+
+  app.post("/api/v1/workspace-bridge/token", async (request, reply) => {
+    reply.header("Cache-Control", "no-store")
+
+    const authHeader = firstHeader(request.headers.authorization)
+    if (!authHeader?.startsWith("Bearer ")) {
+      return sendBridgeError(reply, 401, undefined, WorkspaceBridgeErrorCode.AuthRequired, "WorkspaceBridge refresh token is required")
+    }
+    if (!opts.runtimeTokenSecret || !opts.runtimeRefreshTokenSecret) {
+      return sendBridgeError(reply, 401, undefined, WorkspaceBridgeErrorCode.AuthRequired, "WorkspaceBridge token refresh is not configured")
+    }
+
+    try {
+      const nowMs = Date.now()
+      const verified = verifyWorkspaceBridgeRuntimeRefreshToken(authHeader.slice("Bearer ".length), {
+        secret: opts.runtimeRefreshTokenSecret,
+        nowMs,
+      })
+      const store = opts.getRuntimeRefreshTokenStore
+        ? await opts.getRuntimeRefreshTokenStore(request, verified.claims) ?? defaultRefreshTokenStore
+        : defaultRefreshTokenStore
+      const refreshUse = await store.recordUse({
+        jti: verified.claims.jti,
+        nowMs,
+        maxUses: opts.refreshTokenRateLimit?.maxUses ?? DEFAULT_REFRESH_TOKEN_RATE_LIMIT_MAX_USES,
+        windowMs: opts.refreshTokenRateLimit?.windowMs ?? DEFAULT_REFRESH_TOKEN_RATE_LIMIT_WINDOW_MS,
+        expiresAtMs: verified.claims.exp * 1000,
+      })
+      if (!refreshUse.allowed) {
+        if (refreshUse.reason === "revoked") {
+          return sendBridgeError(reply, 401, undefined, WorkspaceBridgeErrorCode.InvalidToken, "WorkspaceBridge refresh token is revoked")
+        }
+        reply.header("Retry-After", Math.ceil(refreshUse.retryAfterMs / 1000).toString())
+        return sendBridgeError(reply, 429, undefined, WorkspaceBridgeErrorCode.RateLimited, "WorkspaceBridge refresh token rate limit exceeded")
+      }
+      const ttlMs = refreshMintTtlMs(verified.claims, Date.now())
+      if (ttlMs === undefined) {
+        return sendBridgeError(reply, 401, undefined, WorkspaceBridgeErrorCode.ExpiredToken, "Runtime bridge refresh token has expired")
+      }
+      const token = mintWorkspaceBridgeRuntimeToken({
+        secret: opts.runtimeTokenSecret,
+        workspaceId: verified.claims.workspaceId,
+        sessionId: verified.claims.sessionId,
+        runtimeId: verified.claims.runtimeId,
+        capabilities: verified.claims.capabilities,
+        ttlMs,
+      })
+      return reply.code(200).send({ ok: true, token })
+    } catch (err) {
+      const bridgeError = isBridgeError(err)
+        ? err
+        : createWorkspaceBridgeError(WorkspaceBridgeErrorCode.InvalidToken, "WorkspaceBridge refresh token is invalid")
+      return sendBridgeError(reply, statusForBridgeError(bridgeError.code), undefined, bridgeError.code, bridgeError.message)
     }
   })
   done()
@@ -136,6 +216,13 @@ async function sendResponse<T>(reply: FastifyReply, response: WorkspaceBridgeCal
   return reply.code(response.ok ? 200 : statusForBridgeError(response.error.code)).send(response)
 }
 
+function refreshMintTtlMs(claims: WorkspaceBridgeRuntimeRefreshTokenClaims, nowMs: number): number | undefined {
+  const requested = clampWorkspaceBridgeRuntimeTokenTtlMs(claims.tokenTtlMs) ?? DEFAULT_WORKSPACE_BRIDGE_RUNTIME_TOKEN_TTL_MS
+  const remaining = claims.exp * 1000 - nowMs
+  if (remaining <= 0) return undefined
+  return Math.min(requested, remaining)
+}
+
 function sendBridgeError(
   reply: FastifyReply,
   status: number,
@@ -149,6 +236,7 @@ function sendBridgeError(
 
 function statusForBridgeError(code: WorkspaceBridgeErrorCode): number {
   if (code === WorkspaceBridgeErrorCode.AuthRequired || code === WorkspaceBridgeErrorCode.InvalidToken || code === WorkspaceBridgeErrorCode.ExpiredToken) return 401
+  if (code === WorkspaceBridgeErrorCode.RateLimited) return 429
   if (code === WorkspaceBridgeErrorCode.CallerNotAllowed || code === WorkspaceBridgeErrorCode.CapabilityDenied || code === WorkspaceBridgeErrorCode.ResourceScopeDenied) return 403
   if (code === WorkspaceBridgeErrorCode.OpNotFound) return 404
   if (code === WorkspaceBridgeErrorCode.InputTooLarge || code === WorkspaceBridgeErrorCode.OutputTooLarge) return 413

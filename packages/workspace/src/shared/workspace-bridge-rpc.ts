@@ -5,6 +5,18 @@
  * Node-only types/imports and keep stable bridge error codes centralized here.
  */
 
+/**
+ * Canonical WorkspaceBridge runtime env var names. Defined in this browser- and
+ * server-safe module so the producer (server runtimeEnv injection) and the
+ * consumer (bridge-client SDK) share one source of truth and cannot drift on
+ * string equality.
+ */
+export const WORKSPACE_BRIDGE_URL_ENV = "BORING_WORKSPACE_BRIDGE_URL"
+export const WORKSPACE_BRIDGE_TOKEN_ENV = "BORING_WORKSPACE_BRIDGE_TOKEN"
+export const WORKSPACE_BRIDGE_TOKEN_URL_ENV = "BORING_WORKSPACE_BRIDGE_TOKEN_URL"
+export const WORKSPACE_BRIDGE_REFRESH_TOKEN_ENV = "BORING_WORKSPACE_BRIDGE_REFRESH_TOKEN"
+export const WORKSPACE_BRIDGE_DISABLED_ENV = "BORING_WORKSPACE_BRIDGE_DISABLED"
+
 export type BridgeCallerClass = "browser" | "runtime" | "server"
 
 export type BridgeActorKind = "human" | "agent" | "system" | "service"
@@ -47,6 +59,13 @@ export interface WorkspaceBridgeOperationDefinition<
   owner: string
   callerClassesAllowed: readonly BridgeCallerClass[]
   requiredCapabilities: readonly string[]
+  /**
+   * Allow a caller authenticated for one workspace to invoke this operation on
+   * a registry owned by another workspace. Keep false/omitted for normal
+   * tenant-scoped operations; cross-workspace ops must perform their own
+   * explicit resource authorization.
+   */
+  allowCrossWorkspace?: boolean
   inputSchema: unknown
   outputSchema?: unknown
   timeoutMs: number
@@ -99,6 +118,7 @@ export enum WorkspaceBridgeErrorCode {
   IdempotencyRequired = "BRIDGE_IDEMPOTENCY_REQUIRED",
   IdempotencyConflict = "BRIDGE_IDEMPOTENCY_CONFLICT",
   ReplayRejected = "BRIDGE_REPLAY_REJECTED",
+  RateLimited = "BRIDGE_RATE_LIMITED",
   InvalidToken = "BRIDGE_INVALID_TOKEN",
   ExpiredToken = "BRIDGE_EXPIRED_TOKEN",
   InvalidRequest = "BRIDGE_INVALID_REQUEST",

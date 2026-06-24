@@ -43,6 +43,13 @@ export interface WorkspaceBridgeRegistryLogger {
 
 export interface WorkspaceBridgeRegistryOptions {
   logger?: WorkspaceBridgeRegistryLogger
+  /** Workspace that owns this registry instance. Calls from other workspace ids are rejected unless the op opts into allowCrossWorkspace. */
+  ownerWorkspaceId?: string
+}
+
+export interface WorkspaceBridgeRegistryCallOptions {
+  /** Per-call owner override for hosts that reuse a registry across workspaces. */
+  expectedWorkspaceId?: string
 }
 
 interface RegisteredOperation {
@@ -84,6 +91,9 @@ export function validateWorkspaceBridgeOperationDefinition(
   }
   if (!Array.isArray(definition.requiredCapabilities)) {
     throw invalidDefinition(`WorkspaceBridge operation ${definition.op} requiredCapabilities must be an array`)
+  }
+  if (definition.allowCrossWorkspace !== undefined && typeof definition.allowCrossWorkspace !== "boolean") {
+    throw invalidDefinition(`WorkspaceBridge operation ${definition.op} allowCrossWorkspace must be a boolean when provided`)
   }
   for (const capability of definition.requiredCapabilities) {
     if (typeof capability !== "string" || capability.trim().length === 0) {
@@ -214,9 +224,14 @@ interface SchemaResult {
 export class WorkspaceBridgeRegistry {
   private readonly handlers = new Map<string, RegisteredOperation>()
   private readonly logger?: WorkspaceBridgeRegistryLogger
+  private readonly ownerWorkspaceId?: string
 
   constructor(options: WorkspaceBridgeRegistryOptions = {}) {
+    if (options.ownerWorkspaceId !== undefined && options.ownerWorkspaceId.trim().length === 0) {
+      throw createWorkspaceBridgeError(WorkspaceBridgeErrorCode.InvalidRequest, "WorkspaceBridge registry ownerWorkspaceId must be non-empty when provided")
+    }
     this.logger = options.logger
+    this.ownerWorkspaceId = options.ownerWorkspaceId
   }
 
   registerHandler<TInput, TOutput>(
@@ -249,6 +264,7 @@ export class WorkspaceBridgeRegistry {
   async call<TInput = unknown, TOutput = unknown>(
     request: WorkspaceBridgeCallRequest<TInput>,
     context: WorkspaceBridgeCallContext,
+    options: WorkspaceBridgeRegistryCallOptions = {},
   ): Promise<WorkspaceBridgeCallResponse<TOutput>> {
     const requestId = request.requestId ?? context.requestId ?? createRequestId()
     const registered = this.handlers.get(request.op)
@@ -271,6 +287,14 @@ export class WorkspaceBridgeRegistry {
 
     if (!definition.callerClassesAllowed.includes(context.callerClass)) {
       return this.failure(request.op, requestId, WorkspaceBridgeErrorCode.CallerNotAllowed, "Caller class is not allowed for operation", logBase)
+    }
+
+    const expectedWorkspaceId = options.expectedWorkspaceId ?? this.ownerWorkspaceId
+    if (expectedWorkspaceId && context.workspaceId !== expectedWorkspaceId && definition.allowCrossWorkspace !== true) {
+      return this.failure(request.op, requestId, WorkspaceBridgeErrorCode.ResourceScopeDenied, "Caller workspace is not authorized for this bridge registry", {
+        ...logBase,
+        expectedWorkspaceId,
+      })
     }
 
     const missingCapability = definition.requiredCapabilities.find((capability) => !context.capabilities.includes(capability))

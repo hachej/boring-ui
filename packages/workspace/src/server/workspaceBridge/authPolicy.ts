@@ -141,11 +141,16 @@ export function createBrowserBridgeAuthPolicy(
   }
 }
 
+/**
+ * Dev/local CLI only. This policy performs no user authentication and grants
+ * the configured capabilities (defaulting to the op's own) to a fixed
+ * local-cli principal. Do not use it for exposed or production servers; pass a
+ * host-owned createBrowserBridgeAuthPolicy-style policy instead.
+ */
 export function createLocalCliBridgeAuthPolicy(
   options: LocalCliBridgeAuthPolicyOptions,
 ): BridgeAuthPolicy {
-  // Trusted local/dev only: no Better Auth / core DB. Grants the configured
-  // capabilities (defaulting to the op's own) to a fixed local-cli principal.
+  // Trusted local/dev only: no Better Auth / core DB.
   return {
     resolve(input) {
       if (input.callerClass !== "browser") {
@@ -155,6 +160,12 @@ export function createLocalCliBridgeAuthPolicy(
         )
       }
       ensureCallerAllowed(input.definition, "browser")
+      if (input.workspaceId !== options.workspaceId) {
+        throw createWorkspaceBridgeError(
+          WorkspaceBridgeErrorCode.ResourceScopeDenied,
+          "Local CLI bridge caller is not authorized for workspace",
+        )
+      }
       const capabilities = options.capabilities ?? input.definition.requiredCapabilities
       ensureCapabilities(capabilities, input.requiredCapabilities ?? input.definition.requiredCapabilities)
       const context = makeContext({

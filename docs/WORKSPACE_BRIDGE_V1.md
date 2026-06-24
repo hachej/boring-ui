@@ -26,7 +26,9 @@ createWorkspaceAgentServer({
 })
 ```
 
-`createCoreWorkspaceAgentServer(...)` accepts the same `workspaceBridge` shape.
+`createCoreWorkspaceAgentServer(...)` accepts the same `workspaceBridge` shape. For the standalone/base factory, browser bridge calls fail closed unless the host provides `workspaceBridge.browserAuthPolicy` or explicitly opts into `allowInsecureLocalCliBrowserAuth` for a local-only dev tool. `createLocalCliBridgeAuthPolicy` is unauthenticated and dev-only; it is never selected implicitly.
+
+Runtime callers are also bounded to the workspace that owns the bridge registry. A token minted for workspace A cannot call a registry owned by workspace B; the registry returns `BRIDGE_RESOURCE_SCOPE_DENIED` unless an operation explicitly sets `allowCrossWorkspace: true`. Cross-workspace operations must do their own explicit resource authorization.
 
 Trusted boot-time server plugins can also contribute handlers:
 
@@ -95,24 +97,54 @@ When enabled and valid, agent/runtime executions receive:
 
 - `BORING_WORKSPACE_BRIDGE_URL`
 - `BORING_WORKSPACE_BRIDGE_TOKEN`
+- `BORING_WORKSPACE_BRIDGE_TOKEN_URL` (when refresh is configured)
+- `BORING_WORKSPACE_BRIDGE_REFRESH_TOKEN` (when refresh is configured)
 - `BORING_WORKSPACE_ID`
 - `BORING_AGENT_SESSION_ID`
 
-Remote runtimes, such as `vercel-sandbox`, require an HTTPS non-localhost bridge URL. If the bridge cannot be enabled safely, the runtime receives `BORING_WORKSPACE_BRIDGE_DISABLED=<reason>` instead of a URL/token.
+Remote-placement runtimes (runtime bundles with remote bash or remote-workspace filesystem strategies) require an HTTPS non-localhost bridge URL. If the bridge cannot be enabled safely, the runtime receives `BORING_WORKSPACE_BRIDGE_DISABLED=<reason>` instead of a URL/token.
 
 ## Runtime client
 
-TypeScript runtime code should use the package client:
+TypeScript runtime code should use the package client. It defaults to a 30s per-attempt timeout (covering token-provider resolution, the HTTP request, and response-body parsing), accepts an `AbortSignal`, and wraps bridge/transport failures in stable `WorkspaceBridgeClientError` codes:
 
 ```ts
-import { WorkspaceBridgeClient } from "@hachej/boring-workspace/bridge-client"
+import {
+  WorkspaceBridgeClient,
+  WorkspaceBridgeClientError,
+  WorkspaceBridgeClientErrorCode,
+  WorkspaceBridgeErrorCode,
+} from "@hachej/boring-workspace/bridge-client"
 
 const bridge = WorkspaceBridgeClient.fromEnv()
-await bridge.call("example.v1.write", {
-  id: "output-1",
-  title: "Generated output",
-}, { idempotencyKey: "example-write:output-1" })
+try {
+  await bridge.call("example.v1.write", {
+    id: "output-1",
+    title: "Generated output",
+  }, { idempotencyKey: "example-write:output-1", timeoutMs: 30_000 })
+} catch (error) {
+  if (error instanceof WorkspaceBridgeClientError) {
+    if (error.code === WorkspaceBridgeErrorCode.ExpiredToken) {
+      // Recreate the client with a fresh token, or use a token provider below.
+    }
+    if (error.code === WorkspaceBridgeClientErrorCode.Timeout) {
+      // Host did not respond within the configured timeout.
+    }
+  }
+  throw error
+}
 ```
+
+Runtime env injection provides a short-lived bearer token. Tokens expire (default 5 minutes; hosts may configure TTL). When the host configures `runtimeRefreshTokenSecret`, env injection also provides `BORING_WORKSPACE_BRIDGE_TOKEN_URL` and `BORING_WORKSPACE_BRIDGE_REFRESH_TOKEN`; `WorkspaceBridgeClient.fromEnv()` uses those automatically to re-mint once after a 401 bridge auth error. Custom long-running tools may also pass a token provider; when a call receives a 401 bridge auth error, the client invokes the provider once with `{ refresh: true }` and retries the call once. The timeout is per attempt, so a call that refresh-retries can take up to roughly `2 * timeoutMs` wall-clock time:
+
+```ts
+const bridge = new WorkspaceBridgeClient({
+  url: process.env.BORING_WORKSPACE_BRIDGE_URL!,
+  token: async ({ refresh, signal }) => refresh ? await fetchFreshBridgeToken({ signal }) : cachedBridgeToken,
+})
+```
+
+The stock refresh endpoint is `POST /api/v1/workspace-bridge/token` with `Authorization: Bearer $BORING_WORKSPACE_BRIDGE_REFRESH_TOKEN`. It returns `{ ok: true, token }`. Refresh tokens are sandbox-bound by signed workspace/session/runtime/capability claims, default to a 1h TTL, are checked against a per-jti revocation/rate-limit store, and should be treated as secrets; never log them. Refresh env vars are not injected over plaintext non-loopback HTTP even when short-lived call-token env is allowed for local development.
 
 Non-TypeScript runtimes can call the HTTP transport directly:
 
@@ -140,7 +172,7 @@ Bridge calls are authorized by caller class plus capabilities. Capabilities are 
 - `runtime` calls use scoped bearer tokens minted from the runtime bridge secret.
 - `server` calls use trusted in-process context.
 
-Runtime tokens are scoped to the workspace/session/runtime/capability set and expiry. They protect the host and other workspaces from the sandbox; they are not secret from code already running inside that sandbox.
+Runtime tokens are scoped to the workspace/session/runtime/capability set and expiry, and the bridge rejects calls whose token workspace does not match the registry owner. They protect the host and other workspaces from the sandbox; they are not secret from code already running inside that sandbox. Domain handlers must still scope all reads/writes by `context.workspaceId` and must not trust input-supplied workspace, record, path, or session ids as authorization proof.
 
 Never log tokens, Authorization headers, full payloads, host paths, user answers, or sensitive SQL. Mutating/retryable operations should require an idempotency key.
 

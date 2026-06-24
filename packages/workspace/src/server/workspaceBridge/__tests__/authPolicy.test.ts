@@ -145,4 +145,21 @@ describe("BridgeAuthPolicy adapters", () => {
       actor: { actorKind: "human", performedBy: { label: "local-cli:user" } },
     })
   })
+
+  it("denies local CLI browser callers for a workspace other than the configured one", async () => {
+    const policy = createLocalCliBridgeAuthPolicy({
+      workspaceId: "workspace-local",
+      capabilities: ["example:respond"],
+    })
+
+    // resolve() is synchronous for the local-cli policy, so normalize its throw
+    // into a rejection before asserting on the stable error code.
+    await expect(
+      (async () => policy.resolve({
+        callerClass: "browser",
+        definition: browserOp,
+        workspaceId: "workspace-other",
+      }))(),
+    ).rejects.toMatchObject({ code: WorkspaceBridgeErrorCode.ResourceScopeDenied })
+  })
 })

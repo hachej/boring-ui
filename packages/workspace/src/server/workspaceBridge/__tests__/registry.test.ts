@@ -103,6 +103,37 @@ describe("WorkspaceBridgeRegistry", () => {
     )).resolves.toMatchObject({ ok: false, error: { code: WorkspaceBridgeErrorCode.CapabilityDenied } })
   })
 
+  it("rejects calls from the wrong workspace unless the op explicitly opts into cross-workspace", async () => {
+    const registry = createWorkspaceBridgeRegistry({ ownerWorkspaceId: "workspace-b" })
+    registry.registerHandler(
+      createTestBridgeOperationDefinition({
+        op: "test.v1.tenant-scoped",
+        callerClassesAllowed: ["runtime"],
+        requiredCapabilities: ["test:read"],
+      }),
+      () => ({ ok: true }),
+    )
+    registry.registerHandler(
+      createTestBridgeOperationDefinition({
+        op: "test.v1.cross-workspace",
+        callerClassesAllowed: ["runtime"],
+        requiredCapabilities: ["test:read"],
+        allowCrossWorkspace: true,
+      }),
+      () => ({ ok: true }),
+    )
+
+    await expect(registry.call(
+      { op: "test.v1.tenant-scoped", input: {}, requestId: "req_wrong_workspace" },
+      createTestBridgeContext({ callerClass: "runtime", workspaceId: "workspace-a", capabilities: ["test:read"] }),
+    )).resolves.toMatchObject({ ok: false, error: { code: WorkspaceBridgeErrorCode.ResourceScopeDenied } })
+
+    await expect(registry.call(
+      { op: "test.v1.cross-workspace", input: {}, requestId: "req_cross_workspace" },
+      createTestBridgeContext({ callerClass: "runtime", workspaceId: "workspace-a", capabilities: ["test:read"] }),
+    )).resolves.toMatchObject({ ok: true })
+  })
+
   it("validates input/output schemas and input/output size limits", async () => {
     const registry = createWorkspaceBridgeRegistry()
     registry.registerHandler(

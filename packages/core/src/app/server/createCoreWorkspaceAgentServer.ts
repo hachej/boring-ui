@@ -159,6 +159,7 @@ export interface CreateCoreWorkspaceAgentServerOptions
       handler: WorkspaceBridgeHandler
     }>
     runtimeTokenSecret?: string
+    runtimeRefreshTokenSecret?: string
     runtimeEnv?: WorkspaceBridgeRuntimeEnvOptions
   }
   getWorkspaceBridgeExtraTools?: (ctx: CoreWorkspaceBridgeExtraToolsContext) => CoreWorkspaceBridgeExtraTool[] | Promise<CoreWorkspaceBridgeExtraTool[]>

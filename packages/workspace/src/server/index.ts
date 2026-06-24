@@ -51,6 +51,7 @@ export type {
   WorkspaceBridgeCallContext,
   WorkspaceBridgeHandler,
   WorkspaceBridgeHandlerArgs,
+  WorkspaceBridgeRegistryCallOptions,
   WorkspaceBridgeRegistryLogger,
   WorkspaceBridgeRegistryOptions,
 } from "./workspaceBridge/registry"
@@ -60,6 +61,12 @@ export {
 } from "./workspaceBridge/authPolicy"
 export { workspaceBridgeHttpRoutes } from "./workspaceBridge/httpRoutes"
 export type { WorkspaceBridgeHttpRoutesOptions } from "./workspaceBridge/httpRoutes"
+export { InMemoryWorkspaceBridgeRuntimeRefreshTokenStore } from "./workspaceBridge/refreshTokenStore"
+export type {
+  WorkspaceBridgeRuntimeRefreshTokenStore,
+  WorkspaceBridgeRuntimeRefreshTokenUseOptions,
+  WorkspaceBridgeRuntimeRefreshTokenUseResult,
+} from "./workspaceBridge/refreshTokenStore"
 export {
   InMemoryWorkspaceBridgeIdempotencyStore,
   hashNormalizedInput,
@@ -85,26 +92,39 @@ export type {
   WorkspaceBridgeIdempotencyStore,
 } from "./workspaceBridge/idempotency"
 export {
+  DEFAULT_WORKSPACE_BRIDGE_RUNTIME_REFRESH_TOKEN_TTL_MS,
+  DEFAULT_WORKSPACE_BRIDGE_RUNTIME_TOKEN_TTL_MS,
+  MAX_WORKSPACE_BRIDGE_RUNTIME_TOKEN_TTL_MS,
+  WORKSPACE_BRIDGE_REFRESH_TOKEN_AUDIENCE,
   WORKSPACE_BRIDGE_TOKEN_AUDIENCE,
+  clampWorkspaceBridgeRuntimeTokenTtlMs,
+  mintWorkspaceBridgeRuntimeRefreshToken,
   mintWorkspaceBridgeRuntimeToken,
   runtimeClaimsToBridgeAuthContext,
+  verifyWorkspaceBridgeRuntimeRefreshToken,
   verifyWorkspaceBridgeRuntimeToken,
 } from "./workspaceBridge/runtimeToken"
 export type {
+  MintWorkspaceBridgeRuntimeRefreshTokenOptions,
   MintWorkspaceBridgeRuntimeTokenOptions,
+  VerifiedWorkspaceBridgeRuntimeRefreshToken,
   VerifiedWorkspaceBridgeRuntimeToken,
+  VerifyWorkspaceBridgeRuntimeRefreshTokenOptions,
   VerifyWorkspaceBridgeRuntimeTokenOptions,
+  WorkspaceBridgeRuntimeRefreshTokenClaims,
   WorkspaceBridgeRuntimeTokenClaims,
 } from "./workspaceBridge/runtimeToken"
 export {
   createWorkspaceBridgeRuntimeEnvContribution,
   resolveBridgeCallUrl,
+  resolveBridgeTokenUrl,
 } from "./workspaceBridge/runtimeEnv"
 export { defineTrustedDomainBridgeHandler } from "./workspaceBridge/trustedDomainHandler"
 export type {
   CreateWorkspaceBridgeRuntimeEnvContributionOptions,
   WorkspaceBridgeRuntimeEnvDisabledReason,
   WorkspaceBridgeRuntimeEnvOptions,
+  WorkspaceBridgeRuntimePlacement,
 } from "./workspaceBridge/runtimeEnv"
 export type {
   TrustedDomainBridgeHandlerOptions,
