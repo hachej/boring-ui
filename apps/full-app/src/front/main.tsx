@@ -21,6 +21,12 @@ const PRODUCT_NAME = 'Seneca AI'
 // server-side so the buyer id can't be tampered with.
 const buyEnabled = import.meta.env.VITE_CREDITS_BUY_ENABLED === '1'
 
+// Inline multi-project left bar (projects tree) is still being consolidated
+// (persistent shell / background workspace load — follow-up PR). Ship it OFF by
+// default: the left bar shows the workspace-switcher dropdown at the top
+// (single-project). Set VITE_BORING_INLINE_PROJECTS=1 to opt in for dev.
+const inlineProjectsEnabled = import.meta.env.VITE_BORING_INLINE_PROJECTS === '1'
+
 // Surface the current balance + a "Buy credits" action on the account settings page
 // (in addition to the top-bar badge). Gate the Billing section on the same hook the
 // panel uses, so the nav entry and the panel appear/disappear together — `hidden` is
@@ -85,7 +91,7 @@ createRoot(document.getElementById('root')!).render(
       persistenceEnabled
       appTitle={PRODUCT_NAME}
       workspaceLayout="plugin-tabs"
-      appLeftLayoutMode="multi-project"
+      appLeftLayoutMode={inlineProjectsEnabled ? 'multi-project' : 'single-project'}
       workspaceSectionTitle="Projects"
       showSkills
       showPlugins
