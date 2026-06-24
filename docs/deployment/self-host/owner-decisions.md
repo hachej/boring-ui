@@ -21,7 +21,7 @@ Status: living decision record for the first public `full-app` self-host deploym
 | App VM size | Small baseline: about 2 vCPU, 4 GB RAM, 40 GB disk. Confirm exact OVH flavor. |
 | DB VM size | Small baseline: about 2 vCPU, 4-8 GB RAM, 80 GB disk. Confirm exact OVH flavor and upgrade path. |
 | DB disk | Confirm disk size/type, separate data disk, and LUKS yes/no. |
-| R2 bucket details | Bucket exists: `boring-ui-full-app-pgbackrest-eu` in EU jurisdiction. Still need scoped S3 Access Key ID / Secret Access Key from Cloudflare R2 token UI/API-token flow, object-lock/immutability/replica story, and lifecycle policy. |
+| R2 bucket details | Bucket exists: `boring-ui-full-app-pgbackrest-eu` in EU jurisdiction. Scoped S3 credentials and pgBackRest cipher pass are in vault at `secret/agent/app/boring-ui/self-host-backups`. Still need object-lock/immutability/replica story and lifecycle policy. |
 | Production hostnames | Deferred: no domain for now. Pick app hostname and deploy webhook hostname later from the Cloudflare zone. |
 | GitHub tag protection | Configure ruleset for `prod-*` so only trusted maintainers can create production tags. |
 | RPO/RTO | Confirm DB RPO/RTO targets after backup target is chosen. |

@@ -15,6 +15,7 @@ Status: live test environment for `full-app` self-hosting. Cloudflare public hos
 | Current public URL | `http://51.91.54.122:3000` |
 | Production domain | deferred |
 | Backup bucket | Cloudflare R2 EU jurisdiction bucket `boring-ui-full-app-pgbackrest-eu` |
+| Backup status | pgBackRest enabled; initial full backup and isolated restore materialization drill passed on 2026-06-24 |
 
 ## App VM
 
@@ -48,7 +49,9 @@ Status: live test environment for `full-app` self-hosting. Cloudflare public hos
 | Migration role | `boring_full_app_migrator` |
 | Checksums | on |
 | Network | PostgreSQL allowed from App VM Tailscale `/32`; public PostgreSQL ingress closed |
-| pgbackrest stanza | `boring_full_app` target; not enabled until scoped R2 S3 key + cipher pass are ready |
+| pgbackrest stanza | `boring_full_app` |
+| pgbackrest status | enabled; `pgbackrest check` passes; WAL archiving active; initial full backup label `20260624-084334F` |
+| pgbackrest schedule | weekly full backup Sunday 02:00 UTC; daily differential Monday-Saturday 02:00 UTC via postgres crontab |
 
 ## GitHub
 
@@ -56,14 +59,13 @@ Status: live test environment for `full-app` self-hosting. Cloudflare public hos
 | --- | --- |
 | PR | https://github.com/hachej/boring-ui/pull/370 |
 | Branch | `plan/self-host-vm-boring` |
-| Current deployed revision | `8e42fea9a8a8f95b74e616497690c7be41008554` |
+| Current deployed revision | tracked on VM at `/opt/boring/full-app/last-deployed-revision`; last verified E2E revision `6861c3f0545d4cf6723f0101d3af29add9f99b2e` |
 | Required checks | passing at time of inventory update |
 | Self-host image workflow | passing at time of inventory update |
 
 ## Remaining before final production
 
 - Replace branch-tip poller with protected `prod-*` tag + GHCR digest + deployd/Kamal verification.
-- Create scoped R2 S3 Access Key ID / Secret Access Key for `boring-ui-full-app-pgbackrest-eu` and store only in vault/App DB host.
-- Generate/store `PGBACKREST_CIPHER_PASS` in vault plus offline recovery copy.
-- Enable pgbackrest, run initial full backup, and pass restore drill.
+- Confirm `PGBACKREST_CIPHER_PASS` has an offline recovery copy outside vault.
+- Run a fuller restore drill that starts PostgreSQL from the restored data directory on an isolated host/alternate port.
 - Add Cloudflare hostname/TLS later when chosen.
