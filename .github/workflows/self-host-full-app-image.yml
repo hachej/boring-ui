@@ -222,7 +222,7 @@ jobs:
           push-to-registry: true
 
       - name: Upload deploy manifest
-        uses: actions/upload-artifact@8ea3f5a2f5a16b100a13c5d4955ad4b23a084f2f # v4.7.1
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: full-app-deploy-manifest-${{ github.sha }}
           path: deploy-manifest.json
