@@ -8,9 +8,11 @@ import {
   provisionWorkspaceRuntime,
   registerAgentRoutes,
   type RegisterAgentRoutesOptions,
+  type RuntimeEnvContributionContext,
   type RuntimeProvisioningContribution,
 } from '@hachej/boring-agent/server'
 import {
+  assertWorkspaceBridgeHandlersTrusted,
   collectWorkspaceAgentServerPlugins,
   hasDirServerPlugin,
   omitPluginAuthoringProvisioning,
@@ -23,13 +25,18 @@ import {
   type WorkspaceAgentServerPluginContext,
 } from '@hachej/boring-workspace/app/server'
 import {
-  createInMemoryBridge,
   createWorkspaceUiTools,
   uiRoutes,
-  type UiBridge,
+  type WorkspaceBridge,
+  type WorkspaceBridgeCallRequest,
+  type WorkspaceBridgeCallResponse,
+  type WorkspaceBridgeHandler,
+  type WorkspaceBridgeOperationDefinition,
+  type WorkspaceBridgeRuntimeEnvOptions,
   type WorkspaceServerPlugin,
 } from '@hachej/boring-workspace/server'
-import type { FastifyInstance } from 'fastify'
+import { createCoreWorkspaceBridge } from './coreWorkspaceBridge.js'
+import type { FastifyInstance, FastifyRequest } from 'fastify'
 import type postgres from 'postgres'
 import type { CoreConfig } from '../../shared/types.js'
 import { ERROR_CODES } from '../../shared/errors.js'
@@ -128,6 +135,19 @@ export type CoreWorkspaceDirPluginEntry = Omit<DirPluginEntry, 'hotReload'> & {
 
 export type CoreWorkspacePluginEntry = CoreWorkspaceAgentServerPlugin | CoreWorkspaceDirPluginEntry
 
+type CoreWorkspaceBridgeExtraTool = NonNullable<RegisterAgentRoutesOptions['extraTools']>[number]
+
+export interface CoreWorkspaceBridgeExtraToolsContext {
+  workspaceId: string
+  workspaceRoot: string
+  callAsRuntime<TOutput = unknown>(
+    request: WorkspaceBridgeCallRequest,
+    options?: { sessionId?: string; signal?: AbortSignal },
+  ): Promise<WorkspaceBridgeCallResponse<TOutput>>
+}
+
+export type CoreWorkspaceBridgePiContext = CoreWorkspaceBridgeExtraToolsContext
+
 export interface CreateCoreWorkspaceAgentServerOptions
   extends Omit<RegisterAgentRoutesOptions, 'extraTools'> {
   appRoot?: string
@@ -136,6 +156,17 @@ export interface CreateCoreWorkspaceAgentServerOptions
   plugins?: CoreWorkspacePluginEntry[]
   excludeDefaults?: CreateWorkspaceAgentServerOptions['excludeDefaults']
   defaultPluginPackages?: CreateWorkspaceAgentServerOptions['defaultPluginPackages']
+  workspaceBridge?: {
+    handlers?: Array<{
+      definition: WorkspaceBridgeOperationDefinition
+      handler: WorkspaceBridgeHandler
+    }>
+    runtimeTokenSecret?: string
+    runtimeRefreshTokenSecret?: string
+    runtimeEnv?: WorkspaceBridgeRuntimeEnvOptions
+  }
+  getWorkspaceBridgeExtraTools?: (ctx: CoreWorkspaceBridgeExtraToolsContext) => CoreWorkspaceBridgeExtraTool[] | Promise<CoreWorkspaceBridgeExtraTool[]>
+  getWorkspaceBridgePi?: (ctx: CoreWorkspaceBridgePiContext) => AgentPiOptions | Promise<AgentPiOptions | undefined>
   /**
    * Enable workspace plugin-authoring tooling/prompt for this app.
    * Defaults to false for full-app/core production composition; set true only
@@ -215,10 +246,10 @@ function mergePiOptions(
   }
 }
 
-function createUnavailableCorePluginBridge(): UiBridge {
+function createUnavailableCorePluginBridge(): WorkspaceBridge {
   const fail = () => {
     throw new Error(
-      'Core static server plugins do not receive a workspace-scoped UiBridge yet. Use request-scoped UI tools/routes in core, or createWorkspaceAgentServer for standalone plugin bridge support.',
+      'Core static server plugins do not receive a workspace-scoped WorkspaceBridge yet. Use request-scoped UI tools/routes in core, or createWorkspaceAgentServer for standalone plugin bridge support.',
     )
   }
 
@@ -226,6 +257,7 @@ function createUnavailableCorePluginBridge(): UiBridge {
     getState: fail,
     setState: fail,
     postCommand: fail,
+    emitUiEffect: fail,
     subscribeCommands: fail,
     drainCommands: fail,
   }
@@ -269,6 +301,20 @@ async function pathIsFile(filePath: string): Promise<boolean> {
   } catch {
     return false
   }
+}
+
+function agentSessionIdFromRequest(request: FastifyRequest): string | undefined {
+  const url = request.url.split('?')[0] ?? request.url
+  if (request.method === 'POST' && url === '/api/v1/agent/chat') {
+    const body = request.body as { sessionId?: unknown } | null | undefined
+    return typeof body?.sessionId === 'string' && body.sessionId.trim() ? body.sessionId : undefined
+  }
+  if (request.method === 'POST' && url.endsWith('/followup') && url.startsWith('/api/v1/agent/chat/')) {
+    const params = request.params as { sessionId?: unknown; id?: unknown } | null | undefined
+    const sessionId = params?.sessionId ?? params?.id
+    return typeof sessionId === 'string' && sessionId.trim() ? sessionId : undefined
+  }
+  return undefined
 }
 
 function toHeaders(
@@ -679,31 +725,25 @@ export async function createCoreWorkspaceAgentServer(
     .filter(Boolean)
     .join('\n\n') || undefined
   const defaultPluginDirEntries: CoreWorkspacePluginEntry[] = defaultPluginPackagePaths
-    .map((dir) => ({ dir, hotReload: false as const }))
+    .map((dir) => ({ dir, hotReload: false as const, trust: 'internal' as const }))
     .filter((entry) => hasDirServerPlugin(entry))
   const pluginEntries: CoreWorkspacePluginEntry[] = [
     ...defaultPluginDirEntries,
     ...(options.plugins ?? []),
   ]
-  const bridges = new Map<string, UiBridge>()
-  const getUiBridge = (workspaceId: string): UiBridge => {
-    const safeWorkspaceId = validateWorkspaceIdSegment(workspaceId)
-    let bridge = bridges.get(safeWorkspaceId)
-    if (!bridge) {
-      bridge = createInMemoryBridge()
-      bridges.set(safeWorkspaceId, bridge)
-    }
-    return bridge
-  }
   const pluginResolveContext: WorkspaceAgentServerPluginContext = {
     workspaceRoot: pluginWorkspaceRoot,
     bridge: createUnavailableCorePluginBridge(),
   }
   const resolvedPlugins = await Promise.all(
-    pluginEntries.map((entry) => resolveOnePluginEntry<CoreWorkspaceAgentServerPlugin>(
-      entry,
-      pluginResolveContext,
-    )),
+    pluginEntries.map(async (entry) => {
+      const plugin = await resolveOnePluginEntry<CoreWorkspaceAgentServerPlugin>(
+        entry,
+        pluginResolveContext,
+      )
+      assertWorkspaceBridgeHandlersTrusted(plugin, entry)
+      return plugin
+    }),
   )
 
   const externalPluginsEnabled = options.externalPlugins !== false
@@ -730,6 +770,24 @@ export async function createCoreWorkspaceAgentServer(
       : await resolveWorkspaceRoot(workspaceRoot, workspaceId)
     return root
   }
+  const coreBridge = createCoreWorkspaceBridge({
+    workspaceBridge: {
+      ...options.workspaceBridge,
+      handlers: [
+        ...(options.workspaceBridge?.handlers ?? []),
+        ...(pluginCollection.workspaceBridgeHandlers ?? []),
+      ],
+    },
+    resolveWorkspaceId,
+    workspaceStore,
+    corsOrigins: app.config.cors.origins,
+    validateWorkspaceId: validateWorkspaceIdSegment,
+    agentSessionId: agentSessionIdFromRequest,
+  })
+  app.addHook('preHandler', async (request) => {
+    await coreBridge.rememberSessionOwner(request)
+  })
+
   const workerBaseUrl = process.env.BORING_WORKER_BASE_URL?.trim()
   const remoteWorkerModeAdapter = workerBaseUrl
     ? createRemoteWorkerModeAdapter({ baseUrl: workerBaseUrl })
@@ -762,10 +820,17 @@ export async function createCoreWorkspaceAgentServer(
     const pluginOptions = remoteWorkerModeAdapter
       ? pluginCollection.agentOptions.pi
       : getPluginPiOptions(ctx.workspaceRoot)
+    const bridgePiOptions = options.getWorkspaceBridgePi
+      ? await options.getWorkspaceBridgePi({
+          workspaceId: ctx.workspaceId,
+          workspaceRoot: ctx.workspaceRoot,
+          callAsRuntime: async (request, callOptions) => await coreBridge.callAsRuntime(ctx.workspaceId, request, callOptions),
+        })
+      : undefined
     const callerOptions = options.getPi
       ? await options.getPi(ctx)
       : undefined
-    return mergePiOptions(pluginOptions, callerOptions)
+    return mergePiOptions(mergePiOptions(pluginOptions, bridgePiOptions), callerOptions)
   }
 
   app.get('/api/v1/workspace/meta', async (request, reply) => {
@@ -814,9 +879,17 @@ export async function createCoreWorkspaceAgentServer(
     getSessionNamespace: resolveSessionNamespace,
     getExtraTools: async (ctx) => {
       const callerTools = options.getExtraTools ? await options.getExtraTools(ctx) : []
+      const bridgeTools = options.getWorkspaceBridgeExtraTools
+        ? await options.getWorkspaceBridgeExtraTools({
+            workspaceId: ctx.workspaceId,
+            workspaceRoot: ctx.workspaceRoot,
+            callAsRuntime: async (request, callOptions) => await coreBridge.callAsRuntime(ctx.workspaceId, request, callOptions),
+          })
+        : []
       return [
         ...callerTools,
-        ...createWorkspaceUiTools(getUiBridge(ctx.workspaceId), {
+        ...bridgeTools,
+        ...createWorkspaceUiTools(coreBridge.getBridge(ctx.workspaceId), {
           workspaceRoot: ctx.workspaceFsCapability === 'strong' ? ctx.workspaceRoot : undefined,
         }),
       ]
@@ -848,13 +921,19 @@ export async function createCoreWorkspaceAgentServer(
     registerHealthRoute: options.registerHealthRoute ?? false,
     telemetry,
     metering: options.metering,
+    runtimeEnvContributions: [
+      ...(options.runtimeEnvContributions ?? []),
+      ...(coreBridge.runtimeEnvContribution ? [coreBridge.runtimeEnvContribution] : []),
+    ],
   })
 
   await app.register(uiRoutes, {
     getWorkspaceId: resolveWorkspaceId,
-    getBridge: async (request) => getUiBridge(await resolveWorkspaceId(request)),
+    getBridge: async (request) => coreBridge.getBridge(await resolveWorkspaceId(request)),
     preserveStateKeys: pluginCollection.preservedUiStateKeys,
   })
+
+  await coreBridge.registerHttpRoutes(app)
 
   for (const { routes } of pluginCollection.routeContributions) {
     await app.register(routes)
