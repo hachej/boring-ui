@@ -1,6 +1,6 @@
 # No-domain v0 deploy runbook
 
-Status: live-test runbook. The current OVH App VM uses a temporary VM-owned GitHub branch poller for auto deploy. Do not use for final public production until `prod-*` tag protection, restore drill, and deployd/GHCR digest verification are complete.
+Status: live-test runbook. The current OVH App VM now runs a GHCR image built by GitHub Actions and deployed with Kamal. Do not call this final public production until `prod-*` tag protection, full restore drill, and deployd automation are complete.
 
 ## Shape
 
@@ -30,37 +30,38 @@ no public domain / no Cloudflare Tunnel for v0
 - Runtime env template: `config/self-host/full-app.env.template`
 - Environment decisions: `docs/deployment/self-host/owner-decisions.md`
 - Ansible scaffold: `infra/ansible/`
-- Temporary GitHub branch auto deploy script: `scripts/self-host/auto-deploy-from-github.sh`
-- Temporary systemd templates: `config/self-host/boring-auto-deploy.service.template`, `config/self-host/boring-auto-deploy.timer.template`
+- Legacy temporary branch auto deploy script: `scripts/self-host/auto-deploy-from-github.sh`
+- Legacy temporary systemd templates: `config/self-host/boring-auto-deploy.service.template`, `config/self-host/boring-auto-deploy.timer.template`
 
-## Current live-test GitHub auto deploy
+## Current live-test GitHub + Kamal deploy
 
-The current App VM intentionally uses a narrow, VM-owned branch poller while Cloudflare hostname/webhook and GHCR digest deployd are deferred:
+The current App VM has the old branch poller disabled and runs a Kamal-managed container from a GitHub Actions-built GHCR image:
 
 ```txt
-GitHub branch plan/self-host-vm-boring
-  -> App VM systemd timer every 2 minutes
-  -> git fetch/reset
-  -> docker build apps/full-app/Dockerfile --target web-runtime
-  -> run migrations with DATABASE_MIGRATION_URL from VM secrets
-  -> docker compose up -d --force-recreate
-  -> require /health before recording last deployed revision
+operator pushes prod-* tag
+  -> GitHub Actions builds/smokes GHCR image
+  -> GitHub Actions uploads deploy manifest
+  -> operator verifies manifest digest
+  -> operator runs migrations using the tagged GHCR image
+  -> Kamal deploy --skip-push --version <prod-tag>
+  -> /health must pass
 ```
 
-Installed live-test units on the App VM:
+Live-tested tag:
 
-```bash
-sudo install -m 0755 scripts/self-host/auto-deploy-from-github.sh /usr/local/bin/boring-auto-deploy
-sudo cp config/self-host/boring-auto-deploy.service.template /etc/systemd/system/boring-auto-deploy.service
-sudo cp config/self-host/boring-auto-deploy.timer.template /etc/systemd/system/boring-auto-deploy.timer
-sudo systemctl daemon-reload
-sudo systemctl enable --now boring-auto-deploy.timer
-sudo systemctl start boring-auto-deploy.service
+```txt
+prod-ovh-test-20260624193633
+commit 0b7c2e202fc0d3f7fff6e220537add0a3f3fa808
+digest sha256:4397044ca0b121e7b41964e69ed34bf0068f0b76930db61b25108d9d4928505c
 ```
 
-This keeps production secrets on the VM and out of GitHub Actions, but it is still a temporary live-test mechanism because it deploys a mutable branch tip rather than a verified GHCR digest.
+Important live-test caveats:
 
-## Future manual/protected v0 flow
+- The operator still runs Kamal manually; deployd/webhook automation is not installed yet.
+- The GitHub CLI on the operator host did not support `gh attestation verify`; the manifest digest gate passed, but full attestation verification still needs a newer `gh` or alternate verifier.
+- Current no-domain v0 publishes host port `3000` directly with `proxy: false`; replace with Cloudflare/Kamal proxy routing at hostname cutover.
+
+## Manual/protected v0 flow
 
 1. Create a `prod-*` tag only after local checks and review pass.
 2. Wait for `Self-host full-app image` workflow to pass.

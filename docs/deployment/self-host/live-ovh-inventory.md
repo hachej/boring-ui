@@ -10,8 +10,8 @@ Status: live test environment for `full-app` self-hosting. Cloudflare public hos
 | --- | --- |
 | Environment name | ovh-vps-live-test |
 | Purpose | public `full-app` self-host live test without Cloudflare hostname |
-| Deploy source | GitHub branch `plan/self-host-vm-boring` |
-| Auto deploy | App VM systemd timer `boring-auto-deploy.timer` polling every 2 minutes |
+| Deploy source | GitHub `prod-*` tag built by `Self-host full-app image` workflow into GHCR |
+| Deploy executor | Manual Kamal deploy from verified deploy manifest; legacy branch poller disabled |
 | Current public URL | `http://51.91.54.122:3000` |
 | Production domain | deferred |
 | Backup bucket | Cloudflare R2 EU jurisdiction bucket `boring-ui-full-app-pgbackrest-eu` |
@@ -27,8 +27,10 @@ Status: live test environment for `full-app` self-hosting. Cloudflare public hos
 | Tailscale hostname | `boring-vps.tail6ddfe5.ts.net` |
 | Tailscale IP | `100.127.254.28` |
 | OS/version | Debian GNU/Linux 13 (trixie) |
-| Docker image | `boring-full-app:self-host-test` |
-| Container | `full-app-web-1` |
+| Docker image | `ghcr.io/hachej/boring-ui-full-app:prod-ovh-test-20260624193633` |
+| Image digest | `sha256:4397044ca0b121e7b41964e69ed34bf0068f0b76930db61b25108d9d4928505c` |
+| Container | `boring-full-app-web-prod-ovh-test-20260624193633` |
+| Deploy tool | Kamal 2.11.0 (`proxy: false`, host publish `3000:3000`) |
 | Health endpoint | `http://51.91.54.122:3000/health` |
 | Workspace path | `/data/workspaces` |
 | Pi session path | `/data/pi-sessions` |
@@ -59,13 +61,13 @@ Status: live test environment for `full-app` self-hosting. Cloudflare public hos
 | --- | --- |
 | PR | https://github.com/hachej/boring-ui/pull/370 |
 | Branch | `plan/self-host-vm-boring` |
-| Current deployed revision | tracked on VM at `/opt/boring/full-app/last-deployed-revision`; last verified E2E revision `6861c3f0545d4cf6723f0101d3af29add9f99b2e` |
+| Current deployed revision | `0b7c2e202fc0d3f7fff6e220537add0a3f3fa808` via tag `prod-ovh-test-20260624193633` |
 | Required checks | passing at time of inventory update |
 | Self-host image workflow | passing at time of inventory update |
 
 ## Remaining before final production
 
-- Replace branch-tip poller with protected `prod-*` tag + GHCR digest + deployd/Kamal verification.
+- Add deployd/webhook automation so verified `prod-*` tag manifests trigger Kamal without manual operator steps.
 - Confirm `PGBACKREST_CIPHER_PASS` has an offline recovery copy outside vault.
 - Run a fuller restore drill that starts PostgreSQL from the restored data directory on an isolated host/alternate port.
 - Add Cloudflare hostname/TLS later when chosen.
