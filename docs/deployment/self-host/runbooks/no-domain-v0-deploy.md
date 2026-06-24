@@ -58,7 +58,7 @@ digest sha256:4397044ca0b121e7b41964e69ed34bf0068f0b76930db61b25108d9d4928505c
 Important live-test caveats:
 
 - The operator still runs Kamal manually; deployd/webhook automation is not installed yet.
-- The GitHub CLI on the operator host did not support `gh attestation verify`; the manifest digest gate passed, but full attestation verification still needs a newer `gh` or alternate verifier.
+- `gh attestation verify` was attempted with GitHub CLI 2.95.0, but the operator token was denied access to the requested GHCR/attestation resource. The manifest digest gate passed; full attestation verification still needs a token/package visibility fix or alternate verifier.
 - Current no-domain v0 publishes host port `3000` directly with `proxy: false`; replace with Cloudflare/Kamal proxy routing at hostname cutover.
 
 ## Manual/protected v0 flow
