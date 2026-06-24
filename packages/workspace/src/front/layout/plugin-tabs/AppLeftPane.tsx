@@ -207,6 +207,10 @@ export function AppLeftPane({
         session={session}
         state={state}
         pinned={pinned}
+        // Split panes only make sense within the loaded workspace, so only the
+        // active project's sessions are draggable / offer "open in a new pane".
+        // A session from another project switches to that workspace instead.
+        canSplit={isActiveProjectSession}
         onSwitch={isActiveProjectSession ? onSwitchSession : () => onOpenProjectSession?.(projectId, session.id)}
         onOpenAsPane={isActiveProjectSession ? onOpenSessionAsPane : () => onOpenProjectSession?.(projectId, session.id)}
         onTogglePinned={onToggleSessionPinned}
@@ -652,6 +656,7 @@ function AppSessionRow({
   session,
   state,
   pinned,
+  canSplit = true,
   onSwitch,
   onOpenAsPane,
   onTogglePinned,
@@ -659,6 +664,8 @@ function AppSessionRow({
   session: AppLeftPaneSession
   state: SessionRowState
   pinned: boolean
+  /** Whether this session can be split-paned/dragged (same-project only). */
+  canSplit?: boolean
   onSwitch: (id: string) => void
   onOpenAsPane: (id: string) => void
   onTogglePinned: (id: string) => void
@@ -675,13 +682,15 @@ function AppSessionRow({
       data-boring-session-state={state}
       onClick={activate}
       // Drag a session onto the chat stage to open it as a split pane (the
-      // stage accepts CHAT_SESSION_DRAG_TYPE; see ChatPaneStageDock).
-      draggable
-      onDragStart={(event) => {
+      // stage accepts CHAT_SESSION_DRAG_TYPE; see ChatPaneStageDock). Only
+      // same-project sessions are draggable — a split pane lives in the loaded
+      // workspace's stage, so cross-project sessions can't join it.
+      draggable={canSplit}
+      onDragStart={canSplit ? (event) => {
         event.dataTransfer.setData(CHAT_SESSION_DRAG_TYPE, session.id)
         event.dataTransfer.setData("text/plain", title)
         event.dataTransfer.effectAllowed = "copyMove"
-      }}
+      } : undefined}
       onKeyDown={(event) => {
         if (event.key !== "Enter" && event.key !== " ") return
         event.preventDefault()
@@ -731,9 +740,10 @@ function AppSessionRow({
         >
           <Pin className={cn("h-3.5 w-3.5", pinned && "fill-current")} strokeWidth={1.75} />
         </span>
-        {/* "Open in new chat pane" is pointless once the session is already
-            open (active or open in a pane) — only offer it for closed ones. */}
-        {state === "normal" ? (
+        {/* "Open in new chat pane" only for closed, same-project sessions —
+            it's pointless once open, and a cross-project session can't share
+            this workspace's split stage. */}
+        {state === "normal" && canSplit ? (
           <span
             role="button"
             tabIndex={0}
