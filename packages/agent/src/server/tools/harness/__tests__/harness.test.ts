@@ -7,7 +7,7 @@ import { afterEach, describe, expect, test, vi } from 'vitest'
 
 import type { ExecResult, Sandbox } from '../../../../shared/sandbox'
 import type { Workspace } from '../../../../shared/workspace'
-import type { RuntimeBundle } from '../../../runtime/mode'
+import type { RuntimeBashStrategy, RuntimeBundle } from '../../../runtime/mode'
 import { ErrorCode } from '../../../../shared/error-codes'
 import { buildHarnessAgentTools } from '../index'
 
@@ -45,11 +45,18 @@ function mockSandbox(provider: string, capabilities: string[] = ['exec']): Sandb
 }
 
 function mockBundle(provider: string, capabilities?: string[], workspaceRoot = '/workspace'): RuntimeBundle {
+  const bash: RuntimeBashStrategy | undefined = provider === 'vercel-sandbox'
+    ? { kind: 'remote', defaultPath: '/vercel/runtimes/node24/bin:/vercel/runtimes/node22/bin:/usr/local/bin:/usr/bin:/bin' }
+    : provider === 'bwrap'
+      ? { kind: 'local-sandbox', sandboxRoot: '/workspace' }
+      : undefined
   return {
     workspace: mockWorkspace(workspaceRoot),
     sandbox: mockSandbox(provider, capabilities),
     fileSearch: { search: vi.fn(async () => []) },
+    getRuntimeEnv: vi.fn(async () => ({})),
     storageRoot: workspaceRoot,
+    ...(bash ? { bash } : {}),
   }
 }
 
@@ -209,6 +216,42 @@ describe('buildHarnessAgentTools', () => {
     expect(result.content[0].text).toContain('/runtime/base')
   })
 
+  test('bash redacts runtime bridge tokens from output and details', async () => {
+    const workspaceRoot = await makeTempWorkspace()
+    await writeExecutable(join(workspaceRoot, '.boring-agent', 'venv', 'bin', 'print-token'), '#!/usr/bin/env bash\nprintf "%s" "$BORING_WORKSPACE_BRIDGE_TOKEN"\n')
+
+    const bundle = mockBundle('direct', ['exec'], workspaceRoot)
+    bundle.getRuntimeEnv = vi.fn(async () => ({ BORING_WORKSPACE_BRIDGE_TOKEN: 'bridge-token-secret' }))
+    const tools = buildHarnessAgentTools(bundle)
+    const bashTool = tools.find((t) => t.name === 'bash')!
+
+    const result = await bashTool.execute(
+      { command: 'print-token', timeout: 10 },
+      { abortSignal: new AbortController().signal, toolCallId: 'test-redaction' },
+    )
+
+    expect(result.content[0].text).toContain('[REDACTED]')
+    expect(result.content[0].text).not.toContain('bridge-token-secret')
+    expect(JSON.stringify(result)).not.toContain('bridge-token-secret')
+  })
+
+  test('bash redacts runtime bridge tokens from failed output', async () => {
+    const workspaceRoot = await makeTempWorkspace()
+    const bundle = mockBundle('direct', ['exec'], workspaceRoot)
+    bundle.getRuntimeEnv = vi.fn(async () => ({ BORING_WORKSPACE_BRIDGE_TOKEN: 'bridge-token-secret' }))
+    const tools = buildHarnessAgentTools(bundle)
+    const bashTool = tools.find((t) => t.name === 'bash')!
+
+    const result = await bashTool.execute(
+      { command: 'printf %s "$BORING_WORKSPACE_BRIDGE_TOKEN"; exit 1', timeout: 10 },
+      { abortSignal: new AbortController().signal, toolCallId: 'test-redaction-fail' },
+    )
+
+    expect(result.isError).toBe(true)
+    expect(result.content[0].text).toContain('[REDACTED]')
+    expect(result.content[0].text).not.toContain('bridge-token-secret')
+  })
+
   test('bwrap bash mounts storage root while exposing runtime cwd', async () => {
     if (!hasBwrap()) return
     const storageRoot = await makeTempWorkspace()
@@ -218,6 +261,7 @@ describe('buildHarnessAgentTools', () => {
       workspace: mockWorkspace('/workspace'),
       sandbox: mockSandbox('bwrap'),
       fileSearch: { search: vi.fn(async () => []) },
+      bash: { kind: 'local-sandbox', sandboxRoot: '/workspace' },
     }
     const tools = buildHarnessAgentTools(bundle, {
       pathEntries: ['/workspace/.boring-agent/node/node_modules/.bin'],
@@ -232,6 +276,22 @@ describe('buildHarnessAgentTools', () => {
     expect(result.isError).toBe(false)
     expect(result.content[0].text).toContain('/workspace')
     expect(result.content[0].text).toContain('mounted')
+  })
+
+  test('remote bash defaults to sandbox.exec when a custom remote bundle omits an explicit bash strategy', async () => {
+    const bundle = mockBundle('custom-remote')
+    bundle.sandbox = { ...bundle.sandbox, placement: 'remote', provider: 'custom-remote' }
+    bundle.storageRoot = undefined
+    delete bundle.bash
+    const tools = buildHarnessAgentTools(bundle)
+    const bashTool = tools.find((t) => t.name === 'bash')!
+
+    await bashTool.execute(
+      { command: 'echo remote', timeout: 10 },
+      { abortSignal: new AbortController().signal, toolCallId: 'test-custom-remote-default' },
+    )
+
+    expect(bundle.sandbox.exec).toHaveBeenCalledWith('echo remote', expect.objectContaining({ timeoutMs: 10_000 }))
   })
 
   test('vercel-sandbox bash forwards to sandbox.exec with dynamic runtime env', async () => {

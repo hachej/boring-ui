@@ -95,7 +95,7 @@ function resolveSessionId(sessionId: string | (() => string)): string {
 function formatAskUserResult(result: AskUserToolResult): AskUserToolResultPayload {
   if (result.status === "answered") {
     return {
-      content: [{ type: "text", text: `User answered: ${JSON.stringify(result.answer.values)}` }],
+      content: [{ type: "text", text: `User answered: ${JSON.stringify(result.answer.values)}. Continue the conversation using this answer.` }],
       details: result,
     }
   }

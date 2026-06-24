@@ -35,6 +35,12 @@ export interface ChatFirstPublicShellOptions {
    * otherwise the fixed-position arrows overlay the open panel. Defaults to on.
    */
   showTeachingArrows?: boolean
+  /**
+   * Marketing/navigation links rendered in the public (no-auth) top bar next to
+   * the brand — e.g. About, Pricing, Docs. The authenticated workspace top bar
+   * is unaffected. Use plain hrefs (router or full-page routes both work).
+   */
+  navLinks?: Array<{ label: string; href: string }>
 }
 
 const defaultPublicEmptyState = {
@@ -225,6 +231,13 @@ export function ChatFirstPublicShell<
                   {(appTitle?.[0] ?? 'B').toUpperCase()}
                 </span>
                 <span className="truncate text-[13px] font-medium leading-none tracking-tight text-foreground">{appTitle}</span>
+                {publicShell?.navLinks?.length ? (
+                  <nav className="public-topbar-nav" aria-label="Site">
+                    {publicShell.navLinks.map((link) => (
+                      <a key={link.href} href={link.href}>{link.label}</a>
+                    ))}
+                  </nav>
+                ) : null}
               </>
             ),
             className: workspaceProps.className,

@@ -23,7 +23,9 @@ export {
   type ResolveDefaultWorkspacePluginPackagePathsOptions,
 } from "./defaultPluginPackages"
 export {
+  assertWorkspaceBridgeHandlersTrusted,
   hasDirServerPlugin,
+  isTrustedWorkspaceBridgeHandlerEntry,
   resolveOnePluginEntry,
   type DirPluginEntry,
   type PluginResolveContext,

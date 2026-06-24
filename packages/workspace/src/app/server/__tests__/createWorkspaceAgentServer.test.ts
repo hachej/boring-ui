@@ -37,6 +37,10 @@ beforeEach(() => {
   agentServerMock.provisionWorkspaceRuntime.mockClear()
 })
 
+function mockCreateAgentAppOnce(factory: (opts?: unknown) => Promise<unknown>): void {
+  agentServerMock.createAgentApp.mockImplementationOnce(factory as never)
+}
+
 afterEach(async () => {
   await Promise.all(tempDirs.splice(0).map((dir) => rm(dir, { recursive: true, force: true })))
 })
@@ -45,12 +49,6 @@ async function makeTempDir(prefix: string): Promise<string> {
   const dir = await mkdtemp(join(tmpdir(), prefix))
   tempDirs.push(dir)
   return dir
-}
-
-function mockCreateAgentAppOnce(fn: (opts: unknown) => Promise<unknown>): void {
-  ;(agentServerMock.createAgentApp as unknown as {
-    mockImplementationOnce: (impl: (opts: unknown) => Promise<unknown>) => void
-  }).mockImplementationOnce(fn)
 }
 
 async function writeHotPlugin(root: string, extension: string): Promise<void> {

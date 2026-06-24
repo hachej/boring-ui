@@ -292,6 +292,8 @@ function WorkspacePluginProviders({
   authHeaders,
   onAuthError,
   apiTimeout,
+  activeSessionId,
+  openSessionIds,
   children,
 }: {
   plugins: CapturedFrontPlugin[]
@@ -299,6 +301,8 @@ function WorkspacePluginProviders({
   authHeaders?: Record<string, string>
   onAuthError?: (statusCode: number) => void
   apiTimeout?: number
+  activeSessionId?: string | null
+  openSessionIds?: readonly string[]
   children: ReactNode
 }) {
   const providers = plugins.flatMap((plugin) =>
@@ -314,6 +318,8 @@ function WorkspacePluginProviders({
         authHeaders={authHeaders}
         onAuthError={onAuthError}
         apiTimeout={apiTimeout}
+        activeSessionId={activeSessionId}
+        openSessionIds={openSessionIds}
       >
         {acc}
       </Provider>
@@ -355,6 +361,10 @@ export interface WorkspaceProviderProps {
   authHeaders?: Record<string, string>
   /** Per-request timeout for the data layer's FetchClient, in ms. */
   apiTimeout?: number
+  /** Active chat/session scope shared with plugin providers that need session-scoped data. */
+  activeSessionId?: string | null
+  /** Session ids that are currently open in chat panes, for plugins that must avoid opening closed-session UI. */
+  openSessionIds?: readonly string[]
   defaultTheme?: "light" | "dark" | undefined
   onThemeChange?: (theme: "light" | "dark") => void
   workspaceId?: string
@@ -407,6 +417,8 @@ export function WorkspaceProvider({
   apiBaseUrl = "",
   authHeaders,
   apiTimeout,
+  activeSessionId,
+  openSessionIds,
   defaultTheme,
   onThemeChange,
   workspaceId,
@@ -609,6 +621,8 @@ export function WorkspaceProvider({
                 authHeaders={resolvedAuthHeaders}
                 onAuthError={onAuthError}
                 apiTimeout={apiTimeout}
+                activeSessionId={activeSessionId}
+                openSessionIds={openSessionIds}
               >
                 <WorkspacePluginBindings plugins={pluginsWithBindings} />
                 <AgentPluginHotReloadBridge apiBaseUrl={apiBaseUrl} workspaceId={workspaceId} mode={frontPluginHotReload} authHeaders={resolvedAuthHeaders} />

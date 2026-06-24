@@ -267,3 +267,24 @@
   font-weight: 600;
   color: color-mix(in oklch, var(--foreground) 88%, transparent);
 }
+
+/* Optional marketing/nav links rendered beside the brand in the public top bar
+   (ChatFirstPublicShellOptions.navLinks). The authed workspace is unaffected. */
+.public-topbar-nav {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  margin-left: 0.75rem;
+}
+
+.public-topbar-nav a {
+  font-size: 0.8125rem;
+  font-weight: 500;
+  text-decoration: none;
+  color: color-mix(in oklch, var(--foreground) 65%, transparent);
+  transition: color 0.15s ease;
+}
+
+.public-topbar-nav a:hover {
+  color: var(--foreground);
+}

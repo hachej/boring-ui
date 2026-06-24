@@ -531,8 +531,8 @@ export function createPiCodingAgentHarness(opts: {
     const { session: piSession } = await createAgentSession({
       cwd: runtimeCwd,
       // Suppress Pi's built-in filesystem/shell tools while keeping Boring's
-      // adapted tool catalog active. Passing `tools: []` is an allowlist of
-      // zero tools in Pi v0.75+, which disables customTools too.
+      // adapted tool catalog active. Do NOT pass an explicit empty tool-name
+      // allowlist: in the current Pi SDK that disables custom tools too.
       noTools: "builtin",
       customTools: adaptToolsForPi(opts.tools, input.sessionId, opts.telemetry),
       model,

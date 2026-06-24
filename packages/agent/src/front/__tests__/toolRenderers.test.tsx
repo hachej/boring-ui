@@ -62,6 +62,7 @@ function mockBundle(provider: string): RuntimeBundle {
       }),
     },
     fileSearch: { search: async () => [] },
+    filesystem: provider === "vercel-sandbox" ? { kind: "remote-workspace" } : { kind: "host" },
   }
 }
 

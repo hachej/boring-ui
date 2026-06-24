@@ -92,6 +92,8 @@ export type AskUserRequest = {
   context?: string
   schema?: AskUserFormSchema
   timeoutMs?: number
+  /** Trusted server/runtime attribution. Not accepted from browser bridge inputs. */
+  ownerPrincipalId?: string
 }
 
 export type AskUserToolInput = {

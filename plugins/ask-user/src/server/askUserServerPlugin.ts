@@ -6,7 +6,7 @@ import { AskUserRuntime } from "./askUserRuntime"
 import { FileAskUserStore, type AskUserStore } from "./askUserStore"
 import { AskUserStatePublisher } from "./askUserStatePublisher"
 import { createAskUserTool } from "./createAskUserTool"
-import { questionsRoutes, type QuestionsRoutesOptions } from "./questionsRoutes"
+import { createAskUserBridgeHandlers } from "./askUserBridgeHandlers"
 
 export type AskUserServerPluginOptions = {
   workspaceRoot?: string
@@ -14,20 +14,21 @@ export type AskUserServerPluginOptions = {
   runtime?: AskUserRuntime
   store?: AskUserStore
   sessionId?: string | (() => string)
-  routes?: Omit<QuestionsRoutesOptions, "runtime" | "store">
   onClose?: () => void
 }
 
 export function createAskUserServerPlugin(options: AskUserServerPluginOptions): WorkspaceServerPlugin {
+  if ((options as { routes?: unknown }).routes) {
+    throw new Error("createAskUserServerPlugin no longer registers /api/v1/questions/commands; use WorkspaceBridge ask-user.v1.* handlers or import questionsRoutes for manual legacy wiring")
+  }
   const store = options.store ?? createDefaultStore(options.workspaceRoot)
   const runtime = options.runtime ?? new AskUserRuntime({ store, uiBridge: options.bridge })
   const stopPublisher = options.bridge ? new AskUserStatePublisher(store, options.bridge).start() : undefined
-  const routes: FastifyPluginAsync = async (app) => {
+  const lifecycle: FastifyPluginAsync = async (app) => {
     app.addHook("onClose", async () => {
       stopPublisher?.()
       options.onClose?.()
     })
-    await app.register(questionsRoutes, { ...defaultRoutes, ...options.routes, runtime, store })
   }
   const askUserTool = createAskUserTool({ runtime, sessionId: options.sessionId ?? (() => "default") })
   return defineServerPlugin({
@@ -41,23 +42,10 @@ export function createAskUserServerPlugin(options: AskUserServerPluginOptions): 
       parameters: askUserTool.parameters,
       execute(params, ctx) { return askUserTool.execute(ctx.toolCallId, params, ctx.abortSignal, ctx.sessionId) },
     }],
-    routes,
+    workspaceBridgeHandlers: createAskUserBridgeHandlers({ runtime, store }),
+    routes: lifecycle,
     preservedUiStateKeys: [ASK_USER_UI_STATE_SLOTS.PENDING],
   })
-}
-
-const defaultRoutes: Omit<QuestionsRoutesOptions, "runtime" | "store"> = {
-  // No-auth playground/default shells still need the browser command channel to
-  // bind to the question's owning session. The answerToken remains the terminal
-  // mutation secret; this context only prevents the default anonymous session
-  // sentinel from rejecting legitimate no-auth submits as SESSION_MISMATCH.
-  getAuthContext: (request) => {
-    const body = request.body as { params?: { sessionId?: unknown } } | undefined
-    return {
-      sessionId: typeof body?.params?.sessionId === "string" ? body.params.sessionId : "anonymous",
-      principalId: "anonymous",
-    }
-  },
 }
 
 function createDefaultStore(workspaceRoot: string | undefined): AskUserStore {

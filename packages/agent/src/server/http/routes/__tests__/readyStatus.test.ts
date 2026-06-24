@@ -1,6 +1,6 @@
 import Fastify from 'fastify'
 import { describe, expect, test, vi } from 'vitest'
-import { ReadyStatusTracker } from '../../../sandbox/vercel-sandbox/readyStatus'
+import { ReadyStatusTracker } from '../../../runtime/readyStatus'
 import { readyStatusRoutes } from '../readyStatus'
 
 async function buildApp(tracker: ReadyStatusTracker) {

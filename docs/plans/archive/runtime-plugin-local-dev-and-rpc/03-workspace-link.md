@@ -35,7 +35,7 @@ declare function WorkspaceLink(props: {
 Behavior:
 
 - Renders an `<a>` so hover/copy feel normal.
-- Left click prevents default and dispatches through existing `emitUiEffect` / `postUiCommand`.
+- Left click prevents default and dispatches through `postUiCommand`.
 - Copy link should produce a stable workspace URL or encoded command URL if existing helpers allow it.
 - No route is registered by the plugin.
 

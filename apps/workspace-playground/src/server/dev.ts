@@ -64,6 +64,7 @@ export async function startPlaygroundServer(): Promise<void> {
       logger: true,
       externalPlugins: EXTERNAL_PLUGINS_ENABLED,
       defaultPluginPackages: ["@hachej/boring-ask-user"],
+      workspaceBridge: { allowInsecureLocalCliBrowserAuth: true },
     })
     app.get("/api/v1/workspace/meta", async () => {
       const localName = basename(workspaceRoot) || "Workspace"

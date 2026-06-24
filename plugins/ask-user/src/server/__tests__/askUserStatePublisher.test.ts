@@ -43,6 +43,127 @@ async function waitForRuntimeWaiter(runtime: AskUserRuntime, questionId: string)
 }
 
 describe("AskUserStatePublisher", () => {
+  it("clears preserved legacy full-question UI state when the store has no pending question", async () => {
+    const store = await makeStore()
+    const ui = bridge()
+    await ui.setState({
+      [ASK_USER_UI_STATE_SLOTS.PENDING]: {
+        question: {
+          questionId: "q1",
+          sessionId: "s1",
+          status: "ready",
+          answerToken: "secret-token",
+          schema,
+          title: "Legacy",
+        },
+      },
+    })
+
+    const publisher = new AskUserStatePublisher(store, ui)
+    publisher.start()
+
+    await vi.waitFor(async () => {
+      const slot = (await ui.getState())?.[ASK_USER_UI_STATE_SLOTS.PENDING]
+      expect(slot).toEqual({ hint: null, hintsBySession: {} })
+      expect(JSON.stringify(slot)).not.toContain("secret-token")
+    })
+  })
+
+  it("does not carry forward stale hints from existing UI state", async () => {
+    const store = await makeStore()
+    const ui = bridge()
+    await ui.setState({
+      [ASK_USER_UI_STATE_SLOTS.PENDING]: {
+        hint: { questionId: "stale-q", sessionId: "stale-session", status: "ready" },
+        hintsBySession: { "stale-session": { questionId: "stale-q", sessionId: "stale-session", status: "ready" } },
+      },
+    })
+    const publisher = new AskUserStatePublisher(store, ui)
+    publisher.start()
+    const runtime = new AskUserRuntime({ store })
+    const pending = runtime.ask({ sessionId: "s1", title: "S1", schema })
+    const q1 = await waitForPending(store, "s1")
+    await vi.waitFor(async () => {
+      const slot = (await ui.getState())?.[ASK_USER_UI_STATE_SLOTS.PENDING]
+      expect(slot).toEqual({
+        hint: { questionId: q1.questionId, sessionId: "s1", status: "ready" },
+        hintsBySession: { s1: { questionId: q1.questionId, sessionId: "s1", status: "ready" } },
+      })
+    })
+    await waitForRuntimeWaiter(runtime, q1.questionId)
+    await runtime.cancelQuestion(q1.questionId, "s1")
+    await expect(pending).resolves.toMatchObject({ status: "cancelled" })
+  }, 30_000)
+
+  it("seeds pending hints from store on start and keeps untouched sessions after another session resolves", async () => {
+    const store = await makeStore()
+    const ui = bridge()
+    const runtime = new AskUserRuntime({ store })
+    const s1 = runtime.ask({ sessionId: "s1", title: "S1", schema })
+    const s2 = runtime.ask({ sessionId: "s2", title: "S2", schema })
+    const q1 = await waitForPending(store, "s1")
+    const q2 = await waitForPending(store, "s2")
+
+    const publisher = new AskUserStatePublisher(store, ui)
+    publisher.start()
+
+    await vi.waitFor(async () => {
+      expect((await ui.getState())?.[ASK_USER_UI_STATE_SLOTS.PENDING]).toMatchObject({
+        hintsBySession: {
+          s1: { questionId: q1.questionId, sessionId: "s1", status: "ready" },
+          s2: { questionId: q2.questionId, sessionId: "s2", status: "ready" },
+        },
+      })
+    })
+    await waitForRuntimeWaiter(runtime, q1.questionId)
+    await waitForRuntimeWaiter(runtime, q2.questionId)
+    await runtime.submitAnswer(q2.questionId, "s2", { answer: "ok" })
+    await expect(s2).resolves.toMatchObject({ status: "answered" })
+    await vi.waitFor(async () => {
+      expect((await ui.getState())?.[ASK_USER_UI_STATE_SLOTS.PENDING]).toEqual({
+        hint: { questionId: q1.questionId, sessionId: "s1", status: "ready" },
+        hintsBySession: { s1: { questionId: q1.questionId, sessionId: "s1", status: "ready" } },
+      })
+    })
+    await runtime.cancelQuestion(q1.questionId, "s1")
+    await expect(s1).resolves.toMatchObject({ status: "cancelled" })
+  }, 30_000)
+
+  it("publishes independent hints for multiple pending sessions", async () => {
+    const store = await makeStore()
+    const ui = bridge()
+    const publisher = new AskUserStatePublisher(store, ui)
+    publisher.start()
+    const runtime = new AskUserRuntime({ store })
+    const s1 = runtime.ask({ sessionId: "s1", title: "S1", schema })
+    const s2 = runtime.ask({ sessionId: "s2", title: "S2", schema })
+    const q1 = await waitForPending(store, "s1")
+    const q2 = await waitForPending(store, "s2")
+    await vi.waitFor(async () => {
+      const slot = (await ui.getState())?.[ASK_USER_UI_STATE_SLOTS.PENDING]
+      expect(slot).toMatchObject({
+        hintsBySession: {
+          s1: { questionId: q1.questionId, sessionId: "s1", status: "ready" },
+          s2: { questionId: q2.questionId, sessionId: "s2", status: "ready" },
+        },
+      })
+      expect(JSON.stringify(slot)).not.toContain("answerToken")
+    })
+    await waitForRuntimeWaiter(runtime, q1.questionId)
+    await waitForRuntimeWaiter(runtime, q2.questionId)
+    await runtime.submitAnswer(q1.questionId, "s1", { answer: "ok" })
+    await expect(s1).resolves.toMatchObject({ status: "answered" })
+    await vi.waitFor(async () => {
+      const slot = (await ui.getState())?.[ASK_USER_UI_STATE_SLOTS.PENDING]
+      expect(slot).toEqual({
+        hint: { questionId: q2.questionId, sessionId: "s2", status: "ready" },
+        hintsBySession: { s2: { questionId: q2.questionId, sessionId: "s2", status: "ready" } },
+      })
+    })
+    await runtime.cancelQuestion(q2.questionId, "s2")
+    await expect(s2).resolves.toMatchObject({ status: "cancelled" })
+  }, 30_000)
+
   it("publishes pending slot on create, answer, cancel, and abandon", async () => {
     const store = await makeStore()
     const ui = bridge()
@@ -52,20 +173,21 @@ describe("AskUserStatePublisher", () => {
     const pending = runtime.ask({ sessionId: "s1", title: "T", schema })
     const question = await vi.waitFor(async () => {
       const slot = (await ui.getState())?.[ASK_USER_UI_STATE_SLOTS.PENDING]
-      expect(slot).toMatchObject({ question: { status: "ready" } })
-      return (slot as { question: { questionId: string } }).question
+      expect(slot).toMatchObject({ hint: { status: "ready" } })
+      expect(JSON.stringify(slot)).not.toContain("answerToken")
+      return (slot as { hint: { questionId: string } }).hint
     })
     await waitForRuntimeWaiter(runtime, question.questionId)
     await runtime.submitAnswer(question.questionId, "s1", { answer: "ok" })
     await expect(pending).resolves.toMatchObject({ status: "answered" })
-    await vi.waitFor(async () => expect((await ui.getState())?.[ASK_USER_UI_STATE_SLOTS.PENDING]).toEqual({ question: null }))
+    await vi.waitFor(async () => expect((await ui.getState())?.[ASK_USER_UI_STATE_SLOTS.PENDING]).toEqual({ hint: null, hintsBySession: {} }))
 
     const cancelPending = runtime.ask({ sessionId: "s1", schema })
     const q2 = await waitForPending(store, "s1")
     await waitForRuntimeWaiter(runtime, q2.questionId)
     await runtime.cancelQuestion(q2.questionId, "s1")
     await expect(cancelPending).resolves.toMatchObject({ status: "cancelled" })
-    await vi.waitFor(async () => expect((await ui.getState())?.[ASK_USER_UI_STATE_SLOTS.PENDING]).toEqual({ question: null }))
+    await vi.waitFor(async () => expect((await ui.getState())?.[ASK_USER_UI_STATE_SLOTS.PENDING]).toEqual({ hint: null, hintsBySession: {} }))
 
     const abandonedController = new AbortController()
     const abandonedPending = runtime.ask({ sessionId: "s1", schema }, abandonedController.signal)
@@ -73,7 +195,7 @@ describe("AskUserStatePublisher", () => {
     await store.markAbandoned(q3.questionId)
     abandonedController.abort()
     await expect(abandonedPending).resolves.toMatchObject({ status: "cancelled" })
-    await vi.waitFor(async () => expect((await ui.getState())?.[ASK_USER_UI_STATE_SLOTS.PENDING]).toEqual({ question: null }))
+    await vi.waitFor(async () => expect((await ui.getState())?.[ASK_USER_UI_STATE_SLOTS.PENDING]).toEqual({ hint: null, hintsBySession: {} }))
   }, 30_000)
 })
 
