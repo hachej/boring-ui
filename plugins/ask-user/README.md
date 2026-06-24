@@ -23,7 +23,7 @@ cancels.
 | Panel | `ask-user.questions` ("Questions"), `placement: "center"`, chromeless |
 | Surface resolver | kind `questions` (`ASK_USER_SURFACE_KIND`) → opens the panel |
 | Agent tool | `ask_user` (blocking; resolves `answered` / `cancelled`) |
-| HTTP route | `POST /api/v1/questions/commands` (submit + cancel commands) |
+| WorkspaceBridge ops | `ask-user.v1.request`, `ask-user.v1.answer`, `ask-user.v1.cancel`, `ask-user.v1.pending`, `ask-user.v1.transcript` |
 | Pi prompt | `pi.systemPrompt` nudges the agent to use `ask_user` over chat roleplay |
 
 ## How it's wired
@@ -73,6 +73,11 @@ The agent then calls `ask_user` with a `{ title, context?, schema }` payload:
 
 The pane opens, the user submits, and the tool resolves with
 `{ status: "answered", answer: { values: { env: "production" } } }`.
+
+Submit/cancel/pending/transcript traffic goes through WorkspaceBridge
+`ask-user.v1.*` operations. The old `questionsRoutes` helper for
+`POST /api/v1/questions/commands` remains exported only for manual legacy
+wiring; `createAskUserServerPlugin` does not register that route.
 
 ## Field types
 
