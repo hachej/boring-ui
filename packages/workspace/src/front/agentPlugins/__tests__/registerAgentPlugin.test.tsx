@@ -735,25 +735,21 @@ describe("useAgentPluginHotReload", () => {
     expect(screen.getByTestId("all-panel-ids")).not.toHaveTextContent("hidden-removed-pane")
   })
 
-  test("renders runtime left tabs by resolving their panelId component", async () => {
+  test("registers runtime workspace-page panels", async () => {
     const importFront = async (): Promise<{ default: BoringFrontFactoryWithId }> => ({
       default: hotPlugin("hot-plugin", (api) => {
         api.registerPanel({
-          id: "hot-left-pane",
-          label: "Hot Left Pane",
-          component: function HotLeftPane() {
-            return <div data-testid="hot-left-pane">left tab content</div>
+          id: "hot-workspace-page",
+          label: "Hot Page",
+          placement: "workspace-page",
+          component: function HotWorkspacePage() {
+            return <div data-testid="hot-workspace-page">workspace page content</div>
           },
-        })
-        api.registerLeftTab({
-          id: "hot-left-tab",
-          title: "Hot Left",
-          panelId: "hot-left-pane",
         })
       }),
     })
 
-    function LeftTabHarness() {
+    function WorkspacePageHarness() {
       const panelRegistry = React.useMemo(() => new PanelRegistry(), [])
       const commandRegistry = React.useMemo(() => new CommandRegistry(), [])
       const surfaceResolverRegistry = React.useMemo(() => new SurfaceResolverRegistry(), [])
@@ -764,12 +760,12 @@ describe("useAgentPluginHotReload", () => {
       return (
         <RegistryProvider panelRegistry={panelRegistry} commandRegistry={commandRegistry} surfaceResolverRegistry={surfaceResolverRegistry}>
           <Listener />
-          <PaneRenderer id="hot-left-tab" />
+          <PaneRenderer id="hot-workspace-page" />
         </RegistryProvider>
       )
     }
 
-    render(<LeftTabHarness />)
+    render(<WorkspacePageHarness />)
     MockEventSource.instances[0].dispatch("boring.plugin.load", {
       type: "boring.plugin.load",
       id: "hot-plugin",
@@ -779,56 +775,7 @@ describe("useAgentPluginHotReload", () => {
       boring: { front: "./front.mjs" },
     })
 
-    await waitFor(() => expect(screen.getByTestId("hot-left-pane")).toHaveTextContent("left tab content"))
-  })
-
-  test("warns when a left tab references an unknown panelId", async () => {
-    const warn = vi.spyOn(console, "warn").mockImplementation(() => {})
-    try {
-      const importFront = async (): Promise<{ default: BoringFrontFactoryWithId }> => ({
-        default: hotPlugin("hot-plugin", (api) => {
-          api.registerPanel({
-            id: "hot-plugin.panel",
-            label: "Real Panel",
-            component: function RealPanel() { return null },
-          })
-          api.registerLeftTab({
-            id: "hot-plugin.tab",
-            title: "Typo Tab",
-            panelId: "hot-plugin-typo.panel",
-          })
-        }),
-      })
-
-      function WarnHarness() {
-        const panelRegistry = React.useMemo(() => new PanelRegistry(), [])
-        const commandRegistry = React.useMemo(() => new CommandRegistry(), [])
-        const surfaceResolverRegistry = React.useMemo(() => new SurfaceResolverRegistry(), [])
-        function Listener() {
-          useAgentPluginHotReload({ workspaceId: "test-workspace", importFront })
-          return null
-        }
-        return (
-          <RegistryProvider panelRegistry={panelRegistry} commandRegistry={commandRegistry} surfaceResolverRegistry={surfaceResolverRegistry}>
-            <Listener />
-          </RegistryProvider>
-        )
-      }
-
-      render(<WarnHarness />)
-      MockEventSource.instances[0].dispatch("boring.plugin.load", {
-        type: "boring.plugin.load",
-        id: "hot-plugin",
-        version: "1.0.0",
-        revision: 1,
-        frontTarget: { kind: "module-url", entryUrl: "/@fs/front.mjs", revision: 1 },
-        boring: { front: "./front.mjs" },
-      })
-
-      await waitFor(() => expect(warn).toHaveBeenCalledWith(expect.stringContaining('references unknown panelId "hot-plugin-typo.panel"')))
-    } finally {
-      warn.mockRestore()
-    }
+    await waitFor(() => expect(screen.getByTestId("hot-workspace-page")).toHaveTextContent("workspace page content"))
   })
 
   test("updates command palette entries when plugin front registrations change", async () => {

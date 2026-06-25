@@ -28,12 +28,12 @@ references/workspace/bridge.md            # agent → UI bridge (exec_ui, /reloa
 - **`skills/boring-plugin-authoring/SKILL.md`** — the primary entry point. Covers
   the scaffold-first workflow (`boring-ui-plugin scaffold`), `definePlugin` config
   shape, the `.pi/extensions/<name>/` vs `plugins/<name>/` layout decision, navigation
-  surfaces (command palette vs left tabs vs surface resolvers vs agent slash commands),
+  surfaces (command palette vs workspace pages vs surface resolvers vs agent slash commands),
   design-system defaults, Pi extensions/tools, and the `/reload` + `plugin_diagnostics`
   verification loop. It links into the three reference docs for deeper detail.
 - **`references/workspace/*.md`** — the deep-dive references. These document the real
   `@hachej/boring-workspace` API (`definePlugin`, `registerPanel` /
-  `registerPanelCommand` / `registerLeftTab` / `registerSurfaceResolver`,
+  `registerPanelCommand` / `registerSurfaceResolver`,
   `WORKSPACE_OPEN_PATH_SURFACE_KIND`, `openPanel` / `notify`, `WorkspaceLink`) and are
   read by runtime agents while authoring plugins, so their accuracy is load-bearing.
 

@@ -1,10 +1,9 @@
 import type { ComponentType, ReactNode } from "react"
-import type { PanelConfig, PaneProps } from "../types/panel"
-import type { SurfaceOpenRequest, SurfacePanelResolution } from "../types/surface"
+import { isWorkspaceSourcePlacement, type PanelConfig, type PaneProps, type PanelPlacement, type WorkspaceSourceProps } from "../types/panel"
+import type { SurfaceOpenRequest, SurfacePanelResolution, SurfaceResolverExample, SurfaceResolverRegistration } from "../types/surface"
 import { PluginError } from "./errors"
 import type {
   CatalogConfig,
-  LeftTabParams,
   PluginBinding,
   PluginProvider,
 } from "./types"
@@ -14,12 +13,26 @@ export interface BoringFrontPanelRegistration<T = unknown> {
   component: ComponentType<PaneProps<T>> | (() => Promise<{ default: ComponentType<PaneProps<T>> }>)
   label?: string
   icon?: ComponentType<{ className?: string }>
-  placement?: string
+  placement?: PanelPlacement
   requiresCapabilities?: string[]
   essential?: boolean
   lazy?: boolean
   chromeless?: boolean
   supportsFullPage?: boolean
+  /** @deprecated Only honored for legacy workspace-source/left-tab panels. Use registerWorkspaceSource.defaultPanelId. */
+  defaultPanelId?: string
+  source?: string
+}
+
+export interface BoringFrontWorkspaceSourceRegistration<T = unknown> {
+  id: string
+  component: ComponentType<WorkspaceSourceProps<T>> | (() => Promise<{ default: ComponentType<WorkspaceSourceProps<T>> }>)
+  label?: string
+  icon?: ComponentType<{ className?: string }>
+  requiresCapabilities?: string[]
+  lazy?: boolean
+  chromeless?: boolean
+  defaultPanelId?: string
   source?: string
 }
 
@@ -31,18 +44,6 @@ export interface BoringFrontPanelCommandRegistration {
   keywords?: string[]
   shortcut?: string
   when?: () => boolean
-}
-
-export interface BoringFrontLeftTabRegistration<T = LeftTabParams> {
-  id: string
-  title: string
-  panelId: string
-  icon?: ComponentType<{ className?: string }>
-  component?: PanelConfig<T>["component"]
-  lazy?: boolean
-  chromeless?: boolean
-  requiresCapabilities?: string[]
-  source?: string
 }
 
 export interface BoringFrontProviderRegistration {
@@ -58,8 +59,37 @@ export interface BoringFrontBindingRegistration {
 export interface BoringFrontSurfaceResolverRegistration {
   id?: string
   kind: string
+  title?: string
+  description?: string
+  targetHint?: string
+  examples?: SurfaceResolverExample[]
+  metaSchema?: Record<string, unknown>
   source?: string
   resolve: (request: SurfaceOpenRequest) => SurfacePanelResolution | null | undefined
+}
+
+export function normalizeFrontSurfaceResolver(
+  resolver: BoringFrontSurfaceResolverRegistration,
+  pluginId: string,
+): { id: string; config: SurfaceResolverRegistration } {
+  const id = resolver.id ?? `${pluginId}:${resolver.kind}`
+  return {
+    id,
+    config: {
+      kind: resolver.kind,
+      ...(resolver.title !== undefined ? { title: resolver.title } : {}),
+      ...(resolver.description !== undefined ? { description: resolver.description } : {}),
+      ...(resolver.targetHint !== undefined ? { targetHint: resolver.targetHint } : {}),
+      ...(resolver.examples !== undefined ? { examples: resolver.examples } : {}),
+      ...(resolver.metaSchema !== undefined ? { metaSchema: resolver.metaSchema } : {}),
+      source: resolver.source ?? "plugin",
+      pluginId,
+      resolve(request: SurfaceOpenRequest) {
+        if (request.kind !== resolver.kind) return undefined
+        return resolver.resolve(request) ?? undefined
+      },
+    },
+  }
 }
 
 export type BoringFrontToolRenderer = (part: unknown) => ReactNode
@@ -74,8 +104,8 @@ export interface BoringFrontAPI {
   registerBinding(registration: BoringFrontBindingRegistration): void
   registerCatalog(registration: CatalogConfig): void
   registerPanel<T = unknown>(registration: BoringFrontPanelRegistration<T>): void
+  registerWorkspaceSource<T = unknown>(registration: BoringFrontWorkspaceSourceRegistration<T>): void
   registerPanelCommand(registration: BoringFrontPanelCommandRegistration): void
-  registerLeftTab<T = LeftTabParams>(registration: BoringFrontLeftTabRegistration<T>): void
   registerSurfaceResolver(registration: BoringFrontSurfaceResolverRegistration): void
   registerToolRenderer(registration: BoringFrontToolRendererRegistration): void
 }
@@ -108,8 +138,8 @@ export interface DefinePluginConfig {
   id: string
   label?: string
   panels?: ReadonlyArray<BoringFrontPanelRegistration<any>>
+  workspaceSources?: ReadonlyArray<BoringFrontWorkspaceSourceRegistration<any>>
   commands?: ReadonlyArray<BoringFrontPanelCommandRegistration>
-  leftTabs?: ReadonlyArray<BoringFrontLeftTabRegistration<any>>
   surfaceResolvers?: ReadonlyArray<BoringFrontSurfaceResolverRegistration>
   providers?: ReadonlyArray<BoringFrontProviderRegistration>
   bindings?: ReadonlyArray<BoringFrontBindingRegistration>
@@ -137,7 +167,7 @@ export function definePlugin<const Config extends DefinePluginConfig>(
     if (typeof config === "string" || typeof config === "function") {
       throw new Error(
         "definePlugin now takes a single declarative config object: " +
-          "definePlugin({ id, label?, panels, commands, leftTabs, surfaceResolvers, setup? }). " +
+          "definePlugin({ id, label?, panels, commands, surfaceResolvers, setup? }). " +
           "The legacy positional form was removed — use the new shape.",
       )
     }
@@ -148,8 +178,8 @@ export function definePlugin<const Config extends DefinePluginConfig>(
   }
   const factory: BoringFrontFactory = (api) => {
     for (const panel of config.panels ?? []) api.registerPanel(panel)
+    for (const source of config.workspaceSources ?? []) api.registerWorkspaceSource(source)
     for (const command of config.commands ?? []) api.registerPanelCommand(command)
-    for (const tab of config.leftTabs ?? []) api.registerLeftTab(tab)
     for (const resolver of config.surfaceResolvers ?? []) api.registerSurfaceResolver(resolver)
     for (const provider of config.providers ?? []) api.registerProvider(provider)
     for (const binding of config.bindings ?? []) api.registerBinding(binding)
@@ -183,8 +213,8 @@ export interface CapturedBoringFrontRegistrations {
   bindings: BoringFrontBindingRegistration[]
   catalogs: CatalogConfig[]
   panels: BoringFrontPanelRegistration<any>[]
+  workspaceSources: BoringFrontWorkspaceSourceRegistration<any>[]
   panelCommands: BoringFrontPanelCommandRegistration[]
-  leftTabs: BoringFrontLeftTabRegistration<any>[]
   surfaceResolvers: BoringFrontSurfaceResolverRegistration[]
   toolRenderers: BoringFrontToolRendererRegistration[]
 }
@@ -208,8 +238,8 @@ export function createCapturingBoringFrontAPI(options: { pluginId?: string } = {
   const bindings: BoringFrontBindingRegistration[] = []
   const catalogs: CatalogConfig[] = []
   const panels: BoringFrontPanelRegistration<any>[] = []
+  const workspaceSources: BoringFrontWorkspaceSourceRegistration<any>[] = []
   const panelCommands: BoringFrontPanelCommandRegistration[] = []
-  const leftTabs: BoringFrontLeftTabRegistration<any>[] = []
   const surfaceResolvers: BoringFrontSurfaceResolverRegistration[] = []
   const toolRenderers: BoringFrontToolRendererRegistration[] = []
   // Intra-plugin id collision detection (PLUGIN_SYSTEM.md §5.7): two register*
@@ -244,26 +274,21 @@ export function createCapturingBoringFrontAPI(options: { pluginId?: string } = {
       catalogs.push(registration)
     },
     registerPanel(registration) {
-      claim("panel", registration.id)
+      claim(isWorkspaceSourcePlacement(registration.placement) ? "workspace-source" : "panel", registration.id)
       panels.push(registration)
+    },
+    registerWorkspaceSource(registration) {
+      claim("workspace-source", registration.id)
+      workspaceSources.push(registration)
     },
     registerPanelCommand(registration) {
       claim("command", registration.id)
       panelCommands.push(registration)
     },
-    registerLeftTab(registration) {
-      claim("left-tab", registration.id)
-      leftTabs.push(registration)
-    },
     registerSurfaceResolver(registration) {
       const id = registration.id ?? `${options.pluginId ?? "anon"}:${registration.kind}`
       claim("surface-resolver", id)
-      // Assign the synthetic id so downstream readers of registration.id
-      // don't get undefined when the caller omitted it.
-      if (registration.id === undefined) {
-        ;(registration as { id: string }).id = id
-      }
-      surfaceResolvers.push(registration)
+      surfaceResolvers.push({ ...registration, id })
     },
     registerToolRenderer(registration) {
       claim("tool-renderer", registration.id)
@@ -275,8 +300,8 @@ export function createCapturingBoringFrontAPI(options: { pluginId?: string } = {
         bindings: clone(bindings),
         catalogs: clone(catalogs),
         panels: clone(panels),
+        workspaceSources: clone(workspaceSources),
         panelCommands: clone(panelCommands),
-        leftTabs: clone(leftTabs),
         surfaceResolvers: clone(surfaceResolvers),
         toolRenderers: clone(toolRenderers),
       }
