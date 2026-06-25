@@ -116,6 +116,42 @@ describe("PiSessionStore.loadEntries transcript reconstruction", () => {
     await expect(store.list(ctx)).resolves.toEqual([]);
   });
 
+  it("ignores the baked-in 'New session' placeholder so the real title wins", async () => {
+    // Regression: create() writes a session_info name="New session" placeholder
+    // into the wrapper. extractTitle used to return the last session_info name
+    // unconditionally, so the placeholder shadowed the first-user-message
+    // fallback and a session with real content stayed titled "New session".
+    const boringSessionId = "boring-placeholder";
+    const nativeSessionId = "native-placeholder";
+    const nativePath = join(tmpDir, `2026-06-02_${nativeSessionId}.jsonl`);
+    const boringPath = join(tmpDir, `${boringSessionId}.jsonl`);
+    const nativeLines = [
+      { type: "session", version: 1, id: nativeSessionId, timestamp: "2026-06-02T00:00:01.000Z", cwd: "/workspace" },
+      {
+        type: "message",
+        id: "m-user-1",
+        parentId: null,
+        timestamp: "2026-06-02T00:00:02.000Z",
+        message: { role: "user", content: [{ type: "text", text: "summarize the quarterly numbers" }] },
+      },
+    ];
+    const boringLines = [
+      { type: "session", version: 1, id: boringSessionId, timestamp: "2026-06-02T00:00:00.000Z", cwd: "/workspace" },
+      { type: "session_info", id: "info-1", parentId: null, timestamp: "2026-06-02T00:00:00.000Z", name: "New session" },
+      { type: "pi_session_file", timestamp: "2026-06-02T00:00:03.000Z", path: nativePath },
+    ];
+    await writeFile(nativePath, `${nativeLines.map((line) => JSON.stringify(line)).join("\n")}\n`, "utf-8");
+    await writeFile(boringPath, `${boringLines.map((line) => JSON.stringify(line)).join("\n")}\n`, "utf-8");
+
+    const store = new PiSessionStore("/workspace", tmpDir);
+    const summaries = await store.list(ctx);
+    expect(summaries).toHaveLength(1);
+    expect(summaries[0].title).toBe("summarize the quarterly numbers");
+
+    const detail = await store.load(ctx, boringSessionId);
+    expect(detail.title).toBe("summarize the quarterly numbers");
+  });
+
   it("drops empty assistant turns out of the rebuilt history", async () => {
     const sessionId = "sess-empty-assistant";
     const filepath = join(tmpDir, `${sessionId}.jsonl`);

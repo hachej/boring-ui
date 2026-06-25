@@ -30,15 +30,22 @@ vi.mock('react-router-dom', async (importOriginal) => {
   return { ...actual, useNavigate: () => navigateMock }
 })
 
-vi.mock('../../../front/index.js', () => ({
-  CoreFront: ({ children, ...props }: { children?: ReactNode }) => {
-    coreFrontProps = props
-    return (
-      <MemoryRouter initialEntries={[routePath]}>
-        <Routes>{children}</Routes>
-      </MemoryRouter>
-    )
-  },
+vi.mock('../../../front/index.js', async () => {
+  const { QueryClient, QueryClientProvider } = await import('@tanstack/react-query')
+  return {
+    CoreFront: ({ children, ...props }: { children?: ReactNode }) => {
+      coreFrontProps = props
+      const queryClient = new QueryClient({
+        defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
+      })
+      return (
+        <QueryClientProvider client={queryClient}>
+          <MemoryRouter initialEntries={[routePath]}>
+            <Routes>{children}</Routes>
+          </MemoryRouter>
+        </QueryClientProvider>
+      )
+    },
   UserMenu: () => <div>User menu</div>,
   ThemeToggle: () => <div>Theme toggle</div>,
   WorkspaceSwitcher: () => <div>Switcher</div>,
@@ -62,8 +69,9 @@ vi.mock('../../../front/index.js', () => ({
     : sessionState,
   useSignIn: () => ({ email: signInEmailMock }),
   useSignUp: () => ({ email: signUpEmailMock }),
-  useWorkspaceRouteStatus: () => routeStatus,
-}))
+    useWorkspaceRouteStatus: () => routeStatus,
+  }
+})
 
 vi.mock('@hachej/boring-workspace', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@hachej/boring-workspace')>()

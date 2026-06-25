@@ -144,6 +144,21 @@ function getRequestWorkspaceId(request: FastifyRequest): string {
   return request.workspaceContext?.workspaceId ?? DEFAULT_WORKSPACE_ID
 }
 
+function statusCodeFromUnknownError(err: unknown, fallback = 500): number {
+  const maybeStatusCode = (err as { statusCode?: unknown })?.statusCode
+  if (typeof maybeStatusCode === 'number' && maybeStatusCode >= 400 && maybeStatusCode <= 599) return maybeStatusCode
+  const maybeStatus = (err as { status?: unknown })?.status
+  if (typeof maybeStatus === 'number' && maybeStatus >= 400 && maybeStatus <= 599) return maybeStatus
+  return fallback
+}
+
+function errorCodeFromUnknownError(err: unknown, statusCode: number): ErrorCode {
+  const parsedCode = ErrorCode.safeParse((err as { code?: unknown })?.code)
+  if (parsedCode.success) return parsedCode.data
+  if (statusCode === 401 || statusCode === 403) return ErrorCode.enum.UNAUTHORIZED
+  return statusCode < 500 ? ErrorCode.enum.WORKSPACE_UNINITIALIZED : ErrorCode.enum.INTERNAL_ERROR
+}
+
 function promoteRawFileWorkspaceQueryToHeader(request: FastifyRequest): void {
   const pathname = request.url.split('?')[0] ?? request.url
   // Browser media previews (img/object/etc.) cannot attach custom headers, so
@@ -937,6 +952,28 @@ let runtimeProvisioning: WorkspaceProvisioningResult | undefined
       })
       return binding.piChatService
     },
+  })
+  // No-boot per-workspace session list: resolves the host session store
+  // (readdir) WITHOUT provisioning the runtime, so the multi-project nav can
+  // browse ANY accessible workspace's chats without loading that workspace.
+  // The workspace is scoped by the x-boring-workspace-id header, same as every
+  // other agent route, so the auth/workspace-context hooks still apply.
+  // (See docs/plans/multi-project-left-bar.md §0 / P0.)
+  app.get('/api/v1/agent/pi-chat/session-list', async (request, reply) => {
+    try {
+      const store = await getSessionStoreForRequest(request)
+      const workspaceId = getRequestWorkspaceId(request)
+      const sessions = await store.list({ workspaceId })
+      return reply.send(sessions)
+    } catch (err) {
+      const statusCode = statusCodeFromUnknownError(err)
+      const code = errorCodeFromUnknownError(err, statusCode)
+      const message = err instanceof Error && err.message
+        ? err.message
+        : 'list workspace sessions failed'
+      request.log?.error?.({ err, code, statusCode }, 'list workspace sessions (no-boot) failed')
+      return reply.code(statusCode).send({ error: { code, message } })
+    }
   })
   await app.register(systemPromptRoutes, {
     getHarness: async (request) => (await getBindingForRequest(request)).harness,

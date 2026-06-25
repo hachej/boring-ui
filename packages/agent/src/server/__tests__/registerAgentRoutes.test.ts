@@ -5,6 +5,7 @@ import { afterEach, expect, test, vi } from 'vitest'
 import Fastify from 'fastify'
 
 import { registerAgentRoutes } from '../registerAgentRoutes'
+import { ErrorCode } from '../../shared/error-codes'
 import { provisionWorkspaceRuntime } from '../workspace/provisioning'
 import type { RuntimeModeAdapter } from '../runtime/mode'
 
@@ -358,6 +359,73 @@ test('registerAgentRoutes mounts catalog endpoint on host app', async () => {
   const names: string[] = body.tools.map((t: { name: string }) => t.name)
   expect(names).toContain('bash')
   expect(names).toContain('read')
+
+  await app.close()
+})
+
+test('no-boot session-list preserves scoped route error status and stable shape', async () => {
+  const workspaceRoot = await makeTempDir('boring-agent-session-list-error-')
+  const app = Fastify({ logger: false })
+
+  await app.register(registerAgentRoutes, {
+    workspaceRoot,
+    mode: 'direct',
+    getWorkspaceId: async (request) => String(request.headers['x-boring-workspace-id'] ?? 'workspace-a'),
+    getWorkspaceRoot: async () => {
+      const error = new Error('workspace access denied') as Error & { statusCode: number; code: string }
+      error.statusCode = 403
+      error.code = ErrorCode.enum.UNAUTHORIZED
+      throw error
+    },
+  })
+  await app.ready()
+
+  const res = await app.inject({
+    method: 'GET',
+    url: '/api/v1/agent/pi-chat/session-list',
+    headers: { 'x-boring-workspace-id': 'workspace-a' },
+  })
+
+  expect(res.statusCode).toBe(403)
+  expect(res.json()).toEqual({
+    error: {
+      code: ErrorCode.enum.UNAUTHORIZED,
+      message: 'workspace access denied',
+    },
+  })
+
+  await app.close()
+})
+
+test('no-boot session-list maps plain forbidden scoped route errors to unauthorized code', async () => {
+  const workspaceRoot = await makeTempDir('boring-agent-session-list-forbidden-')
+  const app = Fastify({ logger: false })
+
+  await app.register(registerAgentRoutes, {
+    workspaceRoot,
+    mode: 'direct',
+    getWorkspaceId: async (request) => String(request.headers['x-boring-workspace-id'] ?? 'workspace-a'),
+    getWorkspaceRoot: async () => {
+      const error = new Error('workspace forbidden') as Error & { statusCode: number }
+      error.statusCode = 403
+      throw error
+    },
+  })
+  await app.ready()
+
+  const res = await app.inject({
+    method: 'GET',
+    url: '/api/v1/agent/pi-chat/session-list',
+    headers: { 'x-boring-workspace-id': 'workspace-a' },
+  })
+
+  expect(res.statusCode).toBe(403)
+  expect(res.json()).toEqual({
+    error: {
+      code: ErrorCode.enum.UNAUTHORIZED,
+      message: 'workspace forbidden',
+    },
+  })
 
   await app.close()
 })

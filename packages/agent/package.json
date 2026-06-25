@@ -67,6 +67,7 @@
     "smoke:capability-readiness:vercel": "tsx ./scripts/smoke-capability-readiness-vercel.mts"
   },
   "dependencies": {
+    "@earendil-works/pi-tui": "0.75.5",
     "@hachej/boring-ui-kit": "workspace:*",
     "@mariozechner/pi-coding-agent": "npm:@earendil-works/pi-coding-agent@0.75.5",
     "@radix-ui/react-collapsible": "^1.1.12",

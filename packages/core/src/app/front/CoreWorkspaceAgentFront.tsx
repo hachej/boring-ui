@@ -1,5 +1,7 @@
 import { useEffect, useMemo, useState, type ReactNode } from 'react'
-import { Navigate, Route, useLocation, useParams } from 'react-router-dom'
+import { useQueries, useQuery } from '@tanstack/react-query'
+import { writeActiveSessionId } from '@hachej/boring-agent/front'
+import { Navigate, Route, useLocation, useNavigate, useParams } from 'react-router-dom'
 import { WorkspaceProvider } from '@hachej/boring-workspace'
 import { ErrorState } from '@hachej/boring-ui-kit'
 import {
@@ -10,6 +12,8 @@ import {
   useCurrentWorkspace,
   useSession,
   useWorkspaceRouteStatus,
+  apiFetchJson,
+  CreateWorkspaceDialog,
   type CoreFrontAuthPagesOverride,
 } from '../../front/index.js'
 import {
@@ -23,6 +27,7 @@ import {
 import { ChatFirstAuthenticatedShell } from './chatFirst/ChatFirstAuthenticatedShell.js'
 import { ChatFirstPublicShell, type ChatFirstPublicShellOptions } from './chatFirst/ChatFirstPublicShell.js'
 import { installVitePreloadRecovery } from './vitePreloadRecovery.js'
+import type { Workspace } from '../../shared/types.js'
 import {
   clearPendingChatEntry,
   DEFAULT_CHAT_FIRST_PENDING_WORKSPACE_ID,
@@ -41,6 +46,29 @@ const DEFAULT_FULL_PAGE_BASE_PATH = '/full-page'
 
 type ChatEntryMode = 'auth-first' | 'chat-first'
 type RoutedWorkspaceAgentProps<TSession extends WorkspaceAgentSession = WorkspaceAgentSession> = Omit<WorkspaceAgentFrontProps<TSession>, 'workspaceId' | 'frontPluginHotReload' | 'hotReloadEnabled'>
+
+const WORKSPACES_QUERY_KEY = ['workspaces'] as const
+
+async function fetchWorkspaces(): Promise<Workspace[]> {
+  const data = await apiFetchJson<{ workspaces: Workspace[] }>('/api/v1/workspaces')
+  return data.workspaces
+}
+
+function useWorkspacesList(enabled: boolean): Workspace[] {
+  return useQuery({ queryKey: WORKSPACES_QUERY_KEY, queryFn: fetchWorkspaces, enabled }).data ?? []
+}
+
+interface NoBootSessionSummary { id: string; title: string; updatedAt: string; turnCount: number }
+
+// No-boot listing: reads a workspace's sessions WITHOUT provisioning its
+// runtime, so the multi-project nav can browse any accessible workspace's chats
+// without loading it. Scoped by the x-boring-workspace-id header (see the agent
+// route in registerAgentRoutes.ts). Returns the bare array, matching /pi-chat/sessions.
+async function fetchWorkspaceSessions(workspaceId: string): Promise<NoBootSessionSummary[]> {
+  return apiFetchJson<NoBootSessionSummary[]>('/api/v1/agent/pi-chat/session-list', {
+    headers: { 'x-boring-workspace-id': workspaceId },
+  })
+}
 
 export interface CoreWorkspaceAgentFrontProps<
   TSession extends WorkspaceAgentSession = WorkspaceAgentSession,
@@ -172,13 +200,24 @@ function HomeRedirect<TSession extends WorkspaceAgentSession = WorkspaceAgentSes
 }) {
   const config = useConfig()
   const resolvedAppTitle = appTitle ?? config.appName
-  const resolvedTopBarLeft = topBarLeft === undefined ? <WorkspaceSwitcher appTitle={resolvedAppTitle} /> : topBarLeft
+  const resolvedTopBarLeft = topBarLeft === undefined ? <WorkspaceSwitcher appTitle={resolvedAppTitle} displayMode="workspace" /> : topBarLeft
   const resolvedLoadingFallback = loadingFallback ?? (
-    <WorkspaceLoadingPage
-      appTitle={resolvedAppTitle}
-      topBarLeft={resolvedTopBarLeft}
-      topBarRight={topBarRight}
-    />
+    // Multi-project: opening a workspace (on session click) shows a minimal,
+    // non-blocking spinner rather than the full-page "Restoring files…" takeover
+    // (plan §5.2). Single-project keeps the full loading page.
+    workspaceProps.appLeftLayoutMode === 'multi-project'
+      ? (
+        <div className="flex h-full w-full items-center justify-center bg-background">
+          <span className="h-5 w-5 animate-spin rounded-full border-2 border-muted-foreground/30 border-t-foreground/70" role="status" aria-label="Loading workspace" />
+        </div>
+      )
+      : (
+        <WorkspaceLoadingPage
+          appTitle={resolvedAppTitle}
+          topBarLeft={resolvedTopBarLeft}
+          topBarRight={topBarRight}
+        />
+      )
   )
   const resolvedWorkspaceProps: RoutedWorkspaceAgentProps<TSession> = {
     ...workspaceProps,
@@ -247,6 +286,7 @@ function WorkspaceRoute<
   topBarLeft,
   topBarRight,
   workspaceRoute,
+  workspaceHref,
   chatFirstPublicShell,
   chatFirstPublicWorkspaceProps,
 }: {
@@ -259,18 +299,30 @@ function WorkspaceRoute<
   topBarLeft?: ReactNode
   topBarRight?: ReactNode
   workspaceRoute: string
+  workspaceHref: (workspaceId: string) => string
   chatFirstPublicShell?: ChatFirstPublicShellOptions
   chatFirstPublicWorkspaceProps?: Partial<RoutedWorkspaceAgentProps<TSession>>
 }) {
   const config = useConfig()
   const resolvedAppTitle = appTitle ?? config.appName
-  const resolvedTopBarLeft = topBarLeft === undefined ? <WorkspaceSwitcher appTitle={resolvedAppTitle} /> : topBarLeft
+  const resolvedTopBarLeft = topBarLeft === undefined ? <WorkspaceSwitcher appTitle={resolvedAppTitle} displayMode="workspace" /> : topBarLeft
   const resolvedLoadingFallback = loadingFallback ?? (
-    <WorkspaceLoadingPage
-      appTitle={resolvedAppTitle}
-      topBarLeft={resolvedTopBarLeft}
-      topBarRight={topBarRight}
-    />
+    // Multi-project: opening a workspace (on session click) shows a minimal,
+    // non-blocking spinner rather than the full-page "Restoring files…" takeover
+    // (plan §5.2). Single-project keeps the full loading page.
+    workspaceProps.appLeftLayoutMode === 'multi-project'
+      ? (
+        <div className="flex h-full w-full items-center justify-center bg-background">
+          <span className="h-5 w-5 animate-spin rounded-full border-2 border-muted-foreground/30 border-t-foreground/70" role="status" aria-label="Loading workspace" />
+        </div>
+      )
+      : (
+        <WorkspaceLoadingPage
+          appTitle={resolvedAppTitle}
+          topBarLeft={resolvedTopBarLeft}
+          topBarRight={topBarRight}
+        />
+      )
   )
   const resolvedWorkspaceProps: RoutedWorkspaceAgentProps<TSession> = {
     ...workspaceProps,
@@ -280,11 +332,53 @@ function WorkspaceRoute<
   }
   const params = useParams()
   const location = useLocation()
+  const navigate = useNavigate()
+  const [createProjectOpen, setCreateProjectOpen] = useState(false)
   const session = useSession()
   const pendingChatEntry = usePendingChatDraft()
   const currentWorkspace = useCurrentWorkspace()
+  const workspaces = useWorkspacesList(Boolean(session.data?.user))
   const routeStatus = useWorkspaceRouteStatus()
   const workspaceId = params[workspaceIdParam]?.trim() ?? workspaceIdFromPath(location.pathname, workspaceRoute, workspaceIdParam) ?? ''
+  const inlineWorkspaceSource = workspaces.length > 0
+    ? workspaces
+    : currentWorkspace
+      ? [currentWorkspace]
+      : []
+  const isMultiProject = workspaceProps.appLeftLayoutMode === 'multi-project'
+  // Browse every accessible workspace's chats without loading any of them: one
+  // no-boot session-list fetch per workspace. Listing never provisions a
+  // runtime, so this is cheap and decoupled from "opening" a workspace (which
+  // only happens when a session is clicked).
+  const sessionQueries = useQueries({
+    queries: (isMultiProject ? inlineWorkspaceSource : []).map((workspace) => ({
+      queryKey: ['workspace-sessions', workspace.id] as const,
+      queryFn: () => fetchWorkspaceSessions(workspace.id),
+      enabled: Boolean(session.data?.user) && isMultiProject,
+      staleTime: 30_000,
+    })),
+  })
+  const inlineWorkspaceProjects = isMultiProject
+    ? inlineWorkspaceSource.map((workspace, index) => {
+      // The active workspace shows its LIVE session list (so a freshly-created
+      // chat appears immediately) — leave `sessions` undefined and let the
+      // app-left pane fall back to the live rows. Other workspaces show the
+      // no-boot snapshot.
+      if (workspace.id === workspaceId) {
+        return { id: workspace.id, name: workspace.name, available: true }
+      }
+      const query = sessionQueries[index]
+      const rows = (query?.data ?? []).map((s) => ({ id: s.id, title: s.title, updatedAt: s.updatedAt }))
+      return {
+        id: workspace.id,
+        name: workspace.name,
+        available: true,
+        sessions: rows,
+        sessionCount: rows.length,
+        loadingSessions: query?.isLoading ?? false,
+      }
+    })
+    : undefined
   const pendingDraftTargetsWorkspace = !pendingChatEntry?.intendedWorkspaceId || pendingChatEntry.intendedWorkspaceId === workspaceId
   const restorePendingDraft = pendingDraftTargetsWorkspace && (
     pendingChatEntryMatchesLocation(
@@ -356,20 +450,46 @@ function WorkspaceRoute<
   }
 
   return (
-    <WorkspaceAgentFront
-      key={workspaceId}
-      {...resolvedWorkspaceProps}
-      workspaceId={workspaceId}
-      workspaceLabel={resolvedWorkspaceProps.workspaceLabel ?? currentWorkspace.name}
-      requestHeaders={requestHeaders}
-      authHeaders={authHeaders}
-      fullPageBasePath={scopedFullPageBasePath}
-      chatParams={chatParams}
-      bootPreloadPaths={bootPreloadPaths}
-      frontPluginHotReload={false}
-      hotReloadEnabled={false}
-      showThemeToggle={false}
-    />
+    <>
+      <WorkspaceAgentFront
+        key={workspaceId}
+        {...resolvedWorkspaceProps}
+        workspaceId={workspaceId}
+        workspaceLabel={resolvedWorkspaceProps.workspaceLabel ?? currentWorkspace.name}
+        requestHeaders={requestHeaders}
+        authHeaders={authHeaders}
+        fullPageBasePath={scopedFullPageBasePath}
+        chatParams={chatParams}
+        appLeftProjects={resolvedWorkspaceProps.appLeftProjects ?? inlineWorkspaceProjects}
+        appLeftActiveProjectId={resolvedWorkspaceProps.appLeftActiveProjectId ?? workspaceId}
+        onSwitchAppLeftProject={resolvedWorkspaceProps.onSwitchAppLeftProject ?? ((nextWorkspaceId) => navigate(workspaceHref(nextWorkspaceId)))}
+        onOpenAppLeftProjectSession={resolvedWorkspaceProps.onOpenAppLeftProjectSession ?? ((projectId, sessionId) => {
+          // Open a session in another project: this is the ONLY action that
+          // loads a workspace. Pre-seed that workspace's active-session key
+          // (sync localStorage) THEN navigate — the target mounts and opens the
+          // session, no race (plan §5.1). Loading is non-blocking (light loader).
+          if (projectId !== workspaceId) writeActiveSessionId(sessionId, { storageScope: projectId })
+          navigate(workspaceHref(projectId))
+        })}
+        onCreateAppLeftProject={resolvedWorkspaceProps.onCreateAppLeftProject ?? (workspaceProps.appLeftLayoutMode === 'multi-project' ? (() => setCreateProjectOpen(true)) : undefined)}
+        onOpenAppLeftProjectSettings={resolvedWorkspaceProps.onOpenAppLeftProjectSettings ?? ((projectId) => navigate(`${workspaceHref(projectId)}/settings`))}
+        onOpenAppLeftProjectInNewTab={resolvedWorkspaceProps.onOpenAppLeftProjectInNewTab ?? ((projectId) => globalThis.open?.(workspaceHref(projectId), '_blank', 'noopener,noreferrer'))}
+        bootPreloadPaths={bootPreloadPaths}
+        frontPluginHotReload={false}
+        hotReloadEnabled={false}
+        showThemeToggle={false}
+      />
+      {workspaceProps.appLeftLayoutMode === 'multi-project' ? (
+        <CreateWorkspaceDialog
+          open={createProjectOpen}
+          onOpenChange={setCreateProjectOpen}
+          title="Create project"
+          description="Spin up a fresh project space."
+          entityNoun="project"
+          onCreated={(workspace) => navigate(workspaceHref(workspace.id))}
+        />
+      ) : null}
+    </>
   )
 }
 
@@ -573,6 +693,7 @@ export function CoreWorkspaceAgentFront<
             topBarLeft={topBarLeft}
             topBarRight={topBarRight}
             workspaceRoute={workspaceRoute}
+            workspaceHref={workspaceHref}
             chatFirstPublicShell={chatFirstPublicShell}
             chatFirstPublicWorkspaceProps={chatFirstPublicWorkspaceProps}
           />
