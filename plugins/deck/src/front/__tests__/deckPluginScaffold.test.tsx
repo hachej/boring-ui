@@ -122,6 +122,11 @@ describe("deck scaffold", () => {
     expect(registries.panels.get("deck")).toEqual(
       expect.objectContaining({ id: "deck", title: "Deck", pluginId: "deck" }),
     )
+    registries.panels.register("deck", {
+      title: "Deck",
+      placement: "center",
+      component: () => <div data-testid="mock-deck-panel" />,
+    })
 
     render(
       <RegistryProvider
@@ -143,11 +148,15 @@ describe("deck scaffold", () => {
       })
     })
 
-    expect(mockAddPanel).toHaveBeenCalledWith(expect.objectContaining({
-      id: "surface:workspace.open.path:briefings/weekly.md",
-      component: "deck",
-      title: "weekly.md",
-      params: expect.objectContaining({ path: "briefings/weekly.md" }),
-    }))
+    await waitFor(() => expect(surface?.getSnapshot()).toEqual(expect.objectContaining({
+      activeTab: "surface:workspace.open.path:briefings/weekly.md",
+      openTabs: expect.arrayContaining([
+        expect.objectContaining({
+          id: "surface:workspace.open.path:briefings/weekly.md",
+          title: "weekly.md",
+          params: expect.objectContaining({ path: "briefings/weekly.md" }),
+        }),
+      ]),
+    })))
   })
 })

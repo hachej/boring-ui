@@ -12,7 +12,8 @@ import { useCommandRegistry, useRegistry } from "../registry"
 import type { PaneProps } from "../registry/types"
 import { readStoredNumber, writeStoredNumber } from "../store/localStorageValues"
 import type { ChatLayoutProps } from "./types"
-import { useWorkspaceAttention, useWorkspaceContext, workspaceAttentionSessionBadgeForBlocker } from "../provider"
+import { useWorkspaceAttention, workspaceAttentionSessionBadgeForBlocker } from "../provider"
+import { useWorkspaceContext } from "../provider/WorkspaceProvider"
 import { ChatPaneStage } from "./ChatPaneStage"
 
 export function buildChatLayout(props: ChatLayoutProps = {}): LayoutConfig {

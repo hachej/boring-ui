@@ -61,6 +61,11 @@ export default defineConfig({
     },
     rollupOptions: {
       external: isExternalPackage,
+      output: {
+        manualChunks(id) {
+          if (id.includes("dockview-react") || id.includes("/src/front/dock/")) return "WorkspaceProvider"
+        },
+      },
     },
   },
 })

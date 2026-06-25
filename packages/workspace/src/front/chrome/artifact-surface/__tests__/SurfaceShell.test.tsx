@@ -7,36 +7,9 @@ import { CommandRegistry } from "../../../../shared/plugins/CommandRegistry"
 import { SurfaceResolverRegistry } from "../../../../shared/plugins/SurfaceResolverRegistry"
 import { WORKSPACE_OPEN_PATH_SURFACE_KIND } from "../../../../shared/types/surface"
 
-let capturedSurfaceStorageKey: string | undefined
-let capturedAllowedPanels: string[] | undefined
-let mockAddPanel = vi.fn()
-let mockGetPanel: (id: string) => unknown = vi.fn(() => undefined)
-
 vi.mock("../../workbench-left/WorkbenchLeftPane", () => ({
   WorkbenchLeftPane: () => <div data-testid="mock-left-pane" />,
 }))
-
-vi.mock("../ArtifactSurfacePane", async () => {
-  const React = await import("react")
-  function MockArtifactSurfacePane(props: { storageKey?: string; allowedPanels?: string[]; onReady?: (api: unknown) => void }) {
-    capturedSurfaceStorageKey = props.storageKey
-    capturedAllowedPanels = props.allowedPanels
-    React.useEffect(() => {
-      props.onReady?.({
-        panels: [],
-        activePanel: null,
-        getPanel: mockGetPanel,
-        addPanel: mockAddPanel,
-        onDidAddPanel: vi.fn(() => ({ dispose: vi.fn() })),
-        onDidRemovePanel: vi.fn(() => ({ dispose: vi.fn() })),
-        onDidActivePanelChange: vi.fn(() => ({ dispose: vi.fn() })),
-      })
-    }, [props.onReady])
-    return <div data-testid="mock-artifact-surface" />
-  }
-  MockArtifactSurfacePane.defaultAllowedPanels = [] as string[]
-  return { ArtifactSurfacePane: MockArtifactSurfacePane }
-})
 
 function renderSurface(
   storageKey?: string,
@@ -55,56 +28,105 @@ function renderSurface(
   )
 }
 
+function readStoredTabs(storageKey: string) {
+  const raw = localStorage.getItem(`${storageKey}:workspaceTabs`)
+  return raw ? JSON.parse(raw) as { tabs: Array<{ id: string; component: string; title: string }>; activeTab: string | null } : null
+}
+
 describe("SurfaceShell", () => {
   beforeEach(() => {
-    capturedSurfaceStorageKey = undefined
-    capturedAllowedPanels = undefined
-    mockAddPanel = vi.fn()
-    mockGetPanel = vi.fn(() => undefined)
     localStorage.clear()
   })
 
-  it("uses the workspace-scoped storage key for dockview pane persistence", () => {
-    renderSurface("boring-ui-v2:surface-shell:full-app:workspace-a")
+  it("persists workspace tabs under the workspace-scoped storage key", async () => {
+    let surface: SurfaceShellApi | undefined
+    const panelRegistry = new PanelRegistry()
+    panelRegistry.register("chart", { title: "Chart", placement: "center", component: () => <div>Chart panel</div> })
 
-    expect(capturedSurfaceStorageKey).toBe("boring-ui-v2:surface-shell:full-app:workspace-a")
+    renderSurface("workspace-a", { onReady: (api) => { surface = api } }, panelRegistry)
+    await waitFor(() => expect(surface).toBeDefined())
+
+    act(() => {
+      surface?.openPanel({ id: "chart:gdp", component: "chart", title: "GDP" })
+    })
+
+    await waitFor(() => {
+      expect(readStoredTabs("workspace-a")?.tabs.map((tab) => tab.id)).toContain("chart:gdp")
+    })
+    expect(readStoredTabs("workspace-a")?.activeTab).toBe("chart:gdp")
   })
 
-  it("updates dockview pane persistence when the workspace storage key changes", () => {
-    const { rerender } = renderSurface("workspace-a")
-    expect(capturedSurfaceStorageKey).toBe("workspace-a")
+  it("updates mounted pane params when reopening an existing workspace tab", async () => {
+    let surface: SurfaceShellApi | undefined
+    const panelRegistry = new PanelRegistry()
+    panelRegistry.register("chart", {
+      title: "Chart",
+      placement: "center",
+      component: ({ params }) => <div data-testid="chart-param">{String(params?.metric ?? "")}</div>,
+    })
+
+    renderSurface("workspace-a", { onReady: (api) => { surface = api } }, panelRegistry)
+    await waitFor(() => expect(surface).toBeDefined())
+
+    act(() => {
+      surface?.openPanel({ id: "chart:gdp", component: "chart", title: "GDP", params: { metric: "gdp" } })
+    })
+    expect(await screen.findByText("gdp")).toBeInTheDocument()
+
+    act(() => {
+      surface?.openPanel({ id: "chart:gdp", component: "chart", title: "GDP", params: { metric: "cpi" } })
+    })
+
+    expect(await screen.findByText("cpi")).toBeInTheDocument()
+  })
+
+  it("restores persisted workspace tabs when remounted with the same storage key", async () => {
+    localStorage.setItem("workspace-a:workspaceTabs", JSON.stringify({
+      v: 1,
+      tabs: [{ id: "chart:gdp", component: "chart", title: "GDP", kind: "plugin", filetreeOpen: false }],
+      activeTab: "chart:gdp",
+    }))
+    const panelRegistry = new PanelRegistry()
+    panelRegistry.register("chart", { title: "Chart", placement: "center", component: () => <div>Restored chart</div> })
+
+    renderSurface("workspace-a", {}, panelRegistry)
+
+    expect(await screen.findByRole("button", { name: "Activate GDP" })).toHaveAttribute("aria-pressed", "true")
+    expect(screen.getByText("Restored chart")).toBeInTheDocument()
+  })
+
+  it("switches to a different workspace tab set when the storage key changes", async () => {
+    localStorage.setItem("workspace-a:workspaceTabs", JSON.stringify({
+      v: 1,
+      tabs: [{ id: "chart:a", component: "chart", title: "A", kind: "plugin", filetreeOpen: false }],
+      activeTab: "chart:a",
+    }))
+    localStorage.setItem("workspace-b:workspaceTabs", JSON.stringify({
+      v: 1,
+      tabs: [{ id: "chart:b", component: "chart", title: "B", kind: "plugin", filetreeOpen: false }],
+      activeTab: "chart:b",
+    }))
+    const panelRegistry = new PanelRegistry()
+    panelRegistry.register("chart", { title: "Chart", placement: "center", component: () => <div>Chart panel</div> })
+
+    const { rerender } = renderSurface("workspace-a", {}, panelRegistry)
+    expect(await screen.findByRole("button", { name: "Activate A" })).toBeInTheDocument()
 
     rerender(
-      <RegistryProvider panelRegistry={new PanelRegistry()} commandRegistry={new CommandRegistry()}>
+      <RegistryProvider panelRegistry={panelRegistry} commandRegistry={new CommandRegistry()} surfaceResolverRegistry={new SurfaceResolverRegistry()}>
         <SurfaceShell storageKey="workspace-b" />
       </RegistryProvider>,
     )
 
-    expect(capturedSurfaceStorageKey).toBe("workspace-b")
+    expect(await screen.findByRole("button", { name: "Activate B" })).toBeInTheDocument()
+    expect(screen.queryByRole("button", { name: "Activate A" })).not.toBeInTheDocument()
   })
 
-  it("updates allowed surface panels when a hot-loaded plugin panel registers after mount", async () => {
-    const panelRegistry = new PanelRegistry()
-    renderSurface("workspace-a", {}, panelRegistry)
-
-    expect(capturedAllowedPanels).not.toContain("hot-csv.panel")
-
-    act(() => {
-      panelRegistry.register("hot-csv.panel", {
-        title: "Hot CSV",
-        placement: "center",
-        component: () => null,
-      })
-    })
-
-    await waitFor(() => expect(capturedAllowedPanels).toContain("hot-csv.panel"))
-  })
-
-  it("routes file opens through the latest matching surface resolver before activating stale tabs", async () => {
+  it("routes file opens through the latest matching surface resolver before reusing stale file tabs", async () => {
     let surface: SurfaceShellApi | undefined
     const panelRegistry = new PanelRegistry()
-    panelRegistry.register("editor", { title: "Editor", placement: "center", component: () => null })
-    panelRegistry.register("hot-csv.panel", { title: "Hot CSV", placement: "center", component: () => null })
+    panelRegistry.register("editor", { title: "Editor", placement: "center", component: () => <div>Editor</div> })
+    panelRegistry.register("hot-csv.panel", { title: "Hot CSV", placement: "center", component: () => <div>CSV</div> })
     const surfaceResolverRegistry = new SurfaceResolverRegistry()
     surfaceResolverRegistry.register("filesystem", {
       source: "builtin",
@@ -118,47 +140,6 @@ describe("SurfaceShell", () => {
         ? { id: `hot-csv:${request.target}`, component: "hot-csv.panel", params: { path: request.target }, score: 100 }
         : undefined,
     })
-    mockGetPanel = vi.fn((id: string) => id === "file:data.csv"
-      ? { api: { setActive: vi.fn(), updateParameters: vi.fn() } }
-      : undefined,
-    )
-
-    renderSurface("workspace-a", { onReady: (api) => { surface = api } }, panelRegistry, surfaceResolverRegistry)
-    await waitFor(() => expect(surface).toBeDefined())
-
-    await act(async () => {
-      await surface?.openFile("data.csv")
-    })
-
-    expect(mockAddPanel).toHaveBeenCalledWith(expect.objectContaining({
-      id: "hot-csv:data.csv",
-      component: "hot-csv.panel",
-      params: expect.objectContaining({ path: "data.csv" }),
-    }))
-  })
-
-  it("routes openSurface path requests through the latest resolver before stale file tabs", async () => {
-    let surface: SurfaceShellApi | undefined
-    const panelRegistry = new PanelRegistry()
-    panelRegistry.register("editor", { title: "Editor", placement: "center", component: () => null })
-    panelRegistry.register("hot-csv.panel", { title: "Hot CSV", placement: "center", component: () => null })
-    const surfaceResolverRegistry = new SurfaceResolverRegistry()
-    surfaceResolverRegistry.register("filesystem", {
-      source: "builtin",
-      resolve: (request) => request.kind === WORKSPACE_OPEN_PATH_SURFACE_KIND
-        ? { id: `file:${request.target}`, component: "editor", params: { path: request.target }, score: 0 }
-        : undefined,
-    })
-    surfaceResolverRegistry.register("hot-csv.surface", {
-      source: "plugin",
-      resolve: (request) => request.kind === WORKSPACE_OPEN_PATH_SURFACE_KIND && request.target.endsWith(".csv")
-        ? { id: `hot-csv:${request.target}`, component: "hot-csv.panel", params: { path: request.target }, score: 100 }
-        : undefined,
-    })
-    mockGetPanel = vi.fn((id: string) => id === "file:data.csv"
-      ? { api: { setActive: vi.fn(), updateParameters: vi.fn() } }
-      : undefined,
-    )
 
     renderSurface("workspace-a", { onReady: (api) => { surface = api } }, panelRegistry, surfaceResolverRegistry)
     await waitFor(() => expect(surface).toBeDefined())
@@ -167,17 +148,11 @@ describe("SurfaceShell", () => {
       surface?.openSurface({ kind: WORKSPACE_OPEN_PATH_SURFACE_KIND, target: "data.csv" })
     })
 
-    expect(mockAddPanel).toHaveBeenCalledWith(expect.objectContaining({
-      id: "hot-csv:data.csv",
-      component: "hot-csv.panel",
-      params: expect.objectContaining({ path: "data.csv" }),
-    }))
+    await waitFor(() => expect(surface?.getSnapshot().activeTab).toBe("hot-csv:data.csv"))
+    expect(screen.getByRole("button", { name: "Activate data.csv" })).toBeInTheDocument()
   })
 
   it("renders a reachable close-workbench button as an overlay regardless of tab state", async () => {
-    // Regression: the close action used to live in dockview's right-header
-    // slot, which gets squeezed/hidden when exactly one tab is open. It is now
-    // an always-rendered overlay, so it must be present even with zero panels.
     renderSurface("workspace-a", { onClose: vi.fn() })
 
     expect(await screen.findByRole("button", { name: "Close workbench" })).toBeInTheDocument()
@@ -197,14 +172,14 @@ describe("SurfaceShell", () => {
       },
     })
 
-    expect(screen.getByLabelText("Workbench left pane")).toBeInTheDocument()
+    expect(screen.getByLabelText("Files")).toBeInTheDocument()
     await waitFor(() => expect(surface).toBeDefined())
 
     act(() => {
       surface?.closeWorkbenchLeftPane()
     })
 
-    expect(screen.queryByLabelText("Workbench left pane")).not.toBeInTheDocument()
-    expect(screen.getAllByRole("button", { name: "Show workspace menu" }).length).toBeGreaterThan(0)
+    expect(screen.queryByLabelText("Files")).not.toBeInTheDocument()
+    expect(screen.getAllByRole("button", { name: "Show file tree" }).length).toBeGreaterThan(0)
   })
 })
