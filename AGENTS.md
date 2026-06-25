@@ -16,7 +16,8 @@ Detailed coding practices, workflow, architecture, and package docs live under `
 7. **Run relevant quality gates** before calling work done.
 8. **Never launch bare `bv`; use only `bv --robot-*`.**
 9. **Never edit `.beads/*.jsonl` by hand.** Use `br` commands.
-10. **Default communication mode:** caveman skill, full intensity, unless user says `stop caveman` or `normal mode`.
+10. **Session history is host app user data:** Pi chat transcripts/session lists are owned by the deployed core app host, not by the sandbox/workspace runtime. Store them on the host app's durable volume via `BORING_AGENT_SESSION_ROOT` (typically `/data/pi-sessions`), not in container home/root. If host-side `BORING_AGENT_WORKSPACE_ROOT=/data/workspaces`, keep the host session root as sibling `/data/pi-sessions` unless the user explicitly chooses another mounted volume.
+11. **Default communication mode:** caveman skill, full intensity, unless user says `stop caveman` or `normal mode`.
 
 ## Start here
 
