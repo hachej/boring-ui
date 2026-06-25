@@ -34,6 +34,7 @@ Allowed extra label: `source:feedback` only when the item came from
 | duplicate, invalid, out of scope | `state:done` |
 | unclear | `state:blocked phase:grill`, gate `clarity` |
 | risk classification | keep `track:owner`; upgrade to `track:fast` only if eligible |
+| flag or abstraction missing | keep `track:owner`, gate `flag` |
 | needs design or sequencing | `state:active phase:plan`, gate `plan` |
 | clear and no PR | `state:active phase:implement`, gate `implementation` |
 | PR needs review or fixes | `state:active phase:review`, gate `implementation` |
@@ -43,7 +44,8 @@ Allowed extra label: `source:feedback` only when the item came from
 ## Fast Track
 
 Use `track:fast` only for trusted-author low-risk work with small blast radius,
-obvious acceptance criteria, clean review, green CI, and current proof.
+obvious acceptance criteria, no needed flag or safe flag defaults, clean review,
+green CI, and current proof.
 
 Use `track:owner` for auth, billing, permissions, privacy, secrets, migrations,
 public API, releases, broad refactors, destructive/deletion-heavy changes,
@@ -69,6 +71,7 @@ What:
 Labels:
 Gate:
 Track:
+Flag:
 Sessions:
 Proof:
 Next action:

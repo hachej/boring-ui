@@ -21,7 +21,8 @@ Run `/triage`. One issue, one next action. Do not invent extra states.
 | --- | --- |
 | `clarity` | `/loop-grill`: grill-me plus ask-user; stay `state:blocked phase:grill` |
 | `risk` | keep `track:owner`; upgrade to `track:fast` only when all fast-track rules pass |
-| `plan` | `/loop-plan`: smallest useful plan; plan file plus thermo review for risky or multi-PR work |
+| `flag` | require `not-needed`, safe feature flag, or abstraction path before code starts |
+| `plan` | `/loop-plan`: smallest useful plan; issue-linked plan file for risky or multi-PR work |
 | `implementation` | `/loop-implement`: one worker lane for one issue/PR |
 | `proof` | tests, CI, screenshots, demo workspace proof when useful |
 | `merge` | fast-track merge or owner review |
@@ -49,6 +50,17 @@ release/publish work, or merge without policy permission.
 The parent lane owns `implementSession`. Bounded subagents or review sessions
 are allowed, but they return findings to the parent lane and get recorded in the
 session ledger.
+
+## Trunk Rule
+
+Plan-only work may edit local `main` directly. Store plans at
+`docs/kanzen/plans/<state>/gh-<number>-<slug>.md`.
+
+Code defaults to local trunk plus feature flag, then a tiny PR. If the work
+cannot be flagged, prefer branch-by-abstraction or keystone interface last. Use
+a short-lived worktree/branch only for risky, transversal, parallel, or
+not-trunk-safe work. Plans and PR cards must record `flag: not-needed`,
+`flag: <name>`, or `flag: not-flaggable + reason`.
 
 ## Review Rule
 

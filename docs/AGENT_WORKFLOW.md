@@ -134,6 +134,19 @@ archived/stale, or wrong scope; record the replacement and reason. If planning
 naturally becomes implementation in the same Pi thread, carry the id forward,
 for example `implementSession: <same id as planSession>`.
 
+## Trunk, flags, and plans
+
+Plan-only work may happen on local `main`; it does not need a branch or
+worktree. Store issue-linked plans as
+`docs/kanzen/plans/<state>/gh-<number>-<slug>.md` and move them only when the
+Kanzen state meaningfully changes.
+
+For code, prefer local trunk plus a safe feature flag and publish as a tiny PR.
+If the change cannot be feature-flagged, use branch-by-abstraction, keystone
+interface last, shadow mode, or expand/contract migration. Use a short-lived
+worktree/branch only when the work is still risky, transversal, parallel, or
+cannot keep trunk green.
+
 ## GitHub proof of work
 
 For issue/PR implementations, follow [`docs/procedures/proof-of-work.md`](procedures/proof-of-work.md).

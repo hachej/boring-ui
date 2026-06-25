@@ -19,6 +19,7 @@ Every issue card should be understandable from these columns:
 | Phase | What is next? | `triage`, `grill`, `plan`, `implement`, `review`, `merge` |
 | Track | Who merges? | `fast` or `owner` |
 | Gate | Why stopped? | `clarity`, `plan`, `proof`, `merge` |
+| Flag | How is runtime exposure controlled? | `not-needed`, `flag:<name>` |
 | Proof | Is it verified? | tests, CI, demo, screenshot, waiver |
 | Sessions | Which Pi threads continue it? | `planSession`, `implementSession` |
 | Next | One action | `/loop-grill`, `/loop-plan`, `/loop-implement` |
@@ -49,7 +50,7 @@ Use labels for routing, not judgment essays.
 
 Do not add labels for `bug`, `ui`, `accessibility`, `package:*`, `plugin:*`,
 or `gate:*`. Structured fields carry the details: `area`, `kind`, `gate`,
-`risk`, `proofRequired`, `proofState`, `reviewState`, `reviewedSha`,
+`risk`, `flag`, `proofRequired`, `proofState`, `reviewState`, `reviewedSha`,
 `mergeMode`, `nextAction`, plus session fields.
 
 ## Session Continuity
@@ -83,6 +84,7 @@ Evaluate gates top to bottom and stop at the first failing row.
 | `intake` | issue has context, redaction note, first plan | fix issue body |
 | `clarity` | issue is clear enough | `/loop-grill` |
 | `risk` | `track:owner` is confirmed or upgraded to `track:fast` | keep owner track |
+| `flag` | no flag needed, or safe flag/abstraction path exists | choose flag/abstraction |
 | `plan` | inline plan is enough, or plan file passed thermo review | `/loop-plan` |
 | `implementation` | PR exists and review loop is clean | `/loop-implement` |
 | `proof` | tests, CI, demo, screenshots, or waiver are current | run proof |
@@ -121,6 +123,69 @@ Allowed only when all are true:
 
 Everything else is `track:owner`: agents may prepare the PR, but Julien reviews
 before merge.
+
+## Trunk And Flags
+
+Use trunk-based work by default, but keep remote `main` protected.
+
+| Case | Default |
+| --- | --- |
+| plan-only work | edit on local `main`; no branch or worktree |
+| small single-lane code | local trunk plus feature flag, then tiny PR |
+| not flaggable | branch-by-abstraction or keystone interface last |
+| still risky | short-lived worktree/branch |
+| transversal | plan first, stacked PRs, owner gate |
+
+Feature flags are the isolation boundary for non-trivial runtime behavior:
+
+```text
+flag:
+default:
+owner:
+blastRadius:
+rollback:
+removeBy:
+```
+
+Default flags off in production and on only in dev/demo when useful. If no flag
+is needed, say why. If no safe flag exists, use abstraction, shadow mode,
+expand/contract migration, or a short-lived worktree.
+
+## Plan Files
+
+Plan files are workflow artifacts, so keep them under Kanzen and tie them to a
+GitHub item before implementation starts:
+
+```text
+docs/kanzen/plans/
+  queued/gh-123-short-slug.md
+  blocked/gh-123-short-slug.md
+  active/gh-123-short-slug.md
+  ready/gh-123-short-slug.md
+  done/gh-123-short-slug.md
+```
+
+Naming rule: `gh-<issue-or-pr-number>-<short-slug>.md`. If no GitHub item
+exists yet, create one first. Temporary research may use
+`queued/no-issue-YYYY-MM-DD-short-slug.md`, but it must become GitHub-linked
+before code starts.
+
+Move the file only when the Kanzen state meaningfully changes. Keep state in
+frontmatter too so moved files remain searchable:
+
+```yaml
+github: https://github.com/hachej/boring-ui/issues/123
+state: active
+phase: plan
+track: owner
+flag: not-needed
+planSession:
+planReviewSession:
+updated: 2026-06-25
+```
+
+Plan-only edits do not need a branch/worktree. Code starts only after the plan
+states the flag/abstraction strategy, proof path, and owner gate.
 
 ## Loop Commands
 
