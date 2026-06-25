@@ -35,7 +35,6 @@ function AppLeftPaneResizeHandle({ onResize }: { onResize: (delta: number) => vo
       role="separator"
       aria-label="Resize app navigation"
       aria-orientation="vertical"
-      tabIndex={0}
       onPointerDown={startResize}
       className="group relative z-20 -ml-px w-1 shrink-0 cursor-col-resize touch-none bg-transparent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
     >
