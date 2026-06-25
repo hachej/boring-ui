@@ -254,6 +254,75 @@ describe("WorkspaceProvider — panel registration", () => {
     expect(screen.getByTestId("source-default-panel").textContent).toBe("legacy-center")
   })
 
+  it("adapts legacy workspace-source panel PaneProps containerApi to source openPanel", () => {
+    function LegacyPanel({ containerApi }: PaneProps) {
+      return (
+        <button
+          type="button"
+          onClick={() => containerApi.addPanel({
+            id: "legacy-opened",
+            component: "legacy.center",
+            title: "Legacy Center",
+            params: { from: "legacy" },
+          })}
+        >
+          Open legacy center
+        </button>
+      )
+    }
+    const onOpenPanel = vi.fn()
+    const legacyPanel: PanelConfig = {
+      id: "legacy-source",
+      title: "Legacy Source",
+      component: LegacyPanel,
+      placement: "workspace-source",
+      defaultPanelId: "legacy.center",
+      source: "app",
+    }
+
+    render(
+      <WorkspaceProvider panels={[legacyPanel]} persistenceEnabled={false}>
+        <WorkbenchLeftPane defaultTab="legacy-source" onOpenPanel={onOpenPanel} />
+      </WorkspaceProvider>,
+    )
+
+    fireEvent.click(screen.getByRole("button", { name: "Open legacy center" }))
+
+    expect(onOpenPanel).toHaveBeenCalledWith({
+      id: "legacy-opened",
+      component: "legacy.center",
+      title: "Legacy Center",
+      params: { from: "legacy" },
+    })
+  })
+
+  it("legacy workspace-source panel adapter throws clearly for unsupported Dockview api use", async () => {
+    const consoleError = vi.spyOn(console, "error").mockImplementation(() => undefined)
+    function BadLegacyPanel({ api }: PaneProps) {
+      api.close()
+      return null
+    }
+    const legacyPanel: PanelConfig = {
+      id: "bad-legacy-source",
+      title: "Bad Legacy Source",
+      component: BadLegacyPanel,
+      placement: "workspace-source",
+      source: "app",
+    }
+
+    try {
+      render(
+        <WorkspaceProvider panels={[legacyPanel]} persistenceEnabled={false}>
+          <WorkbenchLeftPane defaultTab="bad-legacy-source" />
+        </WorkspaceProvider>,
+      )
+
+      expect(await screen.findByText(/cannot use Dockview api\.close/)).toBeInTheDocument()
+    } finally {
+      consoleError.mockRestore()
+    }
+  })
+
   it("registers Files as a workspace source, not a Dockview panel", () => {
     function Inspector() {
       const sources = useWorkspaceSourceRegistry()
