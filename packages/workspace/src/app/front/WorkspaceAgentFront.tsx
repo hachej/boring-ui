@@ -931,7 +931,7 @@ export function WorkspaceAgentFront<
     [plugins],
   )
   const hasLeftTabs = useMemo(
-    () => capturedPlugins.some((plugin) => plugin.registrations.leftTabs.length > 0),
+    () => capturedPlugins.some((plugin) => plugin.registrations.workspaceSources.length > 0),
     [capturedPlugins],
   )
   const pluginPanelIds = useMemo(
