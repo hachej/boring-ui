@@ -24,7 +24,7 @@ import {
   InputGroupTextarea,
 } from "@hachej/boring-ui-kit";
 import { Input, Spinner } from "@hachej/boring-ui-kit";
-import { cn } from "@/front/lib";
+import { cn } from "../lib";
 import type { ChatStatus, SourceDocumentUIPart } from "ai";
 import {
   CornerDownLeftIcon,

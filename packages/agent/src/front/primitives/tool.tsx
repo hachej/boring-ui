@@ -8,7 +8,7 @@
  * without local invention.
  */
 import { Badge, Collapsible, CollapsibleContent, CollapsibleTrigger } from "@hachej/boring-ui-kit";
-import { cn } from "@/front/lib";
+import { cn } from "../lib";
 import {
   CheckCircleIcon,
   ChevronDownIcon,
