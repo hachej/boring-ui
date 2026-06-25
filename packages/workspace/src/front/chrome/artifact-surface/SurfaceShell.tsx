@@ -1,8 +1,8 @@
 "use client"
 
-import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react"
-import type { DockviewApi } from "dockview-react"
-import { ChevronRight, Menu } from "lucide-react"
+import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore, type ComponentType } from "react"
+import type { DockviewApi, DockviewPanelApi } from "dockview-react"
+import { ChevronRight, FolderTree, Maximize2, Menu, MoreHorizontal, Plus } from "lucide-react"
 import { ControlTooltip } from "../../components/ControlTooltip"
 import { Button, IconButton } from "@hachej/boring-ui-kit"
 import { cn } from "../../lib/utils"
@@ -12,6 +12,7 @@ import type { WorkspaceState, PanelState } from "../../store/types"
 import { WorkbenchLeftPane } from "../workbench-left/WorkbenchLeftPane"
 import { useRegistry, useSurfaceResolverRegistry } from "../../registry"
 import type { SurfaceOpenRequest } from "../../../shared/types/surface"
+import type { PaneProps } from "../../../shared/types/panel"
 import { WORKSPACE_OPEN_PATH_SURFACE_KIND } from "../../../shared/types/surface"
 import {
   findOpenFilePanel,
@@ -41,6 +42,11 @@ export interface OpenPanelConfig {
   title?: string
   /** Arbitrary params passed to the pane component. */
   params?: Record<string, unknown>
+}
+
+interface WorkspacePaneTab extends OpenPanelConfig {
+  kind: "files" | "plugin"
+  filetreeOpen?: boolean
 }
 
 export interface SurfaceShellApi {
@@ -75,6 +81,8 @@ export interface SurfaceShellProps {
   onChange?: (snapshot: SurfaceShellSnapshot) => void
   /** Optional close action for hosts that model the workbench as collapsible. */
   onClose?: () => void
+  fullscreen?: boolean
+  onToggleFullscreen?: () => void
   /**
    * Extra panel ids (registered via WorkspaceProvider's `panels` prop) that
    * this workbench is allowed to render. Defaults to the built-in
@@ -95,6 +103,13 @@ export interface SurfaceShellProps {
 
 const COLLAPSED_WIDTH = 40
 const FILE_BACKED_PARAM = "__boringFileBacked"
+const WORKSPACE_TABS_STORAGE_VERSION = 1
+
+interface StoredWorkspaceTabsEnvelope {
+  v: number
+  tabs: WorkspacePaneTab[]
+  activeTab: string | null
+}
 
 function fileBackedPath(
   panel: PanelState | null | undefined,
@@ -130,6 +145,70 @@ function err(code: string, message: string): CommandResult {
   return { seq: ++seqCounter, status: "error", error: { code, message } }
 }
 
+function workspaceTabsStorageKey(storageKey: string): string {
+  return `${storageKey}:workspaceTabs`
+}
+
+function defaultWorkspaceTabs(): WorkspacePaneTab[] {
+  return [{
+    id: "files",
+    component: "__files-home",
+    title: "Files",
+    kind: "files" as const,
+    filetreeOpen: true,
+  }]
+}
+
+function tabsFromInitialPanels(initialPanels: SurfaceShellProps["initialPanels"]): WorkspacePaneTab[] {
+  const tabs = (initialPanels ?? []).map((panel) => ({
+    id: panel.id,
+    component: panel.component,
+    title: panel.title ?? panel.id,
+    params: panel.params,
+    kind: "plugin" as const,
+    filetreeOpen: false,
+  }))
+  return tabs.length > 0 ? tabs : defaultWorkspaceTabs()
+}
+
+function readStoredWorkspaceTabs(storageKey: string | undefined): StoredWorkspaceTabsEnvelope | null {
+  if (!storageKey) return null
+  try {
+    const raw = localStorage.getItem(workspaceTabsStorageKey(storageKey))
+    if (!raw) return null
+    const parsed = JSON.parse(raw) as Partial<StoredWorkspaceTabsEnvelope>
+    if (parsed.v !== WORKSPACE_TABS_STORAGE_VERSION || !Array.isArray(parsed.tabs)) return null
+    const tabs = parsed.tabs.filter((tab): tab is WorkspacePaneTab => (
+      typeof tab === "object" && tab !== null &&
+      typeof tab.id === "string" && tab.id.length > 0 &&
+      typeof tab.component === "string" && tab.component.length > 0 &&
+      (tab.kind === "files" || tab.kind === "plugin")
+    ))
+    if (tabs.length === 0) return null
+    const activeTab = typeof parsed.activeTab === "string" && tabs.some((tab) => tab.id === parsed.activeTab)
+      ? parsed.activeTab
+      : tabs[0]?.id ?? null
+    return { v: WORKSPACE_TABS_STORAGE_VERSION, tabs, activeTab }
+  } catch {
+    return null
+  }
+}
+
+function writeStoredWorkspaceTabs(storageKey: string | undefined, tabs: WorkspacePaneTab[], activeTab: string | null): void {
+  if (!storageKey) return
+  try {
+    if (tabs.length === 0) {
+      localStorage.removeItem(workspaceTabsStorageKey(storageKey))
+      return
+    }
+    const safeActive = activeTab && tabs.some((tab) => tab.id === activeTab) ? activeTab : tabs[0]?.id ?? null
+    localStorage.setItem(
+      workspaceTabsStorageKey(storageKey),
+      JSON.stringify({ v: WORKSPACE_TABS_STORAGE_VERSION, tabs, activeTab: safeActive }),
+    )
+  } catch {}
+}
+
 export function SurfaceShell({
   rootDir = "",
   sidebarDefaultWidth = 240,
@@ -139,6 +218,8 @@ export function SurfaceShell({
   onReady,
   onChange,
   onClose,
+  fullscreen = false,
+  onToggleFullscreen,
   extraPanels,
   defaultLeftTab,
   onReloadAgentPlugins,
@@ -206,6 +287,9 @@ export function SurfaceShell({
   panelRegistryRef.current = panelRegistry
   const surfaceResolverRegistryRef = useRef(surfaceResolverRegistry)
   surfaceResolverRegistryRef.current = surfaceResolverRegistry
+  const collapsedRef = useRef(collapsed)
+  collapsedRef.current = collapsed
+  const autoCollapsedByRef = useRef<string | null>(null)
   const allowedPanels = useMemo(() => {
     const ids = new Set<string>()
     for (const panel of panelRegistrySnapshot) {
@@ -216,77 +300,80 @@ export function SurfaceShell({
     }
     return [...ids]
   }, [extraPanels, panelRegistrySnapshot])
+  const [workspaceTabs, setWorkspaceTabs] = useState<WorkspacePaneTab[]>(() => (
+    readStoredWorkspaceTabs(storageKey)?.tabs ?? tabsFromInitialPanels(initialPanels)
+  ))
+  const [activeWorkspaceTabId, setActiveWorkspaceTabId] = useState<string | null>(() => {
+    const stored = readStoredWorkspaceTabs(storageKey)
+    return stored?.activeTab ?? tabsFromInitialPanels(initialPanels)[0]?.id ?? null
+  })
+  const [pluginMenuOpen, setPluginMenuOpen] = useState(false)
+  const workspaceTabsRef = useRef<WorkspacePaneTab[]>([])
+  const activeWorkspaceTabIdRef = useRef<string | null>(null)
+  workspaceTabsRef.current = workspaceTabs
+  activeWorkspaceTabIdRef.current = activeWorkspaceTabId
+  const pluginMenuEntries = useMemo(() => {
+    const entries: Array<{ id: string; title: string; component?: string; kind: "files" | "panel"; multiple?: boolean }> = [
+      { id: "files", title: "File", kind: "files", multiple: true },
+    ]
+    for (const panel of panelRegistrySnapshot) {
+      if (panel.placement === "center" && panel.sidebarPolicy === "collapse") {
+        entries.push({ id: panel.id, title: panel.title, component: panel.id, kind: "panel", multiple: false })
+      }
+    }
+    return entries
+  }, [panelRegistrySnapshot])
+  const activeWorkspaceTab = useMemo(
+    () => workspaceTabs.find((tab) => tab.id === activeWorkspaceTabId) ?? workspaceTabs[0] ?? null,
+    [activeWorkspaceTabId, workspaceTabs],
+  )
+  const openWorkspaceTab = useCallback((tab: WorkspacePaneTab) => {
+    setWorkspaceTabs((current) => {
+      const existing = current.findIndex((candidate) => candidate.id === tab.id)
+      if (existing >= 0) {
+        const next = [...current]
+        next[existing] = { ...next[existing]!, ...tab }
+        return next
+      }
+      return [...current, tab]
+    })
+    setActiveWorkspaceTabId(tab.id)
+    setPluginMenuOpen(false)
+  }, [])
 
   const openFileSync = useCallback((path: string) => {
-    const api = apiRef.current
-    if (!api) {
-      console.warn("[SurfaceShell] openFile: surface not ready (dockview not initialized)")
-      return
-    }
     const normalizedPath = normalizeWorkbenchPath(path)
     const request: SurfaceOpenRequest = {
       kind: WORKSPACE_OPEN_PATH_SURFACE_KIND,
       target: normalizedPath,
     }
     const resolved = surfaceResolverRegistryRef.current.resolve(request)
-    if (resolved) {
-      if (!panelRegistryRef.current.has(resolved.component)) {
-        console.warn(`[SurfaceShell] openFile: resolver returned unknown panel "${resolved.component}" for "${normalizedPath}"`)
-        return
-      }
-      const panelId = surfacePanelId(request, resolved)
-      fileBackedPanelIdsRef.current.add(panelId)
-      const existingByResolvedId = api.getPanel(panelId)
-      const params = fileBackedParams(resolved.params, normalizedPath)
-      if (existingByResolvedId) {
-        existingByResolvedId.api.updateParameters(params)
-        existingByResolvedId.api.setActive()
-        return
-      }
-      api.addPanel({
-        id: panelId,
-        component: resolved.component,
-        title: resolved.title ?? normalizedPath.split("/").pop() ?? normalizedPath,
-        params,
-      })
+    if (!resolved) {
+      console.warn(`[SurfaceShell] openFile: no surface resolver matched "${normalizedPath}"`)
       return
     }
-
-    const existing = findOpenFilePanel(api, normalizedPath)
-    if (existing) {
-      existing.api.setActive()
+    if (!panelRegistryRef.current.has(resolved.component)) {
+      console.warn(`[SurfaceShell] openFile: resolver returned unknown panel "${resolved.component}" for "${normalizedPath}"`)
       return
     }
-    console.warn(`[SurfaceShell] openFile: no surface resolver matched "${normalizedPath}"`)
-  }, [])
+    const panelId = surfacePanelId(request, resolved)
+    fileBackedPanelIdsRef.current.add(panelId)
+    const params = fileBackedParams(resolved.params, normalizedPath)
+    openWorkspaceTab({
+      id: panelId,
+      component: resolved.component,
+      title: resolved.title ?? normalizedPath.split("/").pop() ?? normalizedPath,
+      params,
+      kind: "files",
+      filetreeOpen: false,
+    })
+  }, [openWorkspaceTab])
 
   const openSurfaceSync = useCallback((request: SurfaceOpenRequest) => {
-    const api = apiRef.current
-    if (!api) {
-      console.warn("[SurfaceShell] openSurface: surface not ready (dockview not initialized)")
-      return
-    }
     const normalizedRequest = normalizeSurfaceOpenRequest(request)
     const resolved = surfaceResolverRegistryRef.current.resolve(normalizedRequest)
     if (!resolved) {
       console.warn(`[SurfaceShell] openSurface: no resolver matched kind="${normalizedRequest.kind}" target="${normalizedRequest.target}"`)
-      return
-    }
-    const panelId = surfacePanelId(normalizedRequest, resolved)
-    if (normalizedRequest.kind === WORKSPACE_OPEN_PATH_SURFACE_KIND) {
-      fileBackedPanelIdsRef.current.add(panelId)
-    }
-    const existing = api.getPanel(panelId)
-    const closeWorkbenchOnDone = normalizedRequest.meta?.closeWorkbenchOnDone === true
-    const baseParams = normalizedRequest.kind === WORKSPACE_OPEN_PATH_SURFACE_KIND
-      ? fileBackedParams(resolved.params, normalizedRequest.target)
-      : resolved.params
-    const resolvedParams = closeWorkbenchOnDone && onCloseRef.current
-      ? { ...(baseParams ?? {}), __closeWorkbenchOnDone: onCloseRef.current }
-      : baseParams
-    if (existing) {
-      if (resolvedParams) existing.api.updateParameters(resolvedParams)
-      existing.api.setActive()
       return
     }
     const registry = panelRegistryRef.current
@@ -297,35 +384,28 @@ export function SurfaceShell({
           `Register the component through a panel output before resolving to it.`,
       )
     }
-    api.addPanel({
+    const panelId = surfacePanelId(normalizedRequest, resolved)
+    if (normalizedRequest.kind === WORKSPACE_OPEN_PATH_SURFACE_KIND) {
+      fileBackedPanelIdsRef.current.add(panelId)
+    }
+    const closeWorkbenchOnDone = normalizedRequest.meta?.closeWorkbenchOnDone === true
+    const baseParams = normalizedRequest.kind === WORKSPACE_OPEN_PATH_SURFACE_KIND
+      ? fileBackedParams(resolved.params, normalizedRequest.target)
+      : resolved.params
+    const resolvedParams = closeWorkbenchOnDone && onCloseRef.current
+      ? { ...(baseParams ?? {}), __closeWorkbenchOnDone: onCloseRef.current }
+      : baseParams
+    openWorkspaceTab({
       id: panelId,
       component: resolved.component,
       title: resolved.title ?? normalizedRequest.target,
       params: resolvedParams,
+      kind: normalizedRequest.kind === WORKSPACE_OPEN_PATH_SURFACE_KIND ? "files" : "plugin",
+      filetreeOpen: false,
     })
-  }, [])
+  }, [openWorkspaceTab])
 
   const openPanelSync = useCallback((config: OpenPanelConfig) => {
-    const api = apiRef.current
-    if (!api) return
-    const existing = api.getPanel(config.id)
-    if (existing) {
-      // Re-activate, and update params if they changed (so callers can drive
-      // pane state by re-issuing openPanel with new params — same panel, new
-      // input).
-      if (config.params) {
-        existing.api.updateParameters(config.params)
-      }
-      existing.api.setActive()
-      return
-    }
-    // Validate the component is actually registered. Without this check,
-    // dockview happily creates an empty tab when handed an unknown
-    // component name (it falls back to a no-op renderer). That's how the
-    // agent's "openPanel({component:'chart'})" produced a blank workbench
-    // with no error signal in either direction. Refuse loudly here so the
-    // failure is visible at the call site and (when called via exec_ui)
-    // surfaces back to the LLM through the UI bridge error path.
     const registry = panelRegistryRef.current
     if (!registry.has(config.component)) {
       const known = registry.list().map((p) => p.id).join(", ")
@@ -334,23 +414,23 @@ export function SurfaceShell({
           `Add the component to WorkspaceProvider's "panels" prop, or pick one of the registered ids.`,
       )
     }
-    api.addPanel({
+    const registeredPanel = registry.get(config.component)
+    openWorkspaceTab({
       id: config.id,
       component: config.component,
-      title: config.title ?? config.id,
+      title: config.title ?? registeredPanel?.title ?? config.id,
       params: config.params,
+      kind: registeredPanel?.sidebarPolicy === "collapse" ? "plugin" : "plugin",
+      filetreeOpen: false,
     })
-  }, [])
+  }, [openWorkspaceTab])
 
   const getSnapshot = useCallback((): SurfaceShellSnapshot => {
-    const api = apiRef.current
-    if (!api) return { openTabs: [], activeTab: null }
-    const openTabs: SurfaceShellTab[] = api.panels.map((p) => ({
-      id: p.id,
-      title: (p.title ?? p.id) as string,
-      params: (p.params as Record<string, unknown> | undefined) ?? undefined,
-    }))
-    return { openTabs, activeTab: api.activePanel?.id ?? null }
+    const tabs = workspaceTabsRef.current
+    return {
+      openTabs: tabs.map((tab) => ({ id: tab.id, title: tab.title ?? tab.id, params: tab.params })),
+      activeTab: activeWorkspaceTabIdRef.current,
+    }
   }, [])
 
   const emitBridgeEvent = useCallback(<K extends keyof BridgeEventMap>(
@@ -379,24 +459,34 @@ export function SurfaceShell({
     openFile: openFileSync,
     openSurface: openSurfaceSync,
     openPanel: openPanelSync,
-    closeWorkbenchLeftPane: () => setCollapsed(true),
+    closeWorkbenchLeftPane: () => {
+      autoCollapsedByRef.current = null
+      setCollapsed(true)
+      const activeId = activeWorkspaceTabIdRef.current
+      if (activeId) {
+        setWorkspaceTabs((prev) => prev.map((tab) => (
+          tab.id === activeId && tab.kind === "files"
+            ? { ...tab, filetreeOpen: false }
+            : tab
+        )))
+      }
+    },
     expandToFile: expandToFileSync,
     getSnapshot,
   }), [expandToFileSync, getSnapshot, openFileSync, openPanelSync, openSurfaceSync])
 
   const getBridgeState = useCallback((): WorkspaceState => {
-    const api = apiRef.current
-    const panels: PanelState[] = api
-      ? api.panels.map((p) => ({
-          id: p.id,
-          component: String((p as { component?: string }).component ?? ""),
-          params: (p.params as Record<string, unknown> | undefined) ?? undefined,
-        }))
-      : []
-    const activePanel = api?.activePanel?.id ?? null
-    const fileBackedPanelIds = fileBackedPanelIdsRef.current
-    const activePanelState = panels.find((panel) => panel.id === activePanel)
-    const activeFile = fileBackedPath(activePanelState, fileBackedPanelIds)
+    const tabs = workspaceTabsRef.current
+    const activePanel = activeWorkspaceTabIdRef.current
+    const panels: PanelState[] = tabs.map((tab) => ({
+      id: tab.id,
+      component: tab.component,
+      params: tab.params,
+    }))
+    const activePanelState = tabs.find((tab) => tab.id === activePanel)
+    const activeFile = activePanelState?.kind === "files" && typeof activePanelState.params?.path === "string"
+      ? activePanelState.params.path
+      : null
     return {
       hydrationComplete: true,
       layout: null,
@@ -406,9 +496,9 @@ export function SurfaceShell({
       panels,
       activePanel,
       activeFile,
-      visibleFiles: panels
-        .map((panel) => fileBackedPath(panel, fileBackedPanelIds))
-        .filter((p): p is string => p !== null),
+      visibleFiles: tabs
+        .filter((tab) => tab.kind === "files" && typeof tab.params?.path === "string")
+        .map((tab) => tab.params!.path as string),
       dirtyFiles: {},
       notifications: [],
     }
@@ -420,6 +510,16 @@ export function SurfaceShell({
       handler(state)
     }
   }, [getBridgeState])
+
+  useEffect(() => {
+    onReadyRef.current?.(localSurfaceApi)
+  }, [localSurfaceApi])
+
+  useEffect(() => {
+    const snapshot = getSnapshot()
+    onChangeRef.current?.(snapshot)
+    emitBridgeState()
+  }, [activeWorkspaceTabId, emitBridgeState, getSnapshot, workspaceTabs])
 
   const initializedPanelsRef = useRef(false)
   const handleReady = useCallback((ready: DockviewApi) => {
@@ -444,7 +544,26 @@ export function SurfaceShell({
     }
     ready.onDidAddPanel(emit)
     ready.onDidRemovePanel(emit)
-    ready.onDidActivePanelChange(emit)
+    ready.onDidActivePanelChange(() => {
+      emit()
+      const active = ready.activePanel
+      if (!active) return
+      const compId =
+        (active as { contentComponent?: string }).contentComponent ?? active.id
+      const config = panelRegistryRef.current.get(compId)
+      if (config?.sidebarPolicy === "collapse") {
+        if (!collapsedRef.current) {
+          autoCollapsedByRef.current = compId
+          setCollapsed(true)
+        }
+      } else if (
+        collapsedRef.current &&
+        autoCollapsedByRef.current !== null
+      ) {
+        // Leaving a standalone panel should not force-open the filetree.
+        autoCollapsedByRef.current = null
+      }
+    })
     // Initial snapshot once everyone's wired up.
     emit()
   }, [localSurfaceApi, getSnapshot, emitBridgeState])
@@ -453,45 +572,8 @@ export function SurfaceShell({
   const openFile = useCallback(
     async (path: string): Promise<CommandResult> => {
       try {
-        const api = apiRef.current
-        if (!api) return err("not-ready", "surface not ready")
-        const normalizedPath = normalizeWorkbenchPath(path)
-        const request: SurfaceOpenRequest = {
-          kind: WORKSPACE_OPEN_PATH_SURFACE_KIND,
-          target: normalizedPath,
-        }
-        const resolved = surfaceResolverRegistryRef.current.resolve(request)
-        if (resolved) {
-          if (!panelRegistryRef.current.has(resolved.component)) {
-            return err(
-              "NO_SURFACE_PANEL",
-              `surface resolver "${request.kind}" returned unknown panel "${resolved.component}"`,
-            )
-          }
-          const panelId = surfacePanelId(request, resolved)
-          fileBackedPanelIdsRef.current.add(panelId)
-          const params = fileBackedParams(resolved.params, normalizedPath)
-          const existingByResolvedId = api.getPanel(panelId)
-          if (existingByResolvedId) {
-            existingByResolvedId.api.updateParameters(params)
-            existingByResolvedId.api.setActive()
-            return ok()
-          }
-          api.addPanel({
-            id: panelId,
-            component: resolved.component,
-            title: resolved.title ?? normalizedPath.split("/").pop() ?? normalizedPath,
-            params,
-          })
-          return ok()
-        }
-
-        const existing = findOpenFilePanel(api, normalizedPath)
-        if (existing) {
-          existing.api.setActive()
-          return ok()
-        }
-        return err("NO_SURFACE_RESOLVER", `no registered surface resolver handles ${normalizedPath}`)
+        openFileSync(path)
+        return ok()
       } catch (error) {
         return err(
           "INVALID_SURFACE_PATH",
@@ -499,7 +581,7 @@ export function SurfaceShell({
         )
       }
     },
-    [],
+    [openFileSync],
   )
 
   const bridge = useMemo<WorkspaceBridge>(() => {
@@ -509,10 +591,33 @@ export function SurfaceShell({
       getDirtyFiles: () => [],
       getVisibleFiles: () => getBridgeState().visibleFiles,
       openFile,
-      openPanel: async () => ok(),
-      closePanel: async () => ok(),
+      openPanel: async (config) => {
+        try {
+          openPanelSync(config)
+          return ok()
+        } catch (error) {
+          return err("OPEN_PANEL", error instanceof Error ? error.message : "failed to open panel")
+        }
+      },
+      closePanel: async (id) => {
+        setWorkspaceTabs((current) => current.filter((tab) => tab.id !== id))
+        if (activeWorkspaceTabIdRef.current === id) {
+          const next = workspaceTabsRef.current.find((tab) => tab.id !== id) ?? null
+          setActiveWorkspaceTabId(next?.id ?? null)
+        }
+        return ok()
+      },
       closeWorkbenchLeftPane: async () => {
+        autoCollapsedByRef.current = null
         setCollapsed(true)
+        const activeId = activeWorkspaceTabIdRef.current
+        if (activeId) {
+          setWorkspaceTabs((prev) => prev.map((tab) => (
+            tab.id === activeId && tab.kind === "files"
+              ? { ...tab, filetreeOpen: false }
+              : tab
+          )))
+        }
         return ok()
       },
       showNotification: async () => ok(),
@@ -565,7 +670,7 @@ export function SurfaceShell({
       const state = dragStateRef.current
       if (!state) return
       const delta = e.clientX - state.startX
-      const next = Math.max(sidebarMinWidth, Math.min(sidebarMaxWidth, state.startWidth + delta))
+      const next = Math.max(sidebarMinWidth, Math.min(sidebarMaxWidth, state.startWidth - delta))
       setSidebarWidth(next)
     },
     [sidebarMinWidth, sidebarMaxWidth],
@@ -583,10 +688,10 @@ export function SurfaceShell({
       const step = e.shiftKey ? 32 : 16
       if (e.key === "ArrowLeft") {
         e.preventDefault()
-        setSidebarWidth((w) => Math.max(sidebarMinWidth, w - step))
+        setSidebarWidth((w) => Math.min(sidebarMaxWidth, w + step))
       } else if (e.key === "ArrowRight") {
         e.preventDefault()
-        setSidebarWidth((w) => Math.min(sidebarMaxWidth, w + step))
+        setSidebarWidth((w) => Math.max(sidebarMinWidth, w - step))
       } else if (e.key === "Home") {
         e.preventDefault()
         setSidebarWidth(sidebarMinWidth)
@@ -597,6 +702,17 @@ export function SurfaceShell({
     },
     [collapsed, sidebarMinWidth, sidebarMaxWidth],
   )
+
+  useEffect(() => {
+    const stored = readStoredWorkspaceTabs(storageKey)
+    const tabs = stored?.tabs ?? tabsFromInitialPanels(initialPanels)
+    setWorkspaceTabs(tabs)
+    setActiveWorkspaceTabId(stored?.activeTab ?? tabs[0]?.id ?? null)
+  }, [storageKey])
+
+  useEffect(() => {
+    writeStoredWorkspaceTabs(storageKey, workspaceTabs, activeWorkspaceTabId)
+  }, [activeWorkspaceTabId, storageKey, workspaceTabs])
 
   // Persist sidebar width. (The on-mount READ moved into the useState lazy
   // initializer so the first render is already hydrated — without that, the
@@ -616,101 +732,345 @@ export function SurfaceShell({
     } catch {}
   }, [storageKey, collapsed])
 
+  const panelComponents = useMemo(() => panelRegistry.getComponents(), [panelRegistry, panelRegistrySnapshot])
+  const activeComponent = activeWorkspaceTab ? panelComponents[activeWorkspaceTab.component] ?? null : null
+  const activeFilePath = activeWorkspaceTab?.kind === "files" && typeof activeWorkspaceTab.params?.path === "string"
+    ? activeWorkspaceTab.params.path
+    : null
+  const updateWorkspaceTab = useCallback((id: string, patch: Partial<WorkspacePaneTab>) => {
+    setWorkspaceTabs((current) => current.map((tab) => tab.id === id ? { ...tab, ...patch } : tab))
+  }, [])
+  const closeWorkspaceTab = useCallback((id: string) => {
+    setWorkspaceTabs((current) => {
+      const next = current.filter((tab) => tab.id !== id)
+      if (activeWorkspaceTabIdRef.current === id) {
+        setActiveWorkspaceTabId(next[0]?.id ?? null)
+      }
+      return next
+    })
+  }, [])
+  const openPluginEntry = useCallback((entry: { id: string; title: string; component?: string; kind: "files" | "panel"; multiple?: boolean }) => {
+    setPluginMenuOpen(false)
+    if (entry.kind === "files") {
+      openWorkspaceTab({
+        id: `files:${Date.now()}`,
+        component: "__files-home",
+        title: "Files",
+        params: {},
+        kind: "files",
+        filetreeOpen: true,
+      })
+      return
+    }
+    if (!entry.component) return
+    if (entry.multiple === false) {
+      const existing = workspaceTabsRef.current.find((tab) => tab.component === entry.component)
+      if (existing) {
+        setActiveWorkspaceTabId(existing.id)
+        return
+      }
+    }
+    openWorkspaceTab({
+      id: entry.multiple === false ? entry.component : `${entry.component}:${Date.now()}`,
+      component: entry.component,
+      title: entry.title,
+      params: {},
+      kind: "plugin",
+      filetreeOpen: false,
+    })
+  }, [openWorkspaceTab])
+
   return (
     <div
       ref={containerRef}
       data-boring-workspace-part="surface"
-      className={cn("flex h-full min-h-0 w-full bg-background", className)}
+      data-boring-surface-mode="workspace-tabs"
+      className={cn("flex h-full min-h-0 w-full flex-col bg-background", className)}
       data-testid="surface-shell"
     >
-      {!collapsed ? (
-        <>
-          <aside
-            data-boring-workspace-part="surface-sidebar"
-            data-boring-state="expanded"
-            className="flex h-full min-h-0 flex-col"
-            style={{ width: sidebarWidth, minWidth: sidebarWidth, maxWidth: sidebarWidth }}
-            aria-label="Workbench left pane"
-          >
-            <WorkbenchLeftPane
-              rootDir={rootDir}
-              bridge={bridge}
-              defaultTab={defaultLeftTab}
-              revealFileTreeRequest={fileTreeRevealRequest}
-              onOpenPanel={openPanelSync}
-              onReloadAgentPlugins={onReloadAgentPlugins}
-              onCollapse={() => setCollapsed(true)}
-            />
-          </aside>
+      <WorkspaceSurfaceTopBar
+        tabs={workspaceTabs}
+        activeTabId={activeWorkspaceTab?.id ?? null}
+        activePath={activeFilePath}
+        filetreeOpen={Boolean(activeWorkspaceTab?.kind === "files" && activeWorkspaceTab.filetreeOpen)}
+        pluginMenuOpen={pluginMenuOpen}
+        pluginEntries={pluginMenuEntries}
+        onActivateTab={setActiveWorkspaceTabId}
+        onCloseTab={closeWorkspaceTab}
+        onTogglePluginMenu={() => setPluginMenuOpen((open) => !open)}
+        onOpenPlugin={openPluginEntry}
+        onToggleFiletree={() => {
+          if (!activeWorkspaceTab || activeWorkspaceTab.kind !== "files") return
+          updateWorkspaceTab(activeWorkspaceTab.id, { filetreeOpen: !activeWorkspaceTab.filetreeOpen })
+        }}
+        fullscreen={fullscreen}
+        onToggleFullscreen={onToggleFullscreen}
+        onClose={onClose}
+      />
 
-          <div
-            role="separator"
-            aria-orientation="vertical"
-            aria-label="Resize sidebar"
-            tabIndex={0}
-            onPointerDown={startDrag}
-            onPointerMove={onDrag}
-            onPointerUp={endDrag}
-            onPointerCancel={endDrag}
-            onKeyDown={onHandleKeyDown}
-            className={cn(
-              "relative w-px shrink-0 cursor-col-resize bg-transparent transition-colors hover:bg-primary/40",
-              "focus-visible:outline-none focus-visible:bg-primary/50",
-            )}
-          >
-            <span aria-hidden="true" className="absolute inset-y-0 -left-1.5 -right-1.5" />
+      <div className="min-h-0 flex-1">
+        {!activeWorkspaceTab ? (
+          <div className="flex h-full items-center justify-center text-sm text-muted-foreground">
+            Open a workspace tab with +
           </div>
-        </>
-      ) : null}
-
-      <div className="relative min-w-0 flex-1">
-        <div
-          data-boring-workspace-part="surface-tabs"
-          data-boring-state={collapsed ? "collapsed" : "expanded"}
-          className="workbench-dockview h-full"
-          data-collapsed-sources={collapsed ? "true" : undefined}
-        >
-          <ArtifactSurfacePane
-            storageKey={storageKey}
-            onReady={handleReady}
-            allowedPanels={allowedPanels}
-          />
-        </div>
-        {/* Header overlays — always reachable, including existing/single-tab
-            dockview groups where header action slots can be squeezed/hidden.
-            zIndex must beat dockview's "open tabs" overflow popover (built by
-            PopupService at --dv-overlay-z-index 999, sometimes doubled to ~1998)
-            so the close-workspace control on the right edge is never covered by
-            an open dropdown menu. */}
-        <div
-          className="pointer-events-none absolute inset-x-0 top-0 flex items-center justify-between"
-          style={{ height: 44, zIndex: 2000 }}
-        >
-          <div>
-            {collapsed && (
-              <ControlTooltip label="Show workspace menu" side="right">
-                <IconButton
-                  type="button"
-                  variant="ghost"
-                  size="icon-xs"
-                  onClick={() => setCollapsed(false)}
-                  className="pointer-events-auto ml-2"
-                  aria-label="Show workspace menu"
-                >
-                  <Menu className="h-4 w-4" strokeWidth={1.75} />
-                </IconButton>
-              </ControlTooltip>
-            )}
+        ) : (
+          <div className="flex h-full min-h-0 w-full">
+            <div className="min-w-0 flex-1">
+              {activeComponent ? (
+                <WorkspacePaneHost
+                  tab={activeWorkspaceTab}
+                  component={activeComponent}
+                  containerApi={apiRef.current}
+                  onParamsChange={(params) => updateWorkspaceTab(activeWorkspaceTab.id, { params })}
+                  onTitleChange={(title) => updateWorkspaceTab(activeWorkspaceTab.id, { title })}
+                />
+              ) : activeWorkspaceTab.component === "__files-home" ? (
+                <FilesHomePane />
+              ) : (
+                <div className="flex h-full items-center justify-center text-sm text-muted-foreground">Missing plugin panel</div>
+              )}
+            </div>
+            {activeWorkspaceTab.kind === "files" && activeWorkspaceTab.filetreeOpen ? (
+              <aside
+                data-boring-workspace-part="surface-sidebar"
+                data-boring-state="expanded"
+                className="flex h-full min-h-0 flex-col border-l border-border"
+                style={{ width: sidebarWidth, minWidth: sidebarWidth, maxWidth: sidebarWidth }}
+                aria-label="Files"
+              >
+                <WorkbenchLeftPane
+                  rootDir={rootDir}
+                  bridge={bridge}
+                  defaultTab={defaultLeftTab}
+                  revealFileTreeRequest={fileTreeRevealRequest}
+                  onOpenPanel={openPanelSync}
+                  onReloadAgentPlugins={onReloadAgentPlugins}
+                  railSide="right"
+                  hideRail
+                />
+              </aside>
+            ) : null}
           </div>
-          {onClose && <WorkbenchCloseAction onClose={onClose} />}
-        </div>
-        <EmptyWorkbenchOverlay
-          api={api}
-          collapsed={collapsed}
-          onExpandFiles={() => setCollapsed(false)}
-        />
+        )}
       </div>
     </div>
+  )
+}
+
+function WorkspaceSurfaceTopBar({
+  tabs,
+  activeTabId,
+  activePath,
+  filetreeOpen,
+  pluginMenuOpen,
+  pluginEntries,
+  onActivateTab,
+  onCloseTab,
+  onTogglePluginMenu,
+  onOpenPlugin,
+  onToggleFiletree,
+  fullscreen,
+  onToggleFullscreen,
+  onClose,
+}: {
+  tabs: WorkspacePaneTab[]
+  activeTabId: string | null
+  activePath: string | null
+  filetreeOpen: boolean
+  pluginMenuOpen: boolean
+  pluginEntries: Array<{ id: string; title: string; component?: string; kind: "files" | "panel"; multiple?: boolean }>
+  onActivateTab: (id: string) => void
+  onCloseTab: (id: string) => void
+  onTogglePluginMenu: () => void
+  onOpenPlugin: (entry: { id: string; title: string; component?: string; kind: "files" | "panel"; multiple?: boolean }) => void
+  onToggleFiletree: () => void
+  fullscreen: boolean
+  onToggleFullscreen?: () => void
+  onClose?: () => void
+}) {
+  const activeTab = tabs.find((tab) => tab.id === activeTabId) ?? null
+  const pathParts = activePath?.split("/").filter(Boolean) ?? []
+  const breadcrumbs = pathParts.length > 0 ? pathParts : [activeTab?.title ?? "Workspace"]
+  return (
+    <div data-boring-workspace-part="surface-topbar" className="shrink-0 border-b border-border bg-background">
+      <div className="relative flex h-11 items-center gap-1 px-3">
+        <div className="flex min-w-0 flex-1 items-center gap-1 overflow-hidden">
+          {tabs.map((tab) => {
+            const active = tab.id === activeTabId
+            return (
+              <button
+                key={tab.id}
+                type="button"
+                aria-label={`Activate ${tab.title ?? tab.id}`}
+                aria-pressed={active}
+                onClick={() => onActivateTab(tab.id)}
+                className={`group flex h-8 max-w-[220px] items-center gap-2 rounded-xl px-3 text-sm transition-colors ${active ? "bg-muted text-foreground" : "text-muted-foreground hover:bg-muted/70 hover:text-foreground"}`}
+              >
+                <span className="truncate">{tab.title ?? tab.id}</span>
+                <span
+                  role="button"
+                  tabIndex={0}
+                  aria-label={`Close ${tab.title ?? tab.id}`}
+                  onClick={(event) => {
+                    event.stopPropagation()
+                    onCloseTab(tab.id)
+                  }}
+                  onKeyDown={(event) => {
+                    if (event.key !== "Enter" && event.key !== " ") return
+                    event.preventDefault()
+                    event.stopPropagation()
+                    onCloseTab(tab.id)
+                  }}
+                  className="grid size-4 place-items-center rounded-full text-muted-foreground opacity-80 hover:bg-background hover:text-foreground"
+                >
+                  ×
+                </span>
+              </button>
+            )
+          })}
+          <div className="relative shrink-0">
+            <button
+              type="button"
+              aria-label="Add workspace tab"
+              title="Add workspace tab"
+              onClick={onTogglePluginMenu}
+              className="grid size-8 place-items-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground"
+            >
+              <Plus className="h-4 w-4" strokeWidth={1.75} />
+            </button>
+            {pluginMenuOpen ? (
+              <div
+                data-boring-workspace-part="plugin-tab-menu"
+                className="absolute left-0 top-9 z-[2500] w-64 overflow-hidden rounded-xl border border-border bg-popover p-1.5 text-sm shadow-xl"
+              >
+                <div className="px-2 pb-1 pt-1 text-xs font-medium text-muted-foreground">New workspace tab</div>
+                {pluginEntries.map((entry) => (
+                  <button
+                    key={entry.id}
+                    type="button"
+                    aria-label={`Create ${entry.title} tab`}
+                    onClick={() => onOpenPlugin(entry)}
+                    className="flex h-10 w-full items-center gap-2 rounded-lg px-2 text-left text-popover-foreground hover:bg-muted"
+                  >
+                    <span className="grid size-6 place-items-center rounded-md bg-muted text-muted-foreground">
+                      {entry.kind === "files" ? <FolderTree className="h-4 w-4" strokeWidth={1.75} /> : <Plus className="h-4 w-4" strokeWidth={1.75} />}
+                    </span>
+                    <span className="min-w-0 flex-1 truncate">{entry.title}</span>
+                  </button>
+                ))}
+              </div>
+            ) : null}
+          </div>
+        </div>
+        <button type="button" aria-label="Workspace options" className="grid size-7 place-items-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground">
+          <MoreHorizontal className="h-4 w-4" strokeWidth={1.75} />
+        </button>
+        {onToggleFullscreen ? (
+          <IconButton
+            type="button"
+            variant="ghost"
+            size="icon-xs"
+            onClick={onToggleFullscreen}
+            className="pointer-events-auto mx-1"
+            aria-label={fullscreen ? "Exit workspace fullscreen" : "Enter workspace fullscreen"}
+            title={fullscreen ? "Exit workspace fullscreen" : "Enter workspace fullscreen"}
+          >
+            <Maximize2 className="h-4 w-4" strokeWidth={1.75} />
+          </IconButton>
+        ) : null}
+        {onClose ? <WorkbenchCloseAction onClose={onClose} /> : null}
+      </div>
+      <div className="flex h-10 items-center gap-2 border-t border-border/60 px-3 text-sm">
+        <div className="flex min-w-0 flex-1 items-center gap-1 text-muted-foreground">
+          {breadcrumbs.map((part, index) => (
+            <span key={`${part}-${index}`} className="contents">
+              {index > 0 ? <span className="text-muted-foreground/60">›</span> : null}
+              <span className={index === breadcrumbs.length - 1 ? "truncate font-medium text-foreground" : "truncate"}>{part}</span>
+            </span>
+          ))}
+        </div>
+        <button type="button" aria-label="Open externally" className="rounded-lg border border-border px-3 py-1 text-foreground hover:bg-muted">
+          Open
+        </button>
+        {activeTab?.kind === "files" ? (
+          <button
+            type="button"
+            aria-label={filetreeOpen ? "Hide file tree" : "Show file tree"}
+            aria-pressed={filetreeOpen}
+            onClick={onToggleFiletree}
+            className="grid size-8 place-items-center rounded-lg text-muted-foreground hover:bg-muted hover:text-foreground aria-pressed:bg-muted aria-pressed:text-foreground"
+          >
+            <FolderTree className="h-4 w-4" strokeWidth={1.75} />
+          </button>
+        ) : null}
+      </div>
+    </div>
+  )
+}
+
+function FilesHomePane() {
+  return (
+    <div className="flex h-full items-center justify-center p-8 text-center text-sm text-muted-foreground">
+      <div>
+        <div className="text-base font-medium text-foreground">Files</div>
+        <div className="mt-1">Pick a file from the file tree to open it in its own Files tab.</div>
+      </div>
+    </div>
+  )
+}
+
+function WorkspacePaneHost({
+  tab,
+  component: Component,
+  containerApi,
+  onParamsChange,
+  onTitleChange,
+}: {
+  tab: WorkspacePaneTab
+  component: ComponentType<PaneProps<Record<string, unknown>>>
+  containerApi: DockviewApi | null
+  onParamsChange: (params: Record<string, unknown>) => void
+  onTitleChange: (title: string) => void
+}) {
+  const [params, setParams] = useState<Record<string, unknown>>(tab.params ?? {})
+  const paramsRef = useRef<Record<string, unknown>>(tab.params ?? {})
+  const listenersRef = useRef(new Set<(event: { params: Record<string, unknown> }) => void>())
+
+  const publishParams = useCallback((next: Record<string, unknown>) => {
+    paramsRef.current = next
+    setParams(next)
+    onParamsChange(next)
+    for (const listener of [...listenersRef.current]) listener({ params: next })
+  }, [onParamsChange])
+
+  useEffect(() => {
+    publishParams(tab.params ?? {})
+  }, [tab.id])
+
+  const panelApi = useMemo(() => ({
+    id: tab.id,
+    updateParameters(next: Record<string, unknown>) {
+      publishParams({ ...paramsRef.current, ...next })
+    },
+    onDidParametersChange(listener: (event: { params: Record<string, unknown> }) => void) {
+      listenersRef.current.add(listener)
+      return { dispose: () => listenersRef.current.delete(listener) }
+    },
+    setActive() {},
+    setTitle(title: string) {
+      if (title === tab.title) return
+      window.queueMicrotask(() => onTitleChange(title))
+    },
+    close() {},
+  }) as unknown as DockviewPanelApi, [onTitleChange, publishParams, tab.id])
+
+  return (
+    <Component
+      params={params}
+      api={panelApi}
+      containerApi={containerApi as DockviewApi}
+      className="h-full"
+    />
   )
 }
 

@@ -52,6 +52,7 @@ describe('usePiSessions', () => {
   let fetchMock: ReturnType<typeof vi.fn>
 
   beforeEach(() => {
+    window.localStorage.clear()
     fetchMock = vi.fn()
   })
 
@@ -79,6 +80,29 @@ describe('usePiSessions', () => {
       headers: { authorization: 'Bearer redacted', 'x-boring-storage-scope': 'scope-a' },
     })
     expect(persisted.values.get(activeSessionStorageKey('scope-a'))).toBe('pi-running')
+  })
+
+  test('does not dispose the active remote session when equal remote options are re-created by the host', async () => {
+    const remote = remoteFactory()
+    fetchMock.mockResolvedValue(jsonResponse([session('pi-running')]))
+
+    const { rerender } = renderHook(
+      ({ timeout }) => usePiSessions({
+        storageScope: 'scope-a',
+        fetch: fetchMock as unknown as typeof fetch,
+        createRemoteSession: remote.factory,
+        remoteSessionOptions: { requestTimeoutMs: timeout },
+      }),
+      { initialProps: { timeout: 60_000 } },
+    )
+
+    await waitFor(() => expect(remote.factory).toHaveBeenCalledTimes(1))
+
+    rerender({ timeout: 60_000 })
+
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    expect(remote.factory).toHaveBeenCalledTimes(1)
+    expect(remote.created[0]?.dispose).not.toHaveBeenCalled()
   })
 
   test('loads the first session page before fetching older sessions on demand', async () => {

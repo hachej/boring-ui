@@ -114,6 +114,12 @@ export function usePiSessions(options: UsePiSessionsOptions = {}): UsePiSessions
   const loadedDataSourceRef = useRef(dataSourceKey)
   const requestScopeRef = useRef(requestScopeKey)
   requestScopeRef.current = requestScopeKey
+  const remoteSessionOptionsRef = useRef(options.remoteSessionOptions)
+  remoteSessionOptionsRef.current = options.remoteSessionOptions
+  const remoteSessionOptionsKey = useMemo(
+    () => remoteSessionOptionsIdentity(options.remoteSessionOptions),
+    [options.remoteSessionOptions],
+  )
 
   useEffect(() => {
     sessionsRef.current = sessions
@@ -301,7 +307,7 @@ export function usePiSessions(options: UsePiSessionsOptions = {}): UsePiSessions
     }
 
     const session = createRemoteSession({
-      ...options.remoteSessionOptions,
+      ...remoteSessionOptionsRef.current,
       sessionId: activeSessionId,
       workspaceId: options.workspaceId,
       storageScope,
@@ -313,7 +319,7 @@ export function usePiSessions(options: UsePiSessionsOptions = {}): UsePiSessions
     return () => {
       session.dispose()
     }
-  }, [activeSessionId, activeSessionKnown, apiBaseUrl, connectActiveSession, createRemoteSession, enabled, fetchImpl, options.remoteSessionOptions, options.workspaceId, requestHeaders, storageScope])
+  }, [activeSessionId, activeSessionKnown, apiBaseUrl, connectActiveSession, createRemoteSession, enabled, fetchImpl, remoteSessionOptionsKey, options.workspaceId, requestHeaders, storageScope])
 
   const create = useCallback(async (init?: PiSessionCreateInit): Promise<SessionSummary> => {
     if (!enabled) throw new Error('Pi sessions are disabled')
@@ -434,6 +440,19 @@ function toSessionSummary(value: unknown): SessionSummary {
 
 function canonicalPageCount(data: SessionSummary[]): number {
   return Math.min(data.length, SESSION_PAGE_SIZE)
+}
+
+function remoteSessionOptionsIdentity(options: UsePiSessionsOptions['remoteSessionOptions']): string {
+  if (!options) return '{}'
+  return JSON.stringify({
+    autoStart: options.autoStart,
+    requestTimeoutMs: options.requestTimeoutMs,
+    reconnect: options.reconnect,
+    debug: options.debug ? {
+      largeStateWarningBytes: options.debug.largeStateWarningBytes,
+      largeStateWarningMessages: options.debug.largeStateWarningMessages,
+    } : undefined,
+  })
 }
 
 function mergeSessions(...lists: SessionSummary[][]): SessionSummary[] {
