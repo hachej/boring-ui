@@ -142,19 +142,50 @@ describe("ArtifactSurfacePane — layout persistence", () => {
     expect(capturedProps.persistedLayout).toBeUndefined()
   })
 
-  it("drops the layout when any panel's contentComponent isn't in allowedPanels", () => {
-    // A saved tab whose component was removed (or filtered out of this
-    // shell) would silently render an empty pane via dockview. Reject the
-    // whole layout so the user gets a fresh shell instead of a wedged one.
+  it("defers layout hydration when a panel is not allowed yet", () => {
     const layout = buildLayout([
       { id: "p1", component: "empty" },
-      { id: "p2", component: "removed-component" },
+      { id: "p2", component: "late-plugin" },
     ])
     localStorage.setItem(KEY, envelope(layout))
-    renderPane(
+    const { rerender } = renderPane(
       <ArtifactSurfacePane storageKey={KEY} allowedPanels={["empty"]} />,
     )
+
     expect(capturedProps.persistedLayout).toBeUndefined()
+    act(() => {
+      capturedProps.onLayoutChange?.(buildLayout([]))
+    })
+    expect(localStorage.getItem(KEY)).toBe(envelope(layout))
+
+    rerender(
+      <RegistryProvider
+        panelRegistry={(() => {
+          const r = new PanelRegistry()
+          r.register("empty", { title: "empty", component: DummyPanel })
+          r.register("late-plugin", { title: "late", component: DummyPanel })
+          return r
+        })()}
+        commandRegistry={new CommandRegistry()}
+      >
+        <ArtifactSurfacePane storageKey={KEY} allowedPanels={["empty", "late-plugin"]} />
+      </RegistryProvider>,
+    )
+
+    expect(capturedProps.persistedLayout).toEqual(layout)
+  })
+
+  it("still writes non-empty layouts while a stored layout is blocked by allowedPanels", () => {
+    const blocked = buildLayout([{ id: "p1", component: "late-plugin" }])
+    const replacement = buildLayout([{ id: "new", component: "empty" }])
+    localStorage.setItem(KEY, envelope(blocked))
+    renderPane(<ArtifactSurfacePane storageKey={KEY} allowedPanels={["empty"]} />)
+
+    act(() => {
+      capturedProps.onLayoutChange?.(replacement)
+    })
+
+    expect(localStorage.getItem(KEY)).toBe(envelope(replacement))
   })
 
   it("explicit persistedLayout prop wins over localStorage", () => {
