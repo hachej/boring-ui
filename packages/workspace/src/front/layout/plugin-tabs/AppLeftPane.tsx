@@ -210,6 +210,7 @@ export function AppLeftPane({
         // active project's sessions are draggable / offer "open in a new pane".
         // A session from another project switches to that workspace instead.
         canSplit={isActiveProjectSession}
+        canPin={isActiveProjectSession}
         onSwitch={isActiveProjectSession ? onSwitchSession : () => onOpenProjectSession?.(projectId, session.id)}
         onOpenAsPane={isActiveProjectSession ? onOpenSessionAsPane : () => onOpenProjectSession?.(projectId, session.id)}
         onTogglePinned={onToggleSessionPinned}

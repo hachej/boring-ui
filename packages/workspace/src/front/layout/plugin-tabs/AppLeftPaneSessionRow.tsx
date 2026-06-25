@@ -12,6 +12,7 @@ export function AppSessionRow({
   state,
   pinned,
   canSplit = true,
+  canPin = true,
   onSwitch,
   onOpenAsPane,
   onTogglePinned,
@@ -21,6 +22,8 @@ export function AppSessionRow({
   pinned: boolean
   /** Whether this session can be split-paned/dragged (same-project only). */
   canSplit?: boolean
+  /** Whether this session belongs to the active project's pinned-session scope. */
+  canPin?: boolean
   onSwitch: (id: string) => void
   onOpenAsPane: (id: string) => void
   onTogglePinned: (id: string) => void
@@ -72,19 +75,21 @@ export function AppSessionRow({
         {title}
       </button>
       <span className="flex shrink-0 items-center gap-0.5 opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100">
-        <button
-          type="button"
-          aria-label={pinned ? `Unpin ${title}` : `Pin ${title}`}
-          title={pinned ? "Unpin" : "Pin"}
-          aria-pressed={pinned}
-          onClick={() => onTogglePinned(session.id)}
-          className={cn(
-            "grid size-6 place-items-center rounded-md text-muted-foreground hover:bg-background hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40",
-            pinned && "text-[color:var(--accent)]",
-          )}
-        >
-          <Pin className={cn("h-3.5 w-3.5", pinned && "fill-current")} strokeWidth={1.75} />
-        </button>
+        {canPin ? (
+          <button
+            type="button"
+            aria-label={pinned ? `Unpin ${title}` : `Pin ${title}`}
+            title={pinned ? "Unpin" : "Pin"}
+            aria-pressed={pinned}
+            onClick={() => onTogglePinned(session.id)}
+            className={cn(
+              "grid size-6 place-items-center rounded-md text-muted-foreground hover:bg-background hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40",
+              pinned && "text-[color:var(--accent)]",
+            )}
+          >
+            <Pin className={cn("h-3.5 w-3.5", pinned && "fill-current")} strokeWidth={1.75} />
+          </button>
+        ) : null}
         {/* "Open in new chat pane" only for closed, same-project sessions —
             it's pointless once open, and a cross-project session can't share
             this workspace's split stage. */}

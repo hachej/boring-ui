@@ -349,6 +349,7 @@ describe("WorkspaceAgentFront", () => {
 
     const appNav = screen.getByLabelText("App navigation")
     expect(appNav).toBeInTheDocument()
+    expect(screen.getByRole("separator", { name: "Resize app navigation" })).not.toHaveAttribute("tabindex")
     expect(within(appNav).getAllByRole("button", { name: "New chat" })).toHaveLength(1)
     expect(within(appNav).getByRole("button", { name: "Search" })).toBeInTheDocument()
     expect(within(appNav).getByRole("button", { name: "Plugins" })).toBeInTheDocument()
@@ -442,6 +443,9 @@ describe("WorkspaceAgentFront", () => {
     expect(collapseAlpha).toHaveAttribute("aria-expanded", "true")
     expect(within(appNav).getByRole("button", { name: "Project Alpha" })).toBeInTheDocument()
     expect(within(appNav).getByText("Project Beta")).toBeInTheDocument()
+    fireEvent.click(within(appNav).getByRole("button", { name: "Expand Project Beta" }))
+    expect(within(appNav).getByText("Beta kickoff")).toBeInTheDocument()
+    expect(within(appNav).queryByRole("button", { name: "Pin Beta kickoff" })).not.toBeInTheDocument()
     expect(within(appNav).getByText("Active project session")).toBeInTheDocument()
     // The active session is already open, so it offers no "open in a new pane".
     expect(within(appNav).queryByRole("button", { name: "Open Active project session in new chat pane" })).not.toBeInTheDocument()
