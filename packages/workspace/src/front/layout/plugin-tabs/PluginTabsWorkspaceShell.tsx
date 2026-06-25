@@ -1,11 +1,21 @@
 "use client"
 
-import { useCallback, useRef, useState, type PointerEvent as ReactPointerEvent, type ReactNode } from "react"
+import { useCallback, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type PointerEvent as ReactPointerEvent, type ReactNode } from "react"
 import { PanelLeftClose, PanelLeftOpen } from "lucide-react"
 import { cn } from "../../lib/utils"
 import { PaneCollapseButton } from "../paneCollapseButton"
 
-function AppLeftPaneResizeHandle({ onResize }: { onResize: (delta: number) => void }) {
+function AppLeftPaneResizeHandle({
+  width,
+  minWidth,
+  maxWidth,
+  onResize,
+}: {
+  width: number
+  minWidth: number
+  maxWidth: number
+  onResize: (delta: number) => void
+}) {
   const lastXRef = useRef<number | null>(null)
   const handlePointerMove = useCallback((event: PointerEvent) => {
     if (lastXRef.current == null) return
@@ -29,12 +39,34 @@ function AppLeftPaneResizeHandle({ onResize }: { onResize: (delta: number) => vo
     window.addEventListener("pointermove", handlePointerMove)
     window.addEventListener("pointerup", stopResize)
   }, [handlePointerMove, stopResize])
+  const handleKeyDown = useCallback((event: ReactKeyboardEvent<HTMLDivElement>) => {
+    const smallStep = 16
+    const largeStep = 48
+    if (event.key === "ArrowLeft") {
+      event.preventDefault()
+      onResize(event.shiftKey ? -largeStep : -smallStep)
+    } else if (event.key === "ArrowRight") {
+      event.preventDefault()
+      onResize(event.shiftKey ? largeStep : smallStep)
+    } else if (event.key === "Home") {
+      event.preventDefault()
+      onResize(minWidth - width)
+    } else if (event.key === "End") {
+      event.preventDefault()
+      onResize(maxWidth - width)
+    }
+  }, [maxWidth, minWidth, onResize, width])
 
   return (
     <div
       role="separator"
       aria-label="Resize app navigation"
       aria-orientation="vertical"
+      aria-valuemin={minWidth}
+      aria-valuemax={maxWidth}
+      aria-valuenow={width}
+      tabIndex={0}
+      onKeyDown={handleKeyDown}
       onPointerDown={startResize}
       className="group relative z-20 -ml-px w-1 shrink-0 cursor-col-resize touch-none bg-transparent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
     >
@@ -50,6 +82,9 @@ export interface PluginTabsWorkspaceShellProps {
   onExpand: () => void
   onCollapse: () => void
   onResizeLeftPane?: (delta: number) => void
+  leftPaneWidth?: number
+  minLeftPaneWidth?: number
+  maxLeftPaneWidth?: number
   className?: string
 }
 
@@ -60,6 +95,9 @@ export function PluginTabsWorkspaceShell({
   onExpand,
   onCollapse,
   onResizeLeftPane,
+  leftPaneWidth,
+  minLeftPaneWidth = 220,
+  maxLeftPaneWidth = 420,
   className,
 }: PluginTabsWorkspaceShellProps) {
   // Ephemeral peek: when the pane is collapsed, hovering the left edge slides
@@ -73,7 +111,14 @@ export function PluginTabsWorkspaceShell({
       className={cn("relative flex h-full min-h-0 w-full overflow-hidden bg-background", className)}
     >
       {collapsed ? null : leftPane}
-      {!collapsed && onResizeLeftPane ? <AppLeftPaneResizeHandle onResize={onResizeLeftPane} /> : null}
+      {!collapsed && onResizeLeftPane && leftPaneWidth != null ? (
+        <AppLeftPaneResizeHandle
+          width={leftPaneWidth}
+          minWidth={minLeftPaneWidth}
+          maxWidth={maxLeftPaneWidth}
+          onResize={onResizeLeftPane}
+        />
+      ) : null}
       <div className="relative min-w-0 flex-1">
         {children}
       </div>
