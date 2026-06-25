@@ -222,7 +222,9 @@ Those belong to the sandbox runtime root, `/workspace`.
 
 Production chat history also must not use the container root filesystem. Set
 `BORING_AGENT_SESSION_ROOT` to a mounted-volume path such as `/data/pi-sessions`
-so Pi wrapper/native transcripts survive Fly deploys and restarts.
+so Pi wrapper/native transcripts survive Fly deploys and restarts. Core-hosted
+apps that run `vercel-sandbox` with `BORING_AGENT_WORKSPACE_ROOT=/data/workspaces`
+default this to the sibling `/data/pi-sessions` path when the env var is absent.
 
 ## Adding a custom runtime mode
 

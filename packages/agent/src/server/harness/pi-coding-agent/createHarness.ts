@@ -347,6 +347,8 @@ export function createPiCodingAgentHarness(opts: {
   pi?: PiHarnessOptions;
   /** Optional stable namespace for file-backed session storage. */
   sessionNamespace?: string;
+  /** Optional explicit root for file-backed session directories. */
+  sessionRoot?: string;
   /** Optional explicit file-backed session directory. Mostly for tests/hosts. */
   sessionDir?: string;
   /** Optional best-effort telemetry sink supplied by an embedding host. */
@@ -362,6 +364,7 @@ export function createPiCodingAgentHarness(opts: {
   const pi = withPiHarnessDefaults(opts.pi);
   const sessionStore = new PiSessionStore(opts.runtimeCwd ?? opts.cwd, {
     sessionNamespace: opts.sessionNamespace,
+    sessionRoot: opts.sessionRoot,
     sessionDir: opts.sessionDir,
     storageCwd: opts.cwd,
   });
