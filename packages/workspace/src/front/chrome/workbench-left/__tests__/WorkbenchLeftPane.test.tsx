@@ -3,20 +3,21 @@ import { fireEvent, render, screen } from "@testing-library/react"
 import { describe, expect, test, vi } from "vitest"
 import { RegistryProvider } from "../../../registry/RegistryProvider"
 import { PanelRegistry } from "../../../registry/PanelRegistry"
+import { WorkspaceSourceRegistry } from "../../../registry/WorkspaceSourceRegistry"
 import { CommandRegistry } from "../../../../shared/plugins/CommandRegistry"
 import { SurfaceResolverRegistry } from "../../../../shared/plugins/SurfaceResolverRegistry"
-import type { PaneProps } from "../../../registry/types"
+import type { WorkspaceSourceProps } from "../../../registry/types"
 import { WorkbenchLeftPane } from "../WorkbenchLeftPane"
 
-function LeftTabWithButton({ containerApi }: PaneProps) {
+function SourceWithButton({ openPanel }: WorkspaceSourceProps) {
   return (
     <button
       type="button"
-      onClick={() => containerApi.addPanel({
+      onClick={() => openPanel?.({
         id: "demo-instance",
         component: "demo.panel",
         title: "Demo Panel",
-        params: { from: "left-tab" },
+        params: { from: "workspace-source" },
       })}
     >
       Open demo panel
@@ -25,18 +26,19 @@ function LeftTabWithButton({ containerApi }: PaneProps) {
 }
 
 describe("WorkbenchLeftPane", () => {
-  test("left-tab panels can open center panels through containerApi.addPanel", () => {
+  test("workspace sources can open center panels through openPanel", () => {
     const panelRegistry = new PanelRegistry()
-    panelRegistry.register("demo.left", {
+    const workspaceSourceRegistry = new WorkspaceSourceRegistry()
+    workspaceSourceRegistry.register("demo.source", {
       title: "Demo",
-      placement: "left-tab",
-      component: LeftTabWithButton,
+      component: SourceWithButton,
     })
     const onOpenPanel = vi.fn()
 
     render(
       <RegistryProvider
         panelRegistry={panelRegistry}
+        workspaceSourceRegistry={workspaceSourceRegistry}
         commandRegistry={new CommandRegistry()}
         surfaceResolverRegistry={new SurfaceResolverRegistry()}
       >
@@ -50,7 +52,7 @@ describe("WorkbenchLeftPane", () => {
       id: "demo-instance",
       component: "demo.panel",
       title: "Demo Panel",
-      params: { from: "left-tab" },
+      params: { from: "workspace-source" },
     })
   })
 
@@ -61,9 +63,9 @@ describe("WorkbenchLeftPane", () => {
       placement: "center",
       component: () => <div>data center</div>,
     })
-    panelRegistry.register("data.tab", {
+    const workspaceSourceRegistry = new WorkspaceSourceRegistry()
+    workspaceSourceRegistry.register("data.source", {
       title: "Data",
-      placement: "left-tab",
       defaultPanelId: "data.panel",
       component: () => <div>data body</div>,
     })
@@ -72,6 +74,7 @@ describe("WorkbenchLeftPane", () => {
     render(
       <RegistryProvider
         panelRegistry={panelRegistry}
+        workspaceSourceRegistry={workspaceSourceRegistry}
         commandRegistry={new CommandRegistry()}
         surfaceResolverRegistry={new SurfaceResolverRegistry()}
       >
@@ -90,9 +93,9 @@ describe("WorkbenchLeftPane", () => {
 
   test("right-clicking a category reloads agent plugins", () => {
     const panelRegistry = new PanelRegistry()
-    panelRegistry.register("data.tab", {
+    const workspaceSourceRegistry = new WorkspaceSourceRegistry()
+    workspaceSourceRegistry.register("data.source", {
       title: "Data",
-      placement: "left-tab",
       component: () => <div>data body</div>,
     })
     const onReloadAgentPlugins = vi.fn()
@@ -100,6 +103,7 @@ describe("WorkbenchLeftPane", () => {
     render(
       <RegistryProvider
         panelRegistry={panelRegistry}
+        workspaceSourceRegistry={workspaceSourceRegistry}
         commandRegistry={new CommandRegistry()}
         surfaceResolverRegistry={new SurfaceResolverRegistry()}
       >
@@ -114,14 +118,13 @@ describe("WorkbenchLeftPane", () => {
 
   test("categories render as a rail with a calm active state and menu collapse", () => {
     const panelRegistry = new PanelRegistry()
-    panelRegistry.register("files", {
+    const workspaceSourceRegistry = new WorkspaceSourceRegistry()
+    workspaceSourceRegistry.register("files", {
       title: "Files",
-      placement: "left-tab",
       component: () => <div>files body</div>,
     })
-    panelRegistry.register("data", {
+    workspaceSourceRegistry.register("data", {
       title: "Data",
-      placement: "left-tab",
       component: () => <div>data body</div>,
     })
     const onCollapse = vi.fn()
@@ -129,6 +132,7 @@ describe("WorkbenchLeftPane", () => {
     render(
       <RegistryProvider
         panelRegistry={panelRegistry}
+        workspaceSourceRegistry={workspaceSourceRegistry}
         commandRegistry={new CommandRegistry()}
         surfaceResolverRegistry={new SurfaceResolverRegistry()}
       >
@@ -155,20 +159,20 @@ describe("WorkbenchLeftPane", () => {
 
   test("icon-less categories fall back to an initial-letter glyph", () => {
     const panelRegistry = new PanelRegistry()
-    panelRegistry.register("files", {
+    const workspaceSourceRegistry = new WorkspaceSourceRegistry()
+    workspaceSourceRegistry.register("files", {
       title: "Files",
-      placement: "left-tab",
       component: () => <div>files body</div>,
     })
-    panelRegistry.register("data", {
+    workspaceSourceRegistry.register("data", {
       title: "Data",
-      placement: "left-tab",
       component: () => <div>data body</div>,
     })
 
     render(
       <RegistryProvider
         panelRegistry={panelRegistry}
+        workspaceSourceRegistry={workspaceSourceRegistry}
         commandRegistry={new CommandRegistry()}
         surfaceResolverRegistry={new SurfaceResolverRegistry()}
       >

@@ -11,14 +11,15 @@ import {
   useState,
   useSyncExternalStore,
   type ComponentType,
+  type ReactNode,
 } from "react"
 import { Menu, Search, X } from "lucide-react"
 import { IconButton, Input } from "@hachej/boring-ui-kit"
 import { ControlTooltip } from "../../components/ControlTooltip"
 import { cn } from "../../lib/utils"
 import type { FileTreeBridge } from "../../bridge/types"
-import { useRegistry } from "../../registry"
-import type { PaneProps, PanelConfig } from "../../registry/types"
+import { useRegistry, useWorkspaceSourceRegistry } from "../../registry"
+import type { PaneProps, PanelConfig, WorkspaceSourceConfig } from "../../registry/types"
 import type { LeftTabParams } from "../../../shared/plugins/types"
 import { PluginErrorBoundary } from "../../plugin/PluginErrorBoundary"
 
@@ -55,31 +56,33 @@ export function WorkbenchLeftPane({
   className,
 }: WorkbenchLeftPaneProps) {
   const panelRegistry = useRegistry()
+  const workspaceSourceRegistry = useWorkspaceSourceRegistry()
   const panels = useSyncExternalStore(
     panelRegistry.subscribe,
     panelRegistry.getSnapshot,
     panelRegistry.getSnapshot,
   )
-  const leftTabPanels = useMemo(
-    () => panels.filter((panel) => panel.placement === "left-tab"),
-    [panels],
+  const sources = useSyncExternalStore(
+    workspaceSourceRegistry.subscribe,
+    workspaceSourceRegistry.getSnapshot,
+    workspaceSourceRegistry.getSnapshot,
   )
   const tabs = useMemo(() => {
-    const next: Array<{ id: string; title: string; icon: React.ReactNode; panel?: PanelConfig }> = []
-    for (const panel of leftTabPanels) {
-      const Icon = panel.icon
+    const next: Array<{ id: string; title: string; icon: ReactNode; source?: WorkspaceSourceConfig }> = []
+    for (const source of sources) {
+      const Icon = source.icon
       next.push({
-        id: panel.id,
-        title: panel.title,
+        id: source.id,
+        title: source.title,
         // Icon-less plugins get an initial-letter glyph instead of a shared
         // generic icon — on an icon-only rail, two identical fallback icons
         // would be indistinguishable.
-        icon: Icon ? <Icon className="h-4 w-4" /> : <CategoryInitial title={panel.title} />,
-        panel,
+        icon: Icon ? <Icon className="h-4 w-4" /> : <CategoryInitial title={source.title} />,
+        source,
       })
     }
     return next
-  }, [leftTabPanels])
+  }, [sources])
   const [tab, setTab] = useState<WorkbenchLeftTabId>(defaultTab ?? "")
   const activeTab = tabs.some((entry) => entry.id === tab) ? tab : (tabs[0]?.id ?? "")
   const [searchOpen, setSearchOpen] = useState(false)
@@ -115,8 +118,8 @@ export function WorkbenchLeftPane({
     }
   }, [revealFileTreeRequest, tabs])
 
-  const openDefaultPanelForTab = useCallback((entry: { panel?: PanelConfig }) => {
-    const defaultPanelId = entry.panel?.defaultPanelId
+  const openDefaultPanelForTab = useCallback((entry: { source?: WorkspaceSourceConfig }) => {
+    const defaultPanelId = entry.source?.defaultPanelId
     if (!defaultPanelId || !onOpenPanel) return
     const target = panels.find((panel) => panel.id === defaultPanelId && panel.placement !== "left-tab")
     if (!target) return
@@ -127,7 +130,7 @@ export function WorkbenchLeftPane({
     })
   }, [onOpenPanel, panels])
 
-  const selectTab = useCallback((entry: { id: string; panel?: PanelConfig }) => {
+  const selectTab = useCallback((entry: { id: string; source?: WorkspaceSourceConfig }) => {
     setTab(entry.id)
     openDefaultPanelForTab(entry)
   }, [openDefaultPanelForTab])
@@ -148,7 +151,7 @@ export function WorkbenchLeftPane({
   }, [])
 
   const activeEntry = tabs.find((entry) => entry.id === activeTab)
-  const activeOwnsSearch = Boolean((activeEntry?.panel as { chromeless?: boolean } | undefined)?.chromeless)
+  const activeOwnsSearch = Boolean(activeEntry?.source?.chromeless)
   const showChromeSearch = !activeOwnsSearch
   const leftTabParams = useMemo<LeftTabParams>(
     () => ({
@@ -272,7 +275,7 @@ export function WorkbenchLeftPane({
         )}
 
         <div className="min-h-0 flex-1 overflow-hidden">
-          <LeftTabPanelHost panel={activeEntry?.panel} params={leftTabParams} onOpenPanel={onOpenPanel} />
+          <WorkspaceSourceHost source={activeEntry?.source} params={leftTabParams} onOpenPanel={onOpenPanel} />
         </div>
       </div>
     </div>
@@ -292,39 +295,18 @@ function CategoryInitial({ title }: { title: string }) {
   )
 }
 
-const noopDisposable = { dispose() {} }
-const noopPaneApi = new Proxy(
-  {},
-  {
-    get: () => () => noopDisposable,
-  },
-) as PaneProps["api"]
-function createLeftTabContainerApi(onOpenPanel: WorkbenchLeftPaneProps["onOpenPanel"]): PaneProps["containerApi"] {
-  return new Proxy(
-    {},
-    {
-      get: (_target, prop) => {
-        if (prop === "addPanel") return (config: WorkbenchLeftPaneOpenPanelConfig) => onOpenPanel?.(config)
-        return () => undefined
-      },
-    },
-  ) as PaneProps["containerApi"]
-}
-
-function LeftTabPanelHost({ panel, params, onOpenPanel }: { panel?: PanelConfig; params: LeftTabParams; onOpenPanel?: WorkbenchLeftPaneProps["onOpenPanel"] }) {
+function WorkspaceSourceHost({ source, params, onOpenPanel }: { source?: WorkspaceSourceConfig; params: LeftTabParams; onOpenPanel?: WorkbenchLeftPaneProps["onOpenPanel"] }) {
   const Inner = useMemo(() => {
-    if (!panel) return null
-    if (panel.lazy) {
+    if (!source) return null
+    if (source.lazy) {
       return lazy(
-        panel.component as () => Promise<{ default: ComponentType<unknown> }>,
+        source.component as () => Promise<{ default: ComponentType<unknown> }>,
       )
     }
-    return panel.component as ComponentType<any>
-  }, [panel])
+    return source.component as ComponentType<any>
+  }, [source])
 
-  const containerApi = useMemo(() => createLeftTabContainerApi(onOpenPanel), [onOpenPanel])
-
-  if (!panel || !Inner) {
+  if (!source || !Inner) {
     return (
       <div className="flex h-full items-center justify-center px-4 text-center text-[12px] text-muted-foreground">
         No workspace category registered.
@@ -333,9 +315,9 @@ function LeftTabPanelHost({ panel, params, onOpenPanel }: { panel?: PanelConfig;
   }
   return (
     <PluginErrorBoundary
-      pluginId={panel.pluginId ?? panel.id}
-      contributionKind="panel"
-      contributionId={panel.id}
+      pluginId={source.pluginId ?? source.id}
+      contributionKind="workspace-source"
+      contributionId={source.id}
     >
       <Suspense
         fallback={
@@ -346,8 +328,7 @@ function LeftTabPanelHost({ panel, params, onOpenPanel }: { panel?: PanelConfig;
       >
         {createElement(Inner, {
           params,
-          api: noopPaneApi,
-          containerApi,
+          openPanel: onOpenPanel,
           className: "h-full",
         })}
       </Suspense>
