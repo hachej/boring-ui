@@ -1805,6 +1805,6 @@ describe("WorkspaceAgentFront", () => {
     await waitFor(() => expect(screen.getByTestId("chat-panel").textContent).toContain("created-empty-session"), { timeout: 3000 })
 
     expect(captured.some((props) => props.sessionId === "default")).toBe(false)
-    expect(captured.at(-1)?.hydrateMessages).toBe(false)
+    expect(captured.at(-1)?.hydrateMessages).toBe(true)
   })
 })
