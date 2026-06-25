@@ -337,7 +337,8 @@ function WorkspaceRoute<
   const session = useSession()
   const pendingChatEntry = usePendingChatDraft()
   const currentWorkspace = useCurrentWorkspace()
-  const workspaces = useWorkspacesList(Boolean(session.data?.user))
+  const isMultiProject = workspaceProps.appLeftLayoutMode === 'multi-project'
+  const workspaces = useWorkspacesList(Boolean(session.data?.user) && isMultiProject)
   const routeStatus = useWorkspaceRouteStatus()
   const workspaceId = params[workspaceIdParam]?.trim() ?? workspaceIdFromPath(location.pathname, workspaceRoute, workspaceIdParam) ?? ''
   const inlineWorkspaceSource = workspaces.length > 0
@@ -345,7 +346,6 @@ function WorkspaceRoute<
     : currentWorkspace
       ? [currentWorkspace]
       : []
-  const isMultiProject = workspaceProps.appLeftLayoutMode === 'multi-project'
   // Browse every accessible workspace's chats without loading any of them: one
   // no-boot session-list fetch per workspace. Listing never provisions a
   // runtime, so this is cheap and decoupled from "opening" a workspace (which
