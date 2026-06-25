@@ -1,4 +1,7 @@
 export { UserMenu } from './UserMenu.js'
+export type { UserMenuProps } from './UserMenu.js'
 export { TopBarSlotProvider, useTopBarSlot } from './TopBarSlot.js'
 export { WorkspaceSwitcher } from './WorkspaceSwitcher.js'
+export { CreateWorkspaceDialog } from './CreateWorkspaceDialog.js'
+export type { CreateWorkspaceDialogProps } from './CreateWorkspaceDialog.js'
 export { ThemeToggle } from './ThemeToggle.js'

@@ -1,6 +1,7 @@
 export {
   WorkspaceAgentFront,
   type WorkspaceAgentFrontProps,
+  type WorkspaceAgentLayout,
   type WorkspaceAgentSession,
   type WorkspaceAgentSessionsApi,
   type UseWorkspaceAgentSessions,

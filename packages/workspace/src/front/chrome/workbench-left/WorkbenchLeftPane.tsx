@@ -2,7 +2,6 @@
 
 import {
   createElement,
-  lazy,
   Suspense,
   useCallback,
   useEffect,
@@ -10,15 +9,16 @@ import {
   useRef,
   useState,
   useSyncExternalStore,
-  type ComponentType,
 } from "react"
-import { Menu, Search, X } from "lucide-react"
+import { PanelLeftClose, Search, X } from "lucide-react"
 import { IconButton, Input } from "@hachej/boring-ui-kit"
 import { ControlTooltip } from "../../components/ControlTooltip"
 import { cn } from "../../lib/utils"
+import { PaneCollapseButton } from "../../layout/paneCollapseButton"
 import type { FileTreeBridge } from "../../bridge/types"
-import { useRegistry } from "../../registry"
-import type { PaneProps, PanelConfig } from "../../registry/types"
+import { useRegistry, useWorkspaceSourceRegistry } from "../../registry"
+import type { PanelConfig, WorkspaceSourceConfig } from "../../registry/types"
+import { isWorkspacePagePlacement, isWorkspaceSourcePlacement } from "../../../shared/types/panel"
 import type { LeftTabParams } from "../../../shared/plugins/types"
 import { PluginErrorBoundary } from "../../plugin/PluginErrorBoundary"
 
@@ -37,10 +37,21 @@ export interface WorkbenchLeftPaneProps {
   rootDir?: string
   bridge?: FileTreeBridge
   defaultTab?: WorkbenchLeftTabId
+  activeTab?: WorkbenchLeftTabId
+  /**
+   * Id of the currently-focused surface tab (dockview's active panel). Drives the
+   * accent for "workspace-page" rail icons so a page only glows while it's the open
+   * tab — `activeTab` is the rail's own click state and goes stale on tab switches.
+   */
+  activePanelId?: string | null
+  onActiveTabChange?: (tab: WorkbenchLeftTabId) => void
   revealFileTreeRequest?: { path: string; seq: number } | null
   onOpenPanel?: (config: WorkbenchLeftPaneOpenPanelConfig) => void
   onReloadAgentPlugins?: () => void | Promise<unknown>
   onCollapse?: () => void
+  onExpand?: (tab?: WorkbenchLeftTabId) => void
+  onCloseSourcePane?: () => void
+  railOnly?: boolean
   className?: string
 }
 
@@ -48,40 +59,76 @@ export function WorkbenchLeftPane({
   rootDir = "",
   bridge,
   defaultTab,
+  activeTab: controlledActiveTab,
+  activePanelId,
+  onActiveTabChange,
   revealFileTreeRequest,
   onOpenPanel,
   onReloadAgentPlugins,
   onCollapse,
+  onExpand,
+  onCloseSourcePane,
+  railOnly = false,
   className,
 }: WorkbenchLeftPaneProps) {
   const panelRegistry = useRegistry()
+  const workspaceSourceRegistry = useWorkspaceSourceRegistry()
   const panels = useSyncExternalStore(
     panelRegistry.subscribe,
     panelRegistry.getSnapshot,
     panelRegistry.getSnapshot,
   )
-  const leftTabPanels = useMemo(
-    () => panels.filter((panel) => panel.placement === "left-tab"),
+  const workspaceSources = useSyncExternalStore(
+    workspaceSourceRegistry.subscribe,
+    workspaceSourceRegistry.getSnapshot,
+    workspaceSourceRegistry.getSnapshot,
+  )
+  type LeftPaneEntry = {
+    id: string
+    title: string
+    icon: React.ReactNode
+    source?: WorkspaceSourceConfig
+    panel?: PanelConfig
+    kind: "source" | "workspace-page"
+  }
+  const workspacePagePanels = useMemo(
+    () => panels.filter((panel) => isWorkspacePagePlacement(panel.placement)),
     [panels],
   )
   const tabs = useMemo(() => {
-    const next: Array<{ id: string; title: string; icon: React.ReactNode; panel?: PanelConfig }> = []
-    for (const panel of leftTabPanels) {
+    const next: LeftPaneEntry[] = []
+    for (const source of workspaceSources) {
+      const Icon = source.icon
+      next.push({
+        id: source.id,
+        title: source.title,
+        kind: "source",
+        // Icon-less plugins get an initial-letter glyph instead of a shared
+        // generic icon — on an icon-only rail, two identical fallback icons
+        // would be indistinguishable.
+        icon: Icon ? <Icon className="h-4 w-4" /> : <CategoryInitial title={source.title} />,
+        source,
+      })
+    }
+    for (const panel of workspacePagePanels) {
       const Icon = panel.icon
       next.push({
         id: panel.id,
         title: panel.title,
-        // Icon-less plugins get an initial-letter glyph instead of a shared
-        // generic icon — on an icon-only rail, two identical fallback icons
-        // would be indistinguishable.
+        kind: "workspace-page",
         icon: Icon ? <Icon className="h-4 w-4" /> : <CategoryInitial title={panel.title} />,
         panel,
       })
     }
     return next
-  }, [leftTabPanels])
+  }, [workspacePagePanels, workspaceSources])
   const [tab, setTab] = useState<WorkbenchLeftTabId>(defaultTab ?? "")
-  const activeTab = tabs.some((entry) => entry.id === tab) ? tab : (tabs[0]?.id ?? "")
+  const selectedTab = controlledActiveTab ?? tab
+  const activeTab = tabs.some((entry) => entry.id === selectedTab) ? selectedTab : (tabs[0]?.id ?? "")
+  const setActiveTab = useCallback((next: WorkbenchLeftTabId) => {
+    if (controlledActiveTab === undefined) setTab(next)
+    onActiveTabChange?.(next)
+  }, [controlledActiveTab, onActiveTabChange])
   const [searchOpen, setSearchOpen] = useState(false)
   const [query, setQuery] = useState("")
   const [debouncedQuery, setDebouncedQuery] = useState("")
@@ -103,22 +150,31 @@ export function WorkbenchLeftPane({
   }, [searchOpen])
 
   useEffect(() => {
-    if (tabs.length > 0 && !tabs.some((entry) => entry.id === tab)) {
-      setTab(tabs[0]!.id)
+    if (tabs.length > 0 && !tabs.some((entry) => entry.id === selectedTab)) {
+      setActiveTab(tabs[0]!.id)
     }
-  }, [tab, tabs])
+  }, [selectedTab, setActiveTab, tabs])
 
   useEffect(() => {
     if (!revealFileTreeRequest) return
     if (tabs.some((entry) => entry.id === FILES_LEFT_TAB_ID)) {
-      setTab(FILES_LEFT_TAB_ID)
+      setActiveTab(FILES_LEFT_TAB_ID)
     }
-  }, [revealFileTreeRequest, tabs])
+  }, [revealFileTreeRequest, setActiveTab, tabs])
 
-  const openDefaultPanelForTab = useCallback((entry: { panel?: PanelConfig }) => {
-    const defaultPanelId = entry.panel?.defaultPanelId
-    if (!defaultPanelId || !onOpenPanel) return
-    const target = panels.find((panel) => panel.id === defaultPanelId && panel.placement !== "left-tab")
+  const openPanelForEntry = useCallback((entry: LeftPaneEntry) => {
+    if (!onOpenPanel) return
+    if (entry.kind === "workspace-page" && entry.panel) {
+      onOpenPanel({
+        id: entry.panel.id,
+        component: entry.panel.id,
+        title: entry.panel.title,
+      })
+      return
+    }
+    const defaultPanelId = entry.source?.defaultPanelId
+    if (!defaultPanelId) return
+    const target = panels.find((panel) => panel.id === defaultPanelId && !isWorkspaceSourcePlacement(panel.placement))
     if (!target) return
     onOpenPanel({
       id: target.id,
@@ -127,10 +183,21 @@ export function WorkbenchLeftPane({
     })
   }, [onOpenPanel, panels])
 
-  const selectTab = useCallback((entry: { id: string; panel?: PanelConfig }) => {
-    setTab(entry.id)
-    openDefaultPanelForTab(entry)
-  }, [openDefaultPanelForTab])
+  const selectTab = useCallback((entry: LeftPaneEntry) => {
+    if (entry.kind === "source") {
+      if (!railOnly && entry.id === activeTab) {
+        onCloseSourcePane?.()
+        return
+      }
+      setActiveTab(entry.id)
+      onExpand?.(entry.id)
+      openPanelForEntry(entry)
+      return
+    }
+    setActiveTab(entry.id)
+    openPanelForEntry(entry)
+    onCloseSourcePane?.()
+  }, [activeTab, onCloseSourcePane, onExpand, openPanelForEntry, railOnly, setActiveTab])
 
   const toggleSearch = useCallback(() => {
     setSearchOpen((s) => {
@@ -148,7 +215,8 @@ export function WorkbenchLeftPane({
   }, [])
 
   const activeEntry = tabs.find((entry) => entry.id === activeTab)
-  const activeOwnsSearch = Boolean((activeEntry?.panel as { chromeless?: boolean } | undefined)?.chromeless)
+  const activeSource = activeEntry?.kind === "source" ? activeEntry.source : undefined
+  const activeOwnsSearch = Boolean(activeSource?.chromeless)
   const showChromeSearch = !activeOwnsSearch
   const leftTabParams = useMemo<LeftTabParams>(
     () => ({
@@ -174,19 +242,24 @@ export function WorkbenchLeftPane({
       aria-label="Workspace categories"
     >
       {onCollapse && (
-        <ControlTooltip label="Hide workspace menu" side="right">
-          <button
-            type="button"
-            aria-label="Hide workspace menu"
-            onClick={onCollapse}
-            className="mb-1 flex h-8 w-8 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-background/70 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
-          >
-            <Menu className="h-4 w-4" strokeWidth={1.75} />
-          </button>
-        </ControlTooltip>
+        <PaneCollapseButton label="Hide workspace menu" side="right" onClick={onCollapse} className="mb-1">
+          <PanelLeftClose className="h-4 w-4" strokeWidth={1.75} />
+        </PaneCollapseButton>
       )}
       {tabs.map((entry) => {
-        const active = entry.id === activeTab
+        // A "source" lives in the collapsible left pane: its "selected" state is the
+        // rail's own activeTab. A "workspace-page" is a full-window surface tab: its
+        // "selected" state is whether it's the focused surface tab (activePanelId),
+        // NOT the rail click — otherwise the icon stays lit after you switch tabs.
+        const isPage = entry.kind === "workspace-page"
+        const active = isPage ? entry.id === activePanelId : entry.id === activeTab
+        // At most ONE plugin is "focused" (accent/orange) at a time. A source pane and
+        // a page surface tab can be open at once (source on the left, page in the main
+        // area), so gate by railOnly (= source pane collapsed): while a source pane is
+        // open the active source is focused; while it's collapsed the active surface
+        // page is focused. The other, if still open, falls through to the quiet neutral
+        // highlight below — never a second accent.
+        const showAccent = isPage ? active && railOnly : active && !railOnly
         return (
           <ControlTooltip key={entry.id} label={entry.title} side="right">
             <button
@@ -201,8 +274,18 @@ export function WorkbenchLeftPane({
               }}
               className={cn(
                 "relative flex h-8 w-8 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-background/70 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40",
-                active && "rounded-r-none bg-muted/35 text-foreground shadow-none hover:bg-muted/35 before:absolute before:-right-1.5 before:top-0 before:h-full before:w-1.5 before:bg-muted/35",
               )}
+              // Inline (not arbitrary Tailwind classes) so it applies even when
+              // the host's prebuilt CSS doesn't include these classes. Open plugin
+              // (pane visible) = accent icon on an elevated chip; selected but
+              // collapsed = quiet neutral, no accent.
+              style={
+                showAccent
+                  ? { color: "var(--accent)", backgroundColor: "color-mix(in oklch, var(--foreground) 10%, transparent)" }
+                  : active
+                    ? { backgroundColor: "color-mix(in oklch, var(--foreground) 6%, transparent)" }
+                    : undefined
+              }
             >
               {entry.icon}
             </button>
@@ -211,6 +294,14 @@ export function WorkbenchLeftPane({
       })}
     </nav>
   )
+
+  if (railOnly) {
+    return (
+      <div data-boring-workspace-part="workbench-left" className={cn("workbench-left-root flex h-full min-h-0", className)}>
+        {rail}
+      </div>
+    )
+  }
 
   return (
     <div data-boring-workspace-part="workbench-left" className={cn("workbench-left-root flex h-full min-h-0", className)}>
@@ -272,9 +363,22 @@ export function WorkbenchLeftPane({
         )}
 
         <div className="min-h-0 flex-1 overflow-hidden">
-          <LeftTabPanelHost panel={activeEntry?.panel} params={leftTabParams} onOpenPanel={onOpenPanel} />
+          {activeEntry?.kind === "workspace-page" ? (
+            <WorkspacePageLauncher title={activeEntry.title} />
+          ) : (
+            <LeftTabPanelHost source={activeSource} params={leftTabParams} onOpenPanel={onOpenPanel} />
+          )}
         </div>
       </div>
+    </div>
+  )
+}
+
+function WorkspacePageLauncher({ title }: { title: string }) {
+  return (
+    <div className="flex h-full flex-col items-center justify-center px-4 text-center text-[12px] text-muted-foreground">
+      <div className="mb-1 text-sm font-medium text-foreground">{title}</div>
+      <div>Opened in the workspace.</div>
     </div>
   )
 }
@@ -292,39 +396,11 @@ function CategoryInitial({ title }: { title: string }) {
   )
 }
 
-const noopDisposable = { dispose() {} }
-const noopPaneApi = new Proxy(
-  {},
-  {
-    get: () => () => noopDisposable,
-  },
-) as PaneProps["api"]
-function createLeftTabContainerApi(onOpenPanel: WorkbenchLeftPaneProps["onOpenPanel"]): PaneProps["containerApi"] {
-  return new Proxy(
-    {},
-    {
-      get: (_target, prop) => {
-        if (prop === "addPanel") return (config: WorkbenchLeftPaneOpenPanelConfig) => onOpenPanel?.(config)
-        return () => undefined
-      },
-    },
-  ) as PaneProps["containerApi"]
-}
+function LeftTabPanelHost({ source, params, onOpenPanel }: { source?: WorkspaceSourceConfig; params: LeftTabParams; onOpenPanel?: WorkbenchLeftPaneProps["onOpenPanel"] }) {
+  const workspaceSourceRegistry = useWorkspaceSourceRegistry()
+  const Inner = source ? workspaceSourceRegistry.getComponent(source.id) : null
 
-function LeftTabPanelHost({ panel, params, onOpenPanel }: { panel?: PanelConfig; params: LeftTabParams; onOpenPanel?: WorkbenchLeftPaneProps["onOpenPanel"] }) {
-  const Inner = useMemo(() => {
-    if (!panel) return null
-    if (panel.lazy) {
-      return lazy(
-        panel.component as () => Promise<{ default: ComponentType<unknown> }>,
-      )
-    }
-    return panel.component as ComponentType<any>
-  }, [panel])
-
-  const containerApi = useMemo(() => createLeftTabContainerApi(onOpenPanel), [onOpenPanel])
-
-  if (!panel || !Inner) {
+  if (!source || !Inner) {
     return (
       <div className="flex h-full items-center justify-center px-4 text-center text-[12px] text-muted-foreground">
         No workspace category registered.
@@ -333,9 +409,9 @@ function LeftTabPanelHost({ panel, params, onOpenPanel }: { panel?: PanelConfig;
   }
   return (
     <PluginErrorBoundary
-      pluginId={panel.pluginId ?? panel.id}
-      contributionKind="panel"
-      contributionId={panel.id}
+      pluginId={source.pluginId ?? source.id}
+      contributionKind="workspace-source"
+      contributionId={source.id}
     >
       <Suspense
         fallback={
@@ -346,8 +422,7 @@ function LeftTabPanelHost({ panel, params, onOpenPanel }: { panel?: PanelConfig;
       >
         {createElement(Inner, {
           params,
-          api: noopPaneApi,
-          containerApi,
+          openPanel: onOpenPanel,
           className: "h-full",
         })}
       </Suspense>
