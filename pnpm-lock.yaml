@@ -212,9 +212,6 @@ importers:
 
   packages/agent:
     dependencies:
-      '@earendil-works/pi-tui':
-        specifier: 0.75.5
-        version: 0.75.5
       '@hachej/boring-ui-kit':
         specifier: workspace:*
         version: link:../ui
@@ -518,8 +515,8 @@ importers:
         specifier: ^1.8.0
         version: 1.8.0(react@19.2.5)
       nodemailer:
-        specifier: ^8.0.6
-        version: 8.0.6
+        specifier: ^8.0.9
+        version: 8.0.9
       pino:
         specifier: ^10.3.1
         version: 10.3.1
@@ -966,15 +963,6 @@ importers:
       vitest:
         specifier: ^3.2.6
         version: 3.2.6(@types/debug@4.1.13)(@types/node@22.19.17)(jiti@2.7.0)(jsdom@29.0.2(@noble/hashes@2.2.0))(lightningcss@1.32.0)(tsx@4.21.0)(yaml@2.9.0)
-
-  plugins/ccusage-dashboard:
-    dependencies:
-      ccusage:
-        specifier: ^20.0.11
-        version: 20.0.14
-      recharts:
-        specifier: ^2.15.0
-        version: 2.15.4(react-dom@19.2.5(react@19.2.5))(react@19.2.5)
 
   plugins/data-catalog:
     dependencies:
@@ -1483,36 +1471,6 @@ packages:
   '@bramus/specificity@2.4.2':
     resolution: {integrity: sha512-ctxtJ/eA+t+6q2++vj5j7FYX3nRu311q1wfYH3xjlLOsczhlhxAg2FWNUXhpGvAw3BWo1xBcvOV6/YLc2r5FJw==}
     hasBin: true
-
-  '@ccusage/ccusage-darwin-arm64@20.0.14':
-    resolution: {integrity: sha512-M8ZQzWmvLsI+eKbjQBJtw2YudUgFr4gAtXmNnb5nYam177vmajaxDWdItJr+I+Qx9QbxsKOxJslazT/WYkoFFQ==}
-    cpu: [arm64]
-    os: [darwin]
-
-  '@ccusage/ccusage-darwin-x64@20.0.14':
-    resolution: {integrity: sha512-NORKtEWsw8n3WGTdK3LGmEbygwrUFEDYAOeXWYT5rKAU84IMMYO9BVKALsr5KWX5FpfGGhTk/QdbzSFIaAqzKw==}
-    cpu: [x64]
-    os: [darwin]
-
-  '@ccusage/ccusage-linux-arm64@20.0.14':
-    resolution: {integrity: sha512-aShec3E1bFZTOl35B4KdX35kEzGZGkGO5eOnR03ih1mF88D9eEUFKWJ9pha1Liq8v/1gJvmHzgjuV7hLxrNDhw==}
-    cpu: [arm64]
-    os: [linux]
-
-  '@ccusage/ccusage-linux-x64@20.0.14':
-    resolution: {integrity: sha512-Q00no4oxct4/zQ4ob7t8uItsTSyrwFLti5NZ6kGhCxliN7LwMNqMVrTsUDy8Wsfiu1HEtyQQUclYRNAtLsn6Uw==}
-    cpu: [x64]
-    os: [linux]
-
-  '@ccusage/ccusage-win32-arm64@20.0.14':
-    resolution: {integrity: sha512-a7VPXWtzeQVo3qJl4Mprga8gBhWniQ0aPfw8FZWGRp9S7oDL18vgJOq2yF7c2NYYvTDW2prDaku6dawVNQGXeg==}
-    cpu: [arm64]
-    os: [win32]
-
-  '@ccusage/ccusage-win32-x64@20.0.14':
-    resolution: {integrity: sha512-DXo5DrINH/Zwih+N7ra7jSpIo70heuzC+6k3CuB4QIacJj908uSX12Zp4JdnUwmFk7yGEwQBfVs+SmuOc+VP0w==}
-    cpu: [x64]
-    os: [win32]
 
   '@chevrotain/cst-dts-gen@12.0.0':
     resolution: {integrity: sha512-fSL4KXjTl7cDgf0B5Rip9Q05BOrYvkJV/RrBTE/bKDN096E4hN/ySpcBK5B24T76dlQ2i32Zc3PAE27jFnFrKg==}
@@ -4580,10 +4538,6 @@ packages:
   ccount@2.0.1:
     resolution: {integrity: sha512-eyrF0jiFpY+3drT6383f1qhkbGsLSifNAjA61IUjZjmLCWjItY6LB9ft9YhoDgwfmclB2zhu51Lc7+95b8NRAg==}
 
-  ccusage@20.0.14:
-    resolution: {integrity: sha512-xAkGU9NZdhbxj11o6J9x/tqNXicLz29y9j3nTJEkPI76LW4i6IrsXXcD9ywqzbKRsq1NlJLEhnBRgaZAksS9WA==}
-    hasBin: true
-
   chai@5.3.3:
     resolution: {integrity: sha512-4zNhdJD/iOjSH0A05ea+Ke6MU5mmpQcbQsSOkgdaUMJ9zTlDTD/GYlwohmIE2u0gaxHYiVHEn1Fw9mZ/ktJWgw==}
     engines: {node: '>=18'}
@@ -6224,8 +6178,8 @@ packages:
   node-releases@2.0.38:
     resolution: {integrity: sha512-3qT/88Y3FbH/Kx4szpQQ4HzUbVrHPKTLVpVocKiLfoYvw9XSGOX2FmD2d6DrXbVYyAQTF2HeF6My8jmzx7/CRw==}
 
-  nodemailer@8.0.6:
-    resolution: {integrity: sha512-Nm2XeuDwwy2wi5A+8jPWwQwNzcjNjhWdE3pVLoXEusxJqCnAPAgnBGkSmiLknbnWuOF9qraRpYZjfxqtKZ4tPw==}
+  nodemailer@8.0.9:
+    resolution: {integrity: sha512-5ofa7BUN8+C+Hckh5V2GjeeOGRQBx0CJQA6KxrvuZfC8iU4/q7sLn8XrtEEhJkjV6HdyIiQs7Bba6bTao8JhkA==}
     engines: {node: '>=6.0.0'}
 
   object-assign@4.1.1:
@@ -8095,24 +8049,6 @@ snapshots:
   '@bramus/specificity@2.4.2':
     dependencies:
       css-tree: 3.2.1
-
-  '@ccusage/ccusage-darwin-arm64@20.0.14':
-    optional: true
-
-  '@ccusage/ccusage-darwin-x64@20.0.14':
-    optional: true
-
-  '@ccusage/ccusage-linux-arm64@20.0.14':
-    optional: true
-
-  '@ccusage/ccusage-linux-x64@20.0.14':
-    optional: true
-
-  '@ccusage/ccusage-win32-arm64@20.0.14':
-    optional: true
-
-  '@ccusage/ccusage-win32-x64@20.0.14':
-    optional: true
 
   '@chevrotain/cst-dts-gen@12.0.0':
     dependencies:
@@ -11168,15 +11104,6 @@ snapshots:
 
   ccount@2.0.1: {}
 
-  ccusage@20.0.14:
-    optionalDependencies:
-      '@ccusage/ccusage-darwin-arm64': 20.0.14
-      '@ccusage/ccusage-darwin-x64': 20.0.14
-      '@ccusage/ccusage-linux-arm64': 20.0.14
-      '@ccusage/ccusage-linux-x64': 20.0.14
-      '@ccusage/ccusage-win32-arm64': 20.0.14
-      '@ccusage/ccusage-win32-x64': 20.0.14
-
   chai@5.3.3:
     dependencies:
       assertion-error: 2.0.1
@@ -13089,7 +13016,7 @@ snapshots:
 
   node-releases@2.0.38: {}
 
-  nodemailer@8.0.6: {}
+  nodemailer@8.0.9: {}
 
   object-assign@4.1.1: {}
 
