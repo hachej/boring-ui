@@ -20,6 +20,8 @@ Read:
   - orchestration skill.
 - [`boring-triage`](../../.agents/skills/boring-triage/SKILL.md) - triage
   skill.
+- Plan files live under `plans/<state>/gh-<number>-<slug>.md`; see
+  [`boring-loop.md`](boring-loop.md#plan-files).
 
 Source notes live in [`sources/`](sources/):
 

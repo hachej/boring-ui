@@ -187,6 +187,30 @@ updated: 2026-06-25
 Plan-only edits do not need a branch/worktree. Code starts only after the plan
 states the flag/abstraction strategy, proof path, and owner gate.
 
+Use this body shape:
+
+```markdown
+# gh-123 short title
+
+## Decision
+What should happen and why this is worth doing.
+
+## Flag
+`not-needed`, `flag:<name>`, or `not-flaggable` with the abstraction path.
+
+## Acceptance
+Small bullets that can be tested or reviewed.
+
+## Slices
+Tiny PRs or implementation steps; say when a stack is needed.
+
+## Proof
+Commands, CI, demo workspace, screenshots, or explicit waiver.
+
+## Open Questions
+Only questions that block safe implementation or merge.
+```
+
 ## Loop Commands
 
 `/feedback`: create a GitHub issue directly, enriched with safe context, lean

@@ -10,8 +10,8 @@ Triage answers: what is the first unmet gate?
 ## Read
 
 Read issue/PR body, comments, owner instructions, related PRs, changed files,
-CI, reviews, head SHA, recorded Pi sessions, and enough code/docs to know risk
-and proof path.
+CI, reviews, head SHA, recorded Pi sessions, and enough code/docs to know risk,
+flag/abstraction path, and proof path.
 
 ## Labels
 
