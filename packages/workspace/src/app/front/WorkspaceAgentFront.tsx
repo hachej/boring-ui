@@ -1596,6 +1596,9 @@ export function WorkspaceAgentFront<
       onExpand={() => setAppLeftPaneCollapsed(false)}
       onCollapse={() => setAppLeftPaneCollapsed(true)}
       onResizeLeftPane={(delta) => setAppLeftPaneWidth((width) => clampNumber(width + delta, 220, 420))}
+      leftPaneWidth={effectiveAppLeftPaneWidth}
+      minLeftPaneWidth={220}
+      maxLeftPaneWidth={420}
       leftPane={(
         <AppLeftPane
           width={effectiveAppLeftPaneWidth}
