@@ -13,6 +13,7 @@ import type {
   CatalogConfig,
   LeftTabParams,
   WorkspaceBridge,
+  WorkspaceSourceProps,
 } from "@hachej/boring-workspace"
 import type { PaneProps } from "@hachej/boring-workspace"
 import {
@@ -66,7 +67,7 @@ export type {
 /**
  * Builds a `BoringFrontFactoryWithId` for the data-catalog plugin.
  * The factory captures `options` in a closure and registers the
- * configured left tab, visualization panel, catalog entry, and
+ * configured workspace source, visualization panel, catalog entry, and
  * surface resolver imperatively when the workspace calls it.
  *
  * Each contribution is opt-out via the `include*` flags so host apps
@@ -82,15 +83,15 @@ export function createDataCatalogPlugin(
   const label = options.label ?? "Data"
   const catalogId = options.catalogId ?? id
   const catalogLabel = options.catalogLabel ?? label
-  const leftTabId = options.leftTabId ?? `${id}-tab`
-  const leftTabTitle = options.leftTabTitle ?? label
-  const leftTabIcon = options.leftTabIcon ?? Database
+  const workspaceSourceId = options.workspacePageId ?? options.leftTabId ?? `${id}-page`
+  const workspaceSourceTitle = options.workspacePageTitle ?? options.leftTabTitle ?? label
+  const workspaceSourceIcon = options.workspacePageIcon ?? options.leftTabIcon ?? Database
   const visualizationPanelId = options.visualizationPanelId ?? `${id}-visualization`
   const visualizationTitle = options.visualizationTitle ?? `${label} View`
   const surfaceKind = options.surfaceKind ?? DATA_CATALOG_ROW_SURFACE_KIND
   const source = options.source ?? "app"
   const includeVisualizationPanel = options.includeVisualizationPanel ?? true
-  const includeLeftTab = options.includeLeftTab ?? true
+  const includeWorkspaceSource = options.includeWorkspacePage ?? options.includeLeftTab ?? true
   const includeCatalog = options.includeCatalog ?? true
   const includeSurfaceResolver =
     options.includeSurfaceResolver ?? (includeVisualizationPanel && !options.onSelect)
@@ -102,7 +103,7 @@ export function createDataCatalogPlugin(
       ? createDataCatalogOpenHandler({ catalogId, surfaceKind })
       : () => {})
 
-  function DataCatalogLeftTab({ params, className }: PaneProps<LeftTabParams>) {
+  function DataCatalogWorkspaceSource({ params, className }: WorkspaceSourceProps<LeftTabParams>) {
     const { query, controlled } = useDataCatalogQuery(params)
     const bridge = params?.bridge as WorkspaceBridge | undefined
     const handleSelect = (row: ExplorerItem) => onSelect(row, { params, bridge })
@@ -116,8 +117,8 @@ export function createDataCatalogPlugin(
         getDragPayload={options.getDragPayload}
         emptyState={emptyState}
         searchPlaceholder={searchPlaceholder}
-        toolbarTitle={usesOuterChromeSearch ? undefined : leftTabTitle}
-        toolbarIcon={usesOuterChromeSearch ? undefined : leftTabIcon}
+        toolbarTitle={usesOuterChromeSearch ? undefined : workspaceSourceTitle}
+        toolbarIcon={usesOuterChromeSearch ? undefined : workspaceSourceIcon}
         query={usesOuterChromeSearch ? query : undefined}
         searchable={!usesOuterChromeSearch}
         toolbarPortalElement={usesOuterChromeSearch ? params?.chromeActionsElement : undefined}
@@ -176,14 +177,13 @@ export function createDataCatalogPlugin(
     )
   }
 
-  const leftTab = includeLeftTab
+  const workspaceSource = includeWorkspaceSource
     ? {
-        id: leftTabId,
-        title: leftTabTitle,
-        icon: leftTabIcon,
-        component: DataCatalogLeftTab,
+        id: workspaceSourceId,
+        label: workspaceSourceTitle,
+        icon: workspaceSourceIcon,
+        component: DataCatalogWorkspaceSource,
         source,
-        panelId: leftTabId,
       }
     : undefined
 
@@ -223,7 +223,7 @@ export function createDataCatalogPlugin(
   return definePlugin({
     id,
     label,
-    leftTabs: leftTab ? [leftTab] : [],
+    workspaceSources: workspaceSource ? [workspaceSource] : [],
     panels: visualizationPanel ? [visualizationPanel] : [],
     catalogs: catalog ? [catalog] : [],
     surfaceResolvers: resolver ? [resolver] : [],
