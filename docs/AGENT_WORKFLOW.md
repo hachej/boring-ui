@@ -94,17 +94,45 @@ The agent token is read-only for `secret/agent/*` and `secret/shared/*`.
 
 ## GitHub labels
 
-Every issue should have exactly one `status:` label plus relevant package/plugin labels.
+Kanzen labels are routing state only. Every issue or PR should have exactly one
+`state:*`, one `phase:*`, and one `track:*` label.
 
-Status flow:
+Allowed values:
 
 ```text
-status:to-plan → status:to-plan-review → status:to-code → status:to-code-review → closed
+state:queued | state:blocked | state:active | state:ready | state:done
+phase:triage | phase:grill | phase:plan | phase:implement | phase:review | phase:merge
+track:owner | track:fast
 ```
 
-Package labels: `package:core`, `package:agent`, `package:workspace`, `package:ui`, `package:cli`, `package:pi`.
+Optional source label: `source:feedback`.
 
-Plugin labels: `plugin:ask-user`, `plugin:data-catalog`, `plugin:data-explorer`, `plugin:deck`.
+Do not add `bug`, `ui`, `accessibility`, `package:*`, `plugin:*`, or `gate:*`
+labels for Kanzen flow. Put area, kind, gate, proof, and next action in the
+issue/PR body or Kanzen comment.
+
+## Pi session continuity
+
+Session ids are structured metadata, not labels. Store them in the issue/PR
+body, Kanzen card, review hook, or proof comment:
+
+```text
+feedbackSession:
+grillSession:
+planSession:
+planReviewSession:
+implementSession:
+codeReviewSession:
+proofSession:
+ownerAskSession:
+```
+
+Before starting plan, review, implementation, proof, or owner ask work, reuse
+the matching session when it still belongs to the same repo, issue/PR, and
+branch. Create a new session only when the prior one is missing, inaccessible,
+archived/stale, or wrong scope; record the replacement and reason. If planning
+naturally becomes implementation in the same Pi thread, carry the id forward,
+for example `implementSession: <same id as planSession>`.
 
 ## GitHub proof of work
 
