@@ -4,7 +4,7 @@ import { renderHook } from "@testing-library/react"
 import userEvent from "@testing-library/user-event"
 import type { ReactNode } from "react"
 import { WorkspaceProvider } from "../front/provider"
-import { useRegistry, useCommandRegistry, useCatalogRegistry } from "../front/registry"
+import { useRegistry, useWorkspaceSourceRegistry, useCommandRegistry, useCatalogRegistry } from "../front/registry"
 import { useCatalogs } from "../front/plugin/useCatalogs"
 import { definePlugin } from "../shared/plugins/frontFactory"
 const DummyPanel = () => null
@@ -149,11 +149,12 @@ describe("WorkspaceProvider — plugin integration", () => {
     await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument())
   })
 
-  it("defaults include filesystemPlugin (files, editors, and file fallback panels)", () => {
+  it("defaults include filesystemPlugin (files source, editors, and file fallback panels)", () => {
     function Inspector() {
       const reg = useRegistry()
+      const sources = useWorkspaceSourceRegistry()
       const ids = reg.list().map((p) => p.id)
-      return <div data-testid="ids">{ids.join(",")}</div>
+      return <><div data-testid="ids">{ids.join(",")}</div><div data-testid="source-ids">{sources.list().map((source) => source.id).join(",")}</div></>
     }
 
     render(
@@ -163,7 +164,9 @@ describe("WorkspaceProvider — plugin integration", () => {
     )
 
     const ids = screen.getByTestId("ids").textContent!.split(",")
-    expect(ids).toContain("files")
+    const sourceIds = screen.getByTestId("source-ids").textContent!.split(",")
+    expect(sourceIds).toContain("files")
+    expect(ids).not.toContain("files")
     expect(ids).toContain("empty-file-panel")
     expect(ids).toContain("code-editor")
     expect(ids).toContain("markdown-editor")
@@ -172,10 +175,12 @@ describe("WorkspaceProvider — plugin integration", () => {
   it("excludeDefaults: ['filesystem'] removes all filesystem contributions", () => {
     function Inspector() {
       const reg = useRegistry()
+      const sources = useWorkspaceSourceRegistry()
       const catalogs = useCatalogRegistry()
       return (
         <div>
           <span data-testid="panel-ids">{reg.list().map((p) => p.id).join(",")}</span>
+          <span data-testid="source-ids">{sources.list().map((source) => source.id).join(",")}</span>
           <span data-testid="catalog-count">{catalogs.list().length}</span>
         </div>
       )
@@ -189,6 +194,7 @@ describe("WorkspaceProvider — plugin integration", () => {
 
     const panelIds = screen.getByTestId("panel-ids").textContent!.split(",")
     expect(panelIds).not.toContain("files")
+    expect(screen.getByTestId("source-ids").textContent).not.toContain("files")
     expect(panelIds).not.toContain("empty-file-panel")
     expect(panelIds).not.toContain("code-editor")
     expect(panelIds).not.toContain("markdown-editor")
@@ -238,7 +244,7 @@ describe("WorkspaceProvider — plugin integration", () => {
     )
 
     const ids = screen.getByTestId("ids").textContent!.split(",")
-    expect(ids).toContain("files")
+    expect(ids).not.toContain("files")
     expect(ids).toContain("analytics-dashboard")
   })
 })
@@ -325,7 +331,7 @@ describe("WorkspaceProvider — core panel registration (j9p7.25)", () => {
       </WorkspaceProvider>,
     )
 
-    // 4 core + 8 filesystem panels/left-tab + 1 test = 13
-    expect(screen.getByTestId("count").textContent).toBe("13")
+    // 4 core + 7 filesystem panels + 1 test = 12; Files is a workspace source.
+    expect(screen.getByTestId("count").textContent).toBe("12")
   })
 })

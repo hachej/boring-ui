@@ -25,7 +25,7 @@ const samplePlugin: BoringFrontFactoryWithId = definePlugin({
       id: SAMPLE_PANEL_ID,
       label: "Sample",
       component: SamplePanel,
-      placement: "center",
+      placement: "workspace-page",
       source: "app",
     },
   ],

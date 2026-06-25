@@ -4,6 +4,10 @@ export type {
   PanelConfig,
   CommandConfig,
   PanelRegistration,
+  WorkspaceSourceConfig,
+  WorkspaceSourceOpenPanelConfig,
+  WorkspaceSourceProps,
+  WorkspaceSourceRegistration,
 } from "../../shared/types/panel"
 
 // definePanel is a runtime value, not a type

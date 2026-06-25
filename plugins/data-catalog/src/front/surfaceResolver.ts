@@ -34,6 +34,10 @@ export function createDataCatalogSurfaceResolver(
   return {
     id: options.surfaceResolverId ?? `${options.id}-row`,
     kind,
+    title: "Open data catalog row",
+    description: "Open or focus a data catalog row using the host catalog resolver.",
+    targetHint: "catalog row id or query string",
+    examples: [{ target: "orders_daily" }],
     source: options.source,
     resolve(request) {
       if (request.kind !== kind) return undefined

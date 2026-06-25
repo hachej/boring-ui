@@ -1,19 +1,24 @@
 import { PluginError } from "./errors"
+import { adaptLegacyPanelToWorkspaceSource } from "./legacyWorkspaceSource"
 import {
   captureFrontPlugin,
+  normalizeFrontSurfaceResolver,
   type BoringFrontFactoryWithId,
-  type BoringFrontLeftTabRegistration,
   type BoringFrontPanelRegistration,
   type BoringFrontPanelCommandRegistration,
-  type BoringFrontSurfaceResolverRegistration,
+  type BoringFrontWorkspaceSourceRegistration,
   type CapturedFrontPlugin,
 } from "./frontFactory"
 import type { CatalogConfig } from "./types"
-import type { CommandConfig, PanelRegistration } from "../types/panel"
-import type { SurfaceOpenRequest, SurfaceResolverRegistration } from "../types/surface"
+import { isWorkspaceSourcePlacement, type CommandConfig, type PanelRegistration, type WorkspaceSourceRegistration } from "../types/panel"
+import type { SurfaceResolverRegistration } from "../types/surface"
 
 export interface PanelRegistryLike {
   register(id: string, config: PanelRegistration): void
+}
+
+export interface WorkspaceSourceRegistryLike {
+  register(id: string, config: WorkspaceSourceRegistration): void
 }
 
 export interface CommandRegistryLike {
@@ -35,10 +40,12 @@ export interface BootstrapOptions {
   excludeDefaults?: string[]
   registries: {
     panels: PanelRegistryLike
+    workspaceSources?: WorkspaceSourceRegistryLike
     commands: CommandRegistryLike
     catalogs: CatalogRegistryLike
     surfaceResolvers?: SurfaceResolverRegistryLike
   }
+  panelCommandRunner?: (command: BoringFrontPanelCommandRegistration) => (() => void) | undefined
 }
 
 export interface BootstrapResult {
@@ -62,26 +69,47 @@ function panelRegistration(panel: BoringFrontPanelRegistration<any>, pluginId: s
   }
 }
 
-function leftTabRegistration(tab: BoringFrontLeftTabRegistration<any>, pluginId: string): PanelRegistration {
+function legacyPanelWorkspaceSourceRegistration(panel: BoringFrontPanelRegistration<any>, pluginId: string): WorkspaceSourceRegistration {
+  const title = panel.label ?? panel.id
   return {
-    title: tab.title,
-    component: tab.component ?? (() => null),
-    placement: "left-tab",
-    defaultPanelId: tab.panelId,
-    source: tab.source ?? "plugin",
+    title,
+    component: adaptLegacyPanelToWorkspaceSource(panel.id, title, panel.component, panel.lazy),
+    source: panel.source ?? "plugin",
     pluginId,
-    ...(tab.icon ? { icon: tab.icon } : {}),
-    ...(tab.requiresCapabilities ? { requiresCapabilities: tab.requiresCapabilities } : {}),
-    ...(tab.lazy !== undefined ? { lazy: tab.lazy } : {}),
-    ...(tab.chromeless !== undefined ? { chromeless: tab.chromeless } : {}),
+    ...(panel.icon ? { icon: panel.icon } : {}),
+    ...(panel.requiresCapabilities ? { requiresCapabilities: panel.requiresCapabilities } : {}),
+    ...(panel.lazy !== undefined ? { lazy: panel.lazy } : {}),
+    ...(panel.chromeless !== undefined ? { chromeless: panel.chromeless } : {}),
+    ...(panel.defaultPanelId !== undefined ? { defaultPanelId: panel.defaultPanelId } : {}),
   }
 }
 
-function commandRegistration(command: BoringFrontPanelCommandRegistration, pluginId: string): CommandConfig {
+function workspaceSourceRegistration(source: BoringFrontWorkspaceSourceRegistration<any>, pluginId: string): WorkspaceSourceRegistration {
+  return {
+    title: source.label ?? source.id,
+    component: source.component,
+    source: source.source ?? "plugin",
+    pluginId,
+    ...(source.icon ? { icon: source.icon } : {}),
+    ...(source.requiresCapabilities ? { requiresCapabilities: source.requiresCapabilities } : {}),
+    ...(source.lazy !== undefined ? { lazy: source.lazy } : {}),
+    ...(source.chromeless !== undefined ? { chromeless: source.chromeless } : {}),
+    ...(source.defaultPanelId !== undefined ? { defaultPanelId: source.defaultPanelId } : {}),
+  }
+}
+
+function commandRegistration(
+  command: BoringFrontPanelCommandRegistration,
+  pluginId: string,
+  panelCommandRunner?: BootstrapOptions["panelCommandRunner"],
+): CommandConfig {
+  const run = command.run ?? panelCommandRunner?.(command) ?? (() => {
+    throw new Error(`Panel command "${command.id}" must provide run() or panelId.`)
+  })
   return {
     id: command.id,
     title: command.title,
-    run: command.run ?? (() => undefined),
+    run,
     pluginId,
     ...(command.keywords ? { keywords: command.keywords } : command.panelId ? { keywords: [command.panelId] } : {}),
     ...(command.shortcut ? { shortcut: command.shortcut } : {}),
@@ -89,43 +117,38 @@ function commandRegistration(command: BoringFrontPanelCommandRegistration, plugi
   }
 }
 
-function surfaceResolverRegistration(
-  resolver: BoringFrontSurfaceResolverRegistration,
-  pluginId: string,
-): { id: string; config: SurfaceResolverRegistration } {
-  const id = resolver.id ?? `${pluginId}:${resolver.kind}`
-  return {
-    id,
-    config: {
-      source: resolver.source ?? "plugin",
-      pluginId,
-      resolve(request: SurfaceOpenRequest) {
-        if (request.kind !== resolver.kind) return undefined
-        return resolver.resolve(request) ?? undefined
-      },
-    },
-  }
+function hasWorkspaceSourceContributions(registrations: CapturedFrontPlugin["registrations"]): boolean {
+  return registrations.workspaceSources.length > 0 ||
+    registrations.panels.some((panel) => isWorkspaceSourcePlacement(panel.placement))
 }
 
 export function registerCapturedFrontPlugin(
   plugin: CapturedFrontPlugin,
   registries: BootstrapOptions["registries"],
+  panelCommandRunner?: BootstrapOptions["panelCommandRunner"],
 ): void {
   const { registrations } = plugin
+  if (!registries.workspaceSources && hasWorkspaceSourceContributions(registrations)) {
+    throw new PluginError("validation", `plugin "${plugin.id}" registered workspace sources but bootstrap registries.workspaceSources is missing`)
+  }
   for (const panel of registrations.panels) {
+    if (isWorkspaceSourcePlacement(panel.placement) && registries.workspaceSources) {
+      registries.workspaceSources.register(panel.id, legacyPanelWorkspaceSourceRegistration(panel, plugin.id))
+      continue
+    }
     registries.panels.register(panel.id, panelRegistration(panel, plugin.id))
   }
-  for (const tab of registrations.leftTabs) {
-    registries.panels.register(tab.id, leftTabRegistration(tab, plugin.id))
+  for (const source of registrations.workspaceSources) {
+    registries.workspaceSources?.register(source.id, workspaceSourceRegistration(source, plugin.id))
   }
   for (const command of registrations.panelCommands) {
-    registries.commands.registerCommand(commandRegistration(command, plugin.id))
+    registries.commands.registerCommand(commandRegistration(command, plugin.id, panelCommandRunner))
   }
   for (const catalog of registrations.catalogs) {
     registries.catalogs.register(catalog, plugin.id)
   }
   for (const resolver of registrations.surfaceResolvers) {
-    const { id, config } = surfaceResolverRegistration(resolver, plugin.id)
+    const { id, config } = normalizeFrontSurfaceResolver(resolver, plugin.id)
     registries.surfaceResolvers?.register(id, config)
   }
 }
@@ -156,7 +179,7 @@ export function bootstrap(options: BootstrapOptions): BootstrapResult {
 
   const captured = finalPlugins.map(captureFrontPlugin)
   for (const plugin of captured) {
-    registerCapturedFrontPlugin(plugin, options.registries)
+    registerCapturedFrontPlugin(plugin, options.registries, options.panelCommandRunner)
   }
 
   return {
