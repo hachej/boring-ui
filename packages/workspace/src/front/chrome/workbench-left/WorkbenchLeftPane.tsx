@@ -9,6 +9,7 @@ import {
   useRef,
   useState,
   useSyncExternalStore,
+  type ReactNode,
 } from "react"
 import { PanelLeftClose, Search, X } from "lucide-react"
 import { IconButton, Input } from "@hachej/boring-ui-kit"
@@ -86,7 +87,7 @@ export function WorkbenchLeftPane({
   type LeftPaneEntry = {
     id: string
     title: string
-    icon: React.ReactNode
+    icon: ReactNode
     source?: WorkspaceSourceConfig
     panel?: PanelConfig
     kind: "source" | "workspace-page"
