@@ -1,6 +1,6 @@
 # Multi-Project Left Bar — Plan
 
-Status: proposed (rev 4 — background-open contract clarified after #377/#385 review)
+Status: proposed (rev 5 — mounted-workspace cache plan for #385)
 Relationship to existing specs:
 - Extends `docs/plans/plugin-tabs-workspace-layout/02-left-pane.md`, which deliberately shipped **no "Projects" primary item**. This plan adds multi-project navigation to that left pane.
 - The **layout modes** here (`single-project` / `multi-project`) are a different axis from the **plugin display modes** (`09-two-plugin-display-modes.md`) and the **workspace layout host** (V2 review). See §3.1 — they never branch on each other.
@@ -34,7 +34,7 @@ Non-goals: changing the agent runtime, the plugin loading model, or tenancy/auth
 
 ## 2. Two layout modes
 
-A deployment resolves ONE mode (§2.3). Both reuse the same per-workspace content (chat + workbench), which stays `key={workspaceId}` and remounts on switch (correct — re-inits that project's plugins).
+A deployment resolves ONE mode (§2.3). Both reuse the same per-workspace content (chat + workbench). In `single-project`, content behaves as today and remounts on workspace switch. In `multi-project`, content is still keyed by `workspaceId`, but recently used workspace contents may remain mounted in the bounded cache (§5.3) until LRU eviction.
 
 ### `single-project` (default)
 Top-of-left-bar **dropdown** (today's `WorkspaceSwitcher`, unchanged). Left bar shows only the current project's sessions. No surface enumerates other projects.
@@ -124,13 +124,13 @@ Scope rules: skills are **project-specific or global** and the page **labels whi
 ### 5.1 Open-session contract
 - The active-session key is accessed **only** via the exported helper `writeActiveSessionId(id, { storageScope })` (`packages/agent/src/front/chat/session/activeSessionStorage.ts`) — never a hand-built string. Documented contract + test.
 - **Cross-project open:** `writeActiveSessionId` is a **synchronous** localStorage write; the shell writes it, THEN `navigate('/workspace/<id>')`. The target `WorkspaceAgentFront` mounts and reads `initialActiveSessionId ?? readActiveSessionId(...)` on first render — after the write — so there is **no race** and **no need for router nav-state**. (Nav-state was rejected: the workspace package has no `react-router` dependency and must not gain one — invariant #7-adjacent. Open Q removed.)
-- **Same-project open** (workspace already mounted; `navigate` is a no-op): handled by a **new typed event on the workspace bus**, a PR2 deliverable — not yet present:
+- **Mounted-target open** (same project or cached inactive project): handled by a **new typed event on the workspace bus**, a PR2/#385 deliverable. The shell still writes storage and navigates for cross-project opens; the event is the live handoff for any already-mounted target. Non-mounted targets ignore the event and read storage on first mount:
 
 ```ts
 // PR2: add to packages/workspace/src/front/events (typed bus, not ad-hoc CustomEvent)
 workspaceEvents.openSession: { workspaceId: string; sessionId: string | null }
 ```
-Shell dispatches; a **new** `WorkspaceAgentFront` subscriber switches the live session. PR2 acceptance gates on both the event type and the consumer existing.
+Shell dispatches after the storage write. A **new** `WorkspaceAgentFront` subscriber switches the live session when its `workspaceId` matches the event. PR2/#385 acceptance gates on the event type, the consumer, and the cached-target case: workspace A visible, workspace B cached/inactive, click B/session-2 ⇒ B becomes visible with session-2 active without requiring a remount.
 
 ### 5.2 Background boot — no route/content takeover
 Sandbox provisioning is lazy (first agent use); a switch does not wait on a sandbox. The only unavoidable gate is the target workspace-detail fetch (auth / existence). The product requirement from #377 is stricter than "use a smaller spinner": **opening a session from another project must not blank or replace the current workspace page while the target workspace loads.**
@@ -147,22 +147,76 @@ click session S in project X while project A is mounted:
   6. not-found/forbidden/switch-failed render as content-pane errors while the nav remains available
 ```
 
-Implementation options:
+Chosen #385 architecture:
 
-- **Preferred structural solution:** persistent app shell (§3 / §11.3A). The project nav lives outside the keyed workspace content, so it never remounts; routed content can show target-loading state independently.
-- **Acceptable PR2 repair if the shell has not been lifted yet:** retain the **last matched** `WorkspaceAgentFront` during multi-project `loading`/`mismatched` route states. Use separate identities:
+- Build the **persistent multi-project shell** now. The project nav lives outside the keyed per-workspace content, so the nav never remounts on workspace changes.
+- Add a **bounded mounted-workspace cache** for routed workspace content. Multiple recently used `WorkspaceAgentFront` instances may stay mounted, but only under a strict inactive-workspace contract (§5.3).
+- Distinguish identities explicitly:
   - `routeWorkspaceId` = URL target currently loading/checking.
-  - `renderedWorkspaceId` = last matched workspace still mounted until the target is matched.
-  Scope `requestHeaders`, `authHeaders`, `fullPageBasePath`, live session fallback, and the `WorkspaceAgentFront key` to `renderedWorkspaceId` while pending. Do **not** mark the target project as active until it is actually matched; use a separate pending/opening state for feedback.
+  - `activeWorkspaceId` = matched workspace shown as active in the route/nav.
+  - `mountedWorkspaceIds` = small LRU set of workspaces whose content remains mounted.
+  - `visibleWorkspaceId` = workspace content currently visible; normally `activeWorkspaceId`, but remains the previous visible workspace while the route target is pending.
+- On cross-project open, write the target active-session id, navigate, mark the target as `opening`, and keep the current visible workspace mounted/visible until the target is matched. If the target is already mounted, switch visibility immediately after the active-session handoff without a full remount.
+- First-load/deep-link with no mounted workspace may show a minimal content-pane spinner because there is no old workspace to retain.
 
-Single-project mode keeps the existing full-page/loading fallback behavior. First-load/deep-link with no previous matched workspace may show the minimal content-pane spinner because there is no old workspace to retain.
+Rejected:
 
-Rejected: replacing the whole page with a full-screen or full-content spinner on cross-project session open. That is still a reload-feeling takeover and fails #377.
+- Replacing the whole page with a full-screen or full-content spinner on cross-project session open. That is still a reload-feeling takeover and fails #377.
+- Keeping every visited workspace mounted forever. The cache is bounded and evicts inactive entries.
+- Letting inactive mounted workspaces continue foreground-only side effects (focus, global keybindings, visible overlays, active chat streaming) as if they were visible.
+
+
+### 5.3 Mounted-workspace cache contract
+
+#385 may keep **multiple** workspace contents mounted to make project switching feel instant, but this is a controlled cache, not an unbounded tab graveyard.
+
+Cache policy:
+
+- Default max mounted workspaces: **3** (`current + two recent`). This can be a constant for #385; make it configurable only if a real host needs it.
+- Eviction is LRU by successful visibility, never by mere session-list browsing. Expanding a project in the nav does **not** mount that workspace.
+- The active/visible workspace is never evicted.
+- A workspace becomes cache-eligible only after it has successfully matched auth/route checks and mounted once.
+- On logout, tenant/app switch, or auth loss, clear the cache.
+
+Store isolation prerequisite:
+
+- Multiple mounted `WorkspaceAgentFront` / `WorkspaceProvider` instances require provider-scoped workspace stores. A module-singleton store ref is not multi-mount safe: the last provider to bind would win and hidden workspaces could mutate/read the wrong layout state.
+- #385 must make workspace selectors/store access context-scoped or otherwise explicitly multi-provider-safe before enabling the cache.
+- Acceptance test: mount two cached workspace providers at once; panel/layout/theme mutation in workspace A does not affect workspace B, and selectors read the provider-local store.
+
+Visibility / active-workspace signal:
+
+- Each mounted workspace receives an explicit `visible` (or `activeWorkspace`) signal. Hidden workspaces are not merely CSS-hidden; global side effects must gate/filter on visibility.
+- Workspace-targeted events are preferred over singleton broadcast where possible. If a singleton bus remains, every subscriber must ignore events whose workspace target does not match its own visible workspace.
+
+Inactive workspace contract:
+
+- Inactive mounted workspaces are DOM-hidden (`hidden`/`display:none`) and cannot own focus.
+- Inactive workspaces do not receive global keyboard shortcuts, visible overlays, toasts, command-palette ownership, or drag/drop targets.
+- Hidden workspaces do not set document title/theme and do not own global UI-command handling.
+- Chat split panes remain **within one workspace**. A session row from project B never joins project A's split stage; it switches visibility/project instead.
+- Inactive workspaces may keep local React state/layout state so switching back is fast.
+- Do not intentionally start runtime provisioning just because a workspace is cached. Runtime boot remains lazy: cache retention is a UI state optimization, not a background boot-all mechanism.
+- If an inactive workspace has active network streams/subscriptions that are expensive or user-visible, pause or disconnect them unless they are explicitly required for correctness. #385 must audit known providers (`WorkspaceProvider`, chat/session hooks, plugin hot reload, file events, bridge client, command palette/toaster) and either gate them by visibility or document why they are safe.
+
+Minimum implementation shape:
+
+```ts
+type MountedWorkspaceEntry = {
+  workspaceId: string
+  workspace: Workspace
+  lastVisibleAt: number
+}
+
+const MAX_MOUNTED_WORKSPACES = 3
+```
+
+The persistent shell renders one content host per mounted entry, with only `visibleWorkspaceId` shown. Request/auth headers and storage scopes are computed from each entry's own `workspaceId`, never from the current route target by accident. Cached-target session opens use `workspaceEvents.openSession` to switch the already-mounted workspace live; non-mounted targets fall back to first-mount storage read.
 
 ---
 
 ## 6. State model (no boolean soup)
-One source per concern: `layoutMode` (derived once via `resolveLayoutMode`, read-only); nav open/collapsed (existing); expanded project set (owned by `WorkspaceProjectsNav`, persisted); active project (derived from `useCurrentWorkspace()`/route, never duplicated); per-project session cache (a keyed map in the shell, **LRU-capped to the last 12 expanded projects**, with a test, so a long session can't accumulate unbounded rows). No `usePiSessions` in a loop.
+One source per concern: `layoutMode` (derived once via `resolveLayoutMode`, read-only); nav open/collapsed (existing); expanded project set (owned by `WorkspaceProjectsNav`, persisted); active project (derived from the matched route/current workspace, never from a pending target); opening project id (transient pending feedback only); mounted workspace cache (LRU-capped, §5.3); per-project session cache (a keyed map in the shell, **LRU-capped to the last 12 expanded projects**, with a test, so a long session cannot accumulate unbounded rows). No `usePiSessions` in a loop for session-list snapshots.
 
 ---
 
@@ -196,8 +250,8 @@ Multi-project "New project" reuses `WorkspaceSwitcher`'s create `Dialog`, extrac
 - Full-app wraps with `WorkspaceProjectsShell`; `single-project` renders children **exactly as today**.
 - **Enforced** by snapshot/e2e: dropdown renders, sessions rail unchanged, no projects nav mounts, `CoreFront` output identical when `appShell` not passed.
 
-### PR 2 — Multi-project layout (opt-in; depends on PR0)
-- `WorkspaceProjectsNav` in the persistent left bar; lazy per-project sessions via P0 (LRU-capped); §5.1 open-session (sync write+navigate cross-project, typed `openSession` event + new `WorkspaceAgentFront` consumer same-project); §5.2 background-open/no-takeover contract; §7.3 single-account-menu change; footer account row; dropdown removed; `status: undefined`; `CreateWorkspaceDialog` for new project.
+### PR 2 / #385 — Multi-project layout and mounted workspace cache (depends on PR0)
+- `WorkspaceProjectsNav` in the persistent left bar; lazy per-project sessions via P0 (LRU-capped); §5.1 open-session (sync write+navigate cross-project, typed `openSession` event + new `WorkspaceAgentFront` consumer same-project); §5.2 background-open/no-takeover contract; §5.3 bounded mounted-workspace cache; §7.3 single-account-menu change; footer account row; dropdown removed; `status: undefined`; `CreateWorkspaceDialog` for new project. This is all in #385 rather than a follow-up split.
 
 ### PR 3 — Skills & plugins pages (depends on P1)
 - Current-project + global with scope chips; hide internal plugins; project filter + cross-project enumeration only after P1.
@@ -222,10 +276,15 @@ PR2:
 ```txt
 [ ] multi-project lazy-loads via P0 (LRU-capped, tested); no runtime boot on expand
 [ ] cross-project session open keeps the previous workspace shell/content mounted while the target loads; no full-page or full-content takeover
-[ ] cross-project open = sync writeActiveSessionId + navigate; same-project = typed openSession event + consumer
+[ ] mounted workspace cache is bounded (default max 3), LRU-evicted, and never populated by mere project expansion/session-list browsing
+[ ] workspace store/selectors are provider-scoped or otherwise multi-provider-safe; two mounted workspaces cannot share/corrupt layout state
+[ ] inactive mounted workspaces are hidden/inert enough to avoid focus/global-shortcut/drag/drop/overlay/toast/title/theme/UI-command ownership; expensive streams are paused or explicitly justified
+[ ] cross-project open = sync writeActiveSessionId + navigate + typed openSession event for already-mounted targets; non-mounted targets read the written active-session id on first mount
+[ ] cached-target open works without remount: A visible, B cached/inactive, click B/session-2 => B visible with session-2 active
 [ ] split/open-in-new-pane affordances remain same-project only; cross-project session rows switch projects instead of joining the current workspace's split stage
 [ ] exactly one account menu; dropdown removed in multi-project; status: undefined (no dot)
 [ ] new project via CreateWorkspaceDialog (no window.prompt)
+[ ] single-project mode is unchanged and does not instantiate the multi-workspace cache
 ```
 
 ## 10. Open questions
@@ -268,8 +327,13 @@ multi-project body:
 ```
 
 ### 11.3 The architecture decision the multi-project PR must make
-`WorkspaceAppRail` is **per-workspace** (inside `WorkspaceAgentFront`, `key={workspaceId}` → remounts on switch, knows only its own workspace). A multi-project tree + cross-project Pinned there will **flash on switch** and has **no cross-workspace data**. Two ways out — pick one in the multi-project PR:
-- **(A) Persistent shell (recommended, §3):** lift the rail out of `WorkspaceAgentFront` into the `CoreFront` `appShell` so it mounts once; feed it the workspace list + per-project sessions (via the **P0** no-boot route) + cross-project pinned store. No flash. Bigger refactor.
-- **(B) Feed the per-workspace rail:** pass the workspace list + a session fetcher + pinned store into `WorkspaceAppRail` as props. This is only acceptable if paired with the §5.2 **last-matched workspace retention** repair so cross-project opens do not blank the page. Plain remount/flash is rejected because it violates #377.
+`WorkspaceAppRail` was per-workspace in the early draft (inside `WorkspaceAgentFront`, `key={workspaceId}`), which caused flash/remount and made cross-workspace data awkward. #385 should take option **A**: persistent shell.
 
-This is the load-bearing decision for the multi-project PR and must be resolved before coding it. For #377/#385, success means project/session browsing remains visible and the old workspace content stays mounted until the target workspace is ready.
+Final decision for #385:
+
+- Lift the project nav / app-left shell to a persistent host in core.
+- Feed it workspace list + per-project session snapshots via the P0 no-boot route.
+- Render workspace content through the bounded mounted-workspace cache (§5.3).
+- The old per-workspace rail path is not acceptable for multi-project unless it is only an internal content host behind the persistent shell.
+
+Success means project/session browsing remains visible, recent workspace contents can remain mounted, and switching/opening sessions never feels like a page reload.

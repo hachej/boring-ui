@@ -76,3 +76,62 @@ PR2/#385 is not complete unless tests prove:
 
 ### Thermo verdict after plan update
 The **plan text is now structurally aligned** with #377, but the implementation must still be repaired and reviewed against the new §5.2 acceptance. Do not call #385 finished solely because CI is green; CI did not cover the no-takeover product invariant before this update.
+
+---
+
+## Round 4 (#385 scope decision) — PLAN UPDATED FOR MOUNTED WORKSPACE CACHE
+
+Product decision: do the full multi-workspace mounted-content work in #385 instead of deferring it.
+
+### Decision
+#385 should implement the persistent multi-project shell plus a bounded mounted-workspace cache.
+
+This supersedes the weaker "last matched only" repair. The last-matched behavior becomes the minimum behavior naturally provided by the cache, but the intended architecture is now:
+
+- persistent multi-project shell / nav outside keyed workspace content;
+- workspace content rendered through a small LRU cache;
+- default max mounted workspaces = 3 (`current + two recent`);
+- expanding/browsing a project never mounts that workspace;
+- only successful route/open actions add to the mounted cache;
+- inactive mounted workspaces are hidden/inert and do not own focus, global shortcuts, overlays, or cross-project split/drop targets;
+- runtime boot remains lazy, not "mount all workspaces in background".
+
+### Why this is better
+- It satisfies #377 more completely: switching back to a recent project can be instant, not merely non-blank.
+- It makes the project/session tree truly persistent rather than per-workspace chrome pretending to be global.
+- It gives a clear cap and inactive contract, avoiding the unbounded-memory and many-live-streams failure mode.
+- It keeps split panes correctly scoped to one workspace while still allowing multiple workspace contents to exist in memory.
+
+### New implementation/review blockers
+#385 is not complete until tests prove:
+
+1. Project/session expansion uses no-boot session snapshots and does **not** mount/provision target workspace content.
+2. Cross-project session open writes target active-session id, navigates, and keeps existing visible workspace mounted while target route is pending.
+3. Once a target is matched, it enters the mounted cache and becomes visible; switching back to a cached workspace avoids a full remount where possible.
+4. Mounted cache is bounded and evicts least-recent inactive entries.
+5. Inactive mounted entries are hidden/inert enough to avoid focus/keyboard/overlay/drag ownership.
+6. Split/open-in-new-pane affordances remain same-project only.
+7. Single-project mode is unchanged and does not instantiate the multi-workspace cache.
+
+### Current verdict
+Plan direction is stronger and aligned with the product ask. Implementation still required in #385; green CI before this work does not mean #385 is done.
+
+---
+
+## Round 5 (mounted cache hardening) — PLAN UPDATED
+
+Thermo review found three blockers in the Round 4 mounted-cache plan:
+
+1. **Workspace store isolation.** Multiple mounted `WorkspaceProvider` instances are unsafe if selectors/store binding remain module-singleton. #385 must make store access provider-scoped or otherwise multi-provider-safe before enabling the cache.
+2. **Cached-target open-session handoff.** `writeActiveSessionId` only solves first mount. If target workspace B is already mounted but inactive, opening B/session-2 must also deliver a live typed `workspaceEvents.openSession` event to B so it switches without remount.
+3. **Inactive workspace global side effects.** DOM hiding alone is insufficient. Shortcuts, UI-command bus subscribers, document title/theme, overlays/toasts, drag/drop, bridge clients, plugin hot reload, file events, and expensive streams need a visible/active-workspace signal or workspace-targeted filtering.
+
+Plan updates applied:
+
+- Added a store-isolation prerequisite and acceptance test.
+- Expanded §5.1 so the typed `openSession` event applies to any mounted target, not only same-project no-op navigation.
+- Added a visibility/active-workspace signal requirement.
+- Made inactive workspace contract concrete for shortcuts, overlays/toasts, document title/theme, UI commands, focus, drag/drop, and stream policy.
+- Copied all of this into the main PR2/#385 acceptance list, including single-project mode not instantiating the cache.
+
+Current verdict: plan is intentionally more ambitious, but now names the load-bearing implementation risks instead of hiding them. #385 should not implement mounted caching until these prerequisites/tests are in place.
