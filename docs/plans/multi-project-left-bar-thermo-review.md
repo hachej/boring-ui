@@ -135,3 +135,22 @@ Plan updates applied:
 - Copied all of this into the main PR2/#385 acceptance list, including single-project mode not instantiating the cache.
 
 Current verdict: plan is intentionally more ambitious, but now names the load-bearing implementation risks instead of hiding them. #385 should not implement mounted caching until these prerequisites/tests are in place.
+
+---
+
+## Round 6 (runtime preboot policy) — PLAN UPDATED
+
+Product clarification: after a user explicitly opens a session/project, runtime/sandbox preboot should start ASAP in the background so the user is less likely to wait when the agent needs tools/files. The chat UI must not wait for runtime readiness.
+
+Plan updates applied:
+
+- Renamed §5.2 to **Background open — no route/content takeover**.
+- Split readiness into **chat UI readiness** and **workspace runtime readiness**.
+- Browsing/expanding projects remains no-boot and does not mount workspace UI.
+- Explicit open intent starts target UI/session loading and runtime/sandbox preboot concurrently.
+- Target chat/session render must not wait for runtime preboot.
+- If the first tool/file/runtime command arrives before preboot finishes, the command waits inline with a "Preparing workspace…" style state, not a page loader.
+- Cached recent workspaces may keep runtime warm only if that runtime was started by explicit intent and remains within the bounded cache policy.
+- Acceptance now requires separate measurement/reporting for no-boot session list, workspace detail, session transcript load, UI mount, runtime preboot, and first-tool wait.
+
+Current verdict: the plan now matches the user workflow: click session → see chat/app ASAP; runtime warms in parallel; first tool step waits only if necessary.

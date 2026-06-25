@@ -132,19 +132,22 @@ workspaceEvents.openSession: { workspaceId: string; sessionId: string | null }
 ```
 Shell dispatches after the storage write. A **new** `WorkspaceAgentFront` subscriber switches the live session when its `workspaceId` matches the event. PR2/#385 acceptance gates on the event type, the consumer, and the cached-target case: workspace A visible, workspace B cached/inactive, click B/session-2 ⇒ B becomes visible with session-2 active without requiring a remount.
 
-### 5.2 Background boot — no route/content takeover
-Sandbox provisioning is lazy (first agent use); a switch does not wait on a sandbox. The only unavoidable gate is the target workspace-detail fetch (auth / existence). The product requirement from #377 is stricter than "use a smaller spinner": **opening a session from another project must not blank or replace the current workspace page while the target workspace loads.**
+### 5.2 Background open — no route/content takeover
+Opening a session in another project has two separate readiness tracks: **chat UI readiness** and **workspace runtime readiness**. Chat UI must win: the user should see the target session/app as soon as the workspace identity + transcript are ready. Runtime/sandbox prep should start in the background after explicit open intent, but it must not block rendering the chat. If the user sends the first command before tools/files/runtime are ready, that command waits inline in the chat/tool area. The product requirement from #377 is stricter than "use a smaller spinner": **opening a session from another project must not blank or replace the current workspace page while the target workspace loads.**
 
 Hard contract for `multi-project`:
 
 ```txt
 click session S in project X while project A is mounted:
   1. synchronously writeActiveSessionId(S, { storageScope: X })
-  2. navigate('/workspace/X') so URL/auth checks/provisioning start
-  3. keep the previously matched workspace shell/content mounted while X is pending
-  4. show pending feedback in the nav/content chrome only (e.g. row spinner/banner), not a page takeover
-  5. when X is matched, swap to X's WorkspaceAgentFront; it reads S on first render
-  6. not-found/forbidden/switch-failed render as content-pane errors while the nav remains available
+  2. navigate('/workspace/X') so URL/auth checks start
+  3. begin target workspace UI/session load in the background
+  4. begin target runtime/sandbox preboot in the background (explicit user intent happened)
+  5. keep the previously matched workspace shell/content mounted while X is pending
+  6. show pending feedback in the nav/content chrome only (e.g. row spinner/banner), not a page takeover
+  7. when X's app/chat is ready enough to render, swap to X's WorkspaceAgentFront; it reads S on first render
+  8. if runtime preboot is still running, chat remains usable; the first tool/file/runtime command waits inline
+  9. not-found/forbidden/switch-failed render as content-pane errors while the nav remains available
 ```
 
 Chosen #385 architecture:
@@ -156,7 +159,7 @@ Chosen #385 architecture:
   - `activeWorkspaceId` = matched workspace shown as active in the route/nav.
   - `mountedWorkspaceIds` = small LRU set of workspaces whose content remains mounted.
   - `visibleWorkspaceId` = workspace content currently visible; normally `activeWorkspaceId`, but remains the previous visible workspace while the route target is pending.
-- On cross-project open, write the target active-session id, navigate, mark the target as `opening`, and keep the current visible workspace mounted/visible until the target is matched. If the target is already mounted, switch visibility immediately after the active-session handoff without a full remount.
+- On cross-project open, write the target active-session id, navigate, mark the target as `opening`, start target UI/session loading and runtime preboot concurrently, and keep the current visible workspace mounted/visible until the target chat UI is ready. If the target is already mounted, switch visibility immediately after the active-session handoff without a full remount.
 - First-load/deep-link with no mounted workspace may show a minimal content-pane spinner because there is no old workspace to retain.
 
 Rejected:
@@ -164,6 +167,7 @@ Rejected:
 - Replacing the whole page with a full-screen or full-content spinner on cross-project session open. That is still a reload-feeling takeover and fails #377.
 - Keeping every visited workspace mounted forever. The cache is bounded and evicts inactive entries.
 - Letting inactive mounted workspaces continue foreground-only side effects (focus, global keybindings, visible overlays, active chat streaming) as if they were visible.
+- Blocking target chat/session render on sandbox/runtime readiness. Runtime can warm in parallel; tool/file steps wait inline if needed.
 
 
 ### 5.3 Mounted-workspace cache contract
@@ -196,8 +200,9 @@ Inactive workspace contract:
 - Hidden workspaces do not set document title/theme and do not own global UI-command handling.
 - Chat split panes remain **within one workspace**. A session row from project B never joins project A's split stage; it switches visibility/project instead.
 - Inactive workspaces may keep local React state/layout state so switching back is fast.
-- Do not intentionally start runtime provisioning just because a workspace is cached. Runtime boot remains lazy: cache retention is a UI state optimization, not a background boot-all mechanism.
-- If an inactive workspace has active network streams/subscriptions that are expensive or user-visible, pause or disconnect them unless they are explicitly required for correctness. #385 must audit known providers (`WorkspaceProvider`, chat/session hooks, plugin hot reload, file events, bridge client, command palette/toaster) and either gate them by visibility or document why they are safe.
+- Do not intentionally start runtime provisioning just because a workspace is cached or because a project was expanded for browsing. Cache retention is a UI state optimization, not a background boot-all mechanism.
+- **Do** start runtime/sandbox preboot after explicit open intent (clicking a project/session), in parallel with UI/session loading. This is a best-effort warmup: chat rendering must not wait for it.
+- If an inactive workspace has active network streams/subscriptions that are expensive or user-visible, pause or disconnect them unless they are explicitly required for correctness. Runtime preboot/warm state for recent workspaces may continue only under the cache cap and must be treated separately from foreground UI effects. #385 must audit known providers (`WorkspaceProvider`, chat/session hooks, plugin hot reload, file events, bridge client, command palette/toaster) and either gate them by visibility or document why they are safe.
 
 Minimum implementation shape:
 
@@ -212,6 +217,19 @@ const MAX_MOUNTED_WORKSPACES = 3
 ```
 
 The persistent shell renders one content host per mounted entry, with only `visibleWorkspaceId` shown. Request/auth headers and storage scopes are computed from each entry's own `workspaceId`, never from the current route target by accident. Cached-target session opens use `workspaceEvents.openSession` to switch the already-mounted workspace live; non-mounted targets fall back to first-mount storage read.
+
+
+### 5.4 Runtime preboot policy
+
+Runtime/sandbox readiness is not the same as chat UI readiness. #385 should optimize both, but with the right ordering:
+
+- **Browse/expand projects:** no runtime boot, no workspace UI mount, no sandbox work. Use only the P0 no-boot session-list route.
+- **Explicit open intent** (click project/session, create chat in project, open cached workspace): start runtime/sandbox preboot ASAP in the background, because the user is likely to need tools/files soon.
+- **Chat render path:** do not block on runtime readiness. Render the target session as soon as workspace identity/session transcript are ready enough.
+- **First tool/file/runtime command:** if preboot is still pending, the command waits with an inline "Preparing workspace…"/tool-readiness state inside chat/workbench, not a page-level loader.
+- **Cached recent workspaces:** may keep runtime warm within the same bounded policy if already started by explicit intent; do not start runtimes for merely listed projects.
+
+Acceptance must measure/report these separately: no-boot session-list time, workspace detail time, session transcript load time, UI mount time, runtime preboot time, and first-tool wait time.
 
 ---
 
@@ -275,12 +293,14 @@ PR1:
 PR2:
 ```txt
 [ ] multi-project lazy-loads via P0 (LRU-capped, tested); no runtime boot on expand
-[ ] cross-project session open keeps the previous workspace shell/content mounted while the target loads; no full-page or full-content takeover
+[ ] cross-project session open keeps the previous workspace shell/content mounted while target app/chat loads; no full-page or full-content takeover
 [ ] mounted workspace cache is bounded (default max 3), LRU-evicted, and never populated by mere project expansion/session-list browsing
 [ ] workspace store/selectors are provider-scoped or otherwise multi-provider-safe; two mounted workspaces cannot share/corrupt layout state
 [ ] inactive mounted workspaces are hidden/inert enough to avoid focus/global-shortcut/drag/drop/overlay/toast/title/theme/UI-command ownership; expensive streams are paused or explicitly justified
 [ ] cross-project open = sync writeActiveSessionId + navigate + typed openSession event for already-mounted targets; non-mounted targets read the written active-session id on first mount
 [ ] cached-target open works without remount: A visible, B cached/inactive, click B/session-2 => B visible with session-2 active
+[ ] runtime/sandbox preboot starts after explicit open intent but does not block target chat render; first tool/file/runtime command waits inline if preboot is not done
+[ ] measurements distinguish no-boot session list, workspace detail, session transcript, UI mount, runtime preboot, and first-tool wait
 [ ] split/open-in-new-pane affordances remain same-project only; cross-project session rows switch projects instead of joining the current workspace's split stage
 [ ] exactly one account menu; dropdown removed in multi-project; status: undefined (no dot)
 [ ] new project via CreateWorkspaceDialog (no window.prompt)
