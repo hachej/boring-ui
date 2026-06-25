@@ -16,7 +16,8 @@ Detailed coding practices, workflow, architecture, and package docs live under `
 7. **Run relevant quality gates** before calling work done.
 8. **Never launch bare `bv`; use only `bv --robot-*`.**
 9. **Never edit `.beads/*.jsonl` by hand.** Use `br` commands.
-10. **Default communication mode:** caveman skill, full intensity, unless user says `stop caveman` or `normal mode`.
+10. **Session history is user data:** in deployed/core `vercel-sandbox` apps, Pi chat transcripts must live on durable storage (`BORING_AGENT_SESSION_ROOT`, typically `/data/pi-sessions`), not container home/root. If `BORING_AGENT_WORKSPACE_ROOT=/data/workspaces`, keep session root as sibling `/data/pi-sessions` unless the user explicitly chooses another mounted volume.
+11. **Default communication mode:** caveman skill, full intensity, unless user says `stop caveman` or `normal mode`.
 
 ## Start here
 
