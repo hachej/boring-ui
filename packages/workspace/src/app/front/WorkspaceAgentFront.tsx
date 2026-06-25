@@ -1152,12 +1152,7 @@ export function WorkspaceAgentFront<
   }, [requestedAutoSubmitInitialDraft, workspaceId])
   const autoSubmittingInitialDraft = requestedAutoSubmitInitialDraft
   const delayAutoSubmitDraft = autoSubmittingInitialDraft && shouldUseRemoteSessions && !effectiveActiveSessionId
-  const freshEmptySessionActive = Boolean(
-    freshEmptySession
-      && freshEmptySession.workspaceId === workspaceId
-      && freshEmptySession.id === effectiveActiveSessionId,
-  )
-  const hydrateMessages = !freshEmptySessionActive && !autoSubmitHydrationDisabled && provisionWorkspace !== false && (
+  const hydrateMessages = !autoSubmitHydrationDisabled && provisionWorkspace !== false && (
     shouldUseRemoteSessions ? Boolean(effectiveActiveSessionId) : true
   )
   const handleWorkspaceWarmupStatusChange = useCallback((status: WorkspaceWarmupStatus) => {
