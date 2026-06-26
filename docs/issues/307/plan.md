@@ -1,3 +1,13 @@
+---
+github: https://github.com/hachej/boring-ui/issues/307
+issue: 307
+state: active
+phase: plan
+track: owner
+flag: env:BORING_WORKER_SANDBOX=gvisor
+updated: 2026-06-26
+---
+
 # gVisor Sandbox Plan — proper multi-tenant isolation for the remote worker
 
 - **Status:** Proposed (planning)
