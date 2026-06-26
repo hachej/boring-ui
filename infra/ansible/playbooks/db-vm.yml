@@ -1,0 +1,8 @@
+---
+- name: Configure boring-ui DB VM
+  hosts: db
+  become: true
+  roles:
+    - role: common
+    - role: postgresql
+      when: pg_enabled | default(true)

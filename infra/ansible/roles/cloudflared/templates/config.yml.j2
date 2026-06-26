@@ -1,0 +1,16 @@
+# Managed by Ansible — do not edit manually.
+{% if cloudflared_tunnel_name | default('') %}
+tunnel: {{ cloudflared_tunnel_name }}
+{% endif %}
+ingress:
+{% for item in cloudflared_ingress | default([]) %}
+{% if item.hostname is defined %}
+  - hostname: {{ item.hostname }}
+    service: {{ item.service }}
+{% else %}
+  - service: {{ item.service }}
+{% endif %}
+{% endfor %}
+{% if (cloudflared_ingress | default([]) | length) == 0 %}
+  - service: http_status:404
+{% endif %}
