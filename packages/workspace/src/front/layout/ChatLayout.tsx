@@ -582,20 +582,6 @@ export function ChatLayout(props: ChatLayoutProps) {
           stackIndex={props.onOpenNav ? 1 : 0}
         />
       ) : null}
-      {chatCollapsed && !props.chatOverlay ? (
-        <FloatingEdgeButton
-          side="left"
-          icon="chat"
-          onClick={toggleChatCollapsed}
-          label="Expand chat"
-          hint="⌘\\"
-          // Anchored to the shell's left edge (not the content region) so it
-          // stays pinned to the left even when the session drawer is open and
-          // pushes the content rightward.
-          stackIndex={1}
-          pulse={chatRailPulse || activeBlockers.length > 0}
-        />
-      ) : null}
     </div>
   )
 }
