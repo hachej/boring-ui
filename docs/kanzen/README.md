@@ -20,8 +20,6 @@ Read:
   - orchestration skill.
 - [`boring-triage`](../../.agents/skills/boring-triage/SKILL.md) - triage
   skill.
-- Agent workflow procedure:
-  [`procedures/agent-workflow.md`](procedures/agent-workflow.md).
 - Coding procedures:
   [`procedures/coding-rules.md`](procedures/coding-rules.md),
   [`procedures/coding-invariants.md`](procedures/coding-invariants.md), and

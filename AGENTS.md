@@ -24,7 +24,7 @@ Detailed coding practices, workflow, architecture, and package docs live under `
 | Coding rules | [`docs/kanzen/procedures/coding-rules.md`](docs/kanzen/procedures/coding-rules.md) |
 | Coding invariants | [`docs/kanzen/procedures/coding-invariants.md`](docs/kanzen/procedures/coding-invariants.md) |
 | Repo commands | [`docs/kanzen/procedures/repo-commands.md`](docs/kanzen/procedures/repo-commands.md) |
-| Agent workflow, review, commit, GitHub labels | [`docs/kanzen/procedures/agent-workflow.md`](docs/kanzen/procedures/agent-workflow.md) |
+| Kanzen agent loop, review, commit, GitHub labels | [`docs/kanzen/boring-loop.md`](docs/kanzen/boring-loop.md) |
 | Architecture decisions | [`docs/DECISIONS.md`](docs/DECISIONS.md) |
 | Agent ↔ workspace contract | [`docs/WORKSPACE_CONTRACT.md`](docs/WORKSPACE_CONTRACT.md) |
 | Proof-of-work comments | [`docs/procedures/proof-of-work.md`](docs/procedures/proof-of-work.md) |
@@ -67,4 +67,4 @@ See [`docs/kanzen/procedures/coding-invariants.md`](docs/kanzen/procedures/codin
 2. Make surgical, minimal changes.
 3. Add/update tests for behavior changes.
 4. Run relevant checks.
-5. For Kanzen issue/PR work, follow [`docs/kanzen/procedures/agent-workflow.md`](docs/kanzen/procedures/agent-workflow.md).
+5. For Kanzen issue/PR work, follow [`docs/kanzen/boring-loop.md`](docs/kanzen/boring-loop.md).

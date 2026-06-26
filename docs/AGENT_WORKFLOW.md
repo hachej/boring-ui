@@ -2,5 +2,8 @@
 
 This file is a compatibility pointer.
 
-The canonical agent workflow procedure lives at
-[`docs/kanzen/procedures/agent-workflow.md`](kanzen/procedures/agent-workflow.md).
+The canonical Kanzen workflow lives at
+[`docs/kanzen/boring-loop.md`](kanzen/boring-loop.md).
+
+Focused procedures live under
+[`docs/kanzen/procedures/`](kanzen/procedures/).
