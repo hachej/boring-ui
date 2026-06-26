@@ -1,0 +1,95 @@
+/*
+ * Utility polyfill for this runtime plugin.
+ *
+ * The host app ships a purged Tailwind build, so any utility class its own
+ * source never uses is silently absent for runtime plugins. This file defines
+ * exactly the classes this plugin uses that are missing from the host CSS
+ * (audited against packages/cli/public/assets). Names and values match
+ * Tailwind, so if the host build ever starts including one of these the
+ * duplicate definition is harmless.
+ */
+
+/* ---- spacing & layout ---- */
+.gap-x-2 { column-gap: 0.5rem; }
+.gap-x-3 { column-gap: 0.75rem; }
+.gap-x-4 { column-gap: 1rem; }
+.gap-y-1 { row-gap: 0.25rem; }
+.gap-y-2 { row-gap: 0.5rem; }
+.space-y-1\.5 > :not([hidden]) ~ :not([hidden]) { margin-top: 0.375rem; }
+.space-y-3 > :not([hidden]) ~ :not([hidden]) { margin-top: 0.75rem; }
+.space-y-5 > :not([hidden]) ~ :not([hidden]) { margin-top: 1.25rem; }
+.m-3 { margin: 0.75rem; }
+.mr-1 { margin-right: 0.25rem; }
+.pr-1\.5 { padding-right: 0.375rem; }
+.pt-2\.5 { padding-top: 0.625rem; }
+.py-12 { padding-top: 3rem; padding-bottom: 3rem; }
+.py-16 { padding-top: 4rem; padding-bottom: 4rem; }
+.max-w-5xl { max-width: 64rem; }
+.max-w-64 { max-width: 16rem; }
+.max-w-\[48ch\] { max-width: 48ch; }
+.max-w-\[70ch\] { max-width: 70ch; }
+.min-h-28 { min-height: 7rem; }
+.min-w-4 { min-width: 1rem; }
+.h-\[3px\] { height: 3px; }
+.w-\[88px\] { width: 88px; }
+.aspect-video { aspect-ratio: 16 / 9; }
+.opacity-25 { opacity: 0.25; }
+.resize-y { resize: vertical; }
+
+/* ---- diff & status colors (Tailwind palette values) ---- */
+.text-emerald-600 { color: #059669; }
+.text-emerald-700 { color: #047857; }
+.text-red-600 { color: #dc2626; }
+.text-red-700 { color: #b91c1c; }
+.text-amber-600 { color: #d97706; }
+.text-amber-700 { color: #b45309; }
+.text-sky-600 { color: #0284c7; }
+.text-sky-700 { color: #0369a1; }
+.bg-red-500 { background-color: #ef4444; }
+.bg-sky-500 { background-color: #0ea5e9; }
+.bg-emerald-500\/10 { background-color: rgb(16 185 129 / 0.1); }
+.bg-amber-500\/10 { background-color: rgb(245 158 11 / 0.1); }
+.bg-red-500\/10 { background-color: rgb(239 68 68 / 0.1); }
+.bg-sky-500\/10 { background-color: rgb(14 165 233 / 0.1); }
+.bg-muted-foreground\/50 { background-color: color-mix(in oklab, var(--boring-muted-foreground) 50%, transparent); }
+
+.dark .dark\:text-emerald-300 { color: #6ee7b7; }
+.dark .dark\:text-emerald-400 { color: #34d399; }
+.dark .dark\:text-red-300 { color: #fca5a5; }
+.dark .dark\:text-red-400 { color: #f87171; }
+.dark .dark\:text-amber-300 { color: #fcd34d; }
+.dark .dark\:text-amber-400 { color: #fbbf24; }
+.dark .dark\:text-sky-300 { color: #7dd3fc; }
+.dark .dark\:text-sky-400 { color: #38bdf8; }
+
+/* ---- interaction states ---- */
+.hover\:bg-muted\/50:hover { background-color: color-mix(in oklab, var(--boring-muted) 50%, transparent); }
+.hover\:bg-ring\/30:hover { background-color: color-mix(in oklab, var(--boring-ring) 30%, transparent); }
+.hover\:border-ring\/60:hover { border-color: color-mix(in oklab, var(--boring-ring) 60%, transparent); }
+.hover\:bg-emerald-500\/15:hover { background-color: rgb(16 185 129 / 0.15); }
+.hover\:text-emerald-600:hover { color: #059669; }
+.dark .dark\:hover\:text-emerald-400:hover { color: #34d399; }
+.group:hover .group-hover\:flex { display: flex; }
+.group:focus-within .group-focus-within\:flex { display: flex; }
+.group:hover .group-hover\:underline { text-decoration-line: underline; }
+
+/* ---- Pierre Trees / Diffs integration ---- */
+.github-pr-tracker-tree {
+  --trees-item-height: 24px;
+  --trees-theme-bg: transparent;
+  --trees-theme-fg: var(--boring-foreground);
+  --trees-theme-muted-fg: var(--boring-muted-foreground);
+  --trees-theme-border: var(--boring-border);
+  display: block;
+  min-height: 0;
+}
+
+.github-pr-tracker-diff {
+  color-scheme: light dark;
+}
+
+/* ---- responsive ---- */
+@media (min-width: 768px) {
+  .md\:grid-cols-2 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .md\:text-xs { font-size: 0.75rem; line-height: 1rem; }
+}

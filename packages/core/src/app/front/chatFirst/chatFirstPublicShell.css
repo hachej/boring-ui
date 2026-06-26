@@ -17,6 +17,109 @@
   );
 }
 
+/* --- Public top-bar CTA + Calendly popover --- */
+.public-topbar-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.public-contact-popover-wrap {
+  position: relative;
+}
+
+.public-contact-button,
+.public-sign-in-button {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 6px 12px;
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1.2;
+  transition: background-color 0.15s ease, border-color 0.15s ease, color 0.15s ease;
+}
+
+.public-contact-button {
+  background: var(--foreground);
+  color: var(--background);
+  border-color: var(--foreground);
+}
+
+.public-contact-button:hover {
+  background: color-mix(in oklch, var(--foreground) 88%, var(--accent));
+}
+
+.public-sign-in-button {
+  background: transparent;
+  color: var(--foreground);
+}
+
+.public-sign-in-button:hover {
+  background: var(--muted);
+}
+
+.public-contact-popover {
+  position: absolute;
+  top: calc(100% + 10px);
+  right: 0;
+  z-index: 80;
+  width: min(420px, calc(100vw - 24px));
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: 18px;
+  background: var(--background);
+  box-shadow: 0 24px 80px color-mix(in oklch, var(--foreground) 18%, transparent);
+}
+
+.public-contact-popover-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  border-bottom: 1px solid var(--border);
+  padding: 10px 12px 10px 14px;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.public-contact-popover-header button {
+  display: grid;
+  width: 28px;
+  height: 28px;
+  place-items: center;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--muted-foreground);
+  cursor: pointer;
+  font-size: 20px;
+  line-height: 1;
+}
+
+.public-contact-popover-header button:hover {
+  background: var(--muted);
+  color: var(--foreground);
+}
+
+.public-contact-popover iframe {
+  display: block;
+  width: 100%;
+  height: min(680px, calc(100vh - 120px));
+  min-height: 520px;
+  border: 0;
+  background: var(--background);
+}
+
+@media (max-width: 560px) {
+  .public-contact-popover {
+    position: fixed;
+    top: 56px;
+    right: 8px;
+    left: 8px;
+    width: auto;
+  }
+}
+
 /* --- Hand-drawn teaching annotations (public no-auth shell) --- */
 .public-arrow {
   pointer-events: none;
@@ -165,7 +268,7 @@
   padding-top: clamp(28px, 9vh, 132px);
 }
 
-/* Move the /command cards to the bottom of the hero block (after the footer),
+/* Move suggestion cards to the bottom of the hero block (after the footer),
    so they sit directly above the composer. The empty-state is a flex column,
    so `order` reorders without touching the React tree. */
 .public-chat-first-shell [data-boring-agent-part="empty-state"] .public-hero-foot {
@@ -175,7 +278,7 @@
   order: 20;
 }
 
-/* Command launcher cards — make the slash commands read as runnable. */
+/* Suggestion cards — keep example prompts visually connected to the composer. */
 .public-chat-first-shell [data-boring-agent-part="suggestion-grid"] {
   margin-top: 28px;
   max-width: 560px;

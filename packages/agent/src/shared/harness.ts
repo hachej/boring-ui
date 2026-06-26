@@ -10,6 +10,7 @@ export interface AgentHarnessFactoryInput {
   runtimeCwd?: string
   systemPromptAppend?: string
   sessionNamespace?: string
+  sessionRoot?: string
   sessionDir?: string
   /**
    * Optional dynamic system-prompt source. Harness calls it whenever it

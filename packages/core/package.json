@@ -1,6 +1,6 @@
 {
   "name": "@hachej/boring-core",
-  "version": "0.1.55",
+  "version": "0.1.59",
   "type": "module",
   "license": "MIT",
   "description": "Foundation package for boring-ui-v2 apps: DB, auth, config, HTTP app factory, and frontend app shell.",
@@ -87,7 +87,7 @@
     "fastify-plugin": "^5.1.0",
     "isomorphic-dompurify": "^3.10.0",
     "lucide-react": "^1.8.0",
-    "nodemailer": "^8.0.6",
+    "nodemailer": "^8.0.9",
     "pino": "^10.3.1",
     "postgres": "^3.4.9",
     "posthog-node": "^5.35.1",

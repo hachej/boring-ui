@@ -221,13 +221,15 @@ function hydrateFromSnapshot(
     if (followUp.clientNonce) serverNonces.add(followUp.clientNonce)
   }
 
+  const preserveInitialOptimisticOutbox = shouldPreserveInitialOptimisticOutbox(state, snapshot, snapshotMessages)
+  const preserveOutbox = preserveLocalHistory || preserveInitialOptimisticOutbox
   const nextOutbox: Record<string, OptimisticUserMessage> = {}
-  if (preserveLocalHistory) {
+  if (preserveOutbox) {
     for (const message of Object.values(state.optimisticOutbox)) {
       if (!serverNonces.has(message.clientNonce)) nextOutbox[message.clientNonce] = message
     }
   }
-  const staleOutbox = preserveLocalHistory
+  const staleOutbox = preserveOutbox
     ? []
     : Object.values(state.optimisticOutbox).filter((message) => !serverNonces.has(message.clientNonce))
 
@@ -259,6 +261,17 @@ function hydrateFromSnapshot(
     hydrated: true,
     needsResync: undefined,
   }
+}
+
+function shouldPreserveInitialOptimisticOutbox(
+  state: PiChatState,
+  snapshot: PiChatSnapshot,
+  snapshotMessages: BoringChatMessage[],
+): boolean {
+  return !state.hydrated
+    && Object.keys(state.optimisticOutbox).length > 0
+    && snapshotMessages.length === 0
+    && snapshot.queue.followUps.length === 0
 }
 
 function shouldPreserveLocalCommittedHistory(

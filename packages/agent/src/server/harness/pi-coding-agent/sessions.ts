@@ -38,14 +38,16 @@ export interface PiSessionEntries {
   messages: unknown[];
 }
 
-function sessionBaseDir(): string {
+function sessionBaseDir(explicitRoot?: string): string {
+  const explicit = explicitRoot?.trim();
+  if (explicit) return resolve(explicit);
   const configured = getEnv(SESSION_ROOT_ENV)?.trim();
   return configured ? resolve(configured) : join(homedir(), ".pi", "agent", "sessions");
 }
 
-function defaultSessionDir(cwd: string): string {
+function defaultSessionDir(cwd: string, explicitRoot?: string): string {
   const safePath = `--${cwd.replace(/^[/\\]/, "").replace(/[/\\:]/g, "-")}--`;
-  return join(sessionBaseDir(), safePath);
+  return join(sessionBaseDir(explicitRoot), safePath);
 }
 
 const SAFE_ID = /^[a-zA-Z0-9_-]+$/;
@@ -70,12 +72,12 @@ interface NormalizedListOptions {
   includeId: string | undefined;
 }
 
-function sessionDirForNamespace(namespace: string): string {
+function sessionDirForNamespace(namespace: string, explicitRoot?: string): string {
   const safeNamespace = namespace.trim();
   if (!SAFE_SESSION_NAMESPACE.test(safeNamespace)) {
     throw new Error("session namespace must contain only letters, numbers, underscores, and dashes");
   }
-  return join(sessionBaseDir(), safeNamespace);
+  return join(sessionBaseDir(explicitRoot), safeNamespace);
 }
 
 function normalizeListOptions(options: SessionListOptions | undefined): NormalizedListOptions {
@@ -89,6 +91,8 @@ function normalizeListOptions(options: SessionListOptions | undefined): Normaliz
 export interface PiSessionStoreOptions {
   sessionDir?: string;
   sessionNamespace?: string;
+  /** Explicit root for file-backed session directories. Overrides BORING_AGENT_SESSION_ROOT. */
+  sessionRoot?: string;
   /** Host/storage cwd used only to derive the default file-backed session directory. */
   storageCwd?: string;
 }
@@ -107,8 +111,8 @@ export class PiSessionStore implements SessionStore {
     }
     this.sessionDir = options?.sessionDir
       ?? (options?.sessionNamespace
-        ? sessionDirForNamespace(options.sessionNamespace)
-        : defaultSessionDir(options?.storageCwd ?? cwd));
+        ? sessionDirForNamespace(options.sessionNamespace, options.sessionRoot)
+        : defaultSessionDir(options?.storageCwd ?? cwd, options?.sessionRoot));
   }
 
   getSessionDir(): string {
