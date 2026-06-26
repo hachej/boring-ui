@@ -233,7 +233,7 @@ function createLandingPageHtml(appName: string): string {
 
     <section class="cta">
       <h2>Have a workflow you'd like to <em>automate</em>?</h2>
-      <p>Book a 30-minute walkthrough. We'll turn your workflow into a private AI workspace wired to your tools and data — and help build AI infrastructure that gives people a choice.</p>
+      <p>Type <code>/reach-out</code> in the chat right now. We'll turn it into a private AI workspace wired to your tools and data — and help build AI infrastructure that gives people a choice.</p>
       <div class="actions">
         <a class="btn primary" href="#book" data-ws="book-call">Book a 30-min call<span class="arrow">→</span></a>
         <a class="btn ghost" href="${githubUrl}" target="_blank" rel="noreferrer">Star it on GitHub</a>
