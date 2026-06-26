@@ -43,6 +43,13 @@ export interface CoreFrontProps {
   workspaceRoute?: string
   workspaceIdParam?: string
   publicPaths?: string[]
+  /**
+   * Optional wrapper around the routed content, rendered INSIDE the providers
+   * (router, workspace auth) so it persists across route changes. Apps use it
+   * to mount a persistent shell (e.g. a multi-project left bar) beside the
+   * routes. Defaults to identity — omitting it changes nothing.
+   */
+  appShell?: (routedContent: ReactNode) => ReactNode
 }
 
 const CSP_NONCE_META_NAME = 'boring-csp-nonce'
@@ -96,7 +103,7 @@ function RouterAuthGate({ children, publicPaths }: { children: ReactNode; public
   )
 }
 
-export function CoreFront({ children, authPages, cspNonce, workspaceRoute, workspaceIdParam, publicPaths }: CoreFrontProps) {
+export function CoreFront({ children, authPages, cspNonce, workspaceRoute, workspaceIdParam, publicPaths, appShell }: CoreFrontProps) {
   const queryClient = useMemo(createDefaultQueryClient, [])
   const resolvedCspNonce = useMemo(
     () => cspNonce ?? readCspNonceFromDom(),
@@ -110,6 +117,7 @@ export function CoreFront({ children, authPages, cspNonce, workspaceRoute, works
   const VerifyEmailPage = authPages?.verifyEmail ?? DefaultVerifyEmailPage
   const AuthErrorPage = authPages?.authError ?? DefaultAuthErrorPage
   const UserSettingsPage = authPages?.userSettings ?? DefaultUserSettingsPage
+  const wrapShell = appShell ?? ((content: ReactNode) => content)
 
   return (
     <HelmetProvider>
@@ -137,6 +145,7 @@ export function CoreFront({ children, authPages, cspNonce, workspaceRoute, works
                           ) : null}
                         </Helmet>
                         <RouterAuthGate publicPaths={['/invites', ...(publicPaths ?? [])]}>
+                          {wrapShell(
                           <Suspense fallback={null}>
                             <Routes>
                               <Route path={routes.signin} element={<SignInPage />} />
@@ -158,6 +167,7 @@ export function CoreFront({ children, authPages, cspNonce, workspaceRoute, works
                               {children}
                             </Routes>
                           </Suspense>
+                          )}
                         </RouterAuthGate>
                       </TopBarSlotProvider>
                     </WorkspaceAuthProvider>

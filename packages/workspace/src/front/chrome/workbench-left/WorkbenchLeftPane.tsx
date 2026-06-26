@@ -41,6 +41,10 @@ export interface WorkbenchLeftPaneProps {
   onOpenPanel?: (config: WorkbenchLeftPaneOpenPanelConfig) => void
   onReloadAgentPlugins?: () => void | Promise<unknown>
   onCollapse?: () => void
+  railOnly?: boolean
+  onExpandRail?: () => void
+  railSide?: "left" | "right"
+  hideRail?: boolean
   className?: string
 }
 
@@ -52,6 +56,10 @@ export function WorkbenchLeftPane({
   onOpenPanel,
   onReloadAgentPlugins,
   onCollapse,
+  railOnly = false,
+  onExpandRail,
+  railSide = "left",
+  hideRail = false,
   className,
 }: WorkbenchLeftPaneProps) {
   const panelRegistry = useRegistry()
@@ -115,22 +123,24 @@ export function WorkbenchLeftPane({
     }
   }, [revealFileTreeRequest, tabs])
 
-  const openDefaultPanelForTab = useCallback((entry: { panel?: PanelConfig }) => {
+  const openDefaultPanelForTab = useCallback((entry: { panel?: PanelConfig }): boolean => {
     const defaultPanelId = entry.panel?.defaultPanelId
-    if (!defaultPanelId || !onOpenPanel) return
+    if (!defaultPanelId || !onOpenPanel) return false
     const target = panels.find((panel) => panel.id === defaultPanelId && panel.placement !== "left-tab")
-    if (!target) return
+    if (!target) return false
     onOpenPanel({
       id: target.id,
       component: target.id,
       title: target.title,
     })
+    return true
   }, [onOpenPanel, panels])
 
   const selectTab = useCallback((entry: { id: string; panel?: PanelConfig }) => {
     setTab(entry.id)
-    openDefaultPanelForTab(entry)
-  }, [openDefaultPanelForTab])
+    const openedDefaultPanel = openDefaultPanelForTab(entry)
+    if (railOnly && !openedDefaultPanel) onExpandRail?.()
+  }, [onExpandRail, openDefaultPanelForTab, railOnly])
 
   const toggleSearch = useCallback(() => {
     setSearchOpen((s) => {
@@ -212,9 +222,17 @@ export function WorkbenchLeftPane({
     </nav>
   )
 
+  if (railOnly) {
+    return (
+      <div data-boring-workspace-part="workbench-left-rail" className={cn("workbench-left-root flex h-full min-h-0", className)}>
+        {rail}
+      </div>
+    )
+  }
+
   return (
-    <div data-boring-workspace-part="workbench-left" className={cn("workbench-left-root flex h-full min-h-0", className)}>
-      {rail}
+    <div data-boring-workspace-part="workbench-left" className={cn("workbench-left-root flex h-full min-h-0", railSide === "right" && "flex-row-reverse", className)}>
+      {hideRail ? null : rail}
 
       <div className="flex h-full min-w-0 flex-1 flex-col bg-muted/35">
         {!activeOwnsSearch && (

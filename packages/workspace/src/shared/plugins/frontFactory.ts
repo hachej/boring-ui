@@ -15,6 +15,7 @@ export interface BoringFrontPanelRegistration<T = unknown> {
   label?: string
   icon?: ComponentType<{ className?: string }>
   placement?: string
+  sidebarPolicy?: "show" | "collapse"
   requiresCapabilities?: string[]
   essential?: boolean
   lazy?: boolean
@@ -115,6 +116,8 @@ export interface DefinePluginConfig {
   bindings?: ReadonlyArray<BoringFrontBindingRegistration>
   catalogs?: ReadonlyArray<CatalogConfig>
   toolRenderers?: ReadonlyArray<BoringFrontToolRendererRegistration>
+  /** Semantic hint for Pi prompt builder. Does not affect runtime layout. */
+  mode?: "integrated" | "standalone"
   /**
    * Escape hatch for registrations that can't be expressed declaratively.
    * Called LAST, after every declarative field has been registered.

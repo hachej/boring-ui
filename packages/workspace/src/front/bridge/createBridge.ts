@@ -107,6 +107,9 @@ export function createBridge(store: StoreApi): WorkspaceBridge {
       if (existing) {
         const prev = state.activePanel
         state.activatePanel(config.id)
+        if (config.params && Object.keys(config.params).length > 0) {
+          state.updatePanelParams(config.id, config.params)
+        }
         emit("panel:activated", { panelId: config.id, previousPanelId: prev })
         return ok()
       }

@@ -48,6 +48,7 @@ function createMockStore() {
     openPanel: vi.fn(),
     closePanel: vi.fn(),
     activatePanel: vi.fn(),
+    updatePanelParams: vi.fn(),
     openFile: vi.fn(),
     markDirty: vi.fn(),
     markClean: vi.fn(),
