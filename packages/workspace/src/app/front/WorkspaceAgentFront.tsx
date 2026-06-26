@@ -503,7 +503,6 @@ export function WorkspaceAgentFront<
     workspaceId,
     failed: false,
   }))
-  const [freshEmptySession, setFreshEmptySession] = useState<{ workspaceId: string; id: string } | null>(null)
   const chatPaneStorageKey = `boring-workspace:chat-panes:${workspaceId}`
   const [chatPaneState, setChatPaneState] = useState<ChatPaneState>(() =>
     (shellPersistenceEnabled ? readStoredChatPaneState(chatPaneStorageKey, workspaceId) : null)
@@ -802,7 +801,6 @@ export function WorkspaceAgentFront<
     suppressEmptyAutoCreateRef.current = false
     setInitialRemoteSessionCreating({ workspaceId, creating: false })
     setInitialRemoteSessionCreateFailed({ workspaceId, failed: false })
-    setFreshEmptySession(null)
   }, [workspaceId])
 
   useEffect(() => {
@@ -837,10 +835,6 @@ export function WorkspaceAgentFront<
     setInitialRemoteSessionCreating({ workspaceId, creating: true })
     setInitialRemoteSessionCreateFailed({ workspaceId, failed: false })
     void Promise.resolve(sessionApi.create({ title: defaultSessionTitle }))
-      .then((session) => {
-        const id = (session as { id?: unknown } | null | undefined)?.id
-        if (typeof id === "string") setFreshEmptySession({ workspaceId, id })
-      })
       .catch(() => {
         autoCreateSessionRef.current = false
         setInitialRemoteSessionCreating({ workspaceId, creating: false })
