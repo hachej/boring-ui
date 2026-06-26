@@ -392,9 +392,9 @@ Avoid breaking current consumers in the first pass.
 3. `DataCatalog` and `DataCatalogPane` root exports are removed now; use data catalog plugin helpers instead.
 4. Move app/plugin imports to `plugins/data-explorer` or package-root exports.
 
-## Implementation Beads
+## Implementation Tasks
 
-### Bead 1 — Explorer plugin skeleton
+### Task 1 — Explorer plugin skeleton
 
 - Add `plugins/data-explorer/src` with current `DataExplorer` code moved mostly
   intact.
@@ -403,14 +403,14 @@ Avoid breaking current consumers in the first pass.
   `plugins/data-explorer`.
 - Tests: current DataExplorer tests pass unchanged after path update.
 
-### Bead 2 — Data catalog plugin composition
+### Task 2 — Data catalog plugin composition
 
 - Change the `@hachej/boring-data-catalog` package to import explorer APIs from `@hachej/boring-data-explorer`.
 - Split data catalog helpers into `catalogs.ts` if useful.
 - Keep `front/components/data-catalog` removed; do not add compatibility wrappers back.
 - Tests: data catalog package tests and public API tests.
 
-### Bead 3 — Tree adapter design
+### Task 3 — Tree adapter design
 
 - Add `ExplorerTreeAdapter`, `ExplorerNode`, section/folder node types.
 - Add tree state hook or extend explorer state carefully, including per-section
@@ -418,7 +418,7 @@ Avoid breaking current consumers in the first pass.
 - Do not rewrite filesystem tree yet.
 - Tests: adapter contract, expansion, per-node loading, abort handling.
 
-### Bead 4 — Feret project tree spike
+### Task 4 — Feret project tree spike
 
 - In Feret v2/app playground, build a project tree using `ExplorerTreeAdapter`.
 - Prove mixed rows and section filters.
@@ -426,14 +426,14 @@ Avoid breaking current consumers in the first pass.
 - Output is either a shippable Feret integration PR or a plan update with the
   gaps found during the spike.
 
-### Bead 5 — Optional filesystem reuse
+### Task 5 — Optional filesystem reuse
 
 - Evaluate whether filesystem tree should remain custom or wrap explorer tree.
 - Decision trigger: after the Feret project tree spike, compare required file
   tree behavior (path validation, file events, expand-to-file, selection, editor
   lifecycle) against explorer tree behavior.
 - Exit criteria: record either `keep custom filesystem tree` or `migrate
-filesystem tree to explorer tree` before the legacy data-catalog removal bead.
+filesystem tree to explorer tree` before the legacy data-catalog removal task.
 - Only migrate if benefits outweigh loss of file-tree-specific behavior.
 
 ## Non-goals
@@ -441,8 +441,8 @@ filesystem tree to explorer tree` before the legacy data-catalog removal bead.
 - Do not make every visual component a plugin. `@boring/ui`, layout,
   chrome hosts, registries, bridge, and provider stay front-owned.
 - Do not force filesystem to depend on data catalog.
-- Do not rewrite file tree in the first bead.
-- Do not remove public exports without an explicit breaking cleanup bead.
+- Do not rewrite file tree in the first task.
+- Do not remove public exports without an explicit breaking cleanup task.
 - Do not allow reverse imports from `@hachej/boring-data-explorer` into domain plugins. Add or
   extend invariant lint so allowed direction is domain plugin -> data explorer package,
   never data explorer package -> data catalog package, filesystemPlugin, or app plugins.
@@ -453,5 +453,5 @@ filesystem tree to explorer tree` before the legacy data-catalog removal bead.
 - Domain-named components do not live under `front/components`.
 - Explorer APIs are reusable by data catalog, filesystem, and Feret without
   cross-domain plugin imports.
-- Existing public API remains source-compatible until an approved breaking bead.
+- Existing public API remains source-compatible until an approved breaking task.
 - Feret Project Tree requirements are representable without forking explorer UI.

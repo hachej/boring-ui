@@ -4,7 +4,7 @@
 > `../../INTERFACES.md` and `../../PLUGIN_STRUCTURE.md` for the current concise
 > contract reference.
 
-**Status:** v7.7 — round-7 governance: ChatPanel via dependency injection (NOT plugin); baseline protocol uses `git worktree` (NOT `git stash`); systemPrompt ordering reaffirmed (bootstrap first, createAgentApp second); excludeDefaults semantics corrected (UI off; tools stay); j9p7.30 sed→explicit Edits; bead-level dep + path fixes integrated.
+**Status:** v7.7 — round-7 governance: ChatPanel via dependency injection (NOT plugin); baseline protocol uses `git worktree` (NOT `git stash`); systemPrompt ordering reaffirmed (bootstrap first, createAgentApp second); excludeDefaults semantics corrected (UI off; tools stay); j9p7.30 sed→explicit Edits; task-level dep + path fixes integrated.
 
 > **2026-04-30 routing update:** any later references in this historical plan
 > to `PanelConfig.filePatterns`, `fileFallback`, or `PanelRegistry.resolve`
@@ -2111,7 +2111,7 @@ reviewers don't think they were missed.
 | **Plugin-vs-substrate tool name collision** | A plugin shipping a tool called `read` replaces substrate's. Late-wins logged. Could confuse the LLM if names diverge mid-session. | When agent-authored plugins (Phase 3) make accidental collision likely. |
 | **Catalog adapter memory** | If an adapter holds a long-running subscription (e.g., websocket to a remote search service), there's no place to clean up because there's no `onUnmount`. | When a real adapter needs it. Adding a teardown hook on `CatalogConfig` is non-breaking. |
 | **Non-React stateful adapters need lifecycle** | Gemini P1: an adapter that wants to subscribe to `events.on('file:moved', …)` to invalidate its cache has nowhere to do it. Module-scope `events.on(...)` fires globally for all hosts. Lazy on-first-call leaks (no unsubscribe). | First plugin that needs it. Re-introduce `Plugin.onMount(ctx) → cleanup` (we cut it in v6 because Phase 1 plugins are all React-component-based or factory-injected; that assumption breaks for stateful adapters). |
-| **`registerAgentRoutes` lacks `disableDefaultFileTools`** | Codex round-4 P1: `createAgentApp` accepts `disableDefaultFileTools` (verified `createAgentApp.ts:47`) but `registerAgentRoutes` (the embedded-Fastify path used by `apps/full-app/src/server/main.ts:383`) does NOT — it always includes filesystem tools (`registerAgentRoutes.ts:94`). The "harness opt-out" promise only holds for the standalone `createAgentApp` path. | Add `disableDefaultFileTools` option to `registerAgentRoutes` plumbed through to its internal tool-catalog construction. **Out of scope for Phase 1** macro acceptance (macro uses `createWorkspaceAgentApp` which uses `createAgentApp`, not `registerAgentRoutes`). Add a follow-up bead under the j9p7 epic OR Phase 2 if a `registerAgentRoutes`-using host needs the opt-out. |
+| **`registerAgentRoutes` lacks `disableDefaultFileTools`** | Codex round-4 P1: `createAgentApp` accepts `disableDefaultFileTools` (verified `createAgentApp.ts:47`) but `registerAgentRoutes` (the embedded-Fastify path used by `apps/full-app/src/server/main.ts:383`) does NOT — it always includes filesystem tools (`registerAgentRoutes.ts:94`). The "harness opt-out" promise only holds for the standalone `createAgentApp` path. | Add `disableDefaultFileTools` option to `registerAgentRoutes` plumbed through to its internal tool-catalog construction. **Out of scope for Phase 1** macro acceptance (macro uses `createWorkspaceAgentApp` which uses `createAgentApp`, not `registerAgentRoutes`). Add a follow-up task under the j9p7 epic OR Phase 2 if a `registerAgentRoutes`-using host needs the opt-out. |
 | **Build-time enforcement of client/server split** | Documented invariant; not a custom lint rule. | If accidental cross-imports become common. |
 | **Plugin versioning / compat** | `Plugin.version` field cut. No compat negotiation. | Phase 2 npm distribution. |
 | **Layout migrations** | Renaming a panel id breaks cached dockview layouts. Same problem as today; not made worse by plugin model. | When layouts become stable enough to merit migration tooling. |
@@ -2496,7 +2496,7 @@ export { definePlugin, definePanel, PluginError, … } from "./plugin"
 export { CatalogRegistry, useCommands, useActivePanels, useCatalogs, … } from "./plugin"
 ```
 
-### Phase 1.5 breakdown — 7 phase beads (A through G)
+### Phase 1.5 breakdown — 7 phase tasks (A through G)
 
 A and B can run in parallel. C depends on A. D, E, F can run in parallel after A+B+C. G depends on D+E+F.
 
@@ -2519,7 +2519,7 @@ A and B can run in parallel. C depends on A. D, E, F can run in parallel after A
 │  - Update internal imports                                       │
 │  - DON'T touch ChatCenteredShell.tsx or ChatTopBar.tsx yet —     │
 │    they stay until Phase G/C respectively.                       │
-│  Bead: j9p7.24                                                   │
+│  Task: j9p7.24                                                   │
 │                                                                  │
 │  Note: Step 0 already ran the workspace reorg into v7.6 layout, │
 │  so source paths use front/ prefix. ArtifactSurfacePane.tsx and  │
@@ -2542,7 +2542,7 @@ A and B can run in parallel. C depends on A. D, E, F can run in parallel after A
 │    mount, BEFORE bootstrap() runs                                │
 │  - Test: render WorkspaceProvider with no plugins; assert the    │
 │    panel registry has the 4 core ids                             │
-│  Bead: j9p7.25 (depends on j9p7.24 closing for the actual        │
+│  Task: j9p7.25 (depends on j9p7.24 closing for the actual        │
 │  definition.ts files to import)                                  │
 └──────────────────────────────────────────────────────────────────┘
                              │
@@ -2557,7 +2557,7 @@ A and B can run in parallel. C depends on A. D, E, F can run in parallel after A
 │  - Export ResponsiveDockviewShell from package barrel with jsdoc │
 │    explaining Tier 2                                             │
 │  - Add §"Three-tier API" to packages/workspace/README.md         │
-│  Bead: j9p7.26                                                   │
+│  Task: j9p7.26                                                   │
 └──────────────────────────────────────────────────────────────────┘
                              │
                              ▼
@@ -2569,7 +2569,7 @@ A and B can run in parallel. C depends on A. D, E, F can run in parallel after A
 │  - Confirm e2e tests (apps/workspace-playground/e2e/*.spec.ts)   │
 │    still pass                                                    │
 │  - Document any gotchas for the next two app migrations          │
-│  Bead: j9p7.27                                                   │
+│  Task: j9p7.27                                                   │
 └──────────────────────────────────────────────────────────────────┘
                              │
                              ▼
@@ -2597,7 +2597,7 @@ A and B can run in parallel. C depends on A. D, E, F can run in parallel after A
 │  - macro's uiBridge.ts is ALREADY deleted in Step 1a (NOT here   │
 │    — gemini P2 catch).                                           │
 │  - Confirm boring-macro e2e tests pass                           │
-│  Beads: j9p7.18 (plugin module), j9p7.19 (app refactor),         │
+│  Tasks: j9p7.18 (plugin module), j9p7.19 (app refactor),         │
 │         j9p7.20 (e2e gate). Reframed under Phase E.              │
 └──────────────────────────────────────────────────────────────────┘
                              │
@@ -2608,7 +2608,7 @@ A and B can run in parallel. C depends on A. D, E, F can run in parallel after A
 │  - Rewrite apps/full-app/src/front/main.tsx to use the           │
 │    appropriate declarative layout                                │
 │  - Confirm e2e tests pass                                        │
-│  Bead: j9p7.28                                                   │
+│  Task: j9p7.28                                                   │
 └──────────────────────────────────────────────────────────────────┘
                              │
                              ▼
@@ -2622,7 +2622,7 @@ A and B can run in parallel. C depends on A. D, E, F can run in parallel after A
 │  - Dropped related exports from src/index.ts                     │
 │  - Removed now-empty components/chat/ folder                     │
 │  - Updated WORKSPACE_V2_PLAN.md and active package docs          │
-│  Bead: j9p7.29                                                   │
+│  Task: j9p7.29                                                   │
 └──────────────────────────────────────────────────────────────────┘
 ```
 
@@ -2635,7 +2635,7 @@ A and B can run in parallel. C depends on A. D, E, F can run in parallel after A
 
 ### Phase 1.5 ship criteria
 
-- All 7 phase beads (j9p7.24-29 + j9p7.18-20) closed
+- All 7 phase tasks (j9p7.24-29 + j9p7.18-20) closed
 - Three apps run on declarative layouts in production
 - `ChatCenteredShell` and `ChatShellContext` deleted from the tree
 - Public API exposes Tier 1 / Tier 2 / Tier 3 entries with jsdoc
@@ -2648,7 +2648,7 @@ The earlier Phase 1 Step 5b ("ChatCenteredShell drops `data` + `extraPanels` pro
 - Step 5b's "drop legacy props" becomes "delete the whole shell" (Phase G).
 - Step 5c's "registry-driven WorkbenchLeftPane" becomes "WorkbenchLeftPane is just one of the core panels registered by WorkspaceProvider; tab strip is gone" (Phase A + B).
 
-Beads j9p7.16 (Step 5b) and j9p7.17 (Step 5c) close as **scope-shifted to Phase 1.5** — see Phase A/B beads for the new location.
+Tasks j9p7.16 (Step 5b) and j9p7.17 (Step 5c) close as **scope-shifted to Phase 1.5** — see Phase A/B tasks for the new location.
 
 ## Phase 2/3 (sketched, deferred)
 
@@ -2843,9 +2843,9 @@ pre-migration are not this gate's job.
 - Superseded plans: `COMMAND_PALETTE_REGISTRY.md` (older); v2-v5.2
   of this file (in git history).
 
-## Changelog v7.6 → v7.7 (round-7 governance + bead-level fixes)
+## Changelog v7.6 → v7.7 (round-7 governance + task-level fixes)
 
-Round-6 (codex bead-level review) returned 2 P0 governance questions, 7 P1s, 3 P2s. The user resolved both P0s; this changelog documents the integrated answers and the bead-level patches.
+Round-6 (codex task-level review) returned 2 P0 governance questions, 7 P1s, 3 P2s. The user resolved both P0s; this changelog documents the integrated answers and the task-level patches.
 
 ### P0 — ChatPanel resolution: dependency injection (NOT plugin)
 
@@ -2859,9 +2859,9 @@ Round-5 used `git stash` to establish a pre-migration baseline. That violates AG
 
 Spec edits: §"Acceptance" prepends a "Baseline protocol (v7.7 — worktree-based)" subsection with the canonical script. j9p7.20 (round-7 notes) replaces all `git stash` mentions with the worktree procedure. j9p7.20's dep on j9p7.19 was REMOVED via `br dep remove` — baseline runs BEFORE migration, so the graph edge that implied "baseline blocks on migration" was wrong.
 
-### P1 fixes (bead-level)
+### P1 fixes (task-level)
 
-1. **systemPrompt ordering circularity (j9p7.11 / j9p7.31)** — both beads now state the canonical sequence: bootstrap FIRST (computes `systemPromptAppend` + stages agentTools), then `createAgentApp({ systemPromptAppend, extraTools: [...uiTools, ...stagedAgentTools] })`. agentTools are staged into a list during bootstrap, not registered against a live registry.
+1. **systemPrompt ordering circularity (j9p7.11 / j9p7.31)** — both tasks now state the canonical sequence: bootstrap FIRST (computes `systemPromptAppend` + stages agentTools), then `createAgentApp({ systemPromptAppend, extraTools: [...uiTools, ...stagedAgentTools] })`. agentTools are staged into a list during bootstrap, not registered against a live registry.
 
 2. **excludeDefaults semantics correction (j9p7.10)** — the round-1 test "LLM file ops not in agentTool list" was wrong. `excludeDefaults: ['filesystem']` removes filesystemPlugin's UI contributions (panels + catalog). It does NOT remove file tools — those are HARNESS substrate, never in the plugin's `agentTools` (which is undefined). Two switches, two layers: `excludeDefaults` for UI, `disableDefaultFileTools` for tools.
 
@@ -2898,7 +2898,7 @@ Codex flagged: `shared/plugin/types.ts` referencing `ExplorerAdapter` from `comp
 
 ### P1 — Phase 1.5 step text path-updated
 
-Codex flagged that Phase A still said `panes/<id>/`, Phase C said `layouts/TopBar.tsx`, Phase E said `src/macroPlugin.ts` — all pre-v7.5. **Fix:** Phase A → `front/chrome/<id>/`; Phase C → `front/layout/TopBar.tsx`; Phase E → `apps/.../src/plugin/{front,server}/` directly. Bead descriptions to be updated post-commit.
+Codex flagged that Phase A still said `panes/<id>/`, Phase C said `layouts/TopBar.tsx`, Phase E said `src/macroPlugin.ts` — all pre-v7.5. **Fix:** Phase A → `front/chrome/<id>/`; Phase C → `front/layout/TopBar.tsx`; Phase E → `apps/.../src/plugin/{front,server}/` directly. Task descriptions to be updated post-commit.
 
 ### P2 cleanup pack (applied)
 
@@ -2916,7 +2916,7 @@ Codex flagged that Phase A still said `panes/<id>/`, Phase C said `layouts/TopBa
 
 After v7.6 patches: both verdicts converge on **implementable as-is**. No reversals from earlier rounds. The architecture stands.
 
-### Beads needing path updates
+### Tasks needing path updates
 
 - **NEW j9p7.31** — Step 0 workspace reorg (mechanical)
 - **j9p7.9** (filesystemPlugin) — paths under `plugins/filesystemPlugin/{index.ts (no server.ts since UI-only), front/}`
@@ -3004,7 +3004,7 @@ Apps mirror: each app contributes ONE plugin, lives in `apps/<host>/src/plugin/{
 4. **No category mixing at any level** — workspace own code is in `front/server/shared`; plugins are in `plugins/`; plugin machinery is in singular `plugin/` sub-folders. Zero ambiguity for new contributors.
 5. **Plays well with build invariants** — codex round-2 caught a P0 where server-only modules were about to leak into client code. With the explicit split, the lint rule "front/ must not import from server/" is one path-prefix check.
 
-### Bead impact
+### Task impact
 
 Mostly path-string updates; no semantic changes:
 
@@ -3017,7 +3017,7 @@ Mostly path-string updates; no semantic changes:
   `apps/boring-macro-v2/src/plugin/{index,server}.ts` to
   `apps/boring-macro-v2/src/plugin/{index.ts,front/,server/}`
 
-A new bead **j9p7.30** could capture the workspace front/server reorg
+A new task **j9p7.30** could capture the workspace front/server reorg
 itself if it's substantive enough to warrant separate tracking. For
 now, fold into Phase A (j9p7.24) since they're both restructuring
 the same directory.
@@ -3032,14 +3032,14 @@ User decision (2026-04-29): **merge into one mega-plan + one epic**. The earlier
    - Documents three-tier API (Tier 1 declarative pre-shaped layouts; Tier 2 custom LayoutConfig with stock chrome; Tier 3 raw primitives)
    - Substrate vs default-plugin vs app-plugin clarification (chat is core, not a plugin)
    - File-tree end state (panes/ as canonical home; components/chat/ disappears)
-   - 7 phase beads breakdown (Phase A → G) with parallelism map
+   - 7 phase tasks breakdown (Phase A → G) with parallelism map
    - Risks + ship criteria
 
-2. **j9p7.16 (Step 5b) and j9p7.17 (Step 5c) marked obsolete** — scope-shifted to Phase 1.5. Closing them with reason "subsumed by Phase 1.5 Phase A/B." Replacement beads created for each Phase.
+2. **j9p7.16 (Step 5b) and j9p7.17 (Step 5c) marked obsolete** — scope-shifted to Phase 1.5. Closing them with reason "subsumed by Phase 1.5 Phase A/B." Replacement tasks created for each Phase.
 
 3. **j9p7.18 / .19 / .20** (macro plugin module / app refactor / e2e gate) **reframed under Phase E**, not Step 6. Same work, different grouping.
 
-4. **6 new beads created** for Phase 1.5 phases that don't have direct j9p7 equivalents:
+4. **6 new tasks created** for Phase 1.5 phases that don't have direct j9p7 equivalents:
    - j9p7.24 (Phase A — decompose shells)
    - j9p7.25 (Phase B — wire core panel registrations)
    - j9p7.26 (Phase C — lift TopBar chrome)
@@ -3065,7 +3065,7 @@ Merging gives:
 
 - PLUGIN_MODEL.md grows by ~280 lines (Phase 1.5 + this changelog entry)
 - DECLARATIVE_LAYOUT_MIGRATION.md gains a SUPERSEDED banner; content preserved in history
-- j9p7 epic gains 6 new beads, closes 2 obsolete beads
+- j9p7 epic gains 6 new tasks, closes 2 obsolete tasks
 - zrby epic closes
 - Acceptance contract updated: j9p7 closes when Phase 1.5 ship criteria met (declarative apps + ChatCenteredShell deleted + Tier 1/2/3 public API)
 
@@ -3129,7 +3129,7 @@ without payoff.
   `pages` sketch + this changelog entry).
 - Contract: unchanged — same 7 fields (id, label, systemPrompt,
   panels, commands, catalogs, agentTools).
-- Beads: unchanged. Bead descriptions can keep using
+- Tasks: unchanged. Task descriptions can keep using
   `placement: 'left-tab'` / `'center'` etc. as today.
 
 ## Changelog v7.1 → v7.2 (planning-workflow review pass)
@@ -3147,7 +3147,7 @@ cards) is wrapped in `<PluginErrorBoundary pluginId>`. A buggy
 plugin can no longer crash the workspace shell. Dropped errors
 push into `WorkspaceContext.errors[]` for visibility via
 `<PluginInspector />`. Implementation sites: PanelHost, CatalogResults,
-chat-suggestion card list. ~50 LOC. New bead: j9p7.22.
+chat-suggestion card list. ~50 LOC. New task: j9p7.22.
 
 **2. CatalogRegistry search debouncing + AbortSignal propagation.**
 New hook: `useDebouncedCatalogSearch(query, opts?)` debounces 150ms,
@@ -3155,7 +3155,7 @@ aborts in-flight searches per keystroke via the AbortSignal that
 ExplorerAdapter.search ALREADY accepts (verified
 `packages/workspace/src/components/DataExplorer/types.ts:46-55` —
 no contract change needed; just consumer-side wiring). Per-catalog
-errors isolated via try/catch. Updates bead j9p7.13.
+errors isolated via try/catch. Updates task j9p7.13.
 
 ### Compelling-feature addition (selected)
 
@@ -3164,7 +3164,7 @@ concatenates across registered plugins (in registration order),
 prepends to the harness's base system prompt. Lets plugin authors
 own their domain framing for the LLM ("you have a FRED database;
 use macro_* tools for X"). Concrete LLM-quality improvement;
-reduces host-author burden. Updates beads j9p7.4 (contract +
+reduces host-author burden. Updates tasks j9p7.4 (contract +
 validation), j9p7.7 (bootstrap concat), j9p7.18 (macro plugin sets).
 
 ### DX additions (selected)
@@ -3173,7 +3173,7 @@ validation), j9p7.7 (bootstrap concat), j9p7.18 (macro plugin sets).
 ("console.log is enough"). Reversal justified: plugin authors hit
 "why didn't my command appear?" daily; visual check beats
 spelunking React DevTools. ~50 LOC, zero production cost
-(import.meta.env.DEV gated). New bead: j9p7.23.
+(import.meta.env.DEV gated). New task: j9p7.23.
 
 **5. New §"Decisions log".** Single-table summary of locked
 architectural decisions with one-line rationale + pointer to the
@@ -3200,8 +3200,8 @@ harness-owns-tools framing. The two plans now read consistently.
 
 ### Net impact
 
-- New beads: j9p7.22 (error boundaries) + j9p7.23 (PluginInspector)
-- Updated beads: j9p7.4 (systemPrompt validation), j9p7.7 (bootstrap
+- New tasks: j9p7.22 (error boundaries) + j9p7.23 (PluginInspector)
+- Updated tasks: j9p7.4 (systemPrompt validation), j9p7.7 (bootstrap
   concat), j9p7.13 (debounced search), j9p7.18 (macro systemPrompt)
 - Spec additions: ~250 lines (decisions log + patterns + 3 new
   sections + v7.2 changelog)
@@ -3251,7 +3251,7 @@ implementation gap.
    path. **Out of scope for Phase 1 macro acceptance** (macro uses
    `createWorkspaceAgentApp` → `createAgentApp`, not
    `registerAgentRoutes`). Tracked as a known-gap; promote to a
-   bead if a `registerAgentRoutes`-using host needs the opt-out.
+   task if a `registerAgentRoutes`-using host needs the opt-out.
 
 ### Cross-plan note (NOT patched in this commit)
 
@@ -3270,8 +3270,8 @@ ownership).
 
 Macro 260→46 still holds. v7 automatic file tools don't add macro
 glue; macro domain tools still fit `Plugin.agentTools`. Current
-j9p7 beads are v7-aligned (verified post f2d73bc). Old uhwx
-(pi-tools-migration) docs/beads are stale relative to v7 — track
+j9p7 tasks are v7-aligned (verified post f2d73bc). Old uhwx
+(pi-tools-migration) docs/tasks are stale relative to v7 — track
 separately.
 
 ## Changelog v6.3 → v7.0 (separation of concerns: harness owns tools)
@@ -3345,18 +3345,18 @@ changes is that macro's agentTools come ONLY from
 File tools come from the harness automatically. No plumbing
 difference for macro's host code.
 
-### Bead impact
+### Task impact
 
 - **B2** (file ops bundle extraction) → reframed as "extract
   pi-factory wiring per pi-tools-migration; bundle includes pi
   tools + any custom additions." No dual-registration story.
-- **B9** (filesystemPlugin) → becomes a tiny bead: plain const
+- **B9** (filesystemPlugin) → becomes a tiny task: plain const
   with panels + catalog, no agentTools. ~10 LOC of plugin code.
 - **B11** (createWorkspaceAgentApp) → no
   `disableDefaultFileTools: true` wiring; just wraps
   `createAgentApp` and runs bootstrap.
 
-All three bead descriptions updated to match v7.0 framing.
+All three task descriptions updated to match v7.0 framing.
 
 ## Changelog v6.2 → v6.3 (gemini fresh-eyes review patches)
 

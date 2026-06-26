@@ -73,7 +73,6 @@ const dynamicPluginReactRefreshExclude = [
 
 const devServerWatchIgnored = [
   "**/.git/**",
-  "**/.beads/**",
   "**/.pi/agent/cache/**",
   "**/.pi/agent/sessions/**",
   "**/node_modules/**",

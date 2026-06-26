@@ -417,17 +417,17 @@ Remember full-app Playwright currently uses explicit `testMatch`, so the new spe
 
 ---
 
-## 11. Bead mapping
+## 11. Task mapping
 
-Existing bead moved to this plan:
+Existing task moved to this plan:
 
 ```txt
 boring-ui-v2-reorg-rc6o — Expose child-app chat entry hooks for auth-first and chat-first
 ```
 
-That bead should carry the `child-app-chat-entry-auth` label and should not block authenticated chat-first workspace boot implementation.
+That task should carry the `child-app-chat-entry-auth` label and should not block authenticated chat-first workspace boot implementation.
 
-Possible later beads if the first bead grows too large:
+Possible later tasks if the first task grows too large:
 
 1. `chat-panel-draft-submit-hooks` — package hook surface only.
 2. `full-app-chat-entry-example` — child app overlay/draft example.

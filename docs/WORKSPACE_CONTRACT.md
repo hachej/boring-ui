@@ -2,7 +2,7 @@
 
 Defines the contracts between `@hachej/boring-agent` and `@hachej/boring-workspace`. Both packages are composed at the **app-shell level** -- neither imports from the other at runtime.
 
-See also: [DECISIONS.md](./DECISIONS.md) (locked decisions), [REVIEW_DECISIONS.md](./REVIEW_DECISIONS.md) (adopted/deferred findings).
+See also: [DECISIONS.md](./DECISIONS.md) (locked decisions), [REVIEW_DECISIONS.md](kanzen/REVIEW_DECISIONS.md) (adopted/deferred findings).
 
 ---
 

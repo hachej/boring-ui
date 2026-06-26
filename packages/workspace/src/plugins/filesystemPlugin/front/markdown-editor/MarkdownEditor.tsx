@@ -77,8 +77,89 @@ export interface MarkdownEditorProps {
   documentPath?: string
 }
 
+export interface MarkdownFrontmatterEntry {
+  key: string
+  value: string
+}
+
+export interface MarkdownFrontmatterSummary {
+  entries: MarkdownFrontmatterEntry[]
+  block: string
+  raw: string
+  body: string
+}
+
+function stripWrappingQuotes(value: string): string {
+  const trimmed = value.trim()
+  if (trimmed.length < 2) return trimmed
+  const first = trimmed[0]
+  const last = trimmed[trimmed.length - 1]
+  if ((first === "\"" && last === "\"") || (first === "'" && last === "'")) {
+    return trimmed.slice(1, -1)
+  }
+  return trimmed
+}
+
+function formatFrontmatterValue(rawValue: string): string {
+  const normalized = rawValue
+    .split("\n")
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .map((line) => line.replace(/^-\s+/, ""))
+    .join(", ")
+  return stripWrappingQuotes(normalized)
+}
+
+export function parseMarkdownFrontmatter(content: string): MarkdownFrontmatterSummary | null {
+  const normalized = content.replace(/^\uFEFF/, "")
+  const match = normalized.match(/^---[ \t]*\r?\n([\s\S]*?)\r?\n(?:---|\.\.\.)[ \t]*(?:\r?\n|$)/)
+  if (!match || match.index !== 0) return null
+
+  const raw = match[1] ?? ""
+  const body = normalized.slice(match[0].length)
+  const entries: MarkdownFrontmatterEntry[] = []
+  let current: { key: string; lines: string[] } | null = null
+
+  const flushCurrent = () => {
+    if (!current) return
+    const value = formatFrontmatterValue(current.lines.join("\n"))
+    if (value) entries.push({ key: current.key, value })
+    current = null
+  }
+
+  for (const line of raw.split(/\r?\n/)) {
+    if (!line.trim() || line.trimStart().startsWith("#")) continue
+    const keyMatch = line.match(/^([A-Za-z0-9_-]+):(?:\s*(.*))?$/)
+    if (keyMatch) {
+      flushCurrent()
+      current = { key: keyMatch[1], lines: [keyMatch[2] ?? ""] }
+      continue
+    }
+    if (current && /^\s+/.test(line)) current.lines.push(line)
+  }
+  flushCurrent()
+
+  return entries.length > 0 ? { entries, block: match[0], raw, body } : null
+}
+
+function applyFrontmatterToBody(summary: MarkdownFrontmatterSummary | null, body: string): string {
+  if (!summary) return body
+  const separator = summary.block.endsWith("\n") || body.length === 0 ? "" : "\n"
+  return `${summary.block}${separator}${body}`
+}
+
+export function serializeMarkdownEditorChange(
+  nextBody: string,
+  editorFocused: boolean,
+  frontmatter: MarkdownFrontmatterSummary | null,
+): string | null {
+  if (!isUserEditedChange(nextBody, editorFocused)) return null
+  return applyFrontmatterToBody(frontmatter, nextBody)
+}
+
 export function countMarkdownWords(content: string): number {
-  const plainText = content
+  const body = parseMarkdownFrontmatter(content)?.body ?? content
+  const plainText = body
     .replace(/```[\s\S]*?```/g, " ")
     .replace(/`[^`]*`/g, " ")
     .replace(/^\s{0,3}#{1,6}\s+/gm, "")
@@ -479,6 +560,42 @@ function Toolbar({
   )
 }
 
+function FrontmatterSummary({ summary }: { summary: MarkdownFrontmatterSummary }) {
+  return (
+    <section
+      aria-label="Frontmatter"
+      className="border-b border-border/60 bg-muted/30 px-6 py-4"
+      data-testid="markdown-frontmatter-summary"
+    >
+      <div className="mx-auto flex max-w-[68ch] flex-col gap-3">
+        <div className="flex items-center justify-between gap-3">
+          <h2 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+            Frontmatter
+          </h2>
+          <span className="rounded border border-border/70 px-2 py-0.5 font-mono text-[10px] text-muted-foreground">
+            YAML
+          </span>
+        </div>
+        <dl className="grid gap-2 sm:grid-cols-2">
+          {summary.entries.map((entry, index) => (
+            <div
+              key={`${entry.key}-${index}`}
+              className="min-w-0 rounded-md border border-border/60 bg-background/80 px-3 py-2"
+            >
+              <dt className="truncate font-mono text-[11px] font-semibold text-muted-foreground">
+                {entry.key}
+              </dt>
+              <dd className="mt-1 break-words text-sm text-foreground">
+                {entry.value}
+              </dd>
+            </div>
+          ))}
+        </dl>
+      </div>
+    </section>
+  )
+}
+
 export function MarkdownEditor({
   content,
   onChange,
@@ -516,9 +633,13 @@ export function MarkdownEditor({
   const lastEmittedRef = useRef<string>(content)
   const editorRef = useRef<Editor | null>(null)
   const wordCount = useMemo(() => countMarkdownWords(content), [content])
+  const frontmatter = useMemo(() => parseMarkdownFrontmatter(content), [content])
+  const richContent = frontmatter?.body ?? content
 
   // Stable ref so handlePaste (created once in useEditor) always calls the latest version.
   const insertImageRef = useRef<(file: File) => Promise<void>>(async () => {})
+  const frontmatterRef = useRef<MarkdownFrontmatterSummary | null>(frontmatter)
+  frontmatterRef.current = frontmatter
   insertImageRef.current = async (file: File) => {
     const editor = editorRef.current
     if (!editor) return
@@ -580,10 +701,11 @@ export function MarkdownEditor({
     }
   }
 
-  const editorContent = content
-    ? content
-    : { type: "doc", content: [{ type: "paragraph" }] }
-  const editorContentType = content ? "markdown" : "json"
+  const editorContent = useMemo(
+    () => richContent ? richContent : { type: "doc", content: [{ type: "paragraph" }] },
+    [richContent],
+  )
+  const editorContentType = richContent ? "markdown" : "json"
 
   const editor = useEditor({
     extensions: editorExtensions,
@@ -606,15 +728,14 @@ export function MarkdownEditor({
     },
     onUpdate: ({ editor: e }) => {
       if (suppressChangeRef.current) return
-      const next = e.getMarkdown?.() ?? e.getHTML()
+      const nextBody = e.getMarkdown?.() ?? e.getHTML()
+      const next = serializeMarkdownEditorChange(nextBody, e.isFocused, frontmatterRef.current)
+      if (next === null) return
       // Remember our own serialized output so the content-sync effect can tell
       // a save round-trip (normalized markdown) apart from a genuine external
       // change, and never re-seeds / re-dirties on what we produced. This is the
       // load-bearing fix for the autosave/conflict storm — see the sync effect.
       lastEmittedRef.current = next
-      // Drop a transient empty emission from an unfocused editor (settling on
-      // init/remount); real edits — typing AND toolbar actions — still flow.
-      if (!isUserEditedChange(next, e.isFocused)) return
       onChangeRef.current?.(next)
     },
   })
@@ -634,7 +755,7 @@ export function MarkdownEditor({
     // Backstop: if the editor's current serialization already matches, there's
     // nothing to apply.
     const current = editor.getMarkdown?.() ?? editor.getHTML()
-    if (current === content) return
+    if (current === richContent) return
     // Genuine external change (a different document, e.g. an agent write) —
     // apply it and record it as our new baseline so the round-trip of THIS
     // content doesn't re-trigger a re-seed.
@@ -642,7 +763,7 @@ export function MarkdownEditor({
     editor.commands.setContent(editorContent, { contentType: editorContentType })
     suppressChangeRef.current = false
     lastEmittedRef.current = content
-  }, [editor, content])
+  }, [editor, content, editorContent, editorContentType, richContent])
 
   const handleEditorClick = (event: ReactMouseEvent<HTMLDivElement>) => {
     if (!shouldHandleWorkspaceLinkClick(event.nativeEvent)) return
@@ -679,7 +800,10 @@ export function MarkdownEditor({
             onChange={(e) => onChangeRef.current?.(e.target.value)}
           />
         ) : (
-          <EditorContent editor={editor} />
+          <>
+            {frontmatter && <FrontmatterSummary summary={frontmatter} />}
+            <EditorContent editor={editor} />
+          </>
         )}
       </div>
       <div className="border-t border-border/60 px-4 py-2 text-right text-xs text-muted-foreground" data-testid="markdown-word-count">

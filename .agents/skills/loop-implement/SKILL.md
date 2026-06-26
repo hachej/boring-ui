@@ -1,0 +1,61 @@
+---
+name: loop-implement
+description: "Use for /loop-implement or the implementation gate: run one accountable Kanzen implementation lane for one issue or PR, optionally use bounded helpers, review/fix, prove, and stop before merge unless fast-track policy is explicitly satisfied."
+---
+
+# Loop Implement
+
+Goal: produce a proved PR. Own one accountable implementation lane and do not
+merge by default.
+
+## Procedures
+
+| Need | Read |
+| --- | --- |
+| branch/worktree | `docs/kanzen/procedures/branch-worktree.md` |
+| proof | `docs/kanzen/procedures/proof-of-work.md` |
+| owner handoff | `docs/kanzen/procedures/owner-review-card.md` |
+
+## Flow
+
+| Step | Action |
+| --- | --- |
+| Read | issue, plan, acceptance, proof requirement, repo invariants |
+| Prepare | use the branch/worktree procedure |
+| Code | make the smallest change; optionally delegate isolated helper work |
+| Test | run focused tests and proof-of-work demo steps when UI/workspace behavior changes |
+| Review | run the review loop below until clean or blocked |
+| Proof | post final proof using the proof-of-work procedure |
+| PR | open/update PR; use owner-review-card procedure when human review is needed |
+
+In read-only/dry-run mode, report the next blocked action instead of claiming a
+comment, label, PR, or proof was posted.
+
+## Review Loop
+
+Use `coding-autoreview` on the current target: local mode for dirty work, branch
+mode for PR/branch work, or commit mode for one finished commit. For
+non-trivial code, also use `coding-thermo-nuclear-code-quality-review` as a
+bounded helper. Verify every finding, fix accepted findings, rerun affected
+tests/proof, then rerun review until clean or blocked. Record the reviewed head
+SHA.
+
+## Helpers
+
+The lane owner remains responsible for branch, commits, final diff, proof, PR
+body, labels, and state. Helpers return findings, diffs, or proof to the lane.
+Helpers must not merge, change labels, ask the owner directly, or spawn more
+helpers. If the work needs multiple accountable branches or PRs, stop and return
+a split or stacked-PR plan to triage.
+
+## Exit
+
+| Result | Labels | Gate |
+| --- | --- | --- |
+| owner input needed | `state:blocked phase:implement` | `clarity` |
+| accepted review finding remains | `state:active phase:review` | `implementation` |
+| proof still needed | `state:active phase:review` | `proof` |
+| review/proof clean | `state:ready phase:merge` | `merge` |
+
+Fast track only applies after triage confirms `track:fast` and all merge gates
+pass.
