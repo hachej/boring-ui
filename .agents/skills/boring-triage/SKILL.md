@@ -55,7 +55,8 @@ unclear requirements, or untrusted authors.
 
 Sessions are structured metadata, not labels. Preserve and reuse:
 `feedbackSession`, `grillSession`, `planSession`, `planReviewSession`,
-`implementSession`, `codeReviewSession`, `proofSession`, `ownerAskSession`.
+`implementSession`, `codeReviewSession`, `proofSession`, `visualReviewSession`,
+`ownerAskSession`.
 
 If the next action creates or replaces a session, record the id and reason in
 the card/body. If a phase advances in the same Pi thread, carry the id forward,
@@ -74,6 +75,7 @@ Track:
 Flag:
 Sessions:
 Proof:
+Visual review:
 Next action:
 Why:
 ```

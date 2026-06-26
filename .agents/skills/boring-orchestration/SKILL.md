@@ -33,7 +33,8 @@ Pi/Codex session ids are structured metadata, never labels. Record them in the
 issue/PR Kanzen card, review hook, or body:
 
 `feedbackSession`, `grillSession`, `planSession`, `planReviewSession`,
-`implementSession`, `codeReviewSession`, `proofSession`, `ownerAskSession`.
+`implementSession`, `codeReviewSession`, `proofSession`, `visualReviewSession`,
+`ownerAskSession`.
 
 Before starting a gate action, reuse the matching session when it still belongs
 to the same repo, item, and branch. Create a new session only when missing,
@@ -71,6 +72,21 @@ not-trunk-safe work. Plans and PR cards must record `flag: not-needed`,
 For non-trivial work, run review/fix/re-review plus thermo-nuclear
 implementation review. Proof and review must match the current head SHA.
 
+## Visual Handoff
+
+For non-trivial owner review, use `visual-explainer` when available and already
+installed from an owner-approved commit SHA. Generate a visual plan/diff/proof
+artifact, link it in the Kanzen card, and create an ask-user blocker with exact
+choices: approve, request changes, defer, reject/remove.
+
+Record `visualReviewSession`, artifact path/URL, `ownerAskSession`, ask status,
+and missing-tool reason if a Markdown/HTML fallback was used. Do not install or
+approve a new external tool during the loop unless Julien approved the exact
+commit. The ask-user record is the merge source of truth; owner comments must be
+copied into the card before merge. Do not build a custom review plugin yet; add
+a future `kanzen-review` plugin only after artifact links plus ask-user blockers
+are not enough.
+
 ## Merge Rule
 
 Auto-merge only when:
@@ -79,6 +95,8 @@ Auto-merge only when:
 - author/agent is trusted by repo policy;
 - PR is non-draft on a worker-owned branch;
 - CI, tests, review, thermo check, and proof are current;
+- no visual handoff is required, or Julien recorded `ownerAskStatus: approve`
+  in ask-user for the current artifact;
 - no restricted area is touched;
 - proof comment is posted.
 

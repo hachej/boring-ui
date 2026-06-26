@@ -124,6 +124,7 @@ planReviewSession:
 implementSession:
 codeReviewSession:
 proofSession:
+visualReviewSession:
 ownerAskSession:
 ```
 
@@ -156,3 +157,27 @@ cannot keep trunk green.
 For issue/PR implementations, follow [`docs/procedures/proof-of-work.md`](procedures/proof-of-work.md).
 
 A PR is not ready for human review until the final proof comment includes tests, manual validation, artifacts/screenshots where relevant, workspace-playground details for UI/workspace behavior, and known gaps. Never post host/IP addresses in the public repo.
+
+## Visual owner handoff
+
+When owner review is needed and the plan, diff, stack, or proof is non-trivial,
+prepare visual review material with `visual-explainer` when the Pi tool is
+available:
+
+```bash
+pi install -l git:github.com/nicobailon/visual-explainer#<reviewed-commit-sha>
+```
+
+Install only from an owner-approved commit SHA. Use `--approve` only when
+Julien has approved that exact commit; otherwise use the fallback below.
+
+Then create an ask-user blocker with the issue/PR, visual artifact, demo
+surface, flag state, proof, risk, and exact choices: approve, request changes,
+defer, reject/remove.
+
+The ask-user record is the merge source of truth. If Julien approves in a
+comment, copy that decision into the ask-user/card state before merging.
+
+If `visual_explainer` is not available, write the same review card as Markdown
+or HTML and record the missing-tool reason. Do not create a custom review plugin
+until artifact links plus ask-user blockers prove insufficient.

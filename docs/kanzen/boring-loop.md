@@ -66,6 +66,7 @@ planReviewSession:
 implementSession:
 codeReviewSession:
 proofSession:
+visualReviewSession:
 ownerAskSession:
 ```
 
@@ -156,6 +157,45 @@ removeBy:
 Default flags off in production and on only in dev/demo when useful. If no flag
 is needed, say why. If no safe flag exists, use abstraction, shadow mode,
 expand/contract migration, or a short-lived worktree.
+
+## Visual Review
+
+Do not build a custom boring-ui review plugin yet. Use `visual-explainer` as the
+renderer, and let Kanzen own review state, ask-user blockers, and session
+continuity.
+
+Install locally only from an owner-approved commit SHA. Do not auto-approve a
+new mutable external source, branch, or tag from the loop itself:
+
+```bash
+pi install -l git:github.com/nicobailon/visual-explainer#<reviewed-commit-sha>
+```
+
+Use `--approve` only when Julien has already approved that exact commit.
+Otherwise fall back to Markdown/HTML review material and record the missing
+approved tool.
+
+Use it for owner handoff when a plan, PR, stack, or proof story is non-trivial.
+Record:
+
+```text
+visualReview:
+visualReviewSession:
+artifact:
+askUserQuestion:
+ownerAskSession:
+ownerAskStatus:
+```
+
+The handoff stays blocked until Julien answers the ask-user card. Owner comments
+can inform the card, but the ask-user record is the merge source of truth. The
+card must include the issue/PR, visual artifact, demo surface, flag state,
+proof, risk, and exact choices: approve, request changes, defer, reject/remove.
+
+If this becomes painful, build a future `kanzen-review` plugin. That plugin
+should own boring-ui pending review state and ask-user integration; it should
+still call `visual-explainer` or another renderer instead of replacing the
+rendering layer.
 
 ## Plan Files
 
