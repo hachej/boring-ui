@@ -10,8 +10,8 @@ Triage answers: what is the first unmet gate?
 ## Read
 
 Read issue/PR body, comments, owner instructions, related PRs, changed files,
-CI, reviews, head SHA, recorded Pi sessions, and enough code/docs to know risk,
-flag/abstraction path, and proof path.
+CI, reviews, thermo check, head SHA, recorded Pi sessions, and enough code/docs
+to know risk, flag/abstraction path, and proof path.
 
 ## Labels
 
@@ -31,21 +31,24 @@ Allowed extra label: `source:feedback` only when the item came from
 
 | Situation | Labels / Gate |
 | --- | --- |
-| duplicate, invalid, out of scope | `state:done` |
+| missing intake context, redaction note, or first plan | keep `state:queued phase:triage`, gate `intake` |
+| duplicate, invalid, out of scope | `state:done phase:triage`, preserve `track:*` |
 | unclear | `state:blocked phase:grill`, gate `clarity` |
 | risk classification | keep `track:owner`; upgrade to `track:fast` only if eligible |
 | flag or abstraction missing | keep `track:owner`, gate `flag` |
 | needs design, sequencing, or exceeds review budget | `state:active phase:plan`, gate `plan` |
 | clear and no PR | `state:active phase:implement`, gate `implementation` |
-| PR needs review or fixes | `state:active phase:review`, gate `implementation` |
-| tests, CI, or demo proof missing | `state:active phase:review`, gate `proof` |
+| PR needs review, thermo check, or fixes | `state:active phase:review`, gate `implementation` |
+| tests, CI, GitHub proof comment, or demo proof missing | `state:active phase:review`, gate `proof` |
 | all gates pass | `state:ready phase:merge`, gate `merge` |
 
 ## Fast Track
 
 Use `track:fast` only for trusted-author low-risk work with small blast radius,
-obvious acceptance criteria, no needed flag or safe flag defaults, clean review,
-green CI, and current proof.
+obvious acceptance criteria, no needed flag or safe flag defaults, a non-draft
+PR on a worker-owned branch, clean review, current thermo check, green CI, and
+current proof. If no PR exists yet, record fast-track candidacy in the card/body
+and re-check before setting `track:fast`.
 
 Use `track:owner` for auth, billing, permissions, privacy, secrets, migrations,
 public API, releases, broad refactors, destructive/deletion-heavy changes,
@@ -75,6 +78,7 @@ Flag:
 Session comments:
 Proof:
 Visual review:
+Thermo:
 Review budget:
 Commit prefix:
 Next action:

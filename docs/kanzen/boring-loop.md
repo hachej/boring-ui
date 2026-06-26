@@ -18,9 +18,9 @@ Every issue card should be understandable from these columns:
 | State | Can work move? | `queued`, `blocked`, `active`, `ready`, `done` |
 | Phase | What is next? | `triage`, `grill`, `plan`, `implement`, `review`, `merge` |
 | Track | Who merges? | `fast` or `owner` |
-| Gate | Why stopped? | `clarity`, `plan`, `proof`, `merge` |
+| Gate | Why stopped? | `intake`, `clarity`, `risk`, `flag`, `plan`, `implementation`, `proof`, `merge` |
 | Flag | How is runtime exposure controlled? | `not-needed`, `flag:<name>` |
-| Proof | Is it verified? | tests, CI, demo, screenshot, waiver |
+| Proof | Is it verified? | tests, CI, proof comment, demo, screenshot, waiver |
 | Session comments | Which Pi threads continue it? | id, purpose, scope, reason |
 | Next | One action | `/loop-grill`, `/loop-plan`, `/loop-implement` |
 
@@ -77,7 +77,7 @@ Evaluate gates top to bottom and stop at the first failing row.
 | `flag` | no flag needed, or safe flag/abstraction path exists | choose flag/abstraction |
 | `plan` | inline plan is enough, or plan file passed thermo review | `/loop-plan` |
 | `implementation` | PR exists and review loop is clean | `/loop-implement` |
-| `proof` | tests, CI, demo, screenshots, or waiver are current | run proof |
+| `proof` | tests, CI, GitHub proof comment, demo, screenshots, or waiver are current | run proof |
 | `merge` | fast-track merge or Julien review is allowed | merge or ask owner |
 
 ```mermaid
@@ -105,11 +105,13 @@ automatically once every gate passes."
 Allowed only when all are true:
 
 - author/agent is trusted by repo policy;
+- PR is non-draft on a worker-owned branch;
 - small low-risk diff with reduced blast radius;
 - no auth, billing, permissions, secrets, migrations, public API, release,
   deletion-heavy, or broad refactor work;
 - acceptance criteria and proof path are obvious;
-- review, thermo check, tests, CI, and demo proof are current for the head SHA.
+- review, thermo check, tests, CI, GitHub proof comment, and demo proof are
+  current for the head SHA.
 
 Everything else is `track:owner`: agents may prepare the PR, but Julien reviews
 before merge.

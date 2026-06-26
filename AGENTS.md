@@ -11,10 +11,14 @@ Detailed coding practices, workflow, architecture, and package docs live under `
 2. **No file deletion without explicit written permission.**
 3. **No destructive git/filesystem ops without explicit instruction:** no `rm -rf`, `git reset --hard`, `git clean -fd`, `git push --force`.
 4. **No secrets in git/logs.** Never paste tokens into commits, comments, or logs.
-5. **Never work directly on `main`** unless explicitly authorized. Use a branch/worktree.
+5. **Never push directly to remote `main`.** Use a branch/worktree unless the
+   owner or Kanzen trunk procedure explicitly authorizes local-main work; keep
+   local `main` green.
 6. **Do not overwrite other agents' work.** Investigate unexpected changes before editing.
 7. **Run relevant quality gates** before calling work done.
-8. **Default communication mode:** caveman skill, full intensity, unless user says `stop caveman` or `normal mode`.
+8. **Default communication style:** concise, direct, high-signal. Honor user
+   requests for `stop caveman`, `normal mode`, or any other explicit tone
+   change.
 
 ## Start here
 

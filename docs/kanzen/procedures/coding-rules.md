@@ -10,19 +10,22 @@ Project-wide engineering rules for boring-ui v2.
 - No secrets in git. Do not paste tokens into commits or logs.
 - No broad rewrite scripts/codemods without approval.
 - No file variants (`*_v2.*`, `*_improved.*`) - edit in place.
-- Never work directly on `main` unless explicitly authorized. Use a short-lived
-  branch or worktree.
+- Never push directly to remote `main`. Use a short-lived branch/worktree unless
+  the owner or Kanzen trunk procedure explicitly authorizes local-main work;
+  keep local `main` green.
 - Run relevant lint/typecheck/tests before considering work done.
 - Never stash, revert, or overwrite another agent's uncommitted work.
   Investigate unexpected changes first.
 
 ## Thinking Before Coding
 
-- State assumptions. If uncertain, ask.
-- If multiple interpretations exist, present them.
+- State assumptions. If uncertainty blocks safe progress, ask; otherwise proceed
+  with the smallest reasonable interpretation.
+- If multiple risky interpretations exist, present them.
 - Prefer the simplest approach that solves the requested problem.
 - Push back when a request would make the code worse.
-- Stop and ask when requirements are unclear.
+- Stop and ask only when requirements are unclear enough to make execution
+  unsafe or wasteful.
 
 ## Simplicity First
 
