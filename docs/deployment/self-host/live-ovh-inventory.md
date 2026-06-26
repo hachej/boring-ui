@@ -2,18 +2,19 @@
 
 Do not put secret values in this file.
 
-Status: live test environment for `full-app` self-hosting. Cloudflare public hostname is deferred.
+Status: live test environment for `full-app` self-hosting. Dev Cloudflare hostname is active; final `app.senecaapp.ai` cutover is deferred.
 
 ## Environment
 
 | Field | Value |
 | --- | --- |
 | Environment name | ovh-vps-live-test |
-| Purpose | public `full-app` self-host live test without Cloudflare hostname |
+| Purpose | public `full-app` self-host live test behind Cloudflare dev hostname |
 | Deploy source | GitHub `prod-*` tag built by `Self-host full-app image` workflow into GHCR |
 | Deploy executor | Manual Kamal deploy from verified deploy manifest; legacy branch poller disabled |
-| Current public URL | `http://51.91.54.122:3000` |
-| Production domain | deferred |
+| Current public URL | `https://dev.senecaapp.ai` |
+| Direct origin health | `http://51.91.54.122/health` |
+| Future production domain | `app.senecaapp.ai` deferred |
 | Backup bucket | Cloudflare R2 EU jurisdiction bucket `boring-ui-full-app-pgbackrest-eu` |
 | Backup status | pgBackRest enabled; initial full backup and isolated restore materialization drill passed on 2026-06-24 |
 
@@ -30,8 +31,9 @@ Status: live test environment for `full-app` self-hosting. Cloudflare public hos
 | Docker image | `ghcr.io/hachej/boring-ui-full-app:prod-ovh-test-20260624193633` |
 | Image digest | `sha256:4397044ca0b121e7b41964e69ed34bf0068f0b76930db61b25108d9d4928505c` |
 | Container | `boring-full-app-web-prod-ovh-test-20260624193633` |
-| Deploy tool | Kamal 2.11.0 (`proxy: false`, host publish `3000:3000`) |
-| Health endpoint | `http://51.91.54.122:3000/health` |
+| Deploy tool | Kamal 2.11.0 (`proxy: false`, host publish `80:3000`) |
+| Origin TLS | nginx terminates 443 with local/self-signed certificate for Cloudflare Full mode, proxies to app on port 80 |
+| Health endpoint | `https://dev.senecaapp.ai/health` |
 | Workspace path | `/data/workspaces` |
 | Pi session path | `/data/pi-sessions` |
 
@@ -70,4 +72,4 @@ Status: live test environment for `full-app` self-hosting. Cloudflare public hos
 - Add deployd/webhook automation so verified `prod-*` tag manifests trigger Kamal without manual operator steps.
 - Confirm `PGBACKREST_CIPHER_PASS` has an offline recovery copy outside vault.
 - Run a fuller restore drill that starts PostgreSQL from the restored data directory on an isolated host/alternate port.
-- Add Cloudflare hostname/TLS later when chosen.
+- Replace dev hostname with final `app.senecaapp.ai` when ready.
