@@ -191,8 +191,9 @@ work. They need budgets, stop conditions, and blast-radius controls.
 
 ## What Not To Copy Blindly
 
-- A clean-main local gate for every repo. boring-ui's local rule is branch or
-  worktree, never direct `main` unless explicitly authorized.
+- A clean-main local gate for every repo. boring-ui now treats local trunk as
+  the fast integration bench for plan-only work and small flagged changes, while
+  keeping remote `main` protected.
 - Release authority as default.
 - Broad auto-merge.
 - Organization-specific exclusions or credential paths.

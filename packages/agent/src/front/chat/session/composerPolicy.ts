@@ -49,6 +49,7 @@ export interface PiComposerPolicyOptions extends PiQueueControllerOptions {
   onBeforeSubmit?: (draft: string, context: { files: PromptInputFilePart[]; source: PiComposerSubmitInput['source'] }) => boolean | Promise<boolean>
   onCommandResult?: (message: string) => void
   onMentionedFilesConsumed?: () => void
+  allowPromptDuringInitialHydration?: boolean
 }
 
 export type PiComposerBlockedReason =

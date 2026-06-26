@@ -274,6 +274,8 @@ export interface RegisterAgentRoutesOptions {
     request?: FastifyRequest
   }) => PiHarnessOptions | undefined | Promise<PiHarnessOptions | undefined>
   sessionNamespace?: string
+  /** Optional explicit root for file-backed Pi chat transcript storage. */
+  sessionRoot?: string
   /** Optional best-effort telemetry sink supplied by an embedding host. */
   telemetry?: TelemetrySink
   /**
@@ -658,6 +660,7 @@ let runtimeProvisioning: WorkspaceProvisioningResult | undefined
       tools,
       cwd: root,
       sessionNamespace: scope.sessionNamespace,
+      sessionRoot: opts.sessionRoot,
       systemPromptAppend: opts.systemPromptAppend,
       systemPromptDynamic: opts.getSystemPromptDynamic
         ? () => opts.getSystemPromptDynamic?.({ workspaceId, workspaceRoot: root })
@@ -830,6 +833,7 @@ let runtimeProvisioning: WorkspaceProvisioningResult | undefined
     if (cached) return cached
     const store = new PiSessionStore(scope.root, {
       sessionNamespace: scope.sessionNamespace,
+      sessionRoot: opts.sessionRoot,
       storageCwd: scope.root,
     })
     earlySessionStores.set(scope.key, store)

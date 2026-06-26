@@ -55,14 +55,14 @@ standalone (`createAgentApp`) with zero core dependency.
 
 ## Cross-cutting docs (this folder)
 
-- [`CODING_PRACTICES.md`](CODING_PRACTICES.md) — engineering rules, simplicity/surgical-change guidance, commands, and invariant details referenced by `AGENTS.md`.
-- [`AGENT_WORKFLOW.md`](AGENT_WORKFLOW.md) — bead workflow, cross-review, commits, Agent Mail, labels, and proof-of-work pointers.
 - [`DECISIONS.md`](DECISIONS.md) — locked architectural decisions registry for the agent runtime (what/why/rationale/re-evaluate-when). Changing a locked decision requires updating this doc.
 - [`REVIEW_DECISIONS.md`](REVIEW_DECISIONS.md) — what was adopted vs deferred from external reviews; check before re-litigating "why don't we have X".
 - [`WORKSPACE_CONTRACT.md`](WORKSPACE_CONTRACT.md) — the agent ↔ workspace integration contract: HTTP routes, component exports, UiBridge/UiCommand semantics, import boundaries.
 - [`TAILWIND-V4-STYLE-ISOLATION.md`](TAILWIND-V4-STYLE-ISOLATION.md) — how packages share Tailwind v4 tokens: workspace owns `--boring-*` `:root` tokens; agent inherits them scoped to `[data-boring-agent]` (test-enforced).
 - [`PERFORMANCE.md`](PERFORMANCE.md) — historical Vercel-sandbox vs local FS latency benchmarks (harness removed; kept for reference).
-- [`kanzen/`](kanzen/) — analysis of a 5-minute maintainer orchestration loop for repo triage, worker threads, proof gates, owner decisions, and budgeted autonomy.
+- [`kanzen/`](kanzen/) — maintainer loop docs and procedures for repo triage,
+  worker threads, proof gates, owner decisions, coding rules, agent loops,
+  and budgeted autonomy.
 - [`procedures/proof-of-work.md`](procedures/proof-of-work.md) — required GitHub proof-of-work procedure for PRs.
 - [`deployment/self-host/`](deployment/self-host/README.md) — planning artifacts and templates for the public full-app App VM + DB VM self-host deployment with Vercel Sandbox.
 - [`web/`](web/README.md) — human-oriented guide: architecture overview, full package map, getting started, composition guide, design FAQ, troubleshooting map, per-package explainers, glossary. Orientation, not normative spec — canonical specs live in `packages/*/docs/`.

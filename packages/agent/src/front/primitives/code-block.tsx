@@ -8,8 +8,8 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@hachej/boring-ui-kit";
-import { copyTextToClipboard } from "@/front/clipboard";
-import { cn } from "@/front/lib";
+import { copyTextToClipboard } from "../clipboard";
+import { cn } from "../lib";
 import { CheckIcon, CopyIcon } from "lucide-react";
 import type { ComponentProps, CSSProperties, HTMLAttributes } from "react";
 import {
