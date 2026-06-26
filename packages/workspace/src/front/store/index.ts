@@ -115,12 +115,6 @@ export function createWorkspaceStore(options: CreateWorkspaceStoreOptions = {}) 
               s.activePanel === panelId ? null : s.activePanel,
           })),
         activatePanel: (panelId) => set({ activePanel: panelId }),
-        updatePanelParams: (panelId, params) =>
-          set((s) => ({
-            panels: s.panels.map((p) =>
-              p.id === panelId ? { ...p, params: { ...(p.params ?? {}), ...params } } : p,
-            ),
-          })),
         openFile: (file, panelId) =>
           set((s) => ({
             activeFile: file,

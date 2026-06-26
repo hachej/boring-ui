@@ -59,7 +59,6 @@ function panelRegistration(panel: BoringFrontPanelRegistration<any>, pluginId: s
     ...(panel.lazy !== undefined ? { lazy: panel.lazy } : {}),
     ...(panel.chromeless !== undefined ? { chromeless: panel.chromeless } : {}),
     ...(panel.supportsFullPage !== undefined ? { supportsFullPage: panel.supportsFullPage } : {}),
-    ...(panel.sidebarPolicy !== undefined ? { sidebarPolicy: panel.sidebarPolicy } : {}),
   }
 }
 

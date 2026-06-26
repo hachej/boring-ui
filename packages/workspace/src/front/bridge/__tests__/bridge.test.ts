@@ -23,7 +23,6 @@ function createMockStore() {
     openPanel: vi.fn((p) => { state.panels.push(p) }),
     closePanel: vi.fn((id) => { state.panels = state.panels.filter((p) => p.id !== id) }),
     activatePanel: vi.fn((id) => { state.activePanel = id }),
-    updatePanelParams: vi.fn(),
     openFile: vi.fn((file) => { state.activeFile = file }),
     markDirty: vi.fn((f, pid) => { state.dirtyFiles[f] = { panelId: pid, savedAt: null } }),
     markClean: vi.fn((f) => { delete state.dirtyFiles[f] }),
