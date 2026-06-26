@@ -13,6 +13,8 @@ Read:
   - orchestration skill.
 - [`boring-triage`](../../.agents/skills/boring-triage/SKILL.md) - triage
   skill.
+- Local proof/signoff workflow:
+  [`procedures/local-signoff.md`](procedures/local-signoff.md).
 
 Source notes live in [`sources/`](sources/):
 
