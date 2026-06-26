@@ -160,9 +160,17 @@ expand/contract migration, or a short-lived worktree.
 
 ## Visual Review
 
-Do not build a custom boring-ui review plugin yet. Use `visual-explainer` as the
-renderer, and let Kanzen own review state, ask-user blockers, and session
-continuity.
+Do not build a broad GitHub review plugin. The only boring-ui layer needed is a
+thin `visual-review` pending surface, modeled on `ask-user`:
+
+1. store one pending review item per session;
+2. publish a lightweight UI-state hint;
+3. add a `WorkspaceAttentionBlocker` with a review session badge;
+4. best-effort open `openSurface { kind: "visual-review" }` with
+   `openOnlyWhenSessionOpen: true`;
+5. render the visual artifact and approval choices in that surface.
+
+Use `visual-explainer` only as the renderer that creates the HTML artifact.
 
 Install locally only from an owner-approved commit SHA. Do not auto-approve a
 new mutable external source, branch, or tag from the loop itself:
@@ -180,22 +188,23 @@ Record:
 
 ```text
 visualReview:
+visualReviewId:
 visualReviewSession:
 artifact:
-askUserQuestion:
-ownerAskSession:
-ownerAskStatus:
+visualReviewStatus:
 ```
 
-The handoff stays blocked until Julien answers the ask-user card. Owner comments
-can inform the card, but the ask-user record is the merge source of truth. The
-card must include the issue/PR, visual artifact, demo surface, flag state,
-proof, risk, and exact choices: approve, request changes, defer, reject/remove.
+The handoff stays blocked until Julien answers the session-scoped review item.
+Owner comments can inform the item, but the pending review record is the merge
+source of truth. The review surface must open with the visual artifact ready and
+include the issue/PR, demo surface, flag state, proof, risk, and exact choices:
+approve, request changes, defer, reject/remove.
 
-If this becomes painful, build a future `kanzen-review` plugin. That plugin
-should own boring-ui pending review state and ask-user integration; it should
-still call `visual-explainer` or another renderer instead of replacing the
-rendering layer.
+Until that thin surface exists, use `ask-user` as a compatibility fallback with
+the artifact link in the question context, and record `ownerAskSession` for that
+fallback. Copy the ask-user answer into `visualReviewStatus` for the current
+artifact so the merge gate stays the same. Do not replace the renderer or invent
+a second review workflow.
 
 ## Plan Files
 
@@ -284,7 +293,10 @@ then record the new state/gate.
 - Feedback form creates GitHub issues with context and first plan.
 - Triage board shows state, phase, track, gate, PR, proof, sessions, and next
   action.
-- Ask-user pane holds blocked grill/owner questions per session.
+- Ask-user pane holds blocked grill questions and fallback owner asks per
+  session.
+- Visual-review surface holds blocked review handoffs per session and opens the
+  artifact ready to inspect.
 - PR review pane focuses one PR: diff, findings, fixes, reviewed SHA, proof.
 - Demo proof pane starts the app when useful and tells Julien exactly what to
   verify.

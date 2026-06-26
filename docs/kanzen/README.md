@@ -22,7 +22,8 @@ Read:
   skill.
 - Plan files live under `plans/<state>/gh-<number>-<slug>.md`; see
   [`boring-loop.md`](boring-loop.md#plan-files).
-- Visual owner handoffs use `visual-explainer` plus ask-user; see
+- Visual owner handoffs use `visual-explainer` plus a thin ask-user-style
+  pending review surface; see
   [`boring-loop.md`](boring-loop.md#visual-review).
 
 Source notes live in [`sources/`](sources/):

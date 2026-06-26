@@ -171,13 +171,17 @@ pi install -l git:github.com/nicobailon/visual-explainer#<reviewed-commit-sha>
 Install only from an owner-approved commit SHA. Use `--approve` only when
 Julien has approved that exact commit; otherwise use the fallback below.
 
-Then create an ask-user blocker with the issue/PR, visual artifact, demo
-surface, flag state, proof, risk, and exact choices: approve, request changes,
-defer, reject/remove.
+Then create a session-scoped `visual-review` pending item, using the same
+pattern as `ask-user`: pending store, UI-state hint, `WorkspaceAttentionBlocker`
+session badge, and best-effort `openSurface` for the artifact. The surface must
+show the issue/PR, visual artifact, demo surface, flag state, proof, risk, and
+exact choices: approve, request changes, defer, reject/remove.
 
-The ask-user record is the merge source of truth. If Julien approves in a
-comment, copy that decision into the ask-user/card state before merging.
+The pending review record is the merge source of truth. If Julien approves in a
+comment, copy that decision into `visualReviewStatus` before merging.
 
 If `visual_explainer` is not available, write the same review card as Markdown
-or HTML and record the missing-tool reason. Do not create a custom review plugin
-until artifact links plus ask-user blockers prove insufficient.
+or HTML and record the missing-tool reason. If the `visual-review` surface is
+not available yet, use `ask-user` as a compatibility fallback with the artifact
+link in the question context, record `ownerAskSession`, then copy the answer
+into `visualReviewStatus` for the current artifact.
