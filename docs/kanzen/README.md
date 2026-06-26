@@ -26,6 +26,8 @@ Read:
   [`procedures/repo-commands.md`](procedures/repo-commands.md).
 - Trunk/flag/review budget procedure:
   [`procedures/trunk-flags-review-budget.md`](procedures/trunk-flags-review-budget.md).
+- Local proof/signoff workflow:
+  [`procedures/local-signoff.md`](procedures/local-signoff.md).
 - Plan files live under `../issues/<issue-number>/`; see
   [`procedures/issue-plans.md`](procedures/issue-plans.md).
 - Visual owner handoffs use `visual-explainer` plus a thin ask-user-style
