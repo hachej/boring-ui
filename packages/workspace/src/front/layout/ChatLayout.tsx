@@ -482,9 +482,10 @@ export function ChatLayout(props: ChatLayoutProps) {
               <PanelSlot id={centerId} params={props.centerParams} />
             )}
           </div>
-          {!chatCollapsed && props.chatOverlay ? (
+          {props.chatOverlay ? (
             <div
               data-boring-workspace-part="chat-left-overlay"
+              aria-hidden={chatCollapsed}
               className="absolute inset-0 z-40 flex bg-background"
             >
               <div className="flex h-full w-full flex-col border-r border-border bg-background">
