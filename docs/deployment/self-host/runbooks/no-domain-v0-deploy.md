@@ -9,8 +9,8 @@ operator creates protected prod-* tag
 GitHub Actions builds/smokes/pushes GHCR image
 GitHub Actions attests image digest and uploads deploy manifest
 operator/deployd verifies tag + CI + provenance + digest
-App VM runs Kamal over Tailscale only
-no public domain / no Cloudflare Tunnel for v0
+App VM runs Kamal
+Cloudflare proxied dev hostname points at App VM; final hostname deferred
 ```
 
 ## Preconditions
@@ -59,7 +59,7 @@ Important live-test caveats:
 
 - The operator still runs Kamal manually; deployd/webhook automation is not installed yet.
 - `gh attestation verify` was attempted with GitHub CLI 2.95.0, but the operator token was denied access to the requested GHCR/attestation resource. The manifest digest gate passed; full attestation verification still needs a token/package visibility fix or alternate verifier.
-- Current no-domain v0 publishes host port `3000` directly with `proxy: false`; replace with Cloudflare/Kamal proxy routing at hostname cutover.
+- Current dev hostname v0 publishes origin HTTP `80:3000` with `proxy: false`; nginx terminates origin TLS on `443` for Cloudflare Full mode and proxies to port `80`. Replace this with managed Cloudflare/Kamal proxy routing before final `app.senecaapp.ai` cutover.
 
 ## Manual/protected v0 flow
 
@@ -85,17 +85,17 @@ Important live-test caveats:
    - no incompatible DB migration is included.
 6. On the App VM/deployd host, fill Kamal/env files from vault.
 7. Deploy the commit tag only after digest/provenance verification passes.
-8. Probe `/health` over Tailscale.
+8. Probe `/health` over Tailscale and, when a dev hostname exists, through Cloudflare HTTPS.
 9. Keep old deployment available for rollback until DB migration risk is known.
 
 ## Not allowed in v0
 
 - No production secrets in GitHub Actions.
-- No public Cloudflare hostname yet.
+- No final public Cloudflare hostname yet; `dev.senecaapp.ai` is a live-test hostname only.
 - No public PostgreSQL ingress.
 - No unverified mutable image tag deploy.
 - No destructive DB migration without a separate maintenance plan.
 
 ## Later public cutover
 
-When public hostname is chosen, add Cloudflare Tunnel ingress and edge policy in a separate reviewed slice. Do not infer public hostname from this no-domain v0 runbook.
+When final public hostname is chosen, switch from `dev.senecaapp.ai` to `app.senecaapp.ai` and add the reviewed edge policy/tunnel/proxy shape. Do not treat the dev hostname as final production cutover.

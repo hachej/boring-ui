@@ -25,12 +25,14 @@ servers:
     proxy: false
     options:
       publish:
-        - "3000:3000"
+        - "80:3000"
       security-opt: no-new-privileges:true
       read-only: false
 
-# No public proxy/domain for v0. The live-test publishes host port 3000 directly.
-# Replace this with Cloudflare/Kamal proxy routing later at public hostname cutover.
+# Current dev public cutover uses Cloudflare proxied DNS for dev.senecaapp.ai.
+# Kamal publishes origin HTTP on port 80; nginx terminates origin TLS on 443 with
+# a local/self-signed certificate for Cloudflare Full mode and proxies to port 80.
+# Replace with managed Cloudflare/Kamal proxy routing before final app.senecaapp.ai cutover.
 
 ssh:
   user: debian
