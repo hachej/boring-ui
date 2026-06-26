@@ -45,6 +45,12 @@ export interface PanelConfig<T = any> {
   essential?: boolean
   chromeless?: boolean
   supportsFullPage?: boolean
+  /**
+   * Chrome hint: controls the left sidebar when this panel is the active tab.
+   * "show" (default) keeps the sidebar visible.
+   * "collapse" auto-collapses the sidebar so the panel gets full workbench width.
+   */
+  sidebarPolicy?: "show" | "collapse"
   /** Center-panel id opened when this config is used as a left-tab category. */
   defaultPanelId?: string
   /** Source: "builtin" | "app" */

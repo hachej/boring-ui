@@ -89,7 +89,7 @@ createRoot(document.getElementById('root')!).render(
       publicPaths={[]}
       chatFirstPublicShell={{
         showTeachingArrows: true,
-        composerPlaceholder: 'Sign in to chat with the agent — or type a command like /landing-page',
+        composerPlaceholder: 'Sign in to chat with the agent',
         emptyState: {
           eyebrow: PRODUCT_NAME,
           title: 'One workspace. Any AI provider',
@@ -108,9 +108,14 @@ createRoot(document.getElementById('root')!).render(
           ),
         },
         suggestions: [
-          { label: '/landing-page', hint: 'Get more details.', prompt: '/landing-page' },
-          { label: '/reach-out', hint: 'Book a 30-minute live walkthrough.', prompt: '/reach-out' },
+          { label: 'Fetch & explore data', hint: 'Pull a dataset, surface the trends.', prompt: 'Fetch a relevant dataset, then summarize the key series, trends, and anything that stands out.' },
+          { label: 'Create a deck', hint: 'Turn findings into slides.', prompt: 'Analyze the data and build a clean, presentation-ready slide deck of the key findings.' },
+          { label: 'Build a chart', hint: 'Visualize the key numbers.', prompt: 'Create a clear chart that visualizes the most important series, and explain what it shows.' },
         ],
+        contact: {
+          calendlyUrl: 'https://calendly.com/julien-hurault-sumeo/30min',
+          title: 'Book a 30-minute walkthrough',
+        },
         models: [
           // European-hosted · Frontier · Local — one per category.
           { provider: 'infomaniak', id: 'minimax-2.5', label: 'MiniMax 2.5 · Infomaniak' },

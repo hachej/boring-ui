@@ -285,9 +285,16 @@ export type {
 
 // Declarative chat/workbench chrome
 export { SessionBrowser } from "./front/chrome/session-list/SessionBrowser"
+export { WorkspaceProjectsNav } from "./front/chrome/workspace-nav/WorkspaceProjectsNav"
 export { SurfaceShell } from "./front/chrome/artifact-surface/SurfaceShell"
 export { WorkbenchLeftPane } from "./front/chrome/workbench-left/WorkbenchLeftPane"
 export type { SessionBrowserProps } from "./front/chrome/session-list/SessionBrowser"
+export type {
+  WorkspaceProjectsNavProps,
+  NavProject,
+  ProjectSessionsState,
+  ProjectRuntimeStatus,
+} from "./front/chrome/workspace-nav/WorkspaceProjectsNav"
 export type {
   OpenArtifactHandler,
   WorkspaceChatPanelComponent,

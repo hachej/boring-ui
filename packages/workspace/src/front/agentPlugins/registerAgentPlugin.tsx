@@ -268,6 +268,7 @@ function buildRegistryPayloads(
       ...(panel.essential !== undefined ? { essential: panel.essential } : {}),
       ...(panel.lazy !== undefined ? { lazy: panel.lazy } : {}),
       ...(panel.chromeless !== undefined ? { chromeless: panel.chromeless } : {}),
+      ...(panel.sidebarPolicy !== undefined ? { sidebarPolicy: panel.sidebarPolicy } : {}),
     } as PanelConfig)
   }
   for (const tab of captured.leftTabs) {

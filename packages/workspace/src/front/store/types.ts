@@ -43,6 +43,7 @@ export interface WorkspaceActions {
   openPanel: (panel: PanelState) => void
   closePanel: (panelId: string) => void
   activatePanel: (panelId: string) => void
+  updatePanelParams: (panelId: string, params: Record<string, unknown>) => void
   openFile: (file: string, panelId?: string) => void
   markDirty: (file: string, panelId: string) => void
   markClean: (file: string) => void
