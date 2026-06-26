@@ -38,14 +38,16 @@ export interface PiSessionEntries {
   messages: unknown[];
 }
 
-function sessionBaseDir(): string {
+function sessionBaseDir(explicitRoot?: string): string {
+  const explicit = explicitRoot?.trim();
+  if (explicit) return resolve(explicit);
   const configured = getEnv(SESSION_ROOT_ENV)?.trim();
   return configured ? resolve(configured) : join(homedir(), ".pi", "agent", "sessions");
 }
 
-function defaultSessionDir(cwd: string): string {
+function defaultSessionDir(cwd: string, explicitRoot?: string): string {
   const safePath = `--${cwd.replace(/^[/\\]/, "").replace(/[/\\:]/g, "-")}--`;
-  return join(sessionBaseDir(), safePath);
+  return join(sessionBaseDir(explicitRoot), safePath);
 }
 
 const SAFE_ID = /^[a-zA-Z0-9_-]+$/;
@@ -70,12 +72,12 @@ interface NormalizedListOptions {
   includeId: string | undefined;
 }
 
-function sessionDirForNamespace(namespace: string): string {
+function sessionDirForNamespace(namespace: string, explicitRoot?: string): string {
   const safeNamespace = namespace.trim();
   if (!SAFE_SESSION_NAMESPACE.test(safeNamespace)) {
     throw new Error("session namespace must contain only letters, numbers, underscores, and dashes");
   }
-  return join(sessionBaseDir(), safeNamespace);
+  return join(sessionBaseDir(explicitRoot), safeNamespace);
 }
 
 function normalizeListOptions(options: SessionListOptions | undefined): NormalizedListOptions {
@@ -89,6 +91,8 @@ function normalizeListOptions(options: SessionListOptions | undefined): Normaliz
 export interface PiSessionStoreOptions {
   sessionDir?: string;
   sessionNamespace?: string;
+  /** Explicit root for file-backed session directories. Overrides BORING_AGENT_SESSION_ROOT. */
+  sessionRoot?: string;
   /** Host/storage cwd used only to derive the default file-backed session directory. */
   storageCwd?: string;
 }
@@ -107,8 +111,8 @@ export class PiSessionStore implements SessionStore {
     }
     this.sessionDir = options?.sessionDir
       ?? (options?.sessionNamespace
-        ? sessionDirForNamespace(options.sessionNamespace)
-        : defaultSessionDir(options?.storageCwd ?? cwd));
+        ? sessionDirForNamespace(options.sessionNamespace, options.sessionRoot)
+        : defaultSessionDir(options?.storageCwd ?? cwd, options?.sessionRoot));
   }
 
   getSessionDir(): string {
@@ -347,11 +351,34 @@ export class PiSessionStore implements SessionStore {
   }
 
   async loadPiSessionFile(_ctx: SessionCtx, sessionId: string): Promise<string | null> {
+    if (!SAFE_ID.test(sessionId)) return null;
     try {
-      const filepath = await this.resolveSessionFile(sessionId);
-      const content = await readFile(filepath, "utf-8");
-      return extractPiSessionFilePath(safeParseEntries(content))
-        ?? (isTimestampNamedPiSessionFile(filepath, sessionId) ? filepath : null);
+      const direct = join(this.sessionDir, `${sessionId}.jsonl`);
+      let filepath = direct;
+      let content: string;
+      try {
+        content = await readFile(direct, "utf-8");
+      } catch {
+        const files = await readdir(this.sessionDir).catch(() => []);
+        const match = files.find((f) =>
+          f.endsWith(`_${sessionId}.jsonl`) || f === `${sessionId}.jsonl`,
+        );
+        if (!match) return null;
+        filepath = join(this.sessionDir, match);
+        content = await readFile(filepath, "utf-8");
+      }
+      const entries = safeParseEntries(content);
+      const linkedPiFile = extractPiSessionFilePath(entries);
+      if (linkedPiFile) return linkedPiFile;
+      if (!isTimestampNamedPiSessionFile(filepath, sessionId)) return null;
+      const existingWrapper = await this.findWrapperReferencingNativeSession(filepath);
+      if (existingWrapper) {
+        const wrapperSessionId = await this.readSessionFileId(existingWrapper);
+        if (wrapperSessionId !== sessionId) return null;
+        const wrapperEntries = parseJsonlPrefixEntries(await readJsonlPrefix(existingWrapper));
+        return extractPiSessionFilePath(wrapperEntries);
+      }
+      return await this.ensureWrapperForNativeSession(sessionId, filepath);
     } catch {
       return null;
     }

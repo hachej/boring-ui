@@ -1,7 +1,6 @@
-import { useEffect, useRef, useState, type ReactNode } from 'react'
+import { useState, type ReactNode } from 'react'
 import { useLocation } from 'react-router-dom'
-import { builtinCommands, type ChatSuggestion, type SlashCommand } from '@hachej/boring-agent/front'
-import { postUiCommand } from '@hachej/boring-workspace'
+import { builtinCommands, type ChatSuggestion } from '@hachej/boring-agent/front'
 import type {
   WorkspaceAgentFrontProps,
   WorkspaceAgentSession,
@@ -29,12 +28,28 @@ export interface ChatFirstPublicShellOptions {
    */
   models?: Array<{ provider: string; id: string; label: string; available?: boolean }>
   /**
+   * Optional public top-bar contact CTA. When set, the no-auth top bar shows a
+   * “Get in touch” button that opens a Calendly popover instead of asking users
+   * to discover hidden chat commands.
+   */
+  contact?: {
+    label?: string
+    calendlyUrl: string
+    title?: string
+  }
+  /**
    * Hand-drawn "Ask your AI here" / "Review its work here" annotations point at the
    * composer and the workspace surface to teach the empty public shell. Apps
    * that open a center panel on load (e.g. a landing page) should disable them,
    * otherwise the fixed-position arrows overlay the open panel. Defaults to on.
    */
   showTeachingArrows?: boolean
+  /**
+   * Marketing/navigation links rendered in the public (no-auth) top bar next to
+   * the brand — e.g. About, Pricing, Docs. The authenticated workspace top bar
+   * is unaffected. Use plain hrefs (router or full-page routes both work).
+   */
+  navLinks?: Array<{ label: string; href: string }>
 }
 
 const defaultPublicEmptyState = {
@@ -57,6 +72,37 @@ function readComposerDraftFromDom(): string {
   return input?.value ?? ''
 }
 
+function PublicTopBarActions({
+  contact,
+  onSignIn,
+}: {
+  contact?: ChatFirstPublicShellOptions['contact']
+  onSignIn: () => void
+}) {
+  const [contactOpen, setContactOpen] = useState(false)
+  return (
+    <div className="public-topbar-actions">
+      {contact ? (
+        <div className="public-contact-popover-wrap">
+          <button type="button" className="public-contact-button" onClick={() => setContactOpen((open) => !open)}>
+            {contact.label ?? 'Get in touch'}
+          </button>
+          {contactOpen ? (
+            <div className="public-contact-popover" role="dialog" aria-label={contact.title ?? 'Schedule a call'}>
+              <div className="public-contact-popover-header">
+                <span>{contact.title ?? 'Schedule a call'}</span>
+                <button type="button" aria-label="Close contact popover" onClick={() => setContactOpen(false)}>×</button>
+              </div>
+              <iframe title={contact.title ?? 'Schedule a call'} src={contact.calendlyUrl} loading="lazy" />
+            </div>
+          ) : null}
+        </div>
+      ) : null}
+      <button type="button" className="public-sign-in-button" onClick={onSignIn}>Sign in</button>
+    </div>
+  )
+}
+
 export function ChatFirstPublicShell<
   TSession extends WorkspaceAgentSession = WorkspaceAgentSession,
 >({
@@ -72,7 +118,6 @@ export function ChatFirstPublicShell<
 }) {
   const location = useLocation()
   const [modalOpen, setModalOpen] = useState(false)
-  const lastAutoRunCommandRef = useRef('')
   const returnTo = safeReturnTo(location.pathname, location.search, location.hash)
   const promptedDraft = new URLSearchParams(location.search).get('prompt')?.trim() ?? ''
   const pendingReturnTo = promptedDraft ? '/' : returnTo
@@ -83,93 +128,6 @@ export function ChatFirstPublicShell<
     writePendingChatEntry({ draft, returnTo: pendingReturnTo, ...(intendedWorkspaceId ? { intendedWorkspaceId } : {}) })
     setModalOpen(true)
   }
-  const normalizePublicCommand = (draft: string) => draft.trim().toLowerCase().replace(/[’`]/g, "'")
-  const openLandingPage = () => postUiCommand({
-    kind: 'openPanel',
-    params: { id: 'public-landing-page', component: 'public.launch.landing', title: 'Landing page' },
-  })
-  const openLetsChat = () => postUiCommand({
-    kind: 'openPanel',
-    params: { id: 'public-lets-chat', component: 'public.launch.lets-chat', title: 'Let’s chat' },
-  })
-  const publicCommands: SlashCommand[] = [
-    {
-      name: 'landing-page',
-      description: 'Open the landing page workspace tab.',
-      kind: 'local',
-      handler: () => {
-        openLandingPage()
-        return { message: 'Opened Landing page.' }
-      },
-    },
-    {
-      name: 'reach-out',
-      description: 'Open the Calendly workspace tab.',
-      kind: 'local',
-      handler: () => {
-        openLetsChat()
-        return { message: 'Opened Let’s chat.' }
-      },
-    },
-  ]
-  const runPublicCommand = (draft: string): boolean => {
-    const command = normalizePublicCommand(draft)
-    if (command === '/landing-page') {
-      openLandingPage()
-      return true
-    }
-    if (command === '/reach-out' || command === "/let's-chat" || command === '/lets-chat') {
-      openLetsChat()
-      return true
-    }
-    return false
-  }
-
-  useEffect(() => {
-    const intercept = (event: Event): boolean => {
-      const draft = readComposerDraftFromDom()
-      if (!runPublicCommand(draft)) return false
-      event.preventDefault()
-      event.stopPropagation()
-      return true
-    }
-    const onClick = (event: MouseEvent) => {
-      const target = event.target instanceof Element ? event.target : null
-      if (!target?.closest('[data-boring-agent-part="composer-submit"], [aria-label="Submit"]')) return
-      intercept(event)
-    }
-    const maybeAutoRunDraft = () => {
-      const draft = readComposerDraftFromDom()
-      const command = normalizePublicCommand(draft)
-      const isCommand = command === '/landing-page' || command === '/reach-out' || command === "/let's-chat" || command === '/lets-chat'
-      if (!isCommand) {
-        lastAutoRunCommandRef.current = ''
-        return
-      }
-      if (lastAutoRunCommandRef.current === command) return
-      lastAutoRunCommandRef.current = command
-      runPublicCommand(draft)
-    }
-    const onKeyDown = (event: KeyboardEvent) => {
-      const target = event.target instanceof Element ? event.target : null
-      if (!target?.closest('[data-boring-agent-part="composer-input"]')) return
-      if (event.key === 'Enter' && !event.shiftKey && !event.altKey && !event.ctrlKey && !event.metaKey) intercept(event)
-    }
-    const onInput = (event: Event) => {
-      const target = event.target instanceof Element ? event.target : null
-      if (!target?.closest('[data-boring-agent-part="composer-input"]')) return
-      window.setTimeout(maybeAutoRunDraft, 0)
-    }
-    document.addEventListener('click', onClick, true)
-    document.addEventListener('keydown', onKeyDown, true)
-    document.addEventListener('input', onInput, true)
-    return () => {
-      document.removeEventListener('click', onClick, true)
-      document.removeEventListener('keydown', onKeyDown, true)
-      document.removeEventListener('input', onInput, true)
-    }
-  })
-
   return (
     <div className="public-chat-first-shell relative h-screen min-h-0 bg-background">
       {publicShell?.showTeachingArrows !== false && (
@@ -211,9 +169,9 @@ export function ChatFirstPublicShell<
             ...workspaceProps,
             // No-auth landing should open with the workspace surface closed —
             // a fresh load/hard refresh shows just the hero, not a re-opened
-            // panel. The /landing-page command still opens it on demand.
-            defaultSurfaceOpen: false,
-            topBarRight: <button type="button" className="rounded-md border border-border px-3 py-1.5 text-sm font-medium hover:bg-muted" onClick={() => openAuth()}>Sign in</button>,
+            // panel unless the app explicitly overrides defaultSurfaceOpen.
+            defaultSurfaceOpen: workspaceProps.defaultSurfaceOpen ?? false,
+            topBarRight: <PublicTopBarActions contact={publicShell?.contact} onSignIn={() => openAuth()} />,
             // No-auth shell has no real session yet — show just the brand, hide the
             // "· New session" placeholder that the default TopBar would render.
             topBarLeft: (
@@ -225,6 +183,13 @@ export function ChatFirstPublicShell<
                   {(appTitle?.[0] ?? 'B').toUpperCase()}
                 </span>
                 <span className="truncate text-[13px] font-medium leading-none tracking-tight text-foreground">{appTitle}</span>
+                {publicShell?.navLinks?.length ? (
+                  <nav className="public-topbar-nav" aria-label="Site">
+                    {publicShell.navLinks.map((link) => (
+                      <a key={link.href} href={link.href}>{link.label}</a>
+                    ))}
+                  </nav>
+                ) : null}
               </>
             ),
             className: workspaceProps.className,
@@ -232,7 +197,7 @@ export function ChatFirstPublicShell<
             chatParams: {
               ...workspaceProps.chatParams,
               emptyPlacement: 'hero',
-              composerPlaceholder: publicShell?.composerPlaceholder ?? 'Type /landing-page or /reach-out',
+              composerPlaceholder: publicShell?.composerPlaceholder ?? 'Sign in to continue in a private workspace',
               hideComposerSettings: !showComposerSettings,
               suppressPreSubmitCancelledWarning: true,
               thinkingControl: showComposerSettings,
@@ -249,10 +214,10 @@ export function ChatFirstPublicShell<
                 ...publicShell?.emptyState,
               },
               suggestions: publicShell?.suggestions ?? defaultPublicSuggestions,
-              commands: publicCommands,
+              commands: [],
               excludeBuiltinCommands: builtinCommands.map((command) => command.name),
               onBeforeSubmit: (draft: string) => {
-                if (!runPublicCommand(draft)) openAuth(draft)
+                openAuth(draft)
                 return false as const
               },
             },

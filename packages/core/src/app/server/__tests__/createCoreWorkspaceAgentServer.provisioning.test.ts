@@ -1,5 +1,6 @@
 import Fastify from 'fastify'
 import { beforeEach, expect, test, vi } from 'vitest'
+import type { CoreConfig } from '../../../shared/types.js'
 import { createTestCoreConfig } from '../../../server/__tests__/createTestApp.js'
 
 const mocks = vi.hoisted(() => ({
@@ -31,13 +32,21 @@ vi.mock('@hachej/boring-workspace/app/server', () => ({
 }))
 
 vi.mock('@hachej/boring-workspace/server', () => ({
-  createInMemoryBridge: () => ({ postCommand: vi.fn() }),
+  createBrowserBridgeAuthPolicy: () => vi.fn(),
+  createInMemoryBridge: () => ({ postCommand: vi.fn(), drainCommands: vi.fn(), getState: vi.fn(), emitUiEffect: vi.fn(), setState: vi.fn(), subscribeCommands: vi.fn() }),
+  createWorkspaceBridgeRegistry: () => ({ call: vi.fn(), getDefinition: vi.fn(), registerHandler: vi.fn() }),
   createWorkspaceUiTools: mocks.createWorkspaceUiTools,
+  InMemoryWorkspaceBridgeIdempotencyStore: class InMemoryWorkspaceBridgeIdempotencyStore {},
   uiRoutes: async () => {},
+  workspaceBridgeHttpRoutes: async () => {},
 }))
 
 vi.mock('../../../server/app/index.js', () => ({
-  createCoreApp: async () => Fastify({ logger: false }),
+  createCoreApp: async (config: CoreConfig) => {
+    const app = Fastify({ logger: false })
+    app.decorate('config', config)
+    return app
+  },
   registerRoutes: async () => {},
 }))
 
@@ -256,7 +265,11 @@ test('core/full-app composition honors BORING_AGENT_WORKSPACE_ROOT for workspace
   })
 
   const previous = process.env.BORING_AGENT_WORKSPACE_ROOT
-  process.env.BORING_AGENT_WORKSPACE_ROOT = '/tmp/from-env-workspaces'
+  const previousSessionRoot = process.env.BORING_AGENT_SESSION_ROOT
+  const previousMode = process.env.BORING_AGENT_MODE
+  process.env.BORING_AGENT_WORKSPACE_ROOT = '/tmp/workspaces'
+  process.env.BORING_AGENT_SESSION_ROOT = '  '
+  process.env.BORING_AGENT_MODE = 'vercel-sandbox'
 
   try {
     const { createCoreWorkspaceAgentServer } = await import('../createCoreWorkspaceAgentServer.js')
@@ -268,7 +281,8 @@ test('core/full-app composition honors BORING_AGENT_WORKSPACE_ROOT for workspace
 
     try {
       const options = (mocks.registerAgentRoutes as any).mock.calls.at(-1)?.[1] as Record<string, unknown>
-      expect(options.workspaceRoot).toBe('/tmp/from-env-workspaces')
+      expect(options.workspaceRoot).toBe('/tmp/workspaces')
+      expect(options.sessionRoot).toBe('/tmp/pi-sessions')
       expect(mocks.collectWorkspaceAgentServerPlugins).toHaveBeenCalledWith(expect.objectContaining({
         workspaceRoot: process.cwd(),
       }))
@@ -278,5 +292,9 @@ test('core/full-app composition honors BORING_AGENT_WORKSPACE_ROOT for workspace
   } finally {
     if (previous === undefined) delete process.env.BORING_AGENT_WORKSPACE_ROOT
     else process.env.BORING_AGENT_WORKSPACE_ROOT = previous
+    if (previousSessionRoot === undefined) delete process.env.BORING_AGENT_SESSION_ROOT
+    else process.env.BORING_AGENT_SESSION_ROOT = previousSessionRoot
+    if (previousMode === undefined) delete process.env.BORING_AGENT_MODE
+    else process.env.BORING_AGENT_MODE = previousMode
   }
 })

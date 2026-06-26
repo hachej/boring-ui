@@ -10,28 +10,27 @@ Kanzen is the boring-ui maintainer loop:
 Keep it simple: state says whether work can move, phase says what kind of work
 is next, gates say why it cannot move yet.
 
-Boundary: Kanzen is a maintainer routing loop. Coding execution still follows
-the canonical workflow in [`AGENT_WORKFLOW.md`](AGENT_WORKFLOW.md).
-
 Read:
 
-- [`boring-loop.md`](boring-loop.md) - clean model, labels, gates, and product
-  shape.
-- [`AGENT_WORKFLOW.md`](AGENT_WORKFLOW.md) - canonical agent coding workflow.
-- [`CODING_PRACTICES.md`](CODING_PRACTICES.md) - agent coding practices,
-  invariants, and commands.
-- [`REVIEW_DECISIONS.md`](REVIEW_DECISIONS.md) - historical adopted/deferred
-  review findings.
+- [`boring-loop.md`](boring-loop.md) - vision/index, clean model, labels,
+  gates, and product shape.
 - [`boring-feedback`](../../.agents/skills/boring-feedback/SKILL.md)
   - `/feedback` intake skill.
-- [`boring-triage`](../../.agents/skills/boring-triage/SKILL.md) - `/triage`,
-  gates, routing, proof, and merge decisions.
-- [`loop-grill`](../../.agents/skills/loop-grill/SKILL.md) - clarity loop.
-- [`loop-plan`](../../.agents/skills/loop-plan/SKILL.md) - planning loop.
-- [`loop-implement`](../../.agents/skills/loop-implement/SKILL.md)
-  - implementation loop.
-- [`procedures/`](procedures/README.md) - branch/worktree, proof, and owner
-  handoff procedures.
+- [`boring-orchestration`](../../.agents/skills/boring-orchestration/SKILL.md)
+  - orchestration skill.
+- [`boring-triage`](../../.agents/skills/boring-triage/SKILL.md) - triage
+  skill.
+- Coding procedures:
+  [`procedures/coding-rules.md`](procedures/coding-rules.md),
+  [`procedures/coding-invariants.md`](procedures/coding-invariants.md), and
+  [`procedures/repo-commands.md`](procedures/repo-commands.md).
+- Trunk/flag/review budget procedure:
+  [`procedures/trunk-flags-review-budget.md`](procedures/trunk-flags-review-budget.md).
+- Plan files live under `../issues/<issue-number>/`; see
+  [`procedures/issue-plans.md`](procedures/issue-plans.md).
+- Visual owner handoffs use `visual-explainer` plus a thin ask-user-style
+  pending review surface; see
+  [`procedures/visual-review.md`](procedures/visual-review.md).
 
 Source notes live in [`sources/`](sources/):
 

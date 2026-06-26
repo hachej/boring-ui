@@ -149,6 +149,7 @@ export interface PiChatPanelProps<
   createRemoteSession?: (options: RemotePiSessionOptions) => RemotePiSession
   remoteSessionOptions?: UsePiSessionsOptions['remoteSessionOptions']
   hydrateMessages?: boolean
+  allowPromptDuringInitialHydration?: boolean
   workspaceWarmupStatus?: ChatPanelWorkspaceWarmupStatus
   onSessionReset?: () => void | Promise<void>
   onBeforeSubmit?: (draft: string, context: ChatSubmitContext) => false | void | boolean | Promise<false | void | boolean>
@@ -156,6 +157,7 @@ export interface PiChatPanelProps<
   onCommandResult?: (message: string) => void
   onComposerWarning?: (message: string) => void
   onMentionedFilesConsumed?: () => void
+  onPromptSubmitStarted?: (context: { sessionId: string; clientNonce: string }) => void
   onData?: (part: unknown) => void
   onOpenArtifact?: (path: string) => void
   composerBlockers?: TComposerBlocker[]
@@ -212,6 +214,7 @@ export function PiChatPanel<
   createRemoteSession,
   remoteSessionOptions,
   hydrateMessages = true,
+  allowPromptDuringInitialHydration = false,
   workspaceWarmupStatus,
   onSessionReset,
   onBeforeSubmit,
@@ -219,6 +222,7 @@ export function PiChatPanel<
   onCommandResult,
   onComposerWarning,
   onMentionedFilesConsumed,
+  onPromptSubmitStarted,
   onData,
   onOpenArtifact,
   composerBlockers = EMPTY_BLOCKERS,
@@ -406,7 +410,10 @@ export function PiChatPanel<
   const runtimeDependenciesNotice = composerNoticeForRuntimeDependencies(workspaceWarmupStatus)
   const workspaceWarmupBlocked = Boolean(warmupNotice)
   const activeBlockers = useMemo(
-    () => composerBlockers.filter((blocker) => !blocker.sessionId || blocker.sessionId === activeSessionId),
+    // A missing active session id means a single/sessionless chat host. In that
+    // mode, keep scoped blockers visible instead of hiding the only attention UI.
+    // Multi-session hosts should pass a session id so unrelated blockers filter out.
+    () => composerBlockers.filter((blocker) => !blocker.sessionId || !activeSessionId || blocker.sessionId === activeSessionId),
     [activeSessionId, composerBlockers],
   )
   const canonicalMessages = selectedChatState ? selectMessagesForRender(selectedChatState) : []
@@ -722,6 +729,7 @@ export function PiChatPanel<
       mentionedFiles: effectiveMentionedFiles,
       getDraft: () => draftRef.current,
       onDraftChange: setComposerDraft,
+      allowPromptDuringInitialHydration,
       onPromptSubmitStarted: () => {
         markLocalSubmitted(activeChatSessionId)
       },
@@ -745,7 +753,7 @@ export function PiChatPanel<
         onMentionedFilesConsumed?.()
       },
     })
-  }, [activeChatSessionId, addLocalNotice, clearMentionedFiles, composerBlocked, composerBlockerLabel, effectiveMentionedFiles, markLocalSubmitted, onBeforeSubmit, onCommandResult, onComposerWarning, onMentionedFilesConsumed, openModelPicker, openThinkingPicker, registry, reloadAgentPlugins, resetSession, runPluginUpdate, selectComposerModel, selectComposerThinking, selectedModel, selectedPiSession, selectedThinking, setComposerDraft, submitThinkingControl, suppressPreSubmitCancelledWarning])
+  }, [activeChatSessionId, addLocalNotice, allowPromptDuringInitialHydration, clearMentionedFiles, composerBlocked, composerBlockerLabel, effectiveMentionedFiles, markLocalSubmitted, onBeforeSubmit, onCommandResult, onComposerWarning, onMentionedFilesConsumed, onPromptSubmitStarted, openModelPicker, openThinkingPicker, registry, reloadAgentPlugins, resetSession, runPluginUpdate, selectComposerModel, selectComposerThinking, selectedModel, selectedPiSession, selectedThinking, setComposerDraft, submitThinkingControl, suppressPreSubmitCancelledWarning])
 
   // Turn a rejected send (prompt/follow-up/auto-submit) into the single run-rejected
   // notice, carrying the stable server error code so a host can attach a recovery
@@ -792,6 +800,7 @@ export function PiChatPanel<
         dropLocalNotice(RUN_REJECTED_NOTICE_ID)
       }
       if (result.type === 'prompt' && activeChatSessionId) {
+        onPromptSubmitStarted?.({ sessionId: activeChatSessionId, clientNonce: result.clientNonce })
         if (shouldHoldLocalSubmitted(selectedPiSession, result.cursor)) markLocalSubmitted(activeChatSessionId)
         else clearLocalSubmitted(activeChatSessionId)
       }
@@ -806,7 +815,7 @@ export function PiChatPanel<
       surfaceRunRejected(error)
       return false
     }
-  }, [activeChatSessionId, clearLocalSubmitted, dropLocalNotice, markLocalSubmitted, policy, selectedPiSession, setComposerDraft, surfaceRunRejected])
+  }, [activeChatSessionId, clearLocalSubmitted, dropLocalNotice, markLocalSubmitted, onPromptSubmitStarted, policy, selectedPiSession, setComposerDraft, surfaceRunRejected])
 
   const editQueued = useCallback(() => {
     if (!policy) return
@@ -895,6 +904,7 @@ export function PiChatPanel<
         dropLocalNotice(RUN_REJECTED_NOTICE_ID)
       }
       if (result.type === 'prompt') {
+        onPromptSubmitStarted?.({ sessionId: activeSessionId, clientNonce: result.clientNonce })
         if (shouldHoldLocalSubmitted(selectedPiSession, result.cursor)) markLocalSubmitted(activeSessionId)
         else clearLocalSubmitted(activeSessionId)
       }
@@ -912,7 +922,7 @@ export function PiChatPanel<
       // of an inert generic error.
       surfaceRunRejected(error)
     })
-  }, [activeSessionId, autoSubmitInitialDraft, clearLocalSubmitted, composerBlocked, dropLocalNotice, initialDraft, markLocalSubmitted, onAutoSubmitInitialDraftAccepted, policy, selectedPiSession, setComposerDraft, settlePendingAutoSubmit, surfaceRunRejected])
+  }, [activeSessionId, autoSubmitInitialDraft, clearLocalSubmitted, composerBlocked, dropLocalNotice, initialDraft, markLocalSubmitted, onAutoSubmitInitialDraftAccepted, onPromptSubmitStarted, policy, selectedPiSession, setComposerDraft, settlePendingAutoSubmit, surfaceRunRejected])
 
   useEffect(() => {
     if (workspaceWarmupStatus?.status === 'ready') {
@@ -920,9 +930,20 @@ export function PiChatPanel<
     }
   }, [clearLocalNotice, workspaceWarmupStatus?.status])
 
+  const initialHydrationPromptAllowed = Boolean(
+    allowPromptDuringInitialHydration
+      && selectedChatState
+      && selectedChatState.status === 'hydrating'
+      && !selectedChatState.hydrated
+      && selectedChatState.history.messageCount === 0
+      && selectedChatState.committedMessages.length === 0
+      && selectedChatState.queue.followUps.length === 0
+      && Object.keys(selectedChatState.optimisticOutbox).length === 0
+      && !selectedChatState.streamingMessage,
+  )
   const disabled = !policy || sessionsLoading || composerBlocked
   const isStreaming = isPiBusyStatus(status)
-  const submitStatus = toPromptSubmitStatus(status)
+  const submitStatus = initialHydrationPromptAllowed ? 'ready' : toPromptSubmitStatus(status)
   const submitDisabled = !policy || sessionsLoading || (composerBlocked && !isStreaming)
   const mergedToolRenderers = useMemo(() => mergeShadcnToolRenderers(toolRenderers), [toolRenderers])
   const debugMessages = useMemo(() => messages.map(toDebugUiMessage), [messages])

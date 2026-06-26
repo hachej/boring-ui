@@ -14,6 +14,7 @@ type CapturedChatPanelProps = WorkspaceChatPanelProps & {
   initialDraft?: string
   autoSubmitInitialDraft?: boolean
   hydrateMessages?: boolean
+  allowPromptDuringInitialHydration?: boolean
   onAutoSubmitInitialDraftSettled?: () => void
 }
 
@@ -1229,6 +1230,46 @@ describe("WorkspaceAgentFront", () => {
     })
   })
 
+  it("does not auto-open an openOnlyWhenSessionOpen surface for a closed chat session", async () => {
+    render(
+      <WorkspaceAgentFront
+        workspaceId="session-gated-surface"
+        chatPanel={SessionIdChatPanel}
+        sessions={[
+          { id: "s1", title: "Open", updatedAt: new Date(0).toISOString(), turnCount: 0 },
+          { id: "s2", title: "Closed", updatedAt: new Date(0).toISOString(), turnCount: 0 },
+        ]}
+        activeSessionId="s1"
+        onSwitchSession={vi.fn()}
+        persistenceEnabled={false}
+      />,
+    )
+
+    await screen.findByText("Chat pane s1")
+    expect(screen.queryByLabelText("Surface")).not.toBeInTheDocument()
+
+    window.dispatchEvent(new CustomEvent(UI_COMMAND_EVENT, {
+      detail: {
+        kind: "openSurface",
+        params: { kind: "questions", target: "q2", meta: { sessionId: "s2", openOnlyWhenSessionOpen: true } },
+      } satisfies UiCommand,
+    }))
+
+    await new Promise((resolve) => setTimeout(resolve, 20))
+    expect(screen.queryByLabelText("Surface")).not.toBeInTheDocument()
+
+    window.dispatchEvent(new CustomEvent(UI_COMMAND_EVENT, {
+      detail: {
+        kind: "openSurface",
+        params: { kind: "questions", target: "q1", meta: { sessionId: "s1", openOnlyWhenSessionOpen: true } },
+      } satisfies UiCommand,
+    }))
+
+    await waitFor(() => {
+      expect(screen.getByLabelText("Surface")).toHaveAttribute("aria-hidden", "false")
+    })
+  })
+
   it("dispatches browser UI command events into the app surface", async () => {
     render(
       <WorkspaceAgentFront
@@ -1622,7 +1663,7 @@ describe("WorkspaceAgentFront", () => {
     expandHistory()
     await user.click(screen.getByText("Session two"))
     expect(onSwitchSession).toHaveBeenCalledWith("s2")
-    expect(observed).toHaveBeenCalledWith(expect.objectContaining({ detail: { sessionId: "s1" } }))
+    expect(observed).toHaveBeenCalledWith(expect.objectContaining({ detail: expect.objectContaining({ sessionId: "s1", reason: "session-switch" }) }))
 
     window.removeEventListener("boring:workspace-composer-stop", observed)
   })
@@ -1714,7 +1755,7 @@ describe("WorkspaceAgentFront", () => {
     }, { timeout: 3000 })
   })
 
-  it("keeps the chat shell in transition until the first empty remote session is stable", async () => {
+  it("connects the first auto-created empty remote session after the transition", async () => {
     const captured: CapturedChatPanelProps[] = []
     const CapturingChatPanel = (props: WorkspaceChatPanelProps) => {
       captured.push(props)
@@ -1765,6 +1806,7 @@ describe("WorkspaceAgentFront", () => {
     await waitFor(() => expect(screen.getByTestId("chat-panel").textContent).toContain("created-empty-session"), { timeout: 3000 })
 
     expect(captured.some((props) => props.sessionId === "default")).toBe(false)
-    expect(captured.at(-1)?.hydrateMessages).toBe(false)
+    expect(captured.at(-1)?.hydrateMessages).toBe(true)
+    expect(captured.at(-1)?.allowPromptDuringInitialHydration).toBe(true)
   })
 })

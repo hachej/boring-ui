@@ -347,6 +347,8 @@ export function createPiCodingAgentHarness(opts: {
   pi?: PiHarnessOptions;
   /** Optional stable namespace for file-backed session storage. */
   sessionNamespace?: string;
+  /** Optional explicit root for file-backed session directories. */
+  sessionRoot?: string;
   /** Optional explicit file-backed session directory. Mostly for tests/hosts. */
   sessionDir?: string;
   /** Optional best-effort telemetry sink supplied by an embedding host. */
@@ -362,6 +364,7 @@ export function createPiCodingAgentHarness(opts: {
   const pi = withPiHarnessDefaults(opts.pi);
   const sessionStore = new PiSessionStore(opts.runtimeCwd ?? opts.cwd, {
     sessionNamespace: opts.sessionNamespace,
+    sessionRoot: opts.sessionRoot,
     sessionDir: opts.sessionDir,
     storageCwd: opts.cwd,
   });
@@ -531,8 +534,8 @@ export function createPiCodingAgentHarness(opts: {
     const { session: piSession } = await createAgentSession({
       cwd: runtimeCwd,
       // Suppress Pi's built-in filesystem/shell tools while keeping Boring's
-      // adapted tool catalog active. Passing `tools: []` is an allowlist of
-      // zero tools in Pi v0.75+, which disables customTools too.
+      // adapted tool catalog active. Do NOT pass an explicit empty tool-name
+      // allowlist: in the current Pi SDK that disables custom tools too.
       noTools: "builtin",
       customTools: adaptToolsForPi(opts.tools, input.sessionId, opts.telemetry),
       model,

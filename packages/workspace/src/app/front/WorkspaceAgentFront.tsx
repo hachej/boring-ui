@@ -7,6 +7,7 @@ import {
 } from "@hachej/boring-agent/front"
 import { WorkspaceProvider, type WorkspaceProviderProps } from "../../front/provider/WorkspaceProvider"
 import { ChatLayout, TopBar, ThemeToggle, type ChatLayoutProps } from "../../front/layout"
+import { WORKSPACE_COMPOSER_STOP_REASONS, emitWorkspaceComposerStop } from "../../front/chrome/chat/composerStop"
 import type { WorkspaceChatPanelProps } from "../../front/chrome/chat/types"
 import type {
   SurfaceShellApi,
@@ -60,6 +61,7 @@ export interface WorkspaceAgentSessionsApi<
   create: (input?: { title?: string }) => void | Promise<unknown>
   delete: (id: string) => void | Promise<unknown>
   loadMore?: () => void | Promise<unknown>
+  refresh?: (options?: { background?: boolean }) => void | Promise<unknown>
 }
 
 export type UseWorkspaceAgentSessions<
@@ -502,7 +504,6 @@ export function WorkspaceAgentFront<
     workspaceId,
     failed: false,
   }))
-  const [freshEmptySession, setFreshEmptySession] = useState<{ workspaceId: string; id: string } | null>(null)
   const chatPaneStorageKey = `boring-workspace:chat-panes:${workspaceId}`
   const [chatPaneState, setChatPaneState] = useState<ChatPaneState>(() =>
     (shellPersistenceEnabled ? readStoredChatPaneState(chatPaneStorageKey, workspaceId) : null)
@@ -730,7 +731,7 @@ export function WorkspaceAgentFront<
     : sessionApi?.switch ?? onSwitchSession ?? localSessionStore.switchTo
   const resolvedSwitch = useCallback((nextSessionId: string) => {
     if (effectiveActiveSessionId && nextSessionId !== effectiveActiveSessionId) {
-      window.dispatchEvent(new CustomEvent("boring:workspace-composer-stop", { detail: { sessionId: effectiveActiveSessionId } }))
+      emitWorkspaceComposerStop({ sessionId: effectiveActiveSessionId, reason: WORKSPACE_COMPOSER_STOP_REASONS.sessionSwitch })
     }
     return rawSwitch(nextSessionId)
   }, [effectiveActiveSessionId, rawSwitch])
@@ -801,7 +802,6 @@ export function WorkspaceAgentFront<
     suppressEmptyAutoCreateRef.current = false
     setInitialRemoteSessionCreating({ workspaceId, creating: false })
     setInitialRemoteSessionCreateFailed({ workspaceId, failed: false })
-    setFreshEmptySession(null)
   }, [workspaceId])
 
   useEffect(() => {
@@ -836,10 +836,6 @@ export function WorkspaceAgentFront<
     setInitialRemoteSessionCreating({ workspaceId, creating: true })
     setInitialRemoteSessionCreateFailed({ workspaceId, failed: false })
     void Promise.resolve(sessionApi.create({ title: defaultSessionTitle }))
-      .then((session) => {
-        const id = (session as { id?: unknown } | null | undefined)?.id
-        if (typeof id === "string") setFreshEmptySession({ workspaceId, id })
-      })
       .catch(() => {
         autoCreateSessionRef.current = false
         setInitialRemoteSessionCreating({ workspaceId, creating: false })
@@ -895,6 +891,14 @@ export function WorkspaceAgentFront<
     setSurfaceReady(false)
     setSurfaceOpen(false)
   }, [setSurfaceOpen])
+  const openChatSessionIdsRef = useRef<ReadonlySet<string>>(new Set())
+  const shouldOpenSurface = useCallback<NonNullable<DispatchContext["shouldOpenSurface"]>>((request) => {
+    const meta = request.meta
+    if (!meta || meta.openOnlyWhenSessionOpen !== true) return true
+    const sessionId = typeof meta.sessionId === "string" ? meta.sessionId : null
+    if (!sessionId) return false
+    return openChatSessionIdsRef.current.has(sessionId)
+  }, [])
 
   // One source of truth for the agent → UI command dispatch context, shared by
   // the file-tree bridge, the window CustomEvent handler, and the chat host
@@ -906,7 +910,8 @@ export function WorkspaceAgentFront<
     openWorkbenchSources,
     closeWorkbench,
     enqueue: enqueueSurfaceOp,
-  }), [getSurface, isWorkbenchOpen, openWorkbench, openWorkbenchSources, closeWorkbench, enqueueSurfaceOp])
+    shouldOpenSurface,
+  }), [getSurface, isWorkbenchOpen, openWorkbench, openWorkbenchSources, closeWorkbench, enqueueSurfaceOp, shouldOpenSurface])
 
   // Minimal surface-backed bridge for the file tree. The left-tab file tree
   // only needs click-to-open + active-file reveal. Click-to-open routes through
@@ -1006,11 +1011,35 @@ export function WorkspaceAgentFront<
     for (const session of resolvedSessions) titles.set(session.id, session.title)
     return titles
   }, [resolvedSessions])
+  const [initialHydrationPromptStarted, setInitialHydrationPromptStarted] = useState<{ workspaceId: string; ids: Set<string> }>(() => ({
+    workspaceId,
+    ids: new Set(),
+  }))
+  const emptySessionIds = useMemo(() => {
+    const ids = new Set<string>()
+    if (!remoteSessionsAvailable) return ids
+    const startedIds = initialHydrationPromptStarted.workspaceId === workspaceId
+      ? initialHydrationPromptStarted.ids
+      : new Set<string>()
+    for (const session of activeRemoteSessions) {
+      if (session.turnCount === 0 && !startedIds.has(session.id)) ids.add(session.id)
+    }
+    return ids
+  }, [activeRemoteSessions, initialHydrationPromptStarted, remoteSessionsAvailable, workspaceId])
+
+  useEffect(() => {
+    setInitialHydrationPromptStarted((current) => (
+      current.workspaceId === workspaceId ? current : { workspaceId, ids: new Set() }
+    ))
+  }, [workspaceId])
 
   const activeChatPaneState = chatPaneState.workspaceId === workspaceId
     ? chatPaneState
     : { workspaceId, ids: [], activeId: null }
   const chatPaneIds = activeChatPaneState.ids.length > 0 ? activeChatPaneState.ids : [chatSessionId]
+  useEffect(() => {
+    openChatSessionIdsRef.current = new Set(chatPaneIds)
+  }, [chatPaneIds])
   const activeChatPaneId = activeChatPaneState.activeId ?? chatPaneIds[0] ?? chatSessionId
 
   const switchToChatPane = useCallback((nextSessionId: string) => {
@@ -1139,12 +1168,7 @@ export function WorkspaceAgentFront<
   }, [requestedAutoSubmitInitialDraft, workspaceId])
   const autoSubmittingInitialDraft = requestedAutoSubmitInitialDraft
   const delayAutoSubmitDraft = autoSubmittingInitialDraft && shouldUseRemoteSessions && !effectiveActiveSessionId
-  const freshEmptySessionActive = Boolean(
-    freshEmptySession
-      && freshEmptySession.workspaceId === workspaceId
-      && freshEmptySession.id === effectiveActiveSessionId,
-  )
-  const hydrateMessages = !freshEmptySessionActive && !autoSubmitHydrationDisabled && provisionWorkspace !== false && (
+  const hydrateMessages = !autoSubmitHydrationDisabled && provisionWorkspace !== false && (
     shouldUseRemoteSessions ? Boolean(effectiveActiveSessionId) : true
   )
   const handleWorkspaceWarmupStatusChange = useCallback((status: WorkspaceWarmupStatus) => {
@@ -1213,6 +1237,21 @@ export function WorkspaceAgentFront<
       extraCommands,
       workspaceWarmupStatus,
       hydrateMessages,
+      allowPromptDuringInitialHydration: emptySessionIds.has(sessionId),
+      onPromptSubmitStarted: ({ sessionId: submittedSessionId }: { sessionId: string; clientNonce: string }) => {
+        setInitialHydrationPromptStarted((current) => {
+          const currentIds = current.workspaceId === workspaceId ? current.ids : new Set<string>()
+          if (currentIds.has(submittedSessionId)) return current.workspaceId === workspaceId ? current : { workspaceId, ids: currentIds }
+          const ids = new Set(currentIds)
+          ids.add(submittedSessionId)
+          return { workspaceId, ids }
+        })
+      },
+      onTurnComplete: () => {
+        void sessionApi?.refresh?.({ background: true })
+        const existing = chatParams?.onTurnComplete
+        if (typeof existing === "function") existing()
+      },
       onAutoSubmitInitialDraftSettled: () => {
         autoSubmitSessionCreateRef.current = false
         setAutoSubmitHydrationDisabled(false)
@@ -1226,7 +1265,7 @@ export function WorkspaceAgentFront<
       ...(resolvedHotReloadEnabled !== undefined ? { hotReloadEnabled: resolvedHotReloadEnabled } : {}),
     }
     },
-    [apiBaseUrl, chatParams, delayAutoSubmitDraft, resolvedRequestHeaders, bridgeEndpoint, surfaceDispatch, extraCommands, workspaceWarmupStatus, hydrateMessages, resolvedHotReloadEnabled, pluginToolRenderers, reloadAgentPluginsForSession, workspaceId],
+    [apiBaseUrl, chatParams, delayAutoSubmitDraft, resolvedRequestHeaders, bridgeEndpoint, surfaceDispatch, extraCommands, workspaceWarmupStatus, hydrateMessages, emptySessionIds, resolvedHotReloadEnabled, pluginToolRenderers, reloadAgentPluginsForSession, sessionApi, workspaceId],
   )
   const centerParams = useMemo(
     () => makeCenterParams(chatSessionId),
@@ -1286,6 +1325,8 @@ export function WorkspaceAgentFront<
         apiBaseUrl={apiBaseUrl}
         authHeaders={resolvedAuthHeaders}
         apiTimeout={apiTimeout}
+        activeSessionId={activeChatPaneId}
+        openSessionIds={chatPaneIds}
         defaultTheme={defaultTheme}
         onThemeChange={onThemeChange}
         workspaceId={workspaceId}

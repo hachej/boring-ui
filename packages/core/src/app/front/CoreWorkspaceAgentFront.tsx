@@ -196,6 +196,8 @@ function HomeRedirect<TSession extends WorkspaceAgentSession = WorkspaceAgentSes
     location.search,
     location.hash,
   )
+  if (session.isPending) return <>{resolvedLoadingFallback}</>
+
   if (!session.data?.user && chatEntryMode === 'chat-first') {
     return (
       <ChatFirstPublicShell
@@ -313,6 +315,8 @@ function WorkspaceRoute<
   )
 
   if (!workspaceId) return <>{resolvedLoadingFallback}</>
+
+  if (session.isPending) return <>{resolvedLoadingFallback}</>
 
   if (!session.data?.user && chatEntryMode === 'chat-first') {
     return (
