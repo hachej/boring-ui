@@ -29,18 +29,14 @@ Run `/triage`. One issue, one next action. Do not invent extra states.
 
 ## Session Continuity
 
-Pi/Codex session ids are structured metadata, never labels. Record them in the
-issue/PR Kanzen card, review hook, or body:
+Pi/Codex session ids are structured comments, never labels and never a fixed
+schema. When a session matters, comment the session id, purpose, scope, and
+replacement reason in the issue/PR or Kanzen card.
 
-`feedbackSession`, `grillSession`, `planSession`, `planReviewSession`,
-`implementSession`, `codeReviewSession`, `proofSession`, `visualReviewSession`,
-`ownerAskSession`.
-
-Before starting a gate action, reuse the matching session when it still belongs
-to the same repo, item, and branch. Create a new session only when missing,
-inaccessible, archived/stale, or wrong scope; record the replacement and reason.
-When a loop graduates in the same Pi thread, carry the id forward, such as
-`implementSession: <same id as planSession>`.
+Before starting a gate action, reuse a relevant session when it still belongs to
+the same repo, item, and branch. Create a new session only when missing,
+inaccessible, archived/stale, or wrong scope; comment the replacement and
+reason. When a loop graduates in the same Pi thread, say so in the comment.
 
 ## Worker Rule
 
@@ -48,9 +44,9 @@ One lane means one Codex/Kanzen thread/run, one branch/worktree, one GitHub
 item. Stop for missing owner input, missing access, destructive actions,
 release/publish work, or merge without policy permission.
 
-The parent lane owns `implementSession`. Bounded subagents or review sessions
-are allowed, but they return findings to the parent lane and get recorded in the
-session ledger.
+The parent lane owns the implementation context. Bounded subagents or review
+sessions are allowed, but they return findings to the parent lane and get
+recorded in the session comment.
 
 ## Trunk Rule
 
@@ -97,14 +93,14 @@ artifact, then create a session-scoped `visual-review` pending item modeled on
 `ask-user`: pending state, session badge/blocker, and best-effort artifact
 `openSurface`.
 
-Record `visualReviewId`, `visualReviewSession`, artifact path/URL,
-`visualReviewStatus`, and missing-tool reason if a Markdown/HTML fallback was
-used. Do not install or approve a new external tool during the loop unless
-Julien approved the exact commit. The pending review item is the merge source of
-truth; owner comments must be copied into it before merge. If the
+Record `visualReviewId`, artifact path/URL, `visualReviewStatus`, and
+missing-tool reason if a Markdown/HTML fallback was used. Do not install or
+approve a new external tool during the loop unless Julien approved the exact
+commit. The pending review item is the merge source of truth; owner comments
+must be copied into it before merge. If the
 `visual-review` surface is unavailable, use `ask-user` with the artifact link as
-a compatibility fallback, record `ownerAskSession`, then copy the answer into
-`visualReviewStatus` for the current artifact.
+a compatibility fallback, comment the fallback ask-user session id, then copy
+the answer into `visualReviewStatus` for the current artifact.
 
 ## Merge Rule
 

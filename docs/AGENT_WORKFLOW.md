@@ -116,27 +116,15 @@ issue/PR body or Kanzen comment.
 
 ## Pi session continuity
 
-Session ids are structured metadata, not labels. Store them in the issue/PR
-body, Kanzen card, review hook, or proof comment:
+Session ids are structured comments, not labels and not a fixed schema. When a
+session matters, add or update an issue/PR or Kanzen comment with the session
+id, purpose, scope, and replacement reason if it changed.
 
-```text
-feedbackSession:
-grillSession:
-planSession:
-planReviewSession:
-implementSession:
-codeReviewSession:
-proofSession:
-visualReviewSession:
-ownerAskSession:
-```
-
-Before starting plan, review, implementation, proof, or owner ask work, reuse
-the matching session when it still belongs to the same repo, issue/PR, and
-branch. Create a new session only when the prior one is missing, inaccessible,
-archived/stale, or wrong scope; record the replacement and reason. If planning
-naturally becomes implementation in the same Pi thread, carry the id forward,
-for example `implementSession: <same id as planSession>`.
+Before starting plan, review, implementation, proof, or owner ask work, reuse a
+relevant session when it still belongs to the same repo, issue/PR, and branch.
+Create a new session only when the prior one is missing, inaccessible,
+archived/stale, or wrong scope; comment the replacement and reason. If planning
+naturally becomes implementation in the same Pi thread, say so in the comment.
 
 ## Trunk, flags, and plans
 
@@ -192,5 +180,5 @@ comment, copy that decision into `visualReviewStatus` before merging.
 If `visual_explainer` is not available, write the same review card as Markdown
 or HTML and record the missing-tool reason. If the `visual-review` surface is
 not available yet, use `ask-user` as a compatibility fallback with the artifact
-link in the question context, record `ownerAskSession`, then copy the answer
-into `visualReviewStatus` for the current artifact.
+link in the question context, comment the fallback ask-user session id, then copy
+the answer into `visualReviewStatus` for the current artifact.

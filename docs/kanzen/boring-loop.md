@@ -21,7 +21,7 @@ Every issue card should be understandable from these columns:
 | Gate | Why stopped? | `clarity`, `plan`, `proof`, `merge` |
 | Flag | How is runtime exposure controlled? | `not-needed`, `flag:<name>` |
 | Proof | Is it verified? | tests, CI, demo, screenshot, waiver |
-| Sessions | Which Pi threads continue it? | `planSession`, `implementSession` |
+| Session comments | Which Pi threads continue it? | id, purpose, scope, reason |
 | Next | One action | `/loop-grill`, `/loop-plan`, `/loop-implement` |
 
 The UI should show this as chips plus one sentence, not a wall of text.
@@ -55,26 +55,15 @@ or `gate:*`. Structured fields carry the details: `area`, `kind`, `gate`,
 
 ## Session Continuity
 
-Pi/Codex session ids are continuity handles, not labels. Record them on the
-issue, PR, Kanzen card, or review hook:
+Pi/Codex session ids are continuity handles, not labels and not a fixed schema.
+When a session matters, add or update a short issue/PR or Kanzen comment with
+the session id, purpose, scope, and replacement reason if it changed.
 
-```text
-feedbackSession:
-grillSession:
-planSession:
-planReviewSession:
-implementSession:
-codeReviewSession:
-proofSession:
-visualReviewSession:
-ownerAskSession:
-```
-
-Before a loop starts, reuse the matching session if it still belongs to the same
+Before a loop starts, reuse the relevant session if it still belongs to the same
 repo, issue/PR, and branch. Create a new session only when the old one is
-missing, inaccessible, archived/stale, or wrong scope, then record the new id
+missing, inaccessible, archived/stale, or wrong scope, then comment the new id
 and reason. If planning naturally becomes implementation in the same Pi thread,
-carry the id forward, for example `implementSession: <same id as planSession>`.
+say so in the comment instead of inventing another field.
 
 ## Gates
 
@@ -194,7 +183,6 @@ Record:
 ```text
 visualReview:
 visualReviewId:
-visualReviewSession:
 artifact:
 visualReviewStatus:
 ```
@@ -206,8 +194,8 @@ include the issue/PR, demo surface, flag state, proof, risk, and exact choices:
 approve, request changes, defer, reject/remove.
 
 Until that thin surface exists, use `ask-user` as a compatibility fallback with
-the artifact link in the question context, and record `ownerAskSession` for that
-fallback. Copy the ask-user answer into `visualReviewStatus` for the current
+the artifact link in the question context, and comment the fallback ask-user
+session id. Copy the ask-user answer into `visualReviewStatus` for the current
 artifact so the merge gate stays the same. Do not replace the renderer or invent
 a second review workflow.
 
@@ -249,8 +237,6 @@ state: active
 phase: plan
 track: owner
 flag: not-needed
-planSession:
-planReviewSession:
 updated: 2026-06-25
 ```
 
@@ -285,21 +271,21 @@ Only questions that block safe implementation or merge.
 ## Loop Commands
 
 `/feedback`: create a GitHub issue directly, enriched with safe context, lean
-routing labels, `feedbackSession`, and a first plan. If the report is unclear,
+routing labels, a session comment, and a first plan. If the report is unclear,
 create the issue as `state:blocked phase:grill`.
 
 `/loop-grill`: use the grill-me skill and ask-user pane. This can run now or
 wait asynchronously in the pending session list. Exit when the issue is clear.
-Reuse or record `grillSession`.
+Reuse or comment the relevant session id.
 
 `/loop-plan`: produce the smallest useful plan. Use an inline plan for small
 work. Use a plan file plus thermo-nuclear review for important, risky, or
-multi-PR work. Reuse or record `planSession` and `planReviewSession`.
+multi-PR work. Reuse or comment the relevant planning/review session ids.
 
 `/loop-implement`: implement the plan, open/update the PR, run review/fix
 rounds, run thermo-nuclear implementation review when non-trivial, and collect
-proof. Reuse or record `implementSession`, `codeReviewSession`, and
-`proofSession`.
+proof. Reuse or comment the relevant implementation, review, and proof session
+ids.
 
 `/triage`: orchestrate the queue. It should perform one next action per issue,
 then record the new state/gate.

@@ -53,14 +53,12 @@ unclear requirements, or untrusted authors.
 
 ## Sessions
 
-Sessions are structured metadata, not labels. Preserve and reuse:
-`feedbackSession`, `grillSession`, `planSession`, `planReviewSession`,
-`implementSession`, `codeReviewSession`, `proofSession`, `visualReviewSession`,
-`ownerAskSession`.
+Sessions are structured comments, not labels and not a fixed schema. Preserve
+and reuse relevant session ids from issue/PR or Kanzen comments.
 
-If the next action creates or replaces a session, record the id and reason in
-the card/body. If a phase advances in the same Pi thread, carry the id forward,
-such as `implementSession: <same id as planSession>`.
+If the next action creates or replaces a session, comment the id, purpose,
+scope, and reason in the card/body. If a phase advances in the same Pi thread,
+say so in the comment.
 
 ## Card
 
@@ -74,7 +72,7 @@ Labels:
 Gate:
 Track:
 Flag:
-Sessions:
+Session comments:
 Proof:
 Visual review:
 Review budget:
