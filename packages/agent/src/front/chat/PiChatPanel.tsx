@@ -1052,6 +1052,43 @@ export function PiChatPanel<
               onSuggestionSubmit={({ text, files, source }) => sendComposerMessage({ text, files, source })}
               onRestoreDraft={setComposerDraft}
               windowResetKey={activeSessionId}
+              availableCommands={allCommands.map(c => c.name)}
+              onMentionClick={(mention) => {
+                if (mention.kind === 'slash-command') {
+                  const cmdName = mention.value.replace('/', '')
+                  const command = registry.get(cmdName)
+                  if (command?.clickBehavior === 'execute') {
+                    // Run immediately
+                    void (async () => {
+                      if (!sessionId) return
+                      const currentSessionId = sessionId
+                      const ctx = {
+                        sessionId: currentSessionId,
+                        clearMessages: () => addLocalNotice({ id: `cmd-clear:${Date.now()}`, level: 'info' as const, text: 'Messages cleared', dismissible: true }),
+                        resetSession: () => {
+                          addLocalNotice({ id: `cmd-reset:${Date.now()}`, level: 'info' as const, text: 'Session reset', dismissible: true })
+                          if (onSessionReset) void onSessionReset()
+                        },
+                        listCommands: () => registry.list(),
+                        reloadAgentPlugins,
+                        openModelPicker: undefined,
+                        selectComposerModel: undefined,
+                        openThinkingPicker: undefined,
+                        selectComposerThinking: undefined,
+                        pluginUpdate: { run: runPluginUpdate },
+                      }
+                      const result = await Promise.resolve(command.handler('', ctx))
+                      if (typeof result === 'string') {
+                        addLocalNotice({ id: `cmd-result:${Date.now()}`, level: 'info' as const, text: result, dismissible: true })
+                      }
+                    })()
+                  } else if (command?.clickBehavior === 'insert' || !command?.clickBehavior) {
+                    // Insert into composer
+                    setComposerDraft(`/${cmdName} `, true)
+                  }
+                }
+                // TODO: Handle file-path, skill, and other mention kinds
+              }}
             />
 
             <PiChatComposerSurface
