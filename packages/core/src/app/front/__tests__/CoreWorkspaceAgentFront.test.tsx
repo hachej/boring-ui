@@ -281,6 +281,19 @@ describe('CoreWorkspaceAgentFront', () => {
     })
   })
 
+  it('keeps chat-first public shell hidden while auth session is still loading', async () => {
+    const { CoreWorkspaceAgentFront } = await importSubject()
+    sessionState = { data: null, isPending: true }
+    currentWorkspaceId = null
+    routePath = '/workspace/workspace-a'
+
+    render(<CoreWorkspaceAgentFront chatEntryMode="chat-first" loadingFallback={<div>Checking session</div>} />)
+
+    expect(screen.getByText('Checking session')).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Sign in' })).not.toBeInTheDocument()
+    expect(screen.queryByTestId('workspace-agent-front')).not.toBeInTheDocument()
+  })
+
   it('renders the regular workspace shell with sign-in chrome before auth', async () => {
     const { CoreWorkspaceAgentFront } = await importSubject()
     sessionState = { data: null, isPending: false }
