@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore, type ComponentType, type ReactNode } from "react"
+import { useCallback, useEffect, useMemo, useRef, useState, type ComponentType, type ReactNode } from "react"
 import {
   PiChatPanel as DefaultPiChatPanel,
   usePiSessions as useDefaultPiSessions,
@@ -7,7 +7,6 @@ import {
   type ToolRendererOverrides,
 } from "@hachej/boring-agent/front"
 import { WorkspaceProvider, type WorkspaceProviderProps } from "../../front/provider/WorkspaceProvider"
-import { useWorkspaceAttention } from "../../front/attention"
 import { ChatLayout, TopBar, ThemeToggle, type ChatLayoutProps } from "../../front/layout"
 import { WORKSPACE_COMPOSER_STOP_REASONS, emitWorkspaceComposerStop } from "../../front/chrome/chat/composerStop"
 import type { WorkspaceChatPanelProps } from "../../front/chrome/chat/types"
@@ -21,10 +20,8 @@ import { SkillsPage } from "../../front/chrome/skills/SkillsPage"
 import { PluginsOverlay } from "../../front/chrome/plugins/PluginsOverlay"
 import { AppLeftPane, type AppLeftPaneHeaderMode, type AppLeftPaneLayoutMode, type AppLeftPaneProject } from "../../front/layout/plugin-tabs/AppLeftPane"
 import { PluginTabsWorkspaceShell } from "../../front/layout/plugin-tabs/PluginTabsWorkspaceShell"
-import { useRegistry, useSurfaceResolverRegistry } from "../../front/registry"
 import { captureFrontPlugin } from "../../shared/plugins/frontFactory"
 import { isWorkspaceSourcePlacement } from "../../shared/types/panel"
-import { surfaceResolverDescriptor } from "../../shared/types/surface"
 import { UI_COMMAND_EVENT, dispatchUiCommand } from "../../front/bridge"
 import type { CommandPaletteSessionItem } from "../../front/components/CommandPalette"
 import type { CommandResult, DispatchContext, FileTreeBridge, Unsubscribe } from "../../front/bridge"
@@ -35,6 +32,9 @@ import {
 } from "./localStorageSessions"
 import { WORKSPACE_AGENT_PLUGINS_RELOADED_EVENT } from "../../front/agentPlugins/reloadEvent"
 import { WorkspaceBackgroundBoot } from "./WorkspaceBackgroundBoot"
+import { ChatSessionTransitionState, WorkbenchWarmupOverlay } from "./WorkspaceAgentStatusStates"
+import { WorkspaceUiStateSync } from "./WorkspaceUiStateSync"
+import { CloseLeftPaneOnQuestion } from "./CloseLeftPaneOnQuestion"
 import { workspaceRequestHeaders, type WorkspaceWarmupStatus } from "./workspacePreload"
 import {
   createdSessionId,
@@ -257,37 +257,6 @@ const emptySurfaceSnapshot: SurfaceShellSnapshot = {
   activeTab: null,
 }
 
-function WorkbenchWarmupOverlay({ status }: { status: WorkspaceWarmupStatus }) {
-  const requirement = status.status === "ready" ? undefined : status.requirement
-  const preparing = status.status !== "failed"
-  const title = preparing
-    ? requirement === "workspace-fs"
-      ? "Preparing files…"
-      : requirement === "sandbox-exec"
-        ? "Preparing secure runtime…"
-        : requirement === "ui-bridge"
-          ? "Connecting workspace…"
-          : "Preparing workspace…"
-    : "Workspace workbench failed"
-  const description = status.status === "failed"
-    ? status.message
-    : "Chat is ready while files, tools, and workspace panels finish warming up."
-  return (
-    <div className="flex h-full min-h-0 items-center justify-center bg-background px-6 text-center">
-      <div className="max-w-sm rounded-2xl border border-border bg-card p-5 shadow-sm">
-        {preparing ? (
-          <div className="mx-auto mb-3 h-7 w-7 rounded-full border-2 border-muted-foreground/20 border-t-foreground animate-spin" aria-hidden="true" />
-        ) : null}
-        <div className="text-sm font-semibold text-foreground">{title}</div>
-        <p className="mt-2 text-sm text-muted-foreground">{description}</p>
-        {status.status === "failed" ? (
-          <p className="mt-3 text-xs text-muted-foreground">Reload the workspace to retry.</p>
-        ) : null}
-      </div>
-    </div>
-  )
-}
-
 function useDefaultWorkspacePiSessions(options: Parameters<UseWorkspaceAgentSessions>[0]): WorkspaceAgentSessionsApi {
   const workspaceId = options.workspaceId ?? workspaceIdFromHeaders(options.requestHeaders) ?? options.storageKey
   const piSessions = useDefaultPiSessions({
@@ -381,124 +350,6 @@ function writeStoredPinnedSessions(storageKey: string, ids: string[]): void {
   } catch {
     // Best-effort persistence only.
   }
-}
-
-function ChatSessionTransitionState() {
-  return (
-    <div className="flex h-full min-h-0 items-center justify-center bg-background px-6 text-center">
-      <div className="max-w-sm rounded-2xl border border-border bg-card p-5 shadow-sm">
-        <div className="mx-auto mb-3 h-7 w-7 rounded-full border-2 border-muted-foreground/20 border-t-foreground animate-spin" aria-hidden="true" />
-        <div className="text-sm font-semibold text-foreground">Loading sessions…</div>
-        <p className="mt-2 text-sm text-muted-foreground">Finding this workspace’s saved chats.</p>
-      </div>
-    </div>
-  )
-}
-
-function uiEndpointBase(endpoint: string | null | undefined): string {
-  if (!endpoint) return "/api/v1/ui"
-  const normalized = endpoint.replace(/\/$/, "")
-  const suffix = "/api/v1/ui"
-  if (normalized.endsWith(suffix)) return normalized
-  return `${normalized}${suffix}`
-}
-
-function uiStateEndpointUrl(endpoint: string | null | undefined): string {
-  return `${uiEndpointBase(endpoint)}/state`
-}
-
-function activeFileFromSnapshot(snapshot: SurfaceShellSnapshot): string | null {
-  const active = snapshot.openTabs.find((tab) => tab.id === snapshot.activeTab)
-  const path = active?.params?.path
-  return typeof path === "string" ? path : null
-}
-
-function WorkspaceUiStateSync({
-  bridgeEndpoint,
-  requestHeaders,
-  navOpen,
-  surfaceOpen,
-  surfaceReady,
-  snapshot,
-}: {
-  bridgeEndpoint?: string | null
-  requestHeaders: Record<string, string>
-  navOpen: boolean
-  surfaceOpen: boolean
-  surfaceReady: boolean
-  snapshot: SurfaceShellSnapshot
-}) {
-  const panelRegistry = useRegistry()
-  const surfaceResolverRegistry = useSurfaceResolverRegistry()
-  const panelRegistrySnapshot = useSyncExternalStore(
-    panelRegistry.subscribe,
-    panelRegistry.getSnapshot,
-    panelRegistry.getSnapshot,
-  )
-  const surfaceResolverSnapshot = useSyncExternalStore(
-    surfaceResolverRegistry.subscribe,
-    surfaceResolverRegistry.getSnapshot,
-    surfaceResolverRegistry.getSnapshot,
-  )
-  const abortRef = useRef<AbortController | null>(null)
-
-  useEffect(() => {
-    if (bridgeEndpoint === null) return
-    // Do not publish a placeholder empty tab snapshot while the workbench
-    // is mounted/opening but Dockview has not called onReady yet. That
-    // replace-style PUT would clobber the bridge's last known openTabs and
-    // make agent verification think every tab disappeared.
-    if (surfaceOpen && !surfaceReady) return
-    abortRef.current?.abort()
-    const controller = new AbortController()
-    abortRef.current = controller
-    const state = {
-      v: 1,
-      drawerOpen: navOpen,
-      workbenchOpen: surfaceOpen,
-      openTabs: snapshot.openTabs,
-      activeTab: snapshot.activeTab,
-      activeFile: activeFileFromSnapshot(snapshot),
-      availablePanels: panelRegistrySnapshot.map((panel) => panel.id),
-      availableSurfaces: surfaceResolverSnapshot.flatMap((surface) => {
-        const descriptor = surfaceResolverDescriptor(surface)
-        return descriptor ? [descriptor] : []
-      }),
-    }
-
-    void fetch(uiStateEndpointUrl(bridgeEndpoint), {
-      method: "PUT",
-      headers: { ...requestHeaders, "Content-Type": "application/json" },
-      body: JSON.stringify({ state, causedBy: "user" }),
-      signal: controller.signal,
-    }).catch(() => {
-      // UI state is advisory for the agent; command delivery still works.
-    })
-
-    return () => {
-      controller.abort()
-    }
-  }, [bridgeEndpoint, navOpen, panelRegistrySnapshot, requestHeaders, snapshot, surfaceOpen, surfaceReady, surfaceResolverSnapshot])
-
-  return null
-}
-
-/**
- * When an ask-user question opens (an attention blocker with reason
- * "waiting_for_user_input" appears), close the workbench's default-open left
- * pane so the question isn't hidden behind it. Fires only on the transition
- * into "waiting" so re-opening the pane while a question is pending isn't
- * fought. Renders inside WorkspaceProvider (needs the attention context).
- */
-function CloseLeftPaneOnQuestion({ onQuestionOpen }: { onQuestionOpen: () => void }) {
-  const { blockers } = useWorkspaceAttention()
-  const waiting = blockers.some((blocker) => blocker.reason === "waiting_for_user_input")
-  const prevWaitingRef = useRef(false)
-  useEffect(() => {
-    if (waiting && !prevWaitingRef.current) onQuestionOpen()
-    prevWaitingRef.current = waiting
-  }, [waiting, onQuestionOpen])
-  return null
 }
 
 export function WorkspaceAgentFront<
