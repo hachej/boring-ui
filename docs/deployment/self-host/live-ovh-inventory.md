@@ -16,7 +16,7 @@ Status: live test environment for `full-app` self-hosting. Dev Cloudflare hostna
 | Direct origin health | `http://51.91.54.122/health` |
 | Future production domain | `app.senecaapp.ai` deferred |
 | Backup bucket | Cloudflare R2 EU jurisdiction bucket `boring-ui-full-app-pgbackrest-eu` |
-| Backup status | pgBackRest enabled; initial full backup and isolated restore materialization drill passed on 2026-06-24 |
+| Backup status | pgBackRest enabled; initial full backup and isolated restore materialization drill passed on 2026-06-24; post-Neon-cutover full backup `20260626-090739F` passed |
 
 ## App VM
 
@@ -48,13 +48,13 @@ Status: live test environment for `full-app` self-hosting. Dev Cloudflare hostna
 | Tailscale IP | `100.115.45.64` |
 | OS/version | Debian GNU/Linux 13 (trixie) |
 | PostgreSQL major version | 17 |
-| Database | `boring_full_app` |
+| Database | `boring_full_app` migrated from Neon production on 2026-06-26 |
 | Runtime role | `boring_full_app_runtime` |
 | Migration role | `boring_full_app_migrator` |
 | Checksums | on |
 | Network | PostgreSQL allowed from App VM Tailscale `/32`; public PostgreSQL ingress closed |
 | pgbackrest stanza | `boring_full_app` |
-| pgbackrest status | enabled; `pgbackrest check` passes; WAL archiving active; initial full backup label `20260624-084334F` |
+| pgbackrest status | enabled; `pgbackrest check` passes; WAL archiving active; latest verified full backup label `20260626-090739F` after Neon cutover |
 | pgbackrest schedule | weekly full backup Sunday 02:00 UTC; daily differential Monday-Saturday 02:00 UTC via postgres crontab |
 
 ## GitHub
