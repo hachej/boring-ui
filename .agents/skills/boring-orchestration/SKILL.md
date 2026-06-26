@@ -1,12 +1,11 @@
 ---
 name: boring-orchestration
-description: "Use to run /triage for boring-ui: refresh GitHub state, apply triage gates, run the first needed loop, collect proof, and merge only fast-track-safe PRs."
+description: "Use for scheduled /triage: refresh GitHub, run the first unmet gate, collect proof, and merge only fast-track-safe PRs."
 ---
 
 # Boring Orchestration
 
-Run scheduled `/triage`. One issue gets one next action. Do not invent extra
-states.
+Run scheduled `/triage`.
 
 Canonical model: `../../../docs/kanzen/boring-loop.md`.
 How-to details: `../../../docs/kanzen/procedures/` and
@@ -14,12 +13,11 @@ How-to details: `../../../docs/kanzen/procedures/` and
 
 ## Sweep
 
-1. Refresh GitHub issues, PRs, comments, labels, CI, reviews, proof, head SHA,
-   and session comments.
-2. Read newest Julien/owner instruction first.
-3. Run `boring-triage` on queued or stale items.
-4. Execute only the first unmet gate.
-5. Record labels, gate, proof/reviewed SHA, next action, and session comments.
+1. Refresh issues, PRs, comments, labels, CI, reviews, proof, head SHA, sessions.
+2. Read newest owner instruction.
+3. Run `boring-triage`.
+4. Execute first unmet gate only.
+5. Record labels, gate, proof/reviewed SHA, next action, sessions.
 
 ## Gates
 
@@ -36,27 +34,18 @@ How-to details: `../../../docs/kanzen/procedures/` and
 
 ## Rules
 
-- Labels and fields follow `boring-loop.md`; labels are only `state:*`,
-  `phase:*`, `track:*`, plus optional `source:feedback`.
-- Sessions are comments, not fixed fields. Comment id, purpose, scope, and
-  replacement reason when a session is created, reused, or replaced.
-- One lane means one parent thread/run, one checkout context, and one GitHub
-  item. Bounded subagents may implement a slice or review, then return findings
-  to the parent lane.
-- Trunk, feature-flag, worktree, issue-plan, commit-prefix, and 1,500-line
-  review-budget rules live in
-  `../../../docs/kanzen/procedures/trunk-flags-review-budget.md`,
-  `../../../docs/kanzen/procedures/issue-plans.md`, and
-  `../../../docs/kanzen/procedures/coding-rules.md`.
-- For non-trivial work, run review/fix/re-review and thermo check until clean
-  or blocked; proof, review, and thermo check must match the current head SHA.
-- For non-trivial owner review, prepare `visual-review` material using
-  `../../../docs/kanzen/procedures/visual-review.md`.
+- Labels: only `state:*`, `phase:*`, `track:*`, optional `source:feedback`.
+- Sessions: comments only; include id, purpose, scope, reason.
+- Lane: one parent thread/run, one checkout context, one GitHub item.
+- Subagents: allowed for slices/review; return findings to parent lane.
+- Trunk/budget: `../../../docs/kanzen/procedures/trunk-flags-review-budget.md`.
+- Issue plans: `../../../docs/kanzen/procedures/issue-plans.md`.
+- Commit/coding rules: `../../../docs/kanzen/procedures/coding-rules.md`.
+- Review: fix/re-review plus thermo until clean or blocked.
+- Head SHA: proof, review, thermo must match.
+- Owner review: use `../../../docs/kanzen/procedures/visual-review.md`.
 
 ## Merge
 
-Auto-merge only when `state:ready phase:merge track:fast`, the PR is non-draft
-on a worker-owned branch, CI/tests/review/thermo/proof are current, the GitHub
-proof-of-work comment is posted, no restricted area is touched, and any required
-visual review is approved for the current artifact. Otherwise prepare the owner
-review brief and keep `track:owner`.
+- Apply fast-track checklist in `../../../docs/kanzen/boring-loop.md`.
+- If any item fails: owner review brief, `track:owner`.

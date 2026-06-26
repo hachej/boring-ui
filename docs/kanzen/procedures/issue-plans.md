@@ -1,7 +1,6 @@
 # Issue Plans
 
-Plan files are issue artifacts. Every plan must belong to a GitHub issue before
-implementation starts, and the local folder mirrors that issue:
+Every plan belongs to a GitHub issue.
 
 ```text
 docs/issues/
@@ -11,23 +10,20 @@ docs/issues/
     plan-stack-2.md
 ```
 
-The folder is `docs/issues/<issue-number>/`. Use `plan.md` for the main plan and
-`plan-<short-slice>.md` for additional slices or stacked PR layers. If no issue
-exists yet, create or choose the issue first; do not start an implementation
-plan against a floating local file. PRs should name their primary issue and link
-back to the matching local issue folder.
-
-All commits for the issue start with the issue number:
+- Folder: `docs/issues/<issue-number>/`
+- Main plan: `plan.md`
+- Slices/stacks: `plan-<short-slice>.md`
+- No issue: create or choose one first.
+- PR: name primary issue; link folder.
+- Commits: start with issue number.
 
 ```text
 #123 docs(plan): add review handoff slice
 ```
 
-If one PR covers multiple issues, split the commits by primary issue and mention
-secondary issue links in the commit body.
-
-Do not move plans when Kanzen state changes. Keep state in frontmatter so issue
-folders stay stable and searchable:
+- Multi-issue PR: split commits by primary issue; secondary links in body.
+- Do not move plans by state.
+- State lives in frontmatter:
 
 ```yaml
 github: https://github.com/hachej/boring-ui/issues/123
@@ -39,10 +35,10 @@ flag: not-needed
 updated: 2026-06-25
 ```
 
-Plan-only edits do not need a branch/worktree. Code starts only after the plan
-states the issue mapping, flag/abstraction strategy, proof path, and owner gate.
+- Plan-only edits: no branch/worktree needed.
+- Code starts after: issue mapping, flag/abstraction, proof path, owner gate.
 
-Use this body shape:
+Body shape:
 
 ```markdown
 # gh-123 short title

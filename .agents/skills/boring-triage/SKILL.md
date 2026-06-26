@@ -1,21 +1,20 @@
 ---
 name: boring-triage
-description: "Use to classify boring-ui GitHub issues and PRs into simple state/phase/track labels, choose the first unmet gate, and decide fast-track versus owner-review routing."
+description: "Use for /triage classification: set state/phase/track, find the first unmet gate, and choose fast-track or owner routing."
 ---
 
 # Boring Triage
 
-Triage answers: what is the first unmet gate?
+Answer: first unmet gate.
 
 ## Read
 
-Read issue/PR body, comments, owner instructions, related PRs, changed files,
-CI, reviews, thermo check, head SHA, recorded Pi sessions, and enough code/docs
-to know risk, flag/abstraction path, and proof path.
+- Issue/PR body, comments, owner instructions.
+- Related PRs, files, CI, reviews, thermo, head SHA.
+- Session comments.
+- Enough code/docs to judge risk, flag path, proof path.
 
 ## Labels
-
-Keep labels boring. They are routing state, not taxonomy.
 
 | Kind | Rule | Values |
 | --- | --- | --- |
@@ -23,9 +22,10 @@ Keep labels boring. They are routing state, not taxonomy.
 | `phase:*` | exactly one | `triage`, `grill`, `plan`, `implement`, `review`, `merge` |
 | `track:*` | exactly one | `owner` by default, `fast` only after risk gate |
 
-Allowed extra label: `source:feedback` only when the item came from
-`/feedback`. Do not add `bug`, `ui`, `accessibility`, `package:*`,
-`plugin:*`, or `gate:*`; put those details in the body/card.
+- Extra label: `source:feedback` only.
+- No taxonomy labels: `bug`, `ui`, `accessibility`, `package:*`, `plugin:*`,
+  `gate:*`.
+- Put details in body/card.
 
 ## Gate Table
 
@@ -44,24 +44,20 @@ Allowed extra label: `source:feedback` only when the item came from
 
 ## Fast Track
 
-Use `track:fast` only for trusted-author low-risk work with small blast radius,
-obvious acceptance criteria, no needed flag or safe flag defaults, a non-draft
-PR on a worker-owned branch, clean review, current thermo check, green CI, and
-current proof. If no PR exists yet, record fast-track candidacy in the card/body
-and re-check before setting `track:fast`.
-
-Use `track:owner` for auth, billing, permissions, privacy, secrets, migrations,
-public API, releases, broad refactors, destructive/deletion-heavy changes,
-unclear requirements, or untrusted authors.
+- `track:fast`: trusted author, low risk, small blast radius.
+- Requires: obvious acceptance, safe flag/default, non-draft PR, worker-owned
+  branch, clean review, thermo, CI, proof.
+- No PR yet: record fast-track candidate; re-check before `track:fast`.
+- `track:owner`: auth, billing, permissions, privacy, secrets, migrations,
+  public API, releases, broad refactors, destructive changes, unclear scope,
+  untrusted author.
 
 ## Sessions
 
-Sessions are structured comments, not labels and not a fixed schema. Preserve
-and reuse relevant session ids from issue/PR or Kanzen comments.
-
-If the next action creates or replaces a session, comment the id, purpose,
-scope, and reason in the card/body. If a phase advances in the same Pi thread,
-say so in the comment.
+- Sessions are comments, not labels or fixed fields.
+- Preserve/reuse relevant ids.
+- New/replaced session: comment id, purpose, scope, reason.
+- Same Pi thread advances phase: say so in the comment.
 
 ## Card
 
@@ -85,5 +81,5 @@ Next action:
 Why:
 ```
 
-Never end with vague review. Say the exact next command: `/loop-grill`,
-`/loop-plan`, `/loop-implement`, proof, fast-track merge, or owner review.
+End with exact next action: `/loop-grill`, `/loop-plan`, `/loop-implement`,
+proof, fast-track merge, or owner review.

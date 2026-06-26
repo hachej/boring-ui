@@ -1,13 +1,10 @@
 # Coding Rules
 
-Project-wide engineering rules for boring-ui v2.
-
 ## Safety
 
-- No destructive git/filesystem ops without explicit instruction (`rm -rf`,
-  `git reset --hard`, `git clean -fd`, `git push --force`). Prefer
-  non-destructive alternatives first.
-- No secrets in git. Do not paste tokens into commits or logs.
+- No destructive ops without explicit instruction: `rm -rf`,
+  `git reset --hard`, `git clean -fd`, `git push --force`.
+- No secrets in git, commits, or logs.
 - No broad rewrite scripts/codemods without approval.
 - No file variants (`*_v2.*`, `*_improved.*`) - edit in place.
 - Never push directly to remote `main`. Use a short-lived branch/worktree unless
@@ -17,7 +14,7 @@ Project-wide engineering rules for boring-ui v2.
 - Never stash, revert, or overwrite another agent's uncommitted work.
   Investigate unexpected changes first.
 
-## Thinking Before Coding
+## Thinking
 
 - State assumptions. If uncertainty blocks safe progress, ask; otherwise proceed
   with the smallest reasonable interpretation.
@@ -47,9 +44,7 @@ Project-wide engineering rules for boring-ui v2.
   snapshots. If the work is larger, decompose it into slices or stacked PRs
   before coding, or record an explicit owner-approved exception.
 
-## Goal-Driven Execution
-
-Convert tasks into verifiable goals:
+## Verifiable Goals
 
 ```text
 1. [Step] -> verify: [check]
@@ -57,34 +52,24 @@ Convert tasks into verifiable goals:
 3. [Step] -> verify: [check]
 ```
 
-Examples:
-
 - "Add validation" -> write invalid-input tests, then make them pass.
 - "Fix the bug" -> reproduce it with a test or documented manual step, then fix.
 - "Refactor X" -> verify tests pass before and after.
 
 ## Commit Issue Prefix
 
-Every commit subject must start with the primary GitHub issue number:
-
 ```text
 #123 fix(workspace): keep pending review visible
 ```
 
-If no issue exists, create or choose one before planning or coding. Use one
-primary issue number per commit; mention secondary issues in the body.
+- Subject starts with primary GitHub issue number.
+- No issue: create or choose one before planning/coding.
+- One primary issue per commit; secondary issues in body.
 
 ## Build Principles
 
-- **Composable** - user-facing features should offer default component,
-  primitives, and headless hook when appropriate. Do not force a shell.
-- **Modular + short** - small interfaces, single-responsibility files,
-  load-bearing seams (`Harness`, `Catalog`, `Workspace`, `Sandbox`,
-  `SessionStore`, `UiBridge`).
-- **Maintainable shared code** - platform-agnostic contracts in `src/shared/**`;
-  no `node:*`, no `Buffer` there.
-- **Ship fast, accept known risk** - do not pre-engineer mitigations for risks
-  already accepted in specs.
-- **Port over re-research** - old boring-ui (`/home/ubuntu/projects/boring-ui/`)
-  has battle-tested validators, bwrap flags, and file routes; port/adapt where
-  possible.
+- **Composable** - default component, primitives, headless hook when useful.
+- **Modular + short** - small interfaces, single-responsibility files.
+- **Shared code** - `src/shared/**` has no `node:*`, no `Buffer`.
+- **Ship fast** - do not pre-engineer accepted risks.
+- **Port first** - adapt proven old boring-ui validators, bwrap flags, routes.

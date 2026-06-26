@@ -1,17 +1,13 @@
 # Boring Loop
 
-Boring Loop is the smallest useful maintainer system:
-
 ```text
 /feedback -> enriched GitHub issue
 /triage   -> route the issue through gates
 ```
 
-Autonomy is not a mood. It is a label plus passed gates.
+Rule: autonomy = label + passed gates.
 
 ## One Screen
-
-Every issue card should be understandable from these columns:
 
 | Column | Meaning | Example |
 | --- | --- | --- |
@@ -24,22 +20,17 @@ Every issue card should be understandable from these columns:
 | Session comments | Which Pi threads continue it? | id, purpose, scope, reason |
 | Next | One action | `/loop-grill`, `/loop-plan`, `/loop-implement` |
 
-The UI should show this as chips plus one sentence, not a wall of text.
+- UI: chips plus one sentence.
 
 ## Skills
 
-- [`boring-feedback`](../../.agents/skills/boring-feedback/SKILL.md):
-  create the enriched issue.
-- [`boring-triage`](../../.agents/skills/boring-triage/SKILL.md):
-  classify state, track, and next gate.
-- [`boring-orchestration`](../../.agents/skills/boring-orchestration/SKILL.md):
-  run `/triage`, workers, review, proof, and merge decisions.
+- [`boring-feedback`](../../.agents/skills/boring-feedback/SKILL.md): create issue.
+- [`boring-triage`](../../.agents/skills/boring-triage/SKILL.md): classify gate.
+- [`boring-orchestration`](../../.agents/skills/boring-orchestration/SKILL.md): run sweep.
 - [`sources/theo_loop.md`](sources/theo_loop.md): source transcript.
 - [`sources/steinberger_loop.md`](sources/steinberger_loop.md): source notes.
 
 ## Labels
-
-Use labels for routing, not judgment essays.
 
 | Kind | Rule | Values |
 | --- | --- | --- |
@@ -48,26 +39,24 @@ Use labels for routing, not judgment essays.
 | `track:*` | exactly one | `owner` by default, `fast` only after risk gate |
 | source | optional | `source:feedback` |
 
-Do not add labels for `bug`, `ui`, `accessibility`, `package:*`, `plugin:*`,
-or `gate:*`. Structured fields carry the details: `area`, `kind`, `gate`,
-`risk`, `flag`, `proofRequired`, `proofState`, `reviewState`, `reviewedSha`,
-`mergeMode`, `nextAction`, plus session comments.
+- Labels route only.
+- No taxonomy labels: `bug`, `ui`, `accessibility`, `package:*`, `plugin:*`,
+  `gate:*`.
+- Details go in fields: `area`, `kind`, `gate`, `risk`, `flag`,
+  `proofRequired`, `proofState`, `reviewState`, `reviewedSha`, `mergeMode`,
+  `nextAction`, session comments.
 
 ## Session Continuity
 
-Pi/Codex session ids are continuity handles, not labels and not a fixed schema.
-When a session matters, add or update a short issue/PR or Kanzen comment with
-the session id, purpose, scope, and replacement reason if it changed.
-
-Before a loop starts, reuse the relevant session if it still belongs to the same
-repo, issue/PR, and branch. Create a new session only when the old one is
-missing, inaccessible, archived/stale, or wrong scope, then comment the new id
-and reason. If planning naturally becomes implementation in the same Pi thread,
-say so in the comment instead of inventing another field.
+- Session ids are comments, not labels or fixed fields.
+- Comment: id, purpose, scope, replacement reason.
+- Reuse if repo, issue/PR, and branch still match.
+- New session only when missing, inaccessible, stale, or wrong scope.
 
 ## Gates
 
-Evaluate gates top to bottom and stop at the first failing row.
+- Evaluate top to bottom.
+- Stop at first failing row.
 
 | Gate | Passes When | If It Fails |
 | --- | --- | --- |
@@ -99,68 +88,37 @@ flowchart LR
 
 ## Fast Track
 
-New work starts `track:owner`. `track:fast` is an upgrade that means "merge
-automatically once every gate passes."
-
-Allowed only when all are true:
-
-- author/agent is trusted by repo policy;
-- PR is non-draft on a worker-owned branch;
-- small low-risk diff with reduced blast radius;
-- no auth, billing, permissions, secrets, migrations, public API, release,
-  deletion-heavy, or broad refactor work;
-- acceptance criteria and proof path are obvious;
-- review, thermo check, tests, CI, GitHub proof comment, and demo proof are
-  current for the head SHA.
-
-Everything else is `track:owner`: agents may prepare the PR, but Julien reviews
-before merge.
+- Default: `track:owner`.
+- `track:fast` requires trusted author, non-draft worker-owned PR, small
+  low-risk diff, obvious acceptance, proof path, safe flag/default.
+- `track:fast` forbids auth, billing, permissions, secrets, migrations, public
+  API, release, deletion-heavy work, broad refactor.
+- Merge requires current review, thermo, tests, CI, proof comment, demo proof.
+- If visual review is required: approval must match the current artifact.
+- Otherwise: `track:owner`; Julien reviews.
 
 ## Procedures
 
-- [Trunk, flags, and review budget](procedures/trunk-flags-review-budget.md):
-  local-main review bench, feature flags, worktree escalation, and the 1,500
-  added production-code line budget.
-- [Issue plans](procedures/issue-plans.md): `docs/issues/<issue-number>/`,
-  plan shape, issue mapping, and issue-prefixed commits.
-- [Visual review](procedures/visual-review.md): `visual-explainer`,
-  session-scoped `visual-review` blocker, ask-user fallback, and approval
-  states.
+- [Trunk, flags, review budget](procedures/trunk-flags-review-budget.md)
+- [Issue plans](procedures/issue-plans.md)
+- [Visual review](procedures/visual-review.md)
 
 ## Loop Commands
 
-`/feedback`: create a GitHub issue directly, enriched with safe context, lean
-routing labels, a session comment, and a first plan. If the report is unclear,
-create the issue as `state:blocked phase:grill`.
-
-`/loop-grill`: use the grill-me skill and ask-user pane. This can run now or
-wait asynchronously in the pending session list. Exit when the issue is clear.
-Reuse or comment the relevant session id.
-
-`/loop-plan`: produce the smallest useful plan. Use an inline plan for small
-work. Use a plan file plus thermo-nuclear review for important, risky, or
-multi-PR work. Reuse or comment the relevant planning/review session ids.
-
-`/loop-implement`: implement the plan, open/update the PR, run review/fix
-rounds, run thermo-nuclear implementation review when non-trivial, and collect
-proof. Reuse or comment the relevant implementation, review, and proof session
-ids.
-
-`/triage`: orchestrate the queue. It should perform one next action per issue,
-then record the new state/gate.
+- `/feedback`: create issue; stop. If unclear: `state:blocked phase:grill`.
+- `/loop-grill`: grill-me plus ask-user; exit when clear.
+- `/loop-plan`: smallest plan; plan file plus thermo for risky/multi-PR work.
+- `/loop-implement`: code, PR, review/fix rounds, thermo, proof.
+- `/triage`: one next action per issue; record state/gate.
 
 ## Product Shape
 
-- Feedback form creates GitHub issues with context and first plan.
-- Triage board shows state, phase, track, gate, PR, proof, session comments,
-  and next action.
-- Ask-user pane holds blocked grill questions and fallback owner asks per
-  session.
-- Visual-review surface holds blocked review handoffs per session and opens the
-  artifact ready to inspect.
-- PR review pane focuses one PR: diff, findings, fixes, reviewed SHA, proof.
-- Demo proof pane starts the app when useful and tells Julien exactly what to
-  verify.
+- Feedback form: GitHub issue, context, first plan.
+- Triage board: state, phase, track, gate, PR, proof, sessions, next action.
+- Ask-user: grill questions and fallback owner asks.
+- Visual-review: artifact, choices, session blocker.
+- PR review: diff, findings, fixes, reviewed SHA, proof.
+- Demo proof: app ready plus exact checks.
 
 ## Maintenance
 

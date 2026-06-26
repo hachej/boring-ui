@@ -1,11 +1,11 @@
 ---
 name: boring-feedback
-description: "Use when a user submits /feedback or asks to capture product feedback: create an enriched GitHub issue with safe context, lean routing labels, first plan, and either queued triage or blocked grill state."
+description: "Use for /feedback: create one enriched GitHub issue with safe context, lean labels, first plan, and queued or grill-blocked state."
 ---
 
 # Boring Feedback
 
-Goal: `/feedback` creates the GitHub issue. It never implements.
+Goal: create the GitHub issue. Never implement.
 
 ## Steps
 
@@ -17,18 +17,14 @@ Goal: `/feedback` creates the GitHub issue. It never implements.
 | First plan | likely area, acceptance criteria, flag/abstraction guess, proof path |
 | Labels | `source:feedback`, one `state:*`, one `phase:*`, `track:owner` |
 
-Do not add taxonomy labels such as `bug`, `ui`, `accessibility`,
-`package:*`, `plugin:*`, or `gate:*`. Put area, kind, gate, flag guess, and
-proof path in the issue body.
-
-Record the current Pi/Codex session id as a short session comment when
-available: id, purpose `feedback`, repo/item scope, and capture context. If the
-host does not expose a session id, note that only when useful; do not invent one
-and do not create fixed session fields.
+- Labels: no `bug`, `ui`, `accessibility`, `package:*`, `plugin:*`, `gate:*`.
+- Body: area, kind, gate, flag guess, proof path.
+- Session: comment id, purpose `feedback`, repo/item scope, capture context.
+- Missing id: omit or note `unavailable`; never invent fixed session fields.
 
 ## Grill Routing
 
-If unclear, ask whether to grill now, defer, or skip.
+- If unclear: ask `grill now`, `defer`, or `skip/clear`.
 
 | Choice | Result |
 | --- | --- |
@@ -36,6 +32,5 @@ If unclear, ask whether to grill now, defer, or skip.
 | defer | create issue as `state:blocked phase:grill`; record gate `clarity` in the body |
 | skip/clear | create issue as `state:queued phase:triage`; record gate `intake` in the body |
 
-For deferred grill questions, create the issue first, then use ask-user so the
-session appears as pending in boring-ui. Comment the ask-user session id on the
-issue if one is created.
+- Deferred grill: create issue first, then ask-user.
+- Comment ask-user session id if one is created.
