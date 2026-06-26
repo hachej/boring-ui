@@ -1,3 +1,13 @@
+---
+github: https://github.com/hachej/boring-ui/issues/258
+issue: 258
+state: blocked
+phase: plan
+track: owner
+flag: not-needed
+updated: 2026-06-26
+---
+
 # Browser Use Plugin Spec
 
 Status: draft spec only — no implementation in this PR.
