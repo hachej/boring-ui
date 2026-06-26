@@ -128,6 +128,12 @@ before merge.
 
 Use trunk-based work by default, but keep remote `main` protected.
 
+Golden rule: the `boring-ui-v2` checkout stays on local `main` as Julien's live
+review bench. The three Docker review surfaces stay running and easy to inspect:
+`full-app`, `workspace-playground`, and `agent-playground`. Agents should keep
+local main green/reloadable; if they cannot, they must stop, repair, or escalate
+to a short-lived isolated branch/worktree.
+
 | Case | Default |
 | --- | --- |
 | plan-only work | edit on local `main`; no branch or worktree |

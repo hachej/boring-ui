@@ -136,6 +136,10 @@ for example `implementSession: <same id as planSession>`.
 
 ## Trunk, flags, and plans
 
+Golden rule: keep the `boring-ui-v2` checkout on local `main` as the live review
+bench, with the three Docker review surfaces running/reloadable:
+`full-app`, `workspace-playground`, and `agent-playground`.
+
 Plan-only work may happen on local `main`; it does not need a branch or
 worktree. Store issue-linked plans as
 `docs/kanzen/plans/<state>/gh-<number>-<slug>.md` and move them only when the
