@@ -55,3 +55,17 @@ test("keeps missing workspace paths as unavailable", async () => {
     available: false,
   }))
 })
+
+test("creates missing workspace directories when requested", async () => {
+  const root = await makeTempDir("boring-cli-registry-root-")
+  const missing = join(root, "created-project")
+  const registry = createLocalWorkspaceRegistry(join(root, "workspaces.yaml"))
+
+  const added = await registry.add(missing, { name: "Created", createIfMissing: true })
+  expect(added.available).toBe(true)
+  await expect(registry.get(added.id)).resolves.toEqual(expect.objectContaining({
+    name: "Created",
+    path: missing,
+    available: true,
+  }))
+})

@@ -597,13 +597,14 @@ export async function createWorkspacesModeApp(opts: {
     workspaces: await registry.list(),
   }))
   app.post("/api/v1/local-workspaces", async (request, reply) => {
-    const body = request.body as { path?: unknown; name?: unknown }
+    const body = request.body as { path?: unknown; name?: unknown; createIfMissing?: unknown }
     if (typeof body?.path !== "string" || !body.path.trim()) {
       return reply.code(400).send({ error: "workspace path is required" })
     }
     try {
       const workspace = await registry.add(body.path, {
         name: typeof body.name === "string" ? body.name : undefined,
+        createIfMissing: body.createIfMissing === true,
       })
       return { workspace }
     } catch (error) {
