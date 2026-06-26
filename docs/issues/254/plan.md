@@ -1,3 +1,13 @@
+---
+github: https://github.com/hachej/boring-ui/issues/254
+issue: 254
+state: active
+phase: plan
+track: owner
+flag: local-cli-only
+updated: 2026-06-26
+---
+
 # CLI/local runtime plugin plan
 
 Canonical docs:
