@@ -20,6 +20,8 @@ Read:
   - orchestration skill.
 - [`boring-triage`](../../.agents/skills/boring-triage/SKILL.md) - triage
   skill.
+- Agent workflow procedure:
+  [`procedures/agent-workflow.md`](procedures/agent-workflow.md).
 - Trunk/flag/review budget procedure:
   [`procedures/trunk-flags-review-budget.md`](procedures/trunk-flags-review-budget.md).
 - Plan files live under `../issues/<issue-number>/`; see

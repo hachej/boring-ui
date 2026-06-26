@@ -24,7 +24,7 @@ Detailed coding practices, workflow, architecture, and package docs live under `
 | --- | --- |
 | Project/package map | [`docs/README.md`](docs/README.md) |
 | Coding best practices, invariants, commands | [`docs/CODING_PRACTICES.md`](docs/CODING_PRACTICES.md) |
-| Agent/bead workflow, review, commit, GitHub labels | [`docs/AGENT_WORKFLOW.md`](docs/AGENT_WORKFLOW.md) |
+| Agent/bead workflow, review, commit, GitHub labels | [`docs/kanzen/procedures/agent-workflow.md`](docs/kanzen/procedures/agent-workflow.md) |
 | Architecture decisions | [`docs/DECISIONS.md`](docs/DECISIONS.md) |
 | Agent ↔ workspace contract | [`docs/WORKSPACE_CONTRACT.md`](docs/WORKSPACE_CONTRACT.md) |
 | Proof-of-work comments | [`docs/procedures/proof-of-work.md`](docs/procedures/proof-of-work.md) |
@@ -67,4 +67,4 @@ See [`docs/CODING_PRACTICES.md`](docs/CODING_PRACTICES.md#critical-architectural
 2. Make surgical, minimal changes.
 3. Add/update tests for behavior changes.
 4. Run relevant checks.
-5. For bead work, follow [`docs/AGENT_WORKFLOW.md`](docs/AGENT_WORKFLOW.md).
+5. For bead work, follow [`docs/kanzen/procedures/agent-workflow.md`](docs/kanzen/procedures/agent-workflow.md).
