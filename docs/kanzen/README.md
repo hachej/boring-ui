@@ -22,6 +22,10 @@ Read:
   skill.
 - Agent workflow procedure:
   [`procedures/agent-workflow.md`](procedures/agent-workflow.md).
+- Coding procedures:
+  [`procedures/coding-rules.md`](procedures/coding-rules.md),
+  [`procedures/coding-invariants.md`](procedures/coding-invariants.md), and
+  [`procedures/repo-commands.md`](procedures/repo-commands.md).
 - Trunk/flag/review budget procedure:
   [`procedures/trunk-flags-review-budget.md`](procedures/trunk-flags-review-budget.md).
 - Plan files live under `../issues/<issue-number>/`; see

@@ -23,7 +23,9 @@ Detailed coding practices, workflow, architecture, and package docs live under `
 | Need | Read |
 | --- | --- |
 | Project/package map | [`docs/README.md`](docs/README.md) |
-| Coding best practices, invariants, commands | [`docs/CODING_PRACTICES.md`](docs/CODING_PRACTICES.md) |
+| Coding rules | [`docs/kanzen/procedures/coding-rules.md`](docs/kanzen/procedures/coding-rules.md) |
+| Coding invariants | [`docs/kanzen/procedures/coding-invariants.md`](docs/kanzen/procedures/coding-invariants.md) |
+| Repo commands | [`docs/kanzen/procedures/repo-commands.md`](docs/kanzen/procedures/repo-commands.md) |
 | Agent/bead workflow, review, commit, GitHub labels | [`docs/kanzen/procedures/agent-workflow.md`](docs/kanzen/procedures/agent-workflow.md) |
 | Architecture decisions | [`docs/DECISIONS.md`](docs/DECISIONS.md) |
 | Agent ↔ workspace contract | [`docs/WORKSPACE_CONTRACT.md`](docs/WORKSPACE_CONTRACT.md) |
@@ -49,7 +51,7 @@ Detailed coding practices, workflow, architecture, and package docs live under `
 
 ## Non-negotiable architectural invariants
 
-See [`docs/CODING_PRACTICES.md`](docs/CODING_PRACTICES.md#critical-architectural-invariants) for detail. Short version:
+See [`docs/kanzen/procedures/coding-invariants.md`](docs/kanzen/procedures/coding-invariants.md) for detail. Short version:
 
 1. No `node:*` imports in `src/shared/**`.
 2. No `Buffer` in `src/shared/**`; use `Uint8Array`.
