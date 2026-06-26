@@ -251,7 +251,12 @@ export function AppLeftPane({
       style={{ width, minWidth: width, maxWidth: width }}
       aria-label="App navigation"
     >
-      <AppLeftPaneHeader appTitle={appTitle} workspaceLabel={workspaceLabel} topSlot={topSlot} />
+      <AppLeftPaneHeader
+        appTitle={appTitle}
+        workspaceLabel={workspaceLabel}
+        topSlot={topSlot}
+        showBrand={layoutMode !== "multi-project"}
+      />
 
       <nav className="shrink-0 space-y-0.5 px-2 pb-1 pt-1" aria-label="Primary workspace actions">
         <PrimaryAction icon={<Plus className="h-4 w-4" strokeWidth={2} />} label="New chat" onClick={onCreateSession} emphasis />

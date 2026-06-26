@@ -428,6 +428,7 @@ describe("WorkspaceAgentFront", () => {
       <WorkspaceAgentFront
         workspaceId="project-a"
         workspaceLayout="plugin-tabs"
+        appTitle="Seneca AI"
         appLeftLayoutMode="multi-project"
         workspaceSectionTitle="Projects"
         chatPanel={SessionIdChatPanel}
@@ -442,6 +443,8 @@ describe("WorkspaceAgentFront", () => {
     )
 
     const appNav = screen.getByLabelText("App navigation")
+    expect(within(appNav).queryByText("Seneca AI")).not.toBeInTheDocument()
+    expect(appNav.querySelector('[data-boring-workspace-part="app-left-pane-brand"]')).not.toBeInTheDocument()
     expect(within(appNav).queryByText("Default workspace")).not.toBeInTheDocument()
     expect(within(appNav).getByText("Pinned")).toBeInTheDocument()
     expect(within(appNav).getByText("Projects")).toBeInTheDocument()
