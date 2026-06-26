@@ -1,3 +1,13 @@
+---
+github: https://github.com/hachej/boring-ui/issues/295
+issue: 295
+state: active
+phase: plan
+track: owner
+flag: env:BORING_WORKSPACE_TREE_IMPL=trees
+updated: 2026-06-26
+---
+
 # Pierre Trees file-tree migration plan
 
 ## Status
