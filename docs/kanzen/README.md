@@ -20,7 +20,7 @@ Read:
   - orchestration skill.
 - [`boring-triage`](../../.agents/skills/boring-triage/SKILL.md) - triage
   skill.
-- Plan files live under `plans/<state>/gh-<number>-<slug>.md`; see
+- Plan files live under `../issues/<issue-number>/`; see
   [`boring-loop.md`](boring-loop.md#plan-files).
 - Visual owner handoffs use `visual-explainer` plus a thin ask-user-style
   pending review surface; see

@@ -142,9 +142,10 @@ bench, with the three Docker review surfaces running/reloadable:
 `full-app`, `workspace-playground`, and `agent-playground`.
 
 Plan-only work may happen on local `main`; it does not need a branch or
-worktree. Store issue-linked plans as
-`docs/kanzen/plans/<state>/gh-<number>-<slug>.md` and move them only when the
-Kanzen state meaningfully changes.
+worktree. Every plan belongs to a GitHub issue. Store issue-linked plans under
+`docs/issues/<issue-number>/`, using `plan.md` for the main plan and
+`plan-<short-slice>.md` for additional slices or stacked PR layers. Keep Kanzen
+state in frontmatter; do not move plan files between state folders.
 
 For code, prefer local trunk plus a safe feature flag and publish as a tiny PR.
 If the change cannot be feature-flagged, use branch-by-abstraction, keystone

@@ -59,7 +59,10 @@ Golden rule: keep `boring-ui-v2` on local `main` as the live review bench, with
 surfaces running/reloadable.
 
 Plan-only work may edit local `main` directly. Store plans at
-`docs/kanzen/plans/<state>/gh-<number>-<slug>.md`.
+`docs/issues/<issue-number>/plan.md` or
+`docs/issues/<issue-number>/plan-<short-slice>.md`. Every plan must belong to a
+GitHub issue; keep state in frontmatter instead of moving files between state
+folders.
 
 Code defaults to local trunk plus feature flag, then a tiny PR. If the work
 cannot be flagged, prefer branch-by-abstraction or keystone interface last. Use

@@ -213,28 +213,29 @@ a second review workflow.
 
 ## Plan Files
 
-Plan files are workflow artifacts, so keep them under Kanzen and tie them to a
-GitHub item before implementation starts:
+Plan files are issue artifacts. Every plan must belong to a GitHub issue before
+implementation starts, and the local folder mirrors that issue:
 
 ```text
-docs/kanzen/plans/
-  queued/gh-123-short-slug.md
-  blocked/gh-123-short-slug.md
-  active/gh-123-short-slug.md
-  ready/gh-123-short-slug.md
-  done/gh-123-short-slug.md
+docs/issues/
+  123/
+    plan.md
+    plan-frontend-slice.md
+    plan-stack-2.md
 ```
 
-Naming rule: `gh-<issue-or-pr-number>-<short-slug>.md`. If no GitHub item
-exists yet, create one first. Temporary research may use
-`queued/no-issue-YYYY-MM-DD-short-slug.md`, but it must become GitHub-linked
-before code starts.
+The folder is `docs/issues/<issue-number>/`. Use `plan.md` for the main plan and
+`plan-<short-slice>.md` for additional slices or stacked PR layers. If no issue
+exists yet, create or choose the issue first; do not start an implementation
+plan against a floating local file. PRs should name their primary issue and link
+back to the matching local issue folder.
 
-Move the file only when the Kanzen state meaningfully changes. Keep state in
-frontmatter too so moved files remain searchable:
+Do not move plans when Kanzen state changes. Keep state in frontmatter so issue
+folders stay stable and searchable:
 
 ```yaml
 github: https://github.com/hachej/boring-ui/issues/123
+issue: 123
 state: active
 phase: plan
 track: owner
@@ -245,7 +246,7 @@ updated: 2026-06-25
 ```
 
 Plan-only edits do not need a branch/worktree. Code starts only after the plan
-states the flag/abstraction strategy, proof path, and owner gate.
+states the issue mapping, flag/abstraction strategy, proof path, and owner gate.
 
 Use this body shape:
 
