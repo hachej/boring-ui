@@ -14,6 +14,7 @@ type CapturedChatPanelProps = WorkspaceChatPanelProps & {
   initialDraft?: string
   autoSubmitInitialDraft?: boolean
   hydrateMessages?: boolean
+  allowPromptDuringInitialHydration?: boolean
   onAutoSubmitInitialDraftSettled?: () => void
 }
 
@@ -1806,5 +1807,6 @@ describe("WorkspaceAgentFront", () => {
 
     expect(captured.some((props) => props.sessionId === "default")).toBe(false)
     expect(captured.at(-1)?.hydrateMessages).toBe(true)
+    expect(captured.at(-1)?.allowPromptDuringInitialHydration).toBe(true)
   })
 })
