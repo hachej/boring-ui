@@ -472,6 +472,33 @@ describe("WorkspaceAgentFront", () => {
     expect(within(appNav).queryByText("Active project session")).not.toBeInTheDocument()
   })
 
+  it("keeps classic workspace sources available outside plugin-tabs mode", async () => {
+    function SourcePanel() {
+      return <div>Classic source body</div>
+    }
+    const plugin = definePlugin({
+      id: "classic-source-plugin",
+      workspaceSources: [{ id: "classic-source", label: "Classic source", component: SourcePanel }],
+    })
+
+    render(
+      <WorkspaceAgentFront
+        workspaceId="classic-workspace-source"
+        chatPanel={SessionIdChatPanel}
+        sessions={[{ id: "s1", title: "First session" }]}
+        activeSessionId="s1"
+        plugins={[plugin]}
+        defaultSurfaceOpen
+        defaultWorkbenchLeftOpen
+        defaultWorkbenchLeftTab="classic-source"
+        provisionWorkspace={false}
+        persistenceEnabled={false}
+      />,
+    )
+
+    await waitFor(() => expect(screen.getByText("Classic source body")).toBeInTheDocument())
+  })
+
   it("opens the Plugins overlay from the app nav and lists external plugins only", async () => {
     const user = userEvent.setup()
     vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {

@@ -93,6 +93,10 @@ export function ChatLayout(props: ChatLayoutProps) {
     props.storageKey ? `${props.storageKey}:surfaceWidth` : undefined,
     680,
   )
+  const [sidebarWidth, setSidebarWidth] = useStoredNumberState(
+    props.storageKey ? `${props.storageKey}:sidebarWidth` : undefined,
+    280,
+  )
   const [chatCollapsed, setChatCollapsed] = useStoredBooleanState(
     props.storageKey ? `${props.storageKey}:chatCollapsed` : undefined,
     false,
@@ -110,6 +114,7 @@ export function ChatLayout(props: ChatLayoutProps) {
   )
   const commandRegistry = useCommandRegistry()
   const effectiveNavWidth = clamp(navWidth, 200, 360)
+  const effectiveSidebarWidth = clamp(sidebarWidth, 200, Math.max(240, Math.floor(viewport * 0.5)))
   const surfaceMax = Math.max(480, Math.floor(viewport * 0.72))
   const effectiveSurfaceWidth = clamp(surfaceWidth, 480, surfaceMax)
   const uiSurface = getFunction<() => SurfaceShellApi | null>(props.centerParams, "getSurface")
@@ -384,6 +389,41 @@ export function ChatLayout(props: ChatLayoutProps) {
             side="drawer-right"
             ariaLabel="Resize sessions drawer"
             onResize={(delta) => setNavWidth((w) => clamp(w + delta, 200, 360))}
+          />
+        ) : null}
+      </aside>
+
+      <aside
+        data-boring-workspace-part="workbench-left-shell"
+        data-boring-state={sidebarOpen ? "expanded" : "collapsed"}
+        aria-label={sidebarOpen ? "Workbench left panel" : undefined}
+        aria-hidden={!sidebarOpen}
+        className={cn(
+          "relative h-full min-h-0 shrink-0 overflow-hidden bg-background",
+          "transition-[width,min-width,max-width] duration-[280ms] ease-[cubic-bezier(0.22,1,0.36,1)]",
+          sidebarOpen && "border-r border-[color:oklch(from_var(--border)_l_c_h/0.6)]",
+        )}
+        style={{
+          width: sidebarOpen ? effectiveSidebarWidth : 0,
+          minWidth: sidebarOpen ? effectiveSidebarWidth : 0,
+          maxWidth: sidebarOpen ? effectiveSidebarWidth : 0,
+          willChange: "width",
+        }}
+      >
+        <div
+          className={cn(
+            "h-full min-h-0 overflow-hidden",
+            "transition-opacity duration-[200ms] ease-[cubic-bezier(0.22,1,0.36,1)]",
+            sidebarOpen ? "opacity-100" : "opacity-0",
+          )}
+        >
+          {sidebarOpen ? <PanelSlot id={props.sidebar ?? "workbench-left"} params={props.sidebarParams} /> : null}
+        </div>
+        {sidebarOpen ? (
+          <ResizeHandle
+            side="drawer-right"
+            ariaLabel="Resize workbench left panel"
+            onResize={(delta) => setSidebarWidth((w) => clamp(w + delta, 200, Math.max(240, Math.floor(viewport * 0.5))))}
           />
         ) : null}
       </aside>

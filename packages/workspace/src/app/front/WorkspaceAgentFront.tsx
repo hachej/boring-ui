@@ -23,6 +23,7 @@ import { AppLeftPane, type AppLeftPaneLayoutMode, type AppLeftPaneProject } from
 import { PluginTabsWorkspaceShell } from "../../front/layout/plugin-tabs/PluginTabsWorkspaceShell"
 import { useRegistry, useSurfaceResolverRegistry } from "../../front/registry"
 import { captureFrontPlugin } from "../../shared/plugins/frontFactory"
+import { isWorkspaceSourcePlacement } from "../../shared/types/panel"
 import { surfaceResolverDescriptor } from "../../shared/types/surface"
 import { UI_COMMAND_EVENT, dispatchUiCommand } from "../../front/bridge"
 import type { CommandPaletteSessionItem } from "../../front/components/CommandPalette"
@@ -1086,7 +1087,13 @@ export function WorkspaceAgentFront<
     () => plugins?.map(captureFrontPlugin) ?? [],
     [plugins],
   )
-  const hasLeftTabs = false
+  const hasLeftTabs = useMemo(
+    () => !isPluginTabsLayout && capturedPlugins.some((plugin) => (
+      plugin.registrations.workspaceSources.length > 0 ||
+      plugin.registrations.panels.some((panel) => isWorkspaceSourcePlacement(panel.placement))
+    )),
+    [capturedPlugins, isPluginTabsLayout],
+  )
   const pluginPanelIds = useMemo(
     () => capturedPlugins.flatMap((plugin) => plugin.registrations.panels.map((panel) => panel.id)),
     [capturedPlugins],
