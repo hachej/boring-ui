@@ -388,6 +388,25 @@ describe("PiSessionStore", () => {
     }
   });
 
+  it("lets hosts pass an explicit session root without mutating process env", async () => {
+    const previous = process.env.BORING_AGENT_SESSION_ROOT;
+    process.env.BORING_AGENT_SESSION_ROOT = join(tmpDir, "env-root");
+    try {
+      const store = new PiSessionStore("/workspace", {
+        sessionNamespace: "workspace-a",
+        sessionRoot: join(tmpDir, "explicit-root"),
+      });
+      expect(store.getSessionDir()).toBe(join(tmpDir, "explicit-root", "workspace-a"));
+
+      const session = await store.create(ctx, { title: "Explicit" });
+      await expect(readFile(join(tmpDir, "explicit-root", "workspace-a", `${session.id}.jsonl`), "utf-8"))
+        .resolves.toContain("Explicit");
+    } finally {
+      if (previous === undefined) delete process.env.BORING_AGENT_SESSION_ROOT;
+      else process.env.BORING_AGENT_SESSION_ROOT = previous;
+    }
+  });
+
   it("can store session files under host cwd while writing runtime cwd in session header", async () => {
     const store = new PiSessionStore("/workspace", { storageCwd: "/tmp/host-storage-root", sessionDir: tmpDir });
     const session = await store.create(ctx, { title: "Runtime cwd" });
