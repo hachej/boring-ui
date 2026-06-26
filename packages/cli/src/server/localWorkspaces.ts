@@ -2,7 +2,7 @@ import { createHash } from "node:crypto"
 import { existsSync, statSync } from "node:fs"
 import { mkdir, readFile, realpath, rename, writeFile } from "node:fs/promises"
 import { homedir } from "node:os"
-import { basename, dirname, resolve } from "node:path"
+import { basename, dirname, join, resolve } from "node:path"
 
 export interface LocalWorkspace {
   id: string
@@ -109,8 +109,14 @@ function serializeRegistryYaml(workspaces: StoredLocalWorkspace[]): string {
   return `${lines.join("\n")}\n`
 }
 
+function expandHomePath(input: string): string {
+  if (input === "~") return homedir()
+  if (input.startsWith("~/") || input.startsWith("~\\")) return join(homedir(), input.slice(2))
+  return input
+}
+
 async function resolveWorkspacePath(input: string): Promise<string> {
-  const absolute = resolve(input)
+  const absolute = resolve(expandHomePath(input))
   try {
     return await realpath(absolute)
   } catch {

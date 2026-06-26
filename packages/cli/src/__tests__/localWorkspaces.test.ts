@@ -1,5 +1,5 @@
 import { mkdtemp, rm, writeFile } from "node:fs/promises"
-import { tmpdir } from "node:os"
+import { homedir, tmpdir } from "node:os"
 import { join } from "node:path"
 import { afterEach, expect, test } from "vitest"
 import { createLocalWorkspaceRegistry } from "../server/localWorkspaces.js"
@@ -68,4 +68,16 @@ test("creates missing workspace directories when requested", async () => {
     path: missing,
     available: true,
   }))
+})
+
+test("expands home-relative workspace paths before creating directories", async () => {
+  const root = await makeTempDir("boring-cli-registry-root-")
+  const homeProjectName = `.boring-cli-registry-home-${process.pid}-${Date.now()}`
+  const homeProject = join(homedir(), homeProjectName)
+  tempDirs.push(homeProject)
+  const registry = createLocalWorkspaceRegistry(join(root, "workspaces.yaml"))
+
+  const added = await registry.add(`~/${homeProjectName}`, { createIfMissing: true })
+  expect(added.available).toBe(true)
+  expect(added.path).toBe(homeProject)
 })
