@@ -1540,12 +1540,14 @@ export function WorkspaceAgentFront<
     <SkillsPage
       onClose={() => setLeftOverlay(null)}
       headerInsetStart={appLeftPaneCollapsed}
+      headerInsetEnd
     />
   ) : leftOverlay === "plugins" && pluginsActionEnabled ? (
     <PluginsOverlay
       onClose={() => setLeftOverlay(null)}
       onReloadExternalPlugins={() => reloadAgentPluginsForSession(effectiveActiveSessionId ?? chatSessionId)}
       headerInsetStart={appLeftPaneCollapsed}
+      headerInsetEnd
     />
   ) : null
   const mainContent = remoteSessionsTransitioning ? (

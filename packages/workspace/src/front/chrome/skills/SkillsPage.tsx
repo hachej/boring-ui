@@ -32,9 +32,11 @@ export type SkillsPageProps = Partial<PaneProps> & {
   onClose?: () => void
   /** Reserve room for shell-level chrome that floats over collapsed app nav. */
   headerInsetStart?: boolean
+  /** Reserve room for shell-level top-right controls floating over the overlay. */
+  headerInsetEnd?: boolean
 }
 
-export function SkillsPage({ onClose, headerInsetStart = false }: SkillsPageProps) {
+export function SkillsPage({ onClose, headerInsetStart = false, headerInsetEnd = false }: SkillsPageProps) {
   const client = useWorkspacePluginClient()
   const [state, setState] = useState<LoadState>({ status: "loading", skills: [] })
 
@@ -74,8 +76,9 @@ export function SkillsPage({ onClose, headerInsetStart = false }: SkillsPageProp
   return (
     <div data-boring-workspace-part="skills-page" className="flex h-full min-h-0 flex-col bg-background">
       <header className={cn(
-        "flex h-12 shrink-0 items-center justify-between border-b border-border/60 pr-4",
+        "flex h-12 shrink-0 items-center justify-between border-b border-border/60",
         headerInsetStart ? "pl-12" : "pl-4",
+        headerInsetEnd ? "pr-24" : "pr-4",
       )}>
         <div className="flex min-w-0 items-center gap-2">
           <span className="grid size-7 place-items-center rounded-lg bg-[color:oklch(from_var(--accent)_l_c_h/0.12)] text-[color:var(--accent)]">
