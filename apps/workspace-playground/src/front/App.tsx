@@ -1,24 +1,14 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react"
+import { useCallback, useEffect, useMemo, useState } from "react"
 import { createDeckPlugin } from "@hachej/boring-deck/front"
 import type { DeckWidgetDefinition } from "@hachej/boring-deck/shared"
 import { WorkspaceProvider } from "@hachej/boring-workspace"
 import { WorkspaceAgentFront, WorkspaceFullPagePanel, parseFullPagePanelLocation } from "@hachej/boring-workspace/app/front"
 import { askUserPlugin } from "@hachej/boring-ask-user/front"
 import { SHOWCASE_SESSION_ID, seedShowcase } from "./showcaseMessages"
-import { standaloneTestPlugin } from "./standaloneTestPlugin"
 
 function isShowcaseRoute(): boolean {
   if (typeof window === "undefined") return false
   return new URLSearchParams(window.location.search).get("showcase") === "1"
-}
-
-/** ?projects=1 (multi) | ?projects=single (single-workspace degrade). */
-export function projectsPreviewMode(): "multi" | "single" | null {
-  if (typeof window === "undefined") return null
-  const value = new URLSearchParams(window.location.search).get("projects")
-  if (value === "single") return "single"
-  if (value === "1" || value === "multi") return "multi"
-  return null
 }
 
 function isFullPageRoute(): boolean {
@@ -51,7 +41,7 @@ const playgroundDeckPlugin = createDeckPlugin({
   },
 })
 
-const workspacePlugins = [askUserPlugin, playgroundDeckPlugin, standaloneTestPlugin]
+const workspacePlugins = [askUserPlugin, playgroundDeckPlugin]
 const externalPluginsEnabled = (import.meta as ImportMeta & { env?: Record<string, string> }).env?.VITE_BORING_EXTERNAL_PLUGINS === "1"
 
 function resetPlaygroundStorageIfRequested(): void {
@@ -131,23 +121,6 @@ export function WorkspaceShell() {
     [showcase],
   )
 
-  const openStandalonePrototype = useCallback(async () => {
-    await fetch("/api/v1/ui/commands", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        kind: "openPanel",
-        params: {
-          id: "standalone-test",
-          component: "standalone-test.main",
-          title: "Standalone Test",
-          params: { message: "auto-open prototype", count: 1, color: "bg-blue-50" },
-        },
-      }),
-    })
-  }, [])
-  const standaloneAutoOpenedRef = useRef(false)
-
   useEffect(() => {
     if (showcase || fullPage) return
     let cancelled = false
@@ -171,13 +144,6 @@ export function WorkspaceShell() {
     return () => { cancelled = true }
   }, [showcase, fullPage])
 
-  useEffect(() => {
-    if (showcase || fullPage || !metaLoaded || standaloneAutoOpenedRef.current) return
-    standaloneAutoOpenedRef.current = true
-    const timer = window.setTimeout(() => { void openStandalonePrototype() }, 1000)
-    return () => window.clearTimeout(timer)
-  }, [fullPage, metaLoaded, openStandalonePrototype, showcase])
-
   if (showcase) seedShowcase(SHOWCASE_SESSION_ID)
 
   if (fullPage) {
@@ -193,14 +159,11 @@ export function WorkspaceShell() {
       workspaceId={showcase ? "playground" : workspaceId}
       apiBaseUrl=""
       persistenceEnabled
-      debug={false}
+      debug
       providerStorageKey={showcase ? "boring-ui-v2:layout:playground" : `boring-ui-v2:layout:playground:${workspaceId}`}
       appTitle={showcase ? "Boring" : projectName}
       workspaceLabel={showcase ? undefined : projectName}
       defaultSessionTitle={showcase ? "New session" : projectName}
-      defaultNavOpen={false}
-      defaultSurfaceOpen
-      defaultWorkbenchLeftOpen
       externalPlugins={externalPluginsEnabled}
       frontPluginHotReload={externalPluginsEnabled ? "vite" : undefined}
       fullPageBasePath="/full-page"
