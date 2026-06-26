@@ -1,3 +1,13 @@
+---
+github: https://github.com/hachej/boring-ui/issues/12
+issue: 12
+state: queued
+phase: plan
+track: owner
+flag: not-needed
+updated: 2026-06-26
+---
+
 # Pi Decoupling Plan
 
 Status: draft  
