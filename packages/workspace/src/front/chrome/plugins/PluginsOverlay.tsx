@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react"
 import { Plug, RefreshCw, X } from "lucide-react"
-import { Button, IconButton } from "@hachej/boring-ui-kit"
+import { IconButton } from "@hachej/boring-ui-kit"
 import { WORKSPACE_AGENT_PLUGINS_RELOADED_EVENT } from "../../agentPlugins/reloadEvent"
 import { cn } from "../../lib/utils"
 import { useWorkspacePluginClient } from "../../plugin/useWorkspacePluginClient"
@@ -174,18 +174,19 @@ export function PluginsOverlay({ onClose, onReloadExternalPlugins, headerInsetSt
             <p className="truncate text-xs text-muted-foreground">External plugins loaded for this workspace</p>
           </div>
         </div>
-        <div className="flex shrink-0 items-center gap-1">
-          <Button
+        <div className="flex shrink-0 items-center gap-0.5">
+          <IconButton
             type="button"
             variant="ghost"
-            size="sm"
+            size="icon-xs"
             onClick={() => void reload()}
             disabled={reloading || state.status === "loading"}
-            className="gap-1.5 text-xs"
+            aria-label="Reload plugins"
+            title="Reload plugins"
+            className="text-muted-foreground hover:text-foreground"
           >
-            <RefreshCw className={cn("h-3.5 w-3.5", (reloading || state.status === "loading") && "animate-spin")} strokeWidth={1.75} />
-            Reload
-          </Button>
+            <RefreshCw className={cn("size-3", (reloading || state.status === "loading") && "animate-spin")} strokeWidth={1.75} />
+          </IconButton>
           <IconButton
             type="button"
             variant="ghost"

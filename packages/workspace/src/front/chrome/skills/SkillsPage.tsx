@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react"
 import { FileText, RefreshCw, Sparkles, X } from "lucide-react"
-import { Button, IconButton } from "@hachej/boring-ui-kit"
+import { IconButton } from "@hachej/boring-ui-kit"
 import { cn } from "../../lib/utils"
 import { postUiCommand } from "../../bridge"
 import { useWorkspacePluginClient } from "../../plugin/useWorkspacePluginClient"
@@ -89,18 +89,19 @@ export function SkillsPage({ onClose, headerInsetStart = false, headerInsetEnd =
             <p className="truncate text-xs text-muted-foreground">Workspace skills available to slash commands</p>
           </div>
         </div>
-        <div className="flex shrink-0 items-center gap-1">
-          <Button
+        <div className="flex shrink-0 items-center gap-0.5">
+          <IconButton
             type="button"
             variant="ghost"
-            size="sm"
+            size="icon-xs"
             onClick={() => void loadSkills(true)}
             disabled={state.status === "loading"}
-            className="gap-1.5 text-xs"
+            aria-label="Refresh skills"
+            title="Refresh skills"
+            className="text-muted-foreground hover:text-foreground"
           >
-            <RefreshCw className={cn("h-3.5 w-3.5", state.status === "loading" && "animate-spin")} strokeWidth={1.75} />
-            Refresh
-          </Button>
+            <RefreshCw className={cn("size-3", state.status === "loading" && "animate-spin")} strokeWidth={1.75} />
+          </IconButton>
           {onClose ? (
             <IconButton
               type="button"
