@@ -1,3 +1,13 @@
+---
+github: https://github.com/hachej/boring-ui/issues/367
+issue: 367
+state: active
+phase: plan
+track: owner
+flag: not-needed
+updated: 2026-06-26
+---
+
 # TipTap-first agentic markdown collaboration plan
 
 Status: proposed  
