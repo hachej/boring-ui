@@ -178,6 +178,32 @@ export function CliWorkspaceShell() {
 
   refreshWorkspacesRef.current = refreshWorkspaces
 
+  const createLocalWorkspace = useCallback(() => {
+    const rawPath = window.prompt("Path for the local workspace folder to create or add")
+    const path = rawPath?.trim()
+    if (!path) return
+    const rawName = window.prompt("Workspace name", path.split(/[\\/]+/).filter(Boolean).at(-1) ?? "Workspace")
+    const name = rawName?.trim() || undefined
+    void fetch("/api/v1/local-workspaces", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ path, name, createIfMissing: true }),
+    })
+      .then(async (res) => {
+        const data = await res.json().catch(() => ({})) as { workspace?: LocalWorkspace; error?: string }
+        if (!res.ok || !data.workspace) throw new Error(data.error || `local-workspaces ${res.status}`)
+        setWorkspacesLoaded(true)
+        setWorkspaces((current) => current.some((workspace) => workspace.id === data.workspace!.id) ? current : [...current, data.workspace!])
+        window.localStorage.setItem("boring-ui:local-workspace-id", data.workspace.id)
+        setActiveWorkspaceId(data.workspace.id)
+        syncCliWorkspaceUrl(data.workspace.id)
+        refreshWorkspaces()
+      })
+      .catch((error) => {
+        window.alert(error instanceof Error ? error.message : "Unable to create workspace")
+      })
+  }, [refreshWorkspaces])
+
   useEffect(() => {
     let cancelled = false
     void fetch("/api/v1/workspace/meta")
@@ -314,8 +340,15 @@ export function CliWorkspaceShell() {
             <p className="mt-2 text-sm text-muted-foreground">
               {hasUnavailableWorkspaces
                 ? "Registered workspace folders are missing or not directories. Restore one of the folders, then focus or refresh this page."
-                : <>Add one with <code>boring-ui workspaces add /path/to/project</code>, then refresh this page.</>}
+                : "Create or add a local workspace folder from this screen."}
             </p>
+            <button
+              type="button"
+              onClick={createLocalWorkspace}
+              className="mt-4 rounded-md bg-foreground px-3 py-2 text-sm font-medium text-background hover:opacity-90 focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            >
+              Create or add local folder
+            </button>
           </div>
         </div>
       )
@@ -349,9 +382,10 @@ export function CliWorkspaceShell() {
             appTitle="Boring UI"
             workspaces={workspaces}
             activeWorkspaceId={activeWorkspace.id}
-            createLabel="Add local folder"
-            createDescription="Use `boring-ui workspaces add /path`"
+            createLabel="Create or add local folder"
+            createDescription="Create the folder if it does not exist"
             settingsDescription={activeWorkspace.path}
+            onCreateWorkspace={createLocalWorkspace}
             onSelectWorkspace={(workspaceId) => {
               window.localStorage.setItem("boring-ui:local-workspace-id", workspaceId)
               setActiveWorkspaceId(workspaceId)

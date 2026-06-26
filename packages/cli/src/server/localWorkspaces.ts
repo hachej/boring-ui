@@ -18,7 +18,7 @@ interface StoredLocalWorkspace extends Omit<LocalWorkspace, "available"> {}
 export interface LocalWorkspaceRegistry {
   path: string
   list(): Promise<LocalWorkspace[]>
-  add(path: string, opts?: { name?: string }): Promise<LocalWorkspace>
+  add(path: string, opts?: { name?: string; createIfMissing?: boolean }): Promise<LocalWorkspace>
   remove(id: string): Promise<void>
   rename(id: string, name: string): Promise<LocalWorkspace>
   get(id: string): Promise<LocalWorkspace | null>
@@ -160,10 +160,13 @@ export function createLocalWorkspaceRegistry(path = getDefaultLocalWorkspaceRegi
       const workspace = (await readStored()).find((entry) => entry.id === id)
       return workspace ? withAvailability(workspace) : null
     },
-    async add(inputPath: string, opts?: { name?: string }) {
+    async add(inputPath: string, opts?: { name?: string; createIfMissing?: boolean }) {
       const workspacePath = await resolveWorkspacePath(inputPath)
       if (pathExists(workspacePath) && !pathIsDirectory(workspacePath)) {
         throw new Error(`workspace path is not a directory: ${workspacePath}`)
+      }
+      if (!pathExists(workspacePath) && opts?.createIfMissing) {
+        await mkdir(workspacePath, { recursive: true })
       }
       const now = new Date().toISOString()
       const workspaces = await readStored()
