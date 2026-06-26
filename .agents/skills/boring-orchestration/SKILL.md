@@ -67,6 +67,13 @@ a short-lived worktree/branch only for risky, transversal, parallel, or
 not-trunk-safe work. Plans and PR cards must record `flag: not-needed`,
 `flag: <name>`, or `flag: not-flaggable + reason`.
 
+## Review Budget
+
+Plans and PRs should decompose work into reviewable slices of about 1,500 added
+production-code lines max. Exclude tests, docs, generated output, and snapshots
+from the count. If a slice is larger, split or stack it before coding; otherwise
+record the explicit owner-approved exception in the plan and PR.
+
 ## Review Rule
 
 For non-trivial work, run review/fix/re-review plus thermo-nuclear

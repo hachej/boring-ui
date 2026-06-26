@@ -143,6 +143,11 @@ to a short-lived isolated branch/worktree.
 | still risky | short-lived worktree/branch |
 | transversal | plan first, stacked PRs, owner gate |
 
+Review budget: decompose plans and PRs so each reviewable slice is about 1,500
+added production-code lines max. Exclude tests, docs, generated output, and
+snapshots from the count. If a slice must exceed the budget, record why and get
+explicit owner approval before implementation or review.
+
 Feature flags are the isolation boundary for non-trivial runtime behavior:
 
 ```text
@@ -257,7 +262,8 @@ What should happen and why this is worth doing.
 Small bullets that can be tested or reviewed.
 
 ## Slices
-Tiny PRs or implementation steps; say when a stack is needed.
+Tiny PRs or implementation steps. Keep each slice near the review budget; say
+when a stack is needed.
 
 ## Proof
 Commands, CI, demo workspace, screenshots, or explicit waiver.

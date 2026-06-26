@@ -35,7 +35,7 @@ Allowed extra label: `source:feedback` only when the item came from
 | unclear | `state:blocked phase:grill`, gate `clarity` |
 | risk classification | keep `track:owner`; upgrade to `track:fast` only if eligible |
 | flag or abstraction missing | keep `track:owner`, gate `flag` |
-| needs design or sequencing | `state:active phase:plan`, gate `plan` |
+| needs design, sequencing, or exceeds review budget | `state:active phase:plan`, gate `plan` |
 | clear and no PR | `state:active phase:implement`, gate `implementation` |
 | PR needs review or fixes | `state:active phase:review`, gate `implementation` |
 | tests, CI, or demo proof missing | `state:active phase:review`, gate `proof` |
@@ -76,6 +76,7 @@ Flag:
 Sessions:
 Proof:
 Visual review:
+Review budget:
 Next action:
 Why:
 ```

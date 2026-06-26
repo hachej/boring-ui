@@ -35,6 +35,10 @@ Project-wide engineering rules for boring-ui v2. `AGENTS.md` stays short and poi
 - Do not refactor adjacent code unless the task needs it.
 - Remove imports/variables/functions made unused by your changes.
 - Mention unrelated dead code; do not delete it unless asked.
+- Keep review slices small: plans and PRs should target about 1,500 added
+  production-code lines max, excluding tests, docs, generated output, and
+  snapshots. If the work is larger, decompose it into slices or stacked PRs
+  before coding, or record an explicit owner-approved exception.
 
 ## Goal-driven execution
 

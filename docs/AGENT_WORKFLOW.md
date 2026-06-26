@@ -152,6 +152,11 @@ interface last, shadow mode, or expand/contract migration. Use a short-lived
 worktree/branch only when the work is still risky, transversal, parallel, or
 cannot keep trunk green.
 
+Review budget: plan slices and PRs should stay around 1,500 added production
+code lines max. Do not count tests, docs, generated output, or snapshots. If the
+work is larger, split it into smaller PRs or a stack before coding; otherwise
+record the explicit owner-approved exception in the plan and PR.
+
 ## GitHub proof of work
 
 For issue/PR implementations, follow [`docs/procedures/proof-of-work.md`](procedures/proof-of-work.md).
