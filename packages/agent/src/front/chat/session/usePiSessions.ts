@@ -114,6 +114,12 @@ export function usePiSessions(options: UsePiSessionsOptions = {}): UsePiSessions
   const loadedDataSourceRef = useRef(dataSourceKey)
   const requestScopeRef = useRef(requestScopeKey)
   requestScopeRef.current = requestScopeKey
+  const remoteSessionOptionsRef = useRef(options.remoteSessionOptions)
+  remoteSessionOptionsRef.current = options.remoteSessionOptions
+  const remoteSessionOptionsKey = useMemo(
+    () => remoteSessionOptionsIdentity(options.remoteSessionOptions),
+    [options.remoteSessionOptions],
+  )
 
   useEffect(() => {
     sessionsRef.current = sessions
@@ -301,7 +307,7 @@ export function usePiSessions(options: UsePiSessionsOptions = {}): UsePiSessions
     }
 
     const session = createRemoteSession({
-      ...options.remoteSessionOptions,
+      ...remoteSessionOptionsRef.current,
       sessionId: activeSessionId,
       workspaceId: options.workspaceId,
       storageScope,
@@ -313,7 +319,7 @@ export function usePiSessions(options: UsePiSessionsOptions = {}): UsePiSessions
     return () => {
       session.dispose()
     }
-  }, [activeSessionId, activeSessionKnown, apiBaseUrl, connectActiveSession, createRemoteSession, enabled, fetchImpl, options.remoteSessionOptions, options.workspaceId, requestHeaders, storageScope])
+  }, [activeSessionId, activeSessionKnown, apiBaseUrl, connectActiveSession, createRemoteSession, enabled, fetchImpl, remoteSessionOptionsKey, options.workspaceId, requestHeaders, storageScope])
 
   const create = useCallback(async (init?: PiSessionCreateInit): Promise<SessionSummary> => {
     if (!enabled) throw new Error('Pi sessions are disabled')
@@ -434,6 +440,42 @@ function toSessionSummary(value: unknown): SessionSummary {
 
 function canonicalPageCount(data: SessionSummary[]): number {
   return Math.min(data.length, SESSION_PAGE_SIZE)
+}
+
+const remoteSessionOptionObjectIds = new WeakMap<object, number>()
+let remoteSessionOptionObjectSeq = 0
+function remoteSessionOptionObjectIdentity(value: unknown): string | undefined {
+  if ((typeof value !== 'object' && typeof value !== 'function') || value === null) return undefined
+  const object = value as object
+  let id = remoteSessionOptionObjectIds.get(object)
+  if (!id) {
+    id = ++remoteSessionOptionObjectSeq
+    remoteSessionOptionObjectIds.set(object, id)
+  }
+  return String(id)
+}
+
+function remoteSessionOptionsIdentity(options: UsePiSessionsOptions['remoteSessionOptions']): string {
+  if (!options) return '{}'
+  return JSON.stringify({
+    autoStart: options.autoStart,
+    requestTimeoutMs: options.requestTimeoutMs,
+    onEvent: remoteSessionOptionObjectIdentity(options.onEvent),
+    storeOptions: remoteSessionOptionObjectIdentity(options.storeOptions),
+    setTimeoutFn: remoteSessionOptionObjectIdentity(options.setTimeoutFn),
+    clearTimeoutFn: remoteSessionOptionObjectIdentity(options.clearTimeoutFn),
+    reconnect: options.reconnect ? {
+      baseMs: options.reconnect.baseMs,
+      maxMs: options.reconnect.maxMs,
+      jitterRatio: options.reconnect.jitterRatio,
+      random: remoteSessionOptionObjectIdentity(options.reconnect.random),
+    } : undefined,
+    debug: options.debug ? {
+      largeStateWarningBytes: options.debug.largeStateWarningBytes,
+      largeStateWarningMessages: options.debug.largeStateWarningMessages,
+      onWarning: remoteSessionOptionObjectIdentity(options.debug.onWarning),
+    } : undefined,
+  })
 }
 
 function mergeSessions(...lists: SessionSummary[][]): SessionSummary[] {
