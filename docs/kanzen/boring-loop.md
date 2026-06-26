@@ -51,7 +51,7 @@ Use labels for routing, not judgment essays.
 Do not add labels for `bug`, `ui`, `accessibility`, `package:*`, `plugin:*`,
 or `gate:*`. Structured fields carry the details: `area`, `kind`, `gate`,
 `risk`, `flag`, `proofRequired`, `proofState`, `reviewState`, `reviewedSha`,
-`mergeMode`, `nextAction`, plus session fields.
+`mergeMode`, `nextAction`, plus session comments.
 
 ## Session Continuity
 
@@ -114,159 +114,16 @@ Allowed only when all are true:
 Everything else is `track:owner`: agents may prepare the PR, but Julien reviews
 before merge.
 
-## Trunk And Flags
+## Procedures
 
-Use trunk-based work by default, but keep remote `main` protected.
-
-Golden rule: the `boring-ui-v2` checkout stays on local `main` as Julien's live
-review bench. The three Docker review surfaces stay running and easy to inspect:
-`full-app`, `workspace-playground`, and `agent-playground`. Agents should keep
-local main green/reloadable; if they cannot, they must stop, repair, or escalate
-to a short-lived isolated branch/worktree.
-
-| Case | Default |
-| --- | --- |
-| plan-only work | edit on local `main`; no branch or worktree |
-| small single-lane code | local trunk plus feature flag, then tiny PR |
-| not flaggable | branch-by-abstraction or keystone interface last |
-| still risky | short-lived worktree/branch |
-| transversal | plan first, stacked PRs, owner gate |
-
-Review budget: decompose plans and PRs so each reviewable slice is about 1,500
-added production-code lines max. Exclude tests, docs, generated output, and
-snapshots from the count. If a slice must exceed the budget, record why and get
-explicit owner approval before implementation or review.
-
-Feature flags are the isolation boundary for non-trivial runtime behavior:
-
-```text
-flag:
-default:
-owner:
-blastRadius:
-rollback:
-removeBy:
-```
-
-Default flags off in production and on only in dev/demo when useful. If no flag
-is needed, say why. If no safe flag exists, use abstraction, shadow mode,
-expand/contract migration, or a short-lived worktree.
-
-## Visual Review
-
-Do not build a broad GitHub review plugin. The only boring-ui layer needed is a
-thin `visual-review` pending surface, modeled on `ask-user`:
-
-1. store one pending review item per session;
-2. publish a lightweight UI-state hint;
-3. add a `WorkspaceAttentionBlocker` with a review session badge;
-4. best-effort open `openSurface { kind: "visual-review" }` with
-   `openOnlyWhenSessionOpen: true`;
-5. render the visual artifact and approval choices in that surface.
-
-Use `visual-explainer` only as the renderer that creates the HTML artifact.
-
-Install locally only from an owner-approved commit SHA. Do not auto-approve a
-new mutable external source, branch, or tag from the loop itself:
-
-```bash
-pi install -l git:github.com/nicobailon/visual-explainer#<reviewed-commit-sha>
-```
-
-Use `--approve` only when Julien has already approved that exact commit.
-Otherwise fall back to Markdown/HTML review material and record the missing
-approved tool.
-
-Use it for owner handoff when a plan, PR, stack, or proof story is non-trivial.
-Record:
-
-```text
-visualReview:
-visualReviewId:
-artifact:
-visualReviewStatus:
-```
-
-The handoff stays blocked until Julien answers the session-scoped review item.
-Owner comments can inform the item, but the pending review record is the merge
-source of truth. The review surface must open with the visual artifact ready and
-include the issue/PR, demo surface, flag state, proof, risk, and exact choices:
-approve, request changes, defer, reject/remove.
-
-Until that thin surface exists, use `ask-user` as a compatibility fallback with
-the artifact link in the question context, and comment the fallback ask-user
-session id. Copy the ask-user answer into `visualReviewStatus` for the current
-artifact so the merge gate stays the same. Do not replace the renderer or invent
-a second review workflow.
-
-## Plan Files
-
-Plan files are issue artifacts. Every plan must belong to a GitHub issue before
-implementation starts, and the local folder mirrors that issue:
-
-```text
-docs/issues/
-  123/
-    plan.md
-    plan-frontend-slice.md
-    plan-stack-2.md
-```
-
-The folder is `docs/issues/<issue-number>/`. Use `plan.md` for the main plan and
-`plan-<short-slice>.md` for additional slices or stacked PR layers. If no issue
-exists yet, create or choose the issue first; do not start an implementation
-plan against a floating local file. PRs should name their primary issue and link
-back to the matching local issue folder.
-
-All commits for the issue start with the issue number:
-
-```text
-#123 docs(plan): add review handoff slice
-```
-
-If one PR covers multiple issues, split the commits by primary issue and mention
-secondary issue links in the commit body.
-
-Do not move plans when Kanzen state changes. Keep state in frontmatter so issue
-folders stay stable and searchable:
-
-```yaml
-github: https://github.com/hachej/boring-ui/issues/123
-issue: 123
-state: active
-phase: plan
-track: owner
-flag: not-needed
-updated: 2026-06-25
-```
-
-Plan-only edits do not need a branch/worktree. Code starts only after the plan
-states the issue mapping, flag/abstraction strategy, proof path, and owner gate.
-
-Use this body shape:
-
-```markdown
-# gh-123 short title
-
-## Decision
-What should happen and why this is worth doing.
-
-## Flag
-`not-needed`, `flag:<name>`, or `not-flaggable` with the abstraction path.
-
-## Acceptance
-Small bullets that can be tested or reviewed.
-
-## Slices
-Tiny PRs or implementation steps. Keep each slice near the review budget; say
-when a stack is needed.
-
-## Proof
-Commands, CI, demo workspace, screenshots, or explicit waiver.
-
-## Open Questions
-Only questions that block safe implementation or merge.
-```
+- [Trunk, flags, and review budget](procedures/trunk-flags-review-budget.md):
+  local-main review bench, feature flags, worktree escalation, and the 1,500
+  added production-code line budget.
+- [Issue plans](procedures/issue-plans.md): `docs/issues/<issue-number>/`,
+  plan shape, issue mapping, and issue-prefixed commits.
+- [Visual review](procedures/visual-review.md): `visual-explainer`,
+  session-scoped `visual-review` blocker, ask-user fallback, and approval
+  states.
 
 ## Loop Commands
 
@@ -293,8 +150,8 @@ then record the new state/gate.
 ## Product Shape
 
 - Feedback form creates GitHub issues with context and first plan.
-- Triage board shows state, phase, track, gate, PR, proof, sessions, and next
-  action.
+- Triage board shows state, phase, track, gate, PR, proof, session comments,
+  and next action.
 - Ask-user pane holds blocked grill questions and fallback owner asks per
   session.
 - Visual-review surface holds blocked review handoffs per session and opens the
@@ -307,7 +164,7 @@ then record the new state/gate.
 
 - Add a gate row before adding a new phase.
 - Add a structured field before adding a label.
-- Add a session field before creating an unlinked follow-up thread.
+- Add a session comment before creating an unlinked follow-up thread.
 - Keep each skill under one screen.
 - Keep `/feedback` write-only: it creates the issue and stops.
 - Keep `/triage` action-light: one issue gets one next action per sweep.

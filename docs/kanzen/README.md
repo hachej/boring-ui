@@ -12,19 +12,21 @@ is next, gates say why it cannot move yet.
 
 Read:
 
-- [`boring-loop.md`](boring-loop.md) - clean model, labels, gates, and product
-  shape.
+- [`boring-loop.md`](boring-loop.md) - vision/index, clean model, labels,
+  gates, and product shape.
 - [`boring-feedback`](../../.agents/skills/boring-feedback/SKILL.md)
   - `/feedback` intake skill.
 - [`boring-orchestration`](../../.agents/skills/boring-orchestration/SKILL.md)
   - orchestration skill.
 - [`boring-triage`](../../.agents/skills/boring-triage/SKILL.md) - triage
   skill.
+- Trunk/flag/review budget procedure:
+  [`procedures/trunk-flags-review-budget.md`](procedures/trunk-flags-review-budget.md).
 - Plan files live under `../issues/<issue-number>/`; see
-  [`boring-loop.md`](boring-loop.md#plan-files).
+  [`procedures/issue-plans.md`](procedures/issue-plans.md).
 - Visual owner handoffs use `visual-explainer` plus a thin ask-user-style
   pending review surface; see
-  [`boring-loop.md`](boring-loop.md#visual-review).
+  [`procedures/visual-review.md`](procedures/visual-review.md).
 
 Source notes live in [`sources/`](sources/):
 
