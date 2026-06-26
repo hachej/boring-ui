@@ -364,7 +364,7 @@ export function FileTreeView({
   // into an open folder stays hidden until the user collapses + re-expands it.
   // `user`-caused changes already refresh locally at their call sites.
   const expandedDirsRef = useRef<Set<string>>(new Set())
-  useEffect(() => {
+  useLayoutEffect(() => {
     expandedDirsRef.current = new Set(expandedChildren.keys())
   }, [expandedChildren])
 

@@ -107,14 +107,19 @@ function isExternalImageSrc(src: string): boolean {
  * propagating to `onChange`.
  *
  * TipTap fires `onUpdate` not only for typed input but also while the editor
- * settles on init / remount / DOM re-parent, which can momentarily report an
- * empty document right after non-empty content was loaded. Emptying a document
- * is only ever a user action when the editor is focused (it requires keyboard
- * input), so an empty emission from an unfocused editor is a spurious artifact.
- * Dropping it prevents autosave from overwriting a real file with "".
+ * settles on init / remount / DOM re-parent. Those unfocused emissions can be
+ * non-empty normalized markdown (for example frontmatter rewritten as a rule +
+ * heading), so saving them can corrupt files before the user touches anything.
+ * Keep toolbar edits working too: focus may be on a toolbar button, so a prior
+ * pointer/key interaction inside this editor shell also marks updates as user
+ * initiated.
  */
-export function isUserEditedChange(nextContent: string, editorFocused: boolean): boolean {
-  return !(nextContent === "" && !editorFocused)
+export function isUserEditedChange(
+  _nextContent: string,
+  editorFocused: boolean,
+  userInteracted = false,
+): boolean {
+  return editorFocused || userInteracted
 }
 
 function normalizeRelativeImagePath(src: string, documentPath?: string): string {
@@ -508,6 +513,7 @@ export function MarkdownEditor({
   const onChangeRef = useRef(onChange)
   onChangeRef.current = onChange
   const suppressChangeRef = useRef(false)
+  const userInteractedRef = useRef(false)
   // Tracks the last markdown string the editor itself emitted (or was seeded
   // with). TipTap normalizes markdown on serialize, so the `content` prop that
   // comes back from a save round-trip rarely equals the original disk bytes.
@@ -520,6 +526,7 @@ export function MarkdownEditor({
   // Stable ref so handlePaste (created once in useEditor) always calls the latest version.
   const insertImageRef = useRef<(file: File) => Promise<void>>(async () => {})
   insertImageRef.current = async (file: File) => {
+    userInteractedRef.current = true
     const editor = editorRef.current
     if (!editor) return
 
@@ -614,7 +621,7 @@ export function MarkdownEditor({
       lastEmittedRef.current = next
       // Drop a transient empty emission from an unfocused editor (settling on
       // init/remount); real edits — typing AND toolbar actions — still flow.
-      if (!isUserEditedChange(next, e.isFocused)) return
+      if (!isUserEditedChange(next, e.isFocused, userInteractedRef.current)) return
       onChangeRef.current?.(next)
     },
   })
@@ -657,7 +664,12 @@ export function MarkdownEditor({
   }
 
   return (
-    <div className={cn("flex h-full min-h-0 flex-col overflow-hidden", className)}>
+    <div
+      className={cn("flex h-full min-h-0 flex-col overflow-hidden", className)}
+      onPointerDownCapture={() => { userInteractedRef.current = true }}
+      onClickCapture={() => { userInteractedRef.current = true }}
+      onKeyDownCapture={() => { userInteractedRef.current = true }}
+    >
       {!readOnly && (
         <Toolbar
           editor={editor}

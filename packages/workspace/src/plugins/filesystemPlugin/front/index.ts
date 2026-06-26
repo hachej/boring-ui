@@ -111,10 +111,9 @@ const filesystemFront: BoringFrontSetup = (api) => {
     id: "filesystem-tree-preload",
     component: FilesystemTreePreloadBinding,
   })
-  api.registerLeftTab({
+  api.registerWorkspaceSource({
     id: FILES_LEFT_TAB_ID,
-    title: "Files",
-    panelId: FILES_LEFT_TAB_ID,
+    label: "Files",
     component: FileTreePane,
     source: "builtin",
     icon: FolderTree,

@@ -12,10 +12,11 @@ const MarkdownEditor = lazy(() =>
 // `path` is optional: dockview can restore a panel from serialized
 // layout where params got lost. Read defensively, render a placeholder
 // rather than crash when path isn't there.
-export type MarkdownEditorPaneProps = PaneProps<{ path?: string }>
+export type MarkdownEditorPaneProps = PaneProps<{ path?: string; mode?: "view" | "edit" | "diff" }>
 
 export function MarkdownEditorPane({ params, api, className }: MarkdownEditorPaneProps) {
   const path = typeof params?.path === "string" ? params.path : ""
+  const readOnly = params?.mode === "view"
 
   const {
     content,
@@ -44,7 +45,7 @@ export function MarkdownEditorPane({ params, api, className }: MarkdownEditorPan
       onReload={onReloadFromServer}
       onOverwrite={onOverwrite}
       editorComponent={MarkdownEditor}
-      editorProps={{ className, documentPath: path }}
+      editorProps={{ className, documentPath: path, readOnly }}
     />
   )
 }
