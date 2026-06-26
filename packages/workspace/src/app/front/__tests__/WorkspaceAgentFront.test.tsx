@@ -14,6 +14,7 @@ type CapturedChatPanelProps = WorkspaceChatPanelProps & {
   initialDraft?: string
   autoSubmitInitialDraft?: boolean
   hydrateMessages?: boolean
+  allowPromptDuringInitialHydration?: boolean
   onAutoSubmitInitialDraftSettled?: () => void
 }
 
@@ -2109,7 +2110,7 @@ describe("WorkspaceAgentFront", () => {
     }, { timeout: 3000 })
   })
 
-  it("keeps the chat shell in transition until the first empty remote session is stable", async () => {
+  it("connects the first auto-created empty remote session after the transition", async () => {
     const captured: CapturedChatPanelProps[] = []
     const CapturingChatPanel = (props: WorkspaceChatPanelProps) => {
       captured.push(props)
@@ -2160,6 +2161,7 @@ describe("WorkspaceAgentFront", () => {
     await waitFor(() => expect(screen.getByTestId("chat-panel").textContent).toContain("created-empty-session"), { timeout: 3000 })
 
     expect(captured.some((props) => props.sessionId === "default")).toBe(false)
-    expect(captured.at(-1)?.hydrateMessages).toBe(false)
+    expect(captured.at(-1)?.hydrateMessages).toBe(true)
+    expect(captured.at(-1)?.allowPromptDuringInitialHydration).toBe(true)
   })
 })
