@@ -19,7 +19,7 @@ import type {
 } from "../../front/chrome/artifact-surface/SurfaceShell"
 import { SkillsPage } from "../../front/chrome/skills/SkillsPage"
 import { PluginsOverlay } from "../../front/chrome/plugins/PluginsOverlay"
-import { AppLeftPane, type AppLeftPaneLayoutMode, type AppLeftPaneProject } from "../../front/layout/plugin-tabs/AppLeftPane"
+import { AppLeftPane, type AppLeftPaneHeaderMode, type AppLeftPaneLayoutMode, type AppLeftPaneProject } from "../../front/layout/plugin-tabs/AppLeftPane"
 import { PluginTabsWorkspaceShell } from "../../front/layout/plugin-tabs/PluginTabsWorkspaceShell"
 import { useRegistry, useSurfaceResolverRegistry } from "../../front/registry"
 import { captureFrontPlugin } from "../../shared/plugins/frontFactory"
@@ -122,8 +122,8 @@ export interface WorkspaceAgentFrontProps<
   workspaceSectionTitle?: string
   /** App-left layout mode. single-project uses the workspace dropdown; multi-project renders workspaces inline. */
   appLeftLayoutMode?: AppLeftPaneLayoutMode
-  /** Show the app-left brand/workspace header. Disable for compact host shells that only want actions + chats. */
-  appLeftHeader?: boolean
+  /** App-left header mode: full brand, workspace picker only, or hidden with collapse-button clearance. */
+  appLeftHeaderMode?: AppLeftPaneHeaderMode
   /** Optional cross-project overview rendered in the app-left workspace/project section. */
   appLeftProjects?: AppLeftPaneProject[]
   appLeftActiveProjectId?: string | null
@@ -538,7 +538,7 @@ export function WorkspaceAgentFront<
   workspaceLabel,
   workspaceSectionTitle = "Workspaces",
   appLeftLayoutMode = "single-project",
-  appLeftHeader = true,
+  appLeftHeaderMode = "full",
   appLeftProjects,
   appLeftActiveProjectId,
   onSwitchAppLeftProject,
@@ -1616,7 +1616,7 @@ export function WorkspaceAgentFront<
           workspaceLabel={workspaceLabel}
           workspaceSectionTitle={workspaceSectionTitle}
           layoutMode={appLeftLayoutMode}
-          showHeader={appLeftHeader}
+          headerMode={appLeftHeaderMode}
           projects={appLeftProjects}
           activeProjectId={appLeftActiveProjectId ?? workspaceId}
           onOpenProjectSession={onOpenAppLeftProjectSession}

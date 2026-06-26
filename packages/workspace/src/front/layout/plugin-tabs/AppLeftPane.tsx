@@ -39,6 +39,7 @@ export interface AppLeftPaneProject {
 }
 
 export type AppLeftPaneLayoutMode = "single-project" | "multi-project"
+export type AppLeftPaneHeaderMode = "full" | "workspace" | "hidden"
 
 export interface AppLeftPaneProps {
   width?: number
@@ -59,7 +60,8 @@ export interface AppLeftPaneProps {
   sessionTitle?: string
   topSlot?: ReactNode
   bottomSlot?: ReactNode
-  showHeader?: boolean
+  /** full: brand + workspace, workspace: workspace picker only, hidden: reserve collapse clearance only. */
+  headerMode?: AppLeftPaneHeaderMode
   sessions: AppLeftPaneSession[]
   activeSessionId?: string | null
   openSessionIds: readonly string[]
@@ -120,7 +122,7 @@ export function AppLeftPane({
   onOpenProjectInNewTab,
   topSlot,
   bottomSlot,
-  showHeader = true,
+  headerMode = "full",
   sessions,
   activeSessionId,
   openSessionIds,
@@ -195,7 +197,8 @@ export function AppLeftPane({
     () => projectItems.filter((project) => !pinnedProjectSet.has(project.id)),
     [projectItems, pinnedProjectSet],
   )
-  const headerVisible = showHeader && layoutMode !== "multi-project"
+  const headerVisible = headerMode !== "hidden" && (layoutMode !== "multi-project" || headerMode === "workspace")
+  const headerShowsBrand = headerMode === "full" && layoutMode !== "multi-project"
   const renderSession = (session: AppLeftPaneSession, pinned: boolean, projectId = activeProjectId ?? undefined) => {
     const isActiveProjectSession = !projectId || projectId === activeProjectId
     const state: SessionRowState = isActiveProjectSession && session.id === activeSessionId
@@ -259,6 +262,7 @@ export function AppLeftPane({
           appTitle={appTitle}
           workspaceLabel={workspaceLabel}
           topSlot={topSlot}
+          showBrand={headerShowsBrand}
         />
       ) : (
         <div className="h-12 shrink-0" aria-hidden="true" />
