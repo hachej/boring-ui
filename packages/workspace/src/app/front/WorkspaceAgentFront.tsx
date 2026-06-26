@@ -19,10 +19,11 @@ import type {
 } from "../../front/chrome/artifact-surface/SurfaceShell"
 import { SkillsPage } from "../../front/chrome/skills/SkillsPage"
 import { PluginsOverlay } from "../../front/chrome/plugins/PluginsOverlay"
-import { AppLeftPane, type AppLeftPaneLayoutMode, type AppLeftPaneProject } from "../../front/layout/plugin-tabs/AppLeftPane"
+import { AppLeftPane, type AppLeftPaneHeaderMode, type AppLeftPaneLayoutMode, type AppLeftPaneProject } from "../../front/layout/plugin-tabs/AppLeftPane"
 import { PluginTabsWorkspaceShell } from "../../front/layout/plugin-tabs/PluginTabsWorkspaceShell"
 import { useRegistry, useSurfaceResolverRegistry } from "../../front/registry"
 import { captureFrontPlugin } from "../../shared/plugins/frontFactory"
+import { isWorkspaceSourcePlacement } from "../../shared/types/panel"
 import { surfaceResolverDescriptor } from "../../shared/types/surface"
 import { UI_COMMAND_EVENT, dispatchUiCommand } from "../../front/bridge"
 import type { CommandPaletteSessionItem } from "../../front/components/CommandPalette"
@@ -121,6 +122,8 @@ export interface WorkspaceAgentFrontProps<
   workspaceSectionTitle?: string
   /** App-left layout mode. single-project uses the workspace dropdown; multi-project renders workspaces inline. */
   appLeftLayoutMode?: AppLeftPaneLayoutMode
+  /** App-left header mode: full brand, workspace picker only, or hidden with collapse-button clearance. */
+  appLeftHeaderMode?: AppLeftPaneHeaderMode
   /** Optional cross-project overview rendered in the app-left workspace/project section. */
   appLeftProjects?: AppLeftPaneProject[]
   appLeftActiveProjectId?: string | null
@@ -535,6 +538,7 @@ export function WorkspaceAgentFront<
   workspaceLabel,
   workspaceSectionTitle = "Workspaces",
   appLeftLayoutMode = "single-project",
+  appLeftHeaderMode = "full",
   appLeftProjects,
   appLeftActiveProjectId,
   onSwitchAppLeftProject,
@@ -1086,7 +1090,13 @@ export function WorkspaceAgentFront<
     () => plugins?.map(captureFrontPlugin) ?? [],
     [plugins],
   )
-  const hasLeftTabs = false
+  const hasLeftTabs = useMemo(
+    () => !isPluginTabsLayout && capturedPlugins.some((plugin) => (
+      plugin.registrations.workspaceSources.length > 0 ||
+      plugin.registrations.panels.some((panel) => isWorkspaceSourcePlacement(panel.placement))
+    )),
+    [capturedPlugins, isPluginTabsLayout],
+  )
   const pluginPanelIds = useMemo(
     () => capturedPlugins.flatMap((plugin) => plugin.registrations.panels.map((panel) => panel.id)),
     [capturedPlugins],
@@ -1530,12 +1540,14 @@ export function WorkspaceAgentFront<
     <SkillsPage
       onClose={() => setLeftOverlay(null)}
       headerInsetStart={appLeftPaneCollapsed}
+      headerInsetEnd={!surfaceOpen}
     />
   ) : leftOverlay === "plugins" && pluginsActionEnabled ? (
     <PluginsOverlay
       onClose={() => setLeftOverlay(null)}
       onReloadExternalPlugins={() => reloadAgentPluginsForSession(effectiveActiveSessionId ?? chatSessionId)}
       headerInsetStart={appLeftPaneCollapsed}
+      headerInsetEnd={!surfaceOpen}
     />
   ) : null
   const mainContent = remoteSessionsTransitioning ? (
@@ -1557,6 +1569,7 @@ export function WorkspaceAgentFront<
       surface={surfaceOpen ? "artifact-surface" : null}
       surfaceParams={surfaceParams as Record<string, unknown>}
       chatOverlay={isPluginTabsLayout ? leftOverlayNode : null}
+      onCloseChatOverlay={() => setLeftOverlay(null)}
       surfaceOverlay={workbenchOverlay}
       sidebar={surfaceOpen && !workbenchBlocked && hasLeftTabs && effectiveWorkbenchLeftOpen ? "workbench-left" : null}
       sidebarParams={surfaceOpen && !workbenchBlocked && hasLeftTabs ? {
@@ -1606,6 +1619,7 @@ export function WorkspaceAgentFront<
           workspaceLabel={workspaceLabel}
           workspaceSectionTitle={workspaceSectionTitle}
           layoutMode={appLeftLayoutMode}
+          headerMode={appLeftHeaderMode}
           projects={appLeftProjects}
           activeProjectId={appLeftActiveProjectId ?? workspaceId}
           onOpenProjectSession={onOpenAppLeftProjectSession}

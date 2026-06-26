@@ -9,7 +9,7 @@ import {
   isPaymentRequiredNotice,
   useCreditBalance,
 } from '@hachej/boring-core/app/front'
-import { UserMenu, UserSettingsPage } from '@hachej/boring-core/front'
+import { UserMenu, UserSettingsPage, WorkspaceSwitcher } from '@hachej/boring-core/front'
 import '@hachej/boring-core/app/front/styles.css'
 import './app.css'
 import { PublicHeroDescription, publicLaunchPlugin } from './PublicLaunchPages'
@@ -91,6 +91,8 @@ createRoot(document.getElementById('root')!).render(
       persistenceEnabled
       appTitle={PRODUCT_NAME}
       workspaceLayout="plugin-tabs"
+      appLeftHeaderMode="workspace"
+      topBarLeft={<WorkspaceSwitcher displayMode="workspace" />}
       appLeftLayoutMode={inlineProjectsEnabled ? 'multi-project' : 'single-project'}
       workspaceSectionTitle="Projects"
       showSkills

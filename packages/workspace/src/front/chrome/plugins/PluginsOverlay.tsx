@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react"
 import { Plug, RefreshCw, X } from "lucide-react"
-import { Button, IconButton } from "@hachej/boring-ui-kit"
+import { IconButton } from "@hachej/boring-ui-kit"
 import { WORKSPACE_AGENT_PLUGINS_RELOADED_EVENT } from "../../agentPlugins/reloadEvent"
 import { cn } from "../../lib/utils"
 import { useWorkspacePluginClient } from "../../plugin/useWorkspacePluginClient"
@@ -14,6 +14,8 @@ export interface PluginsOverlayProps {
   onReloadExternalPlugins?: () => Promise<string | undefined> | string | undefined
   /** Reserve room for shell-level chrome that floats over collapsed app nav. */
   headerInsetStart?: boolean
+  /** Reserve room for shell-level top-right controls floating over the overlay. */
+  headerInsetEnd?: boolean
 }
 
 interface ExternalPluginEntry {
@@ -50,7 +52,7 @@ function upsertPlugin(plugins: ExternalPluginEntry[], plugin: ExternalPluginEntr
  * Lists only runtime/external plugins; statically bundled app plugins (Deck,
  * Questions, etc.) are intentionally hidden here.
  */
-export function PluginsOverlay({ onClose, onReloadExternalPlugins, headerInsetStart = false }: PluginsOverlayProps) {
+export function PluginsOverlay({ onClose, onReloadExternalPlugins, headerInsetStart = false, headerInsetEnd = false }: PluginsOverlayProps) {
   const client = useWorkspacePluginClient()
   const [state, setState] = useState<LoadState>({ status: "loading", plugins: [] })
   const [pendingIds, setPendingIds] = useState<ReadonlySet<string>>(() => new Set())
@@ -159,8 +161,9 @@ export function PluginsOverlay({ onClose, onReloadExternalPlugins, headerInsetSt
   return (
     <div data-boring-workspace-part="plugins-overlay" className="flex h-full min-h-0 flex-col bg-background">
       <header className={cn(
-        "flex h-12 shrink-0 items-center justify-between border-b border-border/60 pr-4",
+        "flex h-12 shrink-0 items-center justify-between border-b border-border/60",
         headerInsetStart ? "pl-12" : "pl-4",
+        headerInsetEnd ? "pr-16" : "pr-4",
       )}>
         <div className="flex min-w-0 items-center gap-2">
           <span className="grid size-7 place-items-center rounded-lg bg-foreground/[0.06] text-muted-foreground">
@@ -171,18 +174,19 @@ export function PluginsOverlay({ onClose, onReloadExternalPlugins, headerInsetSt
             <p className="truncate text-xs text-muted-foreground">External plugins loaded for this workspace</p>
           </div>
         </div>
-        <div className="flex shrink-0 items-center gap-1">
-          <Button
+        <div className="flex shrink-0 items-center gap-0.5">
+          <IconButton
             type="button"
             variant="ghost"
-            size="sm"
+            size="icon-xs"
             onClick={() => void reload()}
             disabled={reloading || state.status === "loading"}
-            className="gap-1.5 text-xs"
+            aria-label="Reload plugins"
+            title="Reload plugins"
+            className="text-muted-foreground hover:text-foreground"
           >
-            <RefreshCw className={cn("h-3.5 w-3.5", (reloading || state.status === "loading") && "animate-spin")} strokeWidth={1.75} />
-            Reload
-          </Button>
+            <RefreshCw className={cn("size-3", (reloading || state.status === "loading") && "animate-spin")} strokeWidth={1.75} />
+          </IconButton>
           <IconButton
             type="button"
             variant="ghost"

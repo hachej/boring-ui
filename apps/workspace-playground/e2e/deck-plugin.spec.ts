@@ -27,6 +27,7 @@ async function openFileFromPalette(
 ) {
   await test.step(`open ${query} from the command palette`, async () => {
     await openPalette(page)
+    await page.getByRole("button", { name: "Sources" }).click()
     await page.keyboard.type(query)
     await page.waitForTimeout(300)
     await page.getByRole("option", { name: optionName }).first().click()
@@ -56,7 +57,7 @@ test.describe("workspace-playground deck plugin", () => {
         localStorage.setItem(`${prefix}:surface`, "0")
       }, STORAGE_KEY)
       await page.reload()
-      await expect(page.getByRole("banner", { name: /app top bar/i })).toBeVisible({ timeout: 10_000 })
+      await expect(page.locator('aside[aria-label="App navigation"]')).toBeVisible({ timeout: 10_000 })
     })
   })
 

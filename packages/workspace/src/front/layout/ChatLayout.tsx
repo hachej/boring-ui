@@ -93,6 +93,10 @@ export function ChatLayout(props: ChatLayoutProps) {
     props.storageKey ? `${props.storageKey}:surfaceWidth` : undefined,
     680,
   )
+  const [sidebarWidth, setSidebarWidth] = useStoredNumberState(
+    props.storageKey ? `${props.storageKey}:sidebarWidth` : undefined,
+    280,
+  )
   const [chatCollapsed, setChatCollapsed] = useStoredBooleanState(
     props.storageKey ? `${props.storageKey}:chatCollapsed` : undefined,
     false,
@@ -110,6 +114,7 @@ export function ChatLayout(props: ChatLayoutProps) {
   )
   const commandRegistry = useCommandRegistry()
   const effectiveNavWidth = clamp(navWidth, 200, 360)
+  const effectiveSidebarWidth = clamp(sidebarWidth, 200, Math.max(240, Math.floor(viewport * 0.5)))
   const surfaceMax = Math.max(480, Math.floor(viewport * 0.72))
   const effectiveSurfaceWidth = clamp(surfaceWidth, 480, surfaceMax)
   const uiSurface = getFunction<() => SurfaceShellApi | null>(props.centerParams, "getSurface")
@@ -157,7 +162,13 @@ export function ChatLayout(props: ChatLayoutProps) {
     scheduleComposerFocus()
   }, [chatCollapsed, closeNav, closeSurface, navOpen, setChatCollapsed, surfaceOpen])
 
+  const suppressOverlayAutoExpandRef = useRef(false)
   const toggleChatCollapsed = useCallback(() => {
+    const collapsing = !chatCollapsed
+    // If Plugins/Skills is already open, full-workbench mode should hide the
+    // chat stage without losing the overlay state. Suppress the one auto-expand
+    // effect below; when the user restores chat, the overlay is still there.
+    if (collapsing && props.chatOverlay) suppressOverlayAutoExpandRef.current = true
     setChatCollapsed((current) => {
       const next = !current
       // Collapsing the chat opens the workbench so the freed space is filled
@@ -166,7 +177,7 @@ export function ChatLayout(props: ChatLayoutProps) {
       return next
     })
     setChatRailPulse(false)
-  }, [setChatCollapsed, surfaceOpen, props.onOpenSurface])
+  }, [chatCollapsed, props.chatOverlay, props.onOpenSurface, setChatCollapsed, surfaceOpen])
 
   useKeyboardShortcuts({
     shortcuts: useMemo(() => {
@@ -332,7 +343,12 @@ export function ChatLayout(props: ChatLayoutProps) {
   // content opens beside them. If chat was collapsed by a previous compact
   // workbench takeover, opening an overlay restores the chat area first.
   useEffect(() => {
-    if (props.chatOverlay && chatCollapsed) setChatCollapsed(false)
+    if (!props.chatOverlay || !chatCollapsed) return
+    if (suppressOverlayAutoExpandRef.current) {
+      suppressOverlayAutoExpandRef.current = false
+      return
+    }
+    setChatCollapsed(false)
   }, [chatCollapsed, props.chatOverlay, setChatCollapsed])
 
   // Never leave a blank middle: if the workbench is closed while the chat is
@@ -388,6 +404,41 @@ export function ChatLayout(props: ChatLayoutProps) {
         ) : null}
       </aside>
 
+      <aside
+        data-boring-workspace-part="workbench-left-shell"
+        data-boring-state={sidebarOpen ? "expanded" : "collapsed"}
+        aria-label={sidebarOpen ? "Workbench left panel" : undefined}
+        aria-hidden={!sidebarOpen}
+        className={cn(
+          "relative h-full min-h-0 shrink-0 overflow-hidden bg-background",
+          "transition-[width,min-width,max-width] duration-[280ms] ease-[cubic-bezier(0.22,1,0.36,1)]",
+          sidebarOpen && "border-r border-[color:oklch(from_var(--border)_l_c_h/0.6)]",
+        )}
+        style={{
+          width: sidebarOpen ? effectiveSidebarWidth : 0,
+          minWidth: sidebarOpen ? effectiveSidebarWidth : 0,
+          maxWidth: sidebarOpen ? effectiveSidebarWidth : 0,
+          willChange: "width",
+        }}
+      >
+        <div
+          className={cn(
+            "h-full min-h-0 overflow-hidden",
+            "transition-opacity duration-[200ms] ease-[cubic-bezier(0.22,1,0.36,1)]",
+            sidebarOpen ? "opacity-100" : "opacity-0",
+          )}
+        >
+          {sidebarOpen ? <PanelSlot id={props.sidebar ?? "workbench-left"} params={props.sidebarParams} /> : null}
+        </div>
+        {sidebarOpen ? (
+          <ResizeHandle
+            side="drawer-right"
+            ariaLabel="Resize workbench left panel"
+            onResize={(delta) => setSidebarWidth((w) => clamp(w + delta, 200, Math.max(240, Math.floor(viewport * 0.5))))}
+          />
+        ) : null}
+      </aside>
+
       <div className="relative flex h-full min-h-0 min-w-0 flex-1 overflow-hidden bg-background">
         <main
           data-boring-workspace-part="chat-stage"
@@ -431,9 +482,10 @@ export function ChatLayout(props: ChatLayoutProps) {
               <PanelSlot id={centerId} params={props.centerParams} />
             )}
           </div>
-          {!chatCollapsed && props.chatOverlay ? (
+          {props.chatOverlay ? (
             <div
               data-boring-workspace-part="chat-left-overlay"
+              aria-hidden={chatCollapsed}
               className="absolute inset-0 z-40 flex bg-background"
             >
               <div className="flex h-full w-full flex-col border-r border-border bg-background">
@@ -493,16 +545,18 @@ export function ChatLayout(props: ChatLayoutProps) {
 
       </div>
 
-      <TopRightWorkspaceControls
-        surfaceOpen={surfaceOpen}
-        canToggleSurface={canControlSurface}
-        onToggleSurface={toggleSurface}
-        chatCollapsed={chatCollapsed}
-        canToggleChat={centerId === "chat"}
-        onToggleChat={toggleChatCollapsed}
-        chatPulse={chatRailPulse || blockers.length > 0}
-        surfaceConfigured={surfaceConfigured}
-      />
+      {!props.chatOverlay ? (
+        <TopRightWorkspaceControls
+          surfaceOpen={surfaceOpen}
+          canToggleSurface={canControlSurface}
+          onToggleSurface={toggleSurface}
+          chatCollapsed={chatCollapsed}
+          canToggleChat={centerId === "chat" && surfaceOpen && !chatCollapsed}
+          onToggleChat={toggleChatCollapsed}
+          chatPulse={chatRailPulse || blockers.length > 0}
+          surfaceConfigured={surfaceConfigured}
+        />
+      ) : null}
 
       {!navOpen && props.onOpenNav ? (
         <FloatingEdgeButton
@@ -526,20 +580,6 @@ export function ChatLayout(props: ChatLayoutProps) {
           // Sits directly above the Sessions toggle; when the session drawer
           // is open the drawer's own header "+" takes over and this hides.
           stackIndex={props.onOpenNav ? 1 : 0}
-        />
-      ) : null}
-      {chatCollapsed ? (
-        <FloatingEdgeButton
-          side="left"
-          icon="chat"
-          onClick={toggleChatCollapsed}
-          label="Expand chat"
-          hint="⌘\\"
-          // Anchored to the shell's left edge (not the content region) so it
-          // stays pinned to the left even when the session drawer is open and
-          // pushes the content rightward.
-          stackIndex={1}
-          pulse={chatRailPulse || activeBlockers.length > 0}
         />
       ) : null}
     </div>

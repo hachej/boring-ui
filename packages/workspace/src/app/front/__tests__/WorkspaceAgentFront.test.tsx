@@ -416,6 +416,49 @@ describe("WorkspaceAgentFront", () => {
     expect(within(appNav).queryByRole("button", { name: "Plugins" })).not.toBeInTheDocument()
   })
 
+  it("can render compact app navigation with only actions and chats", () => {
+    render(
+      <WorkspaceAgentFront
+        workspaceId="compact-project"
+        workspaceLayout="plugin-tabs"
+        appTitle="Seneca AI"
+        workspaceLabel="Default workspace"
+        appLeftHeaderMode="hidden"
+        chatPanel={SessionIdChatPanel}
+        sessions={[{ id: "s1", title: "Focused session" }]}
+        activeSessionId="s1"
+      />,
+    )
+
+    const appNav = screen.getByLabelText("App navigation")
+    expect(within(appNav).queryByText("Seneca AI")).not.toBeInTheDocument()
+    expect(within(appNav).queryByText("Default workspace")).not.toBeInTheDocument()
+    expect(within(appNav).getByRole("button", { name: "New chat" })).toBeInTheDocument()
+    expect(within(appNav).getByText("Chats")).toBeInTheDocument()
+    expect(within(appNav).getByText("Focused session")).toBeInTheDocument()
+  })
+
+  it("can render compact app navigation with a workspace picker and no brand", () => {
+    render(
+      <WorkspaceAgentFront
+        workspaceId="workspace-picker-project"
+        workspaceLayout="plugin-tabs"
+        appTitle="Seneca AI"
+        workspaceLabel="Default workspace"
+        topBarLeft={<button type="button">Default workspace</button>}
+        appLeftHeaderMode="workspace"
+        chatPanel={SessionIdChatPanel}
+        sessions={[{ id: "s1", title: "Focused session" }]}
+        activeSessionId="s1"
+      />,
+    )
+
+    const appNav = screen.getByLabelText("App navigation")
+    expect(within(appNav).queryByText("Seneca AI")).not.toBeInTheDocument()
+    expect(within(appNav).getByRole("button", { name: "Default workspace" })).toBeInTheDocument()
+    expect(within(appNav).getByText("Chats")).toBeInTheDocument()
+  })
+
   it("renders multi-project app navigation with pinned sessions above the inline projects tree", () => {
     const sessions = [
       { id: "s1", title: "Active project session", updatedAt: Date.now() - 1_000 },
@@ -428,6 +471,7 @@ describe("WorkspaceAgentFront", () => {
       <WorkspaceAgentFront
         workspaceId="project-a"
         workspaceLayout="plugin-tabs"
+        appTitle="Seneca AI"
         appLeftLayoutMode="multi-project"
         workspaceSectionTitle="Projects"
         chatPanel={SessionIdChatPanel}
@@ -442,6 +486,8 @@ describe("WorkspaceAgentFront", () => {
     )
 
     const appNav = screen.getByLabelText("App navigation")
+    expect(within(appNav).queryByText("Seneca AI")).not.toBeInTheDocument()
+    expect(appNav.querySelector('[data-boring-workspace-part="app-left-pane-brand"]')).not.toBeInTheDocument()
     expect(within(appNav).queryByText("Default workspace")).not.toBeInTheDocument()
     expect(within(appNav).getByText("Pinned")).toBeInTheDocument()
     expect(within(appNav).getByText("Projects")).toBeInTheDocument()
@@ -470,6 +516,33 @@ describe("WorkspaceAgentFront", () => {
     fireEvent.click(collapseAlpha)
     expect(within(appNav).getByRole("button", { name: "Expand Project Alpha" })).toHaveAttribute("aria-expanded", "false")
     expect(within(appNav).queryByText("Active project session")).not.toBeInTheDocument()
+  })
+
+  it("keeps classic workspace sources available outside plugin-tabs mode", async () => {
+    function SourcePanel() {
+      return <div>Classic source body</div>
+    }
+    const plugin = definePlugin({
+      id: "classic-source-plugin",
+      workspaceSources: [{ id: "classic-source", label: "Classic source", component: SourcePanel }],
+    })
+
+    render(
+      <WorkspaceAgentFront
+        workspaceId="classic-workspace-source"
+        chatPanel={SessionIdChatPanel}
+        sessions={[{ id: "s1", title: "First session" }]}
+        activeSessionId="s1"
+        plugins={[plugin]}
+        defaultSurfaceOpen
+        defaultWorkbenchLeftOpen
+        defaultWorkbenchLeftTab="classic-source"
+        provisionWorkspace={false}
+        persistenceEnabled={false}
+      />,
+    )
+
+    await waitFor(() => expect(screen.getByText("Classic source body")).toBeInTheDocument())
   })
 
   it("opens the Plugins overlay from the app nav and lists external plugins only", async () => {

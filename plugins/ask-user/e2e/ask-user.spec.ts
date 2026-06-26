@@ -45,7 +45,8 @@ test.describe("ask_user Questions pane", () => {
       const body = route.request().postDataJSON()
       commands.push(body)
       if (body.op === "ask-user.v1.pending") {
-        await route.fulfill({ json: { ok: true, op: body.op, requestId: "req-e2e", output: { pending: question } } })
+        const sessionId = body.input?.sessionId ?? question.sessionId
+        await route.fulfill({ json: { ok: true, op: body.op, requestId: "req-e2e", output: { pending: { ...question, sessionId } } } })
         return
       }
       await route.fulfill({ json: { ok: true, op: body.op, requestId: "req-e2e", output: { ok: true, status: "answered" } } })
@@ -54,10 +55,11 @@ test.describe("ask_user Questions pane", () => {
     const commandStreamReady = page.waitForRequest((request) => request.url().includes("/api/v1/ui/commands/next"), { timeout: 10_000 })
     await page.goto("/", { waitUntil: "domcontentloaded" })
     await expect(page.getByRole("textbox", { name: "Agent prompt" })).toBeVisible({ timeout: 10_000 })
-    const workbenchButton = page.getByRole("button", { name: /^workbench$/i })
+    const workbenchButton = page.getByRole("button", { name: /^open workbench$/i })
     if (await workbenchButton.isVisible().catch(() => false)) await workbenchButton.click()
     await commandStreamReady
-    await page.request.post("/api/v1/ui/commands", { data: { kind: "openSurface", params: { kind: "questions", target: question.questionId, meta: { sessionId: question.sessionId } } } })
+    const activeSessionId = await page.locator('[data-pi-chat-session-id]').first().getAttribute('data-pi-chat-session-id')
+    await page.request.post("/api/v1/ui/commands", { data: { kind: "openSurface", params: { kind: "questions", target: question.questionId, meta: { sessionId: activeSessionId ?? question.sessionId } } } })
 
     await expect(page.getByText("Choose A or B")).toBeVisible({ timeout: 8_000 })
     await page.getByRole("radio", { name: "A" }).click()

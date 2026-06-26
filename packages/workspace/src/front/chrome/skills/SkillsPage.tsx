@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react"
 import { FileText, RefreshCw, Sparkles, X } from "lucide-react"
-import { Button, IconButton } from "@hachej/boring-ui-kit"
+import { IconButton } from "@hachej/boring-ui-kit"
 import { cn } from "../../lib/utils"
 import { postUiCommand } from "../../bridge"
 import { useWorkspacePluginClient } from "../../plugin/useWorkspacePluginClient"
@@ -32,9 +32,11 @@ export type SkillsPageProps = Partial<PaneProps> & {
   onClose?: () => void
   /** Reserve room for shell-level chrome that floats over collapsed app nav. */
   headerInsetStart?: boolean
+  /** Reserve room for shell-level top-right controls floating over the overlay. */
+  headerInsetEnd?: boolean
 }
 
-export function SkillsPage({ onClose, headerInsetStart = false }: SkillsPageProps) {
+export function SkillsPage({ onClose, headerInsetStart = false, headerInsetEnd = false }: SkillsPageProps) {
   const client = useWorkspacePluginClient()
   const [state, setState] = useState<LoadState>({ status: "loading", skills: [] })
 
@@ -74,8 +76,9 @@ export function SkillsPage({ onClose, headerInsetStart = false }: SkillsPageProp
   return (
     <div data-boring-workspace-part="skills-page" className="flex h-full min-h-0 flex-col bg-background">
       <header className={cn(
-        "flex h-12 shrink-0 items-center justify-between border-b border-border/60 pr-4",
+        "flex h-12 shrink-0 items-center justify-between border-b border-border/60",
         headerInsetStart ? "pl-12" : "pl-4",
+        headerInsetEnd ? "pr-16" : "pr-4",
       )}>
         <div className="flex min-w-0 items-center gap-2">
           <span className="grid size-7 place-items-center rounded-lg bg-[color:oklch(from_var(--accent)_l_c_h/0.12)] text-[color:var(--accent)]">
@@ -86,18 +89,19 @@ export function SkillsPage({ onClose, headerInsetStart = false }: SkillsPageProp
             <p className="truncate text-xs text-muted-foreground">Workspace skills available to slash commands</p>
           </div>
         </div>
-        <div className="flex shrink-0 items-center gap-1">
-          <Button
+        <div className="flex shrink-0 items-center gap-0.5">
+          <IconButton
             type="button"
             variant="ghost"
-            size="sm"
+            size="icon-xs"
             onClick={() => void loadSkills(true)}
             disabled={state.status === "loading"}
-            className="gap-1.5 text-xs"
+            aria-label="Refresh skills"
+            title="Refresh skills"
+            className="text-muted-foreground hover:text-foreground"
           >
-            <RefreshCw className={cn("h-3.5 w-3.5", state.status === "loading" && "animate-spin")} strokeWidth={1.75} />
-            Refresh
-          </Button>
+            <RefreshCw className={cn("size-3", state.status === "loading" && "animate-spin")} strokeWidth={1.75} />
+          </IconButton>
           {onClose ? (
             <IconButton
               type="button"

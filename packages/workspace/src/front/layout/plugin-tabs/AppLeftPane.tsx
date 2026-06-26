@@ -39,6 +39,7 @@ export interface AppLeftPaneProject {
 }
 
 export type AppLeftPaneLayoutMode = "single-project" | "multi-project"
+export type AppLeftPaneHeaderMode = "full" | "workspace" | "hidden"
 
 export interface AppLeftPaneProps {
   width?: number
@@ -59,6 +60,8 @@ export interface AppLeftPaneProps {
   sessionTitle?: string
   topSlot?: ReactNode
   bottomSlot?: ReactNode
+  /** full: brand + workspace, workspace: workspace picker only, hidden: reserve collapse clearance only. */
+  headerMode?: AppLeftPaneHeaderMode
   sessions: AppLeftPaneSession[]
   activeSessionId?: string | null
   openSessionIds: readonly string[]
@@ -119,6 +122,7 @@ export function AppLeftPane({
   onOpenProjectInNewTab,
   topSlot,
   bottomSlot,
+  headerMode = "full",
   sessions,
   activeSessionId,
   openSessionIds,
@@ -193,6 +197,8 @@ export function AppLeftPane({
     () => projectItems.filter((project) => !pinnedProjectSet.has(project.id)),
     [projectItems, pinnedProjectSet],
   )
+  const headerVisible = headerMode !== "hidden" && (layoutMode !== "multi-project" || headerMode === "workspace")
+  const headerShowsBrand = headerMode === "full" && layoutMode !== "multi-project"
   const renderSession = (session: AppLeftPaneSession, pinned: boolean, projectId = activeProjectId ?? undefined) => {
     const isActiveProjectSession = !projectId || projectId === activeProjectId
     const state: SessionRowState = isActiveProjectSession && session.id === activeSessionId
@@ -251,7 +257,16 @@ export function AppLeftPane({
       style={{ width, minWidth: width, maxWidth: width }}
       aria-label="App navigation"
     >
-      <AppLeftPaneHeader appTitle={appTitle} workspaceLabel={workspaceLabel} topSlot={topSlot} />
+      {headerVisible ? (
+        <AppLeftPaneHeader
+          appTitle={appTitle}
+          workspaceLabel={workspaceLabel}
+          topSlot={topSlot}
+          showBrand={headerShowsBrand}
+        />
+      ) : (
+        <div className="h-12 shrink-0" aria-hidden="true" />
+      )}
 
       <nav className="shrink-0 space-y-0.5 px-2 pb-1 pt-1" aria-label="Primary workspace actions">
         <PrimaryAction icon={<Plus className="h-4 w-4" strokeWidth={2} />} label="New chat" onClick={onCreateSession} emphasis />

@@ -277,16 +277,13 @@ export function WorkbenchLeftPane({
                 "relative flex h-8 w-8 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-background/70 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40",
               )}
               // Inline (not arbitrary Tailwind classes) so it applies even when
-              // the host's prebuilt CSS doesn't include these classes. Open plugin
-              // (pane visible) = accent icon on an elevated chip; selected but
-              // collapsed = quiet neutral, no accent.
-              style={
-                showAccent
-                  ? { color: "var(--accent)", backgroundColor: "color-mix(in oklch, var(--foreground) 10%, transparent)" }
-                  : active
-                    ? { backgroundColor: "color-mix(in oklch, var(--foreground) 6%, transparent)" }
-                    : undefined
-              }
+              // the host's prebuilt CSS doesn't include these classes. Only an
+              // actually open/focused plugin gets the accent chip; a remembered
+              // selection in collapsed rail mode stays visually quiet so it does
+              // not read as opened.
+              style={showAccent
+                ? { color: "var(--accent)", backgroundColor: "color-mix(in oklch, var(--foreground) 10%, transparent)" }
+                : undefined}
             >
               {entry.icon}
             </button>
