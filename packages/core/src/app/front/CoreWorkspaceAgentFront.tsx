@@ -1,21 +1,28 @@
 import { useEffect, useMemo, useState, type ReactNode } from 'react'
 import { Navigate, Route, useLocation, useParams } from 'react-router-dom'
+import { WorkspaceProvider } from '@hachej/boring-workspace'
+import { ErrorState } from '@hachej/boring-ui-kit'
 import {
   CoreFront,
   UserMenu,
   WorkspaceSwitcher,
+  useConfig,
   useCurrentWorkspace,
   useSession,
   useWorkspaceRouteStatus,
   type CoreFrontAuthPagesOverride,
 } from '../../front/index.js'
 import {
+  parseFullPagePanelLocation,
   WorkspaceAgentFront,
+  WorkspaceBootGate,
+  WorkspaceFullPagePanel,
   type WorkspaceAgentFrontProps,
   type WorkspaceAgentSession,
 } from '@hachej/boring-workspace/app/front'
 import { ChatFirstAuthenticatedShell } from './chatFirst/ChatFirstAuthenticatedShell.js'
 import { ChatFirstPublicShell, type ChatFirstPublicShellOptions } from './chatFirst/ChatFirstPublicShell.js'
+import { installVitePreloadRecovery } from './vitePreloadRecovery.js'
 import {
   clearPendingChatEntry,
   DEFAULT_CHAT_FIRST_PENDING_WORKSPACE_ID,
@@ -26,18 +33,25 @@ import {
   workspaceIdFromPath,
 } from './chatFirst/pendingChatEntry.js'
 
+installVitePreloadRecovery()
+
 const DEFAULT_WORKSPACE_ROUTE = '/workspace/:id'
 const DEFAULT_WORKSPACE_ID_PARAM = 'id'
+const DEFAULT_FULL_PAGE_BASE_PATH = '/full-page'
 
 type ChatEntryMode = 'auth-first' | 'chat-first'
+type RoutedWorkspaceAgentProps<TSession extends WorkspaceAgentSession = WorkspaceAgentSession> = Omit<WorkspaceAgentFrontProps<TSession>, 'workspaceId' | 'frontPluginHotReload' | 'hotReloadEnabled'>
 
 export interface CoreWorkspaceAgentFrontProps<
   TSession extends WorkspaceAgentSession = WorkspaceAgentSession,
-> extends Omit<WorkspaceAgentFrontProps<TSession>, 'workspaceId' | 'frontPluginHotReload' | 'hotReloadEnabled'> {
+> extends RoutedWorkspaceAgentProps<TSession> {
   /** Core consumes plugins statically for now; app-level hot reload is explicitly unsupported. */
   hotReload?: false
   chatEntryMode?: ChatEntryMode
   chatFirstPublicShell?: ChatFirstPublicShellOptions
+  /** Extra workspace props used only by the unauthenticated chat-first public shell. */
+  chatFirstPublicWorkspaceProps?: Partial<RoutedWorkspaceAgentProps<TSession>>
+  publicPaths?: string[]
   authPages?: CoreFrontAuthPagesOverride
   cspNonce?: string
   children?: ReactNode
@@ -48,7 +62,9 @@ export interface CoreWorkspaceAgentFrontProps<
   bootPreloadPaths?: string[]
 }
 
-function DefaultTopBarRight() {
+/** Default top-bar right content. Exported so apps can compose extra widgets
+ * (e.g. a credit balance badge) alongside the user menu. */
+export function DefaultTopBarRight() {
   // Theme switching lives in the UserMenu for the full app, so no separate
   // top-bar toggle here (that's only for standalone hosts like the playground).
   return <UserMenu />
@@ -91,6 +107,29 @@ function WorkspaceLoadingPage({
   )
 }
 
+function mergePublicWorkspaceProps<TSession extends WorkspaceAgentSession = WorkspaceAgentSession>(
+  workspaceProps: RoutedWorkspaceAgentProps<TSession>,
+  publicWorkspaceProps?: Partial<RoutedWorkspaceAgentProps<TSession>>,
+): RoutedWorkspaceAgentProps<TSession> {
+  if (!publicWorkspaceProps) return workspaceProps
+  return {
+    ...workspaceProps,
+    ...publicWorkspaceProps,
+    requestHeaders: {
+      ...workspaceProps.requestHeaders,
+      ...publicWorkspaceProps.requestHeaders,
+    },
+    authHeaders: {
+      ...workspaceProps.authHeaders,
+      ...publicWorkspaceProps.authHeaders,
+    },
+    chatParams: {
+      ...workspaceProps.chatParams,
+      ...publicWorkspaceProps.chatParams,
+    },
+  }
+}
+
 function usePendingChatDraft() {
   const session = useSession()
   const userId = session.data?.user?.id ?? null
@@ -115,16 +154,38 @@ function HomeRedirect<TSession extends WorkspaceAgentSession = WorkspaceAgentSes
   workspaceHref,
   chatEntryMode,
   appTitle,
+  topBarLeft,
+  topBarRight,
   workspaceProps,
   chatFirstPublicShell,
+  chatFirstPublicWorkspaceProps,
 }: {
-  loadingFallback: ReactNode
+  loadingFallback?: ReactNode
   workspaceHref: (workspaceId: string) => string
   chatEntryMode: ChatEntryMode
-  appTitle: string
-  workspaceProps: Omit<WorkspaceAgentFrontProps<TSession>, 'workspaceId' | 'frontPluginHotReload' | 'hotReloadEnabled'>
+  appTitle?: string
+  topBarLeft?: ReactNode
+  topBarRight?: ReactNode
+  workspaceProps: RoutedWorkspaceAgentProps<TSession>
   chatFirstPublicShell?: ChatFirstPublicShellOptions
+  chatFirstPublicWorkspaceProps?: Partial<RoutedWorkspaceAgentProps<TSession>>
 }) {
+  const config = useConfig()
+  const resolvedAppTitle = appTitle ?? config.appName
+  const resolvedTopBarLeft = topBarLeft === undefined ? <WorkspaceSwitcher appTitle={resolvedAppTitle} /> : topBarLeft
+  const resolvedLoadingFallback = loadingFallback ?? (
+    <WorkspaceLoadingPage
+      appTitle={resolvedAppTitle}
+      topBarLeft={resolvedTopBarLeft}
+      topBarRight={topBarRight}
+    />
+  )
+  const resolvedWorkspaceProps: RoutedWorkspaceAgentProps<TSession> = {
+    ...workspaceProps,
+    appTitle: resolvedAppTitle,
+    topBarLeft: resolvedTopBarLeft,
+    topBarRight,
+  }
   const location = useLocation()
   const session = useSession()
   const workspace = useCurrentWorkspace()
@@ -135,18 +196,28 @@ function HomeRedirect<TSession extends WorkspaceAgentSession = WorkspaceAgentSes
     location.search,
     location.hash,
   )
-  if (!session.data?.user && chatEntryMode === 'chat-first') return <ChatFirstPublicShell appTitle={appTitle} publicShell={chatFirstPublicShell} workspaceProps={workspaceProps} />
-  if (!workspace && chatEntryMode === 'chat-first' && session.data?.user && restorePendingDraft) {
+  if (session.isPending) return <>{resolvedLoadingFallback}</>
+
+  if (!session.data?.user && chatEntryMode === 'chat-first') {
     return (
-      <ChatFirstAuthenticatedShell
-        appTitle={appTitle}
-        workspaceId={pendingChatEntry?.intendedWorkspaceId ?? DEFAULT_CHAT_FIRST_PENDING_WORKSPACE_ID}
-        initialDraft={pendingChatEntry?.draft}
-        workspaceProps={workspaceProps}
+      <ChatFirstPublicShell
+        appTitle={resolvedAppTitle}
+        publicShell={chatFirstPublicShell}
+        workspaceProps={mergePublicWorkspaceProps(resolvedWorkspaceProps, chatFirstPublicWorkspaceProps)}
       />
     )
   }
-  if (!workspace) return <>{loadingFallback}</>
+  if (!workspace && chatEntryMode === 'chat-first' && session.data?.user && restorePendingDraft) {
+    return (
+      <ChatFirstAuthenticatedShell
+        appTitle={resolvedAppTitle}
+        workspaceId={pendingChatEntry?.intendedWorkspaceId ?? DEFAULT_CHAT_FIRST_PENDING_WORKSPACE_ID}
+        initialDraft={pendingChatEntry?.draft}
+        workspaceProps={resolvedWorkspaceProps}
+      />
+    )
+  }
+  if (!workspace) return <>{resolvedLoadingFallback}</>
   return <Navigate to={workspaceHref(workspace.id)} replace />
 }
 
@@ -175,18 +246,40 @@ function WorkspaceRoute<
   workspaceProps,
   chatEntryMode,
   appTitle,
+  topBarLeft,
+  topBarRight,
   workspaceRoute,
   chatFirstPublicShell,
+  chatFirstPublicWorkspaceProps,
 }: {
   workspaceIdParam: string
-  loadingFallback: ReactNode
+  loadingFallback?: ReactNode
   bootPreloadPaths?: string[]
-  workspaceProps: Omit<WorkspaceAgentFrontProps<TSession>, 'workspaceId' | 'frontPluginHotReload' | 'hotReloadEnabled'>
+  workspaceProps: RoutedWorkspaceAgentProps<TSession>
   chatEntryMode: ChatEntryMode
-  appTitle: string
+  appTitle?: string
+  topBarLeft?: ReactNode
+  topBarRight?: ReactNode
   workspaceRoute: string
   chatFirstPublicShell?: ChatFirstPublicShellOptions
+  chatFirstPublicWorkspaceProps?: Partial<RoutedWorkspaceAgentProps<TSession>>
 }) {
+  const config = useConfig()
+  const resolvedAppTitle = appTitle ?? config.appName
+  const resolvedTopBarLeft = topBarLeft === undefined ? <WorkspaceSwitcher appTitle={resolvedAppTitle} /> : topBarLeft
+  const resolvedLoadingFallback = loadingFallback ?? (
+    <WorkspaceLoadingPage
+      appTitle={resolvedAppTitle}
+      topBarLeft={resolvedTopBarLeft}
+      topBarRight={topBarRight}
+    />
+  )
+  const resolvedWorkspaceProps: RoutedWorkspaceAgentProps<TSession> = {
+    ...workspaceProps,
+    appTitle: resolvedAppTitle,
+    topBarLeft: resolvedTopBarLeft,
+    topBarRight,
+  }
   const params = useParams()
   const location = useLocation()
   const session = useSession()
@@ -207,18 +300,33 @@ function WorkspaceRoute<
     )
   )
   const requestHeaders = useMemo(
-    () => ({ ...workspaceProps.requestHeaders, 'x-boring-workspace-id': workspaceId }),
-    [workspaceId, workspaceProps.requestHeaders],
+    () => ({ ...resolvedWorkspaceProps.requestHeaders, 'x-boring-workspace-id': workspaceId }),
+    [workspaceId, resolvedWorkspaceProps.requestHeaders],
   )
   const authHeaders = useMemo(
-    () => ({ ...workspaceProps.authHeaders, 'x-boring-workspace-id': workspaceId }),
-    [workspaceId, workspaceProps.authHeaders],
+    () => ({ ...resolvedWorkspaceProps.authHeaders, 'x-boring-workspace-id': workspaceId }),
+    [workspaceId, resolvedWorkspaceProps.authHeaders],
+  )
+  const scopedFullPageBasePath = useMemo(
+    () => resolvedWorkspaceProps.fullPageBasePath
+      ? withWorkspaceIdSearch(resolvedWorkspaceProps.fullPageBasePath, workspaceId)
+      : undefined,
+    [resolvedWorkspaceProps.fullPageBasePath, workspaceId],
   )
 
-  if (!workspaceId) return <>{loadingFallback}</>
+  if (!workspaceId) return <>{resolvedLoadingFallback}</>
+
+  if (session.isPending) return <>{resolvedLoadingFallback}</>
 
   if (!session.data?.user && chatEntryMode === 'chat-first') {
-    return <ChatFirstPublicShell appTitle={appTitle} intendedWorkspaceId={workspaceId} publicShell={chatFirstPublicShell} workspaceProps={workspaceProps} />
+    return (
+      <ChatFirstPublicShell
+        appTitle={resolvedAppTitle}
+        intendedWorkspaceId={workspaceId}
+        publicShell={chatFirstPublicShell}
+        workspaceProps={mergePublicWorkspaceProps(resolvedWorkspaceProps, chatFirstPublicWorkspaceProps)}
+      />
+    )
   }
 
   if (routeStatus.status === 'not-found' || routeStatus.status === 'forbidden' || routeStatus.status === 'switch-failed') {
@@ -228,23 +336,23 @@ function WorkspaceRoute<
   if (chatEntryMode === 'chat-first' && restorePendingDraft && (routeStatus.status !== 'matched' || currentWorkspace?.id !== workspaceId)) {
     return (
       <ChatFirstAuthenticatedShell
-        appTitle={appTitle}
+        appTitle={resolvedAppTitle}
         workspaceId={workspaceId}
         initialDraft={pendingChatEntry?.draft}
-        workspaceProps={workspaceProps}
+        workspaceProps={resolvedWorkspaceProps}
       />
     )
   }
 
-  if (routeStatus.status !== 'matched' || currentWorkspace?.id !== workspaceId) return <>{loadingFallback}</>
+  if (routeStatus.status !== 'matched' || currentWorkspace?.id !== workspaceId) return <>{resolvedLoadingFallback}</>
 
   const shouldRestorePendingDraft = restorePendingDraft && Boolean(pendingChatEntry?.draft)
   const chatParams = {
-    ...workspaceProps.chatParams,
+    ...resolvedWorkspaceProps.chatParams,
     ...(shouldRestorePendingDraft ? { initialDraft: pendingChatEntry?.draft } : {}),
     ...(shouldRestorePendingDraft ? { autoSubmitInitialDraft: true } : {}),
     onBeforeSubmit: async (draft: string, ctx: unknown) => {
-      const existing = workspaceProps.chatParams?.onBeforeSubmit as ((draft: string, ctx: unknown) => false | void | Promise<false | void>) | undefined
+      const existing = resolvedWorkspaceProps.chatParams?.onBeforeSubmit as ((draft: string, ctx: unknown) => false | void | Promise<false | void>) | undefined
       const result = await existing?.(draft, ctx)
       if (result !== false) clearPendingChatEntry()
       return result
@@ -254,16 +362,143 @@ function WorkspaceRoute<
   return (
     <WorkspaceAgentFront
       key={workspaceId}
-      {...workspaceProps}
+      {...resolvedWorkspaceProps}
       workspaceId={workspaceId}
+      workspaceLabel={resolvedWorkspaceProps.workspaceLabel ?? currentWorkspace.name}
       requestHeaders={requestHeaders}
       authHeaders={authHeaders}
+      fullPageBasePath={scopedFullPageBasePath}
       chatParams={chatParams}
       bootPreloadPaths={bootPreloadPaths}
       frontPluginHotReload={false}
       hotReloadEnabled={false}
       showThemeToggle={false}
     />
+  )
+}
+
+function fullPageRoutePath(basePath: string): string {
+  const path = basePath.split(/[?#]/, 1)[0]?.trim()
+  return path || DEFAULT_FULL_PAGE_BASE_PATH
+}
+
+function workspaceIdFromFullPageSearch(search: string): string | null {
+  const workspaceId = new URLSearchParams(search).get('workspaceId')?.trim()
+  return workspaceId || null
+}
+
+function withWorkspaceIdSearch(basePath: string, workspaceId: string): string {
+  const [pathWithSearch, hash = ''] = basePath.split('#', 2)
+  const [path, rawSearch = ''] = pathWithSearch.split('?', 2)
+  const search = new URLSearchParams(rawSearch)
+  search.set('workspaceId', workspaceId)
+  return `${path}?${search.toString()}${hash ? `#${hash}` : ''}`
+}
+
+function scopedWorkspaceHeaders(
+  workspaceId: string,
+  headers: Record<string, string> | undefined,
+): Record<string, string> {
+  return { ...(headers ?? {}), 'x-boring-workspace-id': workspaceId }
+}
+
+function FullPageRouteErrorPage({ code, title, description }: { code: string; title: string; description: string }) {
+  return (
+    <div
+      className="flex min-h-screen items-center justify-center bg-background p-6 text-foreground"
+      data-testid="full-page-error-state"
+      data-full-page-error-code={code}
+    >
+      <ErrorState className="w-full max-w-lg" title={title} description={description} />
+    </div>
+  )
+}
+
+function CoreFullPagePanelRoute<TSession extends WorkspaceAgentSession = WorkspaceAgentSession>({
+  fullPageBasePath,
+  loadingFallback,
+  bootPreloadPaths,
+  workspaceProps,
+  appTitle,
+}: {
+  fullPageBasePath: string
+  loadingFallback?: ReactNode
+  bootPreloadPaths?: string[]
+  workspaceProps: RoutedWorkspaceAgentProps<TSession>
+  appTitle?: string
+}) {
+  const location = useLocation()
+  const parsed = useMemo(() => parseFullPagePanelLocation(location.search), [location.search])
+  const currentWorkspace = useCurrentWorkspace()
+  const workspaceId = workspaceIdFromFullPageSearch(location.search) ?? currentWorkspace?.id ?? ''
+
+  const scopedFullPageBasePath = workspaceId
+    ? withWorkspaceIdSearch(fullPageBasePath, workspaceId)
+    : fullPageBasePath
+  const requestHeaders = workspaceId
+    ? scopedWorkspaceHeaders(workspaceId, workspaceProps.requestHeaders)
+    : workspaceProps.requestHeaders
+  const authHeaders = workspaceId
+    ? scopedWorkspaceHeaders(workspaceId, { ...(workspaceProps.requestHeaders ?? {}), ...(workspaceProps.authHeaders ?? {}) })
+    : { ...(workspaceProps.requestHeaders ?? {}), ...(workspaceProps.authHeaders ?? {}) }
+
+  if (parsed.error || !parsed.componentId) {
+    return (
+      <FullPageRouteErrorPage
+        code={parsed.error?.code ?? 'FULL_PAGE_PANEL_MISSING_COMPONENT'}
+        title="Invalid full-page panel route"
+        description={parsed.error?.message ?? 'Missing full-page panel component id.'}
+      />
+    )
+  }
+
+  if (!workspaceId) {
+    return <>{loadingFallback ?? (
+      <FullPageRouteErrorPage
+        code="FULL_PAGE_PANEL_MISSING_WORKSPACE"
+        title="Workspace unavailable"
+        description="The full-page panel route needs a workspace id. Open it from a workspace or include workspaceId in the URL."
+      />
+    )}</>
+  }
+
+  return (
+    <WorkspaceProvider
+      chatPanel={workspaceProps.chatPanel}
+      plugins={workspaceProps.plugins}
+      excludeDefaults={workspaceProps.excludeDefaults}
+      panels={workspaceProps.panels}
+      commands={workspaceProps.commands}
+      catalogs={workspaceProps.catalogs}
+      capabilities={workspaceProps.capabilities}
+      apiBaseUrl={workspaceProps.apiBaseUrl}
+      authHeaders={authHeaders}
+      apiTimeout={workspaceProps.apiTimeout}
+      defaultTheme={workspaceProps.defaultTheme}
+      onThemeChange={workspaceProps.onThemeChange}
+      workspaceId={workspaceId}
+      workspaceLabel={currentWorkspace?.id === workspaceId ? currentWorkspace.name : workspaceProps.workspaceLabel}
+      appTitle={appTitle}
+      storageKey={workspaceProps.providerStorageKey ?? `boring-ui-v2:layout:${workspaceId}`}
+      persistenceEnabled={workspaceProps.persistenceEnabled}
+      manageDocumentTitle={false}
+      bridgeEndpoint={null}
+      onAuthError={workspaceProps.onAuthError}
+      onOpenFile={workspaceProps.onOpenFile}
+      debug={workspaceProps.debug}
+      frontPluginHotReload={false}
+      fullPageBasePath={scopedFullPageBasePath}
+    >
+      <WorkspaceBootGate
+        workspaceId={workspaceId}
+        requestHeaders={requestHeaders}
+        apiBaseUrl={workspaceProps.apiBaseUrl}
+        preloadPaths={bootPreloadPaths}
+        provisionWorkspace={workspaceProps.provisionWorkspace}
+      >
+        <WorkspaceFullPagePanel componentId={parsed.componentId} params={parsed.params} />
+      </WorkspaceBootGate>
+    </WorkspaceProvider>
   )
 }
 
@@ -282,13 +517,16 @@ export function CoreWorkspaceAgentFront<
   workspaceHref = (workspaceId) => `/workspace/${workspaceId}`,
   loadingFallback,
   bootPreloadPaths,
-  topBarLeft = <WorkspaceSwitcher />,
+  topBarLeft,
   topBarRight = <DefaultTopBarRight />,
-  appTitle = 'Boring',
+  appTitle,
   bridgeEndpoint = '/api/v1/ui',
+  fullPageBasePath = DEFAULT_FULL_PAGE_BASE_PATH,
   hotReload = false,
   chatEntryMode = 'auth-first',
   chatFirstPublicShell,
+  chatFirstPublicWorkspaceProps,
+  publicPaths,
   ...workspaceProps
 }: CoreWorkspaceAgentFrontProps<TSession>) {
   if ((hotReload as unknown) !== false) {
@@ -296,20 +534,10 @@ export function CoreWorkspaceAgentFront<
       'CoreWorkspaceAgentFront does not support hotReload yet; use static plugin consumption or WorkspaceAgentFront for standalone hot reload.',
     )
   }
-  const resolvedLoadingFallback = loadingFallback ?? (
-    <WorkspaceLoadingPage
-      appTitle={appTitle}
-      topBarLeft={topBarLeft}
-      topBarRight={topBarRight}
-    />
-  )
-
-  const resolvedWorkspaceProps: Omit<WorkspaceAgentFrontProps<TSession>, 'workspaceId' | 'frontPluginHotReload' | 'hotReloadEnabled'> = {
+  const routedWorkspaceProps: RoutedWorkspaceAgentProps<TSession> = {
     ...workspaceProps,
-    appTitle,
-    topBarLeft,
-    topBarRight,
     bridgeEndpoint,
+    fullPageBasePath,
   }
 
   return (
@@ -318,18 +546,21 @@ export function CoreWorkspaceAgentFront<
       cspNonce={cspNonce}
       workspaceRoute={workspaceRoute}
       workspaceIdParam={workspaceIdParam}
-      publicPaths={chatEntryMode === 'chat-first' ? chatFirstPublicPaths(workspaceRoute) : undefined}
+      publicPaths={chatEntryMode === 'chat-first' ? [...chatFirstPublicPaths(workspaceRoute), ...(publicPaths ?? [])] : publicPaths}
     >
       <Route
         path="/"
         element={
           <HomeRedirect
-            loadingFallback={resolvedLoadingFallback}
+            loadingFallback={loadingFallback}
             workspaceHref={workspaceHref}
             chatEntryMode={chatEntryMode}
             appTitle={appTitle}
-            workspaceProps={resolvedWorkspaceProps}
+            topBarLeft={topBarLeft}
+            topBarRight={topBarRight}
+            workspaceProps={routedWorkspaceProps}
             chatFirstPublicShell={chatFirstPublicShell}
+            chatFirstPublicWorkspaceProps={chatFirstPublicWorkspaceProps}
           />
         }
       />
@@ -338,13 +569,28 @@ export function CoreWorkspaceAgentFront<
         element={
           <WorkspaceRoute
             workspaceIdParam={workspaceIdParam}
-            loadingFallback={resolvedLoadingFallback}
+            loadingFallback={loadingFallback}
             bootPreloadPaths={bootPreloadPaths}
-            workspaceProps={resolvedWorkspaceProps}
+            workspaceProps={routedWorkspaceProps}
             chatEntryMode={chatEntryMode}
             appTitle={appTitle}
+            topBarLeft={topBarLeft}
+            topBarRight={topBarRight}
             workspaceRoute={workspaceRoute}
             chatFirstPublicShell={chatFirstPublicShell}
+            chatFirstPublicWorkspaceProps={chatFirstPublicWorkspaceProps}
+          />
+        }
+      />
+      <Route
+        path={fullPageRoutePath(fullPageBasePath)}
+        element={
+          <CoreFullPagePanelRoute
+            fullPageBasePath={fullPageBasePath}
+            loadingFallback={loadingFallback}
+            bootPreloadPaths={bootPreloadPaths}
+            workspaceProps={routedWorkspaceProps}
+            appTitle={appTitle}
           />
         }
       />

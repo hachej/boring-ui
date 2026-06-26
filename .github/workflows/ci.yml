@@ -17,6 +17,76 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  changes:
+    name: Detect Changes
+    runs-on: ubuntu-latest
+    outputs:
+      workspace_bundle: ${{ steps.filter.outputs.workspace_bundle }}
+      core_bundle: ${{ steps.filter.outputs.core_bundle }}
+      e2e: ${{ steps.filter.outputs.e2e }}
+      worker_smoke: ${{ steps.filter.outputs.worker_smoke }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+        with:
+          fetch-depth: 0
+
+      - name: Detect changed areas
+        id: filter
+        shell: bash
+        run: |
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            base="origin/${{ github.base_ref }}"
+            git fetch --no-tags --depth=1 origin "${{ github.base_ref }}:refs/remotes/origin/${{ github.base_ref }}" || true
+            files=$(git diff --name-only "$base...HEAD")
+          else
+            files=$(git diff --name-only "${{ github.event.before }}" "${{ github.sha }}" || true)
+          fi
+
+          workspace_bundle=false
+          core_bundle=false
+          e2e=false
+          worker_smoke=false
+
+          while IFS= read -r file; do
+            [ -z "$file" ] && continue
+            case "$file" in
+              pnpm-lock.yaml|package.json|pnpm-workspace.yaml|.github/workflows/ci.yml|packages/workspace/*|packages/workspace/**|packages/ui/*|packages/ui/**|plugins/*/src/*.tsx|plugins/*/src/**/*.tsx|apps/workspace-playground/*|apps/workspace-playground/**)
+                workspace_bundle=true
+                ;;
+            esac
+            case "$file" in
+              pnpm-lock.yaml|package.json|pnpm-workspace.yaml|.github/workflows/ci.yml|packages/core/*|packages/core/**)
+                core_bundle=true
+                ;;
+            esac
+            case "$file" in
+              pnpm-lock.yaml|package.json|pnpm-workspace.yaml|.github/workflows/ci.yml|packages/agent/*|packages/agent/**|packages/workspace/*|packages/workspace/**|packages/core/*|packages/core/**|apps/full-app/*|apps/full-app/**|apps/workspace-playground/*|apps/workspace-playground/**|**/playwright.config.ts)
+                e2e=true
+                ;;
+            esac
+            case "$file" in
+              pnpm-lock.yaml|package.json|pnpm-workspace.yaml|.github/workflows/ci.yml|apps/full-app/Dockerfile|apps/full-app/src/server/*|apps/full-app/src/server/**|apps/full-app/scripts/remote-worker-smoke.mjs|packages/agent/*|packages/agent/**|packages/core/src/server/*|packages/core/src/server/**)
+                worker_smoke=true
+                ;;
+            esac
+          done <<< "$files"
+
+          echo "workspace_bundle=$workspace_bundle" >> "$GITHUB_OUTPUT"
+          echo "core_bundle=$core_bundle" >> "$GITHUB_OUTPUT"
+          echo "e2e=$e2e" >> "$GITHUB_OUTPUT"
+          echo "worker_smoke=$worker_smoke" >> "$GITHUB_OUTPUT"
+
+  action-pins:
+    name: Action Pins
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+
+      - name: Assert workflow actions are pinned to commit SHAs
+        run: bash scripts/check-action-pins.sh
+
   lint:
     name: Lint
     runs-on: ubuntu-latest
@@ -63,13 +133,23 @@ jobs:
         run: pnpm install --frozen-lockfile
 
       - name: Run typecheck
-        run: pnpm typecheck:changed
+        run: |
+          if [ "${{ github.event_name }}" = "pull_request" ] && \
+             [ "${{ contains(github.event.pull_request.labels.*.name, 'ci:full') }}" != "true" ] && \
+             [ "${{ contains(github.event.pull_request.labels.*.name, 'release-candidate') }}" != "true" ] && \
+             [[ ! "${{ github.head_ref }}" == release/* ]]; then
+            pnpm typecheck:changed
+          else
+            pnpm typecheck
+          fi
         env:
           NODE_OPTIONS: --max-old-space-size=4096
           TYPECHECK_BASE_REF: ${{ github.base_ref || 'main' }}
 
   bundle-budget:
     name: Bundle Budget
+    needs: changes
+    if: github.event_name == 'push' || needs.changes.outputs.workspace_bundle == 'true' || contains(github.event.pull_request.labels.*.name, 'ci:full') || contains(github.event.pull_request.labels.*.name, 'release-candidate') || startsWith(github.head_ref, 'release/')
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -97,6 +177,8 @@ jobs:
 
   core-bundle-budget:
     name: Core Bundle Budget
+    needs: changes
+    if: github.event_name == 'push' || needs.changes.outputs.core_bundle == 'true' || contains(github.event.pull_request.labels.*.name, 'ci:full') || contains(github.event.pull_request.labels.*.name, 'release-candidate') || startsWith(github.head_ref, 'release/')
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -121,8 +203,54 @@ jobs:
           PR_BODY: ${{ github.event.pull_request.body }}
         run: pnpm ci:core-bundle-size
 
-  unit:
-    name: Unit Tests (${{ matrix.name }})
+  unit-changed:
+    name: Unit Tests Changed
+    if: github.event_name == 'pull_request' && !contains(github.event.pull_request.labels.*.name, 'ci:full') && !contains(github.event.pull_request.labels.*.name, 'release-candidate') && !startsWith(github.head_ref, 'release/')
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: ubuntu
+          POSTGRES_PASSWORD: test
+          POSTGRES_DB: boring_ui_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    steps:
+      - name: Checkout
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+        with:
+          fetch-depth: 0
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@0e279bb959325dab635dd2c09392533439d90093 # v6.0.8
+
+      - name: Setup Node
+        uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
+        with:
+          node-version: 22.19.0
+          cache: pnpm
+
+      - name: Install
+        run: pnpm install --frozen-lockfile
+
+      - name: Install system dependencies
+        run: sudo apt-get install -y ripgrep
+
+      - name: Run affected unit tests
+        run: pnpm test:changed
+        env:
+          NODE_OPTIONS: --max-old-space-size=4096
+          TEST_BASE_REF: ${{ github.base_ref || 'main' }}
+
+  unit-full:
+    name: Unit Tests Full (${{ matrix.name }})
+    if: github.event_name == 'push' || contains(github.event.pull_request.labels.*.name, 'ci:full') || contains(github.event.pull_request.labels.*.name, 'release-candidate') || startsWith(github.head_ref, 'release/')
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
@@ -185,19 +313,30 @@ jobs:
   unit-summary:
     name: Unit Tests
     runs-on: ubuntu-latest
-    needs: unit
+    needs: [unit-changed, unit-full]
     if: always()
     steps:
-      - name: Verify unit test shards
+      - name: Verify unit test jobs
         run: |
-          if [ "${{ needs.unit.result }}" != "success" ]; then
-            echo "Unit test shards result: ${{ needs.unit.result }}"
+          changed="${{ needs.unit-changed.result }}"
+          full="${{ needs.unit-full.result }}"
+          if [ "$changed" != "success" ] && [ "$changed" != "skipped" ]; then
+            echo "Changed unit tests result: $changed"
             exit 1
           fi
-          echo "All unit test shards passed."
+          if [ "$full" != "success" ] && [ "$full" != "skipped" ]; then
+            echo "Full unit tests result: $full"
+            exit 1
+          fi
+          if [ "$changed" = "skipped" ] && [ "$full" = "skipped" ]; then
+            echo "No unit test job ran. Check CI routing."
+            exit 1
+          fi
+          echo "Unit test routing passed: changed=$changed full=$full"
 
   invariants:
     name: Invariants
+    if: github.event_name == 'push' || contains(github.event.pull_request.labels.*.name, 'ci:full') || contains(github.event.pull_request.labels.*.name, 'release-candidate') || startsWith(github.head_ref, 'release/')
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -223,6 +362,8 @@ jobs:
 
   e2e:
     name: E2E
+    needs: changes
+    if: github.event_name == 'push' || needs.changes.outputs.e2e == 'true' || contains(github.event.pull_request.labels.*.name, 'ci:e2e') || contains(github.event.pull_request.labels.*.name, 'ci:full') || contains(github.event.pull_request.labels.*.name, 'release-candidate') || startsWith(github.head_ref, 'release/')
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -254,9 +395,137 @@ jobs:
       - name: Run e2e
         run: pnpm e2e
 
+  remote-worker-smoke:
+    name: Remote Worker Smoke
+    needs: changes
+    if: github.event_name == 'push' || needs.changes.outputs.worker_smoke == 'true' || contains(github.event.pull_request.labels.*.name, 'ci:worker-smoke') || contains(github.event.pull_request.labels.*.name, 'ci:full') || contains(github.event.pull_request.labels.*.name, 'release-candidate') || startsWith(github.head_ref, 'release/')
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@0e279bb959325dab635dd2c09392533439d90093 # v6.0.8
+
+      - name: Setup Node
+        uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
+        with:
+          node-version: 22.19.0
+          cache: pnpm
+
+      - name: Install
+        run: pnpm install --frozen-lockfile
+
+      - name: Install worker smoke system dependencies
+        run: sudo apt-get install -y bubblewrap ripgrep
+
+      - name: Prepare bwrap user namespaces
+        run: |
+          sudo sysctl -w kernel.unprivileged_userns_clone=1 || true
+          sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0 || true
+          sudo sysctl -w kernel.apparmor_restrict_unprivileged_unconfined=0 || true
+          tmp=$(mktemp -d)
+          bwrap \
+            --unshare-all \
+            --die-with-parent \
+            --new-session \
+            --tmpfs / \
+            --proc /proc \
+            --dev /dev \
+            --tmpfs /tmp \
+            --ro-bind /usr /usr \
+            --ro-bind /lib /lib \
+            --ro-bind /lib64 /lib64 \
+            --ro-bind /bin /bin \
+            --ro-bind /sbin /sbin \
+            --ro-bind /etc /etc \
+            --bind "$tmp" /workspace \
+            --chdir /workspace \
+            --setenv HOME /workspace \
+            -- bash -c 'echo bwrap-ok > out.txt'
+          test "$(cat "$tmp/out.txt")" = bwrap-ok
+
+      - name: Build full-app image inputs
+        run: pnpm --filter full-app run build
+        env:
+          NODE_OPTIONS: --max-old-space-size=4096
+
+      - name: Build worker Docker target
+        run: docker build -f apps/full-app/Dockerfile --target worker-runtime -t boring-sandbox-worker:ci .
+
+      - name: Verify worker image runtime dependencies
+        run: |
+          docker run --rm --entrypoint sh boring-sandbox-worker:ci -lc '
+            command -v bwrap >/dev/null
+            command -v python3 >/dev/null
+            command -v rg >/dev/null
+            command -v setpriv >/dev/null
+            command -v uv >/dev/null
+            python3 -m venv /tmp/worker-smoke-venv
+            uv --version >/dev/null
+            test ! -e /app/apps/full-app
+            test ! -e /app/apps
+          '
+
+      - name: Run remote-worker smoke
+        run: pnpm --filter full-app run smoke:remote-worker
+
+  pr-fast-summary:
+    name: PR Fast Summary
+    if: always() && github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    needs: [action-pins, lint, typecheck, unit-summary, bundle-budget, core-bundle-budget, e2e, remote-worker-smoke]
+    steps:
+      - name: Verify PR checks
+        run: |
+          for result in \
+            "action-pins=${{ needs.action-pins.result }}" \
+            "lint=${{ needs.lint.result }}" \
+            "typecheck=${{ needs.typecheck.result }}" \
+            "unit=${{ needs.unit-summary.result }}" \
+            "bundle=${{ needs.bundle-budget.result }}" \
+            "core-bundle=${{ needs.core-bundle-budget.result }}" \
+            "e2e=${{ needs.e2e.result }}" \
+            "worker-smoke=${{ needs.remote-worker-smoke.result }}"; do
+            name=${result%%=*}
+            value=${result#*=}
+            if [ "$value" != "success" ] && [ "$value" != "skipped" ]; then
+              echo "$name failed or was cancelled: $value"
+              exit 1
+            fi
+          done
+          echo "PR fast gate passed. Optional heavy jobs may be skipped by design."
+
+  main-green-summary:
+    name: Main Green Summary
+    if: always() && github.event_name == 'push'
+    runs-on: ubuntu-latest
+    needs: [action-pins, lint, typecheck, bundle-budget, core-bundle-budget, unit-summary, invariants, e2e, remote-worker-smoke]
+    steps:
+      - name: Verify main checks
+        run: |
+          for result in \
+            "action-pins=${{ needs.action-pins.result }}" \
+            "lint=${{ needs.lint.result }}" \
+            "typecheck=${{ needs.typecheck.result }}" \
+            "bundle=${{ needs.bundle-budget.result }}" \
+            "core-bundle=${{ needs.core-bundle-budget.result }}" \
+            "unit=${{ needs.unit-summary.result }}" \
+            "invariants=${{ needs.invariants.result }}" \
+            "e2e=${{ needs.e2e.result }}" \
+            "worker-smoke=${{ needs.remote-worker-smoke.result }}"; do
+            name=${result%%=*}
+            value=${result#*=}
+            if [ "$value" != "success" ]; then
+              echo "$name is not green: $value"
+              exit 1
+            fi
+          done
+          echo "Remote main is green."
+
   publish-ci:
     name: Publish CI packages to npm
-    needs: [lint, typecheck, bundle-budget, core-bundle-budget, unit-summary, invariants, e2e]
+    needs: [main-green-summary]
     if: github.ref == 'refs/heads/main' && github.event_name == 'push'
     runs-on: ubuntu-latest
     permissions:
@@ -306,22 +575,3 @@ jobs:
               echo "::warning::CI package publish failed for $pkg; continuing because release publishing is handled by release.yml"
             fi
           done
-
-  deploy:
-    name: Deploy to Fly.io
-    needs: [lint, typecheck, unit-summary, invariants, e2e]
-    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
-
-      - uses: superfly/flyctl-actions/setup-flyctl@ed8efb33836e8b2096c7fd3ba1c8afe303ebbff1
-
-      - name: Deploy boring-full-app
-        run: flyctl deploy --remote-only --app boring-full-app --config apps/full-app/fly.toml
-        env:
-          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
-
-      # boring-macro is deployed from its canonical standalone repository:
-      # https://github.com/hachej/boring-macro
-      # Do not deploy it from this monorepo.

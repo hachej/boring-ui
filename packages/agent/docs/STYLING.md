@@ -1,6 +1,8 @@
 # STYLING
 
-Styling contract for `@boring/agent` frontend surfaces.
+Styling contract for `@hachej/boring-agent` frontend surfaces. For the full
+agent/workspace Tailwind isolation model, see
+[`docs/TAILWIND-V4-STYLE-ISOLATION.md`](../../../docs/TAILWIND-V4-STYLE-ISOLATION.md).
 
 ## Package CSS
 
@@ -8,12 +10,12 @@ Consumers import the precompiled package stylesheet once, after host/workspace
 base CSS and before app overrides:
 
 ```ts
-import "@boring/workspace/globals.css"
-import "@boring/agent/front/styles.css"
+import "@hachej/boring-workspace/globals.css"
+import "@hachej/boring-agent/front/styles.css"
 import "./app.css"
 ```
 
-The published `@boring/agent/front/styles.css` is consumer-safe: it contains no
+The published `@hachej/boring-agent/front/styles.css` is consumer-safe: it contains no
 Tailwind `@source`, no Tailwind imports, and no repo-relative source paths.
 
 ## Public selectors

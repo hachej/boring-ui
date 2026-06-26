@@ -27,7 +27,7 @@ describe('DebugDrawer', () => {
     document.execCommand = originalExecCommand
   })
 
-  test('shows pi session id and terminal resume command by default', () => {
+  test('shows runtime session id by default', () => {
     const html = renderToStaticMarkup(
       <DebugDrawer
         sessionId="sess-debug-123"
@@ -38,10 +38,10 @@ describe('DebugDrawer', () => {
     )
 
     expect(html).toContain('Session')
-    expect(html).toContain('Pi session id')
+    expect(html).toContain('Runtime session id')
     expect(html).toContain('sess-debug-123')
-    expect(html).toContain('pi --session sess-debug-123')
-    expect(html).toContain('pi --continue')
+    expect(html).not.toContain('pi --session sess-debug-123')
+    expect(html).not.toContain('pi --continue')
   })
 
   test('copy buttons use legacy fallback when clipboard API is unavailable', async () => {
@@ -57,7 +57,7 @@ describe('DebugDrawer', () => {
       />,
     )
 
-    fireEvent.click(screen.getByRole('button', { name: 'Copy Pi session id' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Copy Runtime session id' }))
 
     await waitFor(() => {
       expect(execCommand).toHaveBeenCalledWith('copy')

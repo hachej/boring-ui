@@ -7,7 +7,7 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from "@hachej/boring-ui-kit";
-import { cn } from "@/front/lib";
+import { cn } from "../lib";
 import { cjk } from "@streamdown/cjk";
 import { code } from "@streamdown/code";
 import { math } from "@streamdown/math";
@@ -407,8 +407,8 @@ const MarkdownCode = ({
   return (
     <code
       className={cn(
-        "rounded-sm border border-input bg-muted/80 px-1.5 py-[0.1em]",
-        "font-mono text-[0.92em] font-medium text-foreground",
+        "rounded-[0.3em] bg-muted/55 px-[0.32em] py-[0.08em]",
+        "font-mono text-[0.9em] font-medium text-foreground/90",
         className,
       )}
       {...(props as Record<string, unknown>)}

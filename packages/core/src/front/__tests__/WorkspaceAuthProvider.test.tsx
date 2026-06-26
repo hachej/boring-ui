@@ -29,7 +29,8 @@ vi.mock('../auth/AuthProvider', () => ({
 }))
 
 import { withBeadId } from '../../server/__tests__/_setup'
-import type { MemberRole, Workspace } from '../../shared/types'
+import type { MemberRole, RuntimeConfig, Workspace } from '../../shared/types'
+import { ConfigProvider } from '../ConfigProvider'
 import {
   WORKSPACES_QUERY_KEY,
   WorkspaceAuthProvider,
@@ -44,11 +45,25 @@ const BEAD_ID = 'boring-ui-v2-un4j'
 const WS_1: Workspace = {
   id: 'ws-001',
   appId: 'test-app',
-  name: 'My Workspace',
+  name: 'Default workspace',
   createdBy: 'user-1',
   createdAt: '2026-01-01T00:00:00.000Z',
   deletedAt: null,
   isDefault: true,
+}
+
+const RUNTIME_CONFIG: RuntimeConfig = {
+  appId: 'test-app',
+  appName: 'Test App',
+  appLogo: null,
+  apiBase: '',
+  features: {
+    githubOauth: false,
+    googleOauth: false,
+    invitesEnabled: true,
+    sendWelcomeEmail: true,
+    emailVerification: true,
+  },
 }
 
 const WS_2: Workspace = {
@@ -81,29 +96,38 @@ function Probe() {
 function renderWithRouter(
   initialPath: string,
   queryClient: QueryClient,
+  options?: { withConfig?: boolean },
 ) {
+  const routes = (
+    <MemoryRouter initialEntries={[initialPath]}>
+      <Routes>
+        <Route
+          path="/workspace/:id"
+          element={
+            <WorkspaceAuthProvider>
+              <Probe />
+            </WorkspaceAuthProvider>
+          }
+        />
+        <Route
+          path="/"
+          element={
+            <WorkspaceAuthProvider>
+              <Probe />
+            </WorkspaceAuthProvider>
+          }
+        />
+      </Routes>
+    </MemoryRouter>
+  )
+
+  const content = options?.withConfig
+    ? <ConfigProvider retryBackoff={[]}>{routes}</ConfigProvider>
+    : routes
+
   return render(
     <QueryClientProvider client={queryClient}>
-      <MemoryRouter initialEntries={[initialPath]}>
-        <Routes>
-          <Route
-            path="/workspace/:id"
-            element={
-              <WorkspaceAuthProvider>
-                <Probe />
-              </WorkspaceAuthProvider>
-            }
-          />
-          <Route
-            path="/"
-            element={
-              <WorkspaceAuthProvider>
-                <Probe />
-              </WorkspaceAuthProvider>
-            }
-          />
-        </Routes>
-      </MemoryRouter>
+      {content}
     </QueryClientProvider>,
   )
 }
@@ -118,6 +142,22 @@ function mockWorkspaceDetail(ws: Workspace, role: MemberRole) {
           : input.url
     if (!url.endsWith(`/api/v1/workspaces/${ws.id}`)) return undefined
     return new Response(JSON.stringify({ workspace: ws, role }), {
+      status: 200,
+      headers: { 'content-type': 'application/json' },
+    })
+  })
+}
+
+function mockConfig(config: RuntimeConfig) {
+  useMswHandler(async (input) => {
+    const url =
+      typeof input === 'string'
+        ? input
+        : input instanceof URL
+          ? input.toString()
+          : input.url
+    if (!url.endsWith('/api/v1/config')) return undefined
+    return new Response(JSON.stringify(config), {
       status: 200,
       headers: { 'content-type': 'application/json' },
     })
@@ -183,6 +223,21 @@ function setPendingSession() {
   mockSessionState.current = { data: null, isPending: true, error: null }
 }
 
+function setUnverifiedSession() {
+  mockSessionState.current = {
+    ...mockSessionState.current,
+    data: mockSessionState.current.data
+      ? {
+          ...mockSessionState.current.data,
+          user: {
+            ...mockSessionState.current.data.user,
+            emailVerified: false,
+          },
+        }
+      : null,
+  }
+}
+
 function waitOneTick() {
   return new Promise((resolve) => setTimeout(resolve, 0))
 }
@@ -192,6 +247,40 @@ afterEach(() => {
 })
 
 describe('WorkspaceAuthProvider', () => {
+  it(
+    'does not fetch workspace list or detail when email verification is required and user is unverified',
+    withBeadId(BEAD_ID, async ({ assertionPassed }) => {
+      const qc = createQueryClient()
+      let workspaceRequests = 0
+      setUnverifiedSession()
+      mockConfig(RUNTIME_CONFIG)
+
+      useMswHandler(async (input) => {
+        const url =
+          typeof input === 'string'
+            ? input
+            : input instanceof URL
+              ? input.toString()
+              : input.url
+        if (url.includes('/api/v1/workspaces')) {
+          workspaceRequests += 1
+          return new Response(JSON.stringify({ workspaces: [WS_1] }), {
+            status: 200,
+            headers: { 'content-type': 'application/json' },
+          })
+        }
+        return undefined
+      })
+
+      renderWithRouter(`/workspace/${WS_1.id}`, qc, { withConfig: true })
+      await waitFor(() => expect(screen.getByTestId('ws-name').textContent).toBe('none'))
+      await waitOneTick()
+
+      expect(workspaceRequests).toBe(0)
+      assertionPassed('workspace-unverified-no-fetch')
+    }),
+  )
+
   it(
     'does not fetch workspace list or detail before auth resolves',
     withBeadId(BEAD_ID, async ({ assertionPassed }) => {
@@ -271,7 +360,7 @@ describe('WorkspaceAuthProvider', () => {
       renderWithRouter(`/workspace/${WS_1.id}`, qc)
 
       await waitFor(() =>
-        expect(screen.getByTestId('ws-name').textContent).toBe('My Workspace'),
+        expect(screen.getByTestId('ws-name').textContent).toBe('Default workspace'),
       )
       expect(screen.getByTestId('ws-role').textContent).toBe('owner')
       assertionPassed('workspace-by-id')
@@ -306,7 +395,7 @@ describe('WorkspaceAuthProvider', () => {
       renderWithRouter(`/workspace/${encodeURIComponent(specialWs.id)}`, qc)
 
       await waitFor(() =>
-        expect(screen.getByTestId('ws-name').textContent).toBe('My Workspace'),
+        expect(screen.getByTestId('ws-name').textContent).toBe('Default workspace'),
       )
       expect(requestedUrl).toContain('/api/v1/workspaces/team%2Fa%20b')
       assertionPassed('workspace-route-id-encoded')
@@ -324,7 +413,7 @@ describe('WorkspaceAuthProvider', () => {
       renderWithRouter('/', qc)
 
       await waitFor(() =>
-        expect(screen.getByTestId('ws-name').textContent).toBe('My Workspace'),
+        expect(screen.getByTestId('ws-name').textContent).toBe('Default workspace'),
       )
       expect(screen.getByTestId('ws-role').textContent).toBe('editor')
       assertionPassed('workspace-fallback-default')
@@ -432,7 +521,7 @@ describe('WorkspaceAuthProvider', () => {
 
       renderWithRouter(`/workspace/${WS_1.id}`, qc)
 
-      expect(screen.getByTestId('ws-name').textContent).toBe('My Workspace')
+      expect(screen.getByTestId('ws-name').textContent).toBe('Default workspace')
       expect(screen.getByTestId('ws-role').textContent).toBe('owner')
       assertionPassed('workspace-cache-hit')
 
@@ -472,7 +561,7 @@ describe('WorkspaceAuthProvider', () => {
       }))
 
       await waitFor(() =>
-        expect(screen.getByTestId('ws-name').textContent).toBe('My Workspace'),
+        expect(screen.getByTestId('ws-name').textContent).toBe('Default workspace'),
       )
       expect(screen.getByTestId('ws-role').textContent).toBe('owner')
       assertionPassed('workspace-loading-resolves')

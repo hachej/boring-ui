@@ -1,10 +1,12 @@
 "use client"
 
-import { useCallback, useEffect } from "react"
-import { useWorkspaceAttention, useWorkspaceChatPanel } from "../../provider"
+import { useCallback, useEffect, useRef } from "react"
+import { emitWorkspaceAttentionAction, useWorkspaceAttention, useWorkspaceChatPanel } from "../../provider"
 import { emitAgentData } from "../../events"
 import { dispatchUiCommand, startUiCommandStream } from "../../bridge"
-import type { SurfaceShellApi } from "../artifact-surface/SurfaceShell"
+import { relativizeWorkspacePath } from "../../../app/front/workspacePreload"
+import type { DispatchContext } from "../../bridge"
+import { WORKSPACE_COMPOSER_STOP_REASONS, emitWorkspaceComposerStop } from "./composerStop"
 import type { WorkspaceChatPanelProps } from "./types"
 
 export interface ChatPanelHostShellProps {
@@ -12,11 +14,12 @@ export interface ChatPanelHostShellProps {
   requestHeaders?: Record<string, string>
   /** Endpoint base for agent → UI commands. Empty string = same origin. */
   bridgeEndpoint?: string | null
-  getSurface?: () => SurfaceShellApi | null
-  isWorkbenchOpen?: () => boolean
-  openWorkbench?: () => void
-  openWorkbenchSources?: () => void
-  closeWorkbench?: () => void
+  /**
+   * Agent → UI command dispatch context (surface handle, open/close workbench,
+   * and the pending-op queue). Built once by the host and shared by every
+   * dispatch site here. Absent when the workbench surface isn't available.
+   */
+  surfaceDispatch?: DispatchContext
 }
 
 export type ChatPanelHostProps = WorkspaceChatPanelProps & ChatPanelHostShellProps
@@ -33,75 +36,104 @@ function streamEndpointFromBridgeEndpoint(endpoint: string | null | undefined): 
   return normalized
 }
 
+function workspaceAgentDataPart(part: unknown): unknown {
+  if (typeof part !== "object" || part === null) return part
+  const event = part as Record<string, unknown>
+  if (event.type !== "file-changed" || typeof event.path !== "string") return part
+  return {
+    type: "data-file-changed",
+    data: {
+      op: typeof event.changeType === "string" ? event.changeType : "edit",
+      path: event.path,
+      toolCallId: typeof event.seq === "number" ? `pi:${event.seq}` : "pi:file-changed",
+    },
+  }
+}
+
 export function ChatPanelHost(props: ChatPanelHostProps) {
   const ChatPanelImpl = useWorkspaceChatPanel()
   const { blockers } = useWorkspaceAttention()
   const {
-    getSurface,
-    isWorkbenchOpen,
-    openWorkbench,
-    openWorkbenchSources,
-    closeWorkbench,
+    surfaceDispatch,
     bridgeEndpoint,
     ...chatPanelProps
   } = props
 
+  // Agent tool inputs (read/write/edit) carry absolute filesystem paths, but
+  // the workspace file API is relative-only (absolute paths 403). Learn the
+  // workspace root once so click-to-open can translate absolute → relative.
+  const workspaceRootRef = useRef<string | null>(null)
+  const apiBase = streamEndpointFromBridgeEndpoint(bridgeEndpoint) ?? ""
+  const metaWorkspaceId = workspaceIdFromHeaders(chatPanelProps.requestHeaders)
+  useEffect(() => {
+    let cancelled = false
+    const headers: Record<string, string> = metaWorkspaceId ? { "x-boring-workspace-id": metaWorkspaceId } : {}
+    void fetch(`${apiBase}/api/v1/workspace/meta`, { headers })
+      .then((res) => (res.ok ? res.json() as Promise<{ workspaceRoot?: unknown }> : null))
+      .then((meta) => {
+        if (cancelled) return
+        if (meta && typeof meta.workspaceRoot === "string") workspaceRootRef.current = meta.workspaceRoot
+      })
+      .catch(() => {})
+    return () => { cancelled = true }
+  }, [apiBase, metaWorkspaceId])
+
   const openArtifact = useCallback(
     (path: string) => {
-      if (getSurface && isWorkbenchOpen && openWorkbench) {
-        dispatchUiCommand(
-          { kind: "openFile", params: { path } },
-          { surface: getSurface, isWorkbenchOpen, openWorkbench, openWorkbenchSources, closeWorkbench },
-        )
+      const resolved = relativizeWorkspacePath(path, workspaceRootRef.current)
+      if (surfaceDispatch) {
+        dispatchUiCommand({ kind: "openFile", params: { path: resolved } }, surfaceDispatch)
       }
-      props.onOpenArtifact?.(path)
+      props.onOpenArtifact?.(resolved)
     },
-    [getSurface, isWorkbenchOpen, openWorkbench, openWorkbenchSources, closeWorkbench, props.onOpenArtifact],
+    [surfaceDispatch, props.onOpenArtifact],
   )
 
   const uiWorkspaceId = workspaceIdFromHeaders(chatPanelProps.requestHeaders)
-  const composerBlockers = blockers.filter((blocker) => !blocker.sessionId || blocker.sessionId === chatPanelProps.sessionId)
+  // A missing host session id means a single/sessionless chat host. In that
+  // mode, keep scoped blockers visible instead of hiding the only attention UI.
+  // Multi-session hosts should pass `sessionId` so unrelated blockers filter out.
+  const composerBlockers = blockers.filter((blocker) => !blocker.sessionId || !chatPanelProps.sessionId || blocker.sessionId === chatPanelProps.sessionId)
 
   useEffect(() => {
-    if (bridgeEndpoint === null || !getSurface || !isWorkbenchOpen || !openWorkbench) return
+    if (bridgeEndpoint === null || !surfaceDispatch) return
     return startUiCommandStream({
       endpoint: streamEndpointFromBridgeEndpoint(bridgeEndpoint),
       query: uiWorkspaceId ? { workspaceId: uiWorkspaceId } : undefined,
-      ctx: {
-        surface: getSurface,
-        isWorkbenchOpen,
-        openWorkbench,
-        openWorkbenchSources,
-        closeWorkbench,
-      },
+      ctx: surfaceDispatch,
     })
-  }, [bridgeEndpoint, getSurface, isWorkbenchOpen, openWorkbench, openWorkbenchSources, closeWorkbench, uiWorkspaceId])
+  }, [bridgeEndpoint, surfaceDispatch, uiWorkspaceId])
 
   const handleComposerStop = useCallback(() => {
-    window.dispatchEvent(new CustomEvent("boring:workspace-composer-stop", { detail: { sessionId: chatPanelProps.sessionId } }))
+    emitWorkspaceComposerStop({ sessionId: chatPanelProps.sessionId, reason: WORKSPACE_COMPOSER_STOP_REASONS.userStop })
     props.onComposerStop?.()
   }, [chatPanelProps.sessionId, props.onComposerStop])
 
   const handleComposerBlockerAction = useCallback(
     (blocker: NonNullable<WorkspaceChatPanelProps["composerBlockers"]>[number], action: string) => {
-      if (action === "cancel") {
-        window.dispatchEvent(new CustomEvent("boring:workspace-composer-stop", { detail: { sessionId: chatPanelProps.sessionId } }))
-        return
-      }
+      const sessionId = blocker.sessionId ?? chatPanelProps.sessionId
+      emitWorkspaceAttentionAction({ blockerId: blocker.id, actionId: action, blocker, sessionId })
       if (action !== "open" || !blocker.surfaceKind) return
-      if (getSurface && isWorkbenchOpen && openWorkbench) {
+      if (surfaceDispatch) {
         dispatchUiCommand(
-          { kind: "openSurface", params: { kind: blocker.surfaceKind, target: blocker.target, meta: {} } },
-          { surface: getSurface, isWorkbenchOpen, openWorkbench, openWorkbenchSources, closeWorkbench },
+          {
+            kind: "openSurface",
+            params: {
+              kind: blocker.surfaceKind,
+              target: blocker.target,
+              meta: sessionId ? { sessionId, openOnlyWhenSessionOpen: true } : {},
+            },
+          },
+          surfaceDispatch,
         )
       }
     },
-    [chatPanelProps.sessionId, closeWorkbench, getSurface, isWorkbenchOpen, openWorkbench, openWorkbenchSources],
+    [chatPanelProps.sessionId, surfaceDispatch],
   )
 
   const handleData = useCallback(
     (part: unknown) => {
-      emitAgentData(part)
+      emitAgentData(workspaceAgentDataPart(part))
       props.onData?.(part)
     },
     [props.onData],

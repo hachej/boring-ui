@@ -9,6 +9,7 @@ import { ErrorCode } from "@hachej/boring-agent/shared"
 import type { BoringServerPluginManifest } from "@hachej/boring-workspace/server"
 import ts from "typescript"
 import { createServer } from "vite"
+import { init as initCjsLexer, parse as parseCjsExports } from "cjs-module-lexer"
 
 export const PLUGIN_FRONT_RUNTIME_BASE_PATH = "/api/v1/agent-plugins/runtime"
 const HOST_VIRTUAL_SINGLETON_MODULES = [
@@ -450,12 +451,18 @@ function normalizeRequestSubpath(raw: string): string {
 }
 
 function assertRuntimeFrontEntrySubpath(frontEntrySubpath: string): void {
-  if (frontEntrySubpath.startsWith("front/")) return
+  // Accept any subpath that targets a `front/` segment inside the
+  // package. Source-style plugins expose `front/index.tsx`; published
+  // build-output plugins expose `dist/front/index.js`. Both layouts are
+  // valid — reject only paths that don't include a `front/` directory
+  // anywhere, which catches manifest typos and accidental relative-path
+  // escapes.
+  if (/(^|\/)front\//.test(frontEntrySubpath)) return
   throw new PluginFrontRuntimeError(
     ErrorCode.enum.PLUGIN_RUNTIME_PRIVATE_FILE,
     403,
     "validate",
-    "native runtime plugin fronts must live under the front/ directory",
+    "native runtime plugin fronts must live under a front/ directory",
     { frontEntrySubpath },
   )
 }
@@ -509,16 +516,33 @@ function optimizedDependencySingletonSource(targetPath: string): HostVirtualSing
   const cleanPath = targetPath.split("?")[0]
   const normalizedPath = cleanPath.replaceAll("\\", "/")
   const workspaceSingletonByPath: Array<[string, HostVirtualSingletonModule]> = [
+    // Monorepo dev layout.
     ["/packages/workspace/dist/workspace.js", "@hachej/boring-workspace"],
     ["/packages/workspace/src/index.ts", "@hachej/boring-workspace"],
     ["/packages/workspace/dist/plugin.js", "@hachej/boring-workspace/plugin"],
     ["/packages/workspace/src/plugin.ts", "@hachej/boring-workspace/plugin"],
     ["/packages/workspace/dist/events.js", "@hachej/boring-workspace/events"],
     ["/packages/workspace/src/front/events/index.ts", "@hachej/boring-workspace/events"],
+    // Installed layout (npm global / pnpm store): the scoped-package suffix
+    // matches both node_modules/@hachej/... and .pnpm/.../@hachej/... paths.
+    // Without these, a plugin importing the workspace root in an installed
+    // CLI gets a proxied SECOND copy of the workspace bundle — its context
+    // hooks (useApiBaseUrl, ...) read the wrong React context, and the
+    // proxied app-level graph drags un-interop'd CJS deps that fail to load.
+    ["/@hachej/boring-workspace/dist/workspace.js", "@hachej/boring-workspace"],
+    ["/@hachej/boring-workspace/dist/plugin.js", "@hachej/boring-workspace/plugin"],
+    ["/@hachej/boring-workspace/dist/events.js", "@hachej/boring-workspace/events"],
   ]
   for (const [suffix, source] of workspaceSingletonByPath) {
     if (normalizedPath.endsWith(suffix)) return source
   }
+  // Filename-based mapping applies ONLY to Vite optimizer output
+  // (.vite/deps/react.js etc.). Matching by bare filename anywhere would
+  // also capture a dependency's own module that happens to be named
+  // react.js — e.g. dockview/dist/esm/react.js, whose exports (ReactPart)
+  // do not exist on the react singleton, killing the whole importing
+  // plugin module graph with a named-export SyntaxError.
+  if (!normalizedPath.includes("/.vite/deps/")) return undefined
   const fileName = normalizedPath.slice(normalizedPath.lastIndexOf("/") + 1)
   const sourceByFileName: Record<string, HostVirtualSingletonModule> = {
     "react.js": "react",
@@ -685,7 +709,7 @@ async function resolveFileWithinPlugin(record: TrackedPluginRecord, subpath: str
   return resolvedPath
 }
 
-function snapshotRuntimeSourceFiles(pluginRoot: string): Map<string, Uint8Array> {
+function snapshotRuntimeSourceFiles(pluginRoot: string, frontRootDir: string, frontRootRelative: string): Map<string, Uint8Array> {
   const snapshot = new Map<string, Uint8Array>()
   const visit = (dir: string, subpathPrefix: string) => {
     if (!existsSync(dir)) return
@@ -722,7 +746,11 @@ function snapshotRuntimeSourceFiles(pluginRoot: string): Map<string, Uint8Array>
       }
     }
   }
-  visit(resolvePath(pluginRoot, "front"), "front")
+  // Walk both the actual front root (e.g. `front/` for source-style
+  // plugins, `dist/front/` for build-output plugins) and the shared
+  // root. The front root prefix is preserved in snapshot keys so the
+  // runtime validator can resolve the same subpath the request used.
+  visit(frontRootDir, frontRootRelative.split("\\").join("/"))
   visit(resolvePath(pluginRoot, "shared"), "shared")
   return snapshot
 }
@@ -786,6 +814,55 @@ function parsePluginDependencyVirtualId(id: string): PluginDependencyContext | n
   }
 }
 
+// Cache of nodeModulesDir → real paths of all top-level package entries.
+// Built once per plugin instance; pnpm symlinks make the real path of each dep
+// land in the global content-addressable store (outside node_modules), so we
+// resolve every entry up-front and check containment against those real roots.
+//
+// This cache is intentionally unbounded and never invalidated. If a user runs
+// `npm install` inside a plugin dir mid-session, they must restart the CLI for
+// the new dep to be importable — the server's module graph has the same
+// constraint — so a stale cache cannot be reached in normal use.
+const pluginPackageRootsCache = new Map<string, Promise<ReadonlySet<string>>>()
+
+async function getPluginPackageRoots(nodeModulesDir: string): Promise<ReadonlySet<string>> {
+  let cached = pluginPackageRootsCache.get(nodeModulesDir)
+  if (!cached) {
+    cached = buildPluginPackageRoots(nodeModulesDir)
+    pluginPackageRootsCache.set(nodeModulesDir, cached)
+  }
+  return cached
+}
+
+async function buildPluginPackageRoots(nodeModulesDir: string): Promise<ReadonlySet<string>> {
+  const roots = new Set<string>()
+  let entries: string[]
+  try {
+    entries = readdirSync(nodeModulesDir)
+  } catch {
+    return roots
+  }
+  for (const entry of entries) {
+    if (entry.startsWith(".")) continue // skip .pnpm, .modules.yaml, etc.
+    const entryPath = resolvePath(nodeModulesDir, entry)
+    if (entry.startsWith("@")) {
+      // Scoped namespace directory — resolve each package inside it
+      let scopedEntries: string[]
+      try {
+        scopedEntries = readdirSync(entryPath)
+      } catch {
+        continue
+      }
+      for (const scopedEntry of scopedEntries) {
+        roots.add(await resolveRealLike(resolvePath(entryPath, scopedEntry)))
+      }
+    } else {
+      roots.add(await resolveRealLike(entryPath))
+    }
+  }
+  return roots
+}
+
 async function ensurePluginDependencyPath(record: TrackedPluginRecord, source: string, importer: string | undefined, resolvedPath: string): Promise<string> {
   const nodeModulesDir = resolvePath(record.rootDir, "node_modules")
   if (!existsSync(nodeModulesDir)) {
@@ -801,13 +878,25 @@ async function ensurePluginDependencyPath(record: TrackedPluginRecord, source: s
   const nodeModulesReal = await resolveRealLike(nodeModulesDir)
   const resolvedReal = await resolveRealLike(resolvedPath)
   if (!isWithin(nodeModulesReal, resolvedReal)) {
-    throw new PluginFrontRuntimeError(
-      ErrorCode.enum.PLUGIN_RUNTIME_UNSAFE_IMPORT,
-      400,
-      "resolve",
-      "runtime plugin dependency resolved outside the plugin-local node_modules directory",
-      { source, importer, resolvedPath, pluginNodeModules: nodeModulesDir },
+    // pnpm stores packages in a global content-addressable store and symlinks
+    // them from node_modules. The real path of any pnpm-managed dep (including
+    // files reachable via relative imports within that dep) lives outside
+    // node_modules, so isWithin() always fails. Fall back to a cached set of
+    // real package roots derived from the node_modules symlink targets: if
+    // resolvedReal is inside any of those roots, it's legitimately installed.
+    const packageRoots = await getPluginPackageRoots(nodeModulesDir)
+    const isInstalledPackage = Array.from(packageRoots).some(
+      (root) => root === resolvedReal || isWithin(root, resolvedReal),
     )
+    if (!isInstalledPackage) {
+      throw new PluginFrontRuntimeError(
+        ErrorCode.enum.PLUGIN_RUNTIME_UNSAFE_IMPORT,
+        400,
+        "resolve",
+        "runtime plugin dependency resolved outside the plugin-local node_modules directory",
+        { source, importer, resolvedPath, pluginNodeModules: nodeModulesDir },
+      )
+    }
   }
   return resolvedReal
 }
@@ -916,6 +1005,123 @@ function runtimeAssetContentType(path: string): string {
     case ".woff2": return "font/woff2"
     default: return "application/octet-stream"
   }
+}
+
+// Plugin-local dependencies are served straight from disk through the proxy
+// pipeline, but Vite's CommonJS→ESM interop only runs inside its dep optimizer,
+// which is disabled here (optimizeDeps.noDiscovery). Without it, a CJS dep
+// (e.g. es-toolkit/compat, lodash) is shipped to the browser as raw
+// `module.exports = ...` / `exports.foo = ...` referencing globals that do not
+// exist in an ES module, so the whole importing plugin graph dies with
+// "exports is not defined". Host singletons (react, ...) sidestep this because
+// runtimeSingletonModuleCode hand-writes their ESM interop; this gives every
+// other CJS dep the same treatment.
+const CJS_REQUIRE_PLACEHOLDER = "__boringCjsRequire"
+let cjsLexerReady: Promise<void> | undefined
+function ensureCjsLexer(): Promise<void> {
+  if (!cjsLexerReady) cjsLexerReady = initCjsLexer()
+  return cjsLexerReady
+}
+
+function hasEsmSyntax(sourceText: string): boolean {
+  const sourceFile = ts.createSourceFile("cjs-probe.js", sourceText, ts.ScriptTarget.Latest, true, ts.ScriptKind.JS)
+  let esm = false
+  const visit = (node: ts.Node): void => {
+    if (esm) return
+    if (
+      ts.isImportDeclaration(node)
+      || ts.isExportDeclaration(node)
+      || ts.isExportAssignment(node)
+      || (ts.isFunctionDeclaration(node) && node.modifiers?.some((m) => m.kind === ts.SyntaxKind.ExportKeyword))
+      || ((ts.isVariableStatement(node) || ts.isClassDeclaration(node)) && node.modifiers?.some((m) => m.kind === ts.SyntaxKind.ExportKeyword))
+    ) {
+      esm = true
+      return
+    }
+    ts.forEachChild(node, visit)
+  }
+  visit(sourceFile)
+  return esm
+}
+
+function looksLikeCommonJs(sourceText: string): boolean {
+  if (hasEsmSyntax(sourceText)) return false
+  return /\b(?:module\.exports|exports\.|exports\[)/.test(sourceText)
+    || /\brequire\s*\(/.test(sourceText)
+}
+
+function collectRequireSpecifiers(sourceFile: ts.SourceFile): string[] {
+  const specifiers = new Set<string>()
+  const visit = (node: ts.Node): void => {
+    if (
+      ts.isCallExpression(node)
+      && ts.isIdentifier(node.expression)
+      && node.expression.text === "require"
+      && node.arguments.length === 1
+      && ts.isStringLiteralLike(node.arguments[0])
+    ) {
+      specifiers.add(node.arguments[0].text)
+    }
+    ts.forEachChild(node, visit)
+  }
+  visit(sourceFile)
+  return [...specifiers]
+}
+
+// Rewrites a CommonJS dependency module into an ES module that the browser can
+// evaluate. Each `require("X")` is hoisted to a static `import * as ns from "X"`
+// (so Vite's resolveId/import-analysis rewrites it into a proxy URL just like a
+// normal import) and replaced with a synchronous accessor over the already
+// imported namespace. The original body runs against a synthetic
+// `module`/`exports`, then `module.exports` is re-exported as the default plus
+// the named exports detected by cjs-module-lexer.
+async function cjsDependencyToEsm(sourceText: string, modulePath: string): Promise<string> {
+  await ensureCjsLexer()
+  const sourceFile = ts.createSourceFile(modulePath, sourceText, ts.ScriptTarget.Latest, true, ts.ScriptKind.JS)
+  const requireSpecifiers = collectRequireSpecifiers(sourceFile)
+  const importLines: string[] = []
+  const requireMapEntries: string[] = []
+  requireSpecifiers.forEach((specifier, index) => {
+    const binding = `${CJS_REQUIRE_PLACEHOLDER}_${index}`
+    importLines.push(`import * as ${binding} from ${JSON.stringify(specifier)};`)
+    requireMapEntries.push(`  [${JSON.stringify(specifier)}]: ${binding},`)
+  })
+
+  let exportNames: string[] = []
+  try {
+    const parsed = parseCjsExports(sourceText, modulePath)
+    exportNames = [...parsed.exports]
+  } catch {
+    // Lexer failed (unusual CJS shape); default export still works.
+    exportNames = []
+  }
+  const safeExportNames = exportNames.filter(
+    (name) => /^[A-Za-z_$][A-Za-z0-9_$]*$/.test(name) && name !== "default" && name !== "__esModule",
+  )
+  const namedExportLines = safeExportNames.map(
+    (name) => `export const ${name} = ${JSON.stringify(name)} in __boringCjsExports ? __boringCjsExports[${JSON.stringify(name)}] : undefined;`,
+  )
+
+  return [
+    ...importLines,
+    `const ${CJS_REQUIRE_PLACEHOLDER}_modules = {`,
+    ...requireMapEntries,
+    "};",
+    `function ${CJS_REQUIRE_PLACEHOLDER}(id) {`,
+    `  const ns = ${CJS_REQUIRE_PLACEHOLDER}_modules[id];`,
+    `  if (!ns) throw new Error("runtime plugin CommonJS require could not be resolved: " + id);`,
+    "  const def = ns.default;",
+    "  if (def !== undefined && (ns.__esModule || typeof def !== 'object' || Object.keys(ns).length === 1)) return def;",
+    "  return ns.default !== undefined ? ns.default : ns;",
+    "}",
+    "const __boringCjsModule = { exports: {} };",
+    `(function (module, exports, require) {`,
+    sourceText,
+    `})(__boringCjsModule, __boringCjsModule.exports, ${CJS_REQUIRE_PLACEHOLDER});`,
+    "const __boringCjsExports = __boringCjsModule.exports;",
+    "export default __boringCjsExports;",
+    ...namedExportLines,
+  ].join("\n")
 }
 
 function runtimeAssetModuleCode(path: string, bytes: Uint8Array): string {
@@ -1123,6 +1329,7 @@ export interface PluginFrontRuntimeHost {
   invalidatePlugin(workspaceId: string, pluginId: string, keepRevision?: number): Promise<void>
   disposeWorkspace(workspaceId: string): Promise<void>
   serve(request: PluginFrontRuntimeServeRequest): Promise<PluginFrontRuntimeResponse>
+  warmupWorkspace(workspaceId: string): Promise<void>
   registerRoutes(app: FastifyInstance): Promise<void>
   close(): Promise<void>
 }
@@ -1149,7 +1356,24 @@ export async function createPluginFrontRuntimeHost(
     appType: "custom",
     configFile: false,
     logLevel: "silent",
+    // Disable the dep optimizer entirely. With discovery on, Vite re-optimizes
+    // mid-session as plugin imports surface new deps; each pass rewrites
+    // node_modules/.vite/deps and bumps the browserHash, invalidating chunk
+    // URLs the browser already holds (ERR_FILE_NOT_FOUND_IN_OPTIMIZED_DEP_DIR)
+    // and stalling in-flight plugin front transforms indefinitely. The runtime
+    // host serves deps through its own proxy/singleton routes, so pre-bundling
+    // buys nothing here.
     root: repoRoot,
+    // Skip the dep-optimisation entry scan. Without this, Vite crawls the
+    // entire monorepo looking for import statements and hits files like
+    // App.tsx that import `virtual:boring-front-plugins` — a module that
+    // is not registered in this Vite server. That transform error corrupts
+    // the dep-opt lock, causing any concurrently-starting Vite instance to
+    // hang until the test timeout fires.
+    // noDiscovery disables runtime dep discovery too, so transforming a plugin
+    // module with bare imports (e.g. lucide-react) never triggers Vite's
+    // esbuild pre-bundler, which would hang the request for tens of seconds.
+    optimizeDeps: { entries: [], noDiscovery: true },
     plugins: [
       react(),
       {
@@ -1225,6 +1449,16 @@ export async function createPluginFrontRuntimeHost(
               return runtimeAssetModuleCode(resolvedPath, await readFile(resolvedPath))
             }
             const sourceText = await readFile(resolvedPath, "utf8")
+            const extension = extname(resolvedPath).toLowerCase()
+            const isCommonJs = extension === ".cjs" || (extension !== ".mjs" && looksLikeCommonJs(sourceText))
+            if (isCommonJs) {
+              const interop = await cjsDependencyToEsm(sourceText, resolvedPath)
+              // Validate the rewritten ESM: the original module's require()
+              // targets are now hoisted imports, so they pass through the same
+              // unsafe-specifier gate as any other dependency import.
+              validateSourceImports(interop, resolvedPath, basePath)
+              return interop
+            }
             validateSourceImports(sourceText, resolvedPath, basePath)
             return sourceText
           }
@@ -1750,20 +1984,24 @@ export async function createPluginFrontRuntimeHost(
     assertRuntimeFrontEntrySubpath(frontEntrySubpath)
     const entryUrl = buildRuntimeUrl(basePath, workspaceId, pluginId, revision, frontEntrySubpath)
     const rootDir = resolvePath(args.plugin.rootDir)
+    // Compute the front root ONCE: source-style plugins expose
+    // `front/index.tsx` (front root is `front/`); build-output plugins
+    // expose `dist/front/index.js` (front root is `dist/front/`). The
+    // root governs both the served allowed subtree and the source
+    // snapshot, so they must agree.
+    const frontRootRelative = (frontEntrySubpath === "front" || frontEntrySubpath.startsWith("front/"))
+      ? "front"
+      : dirname(frontEntrySubpath)
+    const frontRootDir = resolvePath(rootDir, frontRootRelative)
     storeTrackedPlugin({
       workspaceId,
       pluginId,
       revision,
       rootDir,
       frontEntrySubpath,
-      frontRootDir: resolvePath(
-        rootDir,
-        frontEntrySubpath === "front" || frontEntrySubpath.startsWith("front/")
-          ? "front"
-          : dirname(frontEntrySubpath),
-      ),
+      frontRootDir,
       sharedRootDir: resolvePath(rootDir, "shared"),
-      sourceSnapshot: snapshotRuntimeSourceFiles(rootDir),
+      sourceSnapshot: snapshotRuntimeSourceFiles(rootDir, frontRootDir, frontRootRelative),
     }, entryUrl)
     return entryUrl
   }
@@ -1772,7 +2010,13 @@ export async function createPluginFrontRuntimeHost(
     return (plugin: BoringServerPluginManifest, context: { revision: number; frontEntrySubpath: string }) => {
       if (!plugin.frontPath) return undefined
       const frontEntrySubpath = normalizeRequestSubpath(context.frontEntrySubpath)
-      if (!frontEntrySubpath.startsWith("front/")) return undefined
+      // The runtime host serves any relative path inside the plugin
+      // root. Source-style plugins expose `front/index.tsx`; published
+      // build-output plugins expose `dist/front/index.js`. Both layouts
+      // are valid — accept any subpath that targets a `front/` segment
+      // somewhere inside the package, and reject everything else
+      // (catches manifest typos and accidental relative-path escapes).
+      if (!/(^|\/)front\//.test(frontEntrySubpath)) return undefined
       return {
         kind: "native",
         entryUrl: trackPlugin({
@@ -1785,6 +2029,43 @@ export async function createPluginFrontRuntimeHost(
         trust: "local-trusted-native",
       }
     }
+  }
+
+  // Pre-transform the front entry (and, transitively, the react /
+  // @hachej/boring-workspace singleton modules it imports) for every tracked
+  // plugin in a workspace so the first browser request hits a warm transform
+  // cache instead of paying ~4s of cold Vite resolve/transform that starves
+  // the event loop. Fire-and-forget: failures are swallowed (the real browser
+  // request will surface them) and serve()'s own promise-dedupe means a
+  // concurrent browser hit reuses this in-flight transform rather than racing.
+  async function warmupWorkspace(workspaceId: string): Promise<void> {
+    if (closed) return
+    const records = trackedWorkspaces.get(workspaceId)
+    if (!records || records.size === 0) return
+    await Promise.all(
+      [...records.values()].map(async (record) => {
+        try {
+          await serve({
+            workspaceId,
+            pluginId: record.pluginId,
+            revision: record.revision,
+            subpath: record.frontEntrySubpath,
+          })
+        } catch (error) {
+          emit({
+            level: "warn",
+            stage: "transform",
+            outcome: "rejected",
+            msg: "plugin front warmup transform failed (ignored)",
+            workspaceId,
+            pluginId: record.pluginId,
+            revision: record.revision,
+            requestedPath: record.frontEntrySubpath,
+            details: { error: error instanceof Error ? error.message : String(error) },
+          })
+        }
+      }),
+    )
   }
 
   function untrackPlugin(workspaceId: string, pluginId: string): void {
@@ -1820,6 +2101,7 @@ export async function createPluginFrontRuntimeHost(
     invalidatePlugin,
     disposeWorkspace,
     serve,
+    warmupWorkspace,
     registerRoutes,
     close,
   }

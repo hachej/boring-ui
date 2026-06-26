@@ -17,6 +17,7 @@ import { renderToStaticMarkup } from "react-dom/server"
 import { afterEach, describe, expect, test, vi } from "vitest"
 import { ErrorCode } from "../../shared/error-codes"
 import { shadcnDefaultToolRenderers } from "../toolRenderers"
+import { Tool, ToolHeader, ToolOutput } from "../primitives/tool"
 import type { ToolPart } from "../../front/toolRenderers"
 import { buildFilesystemAgentTools } from "../../server/tools/filesystem"
 import type { RuntimeBundle } from "../../server/runtime/mode"
@@ -61,6 +62,7 @@ function mockBundle(provider: string): RuntimeBundle {
       }),
     },
     fileSearch: { search: async () => [] },
+    filesystem: provider === "vercel-sandbox" ? { kind: "remote-workspace" } : { kind: "host" },
   }
 }
 
@@ -131,6 +133,53 @@ describe("workspace readiness tool status", () => {
     expect(html).toContain("Python runtime dependencies are still installing.")
     expect(html).toContain("This is retryable")
     expect(html).not.toContain("bm: command not found")
+  })
+})
+
+describe("tool output formatting", () => {
+  test("keeps failed command headers in bounded title, badge, and chevron lanes", () => {
+    const html = renderToStaticMarkup(
+      <Tool>
+        <ToolHeader
+          type="dynamic-tool"
+          toolName="bash"
+          state="output-error"
+          title="bash · printf a-very-long-unbroken-token-that-should-not-push-the-error-badge-away"
+        />
+      </Tool>,
+    )
+
+    expect(html).toContain('data-boring-agent-part="tool-header"')
+    expect(html).toContain('flex w-full min-w-0 items-center')
+    expect(html).toContain('data-boring-agent-part="tool-title"')
+    expect(html).toContain('min-w-0 flex-1 truncate text-sm font-medium')
+    expect(html).toContain('data-slot="badge"')
+    expect(html).toContain('data-boring-agent-part="tool-chevron"')
+    expect(html).toContain("Error")
+  })
+
+  test("formats multiline failed command errors as preformatted text", () => {
+    const html = renderToStaticMarkup(
+      <ToolOutput output={undefined} errorText={'line one\nline two'} />,
+    )
+
+    expect(html).toContain("<pre")
+    expect(html).toContain("whitespace-pre-wrap")
+    expect(html).toContain("overflow-hidden")
+    expect(html).toContain("font-mono")
+    expect(html).toContain("line one\nline two")
+    expect(html).not.toContain("<div></div>")
+  })
+
+  test("does not duplicate object output when an explicit tool error is present", () => {
+    const html = renderToStaticMarkup(
+      <ToolOutput output={{ content: 'line one', errorText: 'line one' }} errorText="line one" />,
+    )
+
+    expect(html).toContain("<pre")
+    expect(html).toContain("line one")
+    expect(html).not.toContain('"content"')
+    expect(html).not.toContain('"errorText"')
   })
 })
 

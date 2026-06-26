@@ -176,6 +176,16 @@ export default function extension(api: { registerTool(tool: unknown): void }) {
 }
 ```
 
+## Chat slash commands
+
+Pi resources double as chat `/slash` commands: extensions, prompts, and skills
+shipped in `package.json#pi` appear automatically in the chat composer's
+slash-command picker, tagged with their source (`extension`/`prompt`/`skill`)
+and plugin name. `kind: skill` commands are forwarded to the agent as
+`skill: <name>`; server commands execute via the agent's commands route without
+going through the chat loop. No harness changes are needed — shipping the Pi
+resource is enough.
+
 ## Folder layout
 
 ```txt
@@ -212,19 +222,9 @@ function components.
 Production Fastify-only hosts need a workspace-owned module asset endpoint
 before loading TS/TSX front plugin entries without Vite.
 
-Runtime reload is separately switchable in `createWorkspaceAgentServer`:
-
-```ts
-createWorkspaceAgentServer({
-  pluginHotReload: true, // /reload refreshes front assets and dynamic pi.* snapshots
-})
-```
-
-Set `pluginHotReload: false` for static production hosts. The workspace still
-takes a boot-time snapshot of discovered/default package `pi.*` resources and
-`pi.systemPrompt`; it just does not refresh them on `/reload`. Workspace server
-entries are always boot-time/static composition: restart the host process after
-changing `boring.server` code.
+Runtime front assets and dynamic `pi.*` snapshots refresh through the canonical
+`/reload` path. Workspace server entries remain boot-time/static composition:
+restart the host process after changing `boring.server` code.
 
 ## Invariants
 

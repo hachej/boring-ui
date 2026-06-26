@@ -28,38 +28,6 @@ interface ToolCall {
   params: Record<string, unknown>
 }
 
-function parseToolCalls(body: string): { calls: ToolCall[]; text: string } {
-  const calls: ToolCall[] = []
-  const textParts: string[] = []
-  for (const line of body.split("\n")) {
-    const trimmed = line.trim()
-    if (!trimmed.startsWith("data:")) continue
-    const payload = trimmed.slice("data:".length).trim()
-    if (!payload || payload === "[DONE]") continue
-    let chunk: Record<string, unknown>
-    try {
-      chunk = JSON.parse(payload)
-    } catch {
-      continue
-    }
-    if (chunk.type === "tool-input-available") {
-      const toolName = chunk.toolName
-      const input = chunk.input
-      if (typeof toolName !== "string") continue
-      calls.push({
-        tool: toolName,
-        params:
-          input && typeof input === "object" && !Array.isArray(input)
-            ? (input as Record<string, unknown>)
-            : {},
-      })
-    } else if (chunk.type === "text-delta" && typeof chunk.delta === "string") {
-      textParts.push(chunk.delta)
-    }
-  }
-  return { calls, text: textParts.join("") }
-}
-
 async function setUiState(
   app: FastifyInstance,
   state: Record<string, unknown>,
@@ -74,20 +42,66 @@ async function setUiState(
   }
 }
 
+async function readChatState(app: FastifyInstance, sessionId: string): Promise<Record<string, unknown>> {
+  const res = await app.inject({
+    method: "GET",
+    url: `/api/v1/agent/pi-chat/${encodeURIComponent(sessionId)}/state`,
+  })
+  if (res.statusCode !== 200) {
+    throw new Error(`GET /pi-chat/state returned ${res.statusCode}: ${res.body}`)
+  }
+  return JSON.parse(res.body) as Record<string, unknown>
+}
+
+function captureTurn(messages: unknown[], fromIndex: number): { calls: ToolCall[]; text: string } {
+  const calls: ToolCall[] = []
+  const textParts: string[] = []
+  for (const message of messages.slice(fromIndex)) {
+    const parts = Array.isArray((message as { parts?: unknown[] })?.parts) ? (message as { parts: unknown[] }).parts : []
+    for (const part of parts) {
+      const rec = part as Record<string, unknown>
+      if (rec.type === "text" && typeof rec.text === "string") textParts.push(rec.text)
+      if (rec.type === "tool-call" && typeof rec.toolName === "string") {
+        calls.push({
+          tool: rec.toolName,
+          params: rec.input && typeof rec.input === "object" && !Array.isArray(rec.input)
+            ? (rec.input as Record<string, unknown>)
+            : {},
+        })
+      }
+    }
+  }
+  return { calls, text: textParts.join("") }
+}
+
 async function sendTurn(
   app: FastifyInstance,
   sessionId: string,
   message: string,
 ): Promise<{ calls: ToolCall[]; text: string }> {
+  const before = await readChatState(app, sessionId)
+  const beforeCount = Array.isArray(before.messages) ? before.messages.length : 0
+
   const res = await app.inject({
     method: "POST",
-    url: "/api/v1/agent/chat",
-    payload: { sessionId, message },
+    url: `/api/v1/agent/pi-chat/${encodeURIComponent(sessionId)}/prompt`,
+    payload: { message, clientNonce: `turn-${Date.now()}-${Math.random().toString(36).slice(2)}` },
   })
-  if (res.statusCode !== 200) {
-    throw new Error(`POST /chat returned ${res.statusCode}: ${res.body}`)
+  if (res.statusCode !== 202 && res.statusCode !== 200) {
+    throw new Error(`POST /pi-chat/prompt returned ${res.statusCode}: ${res.body}`)
   }
-  return parseToolCalls(res.body)
+
+  // The prompt route is async (202) — poll until the turn settles.
+  const deadline = Date.now() + 120_000
+  for (;;) {
+    const snapshot = await readChatState(app, sessionId)
+    if (snapshot.status !== "streaming") {
+      const messages = Array.isArray(snapshot.messages) ? snapshot.messages : []
+      return captureTurn(messages, beforeCount)
+    }
+    if (Date.now() > deadline) throw new Error("pi-chat turn did not settle within 120s")
+    await new Promise((resolve) => setTimeout(resolve, 250))
+  }
 }
 
 describeIf("exec_ui openFile — re-open after close (live LLM)", () => {
@@ -117,11 +131,6 @@ describeIf("exec_ui openFile — re-open after close (live LLM)", () => {
     "agent re-calls exec_ui openFile after the tab is closed",
     async () => {
       const sessionId = `reopen-${Date.now()}`
-      await app.inject({
-        method: "POST",
-        url: "/api/v1/agent/sessions",
-        payload: { id: sessionId },
-      })
 
       // Turn 1: empty workspace, ask to open the file.
       await setUiState(app, { workbenchOpen: true, openTabs: [], activeTab: null })
@@ -175,11 +184,6 @@ describeIf("exec_ui openFile — re-open after close (live LLM)", () => {
       // again — they want it focused, not a "Already done" reply. The agent
       // must call exec_ui regardless of what state says.
       const sessionId = `reopen-stateopen-${Date.now()}`
-      await app.inject({
-        method: "POST",
-        url: "/api/v1/agent/sessions",
-        payload: { id: sessionId },
-      })
 
       // Pre-set state: README.md is already in openTabs and active.
       await setUiState(app, {

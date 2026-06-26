@@ -5,10 +5,12 @@ import {
   Suspense,
   useCallback,
   useEffect,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
 } from "react"
+import { createPortal } from "react-dom"
 import type { DockviewPanelApi } from "dockview-react"
 import {
   useFileList,
@@ -18,6 +20,7 @@ import {
   useDeleteFile,
   useFileSearch,
   useDataClient,
+  useGitUrlMetadata,
 } from "../data"
 import type { FileEntry } from "../data/types"
 import type { FileTreeNode, FileTreeEditState } from "./FileTree"
@@ -29,7 +32,7 @@ import {
   parentDir,
   type DraftEditing,
 } from "./treeModel"
-import type { WorkspaceBridge } from "../../../../front/bridge/types"
+import type { FileTreeBridge } from "../../../../front/bridge/types"
 import { PanelChrome } from "../../../../front/dock"
 import {
   DEFAULT_TREE_IGNORE,
@@ -78,11 +81,33 @@ interface ContextMenuState {
   isBackground?: boolean
 }
 
+const CONTEXT_MENU_MARGIN = 8
+const SETTLED_REMOTE_TREE_REFRESH_MS = 250
+
+function clampContextMenuPosition(
+  x: number,
+  y: number,
+  menuRect: Pick<DOMRect, "width" | "height">,
+  viewportWidth: number,
+  viewportHeight: number,
+) {
+  return {
+    x: Math.max(
+      CONTEXT_MENU_MARGIN,
+      Math.min(x, viewportWidth - menuRect.width - CONTEXT_MENU_MARGIN),
+    ),
+    y: Math.max(
+      CONTEXT_MENU_MARGIN,
+      Math.min(y, viewportHeight - menuRect.height - CONTEXT_MENU_MARGIN),
+    ),
+  }
+}
+
 export interface FileTreeViewProps {
   rootDir?: string
   /** Already-debounced query. Empty/undefined means no filter. */
   searchQuery?: string
-  bridge?: Pick<WorkspaceBridge, "openFile" | "getActiveFile" | "select"> & Partial<Pick<WorkspaceBridge, "subscribe">>
+  bridge?: FileTreeBridge
   revealFileTreeRequest?: { path: string; seq: number } | null
   /**
    * Names (or regex patterns) to hide from the tree. Defaults to
@@ -110,6 +135,19 @@ function parentDirsForReveal(path: string): string[] {
   return dirs
 }
 
+function basename(path: string): string {
+  const i = path.lastIndexOf("/")
+  return i >= 0 ? path.slice(i + 1) : path
+}
+
+function hideEntries(
+  entries: FileEntry[] | undefined,
+  hiddenPaths: ReadonlySet<string>,
+): FileEntry[] | undefined {
+  if (!entries || hiddenPaths.size === 0) return entries
+  return entries.filter((entry) => !hiddenPaths.has(entry.path))
+}
+
 /**
  * File tree with the full workbench actions: tracks container height,
  * routes selects through `bridge.openFile`, and provides a right-click
@@ -134,10 +172,11 @@ export function FileTreeView({
   const [optimisticEntries, setOptimisticEntries] = useState<
     Map<string, FileEntry[]>
   >(new Map())
+  const [hiddenEntryPaths, setHiddenEntryPaths] = useState<Set<string>>(new Set())
   const rootDirKey = dirKey(rootDir)
   const rawFileListWithOptimistic = useMemo(
-    () => mergeEntries(rawFileList, optimisticEntries.get(rootDirKey)),
-    [rawFileList, optimisticEntries, rootDirKey],
+    () => hideEntries(mergeEntries(rawFileList, optimisticEntries.get(rootDirKey)), hiddenEntryPaths),
+    [rawFileList, optimisticEntries, rootDirKey, hiddenEntryPaths],
   )
   // Filter out junk folders (node_modules, dist, …) before they hit
   // buildTree. Cheap O(n) at the top level; nested children are already
@@ -156,20 +195,27 @@ export function FileTreeView({
     Map<string, FileEntry[]>
   >(new Map())
   const expandedChildrenWithOptimistic = useMemo(() => {
-    if (optimisticEntries.size === 0) return expandedChildren
-    const next = new Map(expandedChildren)
+    if (optimisticEntries.size === 0 && hiddenEntryPaths.size === 0) return expandedChildren
+    const next = new Map<string, FileEntry[]>()
+    for (const [dir, entries] of expandedChildren) {
+      next.set(dir, hideEntries(entries, hiddenEntryPaths) ?? entries)
+    }
     for (const [dir, entries] of optimisticEntries) {
       if (dir === rootDirKey) continue
-      const merged = mergeEntries(next.get(dir), entries)
+      const merged = hideEntries(mergeEntries(next.get(dir), entries), hiddenEntryPaths)
       if (merged) next.set(dir, merged)
     }
     return next
-  }, [expandedChildren, optimisticEntries, rootDirKey])
+  }, [expandedChildren, optimisticEntries, rootDirKey, hiddenEntryPaths])
 
   const containerRef = useRef<HTMLDivElement>(null)
   const [treeHeight, setTreeHeight] = useState(400)
 
   const [ctxMenu, setCtxMenu] = useState<ContextMenuState | null>(null)
+  const gitUrlPath = ctxMenu && !ctxMenu.isBackground && ctxMenu.node.kind === "file"
+    ? ctxMenu.node.path
+    : null
+  const { data: gitUrlMetadata } = useGitUrlMetadata(gitUrlPath)
   const [deleteTarget, setDeleteTarget] = useState<FileTreeNode | null>(null)
   const menuRef = useRef<HTMLDivElement>(null)
   const [selectedPath, setSelectedPath] = useState<string | null>(
@@ -200,6 +246,23 @@ export function FileTreeView({
     }
     document.addEventListener("pointerdown", onPointerDown)
     return () => document.removeEventListener("pointerdown", onPointerDown)
+  }, [ctxMenu])
+
+  useLayoutEffect(() => {
+    if (!ctxMenu || !menuRef.current) return
+    const { x, y } = clampContextMenuPosition(
+      ctxMenu.x,
+      ctxMenu.y,
+      menuRef.current.getBoundingClientRect(),
+      window.innerWidth,
+      window.innerHeight,
+    )
+    if (x === ctxMenu.x && y === ctxMenu.y) return
+    setCtxMenu((prev) => {
+      if (!prev) return prev
+      if (prev.x === x && prev.y === y) return prev
+      return { ...prev, x, y }
+    })
   }, [ctxMenu])
 
   useEffect(() => {
@@ -294,6 +357,51 @@ export function FileTreeView({
     [dataClient, rootDir, ignoreNames],
   )
 
+  // Expanded subfolders cache their children in local state (not react-query),
+  // so `useFileList`'s invalidation only refreshes the root level. Mirror the
+  // expanded dir set into a ref and re-fetch the affected dir when an
+  // agent/remote change lands inside it — otherwise a file the agent writes
+  // into an open folder stays hidden until the user collapses + re-expands it.
+  // `user`-caused changes already refresh locally at their call sites.
+  const expandedDirsRef = useRef<Set<string>>(new Set())
+  useEffect(() => {
+    expandedDirsRef.current = new Set(expandedChildren.keys())
+  }, [expandedChildren])
+
+  useEffect(() => {
+    const settledTimers = new Set<ReturnType<typeof setTimeout>>()
+    const affected = (paths: string[]): string[] =>
+      Array.from(new Set(paths.map(parentDir))).filter((dir) => expandedDirsRef.current.has(dir))
+    const refreshNowAndAfterSettle = (dirs: string[]) => {
+      if (!dirs.length) return
+      void refreshDirs(dirs)
+      const timer = setTimeout(() => {
+        settledTimers.delete(timer)
+        void refreshDirs(dirs)
+      }, SETTLED_REMOTE_TREE_REFRESH_MS)
+      settledTimers.add(timer)
+    }
+    const offCreated = events.on(filesystemEvents.created, (e) => {
+      if (e.cause === "user") return
+      refreshNowAndAfterSettle(affected([e.path]))
+    })
+    const offDeleted = events.on(filesystemEvents.deleted, (e) => {
+      if (e.cause === "user") return
+      refreshNowAndAfterSettle(affected([e.path]))
+    })
+    const offMoved = events.on(filesystemEvents.moved, (e) => {
+      if (e.cause === "user") return
+      refreshNowAndAfterSettle(affected([e.from, e.to]))
+    })
+    return () => {
+      offCreated()
+      offDeleted()
+      offMoved()
+      for (const timer of settledTimers) clearTimeout(timer)
+      settledTimers.clear()
+    }
+  }, [refreshDirs])
+
   const revealTreePath = useCallback(
     async (path: string | null, options?: { refreshTargetDir?: boolean }) => {
       if (!path) return
@@ -380,6 +488,52 @@ export function FileTreeView({
       return next
     })
   }, [])
+
+  const hideEntry = useCallback((path: string) => {
+    setHiddenEntryPaths((prev) => {
+      if (prev.has(path)) return prev
+      const next = new Set(prev)
+      next.add(path)
+      return next
+    })
+  }, [])
+
+  const unhideEntry = useCallback((path: string) => {
+    setHiddenEntryPaths((prev) => {
+      if (!prev.has(path)) return prev
+      const next = new Set(prev)
+      next.delete(path)
+      return next
+    })
+  }, [])
+
+  useEffect(() => {
+    const shouldPatchDir = (dir: string) => dir === rootDirKey || expandedDirsRef.current.has(dir)
+    const offCreated = events.on(filesystemEvents.created, (e) => {
+      unhideEntry(e.path)
+      if (e.cause === "user") return
+      const dir = parentDir(e.path)
+      if (shouldPatchDir(dir)) {
+        addOptimisticEntry(dir, { name: basename(e.path), kind: e.kind, path: e.path })
+      }
+    })
+    const offDeleted = events.on(filesystemEvents.deleted, (e) => {
+      if (e.cause === "user") return
+      hideEntry(e.path)
+      removeOptimisticEntry(parentDir(e.path), e.path)
+    })
+    const offMoved = events.on(filesystemEvents.moved, (e) => {
+      if (e.cause === "user") return
+      hideEntry(e.from)
+      unhideEntry(e.to)
+      removeOptimisticEntry(parentDir(e.from), e.from)
+    })
+    return () => {
+      offCreated()
+      offDeleted()
+      offMoved()
+    }
+  }, [addOptimisticEntry, hideEntry, removeOptimisticEntry, rootDirKey, unhideEntry])
 
   // Paths currently being mutated (move/rename/delete/create). Renders a
   // pending spinner on the affected rows. Set during the await; cleared in
@@ -519,7 +673,7 @@ export function FileTreeView({
           addOptimisticEntry(dir, optimisticEntry)
           addedOptimisticPath = newPath
           if (current.kind === "create-file") {
-            await writeFile({ path: newPath, content: "" })
+            await writeFile({ path: newPath, content: "", returnMtimeMs: false })
             // useFileWrite emits changed (it can't tell create from edit);
             // the call site knows this was a creation, so emit here.
             // useCreateDir already emits its own filesystem create event.
@@ -528,6 +682,7 @@ export function FileTreeView({
               path: newPath,
               kind: "file",
             })
+            handleSelect(newPath)
             toast.success({ title: "File created", description: newPath })
           } else {
             await createDir({ path: newPath })
@@ -562,6 +717,7 @@ export function FileTreeView({
       clearPending,
       addOptimisticEntry,
       removeOptimisticEntry,
+      handleSelect,
     ],
   )
 
@@ -573,6 +729,14 @@ export function FileTreeView({
     if (!ctxMenu?.node) return
     await copyToClipboard(ctxMenu.node.path)
     toast.success({ title: "Path copied", description: ctxMenu.node.path })
+  })
+
+  const handleCopyGitUrl = ctxAction(async () => {
+    if (!gitUrlMetadata?.enabled || !gitUrlMetadata.url) {
+      throw new Error(gitUrlMetadata?.reason ?? "Git URL unavailable")
+    }
+    await copyToClipboard(gitUrlMetadata.url)
+    toast.success({ title: "Git URL copied", description: gitUrlMetadata.url })
   })
 
   const handleDeleteConfirm = useCallback(async () => {
@@ -682,7 +846,7 @@ export function FileTreeView({
         )}
       </div>
 
-      {ctxMenu && (
+      {ctxMenu && createPortal(
         <div
           ref={menuRef}
           role="menu"
@@ -716,9 +880,23 @@ export function FileTreeView({
               <Button type="button" role="menuitem" variant="ghost" size="sm" className="w-full justify-start" onClick={handleCopyPath}>
                 Copy path
               </Button>
+              {gitUrlMetadata?.enabled ? (
+                <Button type="button" role="menuitem" variant="ghost" size="sm" className="w-full justify-start" onClick={handleCopyGitUrl}>
+                  Copy Git URL
+                </Button>
+              ) : gitUrlMetadata?.reason ? (
+                <div className="px-2 py-1 text-xs text-muted-foreground" aria-live="polite">
+                  {gitUrlMetadata.reason}
+                </div>
+              ) : null}
             </>
           )}
-        </div>
+        </div>,
+        // Portal to <body>: the menu is position:fixed, but the dockview panel
+        // ancestor is transformed (its own containing block) and PanelChrome is
+        // overflow-hidden, which clipped the menu at the panel's bottom edge.
+        // Rendering at the body root makes "fixed" truly viewport-relative.
+        document.body,
       )}
 
       <AlertDialog
@@ -746,6 +924,8 @@ export function FileTreeView({
   )
 }
 
+export { clampContextMenuPosition }
+
 export interface FileTreePaneParams extends LeftTabParams {
   rootDir?: string
   searchQuery?: string
@@ -759,7 +939,7 @@ export interface FileTreePaneProps extends Partial<PaneProps<FileTreePaneParams>
   rootDir?: string
   searchQuery?: string
   panelApi?: DockviewPanelApi
-  bridge?: WorkspaceBridge
+  bridge?: FileTreeBridge
   chromeless?: boolean
   className?: string
 }
@@ -780,7 +960,7 @@ export function FileTreePane({
   className,
 }: FileTreePaneProps) {
   const effectiveRootDir = params?.rootDir ?? rootDir
-  const effectiveBridge = (params?.bridge as WorkspaceBridge | undefined) ?? bridge
+  const effectiveBridge = (params?.bridge as FileTreeBridge | undefined) ?? bridge
   const effectiveChromeless = params?.chromeless ?? chromeless
   const effectiveRevealRequest = params?.revealFileTreeRequest ?? null
   const externalSearchQuery =

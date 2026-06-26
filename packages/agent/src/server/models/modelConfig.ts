@@ -12,6 +12,19 @@ const INFOMANIAK_PROVIDER = 'infomaniak'
 const INFOMANIAK_API_BASE = 'https://api.infomaniak.com'
 const DEFAULT_CUSTOM_MODEL_MAX_TOKENS = 16_384
 const DEFAULT_CUSTOM_MODEL_CONTEXT_WINDOW = 200_000
+const DEFAULT_INFOMANIAK_MODELS = [
+  'moonshotai/Kimi-K2.6',
+  'nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B-FP8',
+  'Qwen/Qwen3.5-122B-A10B-FP8',
+]
+
+type OpenAICompletionsCompatDefaults = Partial<{
+  supportsStore: boolean
+  supportsDeveloperRole: boolean
+  supportsReasoningEffort: boolean
+  supportsUsageInStreaming: boolean
+  maxTokensField: 'max_tokens' | 'max_completion_tokens'
+}>
 
 function clean(value: string | undefined): string | undefined {
   const trimmed = value?.trim()
@@ -43,6 +56,30 @@ function readModelInput(name: string): Array<'text' | 'image'> {
   return parsed.length > 0 ? parsed : ['text']
 }
 
+function readMaxTokensField(
+  name: string,
+  fallback: 'max_tokens' | 'max_completion_tokens' = 'max_completion_tokens',
+): 'max_tokens' | 'max_completion_tokens' {
+  const raw = clean(getEnv(name))
+  return raw === 'max_tokens' || raw === 'max_completion_tokens' ? raw : fallback
+}
+
+// Some OpenAI-compatible gateways (e.g. Ollama/Infomaniak) reject store,
+// developer-role, reasoning-effort fields or want `max_tokens`; let hosts tune
+// compat per provider env prefix instead of hardcoding OpenAI defaults.
+function buildOpenAICompletionsCompat(
+  envPrefix: string,
+  defaults: OpenAICompletionsCompatDefaults = {},
+) {
+  return {
+    supportsStore: readBoolean(`${envPrefix}_SUPPORTS_STORE`, defaults.supportsStore ?? false),
+    supportsDeveloperRole: readBoolean(`${envPrefix}_SUPPORTS_DEVELOPER_ROLE`, defaults.supportsDeveloperRole ?? true),
+    supportsReasoningEffort: readBoolean(`${envPrefix}_SUPPORTS_REASONING_EFFORT`, defaults.supportsReasoningEffort ?? true),
+    supportsUsageInStreaming: readBoolean(`${envPrefix}_SUPPORTS_USAGE_IN_STREAMING`, defaults.supportsUsageInStreaming ?? true),
+    maxTokensField: readMaxTokensField(`${envPrefix}_MAX_TOKENS_FIELD`, defaults.maxTokensField),
+  }
+}
+
 function readApiKeyEnv(candidates: string[]): string | undefined {
   for (const candidate of candidates) {
     const envName = clean(candidate)
@@ -52,41 +89,33 @@ function readApiKeyEnv(candidates: string[]): string | undefined {
 }
 
 function buildOpenAICompatibleProviderConfig(opts: {
-  modelId: string
-  modelName?: string
+  models: Array<{ id: string; name?: string }>
   apiKeyEnv: string
   baseUrl: string
   envPrefix: string
+  compatDefaults?: OpenAICompletionsCompatDefaults
 }): ProviderConfigInput {
   return {
     baseUrl: opts.baseUrl,
     apiKey: opts.apiKeyEnv,
     api: 'openai-completions',
-    models: [
-      {
-        id: opts.modelId,
-        name: opts.modelName ?? opts.modelId,
-        api: 'openai-completions',
-        reasoning: readBoolean(`${opts.envPrefix}_REASONING`, true),
-        input: readModelInput(`${opts.envPrefix}_INPUT`),
-        cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
-        contextWindow: readPositiveInt(
-          `${opts.envPrefix}_CONTEXT_WINDOW`,
-          DEFAULT_CUSTOM_MODEL_CONTEXT_WINDOW,
-        ),
-        maxTokens: readPositiveInt(
-          `${opts.envPrefix}_MAX_TOKENS`,
-          DEFAULT_CUSTOM_MODEL_MAX_TOKENS,
-        ),
-        compat: {
-          supportsStore: false,
-          supportsDeveloperRole: true,
-          supportsReasoningEffort: true,
-          supportsUsageInStreaming: true,
-          maxTokensField: 'max_completion_tokens',
-        },
-      },
-    ],
+    models: opts.models.map((model) => ({
+      id: model.id,
+      name: model.name ?? model.id,
+      api: 'openai-completions',
+      reasoning: readBoolean(`${opts.envPrefix}_REASONING`, true),
+      input: readModelInput(`${opts.envPrefix}_INPUT`),
+      cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+      contextWindow: readPositiveInt(
+        `${opts.envPrefix}_CONTEXT_WINDOW`,
+        DEFAULT_CUSTOM_MODEL_CONTEXT_WINDOW,
+      ),
+      maxTokens: readPositiveInt(
+        `${opts.envPrefix}_MAX_TOKENS`,
+        DEFAULT_CUSTOM_MODEL_MAX_TOKENS,
+      ),
+      compat: buildOpenAICompletionsCompat(opts.envPrefix, opts.compatDefaults),
+    })),
   }
 }
 
@@ -99,32 +128,59 @@ function readInfomaniakBaseUrl(): string | undefined {
   return `${INFOMANIAK_API_BASE}/2/ai/${productId}/openai/v1`
 }
 
+function readInfomaniakModelIds(): string[] {
+  const configured = clean(getEnv('BORING_AGENT_INFOMANIAK_MODELS'))
+    ?.split(',')
+    .map((part) => part.trim())
+    .filter(Boolean)
+  const ids = configured?.length ? configured : [...DEFAULT_INFOMANIAK_MODELS]
+  const legacyModel = clean(getEnv('BORING_AGENT_INFOMANIAK_MODEL'))
+  if (legacyModel && !ids.includes(legacyModel)) ids.push(legacyModel)
+  return Array.from(new Set(ids))
+}
+
 function readInfomaniakProvider(): {
   provider: string
   config: ProviderConfigInput
-  model: AgentModelSelection
+  models: AgentModelSelection[]
+  defaultModel: AgentModelSelection
 } | undefined {
-  const modelId = clean(getEnv('BORING_AGENT_INFOMANIAK_MODEL'))
+  const modelIds = readInfomaniakModelIds()
+  const defaultModelId = clean(getEnv('BORING_AGENT_INFOMANIAK_MODEL'))
     ?? clean(getEnv('BORING_AGENT_DEFAULT_MODEL_ID'))
+    ?? modelIds[0]
   const baseUrl = readInfomaniakBaseUrl()
   const apiKeyEnv = readApiKeyEnv([
     clean(getEnv('BORING_AGENT_INFOMANIAK_API_KEY_ENV')) ?? '',
     'INFOMANIAK_API_TOKEN',
     'BORING_AGENT_INFOMANIAK_API_KEY',
   ])
-  if (!modelId || !baseUrl || !apiKeyEnv) return undefined
+  if (!defaultModelId || !baseUrl || !apiKeyEnv) return undefined
 
   const provider = clean(getEnv('BORING_AGENT_INFOMANIAK_PROVIDER'))
     ?? INFOMANIAK_PROVIDER
+  const modelName = clean(getEnv('BORING_AGENT_INFOMANIAK_MODEL_NAME'))
+  const models = modelIds.map((id) => {
+    const model: { id: string; name?: string } = { id }
+    if (id === defaultModelId && modelName) model.name = modelName
+    return model
+  })
+  if (!models.some((model) => model.id === defaultModelId)) {
+    models.push({ id: defaultModelId, name: modelName })
+  }
   return {
     provider,
-    model: { provider, id: modelId },
+    models: models.map((model) => ({ provider, id: model.id })),
+    defaultModel: { provider, id: defaultModelId },
     config: buildOpenAICompatibleProviderConfig({
-      modelId,
-      modelName: clean(getEnv('BORING_AGENT_INFOMANIAK_MODEL_NAME')),
+      models,
       apiKeyEnv,
       baseUrl,
       envPrefix: 'BORING_AGENT_INFOMANIAK',
+      // Infomaniak's OpenAI-compatible chat endpoint rejects OpenAI's newer
+      // `developer` role (surfacing as "400 Unexpected message role"). Hosts
+      // can opt back in with BORING_AGENT_INFOMANIAK_SUPPORTS_DEVELOPER_ROLE=1.
+      compatDefaults: { supportsDeveloperRole: false, supportsReasoningEffort: false },
     }),
   }
 }
@@ -132,7 +188,8 @@ function readInfomaniakProvider(): {
 function readCustomProvider(): {
   provider: string
   config: ProviderConfigInput
-  model: AgentModelSelection
+  models: AgentModelSelection[]
+  defaultModel: AgentModelSelection
 } | undefined {
   const provider = clean(getEnv('BORING_AGENT_CUSTOM_MODEL_PROVIDER'))
   const modelId = clean(getEnv('BORING_AGENT_CUSTOM_MODEL_ID'))
@@ -143,12 +200,15 @@ function readCustomProvider(): {
   ])
   if (!provider || !modelId || !baseUrl || !apiKeyEnv) return undefined
 
+  const modelName = clean(getEnv('BORING_AGENT_CUSTOM_MODEL_NAME'))
+  const model: { id: string; name?: string } = { id: modelId }
+  if (modelName) model.name = modelName
   return {
     provider,
-    model: { provider, id: modelId },
+    models: [{ provider, id: modelId }],
+    defaultModel: { provider, id: modelId },
     config: buildOpenAICompatibleProviderConfig({
-      modelId,
-      modelName: clean(getEnv('BORING_AGENT_CUSTOM_MODEL_NAME')),
+      models: [model],
       apiKeyEnv,
       baseUrl,
       envPrefix: 'BORING_AGENT_CUSTOM_MODEL',
@@ -165,7 +225,7 @@ export function registerConfiguredModelProviders(
     if (!provider) continue
     if (seen.has(provider.provider)) continue
     registry.registerProvider(provider.provider, provider.config)
-    registered.push(provider.model)
+    registered.push(...provider.models)
     seen.add(provider.provider)
   }
   return registered
@@ -198,6 +258,6 @@ export function readConfiguredDefaultModel(): AgentModelSelection | undefined {
   }
 
   return readPiSettingsDefaultModel()
-    ?? readInfomaniakProvider()?.model
-    ?? readCustomProvider()?.model
+    ?? readInfomaniakProvider()?.defaultModel
+    ?? readCustomProvider()?.defaultModel
 }

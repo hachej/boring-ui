@@ -2,6 +2,7 @@ import { z } from 'zod'
 
 export const ErrorCode = z.enum([
   // Auth / config
+  'UNAUTHORIZED',
   'MISSING_API_KEY',
   'INVALID_API_KEY',
   'OIDC_REFRESH_FAILED',
@@ -30,8 +31,13 @@ export const ErrorCode = z.enum([
   'SANDBOX_NOT_READY',
   'SANDBOX_EXPIRED',
   'VERCEL_API_ERROR',
+  'REMOTE_WORKER_TIMEOUT',
+  'REMOTE_WORKER_STREAM_CLOSED',
   'CIRCUIT_OPEN',
   'ABORTED',
+
+  // Billing / metering
+  'PAYMENT_REQUIRED',
 
   // Session / bridge
   'SESSION_NOT_FOUND',

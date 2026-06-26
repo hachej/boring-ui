@@ -2,14 +2,6 @@ import type { SlashCommand } from './registry'
 
 export const builtinCommands: SlashCommand[] = [
   {
-    name: 'clear',
-    description: 'Hide messages from display',
-    clickBehavior: 'insert',
-    handler(_, ctx) {
-      ctx.clearMessages()
-    },
-  },
-  {
     name: 'reset',
     description: 'Delete current session and start fresh',
     clickBehavior: 'insert',
@@ -17,6 +9,13 @@ export const builtinCommands: SlashCommand[] = [
       if (!globalThis.confirm('Reset this session? All messages will be cleared.')) return
       ctx.resetSession()
       return 'Session reset.'
+    },
+  },
+  {
+    name: 'clear',
+    description: 'Hide messages from display',
+    handler(_, ctx) {
+      ctx.clearMessages()
     },
   },
   {
@@ -31,13 +30,40 @@ export const builtinCommands: SlashCommand[] = [
     },
   },
   {
+    name: 'model',
+    description: 'Open or set the composer model',
+    handler(args, ctx) {
+      const query = args.trim()
+      if (query) return ctx.selectComposerModel?.(query)
+      if (ctx.openModelPicker?.() === false) return { preserveDraft: true }
+    },
+  },
+  {
+    name: 'thinking',
+    description: 'Open or set the thinking level',
+    handler(args, ctx) {
+      const query = args.trim()
+      if (query) return ctx.selectComposerThinking?.(query)
+      if (ctx.openThinkingPicker?.() === false) return { preserveDraft: true }
+    },
+  },
+  {
     name: 'help',
     description: 'Show available commands',
     clickBehavior: 'insert',
     handler(_, ctx) {
       const cmds = ctx.listCommands()
       if (cmds.length === 0) return 'No commands available.'
-      return cmds.map((c) => `/${c.name} — ${c.description}`).join('\n')
+      // Command results render as a plain-text notice (RuntimeNotices uses
+      // `white-space: pre-wrap`, not Streamdown), so a GFM table would show as
+      // raw pipes. A "\n"-joined list keeps each command on its own line.
+      return [
+        'Available commands:',
+        ...cmds.map((c) => {
+          const desc = (c.description ?? '').replace(/\s+/g, ' ').trim()
+          return desc ? `/${c.name} — ${desc}` : `/${c.name}`
+        }),
+      ].join('\n')
     },
   },
 ]

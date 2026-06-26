@@ -8,16 +8,9 @@ import {
 } from '@mariozechner/pi-coding-agent'
 
 import type { AgentTool } from '../../../shared/tool'
-import { getRuntimeBundleStorageRoot, type RuntimeBundle } from '../../runtime/mode'
+import { getRuntimeBundleStorageRoot, type RuntimeBundle, type RuntimeFilesystemStrategy } from '../../runtime/mode'
 import { boundFs } from '../operations/bound'
-import {
-  vercelEditOps,
-  vercelFindOps,
-  vercelLsOps,
-  vercelReadOps,
-  vercelWriteOps,
-} from '../operations/vercel'
-import { vercelGrepTool } from '../vercelGrepTool'
+import { buildRemoteWorkspaceFilesystemAgentTools } from './remoteWorkspaceTools'
 
 interface PiToolResultLike {
   content?: Array<{ type: string; text?: string }>
@@ -81,21 +74,21 @@ function adaptPiTool<TParams extends Record<string, unknown>>(
   }
 }
 
+function defaultFilesystemStrategyForBundle(bundle: RuntimeBundle): RuntimeFilesystemStrategy {
+  return bundle.sandbox.placement === 'remote'
+    ? { kind: 'remote-workspace' }
+    : { kind: 'host' }
+}
+
 export function buildFilesystemAgentTools(bundle: RuntimeBundle): AgentTool[] {
   const cwd = bundle.workspace.root
-  const storageRoot = getRuntimeBundleStorageRoot(bundle)
+  const strategy = bundle.filesystem ?? defaultFilesystemStrategyForBundle(bundle)
 
-  if (bundle.sandbox.provider === 'vercel-sandbox') {
-    return [
-      adaptPiTool(createReadToolDefinition(cwd, { operations: vercelReadOps(bundle.workspace) })),
-      adaptPiTool(createWriteToolDefinition(cwd, { operations: vercelWriteOps(bundle.workspace) })),
-      adaptPiTool(createEditToolDefinition(cwd, { operations: vercelEditOps(bundle.workspace) })),
-      adaptPiTool(createFindToolDefinition(cwd, { operations: vercelFindOps(bundle.sandbox, bundle.workspace) })),
-      { ...vercelGrepTool(bundle.sandbox, cwd), readinessRequirements: ['workspace-fs'] },
-      adaptPiTool(createLsToolDefinition(cwd, { operations: vercelLsOps(bundle.workspace) })),
-    ]
+  if (strategy.kind === 'remote-workspace') {
+    return buildRemoteWorkspaceFilesystemAgentTools(bundle, strategy.pathOptions)
   }
 
+  const storageRoot = getRuntimeBundleStorageRoot(bundle)
   const ops = boundFs(storageRoot, { runtimeRoot: cwd })
   return [
     adaptPiTool(createReadToolDefinition(cwd, { operations: ops.read })),

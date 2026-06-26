@@ -65,6 +65,14 @@ describe("full-page panel helpers", () => {
       }),
     ).toBe("/full-page?component=deck&params=%7B%22path%22%3A%22deck%2Fintro.md%22%7D")
 
+    expect(
+      buildFullPagePanelHref({
+        componentId: "deck",
+        params: { path: "deck/intro.md" },
+        basePath: "/full-page?workspaceId=workspace-a",
+      }),
+    ).toBe("/full-page?workspaceId=workspace-a&component=deck&params=%7B%22path%22%3A%22deck%2Fintro.md%22%7D")
+
     const wrapper = ({ children }: { children: ReactNode }) => (
       <WorkspaceProvider persistenceEnabled={false} fullPageBasePath="/full-page">
         {children}
@@ -105,7 +113,7 @@ describe("parseFullPagePanelLocation", () => {
 describe("WorkspaceFullPagePanel", () => {
   it("renders an opted-in panel in full-page mode", async () => {
     render(
-      <WorkspaceProvider persistenceEnabled={false} panels={[fullPagePanel]}>
+      <WorkspaceProvider persistenceEnabled={false} manageDocumentTitle={false} panels={[fullPagePanel]}>
         <WorkspaceFullPagePanel componentId="deck" params={{ path: "deck/intro.md" }} />
       </WorkspaceProvider>,
     )
@@ -117,7 +125,7 @@ describe("WorkspaceFullPagePanel", () => {
 
   it("rejects panels that do not opt into full-page mode", () => {
     render(
-      <WorkspaceProvider persistenceEnabled={false} panels={[dockOnlyPanel]}>
+      <WorkspaceProvider persistenceEnabled={false} manageDocumentTitle={false} panels={[dockOnlyPanel]}>
         <WorkspaceFullPagePanel componentId="dock-only" />
       </WorkspaceProvider>,
     )
@@ -130,7 +138,7 @@ describe("WorkspaceFullPagePanel", () => {
 
     try {
       render(
-        <WorkspaceProvider persistenceEnabled={false} panels={[crashingPanel]}>
+        <WorkspaceProvider persistenceEnabled={false} manageDocumentTitle={false} panels={[crashingPanel]}>
           <WorkspaceFullPagePanel componentId="crashy" />
         </WorkspaceProvider>,
       )

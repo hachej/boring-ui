@@ -9,7 +9,7 @@
  */
 import { mkdtemp, readFile, rm, writeFile, mkdir } from "node:fs/promises"
 import { tmpdir } from "node:os"
-import { join } from "node:path"
+import { join, resolve } from "node:path"
 import { afterEach, beforeEach, expect, test, describe } from "vitest"
 import {
   collectWorkspaceAgentServerPlugins,
@@ -469,6 +469,38 @@ describe("createWorkspaceAgentServer — plugin provisioning", () => {
     }
   }, 15_000)
 
+  // Issue #200: a workspace-local `.agents/skills/<name>` skill must appear in
+  // the slash-command list (the unified /api/v1/agent/commands endpoint), not
+  // only in the /skills API — alongside the existing package/global skills.
+  test("local .agents/skills skill appears in the slash-command list (#200)", async () => {
+    const workspaceRoot = await makeTempDir("boring-local-skill-slash-")
+    await mkdir(join(workspaceRoot, ".agents", "skills", "local-test-skill"), { recursive: true })
+    await writeFile(
+      join(workspaceRoot, ".agents", "skills", "local-test-skill", "SKILL.md"),
+      "---\nname: local-test-skill\ndescription: A workspace-local skill for the slash list.\n---\n# Local test skill\n",
+      "utf8",
+    )
+
+    const app = await createWorkspaceAgentServer({
+      workspaceRoot,
+      mode: "direct",
+      logger: false,
+    })
+
+    try {
+      const res = await app.inject({ method: "GET", url: "/api/v1/agent/commands?sessionId=default" })
+      expect(res.statusCode).toBe(200)
+      const commands = res.json().commands as Array<{ name: string; source: string }>
+      const skillCommands = commands.filter((c) => c.source === "skill").map((c) => c.name)
+      // Pi prefixes skill commands with `skill:`. The local skill must be listed
+      // and existing package skills must still be present.
+      expect(skillCommands).toContain("skill:local-test-skill")
+      expect(skillCommands).toContain("skill:boring-plugin-authoring")
+    } finally {
+      await app.close()
+    }
+  }, 15_000)
+
   test("collects plugin provisioning declarations and asks agent to seed workspace", async () => {
     const workspaceRoot = await makeTempDir("boring-workspace-provisioned-")
     const templateRoot = await makeTempDir("boring-workspace-template-")
@@ -635,7 +667,11 @@ describe("createWorkspaceAgentServer — plugin provisioning", () => {
         diagnostics?: unknown[]
       }
       expect(body.ok).toBe(true)
-      expect(body.diagnostics).toBeUndefined()
+      // Session "missing" has no live agent session, so the only diagnostic is
+      // the "nothing reloaded yet" note.
+      expect(body.diagnostics).toEqual([
+        { source: "reload", message: "No live agent session to reload yet — changes apply to the next session." },
+      ])
       expect(body.restart_warnings).toEqual([
         expect.objectContaining({
           id: "reload-warning-plugin",
@@ -849,6 +885,9 @@ describe("createWorkspaceAgentServer — defaultPluginPackages (standard load pr
       mode: "direct",
       logger: false,
       disableDefaultFileTools: true,
+      // The fixture package is a dep of @hachej/boring-workspace itself —
+      // anchor npm-name resolution there, like a host app passing its root.
+      appRoot: resolve(__dirname, "..", "..", ".."),
       // Workspace-local fixture package — proves require.resolve + DirPluginEntry
       // + BoringPluginAssetManager scan all wire together correctly without
       // coupling this workspace test to a real plugin package like ask-user.
@@ -864,15 +903,16 @@ describe("createWorkspaceAgentServer — defaultPluginPackages (standard load pr
       expect(toolNames).toContain("fixture_ping")
 
       // Front-side discovery: the package appears in /api/v1/agent-plugins
-      // with a frontUrl pointing at its boring.front entry. The
-      // front-side SSE subscriber would dynamic-import this URL.
+      // with a module-url frontTarget pointing at its boring.front entry.
+      // The front-side SSE subscriber would dynamic-import this URL.
       const plugins = await app.inject({ method: "GET", url: "/api/v1/agent-plugins" })
       expect(plugins.statusCode).toBe(200)
       // Plugin id is derived from package.json#name via @scope/name → scope-name
-      const list = plugins.json() as Array<{ id: string; frontUrl?: string }>
+      const list = plugins.json() as Array<{ id: string; frontTarget?: { kind: string; entryUrl: string } }>
       const found = list.find((p) => p.id === "boring-fixtures-default-plugin")
       expect(found, `boring-fixtures-default-plugin not in /api/v1/agent-plugins; got: ${JSON.stringify(list)}`).toBeDefined()
-      expect(found?.frontUrl).toMatch(/\/@fs\//)
+      expect(found?.frontTarget?.kind).toBe("module-url")
+      expect(found?.frontTarget?.entryUrl).toMatch(/\/@fs\//)
     } finally {
       await app.close()
     }

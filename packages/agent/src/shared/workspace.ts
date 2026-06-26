@@ -84,6 +84,31 @@ export interface WorkspaceChangeEvent {
   mtimeMs?: number
 }
 
+/**
+ * Result of a watcher's readiness probe. `ok: false` means the
+ * implementation decided it cannot observe this workspace (e.g. the
+ * tree is too large to watch without harming the host process) —
+ * hosts should tell clients to fall back rather than wait for events
+ * that will never come.
+ */
+export type WorkspaceWatcherReadiness =
+  | { ok: true }
+  | { ok: false; reason: string; message?: string }
+
+export interface WorkspaceWatchControlEvent {
+  type: 'resync-required'
+  reason: string
+}
+
+export interface WorkspaceWatchSubscribeOptions {
+  /**
+   * Called when the watcher detects a gap where changes may have been
+   * missed. Consumers should drop caches/refetch instead of trusting
+   * incremental events alone.
+   */
+  onControlEvent?: (event: WorkspaceWatchControlEvent) => void
+}
+
 export interface WorkspaceWatcher {
   /**
    * Add a listener for change events. Returns an unsubscribe fn —
@@ -91,7 +116,18 @@ export interface WorkspaceWatcher {
    * itself is disposed, so unsubscribing one listener is cheap and
    * does NOT tear down the watcher.
    */
-  subscribe(listener: (event: WorkspaceChangeEvent) => void): () => void
+  subscribe(
+    listener: (event: WorkspaceChangeEvent) => void,
+    options?: WorkspaceWatchSubscribeOptions,
+  ): () => void
+
+  /**
+   * Optional readiness probe. Implementations with a startup guard
+   * (workspace-size check, native module availability, …) resolve it
+   * once the underlying source is observing — or with `ok: false`
+   * when observation was refused. Absent → assume always ready.
+   */
+  whenReady?(): Promise<WorkspaceWatcherReadiness>
 
   /**
    * Tear down the underlying observation source (chokidar instance,

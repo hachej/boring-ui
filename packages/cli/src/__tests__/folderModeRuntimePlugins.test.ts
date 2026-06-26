@@ -158,6 +158,57 @@ describe("folder mode runtime plugin wiring", () => {
     }
   }, 20_000)
 
+  test("browser-reported front import errors surface in runtime-plugin-diagnostics", async () => {
+    const homeRoot = await makeTempDir("boring-cli-folder-fronterr-home-")
+    const workspaceRoot = await makeTempDir("boring-cli-folder-fronterr-workspace-")
+    process.env.HOME = homeRoot
+
+    const globalPlugin = join(homeRoot, ".pi", "agent", "extensions", "broken-front")
+    await writePlugin(globalPlugin, "broken-front")
+
+    const app = await createFolderModeApp({
+      workspaceRoot,
+      mode: "direct",
+      provisionWorkspace: false,
+    })
+
+    try {
+      // Malformed report is rejected.
+      const bad = await app.inject({
+        method: "POST",
+        url: "/api/v1/agent-plugins/broken-front/front-error",
+        payload: { revision: 2 },
+      })
+      expect(bad.statusCode).toBe(400)
+
+      // A valid browser report is accepted and stored.
+      const report = await app.inject({
+        method: "POST",
+        url: "/api/v1/agent-plugins/broken-front/front-error",
+        payload: { revision: 2, message: "exports is not defined", url: "/runtime/broken.mjs" },
+      })
+      expect(report.statusCode).toBe(204)
+
+      const diagnostics = await app.inject({ method: "GET", url: "/api/v1/runtime-plugin-diagnostics" })
+      expect(diagnostics.statusCode).toBe(200)
+      expect(diagnostics.json()).toMatchObject({
+        plugins: expect.arrayContaining([
+          expect.objectContaining({
+            id: "broken-front",
+            frontError: expect.objectContaining({
+              pluginId: "broken-front",
+              revision: 2,
+              message: "exports is not defined",
+              url: "/runtime/broken.mjs",
+            }),
+          }),
+        ]),
+      })
+    } finally {
+      await app.close()
+    }
+  }, 20_000)
+
   test("workspace-local collection plugin shadows global collection plugin in folder mode app", async () => {
     const homeRoot = await makeTempDir("boring-cli-folder-shadow-home-")
     const workspaceRoot = await makeTempDir("boring-cli-folder-shadow-workspace-")
@@ -178,17 +229,21 @@ describe("folder mode runtime plugin wiring", () => {
     try {
       const list = await app.inject({ method: "GET", url: "/api/v1/agent-plugins" })
       expect(list.statusCode).toBe(200)
-      expect((list.json() as Array<{ id: string }>).map((plugin) => plugin.id)).toEqual(["shadow-plugin"])
+      const pluginIds = (list.json() as Array<{ id: string }>).map((plugin) => plugin.id)
+      expect(pluginIds).toEqual(expect.arrayContaining(["shadow-plugin", "ask-user"]))
+      expect(pluginIds.filter((id) => id === "shadow-plugin")).toHaveLength(1)
 
       const diagnostics = await app.inject({ method: "GET", url: "/api/v1/runtime-plugin-diagnostics" })
       expect(diagnostics.statusCode).toBe(200)
-      expect(diagnostics.json()).toMatchObject({
-        plugins: [expect.objectContaining({
+      const diagnosticsPlugins = (diagnostics.json() as { plugins: Array<{ id: string; rootDir?: string; frontPath?: string }> }).plugins
+      expect(diagnosticsPlugins).toEqual(expect.arrayContaining([
+        expect.objectContaining({
           id: "shadow-plugin",
           rootDir: localPlugin,
           frontPath: join(localPlugin, "front", "index.tsx"),
-        })],
-      })
+        }),
+        expect.objectContaining({ id: "ask-user" }),
+      ]))
     } finally {
       await app.close()
     }
@@ -211,7 +266,7 @@ describe("folder mode runtime plugin wiring", () => {
 
     try {
       const list = await app.inject({ method: "GET", url: "/api/v1/agent-plugins" })
-      const [plugin] = list.json() as Array<{ frontTarget?: { entryUrl?: string } }>
+      const plugin = (list.json() as Array<{ id: string; frontTarget?: { entryUrl?: string } }>).find((item) => item.id === "front-removed-plugin")
       expect(plugin?.frontTarget?.entryUrl).toBeTruthy()
 
       await writeFile(join(pluginRoot, "package.json"), JSON.stringify({
@@ -223,8 +278,38 @@ describe("folder mode runtime plugin wiring", () => {
       const reload = await app.inject({ method: "POST", url: "/api/v1/agent/reload", payload: {} })
       expect(reload.statusCode).toBe(200)
 
-      const runtimeAfterFrontRemoved = await app.inject({ method: "GET", url: plugin.frontTarget!.entryUrl! })
+      const runtimeAfterFrontRemoved = await app.inject({ method: "GET", url: plugin!.frontTarget!.entryUrl! })
       expect(runtimeAfterFrontRemoved.statusCode).toBe(404)
+    } finally {
+      await app.close()
+    }
+  }, 20_000)
+
+  test("folder mode ships ask-user as a default plugin package", async () => {
+    const workspaceRoot = await makeTempDir("boring-cli-folder-default-")
+    process.env.HOME = workspaceRoot
+
+    const app = await createFolderModeApp({
+      workspaceRoot,
+      mode: "direct",
+      projectName: "Folder Workspace",
+      provisionWorkspace: false,
+    })
+
+    try {
+      const list = await app.inject({ method: "GET", url: "/api/v1/agent-plugins" })
+      expect(list.statusCode).toBe(200)
+      const plugins = list.json() as Array<{ id: string; frontTarget?: { entryUrl?: string } }>
+      const askUser = plugins.find((plugin) => plugin.id === "ask-user")
+      expect(askUser).toBeDefined()
+      // The CLI ships a built `dist/front/index.js`, so the runtime
+      // entry URL must use that path and the file must serve a 200.
+      expect(askUser?.frontTarget?.entryUrl).toMatch(/\/dist\/front\/index\.[mc]?js$/)
+      const runtime = await app.inject({ method: "GET", url: askUser!.frontTarget!.entryUrl! })
+      expect(runtime.statusCode).toBe(200)
+      // ask-user is sourced as an `internal` package; the CLI should
+      // not advertise it via the legacy `frontUrl` field.
+      expect((askUser as Record<string, unknown>).frontUrl).toBeUndefined()
     } finally {
       await app.close()
     }

@@ -13,7 +13,7 @@
  * (See .impeccable.md in the repo root for design context and principles.)
  */
 
-@layer theme, components, utilities;
+@layer theme, base, components, utilities;
 @import "tailwindcss/theme.css" layer(theme) source(none);
 @import "tailwindcss/utilities.css" layer(utilities) source(none);
 
@@ -227,6 +227,13 @@
 [data-boring-agent] button {
   color: var(--foreground);
   font: inherit;
+}
+[data-boring-agent] [data-boring-agent-part="composer-submit"] {
+  background-color: var(--foreground);
+  color: var(--background);
+}
+[data-boring-agent] [data-boring-agent-part="composer-submit"]:hover {
+  background-color: color-mix(in oklab, var(--foreground) 90%, transparent);
 }
 
 /*

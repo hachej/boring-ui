@@ -45,6 +45,8 @@ export interface PanelConfig<T = any> {
   essential?: boolean
   chromeless?: boolean
   supportsFullPage?: boolean
+  /** Center-panel id opened when this config is used as a left-tab category. */
+  defaultPanelId?: string
   /** Source: "builtin" | "app" */
   source?: string
   pluginId?: string
@@ -57,11 +59,6 @@ export interface PanelConfig<T = any> {
    */
   lazy?: boolean
   component: ComponentType<PaneProps<T>> | (() => Promise<{ default: ComponentType<PaneProps<T>> }>)
-}
-
-// Type guard to check if a panel is lazy
-export function isLazyPanel(config: PanelConfig): config is PanelConfig & { lazy: true } {
-  return config.lazy === true
 }
 
 export type PanelRegistration<T = any> = Omit<PanelConfig<T>, 'id'>

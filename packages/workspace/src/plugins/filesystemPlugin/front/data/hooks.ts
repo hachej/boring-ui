@@ -13,23 +13,43 @@ import { getPreloadedTreeEntries } from "./treePreloadCache"
 import { events, userMeta } from "../../../../front/events"
 import { filesystemEvents } from "../../shared/events"
 import { FILES_QUERY_KEY_SEGMENT } from "../../shared/constants"
-import type { FileContent, FileEntry, FileStat } from "./types"
+import type { FileContent, FileEntry, FileStat, GitUrlMetadata } from "./types"
 
 function noRetryOn404(count: number, error: Error): boolean {
   if (error instanceof FetchError && error.status === 404) return false
   return count < 3
 }
 
-export function useFileContent(path: string | null): UseQueryResult<FileContent> {
+export interface UseFileContentOptions {
+  /** Create the file with this content when the initial read returns 404. */
+  createIfMissing?: string
+}
+
+export function useFileContent(
+  path: string | null,
+  options: UseFileContentOptions = {},
+): UseQueryResult<FileContent> {
   const client = useDataClient()
   const base = useApiBaseUrl()
   const workspaceId = useWorkspaceRequestId()
+  const createIfMissing = options.createIfMissing
   return useQuery({
-    queryKey: [base, workspaceId, FILES_QUERY_KEY_SEGMENT, path],
-    queryFn: ({ signal }) => client.getFile(path!, signal),
+    queryKey: [base, workspaceId, FILES_QUERY_KEY_SEGMENT, path, createIfMissing ?? null],
+    queryFn: async ({ signal }) => {
+      const activePath = path!
+      try {
+        return await client.getFile(activePath, signal)
+      } catch (err) {
+        if (createIfMissing === undefined || !(err instanceof FetchError) || err.status !== 404) throw err
+        if (signal.aborted) throw new DOMException("Aborted", "AbortError")
+        const created = await client.writeFile(activePath, createIfMissing)
+        events.emit(filesystemEvents.created, { ...userMeta(), path: activePath, kind: "file" })
+        return { content: createIfMissing, mtimeMs: created.mtimeMs }
+      }
+    },
     enabled: path != null,
     staleTime: 0,
-    retry: noRetryOn404,
+    retry: createIfMissing === undefined ? noRetryOn404 : false,
   })
 }
 
@@ -58,6 +78,19 @@ export function useStat(path: string | null): UseQueryResult<FileStat> {
     queryKey: [base, workspaceId, "stat", path],
     queryFn: ({ signal }) => client.stat(path!, signal),
     enabled: path != null,
+    retry: noRetryOn404,
+  })
+}
+
+export function useGitUrlMetadata(path: string | null): UseQueryResult<GitUrlMetadata> {
+  const client = useDataClient()
+  const base = useApiBaseUrl()
+  const workspaceId = useWorkspaceRequestId()
+  return useQuery({
+    queryKey: [base, workspaceId, "git-file-url", path],
+    queryFn: ({ signal }) => client.getGitUrlMetadata(path!, signal),
+    enabled: path != null,
+    staleTime: 30_000,
     retry: noRetryOn404,
   })
 }
@@ -95,6 +128,11 @@ export interface FileWriteVariables {
    * if the file has changed since. Omit to force-overwrite.
    */
   expectedMtimeMs?: number
+  /**
+   * Set false for writes that do not need a fresh server mtime. Keeps
+   * remote-sandbox creates fast by avoiding an immediate post-write stat.
+   */
+  returnMtimeMs?: boolean
 }
 
 export interface FileWriteResult {
@@ -105,8 +143,13 @@ export interface FileWriteResult {
 export function useFileWrite(): UseMutationResult<FileWriteResult, Error, FileWriteVariables> {
   const client = useDataClient()
   return useMutation({
-    mutationFn: ({ path, content, expectedMtimeMs }) =>
-      client.writeFile(path, content, expectedMtimeMs != null ? { expectedMtimeMs } : undefined),
+    mutationFn: ({ path, content, expectedMtimeMs, returnMtimeMs }) => {
+      const opts = {
+        ...(expectedMtimeMs != null ? { expectedMtimeMs } : {}),
+        ...(returnMtimeMs === false ? { returnMtimeMs: false } : {}),
+      }
+      return client.writeFile(path, content, Object.keys(opts).length > 0 ? opts : undefined)
+    },
     onSuccess: (_, { path }) => {
       // Single source of truth: emit onto the bus, the centralized
       // invalidator (`useFileEventInvalidation`) handles cache

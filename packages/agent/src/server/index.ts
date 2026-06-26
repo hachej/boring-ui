@@ -1,6 +1,7 @@
 // @hachej/boring-agent — server (Node-only) public API
 export { createDirectSandbox } from './sandbox/direct/createDirectSandbox'
 export { createBwrapSandbox } from './sandbox/bwrap/createBwrapSandbox'
+export type { BwrapResourceLimits, CreateBwrapSandboxOptions } from './sandbox/bwrap/createBwrapSandbox'
 export { FileHandleStore } from './sandbox/vercel-sandbox/FileHandleStore'
 export { resolveSandboxHandle } from './sandbox/vercel-sandbox/resolveSandboxHandle'
 export { bakeSnapshotIfNeeded, buildPackageHash, buildSnapshotRecipeHash } from './sandbox/vercel-sandbox/bake'
@@ -28,6 +29,34 @@ export {
 } from './sandbox/vercel-sandbox/deploymentSnapshot'
 export type { VercelDeploymentSnapshotOptions } from './sandbox/vercel-sandbox/deploymentSnapshot'
 export { createNodeWorkspace } from './workspace/createNodeWorkspace'
+export { createRemoteWorkerModeAdapter } from './runtime/modes/remote-worker'
+export type { RemoteWorkerModeAdapterOptions } from './runtime/modes/remote-worker'
+export { createRemoteWorkerWorkspace } from './workspace/createRemoteWorkerWorkspace'
+export { createRemoteWorkerSandbox } from './sandbox/remote-worker/createRemoteWorkerSandbox'
+export {
+  RemoteWorkerClient,
+  RemoteWorkerClientError,
+  constantTimeTokenEqual,
+  decodeBytesFromWorker,
+  encodeBytesForWorker,
+} from './sandbox/remote-worker/workerClient'
+export type { RemoteWorkerClientOptions } from './sandbox/remote-worker/workerClient'
+export {
+  REMOTE_WORKER_PROVIDER,
+  REMOTE_WORKER_RUNTIME_CWD,
+  WORKER_INTERNAL_TOKEN_HEADER,
+  WORKER_REQUEST_ID_HEADER,
+  WORKER_WORKSPACE_ID_HEADER,
+}
+  from './sandbox/remote-worker/protocol'
+export type {
+  RemoteWorkerErrorPayload,
+  RemoteWorkerExecRequest,
+  RemoteWorkerExecResponse,
+  RemoteWorkerFsEventEnvelope,
+  RemoteWorkerWorkspaceOp,
+  RemoteWorkerWorkspaceResult,
+} from './sandbox/remote-worker/protocol'
 // Exposed so consumers (and integration tests in dependent packages) can
 // mount the file-routes plugin onto a standalone Fastify without booting
 // the whole agent app. Used by workspace's FetchClient ↔ server contract tests.
@@ -84,6 +113,22 @@ export {
 } from './piPackages'
 export { registerAgentRoutes } from './registerAgentRoutes'
 export type { RegisterAgentRoutesOptions } from './registerAgentRoutes'
+export type { RuntimeEnvContribution, RuntimeEnvContributionContext } from './runtimeEnvContributions'
+export type {
+  AgentMeteringSink,
+  MeteringErrorLogger,
+  MeteringReleaseInput,
+  MeteringReleaseReason,
+  MeteringReservationResult,
+  MeteringReserveInput,
+  MeteringRunKind,
+  MeteringRunScope,
+  MeteringRunStatus,
+  MeteringSettleInput,
+  MeteringUsage,
+  MeteringUsageInput,
+} from './pi-chat/metering'
+export { normalizeMeteringUsage } from './pi-chat/metering'
 export { createLogger } from './logging'
 export type { Logger, LogFields } from './logging'
 export type {

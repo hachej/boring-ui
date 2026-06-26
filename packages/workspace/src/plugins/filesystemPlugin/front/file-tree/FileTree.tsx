@@ -151,6 +151,42 @@ function InlineEditInput({
   )
 }
 
+export interface SanitizeFileTreeResult {
+  nodes: FileTreeNode[]
+  /** How many nodes were removed (pathless or duplicate id). */
+  dropped: number
+}
+
+/**
+ * Make tree data safe for react-arborist (`idAccessor="path"`), which THROWS
+ * "Data must contain an 'id' property …" on a non-string id and misbehaves on a duplicate
+ * id. Drops any node without a non-empty string `path`, and any node whose `path` was
+ * already seen (ids must be unique), recursively. Both are unrenderable as distinct nodes
+ * anyway, so dropping them is correct and stops one malformed listing entry from crashing
+ * the whole file panel. PURE: no logging side effect — the caller surfaces `dropped`.
+ */
+export function sanitizeFileTree(nodes: FileTreeNode[]): SanitizeFileTreeResult {
+  const seen = new Set<string>()
+  let dropped = 0
+  const walk = (list: FileTreeNode[]): FileTreeNode[] => {
+    const out: FileTreeNode[] = []
+    for (const node of list) {
+      if (typeof node?.path !== "string" || node.path.length === 0 || seen.has(node.path)) {
+        dropped++
+        continue
+      }
+      seen.add(node.path)
+      out.push(
+        node.children && node.children.length > 0
+          ? { ...node, children: walk(node.children) }
+          : node,
+      )
+    }
+    return out
+  }
+  return { nodes: walk(nodes), dropped }
+}
+
 function countVisibleNodes(
   nodes: FileTreeNode[],
   searchQuery: string | undefined,
@@ -285,6 +321,24 @@ export function FileTree({
   className,
 }: FileTreeProps) {
   const treeRef = useRef<TreeApi<FileTreeNode> | null>(null)
+  // Guard react-arborist (idAccessor="path") against a listing entry with no/duplicate
+  // path — one such node would otherwise throw and crash the whole file panel.
+  const { nodes: safeFiles, dropped: droppedNodeCount } = useMemo(
+    () => sanitizeFileTree(files),
+    [files],
+  )
+  // Surface the (rare) dropped-node diagnostic from an EFFECT, not during render, and only
+  // when the count changes — so it can't spam the console when an upstream parent rebuilds
+  // the files array every render with a persistently-malformed entry.
+  const lastWarnedDropCount = useRef(0)
+  useEffect(() => {
+    if (droppedNodeCount > 0 && droppedNodeCount !== lastWarnedDropCount.current) {
+      console.warn(
+        `[filesystem] dropped ${droppedNodeCount} file-tree node(s) with a missing or duplicate path`,
+      )
+    }
+    lastWarnedDropCount.current = droppedNodeCount
+  }, [droppedNodeCount])
 
   useEffect(() => {
     if (!editing?.isDraft) return
@@ -399,12 +453,14 @@ export function FileTree({
     [onContextMenu, editing, pendingPaths, onSubmitEdit, onCancelEdit],
   )
 
+  // Derive all render decisions from safeFiles (what the Tree actually receives) so the
+  // empty / no-results states can't disagree with the rendered tree.
   const visibleNodeCount = useMemo(
-    () => countVisibleNodes(files, searchQuery),
-    [files, searchQuery],
+    () => countVisibleNodes(safeFiles, searchQuery),
+    [safeFiles, searchQuery],
   )
 
-  if (files.length === 0) {
+  if (safeFiles.length === 0) {
     return (
       <div
         className={cn(
@@ -436,7 +492,7 @@ export function FileTree({
       <div data-boring-workspace-part="file-tree" className={cn("file-tree", className)}>
         <Tree<FileTreeNode>
           ref={treeRef}
-          data={files}
+          data={safeFiles}
           idAccessor="path"
           childrenAccessor="children"
           openByDefault={false}

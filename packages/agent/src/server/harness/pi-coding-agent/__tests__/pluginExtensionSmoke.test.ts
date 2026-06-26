@@ -118,22 +118,12 @@ describe("Plugin extension smoke test", () => {
       cwd: tempDir,
     });
 
-    const chunks: unknown[] = [];
-    for await (const chunk of harness.sendMessage(
+    // Session creation is what wires plugin tools into pi's customTools —
+    // same lazy path the pi-chat service uses.
+    await harness.getPiSessionAdapter(
       { sessionId: "session-smoke", message: "run hello tool" },
       { workdir: tempDir, abortSignal: new AbortController().signal },
-    )) {
-      chunks.push(chunk);
-    }
-
-    const chunkTypes = chunks
-      .filter(
-        (chunk): chunk is { type: string } =>
-          typeof chunk === "object" && chunk !== null && "type" in chunk,
-      )
-      .map((chunk) => chunk.type);
-    expect(chunkTypes).toContain("start");
-    expect(chunkTypes).toContain("finish");
+    );
 
     expect(mockCreateAgentSession).toHaveBeenCalledTimes(1);
     const createArgs = mockCreateAgentSession.mock.calls[0]?.[0] as {

@@ -10,7 +10,7 @@ export interface ToolUiMetadata {
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null
+  return typeof value === 'object' && value !== null && !Array.isArray(value)
 }
 
 export function isToolUiMetadata(value: unknown): value is ToolUiMetadata {
@@ -20,6 +20,19 @@ export function isToolUiMetadata(value: unknown): value is ToolUiMetadata {
     (value.displayGroup === undefined || typeof value.displayGroup === 'string') &&
     (value.icon === undefined || typeof value.icon === 'string')
   )
+}
+
+export function sanitizeToolUiMetadata(value: unknown): ToolUiMetadata | undefined {
+  if (!isToolUiMetadata(value)) return undefined
+  const rendererId = value.rendererId?.trim()
+  const displayGroup = value.displayGroup?.trim()
+  const icon = value.icon?.trim()
+  return {
+    ...(rendererId ? { rendererId } : {}),
+    ...(displayGroup ? { displayGroup } : {}),
+    ...(icon ? { icon } : {}),
+    ...(value.details !== undefined ? { details: value.details } : {}),
+  }
 }
 
 /**
@@ -33,7 +46,5 @@ export function extractToolUiMetadata(output: unknown): ToolUiMetadata | undefin
   const details = output.details
   if (!isRecord(details)) return undefined
 
-  if (isToolUiMetadata(details.ui)) return details.ui
-
-  return undefined
+  return sanitizeToolUiMetadata(details.ui)
 }

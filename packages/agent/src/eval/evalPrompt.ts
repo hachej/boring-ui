@@ -1,9 +1,9 @@
 /**
- * Single-prompt eval. Posts a chat through `app.inject`, captures every
- * tool call in the streamed response, and matches against the expected
+ * Single-prompt eval. Posts a Pi-native chat through `app.inject`, captures
+ * tool calls from the canonical session snapshot, and matches against the expected
  * shape.
  *
- * The Fastify routes are exercised in-process (no real network for /chat
+ * The Fastify routes are exercised in-process (no real network for Pi chat
  * itself), but the LLM call inside the harness IS real — that's the whole
  * point. Cost lives at the model API boundary; control via model choice +
  * retry budget + suite-level concurrency.
@@ -148,17 +148,7 @@ async function runOnce(
 ): Promise<CapturedStream> {
   const querySuffix = formatQuerySuffix(opts.query)
 
-  // Register the session so the harness has somewhere to attach the turn.
-  // Some harness impls auto-create on chat.send; pre-creating is safe in
-  // both cases and lets the cleanup DELETE find a real row.
-  await app.inject({
-    method: "POST",
-    url: `/api/v1/agent/sessions${querySuffix}`,
-    headers: opts.headers,
-    payload: { id: opts.sessionId },
-  })
-
-  // System prompt path: the agent's chat schema doesn't accept a system
+  // System prompt path: the agent's prompt schema doesn't accept a system
   // prompt directly today (it lives on the harness or model config). For
   // now we pre-pend it to the user message with a separator the LLM
   // typically respects. If we land a /system route or extend the schema
@@ -167,41 +157,91 @@ async function runOnce(
     ? `[SYSTEM]\n${opts.systemPrompt}\n[/SYSTEM]\n\n${opts.prompt}`
     : opts.prompt
 
-  let res
   try {
-    res = await withTimeout(
+    const res = await withTimeout(
       app.inject({
         method: "POST",
-        url: `/api/v1/agent/chat${querySuffix}`,
+        url: `/api/v1/agent/pi-chat/${encodeURIComponent(opts.sessionId)}/prompt${querySuffix}`,
         headers: opts.headers,
         payload: {
-          sessionId: opts.sessionId,
           message: userMessage,
+          clientNonce: `eval-${opts.sessionId}`,
           model: opts.model,
         },
       }),
       opts.timeoutMs,
       `chat request exceeded ${opts.timeoutMs}ms`,
     )
+
+    // The prompt route is async: it replies 202 once the turn is accepted and
+    // the agent runs in the background. Poll /state until the turn settles.
+    if (res.statusCode !== 202 && res.statusCode !== 200) {
+      throw new Error(
+        `Pi chat prompt returned ${res.statusCode}: ${res.body.slice(0, 256)}`,
+      )
+    }
+
+    const snapshot = await withTimeout(
+      waitForSettledState(app, opts, querySuffix),
+      opts.timeoutMs,
+      `chat turn did not settle within ${opts.timeoutMs}ms`,
+    )
+    return capturePiChatSnapshot(snapshot)
   } finally {
-    // Best-effort cleanup. Ignore failures — the test harness session
-    // store is in-memory and ephemeral.
+    // Best-effort cleanup AFTER capture (deleting first would destroy the
+    // session state the capture reads). Ignore failures — eval sessions are
+    // ephemeral.
     void app
       .inject({
         method: "DELETE",
-        url: `/api/v1/agent/sessions/${encodeURIComponent(opts.sessionId)}${querySuffix}`,
+        url: `/api/v1/agent/pi-chat/sessions/${encodeURIComponent(opts.sessionId)}${querySuffix}`,
         headers: opts.headers,
       })
       .catch(() => {})
   }
+}
 
-  if (res.statusCode !== 200) {
-    throw new Error(
-      `chat returned ${res.statusCode}: ${res.body.slice(0, 256)}`,
-    )
+const STATE_POLL_INTERVAL_MS = 250
+
+async function waitForSettledState(
+  app: FastifyInstance,
+  opts: RunOnceOpts,
+  querySuffix: string,
+): Promise<Record<string, unknown>> {
+  for (;;) {
+    const state = await app.inject({
+      method: "GET",
+      url: `/api/v1/agent/pi-chat/${encodeURIComponent(opts.sessionId)}/state${querySuffix}`,
+      headers: opts.headers,
+    })
+    if (state.statusCode !== 200) {
+      throw new Error(`Pi chat state returned ${state.statusCode}: ${state.body.slice(0, 256)}`)
+    }
+    const snapshot = JSON.parse(state.body) as Record<string, unknown>
+    if (snapshot.status !== "streaming") return snapshot
+    await new Promise((resolve) => setTimeout(resolve, STATE_POLL_INTERVAL_MS))
   }
+}
 
-  return parseSseStream(res.body)
+function capturePiChatSnapshot(snapshot: Record<string, unknown>): CapturedStream {
+  const toolCalls: ToolCall[] = []
+  const textParts: string[] = []
+  const snapshotError = snapshot.error as { message?: unknown } | undefined
+  const errorText = typeof snapshotError?.message === 'string' ? snapshotError.message : undefined
+  const messages = Array.isArray(snapshot.messages) ? snapshot.messages : []
+  for (const message of messages) {
+    if (typeof message !== 'object' || message === null) continue
+    const parts = Array.isArray((message as { parts?: unknown }).parts) ? (message as { parts: unknown[] }).parts : []
+    for (const part of parts) {
+      if (typeof part !== 'object' || part === null) continue
+      const rec = part as Record<string, unknown>
+      if (rec.type === 'text' && typeof rec.text === 'string') textParts.push(rec.text)
+      if (rec.type === 'tool-call' && typeof rec.toolName === 'string') {
+        toolCalls.push({ tool: rec.toolName, params: typeof rec.input === 'object' && rec.input !== null ? rec.input as Record<string, unknown> : {} })
+      }
+    }
+  }
+  return { toolCalls, text: textParts.join(''), errorText }
 }
 
 function formatQuerySuffix(query: RunOnceOpts["query"]): string {
@@ -213,80 +253,6 @@ function formatQuerySuffix(query: RunOnceOpts["query"]): string {
   }
   const encoded = params.toString()
   return encoded ? `?${encoded}` : ""
-}
-
-/**
- * Extract tool calls + text + usage from the SSE response body produced
- * by /api/v1/agent/chat. Each SSE event line is `data: <json>\n` where
- * json is a UIMessageChunk. We watch for:
- * - `tool-input-available`: { toolName, input } → ToolCall
- * - `text-delta`: { delta } → accumulate into text buffer
- * - `data-usage`: { data: { input, output } } → usage totals
- * - `error`: provider/harness stream errors → fail with visible reason
- * - `[DONE]` sentinel marks end of stream
- */
-function parseSseStream(body: string): CapturedStream {
-  const toolCalls: ToolCall[] = []
-  const textParts: string[] = []
-  const errorParts: string[] = []
-  let usage: CapturedStream["usage"] | undefined
-
-  for (const line of body.split("\n")) {
-    const trimmed = line.trim()
-    if (!trimmed.startsWith("data:")) continue
-    const payload = trimmed.slice("data:".length).trim()
-    if (!payload || payload === "[DONE]") continue
-    let chunk: Record<string, unknown>
-    try {
-      chunk = JSON.parse(payload) as Record<string, unknown>
-    } catch {
-      continue
-    }
-    const type = chunk.type
-    if (type === "tool-input-available") {
-      const toolName = chunk.toolName
-      if (typeof toolName !== "string") continue
-      const input = chunk.input
-      const params =
-        input && typeof input === "object" && !Array.isArray(input)
-          ? (input as Record<string, unknown>)
-          : {}
-      toolCalls.push({ tool: toolName, params })
-    } else if (type === "text-delta") {
-      const delta = chunk.delta
-      if (typeof delta === "string") textParts.push(delta)
-    } else if (type === "data-usage") {
-      const data = chunk.data
-      if (data && typeof data === "object") {
-        const obj = data as Record<string, unknown>
-        if (typeof obj.input === "number" && typeof obj.output === "number") {
-          usage = { input: obj.input, output: obj.output }
-        }
-      }
-    } else if (type === "error") {
-      const text = stringifyStreamError(chunk)
-      if (text) errorParts.push(text)
-    }
-  }
-
-  return {
-    toolCalls,
-    text: textParts.join(""),
-    usage,
-    errorText: errorParts.length ? errorParts.join("\n") : undefined,
-  }
-}
-
-function stringifyStreamError(chunk: Record<string, unknown>): string {
-  for (const key of ["errorText", "message", "error"]) {
-    const value = chunk[key]
-    if (typeof value === "string" && value.trim()) return value
-    if (value && typeof value === "object") {
-      const message = (value as Record<string, unknown>).message
-      if (typeof message === "string" && message.trim()) return message
-    }
-  }
-  return "unknown stream error"
 }
 
 function withTimeout<T>(p: Promise<T>, ms: number, label: string): Promise<T> {

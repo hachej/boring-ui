@@ -73,6 +73,8 @@ export interface PluginProviderProps {
   authHeaders?: Record<string, string>
   onAuthError?: (statusCode: number) => void
   apiTimeout?: number
+  activeSessionId?: string | null
+  openSessionIds?: readonly string[]
   children: ReactNode
 }
 
@@ -92,6 +94,8 @@ export interface LeftTabParams {
   searchQuery?: string
   bridge?: unknown
   chromeless?: boolean
+  /** Optional DOM target for left-tab toolbar actions owned by the pane. */
+  chromeActionsElement?: Element | null
   revealFileTreeRequest?: { path: string; seq: number } | null
 }
 

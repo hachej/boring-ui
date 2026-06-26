@@ -4,7 +4,6 @@ import { extname, join } from "node:path";
 import {
   createAgentSession,
   type AgentSession,
-  type AgentSessionEvent,
   type PromptOptions,
   SessionManager,
   AuthStorage,
@@ -14,16 +13,15 @@ import {
   getAgentDir,
   loadSkills,
   type ExtensionFactory,
+  type SlashCommandInfo,
 } from "@mariozechner/pi-coding-agent";
-import type { AgentHarness, SendMessageInput, RunContext, MessageAttachment, FollowUpOptions } from "../../../shared/harness.js";
+import type { AgentHarness, AgentSlashCommandSummary, SendMessageInput, RunContext } from "../../../shared/harness.js";
 import { createLogger } from "../../logging.js";
 import type { AgentTool } from "../../../shared/tool.js";
 import type { TelemetrySink } from "../../../shared/telemetry.js";
-import type { UIMessageChunk } from "../../../shared/message.js";
 import { adaptToolsForPi, unmarkToolResultErrorDetails } from "./tool-adapter.js";
-import { piEventToChunks } from "./stream-adapter.js";
+import { createPiAgentSessionAdapter, type PiAgentSessionAdapter } from "../../pi-chat/PiAgentSessionAdapter.js";
 import { PiSessionStore } from "./sessions.js";
-import { createSessionTitleScheduler } from "./sessionTitle.js";
 import {
   readConfiguredDefaultModel,
   registerConfiguredModelProviders,
@@ -37,18 +35,7 @@ interface PiSessionHandle {
   piSession: AgentSession;
   modelRegistry: ModelRegistry;
   sessionManager: SessionManager;
-}
-
-interface NativeFollowUpRequest {
-  text: string;
-  displayText: string;
-  clientNonce?: string;
-  clientSeq?: number;
-}
-
-interface NativeFollowUpRemoval {
-  request: NativeFollowUpRequest;
-  textOrdinal: number;
+  resourceLoader: DefaultResourceLoader;
 }
 
 export { mergePiPackageSources } from "../../piPackages.js";
@@ -123,6 +110,29 @@ export interface PiHarnessOptions {
   getHotReloadableResources?: () => HotReloadablePiResources;
 }
 
+/** Pi harness options with the discovery flags resolved to definite booleans. */
+export type ResolvedPiHarnessOptions = PiHarnessOptions & {
+  noContextFiles: boolean;
+  noSkills: boolean;
+};
+
+/**
+ * Boring's default pi resource-discovery policy — the ONE place these flags
+ * get their defaults. Harness factories must apply this instead of inlining
+ * flag literals; hosts override per-field through their `pi` config.
+ *
+ * - `noContextFiles: true` — boring composes its own workspace context
+ *   prompt; pi's ambient AGENTS.md/CLAUDE.md discovery stays off.
+ * - `noSkills: true` — ambient skill discovery (workspace + user-global
+ *   ~/.pi skills) stays off so user-global skills don't leak into hosted
+ *   agents. Hosts that run on the user's own machine (the standalone CLI)
+ *   opt in with `pi: { noSkills: false }`.
+ */
+export function withPiHarnessDefaults(pi?: PiHarnessOptions): ResolvedPiHarnessOptions {
+  const { noContextFiles = true, noSkills = true, ...rest } = pi ?? {};
+  return { ...rest, noContextFiles, noSkills };
+}
+
 export interface HotReloadablePiResources {
   additionalSkillPaths?: string[];
   packages?: PiPackageSource[];
@@ -156,65 +166,6 @@ function buildToolErrorResultExtension(): ExtensionFactory {
   }
 }
 
-
-function extractUserMessageText(message: unknown): string {
-  const record = message as { role?: unknown; content?: unknown } | null;
-  if (record?.role !== "user") return "";
-  if (typeof record.content === "string") return record.content;
-  if (!Array.isArray(record.content)) return "";
-  return record.content
-    .map((part) => {
-      const p = part as { type?: unknown; text?: unknown };
-      return p.type === "text" && typeof p.text === "string" ? p.text : "";
-    })
-    .join("");
-}
-
-function extractAssistantMessageText(message: unknown): {
-  role?: string;
-  text: string;
-  errorText: string;
-} {
-  const record = message as {
-    role?: unknown;
-    content?: unknown;
-    errorMessage?: unknown;
-  } | null;
-  const role = typeof record?.role === "string" ? record.role : undefined;
-  const errorText =
-    typeof record?.errorMessage === "string" ? record.errorMessage : "";
-  const text = Array.isArray(record?.content)
-    ? record.content
-        .map((part) => {
-          const item = part as { type?: unknown; text?: unknown };
-          return item?.type === "text" && typeof item.text === "string"
-            ? item.text
-            : "";
-        })
-        .join("")
-    : "";
-  return { role, text, errorText };
-}
-
-function findLastAssistantMessage(messages: unknown): unknown {
-  if (!Array.isArray(messages)) return undefined;
-  for (let i = messages.length - 1; i >= 0; i--) {
-    const message = messages[i] as { role?: unknown } | undefined;
-    if (message?.role === "assistant") return message;
-  }
-  return undefined;
-}
-
-function extractAssistantReasoningTexts(message: unknown): string[] {
-  const content = (message as { content?: unknown } | null)?.content;
-  if (!Array.isArray(content)) return [];
-  return content.flatMap((part) => {
-    const item = part as { type?: unknown; thinking?: unknown; text?: unknown; content?: unknown };
-    if (item.type !== "thinking" && item.type !== "reasoning") return [];
-    const text = item.thinking ?? item.text ?? item.content;
-    return typeof text === "string" && text.length > 0 ? [text] : [];
-  });
-}
 
 function resolveRequestedModel(
   modelRegistry: ModelRegistry,
@@ -342,6 +293,43 @@ function basenameForAttachment(filename: string): string {
   return safe || "image";
 }
 
+/**
+ * Derive the originating plugin/package name from Pi's command sourceInfo.
+ * Returns the extension directory name for boring runtime plugins (.pi/extensions/<name>),
+ * the package name for npm sources, the repo name for git sources, and the
+ * filename for user-global single-file extensions. Returns undefined for built-in/top-level
+ * commands with no package origin.
+ */
+export function deriveSourcePlugin(sourceInfo: SlashCommandInfo["sourceInfo"] | undefined): string | undefined {
+  if (!sourceInfo) return undefined;
+  const path = typeof sourceInfo.path === "string" ? sourceInfo.path : "";
+  const source = typeof sourceInfo.source === "string" ? sourceInfo.source : "";
+  // Boring runtime plugin: .pi/extensions/<name>/...
+  const runtimePlugin = path.match(/[/\\]\.pi[/\\]extensions[/\\]([^/\\]+)/);
+  if (runtimePlugin) return runtimePlugin[1];
+  // Provisioned plugin skill: .boring-agent/skills/<plugin>/<skill>/SKILL.md
+  const provisionedSkill = path.match(/[/\\]\.boring-agent[/\\]skills[/\\]([^/\\]+)/);
+  if (provisionedSkill) return provisionedSkill[1];
+  // npm package source: "npm:<pkg>"
+  if (source.startsWith("npm:")) return source.slice(4) || undefined;
+  // git source: "git/<host>/<owner>/<repo>" -> repo
+  if (source.startsWith("git/")) return source.split("/").filter(Boolean).pop();
+  // User-global single-file extension: .../extensions/<file>.ts
+  const fileExtension = path.match(/[/\\]extensions[/\\]([^/\\]+)\.[cm]?[tj]sx?$/);
+  if (fileExtension) return fileExtension[1];
+  return undefined;
+}
+
+function normalizeSlashCommandInfo(command: SlashCommandInfo): AgentSlashCommandSummary {
+  const sourcePlugin = deriveSourcePlugin(command.sourceInfo);
+  return {
+    name: command.name,
+    ...(command.description ? { description: command.description } : {}),
+    source: command.source,
+    ...(sourcePlugin ? { sourcePlugin } : {}),
+  };
+}
+
 export function createPiCodingAgentHarness(opts: {
   tools: AgentTool[];
   /** Host/storage cwd used for harness-owned resources (.pi settings, attachments, plugin discovery). */
@@ -359,13 +347,24 @@ export function createPiCodingAgentHarness(opts: {
   pi?: PiHarnessOptions;
   /** Optional stable namespace for file-backed session storage. */
   sessionNamespace?: string;
+  /** Optional explicit root for file-backed session directories. */
+  sessionRoot?: string;
   /** Optional explicit file-backed session directory. Mostly for tests/hosts. */
   sessionDir?: string;
   /** Optional best-effort telemetry sink supplied by an embedding host. */
   telemetry?: TelemetrySink;
-}): AgentHarness {
+}): AgentHarness & {
+  getPiSessionAdapter(input: SendMessageInput, ctx: RunContext): Promise<PiAgentSessionAdapter>;
+  hasPiSession(sessionId: string): boolean;
+} {
+  // Normalize at the true boundary: direct callers and custom harnessFactory
+  // hosts get the canonical discovery policy even if they never heard of
+  // withPiHarnessDefaults. Idempotent for the built-in factories, which
+  // already pass defaulted options.
+  const pi = withPiHarnessDefaults(opts.pi);
   const sessionStore = new PiSessionStore(opts.runtimeCwd ?? opts.cwd, {
     sessionNamespace: opts.sessionNamespace,
+    sessionRoot: opts.sessionRoot,
     sessionDir: opts.sessionDir,
     storageCwd: opts.cwd,
   });
@@ -379,33 +378,33 @@ export function createPiCodingAgentHarness(opts: {
   const effectivePackages: PiPackageSource[] = []
   const effectiveExtensionPaths: string[] = []
   const refreshEffectiveResources = (): void => {
-    const dynamic = opts.pi?.getHotReloadableResources?.() ?? {}
+    const dynamic = pi.getHotReloadableResources?.() ?? {}
     effectiveSkillPaths.splice(
       0,
       effectiveSkillPaths.length,
-      ...(opts.pi?.additionalSkillPaths ?? []),
+      ...(pi.additionalSkillPaths ?? []),
       ...(dynamic.additionalSkillPaths ?? []),
     )
     effectivePackages.splice(
       0,
       effectivePackages.length,
-      ...mergePiPackageSources(opts.pi?.packages ?? [], dynamic.packages ?? []),
+      ...mergePiPackageSources(pi.packages ?? [], dynamic.packages ?? []),
     )
     effectiveExtensionPaths.splice(
       0,
       effectiveExtensionPaths.length,
-      ...(opts.pi?.extensionPaths ?? []),
+      ...(pi.extensionPaths ?? []),
       ...(dynamic.extensionPaths ?? []),
     )
   }
   refreshEffectiveResources()
-  const scheduleSessionTitle = createSessionTitleScheduler({
-    loadSession: (sessionId) =>
-      sessionStore.load({ workspaceId: "default" }, sessionId),
-    writeTitle: (sessionId, title) => {
-      sessionStore.touchSession(sessionId, title);
-    },
-  });
+
+  // Single-flight guard: concurrent cold callers for the same session (e.g.
+  // two browser tabs each opening /events + /state) must share one Pi session
+  // create. Without it both miss the `piSessions` cache, each run the ~seconds
+  // createAgentSession, and the loser's handle is overwritten — leaking a Pi
+  // session and breaking the single-writer guarantee.
+  const piSessionCreations = new Map<string, Promise<PiSessionHandle>>();
 
   async function getOrCreatePiSession(
     sessionId: string,
@@ -418,6 +417,27 @@ export function createPiCodingAgentHarness(opts: {
       return existing;
     }
 
+    const inFlight = piSessionCreations.get(sessionId);
+    if (inFlight) {
+      const handle = await inFlight;
+      await applyRequestedSessionOptions(handle, input);
+      return handle;
+    }
+
+    const creation = createPiSession(sessionId, input, ctx);
+    piSessionCreations.set(sessionId, creation);
+    try {
+      return await creation;
+    } finally {
+      if (piSessionCreations.get(sessionId) === creation) piSessionCreations.delete(sessionId);
+    }
+  }
+
+  async function createPiSession(
+    sessionId: string,
+    input: SendMessageInput,
+    ctx: RunContext,
+  ): Promise<PiSessionHandle> {
     // Auth/model credentials are Pi-owned. AuthStorage.create() lets Pi read
     // its normal environment/settings/auth sources; Boring does not pick a
     // provider credential itself.
@@ -472,7 +492,7 @@ export function createPiCodingAgentHarness(opts: {
     const extensionFactories = [
       toolErrorResultExtension,
       ...(dynamicPromptExtension ? [dynamicPromptExtension] : []),
-      ...(opts.pi?.extensionFactories ?? []),
+      ...(pi.extensionFactories ?? []),
     ]
     const settingsManager = createResourceSettingsManager(
       opts.cwd,
@@ -486,8 +506,8 @@ export function createPiCodingAgentHarness(opts: {
       appendSystemPromptOverride: (base: string[]) => [...base, composedSystemPromptAppend],
       ...(effectiveExtensionPaths.length ? { additionalExtensionPaths: effectiveExtensionPaths } : {}),
       ...(extensionFactories.length ? { extensionFactories } : {}),
-      ...(opts.pi?.noContextFiles ? { noContextFiles: true } : {}),
-      ...(opts.pi?.noSkills ? { noSkills: true } : {}),
+      ...(pi.noContextFiles ? { noContextFiles: true } : {}),
+      ...(pi.noSkills ? { noSkills: true } : {}),
       ...(effectiveSkillPaths.length ? { additionalSkillPaths: effectiveSkillPaths } : {}),
       // skillsOverride REPLACES Pi's resolved skill set, which includes
       // skills contributed by host-declared pi packages (e.g.
@@ -496,7 +516,7 @@ export function createPiCodingAgentHarness(opts: {
       // Passing additionalSkillPaths is not, by itself, a request to throw
       // away package skills — those should keep flowing through Pi's loader
       // and merge with the additional paths.
-      ...(opts.pi?.noSkills
+      ...(pi.noSkills
         ? {
             skillsOverride: () =>
               loadSkills({
@@ -514,8 +534,8 @@ export function createPiCodingAgentHarness(opts: {
     const { session: piSession } = await createAgentSession({
       cwd: runtimeCwd,
       // Suppress Pi's built-in filesystem/shell tools while keeping Boring's
-      // adapted tool catalog active. Passing `tools: []` is an allowlist of
-      // zero tools in Pi v0.75+, which disables customTools too.
+      // adapted tool catalog active. Do NOT pass an explicit empty tool-name
+      // allowlist: in the current Pi SDK that disables custom tools too.
       noTools: "builtin",
       customTools: adaptToolsForPi(opts.tools, input.sessionId, opts.telemetry),
       model,
@@ -533,7 +553,7 @@ export function createPiCodingAgentHarness(opts: {
       }
     }
 
-    const handle: PiSessionHandle = { piSession, modelRegistry, sessionManager };
+    const handle: PiSessionHandle = { piSession, modelRegistry, sessionManager, resourceLoader };
     piSessions.set(sessionId, handle);
     return handle;
   }
@@ -551,8 +571,6 @@ export function createPiCodingAgentHarness(opts: {
     if (!handle) return;
     handle.piSession.dispose();
     piSessions.delete(sessionId);
-    clearNativeFollowUpWork(sessionId);
-    consumedNativeFollowUpKeys.delete(sessionId);
   }
 
   const originalDelete = sessionStore.delete.bind(sessionStore);
@@ -561,154 +579,15 @@ export function createPiCodingAgentHarness(opts: {
     disposePiSession(sessionId);
   };
 
-  const nativeFollowUpPending = new Set<string>();
-  const nativeFollowUpQueues = new Map<string, NativeFollowUpRequest[]>();
-  const consumedNativeFollowUpKeys = new Map<string, Set<string>>();
 
-  function clearNativeFollowUpWork(sessionId: string): void {
-    nativeFollowUpPending.delete(sessionId);
-    nativeFollowUpQueues.delete(sessionId);
-  }
-
-  function userMessageText(message: unknown): string {
-    const content = (message as { content?: unknown }).content;
-    if (!Array.isArray(content)) return "";
-    return content
-      .map((part) => ((part as { type?: unknown; text?: unknown }).type === "text" && typeof (part as { text?: unknown }).text === "string") ? (part as { text: string }).text : "")
-      .join("");
-  }
-
-  function removeFirstMatchingOrdinal<T>(items: T[], matches: (item: T) => boolean, ordinal: number): void {
-    let seen = 0;
-    const index = items.findIndex((item) => {
-      if (!matches(item)) return false;
-      if (seen++ !== ordinal) return false;
-      return true;
-    });
-    if (index >= 0) items.splice(index, 1);
-  }
-
-  function removePiQueuedFollowUp(piSession: AgentSession, text?: string, textOrdinal = 0): void {
-    const session = piSession as unknown as {
-      _followUpMessages?: string[];
-      _emitQueueUpdate?: () => void;
-      agent?: {
-        clearFollowUpQueue?: () => void;
-        followUpQueue?: { messages?: unknown[] };
-      };
-    };
-    if (!text) {
-      session.agent?.clearFollowUpQueue?.();
-      if (Array.isArray(session._followUpMessages)) session._followUpMessages = [];
-      session._emitQueueUpdate?.();
-      return;
-    }
-    const queuedMessages = session.agent?.followUpQueue?.messages;
-    if (Array.isArray(queuedMessages)) {
-      removeFirstMatchingOrdinal(queuedMessages, (message) => userMessageText(message) === text, textOrdinal);
-    }
-    if (Array.isArray(session._followUpMessages)) {
-      removeFirstMatchingOrdinal(session._followUpMessages, (message) => message === text, textOrdinal);
-    }
-    session._emitQueueUpdate?.();
-  }
-
-  function followUpDedupeKeys(options?: FollowUpOptions | NativeFollowUpRequest): string[] {
-    const keys: string[] = [];
-    if (options?.clientNonce) keys.push(`nonce:${options.clientNonce}`);
-    if (options?.clientSeq !== undefined) keys.push(`seq:${options.clientSeq}`);
-    return keys;
-  }
-
-  function hasFollowUpSelector(options?: FollowUpOptions): boolean {
-    return followUpDedupeKeys(options).length > 0;
-  }
-
-  function matchesFollowUpSelector(item: NativeFollowUpRequest, options?: FollowUpOptions): boolean {
-    if (!hasFollowUpSelector(options)) return true;
-    const optionKeys = new Set(followUpDedupeKeys(options));
-    return followUpDedupeKeys(item).some((key) => optionKeys.has(key));
-  }
-
-  function rememberConsumedNativeFollowUp(sessionId: string, request: NativeFollowUpRequest | undefined): void {
-    const keys = followUpDedupeKeys(request);
-    if (keys.length === 0) return;
-    const consumed = consumedNativeFollowUpKeys.get(sessionId) ?? new Set<string>();
-    for (const key of keys) consumed.add(key);
-    consumedNativeFollowUpKeys.set(sessionId, consumed);
-  }
-
-  function followUpPostDedupeKeys(options?: FollowUpOptions | NativeFollowUpRequest): string[] {
-    if (options?.clientNonce) return [`nonce:${options.clientNonce}`];
-    if (options?.clientSeq !== undefined) return [`seq:${options.clientSeq}`];
-    return [];
-  }
-
-  function hasQueuedOrConsumedNativeFollowUp(sessionId: string, options?: FollowUpOptions): boolean {
-    const optionKeys = new Set(followUpPostDedupeKeys(options));
-    if (optionKeys.size === 0) return false;
-    const consumed = consumedNativeFollowUpKeys.get(sessionId);
-    if (consumed && [...optionKeys].some((key) => consumed.has(key))) return true;
-    return (nativeFollowUpQueues.get(sessionId) ?? []).some((request) => followUpPostDedupeKeys(request).some((key) => optionKeys.has(key)));
-  }
-
-  function removeNativeFollowUp(sessionId: string, options?: FollowUpOptions): NativeFollowUpRemoval[] {
-    const queue = nativeFollowUpQueues.get(sessionId);
-    if (!queue?.length) {
-      if (!hasFollowUpSelector(options)) clearNativeFollowUpWork(sessionId);
-      return [];
-    }
-
-    const removed: NativeFollowUpRemoval[] = [];
-    const next: NativeFollowUpRequest[] = [];
-    const textCounts = new Map<string, number>();
-    for (const request of queue) {
-      const textOrdinal = textCounts.get(request.text) ?? 0;
-      textCounts.set(request.text, textOrdinal + 1);
-      if (matchesFollowUpSelector(request, options)) removed.push({ request, textOrdinal });
-      else next.push(request);
-    }
-
-    if (next.length > 0) nativeFollowUpQueues.set(sessionId, next);
-    else clearNativeFollowUpWork(sessionId);
-    return removed;
-  }
-
-  return {
+  return ({
     id: "pi-coding-agent",
     placement: "server",
     sessions: sessionStore,
 
-    async followUp(sessionId: string, text: string, _attachments?: MessageAttachment[], displayText = text, options?: FollowUpOptions): Promise<void> {
-      const handle = piSessions.get(sessionId);
-      if (!handle) throw new Error("followup_session_not_ready");
-      if (hasQueuedOrConsumedNativeFollowUp(sessionId, options)) return;
-      const queue = nativeFollowUpQueues.get(sessionId) ?? [];
-      queue.push({
-        text,
-        displayText,
-        clientNonce: options?.clientNonce,
-        clientSeq: options?.clientSeq,
-      });
-      nativeFollowUpQueues.set(sessionId, queue);
-      nativeFollowUpPending.add(sessionId);
-      await handle.piSession.followUp(text);
-    },
-
-    clearFollowUp(sessionId: string, options?: FollowUpOptions): void {
-      const handle = piSessions.get(sessionId);
-      const removed = removeNativeFollowUp(sessionId, options);
-      if (!handle) return;
-      if (!options?.clientNonce && options?.clientSeq === undefined) {
-        removePiQueuedFollowUp(handle.piSession);
-        return;
-      }
-      for (const item of removed) removePiQueuedFollowUp(handle.piSession, item.request.text, item.textOrdinal);
-    },
-
     /**
      * Pi exposes the resolved system prompt as a getter on AgentSession.
-     * Sessions are created lazily on first sendMessage, so callers may see
+     * Sessions are created lazily on the first prompt, so callers may see
      * `undefined` for a session that hasn't been written to yet — that's
      * the expected pre-first-turn state, not an error.
      */
@@ -716,525 +595,82 @@ export function createPiCodingAgentHarness(opts: {
       return piSessions.get(sessionId)?.piSession.systemPrompt;
     },
 
-    reloadSession: reloadPiSession,
+    hasPiSession(sessionId: string): boolean {
+      return piSessions.has(sessionId);
+    },
 
-    async *sendMessage(
-      input: SendMessageInput,
-      ctx: RunContext,
-    ): AsyncIterable<UIMessageChunk> {
-      const { piSession } = await getOrCreatePiSession(
-        input.sessionId,
-        input,
-        ctx,
-      );
-
-      // Do NOT clear the follow-up queue here. The browser can submit a
-      // follow-up while the first request is still in AI SDK `submitted` state,
-      // before this generator reaches its setup path. Clearing here races that
-      // legitimate POST and makes the queued message disappear. Stale queues are
-      // cleared explicitly through clearFollowUp() on the Stop path.
-
-      const chunks: UIMessageChunk[] = [];
-      let done = false;
-      let streamError: unknown = null;
-      let wake: (() => void) | null = null;
-      let assistantText = "";
-      const textStartSeen = new Set<number>();
-      const textDeltaSeen = new Set<number>();
-
-      const activeTools = new Map<string, number>();
-      let heartbeatTimer: ReturnType<typeof setInterval> | null = null;
-
-      function stopHeartbeat() {
-        if (heartbeatTimer) {
-          clearInterval(heartbeatTimer);
-          heartbeatTimer = null;
-        }
-      }
-
-      function startHeartbeat() {
-        if (heartbeatTimer) return;
-        heartbeatTimer = setInterval(() => {
-          const now = Date.now();
-          for (const [toolCallId, startTime] of activeTools) {
-            chunks.push({
-              type: "data-status",
-              data: { toolCallId, elapsedMs: now - startTime },
-            } as unknown as UIMessageChunk);
-          }
-          if (activeTools.size > 0 && wake) wake();
-        }, 2000);
-      }
-
-      // pi sometimes emits multiple `message_start` events for the same
-      // logical assistant message (e.g. when a turn includes a tool call
-      // followed by a final text response — pi treats those as separate
-      // sub-messages but reuses the same id). The AI SDK on the client
-      // keys messages by id; duplicate `start` chunks with the same id
-      // confuse `replaceMessage` and produce React duplicate-key warnings
-      // + `activeResponse undefined` errors that break tool-part rendering.
-      // Dedupe at the chunk-emission seam: emit each `start` messageId
-      // at most once per turn.
-      const startedMessageIds = new Set<string>()
-      function dedupStartChunks(input: UIMessageChunk[]): UIMessageChunk[] {
-        const out: UIMessageChunk[] = []
-        for (const c of input) {
-          const rec = c as unknown as { type?: string; messageId?: string }
-          if (rec.type === "start") {
-            const id = rec.messageId
-            if (!id) {
-              if (startedMessageIds.has("__anonymous__")) continue
-              startedMessageIds.add("__anonymous__")
-            } else {
-              if (startedMessageIds.has(id)) continue
-              startedMessageIds.add(id)
-            }
-          }
-          out.push(c)
-        }
-        return out
-      }
-
-      let sawTextChunk = false;
-      let inlineTurnIndex = 0;
-      let currentPiAssistantMessageId: string | null = null;
-      let pendingTerminalErrorChunks: UIMessageChunk[] = [];
-      const messageIdsWithStreamedReasoning = new Set<string>();
-      let piSeq = 0;
-      const nextPiSeq = () => ++piSeq;
-
-      const STANDARD_VISIBLE_CHUNK_TYPES = new Set([
-        "text-start",
-        "text-delta",
-        "text-end",
-        "reasoning-start",
-        "reasoning-delta",
-        "reasoning-end",
-        "tool-input-available",
-        "tool-input-error",
-        "tool-output-available",
-        "tool-output-error",
-      ]);
-      const standardToolInputsSeen = new Set<string>();
-
-      function isStandardVisibleChunk(chunk: UIMessageChunk): boolean {
-        const type = (chunk as { type?: unknown }).type;
-        return typeof type === "string" && STANDARD_VISIBLE_CHUNK_TYPES.has(type);
-      }
-
-      function namespaceInlinePartIds(input: UIMessageChunk[]): UIMessageChunk[] {
-        if (inlineTurnIndex === 0) return input;
-        return input.map((chunk) => {
-          const rec = chunk as unknown as { type?: string; id?: string };
-          if (
-            (rec.type === "text-start" || rec.type === "text-delta" || rec.type === "text-end" ||
-              rec.type === "reasoning-start" || rec.type === "reasoning-delta" || rec.type === "reasoning-end") &&
-            typeof rec.id === "string"
-          ) {
-            return { ...rec, id: `turn-${inlineTurnIndex}:${rec.id}` } as unknown as UIMessageChunk;
-          }
-          return chunk;
+    /**
+     * Surface Pi's skill/extension load diagnostics for a session so silent
+     * load failures (bad SKILL.md, extension import errors) reach the UI and
+     * the agent. Returns [] when the session has no live pi session yet.
+     * The resourceLoader getters are synchronous.
+     */
+    getResourceDiagnostics(sessionId: string): Array<{ source: string; message: string; path?: string }> {
+      const handle = piSessions.get(sessionId);
+      if (!handle) return [];
+      const out: Array<{ source: string; message: string; path?: string }> = [];
+      // Pi can emit the same diagnostic once per skill-path source, and its
+      // messages often embed the path already — append it only when missing
+      // and de-duplicate on the final (source, message) pair.
+      const seen = new Set<string>();
+      const push = (entry: { source: string; message: string; path?: string }) => {
+        const key = `${entry.source}\n${entry.message}`;
+        if (seen.has(key)) return;
+        seen.add(key);
+        out.push(entry);
+      };
+      for (const diagnostic of handle.resourceLoader.getSkills().diagnostics) {
+        push({
+          source: "pi-skills",
+          message: diagnostic.path && !diagnostic.message.includes(diagnostic.path)
+            ? `${diagnostic.message} (${diagnostic.path})`
+            : diagnostic.message,
+          ...(diagnostic.path ? { path: diagnostic.path } : {}),
         });
       }
-
-      function filterSdkChunksForCurrentSegment(input: UIMessageChunk[]): UIMessageChunk[] {
-        const out: UIMessageChunk[] = [];
-        for (const chunk of input) {
-          const rec = chunk as unknown as { type?: string; toolCallId?: string };
-          if (inlineTurnIndex > 0 && isStandardVisibleChunk(chunk)) continue;
-
-          if (rec.type === "tool-input-available" && rec.toolCallId) {
-            standardToolInputsSeen.add(rec.toolCallId);
-            out.push(chunk);
-            continue;
-          }
-
-          if (
-            (rec.type === "tool-output-available" || rec.type === "tool-output-error" || rec.type === "tool-output-denied") &&
-            rec.toolCallId &&
-            !standardToolInputsSeen.has(rec.toolCallId)
-          ) {
-            // pi can emit tool_execution_end without a prior assistant
-            // toolcall_end in the canonical AI SDK stream. Suppress that
-            // orphan output; the data-pi side channel still carries the tool
-            // result for the pi projection/fallback path.
-            continue;
-          }
-
-          out.push(chunk);
-        }
-        return out;
+      for (const error of handle.resourceLoader.getExtensions().errors) {
+        push({
+          source: "pi-extensions",
+          message: error.error.includes(error.path) ? error.error : `${error.error} (${error.path})`,
+          path: error.path,
+        });
       }
-
-      // promptPromise tracks the active pi run. Native pi follow-up queuing
-      // keeps this promise open until queued follow-ups finish.
-      // finally block can await full settlement before cleanup.
-      let promptSettled = false;
-      let promptPromise: Promise<void> = Promise.resolve();
-
-      const unsubscribe = piSession.subscribe((event: AgentSessionEvent) => {
-        if (event.type === "message_update") {
-          const ame = event.assistantMessageEvent;
-          if (ame.type === "text_start") {
-            textStartSeen.add(ame.contentIndex);
-          }
-          if (ame.type === "text_delta") {
-            textDeltaSeen.add(ame.contentIndex);
-            assistantText += ame.delta;
-          }
-        }
-
-        if (event.type === "tool_execution_start") {
-          activeTools.set(event.toolCallId, Date.now());
-          startHeartbeat();
-        }
-        if (event.type === "tool_execution_end") {
-          activeTools.delete(event.toolCallId);
-          if (activeTools.size === 0) stopHeartbeat();
-        }
-
-        let converted: UIMessageChunk[];
-        const piHistoryChunks: UIMessageChunk[] = [];
-        const eventMessage = (event as unknown as { message?: { id?: unknown; role?: unknown } }).message;
-        if (event.type === "message_start" && (eventMessage?.role === "user" || eventMessage?.role === "assistant")) {
-          const messageId = typeof eventMessage.id === "string" ? eventMessage.id : `${eventMessage.role}-${Date.now()}`;
-          const role = eventMessage.role;
-          if (role === "assistant") currentPiAssistantMessageId = messageId;
-          const text = role === "user" ? extractUserMessageText(eventMessage) : undefined;
-          if ((role === "user" && text) || role === "assistant") {
-            piHistoryChunks.push({
-              type: "data-pi-message-start",
-              data: { seq: nextPiSeq(), messageId, role, ...(text ? { text } : {}) },
-            } as unknown as UIMessageChunk);
-          }
-        }
-        if (event.type === "message_update") {
-          const ame = event.assistantMessageEvent;
-          const messageId = typeof (event as unknown as { messageId?: unknown }).messageId === "string"
-            ? (event as unknown as { messageId: string }).messageId
-            : typeof (event as unknown as { message?: { id?: unknown } }).message?.id === "string"
-              ? (event as unknown as { message: { id: string } }).message.id
-              : currentPiAssistantMessageId ?? "assistant-streaming";
-          if (ame.type === "text_start") {
-            piHistoryChunks.push({
-              type: "data-pi-text-start",
-              data: { seq: nextPiSeq(), messageId, partId: String(ame.contentIndex) },
-            } as unknown as UIMessageChunk);
-          } else if (ame.type === "text_delta" && ame.delta) {
-            const seq = nextPiSeq();
-            piHistoryChunks.push(
-              {
-                type: "data-pi-text-delta",
-                data: { seq, messageId, partId: String(ame.contentIndex), delta: ame.delta },
-              } as unknown as UIMessageChunk,
-              // Back-compat for the current client projection. Remove once
-              // ChatPanel consumes the stable data-pi-text-* DTOs directly.
-              {
-                type: "data-pi-message-delta",
-                data: { seq, messageId, role: "assistant", delta: ame.delta },
-              } as unknown as UIMessageChunk,
-            );
-          } else if (ame.type === "text_end") {
-            piHistoryChunks.push({
-              type: "data-pi-text-end",
-              data: { seq: nextPiSeq(), messageId, partId: String(ame.contentIndex), ...(typeof ame.content === "string" ? { text: ame.content } : {}) },
-            } as unknown as UIMessageChunk);
-          } else if (ame.type === "thinking_start") {
-            messageIdsWithStreamedReasoning.add(messageId);
-            piHistoryChunks.push({
-              type: "data-pi-reasoning-start",
-              data: { seq: nextPiSeq(), messageId, partId: String(ame.contentIndex) },
-            } as unknown as UIMessageChunk);
-          } else if (ame.type === "thinking_delta") {
-            messageIdsWithStreamedReasoning.add(messageId);
-            piHistoryChunks.push({
-              type: "data-pi-reasoning-delta",
-              data: { seq: nextPiSeq(), messageId, partId: String(ame.contentIndex), delta: ame.delta },
-            } as unknown as UIMessageChunk);
-          } else if (ame.type === "thinking_end") {
-            piHistoryChunks.push({
-              type: "data-pi-reasoning-end",
-              data: { seq: nextPiSeq(), messageId, partId: String(ame.contentIndex) },
-            } as unknown as UIMessageChunk);
-          } else if (ame.type === "toolcall_end") {
-            piHistoryChunks.push({
-              type: "data-pi-tool-call-end",
-              data: { seq: nextPiSeq(), messageId, toolCallId: ame.toolCall.id, toolName: ame.toolCall.name, input: ame.toolCall.arguments },
-            } as unknown as UIMessageChunk);
-          }
-        }
-        if (event.type === "message_end" && (eventMessage?.role === "user" || eventMessage?.role === "assistant")) {
-          const role = eventMessage.role;
-          const messageId = typeof eventMessage.id === "string"
-            ? eventMessage.id
-            : role === "assistant" && currentPiAssistantMessageId
-              ? currentPiAssistantMessageId
-              : `${role}-${Date.now()}`;
-          const text = role === "user"
-            ? extractUserMessageText(eventMessage)
-            : extractAssistantMessageText(eventMessage).text;
-          if (role === "assistant" && !messageIdsWithStreamedReasoning.has(messageId)) {
-            for (const reasoningText of extractAssistantReasoningTexts(eventMessage)) {
-              const partId = `reasoning-${nextPiSeq()}`;
-              piHistoryChunks.push(
-                { type: "data-pi-reasoning-start", data: { seq: nextPiSeq(), messageId, partId } } as unknown as UIMessageChunk,
-                { type: "data-pi-reasoning-delta", data: { seq: nextPiSeq(), messageId, partId, delta: reasoningText } } as unknown as UIMessageChunk,
-                { type: "data-pi-reasoning-end", data: { seq: nextPiSeq(), messageId, partId } } as unknown as UIMessageChunk,
-              );
-            }
-          }
-          piHistoryChunks.push({
-            type: "data-pi-message-end",
-            data: { seq: nextPiSeq(), messageId, role, ...(text ? { text } : {}) },
-          } as unknown as UIMessageChunk);
-        }
-
-        if (event.type === "tool_execution_start" && currentPiAssistantMessageId) {
-          piHistoryChunks.push({
-            type: "data-pi-tool-call-end",
-            data: { seq: nextPiSeq(), messageId: currentPiAssistantMessageId, toolCallId: event.toolCallId, toolName: event.toolName, input: event.args },
-          } as unknown as UIMessageChunk);
-        }
-
-        if (event.type === "tool_execution_end" && currentPiAssistantMessageId) {
-          piHistoryChunks.push({
-            type: "data-pi-tool-result",
-            data: { seq: nextPiSeq(), messageId: currentPiAssistantMessageId, toolCallId: event.toolCallId, output: event.result, isError: event.isError },
-          } as unknown as UIMessageChunk);
-        }
-
-        if (event.type === "message_start" && (event as any).message?.role === "user") {
-          const text = extractUserMessageText((event as any).message);
-          converted = text && text !== input.message
-            ? [{ type: "data-followup-consumed", data: { text } } as unknown as UIMessageChunk, ...piHistoryChunks]
-            : piHistoryChunks;
-          if (text && text !== input.message) {
-            inlineTurnIndex += 1;
-            sawTextChunk = false;
-            currentPiAssistantMessageId = null;
-            const queue = nativeFollowUpQueues.get(input.sessionId);
-            if (queue?.length) {
-              const index = queue.findIndex((item) => item.text === text || item.displayText === text);
-              const consumed = index >= 0 ? queue.splice(index, 1)[0] : queue.shift();
-              rememberConsumedNativeFollowUp(input.sessionId, consumed);
-              if (queue.length > 0) nativeFollowUpQueues.set(input.sessionId, queue);
-              else clearNativeFollowUpWork(input.sessionId);
-            } else {
-              nativeFollowUpPending.delete(input.sessionId);
-            }
-          }
-        } else if (event.type === "message_end" && (event as any).message?.role === "user") {
-          converted = piHistoryChunks;
-        } else {
-          const sdkChunks = namespaceInlinePartIds(dedupStartChunks(piEventToChunks(event)));
-          const shouldBufferTerminalError = event.type === "message_update"
-            && (event as { assistantMessageEvent?: { type?: unknown } }).assistantMessageEvent?.type === "error";
-          const visibleSdkChunks = shouldBufferTerminalError
-            ? sdkChunks.filter((chunk) => {
-                const type = (chunk as { type?: unknown }).type;
-                if (type === "error" || type === "finish") {
-                  pendingTerminalErrorChunks.push(chunk);
-                  return false;
-                }
-                return true;
-              })
-            : sdkChunks;
-          const sdkChunksForTurn = filterSdkChunksForCurrentSegment(visibleSdkChunks);
-          converted = [...piHistoryChunks, ...sdkChunksForTurn];
-        }
-        for (const chunk of converted) {
-          const t = (chunk as { type?: string }).type;
-          if (t === "text-delta" || t === "data-pi-text-delta" || t === "data-pi-text-end") {
-            sawTextChunk = true;
-          }
-          const piEndData = (chunk as { data?: { role?: unknown; text?: unknown } }).data;
-          if (t === "data-pi-message-end" && piEndData?.role === "assistant" && typeof piEndData.text === "string" && piEndData.text.length > 0) {
-            sawTextChunk = true;
-          }
-        }
-        chunks.push(...converted);
-
-        if (event.type === "agent_end") {
-          const willRetry = Boolean((event as { willRetry?: boolean }).willRetry);
-          if (willRetry) {
-            pendingTerminalErrorChunks = [];
-            sawTextChunk = false;
-            currentPiAssistantMessageId = null;
-            messageIdsWithStreamedReasoning.clear();
-          } else if (pendingTerminalErrorChunks.length > 0) {
-            chunks.push(...pendingTerminalErrorChunks);
-            pendingTerminalErrorChunks = [];
-            sawTextChunk = true;
-          } else if (!sawTextChunk) {
-            const { role, text, errorText } = extractAssistantMessageText(
-              findLastAssistantMessage(
-                (event as unknown as { messages?: unknown }).messages,
-              ),
-            );
-            if (role === "assistant" && errorText.length > 0) {
-              chunks.push({ type: "error", errorText } as UIMessageChunk);
-              sawTextChunk = true;
-            } else if (role === "assistant" && text.length > 0) {
-              const messageId = currentPiAssistantMessageId ?? "assistant-streaming";
-              chunks.push(
-                { type: "data-pi-message-start", data: { seq: nextPiSeq(), messageId, role } } as unknown as UIMessageChunk,
-                { type: "data-pi-message-end", data: { seq: nextPiSeq(), messageId, role, text } } as unknown as UIMessageChunk,
-              );
-              sawTextChunk = true;
-              assistantText += text;
-            }
-          }
-
-          if (willRetry) {
-            // Pi 0.75+ can emit agent_end for a failed attempt while it is
-            // about to auto-retry. Keep the HTTP stream open so retry chunks
-            // are delivered instead of accumulating after the generator exits.
-          } else if (nativeFollowUpPending.has(input.sessionId) && !ctx.abortSignal.aborted) {
-            // Pi native follow-up was queued but its user message has not been
-            // emitted yet. Keep this HTTP stream open; the queued user
-            // message_start will clear the pending flag and produce the
-            // data-followup-consumed marker, followed by the next assistant.
-          } else {
-            done = true;
-            stopHeartbeat();
-          }
-        }
-        if (wake) wake();
-      });
-
-      // pi's prompt() resolves only at agent_end. Awaiting it here would
-      // block this generator from yielding until the entire turn completes,
-      // collapsing the response into a single end-of-turn flush. Kick it
-      // off concurrently and drain `chunks` as the subscriber fills it.
-      //
-      // Native pi follow-up queuing keeps prompt() alive until queued follow-up
-      // turns complete, so there is no harness-side second prompt chain.
-      async function prepareTurn(message: string, attachments?: MessageAttachment[]): Promise<{ message: string; promptOpts?: PromptOptions }> {
-        // Process image attachments: pass as vision AND write to workspace.
-        const initialImages: NonNullable<PromptOptions["images"]> = [];
-        const savedPaths: string[] = [];
-        const writeErrors: string[] = [];
-        for (const a of attachments ?? []) {
-          const match = a.url.match(/^data:(image\/[^;]+);base64,(.+)$/);
-          if (!match) continue;
-          const [, contentType, b64] = match;
-          initialImages.push({ type: "image", mimeType: contentType, data: b64 });
-          if (!ctx.workdir) {
-            writeErrors.push(`${a.filename ?? "image"}: no workdir`);
-            continue;
-          }
-          try {
-            // Pre-check base64 length to avoid allocating oversized buffers
-            // (DoS vector: a client could send a massive base64 string).
-            // Base64 decodes to ~75% of encoded length; cap at 10 MB.
-            const estimatedSize = Math.ceil(b64.length * 0.75)
-            if (estimatedSize > 10 * 1024 * 1024) {
-              writeErrors.push(`${a.filename ?? "image"}: attachment exceeds 10 MB limit`);
-              continue;
-            }
-            const bytes = Buffer.from(b64, "base64");
-            const ext = extForAttachment(a.filename ?? "image", contentType);
-            const base = basenameForAttachment(a.filename ?? "image");
-            const unique = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
-            const relPath = `${DEFAULT_ATTACHMENT_DIR}/${base}-${unique}.${ext}`;
-            await mkdir(join(opts.cwd, DEFAULT_ATTACHMENT_DIR), { recursive: true });
-            await writeFile(join(opts.cwd, relPath), bytes);
-            savedPaths.push(relPath);
-          } catch (err) {
-            const msg = err instanceof Error ? err.message : String(err);
-            log.error("attachment write failed", { workdir: opts.cwd, error: msg });
-            writeErrors.push(`${a.filename ?? "image"}: ${msg}`);
-          }
-        }
-        const attachmentNotes: string[] = [];
-        if (savedPaths.length > 0) {
-          attachmentNotes.push(`[Attached file(s) saved to workspace:\n${savedPaths.map((p) => `- ${p}`).join("\n")}]`);
-        }
-        if (writeErrors.length > 0) {
-          attachmentNotes.push(`[Warning: failed to save attachment(s) to workspace — ${writeErrors.join("; ")}. The image is available via vision only.]`);
-        }
-        return {
-          message: attachmentNotes.length > 0 ? `${message}\n\n${attachmentNotes.join("\n")}` : message,
-          promptOpts: initialImages.length > 0 ? { images: initialImages } : undefined,
-        };
-      }
-
-      async function startTurn(message: string, attachments?: MessageAttachment[]): Promise<void> {
-        promptSettled = false;
-        const prepared = await prepareTurn(message, attachments);
-        return piSession
-          .prompt(prepared.message, prepared.promptOpts)
-          .then(() => {
-            promptSettled = true;
-            // Defensive escape hatch: native followUp normally keeps prompt()
-            // alive until the queued turn is consumed and emits its own user
-            // message_start. If pi resolves without that consumption event,
-            // do not keep the HTTP stream open forever waiting for chunks that
-            // will never arrive.
-            if (!done && nativeFollowUpPending.has(input.sessionId)) {
-              clearNativeFollowUpWork(input.sessionId);
-              done = true;
-              stopHeartbeat();
-              if (wake) wake();
-            }
-          })
-          .catch((err) => {
-            promptSettled = true;
-            streamError = err;
-            done = true;
-            stopHeartbeat();
-            if (wake) wake();
-          });
-      }
-      promptPromise = startTurn(input.message, input.attachments);
-
-      const onAbort = () => {
-        // While prompt() is still running, treat abort as a graceful stop:
-        // we'll signal pi via piSession.abort(), let the child exit, and
-        // exit the generator cleanly. Only surface "Aborted" as an error
-        // when the turn already completed — that's an unexpected late abort.
-        if (promptSettled) {
-          streamError = new Error("Aborted");
-        }
-        done = true;
-        stopHeartbeat();
-        piSession.abort().catch(() => {});
-        if (wake) wake();
-      };
-      ctx.abortSignal.addEventListener("abort", onAbort, { once: true });
-
-      try {
-        while (!done) {
-          if (chunks.length === 0) {
-            await new Promise<void>((r) => {
-              wake = r;
-            });
-            wake = null;
-          }
-          if (streamError) throw streamError;
-          while (chunks.length > 0) {
-            yield chunks.shift()!;
-          }
-        }
-        while (chunks.length > 0) {
-          yield chunks.shift()!;
-        }
-      } finally {
-        // Surface any pending rejection from prompt() and ensure the
-        // promise settles so unhandled-rejection warnings don't leak.
-        await promptPromise;
-        stopHeartbeat();
-        ctx.abortSignal.removeEventListener("abort", onAbort);
-        unsubscribe();
-        sessionStore.touchSession(input.sessionId);
-        if (!streamError) {
-          scheduleSessionTitle({
-            sessionId: input.sessionId,
-            firstUserMessage: input.message,
-            firstAssistantReply: assistantText,
-          });
-        }
-      }
+      return out;
     },
-  };
+
+    reloadSession: reloadPiSession,
+
+    async getSlashCommands(sessionId: string, ctx: RunContext): Promise<ReadonlyArray<AgentSlashCommandSummary>> {
+      const handle = await getOrCreatePiSession(sessionId, { sessionId, message: "" }, ctx);
+      return handle.resourceLoader.getExtensions().runtime.getCommands().map(normalizeSlashCommandInfo);
+    },
+
+    async executeSlashCommand(sessionId: string, name: string, args: string, ctx: RunContext): Promise<void> {
+      const handle = await getOrCreatePiSession(sessionId, { sessionId, message: "" }, ctx);
+      const command = handle.piSession.extensionRunner.getCommand(name);
+      if (command) {
+        await command.handler(args, handle.piSession.extensionRunner.createCommandContext());
+        return;
+      }
+
+      const knownCommand = handle.resourceLoader.getExtensions().runtime.getCommands().some((candidate) => candidate.name === name);
+      if (!knownCommand) throw new Error(`command '${name}' not registered in session '${sessionId}'`);
+
+      const text = args.trim() ? `/${name} ${args}` : `/${name}`;
+      await handle.piSession.prompt(text);
+    },
+
+    async getPiSessionAdapter(input: SendMessageInput, ctx: RunContext) {
+      const { piSession } = await getOrCreatePiSession(input.sessionId, input, ctx);
+      return createPiAgentSessionAdapter(piSession, {
+        sessionId: input.sessionId,
+        ...(piSession.agent && typeof piSession.agent.continue === "function"
+          ? { continueQueuedFollowUp: () => piSession.agent!.continue() }
+          : {}),
+      });
+    },
+  } as AgentHarness & {
+    getPiSessionAdapter(input: SendMessageInput, ctx: RunContext): Promise<PiAgentSessionAdapter>;
+    hasPiSession(sessionId: string): boolean;
+  });
 }

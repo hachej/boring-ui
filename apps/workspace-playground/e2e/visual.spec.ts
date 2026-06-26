@@ -8,7 +8,7 @@ import { expect, test } from "@playwright/test"
  * to the user-visible bug they catch.
  */
 
-const STORAGE_KEY = "boring-ui-v2:layout:playground"
+const STORAGE_KEY = "boring-ui-v2:layout:playground:workspace"
 
 async function openPalette(page: import("@playwright/test").Page) {
   await page.goto("/")
@@ -106,21 +106,20 @@ test.describe("workspace shell resize chrome", () => {
     })
     expect(accent).toBeTruthy()
 
-    // Hover: the handle's background should resolve to (or be derived
-    // from) --accent. We check the className includes accent — the
-    // computed bg-color depends on hover state which Playwright's
-    // mouse.move triggers. Use evaluate after hover.
+    // Hover: the visible tint is painted on the handle's pseudo-element.
+    // The handle element itself intentionally remains transparent so it
+    // does not create a wide block of color.
     const box = await handle.boundingBox()
     if (!box) throw new Error("no bounding box for handle")
     await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2)
     await page.waitForTimeout(400) // hover transition + 150ms delay
 
     const bgColor = await handle.evaluate(
-      (el) => getComputedStyle(el).backgroundColor,
+      (el) => getComputedStyle(el, "::after").backgroundColor,
     )
-    // After hover, background should not be transparent. (oklch values
-    // are reported as oklch(...) by getComputedStyle in modern Chromium
-    // — accept any non-zero color.)
+    // After hover, the pseudo-element background should not be transparent.
+    // (oklch values are reported as oklch(...) by getComputedStyle in modern
+    // Chromium — accept any non-zero color.)
     expect(bgColor).not.toMatch(/(rgba\(0,\s*0,\s*0,\s*0\)|transparent)/)
   })
 })

@@ -4,12 +4,15 @@ import path from 'node:path'
 
 import {
   compactPiPackages,
+  createRemoteWorkerModeAdapter,
   provisionWorkspaceRuntime,
   registerAgentRoutes,
   type RegisterAgentRoutesOptions,
+  type RuntimeEnvContributionContext,
   type RuntimeProvisioningContribution,
 } from '@hachej/boring-agent/server'
 import {
+  assertWorkspaceBridgeHandlersTrusted,
   collectWorkspaceAgentServerPlugins,
   hasDirServerPlugin,
   omitPluginAuthoringProvisioning,
@@ -22,13 +25,18 @@ import {
   type WorkspaceAgentServerPluginContext,
 } from '@hachej/boring-workspace/app/server'
 import {
-  createInMemoryBridge,
   createWorkspaceUiTools,
   uiRoutes,
-  type UiBridge,
+  type WorkspaceBridge,
+  type WorkspaceBridgeCallRequest,
+  type WorkspaceBridgeCallResponse,
+  type WorkspaceBridgeHandler,
+  type WorkspaceBridgeOperationDefinition,
+  type WorkspaceBridgeRuntimeEnvOptions,
   type WorkspaceServerPlugin,
 } from '@hachej/boring-workspace/server'
-import type { FastifyInstance } from 'fastify'
+import { createCoreWorkspaceBridge } from './coreWorkspaceBridge.js'
+import type { FastifyInstance, FastifyRequest } from 'fastify'
 import type postgres from 'postgres'
 import type { CoreConfig } from '../../shared/types.js'
 import { ERROR_CODES } from '../../shared/errors.js'
@@ -108,6 +116,9 @@ export type CoreWorkspaceAgentServer = FastifyInstance & {
   db: Database
   userStore: UserStore
   workspaceStore: WorkspaceStore
+  /** Best-effort telemetry sink (DB-backed when BORING_TELEMETRY_ENABLED=true, else noop).
+   * Consumed by request hooks and the credit service to emit product events. */
+  telemetry: TelemetrySink
 }
 
 export type CoreWorkspaceAgentServerPlugin = WorkspaceServerPlugin & {
@@ -121,6 +132,19 @@ export type CoreWorkspaceDirPluginEntry = Omit<DirPluginEntry, 'hotReload'> & {
 
 export type CoreWorkspacePluginEntry = CoreWorkspaceAgentServerPlugin | CoreWorkspaceDirPluginEntry
 
+type CoreWorkspaceBridgeExtraTool = NonNullable<RegisterAgentRoutesOptions['extraTools']>[number]
+
+export interface CoreWorkspaceBridgeExtraToolsContext {
+  workspaceId: string
+  workspaceRoot: string
+  callAsRuntime<TOutput = unknown>(
+    request: WorkspaceBridgeCallRequest,
+    options?: { sessionId?: string; signal?: AbortSignal },
+  ): Promise<WorkspaceBridgeCallResponse<TOutput>>
+}
+
+export type CoreWorkspaceBridgePiContext = CoreWorkspaceBridgeExtraToolsContext
+
 export interface CreateCoreWorkspaceAgentServerOptions
   extends Omit<RegisterAgentRoutesOptions, 'extraTools'> {
   appRoot?: string
@@ -129,7 +153,17 @@ export interface CreateCoreWorkspaceAgentServerOptions
   plugins?: CoreWorkspacePluginEntry[]
   excludeDefaults?: CreateWorkspaceAgentServerOptions['excludeDefaults']
   defaultPluginPackages?: CreateWorkspaceAgentServerOptions['defaultPluginPackages']
-  appPackageJsonPath?: CreateWorkspaceAgentServerOptions['appPackageJsonPath']
+  workspaceBridge?: {
+    handlers?: Array<{
+      definition: WorkspaceBridgeOperationDefinition
+      handler: WorkspaceBridgeHandler
+    }>
+    runtimeTokenSecret?: string
+    runtimeRefreshTokenSecret?: string
+    runtimeEnv?: WorkspaceBridgeRuntimeEnvOptions
+  }
+  getWorkspaceBridgeExtraTools?: (ctx: CoreWorkspaceBridgeExtraToolsContext) => CoreWorkspaceBridgeExtraTool[] | Promise<CoreWorkspaceBridgeExtraTool[]>
+  getWorkspaceBridgePi?: (ctx: CoreWorkspaceBridgePiContext) => AgentPiOptions | Promise<AgentPiOptions | undefined>
   /**
    * Enable workspace plugin-authoring tooling/prompt for this app.
    * Defaults to false for full-app/core production composition; set true only
@@ -147,6 +181,34 @@ export interface CreateCoreWorkspaceAgentServerOptions
 }
 
 type AgentPiOptions = RegisterAgentRoutesOptions['pi']
+
+function normalizeOptionalPath(value: string | undefined): string | undefined {
+  const trimmed = value?.trim()
+  return trimmed ? trimmed : undefined
+}
+
+function inferSessionRootForWorkspaceRoot(workspaceRoot: string, runtimeMode: string | undefined): string | undefined {
+  if (runtimeMode !== 'vercel-sandbox') return undefined
+  const resolvedRoot = path.resolve(workspaceRoot)
+  if (path.basename(resolvedRoot) !== 'workspaces') return undefined
+  return path.join(path.dirname(resolvedRoot), 'pi-sessions')
+}
+
+export function resolveCoreLoadConfigOptions(
+  options: Pick<
+    CreateCoreWorkspaceAgentServerOptions,
+    'appRoot' | 'loadConfigOptions'
+  > = {},
+  nodeEnv = process.env.NODE_ENV,
+): LoadConfigOptions {
+  return {
+    allowMissingSecrets: nodeEnv !== 'production',
+    ...(options.appRoot && !options.loadConfigOptions?.tomlPath
+      ? { tomlPath: path.resolve(options.appRoot, 'boring.app.toml') }
+      : {}),
+    ...options.loadConfigOptions,
+  }
+}
 
 function dedupeStrings(values: string[]): string[] {
   return Array.from(new Set(values))
@@ -193,10 +255,10 @@ function mergePiOptions(
   }
 }
 
-function createUnavailableCorePluginBridge(): UiBridge {
+function createUnavailableCorePluginBridge(): WorkspaceBridge {
   const fail = () => {
     throw new Error(
-      'Core static server plugins do not receive a workspace-scoped UiBridge yet. Use request-scoped UI tools/routes in core, or createWorkspaceAgentServer for standalone plugin bridge support.',
+      'Core static server plugins do not receive a workspace-scoped WorkspaceBridge yet. Use request-scoped UI tools/routes in core, or createWorkspaceAgentServer for standalone plugin bridge support.',
     )
   }
 
@@ -204,6 +266,7 @@ function createUnavailableCorePluginBridge(): UiBridge {
     getState: fail,
     setState: fail,
     postCommand: fail,
+    emitUiEffect: fail,
     subscribeCommands: fail,
     drainCommands: fail,
   }
@@ -212,6 +275,10 @@ function createUnavailableCorePluginBridge(): UiBridge {
 function contentType(filePath: string): string {
   const ext = path.extname(filePath).toLowerCase()
   return MIME_TYPES[ext] ?? 'application/octet-stream'
+}
+
+function isFrontendAssetPath(pathname: string): boolean {
+  return pathname === '/assets' || pathname.startsWith('/assets/')
 }
 
 function injectCspNonceIntoHtml(html: string, nonce: string | undefined): string {
@@ -243,6 +310,20 @@ async function pathIsFile(filePath: string): Promise<boolean> {
   } catch {
     return false
   }
+}
+
+function agentSessionIdFromRequest(request: FastifyRequest): string | undefined {
+  const url = request.url.split('?')[0] ?? request.url
+  if (request.method === 'POST' && url === '/api/v1/agent/chat') {
+    const body = request.body as { sessionId?: unknown } | null | undefined
+    return typeof body?.sessionId === 'string' && body.sessionId.trim() ? body.sessionId : undefined
+  }
+  if (request.method === 'POST' && url.endsWith('/followup') && url.startsWith('/api/v1/agent/chat/')) {
+    const params = request.params as { sessionId?: unknown; id?: unknown } | null | undefined
+    const sessionId = params?.sessionId ?? params?.id
+    return typeof sessionId === 'string' && sessionId.trim() ? sessionId : undefined
+  }
+  return undefined
 }
 
 function toHeaders(
@@ -373,7 +454,12 @@ function shouldServeFrontend(pathname: string): boolean {
 
 async function serveFrontendShell(
   request: { id: string; cspNonce?: string },
-  reply: { status: (code: number) => unknown; type: (value: string) => unknown; send: (body: unknown) => unknown },
+  reply: {
+    status: (code: number) => unknown
+    type: (value: string) => unknown
+    header: (name: string, value: string) => unknown
+    send: (body: unknown) => unknown
+  },
   indexPath: string,
   telemetry: TelemetrySink,
 ) {
@@ -387,6 +473,7 @@ async function serveFrontendShell(
 
   const html = await readFile(indexPath, 'utf-8')
   captureAppOpened(telemetry, request.id)
+  reply.header('cache-control', 'no-store')
   reply.type('text/html; charset=utf-8')
   return reply.send(injectCspNonceIntoHtml(html, request.cspNonce))
 }
@@ -450,12 +537,23 @@ function captureAppOpened(telemetry: TelemetrySink, requestId: string): void {
 
 function registerTelemetryHooks(app: CoreWorkspaceAgentServer, telemetry: TelemetrySink): void {
   app.addHook('onResponse', async (request, reply) => {
-    if (reply.statusCode < 500) return
+    const status = reply.statusCode
+    // Rate-limited requests (429) are a distinct abuse/capacity signal. Same namespace as
+    // server.request.failed; only stable, non-path metadata (URL/route excluded — see the
+    // privacy test).
+    if (status === 429) {
+      safeCapture(telemetry, {
+        name: 'server.request.rate_limited',
+        properties: { requestId: request.id },
+      })
+      return
+    }
+    if (status < 500) return
     safeCapture(telemetry, {
       name: 'server.request.failed',
       properties: {
         requestId: request.id,
-        status: reply.statusCode,
+        status,
         errorCode: ERROR_CODES.INTERNAL_ERROR,
       },
     })
@@ -499,20 +597,30 @@ async function registerFrontendFallback(
     }
 
     if (await pathIsFile(candidate)) {
+      if (isFrontendAssetPath(pathname)) {
+        reply.header('cache-control', 'public, max-age=31536000, immutable')
+      }
       reply.type(contentType(candidate))
       return reply.send(createReadStream(candidate))
+    }
+
+    if (isFrontendAssetPath(pathname)) {
+      reply.status(404)
+      reply.header('cache-control', 'no-store')
+      return { error: 'asset_not_found' }
     }
 
     return serveFrontendShell(request, reply, indexPath, telemetry)
   })
 }
 
-async function createCoreRuntime(config: CoreConfig): Promise<{
+async function createCoreRuntime(config: CoreConfig, customTelemetry?: TelemetrySink): Promise<{
   app: CoreWorkspaceAgentServer
   sql: postgres.Sql
   db: Database
   userStore: UserStore
   workspaceStore: WorkspaceStore
+  telemetry: TelemetrySink
 }> {
   if (config.stores !== 'postgres') {
     throw new Error('createCoreWorkspaceAgentServer currently supports only CORE_STORES=postgres')
@@ -527,21 +635,27 @@ async function createCoreRuntime(config: CoreConfig): Promise<{
   )
 
   const app = await createCoreApp(config) as CoreWorkspaceAgentServer
-  const auth = createAuth(config, db, {
-    workspaceStore,
-    logger: app.log,
-  })
+  // Resolve the telemetry sink here (db exists now) so the auth hooks get a plain sink.
+  const telemetry = customTelemetry ?? createDatabaseTelemetryFromEnv(db, { appId: config.appId }, process.env)
+  const telemetrySource = customTelemetry
+    ? 'custom'
+    : process.env.BORING_TELEMETRY_ENABLED === 'true'
+      ? 'db-env'
+      : 'noop-env'
+  app.log.debug({ telemetry: { source: telemetrySource } }, 'resolved telemetry sink')
+  const auth = createAuth(config, db, { workspaceStore, logger: app.log, telemetry })
 
   app.decorate('db', db)
   app.decorate('auth', auth)
   app.decorate('userStore', userStore)
   app.decorate('workspaceStore', workspaceStore)
+  app.decorate('telemetry', telemetry)
 
   app.addHook('onClose', async () => {
     await sql.end()
   })
 
-  return { app, sql, db, userStore, workspaceStore }
+  return { app, sql, db, userStore, workspaceStore, telemetry }
 }
 
 async function registerCoreRoutes({
@@ -581,24 +695,17 @@ export async function createCoreWorkspaceAgentServer(
   }
   assertCoreStaticPluginEntries(options.plugins)
 
-  const config = options.config ?? (await loadConfig({
-    allowMissingSecrets: process.env.NODE_ENV !== 'production',
-    ...options.loadConfigOptions,
-  }))
-  const { app, sql, db, userStore, workspaceStore } = await createCoreRuntime(config)
+  const config = options.config ?? (await loadConfig(resolveCoreLoadConfigOptions(options)))
+  const { app, sql, db, userStore, workspaceStore, telemetry } = await createCoreRuntime(config, options.telemetry)
   const appRoot = options.appRoot
   const serveFrontend =
     options.serveFrontend ?? (process.env.NODE_ENV !== 'development' && Boolean(appRoot))
   const pluginWorkspaceRoot = process.cwd()
   const workspaceRoot = options.workspaceRoot ?? process.env.BORING_AGENT_WORKSPACE_ROOT ?? process.cwd()
-  const telemetrySource = options.telemetry
-    ? 'custom'
-    : process.env.BORING_TELEMETRY_ENABLED === 'true'
-      ? 'db-env'
-      : 'noop-env'
-  const telemetry = options.telemetry ?? createDatabaseTelemetryFromEnv(db, { appId: config.appId }, process.env)
-  app.log.debug({ telemetry: { source: telemetrySource } }, 'resolved telemetry sink')
-
+  const agentRuntimeMode = options.runtimeModeAdapter?.id ?? options.mode ?? process.env.BORING_AGENT_MODE
+  const sessionRoot = normalizeOptionalPath(options.sessionRoot)
+    ?? normalizeOptionalPath(process.env.BORING_AGENT_SESSION_ROOT)
+    ?? inferSessionRootForWorkspaceRoot(workspaceRoot, agentRuntimeMode)
   registerTelemetryHooks(app, telemetry)
 
   await registerCoreRoutes({ app, sql, db, userStore, workspaceStore })
@@ -616,7 +723,6 @@ export async function createCoreWorkspaceAgentServer(
 
   const defaultPluginPackagePaths = resolveDefaultWorkspacePluginPackagePaths({
     workspaceRoot: pluginWorkspaceRoot,
-    appPackageJsonPath: options.appPackageJsonPath,
     defaultPluginPackages: options.defaultPluginPackages,
   })
   const defaultPackagePiSnapshot = readWorkspacePluginPackagePiSnapshot(defaultPluginPackagePaths)
@@ -626,34 +732,29 @@ export async function createCoreWorkspaceAgentServer(
     .filter(Boolean)
     .join('\n\n') || undefined
   const defaultPluginDirEntries: CoreWorkspacePluginEntry[] = defaultPluginPackagePaths
-    .map((dir) => ({ dir, hotReload: false as const }))
+    .map((dir) => ({ dir, hotReload: false as const, trust: 'internal' as const }))
     .filter((entry) => hasDirServerPlugin(entry))
   const pluginEntries: CoreWorkspacePluginEntry[] = [
     ...defaultPluginDirEntries,
     ...(options.plugins ?? []),
   ]
-  const bridges = new Map<string, UiBridge>()
-  const getUiBridge = (workspaceId: string): UiBridge => {
-    const safeWorkspaceId = validateWorkspaceIdSegment(workspaceId)
-    let bridge = bridges.get(safeWorkspaceId)
-    if (!bridge) {
-      bridge = createInMemoryBridge()
-      bridges.set(safeWorkspaceId, bridge)
-    }
-    return bridge
-  }
   const pluginResolveContext: WorkspaceAgentServerPluginContext = {
     workspaceRoot: pluginWorkspaceRoot,
     bridge: createUnavailableCorePluginBridge(),
   }
   const resolvedPlugins = await Promise.all(
-    pluginEntries.map((entry) => resolveOnePluginEntry<CoreWorkspaceAgentServerPlugin>(
-      entry,
-      pluginResolveContext,
-    )),
+    pluginEntries.map(async (entry) => {
+      const plugin = await resolveOnePluginEntry<CoreWorkspaceAgentServerPlugin>(
+        entry,
+        pluginResolveContext,
+      )
+      assertWorkspaceBridgeHandlersTrusted(plugin, entry)
+      return plugin
+    }),
   )
 
-  const installPluginAuthoring = options.installPluginAuthoring === true
+  const externalPluginsEnabled = options.externalPlugins !== false
+  const installPluginAuthoring = externalPluginsEnabled && options.installPluginAuthoring === true
   const pluginCollection = collectWorkspaceAgentServerPlugins({
     workspaceRoot: pluginWorkspaceRoot,
     systemPromptAppend: staticSystemPromptAppend,
@@ -676,6 +777,28 @@ export async function createCoreWorkspaceAgentServer(
       : await resolveWorkspaceRoot(workspaceRoot, workspaceId)
     return root
   }
+  const coreBridge = createCoreWorkspaceBridge({
+    workspaceBridge: {
+      ...options.workspaceBridge,
+      handlers: [
+        ...(options.workspaceBridge?.handlers ?? []),
+        ...(pluginCollection.workspaceBridgeHandlers ?? []),
+      ],
+    },
+    resolveWorkspaceId,
+    workspaceStore,
+    corsOrigins: app.config.cors.origins,
+    validateWorkspaceId: validateWorkspaceIdSegment,
+    agentSessionId: agentSessionIdFromRequest,
+  })
+  app.addHook('preHandler', async (request) => {
+    await coreBridge.rememberSessionOwner(request)
+  })
+
+  const workerBaseUrl = process.env.BORING_WORKER_BASE_URL?.trim()
+  const remoteWorkerModeAdapter = workerBaseUrl
+    ? createRemoteWorkerModeAdapter({ baseUrl: workerBaseUrl })
+    : undefined
   const piOptionsByRoot = new Map<string, AgentPiOptions>()
   const getPluginPiOptions = (root: string): AgentPiOptions => {
     const resolvedRoot = path.resolve(root)
@@ -697,18 +820,61 @@ export async function createCoreWorkspaceAgentServer(
     return scopedPluginCollection.agentOptions.pi
   }
   const resolvePiOptions: NonNullable<RegisterAgentRoutesOptions['getPi']> = async (ctx) => {
-    const pluginOptions = getPluginPiOptions(ctx.workspaceRoot)
+    // In remote-worker mode the workspace filesystem lives on the worker. Do
+    // not scan per-workspace Pi skills/plugins from the public host path — it
+    // can be stale after volume cutover and would reintroduce split-brain. Keep
+    // only static app/plugin Pi config plus explicit caller overrides.
+    const pluginOptions = remoteWorkerModeAdapter
+      ? pluginCollection.agentOptions.pi
+      : getPluginPiOptions(ctx.workspaceRoot)
+    const bridgePiOptions = options.getWorkspaceBridgePi
+      ? await options.getWorkspaceBridgePi({
+          workspaceId: ctx.workspaceId,
+          workspaceRoot: ctx.workspaceRoot,
+          callAsRuntime: async (request, callOptions) => await coreBridge.callAsRuntime(ctx.workspaceId, request, callOptions),
+        })
+      : undefined
     const callerOptions = options.getPi
       ? await options.getPi(ctx)
       : undefined
-    return mergePiOptions(pluginOptions, callerOptions)
+    return mergePiOptions(mergePiOptions(pluginOptions, bridgePiOptions), callerOptions)
   }
+
+  app.get('/api/v1/workspace/meta', async (request, reply) => {
+    try {
+      const workspaceId = await resolveWorkspaceId(request)
+      const [workspace, workspaceRootForRequest] = await Promise.all([
+        workspaceStore.get(workspaceId),
+        resolveRoot(workspaceId, request),
+      ])
+      return {
+        workspaceId,
+        workspaceRoot: workspaceRootForRequest,
+        projectName: workspace?.name ?? 'Workspace',
+      }
+    } catch (error) {
+      const statusCode = typeof (error as { statusCode?: unknown })?.statusCode === 'number'
+        ? (error as { statusCode: number }).statusCode
+        : 500
+      const message = error instanceof Error ? error.message : 'workspace meta failed'
+      return reply.code(statusCode).send({ error: message })
+    }
+  })
+
+  const resolveSessionNamespace: NonNullable<RegisterAgentRoutesOptions['getSessionNamespace']> = async (ctx) => (
+    options.getSessionNamespace
+      ? await options.getSessionNamespace(ctx)
+      : options.sessionNamespace ?? ctx.workspaceId
+  )
+
   await app.register(registerAgentRoutes, {
     workspaceRoot,
     sessionId: options.sessionId,
     templatePath: options.templatePath,
     getTemplatePath: options.getTemplatePath,
     mode: options.mode,
+    externalPlugins: externalPluginsEnabled,
+    runtimeModeAdapter: remoteWorkerModeAdapter,
     version: options.version,
     extraTools: [
       ...(options.extraTools ?? []),
@@ -717,13 +883,21 @@ export async function createCoreWorkspaceAgentServer(
     systemPromptAppend: pluginCollection.agentOptions.systemPromptAppend,
     pi: pluginCollection.agentOptions.pi,
     getPi: resolvePiOptions,
-    sessionNamespace: options.sessionNamespace,
-    getSessionNamespace: options.getSessionNamespace,
+    sessionRoot,
+    getSessionNamespace: resolveSessionNamespace,
     getExtraTools: async (ctx) => {
       const callerTools = options.getExtraTools ? await options.getExtraTools(ctx) : []
+      const bridgeTools = options.getWorkspaceBridgeExtraTools
+        ? await options.getWorkspaceBridgeExtraTools({
+            workspaceId: ctx.workspaceId,
+            workspaceRoot: ctx.workspaceRoot,
+            callAsRuntime: async (request, callOptions) => await coreBridge.callAsRuntime(ctx.workspaceId, request, callOptions),
+          })
+        : []
       return [
         ...callerTools,
-        ...createWorkspaceUiTools(getUiBridge(ctx.workspaceId), {
+        ...bridgeTools,
+        ...createWorkspaceUiTools(coreBridge.getBridge(ctx.workspaceId), {
           workspaceRoot: ctx.workspaceFsCapability === 'strong' ? ctx.workspaceRoot : undefined,
         }),
       ]
@@ -754,13 +928,20 @@ export async function createCoreWorkspaceAgentServer(
     provisionWorkspace: options.provisionWorkspace,
     registerHealthRoute: options.registerHealthRoute ?? false,
     telemetry,
+    metering: options.metering,
+    runtimeEnvContributions: [
+      ...(options.runtimeEnvContributions ?? []),
+      ...(coreBridge.runtimeEnvContribution ? [coreBridge.runtimeEnvContribution] : []),
+    ],
   })
 
   await app.register(uiRoutes, {
     getWorkspaceId: resolveWorkspaceId,
-    getBridge: async (request) => getUiBridge(await resolveWorkspaceId(request)),
+    getBridge: async (request) => coreBridge.getBridge(await resolveWorkspaceId(request)),
     preserveStateKeys: pluginCollection.preservedUiStateKeys,
   })
+
+  await coreBridge.registerHttpRoutes(app)
 
   for (const { routes } of pluginCollection.routeContributions) {
     await app.register(routes)

@@ -18,13 +18,20 @@ export type {
   WorkspaceBridgeContextValue,
   WorkspaceContextValue,
 } from "./WorkspaceProvider"
+export { formatWorkspaceDocumentTitle } from "./workspaceTitle"
 export {
+  WORKSPACE_ATTENTION_ACTION_EVENT,
   WorkspaceAttentionProvider,
+  emitWorkspaceAttentionAction,
   useWorkspaceAttention,
+  workspaceAttentionSessionBadgeForBlocker,
 } from "../attention"
 export type {
+  WorkspaceAttentionActionDetail,
   WorkspaceAttentionBlocker,
+  WorkspaceAttentionBlockerAction,
   WorkspaceAttentionContextValue,
+  WorkspaceAttentionSessionBadge,
 } from "../attention"
 export type {
   OpenArtifactHandler,

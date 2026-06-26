@@ -1,11 +1,17 @@
 import { defineConfig } from "vite"
 import react from "@vitejs/plugin-react"
 import tailwindcss from "@tailwindcss/vite"
-import { resolve } from "node:path"
+import { dirname, resolve } from "node:path"
 import { createBoringAppViteAliases } from "@hachej/boring-core/app/vite"
 import { AGENT_API_PORT, VITE_PORT, startPlaygroundServer } from "./src/server/dev"
 
 const baseResolve = createBoringAppViteAliases({ appRoot: __dirname })
+const repoRoot = resolve(__dirname, "../..")
+const externalWorkspaceRoot = process.env.BORING_AGENT_WORKSPACE_ROOT?.trim()
+const externalRuntimeExtensionsRoot = externalWorkspaceRoot
+  ? resolve(externalWorkspaceRoot, ".pi", "extensions")
+  : undefined
+const fsAllow = externalRuntimeExtensionsRoot ? [repoRoot, externalRuntimeExtensionsRoot] : [repoRoot]
 // The playground is the standalone dev surface for the workspace
 // package — its src/ contains `@/` (workspace-src-rooted) imports that
 // the standard helper doesn't cover. Add those alongside the shared
@@ -45,7 +51,7 @@ const playgroundOnlyAliases = [
 
 function isRuntimeExtensionPath(file: string): boolean {
   const normalized = file.replaceAll("\\", "/")
-  return /(^|\/)workspace\/\.pi\/extensions\//.test(normalized)
+  return /(^|\/)(workspace\/)?\.pi\/extensions\//.test(normalized)
 }
 
 const dynamicPluginReactRefreshExclude = [
@@ -54,7 +60,7 @@ const dynamicPluginReactRefreshExclude = [
   // second/stale hook dispatcher for dynamically imported panels after edits,
   // so leave these files to Vite's plain esbuild TSX transform and apply
   // updates only after /reload.
-  /workspace\/\.pi\/extensions\//,
+  /(^|\/)(workspace\/)?\.pi\/extensions\//,
   /apps\/workspace-playground\/src\/plugins\/[^/]+\/front\//,
   /plugins\/[^/]+\/dist\/front\//,
   // The playground consumes prebuilt workspace/agent/ui dist files. Dynamic
@@ -64,6 +70,16 @@ const dynamicPluginReactRefreshExclude = [
   // settle. Dist bundles are already built artifacts, so don't instrument them.
   /packages\/(workspace|agent|ui)\/dist\//,
 ]
+
+const devServerWatchIgnored = [
+  "**/.git/**",
+  "**/.beads/**",
+  "**/.pi/agent/cache/**",
+  "**/.pi/agent/sessions/**",
+  "**/node_modules/**",
+]
+const usePollingWatch = process.env.CHOKIDAR_USEPOLLING === "1" || process.env.BORING_VITE_USEPOLLING === "1"
+const pollingInterval = Number(process.env.CHOKIDAR_INTERVAL ?? process.env.BORING_VITE_POLL_INTERVAL ?? "300")
 
 export default defineConfig({
   plugins: [
@@ -96,6 +112,20 @@ export default defineConfig({
   server: {
     port: VITE_PORT,
     host: true,
+    fs: {
+      allow: fsAllow,
+    },
+    watch: {
+      ignored: devServerWatchIgnored,
+      // Opt-in polling for environments where native FS events don't fire
+      // (network mounts, some containers): CHOKIDAR_USEPOLLING=1.
+      ...(usePollingWatch
+        ? {
+            usePolling: true,
+            interval: Number.isFinite(pollingInterval) && pollingInterval > 0 ? pollingInterval : 300,
+          }
+        : {}),
+    },
     proxy: {
       // All API traffic goes to the agent server — the agent owns the
       // filesystem and the UI bridge. No vite-side mocks.

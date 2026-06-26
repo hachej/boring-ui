@@ -33,6 +33,7 @@ import {
 } from 'lucide-react'
 import { useSession, useSignOut, useChangePassword } from './AuthProvider.js'
 import { useUser } from './UserIdentityProvider.js'
+import { useOptionalConfig } from '../ConfigProvider.js'
 import { apiFetch } from '../utils.js'
 
 const changePasswordSchema = z
@@ -48,8 +49,22 @@ const changePasswordSchema = z
 
 type ChangePasswordData = z.infer<typeof changePasswordSchema>
 
+/** A host-provided settings section inserted after the profile panel, with its own
+ * nav entry. Lets a host add feature sections (e.g. billing) WITHOUT this page —
+ * which lives in the feature-agnostic `@hachej/boring-core/front` — knowing what
+ * they are. `id` must match the rendered content's anchor id for nav scroll. */
+export interface UserSettingsSection {
+  id: string
+  navLabel: string
+  navDescription?: string
+  content: ReactNode
+}
+
 export interface UserSettingsPageProps {
   topBar?: ReactNode
+  /** Extra settings sections (each with its own nav entry) inserted after the
+   * profile panel. Omitted entirely when not provided. */
+  extraSections?: UserSettingsSection[]
 }
 
 function initialsFor(name: string | null | undefined, email: string): string {
@@ -73,21 +88,30 @@ function formatMemberSince(value: string): string {
 }
 
 function SettingsTopBar() {
+  const config = useOptionalConfig()
+  const appTitle = config?.appName ?? 'Boring UI'
+  const appInitial = (appTitle.trim().charAt(0) || 'B').toUpperCase()
   return (
     <header
       className="relative flex h-[52px] items-center justify-between gap-3 border-b border-border/40 bg-background px-4"
       aria-label="App top bar"
     >
       <div className="flex min-w-0 flex-1 items-center gap-2.5">
-        <div
-          aria-hidden="true"
-          className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-foreground text-[12px] font-semibold text-background"
+        <a
+          href="/"
+          aria-label={`${appTitle} home`}
+          className="flex min-w-0 items-center gap-2.5 rounded-md outline-none transition-opacity hover:opacity-80 focus-visible:ring-2 focus-visible:ring-ring"
         >
-          B
-        </div>
-        <span className="truncate text-[13px] font-medium tracking-tight text-foreground">
-          Boring
-        </span>
+          <div
+            aria-hidden="true"
+            className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-foreground text-[12px] font-semibold text-background"
+          >
+            {appInitial}
+          </div>
+          <span className="truncate text-[13px] font-medium tracking-tight text-foreground">
+            {appTitle}
+          </span>
+        </a>
         <span aria-hidden="true" className="text-muted-foreground/30">/</span>
         <span className="truncate text-[13px] text-muted-foreground">Account settings</span>
       </div>
@@ -132,13 +156,13 @@ function SettingsPageHeader({
   )
 }
 
-const ACCOUNT_NAV_ITEMS = [
-  { href: '#profile', label: 'Profile', description: 'Identity and email' },
+const PROFILE_NAV_ITEM = { href: '#profile', label: 'Profile', description: 'Identity and email' }
+const ACCOUNT_TAIL_NAV_ITEMS = [
   { href: '#password', label: 'Password', description: 'Sign-in security' },
   { href: '#danger-zone', label: 'Deletion', description: 'Permanent actions' },
 ]
 
-export function UserSettingsPage({ topBar }: UserSettingsPageProps = {}) {
+export function UserSettingsPage({ topBar, extraSections = [] }: UserSettingsPageProps = {}) {
   const session = useSession()
   const identity = useUser()
   const signOut = useSignOut()
@@ -242,7 +266,14 @@ export function UserSettingsPage({ topBar }: UserSettingsPageProps = {}) {
       <div className="boring-settings-scroll">
         <div className="boring-settings-layout">
           <aside className="boring-settings-sidebar">
-            <UiSettingsNav label="Account settings" items={ACCOUNT_NAV_ITEMS} />
+            <UiSettingsNav
+              label="Account settings"
+              items={[
+                PROFILE_NAV_ITEM,
+                ...extraSections.map((s) => ({ href: `#${s.id}`, label: s.navLabel, description: s.navDescription })),
+                ...ACCOUNT_TAIL_NAV_ITEMS,
+              ]}
+            />
           </aside>
 
           <div className="boring-settings-content space-y-4">
@@ -284,6 +315,10 @@ export function UserSettingsPage({ topBar }: UserSettingsPageProps = {}) {
               </UiDetailLine>
             </DetailList>
           </UiSettingsPanel>
+
+          {extraSections.map((section) => (
+            <div key={section.id}>{section.content}</div>
+          ))}
 
           <form onSubmit={handleSubmit(onChangePassword)} noValidate>
             <UiSettingsPanel

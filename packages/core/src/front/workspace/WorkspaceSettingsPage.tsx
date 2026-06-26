@@ -31,6 +31,7 @@ import {
 } from 'lucide-react'
 import { useCurrentWorkspace, useWorkspaceRole } from '../WorkspaceAuthProvider.js'
 import { WORKSPACES_QUERY_KEY, workspaceQueryKey } from '../WorkspaceAuthProvider.js'
+import { useOptionalConfig } from '../ConfigProvider.js'
 import { apiFetch, apiFetchJson, getHttpErrorDetail } from '../utils.js'
 import type { WorkspaceRuntime } from '../../shared/types.js'
 
@@ -45,6 +46,9 @@ const STATE_TONES: Record<string, 'info' | 'success' | 'danger' | 'neutral'> = {
 }
 
 function SettingsTopBar({ workspaceId, workspaceName }: { workspaceId: string; workspaceName: string }) {
+  const config = useOptionalConfig()
+  const appTitle = config?.appName ?? 'Boring UI'
+  const appInitial = (appTitle.trim().charAt(0) || 'B').toUpperCase()
   const navigate = useNavigate()
   const workspaceHref = workspaceId ? `/workspace/${encodeURIComponent(workspaceId)}` : '/'
   return (
@@ -62,10 +66,10 @@ function SettingsTopBar({ workspaceId, workspaceName }: { workspaceId: string; w
           onClick={() => navigate(workspaceHref)}
           className="shrink-0 bg-foreground text-[12px] font-semibold text-background hover:bg-foreground/90"
         >
-          B
+          {appInitial}
         </IconButton>
         <span className="truncate text-[13px] font-medium tracking-tight text-foreground">
-          Boring
+          {appTitle}
         </span>
         <span aria-hidden="true" className="text-muted-foreground/30">/</span>
         <span className="truncate text-[13px] text-muted-foreground">{workspaceName}</span>

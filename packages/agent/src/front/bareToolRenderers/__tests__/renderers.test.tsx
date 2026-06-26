@@ -4,6 +4,8 @@ import {
   defaultToolRenderers,
   mergeToolRenderers,
   resolveToolRenderer,
+  resolveToolRendererForPart,
+  toToolPart,
   type ToolPart,
 } from '../renderers'
 import { buildFilesystemAgentTools } from '../../../server/tools/filesystem'
@@ -49,6 +51,7 @@ function mockBundle(provider: string): RuntimeBundle {
       }),
     },
     fileSearch: { search: async () => [] },
+    filesystem: provider === 'vercel-sandbox' ? { kind: 'remote-workspace' } : { kind: 'host' },
   }
 }
 
@@ -253,5 +256,43 @@ describe('resolveToolRenderer', () => {
       __fallback: customFallback,
     })
     expect(renderer).toBe(defaultToolRenderers.edit)
+  })
+
+  test('toToolPart adapts BoringChatPart tool-call id and top-level ui metadata', () => {
+    const part = toToolPart({
+      type: 'tool-call',
+      id: 'pi-call-7',
+      toolName: 'plugin_tool',
+      state: 'aborted',
+      input: { ok: true },
+      ui: { rendererId: 'plugin-card', details: { row: 1 } },
+    })
+
+    expect(part).toEqual(expect.objectContaining({
+      type: 'tool-call',
+      toolCallId: 'pi-call-7',
+      toolName: 'plugin_tool',
+      state: 'aborted',
+      ui: { rendererId: 'plugin-card', details: { row: 1 } },
+    }))
+  })
+
+  test('resolveToolRendererForPart makes rendererId-vs-toolName collisions deterministic', () => {
+    const rendererById = () => <div>renderer id</div>
+    const rendererByToolName = () => <div>tool name</div>
+    const part = makePart({
+      toolName: 'bash',
+      output: { details: { ui: { rendererId: 'plugin-card' } } },
+    })
+    const adapted = toToolPart(part)!
+
+    const resolved = resolveToolRendererForPart(adapted, {
+      'plugin-card': rendererById,
+      bash: rendererByToolName,
+    })
+
+    expect(resolved.renderer).toBe(rendererById)
+    expect(resolved.resolution).toEqual({ key: 'plugin-card', source: 'rendererId', requestedRendererId: 'plugin-card' })
+    expect(resolved.part.rendererResolution).toEqual(resolved.resolution)
   })
 })

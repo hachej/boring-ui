@@ -10,9 +10,26 @@ import type { RuntimeModeAdapter } from '../runtime/mode'
 
 const tempDirs: string[] = []
 
+async function removeDirEventually(dir: string, timeoutMs = 5000): Promise<void> {
+  const startedAt = Date.now()
+  let lastError: unknown
+  while (Date.now() - startedAt < timeoutMs) {
+    try {
+      await rm(dir, { recursive: true, force: true })
+      return
+    } catch (error) {
+      lastError = error
+      const code = typeof error === 'object' && error && 'code' in error ? (error as { code?: string }).code : undefined
+      if (code !== 'ENOTEMPTY' && code !== 'EBUSY') throw error
+      await new Promise((resolve) => setTimeout(resolve, 50))
+    }
+  }
+  if (lastError) throw lastError
+}
+
 afterEach(async () => {
   await Promise.all(
-    tempDirs.splice(0).map((dir) => rm(dir, { recursive: true, force: true })),
+    tempDirs.splice(0).map((dir) => removeDirEventually(dir)),
   )
 })
 
@@ -54,6 +71,46 @@ async function createDummySkill(): Promise<string> {
   await writeFile(join(root, 'SKILL.md'), '---\nname: dummy-sdk-skill\ndescription: Dummy SDK skill\n---\n# Dummy SDK\n')
   return root
 }
+
+test('registerAgentRoutes externalPlugins=false keeps local plugin files out of catalog', async () => {
+  const workspaceRoot = await makeTempDir('boring-agent-embed-plugin-disabled-')
+  const pluginDir = join(workspaceRoot, '.pi', 'extensions')
+  await mkdir(pluginDir, { recursive: true })
+  await writeFile(
+    join(pluginDir, 'hidden.mjs'),
+    [
+      'export default {',
+      "  name: 'a4s_embed_plugin_hidden',",
+      "  description: 'hidden embedded plugin tool',",
+      "  parameters: { type: 'object', properties: {} },",
+      '  async execute() { return { content: [{ type: \'text\', text: \'hidden\' }] } },',
+      '}',
+      '',
+    ].join('\n'),
+  )
+  const app = Fastify({ logger: false })
+  await app.register(registerAgentRoutes, {
+    workspaceRoot,
+    mode: 'direct',
+    externalPlugins: false,
+  })
+
+  try {
+    const res = await app.inject({ method: 'GET', url: '/api/v1/agent/catalog' })
+    expect(res.statusCode).toBe(200)
+    const names = res.json().tools.map((tool: { name: string }) => tool.name)
+    expect(names).not.toContain('a4s_embed_plugin_hidden')
+    expect(names).not.toContain('plugin_diagnostics')
+    expect(names).toContain('bash')
+    const catalogText = JSON.stringify(res.json()).toLowerCase()
+    expect(catalogText).not.toContain('boring-ui-plugin')
+    expect(catalogText).not.toContain('boring-plugin-authoring')
+    expect(catalogText).not.toContain('plugin-owned')
+    expect(catalogText).not.toContain('my-plugin')
+  } finally {
+    await app.close()
+  }
+})
 
 test('registerAgentRoutes provisions embedded runtime plugins before host app routes are ready', async () => {
   const workspaceRoot = await makeTempDir('boring-agent-embed-provision-')
@@ -150,83 +207,36 @@ test('registerAgentRoutes provisions the resolved request workspace, not the hos
   }
 }, 15_000)
 
-test('chat and chat history are not blocked while request-scoped runtime dependency provisioning is pending', async () => {
-  const workspaceRoot = await makeTempDir('boring-agent-chat-pending-provision-')
+test('registerAgentRoutes resolves raw file preview workspace from query param', async () => {
+  const baseRoot = await makeTempDir('boring-agent-raw-preview-base-')
+  const workspaceA = await makeTempDir('boring-agent-raw-preview-a-')
+  await writeFile(join(baseRoot, 'chart.png'), 'base-root')
+  await writeFile(join(workspaceA, 'chart.png'), 'workspace-a')
+  const getWorkspaceId = vi.fn(async (request: { headers: Record<string, unknown> }) => String(request.headers['x-boring-workspace-id'] ?? ''))
+  const getWorkspaceRoot = vi.fn(async (workspaceId: string) => workspaceId === 'workspace-a' ? workspaceA : baseRoot)
   const app = Fastify({ logger: false })
-  const provisionStarted = vi.fn()
-  let resolveProvision: (() => void) | undefined
 
   await app.register(registerAgentRoutes, {
-    workspaceRoot,
+    workspaceRoot: baseRoot,
     mode: 'direct',
-    getWorkspaceId: () => 'workspace-a',
-    getWorkspaceRoot: () => workspaceRoot,
-    provisionRuntime: async () => {
-      provisionStarted()
-      await new Promise<void>((resolve) => { resolveProvision = resolve })
-      return { changed: false, env: {}, pathEntries: [], skillPaths: [] }
-    },
-    harnessFactory: async () => ({
-      id: 'pending-provision-test-harness',
-      placement: 'server' as const,
-      sessions: {
-        async list() { return [] },
-        async create() {
-          const now = new Date().toISOString()
-          return { id: 's1', title: 'Test', createdAt: now, updatedAt: now, turnCount: 0 }
-        },
-        async load() {
-          const now = new Date().toISOString()
-          return { id: 's1', title: 'Test', createdAt: now, updatedAt: now, turnCount: 0, messages: [] }
-        },
-        async delete() {},
-      },
-      async *sendMessage() {},
-    }),
+    getWorkspaceId,
+    getWorkspaceRoot,
   })
   await app.ready()
 
   try {
-    const created = await app.inject({
-      method: 'POST',
-      url: '/api/v1/agent/sessions',
-      payload: { title: 'Existing chat' },
-    })
-    expect(created.statusCode).toBe(200)
-    const sessionId = created.json().id as string
-
     const res = await app.inject({
-      method: 'POST',
-      url: '/api/v1/agent/chat',
-      payload: { sessionId, message: 'hello' },
+      method: 'GET',
+      url: '/api/v1/files/raw?path=chart.png&workspaceId=workspace-a',
     })
 
     expect(res.statusCode).toBe(200)
-    expect(provisionStarted).toHaveBeenCalledOnce()
-
-    const saved = await app.inject({
-      method: 'PUT',
-      url: `/api/v1/agent/chat/${encodeURIComponent(sessionId)}/messages`,
-      payload: {
-        messages: [{ id: 'm1', role: 'user', parts: [{ type: 'text', text: 'previous message' }] }],
-      },
-    })
-    expect(saved.statusCode).toBe(204)
-
-    const hydrated = await app.inject({
-      method: 'GET',
-      url: `/api/v1/agent/chat/${encodeURIComponent(sessionId)}/messages`,
-    })
-    expect(hydrated.statusCode).toBe(200)
-    expect(hydrated.json()).toMatchObject({
-      messages: [{ role: 'user', parts: [{ type: 'text', text: 'previous message' }] }],
-    })
-
-    resolveProvision?.()
-    const catalog = await app.inject({ method: 'GET', url: '/api/v1/agent/catalog' })
-    expect(catalog.statusCode).toBe(200)
+    expect(res.body).toBe('workspace-a')
+    expect(getWorkspaceId).toHaveBeenCalledWith(expect.objectContaining({
+      headers: expect.objectContaining({ 'x-boring-workspace-id': 'workspace-a' }),
+    }))
+    expect(getWorkspaceRoot).toHaveBeenCalledWith('workspace-a', expect.anything())
   } finally {
-    resolveProvision?.()
     await app.close()
   }
 })
@@ -264,12 +274,11 @@ test('request-scoped ready-status resolves the requested workspace', async () =>
 
 test('registerAgentRoutes reload reruns provisioning and refreshes skills scope', async () => {
   const workspaceRoot = await makeTempDir('boring-agent-embed-reload-provision-')
-  const skillRootV1 = join(workspaceRoot, 'generated-skills-v1', 'reload-skill-v1')
-  const skillRootV2 = join(workspaceRoot, 'generated-skills-v2', 'reload-skill-v2')
-  await mkdir(skillRootV1, { recursive: true })
-  await mkdir(skillRootV2, { recursive: true })
-  await writeFile(join(skillRootV1, 'SKILL.md'), '---\nname: reload-skill-v1\ndescription: Before reload.\n---\n')
-  await writeFile(join(skillRootV2, 'SKILL.md'), '---\nname: reload-skill-v2\ndescription: After reload.\n---\n')
+  const skillRoot = join(workspaceRoot, 'generated-skills', 'reload-skill')
+  async function writeReloadSkill(description: string): Promise<void> {
+    await mkdir(skillRoot, { recursive: true })
+    await writeFile(join(skillRoot, 'SKILL.md'), `---\nname: reload-skill\ndescription: ${description}\n---\n`)
+  }
   let provisionCalls = 0
   const reloadSession = vi.fn(async () => true)
   const app = Fastify({ logger: false })
@@ -279,11 +288,12 @@ test('registerAgentRoutes reload reruns provisioning and refreshes skills scope'
     mode: 'direct',
     provisionRuntime: async () => {
       provisionCalls += 1
+      await writeReloadSkill(provisionCalls === 1 ? 'Before reload.' : 'After reload.')
       return {
         changed: true,
         env: { BORING_AGENT_WORKSPACE_ROOT: workspaceRoot },
         pathEntries: [],
-        skillPaths: [provisionCalls === 1 ? dirname(skillRootV1) : dirname(skillRootV2)],
+        skillPaths: [dirname(skillRoot)],
       }
     },
     harnessFactory: async () => ({
@@ -302,8 +312,7 @@ test('registerAgentRoutes reload reruns provisioning and refreshes skills scope'
         async delete() {},
       },
       reloadSession,
-      async *sendMessage() {},
-    }),
+      }),
   })
   await app.ready()
 
@@ -311,7 +320,9 @@ test('registerAgentRoutes reload reruns provisioning and refreshes skills scope'
     await eventually(async () => {
       const before = await app.inject({ method: 'GET', url: '/api/v1/agent/skills' })
       expect(before.statusCode).toBe(200)
-      expect(before.json().skills.map((skill: { name: string }) => skill.name)).toContain('reload-skill-v1')
+      expect(before.json().skills).toEqual(expect.arrayContaining([
+        expect.objectContaining({ name: 'reload-skill', description: 'Before reload.' }),
+      ]))
     })
 
     const reload = await app.inject({ method: 'POST', url: '/api/v1/agent/reload', payload: {} })
@@ -320,11 +331,11 @@ test('registerAgentRoutes reload reruns provisioning and refreshes skills scope'
     expect(reloadSession).toHaveBeenCalledWith('default')
     expect(provisionCalls).toBe(2)
 
-    const after = await app.inject({ method: 'GET', url: '/api/v1/agent/skills' })
+    const after = await app.inject({ method: 'GET', url: '/api/v1/agent/skills?refresh=1' })
     expect(after.statusCode).toBe(200)
-    const names: string[] = after.json().skills.map((skill: { name: string }) => skill.name)
-    expect(names).toContain('reload-skill-v2')
-    expect(names).not.toContain('reload-skill-v1')
+    expect(after.json().skills).toEqual(expect.arrayContaining([
+      expect.objectContaining({ name: 'reload-skill', description: 'After reload.' }),
+    ]))
   } finally {
     await app.close()
   }
@@ -387,22 +398,22 @@ test('registerAgentRoutes isolates same-root sessions with getSessionNamespace',
   try {
     const created = await app.inject({
       method: 'POST',
-      url: '/api/v1/agent/sessions',
+      url: '/api/v1/agent/pi-chat/sessions',
       headers: { 'x-boring-workspace-id': 'workspace-a' },
       payload: { title: 'Workspace A' },
     })
-    expect(created.statusCode).toBe(200)
+    expect(created.statusCode).toBe(201)
 
     const workspaceA = await app.inject({
       method: 'GET',
-      url: '/api/v1/agent/sessions',
+      url: '/api/v1/agent/pi-chat/sessions',
       headers: { 'x-boring-workspace-id': 'workspace-a' },
     })
     expect(workspaceA.json()).toHaveLength(1)
 
     const workspaceB = await app.inject({
       method: 'GET',
-      url: '/api/v1/agent/sessions',
+      url: '/api/v1/agent/pi-chat/sessions',
       headers: { 'x-boring-workspace-id': 'workspace-b' },
     })
     expect(workspaceB.json()).toHaveLength(0)
@@ -429,22 +440,22 @@ test('registerAgentRoutes treats dynamic session namespace as request scoped', a
   try {
     const created = await app.inject({
       method: 'POST',
-      url: '/api/v1/agent/sessions',
+      url: '/api/v1/agent/pi-chat/sessions',
       headers: { 'x-session-namespace': 'namespace-a' },
       payload: { title: 'Namespace A' },
     })
-    expect(created.statusCode).toBe(200)
+    expect(created.statusCode).toBe(201)
 
     const namespaceA = await app.inject({
       method: 'GET',
-      url: '/api/v1/agent/sessions',
+      url: '/api/v1/agent/pi-chat/sessions',
       headers: { 'x-session-namespace': 'namespace-a' },
     })
     expect(namespaceA.json()).toHaveLength(1)
 
     const namespaceB = await app.inject({
       method: 'GET',
-      url: '/api/v1/agent/sessions',
+      url: '/api/v1/agent/pi-chat/sessions',
       headers: { 'x-session-namespace': 'namespace-b' },
     })
     expect(namespaceB.json()).toHaveLength(0)
@@ -466,7 +477,7 @@ test('registerAgentRoutes mounts sessions endpoint', async () => {
   })
   await app.ready()
 
-  const res = await app.inject({ method: 'GET', url: '/api/v1/agent/sessions' })
+  const res = await app.inject({ method: 'GET', url: '/api/v1/agent/pi-chat/sessions' })
   expect(res.statusCode).toBe(200)
   expect(Array.isArray(res.json())).toBe(true)
 
@@ -528,7 +539,7 @@ test('registerAgentRoutes bridges request.user to workspaceContext', async () =>
   })
   await app.ready()
 
-  const res = await app.inject({ method: 'GET', url: '/api/v1/agent/sessions' })
+  const res = await app.inject({ method: 'GET', url: '/api/v1/agent/pi-chat/sessions' })
   expect(res.statusCode).toBe(200)
 
   await app.close()
@@ -580,6 +591,19 @@ test('registerAgentRoutes registers agent capabilities contributor when host sup
   expect(Array.isArray(body.agent?.modelProviders)).toBe(true)
 
   await app.close()
+})
+
+test('generic agent composition does not special-case provider-specific sandboxes', async () => {
+  const files = [
+    'createAgentApp.ts',
+    'registerAgentRoutes.ts',
+    'tools/harness/index.ts',
+    'tools/filesystem/index.ts',
+  ]
+  for (const rel of files) {
+    const source = await readFile(join(process.cwd(), 'src/server', rel), 'utf8')
+    expect(source).not.toMatch(/vercel|remote-worker|resolvedMode\s*[!=]==\s*['"]vercel-sandbox['"]|sandbox\.provider\s*[!=]==/i)
+  }
 })
 
 test('createAgentApp has zero runtime imports from @hachej/boring-core', async () => {
@@ -826,6 +850,63 @@ test('request-scoped models endpoint does not require workspace header', async (
   await app.close()
 }, 15_000)
 
+test('request-scoped commands endpoint uses the workspace harness', async () => {
+  const workspaceRoot = await makeTempDir('boring-agent-embed-commands-')
+  const app = Fastify({ logger: false })
+  const getSlashCommands = vi.fn(async () => [{ name: 'open-test-panel', source: 'extension' as const }])
+  let scopeChecks = 0
+
+  await app.register(registerAgentRoutes, {
+    workspaceRoot,
+    mode: 'direct',
+    getWorkspaceId: (request) => {
+      scopeChecks += 1
+      const value = request.headers['x-boring-workspace-id']
+      if (typeof value !== 'string') {
+        const error = new Error('workspace id is required') as Error & { statusCode: number }
+        error.statusCode = 400
+        throw error
+      }
+      return value
+    },
+    getWorkspaceRoot: () => workspaceRoot,
+    harnessFactory: async () => ({
+      id: 'commands-test-harness',
+      placement: 'server' as const,
+      sessions: {
+        async list() { return [] },
+        async create() {
+          const now = new Date().toISOString()
+          return { id: 'custom', title: 'Custom', createdAt: now, updatedAt: now, turnCount: 0 }
+        },
+        async load() {
+          const now = new Date().toISOString()
+          return { id: 'custom', title: 'Custom', createdAt: now, updatedAt: now, turnCount: 0, messages: [] }
+        },
+        async delete() {},
+      },
+      getSlashCommands,
+    }),
+  })
+  await app.ready()
+
+  try {
+    const commandsRes = await app.inject({
+      method: 'GET',
+      url: '/api/v1/agent/commands?sessionId=custom',
+      headers: { 'x-boring-workspace-id': 'workspace-a' },
+    })
+    expect(commandsRes.statusCode).toBe(200)
+    expect(commandsRes.json()).toEqual({
+      commands: [{ name: 'open-test-panel', source: 'extension' }],
+    })
+    expect(getSlashCommands).toHaveBeenCalledWith('custom', expect.objectContaining({ workdir: workspaceRoot }))
+    expect(scopeChecks).toBe(1)
+  } finally {
+    await app.close()
+  }
+}, 15_000)
+
 test('skills endpoint lists Pi-resolved project skills', async () => {
   const workspaceRoot = await makeTempDir('boring-agent-embed-skills-project-')
   const projectSkillDir = join(workspaceRoot, '.pi', 'skills', 'project-skill')
@@ -840,6 +921,9 @@ test('skills endpoint lists Pi-resolved project skills', async () => {
   await app.register(registerAgentRoutes, {
     workspaceRoot,
     mode: 'direct',
+    // Skill discovery is off by default (withPiHarnessDefaults); hosts that
+    // want pi-resolved skills in the picker opt in, like the CLI does.
+    pi: { noSkills: false },
   })
   await app.ready()
 
@@ -847,6 +931,34 @@ test('skills endpoint lists Pi-resolved project skills', async () => {
   expect(res.statusCode).toBe(200)
   const names: string[] = res.json().skills.map((skill: { name: string }) => skill.name)
   expect(names).toContain('project-skill')
+
+  await app.close()
+})
+
+test('skills endpoint discovers workspace .agents/skills when ambient skills are enabled', async () => {
+  const workspaceRoot = await makeTempDir('boring-agent-embed-skills-ambient-')
+  const skillRoot = join(workspaceRoot, '.agents', 'skills', 'cli-project-skill')
+  await mkdir(skillRoot, { recursive: true })
+  await writeFile(
+    join(skillRoot, 'SKILL.md'),
+    '---\nname: cli-project-skill\ndescription: Project skill visible in standalone CLI mode.\n---\n# CLI project skill\n',
+    'utf-8',
+  )
+
+  const app = Fastify({ logger: false })
+  await app.register(registerAgentRoutes, {
+    workspaceRoot,
+    mode: 'direct',
+    // The standalone CLI's config: ambient discovery on (default is off).
+    pi: { noSkills: false },
+  })
+  await app.ready()
+
+  const res = await app.inject({ method: 'GET', url: '/api/v1/agent/skills?refresh=1' })
+  expect(res.statusCode).toBe(200)
+  expect(res.json().skills).toEqual(expect.arrayContaining([
+    expect.objectContaining({ name: 'cli-project-skill' }),
+  ]))
 
   await app.close()
 })
@@ -865,6 +977,7 @@ test('skills endpoint does not require unrelated runtime-only dynamic hooks', as
   await app.register(registerAgentRoutes, {
     workspaceRoot,
     mode: 'direct',
+    pi: { noSkills: false },
     getSessionNamespace: () => {
       throw new Error('session namespace should not be needed for skill listing')
     },
@@ -935,5 +1048,72 @@ test('registerAgentRoutes does NOT expose /api/v1/ui/* (moved to @hachej/boring-
   })
   expect(put.statusCode).toBe(404)
 
+  await app.close()
+})
+
+
+test('runtimeEnvContributions merge generic host env into sandbox exec without workspace imports', async () => {
+  const workspaceRoot = await makeTempDir('boring-agent-runtime-env-contrib-')
+  const app = Fastify({ logger: false })
+  const execCalls: Array<Record<string, string> | undefined> = []
+  const telemetryEvents: unknown[] = []
+  const customAdapter: RuntimeModeAdapter = {
+    id: 'custom-env-sandbox',
+    workspaceFsCapability: 'strong',
+    async create(ctx) {
+      const { createNodeWorkspace } = await import('../workspace/createNodeWorkspace')
+      const { createServerFileSearch } = await import('../runtime/createServerFileSearch')
+      const runtimeContext = { runtimeCwd: '/workspace' }
+      const workspace = createNodeWorkspace(ctx.workspaceRoot)
+      const sandbox = {
+        id: 'env-sandbox',
+        placement: 'server' as const,
+        provider: 'custom-env-sandbox',
+        capabilities: ['exec'],
+        runtimeContext,
+        async exec(_cmd: string, opts?: { env?: Record<string, string> }) {
+          execCalls.push(opts?.env)
+          return { stdout: new TextEncoder().encode('ok'), stderr: new Uint8Array(), exitCode: 0, durationMs: 1, truncated: false }
+        },
+      }
+      return { runtimeContext, workspace, sandbox, fileSearch: createServerFileSearch(workspace, sandbox), bash: { kind: 'remote' } }
+    },
+  }
+  let capturedTools: import('../../shared/tool').AgentTool[] = []
+  const harnessFactory = vi.fn(async (input) => {
+    capturedTools = input.tools
+    return {
+      id: 'runtime-env-test-harness',
+      placement: 'server' as const,
+      sessions: {
+        async list() { return [] },
+        async create() { const now = new Date().toISOString(); return { id: 's', title: 'S', createdAt: now, updatedAt: now, turnCount: 0 } },
+        async load() { const now = new Date().toISOString(); return { id: 's', title: 'S', createdAt: now, updatedAt: now, turnCount: 0, messages: [] } },
+        async delete() {},
+      },
+      async *sendMessage() {},
+    }
+  })
+
+  await app.register(registerAgentRoutes, {
+    workspaceRoot,
+    runtimeModeAdapter: customAdapter,
+    harnessFactory,
+    telemetry: { capture: (event) => { telemetryEvents.push(event) } },
+    runtimeEnvContributions: [{ id: 'generic-test', getEnv: () => ({ GENERIC_TEST_ENV: 'yes' }) }],
+  })
+  await app.ready()
+  await capturedTools.find((tool) => tool.name === 'bash')!.execute(
+    { command: 'echo ok' },
+    { abortSignal: new AbortController().signal, toolCallId: 'tool-env' },
+  )
+
+  expect(execCalls[0]).toMatchObject({ GENERIC_TEST_ENV: 'yes' })
+  expect(telemetryEvents).toContainEqual(expect.objectContaining({
+    name: 'agent.runtime.env_contributed',
+    properties: expect.objectContaining({ contributionIds: ['generic-test'] }),
+  }))
+  expect(JSON.stringify(telemetryEvents)).not.toContain('yes')
+  expect(JSON.stringify(telemetryEvents)).not.toContain('GENERIC_TEST_ENV')
   await app.close()
 })

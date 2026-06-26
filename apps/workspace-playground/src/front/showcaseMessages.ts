@@ -3,7 +3,7 @@
  *
  * Renders one hand-crafted thread covering every message variant + tool
  * state + markdown pattern so we can iterate visual design without an LLM
- * in the loop. Hydrated into ChatPanel via localStorage; useAgentChat
+ * in the loop. Hydrated into the Pi-native chat panel via localStorage.
  * picks it up on mount because the cache key matches the showcase
  * session id.
  *
@@ -246,8 +246,8 @@ export const showcaseMessages = [
 ] as const
 
 /**
- * Pre-seed the cache that ChatPanel's `useAgentChat` reads on hydration.
- * Call once on mount in showcase mode; ChatPanel then renders the fixture
+ * Pre-seed the old showcase cache for archived demos.
+ * Call once on mount in showcase mode; the fixture remains display-only
  * with no network round-trip.
  */
 export function seedShowcase(sessionId = SHOWCASE_SESSION_ID) {

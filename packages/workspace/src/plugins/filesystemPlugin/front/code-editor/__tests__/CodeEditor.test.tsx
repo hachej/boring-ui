@@ -14,6 +14,18 @@ afterEach(() => {
 })
 
 describe("CodeEditor", () => {
+  it("passes the app CSP nonce to CodeMirror style tags", () => {
+    const meta = document.createElement("meta")
+    meta.setAttribute("name", "boring-csp-nonce")
+    meta.setAttribute("content", "test-csp-nonce")
+    document.head.appendChild(meta)
+
+    render(<CodeEditor content="const x = 1" language="typescript" />)
+
+    expect(document.head.querySelector('style[nonce="test-csp-nonce"]')).toBeTruthy()
+    meta.remove()
+  })
+
   it("renders with content", () => {
     const { container: root } = render(
       <CodeEditor content="const x = 1" language="typescript" />,

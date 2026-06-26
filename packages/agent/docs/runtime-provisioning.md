@@ -15,10 +15,14 @@ $BORING_AGENT_WORKSPACE_ROOT/.boring-agent/
 ├── skills/          # generated mirror of plugin skills
 ├── node/            # npm prefix for runtime Node CLIs
 ├── venv/            # Python virtualenv for runtime Python CLIs/SDKs
-├── sdk/uv/          # optional workspace-local uv fallback
-├── cache/           # adapter/package cache
-└── fingerprints/    # runtime skip hints
+├── sdk/             # staged local SDK/package sources (sdk/uv = workspace-local uv)
+├── cache/           # npm/uv/pip caches
+└── tmp/             # staged venvs, tarballs, temp files
 ```
+
+Provisioning skip state is tracked via ownership markers and fingerprints stored
+alongside managed directories (see `runtimeLayout.ts`), not a separate
+`fingerprints/` directory.
 
 `.boring-agent` is generated and disposable. Do not hand-edit it; delete it to
 force a full local reprovision. The directory writes its own `.gitignore` and

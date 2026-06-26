@@ -5,42 +5,39 @@ const hasRealKey =
   process.env.ANTHROPIC_API_KEY !== 'e2e-test-key'
 
 test.describe('M3b: slash commands (client-side)', () => {
-  test('/reset clears session after confirm', async ({ browserPage }) => {
+  test('/reset starts a fresh session after confirm', async ({ browserPage }) => {
+    const chat = browserPage.locator('[data-boring-agent-part="chat"]')
     const composer = browserPage.locator('[data-boring-agent-part="composer-input"]')
 
-    // Get one message into the conversation first via /reset
+    await expect(chat).toHaveAttribute('data-pi-chat-connection', 'connected', { timeout: 10_000 })
+    await expect(chat).toHaveAttribute('data-pi-chat-session-id', /.+/)
+    const before = await chat.getAttribute('data-pi-chat-session-id')
+
+    // /reset deletes the current session and starts a fresh, empty one (no
+    // "Session reset." message — the rewrite drops the active session entirely).
     browserPage.once('dialog', (dialog) => dialog.accept())
     await composer.fill('/reset')
     await browserPage.locator('button[aria-label="Submit"]').click()
-    await expect(browserPage.locator('[data-boring-agent-message-role="assistant"]')).toHaveCount(1)
 
-    // Second /reset: accept dialog — count goes back to 1 (just "Session reset.")
-    browserPage.on('dialog', (dialog) => dialog.accept())
-    await composer.fill('/reset')
-    await browserPage.locator('button[aria-label="Submit"]').click()
-
-    const messages = browserPage.locator('[data-boring-agent-message-role="assistant"]')
-    await expect(messages).toHaveCount(1)
-    await expect(messages.first()).toContainText('Session reset.')
+    await expect(chat).not.toHaveAttribute('data-pi-chat-session-id', before ?? '', { timeout: 10_000 })
+    await expect(browserPage.locator('[data-boring-agent-message-role="assistant"]')).toHaveCount(0)
   })
 
-  test('/reset cancelled preserves messages', async ({ browserPage }) => {
+  test('/reset cancelled keeps the current session', async ({ browserPage }) => {
+    const chat = browserPage.locator('[data-boring-agent-part="chat"]')
     const composer = browserPage.locator('[data-boring-agent-part="composer-input"]')
 
-    // Get a message in the conversation
-    browserPage.once('dialog', (dialog) => dialog.accept())
-    await composer.fill('/reset')
-    await browserPage.locator('button[aria-label="Submit"]').click()
-    await expect(browserPage.locator('[data-boring-agent-message-role="assistant"]')).toHaveCount(1)
+    await expect(chat).toHaveAttribute('data-pi-chat-connection', 'connected', { timeout: 10_000 })
+    await expect(chat).toHaveAttribute('data-pi-chat-session-id', /.+/)
+    const before = await chat.getAttribute('data-pi-chat-session-id')
 
-    // Cancel the second /reset — messages preserved
-    browserPage.on('dialog', (dialog) => dialog.dismiss())
+    // Dismissing the confirm leaves the active session untouched.
+    browserPage.once('dialog', (dialog) => dialog.dismiss())
     await composer.fill('/reset')
     await browserPage.locator('button[aria-label="Submit"]').click()
 
-    const messages = browserPage.locator('[data-boring-agent-message-role="assistant"]')
-    await expect(messages).toHaveCount(1)
-    await expect(messages.first()).toContainText('Session reset.')
+    await browserPage.waitForTimeout(500)
+    await expect(chat).toHaveAttribute('data-pi-chat-session-id', before ?? '')
   })
 })
 

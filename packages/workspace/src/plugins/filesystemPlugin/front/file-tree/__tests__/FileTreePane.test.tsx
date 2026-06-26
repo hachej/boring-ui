@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from "vitest"
+import { describe, it, expect, vi, beforeEach, beforeAll, afterAll } from "vitest"
 import { render, screen, fireEvent, waitFor, act } from "@testing-library/react"
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
 import type React from "react"
@@ -12,6 +12,7 @@ const mockDeleteFile = vi.fn()
 const mockFileSearch = vi.fn()
 
 const mockGetTree = vi.fn()
+const mockGetGitUrlMetadata = vi.fn()
 
 vi.mock("../../data", () => ({
   useFileList: (dir: string) => mockFileList(dir),
@@ -21,6 +22,7 @@ vi.mock("../../data", () => ({
   useDeleteFile: () => ({ mutateAsync: mockDeleteFile }),
   useFileSearch: (query: string, limit?: number) => mockFileSearch(query, limit),
   useDataClient: () => ({ getTree: mockGetTree }),
+  useGitUrlMetadata: (path: string | null) => mockGetGitUrlMetadata(path),
   useApiBaseUrl: () => "/api",
 }))
 
@@ -148,7 +150,9 @@ vi.mock("../FileTree", () => {
   }
 })
 
-import { FileTreePane } from "../FileTreeView"
+import { FileTreePane, clampContextMenuPosition } from "../FileTreeView"
+import { events, remoteMeta, userMeta } from "../../../../../front/events"
+import { filesystemEvents } from "../../../shared/events"
 
 const sampleFiles = [
   { name: "src", kind: "dir" as const, path: "src" },
@@ -163,6 +167,35 @@ function wrapper({ children }: { children: React.ReactNode }) {
   return <QueryClientProvider client={qc}>{children}</QueryClientProvider>
 }
 
+const originalInnerWidth = window.innerWidth
+const originalInnerHeight = window.innerHeight
+
+beforeAll(() => {
+  Object.defineProperty(window, "innerWidth", {
+    configurable: true,
+    writable: true,
+    value: 320,
+  })
+  Object.defineProperty(window, "innerHeight", {
+    configurable: true,
+    writable: true,
+    value: 420,
+  })
+})
+
+afterAll(() => {
+  Object.defineProperty(window, "innerWidth", {
+    configurable: true,
+    writable: true,
+    value: originalInnerWidth,
+  })
+  Object.defineProperty(window, "innerHeight", {
+    configurable: true,
+    writable: true,
+    value: originalInnerHeight,
+  })
+})
+
 beforeEach(() => {
   vi.clearAllMocks()
   mockFileSearch.mockReturnValue({ data: undefined })
@@ -170,6 +203,21 @@ beforeEach(() => {
     data: sampleFiles,
     isLoading: false,
     error: undefined,
+  })
+  mockGetGitUrlMetadata.mockImplementation(() => ({ data: { enabled: false } }))
+})
+
+describe("clampContextMenuPosition", () => {
+  it("keeps the menu inside the viewport when opened near the bottom-right edge", () => {
+    expect(
+      clampContextMenuPosition(280, 390, { width: 120, height: 100 }, 320, 420),
+    ).toEqual({ x: 192, y: 312 })
+  })
+
+  it("leaves in-bounds positions unchanged", () => {
+    expect(
+      clampContextMenuPosition(40, 60, { width: 120, height: 100 }, 320, 420),
+    ).toEqual({ x: 40, y: 60 })
   })
 })
 
@@ -357,6 +405,45 @@ describe("FileTreePane", () => {
     expect(bridge.openFile).not.toHaveBeenCalled()
   })
 
+  it("refreshes an expanded folder when an agent/remote change lands inside it", async () => {
+    mockGetTree.mockResolvedValue([{ name: "old.ts", kind: "file", path: "src/old.ts" }])
+    let expandHandler: ((payload: { path: string }) => void) | null = null
+    const bridge = {
+      getActiveFile: () => null,
+      openFile: vi.fn().mockResolvedValue({ seq: 1, status: "ok" }),
+      subscribe: vi.fn((event, handler) => {
+        if (event === "tree:expand") expandHandler = handler
+        return vi.fn()
+      }),
+    }
+
+    render(<FileTreePane bridge={bridge as any} />, { wrapper })
+    await waitFor(() => expect(screen.getByTestId("file-tree")).toBeInTheDocument())
+    await waitFor(() => expect(bridge.subscribe).toHaveBeenCalled())
+
+    // Expand "src" so its children live in local state (not react-query).
+    // Wait for the child to actually render — that guarantees expandedChildren
+    // committed (getTree is called synchronously, before its promise resolves).
+    act(() => expandHandler?.({ path: "src" }))
+    await screen.findByText("old.ts")
+    mockGetTree.mockClear()
+
+    // A remote (agent/SSE) create inside the expanded dir must re-fetch it…
+    act(() => {
+      events.emit(filesystemEvents.created, { ...remoteMeta(), path: "src/new.ts", kind: "file" })
+    })
+    await waitFor(() => expect(mockGetTree).toHaveBeenCalledWith("src"))
+
+    // …but a create in a non-expanded dir, or a user-caused one, must not.
+    mockGetTree.mockClear()
+    act(() => {
+      events.emit(filesystemEvents.created, { ...remoteMeta(), path: "other/x.ts", kind: "file" })
+      events.emit(filesystemEvents.created, { ...userMeta(), path: "src/typed.ts", kind: "file" })
+    })
+    await new Promise((r) => setTimeout(r, 20))
+    expect(mockGetTree).not.toHaveBeenCalled()
+  })
+
   it("reveals folder requests forwarded through left-tab params", async () => {
     const bridge = {
       getActiveFile: () => null,
@@ -418,6 +505,88 @@ describe("FileTreePane", () => {
     expect(screen.getByRole("menuitem", { name: "Rename" })).toBeInTheDocument()
     expect(screen.getByRole("menuitem", { name: "Delete" })).toBeInTheDocument()
     expect(screen.getByRole("menuitem", { name: "Copy path" })).toBeInTheDocument()
+  })
+
+  it("shows Copy Git URL when git metadata is available for a file", async () => {
+    mockGetGitUrlMetadata.mockImplementation((path: string | null) => ({
+      data: path === "index.ts"
+        ? { enabled: true, url: "https://github.com/hachej/boring-ui/blob/main/index.ts" }
+        : { enabled: false },
+    }))
+
+    render(<FileTreePane />, { wrapper })
+    await waitFor(() => expect(screen.getByText("index.ts")).toBeInTheDocument())
+
+    fireEvent.contextMenu(screen.getByText("index.ts"))
+
+    expect(screen.getByRole("menuitem", { name: "Copy Git URL" })).toBeInTheDocument()
+  })
+
+  it("shows a clear reason instead of Copy Git URL when unavailable", async () => {
+    mockGetGitUrlMetadata.mockImplementation((path: string | null) => ({
+      data: path === "index.ts"
+        ? { enabled: false, reason: "Workspace is not inside a Git repository." }
+        : { enabled: false },
+    }))
+
+    render(<FileTreePane />, { wrapper })
+    await waitFor(() => expect(screen.getByText("index.ts")).toBeInTheDocument())
+
+    fireEvent.contextMenu(screen.getByText("index.ts"))
+
+    expect(screen.queryByRole("menuitem", { name: "Copy Git URL" })).not.toBeInTheDocument()
+    expect(screen.getByText("Workspace is not inside a Git repository.")).toBeInTheDocument()
+  })
+
+  it("repositions the context menu when opened too close to the viewport bottom", async () => {
+    const rectSpy = vi
+      .spyOn(HTMLElement.prototype, "getBoundingClientRect")
+      .mockImplementation(function (this: HTMLElement) {
+        if (this.getAttribute("role") === "menu") {
+          return {
+            x: 0,
+            y: 0,
+            top: 0,
+            left: 0,
+            right: 120,
+            bottom: 100,
+            width: 120,
+            height: 100,
+            toJSON: () => ({}),
+          } as DOMRect
+        }
+        return {
+          x: 0,
+          y: 0,
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          width: 0,
+          height: 0,
+          toJSON: () => ({}),
+        } as DOMRect
+      })
+
+    try {
+      render(<FileTreePane />, { wrapper })
+
+      await waitFor(() => {
+        expect(screen.getByText("index.ts")).toBeInTheDocument()
+      })
+
+      fireEvent.contextMenu(screen.getByText("index.ts"), {
+        clientX: 280,
+        clientY: 390,
+      })
+
+      await waitFor(() => {
+        const menu = screen.getByRole("menu")
+        expect(menu).toHaveStyle({ left: "192px", top: "312px" })
+      })
+    } finally {
+      rectSpy.mockRestore()
+    }
   })
 
   it("delete context action shows AlertDialog confirmation", async () => {
@@ -660,7 +829,29 @@ describe("FileTreePane", () => {
         expect(mockFileWrite).toHaveBeenCalledWith({
           path: "notes.md",
           content: "",
+          returnMtimeMs: false,
         }),
+      )
+    })
+
+    it("New file submit opens the created file", async () => {
+      const bridge = {
+        openFile: vi.fn().mockResolvedValue({ seq: 1, status: "ok" }),
+      }
+      mockFileWrite.mockResolvedValue(undefined)
+      render(<FileTreePane bridge={bridge as any} />, { wrapper })
+      await waitFor(() => expect(screen.getByTestId("file-tree")).toBeInTheDocument())
+
+      const container = screen.getByTestId("file-tree").parentElement!
+      fireEvent.contextMenu(container)
+      fireEvent.click(screen.getByRole("menuitem", { name: "New file" }))
+
+      const input = await screen.findByTestId("file-tree-edit-input")
+      fireEvent.change(input, { target: { value: "notes.md" } })
+      fireEvent.keyDown(input, { key: "Enter" })
+
+      await waitFor(() =>
+        expect(bridge.openFile).toHaveBeenCalledWith("notes.md", { mode: "edit" }),
       )
     })
 
@@ -768,6 +959,7 @@ describe("FileTreePane", () => {
         expect(mockFileWrite).toHaveBeenCalledWith({
           path: "src/child.ts",
           content: "",
+          returnMtimeMs: false,
         }),
       )
     })
@@ -828,6 +1020,29 @@ describe("FileTreePane", () => {
       fireEvent.click(screen.getByRole("menuitem", { name: "Copy path" }))
 
       await waitFor(() => expect(writeText).toHaveBeenCalledWith("index.ts"))
+    })
+
+    it("copies the git url when Copy Git URL is clicked", async () => {
+      const writeText = vi.fn().mockResolvedValue(undefined)
+      Object.defineProperty(globalThis.navigator, "clipboard", {
+        value: { writeText },
+        configurable: true,
+      })
+      mockGetGitUrlMetadata.mockImplementation((path: string | null) => ({
+        data: path === "index.ts"
+          ? { enabled: true, url: "https://github.com/hachej/boring-ui/blob/main/index.ts" }
+          : { enabled: false },
+      }))
+
+      render(<FileTreePane />, { wrapper })
+      await waitFor(() => expect(screen.getByText("index.ts")).toBeInTheDocument())
+
+      fireEvent.contextMenu(screen.getByText("index.ts"))
+      fireEvent.click(screen.getByRole("menuitem", { name: "Copy Git URL" }))
+
+      await waitFor(() =>
+        expect(writeText).toHaveBeenCalledWith("https://github.com/hachej/boring-ui/blob/main/index.ts"),
+      )
     })
 
     it("shows a success toast after copying", async () => {

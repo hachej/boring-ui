@@ -1,105 +1,17 @@
 import { lstat, mkdir, readdir, readFile, rename, rm, stat, unlink, writeFile } from 'node:fs/promises'
-import { dirname, relative, resolve, sep } from 'node:path'
-import chokidar, { type FSWatcher } from 'chokidar'
+import { dirname, resolve } from 'node:path'
 
 import type { WorkspaceRuntimeContext } from '../../shared/runtime'
-import type {
-  Workspace,
-  WorkspaceChangeEvent,
-  WorkspaceWatcher,
-} from '../../shared/workspace'
+import type { Workspace } from '../../shared/workspace'
 import {
   assertRealPathWithinWorkspace,
   ensureExistingWorkspacePath,
   ensureWritableWorkspacePath,
   validatePath,
 } from './paths'
+import { createNodeWatcher, toPosixRel, type NodeWorkspaceWatcher } from './nodeWatcher'
 
 const EPERM_CODE = 'EPERM'
-
-const DEFAULT_WATCH_IGNORES = [
-  'node_modules',
-  '.git',
-  '.DS_Store',
-  'dist',
-  '.next',
-  '.turbo',
-  'test-results',
-] as const
-
-function shouldIgnoreWatchPath(path: string): boolean {
-  const parts = path.split(sep)
-  return parts.some((part) =>
-    DEFAULT_WATCH_IGNORES.includes(part as (typeof DEFAULT_WATCH_IGNORES)[number]) ||
-    part.endsWith('.tsbuildinfo'),
-  )
-}
-
-/**
- * One chokidar instance per workspace root, fanned out to N
- * subscribers. Created lazily on first `watch()` call so unit tests
- * and watch-free hosts pay nothing.
- */
-function createNodeWatcher(root: string): WorkspaceWatcher {
-  const listeners = new Set<(e: WorkspaceChangeEvent) => void>()
-  let fsw: FSWatcher | null = null
-  let closed = false
-
-  const ensureFsw = (): FSWatcher => {
-    if (fsw) return fsw
-    fsw = chokidar.watch(root, {
-      ignored: shouldIgnoreWatchPath,
-      ignoreInitial: true,
-      persistent: true,
-      followSymlinks: false,
-      // Avoid chokidar's awaitWriteFinish polling loop in long-lived app
-      // servers. Consumers already reconcile by mtime after invalidation.
-      // No native renames from chokidar — `unlinkDir`/`addDir`/
-      // `unlink`/`add` are the primitives we get. We surface them as
-      // separate `unlink` + `write`/`mkdir` events; renames are best
-      // recovered at the consumer level if needed.
-    })
-    fsw.on('add', (p, s) => emit({ op: 'write', path: rel(p), mtimeMs: s?.mtimeMs }))
-    fsw.on('change', (p, s) => emit({ op: 'write', path: rel(p), mtimeMs: s?.mtimeMs }))
-    fsw.on('addDir', (p) => emit({ op: 'mkdir', path: rel(p) }))
-    fsw.on('unlink', (p) => emit({ op: 'unlink', path: rel(p) }))
-    fsw.on('unlinkDir', (p) => emit({ op: 'unlink', path: rel(p) }))
-    fsw.on('error', () => { /* swallowed: errors are best-effort */ })
-    return fsw
-  }
-
-  const rel = (abs: string): string => {
-    const r = relative(root, abs)
-    // Normalize Windows separators so the wire format stays POSIX.
-    return r.split(sep).join('/')
-  }
-
-  const emit = (event: WorkspaceChangeEvent) => {
-    if (closed) return
-    if (event.path === '' || event.path.startsWith('..')) return
-    for (const l of [...listeners]) {
-      try { l(event) } catch { /* one bad listener doesn't kill the chain */ }
-    }
-  }
-
-  return {
-    subscribe(listener) {
-      if (closed) return () => {}
-      listeners.add(listener)
-      ensureFsw()
-      return () => {
-        listeners.delete(listener)
-      }
-    },
-    close() {
-      if (closed) return
-      closed = true
-      listeners.clear()
-      fsw?.close().catch(() => {})
-      fsw = null
-    },
-  }
-}
 
 export interface CreateNodeWorkspaceOptions {
   runtimeContext?: WorkspaceRuntimeContext
@@ -117,7 +29,7 @@ export function createNodeWorkspace(root: string, opts: CreateNodeWorkspaceOptio
   // Lazy singleton: a single chokidar instance shared by every caller
   // of `watch()` on this workspace. Codex flagged "one watcher per
   // SSE client" as a fd leak — this avoids it.
-  let cachedWatcher: WorkspaceWatcher | null = null
+  let cachedWatcher: NodeWorkspaceWatcher | null = null
 
   const workspace: Workspace = {
     root: runtimeContext.runtimeCwd,
@@ -230,6 +142,10 @@ export function createNodeWorkspace(root: string, opts: CreateNodeWorkspaceOptio
       const fromAbsPath = await ensureExistingWorkspacePath(root, fromRelPath)
       const toAbsPath = await ensureWritableWorkspacePath(root, toRelPath)
       await rename(fromAbsPath, toAbsPath)
+      // One synthetic rename instead of the unlink/add event storm
+      // chokidar would stream for every file under a moved directory.
+      // No watcher yet → no subscribers → nothing to announce.
+      cachedWatcher?.emitRename(toPosixRel(root, fromAbsPath), toPosixRel(root, toAbsPath))
     },
   }
 
