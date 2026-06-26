@@ -44,10 +44,20 @@ RUN pnpm --filter full-app exec tsc -p tsconfig.server.json --noCheck \
 
 FROM node:22-slim AS runtime
 WORKDIR /app
+ARG REVISION=unknown
+ARG SOURCE=https://github.com/hachej/boring-ui-v2
+LABEL org.opencontainers.image.source=$SOURCE \
+  org.opencontainers.image.revision=$REVISION \
+  org.opencontainers.image.title="boring-ui full-app" \
+  boring.role="web"
 RUN apt-get update \
   && apt-get install -y --no-install-recommends bubblewrap ca-certificates \
   && rm -rf /var/lib/apt/lists/* \
-  && corepack enable
+  && corepack enable \
+  && groupadd --system --gid 10001 boring \
+  && useradd --system --uid 10001 --gid 10001 --home-dir /nonexistent --shell /usr/sbin/nologin boring \
+  && mkdir -p /data/workspaces /data/pi-sessions \
+  && chown -R boring:boring /data
 
 COPY --from=build /app/.npmrc /app/pnpm-workspace.yaml /app/package.json /app/pnpm-lock.yaml ./
 
@@ -90,17 +100,26 @@ EXPOSE 3000
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
   CMD node -e "fetch('http://localhost:3000/health').then(r=>{if(!r.ok)throw r.status}).catch(()=>process.exit(1))"
 
+USER boring
 CMD ["node", "apps/full-app/dist/server/main.js"]
 
 FROM node:22-slim AS worker-runtime
 WORKDIR /app
+ARG REVISION=unknown
+ARG SOURCE=https://github.com/hachej/boring-ui-v2
+LABEL org.opencontainers.image.source=$SOURCE \
+  org.opencontainers.image.revision=$REVISION \
+  org.opencontainers.image.title="boring-ui full-app worker" \
+  boring.role="worker"
 COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /usr/local/bin/
 RUN apt-get update \
   && apt-get install -y --no-install-recommends bubblewrap ca-certificates curl git python3 python3-pip python3-venv ripgrep util-linux \
   && rm -rf /var/lib/apt/lists/* \
   && corepack enable \
   && groupadd --system --gid 10001 boring \
-  && useradd --system --uid 10001 --gid 10001 --home-dir /nonexistent --shell /usr/sbin/nologin boring
+  && useradd --system --uid 10001 --gid 10001 --home-dir /nonexistent --shell /usr/sbin/nologin boring \
+  && mkdir -p /data/workspaces \
+  && chown -R boring:boring /data
 
 # Worker image intentionally excludes the full-app frontend and main server.
 # It contains only the internal worker entrypoint plus the agent package it uses
@@ -122,3 +141,7 @@ HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
   CMD node -e "fetch('http://localhost:3000/health').then(r=>{if(!r.ok)throw r.status}).catch(()=>process.exit(1))"
 
 CMD ["/usr/local/bin/worker-entrypoint", "node", "worker/agent-worker.js"]
+
+# Keep the public web app as the default image when no --target is provided.
+# The worker image remains available via --target worker-runtime.
+FROM runtime AS web-runtime

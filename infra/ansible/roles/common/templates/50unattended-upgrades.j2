@@ -1,0 +1,16 @@
+// Managed by Ansible — do not edit manually.
+Unattended-Upgrade::Origins-Pattern {
+{% for origin in unattended_origins_common | default([]) %}
+  "{{ origin }}";
+{% endfor %}
+{% for origin in unattended_origins_app | default([]) %}
+  "{{ origin }}";
+{% endfor %}
+{% for origin in unattended_origins_db | default([]) %}
+  "{{ origin }}";
+{% endfor %}
+};
+
+Unattended-Upgrade::Automatic-Reboot "true";
+Unattended-Upgrade::Automatic-Reboot-Time "{{ unattended_reboot_time | default('04:00') }}";
+Unattended-Upgrade::Remove-Unused-Dependencies "true";

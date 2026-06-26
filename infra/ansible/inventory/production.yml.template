@@ -1,0 +1,11 @@
+---
+all:
+  children:
+    app:
+      hosts:
+        full-app-app:
+          ansible_host: full-app-app.example.ts.net
+    db:
+      hosts:
+        full-app-db:
+          ansible_host: full-app-db.example.ts.net
