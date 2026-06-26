@@ -230,6 +230,15 @@ exists yet, create or choose the issue first; do not start an implementation
 plan against a floating local file. PRs should name their primary issue and link
 back to the matching local issue folder.
 
+All commits for the issue start with the issue number:
+
+```text
+#123 docs(plan): add review handoff slice
+```
+
+If one PR covers multiple issues, split the commits by primary issue and mention
+secondary issue links in the commit body.
+
 Do not move plans when Kanzen state changes. Keep state in frontmatter so issue
 folders stay stable and searchable:
 

@@ -64,6 +64,13 @@ Plan-only work may edit local `main` directly. Store plans at
 GitHub issue; keep state in frontmatter instead of moving files between state
 folders.
 
+## Commit Prefix
+
+Every commit subject starts with the primary issue number, for example
+`#123 fix(workspace): keep pending review visible`. If no issue exists, create or
+choose one before planning, coding, or committing. Mention secondary issues in
+the commit body.
+
 Code defaults to local trunk plus feature flag, then a tiny PR. If the work
 cannot be flagged, prefer branch-by-abstraction or keystone interface last. Use
 a short-lived worktree/branch only for risky, transversal, parallel, or

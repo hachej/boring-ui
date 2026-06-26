@@ -56,6 +56,17 @@ Examples:
 - "Fix the bug" → reproduce it with a test or documented manual step, then fix.
 - "Refactor X" → verify tests pass before and after.
 
+## Commit Issue Prefix
+
+Every commit subject must start with the primary GitHub issue number:
+
+```text
+#123 fix(workspace): keep pending review visible
+```
+
+If no issue exists, create or choose one before planning or coding. Use one
+primary issue number per commit; mention secondary issues in the body.
+
 ## Build principles
 
 - **Composable** — user-facing features should offer default component + primitives + headless hook when appropriate. Do not force a shell.

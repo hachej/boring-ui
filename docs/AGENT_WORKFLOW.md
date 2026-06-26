@@ -57,7 +57,7 @@ Never self-review for closure.
 ## Commit style
 
 ```text
-<type>(<scope>): <subject>
+#<issue-number> <type>(<scope>): <subject>
 
 <body optional, wrap at 72>
 
@@ -68,7 +68,10 @@ Types: `feat`, `fix`, `docs`, `chore`, `refactor`, `test`, `polish`.
 
 Common scopes: `plan`, `beads`, `agent`, `workspace`, `core`, `cli`, `plugin`.
 
-Reference bead IDs in subject/body. Keep commits atomic per bead. If bead state changed, run `br sync --flush-only` and include `.beads/issues.jsonl`.
+Use the primary GitHub issue number as the subject prefix. If no issue exists,
+create or choose one before committing. Mention secondary issues or legacy bead
+IDs in the body. Keep commits atomic per issue/slice. If bead state changed, run
+`br sync --flush-only` and include `.beads/issues.jsonl`.
 
 ## Session end
 

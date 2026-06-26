@@ -68,6 +68,7 @@ Return:
 
 ```text
 URL:
+Primary issue:
 What:
 Labels:
 Gate:
@@ -77,6 +78,7 @@ Sessions:
 Proof:
 Visual review:
 Review budget:
+Commit prefix:
 Next action:
 Why:
 ```
