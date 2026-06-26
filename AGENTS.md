@@ -14,9 +14,7 @@ Detailed coding practices, workflow, architecture, and package docs live under `
 5. **Never work directly on `main`** unless explicitly authorized. Use a branch/worktree.
 6. **Do not overwrite other agents' work.** Investigate unexpected changes before editing.
 7. **Run relevant quality gates** before calling work done.
-8. **Never launch bare `bv`; use only `bv --robot-*`.**
-9. **Never edit `.beads/*.jsonl` by hand.** Use `br` commands.
-10. **Default communication mode:** caveman skill, full intensity, unless user says `stop caveman` or `normal mode`.
+8. **Default communication mode:** caveman skill, full intensity, unless user says `stop caveman` or `normal mode`.
 
 ## Start here
 
@@ -26,7 +24,7 @@ Detailed coding practices, workflow, architecture, and package docs live under `
 | Coding rules | [`docs/kanzen/procedures/coding-rules.md`](docs/kanzen/procedures/coding-rules.md) |
 | Coding invariants | [`docs/kanzen/procedures/coding-invariants.md`](docs/kanzen/procedures/coding-invariants.md) |
 | Repo commands | [`docs/kanzen/procedures/repo-commands.md`](docs/kanzen/procedures/repo-commands.md) |
-| Agent/bead workflow, review, commit, GitHub labels | [`docs/kanzen/procedures/agent-workflow.md`](docs/kanzen/procedures/agent-workflow.md) |
+| Agent workflow, review, commit, GitHub labels | [`docs/kanzen/procedures/agent-workflow.md`](docs/kanzen/procedures/agent-workflow.md) |
 | Architecture decisions | [`docs/DECISIONS.md`](docs/DECISIONS.md) |
 | Agent ↔ workspace contract | [`docs/WORKSPACE_CONTRACT.md`](docs/WORKSPACE_CONTRACT.md) |
 | Proof-of-work comments | [`docs/procedures/proof-of-work.md`](docs/procedures/proof-of-work.md) |
@@ -69,4 +67,4 @@ See [`docs/kanzen/procedures/coding-invariants.md`](docs/kanzen/procedures/codin
 2. Make surgical, minimal changes.
 3. Add/update tests for behavior changes.
 4. Run relevant checks.
-5. For bead work, follow [`docs/kanzen/procedures/agent-workflow.md`](docs/kanzen/procedures/agent-workflow.md).
+5. For Kanzen issue/PR work, follow [`docs/kanzen/procedures/agent-workflow.md`](docs/kanzen/procedures/agent-workflow.md).

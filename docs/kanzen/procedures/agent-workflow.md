@@ -6,9 +6,9 @@ Operational workflow for agents working in boring-ui v2.
 
 | Tool | Purpose | Key commands |
 | --- | --- | --- |
-| `br` | Issue tracking / source of truth | `br ready`, `br show <id>`, `br update <id> -s <status>`, `br close <id>`, `br sync --flush-only` |
-| `bv` | Triage sidecar | Use only `bv --robot-*`; never launch bare `bv` |
-| `git` | Atomic commits per bead | `git status`, `git diff --staged`, `git add`, `git commit` |
+| GitHub | Issue/PR source of truth | `gh issue view`, `gh issue edit`, `gh pr view`, `gh pr edit`, `gh pr merge` |
+| Kanzen labels/comments | State, phase, track, gates, session continuity | `state:*`, `phase:*`, `track:*`, proof and decision comments |
+| `git` | Atomic commits per issue slice | `git status`, `git diff --staged`, `git add`, `git commit` |
 | `cc -p` | Claude review for Codex agents | non-interactive print mode |
 | `cod exec` | Codex review for Claude agents | non-interactive exec mode |
 | MCP Agent Mail | Peer coordination, claims, reservations | register, fetch inbox, send `[CLAIM]` / `[DONE]` |
@@ -16,28 +16,33 @@ Operational workflow for agents working in boring-ui v2.
 
 Hard rules:
 
-- Never launch bare `bv`.
-- Never edit `.beads/*.jsonl` by hand.
 - Never commit secrets.
 - Use MCP tools natively; do not wrap them with ad hoc HTTP clients.
 
 ## Session startup
 
-1. Read `AGENTS.md`, then this file if you are doing bead work.
-2. Register with Agent Mail and fetch inbox.
+1. Read `AGENTS.md`, then this file for Kanzen issue/PR work.
+2. Register with Agent Mail and fetch inbox when coordinating with other agents.
 3. Skim relevant package docs (`packages/<pkg>/docs/README.md`).
-4. Pick work with `bv --robot-next` or `br ready`.
-5. Check for collisions: inbox `[CLAIM]` messages and file reservations.
+4. Pick work from owner instruction or GitHub items with Kanzen labels.
+5. Read the newest owner comments before touching the issue or PR.
+6. Check for collisions: issue/PR session comments, inbox `[CLAIM]` messages,
+   and file reservations.
 
-## Per-bead loop
+## Per-Issue Loop
 
-1. `br show <id>` — note goal, acceptance, paths, deps, reference files.
-2. Claim: `br update <id> -s in_progress`, broadcast `[CLAIM]`, reserve files.
-3. Implement code + tests together.
-4. Verify locally with relevant quality gates.
-5. Cross-review with the opposite model.
-6. Commit atomically.
-7. Close bead, announce `[DONE]`, release reservations.
+1. Read the GitHub issue/PR, linked plan under `docs/issues/<issue-number>/`,
+   acceptance criteria, proof requirement, and relevant package docs.
+2. Claim with a short issue/PR comment when needed; include session id, scope,
+   branch/worktree, and files you expect to touch.
+3. Move only the first unmet gate: grill, plan, implement, review, proof, owner
+   decision, or merge.
+4. Implement code and tests together for implementation work.
+5. Verify locally with relevant quality gates and demo proof when UI/workspace
+   behavior changes.
+6. Cross-review non-trivial changes, fix accepted findings, and re-review until
+   clean or blocked.
+7. Update the issue/PR with proof, known gaps, next gate, and handoff material.
 
 ## Cross-review
 
@@ -66,22 +71,21 @@ Co-Authored-By: <agent-name> <noreply@anthropic.com>
 
 Types: `feat`, `fix`, `docs`, `chore`, `refactor`, `test`, `polish`.
 
-Common scopes: `plan`, `beads`, `agent`, `workspace`, `core`, `cli`, `plugin`.
+Common scopes: `plan`, `agent`, `workspace`, `core`, `cli`, `plugin`.
 
 Use the primary GitHub issue number as the subject prefix. If no issue exists,
-create or choose one before committing. Mention secondary issues or legacy bead
-IDs in the body. Keep commits atomic per issue/slice. If bead state changed, run
-`br sync --flush-only` and include `.beads/issues.jsonl`.
+create or choose one before planning, coding, or committing. Mention secondary
+issues in the body. Keep commits atomic per issue/slice.
 
 ## Session end
 
-1. File beads for unfinished discoveries.
+1. File or update GitHub issues for unfinished discoveries.
 2. Run relevant quality gates.
-3. Update bead status.
-4. `br sync --flush-only`.
-5. Commit atomically if needed.
-6. Send Agent Mail `[STATUS]` handoff.
-7. Release file reservations.
+3. Update Kanzen labels/comments with the next state, phase, track, gate, and
+   owner decision needed.
+4. Commit atomically if needed.
+5. Send Agent Mail `[STATUS]` handoff when coordinating with other agents.
+6. Release file reservations.
 
 ## Credentials
 
