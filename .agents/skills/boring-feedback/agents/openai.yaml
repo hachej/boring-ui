@@ -1,0 +1,3 @@
+interface:
+  display_name: "Boring Feedback"
+  short_description: "Capture /feedback, enrich context, create a lean GitHub issue, and record session continuity."
