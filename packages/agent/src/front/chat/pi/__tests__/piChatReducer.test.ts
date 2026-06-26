@@ -80,6 +80,26 @@ describe('piChatReducer', () => {
     expect(state.notices).toContainEqual(expect.objectContaining({ id: 'stale-outbox-cleared', level: 'warning' }))
   })
 
+  it('preserves a first prompt submitted while the empty session snapshot is hydrating', () => {
+    let state = initial()
+    state = piChatReducer(state, { type: 'optimistic-user-message', message: optimistic('nonce-first', 'first message') })
+
+    state = piChatReducer(state, {
+      type: 'hydrate',
+      snapshot: snapshot({
+        seq: 1,
+        status: 'streaming',
+        activeTurnId: 'turn-first',
+        messages: [],
+        queue: { followUps: [] },
+      }),
+    })
+
+    expect(state).toMatchObject({ status: 'streaming', turnId: 'turn-first', hydrated: true })
+    expect(state.optimisticOutbox['nonce-first']).toEqual(expect.objectContaining({ clientNonce: 'nonce-first' }))
+    expect(state.notices.some((notice) => notice.id === 'stale-outbox-cleared')).toBe(false)
+  })
+
   it('does not let a reconnect hydration reset local history with a short snapshot', () => {
     let state = piChatReducer(initial(), {
       type: 'hydrate',

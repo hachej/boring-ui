@@ -38,6 +38,7 @@ export interface PiQueueControllerOptions {
   getDraft?: () => string
   onWarning?: (message: string) => void
   onPromptSubmitStarted?: (clientNonce: string) => void
+  allowPromptDuringInitialHydration?: boolean
 }
 
 export type PiQueueSubmitResult =
@@ -66,7 +67,11 @@ export class PiFollowUpQueueController {
     }
 
     const state = this.session.getState()
-    if (state.status === 'hydrating') {
+    if (state.status === 'hydrating' && !(this.options.allowPromptDuringInitialHydration === true && canPromptDuringInitialHydration(state))) {
+      return this.block('hydrating', 'The agent session is still hydrating.')
+    }
+
+    if (state.status === 'idle' && hasPendingOptimisticPromptInEmptySession(state)) {
       return this.block('hydrating', 'The agent session is still hydrating.')
     }
 
@@ -151,6 +156,22 @@ export function createPiFollowUpQueueController(
 
 export function isPiChatBusy(status: PiChatStatus): boolean {
   return status === 'submitted' || status === 'streaming' || status === 'aborting'
+}
+
+export function canPromptDuringInitialHydration(state: PiChatState): boolean {
+  return !state.hydrated
+    && state.history.messageCount === 0
+    && state.committedMessages.length === 0
+    && state.queue.followUps.length === 0
+    && Object.keys(state.optimisticOutbox).length === 0
+    && !state.streamingMessage
+}
+
+function hasPendingOptimisticPromptInEmptySession(state: PiChatState): boolean {
+  return state.hydrated
+    && state.history.messageCount === 0
+    && state.committedMessages.length === 0
+    && Object.values(state.optimisticOutbox).some((message) => message.clientSeq === undefined)
 }
 
 export function nextFollowUpClientSeq(state: PiChatState, floor = 1): number {

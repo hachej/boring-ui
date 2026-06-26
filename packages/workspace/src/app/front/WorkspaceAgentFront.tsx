@@ -61,6 +61,7 @@ export interface WorkspaceAgentSessionsApi<
   create: (input?: { title?: string }) => void | Promise<unknown>
   delete: (id: string) => void | Promise<unknown>
   loadMore?: () => void | Promise<unknown>
+  refresh?: (options?: { background?: boolean }) => void | Promise<unknown>
 }
 
 export type UseWorkspaceAgentSessions<
@@ -1010,6 +1011,27 @@ export function WorkspaceAgentFront<
     for (const session of resolvedSessions) titles.set(session.id, session.title)
     return titles
   }, [resolvedSessions])
+  const [initialHydrationPromptStarted, setInitialHydrationPromptStarted] = useState<{ workspaceId: string; ids: Set<string> }>(() => ({
+    workspaceId,
+    ids: new Set(),
+  }))
+  const emptySessionIds = useMemo(() => {
+    const ids = new Set<string>()
+    if (!remoteSessionsAvailable) return ids
+    const startedIds = initialHydrationPromptStarted.workspaceId === workspaceId
+      ? initialHydrationPromptStarted.ids
+      : new Set<string>()
+    for (const session of activeRemoteSessions) {
+      if (session.turnCount === 0 && !startedIds.has(session.id)) ids.add(session.id)
+    }
+    return ids
+  }, [activeRemoteSessions, initialHydrationPromptStarted, remoteSessionsAvailable, workspaceId])
+
+  useEffect(() => {
+    setInitialHydrationPromptStarted((current) => (
+      current.workspaceId === workspaceId ? current : { workspaceId, ids: new Set() }
+    ))
+  }, [workspaceId])
 
   const activeChatPaneState = chatPaneState.workspaceId === workspaceId
     ? chatPaneState
@@ -1215,6 +1237,21 @@ export function WorkspaceAgentFront<
       extraCommands,
       workspaceWarmupStatus,
       hydrateMessages,
+      allowPromptDuringInitialHydration: emptySessionIds.has(sessionId),
+      onPromptSubmitStarted: ({ sessionId: submittedSessionId }: { sessionId: string; clientNonce: string }) => {
+        setInitialHydrationPromptStarted((current) => {
+          const currentIds = current.workspaceId === workspaceId ? current.ids : new Set<string>()
+          if (currentIds.has(submittedSessionId)) return current.workspaceId === workspaceId ? current : { workspaceId, ids: currentIds }
+          const ids = new Set(currentIds)
+          ids.add(submittedSessionId)
+          return { workspaceId, ids }
+        })
+      },
+      onTurnComplete: () => {
+        void sessionApi?.refresh?.({ background: true })
+        const existing = chatParams?.onTurnComplete
+        if (typeof existing === "function") existing()
+      },
       onAutoSubmitInitialDraftSettled: () => {
         autoSubmitSessionCreateRef.current = false
         setAutoSubmitHydrationDisabled(false)
@@ -1228,7 +1265,7 @@ export function WorkspaceAgentFront<
       ...(resolvedHotReloadEnabled !== undefined ? { hotReloadEnabled: resolvedHotReloadEnabled } : {}),
     }
     },
-    [apiBaseUrl, chatParams, delayAutoSubmitDraft, resolvedRequestHeaders, bridgeEndpoint, surfaceDispatch, extraCommands, workspaceWarmupStatus, hydrateMessages, resolvedHotReloadEnabled, pluginToolRenderers, reloadAgentPluginsForSession, workspaceId],
+    [apiBaseUrl, chatParams, delayAutoSubmitDraft, resolvedRequestHeaders, bridgeEndpoint, surfaceDispatch, extraCommands, workspaceWarmupStatus, hydrateMessages, emptySessionIds, resolvedHotReloadEnabled, pluginToolRenderers, reloadAgentPluginsForSession, sessionApi, workspaceId],
   )
   const centerParams = useMemo(
     () => makeCenterParams(chatSessionId),
