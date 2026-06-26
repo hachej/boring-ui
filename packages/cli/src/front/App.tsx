@@ -183,7 +183,8 @@ export function CliWorkspaceShell() {
     const path = rawPath?.trim()
     if (!path) return
     const rawName = window.prompt("Workspace name", path.split(/[\\/]+/).filter(Boolean).at(-1) ?? "Workspace")
-    const name = rawName?.trim() || undefined
+    if (rawName === null) return
+    const name = rawName.trim() || undefined
     void fetch("/api/v1/local-workspaces", {
       method: "POST",
       headers: { "content-type": "application/json" },
