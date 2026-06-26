@@ -1754,7 +1754,7 @@ describe("WorkspaceAgentFront", () => {
     }, { timeout: 3000 })
   })
 
-  it("keeps the chat shell in transition until the first empty remote session is stable", async () => {
+  it("connects the first auto-created empty remote session after the transition", async () => {
     const captured: CapturedChatPanelProps[] = []
     const CapturingChatPanel = (props: WorkspaceChatPanelProps) => {
       captured.push(props)
