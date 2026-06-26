@@ -18,6 +18,8 @@ import { Message, MessageContent, MessageResponse } from '../../primitives/messa
 import { Reasoning, ReasoningContent, ReasoningTrigger } from '../../primitives/reasoning'
 import { ToolCallGroup, type GroupedToolEntry } from '../../primitives/tool-call-group'
 import { noticeSurfaceClass, noticeTextClass } from './noticeStyles'
+import { TextWithClickableMentions } from './TextWithClickableMentions'
+import type { ClickableMention } from './ClickableMention'
 
 /**
  * Read-only / inspection tools collapse into the grouped "Used X · Y" summary;
@@ -39,9 +41,11 @@ export interface PiTimelineMessageProps {
   isStreaming: boolean
   showThoughts: boolean
   toolRenderers: ToolRendererOverrides
+  availableCommands?: string[]
+  onMentionClick?: (mention: ClickableMention) => void
 }
 
-export function PiTimelineMessage({ message, isLast, isStreaming, showThoughts, toolRenderers }: PiTimelineMessageProps) {
+export function PiTimelineMessage({ message, isLast, isStreaming, showThoughts, toolRenderers, availableCommands, onMentionClick }: PiTimelineMessageProps) {
   const role = message.role
   const isAssistant = role === 'assistant'
   const textParts = message.parts.filter((part): part is Extract<BoringChatPart, { type: 'text' }> => part.type === 'text')
@@ -145,26 +149,37 @@ export function PiTimelineMessage({ message, isLast, isStreaming, showThoughts, 
           if (item.part.type === 'text') {
             const text = textForMessageDisplay(item.part.text, role)
             if (!text) return null
+            // For assistant messages, wrap text with clickable mention support
+            const renderContent = role === 'assistant' && availableCommands ? (
+              <TextWithClickableMentions
+                availableCommands={availableCommands}
+                onMentionClick={onMentionClick}
+              >
+                {text}
+              </TextWithClickableMentions>
+            ) : null
             return (
               <div key={item.key} data-boring-agent-part="message-text">
-                <MessageResponse
-                  className={cn(
-                    'max-w-none',
-                    'prose prose-invert prose-neutral',
-                    'prose-p:my-3 prose-p:leading-[1.7] prose-p:text-[13px]',
-                    'prose-headings:mt-5 prose-headings:mb-2 prose-headings:font-semibold prose-headings:tracking-[-0.01em]',
-                    'prose-ul:my-3 prose-ul:pl-6 prose-ol:my-3 prose-ol:pl-6',
-                    'prose-li:my-1.5 prose-li:leading-[1.7] prose-li:pl-1 prose-li:marker:text-muted-foreground/70',
-                    'prose-strong:font-semibold prose-strong:text-foreground',
-                    'prose-em:text-foreground/90',
-                    'prose-a:text-[color:var(--accent)] prose-a:underline-offset-4 hover:prose-a:underline',
-                    'prose-code:before:content-none prose-code:after:content-none',
-                    'prose-pre:my-0 prose-pre:rounded-none prose-pre:border-0',
-                    'prose-pre:bg-transparent prose-pre:p-0',
-                  )}
-                >
-                  {text}
-                </MessageResponse>
+                {renderContent ?? (
+                  <MessageResponse
+                    className={cn(
+                      'max-w-none',
+                      'prose prose-invert prose-neutral',
+                      'prose-p:my-3 prose-p:leading-[1.7] prose-p:text-[13px]',
+                      'prose-headings:mt-5 prose-headings:mb-2 prose-headings:font-semibold prose-headings:tracking-[-0.01em]',
+                      'prose-ul:my-3 prose-ul:pl-6 prose-ol:my-3 prose-ol:pl-6',
+                      'prose-li:my-1.5 prose-li:leading-[1.7] prose-li:pl-1 prose-li:marker:text-muted-foreground/70',
+                      'prose-strong:font-semibold prose-strong:text-foreground',
+                      'prose-em:text-foreground/90',
+                      'prose-a:text-[color:var(--accent)] prose-a:underline-offset-4 hover:prose-a:underline',
+                      'prose-code:before:content-none prose-code:after:content-none',
+                      'prose-pre:my-0 prose-pre:rounded-none prose-pre:border-0',
+                      'prose-pre:bg-transparent prose-pre:p-0',
+                    )}
+                  >
+                    {text}
+                  </MessageResponse>
+                )}
               </div>
             )
           }
