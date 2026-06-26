@@ -1,7 +1,7 @@
 "use client"
 
-import type { KeyboardEvent as ReactKeyboardEvent, MouseEvent as ReactMouseEvent } from 'react'
-import { useCallback, useEffect, useState } from 'react'
+import type { ComponentProps, KeyboardEvent as ReactKeyboardEvent, MouseEvent as ReactMouseEvent, ReactNode } from 'react'
+import { Fragment, useCallback, useEffect, useState } from 'react'
 import { CheckIcon, CopyIcon } from 'lucide-react'
 import { Button } from '@hachej/boring-ui-kit'
 import type { BoringChatMessage, BoringChatPart } from '../../../shared/chat'
@@ -149,37 +149,30 @@ export function PiTimelineMessage({ message, isLast, isStreaming, showThoughts, 
           if (item.part.type === 'text') {
             const text = textForMessageDisplay(item.part.text, role)
             if (!text) return null
-            // For assistant messages, wrap text with clickable mention support
-            const renderContent = role === 'assistant' && availableCommands ? (
-              <TextWithClickableMentions
-                availableCommands={availableCommands}
-                onMentionClick={onMentionClick}
-              >
-                {text}
-              </TextWithClickableMentions>
-            ) : null
+            const mentionMarkdownComponents = role === 'assistant' && availableCommands
+              ? createMentionMarkdownComponents(availableCommands, onMentionClick)
+              : undefined
             return (
               <div key={item.key} data-boring-agent-part="message-text">
-                {renderContent ?? (
-                  <MessageResponse
-                    className={cn(
-                      'max-w-none',
-                      'prose prose-invert prose-neutral',
-                      'prose-p:my-3 prose-p:leading-[1.7] prose-p:text-[13px]',
-                      'prose-headings:mt-5 prose-headings:mb-2 prose-headings:font-semibold prose-headings:tracking-[-0.01em]',
-                      'prose-ul:my-3 prose-ul:pl-6 prose-ol:my-3 prose-ol:pl-6',
-                      'prose-li:my-1.5 prose-li:leading-[1.7] prose-li:pl-1 prose-li:marker:text-muted-foreground/70',
-                      'prose-strong:font-semibold prose-strong:text-foreground',
-                      'prose-em:text-foreground/90',
-                      'prose-a:text-[color:var(--accent)] prose-a:underline-offset-4 hover:prose-a:underline',
-                      'prose-code:before:content-none prose-code:after:content-none',
-                      'prose-pre:my-0 prose-pre:rounded-none prose-pre:border-0',
-                      'prose-pre:bg-transparent prose-pre:p-0',
-                    )}
-                  >
-                    {text}
-                  </MessageResponse>
-                )}
+                <MessageResponse
+                  components={mentionMarkdownComponents}
+                  className={cn(
+                    'max-w-none',
+                    'prose prose-invert prose-neutral',
+                    'prose-p:my-3 prose-p:leading-[1.7] prose-p:text-[13px]',
+                    'prose-headings:mt-5 prose-headings:mb-2 prose-headings:font-semibold prose-headings:tracking-[-0.01em]',
+                    'prose-ul:my-3 prose-ul:pl-6 prose-ol:my-3 prose-ol:pl-6',
+                    'prose-li:my-1.5 prose-li:leading-[1.7] prose-li:pl-1 prose-li:marker:text-muted-foreground/70',
+                    'prose-strong:font-semibold prose-strong:text-foreground',
+                    'prose-em:text-foreground/90',
+                    'prose-a:text-[color:var(--accent)] prose-a:underline-offset-4 hover:prose-a:underline',
+                    'prose-code:before:content-none prose-code:after:content-none',
+                    'prose-pre:my-0 prose-pre:rounded-none prose-pre:border-0',
+                    'prose-pre:bg-transparent prose-pre:p-0',
+                  )}
+                >
+                  {text}
+                </MessageResponse>
               </div>
             )
           }
@@ -197,6 +190,47 @@ export function PiTimelineMessage({ message, isLast, isStreaming, showThoughts, 
       ) : null}
     </Message>
   )
+}
+
+type MentionMarkdownComponents = NonNullable<ComponentProps<typeof MessageResponse>['components']>
+
+function createMentionMarkdownComponents(
+  availableCommands: string[],
+  onMentionClick: ((mention: ClickableMention) => void) | undefined,
+): MentionMarkdownComponents {
+  const decorate = (children: ReactNode): ReactNode => {
+    if (typeof children === 'string') {
+      return (
+        <TextWithClickableMentions availableCommands={availableCommands} onMentionClick={onMentionClick}>
+          {children}
+        </TextWithClickableMentions>
+      )
+    }
+    if (Array.isArray(children)) {
+      return children.map((child, index) => (
+        <Fragment key={index}>{decorate(child)}</Fragment>
+      ))
+    }
+    return children
+  }
+
+  const Paragraph = ({ children, ...props }: ComponentProps<'p'>) => <p {...props}>{decorate(children)}</p>
+  const ListItem = ({ children, ...props }: ComponentProps<'li'>) => <li {...props}>{decorate(children)}</li>
+  const Heading1 = ({ children, ...props }: ComponentProps<'h1'>) => <h1 {...props}>{decorate(children)}</h1>
+  const Heading2 = ({ children, ...props }: ComponentProps<'h2'>) => <h2 {...props}>{decorate(children)}</h2>
+  const Heading3 = ({ children, ...props }: ComponentProps<'h3'>) => <h3 {...props}>{decorate(children)}</h3>
+  const Heading4 = ({ children, ...props }: ComponentProps<'h4'>) => <h4 {...props}>{decorate(children)}</h4>
+  const Blockquote = ({ children, ...props }: ComponentProps<'blockquote'>) => <blockquote {...props}>{decorate(children)}</blockquote>
+
+  return {
+    p: Paragraph,
+    li: ListItem,
+    h1: Heading1,
+    h2: Heading2,
+    h3: Heading3,
+    h4: Heading4,
+    blockquote: Blockquote,
+  } as MentionMarkdownComponents
 }
 
 function TimelineReasoningPart({ item, showThoughts }: { item: Extract<RenderablePart, { kind: 'reasoning' }>; showThoughts: boolean }) {

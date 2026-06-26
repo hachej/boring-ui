@@ -16,8 +16,8 @@ export interface TextSegment {
   mention?: ClickableMention
 }
 
-// Slash command: /word-characters (but not in code blocks)
-const SLASH_COMMAND_PATTERN = /(^|[^`\w])(\/[\w-]+)/g
+// Slash command mention: /command-name at a word boundary, but not URL/path segments.
+const SLASH_COMMAND_PATTERN = /(^|[\s([{"'`])\/(\w[\w-]*)\b/g
 
 // File path mention: @path/to/file
 const FILE_PATH_PATTERN = /(^|\s)(@[A-Za-z0-9_./-]+)/g
@@ -40,7 +40,9 @@ export function parseMentions(text: string, availableCommands?: string[]): TextS
   // Slash commands
   for (const match of text.matchAll(SLASH_COMMAND_PATTERN)) {
     const prefix = match[1]
-    const command = match[2]
+    const commandName = match[2]
+    if (availableCommands && !availableCommands.includes(commandName)) continue
+    const command = `/${commandName}`
     const start = match.index! + prefix.length
     const end = start + command.length
     matches.push({ start, end, type: 'slash-command', value: command })
