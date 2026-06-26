@@ -162,12 +162,13 @@ export function ChatLayout(props: ChatLayoutProps) {
     scheduleComposerFocus()
   }, [chatCollapsed, closeNav, closeSurface, navOpen, setChatCollapsed, surfaceOpen])
 
+  const suppressOverlayAutoExpandRef = useRef(false)
   const toggleChatCollapsed = useCallback(() => {
     const collapsing = !chatCollapsed
-    // A chat-hosted overlay (Plugins/Skills) is not useful when the user asks
-    // for full workbench mode. Dismiss it first so the chat can actually
-    // collapse instead of the overlay re-opening the stage on the next effect.
-    if (collapsing && props.chatOverlay) props.onCloseChatOverlay?.()
+    // If Plugins/Skills is already open, full-workbench mode should hide the
+    // chat stage without losing the overlay state. Suppress the one auto-expand
+    // effect below; when the user restores chat, the overlay is still there.
+    if (collapsing && props.chatOverlay) suppressOverlayAutoExpandRef.current = true
     setChatCollapsed((current) => {
       const next = !current
       // Collapsing the chat opens the workbench so the freed space is filled
@@ -176,7 +177,7 @@ export function ChatLayout(props: ChatLayoutProps) {
       return next
     })
     setChatRailPulse(false)
-  }, [chatCollapsed, props.chatOverlay, props.onCloseChatOverlay, props.onOpenSurface, setChatCollapsed, surfaceOpen])
+  }, [chatCollapsed, props.chatOverlay, props.onOpenSurface, setChatCollapsed, surfaceOpen])
 
   useKeyboardShortcuts({
     shortcuts: useMemo(() => {
@@ -342,7 +343,12 @@ export function ChatLayout(props: ChatLayoutProps) {
   // content opens beside them. If chat was collapsed by a previous compact
   // workbench takeover, opening an overlay restores the chat area first.
   useEffect(() => {
-    if (props.chatOverlay && chatCollapsed) setChatCollapsed(false)
+    if (!props.chatOverlay || !chatCollapsed) return
+    if (suppressOverlayAutoExpandRef.current) {
+      suppressOverlayAutoExpandRef.current = false
+      return
+    }
+    setChatCollapsed(false)
   }, [chatCollapsed, props.chatOverlay, setChatCollapsed])
 
   // Never leave a blank middle: if the workbench is closed while the chat is
