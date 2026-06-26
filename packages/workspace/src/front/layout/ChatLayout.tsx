@@ -551,7 +551,7 @@ export function ChatLayout(props: ChatLayoutProps) {
           canToggleSurface={canControlSurface}
           onToggleSurface={toggleSurface}
           chatCollapsed={chatCollapsed}
-          canToggleChat={false}
+          canToggleChat={centerId === "chat" && surfaceOpen && !chatCollapsed}
           onToggleChat={toggleChatCollapsed}
           chatPulse={chatRailPulse || blockers.length > 0}
           surfaceConfigured={surfaceConfigured}
