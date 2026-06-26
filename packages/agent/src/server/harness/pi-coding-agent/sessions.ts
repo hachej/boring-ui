@@ -52,10 +52,6 @@ const SAFE_ID = /^[a-zA-Z0-9_-]+$/;
 const SAFE_SESSION_NAMESPACE = /^[a-zA-Z0-9_-]+$/;
 const SESSION_ROOT_ENV = "BORING_AGENT_SESSION_ROOT";
 const SUMMARY_PREFIX_BYTES = 64 * 1024;
-// Placeholder written into a wrapper's session_info at create time. It must
-// never be treated as a real title, or it shadows the pi-generated title /
-// first-user-message fallback and the session is stuck as "New session".
-const DEFAULT_SESSION_TITLE = "New session";
 
 type SessionFileStat = { filepath: string; stat: Awaited<ReturnType<typeof fsStat>> };
 
@@ -188,9 +184,7 @@ export class PiSessionStore implements SessionStore {
     };
 
     const lines = [JSON.stringify(header)];
-    // Only persist a *real* title. Baking the "New session" placeholder here
-    // would later shadow the derived title (see extractTitle).
-    if (init?.title && init.title !== DEFAULT_SESSION_TITLE) {
+    if (init?.title) {
       const infoEntry: SessionInfoEntry = {
         type: "session_info",
         id: randomUUID(),
@@ -216,11 +210,7 @@ export class PiSessionStore implements SessionStore {
   async load(_ctx: SessionCtx, sessionId: string): Promise<SessionDetail> {
     const resolved = await this.resolveSessionTranscript(sessionId);
     const title =
-      extractTitle(resolved.sessionEntries) ??
-      extractTitle(resolved.linkedEntries) ??
-      firstUserMessage(resolved.linkedEntries) ??
-      firstUserMessage(resolved.sessionEntries) ??
-      DEFAULT_SESSION_TITLE;
+      extractTitle(resolved.sessionEntries) ?? extractTitle(resolved.linkedEntries) ?? "New session";
     const turnCount = countUserTurns(resolved.transcriptEntries);
     const updatedAtMs = Math.max(resolved.fileStat.mtime.getTime(), resolved.linkedMtimeMs ?? 0);
 
@@ -838,15 +828,10 @@ function countUserTurns(entries: SessionEntry[]): number {
 }
 
 function extractTitle(entries: SessionEntry[]): string | undefined {
-  const named = entries.filter((e): e is SessionInfoEntry => e.type === "session_info");
-  // Use the most recent *real* title. Skip the "New session" placeholder that
-  // create() bakes in, otherwise it shadows the first-user-message fallback and
-  // sessions that clearly have content stay titled "New session".
-  for (let i = named.length - 1; i >= 0; i -= 1) {
-    const name = named[i].name;
-    if (name && name !== DEFAULT_SESSION_TITLE) return name;
-  }
-  return undefined;
+  const last = entries
+    .filter((e): e is SessionInfoEntry => e.type === "session_info")
+    .pop();
+  return last?.name;
 }
 
 function firstUserMessage(entries: SessionEntry[]): string | undefined {

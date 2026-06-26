@@ -1,25 +1,27 @@
 // @vitest-environment jsdom
 import { cleanup, fireEvent, render, screen } from '@testing-library/react'
-import { afterEach, beforeAll, describe, expect, test, vi } from 'vitest'
-import type { ChatPanelProps } from '@hachej/boring-agent/front'
+import { afterEach, describe, expect, test, vi } from 'vitest'
 
 const mocks = vi.hoisted(() => ({
   chatPanelProps: [] as Array<Record<string, unknown>>,
 }))
 
-function MockChatPanel(props: ChatPanelProps) {
-  mocks.chatPanelProps.push(props as Record<string, unknown>)
-  return (
-    <div
-      data-testid="mock-chat-panel"
-      data-chrome={String(props.chrome)}
-      data-debug={String(props.debug)}
-      data-show-sessions={String(props.showSessions)}
-      data-thinking-control={String(props.thinkingControl)}
-      data-storage-scope={String(props.storageScope)}
-    />
-  )
-}
+vi.mock('@hachej/boring-agent/front', async () => {
+  const React = await import('react')
+  return {
+    ChatPanel: (props: Record<string, unknown>) => {
+      mocks.chatPanelProps.push(props)
+      return React.createElement('div', {
+        'data-testid': 'mock-chat-panel',
+        'data-chrome': String(props.chrome),
+        'data-debug': String(props.debug),
+        'data-show-sessions': String(props.showSessions),
+        'data-thinking-control': String(props.thinkingControl),
+        'data-storage-scope': String(props.storageScope),
+      })
+    },
+  }
+})
 
 vi.mock('@hachej/boring-agent/shared', () => ({
   WORKSPACE_AGENT_PLUGINS_RELOADED_EVENT: 'boring-agent:plugins-reloaded',
@@ -29,17 +31,7 @@ vi.mock('../../../../../apps/agent-playground/src/Showcase', () => ({
   Showcase: () => <div data-testid="mock-showcase" />,
 }))
 
-type PlaygroundApp = typeof import('../../../../../apps/agent-playground/src/front/App')['App']
-
-async function loadApp(): Promise<PlaygroundApp> {
-  vi.resetModules()
-  return (await import('../../../../../apps/agent-playground/src/front/App')).App
-}
-
-beforeAll(() => {
-  ;(globalThis as { ResizeObserver?: unknown }).ResizeObserver =
-    class { observe() {}; unobserve() {}; disconnect() {} }
-})
+import { App } from '../../../../../apps/agent-playground/src/front/App'
 
 describe('agent playground defaults', () => {
   afterEach(() => {
@@ -50,11 +42,10 @@ describe('agent playground defaults', () => {
     document.documentElement.className = ''
   })
 
-  test('opens in the workspace-like composer surface by default', async () => {
-    const App = await loadApp()
+  test('opens in the workspace-like composer surface by default', () => {
     window.localStorage.setItem('agent-playground:theme', 'dark')
 
-    render(<App ChatPanelComponent={MockChatPanel} />)
+    render(<App />)
 
     const panel = screen.getByTestId('mock-chat-panel')
     expect(panel.getAttribute('data-chrome')).toBe('true')
@@ -73,9 +64,8 @@ describe('agent playground defaults', () => {
     expect((screen.getByLabelText('thinking control') as HTMLInputElement).checked).toBe(true)
   })
 
-  test('keeps diagnostic chrome controls available without changing the default', async () => {
-    const App = await loadApp()
-    render(<App ChatPanelComponent={MockChatPanel} />)
+  test('keeps diagnostic chrome controls available without changing the default', () => {
+    render(<App />)
 
     fireEvent.click(screen.getByLabelText('chrome'))
     fireEvent.click(screen.getByLabelText('debug'))

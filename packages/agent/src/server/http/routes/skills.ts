@@ -7,14 +7,8 @@
  * host apps having to hardcode skill names in extraCommands.
  *
  * Shape:
- *   { skills: [{ name: string, description: string, filePath?: string }] }
- *
- * `filePath` is the path to the skill's SKILL.md exposed for the workspace UI
- * bridge. It is workspace-relative when the skill lives under the workspace
- * root (so `openFile` can load it), and falls back to the absolute path for
- * external skill sources.
+ *   { skills: [{ name: string, description: string }] }
  */
-import { isAbsolute, relative } from 'node:path'
 import type { FastifyInstance, FastifyRequest } from 'fastify'
 import {
   DefaultPackageManager,
@@ -27,18 +21,10 @@ import { createResourceSettingsManager, withPiHarnessDefaults } from '../../harn
 export interface SkillSummary {
   name: string
   description: string
-  /** Path to the skill's SKILL.md for UI bridge openFile (workspace-relative when possible). */
-  filePath?: string
 }
 
 interface SkillsQuery {
   refresh?: string
-}
-
-function skillPathForUiBridge(workspaceRoot: string, filePath: string): string {
-  const rel = relative(workspaceRoot, filePath).replace(/\\/g, '/')
-  if (rel && !rel.startsWith('..') && !isAbsolute(rel)) return rel
-  return filePath
 }
 
 const CACHE_TTL_MS = 30_000
@@ -117,7 +103,6 @@ export function skillsRoutes(
       const skills: SkillSummary[] = result.skills.map((s) => ({
         name: s.name,
         description: s.description,
-        filePath: skillPathForUiBridge(workspaceRoot, s.filePath),
       }))
       cached.set(cacheKey, { skills, expiresAt: now + CACHE_TTL_MS })
       return reply.code(200).send({ skills })

@@ -78,16 +78,11 @@ async function startFrontend(apiPort: number): Promise<string> {
   const vite = await createViteServer({
     configFile: false,
     root: playgroundRoot,
-    // Store pre-bundled deps outside project-local node_modules/.vite/deps so
-    // parallel E2E backends never race the repo cache. In Playwright, scope the
-    // cache per worker: one worker runs tests sequentially, while different
-    // workers cannot invalidate each other's optimized chunks. Outside tests,
-    // fall back to a process-scoped cache.
-    cacheDir: process.env.BORING_AGENT_VITE_CACHE_DIR ?? path.join(
-      os.tmpdir(),
-      'vite-boring-agent-cache',
-      process.env.TEST_WORKER_INDEX ? `worker-${process.env.TEST_WORKER_INDEX}` : String(process.pid),
-    ),
+    // Store pre-bundled deps in a tmpdir shared across all E2E backends in the
+    // same OS session. Avoids both (a) racing on the project-local
+    // node_modules/.vite/deps when parallel workers run concurrently and
+    // (b) cold-rebuilding on every sequential test in CI.
+    cacheDir: path.join(os.tmpdir(), 'vite-boring-agent-cache'),
     plugins: [react(), tailwindcss()],
     resolve: {
       alias: {

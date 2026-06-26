@@ -8,21 +8,20 @@ export const AGENT_API_PORT = Number(process.env.AGENT_API_PORT) || 5210
 export const VITE_PORT = Number(process.env.PORT) || 5200
 export const APP_ROOT = resolve(import.meta.dirname, "../..")
 export const FIXTURES_DIR = resolve(APP_ROOT, "src/fixtures")
-export const PLAYGROUND_SKILLS_DIR = resolve(APP_ROOT, "src/skills")
 export const WORKSPACE_DIR = resolve(APP_ROOT, "workspace")
 const EXTERNAL_PLUGINS_ENABLED = process.env.BORING_EXTERNAL_PLUGINS === "1"
 
-function seedFixtureEntry(srcRoot: string, destRoot: string, overwrite = false): void {
+function seedFixtureEntry(srcRoot: string, destRoot: string): void {
   for (const name of readdirSync(srcRoot)) {
     const src = resolve(srcRoot, name)
     const stats = statSync(src)
     if (stats.isDirectory()) {
-      seedFixtureEntry(src, resolve(destRoot, name), overwrite)
+      seedFixtureEntry(src, resolve(destRoot, name))
       continue
     }
     if (!stats.isFile()) continue
     const dest = resolve(destRoot, name)
-    if (existsSync(dest) && !overwrite) continue
+    if (existsSync(dest)) continue
     mkdirSync(dirname(dest), { recursive: true })
     copyFileSync(src, dest)
   }
@@ -35,15 +34,6 @@ export function seedWorkspaceFromFixtures(workspaceRoot = WORKSPACE_DIR): void {
   seedFixtureEntry(FIXTURES_DIR, workspaceRoot)
 }
 
-function seedPlaygroundSkills(workspaceRoot = WORKSPACE_DIR): string {
-  const workspaceSkillsDir = resolve(workspaceRoot, ".agents/skills")
-  if (existsSync(PLAYGROUND_SKILLS_DIR)) {
-    mkdirSync(workspaceSkillsDir, { recursive: true })
-    seedFixtureEntry(PLAYGROUND_SKILLS_DIR, workspaceSkillsDir, true)
-  }
-  return workspaceSkillsDir
-}
-
 let agentBoot: Promise<void> | null = null
 
 export async function startPlaygroundServer(): Promise<void> {
@@ -53,7 +43,6 @@ export async function startPlaygroundServer(): Promise<void> {
     if (process.env.BORING_WORKSPACE_PLAYGROUND_SEED_FIXTURES !== "0") {
       seedWorkspaceFromFixtures(workspaceRoot)
     }
-    const playgroundSkillsDir = seedPlaygroundSkills(workspaceRoot)
     const workerBaseUrl = process.env.BORING_WORKER_BASE_URL?.trim()
     const remoteWorkerModeAdapter = workerBaseUrl
       ? createRemoteWorkerModeAdapter({ baseUrl: workerBaseUrl })
@@ -75,11 +64,6 @@ export async function startPlaygroundServer(): Promise<void> {
       logger: true,
       externalPlugins: EXTERNAL_PLUGINS_ENABLED,
       defaultPluginPackages: ["@hachej/boring-ask-user"],
-      // Surface a sample project-local skill so the Skills overlay has content
-      // in the playground. We copy it into the workspace-local .agents/skills
-      // tree so clicking it can use the UI bridge openFile command against a
-      // normal workspace-relative path.
-      pi: { additionalSkillPaths: [playgroundSkillsDir] },
       workspaceBridge: { allowInsecureLocalCliBrowserAuth: true },
     })
     app.get("/api/v1/workspace/meta", async () => {
