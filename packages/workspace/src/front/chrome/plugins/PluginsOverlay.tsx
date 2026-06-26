@@ -163,7 +163,7 @@ export function PluginsOverlay({ onClose, onReloadExternalPlugins, headerInsetSt
       <header className={cn(
         "flex h-12 shrink-0 items-center justify-between border-b border-border/60",
         headerInsetStart ? "pl-12" : "pl-4",
-        headerInsetEnd ? "pr-24" : "pr-4",
+        headerInsetEnd ? "pr-20" : "pr-4",
       )}>
         <div className="flex min-w-0 items-center gap-2">
           <span className="grid size-7 place-items-center rounded-lg bg-foreground/[0.06] text-muted-foreground">

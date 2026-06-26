@@ -163,6 +163,11 @@ export function ChatLayout(props: ChatLayoutProps) {
   }, [chatCollapsed, closeNav, closeSurface, navOpen, setChatCollapsed, surfaceOpen])
 
   const toggleChatCollapsed = useCallback(() => {
+    const collapsing = !chatCollapsed
+    // A chat-hosted overlay (Plugins/Skills) is not useful when the user asks
+    // for full workbench mode. Dismiss it first so the chat can actually
+    // collapse instead of the overlay re-opening the stage on the next effect.
+    if (collapsing && props.chatOverlay) props.onCloseChatOverlay?.()
     setChatCollapsed((current) => {
       const next = !current
       // Collapsing the chat opens the workbench so the freed space is filled
@@ -171,7 +176,7 @@ export function ChatLayout(props: ChatLayoutProps) {
       return next
     })
     setChatRailPulse(false)
-  }, [setChatCollapsed, surfaceOpen, props.onOpenSurface])
+  }, [chatCollapsed, props.chatOverlay, props.onCloseChatOverlay, props.onOpenSurface, setChatCollapsed, surfaceOpen])
 
   useKeyboardShortcuts({
     shortcuts: useMemo(() => {

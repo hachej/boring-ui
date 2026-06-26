@@ -1569,6 +1569,7 @@ export function WorkspaceAgentFront<
       surface={surfaceOpen ? "artifact-surface" : null}
       surfaceParams={surfaceParams as Record<string, unknown>}
       chatOverlay={isPluginTabsLayout ? leftOverlayNode : null}
+      onCloseChatOverlay={() => setLeftOverlay(null)}
       surfaceOverlay={workbenchOverlay}
       sidebar={surfaceOpen && !workbenchBlocked && hasLeftTabs && effectiveWorkbenchLeftOpen ? "workbench-left" : null}
       sidebarParams={surfaceOpen && !workbenchBlocked && hasLeftTabs ? {

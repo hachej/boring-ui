@@ -78,7 +78,7 @@ export function SkillsPage({ onClose, headerInsetStart = false, headerInsetEnd =
       <header className={cn(
         "flex h-12 shrink-0 items-center justify-between border-b border-border/60",
         headerInsetStart ? "pl-12" : "pl-4",
-        headerInsetEnd ? "pr-24" : "pr-4",
+        headerInsetEnd ? "pr-20" : "pr-4",
       )}>
         <div className="flex min-w-0 items-center gap-2">
           <span className="grid size-7 place-items-center rounded-lg bg-[color:oklch(from_var(--accent)_l_c_h/0.12)] text-[color:var(--accent)]">
