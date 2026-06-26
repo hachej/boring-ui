@@ -1,0 +1,17 @@
+---
+ansible_user: debian
+pg_app_tailscale_ip: "100.64.0.10"
+pg_database: boring_full_app
+pg_migration_password: "{{ lookup('env', 'PG_MIGRATION_PASSWORD') }}"
+pg_runtime_password: "{{ lookup('env', 'PG_RUNTIME_PASSWORD') }}"
+pg_monitor_password: "{{ lookup('env', 'PG_MONITOR_PASSWORD') | default('', true) }}"
+
+pgbackrest_enabled: false
+pgbackrest_s3_bucket: "{{ lookup('env', 'PGBACKREST_S3_BUCKET') | default('', true) }}"
+pgbackrest_s3_region: "{{ lookup('env', 'PGBACKREST_S3_REGION') | default('auto', true) }}"
+pgbackrest_s3_endpoint: "{{ lookup('env', 'PGBACKREST_S3_ENDPOINT') | default('', true) }}"
+pgbackrest_s3_key: "{{ lookup('env', 'PGBACKREST_S3_KEY') | default('', true) }}"
+pgbackrest_s3_secret: "{{ lookup('env', 'PGBACKREST_S3_SECRET') | default('', true) }}"
+pgbackrest_cipher_pass: "{{ lookup('env', 'PGBACKREST_CIPHER_PASS') | default('', true) }}"
+healthcheck_backup_full_url: "{{ lookup('env', 'HEALTHCHECK_BACKUP_FULL_URL') | default('', true) }}"
+healthcheck_backup_diff_url: "{{ lookup('env', 'HEALTHCHECK_BACKUP_DIFF_URL') | default('', true) }}"

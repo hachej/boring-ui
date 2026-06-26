@@ -1,0 +1,125 @@
+---
+- name: Add PostgreSQL PGDG apt signing key
+  ansible.builtin.get_url:
+    url: https://www.postgresql.org/media/keys/ACCC4CF8.asc
+    dest: /usr/share/keyrings/postgresql-archive-keyring.asc
+    mode: "0644"
+
+- name: Add PostgreSQL PGDG apt repository
+  ansible.builtin.apt_repository:
+    repo: "deb [signed-by=/usr/share/keyrings/postgresql-archive-keyring.asc] https://apt.postgresql.org/pub/repos/apt {{ ansible_facts['distribution_release'] }}-pgdg main"
+    filename: pgdg
+    state: present
+
+- name: Install PostgreSQL common tooling
+  ansible.builtin.apt:
+    name:
+      - postgresql-common
+      - python3-psycopg2
+    state: present
+    update_cache: true
+
+- name: Disable Debian automatic main cluster creation before server package install
+  ansible.builtin.lineinfile:
+    path: /etc/postgresql-common/createcluster.conf
+    regexp: '^#?create_main_cluster\s*='
+    line: 'create_main_cluster = false'
+    create: true
+    owner: root
+    group: root
+    mode: "0644"
+
+- name: Install PostgreSQL server package
+  ansible.builtin.apt:
+    name: "postgresql-{{ pg_version }}"
+    state: present
+    update_cache: true
+
+- name: Check if cluster exists
+  ansible.builtin.stat:
+    path: "/var/lib/postgresql/{{ pg_version }}/main/PG_VERSION"
+  register: pg_cluster
+
+- name: Create cluster with data checksums
+  ansible.builtin.command:
+    cmd: "pg_createcluster {{ pg_version }} main -- --data-checksums"
+  when: not pg_cluster.stat.exists
+
+- name: Verify existing PostgreSQL cluster has data checksums enabled
+  ansible.builtin.command:
+    cmd: "/usr/lib/postgresql/{{ pg_version }}/bin/pg_controldata /var/lib/postgresql/{{ pg_version }}/main"
+  register: pg_controldata
+  changed_when: false
+
+- name: Fail if PostgreSQL data checksums are not enabled
+  ansible.builtin.fail:
+    msg: "PostgreSQL cluster exists without data checksums. Recreate the empty cluster manually before production data import."
+  when: "'Data page checksum version:           0' in pg_controldata.stdout"
+
+- name: Template postgresql.conf
+  ansible.builtin.template:
+    src: postgresql.conf.j2
+    dest: "/etc/postgresql/{{ pg_version }}/main/postgresql.conf"
+    owner: postgres
+    group: postgres
+    mode: "0644"
+  notify: restart postgresql
+
+- name: Template pg_hba.conf
+  ansible.builtin.template:
+    src: pg_hba.conf.j2
+    dest: "/etc/postgresql/{{ pg_version }}/main/pg_hba.conf"
+    owner: postgres
+    group: postgres
+    mode: "0640"
+  notify: reload postgresql
+
+- name: Enable and start PostgreSQL
+  ansible.builtin.systemd:
+    name: "postgresql@{{ pg_version }}-main"
+    enabled: true
+    state: started
+
+- name: Flush handlers before role/database management
+  ansible.builtin.meta: flush_handlers
+
+- name: Create app database
+  community.postgresql.postgresql_db:
+    name: "{{ pg_database }}"
+    state: present
+  become_user: postgres
+
+- name: Create migration role
+  community.postgresql.postgresql_user:
+    name: "{{ pg_database }}_migrator"
+    password: "{{ pg_migration_password }}"
+    role_attr_flags: LOGIN
+    state: present
+  become_user: postgres
+  no_log: true
+
+- name: Create runtime role
+  community.postgresql.postgresql_user:
+    name: "{{ pg_database }}_runtime"
+    password: "{{ pg_runtime_password }}"
+    role_attr_flags: LOGIN
+    state: present
+  become_user: postgres
+  no_log: true
+
+- name: Create monitoring role when configured
+  community.postgresql.postgresql_user:
+    name: "{{ pg_database }}_monitor"
+    password: "{{ pg_monitor_password }}"
+    role_attr_flags: LOGIN
+    state: present
+  become_user: postgres
+  when: pg_monitor_password | default('') | length > 0
+  no_log: true
+
+- name: Enable pg_stat_statements extension
+  community.postgresql.postgresql_ext:
+    name: pg_stat_statements
+    db: "{{ pg_database }}"
+    state: present
+  become_user: postgres
