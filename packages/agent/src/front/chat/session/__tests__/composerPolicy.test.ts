@@ -152,6 +152,70 @@ describe('PiComposerPolicyController submit policy', () => {
     expect(session.prompts[0]?.displayMessage).toBe('Build it')
   })
 
+  it('allows the first prompt while an empty initial session is still hydrating', async () => {
+    const session = new FakeComposerSession('hydrating')
+    const policy = createPiComposerPolicyController({
+      session,
+      registry: createCommandRegistry(builtinCommands),
+      slashContext: context(),
+      createClientNonce: nonceFactory(),
+      allowPromptDuringInitialHydration: true,
+    })
+
+    await expect(policy.submit({ text: 'first message' })).resolves.toMatchObject({
+      type: 'prompt',
+      clientNonce: 'nonce-1',
+      preserveDraft: false,
+    })
+    expect(session.prompts).toEqual([expect.objectContaining({ message: 'first message', clientNonce: 'nonce-1' })])
+  })
+
+  it('blocks another prompt while the first hydrating prompt is still optimistic', async () => {
+    const session = new FakeComposerSession('idle')
+    session.state = {
+      ...session.state,
+      hydrated: true,
+      optimisticOutbox: {
+        'nonce-first': {
+          id: 'optimistic:nonce-first',
+          role: 'user',
+          status: 'pending',
+          clientNonce: 'nonce-first',
+          parts: [{ type: 'text', text: 'first message' }],
+        },
+      },
+    }
+    const policy = createPiComposerPolicyController({
+      session,
+      registry: createCommandRegistry(builtinCommands),
+      slashContext: context(),
+    })
+
+    await expect(policy.submit({ text: 'second message' })).resolves.toMatchObject({
+      type: 'blocked',
+      reason: 'hydrating',
+      preserveDraft: true,
+    })
+    expect(session.prompts).toEqual([])
+  })
+
+  it('keeps blocking submit while a non-empty session is hydrating', async () => {
+    const session = new FakeComposerSession('hydrating')
+    session.state = { ...session.state, history: { mode: 'full', messageCount: 1 } }
+    const policy = createPiComposerPolicyController({
+      session,
+      registry: createCommandRegistry(builtinCommands),
+      slashContext: context(),
+    })
+
+    await expect(policy.submit({ text: 'too soon' })).resolves.toMatchObject({
+      type: 'blocked',
+      reason: 'hydrating',
+      preserveDraft: true,
+    })
+    expect(session.prompts).toEqual([])
+  })
+
   it('does not consume mentioned files when the remote prompt fails before acceptance', async () => {
     const session = new FakeComposerSession('idle')
     session.prompt = vi.fn(async (payload: PromptPayload) => {

@@ -182,6 +182,18 @@ export interface CreateCoreWorkspaceAgentServerOptions
 
 type AgentPiOptions = RegisterAgentRoutesOptions['pi']
 
+function normalizeOptionalPath(value: string | undefined): string | undefined {
+  const trimmed = value?.trim()
+  return trimmed ? trimmed : undefined
+}
+
+function inferSessionRootForWorkspaceRoot(workspaceRoot: string, runtimeMode: string | undefined): string | undefined {
+  if (runtimeMode !== 'vercel-sandbox') return undefined
+  const resolvedRoot = path.resolve(workspaceRoot)
+  if (path.basename(resolvedRoot) !== 'workspaces') return undefined
+  return path.join(path.dirname(resolvedRoot), 'pi-sessions')
+}
+
 export function resolveCoreLoadConfigOptions(
   options: Pick<
     CreateCoreWorkspaceAgentServerOptions,
@@ -690,6 +702,10 @@ export async function createCoreWorkspaceAgentServer(
     options.serveFrontend ?? (process.env.NODE_ENV !== 'development' && Boolean(appRoot))
   const pluginWorkspaceRoot = process.cwd()
   const workspaceRoot = options.workspaceRoot ?? process.env.BORING_AGENT_WORKSPACE_ROOT ?? process.cwd()
+  const agentRuntimeMode = options.runtimeModeAdapter?.id ?? options.mode ?? process.env.BORING_AGENT_MODE
+  const sessionRoot = normalizeOptionalPath(options.sessionRoot)
+    ?? normalizeOptionalPath(process.env.BORING_AGENT_SESSION_ROOT)
+    ?? inferSessionRootForWorkspaceRoot(workspaceRoot, agentRuntimeMode)
   registerTelemetryHooks(app, telemetry)
 
   await registerCoreRoutes({ app, sql, db, userStore, workspaceStore })
@@ -867,6 +883,7 @@ export async function createCoreWorkspaceAgentServer(
     systemPromptAppend: pluginCollection.agentOptions.systemPromptAppend,
     pi: pluginCollection.agentOptions.pi,
     getPi: resolvePiOptions,
+    sessionRoot,
     getSessionNamespace: resolveSessionNamespace,
     getExtraTools: async (ctx) => {
       const callerTools = options.getExtraTools ? await options.getExtraTools(ctx) : []

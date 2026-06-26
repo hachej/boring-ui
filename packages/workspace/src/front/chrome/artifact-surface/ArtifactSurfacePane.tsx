@@ -23,43 +23,52 @@ interface StoredEnvelope {
   layout: SerializedLayout
 }
 
-// Read + validate a persisted layout. Returns undefined on any failure
-// (missing, parse error, version mismatch, panel referencing an unknown
-// component) so the caller falls back to a fresh layout. Filtering out
-// individual unknown panels would orphan the grid tree, so we drop the
-// whole layout if any one is invalid.
-function readStoredLayout(
+type StoredLayoutState =
+  | { status: "ready"; layout: SerializedLayout }
+  | { status: "blocked-by-allowed-panels" }
+  | { status: "empty" | "invalid" }
+
+// Read + validate a persisted layout. Malformed/stale payloads are invalid and
+// ignored. Layouts whose panel components are merely not registered/allowed yet
+// are treated as temporarily blocked so an early empty Dockview mount cannot
+// overwrite them before plugin registrations arrive.
+function readStoredLayoutState(
   key: string,
   allowed?: ReadonlySet<string>,
-): SerializedLayout | undefined {
-  if (typeof window === "undefined") return undefined
+): StoredLayoutState {
+  if (typeof window === "undefined") return { status: "empty" }
   let raw: string | null
   try {
     raw = window.localStorage.getItem(key)
   } catch {
-    return undefined
+    return { status: "empty" }
   }
-  if (!raw) return undefined
+  if (!raw) return { status: "empty" }
   let parsed: unknown
   try {
     parsed = JSON.parse(raw)
   } catch {
-    return undefined
+    return { status: "invalid" }
   }
-  if (!parsed || typeof parsed !== "object") return undefined
+  if (!parsed || typeof parsed !== "object") return { status: "invalid" }
   const envelope = parsed as Partial<StoredEnvelope>
-  if (envelope.v !== STORAGE_VERSION) return undefined
+  if (envelope.v !== STORAGE_VERSION) return { status: "invalid" }
   const layout = envelope.layout
-  if (!layout || typeof layout !== "object") return undefined
+  if (!layout || typeof layout !== "object") return { status: "invalid" }
   const panels = (layout as { panels?: unknown }).panels
-  if (!panels || typeof panels !== "object") return undefined
+  if (!panels || typeof panels !== "object") return { status: "invalid" }
   for (const entry of Object.values(panels as Record<string, unknown>)) {
-    if (!entry || typeof entry !== "object") return undefined
+    if (!entry || typeof entry !== "object") return { status: "invalid" }
     const comp = (entry as { contentComponent?: unknown }).contentComponent
-    if (typeof comp !== "string") return undefined
-    if (allowed && !allowed.has(comp)) return undefined
+    if (typeof comp !== "string") return { status: "invalid" }
+    if (allowed && !allowed.has(comp)) return { status: "blocked-by-allowed-panels" }
   }
-  return layout as SerializedLayout
+  return { status: "ready", layout: layout as SerializedLayout }
+}
+
+function layoutHasPanels(layout: SerializedLayout): boolean {
+  const panels = (layout as { panels?: unknown }).panels
+  return Boolean(panels && typeof panels === "object" && Object.keys(panels as Record<string, unknown>).length > 0)
 }
 
 export interface ArtifactSurfacePaneProps {
@@ -95,15 +104,26 @@ export function ArtifactSurfacePane({
   // new payload — without that, dockview consumes persistedLayout once on
   // its initial onReady and ignores subsequent changes.
   const allowedPanelsKey = allowedPanels?.slice().sort().join("\u0000") ?? "*"
-  const internalPersisted = useMemo(() => {
-    if (callerControlled) return undefined
-    return readStoredLayout(storageKey, allowedPanels ? new Set(allowedPanels) : undefined)
-  }, [allowedPanels, callerControlled, storageKey])
+  const allowedPanelSet = useMemo(
+    () => allowedPanels ? new Set(allowedPanels) : undefined,
+    [allowedPanels],
+  )
+  const internalLayoutState = useMemo(() => {
+    if (callerControlled) return { status: "empty" } as StoredLayoutState
+    return readStoredLayoutState(storageKey, allowedPanelSet)
+  }, [allowedPanelSet, callerControlled, storageKey])
+  const internalPersisted = internalLayoutState.status === "ready" ? internalLayoutState.layout : undefined
 
   const handleLayoutChange = useCallback(
     (layout: SerializedLayout) => {
       if (onLayoutChange) {
         onLayoutChange(layout)
+        return
+      }
+      if (
+        internalLayoutState.status === "blocked-by-allowed-panels" &&
+        !layoutHasPanels(layout)
+      ) {
         return
       }
       const envelope: StoredEnvelope = { v: STORAGE_VERSION, layout }
@@ -113,7 +133,7 @@ export function ArtifactSurfacePane({
         /* localStorage full / disabled — accept loss rather than block UI. */
       }
     },
-    [onLayoutChange, storageKey],
+    [internalLayoutState.status, onLayoutChange, storageKey],
   )
 
   if (!visible) return null

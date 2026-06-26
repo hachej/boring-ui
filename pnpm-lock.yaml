@@ -515,8 +515,8 @@ importers:
         specifier: ^1.8.0
         version: 1.8.0(react@19.2.5)
       nodemailer:
-        specifier: ^8.0.6
-        version: 8.0.6
+        specifier: ^8.0.9
+        version: 8.0.9
       pino:
         specifier: ^10.3.1
         version: 10.3.1
@@ -6221,8 +6221,8 @@ packages:
   node-releases@2.0.38:
     resolution: {integrity: sha512-3qT/88Y3FbH/Kx4szpQQ4HzUbVrHPKTLVpVocKiLfoYvw9XSGOX2FmD2d6DrXbVYyAQTF2HeF6My8jmzx7/CRw==}
 
-  nodemailer@8.0.6:
-    resolution: {integrity: sha512-Nm2XeuDwwy2wi5A+8jPWwQwNzcjNjhWdE3pVLoXEusxJqCnAPAgnBGkSmiLknbnWuOF9qraRpYZjfxqtKZ4tPw==}
+  nodemailer@8.0.9:
+    resolution: {integrity: sha512-5ofa7BUN8+C+Hckh5V2GjeeOGRQBx0CJQA6KxrvuZfC8iU4/q7sLn8XrtEEhJkjV6HdyIiQs7Bba6bTao8JhkA==}
     engines: {node: '>=6.0.0'}
 
   object-assign@4.1.1:
@@ -13086,7 +13086,7 @@ snapshots:
 
   node-releases@2.0.38: {}
 
-  nodemailer@8.0.6: {}
+  nodemailer@8.0.9: {}
 
   object-assign@4.1.1: {}
 
