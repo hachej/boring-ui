@@ -122,6 +122,8 @@ export interface WorkspaceAgentFrontProps<
   workspaceSectionTitle?: string
   /** App-left layout mode. single-project uses the workspace dropdown; multi-project renders workspaces inline. */
   appLeftLayoutMode?: AppLeftPaneLayoutMode
+  /** Show the app-left brand/workspace header. Disable for compact host shells that only want actions + chats. */
+  appLeftHeader?: boolean
   /** Optional cross-project overview rendered in the app-left workspace/project section. */
   appLeftProjects?: AppLeftPaneProject[]
   appLeftActiveProjectId?: string | null
@@ -536,6 +538,7 @@ export function WorkspaceAgentFront<
   workspaceLabel,
   workspaceSectionTitle = "Workspaces",
   appLeftLayoutMode = "single-project",
+  appLeftHeader = true,
   appLeftProjects,
   appLeftActiveProjectId,
   onSwitchAppLeftProject,
@@ -1613,6 +1616,7 @@ export function WorkspaceAgentFront<
           workspaceLabel={workspaceLabel}
           workspaceSectionTitle={workspaceSectionTitle}
           layoutMode={appLeftLayoutMode}
+          showHeader={appLeftHeader}
           projects={appLeftProjects}
           activeProjectId={appLeftActiveProjectId ?? workspaceId}
           onOpenProjectSession={onOpenAppLeftProjectSession}

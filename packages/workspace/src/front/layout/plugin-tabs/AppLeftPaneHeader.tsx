@@ -31,7 +31,13 @@ export function AppLeftPaneHeader({
         </div>
       ) : null}
       {topSlot ? (
-        <div className={showBrand ? "mt-1 min-w-0" : "min-w-0"} data-boring-workspace-part="app-left-pane-workspace">{topSlot}</div>
+        <div
+          className={showBrand ? "mt-1 min-w-0" : "min-w-0 pr-1"}
+          style={showBrand ? undefined : { paddingLeft: "2.5rem" }}
+          data-boring-workspace-part="app-left-pane-workspace"
+        >
+          {topSlot}
+        </div>
       ) : workspaceLabel ? (
         <div
           className="mt-0.5 flex min-h-8 items-center gap-2 rounded-md px-2 text-[13px] text-foreground/72"

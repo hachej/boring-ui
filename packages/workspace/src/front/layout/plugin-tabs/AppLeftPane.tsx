@@ -59,6 +59,7 @@ export interface AppLeftPaneProps {
   sessionTitle?: string
   topSlot?: ReactNode
   bottomSlot?: ReactNode
+  showHeader?: boolean
   sessions: AppLeftPaneSession[]
   activeSessionId?: string | null
   openSessionIds: readonly string[]
@@ -119,6 +120,7 @@ export function AppLeftPane({
   onOpenProjectInNewTab,
   topSlot,
   bottomSlot,
+  showHeader = true,
   sessions,
   activeSessionId,
   openSessionIds,
@@ -193,6 +195,7 @@ export function AppLeftPane({
     () => projectItems.filter((project) => !pinnedProjectSet.has(project.id)),
     [projectItems, pinnedProjectSet],
   )
+  const headerVisible = showHeader && layoutMode !== "multi-project"
   const renderSession = (session: AppLeftPaneSession, pinned: boolean, projectId = activeProjectId ?? undefined) => {
     const isActiveProjectSession = !projectId || projectId === activeProjectId
     const state: SessionRowState = isActiveProjectSession && session.id === activeSessionId
@@ -251,12 +254,15 @@ export function AppLeftPane({
       style={{ width, minWidth: width, maxWidth: width }}
       aria-label="App navigation"
     >
-      <AppLeftPaneHeader
-        appTitle={appTitle}
-        workspaceLabel={workspaceLabel}
-        topSlot={topSlot}
-        showBrand={layoutMode !== "multi-project"}
-      />
+      {headerVisible ? (
+        <AppLeftPaneHeader
+          appTitle={appTitle}
+          workspaceLabel={workspaceLabel}
+          topSlot={topSlot}
+        />
+      ) : (
+        <div className="h-12 shrink-0" aria-hidden="true" />
+      )}
 
       <nav className="shrink-0 space-y-0.5 px-2 pb-1 pt-1" aria-label="Primary workspace actions">
         <PrimaryAction icon={<Plus className="h-4 w-4" strokeWidth={2} />} label="New chat" onClick={onCreateSession} emphasis />

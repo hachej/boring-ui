@@ -416,6 +416,28 @@ describe("WorkspaceAgentFront", () => {
     expect(within(appNav).queryByRole("button", { name: "Plugins" })).not.toBeInTheDocument()
   })
 
+  it("can render compact app navigation with only actions and chats", () => {
+    render(
+      <WorkspaceAgentFront
+        workspaceId="compact-project"
+        workspaceLayout="plugin-tabs"
+        appTitle="Seneca AI"
+        workspaceLabel="Default workspace"
+        appLeftHeader={false}
+        chatPanel={SessionIdChatPanel}
+        sessions={[{ id: "s1", title: "Focused session" }]}
+        activeSessionId="s1"
+      />,
+    )
+
+    const appNav = screen.getByLabelText("App navigation")
+    expect(within(appNav).queryByText("Seneca AI")).not.toBeInTheDocument()
+    expect(within(appNav).queryByText("Default workspace")).not.toBeInTheDocument()
+    expect(within(appNav).getByRole("button", { name: "New chat" })).toBeInTheDocument()
+    expect(within(appNav).getByText("Chats")).toBeInTheDocument()
+    expect(within(appNav).getByText("Focused session")).toBeInTheDocument()
+  })
+
   it("renders multi-project app navigation with pinned sessions above the inline projects tree", () => {
     const sessions = [
       { id: "s1", title: "Active project session", updatedAt: Date.now() - 1_000 },

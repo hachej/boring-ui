@@ -91,6 +91,7 @@ createRoot(document.getElementById('root')!).render(
       persistenceEnabled
       appTitle={PRODUCT_NAME}
       workspaceLayout="plugin-tabs"
+      appLeftHeader={false}
       appLeftLayoutMode={inlineProjectsEnabled ? 'multi-project' : 'single-project'}
       workspaceSectionTitle="Projects"
       showSkills
