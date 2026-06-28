@@ -14,7 +14,7 @@ import type { AvailableModel, ModelSelection, ThinkingLevel } from '../chatPanel
 import { DEFAULT_THINKING } from '../chatPanelSettings'
 import { cn } from '../lib'
 import { defaultChatSuggestions, type ChatSuggestion } from '../ChatEmptyState'
-import type { SlashCommand, SlashCommandContext, SlashCommandHandlerResult } from '../slashCommands'
+import type { SlashCommand } from '../slashCommands'
 import { builtinCommands, createCommandRegistry } from '../slashCommands'
 import type { ToolRendererOverrides } from '../bareToolRenderers'
 import { mergeShadcnToolRenderers } from '../toolRenderers'
@@ -25,6 +25,7 @@ import { useComposerPickers } from '../useComposerPickers'
 import { useChatModelSelection } from '../hooks/useChatModelSelection'
 import { useServerCommands } from '../hooks/useServerCommands'
 import { useAttachmentNotice } from '../hooks/useAttachmentNotice'
+import { useSlashCommandUi } from './useSlashCommandUi'
 import {
   composerNoticeForRuntimeDependencies,
   composerNoticeForWarmup,
@@ -171,12 +172,6 @@ export interface PiChatPanelProps<
    * Lets a host attach a recovery action for a specific error code without the agent
    * knowing what the code means or what the action does. */
   renderNoticeAction?: (notice: PiChatRuntimeNotice) => ReactNode
-}
-
-function slashCommandResultMessage(result: SlashCommandHandlerResult): string | undefined {
-  if (typeof result === 'string') return result
-  if (result && typeof result === 'object' && typeof result.message === 'string') return result.message
-  return undefined
 }
 
 export function PiChatPanel<
@@ -410,6 +405,7 @@ export function PiChatPanel<
     enabled: serverResourcesEnabled,
   })
   const allCommands = useMemo(() => registry.list(), [registry, commandsStamp])
+  const availableCommandNames = useMemo(() => allCommands.map((command) => command.name), [allCommands])
 
   const activeChatSessionId = selectedChatState?.sessionId
   const warmupNotice = composerNoticeForWarmup(workspaceWarmupStatus)
@@ -677,49 +673,24 @@ export function PiChatPanel<
     return `Thinking set to ${thinkingLabel(match)}.`
   }, [thinkingControl, thinkingLevel])
 
-  const runSlashCommandFromUi = useCallback((name: string) => {
-    const command = registry.get(name)
-    if (!command || command.clickBehavior === 'disabled') return
-    void (async () => {
-      const currentSessionId = activeChatSessionId ?? activeSessionId ?? sessionId ?? 'default'
-      const ctx: SlashCommandContext = {
-        sessionId: currentSessionId,
-        clearMessages: () => addLocalNotice({
-          id: 'clear-not-supported',
-          level: 'info',
-          text: '/clear is not available in this chat panel.',
-          dismissible: true,
-        }),
-        resetSession,
-        listCommands: () => registry.list(),
-        reloadAgentPlugins,
-        pluginUpdate: { run: runPluginUpdate },
-        openModelPicker,
-        selectComposerModel,
-        openThinkingPicker,
-        selectComposerThinking,
-      }
-      const result = await Promise.resolve(command.handler('', ctx))
-      const message = slashCommandResultMessage(result) ?? `/${name} triggered.`
-      onCommandResult?.(message)
-      addLocalNotice({ id: `command:${Date.now()}`, level: 'info', text: message, dismissible: true })
-    })()
-  }, [activeChatSessionId, activeSessionId, addLocalNotice, onCommandResult, openModelPicker, openThinkingPicker, registry, reloadAgentPlugins, resetSession, runPluginUpdate, selectComposerModel, selectComposerThinking, sessionId])
-
-  const selectSlashCommand = useCallback((name: string) => {
-    const command = registry.get(name)
-    if (command?.clickBehavior === 'execute') {
-      dismissSlash()
-      setComposerDraft('')
-      runSlashCommandFromUi(name)
-      return
-    }
-    if (command?.clickBehavior === 'disabled') {
-      dismissSlash()
-      return
-    }
-    insertSlashCommand(name)
-  }, [dismissSlash, insertSlashCommand, registry, runSlashCommandFromUi, setComposerDraft])
+  const { selectSlashCommand, handleMentionClick } = useSlashCommandUi({
+    registry,
+    activeChatSessionId,
+    activeSessionId,
+    sessionId,
+    addLocalNotice,
+    resetSession,
+    reloadAgentPlugins,
+    runPluginUpdate,
+    openModelPicker,
+    selectComposerModel,
+    openThinkingPicker,
+    selectComposerThinking,
+    onCommandResult,
+    dismissSlash,
+    insertSlashCommand,
+    setComposerDraft,
+  })
 
   const policy = useMemo(() => {
     if (!selectedPiSession || !activeChatSessionId) return undefined
@@ -1088,18 +1059,8 @@ export function PiChatPanel<
               onSuggestionSubmit={({ text, files, source }) => sendComposerMessage({ text, files, source })}
               onRestoreDraft={setComposerDraft}
               windowResetKey={activeSessionId}
-              availableCommands={allCommands.map(c => c.name)}
-              onMentionClick={(mention) => {
-                if (mention.kind !== 'slash-command') return
-                const cmdName = mention.value.replace('/', '')
-                const command = registry.get(cmdName)
-                if (!command || command.clickBehavior === 'disabled') return
-                if (command.clickBehavior === 'insert') {
-                  setComposerDraft(`/${cmdName} `, true)
-                  return
-                }
-                runSlashCommandFromUi(cmdName)
-              }}
+              availableCommands={availableCommandNames}
+              onMentionClick={handleMentionClick}
             />
 
             <PiChatComposerSurface

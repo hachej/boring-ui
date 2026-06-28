@@ -31,8 +31,6 @@ export function parseMentions(text: string, availableCommands?: string[]): TextS
   }
 
   const segments: TextSegment[] = []
-  let remaining = text
-  let lastIndex = 0
 
   // Find all potential mentions
   const matches: Array<{ start: number; end: number; type: string; value: string }> = []
@@ -111,12 +109,4 @@ export function parseMentions(text: string, availableCommands?: string[]): TextS
   }
 
   return segments.length > 0 ? segments : [{ type: 'text', content: text }]
-}
-
-/**
- * Check if a slash command is available (has clickBehavior defined)
- */
-export function isSlashCommandAvailable(command: string, availableCommands?: string[]): boolean {
-  if (!availableCommands) return true // Assume all available if not specified
-  return availableCommands.includes(command)
 }

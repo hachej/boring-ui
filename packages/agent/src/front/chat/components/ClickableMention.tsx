@@ -1,6 +1,6 @@
 "use client"
 
-import type { ComponentProps, ReactNode } from 'react'
+import type { ReactNode } from 'react'
 import { cn } from '../../lib'
 
 /**
@@ -27,10 +27,11 @@ export interface ClickableMentionLinkProps {
 }
 
 export function ClickableMentionLink({ mention, onClick, className, 'aria-disabled': ariaDisabled, title, children, ...rest }: ClickableMentionLinkProps) {
+  const disabled = ariaDisabled === true
   const handleClick = (e: React.MouseEvent) => {
     e.preventDefault()
     e.stopPropagation()
-    onClick?.(mention)
+    if (!disabled) onClick?.(mention)
   }
 
   const kindStyles = {
@@ -45,10 +46,14 @@ export function ClickableMentionLink({ mention, onClick, className, 'aria-disabl
     <button
       type="button"
       className={cn(
-        'inline-flex items-center rounded-full border px-2 py-0.5 text-[12px] font-medium no-underline transition-colors cursor-pointer',
+        'inline-flex items-center rounded-full border px-2 py-0.5 text-[12px] font-medium no-underline transition-colors',
+        disabled ? 'cursor-not-allowed opacity-60' : 'cursor-pointer',
         style,
         className,
       )}
+      aria-disabled={disabled || undefined}
+      disabled={disabled}
+      title={title}
       onClick={handleClick}
       {...rest}
     >
