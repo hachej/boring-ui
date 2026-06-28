@@ -221,6 +221,37 @@ function createMentionMarkdownComponents(
   const Heading3 = ({ children, ...props }: ComponentProps<'h3'>) => <h3 {...props}>{decorate(children)}</h3>
   const Heading4 = ({ children, ...props }: ComponentProps<'h4'>) => <h4 {...props}>{decorate(children)}</h4>
   const Blockquote = ({ children, ...props }: ComponentProps<'blockquote'>) => <blockquote {...props}>{decorate(children)}</blockquote>
+  const Code = ({
+    inline,
+    className,
+    children,
+    ...props
+  }: {
+    inline?: boolean
+    className?: string
+    children?: ReactNode
+  } & Record<string, unknown>) => {
+    const text = typeof children === 'string' ? children : undefined
+    const commandName = text?.match(/^\/(\w[\w-]*)$/)?.[1]
+    if (inline !== false && commandName && availableCommands.includes(commandName)) {
+      return (
+        <TextWithClickableMentions availableCommands={availableCommands} onMentionClick={onMentionClick}>
+          {text}
+        </TextWithClickableMentions>
+      )
+    }
+    return (
+      <code
+        className={cn(
+          inline === false ? undefined : 'rounded-[0.3em] bg-muted/55 px-[0.32em] py-[0.08em] font-mono text-[0.9em] font-medium text-foreground/90',
+          className,
+        )}
+        {...props}
+      >
+        {children}
+      </code>
+    )
+  }
 
   return {
     p: Paragraph,
@@ -230,6 +261,7 @@ function createMentionMarkdownComponents(
     h3: Heading3,
     h4: Heading4,
     blockquote: Blockquote,
+    code: Code,
   } as MentionMarkdownComponents
 }
 
