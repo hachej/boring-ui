@@ -677,19 +677,49 @@ export function PiChatPanel<
     return `Thinking set to ${thinkingLabel(match)}.`
   }, [thinkingControl, thinkingLevel])
 
+  const runSlashCommandFromUi = useCallback((name: string) => {
+    const command = registry.get(name)
+    if (!command || command.clickBehavior === 'disabled') return
+    void (async () => {
+      const currentSessionId = activeChatSessionId ?? activeSessionId ?? sessionId ?? 'default'
+      const ctx: SlashCommandContext = {
+        sessionId: currentSessionId,
+        clearMessages: () => addLocalNotice({
+          id: 'clear-not-supported',
+          level: 'info',
+          text: '/clear is not available in this chat panel.',
+          dismissible: true,
+        }),
+        resetSession,
+        listCommands: () => registry.list(),
+        reloadAgentPlugins,
+        pluginUpdate: { run: runPluginUpdate },
+        openModelPicker,
+        selectComposerModel,
+        openThinkingPicker,
+        selectComposerThinking,
+      }
+      const result = await Promise.resolve(command.handler('', ctx))
+      const message = slashCommandResultMessage(result) ?? `/${name} triggered.`
+      onCommandResult?.(message)
+      addLocalNotice({ id: `command:${Date.now()}`, level: 'info', text: message, dismissible: true })
+    })()
+  }, [activeChatSessionId, activeSessionId, addLocalNotice, onCommandResult, openModelPicker, openThinkingPicker, registry, reloadAgentPlugins, resetSession, runPluginUpdate, selectComposerModel, selectComposerThinking, sessionId])
+
   const selectSlashCommand = useCallback((name: string) => {
-    if (name === 'model') {
+    const command = registry.get(name)
+    if (command?.clickBehavior === 'execute') {
       dismissSlash()
-      if (openModelPicker()) setComposerDraft('')
+      setComposerDraft('')
+      runSlashCommandFromUi(name)
       return
     }
-    if (name === 'thinking' || name === 'think') {
+    if (command?.clickBehavior === 'disabled') {
       dismissSlash()
-      if (openThinkingPicker()) setComposerDraft('')
       return
     }
     insertSlashCommand(name)
-  }, [dismissSlash, insertSlashCommand, openModelPicker, openThinkingPicker, setComposerDraft])
+  }, [dismissSlash, insertSlashCommand, registry, runSlashCommandFromUi, setComposerDraft])
 
   const policy = useMemo(() => {
     if (!selectedPiSession || !activeChatSessionId) return undefined
@@ -1068,32 +1098,7 @@ export function PiChatPanel<
                   setComposerDraft(`/${cmdName} `, true)
                   return
                 }
-                void (async () => {
-                  const currentSessionId = activeChatSessionId ?? activeSessionId ?? sessionId ?? 'default'
-                  const ctx: SlashCommandContext = {
-                    sessionId: currentSessionId,
-                    clearMessages: () => addLocalNotice({
-                      id: 'clear-not-supported',
-                      level: 'info',
-                      text: '/clear is not available in this chat panel.',
-                      dismissible: true,
-                    }),
-                    resetSession,
-                    listCommands: () => registry.list(),
-                    reloadAgentPlugins,
-                    pluginUpdate: { run: runPluginUpdate },
-                    openModelPicker,
-                    selectComposerModel,
-                    openThinkingPicker,
-                    selectComposerThinking,
-                  }
-                  const result = await Promise.resolve(command.handler('', ctx))
-                  const message = slashCommandResultMessage(result)
-                  if (message) {
-                    onCommandResult?.(message)
-                    addLocalNotice({ id: `command:${Date.now()}`, level: 'info', text: message, dismissible: true })
-                  }
-                })()
+                runSlashCommandFromUi(cmdName)
               }}
             />
 
