@@ -14,7 +14,7 @@ import type { AvailableModel, ModelSelection, ThinkingLevel } from '../chatPanel
 import { DEFAULT_THINKING } from '../chatPanelSettings'
 import { cn } from '../lib'
 import { defaultChatSuggestions, type ChatSuggestion } from '../ChatEmptyState'
-import type { SlashCommand } from '../slashCommands'
+import type { SlashCommand, SlashCommandContext, SlashCommandHandlerResult } from '../slashCommands'
 import { builtinCommands, createCommandRegistry } from '../slashCommands'
 import type { ToolRendererOverrides } from '../bareToolRenderers'
 import { mergeShadcnToolRenderers } from '../toolRenderers'
@@ -171,6 +171,12 @@ export interface PiChatPanelProps<
    * Lets a host attach a recovery action for a specific error code without the agent
    * knowing what the code means or what the action does. */
   renderNoticeAction?: (notice: PiChatRuntimeNotice) => ReactNode
+}
+
+function slashCommandResultMessage(result: SlashCommandHandlerResult): string | undefined {
+  if (typeof result === 'string') return result
+  if (result && typeof result === 'object' && typeof result.message === 'string') return result.message
+  return undefined
 }
 
 export function PiChatPanel<
@@ -1054,40 +1060,40 @@ export function PiChatPanel<
               windowResetKey={activeSessionId}
               availableCommands={allCommands.map(c => c.name)}
               onMentionClick={(mention) => {
-                if (mention.kind === 'slash-command') {
-                  const cmdName = mention.value.replace('/', '')
-                  const command = registry.get(cmdName)
-                  if (command?.clickBehavior === 'execute') {
-                    // Run immediately
-                    void (async () => {
-                      if (!sessionId) return
-                      const currentSessionId = sessionId
-                      const ctx = {
-                        sessionId: currentSessionId,
-                        clearMessages: () => addLocalNotice({ id: `cmd-clear:${Date.now()}`, level: 'info' as const, text: 'Messages cleared', dismissible: true }),
-                        resetSession: () => {
-                          addLocalNotice({ id: `cmd-reset:${Date.now()}`, level: 'info' as const, text: 'Session reset', dismissible: true })
-                          if (onSessionReset) void onSessionReset()
-                        },
-                        listCommands: () => registry.list(),
-                        reloadAgentPlugins,
-                        openModelPicker: undefined,
-                        selectComposerModel: undefined,
-                        openThinkingPicker: undefined,
-                        selectComposerThinking: undefined,
-                        pluginUpdate: { run: runPluginUpdate },
-                      }
-                      const result = await Promise.resolve(command.handler('', ctx))
-                      if (typeof result === 'string') {
-                        addLocalNotice({ id: `cmd-result:${Date.now()}`, level: 'info' as const, text: result, dismissible: true })
-                      }
-                    })()
-                  } else if (command?.clickBehavior === 'insert' || !command?.clickBehavior) {
-                    // Insert into composer
-                    setComposerDraft(`/${cmdName} `, true)
-                  }
+                if (mention.kind !== 'slash-command') return
+                const cmdName = mention.value.replace('/', '')
+                const command = registry.get(cmdName)
+                if (!command || command.clickBehavior === 'disabled') return
+                if (command.clickBehavior === 'insert') {
+                  setComposerDraft(`/${cmdName} `, true)
+                  return
                 }
-                // TODO: Handle file-path, skill, and other mention kinds
+                void (async () => {
+                  const currentSessionId = activeChatSessionId ?? activeSessionId ?? sessionId ?? 'default'
+                  const ctx: SlashCommandContext = {
+                    sessionId: currentSessionId,
+                    clearMessages: () => addLocalNotice({
+                      id: 'clear-not-supported',
+                      level: 'info',
+                      text: '/clear is not available in this chat panel.',
+                      dismissible: true,
+                    }),
+                    resetSession,
+                    listCommands: () => registry.list(),
+                    reloadAgentPlugins,
+                    pluginUpdate: { run: runPluginUpdate },
+                    openModelPicker,
+                    selectComposerModel,
+                    openThinkingPicker,
+                    selectComposerThinking,
+                  }
+                  const result = await Promise.resolve(command.handler('', ctx))
+                  const message = slashCommandResultMessage(result)
+                  if (message) {
+                    onCommandResult?.(message)
+                    addLocalNotice({ id: `command:${Date.now()}`, level: 'info', text: message, dismissible: true })
+                  }
+                })()
               }}
             />
 
