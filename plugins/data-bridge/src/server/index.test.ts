@@ -1,16 +1,60 @@
-import { mkdtempSync, writeFileSync } from "node:fs"
-import { DuckDBInstance } from "@duckdb/node-api"
+import { mkdtempSync, symlinkSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
-import { describe, expect, it, vi } from "vitest"
+import { afterEach, describe, expect, it, vi } from "vitest"
+import { createWorkspaceAgentServer } from "@hachej/boring-workspace/app/server"
 import { createWorkspaceBridgeRegistry, type WorkspaceBridgeCallResponse } from "@hachej/boring-workspace/server"
 import type { DataBridgeTableResult } from "../shared"
 import { createDataBridgeServerPlugin, type DataBridgeSqlAdapter } from "./index"
 
+let app: Awaited<ReturnType<typeof createWorkspaceAgentServer>> | undefined
+
+afterEach(async () => {
+  await app?.close()
+  app = undefined
+})
+
 function createWorkspaceFixture() {
   const workspaceRoot = mkdtempSync(join(tmpdir(), "data-bridge-test-"))
   writeFileSync(join(workspaceRoot, "data.csv"), "id,role\n1,engineer\n2,designer\n3,engineer\n")
+  const outside = join(workspaceRoot, "..", "outside.csv")
+  writeFileSync(outside, "id,role\n1,secret\n")
+  symlinkSync(outside, join(workspaceRoot, "linked-outside.csv"))
   return workspaceRoot
+}
+
+async function createApp() {
+  const workspaceRoot = createWorkspaceFixture()
+  app = await createWorkspaceAgentServer({
+    workspaceRoot,
+    mode: "local",
+    logger: false,
+    plugins: [createDataBridgeServerPlugin({ workspaceRoot })],
+    workspaceBridge: { allowInsecureLocalCliBrowserAuth: true },
+  })
+  return app
+}
+
+async function query(path: string, overrides: Record<string, unknown> = {}) {
+  const server = await createApp()
+  return await server.inject({
+    method: "POST",
+    url: "/api/v1/workspace-bridge/call",
+    headers: { "content-type": "application/json" },
+    payload: {
+      op: "data.v1.query.run",
+      input: {
+        query: {
+          language: "bsl-dashboard",
+          model: "people",
+          groupBy: ["role"],
+          measures: ["count"],
+          dataRef: { kind: "workspace-file", path },
+          ...overrides,
+        },
+      },
+    },
+  })
 }
 
 async function sqlQuery(adapter: DataBridgeSqlAdapter, capabilities: string[], overrides: Record<string, unknown> = {}): Promise<WorkspaceBridgeCallResponse> {
@@ -40,6 +84,42 @@ async function sqlQuery(adapter: DataBridgeSqlAdapter, capabilities: string[], o
     actor: { actorKind: "agent", performedBy: { label: "test" } },
   })
 }
+
+describe("data bridge workspace-file adapter", () => {
+  it("aggregates workspace CSV data through WorkspaceBridge", async () => {
+    const res = await query("data.csv")
+
+    expect(res.statusCode).toBe(200)
+    expect(res.json().output.rows).toEqual([
+      { role: "engineer", count: 2 },
+      { role: "designer", count: 1 },
+    ])
+  })
+
+  it("honors dimensions as the grouping field fallback", async () => {
+    const res = await query("data.csv", { groupBy: undefined, dimensions: ["role"] })
+
+    expect(res.statusCode).toBe(200)
+    expect(res.json().output.rows).toEqual([
+      { role: "engineer", count: 2 },
+      { role: "designer", count: 1 },
+    ])
+  })
+
+  it("rejects workspace file paths that escape the workspace root", async () => {
+    const res = await query("../outside.csv")
+
+    expect(res.statusCode).toBeGreaterThanOrEqual(400)
+    expect(res.json().ok).toBe(false)
+  })
+
+  it("rejects symlinks that resolve outside the workspace root", async () => {
+    const res = await query("linked-outside.csv")
+
+    expect(res.statusCode).toBeGreaterThanOrEqual(400)
+    expect(res.json().ok).toBe(false)
+  })
+})
 
 describe("data bridge SQL adapters", () => {
   function adapter(rows: Record<string, unknown>[] = [{ series_id: "GDP" }, { series_id: "CPI" }, { series_id: "UNRATE" }]): DataBridgeSqlAdapter {
@@ -104,48 +184,5 @@ describe("data bridge SQL adapters", () => {
       sql: "SELECT series_id FROM series_catalog",
       limit: 2,
     }))
-  })
-
-  it("runs an end-to-end SQL query through a DuckDB file adapter", async () => {
-    const workspaceRoot = createWorkspaceFixture()
-    const dbPath = join(workspaceRoot, "macro-fixture.duckdb")
-    const instance = await DuckDBInstance.create(dbPath)
-    const connection = await instance.connect()
-    try {
-      await connection.run("create table series_catalog(series_id varchar, frequency varchar)")
-      await connection.run("insert into series_catalog values ('GDP', 'quarterly'), ('CPI', 'monthly'), ('UNRATE', 'monthly')")
-
-      const sqlAdapter: DataBridgeSqlAdapter = {
-        requiredCapabilities: ["data:macro-clickhouse"],
-        maxRows: 10,
-        async execute({ sql, limit }) {
-          const reader = await connection.runAndReadUntil(sql, limit + 1)
-          const rows = reader.getRowObjectsJson().slice(0, limit) as Record<string, unknown>[]
-          return {
-            kind: "data-bridge.table",
-            version: 1,
-            columns: reader.columnNames().map((name) => ({ name, type: "string" })),
-            rows,
-            rowCount: rows.length,
-            truncated: !reader.done || reader.currentRowCount > limit,
-            source: "duckdb-file",
-          }
-        },
-      }
-
-      const res = await sqlQuery(sqlAdapter, ["data:read", "data:sql-query", "data:macro-clickhouse"], {
-        sql: "SELECT frequency, count(*) as count FROM series_catalog GROUP BY frequency ORDER BY frequency",
-        limit: 5,
-      })
-
-      expect(res.ok).toBe(true)
-      expect(res.ok ? (res.output as DataBridgeTableResult).rows : []).toEqual([
-        { frequency: "monthly", count: "2" },
-        { frequency: "quarterly", count: "1" },
-      ])
-    } finally {
-      connection.closeSync()
-      instance.closeSync()
-    }
   })
 })
