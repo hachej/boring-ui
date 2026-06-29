@@ -38,7 +38,15 @@ export interface DataBridgeBslPythonQuery {
   limit?: number
 }
 
-export type DataBridgeQuery = DataBridgeDashboardQuery | DataBridgeBslPythonQuery
+export interface DataBridgeSqlQuery {
+  language: "sql"
+  source: string
+  sql: string
+  params?: Record<string, unknown>
+  limit?: number
+}
+
+export type DataBridgeQuery = DataBridgeDashboardQuery | DataBridgeBslPythonQuery | DataBridgeSqlQuery
 
 export interface DataBridgeQueryRunInput {
   source?: string

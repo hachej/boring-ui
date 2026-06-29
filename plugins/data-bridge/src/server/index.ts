@@ -8,19 +8,39 @@ import {
   type WorkspaceBridgeHandlerContribution,
 } from "@hachej/boring-workspace/server"
 import type {
+  DataBridgeBslPythonQuery,
   DataBridgeColumn,
   DataBridgeDashboardQuery,
   DataBridgeQueryRunInput,
+  DataBridgeSqlQuery,
   DataBridgeTableResult,
 } from "../shared"
 import { DATA_BRIDGE_QUERY_RUN_OP } from "../shared"
+
+export interface DataBridgeSqlAdapter {
+  requiredCapabilities?: string[]
+  maxRows?: number
+  execute(args: {
+    query: DataBridgeSqlQuery
+    sql: string
+    params?: Record<string, unknown>
+    limit: number
+    signal?: AbortSignal
+  }): Promise<DataBridgeTableResult>
+}
 
 interface CreateDataBridgeServerPluginOptions {
   workspaceRoot: string
   bslModelPath?: string
   bslProfile?: string
   bslProfileFile?: string
+  sqlAdapters?: Record<string, DataBridgeSqlAdapter>
 }
+
+const SQL_DEFAULT_LIMIT = 1000
+const SQL_MAX_LIMIT = 5000
+const SQL_ALLOWED_FIRST_TOKENS = new Set(["SELECT", "WITH", "EXPLAIN", "DESCRIBE", "SHOW", "DESC"])
+const MULTI_STMT_RE = /;\s*\S/
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value)
@@ -33,6 +53,38 @@ function numeric(value: unknown): number | null {
     if (Number.isFinite(parsed)) return parsed
   }
   return null
+}
+
+function normalizeLimit(value: unknown, max = SQL_MAX_LIMIT): number {
+  const n = typeof value === "number" ? value : Number(value)
+  if (!Number.isFinite(n)) return Math.min(SQL_DEFAULT_LIMIT, max)
+  return Math.max(1, Math.min(Math.floor(n), max))
+}
+
+function requireCapabilities(actual: readonly string[], required: readonly string[]): void {
+  const missing = required.find((capability) => !actual.includes(capability))
+  if (missing) throw new Error(`Missing required data capability: ${missing}`)
+}
+
+function normalizeReadOnlySql(sql: string): string {
+  const query = sql.trim().replace(/;+$/, "").trim()
+  if (!query) throw new Error("SQL query is required")
+  const firstToken = query.split(/\s+/)[0]?.toUpperCase() ?? ""
+  if (!SQL_ALLOWED_FIRST_TOKENS.has(firstToken)) {
+    throw new Error(`Only read-only SQL queries are allowed (${[...SQL_ALLOWED_FIRST_TOKENS].sort().join(", ")})`)
+  }
+  if (MULTI_STMT_RE.test(query)) throw new Error("Multi-statement SQL queries are not allowed")
+  return query
+}
+
+function truncateResult(result: DataBridgeTableResult, limit: number): DataBridgeTableResult {
+  if (result.rows.length <= limit) return result
+  return {
+    ...result,
+    rows: result.rows.slice(0, limit),
+    rowCount: Math.max(result.rowCount, result.rows.length),
+    truncated: true,
+  }
 }
 
 function parseCsv(text: string): Record<string, unknown>[] {
@@ -186,7 +238,7 @@ function compileDashboardToBslPython(query: DataBridgeDashboardQuery): string {
   return `sm${groupCall}.aggregate(${aggregateArgs})`
 }
 
-async function runBslQuery(options: CreateDataBridgeServerPluginOptions, input: DataBridgeQueryRunInput, trustedPython: boolean, signal?: AbortSignal): Promise<DataBridgeTableResult> {
+async function runBslQuery(options: CreateDataBridgeServerPluginOptions, input: DataBridgeQueryRunInput & { query: DataBridgeDashboardQuery | DataBridgeBslPythonQuery }, trustedPython: boolean, signal?: AbortSignal): Promise<DataBridgeTableResult> {
   const modelPath = options.bslModelPath ?? process.env.BORING_BSL_MODEL_PATH ?? process.env.BSL_MODEL_PATH
   if (!modelPath) throw new Error("BSL adapter is not configured: set BORING_BSL_MODEL_PATH")
   const payload = {
@@ -199,6 +251,25 @@ async function runBslQuery(options: CreateDataBridgeServerPluginOptions, input: 
     trustedPython,
   }
   return await runPythonBsl(payload, signal)
+}
+
+async function runSqlQuery(options: CreateDataBridgeServerPluginOptions, input: DataBridgeQueryRunInput, capabilities: readonly string[], signal?: AbortSignal): Promise<DataBridgeTableResult> {
+  if (input.query.language !== "sql") throw new Error("SQL adapter requires query.language=sql")
+  requireCapabilities(capabilities, ["data:sql-query"])
+  const adapter = options.sqlAdapters?.[input.query.source]
+  if (!adapter) throw new Error(`Data bridge SQL source is not configured: ${input.query.source}`)
+  requireCapabilities(capabilities, adapter.requiredCapabilities ?? [])
+  const maxRows = adapter.maxRows ?? SQL_MAX_LIMIT
+  const limit = normalizeLimit(input.query.limit, maxRows)
+  const sql = normalizeReadOnlySql(input.query.sql)
+  const result = await adapter.execute({
+    query: { ...input.query, sql, limit },
+    sql,
+    params: input.query.params,
+    limit,
+    signal,
+  })
+  return { ...truncateResult(result, limit), source: result.source ?? input.query.source }
 }
 
 async function runPythonBsl(payload: Record<string, unknown>, signal?: AbortSignal): Promise<DataBridgeTableResult> {
@@ -260,7 +331,7 @@ export function createDataBridgeServerPlugin(options: CreateDataBridgeServerPlug
     version: 1,
     owner: "data-bridge",
     callerClassesAllowed: ["browser", "runtime", "server"],
-    requiredCapabilities: [],
+    requiredCapabilities: ["data:read"],
     inputSchema: { type: "object" },
     maxOutputBytes: 2 * 1024 * 1024,
     timeoutMs: 30_000,
@@ -268,13 +339,16 @@ export function createDataBridgeServerPlugin(options: CreateDataBridgeServerPlug
     handler: async ({ input, context, signal }) => {
       if (!isRecord(input) || !isRecord(input.query)) throw new Error("Invalid data bridge query input")
       const typedInput = input as unknown as DataBridgeQueryRunInput
+      if (typedInput.query.language === "sql") {
+        return await runSqlQuery(options, typedInput, context.capabilities, signal)
+      }
       if (typedInput.query.language === "bsl-python" && (context.callerClass === "browser" || !context.capabilities.includes("data:bsl-query-string"))) {
         throw new Error("trusted runtime/server caller with data:bsl-query-string capability is required for bsl-python queries")
       }
       if (typedInput.query.language === "bsl-dashboard" && typedInput.query.dataRef?.kind === "workspace-file") {
         return await runWorkspaceFileQuery(options.workspaceRoot, typedInput)
       }
-      return await runBslQuery(options, typedInput, typedInput.query.language === "bsl-python", signal)
+      return await runBslQuery(options, typedInput as DataBridgeQueryRunInput & { query: DataBridgeDashboardQuery | DataBridgeBslPythonQuery }, typedInput.query.language === "bsl-python", signal)
     },
   })
 
