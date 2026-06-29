@@ -7,21 +7,30 @@ export const metricFormats = ["number", "currency", "percent"] as const
 export const filterControlTypes = ["select", "multiSelect", "dateRange", "numberRange", "search"] as const
 export const sortDirections = ["asc", "desc"] as const
 
-export const dashboardQuerySchema = z.union([
-  z.object({
-    id: z.string().min(1),
-    model: z.string().min(1),
-    query: z.string().min(1),
-    limit: z.number().int().safe().min(1).optional(),
-  }),
-  z.object({
-    id: z.string().min(1),
-    source: z.string().min(1).optional(),
-    sql: z.string().min(1),
-    params: z.record(z.string(), z.unknown()).optional(),
-    limit: z.number().int().safe().min(1).optional(),
-  }),
-])
+export const dashboardDataRefSchema = z.object({
+  kind: z.literal("workspace-file"),
+  path: z.string().min(1),
+  limit: z.number().int().safe().min(1).max(10000).optional(),
+})
+
+export const bslFilterExpressionSchema = z.object({
+  field: z.string(),
+  op: z.enum(["eq", "neq", "gt", "gte", "lt", "lte", "in", "contains", "between"]),
+  value: z.unknown(),
+})
+
+export const dashboardQuerySchema = z.object({
+  id: z.string().min(1),
+  model: z.string().min(1),
+  query: z.string().min(1).optional(),
+  groupBy: z.array(z.string()).optional(),
+  measures: z.array(z.string()).optional(),
+  dimensions: z.array(z.string()).optional(),
+  filters: z.array(bslFilterExpressionSchema).optional(),
+  orderBy: z.array(z.tuple([z.string(), z.enum(sortDirections)])).optional(),
+  limit: z.number().int().safe().min(1).optional(),
+  dataRef: dashboardDataRefSchema.optional(),
+})
 
 export const dashboardGridPropsSchema = z.object({
   title: z.string().optional(),
@@ -84,3 +93,4 @@ export type BslPerspectiveViewerProps = z.infer<typeof bslPerspectiveViewerProps
 export type BslFilterProps = z.infer<typeof bslFilterPropsSchema>
 export type BslTextProps = z.infer<typeof bslTextPropsSchema>
 export type BslDashboardQuerySpec = z.infer<typeof dashboardQuerySchema>
+export type BslFilterExpression = z.infer<typeof bslFilterExpressionSchema>
