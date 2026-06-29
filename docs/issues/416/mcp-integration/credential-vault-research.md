@@ -295,3 +295,91 @@ embedded-secret-store
 nango
 local-file
 ```
+
+## Final embeddable-library pass
+
+A final targeted pass found one candidate that may materially reduce V0 code: `agent.pw`.
+
+### agent.pw
+
+Repository: <https://github.com/smithery-ai/agent.pw> (fetched mirror/fork: <https://github.com/aospi78/agent.pw>)
+
+Package: `agent.pw`
+
+Why it matters:
+
+```txt
+embeddable TypeScript package
+Postgres-compatible database, no required daemon
+AES-GCM encrypted credential storage
+OAuth PKCE, token refresh, revocation
+RFC 9728 protected-resource discovery
+manual header/API-key credentials
+path-scoped credential model
+path-scoped rights/rules
+refresh-aware resolveHeaders({ path })
+FlowStore abstraction for pending OAuth state
+```
+
+This is the closest match found for Constellation's desired embedded credential store.
+
+Example API shape:
+
+```ts
+const db = unwrap(createDb(process.env.DATABASE_URL!));
+const agentPw = await unwrap(
+  createAgentPw({
+    db,
+    encryptionKey: process.env.AGENTPW_ENCRYPTION_KEY!,
+    flowStore: createInMemoryFlowStore(),
+  }),
+);
+
+const prepared = await unwrap(
+  agentPw.connect.prepare({
+    path: "workspace.connections.notion",
+    resource: "https://mcp.notion.com/mcp",
+  }),
+);
+
+const headers = await unwrap(
+  agentPw.connect.resolveHeaders({ path: "workspace.connections.notion" }),
+);
+```
+
+Potential fit:
+
+```txt
+Use as first spike for embedded SecretStore/OAuth lifecycle.
+Map Constellation source/workspace/actor IDs to agent.pw paths or wrapping metadata.
+Use resolveHeaders only inside trusted server-side adapters.
+Keep boring-mcp policy/audit/redaction boundary outside agent.pw.
+```
+
+Concerns / gaps to verify:
+
+```txt
+License is FSL-1.1-MIT, not plain MIT until future conversion; confirm acceptable for private/commercial Constellation use.
+Current crypto uses AES-GCM with 32-byte key and random 12-byte IV, but does not obviously expose our desired key-version/AAD/envelope metadata as first-class fields.
+Need verify schema/migrations can coexist with boring-ui Drizzle/Postgres conventions.
+Need verify production FlowStore can be SQL/Redis rather than in-memory.
+Need verify OAuth discovery handles MCP-native Notion/Airtable flows and dynamic client registration requirements.
+Need verify refresh locking/single-flight behavior under concurrent calls.
+Need add Constellation-level redaction/audit/no-raw-token tests around it.
+```
+
+Decision update:
+
+Before writing a fully custom `EncryptedPostgresSecretStore`, run an `agent.pw` spike. If it satisfies licensing, schema, OAuth, and concurrency requirements, wrap it as the first implementation of Constellation's credential resolver.
+
+If it fails any hard gate, fall back to the embedded custom Postgres SecretStore described above, borrowing `agent.pw`'s path/resource/resolveHeaders model.
+
+### Other final-pass candidates
+
+| Candidate | Finding |
+| --- | --- |
+| OpenCloak | Interesting open-source OAuth vault for agents; appears more token-exchange/proxy/product oriented and Tailscale/Daytona-shaped than embeddable app library. |
+| Auth0 Token Vault samples | Strong managed pattern, but adds Auth0 dependency; useful reference, not private self-owned V0. |
+| Supabase Vault | Useful Postgres-extension model for encrypted secrets; best if already on Supabase. Decrypted SQL view is dangerous for our no-raw-secret API requirement unless tightly locked down. |
+| oauth-connector | Small MIT OAuth token manager with AES-256-GCM and storage strategies. Simpler than needed; useful for provider refresh reference, not full multi-tenant credential vault. |
+| drizzle-encryption / EncoraDB / field encryption libs | Help encrypt columns, but do not solve OAuth lifecycle, agent-safe resolution, refresh locks, revoke/audit policy. |

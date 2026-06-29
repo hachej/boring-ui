@@ -1217,3 +1217,43 @@ BYO LLM provider tokens
 Better Auth remains the identity/session/org layer and can own regular OAuth account tokens only where provider-specific spikes prove it handles refresh safely with `account.encryptOAuthTokens: true`.
 
 For MCP-native OAuth and BYO LLM credentials, Constellation owns encrypted storage directly through the embedded SecretStore.
+
+## Final embedded vault candidate: agent.pw
+
+Final research found `agent.pw` as the strongest candidate to reduce custom SecretStore code.
+
+See [`credential-vault-research.md`](./credential-vault-research.md#final-embeddable-library-pass).
+
+Decision refinement:
+
+```txt
+Run agent.pw spike before implementing custom EncryptedPostgresSecretStore.
+```
+
+Reasons:
+
+```txt
+embeddable TypeScript
+Postgres-compatible
+AES-GCM encrypted credentials
+OAuth PKCE / refresh / revocation
+RFC 9728 discovery
+manual header/API-key credentials
+path-scoped rights
+refresh-aware resolveHeaders
+FlowStore abstraction
+```
+
+Hard gates before adoption:
+
+```txt
+license acceptable for Constellation
+schema/migrations compatible with boring-ui Postgres/Drizzle conventions
+production FlowStore not in-memory
+MCP-native Notion/Airtable OAuth discovery/dynamic registration works or can be extended
+refresh locking safe under concurrency
+Constellation can enforce no raw-token API, redaction, audit, ownership, revoke/cache invalidation around it
+key version / rotation story is acceptable or can be wrapped
+```
+
+If `agent.pw` passes, wrap it as the first implementation behind Constellation's credential resolver. If it fails, proceed with custom embedded SecretStore and borrow its path/resource/resolveHeaders model.
