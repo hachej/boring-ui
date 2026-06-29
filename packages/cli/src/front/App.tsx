@@ -72,6 +72,97 @@ function syncCliWorkspaceUrl(workspaceId: string, sessionId?: string | null): vo
   window.history.replaceState(null, "", nextPath)
 }
 
+function shareTokenFromCliUrl(pathname: string): string | null {
+  const match = pathname.match(/^\/share\/([^/?#]+)\/editor\/?$/)
+  if (!match?.[1]) return null
+  try {
+    return decodeURIComponent(match[1])
+  } catch {
+    return match[1]
+  }
+}
+
+function PublicShareMarkdownEditor({ token }: { token: string }) {
+  const [content, setContent] = useState<string>("")
+  const [savedContent, setSavedContent] = useState<string>("")
+  const [loading, setLoading] = useState(true)
+  const [saving, setSaving] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  useEffect(() => {
+    let cancelled = false
+    setLoading(true)
+    fetch(`/share/${encodeURIComponent(token)}/raw`)
+      .then(async (res) => {
+        if (!res.ok) throw new Error(await res.text())
+        return await res.text()
+      })
+      .then((text) => {
+        if (cancelled) return
+        setContent(text)
+        setSavedContent(text)
+        setError(null)
+      })
+      .catch((err) => {
+        if (!cancelled) setError(err instanceof Error ? err.message : "Failed to load document")
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false)
+      })
+    return () => { cancelled = true }
+  }, [token])
+
+  const save = useCallback(async () => {
+    setSaving(true)
+    setError(null)
+    try {
+      const res = await fetch(`/share/${encodeURIComponent(token)}/raw`, {
+        method: "POST",
+        headers: { "content-type": "application/x-www-form-urlencoded" },
+        body: new URLSearchParams({ content }).toString(),
+        redirect: "manual",
+      })
+      if (res.status !== 303 && !res.ok) throw new Error(await res.text())
+      setSavedContent(content)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to save document")
+    } finally {
+      setSaving(false)
+    }
+  }, [content, token])
+
+  const dirty = content !== savedContent
+
+  return (
+    <WorkspaceSingleton.WorkspaceFilesProvider apiBaseUrl={`/share/${encodeURIComponent(token)}`}>
+      <div className="min-h-screen bg-background text-foreground">
+        <header className="flex items-center justify-between border-b border-border px-4 py-3">
+          <div>
+            <div className="text-sm font-semibold">Public Markdown review</div>
+            <div className="text-xs text-muted-foreground">Rich editor POC · constrained share API</div>
+          </div>
+          <div className="flex items-center gap-2 text-xs">
+            {dirty ? <span className="text-amber-600">Unsaved changes</span> : <span className="text-muted-foreground">Saved</span>}
+            <a className="rounded-md border border-border px-3 py-1.5" href={`/share/${encodeURIComponent(token)}/bundle.zip`}>Download ZIP</a>
+            <a className="rounded-md border border-border px-3 py-1.5" href={`/share/${encodeURIComponent(token)}/portable.md`}>Portable MD</a>
+            <button className="rounded-md bg-primary px-3 py-1.5 text-primary-foreground disabled:opacity-50" onClick={save} disabled={saving || loading || !dirty}>
+              {saving ? "Saving…" : "Save"}
+            </button>
+          </div>
+        </header>
+        {error ? <div className="m-4 rounded-md border border-destructive/40 bg-destructive/10 p-3 text-sm text-destructive">{error}</div> : null}
+        {loading ? (
+          <div className="p-8 text-sm text-muted-foreground">Loading document…</div>
+        ) : (
+          <div className="mx-auto max-w-5xl p-4">
+            <WorkspaceSingleton.MarkdownEditor content={content} onChange={setContent} documentPath="review.md" className="min-h-[75vh] overflow-hidden rounded-xl border border-border" />
+          </div>
+        )}
+      </div>
+    </WorkspaceSingleton.WorkspaceFilesProvider>
+  )
+}
+
 function areWorkspacesEqual(a: LocalWorkspace[], b: LocalWorkspace[]): boolean {
   if (a.length !== b.length) return false
   return a.every((workspace, index) => {
@@ -99,6 +190,9 @@ export function CliVersionBadge({ version }: { version?: string | null }) {
 }
 
 export function CliWorkspaceShell() {
+  const shareToken = shareTokenFromCliUrl(window.location.pathname)
+  if (shareToken) return <PublicShareMarkdownEditor token={shareToken} />
+
   const [projectName, setProjectName] = useState("Workspace")
   const [workspacesMode, setWorkspacesMode] = useState(false)
   const [cliVersion, setCliVersion] = useState<string | null>(null)

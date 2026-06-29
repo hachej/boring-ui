@@ -235,7 +235,7 @@ function renderMarkdownDocument(markdown: string, share: PublicShareRecord): str
 :root{color-scheme:light dark;font-family:Inter,ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;line-height:1.6}body{margin:0;background:#fafafa;color:#171717}.page{max-width:820px;margin:0 auto;padding:48px 24px 72px}.meta{display:flex;justify-content:space-between;gap:16px;margin-bottom:32px;color:#737373;font-size:13px}.meta a{color:inherit}article,.edit{background:white;border:1px solid #e5e5e5;border-radius:18px;padding:32px;box-shadow:0 18px 60px rgba(0,0,0,.06)}.edit{margin-top:18px}.edit summary{cursor:pointer;font-weight:700}.edit textarea{box-sizing:border-box;width:100%;min-height:420px;margin-top:18px;padding:14px;border:1px solid #d4d4d4;border-radius:12px;font:13px/1.5 ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,monospace}.edit button{margin-top:12px;border:0;border-radius:999px;background:#171717;color:white;padding:9px 15px;font-weight:700;cursor:pointer}.edit span{margin-left:12px;color:#737373;font-size:12px}h1,h2,h3{line-height:1.2;margin:1.4em 0 .55em}h1:first-child,h2:first-child,h3:first-child{margin-top:0}p,ul,pre{margin:0 0 1em}img{max-width:100%;height:auto;border-radius:12px;border:1px solid #e5e5e5}pre{overflow:auto;padding:16px;border-radius:12px;background:#171717;color:#fafafa}code{font-family:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,monospace;font-size:.9em}p code,li code{background:#f5f5f5;border:1px solid #e5e5e5;border-radius:5px;padding:1px 4px;color:#171717}a{color:#2563eb}@media (prefers-color-scheme:dark){body{background:#0a0a0a;color:#ededed}article,.edit{background:#111;border-color:#262626}.meta{color:#a3a3a3}.edit textarea{background:#0a0a0a;color:#ededed;border-color:#333}.edit button{background:#ededed;color:#111}.edit span{color:#a3a3a3}p code,li code{background:#1f1f1f;border-color:#333;color:#ededed}img{border-color:#333}}
 </style>
 </head>
-<body><main class="page"><div class="meta"><span>${title}</span><span><a href="/share/${encodeURIComponent(share.token)}/portable.md">Portable MD</a> · <a href="/share/${encodeURIComponent(share.token)}/bundle.zip">Bundle ZIP</a> · <a href="/share/${encodeURIComponent(share.token)}/raw">Raw</a></span></div><article>${out.join('\n')}</article>${editPanel}</main></body>
+<body><main class="page"><div class="meta"><span>${title}</span><span><a href="/share/${encodeURIComponent(share.token)}/editor">Rich editor</a> · <a href="/share/${encodeURIComponent(share.token)}/portable.md">Portable MD</a> · <a href="/share/${encodeURIComponent(share.token)}/bundle.zip">Bundle ZIP</a> · <a href="/share/${encodeURIComponent(share.token)}/raw">Raw</a></span></div><article>${out.join('\n')}</article>${editPanel}</main></body>
 </html>`
 }
 
@@ -440,6 +440,28 @@ export function registerPublicShareRoutes(
       return reply.code(303).header('location', `/share/${encodeURIComponent(share.token)}/`).send()
     } catch {
       return reply.code(404).send({ error: 'share entry not found' })
+    }
+  })
+
+  app.get('/share/:token/api/v1/files/raw', async (request, reply) => {
+    const { token } = request.params as { token: string }
+    const query = request.query as Record<string, unknown>
+    const rawPath = typeof query.path === 'string' ? query.path : ''
+    const share = await resolveShare(opts, token, reply)
+    if (!share) return
+    const assetPath = normalizeWorkspacePath(rawPath)
+    if (!assetPath || !sharePathAllowed(share, assetPath)) {
+      return reply.code(404).send({ error: 'asset not found' })
+    }
+    try {
+      const workspace = await opts.getWorkspace(share)
+      const bytes = await readBinary(workspace, assetPath)
+      return securityHeaders(reply)
+        .type(contentTypeForPath(assetPath))
+        .header('content-length', String(bytes.byteLength))
+        .send(Buffer.from(bytes))
+    } catch {
+      return reply.code(404).send({ error: 'asset not found' })
     }
   })
 

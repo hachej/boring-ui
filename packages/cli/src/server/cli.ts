@@ -475,6 +475,7 @@ function parseExpiresAt(value: string | undefined): string | undefined {
 
 async function startShareMode(opts: {
   fileArg?: string
+  publicDir: string
   port: number
   host: string
   includeAssets?: boolean
@@ -510,6 +511,7 @@ async function startShareMode(opts: {
     getWorkspace: () => workspace,
   })
   app.get('/health', async () => ({ ok: true }))
+  await registerStatic(app, opts.publicDir)
   await app.listen({ port: opts.port, host: opts.host })
   const url = `http://localhost:${opts.port}/share/${encodeURIComponent(token)}/`
   console.log(`\nShared Markdown review`)
@@ -1017,6 +1019,7 @@ export async function runCli(options: RunCliOptions): Promise<void> {
   if (positionals[0] === "share") {
     await startShareMode({
       fileArg: positionals[1],
+      publicDir: options.publicDir,
       port,
       host: (args.host as string | undefined) ?? process.env.HOST ?? "127.0.0.1",
       includeAssets: args.assets === true,
