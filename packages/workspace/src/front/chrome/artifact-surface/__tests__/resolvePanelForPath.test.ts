@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest"
 import { normalizeSurfaceOpenRequest, resolvePanelForPath } from "../SurfaceShell"
+import { surfacePanelId } from "../surfaceShellHelpers"
 import { SurfaceResolverRegistry } from "../../../../shared/plugins/SurfaceResolverRegistry"
 
 function makeRegistry(matches: Record<string, string>) {
@@ -24,7 +25,20 @@ describe("normalizeSurfaceOpenRequest", () => {
     })).toEqual({
       kind: "workspace.open.path",
       target: "src/index.ts",
+      filesystem: "user",
       meta: { source: "test" },
+    })
+  })
+
+  it("preserves explicit filesystem on workspace path surface targets", () => {
+    expect(normalizeSurfaceOpenRequest({
+      kind: "workspace.open.path",
+      target: "/company/hr/policy.md",
+      filesystem: "company_context",
+    })).toEqual({
+      kind: "workspace.open.path",
+      target: "/company/hr/policy.md",
+      filesystem: "company_context",
     })
   })
 
@@ -38,6 +52,26 @@ describe("normalizeSurfaceOpenRequest", () => {
   it("does not alter non-path surface targets", () => {
     const request = { kind: "data-catalog.open-row", target: "../series" }
     expect(normalizeSurfaceOpenRequest(request)).toBe(request)
+  })
+})
+
+describe("surfacePanelId", () => {
+  it("uses filesystem resource identity for workspace path surfaces", () => {
+    expect(surfacePanelId(
+      { kind: "workspace.open.path", target: "/same.md" },
+      { id: "resolver:/same.md", component: "editor" },
+    )).toBe("file:user:/same.md")
+    expect(surfacePanelId(
+      { kind: "workspace.open.path", target: "/same.md", filesystem: "company_context" },
+      { id: "resolver:/same.md", component: "editor" },
+    )).toBe("file:company_context:/same.md")
+  })
+
+  it("does not infer filesystem from path prefixes", () => {
+    expect(surfacePanelId(
+      { kind: "workspace.open.path", target: "company_context:/same.md" },
+      { component: "editor" },
+    )).toBe("file:user:company_context:/same.md")
   })
 })
 

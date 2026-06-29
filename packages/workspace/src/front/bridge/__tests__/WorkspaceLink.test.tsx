@@ -10,12 +10,20 @@ describe("workspaceLinkCommand", () => {
       kind: "openFile",
       params: { path: "src/app.ts", mode: "edit" },
     })
+    expect(workspaceLinkCommand({ kind: "openFile", path: "/company/hr/policy.md", filesystem: "company_context" })).toEqual({
+      kind: "openFile",
+      params: { path: "/company/hr/policy.md", filesystem: "company_context" },
+    })
   })
 
   test("maps openSurface targets to canonical UI commands", () => {
     expect(workspaceLinkCommand({ kind: "openSurface", surfaceKind: "niche", target: "climate", meta: { source: "test" } })).toEqual({
       kind: "openSurface",
       params: { kind: "niche", target: "climate", meta: { source: "test" } },
+    })
+    expect(workspaceLinkCommand({ kind: "openSurface", surfaceKind: "workspace.open.path", target: "/company/hr/policy.md", filesystem: "company_context" })).toEqual({
+      kind: "openSurface",
+      params: { kind: "workspace.open.path", target: "/company/hr/policy.md", filesystem: "company_context" },
     })
   })
 
