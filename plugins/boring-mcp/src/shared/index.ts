@@ -140,6 +140,33 @@ export interface McpSourceStore {
   getSource(sourceId: string): Promise<McpSource | undefined>
 }
 
+export interface McpSourceRegistry extends McpSourceStore {
+  disconnectSource?(actor: McpActor, sourceId: string): Promise<McpSource | undefined>
+}
+
+export interface McpSourceStatusPayload {
+  source: McpSourceDto
+  connectable: boolean
+  canProbe: boolean
+  canDisconnect: boolean
+}
+
+export function toMcpSourceDto(source: McpSource): McpSourceDto {
+  return {
+    id: source.id,
+    provider: source.provider,
+    displayName: source.displayName,
+    status: source.status,
+    ownerKind: source.ownerKind,
+    credentialProvider: source.credentialProvider,
+    scopes: source.scopes,
+    providerAccountLabel: source.providerAccountLabel,
+    lastVerifiedAt: source.lastVerifiedAt,
+    createdAt: source.createdAt,
+    updatedAt: source.updatedAt,
+  }
+}
+
 export interface McpTransportClient {
   listTools(source: McpSource): Promise<McpDiscoveredTool[]>
   listResources(source: McpSource): Promise<McpDiscoveredResource[]>

@@ -14,4 +14,5 @@ export function createBoringMcpServerPlugin(options: CreateBoringMcpServerPlugin
 }
 
 export default createBoringMcpServerPlugin()
+export * from "./sourceHandlers"
 export * from "../shared"
