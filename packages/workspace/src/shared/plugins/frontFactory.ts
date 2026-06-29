@@ -13,7 +13,7 @@ export interface BoringFrontPanelRegistration<T = unknown> {
   component: ComponentType<PaneProps<T>> | (() => Promise<{ default: ComponentType<PaneProps<T>> }>)
   label?: string
   icon?: ComponentType<{ className?: string }>
-  placement?: PanelPlacement
+  placement?: PanelConfig["placement"]
   requiresCapabilities?: string[]
   essential?: boolean
   lazy?: boolean
