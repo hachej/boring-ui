@@ -96,6 +96,12 @@ export function useSlashCommandUi({
   }, [dismissSlash, insertSlashCommand, registry, runSlashCommandFromUi, setComposerDraft])
 
   const handleMentionClick = useCallback((mention: ClickableMention) => {
+    if (mention.kind === 'skill') {
+      const skillName = mention.value.replace(/^!/, '')
+      if (skillName) setComposerDraft(`skill: ${skillName}\n\n`, true)
+      return
+    }
+
     if (mention.kind !== 'slash-command') return
     const name = mention.value.replace('/', '')
     const command = registry.get(name)
