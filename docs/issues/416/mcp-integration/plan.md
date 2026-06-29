@@ -533,6 +533,31 @@ boring-mcp → MCP SDK/pi-adapter-style client → Composio MCP endpoint
 
 The mock PoC does not replace real Composio provider spikes. Live Composio still must prove `session.mcp.url`, `session.mcp.headers`, Notion/Airtable/Microsoft metadata, revoke/disconnect, audit, and no-token-leak behavior.
 
+## Composio Notion live PoC
+
+See [`composio-notion-live-poc.md`](./composio-notion-live-poc.md).
+
+Live Notion PoC is green for the selected architecture:
+
+```txt
+Vault Composio API key → Composio session.mcp.url/headers
+  → pi-mcp-adapter/MCP SDK Streamable HTTP client
+  → COMPOSIO_SEARCH_TOOLS metadata
+  → COMPOSIO_MANAGE_CONNECTIONS Notion auth link
+  → active Notion connection
+  → read-only NOTION_SEARCH_NOTION_PAGE execution via COMPOSIO_MULTI_EXECUTE_TOOL
+```
+
+Important implementation lessons:
+
+```txt
+Composio exposes broad meta-tools; hosted V0 must expose only boring-mcp bridge tools.
+COMPOSIO_MULTI_EXECUTE_TOOL can execute mutating tools, so boring-mcp must enforce read-only allowlists before calling it.
+Composio tool search returns rich schemas sufficient for mcp_tool_describe.
+Composio responses can include user/workspace/account metadata, so redaction/audit filtering is mandatory.
+The live read call did not echo the Composio MCP session header value.
+```
+
 ## Composio production gates
 
 Composio can ship V0 only after these are green or explicitly accepted:

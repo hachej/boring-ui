@@ -12,6 +12,7 @@ Current decision: hosted Constellation V0 is **Composio-first** for managed conn
 
 - [`credential-vault-research.md`](./credential-vault-research.md) — credential-vault options, Composio/Nango/Infisical/agent-vault research, final backend notes.
 - [`composio-mcp-session-poc.md`](./composio-mcp-session-poc.md) — mock Composio MCP session compatibility PoC using pi-mcp-adapter/MCP SDK plumbing.
+- [`composio-notion-live-poc.md`](./composio-notion-live-poc.md) — live Composio + Notion MCP session PoC.
 - [`better-auth-mcp-research.md`](./better-auth-mcp-research.md) — Better Auth MCP/OAuth findings and inbound-vs-outbound distinction.
 - [`nango-selfhost-poc.md`](./nango-selfhost-poc.md) — self-hosted Nango smoke.
 - [`nango-real-spike.md`](./nango-real-spike.md) — real Nango credential/proxy spike.
