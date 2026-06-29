@@ -20,7 +20,7 @@ Keep `@hachej/data-bridge` as a separate trusted server plugin, but keep the V0 
 1. One generic bridge operation: `data.v1.query.run`.
 2. A small typed query union:
    - `bsl-dashboard` for dashboard/semantic aggregate requests.
-   - `bsl-python` for trusted runtime/server BSL expression execution.
+   - `bsl-python` for trusted runtime/server BSL/Ibis expression execution.
    - `sql` for read-only adapter-backed SQL execution.
 3. A server-side adapter registry supplied by the host/plugin options.
 4. No direct ClickHouse dependency in `@hachej/data-bridge` V0.
@@ -43,8 +43,8 @@ Keep `@hachej/data-bridge` as a separate trusted server plugin, but keep the V0 
   - all callers need `data:read` for `data.v1.query.run`.
   - SQL additionally needs `data:sql-query`.
   - SQL source can additionally require adapter-specific capabilities such as `data:macro-clickhouse`.
-  - direct `bsl-python` remains runtime/server only with `data:bsl-query-string`.
-- Keep browser dashboard callers on safe `bsl-dashboard` / `workspace-file` path unless explicitly granted SQL capability.
+  - direct `bsl-python` remains runtime/server only with `data:bsl-query-string`; it exposes BSL's normal `sm` plus `ibis`/`_` for trusted chained queries such as `.order_by(ibis.desc(...)).limit(...)`.
+- Keep browser dashboard callers on safe `bsl-dashboard` / `workspace-file` path unless explicitly granted SQL capability; do not expose arbitrary Ibis/Python expressions to browser callers.
 - Add focused tests for:
   - current workspace-file dashboard query still works with `data:read`.
   - SQL rejects non-read-only and multi-statement input before adapter execution.
