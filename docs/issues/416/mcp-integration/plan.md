@@ -947,6 +947,350 @@ pass-through wrappers that only rename Composio calls
 
 If the implementation starts adding machinery beyond the thin seam, stop and simplify.
 
+## Full feature delivery checklist and PR map
+
+Use this checklist to track the full MCP/Sources feature from proven PoC to shipped Constellation product.
+
+### Review-size rule
+
+Every implementation PR must stay reviewable:
+
+```txt
+Max new non-test/non-doc code per PR: 1300 lines
+Tests and docs do not count toward the cap.
+If a slice approaches the cap, split it before opening the PR.
+No PR may mix backend connector plumbing, agent tool exposure, and UI polish unless the combined non-test/non-doc diff is still small and cohesive.
+```
+
+Line-count command before opening a PR:
+
+```bash
+git diff --numstat origin/main...HEAD \
+  | awk '$3 !~ /(^|\/)(__tests__|tests|e2e)(\/|$)/ && $3 !~ /\.(md|mdx)$/ { add += $1 } END { print add + 0 }'
+```
+
+### PR 0 — planning and evidence pack
+
+Repo: `hachej/boring-ui`
+Branch: `issue-416-mcp-integration`
+PR: `#418`
+Status: open
+
+Scope:
+
+```txt
+canonical MCP/connector plan
+Composio-first decision
+live Notion PoC evidence
+credential/auth research
+thermo reviews
+PR-by-PR delivery map
+```
+
+Exit criteria:
+
+```txt
+plan is canonical and green-reviewed
+review-size cap is recorded
+future PRs have clear acceptance criteria
+```
+
+### PR 1 — generic MCP governance foundation + Sources UX shell
+
+Repo: `hachej/boring-ui-constellation`
+Branch: `feat/generic-mcp-onboarding`
+Status: ready/open PR
+Code cap target: under 1300 non-test/non-doc lines
+
+Scope already implemented:
+
+```txt
+MCP provider templates
+read-only tool policy
+MCP facade guardrails
+redaction guard
+status/doctor/probe model
+front-end Sources left tab
+MCP Sources center panel shell
+no browser Composio calls
+no raw secret exposure
+```
+
+Exit criteria:
+
+```txt
+Sources entry appears only in authenticated workspace
+UI states are static/shell only until backend routes land
+all provider/action copy matches the canonical plan
+redaction/policy tests pass where dependencies are installed
+```
+
+### PR 2 — MCP source registry and backend route contracts
+
+Repo: `hachej/boring-ui-constellation`
+Branch: `feat/mcp-source-registry`
+Code cap target: under 900 non-test/non-doc lines
+
+Scope:
+
+```txt
+source registry model/store
+GET /api/mcp/sources
+GET /api/mcp/sources/:sourceId/status
+POST /api/mcp/sources/:sourceId/probe
+POST /api/mcp/sources/:sourceId/disconnect as safe stub if Composio adapter is not yet wired
+server-side actor/workspace ownership checks
+stable MCP_* errors
+route tests with fake connector provider
+```
+
+Non-goals:
+
+```txt
+no real Composio API calls
+no agent bridge tools
+no tool execution
+no OAuth token storage
+```
+
+Exit criteria:
+
+```txt
+browser can list/manage source records through Constellation-owned routes only
+all responses are secret-free DTOs
+route tests prove cross-user/workspace access is denied
+```
+
+### PR 3 — ComposioConnectorProvider Notion connect/status/probe
+
+Repo: `hachej/boring-ui-constellation`
+Branch: `feat/composio-notion-connect`
+Code cap target: under 1100 non-test/non-doc lines
+
+Scope:
+
+```txt
+server-only Composio SDK client
+Vault/env secret resolution seam for COMPOSIO_API_KEY
+create/reuse Composio MCP sessions
+POST /api/mcp/sources/notion/start-connect
+status refresh from Composio
+probe/search metadata through Composio MCP session
+store non-secret Composio refs only
+redact account/workspace metadata before browser response
+```
+
+Non-goals:
+
+```txt
+no Airtable/Microsoft
+no read-only execution yet
+no materialized tools
+no browser Composio headers/API key
+```
+
+Exit criteria:
+
+```txt
+user can click Connect for Notion and complete Composio auth
+status becomes connected after server refresh
+probe returns normalized, redacted read-only tool summaries
+secret canary tests pass
+```
+
+### PR 4 — normalized tool catalog: search and describe
+
+Repo: `hachej/boring-ui-constellation`
+Branch: `feat/mcp-tool-catalog`
+Code cap target: under 1000 non-test/non-doc lines
+
+Scope:
+
+```txt
+normalized connector tool DTO
+catalog cache/refresh boundary
+mcp_tools_search backend operation
+mcp_tool_describe backend operation
+Notion allowlist from live PoC
+schema hash / drift detection model
+Sources UI tool catalog panel wired to backend
+```
+
+Non-goals:
+
+```txt
+no actual provider tool execution
+no V2 materialized tools
+no admin classification UI
+```
+
+Exit criteria:
+
+```txt
+UI can search Notion tools and view exact input schemas
+disabled/mutating tools show blocked reasons
+unknown tools are disabled by default
+```
+
+### PR 5 — governed read-only execution for Notion
+
+Repo: `hachej/boring-ui-constellation`
+Branch: `feat/notion-readonly-call`
+Code cap target: under 1100 non-test/non-doc lines
+
+Scope:
+
+```txt
+mcp_readonly_call backend operation
+COMPOSIO_MULTI_EXECUTE_TOOL server-side adapter
+input schema validation and byte limits
+pre-call deny-before-allow policy
+redaction and secret-leak assertions on result/error
+audit event write path
+small UI smoke action for read-only Notion search/probe result
+```
+
+Non-goals:
+
+```txt
+no write/admin actions
+no materialized tools
+no Airtable/Microsoft execution
+```
+
+Exit criteria:
+
+```txt
+known read-only Notion call succeeds through Constellation facade
+mutating Notion slug is denied before Composio call
+raw Composio meta-tools are never agent/browser visible
+audit entry contains summary only, no tokens/session headers
+```
+
+### PR 6 — agent bridge tools
+
+Repo: `hachej/boring-ui-constellation`
+Branch: `feat/mcp-agent-bridge-tools`
+Code cap target: under 1000 non-test/non-doc lines
+
+Scope:
+
+```txt
+mcp_servers_list
+mcp_server_status
+mcp_server_doctor
+mcp_server_probe
+mcp_tools_search
+mcp_tool_describe
+mcp_readonly_call
+agent tool tests with fake connector and fake Composio responses
+```
+
+Non-goals:
+
+```txt
+no V2 materialized tools
+no new providers
+no arbitrary user MCP servers in hosted mode
+```
+
+Exit criteria:
+
+```txt
+agent can discover and call Notion read-only through bridge tools
+bridge tools return stable MCP_* errors
+agent output is redacted and budget/size-limited
+```
+
+### PR 7 — Airtable live provider slice
+
+Repo: `hachej/boring-ui-constellation`
+Branch: `feat/airtable-mcp-source`
+Code cap target: under 1100 non-test/non-doc lines
+
+Scope:
+
+```txt
+live Airtable Composio auth spike evidence
+Airtable provider template finalization
+Airtable connect/status/probe
+Airtable tool catalog search/describe
+read-only Airtable execution for one safe call
+```
+
+Exit criteria:
+
+```txt
+Airtable lists/searches read-only records through boring-mcp
+create/update/delete/admin actions are blocked before provider call
+revoke/disconnect behavior verified or documented as accepted gap
+```
+
+### PR 8 — Microsoft/SharePoint live provider slice
+
+Repo: `hachej/boring-ui-constellation`
+Branch: `feat/sharepoint-mcp-source`
+Code cap target: under 1200 non-test/non-doc lines
+
+Scope:
+
+```txt
+live Microsoft/SharePoint Composio auth spike evidence
+provider template finalization
+connect/status/probe
+tool catalog search/describe
+one safe read-only metadata/content call
+company-context copy and ownership checks reviewed
+```
+
+Exit criteria:
+
+```txt
+SharePoint/Microsoft source can be connected and probed
+read-only call succeeds on approved content
+company vs personal context boundary is explicit in UI/API DTOs
+```
+
+### PR 9 — production hardening and launch gate
+
+Repo: `hachej/boring-ui-constellation`
+Branch: `feat/mcp-production-hardening`
+Code cap target: under 1300 non-test/non-doc lines
+
+Scope:
+
+```txt
+full audit/redaction canary tests
+rate/budget hooks
+provider timeout/retry policy
+disconnect/revoke verification
+security checklist output
+operator docs
+deploy smoke for Notion path
+```
+
+Exit criteria:
+
+```txt
+security gates documented
+no raw secrets in logs/browser/workspace files
+Notion/Airtable/Microsoft launch checklist complete or explicitly deferred
+production deploy smoke passes
+```
+
+### Backlog after V0
+
+Do not mix these into V0 PRs unless explicitly approved:
+
+```txt
+V2 materialized tools
+arbitrary user-managed hosted MCP servers
+native MCP OAuth implementation
+SecretStore-backed private connector provider
+admin classification UI
+team/project context filesystems beyond the explicit V0 source owner field
+```
+
 ## Implementation sequence
 
 ### Phase 0 — provider spike
