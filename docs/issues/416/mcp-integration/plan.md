@@ -628,3 +628,102 @@ mode adapters
 ```
 
 Do not bake hosted assumptions into the generic core, and do not let CLI/local config semantics leak into hosted production.
+
+## Gemini review amendments
+
+### Redaction guard must know concrete secret values
+
+Do not rely on generic token-looking regexes alone. The redaction guard must be seeded per call with the resolved credential material and other sensitive values known to the request.
+
+```ts
+interface McpRedactionContext {
+  credential?: McpResolvedCredential;
+  sensitiveValues: string[];
+  sensitiveKeys: string[];
+}
+
+interface McpRedactionGuard {
+  redact(value: unknown, context: McpRedactionContext): unknown;
+  assertSafeForAgent(value: unknown, context: McpRedactionContext): void;
+  assertSafeForLog(value: unknown, context: McpRedactionContext): void;
+}
+```
+
+Rules:
+
+- resolved access/refresh tokens, auth codes, dynamic client secrets, and request authorization headers are added to `sensitiveValues`;
+- regex detection is only a fallback;
+- tests must prove a token under a non-sensitive key is still removed when present in `sensitiveValues`.
+
+### Drift handling is severity-based
+
+`MCP_PROVIDER_TOOL_DRIFT` does not always hard-disable the whole server. Drift is classified:
+
+- **breaking drift**: required input added, input type changed incompatibly, tool removed, tool renamed, output shape no longer parseable for materialized/direct tool assumptions → disable affected tool;
+- **review drift**: description changed, optional input added, output schema added/expanded, denied tool changed description/schema → keep denied tools denied; keep allowed bridge-call tools enabled only if input compatibility is preserved, but flag for review;
+- **new tool drift**: new live tool without exact classification → disabled until classified.
+
+Materialized V2 tools are stricter: any schema hash mismatch disables the direct tool until reclassified, while the bridge may remain available if compatibility check passes.
+
+### CLI/user-managed config must be outside agent-writable paths
+
+Mode A must not let the agent mutate MCP config and then execute arbitrary stdio commands on the user's machine.
+
+Rules:
+
+- user/global MCP config lives outside the agent-writable workspace by default;
+- project-local MCP config is read-only to the agent unless the user explicitly grants edit rights;
+- `doctor` warns if MCP config file is inside an agent-writable directory;
+- adding/enabling stdio MCP servers requires an explicit user action outside autonomous agent edits;
+- runtime agents cannot silently add stdio servers by writing `.mcp.json` and triggering reload;
+- hosted Mode B disables arbitrary stdio by default.
+
+### V0 tool interface includes describe and pagination
+
+V0 bridge tools are:
+
+```ts
+mcp_servers_list({ cursor?, limit? })
+mcp_server_status({ serverId })
+mcp_server_doctor({ serverId })
+mcp_server_probe({ serverId })
+mcp_tools_search({ query, serverId?, cursor?, limit?, enabledOnly? })
+mcp_tool_describe({ serverId, toolName })
+mcp_resources_list({ serverId, cursor?, limit? })
+mcp_resource_read({ serverId, uri })
+mcp_readonly_call({ serverId, toolName, input })
+```
+
+`mcp_tool_describe` is required in V0 so the agent can fetch the exact JSON schema before calling `mcp_readonly_call`. `mcp_tools_list` is deprecated in the plan in favor of paginated search/describe.
+
+### Resource URI validation is provider and mode aware
+
+Resource validation is not origin-based. It is provider-template based:
+
+- providers must declare allowed URI schemes/prefixes or a validator;
+- absent validator/prefix means resource reads denied;
+- `file://` and host-local paths are denied in hosted Mode B unless an app-defined provider explicitly owns them;
+- CLI Mode A may allow local filesystem MCP resources only when the MCP server config was user-approved and outside agent write control.
+
+### Transport connection lifecycle guard
+
+Execution guards wrap calls, but connection lifecycle needs its own manager contract:
+
+```ts
+interface McpConnectionManager {
+  getOrCreateClient(actor, source): Promise<McpTransportClient>;
+  releaseClient(actor, source): Promise<void>;
+  closeSource(sourceId): Promise<void>;
+  closeIdle(now: number): Promise<void>;
+}
+```
+
+Hosted Mode B requirements:
+
+- cache key includes app/workspace/user/source/provider/config version;
+- max active clients per user/workspace/source;
+- max concurrent connects;
+- idle TTL;
+- SSE clients are process-local and disposable;
+- no assumption of sticky sessions;
+- disconnect/revoke invalidates source of truth and closes known local clients best-effort.
