@@ -804,3 +804,33 @@ Open verification before adoption:
 - verify `getConnection(providerConfigKey, connectionId)` returns/refreshes credentials;
 - verify Proxy can call a harmless endpoint;
 - verify encrypted-at-rest behavior with `NANGO_ENCRYPTION_KEY` set.
+
+## Nango real spike outcome
+
+See [`nango-real-spike.md`](./nango-real-spike.md).
+
+The isolated real spike proved more than the initial smoke:
+
+- self-hosted Nango backend API works locally after recovering/using a local API key;
+- `private-api-generic` integration creation works;
+- API-key connections can be imported or created through Connect UI;
+- connection credentials are encrypted at rest when `NANGO_ENCRYPTION_KEY` is set;
+- Nango Proxy can inject stored credentials server-side into an upstream request;
+- Connect UI works in self-host, but the link needed an explicit `apiURL=http://localhost:3003` query param in the local setup;
+- free self-host Connect UI is Nango/default-branded enough that client-facing Constellation may need a wrapper or custom provider buttons.
+
+This makes Nango a stronger candidate for Constellation if future integration velocity matters. However, adoption is still gated on a real OAuth provider spike:
+
+- Notion OAuth or MCP auth;
+- Airtable OAuth/PAT path;
+- Microsoft/SharePoint OAuth with refresh/revoke;
+- provider domain allowlist outbound policy;
+- disconnect/revoke behavior;
+- no raw token leakage in logs or agent responses.
+
+Decision rule:
+
+```txt
+If Notion/Airtable/Microsoft OAuth refresh/revoke works cleanly in free self-host, use Nango as the hosted Constellation credential provider behind `McpCredentialProvider`.
+If free self-host limits or provider quirks block us, build a narrow Constellation token broker for the first providers and keep Nango as a future adapter.
+```
