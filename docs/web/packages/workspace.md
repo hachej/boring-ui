@@ -8,7 +8,7 @@
 - plugin registries
 - panel contracts
 - UI bridge client/runtime
-- plugin-owned commands, catalogs, tabs, and surface resolvers
+- plugin-owned commands, catalogs, workspace sources, and surface resolvers
 - app composition helpers for agent-enabled workspace shells
 - the two-tier plugin model: trusted boot-time app/internal plugins vs local runtime/generated plugins
 
@@ -17,7 +17,7 @@
 Use workspace when you need:
 
 - IDE-style structure
-- pluggable panels and tabs
+- pluggable panels and workspace sources
 - command/catalog surfaces
 - a bridge between backend intent and frontend workspace actions
 
@@ -26,7 +26,7 @@ Use workspace when you need:
 **Front plugin authoring** uses `definePlugin({ ... })` with:
 
 - `panels`
-- `leftTabs`
+- `workspaceSources`
 - `commands`
 - `catalogs`
 - `bindings`

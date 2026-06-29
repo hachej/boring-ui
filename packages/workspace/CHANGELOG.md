@@ -110,10 +110,11 @@ Migration recipe:
 4. Move extra panel gates to layout/surface params.
 5. Delete `withCommandPalette`; `WorkspaceProvider` mounts the registry-backed command palette.
 
-#### `WorkbenchLeftPane` tab extension moves to the registry
+#### `WorkbenchLeftPane` source extension moves to workspace sources
 
-New tab content must be registered as plugin panels with
-`placement: "left-tab"`.
+New left source content must be registered through `workspaceSources`.
+Removed legacy panel placements such as `placement: "left-tab"` now fail fast
+with a migration error instead of being adapted.
 
 ```tsx
 import { definePlugin } from "@hachej/boring-workspace/plugin"
@@ -121,12 +122,11 @@ import { definePlugin } from "@hachej/boring-workspace/plugin"
 export const macroPlugin = definePlugin({
   id: "boring-macro",
   label: "Macro",
-  leftTabs: [
+  workspaceSources: [
     {
       id: "macro-series",
-      title: "Series",
-      panelId: "macro-series",
-      component: () => import("./SeriesTab").then((m) => ({ default: m.SeriesTab })),
+      label: "Series",
+      component: () => import("./SeriesSource").then((m) => ({ default: m.SeriesSource })),
     },
   ],
 })
@@ -233,7 +233,7 @@ Hot-reloadable chat behavior should live in `pi.extensions`, `pi.skills`,
 `definePlugin({ ... })` accepts declarative front contributions:
 
 - `panels`
-- `leftTabs`
+- `workspaceSources`
 - `commands`
 - `catalogs`
 - `surfaceResolvers`
@@ -258,7 +258,7 @@ Hot-reloadable chat behavior should live in `pi.extensions`, `pi.skills`,
 - `createWorkspaceAgentServer({ plugins, defaultPluginPackages, appPackageJsonPath })` for server-side composition and package discovery.
 - Tier 1 layouts: `ChatLayout`, `IdeLayout`, `buildChatLayout`, and `buildIdeLayout`.
 - Tier 2 shell primitives: `TopBar` and `ResponsiveDockviewShell`.
-- Registry-driven workbench tabs via left-tab plugin outputs.
+- Registry-driven workbench sources via explicit `workspaceSources` plugin outputs.
 - `@hachej/boring-data-catalog` catalog helpers and `@hachej/boring-data-explorer` explorer primitives.
 - Polymorphic Recent entries for catalogs and commands.
 - Plugin-owned surface resolvers for path and domain-target routing.
@@ -283,7 +283,7 @@ Hot-reloadable chat behavior should live in `pi.extensions`, `pi.skills`,
 
 1. Replace direct `CommandPalette` file-search props with catalog contributions.
 2. Replace `ChatCenteredShell` with `ChatLayout` or `ResponsiveDockviewShell`.
-3. Convert left-pane tabs to plugin panels with `leftTabs` or `placement: "left-tab"`.
+3. Convert left-pane tabs to explicit plugin `workspaceSources`.
 4. Split front and server entrypoints when tools, routes, credentials, or Node-only code are involved.
 5. Put hot-reloadable agent behavior in Pi resources; use `boring.server` only for static app/server composition.
 6. Prefer explicit `package.json#boring.server` for server integration; restart the workspace process after server plugin edits.

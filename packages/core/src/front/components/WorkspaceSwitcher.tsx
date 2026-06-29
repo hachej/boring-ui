@@ -53,6 +53,12 @@ type ToastApi = {
 export interface WorkspaceSwitcherProps {
   appTitle?: string
   workspacePathPrefix?: string
+  /**
+   * 'full' (default): app glyph + "App / Workspace" — for top bars.
+   * 'workspace': just the workspace name + chevron — for the app-left pane,
+   * where the app brand is shown separately above (avoids "App / App").
+   */
+  displayMode?: 'full' | 'workspace'
 }
 
 function useToastCompat(): ToastApi {
@@ -109,6 +115,7 @@ function OpenInNewTabIcon({ className }: { className?: string }) {
 export function WorkspaceSwitcher({
   appTitle,
   workspacePathPrefix = '/workspace',
+  displayMode = 'full',
 }: WorkspaceSwitcherProps) {
   const config = useOptionalConfig()
   const resolvedAppTitle = appTitle ?? config?.appName ?? 'Boring UI'
@@ -220,29 +227,37 @@ export function WorkspaceSwitcher({
       ) : (
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
-            <Button
-              type="button"
-              variant="ghost"
-              aria-label={`Workspace menu: ${switcherLabel}`}
-              className="-ml-1 h-8 min-w-0 justify-start gap-2.5 border border-transparent px-1 py-1 text-left"
-            >
-              <span
-                aria-hidden="true"
-                className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-foreground text-[12px] font-semibold text-background"
+            {displayMode === 'workspace' ? (
+              <Button
+                type="button"
+                variant="ghost"
+                aria-label={`Workspace menu: ${switcherLabel}`}
+                className="h-8 w-full min-w-0 justify-start gap-1.5 rounded-lg border border-transparent px-2 text-left hover:bg-foreground/[0.06] focus-visible:ring-1 focus-visible:ring-ring"
               >
-                {resolvedAppTitle.charAt(0).toUpperCase()}
-              </span>
-              <span className="flex min-w-0 items-center gap-1.5">
-                <span className="truncate text-[13px] font-medium text-foreground">
-                  {resolvedAppTitle}
-                </span>
-                <span aria-hidden="true" className="text-muted-foreground/30">/</span>
-                <span className="truncate text-[13px] font-normal text-muted-foreground">
+                <span className="min-w-0 flex-1 truncate text-[13px] font-medium text-foreground/85">
                   {switcherLabel}
                 </span>
-              </span>
-              <ChevronsUpDown className="h-3.5 w-3.5 shrink-0 text-muted-foreground/55" aria-hidden="true" />
-            </Button>
+                <ChevronsUpDown className="h-3.5 w-3.5 shrink-0 text-muted-foreground/50" aria-hidden="true" />
+              </Button>
+            ) : (
+              <Button
+                type="button"
+                variant="ghost"
+                aria-label={`Workspace menu: ${switcherLabel}`}
+                className="-ml-1 h-8 min-w-0 justify-start gap-2.5 border border-transparent px-1 py-1 text-left"
+              >
+                <span
+                  aria-hidden="true"
+                  className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-foreground text-[12px] font-semibold text-background"
+                >
+                  {workspaceInitial(switcherLabel)}
+                </span>
+                <span className="min-w-0 truncate text-[13px] font-medium text-foreground">
+                  {switcherLabel}
+                </span>
+                <ChevronsUpDown className="h-3.5 w-3.5 shrink-0 text-muted-foreground/55" aria-hidden="true" />
+              </Button>
+            )}
           </DropdownMenuTrigger>
           <DropdownMenuContent
             align="start"

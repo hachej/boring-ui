@@ -12,7 +12,7 @@ import { expect, test } from "@playwright/test"
 test.describe("command palette", () => {
   test("Escape closes the palette on the first press", async ({ page }) => {
     await page.goto("/")
-    await expect(page.getByRole("banner", { name: /app top bar/i })).toBeVisible({ timeout: 10_000 })
+    await expect(page.locator('aside[aria-label="App navigation"]')).toBeVisible({ timeout: 10_000 })
 
     // Open the palette via the keyboard shortcut. The shell binds Cmd+P
     // / Ctrl+P globally.
@@ -36,7 +36,7 @@ test.describe("command palette", () => {
 
   test("Escape closes even with an empty input", async ({ page }) => {
     await page.goto("/")
-    await expect(page.getByRole("banner", { name: /app top bar/i })).toBeVisible({ timeout: 10_000 })
+    await expect(page.locator('aside[aria-label="App navigation"]')).toBeVisible({ timeout: 10_000 })
 
     await page.keyboard.press("ControlOrMeta+KeyK")
     await expect(
@@ -54,7 +54,7 @@ test.describe("command palette", () => {
     // chat shell both mounted <CommandPalette />, creating two stacked
     // dialogs and two ⌘K listeners.
     await page.goto("/")
-    await expect(page.getByRole("banner", { name: /app top bar/i })).toBeVisible({ timeout: 10_000 })
+    await expect(page.locator('aside[aria-label="App navigation"]')).toBeVisible({ timeout: 10_000 })
     await page.keyboard.press("ControlOrMeta+KeyK")
 
     const dialogs = page.getByRole("dialog", { name: /command palette/i })

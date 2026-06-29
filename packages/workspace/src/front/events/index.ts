@@ -4,7 +4,7 @@
  * (and downstream packages that depend on it). React consumers should use
  * `useEvent(name, handler)` to handle cleanup automatically.
  *
- * See `docs/plans/UNIFIED_EVENT_BUS.md` for design + migration plan.
+ * See `packages/workspace/docs/plans/archive/UNIFIED_EVENT_BUS.md` for design + migration plan.
  */
 
 import { createEventBus } from "./bus"

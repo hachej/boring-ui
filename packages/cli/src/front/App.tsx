@@ -41,6 +41,12 @@ interface LocalWorkspace {
   available: boolean
 }
 
+interface LocalWorkspaceSession {
+  id: string
+  title?: string | null
+  updatedAt?: string | number
+}
+
 export function workspaceIdFromCliUrl(pathname: string): string | null {
   const match = pathname.match(/^\/workspace\/([^/?#]+)/)
   if (!match?.[1]) return null
@@ -130,6 +136,7 @@ export function CliWorkspaceShell() {
   // and retry) so a transient error never strands the page on the empty state.
   const [workspacesLoaded, setWorkspacesLoaded] = useState(false)
   const [runtimePluginFrontLoadingEnabled, setRuntimePluginFrontLoadingEnabled] = useState(false)
+  const [workspaceSessionsById, setWorkspaceSessionsById] = useState<Record<string, LocalWorkspaceSession[]>>({})
 
   const refreshWorkspacesRef = useRef<(() => void) | null>(null)
 
@@ -295,6 +302,40 @@ export function CliWorkspaceShell() {
     [activeWorkspaceId],
   )
 
+  useEffect(() => {
+    if (!workspacesMode || workspaces.length === 0) return
+    let cancelled = false
+    void Promise.all(workspaces.map(async (workspace) => {
+      if (!workspace.available) return [workspace.id, []] as const
+      try {
+        const res = await fetch("/api/v1/agent/pi-chat/sessions", {
+          headers: { "x-boring-workspace-id": workspace.id },
+        })
+        if (!res.ok) return [workspace.id, []] as const
+        const data = await res.json() as LocalWorkspaceSession[] | { sessions?: LocalWorkspaceSession[] }
+        const sessions = Array.isArray(data) ? data : (data.sessions ?? [])
+        return [workspace.id, sessions.slice(0, 5)] as const
+      } catch {
+        return [workspace.id, []] as const
+      }
+    })).then((entries) => {
+      if (cancelled) return
+      setWorkspaceSessionsById(Object.fromEntries(entries))
+    })
+    return () => { cancelled = true }
+  }, [workspaces, workspacesMode])
+
+  const appLeftProjects = useMemo(() => workspaces.map((workspace) => {
+    const sessions = workspaceSessionsById[workspace.id] ?? []
+    return {
+      id: workspace.id,
+      name: workspace.name,
+      available: workspace.available,
+      sessionCount: sessions.length,
+      sessions,
+    }
+  }), [workspaces, workspaceSessionsById])
+
   if (!metaLoaded) {
     return <div className="h-screen w-screen bg-background" />
   }
@@ -377,6 +418,9 @@ export function CliWorkspaceShell() {
         }
         chatParams={{ thinkingControl: true }}
         frontPluginHotReload={runtimePluginFrontLoadingEnabled ? "vite" : false}
+        workspaceLayout="plugin-tabs"
+        workspaceSectionTitle="Projects"
+        appLeftProjects={appLeftProjects}
         topBarRight={<CliVersionBadge version={cliVersion} />}
         topBarLeft={
           <WorkspaceSwitcherControl
@@ -410,6 +454,8 @@ export function CliWorkspaceShell() {
       activeSessionId={initialSessionId ?? undefined}
       chatParams={{ thinkingControl: true }}
       frontPluginHotReload={runtimePluginFrontLoadingEnabled ? "vite" : false}
+      workspaceLayout="plugin-tabs"
+      workspaceSectionTitle="Project"
       topBarRight={<CliVersionBadge version={cliVersion} />}
     />
   )

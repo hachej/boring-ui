@@ -1,5 +1,5 @@
 import React from "react"
-import { definePlugin, type PaneProps } from "@hachej/boring-workspace/plugin"
+import { definePlugin, type PaneProps, type WorkspaceSourceProps } from "@hachej/boring-workspace/plugin"
 import "./styles.css"
 import { fetchPrData, requestAgentClassifyIssues, requestAgentLabelIssue, requestServerRefresh } from "./data"
 import { PrDetail } from "./prDetail"
@@ -199,10 +199,10 @@ function MainPane({ params, containerApi }: PaneProps<{ number?: number; view?: 
   )
 }
 
-function LeftPane({ containerApi }: PaneProps) {
+function LeftPane({ openPanel }: WorkspaceSourceProps) {
   const [busy, setBusy] = React.useState(false)
-  const openPrDashboard = () => containerApi.addPanel({ id: `${MAIN_PANEL_ID}.prs`, component: MAIN_PANEL_ID, title: "PR Dashboard", params: { view: "prs" } })
-  const openIssueDashboard = () => containerApi.addPanel({ id: `${MAIN_PANEL_ID}.issues`, component: MAIN_PANEL_ID, title: "Issues Kanban", params: { view: "issues" } })
+  const openPrDashboard = () => openPanel?.({ id: `${MAIN_PANEL_ID}.prs`, component: MAIN_PANEL_ID, title: "PR Dashboard", params: { view: "prs" } })
+  const openIssueDashboard = () => openPanel?.({ id: `${MAIN_PANEL_ID}.issues`, component: MAIN_PANEL_ID, title: "Issues Kanban", params: { view: "issues" } })
   const refresh = async () => { setBusy(true); try { await requestServerRefresh() } finally { setBusy(false) } }
   return <div className="flex h-full min-h-0 flex-col gap-3 overflow-auto bg-background p-3 text-foreground"><div><h2 className="text-sm font-semibold">GitHub Tracker</h2><p className="text-xs text-muted-foreground">Controls and dashboards</p></div><Button variant="secondary" onClick={openIssueDashboard}>Open issue board</Button><Button variant="outline" onClick={openPrDashboard}>Open PR dashboard</Button><Button variant="outline" onClick={() => void refresh()} disabled={busy}>{busy ? <Spinner className="size-3" /> : "Refresh now"}</Button><Button variant="ghost" onClick={() => void requestAgentClassifyIssues()}>LLM classify issues</Button></div>
 }
@@ -210,10 +210,11 @@ function LeftPane({ containerApi }: PaneProps) {
 export default definePlugin({
   id: PLUGIN_ID,
   label: "GitHub PR Tracker",
+  workspaceSources: [
+    { id: LEFT_PANEL_ID, label: "GitHub PRs", component: LeftPane, defaultPanelId: MAIN_PANEL_ID },
+  ],
   panels: [
     { id: MAIN_PANEL_ID, label: "GitHub PR Tracker", component: MainPane },
-    { id: LEFT_PANEL_ID, label: "GitHub PR Tracker", component: LeftPane },
   ],
   commands: [{ id: `${PLUGIN_ID}.open`, title: "Open GitHub PR Tracker", panelId: MAIN_PANEL_ID }],
-  leftTabs: [{ id: `${PLUGIN_ID}.tab`, title: "GitHub PRs", panelId: LEFT_PANEL_ID }],
 })

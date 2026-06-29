@@ -2,7 +2,7 @@
 
 ## v7 - 2026-04-28
 
-Reference: [`docs/plans/core-gap-closure-spec.md`](docs/plans/core-gap-closure-spec.md)
+Reference: [`docs/plans/archive/core-gap-closure-spec.md`](docs/plans/archive/core-gap-closure-spec.md)
 
 ### Shipped
 

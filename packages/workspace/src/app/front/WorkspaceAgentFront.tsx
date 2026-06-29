@@ -1,7 +1,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ComponentType, type ReactNode } from "react"
+import { Plug, Sparkles } from "lucide-react"
 import {
   PiChatPanel as DefaultPiChatPanel,
   usePiSessions as useDefaultPiSessions,
+  searchPiSessions,
   type SlashCommand,
   type ToolRendererOverrides,
 } from "@hachej/boring-agent/front"
@@ -10,21 +12,29 @@ import { ChatLayout, TopBar, ThemeToggle, type ChatLayoutProps } from "../../fro
 import { WORKSPACE_COMPOSER_STOP_REASONS, emitWorkspaceComposerStop } from "../../front/chrome/chat/composerStop"
 import type { WorkspaceChatPanelProps } from "../../front/chrome/chat/types"
 import type {
+  OpenPanelConfig,
   SurfaceShellApi,
   SurfaceShellProps,
   SurfaceShellSnapshot,
 } from "../../front/chrome/artifact-surface/SurfaceShell"
-import { useRegistry } from "../../front/registry"
+import { SkillsPage } from "../../front/chrome/skills/SkillsPage"
+import { PluginsOverlay } from "../../front/chrome/plugins/PluginsOverlay"
+import { AppLeftPane } from "../../front/layout/plugin-tabs/AppLeftPane"
+import { PluginTabsWorkspaceShell } from "../../front/layout/plugin-tabs/PluginTabsWorkspaceShell"
 import { captureFrontPlugin } from "../../shared/plugins/frontFactory"
 import { UI_COMMAND_EVENT, dispatchUiCommand } from "../../front/bridge"
+import type { CommandPaletteSessionItem } from "../../front/components/CommandPalette"
 import type { CommandResult, DispatchContext, FileTreeBridge, Unsubscribe } from "../../front/bridge"
-import { readStoredBoolean, writeStoredBoolean } from "../../front/store/localStorageValues"
+import { readStoredBoolean, readStoredNumber, writeStoredBoolean, writeStoredNumber } from "../../front/store/localStorageValues"
 import {
   createLocalStorageSessions,
   useLocalStorageSessions,
 } from "./localStorageSessions"
 import { WORKSPACE_AGENT_PLUGINS_RELOADED_EVENT } from "../../front/agentPlugins/reloadEvent"
 import { WorkspaceBackgroundBoot } from "./WorkspaceBackgroundBoot"
+import { ChatSessionTransitionState, WorkbenchWarmupOverlay } from "./WorkspaceAgentStatusStates"
+import { WorkspaceUiStateSync } from "./WorkspaceUiStateSync"
+import { CloseLeftPaneOnQuestion } from "./CloseLeftPaneOnQuestion"
 import { workspaceRequestHeaders, type WorkspaceWarmupStatus } from "./workspacePreload"
 import {
   createdSessionId,
@@ -75,9 +85,39 @@ export type UseWorkspaceAgentSessions<
   refreshKey?: unknown
 }) => WorkspaceAgentSessionsApi<TSession>
 
+export type WorkspaceAgentLayout = "classic" | "plugin-tabs"
+export type WorkspaceAgentAppLeftLayoutMode = "single-project" | "multi-project"
+export type WorkspaceAgentAppLeftHeaderMode = "full" | "workspace" | "hidden"
+
+export interface WorkspaceAgentAppLeftProjectSession {
+  id: string
+  title?: string | null
+  updatedAt?: string | number
+}
+
+export interface WorkspaceAgentAppLeftProject {
+  id: string
+  name: string
+  available?: boolean
+  sessionCount?: number
+  blockedCount?: number
+  sessions?: WorkspaceAgentAppLeftProjectSession[]
+  hasMoreSessions?: boolean
+  loadingSessions?: boolean
+}
+
+export interface WorkspaceAgentAppLeftAction {
+  id: string
+  label: string
+  icon: ReactNode
+  onClick: () => void
+  trailing?: ReactNode
+  emphasis?: boolean
+}
+
 export interface WorkspaceAgentFrontProps<
   TSession extends WorkspaceAgentSession = WorkspaceAgentSession,
-> extends Omit<WorkspaceProviderProps, "children" | "workspaceId" | "storageKey" | "chatPanel">,
+> extends Omit<WorkspaceProviderProps, "children" | "workspaceId" | "storageKey" | "chatPanel" | "commandPaletteSessionSearch">,
     Omit<ChatLayoutProps,
       | "nav"
       | "navParams"
@@ -107,7 +147,29 @@ export interface WorkspaceAgentFrontProps<
   afterShell?: ReactNode
   appTitle?: string
   workspaceLabel?: string
+  /** App-left workspace/project section title. Defaults to "Workspaces". */
+  workspaceSectionTitle?: string
+  /** App-left layout mode. single-project uses the workspace dropdown; multi-project renders workspaces inline. */
+  appLeftLayoutMode?: WorkspaceAgentAppLeftLayoutMode
+  /** App-left header mode: full brand, workspace picker only, or hidden with collapse-button clearance. */
+  appLeftHeaderMode?: WorkspaceAgentAppLeftHeaderMode
+  /** Optional cross-project overview rendered in the app-left workspace/project section. */
+  appLeftProjects?: WorkspaceAgentAppLeftProject[]
+  appLeftActiveProjectId?: string | null
+  onSwitchAppLeftProject?: (projectId: string) => void
+  onOpenAppLeftProjectSession?: (projectId: string, sessionId: string) => void
+  onShowMoreAppLeftProjectSessions?: (projectId: string) => void
+  onCreateAppLeftProject?: () => void
+  /** Open a project's workspace settings (host wires routing — workspace pkg has no router). */
+  onOpenAppLeftProjectSettings?: (projectId: string) => void
+  /** Open a project in a new browser tab (host builds the href). */
+  onOpenAppLeftProjectInNewTab?: (projectId: string) => void
   defaultSessionTitle?: string
+  /**
+   * Opt into the Phase 2 app/session left-pane shell. Defaults to the
+   * existing classic top-bar + session-drawer workspace layout.
+   */
+  workspaceLayout?: WorkspaceAgentLayout
   navEnabled?: boolean
   defaultNavOpen?: boolean
   defaultSurfaceOpen?: boolean
@@ -123,6 +185,12 @@ export interface WorkspaceAgentFrontProps<
    * UserMenu) should set this to false to avoid a duplicate control.
    */
   showThemeToggle?: boolean
+  /** Show the plugin-tabs Skills action/overlay. Defaults to true. */
+  showSkills?: boolean
+  /** Show the plugin-tabs Plugins action/overlay. Defaults to true. */
+  showPlugins?: boolean
+  /** Extra actions inserted into the app-left primary action list before built-in management actions. */
+  appLeftActions?: readonly WorkspaceAgentAppLeftAction[]
   sessions?: Array<{ id: string; title?: string | null; updatedAt?: string | number; turnCount?: number }>
   activeSessionId?: string | null
   onSwitchSession?: (id: string) => void
@@ -159,6 +227,31 @@ function shellStorageKeyFromSurfaceStorage(
     : fallback
 }
 
+function useStoredNumberState(
+  key: string,
+  fallback: number,
+  enabled: boolean,
+): [number, (next: number | ((previous: number) => number)) => void] {
+  const [value, setValue] = useState(() => readStoredNumber(key, fallback, enabled))
+
+  useEffect(() => {
+    setValue(readStoredNumber(key, fallback, enabled))
+  }, [key, fallback, enabled])
+
+  const setStoredValue = useCallback(
+    (next: number | ((previous: number) => number)) => {
+      setValue((previous) => {
+        const resolved = typeof next === "function" ? next(previous) : next
+        writeStoredNumber(key, resolved, enabled)
+        return resolved
+      })
+    },
+    [enabled, key],
+  )
+
+  return [value, setStoredValue]
+}
+
 function useStoredBooleanState(
   key: string,
   fallback: boolean,
@@ -185,40 +278,13 @@ const EMPTY_HEADERS: Record<string, string> = {}
 const EMPTY_STRING_LIST: string[] = []
 const PREPARING_WARMUP_STATUS: WorkspaceWarmupStatus = { status: "preparing" }
 
+function clampNumber(value: number, min: number, max: number): number {
+  return Math.min(max, Math.max(min, value))
+}
+
 const emptySurfaceSnapshot: SurfaceShellSnapshot = {
   openTabs: [],
   activeTab: null,
-}
-
-function WorkbenchWarmupOverlay({ status }: { status: WorkspaceWarmupStatus }) {
-  const requirement = status.status === "ready" ? undefined : status.requirement
-  const preparing = status.status !== "failed"
-  const title = preparing
-    ? requirement === "workspace-fs"
-      ? "Preparing files…"
-      : requirement === "sandbox-exec"
-        ? "Preparing secure runtime…"
-        : requirement === "ui-bridge"
-          ? "Connecting workspace…"
-          : "Preparing workspace…"
-    : "Workspace workbench failed"
-  const description = status.status === "failed"
-    ? status.message
-    : "Chat is ready while files, tools, and workspace panels finish warming up."
-  return (
-    <div className="flex h-full min-h-0 items-center justify-center bg-background px-6 text-center">
-      <div className="max-w-sm rounded-2xl border border-border bg-card p-5 shadow-sm">
-        {preparing ? (
-          <div className="mx-auto mb-3 h-7 w-7 rounded-full border-2 border-muted-foreground/20 border-t-foreground animate-spin" aria-hidden="true" />
-        ) : null}
-        <div className="text-sm font-semibold text-foreground">{title}</div>
-        <p className="mt-2 text-sm text-muted-foreground">{description}</p>
-        {status.status === "failed" ? (
-          <p className="mt-3 text-xs text-muted-foreground">Reload the workspace to retry.</p>
-        ) : null}
-      </div>
-    </div>
-  )
 }
 
 function useDefaultWorkspacePiSessions(options: Parameters<UseWorkspaceAgentSessions>[0]): WorkspaceAgentSessionsApi {
@@ -316,91 +382,6 @@ function writeStoredPinnedSessions(storageKey: string, ids: string[]): void {
   }
 }
 
-function ChatSessionTransitionState() {
-  return (
-    <div className="flex h-full min-h-0 items-center justify-center bg-background px-6 text-center">
-      <div className="max-w-sm rounded-2xl border border-border bg-card p-5 shadow-sm">
-        <div className="mx-auto mb-3 h-7 w-7 rounded-full border-2 border-muted-foreground/20 border-t-foreground animate-spin" aria-hidden="true" />
-        <div className="text-sm font-semibold text-foreground">Loading sessions…</div>
-        <p className="mt-2 text-sm text-muted-foreground">Finding this workspace’s saved chats.</p>
-      </div>
-    </div>
-  )
-}
-
-function uiEndpointBase(endpoint: string | null | undefined): string {
-  if (!endpoint) return "/api/v1/ui"
-  const normalized = endpoint.replace(/\/$/, "")
-  const suffix = "/api/v1/ui"
-  if (normalized.endsWith(suffix)) return normalized
-  return `${normalized}${suffix}`
-}
-
-function uiStateEndpointUrl(endpoint: string | null | undefined): string {
-  return `${uiEndpointBase(endpoint)}/state`
-}
-
-function activeFileFromSnapshot(snapshot: SurfaceShellSnapshot): string | null {
-  const active = snapshot.openTabs.find((tab) => tab.id === snapshot.activeTab)
-  const path = active?.params?.path
-  return typeof path === "string" ? path : null
-}
-
-function WorkspaceUiStateSync({
-  bridgeEndpoint,
-  requestHeaders,
-  navOpen,
-  surfaceOpen,
-  surfaceReady,
-  snapshot,
-}: {
-  bridgeEndpoint?: string | null
-  requestHeaders: Record<string, string>
-  navOpen: boolean
-  surfaceOpen: boolean
-  surfaceReady: boolean
-  snapshot: SurfaceShellSnapshot
-}) {
-  const panelRegistry = useRegistry()
-  const abortRef = useRef<AbortController | null>(null)
-
-  useEffect(() => {
-    if (bridgeEndpoint === null) return
-    // Do not publish a placeholder empty tab snapshot while the workbench
-    // is mounted/opening but Dockview has not called onReady yet. That
-    // replace-style PUT would clobber the bridge's last known openTabs and
-    // make agent verification think every tab disappeared.
-    if (surfaceOpen && !surfaceReady) return
-    abortRef.current?.abort()
-    const controller = new AbortController()
-    abortRef.current = controller
-    const state = {
-      v: 1,
-      drawerOpen: navOpen,
-      workbenchOpen: surfaceOpen,
-      openTabs: snapshot.openTabs,
-      activeTab: snapshot.activeTab,
-      activeFile: activeFileFromSnapshot(snapshot),
-      availablePanels: panelRegistry.list().map((panel) => panel.id),
-    }
-
-    void fetch(uiStateEndpointUrl(bridgeEndpoint), {
-      method: "PUT",
-      headers: { ...requestHeaders, "Content-Type": "application/json" },
-      body: JSON.stringify({ state, causedBy: "user" }),
-      signal: controller.signal,
-    }).catch(() => {
-      // UI state is advisory for the agent; command delivery still works.
-    })
-
-    return () => {
-      controller.abort()
-    }
-  }, [bridgeEndpoint, navOpen, panelRegistry, requestHeaders, snapshot, surfaceOpen, surfaceReady])
-
-  return null
-}
-
 export function WorkspaceAgentFront<
   TSession extends WorkspaceAgentSession = WorkspaceAgentSession,
 >({
@@ -437,7 +418,19 @@ export function WorkspaceAgentFront<
   onActiveSessionIdChange,
   appTitle = "Boring UI",
   workspaceLabel,
+  workspaceSectionTitle = "Workspaces",
+  appLeftLayoutMode = "single-project",
+  appLeftHeaderMode = "full",
+  appLeftProjects,
+  appLeftActiveProjectId,
+  onSwitchAppLeftProject,
+  onOpenAppLeftProjectSession,
+  onShowMoreAppLeftProjectSessions,
+  onCreateAppLeftProject,
+  onOpenAppLeftProjectSettings,
+  onOpenAppLeftProjectInNewTab,
   defaultSessionTitle = "New session",
+  workspaceLayout = "classic",
   navEnabled = true,
   defaultNavOpen = false,
   defaultSurfaceOpen,
@@ -447,6 +440,9 @@ export function WorkspaceAgentFront<
   topBarLeft,
   topBarRight,
   showThemeToggle = true,
+  showSkills = true,
+  showPlugins = true,
+  appLeftActions,
   chatParams,
   externalPlugins,
   hotReloadEnabled,
@@ -473,6 +469,13 @@ export function WorkspaceAgentFront<
     resolvedProviderStorageKey,
   )
   const shellPersistenceEnabled = persistenceEnabled !== false
+  const isPluginTabsLayout = workspaceLayout === "plugin-tabs"
+  const skillsActionEnabled = showSkills !== false
+  const pluginsActionEnabled = showPlugins !== false
+  // Skills is only ever a chat-left overlay (see leftOverlay node below); it is
+  // intentionally NOT registered as a workspace panel so it never appears in the
+  // workbench surface.
+  const providerPanels = panels
   const resolvedSessionStorageKey =
     sessionStorageKey ?? `boring-workspace:sessions:${workspaceId}`
   const resolvedRequestHeaders = useMemo(
@@ -758,6 +761,23 @@ export function WorkspaceAgentFront<
     defaultNavOpen,
     shellPersistenceEnabled,
   )
+  const [appLeftPaneCollapsed, setAppLeftPaneCollapsed] = useStoredBooleanState(
+    `${shellStorageKey}:appLeftPaneCollapsed`,
+    false,
+    shellPersistenceEnabled,
+  )
+  const [appLeftPaneWidth, setAppLeftPaneWidth] = useStoredNumberState(
+    `${shellStorageKey}:appLeftPaneWidth`,
+    268,
+    shellPersistenceEnabled,
+  )
+  const effectiveAppLeftPaneWidth = clampNumber(appLeftPaneWidth, 220, 420)
+  const [leftOverlay, setLeftOverlay] = useState<"skills" | "plugins" | null>(null)
+  useEffect(() => {
+    if ((leftOverlay === "skills" && !skillsActionEnabled) || (leftOverlay === "plugins" && !pluginsActionEnabled)) {
+      setLeftOverlay(null)
+    }
+  }, [leftOverlay, pluginsActionEnabled, skillsActionEnabled])
   const effectiveNavOpen = navEnabled && navOpen
   const [surfaceOpen, setSurfaceOpen] = useStoredBooleanState(
     // Key must NOT match resolvedSurfaceStorageKey (which stores the dockview
@@ -775,6 +795,12 @@ export function WorkspaceAgentFront<
   )
   const [workbenchLeftExplicitOpen, setWorkbenchLeftExplicitOpen] = useState(() => defaultWorkbenchLeftOpen ?? false)
   const effectiveWorkbenchLeftOpen = defaultWorkbenchLeftOpen === false ? workbenchLeftExplicitOpen : workbenchLeftOpen
+  // When a question opens, get it out from behind any default-open left pane.
+  const handleQuestionOpen = useCallback(() => {
+    setWorkbenchLeftOpen(false)
+    setWorkbenchLeftExplicitOpen(false)
+    setLeftOverlay(null)
+  }, [setWorkbenchLeftOpen])
   const autoCreateSessionRef = useRef(false)
   const pendingCreatePaneRef = useRef<PendingCreatePane | null>(null)
   const surfaceOpenRef = useRef(surfaceOpen)
@@ -913,6 +939,17 @@ export function WorkspaceAgentFront<
     shouldOpenSurface,
   }), [getSurface, isWorkbenchOpen, openWorkbench, openWorkbenchSources, closeWorkbench, enqueueSurfaceOp, shouldOpenSurface])
 
+  const openWorkspacePanel = useCallback((panel?: OpenPanelConfig) => {
+    surfaceOpenRef.current = true
+    setSurfaceOpen(true)
+    onOpenSurface?.()
+    if (!panel) return
+    const run = (api: SurfaceShellApi) => api.openPanel(panel)
+    const surface = getSurface()
+    if (surface) run(surface)
+    else enqueueSurfaceOp(run)
+  }, [enqueueSurfaceOp, getSurface, onOpenSurface, setSurfaceOpen])
+
   // Minimal surface-backed bridge for the file tree. The left-tab file tree
   // only needs click-to-open + active-file reveal. Click-to-open routes through
   // the shared dispatcher so it gets the same open-workbench + surface-ready
@@ -931,8 +968,8 @@ export function WorkspaceAgentFront<
     [plugins],
   )
   const hasLeftTabs = useMemo(
-    () => capturedPlugins.some((plugin) => plugin.registrations.workspaceSources.length > 0),
-    [capturedPlugins],
+    () => !isPluginTabsLayout && capturedPlugins.some((plugin) => plugin.registrations.workspaceSources.length > 0),
+    [capturedPlugins, isPluginTabsLayout],
   )
   const pluginPanelIds = useMemo(
     () => capturedPlugins.flatMap((plugin) => plugin.registrations.panels.map((panel) => panel.id)),
@@ -1110,6 +1147,31 @@ export function WorkspaceAgentFront<
     if (nextActiveId && current.activeId === sessionId) rawSwitch(nextActiveId)
   }, [chatPaneState, chatSessionId, rawSwitch, workspaceId])
 
+  const createChatSession = useCallback(() => {
+    const created = resolvedCreate()
+    void Promise.resolve(created).then((session) => {
+      const id = createdSessionId(session)
+      if (!id) return
+      setChatPaneState((previous) => {
+        const current = previous.workspaceId === workspaceId
+          ? previous
+          : { workspaceId, ids: [chatSessionId], activeId: chatSessionId }
+        const ids = current.ids.length > 0 ? current.ids : [chatSessionId]
+        const activeId = current.activeId ?? ids[0] ?? chatSessionId
+        return {
+          workspaceId,
+          ids: replaceActivePane(ids, activeId, id),
+          activeId: id,
+        }
+      })
+      rawSwitch(id)
+    }).catch(() => {
+      // Creation errors are surfaced by the session API/chat layer; the left
+      // action should not leave stale optimistic panes behind.
+    })
+    return created
+  }, [chatSessionId, rawSwitch, resolvedCreate, workspaceId])
+
   const createChatPaneAfter = useCallback((afterId: string) => {
     const pendingCreatePane = {
       afterId,
@@ -1153,6 +1215,15 @@ export function WorkspaceAgentFront<
     }
     return resolvedDelete(sessionId)
   }, [chatPaneState, chatSessionId, resolvedDelete, resolvedSwitch, workspaceId])
+
+  // "New chat" from the left bar. With a split already open, the new session
+  // gets its OWN dedicated pane (inserted after the active one) so the existing
+  // panes are never hijacked; with a single pane it just becomes the active
+  // chat — no gratuitous split for the common case.
+  const createChatSessionPreferNewPane = useCallback(() => {
+    if (chatPaneIds.length >= 2) return createChatPaneAfter(activeChatPaneId)
+    return createChatSession()
+  }, [activeChatPaneId, chatPaneIds.length, createChatPaneAfter, createChatSession])
 
   const [autoSubmitHydrationDisabled, setAutoSubmitHydrationDisabled] = useState(requestedAutoSubmitInitialDraft)
   const autoSubmitHydrationWorkspaceRef = useRef(workspaceId)
@@ -1271,14 +1342,38 @@ export function WorkspaceAgentFront<
     () => makeCenterParams(chatSessionId),
     [chatSessionId, makeCenterParams],
   )
-  const chatPanes = useMemo(() => (
-    chatPaneIds.map((id) => ({
-      id,
-      title: sessionTitleById.get(id) ?? (id === "default" ? defaultSessionTitle : id),
-      panel: "chat",
-      params: makeCenterParams(id, { bridgeEnabled: id === activeChatPaneId }),
-    }))
-  ), [activeChatPaneId, chatPaneIds, defaultSessionTitle, makeCenterParams, sessionTitleById])
+  // Stabilise each pane's params by (sessionId, bridgeEnabled). Switching the
+  // active pane only flips one pane's bridge flag, so every *other* open pane
+  // must keep its exact same params object — otherwise it re-renders with a
+  // fresh-identity-but-equal params and reloads its transcript, which read as
+  // "the other pane changed too" when opening a third session. The cache resets
+  // whenever makeCenterParams changes (i.e. a real input changed), so genuine
+  // updates still flow to every pane.
+  const paneParamsCacheRef = useRef<{
+    make: typeof makeCenterParams
+    cache: Map<string, ReturnType<typeof makeCenterParams>>
+  } | null>(null)
+  const chatPanes = useMemo(() => {
+    if (!paneParamsCacheRef.current || paneParamsCacheRef.current.make !== makeCenterParams) {
+      paneParamsCacheRef.current = { make: makeCenterParams, cache: new Map() }
+    }
+    const { cache } = paneParamsCacheRef.current
+    return chatPaneIds.map((id) => {
+      const bridgeEnabled = id === activeChatPaneId
+      const cacheKey = `${id}:${bridgeEnabled}`
+      let params = cache.get(cacheKey)
+      if (!params) {
+        params = makeCenterParams(id, { bridgeEnabled })
+        cache.set(cacheKey, params)
+      }
+      return {
+        id,
+        title: sessionTitleById.get(id) ?? (id === "default" ? defaultSessionTitle : id),
+        panel: "chat",
+        params,
+      }
+    })
+  }, [activeChatPaneId, chatPaneIds, defaultSessionTitle, makeCenterParams, sessionTitleById])
   const surfaceParams = useMemo<SurfaceShellProps>(() => ({
     storageKey: resolvedSurfaceStorageKey,
     defaultLeftTab: defaultWorkbenchLeftTab,
@@ -1288,6 +1383,7 @@ export function WorkspaceAgentFront<
     onReady: handleSurfaceReady,
     onChange: handleSurfaceChange,
     onClose: closeWorkbench,
+    showCloseAction: false,
   }), [
     closeWorkbench,
     defaultWorkbenchLeftTab,
@@ -1312,11 +1408,202 @@ export function WorkspaceAgentFront<
     }))
   }
 
+  const topBarRightContent = (
+    <>
+      {showThemeToggle ? <ThemeToggle /> : null}
+      {topBarRight}
+    </>
+  )
+  const navParams = {
+    sessions: resolvedSessions,
+    activeId: activeChatPaneId,
+    openIds: chatPaneIds,
+    pinnedIds,
+    onTogglePin: toggleSessionPinned,
+    onSwitch: switchToChatPane,
+    onOpenAsTab: openChatPane,
+    onCreate: resolvedCreate,
+    onDelete: deleteSessionAndPane,
+    onLoadMore: sessionApi?.loadMore,
+    hasMore: sessionApi?.hasMore,
+    loadingMore: sessionApi?.loadingMore,
+    onClose: () => setNavOpen(false),
+  }
+  const commandPaletteSessionSearch = useMemo(() => (
+    isPluginTabsLayout
+      ? {
+          sessions: resolvedSessions,
+          activeId: activeChatPaneId,
+          openIds: chatPaneIds,
+          search: (sessions: readonly CommandPaletteSessionItem[], query: string) => searchPiSessions(sessions, query, { limit: 8 }),
+          onSwitch: switchToChatPane,
+          onOpenAsTab: openChatPane,
+        }
+      : undefined
+  ), [activeChatPaneId, chatPaneIds, isPluginTabsLayout, openChatPane, resolvedSessions, switchToChatPane])
+  const managementActions = useMemo<WorkspaceAgentAppLeftAction[]>(() => {
+    const actions: WorkspaceAgentAppLeftAction[] = [...(appLeftActions ?? [])]
+    if (pluginsActionEnabled) {
+      actions.push({
+        id: "plugins",
+        label: "Plugins",
+        icon: <Plug className="h-4 w-4" strokeWidth={1.75} />,
+        onClick: () => setLeftOverlay((cur) => cur === "plugins" ? null : "plugins"),
+      })
+    }
+    if (skillsActionEnabled) {
+      actions.push({
+        id: "skills",
+        label: "Skills",
+        icon: <Sparkles className="h-4 w-4" strokeWidth={1.75} />,
+        onClick: () => setLeftOverlay((cur) => cur === "skills" ? null : "skills"),
+      })
+    }
+    return actions
+  }, [appLeftActions, pluginsActionEnabled, skillsActionEnabled])
+
+  const leftOverlayNode = leftOverlay === "skills" && skillsActionEnabled ? (
+    <SkillsPage
+      onClose={() => setLeftOverlay(null)}
+      headerInsetStart={appLeftPaneCollapsed}
+      headerInsetEnd={!surfaceOpen}
+    />
+  ) : leftOverlay === "plugins" && pluginsActionEnabled ? (
+    <PluginsOverlay
+      onClose={() => setLeftOverlay(null)}
+      onReloadExternalPlugins={() => reloadAgentPluginsForSession(effectiveActiveSessionId ?? chatSessionId)}
+      headerInsetStart={appLeftPaneCollapsed}
+      headerInsetEnd={!surfaceOpen}
+    />
+  ) : null
+  const mainContent = remoteSessionsTransitioning ? (
+    <ChatSessionTransitionState />
+  ) : (
+    <ChatLayout
+      className={className}
+      nav={isPluginTabsLayout ? null : effectiveNavOpen ? "session-list" : null}
+      navParams={navParams}
+      center="chat"
+      centerParams={centerParams}
+      chatPanes={chatPanes}
+      activeChatPaneId={activeChatPaneId}
+      onActiveChatPaneChange={activateChatPane}
+      onCloseChatPane={closeChatPane}
+      onCreateChatPaneAfter={isPluginTabsLayout ? undefined : createChatPaneAfter}
+      onDropChatSession={openChatPane}
+      flashChatPaneId={flashChatPane?.workspaceId === workspaceId ? flashChatPane.id : null}
+      surface={surfaceOpen ? "artifact-surface" : null}
+      surfaceParams={surfaceParams as Record<string, unknown>}
+      chatOverlay={isPluginTabsLayout ? leftOverlayNode : null}
+      onCloseChatOverlay={() => setLeftOverlay(null)}
+      surfaceOverlay={workbenchOverlay}
+      sidebar={surfaceOpen && !workbenchBlocked && hasLeftTabs && effectiveWorkbenchLeftOpen ? "workbench-left" : null}
+      sidebarParams={surfaceOpen && !workbenchBlocked && hasLeftTabs ? {
+        ...(defaultWorkbenchLeftTab ? { defaultTab: defaultWorkbenchLeftTab } : {}),
+        bridge: fileTreeBridge,
+        onClose: () => {
+          setWorkbenchLeftOpen(false)
+          setWorkbenchLeftExplicitOpen(false)
+        },
+        onCollapse: () => {
+          setWorkbenchLeftOpen(false)
+          setWorkbenchLeftExplicitOpen(false)
+        },
+      } : undefined}
+      storageKey={shellPersistenceEnabled ? shellStorageKey : undefined}
+      onOpenNav={!isPluginTabsLayout && navEnabled ? () => {
+        setNavOpen(true)
+        onOpenNav?.()
+      } : undefined}
+      onOpenSurface={() => {
+        surfaceOpenRef.current = true
+        setSurfaceOpen(true)
+        onOpenSurface?.()
+      }}
+      surfaceButtonBottomOffset={surfaceButtonBottomOffset}
+      onOpenSidebar={hasLeftTabs ? () => {
+        surfaceOpenRef.current = true
+        setSurfaceOpen(true)
+        setWorkbenchLeftOpen(true)
+        setWorkbenchLeftExplicitOpen(true)
+      } : undefined}
+    />
+  )
+  const shellContent = isPluginTabsLayout ? (
+    <PluginTabsWorkspaceShell
+      collapsed={appLeftPaneCollapsed}
+      onExpand={() => setAppLeftPaneCollapsed(false)}
+      onCollapse={() => setAppLeftPaneCollapsed(true)}
+      onResizeLeftPane={(delta) => setAppLeftPaneWidth((width) => clampNumber(width + delta, 220, 420))}
+      leftPaneWidth={effectiveAppLeftPaneWidth}
+      minLeftPaneWidth={220}
+      maxLeftPaneWidth={420}
+      leftPane={(
+        <AppLeftPane
+          width={effectiveAppLeftPaneWidth}
+          appTitle={appTitle}
+          workspaceLabel={workspaceLabel}
+          workspaceSectionTitle={workspaceSectionTitle}
+          layoutMode={appLeftLayoutMode}
+          headerMode={appLeftHeaderMode}
+          projects={appLeftProjects}
+          activeProjectId={appLeftActiveProjectId ?? workspaceId}
+          onOpenProjectSession={onOpenAppLeftProjectSession}
+          onShowMoreProjectSessions={onShowMoreAppLeftProjectSessions}
+          onCreateProject={onCreateAppLeftProject}
+          onCreateProjectSession={(projectId) => {
+            // Active project → create a chat in place. Other project → switch to
+            // it (lands in a fresh "new chat" surface). Cross-project new-session
+            // without a switch needs the pending-entry contract (plan §5.1) — deferred.
+            if (projectId === (appLeftActiveProjectId ?? workspaceId)) {
+              setLeftOverlay(null)
+              void createChatSessionPreferNewPane()
+            } else {
+              onSwitchAppLeftProject?.(projectId)
+            }
+          }}
+          onOpenProjectSettings={onOpenAppLeftProjectSettings}
+          onOpenProjectInNewTab={onOpenAppLeftProjectInNewTab}
+          sessionTitle={remoteSessionsTransitioning ? "Loading sessions…" : resolvedSessionTitle ?? defaultSessionTitle}
+          topSlot={topBarLeft}
+          bottomSlot={showThemeToggle || topBarRight != null ? <div className="flex w-full min-w-0 items-center gap-2">{topBarRightContent}</div> : undefined}
+          sessions={resolvedSessions}
+          activeSessionId={activeChatPaneId}
+          openSessionIds={chatPaneIds}
+          pinnedSessionIds={pinnedIds}
+          onCreateSession={() => {
+            setLeftOverlay(null)
+            void createChatSessionPreferNewPane()
+          }}
+          onOpenCommandPalette={openCommandPalette}
+          onSwitchSession={switchToChatPane}
+          onOpenSessionAsPane={openChatPane}
+          onToggleSessionPinned={toggleSessionPinned}
+          actions={managementActions}
+        />
+      )}
+    >
+      {mainContent}
+    </PluginTabsWorkspaceShell>
+  ) : (
+    <div className="flex h-full min-h-0 flex-col">
+      <TopBar
+        appTitle={appTitle}
+        sessionTitle={remoteSessionsTransitioning ? "Loading sessions…" : resolvedSessionTitle ?? defaultSessionTitle}
+        onCommandPalette={openCommandPalette}
+        topBarLeft={topBarLeft}
+        topBarRight={topBarRightContent}
+      />
+      {mainContent}
+    </div>
+  )
+  const publishedNavOpen = isPluginTabsLayout ? !appLeftPaneCollapsed : effectiveNavOpen
+
   return (
     <div className="h-full bg-background text-foreground">
       <WorkspaceProvider
         chatPanel={chatPanel}
-        panels={panels}
+        panels={providerPanels}
         commands={commands}
         catalogs={catalogs}
         plugins={plugins}
@@ -1339,6 +1626,7 @@ export function WorkspaceAgentFront<
         onAuthError={onAuthError}
         frontPluginHotReload={resolvedFrontPluginHotReload}
         fullPageBasePath={fullPageBasePath}
+        commandPaletteSessionSearch={commandPaletteSessionSearch}
       >
         {beforeShell}
         <WorkspaceBackgroundBoot
@@ -1352,90 +1640,13 @@ export function WorkspaceAgentFront<
         <WorkspaceUiStateSync
           bridgeEndpoint={bridgeEndpoint}
           requestHeaders={resolvedRequestHeaders}
-          navOpen={effectiveNavOpen}
+          navOpen={publishedNavOpen}
           surfaceOpen={surfaceOpen}
           surfaceReady={surfaceReady}
           snapshot={surfaceSnapshot}
         />
-        <div className="flex h-full min-h-0 flex-col">
-          <TopBar
-            appTitle={appTitle}
-            sessionTitle={remoteSessionsTransitioning ? "Loading sessions…" : resolvedSessionTitle ?? defaultSessionTitle}
-            onCommandPalette={openCommandPalette}
-            topBarLeft={topBarLeft}
-            topBarRight={
-              <>
-                {showThemeToggle ? <ThemeToggle /> : null}
-                {topBarRight}
-              </>
-            }
-          />
-          {remoteSessionsTransitioning ? (
-            <ChatSessionTransitionState />
-          ) : (
-            <ChatLayout
-              className={className}
-              nav={effectiveNavOpen ? "session-list" : null}
-              navParams={{
-                sessions: resolvedSessions,
-                activeId: activeChatPaneId,
-                openIds: chatPaneIds,
-                pinnedIds,
-                onTogglePin: toggleSessionPinned,
-                onSwitch: switchToChatPane,
-                onOpenAsTab: openChatPane,
-                onCreate: resolvedCreate,
-                onDelete: deleteSessionAndPane,
-                onLoadMore: sessionApi?.loadMore,
-                hasMore: sessionApi?.hasMore,
-                loadingMore: sessionApi?.loadingMore,
-                onClose: () => setNavOpen(false),
-              }}
-              center="chat"
-              centerParams={centerParams}
-              chatPanes={chatPanes}
-              activeChatPaneId={activeChatPaneId}
-              onActiveChatPaneChange={activateChatPane}
-              onCloseChatPane={closeChatPane}
-              onCreateChatPaneAfter={createChatPaneAfter}
-              onDropChatSession={openChatPane}
-              flashChatPaneId={flashChatPane?.workspaceId === workspaceId ? flashChatPane.id : null}
-              surface={surfaceOpen ? "artifact-surface" : null}
-              surfaceParams={surfaceParams as Record<string, unknown>}
-              surfaceOverlay={workbenchOverlay}
-              sidebar={surfaceOpen && !workbenchBlocked && hasLeftTabs && effectiveWorkbenchLeftOpen ? "workbench-left" : null}
-              sidebarParams={surfaceOpen && !workbenchBlocked && hasLeftTabs ? {
-                ...(defaultWorkbenchLeftTab ? { defaultTab: defaultWorkbenchLeftTab } : {}),
-                bridge: fileTreeBridge,
-                onClose: () => {
-                  setWorkbenchLeftOpen(false)
-                  setWorkbenchLeftExplicitOpen(false)
-                },
-                onCollapse: () => {
-                  setWorkbenchLeftOpen(false)
-                  setWorkbenchLeftExplicitOpen(false)
-                },
-              } : undefined}
-              storageKey={shellPersistenceEnabled ? shellStorageKey : undefined}
-              onOpenNav={navEnabled ? () => {
-                setNavOpen(true)
-                onOpenNav?.()
-              } : undefined}
-              onOpenSurface={() => {
-                surfaceOpenRef.current = true
-                setSurfaceOpen(true)
-                onOpenSurface?.()
-              }}
-              surfaceButtonBottomOffset={surfaceButtonBottomOffset}
-              onOpenSidebar={hasLeftTabs ? () => {
-                surfaceOpenRef.current = true
-                setSurfaceOpen(true)
-                setWorkbenchLeftOpen(true)
-                setWorkbenchLeftExplicitOpen(true)
-              } : undefined}
-            />
-          )}
-        </div>
+        <CloseLeftPaneOnQuestion onQuestionOpen={handleQuestionOpen} />
+        {shellContent}
         {afterShell}
       </WorkspaceProvider>
     </div>

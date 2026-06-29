@@ -8,12 +8,14 @@ export function useCommandPaletteChrome({
   mode,
   setMode,
   setQuery,
+  defaultMode = 'catalogs',
 }: {
   open: boolean
   setOpen: Dispatch<SetStateAction<boolean>>
   mode: PaletteMode
   setMode: Dispatch<SetStateAction<PaletteMode>>
   setQuery: Dispatch<SetStateAction<string>>
+  defaultMode?: PaletteMode
 }) {
   const inputRef = useRef<HTMLInputElement>(null)
   const priorFocusRef = useRef<HTMLElement | null>(null)
@@ -78,7 +80,7 @@ export function useCommandPaletteChrome({
   useEffect(() => {
     if (open) {
       setQuery('')
-      setMode('catalogs')
+      setMode(defaultMode)
       requestAnimationFrame(() => {
         inputRef.current?.focus()
       })
@@ -90,7 +92,7 @@ export function useCommandPaletteChrome({
       priorFocusRef.current = null
     }
     wasOpenRef.current = open
-  }, [open, setMode, setQuery])
+  }, [defaultMode, open, setMode, setQuery])
 
   const switchMode = useCallback((nextMode: PaletteMode) => {
     setMode(nextMode)
@@ -99,8 +101,12 @@ export function useCommandPaletteChrome({
   }, [setMode, setQuery])
 
   const toggleMode = useCallback(() => {
+    if (defaultMode === 'chats') {
+      switchMode(mode === 'chats' ? 'catalogs' : mode === 'catalogs' ? 'commands' : 'chats')
+      return
+    }
     switchMode(mode === 'commands' ? 'catalogs' : 'commands')
-  }, [mode, switchMode])
+  }, [defaultMode, mode, switchMode])
 
   const handleInputKeyDown = useCallback((event: KeyboardEvent<HTMLInputElement>) => {
     if (event.key !== 'Tab') return

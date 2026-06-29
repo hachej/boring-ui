@@ -60,10 +60,6 @@ export type PanelPlacement =
   | "bottom"
   | "shared-dockview"
   | "workspace-page"
-  /** @deprecated Use registerWorkspaceSource instead. */
-  | "workspace-source"
-  /** @deprecated Use registerWorkspaceSource instead. */
-  | "left-tab"
   | "right-tab"
 
 export function isSharedDockviewPlacement(placement: string | undefined): boolean {
@@ -72,10 +68,6 @@ export function isSharedDockviewPlacement(placement: string | undefined): boolea
 
 export function isWorkspacePagePlacement(placement: string | undefined): boolean {
   return placement === "workspace-page"
-}
-
-export function isWorkspaceSourcePlacement(placement: string | undefined): boolean {
-  return placement === "workspace-source" || placement === "left-tab"
 }
 
 export interface PanelConfig<T = any> {
@@ -88,8 +80,6 @@ export interface PanelConfig<T = any> {
   essential?: boolean
   chromeless?: boolean
   supportsFullPage?: boolean
-  /** @deprecated Only honored for legacy workspace-source/left-tab panels. Use WorkspaceSourceConfig.defaultPanelId. */
-  defaultPanelId?: string
   /** Source: "builtin" | "app" */
   source?: string
   pluginId?: string

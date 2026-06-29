@@ -228,6 +228,8 @@ describe('WorkspaceSwitcher', () => {
       renderWithProviders(<WorkspaceSwitcher />)
 
       const trigger = await screen.findByRole('button', { name: 'Workspace menu: Workspace A' })
+      expect(trigger).toHaveTextContent('Workspace A')
+      expect(trigger).not.toHaveTextContent('Boring UI')
       fireEvent.pointerDown(trigger)
 
       expect(await screen.findByRole('menuitem', { name: 'Workspace A' })).toBeInTheDocument()

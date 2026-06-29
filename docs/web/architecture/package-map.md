@@ -99,7 +99,7 @@ Put code here when it involves:
 Examples:
 - `WorkspaceProvider`
 - `IdeLayout`
-- plugin `panel`, `left-tab`, `command`, `catalog`, `surface-resolver`
+- plugin `panel`, `workspace-source`, `command`, `catalog`, `surface-resolver`
 
 ## Smell checks
 

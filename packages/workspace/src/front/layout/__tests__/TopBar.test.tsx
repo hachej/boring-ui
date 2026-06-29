@@ -14,4 +14,11 @@ describe("TopBar", () => {
 
     expect(screen.queryByTestId("sentinel-slot")).toBeNull()
   })
+
+  it("shows only the session/workspace title in the default title block", () => {
+    render(<TopBar appTitle="Boring UI" sessionTitle="boring-ui-factory" />)
+
+    expect(screen.getByText("boring-ui-factory")).toBeInTheDocument()
+    expect(screen.queryByText("Boring UI")).not.toBeInTheDocument()
+  })
 })
