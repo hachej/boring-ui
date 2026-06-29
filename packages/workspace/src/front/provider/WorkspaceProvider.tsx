@@ -551,6 +551,12 @@ export function WorkspaceProvider({
 
     if (panels) {
       for (const panel of panels) {
+        if (panel.placement === "left-tab" || panel.placement === "workspace-source") {
+          throw new Error(
+            `WorkspaceProvider panel "${panel.id}" uses removed placement "${panel.placement}". ` +
+              "Use workspaceSources/plugin workspaceSources instead.",
+          )
+        }
         const { id, ...config } = panel
         pr.register(id, config)
       }
