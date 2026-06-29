@@ -60,6 +60,24 @@ Once the browser opens, you can:
 "rewrite the test file to use vitest"
 ```
 
+### Share a Markdown file for review
+
+```bash
+# Read-only review page for one Markdown file plus local images
+boring-ui share docs/review.md --assets
+
+# Let anyone with the URL edit that Markdown file
+boring-ui share docs/review.md --assets --allow-edit
+```
+
+`share` starts a narrow, share-only server. It does not expose the workspace UI,
+agent APIs, shell, file tree, or local bridge. Use a tunnel if you need an
+external URL:
+
+```bash
+cloudflared tunnel --url http://127.0.0.1:5200
+```
+
 ---
 
 ## Installation
