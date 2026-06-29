@@ -22,6 +22,7 @@ export const bslFilterExpressionSchema = z.object({
 export const dashboardQuerySchema = z.object({
   id: z.string().min(1),
   model: z.string().min(1),
+  query: z.string().min(1).optional(),
   groupBy: z.array(z.string()).optional(),
   measures: z.array(z.string()).optional(),
   dimensions: z.array(z.string()).optional(),

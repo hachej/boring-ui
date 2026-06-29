@@ -230,15 +230,7 @@ async function runWorkspaceFileQuery(workspaceRoot: string, input: DataBridgeQue
   return { kind: "data-bridge.table", version: 1, columns: inferColumns(rows), rows, rowCount: rows.length, source: path }
 }
 
-function compileDashboardToBslPython(query: DataBridgeDashboardQuery): string {
-  const groups = query.groupBy ?? query.dimensions ?? []
-  const measures = query.measures ?? []
-  const groupCall = groups.length > 0 ? `.group_by(${groups.map((item) => JSON.stringify(item)).join(", ")})` : ""
-  const aggregateArgs = measures.map((item) => JSON.stringify(item)).join(", ")
-  return `sm${groupCall}.aggregate(${aggregateArgs})`
-}
-
-async function runBslQuery(options: CreateDataBridgeServerPluginOptions, input: DataBridgeQueryRunInput & { query: DataBridgeDashboardQuery | DataBridgeBslPythonQuery }, trustedPython: boolean, signal?: AbortSignal): Promise<DataBridgeTableResult> {
+async function runBslQuery(options: CreateDataBridgeServerPluginOptions, input: DataBridgeQueryRunInput & { query: DataBridgeBslPythonQuery }, signal?: AbortSignal): Promise<DataBridgeTableResult> {
   const modelPath = options.bslModelPath ?? process.env.BORING_BSL_MODEL_PATH ?? process.env.BSL_MODEL_PATH
   if (!modelPath) throw new Error("BSL adapter is not configured: set BORING_BSL_MODEL_PATH")
   const payload = {
@@ -246,9 +238,8 @@ async function runBslQuery(options: CreateDataBridgeServerPluginOptions, input: 
     profile: options.bslProfile ?? process.env.BORING_BSL_PROFILE,
     profileFile: options.bslProfileFile ?? process.env.BORING_BSL_PROFILE_FILE,
     model: input.query.model,
-    query: input.query.language === "bsl-python" ? input.query.query : compileDashboardToBslPython(input.query),
+    query: input.query.query,
     limit: input.query.limit ?? 5000,
-    trustedPython,
   }
   return await runPythonBsl(payload, signal)
 }
@@ -274,24 +265,21 @@ async function runSqlQuery(options: CreateDataBridgeServerPluginOptions, input: 
 
 async function runPythonBsl(payload: Record<string, unknown>, signal?: AbortSignal): Promise<DataBridgeTableResult> {
   const script = String.raw`
-import json, sys, ast
+import json, sys
 from pathlib import Path
 import ibis
 from ibis import _
+from returns.result import Failure, Success
 from boring_semantic_layer import from_yaml
+from boring_semantic_layer.utils import safe_eval
 payload = json.loads(sys.stdin.read())
 query = payload["query"]
-if not payload.get("trustedPython"):
-    tree = ast.parse(query, mode="eval")
-    allowed = (ast.Expression, ast.Call, ast.Attribute, ast.Name, ast.Load, ast.Constant, ast.Tuple, ast.List)
-    for node in ast.walk(tree):
-        if not isinstance(node, allowed):
-            raise ValueError(f"Unsupported BSL query syntax: {type(node).__name__}")
-        if isinstance(node, ast.Name) and node.id != "sm":
-            raise ValueError(f"Unsupported BSL query name: {node.id}")
 models = from_yaml(Path(payload["modelPath"]), profile=payload.get("profile"), profile_path=payload.get("profileFile"))
 sm = models[payload["model"]]
-result = eval(compile(query, "<data-bridge-bsl>", "eval"), {"__builtins__": {}}, {"sm": sm, "ibis": ibis, "_": _})
+evaluated = safe_eval(query, context={**models, "sm": sm, "ibis": ibis, "_": _})
+if isinstance(evaluated, Failure):
+    raise evaluated.failure()
+result = evaluated.unwrap() if isinstance(evaluated, Success) else evaluated
 df = result.execute()
 limit = int(payload.get("limit") or 5000)
 rows = json.loads(df.head(limit).to_json(orient="records", date_format="iso"))
@@ -344,13 +332,13 @@ export function createDataBridgeServerPlugin(options: CreateDataBridgeServerPlug
       if (typedInput.query.language === "sql") {
         return await runSqlQuery(options, typedInput, context.capabilities, signal)
       }
-      if (typedInput.query.language === "bsl-python" && (context.callerClass === "browser" || !context.capabilities.includes("data:bsl-query-string"))) {
-        throw new Error("trusted runtime/server caller with data:bsl-query-string capability is required for bsl-python queries")
-      }
       if (typedInput.query.language === "bsl-dashboard" && typedInput.query.dataRef?.kind === "workspace-file") {
         return await runWorkspaceFileQuery(options.workspaceRoot, typedInput)
       }
-      return await runBslQuery(options, typedInput as DataBridgeQueryRunInput & { query: DataBridgeDashboardQuery | DataBridgeBslPythonQuery }, typedInput.query.language === "bsl-python", signal)
+      if (typedInput.query.language !== "bsl-python") {
+        throw new Error("BSL dashboard queries must provide a BSL expression string; structured dashboard JSON is only supported for workspace-file fixtures")
+      }
+      return await runBslQuery(options, typedInput as DataBridgeQueryRunInput & { query: DataBridgeBslPythonQuery }, signal)
     },
   })
 

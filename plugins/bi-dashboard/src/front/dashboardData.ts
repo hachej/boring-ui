@@ -171,17 +171,24 @@ async function fetchDataBridgeQuery(options: {
     body: JSON.stringify({
       op: DATA_BRIDGE_QUERY_RUN_OP,
       input: {
-        query: {
-          language: "bsl-dashboard",
-          model: options.query.model,
-          groupBy: options.query.groupBy,
-          measures: options.query.measures,
-          dimensions: options.query.dimensions,
-          filters: options.query.filters,
-          orderBy: options.query.orderBy,
-          limit: options.query.limit,
-          dataRef: options.query.dataRef,
-        },
+        query: options.query.query
+          ? {
+              language: "bsl-python",
+              model: options.query.model,
+              query: options.query.query,
+              limit: options.query.limit,
+            }
+          : {
+              language: "bsl-dashboard",
+              model: options.query.model,
+              groupBy: options.query.groupBy,
+              measures: options.query.measures,
+              dimensions: options.query.dimensions,
+              filters: options.query.filters,
+              orderBy: options.query.orderBy,
+              limit: options.query.limit,
+              dataRef: options.query.dataRef,
+            },
       },
     }),
   })
