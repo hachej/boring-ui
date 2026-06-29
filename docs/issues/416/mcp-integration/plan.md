@@ -378,3 +378,152 @@ Fake implementations may use sentinel values. Production implementations must so
 ### Resource URI prefix defaults
 
 If `allowedResourceUriPrefixes` is absent, resource reads are denied by default. Providers must explicitly opt in to readable URI prefixes or implement a provider-specific resource validator. No fallback to endpoint origin is allowed for V0.
+
+## Tool exposure roadmap
+
+### V0 — generic proxy tools
+
+Start with a small generic surface:
+
+```ts
+mcp_tools_search({ query, serverId? })
+mcp_tool_describe({ serverId, toolName })
+mcp_readonly_call({ serverId, toolName, input })
+```
+
+This minimizes context bloat and keeps all authorization/tool-policy/audit checks in one path.
+
+### V1 — Hermes-style progressive disclosure
+
+Add a tool-search layer inspired by Hermes:
+
+- the model sees only search/describe/call bridge tools by default;
+- `mcp_tools_search` searches enabled/classified MCP tools across connected servers;
+- `mcp_tool_describe` returns the exact schema and safety notes for one tool;
+- `mcp_readonly_call` executes only after policy validation;
+- schema/tool catalog drift disables stale entries.
+
+This gives broad MCP coverage without putting every MCP schema into every prompt.
+
+### V2 — OpenClaw/Hermes-style materialized tools
+
+For high-confidence enabled tools, optionally materialize direct agent tools:
+
+```txt
+mcp_airtable_search_records
+mcp_airtable_list_bases
+mcp_notion_fetch
+```
+
+Rules:
+
+- generated/materialized tools still route internally through the same MCP facade;
+- direct tools are sugar over `mcp_readonly_call`, not a bypass;
+- only exact classified tools can materialize;
+- direct tools inherit the same source ownership, credential, redaction, audit, and policy checks;
+- if schema hash drifts, the direct tool is disabled until reclassified.
+
+## Plugin/package shape decision
+
+This should be split into two layers:
+
+### 1. Reusable MCP server package/module
+
+Owns the generic backend mechanics:
+
+- provider template registry;
+- transport client abstraction;
+- tool classification;
+- status/doctor/probe;
+- redaction guard;
+- credential provider interface;
+- execution guard interface;
+- facade and tests.
+
+This should not depend on app UI. It can become a boring-ui package or app/server module first, then be extracted if reused.
+
+### 2. App/internal trusted plugin
+
+The product integration should be an **app/internal trusted plugin**, not a runtime `.pi/extensions` plugin, because it needs:
+
+- trusted server routes;
+- OAuth callback routes;
+- encrypted token access;
+- server-side MCP calls;
+- audit/log persistence;
+- stable agent tool registration;
+- admin/user UI panels.
+
+Plugin surfaces:
+
+- server: trusted routes/tools for MCP registry, status/doctor/probe, search/describe/call;
+- front: Integrations/MCP panel for connect/configure/probe/tool catalog;
+- agent tools: V0 bridge tools, later V2 materialized tools.
+
+Runtime/generated plugins may still consume MCP later, but hosted Constellation production should not rely on runtime `.pi/extensions` for provider credentials or MCP OAuth.
+
+## Tool-search and materialization details
+
+### V1 search/describe contract
+
+```ts
+interface McpToolsSearchRequest {
+  query: string;
+  serverId?: string;
+  risk?: 'read' | 'write' | 'admin' | 'unknown';
+  enabledOnly?: boolean;
+  limit?: number;
+}
+
+interface McpToolsSearchResult {
+  serverId: string;
+  toolName: string;
+  title?: string;
+  summary: string;
+  risk: 'read' | 'write' | 'admin' | 'unknown';
+  enabled: boolean;
+  reason: string;
+  schemaHash?: string;
+}
+```
+
+Search uses the cached checked-in/probed tool catalog, not live provider calls. It returns summaries/classification only, not full schemas. `mcp_tool_describe` returns the full schema for one exact enabled/classified tool.
+
+### V2 materialization trigger
+
+A tool can become a direct/materialized tool only when all are true:
+
+- exact checked-in classification exists;
+- `enabledByDefault: true` or admin explicitly enabled it;
+- schema hash matches latest probe;
+- tool is read-only for V0/V1 read-only profiles;
+- provider template marks it `materialize: true` or admin toggles materialization;
+- generated tool name is stable and collision-free.
+
+No automatic materialization based only on usage count. Usage metrics can suggest candidates, but a checked-in/admin decision is required.
+
+Materialized tools are registered by the trusted app/internal plugin at server boot or controlled reload. They are additive sugar over `mcp_readonly_call` and can be removed/disabled if drift is detected.
+
+### Minimal trusted route surface
+
+Expected trusted routes for the app/internal plugin:
+
+```txt
+GET  /api/mcp/servers
+POST /api/mcp/servers
+GET  /api/mcp/servers/:serverId/status
+POST /api/mcp/servers/:serverId/doctor
+POST /api/mcp/servers/:serverId/probe
+GET  /api/mcp/servers/:serverId/tools
+POST /api/mcp/servers/:serverId/tools/:toolName/enable
+POST /api/mcp/servers/:serverId/tools/:toolName/disable
+POST /api/mcp/auth/:provider/start
+GET  /api/mcp/auth/:provider/callback
+POST /api/mcp/servers/:serverId/logout
+```
+
+Route names can be adjusted during implementation, but these operations define the intended scope.
+
+### V0 to V1 migration
+
+V1 is additive. Existing V0 `mcp_readonly_call` remains stable. V1 adds search/describe backed by the same catalog and policy model. V2 direct tools are optional and can be disabled without removing V0/V1 bridge tools.
