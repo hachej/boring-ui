@@ -14,5 +14,6 @@ export function createBoringMcpServerPlugin(options: CreateBoringMcpServerPlugin
 }
 
 export default createBoringMcpServerPlugin()
+export * from "./managedConnectorPreflight"
 export * from "./sourceHandlers"
 export * from "../shared"
