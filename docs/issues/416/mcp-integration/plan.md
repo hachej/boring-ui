@@ -1025,3 +1025,26 @@ Use the right credential adapter by provider shape:
 - DB-backed store must pass tests for token encryption, refresh, revoke, ownership, and redaction.
 - `tools/list` probe must work with the stored token.
 - Search/describe/call must run through the same policy/audit/redaction path.
+
+## Better Auth credential-store research
+
+See [`better-auth-mcp-research.md`](./better-auth-mcp-research.md).
+
+Findings:
+
+- Better Auth's MCP plugin is mainly for **inbound** MCP auth: making Constellation act as an OAuth provider for MCP clients. It does not directly solve outbound third-party MCP provider auth like Notion MCP.
+- Better Auth account records can store OAuth access/refresh tokens for linked provider accounts.
+- Better Auth token encryption exists but is opt-in via `account.encryptOAuthTokens: true`; Constellation should enable it for any Better Auth-owned provider tokens.
+- Better Auth `getAccessToken` can refresh supported provider tokens, but Generic OAuth has known edge cases around provider-specific refresh/resource params and refresh metadata.
+
+Credential-store policy:
+
+| Flow | Store |
+| --- | --- |
+| Regular OAuth provider supported cleanly by Better Auth | Better Auth account table with token encryption enabled |
+| Generic OAuth provider with simple refresh | Better Auth Generic OAuth only after provider-specific spike |
+| MCP-native OAuth, e.g. Notion MCP | boring-mcp encrypted DB store + MCP SDK/pi-mcp-adapter-derived auth core |
+| Provider needing special refresh/resource params | narrow Constellation credential store or Nango adapter |
+| Constellation exposing its own MCP server | Better Auth MCP plugin may be useful for inbound client auth |
+
+Keep `McpCredentialProvider` pluggable: `better-auth-account`, `mcp-db`, `nango`, and `local-file`.
