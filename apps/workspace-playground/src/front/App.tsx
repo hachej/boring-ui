@@ -270,7 +270,7 @@ export function WorkspaceShell() {
       externalPlugins={externalPluginsEnabled}
       frontPluginHotReload={externalPluginsEnabled ? "vite" : undefined}
       fullPageBasePath="/full-page"
-      defaultLeftOverlay={inboxDemo ? "inbox" : undefined}
+      defaultLeftOverlay={inboxDemo ? "ask-user.inbox" : undefined}
       provisionWorkspace={!showcase}
       sessions={sessions}
       activeSessionId={showcase ? SHOWCASE_SESSION_ID : undefined}

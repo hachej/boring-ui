@@ -29,6 +29,57 @@ const question = {
 }
 
 test.describe("ask_user Questions pane", () => {
+  test("pending question appears in Inbox and survives page refresh", async ({ page }) => {
+    let pendingRequestCount = 0
+    const inboxQuestion = {
+      ...question,
+      questionId: "q-e2e-inbox-refresh",
+      sessionId: "default",
+      title: "Smoke check Inbox persistence",
+      context: "This question should stay visible after browser refresh.",
+    }
+
+    await page.route("**/api/v1/ui/state", async (route) => {
+      if (route.request().method() === "GET") {
+        await route.fulfill({
+          json: {
+            "questions.pending": {
+              hint: {
+                questionId: inboxQuestion.questionId,
+                sessionId: inboxQuestion.sessionId,
+                status: "ready",
+              },
+            },
+          },
+        })
+        return
+      }
+      await route.fulfill({ status: 204 })
+    })
+
+    await page.route("**/api/v1/workspace-bridge/call", async (route) => {
+      const body = route.request().postDataJSON()
+      if (body.op === "ask-user.v1.pending") {
+        pendingRequestCount += 1
+        await route.fulfill({ json: { ok: true, op: body.op, requestId: "req-e2e-inbox", output: { pending: inboxQuestion } } })
+        return
+      }
+      await route.fulfill({ json: { ok: true, op: body.op, requestId: "req-e2e-inbox", output: { ok: true, status: "answered" } } })
+    })
+
+    await page.goto("/?inboxDemo=1&fresh=1", { waitUntil: "domcontentloaded" })
+    await expect(page.getByRole("button", { name: "Inbox" })).toBeVisible({ timeout: 15_000 })
+    await expect(page.getByRole("heading", { name: "Inbox" })).toBeVisible()
+    await expect(page.getByText("Smoke check Inbox persistence")).toBeVisible()
+    await expect.poll(() => pendingRequestCount).toBeGreaterThanOrEqual(1)
+
+    await page.reload({ waitUntil: "domcontentloaded" })
+    await expect(page.getByRole("button", { name: "Inbox" })).toBeVisible({ timeout: 15_000 })
+    await expect(page.getByRole("heading", { name: "Inbox" })).toBeVisible()
+    await expect(page.getByText("Smoke check Inbox persistence")).toBeVisible()
+    await expect.poll(() => pendingRequestCount).toBeGreaterThanOrEqual(2)
+  })
+
   test("ui command opens pane from metadata, submits, and closes", async ({ page }) => {
     const commands: unknown[] = []
     await page.route("**/api/v1/ui/state", async (route) => {
@@ -61,7 +112,7 @@ test.describe("ask_user Questions pane", () => {
     const activeSessionId = await page.locator('[data-pi-chat-session-id]').first().getAttribute('data-pi-chat-session-id')
     await page.request.post("/api/v1/ui/commands", { data: { kind: "openSurface", params: { kind: "questions", target: question.questionId, meta: { sessionId: activeSessionId ?? question.sessionId } } } })
 
-    await expect(page.getByText("Choose A or B")).toBeVisible({ timeout: 8_000 })
+    await expect(page.getByRole("heading", { name: "Choose A or B" })).toBeVisible({ timeout: 8_000 })
     await page.getByRole("radio", { name: "A" }).click()
     await page.getByTestId("artifact-surface").getByRole("button", { name: "Submit" }).click()
 
