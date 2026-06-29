@@ -834,3 +834,26 @@ Decision rule:
 If Notion/Airtable/Microsoft OAuth refresh/revoke works cleanly in free self-host, use Nango as the hosted Constellation credential provider behind `McpCredentialProvider`.
 If free self-host limits or provider quirks block us, build a narrow Constellation token broker for the first providers and keep Nango as a future adapter.
 ```
+
+## Nango target-provider support check
+
+See [`nango-provider-support.md`](./nango-provider-support.md).
+
+Nango's provider registry/docs include all three Constellation target families:
+
+- Airtable:
+  - `airtable` — OAuth2, proxy base `https://api.airtable.com`;
+  - `airtable-pat` — API key/PAT fallback.
+- Notion:
+  - `notion` — OAuth2, proxy base `https://api.notion.com`, includes `notion-version` header;
+  - `notion-mcp` — `MCP_OAUTH2`, dynamic client registration, Notion MCP endpoints;
+  - `notion-scim` — API-key admin/SCIM path.
+- Microsoft / SharePoint:
+  - `microsoft` — OAuth2 Graph, `offline_access`, refresh token support;
+  - `microsoft-tenant-specific` — tenant-bound OAuth2 Graph;
+  - `microsoft-oauth2-cc` — client credentials Graph;
+  - `sharepoint-online` — SharePoint Online v2 / Graph family;
+  - `sharepoint-online-oauth2-cc` — SharePoint app-only/client credentials;
+  - `sharepoint-online-v1` — legacy SharePoint REST two-step/client assertion.
+
+This means Nango is viable at the registry/docs level for Constellation's first provider set. Still required before adoption: real OAuth spikes for Notion/Airtable/Microsoft, with refresh/revoke, scopes, Connect UI wording, and production outbound allowlist verified.
