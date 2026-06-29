@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest"
 import { render, screen, act, waitFor, fireEvent } from "@testing-library/react"
 import { renderHook } from "@testing-library/react"
-import { type ReactNode, useState } from "react"
+import { type ComponentType, type ReactNode, useState } from "react"
 import {
   WorkspaceProvider,
   formatWorkspaceDocumentTitle,
@@ -15,7 +15,6 @@ import { useCommands } from "../front/plugin/useCommands"
 import { useThemePreference } from "../front/store/selectors"
 import type { PaneProps, PanelConfig } from "../front/registry/types"
 import type { CatalogConfig } from "../shared/plugins/types"
-import { WorkbenchLeftPane } from "../front/chrome/workbench-left/WorkbenchLeftPane"
 
 function DummyPanel() {
   return <div>panel</div>
@@ -280,9 +279,16 @@ describe("WorkspaceProvider — panel registration", () => {
       source: "app",
     }
 
+    function LegacySourceHost() {
+      const source = useWorkspaceSourceRegistry().get("legacy-source")
+      if (!source) return <div>missing source</div>
+      const SourceComponent = source.component as ComponentType<any>
+      return <SourceComponent openPanel={onOpenPanel} />
+    }
+
     render(
       <WorkspaceProvider panels={[legacyPanel]} persistenceEnabled={false}>
-        <WorkbenchLeftPane defaultTab="legacy-source" onOpenPanel={onOpenPanel} />
+        <LegacySourceHost />
       </WorkspaceProvider>,
     )
 
@@ -296,7 +302,7 @@ describe("WorkspaceProvider — panel registration", () => {
     })
   })
 
-  it("legacy workspace-source panel adapter throws clearly for unsupported Dockview api use", async () => {
+  it("legacy workspace-source panel adapter throws clearly for unsupported Dockview api use", () => {
     const consoleError = vi.spyOn(console, "error").mockImplementation(() => undefined)
     function BadLegacyPanel({ api }: PaneProps) {
       api.close()
@@ -310,14 +316,19 @@ describe("WorkspaceProvider — panel registration", () => {
       source: "app",
     }
 
-    try {
-      render(
-        <WorkspaceProvider panels={[legacyPanel]} persistenceEnabled={false}>
-          <WorkbenchLeftPane defaultTab="bad-legacy-source" />
-        </WorkspaceProvider>,
-      )
+    function BadLegacySourceHost() {
+      const source = useWorkspaceSourceRegistry().get("bad-legacy-source")
+      if (!source) return <div>missing source</div>
+      const SourceComponent = source.component as ComponentType<any>
+      return <SourceComponent />
+    }
 
-      expect(await screen.findByText(/cannot use Dockview api\.close/)).toBeInTheDocument()
+    try {
+      expect(() => render(
+        <WorkspaceProvider panels={[legacyPanel]} persistenceEnabled={false}>
+          <BadLegacySourceHost />
+        </WorkspaceProvider>,
+      )).toThrow(/cannot use Dockview api\.close/)
     } finally {
       consoleError.mockRestore()
     }
