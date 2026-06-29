@@ -512,6 +512,27 @@ The pi-mcp-adapter spike proved dynamic client registration and Notion auth URL 
 
 Hosted V0 does not block on MCP-native Notion if Composio regular Notion tools satisfy the first product need.
 
+## Composio MCP session compatibility PoC
+
+See [`composio-mcp-session-poc.md`](./composio-mcp-session-poc.md).
+
+A local mock Composio-like MCP endpoint proved that pi-mcp-adapter / MCP SDK Streamable HTTP client plumbing can:
+
+```txt
+connect to a URL MCP endpoint with Composio-style session headers
+list tools
+read input schema metadata
+call a read-only tool
+```
+
+This validates the intended implementation shape in principle:
+
+```txt
+boring-mcp → MCP SDK/pi-adapter-style client → Composio MCP endpoint
+```
+
+The mock PoC does not replace real Composio provider spikes. Live Composio still must prove `session.mcp.url`, `session.mcp.headers`, Notion/Airtable/Microsoft metadata, revoke/disconnect, audit, and no-token-leak behavior.
+
 ## Composio production gates
 
 Composio can ship V0 only after these are green or explicitly accepted:
