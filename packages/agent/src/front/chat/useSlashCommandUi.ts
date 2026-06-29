@@ -50,7 +50,7 @@ export function useSlashCommandUi({
   insertSlashCommand,
   setComposerDraft,
 }: UseSlashCommandUiOptions) {
-  const runSlashCommandFromUi = useCallback((name: string) => {
+  const runSlashCommandFromUi = useCallback((name: string, options?: { clearDraftUnlessPreserved?: boolean }) => {
     const command = registry.get(name)
     if (!command || command.clickBehavior === 'disabled') return
 
@@ -74,6 +74,8 @@ export function useSlashCommandUi({
         selectComposerThinking,
       }
       const result = await Promise.resolve(command.handler('', ctx))
+      const preserveDraft = Boolean(result && typeof result === 'object' && result.preserveDraft)
+      if (options?.clearDraftUnlessPreserved && !preserveDraft) setComposerDraft('')
       const message = slashCommandResultMessage(result) ?? `/${name} triggered.`
       onCommandResult?.(message)
       addLocalNotice({ id: `command:${Date.now()}`, level: 'info', text: message, dismissible: true })
@@ -84,8 +86,7 @@ export function useSlashCommandUi({
     const command = registry.get(name)
     if (command?.clickBehavior === 'execute') {
       dismissSlash()
-      setComposerDraft('')
-      runSlashCommandFromUi(name)
+      runSlashCommandFromUi(name, { clearDraftUnlessPreserved: true })
       return
     }
     if (command?.clickBehavior === 'disabled') {
