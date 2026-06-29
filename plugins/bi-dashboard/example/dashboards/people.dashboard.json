@@ -7,42 +7,40 @@
   "queries": {
     "total_revenue": {
       "id": "total_revenue",
-      "source": "people-duckdb",
-      "sql": "SELECT sum(revenue) AS revenue FROM people"
+      "model": "people",
+      "query": "sm.aggregate(\"revenue\")"
     },
     "headcount": {
       "id": "headcount",
-      "source": "people-duckdb",
-      "sql": "SELECT count(*) AS count FROM people"
+      "model": "people",
+      "query": "sm.aggregate(\"count\")"
     },
     "revenue_by_role": {
       "id": "revenue_by_role",
-      "source": "people-duckdb",
-      "sql": "SELECT role, sum(revenue) AS revenue FROM people GROUP BY role ORDER BY revenue DESC"
+      "model": "people",
+      "query": "sm.group_by(\"role\").aggregate(\"revenue\").order_by(ibis.desc(\"revenue\"))"
     },
     "headcount_by_region": {
       "id": "headcount_by_region",
-      "source": "people-duckdb",
-      "sql": "SELECT region, count(*) AS count FROM people GROUP BY region ORDER BY count DESC"
+      "model": "people",
+      "query": "sm.group_by(\"region\").aggregate(\"count\").order_by(ibis.desc(\"count\"))"
     },
     "revenue_by_region": {
       "id": "revenue_by_region",
-      "source": "people-duckdb",
-      "sql": "SELECT region, sum(revenue) AS revenue FROM people GROUP BY region ORDER BY revenue DESC"
+      "model": "people",
+      "query": "sm.group_by(\"region\").aggregate(\"revenue\").order_by(ibis.desc(\"revenue\"))"
     },
     "people_detail": {
       "id": "people_detail",
-      "source": "people-duckdb",
-      "sql": "SELECT role, region, sum(revenue) AS revenue FROM people GROUP BY role, region ORDER BY revenue DESC"
+      "model": "people",
+      "query": "sm.group_by(\"role\", \"region\").aggregate(\"revenue\").order_by(ibis.desc(\"revenue\"))"
     }
   },
   "root": "dashboard",
   "elements": {
     "dashboard": {
       "type": "DashboardGrid",
-      "props": {
-        "columns": 12
-      },
+      "props": { "columns": 12 },
       "children": [
         "summary",
         "total-revenue",
@@ -63,48 +61,19 @@
     },
     "total-revenue": {
       "type": "BSLMetric",
-      "props": {
-        "queryId": "total_revenue",
-        "valueField": "revenue",
-        "label": "Total revenue",
-        "format": "currency"
-      }
+      "props": { "queryId": "total_revenue", "valueField": "revenue", "label": "Total revenue", "format": "currency" }
     },
     "headcount": {
       "type": "BSLMetric",
-      "props": {
-        "queryId": "headcount",
-        "valueField": "count",
-        "label": "People",
-        "format": "number"
-      }
+      "props": { "queryId": "headcount", "valueField": "count", "label": "People", "format": "number" }
     },
     "role-controller": {
       "type": "BSLFilter",
-      "props": {
-        "id": "role-filter",
-        "field": "role",
-        "label": "Role controller",
-        "controlType": "multiSelect",
-        "targetQueries": [
-          "revenue_by_role",
-          "people_detail"
-        ]
-      }
+      "props": { "id": "role-filter", "field": "role", "label": "Role controller", "controlType": "multiSelect", "targetQueries": ["revenue_by_role", "people_detail"] }
     },
     "region-controller": {
       "type": "BSLFilter",
-      "props": {
-        "id": "region-filter",
-        "field": "region",
-        "label": "Region controller",
-        "controlType": "select",
-        "targetQueries": [
-          "headcount_by_region",
-          "revenue_by_region",
-          "people_detail"
-        ]
-      }
+      "props": { "id": "region-filter", "field": "region", "label": "Region controller", "controlType": "select", "targetQueries": ["headcount_by_region", "revenue_by_region", "people_detail"] }
     },
     "role-chart": {
       "type": "BSLChart",
@@ -115,9 +84,7 @@
         "chartType": "bar",
         "x": "role",
         "y": "revenue",
-        "controls": [
-          "role-filter"
-        ]
+        "controls": ["role-filter"]
       }
     },
     "region-chart": {
@@ -129,9 +96,7 @@
         "chartType": "bar",
         "x": "region",
         "y": "revenue",
-        "controls": [
-          "region-filter"
-        ]
+        "controls": ["region-filter"]
       }
     },
     "perspective-role": {
@@ -140,38 +105,19 @@
         "queryId": "headcount_by_region",
         "title": "Perspective: headcount by region",
         "plugin": "Y Bar",
-        "columns": [
-          "region",
-          "count"
-        ],
-        "sort": [
-          [
-            "count",
-            "desc"
-          ]
-        ]
+        "columns": ["region", "count"],
+        "sort": [["count", "desc"]]
       }
     },
     "perspective-detail": {
       "type": "BSLPerspectiveViewer",
       "props": {
         "queryId": "people_detail",
-        "title": "Perspective: role \u00d7 region revenue",
+        "title": "Perspective: role × region revenue",
         "plugin": "Datagrid",
-        "columns": [
-          "role",
-          "region",
-          "revenue"
-        ],
-        "groupBy": [
-          "role"
-        ],
-        "sort": [
-          [
-            "revenue",
-            "desc"
-          ]
-        ]
+        "columns": ["role", "region", "revenue"],
+        "groupBy": ["role"],
+        "sort": [["revenue", "desc"]]
       }
     }
   }
