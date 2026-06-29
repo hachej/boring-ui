@@ -276,6 +276,8 @@ async function runPythonBsl(payload: Record<string, unknown>, signal?: AbortSign
   const script = String.raw`
 import json, sys, ast
 from pathlib import Path
+import ibis
+from ibis import _
 from boring_semantic_layer import from_yaml
 payload = json.loads(sys.stdin.read())
 query = payload["query"]
@@ -289,7 +291,7 @@ if not payload.get("trustedPython"):
             raise ValueError(f"Unsupported BSL query name: {node.id}")
 models = from_yaml(Path(payload["modelPath"]), profile=payload.get("profile"), profile_path=payload.get("profileFile"))
 sm = models[payload["model"]]
-result = eval(compile(query, "<data-bridge-bsl>", "eval"), {"__builtins__": {}}, {"sm": sm})
+result = eval(compile(query, "<data-bridge-bsl>", "eval"), {"__builtins__": {}}, {"sm": sm, "ibis": ibis, "_": _})
 df = result.execute()
 limit = int(payload.get("limit") or 5000)
 rows = json.loads(df.head(limit).to_json(orient="records", date_format="iso"))
