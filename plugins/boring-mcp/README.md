@@ -41,6 +41,8 @@ Apps may also list the package in `package.json#boring.defaultPluginPackages`, b
 
 ## Security boundaries
 
+Managed connector adapters must pass the [Composio security preflight](./docs/composio-security-preflight.md) before real product provider calls.
+
 - Browser UI never receives provider OAuth tokens, connector API keys, or MCP session headers.
 - Raw provider meta-tools are not exposed by this foundation.
 - Unknown tools are disabled by default.
