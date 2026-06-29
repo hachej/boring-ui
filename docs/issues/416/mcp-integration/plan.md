@@ -1318,3 +1318,53 @@ Cred Ninja
 API Locker
 OpenCloak
 ```
+
+## Composio managed connector backend option
+
+Composio is now an explicit optional managed connector backend.
+
+Use it when speed and connector coverage matter more than self-custody:
+
+```txt
+credentialProvider = "composio-managed"
+```
+
+Pros:
+
+```txt
+managed OAuth
+per-user connected accounts
+many SaaS connectors
+MCP/session tooling
+free/cheap early usage tier
+much less connector plumbing
+```
+
+Constraints:
+
+```txt
+Composio becomes a third-party credential custodian and tool-call data processor.
+Private/regulated deployments may reject this.
+BYO LLM keys and MCP-native gaps still need Constellation SecretStore.
+Provider-specific spikes still required for Notion/Airtable/Microsoft.
+```
+
+Decision:
+
+```txt
+Keep SecretStore abstraction.
+Add Composio adapter as fast-path managed backend.
+Do not make Composio the only credential strategy.
+```
+
+Production gates:
+
+```txt
+DPA/security/subprocessor review
+incident-history risk acceptance
+custom OAuth app support verified
+scope/tool allowlist verified
+revoke/disconnect verified
+no raw token exposure verified
+Constellation audit/redaction wrapper verified
+```

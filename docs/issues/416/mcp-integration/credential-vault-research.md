@@ -471,3 +471,99 @@ refresh locks
 | OpenCloak | reference for token-exchange agent pattern |
 
 They should not be default Constellation dependencies unless a later spike proves maturity, license, and adoption are acceptable.
+
+## Composio managed connector option
+
+Composio is a serious managed option for V0/V1 connector velocity.
+
+Current public positioning/pricing found:
+
+```txt
+Free: 20K standard tool calls/month
+Paid: $29/month for 200K standard tool calls + overage
+Business: $229/month for 2M standard tool calls
+```
+
+Capabilities relevant to Constellation:
+
+```txt
+managed OAuth for many apps
+per-user connected accounts
+custom auth configs / bring your own OAuth app credentials
+API key / bearer token / basic auth style connectors
+MCP/session URLs and managed tool execution
+Composio Connect meta-tools for discover/auth/execute
+```
+
+### Where Composio fits
+
+Composio can be a managed credential/tool backend for normal SaaS connectors:
+
+```txt
+Notion regular API/tools
+Airtable
+Google/Microsoft/GitHub/Slack/etc.
+possibly SharePoint/Microsoft if supported in required shape
+```
+
+Constellation would store only:
+
+```txt
+workspaceId
+actorId
+sourceId
+providerId
+credentialProvider = "composio"
+composio userId / connectionId / authConfigId / sessionRef
+```
+
+Composio stores/refreshes provider credentials and executes or brokers tool calls.
+
+### Where Composio may not fit
+
+Composio should not replace every credential path:
+
+```txt
+BYO LLM provider API keys may still belong in Constellation SecretStore or provider-specific billing/runtime config.
+MCP-native Notion MCP auth still needs a real spike; Composio may expose Notion tools but not necessarily raw Notion MCP protocol semantics.
+Private/regulated Constellation deployments may reject third-party token/data processing.
+```
+
+### Security / procurement gates
+
+Using Composio means accepting it as a third-party credential custodian and tool-call data processor.
+
+Hard gates before production:
+
+```txt
+DPA / subprocessors / data residency accepted by owner/customer
+security docs reviewed
+incident history reviewed and risk accepted
+custom OAuth app support verified where brand/control requires it
+scopes/tool allowlist enforceable from Constellation
+per-user credential isolation verified
+revoke/disconnect verified
+logs/audit export sufficient for Constellation governance
+no raw provider token exposed to Pi/browser/agent
+provider-specific spikes for Notion/Airtable/Microsoft
+```
+
+Research found public reporting of a 2026 Composio credential incident. Treat this as a reason for diligence, not automatic rejection. A managed connector vendor is a high-value token vault; the decision must be explicit.
+
+### Recommended role
+
+Add Composio as an optional `McpCredentialProvider` / connector backend:
+
+```txt
+composio-managed
+```
+
+Keep Constellation's own SecretStore path for:
+
+```txt
+private deployments
+BYO LLM keys
+MCP-native provider gaps
+customers that reject third-party token custody
+fallback if Composio pricing/security/provider coverage changes
+```
