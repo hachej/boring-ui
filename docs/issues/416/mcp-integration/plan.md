@@ -1014,11 +1014,49 @@ Example shape:
 ```ts
 createBoringMcpPlugin({
   sources: [
-    { id: 'notion-personal', providerPreset: 'notion', ownerKind: 'user', label: 'Notion' },
-    { id: 'airtable-company', providerPreset: 'airtable', ownerKind: 'company_context', label: 'Airtable' },
-    { id: 'sharepoint-company', providerPreset: 'sharepoint', ownerKind: 'company_context', label: 'SharePoint' },
+    {
+      id: 'notion-personal',
+      providerPreset: 'notion',
+      ownerKind: 'user',
+      label: 'Notion',
+      toolProfile: 'readonly',
+      enabledTools: ['notion.search_pages', 'notion.get_page_markdown'],
+      materializedTools: [], // V0 empty: use search/describe/readonly_call bridge tools
+    },
+    {
+      id: 'airtable-company',
+      providerPreset: 'airtable',
+      ownerKind: 'company_context',
+      label: 'Airtable',
+      toolProfile: 'readonly',
+      enabledTools: ['airtable.list_bases', 'airtable.list_tables', 'airtable.search_records'],
+      materializedTools: [
+        // V2 optional sugar over the same governed facade, never a bypass.
+        { name: 'mcp_airtable_search_records', tool: 'airtable.search_records' },
+      ],
+    },
+    {
+      id: 'sharepoint-company',
+      providerPreset: 'sharepoint',
+      ownerKind: 'company_context',
+      label: 'SharePoint',
+      toolProfile: 'readonly',
+      enabledTools: ['sharepoint.search_files', 'sharepoint.read_file_metadata'],
+      materializedTools: [],
+    },
   ],
 })
+```
+
+Rules:
+
+```txt
+enabledTools is the app-approved normalized allowlist for that source.
+materializedTools is optional and derives only from enabledTools.
+V0 may leave materializedTools empty and expose only mcp_tools_search, mcp_tool_describe, and mcp_readonly_call.
+V2 materialized tools are generated sugar over mcp_readonly_call, never direct provider calls.
+Provider-native action names stay server-side; app config should prefer normalized boring-mcp tool ids.
+Unknown/provider-drifted tools are disabled until re-probed and reclassified.
 ```
 
 Enforcement rule:
