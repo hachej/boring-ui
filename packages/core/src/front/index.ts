@@ -86,8 +86,10 @@ export {
   TopBarSlotProvider,
   useTopBarSlot,
   WorkspaceSwitcher,
+  CreateWorkspaceDialog,
   ThemeToggle,
 } from './components/index.js'
+export type { CreateWorkspaceDialogProps } from './components/index.js'
 
 export { sanitizeMarkdown, sanitizeToolOutput } from './sanitize.js'
 export { debounce } from './debounce.js'

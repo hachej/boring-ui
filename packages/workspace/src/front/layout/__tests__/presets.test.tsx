@@ -594,13 +594,14 @@ describe("ChatLayout component", () => {
     expect(screen.getByLabelText("Chat")).toHaveAttribute("data-boring-state", "expanded")
   })
 
-  it("collapses the chat to zero width and shows a floating expand button", () => {
+  it("collapses the chat to zero width and restores from fixed top-right chrome", () => {
     renderWithRegistry(
       <ChatLayout center="chat" storageKey="chat-layout-rail" />,
       ["chat", "session-list"],
     )
 
-    expect(screen.queryByRole("button", { name: "Expand chat" })).not.toBeInTheDocument()
+    expect(screen.getByRole("button", { name: "Collapse chat" })).toBeInTheDocument()
+    expect(screen.queryByRole("button", { name: "Show chat" })).not.toBeInTheDocument()
 
     act(() => fireShortcut("\\", { metaKey: true }))
 
@@ -608,11 +609,11 @@ describe("ChatLayout component", () => {
     const collapsed = screen.getByLabelText("Collapsed chat")
     expect(collapsed).toHaveAttribute("data-boring-state", "collapsed")
     expect(collapsed).toHaveAttribute("aria-hidden", "true")
-    // ... and re-opening is a floating left-edge button.
-    expect(screen.getByRole("button", { name: "Expand chat" })).toBeInTheDocument()
+    // ... and re-opening is fixed top-right chrome, not a left-edge rail.
+    expect(screen.getByRole("button", { name: "Show chat" })).toBeInTheDocument()
 
     act(() => fireShortcut("\\", { metaKey: true }))
-    expect(screen.queryByRole("button", { name: "Expand chat" })).not.toBeInTheDocument()
+    expect(screen.queryByRole("button", { name: "Show chat" })).not.toBeInTheDocument()
     expect(screen.getByLabelText("Chat")).toHaveAttribute("data-boring-state", "expanded")
   })
 
@@ -716,7 +717,7 @@ describe("ChatLayout component", () => {
     expect(screen.getByRole("button", { name: "Collapse chat" })).toBeInTheDocument()
   })
 
-  it("stacks the floating expand-chat button above the sessions button on the left edge", () => {
+  it("keeps chat restore in fixed top-right chrome instead of stacking on the left edge", () => {
     renderWithRegistry(
       <ChatLayout center="chat" nav={null} onOpenNav={vi.fn()} storageKey="chat-layout-stack" />,
       ["chat", "session-list"],
@@ -725,12 +726,10 @@ describe("ChatLayout component", () => {
     act(() => fireShortcut("\\", { metaKey: true }))
 
     const sessionsButton = screen.getByRole("button", { name: "Sessions" })
-    const chatButton = screen.getByRole("button", { name: "Expand chat" })
-    // Both anchor to the left edge and are vertically offset so they never overlap.
+    const chatButton = screen.getByRole("button", { name: "Show chat" })
     expect(sessionsButton.className).toContain("left-2")
-    expect(chatButton.className).toContain("left-2")
-    expect(sessionsButton.style.transform).toContain("translateY(calc(-50% - 0px))")
-    expect(chatButton.style.transform).toContain("translateY(calc(-50% - 44px))")
+    expect(chatButton.className).not.toContain("left-2")
+    expect(chatButton.closest(".right-3")).not.toBeNull()
   })
 
   it("auto-expands the chat panel when a blocker appears while collapsed", async () => {

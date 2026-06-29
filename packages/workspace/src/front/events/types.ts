@@ -4,7 +4,7 @@
  * All in-process cross-cutting signals flow through one typed map.
  * Adding a new event = adding a key here.
  *
- * See `docs/plans/UNIFIED_EVENT_BUS.md` for the design rationale and
+ * See `packages/workspace/docs/plans/archive/UNIFIED_EVENT_BUS.md` for the design rationale and
  * the planned future events. Those are intentionally NOT pre-declared
  * — they get added when their concrete emitter and consumer land in
  * the same step.
