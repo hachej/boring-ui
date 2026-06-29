@@ -9,8 +9,30 @@ export interface DataBridgeColumn {
   role?: DataBridgeRole
 }
 
-export interface DataBridgeBslQuery {
-  language: "bsl"
+export interface DataBridgeFilterExpression {
+  field: string
+  op: "eq" | "neq" | "gt" | "gte" | "lt" | "lte" | "in" | "contains" | "between"
+  value: unknown
+}
+
+export interface DataBridgeDashboardQuery {
+  language: "bsl-dashboard"
+  model: string
+  groupBy?: string[]
+  measures?: string[]
+  dimensions?: string[]
+  filters?: DataBridgeFilterExpression[]
+  orderBy?: Array<[field: string, direction: "asc" | "desc"]>
+  limit?: number
+  dataRef?: {
+    kind: "workspace-file"
+    path: string
+    limit?: number
+  }
+}
+
+export interface DataBridgeBslPythonQuery {
+  language: "bsl-python"
   model: string
   query: string
   limit?: number
@@ -24,7 +46,7 @@ export interface DataBridgeSqlQuery {
   limit?: number
 }
 
-export type DataBridgeQuery = DataBridgeBslQuery | DataBridgeSqlQuery
+export type DataBridgeQuery = DataBridgeDashboardQuery | DataBridgeBslPythonQuery | DataBridgeSqlQuery
 
 export interface DataBridgeQueryRunInput {
   source?: string
