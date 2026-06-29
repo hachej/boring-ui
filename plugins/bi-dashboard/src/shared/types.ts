@@ -2,7 +2,6 @@ import type { GeneratedPaneElementSpec, GeneratedPaneSpec } from "@hachej/boring
 import type {
   BslChartProps,
   BslDashboardQuerySpec,
-  BslFilterExpression,
   BslFilterProps,
   BslMetricProps,
   BslPerspectiveViewerProps,
@@ -13,7 +12,6 @@ import type {
 export type {
   BslChartProps,
   BslDashboardQuerySpec,
-  BslFilterExpression,
   BslFilterProps,
   BslMetricProps,
   BslPerspectiveViewerProps,
@@ -24,7 +22,6 @@ export type {
 export type BslChartRenderer = BslChartProps["renderer"]
 export type BslChartType = BslChartProps["chartType"]
 export type PerspectiveViewerPlugin = BslPerspectiveViewerProps["plugin"]
-export type BslDashboardDataRef = NonNullable<BslDashboardQuerySpec["dataRef"]>
 
 export interface BiDashboardSpec extends Omit<GeneratedPaneSpec, "profile" | "queries" | "elements"> {
   profile: "bi-dashboard"

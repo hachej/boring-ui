@@ -8,46 +8,32 @@
     "total_revenue": {
       "id": "total_revenue",
       "model": "people",
-      "measures": ["revenue"],
-      "dataRef": { "kind": "workspace-file", "path": "data/people.csv" }
+      "query": "sm.aggregate(\"revenue\")"
     },
     "headcount": {
       "id": "headcount",
       "model": "people",
-      "measures": ["count"],
-      "dataRef": { "kind": "workspace-file", "path": "data/people.csv" }
+      "query": "sm.aggregate(\"count\")"
     },
     "revenue_by_role": {
       "id": "revenue_by_role",
       "model": "people",
-      "groupBy": ["role"],
-      "measures": ["revenue"],
-      "orderBy": [["revenue", "desc"]],
-      "dataRef": { "kind": "workspace-file", "path": "data/people.csv" }
+      "query": "sm.group_by(\"role\").aggregate(\"revenue\").order_by(ibis.desc(\"revenue\"))"
     },
     "headcount_by_region": {
       "id": "headcount_by_region",
       "model": "people",
-      "groupBy": ["region"],
-      "measures": ["count"],
-      "orderBy": [["count", "desc"]],
-      "dataRef": { "kind": "workspace-file", "path": "data/people.csv" }
+      "query": "sm.group_by(\"region\").aggregate(\"count\").order_by(ibis.desc(\"count\"))"
     },
     "revenue_by_region": {
       "id": "revenue_by_region",
       "model": "people",
-      "groupBy": ["region"],
-      "measures": ["revenue"],
-      "orderBy": [["revenue", "desc"]],
-      "dataRef": { "kind": "workspace-file", "path": "data/people.csv" }
+      "query": "sm.group_by(\"region\").aggregate(\"revenue\").order_by(ibis.desc(\"revenue\"))"
     },
     "people_detail": {
       "id": "people_detail",
       "model": "people",
-      "groupBy": ["role", "region"],
-      "measures": ["revenue"],
-      "orderBy": [["revenue", "desc"]],
-      "dataRef": { "kind": "workspace-file", "path": "data/people.csv" }
+      "query": "sm.group_by(\"role\", \"region\").aggregate(\"revenue\").order_by(ibis.desc(\"revenue\"))"
     }
   },
   "root": "dashboard",

@@ -6,8 +6,6 @@ export type {
   BslChartType,
   PerspectiveViewerPlugin,
   BslDashboardQuerySpec,
-  BslDashboardDataRef,
-  BslFilterExpression,
   BslDashboardSpec,
   BslDashboardComponentSpec,
   DashboardGridSpec,

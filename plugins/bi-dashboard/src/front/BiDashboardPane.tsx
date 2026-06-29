@@ -219,38 +219,10 @@ function formatMetricValue(value: unknown, format: "number" | "currency" | "perc
   return new Intl.NumberFormat("en-US", { maximumFractionDigits: 2 }).format(number)
 }
 
-function applyControllerFilters(spec: BslDashboardSpec, controllerValues: Record<string, string>): BslDashboardSpec {
-  const elements = Object.values(spec.elements)
-  const filtersByQuery = new Map<string, Array<{ field: string; value: string }>>()
-  for (const element of elements) {
-    if (element.type !== "BSLFilter") continue
-    const props = element.props as Record<string, unknown> | undefined
-    const id = typeof props?.id === "string" ? props.id : undefined
-    const field = typeof props?.field === "string" ? props.field : undefined
-    const value = id ? controllerValues[id] : undefined
-    if (!id || !field || !value || value === "__all") continue
-    const targets = Array.isArray(props?.targetQueries) ? props.targetQueries.filter((item): item is string => typeof item === "string") : []
-    for (const queryId of targets) {
-      const existing = filtersByQuery.get(queryId) ?? []
-      existing.push({ field, value })
-      filtersByQuery.set(queryId, existing)
-    }
-  }
-  if (filtersByQuery.size === 0) return spec
-  return {
-    ...spec,
-    queries: Object.fromEntries(Object.entries(spec.queries).map(([queryId, query]) => {
-      const filters = filtersByQuery.get(queryId)
-      if (!filters?.length) return [queryId, query]
-      return [queryId, {
-        ...query,
-        filters: [
-          ...(query.filters ?? []),
-          ...filters.map((filter) => ({ field: filter.field, op: "eq" as const, value: filter.value })),
-        ],
-      }]
-    })),
-  }
+function applyControllerFilters(spec: BslDashboardSpec, _controllerValues: Record<string, string>): BslDashboardSpec {
+  // Query specs are intentionally either BSL expression strings or SQL strings.
+  // Do not mutate them through a parallel JSON filter DSL here.
+  return spec
 }
 
 function ChartPreview({ data, x, y, chartType }: { data?: DashboardQueryResult; x?: string; y?: string | string[]; chartType: string }) {

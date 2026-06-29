@@ -32,8 +32,7 @@ Agents should generate specs shaped like:
     "revenue_by_month": {
       "id": "revenue_by_month",
       "model": "orders",
-      "groupBy": ["month"],
-      "measures": ["revenue"]
+      "query": "sm.group_by(\"month\").aggregate(\"revenue\").order_by(\"month\")"
     }
   },
   "root": "dashboard",
