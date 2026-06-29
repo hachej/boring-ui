@@ -24,9 +24,17 @@ export type WorkspaceAttentionSessionBadge = {
   priority?: number
 }
 
+export type WorkspaceAttentionInboxSourceMetadata =
+  | { type: "plugin"; id: string; label: string }
+  | { type: "external-hook"; id: string; label: string }
+  | { type: "review"; id: string; label: string }
+  | { type: "generic"; id?: string; label: string }
+
 export type WorkspaceAttentionInboxMetadata = {
   kind: "question" | "review" | "approval" | "notice"
   sourceLabel: string
+  /** Explicit generic provenance for Inbox rows. Plugins should prefer this over reason parsing. */
+  source?: WorkspaceAttentionInboxSourceMetadata
   createdAt?: string | number | Date
   updatedAt?: string | number | Date
   priority?: number

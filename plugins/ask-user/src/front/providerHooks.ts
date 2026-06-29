@@ -12,7 +12,8 @@ import {
   workspaceEvents,
   type WorkspaceAttentionActionDetail,
 } from "@hachej/boring-workspace"
-import { ASK_USER_PLUGIN_ID, ASK_USER_SURFACE_KIND, ASK_USER_UI_STATE_SLOTS } from "../shared/constants"
+import { ASK_USER_SURFACE_KIND, ASK_USER_UI_STATE_SLOTS } from "../shared/constants"
+import { askUserHumanActionToBlockerProjection } from "../shared/humanAction"
 import { createQuestionsClient, readPendingQuestionHintsFromState, type PendingQuestionHint } from "./client"
 import { isSessionOpen, type QuestionsRuntime } from "./runtime"
 
@@ -22,32 +23,15 @@ export function useAskUserAttentionBlockers(runtime: QuestionsRuntime, pendingSn
     const blockerIds: string[] = []
     for (const hint of runtime.getPendingHints()) {
       if (hint.status && hint.status !== "ready") continue
-      const blockerId = `${ASK_USER_PLUGIN_ID}:${hint.sessionId}:${hint.questionId}`
-      blockerIds.push(blockerId)
       const hydrated = runtime.getPending(hint.sessionId)
-      const isActiveHint = runtime.activeSessionId === hint.sessionId && isSessionOpen(runtime, hint.sessionId)
-      const actions = hydrated
-        ? [{ id: "open", label: "Open Questions" }, { id: "cancel", label: "Cancel question" }]
-        : isActiveHint
-          ? [{ id: "open", label: "Open Questions" }]
-          : undefined
-      addBlocker({
-        id: blockerId,
-        reason: "ask-user.question",
-        surfaceKind: ASK_USER_SURFACE_KIND,
-        target: hint.questionId,
-        label: hydrated?.title ?? "Answer the question in Questions to continue",
-        sessionId: hint.sessionId,
-        sessionBadge: { kind: "question", label: "question", tone: "attention", priority: 10 },
-        inbox: {
-          kind: "question",
-          sourceLabel: "question",
-          createdAt: hydrated?.createdAt,
-          updatedAt: hydrated?.updatedAt ?? hydrated?.createdAt,
-          priority: 10,
-        },
-        actions,
+      const blocker = askUserHumanActionToBlockerProjection({
+        hint,
+        question: hydrated,
+        isActiveHint: runtime.activeSessionId === hint.sessionId && isSessionOpen(runtime, hint.sessionId),
       })
+      if (!blocker) continue
+      blockerIds.push(blocker.id)
+      addBlocker(blocker)
     }
     return () => { for (const blockerId of blockerIds) removeBlocker(blockerId) }
   }, [addBlocker, removeBlocker, runtime, pendingSnapshot])
