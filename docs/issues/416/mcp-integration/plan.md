@@ -896,3 +896,132 @@ Implication:
 - A `pi-mcp-adapter`-style MCP OAuth core plus DB-backed credential store is a good building block for hosted `boring-mcp`.
 - Hosted Constellation must verify Notion MCP registration/token exchange from the real deployment environment.
 - If Notion MCP token exchange is blocked by runtime egress, use regular Notion OAuth/API for V0 and keep MCP-native Notion experimental.
+
+## MCP-native auth direction after Notion spikes
+
+For MCP-native providers, especially Notion MCP, prefer a `pi-mcp-adapter` / MCP SDK derived OAuth core with Constellation-owned encrypted DB storage.
+
+Rationale:
+
+- `pi-mcp-adapter` successfully produced a Notion MCP authorization URL using dynamic client registration + PKCE.
+- Nango free self-host `notion-mcp` did not reach Notion OAuth through the public backend API path because dynamic registration/client fields were missing.
+- The MCP SDK auth shape matches MCP-native provider expectations better than treating MCP OAuth as a generic SaaS connector.
+- Hosted Constellation still needs DB-backed, multi-tenant, audited credential storage instead of Pi's local `tokens.json` files.
+
+### Layering
+
+```txt
+boring-mcp
+  mcp-oauth-core
+    endpoint discovery
+    dynamic client registration
+    PKCE
+    auth URL generation
+    callback/code exchange
+    refresh
+    credential-store interface
+
+  credential stores
+    local-file store for CLI/user-managed mode
+    encrypted DB store for hosted/full-app mode
+
+  facade/catalog
+    tools/list probe
+    schema hash and drift
+    read/write/admin classification
+    mcp_tools_search
+    mcp_tool_describe
+    mcp_readonly_call
+    optional materialized tools
+```
+
+### Store interface
+
+```ts
+interface McpOAuthStore {
+  get(actor: McpActor, source: McpSourceRef): Promise<AuthEntry | null>;
+  save(actor: McpActor, source: McpSourceRef, entry: AuthEntry): Promise<void>;
+  updateTokens(actor: McpActor, source: McpSourceRef, tokens: StoredTokens): Promise<void>;
+  updateClientInfo(actor: McpActor, source: McpSourceRef, clientInfo: StoredClientInfo): Promise<void>;
+  updatePendingState(actor: McpActor, source: McpSourceRef, pending: PendingOAuthState): Promise<void>;
+  clear(actor: McpActor, source: McpSourceRef): Promise<void>;
+}
+```
+
+Hosted DB rows should include:
+
+```txt
+workspaceId
+userId / actorId
+sourceId
+serverUrl
+encrypted tokens
+encrypted client info
+encrypted PKCE/state while pending
+expiresAt
+scopes
+revokedAt
+createdAt / updatedAt
+```
+
+### Hosted auth flow
+
+Do not keep hosted auth completion dependent on one long-lived in-memory Pi process.
+
+Use HTTP routes:
+
+```txt
+POST /api/mcp/sources/:sourceId/auth/start
+  -> create pending auth row
+  -> generate MCP OAuth authorization URL
+  -> return URL to browser
+
+GET /api/mcp/oauth/callback
+  -> validate state/source/actor
+  -> exchange code
+  -> store encrypted tokens/client info
+  -> mark source connected
+```
+
+Manual/headless auth can still exist for CLI mode, but hosted Constellation should use normal callback routes.
+
+### Tool search/materialization compatibility
+
+This auth direction does not change the planned tool exposure model.
+
+Once a valid token exists, the boring-mcp facade can:
+
+```txt
+connect MCP client with stored token
+call tools/list
+cache tool schemas
+classify read/write/admin
+serve mcp_tools_search
+serve mcp_tool_describe
+serve mcp_readonly_call
+optionally register materialized tools
+```
+
+Materialized tools remain sugar over the same guarded call path:
+
+```txt
+mcp_notion_fetch -> mcp_readonly_call({ serverId, toolName, input })
+```
+
+### Provider strategy
+
+Use the right credential adapter by provider shape:
+
+| Provider shape | Preferred V0 credential path |
+| --- | --- |
+| MCP-native OAuth provider, e.g. Notion MCP | MCP SDK / pi-mcp-adapter-derived OAuth core + encrypted DB store |
+| Normal SaaS REST OAuth, e.g. regular Notion API, Airtable REST, Microsoft Graph | Better Auth if sufficient, otherwise narrow Constellation token broker; Nango remains an optional future adapter |
+| API-key/PAT provider | encrypted Constellation secret ref or Nango Auth+Proxy if integration velocity justifies it |
+| CLI/user-managed MCP | local file store, explicit user-owned config, no hosted token storage |
+
+### Required proof before production
+
+- Notion MCP token exchange must succeed from the actual hosted deployment environment; this sandbox hit Cloudflare 1010 on direct token exchange.
+- DB-backed store must pass tests for token encryption, refresh, revoke, ownership, and redaction.
+- `tools/list` probe must work with the stored token.
+- Search/describe/call must run through the same policy/audit/redaction path.
