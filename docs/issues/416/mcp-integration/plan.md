@@ -990,6 +990,15 @@ boring-ui-constellation:
 
 If an implementation PR adds reusable MCP logic or reusable MCP UI directly to Constellation, stop and split it before merge.
 
+Provider ownership rule:
+
+```txt
+boring-mcp core owns generic MCP/source/tool/connector seams.
+boring-mcp core does not own Notion/Airtable/SharePoint as hardcoded product integrations.
+Provider-specific templates, allowlists, copy, and live-provider maintenance must live in optional provider presets/packs or app configuration unless explicitly approved as first-party reusable presets.
+Live Notion/Airtable/SharePoint spikes can be evidence, fixtures, or examples, but must not make boring-mcp core provider-specific.
+```
+
 Enforcement rule:
 
 ```txt
@@ -1170,43 +1179,46 @@ secret-handling assumptions are explicit before the Composio SDK/API key lands i
 any accepted gap has an owner and a later PR gate
 ```
 
-### PR 3 — boring-mcp ComposioConnectorProvider Notion connect/status/probe
+### PR 3 — boring-mcp generic managed connector adapter
 
 Repo: `hachej/boring-ui`
-Branch: `feat/boring-mcp-composio-notion-connect`
+Branch: `feat/boring-mcp-managed-connector-adapter`
 Code cap target: under 1100 non-test/non-doc lines
 
 Scope:
 
 ```txt
-server-only Composio connector provider behind boring-mcp seam
-server-only Composio SDK/API client abstraction
-secret resolution interface for COMPOSIO_API_KEY; app chooses env/Vault binding outside reusable core
-create/reuse Composio MCP sessions
-start-connect/status/probe operations for Notion
-probe/search metadata through Composio MCP session
-store/return non-secret Composio refs only
+generic managed connector provider behind boring-mcp seam
+Composio-backed implementation as one managed-provider adapter, not a Notion adapter
+server-only SDK/API/MCP-session client abstraction
+secret resolution interface for connector API keys; app chooses env/Vault binding outside reusable core
+create/reuse managed connector sessions generically by provider/toolkit id
+start-connect/status/probe operations for injected provider templates
+probe/search metadata through managed connector session
+store/return non-secret connector refs only
 redact account/workspace metadata before browser/agent response
 ```
 
 Non-goals:
 
 ```txt
+no Notion-specific connector ownership in boring-mcp core
 no Constellation-specific implementation
-no Airtable/Microsoft
+no Airtable/Microsoft/SharePoint-specific connector ownership in boring-mcp core
 no read-only execution yet
 no materialized tools
-no browser Composio headers/API key
+no browser connector headers/API key
 ```
 
 Exit criteria:
 
 ```txt
 PR 2.5 security preflight is linked and green or explicitly owner-accepted
-boring-mcp can start a Notion Composio connection through an injected app secret resolver
+boring-mcp can start a generic managed connector auth flow through injected provider config and app secret resolver
 status becomes connected after server refresh in fake/live-gated tests
 probe returns normalized, redacted read-only tool summaries
 secret canary tests pass
+Notion appears only as test fixture, docs example, optional preset candidate, or app/provider-pack config — not hardcoded core ownership
 ```
 
 ### PR 4 — boring-mcp normalized tool catalog: search and describe
@@ -1319,51 +1331,67 @@ agent output is redacted and budget/size-limited
 child apps enable tools by registering/configuring boring-mcp
 ```
 
-### PR 7 — boring-mcp Airtable live provider slice
+### PR 7 — optional provider preset / app-provider pack: Airtable
 
-Repo: `hachej/boring-ui`
-Branch: `feat/boring-mcp-airtable-source`
-Code cap target: under 1100 non-test/non-doc lines
-
-Scope:
+Repo: provider-specific ownership must be explicit before implementation. Prefer one of:
 
 ```txt
-live Airtable Composio auth spike evidence
-Airtable provider template finalization
-Airtable connect/status/probe
-Airtable tool catalog search/describe
-read-only Airtable execution for one safe call
+hachej/boring-ui optional first-party provider preset package if meant for all apps
+hachej/boring-ui-constellation app config if only Constellation needs it
+separate provider-pack repo/package if provider maintenance should be decoupled
+```
+
+Branch: `feat/boring-mcp-airtable-provider-preset` only if first-party reusable preset is approved
+Code cap target: under 1100 non-test/non-doc lines
+
+Scope if approved as reusable preset:
+
+```txt
+live Airtable managed-connector auth spike evidence
+Airtable provider template/preset finalization
+Airtable connect/status/probe through generic managed connector adapter
+Airtable tool catalog search/describe through generic boring-mcp contracts
+read-only Airtable execution for one safe call once execution PR exists
 ```
 
 Exit criteria:
 
 ```txt
-Airtable lists/searches read-only records through boring-mcp
+ownership is explicit before code lands
+Airtable lists/searches read-only records through generic boring-mcp seams
 create/update/delete/admin actions are blocked before provider call
 revoke/disconnect behavior verified or documented as accepted gap
 ```
 
-### PR 8 — boring-mcp Microsoft/SharePoint live provider slice
+### PR 8 — optional provider preset / app-provider pack: Microsoft/SharePoint
 
-Repo: `hachej/boring-ui`
-Branch: `feat/boring-mcp-sharepoint-source`
-Code cap target: under 1200 non-test/non-doc lines
-
-Scope:
+Repo: provider-specific ownership must be explicit before implementation. Prefer one of:
 
 ```txt
-live Microsoft/SharePoint Composio auth spike evidence
-provider template finalization
-connect/status/probe
-tool catalog search/describe
-one safe read-only metadata/content call
+hachej/boring-ui optional first-party provider preset package if meant for all apps
+hachej/boring-ui-constellation app config if only Constellation needs it
+separate provider-pack repo/package if provider maintenance should be decoupled
+```
+
+Branch: `feat/boring-mcp-sharepoint-provider-preset` only if first-party reusable preset is approved
+Code cap target: under 1200 non-test/non-doc lines
+
+Scope if approved as reusable preset:
+
+```txt
+live Microsoft/SharePoint managed-connector auth spike evidence
+provider template/preset finalization
+connect/status/probe through generic managed connector adapter
+tool catalog search/describe through generic boring-mcp contracts
+one safe read-only metadata/content call once execution PR exists
 company-context copy and ownership hooks reviewed
 ```
 
 Exit criteria:
 
 ```txt
-SharePoint/Microsoft source can be connected and probed through boring-mcp
+ownership is explicit before code lands
+SharePoint/Microsoft source can be connected and probed through generic boring-mcp seams
 read-only call succeeds on approved content
 company vs personal context boundary is explicit in generic DTOs/config hooks
 ```
