@@ -25,7 +25,16 @@ function blockerTitle(blocker: WorkspaceAttentionBlocker): string {
 }
 
 function blockerSourceLabel(blocker: WorkspaceAttentionBlocker): string {
-  return blocker.inbox?.sourceLabel ?? workspaceAttentionSessionBadgeForBlocker(blocker)?.label ?? "workspace"
+  return blocker.inbox?.source?.label ?? blocker.inbox?.sourceLabel ?? workspaceAttentionSessionBadgeForBlocker(blocker)?.label ?? "workspace"
+}
+
+function blockerSource(blocker: WorkspaceAttentionBlocker): WorkspaceInboxItem["source"] {
+  const source = blocker.inbox?.source
+  const label = blockerSourceLabel(blocker)
+  if (source?.type === "plugin") return { type: "plugin", pluginId: source.id, label }
+  if (source?.type === "external-hook") return { type: "external-hook", externalId: source.id, label }
+  if (source?.type === "review") return { type: "review", reviewId: source.id, label }
+  return { type: "plugin", pluginId: source?.id ?? blocker.reason, label }
 }
 
 export function isInboxAttentionBlocker(blocker: WorkspaceAttentionBlocker): boolean {
@@ -40,7 +49,7 @@ export function attentionBlockerToInboxItem(blocker: WorkspaceAttentionBlocker):
     status: "open",
     title: blockerTitle(blocker),
     description: blocker.reason,
-    source: { type: "plugin", pluginId: blocker.reason, label: blockerSourceLabel(blocker) },
+    source: blockerSource(blocker),
     sessionId: blocker.sessionId ?? null,
     targetLabel: blocker.target ?? "",
     artifact: blocker.surfaceKind ? { type: "surface", surfaceKind: blocker.surfaceKind, target: blocker.target } : null,

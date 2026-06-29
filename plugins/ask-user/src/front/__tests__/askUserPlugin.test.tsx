@@ -438,9 +438,16 @@ describe("askUserPlugin front shell", () => {
     await waitFor(() => expect(seen).toContainEqual(expect.objectContaining({
       id: "ask-user:default:q1",
       label: "Choose A or B",
-      inbox: expect.objectContaining({ kind: "question", sourceLabel: "question", priority: 10 }),
+      inbox: expect.objectContaining({
+        kind: "question",
+        sourceLabel: "question",
+        source: { type: "plugin", id: "ask-user", label: "question" },
+        priority: 10,
+      }),
       sessionBadge: expect.objectContaining({ kind: "question" }),
     })))
+    expect(JSON.stringify(seen)).not.toContain("secret")
+    expect(JSON.stringify(seen)).not.toContain("answerToken")
   })
 
   it("generic attention cancel action cancels the matching ask-user question", async () => {

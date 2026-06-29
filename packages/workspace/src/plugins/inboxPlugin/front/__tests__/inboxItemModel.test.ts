@@ -28,7 +28,13 @@ describe('inbox item model', () => {
       target: 'file.ts',
       surfaceKind: 'file',
       sessionBadge: { kind: 'question', label: 'question', priority: 5 },
-      inbox: { kind: 'question', sourceLabel: 'question', priority: 5, createdAt: '2026-01-01T00:00:00.000Z' },
+      inbox: {
+        kind: 'question',
+        sourceLabel: 'question',
+        source: { type: 'plugin', id: 'ask-user', label: 'question' },
+        priority: 5,
+        createdAt: '2026-01-01T00:00:00.000Z',
+      },
       actions: [{ id: 'open', label: 'Open' }],
     })
 
@@ -40,8 +46,41 @@ describe('inbox item model', () => {
       targetLabel: 'file.ts',
       priority: 5,
     })
+    expect(inbox.source).toEqual({ type: 'plugin', pluginId: 'ask-user', label: 'question' })
     expect(inbox.artifact).toEqual({ type: 'surface', surfaceKind: 'file', target: 'file.ts' })
     expect(inbox.actions).toEqual([{ id: 'open', label: 'Open' }])
+  })
+
+  it('uses explicit external and review source metadata without parsing reason', () => {
+    expect(attentionBlockerToInboxItem({
+      id: 'ext',
+      reason: 'opaque.reason',
+      label: 'External review',
+      inbox: { kind: 'review', sourceLabel: 'fallback', source: { type: 'external-hook', id: 'codex-1', label: 'Codex' } },
+    }).source).toEqual({ type: 'external-hook', externalId: 'codex-1', label: 'Codex' })
+
+    expect(attentionBlockerToInboxItem({
+      id: 'review',
+      reason: 'another.opaque.reason',
+      label: 'PR review',
+      inbox: { kind: 'review', sourceLabel: 'fallback', source: { type: 'review', id: 'pr-123', label: 'PR review' } },
+    }).source).toEqual({ type: 'review', reviewId: 'pr-123', label: 'PR review' })
+  })
+
+  it('keeps legacy sourceLabel fallback for generic and older blockers', () => {
+    expect(attentionBlockerToInboxItem({
+      id: 'generic',
+      reason: 'human-action.notice',
+      label: 'Generic notice',
+      inbox: { kind: 'notice', sourceLabel: 'legacy source', source: { type: 'generic', label: 'generic source' } },
+    }).source).toEqual({ type: 'plugin', pluginId: 'human-action.notice', label: 'generic source' })
+
+    expect(attentionBlockerToInboxItem({
+      id: 'legacy',
+      reason: 'ask-user.question',
+      label: 'Legacy question',
+      inbox: { kind: 'question', sourceLabel: 'question' },
+    }).source).toEqual({ type: 'plugin', pluginId: 'ask-user.question', label: 'question' })
   })
 
   it('only admits blockers explicitly contributed to inbox', () => {
