@@ -24,6 +24,14 @@ export type WorkspaceAttentionSessionBadge = {
   priority?: number
 }
 
+export type WorkspaceAttentionInboxMetadata = {
+  kind: "question" | "review" | "approval" | "notice"
+  sourceLabel: string
+  createdAt?: string | number | Date
+  updatedAt?: string | number | Date
+  priority?: number
+}
+
 export type WorkspaceAttentionBlocker = {
   id: string
   /** Plugin/domain-specific reason, e.g. "ask-user.question" or "pr-review.review". */
@@ -34,6 +42,8 @@ export type WorkspaceAttentionBlocker = {
   sessionId?: string
   /** Optional generic session-row badge contributed by the plugin that owns this attention. */
   sessionBadge?: WorkspaceAttentionSessionBadge
+  /** Explicit inbox projection metadata. New inbox-aware plugins should provide this instead of relying on reason parsing. */
+  inbox?: WorkspaceAttentionInboxMetadata
   actions?: WorkspaceAttentionBlockerAction[]
 }
 

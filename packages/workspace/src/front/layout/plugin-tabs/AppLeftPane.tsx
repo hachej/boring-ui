@@ -66,6 +66,7 @@ export interface AppLeftPaneProps {
   onSwitchSession: (id: string) => void
   onOpenSessionAsPane: (id: string) => void
   onToggleSessionPinned: (id: string) => void
+  primaryActions?: Array<{ id: string; label: string; icon: ReactNode; onClick: () => void }>
   showPlugins?: boolean
   showSkills?: boolean
   onOpenPlugins: () => void
@@ -105,6 +106,7 @@ export function AppLeftPane({
   onSwitchSession,
   onOpenSessionAsPane,
   onToggleSessionPinned,
+  primaryActions = [],
   showPlugins = true,
   showSkills = true,
   onOpenPlugins,
@@ -239,6 +241,7 @@ export function AppLeftPane({
       <nav className="shrink-0 space-y-0.5 px-2 pb-1 pt-1" aria-label="Primary workspace actions">
         <PrimaryAction icon={<Plus className="h-4 w-4" strokeWidth={2} />} label="New chat" onClick={onCreateSession} emphasis />
         <PrimaryAction icon={<Search className="h-4 w-4" strokeWidth={1.75} />} label="Search" onClick={onOpenCommandPalette} trailing={<KbdHint keys="⌘K" />} />
+        {primaryActions.map((action) => <PrimaryAction key={action.id} icon={action.icon} label={action.label} onClick={action.onClick} />)}
         {showPlugins ? <PrimaryAction icon={<Plug className="h-4 w-4" strokeWidth={1.75} />} label="Plugins" onClick={onOpenPlugins} /> : null}
         {showSkills ? <PrimaryAction icon={<Sparkles className="h-4 w-4" strokeWidth={1.75} />} label="Skills" onClick={onOpenSkills} /> : null}
       </nav>

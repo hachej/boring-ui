@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react"
 import { createDeckPlugin } from "@hachej/boring-deck/front"
 import type { DeckWidgetDefinition } from "@hachej/boring-deck/shared"
-import { WorkspaceProvider } from "@hachej/boring-workspace"
+import { WorkspaceProvider, inboxDemoPlugin } from "@hachej/boring-workspace"
 import { WorkspaceAgentFront, WorkspaceFullPagePanel, parseFullPagePanelLocation } from "@hachej/boring-workspace/app/front"
 import { askUserPlugin } from "@hachej/boring-ask-user/front"
 import { SHOWCASE_SESSION_ID, seedShowcase } from "./showcaseMessages"
@@ -21,6 +21,11 @@ function isFullPageRoute(): boolean {
 function isMultiRoute(): boolean {
   if (typeof window === "undefined") return false
   return new URLSearchParams(window.location.search).get("multi") === "1"
+}
+
+function isInboxDemoRoute(): boolean {
+  if (typeof window === "undefined") return false
+  return new URLSearchParams(window.location.search).get("inboxDemo") === "1"
 }
 
 const HOUR = 1000 * 60 * 60
@@ -108,7 +113,7 @@ const playgroundDeckPlugin = createDeckPlugin({
   },
 })
 
-const workspacePlugins = [askUserPlugin, playgroundDeckPlugin]
+const baseWorkspacePlugins = [askUserPlugin, playgroundDeckPlugin]
 const externalPluginsEnabled = (import.meta as ImportMeta & { env?: Record<string, string> }).env?.VITE_BORING_EXTERNAL_PLUGINS === "1"
 
 function resetPlaygroundStorageIfRequested(): void {
@@ -149,7 +154,7 @@ function WorkspaceFullPageShell() {
   return (
     <WorkspaceProvider
       apiBaseUrl=""
-      plugins={workspacePlugins}
+      plugins={baseWorkspacePlugins}
       persistenceEnabled
       manageDocumentTitle={false}
       workspaceId="playground-full-page"
@@ -165,6 +170,8 @@ export function WorkspaceShell() {
   const showcase = useMemo(isShowcaseRoute, [])
   const fullPage = useMemo(isFullPageRoute, [])
   const multi = useMemo(isMultiRoute, [])
+  const inboxDemo = useMemo(isInboxDemoRoute, [])
+  const workspacePlugins = useMemo(() => inboxDemo ? [...baseWorkspacePlugins, inboxDemoPlugin] : baseWorkspacePlugins, [inboxDemo])
   const [projectName, setProjectName] = useState("Workspace")
   const [workspaceId, setWorkspaceId] = useState("Workspace")
   const [metaLoaded, setMetaLoaded] = useState(showcase || fullPage)
@@ -250,10 +257,10 @@ export function WorkspaceShell() {
 
   return (
     <WorkspaceAgentFront
-      workspaceId={showcase ? "playground" : workspaceId}
+      workspaceId={inboxDemo ? "playground-inbox-demo" : showcase ? "playground" : workspaceId}
       apiBaseUrl=""
       persistenceEnabled
-      providerStorageKey={showcase ? "boring-ui-v2:layout:playground" : `boring-ui-v2:layout:playground:${workspaceId}`}
+      providerStorageKey={inboxDemo ? "boring-ui-v2:layout:playground:inbox-demo" : showcase ? "boring-ui-v2:layout:playground" : `boring-ui-v2:layout:playground:${workspaceId}`}
       workspaceLayout="plugin-tabs"
       appTitle={showcase ? "Boring" : projectName}
       workspaceLabel={showcase ? undefined : projectName}
@@ -261,6 +268,7 @@ export function WorkspaceShell() {
       externalPlugins={externalPluginsEnabled}
       frontPluginHotReload={externalPluginsEnabled ? "vite" : undefined}
       fullPageBasePath="/full-page"
+      defaultLeftOverlay={inboxDemo ? "inbox" : undefined}
       provisionWorkspace={!showcase}
       sessions={sessions}
       activeSessionId={showcase ? SHOWCASE_SESSION_ID : undefined}
