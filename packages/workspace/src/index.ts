@@ -82,6 +82,8 @@ export type {
 // plugins). Hooks from this seam must run under `WorkspaceFilesProvider`, or a
 // provider that reproduces the same filesystem data contexts.
 export { filesystemEvents } from "./plugins/filesystemPlugin/shared/events"
+export { PublicMarkdownReviewApp } from "./front/public-share/PublicMarkdownReviewApp"
+export type { PublicMarkdownReviewAppProps } from "./front/public-share/PublicMarkdownReviewApp"
 export type { FilesystemEventMap, FilesystemEventMeta } from "./plugins/filesystemPlugin/shared/events"
 // Utility
 export { cn } from "./front/lib/utils"
