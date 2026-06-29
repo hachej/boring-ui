@@ -213,7 +213,7 @@ export { createShadcnTheme } from "./front/theme"
 
 // Unified event bus — typed pubsub for cross-cutting signals
 // (filesystem mutations, panel/editor/query lifecycle). See
-// docs/plans/UNIFIED_EVENT_BUS.md.
+// packages/workspace/docs/plans/archive/UNIFIED_EVENT_BUS.md.
 export {
   events,
   useEvent,
