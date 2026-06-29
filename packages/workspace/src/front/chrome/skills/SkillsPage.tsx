@@ -148,7 +148,7 @@ export function SkillsPage({ onClose, headerInsetStart = false, headerInsetEnd =
                     type="button"
                     onClick={() => openSkillInWorkspace(skill)}
                     title="Open skill"
-                    aria-label={`Open skill ${skill.name}`}
+                    aria-label={`Open skill ${skill.name} in workspace`}
                     className="block w-full text-left"
                   >
                     <div className="flex items-start justify-between gap-3">
