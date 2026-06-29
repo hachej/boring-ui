@@ -376,6 +376,7 @@ export function CliWorkspaceShell() {
     }))
   }, [])
 
+
   if (!metaLoaded) {
     return <div className="h-screen w-screen bg-background" />
   }
