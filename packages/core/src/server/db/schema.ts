@@ -119,6 +119,63 @@ export const workspaceSettingsRelations = relations(workspaceSettings, ({ one })
   }),
 }))
 
+export const workspaceInboxItems = pgTable(
+  'workspace_inbox_items',
+  {
+    id: uuid('id')
+      .default(sql`gen_random_uuid()`)
+      .primaryKey(),
+    workspaceId: uuid('workspace_id')
+      .notNull()
+      .references(() => workspaces.id, { onDelete: 'cascade' }),
+    kind: text('kind').notNull(),
+    status: text('status').notNull().default('open'),
+    title: text('title').notNull(),
+    description: text('description').notNull().default(''),
+    sourceType: text('source_type').notNull(),
+    sourceId: text('source_id'),
+    sourceLabel: text('source_label').notNull().default(''),
+    sessionId: text('session_id'),
+    targetLabel: text('target_label').notNull().default(''),
+    artifact: jsonb('artifact'),
+    priority: integer('priority').notNull().default(0),
+    actions: jsonb('actions').notNull().default([]),
+    idempotencyKey: text('idempotency_key').notNull(),
+    idempotencyHash: text('idempotency_hash').notNull(),
+    createdAt: timestamp('created_at').defaultNow().notNull(),
+    updatedAt: timestamp('updated_at').defaultNow().notNull(),
+  },
+  (table) => [
+    uniqueIndex('workspace_inbox_items_idempotency_idx').on(table.workspaceId, table.idempotencyKey),
+    uniqueIndex('workspace_inbox_items_source_idx').on(table.workspaceId, table.sourceType, table.sourceId),
+    index('workspace_inbox_items_workspace_status_idx').on(table.workspaceId, table.status, table.updatedAt),
+    check('workspace_inbox_items_kind_check', sql`${table.kind} IN ('question', 'review', 'approval', 'notice')`),
+    check('workspace_inbox_items_status_check', sql`${table.status} IN ('open', 'resolved', 'dismissed')`),
+    check('workspace_inbox_items_source_type_check', sql`${table.sourceType} IN ('external-hook', 'review', 'plugin', 'ask-user')`),
+  ],
+)
+
+export const workspaceInboxItemViewStates = pgTable(
+  'workspace_inbox_item_view_states',
+  {
+    workspaceId: uuid('workspace_id')
+      .notNull()
+      .references(() => workspaces.id, { onDelete: 'cascade' }),
+    itemId: uuid('item_id')
+      .notNull()
+      .references(() => workspaceInboxItems.id, { onDelete: 'cascade' }),
+    userId: uuid('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    pinned: boolean('pinned').notNull().default(false),
+    updatedAt: timestamp('updated_at').defaultNow().notNull(),
+  },
+  (table) => [
+    primaryKey({ columns: [table.workspaceId, table.itemId, table.userId] }),
+    index('workspace_inbox_item_view_states_user_idx').on(table.workspaceId, table.userId),
+  ],
+)
+
 export const workspaceRuntimes = pgTable(
   'workspace_runtimes',
   {

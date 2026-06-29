@@ -10,6 +10,10 @@ import type {
   WorkspaceRuntimeResource,
   WorkspaceRuntimeResourceInput,
   WorkspaceRuntimeResourceSelector,
+  WorkspaceInboxItem,
+  WorkspaceInboxItemInput,
+  WorkspaceInboxItemStatus,
+  WorkspaceInboxItemViewState,
   MemberRole,
 } from '../../shared/types.js'
 import type { ERROR_CODES } from '../../shared/errors.js'
@@ -70,6 +74,10 @@ export interface WorkspaceStore {
   retryWorkspaceRuntime(workspaceId: string): Promise<WorkspaceRuntime | null>
   getUiState(userId: string, workspaceId: string): Promise<Record<string, unknown> | null>
   putUiState(userId: string, workspaceId: string, state: Record<string, unknown>): Promise<void>
+  listInboxItems(workspaceId: string, userId: string, filters?: { status?: WorkspaceInboxItemStatus | 'all'; kind?: WorkspaceInboxItem['kind'] }): Promise<{ items: WorkspaceInboxItem[]; viewState: WorkspaceInboxItemViewState[] }>
+  createInboxItem(workspaceId: string, input: WorkspaceInboxItemInput, idempotencyKey: string): Promise<{ item: WorkspaceInboxItem; created: boolean; conflict?: 'idempotency' | 'source' }>
+  updateInboxItemStatus(workspaceId: string, itemId: string, status: WorkspaceInboxItemStatus): Promise<WorkspaceInboxItem | null>
+  putInboxItemViewState(workspaceId: string, userId: string, itemId: string, state: { pinned?: boolean }): Promise<WorkspaceInboxItemViewState | null>
 }
 
 export interface AuthProvider {
