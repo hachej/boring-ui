@@ -365,6 +365,22 @@ export function registerPublicShareRoutes(
     }
   })
 
+  app.get('/share/:token/meta', async (request, reply) => {
+    const { token } = request.params as { token: string }
+    const share = await resolveShare(opts, token, reply)
+    if (!share) return
+    return securityHeaders(reply).send({
+      token: share.token,
+      kind: share.kind,
+      entryPath: share.entryPath,
+      editable: share.capabilities.writeEntry === true,
+      downloads: {
+        portableMarkdown: `/share/${encodeURIComponent(share.token)}/portable.md`,
+        bundleZip: `/share/${encodeURIComponent(share.token)}/bundle.zip`,
+      },
+    })
+  })
+
   app.get('/share/:token/raw', async (request, reply) => {
     const { token } = request.params as { token: string }
     const share = await resolveShare(opts, token, reply)

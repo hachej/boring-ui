@@ -85,6 +85,7 @@ function shareTokenFromCliUrl(pathname: string): string | null {
 function PublicShareMarkdownEditor({ token }: { token: string }) {
   const [content, setContent] = useState<string>("")
   const [savedContent, setSavedContent] = useState<string>("")
+  const [entryPath, setEntryPath] = useState<string>("review.md")
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -92,13 +93,19 @@ function PublicShareMarkdownEditor({ token }: { token: string }) {
   useEffect(() => {
     let cancelled = false
     setLoading(true)
-    fetch(`/share/${encodeURIComponent(token)}/raw`)
-      .then(async (res) => {
+    Promise.all([
+      fetch(`/share/${encodeURIComponent(token)}/meta`).then(async (res) => {
+        if (!res.ok) throw new Error(await res.text())
+        return await res.json() as { entryPath?: string }
+      }),
+      fetch(`/share/${encodeURIComponent(token)}/raw`).then(async (res) => {
         if (!res.ok) throw new Error(await res.text())
         return await res.text()
-      })
-      .then((text) => {
+      }),
+    ])
+      .then(([meta, text]) => {
         if (cancelled) return
+        setEntryPath(meta.entryPath ?? "review.md")
         setContent(text)
         setSavedContent(text)
         setError(null)
@@ -155,7 +162,9 @@ function PublicShareMarkdownEditor({ token }: { token: string }) {
           <div className="p-8 text-sm text-muted-foreground">Loading document…</div>
         ) : (
           <div className="mx-auto max-w-5xl p-4">
-            <WorkspaceSingleton.MarkdownEditor content={content} onChange={setContent} documentPath="review.md" className="min-h-[75vh] overflow-hidden rounded-xl border border-border" />
+            <div style={{ height: "calc(100vh - 96px)" }}>
+              <WorkspaceSingleton.MarkdownEditor content={content} onChange={setContent} documentPath={entryPath} className="h-full overflow-hidden rounded-xl border border-border" />
+            </div>
           </div>
         )}
       </div>
