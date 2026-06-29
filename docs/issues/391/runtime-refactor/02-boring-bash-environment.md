@@ -126,7 +126,11 @@ interface BashVolumeView {
 }
 ```
 
-V1 decision: keep one public root by default. `mounts` are internal/future unless Phase 0 ADR explicitly defines how multiple mounts materialize into one coherent `/workspace` namespace.
+V1 decision: keep one public root by default for the normal private user workspace, but do **not** assume boring-bash has only one filesystem identity. V1 also supports named filesystem bindings where tools, routes, and UI identify resources as `(filesystem, path)`.
+
+A binding may project another logical filesystem, for example `company_context`, into the active runtime using provider-declared mount/projection modes. The provider decides whether that binding materializes as a mount, backend adapter view, or other runtime handle. Path text does not select filesystem identity: `/company_context/x` is not a filesystem switch, and `company_context:/x` is not accepted as a path string.
+
+For #416, PR1 only creates the tiny `@hachej/boring-bash` skeleton and binding contracts. It does not extract existing file/bash tools/routes/providers. Later PRs can use the binding model for readonly policy-filtered company projections and readwrite management projections without inventing a second storage-root resolver or a new sandbox type.
 
 ## Remote-worker split
 
@@ -201,7 +205,9 @@ The workspace bridge remains owned by `@hachej/boring-workspace`.
 
 - provider mode mapping test;
 - one namespace/split-brain tests per provider;
+- named filesystem binding tests for explicit `(filesystem, path)` identity;
 - direct/local/vercel/remote-worker file+exec consistency;
+- provider-declared projection/mount-mode tests;
 - readonly fs without exec;
 - `disableDefaultFileTools` parity;
 - `execute_isolated_code` ownership/readiness;
