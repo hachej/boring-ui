@@ -51,6 +51,7 @@
     "typecheck": "tsc --noEmit",
     "test": "vitest run --passWithNoTests",
     "playground:eval": "tsx playground/run-eval.ts",
+    "playground:smoke": "tsx playground/smoke-dashboard.ts",
     "lint": "pnpm run typecheck",
     "clean": "rm -rf dist .tsbuildinfo"
   },
@@ -66,6 +67,7 @@
     "zod": "^4.3.6"
   },
   "devDependencies": {
+    "@duckdb/node-api": "1.5.2-r.1",
     "@hachej/boring-agent": "workspace:*",
     "@hachej/boring-workspace": "workspace:*",
     "@hachej/data-bridge": "workspace:*",

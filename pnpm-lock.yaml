@@ -979,6 +979,9 @@ importers:
         specifier: ^4.3.6
         version: 4.4.3
     devDependencies:
+      '@duckdb/node-api':
+        specifier: 1.5.2-r.1
+        version: 1.5.2-r.1
       '@hachej/boring-agent':
         specifier: workspace:*
         version: link:../../packages/agent
