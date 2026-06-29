@@ -309,32 +309,63 @@ admin_*
 
 MCP-native annotations such as `readOnlyHint` are helpful classification inputs but never sufficient to enable a tool by themselves.
 
-## Connector interfaces
+## Connector seam — keep it thin
 
-Hosted V0 must hide Composio behind interfaces.
+Hosted V0 must hide Composio behind a **thin seam**, not a full connector framework.
+
+The purpose is to prevent Composio details from spreading through boring-mcp while avoiding premature platform work.
+
+V0 should have:
+
+```txt
+one connector provider interface
+one Composio implementation
+one dispatch point based on source.credentialProvider
+one normalized tool model
+```
+
+V0 should **not** build:
+
+```txt
+dynamic connector plugin loading
+multiple production connector backends
+migration tooling between connector backends
+generic SecretStore implementation unless needed for BYO LLM/private gap
+native MCP connector implementation
+materialized tools
+admin classification UI
+```
+
+Minimal interface shape:
 
 ```ts
-interface ConnectorCredentialProvider {
+interface ConnectorProvider {
   startConnect(input: StartConnectInput): Promise<ConnectStartResult>;
   getStatus(input: ConnectorStatusInput): Promise<ConnectorStatus>;
-  disconnect(input: DisconnectInput): Promise<void>;
-}
-
-interface ConnectorToolProvider {
   probe(input: ConnectorProbeInput): Promise<ConnectorProbeResult>;
-  searchTools(input: ToolSearchInput): Promise<ToolSearchResult>;
-  describeTool(input: ToolDescribeInput): Promise<ToolDescription>;
+  disconnect(input: DisconnectInput): Promise<void>;
   callTool(input: GovernedToolCallInput): Promise<GovernedToolCallResult>;
 }
 ```
 
-First implementation:
+`searchTools` and `describeTool` can be facade/catalog operations over normalized cached metadata. They do not need to be provider methods unless the implementation proves that live provider lookup is simpler.
+
+First and only V0 implementation:
 
 ```txt
 ComposioConnectorProvider
 ```
 
-Future implementations:
+Single V0 dispatch point:
+
+```ts
+switch (source.credentialProvider) {
+  case 'composio-managed':
+    return composioConnector.callTool(input);
+}
+```
+
+Future implementations remain possible but are not V0 work:
 
 ```txt
 NativeMcpConnectorProvider
@@ -535,6 +566,32 @@ local credentials live in user-local secure storage, not hosted DB
 
 Do not let CLI/user-managed config semantics leak into hosted production.
 
+## Complexity guardrails
+
+V0 is allowed to introduce a seam only where it prevents concrete lock-in.
+
+Acceptable V0 abstraction:
+
+```txt
+Composio hidden in one provider module
+normalized tool descriptors hide raw Composio action IDs from public APIs
+policy/audit/redaction live outside provider adapter
+one dispatch point by source.credentialProvider
+```
+
+Unacceptable V0 abstraction:
+
+```txt
+large generic connector framework
+configuration-driven backend loading
+abstract factories for future backends not implemented
+provider-neutral migration layer
+multiple unused interfaces
+pass-through wrappers that only rename Composio calls
+```
+
+If the implementation starts adding machinery beyond the thin seam, stop and simplify.
+
 ## Implementation sequence
 
 ### Phase 0 — provider spike
@@ -587,6 +644,9 @@ audit tests prove no secret values are recorded
 revoke/disconnect invalidates source status and prevents future calls
 stable error-code mapping exists for Composio/provider failures
 fallback/private SecretStore path remains behind interfaces, not hardcoded into V0
+only one V0 connector implementation exists: ComposioConnectorProvider
+Composio calls are isolated to one module and one dispatch point
+no dynamic plugin/connector framework is introduced for V0
 ```
 
 ## Review status
