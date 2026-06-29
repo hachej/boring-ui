@@ -13,6 +13,10 @@ import type {
   WorkspaceRuntimeResource,
   WorkspaceRuntimeResourceInput,
   WorkspaceRuntimeResourceSelector,
+  WorkspaceInboxItem,
+  WorkspaceInboxItemInput,
+  WorkspaceInboxItemStatus,
+  WorkspaceInboxItemViewState,
 } from '../../../shared/types.js'
 import { ERROR_CODES, HttpError } from '../../../shared/errors.js'
 import {
@@ -25,6 +29,7 @@ import {
   workspaceRuntimes,
   workspaceSettings,
 } from '../schema.js'
+import { PostgresWorkspaceInboxRepository } from './PostgresWorkspaceInboxRepository.js'
 
 type DbLike = Pick<PostgresJsDatabase, 'select' | 'insert' | 'update' | 'execute'>
 
@@ -139,10 +144,14 @@ function toWorkspace(row: typeof workspaces.$inferSelect): Workspace {
 }
 
 export class PostgresWorkspaceStore implements WorkspaceStore {
+  private readonly inbox: PostgresWorkspaceInboxRepository
+
   constructor(
     private readonly db: PostgresJsDatabase,
     private readonly workspaceSettingsKey: string = process.env.WORKSPACE_SETTINGS_ENCRYPTION_KEY ?? '',
-  ) {}
+  ) {
+    this.inbox = new PostgresWorkspaceInboxRepository(db)
+  }
 
   private uiStateKey(workspaceId: string): string {
     return `${UI_STATE_KEY_PREFIX}${workspaceId}`
@@ -788,6 +797,30 @@ export class PostgresWorkspaceStore implements WorkspaceStore {
     })
 
     return this.getWorkspaceSettings(workspaceId)
+  }
+
+  async listInboxItems(
+    workspaceId: string,
+    userId: string,
+    filters: { status?: WorkspaceInboxItemStatus | 'all'; kind?: WorkspaceInboxItem['kind'] } = {},
+  ): Promise<{ items: WorkspaceInboxItem[]; viewState: WorkspaceInboxItemViewState[] }> {
+    return this.inbox.list(workspaceId, userId, filters)
+  }
+
+  async createInboxItem(
+    workspaceId: string,
+    input: WorkspaceInboxItemInput,
+    idempotencyKey: string,
+  ): Promise<{ item: WorkspaceInboxItem; created: boolean; conflict?: 'idempotency' | 'source' }> {
+    return this.inbox.create(workspaceId, input, idempotencyKey)
+  }
+
+  async updateInboxItemStatus(workspaceId: string, itemId: string, status: WorkspaceInboxItemStatus): Promise<WorkspaceInboxItem | null> {
+    return this.inbox.updateStatus(workspaceId, itemId, status)
+  }
+
+  async putInboxItemViewState(workspaceId: string, userId: string, itemId: string, state: { pinned?: boolean }): Promise<WorkspaceInboxItemViewState | null> {
+    return this.inbox.putViewState(workspaceId, userId, itemId, state)
   }
 
   async getWorkspaceRuntime(workspaceId: string): Promise<WorkspaceRuntime | null> {

@@ -112,6 +112,58 @@ export type WorkspaceRuntimeResourceInput = WorkspaceRuntimeResourceSelector & {
   generation?: number
 }
 
+export type WorkspaceInboxItemKind = 'question' | 'review' | 'approval' | 'notice'
+export type WorkspaceInboxItemStatus = 'open' | 'resolved' | 'dismissed'
+export type WorkspaceInboxItemSourceType = 'external-hook' | 'review' | 'plugin' | 'ask-user'
+
+export type WorkspaceInboxItemArtifactTarget =
+  | { type: 'surface'; surfaceKind: string; target?: string; params?: Record<string, unknown> }
+  | { type: 'panel'; panelComponentId: string; params?: Record<string, unknown> }
+
+export type WorkspaceInboxItemAction = {
+  id: string
+  label: string
+  tone?: 'primary' | 'neutral' | 'danger'
+}
+
+export type WorkspaceInboxItem = {
+  id: string
+  workspaceId: string
+  kind: WorkspaceInboxItemKind
+  status: WorkspaceInboxItemStatus
+  title: string
+  description: string
+  sourceType: WorkspaceInboxItemSourceType
+  sourceId: string | null
+  sourceLabel: string
+  sessionId: string | null
+  targetLabel: string
+  artifact: WorkspaceInboxItemArtifactTarget | null
+  priority: number
+  actions: WorkspaceInboxItemAction[]
+  createdAt: string
+  updatedAt: string
+}
+
+export type WorkspaceInboxItemViewState = {
+  itemId: string
+  pinned: boolean
+}
+
+export type WorkspaceInboxItemInput = {
+  kind: WorkspaceInboxItemKind
+  title: string
+  description: string
+  sourceType: 'external-hook' | 'review'
+  sourceId: string
+  sourceLabel: string
+  sessionId?: string | null
+  targetLabel?: string
+  artifact?: WorkspaceInboxItemArtifactTarget | null
+  priority?: number
+  actions?: WorkspaceInboxItemAction[]
+}
+
 export type SessionPayload = {
   userId: string
   email: string

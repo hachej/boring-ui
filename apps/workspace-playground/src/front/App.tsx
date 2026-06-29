@@ -5,7 +5,6 @@ import { WorkspaceProvider, inboxDemoPlugin } from "@hachej/boring-workspace"
 import { WorkspaceAgentFront, WorkspaceFullPagePanel, parseFullPagePanelLocation } from "@hachej/boring-workspace/app/front"
 import { askUserPlugin } from "@hachej/boring-ask-user/front"
 import { SHOWCASE_SESSION_ID, seedShowcase } from "./showcaseMessages"
-import { inboxDemoPlugin } from "../../../../packages/workspace/src/plugins/inboxPlugin/examples/inboxDemoPlugin"
 
 function isShowcaseRoute(): boolean {
   if (typeof window === "undefined") return false

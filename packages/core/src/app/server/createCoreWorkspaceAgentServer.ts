@@ -53,6 +53,7 @@ import {
   type WorkspaceStore,
 } from '../../server/app/index.js'
 import {
+  registerInboxRoutes,
   registerInviteRoutes,
   registerMemberRoutes,
   registerSettingsRoutes,
@@ -681,6 +682,7 @@ async function registerCoreRoutes({
   await app.register(registerWorkspaceRoutes)
   await app.register(registerMemberRoutes)
   await app.register(registerSettingsRoutes)
+  await app.register(registerInboxRoutes)
   await app.register(registerInviteRoutes)
 }
 

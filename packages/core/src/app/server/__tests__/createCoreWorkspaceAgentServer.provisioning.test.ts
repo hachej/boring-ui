@@ -61,6 +61,7 @@ beforeEach(() => {
 })
 
 vi.mock('../../../server/routes/index.js', () => ({
+  registerInboxRoutes: async () => {},
   registerInviteRoutes: async () => {},
   registerMemberRoutes: async () => {},
   registerSettingsRoutes: async () => {},
