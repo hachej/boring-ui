@@ -1,7 +1,7 @@
 "use client"
 
 import { useMemo, useState, type ReactNode } from "react"
-import { Plug, Plus, Search, Sparkles } from "lucide-react"
+import { Plus, Search } from "lucide-react"
 import { AppLeftPaneHeader } from "./AppLeftPaneHeader"
 import { PrimaryAction, KbdHint } from "./AppLeftPaneActions"
 import { ProjectOverview, usePinnedProjectIds } from "./AppLeftPaneProjects"
@@ -75,11 +75,7 @@ export interface AppLeftPaneProps {
   onSwitchSession: (id: string) => void
   onOpenSessionAsPane: (id: string) => void
   onToggleSessionPinned: (id: string) => void
-  showPlugins?: boolean
-  showSkills?: boolean
-  onOpenPlugins: () => void
-  onOpenSkills: () => void
-  /** Additional primary app-left actions supplied by the host/app/plugin shell. */
+  /** Primary app-left actions supplied by the host/app/plugin shell after New chat/Search. */
   actions?: readonly AppLeftPaneAction[]
   /**
    * single-project: workspace shown below the app-title logo, no Workspaces
@@ -116,10 +112,6 @@ export function AppLeftPane({
   onSwitchSession,
   onOpenSessionAsPane,
   onToggleSessionPinned,
-  showPlugins = true,
-  showSkills = true,
-  onOpenPlugins,
-  onOpenSkills,
   actions = [],
   layoutMode = "single-project",
 }: AppLeftPaneProps) {
@@ -261,8 +253,6 @@ export function AppLeftPane({
             emphasis={action.emphasis}
           />
         ))}
-        {showPlugins ? <PrimaryAction icon={<Plug className="h-4 w-4" strokeWidth={1.75} />} label="Plugins" onClick={onOpenPlugins} /> : null}
-        {showSkills ? <PrimaryAction icon={<Sparkles className="h-4 w-4" strokeWidth={1.75} />} label="Skills" onClick={onOpenSkills} /> : null}
       </nav>
 
       <div className="boring-scrollbar-discreet min-h-0 flex-1 overflow-y-auto px-2 py-2">

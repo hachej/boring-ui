@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ComponentType, type ReactNode } from "react"
+import { Plug, Sparkles } from "lucide-react"
 import {
   PiChatPanel as DefaultPiChatPanel,
   usePiSessions as useDefaultPiSessions,
@@ -18,10 +19,9 @@ import type {
 } from "../../front/chrome/artifact-surface/SurfaceShell"
 import { SkillsPage } from "../../front/chrome/skills/SkillsPage"
 import { PluginsOverlay } from "../../front/chrome/plugins/PluginsOverlay"
-import { AppLeftPane, type AppLeftPaneAction, type AppLeftPaneHeaderMode, type AppLeftPaneLayoutMode, type AppLeftPaneProject } from "../../front/layout/plugin-tabs/AppLeftPane"
+import { AppLeftPane } from "../../front/layout/plugin-tabs/AppLeftPane"
 import { PluginTabsWorkspaceShell } from "../../front/layout/plugin-tabs/PluginTabsWorkspaceShell"
 import { captureFrontPlugin } from "../../shared/plugins/frontFactory"
-import { isWorkspaceSourcePlacement } from "../../shared/types/panel"
 import { UI_COMMAND_EVENT, dispatchUiCommand } from "../../front/bridge"
 import type { CommandPaletteSessionItem } from "../../front/components/CommandPalette"
 import type { CommandResult, DispatchContext, FileTreeBridge, Unsubscribe } from "../../front/bridge"
@@ -86,6 +86,34 @@ export type UseWorkspaceAgentSessions<
 }) => WorkspaceAgentSessionsApi<TSession>
 
 export type WorkspaceAgentLayout = "classic" | "plugin-tabs"
+export type WorkspaceAgentAppLeftLayoutMode = "single-project" | "multi-project"
+export type WorkspaceAgentAppLeftHeaderMode = "full" | "workspace" | "hidden"
+
+export interface WorkspaceAgentAppLeftProjectSession {
+  id: string
+  title?: string | null
+  updatedAt?: string | number
+}
+
+export interface WorkspaceAgentAppLeftProject {
+  id: string
+  name: string
+  available?: boolean
+  sessionCount?: number
+  blockedCount?: number
+  sessions?: WorkspaceAgentAppLeftProjectSession[]
+  hasMoreSessions?: boolean
+  loadingSessions?: boolean
+}
+
+export interface WorkspaceAgentAppLeftAction {
+  id: string
+  label: string
+  icon: ReactNode
+  onClick: () => void
+  trailing?: ReactNode
+  emphasis?: boolean
+}
 
 export interface WorkspaceAgentFrontProps<
   TSession extends WorkspaceAgentSession = WorkspaceAgentSession,
@@ -122,11 +150,11 @@ export interface WorkspaceAgentFrontProps<
   /** App-left workspace/project section title. Defaults to "Workspaces". */
   workspaceSectionTitle?: string
   /** App-left layout mode. single-project uses the workspace dropdown; multi-project renders workspaces inline. */
-  appLeftLayoutMode?: AppLeftPaneLayoutMode
+  appLeftLayoutMode?: WorkspaceAgentAppLeftLayoutMode
   /** App-left header mode: full brand, workspace picker only, or hidden with collapse-button clearance. */
-  appLeftHeaderMode?: AppLeftPaneHeaderMode
+  appLeftHeaderMode?: WorkspaceAgentAppLeftHeaderMode
   /** Optional cross-project overview rendered in the app-left workspace/project section. */
-  appLeftProjects?: AppLeftPaneProject[]
+  appLeftProjects?: WorkspaceAgentAppLeftProject[]
   appLeftActiveProjectId?: string | null
   onSwitchAppLeftProject?: (projectId: string) => void
   onOpenAppLeftProjectSession?: (projectId: string, sessionId: string) => void
@@ -162,7 +190,7 @@ export interface WorkspaceAgentFrontProps<
   /** Show the plugin-tabs Plugins action/overlay. Defaults to true. */
   showPlugins?: boolean
   /** Extra actions inserted into the app-left primary action list before built-in management actions. */
-  appLeftActions?: readonly AppLeftPaneAction[]
+  appLeftActions?: readonly WorkspaceAgentAppLeftAction[]
   sessions?: Array<{ id: string; title?: string | null; updatedAt?: string | number; turnCount?: number }>
   activeSessionId?: string | null
   onSwitchSession?: (id: string) => void
@@ -940,10 +968,7 @@ export function WorkspaceAgentFront<
     [plugins],
   )
   const hasLeftTabs = useMemo(
-    () => !isPluginTabsLayout && capturedPlugins.some((plugin) => (
-      plugin.registrations.workspaceSources.length > 0 ||
-      plugin.registrations.panels.some((panel) => isWorkspaceSourcePlacement(panel.placement))
-    )),
+    () => !isPluginTabsLayout && capturedPlugins.some((plugin) => plugin.registrations.workspaceSources.length > 0),
     [capturedPlugins, isPluginTabsLayout],
   )
   const pluginPanelIds = useMemo(
@@ -1416,6 +1441,27 @@ export function WorkspaceAgentFront<
         }
       : undefined
   ), [activeChatPaneId, chatPaneIds, isPluginTabsLayout, openChatPane, resolvedSessions, switchToChatPane])
+  const managementActions = useMemo<WorkspaceAgentAppLeftAction[]>(() => {
+    const actions: WorkspaceAgentAppLeftAction[] = [...(appLeftActions ?? [])]
+    if (pluginsActionEnabled) {
+      actions.push({
+        id: "plugins",
+        label: "Plugins",
+        icon: <Plug className="h-4 w-4" strokeWidth={1.75} />,
+        onClick: () => setLeftOverlay((cur) => cur === "plugins" ? null : "plugins"),
+      })
+    }
+    if (skillsActionEnabled) {
+      actions.push({
+        id: "skills",
+        label: "Skills",
+        icon: <Sparkles className="h-4 w-4" strokeWidth={1.75} />,
+        onClick: () => setLeftOverlay((cur) => cur === "skills" ? null : "skills"),
+      })
+    }
+    return actions
+  }, [appLeftActions, pluginsActionEnabled, skillsActionEnabled])
+
   const leftOverlayNode = leftOverlay === "skills" && skillsActionEnabled ? (
     <SkillsPage
       onClose={() => setLeftOverlay(null)}
@@ -1533,15 +1579,7 @@ export function WorkspaceAgentFront<
           onSwitchSession={switchToChatPane}
           onOpenSessionAsPane={openChatPane}
           onToggleSessionPinned={toggleSessionPinned}
-          actions={appLeftActions}
-          showPlugins={pluginsActionEnabled}
-          showSkills={skillsActionEnabled}
-          onOpenPlugins={() => {
-            if (pluginsActionEnabled) setLeftOverlay((cur) => cur === "plugins" ? null : "plugins")
-          }}
-          onOpenSkills={() => {
-            if (skillsActionEnabled) setLeftOverlay((cur) => cur === "skills" ? null : "skills")
-          }}
+          actions={managementActions}
         />
       )}
     >

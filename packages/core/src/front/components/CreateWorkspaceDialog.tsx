@@ -41,7 +41,7 @@ export interface CreateWorkspaceDialogProps {
 /**
  * Standalone "create a workspace" dialog, extracted from `WorkspaceSwitcher` so
  * the multi-project app-left pane can offer a real form instead of a
- * `window.prompt` (plan: multi-project-left-bar §7.2). Controlled via
+ * `window.prompt`. Controlled via
  * `open`/`onOpenChange`; primes the workspaces cache and calls `onCreated`
  * (e.g. to navigate to the new workspace).
  */
