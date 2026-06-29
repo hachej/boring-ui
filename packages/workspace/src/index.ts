@@ -355,6 +355,7 @@ export type {
   WorkspaceAttentionBlocker,
   WorkspaceAttentionBlockerAction,
   WorkspaceAttentionContextValue,
+  WorkspaceAttentionInboxSourceMetadata,
   WorkspaceAttentionSessionBadge,
 } from "./front/provider"
 

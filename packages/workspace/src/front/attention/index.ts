@@ -10,5 +10,6 @@ export type {
   WorkspaceAttentionBlocker,
   WorkspaceAttentionBlockerAction,
   WorkspaceAttentionContextValue,
+  WorkspaceAttentionInboxSourceMetadata,
   WorkspaceAttentionSessionBadge,
 } from "./WorkspaceAttentionProvider"

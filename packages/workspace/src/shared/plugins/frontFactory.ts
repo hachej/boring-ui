@@ -51,6 +51,28 @@ export interface BoringFrontProviderRegistration {
   component: PluginProvider
 }
 
+export interface BoringFrontAppShellApi {
+  openPanel(panel: { id: string; component: string; title: string; params?: Record<string, unknown> }): void
+  openSurface(surface: { kind: string; target?: string; meta?: Record<string, unknown> }): void
+  openDetachedChat(sessionId: string, options?: { title?: string }): boolean
+}
+
+export interface BoringFrontAppLeftActionOverlayProps {
+  onClose: () => void
+  headerInsetStart?: boolean
+  headerInsetEnd?: boolean
+  storageKey?: string
+  shell: BoringFrontAppShellApi
+}
+
+export interface BoringFrontAppLeftActionRegistration {
+  id: string
+  label: string
+  icon?: ComponentType<{ className?: string }>
+  order?: number
+  overlay: ComponentType<BoringFrontAppLeftActionOverlayProps>
+}
+
 export interface BoringFrontBindingRegistration {
   id: string
   component: PluginBinding
@@ -101,6 +123,7 @@ export interface BoringFrontToolRendererRegistration {
 
 export interface BoringFrontAPI {
   registerProvider(registration: BoringFrontProviderRegistration): void
+  registerAppLeftAction(registration: BoringFrontAppLeftActionRegistration): void
   registerBinding(registration: BoringFrontBindingRegistration): void
   registerCatalog(registration: CatalogConfig): void
   registerPanel<T = unknown>(registration: BoringFrontPanelRegistration<T>): void
@@ -142,6 +165,7 @@ export interface DefinePluginConfig {
   commands?: ReadonlyArray<BoringFrontPanelCommandRegistration>
   surfaceResolvers?: ReadonlyArray<BoringFrontSurfaceResolverRegistration>
   providers?: ReadonlyArray<BoringFrontProviderRegistration>
+  appLeftActions?: ReadonlyArray<BoringFrontAppLeftActionRegistration>
   bindings?: ReadonlyArray<BoringFrontBindingRegistration>
   catalogs?: ReadonlyArray<CatalogConfig>
   toolRenderers?: ReadonlyArray<BoringFrontToolRendererRegistration>
@@ -182,6 +206,7 @@ export function definePlugin<const Config extends DefinePluginConfig>(
     for (const command of config.commands ?? []) api.registerPanelCommand(command)
     for (const resolver of config.surfaceResolvers ?? []) api.registerSurfaceResolver(resolver)
     for (const provider of config.providers ?? []) api.registerProvider(provider)
+    for (const action of config.appLeftActions ?? []) api.registerAppLeftAction(action)
     for (const binding of config.bindings ?? []) api.registerBinding(binding)
     for (const catalog of config.catalogs ?? []) api.registerCatalog(catalog)
     for (const renderer of config.toolRenderers ?? []) api.registerToolRenderer(renderer)
@@ -210,6 +235,7 @@ function brandFactoryWithPluginId(
 
 export interface CapturedBoringFrontRegistrations {
   providers: BoringFrontProviderRegistration[]
+  appLeftActions: BoringFrontAppLeftActionRegistration[]
   bindings: BoringFrontBindingRegistration[]
   catalogs: CatalogConfig[]
   panels: BoringFrontPanelRegistration<any>[]
@@ -235,6 +261,7 @@ function clone<T>(items: T[]): T[] {
 
 export function createCapturingBoringFrontAPI(options: { pluginId?: string } = {}): CapturingBoringFrontAPIHandle {
   const providers: BoringFrontProviderRegistration[] = []
+  const appLeftActions: BoringFrontAppLeftActionRegistration[] = []
   const bindings: BoringFrontBindingRegistration[] = []
   const catalogs: CatalogConfig[] = []
   const panels: BoringFrontPanelRegistration<any>[] = []
@@ -264,6 +291,10 @@ export function createCapturingBoringFrontAPI(options: { pluginId?: string } = {
     registerProvider(registration) {
       claim("provider", registration.id)
       providers.push(registration)
+    },
+    registerAppLeftAction(registration) {
+      claim("app-left-action", registration.id)
+      appLeftActions.push(registration)
     },
     registerBinding(registration) {
       claim("binding", registration.id)
@@ -297,6 +328,7 @@ export function createCapturingBoringFrontAPI(options: { pluginId?: string } = {
     flush() {
       return {
         providers: clone(providers),
+        appLeftActions: clone(appLeftActions),
         bindings: clone(bindings),
         catalogs: clone(catalogs),
         panels: clone(panels),

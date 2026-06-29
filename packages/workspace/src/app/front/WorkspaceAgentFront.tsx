@@ -9,6 +9,8 @@ import {
 import { WorkspaceProvider, type WorkspaceProviderProps } from "../../front/provider/WorkspaceProvider"
 import { ChatLayout, TopBar, ThemeToggle, type ChatLayoutProps } from "../../front/layout"
 import { WORKSPACE_COMPOSER_STOP_REASONS, emitWorkspaceComposerStop } from "../../front/chrome/chat/composerStop"
+import { DetachedChatPopover } from "../../front/chrome/chat/DetachedChatPopover"
+import type { ChatPanelHostProps } from "../../front/chrome/chat/ChatPanelHost"
 import type { WorkspaceChatPanelProps } from "../../front/chrome/chat/types"
 import type {
   OpenPanelConfig,
@@ -17,8 +19,6 @@ import type {
   SurfaceShellSnapshot,
 } from "../../front/chrome/artifact-surface/SurfaceShell"
 import { SkillsPage } from "../../front/chrome/skills/SkillsPage"
-import { WorkspaceInboxShellProvider } from "../../plugins/inboxPlugin/front"
-import { useWorkspaceInboxHost } from "./WorkspaceInboxHost"
 import { PluginsOverlay } from "../../front/chrome/plugins/PluginsOverlay"
 import { AppLeftPane, type AppLeftPaneHeaderMode, type AppLeftPaneLayoutMode, type AppLeftPaneProject } from "../../front/layout/plugin-tabs/AppLeftPane"
 import { PluginTabsWorkspaceShell } from "../../front/layout/plugin-tabs/PluginTabsWorkspaceShell"
@@ -159,10 +159,12 @@ export interface WorkspaceAgentFrontProps<
    * UserMenu) should set this to false to avoid a duplicate control.
    */
   showThemeToggle?: boolean
-  /** Show the plugin-tabs Inbox action/overlay. Defaults to true. */
+  /** @deprecated Hide the ask-user Inbox app-left action via hiddenAppLeftActionIds instead. */
   showInbox?: boolean
+  /** Generic app-left plugin action ids to hide. */
+  hiddenAppLeftActionIds?: readonly string[]
   /** Initial plugin-tabs overlay, useful for demos/deep links. */
-  defaultLeftOverlay?: "inbox" | "skills" | "plugins" | null
+  defaultLeftOverlay?: string | null
   /** Show the plugin-tabs Skills action/overlay. Defaults to true. */
   showSkills?: boolean
   /** Show the plugin-tabs Plugins action/overlay. Defaults to true. */
@@ -417,6 +419,7 @@ export function WorkspaceAgentFront<
   topBarRight,
   showThemeToggle = true,
   showInbox = true,
+  hiddenAppLeftActionIds,
   defaultLeftOverlay = null,
   showSkills = true,
   showPlugins = true,
@@ -447,7 +450,10 @@ export function WorkspaceAgentFront<
   )
   const shellPersistenceEnabled = persistenceEnabled !== false
   const isPluginTabsLayout = workspaceLayout === "plugin-tabs"
-  const inboxActionEnabled = showInbox !== false
+  const hiddenAppLeftActionIdSet = useMemo(
+    () => new Set([...(hiddenAppLeftActionIds ?? []), ...(showInbox === false ? ["ask-user.inbox"] : [])]),
+    [hiddenAppLeftActionIds, showInbox],
+  )
   const skillsActionEnabled = showSkills !== false
   const pluginsActionEnabled = showPlugins !== false
   // Skills is only ever a chat-left overlay (see leftOverlay node below); it is
@@ -750,16 +756,15 @@ export function WorkspaceAgentFront<
     shellPersistenceEnabled,
   )
   const effectiveAppLeftPaneWidth = clampNumber(appLeftPaneWidth, 220, 420)
-  const [leftOverlay, setLeftOverlay] = useState<"inbox" | "skills" | "plugins" | null>(defaultLeftOverlay)
+  const [leftOverlay, setLeftOverlay] = useState<string | null>(defaultLeftOverlay)
   useEffect(() => {
     if (
-      (leftOverlay === "inbox" && !inboxActionEnabled)
-      || (leftOverlay === "skills" && !skillsActionEnabled)
+      (leftOverlay === "skills" && !skillsActionEnabled)
       || (leftOverlay === "plugins" && !pluginsActionEnabled)
     ) {
       setLeftOverlay(null)
     }
-  }, [inboxActionEnabled, leftOverlay, pluginsActionEnabled, skillsActionEnabled])
+  }, [leftOverlay, pluginsActionEnabled, skillsActionEnabled])
   const effectiveNavOpen = navEnabled && navOpen
   const [surfaceOpen, setSurfaceOpen] = useStoredBooleanState(
     // Key must NOT match resolvedSurfaceStorageKey (which stores the dockview
@@ -949,6 +954,27 @@ export function WorkspaceAgentFront<
     () => plugins?.map(captureFrontPlugin) ?? [],
     [plugins],
   )
+  const pluginAppLeftActions = useMemo(() => {
+    const actions = capturedPlugins.flatMap((plugin) => plugin.registrations.appLeftActions.map((action) => ({ plugin, action })))
+    const ownerById = new Map<string, string>()
+    for (const { plugin, action } of actions) {
+      const previous = ownerById.get(action.id)
+      if (previous) throw new Error(`Duplicate app-left action id "${action.id}" registered by "${previous}" and "${plugin.id}"`)
+      ownerById.set(action.id, plugin.id)
+    }
+    return actions
+      .filter(({ action }) => !hiddenAppLeftActionIdSet.has(action.id))
+      .sort((a, b) => (a.action.order ?? 0) - (b.action.order ?? 0) || a.action.label.localeCompare(b.action.label) || a.action.id.localeCompare(b.action.id))
+  }, [capturedPlugins, hiddenAppLeftActionIdSet])
+  const pluginPrimaryActions = useMemo(() => pluginAppLeftActions.map(({ action }) => {
+    const Icon = action.icon
+    return {
+      id: action.id,
+      label: action.label,
+      icon: Icon ? <Icon className="h-4 w-4" /> : <span className="h-4 w-4" aria-hidden="true" />,
+      onClick: () => setLeftOverlay((current) => current === action.id ? null : action.id),
+    }
+  }), [pluginAppLeftActions])
   const hasLeftTabs = useMemo(
     () => !isPluginTabsLayout && capturedPlugins.some((plugin) => (
       plugin.registrations.workspaceSources.length > 0 ||
@@ -1426,23 +1452,32 @@ export function WorkspaceAgentFront<
         }
       : undefined
   ), [activeChatPaneId, chatPaneIds, isPluginTabsLayout, openChatPane, resolvedSessions, switchToChatPane])
-  const inboxHost = useWorkspaceInboxHost({
-    enabled: inboxActionEnabled,
-    panels: baseProviderPanels,
-    leftOverlay,
-    setLeftOverlay,
-    appLeftPaneCollapsed,
-    surfaceOpen,
-    workspaceId,
-    effectiveAppLeftPaneWidth,
-    sessionTitleById,
-    defaultSessionTitle,
-    makeCenterParams,
-    openChatPane,
-    surfaceDispatch,
-  })
-  const providerPanels = inboxHost.providerPanels
-  const leftOverlayNode = inboxHost.leftOverlayNode ?? (leftOverlay === "skills" && skillsActionEnabled ? (
+  const providerPanels = baseProviderPanels
+  const [floatingChatSessionId, setFloatingChatSessionId] = useState<string | null>(null)
+  const appActionShell = useMemo(() => ({
+    openPanel(panel: { id: string; component: string; title: string; params?: Record<string, unknown> }) {
+      dispatchUiCommand({ kind: "openPanel", params: panel }, surfaceDispatch)
+    },
+    openSurface(surface: { kind: string; target?: string; meta?: Record<string, unknown> }) {
+      dispatchUiCommand({ kind: "openSurface", params: surface }, surfaceDispatch)
+    },
+    openDetachedChat(sessionId: string) {
+      if (!sessionId) return false
+      setFloatingChatSessionId(sessionId)
+      return true
+    },
+  }), [surfaceDispatch])
+  const pluginOverlay = pluginAppLeftActions.find(({ action }) => action.id === leftOverlay)
+  const leftOverlayNode = pluginOverlay ? (() => {
+    const Overlay = pluginOverlay.action.overlay
+    return <Overlay
+      onClose={() => setLeftOverlay(null)}
+      headerInsetStart={appLeftPaneCollapsed}
+      headerInsetEnd={!surfaceOpen}
+      storageKey={`boring-workspace:${pluginOverlay.action.id}:pins:${workspaceId}`}
+      shell={appActionShell}
+    />
+  })() : leftOverlay === "skills" && skillsActionEnabled ? (
     <SkillsPage
       onClose={() => setLeftOverlay(null)}
       headerInsetStart={appLeftPaneCollapsed}
@@ -1455,7 +1490,7 @@ export function WorkspaceAgentFront<
       headerInsetStart={appLeftPaneCollapsed}
       headerInsetEnd={!surfaceOpen}
     />
-  ) : null)
+  ) : null
   const mainContent = remoteSessionsTransitioning ? (
     <ChatSessionTransitionState />
   ) : (
@@ -1559,7 +1594,7 @@ export function WorkspaceAgentFront<
           onSwitchSession={switchToChatPane}
           onOpenSessionAsPane={openChatPane}
           onToggleSessionPinned={toggleSessionPinned}
-          primaryActions={inboxHost.primaryActions}
+          primaryActions={pluginPrimaryActions}
           showPlugins={pluginsActionEnabled}
           showSkills={skillsActionEnabled}
           onOpenPlugins={() => {
@@ -1585,12 +1620,31 @@ export function WorkspaceAgentFront<
       {mainContent}
     </div>
   )
-  const floatingChatNode = inboxHost.floatingChatNode
+  const floatingChatTitle = floatingChatSessionId
+    ? sessionTitleById.get(floatingChatSessionId) ?? (floatingChatSessionId === "default" ? defaultSessionTitle : floatingChatSessionId)
+    : null
+  const floatingChatParams = floatingChatSessionId
+    ? makeCenterParams(floatingChatSessionId, { bridgeEnabled: false }) as ChatPanelHostProps
+    : null
+  const floatingChatNode = floatingChatSessionId && floatingChatParams ? (
+    <DetachedChatPopover
+      sessionId={floatingChatSessionId}
+      title={floatingChatTitle ?? floatingChatSessionId}
+      chatParams={floatingChatParams}
+      initialPosition={{ left: appLeftPaneCollapsed ? 24 : effectiveAppLeftPaneWidth + 24, top: 72 }}
+      composingEnabled={false}
+      onClose={() => setFloatingChatSessionId(null)}
+      onDock={() => {
+        openChatPane(floatingChatSessionId)
+        setFloatingChatSessionId(null)
+        setLeftOverlay(null)
+      }}
+    />
+  ) : null
   const publishedNavOpen = isPluginTabsLayout ? !appLeftPaneCollapsed : effectiveNavOpen
 
   return (
     <div className="relative h-full bg-background text-foreground">
-      <WorkspaceInboxShellProvider value={inboxHost.shellApi}>
       <WorkspaceProvider
         chatPanel={chatPanel}
         panels={providerPanels}
@@ -1640,7 +1694,6 @@ export function WorkspaceAgentFront<
         {floatingChatNode}
         {afterShell}
       </WorkspaceProvider>
-      </WorkspaceInboxShellProvider>
     </div>
   )
 }

@@ -9,9 +9,10 @@ import {
 } from "@hachej/boring-workspace"
 import {
   definePlugin,
+  type BoringFrontAppLeftActionOverlayProps,
   type BoringFrontFactoryWithId,
 } from "@hachej/boring-workspace/plugin"
-import { HelpCircle, XCircle } from "lucide-react"
+import { HelpCircle, Inbox, MailOpen, XCircle } from "lucide-react"
 import { useEffect, useMemo, useRef, useSyncExternalStore, useState } from "react"
 import { ASK_USER_PANEL_ID, ASK_USER_PANEL_TITLE, ASK_USER_PLUGIN_ID, ASK_USER_SURFACE_KIND } from "../shared/constants"
 import { createQuestionsClient, QuestionsClientError } from "./client"
@@ -31,6 +32,7 @@ import {
   useAskUserPendingRefresh,
 } from "./providerHooks"
 import { QuestionCancelButton, QuestionFields, QuestionForm, QuestionFormProvider, QuestionSubmitButton } from "./primitives"
+import { InboxDetailPanel, InboxOverlay, WorkspaceInboxShellProvider, WORKSPACE_INBOX_DETAIL_PANEL_ID, WORKSPACE_INBOX_PREVIEW_PANEL_ID, type WorkspaceInboxItem, type WorkspaceInboxShellApi } from "./inbox"
 
 function AskUserProvider({ apiBaseUrl, authHeaders, activeSessionId, openSessionIds, children }: PluginProviderProps) {
   const runtime = useMemo<QuestionsRuntime>(() => ({
@@ -166,6 +168,66 @@ function QuestionsPane({ api, params, className }: PaneProps<QuestionsPaneParams
   </div>
 }
 
+function panelInstanceId(prefix: string, id: string): string {
+  const safe = id.replace(/[^A-Za-z0-9_.:-]/g, "_").slice(0, 96)
+  return `${prefix}.${safe || "item"}`
+}
+
+function createInboxShellApi(shell: BoringFrontAppLeftActionOverlayProps["shell"]): WorkspaceInboxShellApi {
+  return {
+    openInboxPreview(item: WorkspaceInboxItem) {
+      shell.openPanel({
+        id: WORKSPACE_INBOX_PREVIEW_PANEL_ID,
+        component: WORKSPACE_INBOX_PREVIEW_PANEL_ID,
+        title: "Inbox Preview",
+        params: { itemId: item.id, blockerId: item.id },
+      })
+      return { success: true }
+    },
+    openInboxItemPanel(item: WorkspaceInboxItem) {
+      shell.openPanel({
+        id: panelInstanceId(WORKSPACE_INBOX_DETAIL_PANEL_ID, item.id),
+        component: WORKSPACE_INBOX_DETAIL_PANEL_ID,
+        title: item.title,
+        params: { itemId: item.id, blockerId: item.id },
+      })
+      return { success: true }
+    },
+    openInboxArtifact(item: WorkspaceInboxItem) {
+      if (!item.artifact) return { success: false, reason: "no-artifact", message: "This inbox item has no artifact target." }
+      if (item.artifact.type === "panel") {
+        shell.openPanel({
+          id: panelInstanceId(item.artifact.panelComponentId, item.id),
+          component: item.artifact.panelComponentId,
+          title: item.title,
+          params: item.artifact.params,
+        })
+        return { success: true }
+      }
+      shell.openSurface({
+        kind: item.artifact.surfaceKind,
+        target: item.artifact.target,
+        meta: item.sessionId ? { sessionId: item.sessionId, openOnlyWhenSessionOpen: true } : {},
+      })
+      return { success: true }
+    },
+    openDetachedChat(sessionId: string, options?: { title?: string }) {
+      return shell.openDetachedChat(sessionId, options)
+        ? { success: true }
+        : { success: false, reason: "placement-failed", message: "Detached chat is not available from this Inbox host." }
+    },
+  }
+}
+
+function HumanActionInboxOverlay({ shell, storageKey, ...props }: BoringFrontAppLeftActionOverlayProps) {
+  const shellApi = useMemo(() => createInboxShellApi(shell), [shell])
+  return (
+    <WorkspaceInboxShellProvider value={shellApi}>
+      <InboxOverlay {...props} pinStorageKey={storageKey} />
+    </WorkspaceInboxShellProvider>
+  )
+}
+
 /**
  * `BoringFrontFactoryWithId` for the ask-user plugin. Registers
  * (1) a provider that owns the per-app questions runtime (apiBaseUrl,
@@ -187,6 +249,15 @@ export const askUserPlugin: BoringFrontFactoryWithId = definePlugin({
       component: AskUserProvider,
     },
   ],
+  appLeftActions: [
+    {
+      id: `${ASK_USER_PLUGIN_ID}.inbox`,
+      label: "Inbox",
+      icon: Inbox,
+      order: 10,
+      overlay: HumanActionInboxOverlay,
+    },
+  ],
   panels: [
     {
       id: ASK_USER_PANEL_ID,
@@ -196,6 +267,22 @@ export const askUserPlugin: BoringFrontFactoryWithId = definePlugin({
       placement: "center",
       source: "builtin",
       chromeless: true,
+    },
+    {
+      id: WORKSPACE_INBOX_PREVIEW_PANEL_ID,
+      label: "Inbox Preview",
+      icon: MailOpen,
+      component: InboxDetailPanel,
+      placement: "center",
+      source: "builtin",
+    },
+    {
+      id: WORKSPACE_INBOX_DETAIL_PANEL_ID,
+      label: "Inbox Detail",
+      icon: MailOpen,
+      component: InboxDetailPanel,
+      placement: "center",
+      source: "builtin",
     },
   ],
   surfaceResolvers: [

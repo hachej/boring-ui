@@ -1,5 +1,5 @@
 import { MailOpen } from "lucide-react"
-import type { PanelConfig } from "../../../front/registry/types"
+import type { PanelConfig } from "@hachej/boring-workspace"
 import { InboxDetailPanel } from "./InboxDetailPanel"
 import { WORKSPACE_INBOX_DETAIL_PANEL_ID, WORKSPACE_INBOX_PREVIEW_PANEL_ID } from "./inboxItemModel"
 
