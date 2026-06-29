@@ -971,14 +971,24 @@ git diff --numstat origin/main...HEAD \
 
 ### Repository ownership rule
 
-Reusable MCP capability belongs in `hachej/boring-ui`, not in a child app. Constellation should only contain app-specific composition, provider enablement, copy, routes that bind to its auth/workspace runtime, and visual product UX.
+Reusable MCP capability belongs in `hachej/boring-ui`, not in a child app. This includes the UI composition. `boring-mcp` should be a reusable boring-ui MCP plugin/capability that any app can enable.
 
 ```txt
-boring-ui: boring-mcp contracts, policy, redaction, source/tool DTOs, connector seams, tests, generic plugin/package surfaces.
-boring-ui-constellation: Sources panel composition, Constellation copy/order/defaults, app runtime registration, deployment/env binding.
+boring-ui:
+  boring-mcp plugin/package
+  MCP/Sources panels and commands
+  contracts, policy, redaction, source/tool DTOs
+  connector seams and generic route/tool surfaces
+  tests and docs
+
+boring-ui-constellation:
+  app-level registration of boring-mcp
+  Constellation provider defaults/order/labels if different from generic defaults
+  app runtime env/deployment binding
+  optional app-specific copy/config only through documented boring-mcp config hooks
 ```
 
-If an implementation PR adds reusable MCP logic to Constellation, stop and split it before merge.
+If an implementation PR adds reusable MCP logic or reusable MCP UI directly to Constellation, stop and split it before merge.
 
 Enforcement rule:
 
@@ -1015,16 +1025,18 @@ review-size cap is recorded
 future PRs have clear acceptance criteria
 ```
 
-### PR 1A — reusable boring-mcp foundation
+### PR 1A — reusable boring-mcp plugin foundation
 
 Repo: `hachej/boring-ui`
-Branch: `feat/boring-mcp-foundation`
+Branch: `feat/boring-mcp-plugin-foundation`
 Code cap target: under 1200 non-test/non-doc lines
 
 Scope:
 
 ```txt
-reusable boring-mcp package/plugin home
+reusable boring-mcp plugin/package home, likely plugins/boring-mcp or packages/boring-mcp
+front plugin: generic Sources left tab and MCP Sources panel shell
+server plugin/contracts: route/tool registration seams where appropriate
 MCP provider template model
 read-only tool policy
 MCP facade guardrails
@@ -1032,39 +1044,40 @@ redaction guard
 status/doctor/probe model
 normalized source/tool DTO types
 fake transport/source-store tests
+configuration hook for app defaults, labels, provider ordering, and enabled providers
 ```
 
 Non-goals:
 
 ```txt
-no Constellation branding/copy
-no app-specific Sources panel
+no Constellation-only implementation
 no real Composio calls
-no app-specific route registration
+no app-specific secret/env binding
+no provider execution
 ```
 
 Exit criteria:
 
 ```txt
-core boring-mcp logic is reusable by Constellation and future apps
+boring-mcp can be enabled by any boring-ui app
+Sources UI is generic and configurable, not hardcoded to Constellation
 no value imports from Constellation
-no app-specific provider enablement beyond generic templates/policies
 redaction/policy/facade tests pass in boring-ui
+plugin/package docs show how child apps enable/configure boring-mcp
 ```
 
-### PR 1B — Constellation Sources UX shell
+### PR 1B — Constellation boring-mcp registration/config
 
 Repo: `hachej/boring-ui-constellation`
-Branch: `feat/constellation-sources-shell`
-Code cap target: under 700 non-test/non-doc lines
+Branch: `feat/enable-boring-mcp`
+Code cap target: under 300 non-test/non-doc lines
 
 Scope:
 
 ```txt
-front-end Sources left tab
-MCP Sources center panel shell
-Constellation-specific provider copy and ordering
-static composition of boring-mcp front/plugin surfaces when available
+register/enable the reusable boring-mcp plugin
+set Constellation defaults: Notion, Airtable, Microsoft/SharePoint order/copy if needed
+wire app env/deployment placeholders only
 no browser Composio calls
 no raw secret exposure
 ```
@@ -1072,19 +1085,19 @@ no raw secret exposure
 Non-goals:
 
 ```txt
+no reusable MCP UI
 no reusable MCP policy/facade logic
 no generic boring-mcp package code
-no backend source registry
+no backend source registry implementation unless it is only app binding to boring-mcp APIs
 no real Composio calls
 ```
 
 Exit criteria:
 
 ```txt
-Sources entry appears only in authenticated Constellation workspace
-UI states are static/shell only until backend routes land
-app-specific copy matches Constellation product language
-all generic MCP logic is imported from boring-ui boring-mcp package/plugin, not duplicated in Constellation
+Constellation consumes boring-mcp like any other app
+all generic Sources UI comes from boring-mcp
+Constellation only provides configuration/registration
 ```
 
 ### PR 2 — MCP source registry and backend route contracts
