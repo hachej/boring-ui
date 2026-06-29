@@ -1100,29 +1100,29 @@ all generic Sources UI comes from boring-mcp
 Constellation only provides configuration/registration
 ```
 
-### PR 2 — MCP source registry and backend route contracts
+### PR 2 — boring-mcp source registry and backend route contracts
 
-Repo: `hachej/boring-ui` for reusable registry/contracts, then `hachej/boring-ui-constellation` for app registration only if needed
-Branch: `feat/mcp-source-registry`
-Code cap target: under 900 non-test/non-doc lines per repo PR
+Repo: `hachej/boring-ui`
+Branch: `feat/boring-mcp-source-registry`
+Code cap target: under 900 non-test/non-doc lines
 
 Scope:
 
 ```txt
-source registry model/store
-GET /api/mcp/sources
-GET /api/mcp/sources/:sourceId/status
-POST /api/mcp/sources/:sourceId/probe
-POST /api/mcp/sources/:sourceId/disconnect as safe stub if Composio adapter is not yet wired
-server-side actor/workspace ownership checks
+reusable boring-mcp source registry contracts
+secret-free source DTOs
+GET /api/mcp/sources-style route/handler contract or plugin route contribution
+status/probe/disconnect route/handler contracts with fake connector provider
+server-side actor/workspace ownership seam that apps can bind to their auth runtime
 stable MCP_* errors
-route tests with fake connector provider
+route/handler tests with fake connector provider
 ```
 
 Non-goals:
 
 ```txt
 no real Composio API calls
+no Constellation-specific route implementation
 no agent bridge tools
 no tool execution
 no OAuth token storage
@@ -1131,14 +1131,15 @@ no OAuth token storage
 Exit criteria:
 
 ```txt
-browser can list/manage source records through Constellation-owned routes only
+any boring-ui app can expose source management through the boring-mcp plugin
 all responses are secret-free DTOs
-route tests prove cross-user/workspace access is denied
+route/handler tests prove cross-user/workspace access is denied through the injected actor/workspace seam
+Constellation-specific binding is deferred to the tiny app enable/config PR
 ```
 
 ### PR 2.5 — Composio security/vendor preflight before real provider calls
 
-Repo: `hachej/boring-ui-constellation` or tracked security checklist linked from the implementation PR
+Repo: `hachej/boring-ui` for reusable boring-mcp checklist/docs; Constellation may link an app-specific acceptance note later
 Code cap target: docs/tests only unless a tiny config/readiness check is needed
 
 Scope:
@@ -1169,28 +1170,29 @@ secret-handling assumptions are explicit before the Composio SDK/API key lands i
 any accepted gap has an owner and a later PR gate
 ```
 
-### PR 3 — ComposioConnectorProvider Notion connect/status/probe
+### PR 3 — boring-mcp ComposioConnectorProvider Notion connect/status/probe
 
-Repo: `hachej/boring-ui-constellation`
-Branch: `feat/composio-notion-connect`
+Repo: `hachej/boring-ui`
+Branch: `feat/boring-mcp-composio-notion-connect`
 Code cap target: under 1100 non-test/non-doc lines
 
 Scope:
 
 ```txt
-server-only Composio SDK client
-Vault/env secret resolution seam for COMPOSIO_API_KEY
+server-only Composio connector provider behind boring-mcp seam
+server-only Composio SDK/API client abstraction
+secret resolution interface for COMPOSIO_API_KEY; app chooses env/Vault binding outside reusable core
 create/reuse Composio MCP sessions
-POST /api/mcp/sources/notion/start-connect
-status refresh from Composio
+start-connect/status/probe operations for Notion
 probe/search metadata through Composio MCP session
-store non-secret Composio refs only
-redact account/workspace metadata before browser response
+store/return non-secret Composio refs only
+redact account/workspace metadata before browser/agent response
 ```
 
 Non-goals:
 
 ```txt
+no Constellation-specific implementation
 no Airtable/Microsoft
 no read-only execution yet
 no materialized tools
@@ -1201,16 +1203,16 @@ Exit criteria:
 
 ```txt
 PR 2.5 security preflight is linked and green or explicitly owner-accepted
-user can click Connect for Notion and complete Composio auth
-status becomes connected after server refresh
+boring-mcp can start a Notion Composio connection through an injected app secret resolver
+status becomes connected after server refresh in fake/live-gated tests
 probe returns normalized, redacted read-only tool summaries
 secret canary tests pass
 ```
 
-### PR 4 — normalized tool catalog: search and describe
+### PR 4 — boring-mcp normalized tool catalog: search and describe
 
-Repo: `hachej/boring-ui-constellation`
-Branch: `feat/mcp-tool-catalog`
+Repo: `hachej/boring-ui`
+Branch: `feat/boring-mcp-tool-catalog`
 Code cap target: under 1000 non-test/non-doc lines
 
 Scope:
@@ -1220,15 +1222,16 @@ normalized connector tool DTO
 catalog cache/refresh boundary
 mcp_tools_search backend operation
 mcp_tool_describe backend operation
+generic Sources UI tool catalog panel wired to boring-mcp contracts
 Notion allowlist from live PoC
 schema hash / drift detection model
-Sources UI tool catalog panel wired to backend
 ```
 
 Non-goals:
 
 ```txt
 no actual provider tool execution
+no Constellation-specific panel implementation
 no V2 materialized tools
 no admin classification UI
 ```
@@ -1236,15 +1239,16 @@ no admin classification UI
 Exit criteria:
 
 ```txt
-UI can search Notion tools and view exact input schemas
+generic boring-mcp UI can search tools and view exact input schemas
 disabled/mutating tools show blocked reasons
 unknown tools are disabled by default
+any app can consume the catalog through boring-mcp config/hooks
 ```
 
-### PR 5 — governed read-only execution for Notion
+### PR 5 — boring-mcp governed read-only execution for Notion
 
-Repo: `hachej/boring-ui-constellation`
-Branch: `feat/notion-readonly-call`
+Repo: `hachej/boring-ui`
+Branch: `feat/boring-mcp-notion-readonly-call`
 Code cap target: under 1100 non-test/non-doc lines
 
 Scope:
@@ -1255,13 +1259,14 @@ COMPOSIO_MULTI_EXECUTE_TOOL server-side adapter
 input schema validation and byte limits
 pre-call deny-before-allow policy
 redaction and secret-leak assertions on result/error
-audit event write path
-small UI smoke action for read-only Notion search/probe result
+audit event interface/hook that apps can bind to their audit sink
+small generic UI smoke action for read-only Notion search/probe result
 ```
 
 Non-goals:
 
 ```txt
+no Constellation-specific implementation
 no write/admin actions
 no materialized tools
 no Airtable/Microsoft execution
@@ -1270,16 +1275,16 @@ no Airtable/Microsoft execution
 Exit criteria:
 
 ```txt
-known read-only Notion call succeeds through Constellation facade
+known read-only Notion call succeeds through boring-mcp facade
 mutating Notion slug is denied before Composio call
 raw Composio meta-tools are never agent/browser visible
-audit entry contains summary only, no tokens/session headers
+audit hook receives summary only, no tokens/session headers
 ```
 
-### PR 6 — agent bridge tools
+### PR 6 — boring-mcp agent bridge tools
 
-Repo: `hachej/boring-ui-constellation`
-Branch: `feat/mcp-agent-bridge-tools`
+Repo: `hachej/boring-ui`
+Branch: `feat/boring-mcp-agent-bridge-tools`
 Code cap target: under 1000 non-test/non-doc lines
 
 Scope:
@@ -1292,12 +1297,14 @@ mcp_server_probe
 mcp_tools_search
 mcp_tool_describe
 mcp_readonly_call
+plugin/server contribution so any app can enable these agent tools
 agent tool tests with fake connector and fake Composio responses
 ```
 
 Non-goals:
 
 ```txt
+no Constellation-specific tool wiring
 no V2 materialized tools
 no new providers
 no arbitrary user MCP servers in hosted mode
@@ -1306,15 +1313,16 @@ no arbitrary user MCP servers in hosted mode
 Exit criteria:
 
 ```txt
-agent can discover and call Notion read-only through bridge tools
+agent can discover and call Notion read-only through boring-mcp bridge tools
 bridge tools return stable MCP_* errors
 agent output is redacted and budget/size-limited
+child apps enable tools by registering/configuring boring-mcp
 ```
 
-### PR 7 — Airtable live provider slice
+### PR 7 — boring-mcp Airtable live provider slice
 
-Repo: `hachej/boring-ui-constellation`
-Branch: `feat/airtable-mcp-source`
+Repo: `hachej/boring-ui`
+Branch: `feat/boring-mcp-airtable-source`
 Code cap target: under 1100 non-test/non-doc lines
 
 Scope:
@@ -1335,10 +1343,10 @@ create/update/delete/admin actions are blocked before provider call
 revoke/disconnect behavior verified or documented as accepted gap
 ```
 
-### PR 8 — Microsoft/SharePoint live provider slice
+### PR 8 — boring-mcp Microsoft/SharePoint live provider slice
 
-Repo: `hachej/boring-ui-constellation`
-Branch: `feat/sharepoint-mcp-source`
+Repo: `hachej/boring-ui`
+Branch: `feat/boring-mcp-sharepoint-source`
 Code cap target: under 1200 non-test/non-doc lines
 
 Scope:
@@ -1349,21 +1357,21 @@ provider template finalization
 connect/status/probe
 tool catalog search/describe
 one safe read-only metadata/content call
-company-context copy and ownership checks reviewed
+company-context copy and ownership hooks reviewed
 ```
 
 Exit criteria:
 
 ```txt
-SharePoint/Microsoft source can be connected and probed
+SharePoint/Microsoft source can be connected and probed through boring-mcp
 read-only call succeeds on approved content
-company vs personal context boundary is explicit in UI/API DTOs
+company vs personal context boundary is explicit in generic DTOs/config hooks
 ```
 
-### PR 9 — production hardening and launch gate
+### PR 9 — boring-mcp production hardening and launch gate
 
-Repo: `hachej/boring-ui-constellation`
-Branch: `feat/mcp-production-hardening`
+Repo: `hachej/boring-ui`
+Branch: `feat/boring-mcp-production-hardening`
 Code cap target: under 1300 non-test/non-doc lines
 
 Scope:
@@ -1375,7 +1383,7 @@ provider timeout/retry policy
 disconnect/revoke verification
 security checklist output
 operator docs
-deploy smoke for Notion path
+generic deploy/smoke checklist for Notion path
 ```
 
 Exit criteria:
@@ -1384,7 +1392,38 @@ Exit criteria:
 security gates documented
 no raw secrets in logs/browser/workspace files
 Notion/Airtable/Microsoft launch checklist complete or explicitly deferred
-production deploy smoke passes
+production deploy smoke recipe passes in a configured app
+```
+
+### PR 10 — Constellation enable/config/deploy binding
+
+Repo: `hachej/boring-ui-constellation`
+Branch: `feat/enable-boring-mcp`
+Code cap target: under 300 non-test/non-doc lines
+
+Scope:
+
+```txt
+enable/register boring-mcp plugin
+pass Constellation provider defaults/order/labels if needed
+bind COMPOSIO_API_KEY via app server env/Vault resolver without exposing it to browser/workspace files
+run app-level smoke against the generic boring-mcp Notion path
+```
+
+Non-goals:
+
+```txt
+no reusable MCP UI
+no reusable MCP policy/facade/connector logic
+no direct raw Composio meta-tool exposure
+```
+
+Exit criteria:
+
+```txt
+Constellation consumes boring-mcp like any other app
+all generic Sources UI and MCP bridge tools come from boring-mcp
+app-specific binding is small and reviewable
 ```
 
 ### Backlog after V0
