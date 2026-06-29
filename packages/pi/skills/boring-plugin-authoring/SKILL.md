@@ -19,7 +19,7 @@ Do not silently invent the domain, data source, navigation behavior, or visual d
 If the `ask_user` tool is installed, prefer it (structured form, with a final free-text
 `remarks` `textarea`); otherwise ask in chat plus a final "Anything else / remarks?". Ask
 only for decisions that affect implementation: purpose and target user; data source or
-sample data; whether it needs a persistent left tab, a slash command, a file
+sample data; whether it needs a workspace page, a shared Dockview panel, a slash command, a file
 opener/surface resolver, or some combination; main panels/views; visual tone; must-have
 interactions or constraints.
 
@@ -31,7 +31,7 @@ interactions or constraints.
 | `definePlugin` surface, `package.json` shape, plugin-local deps, canonical front, design defaults | `references/api.md` |
 | Slash commands / Ctrl+K commands that open a panel | `references/patterns-commands.md` |
 | Clickable links that open files/surfaces/panels (`WorkspaceLink`) | `references/patterns-links.md` |
-| Choosing a nav surface (panel vs left tab vs resolver); file visualizers/readers | `references/patterns-visualizers.md` |
+| Choosing a nav surface (workspace-page vs shared-dockview vs resolver); file visualizers/readers | `references/patterns-visualizers.md` |
 | Hot-reloadable agent tools (Pi extensions); extending/composing an existing plugin | `references/pi-extensions.md` |
 | Static boot-time server routes (`boring.server`); app-default package plugins | `references/server.md` |
 
@@ -70,7 +70,7 @@ Steps:
    If the scaffold says the plugin already exists, read the existing files directly and
    skip this step. The scaffold writes:
    - `.pi/extensions/<name>/package.json` — manifest with `boring.front` and `pi.systemPrompt`
-   - `.pi/extensions/<name>/front/index.tsx` — `definePlugin` config registering one panel + command + left tab
+   - `.pi/extensions/<name>/front/index.tsx` — `definePlugin` config registering one workspace-page panel + command
    - `.pi/extensions/<name>/.gitignore` — ignores runtime verifier/signature sidecars
 3. Read the generated files with the read tool.
 4. Edit them in place with the edit tool — do **NOT** rewrite from scratch. (Read the
@@ -156,13 +156,12 @@ export default definePlugin({
   id: "my-plugin",            // contribution namespace; matching package name is recommended
   label: "My Plugin",
   panels: [
-    { id: "my-plugin.panel", label: "My Plugin", component: MyPane },
+    { id: "my-plugin.panel", label: "My Plugin", placement: "workspace-page", component: MyPane },
   ],
   commands: [
     { id: "my-plugin.open", title: "Open My Plugin", panelId: "my-plugin.panel" },
   ],
-  // Optional only for persistent sidebar navigation:
-  // leftTabs: [{ id: "my-plugin.tab", title: "My Plugin", panelId: "my-plugin.panel" }],
+  // Use placement: "shared-dockview" for artifact/detail/result panels.
 })
 ```
 
@@ -175,5 +174,5 @@ defaults, read `references/api.md`.
 When the routing-table references don't cover your case, read:
 
 - [Plugin authoring reference](../../references/workspace/plugins.md) — full package shape, conventions, hot-reload internals.
-- [Panel/front API reference](../../references/workspace/panels.md) — `PaneProps`, parameter updates, left tabs, layout API.
+- [Panel/front API reference](../../references/workspace/panels.md) — `PaneProps`, parameter updates, workspace-page/shared-dockview layout API.
 - [Agent/UI bridge reference](../../references/workspace/bridge.md) — UI bridge commands and state.

@@ -5,7 +5,7 @@ import { createContext, useCallback, useContext, useMemo, useState, type ReactNo
 export interface PluginError {
   kind: "contribution"
   pluginId: string
-  contributionKind: "panel" | "catalog-row" | "chat-suggestion"
+  contributionKind: "panel" | "workspace-source" | "catalog-row" | "chat-suggestion"
   contributionId?: string
   error: Error
   componentStack?: string | null

@@ -28,6 +28,7 @@ export type {
   BootstrapOptions,
   BootstrapResult,
   PanelRegistryLike,
+  WorkspaceSourceRegistryLike,
   CommandRegistryLike,
   CatalogRegistryLike,
   SurfaceResolverRegistryLike,

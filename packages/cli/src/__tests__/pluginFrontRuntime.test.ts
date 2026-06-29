@@ -770,6 +770,9 @@ describe("pluginFrontRuntime", () => {
       const jsxDevSingletonCode = __testingRuntimeSingletonModuleCode("react/jsx-dev-runtime") ?? ""
       expect(jsxDevSingletonCode).toContain("export default normalized")
       expect(jsxDevSingletonCode).toContain("export const jsxDEV = normalized")
+      const workspaceSingletonCode = __testingRuntimeSingletonModuleCode("@hachej/boring-workspace") ?? ""
+      expect(workspaceSingletonCode).toContain("export const useWorkspacePluginClient = normalized")
+      expect(workspaceSingletonCode).toContain("export const useWorkspaceSourceRegistry = normalized")
       expect(__testingRuntimeSingletonModuleCode("@hachej/boring-ui-kit")).toBeFalsy()
 
       await expect(host.serve({

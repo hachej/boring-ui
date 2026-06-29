@@ -29,7 +29,7 @@ export interface DataCatalogSelectContext {
 
 export interface CreateDataCatalogContributionsOptions {
   /**
-   * Base contribution id. Defaults catalog id to this value and left tab /
+   * Base contribution id. Defaults catalog id to this value and workspace page /
    * visualization panel ids to derived names.
    */
   id?: string
@@ -43,9 +43,17 @@ export interface CreateDataCatalogContributionsOptions {
   searchPlaceholder?: string
   pageSize?: number
   debounceMs?: number
+  workspacePageId?: string
+  workspacePageTitle?: string
+  workspacePageIcon?: PanelConfig["icon"]
+  includeWorkspacePage?: boolean
+  /** @deprecated use workspacePageId */
   leftTabId?: string
+  /** @deprecated use workspacePageTitle */
   leftTabTitle?: string
+  /** @deprecated use workspacePageIcon */
   leftTabIcon?: PanelConfig["icon"]
+  /** @deprecated use includeWorkspacePage */
   includeLeftTab?: boolean
   catalogId?: string
   catalogLabel?: string

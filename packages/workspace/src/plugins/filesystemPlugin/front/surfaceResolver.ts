@@ -133,6 +133,11 @@ function matchFilesystemPath(path: string): FilesystemSurfaceHandler | undefined
 
 export const filesystemSurfaceResolver: SurfaceResolverConfig = {
   id: FILESYSTEM_SURFACE_RESOLVER_ID,
+  kind: WORKSPACE_OPEN_PATH_SURFACE_KIND,
+  title: "Open workspace file",
+  description: "Open or focus a file from the current workspace in the workbench.",
+  targetHint: "relative/path/from/workspace/root.ts",
+  examples: [{ target: "README.md" }],
   source: "builtin",
   resolve(request: SurfaceOpenRequest): SurfacePanelResolution | undefined {
     if (request.kind !== WORKSPACE_OPEN_PATH_SURFACE_KIND) return undefined

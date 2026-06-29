@@ -13,7 +13,6 @@ describe("samplePlugin (BoringFrontFactory)", () => {
       registerCatalog: vi.fn(),
       registerPanel,
       registerPanelCommand,
-      registerLeftTab: vi.fn(),
       registerSurfaceResolver,
     }
 
@@ -23,7 +22,7 @@ describe("samplePlugin (BoringFrontFactory)", () => {
       expect.objectContaining({
         id: SAMPLE_PANEL_ID,
         label: "Sample",
-        placement: "center",
+        placement: "workspace-page",
         component: SamplePanel,
       }),
     )

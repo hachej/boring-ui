@@ -13,7 +13,7 @@ the doc that matches your task.
 
 - **Layout runtime** — Dockview-based panes (`IdeLayout`, `ChatLayout`,
   `ResponsiveDockviewShell`) mounted by `WorkspaceProvider`. Panels open in the
-  center/right/bottom; left-tabs stay docked in the sidebar.
+  shared-dockview panels and workspace-page full plugin pages.
 - **Plugin host** — `WorkspaceProvider` runs `bootstrap(plugins)` to populate the
   panel, command, catalog, and surface-resolver registries. Lazy panel factories
   are auto-wrapped in `React.lazy + Suspense + ErrorBoundary`.
@@ -34,9 +34,9 @@ the doc that matches your task.
 | Abstraction | Where | What it is |
 | --- | --- | --- |
 | `WorkspaceProvider` | `src/front/provider` | Root provider; boots plugins, layout, bridge. |
-| `definePlugin()` | `@hachej/boring-workspace/plugin` | Declarative front plugin: panels, leftTabs, commands, catalogs, bindings, providers, surfaceResolvers. |
+| `definePlugin()` | `@hachej/boring-workspace/plugin` | Declarative front plugin: panels, commands, catalogs, bindings, providers, surfaceResolvers. |
 | `defineServerPlugin()` | `@hachej/boring-workspace/server` | Trusted boot-time server plugin: routes, agent tools, system prompt, Pi packages, provisioning. |
-| `PaneProps<T>` | `src/shared/types/panel.ts` | Props every panel/left-tab component receives (`params`, `api`, `containerApi`). |
+| `PaneProps<T>` | `src/shared/types/panel.ts` | Props every panel/page component receives (`params`, `api`, `containerApi`). |
 | `UiCommand` / `UiBridge` | `src/shared/ui-bridge.ts` | Typed agent→browser command contract. |
 | `SurfaceOpenRequest` | `src/shared/types/surface.ts` | Domain open request resolved to a panel. |
 | `BoringPluginAssetManager` | `src/server/agentPlugins` | Scans plugin dirs, hashes signatures, emits load/unload/error events, backs `/api/v1/agent-plugins`. |

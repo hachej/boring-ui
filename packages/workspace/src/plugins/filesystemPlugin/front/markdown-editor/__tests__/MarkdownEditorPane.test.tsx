@@ -102,6 +102,14 @@ describe("MarkdownEditorPane", () => {
     )
   })
 
+  it("opens Markdown files read-only when panel mode is view", async () => {
+    const props = createMockPaneProps({ params: { path: "SKILL.md", mode: "view" as const } })
+    render(<MarkdownEditorPane {...props} />, { wrapper })
+    await waitFor(() => {
+      expect(screen.getByTestId("markdown-editor")).toHaveAttribute("data-readonly", "true")
+    })
+  })
+
   it("shows error state on load failure", () => {
     mockFileContent.mockReturnValue({
       data: undefined,

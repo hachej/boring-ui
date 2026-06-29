@@ -2,13 +2,12 @@
 // Copy this shape — replace <kebab-name> and <Label>.
 //
 // Structure rule:
-// - Commands open full-size center panes for detailed work.
-// - Left tabs are compact, persistent sidebar/navigator panes.
-// - If a plugin has both, do NOT render the same component in both places.
-//   Register a small LeftPane and a separate MainPane.
+// - Use placement: "workspace-page" for full plugin pages/dashboards.
+// - Use placement: "shared-dockview" for artifacts/details/results.
+// - If your plugin needs side navigation, render it inside your page as normal React.
 
 import React from "react"
-import { definePlugin, type PaneProps } from "@hachej/boring-workspace/plugin"
+import { definePlugin } from "@hachej/boring-workspace/plugin"
 import {
   Badge,
   Button,
@@ -22,8 +21,7 @@ import {
   ToolbarGroup,
 } from "@hachej/boring-ui-kit"
 
-const MAIN_PANEL_ID = "<kebab-name>.panel"
-const LEFT_PANEL_ID = "<kebab-name>.left"
+const MAIN_PANEL_ID = "<kebab-name>.page"
 
 function MainPane() {
   return (
@@ -44,7 +42,7 @@ function MainPane() {
             <CardHeader>
               <CardTitle><Label></CardTitle>
               <CardDescription>
-                This is the full center pane. Put detailed views, tables, charts,
+                This is the full workspace page. Put detailed views, tables, charts,
                 editors, previews, and multi-step workflows here.
               </CardDescription>
             </CardHeader>
@@ -81,69 +79,21 @@ function MainPane() {
   )
 }
 
-function LeftPane({ containerApi }: PaneProps) {
-  const openMainPane = () => {
-    containerApi.addPanel({
-      id: `${MAIN_PANEL_ID}.from-left`,
-      component: MAIN_PANEL_ID,
-      title: "<Label>",
-      params: { source: "left-tab" },
-    })
-  }
-
-  return (
-    <div className="flex h-full min-h-0 min-w-0 flex-col bg-background text-foreground">
-      <div className="border-b border-border/60 px-3 py-2">
-        <div className="text-sm font-medium"><Label></div>
-        <div className="text-xs text-muted-foreground">Compact sidebar navigator</div>
-      </div>
-
-      <div className="min-h-0 min-w-0 flex-1 overflow-auto p-3">
-        <div className="space-y-3">
-          <Card className="min-w-0">
-            <CardHeader className="space-y-1 p-3">
-              <CardTitle className="text-sm">Overview</CardTitle>
-              <CardDescription className="text-xs">
-                Keep left tabs small: summary, filters, navigation, and actions.
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="p-3 pt-0">
-              <Button size="sm" className="w-full" onClick={openMainPane}>
-                Open main pane
-              </Button>
-            </CardContent>
-          </Card>
-
-          <div className="space-y-1 text-xs text-muted-foreground">
-            <div className="rounded-md border border-border bg-card px-2 py-1.5">Recent item</div>
-            <div className="rounded-md border border-border bg-card px-2 py-1.5">Saved filter</div>
-          </div>
-        </div>
-      </div>
-    </div>
-  )
-}
 
 export default definePlugin({
   id: "<kebab-name>",              // contribution namespace; matching package name is recommended
   label: "<Label>",
   panels: [
-    { id: MAIN_PANEL_ID, label: "<Label>", component: MainPane },
-    // Optional left-tab component. Register separately from the main panel so
-    // the sidebar does not duplicate a full workbench view.
-    { id: LEFT_PANEL_ID, label: "<Label>", component: LeftPane },
+    { id: MAIN_PANEL_ID, label: "<Label>", placement: "workspace-page", component: MainPane },
   ],
   commands: [
     { id: "<kebab-name>.open", title: "Open <Label>", panelId: MAIN_PANEL_ID },
   ],
-  // Do not add leftTabs just because a plugin has a panel. A left tab is a
-  // permanent sidebar category. Keep it compact, and use its buttons/rows to
-  // open the full center panel via containerApi.addPanel(...).
+  // If this plugin needs navigation/facets/lists, render them inside MainPane
+  // as regular React/shadcn layout. Do not register shell left tabs.
   //
-  // If this plugin should have persistent sidebar navigation, uncomment this:
-  // leftTabs: [
-  //   { id: "<kebab-name>.tab", title: "<Label>", panelId: LEFT_PANEL_ID },
-  // ],
+  // For generated artifacts/details, add a separate panel with
+  // placement: "shared-dockview" and open it with containerApi.addPanel(...).
   //
   // File visualizer example: import WORKSPACE_OPEN_PATH_SURFACE_KIND from
   // "@hachej/boring-workspace/plugin", import useApiBaseUrl/useWorkspaceRequestId
@@ -159,16 +109,15 @@ export default definePlugin({
   // setup: (api) => { if (env.beta) api.registerPanel(betaPanel) },
 })
 
-// Responsive pane rule: panels and left tabs live inside resizable dock regions.
+// Responsive pane rule: plugin pages and panels live inside resizable dock regions.
 // Avoid fixed large widths; prefer w-full/min-w-0 layouts and responsive chart
 // wrappers such as Recharts ResponsiveContainer.
 //
 // All available `definePlugin` config fields:
 //   id            (required, string)
 //   label         (optional, string)
-//   panels        [{ id, label, component }]
+//   panels        [{ id, label, placement, component }]
 //   commands      [{ id, title, panelId }]
-//   leftTabs      [{ id, title, panelId }]
 //   surfaceResolvers [{ id, kind, resolve(request) }]
 //   providers     (rare — context wrappers)
 //   bindings      (rare — same as provider)

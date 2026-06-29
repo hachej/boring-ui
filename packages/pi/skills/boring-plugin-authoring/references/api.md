@@ -7,10 +7,9 @@ is an array of registration objects:
 
 | Field | Item shape | What it does |
 |---|---|---|
-| `panels` | `{ id, label, component }` | Register a React component as a panel |
+| `panels` | `{ id, label, placement, component }` | Register a React component as a workspace page or shared Dockview panel |
 | `commands` | `{ id, title, panelId }` | Add a **Ctrl+K command-palette entry** that opens a panel — ⚠️ this is NOT the `/open-…` slash-command in agent chat; for that, see `pi.registerCommand` below |
-| `leftTabs` | `{ id, title, panelId }` | Add a sidebar tab |
-| `surfaceResolvers` | `{ id, kind, resolve(request) }` | Map a domain target → panel |
+| `surfaceResolvers` | `{ id, kind, resolve(request) }` | Map a domain target → panel/page |
 | `providers` / `bindings` / `catalogs` | (rare) | Advanced |
 | `setup` | `(api) => void` | Escape hatch — runtime branching, called LAST |
 
@@ -31,7 +30,7 @@ definePlugin({
 
 - ❌ `createPlugin(...)` — use `definePlugin(...)`
 - ❌ `defineFrontPlugin(...)` — removed from the public API
-- ❌ inside `setup`: `api.registerComponent`, `api.addPanel`, `api.registerCommand` (no `Panel`), `api.registerTab` — use the corresponding `register*` name from the table above
+- ❌ inside `setup`: `api.registerComponent`, `api.addPanel`, `api.registerCommand` (no `Panel`), `api.registerTab` — use `registerPanel`, `registerPanelCommand`, or `registerSurfaceResolver`
 - ❌ in Pi extensions: `defineTool(...)` / `export const tools` — export a default function and call `pi.registerTool({ name, description, parameters: { type: "object", properties: {} }, execute })`. `parameters` is mandatory even for no-arg tools.
 
 ## package.json shape
@@ -92,20 +91,19 @@ export default definePlugin({
   id: "my-plugin",            // contribution namespace; matching package name is recommended
   label: "My Plugin",
   panels: [
-    { id: "my-plugin.panel", label: "My Plugin", component: MyPane },
+    { id: "my-plugin.panel", label: "My Plugin", placement: "workspace-page", component: MyPane },
   ],
   commands: [
     { id: "my-plugin.open", title: "Open My Plugin", panelId: "my-plugin.panel" },
   ],
-  // Optional only for persistent sidebar navigation:
-  // leftTabs: [{ id: "my-plugin.tab", title: "My Plugin", panelId: "my-plugin.panel" }],
+  // Use placement: "shared-dockview" for artifact/detail/result panels.
 })
 ```
 
 Notes:
 
 - Package discovery derives an asset id from `package.json#name` (`@scope/name` becomes `scope-name`). `config.id` is the contribution namespace for front outputs. Matching the normalized package id is recommended for fully package-loaded plugins; first-party/static composition may use a shorter namespace.
-- Panel/command/tab ids should be `<plugin-id>.<thing>` — convention.
+- Panel/command/surface ids should be `<plugin-id>.<thing>` — convention.
 - Import React explicitly (no `globalThis.React`).
 - Do NOT use `defineFrontPlugin` or `createPlugin` (don't exist).
 

@@ -4,7 +4,7 @@ import { PluginErrorContext, type PluginError } from "./PluginErrorContext"
 
 interface Props {
   pluginId: string
-  contributionKind: "panel" | "catalog-row" | "chat-suggestion"
+  contributionKind: "panel" | "workspace-source" | "catalog-row" | "chat-suggestion"
   contributionId?: string
   children?: ReactNode
   onError?: (error: Error, info: ErrorInfo) => void

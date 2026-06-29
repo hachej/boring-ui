@@ -31,10 +31,11 @@ function extToLanguage(path: string): string {
   }
 }
 
-export type CodeEditorPaneProps = PaneProps<{ path?: string }>
+export type CodeEditorPaneProps = PaneProps<{ path?: string; mode?: "view" | "edit" | "diff" }>
 
 export function CodeEditorPane({ params, api, className }: CodeEditorPaneProps) {
   const path = typeof params?.path === "string" ? params.path : ""
+  const readOnly = params?.mode === "view"
 
   const {
     content,
@@ -65,7 +66,7 @@ export function CodeEditorPane({ params, api, className }: CodeEditorPaneProps) 
       onReload={onReloadFromServer}
       onOverwrite={onOverwrite}
       editorComponent={CodeEditor}
-      editorProps={{ language, wordWrap: true, className }}
+      editorProps={{ language, wordWrap: true, className, readOnly }}
     />
   )
 }

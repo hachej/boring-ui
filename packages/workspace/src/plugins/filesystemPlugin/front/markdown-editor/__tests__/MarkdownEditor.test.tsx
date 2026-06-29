@@ -47,18 +47,19 @@ describe("MarkdownEditor", () => {
   })
 
   describe("isUserEditedChange", () => {
-    // Regression: an editor that emits an empty document while unfocused is a
-    // spurious init/remount/re-parent artifact, not a user clearing the file.
-    // Propagating it let autosave overwrite a real markdown file with "".
-    it("drops an empty emission from an unfocused editor", () => {
+    // Regression: TipTap can emit non-empty normalized markdown while settling
+    // an unfocused editor. Propagating that let autosave rewrite untouched
+    // SKILL.md frontmatter into rendered markdown.
+    it("drops unfocused emissions even when they are non-empty", () => {
+      expect(isUserEditedChange("---\n\n## name: local-test", false)).toBe(false)
       expect(isUserEditedChange("", false)).toBe(false)
     })
-    it("keeps an empty emission while the editor is focused (user cleared it)", () => {
+    it("keeps focused emissions, including a user clearing the file", () => {
       expect(isUserEditedChange("", true)).toBe(true)
-    })
-    it("keeps non-empty emissions regardless of focus", () => {
-      expect(isUserEditedChange("hello", false)).toBe(true)
       expect(isUserEditedChange("hello", true)).toBe(true)
+    })
+    it("keeps toolbar/button edits after explicit user interaction", () => {
+      expect(isUserEditedChange("hello", false, true)).toBe(true)
     })
   })
 

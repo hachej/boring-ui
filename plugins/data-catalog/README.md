@@ -2,14 +2,14 @@
 
 A configurable data-catalog plugin **builder** for the workbench. One call to
 `createDataCatalogPlugin(options)` binds your `ExplorerDataSource` adapter and
-returns a configured front plugin that contributes a left sidebar tab, a
+returns a configured front plugin that contributes a workspace page, a
 visualization panel, a catalog entry, and a surface resolver. Built on
 [`@hachej/boring-data-explorer`](../data-explorer/README.md).
 
 ## What it does
 
-- Adds a left sidebar tab listing rows from your adapter, with search + facets.
-- Opens a center "visualization" panel when a row is activated (default panel
+- Adds a workspace page listing rows from your adapter, with search + facets.
+- Opens a shared Dockview "visualization" panel when a row is activated (default panel
   shows another explorer scoped to the row; swap in your own component).
 - Lets the agent search the catalog and open a specific row in a panel.
 
@@ -20,8 +20,8 @@ contributions, each opt-out via an `include*` flag:
 
 | Contribution | What | Flag (default) |
 |--------------|------|----------------|
-| Left tab | searchable, faceted row list | `includeLeftTab` (true) |
-| Visualization panel | center panel for the selected row | `includeVisualizationPanel` (true) |
+| Workspace page | searchable, faceted row list | `includeWorkspacePage` (true) |
+| Visualization panel | shared Dockview panel for the selected row | `includeVisualizationPanel` (true) |
 | Catalog | command-palette-searchable catalog entry | `includeCatalog` (true) |
 | Surface resolver | maps `openSurface` → opens the panel | `includeSurfaceResolver` (true if panel on and no custom `onSelect`) |
 
@@ -82,7 +82,7 @@ openSurface({
 - `id`, `label`, `pluginId`, `source` — identity / panel attribution.
 - `facets`, `groupBy`, `getDragPayload`, `onSelect(row, ctx)`, `emptyState`,
   `searchPlaceholder`, `pageSize`, `debounceMs` — explorer behavior.
-- `leftTabId` / `leftTabTitle` / `leftTabIcon`,
+- `workspacePageId` / `workspacePageTitle` / `workspacePageIcon`,
   `catalogId` / `catalogLabel`,
   `visualizationPanelId` / `visualizationTitle` / `visualizationIcon` /
   `visualizationComponent` — per-contribution overrides.

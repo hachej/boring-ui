@@ -37,7 +37,7 @@ Create the directory if it does not exist. Do **not** put new live plugins at th
 
 Package discovery derives an asset id from `package.json#name` (`@scope/name` becomes `scope-name`). There is no separate `boring.id` field. The `definePlugin({ id })` / `defineServerPlugin({ id })` value is a contribution namespace for panels, commands, routes, diagnostics, and ownership. Matching the normalized package id is recommended for fully package-loaded plugins; first-party/static composition may use a shorter namespace when the host owns that mapping.
 
-`boring` does not register panels, commands, left tabs, or surface resolvers. Those runtime UI contributions are registered by the `BoringFrontFactory` exported from `boring.front`. Agent-facing context belongs under `pi.systemPrompt` or, preferably for larger docs, `pi.skills`.
+`boring` does not register panels, commands, workspace pages, or surface resolvers. Those runtime UI contributions are registered by the `BoringFrontFactory` exported from `boring.front`. Agent-facing context belongs under `pi.systemPrompt` or, preferably for larger docs, `pi.skills`.
 
 ## Front entry
 
@@ -74,7 +74,7 @@ type still exists for host/hot-load internals; consumers should always use `defi
 
 Front code is browser code. Do not import Node-only modules and do not define
 agent tools in front plugins. Hot-loaded package fronts currently support panels,
-commands, catalogs, left tabs, and surface resolvers; plugins that register
+commands, catalogs, workspace pages, and surface resolvers; plugins that register
 providers or bindings must be statically imported by the host app and passed via
 `WorkspaceProvider.plugins` / `WorkspaceAgentFront.plugins` for now. Use object-shaped registrations such as
 `api.registerPanel({ id, label, component })` and `api.registerSurfaceResolver({
