@@ -139,36 +139,18 @@ export function SkillsPage({ onClose, headerInsetStart = false, headerInsetEnd =
         ) : (
           <ul role="list" className="grid gap-2">
             {sortedSkills.map((skill) => {
-              const openable = Boolean(skill.filePath)
               return (
                 <li
                   key={skill.name}
-                  className={cn(
-                    "rounded-xl border border-border/60 bg-card/70 px-3 py-2.5",
-                    openable
-                      ? "cursor-pointer transition-colors hover:border-border hover:bg-muted/60"
-                      : "",
-                  )}
+                  className="rounded-xl border border-border/60 bg-card/70 px-3 py-2.5 cursor-pointer transition-colors hover:border-border hover:bg-muted/60"
                 >
-                  {openable ? (
-                    <button
-                      type="button"
-                      onClick={() => openSkillInWorkspace(skill)}
-                      title="Open skill in workspace"
-                      aria-label={`Open skill ${skill.name} in workspace`}
-                      className="block w-full text-left"
-                    >
-                      <div className="flex items-start justify-between gap-3">
-                        <div className="min-w-0">
-                          <div className="truncate text-sm font-medium text-foreground">/{skill.name}</div>
-                          {skill.description ? (
-                            <p className="mt-1 line-clamp-2 text-xs leading-5 text-muted-foreground">{skill.description}</p>
-                          ) : null}
-                        </div>
-                        <FileText className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" strokeWidth={1.75} aria-hidden="true" />
-                      </div>
-                    </button>
-                  ) : (
+                  <button
+                    type="button"
+                    onClick={() => openSkillInWorkspace(skill)}
+                    title="Open skill"
+                    aria-label={`Open skill ${skill.name}`}
+                    className="block w-full text-left"
+                  >
                     <div className="flex items-start justify-between gap-3">
                       <div className="min-w-0">
                         <div className="truncate text-sm font-medium text-foreground">/{skill.name}</div>
@@ -176,13 +158,9 @@ export function SkillsPage({ onClose, headerInsetStart = false, headerInsetEnd =
                           <p className="mt-1 line-clamp-2 text-xs leading-5 text-muted-foreground">{skill.description}</p>
                         ) : null}
                       </div>
-                      {skill.source ? (
-                        <span className="shrink-0 rounded bg-muted px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground">
-                          {skill.source}
-                        </span>
-                      ) : null}
+                      <FileText className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" strokeWidth={1.75} aria-hidden="true" />
                     </div>
-                  )}
+                  </button>
                 </li>
               )
             })}

@@ -438,6 +438,7 @@ export function CliWorkspaceShell() {
         workspaceLabel={activeWorkspace.name}
         workspaceSectionTitle="Projects"
         workspaceLayout="plugin-tabs"
+        appLeftHeaderMode="workspace"
         appLeftProjects={appLeftProjects}
         appLeftActiveProjectId={activeWorkspace.id}
         onSwitchAppLeftProject={(workspaceId) => {
@@ -464,7 +465,7 @@ export function CliWorkspaceShell() {
         topBarRight={<CliVersionBadge version={cliVersion} />}
         topBarLeft={
           <WorkspaceSwitcherControl
-            appTitle="Boring UI"
+            displayMode="workspace"
             workspaces={workspaces}
             activeWorkspaceId={activeWorkspace.id}
             createLabel="Add local folder"
