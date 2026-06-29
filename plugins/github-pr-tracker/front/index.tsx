@@ -1,5 +1,5 @@
 import React from "react"
-import { definePlugin, type WorkspaceSourceProps } from "@hachej/boring-workspace/plugin"
+import { definePlugin, type PaneProps, type WorkspaceSourceProps } from "@hachej/boring-workspace/plugin"
 import "./styles.css"
 import { fetchPrData, requestAgentClassifyIssues, requestAgentLabelIssue, requestServerRefresh } from "./data"
 import { PrDetail } from "./prDetail"
