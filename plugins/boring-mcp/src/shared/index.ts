@@ -23,7 +23,7 @@ export type McpProviderId = "notion" | "airtable" | (string & {})
 export type McpTransport = "streamable-http" | "sse" | "stdio"
 export type McpSourceStatus = "connected" | "expired" | "revoked" | "error" | "unconfigured"
 export type McpToolRisk = "read" | "write" | "admin" | "unknown"
-export type McpCredentialProvider = "provider-managed" | "app-managed" | "user-managed" | (string & {})
+export type McpCredentialProvider = "provider-managed" | "composio-managed" | "app-managed" | "user-managed" | (string & {})
 export type McpSourceOwnerKind = "user" | "company_context" | "team_context" | "project_context"
 
 export interface McpActor {
@@ -43,6 +43,14 @@ export interface McpProviderTemplate {
   allowedResourceUriPrefixes?: string[]
 }
 
+export interface McpConnectorRef {
+  provider: McpProviderId
+  toolkitId?: string
+  externalSourceId?: string
+  connectedAccountId?: string
+  sessionId?: string
+}
+
 export interface McpSource {
   id: string
   workspaceId: string
@@ -54,6 +62,7 @@ export interface McpSource {
   credentialProvider: McpCredentialProvider
   scopes?: string[]
   providerAccountLabel?: string
+  connectorRef?: McpConnectorRef
   lastVerifiedAt?: string
   createdAt?: string
   updatedAt?: string
@@ -69,6 +78,7 @@ export type McpSourceDto = Pick<
   | "credentialProvider"
   | "scopes"
   | "providerAccountLabel"
+  | "connectorRef"
   | "lastVerifiedAt"
   | "createdAt"
   | "updatedAt"
@@ -161,6 +171,7 @@ export function toMcpSourceDto(source: McpSource): McpSourceDto {
     credentialProvider: source.credentialProvider,
     scopes: source.scopes,
     providerAccountLabel: source.providerAccountLabel,
+    connectorRef: source.connectorRef,
     lastVerifiedAt: source.lastVerifiedAt,
     createdAt: source.createdAt,
     updatedAt: source.updatedAt,
@@ -248,8 +259,8 @@ export function assertMcpToolAllowed(template: McpProviderTemplate, toolName: st
 }
 
 const REDACTION = "[REDACTED_MCP_SECRET]"
-const SECRET_KEY_PATTERN = /(api[_-]?key|access[_-]?token|refresh[_-]?token|authorization|cookie|client[_-]?secret|session[_-]?headers?)/i
-const SECRET_VALUE_PATTERN = /(Bearer\s+[A-Za-z0-9._~+\/-]{12,}|sk-[A-Za-z0-9_-]{12,}|x-api-key\s*[:=]\s*[^\s,}]+)/gi
+const SECRET_KEY_PATTERN = /(api[_-]?key|access[_-]?token|refresh[_-]?token|id[_-]?token|oauth[_-]?token|authorization|cookie|client[_-]?secret|session[_-]?headers?|mcp[_-]?session|x-composio-mcp-session)/i
+const SECRET_VALUE_PATTERN = /(Bearer\s+[A-Za-z0-9._~+\/-]{12,}|sk-[A-Za-z0-9_-]{12,}|(?:x-api-key|api[_-]?key|access[_-]?token|refresh[_-]?token|id[_-]?token|oauth[_-]?token|code|client[_-]?secret|session[_-]?headers?|mcp[_-]?session|x-composio-mcp-session)\s*[:=]\s*[^\s,&,}]+)/gi
 
 export function redactMcpSecrets(value: unknown): unknown {
   if (typeof value === "string") return value.replace(SECRET_VALUE_PATTERN, REDACTION)

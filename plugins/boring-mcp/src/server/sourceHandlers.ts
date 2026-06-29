@@ -5,12 +5,12 @@ import {
   toMcpSourceDto,
   type McpActor,
   type McpProbeResult,
-  type McpSource,
   type McpSourceDto,
   type McpSourceRegistry,
   type McpSourceStatusPayload,
   type McpTransportClient,
 } from "../shared"
+import { assertMcpPublicPayloadSecretFree, createMcpSourceStatusPayload, isActorOwnedMcpSource, requireActorOwnedMcpSource, validateMcpSourceId } from "./sourceAccess"
 
 export interface BoringMcpSourceHandlersOptions {
   registry: McpSourceRegistry
@@ -24,67 +24,39 @@ export interface BoringMcpSourceHandlers {
   disconnectSource(actor: McpActor, sourceId: string): Promise<McpSourceStatusPayload>
 }
 
-const SOURCE_ID_PATTERN = /^[A-Za-z0-9_.:-]{1,160}$/
-
-function validateSourceId(sourceId: string): string {
-  const trimmed = sourceId.trim()
-  if (!SOURCE_ID_PATTERN.test(trimmed)) {
-    throw new McpError(MCP_ERROR_CODES.SOURCE_NOT_FOUND, "MCP source not found")
-  }
-  return trimmed
-}
-
-function isOwnedSource(actor: McpActor, source: McpSource | undefined): source is McpSource {
-  return Boolean(source && source.workspaceId === actor.workspaceId && source.userId === actor.userId)
-}
-
-async function requireOwnedSource(registry: McpSourceRegistry, actor: McpActor, sourceId: string): Promise<McpSource> {
-  const source = await registry.getSource(validateSourceId(sourceId))
-  if (!isOwnedSource(actor, source)) {
-    throw new McpError(MCP_ERROR_CODES.SOURCE_NOT_FOUND, "MCP source not found")
-  }
-  return source
-}
-
-function statusPayload(source: McpSource): McpSourceStatusPayload {
-  return {
-    source: toMcpSourceDto(source),
-    connectable: source.credentialProvider === "provider-managed" || source.credentialProvider === "app-managed",
-    canProbe: source.status !== "revoked",
-    canDisconnect: source.status !== "unconfigured" && source.status !== "revoked",
-  }
-}
-
 export function createBoringMcpSourceHandlers(options: BoringMcpSourceHandlersOptions): BoringMcpSourceHandlers {
   const facade = new McpAccessFacade({ store: options.registry, transport: options.transport })
 
   return {
     async listSources(actor) {
-      const sources = await options.registry.listSources(actor)
-      return { sources: sources.map(toMcpSourceDto) }
+      const result = { sources: (await options.registry.listSources(actor)).map(toMcpSourceDto) }
+      assertMcpPublicPayloadSecretFree(result)
+      return result
     },
 
     async getSourceStatus(actor, sourceId) {
-      const source = await requireOwnedSource(options.registry, actor, sourceId)
-      return statusPayload(source)
+      const source = await requireActorOwnedMcpSource(options.registry, actor, sourceId)
+      return createMcpSourceStatusPayload(source)
     },
 
     async probeSource(actor, sourceId) {
-      const normalizedSourceId = validateSourceId(sourceId)
-      return facade.probeSource(actor, normalizedSourceId)
+      const normalizedSourceId = validateMcpSourceId(sourceId)
+      const result = await facade.probeSource(actor, normalizedSourceId)
+      assertMcpPublicPayloadSecretFree(result)
+      return result
     },
 
     async disconnectSource(actor, sourceId) {
-      const normalizedSourceId = validateSourceId(sourceId)
-      await requireOwnedSource(options.registry, actor, normalizedSourceId)
+      const normalizedSourceId = validateMcpSourceId(sourceId)
+      await requireActorOwnedMcpSource(options.registry, actor, normalizedSourceId)
       if (!options.registry.disconnectSource) {
         throw new McpError(MCP_ERROR_CODES.SOURCE_UNAVAILABLE, "MCP source disconnect is not configured")
       }
       const source = await options.registry.disconnectSource(actor, normalizedSourceId)
-      if (!isOwnedSource(actor, source)) {
+      if (!isActorOwnedMcpSource(actor, source)) {
         throw new McpError(MCP_ERROR_CODES.SOURCE_NOT_FOUND, "MCP source not found")
       }
-      return statusPayload(source)
+      return createMcpSourceStatusPayload(source)
     },
   }
 }
