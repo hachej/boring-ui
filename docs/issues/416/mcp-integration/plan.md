@@ -116,19 +116,25 @@ admin_*
 
 Unknown/new provider tools are disabled until classified.
 
-## Generic agent tools
+## Canonical V0 agent tools
 
-Expose a small generic surface instead of every MCP tool directly:
+This is the single canonical V0 agent tool surface. Older `mcp_tools_list`-only sketches are superseded; V0 requires search + describe so the agent can discover a tool and fetch its exact schema before calling it.
 
 ```ts
-mcp_servers_list()
+mcp_servers_list({ cursor?, limit? })
 mcp_server_status({ serverId })
 mcp_server_doctor({ serverId })
 mcp_server_probe({ serverId })
-mcp_tools_list({ serverId })
-mcp_resources_list({ serverId, cursor? })
-mcp_resource_read({ serverId, uri })
+mcp_tools_search({ query, serverId?, cursor?, limit?, enabledOnly? })
+mcp_tool_describe({ serverId, toolName })
 mcp_readonly_call({ serverId, toolName, input })
+```
+
+Resource tools are not part of the default V0 launch surface unless a provider declares explicit URI validators/prefixes:
+
+```ts
+mcp_resources_list({ serverId, cursor?, limit? })
+mcp_resource_read({ serverId, uri })
 ```
 
 ## Policy rules
@@ -186,6 +192,8 @@ Required:
 
 ## Acceptance criteria
 
+Documentation acceptance:
+
 - `docs/issues/416/mcp-integration/` contains this plan and review evidence.
 - Generic MCP foundation is clearly separated from hosted OAuth/product UI.
 - Notion/Airtable templates are documented.
@@ -193,9 +201,19 @@ Required:
 - OpenClaw-inspired status/doctor/probe lifecycle is specified.
 - pi-mcp-adapter is treated as implementation reference, not raw hosted extension dependency.
 
+Implementation acceptance for the first foundation PR:
+
+- canonical V0 bridge tools are wired through one facade path;
+- fake/stub transport test proves one read-only call resolves through search/describe/call;
+- redaction tests prove exact seeded secret values are removed even under non-sensitive keys;
+- policy tests cover exact allow, deny pattern, unknown tool, MCP annotation input, and disabled write/admin cases;
+- drift tests cover removed tool, new unclassified tool, schema hash mismatch, and stale classification TTL;
+- CLI config trust test proves agent-writable MCP config cannot enable stdio execution;
+- hosted credential test proves refresh/revoke invalidates cached clients.
+
 ## Implementation note
 
-A Constellation-specific internal foundation prototype currently exists on branch `feat/generic-mcp-onboarding` in `hachej/boring-ui-constellation`. This issue pack is the boring-ui #416 tracking home for the generic design.
+A Constellation-specific internal foundation prototype currently exists on branch `feat/generic-mcp-onboarding` in `hachej/boring-ui-constellation`. This issue pack is the boring-ui #416 tracking home and source of truth for the generic `boring-mcp` contract. Before extracting shared code into a boring-ui package/plugin, the implementer must reconcile that prototype against this plan; on conflict, this plan governs the generic contract and Constellation-specific code must adapt or remain app-local.
 
 ## Lessons from `pi-mcp-adapter`
 
@@ -217,9 +235,9 @@ V0 classification is manual + conservative:
 3. Tools matching deny patterns are disabled with reason.
 4. Unknown tools are disabled.
 5. Admin/reviewer updates checked-in provider template/policy after reviewing tool name, description, schema, provider docs, and sample output.
-6. Schema hash/tool-list drift disables affected tools until reclassified.
+6. Schema/tool-list drift updates the affected tool state according to the severity rules below.
 
-Heuristics can propose a risk class, but cannot enable tools by themselves.
+MCP-native signals such as tool annotations (`readOnlyHint`, `destructiveHint`, `idempotentHint`) are classification inputs, but never sufficient by themselves to enable a tool. Heuristics and annotations can propose a risk class; exact checked-in or admin classification is still required. `notifications/tools/list_changed` is a trigger to re-probe or mark the cached catalog stale.
 
 ## Production readiness dependencies
 
@@ -252,10 +270,16 @@ Prefix globs such as `create_*` are only V0 defaults. The policy model should su
 Foundation should define a response/log redaction boundary even before real transports ship:
 
 ```ts
+interface McpRedactionContext {
+  credential?: McpResolvedCredential;
+  sensitiveValues: string[];
+  sensitiveKeys: string[];
+}
+
 interface McpRedactionGuard {
-  redact(value: unknown): unknown;
-  assertSafeForAgent(value: unknown): void;
-  assertSafeForLog(value: unknown): void;
+  redact(value: unknown, context: McpRedactionContext): unknown;
+  assertSafeForAgent(value: unknown, context: McpRedactionContext): void;
+  assertSafeForLog(value: unknown, context: McpRedactionContext): void;
 }
 ```
 
@@ -263,8 +287,11 @@ Rules:
 
 - transport responses pass through `assertSafeForAgent` before returning to tools;
 - logs pass through `redact` before persistence/output;
+- exact resolved tokens/secrets must be seeded into `sensitiveValues`;
+- exact seeded secret matches hard-fail or redact according to output target;
+- regex-only fallback matches are redacted-and-flagged, not hard-failed, to avoid blocking legitimate user data;
 - redaction failures return stable `MCP_SECRET_LEAK_GUARD`;
-- tests use token-like strings under both sensitive and non-sensitive keys.
+- tests use exact secret values under both sensitive and non-sensitive keys.
 
 ### Credential reference provider
 
@@ -289,7 +316,12 @@ interface McpToolClassification {
   risk: 'read' | 'write' | 'admin' | 'unknown';
   enabledByDefault: boolean;
   reason: string;
-  schemaHash?: string;
+  schemaHash?: string; // computed from canonical JSON schema form
+  annotations?: {
+    readOnlyHint?: boolean;
+    destructiveHint?: boolean;
+    idempotentHint?: boolean;
+  };
 }
 ```
 
@@ -303,7 +335,7 @@ Tests must cover:
 
 ### Rate-limit and breaker hooks
 
-Foundation should leave a simple hook, even if fake/noop in the first implementation:
+Foundation should keep this hook minimal and fake/noop in the first implementation. Do not build full quota/breaker infrastructure before one real or stubbed read-only MCP call works end-to-end:
 
 ```ts
 interface McpExecutionGuard {
@@ -335,7 +367,7 @@ interface McpProviderTemplate {
   toolClassifications: Record<string, McpToolClassification>;
   denyPatterns: string[];
   allowedResourceUriPrefixes?: string[];
-  toolNamePattern?: RegExp;
+  toolNamePattern?: { source: string; flags?: string };
 }
 ```
 
@@ -354,12 +386,14 @@ Rules:
 `MCP_PROVIDER_TOOL_DRIFT` applies when any checked-in classification no longer matches live probe output:
 
 - allowed tool is missing from live `tools/list`;
-- live tool exists with changed input schema hash;
-- live tool exists with changed output schema hash when available;
+- live tool exists with changed canonical input schema hash;
+- live tool exists with changed canonical output schema hash when available;
 - new live tool appears without exact checked-in classification;
 - previously denied tool changes schema/description enough that reviewed classification may be stale.
 
-Default response: disable affected tool/server capability until classification is reviewed.
+Schema hashes are computed from a canonical JSON representation: stable key ordering, no whitespace sensitivity, normalized `$ref` expansion where supported, and provider/version included in the hash domain.
+
+Default V0 response: disable affected tool capability on any hash mismatch unless a compatibility checker is fully implemented and covered by tests. Compatibility-based keep-enabled behavior is a later optimization, not required for V0.
 
 ### Resolved credential shape
 
@@ -383,15 +417,15 @@ If `allowedResourceUriPrefixes` is absent, resource reads are denied by default.
 
 ### V0 — generic proxy tools
 
-Start with a small generic surface:
+V0 uses the canonical tool surface defined above. The minimum always-present call path is:
 
 ```ts
-mcp_tools_search({ query, serverId? })
+mcp_tools_search({ query, serverId?, cursor?, limit?, enabledOnly? })
 mcp_tool_describe({ serverId, toolName })
 mcp_readonly_call({ serverId, toolName, input })
 ```
 
-This minimizes context bloat and keeps all authorization/tool-policy/audit checks in one path.
+Status/doctor/probe/server listing tools are also part of V0. Resource tools remain optional unless a provider opts into explicit URI validation. This minimizes context bloat and keeps all authorization/tool-policy/audit checks in one path.
 
 ### V1 — Hermes-style progressive disclosure
 
@@ -472,6 +506,7 @@ interface McpToolsSearchRequest {
   serverId?: string;
   risk?: 'read' | 'write' | 'admin' | 'unknown';
   enabledOnly?: boolean;
+  cursor?: string;
   limit?: number;
 }
 
@@ -487,9 +522,11 @@ interface McpToolsSearchResult {
 }
 ```
 
-Search uses the cached checked-in/probed tool catalog, not live provider calls. It returns summaries/classification only, not full schemas. `mcp_tool_describe` returns the full schema for one exact enabled/classified tool.
+Search uses the cached checked-in/probed tool catalog, not live provider calls. It returns summaries/classification only, not full schemas. `mcp_tool_describe` returns the full schema for one exact enabled/classified tool. Cached catalogs have a freshness TTL; stale catalogs either trigger re-probe or mark tools unavailable until probe refresh completes.
 
 ### V2 materialization trigger
+
+V2 is a roadmap note, not a first-foundation-PR requirement. The first foundation PR should not implement materialized tools unless the V0 facade and one real/stub read-only path are already green.
 
 A tool can become a direct/materialized tool only when all are true:
 
@@ -551,12 +588,12 @@ user adds MCP server
   → safe/classified tools can materialize
 ```
 
-Config sources may include project/user MCP config such as `.mcp.json`, `.pi/mcp.json`, or boring-mcp-specific project config, subject to path/security review.
+Config sources may include user/global MCP config or explicitly approved project MCP config such as `.mcp.json`, `.pi/mcp.json`, or boring-mcp-specific config. Config discovery and writability checks must go through the Workspace/adapter contract; no tool route should directly trust raw filesystem paths.
 
 Rules:
 
 - user-managed mode can support arbitrary stdio/http/sse MCP servers;
-- user is responsible for trusting local stdio commands;
+- user is responsible for trusting local stdio commands, but adding/enabling stdio requires explicit user action outside autonomous agent edits;
 - default policy still disables unknown/write/admin tools until enabled;
 - credentials must not be committed accidentally; doctor should warn on literal sensitive headers/env values;
 - materialized tools are project/session-scoped.
@@ -605,12 +642,12 @@ The difference is **who owns config/auth**:
 
 | Concern | User-managed / CLI | App-predefined / full app |
 | --- | --- | --- |
-| Server definitions | user/project config | app templates/database |
+| Server definitions | user/global or explicitly approved project config | app templates/database |
 | Auth | user/local MCP auth or local secret store | hosted OAuth/encrypted app secret store |
 | Arbitrary MCP servers | allowed by default with warnings | denied unless app enables |
 | Stdio commands | allowed locally with trust warning | usually disabled |
 | Tool policy | user/admin local policy | app policy + future governance |
-| Materialization | project/session scoped | app/workspace/user scoped |
+| Materialization | project/session scoped under a synthetic local actor | app/workspace/user scoped |
 
 ### Implementation implication
 
@@ -627,7 +664,7 @@ mode adapters
   localCredentialProvider
 ```
 
-Do not bake hosted assumptions into the generic core, and do not let CLI/local config semantics leak into hosted production.
+Do not bake hosted assumptions into the generic core, and do not let CLI/local config semantics leak into hosted production. CLI mode still has an actor: a synthetic local actor derived from the local user/profile and project identity, used only for ownership checks, cache keys, and audit labels.
 
 ## Gemini review amendments
 
@@ -660,7 +697,7 @@ Rules:
 `MCP_PROVIDER_TOOL_DRIFT` does not always hard-disable the whole server. Drift is classified:
 
 - **breaking drift**: required input added, input type changed incompatibly, tool removed, tool renamed, output shape no longer parseable for materialized/direct tool assumptions → disable affected tool;
-- **review drift**: description changed, optional input added, output schema added/expanded, denied tool changed description/schema → keep denied tools denied; keep allowed bridge-call tools enabled only if input compatibility is preserved, but flag for review;
+- **review drift**: description changed, optional input added, output schema added/expanded, denied tool changed description/schema → keep denied tools denied; for V0, hash mismatch disables affected allowed tools unless a tested compatibility checker says otherwise;
 - **new tool drift**: new live tool without exact classification → disabled until classified.
 
 Materialized V2 tools are stricter: any schema hash mismatch disables the direct tool until reclassified, while the bridge may remain available if compatibility check passes.
@@ -689,9 +726,14 @@ mcp_server_doctor({ serverId })
 mcp_server_probe({ serverId })
 mcp_tools_search({ query, serverId?, cursor?, limit?, enabledOnly? })
 mcp_tool_describe({ serverId, toolName })
+mcp_readonly_call({ serverId, toolName, input })
+```
+
+Optional resource tools require a provider-declared URI validator/prefix and are not part of the default launch surface:
+
+```ts
 mcp_resources_list({ serverId, cursor?, limit? })
 mcp_resource_read({ serverId, uri })
-mcp_readonly_call({ serverId, toolName, input })
 ```
 
 `mcp_tool_describe` is required in V0 so the agent can fetch the exact JSON schema before calling `mcp_readonly_call`. `mcp_tools_list` is deprecated in the plan in favor of paginated search/describe.
@@ -707,6 +749,8 @@ Resource validation is not origin-based. It is provider-template based:
 
 ### Transport connection lifecycle guard
 
+Connection lifecycle is required only when the implementation keeps reusable clients. A first stub/fake transport may implement this as no-op create/release. Real hosted transports must use the manager contract before production:
+
 Execution guards wrap calls, but connection lifecycle needs its own manager contract:
 
 ```ts
@@ -720,10 +764,11 @@ interface McpConnectionManager {
 
 Hosted Mode B requirements:
 
-- cache key includes app/workspace/user/source/provider/config version;
+- cache key includes app/workspace/user/source/provider/config version and credential version/expiry bucket;
 - max active clients per user/workspace/source;
 - max concurrent connects;
 - idle TTL;
 - SSE clients are process-local and disposable;
 - no assumption of sticky sessions;
-- disconnect/revoke invalidates source of truth and closes known local clients best-effort.
+- credential refresh closes/rebuilds clients carrying the old access token before reuse;
+- disconnect/revoke invalidates source of truth and must purge all locally known clients for that source/user before returning success. In distributed deployments this also emits an invalidation event; local close remains best-effort only for processes that miss the event.
