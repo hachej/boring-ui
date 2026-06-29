@@ -123,7 +123,7 @@ export function CliVersionBadge({ version }: { version?: string | null }) {
 
 export function CliWorkspaceShell() {
   const shareToken = shareTokenFromCliUrl(window.location.pathname)
-  if (shareToken) return <WorkspaceSingleton.PublicMarkdownReviewApp token={shareToken} />
+  if (shareToken) return <WorkspaceSingleton.PublicShareApp token={shareToken} />
 
   const [projectName, setProjectName] = useState("Workspace")
   const [workspacesMode, setWorkspacesMode] = useState(false)

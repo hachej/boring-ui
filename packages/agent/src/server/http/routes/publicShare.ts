@@ -1,28 +1,69 @@
-import type { FastifyInstance, FastifyReply } from 'fastify'
+import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify'
 import { dirname, extname, posix } from 'node:path'
 import type { Workspace } from '../../../shared/workspace'
 
-export type PublicShareKind = 'markdown-review'
+export const MARKDOWN_REVIEW_SHARE_KIND = 'markdown-review'
+
+export type PublicShareKind = string
+
+export interface PublicShareDownloadLink {
+  href: string
+  contentType?: string
+  label?: string
+}
 
 export interface PublicShareCapabilities {
   readFiles: string[]
-  renderMarkdown?: true
+  /** Workspace-relative files that may be written through this share. */
+  writeFiles?: string[]
+  /** Back-compat shorthand for allowing writes to entryPath. */
   writeEntry?: true
+  /** Back-compat marker for the current Markdown review renderer. */
+  renderMarkdown?: true
+  downloads?: Record<string, PublicShareDownloadLink>
 }
 
 export interface PublicShareRecord {
   token: string
   kind: PublicShareKind
+  /** Public app/viewer id used by front-end dispatchers. Defaults to kind. */
+  appId?: string
   entryPath: string
+  /** Content type of the entry file; downloads/assets may have their own type. */
+  contentType?: string
   capabilities: PublicShareCapabilities
   createdAt?: string
   expiresAt?: string
   title?: string
 }
 
+export interface PublicShareResponse {
+  body: string | Uint8Array | Buffer
+  contentType: string
+  headers?: Record<string, string>
+  statusCode?: number
+}
+
+export interface PublicShareHandlerContext {
+  share: PublicShareRecord
+  workspace: Workspace
+  request: FastifyRequest
+}
+
+export interface PublicShareHandler {
+  kind: string
+  canHandle?: (share: PublicShareRecord) => boolean
+  meta: (context: Omit<PublicShareHandlerContext, 'workspace' | 'request'>) => Record<string, unknown>
+  renderIndex?: (context: PublicShareHandlerContext) => Promise<PublicShareResponse> | PublicShareResponse
+  readRaw?: (context: PublicShareHandlerContext) => Promise<PublicShareResponse> | PublicShareResponse
+  writeRaw?: (context: PublicShareHandlerContext, content: string) => Promise<void> | void
+  downloads?: Record<string, (context: PublicShareHandlerContext) => Promise<PublicShareResponse> | PublicShareResponse>
+}
+
 export interface PublicShareRoutesOptions {
   getShare: (token: string) => PublicShareRecord | undefined | Promise<PublicShareRecord | undefined>
   getWorkspace: (share: PublicShareRecord) => Workspace | Promise<Workspace>
+  handlers?: PublicShareHandler[]
 }
 
 const LOCAL_MARKDOWN_IMAGE_RE = /!\[[^\]]*\]\(([^)\s]+)(?:\s+"[^"]*")?\)|<img\b[^>]*\bsrc=["']([^"']+)["'][^>]*>/gi
@@ -108,12 +149,18 @@ export function createMarkdownReviewShare(args: {
   }
   return {
     token: args.token,
-    kind: 'markdown-review',
+    kind: MARKDOWN_REVIEW_SHARE_KIND,
+    appId: MARKDOWN_REVIEW_SHARE_KIND,
     entryPath,
+    contentType: 'text/markdown; charset=utf-8',
     capabilities: {
       readFiles: [...readFiles].sort(),
       renderMarkdown: true,
-      ...(args.allowEdit ? { writeEntry: true as const } : {}),
+      ...(args.allowEdit ? { writeEntry: true as const, writeFiles: [entryPath] } : {}),
+      downloads: {
+        portableMarkdown: { href: `/share/${encodeURIComponent(args.token)}/portable.md`, contentType: 'text/markdown; charset=utf-8', label: 'Portable Markdown' },
+        bundleZip: { href: `/share/${encodeURIComponent(args.token)}/bundle.zip`, contentType: 'application/zip', label: 'Bundle ZIP' },
+      },
     },
     ...(args.expiresAt ? { expiresAt: args.expiresAt } : {}),
     ...(args.title ? { title: args.title } : {}),
@@ -318,6 +365,78 @@ async function readBinary(workspace: Workspace, path: string): Promise<Uint8Arra
   return Buffer.from(await workspace.readFile(path), 'utf8')
 }
 
+function canWriteEntry(share: PublicShareRecord): boolean {
+  if (share.capabilities.writeEntry === true) return true
+  return share.capabilities.writeFiles?.includes(share.entryPath) === true
+}
+
+function findShareHandler(handlers: PublicShareHandler[], share: PublicShareRecord): PublicShareHandler | null {
+  return handlers.find((handler) => {
+    if (handler.canHandle) return handler.canHandle(share)
+    return handler.kind === share.kind
+  }) ?? null
+}
+
+function createMarkdownDownloadLinks(share: PublicShareRecord): Record<string, PublicShareDownloadLink> {
+  return {
+    portableMarkdown: { href: `/share/${encodeURIComponent(share.token)}/portable.md`, contentType: 'text/markdown; charset=utf-8', label: 'Portable Markdown' },
+    bundleZip: { href: `/share/${encodeURIComponent(share.token)}/bundle.zip`, contentType: 'application/zip', label: 'Bundle ZIP' },
+  }
+}
+
+export const markdownReviewShareHandler: PublicShareHandler = {
+  kind: MARKDOWN_REVIEW_SHARE_KIND,
+  canHandle: (share) => share.kind === MARKDOWN_REVIEW_SHARE_KIND || share.capabilities.renderMarkdown === true,
+  meta: ({ share }) => ({
+    appId: share.appId ?? MARKDOWN_REVIEW_SHARE_KIND,
+    contentType: share.contentType ?? 'text/markdown; charset=utf-8',
+    downloads: share.capabilities.downloads ?? createMarkdownDownloadLinks(share),
+  }),
+  async renderIndex({ share, workspace }) {
+    if (!sharePathAllowed(share, share.entryPath)) throw new Error('share entry not allowed')
+    const markdown = await workspace.readFile(share.entryPath)
+    return { contentType: 'text/html; charset=utf-8', body: renderMarkdownDocument(markdown, share) }
+  },
+  async readRaw({ share, workspace }) {
+    if (!sharePathAllowed(share, share.entryPath)) throw new Error('share entry not allowed')
+    return { contentType: 'text/markdown; charset=utf-8', body: await workspace.readFile(share.entryPath) }
+  },
+  async writeRaw({ share, workspace }, content) {
+    if (!sharePathAllowed(share, share.entryPath)) throw new Error('share entry not allowed')
+    await workspace.writeFile(share.entryPath, content)
+  },
+  downloads: {
+    async portableMarkdown({ share, workspace, request }) {
+      if (!sharePathAllowed(share, share.entryPath)) throw new Error('share entry not allowed')
+      const origin = `${request.protocol}://${request.host}`
+      const markdown = rewriteMarkdownAssetUrls(await workspace.readFile(share.entryPath), share, origin)
+      return {
+        contentType: 'text/markdown; charset=utf-8',
+        body: markdown,
+        headers: { 'content-disposition': `attachment; filename="${posix.basename(share.entryPath).replace(/"/g, '')}"` },
+      }
+    },
+    async bundleZip({ share, workspace }) {
+      if (!sharePathAllowed(share, share.entryPath)) throw new Error('share entry not allowed')
+      const markdown = rewriteMarkdownAssetUrlsForBundle(await workspace.readFile(share.entryPath), share)
+      const files: Array<{ name: string; data: Uint8Array }> = [{ name: share.entryPath, data: Buffer.from(markdown, 'utf8') }]
+      for (const path of share.capabilities.readFiles) {
+        if (path === share.entryPath) continue
+        files.push({ name: path, data: await readBinary(workspace, path) })
+      }
+      const zip = createStoredZip(files)
+      return {
+        contentType: 'application/zip',
+        body: zip,
+        headers: {
+          'content-disposition': `attachment; filename="${posix.basename(share.entryPath, extname(share.entryPath)) || 'share'}.zip"`,
+          'content-length': String(zip.byteLength),
+        },
+      }
+    },
+  },
+}
+
 async function resolveShare(opts: PublicShareRoutesOptions, token: string, reply: FastifyReply): Promise<PublicShareRecord | null> {
   const share = await opts.getShare(token)
   if (!share) {
@@ -328,10 +447,6 @@ async function resolveShare(opts: PublicShareRoutesOptions, token: string, reply
     reply.code(410).send({ error: 'share expired' })
     return null
   }
-  if (share.kind !== 'markdown-review' || share.capabilities.renderMarkdown !== true) {
-    reply.code(501).send({ error: 'share kind not supported' })
-    return null
-  }
   return share
 }
 
@@ -340,10 +455,28 @@ export function registerPublicShareRoutes(
   opts: PublicShareRoutesOptions,
   done: (err?: Error) => void,
 ): void {
+  const handlers = opts.handlers ?? [markdownReviewShareHandler]
   const securityHeaders = (reply: FastifyReply) => reply
     .header('cache-control', 'no-store')
     .header('x-content-type-options', 'nosniff')
     .header('content-security-policy', "default-src 'none'; img-src 'self' data:; style-src 'unsafe-inline'; form-action 'self'; base-uri 'none'; frame-ancestors 'none'")
+
+  const sendPublicResponse = (reply: FastifyReply, response: PublicShareResponse) => {
+    const secured = securityHeaders(reply).code(response.statusCode ?? 200).type(response.contentType)
+    for (const [name, value] of Object.entries(response.headers ?? {})) secured.header(name, value)
+    return secured.send(response.body instanceof Uint8Array && !(response.body instanceof Buffer) ? Buffer.from(response.body) : response.body)
+  }
+
+  const resolveHandledShare = async (token: string, reply: FastifyReply): Promise<{ share: PublicShareRecord; handler: PublicShareHandler } | null> => {
+    const share = await resolveShare(opts, token, reply)
+    if (!share) return null
+    const handler = findShareHandler(handlers, share)
+    if (!handler) {
+      reply.code(501).send({ error: 'share kind not supported' })
+      return null
+    }
+    return { share, handler }
+  }
 
   if (!app.hasContentTypeParser('application/x-www-form-urlencoded')) {
     app.addContentTypeParser('application/x-www-form-urlencoded', { parseAs: 'string' }, (_request, body, done) => {
@@ -353,13 +486,13 @@ export function registerPublicShareRoutes(
 
   app.get('/share/:token/', async (request, reply) => {
     const { token } = request.params as { token: string }
-    const share = await resolveShare(opts, token, reply)
-    if (!share) return
-    if (!sharePathAllowed(share, share.entryPath)) return reply.code(404).send({ error: 'share entry not allowed' })
+    const resolved = await resolveHandledShare(token, reply)
+    if (!resolved) return
+    const { share, handler } = resolved
+    if (!handler.renderIndex) return reply.code(501).send({ error: 'share app cannot render an index' })
     try {
       const workspace = await opts.getWorkspace(share)
-      const markdown = await workspace.readFile(share.entryPath)
-      return securityHeaders(reply).type('text/html; charset=utf-8').send(renderMarkdownDocument(markdown, share))
+      return sendPublicResponse(reply, await handler.renderIndex({ share, workspace, request }))
     } catch {
       return reply.code(404).send({ error: 'share entry not found' })
     }
@@ -367,82 +500,79 @@ export function registerPublicShareRoutes(
 
   app.get('/share/:token/meta', async (request, reply) => {
     const { token } = request.params as { token: string }
-    const share = await resolveShare(opts, token, reply)
-    if (!share) return
+    const resolved = await resolveHandledShare(token, reply)
+    if (!resolved) return
+    const { share, handler } = resolved
+    const handlerMeta = handler.meta({ share })
+    const downloads = (handlerMeta.downloads as Record<string, PublicShareDownloadLink> | undefined) ?? share.capabilities.downloads ?? {}
+    const servedDownloadIds = Object.keys(handler.downloads ?? {})
     return securityHeaders(reply).send({
       token: share.token,
       kind: share.kind,
+      appId: share.appId ?? share.kind,
       entryPath: share.entryPath,
-      editable: share.capabilities.writeEntry === true,
-      downloads: {
-        portableMarkdown: `/share/${encodeURIComponent(share.token)}/portable.md`,
-        bundleZip: `/share/${encodeURIComponent(share.token)}/bundle.zip`,
+      contentType: share.contentType ?? contentTypeForPath(share.entryPath),
+      editable: canWriteEntry(share),
+      links: {
+        editor: `/share/${encodeURIComponent(share.token)}/editor`,
+        raw: `/share/${encodeURIComponent(share.token)}/raw`,
+        downloads: Object.fromEntries(servedDownloadIds.map((id) => [id, `/share/${encodeURIComponent(share.token)}/download/${encodeURIComponent(id)}`])),
       },
+      ...handlerMeta,
+      downloads,
     })
   })
 
   app.get('/share/:token/raw', async (request, reply) => {
     const { token } = request.params as { token: string }
-    const share = await resolveShare(opts, token, reply)
-    if (!share) return
-    if (!sharePathAllowed(share, share.entryPath)) return reply.code(404).send({ error: 'share entry not allowed' })
+    const resolved = await resolveHandledShare(token, reply)
+    if (!resolved) return
+    const { share, handler } = resolved
+    if (!handler.readRaw) return reply.code(501).send({ error: 'share app cannot read raw content' })
     try {
       const workspace = await opts.getWorkspace(share)
-      return securityHeaders(reply).type('text/markdown; charset=utf-8').send(await workspace.readFile(share.entryPath))
+      return sendPublicResponse(reply, await handler.readRaw({ share, workspace, request }))
     } catch {
       return reply.code(404).send({ error: 'share entry not found' })
     }
   })
 
+  const sendDownload = async (request: FastifyRequest, reply: FastifyReply, token: string, downloadId: string) => {
+    const resolved = await resolveHandledShare(token, reply)
+    if (!resolved) return
+    const { share, handler } = resolved
+    const download = handler.downloads?.[downloadId]
+    if (!download) return reply.code(404).send({ error: 'share download not found' })
+    try {
+      const workspace = await opts.getWorkspace(share)
+      return sendPublicResponse(reply, await download({ share, workspace, request }))
+    } catch {
+      return reply.code(404).send({ error: 'share download not found' })
+    }
+  }
+
+  app.get('/share/:token/download/:downloadId', async (request, reply) => {
+    const params = request.params as { token: string; downloadId: string }
+    return sendDownload(request, reply, params.token, params.downloadId)
+  })
 
   app.get('/share/:token/portable.md', async (request, reply) => {
     const { token } = request.params as { token: string }
-    const share = await resolveShare(opts, token, reply)
-    if (!share) return
-    if (!sharePathAllowed(share, share.entryPath)) return reply.code(404).send({ error: 'share entry not allowed' })
-    try {
-      const workspace = await opts.getWorkspace(share)
-      const origin = `${request.protocol}://${request.host}`
-      const markdown = rewriteMarkdownAssetUrls(await workspace.readFile(share.entryPath), share, origin)
-      return securityHeaders(reply)
-        .header('content-disposition', `attachment; filename="${posix.basename(share.entryPath).replace(/"/g, '')}"`)
-        .type('text/markdown; charset=utf-8')
-        .send(markdown)
-    } catch {
-      return reply.code(404).send({ error: 'share entry not found' })
-    }
+    return sendDownload(request, reply, token, 'portableMarkdown')
   })
 
   app.get('/share/:token/bundle.zip', async (request, reply) => {
     const { token } = request.params as { token: string }
-    const share = await resolveShare(opts, token, reply)
-    if (!share) return
-    if (!sharePathAllowed(share, share.entryPath)) return reply.code(404).send({ error: 'share entry not allowed' })
-    try {
-      const workspace = await opts.getWorkspace(share)
-      const markdown = rewriteMarkdownAssetUrlsForBundle(await workspace.readFile(share.entryPath), share)
-      const files: Array<{ name: string; data: Uint8Array }> = [{ name: share.entryPath, data: Buffer.from(markdown, 'utf8') }]
-      for (const path of share.capabilities.readFiles) {
-        if (path === share.entryPath) continue
-        files.push({ name: path, data: await readBinary(workspace, path) })
-      }
-      const zip = createStoredZip(files)
-      return securityHeaders(reply)
-        .header('content-disposition', `attachment; filename="${posix.basename(share.entryPath, extname(share.entryPath)) || 'share'}.zip"`)
-        .type('application/zip')
-        .header('content-length', String(zip.byteLength))
-        .send(zip)
-    } catch {
-      return reply.code(404).send({ error: 'share bundle not found' })
-    }
+    return sendDownload(request, reply, token, 'bundleZip')
   })
 
   app.post('/share/:token/raw', async (request, reply) => {
     const { token } = request.params as { token: string }
-    const share = await resolveShare(opts, token, reply)
-    if (!share) return
-    if (share.capabilities.writeEntry !== true) return reply.code(403).send({ error: 'share is read-only' })
-    if (!sharePathAllowed(share, share.entryPath)) return reply.code(404).send({ error: 'share entry not allowed' })
+    const resolved = await resolveHandledShare(token, reply)
+    if (!resolved) return
+    const { share, handler } = resolved
+    if (!canWriteEntry(share)) return reply.code(403).send({ error: 'share is read-only' })
+    if (!handler.writeRaw) return reply.code(501).send({ error: 'share app cannot write raw content' })
     const body = request.body
     const content = typeof body === 'string'
       ? new URLSearchParams(body).get('content')
@@ -452,7 +582,7 @@ export function registerPublicShareRoutes(
     if (content === null) return reply.code(400).send({ error: 'content is required' })
     try {
       const workspace = await opts.getWorkspace(share)
-      await workspace.writeFile(share.entryPath, content)
+      await handler.writeRaw({ share, workspace, request }, content)
       return reply.code(303).header('location', `/share/${encodeURIComponent(share.token)}/`).send()
     } catch {
       return reply.code(404).send({ error: 'share entry not found' })
@@ -463,8 +593,9 @@ export function registerPublicShareRoutes(
     const { token } = request.params as { token: string }
     const query = request.query as Record<string, unknown>
     const rawPath = typeof query.path === 'string' ? query.path : ''
-    const share = await resolveShare(opts, token, reply)
-    if (!share) return
+    const resolved = await resolveHandledShare(token, reply)
+    if (!resolved) return
+    const { share } = resolved
     const assetPath = normalizeWorkspacePath(rawPath)
     if (!assetPath || !sharePathAllowed(share, assetPath)) {
       return reply.code(404).send({ error: 'asset not found' })
@@ -483,8 +614,9 @@ export function registerPublicShareRoutes(
 
   app.get('/share/:token/assets/*', async (request, reply) => {
     const params = request.params as { token: string; '*': string }
-    const share = await resolveShare(opts, params.token, reply)
-    if (!share) return
+    const resolved = await resolveHandledShare(params.token, reply)
+    if (!resolved) return
+    const { share } = resolved
     const assetPath = normalizeWorkspacePath(params['*'])
     if (!assetPath || !sharePathAllowed(share, assetPath) || assetPath === share.entryPath) {
       return reply.code(404).send({ error: 'asset not found' })

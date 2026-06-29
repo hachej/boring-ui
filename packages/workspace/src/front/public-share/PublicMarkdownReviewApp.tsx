@@ -12,13 +12,25 @@ export interface PublicMarkdownReviewAppProps {
   autosaveDelayMs?: number
 }
 
+interface PublicShareDownloadLink {
+  href?: string
+}
+
 interface PublicShareMeta {
   entryPath?: string
   editable?: boolean
-  downloads?: {
-    portableMarkdown?: string
-    bundleZip?: string
+  links?: {
+    downloads?: Record<string, string>
   }
+  downloads?: {
+    portableMarkdown?: string | PublicShareDownloadLink
+    bundleZip?: string | PublicShareDownloadLink
+  }
+}
+
+function downloadHref(value: string | PublicShareDownloadLink | undefined, fallback: string): string {
+  if (typeof value === "string") return value
+  return value?.href ?? fallback
 }
 
 export function PublicMarkdownReviewApp({
@@ -50,7 +62,11 @@ export function PublicMarkdownReviewApp({
       .then(([meta, text]) => {
         if (cancelled) return
         setEntryPath(meta.entryPath ?? "review.md")
-        setDownloads(meta.downloads ?? {})
+        setDownloads({
+          ...meta.downloads,
+          portableMarkdown: meta.downloads?.portableMarkdown ?? meta.links?.downloads?.portableMarkdown,
+          bundleZip: meta.downloads?.bundleZip ?? meta.links?.downloads?.bundleZip,
+        })
         setContent(text)
         setSavedContent(text)
         setError(null)
@@ -93,8 +109,8 @@ export function PublicMarkdownReviewApp({
     return () => window.clearTimeout(timer)
   }, [autosaveDelayMs, dirty, loading, save, saving])
 
-  const portableMarkdownHref = downloads?.portableMarkdown ?? `${shareBaseUrl}/portable.md`
-  const bundleZipHref = downloads?.bundleZip ?? `${shareBaseUrl}/bundle.zip`
+  const portableMarkdownHref = downloadHref(downloads?.portableMarkdown, `${shareBaseUrl}/portable.md`)
+  const bundleZipHref = downloadHref(downloads?.bundleZip, `${shareBaseUrl}/bundle.zip`)
 
   return (
     <WorkspaceFilesProvider apiBaseUrl={shareBaseUrl} fileEvents={false}>

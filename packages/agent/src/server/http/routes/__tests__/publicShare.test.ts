@@ -60,8 +60,25 @@ describe('public share routes', () => {
   })
 
 
+  test('returns generic metadata and download routes for the public app dispatcher', async () => {
+    const { app } = await createTestApp({ allowEdit: true })
+
+    const meta = await app.inject({ method: 'GET', url: '/share/s_test/meta' })
+    expect(meta.statusCode).toBe(200)
+    const body = JSON.parse(meta.body) as { kind: string; appId: string; editable: boolean; links: { downloads: Record<string, string> }; downloads: Record<string, { href: string }> }
+    expect(body.kind).toBe('markdown-review')
+    expect(body.appId).toBe('markdown-review')
+    expect(body.editable).toBe(true)
+    expect(body.links.downloads.portableMarkdown).toBe('/share/s_test/download/portableMarkdown')
+    expect(body.downloads.portableMarkdown.href).toBe('/share/s_test/portable.md')
+  })
+
   test('exports portable Markdown and a ZIP bundle with images', async () => {
     const { app } = await createTestApp()
+
+    const genericPortable = await app.inject({ method: 'GET', url: '/share/s_test/download/portableMarkdown', headers: { host: 'review.test' } })
+    expect(genericPortable.statusCode).toBe(200)
+    expect(genericPortable.body).toContain('http://review.test/share/s_test/assets/docs/images/hero.png')
 
     const portable = await app.inject({ method: 'GET', url: '/share/s_test/portable.md', headers: { host: 'review.test' } })
     expect(portable.statusCode).toBe(200)
@@ -81,6 +98,28 @@ describe('public share routes', () => {
 
     const res = await app.inject({ method: 'GET', url: '/share/s_test/assets/docs/secret.md' })
     expect(res.statusCode).toBe(404)
+  })
+
+  test('returns unsupported for shares without a registered public app handler', async () => {
+    const workspaceRoot = await mkdtemp(join(tmpdir(), 'boring-ui-public-share-'))
+    tempRoots.push(workspaceRoot)
+    await writeFile(join(workspaceRoot, 'image.png'), Buffer.from([137, 80, 78, 71]), 'binary')
+    const workspace = createNodeWorkspace(workspaceRoot)
+    const app = Fastify({ logger: false })
+    await app.register(registerPublicShareRoutes, {
+      getShare: () => ({ token: 's_image', kind: 'image-preview', appId: 'image-preview', entryPath: 'image.png', capabilities: { readFiles: ['image.png'] } }),
+      getWorkspace: () => workspace,
+    })
+    await app.ready()
+    apps.push(app)
+
+    const res = await app.inject({ method: 'GET', url: '/share/s_image/meta' })
+    expect(res.statusCode).toBe(501)
+
+    const raw = await app.inject({ method: 'GET', url: '/share/s_image/api/v1/files/raw?path=image.png' })
+    expect(raw.statusCode).toBe(501)
+    const asset = await app.inject({ method: 'GET', url: '/share/s_image/assets/image.png' })
+    expect(asset.statusCode).toBe(501)
   })
 
   test('read-only shares reject public edits', async () => {
