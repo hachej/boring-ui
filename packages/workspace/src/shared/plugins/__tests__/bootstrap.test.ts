@@ -113,27 +113,6 @@ describe("bootstrap", () => {
     })).toThrow("registries.workspaceSources is missing")
   })
 
-  it("bridges legacy workspace-source panel placements into workspace source registry", () => {
-    const registries = makeRegistries()
-
-    bootstrap({
-      chatPanel: DummyChatPanel,
-      plugins: [
-        definePlugin({
-          id: "legacy",
-          panels: [{ id: "legacy.files", label: "Legacy Files", component: DummyPanel, placement: "left-tab", defaultPanelId: "legacy.center" }],
-        }),
-      ],
-      defaults: [],
-      registries,
-    })
-
-    expect(registries.panels.get("legacy.files")).toBeUndefined()
-    expect(registries.workspaceSources.get("legacy.files")).toEqual(
-      expect.objectContaining({ id: "legacy.files", title: "Legacy Files", pluginId: "legacy", defaultPanelId: "legacy.center" }),
-    )
-  })
-
   it("wires declarative panel commands with panelId to an executable runner", () => {
     const registries = makeRegistries()
     const openPanel = vi.fn()

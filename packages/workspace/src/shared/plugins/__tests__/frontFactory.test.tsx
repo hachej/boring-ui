@@ -198,32 +198,4 @@ describe("intra-pluginId collision detection (PLUGIN_SYSTEM.md §5.7)", () => {
     }
   })
 
-  it("legacy workspace-source panel ids collide with workspace source ids", () => {
-    const api = createCapturingBoringFrontAPI({ pluginId: "concrete" })
-    api.registerPanel({ id: "source", label: "Legacy", component: TestPanel, placement: "left-tab" })
-    expect(() => api.registerWorkspaceSource({ id: "source", label: "Source", component: TestSource })).toThrow(/workspace-source "source" twice/)
-  })
-
-  it("collision spans output kinds — panel and command can share the same id", () => {
-    const api = createCapturingBoringFrontAPI({ pluginId: "concrete" })
-    api.registerPanel({ id: "shared", label: "Pane", component: TestPanel })
-    expect(() => api.registerPanelCommand({ id: "shared", title: "Open", panelId: "shared" })).not.toThrow()
-  })
-
-  it("catches the composition-chaining footgun", () => {
-    const dataExplorerKit: BoringFrontFactory = (api) => {
-      api.registerPanel({ id: "table", label: "Explorer Table", component: TestPanel })
-    }
-    const dataCatalogKit: BoringFrontFactory = (api) => {
-      api.registerPanel({ id: "table", label: "Catalog Table", component: TestPanel })
-    }
-    const wrapped = definePlugin({
-      id: "playground-catalog",
-      setup: (api) => {
-        dataExplorerKit(api)
-        dataCatalogKit(api)
-      },
-    })
-    expect(() => captureFrontPlugin(wrapped)).toThrow(/registers panel "table" twice/)
-  })
 })

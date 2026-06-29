@@ -44,8 +44,6 @@ import type { WorkspaceChatPanelComponent, WorkspaceChatPanelProps } from "../ch
 import { WorkspaceAttentionProvider } from "../attention"
 import { useAgentPluginHotReload } from "../agentPlugins/registerAgentPlugin"
 import { formatWorkspaceDocumentTitle } from "./workspaceTitle"
-import { isWorkspaceSourcePlacement } from "../../shared/types/panel"
-import { adaptLegacyPanelToWorkspaceSource } from "../../shared/plugins/legacyWorkspaceSource"
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -552,22 +550,6 @@ export function WorkspaceProvider({
     if (panels) {
       for (const panel of panels) {
         const { id, ...config } = panel
-        if (isWorkspaceSourcePlacement(panel.placement)) {
-          const sourceConfig: WorkspaceSourceRegistration = {
-            title: panel.title,
-            component: adaptLegacyPanelToWorkspaceSource(panel.id, panel.title, panel.component, panel.lazy),
-            ...(panel.icon ? { icon: panel.icon } : {}),
-            ...(panel.requiresCapabilities ? { requiresCapabilities: panel.requiresCapabilities } : {}),
-            ...(panel.chromeless !== undefined ? { chromeless: panel.chromeless } : {}),
-            ...(panel.defaultPanelId !== undefined ? { defaultPanelId: panel.defaultPanelId } : {}),
-            ...(panel.source !== undefined ? { source: panel.source } : {}),
-            ...(panel.pluginId !== undefined ? { pluginId: panel.pluginId } : {}),
-            ...(panel.pluginRevision !== undefined ? { pluginRevision: panel.pluginRevision } : {}),
-            ...(panel.lazy !== undefined ? { lazy: panel.lazy } : {}),
-          }
-          ws.register(id, sourceConfig)
-          continue
-        }
         pr.register(id, config)
       }
     }

@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest"
 import { render, screen, act, waitFor, fireEvent } from "@testing-library/react"
 import { renderHook } from "@testing-library/react"
-import { type ComponentType, type ReactNode, useState } from "react"
+import { type ReactNode, useState } from "react"
 import {
   WorkspaceProvider,
   formatWorkspaceDocumentTitle,
@@ -218,120 +218,6 @@ describe("WorkspaceProvider — panel registration", () => {
     expect(ids).not.toContain("files")
     expect(ids).toContain("test-panel")
     expect(ids).toHaveLength(12)
-  })
-
-  it("bridges app-supplied legacy workspace-source panels into workspace sources", () => {
-    const legacyPanel: PanelConfig = {
-      id: "legacy-source",
-      title: "Legacy Source",
-      component: DummyPanel,
-      placement: "left-tab",
-      defaultPanelId: "legacy-center",
-      source: "app",
-    }
-
-    function Inspector() {
-      const panels = useRegistry()
-      const sources = useWorkspaceSourceRegistry()
-      return (
-        <div>
-          <div data-testid="panel-has-legacy">{String(panels.has("legacy-source"))}</div>
-          <div data-testid="source-has-legacy">{String(sources.has("legacy-source"))}</div>
-          <div data-testid="source-default-panel">{sources.get("legacy-source")?.defaultPanelId}</div>
-        </div>
-      )
-    }
-
-    render(
-      <WorkspaceProvider panels={[legacyPanel]} persistenceEnabled={false}>
-        <Inspector />
-      </WorkspaceProvider>,
-    )
-
-    expect(screen.getByTestId("panel-has-legacy").textContent).toBe("false")
-    expect(screen.getByTestId("source-has-legacy").textContent).toBe("true")
-    expect(screen.getByTestId("source-default-panel").textContent).toBe("legacy-center")
-  })
-
-  it("adapts legacy workspace-source panel PaneProps containerApi to source openPanel", () => {
-    function LegacyPanel({ containerApi }: PaneProps) {
-      return (
-        <button
-          type="button"
-          onClick={() => containerApi.addPanel({
-            id: "legacy-opened",
-            component: "legacy.center",
-            title: "Legacy Center",
-            params: { from: "legacy" },
-          })}
-        >
-          Open legacy center
-        </button>
-      )
-    }
-    const onOpenPanel = vi.fn()
-    const legacyPanel: PanelConfig = {
-      id: "legacy-source",
-      title: "Legacy Source",
-      component: LegacyPanel,
-      placement: "workspace-source",
-      defaultPanelId: "legacy.center",
-      source: "app",
-    }
-
-    function LegacySourceHost() {
-      const source = useWorkspaceSourceRegistry().get("legacy-source")
-      if (!source) return <div>missing source</div>
-      const SourceComponent = source.component as ComponentType<any>
-      return <SourceComponent openPanel={onOpenPanel} />
-    }
-
-    render(
-      <WorkspaceProvider panels={[legacyPanel]} persistenceEnabled={false}>
-        <LegacySourceHost />
-      </WorkspaceProvider>,
-    )
-
-    fireEvent.click(screen.getByRole("button", { name: "Open legacy center" }))
-
-    expect(onOpenPanel).toHaveBeenCalledWith({
-      id: "legacy-opened",
-      component: "legacy.center",
-      title: "Legacy Center",
-      params: { from: "legacy" },
-    })
-  })
-
-  it("legacy workspace-source panel adapter throws clearly for unsupported Dockview api use", () => {
-    const consoleError = vi.spyOn(console, "error").mockImplementation(() => undefined)
-    function BadLegacyPanel({ api }: PaneProps) {
-      api.close()
-      return null
-    }
-    const legacyPanel: PanelConfig = {
-      id: "bad-legacy-source",
-      title: "Bad Legacy Source",
-      component: BadLegacyPanel,
-      placement: "workspace-source",
-      source: "app",
-    }
-
-    function BadLegacySourceHost() {
-      const source = useWorkspaceSourceRegistry().get("bad-legacy-source")
-      if (!source) return <div>missing source</div>
-      const SourceComponent = source.component as ComponentType<any>
-      return <SourceComponent />
-    }
-
-    try {
-      expect(() => render(
-        <WorkspaceProvider panels={[legacyPanel]} persistenceEnabled={false}>
-          <BadLegacySourceHost />
-        </WorkspaceProvider>,
-      )).toThrow(/cannot use Dockview api\.close/)
-    } finally {
-      consoleError.mockRestore()
-    }
   })
 
   it("registers Files as a workspace source, not a Dockview panel", () => {
