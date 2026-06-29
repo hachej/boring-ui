@@ -5,6 +5,8 @@ import "@hachej/boring-workspace/globals.css"
 import "@hachej/boring-agent/front/styles.css"
 import "./app.css"
 
+;(window as Window & { __BORING_CLI_FRONT_BUILD__?: string }).__BORING_CLI_FRONT_BUILD__ = "2026-06-29T14:45Z"
+
 function reloadAfterStaleAssetError() {
   const storageKey = "boring-ui:asset-reload-attempted-at"
   const lastAttempt = Number(window.sessionStorage.getItem(storageKey) ?? 0)

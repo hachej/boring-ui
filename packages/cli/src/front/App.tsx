@@ -41,6 +41,21 @@ interface LocalWorkspace {
   available: boolean
 }
 
+interface ProjectSessionSummary {
+  id: string
+  title?: string | null
+  updatedAt?: string | number
+}
+
+interface ProjectSessionOverview {
+  sessions: ProjectSessionSummary[]
+  loading: boolean
+  error?: string
+}
+
+const PROJECT_SESSION_PREVIEW_INITIAL_LIMIT = 5
+const PROJECT_SESSION_PREVIEW_FETCH_LIMIT = 25
+
 export function workspaceIdFromCliUrl(pathname: string): string | null {
   const match = pathname.match(/^\/workspace\/([^/?#]+)/)
   if (!match?.[1]) return null
@@ -97,6 +112,33 @@ function areWorkspacesEqual(a: LocalWorkspace[], b: LocalWorkspace[]): boolean {
   })
 }
 
+function piActiveSessionStorageKey(workspaceId: string): string {
+  return `boring-agent:v2:${workspaceId}:activeSessionId`
+}
+
+function toProjectSessionSummary(value: unknown): ProjectSessionSummary | null {
+  if (typeof value !== "object" || value === null) return null
+  const record = value as Record<string, unknown>
+  if (typeof record.id !== "string" || record.id.length === 0) return null
+  return {
+    id: record.id,
+    title: typeof record.title === "string" ? record.title : "Untitled",
+    updatedAt: typeof record.updatedAt === "string" || typeof record.updatedAt === "number" ? record.updatedAt : undefined,
+  }
+}
+
+async function fetchProjectSessionOverview(workspaceId: string): Promise<ProjectSessionSummary[]> {
+  const query = new URLSearchParams({ limit: String(PROJECT_SESSION_PREVIEW_FETCH_LIMIT) })
+  const response = await fetch(`/api/v1/agent/pi-chat/sessions?${query.toString()}`, {
+    headers: { "x-boring-workspace-id": workspaceId },
+  })
+  if (!response.ok) throw new Error(`sessions ${response.status}`)
+  const payload = await response.json()
+  return Array.isArray(payload)
+    ? payload.map(toProjectSessionSummary).filter((session): session is ProjectSessionSummary => Boolean(session))
+    : []
+}
+
 export function CliVersionBadge({ version }: { version?: string | null }) {
   const label = version?.trim()
   if (!label) return null
@@ -130,6 +172,8 @@ export function CliWorkspaceShell() {
   // and retry) so a transient error never strands the page on the empty state.
   const [workspacesLoaded, setWorkspacesLoaded] = useState(false)
   const [runtimePluginFrontLoadingEnabled, setRuntimePluginFrontLoadingEnabled] = useState(false)
+  const [projectSessionOverviews, setProjectSessionOverviews] = useState<Record<string, ProjectSessionOverview>>({})
+  const [projectSessionPreviewLimits, setProjectSessionPreviewLimits] = useState<Record<string, number>>({})
 
   const refreshWorkspacesRef = useRef<(() => void) | null>(null)
 
@@ -177,33 +221,6 @@ export function CliWorkspaceShell() {
   }, [])
 
   refreshWorkspacesRef.current = refreshWorkspaces
-
-  const createLocalWorkspace = useCallback(() => {
-    const rawPath = window.prompt("Path for the local workspace folder to create or add")
-    const path = rawPath?.trim()
-    if (!path) return
-    const rawName = window.prompt("Workspace name", path.split(/[\\/]+/).filter(Boolean).at(-1) ?? "Workspace")
-    if (rawName === null) return
-    const name = rawName.trim() || undefined
-    void fetch("/api/v1/local-workspaces", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ path, name, createIfMissing: true }),
-    })
-      .then(async (res) => {
-        const data = await res.json().catch(() => ({})) as { workspace?: LocalWorkspace; error?: string }
-        if (!res.ok || !data.workspace) throw new Error(data.error || `local-workspaces ${res.status}`)
-        setWorkspacesLoaded(true)
-        setWorkspaces((current) => current.some((workspace) => workspace.id === data.workspace!.id) ? current : [...current, data.workspace!])
-        window.localStorage.setItem("boring-ui:local-workspace-id", data.workspace.id)
-        setActiveWorkspaceId(data.workspace.id)
-        syncCliWorkspaceUrl(data.workspace.id)
-        refreshWorkspaces()
-      })
-      .catch((error) => {
-        window.alert(error instanceof Error ? error.message : "Unable to create workspace")
-      })
-  }, [refreshWorkspaces])
 
   useEffect(() => {
     let cancelled = false
@@ -294,6 +311,70 @@ export function CliWorkspaceShell() {
     () => activeWorkspaceId ? { "x-boring-workspace-id": activeWorkspaceId } : null,
     [activeWorkspaceId],
   )
+  const availableWorkspaceIdsKey = useMemo(
+    () => workspaces.filter((workspace) => workspace.available).map((workspace) => workspace.id).sort().join("\n"),
+    [workspaces],
+  )
+
+  useEffect(() => {
+    if (!workspacesMode || !availableWorkspaceIdsKey) return
+    const ids = availableWorkspaceIdsKey.split("\n").filter(Boolean)
+    let cancelled = false
+    setProjectSessionOverviews((current) => {
+      const next: Record<string, ProjectSessionOverview> = {}
+      for (const id of ids) next[id] = current[id] ?? { sessions: [], loading: true }
+      return next
+    })
+    for (const id of ids) {
+      void fetchProjectSessionOverview(id)
+        .then((sessions) => {
+          if (cancelled) return
+          setProjectSessionOverviews((current) => ({
+            ...current,
+            [id]: { sessions, loading: false },
+          }))
+        })
+        .catch((error) => {
+          if (cancelled) return
+          setProjectSessionOverviews((current) => ({
+            ...current,
+            [id]: {
+              sessions: current[id]?.sessions ?? [],
+              loading: false,
+              error: error instanceof Error ? error.message : "sessions failed",
+            },
+          }))
+        })
+    }
+    return () => { cancelled = true }
+  }, [availableWorkspaceIdsKey, workspacesMode])
+
+  const appLeftProjects = useMemo(() => workspaces.map((workspace) => {
+    const overview = projectSessionOverviews[workspace.id]
+    const limit = projectSessionPreviewLimits[workspace.id] ?? PROJECT_SESSION_PREVIEW_INITIAL_LIMIT
+    const sessions = overview?.sessions ?? []
+    return {
+      id: workspace.id,
+      name: workspace.name,
+      available: workspace.available,
+      sessions: sessions.slice(0, limit),
+      sessionCount: sessions.length,
+      hasMoreSessions: sessions.length > limit,
+      loadingSessions: overview?.loading ?? (workspace.available && !overview),
+    }
+  }), [projectSessionOverviews, projectSessionPreviewLimits, workspaces])
+
+  const openProjectSession = useCallback((workspaceId: string, sessionId: string) => {
+    window.localStorage.setItem(piActiveSessionStorageKey(workspaceId), sessionId)
+    setActiveWorkspaceId(workspaceId)
+  }, [])
+
+  const showMoreProjectSessions = useCallback((workspaceId: string) => {
+    setProjectSessionPreviewLimits((current) => ({
+      ...current,
+      [workspaceId]: (current[workspaceId] ?? PROJECT_SESSION_PREVIEW_INITIAL_LIMIT) + PROJECT_SESSION_PREVIEW_INITIAL_LIMIT,
+    }))
+  }, [])
 
   if (!metaLoaded) {
     return <div className="h-screen w-screen bg-background" />
@@ -341,15 +422,8 @@ export function CliWorkspaceShell() {
             <p className="mt-2 text-sm text-muted-foreground">
               {hasUnavailableWorkspaces
                 ? "Registered workspace folders are missing or not directories. Restore one of the folders, then focus or refresh this page."
-                : "Create or add a local workspace folder from this screen."}
+                : <>Add one with <code>boring-ui workspaces add /path/to/project</code>, then refresh this page.</>}
             </p>
-            <button
-              type="button"
-              onClick={createLocalWorkspace}
-              className="mt-4 rounded-md bg-foreground px-3 py-2 text-sm font-medium text-background hover:opacity-90 focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-            >
-              Create or add local folder
-            </button>
           </div>
         </div>
       )
@@ -362,6 +436,17 @@ export function CliWorkspaceShell() {
         key={activeWorkspace.id}
         workspaceId={activeWorkspace.id}
         workspaceLabel={activeWorkspace.name}
+        workspaceSectionTitle="Projects"
+        workspaceLayout="plugin-tabs"
+        appLeftHeaderMode="workspace"
+        appLeftProjects={appLeftProjects}
+        appLeftActiveProjectId={activeWorkspace.id}
+        onSwitchAppLeftProject={(workspaceId) => {
+          window.localStorage.setItem("boring-ui:local-workspace-id", workspaceId)
+          setActiveWorkspaceId(workspaceId)
+        }}
+        onOpenAppLeftProjectSession={openProjectSession}
+        onShowMoreAppLeftProjectSessions={showMoreProjectSessions}
         requestHeaders={requestHeaders}
         authHeaders={requestHeaders}
         plugins={plugins}
@@ -380,13 +465,12 @@ export function CliWorkspaceShell() {
         topBarRight={<CliVersionBadge version={cliVersion} />}
         topBarLeft={
           <WorkspaceSwitcherControl
-            appTitle="Boring UI"
+            displayMode="workspace"
             workspaces={workspaces}
             activeWorkspaceId={activeWorkspace.id}
-            createLabel="Create or add local folder"
-            createDescription="Create the folder if it does not exist"
+            createLabel="Add local folder"
+            createDescription="Use `boring-ui workspaces add /path`"
             settingsDescription={activeWorkspace.path}
-            onCreateWorkspace={createLocalWorkspace}
             onSelectWorkspace={(workspaceId) => {
               window.localStorage.setItem("boring-ui:local-workspace-id", workspaceId)
               setActiveWorkspaceId(workspaceId)
@@ -406,6 +490,9 @@ export function CliWorkspaceShell() {
       persistenceEnabled
       providerStorageKey={`boring-ui-v2:layout:${projectName}`}
       appTitle={projectName}
+      workspaceLabel={projectName}
+      workspaceSectionTitle="Project"
+      workspaceLayout="plugin-tabs"
       defaultSessionTitle={projectName}
       activeSessionId={initialSessionId ?? undefined}
       chatParams={{ thinkingControl: true }}

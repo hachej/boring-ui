@@ -50,8 +50,9 @@ export async function startPlaygroundServer(): Promise<void> {
     const remoteWorkerWorkspaceId = remoteWorkerModeAdapter
       ? (process.env.BORING_WORKSPACE_PLAYGROUND_WORKSPACE_ID?.trim() || randomUUID())
       : undefined
+    const localRuntimeMode = process.env.BORING_AGENT_MODE?.trim() === "direct" ? "direct" : "local"
     console.log(`[workspace-playground] workspace root: ${workspaceRoot}`)
-    console.log(`[workspace-playground] runtime mode: ${remoteWorkerModeAdapter ? "remote-worker" : "local"}`)
+    console.log(`[workspace-playground] runtime mode: ${remoteWorkerModeAdapter ? "remote-worker" : localRuntimeMode}`)
     if (remoteWorkerWorkspaceId) {
       console.log(`[workspace-playground] remote worker workspace id: ${remoteWorkerWorkspaceId}`)
     }
@@ -59,7 +60,7 @@ export async function startPlaygroundServer(): Promise<void> {
       workspaceRoot,
       appRoot: APP_ROOT,
       sessionId: remoteWorkerWorkspaceId,
-      mode: remoteWorkerModeAdapter ? undefined : "local",
+      mode: remoteWorkerModeAdapter ? undefined : localRuntimeMode,
       runtimeModeAdapter: remoteWorkerModeAdapter,
       logger: true,
       externalPlugins: EXTERNAL_PLUGINS_ENABLED,
