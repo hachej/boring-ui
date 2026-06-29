@@ -1048,3 +1048,125 @@ Credential-store policy:
 | Constellation exposing its own MCP server | Better Auth MCP plugin may be useful for inbound client auth |
 
 Keep `McpCredentialProvider` pluggable: `better-auth-account`, `mcp-db`, `nango`, and `local-file`.
+
+## Constellation credential vault direction
+
+Constellation likely needs a narrow app-owned credential vault, not only for MCP provider credentials but also for future Bring Your Own LLM provider tokens.
+
+Examples:
+
+```txt
+MCP provider credentials
+  Notion MCP OAuth tokens
+  Airtable OAuth/PAT tokens
+  Microsoft/SharePoint OAuth tokens
+
+BYO model provider credentials
+  OpenAI API key
+  Anthropic API key
+  OpenRouter API key
+  Gemini API key
+  provider-specific base URL / organization / project metadata
+```
+
+This should be a small, audited capability rather than a generic secrets product.
+
+### Credential vault requirements
+
+```txt
+encrypted-at-rest secret material
+workspace/user/source ownership keys
+purpose-specific credential types
+no raw-token read API for agents/browser
+server-side resolution only at execution boundary
+redaction guard on all errors/logs/results
+refresh/revoke/disconnect lifecycle where applicable
+connection/client cache invalidation on revoke or rotation
+audit events without secret values
+tests with seeded canary secrets
+```
+
+### Suggested model
+
+```ts
+type CredentialKind =
+  | "mcp-oauth"
+  | "mcp-api-key"
+  | "llm-api-key"
+  | "oauth-account-ref"
+  | "nango-connection-ref";
+
+interface SecretCredentialRecord {
+  id: string;
+  workspaceId: string;
+  actorId?: string;
+  sourceId?: string;
+  kind: CredentialKind;
+  providerId: string;
+  encryptedPayload: string;
+  payloadSchemaVersion: number;
+  status: "pending" | "active" | "revoked" | "error";
+  expiresAt?: Date;
+  rotatedAt?: Date;
+  revokedAt?: Date;
+  createdAt: Date;
+  updatedAt: Date;
+}
+```
+
+For credentials Better Auth can safely own, `boring-mcp` / Constellation stores only a reference:
+
+```txt
+kind=oauth-account-ref
+providerId=<provider>
+credentialRef=<better auth account id>
+```
+
+For MCP-native and BYO LLM credentials, Constellation owns encrypted storage directly.
+
+### Execution boundary
+
+Callers should never receive raw secret material. Instead they request a server-side operation:
+
+```txt
+mcp_readonly_call -> credential resolver -> MCP client -> provider
+llm_completion    -> credential resolver -> model client -> provider
+```
+
+The resolver returns secret material only to trusted server-side adapters, never to:
+
+```txt
+browser responses
+agent prompts
+workspace files
+logs
+audit event payloads
+```
+
+### BYO LLM implications
+
+BYO provider tokens need the same controls as MCP credentials:
+
+```txt
+per-workspace/provider credential records
+provider-specific validation/probe
+model allowlist and budget policy
+rate/token accounting
+rotation/revoke
+redacted errors
+no credential export by default
+```
+
+The model runtime should receive a resolved provider client, not a raw API key. This mirrors the MCP facade rule: tools call a governed server adapter, not arbitrary token-bearing HTTP clients.
+
+### Product boundary
+
+The credential vault is an internal Constellation platform capability used by:
+
+```txt
+boring-mcp
+BYO LLM provider configuration
+future governed integrations
+```
+
+It should not become a user-facing generic password manager or arbitrary secret filesystem.
