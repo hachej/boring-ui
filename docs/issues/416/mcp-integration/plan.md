@@ -1,6 +1,6 @@
 # Issue #416 — Canonical MCP / Connector Integration Plan
 
-Status: canonical plan after review pass 6
+Status: canonical plan after live Notion PoC and onboarding UX amendment
 Last updated: 2026-06-29
 
 ## Current decision
@@ -79,7 +79,7 @@ Constellation UI / agent tools
         ↓
 boring-mcp facade
         ↓
-ConnectorCredentialProvider + ConnectorToolProvider
+thin ConnectorProvider seam
         ↓
 ComposioConnectorProvider  (hosted V0)
         ↓
@@ -166,6 +166,263 @@ provider credential storage/refresh
 native SaaS tool/action execution
 MCP/session/tool metadata surfaces
 ```
+
+## Exact implementation instructions from the live Composio Notion PoC
+
+Build V0 as a thin governed wrapper over Composio MCP sessions. Do **not** expose Composio raw meta-tools to agents or browser UI.
+
+### 1. Session creation
+
+Server-side only:
+
+```ts
+const session = await composio.create(composioUserId, {
+  mcp: true,
+  toolkits: [providerToolkit],
+  manageConnections: {
+    enable: true,
+    waitForConnections: false,
+  },
+});
+```
+
+Persist only non-secret references in source records:
+
+```txt
+sourceId
+workspaceId
+userId
+providerId
+credentialProvider = "composio-managed"
+composioUserId
+composioSessionId
+connectedAccountId when active
+status
+lastVerifiedAt
+```
+
+Treat `session.mcp.headers` as secret material. Store/resolve it only through the server-side connector provider or secret store. Never return it to browser, agent, logs, audit payloads, or workspace files.
+
+### 2. MCP connection
+
+Use MCP SDK / pi-mcp-adapter-style Streamable HTTP client plumbing against:
+
+```txt
+session.mcp.url
+session.mcp.headers
+```
+
+The live Notion PoC proved this shape connects and lists Composio's MCP tools.
+
+### 3. Provider connection onboarding
+
+When a source is unconnected, the server may call Composio's connection manager, but the UI must receive only:
+
+```txt
+providerId
+sourceId
+connectUrl
+expiresAt if known
+status = "needs_auth"
+```
+
+The UI opens the Composio Connect URL for the user. After completion, Constellation must re-check status server-side before enabling tools.
+
+### 4. Tool discovery
+
+Call `COMPOSIO_SEARCH_TOOLS` server-side to discover candidate tools and schemas. For Notion, the live PoC returned rich schemas for:
+
+```txt
+NOTION_SEARCH_NOTION_PAGE
+NOTION_GET_PAGE_MARKDOWN
+NOTION_RETRIEVE_PAGE
+NOTION_FETCH_DATA
+NOTION_FETCH_BLOCK_CONTENTS
+NOTION_FETCH_BLOCK_METADATA
+NOTION_FETCH_DATABASE
+NOTION_QUERY_DATABASE
+```
+
+Normalize these into boring-mcp tool descriptors. Agent-facing search returns summaries only; `mcp_tool_describe` returns the exact schema for one selected tool.
+
+### 5. Execution
+
+All execution goes through one server method:
+
+```txt
+mcp_readonly_call → normalized lookup → policy → COMPOSIO_MULTI_EXECUTE_TOOL
+```
+
+Use Composio's expected execution shape:
+
+```json
+{
+  "tools": [
+    {
+      "tool_slug": "NOTION_SEARCH_NOTION_PAGE",
+      "arguments": { "query": "", "page_size": 3, "filter_value": "page" }
+    }
+  ],
+  "thought": "Governed read-only call from boring-mcp",
+  "current_step": "mcp_readonly_call",
+  "current_step_metric": "governed_connector_call"
+}
+```
+
+Before calling Composio, enforce:
+
+```txt
+source ownership
+provider enabled
+connection active
+tool exists in normalized catalog
+tool is enabled
+tool risk is read
+input schema validation
+input byte limit
+rate/budget hooks
+```
+
+If any check fails, return a stable `MCP_*` error and do not call Composio.
+
+### 6. Redaction and audit
+
+Composio responses can include user, workspace, account, page, URL, and provider metadata. Treat these as sensitive contextual data.
+
+Every response/error must pass:
+
+```txt
+secret canary guard
+secret-like key redaction
+provider/session header leak assertion
+audit-safe payload summarization
+agent-safe result shaping
+```
+
+The live read call did not echo the Composio MCP session header, but the guard must remain mandatory.
+
+### 7. Raw Composio meta-tool exposure rule
+
+Never expose these raw tools directly to agents in hosted V0:
+
+```txt
+COMPOSIO_MANAGE_CONNECTIONS
+COMPOSIO_MULTI_EXECUTE_TOOL
+COMPOSIO_REMOTE_BASH_TOOL
+COMPOSIO_REMOTE_WORKBENCH
+COMPOSIO_SEARCH_TOOLS
+COMPOSIO_GET_TOOL_SCHEMAS
+```
+
+They are server-side implementation details behind boring-mcp. This is the key governance line.
+
+## MCP onboarding and management UX
+
+Yes: MCP must be manageable by the user, not only callable by agents. Hosted Constellation needs a first-class **MCP / Sources** area in the main left panel.
+
+### Placement
+
+Add a left-panel entry named one of:
+
+```txt
+Sources
+Context Sources
+MCP Sources
+```
+
+Preferred V0 label: **Sources**. It is more user-friendly than MCP while still backed by boring-mcp internally.
+
+### V0 user jobs
+
+The management area must let a user:
+
+```txt
+see approved provider templates: Notion, Airtable, Microsoft/SharePoint
+see connection state per provider: not connected, needs auth, connected, expired, error
+start/restart provider auth through Composio Connect
+see what the provider can do in read-only mode
+see which tools are enabled vs blocked
+run a safe probe/doctor
+disconnect/revoke a source
+understand whether context is user-owned or company-owned
+```
+
+### V0 screen layout
+
+Left tab: `Sources`
+
+Center panel: `MCP Sources`
+
+Recommended sections:
+
+```txt
+1. Header
+   - "Connect company and personal context safely"
+   - short sentence: "Sources are read-only by default and routed through governed MCP tools."
+
+2. Provider cards
+   - Notion
+   - Airtable
+   - SharePoint / Microsoft 365
+   Each card shows: status, scope owner, read-only badge, connect/manage button.
+
+3. Governance strip
+   - Read-only first
+   - No raw tokens to agents
+   - Audit + redaction
+   - Company and user contexts stay separate
+
+4. Tool catalog preview
+   - Search tools
+   - Describe schema
+   - Call read-only
+   - Mutating tools blocked
+
+5. Activity / audit preview
+   - last probe
+   - last read call
+   - blocked tool attempts
+```
+
+### Frontend implementation rule
+
+The UI must call Constellation-owned endpoints only. It must never call Composio directly from the browser with the Composio API key or MCP session headers.
+
+Allowed browser API shape:
+
+```txt
+GET  /api/mcp/sources
+POST /api/mcp/sources/:provider/start-connect
+GET  /api/mcp/sources/:sourceId/status
+POST /api/mcp/sources/:sourceId/probe
+POST /api/mcp/sources/:sourceId/disconnect
+GET  /api/mcp/sources/:sourceId/tools?query=...
+GET  /api/mcp/sources/:sourceId/tools/:toolName
+```
+
+Not allowed from browser:
+
+```txt
+Composio API key
+Composio MCP session headers
+provider OAuth tokens
+raw COMPOSIO_MULTI_EXECUTE_TOOL execution
+raw provider MCP URLs unless explicitly public and non-secret
+```
+
+### Product copy rule
+
+Use user-facing terms in navigation:
+
+```txt
+Sources
+Connect
+Read-only
+Company context
+Personal context
+```
+
+Use MCP/Composio/provider jargon only in advanced details, diagnostics, or engineering docs.
 
 ## Canonical V0 agent tool surface
 
@@ -295,7 +552,7 @@ check provider/source enabled
 check tool enabled and read-only
 validate input schema and size
 check budget/rate hooks
-call ConnectorToolProvider.callTool
+call ConnectorProvider.callTool
 redact provider result/error
 write audit event
 return safe result
@@ -700,10 +957,10 @@ If the implementation starts adding machinery beyond the thin seam, stop and sim
 - Record exact allowed tool/action candidates.
 - Verify no raw token exposure.
 
-### Phase 1 — interfaces and normalized catalog
+### Phase 1 — thin seam and normalized catalog
 
-- Add `ConnectorCredentialProvider` and `ConnectorToolProvider` contracts.
-- Implement `ComposioConnectorProvider` behind the contracts.
+- Add the single `ConnectorProvider` contract from the thin-seam section.
+- Implement `ComposioConnectorProvider` behind that contract.
 - Add normalized source/tool catalog models.
 - Add fake provider tests for search/describe/call.
 
@@ -714,9 +971,10 @@ If the implementation starts adding machinery beyond the thin seam, stop and sim
 - Enforce read-only allowlist and deny-by-default policy.
 - Add redaction and audit wrappers.
 
-### Phase 3 — product UI/routes
+### Phase 3 — Sources UI/routes
 
-- Integrations panel: connect/status/disconnect/probe.
+- Add the left-panel `Sources` entry and MCP Sources management area.
+- Provider cards: connect/status/disconnect/probe for Notion, Airtable, and Microsoft/SharePoint.
 - Tool catalog panel: show enabled/disabled and reasons.
 - No admin classification UI yet unless needed for launch.
 
