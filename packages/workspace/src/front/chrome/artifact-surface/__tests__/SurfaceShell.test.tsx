@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest"
-import { act, render, screen, waitFor } from "@testing-library/react"
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react"
 import { SurfaceShell, type SurfaceShellApi, type SurfaceShellProps } from "../SurfaceShell"
 import { RegistryProvider } from "../../../registry"
 import { PanelRegistry } from "../../../registry/PanelRegistry"
@@ -9,11 +9,15 @@ import { WORKSPACE_OPEN_PATH_SURFACE_KIND } from "../../../../shared/types/surfa
 
 let capturedSurfaceStorageKey: string | undefined
 let capturedAllowedPanels: string[] | undefined
+let capturedWorkbenchBridge: any
 let mockAddPanel = vi.fn()
 let mockGetPanel: (id: string) => unknown = vi.fn(() => undefined)
 
 vi.mock("../../workbench-left/WorkbenchLeftPane", () => ({
-  WorkbenchLeftPane: () => <div data-testid="mock-left-pane" />,
+  WorkbenchLeftPane: (props: any) => {
+    capturedWorkbenchBridge = props.bridge
+    return <div data-testid="mock-left-pane" />
+  },
 }))
 
 vi.mock("../ArtifactSurfacePane", async () => {
@@ -59,6 +63,7 @@ describe("SurfaceShell", () => {
   beforeEach(() => {
     capturedSurfaceStorageKey = undefined
     capturedAllowedPanels = undefined
+    capturedWorkbenchBridge = undefined
     mockAddPanel = vi.fn()
     mockGetPanel = vi.fn(() => undefined)
     localStorage.clear()
@@ -83,21 +88,27 @@ describe("SurfaceShell", () => {
     expect(capturedSurfaceStorageKey).toBe("workspace-b")
   })
 
-  it("updates allowed surface panels when a hot-loaded plugin panel registers after mount", async () => {
+  it("updates allowed surface panels when hot-loaded dockview/plugin-page panels register after mount", async () => {
     const panelRegistry = new PanelRegistry()
     renderSurface("workspace-a", {}, panelRegistry)
 
     expect(capturedAllowedPanels).not.toContain("hot-csv.panel")
+    expect(capturedAllowedPanels).not.toContain("hot-page.panel")
 
     act(() => {
       panelRegistry.register("hot-csv.panel", {
         title: "Hot CSV",
-        placement: "center",
+        placement: "shared-dockview",
+        component: () => null,
+      })
+      panelRegistry.register("hot-page.panel", {
+        title: "Hot Page",
+        placement: "workspace-page",
         component: () => null,
       })
     })
 
-    await waitFor(() => expect(capturedAllowedPanels).toContain("hot-csv.panel"))
+    await waitFor(() => expect(capturedAllowedPanels).toEqual(expect.arrayContaining(["hot-csv.panel", "hot-page.panel"])))
   })
 
   it("routes file opens through the latest matching surface resolver before activating stale tabs", async () => {
@@ -174,6 +185,40 @@ describe("SurfaceShell", () => {
     }))
   })
 
+  it("auto-collapses the workbench source pane to the rail when opening a workspace-page panel", async () => {
+    let surface: SurfaceShellApi | undefined
+    const panelRegistry = new PanelRegistry()
+    panelRegistry.register("plugin.page", { title: "Plugin Page", placement: "workspace-page", component: () => null })
+
+    renderSurface("workspace-a", { onReady: (api) => { surface = api } }, panelRegistry)
+    expect(screen.getByLabelText("Workbench left pane")).toBeInTheDocument()
+    await waitFor(() => expect(surface).toBeDefined())
+
+    act(() => {
+      surface?.openPanel({ id: "plugin.page", component: "plugin.page", title: "Plugin Page" })
+    })
+
+    expect(mockAddPanel).toHaveBeenCalledWith(expect.objectContaining({ id: "plugin.page", component: "plugin.page" }))
+    expect(screen.getByLabelText("Workbench left pane")).toHaveAttribute("data-boring-state", "rail")
+  })
+
+  it("keeps the workbench left pane open when opening a shared-dockview panel", async () => {
+    let surface: SurfaceShellApi | undefined
+    const panelRegistry = new PanelRegistry()
+    panelRegistry.register("plugin.chart", { title: "Plugin Chart", placement: "shared-dockview", component: () => null })
+
+    renderSurface("workspace-a", { onReady: (api) => { surface = api } }, panelRegistry)
+    expect(screen.getByLabelText("Workbench left pane")).toBeInTheDocument()
+    await waitFor(() => expect(surface).toBeDefined())
+
+    act(() => {
+      surface?.openPanel({ id: "plugin.chart", component: "plugin.chart", title: "Plugin Chart" })
+    })
+
+    expect(mockAddPanel).toHaveBeenCalledWith(expect.objectContaining({ id: "plugin.chart", component: "plugin.chart" }))
+    expect(screen.getByLabelText("Workbench left pane")).toBeInTheDocument()
+  })
+
   it("renders a reachable close-workbench button as an overlay regardless of tab state", async () => {
     // Regression: the close action used to live in dockview's right-header
     // slot, which gets squeezed/hidden when exactly one tab is open. It is now
@@ -189,22 +234,49 @@ describe("SurfaceShell", () => {
     expect(screen.queryByRole("button", { name: "Close workbench" })).not.toBeInTheDocument()
   })
 
-  it("exposes an API command to close the workbench left pane", async () => {
+  it("surface-backed source bridge opens panels and reports unsupported requests as errors", async () => {
+    const panelRegistry = new PanelRegistry()
+    panelRegistry.register("plugin.chart", { title: "Plugin Chart", placement: "shared-dockview", component: () => null })
+    renderSurface("workspace-a", {}, panelRegistry)
+    await waitFor(() => expect(capturedWorkbenchBridge).toBeDefined())
+
+    await expect(capturedWorkbenchBridge.openPanel({
+      id: "plugin.chart",
+      component: "plugin.chart",
+      title: "Plugin Chart",
+    })).resolves.toMatchObject({ status: "ok" })
+    expect(mockAddPanel).toHaveBeenCalledWith(expect.objectContaining({ id: "plugin.chart", component: "plugin.chart" }))
+
+    await expect(capturedWorkbenchBridge.openPanel({
+      id: "missing",
+      component: "missing.panel",
+      title: "Missing",
+    })).resolves.toMatchObject({ status: "error", error: { code: "INVALID_PANEL" } })
+    await expect(capturedWorkbenchBridge.closePanel("missing")).resolves.toMatchObject({ status: "error", error: { code: "PANEL_NOT_FOUND" } })
+  })
+
+  it("exposes an API command to collapse and restore the full left block", async () => {
     let surface: SurfaceShellApi | undefined
+    localStorage.setItem("workspace-a:sourcePaneOpen", "1")
     renderSurface("workspace-a", {
       onReady: (api) => {
         surface = api
       },
     })
 
-    expect(screen.getByLabelText("Workbench left pane")).toBeInTheDocument()
+    const sidebar = screen.getByLabelText("Workbench left pane")
+    expect(sidebar).toBeInTheDocument()
+    expect(sidebar).toHaveAttribute("data-boring-state", "expanded")
     await waitFor(() => expect(surface).toBeDefined())
 
     act(() => {
       surface?.closeWorkbenchLeftPane()
     })
 
-    expect(screen.queryByLabelText("Workbench left pane")).not.toBeInTheDocument()
-    expect(screen.getAllByRole("button", { name: "Show workspace menu" }).length).toBeGreaterThan(0)
+    expect(screen.getByLabelText("Workbench left pane")).toHaveAttribute("data-boring-state", "collapsed")
+
+    fireEvent.click(screen.getAllByRole("button", { name: "Show workspace menu" })[0]!)
+
+    expect(screen.getByLabelText("Workbench left pane")).toHaveAttribute("data-boring-state", "expanded")
   })
 })

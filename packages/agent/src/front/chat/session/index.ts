@@ -9,6 +9,14 @@ export {
 export { usePiSessions, type UsePiSessionsOptions, type UsePiSessionsResult, type PiSessionCreateInit, type PiSessionRefreshOptions } from './usePiSessions'
 export { SessionList, SessionBrowser, type SessionListProps } from './SessionList'
 export {
+  searchPiSessions,
+  parsePiSessionSearchQuery,
+  matchPiSessionSearch,
+  type PiSessionSearchItem,
+  type PiSessionSearchOptions,
+  type PiSessionSearchSortMode,
+} from './piSessionSearch'
+export {
   InitialDraftAutoSubmitGuard,
   createPiComposerPolicyController,
   readPiComposerSettings,

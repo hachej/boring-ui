@@ -5,6 +5,7 @@ import type {
   BoringFrontAPI,
   BoringFrontPanelRegistration,
   BoringFrontSurfaceResolverRegistration,
+  BoringFrontWorkspaceSourceRegistration,
 } from "@hachej/boring-workspace/plugin"
 import type { CatalogConfig } from "@hachej/boring-workspace"
 import { workspaceEvents } from "@hachej/boring-workspace/events"
@@ -54,6 +55,7 @@ const adapter: ExplorerDataSource = {
 
 interface CapturedRegistrations {
   panels: BoringFrontPanelRegistration<any>[]
+  workspaceSources: BoringFrontWorkspaceSourceRegistration<any>[]
   catalogs: CatalogConfig[]
   surfaceResolvers: BoringFrontSurfaceResolverRegistration[]
 }
@@ -61,6 +63,7 @@ interface CapturedRegistrations {
 function makeMockApi(): { api: BoringFrontAPI; captured: CapturedRegistrations } {
   const captured: CapturedRegistrations = {
     panels: [],
+    workspaceSources: [],
     catalogs: [],
     surfaceResolvers: [],
   }
@@ -73,7 +76,9 @@ function makeMockApi(): { api: BoringFrontAPI; captured: CapturedRegistrations }
     registerPanel: vi.fn((p) => {
       captured.panels.push(p)
     }),
-    registerWorkspaceSource: vi.fn(),
+    registerWorkspaceSource: vi.fn((s) => {
+      captured.workspaceSources.push(s)
+    }),
     registerPanelCommand: vi.fn(),
     registerSurfaceResolver: vi.fn((r) => {
       captured.surfaceResolvers.push(r)
@@ -84,7 +89,7 @@ function makeMockApi(): { api: BoringFrontAPI; captured: CapturedRegistrations }
 }
 
 describe("createDataCatalogPlugin (BoringFrontFactory)", () => {
-  it("registers workspace page, visualization panel, catalog, and surface resolver by default", async () => {
+  it("registers workspace source, visualization panel, catalog, and surface resolver by default", async () => {
     const factory = createDataCatalogPlugin({
       id: "warehouse-data",
       label: "Data",
@@ -94,15 +99,15 @@ describe("createDataCatalogPlugin (BoringFrontFactory)", () => {
     const { api, captured } = makeMockApi()
     await factory(api)
 
-    expect(captured.panels).toHaveLength(2)
-    expect(captured.panels[0]).toEqual(
+    expect(captured.workspaceSources).toHaveLength(1)
+    expect(captured.workspaceSources[0]).toEqual(
       expect.objectContaining({
         id: "warehouse-data-page",
         label: "Data",
-        placement: "workspace-page",
       }),
     )
-    expect(captured.panels[1]).toEqual(
+    expect(captured.panels).toHaveLength(1)
+    expect(captured.panels[0]).toEqual(
       expect.objectContaining({
         id: "warehouse-data-visualization",
         placement: "center",
@@ -123,7 +128,7 @@ describe("createDataCatalogPlugin (BoringFrontFactory)", () => {
     )
   })
 
-  it("passes workbench bridge context to workspace-page row selection", async () => {
+  it("passes workbench bridge context to workspace-source row selection", async () => {
     const onSelect = vi.fn()
     const factory = createDataCatalogPlugin({
       id: "metrics",
@@ -134,9 +139,9 @@ describe("createDataCatalogPlugin (BoringFrontFactory)", () => {
     const { api, captured } = makeMockApi()
     await factory(api)
 
-    const page = captured.panels.find((panel) => panel.id === "metrics-page")
-    if (!page) throw new Error("missing workspace page")
-    const Component = page.component as ComponentType<any>
+    const source = captured.workspaceSources.find((item) => item.id === "metrics-page")
+    if (!source) throw new Error("missing workspace source")
+    const Component = source.component as ComponentType<any>
     const bridge = { openFile: vi.fn() }
 
     render(<Component params={{ bridge }} />)
@@ -164,9 +169,9 @@ describe("createDataCatalogPlugin (BoringFrontFactory)", () => {
     const { api, captured } = makeMockApi()
     await factory(api)
 
-    const page = captured.panels.find((panel) => panel.id === "metrics-page")
-    if (!page) throw new Error("missing workspace page")
-    const Component = page.component as ComponentType<any>
+    const source = captured.workspaceSources.find((item) => item.id === "metrics-page")
+    if (!source) throw new Error("missing workspace source")
+    const Component = source.component as ComponentType<any>
     const chromeActionsElement = document.createElement("div")
 
     const { container } = render(
@@ -197,8 +202,9 @@ describe("createDataCatalogPlugin (BoringFrontFactory)", () => {
     const { api, captured } = makeMockApi()
     await factory(api)
 
-    expect(captured.panels).toHaveLength(1)
-    expect(captured.panels[0]).toEqual(expect.objectContaining({ id: "warehouse-data-page", placement: "workspace-page" }))
+    expect(captured.workspaceSources).toHaveLength(1)
+    expect(captured.workspaceSources[0]).toEqual(expect.objectContaining({ id: "warehouse-data-page" }))
+    expect(captured.panels).toHaveLength(0)
     expect(captured.catalogs).toHaveLength(1)
     expect(captured.surfaceResolvers).toHaveLength(1)
 

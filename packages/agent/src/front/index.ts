@@ -30,8 +30,19 @@ export {
   clearActiveSessionId,
   SessionList as PiSessionList,
   SessionBrowser as PiSessionBrowser,
+  searchPiSessions,
+  parsePiSessionSearchQuery,
+  matchPiSessionSearch,
 } from './chat/session'
-export type { UsePiSessionsOptions, UsePiSessionsResult, PiSessionCreateInit, SessionListProps } from './chat/session'
+export type {
+  UsePiSessionsOptions,
+  UsePiSessionsResult,
+  PiSessionCreateInit,
+  SessionListProps,
+  PiSessionSearchItem,
+  PiSessionSearchOptions,
+  PiSessionSearchSortMode,
+} from './chat/session'
 export {
   builtinCommands,
   createCommandRegistry,

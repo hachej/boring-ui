@@ -31,6 +31,7 @@ export function TopBar({
   className,
 }: TopBarProps) {
   const right = topBarRight ?? null
+  const primaryTitle = sessionTitle || appTitle
 
   return (
     <header
@@ -49,17 +50,9 @@ export function TopBar({
               aria-hidden="true"
               className="grid size-[22px] shrink-0 place-items-center rounded-sm bg-foreground text-[11px] font-semibold leading-none tracking-tight text-background"
             >
-              {(appTitle?.[0] ?? "B").toUpperCase()}
+              {(primaryTitle?.[0] ?? "B").toUpperCase()}
             </span>
-            {sessionTitle ? (
-              <>
-                <span className="shrink-0 text-[13px] font-medium leading-none tracking-tight text-foreground/65">{appTitle}</span>
-                <span aria-hidden="true" className="text-[13px] leading-none text-muted-foreground/45">·</span>
-                <span className="truncate text-[13px] font-medium leading-none tracking-tight text-foreground">{sessionTitle}</span>
-              </>
-            ) : (
-              <span className="truncate text-[13px] font-medium leading-none tracking-tight text-foreground">{appTitle}</span>
-            )}
+            <span className="truncate text-[13px] font-medium leading-none tracking-tight text-foreground">{primaryTitle}</span>
           </>
         )}
       </div>

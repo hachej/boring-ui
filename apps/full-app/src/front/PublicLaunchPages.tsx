@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef } from 'react'
 import { useConfig } from '@hachej/boring-core/front'
-import { definePanel, postUiCommand, workspaceLinkCommand } from '@hachej/boring-workspace'
+import { postUiCommand, workspaceLinkCommand } from '@hachej/boring-workspace'
 import { definePlugin } from '@hachej/boring-workspace/plugin'
 
 const calendlyUrl = 'https://calendly.com/julien-hurault-sumeo/30min'
@@ -306,24 +306,24 @@ export const publicLaunchPlugin = definePlugin({
   id: 'public-launch-pages',
   label: 'Public pages',
   panels: [
-    definePanel({
+    {
       id: 'Pages',
       title: 'Pages',
       placement: 'left-tab',
       defaultPanelId: 'public.launch.landing',
       component: PublicPagesPane,
-    }),
-    definePanel({
+    },
+    {
       id: 'public.launch.landing',
       title: 'Landing page',
       placement: 'center',
       component: LandingPageDemo,
-    }),
-    definePanel({
+    },
+    {
       id: 'public.launch.lets-chat',
       title: 'Let’s chat',
       placement: 'center',
       component: LetsChatDemo,
-    }),
+    },
   ],
 })

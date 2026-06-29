@@ -26,7 +26,7 @@ import { createBridge } from "../bridge/createBridge"
 import { postUiCommand } from "../bridge"
 import { createBridgeClient, type BridgeClient } from "../bridge/client"
 import { PanelRenderStatusProvider } from "../registry/PanelRenderStatusBoundary"
-import { CommandPalette } from "../components/CommandPalette"
+import { CommandPalette, type CommandPaletteSessionSearchConfig } from "../components/CommandPalette"
 import { events, workspaceEvents } from "../events"
 import { Toaster } from "../toast"
 import { useKeyboardShortcuts } from "../hooks/useKeyboardShortcuts"
@@ -390,6 +390,7 @@ export interface WorkspaceProviderProps {
    */
   frontPluginHotReload?: FrontPluginHotReloadMode
   fullPageBasePath?: string
+  commandPaletteSessionSearch?: CommandPaletteSessionSearchConfig
 }
 
 // ---------------------------------------------------------------------------
@@ -438,6 +439,7 @@ export function WorkspaceProvider({
   debug = false,
   frontPluginHotReload = (typeof import.meta !== 'undefined' && import.meta.env?.DEV) ? 'vite' as const : false,
   fullPageBasePath,
+  commandPaletteSessionSearch,
 }: WorkspaceProviderProps) {
   const storeRef = useRef<ReturnType<typeof createWorkspaceStore> | null>(null)
   if (!storeRef.current) {
@@ -670,7 +672,11 @@ export function WorkspaceProvider({
                       catalogs={catalogs}
                     />
                     <WorkspaceShortcuts store={store} />
-                    <CommandPalette />
+                    <CommandPalette
+                      sessionSearch={commandPaletteSessionSearch}
+                      apiBaseUrl={apiBaseUrl}
+                      authHeaders={resolvedAuthHeaders}
+                    />
                     <Toaster />
                     {children}
                     {(typeof import.meta !== 'undefined' && import.meta.env?.DEV) && <PluginInspector plugins={pluginMetas} />}

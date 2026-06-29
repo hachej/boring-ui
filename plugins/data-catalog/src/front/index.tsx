@@ -13,6 +13,7 @@ import type {
   CatalogConfig,
   LeftTabParams,
   WorkspaceBridge,
+  WorkspaceSourceProps,
 } from "@hachej/boring-workspace"
 import type { PaneProps } from "@hachej/boring-workspace"
 import {
@@ -66,8 +67,8 @@ export type {
 /**
  * Builds a `BoringFrontFactoryWithId` for the data-catalog plugin.
  * The factory captures `options` in a closure and registers the
- * configured workspace page, visualization panel, catalog entry, and
- * surface resolver when the workspace calls it.
+ * configured workspace source, visualization panel, catalog entry, and
+ * surface resolver imperatively when the workspace calls it.
  *
  * Each contribution is opt-out via the `include*` flags so host apps
  * can compose a subset (e.g. catalog-only without a visualization
@@ -82,15 +83,15 @@ export function createDataCatalogPlugin(
   const label = options.label ?? "Data"
   const catalogId = options.catalogId ?? id
   const catalogLabel = options.catalogLabel ?? label
-  const workspacePageId = options.workspacePageId ?? options.leftTabId ?? `${id}-page`
-  const workspacePageTitle = options.workspacePageTitle ?? options.leftTabTitle ?? label
-  const workspacePageIcon = options.workspacePageIcon ?? options.leftTabIcon ?? Database
+  const workspaceSourceId = options.workspacePageId ?? options.leftTabId ?? `${id}-page`
+  const workspaceSourceTitle = options.workspacePageTitle ?? options.leftTabTitle ?? label
+  const workspaceSourceIcon = options.workspacePageIcon ?? options.leftTabIcon ?? Database
   const visualizationPanelId = options.visualizationPanelId ?? `${id}-visualization`
   const visualizationTitle = options.visualizationTitle ?? `${label} View`
   const surfaceKind = options.surfaceKind ?? DATA_CATALOG_ROW_SURFACE_KIND
   const source = options.source ?? "app"
   const includeVisualizationPanel = options.includeVisualizationPanel ?? true
-  const includeWorkspacePage = options.includeWorkspacePage ?? options.includeLeftTab ?? true
+  const includeWorkspaceSource = options.includeWorkspacePage ?? options.includeLeftTab ?? true
   const includeCatalog = options.includeCatalog ?? true
   const includeSurfaceResolver =
     options.includeSurfaceResolver ?? (includeVisualizationPanel && !options.onSelect)
@@ -102,7 +103,7 @@ export function createDataCatalogPlugin(
       ? createDataCatalogOpenHandler({ catalogId, surfaceKind })
       : () => {})
 
-  function DataCatalogWorkspacePage({ params, className }: PaneProps<LeftTabParams>) {
+  function DataCatalogWorkspaceSource({ params, className }: WorkspaceSourceProps<LeftTabParams>) {
     const { query, controlled } = useDataCatalogQuery(params)
     const bridge = params?.bridge as WorkspaceBridge | undefined
     const handleSelect = (row: ExplorerItem) => onSelect(row, { params, bridge })
@@ -116,8 +117,8 @@ export function createDataCatalogPlugin(
         getDragPayload={options.getDragPayload}
         emptyState={emptyState}
         searchPlaceholder={searchPlaceholder}
-        toolbarTitle={usesOuterChromeSearch ? undefined : workspacePageTitle}
-        toolbarIcon={usesOuterChromeSearch ? undefined : workspacePageIcon}
+        toolbarTitle={usesOuterChromeSearch ? undefined : workspaceSourceTitle}
+        toolbarIcon={usesOuterChromeSearch ? undefined : workspaceSourceIcon}
         query={usesOuterChromeSearch ? query : undefined}
         searchable={!usesOuterChromeSearch}
         toolbarPortalElement={usesOuterChromeSearch ? params?.chromeActionsElement : undefined}
@@ -139,7 +140,7 @@ export function createDataCatalogPlugin(
     )
     // Pass `params` so consumers can read panel state when handling a
     // row activation from inside the visualization panel itself (the
-    // workspace-page path passes `{ params, bridge }`; this aligns
+    // left-tab path already passes `{ params, bridge }`; this aligns
     // the two and unblocks bridge-aware callers from the panel route).
     const handleSelect = (nextRow: ExplorerItem) => onSelect(nextRow, { params })
 
@@ -176,13 +177,12 @@ export function createDataCatalogPlugin(
     )
   }
 
-  const workspacePage = includeWorkspacePage
+  const workspaceSource = includeWorkspaceSource
     ? {
-        id: workspacePageId,
-        label: workspacePageTitle,
-        icon: workspacePageIcon,
-        component: DataCatalogWorkspacePage,
-        placement: "workspace-page" as const,
+        id: workspaceSourceId,
+        label: workspaceSourceTitle,
+        icon: workspaceSourceIcon,
+        component: DataCatalogWorkspaceSource,
         source,
       }
     : undefined
@@ -223,7 +223,8 @@ export function createDataCatalogPlugin(
   return definePlugin({
     id,
     label,
-    panels: [workspacePage, visualizationPanel].filter((panel): panel is NonNullable<typeof workspacePage> | NonNullable<typeof visualizationPanel> => Boolean(panel)),
+    workspaceSources: workspaceSource ? [workspaceSource] : [],
+    panels: visualizationPanel ? [visualizationPanel] : [],
     catalogs: catalog ? [catalog] : [],
     surfaceResolvers: resolver ? [resolver] : [],
   })

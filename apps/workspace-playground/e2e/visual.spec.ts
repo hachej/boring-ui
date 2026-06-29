@@ -12,7 +12,7 @@ const STORAGE_KEY = "boring-ui-v2:layout:playground:workspace"
 
 async function openPalette(page: import("@playwright/test").Page) {
   await page.goto("/")
-  await expect(page.getByRole("banner", { name: /app top bar/i })).toBeVisible({ timeout: 10_000 })
+  await expect(page.locator('aside[aria-label="App navigation"]')).toBeVisible({ timeout: 10_000 })
   await page.keyboard.press("ControlOrMeta+KeyK")
   await expect(
     page.getByRole("dialog", { name: /command palette/i }),
@@ -84,18 +84,13 @@ test.describe("workspace shell resize chrome", () => {
     }, STORAGE_KEY)
     await page.reload()
     await page.waitForTimeout(500)
-    // Open both panes so handles render.
-    const sessions = page.getByRole("button", { name: /sessions/i })
-    if (await sessions.isVisible().catch(() => false)) await sessions.click()
-    const workbench = page.getByRole("button", { name: /workbench/i })
-    if (await workbench.isVisible().catch(() => false)) await workbench.click()
-    await page.waitForTimeout(400)
+    await expect(page.locator('aside[aria-label="App navigation"]')).toBeVisible({ timeout: 10_000 })
   })
 
-  test("resize handles tint with the brand accent (orange) on hover", async ({
+  test("resize handles tint on hover", async ({
     page,
   }) => {
-    const handle = page.locator('[aria-label="Resize workbench"]')
+    const handle = page.locator('[aria-label="Resize app navigation"]')
     await expect(handle).toBeVisible()
 
     const accent = await page.evaluate(() => {
@@ -106,20 +101,14 @@ test.describe("workspace shell resize chrome", () => {
     })
     expect(accent).toBeTruthy()
 
-    // Hover: the visible tint is painted on the handle's pseudo-element.
-    // The handle element itself intentionally remains transparent so it
-    // does not create a wide block of color.
     const box = await handle.boundingBox()
     if (!box) throw new Error("no bounding box for handle")
     await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2)
-    await page.waitForTimeout(400) // hover transition + 150ms delay
+    await page.waitForTimeout(400) // hover transition
 
-    const bgColor = await handle.evaluate(
-      (el) => getComputedStyle(el, "::after").backgroundColor,
+    const bgColor = await handle.locator("span").evaluate(
+      (el) => getComputedStyle(el).backgroundColor,
     )
-    // After hover, the pseudo-element background should not be transparent.
-    // (oklch values are reported as oklch(...) by getComputedStyle in modern
-    // Chromium — accept any non-zero color.)
     expect(bgColor).not.toMatch(/(rgba\(0,\s*0,\s*0,\s*0\)|transparent)/)
   })
 })
