@@ -45,6 +45,12 @@ describe("createCapturingBoringFrontAPI", () => {
       surfaceResolvers: [{ kind: "macro.open", title: "Open macro" }],
     })
   })
+
+  it("rejects removed legacy left source panel placements", () => {
+    const api = createCapturingBoringFrontAPI({ pluginId: "legacy" })
+    expect(() => api.registerPanel({ id: "files", label: "Files", component: TestPanel, placement: "left-tab" })).toThrow(/workspaceSources/)
+    expect(() => api.registerPanel({ id: "source", label: "Source", component: TestPanel, placement: "workspace-source" })).toThrow(/workspaceSources/)
+  })
 })
 
 describe("captureFrontPlugin", () => {

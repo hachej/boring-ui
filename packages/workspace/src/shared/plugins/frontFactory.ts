@@ -272,6 +272,13 @@ export function createCapturingBoringFrontAPI(options: { pluginId?: string } = {
       catalogs.push(registration)
     },
     registerPanel(registration) {
+      if (registration.placement === "left-tab" || registration.placement === "workspace-source") {
+        throw new PluginError(
+          "validation",
+          `plugin "${options.pluginId ?? "<plugin>"}" uses removed panel placement "${registration.placement}" for "${registration.id}". ` +
+            "Use registerWorkspaceSource / definePlugin({ workspaceSources }) instead.",
+        )
+      }
       claim("panel", registration.id)
       panels.push(registration)
     },
