@@ -8,11 +8,16 @@ import type {
   WorkspaceRuntimeResource,
   WorkspaceRuntimeResourceInput,
   WorkspaceRuntimeResourceSelector,
+  WorkspaceInboxItem,
+  WorkspaceInboxItemInput,
+  WorkspaceInboxItemStatus,
+  WorkspaceInboxItemViewState,
   MemberRole,
   User,
 } from '../../../shared/types.js'
 import { ERROR_CODES, HttpError } from '../../../shared/errors.js'
 import type { LocalUserStore } from './LocalUserStore.js'
+import { inboxIdempotencyHash } from './workspaceInboxHash.js'
 
 export class LocalWorkspaceStore implements WorkspaceStore {
   private workspaces = new Map<string, Workspace>()
@@ -21,6 +26,9 @@ export class LocalWorkspaceStore implements WorkspaceStore {
   private runtimes = new Map<string, WorkspaceRuntime>()
   private runtimeResources = new Map<string, WorkspaceRuntimeResource>()
   private wsSettings = new Map<string, Map<string, { value: string; updatedAt: string }>>()
+  private inboxItems = new Map<string, WorkspaceInboxItem>()
+  private inboxIdempotency = new Map<string, { itemId: string; hash: string }>()
+  private inboxViewStates = new Map<string, WorkspaceInboxItemViewState>()
   private uiStates = new Map<string, Record<string, unknown>>() // key: `${userId}:${workspaceId}`
 
   constructor(private userStore: LocalUserStore) {}
@@ -314,6 +322,79 @@ export class LocalWorkspaceStore implements WorkspaceStore {
       wsSettings.set(key, { value: JSON.stringify(value), updatedAt: now })
     }
     return this.getWorkspaceSettings(workspaceId)
+  }
+
+  async listInboxItems(
+    workspaceId: string,
+    userId: string,
+    filters: { status?: WorkspaceInboxItemStatus | 'all'; kind?: WorkspaceInboxItem['kind'] } = {},
+  ): Promise<{ items: WorkspaceInboxItem[]; viewState: WorkspaceInboxItemViewState[] }> {
+    const status = filters.status ?? 'open'
+    const items = Array.from(this.inboxItems.values())
+      .filter((item) => item.workspaceId === workspaceId)
+      .filter((item) => status === 'all' || item.status === status)
+      .filter((item) => !filters.kind || item.kind === filters.kind)
+      .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))
+    const viewState = Array.from(this.inboxViewStates.entries())
+      .filter(([key]) => key.startsWith(`${workspaceId}:${userId}:`))
+      .map(([, state]) => state)
+    return { items, viewState }
+  }
+
+  async createInboxItem(
+    workspaceId: string,
+    input: WorkspaceInboxItemInput,
+    idempotencyKey: string,
+  ): Promise<{ item: WorkspaceInboxItem; created: boolean; conflict?: 'idempotency' | 'source' }> {
+    const hash = inboxIdempotencyHash(input)
+    const idempotencyKeyMap = `${workspaceId}:${idempotencyKey}`
+    const existingByKey = this.inboxIdempotency.get(idempotencyKeyMap)
+    if (existingByKey) {
+      const item = this.inboxItems.get(existingByKey.itemId)!
+      return existingByKey.hash === hash ? { item, created: false } : { item, created: false, conflict: 'idempotency' }
+    }
+    const existingBySource = Array.from(this.inboxItems.values()).find((item) => (
+      item.workspaceId === workspaceId && item.sourceType === input.sourceType && item.sourceId === input.sourceId
+    ))
+    if (existingBySource) return { item: existingBySource, created: false, conflict: 'source' }
+    const now = new Date().toISOString()
+    const item: WorkspaceInboxItem = {
+      id: randomUUID(),
+      workspaceId,
+      kind: input.kind,
+      status: 'open',
+      title: input.title,
+      description: input.description,
+      sourceType: input.sourceType,
+      sourceId: input.sourceId,
+      sourceLabel: input.sourceLabel,
+      sessionId: input.sessionId ?? null,
+      targetLabel: input.targetLabel ?? '',
+      artifact: input.artifact ?? null,
+      priority: input.priority ?? 0,
+      actions: input.actions ?? [],
+      createdAt: now,
+      updatedAt: now,
+    }
+    this.inboxItems.set(item.id, item)
+    this.inboxIdempotency.set(idempotencyKeyMap, { itemId: item.id, hash })
+    return { item, created: true }
+  }
+
+  async updateInboxItemStatus(workspaceId: string, itemId: string, status: WorkspaceInboxItemStatus): Promise<WorkspaceInboxItem | null> {
+    const item = this.inboxItems.get(itemId)
+    if (!item || item.workspaceId !== workspaceId) return null
+    const updated = { ...item, status, updatedAt: new Date().toISOString() }
+    this.inboxItems.set(itemId, updated)
+    return updated
+  }
+
+  async putInboxItemViewState(workspaceId: string, userId: string, itemId: string, state: { pinned?: boolean }): Promise<WorkspaceInboxItemViewState | null> {
+    const item = this.inboxItems.get(itemId)
+    if (!item || item.workspaceId !== workspaceId) return null
+    const viewState = { itemId, pinned: state.pinned ?? false }
+    this.inboxViewStates.set(`${workspaceId}:${userId}:${itemId}`, viewState)
+    return viewState
   }
 
   async getWorkspaceRuntime(workspaceId: string): Promise<WorkspaceRuntime | null> {

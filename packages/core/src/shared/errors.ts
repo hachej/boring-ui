@@ -26,6 +26,7 @@ export const ERROR_CODES = {
   // Validation + infra
   NOT_FOUND: 'not_found',
   VALIDATION_FAILED: 'validation_failed',
+  CONFLICT: 'conflict',
   CONFIG_VALIDATION_FAILED: 'config_validation_failed',
   CONFIG_FETCH_FAILED: 'config_fetch_failed',
   RATE_LIMITED: 'rate_limited',
@@ -37,6 +38,15 @@ export const ERROR_CODES = {
   PAYMENT_REQUIRED: 'payment_required',
   INVALID_PACK: 'invalid_pack',
   CHECKOUT_FAILED: 'checkout_failed',
+
+  // Workspace inbox external API
+  INBOX_UNAUTHORIZED: 'inbox_unauthorized',
+  INBOX_FORBIDDEN: 'inbox_forbidden',
+  INBOX_NOT_FOUND: 'inbox_not_found',
+  INBOX_INVALID_REQUEST: 'inbox_invalid_request',
+  INBOX_IDEMPOTENCY_CONFLICT: 'inbox_idempotency_conflict',
+  INBOX_CONFLICT: 'inbox_conflict',
+  INBOX_STORE_UNAVAILABLE: 'inbox_store_unavailable',
 } as const
 
 export type ErrorCode = (typeof ERROR_CODES)[keyof typeof ERROR_CODES]
