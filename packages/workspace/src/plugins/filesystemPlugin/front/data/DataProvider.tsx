@@ -12,6 +12,8 @@ interface DataProviderProps {
   onAuthError?: (statusCode: number) => void
   timeout?: number
   client?: FetchClient
+  /** Disable workspace file-event streams for constrained public/share surfaces. */
+  fileEvents?: boolean
   children: ReactNode
 }
 
@@ -43,6 +45,7 @@ export function DataProvider({
   onAuthError,
   timeout,
   client: providedClient,
+  fileEvents = true,
   children,
 }: DataProviderProps) {
   const queryClientRef = useRef<QueryClient | null>(null)
@@ -71,7 +74,7 @@ export function DataProvider({
       <ApiBaseUrlContext.Provider value={apiBaseUrl}>
         <WorkspaceRequestIdContext.Provider value={workspaceRequestId}>
           <FetchClientContext.Provider value={client}>
-            <FileEventInvalidationMount />
+            {fileEvents ? <FileEventInvalidationMount /> : null}
             {children}
           </FetchClientContext.Provider>
         </WorkspaceRequestIdContext.Provider>

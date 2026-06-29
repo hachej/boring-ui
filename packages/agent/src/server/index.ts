@@ -62,6 +62,13 @@ export type {
 // the whole agent app. Used by workspace's FetchClient ↔ server contract tests.
 export { fileRoutes } from './http/routes/file'
 export {
+  collectMarkdownAssetPaths,
+  createMarkdownReviewShare,
+  registerPublicShareRoutes,
+  type PublicShareRecord,
+  type PublicShareCapabilities,
+} from './http/routes/publicShare'
+export {
   provisionRuntimeWorkspace,
   type ProvisionRuntimeWorkspaceOptions,
   type RuntimeWorkspaceProvisioningResult,

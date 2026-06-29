@@ -51,6 +51,16 @@ export function workspaceIdFromCliUrl(pathname: string): string | null {
   }
 }
 
+export function shareTokenFromCliUrl(pathname: string): string | null {
+  const match = pathname.match(/^\/share\/([^/?#]+)\/editor\/?$/)
+  if (!match?.[1]) return null
+  try {
+    return decodeURIComponent(match[1])
+  } catch {
+    return match[1]
+  }
+}
+
 const CHAT_SESSION_QUERY_PARAM = "session"
 
 // Read-only, for backward compatibility with legacy deep links. The workspace
@@ -112,6 +122,9 @@ export function CliVersionBadge({ version }: { version?: string | null }) {
 }
 
 export function CliWorkspaceShell() {
+  const shareToken = shareTokenFromCliUrl(window.location.pathname)
+  if (shareToken) return <WorkspaceSingleton.PublicMarkdownReviewApp token={shareToken} />
+
   const [projectName, setProjectName] = useState("Workspace")
   const [workspacesMode, setWorkspacesMode] = useState(false)
   const [cliVersion, setCliVersion] = useState<string | null>(null)
