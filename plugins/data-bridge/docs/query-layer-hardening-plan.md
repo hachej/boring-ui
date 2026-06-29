@@ -19,7 +19,8 @@ Keep `@hachej/data-bridge` as a separate trusted server plugin, but keep the V0 
 
 1. One generic bridge operation: `data.v1.query.run`.
 2. A small typed query union:
-   - `bsl` for BSL/Ibis expression strings evaluated by BSL `safe_eval`.
+   - `bsl-dashboard` for dashboard/semantic aggregate requests.
+   - `bsl-python` for trusted runtime/server BSL expression execution.
    - `sql` for read-only adapter-backed SQL execution.
 3. A server-side adapter registry supplied by the host/plugin options.
 4. No direct ClickHouse dependency in `@hachej/data-bridge` V0.
@@ -36,15 +37,15 @@ Keep `@hachej/data-bridge` as a separate trusted server plugin, but keep the V0 
 - Add read-only SQL guard inspired by boring-macro:
   - allow first token: `SELECT`, `WITH`, `EXPLAIN`, `DESCRIBE`, `SHOW`, `DESC`.
   - reject semicolon multi-statements.
-  - normalize an effective bounded `limit` before adapter execution.
-  - defensively truncate adapter output to the effective limit even if the adapter ignores it.
+  - enforce `limit` bounds.
 - Add capability checks:
   - all callers need `data:read` for `data.v1.query.run`.
   - SQL additionally needs `data:sql-query`.
   - SQL source can additionally require adapter-specific capabilities such as `data:macro-clickhouse`.
-  - `bsl` uses BSL's existing `safe_eval` with `sm`, named models, `ibis`, and `_` for chained queries such as `.order_by(ibis.desc(...)).limit(...)`.
-- Do not add a separate JSON-to-BSL query compiler in data-bridge; dashboard specs should use BSL query strings or SQL.
+  - direct `bsl-python` remains runtime/server only with `data:bsl-query-string`.
+- Keep browser dashboard callers on safe `bsl-dashboard` / `workspace-file` path unless explicitly granted SQL capability.
 - Add focused tests for:
+  - current workspace-file dashboard query still works with `data:read`.
   - SQL rejects non-read-only and multi-statement input before adapter execution.
   - SQL requires `data:sql-query` and adapter-specific capabilities.
   - SQL adapter receives normalized query/limit and returns `DataBridgeTableResult`.
@@ -68,11 +69,8 @@ createDataBridgeServerPlugin({
   sqlAdapters: {
     "macro-clickhouse": {
       requiredCapabilities: ["data:macro-clickhouse"],
-      execute: async ({ query, limit }) => {
-        // Follow-up Macro migration should teach DataService.executeSql to
-        // apply the limit at the ClickHouse query layer where possible. Until
-        // then, data-bridge also truncates defensively after adapter return.
-        const result = await macroDataService.executeSql(query.sql, { limit })
+      execute: async ({ query }) => {
+        const result = await macroDataService.executeSql(query.sql)
         if (!result.ok) throw new Error(result.error)
         return {
           kind: "data-bridge.table",
