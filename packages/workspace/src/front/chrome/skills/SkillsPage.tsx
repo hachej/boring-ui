@@ -5,6 +5,7 @@ import { FileText, RefreshCw, Sparkles, X } from "lucide-react"
 import { IconButton } from "@hachej/boring-ui-kit"
 import { cn } from "../../lib/utils"
 import { postUiCommand } from "../../bridge"
+import { ManagementOverlaySurface } from "../management/ManagementOverlaySurface"
 import { useWorkspacePluginClient } from "../../plugin/useWorkspacePluginClient"
 import type { PaneProps } from "../../registry/types"
 
@@ -74,50 +75,45 @@ export function SkillsPage({ onClose, headerInsetStart = false, headerInsetEnd =
   )
 
   return (
-    <div data-boring-workspace-part="skills-page" className="flex h-full min-h-0 flex-col bg-background">
-      <header className={cn(
-        "flex h-12 shrink-0 items-center justify-between border-b border-border/60",
-        headerInsetStart ? "pl-12" : "pl-4",
-        headerInsetEnd ? "pr-16" : "pr-4",
-      )}>
-        <div className="flex min-w-0 items-center gap-2">
-          <span className="grid size-7 place-items-center rounded-lg bg-[color:oklch(from_var(--accent)_l_c_h/0.12)] text-[color:var(--accent)]">
-            <Sparkles className="h-4 w-4" strokeWidth={1.75} aria-hidden="true" />
-          </span>
-          <div className="min-w-0">
-            <h2 className="truncate text-sm font-semibold tracking-tight text-foreground">Skills</h2>
-            <p className="truncate text-xs text-muted-foreground">Workspace skills available to slash commands</p>
-          </div>
-        </div>
-        <div className="flex shrink-0 items-center gap-0.5">
+    <ManagementOverlaySurface
+      part="skills-page"
+      title="Skills"
+      description="Workspace skills available to slash commands"
+      headerInsetStart={headerInsetStart}
+      headerInsetEnd={headerInsetEnd}
+      icon={(
+        <span className="grid size-7 place-items-center rounded-lg bg-[color:oklch(from_var(--accent)_l_c_h/0.12)] text-[color:var(--accent)]">
+          <Sparkles className="h-4 w-4" strokeWidth={1.75} aria-hidden="true" />
+        </span>
+      )}
+      actions={(<>
+        <IconButton
+          type="button"
+          variant="ghost"
+          size="icon-xs"
+          onClick={() => void loadSkills(true)}
+          disabled={state.status === "loading"}
+          aria-label="Refresh skills"
+          title="Refresh skills"
+          className="text-muted-foreground hover:text-foreground"
+        >
+          <RefreshCw className={cn("size-3", state.status === "loading" && "animate-spin")} strokeWidth={1.75} />
+        </IconButton>
+        {onClose ? (
           <IconButton
             type="button"
             variant="ghost"
             size="icon-xs"
-            onClick={() => void loadSkills(true)}
-            disabled={state.status === "loading"}
-            aria-label="Refresh skills"
-            title="Refresh skills"
+            onClick={onClose}
+            aria-label="Close skills"
+            title="Close"
             className="text-muted-foreground hover:text-foreground"
           >
-            <RefreshCw className={cn("size-3", state.status === "loading" && "animate-spin")} strokeWidth={1.75} />
+            <X className="size-3" strokeWidth={1.75} />
           </IconButton>
-          {onClose ? (
-            <IconButton
-              type="button"
-              variant="ghost"
-              size="icon-xs"
-              onClick={onClose}
-              aria-label="Close skills"
-              title="Close"
-              className="text-muted-foreground hover:text-foreground"
-            >
-              <X className="size-3" strokeWidth={1.75} />
-            </IconButton>
-          ) : null}
-        </div>
-      </header>
-
+        ) : null}
+      </>)}
+    >
       <div className="boring-scrollbar-discreet min-h-0 flex-1 overflow-y-auto p-4" aria-live="polite">
         {state.status === "error" ? (
           <div className="mb-4 rounded-lg border border-destructive/30 bg-destructive/8 px-3 py-2 text-sm text-destructive">
@@ -167,6 +163,6 @@ export function SkillsPage({ onClose, headerInsetStart = false, headerInsetEnd =
           </ul>
         )}
       </div>
-    </div>
+    </ManagementOverlaySurface>
   )
 }

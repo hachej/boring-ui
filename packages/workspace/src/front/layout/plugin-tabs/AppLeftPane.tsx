@@ -36,6 +36,15 @@ export interface AppLeftPaneProject {
 export type AppLeftPaneLayoutMode = "single-project" | "multi-project"
 export type AppLeftPaneHeaderMode = "full" | "workspace" | "hidden"
 
+export interface AppLeftPaneAction {
+  id: string
+  label: string
+  icon: ReactNode
+  onClick: () => void
+  trailing?: ReactNode
+  emphasis?: boolean
+}
+
 export interface AppLeftPaneProps {
   width?: number
   appTitle?: string
@@ -70,6 +79,8 @@ export interface AppLeftPaneProps {
   showSkills?: boolean
   onOpenPlugins: () => void
   onOpenSkills: () => void
+  /** Additional primary app-left actions supplied by the host/app/plugin shell. */
+  actions?: readonly AppLeftPaneAction[]
   /**
    * single-project: workspace shown below the app-title logo, no Workspaces
    * section — just the session list. multi-project: the Workspaces/projects
@@ -109,6 +120,7 @@ export function AppLeftPane({
   showSkills = true,
   onOpenPlugins,
   onOpenSkills,
+  actions = [],
   layoutMode = "single-project",
 }: AppLeftPaneProps) {
   const openSet = useMemo(() => new Set(openSessionIds), [openSessionIds])
@@ -239,6 +251,16 @@ export function AppLeftPane({
       <nav className="shrink-0 space-y-0.5 px-2 pb-1 pt-1" aria-label="Primary workspace actions">
         <PrimaryAction icon={<Plus className="h-4 w-4" strokeWidth={2} />} label="New chat" onClick={onCreateSession} emphasis />
         <PrimaryAction icon={<Search className="h-4 w-4" strokeWidth={1.75} />} label="Search" onClick={onOpenCommandPalette} trailing={<KbdHint keys="⌘K" />} />
+        {actions.map((action) => (
+          <PrimaryAction
+            key={action.id}
+            icon={action.icon}
+            label={action.label}
+            onClick={action.onClick}
+            trailing={action.trailing}
+            emphasis={action.emphasis}
+          />
+        ))}
         {showPlugins ? <PrimaryAction icon={<Plug className="h-4 w-4" strokeWidth={1.75} />} label="Plugins" onClick={onOpenPlugins} /> : null}
         {showSkills ? <PrimaryAction icon={<Sparkles className="h-4 w-4" strokeWidth={1.75} />} label="Skills" onClick={onOpenSkills} /> : null}
       </nav>

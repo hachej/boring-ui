@@ -6,6 +6,7 @@ import { IconButton } from "@hachej/boring-ui-kit"
 import { WORKSPACE_AGENT_PLUGINS_RELOADED_EVENT } from "../../agentPlugins/reloadEvent"
 import { cn } from "../../lib/utils"
 import { useWorkspacePluginClient } from "../../plugin/useWorkspacePluginClient"
+import { ManagementOverlaySurface } from "../management/ManagementOverlaySurface"
 
 export interface PluginsOverlayProps {
   onClose: () => void
@@ -159,48 +160,43 @@ export function PluginsOverlay({ onClose, onReloadExternalPlugins, headerInsetSt
   }, [loadPlugins, onReloadExternalPlugins])
 
   return (
-    <div data-boring-workspace-part="plugins-overlay" className="flex h-full min-h-0 flex-col bg-background">
-      <header className={cn(
-        "flex h-12 shrink-0 items-center justify-between border-b border-border/60",
-        headerInsetStart ? "pl-12" : "pl-4",
-        headerInsetEnd ? "pr-16" : "pr-4",
-      )}>
-        <div className="flex min-w-0 items-center gap-2">
-          <span className="grid size-7 place-items-center rounded-lg bg-foreground/[0.06] text-muted-foreground">
-            <Plug className="h-4 w-4" strokeWidth={1.75} aria-hidden="true" />
-          </span>
-          <div className="min-w-0">
-            <h2 className="truncate text-sm font-semibold tracking-tight text-foreground">Plugins</h2>
-            <p className="truncate text-xs text-muted-foreground">External plugins loaded for this workspace</p>
-          </div>
-        </div>
-        <div className="flex shrink-0 items-center gap-0.5">
-          <IconButton
-            type="button"
-            variant="ghost"
-            size="icon-xs"
-            onClick={() => void reload()}
-            disabled={reloading || state.status === "loading"}
-            aria-label="Reload plugins"
-            title="Reload plugins"
-            className="text-muted-foreground hover:text-foreground"
-          >
-            <RefreshCw className={cn("size-3", (reloading || state.status === "loading") && "animate-spin")} strokeWidth={1.75} />
-          </IconButton>
-          <IconButton
-            type="button"
-            variant="ghost"
-            size="icon-xs"
-            onClick={onClose}
-            aria-label="Close plugins"
-            title="Close"
-            className="text-muted-foreground hover:text-foreground"
-          >
-            <X className="size-3" strokeWidth={1.75} />
-          </IconButton>
-        </div>
-      </header>
-
+    <ManagementOverlaySurface
+      part="plugins-overlay"
+      title="Plugins"
+      description="External plugins loaded for this workspace"
+      headerInsetStart={headerInsetStart}
+      headerInsetEnd={headerInsetEnd}
+      icon={(
+        <span className="grid size-7 place-items-center rounded-lg bg-foreground/[0.06] text-muted-foreground">
+          <Plug className="h-4 w-4" strokeWidth={1.75} aria-hidden="true" />
+        </span>
+      )}
+      actions={(<>
+        <IconButton
+          type="button"
+          variant="ghost"
+          size="icon-xs"
+          onClick={() => void reload()}
+          disabled={reloading || state.status === "loading"}
+          aria-label="Reload plugins"
+          title="Reload plugins"
+          className="text-muted-foreground hover:text-foreground"
+        >
+          <RefreshCw className={cn("size-3", (reloading || state.status === "loading") && "animate-spin")} strokeWidth={1.75} />
+        </IconButton>
+        <IconButton
+          type="button"
+          variant="ghost"
+          size="icon-xs"
+          onClick={onClose}
+          aria-label="Close plugins"
+          title="Close"
+          className="text-muted-foreground hover:text-foreground"
+        >
+          <X className="size-3" strokeWidth={1.75} />
+        </IconButton>
+      </>)}
+    >
       <div className="boring-scrollbar-discreet min-h-0 flex-1 overflow-y-auto p-4" aria-live="polite">
         {state.status === "error" ? (
           <div className="mb-4 rounded-lg border border-destructive/30 bg-destructive/8 px-3 py-2 text-sm text-destructive">
@@ -258,6 +254,6 @@ export function PluginsOverlay({ onClose, onReloadExternalPlugins, headerInsetSt
           </ul>
         )}
       </div>
-    </div>
+    </ManagementOverlaySurface>
   )
 }

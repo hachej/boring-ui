@@ -1,5 +1,4 @@
 import { PluginError } from "./errors"
-import { adaptLegacyPanelToWorkspaceSource } from "./legacyWorkspaceSource"
 import {
   captureFrontPlugin,
   normalizeFrontSurfaceResolver,
@@ -10,7 +9,7 @@ import {
   type CapturedFrontPlugin,
 } from "./frontFactory"
 import type { CatalogConfig } from "./types"
-import { isWorkspaceSourcePlacement, type CommandConfig, type PanelRegistration, type WorkspaceSourceRegistration } from "../types/panel"
+import type { CommandConfig, PanelRegistration, WorkspaceSourceRegistration } from "../types/panel"
 import type { SurfaceResolverRegistration } from "../types/surface"
 
 export interface PanelRegistryLike {
@@ -69,21 +68,6 @@ function panelRegistration(panel: BoringFrontPanelRegistration<any>, pluginId: s
   }
 }
 
-function legacyPanelWorkspaceSourceRegistration(panel: BoringFrontPanelRegistration<any>, pluginId: string): WorkspaceSourceRegistration {
-  const title = panel.label ?? panel.id
-  return {
-    title,
-    component: adaptLegacyPanelToWorkspaceSource(panel.id, title, panel.component, panel.lazy),
-    source: panel.source ?? "plugin",
-    pluginId,
-    ...(panel.icon ? { icon: panel.icon } : {}),
-    ...(panel.requiresCapabilities ? { requiresCapabilities: panel.requiresCapabilities } : {}),
-    ...(panel.lazy !== undefined ? { lazy: panel.lazy } : {}),
-    ...(panel.chromeless !== undefined ? { chromeless: panel.chromeless } : {}),
-    ...(panel.defaultPanelId !== undefined ? { defaultPanelId: panel.defaultPanelId } : {}),
-  }
-}
-
 function workspaceSourceRegistration(source: BoringFrontWorkspaceSourceRegistration<any>, pluginId: string): WorkspaceSourceRegistration {
   return {
     title: source.label ?? source.id,
@@ -118,8 +102,7 @@ function commandRegistration(
 }
 
 function hasWorkspaceSourceContributions(registrations: CapturedFrontPlugin["registrations"]): boolean {
-  return registrations.workspaceSources.length > 0 ||
-    registrations.panels.some((panel) => isWorkspaceSourcePlacement(panel.placement))
+  return registrations.workspaceSources.length > 0
 }
 
 export function registerCapturedFrontPlugin(
@@ -132,10 +115,6 @@ export function registerCapturedFrontPlugin(
     throw new PluginError("validation", `plugin "${plugin.id}" registered workspace sources but bootstrap registries.workspaceSources is missing`)
   }
   for (const panel of registrations.panels) {
-    if (isWorkspaceSourcePlacement(panel.placement) && registries.workspaceSources) {
-      registries.workspaceSources.register(panel.id, legacyPanelWorkspaceSourceRegistration(panel, plugin.id))
-      continue
-    }
     registries.panels.register(panel.id, panelRegistration(panel, plugin.id))
   }
   for (const source of registrations.workspaceSources) {

@@ -1,5 +1,5 @@
 import type { ComponentType, ReactNode } from "react"
-import { isWorkspaceSourcePlacement, type PanelConfig, type PaneProps, type PanelPlacement, type WorkspaceSourceProps } from "../types/panel"
+import type { PanelConfig, PaneProps, WorkspaceSourceProps } from "../types/panel"
 import type { SurfaceOpenRequest, SurfacePanelResolution, SurfaceResolverExample, SurfaceResolverRegistration } from "../types/surface"
 import { PluginError } from "./errors"
 import type {
@@ -19,8 +19,6 @@ export interface BoringFrontPanelRegistration<T = unknown> {
   lazy?: boolean
   chromeless?: boolean
   supportsFullPage?: boolean
-  /** @deprecated Only honored for legacy workspace-source/left-tab panels. Use registerWorkspaceSource.defaultPanelId. */
-  defaultPanelId?: string
   source?: string
 }
 
@@ -274,7 +272,7 @@ export function createCapturingBoringFrontAPI(options: { pluginId?: string } = {
       catalogs.push(registration)
     },
     registerPanel(registration) {
-      claim(isWorkspaceSourcePlacement(registration.placement) ? "workspace-source" : "panel", registration.id)
+      claim("panel", registration.id)
       panels.push(registration)
     },
     registerWorkspaceSource(registration) {

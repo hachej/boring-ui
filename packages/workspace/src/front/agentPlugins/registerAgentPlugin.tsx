@@ -11,10 +11,9 @@ import {
   type BoringFrontFactoryWithId,
   type CapturedBoringFrontRegistrations,
 } from "../../shared/plugins/frontFactory"
-import { adaptLegacyPanelToWorkspaceSource } from "../../shared/plugins/legacyWorkspaceSource"
 import type { BoringPluginEvent, BoringPluginFrontTarget } from "../../shared/plugins/runtimePluginTypes"
 import type { CatalogConfig } from "../../shared/plugins/types"
-import { isWorkspaceSourcePlacement, type PanelConfig, type WorkspaceSourceConfig } from "../../shared/types/panel"
+import type { PanelConfig, WorkspaceSourceConfig } from "../../shared/types/panel"
 import type { SurfaceResolverConfig } from "../../shared/types/surface"
 import type { CommandConfig } from "../registry/types"
 import { useCatalogRegistry, useCommandRegistry, useRegistry, useSurfaceResolverRegistry, useWorkspaceSourceRegistry } from "../registry/RegistryProvider"
@@ -260,23 +259,6 @@ function buildRegistryPayloads(
   const panels: PanelConfig[] = []
   const workspaceSources: WorkspaceSourceConfig[] = []
   for (const panel of captured.panels) {
-    if (isWorkspaceSourcePlacement(panel.placement)) {
-      const title = panel.label ?? panel.id
-      workspaceSources.push({
-        id: panel.id,
-        title,
-        component: adaptLegacyPanelToWorkspaceSource(panel.id, title, panel.component, panel.lazy),
-        source: panel.source ?? "plugin",
-        pluginId,
-        pluginRevision: revision,
-        ...(panel.icon ? { icon: panel.icon } : {}),
-        ...(panel.requiresCapabilities ? { requiresCapabilities: panel.requiresCapabilities } : {}),
-        ...(panel.lazy !== undefined ? { lazy: panel.lazy } : {}),
-        ...(panel.chromeless !== undefined ? { chromeless: panel.chromeless } : {}),
-        ...(panel.defaultPanelId !== undefined ? { defaultPanelId: panel.defaultPanelId } : {}),
-      } as WorkspaceSourceConfig)
-      continue
-    }
     panels.push({
       id: panel.id,
       title: panel.label ?? panel.id,

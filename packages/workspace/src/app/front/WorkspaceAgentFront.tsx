@@ -18,7 +18,7 @@ import type {
 } from "../../front/chrome/artifact-surface/SurfaceShell"
 import { SkillsPage } from "../../front/chrome/skills/SkillsPage"
 import { PluginsOverlay } from "../../front/chrome/plugins/PluginsOverlay"
-import { AppLeftPane, type AppLeftPaneHeaderMode, type AppLeftPaneLayoutMode, type AppLeftPaneProject } from "../../front/layout/plugin-tabs/AppLeftPane"
+import { AppLeftPane, type AppLeftPaneAction, type AppLeftPaneHeaderMode, type AppLeftPaneLayoutMode, type AppLeftPaneProject } from "../../front/layout/plugin-tabs/AppLeftPane"
 import { PluginTabsWorkspaceShell } from "../../front/layout/plugin-tabs/PluginTabsWorkspaceShell"
 import { captureFrontPlugin } from "../../shared/plugins/frontFactory"
 import { isWorkspaceSourcePlacement } from "../../shared/types/panel"
@@ -161,6 +161,8 @@ export interface WorkspaceAgentFrontProps<
   showSkills?: boolean
   /** Show the plugin-tabs Plugins action/overlay. Defaults to true. */
   showPlugins?: boolean
+  /** Extra actions inserted into the app-left primary action list before built-in management actions. */
+  appLeftActions?: readonly AppLeftPaneAction[]
   sessions?: Array<{ id: string; title?: string | null; updatedAt?: string | number; turnCount?: number }>
   activeSessionId?: string | null
   onSwitchSession?: (id: string) => void
@@ -412,6 +414,7 @@ export function WorkspaceAgentFront<
   showThemeToggle = true,
   showSkills = true,
   showPlugins = true,
+  appLeftActions,
   chatParams,
   externalPlugins,
   hotReloadEnabled,
@@ -1530,6 +1533,7 @@ export function WorkspaceAgentFront<
           onSwitchSession={switchToChatPane}
           onOpenSessionAsPane={openChatPane}
           onToggleSessionPinned={toggleSessionPinned}
+          actions={appLeftActions}
           showPlugins={pluginsActionEnabled}
           showSkills={skillsActionEnabled}
           onOpenPlugins={() => {
