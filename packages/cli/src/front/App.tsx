@@ -140,6 +140,14 @@ function PublicShareMarkdownEditor({ token }: { token: string }) {
 
   const dirty = content !== savedContent
 
+  useEffect(() => {
+    if (loading || !dirty || saving) return
+    const timer = window.setTimeout(() => {
+      void save()
+    }, 900)
+    return () => window.clearTimeout(timer)
+  }, [dirty, loading, save, saving])
+
   return (
     <WorkspaceSingleton.WorkspaceFilesProvider apiBaseUrl={`/share/${encodeURIComponent(token)}`}>
       <div className="min-h-screen bg-background text-foreground">
@@ -149,7 +157,7 @@ function PublicShareMarkdownEditor({ token }: { token: string }) {
             <div className="text-xs text-muted-foreground">Rich editor POC · constrained share API</div>
           </div>
           <div className="flex items-center gap-2 text-xs">
-            {dirty ? <span className="text-amber-600">Unsaved changes</span> : <span className="text-muted-foreground">Saved</span>}
+            {saving ? <span className="text-muted-foreground">Saving…</span> : dirty ? <span className="text-amber-600">Unsaved changes</span> : <span className="text-muted-foreground">Saved</span>}
             <a className="rounded-md border border-border px-3 py-1.5" href={`/share/${encodeURIComponent(token)}/bundle.zip`}>Download ZIP</a>
             <a className="rounded-md border border-border px-3 py-1.5" href={`/share/${encodeURIComponent(token)}/portable.md`}>Portable MD</a>
             <button className="rounded-md bg-primary px-3 py-1.5 text-primary-foreground disabled:opacity-50" onClick={save} disabled={saving || loading || !dirty}>
