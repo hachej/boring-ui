@@ -69,6 +69,7 @@ function makeMockApi(): { api: BoringFrontAPI; captured: CapturedRegistrations }
   }
   const api: BoringFrontAPI = {
     registerProvider: vi.fn(),
+    registerAppLeftAction: vi.fn(),
     registerBinding: vi.fn(),
     registerCatalog: vi.fn((c) => {
       captured.catalogs.push(c)
