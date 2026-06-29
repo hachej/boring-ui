@@ -999,6 +999,28 @@ Provider-specific templates, allowlists, copy, and live-provider maintenance mus
 Live Notion/Airtable/SharePoint spikes can be evidence, fixtures, or examples, but must not make boring-mcp core provider-specific.
 ```
 
+App/plugin instance configuration rule:
+
+```txt
+A boring-ui app should enable boring-mcp by passing a small preconfigured source/provider list.
+The app instance should not implement generic MCP UI/policy/facade logic.
+The app instance should not discover arbitrary hosted MCP servers by default.
+The app instance should say: these MCP providers/sources are usable here, with these labels, ownership defaults, and allowed preset ids.
+boring-mcp renders/manages only the configured usable sources.
+```
+
+Example shape:
+
+```ts
+createBoringMcpPlugin({
+  sources: [
+    { id: 'notion-personal', providerPreset: 'notion', ownerKind: 'user', label: 'Notion' },
+    { id: 'airtable-company', providerPreset: 'airtable', ownerKind: 'company_context', label: 'Airtable' },
+    { id: 'sharepoint-company', providerPreset: 'sharepoint', ownerKind: 'company_context', label: 'SharePoint' },
+  ],
+})
+```
+
 Enforcement rule:
 
 ```txt
