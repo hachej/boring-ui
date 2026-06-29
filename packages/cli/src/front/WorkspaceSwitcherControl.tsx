@@ -8,7 +8,7 @@ import {
   DropdownMenuTrigger,
   Kbd,
 } from "@hachej/boring-ui-kit"
-import { ChevronsUpDown, Plus, Settings } from "lucide-react"
+import { ChevronsUpDown, LayoutGrid, Plus, Settings } from "lucide-react"
 
 export interface WorkspaceSwitcherControlItem {
   id: string
@@ -19,6 +19,8 @@ export interface WorkspaceSwitcherControlItem {
 
 export interface WorkspaceSwitcherControlProps {
   appTitle?: string
+  /** full: app glyph + "App / Workspace"; workspace: just the workspace picker. */
+  displayMode?: "full" | "workspace"
   workspaces: WorkspaceSwitcherControlItem[]
   activeWorkspaceId?: string | null
   emptyLabel?: string
@@ -61,6 +63,7 @@ function nextAvailableIndex(
 
 export function WorkspaceSwitcherControl({
   appTitle = "Boring",
+  displayMode = "full",
   workspaces,
   activeWorkspaceId,
   emptyLabel = "Create your first workspace",
@@ -200,19 +203,25 @@ export function WorkspaceSwitcherControl({
     )
   }
 
+  const isWorkspaceMode = displayMode === "workspace"
+
   return (
-    <div className="-ml-1 flex h-8 min-w-0 items-center gap-1.5">
-      <span
-        aria-hidden="true"
-        style={{ width: 28, height: 28 }}
-        className="flex shrink-0 items-center justify-center rounded-md bg-foreground text-[12px] font-semibold text-background"
-      >
-        {appTitle.charAt(0).toUpperCase()}
-      </span>
-      <span className="truncate text-[13px] font-medium text-foreground">
-        {appTitle}
-      </span>
-      <span aria-hidden="true" className="text-muted-foreground/30">/</span>
+    <div className={isWorkspaceMode ? "flex h-8 min-w-0 items-center" : "-ml-1 flex h-8 min-w-0 items-center gap-1.5"}>
+      {!isWorkspaceMode ? (
+        <>
+          <span
+            aria-hidden="true"
+            style={{ width: 28, height: 28 }}
+            className="flex shrink-0 items-center justify-center rounded-md bg-foreground text-[12px] font-semibold text-background"
+          >
+            {appTitle.charAt(0).toUpperCase()}
+          </span>
+          <span className="truncate text-[13px] font-medium text-foreground">
+            {appTitle}
+          </span>
+          <span aria-hidden="true" className="text-muted-foreground/30">/</span>
+        </>
+      ) : null}
 
       <DropdownMenu open={open} onOpenChange={handleOpenChange}>
         <DropdownMenuTrigger asChild>
@@ -222,13 +231,18 @@ export function WorkspaceSwitcherControl({
             variant="ghost"
             aria-label={`Workspace menu: ${switcherLabel}`}
             title="Workspace picker (⌘⇧K)"
-            className="group h-8 min-w-0 justify-start gap-1.5 rounded-md px-1.5 py-1 text-left hover:bg-muted/60 focus-visible:ring-1 focus-visible:ring-ring"
+            className={isWorkspaceMode
+              ? "h-8 w-full min-w-0 justify-start gap-1.5 rounded-lg border border-transparent px-2 text-left hover:bg-foreground/[0.06] focus-visible:ring-1 focus-visible:ring-ring"
+              : "group h-8 min-w-0 justify-start gap-1.5 rounded-md px-1.5 py-1 text-left hover:bg-muted/60 focus-visible:ring-1 focus-visible:ring-ring"}
           >
-            <span className="max-w-[15rem] truncate text-[13px] font-normal text-muted-foreground">
+            <span className={isWorkspaceMode
+              ? "min-w-0 flex-1 truncate text-[13px] font-medium text-foreground/85"
+              : "max-w-[15rem] truncate text-[13px] font-normal text-muted-foreground"}
+            >
               {switcherLabel}
             </span>
-            <Kbd className="ml-1 border-0 bg-transparent p-0 text-[10px] leading-none text-muted-foreground/60 shadow-none group-hover:text-muted-foreground">⌘⇧K</Kbd>
-            <ChevronsUpDown className="h-3.5 w-3.5 shrink-0 text-muted-foreground/55" aria-hidden="true" />
+            {!isWorkspaceMode ? <Kbd className="ml-1 border-0 bg-transparent p-0 text-[10px] leading-none text-muted-foreground/60 shadow-none group-hover:text-muted-foreground">⌘⇧K</Kbd> : null}
+            <ChevronsUpDown className="h-3.5 w-3.5 shrink-0 text-muted-foreground/50" aria-hidden="true" />
           </Button>
         </DropdownMenuTrigger>
         <DropdownMenuContent
@@ -236,9 +250,16 @@ export function WorkspaceSwitcherControl({
           side="bottom"
           sideOffset={6}
           onKeyDownCapture={handleMenuKeyDown}
-          className="w-[21rem] rounded-xl border-border/70 bg-popover p-1.5 text-popover-foreground shadow-2xl"
+          alignOffset={isWorkspaceMode ? -40 : 0}
+          className="w-80 rounded-lg border-border/70 bg-popover p-2 text-popover-foreground shadow-2xl supports-[background:color-mix(in_oklch,white,black)]:bg-[color:var(--surface-workbench-left,var(--popover))]"
         >
-          <div className="max-h-80 overflow-y-auto">
+          <div className="px-2 pb-2 pt-1">
+            <span className="flex items-center gap-2 text-xs font-medium text-muted-foreground">
+              <LayoutGrid className="h-3.5 w-3.5" aria-hidden="true" />
+              Workspaces
+            </span>
+          </div>
+          <div className="max-h-72 overflow-y-auto pr-1">
             {workspaces.map((workspace, index) => {
               const isCurrent = currentWorkspace?.id === workspace.id
               const isActive = activeIndex === index
@@ -262,7 +283,7 @@ export function WorkspaceSwitcherControl({
                           ? "color-mix(in oklch, var(--foreground) 5%, transparent)"
                           : undefined,
                     }}
-                    className="relative gap-3 rounded-lg px-2.5 py-2.5 pl-3 text-[13px] focus:text-foreground data-[active=true]:text-foreground data-[current=true]:text-foreground"
+                    className="relative gap-3 rounded-md px-2.5 py-2 pl-3 text-[13px] focus:bg-foreground/[0.06] focus:text-foreground data-[active=true]:text-foreground data-[current=true]:text-foreground"
                   >
                     <span
                       aria-hidden="true"

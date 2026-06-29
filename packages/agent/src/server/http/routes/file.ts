@@ -17,6 +17,7 @@ import {
   buildFileRecordsResult,
   parseFileRecordsRequest,
 } from './fileRecords'
+import { isReadonlySkillFilePath, readReadonlySkillFile, statReadonlySkillFile } from '../readonlySkillFiles'
 
 const log = createLogger('boring/workspace-settings')
 
@@ -326,6 +327,15 @@ export function fileRoutes(
     if (path === null) return
 
     try {
+      if (isReadonlySkillFilePath(path)) {
+        const { content, stat } = await readReadonlySkillFile(path)
+        if (stat.kind !== 'file') {
+          return reply.code(400).send({
+            error: { code: ERROR_CODE_VALIDATION_ERROR, message: 'path is not a file', field: 'path' },
+          })
+        }
+        return { content, mtimeMs: stat.mtimeMs }
+      }
       const workspace = await resolveWorkspace(request)
       if (workspace.readFileWithStat) {
         const { content, stat } = await workspace.readFileWithStat(path)
@@ -567,6 +577,9 @@ export function fileRoutes(
     if (path === null) return
 
     try {
+      if (isReadonlySkillFilePath(path)) {
+        return await statReadonlySkillFile(path)
+      }
       const workspace = await resolveWorkspace(request)
       const stat = await workspace.stat(path)
       return stat

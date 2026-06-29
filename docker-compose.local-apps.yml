@@ -1,0 +1,184 @@
+x-local-app-image: &local_app_image ${LOCAL_APPS_IMAGE:-boring-macro-deploy-check:latest}
+x-repo-volume: &repo_volume .:/app
+x-data-volume: &data_volume boring-local-apps-data:/data
+# Offline pnpm: use the host's installed pnpm executable + store.
+# This avoids Docker Hub / npm registry pulls when this VPS has DNS/network issues.
+x-host-pnpm-home-volume: &host_pnpm_home_volume /home/ubuntu/.local/share/pnpm:/host-pnpm
+# Local dev only: expose the host Pi provider login/API-key metadata to containers.
+# Do not copy these files into images or commit their contents.
+x-host-pi-agent-volume: &host_pi_agent_volume /home/ubuntu/.pi/agent:/root/.pi/agent
+
+services:
+  db:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_USER: boring
+      POSTGRES_PASSWORD: boring
+      POSTGRES_DB: boring_full_app
+    volumes:
+      - boring-local-apps-postgres:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U boring -d boring_full_app"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  setup:
+    image: *local_app_image
+    working_dir: /app
+    command: >-
+      bash -lc '
+      export PATH=/host-pnpm/.tools/@pnpm+exe/10.33.2_tmp_1273466_0/bin:$PATH &&
+      pnpm config set store-dir /host-pnpm/store &&
+      pnpm install --offline --frozen-lockfile &&
+      pnpm --filter @hachej/boring-ui-kit build &&
+      pnpm --filter @hachej/boring-agent build &&
+      pnpm --filter @hachej/boring-workspace build &&
+      pnpm --filter @hachej/boring-core build &&
+      pnpm --filter @hachej/boring-ui-plugin-cli build &&
+      pnpm --filter @hachej/boring-deck build &&
+      pnpm --filter @hachej/boring-ask-user build &&
+      pnpm --filter @hachej/boring-data-explorer build &&
+      pnpm --filter @hachej/boring-data-catalog build &&
+      pnpm --filter @hachej/boring-ui-cli run build:full
+      '
+    environment:
+      CI: "1"
+      TMPDIR: /tmp
+    volumes:
+      - *repo_volume
+      - *data_volume
+      - *host_pnpm_home_volume
+
+  migrate:
+    image: *local_app_image
+    depends_on:
+      setup:
+        condition: service_completed_successfully
+      db:
+        condition: service_healthy
+    working_dir: /app
+    command: >-
+      bash -lc 'export PATH=/host-pnpm/.tools/@pnpm+exe/10.33.2_tmp_1273466_0/bin:$PATH &&
+      pnpm --dir apps/full-app run migrate'
+    environment:
+      DATABASE_URL: postgres://boring:boring@db:5432/boring_full_app
+      BETTER_AUTH_URL: ${FULL_APP_PUBLIC_URL:-http://100.68.199.114:6301}
+      BETTER_AUTH_SECRET: local-dev-better-auth-secret-change-me-local-dev-better-auth-secret
+      WORKSPACE_SETTINGS_ENCRYPTION_KEY: 0000000000000000000000000000000000000000000000000000000000000000
+    volumes:
+      - *repo_volume
+      - *data_volume
+      - *host_pnpm_home_volume
+
+  full-app:
+    image: *local_app_image
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    working_dir: /app
+    command: >-
+      bash -lc 'export PATH=/host-pnpm/.tools/@pnpm+exe/10.33.2_tmp_1273466_0/bin:$PATH &&
+      pnpm --dir apps/full-app exec tsx src/server/dev.ts'
+    environment:
+      NODE_ENV: development
+      HOST: 0.0.0.0
+      # Internal Fastify API port. The public browser URL is FRONTEND_PORT below;
+      # Vite proxies /api, /auth, and /health to this API inside the container.
+      PORT: 6302
+      # Public full-app frontend. This is the URL to open from Firefox.
+      FRONTEND_PORT: 6301
+      DATABASE_URL: postgres://boring:boring@db:5432/boring_full_app
+      BETTER_AUTH_SECRET: local-dev-better-auth-secret-change-me-local-dev-better-auth-secret
+      WORKSPACE_SETTINGS_ENCRYPTION_KEY: 0000000000000000000000000000000000000000000000000000000000000000
+      BETTER_AUTH_URL: ${FULL_APP_PUBLIC_URL:-http://100.68.199.114:6301}
+      CORS_ORIGINS: ${FULL_APP_CORS_ORIGINS:-http://100.68.199.114:6301,http://localhost:6301,http://127.0.0.1:6301}
+      BORING_AGENT_MODE: direct
+      BORING_AGENT_WORKSPACE_ROOT: /data/workspaces/full-app
+      BORING_AGENT_SESSION_ROOT: /data/pi-sessions/full-app
+      BORING_PLUGIN_AUTHORING: ${BORING_PLUGIN_AUTHORING:-0}
+      ENABLE_DEV_LOGIN: ${ENABLE_DEV_LOGIN:-1}
+      DEV_LOGIN_EMAIL: ${DEV_LOGIN_EMAIL:-dev@example.test}
+      DEV_LOGIN_PASSWORD: ${DEV_LOGIN_PASSWORD:-Dev-local-2026!!x9}
+      DEV_LOGIN_NAME: ${DEV_LOGIN_NAME:-Dev}
+    ports:
+      - "0.0.0.0:6301:6301"
+    volumes:
+      - *repo_volume
+      - *data_volume
+      - *host_pnpm_home_volume
+      - *host_pi_agent_volume
+    healthcheck:
+      test: ["CMD-SHELL", "node -e \"fetch('http://127.0.0.1:6302/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))\""]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 30s
+
+  workspace-playground:
+    image: *local_app_image
+    depends_on:
+      setup:
+        condition: service_completed_successfully
+    working_dir: /app
+    command: >-
+      bash -lc 'export PATH=/host-pnpm/.tools/@pnpm+exe/10.33.2_tmp_1273466_0/bin:$PATH &&
+      pnpm --dir apps/workspace-playground exec vite'
+    environment:
+      NODE_ENV: development
+      PORT: 6303
+      AGENT_API_PORT: 6305
+      BORING_AGENT_MODE: direct
+      BORING_AGENT_WORKSPACE_ROOT: /data/workspaces/playground
+      BORING_AGENT_SESSION_ROOT: /data/pi-sessions/playground
+    ports:
+      - "0.0.0.0:6303:6303"
+    volumes:
+      - *repo_volume
+      - *data_volume
+      - *host_pnpm_home_volume
+      - *host_pi_agent_volume
+    healthcheck:
+      test: ["CMD-SHELL", "node -e \"fetch('http://127.0.0.1:6305/api/v1/workspace/meta').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))\""]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 30s
+
+  cli:
+    image: *local_app_image
+    depends_on:
+      setup:
+        condition: service_completed_successfully
+    working_dir: /app
+    command: >-
+      bash -lc 'mkdir -p /data/workspaces/cli &&
+      node packages/cli/dist/index.js workspaces add /data/workspaces/cli --name "CLI workspace" &&
+      node packages/cli/dist/index.js workspaces
+      --port 6304
+      --host 0.0.0.0
+      --mode local
+      --allow-insecure-local-bridge'
+    environment:
+      NODE_ENV: development
+      BORING_AGENT_MODE: direct
+      BORING_AGENT_WORKSPACE_ROOT: /data/workspaces/cli
+      BORING_AGENT_SESSION_ROOT: /data/pi-sessions/cli
+      BORING_UI_WORKSPACES_PATH: /data/cli-workspaces.yaml
+    ports:
+      - "0.0.0.0:6304:6304"
+    volumes:
+      - *repo_volume
+      - *data_volume
+      - *host_pnpm_home_volume
+      - *host_pi_agent_volume
+    healthcheck:
+      test: ["CMD-SHELL", "node -e \"fetch('http://127.0.0.1:6304/').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))\""]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 30s
+
+volumes:
+  boring-local-apps-data:
+  boring-local-apps-postgres:

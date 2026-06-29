@@ -52,6 +52,7 @@ export async function startCoreWorkspaceAgentDevServer({
       proxy: {
         '/api': apiTarget,
         '/health': apiTarget,
+        '/dev-login': apiTarget,
         '/auth': {
           target: apiTarget,
           changeOrigin: true,
