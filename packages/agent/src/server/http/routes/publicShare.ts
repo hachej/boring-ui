@@ -147,6 +147,18 @@ function renderInlineMarkdown(value: string): string {
   return html
 }
 
+function renderHtmlImageLine(line: string, share: PublicShareRecord): string | null {
+  const src = line.match(/<img\b[^>]*\bsrc=["']([^"']+)["'][^>]*>/i)?.[1]
+  if (!src) return null
+  const resolved = resolveRelativePath(share.entryPath, src)
+  if (!resolved || !sharePathAllowed(share, resolved)) return null
+  const suffix = src.match(/[?#].*$/)?.[0] ?? ''
+  const assetPath = stripUrlSuffix(resolved)
+  const url = `/share/${encodeURIComponent(share.token)}/assets/${assetPath.split('/').map(encodeURIComponent).join('/')}${suffix}`
+  const alt = line.match(/<img\b[^>]*\balt=["']([^"']*)["'][^>]*>/i)?.[1] ?? ''
+  return `<p><img alt="${escapeHtml(alt)}" src="${url}"></p>`
+}
+
 function renderMarkdownDocument(markdown: string, share: PublicShareRecord): string {
   const rewritten = rewriteMarkdownLinks(markdown, share)
   const lines = rewritten.split(/\r?\n/)
@@ -181,6 +193,12 @@ function renderMarkdownDocument(markdown: string, share: PublicShareRecord): str
     }
     if (!line.trim()) {
       closeList()
+      continue
+    }
+    const htmlImage = renderHtmlImageLine(line.trim(), share)
+    if (htmlImage) {
+      closeList()
+      out.push(htmlImage)
       continue
     }
     const heading = line.match(/^(#{1,3})\s+(.+)$/)
