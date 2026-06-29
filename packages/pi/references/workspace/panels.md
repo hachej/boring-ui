@@ -2,7 +2,7 @@
 
 # Panels
 
-Panels are React components rendered inside the workspace dockview layout. They receive `PaneProps<T>` and can be opened programmatically by the agent or user.
+Panels are React components rendered as workspace pages or shared Dockview panels. They receive `PaneProps<T>` and can be opened programmatically by the agent or user.
 
 ## Table of Contents
 
@@ -33,15 +33,14 @@ export default definePlugin({
     {
       id: "my-plugin.panel",
       label: "My Panel",
-      placement: "center",
+      placement: "workspace-page",
       component: MyPane,
     },
   ],
   commands: [
     { id: "my-plugin.open", title: "Open My Panel", panelId: "my-plugin.panel" },
   ],
-  // Optional only for persistent sidebar navigation/catalogs:
-  // leftTabs: [{ id: "my-plugin.tab", title: "My Plugin", panelId: "my-plugin.panel" }],
+  // For artifact/detail panels instead of full pages, use placement: "shared-dockview".
 })
 ```
 
@@ -87,9 +86,9 @@ useEffect(() => {
 
 | value | where |
 |---|---|
-| `center` | main editor area |
-| `right` | right sidebar |
-| `bottom` | bottom panel |
+| `workspace-page` | full plugin page; phase 1 opens in the shared workbench and collapses the workbench left pane |
+| `shared-dockview` | artifact/detail/result panel in the shared Dockview |
+| `center` | legacy alias for shared Dockview |
 
 ---
 
@@ -104,7 +103,7 @@ useEffect(() => {
 
 ## Plugin panel registration
 
-Prefer declarative `panels`, `commands`, and `leftTabs` fields. For conditional
+Prefer declarative `panels` and `commands` fields. For conditional
 registration, use the synchronous `setup(api)` escape hatch:
 
 ```tsx
@@ -113,9 +112,8 @@ import { definePlugin } from "@hachej/boring-workspace/plugin"
 export default definePlugin({
   id: "my-plugin",
   setup(api) {
-    api.registerPanel({ id: "my-plugin.panel", label: "My Panel", component: MyPane })
+    api.registerPanel({ id: "my-plugin.panel", label: "My Panel", placement: "workspace-page", component: MyPane })
     api.registerPanelCommand({ id: "my-plugin.open", title: "Open My Panel", panelId: "my-plugin.panel" })
-    api.registerLeftTab({ id: "my-plugin.tab", title: "My Plugin", panelId: "my-plugin.panel" })
   },
 })
 ```

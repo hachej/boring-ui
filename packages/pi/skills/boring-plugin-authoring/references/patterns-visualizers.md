@@ -5,30 +5,24 @@
 Plugins have three different navigation surfaces. Pick the one that matches the
 user intent; do not register all of them by default.
 
-**Left pane vs main pane rule:** if a plugin has a persistent `leftTabs` entry
-and a main workbench panel, create **two separate components**:
+**Workspace-page vs shared-dockview rule:** if a plugin needs a home/control
+surface, register one `workspace-page` and render any navigation/facets/lists
+inside that page as normal React. If the plugin produces an artifact/detail/result,
+register a separate `shared-dockview` panel for that artifact.
 
-- `LeftPane` / sidebar component: compact navigator, filters, summaries, recent
-  items, buttons, and quick actions. It lives in the narrow left workbench.
-- `MainPane` / center component: full detail view with tables, charts, editors,
-  previews, and multi-step workflows.
-
-Do **not** register the same full `MainPane` component as both `panels[].component`
-and `leftTabs[].panelId`. That duplicates the center UI in the narrow sidebar and
-makes plugins feel broken. Left-pane buttons can open the center pane with
-`PaneProps.containerApi.addPanel({ id, component: "<plugin>.panel", title, params })`.
+Do **not** ask the shell for a plugin left tab. Plugin-owned side navigation lives
+inside the plugin page.
 
 | User intent | Use | Why |
 |---|---|---|
-| "Give me a command/button to open this tool" | `commands: [{ panelId }]` | Command opens the panel on demand; no permanent sidebar slot. |
-| "Add a persistent left-sidebar category/tab" | `leftTabs: [{ panelId }]` | Left tab is always visible navigation for catalogs, dashboards, or always-on tools. It renders the referenced panel. |
-| "When I open files matching X, show them in my custom pane" | `surfaceResolvers` with `WORKSPACE_OPEN_PATH_SURFACE_KIND` | File-open routing chooses the right panel by file/path pattern. No sidebar tab needed. |
+| "Give me a full tool/dashboard/browser" | `panels: [{ placement: "workspace-page" }]` | Full plugin page; plugin owns internal layout/navigation. |
+| "Open a generated chart/detail/result" | `panels: [{ placement: "shared-dockview" }]` | Shared Dockview artifact/detail panel. |
+| "When I open files matching X, show them in my custom pane" | `surfaceResolvers` with `WORKSPACE_OPEN_PATH_SURFACE_KIND` | File-open routing chooses the right panel by file/path pattern. No page required. |
 
 Rules:
 
-- Do **not** add `leftTabs` just because a plugin has a panel. A left tab is
-  permanent sidebar navigation.
-- Use `leftTabs` for categories like Data, Charts, Search, Docs, or other
+- Do **not** add shell left tabs. They are not public plugin API.
+- Use `workspace-page` for categories like Data, Charts, Search, Docs, or other
   always-on workspace tools.
 - Use a file-pattern `surfaceResolver` for file visualizers/readers/editors
   (`*.csv`, `*.deck.md`, `*.json`, etc.).
@@ -67,7 +61,7 @@ export default definePlugin({
   id: "csv-viz",
   label: "CSV Viewer",
   panels: [
-    { id: "csv-viz.panel", label: "CSV", component: CsvPane },
+    { id: "csv-viz.panel", label: "CSV", placement: "shared-dockview", component: CsvPane },
   ],
   surfaceResolvers: [
     {

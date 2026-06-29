@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest"
 import { CommandRegistry } from "../CommandRegistry"
 import { PanelRegistry } from "../../../front/registry/PanelRegistry"
+import { WorkspaceSourceRegistry } from "../../../front/registry/WorkspaceSourceRegistry"
 import { SurfaceResolverRegistry } from "../SurfaceResolverRegistry"
 import type { CommandConfig } from "../../types/panel"
 import { bootstrap } from "../bootstrap"
@@ -15,6 +16,7 @@ const DummyChatPanel = () => null
 function makeRegistries() {
   return {
     panels: new PanelRegistry(),
+    workspaceSources: new WorkspaceSourceRegistry(),
     commands: new CommandRegistry(),
     catalogs: new CatalogRegistry({ warnOnDuplicate: false }),
     surfaceResolvers: new SurfaceResolverRegistry(),
@@ -70,7 +72,7 @@ describe("bootstrap", () => {
       plugins: [
         definePlugin({
           id: "host",
-          leftTabs: [{ id: "files", title: "Files", component: DummyPanel, panelId: "files", source: "app" }],
+          panels: [{ id: "files", label: "Files", component: DummyPanel, placement: "workspace-page", source: "app" }],
           commands: [{ id: "output-command", title: "Output Command", run: vi.fn() }],
           catalogs: [makeCatalog({ id: "output-catalog" })],
           providers: [{ id: "runtime", component: DummyPanel }],
@@ -82,7 +84,7 @@ describe("bootstrap", () => {
     })
 
     expect(registries.panels.get("files")).toEqual(
-      expect.objectContaining({ id: "files", placement: "left-tab", pluginId: "host" }),
+      expect.objectContaining({ id: "files", placement: "workspace-page", pluginId: "host" }),
     )
     expect(registries.commands.getCommand("output-command")).toEqual(
       expect.objectContaining({ id: "output-command", pluginId: "host" }),
@@ -93,6 +95,42 @@ describe("bootstrap", () => {
     expect(registries.surfaceResolvers.get("surface")).toEqual(
       expect.objectContaining({ id: "surface", pluginId: "host" }),
     )
+  })
+
+  it("throws instead of silently dropping workspace sources when registry is missing", () => {
+    expect(() => bootstrap({
+      chatPanel: DummyChatPanel,
+      defaults: [],
+      plugins: [definePlugin({
+        id: "source-plugin",
+        workspaceSources: [{ id: "source", label: "Source", component: DummyPanel }],
+      })],
+      registries: {
+        panels: new PanelRegistry(),
+        commands: new CommandRegistry(),
+        catalogs: new CatalogRegistry({ warnOnDuplicate: false }),
+      },
+    })).toThrow("registries.workspaceSources is missing")
+  })
+
+  it("wires declarative panel commands with panelId to an executable runner", () => {
+    const registries = makeRegistries()
+    const openPanel = vi.fn()
+
+    bootstrap({
+      chatPanel: DummyChatPanel,
+      defaults: [],
+      plugins: [definePlugin({
+        id: "host",
+        commands: [{ id: "host.open", title: "Open Host", panelId: "host.page" }],
+      })],
+      registries,
+      panelCommandRunner: (command) => command.panelId ? () => openPanel(command.panelId) : undefined,
+    })
+
+    registries.commands.getCommand("host.open")?.run()
+
+    expect(openPanel).toHaveBeenCalledWith("host.page")
   })
 
   it("registers defaults before host plugins and returns the final order", () => {
