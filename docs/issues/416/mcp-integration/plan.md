@@ -772,3 +772,35 @@ Hosted Mode B requirements:
 - no assumption of sticky sessions;
 - credential refresh closes/rebuilds clients carrying the old access token before reuse;
 - disconnect/revoke invalidates source of truth and must purge all locally known clients for that source/user before returning success. In distributed deployments this also emits an invalidation event; local close remains best-effort only for processes that miss the event.
+
+## Nango self-host credential-provider candidate
+
+See [`nango-selfhost-poc.md`](./nango-selfhost-poc.md) for the local smoke.
+
+Nango self-host is a candidate for hosted/full-app provider credential lifecycle, especially for Constellation, but only behind the generic credential-provider seam.
+
+```ts
+interface NangoCredentialRef {
+  provider: 'nango';
+  providerConfigKey: string;
+  connectionId: string;
+}
+```
+
+Rules:
+
+- `boring-mcp` core must not depend directly on Nango.
+- Constellation may provide a `NangoMcpCredentialProvider` adapter.
+- Store Nango `providerConfigKey` + `connectionId` as credential references; do not store raw provider tokens in Constellation source records.
+- Free self-hosted Nango appears to support Auth + Proxy, but not Nango MCP server, functions, webhooks, full observability, custom branding, or RBAC.
+- If selected, Constellation should use Nango for OAuth/token storage/refresh and `boring-mcp` for source ownership, policy, search/describe/call, materialization, redaction, and audit.
+- If Nango free self-host feature limits are insufficient, fall back to a narrow Constellation-owned token broker for the first providers.
+
+Open verification before adoption:
+
+- create a local self-host integration;
+- create an API key/session token;
+- complete one OAuth or API-key connection;
+- verify `getConnection(providerConfigKey, connectionId)` returns/refreshes credentials;
+- verify Proxy can call a harmless endpoint;
+- verify encrypted-at-rest behavior with `NANGO_ENCRYPTION_KEY` set.
