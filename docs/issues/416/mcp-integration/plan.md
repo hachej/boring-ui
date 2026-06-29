@@ -857,3 +857,26 @@ Nango's provider registry/docs include all three Constellation target families:
   - `sharepoint-online-v1` — legacy SharePoint REST two-step/client assertion.
 
 This means Nango is viable at the registry/docs level for Constellation's first provider set. Still required before adoption: real OAuth spikes for Notion/Airtable/Microsoft, with refresh/revoke, scopes, Connect UI wording, and production outbound allowlist verified.
+
+## Nango `notion-mcp` spike result
+
+See [`nango-notion-mcp-spike.md`](./nango-notion-mcp-spike.md).
+
+Result: not green yet.
+
+Free self-host Nango could create a `notion-mcp` integration record and render Connect UI, but the backend/public API path did not perform MCP dynamic client registration. Clicking Connect failed before Notion login/consent:
+
+```txt
+Provider Config "constellation-notion-mcp-test" is missing client ID, secret and/or scopes.
+```
+
+DB inspection showed the created provider config had no `oauth_client_id`, `oauth_client_secret`, or `oauth_scopes`. Nango source indicates dynamic client registration exists in the private/dashboard v1 integration creation path, not the simple public `/integrations` path used in the spike.
+
+A direct call to `https://mcp.notion.com/register` from the sandbox returned HTTP 403 / Cloudflare code 1010, so direct registration could not be proven from this environment.
+
+Implication:
+
+- Do not assume Nango free self-host supports Notion MCP OAuth out of the box via backend API.
+- Regular Nango `notion` OAuth remains viable for V0 Notion REST/API access.
+- `notion-mcp` remains experimental until dashboard/private creation or direct dynamic registration is proven.
+- Julien's Notion account is only needed after a working Notion authorization URL is produced; this spike failed earlier.
