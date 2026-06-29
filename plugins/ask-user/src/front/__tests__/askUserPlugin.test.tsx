@@ -1,6 +1,6 @@
 import { act, fireEvent, render, screen, waitFor } from "@testing-library/react"
 import { afterEach, describe, expect, it, vi } from "vitest"
-import { UI_COMMAND_EVENT, WORKSPACE_ATTENTION_ACTION_EVENT, WORKSPACE_COMPOSER_STOP_EVENT, WORKSPACE_COMPOSER_STOP_REASONS, events, userMeta, workspaceEvents } from "@hachej/boring-workspace"
+import { UI_COMMAND_EVENT, WORKSPACE_ATTENTION_ACTION_EVENT, WORKSPACE_COMPOSER_STOP_EVENT, WORKSPACE_COMPOSER_STOP_REASONS, WorkspaceProvider, events, userMeta, useWorkspaceAttention, workspaceEvents } from "@hachej/boring-workspace"
 import { captureFrontPlugin } from "@hachej/boring-workspace/plugin"
 import type { AskUserQuestion } from "../../shared/types"
 import { askUserPlugin } from "../index"
@@ -410,6 +410,37 @@ describe("askUserPlugin front shell", () => {
     } finally {
       window.removeEventListener(UI_COMMAND_EVENT, onCommand)
     }
+  })
+
+  it("contributes pending questions as explicit inbox attention blockers", async () => {
+    const seen: unknown[] = []
+    function AttentionProbe() {
+      const { blockers } = useWorkspaceAttention()
+      seen.splice(0, seen.length, ...blockers)
+      return null
+    }
+    const fetchMock = vi.fn(async (url: string, init?: RequestInit) => {
+      if (String(url).endsWith("/api/v1/workspace-bridge/call") && String(init?.body).includes("ask-user.v1.pending")) return Response.json({ ok: true, output: { pending: question } })
+      if (String(url).endsWith("/api/v1/ui/state")) return Response.json(pendingStateFor(question))
+      return Response.json({})
+    })
+    vi.stubGlobal("fetch", fetchMock)
+    const Provider = getProvider()
+
+    render(
+      <WorkspaceProvider apiBaseUrl="" plugins={[]} workspaceId="test-workspace">
+        <Provider apiBaseUrl="" activeSessionId="default" openSessionIds={["default"]}>
+          <AttentionProbe />
+        </Provider>
+      </WorkspaceProvider>,
+    )
+
+    await waitFor(() => expect(seen).toContainEqual(expect.objectContaining({
+      id: "ask-user:default:q1",
+      label: "Choose A or B",
+      inbox: expect.objectContaining({ kind: "question", sourceLabel: "question", priority: 10 }),
+      sessionBadge: expect.objectContaining({ kind: "question" }),
+    })))
   })
 
   it("generic attention cancel action cancels the matching ask-user question", async () => {
