@@ -147,6 +147,10 @@ export interface McpTransportClient {
   callTool(source: McpSource, toolName: string, input: unknown): Promise<McpToolCallResult>
 }
 
+export interface McpSourceAccessPolicy {
+  canAccessSource(actor: McpActor, source: McpSource): boolean
+}
+
 export class McpError extends Error {
   readonly code: McpErrorCode
   readonly details: unknown
@@ -218,7 +222,7 @@ export function assertMcpToolAllowed(template: McpProviderTemplate, toolName: st
 
 const REDACTION = "[REDACTED_MCP_SECRET]"
 const SECRET_KEY_PATTERN = /(api[_-]?key|access[_-]?token|refresh[_-]?token|authorization|cookie|client[_-]?secret|session[_-]?headers?)/i
-const SECRET_VALUE_PATTERN = /(Bearer\s+[A-Za-z0-9._~+\/-]{12,}|sk-[A-Za-z0-9_-]{12,}|x-api-key\s*[:=]\s*[^\s,}]+)/i
+const SECRET_VALUE_PATTERN = /(Bearer\s+[A-Za-z0-9._~+\/-]{12,}|sk-[A-Za-z0-9_-]{12,}|x-api-key\s*[:=]\s*[^\s,}]+)/gi
 
 export function redactMcpSecrets(value: unknown): unknown {
   if (typeof value === "string") return value.replace(SECRET_VALUE_PATTERN, REDACTION)
@@ -250,15 +254,17 @@ export class McpAccessFacade {
       transport: McpTransportClient
       templates?: readonly McpProviderTemplate[]
       maxInputBytes?: number
+      accessPolicy?: McpSourceAccessPolicy
     },
   ) {}
 
-  listSources(actor: McpActor): Promise<McpSource[]> {
-    return this.params.store.listSources(actor)
+  async listSources(actor: McpActor): Promise<McpSource[]> {
+    return (await this.params.store.listSources(actor)).filter((source) => this.canAccessSource(actor, source))
   }
 
   async probeSource(actor: McpActor, sourceId: string): Promise<McpProbeResult> {
-    const source = await this.requireOwnedSource(actor, sourceId)
+    const source = await this.requireAccessibleSource(actor, sourceId)
+    this.requireConnectedSource(source)
     const template = this.requireTemplate(source)
     const [tools, resources] = await Promise.all([
       this.params.transport.listTools(source),
@@ -273,7 +279,8 @@ export class McpAccessFacade {
   }
 
   async callReadonlyTool(actor: McpActor, sourceId: string, toolName: string, input: unknown): Promise<McpToolCallResult> {
-    const source = await this.requireOwnedSource(actor, sourceId)
+    const source = await this.requireAccessibleSource(actor, sourceId)
+    this.requireConnectedSource(source)
     const template = this.requireTemplate(source)
     assertMcpToolAllowed(template, toolName)
     const bytes = new TextEncoder().encode(JSON.stringify(input ?? {})).byteLength
@@ -285,12 +292,23 @@ export class McpAccessFacade {
     return redactMcpSecrets(result) as McpToolCallResult
   }
 
-  private async requireOwnedSource(actor: McpActor, sourceId: string): Promise<McpSource> {
+  private async requireAccessibleSource(actor: McpActor, sourceId: string): Promise<McpSource> {
     const source = await this.params.store.getSource(sourceId)
-    if (!source || source.workspaceId !== actor.workspaceId || source.userId !== actor.userId) {
+    if (!source || source.workspaceId !== actor.workspaceId) {
       throw new McpError(MCP_ERROR_CODES.SOURCE_NOT_FOUND, "MCP source not found")
     }
+    if (!this.canAccessSource(actor, source)) throw new McpError(MCP_ERROR_CODES.SOURCE_NOT_FOUND, "MCP source not found")
     return source
+  }
+
+  private canAccessSource(actor: McpActor, source: McpSource): boolean {
+    if (source.workspaceId !== actor.workspaceId) return false
+    return this.params.accessPolicy?.canAccessSource(actor, source)
+      ?? (source.ownerKind === "user" && source.userId === actor.userId)
+  }
+
+  private requireConnectedSource(source: McpSource): void {
+    if (source.status !== "connected") throw new McpError(MCP_ERROR_CODES.SOURCE_UNAVAILABLE, "MCP source is not connected")
   }
 
   private requireTemplate(source: McpSource): McpProviderTemplate {

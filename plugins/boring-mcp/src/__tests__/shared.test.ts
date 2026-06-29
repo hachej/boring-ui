@@ -46,10 +46,18 @@ describe("boring-mcp shared policy", () => {
     expect(() => assertMcpToolAllowed(AIRTABLE_MCP_TEMPLATE, "surprise_tool")).toThrow(McpError)
   })
 
-  it("redacts secret-like keys and values", () => {
-    const value = { ok: true, authorization: "Bearer secret-token", nested: { text: "x-api-key: abcdefghijklmnop" } }
+  it("redacts secret-like keys and all secret-like values", () => {
+    const value = {
+      ok: true,
+      authorization: "Bearer secret-token",
+      nested: { text: "Bearer abcdefghijklmnop and sk-abcdefghijklmnop and x-api-key: abcdefghijklmnop" },
+    }
     expect(containsMcpSecret(value)).toBe(true)
-    expect(redactMcpSecrets(value)).toEqual({ ok: true, authorization: "[REDACTED_MCP_SECRET]", nested: { text: "[REDACTED_MCP_SECRET]" } })
+    expect(redactMcpSecrets(value)).toEqual({
+      ok: true,
+      authorization: "[REDACTED_MCP_SECRET]",
+      nested: { text: "[REDACTED_MCP_SECRET] and [REDACTED_MCP_SECRET] and [REDACTED_MCP_SECRET]" },
+    })
   })
 
   it("reports disconnected and unknown sources in doctor output", () => {
@@ -84,7 +92,48 @@ describe("McpAccessFacade", () => {
     const facade = new McpAccessFacade({ store: makeStore(), transport })
     await expect(facade.probeSource({ ...actor, userId: "other" }, notionSource.id)).rejects.toMatchObject({ code: MCP_ERROR_CODES.SOURCE_NOT_FOUND })
     await expect(facade.callReadonlyTool(actor, notionSource.id, "update_page", {})).rejects.toMatchObject({ code: MCP_ERROR_CODES.TOOL_NOT_ALLOWED })
+    expect(transport.listTools).not.toHaveBeenCalled()
     expect(transport.callTool).not.toHaveBeenCalled()
+  })
+
+  it("blocks unavailable sources before transport execution", async () => {
+    const transport: McpTransportClient = {
+      listTools: vi.fn(async () => []),
+      listResources: vi.fn(async () => []),
+      readResource: vi.fn(),
+      callTool: vi.fn(async () => ({ content: "ok" })),
+    }
+    const facade = new McpAccessFacade({ store: makeStore({ ...notionSource, status: "expired" }), transport })
+    await expect(facade.probeSource(actor, notionSource.id)).rejects.toMatchObject({ code: MCP_ERROR_CODES.SOURCE_UNAVAILABLE })
+    await expect(facade.callReadonlyTool(actor, notionSource.id, "NOTION_SEARCH_NOTION_PAGE", {})).rejects.toMatchObject({ code: MCP_ERROR_CODES.SOURCE_UNAVAILABLE })
+    expect(transport.listTools).not.toHaveBeenCalled()
+    expect(transport.listResources).not.toHaveBeenCalled()
+    expect(transport.callTool).not.toHaveBeenCalled()
+  })
+
+  it("requires an explicit access policy for non-user-owned sources", async () => {
+    const teamSource: McpSource = { ...notionSource, ownerKind: "team_context", userId: "team-owner" }
+    const store: McpSourceStore = {
+      async listSources() { return [teamSource] },
+      async getSource(sourceId) { return sourceId === teamSource.id ? teamSource : undefined },
+    }
+    const transport: McpTransportClient = {
+      listTools: vi.fn(async () => []),
+      listResources: vi.fn(async () => []),
+      readResource: vi.fn(),
+      callTool: vi.fn(async () => ({ content: "ok" })),
+    }
+    const defaultFacade = new McpAccessFacade({ store, transport })
+    expect(await defaultFacade.listSources(actor)).toEqual([])
+    await expect(defaultFacade.probeSource(actor, teamSource.id)).rejects.toMatchObject({ code: MCP_ERROR_CODES.SOURCE_NOT_FOUND })
+
+    const policyFacade = new McpAccessFacade({
+      store,
+      transport,
+      accessPolicy: { canAccessSource: (requestActor, source) => requestActor.workspaceId === source.workspaceId && source.ownerKind === "team_context" },
+    })
+    expect(await policyFacade.listSources(actor)).toEqual([teamSource])
+    await expect(policyFacade.probeSource(actor, teamSource.id)).resolves.toMatchObject({ sourceId: teamSource.id })
   })
 
   it("rejects provider responses that look like secrets", async () => {
