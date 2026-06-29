@@ -1368,3 +1368,96 @@ revoke/disconnect verified
 no raw token exposure verified
 Constellation audit/redaction wrapper verified
 ```
+
+## Connector backend decision: Composio-first hosted V0
+
+Decision update:
+
+```txt
+For hosted Constellation V0, prefer Composio as the connector/auth/tool backend.
+Keep Constellation SecretStore as an interface and fallback/future/private-mode path.
+```
+
+Rationale:
+
+- Nango self-host is useful but limited for this product shape, especially around MCP/tool execution and advanced hosted connector UX.
+- Composio better matches the immediate goal: easy onboarding, managed OAuth, per-user connected accounts, and agent/MCP-oriented tool access.
+- Composio's early pricing appears acceptable for Constellation experiments and early production.
+- Building our own full credential store/tool connector stack remains possible later behind the same `credentialProvider` abstraction.
+
+### V0 backend priority
+
+```txt
+1. composio-managed
+   Hosted SaaS connector fast path for Notion/Airtable/Microsoft and other supported tools.
+
+2. embedded-secret-store / Infisical / Vault-compatible SecretStore
+   Future/private fallback for BYO LLM keys, MCP-native gaps, regulated deployments, or customers rejecting third-party token custody.
+
+3. nango
+   Optional adapter only when a specific provider flow benefits from it; not the default V0 direction.
+```
+
+### What Constellation still owns
+
+Even when Composio owns connector auth/tool execution, Constellation owns governance:
+
+```txt
+source registry
+workspace/user/company-context ownership
+which providers are enabled
+which tools/actions are exposed
+read-only default policy
+tool search/describe UX if not fully delegated
+audit events
+redaction of results/errors
+model/token budget policy
+filesystem boundaries
+BYO LLM credential path
+```
+
+### Composio gates before production
+
+```txt
+Notion/Airtable/Microsoft provider spikes pass
+read-only allowlist can be enforced
+per-user/workspace isolation verified
+custom OAuth app / branded consent path understood
+revoke/disconnect behavior verified
+no raw provider token reaches browser/agent/logs
+Composio tool-call/audit metadata is sufficient or wrapped by Constellation audit
+DPA/security/subprocessor/incident-history accepted
+fallback path documented for private deployments
+```
+
+### Preserve future self-custody path
+
+Do not couple boring-mcp directly to Composio APIs. Use interfaces:
+
+```ts
+interface ConnectorCredentialProvider {
+  startConnect(input: StartConnectInput): Promise<ConnectStartResult>;
+  getStatus(input: ConnectorStatusInput): Promise<ConnectorStatus>;
+  disconnect(input: DisconnectInput): Promise<void>;
+}
+
+interface ConnectorToolProvider {
+  searchTools(input: ToolSearchInput): Promise<ToolSearchResult>;
+  describeTool(input: ToolDescribeInput): Promise<ToolDescription>;
+  callTool(input: GovernedToolCallInput): Promise<GovernedToolCallResult>;
+}
+```
+
+First implementation:
+
+```txt
+ComposioConnectorProvider
+```
+
+Future implementations:
+
+```txt
+NativeMcpConnectorProvider
+SecretStoreBackedRestConnectorProvider
+NangoConnectorProvider
+```

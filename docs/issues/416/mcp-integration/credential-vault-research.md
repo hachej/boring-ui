@@ -567,3 +567,42 @@ MCP-native provider gaps
 customers that reject third-party token custody
 fallback if Composio pricing/security/provider coverage changes
 ```
+
+## Decision update: Composio-first hosted V0
+
+Nango self-host remains useful, but it is too limited to be the default V0 path for Constellation's immediate goal of easy agent/MCP-oriented connector onboarding.
+
+Selected hosted V0 strategy:
+
+```txt
+Composio first for managed SaaS connector auth/tool execution.
+Keep Constellation SecretStore interface for future self-custody/private deployments.
+```
+
+This means Constellation initially stores Composio references, not raw provider tokens, for supported connectors:
+
+```txt
+workspaceId
+actorId
+sourceId
+providerId
+credentialProvider = "composio-managed"
+composio user/connection/session/auth config refs
+```
+
+The SecretStore work remains important for:
+
+```txt
+BYO LLM API keys
+MCP-native provider gaps
+private/regulated deployments
+customers who reject third-party token custody
+fallback if Composio coverage/pricing/security changes
+```
+
+Implementation rule:
+
+```txt
+Do not hardcode Composio into boring-mcp business logic.
+Hide it behind ConnectorCredentialProvider and ConnectorToolProvider interfaces.
+```
