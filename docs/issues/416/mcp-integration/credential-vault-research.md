@@ -383,3 +383,91 @@ If it fails any hard gate, fall back to the embedded custom Postgres SecretStore
 | Supabase Vault | Useful Postgres-extension model for encrypted secrets; best if already on Supabase. Decrypted SQL view is dangerous for our no-raw-secret API requirement unless tightly locked down. |
 | oauth-connector | Small MIT OAuth token manager with AES-256-GCM and storage strategies. Simpler than needed; useful for provider refresh reference, not full multi-tenant credential vault. |
 | drizzle-encryption / EncoraDB / field encryption libs | Help encrypt columns, but do not solve OAuth lifecycle, agent-safe resolution, refresh locks, revoke/audit policy. |
+
+## Popular-framework preference update
+
+`agent.pw` is technically close to the desired API, but it is too niche to be the default dependency for Constellation.
+
+Updated preference:
+
+```txt
+Use popular, durable secret-management backends where possible.
+Keep niche agent-vault projects as references only.
+```
+
+### Preferred backend candidate: Infisical
+
+Infisical is the best fit among popular/self-hostable options:
+
+```txt
+open-source secret-management platform
+large community and active development
+self-hostable
+Node SDK
+secret versioning / audit / rotation features
+future KMS and secret-management integrations
+```
+
+Recommended Constellation shape:
+
+```txt
+Constellation DB
+  credential metadata
+  workspace/actor/source ownership
+  provider kind/status
+  audit correlation ids
+  secretRef
+
+Infisical
+  encrypted secret payload
+  provider tokens/API keys/client secrets
+```
+
+Constellation still owns policy and execution:
+
+```txt
+agent/browser -> Constellation operation -> credential resolver -> Infisical SDK -> trusted provider adapter
+```
+
+Raw secrets still never go to browser/agent/workspace/logs.
+
+### Enterprise backend: Vault/OpenBao or cloud KMS
+
+For larger/private enterprise deployments:
+
+```txt
+Vault/OpenBao Transit or KV
+AWS Secrets Manager / KMS
+GCP Secret Manager / KMS
+Azure Key Vault
+```
+
+These can implement the same `SecretStore` interface later.
+
+### Embedded Postgres fallback
+
+Keep embedded `EncryptedPostgresSecretStore` as a fallback when the app must avoid another service.
+
+Use it only with the full security gate list:
+
+```txt
+AEAD encryption
+key versioning
+rotation path
+server-only resolve
+redaction tests
+ownership tests
+revoke/cache invalidation
+refresh locks
+```
+
+### Niche projects demoted to references
+
+| Project | New role |
+| --- | --- |
+| agent.pw | reference for path/resource/resolveHeaders API and OAuth lifecycle ideas |
+| Cred Ninja | reference for agent credential delegation and guard policy |
+| API Locker | reference for product UX, proxy injection, LLM/API/OAuth vault surface |
+| OpenCloak | reference for token-exchange agent pattern |
+
+They should not be default Constellation dependencies unless a later spike proves maturity, license, and adoption are acceptable.

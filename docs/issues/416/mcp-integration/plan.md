@@ -1257,3 +1257,64 @@ key version / rotation story is acceptable or can be wrapped
 ```
 
 If `agent.pw` passes, wrap it as the first implementation behind Constellation's credential resolver. If it fails, proceed with custom embedded SecretStore and borrow its path/resource/resolveHeaders model.
+
+## Credential vault dependency preference update
+
+`agent.pw` is now demoted to reference/spike material only. It is technically close, but too niche to be the default Constellation dependency.
+
+Preferred direction:
+
+```txt
+SecretStore interface first.
+Popular backend first.
+Niche agent-vault projects as references only.
+```
+
+V0 preferred backend candidate:
+
+```txt
+InfisicalSecretStore
+```
+
+Shape:
+
+```txt
+Constellation DB stores metadata/ref:
+  workspaceId
+  actorId
+  sourceId
+  providerId
+  credential kind/status
+  secretRef
+  audit metadata
+
+Infisical stores encrypted secret payload:
+  OAuth tokens
+  API keys
+  BYO LLM provider keys
+  client secrets where needed
+```
+
+Fallback:
+
+```txt
+EncryptedPostgresSecretStore
+```
+
+only if Infisical adds too much operational burden or cannot satisfy provider lifecycle requirements.
+
+Future enterprise backends:
+
+```txt
+Vault/OpenBao
+AWS/GCP/Azure Secret Manager or KMS envelope backend
+```
+
+Reference-only projects:
+
+```txt
+agent.pw
+Cred Ninja
+API Locker
+OpenCloak
+```
