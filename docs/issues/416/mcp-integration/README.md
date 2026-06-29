@@ -1,29 +1,28 @@
-# Issue #416 — MCP Integration Pack
+# Issue #416 — MCP / Connector Integration Pack
 
-This folder tracks the generic MCP onboarding work for issue #416.
+This folder tracks the generic MCP/connector onboarding work for issue #416.
 
-Goal: make it easy to onboard any MCP server, with Notion and Airtable as first templates, while keeping boring-ui/Constellation in control of auth, tool policy, audit, and future governance.
+## Canonical plan
 
-## Files
+- [`plan.md`](./plan.md) — current source of truth.
 
-- `plan.md` — implementation plan for generic MCP onboarding foundation.
-- `reviews/` — thermo review outputs.
+Current decision: hosted Constellation V0 is **Composio-first** for managed connector auth/tool execution, with Constellation-owned interfaces preserving future self-custody/private backends.
 
-## Key decision
+## Research and evidence
 
-Use OpenClaw as the product/control-plane inspiration:
+- [`credential-vault-research.md`](./credential-vault-research.md) — credential-vault options, Composio/Nango/Infisical/agent-vault research, final backend notes.
+- [`better-auth-mcp-research.md`](./better-auth-mcp-research.md) — Better Auth MCP/OAuth findings and inbound-vs-outbound distinction.
+- [`nango-selfhost-poc.md`](./nango-selfhost-poc.md) — self-hosted Nango smoke.
+- [`nango-real-spike.md`](./nango-real-spike.md) — real Nango credential/proxy spike.
+- [`nango-provider-support.md`](./nango-provider-support.md) — provider registry support for Notion/Airtable/Microsoft.
+- [`nango-notion-mcp-spike.md`](./nango-notion-mcp-spike.md) — Nango Notion MCP auth finding.
+- [`pi-mcp-adapter-notion-auth-spike.md`](./pi-mcp-adapter-notion-auth-spike.md) — pi-mcp-adapter Notion MCP auth spike.
+- [`reviews/`](./reviews/) — thermo/Claude/Gemini/local review outputs.
 
-- central MCP registry;
-- add/configure/login/logout;
-- status/doctor/probe;
-- tool filters;
-- runtime projection.
+## Key principles
 
-Use `pi-mcp-adapter` as implementation inspiration:
-
-- MCP transports;
-- lazy lifecycle;
-- metadata/tool discovery;
-- proxy-tool pattern.
-
-Do **not** rely on raw global Pi extension config for hosted multi-user production.
+- Constellation owns governance: source ownership, policy, read-only defaults, audit, redaction, filesystem boundaries, and model/token budget policy.
+- Composio can own hosted V0 connector auth/tool execution where security/procurement gates pass.
+- Raw provider tokens must never reach Pi, browser responses, prompts, logs, workspace files, or audit payloads.
+- Do not hard-code Composio into boring-mcp business logic; hide it behind connector interfaces.
+- Preserve a future self-custody path for BYO LLM keys, MCP-native gaps, private deployments, and customers rejecting third-party token custody.
