@@ -59,6 +59,23 @@ describe('public share routes', () => {
     expect(image.headers['content-type']).toContain('image/png')
   })
 
+
+  test('exports portable Markdown and a ZIP bundle with images', async () => {
+    const { app } = await createTestApp()
+
+    const portable = await app.inject({ method: 'GET', url: '/share/s_test/portable.md', headers: { host: 'review.test' } })
+    expect(portable.statusCode).toBe(200)
+    expect(portable.body).toContain('http://review.test/share/s_test/assets/docs/images/hero.png')
+    expect(portable.body).toContain('http://review.test/share/s_test/assets/docs/images/inline.png')
+
+    const zip = await app.inject({ method: 'GET', url: '/share/s_test/bundle.zip' })
+    expect(zip.statusCode).toBe(200)
+    expect(zip.headers['content-type']).toContain('application/zip')
+    expect(zip.body).toContain('docs/review.md')
+    expect(zip.body).toContain('docs/images/hero.png')
+    expect(zip.body).toContain('docs/images/inline.png')
+  })
+
   test('does not expose unlisted workspace files', async () => {
     const { app } = await createTestApp()
 
