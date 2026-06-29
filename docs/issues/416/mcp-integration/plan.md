@@ -880,3 +880,19 @@ Implication:
 - Regular Nango `notion` OAuth remains viable for V0 Notion REST/API access.
 - `notion-mcp` remains experimental until dashboard/private creation or direct dynamic registration is proven.
 - Julien's Notion account is only needed after a working Notion authorization URL is produced; this spike failed earlier.
+
+## pi-mcp-adapter Notion MCP auth spike
+
+See [`pi-mcp-adapter-notion-auth-spike.md`](./pi-mcp-adapter-notion-auth-spike.md).
+
+Result: promising but not fully complete in this sandbox.
+
+`pi-mcp-adapter` / MCP SDK OAuth successfully generated a Notion MCP authorization URL for `https://mcp.notion.com/mcp` using dynamic client registration and PKCE. Julien opened it and Notion returned an authorization code. This proves the adapter path gets farther than Nango free self-host `notion-mcp`, which failed before Notion login.
+
+The helper process timed out before the code was pasted, so the in-memory pending transport was gone. A direct token exchange using the stored client id, redirect URI, and PKCE verifier then failed with Cloudflare 1010 / `browser_signature_banned` from `https://mcp.notion.com/token`.
+
+Implication:
+
+- A `pi-mcp-adapter`-style MCP OAuth core plus DB-backed credential store is a good building block for hosted `boring-mcp`.
+- Hosted Constellation must verify Notion MCP registration/token exchange from the real deployment environment.
+- If Notion MCP token exchange is blocked by runtime egress, use regular Notion OAuth/API for V0 and keep MCP-native Notion experimental.
