@@ -969,6 +969,26 @@ git diff --numstat origin/main...HEAD \
   | awk '$3 !~ /(^|\/)(__tests__|tests|e2e)(\/|$)/ && $3 !~ /\.(md|mdx)$/ { add += $1 } END { print add + 0 }'
 ```
 
+### Repository ownership rule
+
+Reusable MCP capability belongs in `hachej/boring-ui`, not in a child app. Constellation should only contain app-specific composition, provider enablement, copy, routes that bind to its auth/workspace runtime, and visual product UX.
+
+```txt
+boring-ui: boring-mcp contracts, policy, redaction, source/tool DTOs, connector seams, tests, generic plugin/package surfaces.
+boring-ui-constellation: Sources panel composition, Constellation copy/order/defaults, app runtime registration, deployment/env binding.
+```
+
+If an implementation PR adds reusable MCP logic to Constellation, stop and split it before merge.
+
+Enforcement rule:
+
+```txt
+Every implementation PR must paste this command and its numeric output in the PR description.
+The reviewer must rerun the command against the PR branch before approval.
+If the output is greater than 1300, the PR is blocked and must be split unless the PR is explicitly docs/tests-only.
+If CI automation is added later, it should enforce the same command; until then this is a required manual review gate, not optional guidance.
+```
+
 ### PR 0 — planning and evidence pack
 
 Repo: `hachej/boring-ui`
@@ -995,41 +1015,83 @@ review-size cap is recorded
 future PRs have clear acceptance criteria
 ```
 
-### PR 1 — generic MCP governance foundation + Sources UX shell
+### PR 1A — reusable boring-mcp foundation
 
-Repo: `hachej/boring-ui-constellation`
-Branch: `feat/generic-mcp-onboarding`
-Status: ready/open PR
-Code cap target: under 1300 non-test/non-doc lines
+Repo: `hachej/boring-ui`
+Branch: `feat/boring-mcp-foundation`
+Code cap target: under 1200 non-test/non-doc lines
 
-Scope already implemented:
+Scope:
 
 ```txt
-MCP provider templates
+reusable boring-mcp package/plugin home
+MCP provider template model
 read-only tool policy
 MCP facade guardrails
 redaction guard
 status/doctor/probe model
-front-end Sources left tab
-MCP Sources center panel shell
-no browser Composio calls
-no raw secret exposure
+normalized source/tool DTO types
+fake transport/source-store tests
+```
+
+Non-goals:
+
+```txt
+no Constellation branding/copy
+no app-specific Sources panel
+no real Composio calls
+no app-specific route registration
 ```
 
 Exit criteria:
 
 ```txt
-Sources entry appears only in authenticated workspace
+core boring-mcp logic is reusable by Constellation and future apps
+no value imports from Constellation
+no app-specific provider enablement beyond generic templates/policies
+redaction/policy/facade tests pass in boring-ui
+```
+
+### PR 1B — Constellation Sources UX shell
+
+Repo: `hachej/boring-ui-constellation`
+Branch: `feat/constellation-sources-shell`
+Code cap target: under 700 non-test/non-doc lines
+
+Scope:
+
+```txt
+front-end Sources left tab
+MCP Sources center panel shell
+Constellation-specific provider copy and ordering
+static composition of boring-mcp front/plugin surfaces when available
+no browser Composio calls
+no raw secret exposure
+```
+
+Non-goals:
+
+```txt
+no reusable MCP policy/facade logic
+no generic boring-mcp package code
+no backend source registry
+no real Composio calls
+```
+
+Exit criteria:
+
+```txt
+Sources entry appears only in authenticated Constellation workspace
 UI states are static/shell only until backend routes land
-all provider/action copy matches the canonical plan
-redaction/policy tests pass where dependencies are installed
+app-specific copy matches Constellation product language
+all generic MCP logic is imported from boring-ui boring-mcp package/plugin, not duplicated in Constellation
 ```
 
 ### PR 2 — MCP source registry and backend route contracts
 
-Repo: `hachej/boring-ui-constellation`
+Repo: `hachej/boring-ui` for reusable registry/contracts, then `hachej/boring-ui-constellation` for app registration only if needed
 Branch: `feat/mcp-source-registry`
-Code cap target: under 900 non-test/non-doc lines
+Code cap target: under 900 non-test/non-doc lines per repo PR
 
 Scope:
 
@@ -1059,6 +1121,39 @@ Exit criteria:
 browser can list/manage source records through Constellation-owned routes only
 all responses are secret-free DTOs
 route tests prove cross-user/workspace access is denied
+```
+
+### PR 2.5 — Composio security/vendor preflight before real provider calls
+
+Repo: `hachej/boring-ui-constellation` or tracked security checklist linked from the implementation PR
+Code cap target: docs/tests only unless a tiny config/readiness check is needed
+
+Scope:
+
+```txt
+confirm Composio test project is isolated from production data
+confirm COMPOSIO_API_KEY storage path: server env/Vault only, no browser bundle, no workspace/session files
+confirm log redaction covers Composio API key, MCP session headers, OAuth codes, provider tokens, and seeded canaries
+confirm browser DTOs for connect/status/probe cannot include session.mcp.headers or raw provider OAuth values
+confirm revoke/disconnect and connected-account status behavior to be verified in each provider slice
+record DPA/security/subprocessor/data-residency status or explicit owner-approved acceptance for non-production spikes
+record incident-history/vendor-risk acceptance before production launch
+```
+
+Non-goals:
+
+```txt
+no real provider OAuth connection from the product app until this preflight is green or explicitly owner-accepted
+no agent bridge tools
+no provider tool execution
+```
+
+Exit criteria:
+
+```txt
+security preflight checklist is linked from PR 3
+secret-handling assumptions are explicit before the Composio SDK/API key lands in app code
+any accepted gap has an owner and a later PR gate
 ```
 
 ### PR 3 — ComposioConnectorProvider Notion connect/status/probe
@@ -1092,6 +1187,7 @@ no browser Composio headers/API key
 Exit criteria:
 
 ```txt
+PR 2.5 security preflight is linked and green or explicitly owner-accepted
 user can click Connect for Notion and complete Composio auth
 status becomes connected after server refresh
 probe returns normalized, redacted read-only tool summaries
