@@ -88,6 +88,58 @@ Composio managed auth / sessions / tools
 Notion / Airtable / Microsoft / SharePoint
 ```
 
+## Reuse rule — do not reinvent OAuth or MCP plumbing
+
+The point of this plan is **governance and product integration**, not rebuilding commodity auth/protocol layers.
+
+V0 should reuse existing systems wherever possible:
+
+```txt
+OAuth / connector auth:
+  Composio owns managed OAuth, per-user connected accounts, token refresh, revoke/disconnect for supported SaaS providers.
+
+MCP protocol / tool integration:
+  use the official MCP TypeScript SDK and/or stable exported pi-mcp-adapter patterns for MCP client/proxy-tool behavior.
+```
+
+Constellation should only own the parts neither Composio nor the Pi MCP plugin can safely own for hosted product governance:
+
+```txt
+source/workspace/user ownership
+company vs user context boundaries
+read-only/tool allowlist policy
+normalized tool catalog
+search/describe/call facade
+audit and redaction
+model/token/filesystem governance
+private/self-custody fallback seams
+```
+
+Two acceptable implementation shapes for the Composio V0 adapter:
+
+```txt
+A. Composio SDK/API/action calls behind ComposioConnectorProvider
+B. Composio MCP session endpoint consumed through MCP SDK / pi-mcp-adapter-style client behind ComposioConnectorProvider
+```
+
+Do not use raw local Pi plugin config/storage as hosted production state. But do reuse the tool-interface/proxy pattern so boring-mcp does not reimplement MCP discovery/call mechanics from scratch.
+
+Avoid this split-brain shape unless Composio officially supports it:
+
+```txt
+pi-mcp-adapter connects directly to provider MCP
+Composio separately brokers raw provider token
+```
+
+That would split token lifecycle, refresh, revoke, and audit across two systems. Preferred hosted V0 is one of:
+
+```txt
+boring-mcp → Composio actions/API
+boring-mcp → MCP SDK/pi-adapter-style client → Composio MCP endpoint
+```
+
+In both cases Composio owns provider OAuth, and Constellation owns governance.
+
 Constellation still owns governance:
 
 ```txt
@@ -313,7 +365,7 @@ MCP-native annotations such as `readOnlyHint` are helpful classification inputs 
 
 Hosted V0 must hide Composio behind a **thin seam**, not a full connector framework.
 
-The purpose is to prevent Composio details from spreading through boring-mcp while avoiding premature platform work.
+The purpose is to prevent Composio details from spreading through boring-mcp while avoiding premature platform work. It is also the place where we can choose whether the Composio adapter talks to Composio through SDK/API calls or through a Composio MCP endpoint using MCP SDK / pi-mcp-adapter-style client plumbing.
 
 V0 should have:
 
@@ -647,6 +699,8 @@ fallback/private SecretStore path remains behind interfaces, not hardcoded into 
 only one V0 connector implementation exists: ComposioConnectorProvider
 Composio calls are isolated to one module and one dispatch point
 no dynamic plugin/connector framework is introduced for V0
+OAuth lifecycle is delegated to Composio for supported hosted connectors
+MCP protocol/tool-call mechanics reuse MCP SDK or pi-mcp-adapter-style client/proxy patterns where applicable
 ```
 
 ## Review status
