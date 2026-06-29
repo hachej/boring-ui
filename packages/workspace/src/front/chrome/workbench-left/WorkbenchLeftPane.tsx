@@ -19,7 +19,7 @@ import { PaneCollapseButton } from "../../layout/paneCollapseButton"
 import type { FileTreeBridge } from "../../bridge/types"
 import { useRegistry, useWorkspaceSourceRegistry } from "../../registry"
 import type { PanelConfig, WorkspaceSourceConfig } from "../../registry/types"
-import { isWorkspacePagePlacement, isWorkspaceSourcePlacement } from "../../../shared/types/panel"
+import { isWorkspacePagePlacement } from "../../../shared/types/panel"
 import type { LeftTabParams } from "../../../shared/plugins/types"
 import { PluginErrorBoundary } from "../../plugin/PluginErrorBoundary"
 
@@ -175,7 +175,7 @@ export function WorkbenchLeftPane({
     }
     const defaultPanelId = entry.source?.defaultPanelId
     if (!defaultPanelId) return
-    const target = panels.find((panel) => panel.id === defaultPanelId && !isWorkspaceSourcePlacement(panel.placement))
+    const target = panels.find((panel) => panel.id === defaultPanelId)
     if (!target) return
     onOpenPanel({
       id: target.id,
