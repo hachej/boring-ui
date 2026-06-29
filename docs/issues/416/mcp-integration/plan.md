@@ -1170,3 +1170,50 @@ future governed integrations
 ```
 
 It should not become a user-facing generic password manager or arbitrary secret filesystem.
+
+## Selected credential vault implementation direction
+
+See [`credential-vault-research.md`](./credential-vault-research.md).
+
+Decision: implement a narrow embedded Constellation SecretStore V0 backed by Postgres encrypted payload rows.
+
+This is selected over adopting an external vault product for V0 because Constellation needs app-native ownership, source joins, refresh locks, policy/audit integration, and server-side execution boundaries for MCP and BYO LLM credentials.
+
+Use off-the-shelf projects as references/backends, not immediate V0 dependencies:
+
+| Option | Role |
+| --- | --- |
+| Cred Ninja (`@credninja/oauth`, `@credninja/vault`, `@credninja/guard`) | closest reference for agent credential delegation and OAuth vault patterns |
+| API Locker | reference for LLM/API/OAuth vault UX, proxy injection, MCP surface, audit/rotation |
+| Infisical | optional future backend/secret manager/KMS-style dependency |
+| Vault/OpenBao/cloud KMS | optional future envelope-key backend for enterprise deployments |
+
+V0 SecretStore requirements:
+
+```txt
+Postgres metadata + encrypted payload rows
+AES-256-GCM or XChaCha20-Poly1305
+unique nonce/IV per encryption
+versioned payload envelope
+key id/version column
+future key rotation path
+server-only resolve API
+no raw-token browser/agent/tool API
+redaction guard for logs/errors/audit/tool results
+workspace/actor/source ownership checks
+revoke/rotate cache invalidation
+per-credential refresh lock for OAuth
+short-lived encrypted pending OAuth state / PKCE rows
+seeded canary-secret tests
+```
+
+Initial consumers:
+
+```txt
+boring-mcp external provider credentials
+BYO LLM provider tokens
+```
+
+Better Auth remains the identity/session/org layer and can own regular OAuth account tokens only where provider-specific spikes prove it handles refresh safely with `account.encryptOAuthTokens: true`.
+
+For MCP-native OAuth and BYO LLM credentials, Constellation owns encrypted storage directly through the embedded SecretStore.
