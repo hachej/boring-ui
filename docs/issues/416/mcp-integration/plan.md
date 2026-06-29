@@ -527,3 +527,104 @@ Route names can be adjusted during implementation, but these operations define t
 ### V0 to V1 migration
 
 V1 is additive. Existing V0 `mcp_readonly_call` remains stable. V1 adds search/describe backed by the same catalog and policy model. V2 direct tools are optional and can be disabled without removing V0/V1 bridge tools.
+
+## Operating modes
+
+`boring-mcp` must support two operating modes because CLI/local projects and hosted full apps have different trust/auth boundaries.
+
+### Mode A — user-managed MCP / CLI mode
+
+Use when:
+
+- local CLI / personal project;
+- user owns the machine and config;
+- user wants to add arbitrary MCP servers quickly;
+- credentials can live in user-local secure storage or local config conventions.
+
+Behavior:
+
+```txt
+user adds MCP server
+  → user handles auth/config
+  → boring-mcp probes tools
+  → tools are searchable
+  → safe/classified tools can materialize
+```
+
+Config sources may include project/user MCP config such as `.mcp.json`, `.pi/mcp.json`, or boring-mcp-specific project config, subject to path/security review.
+
+Rules:
+
+- user-managed mode can support arbitrary stdio/http/sse MCP servers;
+- user is responsible for trusting local stdio commands;
+- default policy still disables unknown/write/admin tools until enabled;
+- credentials must not be committed accidentally; doctor should warn on literal sensitive headers/env values;
+- materialized tools are project/session-scoped.
+
+### Mode B — app-predefined MCP / hosted full-app mode
+
+Use when:
+
+- production/full app;
+- app owner predefines supported providers/tools;
+- OAuth and credentials are host-managed;
+- multiple users/workspaces share app infrastructure.
+
+Behavior:
+
+```txt
+app ships MCP templates/policies
+  → user connects approved provider account
+  → boring-mcp uses encrypted server-side credentials
+  → only app-approved tools are searchable/materialized
+```
+
+Rules:
+
+- app defines provider templates, endpoints, allowed transports, and tool policies;
+- user cannot add arbitrary stdio commands unless app explicitly enables it;
+- hosted OAuth callback/token storage is app-owned;
+- credentials are encrypted and never stored in project files or Pi session files;
+- materialized tools are generated only for app-approved, classified tools;
+- app governance can further restrict user/server/tool access.
+
+### Shared concepts across both modes
+
+Both modes use the same core facade concepts:
+
+- MCP server/source registry;
+- status/doctor/probe;
+- tool catalog;
+- read-only default classification;
+- tool search/describe/call;
+- optional materialized tools;
+- redaction guard;
+- stable error codes.
+
+The difference is **who owns config/auth**:
+
+| Concern | User-managed / CLI | App-predefined / full app |
+| --- | --- | --- |
+| Server definitions | user/project config | app templates/database |
+| Auth | user/local MCP auth or local secret store | hosted OAuth/encrypted app secret store |
+| Arbitrary MCP servers | allowed by default with warnings | denied unless app enables |
+| Stdio commands | allowed locally with trust warning | usually disabled |
+| Tool policy | user/admin local policy | app policy + future governance |
+| Materialization | project/session scoped | app/workspace/user scoped |
+
+### Implementation implication
+
+`boring-mcp` should separate:
+
+```txt
+core MCP facade/package
+  mode-neutral registry, policy, probe, search, materialization
+
+mode adapters
+  cliLocalMcpConfigAdapter
+  hostedAppMcpConfigAdapter
+  hostedOAuthCredentialProvider
+  localCredentialProvider
+```
+
+Do not bake hosted assumptions into the generic core, and do not let CLI/local config semantics leak into hosted production.
