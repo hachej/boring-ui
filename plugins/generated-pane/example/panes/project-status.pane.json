@@ -1,0 +1,23 @@
+{
+  "kind": "boring.generated-pane",
+  "version": 1,
+  "profile": "base",
+  "title": "Project Status",
+  "description": "Example generated pane rendered from a safe json-render catalog.",
+  "root": "main",
+  "elements": {
+    "main": {
+      "type": "Card",
+      "props": { "title": "Launch readiness", "description": "Generated from JSON, not React code." },
+      "children": ["stack"]
+    },
+    "stack": {
+      "type": "Stack",
+      "props": { "gap": "md" },
+      "children": ["badge", "summary", "notice"]
+    },
+    "badge": { "type": "Badge", "props": { "label": "On track", "variant": "secondary" } },
+    "summary": { "type": "Text", "props": { "text": "The generated-pane plugin validates this spec against a component catalog before rendering." } },
+    "notice": { "type": "Alert", "props": { "title": "Safe by default", "description": "Unknown components, props, and actions are rejected." } }
+  }
+}

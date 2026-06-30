@@ -1,0 +1,42 @@
+{
+  "name": "@hachej/data-bridge",
+  "version": "0.1.53",
+  "type": "module",
+  "private": false,
+  "license": "MIT",
+  "description": "WorkspaceBridge-backed semantic data adapter plugin for Boring workspace.",
+  "repository": { "type": "git", "url": "https://github.com/hachej/boring-ui" },
+  "homepage": "https://github.com/hachej/boring-ui",
+  "boring": {
+    "id": "data-bridge",
+    "label": "Data Bridge",
+    "front": "dist/front/index.js",
+    "server": "dist/server/index.js"
+  },
+  "files": ["dist", "README.md"],
+  "exports": {
+    ".": { "types": "./dist/shared/index.d.ts", "import": "./dist/shared/index.js" },
+    "./front": { "types": "./dist/front/index.d.ts", "import": "./dist/front/index.js" },
+    "./server": { "types": "./dist/server/index.d.ts", "import": "./dist/server/index.js" },
+    "./shared": { "types": "./dist/shared/index.d.ts", "import": "./dist/shared/index.js" },
+    "./package.json": "./package.json"
+  },
+  "sideEffects": false,
+  "scripts": {
+    "build": "tsup",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run --passWithNoTests",
+    "lint": "pnpm run typecheck",
+    "clean": "rm -rf dist .tsbuildinfo"
+  },
+  "peerDependencies": {
+    "@hachej/boring-workspace": "workspace:*"
+  },
+  "devDependencies": {
+    "@duckdb/node-api": "1.5.2-r.1",
+    "@hachej/boring-workspace": "workspace:*",
+    "tsup": "^8.4.0",
+    "typescript": "~5.9.3",
+    "vitest": "^3.2.6"
+  }
+}
