@@ -53,6 +53,18 @@ Managed connector adapters must pass the [Composio security preflight](./docs/co
 - Mutating/admin tool names are denied before any provider call.
 - Provider results pass redaction and secret-leak checks before agent/UI use.
 
+## Production launch gate / smoke checklist
+
+Before enabling boring-mcp in a shipped app, operators should verify:
+
+1. `evaluateBoringMcpLaunchGate` passes for the app composition: plugin id, registry list/get/disconnect, transport, provider templates, all seven bridge tools, timeout, rate/budget gate, readonly input limit, and reviewed docs.
+2. Managed providers pass `validateManagedConnectorPreflight`; app secrets stay server-side and never appear in browser/workspace files.
+3. Source list/status/probe/tool catalog/read-only call responses pass the secret-leak guard using representative OAuth/session canaries.
+4. Provider metadata calls use timeout + retry policy; read-only tool calls use timeout but no automatic retry.
+5. Rate/budget hooks block before provider `listTools`/`callTool` when local limits are exceeded.
+6. Disconnect/revoke is verified through the injected registry status/result and never performs provider tool execution.
+7. Local smoke with a fake managed connector: connect -> status connected -> search tools -> describe tool -> governed readonly call -> disconnect -> verify non-connected status.
+
 ## Current status
 
-Foundation plus source handlers, executable preflight, generic managed connector adapter seam, normalized tool catalog search/describe, governed fake-transport-testable read-only execution, and exported agent bridge tool definitions. Real Composio SDK/API calls, route/app registration, and Constellation binding land in later PRs.
+Foundation plus source handlers, executable preflight, generic managed connector adapter seam, normalized tool catalog search/describe, governed fake-transport-testable read-only execution, exported agent bridge tool definitions, and production launch-gate helpers. Real Composio SDK/API calls, route/app registration, and Constellation binding land in later PRs.
