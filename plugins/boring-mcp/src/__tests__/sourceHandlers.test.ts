@@ -62,6 +62,15 @@ describe("boring-mcp source handlers", () => {
     expect(result.sources[0]).not.toHaveProperty("sessionHeaders")
   })
 
+  it("rejects source DTOs that contain secret-like provider metadata", async () => {
+    const handlers = createBoringMcpSourceHandlers({
+      registry: makeRegistry(makeSource({ providerAccountLabel: "access_token=abcdefghijklmnop" })),
+      transport: makeTransport(),
+    })
+
+    await expect(handlers.listSources(actor)).rejects.toMatchObject({ code: MCP_ERROR_CODES.SECRET_LEAK_GUARD })
+  })
+
   it("returns status only for the owning actor", async () => {
     const handlers = createBoringMcpSourceHandlers({ registry: makeRegistry(), transport: makeTransport() })
 
@@ -84,6 +93,14 @@ describe("boring-mcp source handlers", () => {
       expect.objectContaining({ name: "NOTION_SEARCH_NOTION_PAGE", decision: expect.objectContaining({ allowed: true }) }),
       expect.objectContaining({ name: "update_page", decision: expect.objectContaining({ allowed: false }) }),
     ])
+  })
+
+  it("rejects probe metadata that contains secret-like values", async () => {
+    const transport = makeTransport()
+    transport.listResources = vi.fn(async () => [{ uri: "notion://page/demo?oauth_token=abcdefghijklmnop" }])
+    const handlers = createBoringMcpSourceHandlers({ registry: makeRegistry(), transport })
+
+    await expect(handlers.probeSource(actor, "source:notion:user-1")).rejects.toMatchObject({ code: MCP_ERROR_CODES.SECRET_LEAK_GUARD })
   })
 
   it("does not call disconnect on unowned sources", async () => {
