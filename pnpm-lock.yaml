@@ -96,6 +96,9 @@ importers:
       '@hachej/boring-core':
         specifier: workspace:*
         version: link:../../packages/core
+      '@hachej/boring-mcp':
+        specifier: workspace:*
+        version: link:../../plugins/boring-mcp
       '@hachej/boring-ui-kit':
         specifier: workspace:*
         version: link:../../packages/ui
