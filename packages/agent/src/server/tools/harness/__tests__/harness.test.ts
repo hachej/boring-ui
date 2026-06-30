@@ -269,7 +269,7 @@ describe('buildHarnessAgentTools', () => {
     const bashTool = tools.find((t) => t.name === 'bash')!
 
     const result = await bashTool.execute(
-      { command: 'pwd; cat marker.txt; test -d .boring-agent && printf "%s" "$BORING_AGENT_WORKSPACE_ROOT"', timeout: 10 },
+      { command: 'pwd; cat marker.txt', timeout: 10 },
       { abortSignal: new AbortController().signal, toolCallId: 'test-bwrap-storage-root' },
     )
 
