@@ -17,5 +17,6 @@ export default createBoringMcpServerPlugin()
 export * from "./managedConnectorAdapter"
 export * from "./managedConnectorPreflight"
 export * from "./sourceHandlers"
+export * from "./readonlyCall"
 export * from "./toolCatalog"
 export * from "../shared"

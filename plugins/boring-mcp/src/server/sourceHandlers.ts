@@ -9,17 +9,22 @@ import {
   type McpSourceDto,
   type McpSourceRegistry,
   type McpSourceStatusPayload,
+  type McpReadonlyCallInput,
+  type McpReadonlyCallResult,
   type McpToolDescribeResult,
   type McpToolSearchResult,
   type McpTransportClient,
 } from "../shared"
 import { assertMcpPublicPayloadSecretFree, createMcpSourceStatusPayload, isActorOwnedMcpSource, requireActorOwnedMcpSource, validateMcpSourceId } from "./sourceAccess"
+import { createBoringMcpReadonlyCaller, type McpReadonlyCallAuditSink } from "./readonlyCall"
 import { createBoringMcpToolCatalog, type McpToolDescribeInput, type McpToolsSearchInput } from "./toolCatalog"
 
 export interface BoringMcpSourceHandlersOptions {
   registry: McpSourceRegistry
   transport: McpTransportClient
   templates?: readonly McpProviderTemplate[]
+  maxReadonlyInputBytes?: number
+  audit?: McpReadonlyCallAuditSink
 }
 
 export interface BoringMcpSourceHandlers {
@@ -30,12 +35,21 @@ export interface BoringMcpSourceHandlers {
   describeTool(actor: McpActor, input: McpToolDescribeInput): Promise<McpToolDescribeResult>
   mcp_tools_search(actor: McpActor, input?: McpToolsSearchInput): Promise<McpToolSearchResult>
   mcp_tool_describe(actor: McpActor, input: McpToolDescribeInput): Promise<McpToolDescribeResult>
+  callReadonly(actor: McpActor, input: McpReadonlyCallInput): Promise<McpReadonlyCallResult>
+  mcp_readonly_call(actor: McpActor, input: McpReadonlyCallInput): Promise<McpReadonlyCallResult>
   disconnectSource(actor: McpActor, sourceId: string): Promise<McpSourceStatusPayload>
 }
 
 export function createBoringMcpSourceHandlers(options: BoringMcpSourceHandlersOptions): BoringMcpSourceHandlers {
   const facade = new McpAccessFacade({ store: options.registry, transport: options.transport, templates: options.templates })
   const catalog = createBoringMcpToolCatalog(options)
+  const readonlyCaller = createBoringMcpReadonlyCaller({
+    registry: options.registry,
+    transport: options.transport,
+    templates: options.templates,
+    maxInputBytes: options.maxReadonlyInputBytes,
+    audit: options.audit,
+  })
 
   return {
     async listSources(actor) {
@@ -70,6 +84,14 @@ export function createBoringMcpSourceHandlers(options: BoringMcpSourceHandlersOp
 
     async mcp_tool_describe(actor, input) {
       return catalog.describeTool(actor, input)
+    },
+
+    async callReadonly(actor, input) {
+      return readonlyCaller.callReadonly(actor, input)
+    },
+
+    async mcp_readonly_call(actor, input) {
+      return readonlyCaller.callReadonly(actor, input)
     },
 
     async disconnectSource(actor, sourceId) {
