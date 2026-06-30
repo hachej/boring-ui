@@ -41,6 +41,19 @@ Annotations extend that result with structured anchored feedback.
 7. Human clicks a final action.
 8. Agent receives `{ actionId, summaryComment?, annotations[] }`.
 
+## Research notes
+
+Existing AI-agent annotation tools are useful references:
+
+- Plannotator stores human annotations with `id`, `blockId`, `startOffset`, `endOffset`, `type`, `text`, `originalText`, creation time, optional images, and `startMeta`/`endMeta` from `web-highlighter` for cross-element selections. Its LLM handoff is a generated markdown summary grouped by annotation, with line labels, selected quote/code block, and user comment.
+- md-annotator uses a similar shape for markdown: `blockId`, offsets, `type`, `text`, `originalText`, optional `targetType` (`image`, `diagram`, `global`), image metadata, and JSON export with `contentHash` so imported annotations can be validated against the reviewed file version.
+- W3C/Hypothesis-style anchoring suggests storing multiple selectors when possible: position, quote, and surrounding context. This makes annotations easier to reattach after small content edits.
+
+Design implication: keep two layers:
+
+1. **Machine annotation JSON** with stable target/anchor metadata.
+2. **LLM handoff summary** optimized for agent consumption: file/target, line or region, selected quote/snippet, user feedback, action requested.
+
 ## Annotation model sketch
 
 ```ts
@@ -80,7 +93,20 @@ export interface HumanActionAnnotation {
   anchor: HumanActionAnnotationAnchor
   body: string
   severity?: "note" | "suggestion" | "issue" | "blocker"
+  selectedText?: string
+  contextBefore?: string
+  contextAfter?: string
+  contentHash?: string
   createdAt: string
+}
+
+export interface HumanActionAnnotationLlmSummary {
+  id: string
+  targetLabel: string
+  locator: string // e.g. "README.md lines 42-44" or "image region 12%,20%,30%,18%"
+  quote?: string
+  feedback: string
+  severity?: HumanActionAnnotation["severity"]
 }
 ```
 
