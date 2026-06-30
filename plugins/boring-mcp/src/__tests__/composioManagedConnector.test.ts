@@ -8,7 +8,7 @@ import { createComposioManagedConnectorProvider, createComposioMcpTransport } fr
 import { createManagedConnectorAdapter, type ManagedConnectorConfig, type ManagedConnectorSecretResolver, type ManagedConnectorSourceRegistry } from "../server/managedConnectorAdapter"
 import type { ManagedConnectorPreflightEvidence } from "../server/managedConnectorPreflight"
 import { createBoringMcpSourceHandlers } from "../server/sourceHandlers"
-import type { McpActor, McpSource } from "../shared"
+import { MCP_ERROR_CODES, type McpActor, type McpSource } from "../shared"
 
 const actor: McpActor = { userId: "user-1", workspaceId: "workspace-1" }
 const config: ManagedConnectorConfig = {
@@ -67,10 +67,16 @@ function jsonResponse(payload: unknown, status = 200): Response {
   return new Response(JSON.stringify(payload), { status, headers: { "content-type": "application/json" } })
 }
 
-function createComposioFetch(mcpUrl = "https://mcp.example/session") {
+function createComposioFetch(mcpUrl = "https://mcp.example/session", accounts: unknown[] = []) {
   return vi.fn(async (input: string | URL, init?: RequestInit) => {
     expect(init?.headers).toMatchObject({ "x-api-key": "cmp_test_key" })
     const url = String(input)
+    if (url.includes("/api/v3.1/connected_accounts?")) {
+      expect(init?.method).toBe("GET")
+      expect(url).toContain("user_id=workspace-1%3Auser-1")
+      expect(url).toContain("toolkit_slug=notion")
+      return jsonResponse({ items: accounts })
+    }
     if (url.endsWith("/api/v3.1/tool_router/session")) {
       expect(JSON.parse(String(init?.body))).toMatchObject({ user_id: "workspace-1:user-1", mcp: true, toolkits: ["notion"] })
       return jsonResponse({ id: "session-1", mcp: { url: mcpUrl, headers: { "x-composio-mcp-session": "server-only-session" } } })
@@ -141,6 +147,66 @@ describe("Composio managed connector provider", () => {
     expect(result.source).toMatchObject({ status: "unconfigured", credentialProvider: "composio-managed", connectorRef: { sessionId: "session-1", toolkitId: "notion" } })
     expect(JSON.stringify(result)).not.toContain("cmp_test_key")
     expect(JSON.stringify(result)).not.toContain("server-only-session")
+
+    await expect(adapter.refreshStatus(actor, result.source.id)).resolves.toMatchObject({ source: { status: "unconfigured" } })
+    expect(fetch).toHaveBeenCalledTimes(3)
+  })
+
+  it("promotes an unconfigured source to connected only after Composio reports an active connected account", async () => {
+    const fetch = createComposioFetch("https://mcp.example/session", [{
+      id: "account-1",
+      user_id: "workspace-1:user-1",
+      status: "ACTIVE",
+      is_disabled: false,
+      toolkit: { slug: "notion" },
+      alias: "Demo Notion",
+    }])
+    const registry = createRegistry()
+    const adapter = createManagedConnectorAdapter({
+      registry,
+      provider: createComposioManagedConnectorProvider({ fetch }),
+      secretResolver,
+      configs: [config],
+      preflightEvidence,
+    })
+
+    const started = await adapter.startConnect(actor, { provider: "notion" })
+    await expect(adapter.refreshStatus(actor, started.source.id)).resolves.toMatchObject({
+      source: { status: "connected", providerAccountLabel: "Demo Notion", connectorRef: { connectedAccountId: "account-1" } },
+    })
+  })
+
+  it("rejects non-HTTPS Composio MCP session URLs unless using the loopback-only test override", async () => {
+    const fetch = createComposioFetch("http://evil.example/mcp")
+    const provider = createComposioManagedConnectorProvider({ fetch })
+
+    await expect(provider.probe({
+      actor,
+      config,
+      secret: { storage: "server-env", value: "cmp_test_key" },
+      source: {} as McpSource,
+    })).rejects.toMatchObject({ code: MCP_ERROR_CODES.PROVIDER_CONFIG_INVALID })
+  })
+
+  it("rejects non-server Composio transport secrets before any provider request", async () => {
+    const fetch = createComposioFetch()
+    const transport = createComposioMcpTransport({
+      fetch,
+      secretResolver: { resolveSecret: vi.fn(async () => ({ storage: "browser" as never, value: "cmp_test_key" })) },
+      configs: [config],
+    })
+
+    await expect(transport.listTools({
+      id: "managed:workspace-1:user-1:notion",
+      workspaceId: actor.workspaceId,
+      userId: actor.userId,
+      provider: "notion",
+      displayName: "Notion",
+      status: "connected",
+      ownerKind: "user",
+      credentialProvider: "composio-managed",
+    })).rejects.toMatchObject({ code: MCP_ERROR_CODES.PROVIDER_CONFIG_INVALID })
+    expect(fetch).not.toHaveBeenCalled()
   })
 
   it("uses Composio session MCP headers with the real MCP SDK transport and hides raw Composio meta tools", async () => {
@@ -158,7 +224,7 @@ describe("Composio managed connector provider", () => {
       credentialProvider: "composio-managed",
       connectorRef: { provider: "notion", toolkitId: "notion", sessionId: "session-1" },
     })
-    const transport = createComposioMcpTransport({ fetch, secretResolver, configs: [config] })
+    const transport = createComposioMcpTransport({ fetch, secretResolver, configs: [config], allowInsecureMcpUrlsForTests: true })
     const handlers = createBoringMcpSourceHandlers({ registry, transport })
     const bridge = createBoringMcpAgentBridgeRegistry(handlers)
 

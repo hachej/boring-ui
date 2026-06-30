@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest"
-import { MCP_ERROR_CODES, McpError, type McpActor, type McpSource } from "../shared"
+import { MCP_ERROR_CODES, type McpActor, type McpSource } from "../shared"
 import { createManagedConnectorAdapter, type ManagedConnectorConfig, type ManagedConnectorProvider, type ManagedConnectorSourceRegistry } from "../server/managedConnectorAdapter"
 import type { ManagedConnectorPreflightEvidence } from "../server/managedConnectorPreflight"
 
@@ -182,13 +182,14 @@ describe("managed connector adapter", () => {
     await expect(adapter.startConnect(actor, { provider: "notion" })).rejects.toMatchObject({ code: MCP_ERROR_CODES.PROVIDER_CONFIG_INVALID })
   })
 
-  it("requires preflight evidence and server-only secret configuration before provider use", () => {
-    expect(() => createManagedConnectorAdapter({
+  it("does not require launch preflight evidence at construction, but still requires server-only secret configuration before provider use", async () => {
+    const adapter = createManagedConnectorAdapter({
       registry: createRegistry(),
       provider: createProvider(),
       configs: [config],
-      preflightEvidence: { ...preflightEvidence, redactionCanaries: [] },
-      secretResolver: { resolveSecret: vi.fn(async () => ({ storage: "server-vault" as const, value: "server-only-secret" })) },
-    })).toThrow(McpError)
+      secretResolver: { resolveSecret: vi.fn(async () => ({ storage: "browser" as never, value: "server-only-secret" })) },
+    })
+
+    await expect(adapter.startConnect(actor, { provider: "notion" })).rejects.toMatchObject({ code: MCP_ERROR_CODES.PROVIDER_CONFIG_INVALID })
   })
 })

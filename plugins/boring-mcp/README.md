@@ -57,7 +57,7 @@ const connector = createManagedConnectorAdapter({
   provider: createComposioManagedConnectorProvider(),
   secretResolver,
   configs,
-  preflightEvidence,
+  redactionCanaries: ['app-owned-mcp-canary'],
 })
 
 const transport = createComposioMcpTransport({ secretResolver, configs })
@@ -79,7 +79,7 @@ Apps may also list the package in `package.json#boring.defaultPluginPackages`, b
 
 ## Security boundaries
 
-Managed connector adapters must pass the [Composio security preflight](./docs/composio-security-preflight.md) and the executable `validateManagedConnectorPreflight` server check before real product provider calls. The generic `createManagedConnectorAdapter` seam accepts provider config plus an app-owned server secret resolver; reusable boring-mcp never binds app env/Vault details.
+Before production provider enablement, apps should record the [Composio security preflight](./docs/composio-security-preflight.md) and run `validateManagedConnectorPreflight` as launch evidence. The runtime `createManagedConnectorAdapter` seam stays small: provider config plus an app-owned server secret resolver; reusable boring-mcp never binds app env/Vault details.
 
 - Browser UI never receives provider OAuth tokens, connector API keys, or MCP session headers.
 - Raw provider meta-tools are not exposed by this foundation.
@@ -103,4 +103,4 @@ Before enabling boring-mcp in a shipped app, operators should verify:
 
 ## Current status
 
-Reusable boring-mcp now includes source handlers, executable preflight, generic managed connector adapter seam, reusable Composio managed connector provider, MCP SDK Streamable HTTP transport, normalized tool catalog search/describe, governed read-only execution, exported/generic agent bridge tools, and production launch-gate helpers. Real app secret binding remains app-owned; Constellation-specific code is not required for the generic MCP feature to run against Composio or another MCP-compatible endpoint.
+Reusable boring-mcp now includes source handlers, optional launch preflight helpers, generic managed connector adapter seam, reusable Composio managed connector provider, MCP SDK Streamable HTTP transport, normalized tool catalog search/describe, governed read-only execution, exported/generic agent bridge tools, and production launch-gate helpers. Real app secret binding remains app-owned; Constellation-specific code is not required for the generic MCP feature to run against Composio or another MCP-compatible endpoint.
