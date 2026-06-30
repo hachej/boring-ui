@@ -17,10 +17,9 @@ import {
   type McpSourceStatus,
   type McpSourceStatusPayload,
 } from "../shared"
-import {
-  assertManagedConnectorPreflight,
-  type ManagedConnectorPreflightEvidence,
-  type ManagedConnectorSecretStorage,
+import type {
+  ManagedConnectorPreflightEvidence,
+  ManagedConnectorSecretStorage,
 } from "./managedConnectorPreflight"
 import { createMcpSourceStatusPayload, requireActorOwnedMcpSource, validateMcpSourceId } from "./sourceAccess"
 
@@ -80,7 +79,7 @@ export interface ManagedConnectorAdapterOptions {
   provider: ManagedConnectorProvider
   secretResolver: ManagedConnectorSecretResolver
   configs: readonly ManagedConnectorConfig[]
-  preflightEvidence: ManagedConnectorPreflightEvidence
+  preflightEvidence?: ManagedConnectorPreflightEvidence
   templates?: readonly McpProviderTemplate[]
   redactionCanaries?: readonly string[]
   sourceIdFactory?: (actor: McpActor, config: ManagedConnectorConfig) => string
@@ -135,8 +134,7 @@ function safeConnectUrl(rawUrl: string | undefined, config: ManagedConnectorConf
 }
 
 export function createManagedConnectorAdapter(options: ManagedConnectorAdapterOptions): ManagedConnectorAdapter {
-  assertManagedConnectorPreflight(options.preflightEvidence)
-  const canaries = [...options.preflightEvidence.redactionCanaries, ...(options.redactionCanaries ?? [])]
+  const canaries = [...(options.preflightEvidence?.redactionCanaries ?? []), ...(options.redactionCanaries ?? [])]
   const templates = options.templates
 
   async function getSecret(provider: McpProviderId): Promise<ManagedConnectorSecret> {

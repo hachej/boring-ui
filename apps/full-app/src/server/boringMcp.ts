@@ -56,29 +56,7 @@ export function createFullAppManagedConnectorSecretResolver(env: NodeJS.ProcessE
   }
 }
 
-const FULL_APP_MANAGED_CONNECTOR_PREFLIGHT = {
-  connectorName: 'Composio managed MCP',
-  isolatedTestProject: true,
-  apiKeyStorage: 'server-env' as const,
-  browserDtoSamples: [{ status: 'unconfigured', provider: 'notion' }],
-  redactedLogSamples: [{ message: 'connector configured with [REDACTED_MCP_SECRET]' }],
-  redactedProviderResultSamples: [{ status: 'connected', account: 'fake-user' }],
-  redactionCanaries: ['cmp_full_app_canary'],
-  revokeDisconnectVerified: true,
-  connectedAccountStatusVerified: true,
-  vendorRisk: {
-    dpaStatus: 'owner-accepted-gap' as const,
-    subprocessorStatus: 'owner-accepted-gap' as const,
-    dataResidencyStatus: 'owner-accepted-gap' as const,
-    incidentHistoryStatus: 'owner-accepted-gap' as const,
-    acceptedGaps: [
-      { id: 'dpaStatus', owner: 'app-owner', followUp: 'Review Composio DPA before production provider enablement', reason: 'Generic binding only; no real provider calls in this app smoke' },
-      { id: 'subprocessorStatus', owner: 'app-owner', followUp: 'Review Composio subprocessors before production provider enablement', reason: 'Generic binding only; no real provider calls in this app smoke' },
-      { id: 'dataResidencyStatus', owner: 'app-owner', followUp: 'Review Composio data residency before production provider enablement', reason: 'Generic binding only; no real provider calls in this app smoke' },
-      { id: 'incidentHistoryStatus', owner: 'app-owner', followUp: 'Review Composio incident history before production provider enablement', reason: 'Generic binding only; no real provider calls in this app smoke' },
-    ],
-  },
-}
+const FULL_APP_MCP_REDACTION_CANARIES = ['cmp_full_app_canary'] as const
 
 export function createFullAppManagedConnectorAdapter(options: {
   env?: NodeJS.ProcessEnv
@@ -90,7 +68,7 @@ export function createFullAppManagedConnectorAdapter(options: {
     provider: options.provider ?? createComposioManagedConnectorProvider(),
     secretResolver: createFullAppManagedConnectorSecretResolver(options.env),
     templates: DEFAULT_MCP_PROVIDER_TEMPLATES,
-    preflightEvidence: FULL_APP_MANAGED_CONNECTOR_PREFLIGHT,
+    redactionCanaries: FULL_APP_MCP_REDACTION_CANARIES,
     configs: [
       { provider: 'notion', displayName: 'Notion', toolkitId: 'notion', connectUrlOrigins: ['https://app.composio.dev'] },
       { provider: 'airtable', displayName: 'Airtable', toolkitId: 'airtable', connectUrlOrigins: ['https://app.composio.dev'] },

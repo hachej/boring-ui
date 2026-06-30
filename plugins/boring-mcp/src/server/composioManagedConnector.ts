@@ -33,12 +33,20 @@ export interface ComposioManagedConnectorProviderOptions {
   /** Optional client metadata for the MCP SDK client used during probe/transport calls. */
   clientName?: string
   clientVersion?: string
+  /** Test-only escape hatch for loopback fake MCP servers. Production Composio MCP URLs must be https. */
+  allowInsecureMcpUrlsForTests?: boolean
 }
 
-interface CreateSessionInput {
+export interface ResolveComposioMcpSessionInput {
   actor: McpActor
   config: ManagedConnectorConfig
   secret: ManagedConnectorSecret
+}
+
+interface ComposioConnectedAccountSummary {
+  id?: string
+  label?: string
+  active: boolean
 }
 
 function trimTrailingSlash(value: string): string {
@@ -49,8 +57,18 @@ function composioUserId(actor: McpActor): string {
   return `${actor.workspaceId}:${actor.userId}`
 }
 
+function actorForSource(source: McpSource): McpActor {
+  return { userId: source.userId, workspaceId: source.workspaceId }
+}
+
 function providerError(message: string, details?: unknown): McpError {
   return new McpError(MCP_ERROR_CODES.PROVIDER_ERROR, message, redactMcpSecrets(details))
+}
+
+function requireServerSecret(secret: ManagedConnectorSecret): void {
+  if ((secret.storage !== "server-env" && secret.storage !== "server-vault") || !secret.value) {
+    throw new McpError(MCP_ERROR_CODES.PROVIDER_CONFIG_INVALID, "Composio connector secret is not configured server-side")
+  }
 }
 
 async function readJsonResponse(response: Response): Promise<unknown> {
@@ -67,24 +85,42 @@ function record(value: unknown): Record<string, unknown> {
   return value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : {}
 }
 
+function array(value: unknown): unknown[] {
+  return Array.isArray(value) ? value : []
+}
+
 function optionalString(value: unknown): string | undefined {
   return typeof value === "string" && value.trim() ? value : undefined
 }
 
 function optionalHeaders(value: unknown): Record<string, string> | undefined {
-  const candidate = record(value)
-  const entries = Object.entries(candidate).filter((entry): entry is [string, string] => typeof entry[1] === "string")
+  const entries = Object.entries(record(value)).filter((entry): entry is [string, string] => typeof entry[1] === "string")
   return entries.length ? Object.fromEntries(entries) : undefined
 }
 
-function extractSession(payload: unknown): ComposioMcpSession {
+function normalizeComposioMcpUrl(rawUrl: string, options: ComposioManagedConnectorProviderOptions): string {
+  let parsed: URL
+  try {
+    parsed = new URL(rawUrl)
+  } catch {
+    throw providerError("Composio session response included an invalid MCP URL")
+  }
+  const loopback = parsed.hostname === "127.0.0.1" || parsed.hostname === "localhost" || parsed.hostname === "::1"
+  const allowedInsecureLoopback = options.allowInsecureMcpUrlsForTests && parsed.protocol === "http:" && loopback
+  if ((parsed.protocol !== "https:" && !allowedInsecureLoopback) || parsed.username || parsed.password) {
+    throw new McpError(MCP_ERROR_CODES.PROVIDER_CONFIG_INVALID, "Composio MCP URL must be https and must not include credentials")
+  }
+  return parsed.toString()
+}
+
+function extractSession(payload: unknown, options: ComposioManagedConnectorProviderOptions): ComposioMcpSession {
   const root = record(payload)
   const session = record(root.session ?? root.data ?? root)
   const mcp = record(session.mcp)
   const id = optionalString(session.id) ?? optionalString(session.session_id) ?? optionalString(root.id) ?? optionalString(root.session_id)
   const url = optionalString(mcp.url)
   if (!id || !url) throw providerError("Composio session response did not include an MCP session", payload)
-  return { id, mcp: { url, headers: optionalHeaders(mcp.headers) } }
+  return { id, mcp: { url: normalizeComposioMcpUrl(url, options), headers: optionalHeaders(mcp.headers) } }
 }
 
 function extractConnectUrl(payload: unknown): string | undefined {
@@ -110,26 +146,42 @@ function extractProviderAccountLabel(payload: unknown): string | undefined {
     ?? optionalString(nested.label)
     ?? optionalString(nested.email)
     ?? optionalString(nested.name)
+    ?? optionalString(nested.alias)
 }
 
-async function composioFetch(options: ComposioManagedConnectorProviderOptions, secret: ManagedConnectorSecret, path: string, body: unknown): Promise<unknown> {
+async function composioRequest(
+  options: ComposioManagedConnectorProviderOptions,
+  secret: ManagedConnectorSecret,
+  method: "GET" | "POST",
+  path: string,
+  body?: unknown,
+): Promise<unknown> {
+  requireServerSecret(secret)
   const fetchImpl = options.fetch ?? globalThis.fetch
   if (!fetchImpl) throw new McpError(MCP_ERROR_CODES.PROVIDER_CONFIG_INVALID, "fetch is not available for Composio connector")
   const response = await fetchImpl(`${trimTrailingSlash(options.apiBaseUrl ?? "https://backend.composio.dev")}${path}`, {
-    method: "POST",
+    method,
     headers: {
       "content-type": "application/json",
       "x-api-key": secret.value,
     },
-    body: JSON.stringify(body),
+    body: body === undefined ? undefined : JSON.stringify(body),
   })
   const payload = await readJsonResponse(response)
   if (!response.ok) throw providerError("Composio request failed", { status: response.status, payload })
   return payload
 }
 
-async function createSession(options: ComposioManagedConnectorProviderOptions, input: CreateSessionInput): Promise<ComposioMcpSession> {
-  const payload = await composioFetch(options, input.secret, "/api/v3.1/tool_router/session", {
+function composioPost(options: ComposioManagedConnectorProviderOptions, secret: ManagedConnectorSecret, path: string, body: unknown): Promise<unknown> {
+  return composioRequest(options, secret, "POST", path, body)
+}
+
+function composioGet(options: ComposioManagedConnectorProviderOptions, secret: ManagedConnectorSecret, path: string): Promise<unknown> {
+  return composioRequest(options, secret, "GET", path)
+}
+
+export async function resolveComposioMcpSession(options: ComposioManagedConnectorProviderOptions, input: ResolveComposioMcpSessionInput): Promise<ComposioMcpSession> {
+  const payload = await composioPost(options, input.secret, "/api/v3.1/tool_router/session", {
     user_id: composioUserId(input.actor),
     mcp: true,
     toolkits: [input.config.toolkitId],
@@ -139,14 +191,39 @@ async function createSession(options: ComposioManagedConnectorProviderOptions, i
       callback_url: options.callbackUrl,
     },
   })
-  return extractSession(payload)
+  return extractSession(payload, options)
 }
 
 async function createLink(options: ComposioManagedConnectorProviderOptions, secret: ManagedConnectorSecret, sessionId: string, config: ManagedConnectorConfig): Promise<unknown> {
-  return composioFetch(options, secret, `/api/v3/tool_router/session/${encodeURIComponent(sessionId)}/link`, {
+  return composioPost(options, secret, `/api/v3/tool_router/session/${encodeURIComponent(sessionId)}/link`, {
     toolkit: config.toolkitId,
     callback_url: options.callbackUrl,
   })
+}
+
+function accountIsForConfig(account: Record<string, unknown>, actor: McpActor, config: ManagedConnectorConfig): boolean {
+  const toolkit = record(account.toolkit)
+  return optionalString(toolkit.slug) === config.toolkitId && optionalString(account.user_id) === composioUserId(actor)
+}
+
+function summarizeAccount(account: Record<string, unknown>): ComposioConnectedAccountSummary {
+  const status = optionalString(account.status)?.toUpperCase()
+  const disabled = account.is_disabled === true || record(account.auth_config).is_disabled === true
+  return {
+    id: optionalString(account.id) ?? optionalString(account.nanoid) ?? optionalString(account.word_id),
+    label: extractProviderAccountLabel(account),
+    active: !disabled && (status === "ACTIVE" || status === "CONNECTED" || status === "ENABLED"),
+  }
+}
+
+async function findConnectedAccount(options: ComposioManagedConnectorProviderOptions, input: ResolveComposioMcpSessionInput): Promise<ComposioConnectedAccountSummary | undefined> {
+  const params = new URLSearchParams({ user_id: composioUserId(input.actor), toolkit_slug: input.config.toolkitId })
+  const payload = await composioGet(options, input.secret, `/api/v3.1/connected_accounts?${params}`)
+  const items = array(record(payload).items)
+    .map(record)
+    .filter((account) => accountIsForConfig(account, input.actor, input.config))
+    .map(summarizeAccount)
+  return items.find((account) => account.active) ?? items[0]
 }
 
 function transportForSession(options: ComposioManagedConnectorProviderOptions, session: ComposioMcpSession): McpTransportClient {
@@ -164,7 +241,7 @@ function safeTools(tools: McpDiscoveredTool[]): McpDiscoveredTool[] {
 export function createComposioManagedConnectorProvider(options: ComposioManagedConnectorProviderOptions = {}): ManagedConnectorProvider {
   return {
     async startConnect({ actor, config, secret }) {
-      const session = await createSession(options, { actor, config, secret })
+      const session = await resolveComposioMcpSession(options, { actor, config, secret })
       const link = await createLink(options, secret, session.id, config)
       return {
         connectorRef: { provider: config.provider, toolkitId: config.toolkitId, sessionId: session.id },
@@ -175,17 +252,29 @@ export function createComposioManagedConnectorProvider(options: ComposioManagedC
     },
 
     async refreshStatus({ actor, source, config, secret }) {
-      const session = await createSession(options, { actor, config, secret })
+      if (source.status === "revoked") {
+        return { status: "revoked", providerAccountLabel: source.providerAccountLabel, lastVerifiedAt: source.lastVerifiedAt, connectorRef: source.connectorRef }
+      }
+      const account = await findConnectedAccount(options, { actor, config, secret })
+      if (!account?.active) {
+        return {
+          status: source.status === "connected" ? "expired" : source.status,
+          providerAccountLabel: account?.label ?? source.providerAccountLabel,
+          lastVerifiedAt: new Date().toISOString(),
+          connectorRef: { ...source.connectorRef, provider: config.provider, toolkitId: config.toolkitId, connectedAccountId: account?.id },
+        }
+      }
+      const session = await resolveComposioMcpSession(options, { actor, config, secret })
       return {
-        status: source.status === "revoked" ? "revoked" : "connected",
-        providerAccountLabel: source.providerAccountLabel,
+        status: "connected",
+        providerAccountLabel: account.label ?? source.providerAccountLabel,
         lastVerifiedAt: new Date().toISOString(),
-        connectorRef: { ...source.connectorRef, provider: config.provider, toolkitId: config.toolkitId, sessionId: session.id },
+        connectorRef: { ...source.connectorRef, provider: config.provider, toolkitId: config.toolkitId, sessionId: session.id, connectedAccountId: account.id },
       }
     },
 
     async probe({ actor, config, secret }) {
-      const session = await createSession(options, { actor, config, secret })
+      const session = await resolveComposioMcpSession(options, { actor, config, secret })
       const transport = transportForSession(options, session)
       const source: McpSource = {
         id: `composio-probe:${actor.workspaceId}:${actor.userId}:${config.provider}`,
@@ -216,7 +305,7 @@ export function createComposioMcpTransport(options: ComposioManagedConnectorProv
       const config = options.configs.find((entry) => entry.provider === source.provider)
       if (!config) throw new McpError(MCP_ERROR_CODES.PROVIDER_CONFIG_INVALID, "Unknown Composio MCP provider")
       const secret = await options.secretResolver.resolveSecret(source.provider)
-      const session = await createSession(options, { actor: { userId: source.userId, workspaceId: source.workspaceId }, config, secret })
+      const session = await resolveComposioMcpSession(options, { actor: actorForSource(source), config, secret })
       return { url: session.mcp.url, headers: session.mcp.headers }
     },
     clientName: options.clientName ?? "boring-mcp-composio",
