@@ -749,11 +749,37 @@ export function WorkspaceAgentFront<
     ? remoteSessionActionsUnavailable
     : sessionApi?.delete ?? onDeleteSession ?? localSessionStore.remove
   const resolvedDelete = useCallback((id: string) => {
-    if (sessionApi && activeRemoteSessions.length <= 1) {
+    if (sessionApi && remoteSessionsPending && activeRemoteSessions.length <= 1) {
       suppressEmptyAutoCreateRef.current = true
+      return rawDelete(id)
+    }
+    if (sessionApi && !remoteSessionsPending && activeRemoteSessions.length <= 1) {
+      if (sessionApi.hasMore) {
+        suppressEmptyAutoCreateRef.current = true
+        return rawDelete(id)
+      }
+      if (pendingLastSessionDeleteRef.current.has(id)) return Promise.resolve()
+      pendingLastSessionDeleteRef.current.add(id)
+      autoCreateSessionRef.current = true
+      setInitialRemoteSessionCreateFailed({ workspaceId, failed: false })
+      const replacement = sessionApi.create({ title: defaultSessionTitle })
+      return Promise.resolve(
+        replacement && typeof (replacement as PromiseLike<unknown>).then === "function"
+          ? Promise.resolve(replacement).then(() => rawDelete(id))
+          : rawDelete(id),
+      )
+        .catch((error) => {
+          autoCreateSessionRef.current = false
+          setInitialRemoteSessionCreateFailed({ workspaceId, failed: true })
+          throw error
+        })
+        .finally(() => {
+          pendingLastSessionDeleteRef.current.delete(id)
+        })
     }
     return rawDelete(id)
-  }, [activeRemoteSessions.length, rawDelete, sessionApi])
+  }, [activeRemoteSessions.length, defaultSessionTitle, rawDelete, remoteSessionsPending, sessionApi, workspaceId])
+
   const resolvedSessionTitle = resolvedSessions.find((session) => session.id === effectiveActiveSessionId)?.title ?? undefined
 
   const [navOpen, setNavOpen] = useStoredBooleanState(
@@ -802,6 +828,7 @@ export function WorkspaceAgentFront<
     setLeftOverlay(null)
   }, [setWorkbenchLeftOpen])
   const autoCreateSessionRef = useRef(false)
+  const pendingLastSessionDeleteRef = useRef<Set<string>>(new Set())
   const pendingCreatePaneRef = useRef<PendingCreatePane | null>(null)
   const surfaceOpenRef = useRef(surfaceOpen)
   const surfaceKeyRef = useRef(resolvedSurfaceStorageKey)
@@ -825,6 +852,7 @@ export function WorkspaceAgentFront<
 
   useEffect(() => {
     autoCreateSessionRef.current = false
+    pendingLastSessionDeleteRef.current.clear()
     suppressEmptyAutoCreateRef.current = false
     setInitialRemoteSessionCreating({ workspaceId, creating: false })
     setInitialRemoteSessionCreateFailed({ workspaceId, failed: false })
@@ -1429,6 +1457,7 @@ export function WorkspaceAgentFront<
     loadingMore: sessionApi?.loadingMore,
     onClose: () => setNavOpen(false),
   }
+  const canDeleteSessions = Boolean(sessionApi || onDeleteSession || !hasExplicitSessionProps)
   const commandPaletteSessionSearch = useMemo(() => (
     isPluginTabsLayout
       ? {
@@ -1579,6 +1608,7 @@ export function WorkspaceAgentFront<
           onSwitchSession={switchToChatPane}
           onOpenSessionAsPane={openChatPane}
           onToggleSessionPinned={toggleSessionPinned}
+          onDeleteSession={canDeleteSessions ? deleteSessionAndPane : undefined}
           actions={managementActions}
         />
       )}
