@@ -7,7 +7,7 @@ const mockFileContent = vi.fn()
 const mockFileWrite = vi.fn()
 
 vi.mock("../../data", () => ({
-  useFileContent: (path: string) => mockFileContent(path),
+  useFileContent: (path: string, options?: unknown) => mockFileContent(path, options),
   useFileWrite: () => ({ mutateAsync: mockFileWrite }),
   useApiBaseUrl: () => "/api",
 }))
@@ -157,6 +157,31 @@ describe("MarkdownEditorPane", () => {
     await waitFor(() => {
       expect(setTitle).toHaveBeenCalledWith("test.md")
     })
+  })
+
+  it("opens company markdown in readonly mode without dirtying or writing", async () => {
+    mockFileContent.mockReturnValue({
+      data: { content: "# Hello\n\nWorld", access: "readonly" },
+      isLoading: false,
+      error: undefined,
+      dataUpdatedAt: 1000,
+    })
+    const setTitle = vi.fn()
+    const props = createMockPaneProps({
+      params: { path: "/company/hr/handbook.md", filesystem: "company_context" },
+      apiOverrides: { setTitle },
+    })
+
+    render(<MarkdownEditorPane {...props} />, { wrapper })
+
+    await waitFor(() => expect(screen.getByTestId("markdown-editor")).toHaveAttribute("data-readonly", "true"))
+    expect(screen.getByText("Readonly")).toBeInTheDocument()
+    expect(setTitle).toHaveBeenCalledWith("handbook.md (readonly)")
+    expect(mockFileContent).toHaveBeenCalledWith("/company/hr/handbook.md", expect.objectContaining({ filesystem: "company_context" }))
+
+    mockOnChange("changed content")
+    expect(mockMarkDirty).not.toHaveBeenCalled()
+    expect(mockFileWrite).not.toHaveBeenCalled()
   })
 
   it("calls markDirty on change", async () => {

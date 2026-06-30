@@ -18,6 +18,7 @@ import { TableHeader } from "@tiptap/extension-table-header"
 import { TableCell } from "@tiptap/extension-table-cell"
 import { ResizableImage } from "./ResizableImage"
 import { useApiBaseUrl, useWorkspaceRequestId } from "../data/DataProvider"
+import { normalizeUiFilesystem, type FilesystemId } from "../../../../shared/types/filesystem"
 import { useFileUpload } from "../data/useFileUpload"
 import CodeBlockLowlight from "@tiptap/extension-code-block-lowlight"
 import { common, createLowlight } from "lowlight"
@@ -75,6 +76,8 @@ export interface MarkdownEditorProps {
   className?: string
   /** Workspace-relative markdown file path, used to make uploaded image links relative. */
   documentPath?: string
+  /** Filesystem identity for relative markdown links/assets. Defaults to user. */
+  filesystem?: FilesystemId
 }
 
 export function countMarkdownWords(content: string): number {
@@ -142,12 +145,21 @@ export function rawFileUrlForMarkdownImage(
   documentPath: string | undefined,
   apiBaseUrl: string,
   workspaceRequestId?: string | null,
+  filesystem?: FilesystemId,
 ): string {
-  if (!src || isExternalImageSrc(src)) return src
-  const path = normalizeRelativeImagePath(src, documentPath)
+  if (!src) return src
+  const fs = normalizeUiFilesystem(filesystem)
+  const isNamedFilesystem = fs !== "user"
+  if (isExternalImageSrc(src) && !(isNamedFilesystem && src.startsWith("/") && !src.startsWith("//"))) return src
+  const path = isNamedFilesystem && src.startsWith("/")
+    ? src
+    : isNamedFilesystem && documentPath?.startsWith("/")
+      ? `/${normalizeRelativeImagePath(src, documentPath)}`
+      : normalizeRelativeImagePath(src, documentPath)
   const base = apiBaseUrl.replace(/\/$/, "")
   const params = new URLSearchParams({ path })
   if (workspaceRequestId) params.set("workspaceId", workspaceRequestId)
+  if (fs !== "user") params.set("filesystem", fs)
   return `${base}/api/v1/files/raw?${params.toString()}`
 }
 
@@ -288,12 +300,14 @@ function Toolbar({
   rawMode,
   onToggleRawMode,
   uploading,
+  allowImageUpload,
 }: {
   editor: Editor | null
   onInsertImage: (file: File) => Promise<void>
   rawMode: boolean
   onToggleRawMode: () => void
   uploading: boolean
+  allowImageUpload: boolean
 }) {
   const setBlockAlign = (align: "left" | "center" | "right") => {
     if (!editor) return
@@ -363,7 +377,7 @@ function Toolbar({
       promptImageUrl()
       return
     }
-    imageFileInputRef.current?.click()
+    if (allowImageUpload) imageFileInputRef.current?.click()
   }
   const handleImageFile = async (e: ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
@@ -424,7 +438,8 @@ function Toolbar({
       </ToolbarButton>
       <ToolbarButton
         onClick={triggerImagePick}
-        title="Image (click to upload, Shift+click for URL)"
+        disabled={!allowImageUpload}
+        title={allowImageUpload ? "Image (click to upload, Shift+click for URL)" : "Image upload unavailable for this filesystem"}
       >
         <ImageIcon className="h-4 w-4" />
       </ToolbarButton>
@@ -491,16 +506,20 @@ export function MarkdownEditor({
   placeholder,
   className,
   documentPath,
+  filesystem: rawFilesystem,
 }: MarkdownEditorProps) {
+  const filesystem = normalizeUiFilesystem(rawFilesystem)
   const apiBaseUrl = useApiBaseUrl()
   const workspaceRequestId = useWorkspaceRequestId()
+  const allowImageUpload = filesystem === "user"
   const { upload, uploading } = useFileUpload()
   const [rawMode, setRawMode] = useState(false)
   const editorExtensions = useMemo(() => {
     const imageExtension = ResizableImage.configure({
       inline: false,
       allowBase64: true,
-      resolveSrc: (src: string) => rawFileUrlForMarkdownImage(src, documentPath, apiBaseUrl, workspaceRequestId),
+      resizable: !readOnly,
+      resolveSrc: (src: string) => rawFileUrlForMarkdownImage(src, documentPath, apiBaseUrl, workspaceRequestId, filesystem),
     })
     const configured = baseExtensions.map((extension) => extension.name === "image" ? imageExtension : extension)
     return placeholder
@@ -509,7 +528,7 @@ export function MarkdownEditor({
           Placeholder.configure({ placeholder }),
         ]
       : configured
-  }, [apiBaseUrl, documentPath, placeholder, workspaceRequestId])
+  }, [apiBaseUrl, documentPath, filesystem, placeholder, readOnly, workspaceRequestId])
   const onChangeRef = useRef(onChange)
   onChangeRef.current = onChange
   const suppressChangeRef = useRef(false)
@@ -528,7 +547,7 @@ export function MarkdownEditor({
   insertImageRef.current = async (file: File) => {
     userInteractedRef.current = true
     const editor = editorRef.current
-    if (!editor) return
+    if (!editor || !allowImageUpload) return
 
     // Insert with the data URL first so the image shows up instantly at the
     // caret. Uploads can be slow; without this the paste appears to do nothing.
@@ -656,11 +675,17 @@ export function MarkdownEditor({
     const target = event.target instanceof Element ? event.target.closest("a[href]") : null
     const href = target?.getAttribute("href")
     if (!href) return
+    const normalizedFilesystem = normalizeUiFilesystem(filesystem)
+    const isNamedFilesystem = normalizedFilesystem !== "user"
     const path = workspaceFilePathForMarkdownLink(href, documentPath)
+      ?? (isNamedFilesystem && href.startsWith("/") && !href.startsWith("//") ? href.split(/[?#]/, 1)[0] : null)
     if (!path) return
     event.preventDefault()
     event.stopPropagation()
-    postUiCommand({ kind: "openFile", params: { path } })
+    const canonicalPath = isNamedFilesystem && documentPath?.startsWith("/") && !path.startsWith("/")
+      ? `/${path}`
+      : path
+    postUiCommand({ kind: "openFile", params: { path: canonicalPath, ...(normalizedFilesystem === "user" ? {} : { filesystem: normalizedFilesystem }) } })
   }
 
   return (
@@ -677,6 +702,7 @@ export function MarkdownEditor({
           rawMode={rawMode}
           onToggleRawMode={() => setRawMode((v) => !v)}
           uploading={uploading}
+      allowImageUpload={allowImageUpload}
         />
       )}
       <div className="min-h-0 flex-1 overflow-auto" onClickCapture={handleEditorClick}>
