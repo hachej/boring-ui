@@ -308,7 +308,7 @@ export function containsMcpSecret(value: unknown): boolean {
   return JSON.stringify(redacted) !== JSON.stringify(value)
 }
 
-export function doctorMcpSource(source: McpSource, templates = DEFAULT_MCP_PROVIDER_TEMPLATES): McpDoctorResult {
+export function doctorMcpSource(source: McpSource, templates: readonly McpProviderTemplate[] = DEFAULT_MCP_PROVIDER_TEMPLATES): McpDoctorResult {
   const issues: McpDoctorIssue[] = []
   if (!getMcpProviderTemplate(source.provider, templates)) {
     issues.push({ level: "error", code: MCP_ERROR_CODES.PROVIDER_CONFIG_INVALID, message: "Unknown MCP provider template" })
