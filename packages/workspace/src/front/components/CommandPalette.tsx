@@ -227,7 +227,6 @@ export function CommandPalette({ sessionSearch, apiBaseUrl, authHeaders }: Comma
         className="cmdk-shell flex flex-col gap-0 overflow-hidden border-border/60 bg-background p-0 shadow-none backdrop-blur-0 [&>button.dialog-close]:hidden"
         style={{ height: 520, width: "min(640px, calc(100vw - 2rem))", maxWidth: 640 }}
         showCloseButton={false}
-        overlayClassName="bg-transparent"
         onPointerDownOutside={() => setOpen(false)}
         onEscapeKeyDown={() => setOpen(false)}
       >

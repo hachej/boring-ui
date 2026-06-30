@@ -7,7 +7,8 @@ This package is the generic MCP capability that child apps can enable. It owns:
 - generic Sources left-tab and MCP Sources panel shell;
 - provider template, source, tool, policy, redaction, status, and facade contracts;
 - deny-before-allow read-only policy helpers;
-- fake-transport-testable facade seams.
+- fake-transport-testable facade seams;
+- server-only managed connector adapter seam with app-injected secret resolution.
 
 It intentionally does **not** perform real connector-provider calls, OAuth, provider execution, secret storage, or app-specific environment binding in the foundation PR.
 
@@ -41,7 +42,7 @@ Apps may also list the package in `package.json#boring.defaultPluginPackages`, b
 
 ## Security boundaries
 
-Managed connector adapters must pass the [Composio security preflight](./docs/composio-security-preflight.md) and the executable `validateManagedConnectorPreflight` server check before real product provider calls.
+Managed connector adapters must pass the [Composio security preflight](./docs/composio-security-preflight.md) and the executable `validateManagedConnectorPreflight` server check before real product provider calls. The generic `createManagedConnectorAdapter` seam accepts provider config plus an app-owned server secret resolver; reusable boring-mcp never binds app env/Vault details.
 
 - Browser UI never receives provider OAuth tokens, connector API keys, or MCP session headers.
 - Raw provider meta-tools are not exposed by this foundation.
@@ -51,4 +52,4 @@ Managed connector adapters must pass the [Composio security preflight](./docs/co
 
 ## Current status
 
-Foundation only. Real connector providers, route registration, agent bridge tools, and provider execution land in later PRs.
+Foundation plus source handlers, executable preflight, and generic managed connector adapter seam. Real Composio SDK/API calls, route registration, agent bridge tools, and provider execution land in later PRs.
