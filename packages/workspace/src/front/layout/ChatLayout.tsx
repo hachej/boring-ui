@@ -377,7 +377,9 @@ export function ChatLayout(props: ChatLayoutProps) {
         className={cn(
           "relative h-full min-h-0 shrink-0 overflow-hidden bg-background",
           "transition-[width,min-width,max-width] duration-[280ms] ease-[cubic-bezier(0.22,1,0.36,1)]",
-          navOpen && "border-r border-[color:oklch(from_var(--border)_l_c_h/0.6)]",
+          navOpen
+            ? "z-30 border-r border-[color:oklch(from_var(--border)_l_c_h/0.6)]"
+            : "pointer-events-none z-0",
         )}
         style={{
           width: navOpen ? effectiveNavWidth : 0,
@@ -390,7 +392,7 @@ export function ChatLayout(props: ChatLayoutProps) {
           className={cn(
             "h-full min-h-0 overflow-hidden",
             "transition-opacity duration-[200ms] ease-[cubic-bezier(0.22,1,0.36,1)]",
-            navOpen ? "opacity-100" : "opacity-0",
+            navOpen ? "opacity-100" : "invisible pointer-events-none opacity-0",
           )}
         >
           <PanelSlot id={navId} params={props.navParams} />
