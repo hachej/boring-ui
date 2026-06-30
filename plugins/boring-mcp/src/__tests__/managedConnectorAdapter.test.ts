@@ -56,7 +56,7 @@ function createProvider(): ManagedConnectorProvider {
   return {
     startConnect: vi.fn(async ({ sourceId }) => ({
       connectorRef: { provider: "notion", toolkitId: "notion-toolkit", externalSourceId: "provider-source-1", sessionId: "session-1" },
-      status: "connected" as const,
+      status: "unconfigured" as const,
       connectUrl: `https://connect.example/${sourceId}`,
       providerAccountLabel: "demo@example.com",
     })),

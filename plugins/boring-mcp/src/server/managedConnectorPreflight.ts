@@ -1,4 +1,4 @@
-import { MCP_ERROR_CODES, McpError, containsMcpSecret, type McpErrorCode } from "../shared"
+import { MCP_ERROR_CODES, McpError, containsMcpSecretOrCanary, type McpErrorCode } from "../shared"
 
 export type ManagedConnectorSecretStorage = "server-env" | "server-vault"
 export type ManagedConnectorRiskStatus = "approved" | "owner-accepted-gap"
@@ -63,25 +63,14 @@ function hasAcceptedGap(evidence: ManagedConnectorVendorRiskEvidence, field: (ty
   return evidence[field] === "approved" || Boolean(evidence.acceptedGaps?.some((gap) => gap.id === field && hasText(gap.owner) && hasText(gap.followUp) && hasText(gap.reason)))
 }
 
-function stringContainsCanary(value: string, canaries: readonly string[]): boolean {
-  return canaries.some((canary) => hasText(canary) && value.includes(canary))
-}
-
-function containsCanary(value: unknown, canaries: readonly string[]): boolean {
-  if (typeof value === "string") return stringContainsCanary(value, canaries)
-  if (Array.isArray(value)) return value.some((item) => containsCanary(item, canaries))
-  if (!value || typeof value !== "object") return false
-  return Object.entries(value).some(([key, nested]) => stringContainsCanary(key, canaries) || containsCanary(nested, canaries))
-}
-
 export function validateManagedConnectorPreflight(evidence: ManagedConnectorPreflightEvidence): ManagedConnectorPreflightResult {
   const hasBrowserSamples = evidence.browserDtoSamples.length > 0
   const hasLogSamples = evidence.redactedLogSamples.length > 0
   const hasProviderResultSamples = evidence.redactedProviderResultSamples.length > 0
   const hasCanaries = evidence.redactionCanaries.some(hasText)
-  const browserHasSecret = evidence.browserDtoSamples.some(containsMcpSecret) || containsCanary(evidence.browserDtoSamples, evidence.redactionCanaries)
-  const logsHaveSecret = evidence.redactedLogSamples.some(containsMcpSecret) || containsCanary(evidence.redactedLogSamples, evidence.redactionCanaries)
-  const providerResultsHaveSecret = evidence.redactedProviderResultSamples.some(containsMcpSecret) || containsCanary(evidence.redactedProviderResultSamples, evidence.redactionCanaries)
+  const browserHasSecret = containsMcpSecretOrCanary(evidence.browserDtoSamples, evidence.redactionCanaries)
+  const logsHaveSecret = containsMcpSecretOrCanary(evidence.redactedLogSamples, evidence.redactionCanaries)
+  const providerResultsHaveSecret = containsMcpSecretOrCanary(evidence.redactedProviderResultSamples, evidence.redactionCanaries)
   const vendorRiskOk = VENDOR_RISK_FIELDS.every((field) => hasAcceptedGap(evidence.vendorRisk, field))
 
   const checks: ManagedConnectorPreflightCheck[] = [
