@@ -5,6 +5,7 @@ import {
   createBoringMcpAgentBridgeRegistry,
   createBoringMcpServerPlugin,
   createBoringMcpSourceHandlers,
+  createComposioManagedConnectorProvider,
   createManagedConnectorAdapter,
   evaluateBoringMcpLaunchGate,
   type BoringMcpLaunchGateResult,
@@ -82,11 +83,11 @@ const FULL_APP_MANAGED_CONNECTOR_PREFLIGHT = {
 export function createFullAppManagedConnectorAdapter(options: {
   env?: NodeJS.ProcessEnv
   registry: ManagedConnectorSourceRegistry
-  provider: ManagedConnectorProvider
+  provider?: ManagedConnectorProvider
 }): ManagedConnectorAdapter {
   return createManagedConnectorAdapter({
     registry: options.registry,
-    provider: options.provider,
+    provider: options.provider ?? createComposioManagedConnectorProvider(),
     secretResolver: createFullAppManagedConnectorSecretResolver(options.env),
     templates: DEFAULT_MCP_PROVIDER_TEMPLATES,
     preflightEvidence: FULL_APP_MANAGED_CONNECTOR_PREFLIGHT,
