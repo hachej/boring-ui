@@ -296,15 +296,6 @@ export function fileRoutes(
     return (await resolveFilesystemBindings(request)).find((binding) => binding.filesystem === filesystem)
   }
 
-  async function rejectUnsupportedFilesystemMutation(request: FastifyRequest, reply: FastifyReply, filesystem: string): Promise<FastifyReply> {
-    const binding = await resolveFilesystemBinding(request, filesystem)
-    if (!binding) return sendNotFoundOrDenied(reply)
-    if (binding.access === 'readonly') return sendFilesystemBindingMutationDenied(reply, filesystem, binding.access)
-    return reply.code(501).send({
-      error: { code: ERROR_CODE_INTERNAL, message: `${filesystem} binding access is not supported by this route` },
-    })
-  }
-
   app.get('/api/v1/files/raw', async (request, reply) => {
     const query = request.query as Record<string, unknown>
     const path = requireStringParam(query.path, 'path', reply)
@@ -314,7 +305,7 @@ export function fileRoutes(
     if (filesystem !== USER_FILESYSTEM_ID) {
       try {
         const binding = await resolveFilesystemBinding(request, filesystem)
-        if (!binding || binding.access !== 'readonly') return sendNotFoundOrDenied(reply)
+        if (!binding) return sendNotFoundOrDenied(reply)
         const result = await binding.operations.read({ filesystem, path })
         const bytes = Buffer.from(result.content, 'utf8')
         return reply
@@ -393,9 +384,9 @@ export function fileRoutes(
     if (filesystem !== USER_FILESYSTEM_ID) {
       try {
         const binding = await resolveFilesystemBinding(request, filesystem)
-        if (!binding || binding.access !== 'readonly') return sendNotFoundOrDenied(reply)
+        if (!binding) return sendNotFoundOrDenied(reply)
         const result = await binding.operations.read({ filesystem, path })
-        return { content: result.content }
+        return { content: result.content, access: binding.access }
       } catch {
         return sendNotFoundOrDenied(reply)
       }
@@ -414,11 +405,11 @@ export function fileRoutes(
       const workspace = await resolveWorkspace(request)
       if (workspace.readFileWithStat) {
         const { content, stat } = await workspace.readFileWithStat(path)
-        return { content, mtimeMs: stat.kind === 'file' ? stat.mtimeMs : undefined }
+        return { content, mtimeMs: stat.kind === 'file' ? stat.mtimeMs : undefined, access: 'readwrite' }
       }
       const content = await workspace.readFile(path)
       const stat = await workspace.stat(path)
-      return { content, mtimeMs: stat.kind === 'file' ? stat.mtimeMs : undefined }
+      return { content, mtimeMs: stat.kind === 'file' ? stat.mtimeMs : undefined, access: 'readwrite' }
     } catch (err) {
       return classifyError(err, reply, 'file')
     }
@@ -440,12 +431,30 @@ export function fileRoutes(
     // 409 with the current mtime so the client can decide whether to
     // reload or force-overwrite.
     const filesystem = requestedFilesystem(body.filesystem)
-    if (filesystem !== USER_FILESYSTEM_ID) return await rejectUnsupportedFilesystemMutation(request, reply, filesystem)
-
-    const expectedMtimeMs = typeof body.expectedMtimeMs === 'number'
+const expectedMtimeMs = typeof body.expectedMtimeMs === 'number'
       ? body.expectedMtimeMs
       : null
     const shouldReturnMtimeMs = body.returnMtimeMs !== false || expectedMtimeMs !== null
+
+    if (filesystem !== USER_FILESYSTEM_ID) {
+      try {
+        const binding = await resolveFilesystemBinding(request, filesystem)
+        if (!binding) return sendNotFoundOrDenied(reply)
+        if (binding.access !== 'readwrite') return sendFilesystemBindingMutationDenied(reply, filesystem, binding.access)
+        if (!binding.operations.write) {
+          return reply.code(501).send({ error: { code: ERROR_CODE_INTERNAL, message: `${filesystem} write operation is unavailable` } })
+        }
+        const result = await binding.operations.write({
+          filesystem,
+          path,
+          content: body.content,
+          ...(expectedMtimeMs !== null ? { expectedMtimeMs } : {}),
+        })
+        return shouldReturnMtimeMs ? { ok: true, mtimeMs: result.mtimeMs } : { ok: true }
+      } catch (err) {
+        return classifyError(err, reply, 'file')
+      }
+    }
 
     try {
       const workspace = await resolveWorkspace(request)
@@ -608,7 +617,20 @@ export function fileRoutes(
     const path = requireStringParam(query.path, 'path', reply)
     if (path === null) return
     const filesystem = requestedFilesystem(query.filesystem)
-    if (filesystem !== USER_FILESYSTEM_ID) return await rejectUnsupportedFilesystemMutation(request, reply, filesystem)
+if (filesystem !== USER_FILESYSTEM_ID) {
+      try {
+        const binding = await resolveFilesystemBinding(request, filesystem)
+        if (!binding) return sendNotFoundOrDenied(reply)
+        if (binding.access !== 'readwrite') return sendFilesystemBindingMutationDenied(reply, filesystem, binding.access)
+        if (!binding.operations.delete) {
+          return reply.code(501).send({ error: { code: ERROR_CODE_INTERNAL, message: `${filesystem} delete operation is unavailable` } })
+        }
+        await binding.operations.delete({ filesystem, path })
+        return { ok: true }
+      } catch (err) {
+        return classifyError(err, reply, 'file')
+      }
+    }
 
     try {
       const workspace = await resolveWorkspace(request)
@@ -626,7 +648,20 @@ export function fileRoutes(
     const to = requireStringParam(body?.to, 'to', reply)
     if (to === null) return
     const filesystem = requestedFilesystem(body.filesystem)
-    if (filesystem !== USER_FILESYSTEM_ID) return await rejectUnsupportedFilesystemMutation(request, reply, filesystem)
+if (filesystem !== USER_FILESYSTEM_ID) {
+      try {
+        const binding = await resolveFilesystemBinding(request, filesystem)
+        if (!binding) return sendNotFoundOrDenied(reply)
+        if (binding.access !== 'readwrite') return sendFilesystemBindingMutationDenied(reply, filesystem, binding.access)
+        if (!binding.operations.move) {
+          return reply.code(501).send({ error: { code: ERROR_CODE_INTERNAL, message: `${filesystem} move operation is unavailable` } })
+        }
+        await binding.operations.move({ filesystem, from, to })
+        return { ok: true }
+      } catch (err) {
+        return classifyError(err, reply, 'file')
+      }
+    }
 
     try {
       const workspace = await resolveWorkspace(request)
@@ -644,7 +679,20 @@ export function fileRoutes(
 
     const recursive = body.recursive === true
     const filesystem = requestedFilesystem(body.filesystem)
-    if (filesystem !== USER_FILESYSTEM_ID) return await rejectUnsupportedFilesystemMutation(request, reply, filesystem)
+if (filesystem !== USER_FILESYSTEM_ID) {
+      try {
+        const binding = await resolveFilesystemBinding(request, filesystem)
+        if (!binding) return sendNotFoundOrDenied(reply)
+        if (binding.access !== 'readwrite') return sendFilesystemBindingMutationDenied(reply, filesystem, binding.access)
+        if (!binding.operations.mkdir) {
+          return reply.code(501).send({ error: { code: ERROR_CODE_INTERNAL, message: `${filesystem} mkdir operation is unavailable` } })
+        }
+        await binding.operations.mkdir({ filesystem, path, recursive })
+        return { ok: true }
+      } catch (err) {
+        return classifyError(err, reply, 'directory')
+      }
+    }
 
     try {
       const workspace = await resolveWorkspace(request)
@@ -664,7 +712,7 @@ export function fileRoutes(
     if (filesystem !== USER_FILESYSTEM_ID) {
       try {
         const binding = await resolveFilesystemBinding(request, filesystem)
-        if (!binding || binding.access !== 'readonly') return sendNotFoundOrDenied(reply)
+        if (!binding) return sendNotFoundOrDenied(reply)
         const result = await binding.operations.stat({ filesystem, path })
         return result.isDirectory ? { kind: 'dir' as const } : { kind: 'file' as const, size: 0 }
       } catch {
