@@ -122,8 +122,9 @@ export interface McpDoctorResult {
   issues: McpDoctorIssue[]
 }
 
-export interface NormalizedMcpTool {
-  serverId: string
+export interface McpToolCatalogEntry {
+  sourceId: string
+  provider: McpProviderId
   toolName: string
   displayName: string
   summary: string
@@ -132,13 +133,24 @@ export interface NormalizedMcpTool {
   outputSchema?: unknown
   risk: McpToolRisk
   enabled: boolean
-  reason: string
-  schemaHash?: string
-  nativeRef?: {
+  blockedReasons: string[]
+  schemaHash: string
+  nativeRef: {
     provider: string
     toolkit?: string
     action: string
   }
+}
+
+export type NormalizedMcpTool = McpToolCatalogEntry
+
+export interface McpToolSearchResult {
+  tools: McpToolCatalogEntry[]
+}
+
+export interface McpToolDescribeResult {
+  tool: McpToolCatalogEntry
+  schemaDrifted: boolean
 }
 
 export interface McpToolCallResult {
