@@ -1080,6 +1080,7 @@ export function WorkspaceAgentFront<
   const activeChatPaneId = activeChatPaneState.activeId ?? chatPaneIds[0] ?? chatSessionId
 
   const switchToChatPane = useCallback((nextSessionId: string) => {
+    setLeftOverlay(null)
     const current = chatPaneState.workspaceId === workspaceId
       ? chatPaneState
       : { workspaceId, ids: [chatSessionId], activeId: chatSessionId }
@@ -1111,6 +1112,7 @@ export function WorkspaceAgentFront<
   }, [chatSessionId, rawSwitch, workspaceId])
 
   const openChatPane = useCallback((nextSessionId: string) => {
+    setLeftOverlay(null)
     const current = chatPaneState.workspaceId === workspaceId
       ? chatPaneState
       : { workspaceId, ids: [chatSessionId], activeId: chatSessionId }
