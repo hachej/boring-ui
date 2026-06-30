@@ -7,13 +7,15 @@ This package is the generic MCP capability that child apps can enable. It owns:
 - generic Sources left-tab and MCP Sources panel shell;
 - provider template, source, tool, policy, redaction, status, and facade contracts;
 - deny-before-allow read-only policy helpers;
+- reusable Composio managed connector provider for hosted OAuth/session onboarding;
+- MCP SDK Streamable HTTP transport for real MCP-compatible endpoints, including Composio session MCP URLs;
 - fake-transport-testable facade seams;
 - normalized tool catalog search/describe contracts;
 - governed `mcp_readonly_call` execution boundary with audit metadata;
 - thin agent bridge tool registry for the seven stable boring-mcp operations;
 - server-only managed connector adapter seam with app-injected secret resolution.
 
-It intentionally does **not** perform real connector-provider calls, OAuth, provider execution, secret storage, or app-specific environment binding in the foundation PR.
+It intentionally does **not** own app-specific secret storage or app identity. Apps provide the Composio API key resolver, source persistence, enabled provider config, and actor resolution; boring-mcp owns generic Composio session creation, hosted connect URL creation, MCP protocol transport, catalog, policy, bridge tools, redaction, and read-only execution path.
 
 ## Enable in an app
 
@@ -31,15 +33,47 @@ const boringMcpPlugin = createBoringMcpPlugin({
 <CoreWorkspaceAgentFront plugins={[boringMcpPlugin]} />
 ```
 
-Server composition can use the server plugin once an app wants the boring-mcp prompt/seams at boot:
+Server composition can enable just the prompt, or the full generic bridge tool stack. For hosted Composio-backed sources, the app supplies only source persistence, the server-side API key resolver, enabled provider config, and actor resolution:
 
 ```ts
-import { createBoringMcpServerPlugin } from '@hachej/boring-mcp/server'
+import {
+  createBoringMcpServerPlugin,
+  createComposioManagedConnectorProvider,
+  createComposioMcpTransport,
+  createManagedConnectorAdapter,
+} from '@hachej/boring-mcp/server'
+
+const configs = [
+  { provider: 'notion', displayName: 'Notion', toolkitId: 'notion', connectUrlOrigins: ['https://app.composio.dev'] },
+]
+const secretResolver = {
+  async resolveSecret() {
+    return { storage: 'server-env' as const, value: process.env.COMPOSIO_API_KEY! }
+  },
+}
+
+const connector = createManagedConnectorAdapter({
+  registry: mcpSourceRegistry,
+  provider: createComposioManagedConnectorProvider(),
+  secretResolver,
+  configs,
+  preflightEvidence,
+})
+
+const transport = createComposioMcpTransport({ secretResolver, configs })
 
 createCoreWorkspaceAgentServer({
-  plugins: [createBoringMcpServerPlugin()],
+  plugins: [createBoringMcpServerPlugin({
+    registry: mcpSourceRegistry,
+    transport,
+    resolveActor: async (_params, ctx) => resolveActorForAgentSession(ctx.sessionId),
+  })],
 })
 ```
+
+When `registry`, `transport`, and `resolveActor` are provided, the plugin contributes the seven stable agent tools automatically: `mcp_servers_list`, `mcp_server_status`, `mcp_server_doctor`, `mcp_server_probe`, `mcp_tools_search`, `mcp_tool_describe`, and `mcp_readonly_call`.
+
+For non-Composio MCP endpoints, apps can still use `createMcpSdkStreamableHttpTransport({ endpoint })` directly.
 
 Apps may also list the package in `package.json#boring.defaultPluginPackages`, but core-based shipped apps should still statically compose front plugins when the UI must render.
 
@@ -64,7 +98,9 @@ Before enabling boring-mcp in a shipped app, operators should verify:
 5. Rate/budget hooks block before provider `listTools`/`callTool` when local limits are exceeded.
 6. Disconnect/revoke is verified through the injected registry status/result and never performs provider tool execution.
 7. Local smoke with a fake managed connector: connect -> status connected -> search tools -> describe tool -> governed readonly call -> disconnect -> verify non-connected status.
+8. Protocol smoke with a fake Streamable HTTP MCP server: real MCP SDK client transport -> list tools -> describe -> governed readonly call -> block mutating tool -> disconnect blocks future call.
+9. Composio smoke with fake Composio HTTP API + fake MCP server: create session -> hosted connect URL -> session MCP headers -> search/readonly call -> raw `COMPOSIO_*` meta-tools hidden.
 
 ## Current status
 
-Foundation plus source handlers, executable preflight, generic managed connector adapter seam, normalized tool catalog search/describe, governed fake-transport-testable read-only execution, exported agent bridge tool definitions, and production launch-gate helpers. Real Composio SDK/API calls, route/app registration, and Constellation binding land in later PRs.
+Reusable boring-mcp now includes source handlers, executable preflight, generic managed connector adapter seam, reusable Composio managed connector provider, MCP SDK Streamable HTTP transport, normalized tool catalog search/describe, governed read-only execution, exported/generic agent bridge tools, and production launch-gate helpers. Real app secret binding remains app-owned; Constellation-specific code is not required for the generic MCP feature to run against Composio or another MCP-compatible endpoint.
