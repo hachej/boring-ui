@@ -153,6 +153,28 @@ export interface McpToolDescribeResult {
   schemaDrifted: boolean
 }
 
+export interface McpReadonlyCallInput {
+  sourceId: string
+  toolName: string
+  input?: unknown
+  expectedSchemaHash?: string
+}
+
+export interface McpReadonlyCallResult {
+  content: unknown
+}
+
+export interface McpReadonlyCallAuditEvent {
+  operation: "mcp_readonly_call"
+  outcome: "success" | "blocked" | "failure"
+  workspaceId: string
+  userId: string
+  sourceId: string
+  toolName: string
+  expectedSchemaHash?: string
+  code?: string
+}
+
 export interface McpToolCallResult {
   content: unknown
 }
@@ -328,19 +350,6 @@ export class McpAccessFacade {
     }
   }
 
-  async callReadonlyTool(actor: McpActor, sourceId: string, toolName: string, input: unknown): Promise<McpToolCallResult> {
-    const source = await this.requireAccessibleSource(actor, sourceId)
-    this.requireConnectedSource(source)
-    const template = this.requireTemplate(source)
-    assertMcpToolAllowed(template, toolName)
-    const bytes = new TextEncoder().encode(JSON.stringify(input ?? {})).byteLength
-    if (bytes > (this.params.maxInputBytes ?? 64 * 1024)) {
-      throw new McpError(MCP_ERROR_CODES.RESOURCE_LIMIT_EXCEEDED, "MCP tool input is too large")
-    }
-    const result = await this.params.transport.callTool(source, toolName, input)
-    if (containsMcpSecret(result)) throw new McpError(MCP_ERROR_CODES.SECRET_LEAK_GUARD, "MCP provider response looked like it contained a secret")
-    return redactMcpSecrets(result) as McpToolCallResult
-  }
 
   private async requireAccessibleSource(actor: McpActor, sourceId: string): Promise<McpSource> {
     const source = await this.params.store.getSource(sourceId)

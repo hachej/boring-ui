@@ -82,7 +82,7 @@ describe("McpAccessFacade", () => {
     ])
   })
 
-  it("blocks unowned sources and mutating calls before transport execution", async () => {
+  it("blocks unowned sources before transport execution", async () => {
     const transport: McpTransportClient = {
       listTools: vi.fn(async () => []),
       listResources: vi.fn(async () => []),
@@ -91,7 +91,6 @@ describe("McpAccessFacade", () => {
     }
     const facade = new McpAccessFacade({ store: makeStore(), transport })
     await expect(facade.probeSource({ ...actor, userId: "other" }, notionSource.id)).rejects.toMatchObject({ code: MCP_ERROR_CODES.SOURCE_NOT_FOUND })
-    await expect(facade.callReadonlyTool(actor, notionSource.id, "update_page", {})).rejects.toMatchObject({ code: MCP_ERROR_CODES.TOOL_NOT_ALLOWED })
     expect(transport.listTools).not.toHaveBeenCalled()
     expect(transport.callTool).not.toHaveBeenCalled()
   })
@@ -105,7 +104,6 @@ describe("McpAccessFacade", () => {
     }
     const facade = new McpAccessFacade({ store: makeStore({ ...notionSource, status: "expired" }), transport })
     await expect(facade.probeSource(actor, notionSource.id)).rejects.toMatchObject({ code: MCP_ERROR_CODES.SOURCE_UNAVAILABLE })
-    await expect(facade.callReadonlyTool(actor, notionSource.id, "NOTION_SEARCH_NOTION_PAGE", {})).rejects.toMatchObject({ code: MCP_ERROR_CODES.SOURCE_UNAVAILABLE })
     expect(transport.listTools).not.toHaveBeenCalled()
     expect(transport.listResources).not.toHaveBeenCalled()
     expect(transport.callTool).not.toHaveBeenCalled()
@@ -136,14 +134,4 @@ describe("McpAccessFacade", () => {
     await expect(policyFacade.probeSource(actor, teamSource.id)).resolves.toMatchObject({ sourceId: teamSource.id })
   })
 
-  it("rejects provider responses that look like secrets", async () => {
-    const transport: McpTransportClient = {
-      listTools: vi.fn(async () => []),
-      listResources: vi.fn(async () => []),
-      readResource: vi.fn(),
-      callTool: vi.fn(async () => ({ content: { access_token: "secret" } })),
-    }
-    const facade = new McpAccessFacade({ store: makeStore(), transport })
-    await expect(facade.callReadonlyTool(actor, notionSource.id, "NOTION_SEARCH_NOTION_PAGE", {})).rejects.toMatchObject({ code: MCP_ERROR_CODES.SECRET_LEAK_GUARD })
-  })
 })
