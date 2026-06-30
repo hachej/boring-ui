@@ -58,6 +58,37 @@ describe("human action ask-user projections", () => {
     expect(JSON.stringify(blocker)).not.toContain("answerToken")
   })
 
+  it("projects target-scoped review questions into review inbox metadata", () => {
+    const reviewQuestion: AskUserQuestion = {
+      ...question,
+      humanAction: {
+        kind: "review",
+        title: "Review README changes",
+        target: { type: "file", path: "README.md" },
+        actions: [{ id: "accept", label: "Accept", tone: "positive" }],
+        actionFieldName: "action",
+      },
+    }
+
+    const view = askUserQuestionToHumanActionView(reviewQuestion)
+    expect(view).toMatchObject({
+      kind: "review",
+      title: "Review README changes",
+      artifact: { surfaceKind: "workspace.open.path", target: "README.md" },
+      response: { mode: "review", actions: [{ id: "accept", label: "Accept" }] },
+    })
+
+    const blocker = askUserHumanActionToBlockerProjection({ hint: reviewQuestion, question: reviewQuestion })
+    expect(blocker).toMatchObject({
+      reason: "ask-user.review",
+      surfaceKind: "workspace.open.path",
+      target: "README.md",
+      sessionBadge: { kind: "review", label: "review" },
+      inbox: { kind: "review", source: { type: "plugin", id: "ask-user", label: "review" } },
+    })
+    expect(JSON.stringify(blocker)).not.toContain("secret-answer-token")
+  })
+
   it("does not project non-ready questions as active blockers", () => {
     expect(askUserHumanActionToBlockerProjection({
       hint: { questionId: "q1", sessionId: "s1", status: "answered" },

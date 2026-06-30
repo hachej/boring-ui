@@ -1,7 +1,7 @@
 import { ASK_USER_BRIDGE_OPS } from "../shared/bridge"
 import { ASK_USER_UI_STATE_SLOTS } from "../shared/constants"
 import { ASK_USER_ERROR_CODES } from "../shared/error-codes"
-import type { AskUserAnswerValue, AskUserFormSchema, AskUserQuestion } from "../shared/types"
+import type { AskUserAnswerValue, AskUserFormSchema, AskUserQuestion, AskUserTargetHumanAction, AskUserHumanActionButton } from "../shared/types"
 import { validateQuestionValues, type QuestionFormValues, type QuestionValidationResult } from "./primitives"
 
 export type QuestionsClientResult = { ok: true; status: string }
@@ -144,10 +144,69 @@ export function normalizeQuestion(value: unknown): AskUserQuestion | null {
     title: typeof raw.title === "string" ? raw.title : undefined,
     context: typeof raw.context === "string" ? raw.context : undefined,
     schema,
+    humanAction: normalizeTargetHumanAction(raw.humanAction),
     answerToken: typeof raw.answerToken === "string" ? raw.answerToken : "",
     createdAt: typeof raw.createdAt === "string" ? raw.createdAt : new Date(0).toISOString(),
     updatedAt: typeof raw.updatedAt === "string" ? raw.updatedAt : new Date(0).toISOString(),
   }
+}
+
+function boundedString(value: unknown, max = 512): string | undefined {
+  return typeof value === "string" && value.length > 0 ? value.slice(0, max) : undefined
+}
+
+function normalizeTargetHumanAction(value: unknown): AskUserTargetHumanAction | undefined {
+  if (!value || typeof value !== "object") return undefined
+  const raw = value as Record<string, unknown>
+  const kind = raw.kind === "review" || raw.kind === "approval" || raw.kind === "acknowledgement" || raw.kind === "choice" ? raw.kind : undefined
+  const title = boundedString(raw.title)
+  const target = normalizeHumanActionTarget(raw.target)
+  const actions = Array.isArray(raw.actions) ? raw.actions.map(normalizeHumanActionButton).filter((action): action is AskUserHumanActionButton => !!action) : []
+  if (!kind || !title || !target || actions.length === 0) return undefined
+  return {
+    ...(boundedString(raw.id) ? { id: boundedString(raw.id) } : {}),
+    kind,
+    title,
+    ...(boundedString(raw.body, 4000) ? { body: boundedString(raw.body, 4000) } : {}),
+    target,
+    actions,
+    ...(boundedString(raw.actionFieldName, 64) ? { actionFieldName: boundedString(raw.actionFieldName, 64) } : {}),
+    ...(boundedString(raw.commentFieldName, 64) ? { commentFieldName: boundedString(raw.commentFieldName, 64) } : {}),
+  }
+}
+
+function normalizeHumanActionButton(value: unknown): AskUserHumanActionButton | null {
+  if (!value || typeof value !== "object") return null
+  const raw = value as Record<string, unknown>
+  const id = boundedString(raw.id, 128)
+  const label = boundedString(raw.label, 160)
+  if (!id || !label) return null
+  const tone = raw.tone === "positive" || raw.tone === "warning" || raw.tone === "danger" || raw.tone === "default" ? raw.tone : undefined
+  const comment = raw.comment === "optional" || raw.comment === "required" || raw.comment === "none" ? raw.comment : undefined
+  return { id, label, ...(tone ? { tone } : {}), ...(comment ? { comment } : {}) }
+}
+
+function normalizeHumanActionTarget(value: unknown): AskUserTargetHumanAction["target"] | null {
+  if (!value || typeof value !== "object") return null
+  const raw = value as Record<string, unknown>
+  const label = boundedString(raw.label)
+  if (raw.type === "file") {
+    const path = boundedString(raw.path)
+    if (!path) return null
+    return { type: "file", path, ...(boundedString(raw.workspaceId, 128) ? { workspaceId: boundedString(raw.workspaceId, 128) } : {}), ...(label ? { label } : {}) }
+  }
+  if (raw.type === "surface") {
+    const surfaceKind = boundedString(raw.surfaceKind, 128)
+    const target = boundedString(raw.target)
+    if (!surfaceKind || !target) return null
+    return { type: "surface", surfaceKind, target, ...(label ? { label } : {}) }
+  }
+  if (raw.type === "panel") {
+    const component = boundedString(raw.component, 128)
+    if (!component) return null
+    return { type: "panel", component, ...(boundedString(raw.instanceId, 128) ? { instanceId: boundedString(raw.instanceId, 128) } : {}), ...(label ? { label } : {}) }
+  }
+  return null
 }
 
 export async function deriveIdempotencyKey(op: string, inputValue: Record<string, unknown>): Promise<string> {

@@ -80,6 +80,70 @@ test.describe("ask_user Questions pane", () => {
     await expect.poll(() => pendingRequestCount).toBeGreaterThanOrEqual(2)
   })
 
+  test("target-scoped review action appears in file header and submits", async ({ page }) => {
+    const commands: unknown[] = []
+    await page.route("**/api/v1/ui/state", async (route) => {
+      if (route.request().method() === "GET") {
+        await route.fulfill({
+          json: {
+            "questions.pending": {
+              hint: { questionId: "q-e2e-review", sessionId: "default", status: "ready" },
+            },
+          },
+        })
+        return
+      }
+      await route.fulfill({ status: 204 })
+    })
+
+    await page.route("**/api/v1/workspace-bridge/call", async (route) => {
+      const body = route.request().postDataJSON()
+      commands.push(body)
+      if (body.op === "ask-user.v1.pending") {
+        const sessionId = body.input?.sessionId ?? "default"
+        await route.fulfill({
+          json: {
+            ok: true,
+            op: body.op,
+            requestId: "req-e2e-review",
+            output: {
+              pending: {
+                ...question,
+                questionId: "q-e2e-review",
+                sessionId,
+                title: "Review README",
+                schema: {
+                  wireVersion: 1,
+                  fields: [{ type: "radio", name: "action", label: "Action", required: true, options: [{ value: "accept", label: "Accept" }, { value: "request_changes", label: "Request changes" }] }],
+                },
+                humanAction: {
+                  kind: "review",
+                  title: "Review README",
+                  target: { type: "file", path: "README.md", label: "README.md" },
+                  actions: [{ id: "accept", label: "Accept", tone: "positive" }],
+                  actionFieldName: "action",
+                },
+              },
+            },
+          },
+        })
+        return
+      }
+      await route.fulfill({ json: { ok: true, op: body.op, requestId: "req-e2e-review", output: { ok: true, status: "answered" } } })
+    })
+
+    await page.goto("/?fresh=1", { waitUntil: "domcontentloaded" })
+    await expect(page.getByRole("textbox", { name: "Agent prompt" })).toBeVisible({ timeout: 15_000 })
+    const workbenchButton = page.getByRole("button", { name: /^open workbench$/i })
+    if (await workbenchButton.isVisible().catch(() => false)) await workbenchButton.click()
+    await page.request.post("/api/v1/ui/commands", { data: { kind: "openFile", params: { path: "README.md" } } })
+
+    await expect(page.getByRole("button", { name: "Review README: Accept" })).toBeVisible({ timeout: 15_000 })
+    await page.getByRole("button", { name: "Review README: Accept" }).click()
+
+    await expect.poll(() => commands.some((cmd: any) => cmd.op === "ask-user.v1.answer" && cmd.input?.values?.action === "accept" && cmd.input?.answerToken === "secret-e2e")).toBe(true)
+  })
+
   test("ui command opens pane from metadata, submits, and closes", async ({ page }) => {
     const commands: unknown[] = []
     await page.route("**/api/v1/ui/state", async (route) => {

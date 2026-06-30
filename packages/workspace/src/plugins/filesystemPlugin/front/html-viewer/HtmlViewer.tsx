@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react"
 import { ErrorState, IconButton, Spinner } from "@hachej/boring-ui-kit"
 import { ExternalLink, RefreshCcw } from "lucide-react"
+import { WorkspaceHumanActionTargetButtons } from "../../../../front/humanActions"
 import { cn } from "../../../../front/lib/utils"
 import { useApiBaseUrl, useWorkspaceRequestId } from "../data/DataProvider"
 
@@ -259,7 +260,8 @@ export function HtmlViewer({ path, className }: HtmlViewerProps) {
 
   return (
     <div className={cn("flex h-full min-h-0 flex-col bg-background", className)}>
-      <div className="flex shrink-0 items-center justify-end gap-3 border-b border-border/60 px-3 py-2">
+      <div className="flex shrink-0 items-center justify-between gap-3 border-b border-border/60 px-3 py-2">
+        <WorkspaceHumanActionTargetButtons target={{ type: "file", path }} />
         <div className="flex items-center gap-1">
           <IconButton
             type="button"

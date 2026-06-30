@@ -42,6 +42,7 @@ import type { CommandConfig, PanelConfig, WorkspaceSourceRegistration } from "..
 import type { CatalogConfig } from "../../shared/plugins/types"
 import type { WorkspaceChatPanelComponent, WorkspaceChatPanelProps } from "../chrome/chat/types"
 import { WorkspaceAttentionProvider } from "../attention"
+import { WorkspaceHumanActionTargetsProvider } from "../humanActions"
 import { useAgentPluginHotReload } from "../agentPlugins/registerAgentPlugin"
 import { formatWorkspaceDocumentTitle } from "./workspaceTitle"
 
@@ -630,6 +631,7 @@ export function WorkspaceProvider({
         <WorkspaceBridgeContext.Provider value={bridgeValue}>
           <FullPageBasePathProvider basePath={fullPageBasePath}>
             <WorkspaceAttentionProvider>
+              <WorkspaceHumanActionTargetsProvider>
           <PluginErrorProvider>
             <RegistryProvider
               panelRegistry={panelRegistry}
@@ -673,6 +675,7 @@ export function WorkspaceProvider({
               </PanelRenderStatusProvider>
             </RegistryProvider>
           </PluginErrorProvider>
+              </WorkspaceHumanActionTargetsProvider>
           </WorkspaceAttentionProvider>
           </FullPageBasePathProvider>
         </WorkspaceBridgeContext.Provider>

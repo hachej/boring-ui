@@ -50,6 +50,34 @@ describe("ask-user front client", () => {
     expect(readPendingQuestionHintFromState(state)).toEqual({ questionId: "legacy", sessionId: "s-legacy", status: "ready" })
   })
 
+  it("normalizes target-scoped human actions from pending bridge payloads", async () => {
+    const fetchMock = vi.fn(async (_url: string, _init?: RequestInit) => Response.json({
+      ok: true,
+      output: {
+        pending: {
+          ...question,
+          humanAction: {
+            kind: "review",
+            title: "Review README",
+            target: { type: "file", path: "README.md", label: "Readme" },
+            actions: [{ id: "accept", label: "Accept", tone: "positive" }],
+            actionFieldName: "action",
+          },
+        },
+      },
+    }))
+    vi.stubGlobal("fetch", fetchMock)
+
+    const pending = await createQuestionsClient().pending("default")
+    expect(pending?.humanAction).toMatchObject({
+      kind: "review",
+      title: "Review README",
+      target: { type: "file", path: "README.md", label: "Readme" },
+      actions: [{ id: "accept", label: "Accept", tone: "positive" }],
+      actionFieldName: "action",
+    })
+  })
+
   it("cancels through the bridge when crypto.subtle is unavailable", async () => {
     vi.stubGlobal("crypto", {})
     const fetchMock = vi.fn(async (_url: string, _init?: RequestInit) => Response.json({ ok: true, output: { ok: true, status: "cancelled" } }))

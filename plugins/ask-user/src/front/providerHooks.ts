@@ -7,10 +7,13 @@ import {
   events,
   postUiCommand,
   useWorkspaceAttention,
+  useWorkspaceHumanActionTargets,
   workspaceComposerStopAppliesToSession,
   workspaceComposerStopTargetSessionId,
   workspaceEvents,
   type WorkspaceAttentionActionDetail,
+  type WorkspaceHumanActionButton,
+  type WorkspaceHumanActionTargetRef,
 } from "@hachej/boring-workspace"
 import { ASK_USER_SURFACE_KIND, ASK_USER_UI_STATE_SLOTS } from "../shared/constants"
 import { askUserHumanActionToBlockerProjection } from "../shared/humanAction"
@@ -35,6 +38,43 @@ export function useAskUserAttentionBlockers(runtime: QuestionsRuntime, pendingSn
     }
     return () => { for (const blockerId of blockerIds) removeBlocker(blockerId) }
   }, [addBlocker, removeBlocker, runtime, pendingSnapshot])
+}
+
+export function useAskUserTargetActions(runtime: QuestionsRuntime, pendingSnapshot: string): void {
+  const { registerTargetAction } = useWorkspaceHumanActionTargets()
+  useEffect(() => {
+    const cleanups: Array<() => void> = []
+    const client = createQuestionsClient({ apiBaseUrl: runtime.apiBaseUrl, headers: runtime.authHeaders })
+    for (const hint of runtime.getPendingHints()) {
+      const pending = runtime.getPending(hint.sessionId)
+      const action = pending?.humanAction
+      if (!pending || pending.status !== "ready" || !action) continue
+      const target = action.target as WorkspaceHumanActionTargetRef
+      cleanups.push(registerTargetAction({
+        id: `${pending.questionId}:${action.id ?? action.kind}`,
+        title: action.title,
+        ...(action.body ? { body: action.body } : {}),
+        target,
+        pluginId: "ask-user",
+        createdAt: pending.createdAt,
+        actions: action.actions.map((button): WorkspaceHumanActionButton => ({
+          id: button.id,
+          label: button.label,
+          ...(button.tone ? { tone: button.tone } : {}),
+          ...(button.comment ? { comment: button.comment } : {}),
+        })),
+        async onAction({ action: button, comment }) {
+          const values: Record<string, string> = {
+            [action.actionFieldName ?? "action"]: button.id,
+          }
+          if (comment) values[action.commentFieldName ?? "comment"] = comment
+          await client.submit(pending, values)
+          runtime.setPending(null, pending.sessionId)
+        },
+      }))
+    }
+    return () => { for (const cleanup of cleanups) cleanup() }
+  }, [pendingSnapshot, registerTargetAction, runtime])
 }
 
 export function useAskUserAutoOpen(runtime: QuestionsRuntime, activeSessionId: string | null | undefined, pendingSnapshot: string): void {

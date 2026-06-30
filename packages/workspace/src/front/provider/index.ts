@@ -34,6 +34,19 @@ export type {
   WorkspaceAttentionInboxSourceMetadata,
   WorkspaceAttentionSessionBadge,
 } from "../attention"
+export {
+  WorkspaceHumanActionTargetButtons,
+  WorkspaceHumanActionTargetsProvider,
+  useWorkspaceHumanActionsForTarget,
+  useWorkspaceHumanActionTargets,
+  workspaceHumanActionTargetKey,
+} from "../humanActions"
+export type {
+  WorkspaceHumanActionButton,
+  WorkspaceHumanActionTargetAction,
+  WorkspaceHumanActionTargetRef,
+  WorkspaceHumanActionTargetsContextValue,
+} from "../humanActions"
 export type {
   OpenArtifactHandler,
   WorkspaceChatPanelComponent,

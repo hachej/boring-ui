@@ -344,6 +344,11 @@ export {
   emitWorkspaceAttentionAction,
   useWorkspaceAttention,
   workspaceAttentionSessionBadgeForBlocker,
+  WorkspaceHumanActionTargetButtons,
+  WorkspaceHumanActionTargetsProvider,
+  useWorkspaceHumanActionsForTarget,
+  useWorkspaceHumanActionTargets,
+  workspaceHumanActionTargetKey,
 } from "./front/provider"
 export type {
   WorkspaceProviderProps,
@@ -357,6 +362,10 @@ export type {
   WorkspaceAttentionContextValue,
   WorkspaceAttentionInboxSourceMetadata,
   WorkspaceAttentionSessionBadge,
+  WorkspaceHumanActionButton,
+  WorkspaceHumanActionTargetAction,
+  WorkspaceHumanActionTargetRef,
+  WorkspaceHumanActionTargetsContextValue,
 } from "./front/provider"
 
 // Store (selectors only — store itself is NOT exported)

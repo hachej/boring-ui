@@ -1,4 +1,5 @@
 import type { ASK_USER_COMMAND_KINDS } from "./constants"
+import type { HumanActionAnnotationTargetRef } from "./humanActionAnnotations"
 
 export type AskUserOption = {
   value: string
@@ -105,6 +106,24 @@ export type AskUserToolInput = {
 
 export type AskUserQuestionStatus = "ready" | "answered" | "cancelled" | "abandoned"
 
+export type AskUserHumanActionButton = {
+  id: string
+  label: string
+  tone?: "default" | "positive" | "warning" | "danger"
+  comment?: "none" | "optional" | "required"
+}
+
+export type AskUserTargetHumanAction = {
+  id?: string
+  kind: "review" | "approval" | "acknowledgement" | "choice"
+  title: string
+  body?: string
+  target: HumanActionAnnotationTargetRef
+  actions: AskUserHumanActionButton[]
+  actionFieldName?: string
+  commentFieldName?: string
+}
+
 export type AskUserQuestion = {
   questionId: string
   sessionId: string
@@ -113,6 +132,7 @@ export type AskUserQuestion = {
   title?: string
   context?: string
   schema?: AskUserFormSchema
+  humanAction?: AskUserTargetHumanAction
   answerToken: string
   createdAt: string
   updatedAt: string

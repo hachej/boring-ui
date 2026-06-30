@@ -3,6 +3,7 @@
 import { lazy, Suspense } from "react"
 import type { ReactNode } from "react"
 import { EmptyState, ErrorState, Spinner } from "@hachej/boring-ui-kit"
+import { WorkspaceHumanActionTargetButtons } from "../../../front/humanActions"
 import { ConflictBanner } from "./ConflictBanner"
 import type { FileConflictError } from "./data/fetchClient"
 
@@ -121,6 +122,10 @@ export function FilePaneShell({
           onOverwrite={onOverwrite}
         />
       )}
+      <WorkspaceHumanActionTargetButtons
+        target={{ type: "file", path }}
+        className="shrink-0 border-b border-border/60 bg-background/95 px-3 py-2"
+      />
       <Suspense fallback={loadingSpinner}>
         {isLoading || content === null ? (
           loadingSpinner

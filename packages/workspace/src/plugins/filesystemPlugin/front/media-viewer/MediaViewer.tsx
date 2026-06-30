@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react"
 import { Download, RefreshCw } from "lucide-react"
 import { ErrorState, Spinner } from "@hachej/boring-ui-kit"
 import { useApiBaseUrl, useWorkspaceRequestId } from "../data/DataProvider"
+import { WorkspaceHumanActionTargetButtons } from "../../../../front/humanActions"
 import { cn } from "../../../../front/lib/utils"
 
 export interface MediaViewerProps {
@@ -82,8 +83,11 @@ export function MediaViewer({ path, kind, reloadKey = 0, onReload, className }: 
   return (
     <div className={cn("flex h-full min-h-0 flex-col bg-background", className)}>
       <div className="flex shrink-0 items-center justify-between gap-3 border-b border-border/60 px-3 py-2">
-        <div className="min-w-0 truncate text-xs font-medium text-muted-foreground" title={path}>
-          {filename(path)}
+        <div className="flex min-w-0 items-center gap-3">
+          <div className="min-w-0 truncate text-xs font-medium text-muted-foreground" title={path}>
+            {filename(path)}
+          </div>
+          <WorkspaceHumanActionTargetButtons target={{ type: "file", path }} />
         </div>
         <div className="flex items-center gap-1">
           <button

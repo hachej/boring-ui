@@ -30,6 +30,7 @@ import {
   useAskUserAutoOpen,
   useAskUserComposerStopCancel,
   useAskUserPendingRefresh,
+  useAskUserTargetActions,
 } from "./providerHooks"
 import { QuestionCancelButton, QuestionFields, QuestionForm, QuestionFormProvider, QuestionSubmitButton } from "./primitives"
 import { InboxOverlay, WorkspaceInboxShellProvider, type WorkspaceInboxItem, type WorkspaceInboxShellApi } from "./inbox"
@@ -53,6 +54,7 @@ function AskUserProvider({ apiBaseUrl, authHeaders, activeSessionId, openSession
   useAskUserAutoOpen(runtime, activeSessionId, pendingSnapshot)
   useAskUserAttentionActions(runtime)
   useAskUserComposerStopCancel(runtime)
+  useAskUserTargetActions(runtime, pendingSnapshot)
   useAskUserPendingRefresh(runtime, { activeSessionId, apiBaseUrl, authHeaders })
 
   return <QuestionsRuntimeContext.Provider value={runtime}>{children}</QuestionsRuntimeContext.Provider>
