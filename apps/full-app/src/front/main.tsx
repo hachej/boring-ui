@@ -13,6 +13,7 @@ import { UserMenu, UserSettingsPage, WorkspaceSwitcher } from '@hachej/boring-co
 import '@hachej/boring-core/app/front/styles.css'
 import './app.css'
 import { PublicHeroDescription, publicLaunchPlugin } from './PublicLaunchPages'
+import { fullAppBoringMcpPlugin } from './boringMcp'
 
 const PRODUCT_NAME = 'Seneca AI'
 
@@ -137,6 +138,7 @@ createRoot(document.getElementById('root')!).render(
         ],
         plugins: [publicLaunchPlugin],
       }}
+      plugins={[fullAppBoringMcpPlugin]}
       authPages={{ userSettings: AccountSettingsPage }}
       topBarRight={
         <div className="flex w-full min-w-0 flex-col gap-1">
