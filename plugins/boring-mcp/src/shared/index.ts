@@ -20,7 +20,7 @@ export const MCP_ERROR_CODES = {
 
 export type McpErrorCode = (typeof MCP_ERROR_CODES)[keyof typeof MCP_ERROR_CODES]
 export type McpProviderId = "notion" | "airtable" | (string & {})
-export type McpTransport = "streamable-http" | "sse" | "stdio"
+export type McpTransport = "streamable-http"
 export type McpSourceStatus = "connected" | "expired" | "revoked" | "error" | "unconfigured"
 export type McpToolRisk = "read" | "write" | "admin" | "unknown"
 export type McpCredentialProvider = "provider-managed" | "composio-managed" | "app-managed" | "user-managed" | (string & {})
