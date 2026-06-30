@@ -6,6 +6,7 @@ export {
   type SlashCommandContext,
   type SlashCommandHandler,
   type SlashCommandHandlerResult,
+  type SlashCommandClickBehavior,
 } from './registry'
 export { builtinCommands } from './builtins'
 export { filterSlashCommandSuggestions, getSlashCommandQuery } from './suggestions'
