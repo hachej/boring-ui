@@ -188,6 +188,7 @@ export async function prepareHtmlPreviewDocument(options: {
 export function HtmlViewer({ path, className }: HtmlViewerProps) {
   const apiBaseUrl = useApiBaseUrl()
   const workspaceRequestId = useWorkspaceRequestId()
+  const target = { type: "file" as const, path, ...(workspaceRequestId ? { workspaceId: workspaceRequestId } : {}) }
   const [html, setHtml] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
@@ -261,7 +262,9 @@ export function HtmlViewer({ path, className }: HtmlViewerProps) {
   return (
     <div className={cn("flex h-full min-h-0 flex-col bg-background", className)}>
       <div className="flex shrink-0 items-center justify-between gap-3 border-b border-border/60 px-3 py-2">
-        <WorkspaceHumanActionTargetButtons target={{ type: "file", path }} />
+        <div className="min-w-0 flex-1">
+          <WorkspaceHumanActionTargetButtons target={target} />
+        </div>
         <div className="flex items-center gap-1">
           <IconButton
             type="button"

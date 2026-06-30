@@ -5,6 +5,7 @@ import type { ReactNode } from "react"
 import { EmptyState, ErrorState, Spinner } from "@hachej/boring-ui-kit"
 import { WorkspaceHumanActionTargetButtons } from "../../../front/humanActions"
 import { ConflictBanner } from "./ConflictBanner"
+import { useWorkspaceRequestId } from "./data/DataProvider"
 import type { FileConflictError } from "./data/fetchClient"
 
 export interface FilePaneShellProps {
@@ -88,6 +89,9 @@ export function FilePaneShell({
   errorMessage,
   className,
 }: FilePaneShellProps) {
+  const workspaceRequestId = useWorkspaceRequestId()
+  const target = { type: "file" as const, path, ...(workspaceRequestId ? { workspaceId: workspaceRequestId } : {}) }
+
   // No file selected
   if (!/\S/.test(path)) {
     return (
@@ -123,7 +127,7 @@ export function FilePaneShell({
         />
       )}
       <WorkspaceHumanActionTargetButtons
-        target={{ type: "file", path }}
+        target={target}
         className="shrink-0 border-b border-border/60 bg-background/95 px-3 py-2"
       />
       <Suspense fallback={loadingSpinner}>

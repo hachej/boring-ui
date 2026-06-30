@@ -27,6 +27,7 @@ function filename(path: string): string {
 export function MediaViewer({ path, kind, reloadKey = 0, onReload, className }: MediaViewerProps) {
   const apiBaseUrl = useApiBaseUrl()
   const workspaceRequestId = useWorkspaceRequestId()
+  const target = { type: "file" as const, path, ...(workspaceRequestId ? { workspaceId: workspaceRequestId } : {}) }
   const [objectUrl, setObjectUrl] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
@@ -87,7 +88,7 @@ export function MediaViewer({ path, kind, reloadKey = 0, onReload, className }: 
           <div className="min-w-0 truncate text-xs font-medium text-muted-foreground" title={path}>
             {filename(path)}
           </div>
-          <WorkspaceHumanActionTargetButtons target={{ type: "file", path }} />
+          <WorkspaceHumanActionTargetButtons target={target} />
         </div>
         <div className="flex items-center gap-1">
           <button

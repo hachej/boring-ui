@@ -17,6 +17,7 @@ import {
 } from "@hachej/boring-workspace"
 import { ASK_USER_SURFACE_KIND, ASK_USER_UI_STATE_SLOTS } from "../shared/constants"
 import { askUserHumanActionToBlockerProjection } from "../shared/humanAction"
+import type { AskUserTargetHumanAction } from "../shared/types"
 import { createQuestionsClient, readPendingQuestionHintsFromState, type PendingQuestionHint } from "./client"
 import { isSessionOpen, type QuestionsRuntime } from "./runtime"
 
@@ -40,6 +41,14 @@ export function useAskUserAttentionBlockers(runtime: QuestionsRuntime, pendingSn
   }, [addBlocker, removeBlocker, runtime, pendingSnapshot])
 }
 
+function workspaceTargetFromAskUserTarget(target: AskUserTargetHumanAction["target"]): WorkspaceHumanActionTargetRef {
+  if (target.type === "file") return { type: "file", path: target.path, ...(target.workspaceId ? { workspaceId: target.workspaceId } : {}), ...(target.label ? { label: target.label } : {}) }
+  if (target.type === "surface") return { type: "surface", surfaceKind: target.surfaceKind, target: target.target, ...(target.label ? { label: target.label } : {}) }
+  if (target.type === "panel") return { type: "panel", component: target.component, ...(target.instanceId ? { instanceId: target.instanceId } : {}), ...(target.label ? { label: target.label } : {}) }
+  const _exhaustive: never = target
+  return _exhaustive
+}
+
 export function useAskUserTargetActions(runtime: QuestionsRuntime, pendingSnapshot: string): void {
   const { registerTargetAction } = useWorkspaceHumanActionTargets()
   useEffect(() => {
@@ -49,7 +58,7 @@ export function useAskUserTargetActions(runtime: QuestionsRuntime, pendingSnapsh
       const pending = runtime.getPending(hint.sessionId)
       const action = pending?.humanAction
       if (!pending || pending.status !== "ready" || !action) continue
-      const target = action.target as WorkspaceHumanActionTargetRef
+      const target = workspaceTargetFromAskUserTarget(action.target)
       cleanups.push(registerTargetAction({
         id: `${pending.questionId}:${action.id ?? action.kind}`,
         title: action.title,

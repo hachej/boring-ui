@@ -1,8 +1,9 @@
 "use client"
 
-import { createContext, useCallback, useContext, useMemo, useState, type ReactNode } from "react"
+import { createContext, useCallback, useContext, useMemo, useRef, useState, type ReactNode } from "react"
 import { Button } from "@hachej/boring-ui-kit"
 import { cn } from "../lib/utils"
+import { toast } from "../toast"
 
 export type WorkspaceHumanActionTargetRef =
   | { type: "surface"; surfaceKind: string; target: string; label?: string }
@@ -49,6 +50,17 @@ function targetActionRegistryKey(action: WorkspaceHumanActionTargetAction): stri
   return `${workspaceHumanActionTargetKey(action.target)}:${action.pluginId ?? "plugin"}:${action.id}`
 }
 
+function workspaceHumanActionTargetsMatch(left: WorkspaceHumanActionTargetRef, right: WorkspaceHumanActionTargetRef): boolean {
+  if (left.type !== right.type) return false
+  if (left.type === "surface" && right.type === "surface") return left.surfaceKind === right.surfaceKind && left.target === right.target
+  if (left.type === "panel" && right.type === "panel") return left.component === right.component && (left.instanceId ?? "") === (right.instanceId ?? "")
+  if (left.type === "file" && right.type === "file") {
+    if (left.path !== right.path) return false
+    return !left.workspaceId || !right.workspaceId || left.workspaceId === right.workspaceId
+  }
+  return false
+}
+
 export function useWorkspaceHumanActionTargets(): WorkspaceHumanActionTargetsContextValue {
   return useContext(WorkspaceHumanActionTargetsContext) ?? noopContext
 }
@@ -66,10 +78,7 @@ export function WorkspaceHumanActionTargetsProvider({ children }: { children: Re
     setActions((current) => [...current.filter((item) => targetActionRegistryKey(item) !== key), action])
     return () => setActions((current) => current.filter((item) => targetActionRegistryKey(item) !== key))
   }, [])
-  const getTargetActions = useCallback((target: WorkspaceHumanActionTargetRef) => {
-    const key = workspaceHumanActionTargetKey(target)
-    return actions.filter((action) => workspaceHumanActionTargetKey(action.target) === key)
-  }, [actions])
+  const getTargetActions = useCallback((target: WorkspaceHumanActionTargetRef) => actions.filter((action) => workspaceHumanActionTargetsMatch(action.target, target)), [actions])
   const value = useMemo<WorkspaceHumanActionTargetsContextValue>(() => ({ registerTargetAction, getTargetActions }), [registerTargetAction, getTargetActions])
   return <WorkspaceHumanActionTargetsContext.Provider value={value}>{children}</WorkspaceHumanActionTargetsContext.Provider>
 }
@@ -84,13 +93,30 @@ function buttonClassName(tone: WorkspaceHumanActionButton["tone"]): string {
 export function WorkspaceHumanActionTargetButtons({ target, className }: { target: WorkspaceHumanActionTargetRef; className?: string }) {
   const actions = useWorkspaceHumanActionsForTarget(target)
   const [draft, setDraft] = useState<{ humanActionId: string; actionId: string; value: string } | null>(null)
-  const [submitting, setSubmitting] = useState<string | null>(null)
+  const submittingIdsRef = useRef(new Set<string>())
+  const [submittingIds, setSubmittingIds] = useState<Set<string>>(() => new Set())
+  const [error, setError] = useState<{ humanActionId: string; message: string } | null>(null)
+  const beginSubmit = (humanActionId: string): boolean => {
+    if (submittingIdsRef.current.has(humanActionId)) return false
+    submittingIdsRef.current.add(humanActionId)
+    setSubmittingIds(new Set(submittingIdsRef.current))
+    return true
+  }
+  const finishSubmit = (humanActionId: string): void => {
+    submittingIdsRef.current.delete(humanActionId)
+    setSubmittingIds(new Set(submittingIdsRef.current))
+  }
   const runAction = (humanAction: WorkspaceHumanActionTargetAction, action: WorkspaceHumanActionButton, comment?: string) => {
-    const submitKey = `${humanAction.id}:${action.id}`
-    setSubmitting(submitKey)
+    if (!beginSubmit(humanAction.id)) return
+    setError(null)
     void Promise.resolve()
       .then(() => humanAction.onAction({ action, ...(comment ? { comment } : {}) }))
-      .finally(() => setSubmitting((current) => current === submitKey ? null : current))
+      .catch(() => {
+        const message = "Decision was not submitted. Try again or open the request from Inbox."
+        setError({ humanActionId: humanAction.id, message })
+        toast.error({ title: "Decision not submitted", description: message })
+      })
+      .finally(() => finishSubmit(humanAction.id))
   }
   if (actions.length === 0) return null
   return (
@@ -99,6 +125,9 @@ export function WorkspaceHumanActionTargetButtons({ target, className }: { targe
         const selected = draft?.humanActionId === humanAction.id
           ? humanAction.actions.find((action) => action.id === draft.actionId)
           : null
+        const selectedRequiresComment = selected?.comment === "required"
+        const rowSubmitting = submittingIds.has(humanAction.id)
+        const rowError = error?.humanActionId === humanAction.id ? error.message : null
         return (
           <div key={humanAction.id} className="flex min-w-0 items-center gap-1 rounded-md border border-border/60 bg-background/80 px-2 py-1 shadow-sm" title={humanAction.body ?? humanAction.title}>
             <span className="max-w-[14rem] truncate text-xs font-medium text-muted-foreground">{humanAction.title}</span>
@@ -111,9 +140,10 @@ export function WorkspaceHumanActionTargetButtons({ target, className }: { targe
                   variant="outline"
                   className={cn("h-7 px-2 text-xs", buttonClassName(action.tone))}
                   aria-label={`${humanAction.title}: ${action.label}`}
-                  disabled={submitting === `${humanAction.id}:${action.id}`}
+                  disabled={rowSubmitting}
                   onClick={() => {
-                    if (action.comment === "required") {
+                    if (rowSubmitting) return
+                    if (action.comment === "required" || action.comment === "optional") {
                       setDraft({ humanActionId: humanAction.id, actionId: action.id, value: "" })
                       return
                     }
@@ -129,22 +159,24 @@ export function WorkspaceHumanActionTargetButtons({ target, className }: { targe
                 className="ml-2 flex items-center gap-1"
                 onSubmit={(event) => {
                   event.preventDefault()
-                  if (!draft.value.trim()) return
+                  const comment = draft.value.trim()
+                  if (selectedRequiresComment && !comment) return
                   setDraft(null)
-                  runAction(humanAction, selected, draft.value.trim())
+                  runAction(humanAction, selected, comment || undefined)
                 }}
               >
                 <input
                   aria-label={`${selected.label} comment`}
                   className="h-7 w-44 rounded-md border border-border bg-background px-2 text-xs outline-none focus:ring-2 focus:ring-ring"
                   value={draft.value}
-                  placeholder="Comment required"
+                  placeholder={selectedRequiresComment ? "Comment required" : "Comment optional"}
                   onChange={(event) => setDraft({ ...draft, value: event.target.value })}
                 />
-                <Button type="submit" size="sm" className="h-7 px-2 text-xs" disabled={!draft.value.trim() || submitting === `${humanAction.id}:${selected.id}`}>Send</Button>
+                <Button type="submit" size="sm" className="h-7 px-2 text-xs" disabled={(selectedRequiresComment && !draft.value.trim()) || rowSubmitting}>Send</Button>
                 <Button type="button" size="sm" variant="ghost" className="h-7 px-2 text-xs" onClick={() => setDraft(null)}>Cancel</Button>
               </form>
             ) : null}
+            {rowError ? <span role="status" className="ml-2 text-xs text-destructive">{rowError}</span> : null}
           </div>
         )
       })}
