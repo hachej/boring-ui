@@ -163,7 +163,8 @@ export function WorkspaceShell() {
       providerStorageKey={showcase ? "boring-ui-v2:layout:playground" : `boring-ui-v2:layout:playground:${workspaceId}`}
       appTitle={showcase ? "Boring" : projectName}
       workspaceLabel={showcase ? undefined : projectName}
-      defaultSessionTitle={showcase ? "New session" : projectName}
+      workspaceLayout="plugin-tabs"
+      defaultSessionTitle="New chat"
       externalPlugins={externalPluginsEnabled}
       frontPluginHotReload={externalPluginsEnabled ? "vite" : undefined}
       fullPageBasePath="/full-page"
