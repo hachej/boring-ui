@@ -16,7 +16,7 @@ import {
   type McpTransportClient,
 } from "../shared"
 import { assertMcpPublicPayloadSecretFree, requireActorOwnedMcpSource, validateMcpSourceId } from "./sourceAccess"
-import { createBoringMcpToolCatalog } from "./toolCatalog"
+import { createBoringMcpToolCatalog, type McpToolCatalogCache } from "./toolCatalog"
 
 export interface McpReadonlyCallAuditSink {
   record(event: McpReadonlyCallAuditEvent): void | Promise<void>
@@ -28,6 +28,7 @@ export interface BoringMcpReadonlyCallOptions {
   templates?: readonly McpProviderTemplate[]
   maxInputBytes?: number
   audit?: McpReadonlyCallAuditSink
+  catalogCache?: McpToolCatalogCache
 }
 
 export interface BoringMcpReadonlyCaller {
@@ -167,7 +168,7 @@ function auditSchemaHash(value: unknown): string | undefined {
 }
 
 export function createBoringMcpReadonlyCaller(options: BoringMcpReadonlyCallOptions): BoringMcpReadonlyCaller {
-  const catalog = createBoringMcpToolCatalog(options)
+  const catalog = createBoringMcpToolCatalog({ ...options, cache: options.catalogCache })
   const maxInputBytes = options.maxInputBytes ?? DEFAULT_MAX_INPUT_BYTES
 
   async function record(event: McpReadonlyCallAuditEvent): Promise<void> {
@@ -209,6 +210,12 @@ export function createBoringMcpReadonlyCaller(options: BoringMcpReadonlyCallOpti
         try {
           providerResult = await options.transport.callTool(source, parsed.toolName, parsed.toolInput)
         } catch (error) {
+          if (error instanceof McpError) {
+            const safeMessage = containsMcpSecret(error.message) ? "MCP provider tool call failed" : error.message
+            await record(auditEvent(actor, request, "failure", error.code))
+            audited = true
+            throw new McpError(error.code, safeMessage, redactMcpSecrets(error.details))
+          }
           const redacted = redactMcpSecrets(error instanceof Error ? { name: error.name, message: error.message } : error)
           await record(auditEvent(actor, request, "failure", MCP_ERROR_CODES.PROVIDER_ERROR))
           audited = true

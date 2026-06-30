@@ -17,9 +17,10 @@ import {
   type McpToolSearchResult,
   type McpTransportClient,
 } from "../shared"
-import { assertMcpPublicPayloadSecretFree, createMcpSourceStatusPayload, isActorOwnedMcpSource, requireActorOwnedMcpSource, validateMcpSourceId } from "./sourceAccess"
+import { createHardenedMcpTransport, verifyMcpDisconnectResult, type McpProviderHardeningOptions } from "./hardening"
+import { assertMcpPublicPayloadSecretFree, createMcpSourceStatusPayload, requireActorOwnedMcpSource, validateMcpSourceId } from "./sourceAccess"
 import { createBoringMcpReadonlyCaller, type McpReadonlyCallAuditSink } from "./readonlyCall"
-import { createBoringMcpToolCatalog, type McpToolDescribeInput, type McpToolsSearchInput } from "./toolCatalog"
+import { InMemoryMcpToolCatalogCache, createBoringMcpToolCatalog, type McpToolDescribeInput, type McpToolsSearchInput } from "./toolCatalog"
 
 export interface BoringMcpSourceHandlersOptions {
   registry: McpSourceRegistry
@@ -27,6 +28,7 @@ export interface BoringMcpSourceHandlersOptions {
   templates?: readonly McpProviderTemplate[]
   maxReadonlyInputBytes?: number
   audit?: McpReadonlyCallAuditSink
+  hardening?: McpProviderHardeningOptions
 }
 
 export interface BoringMcpSourceHandlers {
@@ -44,19 +46,34 @@ export interface BoringMcpSourceHandlers {
 }
 
 export function createBoringMcpSourceHandlers(options: BoringMcpSourceHandlersOptions): BoringMcpSourceHandlers {
-  const facade = new McpAccessFacade({ store: options.registry, transport: options.transport, templates: options.templates })
-  const catalog = createBoringMcpToolCatalog(options)
-  const readonlyCaller = createBoringMcpReadonlyCaller({
-    registry: options.registry,
-    transport: options.transport,
-    templates: options.templates,
-    maxInputBytes: options.maxReadonlyInputBytes,
-    audit: options.audit,
-  })
+  const catalogCache = new InMemoryMcpToolCatalogCache()
+
+  function transportFor(actor: McpActor) {
+    return createHardenedMcpTransport(options.transport, options.hardening, actor)
+  }
+
+  function facadeFor(actor: McpActor) {
+    return new McpAccessFacade({ store: options.registry, transport: transportFor(actor), templates: options.templates })
+  }
+
+  function catalogFor(actor: McpActor) {
+    return createBoringMcpToolCatalog({ ...options, transport: transportFor(actor), cache: catalogCache })
+  }
+
+  function readonlyCallerFor(actor: McpActor) {
+    return createBoringMcpReadonlyCaller({
+      registry: options.registry,
+      transport: transportFor(actor),
+      templates: options.templates,
+      maxInputBytes: options.maxReadonlyInputBytes,
+      audit: options.audit,
+      catalogCache,
+    })
+  }
 
   return {
     async listSources(actor) {
-      const result = { sources: (await facade.listSources(actor)).map(toMcpSourceDto) }
+      const result = { sources: (await facadeFor(actor).listSources(actor)).map(toMcpSourceDto) }
       assertMcpPublicPayloadSecretFree(result)
       return result
     },
@@ -75,33 +92,33 @@ export function createBoringMcpSourceHandlers(options: BoringMcpSourceHandlersOp
 
     async probeSource(actor, sourceId) {
       const normalizedSourceId = validateMcpSourceId(sourceId)
-      const result = await facade.probeSource(actor, normalizedSourceId)
+      const result = await facadeFor(actor).probeSource(actor, normalizedSourceId)
       assertMcpPublicPayloadSecretFree(result)
       return result
     },
 
     async searchTools(actor, input) {
-      return catalog.searchTools(actor, input)
+      return catalogFor(actor).searchTools(actor, input)
     },
 
     async describeTool(actor, input) {
-      return catalog.describeTool(actor, input)
+      return catalogFor(actor).describeTool(actor, input)
     },
 
     async mcp_tools_search(actor, input) {
-      return catalog.searchTools(actor, input)
+      return catalogFor(actor).searchTools(actor, input)
     },
 
     async mcp_tool_describe(actor, input) {
-      return catalog.describeTool(actor, input)
+      return catalogFor(actor).describeTool(actor, input)
     },
 
     async callReadonly(actor, input) {
-      return readonlyCaller.callReadonly(actor, input)
+      return readonlyCallerFor(actor).callReadonly(actor, input)
     },
 
     async mcp_readonly_call(actor, input) {
-      return readonlyCaller.callReadonly(actor, input)
+      return readonlyCallerFor(actor).callReadonly(actor, input)
     },
 
     async disconnectSource(actor, sourceId) {
@@ -111,10 +128,7 @@ export function createBoringMcpSourceHandlers(options: BoringMcpSourceHandlersOp
         throw new McpError(MCP_ERROR_CODES.SOURCE_UNAVAILABLE, "MCP source disconnect is not configured")
       }
       const source = await options.registry.disconnectSource(actor, normalizedSourceId)
-      if (!isActorOwnedMcpSource(actor, source)) {
-        throw new McpError(MCP_ERROR_CODES.SOURCE_NOT_FOUND, "MCP source not found")
-      }
-      return createMcpSourceStatusPayload(source)
+      return verifyMcpDisconnectResult(options.registry, actor, normalizedSourceId, source)
     },
   }
 }
