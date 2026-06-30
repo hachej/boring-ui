@@ -9,6 +9,7 @@ import {
   BORING_MCP_SOURCES_TAB_PANEL_ID,
   DEFAULT_MCP_PROVIDER_TEMPLATES,
   type McpProviderTemplate,
+  type McpToolCatalogEntry,
 } from "../shared"
 
 export interface CreateBoringMcpPluginOptions {
@@ -19,6 +20,7 @@ export interface CreateBoringMcpPluginOptions {
   enabledProviderIds?: readonly string[]
   intro?: string
   governanceNotes?: readonly string[]
+  catalogTools?: readonly McpToolCatalogEntry[]
 }
 
 const defaultGovernanceNotes = [
@@ -55,12 +57,14 @@ const styles: Record<string, CSSProperties> = {
   pillGrid: { display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: 10, maxWidth: 1120, margin: "0 auto 18px" },
   pill: { border: "1px solid var(--border)", borderRadius: 999, background: "var(--card)", padding: "10px 12px", fontSize: 12, fontWeight: 700, textAlign: "center" },
   grid: { display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))", gap: 14, maxWidth: 1120, margin: "0 auto" },
+  toolGrid: { display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(260px, 1fr))", gap: 12, maxWidth: 1120, margin: "18px auto 0" },
   card: { display: "flex", minHeight: 250, flexDirection: "column", border: "1px solid var(--border)", borderRadius: 24, background: "var(--card)", padding: 18 },
   cardTop: { display: "flex", justifyContent: "space-between", gap: 12 },
   badge: { border: "1px solid var(--border)", borderRadius: 999, padding: "5px 8px", color: "var(--muted-foreground)", fontSize: 11, fontWeight: 800, whiteSpace: "nowrap" },
   codeBox: { display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(260px, 1fr))", gap: 14, maxWidth: 1120, margin: "18px auto 0" },
   codeCard: { border: "1px solid var(--border)", borderRadius: 22, background: "var(--card)", padding: 16 },
   code: { display: "block", overflow: "hidden", marginTop: 7, borderRadius: 8, background: "var(--muted)", padding: "7px 8px", color: "var(--muted-foreground)", fontSize: 12, textOverflow: "ellipsis", whiteSpace: "nowrap" },
+  pre: { overflow: "auto", maxHeight: 150, borderRadius: 10, background: "var(--muted)", padding: 10, color: "var(--muted-foreground)", fontSize: 11 },
 }
 
 function SourcesTab({ containerApi, options }: PaneProps & { options: CreateBoringMcpPluginOptions }) {
@@ -109,6 +113,25 @@ function SourcesPanel({ options }: { options: CreateBoringMcpPluginOptions }) {
             <p style={styles.muted}>Configured provider template. Connection, status, probe, and tool catalog wiring are supplied by the host app's boring-mcp backend.</p>
             <div style={styles.badge}>{provider.allowedTools.length} allowed read tools</div>
             <button type="button" disabled style={{ ...styles.button, cursor: "not-allowed", marginTop: "auto", color: "var(--muted-foreground)" }}>Connect through app backend</button>
+          </article>
+        ))}
+      </section>
+      <section style={styles.toolGrid} aria-label="Tool catalog preview">
+        {(options.catalogTools ?? []).length === 0 ? (
+          <article style={styles.codeCard}>
+            <h2>Tool catalog</h2>
+            <p style={styles.muted}>Host apps wire this panel to mcp_tools_search and mcp_tool_describe. No provider execution runs here.</p>
+          </article>
+        ) : options.catalogTools?.map((tool) => (
+          <article key={`${tool.sourceId}:${tool.toolName}`} style={styles.codeCard}>
+            <div style={styles.cardTop}>
+              <h2 style={{ margin: 0 }}>{tool.displayName}</h2>
+              <span style={styles.badge}>{tool.enabled ? "Enabled" : "Blocked"}</span>
+            </div>
+            <p style={styles.muted}>{tool.summary}</p>
+            {!tool.enabled && <p style={styles.muted}>Blocked: {tool.blockedReasons.join(", ")}</p>}
+            <code style={styles.code}>{tool.toolName}</code>
+            <pre style={styles.pre}>{JSON.stringify(tool.inputSchema, null, 2)}</pre>
           </article>
         ))}
       </section>

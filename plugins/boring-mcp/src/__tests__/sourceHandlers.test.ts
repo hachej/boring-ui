@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest"
-import { createBoringMcpSourceHandlers } from "../server"
+import { createBoringMcpSourceHandlers } from "../server/sourceHandlers"
 import {
   MCP_ERROR_CODES,
   type McpActor,
@@ -101,6 +101,17 @@ describe("boring-mcp source handlers", () => {
     const handlers = createBoringMcpSourceHandlers({ registry: makeRegistry(), transport })
 
     await expect(handlers.probeSource(actor, "source:notion:user-1")).rejects.toMatchObject({ code: MCP_ERROR_CODES.SECRET_LEAK_GUARD })
+  })
+
+  it("exposes exact catalog backend operation names", async () => {
+    const handlers = createBoringMcpSourceHandlers({ registry: makeRegistry(), transport: makeTransport() })
+
+    await expect(handlers.mcp_tools_search(actor, { query: "search" })).resolves.toMatchObject({
+      tools: [expect.objectContaining({ toolName: "NOTION_SEARCH_NOTION_PAGE", enabled: true })],
+    })
+    await expect(handlers.mcp_tool_describe(actor, { sourceId: "source:notion:user-1", toolName: "update_page" })).resolves.toMatchObject({
+      tool: expect.objectContaining({ toolName: "update_page", enabled: false }),
+    })
   })
 
   it("does not call disconnect on unowned sources", async () => {
