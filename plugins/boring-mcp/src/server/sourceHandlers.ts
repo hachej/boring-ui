@@ -2,8 +2,10 @@ import {
   MCP_ERROR_CODES,
   McpAccessFacade,
   McpError,
+  doctorMcpSource,
   toMcpSourceDto,
   type McpActor,
+  type McpDoctorResult,
   type McpProbeResult,
   type McpProviderTemplate,
   type McpSourceDto,
@@ -30,6 +32,7 @@ export interface BoringMcpSourceHandlersOptions {
 export interface BoringMcpSourceHandlers {
   listSources(actor: McpActor): Promise<{ sources: McpSourceDto[] }>
   getSourceStatus(actor: McpActor, sourceId: string): Promise<McpSourceStatusPayload>
+  doctorSource(actor: McpActor, sourceId: string): Promise<McpDoctorResult>
   probeSource(actor: McpActor, sourceId: string): Promise<McpProbeResult>
   searchTools(actor: McpActor, input?: McpToolsSearchInput): Promise<McpToolSearchResult>
   describeTool(actor: McpActor, input: McpToolDescribeInput): Promise<McpToolDescribeResult>
@@ -53,7 +56,7 @@ export function createBoringMcpSourceHandlers(options: BoringMcpSourceHandlersOp
 
   return {
     async listSources(actor) {
-      const result = { sources: (await options.registry.listSources(actor)).map(toMcpSourceDto) }
+      const result = { sources: (await facade.listSources(actor)).map(toMcpSourceDto) }
       assertMcpPublicPayloadSecretFree(result)
       return result
     },
@@ -61,6 +64,13 @@ export function createBoringMcpSourceHandlers(options: BoringMcpSourceHandlersOp
     async getSourceStatus(actor, sourceId) {
       const source = await requireActorOwnedMcpSource(options.registry, actor, sourceId)
       return createMcpSourceStatusPayload(source)
+    },
+
+    async doctorSource(actor, sourceId) {
+      const source = await requireActorOwnedMcpSource(options.registry, actor, sourceId)
+      const result = doctorMcpSource(source, options.templates)
+      assertMcpPublicPayloadSecretFree(result)
+      return result
     },
 
     async probeSource(actor, sourceId) {

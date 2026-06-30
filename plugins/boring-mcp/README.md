@@ -10,6 +10,7 @@ This package is the generic MCP capability that child apps can enable. It owns:
 - fake-transport-testable facade seams;
 - normalized tool catalog search/describe contracts;
 - governed `mcp_readonly_call` execution boundary with audit metadata;
+- thin agent bridge tool registry for the seven stable boring-mcp operations;
 - server-only managed connector adapter seam with app-injected secret resolution.
 
 It intentionally does **not** perform real connector-provider calls, OAuth, provider execution, secret storage, or app-specific environment binding in the foundation PR.
@@ -54,4 +55,4 @@ Managed connector adapters must pass the [Composio security preflight](./docs/co
 
 ## Current status
 
-Foundation plus source handlers, executable preflight, generic managed connector adapter seam, normalized tool catalog search/describe, and governed fake-transport-testable read-only execution. Real Composio SDK/API calls, route registration, and agent bridge tools land in later PRs.
+Foundation plus source handlers, executable preflight, generic managed connector adapter seam, normalized tool catalog search/describe, governed fake-transport-testable read-only execution, and exported agent bridge tool definitions. Real Composio SDK/API calls, route/app registration, and Constellation binding land in later PRs.
