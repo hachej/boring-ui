@@ -1,0 +1,31 @@
+# Eval suite: BSL BI dashboard authoring.
+#
+# Goal: verify the BI dashboard plugin skill gives the agent enough context to
+# create dashboard artifacts from a plain BI dashboard request.
+#
+# Run from the repo root:
+#   pnpm --filter @hachej/boring-bi-dashboard playground:eval
+
+model:
+  provider: openai-codex
+  id: gpt-5.5
+
+defaults:
+  retries: 1
+  timeoutMs: 180000
+
+prompts:
+  - prompt: Can you make me a dashboard for orders revenue that I can open in the workspace?
+    expect:
+      - tool: write
+        params:
+          path: !EvalRegex 'dashboards/.+\.dashboard\.json'
+          content: !EvalRegex '"kind"\s*:\s*"boring\.generated-pane"'
+      - tool: write
+        params:
+          path: !EvalRegex 'dashboards/.+\.dashboard\.json'
+          content: !EvalRegex '"profile"\s*:\s*"bi-dashboard"'
+      - tool: write
+        params:
+          path: !EvalRegex 'dashboards/.+\.dashboard\.json'
+          content: !EvalRegex '"elements"\s*:'

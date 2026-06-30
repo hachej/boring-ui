@@ -1,0 +1,11 @@
+{
+  "name": "generated-pane-demo-extension",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "boring": {
+    "id": "generated-pane",
+    "label": "Generated Pane Demo",
+    "front": "front/index.ts"
+  }
+}

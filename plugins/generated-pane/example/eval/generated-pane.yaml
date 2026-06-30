@@ -1,0 +1,24 @@
+# Eval suite: generic generated-pane authoring.
+#
+# Run from the repo root:
+#   pnpm --filter @hachej/boring-generated-pane playground:eval
+
+model:
+  provider: openai-codex
+  id: gpt-5.5
+
+defaults:
+  retries: 1
+  timeoutMs: 180000
+
+prompts:
+  - prompt: Can you make me a launch readiness view for this workspace? I want to open it as a pane later.
+    expect:
+      - tool: write
+        params:
+          path: !EvalRegex 'panes/.+\.pane\.json'
+          content: !EvalRegex '"kind"\s*:\s*"boring\.generated-pane"'
+      - tool: write
+        params:
+          path: !EvalRegex 'panes/.+\.pane\.json'
+          content: !EvalRegex '"elements"\s*:'
