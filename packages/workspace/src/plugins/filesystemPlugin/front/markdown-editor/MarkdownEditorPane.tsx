@@ -29,11 +29,12 @@ export function MarkdownEditorPane({ params, api, className }: MarkdownEditorPan
     onReloadFromServer,
     onOverwrite,
     tabTitle,
+    isReadonly,
   } = useFilePane({ filesystem, path, panelId: api?.id })
 
-  // Update panel title with dirty indicator
+  // Update panel title with dirty/readonly indicator
   if (api && tabTitle) {
-    api.setTitle(tabTitle)
+    api.setTitle(isReadonly ? `${tabTitle} (readonly)` : tabTitle)
   }
 
   return (
@@ -44,11 +45,12 @@ export function MarkdownEditorPane({ params, api, className }: MarkdownEditorPan
       isLoading={isLoading}
       error={error}
       conflict={conflict}
+      readOnly={readOnly || isReadonly}
       onChange={setContent}
       onReload={onReloadFromServer}
       onOverwrite={onOverwrite}
       editorComponent={MarkdownEditor}
-      editorProps={{ className, documentPath: path, readOnly }}
+      editorProps={{ className, documentPath: path, readOnly: readOnly || isReadonly, filesystem }}
     />
   )
 }
