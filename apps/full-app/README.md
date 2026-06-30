@@ -11,7 +11,7 @@ The server is built by `createCoreWorkspaceAgentServer` (from `@hachej/boring-co
 - **Dev** (`dev`): builds agent/workspace/core, then `tsx src/server/dev.ts` runs the dev server — Vite frontend on **`http://localhost:5173`** in front of the Fastify API.
 - **Prod** (`start`): `node dist/server/main.js`, listening on **`PORT`** (default `3000`).
 
-App-specific server plugins live in `src/server/plugins.ts`. Set `BORING_PLUGIN_AUTHORING=1` to install the in-app plugin-authoring surface (dev and prod).
+App-specific server plugins live in `src/server/plugins.ts`. The generic `boring-mcp` Sources plugin is statically composed for this app; set `BORING_MCP_ENABLED=0` to disable its server prompt/plugin registration. Set `BORING_PLUGIN_AUTHORING=1` to install the in-app plugin-authoring surface (dev and prod).
 
 ## Run (local dev)
 
@@ -62,6 +62,9 @@ Common optional:
 | `BORING_AGENT_SESSION_ROOT` | — | Durable Pi chat transcript root. In Fly prod use a mounted-volume path such as `/data/pi-sessions`; do not rely on container `/root/.pi`. |
 | `BORING_AGENT_DEFAULT_MODEL_PROVIDER`, `BORING_AGENT_DEFAULT_MODEL_ID`, `INFOMANIAK_API_TOKEN`, `BORING_AGENT_INFOMANIAK_PRODUCT_ID`, `BORING_AGENT_INFOMANIAK_MODEL` | — | Default chat model, incl. OpenAI-compatible Infomaniak endpoint |
 | `BORING_AGENT_MODE` | `local` | Set `vercel-sandbox` to run the agent in a Vercel Firecracker microVM. Also configure Vercel credentials such as `VERCEL_TEAM_ID`, `VERCEL_PROJECT_ID`, and local/dev auth via `VERCEL_TOKEN` when OIDC is not available. |
+| `BORING_MCP_ENABLED` | `1` | Enables the generic boring-mcp server plugin/prompt for app-owned Sources wiring. |
+| `COMPOSIO_API_KEY` | — | Optional server-only managed connector credential resolved by the app's boring-mcp managed connector secret resolver. Do not create a `VITE_*` mirror. |
+| `BORING_MCP_MAX_READONLY_INPUT_BYTES` | `65536` | Governed read-only MCP call input limit. |
 
 The post-deploy smoke script reads `DEPLOY_URL` plus a family of `SMOKE_*` vars (e.g. `SMOKE_EMAIL`, `SMOKE_PASSWORD`, `SMOKE_AGENT_MODEL_PROVIDER`) to exercise sign-up/verify/reset/agent-chat against a deployed instance.
 
