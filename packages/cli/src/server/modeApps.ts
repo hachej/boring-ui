@@ -19,6 +19,7 @@ import type {
 } from "../shared/runtimePluginDiagnostics.js"
 import { resolveBoringUiCliPackageRoot } from "./pluginDiscovery.js"
 import type { readCliPluginPiSnapshot as readCliPluginPiSnapshotFn } from "./pluginDiscovery.js"
+import { ASK_USER_UI_STATE_SLOTS } from "@hachej/boring-ask-user/shared"
 
 type CliPluginPiSnapshot = ReturnType<typeof readCliPluginPiSnapshotFn>
 
@@ -487,6 +488,12 @@ export async function createWorkspacesModeApp(opts: {
     },
   })
   const bridges = new Map<string, ReturnType<typeof workspaceServer.createInMemoryBridge>>()
+  type WorkspaceBridgeCore = {
+    registry: ReturnType<typeof workspaceServer.createWorkspaceBridgeRuntimeCore>["registry"]
+    idempotencyStore: InstanceType<typeof workspaceServer.InMemoryWorkspaceBridgeIdempotencyStore>
+    extraTools: NonNullable<ReturnType<typeof workspaceAppServer.collectWorkspaceAgentServerPlugins>["agentOptions"]["extraTools"]>
+  }
+  const workspaceBridgeCores = new Map<string, Promise<WorkspaceBridgeCore>>()
   const workspaceEventClosers = new Map<string, Set<() => void>>()
   const pluginRuntimes = new Map<string, {
     manager: InstanceType<typeof workspaceServer.BoringPluginAssetManager>
@@ -503,6 +510,42 @@ export async function createWorkspacesModeApp(opts: {
       bridges.set(workspaceId, bridge)
     }
     return bridge
+  }
+
+  async function getWorkspaceBridgeCore(workspace: LocalWorkspace) {
+    let core = workspaceBridgeCores.get(workspace.id)
+    if (core) return await core
+    core = (async (): Promise<WorkspaceBridgeCore> => {
+      const bridge = getBridge(workspace.id)
+      const ctx = { workspaceRoot: workspace.path, bridge }
+      const defaultPluginDirEntries = pluginDiscovery.resolveCliDefaultPluginPackagePaths()
+        .map((dir) => ({ dir, hotReload: true, trust: "internal" as const }))
+        .filter((entry) => workspaceAppServer.hasDirServerPlugin(entry))
+      const resolvedPlugins = await Promise.all(defaultPluginDirEntries.map(async (entry) => {
+        const plugin = await workspaceAppServer.resolveOnePluginEntry(entry, ctx)
+        workspaceAppServer.assertWorkspaceBridgeHandlersTrusted(plugin, entry)
+        return plugin
+      }))
+      const pluginCollection = workspaceAppServer.collectWorkspaceAgentServerPlugins({
+        plugins: resolvedPlugins,
+        installPluginAuthoring: false,
+        excludeDefaults: ["boring-ui-plugin-cli-package"],
+      })
+      const bridgeCore = workspaceServer.createWorkspaceBridgeRuntimeCore({
+        ownerWorkspaceId: workspace.id,
+        handlers: pluginCollection.workspaceBridgeHandlers ?? [],
+      })
+      return {
+        registry: bridgeCore.registry,
+        idempotencyStore: new workspaceServer.InMemoryWorkspaceBridgeIdempotencyStore(),
+        extraTools: pluginCollection.agentOptions.extraTools ?? [],
+      }
+    })().catch((error) => {
+      workspaceBridgeCores.delete(workspace.id)
+      throw error
+    })
+    workspaceBridgeCores.set(workspace.id, core)
+    return await core
   }
 
   async function requireWorkspace(workspaceId: string): Promise<LocalWorkspace> {
@@ -580,6 +623,7 @@ export async function createWorkspacesModeApp(opts: {
     pluginRuntimes.delete(runtimeKey)
     pluginPiSnapshots.delete(runtimeKey)
     runtimeProvisioningByWorkspace.delete(workspace.id)
+    workspaceBridgeCores.delete(workspace.id)
     bridges.delete(workspace.id)
     diagnosticsStore.disposeWorkspace(workspace.id)
     await runtimeHost.disposeWorkspace(workspace.id)
@@ -730,12 +774,25 @@ export async function createWorkspacesModeApp(opts: {
       ...workspaceServer.createWorkspaceUiTools(getBridge(workspaceId), {
         workspaceRoot: workspaceFsCapability === "strong" ? workspaceRoot : undefined,
       }),
+      ...(await getWorkspaceBridgeCore(await requireWorkspace(workspaceId))).extraTools,
     ],
   })
 
   await app.register(workspaceServer.uiRoutes, {
     getWorkspaceId: async (request) => (await workspaceFromRequest(request)).id,
     getBridge: async (request) => getBridge((await workspaceFromRequest(request)).id),
+    preserveStateKeys: [ASK_USER_UI_STATE_SLOTS.PENDING],
+  })
+
+  await app.register(workspaceServer.workspaceBridgeHttpRoutes, {
+    getRegistry: async (request) => (await getWorkspaceBridgeCore(await workspaceFromRequest(request))).registry,
+    getOwnerWorkspaceId: async (request) => (await workspaceFromRequest(request)).id,
+    getIdempotencyStore: async (request) => (await getWorkspaceBridgeCore(await workspaceFromRequest(request))).idempotencyStore,
+    browserAuthPolicy: {
+      resolve(input) {
+        return workspaceServer.createLocalCliBridgeAuthPolicy({ workspaceId: input.workspaceId }).resolve(input)
+      },
+    },
   })
 
   app.get("/api/v1/runtime-plugin-diagnostics", async (request) => {
