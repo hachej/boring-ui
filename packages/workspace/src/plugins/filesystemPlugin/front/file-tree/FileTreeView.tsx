@@ -59,7 +59,7 @@ import { cn } from "../../../../front/lib/utils"
 import { toast } from "../../../../front/toast"
 import { events, userMeta } from "../../../../front/events"
 import { filesystemEvents } from "../../shared/events"
-import type { FilesystemId } from "../../../../shared/types/filesystem"
+import { normalizeUiFilesystem, type FilesystemId } from "../../../../shared/types/filesystem"
 import type { PaneProps } from "../../../../shared/types/panel"
 import type { LeftTabParams } from "../../../../shared/plugins/types"
 import { copyToClipboard } from "./clipboard"
@@ -174,7 +174,8 @@ export function FileTreeView({
 }: FileTreeViewProps) {
   const dataClient = useDataClient()
   const canMutate = access !== "readonly"
-  const requestFilesystem = filesystem === "user" ? undefined : filesystem
+  const activeFilesystem = normalizeUiFilesystem(filesystem)
+  const requestFilesystem = activeFilesystem === "user" ? undefined : activeFilesystem
   const getTreeEntries = useCallback(
     (path: string) => requestFilesystem ? dataClient.getTree(path, undefined, requestFilesystem) : dataClient.getTree(path),
     [dataClient, requestFilesystem],
@@ -383,6 +384,7 @@ export function FileTreeView({
     const settledTimers = new Set<ReturnType<typeof setTimeout>>()
     const affected = (paths: string[]): string[] =>
       Array.from(new Set(paths.map(parentDir))).filter((dir) => expandedDirsRef.current.has(dir))
+    const eventMatchesFilesystem = (eventFilesystem?: FilesystemId) => normalizeUiFilesystem(eventFilesystem) === activeFilesystem
     const refreshNowAndAfterSettle = (dirs: string[]) => {
       if (!dirs.length) return
       void refreshDirs(dirs)
@@ -393,15 +395,15 @@ export function FileTreeView({
       settledTimers.add(timer)
     }
     const offCreated = events.on(filesystemEvents.created, (e) => {
-      if (e.cause === "user") return
+      if (e.cause === "user" || !eventMatchesFilesystem(e.filesystem)) return
       refreshNowAndAfterSettle(affected([e.path]))
     })
     const offDeleted = events.on(filesystemEvents.deleted, (e) => {
-      if (e.cause === "user") return
+      if (e.cause === "user" || !eventMatchesFilesystem(e.filesystem)) return
       refreshNowAndAfterSettle(affected([e.path]))
     })
     const offMoved = events.on(filesystemEvents.moved, (e) => {
-      if (e.cause === "user") return
+      if (e.cause === "user" || !eventMatchesFilesystem(e.filesystem)) return
       refreshNowAndAfterSettle(affected([e.from, e.to]))
     })
     return () => {
@@ -411,7 +413,7 @@ export function FileTreeView({
       for (const timer of settledTimers) clearTimeout(timer)
       settledTimers.clear()
     }
-  }, [refreshDirs])
+  }, [activeFilesystem, refreshDirs])
 
   const revealTreePath = useCallback(
     async (path: string | null, options?: { refreshTargetDir?: boolean }) => {
@@ -520,7 +522,9 @@ export function FileTreeView({
 
   useEffect(() => {
     const shouldPatchDir = (dir: string) => dir === rootDirKey || expandedDirsRef.current.has(dir)
+    const eventMatchesFilesystem = (eventFilesystem?: FilesystemId) => normalizeUiFilesystem(eventFilesystem) === activeFilesystem
     const offCreated = events.on(filesystemEvents.created, (e) => {
+      if (!eventMatchesFilesystem(e.filesystem)) return
       unhideEntry(e.path)
       if (e.cause === "user") return
       const dir = parentDir(e.path)
@@ -529,12 +533,12 @@ export function FileTreeView({
       }
     })
     const offDeleted = events.on(filesystemEvents.deleted, (e) => {
-      if (e.cause === "user") return
+      if (e.cause === "user" || !eventMatchesFilesystem(e.filesystem)) return
       hideEntry(e.path)
       removeOptimisticEntry(parentDir(e.path), e.path)
     })
     const offMoved = events.on(filesystemEvents.moved, (e) => {
-      if (e.cause === "user") return
+      if (e.cause === "user" || !eventMatchesFilesystem(e.filesystem)) return
       hideEntry(e.from)
       unhideEntry(e.to)
       removeOptimisticEntry(parentDir(e.from), e.from)
@@ -544,7 +548,7 @@ export function FileTreeView({
       offDeleted()
       offMoved()
     }
-  }, [addOptimisticEntry, hideEntry, removeOptimisticEntry, rootDirKey, unhideEntry])
+  }, [activeFilesystem, addOptimisticEntry, hideEntry, removeOptimisticEntry, rootDirKey, unhideEntry])
 
   // Paths currently being mutated (move/rename/delete/create). Renders a
   // pending spinner on the affected rows. Set during the await; cleared in
@@ -953,6 +957,14 @@ export function FileTreeView({
 
 export { clampContextMenuPosition }
 
+export interface FileTreeRootConfig {
+  filesystem: FilesystemId
+  label: string
+  rootDir?: string
+  access?: "readonly" | "readwrite"
+  searchPlaceholder?: string
+}
+
 export interface FileTreePaneParams extends LeftTabParams {
   rootDir?: string
   searchQuery?: string
@@ -961,6 +973,7 @@ export interface FileTreePaneParams extends LeftTabParams {
   chromeless?: boolean
   filesystem?: FilesystemId
   access?: "readonly" | "readwrite"
+  roots?: FileTreeRootConfig[]
   revealFileTreeRequest?: { path: string; seq: number } | null
 }
 
@@ -972,6 +985,7 @@ export interface FileTreePaneProps extends Partial<PaneProps<FileTreePaneParams>
   chromeless?: boolean
   filesystem?: FilesystemId
   access?: "readonly" | "readwrite"
+  roots?: FileTreeRootConfig[]
   className?: string
 }
 
@@ -990,6 +1004,7 @@ export function FileTreePane({
   chromeless = false,
   filesystem = "user",
   access = "readwrite",
+  roots,
   className,
 }: FileTreePaneProps) {
   const effectiveRootDir = params?.rootDir ?? rootDir
@@ -997,18 +1012,33 @@ export function FileTreePane({
   const effectiveChromeless = params?.chromeless ?? chromeless
   const effectiveFilesystem = params?.filesystem ?? filesystem
   const effectiveAccess = params?.access ?? access
+  const effectiveRoots = params?.roots ?? roots
   const effectiveRevealRequest = params?.revealFileTreeRequest ?? null
   const externalSearchQuery =
     params?.searchQuery ?? params?.query ?? controlledSearchQuery
   const effectivePanelApi = panelApi ?? api
   const [searchQuery, setSearchQuery] = useState("")
   const [debouncedQuery, setDebouncedQuery] = useState("")
-  const [selectedFilesystem, setSelectedFilesystem] = useState<FilesystemId>(effectiveFilesystem)
-  const companyProbe = useFileList("/", "company_context")
-  const showCompany = effectiveFilesystem === "company_context" || companyProbe.isSuccess
+  const rootOptions = useMemo<FileTreeRootConfig[]>(() => {
+    if (effectiveRoots?.length) return effectiveRoots
+    return [{
+      filesystem: effectiveFilesystem,
+      label: effectiveFilesystem === "user" ? "Workspace" : effectiveFilesystem,
+      rootDir: effectiveFilesystem === "user" ? effectiveRootDir : "/",
+      access: effectiveAccess,
+    }]
+  }, [effectiveAccess, effectiveFilesystem, effectiveRootDir, effectiveRoots])
+  const [selectedFilesystem, setSelectedFilesystem] = useState<FilesystemId>(rootOptions[0]?.filesystem ?? "user")
   useEffect(() => {
-    if (!showCompany && selectedFilesystem === "company_context") setSelectedFilesystem("user")
-  }, [selectedFilesystem, showCompany])
+    const next = rootOptions.some((root) => root.filesystem === effectiveFilesystem)
+      ? effectiveFilesystem
+      : rootOptions[0]?.filesystem ?? "user"
+    setSelectedFilesystem(next)
+  }, [effectiveFilesystem, rootOptions])
+  const activeRoot = rootOptions.find((root) => root.filesystem === selectedFilesystem) ?? rootOptions[0]
+  const activeFilesystem = activeRoot?.filesystem ?? "user"
+  const activeRootDir = activeRoot?.rootDir ?? (activeFilesystem === "user" ? effectiveRootDir : "/")
+  const activeAccess = activeRoot?.access ?? effectiveAccess
   const debounceRef = useRef<ReturnType<typeof setTimeout>>(undefined)
 
   useEffect(() => {
@@ -1022,13 +1052,10 @@ export function FileTreePane({
       ? externalSearchQuery || undefined
       : debouncedQuery || undefined
 
-  const activeFilesystem = showCompany ? selectedFilesystem : "user"
-  const activeRootDir = activeFilesystem === "company_context" ? "/" : effectiveRootDir
-  const activeAccess = activeFilesystem === "company_context" ? "readonly" : effectiveAccess
-
   if (effectiveChromeless) {
     return (
       <FileTreeView
+        key={`${activeFilesystem}:${activeRootDir}`}
         rootDir={activeRootDir}
         searchQuery={effectiveSearchQuery}
         bridge={effectiveBridge}
@@ -1044,18 +1071,17 @@ export function FileTreePane({
     <PanelChrome title="Files" panelApi={effectivePanelApi}>
       <div className="flex h-full flex-col">
         <div className="space-y-1.5 border-b border-border px-2 py-1.5">
-          {showCompany && (
-            <div className="grid grid-cols-2 gap-1 rounded-md bg-muted/45 p-0.5" role="tablist" aria-label="File roots">
-              <Button type="button" role="tab" aria-selected={activeFilesystem === "user"} variant={activeFilesystem === "user" ? "secondary" : "ghost"} size="sm" className="h-6 text-xs" onClick={() => setSelectedFilesystem("user")}>
-                Workspace
-              </Button>
-              <Button type="button" role="tab" aria-selected={activeFilesystem === "company_context"} variant={activeFilesystem === "company_context" ? "secondary" : "ghost"} size="sm" className="h-6 text-xs" onClick={() => setSelectedFilesystem("company_context")}>
-                Company
-              </Button>
+          {rootOptions.length > 1 && (
+            <div className="grid gap-1 rounded-md bg-muted/45 p-0.5" style={{ gridTemplateColumns: `repeat(${rootOptions.length}, minmax(0, 1fr))` }} role="tablist" aria-label="File roots">
+              {rootOptions.map((root) => (
+                <Button key={root.filesystem} type="button" role="tab" aria-selected={activeFilesystem === root.filesystem} variant={activeFilesystem === root.filesystem ? "secondary" : "ghost"} size="sm" className="h-6 text-xs" onClick={() => setSelectedFilesystem(root.filesystem)}>
+                  {root.label}
+                </Button>
+              ))}
             </div>
           )}
           <Input
-            placeholder={activeFilesystem === "company_context" ? "Filter company files..." : "Search files..."}
+            placeholder={activeRoot?.searchPlaceholder ?? "Search files..."}
             value={externalSearchQuery ?? searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
             className="h-7 text-xs"
@@ -1064,6 +1090,7 @@ export function FileTreePane({
         </div>
         <div className="min-h-0 flex-1">
           <FileTreeView
+            key={`${activeFilesystem}:${activeRootDir}`}
             rootDir={activeRootDir}
             searchQuery={effectiveSearchQuery}
             bridge={effectiveBridge}
