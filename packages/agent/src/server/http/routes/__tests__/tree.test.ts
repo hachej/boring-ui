@@ -1,7 +1,9 @@
 import Fastify, { type FastifyInstance } from 'fastify'
-import { describe, test, expect } from 'vitest'
+import { describe, test, expect, vi } from 'vitest'
+import { ERROR_CODE_NOT_FOUND_OR_DENIED } from '../file'
 import { treeRoutes } from '../tree'
 import type { Workspace, Entry, Stat } from '../../../../shared/workspace'
+import type { RuntimeFilesystemBindingOperations } from '../../../runtime/mode'
 
 const runtimeContext = { runtimeCwd: '/repo' }
 
@@ -34,9 +36,14 @@ function createWorkspace(
   }
 }
 
-async function buildApp(workspace: Workspace): Promise<FastifyInstance> {
+async function buildApp(workspace: Workspace, operations?: RuntimeFilesystemBindingOperations): Promise<FastifyInstance> {
   const app = Fastify({ logger: false })
-  await app.register(treeRoutes, { workspace })
+  await app.register(treeRoutes, {
+    workspace,
+    ...(operations
+      ? { filesystemBindings: [{ filesystem: 'company_context', access: 'readonly' as const, operations }] }
+      : {}),
+  })
   await app.ready()
   return app
 }
@@ -347,6 +354,37 @@ describe('GET /api/v1/tree', () => {
     expect(res.json().error.code).toBe('SANDBOX_EXPIRED')
 
     await app.close()
+  })
+
+  test('company_context tree uses company binding and sanitizes missing bindings', async () => {
+    const workspace = createWorkspace({ '.': [] })
+    const operations: RuntimeFilesystemBindingOperations = {
+      read: vi.fn(),
+      list: vi.fn(async ({ path }) => ({ entries: path === '/' ? ['company'] : ['policy.md'], metadata: {} })),
+      find: vi.fn(),
+      grep: vi.fn(),
+      stat: vi.fn(async ({ path }) => ({ isDirectory: path === 'company', metadata: {} })),
+      rejectMutation: vi.fn((operation) => { throw new Error(`readonly ${operation}`) }),
+    }
+    const app = await buildApp(workspace, operations)
+
+    const res = await app.inject({ method: 'GET', url: '/api/v1/tree?filesystem=company_context' })
+    expect(res.statusCode).toBe(200)
+    expect(res.json().entries).toEqual([{ name: 'company', kind: 'dir', path: 'company' }])
+    expect(operations.list).toHaveBeenCalledWith({ filesystem: 'company_context', path: '/' })
+    expect(operations.stat).toHaveBeenCalledWith({ filesystem: 'company_context', path: 'company' })
+
+    const slashRoot = await app.inject({ method: 'GET', url: '/api/v1/tree?filesystem=company_context&path=%2F' })
+    expect(slashRoot.statusCode).toBe(200)
+    expect(slashRoot.json().entries).toEqual([{ name: 'company', kind: 'dir', path: 'company' }])
+    expect(operations.stat).not.toHaveBeenCalledWith({ filesystem: 'company_context', path: '//company' })
+    await app.close()
+
+    const deniedApp = await buildApp(workspace)
+    const denied = await deniedApp.inject({ method: 'GET', url: '/api/v1/tree?filesystem=company_context' })
+    expect(denied.statusCode).toBe(404)
+    expect(denied.json()).toEqual({ error: { code: ERROR_CODE_NOT_FOUND_OR_DENIED, message: 'not found or denied' } })
+    await deniedApp.close()
   })
 
   test('non-recursive returns only direct children', async () => {
