@@ -15,7 +15,7 @@ const mockGetTree = vi.fn()
 const mockGetGitUrlMetadata = vi.fn()
 
 vi.mock("../../data", () => ({
-  useFileList: (dir: string) => mockFileList(dir),
+  useFileList: (dir: string, filesystem?: string) => mockFileList(dir, filesystem),
   useFileWrite: () => ({ mutateAsync: mockFileWrite }),
   useCreateDir: () => ({ mutateAsync: mockCreateDir }),
   useMoveFile: () => ({ mutateAsync: mockMoveFile }),
@@ -238,6 +238,52 @@ describe("FileTreePane", () => {
       expect(screen.getByTestId("file-tree")).toBeInTheDocument()
     })
     expect(screen.getByText("index.ts")).toBeInTheDocument()
+  })
+
+  it("shows company as a separate readonly root when a company binding exists", async () => {
+    mockFileList.mockImplementation((dir: string, filesystem?: string) => ({
+      data: filesystem === "company_context"
+        ? [{ name: "handbook.md", kind: "file" as const, path: "handbook.md" }]
+        : sampleFiles,
+      isLoading: false,
+      isSuccess: filesystem === "company_context",
+      error: undefined,
+    }))
+    const bridge = {
+      openFile: vi.fn(),
+      select: vi.fn(() => vi.fn()),
+      getActiveFile: vi.fn(),
+    }
+
+    render(<FileTreePane bridge={bridge} />, { wrapper })
+
+    expect(await screen.findByRole("tab", { name: "Workspace" })).toBeInTheDocument()
+    fireEvent.click(screen.getByRole("tab", { name: "Company" }))
+
+    await waitFor(() => expect(screen.getByText("handbook.md")).toBeInTheDocument())
+    fireEvent.click(screen.getByText("handbook.md"))
+    expect(bridge.openFile).toHaveBeenCalledWith("handbook.md", {
+      mode: "edit",
+      filesystem: "company_context",
+    })
+
+    fireEvent.contextMenu(screen.getByText("handbook.md"))
+    expect(screen.queryByRole("menuitem", { name: "Rename" })).not.toBeInTheDocument()
+    expect(screen.queryByRole("menuitem", { name: "Delete" })).not.toBeInTheDocument()
+  })
+
+  it("hides the company root when the company binding is unavailable", async () => {
+    mockFileList.mockImplementation((dir: string, filesystem?: string) => ({
+      data: filesystem === "company_context" ? undefined : sampleFiles,
+      isLoading: false,
+      isSuccess: false,
+      error: filesystem === "company_context" ? new Error("not_found_or_denied") : undefined,
+    }))
+
+    render(<FileTreePane />, { wrapper })
+
+    await waitFor(() => expect(screen.getByTestId("file-tree")).toBeInTheDocument())
+    expect(screen.queryByRole("tab", { name: "Company" })).not.toBeInTheDocument()
   })
 
   it("hides .boring-agent from the default tree view", async () => {
