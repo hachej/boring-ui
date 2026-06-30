@@ -15,6 +15,7 @@ export function createBoringMcpServerPlugin(options: CreateBoringMcpServerPlugin
 
 export default createBoringMcpServerPlugin()
 export * from "./agentBridge"
+export * from "./hardening"
 export * from "./managedConnectorAdapter"
 export * from "./managedConnectorPreflight"
 export * from "./sourceHandlers"
