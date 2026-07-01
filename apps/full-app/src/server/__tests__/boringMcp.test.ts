@@ -8,6 +8,7 @@ import {
   InMemoryMcpRateBudgetGate,
   createBoringMcpAgentBridgeRegistry,
   createBoringMcpSourceHandlers,
+  evaluateBoringMcpLaunchGate,
   type McpActor,
   type McpSource,
   type ManagedConnectorConfig,
@@ -23,7 +24,6 @@ import {
   createFullAppBoringMcpServerPlugins,
   createFullAppManagedConnectorAdapter,
   createFullAppManagedConnectorSecretResolver,
-  evaluateFullAppBoringMcpLaunchGate,
   readFullAppBoringMcpServerConfig,
   registerFullAppBoringMcpRoutes,
 } from '../boringMcp'
@@ -80,7 +80,11 @@ function toolJson(result: { content: Array<{ type: string; text: string }> }): u
   return JSON.parse(result.content[0]?.text ?? 'null')
 }
 
-function makeRouteHarness(provider: ManagedConnectorProvider, env: NodeJS.ProcessEnv = { COMPOSIO_API_KEY: 'cmp_test_secret' } as NodeJS.ProcessEnv) {
+function makeRouteHarness(
+  provider: ManagedConnectorProvider,
+  env: NodeJS.ProcessEnv = { COMPOSIO_API_KEY: 'cmp_test_secret' } as NodeJS.ProcessEnv,
+  transport?: McpTransportClient,
+) {
   const app = Fastify()
   const settingsByUser = new Map<string, Record<string, unknown>>()
   app.decorate('config', { appId: 'full-app-test' } as never)
@@ -105,8 +109,57 @@ function makeRouteHarness(provider: ManagedConnectorProvider, env: NodeJS.Proces
   app.addHook('onRequest', async (request) => {
     request.user = { id: actor.userId, email: 'demo@example.com', name: 'Demo', emailVerified: true }
   })
-  registerFullAppBoringMcpRoutes(app as unknown as CoreWorkspaceAgentServer, { provider, env })
+  registerFullAppBoringMcpRoutes(app as unknown as CoreWorkspaceAgentServer, { provider, env, transport })
   return app
+}
+
+function evaluateTestBoringMcpLaunchGate() {
+  const config = readFullAppBoringMcpServerConfig()
+  const launchActor: McpActor = { workspaceId: 'smoke-workspace', userId: 'smoke-user' }
+  const launchSource: McpSource = {
+    id: 'source:notion:smoke-user',
+    workspaceId: launchActor.workspaceId,
+    userId: launchActor.userId,
+    provider: 'notion',
+    displayName: 'Fake Notion',
+    status: 'connected',
+    ownerKind: 'user',
+    credentialProvider: 'composio-managed',
+  }
+  const registry: McpSourceRegistry = {
+    async listSources(requestActor) {
+      return requestActor.workspaceId === launchActor.workspaceId && requestActor.userId === launchActor.userId ? [launchSource] : []
+    },
+    async getSource(sourceId) {
+      return sourceId === launchSource.id ? launchSource : undefined
+    },
+    async disconnectSource(_actor, sourceId) {
+      return sourceId === launchSource.id ? { ...launchSource, status: 'revoked' } : undefined
+    },
+  }
+  const transport = fakeTransport()
+  const hardening = {
+    gate: new InMemoryMcpRateBudgetGate({ maxCalls: 100, maxToolCalls: 10, windowMs: 60_000 }),
+    timeoutMs: 1000,
+  }
+  const handlers = createBoringMcpSourceHandlers({
+    registry,
+    transport,
+    templates: DEFAULT_MCP_PROVIDER_TEMPLATES,
+    hardening,
+    maxReadonlyInputBytes: config.maxReadonlyInputBytes,
+  })
+
+  return evaluateBoringMcpLaunchGate({
+    pluginId: BORING_MCP_PLUGIN_ID,
+    registry,
+    transport,
+    bridge: createBoringMcpAgentBridgeRegistry(handlers),
+    templates: DEFAULT_MCP_PROVIDER_TEMPLATES,
+    hardening,
+    maxReadonlyInputBytes: config.maxReadonlyInputBytes,
+    docsReviewed: true,
+  })
 }
 
 describe('full-app boring-mcp binding', () => {
@@ -193,7 +246,8 @@ describe('full-app boring-mcp binding', () => {
       })),
       probe: vi.fn(),
     }
-    const app = makeRouteHarness(provider)
+    const tx = fakeTransport()
+    const app = makeRouteHarness(provider, { COMPOSIO_API_KEY: 'cmp_test_secret' } as NodeJS.ProcessEnv, tx)
     await app.ready()
     const headers = { 'x-boring-workspace-id': actor.workspaceId }
 
@@ -204,6 +258,8 @@ describe('full-app boring-mcp binding', () => {
     const connected = await app.inject({ method: 'POST', url: '/api/v1/boring-mcp/connect', headers, payload: { provider: 'notion' } })
     expect(connected.statusCode).toBe(201)
     expect(connected.json()).toMatchObject({ status: { source: { provider: 'notion', status: 'unconfigured' } }, connectUrl: 'https://app.composio.dev/connect/fake' })
+    expect(JSON.stringify(connected.json().status)).not.toContain('connect/fake')
+    expect(JSON.stringify(connected.json().status)).not.toContain('session-1')
 
     const listed = await app.inject({ method: 'GET', url: '/api/v1/boring-mcp/sources', headers })
     const sourceId = listed.json().sourceStatuses[0].source.id
@@ -212,6 +268,11 @@ describe('full-app boring-mcp binding', () => {
     const refreshed = await app.inject({ method: 'POST', url: '/api/v1/boring-mcp/refresh', headers, payload: { sourceId } })
     expect(refreshed.statusCode).toBe(200)
     expect(refreshed.json()).toMatchObject({ status: { source: { status: 'connected', providerAccountLabel: 'demo@example.com' }, canProbe: true } })
+
+    const toolCatalog = await app.inject({ method: 'POST', url: '/api/v1/boring-mcp/tools', headers, payload: { sourceId } })
+    expect(toolCatalog.statusCode).toBe(200)
+    expect(toolCatalog.json()).toMatchObject({ tools: [expect.objectContaining({ sourceId, toolName: 'NOTION_SEARCH_NOTION_PAGE', enabled: true })] })
+    expect(tx.listTools).toHaveBeenCalled()
 
     const disconnected = await app.inject({ method: 'POST', url: '/api/v1/boring-mcp/disconnect', headers, payload: { sourceId } })
     expect(disconnected.statusCode).toBe(200)
@@ -289,7 +350,7 @@ describe('full-app boring-mcp binding', () => {
   })
 
   it('passes the app launch gate with a fake boring-mcp stack', () => {
-    expect(evaluateFullAppBoringMcpLaunchGate()).toEqual({ ok: true, issues: [] })
+    expect(evaluateTestBoringMcpLaunchGate()).toEqual({ ok: true, issues: [] })
   })
 
   it('smokes the generic boring-mcp path with fake provider pieces', async () => {

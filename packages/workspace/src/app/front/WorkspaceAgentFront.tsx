@@ -119,6 +119,7 @@ export interface WorkspaceAgentAppLeftOverlayRenderProps {
   onClose: () => void
   headerInsetStart: boolean
   headerInsetEnd: boolean
+  workspaceId: string
 }
 
 export interface WorkspaceAgentAppLeftOverlayAction {
@@ -1527,8 +1528,9 @@ export function WorkspaceAgentFront<
       onClose: () => setLeftOverlay(null),
       headerInsetStart: appLeftPaneCollapsed,
       headerInsetEnd: !surfaceOpen,
+      workspaceId,
     })
-  }, [appLeftOverlayActions, appLeftPaneCollapsed, leftOverlay, surfaceOpen])
+  }, [appLeftOverlayActions, appLeftPaneCollapsed, leftOverlay, surfaceOpen, workspaceId])
 
   const leftOverlayNode = customLeftOverlayNode ?? (leftOverlay === "skills" && skillsActionEnabled ? (
     <SkillsPage

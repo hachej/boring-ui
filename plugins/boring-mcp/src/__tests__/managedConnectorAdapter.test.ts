@@ -97,8 +97,10 @@ describe("managed connector adapter", () => {
       provider: "notion",
       status: "unconfigured",
       credentialProvider: "composio-managed",
-      connectorRef: expect.objectContaining({ externalSourceId: "provider-source-1", sessionId: "session-1" }),
     }))
+    expect(result.source).not.toHaveProperty("connectorRef")
+    expect(JSON.stringify(result.source)).not.toContain("session-1")
+    expect(JSON.stringify(result.source)).not.toContain("provider-source-1")
     expect(JSON.stringify(result)).not.toContain("server-only-secret")
     expect(provider.startConnect).toHaveBeenCalledWith(expect.objectContaining({ config: expect.objectContaining({ toolkitId: "notion-toolkit" }), sourceId: "managed:workspace-1:user-1:notion" }))
   })

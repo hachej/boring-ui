@@ -36,7 +36,6 @@ const connectedNotion: McpSourceStatusPayload = {
     credentialProvider: "composio-managed",
     providerAccountLabel: "demo@example.com",
     lastVerifiedAt: "2026-07-01T05:00:00.000Z",
-    connectorRef: { provider: "notion", toolkitId: "notion" },
   },
   connectable: false,
   canProbe: true,
@@ -58,12 +57,13 @@ describe("boring-mcp front sources panel", () => {
   })
 
   it("shows admin setup required instead of a dead connect placeholder when actions are not wired", () => {
-    renderSourcesPanel({ connectionUnavailableMessage: "Source API is not wired yet." })
+    renderSourcesPanel({ connectionUnavailableMessage: "MCP API is not wired yet." })
 
     expect(screen.getByText("Notion")).toBeInTheDocument()
     expect(screen.getByText("No account connected yet.")).toBeInTheDocument()
-    expect(screen.getByText("Source API is not wired yet.")).toBeInTheDocument()
     expect(screen.getByRole("button", { name: "Admin setup required" })).toBeDisabled()
+    fireEvent.click(screen.getByRole("button", { name: "Notion MCP" }))
+    expect(screen.getByText("MCP API is not wired yet.")).toBeInTheDocument()
     expect(screen.queryByRole("button", { name: "Connect through app backend" })).not.toBeInTheDocument()
   })
 
@@ -112,7 +112,8 @@ describe("boring-mcp front sources panel", () => {
     renderSourcesPanel({ sourceStatuses: [expiredNotion], sourceActions: { onConnect: vi.fn() } })
 
     expect(screen.getByRole("button", { name: "Reconnect" })).toBeDisabled()
-    expect(screen.getByText("This source cannot start a new connection in its current state. Refresh status or disconnect first.")).toBeInTheDocument()
+    fireEvent.click(screen.getByRole("button", { name: "Notion MCP" }))
+    expect(screen.getByText("This MCP cannot start a new connection in its current state. Refresh status or disconnect first.")).toBeInTheDocument()
   })
 
   it("loads source status and connects through the route-backed source API", async () => {
@@ -130,6 +131,12 @@ describe("boring-mcp front sources panel", () => {
         expect(JSON.parse(String(init?.body))).toEqual({ provider: "notion" })
         return Response.json({ status: connectedNotion, connectUrl: "https://app.composio.dev/connect/notion" }, { status: 201 })
       }
+      if (url.endsWith("/api/v1/boring-mcp/tools")) {
+        expect(init?.method).toBe("POST")
+        expect(init?.headers).toMatchObject({ "x-boring-workspace-id": "workspace-1" })
+        expect(JSON.parse(String(init?.body))).toEqual({ sourceId: "source:notion:user-1", refresh: false })
+        return Response.json({ tools: [{ sourceId: "source:notion:user-1", provider: "notion", toolName: "NOTION_SEARCH_NOTION_PAGE", displayName: "Search", summary: "Search pages", inputSchema: {}, risk: "read", enabled: true, blockedReasons: [], schemaHash: "sha256:test", nativeRef: { provider: "notion", action: "NOTION_SEARCH_NOTION_PAGE" } }] })
+      }
       return Response.json({ message: "not found" }, { status: 404 })
     })
 
@@ -137,8 +144,10 @@ describe("boring-mcp front sources panel", () => {
     fireEvent.click(await screen.findByRole("button", { name: "Connect" }))
 
     expect(await screen.findByText("Connected")).toBeInTheDocument()
+    fireEvent.click(screen.getByRole("button", { name: "Notion MCP" }))
+    expect(await screen.findByText("NOTION_SEARCH_NOTION_PAGE")).toBeInTheDocument()
     expect(openConnectUrl).toHaveBeenCalledWith("https://app.composio.dev/connect/notion")
-    expect(fetchMock).toHaveBeenCalledTimes(2)
+    expect(fetchMock).toHaveBeenCalledTimes(3)
   })
 
   it("merges route-backed source API actions with partial host source action overrides", async () => {
@@ -164,23 +173,38 @@ describe("boring-mcp front sources panel", () => {
     expect(popup.location.href).toBe("https://app.composio.dev/connect/notion")
   })
 
-  it("shows connected account details with distinct view, refresh, and disconnect actions", () => {
+  it("shows connected account details with expandable tools, refresh, and disconnect actions", async () => {
     const onViewTools = vi.fn()
     const onRefreshStatus = vi.fn()
     const onDisconnect = vi.fn()
+    const onListTools = vi.fn(async () => [{
+      sourceId: "source:notion:user-1",
+      provider: "notion" as const,
+      toolName: "NOTION_SEARCH_NOTION_PAGE",
+      displayName: "Search",
+      summary: "Search pages",
+      inputSchema: {},
+      risk: "read" as const,
+      enabled: true,
+      blockedReasons: [],
+      schemaHash: "sha256:test",
+      nativeRef: { provider: "notion", action: "NOTION_SEARCH_NOTION_PAGE" },
+    }])
     renderSourcesPanel({
       sourceStatuses: [connectedNotion],
-      sourceActions: { onViewTools, onRefreshStatus, onDisconnect },
+      sourceActions: { onViewTools, onRefreshStatus, onDisconnect, onListTools },
     })
 
     expect(screen.getByText("Connected")).toBeInTheDocument()
     expect(screen.getByText(/demo@example\.com/)).toBeInTheDocument()
 
-    fireEvent.click(screen.getByRole("button", { name: "View tools" }))
+    fireEvent.click(screen.getByRole("button", { name: "Notion MCP" }))
+    expect(await screen.findByText("NOTION_SEARCH_NOTION_PAGE")).toBeInTheDocument()
     fireEvent.click(screen.getByRole("button", { name: "Refresh status" }))
     fireEvent.click(screen.getByRole("button", { name: "Disconnect" }))
 
     expect(onViewTools).toHaveBeenCalledWith("source:notion:user-1", "notion")
+    expect(onListTools).toHaveBeenCalledWith("source:notion:user-1", "notion", false)
     expect(onRefreshStatus).toHaveBeenCalledWith("source:notion:user-1", "notion")
     expect(onDisconnect).toHaveBeenCalledWith("source:notion:user-1", "notion")
   })

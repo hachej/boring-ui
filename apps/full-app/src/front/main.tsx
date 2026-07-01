@@ -14,7 +14,7 @@ import '@hachej/boring-core/app/front/styles.css'
 import './app.css'
 import { BoringMcpSourcesOverlay } from '@hachej/boring-mcp/front'
 import { PublicHeroDescription, publicLaunchPlugin } from './PublicLaunchPages'
-import { fullAppBoringMcpOptions, fullAppBoringMcpPlugin } from './boringMcp'
+import { fullAppBoringMcpOptions } from './boringMcp'
 
 const PRODUCT_NAME = 'Seneca AI'
 
@@ -29,7 +29,7 @@ const buyEnabled = import.meta.env.VITE_CREDITS_BUY_ENABLED === '1'
 // (single-project). Set VITE_BORING_INLINE_PROJECTS=1 to opt in for dev.
 const inlineProjectsEnabled = import.meta.env.VITE_BORING_INLINE_PROJECTS === '1'
 
-function SourcesIcon({ className }: { className?: string }) {
+function McpIcon({ className }: { className?: string }) {
   return (
     <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
       <path d="M12 3c4.42 0 8 1.34 8 3s-3.58 3-8 3-8-1.34-8-3 3.58-3 8-3Z" />
@@ -111,12 +111,17 @@ createRoot(document.getElementById('root')!).render(
       showPlugins
       appLeftOverlayActions={[
         {
-          id: 'boring-mcp.sources',
-          label: 'Sources',
-          icon: <SourcesIcon className="h-4 w-4" />,
-          render: ({ onClose, headerInsetStart, headerInsetEnd }) => (
+          id: 'boring-mcp',
+          label: 'MCP',
+          icon: <McpIcon className="h-4 w-4" />,
+          render: ({ onClose, headerInsetStart, headerInsetEnd, workspaceId }) => (
             <BoringMcpSourcesOverlay
-              options={fullAppBoringMcpOptions}
+              options={{
+                ...fullAppBoringMcpOptions,
+                sourceApi: fullAppBoringMcpOptions.sourceApi
+                  ? { ...fullAppBoringMcpOptions.sourceApi, workspaceId }
+                  : undefined,
+              }}
               onClose={onClose}
               headerInsetStart={headerInsetStart}
               headerInsetEnd={headerInsetEnd}
@@ -164,7 +169,6 @@ createRoot(document.getElementById('root')!).render(
         ],
         plugins: [publicLaunchPlugin],
       }}
-      plugins={[fullAppBoringMcpPlugin]}
       authPages={{ userSettings: AccountSettingsPage }}
       topBarRight={
         <div className="flex w-full min-w-0 flex-col gap-1">

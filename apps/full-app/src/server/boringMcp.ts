@@ -9,7 +9,6 @@ import {
   InMemoryMcpRateBudgetGate,
   MCP_ERROR_CODES,
   McpError,
-  createBoringMcpAgentBridgeRegistry,
   createBoringMcpAgentTools,
   createBoringMcpServerPlugin,
   createBoringMcpSourceHandlers,
@@ -17,8 +16,6 @@ import {
   createComposioMcpTransport,
   createManagedConnectorAdapter,
   createMcpSourceStatusPayload,
-  evaluateBoringMcpLaunchGate,
-  type BoringMcpLaunchGateResult,
   type ManagedConnectorAdapter,
   type ManagedConnectorConfig,
   type ManagedConnectorProvider,
@@ -28,8 +25,6 @@ import {
   type McpActor,
   type McpProviderId,
   type McpSource,
-  type McpSourceRegistry,
-  type McpSourceStatusPayload,
   type McpTransportClient,
 } from '@hachej/boring-mcp/server'
 import type { AgentTool } from '@hachej/boring-workspace'
@@ -289,6 +284,15 @@ export interface CreateFullAppBoringMcpAgentToolsOptions {
   transport?: McpTransportClient
 }
 
+function createFullAppComposioMcpTransport(env?: NodeJS.ProcessEnv): McpTransportClient {
+  return createComposioMcpTransport({
+    secretResolver: createFullAppManagedConnectorSecretResolver(env, FULL_APP_MANAGED_CONNECTOR_CONFIGS),
+    configs: FULL_APP_MANAGED_CONNECTOR_CONFIGS,
+    clientName: 'boring-full-app-mcp',
+    clientVersion: '0.0.0',
+  })
+}
+
 export function createFullAppBoringMcpAgentTools(
   app: Pick<CoreWorkspaceAgentServer, 'userStore' | 'config'>,
   actor: McpActor,
@@ -297,12 +301,7 @@ export function createFullAppBoringMcpAgentTools(
   const config = readFullAppBoringMcpServerConfig(options.env)
   if (!config.enabled) return []
   const registry = createFullAppMcpSourceRegistry(app, actor)
-  const transport = options.transport ?? createComposioMcpTransport({
-    secretResolver: createFullAppManagedConnectorSecretResolver(options.env, FULL_APP_MANAGED_CONNECTOR_CONFIGS),
-    configs: FULL_APP_MANAGED_CONNECTOR_CONFIGS,
-    clientName: 'boring-full-app-mcp',
-    clientVersion: '0.0.0',
-  })
+  const transport = options.transport ?? createFullAppComposioMcpTransport(options.env)
   return createBoringMcpAgentTools({
     registry,
     transport,
@@ -358,17 +357,24 @@ function providerFromBody(body: unknown, requestId: string): McpProviderId {
   return provider
 }
 
-function sourceStatus(source: McpSource | undefined, requestId: string): McpSourceStatusPayload {
-  if (!source) throw routeError(404, ERROR_CODES.NOT_FOUND, 'MCP source not found', requestId)
-  return createMcpSourceStatusPayload(source)
-}
-
-export function registerFullAppBoringMcpRoutes(app: CoreWorkspaceAgentServer, options: { provider?: ManagedConnectorProvider; env?: NodeJS.ProcessEnv } = {}): void {
+export function registerFullAppBoringMcpRoutes(app: CoreWorkspaceAgentServer, options: { provider?: ManagedConnectorProvider; env?: NodeJS.ProcessEnv; transport?: McpTransportClient } = {}): void {
   if (!readFullAppBoringMcpServerConfig(options.env).enabled) return
+
+  const routeTransport = options.transport ?? createFullAppComposioMcpTransport(options.env)
+  const routeGate = new InMemoryMcpRateBudgetGate({ maxCalls: 100, maxToolCalls: 10, windowMs: 60_000 })
 
   function adapterFor(actor: McpActor) {
     const registry = createFullAppMcpSourceRegistry(app, actor)
     return { registry, adapter: createFullAppManagedConnectorAdapter({ registry, provider: options.provider, env: options.env }) }
+  }
+
+  function handlersFor(actor: McpActor) {
+    return createBoringMcpSourceHandlers({
+      registry: createFullAppMcpSourceRegistry(app, actor),
+      transport: routeTransport,
+      templates: DEFAULT_MCP_PROVIDER_TEMPLATES,
+      hardening: { gate: routeGate, timeoutMs: 30_000 },
+    })
   }
 
   app.get('/api/v1/boring-mcp/sources', async (request) => {
@@ -385,8 +391,9 @@ export function registerFullAppBoringMcpRoutes(app: CoreWorkspaceAgentServer, op
     const { adapter } = adapterFor(actor)
     const provider = providerFromBody(request.body, request.id)
     const result = await withMcpHttpErrors(request.id, () => adapter.startConnect(actor, { provider }))
+    const { connectUrl, ...status } = result
     reply.status(201)
-    return { status: result, connectUrl: result.connectUrl }
+    return { status, connectUrl }
   })
 
   app.post('/api/v1/boring-mcp/refresh', {
@@ -402,9 +409,20 @@ export function registerFullAppBoringMcpRoutes(app: CoreWorkspaceAgentServer, op
     config: { rateLimit: { ...SOURCE_ACTION_RATE_LIMIT, keyGenerator: sourceActionRateLimitKey } },
   }, async (request) => {
     const actor = await requireBoringMcpActor(app, request)
-    const { registry } = adapterFor(actor)
-    const source = await withMcpHttpErrors(request.id, async () => await registry.disconnectSource?.(actor, sourceIdFromBody(request.body, request.id)))
-    return { status: sourceStatus(source, request.id) }
+    const status = await withMcpHttpErrors(request.id, () => handlersFor(actor).disconnectSource(actor, sourceIdFromBody(request.body, request.id)))
+    return { status }
+  })
+
+  app.post('/api/v1/boring-mcp/tools', {
+    config: { rateLimit: { ...SOURCE_ACTION_RATE_LIMIT, keyGenerator: sourceActionRateLimitKey } },
+  }, async (request) => {
+    const actor = await requireBoringMcpActor(app, request)
+    const body = asRecord(request.body)
+    const result = await withMcpHttpErrors(request.id, () => handlersFor(actor).searchTools(actor, {
+      sourceId: sourceIdFromBody(request.body, request.id),
+      refresh: body.refresh === true,
+    }))
+    return { tools: result.tools }
   })
 }
 
@@ -412,70 +430,8 @@ export function createFullAppBoringMcpServerPlugins(env: NodeJS.ProcessEnv = pro
   const config = readFullAppBoringMcpServerConfig(env)
   if (!config.enabled) return []
   return [createBoringMcpServerPlugin({
-    systemPrompt: 'Sources are available through the app-owned boring-mcp integration. Use governed read-only MCP calls only after search/describe confirms the tool is enabled.',
+    systemPrompt: 'MCP providers are available through the app-owned boring-mcp integration. Use governed read-only MCP calls only after search/describe confirms the tool is enabled.',
   })]
 }
 
 export const boringMcpServerPlugins = createFullAppBoringMcpServerPlugins()
-
-export function evaluateFullAppBoringMcpLaunchGate(): BoringMcpLaunchGateResult {
-  const config = readFullAppBoringMcpServerConfig()
-  const actor: McpActor = { workspaceId: 'smoke-workspace', userId: 'smoke-user' }
-  const source: McpSource = {
-    id: 'source:notion:smoke-user',
-    workspaceId: actor.workspaceId,
-    userId: actor.userId,
-    provider: 'notion',
-    displayName: 'Fake Notion',
-    status: 'connected',
-    ownerKind: 'user',
-    credentialProvider: 'composio-managed',
-  }
-  const registry: McpSourceRegistry = {
-    async listSources(requestActor) {
-      return requestActor.workspaceId === actor.workspaceId && requestActor.userId === actor.userId ? [source] : []
-    },
-    async getSource(sourceId) {
-      return sourceId === source.id ? source : undefined
-    },
-    async disconnectSource(_actor, sourceId) {
-      return sourceId === source.id ? { ...source, status: 'revoked' } : undefined
-    },
-  }
-  const transport: McpTransportClient = {
-    async listTools() {
-      return [{ name: 'NOTION_SEARCH_NOTION_PAGE', description: 'Search fake Notion pages', inputSchema: { type: 'object' } }]
-    },
-    async listResources() {
-      return []
-    },
-    async readResource() {
-      return { content: '' }
-    },
-    async callTool() {
-      return { content: [{ type: 'text', text: 'fake ok' }] }
-    },
-  }
-  const hardening = {
-    gate: new InMemoryMcpRateBudgetGate({ maxCalls: 100, maxToolCalls: 10, windowMs: 60_000 }),
-    timeoutMs: 1000,
-  }
-  const handlers = createBoringMcpSourceHandlers({
-    registry,
-    transport,
-    templates: DEFAULT_MCP_PROVIDER_TEMPLATES,
-    hardening,
-    maxReadonlyInputBytes: config.maxReadonlyInputBytes,
-  })
-
-  return evaluateBoringMcpLaunchGate({
-    pluginId: BORING_MCP_PLUGIN_ID,
-    registry,
-    transport,
-    bridge: createBoringMcpAgentBridgeRegistry(handlers),
-    templates: DEFAULT_MCP_PROVIDER_TEMPLATES,
-    hardening,
-    maxReadonlyInputBytes: config.maxReadonlyInputBytes,
-    docsReviewed: true,
-  })
-}
