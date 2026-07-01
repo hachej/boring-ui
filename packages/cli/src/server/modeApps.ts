@@ -516,18 +516,10 @@ export async function createWorkspacesModeApp(opts: {
     let core = workspaceBridgeCores.get(workspace.id)
     if (core) return await core
     core = (async (): Promise<WorkspaceBridgeCore> => {
-      const bridge = getBridge(workspace.id)
-      const ctx = { workspaceRoot: workspace.path, bridge }
-      const defaultPluginDirEntries = pluginDiscovery.resolveCliDefaultPluginPackagePaths()
-        .map((dir) => ({ dir, hotReload: true, trust: "internal" as const }))
-        .filter((entry) => workspaceAppServer.hasDirServerPlugin(entry))
-      const resolvedPlugins = await Promise.all(defaultPluginDirEntries.map(async (entry) => {
-        const plugin = await workspaceAppServer.resolveOnePluginEntry(entry, ctx)
-        workspaceAppServer.assertWorkspaceBridgeHandlersTrusted(plugin, entry)
-        return plugin
-      }))
-      const pluginCollection = workspaceAppServer.collectWorkspaceAgentServerPlugins({
-        plugins: resolvedPlugins,
+      const pluginCollection = await workspaceAppServer.resolveWorkspaceAgentServerPluginCollection({
+        workspaceRoot: workspace.path,
+        bridge: getBridge(workspace.id),
+        defaultPluginPackages: pluginDiscovery.resolveCliDefaultPluginPackagePaths(),
         installPluginAuthoring: false,
         excludeDefaults: ["boring-ui-plugin-cli-package"],
       })
