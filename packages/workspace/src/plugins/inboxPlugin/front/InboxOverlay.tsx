@@ -1,6 +1,6 @@
 "use client"
 
-import { useCallback, useMemo, useState } from "react"
+import { useCallback, useEffect, useMemo, useState } from "react"
 import { Inbox, MailOpen, X } from "lucide-react"
 import { IconButton } from "@hachej/boring-ui-kit"
 import { emitWorkspaceAttentionAction, useWorkspaceAttention } from "../../../front/attention"
@@ -53,6 +53,9 @@ export function InboxOverlay({ onClose, headerInsetStart = false, headerInsetEnd
   const [shellError, setShellError] = useState<string | null>(null)
   const [selectedItemId, setSelectedItemId] = useState<string | null>(null)
   const [pinnedIds, setPinnedIds] = useState<ReadonlySet<string>>(() => readPinnedIds(pinStorageKey))
+  useEffect(() => {
+    setPinnedIds(readPinnedIds(pinStorageKey))
+  }, [pinStorageKey])
   const sorted = useMemo(() => sortInboxItems(blockers.filter(isInboxAttentionBlocker).map(attentionBlockerToInboxItem)), [blockers])
   const filtered = useMemo(() => filterInboxItems(sorted, filter), [filter, sorted])
   const items = useMemo(() => mergeInboxPinnedState(filtered, pinnedIds), [filtered, pinnedIds])

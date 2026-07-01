@@ -78,7 +78,8 @@ const MULTI_PROJECTS = [
   { id: "proj-epsilon", name: "Marketing ops", available: true, sessionCount: 9 },
 ]
 
-if (typeof window !== "undefined" && isMultiRoute()) {
+function seedMultiRouteStorage(): void {
+  if (typeof window === "undefined" || !isMultiRoute()) return
   try {
     // Two pinned sessions from the active project + one pinned project.
     window.localStorage.setItem("boring-workspace:pinned-sessions:proj-alpha", JSON.stringify({ ids: ["m-s2", "m-s6"] }))
@@ -167,6 +168,7 @@ function WorkspaceFullPageShell() {
 
 export function WorkspaceShell() {
   resetPlaygroundStorageIfRequested()
+  seedMultiRouteStorage()
   const showcase = useMemo(isShowcaseRoute, [])
   const fullPage = useMemo(isFullPageRoute, [])
   const multi = useMemo(isMultiRoute, [])
