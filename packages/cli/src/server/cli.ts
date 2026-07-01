@@ -8,12 +8,13 @@ import type {
   WorkspaceProvisioningResult,
 } from "@hachej/boring-agent/server"
 import { execSync } from "node:child_process"
+import { randomBytes } from "node:crypto"
 import {
   existsSync,
   readFileSync,
 } from "node:fs"
 import { createRequire } from "node:module"
-import { basename, isAbsolute, join, resolve } from "node:path"
+import { basename, isAbsolute, join, relative, resolve } from "node:path"
 import { parseArgs } from "node:util"
 import { createLocalWorkspaceRegistry, type LocalWorkspace } from "./localWorkspaces.js"
 import type {
@@ -110,6 +111,7 @@ const HELP_TEXT = [
   "",
   "Commands:",
   "  boring-ui [workspace]                 Start the workspace UI for a folder",
+  "  boring-ui share <file>                Share one Markdown file for review",
   "  boring-ui workspaces <subcommand>     Manage saved local workspaces",
   "  boring-ui plugin <subcommand>         Install, list, and remove plugin sources",
   "",
@@ -118,6 +120,10 @@ const HELP_TEXT = [
   "      --host <host>       Listen host (default: 127.0.0.1)",
   "      --allow-insecure-local-bridge",
   "                            Allow unauthenticated local-cli bridge auth when binding a non-loopback host",
+  "      --assets            Include local Markdown image dependencies in share mode",
+  "      --allow-edit        Let anyone with the share URL edit the Markdown file",
+  "      --expires <time>    Expire share after duration (for example: 1h, 24h, 7d)",
+  "      --no-open           Do not open the browser",
   "  -m, --mode <mode>       local-sandbox or local (default: local)",
   "  -h, --help              Show this help",
 ].join("\n")
@@ -221,6 +227,69 @@ async function startWorkspacesMode(opts: {
   openBrowser(initialUrl)
 }
 
+function parseShareExpiry(value: string | undefined): string | undefined {
+  if (!value) return undefined
+  const match = value.trim().match(/^(\d+)(m|h|d)$/i)
+  if (!match) throw new Error('invalid --expires. Use a duration like 30m, 1h, or 7d.')
+  const amount = Number(match[1])
+  const unit = match[2].toLowerCase()
+  const multiplier = unit === 'm' ? 60_000 : unit === 'h' ? 3_600_000 : 86_400_000
+  return new Date(Date.now() + amount * multiplier).toISOString()
+}
+
+async function startShareMode(opts: {
+  fileArg?: string
+  publicDir: string
+  port: number
+  host: string
+  includeAssets: boolean
+  allowEdit: boolean
+  expires?: string
+  open?: boolean
+}) {
+  if (!opts.fileArg) throw new Error('usage: boring-ui share <markdown-file> [--assets] [--allow-edit]')
+  const workspaceRoot = resolve(process.cwd())
+  const targetPath = resolve(opts.fileArg)
+  const entryPath = relative(workspaceRoot, targetPath).replace(/\\/g, '/')
+  if (!entryPath || entryPath.startsWith('..') || isAbsolute(entryPath)) {
+    throw new Error('shared file must be inside the current workspace')
+  }
+  if (!existsSync(targetPath)) throw new Error(`shared file not found: ${opts.fileArg}`)
+  const markdown = readFileSync(targetPath, 'utf8')
+  const token = `s_${randomBytes(18).toString('base64url')}`
+  const agent = await import('@hachej/boring-agent/server')
+  const { default: Fastify } = await import('fastify')
+  const workspace = agent.createNodeWorkspace(workspaceRoot)
+  const share = agent.createMarkdownReviewShare({
+    token,
+    entryPath,
+    markdown,
+    title: basename(targetPath),
+    includeAssets: opts.includeAssets,
+    allowEdit: opts.allowEdit,
+    expiresAt: parseShareExpiry(opts.expires),
+  })
+  const app = Fastify({ logger: false, bodyLimit: 2 * 1024 * 1024 })
+  await app.register(agent.registerPublicShareRoutes, {
+    getShare: (candidate: string) => candidate === token ? share : undefined,
+    getWorkspace: () => workspace,
+  })
+  app.get('/health', async () => ({ ok: true }))
+  await registerStatic(app, opts.publicDir)
+  await app.listen({ port: opts.port, host: opts.host })
+  const url = `http://localhost:${opts.port}/share/${encodeURIComponent(token)}/`
+  console.log(`\nShared Markdown review`)
+  console.log(`  file       ${entryPath}`)
+  console.log(`  mode       ${opts.allowEdit ? 'public edit' : 'read-only'}`)
+  console.log(`  assets     ${opts.includeAssets ? 'included' : 'off'}`)
+  if (share.expiresAt) console.log(`  expires    ${share.expiresAt}`)
+  console.log(`\n  review     ${url}`)
+  console.log(`  editor     ${url}editor`)
+  console.log(`  markdown   ${url}portable.md`)
+  console.log(`  bundle     ${url}bundle.zip\n`)
+  if (opts.open !== false) openBrowser(url)
+}
+
 async function handleWorkspacesCommand(opts: {
   args: { name?: string }
   positionals: string[]
@@ -289,6 +358,10 @@ export async function runCli(options: RunCliOptions): Promise<void> {
       "panel-id": { type: "string" as const },
       "timeout-ms": { type: "string" as const },
       "allow-insecure-local-bridge": { type: "boolean" as const },
+      assets: { type: "boolean" as const },
+      expires: { type: "string" as const },
+      "allow-edit": { type: "boolean" as const },
+      "no-open": { type: "boolean" as const },
       help: { type: "boolean", short: "h" },
     },
     allowPositionals: true,
@@ -337,6 +410,20 @@ export async function runCli(options: RunCliOptions): Promise<void> {
     allowInsecureLocalBridgeAuth,
   }
 
+
+  if (positionals[0] === "share") {
+    await startShareMode({
+      fileArg: positionals[1],
+      publicDir: options.publicDir,
+      port,
+      host,
+      includeAssets: args.assets === true,
+      allowEdit: args["allow-edit"] === true,
+      expires: args.expires as string | undefined,
+      open: args["no-open"] !== true,
+    })
+    return
+  }
 
   if (positionals[0] === "workspaces") {
     await handleWorkspacesCommand({

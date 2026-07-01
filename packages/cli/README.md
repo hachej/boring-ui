@@ -50,11 +50,20 @@ boring-ui workspaces add <folder>       Register a folder as a saved workspace
 boring-ui workspaces list               List saved workspaces
 boring-ui workspaces remove <id>        Remove a saved workspace
 boring-ui workspaces rename <id> <name> Rename a saved workspace
+boring-ui share <file> [options]        Share one Markdown file for external review
 boring-ui plugin <subcommand> …         Plugin authoring (delegates to boring-ui-plugin)
 ```
 
 `boring-ui plugin …` forwards to `@hachej/boring-ui-plugin-cli`; run
 `boring-ui plugin` with no subcommand for its usage.
+
+`boring-ui share <file>` starts a narrow public review surface for one Markdown file:
+
+```bash
+boring-ui share docs/review.md --assets --allow-edit
+```
+
+It exposes review/editor, raw Markdown, portable Markdown, image assets, and a ZIP bundle for the selected file only. Editing is disabled unless `--allow-edit` is set.
 
 ### Options
 
@@ -63,6 +72,10 @@ boring-ui plugin <subcommand> …         Plugin authoring (delegates to boring-
 | `-p, --port <port>` | `5200` (or `$PORT`) | HTTP port |
 | `--host <host>` | `127.0.0.1` (or `$HOST`) | Listen host. Non-loopback hosts require `--allow-insecure-local-bridge` because the standalone CLI uses unauthenticated local-only bridge browser auth. |
 | `-m, --mode <mode>` | `local` | `local` (no sandbox, full network) or `local-sandbox` (bwrap-isolated, no network, Linux only) |
+| `--assets` | off | Include local Markdown image dependencies in share mode |
+| `--allow-edit` | off | Let anyone with the share URL edit the Markdown file |
+| `--expires <time>` | none | Expire a share after a duration such as `30m`, `1h`, or `7d` |
+| `--no-open` | off | Do not open the browser after starting a share |
 | `-h, --help` | | Show help |
 
 ### Environment variables

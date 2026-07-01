@@ -379,3 +379,8 @@ export type {
   Notification,
   SidebarState,
 } from "./front/store/types"
+
+export { PublicShareApp } from './front/public-share/PublicShareApp'
+export type { PublicShareAppProps } from './front/public-share/PublicShareApp'
+export { PublicMarkdownReviewApp } from './front/public-share/PublicMarkdownReviewApp'
+export type { PublicMarkdownReviewAppProps } from './front/public-share/PublicMarkdownReviewApp'
