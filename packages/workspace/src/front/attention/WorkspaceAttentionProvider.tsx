@@ -95,6 +95,15 @@ const noopAttention: WorkspaceAttentionContextValue = {
 
 const WorkspaceAttentionContext = createContext<WorkspaceAttentionContextValue | null>(null)
 
+function knownSessionSetFromKey(key: string | undefined): ReadonlySet<string> | null {
+  if (key === undefined) return null
+  return new Set(key.length > 0 ? key.split("\0") : [])
+}
+
+function blockerBelongsToKnownSession(blocker: WorkspaceAttentionBlocker, known: ReadonlySet<string> | null): boolean {
+  return !known || !blocker.pruneWhenSessionMissing || !blocker.sessionId || known.has(blocker.sessionId)
+}
+
 export function useWorkspaceAttention(): WorkspaceAttentionContextValue {
   return useContext(WorkspaceAttentionContext) ?? noopAttention
 }
@@ -102,20 +111,29 @@ export function useWorkspaceAttention(): WorkspaceAttentionContextValue {
 export function WorkspaceAttentionProvider({ children, knownSessionIds, knownSessionsAuthoritative = true }: WorkspaceAttentionProviderProps) {
   const [blockers, setBlockers] = useState<WorkspaceAttentionBlocker[]>([])
   const knownSessionKey = knownSessionIds?.join("\0")
+  const authoritativeKnownSessions = useMemo(
+    () => (knownSessionsAuthoritative ? knownSessionSetFromKey(knownSessionKey) : null),
+    [knownSessionKey, knownSessionsAuthoritative],
+  )
   const addBlocker = useCallback((blocker: WorkspaceAttentionBlocker) => {
-    setBlockers((current) => [...current.filter((item) => item.id !== blocker.id), blocker])
-  }, [])
+    setBlockers((current) => {
+      const withoutExisting = current.filter((item) => item.id !== blocker.id)
+      if (!blockerBelongsToKnownSession(blocker, authoritativeKnownSessions)) {
+        return withoutExisting.length === current.length ? current : withoutExisting
+      }
+      return [...withoutExisting, blocker]
+    })
+  }, [authoritativeKnownSessions])
   const removeBlocker = useCallback((id: string) => {
     setBlockers((current) => current.filter((item) => item.id !== id))
   }, [])
   useEffect(() => {
-    if (knownSessionKey === undefined || !knownSessionsAuthoritative) return
-    const known = new Set(knownSessionKey.length > 0 ? knownSessionKey.split("\0") : [])
+    if (!authoritativeKnownSessions) return
     setBlockers((current) => {
-      const next = current.filter((blocker) => !blocker.pruneWhenSessionMissing || !blocker.sessionId || known.has(blocker.sessionId))
+      const next = current.filter((blocker) => blockerBelongsToKnownSession(blocker, authoritativeKnownSessions))
       return next.length === current.length ? current : next
     })
-  }, [knownSessionKey, knownSessionsAuthoritative])
+  }, [authoritativeKnownSessions])
   const value = useMemo<WorkspaceAttentionContextValue>(
     () => ({ blockers, addBlocker, removeBlocker }),
     [blockers, addBlocker, removeBlocker],
