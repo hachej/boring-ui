@@ -1,7 +1,7 @@
 "use client"
 
 import { useEffect, useState, type CSSProperties } from "react"
-import type { PaneProps } from "@hachej/boring-workspace"
+import type { WorkspaceSourceProps } from "@hachej/boring-workspace"
 import { definePlugin, type BoringFrontFactoryWithId } from "@hachej/boring-workspace/plugin"
 import {
   BORING_MCP_PLUGIN_ID,
@@ -101,8 +101,8 @@ function statusTone(status: McpSourceStatus | undefined): CSSProperties {
   }
 }
 
-function openSourcesPanel(containerApi: PaneProps["containerApi"]) {
-  containerApi.addPanel({
+function openSourcesWorkspacePanel(openPanel: WorkspaceSourceProps["openPanel"]): void {
+  openPanel?.({
     id: BORING_MCP_SOURCES_PANEL_ID,
     component: BORING_MCP_SOURCES_PANEL_ID,
     title: "MCP Sources",
@@ -225,7 +225,7 @@ function ProviderCard({ provider, options, sourceStatuses, pending, runAction }:
   )
 }
 
-function SourcesTab({ containerApi, options }: PaneProps & { options: CreateBoringMcpPluginOptions }) {
+function SourcesTab({ openPanel, options }: WorkspaceSourceProps & { options: CreateBoringMcpPluginOptions }) {
   return (
     <div style={styles.tab}>
       <div>
@@ -233,7 +233,7 @@ function SourcesTab({ containerApi, options }: PaneProps & { options: CreateBori
         <h2 style={styles.title}>{options.tabTitle ?? "Sources"}</h2>
         <p style={styles.muted}>Connect approved context providers behind governed MCP tools.</p>
       </div>
-      <button type="button" style={styles.button} onClick={() => openSourcesPanel(containerApi)}>
+      <button type="button" style={styles.button} onClick={() => openSourcesWorkspacePanel(openPanel)}>
         <strong>Manage sources</strong>
         <span style={{ ...styles.muted, display: "block", marginTop: 4 }}>Connect, refresh, disconnect, and inspect tools</span>
       </button>
@@ -330,8 +330,10 @@ export function createBoringMcpPlugin(options: CreateBoringMcpPluginOptions = {}
   return definePlugin({
     id: BORING_MCP_PLUGIN_ID,
     label,
+    workspaceSources: [
+      { id: BORING_MCP_SOURCES_TAB_PANEL_ID, label, defaultPanelId: BORING_MCP_SOURCES_PANEL_ID, component: (props) => <SourcesTab {...props} options={options} /> },
+    ],
     panels: [
-      { id: BORING_MCP_SOURCES_TAB_PANEL_ID, label, placement: "left-tab", component: (props) => <SourcesTab {...props} options={options} /> },
       { id: BORING_MCP_SOURCES_PANEL_ID, label: options.panelTitle ?? "MCP Sources", placement: "center", component: () => <SourcesPanel options={options} /> },
     ],
     commands: [{ id: "boring-mcp.open-sources", title: "Open Sources", panelId: BORING_MCP_SOURCES_PANEL_ID, keywords: ["mcp", "sources", "context"] }],
