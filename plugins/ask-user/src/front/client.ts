@@ -1,7 +1,7 @@
 import { ASK_USER_BRIDGE_OPS } from "../shared/bridge"
 import { ASK_USER_UI_STATE_SLOTS } from "../shared/constants"
 import { ASK_USER_ERROR_CODES } from "../shared/error-codes"
-import type { AskUserAnswerValue, AskUserFormSchema, AskUserQuestion, AskUserTargetHumanAction, AskUserHumanActionButton } from "../shared/types"
+import type { AskUserAnswerValue, AskUserFormSchema, AskUserHumanActionArtifact, AskUserHumanActionButton, AskUserQuestion, AskUserTargetHumanAction } from "../shared/types"
 import { validateQuestionValues, type QuestionFormValues, type QuestionValidationResult } from "./primitives"
 
 export type QuestionsClientResult = { ok: true; status: string }
@@ -163,15 +163,31 @@ function normalizeTargetHumanAction(value: unknown): AskUserTargetHumanAction | 
   const target = normalizeHumanActionTarget(raw.target)
   const actions = Array.isArray(raw.actions) ? raw.actions.map(normalizeHumanActionButton).filter((action): action is AskUserHumanActionButton => !!action) : []
   if (!kind || !title || !target || actions.length === 0) return undefined
+  const artifacts = Array.isArray(raw.artifacts) ? raw.artifacts.map(normalizeHumanActionArtifact).filter((artifact): artifact is AskUserHumanActionArtifact => !!artifact) : []
   return {
     ...(boundedString(raw.id) ? { id: boundedString(raw.id) } : {}),
     kind,
     title,
     ...(boundedString(raw.body, 4000) ? { body: boundedString(raw.body, 4000) } : {}),
     target,
+    ...(artifacts.length > 0 ? { artifacts } : {}),
     actions,
     ...(boundedString(raw.actionFieldName, 64) ? { actionFieldName: boundedString(raw.actionFieldName, 64) } : {}),
     ...(boundedString(raw.commentFieldName, 64) ? { commentFieldName: boundedString(raw.commentFieldName, 64) } : {}),
+    ...(boundedString(raw.reviewFieldName, 64) ? { reviewFieldName: boundedString(raw.reviewFieldName, 64) } : {}),
+    ...(boundedString(raw.annotationsFieldName, 64) ? { annotationsFieldName: boundedString(raw.annotationsFieldName, 64) } : {}),
+  }
+}
+
+function normalizeHumanActionArtifact(value: unknown): AskUserHumanActionArtifact | null {
+  if (!value || typeof value !== "object") return null
+  const raw = value as Record<string, unknown>
+  const target = normalizeHumanActionTarget(raw.target)
+  if (!target) return null
+  return {
+    ...(boundedString(raw.id, 128) ? { id: boundedString(raw.id, 128) } : {}),
+    ...(boundedString(raw.label) ? { label: boundedString(raw.label) } : {}),
+    target,
   }
 }
 

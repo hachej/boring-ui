@@ -60,8 +60,12 @@ describe("ask-user front client", () => {
             kind: "review",
             title: "Review README",
             target: { type: "file", path: "README.md", label: "Readme" },
+            artifacts: [{ id: "html", label: "Generated HTML", target: { type: "file", path: "docs/generated.html", label: "Generated HTML" } }],
             actions: [{ id: "accept", label: "Accept", tone: "positive" }],
             actionFieldName: "action",
+            commentFieldName: "comment",
+            reviewFieldName: "review",
+            annotationsFieldName: "annotations",
           },
         },
       },
@@ -73,8 +77,12 @@ describe("ask-user front client", () => {
       kind: "review",
       title: "Review README",
       target: { type: "file", path: "README.md", label: "Readme" },
+      artifacts: [{ id: "html", label: "Generated HTML", target: { type: "file", path: "docs/generated.html", label: "Generated HTML" } }],
       actions: [{ id: "accept", label: "Accept", tone: "positive" }],
       actionFieldName: "action",
+      commentFieldName: "comment",
+      reviewFieldName: "review",
+      annotationsFieldName: "annotations",
     })
   })
 

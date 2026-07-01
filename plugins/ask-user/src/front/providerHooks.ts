@@ -17,7 +17,8 @@ import {
 } from "@hachej/boring-workspace"
 import { ASK_USER_SURFACE_KIND, ASK_USER_UI_STATE_SLOTS } from "../shared/constants"
 import { askUserHumanActionToBlockerProjection } from "../shared/humanAction"
-import type { AskUserTargetHumanAction } from "../shared/types"
+import { formatHumanActionReviewForLlm, type HumanActionReviewResult } from "../shared/humanActionAnnotations"
+import type { AskUserFormSchema, AskUserQuestion, AskUserTargetHumanAction } from "../shared/types"
 import { createQuestionsClient, readPendingQuestionHintsFromState, type PendingQuestionHint } from "./client"
 import { isSessionOpen, type QuestionsRuntime } from "./runtime"
 
@@ -49,6 +50,54 @@ function workspaceTargetFromAskUserTarget(target: AskUserTargetHumanAction["targ
   return _exhaustive
 }
 
+function schemaHasField(schema: AskUserFormSchema | undefined, name: string): boolean {
+  return !!schema?.fields.some((field) => field.name === name)
+}
+
+function annotationSeverityForButton(button: WorkspaceHumanActionButton): NonNullable<HumanActionReviewResult["annotations"]>[number]["severity"] {
+  if (button.tone === "danger") return "blocker"
+  if (button.tone === "warning") return "issue"
+  if (button.tone === "positive") return "note"
+  return "suggestion"
+}
+
+function buildTargetReviewValues(args: {
+  pending: AskUserQuestion
+  action: AskUserTargetHumanAction
+  button: WorkspaceHumanActionButton
+  comment?: string
+}): Record<string, string> {
+  const { pending, action, button, comment } = args
+  const values: Record<string, string> = {
+    [action.actionFieldName ?? "action"]: button.id,
+  }
+  const commentFieldName = action.commentFieldName ?? "comment"
+  const reviewFieldName = action.reviewFieldName ?? "review"
+  const annotationsFieldName = action.annotationsFieldName ?? "annotations"
+  if (comment && schemaHasField(pending.schema, commentFieldName)) values[commentFieldName] = comment
+
+  if (schemaHasField(pending.schema, reviewFieldName) || schemaHasField(pending.schema, annotationsFieldName)) {
+    const review: HumanActionReviewResult = {
+      humanActionId: action.id ?? pending.questionId,
+      decisionId: button.id,
+      ...(comment ? { comment } : {}),
+      ...(comment ? {
+        annotations: [{
+          id: `${pending.questionId}:${button.id}:global`,
+          target: action.target,
+          anchor: { type: "global" },
+          body: comment,
+          severity: annotationSeverityForButton(button),
+          createdAt: new Date().toISOString(),
+        }],
+      } : {}),
+    }
+    if (schemaHasField(pending.schema, reviewFieldName)) values[reviewFieldName] = formatHumanActionReviewForLlm(review)
+    if (schemaHasField(pending.schema, annotationsFieldName)) values[annotationsFieldName] = JSON.stringify(review)
+  }
+  return values
+}
+
 export function useAskUserTargetActions(runtime: QuestionsRuntime, pendingSnapshot: string): void {
   const { registerTargetAction } = useWorkspaceHumanActionTargets()
   useEffect(() => {
@@ -73,11 +122,7 @@ export function useAskUserTargetActions(runtime: QuestionsRuntime, pendingSnapsh
           ...(button.comment ? { comment: button.comment } : {}),
         })),
         async onAction({ action: button, comment }) {
-          const values: Record<string, string> = {
-            [action.actionFieldName ?? "action"]: button.id,
-          }
-          if (comment) values[action.commentFieldName ?? "comment"] = comment
-          await client.submit(pending, values)
+          await client.submit(pending, buildTargetReviewValues({ pending, action, button, comment }))
           runtime.setPending(null, pending.sessionId)
         },
       }))

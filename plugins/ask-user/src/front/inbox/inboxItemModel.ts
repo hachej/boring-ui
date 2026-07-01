@@ -9,8 +9,8 @@ export interface WorkspaceInboxItemAction {
 }
 
 export type WorkspaceInboxItemArtifactTarget =
-  | { type: "surface"; surfaceKind: string; target?: string; params?: Record<string, unknown> }
-  | { type: "panel"; panelComponentId: string; params?: Record<string, unknown> }
+  | { type: "surface"; id?: string; label?: string; surfaceKind: string; target?: string; params?: Record<string, unknown> }
+  | { type: "panel"; id?: string; label?: string; panelComponentId: string; params?: Record<string, unknown> }
 
 export interface WorkspaceInboxItemSourceBase {
   label: string
@@ -32,6 +32,7 @@ export interface WorkspaceInboxItem {
   sessionId: string | null
   targetLabel: string
   artifact: WorkspaceInboxItemArtifactTarget | null
+  artifacts: WorkspaceInboxItemArtifactTarget[]
   createdAt: string
   updatedAt: string
   priority: number
@@ -47,7 +48,7 @@ export type WorkspaceInboxShellResult =
   | { success: false; reason: "no-artifact" | "open-failed" | "invalid-session" | "placement-failed"; message: string }
 
 export interface WorkspaceInboxShellApi {
-  openInboxArtifact(item: WorkspaceInboxItem): WorkspaceInboxShellResult
+  openInboxArtifact(item: WorkspaceInboxItem, artifact?: WorkspaceInboxItemArtifactTarget): WorkspaceInboxShellResult
   openDetachedChat(sessionId: string, options?: { anchor?: DOMRect; title?: string }): WorkspaceInboxShellResult
 }
 

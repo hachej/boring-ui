@@ -113,15 +113,24 @@ export type AskUserHumanActionButton = {
   comment?: "none" | "optional" | "required"
 }
 
+export type AskUserHumanActionArtifact = {
+  id?: string
+  label?: string
+  target: HumanActionAnnotationTargetRef
+}
+
 export type AskUserTargetHumanAction = {
   id?: string
   kind: "review" | "approval" | "acknowledgement" | "choice"
   title: string
   body?: string
   target: HumanActionAnnotationTargetRef
+  artifacts?: AskUserHumanActionArtifact[]
   actions: AskUserHumanActionButton[]
   actionFieldName?: string
   commentFieldName?: string
+  reviewFieldName?: string
+  annotationsFieldName?: string
 }
 
 export type AskUserQuestion = {

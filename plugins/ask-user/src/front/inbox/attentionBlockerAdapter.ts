@@ -1,5 +1,5 @@
 import { workspaceAttentionSessionBadgeForBlocker, type WorkspaceAttentionBlocker } from "@hachej/boring-workspace"
-import type { InboxItemKind, WorkspaceInboxItem } from "./inboxItemModel"
+import type { InboxItemKind, WorkspaceInboxItem, WorkspaceInboxItemArtifactTarget } from "./inboxItemModel"
 
 const FALLBACK_TIMESTAMP = "1970-01-01T00:00:00.000Z"
 
@@ -41,8 +41,25 @@ export function isInboxAttentionBlocker(blocker: WorkspaceAttentionBlocker): boo
   return !!blocker.inbox
 }
 
+function blockerArtifacts(blocker: WorkspaceAttentionBlocker): WorkspaceInboxItemArtifactTarget[] {
+  const explicit = blocker.inbox?.artifacts?.map((artifact): WorkspaceInboxItemArtifactTarget => artifact.type === "panel"
+    ? { type: "panel", ...(artifact.id ? { id: artifact.id } : {}), ...(artifact.label ? { label: artifact.label } : {}), panelComponentId: artifact.panelComponentId, ...(artifact.params ? { params: artifact.params } : {}) }
+    : { type: "surface", ...(artifact.id ? { id: artifact.id } : {}), ...(artifact.label ? { label: artifact.label } : {}), surfaceKind: artifact.surfaceKind, ...(artifact.target ? { target: artifact.target } : {}), ...(artifact.params ? { params: artifact.params } : {}) }) ?? []
+  if (explicit.length > 0) return explicit
+  return blocker.surfaceKind ? [{ type: "surface", surfaceKind: blocker.surfaceKind, target: blocker.target, ...(blocker.target ? { label: blocker.target } : {}) }] : []
+}
+
+function artifactTargetLabel(artifact: WorkspaceInboxItemArtifactTarget | null, fallback = ""): string {
+  if (!artifact) return fallback
+  if (artifact.label) return artifact.label
+  if (artifact.type === "surface") return artifact.target ?? artifact.surfaceKind
+  return artifact.panelComponentId
+}
+
 export function attentionBlockerToInboxItem(blocker: WorkspaceAttentionBlocker): WorkspaceInboxItem {
   const updatedAt = blockerTimestamp(blocker)
+  const artifacts = blockerArtifacts(blocker)
+  const primaryArtifact = artifacts[0] ?? null
   return {
     id: blocker.id,
     kind: blockerKind(blocker),
@@ -51,8 +68,9 @@ export function attentionBlockerToInboxItem(blocker: WorkspaceAttentionBlocker):
     description: blocker.reason,
     source: blockerSource(blocker),
     sessionId: blocker.sessionId ?? null,
-    targetLabel: blocker.target ?? "",
-    artifact: blocker.surfaceKind ? { type: "surface", surfaceKind: blocker.surfaceKind, target: blocker.target } : null,
+    targetLabel: artifactTargetLabel(primaryArtifact, blocker.target ?? ""),
+    artifact: primaryArtifact,
+    artifacts,
     createdAt: dateValue(blocker.inbox?.createdAt) ?? updatedAt,
     updatedAt,
     priority: blocker.inbox?.priority ?? workspaceAttentionSessionBadgeForBlocker(blocker)?.priority ?? 0,

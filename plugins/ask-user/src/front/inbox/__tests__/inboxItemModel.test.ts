@@ -11,6 +11,7 @@ function item(partial: Partial<WorkspaceInboxItem> & Pick<WorkspaceInboxItem, 'i
     sessionId: null,
     targetLabel: '',
     artifact: null,
+    artifacts: [],
     createdAt: partial.updatedAt,
     priority: 0,
     actions: [],
@@ -47,8 +48,31 @@ describe('inbox item model', () => {
       priority: 5,
     })
     expect(inbox.source).toEqual({ type: 'plugin', pluginId: 'ask-user', label: 'question' })
-    expect(inbox.artifact).toEqual({ type: 'surface', surfaceKind: 'file', target: 'file.ts' })
+    expect(inbox.artifact).toEqual({ type: 'surface', surfaceKind: 'file', target: 'file.ts', label: 'file.ts' })
+    expect(inbox.artifacts).toEqual([{ type: 'surface', surfaceKind: 'file', target: 'file.ts', label: 'file.ts' }])
     expect(inbox.actions).toEqual([{ id: 'open', label: 'Open' }])
+  })
+
+  it('uses explicit inbox artifact pointers when present', () => {
+    const inbox = attentionBlockerToInboxItem({
+      id: 'review-artifacts',
+      reason: 'ask-user.review',
+      label: 'Review landing page',
+      target: 'legacy-target',
+      surfaceKind: 'legacy-surface',
+      inbox: {
+        kind: 'review',
+        sourceLabel: 'review',
+        artifacts: [
+          { type: 'surface', id: 'html', label: 'Generated HTML', surfaceKind: 'workspace.open.path', target: 'docs/generated.html' },
+          { type: 'surface', id: 'brief', label: 'Review brief', surfaceKind: 'questions', target: 'q1' },
+        ],
+      },
+    })
+
+    expect(inbox.targetLabel).toBe('Generated HTML')
+    expect(inbox.artifact).toEqual({ type: 'surface', id: 'html', label: 'Generated HTML', surfaceKind: 'workspace.open.path', target: 'docs/generated.html' })
+    expect(inbox.artifacts).toHaveLength(2)
   })
 
   it('uses explicit external and review source metadata without parsing reason', () => {

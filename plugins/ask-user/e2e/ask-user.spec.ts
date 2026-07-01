@@ -134,14 +134,133 @@ test.describe("ask_user Questions pane", () => {
 
     await page.goto("/?fresh=1", { waitUntil: "domcontentloaded" })
     await expect(page.getByRole("textbox", { name: "Agent prompt" })).toBeVisible({ timeout: 15_000 })
-    const workbenchButton = page.getByRole("button", { name: /^open workbench$/i })
-    if (await workbenchButton.isVisible().catch(() => false)) await workbenchButton.click()
-    await page.request.post("/api/v1/ui/commands", { data: { kind: "openFile", params: { path: "README.md" } } })
+    await page.evaluate(() => {
+      window.dispatchEvent(new CustomEvent("boring-workspace:ui-command", { detail: { kind: "openFile", params: { path: "README.md" } } }))
+    })
+    await page.getByRole("complementary", { name: "Surface" }).getByText("README.md", { exact: true }).first().click({ force: true })
 
     await expect(page.getByRole("button", { name: "Review README: Accept" })).toBeVisible({ timeout: 15_000 })
-    await page.getByRole("button", { name: "Review README: Accept" }).click()
+    await page.getByRole("button", { name: "Review README: Accept" }).click({ force: true })
 
     await expect.poll(() => commands.some((cmd: any) => cmd.op === "ask-user.v1.answer" && cmd.input?.values?.action === "accept" && cmd.input?.answerToken === "secret-e2e")).toBe(true)
+  })
+
+  test("inbox review opens an HTML target and sends annotation payload back to the agent", async ({ page }) => {
+    const commands: unknown[] = []
+    const htmlReviewQuestion = {
+      ...question,
+      questionId: "q-e2e-html-review",
+      sessionId: "default",
+      title: "Review generated landing page",
+      context: "Review the generated HTML artifact and request changes if needed.",
+      schema: {
+        wireVersion: 1,
+        fields: [
+          {
+            type: "radio",
+            name: "decision",
+            label: "Decision",
+            required: true,
+            options: [
+              { value: "accept", label: "Accept" },
+              { value: "request_changes", label: "Request changes" },
+            ],
+          },
+          { type: "textarea", name: "comment", label: "Human comment", maxLength: 4000 },
+          { type: "textarea", name: "review", label: "LLM review handoff", maxLength: 4000 },
+          { type: "textarea", name: "annotations", label: "Machine annotation payload", maxLength: 4000 },
+        ],
+      },
+      humanAction: {
+        id: "review-html-artifact",
+        kind: "review",
+        title: "Review generated landing page",
+        body: "Check the generated HTML before the agent continues.",
+        target: { type: "file", path: "docs/generated-review.html", label: "Generated HTML" },
+        artifacts: [{ id: "generated-html", label: "Generated HTML", target: { type: "file", path: "docs/generated-review.html", label: "Generated HTML" } }],
+        actions: [{ id: "request_changes", label: "Request changes", tone: "warning", comment: "required" }],
+        actionFieldName: "decision",
+        commentFieldName: "comment",
+        reviewFieldName: "review",
+        annotationsFieldName: "annotations",
+      },
+    }
+
+    await page.route("**/api/v1/ui/state", async (route) => {
+      if (route.request().method() === "GET") {
+        await route.fulfill({
+          json: {
+            "questions.pending": {
+              hint: { questionId: htmlReviewQuestion.questionId, sessionId: htmlReviewQuestion.sessionId, status: "ready" },
+            },
+          },
+        })
+        return
+      }
+      await route.fulfill({ status: 204 })
+    })
+
+    await page.route("**/api/v1/files/raw?**", async (route) => {
+      const url = new URL(route.request().url())
+      if (url.searchParams.get("path") === "docs/generated-review.html") {
+        await route.fulfill({
+          contentType: "text/html",
+          body: "<!doctype html><html><body><main><h1>Ship faster</h1><p>Signup now.</p></main></body></html>",
+        })
+        return
+      }
+      await route.continue()
+    })
+
+    await page.route("**/api/v1/workspace-bridge/call", async (route) => {
+      const body = route.request().postDataJSON()
+      commands.push(body)
+      if (body.op === "ask-user.v1.pending") {
+        await route.fulfill({ json: { ok: true, op: body.op, requestId: "req-e2e-html-review", output: { pending: htmlReviewQuestion } } })
+        return
+      }
+      await route.fulfill({ json: { ok: true, op: body.op, requestId: "req-e2e-html-review", output: { ok: true, status: "answered" } } })
+    })
+
+    await page.goto("/?inboxDemo=1&fresh=1", { waitUntil: "domcontentloaded" })
+    await expect(page.getByRole("heading", { name: "Inbox" })).toBeVisible({ timeout: 15_000 })
+    const inboxRow = page.getByRole("button", { name: /Review generated landing page.*Generated HTML/ })
+    await expect(inboxRow).toBeVisible()
+
+    await inboxRow.click()
+    await expect(page.getByRole("button", { name: "Review generated landing page: Request changes" })).toBeVisible({ timeout: 15_000 })
+
+    await page.getByRole("button", { name: "Review generated landing page: Request changes" }).click()
+    await page.getByRole("textbox", { name: "Request changes comment" }).fill("CTA must explain pricing before signup.")
+    await page.getByRole("button", { name: "Send" }).click()
+
+    await expect.poll(() => {
+      const answer = commands.find((cmd: any) => cmd.op === "ask-user.v1.answer") as any
+      return answer?.input?.values?.decision
+    }).toBe("request_changes")
+
+    const answer = commands.find((cmd: any) => cmd.op === "ask-user.v1.answer") as any
+    expect(answer.input.answerToken).toBe("secret-e2e")
+    expect(answer.input.values.comment).toBe("CTA must explain pricing before signup.")
+    expect(answer.input.values.review).toContain("# Human Review Feedback")
+    expect(answer.input.values.review).toContain("Decision: `request_changes`")
+    expect(answer.input.values.review).toContain("Generated HTML")
+    expect(answer.input.values.review).toContain("CTA must explain pricing before signup.")
+
+    const reviewPayload = JSON.parse(answer.input.values.annotations)
+    expect(reviewPayload).toMatchObject({
+      humanActionId: "review-html-artifact",
+      decisionId: "request_changes",
+      comment: "CTA must explain pricing before signup.",
+      annotations: [
+        {
+          target: { type: "file", path: "docs/generated-review.html", label: "Generated HTML" },
+          anchor: { type: "global" },
+          body: "CTA must explain pricing before signup.",
+          severity: "issue",
+        },
+      ],
+    })
   })
 
   test("ui command opens pane from metadata, submits, and closes", async ({ page }) => {

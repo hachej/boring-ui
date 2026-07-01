@@ -13,6 +13,7 @@ import {
   mergeInboxPinnedState,
   sortInboxItems,
   type InboxFilter,
+  type WorkspaceInboxItemArtifactTarget,
   type WorkspaceInboxItemViewModel,
 } from "./inboxItemModel"
 import { useWorkspaceInboxShell } from "./WorkspaceInboxShellContext"
@@ -51,6 +52,7 @@ export function InboxOverlay({ onClose, headerInsetStart = false, headerInsetEnd
   const shell = useWorkspaceInboxShell()
   const [filter, setFilter] = useState<InboxFilter>("all")
   const [shellError, setShellError] = useState<string | null>(null)
+  const [expandedIds, setExpandedIds] = useState<ReadonlySet<string>>(() => new Set())
   const [pinnedIds, setPinnedIds] = useState<ReadonlySet<string>>(() => readPinnedIds(pinStorageKey))
   const sorted = useMemo(() => sortInboxItems(blockers.filter(isInboxAttentionBlocker).map(attentionBlockerToInboxItem)), [blockers])
   const filtered = useMemo(() => filterInboxItems(sorted, filter), [filter, sorted])
@@ -63,6 +65,14 @@ export function InboxOverlay({ onClose, headerInsetStart = false, headerInsetEnd
     reviews: filterInboxItems(sorted, "reviews").length,
   }), [sorted])
 
+  const toggleExpanded = useCallback((id: string) => {
+    setExpandedIds((current) => {
+      const next = new Set(current)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
+      return next
+    })
+  }, [])
   const togglePinned = useCallback((id: string) => {
     setPinnedIds((current) => {
       const next = new Set(current)
@@ -75,7 +85,7 @@ export function InboxOverlay({ onClose, headerInsetStart = false, headerInsetEnd
   const handleShellResult = useCallback((result: ReturnType<typeof shell.openInboxArtifact>) => {
     setShellError(result.success ? null : result.message)
   }, [])
-  const openArtifact = useCallback((item: WorkspaceInboxItemViewModel) => { handleShellResult(shell.openInboxArtifact(item)) }, [handleShellResult, shell])
+  const openArtifact = useCallback((item: WorkspaceInboxItemViewModel, artifact: WorkspaceInboxItemArtifactTarget) => { handleShellResult(shell.openInboxArtifact(item, artifact)) }, [handleShellResult, shell])
   const openChat = useCallback((item: WorkspaceInboxItemViewModel) => {
     if (!item.sessionId) return
     handleShellResult(shell.openDetachedChat(item.sessionId, { title: item.title }))
@@ -118,8 +128,8 @@ export function InboxOverlay({ onClose, headerInsetStart = false, headerInsetEnd
           </div>
         ) : (
           <>
-            <InboxSection title="Pinned" items={pinnedItems} onTogglePinned={togglePinned} onOpenArtifact={openArtifact} onOpenChat={openChat} />
-            <InboxSection title="Inbox" items={unpinnedItems} onTogglePinned={togglePinned} onOpenArtifact={openArtifact} onOpenChat={openChat} />
+            <InboxSection title="Pinned" items={pinnedItems} expandedIds={expandedIds} onTogglePinned={togglePinned} onToggleExpanded={toggleExpanded} onOpenChat={openChat} onOpenArtifact={openArtifact} />
+            <InboxSection title="Inbox" items={unpinnedItems} expandedIds={expandedIds} onTogglePinned={togglePinned} onToggleExpanded={toggleExpanded} onOpenChat={openChat} onOpenArtifact={openArtifact} />
           </>
         )}
       </div>

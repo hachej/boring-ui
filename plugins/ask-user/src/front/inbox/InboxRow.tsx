@@ -2,7 +2,7 @@
 
 import { MessageSquare, Star } from "lucide-react"
 import { cn } from "@hachej/boring-workspace"
-import { formatInboxTime, inboxItemDate, inboxItemSender, type WorkspaceInboxItemViewModel } from "./inboxItemModel"
+import { formatInboxTime, inboxItemDate, inboxItemSender, type WorkspaceInboxItemArtifactTarget, type WorkspaceInboxItemViewModel } from "./inboxItemModel"
 
 function badgeTone(kind: WorkspaceInboxItemViewModel["kind"]): string {
   switch (kind) {
@@ -13,29 +13,49 @@ function badgeTone(kind: WorkspaceInboxItemViewModel["kind"]): string {
   }
 }
 
+function artifactLabel(artifact: WorkspaceInboxItemArtifactTarget, index: number): string {
+  if (artifact.label) return artifact.label
+  if (artifact.type === "surface") return artifact.target ?? artifact.surfaceKind
+  return artifact.panelComponentId || `Artifact ${index + 1}`
+}
+
 export function InboxRow({
   item,
+  expanded,
   onTogglePinned,
-  onOpenArtifact,
+  onToggleExpanded,
   onOpenChat,
+  onOpenArtifact,
 }: {
   item: WorkspaceInboxItemViewModel
+  expanded: boolean
   onTogglePinned: (id: string) => void
-  onOpenArtifact: (item: WorkspaceInboxItemViewModel) => void
+  onToggleExpanded: (id: string) => void
   onOpenChat: (item: WorkspaceInboxItemViewModel) => void
+  onOpenArtifact: (item: WorkspaceInboxItemViewModel, artifact: WorkspaceInboxItemArtifactTarget) => void
 }) {
   const subtitle = [item.sessionId ? `Session ${item.sessionId}` : null, item.targetLabel || null].filter(Boolean).join(" · ")
+  const artifacts = item.artifacts
+  const canExpand = artifacts.length > 1
+  const activateRow = () => {
+    if (artifacts.length === 1) {
+      onOpenArtifact(item, artifacts[0]!)
+      return
+    }
+    if (canExpand) onToggleExpanded(item.id)
+  }
   return (
     <li>
       <div
         role="button"
         tabIndex={0}
         className="group flex h-11 w-full items-center gap-2 overflow-hidden px-4 text-left text-[12px] transition-colors hover:bg-muted/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
-        onClick={() => onOpenArtifact(item)}
+        aria-expanded={canExpand ? expanded : undefined}
+        onClick={activateRow}
         onKeyDown={(event) => {
           if (event.key !== "Enter" && event.key !== " ") return
           event.preventDefault()
-          onOpenArtifact(item)
+          activateRow()
         }}
       >
         <span className="size-2 shrink-0 rounded-full bg-[color:var(--accent)]" />
@@ -79,6 +99,25 @@ export function InboxRow({
           <Star className={cn("size-3.5", item.pinned && "fill-current")} strokeWidth={1.75} />
         </button>
       </div>
+      {expanded && canExpand ? (
+        <div className="ml-[calc(18px+1rem)] border-l border-border/60 px-4 pb-3 pt-1">
+          <div className="flex flex-wrap gap-2" aria-label={`Artifacts for ${item.title}`}>
+            {artifacts.map((artifact, index) => {
+              const label = artifactLabel(artifact, index)
+              return (
+                <button
+                  key={artifact.id ?? `${artifact.type}:${label}:${index}`}
+                  type="button"
+                  className="rounded-md border border-border/70 bg-background px-2.5 py-1.5 text-[11px] font-medium text-foreground shadow-sm transition-colors hover:bg-muted/70 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
+                  onClick={() => onOpenArtifact(item, artifact)}
+                >
+                  {label}
+                </button>
+              )
+            })}
+          </div>
+        </div>
+      ) : null}
     </li>
   )
 }

@@ -177,21 +177,21 @@ function panelInstanceId(prefix: string, id: string): string {
 
 function createInboxShellApi(shell: BoringFrontAppLeftActionOverlayProps["shell"]): WorkspaceInboxShellApi {
   return {
-    openInboxArtifact(item: WorkspaceInboxItem) {
-      if (!item.artifact) return { success: false, reason: "no-artifact", message: "This inbox item has no artifact target." }
-      if (item.artifact.type === "panel") {
+    openInboxArtifact(item: WorkspaceInboxItem, artifact = item.artifact ?? undefined) {
+      if (!artifact) return { success: false, reason: "no-artifact", message: "This inbox item has no artifact target." }
+      if (artifact.type === "panel") {
         shell.openPanel({
-          id: panelInstanceId(item.artifact.panelComponentId, item.id),
-          component: item.artifact.panelComponentId,
-          title: item.title,
-          params: item.artifact.params,
+          id: panelInstanceId(artifact.panelComponentId, artifact.id ?? item.id),
+          component: artifact.panelComponentId,
+          title: artifact.label ?? item.title,
+          params: artifact.params,
         })
         return { success: true }
       }
       shell.openSurface({
-        kind: item.artifact.surfaceKind,
-        target: item.artifact.target,
-        meta: item.sessionId ? { sessionId: item.sessionId, openOnlyWhenSessionOpen: true } : {},
+        kind: artifact.surfaceKind,
+        target: artifact.target,
+        meta: item.sessionId ? { sessionId: item.sessionId } : {},
       })
       return { success: true }
     },

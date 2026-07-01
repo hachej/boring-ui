@@ -52,10 +52,15 @@ export type HumanActionInboxSourceMetadata =
   | { type: "review"; id: string; label: string }
   | { type: "generic"; id?: string; label: string }
 
+export type HumanActionInboxArtifactMetadata =
+  | { type: "surface"; id?: string; label?: string; surfaceKind: string; target?: string; params?: Record<string, unknown> }
+  | { type: "panel"; id?: string; label?: string; panelComponentId: string; params?: Record<string, unknown> }
+
 export type HumanActionInboxMetadata = {
   kind: "question" | "review" | "approval" | "notice"
   sourceLabel: string
   source?: HumanActionInboxSourceMetadata
+  artifacts?: HumanActionInboxArtifactMetadata[]
   createdAt?: string
   updatedAt?: string
   priority?: number
@@ -95,11 +100,41 @@ function humanActionKind(action: AskUserTargetHumanAction | undefined): HumanAct
   return "ack"
 }
 
-function targetArtifact(action: AskUserTargetHumanAction | undefined, questionId: string): HumanActionView["artifact"] {
-  if (!action) return { surfaceKind: ASK_USER_SURFACE_KIND, target: questionId, label: "Questions" }
-  if (action.target.type === "file") return { surfaceKind: "workspace.open.path", target: action.target.path, label: action.target.label ?? action.target.path }
-  if (action.target.type === "surface") return { surfaceKind: action.target.surfaceKind, target: action.target.target, label: action.target.label ?? action.target.target }
-  return undefined
+function artifactLabel(target: AskUserTargetHumanAction["target"], fallback?: string): string {
+  if (target.label) return target.label
+  if (target.type === "file") return target.path
+  if (target.type === "surface") return target.target
+  return fallback ?? target.component
+}
+
+function targetArtifact(target: AskUserTargetHumanAction["target"], label?: string, id?: string): HumanActionInboxArtifactMetadata {
+  if (target.type === "file") return { type: "surface", ...(id ? { id } : {}), label: label ?? artifactLabel(target), surfaceKind: "workspace.open.path", target: target.path }
+  if (target.type === "surface") return { type: "surface", ...(id ? { id } : {}), label: label ?? artifactLabel(target), surfaceKind: target.surfaceKind, target: target.target }
+  return { type: "panel", ...(id ? { id } : {}), label: label ?? artifactLabel(target), panelComponentId: target.component, ...(target.instanceId ? { params: { instanceId: target.instanceId } } : {}) }
+}
+
+function artifactKey(artifact: HumanActionInboxArtifactMetadata): string {
+  if (artifact.type === "panel") return `panel:${artifact.panelComponentId}:${JSON.stringify(artifact.params ?? {})}`
+  return `surface:${artifact.surfaceKind}:${artifact.target ?? ""}`
+}
+
+function actionArtifacts(action: AskUserTargetHumanAction | undefined, questionId: string): HumanActionInboxArtifactMetadata[] {
+  if (!action) return [{ type: "surface", id: "question", surfaceKind: ASK_USER_SURFACE_KIND, target: questionId, label: "Questions" }]
+  const artifacts: HumanActionInboxArtifactMetadata[] = [targetArtifact(action.target, undefined, "target")]
+  for (const artifact of action.artifacts ?? []) artifacts.push(targetArtifact(artifact.target, artifact.label, artifact.id))
+  const seen = new Set<string>()
+  return artifacts.filter((artifact) => {
+    const key = artifactKey(artifact)
+    if (seen.has(key)) return false
+    seen.add(key)
+    return true
+  })
+}
+
+function primaryArtifact(action: AskUserTargetHumanAction | undefined, questionId: string): HumanActionView["artifact"] {
+  const artifact = actionArtifacts(action, questionId)[0]
+  if (!artifact || artifact.type !== "surface") return undefined
+  return { surfaceKind: artifact.surfaceKind, target: artifact.target, label: artifact.label }
 }
 
 export function askUserQuestionToHumanActionView(
@@ -121,7 +156,7 @@ export function askUserQuestionToHumanActionView(
     blocking: true,
     createdAt: question.createdAt,
     updatedAt: question.updatedAt,
-    artifact: targetArtifact(targetAction, question.questionId),
+    artifact: primaryArtifact(targetAction, question.questionId),
     response: targetAction?.kind === "review"
       ? { mode: "review", actions: targetAction.actions }
       : { mode: "form", schema: question.schema, submitLabel: question.schema?.submitLabel },
@@ -137,6 +172,7 @@ export function askUserHumanActionToBlockerProjection(args: {
   if (hint.status && hint.status !== "ready") return null
 
   const action = question ? askUserQuestionToHumanActionView(question) : null
+  const artifacts = actionArtifacts(question?.humanAction, hint.questionId)
   const displayKind = action?.kind === "review" || action?.kind === "approval" ? action.kind : "question"
   const openLabel = displayKind === "review" ? "Open review target" : displayKind === "approval" ? "Open approval target" : "Open Questions"
   const actions = question
@@ -157,6 +193,7 @@ export function askUserHumanActionToBlockerProjection(args: {
       kind: displayKind,
       sourceLabel: displayKind,
       source: { type: "plugin", id: ASK_USER_PLUGIN_ID, label: displayKind },
+      artifacts,
       createdAt: action?.createdAt,
       updatedAt: action?.updatedAt ?? action?.createdAt,
       priority: action?.priority ?? 10,

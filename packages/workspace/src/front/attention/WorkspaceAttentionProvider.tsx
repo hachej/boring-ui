@@ -30,11 +30,17 @@ export type WorkspaceAttentionInboxSourceMetadata =
   | { type: "review"; id: string; label: string }
   | { type: "generic"; id?: string; label: string }
 
+export type WorkspaceAttentionInboxArtifactMetadata =
+  | { type: "surface"; id?: string; label?: string; surfaceKind: string; target?: string; params?: Record<string, unknown> }
+  | { type: "panel"; id?: string; label?: string; panelComponentId: string; params?: Record<string, unknown> }
+
 export type WorkspaceAttentionInboxMetadata = {
   kind: "question" | "review" | "approval" | "notice"
   sourceLabel: string
   /** Explicit generic provenance for Inbox rows. Plugins should prefer this over reason parsing. */
   source?: WorkspaceAttentionInboxSourceMetadata
+  /** Pointer-only artifacts the human can inspect before deciding. No raw artifact/file content. */
+  artifacts?: WorkspaceAttentionInboxArtifactMetadata[]
   createdAt?: string | number | Date
   updatedAt?: string | number | Date
   priority?: number

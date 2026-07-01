@@ -1,21 +1,25 @@
 "use client"
 
 import { Pin } from "lucide-react"
-import type { WorkspaceInboxItemViewModel } from "./inboxItemModel"
+import type { WorkspaceInboxItemArtifactTarget, WorkspaceInboxItemViewModel } from "./inboxItemModel"
 import { InboxRow } from "./InboxRow"
 
 export function InboxSection({
   title,
   items,
+  expandedIds,
   onTogglePinned,
-  onOpenArtifact,
+  onToggleExpanded,
   onOpenChat,
+  onOpenArtifact,
 }: {
   title: string
   items: WorkspaceInboxItemViewModel[]
+  expandedIds: ReadonlySet<string>
   onTogglePinned: (id: string) => void
-  onOpenArtifact: (item: WorkspaceInboxItemViewModel) => void
+  onToggleExpanded: (id: string) => void
   onOpenChat: (item: WorkspaceInboxItemViewModel) => void
+  onOpenArtifact: (item: WorkspaceInboxItemViewModel, artifact: WorkspaceInboxItemArtifactTarget) => void
 }) {
   if (items.length === 0) return null
   return (
@@ -29,9 +33,11 @@ export function InboxSection({
           <InboxRow
             key={item.id}
             item={item}
+            expanded={expandedIds.has(item.id)}
             onTogglePinned={onTogglePinned}
-            onOpenArtifact={onOpenArtifact}
+            onToggleExpanded={onToggleExpanded}
             onOpenChat={onOpenChat}
+            onOpenArtifact={onOpenArtifact}
           />
         ))}
       </ul>
