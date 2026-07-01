@@ -9,6 +9,13 @@ export {
 } from "./testing/companyContextFixtureProvider";
 
 export {
+  MANAGEMENT_PROJECTION_BINDING_REQUIRED_CODE,
+  MANAGEMENT_PROJECTION_INVALID_PATH_CODE,
+  ManagementProjectionOperationError,
+  createManagementProjectionOperations,
+} from "./managementProjectionOperations";
+
+export {
   READONLY_PROJECTION_BINDING_NOT_FOUND_CODE,
   READONLY_PROJECTION_INVALID_PATH_CODE,
   READONLY_PROJECTION_MUTATION_CODE,
@@ -16,7 +23,10 @@ export {
   createReadonlyProjectionOperations,
 } from "./readonlyProjectionOperations";
 
-export { checkReadonlyProjectionConformance } from "./testing/readonlyProjectionConformance";
+export type {
+  ManagementProjectionOperationMetadata,
+  ManagementProjectionOperations,
+} from "./managementProjectionOperations";
 
 export type {
   ReadonlyProjectionOperationMetadata,
@@ -32,6 +42,21 @@ export type {
   CompanyContextFixtureProjectionPolicy,
   CompanyContextFixtureProviderOptions,
 } from "./testing/companyContextFixtureProvider";
+
+export {
+  ScopedFilesystemRuntimeBindingManager,
+  filesystemRuntimeScopeKey,
+} from "./runtimeBindingManager";
+
+export { checkReadonlyProjectionConformance } from "./testing/readonlyProjectionConformance";
+
+export type {
+  FilesystemRuntimeLifecycleEvent,
+  PreparedBindingSelector,
+  ScopedFilesystemRuntimeBindingManagerOptions,
+  ScopedPreparedFilesystemBinding,
+  ScopedRuntimeBindingPlan,
+} from "./runtimeBindingManager";
 
 export type {
   ReadonlyProjectionConformanceResult,
