@@ -42,6 +42,12 @@ export type WorkspaceAttentionBlocker = {
   sessionId?: string
   /** Optional generic session-row badge contributed by the plugin that owns this attention. */
   sessionBadge?: WorkspaceAttentionSessionBadge
+  /**
+   * Remove this blocker once its workspace chat session disappears from the
+   * authoritative session list. Leave unset for external inbox items whose
+   * `sessionId` is a source/thread identifier rather than a local chat id.
+   */
+  pruneWhenSessionMissing?: boolean
   /** Explicit inbox projection metadata. New inbox-aware plugins should provide this instead of relying on reason parsing. */
   inbox?: WorkspaceAttentionInboxMetadata
   actions?: WorkspaceAttentionBlockerAction[]
@@ -75,7 +81,7 @@ export interface WorkspaceAttentionContextValue {
 
 export type WorkspaceAttentionProviderProps = {
   children: ReactNode
-  /** Authoritative set of existing chat sessions. Session-scoped blockers outside this set are stale and removed. */
+  /** Authoritative set of existing chat sessions. Blockers that opt into pruning outside this set are stale and removed. */
   knownSessionIds?: readonly string[]
   /** Keep false while sessions are still loading/paginated so valid blockers are not pruned early. */
   knownSessionsAuthoritative?: boolean
@@ -103,10 +109,13 @@ export function WorkspaceAttentionProvider({ children, knownSessionIds, knownSes
     setBlockers((current) => current.filter((item) => item.id !== id))
   }, [])
   useEffect(() => {
-    if (!knownSessionIds || !knownSessionsAuthoritative) return
-    const known = new Set(knownSessionIds)
-    setBlockers((current) => current.filter((blocker) => !blocker.sessionId || known.has(blocker.sessionId)))
-  }, [knownSessionIds, knownSessionKey, knownSessionsAuthoritative])
+    if (knownSessionKey === undefined || !knownSessionsAuthoritative) return
+    const known = new Set(knownSessionKey.length > 0 ? knownSessionKey.split("\0") : [])
+    setBlockers((current) => {
+      const next = current.filter((blocker) => !blocker.pruneWhenSessionMissing || !blocker.sessionId || known.has(blocker.sessionId))
+      return next.length === current.length ? current : next
+    })
+  }, [knownSessionKey, knownSessionsAuthoritative])
   const value = useMemo<WorkspaceAttentionContextValue>(
     () => ({ blockers, addBlocker, removeBlocker }),
     [blockers, addBlocker, removeBlocker],

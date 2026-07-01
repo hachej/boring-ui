@@ -39,7 +39,7 @@ export function useWorkspaceInboxShellController({
         params: {
           kind: item.artifact.surfaceKind,
           target: item.artifact.target,
-          meta: item.sessionId ? { sessionId: item.sessionId, openOnlyWhenSessionOpen: true } : {},
+          meta: item.sessionId ? { sessionId: item.sessionId } : {},
         },
       }, surfaceDispatch)
       return { success: true }
