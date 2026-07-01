@@ -1,0 +1,17 @@
+metric,runtime,value,unit,note
+Known vulnerabilities found,Pi,21,count,Pi found 21 of 86 known corpus entries
+Known vulnerabilities found,Claude SDK,17,count,Claude SDK found 17 of 86 known corpus entries
+Final findings emitted,Pi,24,count,Pi emitted 24 final findings
+Final findings emitted,Claude SDK,17,count,Claude SDK emitted 17 final findings
+Total recorded cost,Pi,21.31,usd,Includes scan and auxiliary verifier work
+Total recorded cost,Claude SDK,79.56,usd,Includes scan and auxiliary verifier work
+Scan cost,Pi,17.39,usd,Scan work only
+Scan cost,Claude SDK,61.08,usd,Scan work only
+Turns,Pi,426,count,Trace-level turns across 156 chunks
+Turns,Claude SDK,375,count,Trace-level turns across 156 chunks
+Tool executions,Pi,371,count,Trace-level tool executions across 156 chunks
+Tool executions,Claude SDK,219,count,Trace-level tool executions across 156 chunks
+Input tokens per turn,Pi,12.1,k_tokens,Approx scan input tokens per turn
+Input tokens per turn,Claude SDK,60.0,k_tokens,Approx scan input tokens per turn
+No-finding chunk input,Pi,25.8,k_tokens,Average input tokens on no-finding chunks
+No-finding chunk input,Claude SDK,118.4,k_tokens,Average input tokens on no-finding chunks
