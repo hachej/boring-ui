@@ -1579,7 +1579,8 @@ describe("WorkspaceAgentFront", () => {
     })
   })
 
-  it("does not auto-open an openOnlyWhenSessionOpen surface for a closed chat session", async () => {
+  it("loads the target chat session before opening a session-bound surface", async () => {
+    const onSwitchSession = vi.fn()
     render(
       <WorkspaceAgentFront
         workspaceId="session-gated-surface"
@@ -1589,7 +1590,7 @@ describe("WorkspaceAgentFront", () => {
           { id: "s2", title: "Closed", updatedAt: new Date(0).toISOString(), turnCount: 0 },
         ]}
         activeSessionId="s1"
-        onSwitchSession={vi.fn()}
+        onSwitchSession={onSwitchSession}
         persistenceEnabled={false}
       />,
     )
@@ -1604,17 +1605,9 @@ describe("WorkspaceAgentFront", () => {
       } satisfies UiCommand,
     }))
 
-    await new Promise((resolve) => setTimeout(resolve, 20))
-    expect(screen.queryByLabelText("Surface")).not.toBeInTheDocument()
-
-    window.dispatchEvent(new CustomEvent(UI_COMMAND_EVENT, {
-      detail: {
-        kind: "openSurface",
-        params: { kind: "questions", target: "q1", meta: { sessionId: "s1", openOnlyWhenSessionOpen: true } },
-      } satisfies UiCommand,
-    }))
-
     await waitFor(() => {
+      expect(visibleChatSessionIds()).toEqual(["s2"])
+      expect(onSwitchSession).toHaveBeenCalledWith("s2")
       expect(screen.getByLabelText("Surface")).toHaveAttribute("aria-hidden", "false")
     })
   })
