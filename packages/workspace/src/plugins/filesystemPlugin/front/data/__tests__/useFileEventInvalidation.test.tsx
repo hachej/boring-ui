@@ -47,10 +47,10 @@ describe("useFileEventInvalidation", () => {
     events.emit(filesystemEvents.changed, { ...agentMeta("tc-1"), path: "src/a.ts" })
 
     await waitFor(() => expect(invalidate).toHaveBeenCalledWith({
-      queryKey: [TEST_BASE, TEST_WORKSPACE_ID, "files", "src/a.ts"],
+      queryKey: [TEST_BASE, TEST_WORKSPACE_ID, "files", "user", "src/a.ts"],
     }))
     expect(invalidate).toHaveBeenCalledWith({
-      queryKey: [TEST_BASE, TEST_WORKSPACE_ID, "stat", "src/a.ts"],
+      queryKey: [TEST_BASE, TEST_WORKSPACE_ID, "stat", "user", "src/a.ts"],
     })
     // Tree/search are NOT touched on a content-only change.
     const calls = queryKeyCalls(invalidate)
@@ -66,10 +66,10 @@ describe("useFileEventInvalidation", () => {
       queryKey: [TEST_BASE, TEST_WORKSPACE_ID, "tree", "src"],
     }))
     expect(invalidate).toHaveBeenCalledWith({
-      queryKey: [TEST_BASE, TEST_WORKSPACE_ID, "files", "src/new.ts"],
+      queryKey: [TEST_BASE, TEST_WORKSPACE_ID, "files", "user", "src/new.ts"],
     })
     expect(invalidate).toHaveBeenCalledWith({
-      queryKey: [TEST_BASE, TEST_WORKSPACE_ID, "stat", "src/new.ts"],
+      queryKey: [TEST_BASE, TEST_WORKSPACE_ID, "stat", "user", "src/new.ts"],
     })
   })
 
@@ -122,10 +122,10 @@ describe("useFileEventInvalidation", () => {
       queryKey: [TEST_BASE, TEST_WORKSPACE_ID, "tree", "docs"],
     })
     expect(invalidate).toHaveBeenCalledWith({
-      queryKey: [TEST_BASE, TEST_WORKSPACE_ID, "files", "old.ts"],
+      queryKey: [TEST_BASE, TEST_WORKSPACE_ID, "files", "user", "old.ts"],
     })
     expect(invalidate).toHaveBeenCalledWith({
-      queryKey: [TEST_BASE, TEST_WORKSPACE_ID, "files", "docs/new.ts"],
+      queryKey: [TEST_BASE, TEST_WORKSPACE_ID, "files", "user", "docs/new.ts"],
     })
     expect(invalidate).toHaveBeenCalledWith({
       queryKey: [TEST_BASE, TEST_WORKSPACE_ID, "search"],
@@ -144,17 +144,17 @@ describe("useFileEventInvalidation", () => {
     const matches = (key: readonly unknown[]) => predicates[0]({ queryKey: key })
 
     // Descendants under the OLD prefix are invalidated…
-    expect(matches([TEST_BASE, TEST_WORKSPACE_ID, "files", "src/deep/a.ts"])).toBe(true)
-    expect(matches([TEST_BASE, TEST_WORKSPACE_ID, "stat", "src/a.ts"])).toBe(true)
+    expect(matches([TEST_BASE, TEST_WORKSPACE_ID, "files", "user", "src/deep/a.ts"])).toBe(true)
+    expect(matches([TEST_BASE, TEST_WORKSPACE_ID, "stat", "user", "src/a.ts"])).toBe(true)
     expect(matches([TEST_BASE, TEST_WORKSPACE_ID, "tree", "src/deep"])).toBe(true)
     // The moved dir's OWN listing is dead too (panes mounted at rootDir="src").
     expect(matches([TEST_BASE, TEST_WORKSPACE_ID, "tree", "src"])).toBe(true)
     // …unrelated paths, the new prefix, and other workspaces are not.
-    expect(matches([TEST_BASE, TEST_WORKSPACE_ID, "files", "other/a.ts"])).toBe(false)
-    expect(matches([TEST_BASE, TEST_WORKSPACE_ID, "files", "lib/a.ts"])).toBe(false)
-    expect(matches([TEST_BASE, "other-workspace", "files", "src/a.ts"])).toBe(false)
+    expect(matches([TEST_BASE, TEST_WORKSPACE_ID, "files", "user", "other/a.ts"])).toBe(false)
+    expect(matches([TEST_BASE, TEST_WORKSPACE_ID, "files", "user", "lib/a.ts"])).toBe(false)
+    expect(matches([TEST_BASE, "other-workspace", "files", "user", "src/a.ts"])).toBe(false)
     // Prefix match is path-segment-aware: "src-other" is not under "src/".
-    expect(matches([TEST_BASE, TEST_WORKSPACE_ID, "files", "src-other/a.ts"])).toBe(false)
+    expect(matches([TEST_BASE, TEST_WORKSPACE_ID, "files", "user", "src-other/a.ts"])).toBe(false)
   })
 
   it("filesystem deleted invalidates parent tree listing + files(path) + search", async () => {
@@ -165,7 +165,7 @@ describe("useFileEventInvalidation", () => {
       queryKey: [TEST_BASE, TEST_WORKSPACE_ID, "tree", "."],
     }))
     expect(invalidate).toHaveBeenCalledWith({
-      queryKey: [TEST_BASE, TEST_WORKSPACE_ID, "files", "doomed.ts"],
+      queryKey: [TEST_BASE, TEST_WORKSPACE_ID, "files", "user", "doomed.ts"],
     })
     expect(invalidate).toHaveBeenCalledWith({
       queryKey: [TEST_BASE, TEST_WORKSPACE_ID, "search"],

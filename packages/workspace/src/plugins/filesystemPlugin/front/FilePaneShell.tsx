@@ -4,7 +4,8 @@ import { lazy, Suspense } from "react"
 import type { ReactNode } from "react"
 import { EmptyState, ErrorState, Spinner } from "@hachej/boring-ui-kit"
 import { ConflictBanner } from "./ConflictBanner"
-import type { FileConflictError } from "./data/fetchClient"
+import { FetchError, type FileConflictError } from "./data/fetchClient"
+import { redactedFilesystemErrorMessage } from "./data/filesystemErrorRedaction"
 
 export interface FilePaneShellProps {
   /** The file path being edited (for "no file selected" check). */
@@ -36,6 +37,8 @@ export interface FilePaneShellProps {
   loadingFallback?: ReactNode
   /** Custom error message (optional). */
   errorMessage?: string
+  /** Filesystem identity for disclosure-safe governed filesystem error rendering. */
+  filesystem?: string
   /** Wrapper className for the root element. */
   className?: string
 }
@@ -85,6 +88,7 @@ export function FilePaneShell({
   editorProps = {},
   loadingFallback,
   errorMessage,
+  filesystem,
   className,
 }: FilePaneShellProps) {
   // No file selected
@@ -98,9 +102,12 @@ export function FilePaneShell({
 
   // Error state
   if (error) {
+    const description = error instanceof FetchError
+      ? redactedFilesystemErrorMessage(filesystem, error.status, error.message)
+      : error.message
     return (
       <div className="flex h-full items-center justify-center p-6">
-        <ErrorState title="Failed to load file" description={errorMessage ?? error.message} />
+        <ErrorState title="Failed to load file" description={errorMessage ?? description} />
       </div>
     )
   }

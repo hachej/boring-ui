@@ -280,7 +280,7 @@ describe("useFilePane", () => {
       renderHook(() => useFilePane({ path: "   " }), { wrapper })
       await act(async () => {})
 
-      expect(mockFileContent).toHaveBeenCalledWith(null)
+      expect(mockFileContent).toHaveBeenCalledWith(null, { filesystem: "user" })
       expect(mockWriteFile).not.toHaveBeenCalled()
     })
 
@@ -288,7 +288,30 @@ describe("useFilePane", () => {
       renderHook(() => useFilePane({ path: " notes.md " }), { wrapper })
       await act(async () => {})
 
-      expect(mockFileContent).toHaveBeenCalledWith(" notes.md ")
+      expect(mockFileContent).toHaveBeenCalledWith(" notes.md ", { filesystem: "user" })
+    })
+
+    it("separates same-path panes by filesystem for queries and writes", async () => {
+      const { result, rerender } = renderHook(
+        ({ filesystem }) => useFilePane({ path: "same.md", filesystem }),
+        { wrapper, initialProps: { filesystem: "user" as "user" | "company_context" } },
+      )
+      await act(async () => {})
+      expect(mockFileContent).toHaveBeenCalledWith("same.md", { filesystem: "user" })
+
+      rerender({ filesystem: "company_context" })
+      await act(async () => {})
+      expect(mockFileContent).toHaveBeenCalledWith("same.md", { filesystem: "company_context" })
+
+      act(() => result.current.setContent("company edits"))
+      await act(async () => {
+        await result.current.flushSave()
+      })
+      expect(mockWriteFile).toHaveBeenCalledWith(expect.objectContaining({
+        filesystem: "company_context",
+        path: "same.md",
+        content: "company edits",
+      }))
     })
   })
 
@@ -297,7 +320,7 @@ describe("useFilePane", () => {
       renderHook(() => useFilePane({ path: "deck/new.md", createIfMissing: "# Default\n" }), { wrapper })
       await act(async () => {})
 
-      expect(mockFileContent).toHaveBeenCalledWith("deck/new.md", { createIfMissing: "# Default\n" })
+      expect(mockFileContent).toHaveBeenCalledWith("deck/new.md", { filesystem: "user", createIfMissing: "# Default\n" })
       expect(mockWriteFile).not.toHaveBeenCalled()
     })
   })
