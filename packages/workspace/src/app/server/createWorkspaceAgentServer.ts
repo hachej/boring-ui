@@ -334,6 +334,7 @@ export interface WorkspaceAgentServerPluginCollection {
   routeContributions: WorkspaceRouteContribution[]
   workspaceBridgeHandlers: WorkspaceServerPlugin["workspaceBridgeHandlers"]
   preservedUiStateKeys: string[]
+  defaultPluginPackagePaths: string[]
   agentOptions: Pick<
     WorkspaceAgentCreateOptions,
     "extraTools" | "systemPromptAppend" | "pi"
@@ -347,6 +348,15 @@ export interface CollectWorkspaceAgentServerPluginsOptions
   pi?: WorkspaceAgentPiOptions
   /** Whether to include built-in boring plugin-authoring provisioning/prompt resources. */
   installPluginAuthoring?: boolean
+}
+
+export interface ResolveWorkspaceAgentServerPluginCollectionOptions
+  extends Omit<CollectWorkspaceAgentServerPluginsOptions, "plugins"> {
+  workspaceRoot: string
+  bridge: ReturnType<typeof createInMemoryBridge>
+  defaultPluginPackages?: string[]
+  appRoot?: string
+  plugins?: WorkspacePluginEntry[]
 }
 
 export function buildWorkspaceContextPrompt(options: { pluginAuthoringEnabled?: boolean } = {}): string {
@@ -399,6 +409,7 @@ export function collectWorkspaceAgentServerPlugins(
     routeContributions: result.routeContributions,
     workspaceBridgeHandlers: result.workspaceBridgeHandlers,
     preservedUiStateKeys: result.preservedUiStateKeys,
+    defaultPluginPackagePaths: [],
     agentOptions: {
       extraTools: result.agentTools,
       systemPromptAppend: [opts.systemPromptAppend, result.systemPromptAppend]
@@ -416,6 +427,36 @@ export function collectWorkspaceAgentServerPlugins(
       },
     },
   }
+}
+
+export async function resolveWorkspaceAgentServerPluginCollection(
+  opts: ResolveWorkspaceAgentServerPluginCollectionOptions,
+): Promise<WorkspaceAgentServerPluginCollection> {
+  const ctx: WorkspaceAgentServerPluginContext = { workspaceRoot: opts.workspaceRoot, bridge: opts.bridge }
+  const defaultPluginPackagePaths = resolveDefaultWorkspacePluginPackagePaths({
+    workspaceRoot: opts.workspaceRoot,
+    defaultPluginPackages: opts.defaultPluginPackages,
+    anchorDir: opts.appRoot,
+  })
+  const defaultPluginDirEntries: WorkspacePluginEntry[] = defaultPluginPackagePaths
+    .map((dir) => ({ dir, hotReload: true, trust: "internal" as const }))
+    .filter((entry) => hasDirServerPlugin(entry))
+  const allPluginEntries: WorkspacePluginEntry[] = [
+    ...defaultPluginDirEntries,
+    ...(opts.plugins ?? []),
+  ]
+  const resolvedPlugins = await Promise.all(
+    allPluginEntries.map(async (entry) => {
+      const plugin = await resolveOnePluginEntry<WorkspaceServerPlugin>(entry, ctx)
+      assertWorkspaceBridgeHandlersTrusted(plugin, entry)
+      return plugin
+    }),
+  )
+  const collection = collectWorkspaceAgentServerPlugins({
+    ...opts,
+    plugins: resolvedPlugins,
+  })
+  return { ...collection, defaultPluginPackagePaths }
 }
 
 export async function provisionWorkspaceAgentServer(opts: {
@@ -644,45 +685,23 @@ export async function createWorkspaceAgentServer(
   const uiTools = createWorkspaceUiTools(bridge, {
     workspaceRoot: validateUiPaths ? workspaceRoot : undefined,
   })
-  const ctx: WorkspaceAgentServerPluginContext = { workspaceRoot, bridge }
-
-  // Resolve app-default plugin packages (explicit list set in host boot
-  // code — the server-side mirror of the app's static front imports). Each
-  // entry is resolved to an absolute package dir. All default package dirs
-  // flow into the boring asset manager + dynamic Pi scan; only packages
-  // that actually declare/provide a server entry flow into the server-side
-  // install array. Front/Pi-only default packages must not be forced through
-  // a server import.
-  const defaultPluginPackagePaths = resolveDefaultWorkspacePluginPackagePaths({
-    workspaceRoot,
-    defaultPluginPackages: opts.defaultPluginPackages,
-    anchorDir: opts.appRoot,
-  })
-  const defaultPluginDirEntries: WorkspacePluginEntry[] = defaultPluginPackagePaths
-    .map((dir) => ({ dir, hotReload: true, trust: "internal" as const }))
-    .filter((entry) => hasDirServerPlugin(entry))
-
-  const allPluginEntries: WorkspacePluginEntry[] = [
-    ...defaultPluginDirEntries,
-    ...(opts.plugins ?? []),
-  ]
-  // Each entry (pre-built plugin or { dir, ... }) is resolved by
-  // resolveOnePluginEntry. Same logic serves rebuilds on /reload.
-  const resolvedPlugins = await Promise.all(
-    allPluginEntries.map(async (entry) => {
-      const plugin = await resolveOnePluginEntry<WorkspaceServerPlugin>(entry, ctx)
-      assertWorkspaceBridgeHandlersTrusted(plugin, entry)
-      return plugin
-    }),
-  )
   const pluginAuthoringEnabled = externalPluginsEnabled
     && (opts.installPluginAuthoring ?? workspaceFsCapability === "strong")
     && !(opts.excludeDefaults ?? []).includes("boring-ui-plugin-cli-package")
-  const pluginCollection = collectWorkspaceAgentServerPlugins({
+  const pluginCollection = await resolveWorkspaceAgentServerPluginCollection({
     ...opts,
-    plugins: resolvedPlugins,
+    workspaceRoot,
+    bridge,
     installPluginAuthoring: pluginAuthoringEnabled,
   })
+  const defaultPluginPackagePaths = pluginCollection.defaultPluginPackagePaths
+  const ctx: WorkspaceAgentServerPluginContext = { workspaceRoot, bridge }
+  const allPluginEntries: WorkspacePluginEntry[] = [
+    ...defaultPluginPackagePaths
+      .map((dir) => ({ dir, hotReload: true, trust: "internal" as const }))
+      .filter((entry) => hasDirServerPlugin(entry)),
+    ...(opts.plugins ?? []),
+  ]
 
   const { registry: workspaceBridgeRegistry } = createWorkspaceBridgeRuntimeCore({
     registry: opts.workspaceBridge?.registry,
