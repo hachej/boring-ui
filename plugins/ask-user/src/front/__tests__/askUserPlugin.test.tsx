@@ -489,11 +489,13 @@ describe("askUserPlugin front shell", () => {
     await waitFor(() => expect(fetchMock.mock.calls.some(([url, init]) => String(url).endsWith("/api/v1/workspace-bridge/call") && String(init?.body).includes("ask-user.v1.cancel"))).toBe(true))
   })
 
-  it("registers surface resolver and no-topbar panel output", () => {
+  it("registers surface resolver, questions panel, and Inbox app action", () => {
     const panel = capturedPlugin.registrations.panels[0]!
     const resolver = capturedPlugin.registrations.surfaceResolvers[0]!
     expect(panel.id).toBe("ask-user.questions")
     expect(panel.chromeless).toBe(true)
+    expect(capturedPlugin.registrations.panels.map((entry) => entry.id)).toEqual(["ask-user.questions"])
+    expect(capturedPlugin.registrations.appLeftActions).toEqual([expect.objectContaining({ id: "ask-user.inbox", label: "Inbox" })])
     expect(resolver.resolve({ kind: "questions", target: "q1", meta: { sessionId: "default" } })).toMatchObject({ component: "ask-user.questions", id: "ask-user.questions", params: { questionId: "q1", sessionId: "default" } })
   })
 

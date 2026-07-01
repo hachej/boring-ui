@@ -1,7 +1,7 @@
 "use client"
 
 import { MessageSquare, Star } from "lucide-react"
-import { cn } from "../../../front/lib/utils"
+import { cn } from "@hachej/boring-workspace"
 import { formatInboxTime, inboxItemDate, inboxItemSender, type WorkspaceInboxItemViewModel } from "./inboxItemModel"
 
 function badgeTone(kind: WorkspaceInboxItemViewModel["kind"]): string {
