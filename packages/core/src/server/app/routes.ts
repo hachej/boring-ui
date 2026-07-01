@@ -6,6 +6,7 @@ import { buildRuntimeConfigPayload } from '../config/loadConfig.js'
 import { HttpError, ERROR_CODES } from '../../shared/errors.js'
 import { deleteUserCompletely } from '../auth/deleteUserCompletely.js'
 import type { Database } from '../db/connection.js'
+import { withUserSettingsWriteLock } from './userSettingsLocks.js'
 import type { UserStore, WorkspaceStore } from './types.js'
 
 export interface RoutesOptions {
@@ -16,6 +17,26 @@ export interface RoutesOptions {
 }
 
 const HEALTH_DB_TIMEOUT_MS = 2_000
+const SERVER_OWNED_USER_SETTINGS_PREFIX = '__server'
+
+export function stripServerOwnedUserSettings(next: Record<string, unknown>): Record<string, unknown> {
+  const sanitized = { ...next }
+  for (const key of Object.keys(sanitized)) {
+    if (key.startsWith(SERVER_OWNED_USER_SETTINGS_PREFIX)) delete sanitized[key]
+  }
+  return sanitized
+}
+
+export function preserveServerOwnedUserSettings(
+  next: Record<string, unknown>,
+  current: Record<string, unknown>,
+): Record<string, unknown> {
+  const sanitized = stripServerOwnedUserSettings(next)
+  for (const [key, value] of Object.entries(current)) {
+    if (key.startsWith(SERVER_OWNED_USER_SETTINGS_PREFIX)) sanitized[key] = value
+  }
+  return sanitized
+}
 
 async function pingDatabase(
   sqlClient: postgres.Sql,
@@ -108,11 +129,23 @@ const routesPlugin: FastifyPluginAsync<RoutesOptions> = async (app, opts) => {
       })
     }
 
-    const result = await userStore.putUserSettings(
-      request.user!.id,
-      app.config.appId,
-      parsed.data,
-    )
+    const userId = request.user!.id
+    const clientSettings = parsed.data.settings ? stripServerOwnedUserSettings(parsed.data.settings) : undefined
+    const result = userStore.putClientUserSettings
+      ? await userStore.putClientUserSettings(userId, app.config.appId, { ...parsed.data, ...(clientSettings ? { settings: clientSettings } : {}) })
+      : await withUserSettingsWriteLock(userId, app.config.appId, async () => {
+          const current = parsed.data.settings
+            ? await userStore.getUserSettings(userId, app.config.appId)
+            : undefined
+          const updates = parsed.data.settings
+            ? { ...parsed.data, settings: preserveServerOwnedUserSettings(parsed.data.settings, current?.settings ?? {}) }
+            : parsed.data
+          return await userStore.putUserSettings(
+            userId,
+            app.config.appId,
+            updates,
+          )
+        })
     reply.status(200)
     return result
   })

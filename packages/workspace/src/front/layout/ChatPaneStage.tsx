@@ -13,6 +13,8 @@ export interface ChatPaneStageProps {
   panes: ChatPaneDescriptor[]
   activePaneId?: string | null
   renderPane: (pane: ChatPaneDescriptor) => ReactNode
+  /** Optional host actions rendered in each pane header. */
+  topActions?: ReactNode
   onActivePaneChange?: (id: string) => void
   onClosePane?: (id: string) => void
   /**

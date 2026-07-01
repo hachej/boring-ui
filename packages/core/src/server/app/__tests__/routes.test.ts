@@ -359,6 +359,33 @@ describe('PUT /api/v1/me/settings', () => {
     expect(res.json().settings).toEqual({ theme: 'dark', locale: 'en-US' })
   })
 
+  it('preserves server-owned user settings keys across client writes', async () => {
+    const user = await createSessionUser('routes-reserved-settings')
+    await rawSql`
+      INSERT INTO user_settings (user_id, app_id, display_name, email, settings)
+      VALUES (${user.id}, 'test-app', '', ${user.email}, ${JSON.stringify({ __serverBoringMcpSourcesV1: { trusted: true }, theme: 'old' })}::jsonb)
+      ON CONFLICT (user_id, app_id) DO UPDATE SET settings = EXCLUDED.settings
+    `
+
+    const res = await app.inject({
+      method: 'PUT',
+      url: '/api/v1/me/settings',
+      headers: { cookie: user.cookie },
+      payload: { settings: { theme: 'dark', __serverBoringMcpSourcesV1: { forged: true }, __serverNewKey: 'blocked' } },
+    })
+
+    expect(res.statusCode).toBe(200)
+    expect(res.json().settings).toEqual({ theme: 'dark', __serverBoringMcpSourcesV1: { trusted: true } })
+
+    const second = await app.inject({
+      method: 'PUT',
+      url: '/api/v1/me/settings',
+      headers: { cookie: user.cookie },
+      payload: { settings: { locale: 'en-US' } },
+    })
+    expect(second.json().settings).toEqual({ locale: 'en-US', __serverBoringMcpSourcesV1: { trusted: true } })
+  })
+
   it('rejects email field (strict schema)', async () => {
     const res = await app.inject({
       method: 'PUT',

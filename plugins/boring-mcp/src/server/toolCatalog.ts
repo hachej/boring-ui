@@ -133,7 +133,7 @@ export function createBoringMcpToolCatalog(options: BoringMcpToolCatalogOptions)
       if (cached && cached.provider === source.provider) return cached
     }
 
-    const discoveredTools = await options.transport.listTools(source)
+    const discoveredTools = await options.transport.listTools(source, { refresh })
     const tools = discoveredTools.map((tool) => normalizeMcpCatalogTool(normalizedSourceId, source.provider, tool, options.templates))
     const snapshot = { sourceId: normalizedSourceId, provider: source.provider, tools }
     assertMcpPublicPayloadSecretFree(snapshot)

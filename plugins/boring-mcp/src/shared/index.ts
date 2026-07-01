@@ -78,7 +78,6 @@ export type McpSourceDto = Pick<
   | "credentialProvider"
   | "scopes"
   | "providerAccountLabel"
-  | "connectorRef"
   | "lastVerifiedAt"
   | "createdAt"
   | "updatedAt"
@@ -205,15 +204,18 @@ export function toMcpSourceDto(source: McpSource): McpSourceDto {
     credentialProvider: source.credentialProvider,
     scopes: source.scopes,
     providerAccountLabel: source.providerAccountLabel,
-    connectorRef: source.connectorRef,
     lastVerifiedAt: source.lastVerifiedAt,
     createdAt: source.createdAt,
     updatedAt: source.updatedAt,
   }
 }
 
+export interface McpTransportListToolsOptions {
+  refresh?: boolean
+}
+
 export interface McpTransportClient {
-  listTools(source: McpSource): Promise<McpDiscoveredTool[]>
+  listTools(source: McpSource, options?: McpTransportListToolsOptions): Promise<McpDiscoveredTool[]>
   listResources(source: McpSource): Promise<McpDiscoveredResource[]>
   readResource(source: McpSource, uri: string): Promise<unknown>
   callTool(source: McpSource, toolName: string, input: unknown): Promise<McpToolCallResult>

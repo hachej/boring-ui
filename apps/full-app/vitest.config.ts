@@ -12,6 +12,7 @@ export default defineConfig({
     ...boringAliases,
     alias: [
       ...boringAliases.alias,
+      { find: /^@hachej\/boring-core\/server$/, replacement: path.resolve(repoRoot, 'packages/core/src/server/index.ts') },
       { find: /^@hachej\/boring-mcp\/server$/, replacement: path.resolve(repoRoot, 'plugins/boring-mcp/src/server/index.ts') },
       { find: /^@hachej\/boring-mcp\/front$/, replacement: path.resolve(repoRoot, 'plugins/boring-mcp/src/front/index.tsx') },
       { find: /^@hachej\/boring-mcp\/shared$/, replacement: path.resolve(repoRoot, 'plugins/boring-mcp/src/shared/index.ts') },

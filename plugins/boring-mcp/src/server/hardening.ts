@@ -126,8 +126,8 @@ export function createHardenedMcpTransport(
   }
 
   return {
-    listTools(source) {
-      return guard({ sourceId: source.id, operation: "listTools" }, () => transport.listTools(source), true)
+    listTools(source, input) {
+      return guard({ sourceId: source.id, operation: "listTools" }, () => transport.listTools(source, input), true)
     },
     listResources(source) {
       return guard({ sourceId: source.id, operation: "listResources" }, () => transport.listResources(source), true)

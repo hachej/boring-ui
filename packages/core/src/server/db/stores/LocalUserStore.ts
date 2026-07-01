@@ -84,4 +84,41 @@ export class LocalUserStore implements UserStore {
     this.settings.set(key, updated)
     return { ...updated }
   }
+
+  async putClientUserSettings(
+    userId: string,
+    appId: string,
+    updates: { displayName?: string; settings?: Record<string, unknown> },
+  ): Promise<UserSettings> {
+    const current = await this.getUserSettings(userId, appId)
+    const serverOwned = Object.fromEntries(
+      Object.entries(current.settings).filter(([key]) => key.startsWith('__server')),
+    )
+    const clientSettings = updates.settings
+      ? Object.fromEntries(Object.entries(updates.settings).filter(([key]) => !key.startsWith('__server')))
+      : undefined
+    return await this.putUserSettings(userId, appId, {
+      displayName: updates.displayName,
+      settings: clientSettings ? { ...clientSettings, ...serverOwned } : undefined,
+    })
+  }
+
+  async patchUserSettingsJsonPath(
+    userId: string,
+    appId: string,
+    path: string[],
+    value: unknown,
+  ): Promise<UserSettings> {
+    const current = await this.getUserSettings(userId, appId)
+    const settings = structuredClone(current.settings)
+    let cursor: Record<string, unknown> = settings
+    for (const segment of path.slice(0, -1)) {
+      const next = cursor[segment]
+      if (!next || typeof next !== 'object' || Array.isArray(next)) cursor[segment] = {}
+      cursor = cursor[segment] as Record<string, unknown>
+    }
+    const leaf = path[path.length - 1]
+    if (leaf !== undefined) cursor[leaf] = value
+    return await this.putUserSettings(userId, appId, { settings })
+  }
 }

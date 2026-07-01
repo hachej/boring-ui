@@ -68,7 +68,8 @@ function jsonResponse(payload: unknown, status = 200): Response {
 }
 
 function createComposioFetch(mcpUrl = "https://mcp.example/session", accounts: unknown[] = []) {
-  return vi.fn(async (input: string | URL, init?: RequestInit) => {
+  let sessionCount = 0
+  const fakeFetch = vi.fn(async (input: string | URL, init?: RequestInit) => {
     expect(init?.headers).toMatchObject({ "x-api-key": "cmp_test_key" })
     const url = String(input)
     if (url.includes("/api/v3.1/connected_accounts?")) {
@@ -78,15 +79,22 @@ function createComposioFetch(mcpUrl = "https://mcp.example/session", accounts: u
       return jsonResponse({ items: accounts })
     }
     if (url.endsWith("/api/v3.1/tool_router/session")) {
-      expect(JSON.parse(String(init?.body))).toMatchObject({ user_id: "workspace-1:user-1", mcp: true, toolkits: ["notion"] })
-      return jsonResponse({ id: "session-1", mcp: { url: mcpUrl, headers: { "x-composio-mcp-session": "server-only-session" } } })
+      expect(JSON.parse(String(init?.body))).toMatchObject({
+        user_id: "workspace-1:user-1",
+        mcp: true,
+        toolkits: { enable: ["notion"] },
+        manage_connections: { enable: true, enable_wait_for_connections: false },
+      })
+      sessionCount += 1
+      return jsonResponse({ id: `session-${sessionCount}`, mcp: { url: mcpUrl, headers: { "x-composio-mcp-session": `server-only-session-${sessionCount}` } } })
     }
-    if (url.endsWith("/api/v3/tool_router/session/session-1/link")) {
+    if (/\/api\/v3\/tool_router\/session\/session-\d+\/link$/.test(url)) {
       expect(JSON.parse(String(init?.body))).toMatchObject({ toolkit: "notion" })
       return jsonResponse({ redirect_url: "https://app.composio.dev/connect/session-1" })
     }
     return jsonResponse({ error: "not found" }, 404)
   }) as typeof fetch & ReturnType<typeof vi.fn>
+  return fakeFetch
 }
 
 async function readJson(req: IncomingMessage): Promise<unknown> {
@@ -106,6 +114,7 @@ function createFakeMcpServer(seenHeaders: string[]) {
       return
     }
     seenHeaders.push(String(req.headers["x-composio-mcp-session"] ?? ""))
+    seenHeaders.push(String(req.headers["x-api-key"] ?? ""))
     const body = await readJson(req)
     const transport = new StreamableHTTPServerTransport({ sessionIdGenerator: undefined, enableJsonResponse: true })
     res.on("close", () => void transport.close())
@@ -122,6 +131,51 @@ async function listenFakeMcpServer() {
   const close = () => new Promise<void>((resolve, reject) => httpServer.close((error) => error ? reject(error) : resolve()))
   servers.push({ close })
   return { url: `http://127.0.0.1:${port}/mcp`, seenHeaders }
+}
+
+function createFakeComposioMetaMcpServer(seenHeaders: string[], seenToolCalls: string[]) {
+  const server = new McpServer({ name: "composio-meta-fake-mcp", version: "1.0.0" })
+  server.registerTool("COMPOSIO_SEARCH_TOOLS", { description: "Search provider tools" }, async () => ({
+    content: [{ type: "text", text: JSON.stringify({ data: { results: [{ toolkits: ["notion"], primary_tool_slugs: ["NOTION_SEARCH_NOTION_PAGE"], related_tool_slugs: ["NOTION_GET_PAGE_MARKDOWN", "COMPOSIO_MANAGE_CONNECTIONS"] }] } }) }],
+  }))
+  server.registerTool("COMPOSIO_GET_TOOL_SCHEMAS", { description: "Get provider tool schemas" }, async () => ({
+    content: [{ type: "text", text: JSON.stringify({ data: { success: true, tool_schemas: {
+      NOTION_SEARCH_NOTION_PAGE: { tool_slug: "NOTION_SEARCH_NOTION_PAGE", description: "Search pages", input_schema: { type: "object", properties: { query: { type: "string" } } } },
+      NOTION_GET_PAGE_MARKDOWN: { tool_slug: "NOTION_GET_PAGE_MARKDOWN", description: "Read page markdown", input_schema: { type: "object", properties: { page_id: { type: "string" } } } },
+    } } }) }],
+  }))
+  server.registerTool("COMPOSIO_MULTI_EXECUTE_TOOL", { description: "Execute provider tools" }, async () => ({ content: [{ type: "text", text: "meta execute ok" }] }))
+  return createServer(async (req: IncomingMessage, res: ServerResponse) => {
+    if (req.url !== "/mcp" || req.method !== "POST") {
+      res.statusCode = 404
+      res.end("not found")
+      return
+    }
+    seenHeaders.push(String(req.headers["x-composio-mcp-session"] ?? ""))
+    seenHeaders.push(String(req.headers["x-api-key"] ?? ""))
+    const body = await readJson(req)
+    for (const message of Array.isArray(body) ? body : [body]) {
+      if (message && typeof message === "object" && (message as { method?: unknown }).method === "tools/call") {
+        const params = (message as { params?: { name?: unknown } }).params
+        if (typeof params?.name === "string") seenToolCalls.push(params.name)
+      }
+    }
+    const transport = new StreamableHTTPServerTransport({ sessionIdGenerator: undefined, enableJsonResponse: true })
+    res.on("close", () => void transport.close())
+    await server.connect(transport)
+    await transport.handleRequest(req, res, body)
+  })
+}
+
+async function listenFakeComposioMetaMcpServer() {
+  const seenHeaders: string[] = []
+  const seenToolCalls: string[] = []
+  const httpServer = createFakeComposioMetaMcpServer(seenHeaders, seenToolCalls)
+  await new Promise<void>((resolve) => httpServer.listen(0, "127.0.0.1", resolve))
+  const { port } = httpServer.address() as AddressInfo
+  const close = () => new Promise<void>((resolve, reject) => httpServer.close((error) => error ? reject(error) : resolve()))
+  servers.push({ close })
+  return { url: `http://127.0.0.1:${port}/mcp`, seenHeaders, seenToolCalls }
 }
 
 afterEach(async () => {
@@ -144,7 +198,9 @@ describe("Composio managed connector provider", () => {
     const result = await adapter.startConnect(actor, { provider: "notion" })
 
     expect(result.connectUrl).toBe("https://app.composio.dev/connect/session-1")
-    expect(result.source).toMatchObject({ status: "unconfigured", credentialProvider: "composio-managed", connectorRef: { sessionId: "session-1", toolkitId: "notion" } })
+    expect(result.source).toMatchObject({ status: "unconfigured", credentialProvider: "composio-managed" })
+    expect(result.source).not.toHaveProperty("connectorRef")
+    expect(JSON.stringify(result.source)).not.toContain("session-1")
     expect(JSON.stringify(result)).not.toContain("cmp_test_key")
     expect(JSON.stringify(result)).not.toContain("server-only-session")
 
@@ -171,9 +227,10 @@ describe("Composio managed connector provider", () => {
     })
 
     const started = await adapter.startConnect(actor, { provider: "notion" })
-    await expect(adapter.refreshStatus(actor, started.source.id)).resolves.toMatchObject({
-      source: { status: "connected", providerAccountLabel: "Demo Notion", connectorRef: { connectedAccountId: "account-1" } },
-    })
+    const refreshed = await adapter.refreshStatus(actor, started.source.id)
+    expect(refreshed).toMatchObject({ source: { status: "connected", providerAccountLabel: "Demo Notion" } })
+    expect(refreshed.source).not.toHaveProperty("connectorRef")
+    expect(JSON.stringify(refreshed.source)).not.toContain("account-1")
   })
 
   it("rejects non-HTTPS Composio MCP session URLs unless using the loopback-only test override", async () => {
@@ -235,6 +292,62 @@ describe("Composio managed connector provider", () => {
     await expect(bridge.mcp_readonly_call.invoke({ actor }, { sourceId: source.id, toolName: "NOTION_SEARCH_NOTION_PAGE", input: {} })).resolves.toEqual({
       content: { content: [{ type: "text", text: "composio mcp ok" }] },
     })
-    expect(fakeMcp.seenHeaders).toContain("server-only-session")
+    expect(fakeMcp.seenHeaders).toContainEqual(expect.stringContaining("server-only-session"))
+    expect(fakeMcp.seenHeaders).toContain("cmp_test_key")
+  })
+
+  it("discovers live-style Composio provider tools through server-side meta tools", async () => {
+    const fakeMcp = await listenFakeComposioMetaMcpServer()
+    const fetch = createComposioFetch(fakeMcp.url)
+    const registry = createRegistry()
+    const source = await registry.upsertSource(actor, {
+      id: "managed:workspace-1:user-1:notion",
+      workspaceId: actor.workspaceId,
+      userId: actor.userId,
+      provider: "notion",
+      displayName: "Notion",
+      status: "connected",
+      ownerKind: "user",
+      credentialProvider: "composio-managed",
+      connectorRef: { provider: "notion", toolkitId: "notion", sessionId: "session-1" },
+    })
+    const transport = createComposioMcpTransport({ fetch, secretResolver, configs: [config], allowInsecureMcpUrlsForTests: true })
+    const handlers = createBoringMcpSourceHandlers({ registry, transport })
+    const bridge = createBoringMcpAgentBridgeRegistry(handlers)
+
+    await expect(bridge.mcp_tools_search.invoke({ actor }, { query: "notion" })).resolves.toMatchObject({
+      tools: [
+        expect.objectContaining({ toolName: "NOTION_SEARCH_NOTION_PAGE", enabled: true }),
+        expect.objectContaining({ toolName: "NOTION_GET_PAGE_MARKDOWN", enabled: true }),
+      ],
+    })
+    const searchCallsAfterFirstLoad = fakeMcp.seenToolCalls.filter((name) => name === "COMPOSIO_SEARCH_TOOLS").length
+    const schemaCallsAfterFirstLoad = fakeMcp.seenToolCalls.filter((name) => name === "COMPOSIO_GET_TOOL_SCHEMAS").length
+
+    await expect(bridge.mcp_tools_search.invoke({ actor }, { query: "notion" })).resolves.toMatchObject({
+      tools: expect.arrayContaining([expect.objectContaining({ toolName: "NOTION_SEARCH_NOTION_PAGE", enabled: true })]),
+    })
+    expect(fakeMcp.seenToolCalls.filter((name) => name === "COMPOSIO_SEARCH_TOOLS")).toHaveLength(searchCallsAfterFirstLoad)
+    expect(fakeMcp.seenToolCalls.filter((name) => name === "COMPOSIO_GET_TOOL_SCHEMAS")).toHaveLength(schemaCallsAfterFirstLoad)
+
+    await expect(bridge.mcp_tools_search.invoke({ actor }, { query: "notion", refresh: true })).resolves.toMatchObject({
+      tools: expect.arrayContaining([expect.objectContaining({ toolName: "NOTION_SEARCH_NOTION_PAGE", enabled: true })]),
+    })
+    expect(fakeMcp.seenToolCalls.filter((name) => name === "COMPOSIO_SEARCH_TOOLS").length).toBeGreaterThan(searchCallsAfterFirstLoad)
+    expect(fakeMcp.seenToolCalls.filter((name) => name === "COMPOSIO_GET_TOOL_SCHEMAS").length).toBeGreaterThan(schemaCallsAfterFirstLoad)
+
+    const sessionRequestsAfterRefresh = fetch.mock.calls.filter(([url]) => String(url).endsWith("/api/v3.1/tool_router/session")).length
+    await registry.upsertSource(actor, { ...source, updatedAt: "2026-07-01T00:00:00.000Z", connectorRef: { provider: "notion", toolkitId: "notion", sessionId: "new-source-session-ref" } })
+    await expect(bridge.mcp_tools_search.invoke({ actor }, { query: "notion", refresh: true })).resolves.toMatchObject({
+      tools: expect.arrayContaining([expect.objectContaining({ toolName: "NOTION_SEARCH_NOTION_PAGE", enabled: true })]),
+    })
+    expect(fetch.mock.calls.filter(([url]) => String(url).endsWith("/api/v3.1/tool_router/session")).length).toBeGreaterThan(sessionRequestsAfterRefresh)
+
+    await expect(bridge.mcp_tools_search.invoke({ actor }, { query: "COMPOSIO" })).resolves.toMatchObject({ tools: [] })
+    await expect(bridge.mcp_readonly_call.invoke({ actor }, { sourceId: source.id, toolName: "NOTION_SEARCH_NOTION_PAGE", input: { query: "demo" } })).resolves.toEqual({
+      content: { content: [{ type: "text", text: "meta execute ok" }] },
+    })
+    expect(fakeMcp.seenHeaders).toContainEqual(expect.stringContaining("server-only-session"))
+    expect(fakeMcp.seenHeaders).toContain("cmp_test_key")
   })
 })
