@@ -363,7 +363,7 @@ describe('PUT /api/v1/me/settings', () => {
     const user = await createSessionUser('routes-reserved-settings')
     await rawSql`
       INSERT INTO user_settings (user_id, app_id, display_name, email, settings)
-      VALUES (${user.id}, 'test-app', '', ${user.email}, ${rawSql.json({ __serverBoringMcpSourcesV1: { trusted: true }, theme: 'old' })})
+      VALUES (${user.id}, 'test-app', '', ${user.email}, ${JSON.stringify({ __serverBoringMcpSourcesV1: { trusted: true }, theme: 'old' })}::jsonb)
       ON CONFLICT (user_id, app_id) DO UPDATE SET settings = EXCLUDED.settings
     `
 
