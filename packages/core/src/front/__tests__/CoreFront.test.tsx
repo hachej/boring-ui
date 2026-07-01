@@ -274,6 +274,58 @@ describe('CoreFront', () => {
     }),
   )
 
+  it('shows a signup-to-keep banner for anonymous outreach leads', async () => {
+    mockConfigEndpoint()
+    mockApiEndpoints()
+    useMswHandler(async (input) => {
+      const url = typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url
+      if (url.endsWith('/api/v1/me')) {
+        return new Response(
+          JSON.stringify({
+            user: {
+              id: 'anon-1',
+              email: null,
+              name: 'Anonymous lead',
+              emailVerified: true,
+              image: null,
+              createdAt: '2026-01-01',
+              updatedAt: '2026-01-01',
+              isAnonymousLead: true,
+            },
+            settings: { displayName: 'Anonymous lead', email: '', settings: {} },
+          }),
+          { status: 200, headers: { 'content-type': 'application/json' } },
+        )
+      }
+      return undefined
+    })
+    mockUseSession.mockReturnValue({
+      data: {
+        user: {
+          id: 'anon-1',
+          email: 'anon@anonymous.invalid',
+          name: 'Anonymous lead',
+          emailVerified: true,
+          image: null,
+          createdAt: '2026-01-01',
+          updatedAt: '2026-01-01',
+        },
+      },
+      isPending: false,
+      error: null,
+    })
+    window.history.pushState({}, '', '/workspace/w1?tab=chat')
+
+    render(<CoreFront><Route path="/workspace/:id" element={<div>Workspace</div>} /></CoreFront>)
+
+    expect(await screen.findByText(/temporary account/i)).toBeTruthy()
+    expect(screen.getByText(/sign up to keep this workspace/i)).toBeTruthy()
+    const signUpLink = screen.getByRole('link', { name: /sign up to keep it/i })
+    expect(signUpLink.getAttribute('href')).toContain('/auth/signup?')
+    expect(signUpLink.getAttribute('href')).toContain('claim=1')
+    expect(signUpLink.getAttribute('href')).toContain('callbackURL=%2Fworkspace%2Fw1%3Ftab%3Dchat')
+  })
+
   it(
     'provides UserMenu through the top bar slot context',
     withBeadId(BEAD_ID, async ({ assertionPassed }) => {

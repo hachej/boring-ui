@@ -34,6 +34,7 @@ function normalizeUser(raw: Record<string, unknown>): User {
     image: (raw.image as string | null) ?? null,
     createdAt: toISOString(raw.createdAt as string | Date),
     updatedAt: toISOString(raw.updatedAt as string | Date),
+    isAnonymousLead: raw.isAnonymousLead === true ? true : undefined,
   }
 }
 

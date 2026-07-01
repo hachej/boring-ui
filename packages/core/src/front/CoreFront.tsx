@@ -19,6 +19,7 @@ import { ResetPasswordPage as DefaultResetPasswordPage } from './auth/ResetPassw
 import { VerifyEmailPage as DefaultVerifyEmailPage } from './auth/VerifyEmailPage.js'
 import { AuthErrorPage as DefaultAuthErrorPage } from './auth/AuthErrorPage.js'
 import { UserSettingsPage as DefaultUserSettingsPage } from './auth/UserSettingsPage.js'
+import { OutreachClaimBanner } from './auth/OutreachClaimBanner.js'
 import { InvitesPage } from './workspace/InvitesPage.js'
 import { MembersPage } from './workspace/MembersPage.js'
 import { WorkspaceSettingsPage } from './workspace/WorkspaceSettingsPage.js'
@@ -137,6 +138,7 @@ export function CoreFront({ children, authPages, cspNonce, workspaceRoute, works
                           ) : null}
                         </Helmet>
                         <RouterAuthGate publicPaths={['/invites', ...(publicPaths ?? [])]}>
+                          <OutreachClaimBanner />
                           <Suspense fallback={null}>
                             <Routes>
                               <Route path={routes.signin} element={<SignInPage />} />

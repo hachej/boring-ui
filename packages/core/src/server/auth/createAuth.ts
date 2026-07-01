@@ -1,6 +1,7 @@
 import { betterAuth, APIError, type Auth } from 'better-auth'
 import { drizzleAdapter } from 'better-auth/adapters/drizzle'
 import { magicLink } from 'better-auth/plugins/magic-link'
+import { anonymous } from 'better-auth/plugins/anonymous'
 import { zxcvbn, zxcvbnOptions } from '@zxcvbn-ts/core'
 import * as zxcvbnCommon from '@zxcvbn-ts/language-common'
 import * as zxcvbnEn from '@zxcvbn-ts/language-en'
@@ -18,6 +19,7 @@ import {
 import { createPostSignupHook } from './postSignupHook.js'
 import { isCoreEmailVerificationEnabled } from '../../shared/authPolicy.js'
 import { safeCapture, noopTelemetry, type TelemetrySink } from '../../shared/telemetry.js'
+import { createOutreachAuthIdentityAdapter } from '../outreach/identity.js'
 
 const MIN_ZXCVBN_SCORE = 2
 
@@ -68,6 +70,7 @@ export function createAuth(config: CoreConfig, db: Database, opts?: CreateAuthOp
   const transport = buildMailTransport(config)
   const telemetry = opts?.telemetry ?? noopTelemetry
   const emailVerificationEnabled = isCoreEmailVerificationEnabled(config)
+  const outreachIdentity = createOutreachAuthIdentityAdapter(db, config.appId)
 
   const emailVerificationConfig = emailVerificationEnabled && transport
     ? {
@@ -96,21 +99,35 @@ export function createAuth(config: CoreConfig, db: Database, opts?: CreateAuthOp
       }
     : undefined
 
-  const plugins = transport
-    ? [
-        magicLink({
-          sendMagicLink: async (data: { email: string; url: string; token: string }) => {
-            const email = await renderMagicLink({
-              to: data.email,
-              loginUrl: data.url,
-              appName: config.appName,
-              expiresInMinutes: 10,
-            })
-            await transport.send(email)
-          },
-        }),
-      ]
-    : []
+  const plugins = [
+    anonymous({
+      emailDomainName: 'anonymous.invalid',
+      generateName: async () => 'Anonymous lead',
+      disableDeleteAnonymousUser: true,
+      onLinkAccount: async ({ anonymousUser, newUser }) => {
+        await outreachIdentity.transferAnonymousOwnership({
+          anonymousUserId: anonymousUser.user.id,
+          claimedUserId: newUser.user.id,
+          claimedEmail: newUser.user.email,
+        })
+      },
+    }),
+    ...(transport
+      ? [
+          magicLink({
+            sendMagicLink: async (data: { email: string; url: string; token: string }) => {
+              const email = await renderMagicLink({
+                to: data.email,
+                loginUrl: data.url,
+                appName: config.appName,
+                expiresInMinutes: 10,
+              })
+              await transport.send(email)
+            },
+          }),
+        ]
+      : []),
+  ]
 
   const postSignupHook = opts?.workspaceStore
     ? createPostSignupHook({
@@ -152,7 +169,8 @@ export function createAuth(config: CoreConfig, db: Database, opts?: CreateAuthOp
           // auth.signed_up is emitted here (not in postSignupHook) so it fires for ALL
           // signups, independent of whether workspace post-signup setup is wired.
           // distinctId = user id; no properties (no PII, nothing the DB sink would drop).
-          after: async (user: { id?: string } & Record<string, unknown>, ctx: unknown) => {
+          after: async (user: { id?: string; isAnonymous?: boolean } & Record<string, unknown>, ctx: unknown) => {
+            if (user?.isAnonymous === true) return
             safeCapture(telemetry, {
               name: 'auth.signed_up',
               distinctId: typeof user?.id === 'string' ? user.id : undefined,

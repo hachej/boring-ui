@@ -10,6 +10,7 @@ export type User = {
   image: string | null
   createdAt: string
   updatedAt: string
+  isAnonymousLead?: boolean
 }
 
 export type Workspace = {
