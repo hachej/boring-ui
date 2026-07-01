@@ -19,7 +19,6 @@ import type {
 } from "../shared/runtimePluginDiagnostics.js"
 import { resolveBoringUiCliPackageRoot } from "./pluginDiscovery.js"
 import type { readCliPluginPiSnapshot as readCliPluginPiSnapshotFn } from "./pluginDiscovery.js"
-import { ASK_USER_UI_STATE_SLOTS } from "@hachej/boring-ask-user/shared"
 
 type CliPluginPiSnapshot = ReturnType<typeof readCliPluginPiSnapshotFn>
 
@@ -492,6 +491,7 @@ export async function createWorkspacesModeApp(opts: {
     registry: ReturnType<typeof workspaceServer.createWorkspaceBridgeRuntimeCore>["registry"]
     idempotencyStore: InstanceType<typeof workspaceServer.InMemoryWorkspaceBridgeIdempotencyStore>
     extraTools: NonNullable<ReturnType<typeof workspaceAppServer.collectWorkspaceAgentServerPlugins>["agentOptions"]["extraTools"]>
+    preservedUiStateKeys: NonNullable<ReturnType<typeof workspaceAppServer.collectWorkspaceAgentServerPlugins>["preservedUiStateKeys"]>
   }
   const workspaceBridgeCores = new Map<string, Promise<WorkspaceBridgeCore>>()
   const workspaceEventClosers = new Map<string, Set<() => void>>()
@@ -539,6 +539,7 @@ export async function createWorkspacesModeApp(opts: {
         registry: bridgeCore.registry,
         idempotencyStore: new workspaceServer.InMemoryWorkspaceBridgeIdempotencyStore(),
         extraTools: pluginCollection.agentOptions.extraTools ?? [],
+        preservedUiStateKeys: pluginCollection.preservedUiStateKeys ?? [],
       }
     })().catch((error) => {
       workspaceBridgeCores.delete(workspace.id)
@@ -781,7 +782,7 @@ export async function createWorkspacesModeApp(opts: {
   await app.register(workspaceServer.uiRoutes, {
     getWorkspaceId: async (request) => (await workspaceFromRequest(request)).id,
     getBridge: async (request) => getBridge((await workspaceFromRequest(request)).id),
-    preserveStateKeys: [ASK_USER_UI_STATE_SLOTS.PENDING],
+    getPreserveStateKeys: async (request) => (await getWorkspaceBridgeCore(await workspaceFromRequest(request))).preservedUiStateKeys,
   })
 
   await app.register(workspaceServer.workspaceBridgeHttpRoutes, {
