@@ -1,0 +1,169 @@
+{
+  "kind": "boring.generated-pane",
+  "profile": "bi-dashboard",
+  "version": 1,
+  "title": "Random Retail DuckDB Dashboard",
+  "description": "A synthetic retail performance dashboard backed by data/random_retail.duckdb.",
+  "queries": {
+    "total_revenue": {
+      "id": "total_revenue",
+      "source": "random_retail-duckdb",
+      "sql": "SELECT sum(revenue) AS revenue FROM retail_orders"
+    },
+    "total_margin": {
+      "id": "total_margin",
+      "source": "random_retail-duckdb",
+      "sql": "SELECT sum(margin) AS margin FROM retail_orders"
+    },
+    "order_count": {
+      "id": "order_count",
+      "source": "random_retail-duckdb",
+      "sql": "SELECT count(*) AS orders FROM retail_orders"
+    },
+    "avg_satisfaction": {
+      "id": "avg_satisfaction",
+      "source": "random_retail-duckdb",
+      "sql": "SELECT avg(satisfaction) AS satisfaction FROM retail_orders"
+    },
+    "revenue_by_month": {
+      "id": "revenue_by_month",
+      "source": "random_retail-duckdb",
+      "sql": "SELECT strftime(order_date, '%Y-%m') AS month, sum(revenue) AS revenue, sum(margin) AS margin FROM retail_orders GROUP BY month ORDER BY month"
+    },
+    "revenue_by_region": {
+      "id": "revenue_by_region",
+      "source": "random_retail-duckdb",
+      "sql": "SELECT region, sum(revenue) AS revenue, sum(margin) AS margin FROM retail_orders GROUP BY region ORDER BY revenue DESC"
+    },
+    "margin_by_category": {
+      "id": "margin_by_category",
+      "source": "random_retail-duckdb",
+      "sql": "SELECT category, sum(margin) AS margin, sum(revenue) AS revenue FROM retail_orders GROUP BY category ORDER BY margin DESC"
+    },
+    "channel_mix": {
+      "id": "channel_mix",
+      "source": "random_retail-duckdb",
+      "sql": "SELECT channel, count(*) AS orders, sum(revenue) AS revenue FROM retail_orders GROUP BY channel ORDER BY revenue DESC"
+    },
+    "segment_detail": {
+      "id": "segment_detail",
+      "source": "random_retail-duckdb",
+      "sql": "SELECT segment, region, category, channel, count(*) AS orders, sum(units) AS units, sum(revenue) AS revenue, sum(margin) AS margin, avg(satisfaction) AS satisfaction FROM retail_orders GROUP BY segment, region, category, channel ORDER BY revenue DESC"
+    }
+  },
+  "root": "dashboard",
+  "elements": {
+    "dashboard": {
+      "type": "DashboardGrid",
+      "props": { "columns": 1 },
+      "children": [
+        "controllers",
+        "metrics",
+        "charts",
+        "segment-table"
+      ]
+    },
+    "controllers": {
+      "type": "DashboardGrid",
+      "props": { "columns": 3 },
+      "children": [
+        "region-filter",
+        "channel-filter",
+        "category-filter"
+      ]
+    },
+    "metrics": {
+      "type": "DashboardGrid",
+      "props": { "columns": 4 },
+      "children": [
+        "total-revenue",
+        "total-margin",
+        "order-count",
+        "avg-satisfaction"
+      ]
+    },
+    "charts": {
+      "type": "DashboardGrid",
+      "props": { "columns": 2 },
+      "children": [
+        "monthly-chart",
+        "region-chart",
+        "category-chart",
+        "channel-chart"
+      ]
+    },
+    "total-revenue": {
+      "type": "BSLMetric",
+      "props": { "queryId": "total_revenue", "valueField": "revenue", "label": "Total revenue", "format": "currency" }
+    },
+    "total-margin": {
+      "type": "BSLMetric",
+      "props": { "queryId": "total_margin", "valueField": "margin", "label": "Gross margin", "format": "currency" }
+    },
+    "order-count": {
+      "type": "BSLMetric",
+      "props": { "queryId": "order_count", "valueField": "orders", "label": "Orders", "format": "number" }
+    },
+    "avg-satisfaction": {
+      "type": "BSLMetric",
+      "props": { "queryId": "avg_satisfaction", "valueField": "satisfaction", "label": "Avg satisfaction", "format": "number" }
+    },
+    "region-filter": {
+      "type": "BSLFilter",
+      "props": {
+        "id": "region-filter",
+        "field": "region",
+        "label": "Region",
+        "controlType": "multiSelect",
+        "targetQueries": ["revenue_by_region", "segment_detail"]
+      }
+    },
+    "channel-filter": {
+      "type": "BSLFilter",
+      "props": {
+        "id": "channel-filter",
+        "field": "channel",
+        "label": "Channel",
+        "controlType": "select",
+        "targetQueries": ["channel_mix", "segment_detail"]
+      }
+    },
+    "category-filter": {
+      "type": "BSLFilter",
+      "props": {
+        "id": "category-filter",
+        "field": "category",
+        "label": "Category",
+        "controlType": "multiSelect",
+        "targetQueries": ["margin_by_category", "segment_detail"]
+      }
+    },
+    "monthly-chart": {
+      "type": "BSLChart",
+      "props": { "queryId": "revenue_by_month", "title": "Revenue trend by month", "renderer": "echarts", "chartType": "bar", "x": "month", "y": "revenue" }
+    },
+    "region-chart": {
+      "type": "BSLChart",
+      "props": { "queryId": "revenue_by_region", "title": "Revenue by region", "renderer": "echarts", "chartType": "bar", "x": "region", "y": "revenue", "controls": ["region-filter"] }
+    },
+    "category-chart": {
+      "type": "BSLChart",
+      "props": { "queryId": "margin_by_category", "title": "Margin by category", "renderer": "echarts", "chartType": "bar", "x": "category", "y": "margin", "controls": ["category-filter"] }
+    },
+    "channel-chart": {
+      "type": "BSLChart",
+      "props": { "queryId": "channel_mix", "title": "Channel revenue mix", "renderer": "echarts", "chartType": "bar", "x": "channel", "y": "revenue", "controls": ["channel-filter"] }
+    },
+    "segment-table": {
+      "type": "BSLPerspectiveViewer",
+      "props": {
+        "queryId": "segment_detail",
+        "title": "Segment / region / category detail",
+        "plugin": "Datagrid",
+        "columns": ["segment", "region", "category", "channel", "orders", "units", "revenue", "margin", "satisfaction"],
+        "groupBy": ["segment"],
+        "sort": [["revenue", "desc"]]
+      }
+    }
+  }
+}

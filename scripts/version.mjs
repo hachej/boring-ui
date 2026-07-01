@@ -21,6 +21,9 @@ const PUBLISHABLE = [
   "packages/cli", // @hachej/boring-ui-cli
   "plugins/data-explorer",
   "plugins/data-catalog",
+  "plugins/generated-pane",
+  "plugins/data-bridge",
+  "plugins/bi-dashboard",
 ]
 
 function readJson(path) {

@@ -4,7 +4,7 @@
 
 Draft plan. This plan supersedes the current split-brain prototype where:
 
-- `@hachej/data-bridge` parses workspace CSV/JSON/NDJSON files itself.
+- `@hachej/boring-data-bridge` parses workspace CSV/JSON/NDJSON files itself.
 - BI dashboard falls back to `/api/v1/files/records` and repeats aggregation in the browser.
 - Perspective-like panels render JSON rows in an HTML table instead of using a real Perspective/Arrow preparation path.
 
@@ -129,7 +129,7 @@ packages/file-data/src/server/
 
 The reusable implementation must live in a domain-neutral server-only package, **not** in `@hachej/boring-agent/server` and preferably not in workspace core unless the team explicitly decides that tabular workspace-file parsing is part of the workspace file subsystem. Recommended package: `@hachej/file-data` under `packages/file-data/`.
 
-Rationale: `@hachej/data-bridge` is a workspace server plugin; making it depend on the agent HTTP layer would couple reusable data adapters to the host app/agent package. Conversely, making `@hachej/boring-workspace` understand CSV/Arrow/Perspective risks violating the workspace package's domain-neutral boundary. A small server-only file-data package lets the agent route, workspace file APIs, and data-bridge share implementation without teaching workspace about BSL/SQL/Perspective.
+Rationale: `@hachej/boring-data-bridge` is a workspace server plugin; making it depend on the agent HTTP layer would couple reusable data adapters to the host app/agent package. Conversely, making `@hachej/boring-workspace` understand CSV/Arrow/Perspective risks violating the workspace package's domain-neutral boundary. A small server-only file-data package lets the agent route, workspace file APIs, and data-bridge share implementation without teaching workspace about BSL/SQL/Perspective.
 
 Public/server exports from `@hachej/file-data/server`:
 
@@ -557,7 +557,7 @@ Acceptance:
 
 Acceptance:
 
-- `@hachej/data-bridge` has no custom CSV parser.
+- `@hachej/boring-data-bridge` has no custom CSV parser.
 - Bridge and `/files/records` agree on rows/columns/limits.
 - BI dashboard no longer has a permanent browser aggregation fallback; if retained temporarily, it is feature-flagged and documented for removal.
 
@@ -574,7 +574,7 @@ Acceptance:
 
 ### Phase 4 — Add `data.v1.perspective.prepare`
 
-- Add shared contract to `@hachej/data-bridge`.
+- Add shared contract to `@hachej/boring-data-bridge`.
 - Implement inline JSON first for small results.
 - Add Arrow artifact once artifact storage exists.
 - Add websocket later.
@@ -621,7 +621,7 @@ Acceptance:
 ## Open Questions
 
 1. Should `/api/v1/files/data` replace `/api/v1/files/records` long term, or should `/records` stay as the simple stable API?
-2. Where should Arrow conversion live: `@hachej/boring-agent`, `@hachej/data-bridge`, or a dedicated optional package?
+2. Where should Arrow conversion live: `@hachej/boring-agent`, `@hachej/boring-data-bridge`, or a dedicated optional package?
 3. What artifact store should be used for Arrow artifacts in local/dev/serverless modes?
 4. Should DuckDB direct SQL be available to browser callers with a constrained read-only policy, or only runtime/server callers?
 6. Should `WorkspaceFileLease` live in `@hachej/file-data/server` or as a minimal workspace adapter capability consumed by that package?

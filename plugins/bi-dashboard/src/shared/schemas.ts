@@ -1,7 +1,7 @@
 import { z } from "zod"
 
 export const chartRenderers = ["echarts", "vega-lite", "plotly"] as const
-export const chartTypes = ["bar", "line", "area", "scatter", "heatmap", "pie", "treemap", "sunburst", "gauge", "table"] as const
+export const chartTypes = ["bar", "line", "area", "scatter", "heatmap", "treemap", "sunburst", "table"] as const
 export const perspectivePlugins = ["Datagrid", "Y Bar", "X Bar", "Y Line", "Y Area", "Y Scatter", "Y Treemap", "Sunburst", "Heatmap"] as const
 export const metricFormats = ["number", "currency", "percent"] as const
 export const filterControlTypes = ["select", "multiSelect", "dateRange", "numberRange", "search"] as const

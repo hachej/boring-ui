@@ -1,4 +1,5 @@
 import { spawn } from "node:child_process"
+import type { NodeClickHouseClientConfigOptions } from "@clickhouse/client/dist/config"
 import {
   defineServerPlugin,
   defineTrustedDomainBridgeHandler,
@@ -6,8 +7,10 @@ import {
   type WorkspaceBridgeHandlerContribution,
 } from "@hachej/boring-workspace/server"
 import type {
+  DataBridgeArrowResult,
   DataBridgeBslQuery,
   DataBridgeQueryRunInput,
+  DataBridgeQueryRunOutput,
   DataBridgeSqlQuery,
   DataBridgeTableResult,
 } from "../shared"
@@ -21,8 +24,20 @@ export interface DataBridgeSqlAdapter {
     sql: string
     params?: Record<string, unknown>
     limit: number
+    format: "json" | "arrow"
     signal?: AbortSignal
-  }): Promise<DataBridgeTableResult>
+  }): Promise<DataBridgeTableResult | DataBridgeArrowResult>
+}
+
+export interface ClickHouseDataBridgeAdapterOptions {
+  /** ClickHouse HTTP URL, e.g. http://localhost:8123. Defaults to CLICKHOUSE_URL/BM_CH_HOST. */
+  url?: string | URL
+  username?: string
+  password?: string
+  database?: string
+  requiredCapabilities?: string[]
+  maxRows?: number
+  clientConfig?: NodeClickHouseClientConfigOptions
 }
 
 interface CreateDataBridgeServerPluginOptions {
@@ -40,6 +55,10 @@ const MULTI_STMT_RE = /;\s*\S/
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value)
+}
+
+function isDataBridgeArrowResult(value: unknown): value is DataBridgeArrowResult {
+  return isRecord(value) && value.kind === "data-bridge.arrow" && typeof value.arrowBase64 === "string"
 }
 
 function normalizeLimit(value: unknown, max = SQL_MAX_LIMIT): number {
@@ -88,7 +107,7 @@ async function runBslQuery(options: CreateDataBridgeServerPluginOptions, input: 
   return await runPythonBsl(payload, signal)
 }
 
-async function runSqlQuery(options: CreateDataBridgeServerPluginOptions, input: DataBridgeQueryRunInput, capabilities: readonly string[], signal?: AbortSignal): Promise<DataBridgeTableResult> {
+async function runSqlQuery(options: CreateDataBridgeServerPluginOptions, input: DataBridgeQueryRunInput, capabilities: readonly string[], format: "json" | "arrow", signal?: AbortSignal): Promise<DataBridgeTableResult | DataBridgeArrowResult> {
   if (input.query.language !== "sql") throw new Error("SQL adapter requires query.language=sql")
   requireCapabilities(capabilities, ["data:sql-query"])
   const adapter = options.sqlAdapters?.[input.query.source]
@@ -102,8 +121,10 @@ async function runSqlQuery(options: CreateDataBridgeServerPluginOptions, input: 
     sql,
     params: input.query.params,
     limit,
+    format,
     signal,
   })
+  if (isDataBridgeArrowResult(result)) return { ...result, source: result.source ?? input.query.source }
   return { ...truncateResult(result, limit), source: result.source ?? input.query.source }
 }
 
@@ -159,27 +180,132 @@ print(json.dumps({"kind":"data-bridge.table","version":1,"columns":columns,"rows
   return JSON.parse(stdout) as DataBridgeTableResult
 }
 
+async function materializeArrowSnapshot(result: DataBridgeTableResult): Promise<DataBridgeArrowResult> {
+  const perspective = await import("@perspective-dev/client/node")
+  const table = await perspective.default.table(result.rows)
+  const view = await table.view()
+  try {
+    const arrow = await view.to_arrow()
+    return {
+      kind: "data-bridge.arrow",
+      version: 1,
+      arrowBase64: Buffer.from(arrow).toString("base64"),
+      columns: result.columns,
+      rowCount: result.rowCount,
+      truncated: result.truncated,
+      source: result.source,
+    }
+  } finally {
+    await view.delete().catch(() => undefined)
+    await table.delete({ lazy: true }).catch(() => undefined)
+  }
+}
+
+function appendLimit(sql: string, limit: number): string {
+  return `SELECT * FROM (${sql}) AS data_bridge_query LIMIT ${limit}`
+}
+
+function inferScalarType(value: unknown): "string" | "integer" | "float" | "boolean" | "json" {
+  if (typeof value === "number") return Number.isInteger(value) ? "integer" : "float"
+  if (typeof value === "boolean") return "boolean"
+  if (typeof value === "object" && value !== null) return "json"
+  return "string"
+}
+
+function columnsFromRows(rows: Record<string, unknown>[]): DataBridgeTableResult["columns"] {
+  const names = [...new Set(rows.flatMap((row) => Object.keys(row)))]
+  return names.map((name) => ({ name, type: inferScalarType(rows.find((row) => row[name] != null)?.[name]) }))
+}
+
+async function collectResultStreamBytes(stream: AsyncIterable<Buffer | Uint8Array | string> & { destroy?: (error?: Error) => void }, signal?: AbortSignal): Promise<Buffer> {
+  const destroy = () => stream.destroy?.(new Error("ClickHouse query aborted"))
+  if (signal?.aborted) {
+    destroy()
+    throw new Error("ClickHouse query aborted")
+  }
+  signal?.addEventListener("abort", destroy, { once: true })
+  try {
+    const chunks: Buffer[] = []
+    for await (const chunk of stream) {
+      if (signal?.aborted) throw new Error("ClickHouse query aborted")
+      chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk))
+    }
+    if (signal?.aborted) throw new Error("ClickHouse query aborted")
+    return Buffer.concat(chunks)
+  } finally {
+    signal?.removeEventListener("abort", destroy)
+  }
+}
+
+export function createClickHouseDataBridgeAdapter(options: ClickHouseDataBridgeAdapterOptions = {}): DataBridgeSqlAdapter {
+  let clientPromise: Promise<ReturnType<typeof import("@clickhouse/client")["createClient"]>> | null = null
+  async function getClient() {
+    clientPromise ??= import("@clickhouse/client")
+      .then(({ createClient }) => createClient({
+        url: options.url ?? process.env.CLICKHOUSE_URL ?? process.env.BM_CH_HOST,
+        username: options.username ?? process.env.CLICKHOUSE_USER ?? process.env.BM_CH_USER,
+        password: options.password ?? process.env.CLICKHOUSE_PASSWORD ?? process.env.BM_CH_PASSWORD,
+        database: options.database ?? process.env.CLICKHOUSE_DATABASE ?? process.env.BM_CH_DATABASE,
+        ...options.clientConfig,
+      }))
+      .catch((error) => {
+        clientPromise = null
+        throw error
+      })
+    return await clientPromise
+  }
+  return {
+    requiredCapabilities: options.requiredCapabilities ?? ["data:clickhouse"],
+    maxRows: options.maxRows ?? SQL_MAX_LIMIT,
+    async execute({ sql, params, limit, format, signal }) {
+      const client = await getClient()
+      const limitedSql = appendLimit(sql, limit)
+      if (format === "arrow") {
+        const result = await client.exec({ query: `${limitedSql} FORMAT Arrow`, query_params: params, abort_signal: signal })
+        const arrow = await collectResultStreamBytes(result.stream, signal)
+        return {
+          kind: "data-bridge.arrow",
+          version: 1,
+          arrowBase64: arrow.toString("base64"),
+        }
+      }
+      const result = await client.query({ query: limitedSql, format: "JSONEachRow", query_params: params, abort_signal: signal })
+      const rows = await result.json<Record<string, unknown>>()
+      return {
+        kind: "data-bridge.table",
+        version: 1,
+        columns: columnsFromRows(rows),
+        rows,
+        rowCount: rows.length,
+      }
+    },
+  }
+}
+
+async function executeQuery(options: CreateDataBridgeServerPluginOptions, input: DataBridgeQueryRunInput, capabilities: readonly string[], format: "json" | "arrow", signal?: AbortSignal): Promise<DataBridgeTableResult | DataBridgeArrowResult> {
+  if (!isRecord(input) || !isRecord(input.query)) throw new Error("Invalid data bridge query input")
+  if (input.query.language === "sql") return await runSqlQuery(options, input, capabilities, format, signal)
+  if (input.query.language !== "bsl") throw new Error("Data bridge query language must be either bsl or sql")
+  return await runBslQuery(options, input as DataBridgeQueryRunInput & { query: DataBridgeBslQuery }, signal)
+}
+
 export function createDataBridgeServerPlugin(options: CreateDataBridgeServerPluginOptions): WorkspaceServerPlugin {
-  const queryRun = defineTrustedDomainBridgeHandler<DataBridgeQueryRunInput, DataBridgeTableResult>({
+  const queryRun = defineTrustedDomainBridgeHandler<DataBridgeQueryRunInput, DataBridgeQueryRunOutput>({
     op: DATA_BRIDGE_QUERY_RUN_OP,
     version: 1,
     owner: "data-bridge",
     callerClassesAllowed: ["browser", "runtime", "server"],
     requiredCapabilities: ["data:read"],
     inputSchema: { type: "object" },
-    maxOutputBytes: 2 * 1024 * 1024,
+    maxOutputBytes: 10 * 1024 * 1024,
     timeoutMs: 30_000,
     idempotencyPolicy: "none",
     handler: async ({ input, context, signal }) => {
-      if (!isRecord(input) || !isRecord(input.query)) throw new Error("Invalid data bridge query input")
       const typedInput = input as unknown as DataBridgeQueryRunInput
-      if (typedInput.query.language === "sql") {
-        return await runSqlQuery(options, typedInput, context.capabilities, signal)
-      }
-      if (typedInput.query.language !== "bsl") {
-        throw new Error("Data bridge query language must be either bsl or sql")
-      }
-      return await runBslQuery(options, typedInput as DataBridgeQueryRunInput & { query: DataBridgeBslQuery }, signal)
+      const executionFormat = typedInput.format === "arrow" ? "arrow" : "json"
+      const result = await executeQuery(options, typedInput, context.capabilities, executionFormat, signal)
+      if (typedInput.format === "arrow") return isDataBridgeArrowResult(result) ? result : await materializeArrowSnapshot(result)
+      return result
     },
   })
 
@@ -187,7 +313,7 @@ export function createDataBridgeServerPlugin(options: CreateDataBridgeServerPlug
     id: "data-bridge",
     label: "Data Bridge",
     workspaceBridgeHandlers: [queryRun as unknown as WorkspaceBridgeHandlerContribution],
-    systemPrompt: "Use data.v1.query.run through WorkspaceBridge for dashboard data. Supported query languages are bsl and sql.",
+    systemPrompt: "Use data.v1.query.run through WorkspaceBridge for dashboard data. Supported query languages are bsl and sql; set format=arrow for BI/Perspective snapshot viewers."
   })
 }
 

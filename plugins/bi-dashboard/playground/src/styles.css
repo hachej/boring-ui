@@ -1,0 +1,50 @@
+@import "@hachej/boring-workspace/globals.css";
+@import "@hachej/boring-agent/front/styles.css";
+@import "@perspective-dev/viewer/dist/css/pro.css";
+@import "@perspective-dev/viewer-datagrid/dist/css/perspective-viewer-datagrid.css";
+@import "@perspective-dev/viewer-datagrid/dist/css/perspective-viewer-datagrid-toolbar.css";
+@import "@perspective-dev/viewer-d3fc/dist/css/perspective-viewer-d3fc.css";
+
+@source "../../src/**/*.{ts,tsx}";
+@source "../../../generated-pane/src/**/*.{ts,tsx}";
+@source "./**/*.{ts,tsx}";
+
+html,
+body,
+#root {
+  width: 100%;
+  height: 100%;
+  min-height: 100%;
+}
+
+body {
+  margin: 0;
+}
+
+/* Playground-only chat polish: keep the demo readable and let the transcript scroll. */
+[data-boring-workspace-part="chat-pane"],
+[data-boring-agent] {
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+[data-boring-workspace-part="chat-pane"] {
+  min-height: 0;
+  overflow: hidden;
+}
+
+[data-boring-agent-part="message-content"],
+[data-boring-agent-part="message-text"] {
+  max-width: 76ch;
+}
+
+/* Perspective web components/shadow plugins inherit these vars; keep them aligned with the app. */
+perspective-viewer,
+perspective-viewer * {
+  font-family: var(--boring-font-sans, var(--font-sans, ui-sans-serif, system-ui, sans-serif)) !important;
+}
+
+perspective-viewer {
+  --psp-font-family: var(--boring-font-sans, var(--font-sans, ui-sans-serif, system-ui, sans-serif));
+  --psp-interface-monospace--font-family: var(--boring-font-sans, var(--font-sans, ui-sans-serif, system-ui, sans-serif));
+}

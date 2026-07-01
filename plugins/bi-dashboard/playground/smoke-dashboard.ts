@@ -4,8 +4,8 @@ import { dirname, resolve } from "node:path"
 import { fileURLToPath } from "node:url"
 import { DuckDBConnection, quotedIdentifier, quotedString } from "@duckdb/node-api"
 import { createWorkspaceBridgeRegistry } from "@hachej/boring-workspace/server"
-import { createDataBridgeServerPlugin, type DataBridgeSqlAdapter } from "@hachej/data-bridge/server"
-import type { DataBridgeTableResult } from "@hachej/data-bridge/shared"
+import { createDataBridgeServerPlugin, type DataBridgeSqlAdapter } from "@hachej/boring-data-bridge/server"
+import type { DataBridgeTableResult } from "@hachej/boring-data-bridge/shared"
 
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = dirname(__filename)
