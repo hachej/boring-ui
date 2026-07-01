@@ -9,18 +9,22 @@ function normalizeEmail(email: string): string {
   return email.trim().toLowerCase()
 }
 
+function jsonbPath(path: string[]) {
+  return sql`ARRAY[${sql.join(path.map((part) => sql`${part}`), sql`, `)}]::text[]`
+}
+
 function jsonbSetPathExpression(path: string[], value: unknown) {
   let expression = sql`${userSettings.settings}`
   for (let i = 1; i < path.length; i += 1) {
-    const prefix = path.slice(0, i)
+    const prefixPath = jsonbPath(path.slice(0, i))
     const existingObject = sql`CASE
-      WHEN jsonb_typeof(${userSettings.settings} #> ${prefix}::text[]) = 'object'
-      THEN ${userSettings.settings} #> ${prefix}::text[]
+      WHEN jsonb_typeof(${userSettings.settings} #> ${prefixPath}) = 'object'
+      THEN ${userSettings.settings} #> ${prefixPath}
       ELSE '{}'::jsonb
     END`
-    expression = sql`jsonb_set(${expression}, ${prefix}::text[], ${existingObject}, true)`
+    expression = sql`jsonb_set(${expression}, ${prefixPath}, ${existingObject}, true)`
   }
-  return sql`jsonb_set(${expression}, ${path}::text[], ${JSON.stringify(value)}::jsonb, true)`
+  return sql`jsonb_set(${expression}, ${jsonbPath(path)}, ${JSON.stringify(value)}::jsonb, true)`
 }
 
 function rowToUser(row: typeof users.$inferSelect): User {
