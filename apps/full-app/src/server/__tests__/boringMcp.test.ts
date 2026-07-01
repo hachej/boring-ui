@@ -9,6 +9,7 @@ import {
   createBoringMcpSourceHandlers,
   type McpActor,
   type McpSource,
+  type ManagedConnectorConfig,
   type ManagedConnectorProvider,
   type ManagedConnectorSourceRegistry,
   type McpSourceRegistry,
@@ -93,6 +94,16 @@ describe('full-app boring-mcp binding', () => {
       maxReadonlyInputBytes: 1234,
     })
     expect(readTree(join(process.cwd(), 'src/front'))).not.toContain('COMPOSIO_API_KEY')
+  })
+
+  it('derives supported managed connector providers from connector configs', async () => {
+    const configs: readonly ManagedConnectorConfig[] = [
+      { provider: 'custom-provider', displayName: 'Custom Provider', toolkitId: 'custom-toolkit' },
+    ]
+    const resolver = createFullAppManagedConnectorSecretResolver({ COMPOSIO_API_KEY: 'cmp_test_secret' } as NodeJS.ProcessEnv, configs)
+
+    await expect(resolver.resolveSecret('custom-provider')).resolves.toEqual({ storage: 'server-env', value: 'cmp_test_secret' })
+    await expect(resolver.resolveSecret('notion')).rejects.toThrow('Unsupported MCP provider: notion')
   })
 
   it('falls back to the default input limit for unsafe configured values', () => {
