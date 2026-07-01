@@ -33,6 +33,7 @@ export function InboxRow({
         className="group flex h-11 w-full items-center gap-2 overflow-hidden px-4 text-left text-[12px] transition-colors hover:bg-muted/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
         onClick={() => onOpenArtifact(item)}
         onKeyDown={(event) => {
+          if (event.currentTarget !== event.target) return
           if (event.key !== "Enter" && event.key !== " ") return
           event.preventDefault()
           onOpenArtifact(item)
