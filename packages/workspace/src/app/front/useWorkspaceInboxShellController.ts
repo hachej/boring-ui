@@ -34,12 +34,16 @@ export function useWorkspaceInboxShellController({
         }, surfaceDispatch)
         return { success: true }
       }
+      if (!item.artifact.target) return { success: false, reason: "open-failed", message: "This inbox item has no surface target." }
       dispatchUiCommand({
         kind: "openSurface",
         params: {
           kind: item.artifact.surfaceKind,
           target: item.artifact.target,
-          meta: item.sessionId ? { sessionId: item.sessionId } : {},
+          meta: {
+            ...(item.sessionId ? { sessionId: item.sessionId } : {}),
+            ...(item.artifact.params ? { params: item.artifact.params } : {}),
+          },
         },
       }, surfaceDispatch)
       return { success: true }

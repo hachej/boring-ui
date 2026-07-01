@@ -28,6 +28,7 @@ describe('inbox item model', () => {
       target: 'file.ts',
       surfaceKind: 'file',
       sessionBadge: { kind: 'question', label: 'question', priority: 5 },
+      pruneWhenSessionMissing: true,
       inbox: { kind: 'question', sourceLabel: 'question', priority: 5, createdAt: '2026-01-01T00:00:00.000Z' },
       actions: [{ id: 'open', label: 'Open' }],
     })
@@ -39,6 +40,7 @@ describe('inbox item model', () => {
       sessionId: 's1',
       targetLabel: 'file.ts',
       priority: 5,
+      chatAvailable: true,
     })
     expect(inbox.artifact).toEqual({ type: 'surface', surfaceKind: 'file', target: 'file.ts' })
     expect(inbox.actions).toEqual([{ id: 'open', label: 'Open' }])
@@ -54,14 +56,15 @@ describe('inbox item model', () => {
     })).toBe(true)
   })
 
-  it('filters and sorts deterministically', () => {
+  it('filters and sorts by recency, then priority deterministically', () => {
     const items = [
-      item({ id: 'old-review', kind: 'review', updatedAt: '2026-01-01T00:00:00.000Z' }),
+      item({ id: 'old-high-priority-review', kind: 'review', updatedAt: '2026-01-01T00:00:00.000Z', priority: 10 }),
       item({ id: 'new-question', kind: 'question', updatedAt: '2026-01-02T00:00:00.000Z' }),
+      item({ id: 'tie-high-priority', kind: 'review', updatedAt: '2026-01-02T00:00:00.000Z', priority: 5 }),
     ]
 
     expect(filterInboxItems(items, 'questions').map((entry) => entry.id)).toEqual(['new-question'])
-    expect(sortInboxItems(items).map((entry) => entry.id)).toEqual(['new-question', 'old-review'])
+    expect(sortInboxItems(items).map((entry) => entry.id)).toEqual(['tie-high-priority', 'new-question', 'old-high-priority-review'])
   })
 
   it('keeps pin state in the view model only', () => {

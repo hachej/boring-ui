@@ -3,7 +3,7 @@
 import { useCallback, useMemo, useState } from "react"
 import { Inbox, MailOpen, X } from "lucide-react"
 import { IconButton } from "@hachej/boring-ui-kit"
-import { useWorkspaceAttention } from "../../../front/attention"
+import { emitWorkspaceAttentionAction, useWorkspaceAttention } from "../../../front/attention"
 import { cn } from "../../../front/lib/utils"
 import { attentionBlockerToInboxItem, isInboxAttentionBlocker } from "./attentionBlockerAdapter"
 import { InboxFilterBar } from "./InboxFilterBar"
@@ -51,12 +51,15 @@ export function InboxOverlay({ onClose, headerInsetStart = false, headerInsetEnd
   const shell = useWorkspaceInboxShell()
   const [filter, setFilter] = useState<InboxFilter>("all")
   const [shellError, setShellError] = useState<string | null>(null)
+  const [selectedItemId, setSelectedItemId] = useState<string | null>(null)
   const [pinnedIds, setPinnedIds] = useState<ReadonlySet<string>>(() => readPinnedIds(pinStorageKey))
   const sorted = useMemo(() => sortInboxItems(blockers.filter(isInboxAttentionBlocker).map(attentionBlockerToInboxItem)), [blockers])
   const filtered = useMemo(() => filterInboxItems(sorted, filter), [filter, sorted])
   const items = useMemo(() => mergeInboxPinnedState(filtered, pinnedIds), [filtered, pinnedIds])
   const pinnedItems = useMemo(() => items.filter((item) => item.pinned), [items])
   const unpinnedItems = useMemo(() => items.filter((item) => !item.pinned), [items])
+  const selectedItem = useMemo(() => items.find((item) => item.id === selectedItemId) ?? null, [items, selectedItemId])
+  const selectedBlocker = useMemo(() => selectedItem ? blockers.find((blocker) => blocker.id === selectedItem.id) : undefined, [blockers, selectedItem])
   const counts = useMemo(() => ({
     all: sorted.length,
     questions: filterInboxItems(sorted, "questions").length,
@@ -75,7 +78,14 @@ export function InboxOverlay({ onClose, headerInsetStart = false, headerInsetEnd
   const handleShellResult = useCallback((result: ReturnType<typeof shell.openInboxArtifact>) => {
     setShellError(result.success ? null : result.message)
   }, [])
-  const openArtifact = useCallback((item: WorkspaceInboxItemViewModel) => { handleShellResult(shell.openInboxArtifact(item)) }, [handleShellResult, shell])
+  const openArtifact = useCallback((item: WorkspaceInboxItemViewModel) => {
+    if (!item.artifact) {
+      setShellError(null)
+      setSelectedItemId(item.id)
+      return
+    }
+    handleShellResult(shell.openInboxArtifact(item))
+  }, [handleShellResult, shell])
   const openChat = useCallback((item: WorkspaceInboxItemViewModel) => {
     if (!item.sessionId) return
     handleShellResult(shell.openDetachedChat(item.sessionId, { title: item.title }))
@@ -106,6 +116,31 @@ export function InboxOverlay({ onClose, headerInsetStart = false, headerInsetEnd
 
       <InboxFilterBar filter={filter} counts={counts} onFilterChange={setFilter} />
       {shellError ? <div className="border-b border-border/60 bg-destructive/10 px-4 py-2 text-xs text-destructive">{shellError}</div> : null}
+      {selectedItem ? (
+        <div className="border-b border-border/60 bg-background px-4 py-3 text-xs">
+          <div className="flex items-start justify-between gap-3">
+            <div className="min-w-0">
+              <div className="truncate font-medium text-foreground">{selectedItem.title}</div>
+              <div className="mt-1 line-clamp-2 text-muted-foreground">{selectedItem.description}</div>
+            </div>
+            <button type="button" className="shrink-0 text-muted-foreground hover:text-foreground" onClick={() => setSelectedItemId(null)}>Close</button>
+          </div>
+          {selectedItem.actions.length && selectedBlocker ? (
+            <div className="mt-3 flex flex-wrap gap-1.5">
+              {selectedItem.actions.map((action) => (
+                <button
+                  key={action.id}
+                  type="button"
+                  className="rounded-md border border-border/80 bg-background px-2 py-1 text-[11px] font-medium hover:bg-muted/60"
+                  onClick={() => emitWorkspaceAttentionAction({ blockerId: selectedBlocker.id, actionId: action.id, blocker: selectedBlocker, sessionId: selectedItem.sessionId ?? undefined })}
+                >
+                  {action.label}
+                </button>
+              ))}
+            </div>
+          ) : null}
+        </div>
+      ) : null}
 
       <div className="boring-scrollbar-discreet min-h-0 flex-1 overflow-y-auto bg-[color:oklch(from_var(--background)_calc(l-0.012)_c_h)] py-2" aria-live="polite">
         {items.length === 0 ? (

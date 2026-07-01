@@ -30,6 +30,8 @@ export interface WorkspaceInboxItem {
   description: string
   source: WorkspaceInboxItemSource
   sessionId: string | null
+  /** True only when sessionId is known to be a local workspace chat session. */
+  chatAvailable?: boolean
   targetLabel: string
   artifact: WorkspaceInboxItemArtifactTarget | null
   createdAt: string
@@ -80,10 +82,10 @@ export function filterInboxItems(items: readonly WorkspaceInboxItem[], filter: I
 
 export function sortInboxItems(items: readonly WorkspaceInboxItem[]): WorkspaceInboxItem[] {
   return [...items].sort((a, b) => {
-    const byPinnedPriority = b.priority - a.priority
-    if (byPinnedPriority !== 0) return byPinnedPriority
     const byTime = inboxItemDate(b).getTime() - inboxItemDate(a).getTime()
     if (byTime !== 0) return byTime
+    const byPriority = b.priority - a.priority
+    if (byPriority !== 0) return byPriority
     return a.title.localeCompare(b.title)
   })
 }

@@ -42,6 +42,7 @@ export function attentionBlockerToInboxItem(blocker: WorkspaceAttentionBlocker):
     description: blocker.reason,
     source: { type: "plugin", pluginId: blocker.reason, label: blockerSourceLabel(blocker) },
     sessionId: blocker.sessionId ?? null,
+    chatAvailable: blocker.pruneWhenSessionMissing === true && !!blocker.sessionId,
     targetLabel: blocker.target ?? "",
     artifact: blocker.surfaceKind ? { type: "surface", surfaceKind: blocker.surfaceKind, target: blocker.target } : null,
     createdAt: dateValue(blocker.inbox?.createdAt) ?? updatedAt,

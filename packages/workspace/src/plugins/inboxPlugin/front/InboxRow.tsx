@@ -49,7 +49,7 @@ export function InboxRow({
           <span className={cn("rounded-full px-2 py-0.5 text-[10px] font-medium", badgeTone(item.kind))}>{item.kind}</span>
           <span className="text-[11px] font-medium text-muted-foreground" title={inboxItemDate(item).toLocaleString()}>{formatInboxTime(item)}</span>
         </span>
-        {item.sessionId ? (
+        {item.sessionId && item.chatAvailable ? (
           <button
             type="button"
             aria-label={`Open chat session ${item.sessionId}`}
