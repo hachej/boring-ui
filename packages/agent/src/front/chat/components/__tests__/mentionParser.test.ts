@@ -25,10 +25,26 @@ describe('parseMentions', () => {
 
     expect(segments).toEqual([
       { type: 'text', content: 'Inspect ' },
-      { type: 'mention', content: '@packages/agent', mention: { kind: 'file-path', value: '@packages/agent', label: '@packages/agent' } },
+      { type: 'mention', content: '@packages/agent', mention: { kind: 'file-path', value: 'packages/agent', label: '@packages/agent' } },
       { type: 'text', content: ' and ' },
       { type: 'mention', content: '!design-impeccable', mention: { kind: 'skill', value: '!design-impeccable', label: '!design-impeccable' } },
       { type: 'text', content: '.' },
     ])
+  })
+
+  it('detects plain workspace file paths and keeps line suffixes out of the open path', () => {
+    const segments = parseMentions('Open packages/agent/src/front/chat/PiChatPanel.tsx:42 please.', ['help'])
+
+    expect(segments).toEqual([
+      { type: 'text', content: 'Open ' },
+      { type: 'mention', content: 'packages/agent/src/front/chat/PiChatPanel.tsx:42', mention: { kind: 'file-path', value: 'packages/agent/src/front/chat/PiChatPanel.tsx:42', label: 'packages/agent/src/front/chat/PiChatPanel.tsx:42' } },
+      { type: 'text', content: ' please.' },
+    ])
+  })
+
+  it('does not treat URLs as workspace file paths', () => {
+    const segments = parseMentions('Read https://example.com/packages/agent/src/file.ts.', ['help'])
+
+    expect(segments).toEqual([{ type: 'text', content: 'Read https://example.com/packages/agent/src/file.ts.' }])
   })
 })

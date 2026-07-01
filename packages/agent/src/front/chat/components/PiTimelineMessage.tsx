@@ -53,6 +53,13 @@ export function PiTimelineMessage({ message, isLast, isStreaming, showThoughts, 
   const finalParts = groupRenderableParts(message)
   const attachmentSummaryPaths = role === 'user' ? attachmentPathsFromTextParts(textParts) : []
   const openArtifact = useOpenArtifact()
+  const handleMentionClick = useCallback((mention: ClickableMention) => {
+    if (mention.kind === 'file-path') {
+      openArtifact?.(stripPathLocationSuffix(mention.value))
+      return
+    }
+    onMentionClick?.(mention)
+  }, [onMentionClick, openArtifact])
   const shouldReserveStreamingActions = isStreaming && isAssistant && isLast
 
   return (
@@ -150,7 +157,7 @@ export function PiTimelineMessage({ message, isLast, isStreaming, showThoughts, 
             const text = textForMessageDisplay(item.part.text, role)
             if (!text) return null
             const mentionMarkdownComponents = role === 'assistant' && availableCommands
-              ? createMentionMarkdownComponents(availableCommands, onMentionClick)
+              ? createMentionMarkdownComponents(availableCommands, handleMentionClick)
               : undefined
             return (
               <div key={item.key} data-boring-agent-part="message-text">
@@ -193,6 +200,10 @@ export function PiTimelineMessage({ message, isLast, isStreaming, showThoughts, 
 }
 
 type MentionMarkdownComponents = NonNullable<ComponentProps<typeof MessageResponse>['components']>
+
+function stripPathLocationSuffix(path: string): string {
+  return path.replace(/:\d+(?::\d+)?$/, '')
+}
 
 function createMentionMarkdownComponents(
   availableCommands: string[],
