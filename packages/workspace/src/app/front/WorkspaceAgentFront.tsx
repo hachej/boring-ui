@@ -1336,6 +1336,9 @@ export function WorkspaceAgentFront<
       const chatToolRenderers = (chatParams?.toolRenderers && typeof chatParams.toolRenderers === "object")
         ? chatParams.toolRenderers as ToolRendererOverrides
         : undefined
+      const chatRemoteSessionOptions = (chatParams?.remoteSessionOptions && typeof chatParams.remoteSessionOptions === "object")
+        ? chatParams.remoteSessionOptions as Record<string, unknown>
+        : undefined
       return {
       ...chatParams,
       ...(delayAutoSubmitDraft ? { autoSubmitInitialDraft: false, initialDraft: undefined } : {}),
@@ -1344,6 +1347,7 @@ export function WorkspaceAgentFront<
       workspaceId,
       storageScope: workspaceId,
       requestHeaders: resolvedRequestHeaders,
+      remoteSessionOptions: apiTimeout ? { ...(chatRemoteSessionOptions ?? {}), requestTimeoutMs: apiTimeout } : chatRemoteSessionOptions,
       showSessions: false,
       onReloadAgentPlugins: chatParams?.onReloadAgentPlugins ?? (() => reloadAgentPluginsForSession(sessionId)),
       toolRenderers: { ...pluginToolRenderers, ...(chatToolRenderers ?? {}) },
@@ -1380,7 +1384,7 @@ export function WorkspaceAgentFront<
       ...(resolvedHotReloadEnabled !== undefined ? { hotReloadEnabled: resolvedHotReloadEnabled } : {}),
     }
     },
-    [apiBaseUrl, chatParams, delayAutoSubmitDraft, resolvedRequestHeaders, bridgeEndpoint, surfaceDispatch, extraCommands, workspaceWarmupStatus, hydrateMessages, emptySessionIds, resolvedHotReloadEnabled, pluginToolRenderers, reloadAgentPluginsForSession, sessionApi, workspaceId],
+    [apiBaseUrl, apiTimeout, chatParams, delayAutoSubmitDraft, resolvedRequestHeaders, bridgeEndpoint, surfaceDispatch, extraCommands, workspaceWarmupStatus, hydrateMessages, emptySessionIds, resolvedHotReloadEnabled, pluginToolRenderers, reloadAgentPluginsForSession, sessionApi, workspaceId],
   )
   const centerParams = useMemo(
     () => makeCenterParams(chatSessionId),
@@ -1418,6 +1422,14 @@ export function WorkspaceAgentFront<
       }
     })
   }, [activeChatPaneId, chatPaneIds, defaultSessionTitle, makeCenterParams, sessionTitleById])
+  const attentionSessionIds = useMemo(() => {
+    const ids = new Set<string>()
+    for (const session of resolvedSessions) ids.add(session.id)
+    for (const id of chatPaneIds) ids.add(id)
+    if (effectiveActiveSessionId) ids.add(effectiveActiveSessionId)
+    return [...ids]
+  }, [chatPaneIds, effectiveActiveSessionId, resolvedSessions])
+  const attentionSessionsAuthoritative = !remoteSessionsPending && !(sessionApi?.hasMore ?? false)
   const surfaceParams = useMemo<SurfaceShellProps>(() => ({
     storageKey: resolvedSurfaceStorageKey,
     defaultLeftTab: defaultWorkbenchLeftTab,
@@ -1678,6 +1690,8 @@ export function WorkspaceAgentFront<
         apiTimeout={apiTimeout}
         activeSessionId={activeChatPaneId}
         openSessionIds={chatPaneIds}
+        attentionSessionIds={attentionSessionIds}
+        attentionSessionsAuthoritative={attentionSessionsAuthoritative}
         defaultTheme={defaultTheme}
         onThemeChange={onThemeChange}
         workspaceId={workspaceId}

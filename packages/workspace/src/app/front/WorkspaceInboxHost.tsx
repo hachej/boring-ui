@@ -3,6 +3,8 @@
 import { useMemo, useState, type ReactNode } from "react"
 import { Inbox } from "lucide-react"
 import type { DispatchContext } from "../../front/bridge"
+import { useWorkspaceAttention } from "../../front/attention"
+import { isInboxAttentionBlocker } from "../../plugins/inboxPlugin/front/attentionBlockerAdapter"
 import type { PanelConfig } from "../../front/registry/types"
 import { DetachedChatPopover } from "../../front/chrome/chat/DetachedChatPopover"
 import type { ChatPanelHostProps } from "../../front/chrome/chat/ChatPanelHost"
@@ -12,10 +14,26 @@ import { useWorkspaceInboxShellController } from "./useWorkspaceInboxShellContro
 
 export interface WorkspaceInboxHostResult {
   providerPanels?: PanelConfig[]
-  primaryActions: Array<{ id: string; label: string; icon: ReactNode; onClick: () => void }>
+  primaryActions: Array<{ id: string; label: string; icon: ReactNode; onClick: () => void; trailing?: ReactNode }>
   leftOverlayNode: ReactNode
   floatingChatNode: ReactNode
   shellApi: WorkspaceInboxShellApi
+}
+
+function InboxCountBadge() {
+  const { blockers } = useWorkspaceAttention()
+  const count = blockers.filter(isInboxAttentionBlocker).length
+  if (count === 0) return null
+  const label = count > 99 ? "99+" : String(count)
+  return (
+    <span
+      data-boring-workspace-part="app-left-inbox-count"
+      aria-label={`${count} inbox item${count === 1 ? "" : "s"}`}
+      className="inline-flex min-w-5 items-center justify-center rounded-full bg-[color:var(--accent)] px-1.5 py-0.5 text-[10px] font-semibold leading-none text-white shadow-sm"
+    >
+      {label}
+    </span>
+  )
 }
 
 export function useWorkspaceInboxHost({
@@ -54,6 +72,7 @@ export function useWorkspaceInboxHost({
     id: "inbox",
     label: "Inbox",
     icon: <Inbox className="h-4 w-4" strokeWidth={1.75} />,
+    trailing: <InboxCountBadge />,
     onClick: () => setLeftOverlay((cur) => cur === "inbox" ? null : "inbox"),
   }] : [], [enabled, setLeftOverlay])
 

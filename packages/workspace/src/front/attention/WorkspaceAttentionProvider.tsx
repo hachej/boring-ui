@@ -1,6 +1,6 @@
 "use client"
 
-import { createContext, useCallback, useContext, useMemo, useState, type ReactNode } from "react"
+import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from "react"
 
 export const WORKSPACE_ATTENTION_ACTION_EVENT = "boring-workspace:attention-action" as const
 
@@ -73,6 +73,14 @@ export interface WorkspaceAttentionContextValue {
   removeBlocker: (id: string) => void
 }
 
+export type WorkspaceAttentionProviderProps = {
+  children: ReactNode
+  /** Authoritative set of existing chat sessions. Session-scoped blockers outside this set are stale and removed. */
+  knownSessionIds?: readonly string[]
+  /** Keep false while sessions are still loading/paginated so valid blockers are not pruned early. */
+  knownSessionsAuthoritative?: boolean
+}
+
 const noopAttention: WorkspaceAttentionContextValue = {
   blockers: [],
   addBlocker: () => undefined,
@@ -85,14 +93,20 @@ export function useWorkspaceAttention(): WorkspaceAttentionContextValue {
   return useContext(WorkspaceAttentionContext) ?? noopAttention
 }
 
-export function WorkspaceAttentionProvider({ children }: { children: ReactNode }) {
+export function WorkspaceAttentionProvider({ children, knownSessionIds, knownSessionsAuthoritative = true }: WorkspaceAttentionProviderProps) {
   const [blockers, setBlockers] = useState<WorkspaceAttentionBlocker[]>([])
+  const knownSessionKey = knownSessionIds?.join("\0")
   const addBlocker = useCallback((blocker: WorkspaceAttentionBlocker) => {
     setBlockers((current) => [...current.filter((item) => item.id !== blocker.id), blocker])
   }, [])
   const removeBlocker = useCallback((id: string) => {
     setBlockers((current) => current.filter((item) => item.id !== id))
   }, [])
+  useEffect(() => {
+    if (!knownSessionIds || !knownSessionsAuthoritative) return
+    const known = new Set(knownSessionIds)
+    setBlockers((current) => current.filter((blocker) => !blocker.sessionId || known.has(blocker.sessionId)))
+  }, [knownSessionIds, knownSessionKey, knownSessionsAuthoritative])
   const value = useMemo<WorkspaceAttentionContextValue>(
     () => ({ blockers, addBlocker, removeBlocker }),
     [blockers, addBlocker, removeBlocker],
