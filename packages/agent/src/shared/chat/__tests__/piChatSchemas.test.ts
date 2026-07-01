@@ -133,6 +133,16 @@ describe('Pi chat shared schemas', () => {
       role: 'user',
       createdAt: '2026-06-06T10:00:00.000Z',
     })).toMatchObject({ type: 'message-start', createdAt: '2026-06-06T10:00:00.000Z' })
+    expect(PiChatEventSchema.parse({
+      type: 'message-start',
+      seq: 7,
+      messageId: 'u-company',
+      role: 'user',
+      files: [{ type: 'file', path: '/company/hr/policy.md', filesystem: 'company_context' }],
+    })).toMatchObject({
+      type: 'message-start',
+      files: [{ type: 'file', path: '/company/hr/policy.md', filesystem: 'company_context' }],
+    })
     expect(PiChatEventSchema.safeParse({ type: 'new-future-event', seq: 1 }).success).toBe(false)
     expect(PiChatEventSchema.safeParse({ type: 'message-delta', messageId: 'm1', partId: 'p1', kind: 'text', delta: 'hi' }).success).toBe(false)
   })
