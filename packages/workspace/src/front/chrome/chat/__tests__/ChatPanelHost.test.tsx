@@ -223,7 +223,7 @@ describe("ChatPanelHost", () => {
       rafQueue.shift()?.(0)
       expect(openFile).not.toHaveBeenCalled()
       rafQueue.shift()?.(0)
-      expect(openFile).toHaveBeenCalledWith("src/example.ts")
+      expect(openFile).toHaveBeenCalledWith("src/example.ts", { filesystem: "user" })
       expect(onOpenArtifact).toHaveBeenCalledWith("src/example.ts")
     } finally {
       global.requestAnimationFrame = originalRaf

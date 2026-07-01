@@ -6,6 +6,7 @@ import type {
   DynamicPaneConfig,
   Unsubscribe,
 } from "./types"
+import { normalizeUiFilesystem, uiFileResourceKey } from "../../shared/types/filesystem"
 import {
   openFileSchema,
   openPanelSchema,
@@ -69,12 +70,13 @@ export function createBridge(store: StoreApi): WorkspaceBridge {
     },
 
     async openFile(path, opts) {
-      const parsed = openFileSchema.safeParse({ path, mode: opts?.mode })
+      const parsed = openFileSchema.safeParse({ path, mode: opts?.mode, filesystem: opts?.filesystem })
       if (!parsed.success) return err("VALIDATION", parsed.error.issues[0].message)
 
       const state = store.getState()
       const mode = parsed.data.mode ?? "edit"
-      const panelId = `file:${path}`
+      const filesystem = normalizeUiFilesystem(parsed.data.filesystem)
+      const panelId = `file:${uiFileResourceKey({ filesystem, path })}`
       const existing = state.panels.find((p) => p.id === panelId)
       if (existing) {
         const prev = state.activePanel
@@ -92,9 +94,9 @@ export function createBridge(store: StoreApi): WorkspaceBridge {
       }
 
       state.openFile(path, panelId)
-      state.openPanel({ id: panelId, component: "editor", params: { path, mode } })
-      emit("file:opened", { path, mode })
-      emit("panel:opened", { panelId, params: { path, mode } })
+      state.openPanel({ id: panelId, component: "editor", params: { path, mode, filesystem } })
+      emit("file:opened", { path, mode, filesystem })
+      emit("panel:opened", { panelId, params: { path, mode, filesystem } })
       return ok()
     },
 
