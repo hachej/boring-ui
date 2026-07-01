@@ -659,6 +659,7 @@ function resolveWorkspaceBridgeBrowserAuthPolicy(
   return createLocalCliBridgeAuthPolicy({
     workspaceId: "default",
     capabilities: registry.listDefinitions().flatMap((definition) => [...definition.requiredCapabilities]),
+    forceOwnerWorkspaceId: true,
   })
 }
 
