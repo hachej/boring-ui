@@ -1136,9 +1136,6 @@ export function WorkspaceAgentFront<
     })
     return alreadyVisible ? rawSwitch(nextSessionId) : resolvedSwitch(nextSessionId)
   }, [chatPaneState, chatSessionId, rawSwitch, resolvedSwitch, workspaceId])
-  useEffect(() => {
-    switchSessionForSurfaceRef.current = switchToChatPane
-  }, [switchToChatPane])
 
   const activateChatPane = useCallback((nextSessionId: string) => {
     setChatPaneState((previous) => {
