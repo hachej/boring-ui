@@ -33,10 +33,10 @@
     "@hachej/boring-workspace": "workspace:*"
   },
   "devDependencies": {
-    "@duckdb/node-api": "1.5.2-r.1",
+    "@duckdb/node-api": "1.5.2-r.2",
     "@hachej/boring-workspace": "workspace:*",
     "tsup": "^8.4.0",
-    "typescript": "~5.9.3",
+    "typescript": "~6.0.3",
     "vitest": "^3.2.6"
   }
 }
