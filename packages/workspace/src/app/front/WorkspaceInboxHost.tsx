@@ -1,6 +1,6 @@
 "use client"
 
-import { useMemo, useState, type ReactNode } from "react"
+import { useEffect, useMemo, useState, type ReactNode } from "react"
 import { Inbox } from "lucide-react"
 import type { DispatchContext } from "../../front/bridge"
 import { useWorkspaceAttention } from "../../front/attention"
@@ -66,6 +66,9 @@ export function useWorkspaceInboxHost({
   surfaceDispatch: DispatchContext
 }): WorkspaceInboxHostResult {
   const [floatingChatSessionId, setFloatingChatSessionId] = useState<string | null>(null)
+  useEffect(() => {
+    setFloatingChatSessionId(null)
+  }, [workspaceId])
   const inboxShellApi = useWorkspaceInboxShellController({ setFloatingChatSessionId, surfaceDispatch })
   const providerPanels = panels
   const primaryActions = useMemo(() => enabled ? [{
