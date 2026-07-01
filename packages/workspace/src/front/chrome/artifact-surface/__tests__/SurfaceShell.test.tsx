@@ -11,6 +11,7 @@ let capturedSurfaceStorageKey: string | undefined
 let capturedAllowedPanels: string[] | undefined
 let capturedWorkbenchBridge: any
 let mockAddPanel = vi.fn()
+let mockPanels: any[] = []
 let mockGetPanel: (id: string) => unknown = vi.fn(() => undefined)
 
 vi.mock("../../workbench-left/WorkbenchLeftPane", () => ({
@@ -27,7 +28,7 @@ vi.mock("../ArtifactSurfacePane", async () => {
     capturedAllowedPanels = props.allowedPanels
     React.useEffect(() => {
       props.onReady?.({
-        panels: [],
+        panels: mockPanels,
         activePanel: null,
         getPanel: mockGetPanel,
         addPanel: mockAddPanel,
@@ -65,6 +66,7 @@ describe("SurfaceShell", () => {
     capturedAllowedPanels = undefined
     capturedWorkbenchBridge = undefined
     mockAddPanel = vi.fn()
+    mockPanels = []
     mockGetPanel = vi.fn(() => undefined)
     localStorage.clear()
   })
@@ -138,14 +140,80 @@ describe("SurfaceShell", () => {
     await waitFor(() => expect(surface).toBeDefined())
 
     await act(async () => {
-      await surface?.openFile("data.csv")
+      await surface?.openFile("README.md")
+    })
+    expect(mockAddPanel).toHaveBeenCalledWith(expect.objectContaining({
+      id: "file:user:README.md",
+      component: "editor",
+      params: expect.objectContaining({ path: "README.md", filesystem: "user" }),
+    }))
+
+    mockAddPanel.mockClear()
+    await act(async () => {
+      await surface?.openFile("data.csv", { filesystem: "company_context" })
     })
 
     expect(mockAddPanel).toHaveBeenCalledWith(expect.objectContaining({
-      id: "hot-csv:data.csv",
+      id: "file:company_context:data.csv",
       component: "hot-csv.panel",
-      params: expect.objectContaining({ path: "data.csv" }),
+      params: expect.objectContaining({ path: "data.csv", filesystem: "company_context" }),
     }))
+  })
+
+  it("reactivates legacy user file panels instead of duplicating default workspace opens", async () => {
+    let surface: SurfaceShellApi | undefined
+    const legacySetActive = vi.fn()
+    const legacyUpdateParameters = vi.fn()
+    mockPanels = [{
+      id: "file:README.md",
+      component: "editor",
+      params: { path: "README.md" },
+      api: { setActive: legacySetActive, updateParameters: legacyUpdateParameters },
+    }]
+    const panelRegistry = new PanelRegistry()
+    panelRegistry.register("editor", { title: "Editor", placement: "center", component: () => null })
+    const surfaceResolverRegistry = new SurfaceResolverRegistry()
+    surfaceResolverRegistry.register("filesystem", {
+      source: "builtin",
+      resolve: (request) => request.kind === WORKSPACE_OPEN_PATH_SURFACE_KIND
+        ? { component: "editor", params: { path: request.target }, score: 0 }
+        : undefined,
+    })
+
+    renderSurface("workspace-a", { onReady: (api) => { surface = api } }, panelRegistry, surfaceResolverRegistry)
+    await waitFor(() => expect(surface).toBeDefined())
+
+    await act(async () => {
+      await surface?.openFile("README.md")
+    })
+
+    expect(mockAddPanel).not.toHaveBeenCalled()
+    expect(legacyUpdateParameters).toHaveBeenCalledWith(expect.objectContaining({ path: "README.md", filesystem: "user" }))
+    expect(legacySetActive).toHaveBeenCalled()
+  })
+
+  it("opens the same path in user and company_context as distinct surface panels", async () => {
+    let surface: SurfaceShellApi | undefined
+    const panelRegistry = new PanelRegistry()
+    panelRegistry.register("editor", { title: "Editor", placement: "center", component: () => null })
+    const surfaceResolverRegistry = new SurfaceResolverRegistry()
+    surfaceResolverRegistry.register("filesystem", {
+      source: "builtin",
+      resolve: (request) => request.kind === WORKSPACE_OPEN_PATH_SURFACE_KIND
+        ? { component: "editor", params: { path: request.target }, score: 0 }
+        : undefined,
+    })
+
+    renderSurface("workspace-a", { onReady: (api) => { surface = api } }, panelRegistry, surfaceResolverRegistry)
+    await waitFor(() => expect(surface).toBeDefined())
+
+    await act(async () => {
+      await surface?.openFile("same.md")
+      await surface?.openFile("same.md", { filesystem: "company_context" })
+    })
+
+    expect(mockAddPanel).toHaveBeenCalledWith(expect.objectContaining({ id: "file:user:same.md" }))
+    expect(mockAddPanel).toHaveBeenCalledWith(expect.objectContaining({ id: "file:company_context:same.md" }))
   })
 
   it("routes openSurface path requests through the latest resolver before stale file tabs", async () => {
@@ -175,13 +243,13 @@ describe("SurfaceShell", () => {
     await waitFor(() => expect(surface).toBeDefined())
 
     act(() => {
-      surface?.openSurface({ kind: WORKSPACE_OPEN_PATH_SURFACE_KIND, target: "data.csv" })
+      surface?.openSurface({ kind: WORKSPACE_OPEN_PATH_SURFACE_KIND, target: "data.csv", filesystem: "company_context" })
     })
 
     expect(mockAddPanel).toHaveBeenCalledWith(expect.objectContaining({
-      id: "hot-csv:data.csv",
+      id: "file:company_context:data.csv",
       component: "hot-csv.panel",
-      params: expect.objectContaining({ path: "data.csv" }),
+      params: expect.objectContaining({ path: "data.csv", filesystem: "company_context" }),
     }))
   })
 
