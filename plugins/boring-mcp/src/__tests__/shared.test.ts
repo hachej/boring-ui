@@ -8,6 +8,7 @@ import {
   assertMcpToolAllowed,
   classifyMcpTool,
   containsMcpSecret,
+  containsMcpSecretOrCanary,
   doctorMcpSource,
   redactMcpSecrets,
   type McpActor,
@@ -58,6 +59,13 @@ describe("boring-mcp shared policy", () => {
       authorization: "[REDACTED_MCP_SECRET]",
       nested: { text: "[REDACTED_MCP_SECRET] and [REDACTED_MCP_SECRET] and [REDACTED_MCP_SECRET]" },
     })
+  })
+
+  it("detects MCP secrets or seeded redaction canaries through the shared guard", () => {
+    expect(containsMcpSecretOrCanary({ nested: { value: "MCP_CANARY_DO_NOT_LEAK" } }, ["MCP_CANARY_DO_NOT_LEAK", ""])).toBe(true)
+    expect(containsMcpSecretOrCanary({ "MCP_CANARY_DO_NOT_LEAK": "key hit" }, ["MCP_CANARY_DO_NOT_LEAK"])).toBe(true)
+    expect(containsMcpSecretOrCanary({ nested: { authorization: "Bearer abcdefghijklmnop" } }, ["MCP_CANARY_DO_NOT_LEAK"])).toBe(true)
+    expect(containsMcpSecretOrCanary({ nested: { value: "safe" } }, ["MCP_CANARY_DO_NOT_LEAK", ""])).toBe(false)
   })
 
   it("reports disconnected and unknown sources in doctor output", () => {
