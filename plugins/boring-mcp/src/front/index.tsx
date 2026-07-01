@@ -1,12 +1,9 @@
 "use client"
 
 import { useEffect, useState, type CSSProperties } from "react"
-import type { PaneProps } from "@hachej/boring-workspace"
 import { definePlugin, type BoringFrontFactoryWithId } from "@hachej/boring-workspace/plugin"
 import {
   BORING_MCP_PLUGIN_ID,
-  BORING_MCP_SOURCES_PANEL_ID,
-  BORING_MCP_SOURCES_TAB_PANEL_ID,
   DEFAULT_MCP_PROVIDER_TEMPLATES,
   type McpProviderId,
   type McpProviderTemplate,
@@ -31,6 +28,14 @@ export interface BoringMcpProviderSetupState {
   message?: string
 }
 
+export interface BoringMcpSourceApiOptions {
+  enabled: boolean
+  baseUrl?: string
+  workspaceId?: string
+  resolveWorkspaceId?: () => string | undefined
+  openConnectUrl?: (url: string) => void
+}
+
 export interface CreateBoringMcpPluginOptions {
   label?: string
   tabTitle?: string
@@ -42,6 +47,7 @@ export interface CreateBoringMcpPluginOptions {
   catalogTools?: readonly McpToolCatalogEntry[]
   sourceStatuses?: readonly McpSourceStatusPayload[]
   sourceActions?: BoringMcpSourceActions
+  sourceApi?: BoringMcpSourceApiOptions
   providerSetup?: readonly BoringMcpProviderSetupState[]
   connectionUnavailableMessage?: string
 }
@@ -81,6 +87,101 @@ function upsertSourceStatus(statuses: readonly McpSourceStatusPayload[], next: B
   return statuses.map((status, itemIndex) => itemIndex === index ? next : status)
 }
 
+function defaultWorkspaceIdFromLocation(): string | undefined {
+  if (typeof window === "undefined") return undefined
+  const url = new URL(window.location.href)
+  const queryWorkspaceId = url.searchParams.get("workspaceId")?.trim()
+  if (queryWorkspaceId) return queryWorkspaceId
+  const match = url.pathname.match(/\/(?:workspace|w)\/([^/?#]+)/)
+  return match?.[1] ? decodeURIComponent(match[1]) : undefined
+}
+
+function resolveSourceApiWorkspaceId(sourceApi: BoringMcpSourceApiOptions): string {
+  const workspaceId = sourceApi.workspaceId ?? sourceApi.resolveWorkspaceId?.() ?? defaultWorkspaceIdFromLocation()
+  if (!workspaceId) throw new Error("Open a workspace before connecting sources.")
+  return workspaceId
+}
+
+function sourceApiUrl(sourceApi: BoringMcpSourceApiOptions, path: string): string {
+  const base = sourceApi.baseUrl?.replace(/\/$/, "") ?? ""
+  return `${base}${path}`
+}
+
+async function readSourceApiJson<T>(response: Response): Promise<T> {
+  const payload = await response.json().catch((): unknown => undefined)
+  if (!response.ok) {
+    const message = payload && typeof payload === "object" && "message" in payload && typeof payload.message === "string"
+      ? payload.message
+      : "Source API request failed."
+    throw new Error(message)
+  }
+  return payload as T
+}
+
+async function sourceApiRequest<T>(sourceApi: BoringMcpSourceApiOptions, path: string, body?: Record<string, unknown>): Promise<T> {
+  const workspaceId = resolveSourceApiWorkspaceId(sourceApi)
+  const response = await fetch(sourceApiUrl(sourceApi, path), {
+    method: body ? "POST" : "GET",
+    credentials: "same-origin",
+    headers: {
+      "content-type": "application/json",
+      "x-boring-workspace-id": workspaceId,
+    },
+    body: body ? JSON.stringify(body) : undefined,
+  })
+  return readSourceApiJson<T>(response)
+}
+
+function defaultOpenConnectUrl(url: string): void {
+  if (typeof window === "undefined") return
+  window.open(url, "_blank", "noopener,noreferrer")
+}
+
+function openPendingConnectWindow(sourceApi: BoringMcpSourceApiOptions): Window | undefined {
+  if (sourceApi.openConnectUrl || typeof window === "undefined") return undefined
+  const popup = window.open("about:blank", "_blank")
+  if (!popup) throw new Error("Popup blocked. Allow popups for this site and try connecting again.")
+  try { popup.opener = null } catch { /* best effort */ }
+  return popup
+}
+
+function navigatePendingConnectWindow(popup: Window | undefined, url: string | undefined): void {
+  if (!popup) {
+    if (url) defaultOpenConnectUrl(url)
+    return
+  }
+  if (!url) {
+    popup.close()
+    return
+  }
+  popup.location.href = url
+}
+
+function createBrowserSourceActions(sourceApi: BoringMcpSourceApiOptions): BoringMcpSourceActions {
+  return {
+    async onConnect(providerId) {
+      const popup = openPendingConnectWindow(sourceApi)
+      try {
+        const result = await sourceApiRequest<{ status: McpSourceStatusPayload; connectUrl?: string }>(sourceApi, "/api/v1/boring-mcp/connect", { provider: providerId })
+        if (sourceApi.openConnectUrl && result.connectUrl) sourceApi.openConnectUrl(result.connectUrl)
+        else navigatePendingConnectWindow(popup, result.connectUrl)
+        return result.status
+      } catch (error) {
+        popup?.close()
+        throw error
+      }
+    },
+    async onRefreshStatus(sourceId) {
+      const result = await sourceApiRequest<{ status: McpSourceStatusPayload }>(sourceApi, "/api/v1/boring-mcp/refresh", { sourceId })
+      return result.status
+    },
+    async onDisconnect(sourceId) {
+      const result = await sourceApiRequest<{ status: McpSourceStatusPayload }>(sourceApi, "/api/v1/boring-mcp/disconnect", { sourceId })
+      return result.status
+    },
+  }
+}
+
 function statusLabel(status: McpSourceStatus | undefined): string {
   switch (status) {
     case "connected": return "Connected"
@@ -101,13 +202,6 @@ function statusTone(status: McpSourceStatus | undefined): CSSProperties {
   }
 }
 
-function openSourcesPanel(containerApi: PaneProps["containerApi"]) {
-  containerApi.addPanel({
-    id: BORING_MCP_SOURCES_PANEL_ID,
-    component: BORING_MCP_SOURCES_PANEL_ID,
-    title: "MCP Sources",
-  })
-}
 
 const styles: Record<string, CSSProperties> = {
   tab: { display: "flex", height: "100%", flexDirection: "column", gap: 10, padding: 10 },
@@ -120,6 +214,11 @@ const styles: Record<string, CSSProperties> = {
   dangerButton: { border: "1px solid color-mix(in srgb, #ef4444 55%, var(--border))", borderRadius: 12, background: "var(--card)", color: "var(--foreground)", cursor: "pointer", padding: "10px 12px", fontWeight: 700 },
   disabledButton: { border: "1px solid var(--border)", borderRadius: 12, background: "var(--muted)", color: "var(--muted-foreground)", cursor: "not-allowed", padding: "10px 12px", fontWeight: 700 },
   note: { marginTop: "auto", border: "1px solid var(--border)", borderRadius: 16, background: "var(--card)", padding: 12 },
+  overlay: { display: "flex", height: "100%", minHeight: 0, flexDirection: "column", background: "var(--background)", color: "var(--foreground)" },
+  overlayHeader: { display: "flex", minHeight: 48, flexShrink: 0, alignItems: "center", justifyContent: "space-between", gap: 12, borderBottom: "1px solid var(--border)", padding: "0 16px" },
+  overlayTitle: { margin: 0, fontSize: 14, fontWeight: 700, letterSpacing: "-0.02em" },
+  overlayDescription: { margin: 0, overflow: "hidden", color: "var(--muted-foreground)", fontSize: 12, textOverflow: "ellipsis", whiteSpace: "nowrap" },
+  closeButton: { border: "1px solid transparent", borderRadius: 10, background: "transparent", color: "var(--muted-foreground)", cursor: "pointer", padding: "6px 9px", fontSize: 18, lineHeight: 1 },
   panel: { minHeight: "100%", overflow: "auto", padding: 24, background: "var(--background)", color: "var(--foreground)" },
   hero: { display: "flex", justifyContent: "space-between", gap: 20, maxWidth: 1120, margin: "0 auto 18px" },
   heroTitle: { margin: 0, maxWidth: 760, fontSize: "clamp(34px, 5vw, 64px)", lineHeight: 0.95, letterSpacing: "-0.065em" },
@@ -143,9 +242,10 @@ function ActionButton({ children, disabled, tone = "secondary", onClick }: { chi
   return <button type="button" disabled={disabled} style={style} onClick={onClick}>{children}</button>
 }
 
-function ProviderCard({ provider, options, sourceStatuses, pending, runAction }: {
+function ProviderCard({ provider, options, actions, sourceStatuses, pending, runAction }: {
   provider: McpProviderTemplate
   options: CreateBoringMcpPluginOptions
+  actions: BoringMcpSourceActions
   sourceStatuses: readonly McpSourceStatusPayload[]
   pending?: string
   runAction: (key: string, action: () => MaybePromise<BoringMcpSourceActionResult>) => void
@@ -153,7 +253,6 @@ function ProviderCard({ provider, options, sourceStatuses, pending, runAction }:
   const sourceStatus = findSourceStatus(provider, sourceStatuses)
   const source = sourceStatus?.source
   const setup = providerSetupState(provider, options)
-  const actions = options.sourceActions ?? {}
   const setupEnabled = setup?.enabled ?? true
   const status = source?.status
   const sourceId = source?.id
@@ -225,29 +324,12 @@ function ProviderCard({ provider, options, sourceStatuses, pending, runAction }:
   )
 }
 
-function SourcesTab({ containerApi, options }: PaneProps & { options: CreateBoringMcpPluginOptions }) {
-  return (
-    <div style={styles.tab}>
-      <div>
-        <p style={styles.eyebrow}>Context</p>
-        <h2 style={styles.title}>{options.tabTitle ?? "Sources"}</h2>
-        <p style={styles.muted}>Connect approved context providers behind governed MCP tools.</p>
-      </div>
-      <button type="button" style={styles.button} onClick={() => openSourcesPanel(containerApi)}>
-        <strong>Manage sources</strong>
-        <span style={{ ...styles.muted, display: "block", marginTop: 4 }}>Connect, refresh, disconnect, and inspect tools</span>
-      </button>
-      <div style={styles.note}>
-        <strong>V0 rule</strong>
-        <span style={{ ...styles.muted, display: "block", marginTop: 6 }}>Agents only see boring-mcp bridge tools. Provider meta-tools stay server-side.</span>
-      </div>
-    </div>
-  )
-}
-
-function SourcesPanel({ options }: { options: CreateBoringMcpPluginOptions }) {
+export function BoringMcpSourcesPanel({ options }: { options: CreateBoringMcpPluginOptions }) {
   const providers = resolveProviders(options)
   const governanceNotes = options.governanceNotes ?? defaultGovernanceNotes
+  const sourceApi = options.sourceApi?.enabled ? options.sourceApi : undefined
+  const browserActions = sourceApi ? createBrowserSourceActions(sourceApi) : {}
+  const actions = { ...browserActions, ...(options.sourceActions ?? {}) }
   const [sourceStatuses, setSourceStatuses] = useState<readonly McpSourceStatusPayload[]>(options.sourceStatuses ?? [])
   const [pending, setPending] = useState<string | undefined>()
   const [actionError, setActionError] = useState<string | undefined>()
@@ -255,6 +337,20 @@ function SourcesPanel({ options }: { options: CreateBoringMcpPluginOptions }) {
   useEffect(() => {
     setSourceStatuses(options.sourceStatuses ?? [])
   }, [options.sourceStatuses])
+
+  useEffect(() => {
+    if (!sourceApi) return
+    let cancelled = false
+    void (async () => {
+      try {
+        const result = await sourceApiRequest<{ sourceStatuses: McpSourceStatusPayload[] }>(sourceApi, "/api/v1/boring-mcp/sources")
+        if (!cancelled) setSourceStatuses(result.sourceStatuses)
+      } catch (error) {
+        if (!cancelled) setActionError(actionErrorMessage(error))
+      }
+    })()
+    return () => { cancelled = true }
+  }, [sourceApi])
 
   const runAction = (key: string, action: () => MaybePromise<BoringMcpSourceActionResult>) => {
     setPending(key)
@@ -286,7 +382,7 @@ function SourcesPanel({ options }: { options: CreateBoringMcpPluginOptions }) {
       </section>
       {actionError && <div role="alert" style={{ ...styles.codeCard, maxWidth: 1120, margin: "0 auto 18px", borderColor: "color-mix(in srgb, #ef4444 55%, var(--border))" }}>{actionError}</div>}
       <section style={styles.grid} aria-label="Configured source providers">
-        {providers.map((provider) => <ProviderCard key={provider.id} provider={provider} options={options} sourceStatuses={sourceStatuses} pending={pending} runAction={runAction} />)}
+        {providers.map((provider) => <ProviderCard key={provider.id} provider={provider} options={options} actions={actions} sourceStatuses={sourceStatuses} pending={pending} runAction={runAction} />)}
       </section>
       <section style={styles.toolGrid} aria-label="Tool catalog preview">
         {(options.catalogTools ?? []).length === 0 ? (
@@ -325,16 +421,38 @@ function SourcesPanel({ options }: { options: CreateBoringMcpPluginOptions }) {
   )
 }
 
+export interface BoringMcpSourcesOverlayProps {
+  options?: CreateBoringMcpPluginOptions
+  onClose?: () => void
+  headerInsetStart?: boolean
+  headerInsetEnd?: boolean
+}
+
+export function BoringMcpSourcesOverlay({ options = {}, onClose, headerInsetStart = false, headerInsetEnd = false }: BoringMcpSourcesOverlayProps) {
+  return (
+    <div data-boring-workspace-part="boring-mcp-sources-overlay" style={styles.overlay}>
+      <header style={{
+        ...styles.overlayHeader,
+        paddingLeft: headerInsetStart ? 48 : 16,
+        paddingRight: headerInsetEnd ? 64 : 16,
+      }}>
+        <div style={{ minWidth: 0 }}>
+          <h2 style={styles.overlayTitle}>{options.tabTitle ?? options.label ?? "Sources"}</h2>
+          <p style={styles.overlayDescription}>Connect approved context sources through governed MCP tools.</p>
+        </div>
+        {onClose ? <button type="button" aria-label="Close Sources" style={styles.closeButton} onClick={onClose}>×</button> : null}
+      </header>
+      <div style={{ minHeight: 0, flex: 1, overflow: "auto" }}>
+        <BoringMcpSourcesPanel options={options} />
+      </div>
+    </div>
+  )
+}
+
 export function createBoringMcpPlugin(options: CreateBoringMcpPluginOptions = {}): BoringFrontFactoryWithId {
-  const label = options.label ?? "Sources"
   return definePlugin({
     id: BORING_MCP_PLUGIN_ID,
-    label,
-    panels: [
-      { id: BORING_MCP_SOURCES_TAB_PANEL_ID, label, placement: "left-tab", component: (props) => <SourcesTab {...props} options={options} /> },
-      { id: BORING_MCP_SOURCES_PANEL_ID, label: options.panelTitle ?? "MCP Sources", placement: "center", component: () => <SourcesPanel options={options} /> },
-    ],
-    commands: [{ id: "boring-mcp.open-sources", title: "Open Sources", panelId: BORING_MCP_SOURCES_PANEL_ID, keywords: ["mcp", "sources", "context"] }],
+    label: options.label ?? "Sources",
   })
 }
 

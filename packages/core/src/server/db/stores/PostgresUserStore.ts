@@ -9,6 +9,20 @@ function normalizeEmail(email: string): string {
   return email.trim().toLowerCase()
 }
 
+function jsonbSetPathExpression(path: string[], value: unknown) {
+  let expression = sql`${userSettings.settings}`
+  for (let i = 1; i < path.length; i += 1) {
+    const prefix = path.slice(0, i)
+    const existingObject = sql`CASE
+      WHEN jsonb_typeof(${userSettings.settings} #> ${prefix}::text[]) = 'object'
+      THEN ${userSettings.settings} #> ${prefix}::text[]
+      ELSE '{}'::jsonb
+    END`
+    expression = sql`jsonb_set(${expression}, ${prefix}::text[], ${existingObject}, true)`
+  }
+  return sql`jsonb_set(${expression}, ${path}::text[], ${JSON.stringify(value)}::jsonb, true)`
+}
+
 function rowToUser(row: typeof users.$inferSelect): User {
   return {
     id: row.id,
@@ -118,6 +132,85 @@ export class PostgresUserStore implements UserStore {
         },
       })
       .returning()
+
+    return {
+      displayName: rows[0].displayName,
+      email: rows[0].email,
+      settings: (rows[0].settings ?? {}) as Record<string, unknown>,
+    }
+  }
+
+  async putClientUserSettings(
+    userId: string,
+    appId: string,
+    updates: { displayName?: string; settings?: Record<string, unknown> },
+  ): Promise<{ displayName: string; email: string; settings: Record<string, unknown> }> {
+    if (!updates.settings) return await this.putUserSettings(userId, appId, { displayName: updates.displayName })
+    const current = await this.getUserSettings(userId, appId)
+    const clientSettings = Object.fromEntries(
+      Object.entries(updates.settings).filter(([key]) => !key.startsWith('__server')),
+    )
+    const nextDisplayName = updates.displayName ?? current.displayName
+    const nextEmail = current.email
+    const rows = await this.db
+      .insert(userSettings)
+      .values({
+        userId,
+        appId,
+        displayName: nextDisplayName,
+        email: nextEmail,
+        settings: clientSettings,
+      })
+      .onConflictDoUpdate({
+        target: [userSettings.userId, userSettings.appId],
+        set: {
+          displayName: nextDisplayName,
+          settings: sql`(
+            SELECT COALESCE(jsonb_object_agg(key, value), '{}'::jsonb)
+            FROM jsonb_each(${userSettings.settings})
+            WHERE left(key, 8) = '__server'
+          ) || ${JSON.stringify(clientSettings)}::jsonb`,
+          updatedAt: new Date(),
+        },
+      })
+      .returning()
+
+    return {
+      displayName: rows[0].displayName,
+      email: rows[0].email,
+      settings: (rows[0].settings ?? {}) as Record<string, unknown>,
+    }
+  }
+
+  async patchUserSettingsJsonPath(
+    userId: string,
+    appId: string,
+    path: string[],
+    value: unknown,
+  ): Promise<{ displayName: string; email: string; settings: Record<string, unknown> }> {
+    if (path.length === 0) throw new Error('settings JSON path must not be empty')
+    const user = await this.getById(userId)
+    const rows = await this.db.transaction(async (tx) => {
+      await tx
+        .insert(userSettings)
+        .values({
+          userId,
+          appId,
+          displayName: user?.name ?? '',
+          email: user?.email ?? '',
+          settings: {},
+        })
+        .onConflictDoNothing({ target: [userSettings.userId, userSettings.appId] })
+
+      return await tx
+        .update(userSettings)
+        .set({
+          settings: jsonbSetPathExpression(path, value),
+          updatedAt: new Date(),
+        })
+        .where(sql`${userSettings.userId} = ${userId} AND ${userSettings.appId} = ${appId}`)
+        .returning()
+    })
 
     return {
       displayName: rows[0].displayName,

@@ -3,15 +3,17 @@
 import "@testing-library/jest-dom/vitest"
 import { cleanup, fireEvent, render, screen } from "@testing-library/react"
 import { afterEach, describe, expect, it, vi } from "vitest"
-import type { ComponentType } from "react"
-import type { BoringFrontAPI, BoringFrontPanelRegistration, PaneProps } from "@hachej/boring-workspace/plugin"
-import { BORING_MCP_SOURCES_PANEL_ID, type McpSourceStatusPayload } from "../shared"
-import { createBoringMcpPlugin, type CreateBoringMcpPluginOptions } from "../front"
+import type { BoringFrontAPI } from "@hachej/boring-workspace/plugin"
+import type { McpSourceStatusPayload } from "../shared"
+import { BoringMcpSourcesOverlay, createBoringMcpPlugin, type CreateBoringMcpPluginOptions } from "../front"
 
 function renderSourcesPanel(options: CreateBoringMcpPluginOptions = {}) {
-  const panels: BoringFrontPanelRegistration<any>[] = []
+  return render(<BoringMcpSourcesOverlay options={{ enabledProviderIds: ["notion"], ...options }} />)
+}
+
+function capturePluginRegistrations() {
   const api: BoringFrontAPI = {
-    registerPanel: (panel) => { panels.push(panel) },
+    registerPanel: vi.fn(),
     registerPanelCommand: vi.fn(),
     registerProvider: vi.fn(),
     registerBinding: vi.fn(),
@@ -20,11 +22,8 @@ function renderSourcesPanel(options: CreateBoringMcpPluginOptions = {}) {
     registerSurfaceResolver: vi.fn(),
     registerToolRenderer: vi.fn(),
   }
-  createBoringMcpPlugin({ enabledProviderIds: ["notion"], ...options })(api)
-  const panel = panels.find((item) => item.id === BORING_MCP_SOURCES_PANEL_ID)
-  if (!panel || typeof panel.component !== "function") throw new Error("Sources panel was not registered")
-  const Component = panel.component as ComponentType<PaneProps>
-  return render(<Component api={{} as PaneProps["api"]} containerApi={{} as PaneProps["containerApi"]} params={undefined} />)
+  createBoringMcpPlugin({ enabledProviderIds: ["notion"] })(api)
+  return api
 }
 
 const connectedNotion: McpSourceStatusPayload = {
@@ -44,9 +43,20 @@ const connectedNotion: McpSourceStatusPayload = {
   canDisconnect: true,
 }
 
-afterEach(() => cleanup())
+afterEach(() => {
+  cleanup()
+  vi.restoreAllMocks()
+})
 
 describe("boring-mcp front sources panel", () => {
+  it("does not register workbench panels or workspace sources; hosts mount the management overlay", () => {
+    const api = capturePluginRegistrations()
+
+    expect(api.registerPanel).not.toHaveBeenCalled()
+    expect(api.registerWorkspaceSource).not.toHaveBeenCalled()
+    expect(api.registerPanelCommand).not.toHaveBeenCalled()
+  })
+
   it("shows admin setup required instead of a dead connect placeholder when actions are not wired", () => {
     renderSourcesPanel({ connectionUnavailableMessage: "Source API is not wired yet." })
 
@@ -103,6 +113,55 @@ describe("boring-mcp front sources panel", () => {
 
     expect(screen.getByRole("button", { name: "Reconnect" })).toBeDisabled()
     expect(screen.getByText("This source cannot start a new connection in its current state. Refresh status or disconnect first.")).toBeInTheDocument()
+  })
+
+  it("loads source status and connects through the route-backed source API", async () => {
+    window.history.pushState({}, "", "/workspace/workspace-1")
+    const openConnectUrl = vi.fn()
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockImplementation(async (input, init) => {
+      const url = String(input)
+      if (url.endsWith("/api/v1/boring-mcp/sources")) {
+        expect(init?.headers).toMatchObject({ "x-boring-workspace-id": "workspace-1" })
+        return Response.json({ sourceStatuses: [] })
+      }
+      if (url.endsWith("/api/v1/boring-mcp/connect")) {
+        expect(init?.method).toBe("POST")
+        expect(init?.headers).toMatchObject({ "x-boring-workspace-id": "workspace-1" })
+        expect(JSON.parse(String(init?.body))).toEqual({ provider: "notion" })
+        return Response.json({ status: connectedNotion, connectUrl: "https://app.composio.dev/connect/notion" }, { status: 201 })
+      }
+      return Response.json({ message: "not found" }, { status: 404 })
+    })
+
+    renderSourcesPanel({ sourceApi: { enabled: true, openConnectUrl } })
+    fireEvent.click(await screen.findByRole("button", { name: "Connect" }))
+
+    expect(await screen.findByText("Connected")).toBeInTheDocument()
+    expect(openConnectUrl).toHaveBeenCalledWith("https://app.composio.dev/connect/notion")
+    expect(fetchMock).toHaveBeenCalledTimes(2)
+  })
+
+  it("merges route-backed source API actions with partial host source action overrides", async () => {
+    window.history.pushState({}, "", "/workspace/workspace-1")
+    const onViewTools = vi.fn()
+    const popup = { location: { href: "about:blank" }, close: vi.fn(), opener: undefined } as unknown as Window
+    vi.spyOn(window, "open").mockReturnValue(popup)
+    vi.spyOn(globalThis, "fetch").mockImplementation(async (input, init) => {
+      const url = String(input)
+      if (url.endsWith("/api/v1/boring-mcp/sources")) return Response.json({ sourceStatuses: [] })
+      if (url.endsWith("/api/v1/boring-mcp/connect")) {
+        expect(init?.method).toBe("POST")
+        return Response.json({ status: connectedNotion, connectUrl: "https://app.composio.dev/connect/notion" }, { status: 201 })
+      }
+      return Response.json({ message: "not found" }, { status: 404 })
+    })
+
+    renderSourcesPanel({ sourceApi: { enabled: true }, sourceActions: { onViewTools } })
+    fireEvent.click(await screen.findByRole("button", { name: "Connect" }))
+
+    expect(await screen.findByText("Connected")).toBeInTheDocument()
+    expect(window.open).toHaveBeenCalledWith("about:blank", "_blank")
+    expect(popup.location.href).toBe("https://app.composio.dev/connect/notion")
   })
 
   it("shows connected account details with distinct view, refresh, and disconnect actions", () => {

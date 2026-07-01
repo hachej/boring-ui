@@ -115,6 +115,21 @@ export interface WorkspaceAgentAppLeftAction {
   emphasis?: boolean
 }
 
+export interface WorkspaceAgentAppLeftOverlayRenderProps {
+  onClose: () => void
+  headerInsetStart: boolean
+  headerInsetEnd: boolean
+}
+
+export interface WorkspaceAgentAppLeftOverlayAction {
+  id: string
+  label: string
+  icon: ReactNode
+  trailing?: ReactNode
+  emphasis?: boolean
+  render: (props: WorkspaceAgentAppLeftOverlayRenderProps) => ReactNode
+}
+
 export interface WorkspaceAgentFrontProps<
   TSession extends WorkspaceAgentSession = WorkspaceAgentSession,
 > extends Omit<WorkspaceProviderProps, "children" | "workspaceId" | "storageKey" | "chatPanel" | "commandPaletteSessionSearch">,
@@ -191,6 +206,8 @@ export interface WorkspaceAgentFrontProps<
   showPlugins?: boolean
   /** Extra actions inserted into the app-left primary action list before built-in management actions. */
   appLeftActions?: readonly WorkspaceAgentAppLeftAction[]
+  /** Extra chat-hosted management overlays opened from the app-left primary action list. */
+  appLeftOverlayActions?: readonly WorkspaceAgentAppLeftOverlayAction[]
   sessions?: Array<{ id: string; title?: string | null; updatedAt?: string | number; turnCount?: number }>
   activeSessionId?: string | null
   onSwitchSession?: (id: string) => void
@@ -443,6 +460,7 @@ export function WorkspaceAgentFront<
   showSkills = true,
   showPlugins = true,
   appLeftActions,
+  appLeftOverlayActions,
   chatParams,
   externalPlugins,
   hotReloadEnabled,
@@ -798,12 +816,13 @@ export function WorkspaceAgentFront<
     shellPersistenceEnabled,
   )
   const effectiveAppLeftPaneWidth = clampNumber(appLeftPaneWidth, 220, 420)
-  const [leftOverlay, setLeftOverlay] = useState<"skills" | "plugins" | null>(null)
+  const [leftOverlay, setLeftOverlay] = useState<string | null>(null)
   useEffect(() => {
-    if ((leftOverlay === "skills" && !skillsActionEnabled) || (leftOverlay === "plugins" && !pluginsActionEnabled)) {
+    const customOverlayActive = Boolean(leftOverlay && appLeftOverlayActions?.some((action) => action.id === leftOverlay))
+    if ((leftOverlay === "skills" && !skillsActionEnabled) || (leftOverlay === "plugins" && !pluginsActionEnabled) || (leftOverlay && leftOverlay !== "skills" && leftOverlay !== "plugins" && !customOverlayActive)) {
       setLeftOverlay(null)
     }
-  }, [leftOverlay, pluginsActionEnabled, skillsActionEnabled])
+  }, [appLeftOverlayActions, leftOverlay, pluginsActionEnabled, skillsActionEnabled])
   const effectiveNavOpen = navEnabled && navOpen
   const [surfaceOpen, setSurfaceOpen] = useStoredBooleanState(
     // Key must NOT match resolvedSurfaceStorageKey (which stores the dockview
@@ -1472,6 +1491,16 @@ export function WorkspaceAgentFront<
   ), [activeChatPaneId, chatPaneIds, isPluginTabsLayout, openChatPane, resolvedSessions, switchToChatPane])
   const managementActions = useMemo<WorkspaceAgentAppLeftAction[]>(() => {
     const actions: WorkspaceAgentAppLeftAction[] = [...(appLeftActions ?? [])]
+    for (const action of appLeftOverlayActions ?? []) {
+      actions.push({
+        id: action.id,
+        label: action.label,
+        icon: action.icon,
+        trailing: action.trailing,
+        emphasis: action.emphasis,
+        onClick: () => setLeftOverlay((cur) => cur === action.id ? null : action.id),
+      })
+    }
     if (pluginsActionEnabled) {
       actions.push({
         id: "plugins",
@@ -1489,9 +1518,19 @@ export function WorkspaceAgentFront<
       })
     }
     return actions
-  }, [appLeftActions, pluginsActionEnabled, skillsActionEnabled])
+  }, [appLeftActions, appLeftOverlayActions, pluginsActionEnabled, skillsActionEnabled])
 
-  const leftOverlayNode = leftOverlay === "skills" && skillsActionEnabled ? (
+  const customLeftOverlayNode = useMemo(() => {
+    const overlay = appLeftOverlayActions?.find((action) => action.id === leftOverlay)
+    if (!overlay) return null
+    return overlay.render({
+      onClose: () => setLeftOverlay(null),
+      headerInsetStart: appLeftPaneCollapsed,
+      headerInsetEnd: !surfaceOpen,
+    })
+  }, [appLeftOverlayActions, appLeftPaneCollapsed, leftOverlay, surfaceOpen])
+
+  const leftOverlayNode = customLeftOverlayNode ?? (leftOverlay === "skills" && skillsActionEnabled ? (
     <SkillsPage
       onClose={() => setLeftOverlay(null)}
       headerInsetStart={appLeftPaneCollapsed}
@@ -1504,7 +1543,7 @@ export function WorkspaceAgentFront<
       headerInsetStart={appLeftPaneCollapsed}
       headerInsetEnd={!surfaceOpen}
     />
-  ) : null
+  ) : null)
   const mainContent = remoteSessionsTransitioning ? (
     <ChatSessionTransitionState />
   ) : (

@@ -1,8 +1,13 @@
-import { createBoringMcpPlugin } from '@hachej/boring-mcp/front'
+import { createBoringMcpPlugin, type CreateBoringMcpPluginOptions } from '@hachej/boring-mcp/front'
 
-export const fullAppBoringMcpPlugin = createBoringMcpPlugin({
+const sourceApiEnabled = import.meta.env.VITE_BORING_MCP_ENABLED !== '0'
+
+export const fullAppBoringMcpOptions: CreateBoringMcpPluginOptions = {
   label: 'Sources',
   enabledProviderIds: ['notion', 'airtable'],
   intro: 'Connect approved context sources through governed read-only MCP tools.',
-  connectionUnavailableMessage: 'Source connection actions are not exposed in this app yet. Ask an admin to enable the boring-mcp source API endpoints.',
-})
+  sourceApi: { enabled: sourceApiEnabled },
+  connectionUnavailableMessage: sourceApiEnabled ? undefined : 'Sources are disabled for this deployment.',
+}
+
+export const fullAppBoringMcpPlugin = createBoringMcpPlugin(fullAppBoringMcpOptions)

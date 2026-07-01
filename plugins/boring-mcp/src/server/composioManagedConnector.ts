@@ -184,10 +184,10 @@ export async function resolveComposioMcpSession(options: ComposioManagedConnecto
   const payload = await composioPost(options, input.secret, "/api/v3.1/tool_router/session", {
     user_id: composioUserId(input.actor),
     mcp: true,
-    toolkits: [input.config.toolkitId],
+    toolkits: { enable: [input.config.toolkitId] },
     manage_connections: {
       enable: true,
-      wait_for_connections: false,
+      enable_wait_for_connections: false,
       callback_url: options.callbackUrl,
     },
   })

@@ -78,7 +78,12 @@ function createComposioFetch(mcpUrl = "https://mcp.example/session", accounts: u
       return jsonResponse({ items: accounts })
     }
     if (url.endsWith("/api/v3.1/tool_router/session")) {
-      expect(JSON.parse(String(init?.body))).toMatchObject({ user_id: "workspace-1:user-1", mcp: true, toolkits: ["notion"] })
+      expect(JSON.parse(String(init?.body))).toMatchObject({
+        user_id: "workspace-1:user-1",
+        mcp: true,
+        toolkits: { enable: ["notion"] },
+        manage_connections: { enable: true, enable_wait_for_connections: false },
+      })
       return jsonResponse({ id: "session-1", mcp: { url: mcpUrl, headers: { "x-composio-mcp-session": "server-only-session" } } })
     }
     if (url.endsWith("/api/v3/tool_router/session/session-1/link")) {
