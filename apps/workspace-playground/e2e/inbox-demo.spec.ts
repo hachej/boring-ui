@@ -25,6 +25,31 @@ test.describe("workspace-playground inbox demo", () => {
     await expect(page.getByText("Workspace Playground")).toBeVisible()
   })
 
+  test("filters and persists pinned inbox items", async ({ page }) => {
+    await page.goto("/?inboxDemo=1&fresh=1")
+
+    const inboxButton = page.getByRole("button", { name: /Inbox 2 inbox items/ })
+    await expect(inboxButton).toBeVisible({ timeout: 15_000 })
+    if (!(await page.getByRole("heading", { name: "Inbox" }).isVisible())) await inboxButton.click()
+    const inboxOverlay = page.locator('[data-boring-workspace-part="inbox-overlay"]')
+
+    await inboxOverlay.getByRole("button", { name: "Questions 1" }).click()
+    await expect(inboxOverlay.getByText("Pick the deploy target for the release smoke")).toBeVisible()
+    await expect(inboxOverlay.getByText("Review Codex notes on workspace inbox flow")).toHaveCount(0)
+
+    await inboxOverlay.getByRole("button", { name: "All 2" }).click()
+    const reviewRow = inboxOverlay.getByRole("button", { name: /Review Codex notes on workspace inbox flow/ }).first()
+    await reviewRow.hover()
+    await inboxOverlay.getByRole("button", { name: "Pin Review Codex notes on workspace inbox flow", exact: true }).click()
+    await expect(inboxOverlay.locator("section", { hasText: "Pinned" }).getByText("Review Codex notes on workspace inbox flow")).toBeVisible()
+
+    await page.reload()
+    const reloadedInboxButton = page.getByRole("button", { name: /Inbox 2 inbox items/ })
+    await expect(reloadedInboxButton).toBeVisible({ timeout: 15_000 })
+    if (!(await page.getByRole("heading", { name: "Inbox" }).isVisible())) await reloadedInboxButton.click()
+    await expect(page.locator('[data-boring-workspace-part="inbox-overlay"]').locator("section", { hasText: "Pinned" }).getByText("Review Codex notes on workspace inbox flow")).toBeVisible()
+  })
+
   test("opens a read-only detached chat and preserves its dragged position across app-nav collapse", async ({ page }) => {
     await page.goto("/?inboxDemo=1&fresh=1")
 
