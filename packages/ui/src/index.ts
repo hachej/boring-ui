@@ -48,3 +48,4 @@ export { Collapsible, CollapsibleTrigger, CollapsibleContent } from './collapsib
 export { ButtonGroup, ButtonGroupSeparator, ButtonGroupText, buttonGroupVariants } from './button-group'
 export { InputGroup, InputGroupAddon, InputGroupButton, InputGroupText, InputGroupInput, InputGroupTextarea } from './input-group'
 export { ChoiceGroup, ChoiceGroupLegend, ChoiceItem, ChoiceItemBody, ChoiceItemTitle, ChoiceItemDescription } from './choice-group'
+export { applyBoringPerspectiveTheme, boringPerspectiveThemeName, type BoringPerspectiveThemeOptions } from './perspective-theme'
