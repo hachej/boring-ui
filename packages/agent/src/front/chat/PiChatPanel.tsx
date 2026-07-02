@@ -25,6 +25,7 @@ import { useComposerPickers } from '../useComposerPickers'
 import { useChatModelSelection } from '../hooks/useChatModelSelection'
 import { useServerCommands } from '../hooks/useServerCommands'
 import { useAttachmentNotice } from '../hooks/useAttachmentNotice'
+import { useSlashCommandUi } from './useSlashCommandUi'
 import {
   composerNoticeForRuntimeDependencies,
   composerNoticeForWarmup,
@@ -404,6 +405,7 @@ export function PiChatPanel<
     enabled: serverResourcesEnabled,
   })
   const allCommands = useMemo(() => registry.list(), [registry, commandsStamp])
+  const availableCommandNames = useMemo(() => allCommands.map((command) => command.name), [allCommands])
 
   const activeChatSessionId = selectedChatState?.sessionId
   const warmupNotice = composerNoticeForWarmup(workspaceWarmupStatus)
@@ -671,19 +673,24 @@ export function PiChatPanel<
     return `Thinking set to ${thinkingLabel(match)}.`
   }, [thinkingControl, thinkingLevel])
 
-  const selectSlashCommand = useCallback((name: string) => {
-    if (name === 'model') {
-      dismissSlash()
-      if (openModelPicker()) setComposerDraft('')
-      return
-    }
-    if (name === 'thinking' || name === 'think') {
-      dismissSlash()
-      if (openThinkingPicker()) setComposerDraft('')
-      return
-    }
-    insertSlashCommand(name)
-  }, [dismissSlash, insertSlashCommand, openModelPicker, openThinkingPicker, setComposerDraft])
+  const { selectSlashCommand, handleMentionClick } = useSlashCommandUi({
+    registry,
+    activeChatSessionId,
+    activeSessionId,
+    sessionId,
+    addLocalNotice,
+    resetSession,
+    reloadAgentPlugins,
+    runPluginUpdate,
+    openModelPicker,
+    selectComposerModel,
+    openThinkingPicker,
+    selectComposerThinking,
+    onCommandResult,
+    dismissSlash,
+    insertSlashCommand,
+    setComposerDraft,
+  })
 
   const policy = useMemo(() => {
     if (!selectedPiSession || !activeChatSessionId) return undefined
@@ -1052,6 +1059,8 @@ export function PiChatPanel<
               onSuggestionSubmit={({ text, files, source }) => sendComposerMessage({ text, files, source })}
               onRestoreDraft={setComposerDraft}
               windowResetKey={activeSessionId}
+              availableCommands={availableCommandNames}
+              onMentionClick={handleMentionClick}
             />
 
             <PiChatComposerSurface

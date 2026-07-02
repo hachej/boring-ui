@@ -16,6 +16,7 @@ import {
 } from '../../primitives/conversation'
 import { RuntimeNoticeMessages, type PanelNotice } from './ChatNotices'
 import { PiTimelineMessage } from './PiTimelineMessage'
+import type { ClickableMention } from './ClickableMention'
 
 // Heavy sessions (tool-heavy runs reach thousands of messages) must not mount
 // the whole transcript at once. Render a window anchored to the latest message
@@ -49,6 +50,10 @@ export interface PiConversationSurfaceProps {
   onRestoreDraft: (text: string) => void
   /** Changes when the active session changes; resets the history window to the latest page. */
   windowResetKey?: string
+  /** Available slash command names for clickable mention detection. */
+  availableCommands?: string[]
+  /** Callback when a clickable mention is clicked. */
+  onMentionClick?: (mention: ClickableMention) => void
 }
 
 export function PiConversationSurface({
@@ -68,6 +73,8 @@ export function PiConversationSurface({
   onSuggestionSubmit,
   onRestoreDraft,
   windowResetKey,
+  availableCommands,
+  onMentionClick,
 }: PiConversationSurfaceProps) {
   const messageItems = buildMessageRenderItems(messages)
   const total = messageItems.length
@@ -132,6 +139,8 @@ export function PiConversationSurface({
             isStreaming={isStreaming}
             showThoughts={showThoughts}
             toolRenderers={toolRenderers}
+            availableCommands={availableCommands}
+            onMentionClick={onMentionClick}
           />
         ))}
         <RuntimeNoticeMessages notices={runtimeNotices} onDismiss={onDismissNotice} renderAction={renderNoticeAction} />
