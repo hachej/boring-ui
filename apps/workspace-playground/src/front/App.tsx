@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react"
 import { createDeckPlugin } from "@hachej/boring-deck/front"
 import type { DeckWidgetDefinition } from "@hachej/boring-deck/shared"
-import { WorkspaceProvider, inboxDemoPlugin } from "@hachej/boring-workspace"
+import { WorkspaceProvider, INBOX_DEMO_SESSION_ID, inboxDemoPlugin } from "@hachej/boring-workspace"
 import { WorkspaceAgentFront, WorkspaceFullPagePanel, parseFullPagePanelLocation } from "@hachej/boring-workspace/app/front"
 import { askUserPlugin } from "@hachej/boring-ask-user/front"
 import { SHOWCASE_SESSION_ID, seedShowcase } from "./showcaseMessages"
@@ -188,8 +188,16 @@ export function WorkspaceShell() {
               updatedAt: Date.now(),
             },
           ]
-        : undefined,
-    [showcase],
+        : inboxDemo
+          ? [
+              {
+                id: INBOX_DEMO_SESSION_ID,
+                title: "Inbox demo chat",
+                updatedAt: Date.now(),
+              },
+            ]
+          : undefined,
+    [inboxDemo, showcase],
   )
   const handleActiveSessionIdChange = useCallback(
     (sessionId: string | null) => {
@@ -274,9 +282,9 @@ export function WorkspaceShell() {
       frontPluginHotReload={externalPluginsEnabled ? "vite" : undefined}
       fullPageBasePath="/full-page"
       defaultLeftOverlay={inboxDemo ? "inbox" : undefined}
-      provisionWorkspace={!showcase}
+      provisionWorkspace={!showcase && !inboxDemo}
       sessions={sessions}
-      activeSessionId={showcase ? SHOWCASE_SESSION_ID : undefined}
+      activeSessionId={showcase ? SHOWCASE_SESSION_ID : inboxDemo ? INBOX_DEMO_SESSION_ID : undefined}
       onActiveSessionIdChange={handleActiveSessionIdChange}
       plugins={workspacePlugins}
       chatParams={{ thinkingControl: true }}

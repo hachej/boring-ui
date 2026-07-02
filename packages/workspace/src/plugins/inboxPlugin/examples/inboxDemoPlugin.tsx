@@ -13,6 +13,7 @@ export function createInboxDemoBlockers(now = Date.now()): WorkspaceAttentionBlo
       reason: "ask-user.question",
       label: "Pick the deploy target for the release smoke",
       sessionId: INBOX_DEMO_SESSION_ID,
+      pruneWhenSessionMissing: true,
       target: "README.md",
       surfaceKind: WORKSPACE_OPEN_PATH_SURFACE_KIND,
       inbox: {
