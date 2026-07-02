@@ -128,9 +128,13 @@ export function useAskUserPendingRefresh(
       const sessionsToHydrate = new Set<string>()
       if (activeSessionId) sessionsToHydrate.add(activeSessionId)
       for (const hint of hints) {
-        if (isSessionOpen(runtime, hint.sessionId)) sessionsToHydrate.add(hint.sessionId)
+        // A pending question can belong to a session that is no longer mounted
+        // in the current chat layout (for example a fresh/demo URL opened while
+        // an ask_user form is still blocking an older session). Hydrate every
+        // server-published hint so the Questions pane can still render the
+        // blocking form instead of an empty state.
+        sessionsToHydrate.add(hint.sessionId)
       }
-      if (sessionsToHydrate.size === 0 && hints[0]) sessionsToHydrate.add(hints[0].sessionId)
       await Promise.all([...sessionsToHydrate].map(async (sessionId) => {
         try {
           await runtime.refreshPending(sessionId)

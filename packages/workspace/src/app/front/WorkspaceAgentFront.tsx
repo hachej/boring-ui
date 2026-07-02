@@ -946,12 +946,20 @@ export function WorkspaceAgentFront<
     setSurfaceOpen(false)
   }, [setSurfaceOpen])
   const openChatSessionIdsRef = useRef<ReadonlySet<string>>(new Set())
+  const switchSessionForSurfaceRef = useRef<(sessionId: string) => void>(() => {})
   const shouldOpenSurface = useCallback<NonNullable<DispatchContext["shouldOpenSurface"]>>((request) => {
     const meta = request.meta
     if (!meta || meta.openOnlyWhenSessionOpen !== true) return true
     const sessionId = typeof meta.sessionId === "string" ? meta.sessionId : null
     if (!sessionId) return false
-    return openChatSessionIdsRef.current.has(sessionId)
+    if (!openChatSessionIdsRef.current.has(sessionId)) {
+      // A question/review surface belongs to a concrete chat session. If the
+      // session is not currently mounted (fresh URL, closed split pane, etc.),
+      // switch/load that chat first instead of silently skipping the surface and
+      // leaving the user in an empty Questions pane.
+      switchSessionForSurfaceRef.current(sessionId)
+    }
+    return true
   }, [])
 
   // One source of truth for the agent → UI command dispatch context, shared by
@@ -1124,6 +1132,9 @@ export function WorkspaceAgentFront<
     })
     return alreadyVisible ? rawSwitch(nextSessionId) : resolvedSwitch(nextSessionId)
   }, [chatPaneState, chatSessionId, rawSwitch, resolvedSwitch, workspaceId])
+  useEffect(() => {
+    switchSessionForSurfaceRef.current = switchToChatPane
+  }, [switchToChatPane])
 
   const activateChatPane = useCallback((nextSessionId: string) => {
     setChatPaneState((previous) => {
