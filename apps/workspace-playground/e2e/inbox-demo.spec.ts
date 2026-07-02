@@ -19,6 +19,10 @@ test.describe("workspace-playground inbox demo", () => {
     const firstInboxRow = inboxOverlay.getByRole("button", { name: /Pick the deploy target for the release smoke/ }).first()
     const firstInboxRowBox = await firstInboxRow.boundingBox()
     expect(firstInboxRowBox?.height).toBeLessThanOrEqual(48)
+
+    await firstInboxRow.click()
+    await expect(inboxOverlay.getByText("ask-user.question")).toHaveCount(0)
+    await expect(page.getByText("Workspace Playground")).toBeVisible()
   })
 
   test("opens a read-only detached chat and preserves its dragged position across app-nav collapse", async ({ page }) => {

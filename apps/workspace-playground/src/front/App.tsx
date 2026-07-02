@@ -271,7 +271,6 @@ export function WorkspaceShell() {
       apiBaseUrl=""
       apiTimeout={60_000}
       persistenceEnabled
-      debug
       providerStorageKey={inboxDemo ? "boring-ui-v2:layout:playground:inbox-demo" : showcase ? "boring-ui-v2:layout:playground" : `boring-ui-v2:layout:playground:${workspaceId}`}
       workspaceLayout="plugin-tabs"
       appLeftHeaderMode="hidden"

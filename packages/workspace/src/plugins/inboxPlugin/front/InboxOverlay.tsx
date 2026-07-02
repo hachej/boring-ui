@@ -82,12 +82,14 @@ export function InboxOverlay({ onClose, headerInsetStart = false, headerInsetEnd
     setShellError(result.success ? null : result.message)
   }, [])
   const openArtifact = useCallback((item: WorkspaceInboxItemViewModel) => {
-    setSelectedItemId(item.id)
     if (!item.artifact) {
+      setSelectedItemId(item.id)
       setShellError(null)
       return
     }
-    handleShellResult(shell.openInboxArtifact(item))
+    const result = shell.openInboxArtifact(item)
+    handleShellResult(result)
+    setSelectedItemId(result.success ? null : item.id)
   }, [handleShellResult, shell])
   const openChat = useCallback((item: WorkspaceInboxItemViewModel) => {
     if (!item.sessionId) return

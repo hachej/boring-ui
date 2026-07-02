@@ -28,7 +28,47 @@ const question = {
   },
 }
 
+function pendingStateFor(q: typeof question) {
+  return {
+    "questions.pending": {
+      hint: { questionId: q.questionId, sessionId: q.sessionId, status: q.status },
+      hintsBySession: { [q.sessionId]: { questionId: q.questionId, sessionId: q.sessionId, status: q.status } },
+    },
+  }
+}
+
 test.describe("ask_user Questions pane", () => {
+  test("chat blocker reopens the Questions pane after the pane is closed", async ({ page }) => {
+    await page.route("**/api/v1/ui/state", async (route) => {
+      if (route.request().method() === "GET") {
+        await route.fulfill({ json: pendingStateFor(question) })
+        return
+      }
+      await route.fulfill({ status: 204 })
+    })
+
+    await page.route("**/api/v1/workspace-bridge/call", async (route) => {
+      const body = route.request().postDataJSON()
+      if (body.op === "ask-user.v1.pending") {
+        const sessionId = body.input?.sessionId ?? question.sessionId
+        await route.fulfill({ json: { ok: true, op: body.op, requestId: "req-e2e", output: { pending: { ...question, sessionId } } } })
+        return
+      }
+      await route.fulfill({ json: { ok: true, op: body.op, requestId: "req-e2e", output: { ok: true, status: "answered" } } })
+    })
+
+    await page.goto("/", { waitUntil: "domcontentloaded" })
+    await expect(page.getByRole("textbox", { name: "Agent prompt" })).toBeVisible({ timeout: 10_000 })
+    const questionsHeading = page.getByTestId("artifact-surface").getByRole("heading", { name: "Choose A or B" })
+    await expect(questionsHeading).toBeVisible({ timeout: 8_000 })
+
+    await page.getByRole("button", { name: "Close Questions" }).click()
+    await expect(questionsHeading).toBeHidden({ timeout: 5_000 })
+
+    await page.getByRole("button", { name: "Open Questions" }).click()
+    await expect(questionsHeading).toBeVisible({ timeout: 8_000 })
+  })
+
   test("ui command opens pane from metadata, submits, and closes", async ({ page }) => {
     const commands: unknown[] = []
     await page.route("**/api/v1/ui/state", async (route) => {
@@ -55,13 +95,11 @@ test.describe("ask_user Questions pane", () => {
     const commandStreamReady = page.waitForRequest((request) => request.url().includes("/api/v1/ui/commands/next"), { timeout: 10_000 })
     await page.goto("/", { waitUntil: "domcontentloaded" })
     await expect(page.getByRole("textbox", { name: "Agent prompt" })).toBeVisible({ timeout: 10_000 })
-    const workbenchButton = page.getByRole("button", { name: /^open workbench$/i })
-    if (await workbenchButton.isVisible().catch(() => false)) await workbenchButton.click()
     await commandStreamReady
     const activeSessionId = await page.locator('[data-pi-chat-session-id]').first().getAttribute('data-pi-chat-session-id')
     await page.request.post("/api/v1/ui/commands", { data: { kind: "openSurface", params: { kind: "questions", target: question.questionId, meta: { sessionId: activeSessionId ?? question.sessionId } } } })
 
-    await expect(page.getByText("Choose A or B")).toBeVisible({ timeout: 8_000 })
+    await expect(page.getByTestId("artifact-surface").getByRole("heading", { name: "Choose A or B" })).toBeVisible({ timeout: 8_000 })
     await page.getByRole("radio", { name: "A" }).click()
     await page.getByTestId("artifact-surface").getByRole("button", { name: "Submit" }).click()
 
