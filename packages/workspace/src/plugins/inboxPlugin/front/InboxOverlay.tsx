@@ -93,6 +93,15 @@ export function InboxOverlay({ onClose, headerInsetStart = false, headerInsetEnd
     if (!item.sessionId) return
     handleShellResult(shell.openDetachedChat(item.sessionId, { title: item.title }))
   }, [handleShellResult, shell])
+  const handleDetailAction = useCallback((actionId: string) => {
+    if (!selectedItem || !selectedBlocker) return
+    if (actionId === "open") {
+      if (selectedItem.artifact) openArtifact(selectedItem)
+      else setShellError("This inbox item has no artifact target.")
+      return
+    }
+    emitWorkspaceAttentionAction({ blockerId: selectedBlocker.id, actionId, blocker: selectedBlocker, sessionId: selectedItem.sessionId ?? undefined })
+  }, [openArtifact, selectedBlocker, selectedItem])
 
   return (
     <div data-boring-workspace-part="inbox-overlay" className="flex h-full min-h-0 flex-col bg-background">
@@ -135,7 +144,7 @@ export function InboxOverlay({ onClose, headerInsetStart = false, headerInsetEnd
                   key={action.id}
                   type="button"
                   className="rounded-md border border-border/80 bg-background px-2 py-1 text-[11px] font-medium hover:bg-muted/60"
-                  onClick={() => emitWorkspaceAttentionAction({ blockerId: selectedBlocker.id, actionId: action.id, blocker: selectedBlocker, sessionId: selectedItem.sessionId ?? undefined })}
+                  onClick={() => handleDetailAction(action.id)}
                 >
                   {action.label}
                 </button>
