@@ -69,13 +69,13 @@
   "devDependencies": {
     "@hachej/boring-agent": "workspace:*",
     "@hachej/boring-workspace": "workspace:*",
-    "tsx": "^4.21.0",
+    "tsx": "^4.22.4",
     "@types/react": "^19.0.0",
     "@types/react-dom": "^19.0.0",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
     "tsup": "^8.4.0",
     "typescript": "~5.9.3",
-    "vitest": "^3.2.6"
+    "vitest": "^4.1.9"
   }
 }
