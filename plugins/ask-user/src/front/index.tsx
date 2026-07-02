@@ -61,6 +61,9 @@ type QuestionsPaneParams = { questionId?: string; sessionId?: string; __closeWor
 function paneQuestionSessionId(runtime: QuestionsRuntime, params: QuestionsPaneParams | undefined): string | null {
   const activeSessionId = runtime.activeSessionId ?? null
   if (activeSessionId && isPaneSessionVisible(runtime, activeSessionId) && hasReadyQuestion(runtime, activeSessionId)) return activeSessionId
+  if (params?.sessionId && hasReadyQuestion(runtime, params.sessionId)) return params.sessionId
+  const hintedSessionId = runtime.getPendingHints().find((hint) => !hint.status || hint.status === "ready")?.sessionId
+  if (hintedSessionId) return hintedSessionId
   if (params?.sessionId && isPaneSessionVisible(runtime, params.sessionId)) return params.sessionId
   return activeSessionId && isPaneSessionVisible(runtime, activeSessionId) ? activeSessionId : null
 }
@@ -81,6 +84,11 @@ function hasReadyQuestion(runtime: QuestionsRuntime, sessionId: string): boolean
 
 function QuestionsPane({ api, params, className }: PaneProps<QuestionsPaneParams>) {
   const runtime = useQuestionsRuntime()
+  // Subscribe to the full pending snapshot, not only the currently selected
+  // session payload. A fresh/demo page can mount with a new active session while
+  // the server-published pending hint belongs to an older hidden session. The
+  // selected pane session must be allowed to change when hints hydrate.
+  useSyncExternalStore(runtime.subscribe, () => pendingQuestionSnapshot(runtime), () => "none")
   const paneSessionId = paneQuestionSessionId(runtime, params)
   const pending = useSyncExternalStore(runtime.subscribe, () => runtime.getPending(paneSessionId), () => runtime.getPending(paneSessionId))
   const [closedQuestionId, setClosedQuestionId] = useState<string | null>(null)
@@ -91,6 +99,13 @@ function QuestionsPane({ api, params, className }: PaneProps<QuestionsPaneParams
   const client = useMemo(() => createQuestionsClient({ apiBaseUrl: runtime.apiBaseUrl, headers: runtime.authHeaders }), [runtime.apiBaseUrl, runtime.authHeaders])
   useEffect(() => {
     if (!params?.sessionId || !isPaneSessionKnownHidden(runtime, params.sessionId)) return
+    if (hasReadyQuestion(runtime, params.sessionId)) return
+    const hints = runtime.getPendingHints()
+    // On first mount the provider may not have loaded /api/v1/ui/state yet.
+    // Do not close a hidden-session pane until the authoritative hints have
+    // arrived; otherwise a fresh/demo route can flash-close before hydrating
+    // the blocking question for its original session.
+    if (hints.length === 0) return
     const activeSessionId = runtime.activeSessionId ?? null
     const canShowActiveQuestion = activeSessionId && isPaneSessionVisible(runtime, activeSessionId) && hasReadyQuestion(runtime, activeSessionId)
     if (!canShowActiveQuestion) api.close()

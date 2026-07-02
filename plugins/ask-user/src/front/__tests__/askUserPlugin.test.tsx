@@ -4,6 +4,7 @@ import { UI_COMMAND_EVENT, WORKSPACE_ATTENTION_ACTION_EVENT, WORKSPACE_COMPOSER_
 import { captureFrontPlugin } from "@hachej/boring-workspace/plugin"
 import type { AskUserQuestion } from "../../shared/types"
 import { askUserPlugin } from "../index"
+import { sharedQuestionsStore } from "../runtime"
 
 const capturedPlugin = captureFrontPlugin(askUserPlugin)
 
@@ -60,6 +61,7 @@ function getPanel() {
 }
 
 afterEach(() => {
+  sharedQuestionsStore.setPending(null)
   vi.unstubAllGlobals()
 })
 
@@ -116,7 +118,34 @@ describe("askUserPlugin front shell", () => {
     expect(fetchMock.mock.calls.filter(([url, init]) => String(url).endsWith("/api/v1/workspace-bridge/call") && String(init?.body).includes("ask-user.v1.pending")).length).toBeGreaterThanOrEqual(2)
   })
 
-  it("closes the Questions pane when its owning session is no longer open", async () => {
+  it("hydrates and shows a blocking hidden-session question on a fresh active session", async () => {
+    const blockedQuestion = { ...question, questionId: "fresh-hidden-q1", sessionId: "blocked-session", title: "Question from blocked session", answerToken: "fresh-hidden-token-1" }
+    const pendingBySession = new Map<string, AskUserQuestion>([[blockedQuestion.sessionId, blockedQuestion]])
+    const requestedPendingSessions: string[] = []
+    const fetchMock = vi.fn(async (url: string, init?: RequestInit) => {
+      if (String(url).endsWith("/api/v1/workspace-bridge/call") && String(init?.body).includes("ask-user.v1.pending")) {
+        const body = JSON.parse(String(init?.body)) as { input?: { sessionId?: string } }
+        const sessionId = body.input?.sessionId ?? ""
+        requestedPendingSessions.push(sessionId)
+        return Response.json({ ok: true, output: { pending: pendingBySession.get(sessionId) ?? null } })
+      }
+      if (String(url).endsWith("/api/v1/ui/state")) return Response.json(pendingStateForMany([...pendingBySession.values()]))
+      return Response.json({})
+    })
+    vi.stubGlobal("fetch", fetchMock)
+    const Provider = getProvider()
+    const Panel = getPanel()
+    const api = { close: vi.fn() }
+
+    render(<Provider apiBaseUrl="" activeSessionId="fresh-session" openSessionIds={["fresh-session"]}><Panel params={{ sessionId: blockedQuestion.sessionId, questionId: blockedQuestion.questionId }} api={api} className="h-full" /></Provider>)
+
+    expect(await screen.findByText("Question from blocked session")).toBeInTheDocument()
+    expect(screen.queryByText("No pending questions")).not.toBeInTheDocument()
+    expect(requestedPendingSessions).toContain(blockedQuestion.sessionId)
+    expect(api.close).not.toHaveBeenCalled()
+  })
+
+  it("keeps a hidden-session pending question visible when it is still blocking", async () => {
     const s1Question = { ...question, questionId: "hidden-pane-q1", sessionId: "hidden-pane-s1", title: "Question for hidden session", answerToken: "hidden-pane-token-1" }
     const pendingBySession = new Map<string, AskUserQuestion>([[s1Question.sessionId, s1Question]])
     const fetchMock = vi.fn(async (url: string, init?: RequestInit) => {
@@ -137,8 +166,8 @@ describe("askUserPlugin front shell", () => {
 
     view.rerender(<Provider apiBaseUrl="" activeSessionId="other-open-session" openSessionIds={["other-open-session"]}><Panel params={{ sessionId: s1Question.sessionId, questionId: s1Question.questionId }} api={api} className="h-full" /></Provider>)
 
-    await waitFor(() => expect(api.close).toHaveBeenCalled())
-    expect(screen.queryByText("Question for hidden session")).not.toBeInTheDocument()
+    expect(await screen.findByText("Question for hidden session")).toBeInTheDocument()
+    expect(api.close).not.toHaveBeenCalled()
   })
 
   it("drops a hidden session question and retargets to the visible active session in multi-session mode", async () => {
