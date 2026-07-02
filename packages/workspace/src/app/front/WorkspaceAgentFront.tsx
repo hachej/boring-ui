@@ -1720,7 +1720,7 @@ export function WorkspaceAgentFront<
           surfaceReady={surfaceReady}
           snapshot={surfaceSnapshot}
         />
-        <CloseLeftPaneOnQuestion onQuestionOpen={handleQuestionOpen} />
+        <CloseLeftPaneOnQuestion activeSessionId={activeChatPaneId} onQuestionOpen={handleQuestionOpen} />
         {shellContent}
         {floatingChatNode}
         {afterShell}
