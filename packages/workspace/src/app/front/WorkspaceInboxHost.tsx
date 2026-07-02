@@ -69,7 +69,7 @@ export function useWorkspaceInboxHost({
   useEffect(() => {
     setFloatingChatSessionId(null)
   }, [workspaceId])
-  const inboxShellApi = useWorkspaceInboxShellController({ setFloatingChatSessionId, surfaceDispatch })
+  const inboxShellApi = useWorkspaceInboxShellController({ setFloatingChatSessionId, openChatPane, surfaceDispatch })
   const providerPanels = panels
   const primaryActions = useMemo(() => enabled ? [{
     id: "inbox",

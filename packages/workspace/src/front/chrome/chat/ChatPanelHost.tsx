@@ -113,6 +113,7 @@ export function ChatPanelHost(props: ChatPanelHostProps) {
   const handleComposerBlockerAction = useCallback(
     (blocker: NonNullable<WorkspaceChatPanelProps["composerBlockers"]>[number], action: string) => {
       const sessionId = blocker.sessionId ?? chatPanelProps.sessionId
+      chatPanelProps.onComposerBlockerAction?.(blocker, action)
       emitWorkspaceAttentionAction({ blockerId: blocker.id, actionId: action, blocker, sessionId })
       if (action !== "open" || !blocker.surfaceKind) return
       if (surfaceDispatch) {
@@ -129,7 +130,7 @@ export function ChatPanelHost(props: ChatPanelHostProps) {
         )
       }
     },
-    [chatPanelProps.sessionId, surfaceDispatch],
+    [chatPanelProps, surfaceDispatch],
   )
 
   const handleData = useCallback(

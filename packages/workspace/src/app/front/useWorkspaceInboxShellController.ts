@@ -14,9 +14,11 @@ function panelInstanceId(prefix: string, id: string): string {
 
 export function useWorkspaceInboxShellController({
   setFloatingChatSessionId,
+  openChatPane,
   surfaceDispatch,
 }: {
   setFloatingChatSessionId: Dispatch<SetStateAction<string | null>>
+  openChatPane: (sessionId: string) => void
   surfaceDispatch: DispatchContext
 }): WorkspaceInboxShellApi {
   return useMemo<WorkspaceInboxShellApi>(() => ({
@@ -35,6 +37,7 @@ export function useWorkspaceInboxShellController({
         return { success: true }
       }
       if (!item.artifact.target) return { success: false, reason: "open-failed", message: "This inbox item has no surface target." }
+      if (item.sessionId && item.chatAvailable) openChatPane(item.sessionId)
       dispatchUiCommand({
         kind: "openSurface",
         params: {
@@ -53,5 +56,5 @@ export function useWorkspaceInboxShellController({
       setFloatingChatSessionId(sessionId)
       return { success: true }
     },
-  }), [setFloatingChatSessionId, surfaceDispatch])
+  }), [openChatPane, setFloatingChatSessionId, surfaceDispatch])
 }
