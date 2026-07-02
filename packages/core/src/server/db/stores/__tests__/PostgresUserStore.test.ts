@@ -168,6 +168,56 @@ describe('PostgresUserStore', () => {
     })
   })
 
+  describe('patchUserSettingsJsonPath', () => {
+    it('patches nested server-owned settings paths with colon-heavy keys', async () => {
+      const user = await store.upsert('10000000-0000-0000-0000-000000000011', {
+        email: 'mcp-source@pgtest.com',
+        name: 'MCP Source',
+      })
+      const sourceId = 'managed:workspace:one:user:notion'
+
+      const result = await store.patchUserSettingsJsonPath(
+        user.id,
+        'app1',
+        ['__serverBoringMcpSourcesV1', 'workspace:one', sourceId],
+        { provider: 'notion', status: 'unconfigured' },
+      )
+
+      expect(result.settings).toEqual({
+        __serverBoringMcpSourcesV1: {
+          'workspace:one': {
+            [sourceId]: { provider: 'notion', status: 'unconfigured' },
+          },
+        },
+      })
+    })
+
+    it('coerces non-object intermediate settings before patching nested paths', async () => {
+      const user = await store.upsert('10000000-0000-0000-0000-000000000012', {
+        email: 'mcp-coerce@pgtest.com',
+        name: 'MCP Coerce',
+      })
+      await store.putUserSettings(user.id, 'app1', {
+        settings: { __serverBoringMcpSourcesV1: 'not-an-object' },
+      })
+
+      const result = await store.patchUserSettingsJsonPath(
+        user.id,
+        'app1',
+        ['__serverBoringMcpSourcesV1', 'workspace', 'source'],
+        { ok: true },
+      )
+
+      expect(result.settings).toEqual({
+        __serverBoringMcpSourcesV1: {
+          workspace: {
+            source: { ok: true },
+          },
+        },
+      })
+    })
+  })
+
   describe('putUserSettings', () => {
     it('inserts on first call (no existing row)', async () => {
       const user = await store.upsert('10000000-0000-0000-0000-000000000008', {

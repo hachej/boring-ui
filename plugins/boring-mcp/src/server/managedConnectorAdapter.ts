@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto"
 import {
   MCP_ERROR_CODES,
   McpError,
@@ -21,6 +22,7 @@ import type {
   ManagedConnectorPreflightEvidence,
   ManagedConnectorSecretStorage,
 } from "./managedConnectorPreflight"
+import { verifyMcpDisconnectResult } from "./hardening"
 import { createMcpSourceStatusPayload, requireActorOwnedMcpSource, validateMcpSourceId } from "./sourceAccess"
 
 export interface ManagedConnectorSecret {
@@ -72,6 +74,7 @@ export interface ManagedConnectorProvider {
   startConnect(args: { actor: McpActor; config: ManagedConnectorConfig; secret: ManagedConnectorSecret; sourceId: string }): Promise<ManagedConnectorStartResponse>
   refreshStatus(args: { actor: McpActor; source: McpSource; config: ManagedConnectorConfig; secret: ManagedConnectorSecret }): Promise<ManagedConnectorStatusResponse>
   probe(args: { actor: McpActor; source: McpSource; config: ManagedConnectorConfig; secret: ManagedConnectorSecret }): Promise<ManagedConnectorProbeResponse>
+  revoke?(args: { actor: McpActor; source: McpSource; config: ManagedConnectorConfig; secret: ManagedConnectorSecret }): Promise<void>
 }
 
 export interface ManagedConnectorAdapterOptions {
@@ -89,6 +92,7 @@ export interface ManagedConnectorAdapter {
   startConnect(actor: McpActor, input: ManagedConnectorStartInput): Promise<ManagedConnectorStartResult>
   refreshStatus(actor: McpActor, sourceId: string): Promise<McpSourceStatusPayload>
   probeSource(actor: McpActor, sourceId: string): Promise<McpProbeResult>
+  disconnectSource(actor: McpActor, sourceId: string): Promise<McpSourceStatusPayload>
 }
 
 export interface ManagedConnectorStartResult extends McpSourceStatusPayload {
@@ -99,8 +103,17 @@ function findConfig(configs: readonly ManagedConnectorConfig[], provider: McpPro
   return configs.find((config) => config.provider === provider)
 }
 
+export function createManagedConnectorSourceId(actor: McpActor, provider: McpProviderId): string {
+  const digest = createHash("sha256").update(`${actor.workspaceId}\0${actor.userId}\0${provider}`).digest("hex").slice(0, 32)
+  return validateMcpSourceId(`managed:${provider}:${digest}`)
+}
+
+export function createLegacyManagedConnectorSourceId(actor: McpActor, provider: McpProviderId): string {
+  return validateMcpSourceId(`managed:${actor.workspaceId}:${actor.userId}:${provider}`)
+}
+
 function defaultSourceId(actor: McpActor, config: ManagedConnectorConfig): string {
-  return validateMcpSourceId(`managed:${actor.workspaceId}:${actor.userId}:${config.provider}`)
+  return createManagedConnectorSourceId(actor, config.provider)
 }
 
 function assertSecretFree(value: unknown, canaries: readonly string[], code: McpErrorCode = MCP_ERROR_CODES.SECRET_LEAK_GUARD): void {
@@ -141,7 +154,7 @@ export function createManagedConnectorAdapter(options: ManagedConnectorAdapterOp
   function requireConfig(provider: McpProviderId): { config: ManagedConnectorConfig; template: McpProviderTemplate } {
     const config = findConfig(options.configs, provider)
     const template = getMcpProviderTemplate(provider, templates)
-    if (!config || !template) throw new McpError(MCP_ERROR_CODES.PROVIDER_CONFIG_INVALID, "Unknown managed connector provider")
+    if (!config || !template) throw new McpError(MCP_ERROR_CODES.PROVIDER_CONFIG_INVALID, "Unknown managed connector provider", { reason: "unsupported_provider" })
     return { config, template }
   }
 
@@ -209,6 +222,26 @@ export function createManagedConnectorAdapter(options: ManagedConnectorAdapterOp
         resources: response.resources,
       }
       assertSecretFree(result, [...canaries, secret.value])
+      return result
+    },
+
+    async disconnectSource(actor, sourceId) {
+      if (!options.registry.disconnectSource) throw new McpError(MCP_ERROR_CODES.SOURCE_UNAVAILABLE, "MCP source disconnect is not configured")
+      const source = await requireActorOwnedMcpSource(options.registry, actor, sourceId)
+      let secretCanaries: readonly string[] = canaries
+      if (options.provider.revoke) {
+        try {
+          const { config } = requireConfig(source.provider)
+          const secret = await getSecret(config.provider)
+          await options.provider.revoke({ actor, source, config, secret })
+          secretCanaries = [...canaries, secret.value]
+        } catch (error) {
+          if (!(error instanceof McpError && error.code === MCP_ERROR_CODES.PROVIDER_CONFIG_INVALID)) throw error
+        }
+      }
+      const disconnected = await options.registry.disconnectSource(actor, source.id)
+      const result = await verifyMcpDisconnectResult(options.registry, actor, source.id, disconnected)
+      assertSecretFree(result, secretCanaries)
       return result
     },
   }
