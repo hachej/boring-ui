@@ -34,6 +34,7 @@ interface StageContextValue {
   activePaneId: string | null
   flashPaneId: string | null
   renderPane: ChatPaneStageProps["renderPane"]
+  topActions?: ChatPaneStageProps["topActions"]
   onActivePaneChange?: (id: string) => void
   onClosePane?: (id: string) => void
 }
@@ -176,6 +177,7 @@ export function ChatPaneStageDock({
   panes,
   activePaneId,
   renderPane,
+  topActions,
   onActivePaneChange,
   onClosePane,
   flashPaneId,
@@ -201,9 +203,10 @@ export function ChatPaneStageDock({
     activePaneId: resolvedActiveId,
     flashPaneId: flashPaneId ?? null,
     renderPane,
+    topActions,
     onActivePaneChange,
     onClosePane: panes.length > 1 ? onClosePane : undefined,
-  }), [panes, resolvedActiveId, flashPaneId, renderPane, onActivePaneChange, onClosePane])
+  }), [panes, resolvedActiveId, flashPaneId, renderPane, topActions, onActivePaneChange, onClosePane])
 
   const handleReady = useCallback((event: DockviewReadyEvent) => {
     const api = event.api
@@ -406,6 +409,11 @@ function ChatPaneHeader(props: IDockviewPanelHeaderProps) {
           className="h-3.5 w-3.5 shrink-0 text-muted-foreground/45 transition-colors group-hover:text-muted-foreground"
           strokeWidth={1.75}
         />
+      ) : null}
+      {stage.topActions && api.id === stage.activePaneId ? (
+        <div data-boring-workspace-part="chat-pane-top-actions" className="flex shrink-0 items-center gap-1">
+          {stage.topActions}
+        </div>
       ) : null}
       <span className="min-w-0 flex-1 overflow-hidden text-ellipsis whitespace-nowrap text-foreground/70">
         {title}

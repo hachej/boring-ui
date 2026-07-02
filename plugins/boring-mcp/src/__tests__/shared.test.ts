@@ -11,6 +11,7 @@ import {
   containsMcpSecretOrCanary,
   doctorMcpSource,
   redactMcpSecrets,
+  toMcpSourceDto,
   type McpActor,
   type McpSource,
   type McpSourceStore,
@@ -66,6 +67,18 @@ describe("boring-mcp shared policy", () => {
     expect(containsMcpSecretOrCanary({ "MCP_CANARY_DO_NOT_LEAK": "key hit" }, ["MCP_CANARY_DO_NOT_LEAK"])).toBe(true)
     expect(containsMcpSecretOrCanary({ nested: { authorization: "Bearer abcdefghijklmnop" } }, ["MCP_CANARY_DO_NOT_LEAK"])).toBe(true)
     expect(containsMcpSecretOrCanary({ nested: { value: "safe" } }, ["MCP_CANARY_DO_NOT_LEAK", ""])).toBe(false)
+  })
+
+  it("omits server-only connector refs from public source DTOs", () => {
+    const dto = toMcpSourceDto({
+      ...notionSource,
+      credentialProvider: "composio-managed",
+      connectorRef: { provider: "notion", toolkitId: "notion", sessionId: "server-only-session", connectedAccountId: "account-1" },
+    })
+
+    expect(dto).not.toHaveProperty("connectorRef")
+    expect(JSON.stringify(dto)).not.toContain("server-only-session")
+    expect(JSON.stringify(dto)).not.toContain("account-1")
   })
 
   it("reports disconnected and unknown sources in doctor output", () => {
