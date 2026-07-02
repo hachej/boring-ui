@@ -22,6 +22,7 @@ import { UserSettingsPage as DefaultUserSettingsPage } from './auth/UserSettings
 import { InvitesPage } from './workspace/InvitesPage.js'
 import { MembersPage } from './workspace/MembersPage.js'
 import { WorkspaceSettingsPage } from './workspace/WorkspaceSettingsPage.js'
+import { CompanyAdminPage } from './workspace/CompanyAdminPage.js'
 import { InviteAcceptPage } from './auth/InviteAcceptPage.js'
 import { isRuntimeEmailVerificationEnabled } from '../shared/authPolicy.js'
 import { routes } from './utils.js'
@@ -154,6 +155,8 @@ export function CoreFront({ children, authPages, cspNonce, workspaceRoute, works
                               <Route path="/workspace/:id/invites" element={<InvitesPage />} />
                               <Route path={routes.workspaceSettings} element={<WorkspaceSettingsPage />} />
                               <Route path="/workspace/:id/settings" element={<WorkspaceSettingsPage />} />
+                              <Route path={routes.companyAdmin} element={<CompanyAdminPage />} />
+                              <Route path="/workspace/:id/admin" element={<CompanyAdminPage />} />
                               <Route path={routes.inviteAccept} element={<InviteAcceptPage />} />
                               {children}
                             </Routes>

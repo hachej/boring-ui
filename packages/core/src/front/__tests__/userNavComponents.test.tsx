@@ -18,6 +18,7 @@ const mockNavigate = vi.fn()
 const mockUseUser = vi.fn()
 const mockSignOut = vi.fn()
 const mockUseCurrentWorkspace = vi.fn()
+const mockUseWorkspaceRole = vi.fn()
 const mockUseTheme = vi.fn()
 const mockToast = vi.fn()
 
@@ -43,6 +44,7 @@ vi.mock('../WorkspaceAuthProvider', async () => {
   return {
     ...actual,
     useCurrentWorkspace: () => mockUseCurrentWorkspace(),
+    useWorkspaceRole: () => mockUseWorkspaceRole(),
   }
 })
 
@@ -159,6 +161,7 @@ beforeEach(() => {
   mockUseUser.mockReset()
   mockSignOut.mockReset()
   mockUseCurrentWorkspace.mockReset()
+  mockUseWorkspaceRole.mockReset()
   mockUseTheme.mockReset()
   mockToast.mockReset()
 
@@ -181,6 +184,7 @@ beforeEach(() => {
 
   mockSignOut.mockResolvedValue(undefined)
   mockUseCurrentWorkspace.mockReturnValue(WORKSPACES[0])
+  mockUseWorkspaceRole.mockReturnValue('owner')
   mockUseTheme.mockReturnValue({
     theme: 'light',
     preference: 'light',
@@ -205,6 +209,7 @@ describe('UserMenu', () => {
       expect(screen.getByText('menu-user@boring.dev')).toBeInTheDocument()
       expect(screen.getByRole('menuitem', { name: 'Light' })).toHaveAttribute('data-current', 'true')
       expect(screen.getByRole('menuitem', { name: 'User settings' })).toBeInTheDocument()
+      expect(screen.getByRole('menuitem', { name: 'Company admin' })).toBeInTheDocument()
       expect(screen.queryByRole('menuitem', { name: 'Create workspace' })).toBeNull()
       expect(screen.queryByRole('menuitem', { name: 'Workspace settings' })).toBeNull()
       assertionPassed('user-menu-renders-user')
@@ -218,6 +223,25 @@ describe('UserMenu', () => {
       assertionPassed('user-menu-signout-navigates')
     }),
   )
+
+  it('hides company admin for non-owner workspace members', async () => {
+    mockUseWorkspaceRole.mockReturnValue('editor')
+    renderWithProviders(<UserMenu />)
+
+    fireEvent.pointerDown(screen.getByRole('button', { name: 'User menu' }))
+
+    expect(await screen.findByRole('menuitem', { name: 'User settings' })).toBeInTheDocument()
+    expect(screen.queryByRole('menuitem', { name: 'Company admin' })).toBeNull()
+  })
+
+  it('navigates owners to company admin', async () => {
+    renderWithProviders(<UserMenu />)
+
+    fireEvent.pointerDown(screen.getByRole('button', { name: 'User menu' }))
+    fireEvent.click(await screen.findByRole('menuitem', { name: 'Company admin' }))
+
+    expect(mockNavigate).toHaveBeenCalledWith('/w/ws-a/admin')
+  })
 })
 
 describe('WorkspaceSwitcher', () => {
