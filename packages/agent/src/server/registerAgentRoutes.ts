@@ -922,6 +922,7 @@ let runtimeProvisioning: WorkspaceProvisioningResult | undefined
   })
   await app.register(treeRoutes, {
     getWorkspace: async (request) => (await getBindingForRequest(request)).runtimeBundle.workspace,
+    getFilesystemBindings: async (request) => (await getBindingForRequest(request)).runtimeBundle.filesystemBindings,
   })
   await app.register(searchRoutes, {
     getFileSearch: async (request) => (await getBindingForRequest(request)).runtimeBundle.fileSearch,
