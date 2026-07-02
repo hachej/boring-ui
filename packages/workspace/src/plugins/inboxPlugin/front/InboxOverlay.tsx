@@ -82,9 +82,9 @@ export function InboxOverlay({ onClose, headerInsetStart = false, headerInsetEnd
     setShellError(result.success ? null : result.message)
   }, [])
   const openArtifact = useCallback((item: WorkspaceInboxItemViewModel) => {
+    setSelectedItemId(item.id)
     if (!item.artifact) {
       setShellError(null)
-      setSelectedItemId(item.id)
       return
     }
     handleShellResult(shell.openInboxArtifact(item))
@@ -137,7 +137,7 @@ export function InboxOverlay({ onClose, headerInsetStart = false, headerInsetEnd
             </div>
             <button type="button" className="shrink-0 text-muted-foreground hover:text-foreground" onClick={() => setSelectedItemId(null)}>Close</button>
           </div>
-          {selectedItem.actions.length && selectedBlocker ? (
+          {selectedItem.actions.length > 0 && selectedBlocker ? (
             <div className="mt-3 flex flex-wrap gap-1.5">
               {selectedItem.actions.map((action) => (
                 <button
