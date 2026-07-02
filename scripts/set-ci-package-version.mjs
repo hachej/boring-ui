@@ -25,6 +25,9 @@ const PUBLISHABLE = [
   "plugins/ask-user",
   "plugins/data-explorer",
   "plugins/data-catalog",
+  "plugins/generated-pane",
+  "plugins/data-bridge",
+  "plugins/bi-dashboard",
 ]
 
 function readJson(path) {

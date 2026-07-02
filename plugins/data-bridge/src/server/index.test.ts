@@ -5,7 +5,13 @@ import { join } from "node:path"
 import { describe, expect, it, vi } from "vitest"
 import { createWorkspaceBridgeRegistry, type WorkspaceBridgeCallResponse } from "@hachej/boring-workspace/server"
 import type { DataBridgeTableResult } from "../shared"
-import { createDataBridgeServerPlugin, type DataBridgeSqlAdapter } from "./index"
+import { createClickHouseDataBridgeAdapter, createDataBridgeServerPlugin, type DataBridgeSqlAdapter } from "./index"
+
+const { clickHouseQuery, clickHouseExec } = vi.hoisted(() => ({ clickHouseQuery: vi.fn(), clickHouseExec: vi.fn() }))
+
+vi.mock("@clickhouse/client", () => ({
+  createClient: vi.fn(() => ({ query: clickHouseQuery, exec: clickHouseExec })),
+}))
 
 function createWorkspaceFixture() {
   const workspaceRoot = mkdtempSync(join(tmpdir(), "data-bridge-test-"))
@@ -13,9 +19,9 @@ function createWorkspaceFixture() {
   return workspaceRoot
 }
 
-async function sqlQuery(adapter: DataBridgeSqlAdapter, capabilities: string[], overrides: Record<string, unknown> = {}): Promise<WorkspaceBridgeCallResponse> {
+async function sqlQuery(adapter: DataBridgeSqlAdapter, capabilities: string[], overrides: Record<string, unknown> = {}, format?: "json" | "arrow", pluginOptions: Parameters<typeof createDataBridgeServerPlugin>[0] = { workspaceRoot: createWorkspaceFixture() }): Promise<WorkspaceBridgeCallResponse> {
   const plugin = createDataBridgeServerPlugin({
-    workspaceRoot: createWorkspaceFixture(),
+    ...pluginOptions,
     sqlAdapters: { macro: adapter },
   })
   const registry = createWorkspaceBridgeRegistry()
@@ -25,6 +31,7 @@ async function sqlQuery(adapter: DataBridgeSqlAdapter, capabilities: string[], o
   return await registry.call({
     op: "data.v1.query.run",
     input: {
+      ...(format ? { format } : {}),
       query: {
         language: "sql",
         source: "macro",
@@ -103,6 +110,39 @@ describe("data bridge SQL adapters", () => {
     expect(sqlAdapter.execute).toHaveBeenCalledWith(expect.objectContaining({
       sql: "SELECT series_id FROM series_catalog",
       limit: 2,
+    }))
+  })
+
+  it("materializes SQL query results as Arrow snapshots", async () => {
+    const sqlAdapter = adapter([{ series_id: "GDP" }])
+    const res = await sqlQuery(sqlAdapter, ["data:read", "data:sql-query", "data:macro-clickhouse"], {
+      sql: "SELECT series_id FROM series_catalog",
+      limit: 1,
+    }, "arrow")
+
+    expect(res.ok).toBe(true)
+    const output = res.ok ? res.output as { kind: string; arrowBase64: string; columns: Array<{ name: string }> } : undefined
+    expect(output?.kind).toBe("data-bridge.arrow")
+    expect(output?.arrowBase64.length).toBeGreaterThan(0)
+    expect(output?.columns.map((column) => column.name)).toEqual(["series_id"])
+  })
+
+  it("lets ClickHouse adapters return native Arrow without JSON materialization", async () => {
+    clickHouseExec.mockResolvedValueOnce({
+      stream: (async function* streamArrow() { yield Buffer.from([1, 2, 3, 4]) })(),
+    })
+    const sqlAdapter = createClickHouseDataBridgeAdapter({ url: "http://clickhouse.test:8123" })
+    const res = await sqlQuery(sqlAdapter, ["data:read", "data:sql-query", "data:clickhouse"], {
+      sql: "SELECT series_id FROM series_catalog LIMIT 100000",
+      limit: 100,
+    }, "arrow")
+
+    expect(res.ok).toBe(true)
+    const output = res.ok ? res.output as { kind: string; arrowBase64: string; rowCount?: number } : undefined
+    expect(output).toMatchObject({ kind: "data-bridge.arrow", arrowBase64: Buffer.from([1, 2, 3, 4]).toString("base64") })
+    expect(output?.rowCount).toBeUndefined()
+    expect(clickHouseExec).toHaveBeenCalledWith(expect.objectContaining({
+      query: "SELECT * FROM (SELECT series_id FROM series_catalog LIMIT 100000) AS data_bridge_query LIMIT 100 FORMAT Arrow",
     }))
   })
 

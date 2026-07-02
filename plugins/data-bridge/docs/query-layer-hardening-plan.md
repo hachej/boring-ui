@@ -2,7 +2,7 @@
 
 ## Context
 
-`@hachej/data-bridge` is new in the BI dashboard stack, but the intent is broader than dashboards: it should become the shared trusted query layer for BI dashboards, BSL integrations, and later boring-macro/MacroAnalyst.
+`@hachej/boring-data-bridge` is new in the BI dashboard stack, but the intent is broader than dashboards: it should become the shared trusted query layer for BI dashboards, BSL integrations, and later boring-macro/MacroAnalyst.
 
 Boring Macro already proves the product need. Today Macro owns its own ClickHouse-backed query service and agent tools:
 
@@ -15,14 +15,14 @@ That works locally for Macro, but it leaves BI dashboards, BSL, and future data 
 
 ## Decision
 
-Keep `@hachej/data-bridge` as a separate trusted server plugin, but keep the V0 simple:
+Keep `@hachej/boring-data-bridge` as a separate trusted server plugin, but keep the V0 simple:
 
 1. One generic bridge operation: `data.v1.query.run`.
 2. A small typed query union:
    - `bsl` for BSL/Ibis expression strings evaluated by BSL `safe_eval`.
    - `sql` for read-only adapter-backed SQL execution.
 3. A server-side adapter registry supplied by the host/plugin options.
-4. No direct ClickHouse dependency in `@hachej/data-bridge` V0.
+4. No direct ClickHouse dependency in `@hachej/boring-data-bridge` V0.
    - Macro can later register a `macro-clickhouse` SQL adapter that delegates to its existing `DataService.executeSql`.
    - This avoids pulling Macro/ClickHouse concerns into the reusable package.
 

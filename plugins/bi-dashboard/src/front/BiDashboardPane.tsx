@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react"
+import { createContext, useContext, useEffect, useMemo, useRef, useState } from "react"
 import { BarChart3, Database, ExternalLink, Gauge, RefreshCcw, SlidersHorizontal, Table2 } from "lucide-react"
 import {
   Card,
@@ -10,6 +10,8 @@ import {
   IconButton,
   Toolbar,
   ToolbarGroup,
+  applyBoringPerspectiveTheme,
+  boringPerspectiveThemeName,
 } from "@hachej/boring-ui-kit"
 import { useApiBaseUrl, useWorkspaceRequestId } from "@hachej/boring-workspace"
 import type { PaneProps } from "@hachej/boring-workspace/plugin"
@@ -17,7 +19,7 @@ import { defineGeneratedPaneProfile, GeneratedPaneRenderer } from "@hachej/borin
 import { parseDashboardSpec } from "../shared"
 import type { BslDashboardSpec } from "../shared"
 import { sampleBiDashboardSpec } from "./sampleSpec"
-import { useDashboardQueryData, type DashboardQueryResult } from "./dashboardData"
+import { fetchArrowDataBridgeQuery, useDashboardQueryData, type DashboardArrowQueryResult, type DashboardQueryResult } from "./dashboardData"
 import {
   bslChartPropsSchema,
   bslFilterPropsSchema,
@@ -86,9 +88,9 @@ export function BiDashboardPane({ params }: PaneProps<BiDashboardPaneParams>) {
   }, [apiBaseUrl, params?.path, params?.spec, refreshKey, workspaceId])
 
   const rawSpec = loadedFile.loading || loadedFile.error ? null : (params?.spec ?? loadedFile.spec ?? sampleBiDashboardSpec)
-  const parsed = rawSpec ? parseDashboardSpec(rawSpec) : { spec: null, errors: [] }
-  const spec = useMemo(() => parsed.spec ? applyControllerFilters(parsed.spec, controllerValues) : null, [controllerValues, parsed.spec])
-  const queryData = useDashboardQueryData(spec, apiBaseUrl, workspaceId ?? undefined)
+  const parsed = useMemo(() => rawSpec ? parseDashboardSpec(rawSpec) : { spec: null, errors: [] }, [rawSpec])
+  const parsedSpec = parsed.spec ?? null
+  const queryData = useDashboardQueryData(parsedSpec, apiBaseUrl, workspaceId ?? undefined, refreshKey, jsonQueryIdsForDashboard(parsedSpec))
 
   if (loadedFile.loading) {
     return (
@@ -106,7 +108,7 @@ export function BiDashboardPane({ params }: PaneProps<BiDashboardPaneParams>) {
     )
   }
 
-  if (!parsed.spec) {
+  if (!parsedSpec) {
     return (
       <div className="flex h-full min-h-0 min-w-0 items-center justify-center bg-background p-6 text-foreground">
         <EmptyState
@@ -117,13 +119,7 @@ export function BiDashboardPane({ params }: PaneProps<BiDashboardPaneParams>) {
     )
   }
 
-  if (!spec) {
-    return (
-      <div className="flex h-full min-h-0 min-w-0 items-center justify-center bg-background p-6 text-foreground">
-        <EmptyState title="Invalid BI dashboard spec" description="Dashboard could not be prepared" />
-      </div>
-    )
-  }
+  const spec = parsedSpec
 
   return (
     <div className="flex h-full min-h-0 min-w-0 flex-col bg-background text-foreground">
@@ -140,7 +136,7 @@ export function BiDashboardPane({ params }: PaneProps<BiDashboardPaneParams>) {
             onClick={() => setRefreshKey((value) => value + 1)}
             aria-label="Refresh dashboard"
             title="Refresh dashboard"
-            disabled={!params?.path || loadedFile.loading}
+            disabled={loadedFile.loading}
           >
             <RefreshCcw className={`h-3.5 w-3.5 ${loadedFile.loading ? "animate-spin" : ""}`} strokeWidth={1.75} />
           </IconButton>
@@ -167,48 +163,35 @@ export function BiDashboardPane({ params }: PaneProps<BiDashboardPaneParams>) {
           {spec.description ? <p className="mt-1 text-sm text-muted-foreground">{spec.description}</p> : null}
         </div>
 
-        <div className="grid min-w-0 gap-4 xl:grid-cols-[minmax(0,1fr)_360px]">
-          <div className="min-w-0 space-y-4">
-            <GeneratedPaneRenderer spec={spec} profile={createBiDashboardPaneProfile(queryData, controllerValues, setControllerValues)} />
-          </div>
-          <Card className="min-w-0">
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2 text-sm">
-                <Database className="h-4 w-4" /> Query manifest
-              </CardTitle>
-              <CardDescription>
+        <div className="min-w-0 space-y-4">
+          <DashboardFiltersBar spec={spec} queryData={queryData} controllerValues={controllerValues} setControllerValues={setControllerValues} />
+          <BiDashboardRenderContext.Provider value={{ apiBaseUrl, workspaceId: workspaceId ?? undefined, spec, refreshKey, queryData, controllerValues, setControllerValues }}>
+            <GeneratedPaneRenderer spec={spec} profile={biDashboardPaneProfile} />
+          </BiDashboardRenderContext.Provider>
+          <details className="group rounded-xl border border-border bg-card">
+            <summary className="flex cursor-pointer list-none items-center gap-2 px-4 py-3 text-sm font-medium text-foreground marker:hidden">
+              <Database className="h-4 w-4" /> Query manifest
+              <span className="ml-auto text-xs text-muted-foreground">debug</span>
+            </summary>
+            <div className="border-t border-border px-4 py-3">
+              <p className="mb-3 text-sm text-muted-foreground">
                 The agent should generate this neutral BSL dashboard contract; the plugin maps it to BSL, ECharts, and Perspective runtime calls.
-              </CardDescription>
-            </CardHeader>
-            <CardContent>
-              <pre className="max-h-[520px] overflow-auto rounded-lg border border-border bg-muted/40 p-3 text-xs text-muted-foreground">
+              </p>
+              <pre className="max-h-[420px] overflow-auto rounded-lg border border-border bg-muted/40 p-3 text-xs text-muted-foreground">
                 {JSON.stringify({ queries: spec.queries }, null, 2)}
               </pre>
-            </CardContent>
-          </Card>
+            </div>
+          </details>
         </div>
       </div>
     </div>
   )
 }
 
-function gridColumnsClass(columns: number | undefined): string {
-  switch (columns) {
-    case 1:
-      return "grid-cols-1"
-    case 2:
-      return "lg:grid-cols-2"
-    case 3:
-      return "lg:grid-cols-3"
-    case 4:
-      return "lg:grid-cols-4"
-    case 6:
-      return "lg:grid-cols-6"
-    case 12:
-      return "lg:grid-cols-2 xl:grid-cols-4"
-    default:
-      return "lg:grid-cols-2"
-  }
+function gridTemplateForColumns(columns: number | undefined): string {
+  if (columns === 1) return "minmax(0, 1fr)"
+  const minWidth = columns && columns >= 6 ? "320px" : "360px"
+  return `repeat(auto-fit, minmax(min(100%, ${minWidth}), 1fr))`
 }
 
 function formatMetricValue(value: unknown, format: "number" | "currency" | "percent" | undefined): string {
@@ -219,74 +202,323 @@ function formatMetricValue(value: unknown, format: "number" | "currency" | "perc
   return new Intl.NumberFormat("en-US", { maximumFractionDigits: 2 }).format(number)
 }
 
-function applyControllerFilters(spec: BslDashboardSpec, _controllerValues: Record<string, string>): BslDashboardSpec {
-  // Query specs are intentionally either BSL expression strings or SQL strings.
-  // Do not mutate them through a parallel JSON filter DSL here.
-  return spec
+type PerspectiveFilter = [string, "==", string]
+
+function perspectiveFiltersForQuery(spec: BslDashboardSpec, controllerValues: Record<string, string>, queryId: string): PerspectiveFilter[] {
+  const filters: PerspectiveFilter[] = []
+  for (const element of Object.values(spec.elements)) {
+    if (element.type !== "BSLFilter") continue
+    const id = String(element.props.id ?? "")
+    const value = controllerValues[id]
+    if (!id || !value || value === "__all") continue
+    const field = String(element.props.field ?? "")
+    const targets = Array.isArray(element.props.targetQueries) ? element.props.targetQueries.map(String) : []
+    if (!field || !targets.includes(queryId)) continue
+    filters.push([field, "==", value])
+  }
+  return filters
 }
 
-function ChartPreview({ data, x, y, chartType }: { data?: DashboardQueryResult; x?: string; y?: string | string[]; chartType: string }) {
-  if (!data) return <Placeholder text="No live data source configured yet" />
-  if (data.loading) return <Placeholder text="Loading data…" />
-  if (data.error) return <Placeholder text={data.error} destructive />
-  const yField = Array.isArray(y) ? y[0] : y
-  if (!x || !yField || data.rows.length === 0) return <Placeholder text="No chartable rows" />
-  const values = data.rows.map((row) => Number(row[yField])).filter(Number.isFinite)
-  const max = Math.max(1, ...values)
+function perspectivePluginForChartType(chartType: string): string {
+  switch (chartType.toLowerCase()) {
+    case "bar":
+      return "Y Bar"
+    case "line":
+      return "Y Line"
+    case "area":
+      return "Y Area"
+    case "scatter":
+      return "Y Scatter"
+    case "heatmap":
+      return "Heatmap"
+    case "treemap":
+      return "Treemap"
+    case "sunburst":
+      return "Sunburst"
+    case "table":
+      return "Datagrid"
+    default:
+      return "Y Bar"
+  }
+}
+
+function chartPerspectiveFields(x?: unknown, y?: unknown): { columns?: string[]; groupBy?: string[] } {
+  const xField = typeof x === "string" && x.length > 0 ? x : undefined
+  const yFields = Array.isArray(y)
+    ? y.filter((value): value is string => typeof value === "string" && value.length > 0)
+    : typeof y === "string" && y.length > 0
+      ? [y]
+      : []
+  return {
+    columns: [...(xField ? [xField] : []), ...yFields],
+    groupBy: xField ? [xField] : undefined,
+  }
+}
+
+function jsonQueryIdsForDashboard(spec: BslDashboardSpec | null): string[] {
+  if (!spec) return []
+  const ids = new Set<string>()
+  for (const element of Object.values(spec.elements)) {
+    if (element.type === "BSLMetric") ids.add(String(element.props.queryId))
+    if (element.type === "BSLFilter") {
+      for (const queryId of element.props.targetQueries) ids.add(String(queryId))
+    }
+  }
+  return [...ids]
+}
+
+function DashboardFiltersBar({
+  spec,
+  queryData,
+  controllerValues,
+  setControllerValues,
+}: {
+  spec: BslDashboardSpec
+  queryData: Record<string, DashboardQueryResult>
+  controllerValues: Record<string, string>
+  setControllerValues: (updater: (previous: Record<string, string>) => Record<string, string>) => void
+}) {
+  const filters = Object.values(spec.elements).filter((element) => element.type === "BSLFilter")
+  if (filters.length === 0) return null
   return (
-    <div className="h-56 rounded-lg border border-border bg-card p-3 text-foreground">
-      <svg viewBox="0 0 640 210" className="h-full w-full overflow-visible" role="img" aria-label={`${chartType} chart`}> 
-        {data.rows.map((row, index) => {
-          const value = Number(row[yField])
-          const label = String(row[x] ?? index + 1)
-          const width = 560 / Math.max(1, data.rows.length)
-          const height = Number.isFinite(value) ? Math.max(3, (value / max) * 150) : 3
-          const left = 55 + index * width
-          if (chartType === "line" || chartType === "area") return null
+    <Card className="min-w-0 border-primary/20 bg-card/95 shadow-sm">
+      <CardContent className="flex min-w-0 flex-wrap items-end gap-3 p-3">
+        <div className="mr-1 flex min-w-[140px] items-center gap-2 pb-2 text-sm font-medium text-foreground">
+          <SlidersHorizontal className="h-4 w-4 text-primary" /> Controls
+        </div>
+        {filters.map((element) => {
+          const props = element.props
+          const id = String(props.id)
+          const field = String(props.field)
+          const targets = props.targetQueries as string[]
+          const options = [...new Set(targets.flatMap((queryId) => queryData[queryId]?.rows.map((row) => row[field]).filter((value) => value != null).map(String) ?? []))].sort((a, b) => a.localeCompare(b))
           return (
-            <g key={index}>
-              <rect x={left} y={165 - height} width={Math.max(8, width - 8)} height={height} rx="4" fill="var(--boring-primary, var(--primary))" opacity="0.9" />
-              <text x={left + width / 2} y="190" textAnchor="middle" className="fill-current text-[10px] text-muted-foreground">{label.slice(0, 10)}</text>
-            </g>
+            <label key={id} className="min-w-[180px] flex-1 text-xs font-medium text-muted-foreground sm:max-w-[260px]">
+              <span className="mb-1 block truncate">{String(props.label ?? props.field)}</span>
+              <select
+                className="h-9 w-full rounded-md border border-border bg-background px-2.5 text-sm font-normal text-foreground shadow-sm outline-none focus:ring-2 focus:ring-ring/40"
+                value={controllerValues[id] ?? "__all"}
+                onChange={(event) => setControllerValues((previous) => ({ ...previous, [id]: event.target.value }))}
+              >
+                <option value="__all">All {field}</option>
+                {options.map((option) => <option key={option} value={option}>{option}</option>)}
+              </select>
+            </label>
           )
         })}
-        {(chartType === "line" || chartType === "area") && (
-          <polyline
-            fill="none"
-            stroke="var(--boring-primary, var(--primary))"
-            strokeWidth="3"
-            points={data.rows.map((row, index) => {
-              const value = Number(row[yField])
-              const xPos = 65 + index * (540 / Math.max(1, data.rows.length - 1))
-              const yPos = 165 - ((Number.isFinite(value) ? value : 0) / max) * 150
-              return `${xPos},${yPos}`
-            }).join(" ")}
-          />
-        )}
-      </svg>
-    </div>
+      </CardContent>
+    </Card>
   )
 }
 
-function DataTable({ data, columns }: { data?: DashboardQueryResult; columns?: string[] }) {
-  if (!data) return <Placeholder text="No live data source configured yet" />
-  if (data.loading) return <Placeholder text="Loading data…" />
-  if (data.error) return <Placeholder text={data.error} destructive />
-  const visibleColumns = columns?.length ? columns : data.columns.map((column) => column.name)
+function base64ToArrayBuffer(value: string): ArrayBuffer {
+  const binary = window.atob(value)
+  const bytes = new Uint8Array(binary.length)
+  for (let index = 0; index < binary.length; index += 1) bytes[index] = binary.charCodeAt(index)
+  return bytes.buffer
+}
+
+let perspectiveRuntimePromise: Promise<typeof import("@perspective-dev/client")> | undefined
+
+function ensurePerspectiveRuntime(): Promise<typeof import("@perspective-dev/client")> {
+  perspectiveRuntimePromise ??= (async () => {
+    const viewerModule = await import("@perspective-dev/viewer")
+    // @ts-expect-error Vite URL import for Perspective wasm asset.
+    const viewerWasm = await import("@perspective-dev/viewer/dist/wasm/perspective-viewer.wasm?url")
+    if (!customElements.get("perspective-viewer")) {
+      await viewerModule.default.init_client(fetch(viewerWasm.default))
+    }
+    await import("@perspective-dev/viewer-datagrid")
+    await import("@perspective-dev/viewer-d3fc")
+    await customElements.whenDefined("perspective-viewer")
+    const perspective = await import("@perspective-dev/client")
+    // @ts-expect-error Vite URL import for Perspective wasm asset.
+    const serverWasm = await import("@perspective-dev/server/dist/wasm/perspective-server.wasm?url")
+    await perspective.default.init_server(fetch(serverWasm.default))
+    return perspective
+  })().catch((error) => {
+    perspectiveRuntimePromise = undefined
+    throw error
+  })
+  return perspectiveRuntimePromise
+}
+
+function isNumericColumnType(type: string | undefined): boolean {
+  return typeof type === "string" && /int|float|double|decimal|number|uint/i.test(type)
+}
+
+function perspectiveRestoreConfig(options: {
+  plugin?: string
+  columns?: string[]
+  groupBy?: string[]
+  splitBy?: string[]
+  sort?: Array<[string, "asc" | "desc"]>
+  filters?: PerspectiveFilter[]
+  snapshot: DashboardArrowQueryResult
+}) {
+  const plugin = options.plugin ?? "Datagrid"
+  const columns = options.columns
+  const base = { plugin, theme: boringPerspectiveThemeName(), settings: false, split_by: options.splitBy, sort: options.sort, filter: options.filters }
+  if (/datagrid/i.test(plugin)) {
+    return { ...base, columns, group_by: options.groupBy }
+  }
+  const columnMeta = options.snapshot.columns ?? []
+  const groupBy = options.groupBy?.length
+    ? options.groupBy
+    : columns?.filter((column) => !isNumericColumnType(columnMeta.find((meta) => meta.name === column)?.type)).slice(0, 1)
+  const groupSet = new Set(groupBy ?? [])
+  const measureColumns = columns?.filter((column) => !groupSet.has(column))
+  const numericMeasureColumns = measureColumns?.filter((column) => isNumericColumnType(columnMeta.find((meta) => meta.name === column)?.type))
+  return {
+    ...base,
+    columns: numericMeasureColumns?.length ? numericMeasureColumns : measureColumns,
+    group_by: groupBy,
+  }
+}
+
+function PerspectiveTable({
+  apiBaseUrl,
+  workspaceId,
+  queryId,
+  query,
+  plugin,
+  columns,
+  groupBy,
+  splitBy,
+  sort,
+  filters,
+  refreshKey,
+}: {
+  apiBaseUrl: string
+  workspaceId: string | undefined
+  queryId: string
+  query: BslDashboardSpec["queries"][string] | undefined
+  plugin?: string
+  columns?: string[]
+  groupBy?: string[]
+  splitBy?: string[]
+  sort?: Array<[string, "asc" | "desc"]>
+  filters?: PerspectiveFilter[]
+  refreshKey: number
+}) {
+  const hostRef = useRef<HTMLDivElement | null>(null)
+  const [state, setState] = useState<{ loading: boolean; error?: string; snapshot?: DashboardArrowQueryResult }>({ loading: true })
+  const viewerRef = useRef<(HTMLElement & { restore?: (config: unknown) => Promise<void>; notifyResize?: (force?: boolean) => Promise<void> }) | null>(null)
+  const columnsKey = JSON.stringify(columns ?? [])
+  const groupByKey = JSON.stringify(groupBy ?? [])
+  const splitByKey = JSON.stringify(splitBy ?? [])
+  const sortKey = JSON.stringify(sort ?? [])
+  const filterKey = JSON.stringify(filters ?? [])
+
+  useEffect(() => {
+    let cancelled = false
+    let cleanup: (() => void) | undefined
+    async function loadPerspective() {
+      if (!query) {
+        setState({ loading: false, error: `Unknown query ${queryId}` })
+        return
+      }
+      const host = hostRef.current
+      if (!host) return
+      setState({ loading: true })
+      try {
+        const perspective = await ensurePerspectiveRuntime()
+        const snapshot = await fetchArrowDataBridgeQuery({ apiBaseUrl, workspaceId, queryId, query })
+        if (cancelled) return
+        const arrow = base64ToArrayBuffer(snapshot.arrowBase64)
+        const worker = await perspective.default.worker()
+        const clientTable = await worker.table(arrow)
+        const tableWithMeta = clientTable as typeof clientTable & {
+          size?: () => Promise<number>
+          schema?: () => Promise<Record<string, string>>
+        }
+        const [tableRowCount, tableSchema] = await Promise.all([
+          tableWithMeta.size?.().catch(() => undefined),
+          tableWithMeta.schema?.().catch(() => undefined),
+        ])
+        const snapshotWithTableMeta: DashboardArrowQueryResult = {
+          ...snapshot,
+          rowCount: typeof tableRowCount === "number" ? tableRowCount : snapshot.rowCount,
+          columns: tableSchema
+            ? Object.entries(tableSchema).map(([name, type]) => ({ name, type }))
+            : snapshot.columns,
+        }
+        if (cancelled) {
+          void clientTable.delete({ lazy: true }).catch(() => undefined)
+          worker.free()
+          return
+        }
+        host.replaceChildren()
+        const viewer = document.createElement("perspective-viewer") as HTMLElement & {
+          load?: (table: unknown) => Promise<void>
+          restore?: (config: unknown) => Promise<void>
+          delete?: () => Promise<void>
+          notifyResize?: (force?: boolean) => Promise<void>
+        }
+        const isDatagrid = /datagrid/i.test(plugin ?? "Datagrid")
+        const height = isDatagrid ? "22rem" : "28rem"
+        viewer.className = "bi-perspective-viewer block w-full overflow-hidden rounded-xl border border-border bg-card text-foreground shadow-sm"
+        viewer.style.display = "block"
+        viewer.style.width = "100%"
+        viewer.style.height = height
+        viewer.style.minHeight = height
+        applyBoringPerspectiveTheme(viewer, { hideAxisLabels: true, chartTicksUseSans: true })
+        host.appendChild(viewer)
+        if (typeof viewer.load !== "function") throw new Error("Perspective viewer custom element did not initialize")
+        await viewer.load(clientTable)
+        await viewer.restore?.(perspectiveRestoreConfig({ plugin, columns, groupBy, splitBy, sort, filters, snapshot: snapshotWithTableMeta }))
+        // Perspective theme restore can rewrite some plugin CSS vars; re-apply
+        // boring-ui tokens after restore so d3fc bars/tooltips inherit them.
+        applyBoringPerspectiveTheme(viewer, { hideAxisLabels: true, chartTicksUseSans: true })
+        await viewer.notifyResize?.(true)
+        if (cancelled) {
+          void viewer.delete?.().catch(() => undefined)
+          void clientTable.delete({ lazy: true }).catch(() => undefined)
+          worker.free()
+          return
+        }
+        viewerRef.current = viewer
+        const resizeObserver = typeof ResizeObserver !== "undefined"
+          ? new ResizeObserver(() => { void viewer.notifyResize?.(true).catch(() => undefined) })
+          : null
+        resizeObserver?.observe(viewer)
+        cleanup = () => {
+          resizeObserver?.disconnect()
+          void viewer.delete?.().catch(() => undefined)
+          void clientTable.delete({ lazy: true }).catch(() => undefined)
+          worker.free()
+        }
+        setState({ loading: false, snapshot: snapshotWithTableMeta })
+      } catch (error) {
+        if (!cancelled) setState({ loading: false, error: error instanceof Error ? error.message : String(error) })
+      }
+    }
+    void loadPerspective()
+    return () => {
+      cancelled = true
+      cleanup?.()
+      viewerRef.current = null
+    }
+  }, [apiBaseUrl, columnsKey, groupByKey, plugin, query, queryId, refreshKey, sortKey, splitByKey, workspaceId])
+
+  useEffect(() => {
+    const viewer = viewerRef.current
+    const snapshot = state.snapshot
+    if (!viewer || !snapshot) return
+    void viewer.restore?.(perspectiveRestoreConfig({ plugin, columns, groupBy, splitBy, sort, filters, snapshot }))
+      .then(() => {
+        applyBoringPerspectiveTheme(viewer, { hideAxisLabels: true, chartTicksUseSans: true })
+        return viewer.notifyResize?.(true)
+      })
+      .catch((error) => setState((previous) => ({ ...previous, error: error instanceof Error ? error.message : String(error) })))
+  }, [columnsKey, filterKey, groupByKey, plugin, sortKey, splitByKey, state.snapshot])
+
   return (
-    <div className="max-h-72 overflow-auto rounded-lg border border-border">
-      <table className="w-full border-collapse text-xs">
-        <thead className="sticky top-0 bg-muted">
-          <tr>{visibleColumns.map((column) => <th key={column} className="border-b border-border px-2 py-1.5 text-left font-medium">{column}</th>)}</tr>
-        </thead>
-        <tbody>
-          {data.rows.map((row, rowIndex) => (
-            <tr key={rowIndex} className="odd:bg-muted/20">
-              {visibleColumns.map((column) => <td key={column} className="border-b border-border/50 px-2 py-1.5 text-muted-foreground">{String(row[column] ?? "")}</td>)}
-            </tr>
-          ))}
-        </tbody>
-      </table>
+    <div className="min-w-0 overflow-hidden">
+      {state.loading ? <Placeholder text="Loading chart…" /> : null}
+      {state.error ? <Placeholder text={state.error} destructive /> : null}
+      <div ref={hostRef} className={state.loading || state.error ? "hidden" : "block overflow-hidden rounded-xl"} />
+      {state.snapshot && !state.error ? <p className="mt-2 truncate text-[11px] text-muted-foreground">{typeof state.snapshot.rowCount === "number" ? `${state.snapshot.rowCount.toLocaleString()} rows · ` : ""}Arrow snapshot</p> : null}
     </div>
   )
 }
@@ -295,12 +527,25 @@ function Placeholder({ text, destructive }: { text: string; destructive?: boolea
   return <div className={`flex h-52 items-center justify-center rounded-lg border border-dashed border-border bg-card text-sm ${destructive ? "text-destructive" : "text-muted-foreground"}`}>{text}</div>
 }
 
-function createBiDashboardPaneProfile(
-  queryData: Record<string, DashboardQueryResult>,
-  controllerValues: Record<string, string>,
-  setControllerValues: (updater: (previous: Record<string, string>) => Record<string, string>) => void,
-) {
-  return defineGeneratedPaneProfile({
+interface BiDashboardRenderState {
+  apiBaseUrl: string
+  workspaceId: string | undefined
+  spec: BslDashboardSpec
+  queryData: Record<string, DashboardQueryResult>
+  refreshKey: number
+  controllerValues: Record<string, string>
+  setControllerValues: (updater: (previous: Record<string, string>) => Record<string, string>) => void
+}
+
+const BiDashboardRenderContext = createContext<BiDashboardRenderState | null>(null)
+
+function useBiDashboardRenderContext(): BiDashboardRenderState {
+  const context = useContext(BiDashboardRenderContext)
+  if (!context) throw new Error("BI dashboard render context is missing")
+  return context
+}
+
+const biDashboardPaneProfile = defineGeneratedPaneProfile({
     id: "bi-dashboard",
     label: "BI Dashboard",
     components: {
@@ -308,25 +553,26 @@ function createBiDashboardPaneProfile(
         description: "Responsive dashboard grid for chart, table, metric, filter, and text widgets.",
         slots: ["default"],
         props: dashboardGridPropsSchema,
-        component: ({ props, children }) => <div className={`grid min-w-0 gap-4 ${gridColumnsClass(props.columns as number | undefined)}`}>{children}</div>,
+        component: ({ props, children }) => <div className="grid min-w-0 gap-4" style={{ gridTemplateColumns: gridTemplateForColumns(props.columns as number | undefined) }}>{children}</div>,
       },
       BSLMetric: {
         description: "Metric card bound to a BI query result field.",
         props: bslMetricPropsSchema,
         component: ({ props }) => {
+          const { queryData } = useBiDashboardRenderContext()
           const queryId = String(props.queryId)
           const valueField = String(props.valueField)
           const data = queryData[queryId]
           const value = data?.rows[0]?.[valueField]
           return (
-            <Card className="min-w-0">
+            <Card className="min-w-0 overflow-hidden">
               <CardHeader className="pb-2">
-                <CardDescription>{String(props.label)}</CardDescription>
-                <CardTitle className="flex items-center gap-2 text-3xl">
+                <CardDescription className="truncate">{String(props.label)}</CardDescription>
+                <CardTitle className="flex min-w-0 items-center gap-2 text-3xl">
                   <Gauge className="h-5 w-5 text-muted-foreground" /> {data?.loading ? "…" : formatMetricValue(value, props.format as "number" | "currency" | "percent" | undefined)}
                 </CardTitle>
               </CardHeader>
-              <CardContent className="text-xs text-muted-foreground">
+              <CardContent className="break-words text-xs text-muted-foreground">
                 {data?.error ? <span className="text-destructive">{data.error}</span> : <>query <code>{queryId}</code> · field <code>{valueField}</code>{data?.source ? <> · {data.source}</> : null}</>}
               </CardContent>
             </Card>
@@ -337,15 +583,34 @@ function createBiDashboardPaneProfile(
         description: "Chart preview bound to a BI query result.",
         props: bslChartPropsSchema,
         component: ({ props }) => {
+          const { apiBaseUrl, workspaceId, spec, refreshKey, queryData, controllerValues } = useBiDashboardRenderContext()
           const queryId = String(props.queryId)
           const data = queryData[queryId]
           return (
-            <Card className="min-w-0">
+            <Card className="min-w-0 overflow-hidden">
               <CardHeader>
-                <CardTitle className="flex items-center gap-2 text-base"><BarChart3 className="h-4 w-4" /> {typeof props.title === "string" ? props.title : queryId}</CardTitle>
-                <CardDescription>{String(props.renderer ?? "echarts")} · {String(props.chartType)} · query <code>{queryId}</code>{data?.source ? <> · {data.source}</> : null}</CardDescription>
+                <CardTitle className="flex min-w-0 items-center gap-2 text-lg"><BarChart3 className="h-4 w-4 shrink-0" /> <span className="truncate">{typeof props.title === "string" ? props.title : queryId}</span></CardTitle>
+                <CardDescription className="truncate">Perspective · {perspectivePluginForChartType(String(props.chartType))} · query <code>{queryId}</code>{data?.source ? <> · {data.source}</> : null}</CardDescription>
               </CardHeader>
-              <CardContent><ChartPreview data={data} x={props.x as string | undefined} y={props.y as string | string[] | undefined} chartType={String(props.chartType)} /></CardContent>
+              <CardContent>
+                {(() => {
+                  const fields = chartPerspectiveFields(props.x, props.y)
+                  const filters = perspectiveFiltersForQuery(spec, controllerValues, queryId)
+                  return (
+                    <PerspectiveTable
+                      apiBaseUrl={apiBaseUrl}
+                      workspaceId={workspaceId}
+                      queryId={queryId}
+                      query={spec.queries[queryId]}
+                      plugin={perspectivePluginForChartType(String(props.chartType))}
+                      columns={fields.columns}
+                      groupBy={fields.groupBy}
+                      filters={filters}
+                      refreshKey={refreshKey}
+                    />
+                  )
+                })()}
+              </CardContent>
             </Card>
           )
         },
@@ -354,15 +619,30 @@ function createBiDashboardPaneProfile(
         description: "Table/Perspective-style viewer bound to a BI query result.",
         props: bslPerspectiveViewerPropsSchema,
         component: ({ props }) => {
+          const { apiBaseUrl, workspaceId, spec, refreshKey, queryData, controllerValues } = useBiDashboardRenderContext()
           const queryId = String(props.queryId)
           const data = queryData[queryId]
           return (
-            <Card className="min-w-0">
+            <Card className="min-w-0 overflow-hidden">
               <CardHeader>
-                <CardTitle className="flex items-center gap-2 text-base"><Table2 className="h-4 w-4" /> {typeof props.title === "string" ? props.title : queryId}</CardTitle>
-                <CardDescription>Perspective {String(props.plugin ?? "Datagrid")} · query <code>{queryId}</code>{data?.source ? <> · {data.source}</> : null}</CardDescription>
+                <CardTitle className="flex min-w-0 items-center gap-2 text-base"><Table2 className="h-4 w-4 shrink-0" /> <span className="truncate">{typeof props.title === "string" ? props.title : queryId}</span></CardTitle>
+                <CardDescription className="truncate">Perspective {String(props.plugin ?? "Datagrid")} · query <code>{queryId}</code>{data?.source ? <> · {data.source}</> : null}</CardDescription>
               </CardHeader>
-              <CardContent><DataTable data={data} columns={props.columns as string[] | undefined} /></CardContent>
+              <CardContent>
+                <PerspectiveTable
+                  apiBaseUrl={apiBaseUrl}
+                  workspaceId={workspaceId}
+                  queryId={queryId}
+                  query={spec.queries[queryId]}
+                  plugin={props.plugin as string | undefined}
+                  columns={props.columns as string[] | undefined}
+                  groupBy={props.groupBy as string[] | undefined}
+                  splitBy={props.splitBy as string[] | undefined}
+                  sort={props.sort as Array<[string, "asc" | "desc"]> | undefined}
+                  filters={perspectiveFiltersForQuery(spec, controllerValues, queryId)}
+                  refreshKey={refreshKey}
+                />
+              </CardContent>
             </Card>
           )
         },
@@ -370,30 +650,7 @@ function createBiDashboardPaneProfile(
       BSLFilter: {
         description: "Dashboard filter control placeholder for target queries.",
         props: bslFilterPropsSchema,
-        component: ({ props }) => {
-          const id = String(props.id)
-          const field = String(props.field)
-          const targets = props.targetQueries as string[]
-          const options = [...new Set(targets.flatMap((queryId) => queryData[queryId]?.rows.map((row) => row[field]).filter((value) => value != null).map(String) ?? []))].sort((a, b) => a.localeCompare(b))
-          return (
-            <Card className="min-w-0 border-primary/25 bg-card">
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2 text-base"><SlidersHorizontal className="h-4 w-4 text-primary" /> {String(props.label ?? props.field)}</CardTitle>
-                <CardDescription>{String(props.controlType)} controller · targets {targets.join(", ")}</CardDescription>
-              </CardHeader>
-              <CardContent>
-                <select
-                  className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground shadow-sm outline-none focus:ring-2 focus:ring-ring/40"
-                  value={controllerValues[id] ?? "__all"}
-                  onChange={(event) => setControllerValues((previous) => ({ ...previous, [id]: event.target.value }))}
-                >
-                  <option value="__all">All {field}</option>
-                  {options.map((option) => <option key={option} value={option}>{option}</option>)}
-                </select>
-              </CardContent>
-            </Card>
-          )
-        },
+        component: () => null,
       },
       BSLText: {
         description: "Text/markdown explanation block for dashboard context.",
@@ -401,5 +658,4 @@ function createBiDashboardPaneProfile(
         component: ({ props }) => <Card className="min-w-0"><CardContent className="p-4 text-sm text-muted-foreground">{String(props.markdown)}</CardContent></Card>,
       },
     },
-  })
-}
+})

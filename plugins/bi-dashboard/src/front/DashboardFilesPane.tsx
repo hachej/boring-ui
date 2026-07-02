@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from "react"
 import { FileJson2, LayoutDashboard, RefreshCw } from "lucide-react"
 import { Badge, EmptyState, IconButton } from "@hachej/boring-ui-kit"
 import { useApiBaseUrl, useWorkspaceRequestId } from "@hachej/boring-workspace"
-import type { PaneProps } from "@hachej/boring-workspace/plugin"
+import type { WorkspaceSourceProps } from "@hachej/boring-workspace/plugin"
 import { BI_DASHBOARD_PANEL_ID } from "./constants"
 
 interface DashboardSearchState {
@@ -26,7 +26,9 @@ function matchesQuery(path: string, query: string | undefined): boolean {
   return path.toLowerCase().includes(value) || titleFromPath(path).toLowerCase().includes(value)
 }
 
-export function DashboardFilesPane({ params, containerApi }: PaneProps<{ searchQuery?: string }>) {
+type DashboardFilesPaneProps = WorkspaceSourceProps<{ searchQuery?: string }>
+
+export function DashboardFilesPane({ params, openPanel }: DashboardFilesPaneProps) {
   const apiBaseUrl = useApiBaseUrl()
   const workspaceId = useWorkspaceRequestId()
   const [state, setState] = useState<DashboardSearchState>({ loading: true, paths: [] })
@@ -63,12 +65,13 @@ export function DashboardFilesPane({ params, containerApi }: PaneProps<{ searchQ
   )
 
   const openDashboard = (path: string) => {
-    containerApi.addPanel({
+    const panel = {
       id: `${BI_DASHBOARD_PANEL_ID}:${path}`,
       component: BI_DASHBOARD_PANEL_ID,
       title: titleFromPath(path),
       params: { path },
-    })
+    }
+    openPanel?.(panel)
   }
 
   return (
