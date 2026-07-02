@@ -51,6 +51,7 @@ export const ResizableImage = Image.extend<any>({
     return {
       ...this.parent?.(),
       resolveSrc: (src: string) => src,
+      resizable: true,
     }
   },
 
@@ -155,13 +156,14 @@ function ResizableImageView({ node, updateAttributes, selected, extension }: Nod
   const storedSrc = (node.attrs.src as string | undefined) ?? ""
   const resolveSrc = (extension.options as { resolveSrc?: ImageSrcResolver }).resolveSrc ?? ((value: string) => value)
   const src = resolveSrc(storedSrc)
+  const resizable = (extension.options as { resizable?: boolean }).resizable !== false
   const alt = (node.attrs.alt as string | undefined) ?? ""
   const title = (node.attrs.title as string | undefined) ?? undefined
   const width = node.attrs.width as number | null | undefined
   const align = (node.attrs.align as "left" | "center" | "right" | undefined) ?? "left"
 
   useEffect(() => {
-    if (!dragging) return
+    if (!dragging || !resizable) return
     const onMove = (e: PointerEvent) => {
       const start = startRef.current
       if (!start) return
@@ -181,9 +183,10 @@ function ResizableImageView({ node, updateAttributes, selected, extension }: Nod
       window.removeEventListener("pointerup", onUp)
       window.removeEventListener("pointercancel", onUp)
     }
-  }, [dragging, updateAttributes])
+  }, [dragging, resizable, updateAttributes])
 
   const onHandlePointerDown = (e: React.PointerEvent<HTMLSpanElement>) => {
+    if (!resizable) return
     e.preventDefault()
     e.stopPropagation()
     const img = wrapperRef.current?.querySelector("img")
@@ -203,27 +206,29 @@ function ResizableImageView({ node, updateAttributes, selected, extension }: Nod
         align === "left" && "mr-auto",
         align === "center" && "mx-auto",
         align === "right" && "ml-auto",
-        selected &&
+        resizable && selected &&
           "ring-2 ring-[color:var(--accent)] ring-offset-1 ring-offset-background",
       )}
       style={{ width: width ? `${width}px` : undefined }}
     >
       <img src={src} alt={alt} title={title} draggable={false} />
-      <span
-        role="slider"
-        aria-label="Resize image"
-        aria-valuenow={width ?? 0}
-        aria-valuemin={MIN_WIDTH}
-        aria-valuemax={MAX_WIDTH}
-        data-testid="resize-handle"
-        onPointerDown={onHandlePointerDown}
-        className={cn(
-          "absolute right-0 bottom-0 h-3 w-3 translate-x-1/2 translate-y-1/2 cursor-nwse-resize",
-          "rounded-full border border-background bg-[color:var(--accent)] shadow",
-          "opacity-0 transition-opacity duration-150 ease-out",
-          (selected || dragging) && "opacity-100",
-        )}
-      />
+      {resizable && (
+        <span
+          role="slider"
+          aria-label="Resize image"
+          aria-valuenow={width ?? 0}
+          aria-valuemin={MIN_WIDTH}
+          aria-valuemax={MAX_WIDTH}
+          data-testid="resize-handle"
+          onPointerDown={onHandlePointerDown}
+          className={cn(
+            "absolute right-0 bottom-0 h-3 w-3 translate-x-1/2 translate-y-1/2 cursor-nwse-resize",
+            "rounded-full border border-background bg-[color:var(--accent)] shadow",
+            "opacity-0 transition-opacity duration-150 ease-out",
+            (selected || dragging) && "opacity-100",
+          )}
+        />
+      )}
     </NodeViewWrapper>
   )
 }

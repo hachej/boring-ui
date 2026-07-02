@@ -18,9 +18,9 @@ const fsAllow = externalRuntimeExtensionsRoot ? [repoRoot, externalRuntimeExtens
 // aliases.
 const playgroundOnlyAliases = [
   // Keep app code importing the public package CSS subpath, but point the
-  // playground's local monorepo dev server at the built CSS artifact so Vite
-  // serves it as text/css instead of falling back through HTML history.
-  { find: "@hachej/boring-workspace/globals.css", replacement: resolve(__dirname, "../../packages/workspace/dist/workspace.css") },
+  // playground's local monorepo dev server at the source CSS so Vite serves
+  // it as text/css even when package dist artifacts are stale/missing.
+  { find: "@hachej/boring-workspace/globals.css", replacement: resolve(__dirname, "../../packages/workspace/src/globals.css") },
   // Cover subpath imports from runtime extensions (e.g. boring-ui-factory
   // .pi/extensions) that land through Vite's /@fs/ resolver.
   { find: "@hachej/boring-workspace/plugin", replacement: resolve(__dirname, "../../packages/workspace/dist/plugin.js") },

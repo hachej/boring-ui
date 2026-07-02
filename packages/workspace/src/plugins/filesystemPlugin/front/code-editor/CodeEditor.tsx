@@ -97,6 +97,7 @@ export function CodeEditor({
 
   const languageCompartment = useRef(new Compartment())
   const readOnlyCompartment = useRef(new Compartment())
+  const editableCompartment = useRef(new Compartment())
   const lineNumbersCompartment = useRef(new Compartment())
   const wordWrapCompartment = useRef(new Compartment())
   const themeCompartment = useRef(new Compartment())
@@ -109,6 +110,7 @@ export function CodeEditor({
     const cspNonce = readCspNonceFromDom()
     const exts: Extension[] = [
       readOnlyCompartment.current.of(EditorState.readOnly.of(effectiveReadOnly)),
+      editableCompartment.current.of(EditorView.editable.of(!effectiveReadOnly)),
       lineNumbersCompartment.current.of(lineNumbers ? lineNumbersExt() : []),
       wordWrapCompartment.current.of(wordWrap ? EditorView.lineWrapping : []),
       drawSelection(),
@@ -172,9 +174,14 @@ export function CodeEditor({
     const view = viewRef.current
     if (!view) return
     view.dispatch({
-      effects: readOnlyCompartment.current.reconfigure(
-        EditorState.readOnly.of(effectiveReadOnly),
-      ),
+      effects: [
+        readOnlyCompartment.current.reconfigure(
+          EditorState.readOnly.of(effectiveReadOnly),
+        ),
+        editableCompartment.current.reconfigure(
+          EditorView.editable.of(!effectiveReadOnly),
+        ),
+      ],
     })
   }, [effectiveReadOnly])
 

@@ -185,7 +185,7 @@ export function treeRoutes(
       if (filesystem !== 'user') {
         try {
           const binding = await resolveFilesystemBinding(request, filesystem)
-          if (!binding || binding.access !== 'readonly') return sendNotFoundOrDenied(reply)
+          if (!binding) return sendNotFoundOrDenied(reply)
           return { entries: await listBoundTree(binding, dir, recursive) }
         } catch {
           return sendNotFoundOrDenied(reply)
@@ -193,6 +193,7 @@ export function treeRoutes(
       }
 
       try {
+
         const workspace = await resolveWorkspace(request)
         const entries = await listTree(workspace, dir, recursive)
         return { entries }
