@@ -54,7 +54,10 @@ git add \
   plugins/deck/package.json \
   plugins/ask-user/package.json \
   plugins/data-explorer/package.json \
-  plugins/data-catalog/package.json
+  plugins/data-catalog/package.json \
+  plugins/generated-pane/package.json \
+  plugins/data-bridge/package.json \
+  plugins/bi-dashboard/package.json
 git commit -m "chore(release): bump packages to $after"
 git push origin main
 
