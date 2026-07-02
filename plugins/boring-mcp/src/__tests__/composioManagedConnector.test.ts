@@ -67,7 +67,7 @@ function jsonResponse(payload: unknown, status = 200): Response {
   return new Response(JSON.stringify(payload), { status, headers: { "content-type": "application/json" } })
 }
 
-function createComposioFetch(mcpUrl = "https://mcp.example/session", accounts: unknown[] = []) {
+function createComposioFetch(mcpUrl = "https://mcp.example/session", accounts: unknown[] = [], deleteStatus = 200) {
   let sessionCount = 0
   const fakeFetch = vi.fn(async (input: string | URL, init?: RequestInit) => {
     expect(init?.headers).toMatchObject({ "x-api-key": "cmp_test_key" })
@@ -77,6 +77,9 @@ function createComposioFetch(mcpUrl = "https://mcp.example/session", accounts: u
       expect(url).toContain("user_id=workspace-1%3Auser-1")
       expect(url).toContain("toolkit_slug=notion")
       return jsonResponse({ items: accounts })
+    }
+    if (url.includes("/api/v3.1/connected_accounts/") && init?.method === "DELETE") {
+      return jsonResponse({ deleted: deleteStatus < 400 }, deleteStatus)
     }
     if (url.endsWith("/api/v3.1/tool_router/session")) {
       expect(JSON.parse(String(init?.body))).toMatchObject({
@@ -231,6 +234,33 @@ describe("Composio managed connector provider", () => {
     expect(refreshed).toMatchObject({ source: { status: "connected", providerAccountLabel: "Demo Notion" } })
     expect(refreshed.source).not.toHaveProperty("connectorRef")
     expect(JSON.stringify(refreshed.source)).not.toContain("account-1")
+
+    await expect(adapter.disconnectSource(actor, started.source.id)).resolves.toMatchObject({ source: { status: "revoked" } })
+    expect(fetch).toHaveBeenCalledWith("https://backend.composio.dev/api/v3.1/connected_accounts/account-1", expect.objectContaining({ method: "DELETE" }))
+  })
+
+  it("treats an already-missing Composio connected account as a successful local disconnect", async () => {
+    const fetch = createComposioFetch("https://mcp.example/session", [{
+      id: "account-gone",
+      user_id: "workspace-1:user-1",
+      status: "ACTIVE",
+      is_disabled: false,
+      toolkit: { slug: "notion" },
+    }], 404)
+    const registry = createRegistry()
+    const adapter = createManagedConnectorAdapter({
+      registry,
+      provider: createComposioManagedConnectorProvider({ fetch }),
+      secretResolver,
+      configs: [config],
+      preflightEvidence,
+    })
+
+    const started = await adapter.startConnect(actor, { provider: "notion" })
+    await adapter.refreshStatus(actor, started.source.id)
+
+    await expect(adapter.disconnectSource(actor, started.source.id)).resolves.toMatchObject({ source: { status: "revoked" } })
+    expect(fetch).toHaveBeenCalledWith("https://backend.composio.dev/api/v3.1/connected_accounts/account-gone", expect.objectContaining({ method: "DELETE" }))
   })
 
   it("rejects non-HTTPS Composio MCP session URLs unless using the loopback-only test override", async () => {
@@ -343,10 +373,20 @@ describe("Composio managed connector provider", () => {
     })
     expect(fetch.mock.calls.filter(([url]) => String(url).endsWith("/api/v3.1/tool_router/session")).length).toBeGreaterThan(sessionRequestsAfterRefresh)
 
+    await expect(bridge.mcp_server_probe.invoke({ actor }, { sourceId: source.id })).resolves.toMatchObject({
+      sourceId: source.id,
+      resources: [],
+      tools: expect.arrayContaining([expect.objectContaining({ name: "NOTION_SEARCH_NOTION_PAGE" })]),
+    })
     await expect(bridge.mcp_tools_search.invoke({ actor }, { query: "COMPOSIO" })).resolves.toMatchObject({ tools: [] })
+
+    const searchCallsBeforeReadonly = fakeMcp.seenToolCalls.filter((name) => name === "COMPOSIO_SEARCH_TOOLS").length
+    const schemaCallsBeforeReadonly = fakeMcp.seenToolCalls.filter((name) => name === "COMPOSIO_GET_TOOL_SCHEMAS").length
     await expect(bridge.mcp_readonly_call.invoke({ actor }, { sourceId: source.id, toolName: "NOTION_SEARCH_NOTION_PAGE", input: { query: "demo" } })).resolves.toEqual({
       content: { content: [{ type: "text", text: "meta execute ok" }] },
     })
+    expect(fakeMcp.seenToolCalls.filter((name) => name === "COMPOSIO_SEARCH_TOOLS")).toHaveLength(searchCallsBeforeReadonly)
+    expect(fakeMcp.seenToolCalls.filter((name) => name === "COMPOSIO_GET_TOOL_SCHEMAS")).toHaveLength(schemaCallsBeforeReadonly)
     expect(fakeMcp.seenHeaders).toContainEqual(expect.stringContaining("server-only-session"))
     expect(fakeMcp.seenHeaders).toContain("cmp_test_key")
   })

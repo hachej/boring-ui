@@ -211,7 +211,8 @@ export function toMcpSourceDto(source: McpSource): McpSourceDto {
 }
 
 export interface McpTransportListToolsOptions {
-  refresh?: boolean
+  /** Force bypassing provider-level metadata caches, not just local catalog caches. */
+  forceProviderRefresh?: boolean
 }
 
 export interface McpTransportClient {

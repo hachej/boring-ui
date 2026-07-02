@@ -117,7 +117,6 @@ describe("boring-mcp front sources panel", () => {
   })
 
   it("loads source status and connects through the route-backed source API", async () => {
-    window.history.pushState({}, "", "/workspace/workspace-1")
     const openConnectUrl = vi.fn()
     const fetchMock = vi.spyOn(globalThis, "fetch").mockImplementation(async (input, init) => {
       const url = String(input)
@@ -140,7 +139,7 @@ describe("boring-mcp front sources panel", () => {
       return Response.json({ message: "not found" }, { status: 404 })
     })
 
-    renderSourcesPanel({ sourceApi: { enabled: true, openConnectUrl } })
+    renderSourcesPanel({ sourceApi: { enabled: true, workspaceId: "workspace-1", openConnectUrl } })
     fireEvent.click(await screen.findByRole("button", { name: "Connect" }))
 
     expect(await screen.findByText("Connected")).toBeInTheDocument()
@@ -151,7 +150,6 @@ describe("boring-mcp front sources panel", () => {
   })
 
   it("merges route-backed source API actions with partial host source action overrides", async () => {
-    window.history.pushState({}, "", "/workspace/workspace-1")
     const onViewTools = vi.fn()
     const popup = { location: { href: "about:blank" }, close: vi.fn(), opener: undefined } as unknown as Window
     vi.spyOn(window, "open").mockReturnValue(popup)
@@ -165,7 +163,7 @@ describe("boring-mcp front sources panel", () => {
       return Response.json({ message: "not found" }, { status: 404 })
     })
 
-    renderSourcesPanel({ sourceApi: { enabled: true }, sourceActions: { onViewTools } })
+    renderSourcesPanel({ sourceApi: { enabled: true, workspaceId: "workspace-1" }, sourceActions: { onViewTools } })
     fireEvent.click(await screen.findByRole("button", { name: "Connect" }))
 
     expect(await screen.findByText("Connected")).toBeInTheDocument()

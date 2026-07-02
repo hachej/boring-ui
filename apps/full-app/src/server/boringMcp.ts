@@ -14,7 +14,9 @@ import {
   createBoringMcpSourceHandlers,
   createComposioManagedConnectorProvider,
   createComposioMcpTransport,
+  createLegacyManagedConnectorSourceId,
   createManagedConnectorAdapter,
+  createManagedConnectorSourceId,
   createMcpSourceStatusPayload,
   type ManagedConnectorAdapter,
   type ManagedConnectorConfig,
@@ -67,7 +69,7 @@ export function createFullAppManagedConnectorSecretResolver(
   const supportedProviders = new Set<McpProviderId>(configs.map((config) => config.provider))
   return {
     async resolveSecret(provider: McpProviderId): Promise<ManagedConnectorSecret> {
-      if (!supportedProviders.has(provider)) throw new McpError(MCP_ERROR_CODES.PROVIDER_CONFIG_INVALID, `Unsupported MCP provider: ${provider}`)
+      if (!supportedProviders.has(provider)) throw new McpError(MCP_ERROR_CODES.PROVIDER_CONFIG_INVALID, `Unsupported MCP provider: ${provider}`, { reason: 'unsupported_provider' })
       const value = env.COMPOSIO_API_KEY?.trim()
       if (!value) throw new McpError(MCP_ERROR_CODES.PROVIDER_CONFIG_INVALID, 'COMPOSIO_API_KEY is not configured')
       return { storage: 'server-env', value }
@@ -111,7 +113,7 @@ function safeSessionNamespaceSegment(value: string): string {
 export function fullAppAgentSessionNamespace(ctx: { workspaceId: string; request?: FastifyRequest }): string {
   const workspaceSegment = safeSessionNamespaceSegment(ctx.workspaceId)
   const userId = requestUserId(ctx.request)
-  return userId ? `${workspaceSegment}_user_${shortHash(userId)}` : workspaceSegment
+  return `${workspaceSegment}_user_${userId ? shortHash(userId) : 'anonymous'}`
 }
 
 function asRecord(value: unknown): Record<string, unknown> {
@@ -147,7 +149,7 @@ function mcpHttpStatus(error: McpError): { status: number; code: ErrorCode } {
     case MCP_ERROR_CODES.TOOL_NOT_ALLOWED:
       return { status: 400, code: ERROR_CODES.VALIDATION_FAILED }
     case MCP_ERROR_CODES.PROVIDER_CONFIG_INVALID:
-      return error.message.startsWith('Unknown') || error.message.startsWith('Unsupported')
+      return asRecord(error.details).reason === 'unsupported_provider'
         ? { status: 400, code: ERROR_CODES.VALIDATION_FAILED }
         : { status: 503, code: ERROR_CODES.CONFIG_VALIDATION_FAILED }
     case MCP_ERROR_CODES.SOURCE_UNAVAILABLE:
@@ -207,7 +209,7 @@ function sourceFromUnknown(value: unknown): McpSource | undefined {
   }
 }
 
-function readStoredSources(settings: Record<string, unknown>, actor: McpActor): McpSource[] {
+function readRawStoredSources(settings: Record<string, unknown>, actor: McpActor): McpSource[] {
   const root = asRecord(settings[USER_SETTINGS_MCP_SOURCES_KEY])
   const workspaceSources = asRecord(root[actor.workspaceId])
   return Object.values(workspaceSources)
@@ -215,13 +217,56 @@ function readStoredSources(settings: Record<string, unknown>, actor: McpActor): 
     .filter((source): source is McpSource => Boolean(source && source.workspaceId === actor.workspaceId && source.userId === actor.userId))
 }
 
+function normalizeStoredSourceId(actor: McpActor, source: McpSource): McpSource {
+  try {
+    const legacyId = createLegacyManagedConnectorSourceId(actor, source.provider)
+    return source.id === legacyId ? { ...source, id: createManagedConnectorSourceId(actor, source.provider) } : source
+  } catch {
+    return source
+  }
+}
+
+function sourceStatusRank(source: McpSource): number {
+  switch (source.status) {
+    case 'connected': return 5
+    case 'expired':
+    case 'error': return 4
+    case 'unconfigured': return 3
+    case 'revoked': return 1
+    default: return 0
+  }
+}
+
+function dedupeStoredSources(sources: McpSource[]): McpSource[] {
+  const byId = new Map<string, McpSource>()
+  for (const source of sources) {
+    const current = byId.get(source.id)
+    if (!current || sourceStatusRank(source) >= sourceStatusRank(current)) byId.set(source.id, source)
+  }
+  return [...byId.values()]
+}
+
+function readStoredSources(settings: Record<string, unknown>, actor: McpActor): McpSource[] {
+  return dedupeStoredSources(readRawStoredSources(settings, actor).map((source) => normalizeStoredSourceId(actor, source)))
+}
+
+function existingLegacySourceIdFor(actor: McpActor, source: McpSource, rawSources: readonly McpSource[]): string | undefined {
+  try {
+    const legacyId = createLegacyManagedConnectorSourceId(actor, source.provider)
+    return legacyId !== source.id && rawSources.some((item) => item.id === legacyId) ? legacyId : undefined
+  } catch {
+    return undefined
+  }
+}
+
 async function saveStoredSource(
   app: Pick<CoreWorkspaceAgentServer, 'userStore' | 'config'>,
   actor: McpActor,
   source: McpSource,
+  removeSourceIds: readonly string[] = [],
 ): Promise<McpSource[]> {
   const patch = app.userStore.patchUserSettingsJsonPath
-  if (patch) {
+  if (patch && removeSourceIds.length === 0) {
     const updated = await patch.call(
       app.userStore,
       actor.userId,
@@ -235,8 +280,9 @@ async function saveStoredSource(
   return await withUserSettingsWriteLock(actor.userId, app.config.appId, async () => {
     const current = await app.userStore.getUserSettings(actor.userId, app.config.appId)
     const root = asRecord(current.settings[USER_SETTINGS_MCP_SOURCES_KEY])
-    const sources = readStoredSources(current.settings, actor)
-    const nextSources = [...sources.filter((item) => item.id !== source.id), source]
+    const removeIds = new Set([source.id, ...removeSourceIds])
+    const sources = readRawStoredSources(current.settings, actor)
+    const nextSources = [...sources.filter((item) => !removeIds.has(item.id)), source]
     const nextSettings = {
       ...current.settings,
       [USER_SETTINGS_MCP_SOURCES_KEY]: {
@@ -245,35 +291,45 @@ async function saveStoredSource(
       },
     }
     await app.userStore.putUserSettings(actor.userId, app.config.appId, { settings: nextSettings })
-    return nextSources
+    return readStoredSources(nextSettings, actor)
   })
 }
 
-export function createFullAppMcpSourceRegistry(app: Pick<CoreWorkspaceAgentServer, 'userStore' | 'config'>, actorScope?: McpActor): ManagedConnectorSourceRegistry {
+export function createFullAppMcpSourceRegistry(app: Pick<CoreWorkspaceAgentServer, 'userStore' | 'config'>, actorScope: McpActor): ManagedConnectorSourceRegistry {
   return {
     async listSources(actor) {
       const current = await app.userStore.getUserSettings(actor.userId, app.config.appId)
       return readStoredSources(current.settings, actor)
     },
     async getSource(sourceId) {
-      if (!actorScope) return undefined
       const current = await app.userStore.getUserSettings(actorScope.userId, app.config.appId)
-      return readStoredSources(current.settings, actorScope).find((source) => source.id === sourceId)
+      const source = readStoredSources(current.settings, actorScope).find((item) => item.id === sourceId)
+      if (source) return source
+      const legacySource = readRawStoredSources(current.settings, actorScope).find((item) => item.id === sourceId)
+      return legacySource ? normalizeStoredSourceId(actorScope, legacySource) : undefined
     },
     async upsertSource(actor, source) {
       const now = new Date().toISOString()
-      const current = await this.listSources(actor)
+      const currentSettings = await app.userStore.getUserSettings(actor.userId, app.config.appId)
+      const current = readStoredSources(currentSettings.settings, actor)
+      const rawSources = readRawStoredSources(currentSettings.settings, actor)
       const existing = current.find((item) => item.id === source.id)
       const next = { ...source, updatedAt: now, createdAt: source.createdAt ?? existing?.createdAt ?? now }
-      await saveStoredSource(app, actor, next)
+      const legacyId = existingLegacySourceIdFor(actor, next, rawSources)
+      await saveStoredSource(app, actor, next, legacyId ? [legacyId] : [])
       return next
     },
     async disconnectSource(actor, sourceId) {
-      const current = await this.listSources(actor)
-      const source = current.find((item) => item.id === sourceId)
+      const currentSettings = await app.userStore.getUserSettings(actor.userId, app.config.appId)
+      const source = readStoredSources(currentSettings.settings, actor).find((item) => item.id === sourceId)
+        ?? (() => {
+          const legacySource = readRawStoredSources(currentSettings.settings, actor).find((item) => item.id === sourceId)
+          return legacySource ? normalizeStoredSourceId(actor, legacySource) : undefined
+        })()
       if (!source) return undefined
       const disconnected = { ...source, status: 'revoked' as const, updatedAt: new Date().toISOString() }
-      await saveStoredSource(app, actor, disconnected)
+      const legacyId = existingLegacySourceIdFor(actor, disconnected, readRawStoredSources(currentSettings.settings, actor))
+      await saveStoredSource(app, actor, disconnected, legacyId ? [legacyId] : [])
       return disconnected
     },
   }
@@ -409,7 +465,7 @@ export function registerFullAppBoringMcpRoutes(app: CoreWorkspaceAgentServer, op
     config: { rateLimit: { ...SOURCE_ACTION_RATE_LIMIT, keyGenerator: sourceActionRateLimitKey } },
   }, async (request) => {
     const actor = await requireBoringMcpActor(app, request)
-    const status = await withMcpHttpErrors(request.id, () => handlersFor(actor).disconnectSource(actor, sourceIdFromBody(request.body, request.id)))
+    const status = await withMcpHttpErrors(request.id, () => adapterFor(actor).adapter.disconnectSource(actor, sourceIdFromBody(request.body, request.id)))
     return { status }
   })
 

@@ -8,6 +8,8 @@ import {
   InMemoryMcpRateBudgetGate,
   createBoringMcpAgentBridgeRegistry,
   createBoringMcpSourceHandlers,
+  createLegacyManagedConnectorSourceId,
+  createManagedConnectorSourceId,
   evaluateBoringMcpLaunchGate,
   type McpActor,
   type McpSource,
@@ -84,9 +86,10 @@ function makeRouteHarness(
   provider: ManagedConnectorProvider,
   env: NodeJS.ProcessEnv = { COMPOSIO_API_KEY: 'cmp_test_secret' } as NodeJS.ProcessEnv,
   transport?: McpTransportClient,
+  initialSettings: Record<string, unknown> = {},
 ) {
   const app = Fastify()
-  const settingsByUser = new Map<string, Record<string, unknown>>()
+  const settingsByUser = new Map<string, Record<string, unknown>>([[actor.userId, initialSettings]])
   app.decorate('config', { appId: 'full-app-test' } as never)
   app.decorate('userStore', {
     async getUserSettings(userId: string) {
@@ -245,6 +248,7 @@ describe('full-app boring-mcp binding', () => {
         lastVerifiedAt: '2026-07-01T06:00:00.000Z',
       })),
       probe: vi.fn(),
+      revoke: vi.fn(async () => undefined),
     }
     const tx = fakeTransport()
     const app = makeRouteHarness(provider, { COMPOSIO_API_KEY: 'cmp_test_secret' } as NodeJS.ProcessEnv, tx)
@@ -277,6 +281,61 @@ describe('full-app boring-mcp binding', () => {
     const disconnected = await app.inject({ method: 'POST', url: '/api/v1/boring-mcp/disconnect', headers, payload: { sourceId } })
     expect(disconnected.statusCode).toBe(200)
     expect(disconnected.json()).toMatchObject({ status: { source: { status: 'revoked' }, canDisconnect: false } })
+    expect(provider.revoke).toHaveBeenCalled()
+
+    await app.close()
+  })
+
+  it('normalizes and migrates legacy raw managed source ids on reconnect', async () => {
+    const legacySourceId = createLegacyManagedConnectorSourceId(actor, 'notion')
+    const opaqueSourceId = createManagedConnectorSourceId(actor, 'notion')
+    const legacySource: McpSource = {
+      ...source,
+      id: legacySourceId,
+      provider: 'notion',
+      connectorRef: { provider: 'notion', toolkitId: 'notion', sessionId: 'legacy-session' },
+    }
+    const provider: ManagedConnectorProvider = {
+      startConnect: vi.fn(async () => ({
+        connectorRef: { provider: 'notion', toolkitId: 'notion', sessionId: 'new-session' },
+        status: 'unconfigured' as const,
+        connectUrl: 'https://app.composio.dev/connect/fake',
+      })),
+      refreshStatus: vi.fn(async ({ source }) => ({
+        status: 'connected' as const,
+        providerAccountLabel: 'legacy@example.com',
+        connectorRef: source.connectorRef,
+      })),
+      probe: vi.fn(),
+      revoke: vi.fn(async () => undefined),
+    }
+    const initialSettings = {
+      __serverBoringMcpSourcesV1: {
+        [actor.workspaceId]: {
+          [legacySourceId]: legacySource,
+        },
+      },
+    }
+    const app = makeRouteHarness(provider, { COMPOSIO_API_KEY: 'cmp_test_secret' } as NodeJS.ProcessEnv, fakeTransport(), initialSettings)
+    await app.ready()
+    const headers = { 'x-boring-workspace-id': actor.workspaceId }
+
+    const listed = await app.inject({ method: 'GET', url: '/api/v1/boring-mcp/sources', headers })
+    expect(listed.statusCode).toBe(200)
+    expect(listed.json().sourceStatuses.map((status: { source: { id: string } }) => status.source.id)).toEqual([opaqueSourceId])
+    expect(JSON.stringify(listed.json())).not.toContain(legacySourceId)
+
+    const refreshedLegacy = await app.inject({ method: 'POST', url: '/api/v1/boring-mcp/refresh', headers, payload: { sourceId: legacySourceId } })
+    expect(refreshedLegacy.statusCode).toBe(200)
+    expect(refreshedLegacy.json().status.source.id).toBe(opaqueSourceId)
+
+    const connected = await app.inject({ method: 'POST', url: '/api/v1/boring-mcp/connect', headers, payload: { provider: 'notion' } })
+    expect(connected.statusCode).toBe(201)
+    expect(connected.json().status.source.id).toBe(opaqueSourceId)
+
+    const listedAfterReconnect = await app.inject({ method: 'GET', url: '/api/v1/boring-mcp/sources', headers })
+    expect(listedAfterReconnect.json().sourceStatuses.map((status: { source: { id: string } }) => status.source.id)).toEqual([opaqueSourceId])
+    expect(JSON.stringify(listedAfterReconnect.json())).not.toContain(legacySourceId)
 
     await app.close()
   })

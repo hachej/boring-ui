@@ -359,7 +359,7 @@ describe('PUT /api/v1/me/settings', () => {
     expect(res.json().settings).toEqual({ theme: 'dark', locale: 'en-US' })
   })
 
-  it('preserves server-owned user settings keys across client writes', async () => {
+  it('preserves server-owned user settings keys across client writes without returning them', async () => {
     const user = await createSessionUser('routes-reserved-settings')
     await rawSql`
       INSERT INTO user_settings (user_id, app_id, display_name, email, settings)
@@ -375,7 +375,7 @@ describe('PUT /api/v1/me/settings', () => {
     })
 
     expect(res.statusCode).toBe(200)
-    expect(res.json().settings).toEqual({ theme: 'dark', __serverBoringMcpSourcesV1: { trusted: true } })
+    expect(res.json().settings).toEqual({ theme: 'dark' })
 
     const second = await app.inject({
       method: 'PUT',
@@ -383,7 +383,15 @@ describe('PUT /api/v1/me/settings', () => {
       headers: { cookie: user.cookie },
       payload: { settings: { locale: 'en-US' } },
     })
-    expect(second.json().settings).toEqual({ locale: 'en-US', __serverBoringMcpSourcesV1: { trusted: true } })
+    expect(second.json().settings).toEqual({ locale: 'en-US' })
+
+    const me = await app.inject({ method: 'GET', url: '/api/v1/me', headers: { cookie: user.cookie } })
+    expect(me.json().settings.settings).toEqual({ locale: 'en-US' })
+
+    const [current] = await rawSql<{ settings: Record<string, unknown> }[]>`
+      SELECT settings FROM user_settings WHERE user_id = ${user.id} AND app_id = 'test-app'
+    `
+    expect(current.settings).toEqual({ locale: 'en-US', __serverBoringMcpSourcesV1: { trusted: true } })
   })
 
   it('rejects email field (strict schema)', async () => {

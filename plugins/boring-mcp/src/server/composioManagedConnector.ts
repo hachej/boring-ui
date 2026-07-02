@@ -1,6 +1,7 @@
 import {
   MCP_ERROR_CODES,
   McpError,
+  getMcpProviderTemplate,
   redactMcpSecrets,
   type McpActor,
   type McpDiscoveredResource,
@@ -63,6 +64,12 @@ function actorForSource(source: McpSource): McpActor {
 
 function providerError(message: string, details?: unknown): McpError {
   return new McpError(MCP_ERROR_CODES.PROVIDER_ERROR, message, redactMcpSecrets(details))
+}
+
+function providerErrorStatus(error: unknown): number | undefined {
+  if (!(error instanceof McpError) || error.code !== MCP_ERROR_CODES.PROVIDER_ERROR) return undefined
+  const details = record(error.details)
+  return typeof details.status === "number" ? details.status : undefined
 }
 
 function requireServerSecret(secret: ManagedConnectorSecret): void {
@@ -152,7 +159,7 @@ function extractProviderAccountLabel(payload: unknown): string | undefined {
 async function composioRequest(
   options: ComposioManagedConnectorProviderOptions,
   secret: ManagedConnectorSecret,
-  method: "GET" | "POST",
+  method: "DELETE" | "GET" | "POST",
   path: string,
   body?: unknown,
 ): Promise<unknown> {
@@ -178,6 +185,10 @@ function composioPost(options: ComposioManagedConnectorProviderOptions, secret: 
 
 function composioGet(options: ComposioManagedConnectorProviderOptions, secret: ManagedConnectorSecret, path: string): Promise<unknown> {
   return composioRequest(options, secret, "GET", path)
+}
+
+function composioDelete(options: ComposioManagedConnectorProviderOptions, secret: ManagedConnectorSecret, path: string): Promise<unknown> {
+  return composioRequest(options, secret, "DELETE", path)
 }
 
 export async function resolveComposioMcpSession(options: ComposioManagedConnectorProviderOptions, input: ResolveComposioMcpSessionInput): Promise<ComposioMcpSession> {
@@ -266,6 +277,10 @@ function jsonFromTextContent(value: unknown): unknown {
   return undefined
 }
 
+function concreteAllowedToolSlugs(provider: string): string[] {
+  return getMcpProviderTemplate(provider)?.allowedTools.filter((toolName) => !toolName.includes("*")) ?? []
+}
+
 function collectComposioToolSlugs(payload: unknown, toolkitId: string): string[] {
   const root = record(jsonFromTextContent(payload) ?? payload)
   const data = record(root.data ?? root)
@@ -285,14 +300,18 @@ function toolsFromComposioSchemas(payload: unknown, slugs: readonly string[]): M
   const root = record(jsonFromTextContent(payload) ?? payload)
   const data = record(root.data ?? root)
   const schemas = record(data.tool_schemas ?? root.tool_schemas)
-  return slugs.map((slug) => {
-    const schema = record(schemas[slug])
-    return {
+  const tools: McpDiscoveredTool[] = []
+  for (const slug of slugs) {
+    const rawSchema = schemas[slug]
+    if (!rawSchema || typeof rawSchema !== "object" || Array.isArray(rawSchema)) continue
+    const schema = rawSchema as Record<string, unknown>
+    tools.push({
       name: optionalString(schema.tool_slug) ?? slug,
       description: optionalString(schema.description),
       inputSchema: schema.input_schema ?? {},
-    }
-  })
+    })
+  }
+  return tools
 }
 
 async function discoverComposioToolkitTools(input: {
@@ -307,7 +326,10 @@ async function discoverComposioToolkitTools(input: {
     queries: [input.config.toolkitId],
     session: input.session.id,
   })
-  const slugs = collectComposioToolSlugs(searchResult, input.config.toolkitId)
+  const slugs = [...new Set([
+    ...collectComposioToolSlugs(searchResult, input.config.toolkitId),
+    ...concreteAllowedToolSlugs(input.source.provider),
+  ].filter((toolName) => !isComposioMetaTool(toolName)))]
   if (slugs.length === 0) return []
   const schemaResult = await input.transport.callTool(input.source, COMPOSIO_GET_TOOL_SCHEMAS, {
     tool_slugs: slugs,
@@ -371,6 +393,17 @@ export function createComposioManagedConnectorProvider(options: ComposioManagedC
       ])
       return { tools, resources }
     },
+
+    async revoke({ actor, source, config, secret }) {
+      const connectedAccountId = source.connectorRef?.connectedAccountId ?? (await findConnectedAccount(options, { actor, config, secret }))?.id
+      if (!connectedAccountId) return
+      try {
+        await composioDelete(options, secret, `/api/v3.1/connected_accounts/${encodeURIComponent(connectedAccountId)}`)
+      } catch (error) {
+        if (providerErrorStatus(error) === 404) return
+        throw error
+      }
+    },
   }
 }
 
@@ -383,6 +416,23 @@ interface ComposioTransportCacheEntry {
   session: ComposioMcpSession
   rawTools?: McpDiscoveredTool[]
   toolkitTools?: McpDiscoveredTool[]
+}
+
+function providerErrorText(error: unknown): string {
+  if (error instanceof McpError) {
+    const details = error.details
+    if (details && typeof details === "object" && typeof (details as { message?: unknown }).message === "string") return (details as { message: string }).message
+  }
+  return error instanceof Error ? error.message : String(error)
+}
+
+function isUnsupportedResourcesError(error: unknown): boolean {
+  const message = providerErrorText(error).toLowerCase()
+  return (
+    message.includes("does not support resources")
+    || message.includes("method not found")
+    || (message.includes("resources/list") && (message.includes("not found") || message.includes("unsupported")))
+  )
 }
 
 export function createComposioMcpTransport(options: ComposioManagedConnectorProviderOptions & {
@@ -408,7 +458,7 @@ export function createComposioMcpTransport(options: ComposioManagedConnectorProv
 
   async function createCacheEntry(source: McpSource): Promise<ComposioTransportCacheEntry> {
     const config = options.configs.find((entry) => entry.provider === source.provider)
-    if (!config) throw new McpError(MCP_ERROR_CODES.PROVIDER_CONFIG_INVALID, "Unknown Composio MCP provider")
+    if (!config) throw new McpError(MCP_ERROR_CODES.PROVIDER_CONFIG_INVALID, "Unknown Composio MCP provider", { reason: "unsupported_provider" })
     const secret = await options.secretResolver.resolveSecret(source.provider)
     const session = await resolveComposioMcpSession(options, { actor: actorForSource(source), config, secret })
     const entry = { config, secret, session, expiresAt: Date.now() + COMPOSIO_TRANSPORT_SESSION_TTL_MS }
@@ -416,10 +466,18 @@ export function createComposioMcpTransport(options: ComposioManagedConnectorProv
     return entry
   }
 
+  function pruneExpiredEntries(now = Date.now()): void {
+    for (const [key, entry] of cache) {
+      if (entry.expiresAt <= now) cache.delete(key)
+    }
+  }
+
   async function cachedContext(source: McpSource): Promise<{ key: string; entry: ComposioTransportCacheEntry; transport: McpTransportClient }> {
     const key = keyForSource(source)
+    const now = Date.now()
+    pruneExpiredEntries(now)
     const cached = cache.get(key)
-    if (cached && cached.expiresAt > Date.now()) {
+    if (cached && cached.expiresAt > now) {
       return { key, entry: cached, transport: transportForSession(options, cached.session, cached.secret) }
     }
     const pending = pendingSessions.get(key) ?? createCacheEntry(source).finally(() => pendingSessions.delete(key))
@@ -438,7 +496,7 @@ export function createComposioMcpTransport(options: ComposioManagedConnectorProv
   return {
     async listTools(source, input) {
       const { key, entry, transport } = await cachedContext(source)
-      if (input?.refresh) {
+      if (input?.forceProviderRefresh) {
         entry.rawTools = undefined
         entry.toolkitTools = undefined
       }
@@ -461,6 +519,7 @@ export function createComposioMcpTransport(options: ComposioManagedConnectorProv
       try {
         return await transport.listResources(source)
       } catch (error) {
+        if (isUnsupportedResourcesError(error)) return []
         cache.delete(key)
         throw error
       }

@@ -91,9 +91,11 @@ describe("managed connector adapter", () => {
 
     const result = await adapter.startConnect(actor, { provider: "notion" })
 
-    expect(result.connectUrl).toBe("https://connect.example/managed:workspace-1:user-1:notion")
+    expect(result.connectUrl).toBe(`https://connect.example/${result.source.id}`)
+    expect(result.source.id).toMatch(/^managed:notion:[a-f0-9]{32}$/)
+    expect(result.source.id).not.toContain(actor.workspaceId)
+    expect(result.source.id).not.toContain(actor.userId)
     expect(result.source).toEqual(expect.objectContaining({
-      id: "managed:workspace-1:user-1:notion",
       provider: "notion",
       status: "unconfigured",
       credentialProvider: "composio-managed",
@@ -102,15 +104,15 @@ describe("managed connector adapter", () => {
     expect(JSON.stringify(result.source)).not.toContain("session-1")
     expect(JSON.stringify(result.source)).not.toContain("provider-source-1")
     expect(JSON.stringify(result)).not.toContain("server-only-secret")
-    expect(provider.startConnect).toHaveBeenCalledWith(expect.objectContaining({ config: expect.objectContaining({ toolkitId: "notion-toolkit" }), sourceId: "managed:workspace-1:user-1:notion" }))
+    expect(provider.startConnect).toHaveBeenCalledWith(expect.objectContaining({ config: expect.objectContaining({ toolkitId: "notion-toolkit" }), sourceId: result.source.id }))
   })
 
   it("refreshes status and probes normalized read-only tool decisions through fake provider", async () => {
     const { adapter } = createAdapter()
 
-    await adapter.startConnect(actor, { provider: "notion" })
-    const status = await adapter.refreshStatus(actor, "managed:workspace-1:user-1:notion")
-    const probe = await adapter.probeSource(actor, "managed:workspace-1:user-1:notion")
+    const started = await adapter.startConnect(actor, { provider: "notion" })
+    const status = await adapter.refreshStatus(actor, started.source.id)
+    const probe = await adapter.probeSource(actor, started.source.id)
 
     expect(status.source.status).toBe("connected")
     expect(status.source.providerAccountLabel).toBe("demo@example.com")
@@ -123,9 +125,9 @@ describe("managed connector adapter", () => {
   it("blocks cross-user status/probe access before provider calls", async () => {
     const { adapter, provider } = createAdapter()
 
-    await adapter.startConnect(actor, { provider: "notion" })
-    await expect(adapter.refreshStatus({ ...actor, userId: "other" }, "managed:workspace-1:user-1:notion")).rejects.toMatchObject({ code: MCP_ERROR_CODES.SOURCE_NOT_FOUND })
-    await expect(adapter.probeSource({ ...actor, userId: "other" }, "managed:workspace-1:user-1:notion")).rejects.toMatchObject({ code: MCP_ERROR_CODES.SOURCE_NOT_FOUND })
+    const started = await adapter.startConnect(actor, { provider: "notion" })
+    await expect(adapter.refreshStatus({ ...actor, userId: "other" }, started.source.id)).rejects.toMatchObject({ code: MCP_ERROR_CODES.SOURCE_NOT_FOUND })
+    await expect(adapter.probeSource({ ...actor, userId: "other" }, started.source.id)).rejects.toMatchObject({ code: MCP_ERROR_CODES.SOURCE_NOT_FOUND })
     expect(provider.refreshStatus).not.toHaveBeenCalled()
     expect(provider.probe).not.toHaveBeenCalled()
   })
@@ -182,6 +184,89 @@ describe("managed connector adapter", () => {
     })
 
     await expect(adapter.startConnect(actor, { provider: "notion" })).rejects.toMatchObject({ code: MCP_ERROR_CODES.PROVIDER_CONFIG_INVALID })
+  })
+
+  it("disconnects locally without resolving secrets when provider has no revoke hook", async () => {
+    const secretResolver = { resolveSecret: vi.fn(async () => { throw new Error("secret should not be resolved") }) }
+    const { adapter, registry } = createAdapter({ secretResolver })
+    const source: McpSource = {
+      id: "managed:notion:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      workspaceId: actor.workspaceId,
+      userId: actor.userId,
+      provider: "notion",
+      displayName: "Notion",
+      status: "connected",
+      ownerKind: "user",
+      credentialProvider: "composio-managed",
+    }
+    await registry.upsertSource(actor, source)
+
+    const result = await adapter.disconnectSource(actor, source.id)
+
+    expect(result.source.status).toBe("revoked")
+    expect(secretResolver.resolveSecret).not.toHaveBeenCalled()
+  })
+
+  it("rejects disconnect when the registry does not persist the local revoke", async () => {
+    const staleSource: McpSource = {
+      id: "managed:notion:cccccccccccccccccccccccccccccccc",
+      workspaceId: actor.workspaceId,
+      userId: actor.userId,
+      provider: "notion",
+      displayName: "Notion",
+      status: "connected",
+      ownerKind: "user",
+      credentialProvider: "composio-managed",
+    }
+    const registry: ManagedConnectorSourceRegistry = {
+      async listSources() { return [staleSource] },
+      async getSource(sourceId) { return sourceId === staleSource.id ? staleSource : undefined },
+      async upsertSource(_actor, source) { return source },
+      disconnectSource: vi.fn(async () => undefined),
+    }
+    const secretResolver = { resolveSecret: vi.fn(async () => { throw new Error("secret should not be resolved") }) }
+    const adapter = createManagedConnectorAdapter({
+      registry,
+      provider: createProvider(),
+      configs: [config],
+      preflightEvidence,
+      secretResolver,
+    })
+
+    await expect(adapter.disconnectSource(actor, staleSource.id)).rejects.toMatchObject({ code: MCP_ERROR_CODES.SOURCE_NOT_FOUND })
+    expect(registry.disconnectSource).toHaveBeenCalledWith(actor, staleSource.id)
+    expect(secretResolver.resolveSecret).not.toHaveBeenCalled()
+  })
+
+  it("disconnects stale sources locally when remote revoke cannot be configured", async () => {
+    const provider = createProvider()
+    provider.revoke = vi.fn()
+    const registry = createRegistry()
+    const secretResolver = { resolveSecret: vi.fn(async () => ({ storage: "browser" as never, value: "" })) }
+    const adapter = createManagedConnectorAdapter({
+      registry,
+      provider,
+      configs: [config],
+      preflightEvidence,
+      secretResolver,
+    })
+    const source: McpSource = {
+      id: "managed:notion:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      workspaceId: actor.workspaceId,
+      userId: actor.userId,
+      provider: "notion",
+      displayName: "Notion",
+      status: "connected",
+      ownerKind: "user",
+      credentialProvider: "composio-managed",
+    }
+    await registry.upsertSource(actor, source)
+
+    const result = await adapter.disconnectSource(actor, source.id)
+
+    expect(result.source.status).toBe("revoked")
+    expect(secretResolver.resolveSecret).toHaveBeenCalledWith("notion")
+    expect(provider.revoke).not.toHaveBeenCalled()
   })
 
   it("does not require launch preflight evidence at construction, but still requires server-only secret configuration before provider use", async () => {

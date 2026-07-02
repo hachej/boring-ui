@@ -70,17 +70,6 @@ describe('LocalUserStore', () => {
     expect(updated.settings).toEqual({ theme: 'dark' })
   })
 
-  it('putClientUserSettings preserves server-owned settings keys', async () => {
-    await store.upsert('u1', { email: 'a@b.com' })
-    await store.putUserSettings('u1', 'app1', { settings: { __serverBoringMcpSourcesV1: { trusted: true }, theme: 'old' } })
-
-    const updated = await store.putClientUserSettings('u1', 'app1', {
-      settings: { theme: 'dark', __serverBoringMcpSourcesV1: { forged: true }, __serverNewKey: 'blocked' },
-    })
-
-    expect(updated.settings).toEqual({ theme: 'dark', __serverBoringMcpSourcesV1: { trusted: true } })
-  })
-
   it('settings are scoped by (userId, appId)', async () => {
     await store.upsert('u1', { email: 'a@b.com' })
     await store.putUserSettings('u1', 'app1', { displayName: 'App1Name' })

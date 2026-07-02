@@ -81,17 +81,8 @@ function upsertSourceStatus(statuses: readonly McpSourceStatusPayload[], next: B
   return statuses.map((status, itemIndex) => itemIndex === index ? next : status)
 }
 
-function defaultWorkspaceIdFromLocation(): string | undefined {
-  if (typeof window === "undefined") return undefined
-  const url = new URL(window.location.href)
-  const queryWorkspaceId = url.searchParams.get("workspaceId")?.trim()
-  if (queryWorkspaceId) return queryWorkspaceId
-  const match = url.pathname.match(/\/(?:workspace|w)\/([^/?#]+)/)
-  return match?.[1] ? decodeURIComponent(match[1]) : undefined
-}
-
 function resolveSourceApiWorkspaceId(sourceApi: BoringMcpSourceApiOptions): string {
-  const workspaceId = sourceApi.workspaceId ?? sourceApi.resolveWorkspaceId?.() ?? defaultWorkspaceIdFromLocation()
+  const workspaceId = sourceApi.workspaceId ?? sourceApi.resolveWorkspaceId?.()
   if (!workspaceId) throw new Error("Open a workspace before connecting MCP.")
   return workspaceId
 }
@@ -473,7 +464,7 @@ export function BoringMcpSourcesPanel({ options }: { options: CreateBoringMcpPlu
       } catch (error) {
         setActionError(actionErrorMessage(error))
       } finally {
-        setPending(undefined)
+        setPending((current) => current === key ? undefined : current)
       }
     })()
   }

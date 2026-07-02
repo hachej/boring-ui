@@ -17,7 +17,7 @@ export interface RoutesOptions {
 }
 
 const HEALTH_DB_TIMEOUT_MS = 2_000
-const SERVER_OWNED_USER_SETTINGS_PREFIX = '__server'
+export const SERVER_OWNED_USER_SETTINGS_PREFIX = '__server'
 
 export function stripServerOwnedUserSettings(next: Record<string, unknown>): Record<string, unknown> {
   const sanitized = { ...next }
@@ -25,6 +25,10 @@ export function stripServerOwnedUserSettings(next: Record<string, unknown>): Rec
     if (key.startsWith(SERVER_OWNED_USER_SETTINGS_PREFIX)) delete sanitized[key]
   }
   return sanitized
+}
+
+export function sanitizeUserSettingsResult<T extends { settings: Record<string, unknown> }>(result: T): T {
+  return { ...result, settings: stripServerOwnedUserSettings(result.settings) }
 }
 
 export function preserveServerOwnedUserSettings(
@@ -115,7 +119,7 @@ const routesPlugin: FastifyPluginAsync<RoutesOptions> = async (app, opts) => {
   app.get('/api/v1/me', async (request) => {
     const user = request.user!
     const settings = await userStore.getUserSettings(user.id, app.config.appId)
-    return { user, settings }
+    return { user, settings: sanitizeUserSettingsResult(settings) }
   })
 
   app.put('/api/v1/me/settings', async (request, reply) => {
@@ -147,7 +151,7 @@ const routesPlugin: FastifyPluginAsync<RoutesOptions> = async (app, opts) => {
           )
         })
     reply.status(200)
-    return result
+    return sanitizeUserSettingsResult(result)
   })
 
   app.delete('/api/v1/me', async (request, reply) => {

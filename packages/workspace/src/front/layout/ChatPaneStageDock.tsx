@@ -410,7 +410,7 @@ function ChatPaneHeader(props: IDockviewPanelHeaderProps) {
           strokeWidth={1.75}
         />
       ) : null}
-      {stage.topActions ? (
+      {stage.topActions && api.id === stage.activePaneId ? (
         <div data-boring-workspace-part="chat-pane-top-actions" className="flex shrink-0 items-center gap-1">
           {stage.topActions}
         </div>
