@@ -1,4 +1,5 @@
 import type { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify'
+import type { RuntimeFilesystemBinding } from '../../runtime/mode'
 import type { Workspace, Entry } from '../../../shared/workspace'
 import { isIgnoredDirName } from '../../workspace/ignore'
 import {
@@ -7,6 +8,7 @@ import {
   ERROR_CODE_NOT_FOUND,
   ERROR_CODE_INTERNAL,
 } from '../middleware'
+import { ERROR_CODE_NOT_FOUND_OR_DENIED } from './file'
 
 const MAX_DEPTH = 10
 const MAX_ENTRIES = 5000
@@ -20,6 +22,7 @@ interface TreeEntry {
 interface TreeQuerystring {
   path?: string
   recursive?: string
+  filesystem?: string
 }
 
 function normalizePath(raw: string | undefined): string {
@@ -38,6 +41,16 @@ class PathError extends Error {
 function joinPath(base: string, name: string): string {
   if (base === '.') return name
   return `${base}/${name}`
+}
+
+function requestedFilesystem(value: unknown): string {
+  return typeof value === 'string' && value.length > 0 ? value : 'user'
+}
+
+function sendNotFoundOrDenied(reply: FastifyReply): FastifyReply {
+  return reply.code(404).send({
+    error: { code: ERROR_CODE_NOT_FOUND_OR_DENIED, message: 'not found or denied' },
+  })
 }
 
 async function listTree(
@@ -89,11 +102,49 @@ async function listTree(
   return entries
 }
 
+async function listBoundTree(
+  binding: RuntimeFilesystemBinding,
+  dir: string,
+  recursive: boolean,
+): Promise<TreeEntry[]> {
+  const root = dir === '.' ? '/' : dir
+  const displayParentDir = dir === '.' || dir === '/' ? '.' : dir.replace(/\/+$/, '')
+  const entries: TreeEntry[] = []
+  const rootEntries = await binding.operations.list({ filesystem: binding.filesystem, path: root })
+  const queue: Array<{ parentDir: string; items: string[]; depth: number }> = [
+    { parentDir: displayParentDir || '.', items: rootEntries.entries, depth: 0 },
+  ]
+
+  while (queue.length > 0) {
+    if (entries.length >= MAX_ENTRIES) break
+    const batch = queue.shift()!
+    for (const name of batch.items) {
+      if (entries.length >= MAX_ENTRIES) break
+      const entryPath = joinPath(batch.parentDir, name)
+      const stat = await binding.operations.stat({ filesystem: binding.filesystem, path: entryPath })
+      const kind = stat.isDirectory ? 'dir' : 'file'
+      entries.push({ name, kind, path: entryPath })
+      if (recursive && kind === 'dir' && batch.depth < MAX_DEPTH && !isIgnoredDirName(name)) {
+        try {
+          const childEntries = await binding.operations.list({ filesystem: binding.filesystem, path: entryPath })
+          queue.push({ parentDir: entryPath, items: childEntries.entries, depth: batch.depth + 1 })
+        } catch {
+          // skip unreadable subdirectories
+        }
+      }
+    }
+  }
+
+  return entries
+}
+
 export function treeRoutes(
   app: FastifyInstance,
   opts: {
     workspace?: Workspace
     getWorkspace?: (request: FastifyRequest) => Workspace | Promise<Workspace>
+    filesystemBindings?: RuntimeFilesystemBinding[]
+    getFilesystemBindings?: (request: FastifyRequest) => RuntimeFilesystemBinding[] | undefined | Promise<RuntimeFilesystemBinding[] | undefined>
   },
   done: (err?: Error) => void,
 ): void {
@@ -101,6 +152,13 @@ export function treeRoutes(
     if (opts.getWorkspace) return await opts.getWorkspace(request)
     if (opts.workspace) return opts.workspace
     throw new Error('workspace route requires workspace or getWorkspace')
+  }
+
+  async function resolveFilesystemBinding(request: FastifyRequest, filesystem: string): Promise<RuntimeFilesystemBinding | undefined> {
+    const bindings = opts.getFilesystemBindings
+      ? await opts.getFilesystemBindings(request) ?? []
+      : opts.filesystemBindings ?? []
+    return bindings.find((binding) => binding.filesystem === filesystem)
   }
 
   app.get(
@@ -122,6 +180,17 @@ export function treeRoutes(
       }
 
       const recursive = request.query.recursive === 'true'
+      const filesystem = requestedFilesystem(request.query.filesystem)
+
+      if (filesystem !== 'user') {
+        try {
+          const binding = await resolveFilesystemBinding(request, filesystem)
+          if (!binding || binding.access !== 'readonly') return sendNotFoundOrDenied(reply)
+          return { entries: await listBoundTree(binding, dir, recursive) }
+        } catch {
+          return sendNotFoundOrDenied(reply)
+        }
+      }
 
       try {
         const workspace = await resolveWorkspace(request)
