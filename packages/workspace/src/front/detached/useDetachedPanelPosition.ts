@@ -26,6 +26,7 @@ export function useDetachedPanelPosition(initialPosition: DetachedPanelPosition,
   const dragRef = useRef<{ x: number; y: number } | null>(null)
 
   const stopDrag = useCallback(() => {
+    if (!dragRef.current) return
     dragRef.current = null
     document.body.style.cursor = ""
     document.body.style.userSelect = ""

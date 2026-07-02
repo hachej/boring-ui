@@ -10,6 +10,7 @@ import { formatInboxTime, inboxItemDate, inboxItemSender, type WorkspaceInboxIte
 import { useWorkspaceInboxShell } from "./WorkspaceInboxShellContext"
 
 function InboxActions({ item, blocker, primary = false }: { item: WorkspaceInboxItem; blocker?: WorkspaceAttentionBlocker; primary?: boolean }) {
+  const shell = useWorkspaceInboxShell()
   if (!item.actions.length || !blocker) return null
   return (
     <div className="flex flex-wrap gap-1.5">
@@ -31,6 +32,7 @@ function InboxActions({ item, blocker, primary = false }: { item: WorkspaceInbox
               blocker,
               sessionId: item.sessionId ?? undefined,
             })
+            if (action.id === "open" && item.artifact) shell.openInboxArtifact(item)
           }}
         >
           {action.label}

@@ -95,12 +95,11 @@ export function InboxOverlay({ onClose, headerInsetStart = false, headerInsetEnd
   }, [handleShellResult, shell])
   const handleDetailAction = useCallback((actionId: string) => {
     if (!selectedItem || !selectedBlocker) return
+    emitWorkspaceAttentionAction({ blockerId: selectedBlocker.id, actionId, blocker: selectedBlocker, sessionId: selectedItem.sessionId ?? undefined })
     if (actionId === "open") {
       if (selectedItem.artifact) openArtifact(selectedItem)
       else setShellError("This inbox item has no artifact target.")
-      return
     }
-    emitWorkspaceAttentionAction({ blockerId: selectedBlocker.id, actionId, blocker: selectedBlocker, sessionId: selectedItem.sessionId ?? undefined })
   }, [openArtifact, selectedBlocker, selectedItem])
 
   return (
