@@ -16,13 +16,15 @@ import {
   Monitor,
   Moon,
   Settings,
+  ShieldCheck,
   Sun,
 } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 
 import { useSignOut, useUser } from '../auth/index.js'
+import { useCurrentWorkspace, useWorkspaceRole } from '../WorkspaceAuthProvider.js'
 import { useTheme } from '../hooks/index.js'
-import { routes } from '../utils.js'
+import { routeHref, routes } from '../utils.js'
 
 type ThemePreference = 'light' | 'dark' | 'system'
 
@@ -70,9 +72,12 @@ export function UserMenu({ contentSide = 'bottom', contentAlign = 'end', variant
   const signOut = useSignOut()
   const navigate = useNavigate()
   const { preference, setTheme } = useTheme()
+  const workspace = useCurrentWorkspace()
+  const workspaceRole = useWorkspaceRole()
   const [isSigningOut, setIsSigningOut] = useState(false)
 
   const user = identity?.user
+  const canOpenCompanyAdmin = workspaceRole === 'owner' && Boolean(workspace?.id)
 
   const userName = user?.name ?? 'Unknown user'
   const userEmail = user?.email ?? 'unknown@example.com'
@@ -180,6 +185,20 @@ export function UserMenu({ contentSide = 'bottom', contentAlign = 'end', variant
             <span className="text-xs text-muted-foreground">Password and account controls</span>
           </span>
         </DropdownMenuItem>
+
+        {canOpenCompanyAdmin ? (
+          <DropdownMenuItem
+            aria-label="Company admin"
+            onSelect={() => navigate(routeHref('companyAdmin', { id: workspace!.id }))}
+            className="gap-3 rounded-md py-2 text-[13px] focus:bg-foreground/[0.06] focus:text-foreground"
+          >
+            <ShieldCheck className="h-4 w-4" aria-hidden="true" />
+            <span className="flex min-w-0 flex-col">
+              <span>Company admin</span>
+              <span className="text-xs text-muted-foreground">Context and model controls</span>
+            </span>
+          </DropdownMenuItem>
+        ) : null}
 
         <DropdownMenuSeparator className="-mx-2" />
 
