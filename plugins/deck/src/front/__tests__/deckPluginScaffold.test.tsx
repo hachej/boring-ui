@@ -144,10 +144,10 @@ describe("deck scaffold", () => {
     })
 
     expect(mockAddPanel).toHaveBeenCalledWith(expect.objectContaining({
-      id: "surface:workspace.open.path:briefings/weekly.md",
+      id: "file:user:briefings/weekly.md",
       component: "deck",
       title: "weekly.md",
-      params: expect.objectContaining({ path: "briefings/weekly.md" }),
+      params: expect.objectContaining({ filesystem: "user", path: "briefings/weekly.md" }),
     }))
   })
 })

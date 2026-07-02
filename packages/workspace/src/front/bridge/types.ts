@@ -1,4 +1,5 @@
 import type { WorkspaceState, PanelState } from "../store/types"
+import type { FilesystemId } from "../../shared/types/filesystem"
 
 export interface CommandResult {
   seq: number
@@ -17,7 +18,7 @@ export interface BridgeEventMap {
   "panel:opened": { panelId: string; params: Record<string, unknown> }
   "panel:closed": { panelId: string }
   "panel:activated": { panelId: string; previousPanelId: string | null }
-  "file:opened": { path: string; mode: "view" | "edit" | "diff" }
+  "file:opened": { path: string; mode: "view" | "edit" | "diff"; filesystem?: FilesystemId }
   "file:saved": { path: string }
   "file:dirty": { path: string; dirty: boolean }
   "sidebar:toggled": { collapsed: boolean }
@@ -43,7 +44,7 @@ export interface WorkspaceBridge {
 
   openFile(
     path: string,
-    opts?: { mode?: "view" | "edit" | "diff" },
+    opts?: { mode?: "view" | "edit" | "diff"; filesystem?: FilesystemId },
   ): Promise<CommandResult>
   openPanel(config: DynamicPaneConfig): Promise<CommandResult>
   closePanel(id: string): Promise<CommandResult>

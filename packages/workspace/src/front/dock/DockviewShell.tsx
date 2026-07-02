@@ -42,7 +42,14 @@ function matchesPanel(
   const params = panel.params as Record<string, unknown> | undefined
   if ("paramPrefix" in match) {
     const value = params?.[match.paramPrefix]
-    return typeof value === "string" && value.startsWith(match.value)
+    const prefixMatches = typeof value === "string" && value.startsWith(match.value)
+    const paramsMatch = match.params
+      ? Object.entries(match.params).every(([key, expected]) => params?.[key] === expected)
+      : true
+    return prefixMatches && paramsMatch
+  }
+  if ("params" in match) {
+    return Object.entries(match.params).every(([key, value]) => params?.[key] === value)
   }
   return params?.[match.param] === match.value
 }

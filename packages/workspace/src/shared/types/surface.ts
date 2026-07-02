@@ -1,8 +1,11 @@
+import type { FilesystemId } from "./filesystem"
+
 export const WORKSPACE_OPEN_PATH_SURFACE_KIND = "workspace.open.path"
 
 export interface SurfaceOpenRequest {
   kind: string
   target: string
+  filesystem?: FilesystemId
   meta?: Record<string, unknown>
 }
 
