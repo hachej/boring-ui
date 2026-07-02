@@ -8,7 +8,7 @@ const mockFileWrite = vi.fn()
 const mockUseEditorLifecycle = vi.fn()
 
 vi.mock("../../data", () => ({
-  useFileContent: (path: string) => mockFileContent(path),
+  useFileContent: (path: string, options?: unknown) => mockFileContent(path, options),
   useFileWrite: () => ({ mutateAsync: mockFileWrite }),
   useDataClient: () => ({}),
   useApiBaseUrl: () => "/api",
@@ -37,6 +37,7 @@ vi.mock("../CodeEditor", () => ({
   ),
 }))
 
+import { FetchError } from "../../data/fetchClient"
 import { CodeEditorPane } from "../CodeEditorPane"
 import { createMockPaneProps } from "../../../../../front/testing/createMockPaneProps"
 
@@ -101,6 +102,23 @@ describe("CodeEditorPane", () => {
     render(<CodeEditorPane {...paneProps("missing.ts")} />, { wrapper })
     expect(screen.getByText(/Failed to load file/)).toBeInTheDocument()
     expect(screen.getByText(/Not found/)).toBeInTheDocument()
+  })
+
+  it("passes filesystem to loading hook and sanitizes denied company errors", () => {
+    mockFileContent.mockReturnValue({
+      data: undefined,
+      isLoading: false,
+      error: new FetchError(404, "FORBIDDEN_FINANCE_SECRET_123 /secret/finance.md"),
+      dataUpdatedAt: 0,
+    })
+    const props = createMockPaneProps({ params: { path: "/company/hr/policy.md", filesystem: "company_context" } })
+
+    render(<CodeEditorPane {...props} />, { wrapper })
+
+    expect(mockFileContent).toHaveBeenCalledWith("/company/hr/policy.md", expect.objectContaining({ filesystem: "company_context" }))
+    expect(screen.getByText("not found or denied")).toBeInTheDocument()
+    expect(screen.queryByText(/FORBIDDEN_FINANCE_SECRET_123/)).not.toBeInTheDocument()
+    expect(screen.queryByText(/secret\/finance/)).not.toBeInTheDocument()
   })
 
   it("infers language from file extension", async () => {
