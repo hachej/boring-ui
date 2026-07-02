@@ -23,13 +23,14 @@ afterEach(async () => {
 
 async function createTestAppWithWorkspace(
   workspace: Workspace,
-  companyOperations?: RuntimeFilesystemBindingOperations,
+  operations?: RuntimeFilesystemBindingOperations,
+  access: 'readonly' | 'readwrite' = 'readonly',
 ): Promise<FastifyInstance> {
   const app = Fastify({ logger: false })
   await app.register(fileRoutes, {
     workspace,
-    ...(companyOperations
-      ? { filesystemBindings: [{ filesystem: 'company_context', access: 'readonly', operations: companyOperations }] }
+    ...(operations
+      ? { filesystemBindings: [{ filesystem: 'company_context', access, operations }] }
       : {}),
   })
   await app.ready()
@@ -79,7 +80,7 @@ describe('file routes (NodeWorkspace integration)', () => {
       url: '/api/v1/files?filesystem=company_context&path=%2Fcompany%2Fhr%2Fpolicy.md',
     })
     expect(allowed.statusCode).toBe(200)
-    expect(allowed.json()).toEqual({ content: 'company:/company/hr/policy.md' })
+    expect(allowed.json()).toEqual({ content: 'company:/company/hr/policy.md', access: 'readonly' })
     expect(operations.read).toHaveBeenCalledWith({ filesystem: 'company_context', path: '/company/hr/policy.md' })
 
     const rawAllowed = await app.inject({
@@ -149,7 +150,7 @@ describe('file routes (NodeWorkspace integration)', () => {
       url: '/api/v1/files?filesystem=project_alpha&path=%2Fsrc%2Findex.ts',
     })
     expect(allowed.statusCode).toBe(200)
-    expect(allowed.json()).toEqual({ content: 'project_alpha:/src/index.ts' })
+    expect(allowed.json()).toEqual({ content: 'project_alpha:/src/index.ts', access: 'readonly' })
     expect(operations.read).toHaveBeenCalledWith({ filesystem: 'project_alpha', path: '/src/index.ts' })
 
     const writeDenied = await app.inject({
@@ -159,6 +160,55 @@ describe('file routes (NodeWorkspace integration)', () => {
     })
     expect(writeDenied.statusCode).toBe(403)
     expect(writeDenied.json()).toEqual({ error: { code: ERROR_CODE_READONLY, message: 'project_alpha binding is readonly' } })
+  })
+
+  test('company_context readwrite binding routes management mutations through binding operations', async () => {
+    const workspaceRoot = await mkdtemp(join(tmpdir(), 'boring-ui-file-routes-'))
+    tempRoots.push(workspaceRoot)
+    const operations: RuntimeFilesystemBindingOperations = {
+      read: vi.fn(async ({ path }) => ({ content: `company:${path}` })),
+      list: vi.fn(),
+      find: vi.fn(),
+      grep: vi.fn(),
+      stat: vi.fn(async () => ({ isDirectory: false })),
+      write: vi.fn(async () => ({ mtimeMs: 789 })),
+      delete: vi.fn(async () => ({})),
+      move: vi.fn(async () => ({})),
+      mkdir: vi.fn(async () => ({})),
+      rejectMutation: vi.fn((operation) => {
+        throw new Error(`readonly ${operation}`)
+      }),
+    }
+    const app = await createTestAppWithWorkspace(createNodeWorkspace(workspaceRoot), operations, 'readwrite')
+
+    const res = await app.inject({
+      method: 'GET',
+      url: '/api/v1/files?filesystem=company_context&path=%2Fcompany%2Fcurated.md',
+    })
+
+    expect(res.statusCode).toBe(200)
+    expect(res.json()).toEqual({ content: 'company:/company/curated.md', access: 'readwrite' })
+
+    const writeRes = await app.inject({
+      method: 'POST',
+      url: '/api/v1/files',
+      payload: { filesystem: 'company_context', path: '/company/curated.md', content: 'updated', returnMtimeMs: true },
+    })
+    expect(writeRes.statusCode).toBe(200)
+    expect(writeRes.json()).toEqual({ ok: true, mtimeMs: 789 })
+    expect(operations.write).toHaveBeenCalledWith({ filesystem: 'company_context', path: '/company/curated.md', content: 'updated' })
+
+    const deleteRes = await app.inject({ method: 'DELETE', url: '/api/v1/files?filesystem=company_context&path=%2Fcompany%2Fcurated.md' })
+    expect(deleteRes.statusCode).toBe(200)
+    expect(operations.delete).toHaveBeenCalledWith({ filesystem: 'company_context', path: '/company/curated.md' })
+
+    const moveRes = await app.inject({ method: 'POST', url: '/api/v1/files/move', payload: { filesystem: 'company_context', from: '/company/a.md', to: '/company/b.md' } })
+    expect(moveRes.statusCode).toBe(200)
+    expect(operations.move).toHaveBeenCalledWith({ filesystem: 'company_context', from: '/company/a.md', to: '/company/b.md' })
+
+    const mkdirRes = await app.inject({ method: 'POST', url: '/api/v1/dirs', payload: { filesystem: 'company_context', path: '/company/new', recursive: true } })
+    expect(mkdirRes.statusCode).toBe(200)
+    expect(operations.mkdir).toHaveBeenCalledWith({ filesystem: 'company_context', path: '/company/new', recursive: true })
   })
 
   test('company_context filesystem rejects delete move and mkdir before user workspace mutation', async () => {
