@@ -8,6 +8,7 @@ import { CommandRegistry } from "../../../../shared/plugins/CommandRegistry"
 import { SurfaceResolverRegistry } from "../../../../shared/plugins/SurfaceResolverRegistry"
 import type { WorkspaceSourceProps } from "../../../registry/types"
 import { WorkbenchLeftPane } from "../WorkbenchLeftPane"
+import { useWorkspaceLeftPaneActions, type WorkspaceLeftPaneOpenPanelConfig } from "../useWorkspaceLeftPaneActions"
 
 function renderLeftPane({
   panels = new PanelRegistry(),
@@ -43,6 +44,26 @@ function WorkspaceSourceWithButton({ openPanel }: WorkspaceSourceProps) {
     >
       Open demo panel
     </button>
+  )
+}
+
+function HostExplorer({ onOpenPanel }: { onOpenPanel: (config: WorkspaceLeftPaneOpenPanelConfig) => void }) {
+  const actions = useWorkspaceLeftPaneActions({ onOpenPanel })
+  return (
+    <aside aria-label="Host explorer">
+      {actions.map((action) => (
+        <button
+          key={action.id}
+          type="button"
+          aria-label={`Host ${action.title}`}
+          aria-current={action.active ? "page" : undefined}
+          onClick={action.select}
+        >
+          {action.icon}
+          {action.title}
+        </button>
+      ))}
+    </aside>
   )
 }
 
@@ -112,6 +133,47 @@ describe("WorkbenchLeftPane", () => {
       component: "data.panel",
       title: "Data Panel",
     })
+  })
+
+  test("host explorers can render category actions without mounting the default left pane", () => {
+    const panelRegistry = new PanelRegistry()
+    const sources = new WorkspaceSourceRegistry()
+    sources.register("files", {
+      title: "Files",
+      component: () => <div>files body</div>,
+    })
+    panelRegistry.register("data.panel", {
+      title: "Data Panel",
+      placement: "center",
+      component: () => <div>data center</div>,
+    })
+    sources.register("data", {
+      title: "Data",
+      defaultPanelId: "data.panel",
+      component: () => <div>data body</div>,
+    })
+    const onOpenPanel = vi.fn()
+
+    renderLeftPane({ panels: panelRegistry, sources, children: <HostExplorer onOpenPanel={onOpenPanel} /> })
+
+    expect(screen.getByRole("complementary", { name: "Host explorer" })).toBeInTheDocument()
+    expect(screen.queryByRole("navigation", { name: "Workspace categories" })).not.toBeInTheDocument()
+    const filesButton = screen.getByRole("button", { name: "Host Files" })
+    const dataButton = screen.getByRole("button", { name: "Host Data" })
+    expect(filesButton).toHaveAttribute("aria-current", "page")
+    expect(dataButton).not.toHaveAttribute("aria-current")
+
+    fireEvent.click(dataButton)
+
+    expect(dataButton).toHaveAttribute("aria-current", "page")
+    expect(onOpenPanel).toHaveBeenCalledWith({
+      id: "data.panel",
+      component: "data.panel",
+      title: "Data Panel",
+    })
+
+    fireEvent.click(dataButton)
+    expect(onOpenPanel).toHaveBeenCalledTimes(2)
   })
 
   test("right-clicking a category reloads agent plugins", () => {
