@@ -22,6 +22,7 @@ import { PluginsOverlay } from "../../front/chrome/plugins/PluginsOverlay"
 import { AppLeftPane } from "../../front/layout/plugin-tabs/AppLeftPane"
 import { PluginTabsWorkspaceShell } from "../../front/layout/plugin-tabs/PluginTabsWorkspaceShell"
 import { captureFrontPlugin } from "../../shared/plugins/frontFactory"
+import type { FilesystemId } from "../../shared/types/filesystem"
 import { UI_COMMAND_EVENT, dispatchUiCommand } from "../../front/bridge"
 import type { CommandPaletteSessionItem } from "../../front/components/CommandPalette"
 import type { CommandResult, DispatchContext, FileTreeBridge, Unsubscribe } from "../../front/bridge"
@@ -1005,8 +1006,8 @@ export function WorkspaceAgentFront<
   // retry + pending-op queue as agent commands (a direct getSurface().openFile()
   // drops the click when the surface hasn't mounted yet — the first-click race).
   const fileTreeBridge = useMemo<FileTreeBridge>(() => ({
-    openFile: async (path: string): Promise<CommandResult> => {
-      dispatchUiCommand({ kind: "openFile", params: { path } }, surfaceDispatch)
+    openFile: async (path: string, opts?: { filesystem?: FilesystemId }): Promise<CommandResult> => {
+      dispatchUiCommand({ kind: "openFile", params: { path, ...(opts?.filesystem ? { filesystem: opts.filesystem } : {}) } }, surfaceDispatch)
       return { seq: 0, status: "ok" }
     },
     getActiveFile: () => getSurface()?.getSnapshot().activeTab ?? null,
@@ -1129,6 +1130,7 @@ export function WorkspaceAgentFront<
   const activeChatPaneId = activeChatPaneState.activeId ?? chatPaneIds[0] ?? chatSessionId
 
   const switchToChatPane = useCallback((nextSessionId: string) => {
+    setLeftOverlay(null)
     const current = chatPaneState.workspaceId === workspaceId
       ? chatPaneState
       : { workspaceId, ids: [chatSessionId], activeId: chatSessionId }
@@ -1160,6 +1162,7 @@ export function WorkspaceAgentFront<
   }, [chatSessionId, rawSwitch, workspaceId])
 
   const openChatPane = useCallback((nextSessionId: string) => {
+    setLeftOverlay(null)
     const current = chatPaneState.workspaceId === workspaceId
       ? chatPaneState
       : { workspaceId, ids: [chatSessionId], activeId: chatSessionId }

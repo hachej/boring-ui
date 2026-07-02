@@ -8,7 +8,7 @@ const mockFileWrite = vi.fn()
 const mockUseEditorLifecycle = vi.fn()
 
 vi.mock("../../data", () => ({
-  useFileContent: (path: string) => mockFileContent(path),
+  useFileContent: (path: string, options?: unknown) => mockFileContent(path, options),
   useFileWrite: () => ({ mutateAsync: mockFileWrite }),
   useDataClient: () => ({}),
   useApiBaseUrl: () => "/api",
@@ -23,12 +23,14 @@ vi.mock("../CodeEditor", () => ({
     content,
     language,
     onChange,
+    readOnly,
   }: {
     content: string
     language: string
     onChange?: (v: string) => void
+    readOnly?: boolean
   }) => (
-    <div data-testid="code-editor" data-language={language}>
+    <div data-testid="code-editor" data-language={language} data-readonly={readOnly ? "true" : "false"}>
       {content}
       <button type="button" onClick={() => onChange?.("changed")}>
         edit
@@ -37,6 +39,7 @@ vi.mock("../CodeEditor", () => ({
   ),
 }))
 
+import { FetchError } from "../../data/fetchClient"
 import { CodeEditorPane } from "../CodeEditorPane"
 import { createMockPaneProps } from "../../../../../front/testing/createMockPaneProps"
 
@@ -101,6 +104,62 @@ describe("CodeEditorPane", () => {
     render(<CodeEditorPane {...paneProps("missing.ts")} />, { wrapper })
     expect(screen.getByText(/Failed to load file/)).toBeInTheDocument()
     expect(screen.getByText(/Not found/)).toBeInTheDocument()
+  })
+
+  it("passes filesystem to loading hook and sanitizes denied company errors", () => {
+    mockFileContent.mockReturnValue({
+      data: undefined,
+      isLoading: false,
+      error: new FetchError(404, "FORBIDDEN_FINANCE_SECRET_123 /secret/finance.md"),
+      dataUpdatedAt: 0,
+    })
+    const props = createMockPaneProps({ params: { path: "/company/hr/policy.md", filesystem: "company_context" } })
+
+    render(<CodeEditorPane {...props} />, { wrapper })
+
+    expect(mockFileContent).toHaveBeenCalledWith("/company/hr/policy.md", expect.objectContaining({ filesystem: "company_context" }))
+    expect(screen.getByText("not found or denied")).toBeInTheDocument()
+    expect(screen.queryByText(/FORBIDDEN_FINANCE_SECRET_123/)).not.toBeInTheDocument()
+    expect(screen.queryByText(/secret\/finance/)).not.toBeInTheDocument()
+  })
+
+  it("opens company files in readonly mode without dirtying or writing", async () => {
+    const markDirty = vi.fn()
+    const setTitle = vi.fn()
+    mockFileContent.mockReturnValue({
+      data: { content: "secret policy", mtimeMs: 123, access: "readonly" },
+      isLoading: false,
+      error: undefined,
+      dataUpdatedAt: Date.now(),
+    })
+    mockUseEditorLifecycle.mockReturnValue({
+      isDirty: true,
+      isSaving: false,
+      lastSavedAt: null,
+      markDirty,
+      markClean: vi.fn(),
+      flushSave: vi.fn(),
+      shouldSync: false,
+      ackSync: vi.fn(),
+      externalChangeWhileDirty: false,
+      ackExternalChange: vi.fn(),
+      notifySaved: vi.fn(),
+    })
+    const props = createMockPaneProps({
+      params: { path: "/company/hr/policy.ts", filesystem: "company_context", access: "readwrite" },
+      apiOverrides: { setTitle },
+    })
+
+    render(<CodeEditorPane {...props} />, { wrapper })
+
+    await waitFor(() => expect(screen.getByTestId("code-editor")).toHaveAttribute("data-readonly", "true"))
+    expect(screen.getByText("Readonly")).toBeInTheDocument()
+    expect(setTitle).toHaveBeenCalledWith("policy.ts (readonly)")
+    expect(mockUseEditorLifecycle.mock.calls.at(-1)?.[1]).toEqual(expect.objectContaining({ adapter: null }))
+
+    screen.getByText("edit").click()
+    expect(markDirty).not.toHaveBeenCalled()
+    expect(mockFileWrite).not.toHaveBeenCalled()
   })
 
   it("infers language from file extension", async () => {

@@ -1,6 +1,6 @@
 {
   "name": "@hachej/boring-bi-dashboard",
-  "version": "0.1.53",
+  "version": "0.1.63",
   "type": "module",
   "private": false,
   "license": "MIT",
@@ -14,7 +14,7 @@
     "id": "bi-dashboard",
     "label": "BI Dashboard",
     "front": "dist/front/index.js",
-    "server": false
+    "server": "dist/server/index.js"
   },
   "pi": {
     "skills": [
@@ -39,6 +39,11 @@
       "types": "./dist/front/index.d.ts",
       "import": "./dist/front/index.js"
     },
+    "./server": {
+      "types": "./dist/server/index.d.ts",
+      "import": "./dist/server/index.js",
+      "default": "./dist/server/index.js"
+    },
     "./shared": {
       "types": "./dist/shared/index.d.ts",
       "import": "./dist/shared/index.js"
@@ -53,7 +58,8 @@
     "playground:eval": "tsx playground/run-eval.ts",
     "playground:smoke": "tsx playground/smoke-dashboard.ts",
     "lint": "pnpm run typecheck",
-    "clean": "rm -rf dist .tsbuildinfo"
+    "clean": "rm -rf dist .tsbuildinfo",
+    "playground:dev": "vite --config playground/vite.config.ts --host 0.0.0.0"
   },
   "peerDependencies": {
     "@hachej/boring-workspace": "workspace:*",
@@ -61,8 +67,14 @@
     "react-dom": "^18.0.0 || ^19.0.0"
   },
   "dependencies": {
+    "@hachej/boring-data-bridge": "workspace:*",
     "@hachej/boring-generated-pane": "workspace:*",
     "@hachej/boring-ui-kit": "workspace:*",
+    "@perspective-dev/client": "4.4.1",
+    "@perspective-dev/server": "4.4.1",
+    "@perspective-dev/viewer": "4.4.1",
+    "@perspective-dev/viewer-d3fc": "4.4.1",
+    "@perspective-dev/viewer-datagrid": "4.4.1",
     "lucide-react": "^1.8.0",
     "zod": "^4.3.6"
   },
@@ -70,16 +82,18 @@
     "@duckdb/node-api": "1.5.2-r.1",
     "@hachej/boring-agent": "workspace:*",
     "@hachej/boring-workspace": "workspace:*",
-    "@hachej/data-bridge": "workspace:*",
     "@json-render/core": "^0.19.0",
     "@json-render/react": "^0.19.0",
+    "@tailwindcss/vite": "^4.2.4",
     "@types/react": "^19.0.0",
     "@types/react-dom": "^19.0.0",
+    "@vitejs/plugin-react": "^4.7.0",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
     "tsup": "^8.4.0",
     "tsx": "^4.21.0",
     "typescript": "~5.9.3",
+    "vite": "^6.4.2",
     "vitest": "^3.2.6"
   }
 }

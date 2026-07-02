@@ -5,6 +5,7 @@ import { useQueryClient, type QueryClient } from "@tanstack/react-query"
 import { events } from "../../../../front/events"
 import { useApiBaseUrl, useWorkspaceRequestId } from "./DataProvider"
 import { filesystemEvents } from "../../shared/events"
+import { normalizeUiFilesystem, type FilesystemId } from "../../../../shared/types/filesystem"
 import { FILES_QUERY_KEY_SEGMENT } from "../../shared/constants"
 import { parentDir } from "../file-tree/treeModel"
 import type { FileEntry } from "./types"
@@ -53,49 +54,49 @@ export function useFileEventInvalidation(): void {
     }
 
     const offChanged = events.on(filesystemEvents.changed, (e) => {
-      invalidateFile(batch, base, workspaceId, e.path)
+      invalidateFile(batch, base, workspaceId, e.path, e.filesystem)
     })
     const offCreated = events.on(filesystemEvents.created, (e) => {
-      upsertTreeCache(queryClient, base, workspaceId, {
+      upsertTreeCache(queryClient, base, workspaceId, e.filesystem, {
         name: basename(e.path),
         kind: e.kind,
         path: e.path,
       })
       const invalidate = () => {
-        invalidateTree(batch, base, workspaceId, e.path)
+        invalidateTree(batch, base, workspaceId, e.path, e.filesystem)
         if (e.kind === "file") {
-          invalidateFile(batch, base, workspaceId, e.path)
+          invalidateFile(batch, base, workspaceId, e.path, e.filesystem)
         }
       }
       invalidate()
       if (e.cause === "remote") runAfterFsSettles(invalidate)
     })
     const offMoved = events.on(filesystemEvents.moved, (e) => {
-      const movedEntry = getTreeCacheEntry(queryClient, base, workspaceId, e.from)
-      removeTreeCacheEntry(queryClient, base, workspaceId, e.from)
+      const movedEntry = getTreeCacheEntry(queryClient, base, workspaceId, e.from, e.filesystem)
+      removeTreeCacheEntry(queryClient, base, workspaceId, e.from, e.filesystem)
       if (movedEntry) {
-        upsertTreeCache(queryClient, base, workspaceId, {
+        upsertTreeCache(queryClient, base, workspaceId, e.filesystem, {
           ...movedEntry,
           name: basename(e.to),
           path: e.to,
         })
       }
       const invalidate = () => {
-        invalidateTree(batch, base, workspaceId, e.from)
-        invalidateTree(batch, base, workspaceId, e.to)
-        invalidateFile(batch, base, workspaceId, e.from)
-        invalidateFile(batch, base, workspaceId, e.to)
-        invalidateMovedDescendants(batch, base, workspaceId, e.from)
+        invalidateTree(batch, base, workspaceId, e.from, e.filesystem)
+        invalidateTree(batch, base, workspaceId, e.to, e.filesystem)
+        invalidateFile(batch, base, workspaceId, e.from, e.filesystem)
+        invalidateFile(batch, base, workspaceId, e.to, e.filesystem)
+        invalidateMovedDescendants(batch, base, workspaceId, e.from, e.filesystem)
         invalidateSearch(batch, base, workspaceId)
       }
       invalidate()
       if (e.cause === "remote") runAfterFsSettles(invalidate)
     })
     const offDeleted = events.on(filesystemEvents.deleted, (e) => {
-      removeTreeCacheEntry(queryClient, base, workspaceId, e.path)
+      removeTreeCacheEntry(queryClient, base, workspaceId, e.path, e.filesystem)
       const invalidate = () => {
-        invalidateTree(batch, base, workspaceId, e.path)
-        invalidateFile(batch, base, workspaceId, e.path)
+        invalidateTree(batch, base, workspaceId, e.path, e.filesystem)
+        invalidateFile(batch, base, workspaceId, e.path, e.filesystem)
         invalidateSearch(batch, base, workspaceId)
       }
       invalidate()
@@ -163,8 +164,8 @@ function basename(path: string): string {
   return i >= 0 ? path.slice(i + 1) : path
 }
 
-function treeKey(base: string, workspaceId: string | null, dir: string): QueryKey {
-  return [base, workspaceId, "tree", dir]
+function treeKey(base: string, workspaceId: string | null, filesystem: FilesystemId | undefined, dir: string): QueryKey {
+  return [base, workspaceId, "tree", normalizeUiFilesystem(filesystem), dir]
 }
 
 function getTreeCacheEntry(
@@ -172,8 +173,9 @@ function getTreeCacheEntry(
   base: string,
   workspaceId: string | null,
   path: string,
+  filesystem?: FilesystemId,
 ): FileEntry | undefined {
-  const entries = qc.getQueryData<FileEntry[]>(treeKey(base, workspaceId, parentDir(path)))
+  const entries = qc.getQueryData<FileEntry[]>(treeKey(base, workspaceId, filesystem, parentDir(path)))
   return entries?.find((entry) => entry.path === path)
 }
 
@@ -181,9 +183,10 @@ function upsertTreeCache(
   qc: QueryClient,
   base: string,
   workspaceId: string | null,
+  filesystem: FilesystemId | undefined,
   entry: FileEntry,
 ): void {
-  qc.setQueryData<FileEntry[]>(treeKey(base, workspaceId, parentDir(entry.path)), (entries) => {
+  qc.setQueryData<FileEntry[]>(treeKey(base, workspaceId, filesystem, parentDir(entry.path)), (entries) => {
     if (!entries) return entries
     const withoutEntry = entries.filter((candidate) => candidate.path !== entry.path)
     return [...withoutEntry, entry]
@@ -195,8 +198,9 @@ function removeTreeCacheEntry(
   base: string,
   workspaceId: string | null,
   path: string,
+  filesystem?: FilesystemId,
 ): void {
-  qc.setQueryData<FileEntry[]>(treeKey(base, workspaceId, parentDir(path)), (entries) => {
+  qc.setQueryData<FileEntry[]>(treeKey(base, workspaceId, filesystem, parentDir(path)), (entries) => {
     if (!entries) return entries
     return entries.filter((entry) => entry.path !== path)
   })
@@ -207,13 +211,15 @@ function invalidateFile(
   base: string,
   workspaceId: string | null,
   path: string,
+  filesystem?: FilesystemId,
 ): void {
-  batch.enqueue([base, workspaceId, FILES_QUERY_KEY_SEGMENT, path])
-  batch.enqueue([base, workspaceId, "stat", path])
+  const fs = normalizeUiFilesystem(filesystem)
+  batch.enqueue([base, workspaceId, FILES_QUERY_KEY_SEGMENT, fs, path])
+  batch.enqueue([base, workspaceId, "stat", fs, path])
 }
 
 /**
- * Tree listing queries are keyed `[base, ws, "tree", dir]` — invalidate
+ * Tree listing queries are keyed `[base, ws, "tree", filesystem, dir]` — invalidate
  * only the listing that actually shows the changed path: its parent
  * (the same `parentDir` the file tree itself keys dirs with).
  */
@@ -222,8 +228,9 @@ function invalidateTree(
   base: string,
   workspaceId: string | null,
   path: string,
+  filesystem?: FilesystemId,
 ): void {
-  batch.enqueue([base, workspaceId, "tree", parentDir(path)])
+  batch.enqueue(treeKey(base, workspaceId, filesystem, parentDir(path)))
 }
 
 /**
@@ -240,16 +247,25 @@ function invalidateMovedDescendants(
   base: string,
   workspaceId: string | null,
   from: string,
+  filesystem?: FilesystemId,
 ): void {
+  const fs = normalizeUiFilesystem(filesystem)
   const prefix = `${from}/`
-  batch.enqueueFilter(`descendants:${base}:${workspaceId}:${prefix}`, {
+  batch.enqueueFilter(`descendants:${base}:${workspaceId}:${fs}:${prefix}`, {
     predicate: (query) => {
       const key = query.queryKey
       return key[0] === base
         && key[1] === workspaceId
-        && (key[2] === FILES_QUERY_KEY_SEGMENT || key[2] === "stat" || key[2] === "tree")
-        && typeof key[3] === "string"
-        && (key[3] === from || key[3].startsWith(prefix))
+        && (
+          ((key[2] === FILES_QUERY_KEY_SEGMENT || key[2] === "stat")
+            && key[3] === fs
+            && typeof key[4] === "string"
+            && (key[4] === from || key[4].startsWith(prefix)))
+          || (key[2] === "tree"
+            && key[3] === fs
+            && typeof key[4] === "string"
+            && (key[4] === from || key[4].startsWith(prefix)))
+        )
     },
   })
 }

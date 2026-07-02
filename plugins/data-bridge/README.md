@@ -1,4 +1,4 @@
-# @hachej/data-bridge
+# @hachej/boring-data-bridge
 
 Trusted WorkspaceBridge-backed data query plugin. It registers `data.v1.query.run`
 so dashboard/runtime callers can execute either:

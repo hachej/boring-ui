@@ -36,6 +36,9 @@ function FakeChatPanel({ onData, onOpenArtifact, composerBlockers, onComposerSto
       <button type="button" onClick={() => onOpenArtifact?.("src/example.ts")}>
         open artifact
       </button>
+      <button type="button" onClick={() => onOpenArtifact?.("/company/hr/policy.md", { filesystem: "company_context" })}>
+        open company artifact
+      </button>
       <button type="button" onClick={() => onComposerStop?.()}>
         stop composer
       </button>
@@ -186,6 +189,32 @@ describe("ChatPanelHost", () => {
     expect(openSurface).toHaveBeenCalledWith(expect.objectContaining({ kind: "questions", target: "q1", meta: { sessionId: "s1", openOnlyWhenSessionOpen: true } }))
   })
 
+  it("opens company artifact references with explicit filesystem", () => {
+    const openFile = vi.fn()
+    const onOpenArtifact = vi.fn()
+    const surface: SurfaceShellApi = {
+      openFile,
+      openSurface: vi.fn(),
+      openPanel: vi.fn(),
+      closeWorkbenchLeftPane: vi.fn(),
+      expandToFile: vi.fn(),
+      getSnapshot: () => ({ openTabs: [], activeTab: null }),
+    }
+    render(
+      <WorkspaceProvider chatPanel={FakeChatPanel} persistenceEnabled={false}>
+        <ChatPanelHost
+          sessionId="s1"
+          onOpenArtifact={onOpenArtifact}
+          surfaceDispatch={{ surface: () => surface, isWorkbenchOpen: () => true, openWorkbench: vi.fn() }}
+        />
+      </WorkspaceProvider>,
+    )
+
+    fireEvent.click(screen.getByRole("button", { name: "open company artifact" }))
+    expect(openFile).toHaveBeenCalledWith("/company/hr/policy.md", { filesystem: "company_context" })
+    expect(onOpenArtifact).toHaveBeenCalledWith("/company/hr/policy.md", { filesystem: "company_context" })
+  })
+
   it("composes workspace artifact opening with caller onOpenArtifact", () => {
     const openFile = vi.fn()
     const setSurfaceOpen = vi.fn()
@@ -223,7 +252,7 @@ describe("ChatPanelHost", () => {
       rafQueue.shift()?.(0)
       expect(openFile).not.toHaveBeenCalled()
       rafQueue.shift()?.(0)
-      expect(openFile).toHaveBeenCalledWith("src/example.ts")
+      expect(openFile).toHaveBeenCalledWith("src/example.ts", { filesystem: "user" })
       expect(onOpenArtifact).toHaveBeenCalledWith("src/example.ts")
     } finally {
       global.requestAnimationFrame = originalRaf

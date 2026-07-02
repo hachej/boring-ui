@@ -59,11 +59,11 @@ const KEY = "test:surface-layout"
 // allowedPanels component, since validation drops layouts with unknown
 // contentComponents.
 function buildLayout(
-  panels: Array<{ id: string; component: string }> = [{ id: "p1", component: "empty" }],
+  panels: Array<{ id: string; component: string; params?: Record<string, unknown> }> = [{ id: "p1", component: "empty" }],
 ): SerializedLayout {
   const panelMap: Record<string, unknown> = {}
   for (const p of panels) {
-    panelMap[p.id] = { id: p.id, contentComponent: p.component }
+    panelMap[p.id] = { id: p.id, contentComponent: p.component, ...(p.params ? { params: p.params } : {}) }
   }
   return {
     activeGroup: panels[0]?.id,
@@ -107,6 +107,49 @@ describe("ArtifactSurfacePane — layout persistence", () => {
     expect(raw).not.toBeNull()
     const parsed = JSON.parse(raw as string)
     expect(parsed).toEqual({ v: 1, layout })
+  })
+
+  it("migrates legacy persisted file panels to explicit user filesystem identity", () => {
+    const layout = buildLayout([{ id: "file:README.md", component: "empty", params: { path: "README.md" } }])
+    localStorage.setItem(KEY, envelope(layout))
+    renderPane(<ArtifactSurfacePane storageKey={KEY} />)
+    expect(capturedProps.persistedLayout).toEqual(expect.objectContaining({
+      panels: {
+        "file:user:README.md": expect.objectContaining({
+          id: "file:user:README.md",
+          params: { path: "README.md", filesystem: "user" },
+        }),
+      },
+    }))
+  })
+
+  it("preserves explicit company filesystem identity in persisted file panels", () => {
+    const layout = buildLayout([{ id: "file:company_context:/company/hr/policy.md", component: "empty", params: { path: "/company/hr/policy.md", filesystem: "company_context" } }])
+    localStorage.setItem(KEY, envelope(layout))
+    renderPane(<ArtifactSurfacePane storageKey={KEY} />)
+    expect(capturedProps.persistedLayout).toEqual(expect.objectContaining({
+      panels: {
+        "file:company_context:/company/hr/policy.md": expect.objectContaining({
+          id: "file:company_context:/company/hr/policy.md",
+          params: { path: "/company/hr/policy.md", filesystem: "company_context" },
+        }),
+      },
+    }))
+  })
+
+  it("writes file panel layouts with explicit filesystem identity", () => {
+    renderPane(<ArtifactSurfacePane storageKey={KEY} />)
+    const layout = buildLayout([{ id: "file:README.md", component: "empty", params: { path: "README.md" } }])
+    act(() => {
+      capturedProps.onLayoutChange?.(layout)
+    })
+    const parsed = JSON.parse(localStorage.getItem(KEY) as string)
+    expect(parsed.layout.panels).toEqual({
+      "file:user:README.md": expect.objectContaining({
+        id: "file:user:README.md",
+        params: { path: "README.md", filesystem: "user" },
+      }),
+    })
   })
 
   it("round-trips: a written layout is restored on next mount", () => {
