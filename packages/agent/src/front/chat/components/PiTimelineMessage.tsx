@@ -87,7 +87,8 @@ export function PiTimelineMessage({ message, isLast, isStreaming, showThoughts, 
               const canOpen = Boolean(openArtifact && openPath)
               const openAttachment = () => {
                 if (!openPath) return
-                openArtifact?.(openPath)
+                if (file.filesystem) openArtifact?.(openPath, { filesystem: file.filesystem })
+                else openArtifact?.(openPath)
               }
               const openAttachmentFromKeyboard = (event: ReactKeyboardEvent<HTMLDivElement>) => {
                 if (event.key !== 'Enter' && event.key !== ' ') return

@@ -159,7 +159,7 @@ export interface PiChatPanelProps<
   onMentionedFilesConsumed?: () => void
   onPromptSubmitStarted?: (context: { sessionId: string; clientNonce: string }) => void
   onData?: (part: unknown) => void
-  onOpenArtifact?: (path: string) => void
+  onOpenArtifact?: (path: string, options?: { filesystem?: string }) => void
   composerBlockers?: TComposerBlocker[]
   onComposerStop?: () => void
   onComposerBlockerAction?: (blocker: TComposerBlocker, action: string) => void

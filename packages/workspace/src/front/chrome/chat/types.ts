@@ -1,12 +1,14 @@
 import type { PiChatPanelProps } from "@hachej/boring-agent/front"
+import type { FilesystemId } from "../../../shared/types/filesystem"
 import type { ComponentType } from "react"
 import type { WorkspaceAttentionBlocker } from "../../provider"
 import type { SurfaceShellApi } from "../artifact-surface/SurfaceShell"
 
-export type OpenArtifactHandler = (path: string) => void
+export type OpenArtifactHandler = (path: string, options?: { filesystem?: FilesystemId }) => void
 
-export interface WorkspaceChatPanelProps extends PiChatPanelProps<WorkspaceAttentionBlocker> {
+export interface WorkspaceChatPanelProps extends Omit<PiChatPanelProps<WorkspaceAttentionBlocker>, "onOpenArtifact"> {
   sessionId: string
+  onOpenArtifact?: OpenArtifactHandler
   /** Endpoint base for agent → visible-workbench UI commands. */
   bridgeEndpoint?: string | null
   /** Imperative handle getter for the visible workbench surface. */
