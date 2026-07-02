@@ -368,6 +368,10 @@ export interface WorkspaceProviderProps {
   activeSessionId?: string | null
   /** Session ids that are currently open in chat panes, for plugins that must avoid opening closed-session UI. */
   openSessionIds?: readonly string[]
+  /** Authoritative chat session ids used to drop stale session-scoped Inbox/attention entries. */
+  attentionSessionIds?: readonly string[]
+  /** False while session data is loading or paginated; prevents pruning valid off-page attention entries. */
+  attentionSessionsAuthoritative?: boolean
   defaultTheme?: "light" | "dark" | undefined
   onThemeChange?: (theme: "light" | "dark") => void
   workspaceId?: string
@@ -423,6 +427,8 @@ export function WorkspaceProvider({
   apiTimeout,
   activeSessionId,
   openSessionIds,
+  attentionSessionIds,
+  attentionSessionsAuthoritative = true,
   defaultTheme,
   onThemeChange,
   workspaceId,
@@ -629,7 +635,7 @@ export function WorkspaceProvider({
       <ThemeContext.Provider value={themeValue}>
         <WorkspaceBridgeContext.Provider value={bridgeValue}>
           <FullPageBasePathProvider basePath={fullPageBasePath}>
-            <WorkspaceAttentionProvider>
+            <WorkspaceAttentionProvider knownSessionIds={attentionSessionIds} knownSessionsAuthoritative={attentionSessionsAuthoritative}>
           <PluginErrorProvider>
             <RegistryProvider
               panelRegistry={panelRegistry}

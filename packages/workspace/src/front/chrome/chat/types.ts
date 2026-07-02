@@ -19,6 +19,12 @@ export interface WorkspaceChatPanelProps extends PiChatPanelProps<WorkspaceAtten
   openWorkbenchSources?: () => void
   /** Closes the visible workbench surface after an ephemeral command finishes. */
   closeWorkbench?: () => void
+  /** Host-injected composer blockers (for shell policies such as detached read-only chat). */
+  composerBlockers?: WorkspaceAttentionBlocker[]
+  onComposerStop?: () => void
+  onComposerBlockerAction?: (blocker: WorkspaceAttentionBlocker, action: string) => void
+  onOpenArtifact?: OpenArtifactHandler
+  onData?: (part: unknown) => void
 }
 
 // The app shell owns the actual chat implementation. Workspace only needs a

@@ -31,6 +31,7 @@ export type {
   WorkspaceAttentionBlocker,
   WorkspaceAttentionBlockerAction,
   WorkspaceAttentionContextValue,
+  WorkspaceAttentionProviderProps,
   WorkspaceAttentionSessionBadge,
 } from "../attention"
 export type {

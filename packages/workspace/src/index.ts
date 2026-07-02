@@ -57,6 +57,8 @@ export {
   useWorkspacePluginClient,
 } from "./front/plugin"
 export type { PluginError as PluginContributionError, WorkspacePluginClient } from "./front/plugin"
+export { inboxDemoPlugin, createInboxDemoBlockers, INBOX_DEMO_SESSION_ID } from "./plugins/inboxPlugin/examples/inboxDemoPlugin"
+
 export {
   filesystemPlugin,
   emitFilesystemAgentFileChange,
@@ -353,6 +355,7 @@ export type {
   WorkspaceAttentionBlocker,
   WorkspaceAttentionBlockerAction,
   WorkspaceAttentionContextValue,
+  WorkspaceAttentionProviderProps,
   WorkspaceAttentionSessionBadge,
 } from "./front/provider"
 

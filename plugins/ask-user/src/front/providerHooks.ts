@@ -36,9 +36,17 @@ export function useAskUserAttentionBlockers(runtime: QuestionsRuntime, pendingSn
         reason: "ask-user.question",
         surfaceKind: ASK_USER_SURFACE_KIND,
         target: hint.questionId,
-        label: "Answer the question in Questions to continue",
+        label: hydrated?.title ?? "Answer the question in Questions to continue",
         sessionId: hint.sessionId,
         sessionBadge: { kind: "question", label: "question", tone: "attention", priority: 10 },
+        pruneWhenSessionMissing: true,
+        inbox: {
+          kind: "question",
+          sourceLabel: "question",
+          createdAt: hydrated?.createdAt,
+          updatedAt: hydrated?.updatedAt ?? hydrated?.createdAt,
+          priority: 10,
+        },
         actions,
       })
     }
