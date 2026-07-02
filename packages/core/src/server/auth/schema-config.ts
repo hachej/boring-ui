@@ -3,6 +3,7 @@ import postgres from 'postgres'
 import { betterAuth } from 'better-auth'
 import { drizzleAdapter } from 'better-auth/adapters/drizzle'
 import { magicLink } from 'better-auth/plugins/magic-link'
+import { anonymous } from 'better-auth/plugins/anonymous'
 
 // Schema-only config for better-auth CLI generation. Do not import in runtime code.
 // The fallback URL is for local schema generation only.
@@ -106,6 +107,10 @@ export const schemaAuthConfig: Parameters<typeof betterAuth>[0] = {
     },
   },
   plugins: [
+    anonymous({
+      emailDomainName: 'anonymous.invalid',
+      disableDeleteAnonymousUser: true,
+    }),
     magicLink({
       // schema-only: callback intentionally stubbed for generation
       sendMagicLink: async () => {},

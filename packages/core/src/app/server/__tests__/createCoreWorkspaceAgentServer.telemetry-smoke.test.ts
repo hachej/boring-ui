@@ -174,6 +174,7 @@ vi.mock('../../../server/app/index.js', () => ({
 vi.mock('../../../server/routes/index.js', () => ({
   registerInviteRoutes: async () => {},
   registerMemberRoutes: async () => {},
+  registerOutreachRoutes: async () => {},
   registerSettingsRoutes: async () => {},
   registerWorkspaceRoutes: async () => {},
 }))
@@ -183,6 +184,7 @@ vi.mock('../../../server/db/index.js', () => ({
     db: dbMock,
     sql: { end: vi.fn() },
   }),
+  PostgresMeteringStore: class PostgresMeteringStore {},
   PostgresUserStore: class PostgresUserStore {},
   PostgresWorkspaceStore: class PostgresWorkspaceStore {},
 }))

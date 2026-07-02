@@ -31,3 +31,9 @@ export {
   isCoreEmailVerificationEnabled,
   isRuntimeEmailVerificationEnabled,
 } from './authPolicy.js'
+
+export {
+  isSafeInternalPath,
+  normalizeOutreachTargetPath,
+  resolveWorkspaceTargetPath,
+} from './outreach/paths.js'

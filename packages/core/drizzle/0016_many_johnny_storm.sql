@@ -1,0 +1,2 @@
+ALTER TABLE "outreach_links" ADD COLUMN "initial_credit_micros" bigint DEFAULT 0 NOT NULL;--> statement-breakpoint
+ALTER TABLE "outreach_links" ADD CONSTRAINT "outreach_links_initial_credit_check" CHECK ("outreach_links"."initial_credit_micros" >= 0);
