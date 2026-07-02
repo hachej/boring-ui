@@ -33,10 +33,11 @@ const mockWorkspace = {
 }
 
 const mockNavigate = vi.fn()
+let mockWorkspaceRole: 'owner' | 'editor' | 'viewer' = 'owner'
 
 vi.mock('../WorkspaceAuthProvider.js', () => ({
   useCurrentWorkspace: () => mockWorkspace.current,
-  useWorkspaceRole: () => 'owner',
+  useWorkspaceRole: () => mockWorkspaceRole,
   WORKSPACES_QUERY_KEY: ['workspaces'],
   workspaceQueryKey: (id: string) => ['workspace', id],
 }))
@@ -96,6 +97,7 @@ afterEach(() => {
     deletedAt: null,
     isDefault: true,
   }
+  mockWorkspaceRole = 'owner'
   mockNavigate.mockReset()
   vi.restoreAllMocks()
 })
@@ -268,6 +270,47 @@ describe('WorkspaceSettingsPage', () => {
       await waitFor(() => expect(deleteUrl).toContain(`/api/v1/workspaces/${encodedWorkspaceId}`))
 
       assertionPassed('settings-page-encoded-id')
+      qc.clear()
+    }),
+  )
+
+  it(
+    'owner can open company admin controls from workspace settings',
+    withBeadId(BEAD_ID, async ({ assertionPassed }) => {
+      const qc = createQueryClient()
+      setupRuntimeHandler(null)
+
+      render(
+        <Wrapper qc={qc}>
+          <WorkspaceSettingsPage />
+        </Wrapper>,
+      )
+
+      await waitFor(() => expect(screen.getByTestId('company-admin-card')).toBeTruthy())
+      fireEvent.click(screen.getByRole('button', { name: 'Open admin controls' }))
+
+      expect(mockNavigate).toHaveBeenCalledWith(`/w/${WS_ID}/admin`)
+      assertionPassed('workspace-settings-company-admin-link')
+      qc.clear()
+    }),
+  )
+
+  it(
+    'non-owners do not see company admin controls in workspace settings',
+    withBeadId(BEAD_ID, async ({ assertionPassed }) => {
+      const qc = createQueryClient()
+      mockWorkspaceRole = 'editor'
+      setupRuntimeHandler(null)
+
+      render(
+        <Wrapper qc={qc}>
+          <WorkspaceSettingsPage />
+        </Wrapper>,
+      )
+
+      await waitFor(() => expect(screen.getByTestId('danger-zone')).toBeTruthy())
+      expect(screen.queryByTestId('company-admin-card')).toBeNull()
+      assertionPassed('workspace-settings-company-admin-owner-only')
       qc.clear()
     }),
   )

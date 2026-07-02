@@ -27,12 +27,13 @@ import {
   RefreshCw,
   Settings2,
   ShieldAlert,
+  ShieldCheck,
   Trash2,
 } from 'lucide-react'
 import { useCurrentWorkspace, useWorkspaceRole } from '../WorkspaceAuthProvider.js'
 import { WORKSPACES_QUERY_KEY, workspaceQueryKey } from '../WorkspaceAuthProvider.js'
 import { useOptionalConfig } from '../ConfigProvider.js'
-import { apiFetch, apiFetchJson, getHttpErrorDetail } from '../utils.js'
+import { apiFetch, apiFetchJson, getHttpErrorDetail, routeHref } from '../utils.js'
 import type { WorkspaceRuntime } from '../../shared/types.js'
 
 export interface WorkspaceSettingsPageProps {
@@ -135,6 +136,7 @@ function roleLabel(role: string | null): string {
 
 const WORKSPACE_NAV_ITEMS = [
   { href: '#general', label: 'General', description: 'Name and access' },
+  { href: '#company-admin', label: 'Company admin', description: 'Context and models' },
   { href: '#runtime', label: 'Runtime', description: 'Provisioning state' },
   { href: '#files', label: 'Files', description: 'Markdown assets' },
   { href: '#danger-zone', label: 'Danger zone', description: 'Permanent actions' },
@@ -315,6 +317,7 @@ export function WorkspaceSettingsPage({ topBar }: WorkspaceSettingsPageProps = {
   const fileSettingsChanged = imageUploadDirValue !== null && imageUploadDirValue.trim() !== currentImageUploadDir
   const nameChanged = nameValue !== null && nameValue.trim() !== workspace?.name
   const canEditName = role !== 'viewer'
+  const canManageCompanyAdmin = role === 'owner'
   const canDeleteWorkspace = role === 'owner' || role === null
   const workspaceName = workspace?.name ?? 'Workspace'
   const workspaceInitial = (workspace?.name?.trim()?.[0] ?? 'W').toUpperCase()
@@ -322,6 +325,7 @@ export function WorkspaceSettingsPage({ topBar }: WorkspaceSettingsPageProps = {
     ? <SettingsTopBar workspaceId={workspaceId} workspaceName={workspaceName} />
     : topBar
   const navItems = WORKSPACE_NAV_ITEMS.filter((item) => {
+    if (item.href === '#company-admin') return canManageCompanyAdmin
     if (item.href === '#runtime') return hasRuntime
     if (item.href === '#files') return hasFileSettings
     return true
@@ -396,6 +400,31 @@ export function WorkspaceSettingsPage({ topBar }: WorkspaceSettingsPageProps = {
               </div>
             </div>
           </UiSettingsPanel>
+
+          {canManageCompanyAdmin && (
+            <UiSettingsPanel
+              id="company-admin"
+              testId="company-admin-card"
+              icon={<ShieldCheck className="h-3.5 w-3.5" aria-hidden="true" />}
+              title="Company admin"
+              description="Manage company context access and model controls for this workspace."
+            >
+              <UiSettingsActionRow
+                title="Access controls"
+                description="Configure which members can read company context paths and which models they can use."
+                action={(
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    onClick={() => navigate(routeHref('companyAdmin', { id: workspaceId }))}
+                  >
+                    Open admin controls
+                  </Button>
+                )}
+              />
+            </UiSettingsPanel>
+          )}
 
           {hasRuntime && (
             <UiSettingsPanel

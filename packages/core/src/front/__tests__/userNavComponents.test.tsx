@@ -205,6 +205,7 @@ describe('UserMenu', () => {
       expect(screen.getByText('menu-user@boring.dev')).toBeInTheDocument()
       expect(screen.getByRole('menuitem', { name: 'Light' })).toHaveAttribute('data-current', 'true')
       expect(screen.getByRole('menuitem', { name: 'User settings' })).toBeInTheDocument()
+      expect(screen.queryByRole('menuitem', { name: 'Company admin' })).toBeNull()
       expect(screen.queryByRole('menuitem', { name: 'Create workspace' })).toBeNull()
       expect(screen.queryByRole('menuitem', { name: 'Workspace settings' })).toBeNull()
       assertionPassed('user-menu-renders-user')
@@ -218,6 +219,7 @@ describe('UserMenu', () => {
       assertionPassed('user-menu-signout-navigates')
     }),
   )
+
 })
 
 describe('WorkspaceSwitcher', () => {

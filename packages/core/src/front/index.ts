@@ -78,6 +78,7 @@ export type { CoreCommand } from './commands/CoreCommandContributions.js'
 export { InvitesPage } from './workspace/InvitesPage.js'
 export { MembersPage } from './workspace/MembersPage.js'
 export { WorkspaceSettingsPage } from './workspace/WorkspaceSettingsPage.js'
+export { CompanyAdminPage } from './workspace/CompanyAdminPage.js'
 export { getWorkspaceCommands } from './workspace/commands.js'
 export type { WorkspaceCommand } from './workspace/commands.js'
 
