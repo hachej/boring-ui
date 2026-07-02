@@ -1,5 +1,5 @@
-export { validateDashboardSpec, parseDashboardSpec } from "./validation"
-export type { DashboardValidationResult } from "./validation"
+export { validateDashboardSpec, parseDashboardSpec, diagnoseDashboardSpec } from "./validation"
+export type { DashboardDiagnostic, DashboardDiagnosticsResult, DashboardDiagnosticSeverity, DashboardValidationResult } from "./validation"
 
 export type {
   BslChartRenderer,
