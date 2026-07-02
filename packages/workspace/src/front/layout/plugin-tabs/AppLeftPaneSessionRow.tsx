@@ -1,6 +1,6 @@
 "use client"
 
-import { Clock3, MessageSquarePlus, Pin } from "lucide-react"
+import { Clock3, MessageSquarePlus, Pin, X } from "lucide-react"
 import { cn } from "../../lib/utils"
 import { CHAT_SESSION_DRAG_TYPE } from "../ChatPaneStage"
 import type { AppLeftPaneSession } from "./AppLeftPane"
@@ -16,6 +16,7 @@ export function AppSessionRow({
   onSwitch,
   onOpenAsPane,
   onTogglePinned,
+  onDelete,
 }: {
   session: AppLeftPaneSession
   state: AppSessionRowState
@@ -27,6 +28,7 @@ export function AppSessionRow({
   onSwitch: (id: string) => void
   onOpenAsPane: (id: string) => void
   onTogglePinned: (id: string) => void
+  onDelete?: (id: string) => void
 }) {
   const title = session.title || "Untitled"
   const activate = () => {
@@ -74,8 +76,14 @@ export function AppSessionRow({
       >
         {title}
       </button>
-      <span className="flex shrink-0 items-center gap-0.5 opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100">
-        {canPin ? (
+      {canPin ? (
+        <span
+          data-boring-workspace-part="app-session-pin-action"
+          className={cn(
+            "flex w-0 shrink-0 items-center overflow-hidden opacity-0 transition-[width,opacity,margin] group-hover:ml-1 group-hover:w-auto group-hover:opacity-100 group-focus-within:ml-1 group-focus-within:w-auto group-focus-within:opacity-100",
+            pinned && "ml-1 w-auto opacity-100",
+          )}
+        >
           <button
             type="button"
             aria-label={pinned ? `Unpin ${title}` : `Pin ${title}`}
@@ -89,22 +97,40 @@ export function AppSessionRow({
           >
             <Pin className={cn("h-3.5 w-3.5", pinned && "fill-current")} strokeWidth={1.75} />
           </button>
-        ) : null}
-        {/* "Open in new chat pane" only for closed, same-project sessions —
-            it's pointless once open, and a cross-project session can't share
-            this workspace's split stage. */}
-        {state === "normal" && canSplit ? (
-          <button
-            type="button"
-            aria-label={`Open ${title} in new chat pane`}
-            title="Open in new chat pane"
-            onClick={() => onOpenAsPane(session.id)}
-            className="grid size-6 place-items-center rounded-md text-muted-foreground hover:bg-background hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
-          >
-            <MessageSquarePlus className="h-3.5 w-3.5" strokeWidth={1.75} />
-          </button>
-        ) : null}
-      </span>
+        </span>
+      ) : null}
+      {/* "Open in new chat pane" only for closed, same-project sessions —
+          it's pointless once open, and a cross-project session can't share
+          this workspace's split stage. */}
+      {(state === "normal" && canSplit) || onDelete ? (
+        <span
+          data-boring-workspace-part="app-session-actions"
+          className="flex w-0 shrink-0 items-center gap-0.5 overflow-hidden opacity-0 transition-[width,opacity,margin] group-hover:ml-1 group-hover:w-auto group-hover:opacity-100 group-focus-within:ml-1 group-focus-within:w-auto group-focus-within:opacity-100"
+        >
+          {state === "normal" && canSplit ? (
+            <button
+              type="button"
+              aria-label={`Open ${title} in new chat pane`}
+              title="Open in new chat pane"
+              onClick={() => onOpenAsPane(session.id)}
+              className="grid size-6 place-items-center rounded-md text-muted-foreground hover:bg-background hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
+            >
+              <MessageSquarePlus className="h-3.5 w-3.5" strokeWidth={1.75} />
+            </button>
+          ) : null}
+          {onDelete ? (
+            <button
+              type="button"
+              aria-label={`Delete ${title}`}
+              title="Delete"
+              onClick={() => onDelete(session.id)}
+              className="grid size-6 place-items-center rounded-md text-muted-foreground hover:bg-background hover:text-destructive focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
+            >
+              <X className="h-3.5 w-3.5" strokeWidth={1.75} />
+            </button>
+          ) : null}
+        </span>
+      ) : null}
     </div>
   )
 }

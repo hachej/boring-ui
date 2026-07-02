@@ -1,8 +1,8 @@
 import {
   MCP_ERROR_CODES,
   McpError,
-  classifyMcpTool,
-  containsMcpSecret,
+  classifyMcpTools,
+  containsMcpSecretOrCanary,
   getMcpProviderTemplate,
   type McpActor,
   type McpConnectorRef,
@@ -17,10 +17,9 @@ import {
   type McpSourceStatus,
   type McpSourceStatusPayload,
 } from "../shared"
-import {
-  assertManagedConnectorPreflight,
-  type ManagedConnectorPreflightEvidence,
-  type ManagedConnectorSecretStorage,
+import type {
+  ManagedConnectorPreflightEvidence,
+  ManagedConnectorSecretStorage,
 } from "./managedConnectorPreflight"
 import { createMcpSourceStatusPayload, requireActorOwnedMcpSource, validateMcpSourceId } from "./sourceAccess"
 
@@ -52,7 +51,7 @@ export interface ManagedConnectorStartInput {
 
 export interface ManagedConnectorStartResponse {
   connectorRef: McpConnectorRef
-  status?: McpSourceStatus
+  status?: Exclude<McpSourceStatus, "connected">
   connectUrl?: string
   providerAccountLabel?: string
 }
@@ -80,7 +79,7 @@ export interface ManagedConnectorAdapterOptions {
   provider: ManagedConnectorProvider
   secretResolver: ManagedConnectorSecretResolver
   configs: readonly ManagedConnectorConfig[]
-  preflightEvidence: ManagedConnectorPreflightEvidence
+  preflightEvidence?: ManagedConnectorPreflightEvidence
   templates?: readonly McpProviderTemplate[]
   redactionCanaries?: readonly string[]
   sourceIdFactory?: (actor: McpActor, config: ManagedConnectorConfig) => string
@@ -104,15 +103,8 @@ function defaultSourceId(actor: McpActor, config: ManagedConnectorConfig): strin
   return validateMcpSourceId(`managed:${actor.workspaceId}:${actor.userId}:${config.provider}`)
 }
 
-function containsCanary(value: unknown, canaries: readonly string[]): boolean {
-  if (typeof value === "string") return canaries.some((canary) => canary.trim() && value.includes(canary))
-  if (Array.isArray(value)) return value.some((item) => containsCanary(item, canaries))
-  if (!value || typeof value !== "object") return false
-  return Object.entries(value).some(([key, nested]) => containsCanary(key, canaries) || containsCanary(nested, canaries))
-}
-
 function assertSecretFree(value: unknown, canaries: readonly string[], code: McpErrorCode = MCP_ERROR_CODES.SECRET_LEAK_GUARD): void {
-  if (containsMcpSecret(value) || containsCanary(value, canaries)) {
+  if (containsMcpSecretOrCanary(value, canaries)) {
     throw new McpError(code, "Managed connector response contained secret material")
   }
 }
@@ -135,8 +127,7 @@ function safeConnectUrl(rawUrl: string | undefined, config: ManagedConnectorConf
 }
 
 export function createManagedConnectorAdapter(options: ManagedConnectorAdapterOptions): ManagedConnectorAdapter {
-  assertManagedConnectorPreflight(options.preflightEvidence)
-  const canaries = [...options.preflightEvidence.redactionCanaries, ...(options.redactionCanaries ?? [])]
+  const canaries = [...(options.preflightEvidence?.redactionCanaries ?? []), ...(options.redactionCanaries ?? [])]
   const templates = options.templates
 
   async function getSecret(provider: McpProviderId): Promise<ManagedConnectorSecret> {
@@ -147,16 +138,16 @@ export function createManagedConnectorAdapter(options: ManagedConnectorAdapterOp
     return secret
   }
 
-  function requireConfig(provider: McpProviderId): ManagedConnectorConfig {
+  function requireConfig(provider: McpProviderId): { config: ManagedConnectorConfig; template: McpProviderTemplate } {
     const config = findConfig(options.configs, provider)
     const template = getMcpProviderTemplate(provider, templates)
     if (!config || !template) throw new McpError(MCP_ERROR_CODES.PROVIDER_CONFIG_INVALID, "Unknown managed connector provider")
-    return config
+    return { config, template }
   }
 
   return {
     async startConnect(actor, input) {
-      const config = requireConfig(input.provider)
+      const { config } = requireConfig(input.provider)
       const sourceId = validateMcpSourceId((options.sourceIdFactory ?? defaultSourceId)(actor, config))
       const secret = await getSecret(config.provider)
       const secretCanaries = [...canaries, secret.value]
@@ -169,7 +160,7 @@ export function createManagedConnectorAdapter(options: ManagedConnectorAdapterOp
         userId: actor.userId,
         provider: config.provider,
         displayName: input.displayName ?? config.displayName,
-        status: response.status === "connected" ? "unconfigured" : (response.status ?? "unconfigured"),
+        status: response.status ?? "unconfigured",
         ownerKind: "user",
         credentialProvider: "composio-managed",
         scopes: config.scopes ? [...config.scopes] : undefined,
@@ -178,41 +169,43 @@ export function createManagedConnectorAdapter(options: ManagedConnectorAdapterOp
       }
       assertSecretFree(source, secretCanaries)
       const saved = await options.registry.upsertSource(actor, source)
-      assertSecretFree(saved, secretCanaries)
-      return { ...createMcpSourceStatusPayload(saved), connectUrl }
+      const result = { ...createMcpSourceStatusPayload(saved), connectUrl }
+      assertSecretFree(result, secretCanaries)
+      return result
     },
 
     async refreshStatus(actor, sourceId) {
       const source = await requireActorOwnedMcpSource(options.registry, actor, sourceId)
-      const config = requireConfig(source.provider)
+      const { config } = requireConfig(source.provider)
       const secret = await getSecret(config.provider)
       const secretCanaries = [...canaries, secret.value]
       const response = await options.provider.refreshStatus({ actor, source, config, secret })
       assertSecretFree(response, secretCanaries)
-      const saved = await options.registry.upsertSource(actor, {
+      const nextSource: McpSource = {
         ...source,
         status: response.status,
         providerAccountLabel: response.providerAccountLabel ?? source.providerAccountLabel,
         connectorRef: response.connectorRef ?? source.connectorRef,
         lastVerifiedAt: response.lastVerifiedAt,
-      })
-      assertSecretFree(saved, secretCanaries)
-      return createMcpSourceStatusPayload(saved)
+      }
+      assertSecretFree(nextSource, secretCanaries)
+      const saved = await options.registry.upsertSource(actor, nextSource)
+      const result = createMcpSourceStatusPayload(saved)
+      assertSecretFree(result, secretCanaries)
+      return result
     },
 
     async probeSource(actor, sourceId) {
       const source = await requireActorOwnedMcpSource(options.registry, actor, sourceId)
       if (source.status !== "connected") throw new McpError(MCP_ERROR_CODES.SOURCE_UNAVAILABLE, "MCP source is not connected")
-      const config = requireConfig(source.provider)
-      const template = getMcpProviderTemplate(source.provider, templates)
-      if (!template) throw new McpError(MCP_ERROR_CODES.PROVIDER_CONFIG_INVALID, "Unknown managed connector provider")
+      const { config, template } = requireConfig(source.provider)
       const secret = await getSecret(config.provider)
       const response = await options.provider.probe({ actor, source, config, secret })
       assertSecretFree(response, [...canaries, secret.value])
       const result = {
         sourceId: source.id,
         provider: source.provider,
-        tools: response.tools.map((tool) => ({ ...tool, decision: classifyMcpTool(template, tool.name) })),
+        tools: classifyMcpTools(template, response.tools),
         resources: response.resources,
       }
       assertSecretFree(result, [...canaries, secret.value])

@@ -19,6 +19,9 @@
    the stage root (.dv-shell.dv-chat-stage) out-specifies the workbench
    rules; the header must read as part of the pane, not a tab strip. */
 .dv-shell.dv-chat-stage .dv-tabs-and-actions-container {
+  height: var(--dv-tabs-and-actions-container-height);
+  box-sizing: border-box;
+  flex-shrink: 0;
   border-bottom: none;
   padding: 0;
   gap: 0;
@@ -26,9 +29,16 @@
 }
 
 /* dockview's fullwidth single-tab rules stop at the scroll wrapper; carry
-   the full width down to the tab itself. */
+   the full width and height down to the tab itself. */
+.dv-shell.dv-chat-stage .dv-tabs-and-actions-container.dv-single-tab .dv-scrollable,
+.dv-shell.dv-chat-stage .dv-tabs-and-actions-container.dv-single-tab .dv-tabs-container,
+.dv-shell.dv-chat-stage .dv-tabs-and-actions-container.dv-single-tab .dv-react-part {
+  height: 100%;
+}
+
 .dv-shell.dv-chat-stage .dv-tabs-and-actions-container.dv-single-tab .dv-tabs-container {
   width: 100%;
+  align-items: stretch;
 }
 
 .dv-shell.dv-chat-stage .dv-tab,

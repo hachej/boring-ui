@@ -1,8 +1,8 @@
 # Composio security preflight
 
-This checklist gates any boring-mcp implementation that talks to Composio or another managed connector provider.
+This checklist is production-launch evidence for any app that enables real Composio or another managed connector provider.
 
-The foundation plugin is provider-neutral. A Composio adapter may only land after this checklist is green for the target app/environment, or after the owner explicitly accepts the named gaps for a non-production spike.
+The reusable boring-mcp runtime keeps construction small and testable: source registry, connector config, server-only secret resolver, transport, and actor resolver. Apps should run this checklist before production provider enablement, or explicitly accept named gaps for a non-production spike.
 
 ## Required before product provider calls
 
@@ -39,9 +39,9 @@ raw connector meta-tools exposed as agent tools
 provider execution before deny-before-allow policy passes
 ```
 
-## PR evidence template
+## PR / launch evidence template
 
-Every managed connector PR must include:
+Every PR or launch checklist that enables real managed connector traffic should include:
 
 ```txt
 Secret resolver used:

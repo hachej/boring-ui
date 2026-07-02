@@ -1843,22 +1843,30 @@ describe("WorkspaceAgentFront", () => {
     expect(create.mock.calls[0]).toEqual([])
   })
 
-  it("does not auto-create a replacement after the user deletes the last remote session", async () => {
-    vi.useFakeTimers()
-    const create = vi.fn(async () => ({ id: "created", title: "Created" }))
+  it("creates a replacement before deleting the last authoritative remote session", async () => {
+    const calls: string[] = []
+    const createArgs: unknown[] = []
     const deleted = vi.fn()
 
     function useDeletingSessions() {
       const [sessionIds, setSessionIds] = useState(["only"])
-      const sessions = sessionIds.map((id) => ({ id, title: "Only session", updatedAt: Date.now() }))
+      const create = vi.fn(async (...args: unknown[]) => {
+        calls.push("create")
+        createArgs.push(args)
+        setSessionIds((prev) => ["created", ...prev])
+        return { id: "created", title: "Created" }
+      })
+      const sessions = sessionIds.map((id) => ({ id, title: id === "created" ? "Created" : "Only session", updatedAt: Date.now() }))
       return {
         sessions,
         activeSessionId: sessions[0]?.id ?? null,
         activeSession: sessions[0] ?? null,
         loading: false,
+        hasMore: false,
         create,
         switch: vi.fn(),
         delete: (id: string) => {
+          calls.push("delete")
           deleted(id)
           setSessionIds((prev) => prev.filter((sessionId) => sessionId !== id))
         },
@@ -1870,6 +1878,7 @@ describe("WorkspaceAgentFront", () => {
         workspaceId="delete-last"
         chatPanel={ChatPanel}
         useSessions={useDeletingSessions}
+        defaultSessionTitle="New chat"
         persistenceEnabled={false}
       />,
     )
@@ -1877,11 +1886,52 @@ describe("WorkspaceAgentFront", () => {
     fireEvent.click(screen.getByRole("button", { name: "Sessions" }))
     fireEvent.click(screen.getByLabelText("Delete Only session"))
 
+    await waitFor(() => expect(calls).toEqual(["create", "delete"]))
+    expect(createArgs).toEqual([[{ title: "New chat" }]])
     expect(deleted).toHaveBeenCalledWith("only")
+    expect(screen.getAllByText("Created").length).toBeGreaterThan(0)
+    expect(screen.queryByText("Only session")).not.toBeInTheDocument()
+  })
+
+  it("does not create a replacement when deleting from a non-authoritative paginated remote page", async () => {
+    vi.useFakeTimers()
+    const create = vi.fn(async () => ({ id: "created", title: "Created" }))
+    const deleted = vi.fn()
+
+    function usePaginatedSessions() {
+      const [sessionIds, setSessionIds] = useState(["visible"])
+      const sessions = sessionIds.map((id) => ({ id, title: "Visible session", updatedAt: Date.now() }))
+      return {
+        sessions,
+        activeSessionId: sessions[0]?.id ?? null,
+        activeSession: sessions[0] ?? null,
+        loading: false,
+        hasMore: true,
+        create,
+        switch: vi.fn(),
+        delete: (id: string) => {
+          deleted(id)
+          setSessionIds((prev) => prev.filter((sessionId) => sessionId !== id))
+        },
+      }
+    }
+
+    render(
+      <WorkspaceAgentFront
+        workspaceId="delete-paginated"
+        chatPanel={ChatPanel}
+        useSessions={usePaginatedSessions}
+        persistenceEnabled={false}
+      />,
+    )
+
+    fireEvent.click(screen.getByRole("button", { name: "Sessions" }))
+    fireEvent.click(screen.getByLabelText("Delete Visible session"))
+
+    expect(deleted).toHaveBeenCalledWith("visible")
     await act(async () => {
       await vi.advanceTimersByTimeAsync(2500)
     })
-
     expect(create).not.toHaveBeenCalled()
     vi.useRealTimers()
   })

@@ -20,7 +20,7 @@ export const MCP_ERROR_CODES = {
 
 export type McpErrorCode = (typeof MCP_ERROR_CODES)[keyof typeof MCP_ERROR_CODES]
 export type McpProviderId = "notion" | "airtable" | (string & {})
-export type McpTransport = "streamable-http" | "sse" | "stdio"
+export type McpTransport = "streamable-http"
 export type McpSourceStatus = "connected" | "expired" | "revoked" | "error" | "unconfigured"
 export type McpToolRisk = "read" | "write" | "admin" | "unknown"
 export type McpCredentialProvider = "provider-managed" | "composio-managed" | "app-managed" | "user-managed" | (string & {})
@@ -287,6 +287,10 @@ export function classifyMcpTool(template: McpProviderTemplate, toolName: string)
   return { allowed: false, risk: "unknown", reason: "Tool is not on the read-only allowlist" }
 }
 
+export function classifyMcpTools(template: McpProviderTemplate, tools: readonly McpDiscoveredTool[]): Array<McpDiscoveredTool & { decision: McpToolDecision }> {
+  return tools.map((tool) => ({ ...tool, decision: classifyMcpTool(template, tool.name) }))
+}
+
 export function assertMcpToolAllowed(template: McpProviderTemplate, toolName: string): void {
   const decision = classifyMcpTool(template, toolName)
   if (!decision.allowed) throw new McpError(MCP_ERROR_CODES.TOOL_NOT_ALLOWED, decision.reason)
@@ -306,6 +310,21 @@ export function redactMcpSecrets(value: unknown): unknown {
 export function containsMcpSecret(value: unknown): boolean {
   const redacted = redactMcpSecrets(value)
   return JSON.stringify(redacted) !== JSON.stringify(value)
+}
+
+function hasMcpCanaryText(value: string, canaries: readonly string[]): boolean {
+  return canaries.some((canary) => canary.trim() && value.includes(canary))
+}
+
+export function containsMcpCanary(value: unknown, canaries: readonly string[]): boolean {
+  if (typeof value === "string") return hasMcpCanaryText(value, canaries)
+  if (Array.isArray(value)) return value.some((item) => containsMcpCanary(item, canaries))
+  if (!value || typeof value !== "object") return false
+  return Object.entries(value).some(([key, nested]) => hasMcpCanaryText(key, canaries) || containsMcpCanary(nested, canaries))
+}
+
+export function containsMcpSecretOrCanary(value: unknown, canaries: readonly string[]): boolean {
+  return containsMcpSecret(value) || containsMcpCanary(value, canaries)
 }
 
 export function doctorMcpSource(source: McpSource, templates: readonly McpProviderTemplate[] = DEFAULT_MCP_PROVIDER_TEMPLATES): McpDoctorResult {
@@ -345,7 +364,7 @@ export class McpAccessFacade {
     return {
       sourceId: source.id,
       provider: source.provider,
-      tools: tools.map((tool) => ({ ...tool, decision: classifyMcpTool(template, tool.name) })),
+      tools: classifyMcpTools(template, tools),
       resources,
     }
   }
