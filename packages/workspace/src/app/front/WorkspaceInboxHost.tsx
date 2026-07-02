@@ -98,6 +98,7 @@ export function useWorkspaceInboxHost({
     : null
   const floatingChatNode = floatingChatSessionId && floatingChatParams ? (
     <DetachedChatPopover
+      key={floatingChatSessionId}
       sessionId={floatingChatSessionId}
       title={floatingChatTitle ?? floatingChatSessionId}
       chatParams={floatingChatParams}

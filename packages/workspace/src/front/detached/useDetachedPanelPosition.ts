@@ -60,8 +60,8 @@ export function useDetachedPanelPosition(initialPosition: DetachedPanelPosition,
   }, [onPointerMove, stopDrag])
 
   useEffect(() => {
-    setPosition(clampPosition(initialPosition, resolvedSize))
-  }, [initialPosition.left, initialPosition.top, resolvedSize.height, resolvedSize.width])
+    setPosition((current) => clampPosition(current, resolvedSize))
+  }, [resolvedSize.height, resolvedSize.width])
 
   return { position, size: resolvedSize, startDrag }
 }
