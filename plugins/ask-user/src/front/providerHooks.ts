@@ -40,6 +40,7 @@ export function useAskUserAttentionBlockers(runtime: QuestionsRuntime, pendingSn
         sessionId: hint.sessionId,
         sessionBadge: { kind: "question", label: "question", tone: "attention", priority: 10 },
         pruneWhenSessionMissing: true,
+        focus: { closeWorkbenchLeftPane: true },
         inbox: {
           kind: "question",
           sourceLabel: "question",

@@ -32,6 +32,11 @@ export type WorkspaceAttentionInboxMetadata = {
   priority?: number
 }
 
+export type WorkspaceAttentionFocusMetadata = {
+  /** Close the workbench left pane when this blocker becomes active for the current session. */
+  closeWorkbenchLeftPane?: boolean
+}
+
 export type WorkspaceAttentionBlocker = {
   id: string
   /** Plugin/domain-specific reason, e.g. "ask-user.question" or "pr-review.review". */
@@ -50,6 +55,8 @@ export type WorkspaceAttentionBlocker = {
   pruneWhenSessionMissing?: boolean
   /** Explicit inbox projection metadata. New inbox-aware plugins should provide this instead of relying on reason parsing. */
   inbox?: WorkspaceAttentionInboxMetadata
+  /** Optional shell focus behavior requested by the plugin that owns this blocker. */
+  focus?: WorkspaceAttentionFocusMetadata
   actions?: WorkspaceAttentionBlockerAction[]
 }
 

@@ -37,7 +37,7 @@ import { WorkspaceBackgroundBoot } from "./WorkspaceBackgroundBoot"
 import { ChatSessionTransitionState, WorkbenchWarmupOverlay } from "./WorkspaceAgentStatusStates"
 import { WorkspaceUiStateSync } from "./WorkspaceUiStateSync"
 import { PluginAppLeftOverlayHost, assertUniqueAppLeftActionIds, pluginAppLeftActionIds, usePluginAppLeftActions, type AppLeftOverlayId } from "./PluginAppLeftHost"
-import { CloseLeftPaneOnQuestion } from "./CloseLeftPaneOnQuestion"
+import { CloseLeftPaneOnAttention } from "./CloseLeftPaneOnAttention"
 import { workspaceRequestHeaders, type WorkspaceWarmupStatus } from "./workspacePreload"
 import {
   createdSessionId,
@@ -836,8 +836,8 @@ export function WorkspaceAgentFront<
   )
   const [workbenchLeftExplicitOpen, setWorkbenchLeftExplicitOpen] = useState(() => defaultWorkbenchLeftOpen ?? false)
   const effectiveWorkbenchLeftOpen = defaultWorkbenchLeftOpen === false ? workbenchLeftExplicitOpen : workbenchLeftOpen
-  // When a question opens, get it out from behind any default-open left pane.
-  const handleQuestionOpen = useCallback(() => {
+  // When a plugin attention item opens main content, get it out from behind any default-open left pane.
+  const handleAttentionOpen = useCallback(() => {
     setWorkbenchLeftOpen(false)
     setWorkbenchLeftExplicitOpen(false)
     setLeftOverlay(null)
@@ -968,10 +968,10 @@ export function WorkspaceAgentFront<
     const sessionId = typeof meta.sessionId === "string" ? meta.sessionId : null
     if (!sessionId) return false
     if (!openChatSessionIdsRef.current.has(sessionId)) {
-      // A question/review surface belongs to a concrete chat session. If the
+      // A session-scoped surface belongs to a concrete chat session. If the
       // session is not currently mounted (fresh URL, closed split pane, etc.),
       // switch/load that chat first instead of silently skipping the surface and
-      // leaving the user in an empty Questions pane.
+      // leaving the user in an empty plugin pane.
       switchSessionForSurfaceRef.current(sessionId)
     }
     return true
@@ -1735,7 +1735,7 @@ export function WorkspaceAgentFront<
           surfaceReady={surfaceReady}
           snapshot={surfaceSnapshot}
         />
-        <CloseLeftPaneOnQuestion activeSessionId={activeChatPaneId} onQuestionOpen={handleQuestionOpen} />
+        <CloseLeftPaneOnAttention activeSessionId={activeChatPaneId} onAttentionOpen={handleAttentionOpen} />
         {shellContent}
         {floatingChatNode}
         {afterShell}
