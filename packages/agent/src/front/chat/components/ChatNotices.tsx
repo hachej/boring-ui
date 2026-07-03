@@ -111,7 +111,7 @@ export function ComposerBlockerNotice<
     <div
       role="status"
       aria-live="polite"
-      className={noticeSurfaceClass('info', 'mx-auto mb-2 w-full max-w-3xl text-xs')}
+      className={noticeSurfaceClass('info', 'relative z-20 mx-auto mb-2 w-full max-w-3xl text-xs')}
     >
       <span>{label}</span>
       {blocker?.actions?.map((action) => {

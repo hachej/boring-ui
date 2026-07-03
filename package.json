@@ -19,6 +19,7 @@
     "check:generated-artifacts": "pnpm tsx scripts/check-generated-artifacts.ts",
     "check:agent-isolation": "pnpm --filter @hachej/boring-agent run check:isolation",
     "check:action-pins": "bash scripts/check-action-pins.sh",
+    "check:dependency-age": "node scripts/check-dependency-age.mjs",
     "check:bundle-size": "pnpm --filter @hachej/boring-workspace run check:bundle-size",
     "check:core-bundle-size": "pnpm --filter @hachej/boring-core run check:bundle-size",
     "ci:bundle-size": "pnpm --filter @hachej/boring-workspace... --workspace-concurrency=4 run build && pnpm check:bundle-size",
@@ -50,14 +51,14 @@
     "node": ">=22.19.0"
   },
   "devDependencies": {
-    "@playwright/test": "^1.59.1",
+    "@playwright/test": "^1.61.1",
     "@storybook/addon-a11y": "^8.6.14",
     "@storybook/addon-essentials": "^8.6.14",
     "@storybook/addon-viewport": "^8.6.14",
     "@storybook/react": "^8.6.14",
     "@storybook/react-vite": "^8.6.14",
-    "@tailwindcss/vite": "^4.1.14",
-    "axe-core": "^4.11.3",
+    "@tailwindcss/vite": "^4.3.1",
+    "axe-core": "^4.12.1",
     "http-server": "^14.1.1",
     "storybook": "^8.6.14",
     "typescript": "^5.4.0"
@@ -71,7 +72,9 @@
       "@perspective-dev/client": "4.4.1",
       "@perspective-dev/viewer": "4.4.1",
       "@perspective-dev/viewer-datagrid": "4.4.1",
-      "@perspective-dev/viewer-d3fc": "4.4.1"
+      "@perspective-dev/viewer-d3fc": "4.4.1",
+      "fastify": "5.8.5",
+      "better-auth": "1.6.11"
     }
   }
 }

@@ -25,6 +25,10 @@ function TestBinding(): null {
   return null
 }
 
+function TestOverlay(): null {
+  return null
+}
+
 describe("createCapturingBoringFrontAPI", () => {
   it("captures providers, bindings, catalogs, panels, commands, and surface resolvers", () => {
     const api = createCapturingBoringFrontAPI()
@@ -34,6 +38,7 @@ describe("createCapturingBoringFrontAPI", () => {
     api.registerPanel({ id: "chart", label: "Chart", component: TestPanel })
     api.registerPanel({ id: "macro-page", label: "Macro", component: TestPanel, placement: "workspace-page" })
     api.registerPanelCommand({ id: "open-chart", title: "Open chart", panelId: "chart" })
+    api.registerAppLeftAction({ id: "inbox", label: "Inbox", overlay: TestOverlay })
     api.registerSurfaceResolver({ kind: "macro.open", title: "Open macro", resolve: () => ({ component: "chart" }) })
 
     expect(api.flush()).toMatchObject({
@@ -42,6 +47,7 @@ describe("createCapturingBoringFrontAPI", () => {
       catalogs: [{ id: "catalog", label: "Catalog" }],
       panels: [{ id: "chart", label: "Chart" }, { id: "macro-page", label: "Macro", placement: "workspace-page" }],
       panelCommands: [{ id: "open-chart", title: "Open chart", panelId: "chart" }],
+      appLeftActions: [{ id: "inbox", label: "Inbox" }],
       surfaceResolvers: [{ kind: "macro.open", title: "Open macro" }],
     })
   })
@@ -63,6 +69,7 @@ describe("captureFrontPlugin", () => {
         { id: "macro-page", label: "Macro", component: TestPanel, placement: "workspace-page" },
       ],
       commands: [{ id: "open-chart", title: "Open chart", panelId: "chart" }],
+      appLeftActions: [{ id: "inbox", label: "Inbox", overlay: TestOverlay }],
       surfaceResolvers: [{ kind: "macro.open", resolve: () => ({ component: "chart", id: "chart:CPI" }) }],
     })
 
@@ -73,6 +80,7 @@ describe("captureFrontPlugin", () => {
     expect(captured.registrations.panels[0]).toMatchObject({ id: "chart", label: "Chart" })
     expect(captured.registrations.panels[1]).toMatchObject({ id: "macro-page", placement: "workspace-page" })
     expect(captured.registrations.panelCommands[0]).toMatchObject({ id: "open-chart", panelId: "chart" })
+    expect(captured.registrations.appLeftActions[0]).toMatchObject({ id: "inbox", label: "Inbox" })
     expect(captured.registrations.surfaceResolvers[0]).toMatchObject({ kind: "macro.open" })
   })
 

@@ -18,10 +18,12 @@ import type {
   SurfaceShellSnapshot,
 } from "../../front/chrome/artifact-surface/SurfaceShell"
 import { SkillsPage } from "../../front/chrome/skills/SkillsPage"
+import { WorkspaceShellCapabilitiesProvider } from "../../front/shell/WorkspaceShellCapabilitiesContext"
+import { useWorkspaceShellCapabilitiesHost } from "./WorkspaceShellCapabilitiesHost"
 import { PluginsOverlay } from "../../front/chrome/plugins/PluginsOverlay"
 import { AppLeftPane } from "../../front/layout/plugin-tabs/AppLeftPane"
 import { PluginTabsWorkspaceShell } from "../../front/layout/plugin-tabs/PluginTabsWorkspaceShell"
-import { captureFrontPlugin } from "../../shared/plugins/frontFactory"
+import { captureWorkspaceFrontPlugins } from "./workspaceBuiltinPlugins"
 import type { FilesystemId } from "../../shared/types/filesystem"
 import { UI_COMMAND_EVENT, dispatchUiCommand } from "../../front/bridge"
 import type { CommandPaletteSessionItem } from "../../front/components/CommandPalette"
@@ -35,7 +37,8 @@ import { WORKSPACE_AGENT_PLUGINS_RELOADED_EVENT } from "../../front/agentPlugins
 import { WorkspaceBackgroundBoot } from "./WorkspaceBackgroundBoot"
 import { ChatSessionTransitionState, WorkbenchWarmupOverlay } from "./WorkspaceAgentStatusStates"
 import { WorkspaceUiStateSync } from "./WorkspaceUiStateSync"
-import { CloseLeftPaneOnQuestion } from "./CloseLeftPaneOnQuestion"
+import { PluginAppLeftOverlayHost, assertUniqueAppLeftActionIds, pluginAppLeftActionIds, usePluginAppLeftActions, type AppLeftOverlayId } from "./PluginAppLeftHost"
+import { CloseLeftPaneOnAttention } from "./CloseLeftPaneOnAttention"
 import { workspaceRequestHeaders, type WorkspaceWarmupStatus } from "./workspacePreload"
 import {
   createdSessionId,
@@ -203,6 +206,8 @@ export interface WorkspaceAgentFrontProps<
    * UserMenu) should set this to false to avoid a duplicate control.
    */
   showThemeToggle?: boolean
+  /** Initial plugin-tabs overlay, useful for demos/deep links. */
+  defaultLeftOverlay?: string | null
   /** Show the plugin-tabs Skills action/overlay. Defaults to true. */
   showSkills?: boolean
   /** Show the plugin-tabs Plugins action/overlay. Defaults to true. */
@@ -460,6 +465,7 @@ export function WorkspaceAgentFront<
   topBarLeft,
   topBarRight,
   showThemeToggle = true,
+  defaultLeftOverlay = null,
   showSkills = true,
   showPlugins = true,
   appLeftActions,
@@ -496,7 +502,7 @@ export function WorkspaceAgentFront<
   // Skills is only ever a chat-left overlay (see leftOverlay node below); it is
   // intentionally NOT registered as a workspace panel so it never appears in the
   // workbench surface.
-  const providerPanels = panels
+  const baseProviderPanels = panels
   const resolvedSessionStorageKey =
     sessionStorageKey ?? `boring-workspace:sessions:${workspaceId}`
   const resolvedRequestHeaders = useMemo(
@@ -819,13 +825,26 @@ export function WorkspaceAgentFront<
     shellPersistenceEnabled,
   )
   const effectiveAppLeftPaneWidth = clampNumber(appLeftPaneWidth, 220, 420)
-  const [leftOverlay, setLeftOverlay] = useState<string | null>(null)
+  const capturedPlugins = useMemo(() => captureWorkspaceFrontPlugins({
+    plugins,
+    excludeDefaults,
+  }), [excludeDefaults, plugins])
+  const [leftOverlay, setLeftOverlay] = useState<AppLeftOverlayId>(defaultLeftOverlay)
+  const pluginOverlayActionIds = useMemo(() => pluginAppLeftActionIds(capturedPlugins), [capturedPlugins])
   useEffect(() => {
     const customOverlayActive = Boolean(leftOverlay && appLeftOverlayActions?.some((action) => action.id === leftOverlay))
-    if ((leftOverlay === "skills" && !skillsActionEnabled) || (leftOverlay === "plugins" && !pluginsActionEnabled) || (leftOverlay && leftOverlay !== "skills" && leftOverlay !== "plugins" && !customOverlayActive)) {
+    if (
+      (leftOverlay === "skills" && !skillsActionEnabled)
+      || (leftOverlay === "plugins" && !pluginsActionEnabled)
+      || (leftOverlay !== null
+        && leftOverlay !== "skills"
+        && leftOverlay !== "plugins"
+        && !pluginOverlayActionIds.has(leftOverlay)
+        && !customOverlayActive)
+    ) {
       setLeftOverlay(null)
     }
-  }, [appLeftOverlayActions, leftOverlay, pluginsActionEnabled, skillsActionEnabled])
+  }, [appLeftOverlayActions, leftOverlay, pluginOverlayActionIds, pluginsActionEnabled, skillsActionEnabled])
   const effectiveNavOpen = navEnabled && navOpen
   const [surfaceOpen, setSurfaceOpen] = useStoredBooleanState(
     // Key must NOT match resolvedSurfaceStorageKey (which stores the dockview
@@ -843,8 +862,8 @@ export function WorkspaceAgentFront<
   )
   const [workbenchLeftExplicitOpen, setWorkbenchLeftExplicitOpen] = useState(() => defaultWorkbenchLeftOpen ?? false)
   const effectiveWorkbenchLeftOpen = defaultWorkbenchLeftOpen === false ? workbenchLeftExplicitOpen : workbenchLeftOpen
-  // When a question opens, get it out from behind any default-open left pane.
-  const handleQuestionOpen = useCallback(() => {
+  // When a plugin attention item opens main content, get it out from behind any default-open left pane.
+  const handleAttentionOpen = useCallback(() => {
     setWorkbenchLeftOpen(false)
     setWorkbenchLeftExplicitOpen(false)
     setLeftOverlay(null)
@@ -968,12 +987,20 @@ export function WorkspaceAgentFront<
     setSurfaceOpen(false)
   }, [setSurfaceOpen])
   const openChatSessionIdsRef = useRef<ReadonlySet<string>>(new Set())
+  const switchSessionForSurfaceRef = useRef<(sessionId: string) => void>(() => undefined)
   const shouldOpenSurface = useCallback<NonNullable<DispatchContext["shouldOpenSurface"]>>((request) => {
     const meta = request.meta
     if (!meta || meta.openOnlyWhenSessionOpen !== true) return true
     const sessionId = typeof meta.sessionId === "string" ? meta.sessionId : null
     if (!sessionId) return false
-    return openChatSessionIdsRef.current.has(sessionId)
+    if (!openChatSessionIdsRef.current.has(sessionId)) {
+      // A session-scoped surface belongs to a concrete chat session. If the
+      // session is not currently mounted (fresh URL, closed split pane, etc.),
+      // switch/load that chat first instead of silently skipping the surface and
+      // leaving the user in an empty plugin pane.
+      switchSessionForSurfaceRef.current(sessionId)
+    }
+    return true
   }, [])
 
   // One source of truth for the agent → UI command dispatch context, shared by
@@ -1013,10 +1040,6 @@ export function WorkspaceAgentFront<
     getActiveFile: () => getSurface()?.getSnapshot().activeTab ?? null,
     select: (): Unsubscribe => () => {},
   }), [getSurface, surfaceDispatch])
-  const capturedPlugins = useMemo(
-    () => plugins?.map(captureFrontPlugin) ?? [],
-    [plugins],
-  )
   const hasLeftTabs = useMemo(
     () => !isPluginTabsLayout && capturedPlugins.some((plugin) => plugin.registrations.workspaceSources.length > 0),
     [capturedPlugins, isPluginTabsLayout],
@@ -1146,6 +1169,9 @@ export function WorkspaceAgentFront<
     })
     return alreadyVisible ? rawSwitch(nextSessionId) : resolvedSwitch(nextSessionId)
   }, [chatPaneState, chatSessionId, rawSwitch, resolvedSwitch, workspaceId])
+  useEffect(() => {
+    switchSessionForSurfaceRef.current = switchToChatPane
+  }, [switchToChatPane])
 
   const activateChatPane = useCallback((nextSessionId: string) => {
     setChatPaneState((previous) => {
@@ -1344,6 +1370,9 @@ export function WorkspaceAgentFront<
       const chatToolRenderers = (chatParams?.toolRenderers && typeof chatParams.toolRenderers === "object")
         ? chatParams.toolRenderers as ToolRendererOverrides
         : undefined
+      const chatRemoteSessionOptions = (chatParams?.remoteSessionOptions && typeof chatParams.remoteSessionOptions === "object")
+        ? chatParams.remoteSessionOptions as Record<string, unknown>
+        : undefined
       return {
       ...chatParams,
       ...(delayAutoSubmitDraft ? { autoSubmitInitialDraft: false, initialDraft: undefined } : {}),
@@ -1352,6 +1381,7 @@ export function WorkspaceAgentFront<
       workspaceId,
       storageScope: workspaceId,
       requestHeaders: resolvedRequestHeaders,
+      remoteSessionOptions: apiTimeout ? { ...(chatRemoteSessionOptions ?? {}), requestTimeoutMs: apiTimeout } : chatRemoteSessionOptions,
       showSessions: false,
       onReloadAgentPlugins: chatParams?.onReloadAgentPlugins ?? (() => reloadAgentPluginsForSession(sessionId)),
       toolRenderers: { ...pluginToolRenderers, ...(chatToolRenderers ?? {}) },
@@ -1388,7 +1418,7 @@ export function WorkspaceAgentFront<
       ...(resolvedHotReloadEnabled !== undefined ? { hotReloadEnabled: resolvedHotReloadEnabled } : {}),
     }
     },
-    [apiBaseUrl, chatParams, delayAutoSubmitDraft, resolvedRequestHeaders, bridgeEndpoint, surfaceDispatch, extraCommands, workspaceWarmupStatus, hydrateMessages, emptySessionIds, resolvedHotReloadEnabled, pluginToolRenderers, reloadAgentPluginsForSession, sessionApi, workspaceId],
+    [apiBaseUrl, apiTimeout, chatParams, delayAutoSubmitDraft, resolvedRequestHeaders, bridgeEndpoint, surfaceDispatch, extraCommands, workspaceWarmupStatus, hydrateMessages, emptySessionIds, resolvedHotReloadEnabled, pluginToolRenderers, reloadAgentPluginsForSession, sessionApi, workspaceId],
   )
   const centerParams = useMemo(
     () => makeCenterParams(chatSessionId),
@@ -1426,6 +1456,14 @@ export function WorkspaceAgentFront<
       }
     })
   }, [activeChatPaneId, chatPaneIds, defaultSessionTitle, makeCenterParams, sessionTitleById])
+  const attentionSessionIds = useMemo(() => {
+    const ids = new Set<string>()
+    for (const session of resolvedSessions) ids.add(session.id)
+    for (const id of chatPaneIds) ids.add(id)
+    if (effectiveActiveSessionId) ids.add(effectiveActiveSessionId)
+    return [...ids]
+  }, [chatPaneIds, effectiveActiveSessionId, resolvedSessions])
+  const attentionSessionsAuthoritative = !remoteSessionsPending && !(sessionApi?.hasMore ?? false)
   const surfaceParams = useMemo<SurfaceShellProps>(() => ({
     storageKey: resolvedSurfaceStorageKey,
     defaultLeftTab: defaultWorkbenchLeftTab,
@@ -1494,6 +1532,19 @@ export function WorkspaceAgentFront<
         }
       : undefined
   ), [activeChatPaneId, chatPaneIds, isPluginTabsLayout, openChatPane, resolvedSessions, switchToChatPane])
+  const shellCapabilitiesHost = useWorkspaceShellCapabilitiesHost({
+    appLeftPaneCollapsed,
+    workspaceId,
+    effectiveAppLeftPaneWidth,
+    sessionTitleById,
+    defaultSessionTitle,
+    makeCenterParams,
+    openChatPane,
+    surfaceDispatch,
+    onDockOverlay: () => setLeftOverlay(null),
+  })
+  const providerPanels = baseProviderPanels
+  const pluginAppLeftActions = usePluginAppLeftActions({ plugins: capturedPlugins, activeOverlay: leftOverlay, setActiveOverlay: setLeftOverlay })
   const chatTopOverlayActions = useMemo(() => {
     if (!isPluginTabsLayout || !appLeftOverlayActions?.length) return null
     return (
@@ -1524,7 +1575,7 @@ export function WorkspaceAgentFront<
   }, [appLeftOverlayActions, isPluginTabsLayout, leftOverlay])
 
   const managementActions = useMemo<WorkspaceAgentAppLeftAction[]>(() => {
-    const actions: WorkspaceAgentAppLeftAction[] = [...(appLeftActions ?? [])]
+    const actions: WorkspaceAgentAppLeftAction[] = [...pluginAppLeftActions, ...(appLeftActions ?? [])]
     for (const action of appLeftOverlayActions ?? []) {
       actions.push({
         id: action.id,
@@ -1551,9 +1602,17 @@ export function WorkspaceAgentFront<
         onClick: () => setLeftOverlay((cur) => cur === "skills" ? null : "skills"),
       })
     }
+    assertUniqueAppLeftActionIds(actions)
     return actions
-  }, [appLeftActions, appLeftOverlayActions, pluginsActionEnabled, skillsActionEnabled])
+  }, [appLeftActions, appLeftOverlayActions, pluginAppLeftActions, pluginsActionEnabled, skillsActionEnabled])
 
+  const pluginLeftOverlayNode = PluginAppLeftOverlayHost({
+    plugins: capturedPlugins,
+    activeOverlay: leftOverlay,
+    onClose: () => setLeftOverlay(null),
+    headerInsetStart: appLeftPaneCollapsed,
+    headerInsetEnd: !surfaceOpen,
+  })
   const customLeftOverlayNode = useMemo(() => {
     const overlay = appLeftOverlayActions?.find((action) => action.id === leftOverlay)
     if (!overlay) return null
@@ -1565,7 +1624,7 @@ export function WorkspaceAgentFront<
     })
   }, [appLeftOverlayActions, appLeftPaneCollapsed, leftOverlay, surfaceOpen, workspaceId])
 
-  const leftOverlayNode = customLeftOverlayNode ?? (leftOverlay === "skills" && skillsActionEnabled ? (
+  const leftOverlayNode = pluginLeftOverlayNode ?? customLeftOverlayNode ?? (leftOverlay === "skills" && skillsActionEnabled ? (
     <SkillsPage
       onClose={() => setLeftOverlay(null)}
       headerInsetStart={appLeftPaneCollapsed}
@@ -1702,16 +1761,19 @@ export function WorkspaceAgentFront<
       {mainContent}
     </div>
   )
+  const floatingChatNode = shellCapabilitiesHost.floatingChatNode
   const publishedNavOpen = isPluginTabsLayout ? !appLeftPaneCollapsed : effectiveNavOpen
 
   return (
-    <div className="h-full bg-background text-foreground">
+    <div className="relative h-full bg-background text-foreground">
+      <WorkspaceShellCapabilitiesProvider value={shellCapabilitiesHost.shellCapabilities}>
       <WorkspaceProvider
         chatPanel={chatPanel}
         panels={providerPanels}
         commands={commands}
         catalogs={catalogs}
         plugins={plugins}
+        capturedPlugins={capturedPlugins}
         excludeDefaults={excludeDefaults}
         capabilities={capabilities}
         apiBaseUrl={apiBaseUrl}
@@ -1719,6 +1781,8 @@ export function WorkspaceAgentFront<
         apiTimeout={apiTimeout}
         activeSessionId={activeChatPaneId}
         openSessionIds={chatPaneIds}
+        attentionSessionIds={attentionSessionIds}
+        attentionSessionsAuthoritative={attentionSessionsAuthoritative}
         defaultTheme={defaultTheme}
         onThemeChange={onThemeChange}
         workspaceId={workspaceId}
@@ -1750,10 +1814,12 @@ export function WorkspaceAgentFront<
           surfaceReady={surfaceReady}
           snapshot={surfaceSnapshot}
         />
-        <CloseLeftPaneOnQuestion onQuestionOpen={handleQuestionOpen} />
+        <CloseLeftPaneOnAttention activeSessionId={activeChatPaneId} onAttentionOpen={handleAttentionOpen} />
         {shellContent}
+        {floatingChatNode}
         {afterShell}
       </WorkspaceProvider>
+      </WorkspaceShellCapabilitiesProvider>
     </div>
   )
 }

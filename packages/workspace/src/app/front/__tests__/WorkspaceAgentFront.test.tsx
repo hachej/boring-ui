@@ -396,6 +396,35 @@ describe("WorkspaceAgentFront", () => {
     expect(screen.getByRole("button", { name: "Open app navigation" })).toBeInTheDocument()
   })
 
+  it("rejects plugin app-left actions that collide with built-in overlays", () => {
+    const collidingPlugin = definePlugin({
+      id: "colliding-action",
+      appLeftActions: [{ id: "plugins", label: "Plugins", overlay: () => <div>Plugin overlay</div> }],
+    })
+
+    expect(() => render(
+      <WorkspaceAgentFront
+        workspaceId="plugin-tabs-colliding-action"
+        workspaceLayout="plugin-tabs"
+        chatPanel={SessionIdChatPanel}
+        plugins={[collidingPlugin]}
+        persistenceEnabled={false}
+      />,
+    )).toThrow(/reserved workspace app-left action/)
+  })
+
+  it("rejects host app-left actions that collide with plugin or built-in overlays", () => {
+    expect(() => render(
+      <WorkspaceAgentFront
+        workspaceId="plugin-tabs-host-colliding-action"
+        workspaceLayout="plugin-tabs"
+        chatPanel={SessionIdChatPanel}
+        appLeftActions={[{ id: "plugins", label: "Host Plugins", icon: null, onClick: () => undefined }]}
+        persistenceEnabled={false}
+      />,
+    )).toThrow(/duplicate app-left action id/)
+  })
+
   it("can hide plugin-tabs Skills and Plugins actions", () => {
     render(
       <WorkspaceAgentFront
@@ -1622,7 +1651,8 @@ describe("WorkspaceAgentFront", () => {
     })
   })
 
-  it("does not auto-open an openOnlyWhenSessionOpen surface for a closed chat session", async () => {
+  it("loads the target chat session before opening a session-bound surface", async () => {
+    const onSwitchSession = vi.fn()
     render(
       <WorkspaceAgentFront
         workspaceId="session-gated-surface"
@@ -1632,7 +1662,7 @@ describe("WorkspaceAgentFront", () => {
           { id: "s2", title: "Closed", updatedAt: new Date(0).toISOString(), turnCount: 0 },
         ]}
         activeSessionId="s1"
-        onSwitchSession={vi.fn()}
+        onSwitchSession={onSwitchSession}
         persistenceEnabled={false}
       />,
     )
@@ -1647,17 +1677,9 @@ describe("WorkspaceAgentFront", () => {
       } satisfies UiCommand,
     }))
 
-    await new Promise((resolve) => setTimeout(resolve, 20))
-    expect(screen.queryByLabelText("Surface")).not.toBeInTheDocument()
-
-    window.dispatchEvent(new CustomEvent(UI_COMMAND_EVENT, {
-      detail: {
-        kind: "openSurface",
-        params: { kind: "questions", target: "q1", meta: { sessionId: "s1", openOnlyWhenSessionOpen: true } },
-      } satisfies UiCommand,
-    }))
-
     await waitFor(() => {
+      expect(visibleChatSessionIds()).toEqual(["s2"])
+      expect(onSwitchSession).toHaveBeenCalledWith("s2")
       expect(screen.getByLabelText("Surface")).toHaveAttribute("aria-hidden", "false")
     })
   })

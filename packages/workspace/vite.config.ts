@@ -31,7 +31,7 @@ export default defineConfig({
     react(),
     tailwindcss(),
     dts({
-      rollupTypes: true,
+      bundleTypes: true,
       tsconfigPath: resolve(__dirname, "tsconfig.front.json"),
     }),
   ],

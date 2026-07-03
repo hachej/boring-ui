@@ -78,17 +78,18 @@ export async function startPlaygroundServer(): Promise<void> {
       defaultPluginPackages: ["@hachej/boring-ask-user"],
       runtimeProvisioner: multiFilesystemPlayground
         ? async ({ runtimeBundle }) => {
-            runtimeBundle.filesystemBindings = [
-              ...(runtimeBundle.filesystemBindings ?? []),
+            const bundle = runtimeBundle as typeof runtimeBundle & { filesystemBindings?: unknown[] }
+            bundle.filesystemBindings = [
+              ...(bundle.filesystemBindings ?? []),
               {
                 filesystem: "company_context",
                 access: "readonly",
                 operations: {
-                  async read({ path }) {
+                  async read({ path }: { path: string }) {
                     const target = resolvePlaygroundBindingPath(workspaceRoot, path)
                     return { content: await readFile(target, "utf8") }
                   },
-                  async list({ path }) {
+                  async list({ path }: { path: string }) {
                     const target = resolvePlaygroundBindingPath(workspaceRoot, path)
                     return { entries: await readdir(target) }
                   },
@@ -98,11 +99,11 @@ export async function startPlaygroundServer(): Promise<void> {
                   async grep() {
                     return { matches: [] }
                   },
-                  async stat({ path }) {
+                  async stat({ path }: { path: string }) {
                     const target = resolvePlaygroundBindingPath(workspaceRoot, path)
                     return { isDirectory: (await stat(target)).isDirectory() }
                   },
-                  rejectMutation(operation) {
+                  rejectMutation(operation: string) {
                     throw new Error(`company_context binding is readonly: ${operation}`)
                   },
                 },

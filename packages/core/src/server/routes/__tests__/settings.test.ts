@@ -247,7 +247,7 @@ describe('POST /api/v1/workspaces/:id/runtime/retry', () => {
 
 describe('POST /api/v1/workspaces/:id/runtime/retry (with provisioner)', () => {
   let provApp: FastifyInstance
-  let provisionFn: ReturnType<typeof vi.fn>
+  let provisionFn: ReturnType<typeof vi.fn<WorkspaceProvisioner['provision']>>
   let provRuntimeDb: WorkspaceRuntime | null
 
   function provResetState() {
@@ -262,12 +262,12 @@ describe('POST /api/v1/workspaces/:id/runtime/retry (with provisioner)', () => {
   }
 
   beforeAll(async () => {
-    provisionFn = vi.fn().mockResolvedValue({ volumePath: '/volumes/ws-retried' })
+    provisionFn = vi.fn<WorkspaceProvisioner['provision']>().mockResolvedValue({ volumePath: '/volumes/ws-retried' })
     provRuntimeDb = null
 
     const mockProvisioner: WorkspaceProvisioner = {
       provision: provisionFn,
-      destroy: vi.fn(),
+      destroy: vi.fn<WorkspaceProvisioner['destroy']>(),
     }
 
     const provMemberDb = new Map<string, Map<string, MemberRole>>()

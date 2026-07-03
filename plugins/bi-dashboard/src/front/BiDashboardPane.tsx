@@ -34,7 +34,7 @@ export function BiDashboardPane({ params }: PaneProps<BiDashboardPaneParams>) {
   const [loadedFile, setLoadedFile] = useState<LoadedDashboardFile>({ spec: null, loading: false })
   const [controllerValues, setControllerValues] = useState<Record<string, string>>({})
   const [refreshKey, setRefreshKey] = useState(0)
-  const [showJsonEditor, setShowJsonEditor] = useState(false)
+  const [showJsonViewer, setShowJsonViewer] = useState(false)
   const [jsonDraft, setJsonDraft] = useState("")
 
   useEffect(() => {
@@ -96,16 +96,16 @@ export function BiDashboardPane({ params }: PaneProps<BiDashboardPaneParams>) {
     return <PaneState title="Could not load BI dashboard" description={loadedFile.error} />
   }
 
-  const openJsonEditor = () => {
+  const openJsonViewer = () => {
     setJsonDraft(JSON.stringify(rawSpec ?? {}, null, 2))
-    setShowJsonEditor(true)
+    setShowJsonViewer(true)
   }
 
-  if (!rawSpec && !showJsonEditor) {
+  if (!rawSpec && !showJsonViewer) {
     return <PaneState title="Open a BI dashboard" description="Select a dashboard JSON file under dashboards/*.dashboard.json." />
   }
 
-  if (!parsedSpec && !showJsonEditor) {
+  if (!parsedSpec && !showJsonViewer) {
     return <PaneState title="Invalid BI dashboard spec" description={parsed.errors.slice(0, 5).join(" • ")} />
   }
 
@@ -123,11 +123,11 @@ export function BiDashboardPane({ params }: PaneProps<BiDashboardPaneParams>) {
             variant="ghost"
             size="icon-xs"
             className="text-muted-foreground hover:text-foreground"
-            onClick={() => showJsonEditor ? setShowJsonEditor(false) : openJsonEditor()}
-            aria-label={showJsonEditor ? "Show dashboard" : "Show dashboard JSON"}
-            title={showJsonEditor ? "Show dashboard" : "Show dashboard JSON"}
+            onClick={() => showJsonViewer ? setShowJsonViewer(false) : openJsonViewer()}
+            aria-label={showJsonViewer ? "Show dashboard" : "Show dashboard JSON"}
+            title={showJsonViewer ? "Show dashboard" : "Show dashboard JSON"}
           >
-            {showJsonEditor ? <LayoutDashboard className="h-3.5 w-3.5" strokeWidth={1.75} /> : <Braces className="h-3.5 w-3.5" strokeWidth={1.75} />}
+            {showJsonViewer ? <LayoutDashboard className="h-3.5 w-3.5" strokeWidth={1.75} /> : <Braces className="h-3.5 w-3.5" strokeWidth={1.75} />}
           </IconButton>
           <IconButton
             type="button"
@@ -137,7 +137,7 @@ export function BiDashboardPane({ params }: PaneProps<BiDashboardPaneParams>) {
             onClick={() => setRefreshKey((value) => value + 1)}
             aria-label="Refresh dashboard"
             title="Refresh dashboard"
-            disabled={loadedFile.loading || showJsonEditor}
+            disabled={loadedFile.loading || showJsonViewer}
           >
             <RefreshCcw className={`h-3.5 w-3.5 ${loadedFile.loading ? "animate-spin" : ""}`} strokeWidth={1.75} />
           </IconButton>
@@ -159,35 +159,35 @@ export function BiDashboardPane({ params }: PaneProps<BiDashboardPaneParams>) {
       </Toolbar>
 
       <div className="min-h-0 min-w-0 flex-1 overflow-auto bg-background p-4">
-        {showJsonEditor ? (
+        {showJsonViewer ? (
           <DashboardJsonViewer draft={jsonDraft} />
         ) : spec ? (
           <>
-        <div className="mb-4">
-          <h1 className="text-2xl font-semibold tracking-tight">{spec.title}</h1>
-          {spec.description ? <p className="mt-1 text-sm text-muted-foreground">{spec.description}</p> : null}
-        </div>
-
-        <div className="min-w-0 space-y-4">
-          <DashboardFiltersBar spec={spec} queryData={queryData} controllerValues={controllerValues} setControllerValues={setControllerValues} />
-          <BiDashboardRenderProvider value={{ apiBaseUrl, workspaceId: workspaceId ?? undefined, spec, refreshKey, queryData, controllerValues, setControllerValues }}>
-            <GeneratedPaneRenderer spec={spec} profile={biDashboardGeneratedPaneProfile} />
-          </BiDashboardRenderProvider>
-          <details className="group rounded-xl border border-border bg-card">
-            <summary className="flex cursor-pointer list-none items-center gap-2 px-4 py-3 text-sm font-medium text-foreground marker:hidden">
-              <Database className="h-4 w-4" /> Query manifest
-              <span className="ml-auto text-xs text-muted-foreground">debug</span>
-            </summary>
-            <div className="border-t border-border px-4 py-3">
-              <p className="mb-3 text-sm text-muted-foreground">
-                The agent should generate this neutral BI dashboard contract; the plugin maps it to data-bridge and Perspective runtime calls.
-              </p>
-              <pre className="max-h-[420px] overflow-auto rounded-lg border border-border bg-muted/40 p-3 text-xs text-muted-foreground">
-                {JSON.stringify({ queries: spec.queries }, null, 2)}
-              </pre>
+            <div className="mb-4">
+              <h1 className="text-2xl font-semibold tracking-tight">{spec.title}</h1>
+              {spec.description ? <p className="mt-1 text-sm text-muted-foreground">{spec.description}</p> : null}
             </div>
-          </details>
-        </div>
+
+            <div className="min-w-0 space-y-4">
+              <DashboardFiltersBar spec={spec} queryData={queryData} controllerValues={controllerValues} setControllerValues={setControllerValues} />
+              <BiDashboardRenderProvider value={{ apiBaseUrl, workspaceId: workspaceId ?? undefined, spec, refreshKey, queryData, controllerValues, setControllerValues }}>
+                <GeneratedPaneRenderer spec={spec} profile={biDashboardGeneratedPaneProfile} />
+              </BiDashboardRenderProvider>
+              <details className="group rounded-xl border border-border bg-card">
+                <summary className="flex cursor-pointer list-none items-center gap-2 px-4 py-3 text-sm font-medium text-foreground marker:hidden">
+                  <Database className="h-4 w-4" /> Query manifest
+                  <span className="ml-auto text-xs text-muted-foreground">debug</span>
+                </summary>
+                <div className="border-t border-border px-4 py-3">
+                  <p className="mb-3 text-sm text-muted-foreground">
+                    The agent should generate this neutral BI dashboard contract; the plugin maps it to data-bridge and Perspective runtime calls.
+                  </p>
+                  <pre className="max-h-[420px] overflow-auto rounded-lg border border-border bg-muted/40 p-3 text-xs text-muted-foreground">
+                    {JSON.stringify({ queries: spec.queries }, null, 2)}
+                  </pre>
+                </div>
+              </details>
+            </div>
           </>
         ) : (
           <PaneState title="Invalid BI dashboard spec" description={parsed.errors.slice(0, 5).join(" • ")} />

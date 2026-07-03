@@ -3,15 +3,18 @@
 import { Button, EmptyState, Notice, Pane, PaneBody, PaneFooter, PaneHeader, PaneTitle } from "@hachej/boring-ui-kit"
 import {
   WORKSPACE_COMPOSER_STOP_EVENT,
+  useWorkspaceAttention,
+  useWorkspaceContext,
   workspaceComposerStopAppliesToSession,
   type PaneProps,
   type PluginProviderProps,
 } from "@hachej/boring-workspace"
 import {
   definePlugin,
+  type BoringFrontAppLeftOverlayProps,
   type BoringFrontFactoryWithId,
 } from "@hachej/boring-workspace/plugin"
-import { HelpCircle, XCircle } from "lucide-react"
+import { HelpCircle, Inbox, XCircle } from "lucide-react"
 import { useEffect, useMemo, useRef, useSyncExternalStore, useState } from "react"
 import { ASK_USER_PANEL_ID, ASK_USER_PANEL_TITLE, ASK_USER_PLUGIN_ID, ASK_USER_SURFACE_KIND } from "../shared/constants"
 import { createQuestionsClient, QuestionsClientError } from "./client"
@@ -31,6 +34,8 @@ import {
   useAskUserPendingRefresh,
 } from "./providerHooks"
 import { QuestionCancelButton, QuestionFields, QuestionForm, QuestionFormProvider, QuestionSubmitButton } from "./primitives"
+import { InboxOverlay } from "./inbox/InboxOverlay"
+import { isInboxAttentionBlocker } from "./inbox/attentionBlockerAdapter"
 
 function AskUserProvider({ apiBaseUrl, authHeaders, activeSessionId, openSessionIds, children }: PluginProviderProps) {
   const runtime = useMemo<QuestionsRuntime>(() => ({
@@ -61,6 +66,9 @@ type QuestionsPaneParams = { questionId?: string; sessionId?: string; __closeWor
 function paneQuestionSessionId(runtime: QuestionsRuntime, params: QuestionsPaneParams | undefined): string | null {
   const activeSessionId = runtime.activeSessionId ?? null
   if (activeSessionId && isPaneSessionVisible(runtime, activeSessionId) && hasReadyQuestion(runtime, activeSessionId)) return activeSessionId
+  if (params?.sessionId && hasReadyQuestion(runtime, params.sessionId)) return params.sessionId
+  const hintedSessionId = runtime.getPendingHints().find((hint) => !hint.status || hint.status === "ready")?.sessionId
+  if (hintedSessionId) return hintedSessionId
   if (params?.sessionId && isPaneSessionVisible(runtime, params.sessionId)) return params.sessionId
   return activeSessionId && isPaneSessionVisible(runtime, activeSessionId) ? activeSessionId : null
 }
@@ -79,8 +87,34 @@ function hasReadyQuestion(runtime: QuestionsRuntime, sessionId: string): boolean
   return runtime.getPendingHints().some((hint) => hint.sessionId === sessionId && (!hint.status || hint.status === "ready"))
 }
 
+function InboxCountBadge() {
+  const { blockers } = useWorkspaceAttention()
+  const count = blockers.filter(isInboxAttentionBlocker).length
+  if (count === 0) return null
+  const label = count > 99 ? "99+" : String(count)
+  return (
+    <span
+      data-boring-workspace-part="app-left-inbox-count"
+      aria-label={`${count} inbox item${count === 1 ? "" : "s"}`}
+      className="inline-flex min-w-5 items-center justify-center rounded-full bg-[color:var(--accent)] px-1.5 py-0.5 text-[10px] font-semibold leading-none text-white shadow-sm"
+    >
+      {label}
+    </span>
+  )
+}
+
+function AskUserInboxOverlay({ onClose }: BoringFrontAppLeftOverlayProps) {
+  const { workspaceId } = useWorkspaceContext()
+  return <InboxOverlay onClose={onClose} pinStorageKey={`boring-workspace:inbox-pins:${workspaceId ?? "workspace"}`} />
+}
+
 function QuestionsPane({ api, params, className }: PaneProps<QuestionsPaneParams>) {
   const runtime = useQuestionsRuntime()
+  // Subscribe to the full pending snapshot, not only the currently selected
+  // session payload. A fresh/demo page can mount with a new active session while
+  // the server-published pending hint belongs to an older hidden session. The
+  // selected pane session must be allowed to change when hints hydrate.
+  useSyncExternalStore(runtime.subscribe, () => pendingQuestionSnapshot(runtime), () => "none")
   const paneSessionId = paneQuestionSessionId(runtime, params)
   const pending = useSyncExternalStore(runtime.subscribe, () => runtime.getPending(paneSessionId), () => runtime.getPending(paneSessionId))
   const [closedQuestionId, setClosedQuestionId] = useState<string | null>(null)
@@ -91,6 +125,13 @@ function QuestionsPane({ api, params, className }: PaneProps<QuestionsPaneParams
   const client = useMemo(() => createQuestionsClient({ apiBaseUrl: runtime.apiBaseUrl, headers: runtime.authHeaders }), [runtime.apiBaseUrl, runtime.authHeaders])
   useEffect(() => {
     if (!params?.sessionId || !isPaneSessionKnownHidden(runtime, params.sessionId)) return
+    if (hasReadyQuestion(runtime, params.sessionId)) return
+    const hints = runtime.getPendingHints()
+    // On first mount the provider may not have loaded /api/v1/ui/state yet.
+    // Do not close a hidden-session pane until the authoritative hints have
+    // arrived; otherwise a fresh/demo route can flash-close before hydrating
+    // the blocking question for its original session.
+    if (hints.length === 0) return
     const activeSessionId = runtime.activeSessionId ?? null
     const canShowActiveQuestion = activeSessionId && isPaneSessionVisible(runtime, activeSessionId) && hasReadyQuestion(runtime, activeSessionId)
     if (!canShowActiveQuestion) api.close()
@@ -166,8 +207,13 @@ function QuestionsPane({ api, params, className }: PaneProps<QuestionsPaneParams
   </div>
 }
 
+export interface CreateAskUserPluginOptions {
+  /** Register the workspace Inbox button/overlay in the app-left rail. */
+  appLeftInbox?: boolean
+}
+
 /**
- * `BoringFrontFactoryWithId` for the ask-user plugin. Registers
+ * Creates a `BoringFrontFactoryWithId` for the ask-user plugin. Registers
  * (1) a provider that owns the per-app questions runtime (apiBaseUrl,
  * auth headers, in-memory pending-question store), (2) a "Questions"
  * panel rendering the pending question form, and (3) a surface
@@ -176,9 +222,11 @@ function QuestionsPane({ api, params, className }: PaneProps<QuestionsPaneParams
  * Pass directly to `WorkspaceProvider.plugins`.
  *
  * The panel is opened via the surface resolver (kind: ASK_USER_SURFACE_KIND),
- * which is how the server-side agent tool triggers it.
+ * which is how the server-side agent tool triggers it. The app-left Inbox
+ * button is opt-in via `appLeftInbox`.
  */
-export const askUserPlugin: BoringFrontFactoryWithId = definePlugin({
+export function createAskUserPlugin(options: CreateAskUserPluginOptions = {}): BoringFrontFactoryWithId {
+  return definePlugin({
   id: ASK_USER_PLUGIN_ID,
   label: ASK_USER_PANEL_TITLE,
   providers: [
@@ -198,6 +246,16 @@ export const askUserPlugin: BoringFrontFactoryWithId = definePlugin({
       chromeless: true,
     },
   ],
+  appLeftActions: options.appLeftInbox ? [
+    {
+      id: "inbox",
+      label: "Inbox",
+      icon: Inbox,
+      trailing: InboxCountBadge,
+      overlay: AskUserInboxOverlay,
+      order: 10,
+    },
+  ] : [],
   surfaceResolvers: [
     {
       id: `${ASK_USER_PLUGIN_ID}.surface`,
@@ -219,6 +277,11 @@ export const askUserPlugin: BoringFrontFactoryWithId = definePlugin({
       },
     },
   ],
-})
+  })
+}
+
+export const askUserPlugin: BoringFrontFactoryWithId = createAskUserPlugin()
+
+export { inboxDemoPlugin, createInboxDemoBlockers, INBOX_DEMO_SESSION_ID } from "./inbox/examples/inboxDemoPlugin"
 
 export default askUserPlugin
