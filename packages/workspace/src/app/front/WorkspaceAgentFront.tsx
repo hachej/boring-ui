@@ -188,8 +188,6 @@ export interface WorkspaceAgentFrontProps<
    * UserMenu) should set this to false to avoid a duplicate control.
    */
   showThemeToggle?: boolean
-  /** Show the plugin-tabs Inbox action/overlay. Defaults to true. */
-  showInbox?: boolean
   /** Initial plugin-tabs overlay, useful for demos/deep links. */
   defaultLeftOverlay?: string | null
   /** Show the plugin-tabs Skills action/overlay. Defaults to true. */
@@ -447,7 +445,6 @@ export function WorkspaceAgentFront<
   topBarLeft,
   topBarRight,
   showThemeToggle = true,
-  showInbox = true,
   defaultLeftOverlay = null,
   showSkills = true,
   showPlugins = true,
@@ -479,7 +476,6 @@ export function WorkspaceAgentFront<
   )
   const shellPersistenceEnabled = persistenceEnabled !== false
   const isPluginTabsLayout = workspaceLayout === "plugin-tabs"
-  const inboxActionEnabled = showInbox !== false
   const skillsActionEnabled = showSkills !== false
   const pluginsActionEnabled = showPlugins !== false
   // Skills is only ever a chat-left overlay (see leftOverlay node below); it is
@@ -810,9 +806,8 @@ export function WorkspaceAgentFront<
   const effectiveAppLeftPaneWidth = clampNumber(appLeftPaneWidth, 220, 420)
   const capturedPlugins = useMemo(() => captureWorkspaceFrontPlugins({
     plugins,
-    inboxEnabled: inboxActionEnabled,
     excludeDefaults,
-  }), [excludeDefaults, inboxActionEnabled, plugins])
+  }), [excludeDefaults, plugins])
   const [leftOverlay, setLeftOverlay] = useState<AppLeftOverlayId>(defaultLeftOverlay)
   const pluginOverlayActionIds = useMemo(() => pluginAppLeftActionIds(capturedPlugins), [capturedPlugins])
   useEffect(() => {

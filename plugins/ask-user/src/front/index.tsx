@@ -2,16 +2,21 @@
 
 import { Button, EmptyState, Notice, Pane, PaneBody, PaneFooter, PaneHeader, PaneTitle } from "@hachej/boring-ui-kit"
 import {
+  InboxOverlay,
   WORKSPACE_COMPOSER_STOP_EVENT,
+  isInboxAttentionBlocker,
+  useWorkspaceAttention,
+  useWorkspaceContext,
   workspaceComposerStopAppliesToSession,
   type PaneProps,
   type PluginProviderProps,
 } from "@hachej/boring-workspace"
 import {
   definePlugin,
+  type BoringFrontAppLeftOverlayProps,
   type BoringFrontFactoryWithId,
 } from "@hachej/boring-workspace/plugin"
-import { HelpCircle, XCircle } from "lucide-react"
+import { HelpCircle, Inbox, XCircle } from "lucide-react"
 import { useEffect, useMemo, useRef, useSyncExternalStore, useState } from "react"
 import { ASK_USER_PANEL_ID, ASK_USER_PANEL_TITLE, ASK_USER_PLUGIN_ID, ASK_USER_SURFACE_KIND } from "../shared/constants"
 import { createQuestionsClient, QuestionsClientError } from "./client"
@@ -80,6 +85,27 @@ function hasReadyQuestion(runtime: QuestionsRuntime, sessionId: string): boolean
   const pending = runtime.getPending(sessionId)
   if (pending?.status === "ready") return true
   return runtime.getPendingHints().some((hint) => hint.sessionId === sessionId && (!hint.status || hint.status === "ready"))
+}
+
+function InboxCountBadge() {
+  const { blockers } = useWorkspaceAttention()
+  const count = blockers.filter(isInboxAttentionBlocker).length
+  if (count === 0) return null
+  const label = count > 99 ? "99+" : String(count)
+  return (
+    <span
+      data-boring-workspace-part="app-left-inbox-count"
+      aria-label={`${count} inbox item${count === 1 ? "" : "s"}`}
+      className="inline-flex min-w-5 items-center justify-center rounded-full bg-[color:var(--accent)] px-1.5 py-0.5 text-[10px] font-semibold leading-none text-white shadow-sm"
+    >
+      {label}
+    </span>
+  )
+}
+
+function AskUserInboxOverlay({ onClose }: BoringFrontAppLeftOverlayProps) {
+  const { workspaceId } = useWorkspaceContext()
+  return <InboxOverlay onClose={onClose} pinStorageKey={`boring-workspace:inbox-pins:${workspaceId ?? "workspace"}`} />
 }
 
 function QuestionsPane({ api, params, className }: PaneProps<QuestionsPaneParams>) {
@@ -181,8 +207,13 @@ function QuestionsPane({ api, params, className }: PaneProps<QuestionsPaneParams
   </div>
 }
 
+export interface CreateAskUserPluginOptions {
+  /** Register the workspace Inbox button/overlay in the app-left rail. */
+  appLeftInbox?: boolean
+}
+
 /**
- * `BoringFrontFactoryWithId` for the ask-user plugin. Registers
+ * Creates a `BoringFrontFactoryWithId` for the ask-user plugin. Registers
  * (1) a provider that owns the per-app questions runtime (apiBaseUrl,
  * auth headers, in-memory pending-question store), (2) a "Questions"
  * panel rendering the pending question form, and (3) a surface
@@ -191,9 +222,11 @@ function QuestionsPane({ api, params, className }: PaneProps<QuestionsPaneParams
  * Pass directly to `WorkspaceProvider.plugins`.
  *
  * The panel is opened via the surface resolver (kind: ASK_USER_SURFACE_KIND),
- * which is how the server-side agent tool triggers it.
+ * which is how the server-side agent tool triggers it. The app-left Inbox
+ * button is opt-in via `appLeftInbox`.
  */
-export const askUserPlugin: BoringFrontFactoryWithId = definePlugin({
+export function createAskUserPlugin(options: CreateAskUserPluginOptions = {}): BoringFrontFactoryWithId {
+  return definePlugin({
   id: ASK_USER_PLUGIN_ID,
   label: ASK_USER_PANEL_TITLE,
   providers: [
@@ -213,6 +246,16 @@ export const askUserPlugin: BoringFrontFactoryWithId = definePlugin({
       chromeless: true,
     },
   ],
+  appLeftActions: options.appLeftInbox ? [
+    {
+      id: "inbox",
+      label: "Inbox",
+      icon: Inbox,
+      trailing: InboxCountBadge,
+      overlay: AskUserInboxOverlay,
+      order: 10,
+    },
+  ] : [],
   surfaceResolvers: [
     {
       id: `${ASK_USER_PLUGIN_ID}.surface`,
@@ -234,6 +277,9 @@ export const askUserPlugin: BoringFrontFactoryWithId = definePlugin({
       },
     },
   ],
-})
+  })
+}
+
+export const askUserPlugin: BoringFrontFactoryWithId = createAskUserPlugin()
 
 export default askUserPlugin

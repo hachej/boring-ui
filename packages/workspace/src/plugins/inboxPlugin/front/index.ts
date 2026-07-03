@@ -1,4 +1,3 @@
-export { workspaceInboxPlugin } from "./definition"
 export { InboxOverlay } from "./InboxOverlay"
 export { useWorkspaceInboxShell } from "./WorkspaceInboxShellContext"
 export type {
@@ -14,4 +13,4 @@ export type {
   WorkspaceInboxShellResult,
 } from "./inboxItemModel"
 
-export { attentionBlockerToInboxItem } from "./attentionBlockerAdapter"
+export { attentionBlockerToInboxItem, isInboxAttentionBlocker } from "./attentionBlockerAdapter"

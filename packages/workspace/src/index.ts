@@ -58,6 +58,7 @@ export {
 } from "./front/plugin"
 export type { PluginError as PluginContributionError, WorkspacePluginClient } from "./front/plugin"
 export { inboxDemoPlugin, createInboxDemoBlockers, INBOX_DEMO_SESSION_ID } from "./plugins/inboxPlugin/examples/inboxDemoPlugin"
+export { InboxOverlay, isInboxAttentionBlocker } from "./plugins/inboxPlugin/front"
 
 export {
   filesystemPlugin,
