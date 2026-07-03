@@ -22,6 +22,11 @@ This workbook will become the operator guide as implementation PRs land.
    - Arcade project configured for the workspace/tenant.
 2. **Arcade backend/provider setup**
    - Connect the SharePoint/Microsoft 365 integration through Arcade.
+   - Configure the server runtime environment:
+     - `BORING_SHAREPOINT_ARCADE_API_KEY` — required Arcade API key; never log this value.
+     - `BORING_SHAREPOINT_ARCADE_DEFAULT_USER_ID` — optional default Arcade user id for local/operator testing.
+     - `BORING_SHAREPOINT_ARCADE_PROVIDER_ID` — optional provider id, defaults to `microsoft`.
+     - `BORING_SHAREPOINT_ARCADE_BASE_URL` — optional Arcade API base URL override.
    - Confirm Microsoft scopes needed by each capability.
    - Confirm tenant/admin consent requirements.
 3. **boring-ui workspace connection**
@@ -68,14 +73,15 @@ The app-left action opens the placeholder SharePoint / Microsoft 365 status over
 
 ## Current scope
 
-This PR adds front-only display wiring on top of the shell + contracts:
+This PR adds server-only Arcade runtime primitives on top of the shell/display stack:
 
-- surface resolver for `*.xlsx.cloud.json` and `*.pptx.cloud.json`
-- virtual display metadata for Office cloud-ref paths
-- placeholder Office preview panel with an **Open in SharePoint** action when a safe `webUrl` is available
-- placeholder SharePoint / Microsoft 365 settings/status panel and app-left overlay
-- no Arcade SDK dependency
+- `ArcadeJsToolRuntime` wraps `@arcadeai/arcadejs` behind server internals.
+- Arcade tool execution uses the SDK shape `{ tool_name, user_id, input }`.
+- Arcade authorization/tool auth responses normalize into shared `IntegrationAuthState` without exporting Arcade SDK types.
+- Arcade config is read from the `BORING_SHAREPOINT_ARCADE_*` environment variables listed above.
+- Redaction helpers keep API keys, bearer tokens, and token query strings out of logs.
+- tests use mocked Arcade clients only.
 - no Microsoft Graph calls
-- no external network calls
-- no iframe preview/edit/provider behavior
+- no external network calls in tests
+- no SharePoint discovery, iframe preview, edit, or provider behavior yet
 - no SharePoint-specific workspace chrome branches
