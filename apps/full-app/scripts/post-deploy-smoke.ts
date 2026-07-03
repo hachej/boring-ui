@@ -1,4 +1,4 @@
-const BEAD_ID = 'boring-ui-v2-6u3z'
+const TASK_ID = 'boring-ui-v2-6u3z'
 const REQUEST_TIMEOUT_MS = readPositiveIntEnv('SMOKE_REQUEST_TIMEOUT_MS', 10_000)
 const RESEND_POLL_TIMEOUT_MS = 60_000
 const RESEND_POLL_INTERVAL_MS = 5_000
@@ -81,7 +81,7 @@ function log(level: 'info' | 'warn' | 'error', event: string, fields: LogFields 
     ts: new Date().toISOString(),
     level,
     event,
-    bead: BEAD_ID,
+    task: TASK_ID,
     ...fields,
   }
 
@@ -1141,7 +1141,6 @@ async function main(): Promise<void> {
 
   log('info', 'smoke.start', {
     deployUrl: baseUrl,
-    bead: BEAD_ID,
     timeoutMs: REQUEST_TIMEOUT_MS,
   })
 

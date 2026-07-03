@@ -26,11 +26,11 @@ vi.mock('better-auth/client/plugins', () => ({
   magicLinkClient: () => ({ id: 'magic-link' }),
 }))
 
-import { withBeadId } from '../../server/__tests__/_setup'
+import { withTaskId } from '../../server/__tests__/_setup'
 import { AuthProvider } from '../auth/AuthProvider'
 import { VerifyEmailPage } from '../auth/VerifyEmailPage'
 
-const BEAD_ID = 'boring-ui-v2-b2hj'
+const TASK_ID = 'boring-ui-v2-b2hj'
 
 function Wrapper({ children }: { children: ReactNode }) {
   return <AuthProvider>{children}</AuthProvider>
@@ -53,7 +53,7 @@ afterEach(() => {
 describe('VerifyEmailPage', () => {
   it(
     'shows invalid link UI when no token in URL',
-    withBeadId(BEAD_ID, async ({ assertionPassed }) => {
+    withTaskId(TASK_ID, async ({ assertionPassed }) => {
       window.history.pushState({}, '', '/auth/verify-email')
 
       render(<VerifyEmailPage />, { wrapper: Wrapper })
@@ -67,7 +67,7 @@ describe('VerifyEmailPage', () => {
 
   it(
     'shows check-your-email UI for signed-in users redirected without a token',
-    withBeadId(BEAD_ID, async ({ assertionPassed }) => {
+    withTaskId(TASK_ID, async ({ assertionPassed }) => {
       mockUseSession.mockReturnValue({
         data: { user: { id: 'u1', email: 'test@test.dev', emailVerified: false }, expiresAt: '' },
         isPending: false,
@@ -87,7 +87,7 @@ describe('VerifyEmailPage', () => {
 
   it(
     'shows verifying state then verified on success',
-    withBeadId(BEAD_ID, async ({ assertionPassed }) => {
+    withTaskId(TASK_ID, async ({ assertionPassed }) => {
       let resolveVerify!: (v: unknown) => void
       mockVerifyEmail.mockReturnValue(
         new Promise((resolve) => {
@@ -115,7 +115,7 @@ describe('VerifyEmailPage', () => {
 
   it(
     'shows expired UI on 410 response',
-    withBeadId(BEAD_ID, async ({ assertionPassed }) => {
+    withTaskId(TASK_ID, async ({ assertionPassed }) => {
       mockVerifyEmail.mockResolvedValue({
         data: null,
         error: { status: 410, message: 'Token expired' },
@@ -134,7 +134,7 @@ describe('VerifyEmailPage', () => {
 
   it(
     'shows invalid UI on generic error',
-    withBeadId(BEAD_ID, async ({ assertionPassed }) => {
+    withTaskId(TASK_ID, async ({ assertionPassed }) => {
       mockVerifyEmail.mockResolvedValue({
         data: null,
         error: { status: 400, message: 'Invalid token' },
@@ -152,7 +152,7 @@ describe('VerifyEmailPage', () => {
 
   it(
     'shows invalid UI on thrown error',
-    withBeadId(BEAD_ID, async ({ assertionPassed }) => {
+    withTaskId(TASK_ID, async ({ assertionPassed }) => {
       mockVerifyEmail.mockRejectedValue(new Error('Network error'))
       window.history.pushState({}, '', '/auth/verify-email?token=network-fail')
 
@@ -167,7 +167,7 @@ describe('VerifyEmailPage', () => {
 
   it(
     'resend button calls sendVerificationEmail with session email',
-    withBeadId(BEAD_ID, async ({ assertionPassed }) => {
+    withTaskId(TASK_ID, async ({ assertionPassed }) => {
       mockUseSession.mockReturnValue({
         data: { user: { id: 'u1', email: 'test@test.dev', emailVerified: false }, expiresAt: '' },
         isPending: false,
@@ -198,7 +198,7 @@ describe('VerifyEmailPage', () => {
 
   it(
     'resend button requires email input when no session',
-    withBeadId(BEAD_ID, async ({ assertionPassed }) => {
+    withTaskId(TASK_ID, async ({ assertionPassed }) => {
       mockVerifyEmail.mockResolvedValue({
         data: null,
         error: { status: 410, message: 'Expired' },
@@ -230,7 +230,7 @@ describe('VerifyEmailPage', () => {
 
   it(
     'resend cooldown disables button for 60s with visible countdown',
-    withBeadId(BEAD_ID, async ({ assertionPassed }) => {
+    withTaskId(TASK_ID, async ({ assertionPassed }) => {
       vi.useFakeTimers({ shouldAdvanceTime: true })
 
       mockUseSession.mockReturnValue({
@@ -280,7 +280,7 @@ describe('VerifyEmailPage', () => {
 
   it(
     'reads boring_invite_failed cookie and renders alert',
-    withBeadId(BEAD_ID, async ({ assertionPassed }) => {
+    withTaskId(TASK_ID, async ({ assertionPassed }) => {
       document.cookie = 'boring_invite_failed=Your invite link was invalid; you are signed in.'
       mockVerifyEmail.mockResolvedValue({ data: { status: true }, error: null })
       window.history.pushState({}, '', '/auth/verify-email?token=valid')
@@ -302,7 +302,7 @@ describe('VerifyEmailPage', () => {
 
   it(
     'deletes boring_invite_failed cookie after reading',
-    withBeadId(BEAD_ID, async ({ assertionPassed }) => {
+    withTaskId(TASK_ID, async ({ assertionPassed }) => {
       document.cookie = 'boring_invite_failed=test-message'
       window.history.pushState({}, '', '/auth/verify-email')
 
@@ -316,7 +316,7 @@ describe('VerifyEmailPage', () => {
 
   it(
     'signs out before returning to sign in from error states',
-    withBeadId(BEAD_ID, async ({ assertionPassed }) => {
+    withTaskId(TASK_ID, async ({ assertionPassed }) => {
       mockUseSession.mockReturnValue({
         data: { user: { id: 'u1', email: 'test@test.dev', emailVerified: false }, expiresAt: '' },
         isPending: false,
@@ -337,7 +337,7 @@ describe('VerifyEmailPage', () => {
 
   it(
     'calls verifyEmail with token from URL',
-    withBeadId(BEAD_ID, async ({ assertionPassed }) => {
+    withTaskId(TASK_ID, async ({ assertionPassed }) => {
       window.history.pushState({}, '', '/auth/verify-email?token=my-token-123')
 
       render(<VerifyEmailPage />, { wrapper: Wrapper })

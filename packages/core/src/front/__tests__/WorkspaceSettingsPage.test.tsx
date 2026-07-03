@@ -5,12 +5,12 @@ import { MemoryRouter, Route, Routes } from 'react-router-dom'
 import type { ReactNode } from 'react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
-import { withBeadId } from '../../server/__tests__/_setup'
+import { withTaskId } from '../../server/__tests__/_setup'
 import { WorkspaceSettingsPage } from '../workspace/WorkspaceSettingsPage'
 import { useMswHandler } from './_setup'
 import type { WorkspaceRuntime } from '../../shared/types'
 
-const BEAD_ID = 'boring-ui-v2-dbd9'
+const TASK_ID = 'boring-ui-v2-dbd9'
 const WS_ID = 'ws-settings-001'
 const WS_NAME = 'Test Workspace'
 
@@ -119,7 +119,7 @@ function makeRuntime(overrides: Partial<WorkspaceRuntime> = {}): WorkspaceRuntim
 describe('WorkspaceSettingsPage', () => {
   it(
     'renders name editor with current name',
-    withBeadId(BEAD_ID, async ({ assertionPassed }) => {
+    withTaskId(TASK_ID, async ({ assertionPassed }) => {
       const qc = createQueryClient()
       setupRuntimeHandler(null)
 
@@ -139,7 +139,7 @@ describe('WorkspaceSettingsPage', () => {
 
   it(
     'edit + save calls PUT and invalidates query',
-    withBeadId(BEAD_ID, async ({ assertionPassed }) => {
+    withTaskId(TASK_ID, async ({ assertionPassed }) => {
       const qc = createQueryClient()
       let putCalled = false
       let putBody: any = null
@@ -181,7 +181,7 @@ describe('WorkspaceSettingsPage', () => {
 
   it(
     'encodes workspace id in settings API URLs',
-    withBeadId(BEAD_ID, async ({ assertionPassed }) => {
+    withTaskId(TASK_ID, async ({ assertionPassed }) => {
       const qc = createQueryClient()
       const specialWorkspaceId = 'team/a b'
       const encodedWorkspaceId = encodeURIComponent(specialWorkspaceId)
@@ -274,7 +274,7 @@ describe('WorkspaceSettingsPage', () => {
 
   it(
     'no runtime row: runtime card NOT rendered',
-    withBeadId(BEAD_ID, async ({ assertionPassed }) => {
+    withTaskId(TASK_ID, async ({ assertionPassed }) => {
       const qc = createQueryClient()
       setupRuntimeHandler(null)
 
@@ -294,7 +294,7 @@ describe('WorkspaceSettingsPage', () => {
 
   it(
     'runtime ready: card shows state=ready + volumePath',
-    withBeadId(BEAD_ID, async ({ assertionPassed }) => {
+    withTaskId(TASK_ID, async ({ assertionPassed }) => {
       const qc = createQueryClient()
       setupRuntimeHandler(makeRuntime({ state: 'ready', volumePath: '/data/ws-001' }))
 
@@ -315,7 +315,7 @@ describe('WorkspaceSettingsPage', () => {
 
   it(
     'runtime error + provision op: shows error + Retry button, click calls retry',
-    withBeadId(BEAD_ID, async ({ assertionPassed }) => {
+    withTaskId(TASK_ID, async ({ assertionPassed }) => {
       const qc = createQueryClient()
       let retryCalled = false
 
@@ -356,7 +356,7 @@ describe('WorkspaceSettingsPage', () => {
 
   it(
     'runtime error + destroy op: shows error + guidance, no Retry button',
-    withBeadId(BEAD_ID, async ({ assertionPassed }) => {
+    withTaskId(TASK_ID, async ({ assertionPassed }) => {
       const qc = createQueryClient()
 
       setupRuntimeHandler(
@@ -382,7 +382,7 @@ describe('WorkspaceSettingsPage', () => {
 
   it(
     'delete confirm: requires typing workspace name, otherwise button disabled',
-    withBeadId(BEAD_ID, async ({ assertionPassed }) => {
+    withTaskId(TASK_ID, async ({ assertionPassed }) => {
       const qc = createQueryClient()
       setupRuntimeHandler(null)
 
@@ -412,7 +412,7 @@ describe('WorkspaceSettingsPage', () => {
 
   it(
     'delete success: navigates home + invalidates workspaces',
-    withBeadId(BEAD_ID, async ({ assertionPassed }) => {
+    withTaskId(TASK_ID, async ({ assertionPassed }) => {
       const qc = createQueryClient()
       let deleteCalled = false
       setupRuntimeHandler(null)
@@ -452,7 +452,7 @@ describe('WorkspaceSettingsPage', () => {
 
   it(
     'delete failure (DESTROY_FAILED): shows error inline, stays on page',
-    withBeadId(BEAD_ID, async ({ assertionPassed }) => {
+    withTaskId(TASK_ID, async ({ assertionPassed }) => {
       const qc = createQueryClient()
       setupRuntimeHandler(null)
 

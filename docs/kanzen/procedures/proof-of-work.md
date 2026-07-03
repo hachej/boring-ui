@@ -1,6 +1,12 @@
 # Proof-of-work procedure
 
-Every GitHub issue/PR implementation must leave auditable proof that the job is done. A PR is not ready for human review until the agent posts a final GitHub proof comment.
+Every GitHub issue/PR implementation must leave auditable proof that the job is
+done. A PR is not ready for human review until the agent posts a final GitHub
+proof comment for the current head SHA.
+
+PR-body proof, CI summaries, and local notes are useful context, but they do
+not replace the final proof comment. If a run is read-only or lacks GitHub
+access, report the missing proof comment as the blocker.
 
 ## Required proof comment
 

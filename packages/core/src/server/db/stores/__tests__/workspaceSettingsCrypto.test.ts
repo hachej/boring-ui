@@ -4,13 +4,13 @@ import { drizzle } from 'drizzle-orm/postgres-js'
 import postgres from 'postgres'
 
 import type { CoreConfig } from '../../../../shared/types'
-import { withBeadId } from '../../../__tests__/_setup'
+import { withTaskId } from '../../../__tests__/_setup'
 import { runMigrations } from '../../migrate'
 import { PostgresWorkspaceStore } from '../PostgresWorkspaceStore'
 
 const TEST_DB_URL = process.env.DATABASE_URL ?? 'postgres://ubuntu:test@localhost/boring_ui_test'
 const APP_ID = 'iozo-crypto-app'
-const BEAD_ID = 'boring-ui-v2-iozo'
+const TASK_ID = 'boring-ui-v2-iozo'
 const ENCRYPTION_KEY_A = 'a'.repeat(64)
 const ENCRYPTION_KEY_B = 'b'.repeat(64)
 const SECRET = 'sk_live_abcdef'
@@ -111,7 +111,7 @@ beforeEach(async () => {
 describe('workspace settings crypto', () => {
   it(
     'round-trips encrypted settings through typed accessors',
-    withBeadId(BEAD_ID, async ({ assertionPassed }) => {
+    withTaskId(TASK_ID, async ({ assertionPassed }) => {
       const { workspaceId } = await seedWorkspace()
 
       const metadata = await store.putWorkspaceSettings(workspaceId, {
@@ -132,7 +132,7 @@ describe('workspace settings crypto', () => {
 
   it(
     'stores ciphertext bytes instead of plaintext',
-    withBeadId(BEAD_ID, async ({ assertionPassed }) => {
+    withTaskId(TASK_ID, async ({ assertionPassed }) => {
       const { workspaceId } = await seedWorkspace()
       await store.putWorkspaceSettings(workspaceId, { api_key: SECRET })
 
@@ -146,7 +146,7 @@ describe('workspace settings crypto', () => {
 
   it(
     'surfaces wrong-key decrypt failure without returning garbage',
-    withBeadId(BEAD_ID, async ({ assertionPassed }) => {
+    withTaskId(TASK_ID, async ({ assertionPassed }) => {
       const { workspaceId } = await seedWorkspace()
       await store.putWorkspaceSettings(workspaceId, { api_key: SECRET })
 
@@ -165,7 +165,7 @@ describe('workspace settings crypto', () => {
 
   it(
     'uses fresh ciphertext for repeated writes of the same plaintext',
-    withBeadId(BEAD_ID, async ({ assertionPassed }) => {
+    withTaskId(TASK_ID, async ({ assertionPassed }) => {
       const { workspaceId } = await seedWorkspace()
 
       await store.putWorkspaceSettings(workspaceId, { api_key: SECRET })

@@ -2,10 +2,10 @@
 import { renderHook } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
-import { withBeadId } from '../../server/__tests__/_setup'
+import { withTaskId } from '../../server/__tests__/_setup'
 import { useBlobUrl } from '../hooks/useBlobUrl'
 
-const BEAD_ID = 'boring-ui-v2-d37p'
+const TASK_ID = 'boring-ui-v2-d37p'
 
 afterEach(() => {
   vi.restoreAllMocks()
@@ -14,7 +14,7 @@ afterEach(() => {
 describe('useBlobUrl hook', () => {
   it(
     'creates and revokes blob URLs across change/null/unmount lifecycle',
-    withBeadId(BEAD_ID, async ({ assertionPassed }) => {
+    withTaskId(TASK_ID, async ({ assertionPassed }) => {
       let counter = 0
       const createSpy = vi.fn(() => `blob:mock-${counter += 1}`)
       const revokeSpy = vi.fn()

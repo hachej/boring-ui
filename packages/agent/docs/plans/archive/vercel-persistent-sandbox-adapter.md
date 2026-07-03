@@ -475,7 +475,7 @@ Acceptance:
   no longer needed.
 - Decide whether to rename channel from `persistent-beta` to `persistent`.
 - Keep backwards compatibility for old stable records until an explicit cleanup
-  bead removes it.
+  task removes it.
 
 ## Test Matrix
 

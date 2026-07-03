@@ -23,11 +23,11 @@ vi.mock('better-auth/client/plugins', () => ({
   magicLinkClient: () => ({ id: 'magic-link' }),
 }))
 
-import { withBeadId } from '../../server/__tests__/_setup'
+import { withTaskId } from '../../server/__tests__/_setup'
 import { AuthProvider } from '../auth/AuthProvider'
 import { ResetPasswordPage } from '../auth/ResetPasswordPage'
 
-const BEAD_ID = 'boring-ui-v2-p8c9'
+const TASK_ID = 'boring-ui-v2-p8c9'
 
 function Wrapper({ children }: { children: ReactNode }) {
   return <AuthProvider>{children}</AuthProvider>
@@ -47,7 +47,7 @@ afterEach(() => {
 describe('ResetPasswordPage', () => {
   it(
     'shows expired UI when no token in URL',
-    withBeadId(BEAD_ID, async ({ assertionPassed }) => {
+    withTaskId(TASK_ID, async ({ assertionPassed }) => {
       window.history.pushState({}, '', '/auth/reset-password')
 
       render(<ResetPasswordPage />, { wrapper: Wrapper })
@@ -62,7 +62,7 @@ describe('ResetPasswordPage', () => {
 
   it(
     'rejects mismatched passwords client-side without fetch',
-    withBeadId(BEAD_ID, async ({ assertionPassed }) => {
+    withTaskId(TASK_ID, async ({ assertionPassed }) => {
       window.history.pushState({}, '', '/auth/reset-password?token=valid-token')
 
       render(<ResetPasswordPage />, { wrapper: Wrapper })
@@ -82,7 +82,7 @@ describe('ResetPasswordPage', () => {
 
   it(
     'shows expired UI on 410 server response',
-    withBeadId(BEAD_ID, async ({ assertionPassed }) => {
+    withTaskId(TASK_ID, async ({ assertionPassed }) => {
       window.history.pushState({}, '', '/auth/reset-password?token=expired-token')
       mockResetPassword.mockResolvedValue({
         error: { status: 410, message: 'Token expired' },
@@ -104,7 +104,7 @@ describe('ResetPasswordPage', () => {
 
   it(
     'shows inline error for weak password from server',
-    withBeadId(BEAD_ID, async ({ assertionPassed }) => {
+    withTaskId(TASK_ID, async ({ assertionPassed }) => {
       window.history.pushState({}, '', '/auth/reset-password?token=valid-token')
       mockResetPassword.mockResolvedValue({
         error: { status: 400, message: 'Password is too common' },
@@ -126,7 +126,7 @@ describe('ResetPasswordPage', () => {
 
   it(
     'rejects password shorter than 8 chars client-side',
-    withBeadId(BEAD_ID, async ({ assertionPassed }) => {
+    withTaskId(TASK_ID, async ({ assertionPassed }) => {
       window.history.pushState({}, '', '/auth/reset-password?token=valid-token')
 
       render(<ResetPasswordPage />, { wrapper: Wrapper })

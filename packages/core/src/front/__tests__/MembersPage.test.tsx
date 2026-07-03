@@ -6,12 +6,12 @@ import { MemoryRouter, Route, Routes } from 'react-router-dom'
 import type { ReactNode } from 'react'
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest'
 
-import { withBeadId } from '../../server/__tests__/_setup'
+import { withTaskId } from '../../server/__tests__/_setup'
 import type { EnrichedMember } from '../hooks/useWorkspaceMembers'
 import { MembersPage } from '../workspace/MembersPage'
 import { useMswHandler } from './_setup'
 
-const BEAD_ID = 'boring-ui-v2-am3l'
+const TASK_ID = 'boring-ui-v2-am3l'
 const WS_ID = 'ws-001'
 const OWNER_ID = 'user-owner'
 const EDITOR_ID = 'user-editor'
@@ -119,7 +119,7 @@ function setupMembersHandler(members: EnrichedMember[] = [OWNER_MEMBER, EDITOR_M
 describe('MembersPage', () => {
   it(
     'renders all members',
-    withBeadId(BEAD_ID, async ({ assertionPassed }) => {
+    withTaskId(TASK_ID, async ({ assertionPassed }) => {
       const qc = createQueryClient()
       setupMembersHandler()
 
@@ -141,7 +141,7 @@ describe('MembersPage', () => {
 
   it(
     'role dropdown calls PATCH on change',
-    withBeadId(BEAD_ID, async ({ assertionPassed }) => {
+    withTaskId(TASK_ID, async ({ assertionPassed }) => {
       const qc = createQueryClient()
       let patchCalled = false
       let patchBody: any = null
@@ -187,7 +187,7 @@ describe('MembersPage', () => {
 
   it(
     'LAST_OWNER on demote shows toast and reverts',
-    withBeadId(BEAD_ID, async ({ assertionPassed }) => {
+    withTaskId(TASK_ID, async ({ assertionPassed }) => {
       const qc = createQueryClient()
       const soloOwner = makeMember({ userId: OWNER_ID, role: 'owner' })
       const viewer = makeMember({ userId: EDITOR_ID, role: 'viewer' })
@@ -231,7 +231,7 @@ describe('MembersPage', () => {
 
   it(
     'remove member as owner: confirm dialog then calls DELETE',
-    withBeadId(BEAD_ID, async ({ assertionPassed }) => {
+    withTaskId(TASK_ID, async ({ assertionPassed }) => {
       const qc = createQueryClient()
       let deleteCalled = false
 
@@ -277,7 +277,7 @@ describe('MembersPage', () => {
 
   it(
     'leave workspace as non-owner: button shows "Leave" and calls DELETE on self',
-    withBeadId(BEAD_ID, async ({ assertionPassed }) => {
+    withTaskId(TASK_ID, async ({ assertionPassed }) => {
       const qc = createQueryClient()
       mockRole.current = 'editor'
       mockSession.current = {
@@ -330,7 +330,7 @@ describe('MembersPage', () => {
 
   it(
     'LAST_OWNER on remove shows toast',
-    withBeadId(BEAD_ID, async ({ assertionPassed }) => {
+    withTaskId(TASK_ID, async ({ assertionPassed }) => {
       const qc = createQueryClient()
 
       useMswHandler(async (input, init) => {
@@ -372,7 +372,7 @@ describe('MembersPage', () => {
 
   it(
     'non-owner cannot change roles: dropdowns disabled',
-    withBeadId(BEAD_ID, async ({ assertionPassed }) => {
+    withTaskId(TASK_ID, async ({ assertionPassed }) => {
       const qc = createQueryClient()
       mockRole.current = 'editor'
       mockSession.current = {

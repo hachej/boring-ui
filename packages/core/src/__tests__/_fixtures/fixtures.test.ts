@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { withBeadId } from '../../server/__tests__/_setup'
+import { withTaskId } from '../../server/__tests__/_setup'
 import {
   getFixtureSnapshot,
   seedInvite,
@@ -11,7 +11,7 @@ import {
 describe('fixtures', () => {
   it(
     'supports seedUser -> seedWorkspace -> seedMembership -> seedInvite',
-    withBeadId('boring-ui-v2-eyll', async ({ assertionPassed }) => {
+    withTaskId('boring-ui-v2-eyll', async ({ assertionPassed }) => {
       const owner = await seedUser({ email: 'owner@test.dev', name: 'Owner' })
       const collaborator = await seedUser({
         email: 'collab@test.dev',
@@ -41,7 +41,7 @@ describe('fixtures', () => {
 
   it(
     'auto-cleans fixture state after each test',
-    withBeadId('boring-ui-v2-eyll', async ({ assertionPassed }) => {
+    withTaskId('boring-ui-v2-eyll', async ({ assertionPassed }) => {
       const snapshot = getFixtureSnapshot()
       assertionPassed('fixtures-cleaned')
       expect(snapshot.users).toHaveLength(0)
