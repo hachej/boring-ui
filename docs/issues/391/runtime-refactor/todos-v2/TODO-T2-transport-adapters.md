@@ -31,7 +31,7 @@ Match `06-migration-phases.md` Phase T2 exit criteria:
 
 - Do not change UI behavior. `PiChatPanel`/`usePiSessions` external API stays identical (08: "`ChatPanel`/`useAgentChat` unchanged externally"). This is an internal transport swap.
 - Reconnect uses T1's DS routes + offsets, not the `?cursor=` NDJSON path. Prefer `@durable-streams/client` for reconnection/backoff/offset-checkpointing; only hand-roll if the client cannot express the `AgentEvent`→UI-store mapping cleanly (justify in the PR).
-- Two handles (08): the transport contract is keyed by `sessionId`. Platform addressing (`workspaceId`, Slack thread, workbook id) lives in the adapter, never in the transport/core type.
+- Two handles (08): the transport contract is keyed by `sessionId`. Surface-native platform addressing (Slack thread ts, workbook/sheet id, workspace pane id, the raw `x-boring-workspace-id` header) lives in the adapter, never in the transport/core type. `SessionCtx { workspaceId, userId? }` — boring's own runtime tenancy context — is allowed on the façade and is not platform addressing.
 - The in-process and HTTP transports must be behaviorally identical under the conformance suite — same event order, same reconnect-replay semantics, same approval round-trip.
 - Keep pin discipline: pin `@durable-streams/client` (and its `@microsoft/fetch-event-source`/`fastq` deps) to exact versions; it is a new front dependency — check bundle-size gates (`pnpm run check:bundle-size`).
 
@@ -51,16 +51,17 @@ Match `06-migration-phases.md` Phase T2 exit criteria:
   - `packages/agent/src/shared/transport.ts` (new): the minimal contract (AI-SDK `ChatTransport`-shaped):
     ```ts
     export interface ChatTransport {
-      // fire a user turn; returns when accepted (not when the turn completes)
-      sendMessages(input: SendMessageInput): Promise<{ accepted: true; startIndex: number }>
+      // fire a user turn; returns when ACCEPTED (not when the turn completes)
+      sendMessages(input: AgentSendInput): Promise<{ accepted: true; startIndex: number }>
       // subscribe/replay the AgentEvent stream from an offset; reconnect-safe
       reconnectToStream(sessionId: string, opts: { startIndex: number }): AsyncIterable<AgentEvent>
-      resolveInput(sessionId: string, requestId: string, response: unknown): Promise<void>
+      resolveInput(sessionId: string, requestId: string, response: ResolveInputResponse): Promise<void>
       stop(sessionId: string): Promise<void>
       interrupt(sessionId: string): Promise<void>
     }
     ```
-    Keep it `sessionId`-keyed (two-handles). Document each method + reconnect semantics (at-least-once from `startIndex`, dedupe by `eventIndex`) in the file header.
+    Keep it `sessionId`-keyed (two-handles). `AgentSendInput` is the single shared send-input type (defined in shared per TODO-P1/BBP1-002 — do not introduce a second input type here); `ResolveInputResponse` is the union defined in `TODO-T1`/`BBT1-004` (import it, do not redeclare). Document each method + reconnect semantics (at-least-once from `startIndex`, dedupe by `eventIndex`) in the file header.
+    - **Contract text (not just a bead note):** `sendMessages()` is an **accepted-receipt wrapper over `agent.send()`** — it drives `agent.send(input, ctx)` far enough to obtain the receipt (drains to the **first `eventIndex`** = the `startIndex` the caller reconnects from) and returns `{ accepted: true, startIndex }`; it does **not** wait for the turn to complete. The turn's events are consumed via `reconnectToStream(sessionId, { startIndex })`. This accepted-then-stream split is part of the transport contract, identical in-process and over HTTP.
   - `packages/agent/src/shared/__tests__/transport.conformance.ts` (new): `runTransportConformance(makeTransport, driveAgent)` covering:
     - `sendMessages` accepted → events arrive in `eventIndex` order.
     - `reconnectToStream` from mid-offset replays exactly the missed events (lossless), no dupes across a simulated drop.
@@ -93,7 +94,7 @@ Match `06-migration-phases.md` Phase T2 exit criteria:
   - `packages/agent/src/front/chat/session/usePiSessions.ts`: ensure it depends only on the `ChatTransport` interface + `createRemoteSession` injection (it already injects — verify no deep import into transport internals remains). No behavioral change.
   - `packages/agent/src/front/chat/PiChatPanel.tsx`: verify it imports only `usePiSessions` + shared types, no transport internals. Remove any leftover `piChatStream` imports.
   - `docs/issues/391/runtime-refactor/08-pluggable-agent-surfaces.md` is the spec; add a short doc `packages/agent/docs/transport.md` (new) recording: the `ChatTransport` contract, and that `x-boring-workspace-id → SessionCtx` mapping lives in `getRequestContext` (`server/http/routes/piChat.ts`) — the pattern every surface adapter (Slack `conversationKey→sessionId`, Excel workbook→sessionId) replicates. Public agent APIs accept `sessionId` only.
-  - **Invariant**: extend `scripts/audit-imports.ts` (or `packages/agent`'s `check-invariants`) with a rule that fails if any exported signature in `packages/agent/src/server/createAgent.ts` / `shared/transport.ts` / the façade references platform-addressing types (`workspaceId`, `storageScope`, `x-boring-workspace-id`, Slack/thread/workbook ids). Grep-based guard is acceptable (match param/type names against an allowlist), matching the style of existing `check-invariants.sh`.
+  - **Invariant**: extend `scripts/audit-imports.ts` (or `packages/agent`'s `check-invariants`) with a rule that fails if any exported signature in `packages/agent/src/server/createAgent.ts` / `shared/transport.ts` / the façade references **surface-native platform-addressing types** — Slack team/channel/thread ts, workbook/sheet ids, workspace pane ids, and the raw `x-boring-workspace-id` header string. **Allowlist `SessionCtx`** (`{ workspaceId, userId? }`): it is boring's OWN runtime tenancy context (the `SessionStore` key) and is explicitly permitted on the façade — do NOT forbid it, and do NOT forbid `workspaceId`/`userId` as `SessionCtx` fields. The guard forbids surface-native identifier types only. Grep-based guard is acceptable (match param/type names against the forbidden surface-native set, with `SessionCtx` allowlisted), matching the style of existing `check-invariants.sh`.
 - **Tests**: an invariant test that a deliberately-bad signature (adds `workspaceId` to `createAgent` public method) makes the guard fail; `PiChatPanel` render test unchanged/green.
 - **Acceptance**: workspace UI runs unmodified (08 exit); the guard blocks platform addressing in core signatures; `transport.md` documents the adapter-owned mapping.
 

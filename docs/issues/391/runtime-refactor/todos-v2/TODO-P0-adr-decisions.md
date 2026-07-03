@@ -56,7 +56,7 @@ Repo facts (verified — cite these exact paths):
 ### BBP0-002 — Ratify the 7 locked decisions from `08` — S
 
 - **Description:** Record the status of each of the 7 decisions in the "Decisions this file locks" section of `08-pluggable-agent-surfaces.md`. Enumerate them explicitly so nothing is silently dropped:
-  1. **Wire protocol** — keep AI-SDK `UIMessageChunk` as the v1 event payload, add the indexed `AgentEvent` envelope; no parallel event union. → `decided`. Cross-reference `docs/DECISIONS.md §3` (existing "Wire protocol").
+  1. **Wire protocol** — keep the existing harness stream unit `PiChatEvent` as the v1 event payload (matching 08's `AgentEvent.chunk: PiChatEvent` envelope), add the indexed `AgentEvent` envelope; no parallel event union. AI-SDK part alignment is revisited only at an AI-SDK v6 migration. → `decided`. Cross-reference `docs/DECISIONS.md §3` (existing "Wire protocol").
   2. **Pure mode** — pi-coding-agent with `runtime: 'none'` and sealed cwd, behind the Phase 1 audit; not a second harness. → `decided`.
   3. **Surfaces live outside the agent package** — per-channel packages (Flue model), not `boring-agent` subpaths. → `decided`.
   4. **Readonly fs is v1** — already landed via #416; resolves `00` open-decision 6. → `decided (landed)`.

@@ -103,7 +103,7 @@ This repo already has real seams. The refactor must extend them:
 9. Users are principals/supervisors/approval channels, not model-callable root agents.
 10. Open backlog issues are not automatically solved; the abstraction only supplies the spine.
 11. **(v2)** Surfaces never own the loop: a surface package depends only on the public agent contract, never on provider internals or boring-bash server code.
-12. **(v2)** Two handles: `sessionId` is runtime-owned; continuation/addressing (Slack thread ts, workbook id, pane binding) is surface-owned. Public agent APIs never accept platform addressing.
+12. **(v2)** Two handles: `sessionId` is runtime-owned; continuation/addressing is surface-owned. **"Platform addressing" = surface-native identifiers** (Slack team/channel/thread ts, workbook/sheet ids, workspace pane ids); public agent APIs never accept these. `SessionCtx { workspaceId, userId? }` is boring's OWN runtime tenancy context (the `SessionStore` key) and is explicitly ALLOWED on the façade — it is not platform addressing. A raw `x-boring-workspace-id` header resolves to a `SessionCtx` in the adapter.
 13. **(v2)** One approval channel: HITL is declared on the tool and travels as stream events; no per-surface approval side channels.
 14. **(v2)** Secrets stay on the trusted core side; credentials are brokered at the environment boundary and never enter the sandbox process or the model transcript.
 

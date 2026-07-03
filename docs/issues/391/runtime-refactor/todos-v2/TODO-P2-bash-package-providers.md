@@ -1,4 +1,4 @@
-# TODO-BBP2 — Phase 2: move concrete bash providers into `@hachej/boring-bash`
+# TODO-P2 — Move concrete bash providers into `@hachej/boring-bash`
 
 Handoff: self-contained work order for one autonomous coding agent (pi or gpt-5.5-xhigh). Cite plan files by relative path. No prior conversation assumed.
 
@@ -68,7 +68,7 @@ Concrete non-agent-loop providers (direct, bwrap, vercel-sandbox, remote-worker 
 
 - **Precondition:** Phase 1 dependency injection (`createAgent()` / injected runtime+features; see 06 Phase 1 and the Phase-1 TODO) is complete before providers move. If not, STOP and report — do not move providers.
 - `@hachej/boring-agent` keeps **zero value imports** from `@hachej/boring-bash`. Value flows one-way: host/CLI/composition imports both.
-- Do not add value re-exports of moved providers from old agent paths (that re-creates the cycle). Type-only re-exports only where safe.
+- Do not add re-exports of moved providers from old agent paths — **neither value nor type-only** (value re-exports re-create the cycle; any old-path re-export violates the no-compat policy). Every importer migrates in the same PR; the origin export is deleted in that PR.
 - Provisioning-ownership rule (00): provisioning engine + `ProvisionWorkspaceRuntimeOptions` stay agent-side over an injected adapter; boring-bash owns requirement normalizer + provider adapters.
 - Preserve path-safety ownership: adapters validate containment; routes/tools never accept raw unchecked host paths.
 - Preserve the mode-id vs provider-id distinction: `local` mode → `bwrap` provider (02 table).
@@ -133,15 +133,15 @@ Concrete non-agent-loop providers (direct, bwrap, vercel-sandbox, remote-worker 
 - **Tests:** protocol compat unit test; handshake reports matrix + rejects bad version; static check `apps/full-app/src/server/worker/*` import graph has no agent-core dep.
 - **Acceptance:** remote-worker provided by boring-bash without coupling worker server to agent core.
 
-### BBP2-007 — Compatibility shims + import-migration enumeration [size M]
+### BBP2-007 — Migrate importers + delete origin exports (no compat shims) [size M]
 
-- **Notes / strategy (enumerate before deleting anything):**
-  - **Type-only re-export from old agent paths (safe):** `RuntimeBundle` and other `mode.ts` types stay agent-exported (unchanged). Provider *types* (e.g. `CreateBwrapSandboxOptions`, `RemoteWorkerClientOptions`, protocol types) may be re-exported `export type { … } from '@hachej/boring-bash/...'` in `packages/agent/src/server/index.ts` **only if** they introduce no runtime import.
-  - **Must migrate imports (value):** every value re-export listed under "Current public re-exports" (`createDirectSandbox`, `createBwrapSandbox`, `createRemoteWorker*`, `createVercelSandboxWorkspace`, `resolveMode`/`autoDetectMode`/`hasBwrap`). Remove these value exports from `packages/agent/src/server/index.ts`; move them to a host/composition barrel (recommend `packages/cli` and `apps/full-app` composition, or a new `@hachej/boring-*` host barrel that already depends on both). Do NOT re-export them from agent.
-  - **Enumerate real external importers:** run `grep -rn "from '@hachej/boring-agent/server'" packages apps plugins` and record which pull the moved value symbols; migrate each to `@hachej/boring-bash/providers`.
-- **Files touch:** `packages/agent/src/server/index.ts`; downstream importers found by grep; add migration notes to `packages/boring-bash/src/providers/README.md` with before/after snippets for direct/local/vercel/remote-worker + readonly/none.
-- **Tests:** static test (extend `scripts/check-invariants.mjs` or `scripts/audit-imports.ts`) proving agent old paths have no boring-bash **value** import; apps compile after migration; sample using new imports typechecks.
-- **Acceptance:** no package cycle, no silent public-API break — users get working host-level compat or a clear migration diagnostic.
+- **Policy (binding — `todos-v2/README.md` "Simplicity & no-compat policy"):** all `@hachej/*` consumers are in-repo, so there is **no** old-path re-export of any kind — **not even type-only**. Every importer migrates to the new path in the **same PR** that moves the provider, and the origin export is deleted in that same PR. Grep is the migration tool; no re-export stub, no host shim that outlives the phase.
+- **Notes / strategy (enumerate, migrate, delete):**
+  - **Delete the origin value exports:** remove every value re-export listed under "Current public re-exports" (`createDirectSandbox`, `createBwrapSandbox`, `createRemoteWorker*`, `createVercelSandboxWorkspace`, `resolveMode`/`autoDetectMode`/`hasBwrap`) from `packages/agent/src/server/index.ts`. Do NOT replace them with a re-export from `@hachej/boring-bash` (that re-creates the cycle *and* violates the no-compat policy). Provider *types* (`CreateBwrapSandboxOptions`, `RemoteWorkerClientOptions`, protocol types, etc.) are likewise **not** re-exported from agent — consumers import them from `@hachej/boring-bash/providers`/`/shared` directly. `RuntimeBundle` and the other `mode.ts` **type-only** contracts stay agent-owned because they never moved (they are agent's own types, not a re-export of a moved thing).
+  - **Migrate every importer in the same PR:** the grep-verified importer set is under "Known importers of concrete providers" above (value importers of `sandbox/{direct,bwrap,vercel-sandbox,remote-worker}` and `resolveMode`/`autoDetectMode` importers). Re-run `grep -rn "from '@hachej/boring-agent/server'" packages apps plugins` to catch any that pull the deleted value symbols, and repoint each to `@hachej/boring-bash/providers`. Host/CLI/composition layers (`packages/cli`, `apps/full-app`, `packages/workspace/*/server`) import `@hachej/boring-bash/providers` directly; the Fastify adapter layer (`createAgentApp`/`registerAgentRoutes`) takes the resolved adapter by injection (Phase-1 seam) rather than importing `resolveMode`.
+- **Files touch:** `packages/agent/src/server/index.ts` (delete the moved value exports); every downstream importer in the grep-verified set; add migration notes to `packages/boring-bash/src/providers/README.md` with before/after snippets for direct/local/vercel/remote-worker + readonly/none.
+- **Tests:** static test (extend `scripts/check-invariants.mjs` or `scripts/audit-imports.ts`) proving agent old paths have no boring-bash **value** import and no re-export of the moved symbols; apps compile after migration; sample using new imports typechecks.
+- **Acceptance:** no package cycle, no old-path re-export (value or type), every importer migrated in-PR; a build fails only if a caller was missed (surfaced as a clear unresolved-import error), never silently shimmed.
 
 ### BBP2-008 — Extend `scripts/check-invariants.mjs` for the provider boundary [size S]
 
@@ -178,5 +178,5 @@ pnpm typecheck              # build:packages then per-pkg typecheck
 - `pnpm lint:invariants` + `pnpm audit:imports` green; zero agent→bash value imports.
 - #416 shared contracts / server projection ops / conformance+leak tests unchanged and passing.
 - Every moved provider carries its tests; direct/local/vercel-sandbox behavior unchanged.
-- Public value re-exports either migrated or host-shimmed with a documented migration note; no re-export creates a cycle.
+- Every importer of the moved value symbols migrated in the same PR and the origin exports deleted; no old-path re-export (value or type), no host shim, no cycle.
 - Mode-id vs provider-id distinction preserved (`local`→`bwrap`).

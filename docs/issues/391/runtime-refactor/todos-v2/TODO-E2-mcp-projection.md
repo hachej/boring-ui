@@ -13,7 +13,7 @@ Handoff: self-contained work order for one autonomous coding agent (pi or gpt-5.
   - `packages/boring-bash/src/server/managementProjectionOperations.ts` — `createManagementProjectionOperations`, `ManagementProjectionOperations`, `ManagementProjectionHandle`.
   - `packages/boring-bash/src/server/testing/readonlyProjectionConformance.ts` — `checkReadonlyProjectionConformance(subject)`, `ReadonlyProjectionConformanceSubject`.
 - Identity spine: `packages/boring-bash/src/shared/index.ts` — `BoundFilesystemContext { humanUserId, agentId, sessionId, workspaceId, requestId }`. An MCP session maps to exactly one of these.
-- MCP SDK reality (verified): `@modelcontextprotocol/sdk` is already a dependency in the repo — `plugins/boring-mcp/package.json` pins `^1.29.0`. Existing use is **client-side only** (`plugins/boring-mcp/src/server/mcpSdkTransport.ts` imports `@modelcontextprotocol/sdk/client/index.js` `Client` + `.../client/streamableHttp.js`). E2 needs the **server** side: `McpServer` from `@modelcontextprotocol/sdk/server/mcp.js` + `StreamableHTTPServerTransport` from `@modelcontextprotocol/sdk/server/streamableHttp.js`. Same SDK, pin the same `^1.29.0`.
+- MCP SDK reality (verified): `@modelcontextprotocol/sdk` is already a dependency in the repo — `plugins/boring-mcp/package.json` pins `^1.29.0`. Existing use is **client-side only** (`plugins/boring-mcp/src/server/mcpSdkTransport.ts` imports `@modelcontextprotocol/sdk/client/index.js` `Client` + `.../client/streamableHttp.js`). E2 needs the **server** side: `McpServer` from `@modelcontextprotocol/sdk/server/mcp.js` + `StreamableHTTPServerTransport` from `@modelcontextprotocol/sdk/server/streamableHttp.js`. Same SDK; **pin it exactly (`1.29.0`, no caret)** per the pack's pin discipline (T2/S1 pin new deps to exact versions).
 - Server barrel to extend: `packages/boring-bash/src/server/index.ts`. Package exports live in `packages/boring-bash/package.json` (`.`/`./shared`/`./server`); add `./mcp` if you want a separate entrypoint (keeps the MCP/SDK dependency out of the base server import for non-MCP consumers).
 
 ## Goal / exit criteria
@@ -46,7 +46,7 @@ Match `06-migration-phases.md` Phase E2 exit criteria:
 
 ### BBE2-001 — MCP server projection factory (M)
 - Description: `createEnvironmentMcpServer(attachment, operations, identity)` returns a configured `McpServer` exposing the capability-gated tool surface.
-- Files: create `packages/boring-bash/src/server/mcp/environmentMcpServer.ts`; add `@modelcontextprotocol/sdk` `^1.29.0` to `packages/boring-bash/package.json` deps; add a `./mcp` export in `package.json` + `packages/boring-bash/src/server/mcp/index.ts`.
+- Files: create `packages/boring-bash/src/server/mcp/environmentMcpServer.ts`; add `@modelcontextprotocol/sdk` pinned exactly to `1.29.0` (no caret) to `packages/boring-bash/package.json` deps; add a `./mcp` export in `package.json` + `packages/boring-bash/src/server/mcp/index.ts`.
 - Notes: Register tools from `@modelcontextprotocol/sdk/server/mcp.js` `McpServer`. Each tool's handler is a one-liner over the injected `ReadonlyProjectionOperations` / `ManagementProjectionOperations` (from E1's registry resolution). Gate `write`/`edit` on `attachment.access === 'readwrite'`; gate `exec` on `attachment.execPolicy === 'attached'`. Input schemas take `{ path }` (+ `{ content }` for write, `{ pattern, offset?, limit? }` for find/grep) — mirror the projection op signatures. Map thrown `ReadonlyProjectionOperationError`/`ManagementProjectionOperationError` to MCP error results using the error `code`, never the raw path.
 - Tests: `packages/boring-bash/src/server/mcp/__tests__/environmentMcpServer.test.ts` — instantiate against a readonly `company_context` attachment (via E1 registry + `FixtureCompanyContextBindingProvider`); assert `write`/`edit`/`exec` tools are NOT registered; assert `read` of an allowed path succeeds and denied path returns an error result with no denied-name/sentinel in the payload.
 - Acceptance: readwrite attachment additionally registers `write`/`edit`; exec attachment additionally registers `exec`; readonly does not.
@@ -99,4 +99,4 @@ pnpm run test
 - Readonly attachment registers exactly the read-family tools; readwrite adds write/edit; exec only under `execPolicy: 'attached'`.
 - Conformance mount reuses the same expected visible-path set as in-process (diff the subject seeds).
 - No broker secret is present in any client-reachable MCP payload (assert in BBE2-004).
-- `@modelcontextprotocol/sdk` pinned to the repo's existing `^1.29.0`.
+- `@modelcontextprotocol/sdk` pinned to an exact `1.29.0` (no caret), matching the pack's exact-pin discipline.

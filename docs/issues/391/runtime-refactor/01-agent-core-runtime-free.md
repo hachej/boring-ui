@@ -57,9 +57,10 @@ interface AgentFeature {
   readinessRequirements?: string[]
 }
 
-interface AgentServerFeature extends AgentFeature {
-  routes?(ctx: AgentFeatureContext): FastifyPluginAsync | undefined
-}
+// Features contribute tools / system-prompt / readiness ONLY. Features never expose routes.
+// HTTP routes are owned by the HTTP adapter (createAgentApp / registerAgentRoutes), which
+// imports and mounts a feature's route module directly (e.g. registerBashRoutes) — not through
+// the feature contract. There is no `routes` member on the feature.
 
 interface AgentFeatureContext {
   agentId: string
@@ -71,7 +72,7 @@ interface AgentFeatureContext {
 
 Rules:
 
-- `routes` is server-only; no `Fastify` value/type leaks into shared/front packages.
+- Features never contribute routes; routes are owned by the HTTP adapter, which mounts a feature's route module directly. No `Fastify` value/type leaks into feature/shared/front packages.
 - `featureGrants` must not be confused with current `AgentRuntimeCapabilities`.
 - `sessionStorageRoot` is transcript/session storage, not workspace file storage.
 

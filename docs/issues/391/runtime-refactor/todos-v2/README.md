@@ -48,6 +48,27 @@ Dispatch these from `../todos/` when their prerequisites complete; apply the del
 - **Phase 7 (multi-agent)** — add: surface adapters address agents via the same `agentId` scoping; one addressing entry binds to one `agentId`; test: two surfaces × two agents in one workspace do not collide.
 - **Phase 8 (cleanup)** — add exit criterion: `@hachej/boring-agent` README documents the four-part surface contract (../08) as the stable public API.
 
+## Simplicity & no-compat policy (applies to every TODO — read as binding)
+
+All `@hachej/*` consumers live in this monorepo. There is **no external migration audience** and therefore **no deprecation windows, no deprecated aliases, no `/legacy` paths, no type-only re-export stubs that outlive their phase**. At 0.x, breaking an internal API is free — the rule is:
+
+1. **Migrate every importer in the same PR** that moves or renames a thing. Grep is the migration tool, not a shim.
+2. **Transitional code has a deadline.** If an old path must stay alive while the new one lands (e.g. `?cursor=` NDJSON until the T2 cutover), it carries a `// TODO(remove:<bead-id>)` marker and a deletion bead **in the same TODO file**. A phase is not done while any of its markers remain. Phase 8 *verifies* zero markers — it is not a dumping ground for deferred deletions.
+3. **No abstraction without two real consumers in the same phase** (or one named consumer in the immediately following phase of this pack). No "might need later" parameters, no speculative generics, no registry/plugin system for a single entry, no config indirection beyond the one typed config object.
+4. **No parallel implementations past their cutover.** When the DS transport passes conformance, the bespoke replay dies in the same PR stack. When tools/routes move to boring-bash, the origin files are deleted, not stubbed.
+5. **New options never grow env-var fallbacks.** Env/file parsing lives in host/CLI composition only (P1).
+6. **If a bead seems to need a compat shim for anything outside this repo — stop and ask.** Do not build it speculatively.
+
+The only legitimate compat surfaces (do NOT break these): on-disk pi session JSONL (existing user sessions must load), the landed #416 shared contracts in `packages/boring-bash/src/shared` (governance PRs consume them), and server↔front within one release train (see versioning below).
+
+## Versioning & flagging (how cutovers ship)
+
+No feature-flag framework. Version is carried where it already exists:
+
+- **Wire**: `AgentEvent.v` is the protocol version (starts at 1); DS stream routes are **new paths** added in T1 alongside the old `?cursor=` route, so old front + new server coexist during development. That additive window *is* the flag — T2 flips the front, then deletes the old route in the same phase (rule 2).
+- **Dark-launch seam**: the front transport is already injectable (`usePiSessions({ createRemoteSession })`). T2 may land the DS transport dark behind that injection for at most one PR, then flip the default and delete the legacy path. Do not add a user-facing toggle.
+- **Package**: bump `@hachej/boring-agent` minor at the T2 cutover (protocol change) and at P3 (tool/route relocation). Server and front ship together in the CLI package, so no long-lived skew exists; the only skew is the dev-time stale front bundle (`pnpm -C packages/cli build:front` after merges).
+
 ## Global non-negotiables (apply to every TODO)
 
 - `@hachej/boring-agent` keeps **zero value imports** from `@hachej/boring-bash` (enforced: `packages/boring-bash/scripts/check-invariants.mjs` — extend, don't bypass).

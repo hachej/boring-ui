@@ -1,4 +1,4 @@
-# TODO-BBP4 — Phase 4: move filesystem front plugin to `@hachej/boring-bash/plugin`
+# TODO-P4 — Move filesystem front plugin to `@hachej/boring-bash/plugin`
 
 Handoff: self-contained work order for one autonomous coding agent (pi or gpt-5.5-xhigh). Cite plan files by relative path. No prior conversation assumed.
 
@@ -37,11 +37,11 @@ Registration/consumers to repoint (grep-verified):
 
 ## Goal / exit criteria
 
-Filesystem front plugin lives in `@hachej/boring-bash/plugin`, registered by workspace with no package cycle; panel ids + `workspace.open.path` resolver + file panel binding + agent file bridge/session-change integration + Company file-tree root + capability-based readonly panes preserved; `FileTreeDataProvider` boundary added; document-authority write/edit override seam added. Exit (06 Phase 4):
+Filesystem front plugin lives in `@hachej/boring-bash/plugin`, registered by workspace with no package cycle; panel ids + `workspace.open.path` resolver + file panel binding + agent file bridge/session-change integration + Company file-tree root + capability-based readonly panes preserved; tree data factored into a plain internal function (the pluggable `FileTreeDataProvider` boundary is deferred to #295); document-authority write/edit override consulted via a single nullable hook. Exit (06 Phase 4):
 
 - `exec_ui openFile` still opens files (same panel ids, same resolver).
-- file tree can consume a provider boundary (default = current tree).
-- an active document coordinator can intercept writes; raw edits work when none is active.
+- file tree data flows through one internal function with unchanged behavior (provider boundary deferred to #295).
+- an active document authority can intercept writes; raw edits work when none is set.
 
 ## Non-negotiables
 
@@ -71,31 +71,32 @@ Filesystem front plugin lives in `@hachej/boring-bash/plugin`, registered by wor
 ### BBP4-011 — Move filesystem front plugin files [size L]
 
 - **Files move:** entire `packages/workspace/src/plugins/filesystemPlugin/front/*` and `shared/*` → `packages/boring-bash/src/plugin/filesystem/{front,shared}/*` (keep sub-structure: `file-tree/`, `code-editor/`, `markdown-editor/`, `media-viewer/`, `html-viewer/`, `empty-file-panel/`, `data/`, and their `__tests__/`).
-- **Files touch:** repoint the three workspace-internal imports in `front/index.ts` (`../../../shared/plugins/frontFactory`, `../../../front/bridge`, `../../../front/registry`) and `surfaceResolver.ts` (`../../../shared/types/surface`) to the `BashPluginHost` adapter (BBP4-010) rather than deep workspace paths. `packages/workspace/src/index.ts`, `app/front/workspaceBuiltinPlugins.ts`, `front/provider/WorkspaceProvider.tsx`: import `filesystemPlugin` from `@hachej/boring-bash/plugin` and register it (passing the host adapter). Decide `packages/workspace/src/shared/types/filesystem.ts`: keep workspace-owned and import type-only from boring-bash, OR relocate the UI `(filesystem,path)` helpers to `boring-bash/plugin/shared` — pick the acyclic option and note it (recommend: keep in workspace, re-used type-only, to avoid churn on non-plugin consumers; verify consumers with grep).
+- **Files touch:** repoint the three workspace-internal imports in `front/index.ts` (`../../../shared/plugins/frontFactory`, `../../../front/bridge`, `../../../front/registry`) and `surfaceResolver.ts` (`../../../shared/types/surface`) to the `BashPluginHost` adapter (BBP4-010) rather than deep workspace paths. `packages/workspace/src/index.ts`, `app/front/workspaceBuiltinPlugins.ts`, `front/provider/WorkspaceProvider.tsx`: import `filesystemPlugin` from `@hachej/boring-bash/plugin` and register it (passing the host adapter). `packages/workspace/src/shared/types/filesystem.ts` **stays workspace-owned** (binding decision — no discretion): the plugin consumes the UI `(filesystem,path)` helpers/types **type-only** from workspace, which is acyclic (workspace does not value-import `boring-bash/plugin`) and avoids churn on the non-plugin consumers. Do NOT relocate it to `boring-bash/plugin/shared`. Verify the consumer set with `grep -rn "shared/types/filesystem" packages apps` and confirm each stays type-only.
 - **Notes:** Preserve every panel id, `FILESYSTEM_PLUGIN_ID`, `FILES_LEFT_TAB_ID`, catalog registration, and the `filesystemSurfaceResolver` output. Preserve Company file-tree root + capability-based readonly panes (in `file-tree/FileTreeView.tsx`, `FilePaneShell.tsx`, `useFilePane.ts`, `code-editor/CodeEditorPane.tsx`).
 - **Tests:** move the plugin's `__tests__` (`filesystemPlugin.test.ts`, `filePanelBinding.test.tsx`, `agentFileBridge.test.tsx`, `useFilePane.test.tsx`, `search.test.ts`, `FileTree*.test.tsx`, editor tests) into boring-bash and pass; workspace↔boring-bash acyclicity check passes.
 - **Acceptance:** file UI runs from boring-bash with unchanged panel ids/resolver and no package cycle.
 
-### BBP4-012 — Add `FileTreeDataProvider` boundary (#295) [size M]
+### BBP4-012 — Extract a plain internal tree function/type (provider boundary deferred to #295) [size S]
 
-- **Files create:** `packages/boring-bash/src/plugin/filesystem/front/file-tree/FileTreeDataProvider.ts` (interface `listTree(root, options)`, optional `listPaths(root, options)`, optional `subscribe(root): AsyncIterable<FileTreeDelta>` — per 02); a default provider adapting the current `data/` hooks + `useFileEventStream`.
-- **Files touch:** `file-tree/FileTreeView.tsx` / `FileTree.tsx` / `treeModel.ts` to read tree data through the provider instead of hardwired hooks; keep the current provider as default (no behavior change).
-- **Notes:** Provider must respect adapter path validation, source-of-truth metadata, hidden/denied files, symlink policy, large-tree pagination. Enables Pierre Trees swap without route changes. May expose agent-visible vs user-visible view when they differ.
-- **Tests:** default provider returns current tree shape; path-list handles large trees (pagination); delta subscription updates UI; hidden/denied files absent from agent-visible tree.
-- **Acceptance:** file tree rendering is replaceable without touching file-route ownership.
+- **Descope (binding):** do **not** ship a `FileTreeDataProvider` interface — no delta-streaming provider abstraction with a single implementation. The "abstraction needs two real consumers" rule (`todos-v2/README.md`) is not met: #295 (Pierre Trees swap) is the only would-be second consumer and it is **not scheduled yet**. Ship the current tree behind a plain internal function + type, not a pluggable boundary.
+- **Files create/touch:** in `packages/boring-bash/src/plugin/filesystem/front/file-tree/`, factor the current tree fetch into a plain internal function/type (e.g. `loadFileTree(root, options)` returning the existing tree shape) over the current `data/` hooks + `useFileEventStream`; point `FileTreeView.tsx` / `FileTree.tsx` / `treeModel.ts` at it. No `subscribe(): AsyncIterable<FileTreeDelta>` interface, no registry, no second impl.
+- **Notes:** Keep behavior identical — respects the existing adapter path validation, source-of-truth metadata, hidden/denied-file handling, symlink policy, and current pagination. The **pluggable `FileTreeDataProvider` boundary is deferred until #295 is actually scheduled** (add it then, with Pierre Trees as the second real consumer).
+- **Tests:** the plain function returns the current tree shape; hidden/denied files absent from the agent-visible tree; existing tree tests stay green.
+- **Acceptance:** the tree data path is a single internal function (no provider interface); behavior unchanged; the provider boundary is explicitly noted as deferred to #295.
 
-### BBP4-013 — Add document-authority write/edit override seam (#367/#226) [size M]
+### BBP4-013 — Add document-authority write/edit override hook (#367/#226) [size M]
 
-- **Files create:** `packages/boring-bash/src/agent/documentAuthority.ts` — `DocumentAuthority` interface (`ownsFile(filesystem, path): boolean`; `applyEdit({ filesystem, path, expectedVersionOrHash, content|edits }): Promise<{ ok } | { rejected, reason }>`) + a `DocumentAuthorityRegistry` (default empty). Optional front surface hook if a pane must publish authority.
-- **Files touch:** the moved `write`/`edit` tools in `packages/boring-bash/src/agent/tools/filesystem/index.ts` (from Phase 3): before raw write/edit, consult the registry — if a doc authority owns the file, route through it, validate stale version/hash, reject stale with a stable error; else fall back to raw file edit (current behavior). Surface the authority decision in tool output/audit details.
-- **Notes:** Greenfield seam — do NOT implement Yjs/TipTap collaboration. Default = no authority registered → behavior identical to Phase 3. Reuse the existing front stale-write handling (`ConflictBanner.tsx`, `useFilePane.ts`) as the UI counterpart; this bead only adds the server/tool seam.
-- **Tests:** with a stub authority registered, edit routes through it; stale version rejects with stable error; with none registered, raw write/edit works unchanged; coordinator failure returns a stable diagnostic and does not corrupt file state.
-- **Acceptance:** agent file tools respect a live document authority when present; raw edits unaffected when absent.
+- **Descope (binding):** ship a **single nullable hook**, not a registry. There is exactly one prospective authority (a future live-document system) — the "abstraction needs two real consumers" rule (`todos-v2/README.md`) does not justify a `DocumentAuthorityRegistry` for a single entry. Add a registry only when a **second** authority actually exists.
+- **Files create:** `packages/boring-bash/src/agent/documentAuthority.ts` — a `DocumentAuthority` interface (`ownsFile(filesystem, path): boolean`; `applyEdit({ filesystem, path, expectedVersionOrHash, content|edits }): Promise<{ ok } | { rejected, reason }>`) and a single optional `documentAuthority?: DocumentAuthority` seam (a nullable hook passed in / set on the tool config), default `undefined`. No registry, no lookup table.
+- **Files touch:** the moved `write`/`edit` tools in `packages/boring-bash/src/agent/tools/filesystem/index.ts` (from Phase 3): before raw write/edit, if `documentAuthority` is set **and** `ownsFile(...)`, route through `applyEdit`, validate stale version/hash, reject stale with a stable error; otherwise fall back to raw file edit (current behavior). Surface the authority decision in tool output/audit details.
+- **Notes:** Greenfield seam — do NOT implement Yjs/TipTap collaboration. Default = no `documentAuthority` set → behavior identical to Phase 3. Reuse the existing front stale-write handling (`ConflictBanner.tsx`, `useFilePane.ts`) as the UI counterpart; this bead only adds the server/tool hook.
+- **Tests:** with a stub `documentAuthority` set, an edit it owns routes through it; stale version rejects with stable error; with none set, raw write/edit works unchanged; authority failure returns a stable diagnostic and does not corrupt file state.
+- **Acceptance:** agent file tools consult the single nullable `documentAuthority` hook when present; raw edits unaffected when absent; no registry introduced.
 
 ### BBP4-014 — Repoint workspace registration + acyclicity guard [size S]
 
-- **Files touch:** `packages/workspace/src/index.ts` (re-export `filesystemPlugin` from `@hachej/boring-bash/plugin` for back-compat, one-way), `app/front/workspaceBuiltinPlugins.ts`, `front/provider/WorkspaceProvider.tsx`; `packages/boring-bash/scripts/check-invariants.mjs` and/or `scripts/audit-imports.ts` + `packages/workspace/scripts/check-plugin-invariants.mjs` to assert no `boring-bash/plugin → @hachej/boring-workspace` value import and no cycle.
-- **Notes:** Missing boring-bash capability must yield a clear UI diagnostic panel, not a crash.
+- **Files touch:** migrate the grep-listed importers to `@hachej/boring-bash/plugin` **in the same PR** and delete the old workspace export — **no back-compat re-export** (no-compat policy, `todos-v2/README.md`). Concretely: `packages/workspace/src/index.ts` (delete the `filesystemPlugin` export, do NOT re-export it from boring-bash), `app/front/workspaceBuiltinPlugins.ts` and `front/provider/WorkspaceProvider.tsx` (import `filesystemPlugin` from `@hachej/boring-bash/plugin` directly and register it with the host adapter). Re-run `grep -rn "filesystemPlugin" packages apps plugins` to catch any other importer and migrate it in the same PR. Extend `packages/boring-bash/scripts/check-invariants.mjs` and/or `scripts/audit-imports.ts` + `packages/workspace/scripts/check-plugin-invariants.mjs` to assert no `boring-bash/plugin → @hachej/boring-workspace` value import and no cycle.
+- **Notes:** Missing boring-bash capability must yield a clear UI diagnostic panel, not a crash. Migration surfaces as a build error if an importer was missed — never a silent shim.
 - **Tests:** `exec_ui openFile` opens the moved panel (playground); `pnpm --filter @hachej/boring-workspace run lint:plugin-invariants` green; acyclicity assertion green.
 - **Acceptance:** workspace consumes the moved plugin cleanly; guardrails prevent a future cycle.
 
@@ -126,5 +127,5 @@ pnpm typecheck
 - Panel ids, `FILESYSTEM_SURFACE_RESOLVER_ID`, and `workspace.open.path` resolve output unchanged.
 - No `boring-bash/plugin → @hachej/boring-workspace` value import; workspace↔boring-bash acyclic; workspace bridge still workspace-owned.
 - Company file-tree root + capability-based readonly panes preserved.
-- `FileTreeDataProvider` default = current tree shape; document-authority seam defaults to raw-edit parity.
+- Tree data is a single internal function (no provider interface — deferred to #295), current tree shape unchanged; document-authority is a single nullable hook (no registry) defaulting to raw-edit parity.
 - `pnpm lint:invariants` + `pnpm audit:imports` + workspace plugin-invariants green.

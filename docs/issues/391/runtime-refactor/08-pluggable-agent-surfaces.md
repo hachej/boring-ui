@@ -19,7 +19,7 @@ Target mounts, in order of delivery:
 
 A surface and the agent core exchange exactly four things:
 
-1. **Message in** — a normalized user turn: `{ sessionRef, content, attachments?, actor }`. Core accepts a string or message parts; the surface does platform parsing (Slack signature + payload, Excel cell context, workspace composer state).
+1. **Message in** — a normalized user turn: `AgentSendInput` = `{ sessionId?, content, attachments?, actor }` (**omit `sessionId` to create a new session**). Core accepts a string or message parts; the surface does platform parsing (Slack signature + payload, Excel cell context, workspace composer state).
 2. **Event stream out** — one ordered, indexed, replayable stream of typed events. Every surface renders the same stream differently; the wire/transport is swappable.
 3. **Approvals / human-in-the-loop** — a request event out + a response call in, on the same channel, declared on the tool — not per-surface special cases.
 4. **Session state** — a runtime-owned `sessionId` + serializable transcript. Persistence and addressing are boundary decisions.
@@ -66,7 +66,7 @@ const agent = createAgent({
 })
 
 // The whole public runtime API:
-agent.send(input, ctx): AsyncIterable<AgentEvent>   // one turn
+agent.send(input: AgentSendInput, ctx): AsyncIterable<AgentEvent>   // one turn (omit input.sessionId to start a new session)
 agent.resolveInput(sessionId, requestId, response)  // approvals / questions
 agent.sessions                                      // list/load/fork/delete
 agent.replay(sessionId, { startIndex })             // reconnect/replay
@@ -168,3 +168,5 @@ Executable contract suites, in-repo, run against every implementation:
 6. **Channel ingress is reused, not written**: depend on `@flue/*` channel packages (pinned beta) with per-channel thin adapters; egress via provider SDKs. Vendoring is the fallback; hosting inside Flue's runtime is explicitly not adopted.
 7. **Environments are attachable resources** (see [`09-environments-attachable.md`](09-environments-attachable.md)): fs+sandbox has identity independent of any agent; agents/subagents/external agents consume it via attachments; external agents attach via MCP projection.
 8. **Front chat provider unchanged.** The chat UI is already a vendored ai-elements fork on shadcn primitives (`boring-ui-kit`, Tailwind v4), and the render layer is insulated from the wire protocol by the `PiChatEvent → piChatReducer → BoringChatMessage` projection — T2 therefore forces zero render-layer work, and "adopt shadcn" is a no-op. Two follow-ups only: (a) opportunistic S-sized upgrade after T2 — replace `use-stick-to-bottom` + the custom transcript windowing in `PiConversationSurface` with shadcn's headless `MessageScroller` (June 2026 release; purely presentational, zero AI-SDK coupling, verified); (b) the `BoringChatMessage → UIMessage.parts` view-model swap (to use Vercel AI Elements' Tool/Reasoning/Confirmation cards natively) stays **deferred** — M–L rewrite of the reducer pipeline (~1,600 LOC) + both tool-renderer stacks for little present gain; if ever done, it rides with T2's `AgentEvent` as the single projection, per decision 1.
+9. **No feature-flag framework; version rides existing carriers.** `AgentEvent.v` is the wire version; DS routes land additive in T1 next to the legacy `?cursor=` route (that additive window is the only "flag") and the legacy route is deleted at the T2 cutover; the injectable front transport (`usePiSessions({ createRemoteSession })`) may dark-launch DS for at most one PR before the default flips; minor version bumps of `@hachej/boring-agent` mark the T2 (protocol) and P3 (relocation) cutovers. Server+front ship together in the CLI package — no long-lived skew exists to flag for.
+10. **No retro-compat, no speculative abstraction.** All `@hachej/*` consumers are in-repo: importers migrate in the same PR, transitional code carries `TODO(remove:<bead-id>)` with a same-phase deletion bead, no abstraction without two real consumers (binding policy: `todos-v2/README.md` "Simplicity & no-compat policy"). Exceptions that MUST stay compatible: on-disk pi session JSONL, the landed #416 shared contracts, server↔front within one release train.

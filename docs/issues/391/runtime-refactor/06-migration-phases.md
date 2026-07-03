@@ -62,7 +62,8 @@ Implementation choice (08, verified): adopt the **Durable Streams wire protocol*
 
 Deliverables:
 
-- `AgentEvent` envelope (`v`, `eventIndex`, `timestamp`, `sessionId`, `chunk`) around the existing harness stream unit (`PiChatEvent`); monotonic index persisted with the session transcript (DS `seq`/offset). Supersedes the bespoke `PiChatReplayBuffer` + `?cursor=` NDJSON replay (kept live until T2 cutover).
+- `AgentEvent` envelope (`v`, `eventIndex`, `timestamp`, `sessionId`, `chunk`) around the existing harness stream unit (`PiChatEvent`); monotonic index persisted in the append-only SQLite `EventStreamStore` (DS `seq`/offset). Supersedes the bespoke `PiChatReplayBuffer` + `?cursor=` NDJSON replay (kept live until T2 cutover).
+- **Two authorities, separate:** the SQLite `EventStreamStore` is the **replay authority**; the pi session JSONL remains the **conversation-state authority** for harness rehydration (unchanged — existing sessions keep loading). Pending approval requests live in the event-stream SQLite DB, not the JSONL/session store.
 - `agent.replay(sessionId, { startIndex })`; HTTP adapter = DS-compliant `GET`/`HEAD` stream routes (catch-up from offset, SSE + long-poll).
 - Approvals/HITL on-stream: `needsApproval` on `AgentTool`; approval/input-request events; `resolveInput()`; durable `session.waiting` park/resume. Migrate permission prompts + ask-user plugin onto this path (no second approval channel).
 - Harness conformance suite additions: envelope ordering, replay-from-index, approval park/resume (extends #12 conformance).
@@ -88,7 +89,7 @@ Deliverables:
 - move concrete provider implementations (direct, bwrap, vercel-sandbox, remote-worker client) to `boring-bash/providers`;
 - provisioning ownership docs: agent owns engine/types over injected adapters; boring-bash owns requirement normalizer and provider adapters;
 - remote-worker split docs: protocol/shared types, client/provider adapter, optional server package path;
-- compatibility strategy: type-only old-path exports where safe; moved values must not be re-exported from agent/workspace if that creates cycles — host/composition shims or explicit import migrations instead.
+- migration strategy (v2, strict): **migrate every importer in the same PR** — no type-only old-path exports, no re-export stubs, no host shims that outlive the phase. Intra-phase transitional code carries `// TODO(remove:<bead-id>)` + a deletion bead (see `todos-v2/README.md` "Simplicity & no-compat policy").
 
 Do not move providers until Phase 1 injection is complete.
 
@@ -101,7 +102,8 @@ Deliverables:
 - move file/tree/search/fs-events/stat/dir routes to `boring-bash/server` — preserving the `(filesystem, path)` addressing **[landed for routes/tools wiring via #429/#454: `filesystem` param, spoof guard, readonly enforcement — this phase moves the code, not the behavior]**;
 - move filesystem tools to `boring-bash/agent`; move or explicitly assign `bash`, `execute_isolated_code`, and upload tools;
 - preserve readiness tags and `disableDefaultFileTools`;
-- replace hardwired registration with `createBashAgentFeature()` consumed as `features` by `createAgent()`.
+- replace hardwired registration with `createBashAgentFeature()` consumed as `features` by `createAgent()`;
+- `createBashAgentFeature()` re-expressed as **environment-attachment sugar** once E1 contracts exist (if E1 has landed; else a plain feature).
 
 Exit criteria: workspace playground still opens file tree/editor; read/write/edit/find/grep/ls/bash work when boring-bash enabled; pure mode still has none of those routes/tools; company_context no-leak conformance still green.
 
@@ -124,11 +126,12 @@ Exit criteria: as v1, plus: no test can read a brokered secret from inside the s
 Deliverables:
 
 - `Environment` / `EnvironmentAttachment` / `EnvironmentRegistry` contracts in boring-bash (generalizing, not replacing, the landed #416 binding shapes); `company_context` re-expressed as the reference environment + readonly attachment.
-- Scoped views (`scope.subpath`) enforced by the environment host; subagents attach explicitly (same handle or scoped view) — no cwd inheritance.
-- `createBashAgentFeature()` re-expressed as attachment sugar; agent core sees `ResolvedEnvironments` type-only (invariant-checked).
+- Scoped views (`scope.subpath`) enforced by the environment host — no cwd inheritance. (The subagent attachment seam that consumes scoped views is deferred to Phase 7, the first real subagent consumer.)
+- agent core sees `ResolvedEnvironments` type-only (invariant-checked).
+- `EnvironmentRegistry` is a minimal Map-backed registry (no lifecycle framework beyond prepare/dispose).
 - Environment conformance suite extended to scoped-view attachments.
 
-Exit criteria: existing workspace + company_context behavior unchanged (governance consumers green); a subagent can be attached to a scoped view of the parent's environment; an agent can hold two environments with distinct `filesystem` identities.
+Exit criteria: existing workspace + company_context behavior unchanged (governance consumers green); a scoped view of an environment can be attached and is physically jailed (subagent consumer deferred to Phase 7); an agent can hold two environments with distinct `filesystem` identities.
 
 ## Phase E2 — MCP environment projection (after E1)
 
@@ -175,6 +178,6 @@ Exit criteria: as v1, plus: two surfaces bound to two agents in one workspace do
 
 ## Phase 8 — Cleanup and deprecation
 
-Unchanged from v1: remove remaining compatibility exports after the migration window; update package docs; migration notes for app authors; convert remaining plan tasks into beads/issues.
+v2 rewrite — Phase 8 is a **verification** phase, not a deferred-deletion dump: assert zero `TODO(remove:*)` markers remain repo-wide (add the check to the invariant scripts); update package docs; convert remaining plan tasks into beads/issues. There is no "migration window" — all import migrations happened in-PR per the no-compat policy (`todos-v2/README.md`).
 
 Additional v2 exit criterion: `@hachej/boring-agent` README documents the four-part surface contract (08) as the stable public API.
