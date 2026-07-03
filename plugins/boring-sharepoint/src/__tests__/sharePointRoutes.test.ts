@@ -91,6 +91,26 @@ describe("SharePoint routes", () => {
     )
   })
 
+  it("rejects invalid durable preview identifiers before provider calls", async () => {
+    const provider = fakeProvider({ createOfficePreviewUrl: vi.fn() })
+    const app = await testApp(provider)
+
+    const invalidCases = [
+      { driveId: " ", driveItemId: ref.driveItemId, error: SHAREPOINT_ERROR_CODES.INVALID_REF },
+      { driveId: ref.driveId, driveItemId: `Bearer ${ref.driveItemId}`, error: SHAREPOINT_ERROR_CODES.REF_CONTAINS_SECRET },
+      { driveId: `${ref.driveId}?access_token=secret`, driveItemId: ref.driveItemId, error: SHAREPOINT_ERROR_CODES.REF_CONTAINS_SECRET },
+      { driveId: "x".repeat(513), driveItemId: ref.driveItemId, error: SHAREPOINT_ERROR_CODES.INVALID_REF },
+    ]
+
+    for (const payload of invalidCases) {
+      const response = await app.inject({ method: "POST", url: SHAREPOINT_ROUTE_PATHS.preview, payload })
+      expect(response.statusCode).toBe(400)
+      expect(response.json()).toMatchObject({ error: payload.error })
+      expect(response.body).not.toMatch(/access_token=secret|Bearer 01ROJO|xxxxx/)
+    }
+    expect(provider.createOfficePreviewUrl).not.toHaveBeenCalled()
+  })
+
   it("rejects non-HTTPS preview results from the provider", async () => {
     const provider = fakeProvider({ createOfficePreviewUrl: vi.fn().mockResolvedValue({ getUrl: "http://tenant/preview?token=secret" }) })
     const app = await testApp(provider)

@@ -81,7 +81,7 @@ export function SharePointSettingsPanel() {
         <p className="mt-1 text-muted-foreground">{status.detail}</p>
       </div>
       <div className="mt-4 rounded-lg border border-dashed border-border bg-muted/20 p-4 text-muted-foreground">
-        Read-only status and document discovery are wired through <code>/api/sharepoint/status</code> and <code>/api/sharepoint/resolve</code>. Preview, Office edits, and import are not enabled yet.
+        Read-only status and document discovery are wired through <code>/api/sharepoint/status</code> and <code>/api/sharepoint/resolve</code>. Office preview is generated on demand through <code>/api/sharepoint/preview</code>; Office edits and import are not enabled yet.
       </div>
     </section>
   )
