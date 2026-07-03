@@ -17,13 +17,21 @@ export {
   mergeGeneratedPaneProfiles,
 } from "./catalog"
 export type {
-  GeneratedPaneActionDefinition,
-  GeneratedPaneActionHandler,
+  GeneratedPaneComponentBinding,
   GeneratedPaneComponentDefinition,
+  GeneratedPaneComponentProps,
   GeneratedPaneProfile,
 } from "./catalog"
-export type { GeneratedPaneElementSpec, GeneratedPaneSpec, GeneratedPaneValidationResult } from "../shared"
-export { parseGeneratedPaneSpec } from "../shared"
+export type {
+  GeneratedPaneDiagnostic,
+  GeneratedPaneDiagnosticCode,
+  GeneratedPaneDiagnosticsResult,
+  GeneratedPaneElementSpec,
+  GeneratedPaneSpec,
+  GeneratedPaneValidationResult,
+  GeneratedPaneVocabulary,
+} from "../shared"
+export { GENERATED_PANE_DIAGNOSTIC_CODES, baseGeneratedPaneVocabulary, defineGeneratedPaneVocabulary, parseGeneratedPaneSpec, validateGeneratedPaneSpec } from "../shared"
 export { GENERATED_PANE_EXPLORER_LEFT_TAB_ID, GENERATED_PANE_PANEL_ID } from "./constants"
 export { generatedPaneSurfaceResolver, isGeneratedPanePath } from "./surfaceResolver"
 

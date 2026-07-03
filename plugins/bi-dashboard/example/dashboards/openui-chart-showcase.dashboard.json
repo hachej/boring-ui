@@ -1,0 +1,228 @@
+{
+  "kind": "boring.generated-pane",
+  "profile": "bi-dashboard",
+  "version": 1,
+  "title": "Native Chart Types Showcase",
+  "description": "Visual fixture for every native OpenUI/shadcn-backed chart type currently authorized for normal dashboard generation.",
+  "queries": {
+    "total_revenue": {
+      "id": "total_revenue",
+      "source": "people-duckdb",
+      "sql": "SELECT sum(revenue) AS revenue FROM people"
+    },
+    "avg_utilization": {
+      "id": "avg_utilization",
+      "source": "people-duckdb",
+      "sql": "SELECT avg(utilization) AS utilization FROM people"
+    },
+    "revenue_by_role": {
+      "id": "revenue_by_role",
+      "source": "people-duckdb",
+      "sql": "SELECT role, count(*) AS people, sum(revenue) AS revenue, avg(utilization) AS utilization, avg(satisfaction) AS satisfaction FROM people GROUP BY role ORDER BY revenue DESC"
+    },
+    "revenue_by_region": {
+      "id": "revenue_by_region",
+      "source": "people-duckdb",
+      "sql": "SELECT region, count(*) AS people, sum(revenue) AS revenue, avg(utilization) AS utilization, avg(satisfaction) AS satisfaction FROM people GROUP BY region ORDER BY revenue DESC"
+    },
+    "people_detail": {
+      "id": "people_detail",
+      "source": "people-duckdb",
+      "sql": "SELECT id, role, region, revenue, utilization, satisfaction FROM people ORDER BY revenue DESC"
+    }
+  },
+  "root": "dashboard",
+  "elements": {
+    "dashboard": {
+      "type": "DashboardGrid",
+      "props": {
+        "columns": 1
+      },
+      "children": [
+        "intro",
+        "region-filter",
+        "role-filter",
+        "metrics-grid",
+        "charts-grid"
+      ]
+    },
+    "intro": {
+      "type": "BSLText",
+      "props": {
+        "markdown": "## Native chart visual test\nThis dashboard intentionally uses every native chart type authorized for normal agent dashboards: bar, line, area, scatter, radar, radial, pie, and donut. Each chart uses one simple measure so renderer bugs are easy to spot."
+      }
+    },
+    "region-filter": {
+      "type": "BSLFilter",
+      "props": {
+        "id": "region-filter",
+        "field": "region",
+        "label": "Region",
+        "controlType": "select",
+        "targetQueries": [
+          "revenue_by_region",
+          "people_detail"
+        ]
+      }
+    },
+    "role-filter": {
+      "type": "BSLFilter",
+      "props": {
+        "id": "role-filter",
+        "field": "role",
+        "label": "Role",
+        "controlType": "select",
+        "targetQueries": [
+          "revenue_by_role",
+          "people_detail"
+        ]
+      }
+    },
+    "total-revenue": {
+      "type": "BSLMetric",
+      "props": {
+        "queryId": "total_revenue",
+        "valueField": "revenue",
+        "label": "Total revenue",
+        "format": "currency"
+      }
+    },
+    "avg-utilization": {
+      "type": "BSLMetric",
+      "props": {
+        "queryId": "avg_utilization",
+        "valueField": "utilization",
+        "label": "Avg utilization",
+        "format": "percent"
+      }
+    },
+    "bar-chart": {
+      "type": "BSLChart",
+      "props": {
+        "queryId": "revenue_by_role",
+        "title": "BAR chart \u2014 revenue by role",
+        "renderer": "native",
+        "chartType": "bar",
+        "x": "role",
+        "y": "revenue",
+        "controls": [
+          "role-filter"
+        ]
+      }
+    },
+    "line-chart": {
+      "type": "BSLChart",
+      "props": {
+        "queryId": "revenue_by_role",
+        "title": "LINE chart \u2014 utilization by role",
+        "renderer": "native",
+        "chartType": "line",
+        "x": "role",
+        "y": "utilization",
+        "controls": [
+          "role-filter"
+        ]
+      }
+    },
+    "area-chart": {
+      "type": "BSLChart",
+      "props": {
+        "queryId": "revenue_by_region",
+        "title": "AREA chart \u2014 revenue by region",
+        "renderer": "native",
+        "chartType": "area",
+        "x": "region",
+        "y": "revenue",
+        "controls": [
+          "region-filter"
+        ]
+      }
+    },
+    "scatter-chart": {
+      "type": "BSLChart",
+      "props": {
+        "queryId": "people_detail",
+        "title": "SCATTER chart \u2014 utilization vs satisfaction by role",
+        "renderer": "native",
+        "chartType": "scatter",
+        "x": "utilization",
+        "y": "satisfaction",
+        "color": "role",
+        "controls": [
+          "region-filter",
+          "role-filter"
+        ]
+      }
+    },
+    "radar-chart": {
+      "type": "BSLChart",
+      "props": {
+        "queryId": "revenue_by_role",
+        "title": "RADAR chart \u2014 people by role",
+        "renderer": "native",
+        "chartType": "radar",
+        "x": "role",
+        "y": "people"
+      }
+    },
+    "radial-chart": {
+      "type": "BSLChart",
+      "props": {
+        "queryId": "revenue_by_region",
+        "title": "RADIAL chart \u2014 revenue by region",
+        "renderer": "native",
+        "chartType": "radial",
+        "x": "region",
+        "y": "revenue"
+      }
+    },
+    "pie-chart": {
+      "type": "BSLChart",
+      "props": {
+        "queryId": "revenue_by_region",
+        "title": "PIE chart \u2014 people by region",
+        "renderer": "native",
+        "chartType": "pie",
+        "x": "region",
+        "y": "people"
+      }
+    },
+    "donut-chart": {
+      "type": "BSLChart",
+      "props": {
+        "queryId": "revenue_by_role",
+        "title": "DONUT chart \u2014 revenue by role",
+        "renderer": "native",
+        "chartType": "donut",
+        "x": "role",
+        "y": "revenue"
+      }
+    },
+    "metrics-grid": {
+      "type": "DashboardGrid",
+      "props": {
+        "columns": 2
+      },
+      "children": [
+        "total-revenue",
+        "avg-utilization"
+      ]
+    },
+    "charts-grid": {
+      "type": "DashboardGrid",
+      "props": {
+        "columns": 2
+      },
+      "children": [
+        "bar-chart",
+        "line-chart",
+        "area-chart",
+        "scatter-chart",
+        "radar-chart",
+        "radial-chart",
+        "pie-chart",
+        "donut-chart"
+      ]
+    }
+  }
+}
