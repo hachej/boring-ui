@@ -42,45 +42,23 @@ This workbook will become the operator guide as implementation PRs land.
    - Stale `webUrl`: re-resolve by durable `driveId + driveItemId`.
    - Arcade tool failure: inspect stable `SHAREPOINT_*` error code and provider status.
 
-## Existing MCP/integrations menu audit
+## MCP/integrations menu path
 
-PR 1 only audits and documents the current menu integration path; it does not add a new menu registry.
+The workspace already exposes generic plugin chrome surfaces for integration/status UI:
 
-Current documented front plugin surfaces in `definePlugin` are:
+- `commands` for command-palette entries that open panels.
+- `appLeftActions` for app-left management overlays, the same chrome family used by the MCP/Sources management UI.
 
-- `panels`
-- `commands`
-- `leftTabs`
-- `catalogs`
-- `surfaceResolvers`
-- `providers` / `bindings`
-- `toolRenderers`
-
-There is no documented generic `integrations` contribution in `definePlugin` today. The selected path for PR 2 is to add the smallest generic integration-menu contribution surface to the existing MCP/integrations menu, then have this plugin contribute data to that surface:
-
-```ts
-interface WorkspaceIntegrationContribution {
-  id: string
-  pluginId: string
-  label: string
-  description?: string
-  statusEndpoint?: string
-  openCommandId: string
-  capabilities?: string[]
-}
-```
-
-The SharePoint contribution should be data/config only:
+PR 2 uses those existing generic surfaces instead of adding SharePoint-specific branches to workspace chrome:
 
 ```txt
-id: sharepoint
-pluginId: boring-sharepoint
-label: SharePoint / Microsoft 365
-openCommandId: boring-sharepoint.open-settings
-capabilities: office.preview, office.excel.edit, office.powerpoint.edit
+command id: boring-sharepoint.open-settings
+panel id: boring-sharepoint.settings
+app-left action id: boring-sharepoint.settings
+label: SharePoint
 ```
 
-If PR 2 discovers an existing generic integration registry in the MCP menu, use that instead and document the files/API in the PR. It must not hard-code SharePoint-specific branches in workspace chrome.
+The app-left action opens the placeholder SharePoint / Microsoft 365 status overlay. The command opens the same status placeholder as a center panel. A future PR can replace the placeholder body with provider status and authorization controls without changing the menu path.
 
 ## Package surfaces
 
@@ -90,10 +68,14 @@ If PR 2 discovers an existing generic integration registry in the MCP menu, use 
 
 ## Current scope
 
-This PR is shell + contracts only:
+This PR adds front-only display wiring on top of the shell + contracts:
 
+- surface resolver for `*.xlsx.cloud.json` and `*.pptx.cloud.json`
+- virtual display metadata for Office cloud-ref paths
+- placeholder Office preview panel with an **Open in SharePoint** action when a safe `webUrl` is available
+- placeholder SharePoint / Microsoft 365 settings/status panel and app-left overlay
 - no Arcade SDK dependency
 - no Microsoft Graph calls
 - no external network calls
-- no preview panel behavior beyond future contracts
-- no integration menu registry changes
+- no iframe preview/edit/provider behavior
+- no SharePoint-specific workspace chrome branches
