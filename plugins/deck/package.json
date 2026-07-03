@@ -46,7 +46,7 @@
   "sideEffects": false,
   "dependencies": {
     "@hachej/boring-ui-kit": "workspace:*",
-    "lucide-react": "^1.23.0",
+    "lucide-react": "^1.21.0",
     "react-markdown": "^10.1.0",
     "remark-gfm": "^4.0.1"
   },

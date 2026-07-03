@@ -47,7 +47,7 @@
   },
   "dependencies": {
     "@hachej/boring-data-explorer": "workspace:*",
-    "lucide-react": "^1.23.0"
+    "lucide-react": "^1.21.0"
   },
   "devDependencies": {
     "@hachej/boring-workspace": "workspace:*",

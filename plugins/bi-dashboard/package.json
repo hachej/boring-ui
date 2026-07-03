@@ -80,7 +80,7 @@
     "@perspective-dev/viewer": "4.5.1",
     "@perspective-dev/viewer-d3fc": "4.4.1",
     "@perspective-dev/viewer-datagrid": "4.5.1",
-    "lucide-react": "^1.23.0",
+    "lucide-react": "^1.21.0",
     "zod": "^4.3.6",
     "zustand": "^4.5.7"
   },
