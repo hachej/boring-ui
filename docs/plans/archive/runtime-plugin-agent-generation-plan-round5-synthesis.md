@@ -10,10 +10,10 @@ Models consulted in round 5:
 
 ## Verdict
 
-After integrating round 5 P1 feedback, the plan is bead-ready.
+After integrating round 5 P1 feedback, the plan is task-ready.
 
-- xAI: BEAD-READY, optional nits only.
-- Opus: BEAD-READY, optional nits only.
+- xAI: TASK-READY, optional nits only.
+- Opus: TASK-READY, optional nits only.
 - GPT-5.5: no P0s; two hosted permission/isolation P1s and one scaffold portability P1. These were integrated.
 
 ## Integrated round 5 changes
@@ -50,6 +50,6 @@ After integrating round 5 P1 feedback, the plan is bead-ready.
 
 ## Remaining optional implementation details
 
-- Pick exact quarantine thresholds during test bead creation.
+- Pick exact quarantine thresholds during test task creation.
 - Decide final sidebar manifest naming if generated left tabs become supported.
 - Add precise hosted lock TTL when implementing DB/Redis advisory lock.

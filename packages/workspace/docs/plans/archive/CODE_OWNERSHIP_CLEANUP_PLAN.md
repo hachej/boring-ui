@@ -367,7 +367,7 @@ Phase 5 is opportunistic — none of it blocks Phases 1–4.
 1. `packages/workspace/e2e/fixture/**` + migrated generic specs.
 2. Reduced `apps/boring-macro-v2/e2e/**` containing only macro-specific specs.
 3. Playground mock backend deduplicated with workspace testing utility.
-4. Follow-up extraction beads:
+4. Follow-up extraction tasks:
    - core server helpers from full-app
    - delete macro `tabBus`; route via existing UI bridge
    - generic queue/rate-limit primitive from macro refresh flow

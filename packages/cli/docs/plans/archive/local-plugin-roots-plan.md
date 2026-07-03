@@ -403,7 +403,7 @@ This plan is complete when all of the following are true:
 
 ## Suggested next step after this plan
 
-Break into beads roughly as:
+Break into tasks roughly as:
 
 1. root resolution + diagnostics
 2. folder mode integration

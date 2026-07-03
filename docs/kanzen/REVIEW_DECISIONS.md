@@ -2,13 +2,13 @@
 
 Tracks what was adopted vs deferred from two external reviews during v1 planning. If you're wondering "why don't we have X?" -- check here before re-litigating.
 
-See also: [DECISIONS.md](./DECISIONS.md) for the locked architectural decisions.
+See also: [DECISIONS.md](../DECISIONS.md) for the locked architectural decisions.
 
 > **Reader note (historical log; entries reflect the April 2026 reviews and are not rewritten):**
 > the published package scope is now `@hachej/boring-*` (not `@boring/*`); `@boring/cloud`
 > remains a planned, not-yet-extracted package; and the chat UI export names referenced here
 > (`SessionToolbar`, `<Tool>`, `theme.css`) predate the pi-native chat rewrite — see
-> [WORKSPACE_CONTRACT.md](./WORKSPACE_CONTRACT.md) for the current surface.
+> [WORKSPACE_CONTRACT.md](../WORKSPACE_CONTRACT.md) for the current surface.
 
 ---
 
@@ -25,7 +25,7 @@ See also: [DECISIONS.md](./DECISIONS.md) for the locked architectural decisions.
 | **Finding** | HTTP surface exposed `/api/v1/agent/workspaces` CRUD that conflicted with the single-workspace-per-instance model. |
 | **Action** | Removed workspace CRUD routes; session routes trimmed to match. |
 | **Rationale** | Workspace management belongs to `@boring/cloud`, not `@boring/agent`. Exposing it here creates two sources of truth. |
-| **Implementing beads** | boring-ui-v2-ce6 (PiSessionStore), boring-ui-v2-983 (UI bridge routes) |
+| **Implementation tasks** | boring-ui-v2-ce6 (PiSessionStore), boring-ui-v2-983 (UI bridge routes) |
 
 #### 2. Exec safety caps
 
@@ -34,7 +34,7 @@ See also: [DECISIONS.md](./DECISIONS.md) for the locked architectural decisions.
 | **Finding** | `exec()` had no timeout or output-size limits, risking runaway processes and OOM. |
 | **Action** | Added `ExecOptions { timeoutMs, maxOutputBytes }` and `ExecResult { durationMs, truncated }` with Uint8Array-typed stdout/stderr. |
 | **Rationale** | Defense-in-depth. Even trusted code can hang or produce unbounded output. |
-| **Implementing beads** | boring-ui-v2-p7c (sandbox interface), boring-ui-v2-pf0 (BwrapSandbox) |
+| **Implementation tasks** | boring-ui-v2-p7c (sandbox interface), boring-ui-v2-pf0 (BwrapSandbox) |
 
 #### 6 (partial). Vercel API resilience
 
@@ -43,7 +43,7 @@ See also: [DECISIONS.md](./DECISIONS.md) for the locked architectural decisions.
 | **Finding** | Vercel SDK calls had no retry or circuit-breaker logic. Full recommendation included lease/heartbeat/reconciler. |
 | **Action** | Added circuit breaker wrapping the Vercel SDK client. Skipped lease/heartbeat/reconciler (cloud-package territory). |
 | **Rationale** | Circuit breaker covers transient failures. The heavier machinery belongs in `@boring/cloud` where sandbox lifecycle is managed. |
-| **Implementing beads** | boring-ui-v2-2ux (VercelSandbox) |
+| **Implementation tasks** | boring-ui-v2-2ux (VercelSandbox) |
 
 #### 11. Export surface consistency
 
@@ -52,7 +52,7 @@ See also: [DECISIONS.md](./DECISIONS.md) for the locked architectural decisions.
 | **Finding** | Export names were inconsistent (`SessionList` vs `SessionToolbar`, extra dialogs and hooks). |
 | **Action** | Decision #15 rewritten. Locked exports: `SessionToolbar` (not `SessionList`); removed rename/delete dialogs and `useRegisterTool` hook. |
 | **Rationale** | Smaller, consistent surface is easier to maintain and less likely to break consumers. |
-| **Implementing beads** | boring-ui-v2-ebn (DECISIONS.md, decision #15) |
+| **Implementation tasks** | boring-ui-v2-ebn (DECISIONS.md, decision #15) |
 
 ### Deferred
 
@@ -144,7 +144,7 @@ Items deferred under the "ship fast, accept known risk" principle. Each includes
 |---|---|
 | **Finding** | Stream resume was originally deferred to post-v1. Review argued it's table-stakes for chat UX. |
 | **Action** | Promoted to M3a milestone: ring buffer + cursor-based reconnection. |
-| **Implementing beads** | boring-ui-v2-wna (stream resumption), boring-ui-v2-f3i (E2E resume test) |
+| **Implementation tasks** | boring-ui-v2-wna (stream resumption), boring-ui-v2-f3i (E2E resume test) |
 
 #### 2. Uint8Array-typed exec output
 
@@ -152,7 +152,7 @@ Items deferred under the "ship fast, accept known risk" principle. Each includes
 |---|---|
 | **Finding** | Exec output should be binary-safe, not string-only. |
 | **Action** | `ExecResult.stdout` and `ExecResult.stderr` typed as `Uint8Array`. |
-| **Implementing beads** | boring-ui-v2-p7c (sandbox interface) |
+| **Implementation tasks** | boring-ui-v2-p7c (sandbox interface) |
 
 #### 3. Slash commands
 
@@ -160,7 +160,7 @@ Items deferred under the "ship fast, accept known risk" principle. Each includes
 |---|---|
 | **Finding** | Chat needs local commands (`/clear`, `/reset`, `/model`, `/help`, `/cost`) for power users. |
 | **Action** | Client-side slash command system with parser, registry, and 5 builtin commands. |
-| **Implementing beads** | boring-ui-v2-qfp (slash commands), boring-ui-v2-uv5 (E2E slash command tests) |
+| **Implementation tasks** | boring-ui-v2-qfp (slash commands), boring-ui-v2-uv5 (E2E slash command tests) |
 
 #### 4. CLI SSH/headless detection
 
@@ -168,7 +168,7 @@ Items deferred under the "ship fast, accept known risk" principle. Each includes
 |---|---|
 | **Finding** | `--open` should detect SSH sessions and headless environments to avoid broken browser launches. |
 | **Action** | CLI detects `$SSH_TTY` / `$SSH_CONNECTION` and skips browser-open. `--no-open` flag for explicit opt-out. |
-| **Implementing beads** | boring-ui-v2-i2a (CLI) |
+| **Implementation tasks** | boring-ui-v2-i2a (CLI) |
 
 #### 5. Auto-gitignore for workspace artifacts
 
@@ -176,7 +176,7 @@ Items deferred under the "ship fast, accept known risk" principle. Each includes
 |---|---|
 | **Finding** | Agent-generated artifacts (`.boring/`, session files) should be auto-gitignored. |
 | **Action** | CLI appends to `.gitignore` on first run. `--no-gitignore` flag to opt out. |
-| **Implementing beads** | boring-ui-v2-i2a (CLI) |
+| **Implementation tasks** | boring-ui-v2-i2a (CLI) |
 
 #### 6. Heartbeat events during long tool calls
 
@@ -184,7 +184,7 @@ Items deferred under the "ship fast, accept known risk" principle. Each includes
 |---|---|
 | **Finding** | Long-running tools (bash, code execution) show no progress. Users think the UI is frozen. |
 | **Action** | Server emits `data-status` chunks every 2s with `{ toolCallId, elapsedMs }`. Client `<Tool>` component shows elapsed timer. |
-| **Implementing beads** | boring-ui-v2-sxh (heartbeat events) |
+| **Implementation tasks** | boring-ui-v2-sxh (heartbeat events) |
 
 #### 7. Vercel snapshot retention
 
@@ -192,7 +192,7 @@ Items deferred under the "ship fast, accept known risk" principle. Each includes
 |---|---|
 | **Finding** | Snapshots accumulate without cleanup. Keep-last-N policy needed. |
 | **Action** | `BORING_AGENT_SNAPSHOT_KEEP` env var (default: 2). Oldest snapshots pruned on new snapshot creation. |
-| **Implementing beads** | boring-ui-v2-2ux (VercelSandbox) |
+| **Implementation tasks** | boring-ui-v2-2ux (VercelSandbox) |
 
 #### 8. CSS-var / Tailwind contract
 
@@ -200,7 +200,7 @@ Items deferred under the "ship fast, accept known risk" principle. Each includes
 |---|---|
 | **Finding** | Need a worked example showing how `--boring-agent-*` custom properties integrate with Tailwind. |
 | **Action** | `theme.css` ships with all custom property definitions. Documentation includes Tailwind mapping example. |
-| **Implementing beads** | boring-ui-v2-2pe (theme CSS) |
+| **Implementation tasks** | boring-ui-v2-2pe (theme CSS) |
 
 #### 9. Session changes endpoint
 
@@ -208,7 +208,7 @@ Items deferred under the "ship fast, accept known risk" principle. Each includes
 |---|---|
 | **Finding** | Originally rejected, then upgraded to adopt for Claude Code parity. Tracks file changes per session. |
 | **Action** | `GET /api/v1/agent/sessions/:id/changes` returns `{ files: SessionFileChange[] }`. |
-| **Implementing beads** | boring-ui-v2-983 (UI bridge routes) |
+| **Implementation tasks** | boring-ui-v2-983 (UI bridge routes) |
 
 #### 10. CLI `--logout` / `--reset-key` flags
 
@@ -216,7 +216,7 @@ Items deferred under the "ship fast, accept known risk" principle. Each includes
 |---|---|
 | **Finding** | Users need a way to clear stored credentials without manually finding config files. |
 | **Action** | CLI flags for credential management. |
-| **Implementing beads** | boring-ui-v2-i2a (CLI) |
+| **Implementation tasks** | boring-ui-v2-i2a (CLI) |
 
 #### 11. Windows support statement
 
@@ -224,7 +224,7 @@ Items deferred under the "ship fast, accept known risk" principle. Each includes
 |---|---|
 | **Finding** | Need an explicit stance on Windows support. |
 | **Action** | WSL2 only. Native Windows is not supported. Documented in README. |
-| **Implementing beads** | boring-ui-v2-1m4 (README) |
+| **Implementation tasks** | boring-ui-v2-1m4 (README) |
 
 #### 12. Test strategy statement
 
@@ -232,7 +232,7 @@ Items deferred under the "ship fast, accept known risk" principle. Each includes
 |---|---|
 | **Finding** | Need an explicit testing philosophy to guide contributors. |
 | **Action** | Unit tests via Vitest, E2E via Playwright, type-level tests via `test-d.ts`. Invariant checks in `scripts/check-invariants.sh`. |
-| **Implementing beads** | boring-ui-v2-xgv (E2E infra), boring-ui-v2-uxs (E2E logging harness) |
+| **Implementation tasks** | boring-ui-v2-xgv (E2E infra), boring-ui-v2-uxs (E2E logging harness) |
 
 ---
 
@@ -250,8 +250,8 @@ Estimated impact: ~300 LOC added over pre-review baseline (net v1 ~ 3,070 LOC).
 
 ## Changelog
 
-Track upgrades of deferred items here. When a deferred risk materializes, create a new bead and add a row.
+Track upgrades of deferred items here. When a deferred risk materializes, create a new GitHub issue and add a row.
 
-| Date | Item | Action | Bead |
+| Date | Item | Action | Issue |
 |---|---|---|---|
 | *(none yet)* | | | |

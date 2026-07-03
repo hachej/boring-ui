@@ -2,7 +2,7 @@
 
 > **⚠ SUPERSEDED 2026-04-29 — content merged into [PLUGIN_MODEL.md](./PLUGIN_MODEL.md) §"Phase 1.5: Consumer migration".**
 >
-> Per user decision (v7.4 merger): the two plans had substantial scope overlap (macro migration, ChatCenteredShell removal, plugin extraction). Folded into one mega-plan + one epic (boring-ui-v2-j9p7) with a single acceptance gate. Phase 1.5 in PLUGIN_MODEL.md is the canonical reference; phase beads are j9p7.24-29 + j9p7.18-20 (the latter reframed under Phase E).
+> Per user decision (v7.4 merger): the two plans had substantial scope overlap (macro migration, ChatCenteredShell removal, plugin extraction). Folded into one mega-plan + one epic (boring-ui-v2-j9p7) with a single acceptance gate. Phase 1.5 in PLUGIN_MODEL.md is the canonical reference; phase tasks are j9p7.24-29 + j9p7.18-20 (the latter reframed under Phase E).
 >
 > Epic boring-ui-v2-zrby closed as merged.
 >
@@ -203,14 +203,14 @@ export { definePlugin, definePanel, PluginError, ... } from "./plugin"
 export { CatalogRegistry, useCommands, useActivePanels, useCatalogs, ... } from "./plugin"
 ```
 
-## Phase breakdown — 7 child beads
+## Phase breakdown — 7 child tasks
 
 A. **Decompose chat shells into per-pane folders + bridge/**
    - `git mv` `components/chat/{SessionBrowser, ChatStagePlaceholder, SurfaceShell, WorkbenchLeftPane}.tsx` into per-pane folders under `panes/`. Each pane gains a `definition.ts` exporting a `PanelConfig`.
    - Create `panes/chat/ChatPanel.tsx` (thin wrapper around `@boring/agent`'s ChatPanel + workspace integrations) + `definition.ts`.
    - `git mv` `components/chat/{uiCommandStream, uiCommandDispatcher}.ts` → `bridge/`.
    - Update internal imports.
-   - **Don't touch `ChatCenteredShell.tsx` or `ChatTopBar.tsx` yet** — they stay in `components/chat/` until later beads.
+   - **Don't touch `ChatCenteredShell.tsx` or `ChatTopBar.tsx` yet** — they stay in `components/chat/` until later tasks.
 
 B. **Wire core panel registrations in WorkspaceProvider**
    - Create `registry/coreRegistrations.ts` exporting `coreWorkspacePanels: PanelConfig[]` aggregating the 4 core panel defs.
@@ -270,7 +270,7 @@ A and B can run in parallel. C depends on A. D, E, F can run in parallel after A
 
 ## Ship criteria
 
-- All 7 phase beads closed.
+- All 7 phase tasks closed.
 - Three apps run on declarative layouts in production.
 - `ChatCenteredShell` and `ChatShellContext` deleted from the tree.
 - Public API exposes Tier 1 / Tier 2 / Tier 3 entries with jsdoc.

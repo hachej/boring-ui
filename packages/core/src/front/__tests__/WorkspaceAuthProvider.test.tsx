@@ -28,7 +28,7 @@ vi.mock('../auth/AuthProvider', () => ({
   useSession: () => mockSessionState.current,
 }))
 
-import { withBeadId } from '../../server/__tests__/_setup'
+import { withTaskId } from '../../server/__tests__/_setup'
 import type { MemberRole, RuntimeConfig, Workspace } from '../../shared/types'
 import { ConfigProvider } from '../ConfigProvider'
 import {
@@ -40,7 +40,7 @@ import {
 } from '../WorkspaceAuthProvider'
 import { useMswHandler } from './_setup'
 
-const BEAD_ID = 'boring-ui-v2-un4j'
+const TASK_ID = 'boring-ui-v2-un4j'
 
 const WS_1: Workspace = {
   id: 'ws-001',
@@ -249,7 +249,7 @@ afterEach(() => {
 describe('WorkspaceAuthProvider', () => {
   it(
     'does not fetch workspace list or detail when email verification is required and user is unverified',
-    withBeadId(BEAD_ID, async ({ assertionPassed }) => {
+    withTaskId(TASK_ID, async ({ assertionPassed }) => {
       const qc = createQueryClient()
       let workspaceRequests = 0
       setUnverifiedSession()
@@ -283,7 +283,7 @@ describe('WorkspaceAuthProvider', () => {
 
   it(
     'does not fetch workspace list or detail before auth resolves',
-    withBeadId(BEAD_ID, async ({ assertionPassed }) => {
+    withTaskId(TASK_ID, async ({ assertionPassed }) => {
       const qc = createQueryClient()
       let workspaceRequests = 0
       setUnauthenticatedSession()
@@ -318,7 +318,7 @@ describe('WorkspaceAuthProvider', () => {
 
   it(
     'does not fetch workspace list while session is pending',
-    withBeadId(BEAD_ID, async ({ assertionPassed }) => {
+    withTaskId(TASK_ID, async ({ assertionPassed }) => {
       const qc = createQueryClient()
       let workspaceRequests = 0
       setPendingSession()
@@ -352,7 +352,7 @@ describe('WorkspaceAuthProvider', () => {
 
   it(
     'resolves workspace by route param :id',
-    withBeadId(BEAD_ID, async ({ assertionPassed }) => {
+    withTaskId(TASK_ID, async ({ assertionPassed }) => {
       const qc = createQueryClient()
       mockWorkspacesList([WS_1])
       mockWorkspaceDetail(WS_1, 'owner')
@@ -370,7 +370,7 @@ describe('WorkspaceAuthProvider', () => {
 
   it(
     'encodes route workspace id before fetching detail',
-    withBeadId(BEAD_ID, async ({ assertionPassed }) => {
+    withTaskId(TASK_ID, async ({ assertionPassed }) => {
       const qc = createQueryClient()
       const specialWs: Workspace = { ...WS_1, id: 'team/a b' }
       let requestedUrl = ''
@@ -405,7 +405,7 @@ describe('WorkspaceAuthProvider', () => {
 
   it(
     'falls back to default workspace when no :id param',
-    withBeadId(BEAD_ID, async ({ assertionPassed }) => {
+    withTaskId(TASK_ID, async ({ assertionPassed }) => {
       const qc = createQueryClient()
       mockWorkspacesList([WS_2, WS_1])
       mockWorkspaceDetail(WS_1, 'editor')
@@ -423,7 +423,7 @@ describe('WorkspaceAuthProvider', () => {
 
   it(
     'falls back to first workspace when no default exists',
-    withBeadId(BEAD_ID, async ({ assertionPassed }) => {
+    withTaskId(TASK_ID, async ({ assertionPassed }) => {
       const qc = createQueryClient()
       const noDefault = { ...WS_2, isDefault: false }
       mockWorkspacesList([noDefault])
@@ -442,7 +442,7 @@ describe('WorkspaceAuthProvider', () => {
 
   it(
     'returns null when user has no workspaces',
-    withBeadId(BEAD_ID, async ({ assertionPassed }) => {
+    withTaskId(TASK_ID, async ({ assertionPassed }) => {
       const qc = createQueryClient()
       mockWorkspacesList([])
 
@@ -459,7 +459,7 @@ describe('WorkspaceAuthProvider', () => {
 
   it(
     'returns null on fetch error',
-    withBeadId(BEAD_ID, async ({ assertionPassed }) => {
+    withTaskId(TASK_ID, async ({ assertionPassed }) => {
       const qc = createQueryClient()
       vi.spyOn(console, 'error').mockImplementation(() => {})
       mockWorkspacesList([WS_1])
@@ -493,7 +493,7 @@ describe('WorkspaceAuthProvider', () => {
 
   it(
     'returns cached workspace detail before refetching',
-    withBeadId(BEAD_ID, async ({ assertionPassed }) => {
+    withTaskId(TASK_ID, async ({ assertionPassed }) => {
       const qc = createQueryClient()
       const renamed = { ...WS_1, name: 'Renamed Workspace' }
       let detailFetches = 0
@@ -539,7 +539,7 @@ describe('WorkspaceAuthProvider', () => {
 
   it(
     'surfaces null while workspace detail is loading',
-    withBeadId(BEAD_ID, async ({ assertionPassed }) => {
+    withTaskId(TASK_ID, async ({ assertionPassed }) => {
       const qc = createQueryClient()
       let resolveResponse: (response: Response) => void = () => {}
       const responsePromise = new Promise<Response>((resolve) => {

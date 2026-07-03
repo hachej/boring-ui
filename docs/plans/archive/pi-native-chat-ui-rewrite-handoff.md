@@ -35,7 +35,7 @@ Status: final acceptance sweep for `boring-ui-v2-reorg-17vb`.
 
 ## Deferred non-goals
 
-Future work should be separate beads:
+Future work should be separate tasks:
 
 - `/clear` as a viewport/filter feature, not transcript deletion.
 - Regenerate/edit previous assistant turns.

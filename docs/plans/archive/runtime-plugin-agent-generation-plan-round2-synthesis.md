@@ -11,7 +11,7 @@ Models consulted in round 2:
 ## Round 2 consensus
 
 The plan is directionally correct, but reviewers found several gaps to tighten
-before bead conversion:
+before task conversion:
 
 1. **Hosted stable artifacts should land before hosted live HMR.**
    - Live sandbox Vite HMR is the best authoring end-state, but stable artifact

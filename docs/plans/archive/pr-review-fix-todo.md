@@ -113,9 +113,9 @@ Locks in the "two entrances, one source of truth" model for plugin-authoring gui
 
 ## P1 — round 2 findings
 
-- [x] **SSE endpoint has no server-side tests (follow-up bead)** — `/api/v1/agent-plugins/events` is never tested with a real EventSource or raw HTTP client. No tests for heartbeat, correct headers, cleanup on disconnect, multiple concurrent clients, or initial snapshot behavior.
+- [x] **SSE endpoint has no server-side tests (follow-up task)** — `/api/v1/agent-plugins/events` is never tested with a real EventSource or raw HTTP client. No tests for heartbeat, correct headers, cleanup on disconnect, multiple concurrent clients, or initial snapshot behavior.
   - File: `packages/workspace/src/server/agentPlugins/routes.ts:95-134`
-- [x] **No test for auth-header passthrough on SSE (follow-up bead, tested via client-side integration tests) on SSE** — code disables SSE when Bearer auth is detected (EventSource can't send custom headers). Untested: fails without headers when auth required, `withCredentials` cookie auth handling.
+- [x] **No test for auth-header passthrough on SSE (follow-up task, tested via client-side integration tests) on SSE** — code disables SSE when Bearer auth is detected (EventSource can't send custom headers). Untested: fails without headers when auth required, `withCredentials` cookie auth handling.
   - File: `packages/workspace/src/front/agentPlugins/registerAgentPlugin.tsx:270-276`
 - [x] **`/@fs/` URL scheme hardcoded in scan layer (design note — frontUrl derived from frontPath by consumers in non-Vite hosts) in scan layer** — `scanBoringPlugins` produces `frontUrl: \`/@fs/${frontPath}\`` which couples scan output to Vite's dev asset URL scheme. In production deployments serving plugin assets differently, this URL would be wrong.
   - File: `packages/workspace/src/server/agentPlugins/scan.ts:230`
@@ -134,9 +134,9 @@ Locks in the "two entrances, one source of truth" model for plugin-authoring gui
 
 ## P2 — round 2 findings
 
-- [x] **`directorySignature` uncapped (note — caps already in code, follow-up bead for perf benchmarks) on large plugin dirs** — has `count > 50_000` and `depth > 8` caps, but no tests exercise boundaries. Perf implications for 10k+ file plugin dirs unmeasured.
+- [x] **`directorySignature` uncapped (note — caps already in code, follow-up task for perf benchmarks) on large plugin dirs** — has `count > 50_000` and `depth > 8` caps, but no tests exercise boundaries. Perf implications for 10k+ file plugin dirs unmeasured.
   - File: `packages/workspace/src/server/agentPlugins/manager.ts:58-120`
-- [x] **Concurrent SSE clients untested (follow-up bead)** — no test that multiple subscribers each receive events independently, or one client disconnect doesn't affect others.
+- [x] **Concurrent SSE clients untested (follow-up task)** — no test that multiple subscribers each receive events independently, or one client disconnect doesn't affect others.
   - File: `packages/workspace/src/server/agentPlugins/routes.ts`
 - [x] **`registerSurfaceResolver` synthetic ID discarded** — when `registration.id` is undefined, synthetic ID is generated for collision tracking but not assigned to the registration object before pushing into array. Downstream readers of `.id` get `undefined`.
   - File: `packages/workspace/src/shared/plugins/frontFactory.ts:158`

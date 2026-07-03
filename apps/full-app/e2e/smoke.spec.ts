@@ -1,6 +1,6 @@
 import { expect, test } from '@playwright/test'
 
-const BEAD = 'boring-ui-v2-q4fo'
+const TASK_ID = 'boring-ui-v2-q4fo'
 const WORKSPACE_ID = 'ws-smoke'
 const USER = {
   id: 'user-dev-local',
@@ -20,7 +20,7 @@ const WORKSPACE = {
 }
 
 function log(event: string, fields: Record<string, unknown> = {}): void {
-  console.info(JSON.stringify({ level: 'info', bead: BEAD, event, ...fields }))
+  console.info(JSON.stringify({ level: 'info', task: TASK_ID, event, ...fields }))
 }
 
 function json(body: unknown, status = 200) {

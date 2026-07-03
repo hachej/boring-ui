@@ -11,7 +11,7 @@ Canonical model: `../../../docs/kanzen/boring-loop.md`.
 Coding rules: `../../../docs/kanzen/procedures/coding-rules.md`.
 Trunk/flag/review budget: `../../../docs/kanzen/procedures/trunk-flags-review-budget.md`.
 Visual review: `../../../docs/kanzen/procedures/visual-review.md`.
-Proof comments: `../../../docs/procedures/proof-of-work.md`.
+Proof comments: `../../../docs/kanzen/procedures/proof-of-work.md`.
 
 ## Steps
 

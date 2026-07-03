@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from 'vitest'
 import {
   __peekFlushedLogs,
   __resetTestLogState,
-  withBeadId,
+  withTaskId,
 } from './_setup'
 
 describe('server test logging conventions', () => {
@@ -10,7 +10,7 @@ describe('server test logging conventions', () => {
     __resetTestLogState()
     vi.spyOn(console, 'error').mockImplementation(() => {})
 
-    const run = withBeadId('boring-ui-v2-eyll', async ({ assertionPassed }) => {
+    const run = withTaskId('boring-ui-v2-eyll', async ({ assertionPassed }) => {
       assertionPassed('precondition')
       throw new Error('forced failure for log flush')
     })
@@ -27,7 +27,7 @@ describe('server test logging conventions', () => {
     __resetTestLogState()
     vi.spyOn(console, 'error').mockImplementation(() => {})
 
-    const run = withBeadId('boring-ui-v2-eyll', async ({ assertionPassed }) => {
+    const run = withTaskId('boring-ui-v2-eyll', async ({ assertionPassed }) => {
       assertionPassed('expected true branch')
       expect(1 + 1).toBe(2)
     })

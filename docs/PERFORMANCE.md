@@ -62,7 +62,7 @@ In `vercel-sandbox` mode, prefer the `find_files` catalog tool (backed by `FileS
 
 ## Mitigations Opened
 
-Because measured slowdowns are >2x, follow-up mitigation beads were created:
+Because measured slowdowns are >2x, follow-up mitigation issues were created:
 
 - `boring-ui-v2-jru.1` — Add `find_files` tool over `FileSearch` (avoid shell `find` loops)
 - `boring-ui-v2-jru.2` — Add `grep_files` batched tool (single call for multi-file search)

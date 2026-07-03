@@ -94,7 +94,7 @@ High-value regression-test sources to mine before implementation:
 - `packages/workspace/src/front/chrome/session-list/__tests__/SessionBrowser.test.tsx`
 - `packages/workspace/src/__tests__/plugin-integration.test.tsx`
 
-TDD rule for implementation beads: write or port the failing regression tests first, then implement the smallest Pi-native code that passes them. If a bead cannot start with a test, its acceptance criteria must explain why and name the manual/e2e proof that replaces it.
+TDD rule for implementation tasks: write or port the failing regression tests first, then implement the smallest Pi-native code that passes them. If a task cannot start with a test, its acceptance criteria must explain why and name the manual/e2e proof that replaces it.
 
 ### 4.2 Pi web-ui: browser/render-state precedent
 
@@ -940,7 +940,7 @@ Do not migrate unrelated workspace base UI, DockView layout code, plugin registr
 
 ## 20. Associated GitHub issues and PRs
 
-Use these as context when converting this plan to beads or closing older work. The rewrite may supersede some refactor-only issues; do not blindly implement old issue shapes if they preserve split-state design.
+Use these as context when converting this plan to tasks or closing older work. The rewrite may supersede some refactor-only issues; do not blindly implement old issue shapes if they preserve split-state design.
 
 ### Primary drivers
 
@@ -993,7 +993,7 @@ Cutover policy:
 
 ### Phase 0 — Spec, behavior inventory, tests first
 
-This rewrite should be implemented TDD-first. The current tests are a map of previous failure modes, not trash. For each implementation bead, port/adapt the relevant old tests before writing replacement code. Keep a short mapping table in the bead or PR notes: old test/file -> new test/file -> port/adapt/delete rationale.
+This rewrite should be implemented TDD-first. The current tests are a map of previous failure modes, not trash. For each implementation task, port/adapt the relevant old tests before writing replacement code. Keep a short mapping table in the task or PR notes: old test/file -> new test/file -> port/adapt/delete rationale.
 
 - Finalize this plan.
 - Create checklist from functional behavior preservation/deliberate-change matrix.
@@ -1204,7 +1204,7 @@ Forbidden references:
 
 ## 25. Non-blocking implementation choices
 
-These choices should not reopen the architecture. Resolve them inside implementation beads with tests.
+These choices should not reopen the architecture. Resolve them inside implementation tasks with tests.
 
 1. Use Zustand or another external store under `RemotePiSession`?
    - Recommendation: Zustand is acceptable/preferred if convenient because it is already in the workspace dependency graph. Regardless of store library, high-frequency `message-delta` rendering must be throttled/coalesced; React 18 auto-batching alone is not the performance strategy.
@@ -1212,5 +1212,5 @@ These choices should not reopen the architecture. Resolve them inside implementa
    - Recommendation: bounded by count, bytes, time, or equivalent cap; exact defaults are implementation/config choices. After eviction, client hydrates canonical `/state` and resumes from latest seq.
 3. What is the custom tool renderer collision policy?
    - Recommendation: require namespaced ids. Reject duplicate `rendererId`s in development/test with clear error; warn and first-registration-wins in production to avoid blanking app.
-4. Does issue #34 land inside this rewrite or as immediate follow-up bead?
+4. Does issue #34 land inside this rewrite or as immediate follow-up task?
    - Recommendation: include minimal renderer contribution seam in this rewrite because new chat shell needs adapter anyway; docs/reference plugin can follow if needed.

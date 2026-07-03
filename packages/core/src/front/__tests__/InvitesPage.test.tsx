@@ -5,12 +5,12 @@ import { MemoryRouter, Route, Routes } from 'react-router-dom'
 import type { ReactNode } from 'react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
-import { withBeadId } from '../../server/__tests__/_setup'
+import { withTaskId } from '../../server/__tests__/_setup'
 import type { WorkspaceInvite, Workspace, MemberRole } from '../../shared/types'
 import { InvitesPage } from '../workspace/InvitesPage'
 import { useMswHandler } from './_setup'
 
-const BEAD_ID = 'boring-ui-v2-npkl'
+const TASK_ID = 'boring-ui-v2-npkl'
 const WS_ID = 'ws-001'
 
 const WORKSPACE: Workspace = {
@@ -82,7 +82,7 @@ function extractUrl(input: RequestInfo | URL): string {
 describe('InvitesPage', () => {
   it(
     'renders existing invites',
-    withBeadId(BEAD_ID, async ({ assertionPassed }) => {
+    withTaskId(TASK_ID, async ({ assertionPassed }) => {
       const qc = createQueryClient()
       const pending = makeInvite({ id: 'inv-p', email: 'pending@test.dev' })
       const accepted = makeInvite({
@@ -130,7 +130,7 @@ describe('InvitesPage', () => {
 
   it(
     'creates invite with Idempotency-Key and invalidates query',
-    withBeadId(BEAD_ID, async ({ assertionPassed }) => {
+    withTaskId(TASK_ID, async ({ assertionPassed }) => {
       const qc = createQueryClient()
       const capturedHeaders: Record<string, string>[] = []
       let postCount = 0
@@ -190,7 +190,7 @@ describe('InvitesPage', () => {
 
   it(
     'generates different Idempotency-Key per submission',
-    withBeadId(BEAD_ID, async ({ assertionPassed }) => {
+    withTaskId(TASK_ID, async ({ assertionPassed }) => {
       const qc = createQueryClient()
       const capturedKeys: string[] = []
 
@@ -244,7 +244,7 @@ describe('InvitesPage', () => {
 
   it(
     'revokes invite and invalidates query',
-    withBeadId(BEAD_ID, async ({ assertionPassed }) => {
+    withTaskId(TASK_ID, async ({ assertionPassed }) => {
       const qc = createQueryClient()
       let deleteInviteId: string | null = null
       const pending = makeInvite({ id: 'inv-revoke', email: 'revoke@test.dev' })
@@ -287,7 +287,7 @@ describe('InvitesPage', () => {
 
   it(
     'encodes workspace and invite ids in invite API URLs',
-    withBeadId(BEAD_ID, async ({ assertionPassed }) => {
+    withTaskId(TASK_ID, async ({ assertionPassed }) => {
       const qc = createQueryClient()
       const specialWorkspaceId = 'team/a b'
       const specialInviteId = 'inv/a b'
@@ -361,7 +361,7 @@ describe('InvitesPage', () => {
 
   it(
     'shows inline form error on duplicate email (422)',
-    withBeadId(BEAD_ID, async ({ assertionPassed }) => {
+    withTaskId(TASK_ID, async ({ assertionPassed }) => {
       const qc = createQueryClient()
 
       useMswHandler(async (input, init) => {
@@ -409,7 +409,7 @@ describe('InvitesPage', () => {
 
   it(
     'shows correct status badges for expired and accepted invites',
-    withBeadId(BEAD_ID, async ({ assertionPassed }) => {
+    withTaskId(TASK_ID, async ({ assertionPassed }) => {
       const qc = createQueryClient()
       const expired = makeInvite({
         id: 'inv-exp',
@@ -455,7 +455,7 @@ describe('InvitesPage', () => {
 
   it(
     'non-owner cannot see this page',
-    withBeadId(BEAD_ID, async ({ assertionPassed }) => {
+    withTaskId(TASK_ID, async ({ assertionPassed }) => {
       const qc = createQueryClient()
       mockRole.current = 'editor'
 

@@ -3,11 +3,11 @@ import { act, renderHook } from '@testing-library/react'
 import type { ReactNode } from 'react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
-import { withBeadId } from '../../server/__tests__/_setup'
+import { withTaskId } from '../../server/__tests__/_setup'
 import { ThemeProvider } from '../ThemeProvider'
 import { useTheme } from '../hooks/useTheme'
 
-const BEAD_ID = 'boring-ui-v2-d37p'
+const TASK_ID = 'boring-ui-v2-d37p'
 
 let prefersDark = false
 
@@ -45,7 +45,7 @@ afterEach(() => {
 describe('useTheme hook', () => {
   it(
     'applies dark, supports system preference, and syncs via storage event',
-    withBeadId(BEAD_ID, async ({ assertionPassed }) => {
+    withTaskId(TASK_ID, async ({ assertionPassed }) => {
       const { result, unmount } = renderHook(() => useTheme(), { wrapper })
 
       act(() => {

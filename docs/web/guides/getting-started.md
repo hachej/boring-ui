@@ -66,7 +66,7 @@ pnpm e2e            # agent end-to-end tests
 pnpm ci             # lint + typecheck + test + invariants + e2e
 ```
 
-To run a playground app, filter to it, e.g. `pnpm --filter workspace-playground dev` (see [proof-of-work](../../procedures/proof-of-work.md) for the port convention).
+To run a playground app, filter to it, e.g. `pnpm --filter workspace-playground dev` (see [proof-of-work](../../kanzen/procedures/proof-of-work.md) for the port convention).
 
 ## 7. Watch the invariants
 

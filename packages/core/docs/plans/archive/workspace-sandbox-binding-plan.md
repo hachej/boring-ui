@@ -55,7 +55,7 @@ for the app server process instead of one sandbox per workspace.
   a trustworthy workspace binding.
 - No silent sandbox replacement on 404/410/stopped. Replacement is only allowed
   in an explicit provision/reset path.
-- No deletion of remote sandboxes as part of this work unless a later bead asks
+- No deletion of remote sandboxes as part of this work unless a later task asks
   for destructive cleanup explicitly.
 
 ## Current State

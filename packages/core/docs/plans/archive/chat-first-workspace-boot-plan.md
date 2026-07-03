@@ -643,11 +643,11 @@ Acceptance:
 
 ---
 
-## 11. Bead breakdown
+## 11. Task breakdown
 
-Each bead should be self-contained enough to implement without rereading this plan. Keep the implementation simple: identity gate, background preload, workbench-local overlay, and readiness errors.
+Each task should be self-contained enough to implement without rereading this plan. Keep the implementation simple: identity gate, background preload, workbench-local overlay, and readiness errors.
 
-### Bead 1 — `workspace-background-boot-helper`
+### Task 1 — `workspace-background-boot-helper`
 
 Goal: add a non-blocking background preload helper and shared readiness status types.
 
@@ -671,7 +671,7 @@ Acceptance:
 
 Depends on: none.
 
-### Bead 2 — `chat-first-composed-workspace-route`
+### Task 2 — `chat-first-composed-workspace-route`
 
 Goal: stop using blocking boot gate in the default composed route after workspace identity is valid, while protecting against stale workspace UI.
 
@@ -694,9 +694,9 @@ Acceptance:
 - chat renders before background preload resolves for tree and sessions
 - no stale workspace A panels/files show under workspace B route
 
-Depends on: Bead 1.
+Depends on: Task 1.
 
-### Bead 3 — `workbench-local-warmup-overlay`
+### Task 3 — `workbench-local-warmup-overlay`
 
 Goal: render a full workbench-local overlay instead of file/editor/plugin panes while workspace readiness is pending.
 
@@ -718,9 +718,9 @@ Acceptance:
 - overlay copy maps requirements to `Preparing files…`, `Waking sandbox…`, or `Preparing workspace…`
 - error overlay is workbench-local and offers retry/reload copy
 
-Depends on: Beads 1-2.
+Depends on: Tasks 1-2.
 
-### Bead 4 — `workspace-readiness-state-source`
+### Task 4 — `workspace-readiness-state-source`
 
 Goal: define the small server/runtime readiness source used by route handlers and tool wrappers.
 
@@ -744,7 +744,7 @@ Acceptance:
 
 Depends on: none.
 
-### Bead 5 — `workspace-not-ready-tool-errors`
+### Task 5 — `workspace-not-ready-tool-errors`
 
 Goal: return one stable retryable error from every workspace-dependent tool while runtime/filesystem/sandbox/UI bridge is not ready, and preserve the structure through Pi.
 
@@ -769,9 +769,9 @@ Acceptance:
 - pure chat/model/metadata tools are not blocked
 - raw provider errors for warmup state are not exposed to model/user
 
-Depends on: Bead 4.
+Depends on: Task 4.
 
-### Bead 6 — `friendly-workspace-not-ready-rendering`
+### Task 6 — `friendly-workspace-not-ready-rendering`
 
 Goal: render `workspace_not_ready` as friendly chat/tool UI instead of a red crash or raw provider text.
 
@@ -791,9 +791,9 @@ Acceptance:
 - raw HTTP/provider text is not displayed for warmup errors
 - chat composer remains available
 
-Depends on: Beads 3 and 5.
+Depends on: Tasks 3 and 5.
 
-### Bead 7 — `chat-first-workspace-boot-e2e`
+### Task 7 — `chat-first-workspace-boot-e2e`
 
 Goal: add a focused regression/e2e fixture proving chat-first boot and switch behavior under delayed workspace endpoints.
 
@@ -813,9 +813,9 @@ Acceptance:
 - identity mismatch still shows transition fallback
 - workbench overlay appears during delayed readiness and disappears when ready
 
-Depends on: Beads 1-3.
+Depends on: Tasks 1-3.
 
-### Bead 8 — `chat-first-boot-docs`
+### Task 8 — `chat-first-boot-docs`
 
 Goal: document the new boot model, readiness errors, and workbench overlay.
 
@@ -834,7 +834,7 @@ Acceptance:
 - docs state chat is allowed before workspace preload completes
 - docs list workspace-dependent tools covered by `workspace_not_ready`
 
-Depends on: Beads 1-8.
+Depends on: Tasks 1-8.
 
 ---
 
