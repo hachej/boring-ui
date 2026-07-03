@@ -18,14 +18,12 @@ import type {
   SurfaceShellSnapshot,
 } from "../../front/chrome/artifact-surface/SurfaceShell"
 import { SkillsPage } from "../../front/chrome/skills/SkillsPage"
-import { WorkspaceInboxShellProvider, workspaceInboxPlugin } from "../../plugins/inboxPlugin/front"
+import { WorkspaceInboxShellProvider } from "../../plugins/inboxPlugin/front"
 import { useWorkspaceInboxHost } from "./WorkspaceInboxHost"
 import { PluginsOverlay } from "../../front/chrome/plugins/PluginsOverlay"
 import { AppLeftPane } from "../../front/layout/plugin-tabs/AppLeftPane"
 import { PluginTabsWorkspaceShell } from "../../front/layout/plugin-tabs/PluginTabsWorkspaceShell"
-import { captureBootstrapPlugins } from "../../shared/plugins/bootstrap"
-import { PluginError } from "../../shared/plugins/errors"
-import { filesystemPlugin } from "../../plugins/filesystemPlugin/front"
+import { captureWorkspaceFrontPlugins } from "./workspaceBuiltinPlugins"
 import { UI_COMMAND_EVENT, dispatchUiCommand } from "../../front/bridge"
 import type { CommandPaletteSessionItem } from "../../front/components/CommandPalette"
 import type { CommandResult, DispatchContext, FileTreeBridge, Unsubscribe } from "../../front/bridge"
@@ -810,27 +808,11 @@ export function WorkspaceAgentFront<
     shellPersistenceEnabled,
   )
   const effectiveAppLeftPaneWidth = clampNumber(appLeftPaneWidth, 220, 420)
-  const capturedPlugins = useMemo(() => {
-    const providedPlugins = inboxActionEnabled
-      ? plugins ?? []
-      : (plugins ?? []).filter((plugin) => plugin.pluginId !== workspaceInboxPlugin.pluginId)
-    const pluginsWithInbox = inboxActionEnabled && !providedPlugins.some((plugin) => plugin.pluginId === workspaceInboxPlugin.pluginId)
-      ? [workspaceInboxPlugin, ...providedPlugins]
-      : providedPlugins
-    const defaultPlugins = (excludeDefaults ?? []).includes(filesystemPlugin.pluginId) ? [] : [filesystemPlugin]
-    const captured = captureBootstrapPlugins({ plugins: pluginsWithInbox, defaults: defaultPlugins, excludeDefaults })
-    for (const plugin of captured) {
-      for (const action of plugin.registrations.appLeftActions) {
-        if (action.id === "plugins" || action.id === "skills") {
-          throw new PluginError(
-            "duplicate-id",
-            `app-left action "${action.id}" from plugin "${plugin.id}" collides with a reserved workspace app-left action`,
-          )
-        }
-      }
-    }
-    return captured
-  }, [excludeDefaults, inboxActionEnabled, plugins])
+  const capturedPlugins = useMemo(() => captureWorkspaceFrontPlugins({
+    plugins,
+    inboxEnabled: inboxActionEnabled,
+    excludeDefaults,
+  }), [excludeDefaults, inboxActionEnabled, plugins])
   const [leftOverlay, setLeftOverlay] = useState<AppLeftOverlayId>(defaultLeftOverlay)
   const pluginOverlayActionIds = useMemo(() => pluginAppLeftActionIds(capturedPlugins), [capturedPlugins])
   useEffect(() => {
