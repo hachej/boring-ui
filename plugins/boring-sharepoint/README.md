@@ -31,10 +31,11 @@ This workbook will become the operator guide as implementation PRs land.
    - Confirm tenant/admin consent requirements.
 3. **boring-ui workspace connection**
    - Open the SharePoint app-left action or run `SharePoint: Open settings/status` from the command palette.
-   - Connect or verify the workspace Arcade user mapping once provider status/auth lands.
-   - Confirm status: connected / needs auth / pending auth / admin consent required / failed.
+   - Connect or verify the workspace Arcade user mapping.
+   - Confirm status from the plugin-owned `GET /api/sharepoint/status` route: connected / needs auth / pending auth / admin consent required / failed.
 4. **Create test documents**
    - Upload a sample `.xlsx` and `.pptx` to the SharePoint document library.
+   - Use `POST /api/sharepoint/resolve` with either `webUrl` or `driveId + driveItemId` to resolve canonical ref metadata.
    - Capture their SharePoint identity as `siteId`, `driveId`, and `driveItemId`.
 5. **Validate V1 flows**
    - Open in SharePoint using `webUrl`.
@@ -73,15 +74,23 @@ The app-left action opens the placeholder SharePoint / Microsoft 365 status over
 
 ## Current scope
 
-This PR adds server-only Arcade runtime primitives on top of the shell/display stack:
+This PR adds read-only SharePoint discovery/status on top of the shell/display/runtime stack:
 
-- `ArcadeJsToolRuntime` wraps `@arcadeai/arcadejs` behind server internals.
-- Arcade tool execution uses the SDK shape `{ tool_name, user_id, input }`.
-- Arcade authorization/tool auth responses normalize into shared `IntegrationAuthState` without exporting Arcade SDK types.
-- Arcade config is read from the `BORING_SHAREPOINT_ARCADE_*` environment variables listed above.
-- Redaction helpers keep API keys, bearer tokens, and token query strings out of logs.
-- tests use mocked Arcade clients only.
-- no Microsoft Graph calls
-- no external network calls in tests
-- no SharePoint discovery, iframe preview, edit, or provider behavior yet
+- `ArcadeSharePointProvider` keeps Arcade tool names and snake_case inputs inside server/provider internals.
+- Status uses the read-only status probe tool `MicrosoftSharepoint_ListSites` through `ArcadeJsToolRuntime` and normalizes responses to `IntegrationAuthState`.
+- Authorization uses Arcade auth start with read-only scopes `Sites.Read.All` and `Files.Read.All`.
+- Discovery resolves SharePoint Office documents with mocked/read-only Arcade tool calls:
+  - `MicrosoftSharepoint_GetSite` with `{ site }` when a site URL is provided.
+  - `MicrosoftSharepoint_GetDriveItemByUrl` with `{ web_url }` when an Office web URL is provided.
+  - `MicrosoftSharepoint_GetDriveItem` with `{ drive_id, item_id }` when durable IDs are provided.
+- Plugin-owned routes:
+  - `GET /api/sharepoint/status` returns `{ status }` only.
+  - `POST /api/sharepoint/resolve` accepts `{ siteUrl?, webUrl?, driveId?, driveItemId? }` and returns `{ ref }` canonical metadata only.
+- The settings/status panel queries `GET /api/sharepoint/status` via a relative route and displays a compact status summary.
+- Ref mapping accepts only `.xlsx` Excel and `.pptx` PowerPoint files; unsupported Office/file types fail with stable `SHAREPOINT_INVALID_REF` errors.
+- Tests use mocked Arcade/provider calls only.
+- no Microsoft Graph direct calls
+- no preview iframe or `driveItem:preview`
+- no Office edit calls
+- no local import/upload
 - no SharePoint-specific workspace chrome branches

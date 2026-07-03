@@ -1,15 +1,6 @@
-import { defineServerPlugin } from "@hachej/boring-workspace/server"
-import {
-  BORING_SHAREPOINT_PLUGIN_ID,
-  BORING_SHAREPOINT_PLUGIN_LABEL,
-} from "../shared"
+import { createSharePointServerPlugin } from "./serverPlugin"
 
-export default defineServerPlugin({
-  id: BORING_SHAREPOINT_PLUGIN_ID,
-  label: BORING_SHAREPOINT_PLUGIN_LABEL,
-  systemPrompt:
-    "SharePoint plugin shell is installed. Future versions will preview and agent-edit SharePoint-hosted Excel and PowerPoint documents.",
-})
+export default createSharePointServerPlugin
 
 export {
   BORING_SHAREPOINT_PLUGIN_ID,
@@ -34,3 +25,19 @@ export {
   type ArcadeAuthorizationStatusInput,
   type ArcadeToolExecuteInput,
 } from "./arcadeRuntime"
+export {
+  SHAREPOINT_ROUTE_PATHS,
+  sharePointRoutes,
+  type SharePointRoutesOptions,
+} from "./routes"
+export {
+  createSharePointServerPlugin,
+  type SharePointServerPluginOptions,
+} from "./serverPlugin"
+export {
+  ARCADE_SHAREPOINT_TOOL_NAMES,
+  ArcadeSharePointProvider,
+  SharePointProviderError,
+  toSharePointDocumentRef,
+  type ArcadeSharePointProviderOptions,
+} from "./sharePointProvider"
