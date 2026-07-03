@@ -55,6 +55,26 @@ export interface CreateOfficePreviewUrlResult {
   expiresAt?: string
 }
 
+export interface LocalOfficeImportTarget {
+  siteUrl?: string
+  driveId?: string
+  folderDriveItemId?: string
+  folderWebUrl?: string
+}
+
+export interface LocalOfficeImportRequest {
+  /** Workspace-relative .xlsx/.pptx source path. Never absolute. */
+  sourcePath: string
+  /** Opaque upload handle produced by the host/workspace upload staging layer. */
+  contentHandle: string
+  target: LocalOfficeImportTarget
+}
+
+export interface LocalOfficeImportResult {
+  ref: SharePointDocumentRef
+  cloudRefPath: string
+}
+
 export type OfficeEditRequest =
   | {
       kind: "excel.add-worksheet"
@@ -95,4 +115,5 @@ export interface SharePointProvider {
   resolveDriveItem(input: ResolveDriveItemInput, ctx: SharePointProviderContext): Promise<SharePointDocumentRef>
   createOfficePreviewUrl(input: SharePointDocumentRef | CreateOfficePreviewUrlInput, ctx: SharePointProviderContext): Promise<CreateOfficePreviewUrlResult>
   editOfficeDocument(ref: SharePointDocumentRef, request: OfficeEditRequest, ctx: SharePointProviderContext): Promise<OfficeEditResult>
+  importLocalOfficeDocument(request: LocalOfficeImportRequest, ctx: SharePointProviderContext): Promise<LocalOfficeImportResult>
 }

@@ -257,6 +257,87 @@ describe("ArcadeSharePointProvider", () => {
     expect(executeTool).not.toHaveBeenCalled()
   })
 
+  it("imports local Excel and PowerPoint documents through the Arcade upload tool", async () => {
+    const executeTool = vi
+      .fn()
+      .mockResolvedValueOnce({ success: true, output: { value: xlsxItemValue } })
+      .mockResolvedValueOnce({ success: true, output: { value: pptxItemValue } })
+    const provider = new ArcadeSharePointProvider({ runtime: { executeTool, startAuthorization: vi.fn() } })
+
+    await expect(
+      provider.importLocalOfficeDocument(
+        {
+          sourcePath: "reports/forecast.xlsx",
+          contentHandle: "staged-upload-1",
+          target: { siteUrl: siteValue.webUrl, driveId: xlsxRef.driveId, folderDriveItemId: "folder-1" },
+        },
+        ctx,
+      ),
+    ).resolves.toEqual({
+      ref: { ...xlsxRef, createdFrom: { type: "local-import", originalPath: "reports/forecast.xlsx" } },
+      cloudRefPath: "reports/forecast.xlsx.cloud.json",
+    })
+
+    await expect(
+      provider.importLocalOfficeDocument(
+        {
+          sourcePath: "decks/roadmap.pptx",
+          contentHandle: "staged-upload-2",
+          target: { folderWebUrl: "https://sumeo662.sharepoint.com/sites/sumeotest/Shared%20Documents" },
+        },
+        ctx,
+      ),
+    ).resolves.toEqual({
+      ref: { ...pptxRef, createdFrom: { type: "local-import", originalPath: "decks/roadmap.pptx" } },
+      cloudRefPath: "decks/roadmap.pptx.cloud.json",
+    })
+
+    expect(executeTool).toHaveBeenNthCalledWith(1, {
+      toolName: ARCADE_SHAREPOINT_TOOL_NAMES.uploadOfficeDocument,
+      userId: ctx.actorUserId,
+      input: {
+        source_path: "reports/forecast.xlsx",
+        content_handle: "staged-upload-1",
+        name: "forecast.xlsx",
+        mime_type: EXCEL_MIME_TYPE,
+        site_url: siteValue.webUrl,
+        drive_id: xlsxRef.driveId,
+        folder_item_id: "folder-1",
+      },
+    })
+    expect(executeTool).toHaveBeenNthCalledWith(2, {
+      toolName: ARCADE_SHAREPOINT_TOOL_NAMES.uploadOfficeDocument,
+      userId: ctx.actorUserId,
+      input: {
+        source_path: "decks/roadmap.pptx",
+        content_handle: "staged-upload-2",
+        name: "roadmap.pptx",
+        mime_type: POWERPOINT_MIME_TYPE,
+        folder_web_url: "https://sumeo662.sharepoint.com/sites/sumeotest/Shared%20Documents",
+      },
+    })
+  })
+
+  it("rejects unsafe local import requests before Arcade calls", async () => {
+    const executeTool = vi.fn()
+    const provider = new ArcadeSharePointProvider({ runtime: { executeTool, startAuthorization: vi.fn() } })
+
+    const invalidRequests = [
+      { sourcePath: "/tmp/forecast.xlsx", contentHandle: "staged-upload-1", target: { driveId: xlsxRef.driveId } },
+      { sourcePath: "../forecast.xlsx", contentHandle: "staged-upload-1", target: { driveId: xlsxRef.driveId } },
+      { sourcePath: "reports/notes.docx", contentHandle: "staged-upload-1", target: { driveId: xlsxRef.driveId } },
+      { sourcePath: "reports/token-secret.xlsx", contentHandle: "staged-upload-1", target: { driveId: xlsxRef.driveId } },
+      { sourcePath: "reports/forecast.xlsx", contentHandle: "Bearer secret", target: { driveId: xlsxRef.driveId } },
+      { sourcePath: "reports/forecast.xlsx", contentHandle: "staged-upload-1", target: { driveId: `${xlsxRef.driveId}?access_token=secret` } },
+      { sourcePath: "reports/forecast.xlsx", contentHandle: "staged-upload-1", target: {} },
+    ]
+
+    for (const request of invalidRequests) {
+      await expect(provider.importLocalOfficeDocument(request, ctx)).rejects.toBeInstanceOf(SharePointProviderError)
+    }
+    expect(executeTool).not.toHaveBeenCalled()
+  })
+
   it("rejects mismatched Office extension and MIME metadata with a stable code", async () => {
     const providerWithItem = (item: Record<string, unknown>) =>
       new ArcadeSharePointProvider({

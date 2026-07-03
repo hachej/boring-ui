@@ -254,6 +254,86 @@ describe("SharePoint routes", () => {
     expect(conflict.body).not.toMatch(/previewUrl|access_token/)
   })
 
+  it("imports local Office files and returns canonical ref metadata only", async () => {
+    const importedExcelRef = { ...ref, createdFrom: { type: "local-import" as const, originalPath: "reports/forecast.xlsx" } }
+    const importedPptxRef = { ...pptxRef, createdFrom: { type: "local-import" as const, originalPath: "decks/roadmap.pptx" } }
+    const provider = fakeProvider({
+      importLocalOfficeDocument: vi
+        .fn()
+        .mockResolvedValueOnce({
+          ref: importedExcelRef,
+          cloudRefPath: "reports/forecast.xlsx.cloud.json",
+          previewUrl: "https://tenant/preview?access_token=secret",
+        } as never)
+        .mockResolvedValueOnce({ ref: importedPptxRef, cloudRefPath: "decks/roadmap.pptx.cloud.json" }),
+    })
+    const app = await testApp(provider)
+
+    const excelResponse = await app.inject({
+      method: "POST",
+      url: SHAREPOINT_ROUTE_PATHS.import,
+      payload: { sourcePath: "reports/forecast.xlsx", contentHandle: "staged-upload-1", target: { driveId: ref.driveId, folderDriveItemId: "folder-1" } },
+    })
+    const pptxResponse = await app.inject({
+      method: "POST",
+      url: SHAREPOINT_ROUTE_PATHS.import,
+      payload: { sourcePath: "decks/roadmap.pptx", contentHandle: "staged-upload-2", target: { folderWebUrl: "https://tenant.sharepoint.com/sites/team/docs" } },
+    })
+
+    expect(excelResponse.statusCode).toBe(200)
+    expect(excelResponse.json()).toEqual({ ref: importedExcelRef, cloudRefPath: "reports/forecast.xlsx.cloud.json" })
+    expect(excelResponse.body).not.toMatch(/previewUrl|getUrl|access_token|Bearer|\/home\/|\/tmp\//i)
+    expect(pptxResponse.statusCode).toBe(200)
+    expect(pptxResponse.json()).toEqual({ ref: importedPptxRef, cloudRefPath: "decks/roadmap.pptx.cloud.json" })
+    expect(provider.importLocalOfficeDocument).toHaveBeenNthCalledWith(
+      1,
+      { sourcePath: "reports/forecast.xlsx", contentHandle: "staged-upload-1", target: { driveId: ref.driveId, folderDriveItemId: "folder-1", folderWebUrl: undefined, siteUrl: undefined } },
+      { workspaceId: "default", actorUserId: "anonymous" },
+    )
+  })
+
+  it("rejects unsafe import route inputs before provider calls", async () => {
+    const provider = fakeProvider({ importLocalOfficeDocument: vi.fn() })
+    const app = await testApp(provider)
+
+    const invalidPayloads = [
+      { sourcePath: "/home/user/forecast.xlsx", contentHandle: "staged-upload-1", target: { driveId: ref.driveId } },
+      { sourcePath: "reports/../forecast.xlsx", contentHandle: "staged-upload-1", target: { driveId: ref.driveId } },
+      { sourcePath: "reports/notes.docx", contentHandle: "staged-upload-1", target: { driveId: ref.driveId } },
+      { sourcePath: "reports/token-secret.xlsx", contentHandle: "staged-upload-1", target: { driveId: ref.driveId } },
+      { sourcePath: "reports/forecast.xlsx", contentHandle: "Bearer secret-token", target: { driveId: ref.driveId } },
+      { sourcePath: "reports/forecast.xlsx", contentHandle: "staged-upload-1", target: { driveId: `${ref.driveId}?access_token=secret` } },
+      { sourcePath: "reports/forecast.xlsx", contentHandle: "staged-upload-1", target: { folderWebUrl: "http://tenant.sharepoint.com/sites/team/docs" } },
+    ]
+
+    for (const payload of invalidPayloads) {
+      const response = await app.inject({ method: "POST", url: SHAREPOINT_ROUTE_PATHS.import, payload })
+      expect(response.statusCode).toBe(400)
+      expect(response.body).not.toMatch(/secret-token|access_token=secret|Bearer|\/home\/user/)
+    }
+    expect(provider.importLocalOfficeDocument).not.toHaveBeenCalled()
+  })
+
+  it("rejects unsafe import provider results", async () => {
+    const provider = fakeProvider({
+      importLocalOfficeDocument: vi.fn().mockResolvedValue({
+        ref: { ...ref, previewUrl: "https://tenant/preview?access_token=secret" },
+        cloudRefPath: "/tmp/forecast.xlsx.cloud.json",
+      }),
+    })
+    const app = await testApp(provider)
+
+    const response = await app.inject({
+      method: "POST",
+      url: SHAREPOINT_ROUTE_PATHS.import,
+      payload: { sourcePath: "reports/forecast.xlsx", contentHandle: "staged-upload-1", target: { driveId: ref.driveId } },
+    })
+
+    expect(response.statusCode).toBe(400)
+    expect(response.json()).toMatchObject({ error: SHAREPOINT_ERROR_CODES.REF_CONTAINS_SECRET })
+    expect(response.body).not.toMatch(/preview|access_token|\/tmp/)
+  })
+
   it("rejects token-bearing edit refs before provider calls", async () => {
     const provider = fakeProvider({ editOfficeDocument: vi.fn() })
     const app = await testApp(provider)
@@ -298,6 +378,7 @@ function fakeProvider(overrides: Partial<SharePointProvider>): SharePointProvide
     resolveDriveItem: vi.fn(),
     createOfficePreviewUrl: vi.fn(),
     editOfficeDocument: vi.fn(),
+    importLocalOfficeDocument: vi.fn(),
     ...overrides,
   }
 }
