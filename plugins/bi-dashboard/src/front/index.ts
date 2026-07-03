@@ -1,3 +1,4 @@
+import "@openuidev/react-ui/components.css"
 import { LayoutDashboard } from "lucide-react"
 import { definePlugin } from "@hachej/boring-workspace/plugin"
 import { BiDashboardPane } from "./BiDashboardPane"
@@ -7,6 +8,9 @@ import { biDashboardSurfaceResolver } from "./surfaceResolver"
 
 export { BiDashboardPane }
 export type { BiDashboardPaneParams } from "./BiDashboardPane"
+export { biDashboardGeneratedPaneProfile } from "./profile"
+export { BiDashboardRenderProvider, useBiDashboardRenderContext } from "./renderContext"
+export type { BiDashboardRenderState } from "./renderContext"
 export { sampleBiDashboardSpec } from "./sampleSpec"
 export { BI_DASHBOARD_LEFT_TAB_ID, BI_DASHBOARD_PANEL_ID } from "./constants"
 export { DashboardFilesPane } from "./DashboardFilesPane"
