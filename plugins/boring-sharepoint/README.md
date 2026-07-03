@@ -25,8 +25,8 @@ This workbook will become the operator guide as implementation PRs land.
    - Confirm Microsoft scopes needed by each capability.
    - Confirm tenant/admin consent requirements.
 3. **boring-ui workspace connection**
-   - Open the SharePoint / Microsoft 365 integration entry in the boring-ui MCP/integrations menu.
-   - Connect or verify the workspace Arcade user mapping.
+   - Open the SharePoint app-left action or run `SharePoint: Open settings/status` from the command palette.
+   - Connect or verify the workspace Arcade user mapping once provider status/auth lands.
    - Confirm status: connected / needs auth / pending auth / admin consent required / failed.
 4. **Create test documents**
    - Upload a sample `.xlsx` and `.pptx` to the SharePoint document library.
