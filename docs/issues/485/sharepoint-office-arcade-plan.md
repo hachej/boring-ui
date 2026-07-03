@@ -268,6 +268,39 @@ Expected changes should be limited to:
 
 Avoid changing core workspace/file-tree/plugin APIs. If an implementation PR needs changes outside the plugin and registration/lockfile/docs, it must explicitly justify the missing extension point and keep the change surgical.
 
+
+## Thermo review after MCP/integrations menu pass
+
+The plan remains green only if the existing MCP/integrations menu is treated as a host surface, not as SharePoint-owned UI. The SharePoint plugin may contribute to it, but must not fork or replace it.
+
+Findings from the current plugin API/docs:
+
+- `definePlugin` currently documents panels, commands, left tabs, catalogs, surface resolvers, providers/bindings, and tool renderers.
+- A generic `integrations` contribution surface is not documented yet.
+- Existing plugin docs require file visualizers to use surface resolvers instead of hard-coded file-tree extension logic.
+- App/internal plugins are the right tier for trusted server routes/tools/provider code; runtime/generated plugins are route-free.
+
+Thermo decision:
+
+- PR 1 must identify the actual existing MCP/integrations menu owner and extension pattern before adding SharePoint UI.
+- If an integration contribution registry exists, SharePoint should register an item there.
+- If it does not exist, add the smallest generic contribution surface to the existing menu. Do not add SharePoint-specific conditionals.
+- If adding that generic surface is too large for PR 1, split it into a separate prerequisite PR before SharePoint appears in the menu.
+
+Hard blockers:
+
+- No `if (id === "sharepoint")` branches in the MCP/integrations menu.
+- No separate SharePoint settings island that bypasses the existing menu.
+- No left-tab workaround if the intended UX is the MCP/integrations menu.
+- No changes to plugin APIs unless the existing menu truly lacks a generic contribution path, and then the new API must be integration-agnostic.
+
+Review checklist for the first implementation PR:
+
+1. Link to the existing MCP/integrations menu files studied.
+2. State which extension path is used.
+3. Show that SharePoint contributes data/config, not hard-coded menu behavior.
+4. Include a test with at least two fake integration contributions so the menu is proven generic.
+
 ## Cross-stack green gates
 
 - No Claude Code MCP/product dependency.
