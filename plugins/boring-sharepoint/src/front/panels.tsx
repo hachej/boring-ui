@@ -1,5 +1,6 @@
+import { useEffect, useState } from "react"
 import type { BoringFrontAppLeftOverlayProps, PaneProps } from "@hachej/boring-workspace/plugin"
-import type { OfficeDocumentSubtype } from "../shared"
+import type { IntegrationAuthState, OfficeDocumentSubtype } from "../shared"
 
 export interface OfficePreviewPanelParams {
   path: string
@@ -48,12 +49,18 @@ export function OfficePreviewPanel({ params }: PaneProps<OfficePreviewPanelParam
 }
 
 export function SharePointSettingsPanel() {
+  const status = useSharePointStatus()
+
   return (
     <section className="flex h-full min-h-0 flex-col bg-background p-4 text-sm text-foreground" data-boring-sharepoint-panel="settings">
       <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Integration status</p>
       <h2 className="mt-1 text-lg font-semibold">SharePoint / Microsoft 365</h2>
+      <div className="mt-4 rounded-lg border border-border bg-muted/20 p-4">
+        <p className="font-medium text-foreground">{status.label}</p>
+        <p className="mt-1 text-muted-foreground">{status.detail}</p>
+      </div>
       <div className="mt-4 rounded-lg border border-dashed border-border bg-muted/20 p-4 text-muted-foreground">
-        Connection status, authorization, and Arcade-backed provider checks will appear here in a later PR.
+        Read-only status and document discovery are wired through <code>/api/sharepoint/status</code> and <code>/api/sharepoint/resolve</code>. Preview, Office edits, and import are not enabled yet.
       </div>
     </section>
   )
@@ -79,6 +86,61 @@ export function SharePointSettingsOverlay({ onClose }: BoringFrontAppLeftOverlay
       <SharePointSettingsPanel />
     </div>
   )
+}
+
+interface SharePointStatusViewModel {
+  label: string
+  detail: string
+}
+
+function useSharePointStatus(): SharePointStatusViewModel {
+  const [status, setStatus] = useState<SharePointStatusViewModel>({
+    label: "Checking status…",
+    detail: "Contacting the SharePoint plugin route.",
+  })
+
+  useEffect(() => {
+    let cancelled = false
+    fetch("/api/sharepoint/status")
+      .then(async (response) => {
+        const payload = await response.json().catch(() => undefined)
+        if (!response.ok) throw new Error(typeof payload?.message === "string" ? payload.message : "SharePoint status request failed")
+        return payload?.status as IntegrationAuthState | undefined
+      })
+      .then((state) => {
+        if (!cancelled) setStatus(formatStatus(state))
+      })
+      .catch((error) => {
+        if (!cancelled) {
+          setStatus({
+            label: "Status unavailable",
+            detail: error instanceof Error ? error.message : "SharePoint status request failed",
+          })
+        }
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [])
+
+  return status
+}
+
+function formatStatus(state: IntegrationAuthState | undefined): SharePointStatusViewModel {
+  switch (state?.status) {
+    case "connected":
+      return { label: "Connected", detail: "Read-only SharePoint discovery is available." }
+    case "needs_auth":
+      return { label: "Authorization required", detail: "Connect SharePoint / Microsoft 365 to enable discovery." }
+    case "pending_auth":
+      return { label: "Authorization pending", detail: "Finish the Microsoft 365 authorization flow." }
+    case "admin_consent_required":
+      return { label: "Admin consent required", detail: state.message }
+    case "failed":
+      return { label: "Status unavailable", detail: state.message }
+    default:
+      return { label: "Status unavailable", detail: "The SharePoint status route returned an unexpected response." }
+  }
 }
 
 function safeHttpsUrl(value: unknown): string | undefined {
