@@ -1,7 +1,8 @@
 import {
-  EXCEL_MIME_TYPE,
-  POWERPOINT_MIME_TYPE,
   SHAREPOINT_ERROR_CODES,
+  SharePointRefValidationError,
+  expectedMimeTypeForOfficeKind,
+  parseSharePointDocumentRef,
   type IntegrationAuthState,
   type OfficeEditRequest,
   type OfficeEditResult,
@@ -141,12 +142,19 @@ export class ArcadeSharePointProvider implements SharePointProvider {
 
 export function toSharePointDocumentRef(input: { site?: Record<string, unknown>; item: Record<string, unknown> }): SharePointDocumentRef {
   const name = requireString(input.item, ["name", "fileName"], "drive item name")
-  const mimeType = optionalString(input.item, ["mimeType", "mime_type", "file.mimeType", "file.mime_type"]) ?? mimeTypeFromName(name)
-  const officeKind = officeKindFromNameAndMime(name, mimeType)
+  const suppliedMimeType = optionalString(input.item, ["mimeType", "mime_type", "file.mimeType", "file.mime_type"])
+  const officeKind = officeKindFromName(name)
   if (!officeKind) {
     throw new SharePointProviderError(
       SHAREPOINT_ERROR_CODES.INVALID_REF,
       "Only .xlsx Excel and .pptx PowerPoint SharePoint documents are supported",
+    )
+  }
+  const expectedMimeType = expectedMimeTypeForOfficeKind(officeKind)
+  if (suppliedMimeType && suppliedMimeType !== expectedMimeType) {
+    throw new SharePointProviderError(
+      SHAREPOINT_ERROR_CODES.INVALID_REF,
+      `SharePoint drive item MIME type does not match ${officeKind} file extension`,
     )
   }
 
@@ -156,7 +164,7 @@ export function toSharePointDocumentRef(input: { site?: Record<string, unknown>;
     version: 1,
     name,
     officeKind,
-    mimeType: officeKind === "excel" ? EXCEL_MIME_TYPE : POWERPOINT_MIME_TYPE,
+    mimeType: expectedMimeType,
     webUrl: requireString(input.item, ["webUrl", "web_url"], "drive item webUrl"),
     siteId:
       optionalString(input.item, ["siteId", "site_id", "parentReference.siteId", "parent_reference.site_id"]) ??
@@ -168,7 +176,14 @@ export function toSharePointDocumentRef(input: { site?: Record<string, unknown>;
   }
 
   if (!ref.siteId) throw new SharePointProviderError(SHAREPOINT_ERROR_CODES.INVALID_REF, "SharePoint site id is required")
-  return ref
+  try {
+    return parseSharePointDocumentRef(ref)
+  } catch (error) {
+    if (error instanceof SharePointRefValidationError) {
+      throw new SharePointProviderError(error.code, error.message)
+    }
+    throw error
+  }
 }
 
 function unwrapArcadeValueObject(response: unknown, toolName: string): Record<string, unknown> {
@@ -188,16 +203,10 @@ function unwrapArcadeValueObject(response: unknown, toolName: string): Record<st
   return value
 }
 
-function officeKindFromNameAndMime(name: string, mimeType: string | undefined): "excel" | "powerpoint" | null {
-  if (name.endsWith(".xlsx") || mimeType === EXCEL_MIME_TYPE) return "excel"
-  if (name.endsWith(".pptx") || mimeType === POWERPOINT_MIME_TYPE) return "powerpoint"
+function officeKindFromName(name: string): "excel" | "powerpoint" | null {
+  if (name.endsWith(".xlsx")) return "excel"
+  if (name.endsWith(".pptx")) return "powerpoint"
   return null
-}
-
-function mimeTypeFromName(name: string): string | undefined {
-  if (name.endsWith(".xlsx")) return EXCEL_MIME_TYPE
-  if (name.endsWith(".pptx")) return POWERPOINT_MIME_TYPE
-  return undefined
 }
 
 function requireString(object: Record<string, unknown> | undefined, paths: string[], label: string): string {

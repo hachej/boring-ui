@@ -1,7 +1,10 @@
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify"
 import {
   SHAREPOINT_ERROR_CODES,
+  SharePointRefValidationError,
   assertSharePointDocumentRefSafeForStorage,
+  parseSharePointDocumentRef,
+  type IntegrationAuthState,
   type ResolveDriveItemInput,
   type SharePointProvider,
   type SharePointProviderContext,
@@ -22,7 +25,7 @@ export function sharePointRoutes(app: FastifyInstance, opts: SharePointRoutesOpt
   app.get(SHAREPOINT_ROUTE_PATHS.status, async (request, reply) => {
     try {
       const ctx = await resolveContext(request, opts)
-      return { status: await opts.provider.getStatus(ctx) }
+      return { status: safeStatusForRoute(await opts.provider.getStatus(ctx)) }
     } catch (error) {
       return sendSharePointRouteError(reply, error)
     }
@@ -32,7 +35,7 @@ export function sharePointRoutes(app: FastifyInstance, opts: SharePointRoutesOpt
     try {
       const input = parseResolveBody(request.body)
       const ctx = await resolveContext(request, opts)
-      const ref = await opts.provider.resolveDriveItem(input, ctx)
+      const ref = parseSharePointDocumentRef(await opts.provider.resolveDriveItem(input, ctx))
       assertSharePointDocumentRefSafeForStorage(ref)
       return { ref }
     } catch (error) {
@@ -41,6 +44,12 @@ export function sharePointRoutes(app: FastifyInstance, opts: SharePointRoutesOpt
   })
 
   done()
+}
+
+function safeStatusForRoute(status: IntegrationAuthState): Record<string, string> {
+  if (status.status === "needs_auth") return { status: "needs_auth" }
+  if (status.status === "pending_auth") return { status: "pending_auth" }
+  return status
 }
 
 function parseResolveBody(body: unknown): ResolveDriveItemInput {
@@ -67,6 +76,9 @@ async function resolveContext(request: FastifyRequest, opts: SharePointRoutesOpt
 function sendSharePointRouteError(reply: FastifyReply, error: unknown) {
   if (error instanceof SharePointProviderError) {
     return reply.code(error.statusCode).send({ error: error.code, message: error.message })
+  }
+  if (error instanceof SharePointRefValidationError) {
+    return reply.code(400).send({ error: error.code, message: error.message })
   }
   return reply.code(500).send({ error: SHAREPOINT_ERROR_CODES.PROVIDER_UNAVAILABLE, message: "SharePoint provider request failed" })
 }

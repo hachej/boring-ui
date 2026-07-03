@@ -36,6 +36,17 @@ describe("SharePoint routes", () => {
     expect(provider.getStatus).toHaveBeenCalledWith({ workspaceId: "default", actorUserId: "anonymous" })
   })
 
+  it("strips authorization URLs from status route responses", async () => {
+    const provider = fakeProvider({ getStatus: vi.fn().mockResolvedValue({ status: "needs_auth", authorizationUrl: "https://arcade.dev/auth?token=secret" }) })
+    const app = await testApp(provider)
+
+    const response = await app.inject({ method: "GET", url: SHAREPOINT_ROUTE_PATHS.status })
+
+    expect(response.statusCode).toBe(200)
+    expect(response.json()).toEqual({ status: { status: "needs_auth" } })
+    expect(response.body).not.toMatch(/arcade\.dev|token=secret|authorizationUrl/i)
+  })
+
   it("returns canonical ref metadata only from resolve", async () => {
     const provider = fakeProvider({ resolveDriveItem: vi.fn().mockResolvedValue(ref) })
     const app = await testApp(provider)
