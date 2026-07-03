@@ -3,7 +3,7 @@ import { createDeckPlugin } from "@hachej/boring-deck/front"
 import type { DeckWidgetDefinition } from "@hachej/boring-deck/shared"
 import { WorkspaceProvider } from "@hachej/boring-workspace"
 import { WorkspaceAgentFront, WorkspaceFullPagePanel, parseFullPagePanelLocation } from "@hachej/boring-workspace/app/front"
-import { createAskUserPlugin, INBOX_DEMO_SESSION_ID, inboxDemoPlugin } from "@hachej/boring-ask-user/front"
+import { createAskUserPlugin } from "@hachej/boring-ask-user/front"
 import { SHOWCASE_SESSION_ID, seedShowcase } from "./showcaseMessages"
 
 function isShowcaseRoute(): boolean {
@@ -14,11 +14,6 @@ function isShowcaseRoute(): boolean {
 function isFullPageRoute(): boolean {
   if (typeof window === "undefined") return false
   return window.location.pathname === "/full-page" || window.location.pathname === "/full-page/"
-}
-
-function isInboxDemoRoute(): boolean {
-  if (typeof window === "undefined") return false
-  return new URLSearchParams(window.location.search).get("inboxDemo") === "1"
 }
 
 interface WorkspaceMeta {
@@ -46,8 +41,7 @@ const playgroundDeckPlugin = createDeckPlugin({
   },
 })
 
-const askUserPlugin = createAskUserPlugin()
-const askUserInboxDemoPlugin = createAskUserPlugin({ appLeftInbox: true })
+const askUserPlugin = createAskUserPlugin({ appLeftInbox: true })
 const baseWorkspacePlugins = [askUserPlugin, playgroundDeckPlugin]
 const externalPluginsEnabled = (import.meta as ImportMeta & { env?: Record<string, string> }).env?.VITE_BORING_EXTERNAL_PLUGINS === "1"
 
@@ -104,11 +98,7 @@ export function WorkspaceShell() {
   resetPlaygroundStorageIfRequested()
   const showcase = useMemo(isShowcaseRoute, [])
   const fullPage = useMemo(isFullPageRoute, [])
-  const inboxDemo = useMemo(isInboxDemoRoute, [])
-  const workspacePlugins = useMemo(
-    () => inboxDemo ? [askUserInboxDemoPlugin, playgroundDeckPlugin, inboxDemoPlugin] : baseWorkspacePlugins,
-    [inboxDemo],
-  )
+  const workspacePlugins = baseWorkspacePlugins
   const [projectName, setProjectName] = useState("Workspace")
   const [workspaceId, setWorkspaceId] = useState("Workspace")
   const [metaLoaded, setMetaLoaded] = useState(showcase || fullPage)
@@ -123,16 +113,8 @@ export function WorkspaceShell() {
               updatedAt: Date.now(),
             },
           ]
-        : inboxDemo
-          ? [
-              {
-                id: INBOX_DEMO_SESSION_ID,
-                title: "Inbox demo chat",
-                updatedAt: Date.now(),
-              },
-            ]
-          : undefined,
-    [inboxDemo, showcase],
+        : undefined,
+    [showcase],
   )
   const handleActiveSessionIdChange = useCallback(
     (sessionId: string | null) => {
@@ -176,10 +158,10 @@ export function WorkspaceShell() {
 
   return (
     <WorkspaceAgentFront
-      workspaceId={inboxDemo ? "playground-inbox-demo" : showcase ? "playground" : workspaceId}
+      workspaceId={showcase ? "playground" : workspaceId}
       apiBaseUrl=""
       persistenceEnabled
-      providerStorageKey={inboxDemo ? "boring-ui-v2:layout:playground:inbox-demo" : showcase ? "boring-ui-v2:layout:playground" : `boring-ui-v2:layout:playground:${workspaceId}`}
+      providerStorageKey={showcase ? "boring-ui-v2:layout:playground" : `boring-ui-v2:layout:playground:${workspaceId}`}
       workspaceLayout="plugin-tabs"
       appTitle={showcase ? "Boring" : projectName}
       workspaceLabel={showcase ? undefined : projectName}
@@ -187,10 +169,9 @@ export function WorkspaceShell() {
       externalPlugins={externalPluginsEnabled}
       frontPluginHotReload={externalPluginsEnabled ? "vite" : undefined}
       fullPageBasePath="/full-page"
-      defaultLeftOverlay={inboxDemo ? "inbox" : undefined}
-      provisionWorkspace={!showcase && !inboxDemo}
+      provisionWorkspace={!showcase}
       sessions={sessions}
-      activeSessionId={showcase ? SHOWCASE_SESSION_ID : inboxDemo ? INBOX_DEMO_SESSION_ID : undefined}
+      activeSessionId={showcase ? SHOWCASE_SESSION_ID : undefined}
       onActiveSessionIdChange={handleActiveSessionIdChange}
       plugins={workspacePlugins}
       chatParams={{ thinkingControl: true }}
