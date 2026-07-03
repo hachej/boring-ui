@@ -18,8 +18,8 @@ import { chartPerspectiveFields, perspectiveFiltersForQuery, perspectivePluginFo
 
 function gridTemplateForColumns(columns: number | undefined): string {
   if (!columns || columns <= 1) return "minmax(0, 1fr)"
-  const clamped = Math.max(2, Math.min(4, Math.trunc(columns)))
-  return `repeat(auto-fit, minmax(min(100%, ${clamped >= 4 ? "280px" : "360px"}), 1fr))`
+  const clamped = Math.max(2, Math.min(5, Math.trunc(columns)))
+  return `repeat(${clamped}, minmax(0, 1fr))`
 }
 
 const OPENUI_CHART_PALETTE = [

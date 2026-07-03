@@ -1,20 +1,18 @@
 import { useEffect, useMemo, useState } from "react"
-import { Braces, Check, Database, ExternalLink, LayoutDashboard, RefreshCcw, SlidersHorizontal } from "lucide-react"
+import { Braces, Database, ExternalLink, LayoutDashboard, RefreshCcw, SlidersHorizontal } from "lucide-react"
 import {
   Card,
   CardContent,
   EmptyState,
   IconButton,
-  Textarea,
   Toolbar,
   ToolbarGroup,
 } from "@hachej/boring-ui-kit"
-import { useApiBaseUrl, useWorkspaceRequestId } from "@hachej/boring-workspace"
+import { CodeEditor, useApiBaseUrl, useWorkspaceRequestId } from "@hachej/boring-workspace"
 import type { PaneProps } from "@hachej/boring-workspace/plugin"
 import { GeneratedPaneRenderer } from "@hachej/boring-generated-pane/front"
 import { parseDashboardSpec } from "../shared"
 import type { BslDashboardSpec } from "../shared"
-import { sampleBiDashboardSpec } from "./sampleSpec"
 import { useDashboardQueryData, type DashboardQueryResult } from "./dashboardData"
 import { BiDashboardRenderProvider } from "./renderContext"
 import { biDashboardGeneratedPaneProfile } from "./profile"
@@ -37,9 +35,7 @@ export function BiDashboardPane({ params }: PaneProps<BiDashboardPaneParams>) {
   const [controllerValues, setControllerValues] = useState<Record<string, string>>({})
   const [refreshKey, setRefreshKey] = useState(0)
   const [showJsonEditor, setShowJsonEditor] = useState(false)
-  const [editedSpec, setEditedSpec] = useState<unknown | null>(null)
   const [jsonDraft, setJsonDraft] = useState("")
-  const [jsonError, setJsonError] = useState<string | null>(null)
 
   useEffect(() => {
     if (!params?.path || params.spec) {
@@ -81,13 +77,11 @@ export function BiDashboardPane({ params }: PaneProps<BiDashboardPaneParams>) {
     return () => controller.abort()
   }, [apiBaseUrl, params?.path, params?.spec, refreshKey, workspaceId])
 
-  const sourceSpec = loadedFile.loading || loadedFile.error ? null : (params?.spec ?? loadedFile.spec ?? sampleBiDashboardSpec)
-  const rawSpec = editedSpec ?? sourceSpec
+  const sourceSpec = loadedFile.loading || loadedFile.error ? null : (params?.spec ?? loadedFile.spec ?? null)
+  const rawSpec = sourceSpec
 
   useEffect(() => {
-    setEditedSpec(null)
     setJsonDraft("")
-    setJsonError(null)
   }, [params?.path, params?.spec, sourceSpec])
 
   const parsed = useMemo(() => rawSpec ? parseDashboardSpec(rawSpec) : { spec: null, errors: [] }, [rawSpec])
@@ -104,25 +98,11 @@ export function BiDashboardPane({ params }: PaneProps<BiDashboardPaneParams>) {
 
   const openJsonEditor = () => {
     setJsonDraft(JSON.stringify(rawSpec ?? {}, null, 2))
-    setJsonError(null)
     setShowJsonEditor(true)
   }
 
-  const applyJsonDraft = () => {
-    try {
-      const next = JSON.parse(jsonDraft)
-      const nextParsed = parseDashboardSpec(next)
-      if (!nextParsed.spec) {
-        setJsonError(nextParsed.errors.slice(0, 8).join(" • "))
-        return
-      }
-      setEditedSpec(next)
-      setJsonError(null)
-      setShowJsonEditor(false)
-      setRefreshKey((value) => value + 1)
-    } catch (error) {
-      setJsonError(error instanceof Error ? error.message : String(error))
-    }
+  if (!rawSpec && !showJsonEditor) {
+    return <PaneState title="Open a BI dashboard" description="Select a dashboard JSON file under dashboards/*.dashboard.json." />
   }
 
   if (!parsedSpec && !showJsonEditor) {
@@ -138,19 +118,6 @@ export function BiDashboardPane({ params }: PaneProps<BiDashboardPaneParams>) {
           <span className="text-xs font-medium text-muted-foreground">BI dashboard</span>
         </ToolbarGroup>
         <ToolbarGroup className="ml-auto">
-          {showJsonEditor ? (
-            <IconButton
-              type="button"
-              variant="ghost"
-              size="icon-xs"
-              className="text-muted-foreground hover:text-foreground"
-              onClick={applyJsonDraft}
-              aria-label="Apply JSON and return to dashboard"
-              title="Apply JSON and return to dashboard"
-            >
-              <Check className="h-3.5 w-3.5" strokeWidth={1.75} />
-            </IconButton>
-          ) : null}
           <IconButton
             type="button"
             variant="ghost"
@@ -193,7 +160,7 @@ export function BiDashboardPane({ params }: PaneProps<BiDashboardPaneParams>) {
 
       <div className="min-h-0 min-w-0 flex-1 overflow-auto bg-background p-4">
         {showJsonEditor ? (
-          <DashboardJsonEditor draft={jsonDraft} setDraft={setJsonDraft} error={jsonError} onApply={applyJsonDraft} />
+          <DashboardJsonViewer draft={jsonDraft} />
         ) : spec ? (
           <>
         <div className="mb-4">
@@ -230,39 +197,18 @@ export function BiDashboardPane({ params }: PaneProps<BiDashboardPaneParams>) {
   )
 }
 
-function DashboardJsonEditor({
-  draft,
-  setDraft,
-  error,
-  onApply,
-}: {
-  draft: string
-  setDraft: (value: string) => void
-  error: string | null
-  onApply: () => void
-}) {
+function DashboardJsonViewer({ draft }: { draft: string }) {
   return (
-    <div className="flex min-h-0 min-w-0 flex-1 flex-col gap-3">
-      <div className="flex min-w-0 items-center justify-between gap-3">
-        <div>
-          <h1 className="text-lg font-semibold tracking-tight">Dashboard JSON</h1>
-          <p className="text-sm text-muted-foreground">Debug/edit the dashboard spec locally, then click the check icon to apply and return to the dashboard.</p>
-        </div>
-        <button
-          type="button"
-          onClick={onApply}
-          className="inline-flex h-8 items-center gap-1.5 rounded-md border border-border bg-card px-3 text-xs font-medium text-foreground shadow-sm hover:bg-muted"
-        >
-          <Check className="h-3.5 w-3.5" /> Apply JSON
-        </button>
+    <div className="flex h-full min-h-0 min-w-0 flex-1 flex-col">
+      <div className="min-h-0 flex-1 overflow-hidden rounded-lg border border-border bg-card">
+        <CodeEditor
+          content={draft}
+          language="json"
+          readOnly
+          wordWrap
+          className="h-full min-h-0"
+        />
       </div>
-      {error ? <div className="rounded-lg border border-destructive/30 bg-destructive/5 px-3 py-2 text-sm text-destructive">{error}</div> : null}
-      <Textarea
-        value={draft}
-        onChange={(event) => setDraft(event.target.value)}
-        spellCheck={false}
-        className="min-h-[70vh] flex-1 resize-none overflow-auto font-mono text-xs leading-relaxed"
-      />
     </div>
   )
 }
