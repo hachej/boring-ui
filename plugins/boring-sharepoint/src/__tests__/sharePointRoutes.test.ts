@@ -211,6 +211,49 @@ describe("SharePoint routes", () => {
     expect(provider.editOfficeDocument).not.toHaveBeenCalled()
   })
 
+  it("allow-lists failed and conflict edit route results", async () => {
+    const app = await testApp(
+      fakeProvider({
+        editOfficeDocument: vi.fn().mockResolvedValueOnce({
+          status: "failed",
+          code: SHAREPOINT_ERROR_CODES.PROVIDER_TOOL_FAILED,
+          message: "backend failed with previewUrl https://tenant/preview?access_token=secret",
+          metadata: { raw: "secret" },
+          getUrl: "https://tenant/preview?access_token=secret",
+          authorizationUrl: "https://arcade.dev/auth?token=secret",
+        } as never),
+      }),
+    )
+
+    const failed = await app.inject({
+      method: "POST",
+      url: SHAREPOINT_ROUTE_PATHS.edit,
+      payload: { ref, request: { kind: "excel.add-worksheet", worksheetName: "Forecast" } },
+    })
+
+    expect(failed.statusCode).toBe(200)
+    expect(failed.json()).toEqual({ status: "failed", code: SHAREPOINT_ERROR_CODES.PROVIDER_TOOL_FAILED, message: "SharePoint Office edit failed" })
+    expect(failed.body).not.toMatch(/metadata|getUrl|authorizationUrl|access_token|previewUrl|secret/i)
+
+    const conflictProvider = fakeProvider({
+      editOfficeDocument: vi.fn().mockResolvedValue({
+        status: "conflict",
+        code: SHAREPOINT_ERROR_CODES.EDIT_CONFLICT,
+        message: "edit conflict",
+        previewUrl: "https://tenant/preview?access_token=secret",
+      } as never),
+    })
+    const conflictApp = await testApp(conflictProvider)
+    const conflict = await conflictApp.inject({
+      method: "POST",
+      url: SHAREPOINT_ROUTE_PATHS.edit,
+      payload: { ref, request: { kind: "excel.add-worksheet", worksheetName: "Forecast" } },
+    })
+
+    expect(conflict.json()).toEqual({ status: "conflict", code: SHAREPOINT_ERROR_CODES.EDIT_CONFLICT, message: "edit conflict" })
+    expect(conflict.body).not.toMatch(/previewUrl|access_token/)
+  })
+
   it("rejects token-bearing edit refs before provider calls", async () => {
     const provider = fakeProvider({ editOfficeDocument: vi.fn() })
     const app = await testApp(provider)

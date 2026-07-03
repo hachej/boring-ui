@@ -248,6 +248,9 @@ describe("ArcadeSharePointProvider", () => {
     await expect(provider.editOfficeDocument(xlsxRef, { kind: "excel.add-worksheet", worksheetName: "x".repeat(32) }, ctx)).rejects.toMatchObject({
       code: SHAREPOINT_ERROR_CODES.INVALID_REF,
     } satisfies Partial<SharePointProviderError>)
+    await expect(provider.editOfficeDocument(xlsxRef, { kind: "excel.add-worksheet", worksheetName: ` ${"x".repeat(31)} ` }, ctx)).rejects.toMatchObject({
+      code: SHAREPOINT_ERROR_CODES.INVALID_REF,
+    } satisfies Partial<SharePointProviderError>)
     await expect(provider.editOfficeDocument(pptxRef, { kind: "powerpoint.create-slide", title: "Bearer secret-token" }, ctx)).rejects.toMatchObject({
       code: SHAREPOINT_ERROR_CODES.REF_CONTAINS_SECRET,
     } satisfies Partial<SharePointProviderError>)
