@@ -11,7 +11,8 @@ Today `@hachej/boring-agent` is too coupled to `Workspace + Sandbox + FileSearch
 - pure/headless agents with no filesystem, no sandbox, no cwd, no file routes, no bash tools;
 - optional working environments for coding/file tasks through `@hachej/boring-bash`;
 - multiple agent personalities/runtimes inside one deployed app and one workspace;
-- child apps such as Macro hosted inside the same full-app deployment without leaking tools/prompts/provisioning into generic workspaces.
+- child apps such as Macro hosted inside the same full-app deployment without leaking tools/prompts/provisioning into generic workspaces;
+- **(v2)** the agent mountable behind any surface — boring-ui workspace (first-class UI), Slack, spreadsheet embeds (pi-excel), CLI/cron — each surface a thin ingress/egress adapter over one event-stream contract; see [`08-pluggable-agent-surfaces.md`](08-pluggable-agent-surfaces.md).
 
 ## Target package ownership
 
@@ -21,6 +22,7 @@ Today `@hachej/boring-agent` is too coupled to `Workspace + Sandbox + FileSearch
 | `@hachej/boring-bash` | optional fs + exec working environment, path safety, search/watch, file routes, file/bash/upload tools, file UI, bash requirement normalizer, provider adapters/capabilities | auth, billing, app membership, LLM harness core, provisioning engine ownership |
 | `@hachej/boring-workspace` | UI shell, layout, plugin host, UI bridge/RPC, surface registry | agent model loop, concrete bash providers |
 | `@hachej/boring-core` / app composition layer | auth, DB, workspaces, child-app context resolution, billing, deployment composition; final child-app registry location follows the shared child-app plan | concrete bash provider internals |
+| surface/channel packages (v2, e.g. `@hachej/boring-channel-slack`, spreadsheet embeds) | platform ingress/egress, platform auth, surface-owned continuation/addressing → `sessionId` mapping, event projection | agent loop, sessions, tools, provider internals, boring-bash server code |
 
 Non-negotiable: `@hachej/boring-agent` has **zero value imports** from `@hachej/boring-bash`. Bash is injected by host/CLI/composition.
 
@@ -47,12 +49,18 @@ Provisioning ownership rule: the existing provisioning engine and `ProvisionWork
 - Read-before-write/stale-write stamps are worth stealing for model-facing file edits.
 - Provider labels are insufficient; a capability matrix must say real bash, real binaries, network isolation, and persistence semantics.
 
+## What we learned from the surface/transport survey (v2)
+
+Vercel AI SDK v5/v6, eve channels, Flue channel packages, Claude Agent SDK, and Slack Bolt AI apps converge on one boundary contract between an agent core and any surface: **message in / indexed replayable event stream out / approvals as request→response events on the same stream / runtime-owned session id with surface-owned addressing**. Details and adopted rules: [`08-pluggable-agent-surfaces.md`](08-pluggable-agent-surfaces.md).
+
 ## Direction
 
-Build one platform with three clean layers:
+Build one platform with five clean layers (v2 extends the original three):
 
 ```txt
-Agent core       model/session/tool loop; no implicit runtime
+Surfaces         workspace UI | Slack | pi-excel | CLI — ingress/egress adapters only
+Transport        in-process | HTTP+SSE | future WS/durable — send + reconnect
+Agent core       model/session/tool loop; no implicit runtime; typed event stream
 Feature layer    optional UI, bash, web, plugin, approval, search capabilities
 Runtime layer    concrete storage/sandbox/provider implementation
 ```
@@ -94,6 +102,10 @@ This repo already has real seams. The refactor must extend them:
 8. Child-app/workspace-kind policy can narrow defaults and requirements.
 9. Users are principals/supervisors/approval channels, not model-callable root agents.
 10. Open backlog issues are not automatically solved; the abstraction only supplies the spine.
+11. **(v2)** Surfaces never own the loop: a surface package depends only on the public agent contract, never on provider internals or boring-bash server code.
+12. **(v2)** Two handles: `sessionId` is runtime-owned; continuation/addressing (Slack thread ts, workbook id, pane binding) is surface-owned. Public agent APIs never accept platform addressing.
+13. **(v2)** One approval channel: HITL is declared on the tool and travels as stream events; no per-surface approval side channels.
+14. **(v2)** Secrets stay on the trusted core side; credentials are brokered at the environment boundary and never enter the sandbox process or the model transcript.
 
 ## Issue coverage posture
 
@@ -123,9 +135,15 @@ Explicitly not fully solved but must be supported by extension points:
 
 ## Open decisions before implementation
 
-1. Is pure/headless mode implemented through pi-coding-agent with cwd disabled/sealed, or a separate non-pi harness? This decision blocks Phase 1 exit.
-2. Is arbitrary multi-mount/overlay support v1, or do we preserve one `/workspace` view and defer advanced projections? If deferred, public shapes must mark `mounts` as internal/future.
+v2 status — resolved (recommendations locked in [`08-pluggable-agent-surfaces.md`](08-pluggable-agent-surfaces.md), to be ratified in the Phase 0 ADR):
+
+1. Pure/headless mode: **pi-coding-agent with cwd disabled/sealed** (behind the Phase 1 audit), not a separate non-pi harness. Non-pi harnesses remain conformance-suite consumers (#12).
+2. Multi-mount/overlay: superseded — named `(filesystem, path)` bindings shipped via #416; arbitrary overlays stay deferred.
+6. Readonly fs: **v1 — already landed** via #416.
+
+Still open:
+
 3. Do providers live under `@hachej/boring-bash/providers` forever, or move to a private provider package later?
 4. Multi-agent route shape: path prefix `/api/v1/agents/:agentId` or header/request-scope equivalent?
 5. Provisioning sharing defaults: workspace-shared, agent-private, or requirement-controlled?
-6. Readonly fs in v1 or deferred?
+7. (v2) Where does each surface persist its `addressing → sessionId` map: surface-local store vs host DB contract?

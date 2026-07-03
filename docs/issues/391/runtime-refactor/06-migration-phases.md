@@ -1,171 +1,154 @@
-# 06 — Migration phases
+# 06 — Migration phases (v2)
 
-## Rule
+## Rules
 
-Dependency inversion happens before package extraction. Otherwise we create an agent↔bash import cycle.
+1. Dependency inversion happens before package extraction. Otherwise we create an agent↔bash import cycle.
+2. Each phase must preserve existing workspace behavior unless that phase explicitly changes a documented invariant.
+3. v2 adds two tracks on top of the original bash track: **Track T (transport/event contract)** and **Track S (surfaces)**. Bash-track phase numbers are unchanged so existing beads/TODOs keep their references.
+4. Reconciliation: work that already landed via #416 (company-fs PR stack #437/#440/#429/#454) is marked **[landed]** and must not be redone — later phases build on it.
 
-Each phase must preserve existing workspace behavior unless that phase explicitly changes a documented invariant.
+## Track overview and ordering
+
+```txt
+Phase 0 ─ Phase 1 ──┬── Phase 2 ── Phase 3 ── Phase 4 ── Phase 5 ── Phase 6 ── Phase 7 ── Phase 8
+   (ADR)  (headless │   (bash pkg)  (routes/   (file UI)  (provis./  (plugins/  (multi-    (cleanup)
+          core)     │               tools)                readiness) child-app) agent)
+                    └── Phase T1 ── Phase T2 ─────────────── Phase S1 ── Phase S2
+                        (event      (transport               (Slack      (pi-excel
+                         envelope)   adapters)                channel)    embed)
+```
+
+Track T starts after Phase 1 and runs parallel to Phases 2–4. Track S needs T2. Governance work (#475 line) continues independently on the landed #416 contracts.
 
 ## Phase 0 — ADR, naming lock, invariant update
 
 Deliverables:
 
-- ADR: `@hachej/boring-agent` becomes runtime-free; `@hachej/boring-bash` owns files/bash/file UI.
+- ADR: `@hachej/boring-agent` becomes runtime-free **and surface-agnostic**; `@hachej/boring-bash` owns files/bash/file UI; surfaces are thin adapters (08).
 - Update `docs/DECISIONS.md` §7 and `packages/agent/docs/runtime.md`.
-- Lock package name: `@hachej/boring-bash`.
-- Decide v1 namespace semantics: preserve one `/workspace` namespace or formally supersede current invariant.
-- State that old monolithic plan is superseded by this plan pack.
+- Lock package name: `@hachej/boring-bash` **[landed — package exists]**.
+- Namespace semantics: one `/workspace` view superseded by named `(filesystem, path)` bindings **[landed via #416; pack already carries the V1 caveat]**.
+- Lock v2 decisions from 08: event envelope over AI-SDK chunks; pure mode via sealed pi harness; per-channel surface packages; readonly fs is v1 (resolved).
+- State that the old monolithic plan is superseded by this plan pack, and that 08 supersedes the surface-related open decisions in 00.
 
-Exit criteria:
+Exit criteria: ADR accepted; plan pack (incl. 08) thermo-reviewed; issue #391 points to the v2 pack.
 
-- ADR accepted;
-- plan pack reviewed;
-- issue #391 points to plan pack.
-
-## Phase 1 — Agent dependency inversion and pure mode
+## Phase 1 — Headless core: dependency inversion, pure mode, `createAgent()`
 
 Deliverables:
 
 - `createAgentApp()` / `registerAgentRoutes()` receive runtime/features by injection.
-- Remove static value imports from agent server composition to built-in mode resolution where needed for pure mode.
-- Define destination for mode resolution: type-only `RuntimeModeAdapter` contracts may stay in agent during migration, but `resolveMode()` and concrete mode adapters move to boring-bash/host composition after compatibility shims.
-- Add package invariant test: no agent value import from boring-bash.
-- Add `runtime: none` / `features: []` path.
+- **Export `createAgent()`** from `@hachej/boring-agent/server`: Fastify-free façade returning `{ send, resolveInput, sessions, replay, readiness, dispose }` (see 08). `createAgentApp()` becomes an adapter over it.
+- Typed config object only: no env-var reads or file discovery inside `createAgent()`; `.pi/*`, workspaces.yaml, env parsing move to host/CLI composition.
+- Remove static value imports from agent server composition to built-in mode resolution where needed for pure mode. Type-only `RuntimeModeAdapter` contracts may stay in agent during migration; `resolveMode()` and concrete mode adapters move to boring-bash/host composition after compatibility shims.
+- Package invariant test: no agent value import from boring-bash **[landed: `scripts/check-invariants.mjs` — extend to the façade]**.
+- Add `runtime: 'none'` / `features: []` path.
 - Separate `sessionStorageRoot` from workspace roots.
-- Audit pi-coding-agent cwd/resource assumptions.
+- Audit pi-coding-agent cwd/resource assumptions (blocks pure-mode exit; decision: sealed pi harness, not a second harness).
 - Add external hook and operational event seams if route composition changes.
 
 Exit criteria:
 
-- pure agent starts with no workspace/sandbox/cwd/file routes/bash tools;
-- existing direct/local/vercel modes still work through host composition.
+- pure agent starts via `createAgent({ runtime: 'none' })` with no workspace/sandbox/cwd/file routes/bash tools, in a plain Node script with no Fastify;
+- existing direct/local/vercel modes still work through host composition;
+- all current HTTP consumers unchanged.
 
-## Phase 2 — Create `@hachej/boring-bash`
+## Phase T1 — Event envelope and replay (after Phase 1)
 
 Deliverables:
 
-- package skeleton and exports;
-- type-only shared contracts;
-- provider capability model;
-- mode/provider mapping docs;
+- `AgentEvent` envelope (`v`, `eventIndex`, `timestamp`, `sessionId`, `chunk`) around the existing `UIMessageChunk` stream; monotonic index persisted with the session transcript.
+- `agent.replay(sessionId, { startIndex })`; HTTP adapter `GET …/events?startIndex=N`.
+- Approvals/HITL on-stream: `needsApproval` on `AgentTool`; approval/input-request events; `resolveInput()`; durable `session.waiting` park/resume. Migrate permission prompts + ask-user plugin onto this path (no second approval channel).
+- Harness conformance suite additions: envelope ordering, replay-from-index, approval park/resume (extends #12 conformance).
+
+Exit criteria: SSE drop + reconnect replays losslessly in the workspace; an approval issued in one client can be answered from another client holding the same session.
+
+## Phase T2 — Transport adapters
+
+Deliverables:
+
+- Transport contract (`send` + `reconnect`) documented; in-process transport (direct `createAgent()` consumption) and HTTP+SSE adapter both pass a shared transport conformance suite.
+- `useAgentChat`/ChatPanel refit to consume only the public contract (no internal imports); custom `ChatTransport` reconnect wired to `startIndex` replay.
+- Two-handles rule enforced: public agent APIs accept `sessionId` only; `x-boring-workspace-id`→`SessionCtx` mapping is HTTP-adapter code, documented as the pattern surface adapters replicate.
+
+Exit criteria: workspace UI runs unmodified against the refit; a headless Node consumer drives the same session interleaved with the UI.
+
+## Phase 2 — `@hachej/boring-bash` package (bash track)
+
+Deliverables:
+
+- package skeleton and exports **[landed via #416: skeleton, shared filesystem-binding contracts, readonly/management company-context operations, fixture provider, leakage/conformance tests]**;
+- provider capability model; mode/provider mapping docs;
 - move concrete provider implementations (direct, bwrap, vercel-sandbox, remote-worker client) to `boring-bash/providers`;
 - provisioning ownership docs: agent owns engine/types over injected adapters; boring-bash owns requirement normalizer and provider adapters;
 - remote-worker split docs: protocol/shared types, client/provider adapter, optional server package path;
-- compatibility strategy: type-only old-path exports are allowed where safe; moved boring-bash values must not be re-exported from agent/workspace if doing so creates package cycles. Use host/composition shims or clear import migrations instead.
+- compatibility strategy: type-only old-path exports where safe; moved values must not be re-exported from agent/workspace if that creates cycles — host/composition shims or explicit import migrations instead.
 
 Do not move providers until Phase 1 injection is complete.
 
-Exit criteria:
+Exit criteria: package builds; no import cycle; current apps still compile after import migration or safe host-level shims; landed #416 contracts unchanged (governance consumers #476–#501 keep working).
 
-- package builds;
-- no import cycle;
-- current apps still compile after import migration or through safe host-level shims.
-
-## Phase 3 — Move server routes and tools
+## Phase 3 — Move server routes and tools (bash track)
 
 Deliverables:
 
-- move file/tree/search/fs-events/stat/dir routes to `boring-bash/server`;
-- move filesystem tools to `boring-bash/agent`;
-- move or explicitly assign `bash`, `execute_isolated_code`, and upload tools;
+- move file/tree/search/fs-events/stat/dir routes to `boring-bash/server` — preserving the `(filesystem, path)` addressing **[landed for routes/tools wiring via #429/#454: `filesystem` param, spoof guard, readonly enforcement — this phase moves the code, not the behavior]**;
+- move filesystem tools to `boring-bash/agent`; move or explicitly assign `bash`, `execute_isolated_code`, and upload tools;
 - preserve readiness tags and `disableDefaultFileTools`;
-- replace hardwired registration with `createBashAgentFeature()`.
+- replace hardwired registration with `createBashAgentFeature()` consumed as `features` by `createAgent()`.
 
-Exit criteria:
+Exit criteria: workspace playground still opens file tree/editor; read/write/edit/find/grep/ls/bash work when boring-bash enabled; pure mode still has none of those routes/tools; company_context no-leak conformance still green.
 
-- workspace playground still opens file tree/editor;
-- read/write/edit/find/grep/ls/bash work when boring-bash enabled;
-- pure mode still has none of those routes/tools.
+## Phase 4 — Move filesystem front plugin (bash track)
 
-## Phase 4 — Move filesystem front plugin
+Deliverables: move filesystem front plugin to `boring-bash/plugin`; preserve panel ids and `workspace.open.path` resolver; preserve file panel binding and agent file bridge/session changes **[Company file-tree root + capability-based readonly panes landed via #416 — carry over intact]**; add `FileTreeDataProvider` boundary; add document-authority override seam.
 
-Deliverables:
+Exit criteria: `exec_ui openFile` still opens files; file tree can consume provider boundary; active document coordinator can intercept writes.
 
-- move filesystem front plugin to `boring-bash/plugin`;
-- preserve panel ids and `workspace.open.path` resolver;
-- preserve file panel binding and agent file bridge/session changes;
-- add `FileTreeDataProvider` boundary;
-- add document-authority override seam.
+## Phase 5 — Extend provisioning/readiness (bash track)
 
-Exit criteria:
+Unchanged from v1: `BashRequirement` normalizer outside agent feeding `provisionWorkspaceRuntime()` via host/core/CLI composition; re-point callers; import-free requirement validation; per-requirement readiness metadata; `optional_failed` derived state; health checks; SDK archive support; managed service requirements; secret status/grant model; remote-worker capability handshake; two-phase bootstrap/onSession reconciliation.
 
-- `exec_ui openFile` still opens files;
-- file tree can consume provider boundary;
-- active document coordinator can intercept writes.
+Additional v2 deliverable: **credential brokering rule** — secrets are injected at the environment boundary (provider adapter), never into the sandbox process env or the model transcript (08 trust boundary).
 
-## Phase 5 — Extend provisioning/readiness
+Exit criteria: as v1, plus: no test can read a brokered secret from inside the sandbox.
+
+## Phase S1 — Slack reference channel (after T2; parallel to Phases 4–5)
 
 Deliverables:
 
-- `BashRequirement` normalizer lives outside agent and feeds `provisionWorkspaceRuntime()` through host/core/CLI composition;
-- re-point callers in core full-app, workspace server, and CLI/workspaces-mode composition;
-- import-free requirement validation;
-- per-requirement readiness metadata;
-- `optional_failed` as compatible derived/display state;
-- health checks;
-- SDK archive support;
-- managed service requirements;
-- secret status/grant model;
-- remote-worker capability handshake;
-- two-phase bootstrap/onSession reconciliation.
+- `@hachej/boring-channel-slack` (`packages/channels/slack`): signature verification, event normalization → `agent.send()`, thread `ts` as surface-owned continuation with an `addressing → sessionId` store, activity → status, text deltas → streamed replies, approval parts → interactive blocks answered via `resolveInput`.
+- Surface adapter conformance suite (first consumer): message-in/events-out, approval round-trip, addressing isolation.
+- Runs against `runtime: 'none'` and against readonly `company_context` bindings (governed-context answering in Slack).
 
-Exit criteria:
+Exit criteria: same agent + same session store serves the workspace UI and a Slack thread; an approval requested in Slack can be answered in Slack or the workspace; Slack package imports only the public agent contract.
 
-- existing provisioning fingerprint skip still works;
-- tools gate on existing readiness keys;
-- plugin SDK provisioned and gated until ready;
-- remote-worker fail-closes when required hardening unavailable.
+## Phase S2 — Spreadsheet embed (pi-excel) (after S1 learnings)
+
+Deliverables:
+
+- Embedding guide + client contract for mounting the agent inside another product: host supplies domain tools (read/write range etc.) as `tools`, `runtime: 'none'`, optional readonly bindings; approvals via host dialog.
+- Reference implementation in the pi-excel plugin (or the closest existing spreadsheet surface) consuming only the published contract.
+
+Exit criteria: the embed has no boring-bash dependency; tool outputs project into the sheet; conformance suite passes.
 
 ## Phase 6 — Plugin and child-app integration
 
-Prerequisite: consume resolved child-app/workspace-kind context from `docs/plans/shared-child-app-platform.md`; do not define a competing child-app registry here.
+Unchanged from v1 (consume shared child-app platform context; `AgentRegistry` introduction; import-free `boring.requires`/`bash` manifest validation; hosted plugin fail-closed; Macro scoping; multi-tenant reload). Prerequisite unchanged: do not define a competing child-app registry here.
 
-Deliverables:
-
-- introduce the `AgentRegistry` data structure so child-app defaults can declare agent sets; full route/session migration follows in Phase 7;
-- import-free plugin manifest validation for `boring.requires` and `bash`;
-- runtime plugin context exposes available features;
-- hosted plugin remote-mode fail-closed behavior;
-- child-app/workspace-kind policy input consumed from shared child-app platform;
-- Macro child-app requirements can be scoped;
-- full-app reload/plugin runtime remains multi-tenant.
-
-Exit criteria:
-
-- Macro requirements do not leak into generic workspace;
-- hosted iframe plugin stays constrained;
-- runtime plugin RPC still works;
-- full-app reload resolves per workspace/agent/plugin runtime.
+Exit criteria: as v1.
 
 ## Phase 7 — Multi-agent routing/session/search
 
-Deliverables:
+Unchanged from v1 (`agentId`-scoped routes or request-scope equivalent against the Phase 6 `AgentRegistry`; binding scope key and `sessionNamespace` include `agentId`; per-agent catalog/readiness; scoped session search; external hook target resolution).
 
-- implement `agentId` scoped routes or request-scope equivalent against the Phase 6 `AgentRegistry`;
-- binding scope key includes `agentId`;
-- `sessionNamespace` includes `agentId`;
-- session root layout preserves durable host session root;
-- per-agent catalog and readiness;
-- session index/search scoped by workspace+agent;
-- external hook target resolution.
+v2 note: surface adapters address agents through the same `agentId` scoping; a Slack channel or embed binds to one `agentId` per addressing entry.
 
-Exit criteria:
-
-- same workspace/same session id/two agents do not collide;
-- deep links can open target agent session;
-- pure/headless and bash-enabled agents coexist in one deployed app.
+Exit criteria: as v1, plus: two surfaces bound to two agents in one workspace do not collide.
 
 ## Phase 8 — Cleanup and deprecation
 
-Deliverables:
+Unchanged from v1: remove remaining compatibility exports after the migration window; update package docs; migration notes for app authors; convert remaining plan tasks into beads/issues.
 
-- remove remaining safe type-only/host-level compatibility exports after downstream migration window;
-- update package docs;
-- create migration notes for app authors;
-- convert remaining plan tasks into beads/issues.
-
-Exit criteria:
-
-- no code imports old moved paths;
-- docs reflect new package ownership;
-- issue #391 can close or split remaining follow-ups.
+Additional v2 exit criterion: `@hachej/boring-agent` README documents the four-part surface contract (08) as the stable public API.
