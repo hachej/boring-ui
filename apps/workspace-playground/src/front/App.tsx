@@ -46,7 +46,8 @@ const playgroundDeckPlugin = createDeckPlugin({
   },
 })
 
-const askUserPlugin = createAskUserPlugin({ appLeftInbox: true })
+const askUserPlugin = createAskUserPlugin()
+const askUserInboxDemoPlugin = createAskUserPlugin({ appLeftInbox: true })
 const baseWorkspacePlugins = [askUserPlugin, playgroundDeckPlugin]
 const externalPluginsEnabled = (import.meta as ImportMeta & { env?: Record<string, string> }).env?.VITE_BORING_EXTERNAL_PLUGINS === "1"
 
@@ -104,7 +105,10 @@ export function WorkspaceShell() {
   const showcase = useMemo(isShowcaseRoute, [])
   const fullPage = useMemo(isFullPageRoute, [])
   const inboxDemo = useMemo(isInboxDemoRoute, [])
-  const workspacePlugins = useMemo(() => inboxDemo ? [...baseWorkspacePlugins, inboxDemoPlugin] : baseWorkspacePlugins, [inboxDemo])
+  const workspacePlugins = useMemo(
+    () => inboxDemo ? [askUserInboxDemoPlugin, playgroundDeckPlugin, inboxDemoPlugin] : baseWorkspacePlugins,
+    [inboxDemo],
+  )
   const [projectName, setProjectName] = useState("Workspace")
   const [workspaceId, setWorkspaceId] = useState("Workspace")
   const [metaLoaded, setMetaLoaded] = useState(showcase || fullPage)

@@ -1,6 +1,16 @@
 import { expect, test } from "@playwright/test"
 
 test.describe("workspace-playground inbox demo", () => {
+  test("does not mount hardcoded Inbox demo data in the normal workspace", async ({ page }) => {
+    await page.goto("/?fresh=1")
+
+    await expect(page.getByRole("button", { name: "New chat" })).toBeVisible({ timeout: 15_000 })
+    await expect(page.getByRole("button", { name: /Inbox/ })).toHaveCount(0)
+    await expect(page.getByRole("button", { name: "Inbox demo chat" })).toHaveCount(0)
+    await expect(page.getByText("Pick the deploy target for the release smoke")).toHaveCount(0)
+    await expect(page.getByText("Review Codex notes on workspace inbox flow")).toHaveCount(0)
+  })
+
   test("mounts plugin-owned demo items in the app-left Inbox", async ({ page }) => {
     await page.goto("/?inboxDemo=1&fresh=1")
 
