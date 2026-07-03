@@ -270,6 +270,25 @@ describe("AskUserRuntime", () => {
     await expect(store.getByQuestionId(question.questionId)).resolves.toMatchObject({ status: "abandoned" })
   })
 
+  it("abandons an orphaned pending question before creating a new one for the same session", async () => {
+    const store = await makeStore()
+    const orphan = makeQuestion({ questionId: "orphan-q", sessionId: "s1" })
+    await store.createPending(orphan)
+
+    const restarted = new AskUserRuntime({ store })
+    const next = restarted.ask({ sessionId: "s1", title: "Fresh question", schema })
+    let pending = await pendingQuestion(store, "s1")
+    await vi.waitFor(async () => {
+      pending = await pendingQuestion(store, "s1")
+      expect(pending.questionId).not.toBe(orphan.questionId)
+    })
+
+    await expect(store.getByQuestionId(orphan.questionId)).resolves.toMatchObject({ status: "abandoned" })
+    await waitForRuntimeWaiter(restarted, pending.questionId)
+    await restarted.cancelQuestion(pending.questionId, "s1")
+    await expect(next).resolves.toMatchObject({ status: "cancelled" })
+  })
+
   it("abandons if submit/cancel discovers a missing waiter", async () => {
     const store = await makeStore()
     const question = makeQuestion()

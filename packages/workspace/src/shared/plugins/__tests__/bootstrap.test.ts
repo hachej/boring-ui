@@ -4,14 +4,15 @@ import { PanelRegistry } from "../../../front/registry/PanelRegistry"
 import { WorkspaceSourceRegistry } from "../../../front/registry/WorkspaceSourceRegistry"
 import { SurfaceResolverRegistry } from "../SurfaceResolverRegistry"
 import type { CommandConfig } from "../../types/panel"
-import { bootstrap } from "../bootstrap"
+import { bootstrap, captureBootstrapPlugins } from "../bootstrap"
 import { CatalogRegistry } from "../CatalogRegistry"
 import { PluginError } from "../errors"
-import { definePlugin } from "../frontFactory"
+import { captureFrontPlugin, definePlugin } from "../frontFactory"
 import type { CatalogConfig } from "../types"
 
 const DummyPanel = () => null
 const DummyChatPanel = () => null
+const DummyOverlay = () => null
 
 function makeRegistries() {
   return {
@@ -171,6 +172,24 @@ describe("bootstrap", () => {
     expect(registries.commands.getCommands()).toEqual([
       expect.objectContaining({ id: "host", pluginId: "filesystem" }),
     ])
+  })
+
+  it("throws duplicate-id for app-left action collisions across plugins", () => {
+    expect(() =>
+      captureBootstrapPlugins({
+        defaults: [definePlugin({ id: "a", appLeftActions: [{ id: "inbox", label: "Inbox", overlay: DummyOverlay }] })],
+        plugins: [definePlugin({ id: "b", appLeftActions: [{ id: "inbox", label: "Other Inbox", overlay: DummyOverlay }] })],
+      }),
+    ).toThrow(/app-left action/)
+  })
+
+  it("throws duplicate-id for app-left action collisions in pre-captured plugins", () => {
+    const capturedPlugins = [
+      captureFrontPlugin(definePlugin({ id: "a", appLeftActions: [{ id: "inbox", label: "Inbox", overlay: DummyOverlay }] })),
+      captureFrontPlugin(definePlugin({ id: "b", appLeftActions: [{ id: "inbox", label: "Other Inbox", overlay: DummyOverlay }] })),
+    ]
+
+    expect(() => captureBootstrapPlugins({ capturedPlugins })).toThrow(/app-left action/)
   })
 
   it("throws duplicate-id for repeated plugin ids in the final set", () => {

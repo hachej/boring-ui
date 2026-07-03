@@ -732,6 +732,21 @@ describe("ChatLayout component", () => {
     expect(chatButton.closest(".right-3")).not.toBeNull()
   })
 
+  it("keeps workbench close and expand controls visible over chat overlays", () => {
+    renderWithRegistry(
+      <ChatLayout
+        center="chat"
+        surface="artifact-surface"
+        surfaceParams={{ onClose: vi.fn() }}
+        chatOverlay={<div>Inbox overlay</div>}
+      />,
+      ["chat", "artifact-surface"],
+    )
+
+    expect(screen.getByRole("button", { name: "Close workbench" })).toBeInTheDocument()
+    expect(screen.getByRole("button", { name: "Expand workbench" })).toBeInTheDocument()
+  })
+
   it("auto-expands the chat panel when a blocker appears while collapsed", async () => {
     function Host() {
       const { addBlocker } = useWorkspaceAttention()

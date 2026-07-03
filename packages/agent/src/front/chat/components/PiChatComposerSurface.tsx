@@ -220,7 +220,7 @@ export function PiChatComposerSurface<
   }, [draft, resizeTextarea, textareaRef])
 
   return (
-    <div className={cn(chrome ? 'px-4 pb-4 pt-2 sm:px-6 sm:pb-5' : 'px-3 pb-2 pt-1')}>
+    <div className={cn('relative z-20', chrome ? 'px-4 pb-4 pt-2 sm:px-6 sm:pb-5' : 'px-3 pb-2 pt-1')}>
       <div
         data-boring-agent-part="chat-working-slot"
         className={cn(

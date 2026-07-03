@@ -54,6 +54,20 @@ export interface BoringFrontBindingRegistration {
   component: PluginBinding
 }
 
+export interface BoringFrontAppLeftOverlayProps {
+  onClose: () => void
+}
+
+export interface BoringFrontAppLeftActionRegistration {
+  id: string
+  label: string
+  icon?: ComponentType<{ className?: string }>
+  trailing?: ComponentType
+  overlay: ComponentType<BoringFrontAppLeftOverlayProps>
+  order?: number
+  emphasis?: boolean
+}
+
 export interface BoringFrontSurfaceResolverRegistration {
   id?: string
   kind: string
@@ -104,6 +118,7 @@ export interface BoringFrontAPI {
   registerPanel<T = unknown>(registration: BoringFrontPanelRegistration<T>): void
   registerWorkspaceSource<T = unknown>(registration: BoringFrontWorkspaceSourceRegistration<T>): void
   registerPanelCommand(registration: BoringFrontPanelCommandRegistration): void
+  registerAppLeftAction(registration: BoringFrontAppLeftActionRegistration): void
   registerSurfaceResolver(registration: BoringFrontSurfaceResolverRegistration): void
   registerToolRenderer(registration: BoringFrontToolRendererRegistration): void
 }
@@ -138,6 +153,7 @@ export interface DefinePluginConfig {
   panels?: ReadonlyArray<BoringFrontPanelRegistration<any>>
   workspaceSources?: ReadonlyArray<BoringFrontWorkspaceSourceRegistration<any>>
   commands?: ReadonlyArray<BoringFrontPanelCommandRegistration>
+  appLeftActions?: ReadonlyArray<BoringFrontAppLeftActionRegistration>
   surfaceResolvers?: ReadonlyArray<BoringFrontSurfaceResolverRegistration>
   providers?: ReadonlyArray<BoringFrontProviderRegistration>
   bindings?: ReadonlyArray<BoringFrontBindingRegistration>
@@ -178,6 +194,7 @@ export function definePlugin<const Config extends DefinePluginConfig>(
     for (const panel of config.panels ?? []) api.registerPanel(panel)
     for (const source of config.workspaceSources ?? []) api.registerWorkspaceSource(source)
     for (const command of config.commands ?? []) api.registerPanelCommand(command)
+    for (const action of config.appLeftActions ?? []) api.registerAppLeftAction(action)
     for (const resolver of config.surfaceResolvers ?? []) api.registerSurfaceResolver(resolver)
     for (const provider of config.providers ?? []) api.registerProvider(provider)
     for (const binding of config.bindings ?? []) api.registerBinding(binding)
@@ -213,6 +230,7 @@ export interface CapturedBoringFrontRegistrations {
   panels: BoringFrontPanelRegistration<any>[]
   workspaceSources: BoringFrontWorkspaceSourceRegistration<any>[]
   panelCommands: BoringFrontPanelCommandRegistration[]
+  appLeftActions: BoringFrontAppLeftActionRegistration[]
   surfaceResolvers: BoringFrontSurfaceResolverRegistration[]
   toolRenderers: BoringFrontToolRendererRegistration[]
 }
@@ -238,6 +256,7 @@ export function createCapturingBoringFrontAPI(options: { pluginId?: string } = {
   const panels: BoringFrontPanelRegistration<any>[] = []
   const workspaceSources: BoringFrontWorkspaceSourceRegistration<any>[] = []
   const panelCommands: BoringFrontPanelCommandRegistration[] = []
+  const appLeftActions: BoringFrontAppLeftActionRegistration[] = []
   const surfaceResolvers: BoringFrontSurfaceResolverRegistration[] = []
   const toolRenderers: BoringFrontToolRendererRegistration[] = []
   // Intra-plugin id collision detection (PLUGIN_SYSTEM.md §5.7): two register*
@@ -290,6 +309,10 @@ export function createCapturingBoringFrontAPI(options: { pluginId?: string } = {
       claim("command", registration.id)
       panelCommands.push(registration)
     },
+    registerAppLeftAction(registration) {
+      claim("app-left-action", registration.id)
+      appLeftActions.push(registration)
+    },
     registerSurfaceResolver(registration) {
       const id = registration.id ?? `${options.pluginId ?? "anon"}:${registration.kind}`
       claim("surface-resolver", id)
@@ -307,6 +330,7 @@ export function createCapturingBoringFrontAPI(options: { pluginId?: string } = {
         panels: clone(panels),
         workspaceSources: clone(workspaceSources),
         panelCommands: clone(panelCommands),
+        appLeftActions: clone(appLeftActions),
         surfaceResolvers: clone(surfaceResolvers),
         toolRenderers: clone(toolRenderers),
       }

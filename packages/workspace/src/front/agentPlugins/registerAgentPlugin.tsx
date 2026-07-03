@@ -333,11 +333,12 @@ function warnUnsupportedDynamicContributions(pluginId: string, captured: Capture
   const unsupported = [
     captured.providers.length > 0 ? `${captured.providers.length} provider(s)` : null,
     captured.bindings.length > 0 ? `${captured.bindings.length} binding(s)` : null,
-  ].filter(Boolean).join(" and ")
+    captured.appLeftActions.length > 0 ? `${captured.appLeftActions.length} app-left action(s)` : null,
+  ].filter(Boolean).join(", ")
   if (!unsupported) return
   console.warn(
     `[boring-ui] hot-loaded plugin "${pluginId}" registered ${unsupported}. ` +
-      "Dynamic provider/binding mounting is not implemented yet, so this plugin's hot-loaded UI contributions were skipped to avoid rendering panels without their required provider tree.",
+      "Dynamic provider/binding/app-left mounting is not implemented yet, so these hot-loaded UI contributions were skipped. Compose the plugin statically to use these outputs.",
   )
 }
 
@@ -401,13 +402,14 @@ function commitCapturedFrontFactory(
   captured: CapturedBoringFrontRegistrations,
   registries: ReturnType<typeof getRegistries>,
 ): void {
-  if (captured.providers.length > 0 || captured.bindings.length > 0) {
+  if (captured.providers.length > 0 || captured.bindings.length > 0 || captured.appLeftActions.length > 0) {
     warnUnsupportedDynamicContributions(pluginId, captured)
-    // Provider/binding contributions require mounting in the provider tree,
-    // which hot reload cannot do safely yet. Keep any provider/binding from the
-    // statically mounted app, but still refresh hot-swappable panel/command/
-    // catalog/resolver outputs. If a newly-added panel depends on an unmounted
-    // provider, the panel render self-test reports that concrete render error.
+    // Provider/binding/app-left contributions require mounting in the provider
+    // or shell chrome tree, which hot reload cannot do safely yet. Keep any
+    // statically mounted contributions, but still refresh hot-swappable panel/
+    // command/catalog/resolver outputs. If a newly-added panel depends on an
+    // unmounted provider, the panel render self-test reports that concrete
+    // render error.
   }
   const payloads = buildRegistryPayloads(pluginId, revision, captured)
   assertNoOutputCollisions(pluginId, payloads, registries)
