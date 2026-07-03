@@ -58,10 +58,12 @@ Exit criteria:
 
 ## Phase T1 — Event envelope and replay (after Phase 1)
 
+Implementation choice (08, verified): adopt the **Durable Streams wire protocol** — embed an append-only SQLite `EventStreamStore` + DS-compliant read handlers (adapt Flue's ~1000-line Apache-2.0 framework-agnostic implementation, fixing the non-transactional append) behind a Fastify bridge; use `@durable-streams/client` in browser/channel consumers. Do not design a bespoke replay protocol.
+
 Deliverables:
 
-- `AgentEvent` envelope (`v`, `eventIndex`, `timestamp`, `sessionId`, `chunk`) around the existing `UIMessageChunk` stream; monotonic index persisted with the session transcript.
-- `agent.replay(sessionId, { startIndex })`; HTTP adapter `GET …/events?startIndex=N`.
+- `AgentEvent` envelope (`v`, `eventIndex`, `timestamp`, `sessionId`, `chunk`) around the existing `UIMessageChunk` stream; monotonic index persisted with the session transcript (DS `seq`/offset).
+- `agent.replay(sessionId, { startIndex })`; HTTP adapter = DS-compliant `GET`/`HEAD` stream routes (catch-up from offset, SSE + long-poll).
 - Approvals/HITL on-stream: `needsApproval` on `AgentTool`; approval/input-request events; `resolveInput()`; durable `session.waiting` park/resume. Migrate permission prompts + ask-user plugin onto this path (no second approval channel).
 - Harness conformance suite additions: envelope ordering, replay-from-index, approval park/resume (extends #12 conformance).
 
