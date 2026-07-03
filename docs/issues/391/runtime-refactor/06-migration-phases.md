@@ -62,7 +62,7 @@ Implementation choice (08, verified): adopt the **Durable Streams wire protocol*
 
 Deliverables:
 
-- `AgentEvent` envelope (`v`, `eventIndex`, `timestamp`, `sessionId`, `chunk`) around the existing `UIMessageChunk` stream; monotonic index persisted with the session transcript (DS `seq`/offset).
+- `AgentEvent` envelope (`v`, `eventIndex`, `timestamp`, `sessionId`, `chunk`) around the existing harness stream unit (`PiChatEvent`); monotonic index persisted with the session transcript (DS `seq`/offset). Supersedes the bespoke `PiChatReplayBuffer` + `?cursor=` NDJSON replay (kept live until T2 cutover).
 - `agent.replay(sessionId, { startIndex })`; HTTP adapter = DS-compliant `GET`/`HEAD` stream routes (catch-up from offset, SSE + long-poll).
 - Approvals/HITL on-stream: `needsApproval` on `AgentTool`; approval/input-request events; `resolveInput()`; durable `session.waiting` park/resume. Migrate permission prompts + ask-user plugin onto this path (no second approval channel).
 - Harness conformance suite additions: envelope ordering, replay-from-index, approval park/resume (extends #12 conformance).
@@ -74,7 +74,7 @@ Exit criteria: SSE drop + reconnect replays losslessly in the workspace; an appr
 Deliverables:
 
 - Transport contract (`send` + `reconnect`) documented; in-process transport (direct `createAgent()` consumption) and HTTP+SSE adapter both pass a shared transport conformance suite.
-- `useAgentChat`/ChatPanel refit to consume only the public contract (no internal imports); custom `ChatTransport` reconnect wired to `startIndex` replay.
+- Front transport refit (`RemotePiSession`/`usePiSessions`/`PiChatPanel` — the actual client stack) to consume only the public contract (no internal imports); reconnect wired to DS `startIndex` replay via `@durable-streams/client`.
 - Two-handles rule enforced: public agent APIs accept `sessionId` only; `x-boring-workspace-id`→`SessionCtx` mapping is HTTP-adapter code, documented as the pattern surface adapters replicate.
 
 Exit criteria: workspace UI runs unmodified against the refit; a headless Node consumer drives the same session interleaved with the UI.

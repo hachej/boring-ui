@@ -1,0 +1,166 @@
+# TODO-BBP3 — Phase 3: move file/bash server routes + tools into `@hachej/boring-bash`
+
+Handoff: self-contained work order for one autonomous coding agent (pi or gpt-5.5-xhigh). Cite plan files by relative path. No prior conversation assumed.
+
+## Context (read first)
+
+- `docs/issues/391/runtime-refactor/06-migration-phases.md` — Phase 3 deliverables/exit (routes/tools code-move, behavior-freeze; `createBashAgentFeature()` consumed as `features` by `createAgent()`).
+- `docs/issues/391/runtime-refactor/02-boring-bash-environment.md` — layered exports (`/server`, `/agent`); "Tools to move or consciously assign"; one-namespace / source-of-truth rules.
+- `docs/issues/391/runtime-refactor/00-global-isa.md` — seams to reuse (`disableDefaultFileTools`, `buildHarnessAgentTools`, `buildFilesystemAgentTools`, `buildUploadAgentTools`, readiness tags); zero agent→bash value imports.
+- `docs/issues/391/runtime-refactor/todos/TODO-03-routes-tools-ui.md` — v1 beads BBA-030..033 (superseded here for the routes/tools slice; UI is TODO-P4).
+
+### Depends on
+
+- **Phase 1** injection: `createAgent()` accepts injected `runtime` + `features` (06 Phase 1). `createBashAgentFeature()` is registered as a feature, not hardwired.
+- **Phase 2** (`TODO-P2-bash-package-providers.md`): providers + `/providers` subpath moved; `resolveMode()` in host/boring-bash composition.
+
+### Already landed via #416 (behavior-freeze — move code, do not change behavior)
+
+- The `(filesystem, path)` addressing already ships **inside the tools/bundle**, not as a separate route:
+  - `packages/agent/src/server/runtime/mode.ts` — `RuntimeBundle.filesystemBindings: RuntimeFilesystemBinding[]`; `RuntimeFilesystemBindingOperations` (read/list/find/grep/stat/write?/delete?/move?/mkdir?/`rejectMutation`); `RuntimeFilesystemBinding.access: 'readonly'|'readwrite'`.
+  - `packages/agent/src/server/tools/filesystem/index.ts` — `withFilesystemParameter()` (injects `filesystem` enum `['user', ...boundIds]`), `withFilesystemRouting()`, `assertNotFilesystemPathSpoof()` (rejects `:/` and `/<fs>` prefixes → "use the filesystem parameter"), `executeBoundFilesystemTool()` (routes non-`user` filesystems to bound ops; `write`/`edit` call `operations.rejectMutation`). **Preserve every one of these behaviors exactly.**
+- `packages/boring-bash/src/server/*` readonly/management projection operations + `runtimeBindingManager` + `companyContextFixtureProvider` (`COMPANY_CONTEXT_SENTINEL = "FORBIDDEN_FINANCE_SECRET_123"`) + `readonlyProjectionConformance`. The company_context **no-leak** conformance/leak tests (`packages/boring-bash/src/server/__tests__/readonlyCompanyContext*.test.ts`) must stay green.
+
+### Current route + tool inventory in `packages/agent` (Phase 3 move targets)
+
+HTTP routes (registered from `createAgentApp.ts` and `registerAgentRoutes.ts`; note there is **no** `filesystems.ts` — filesystem selection is a tool/bundle param, not a route):
+- `packages/agent/src/server/http/routes/file.ts` (`fileRoutes`) — read/write/stat/dir.
+- `packages/agent/src/server/http/routes/tree.ts` (`treeRoutes`).
+- `packages/agent/src/server/http/routes/search.ts` (`searchRoutes`).
+- `packages/agent/src/server/http/routes/fsEvents.ts` (`fsEventsRoutes`).
+- `packages/agent/src/server/http/routes/git.ts` (`gitRoutes`, `GitRouteOptions`).
+- `packages/agent/src/server/http/routes/fileRecords.ts`; `sessionChanges.ts` (`sessionChangesRoutes` — file-change feed; verify coupling before moving, may stay if it depends on session core).
+- Backing search: `packages/agent/src/server/runtime/createServerFileSearch.ts` (+ `__tests__`).
+
+Agent tools:
+- `packages/agent/src/server/tools/filesystem/index.ts` → `buildFilesystemAgentTools()` (`read`, `write`, `edit`, `find`, `grep`, `ls`; readiness tag `workspace-fs`) + `filesystem/remoteWorkspaceTools.ts` + `operations/bound.ts` (`boundFs`) + `operations/remoteWorkspace.ts`.
+- `packages/agent/src/server/tools/harness/index.ts` → `buildHarnessAgentTools()` (`bash` w/ readiness `sandbox-exec` + runtime tags `runtime-dependencies`/`runtime:python`/`runtime:node`; `execute_isolated_code` gated on `sandbox.capabilities.includes('isolated-code')`) + `harness/bashToolOptions.ts` + `operations/remoteSandbox.ts`.
+- `packages/agent/src/server/tools/upload/index.ts` → `buildUploadAgentTools()` (`upload_file`; readiness `workspace-fs`; `MAX_UPLOAD_BYTES`).
+
+Registration/consumption call sites (grep-verified):
+- `packages/agent/src/server/createAgentApp.ts` — imports route+tool builders; `disableDefaultFileTools?: boolean` at L54; tools composed at L184 (`buildHarnessAgentTools`) and L190 (`...(opts.disableDefaultFileTools ? [] : buildFilesystemAgentTools(runtimeBundle))`).
+- `packages/agent/src/server/registerAgentRoutes.ts` — tool builders at L594/601/602 (`buildHarnessAgentTools`, `buildFilesystemAgentTools`, `buildUploadAgentTools`).
+
+## Goal / exit criteria
+
+File/tree/search/fs-events/stat/dir (+ git/status) routes and file/bash/`execute_isolated_code`/upload tools live in `@hachej/boring-bash` (`/server`, `/agent`), contributed via `createBashAgentFeature()` and consumed as `features` by `createAgent()`. Behavior frozen. Exit (06 Phase 3):
+
+- workspace playground still opens file tree/editor; read/write/edit/find/grep/ls/bash work when boring-bash enabled.
+- pure mode (`createAgent({ runtime: 'none' })`) registers none of these routes/tools.
+- company_context no-leak conformance still green.
+- `(filesystem, path)` addressing + readonly enforcement identical to #416.
+
+## Non-negotiables
+
+- Behavior-freeze: this is a **code move**, not a behavior change. Preserve tool names, schemas, prompt snippets, error codes, readiness tags (`workspace-fs`, `sandbox-exec`, `runtime-dependencies`, `runtime:<id>`), stale-read/write stamps, renderer output.
+- Preserve `disableDefaultFileTools` semantics exactly (hides the six filesystem tools).
+- Preserve the `(filesystem, path)` param, `assertNotFilesystemPathSpoof` guard, and readonly `rejectMutation` from #416 verbatim.
+- Zero agent→bash value imports. Pi file tools keep flowing through pi factories + Operations adapters (`@mariozechner/pi-coding-agent` + `operations/bound.ts`); do not bypass those wrappers.
+- One source of truth: routes/tree/search/watch/bash cwd/git/status/upload all resolve from the same root (reuse `getRuntimeBundleStorageRoot()`; do not invent a second resolver).
+- Type-only import of agent contracts (`RuntimeBundle`, `AgentTool`, `Workspace`, `Sandbox`, readiness types) into boring-bash is allowed; value imports are not.
+
+## Do NOT
+
+- Do not touch `/home/ubuntu/projects/boring-ui-v2`. Work only in this worktree. Do not commit.
+- Do not change tool schemas / add features / "improve" behavior beyond stale-write parity already present.
+- Do not move the filesystem front plugin (TODO-P4 owns it).
+- Do not re-shape #416 shared contracts or projection ops.
+
+## Beads
+
+### BBP3-010 — Add `/agent` subpath + `createBashAgentFeature()` skeleton [size S]
+
+- **Files touch/create:** replace stub `packages/boring-bash/src/agent/index.ts` (currently `export {}`) with real exports; `packages/boring-bash/package.json` (add `"./agent"` export); `packages/boring-bash/tsup.config.ts` (add entry); `packages/boring-bash/scripts/check-invariants.mjs` (`requiredExports` += `"./agent"`).
+- **Notes:** Define `createBashAgentFeature(): AgentFeature` shape aligned with the Phase-1 `features` contract (a feature contributes tools + prompt snippets + readiness gates + optional route registration metadata). Import `AgentTool`/`RuntimeBundle` **type-only** from `@hachej/boring-agent/server`. No behavior yet — wiring lands in BBP3-013/014.
+- **Tests:** export-map test imports `/agent`; invariants green.
+- **Acceptance:** `/agent` subpath resolves; feature factory type exists.
+
+### BBP3-011 — Move filesystem tools to `boring-bash/agent` [size L]
+
+- **Files move:**
+  - `packages/agent/src/server/tools/filesystem/index.ts` → `packages/boring-bash/src/agent/tools/filesystem/index.ts` (+ `__tests__/filesystem.test.ts`).
+  - `packages/agent/src/server/tools/filesystem/remoteWorkspaceTools.ts` → `packages/boring-bash/src/agent/tools/filesystem/remoteWorkspaceTools.ts`.
+  - `packages/agent/src/server/tools/operations/bound.ts` → `packages/boring-bash/src/agent/tools/operations/bound.ts` (+ `__tests__/bound.test.ts`).
+  - `packages/agent/src/server/tools/operations/remoteWorkspace.ts` → `packages/boring-bash/src/agent/tools/operations/remoteWorkspace.ts` (+ tests).
+- **Notes:** Keep `withFilesystemParameter`/`withFilesystemRouting`/`assertNotFilesystemPathSpoof`/`executeBoundFilesystemTool`/`adaptPiTool` verbatim. Keep readiness tag `workspace-fs`. Preserve `disableDefaultFileTools` by keeping the six-tool set behind `createBashAgentFeature()` so a host omitting the feature = pure mode with no file tools. Tools must fail with a stable error when boring-bash is absent/not ready.
+- **Tests:** moved tests pass under boring-bash; tool names/schemas unchanged; `disableDefaultFileTools` hides the same six tools; spoof-guard + readonly-rejection tests pass (these guard the #416 behavior).
+- **Acceptance:** six filesystem tools owned by boring-bash; pure agents have none; behavior identical.
+
+### BBP3-012 — Move bash + `execute_isolated_code` tools [size M]
+
+- **Files move:** `packages/agent/src/server/tools/harness/index.ts` → `packages/boring-bash/src/agent/tools/harness/index.ts`; `harness/bashToolOptions.ts` → same dir; `operations/remoteSandbox.ts` → `packages/boring-bash/src/agent/tools/operations/remoteSandbox.ts` (+ their `__tests__/*`).
+- **Notes:** Preserve `bash` readiness `sandbox-exec`; runtime-requirement detection (`runtime:python`/`runtime:node`/`runtime-dependencies`) and secret redaction verbatim. Keep `execute_isolated_code` gated on `bundle.sandbox.capabilities.includes('isolated-code')`. Shell cwd stays `bundle.workspace.root` (same model-visible view). Pure mode → no bash/isolated-code (achieved by omitting the feature).
+- **Tests:** moved `harness.test.ts` passes; pure mode has no bash; readiness/redaction behavior preserved.
+- **Acceptance:** bash power owned by boring-bash, policy/readiness-gated, source-of-truth consistent.
+
+### BBP3-013 — Move upload/artifact tool + decide ownership [size S]
+
+- **Files move:** `packages/agent/src/server/tools/upload/index.ts` → `packages/boring-bash/src/agent/tools/upload/index.ts` (+ `__tests__/upload.test.ts`).
+- **Notes:** `upload_file` is file-view-bound (uses `getRuntimeBundleStorageRoot`) → belongs in boring-bash. Keep readiness `workspace-fs`, `MAX_UPLOAD_BYTES`, stable errors. Pure mode has no workspace-bound upload tool unless host supplies a non-bash artifact feature.
+- **Tests:** upload works in coding workspace; pure mode lacks it; large/binary/missing/permission-denied return stable errors.
+- **Acceptance:** artifact tool moved; no hidden workspace assumption leaks into pure agents.
+
+### BBP3-014 — Move file/tree/search/fs-events/git routes to `boring-bash/server` [size L]
+
+- **Files move:**
+  - `packages/agent/src/server/http/routes/file.ts` → `packages/boring-bash/src/server/routes/file.ts` (+ `__tests__/file.test.ts`).
+  - `tree.ts` → `boring-bash/src/server/routes/tree.ts` (+ `__tests__/tree.test.ts`).
+  - `search.ts` → `boring-bash/src/server/routes/search.ts` (+ `__tests__/search.test.ts`); `runtime/createServerFileSearch.ts` → `boring-bash/src/server/createServerFileSearch.ts` (+ tests).
+  - `fsEvents.ts` → `boring-bash/src/server/routes/fsEvents.ts` (+ `__tests__/fsEvents.test.ts`).
+  - `git.ts` → `boring-bash/src/server/routes/git.ts` (+ `__tests__/git.test.ts`); carry `GitRouteOptions` + git source-root logic.
+  - `fileRecords.ts` → `boring-bash/src/server/routes/fileRecords.ts`. **Verify** `sessionChanges.ts` coupling: if it depends on session-core (not fs), leave it in agent and note; else move.
+- **Files touch:** `packages/boring-bash/src/server/index.ts` (export a `registerBashRoutes(app, { runtime })` composing the above; keep Fastify types injected, not a hard Fastify dep if avoidable — mirror current signatures). `packages/agent/src/server/createAgentApp.ts` + `registerAgentRoutes.ts`: remove direct route imports; register bash routes via the injected feature (BBP3-015). Keep `/api/v1/files/*` + git route paths identical (add aliases only if a path must change — with deprecation note).
+- **Notes:** Routes receive `Workspace`/bundle, not raw paths (already true). Preserve stable error codes + adapter-owned path validation. Pure mode registers none of these.
+- **Tests:** moved route tests pass; read/write/list/search/git parity; git root == file route root == bash cwd; pure mode registers none.
+- **Acceptance:** file-like + git-like HTTP surfaces are boring-bash-owned when enabled, absent in pure mode.
+
+### BBP3-015 — Wire `createBashAgentFeature()` into `createAgent()` composition [size M]
+
+- **Files touch:** `packages/agent/src/server/createAgentApp.ts` (remove L14/15 tool-builder imports + L18-31 route imports for moved routes; consume tools/routes from injected `features` instead; keep `disableDefaultFileTools` honored by whether the host passes the bash feature or a filtered variant); `packages/agent/src/server/registerAgentRoutes.ts` (same for L24-41 imports and L594/601/602 tool composition); host/composition (`packages/cli/src/server/modeApps.ts`, `packages/workspace/src/app/server/createWorkspaceAgentServer.ts`, `apps/full-app` composition, `packages/agent/src/bin/boring-agent.ts`) → construct `createBashAgentFeature()` and pass it in `features`.
+- **Notes:** This is where the Phase-1 injection seam is consumed. If `createAgent()`/`features` is not yet threaded through `createAgentApp`/`registerAgentRoutes`, STOP and report the Phase-1 gap rather than hardwiring. `disableDefaultFileTools`: host passes the bash feature with filesystem tools suppressed (feature option) so the six tools drop while bash/routes remain — preserve exact current semantics.
+- **Tests:** `pnpm --filter @hachej/boring-agent run test` green; a pure-mode composition (`runtime: 'none'`, no bash feature) exposes no file routes/tools; a bash-enabled composition exposes all.
+- **Acceptance:** routes/tools flow through `features`; hardwired registration removed; pure vs bash split verified.
+
+### BBP3-016 — Route + tool source-of-truth regression tests [size M]
+
+- **Files create:** `packages/boring-bash/src/server/__tests__/sourceOfTruth.test.ts` (route write ↔ bash read; bash write ↔ file route read/search; git/status root == file API root == bash cwd) and a `disableDefaultFileTools` parity test.
+- **Notes:** Reuse `getRuntimeBundleStorageRoot`; do not add a second resolver. Do not duplicate provider-level assertions from Phase 2.
+- **Tests:** as above; company_context no-leak conformance (`readonlyCompanyContext*.test.ts`) still green post-move.
+- **Acceptance:** moved routes/tools cannot regress into host-tree-vs-remote-bash split brain; readonly projection stays leak-free.
+
+### BBP3-017 — Extend invariants for the routes/tools boundary [size S]
+
+- **Files touch:** `packages/boring-bash/scripts/check-invariants.mjs` (`requiredExports` += `"./agent"`; keep agent→bash value-import scan). Verify `packages/agent/src/server/index.ts` no longer value-exports moved tool builders (`buildFilesystemAgentTools`/`buildHarnessAgentTools`/`buildUploadAgentTools`) — migrate those importers or host-shim; add a static assertion if practical.
+- **Tests:** `pnpm lint:invariants` (root) green; `pnpm audit:imports` green.
+- **Acceptance:** boundary guarded; no agent→bash value import; no cycle.
+
+## Verification — exact commands verified against package.json scripts
+
+```bash
+pnpm --filter @hachej/boring-bash run build
+pnpm --filter @hachej/boring-bash run typecheck
+pnpm --filter @hachej/boring-bash run test
+pnpm --filter @hachej/boring-bash run check:invariants
+
+pnpm --filter @hachej/boring-agent run build
+pnpm --filter @hachej/boring-agent run typecheck
+pnpm --filter @hachej/boring-agent run test
+pnpm --filter @hachej/boring-agent run lint:invariants
+pnpm --filter @hachej/boring-agent run check:isolation
+
+pnpm lint:invariants     # root: agent + boring-bash + workspace-plugin
+pnpm audit:imports
+pnpm typecheck
+
+# Manual behavior proof (workspace playground): open file tree + editor, run read/write/edit/find/grep/ls/bash.
+# See run-workspace-playground recipe; rebuild dist first.
+```
+
+## Review gates
+
+- Phase 1 (`features`/`createAgent()`) + Phase 2 (providers moved) confirmed present, else STOP+report.
+- Behavior-freeze verified: tool names/schemas/prompt snippets/readiness tags/error codes unchanged; renderer snapshots unchanged.
+- `disableDefaultFileTools` parity test passes; pure mode has zero file routes/tools.
+- `(filesystem, path)` param + spoof guard + readonly `rejectMutation` preserved verbatim; company_context no-leak conformance green.
+- Single source-of-truth regression tests pass; no second storage-root resolver introduced.
+- `pnpm lint:invariants` + `pnpm audit:imports` green; zero agent→bash value imports.

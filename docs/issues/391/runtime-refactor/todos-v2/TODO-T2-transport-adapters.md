@@ -1,0 +1,132 @@
+# TODO-T2 — Transport adapters (in-process + HTTP) over the public contract
+
+Handoff: self-contained work order for one autonomous coding agent (pi or gpt-5.5-xhigh). Cite plan files by relative path. No prior conversation assumed.
+
+## Context (read first)
+
+- Plan: `docs/issues/391/runtime-refactor/06-migration-phases.md` — "Phase T2 — Transport adapters". Depends on **Phase T1** (`TODO-T1-durable-events-approvals.md` in this folder): the durable `EventStreamStore`, `AgentEvent` envelope, DS-compliant `GET`/`HEAD` stream routes, `agent.replay(sessionId,{startIndex})`, and on-stream approvals must already exist. Do not start T2 until T1's conformance suite is green.
+- Plan: `docs/issues/391/runtime-refactor/08-pluggable-agent-surfaces.md` — "Vercel AI SDK `ChatTransport`" (UI state and wire protocol are separate; `sendMessages` + `reconnectToStream` is the entire transport contract), "Two handles (hard rule)", "Conformance" item 3 ("Transport conformance: `send` + `reconnect` semantics identical in-process and over HTTP").
+- Durable Streams client (locked in 08): `@durable-streams/client` (deps `@microsoft/fetch-event-source` + `fastq`) provides reconnection, backoff, offset checkpointing. T2 wires the front's reconnect onto it (or a thin `ChatTransport.reconnectToStream` backed by it) against T1's DS routes.
+
+### Current boring code (verified paths)
+
+- `packages/agent/src/front/chat/pi/remotePiSession.ts` — `class RemotePiSession`, the **existing bespoke transport**. Key internals: `start(cursor?)` → `connectEvents(cursor, gen)` → `runEventStream(cursor, …)` which `fetch`es `buildPiChatEventsUrl({ apiBaseUrl, sessionId, cursor })` (= `GET …/pi-chat/:sessionId/events?cursor=N`), reads NDJSON via `readPiChatNdjsonStream`, and reconnects via `schedulePiChatReconnect` (jittered backoff, `reconnectAttempt`). `prompt`/`followUp`/`interrupt`/`stop` POST to the pi-chat routes. `store.dispatch({type:'cursor-sync'|'connection-state'|…})` drives UI state. **This is exactly `sendMessages` + `reconnectToStream` today, hand-rolled.**
+- `packages/agent/src/front/chat/pi/piChatStream.ts` — the reconnect/cursor helpers to be superseded: `buildPiChatEventsUrl`, `readPiChatNdjsonStream`, `processPiChatSequencedEvent` (gap/stale detection), `schedulePiChatReconnect`, `calculateJitteredBackoffDelayMs`, `parsePiChatReplayRangeError`/`replayRangeErrorToRecovery` (the `replay_gap`/`cursor_ahead` → full-rehydrate recovery). DS's offset-addressed catch-up replaces the gap-recovery dance.
+- `packages/agent/src/front/chat/session/usePiSessions.ts` — the React hook (misnamed in the task as `useAgentChat`; **there is no `useAgentChat`**). It owns session lifecycle and constructs the transport via `createRemoteSession` (default `createRemotePiSession`, injectable via `options.createRemoteSession` — L34, L83, L309). `activePiSession: RemotePiSession`. `PiChatPanel.tsx` (`packages/agent/src/front/chat/PiChatPanel.tsx`, 49KB) consumes this hook.
+- `packages/agent/src/server/http/routes/piChat.ts` — the HTTP adapter. `getRequestContext(request)` maps `request.workspaceContext?.workspaceId` (+ `x-boring-storage-scope` header) → `PiSessionRequestContext`. **This is the `x-boring-workspace-id → SessionCtx` mapping the plan wants documented as the adapter-owned pattern.**
+- `packages/agent/src/shared/harness.ts` — `SendMessageInput`, `RunContext`; L79 comment declaring the harness reconnect-unaware (T1 already moved replay to the façade — verify).
+- `packages/agent/src/server/createAgent.ts` — the Phase 1 façade (`send`, `resolveInput`, `sessions`, `replay`, `readiness`, `dispose`). T2's in-process transport consumes this directly.
+- Invariant scripts: root `scripts/audit-imports.ts` (`pnpm run audit:imports`), `packages/agent/src/…` isolation via `pnpm run check:agent-isolation`, `packages/agent` `lint:invariants` (`bash ../../scripts/check-invariants.sh .`). T2 adds a rule to one of these.
+
+## Goal / exit criteria
+
+Match `06-migration-phases.md` Phase T2 exit criteria:
+
+1. **Transport contract** (`send` + `reconnect`) documented; an **in-process transport** (direct `createAgent()`) and the **HTTP+SSE adapter** both pass one shared transport conformance suite.
+2. `usePiSessions`/`PiChatPanel` refit to consume **only the public contract** (no internal imports); custom `ChatTransport.reconnectToStream` wired to T1's `startIndex`/DS replay via `@durable-streams/client`.
+3. Two-handles rule enforced: public agent APIs accept `sessionId` only; `x-boring-workspace-id → SessionCtx` documented as adapter-owned; a lint/invariant blocks platform-addressing types in core signatures.
+4. Exit: workspace UI runs unmodified against the refit; a headless Node consumer drives the same session interleaved with the UI.
+
+## Non-negotiables
+
+- Do not change UI behavior. `PiChatPanel`/`usePiSessions` external API stays identical (08: "`ChatPanel`/`useAgentChat` unchanged externally"). This is an internal transport swap.
+- Reconnect uses T1's DS routes + offsets, not the `?cursor=` NDJSON path. Prefer `@durable-streams/client` for reconnection/backoff/offset-checkpointing; only hand-roll if the client cannot express the `AgentEvent`→UI-store mapping cleanly (justify in the PR).
+- Two handles (08): the transport contract is keyed by `sessionId`. Platform addressing (`workspaceId`, Slack thread, workbook id) lives in the adapter, never in the transport/core type.
+- The in-process and HTTP transports must be behaviorally identical under the conformance suite — same event order, same reconnect-replay semantics, same approval round-trip.
+- Keep pin discipline: pin `@durable-streams/client` (and its `@microsoft/fetch-event-source`/`fastq` deps) to exact versions; it is a new front dependency — check bundle-size gates (`pnpm run check:bundle-size`).
+
+## Do NOT
+
+- Do NOT touch the server event store / DS routes / approvals — that is T1. If you find a T1 gap, file a bead, do not patch it here.
+- Do NOT delete `piChatStream.ts`/`remotePiSession.ts` until the refit passes the workspace playground and conformance; land the new transport behind `createRemoteSession` injection first, then remove the old path in the same PR's final commit.
+- Do NOT let `workspaceId`/storage-scope leak into `createAgent()` signatures — resolve them in the HTTP adapter (`getRequestContext`) as today.
+- Do NOT build the Slack/Excel surfaces — those are Phases S1/S2 (`06`). T2 only proves the contract with in-process + HTTP + a headless Node consumer.
+
+## Beads
+
+### BBT2-001 — Transport contract doc + shared conformance suite  · size M
+- **Title**: Define the `ChatTransport` contract (`send` + `reconnect`) and a suite run against in-process and HTTP.
+- **Files to create**:
+  - `packages/agent/src/shared/transport.ts` (new): the minimal contract (AI-SDK `ChatTransport`-shaped):
+    ```ts
+    export interface ChatTransport {
+      // fire a user turn; returns when accepted (not when the turn completes)
+      sendMessages(input: SendMessageInput): Promise<{ accepted: true; startIndex: number }>
+      // subscribe/replay the AgentEvent stream from an offset; reconnect-safe
+      reconnectToStream(sessionId: string, opts: { startIndex: number }): AsyncIterable<AgentEvent>
+      resolveInput(sessionId: string, requestId: string, response: unknown): Promise<void>
+      stop(sessionId: string): Promise<void>
+      interrupt(sessionId: string): Promise<void>
+    }
+    ```
+    Keep it `sessionId`-keyed (two-handles). Document each method + reconnect semantics (at-least-once from `startIndex`, dedupe by `eventIndex`) in the file header.
+  - `packages/agent/src/shared/__tests__/transport.conformance.ts` (new): `runTransportConformance(makeTransport, driveAgent)` covering:
+    - `sendMessages` accepted → events arrive in `eventIndex` order.
+    - `reconnectToStream` from mid-offset replays exactly the missed events (lossless), no dupes across a simulated drop.
+    - approval round-trip: a `data-approval-request` event surfaces, `resolveInput` unblocks the turn.
+    - `interrupt`/`stop` terminate the turn.
+    - idempotent replay: two overlapping `reconnectToStream` calls dedupe by `eventIndex`.
+- **Files to touch**: none in product code yet (adapters in BBT2-002/003 register against this).
+- **Acceptance**: suite compiles and is exported for reuse; documents the contract precisely.
+
+### BBT2-002 — In-process transport over `createAgent()`  · size M
+- **Title**: `ChatTransport` implemented by calling the façade directly (no HTTP).
+- **Files to create**:
+  - `packages/agent/src/server/transport/inProcessTransport.ts` (new): wraps `createAgent()` — `sendMessages` → `agent.send(input, ctx)` (drain to `accepted` + first `eventIndex`); `reconnectToStream` → `agent.replay(sessionId, { startIndex })`; `resolveInput`/`stop`/`interrupt` → façade methods.
+- **Tests**: `inProcessTransport.test.ts` calling `runTransportConformance(makeInProcess, …)` from BBT2-001.
+- **Acceptance**: in-process transport passes the shared suite; imports only `createAgent`/shared types (no Fastify, no front).
+
+### BBT2-003 — HTTP transport over DS routes + `@durable-streams/client`  · size L
+- **Title**: Front `ChatTransport` that POSTs turns and reconnects via `@durable-streams/client` against T1's DS `GET`/`HEAD` stream route.
+- **Files to create/touch**:
+  - `packages/agent/src/front/chat/pi/dsHttpTransport.ts` (new): implements `ChatTransport`. `sendMessages` → POST `…/pi-chat/:sessionId/prompt` (reuse existing receipt shape); `reconnectToStream(sessionId,{startIndex})` → `@durable-streams/client` subscribed to `GET …/sessions/:sessionId/events/stream` (T1 route) starting at the DS offset for `startIndex`; map each `AgentEvent` back to the pi-chat UI store dispatches (`cursor-sync`, event apply) that `usePiSessions` expects. `resolveInput` → POST `…/sessions/:sessionId/input`; `stop`/`interrupt` → existing POSTs.
+  - `packages/agent/src/front/chat/pi/remotePiSession.ts` (touch): re-express `RemotePiSession` on top of `dsHttpTransport` — replace `runEventStream`/`buildPiChatEventsUrl`/`readPiChatNdjsonStream`/`schedulePiChatReconnect` usage with `reconnectToStream`. `@durable-streams/client` owns backoff + offset checkpointing (delete the bespoke `calculateJitteredBackoffDelayMs`/`schedulePiChatReconnect` reconnect loop, and the `replay_gap`/`cursor_ahead` rehydrate recovery — DS catch-up makes gaps impossible). Keep the class's public methods (`start`, `prompt`, `interrupt`, `stop`, debug state) byte-compatible so `usePiSessions` is untouched.
+  - Package: add pinned `@durable-streams/client` to `packages/agent/package.json` deps.
+- **Implementation notes**: `startIndex` (integer `eventIndex`) ↔ DS offset conversion lives behind the transport (T1's `replay`/routes already speak both). The old `start(cursor)` cursor becomes `startIndex`; `store.dispatch({type:'cursor-sync', cursor})` maps to the last-seen `eventIndex`. Heartbeats/`Stream-Up-To-Date` drive the `connection-state` dispatch that today comes from NDJSON heartbeats.
+- **Tests**: `dsHttpTransport.test.ts` via `runTransportConformance` against an in-memory fastify app mounting T1's DS route + `createAgent()`; assert reconnect after a forced stream close replays losslessly. Update `remotePiSession.test.ts` expectations.
+- **Acceptance**: HTTP transport passes the same suite as in-process (08 conformance item 3); `remotePiSession` public surface unchanged.
+
+### BBT2-004 — Refit `usePiSessions`/`PiChatPanel` to public contract + two-handles lint  · size M
+- **Title**: Consume only the public contract; document + enforce the addressing boundary.
+- **Files to touch**:
+  - `packages/agent/src/front/chat/session/usePiSessions.ts`: ensure it depends only on the `ChatTransport` interface + `createRemoteSession` injection (it already injects — verify no deep import into transport internals remains). No behavioral change.
+  - `packages/agent/src/front/chat/PiChatPanel.tsx`: verify it imports only `usePiSessions` + shared types, no transport internals. Remove any leftover `piChatStream` imports.
+  - `docs/issues/391/runtime-refactor/08-pluggable-agent-surfaces.md` is the spec; add a short doc `packages/agent/docs/transport.md` (new) recording: the `ChatTransport` contract, and that `x-boring-workspace-id → SessionCtx` mapping lives in `getRequestContext` (`server/http/routes/piChat.ts`) — the pattern every surface adapter (Slack `conversationKey→sessionId`, Excel workbook→sessionId) replicates. Public agent APIs accept `sessionId` only.
+  - **Invariant**: extend `scripts/audit-imports.ts` (or `packages/agent`'s `check-invariants`) with a rule that fails if any exported signature in `packages/agent/src/server/createAgent.ts` / `shared/transport.ts` / the façade references platform-addressing types (`workspaceId`, `storageScope`, `x-boring-workspace-id`, Slack/thread/workbook ids). Grep-based guard is acceptable (match param/type names against an allowlist), matching the style of existing `check-invariants.sh`.
+- **Tests**: an invariant test that a deliberately-bad signature (adds `workspaceId` to `createAgent` public method) makes the guard fail; `PiChatPanel` render test unchanged/green.
+- **Acceptance**: workspace UI runs unmodified (08 exit); the guard blocks platform addressing in core signatures; `transport.md` documents the adapter-owned mapping.
+
+### BBT2-005 — Headless Node consumer driving the same session  · size S
+- **Title**: A script/test that drives a session over the in-process transport, interleaved with a simulated UI on the HTTP transport.
+- **Files to create**:
+  - `packages/agent/scripts/headless-consumer.mts` (new): `createAgent()` → in-process transport → `sendMessages` a turn, stream `AgentEvent`s to stdout, answer an approval via `resolveInput`. Runnable with `tsx` (matches existing `dev`/`eval` scripts using `tsx`).
+  - `packages/agent/src/server/transport/__tests__/interleaved.test.ts` (new): one `createAgent()` shared by an in-process transport and an HTTP transport (fastify inject); the HTTP client (simulating the UI) and the Node consumer both subscribe from `startIndex`, and a turn started by one is observed losslessly by the other; an approval requested in one is answered by the other (mirrors T1 BBT1-006 cross-client resume, now at the transport layer).
+- **Acceptance**: 06 Phase T2 exit — "a headless Node consumer drives the same session interleaved with the UI." Script runs clean; interleaved test green.
+
+## Verification — exact commands (verified against package.json scripts)
+
+```bash
+# unit + conformance (agent package)
+pnpm --filter @hachej/boring-agent test
+pnpm --filter @hachej/boring-agent run typecheck
+pnpm --filter @hachej/boring-agent run lint:invariants
+# monorepo import boundary + isolation guards (two-handles enforcement lands here)
+pnpm run audit:imports
+pnpm run check:agent-isolation
+# front bundle-size gate (new @durable-streams/client dep)
+pnpm run check:bundle-size
+# headless consumer smoke
+pnpm --filter @hachej/boring-agent exec tsx scripts/headless-consumer.mts
+# workspace UI still runs unmodified — drive the playground per the run recipe
+#   (packages/workspace-playground; rebuild dist first). See project run skill.
+```
+T2 adds `@durable-streams/client` (pinned) to `packages/agent`. Node v22.22.
+
+## Review gates
+
+- In-process and HTTP transports pass the **same** `runTransportConformance` suite — identical `send`/`reconnect`/approval semantics (08 item 3).
+- Reconnect goes through `@durable-streams/client` + T1's DS offsets; the `?cursor=` NDJSON path and `schedulePiChatReconnect`/`replay_gap` recovery are removed from the front (or fully superseded) by the final commit.
+- `usePiSessions`/`PiChatPanel` external API unchanged; workspace UI runs unmodified (no consumer edits).
+- Public contract keyed by `sessionId` only; the platform-addressing invariant guard is active and tested; `x-boring-workspace-id → SessionCtx` documented as adapter-owned (`transport.md`).
+- Headless Node consumer interleaves with the UI against one shared `createAgent()` session (06 T2 exit).
+- No new server-side event/approval logic (T1 owns it); any T1 gap filed as a bead, not patched here.
