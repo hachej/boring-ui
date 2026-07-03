@@ -1,3 +1,4 @@
+import { IconButton } from "@hachej/boring-ui-kit"
 import { useAppLeftOverlayChrome, type BoringFrontAppLeftOverlayProps } from "@hachej/boring-workspace/plugin"
 import { createGitHubIssuesAdapter } from "./githubIssuesAdapter"
 import { createMockTaskAdapter } from "./mockAdapter"
@@ -7,6 +8,14 @@ const demoAdapters = [
   createMockTaskAdapter(),
   createGitHubIssuesAdapter({ owner: "hachej", repo: "boring-ui" }),
 ]
+
+function XGlyph({ className }: { className?: string }) {
+  return (
+    <svg className={className} viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <path d="M6 6l12 12M18 6L6 18" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" />
+    </svg>
+  )
+}
 
 function TasksGlyph({ className }: { className?: string }) {
   return (
@@ -37,13 +46,19 @@ export function TasksOverlay({ onClose }: BoringFrontAppLeftOverlayProps) {
             <p className="truncate text-xs text-muted-foreground">Adapter-mapped Kanban board</p>
           </div>
         </div>
-        <button
-          type="button"
-          className="rounded-lg border border-border bg-background px-2.5 py-1.5 text-xs font-medium text-muted-foreground shadow-sm hover:bg-muted hover:text-foreground"
-          onClick={onClose}
-        >
-          Close
-        </button>
+        <div className="flex shrink-0 items-center gap-0.5">
+          <IconButton
+            type="button"
+            variant="ghost"
+            size="icon-xs"
+            onClick={onClose}
+            aria-label="Close tasks"
+            title="Close"
+            className="text-muted-foreground hover:text-foreground"
+          >
+            <XGlyph className="size-3" />
+          </IconButton>
+        </div>
       </header>
       <TaskKanbanBoard adapters={demoAdapters} />
     </div>
