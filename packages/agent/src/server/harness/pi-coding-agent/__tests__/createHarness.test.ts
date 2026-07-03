@@ -36,6 +36,28 @@ describe("createPiCodingAgentHarness", () => {
     expect(typeof harness.reloadSession).toBe("function");
   });
 
+  it("rejects unavailable requested models when strict model resolution is enabled", async () => {
+    const cwd = await mkdtemp(join(tmpdir(), "pi-strict-model-"));
+    try {
+      const harness = createPiCodingAgentHarness({
+        tools: [noopTool],
+        cwd,
+        pi: { strictModelResolution: true },
+      });
+
+      await expect(harness.getPiSessionAdapter({
+        sessionId: "strict-session",
+        message: "hello",
+        model: { provider: "missing-provider", id: "missing-model" },
+      }, { abortSignal: new AbortController().signal, workdir: cwd })).rejects.toMatchObject({
+        statusCode: 400,
+        code: "TOOL_INVALID_INPUT",
+      });
+    } finally {
+      await rm(cwd, { recursive: true, force: true });
+    }
+  });
+
   it("returns false when reloading a session that has not been created yet", async () => {
     const harness = createPiCodingAgentHarness({
       tools: [noopTool],

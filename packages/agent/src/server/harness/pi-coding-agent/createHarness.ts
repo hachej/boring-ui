@@ -108,6 +108,8 @@ export interface PiHarnessOptions {
    * arrays that the harness already captured.
    */
   getHotReloadableResources?: () => HotReloadablePiResources;
+  /** Reject an explicit unavailable/unknown model instead of silently falling back. */
+  strictModelResolution?: boolean;
 }
 
 /** Pi harness options with the discovery flags resolved to definite booleans. */
@@ -167,22 +169,31 @@ function buildToolErrorResultExtension(): ExtensionFactory {
 }
 
 
+function modelUnavailableError(input: SendMessageInput): Error {
+  return Object.assign(new Error('Requested model is not available.'), {
+    statusCode: 400,
+    code: 'TOOL_INVALID_INPUT',
+    details: { provider: input.model?.provider, model: input.model?.id },
+  })
+}
+
 function resolveRequestedModel(
   modelRegistry: ModelRegistry,
   input: SendMessageInput,
+  options: { strict?: boolean } = {},
 ) {
   const requestedId = input.model?.id;
   if (!input.model || !requestedId) return undefined;
   const model = modelRegistry.find(input.model.provider, requestedId);
-  if (!model) return undefined;
-  // Only return the model if the provider actually has credentials — otherwise
-  // fall through to resolveDefaultModel so a stale localStorage selection
-  // (e.g. openai-codex/gpt-5.1 with no API key) doesn't break the chat.
   const available = modelRegistry.getAvailable();
-  const hasAuth = available.some(
-    (m) => m.provider === model.provider && m.id === model.id,
+  const hasAuth = Boolean(model) && available.some(
+    (m) => m.provider === model!.provider && m.id === model!.id,
   );
-  return hasAuth ? model : undefined;
+  if (!model || !hasAuth) {
+    if (options.strict) throw modelUnavailableError(input)
+    return undefined
+  }
+  return model;
 }
 
 function resolveDefaultModel(modelRegistry: ModelRegistry) {
@@ -250,8 +261,9 @@ export function createResourceSettingsManager(
 async function applyRequestedSessionOptions(
   handle: PiSessionHandle,
   input: SendMessageInput,
+  options: { strictModelResolution?: boolean } = {},
 ): Promise<void> {
-  const requestedModel = resolveRequestedModel(handle.modelRegistry, input);
+  const requestedModel = resolveRequestedModel(handle.modelRegistry, input, { strict: options.strictModelResolution });
   if (requestedModel) {
     const current = handle.piSession.model;
     if (
@@ -413,14 +425,14 @@ export function createPiCodingAgentHarness(opts: {
   ): Promise<PiSessionHandle> {
     const existing = piSessions.get(sessionId);
     if (existing) {
-      await applyRequestedSessionOptions(existing, input);
+      await applyRequestedSessionOptions(existing, input, { strictModelResolution: pi.strictModelResolution });
       return existing;
     }
 
     const inFlight = piSessionCreations.get(sessionId);
     if (inFlight) {
       const handle = await inFlight;
-      await applyRequestedSessionOptions(handle, input);
+      await applyRequestedSessionOptions(handle, input, { strictModelResolution: pi.strictModelResolution });
       return handle;
     }
 
@@ -468,7 +480,7 @@ export function createPiCodingAgentHarness(opts: {
       isNewPiSession = true;
     }
 
-    const resolvedModel = resolveRequestedModel(modelRegistry, input);
+    const resolvedModel = resolveRequestedModel(modelRegistry, input, { strict: pi.strictModelResolution });
     // Prefer an explicit available UI selection; otherwise use configured
     // Boring/Pi default if present. Undefined is intentional: Pi/session owns
     // the final fallback model selection.

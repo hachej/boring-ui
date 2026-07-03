@@ -24,6 +24,7 @@ export {
   loadGovernancePolicy,
 } from './loadPolicy.js'
 export { normalizePolicyEmail, validateGovernancePolicy } from './validatePolicy.js'
+export { createGovernanceMeteringSink } from './metering.js'
 
 export interface BuildGovernanceOptions extends Omit<LoadGovernancePolicyOptions, 'config'> {
   config?: Pick<CoreConfig, 'auth'>

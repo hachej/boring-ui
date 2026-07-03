@@ -8,6 +8,8 @@ export interface PiSessionRequestContext {
   workspaceId: string
   storageScope?: string
   authSubject?: string
+  authEmail?: string
+  authEmailVerified?: boolean
   requestId: string
 }
 

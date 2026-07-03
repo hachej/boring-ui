@@ -43,6 +43,8 @@ export interface MeteringUsageResult {
 export interface MeteringRunScope {
   workspaceId: string
   userId?: string
+  userEmail?: string
+  userEmailVerified?: boolean
   sessionId: string
   /** Stable id for one accepted prompt/follow-up run. */
   runId: string
@@ -242,6 +244,8 @@ export function normalizeMeteringUsage(value: unknown): MeteringUsage | undefine
 export interface ReservePromptInput {
   workspaceId: string
   userId?: string
+  userEmail?: string
+  userEmailVerified?: boolean
   sessionId: string
   clientNonce: string
   message: string
@@ -658,6 +662,8 @@ export class PiChatMeteringCoordinator {
       scope: {
         workspaceId: input.workspaceId,
         userId: input.userId,
+        userEmail: input.userEmail,
+        userEmailVerified: input.userEmailVerified,
         sessionId: input.sessionId,
         runId,
         source: 'pi-chat',

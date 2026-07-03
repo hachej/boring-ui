@@ -1006,6 +1006,21 @@ describe('pi chat metering', () => {
     expect(calls.released).toEqual([])
   })
 
+  it('reserves follow-ups with the resolved session model', async () => {
+    const adapter = createAdapter()
+    adapter.currentModel = () => ({ provider: 'infomaniak', id: 'allowed-model' })
+    const { sink, calls } = createSink()
+    const { service } = createService(adapter, sink)
+
+    await service.followUp(ctx, 's1', { message: 'next', clientNonce: 'nonce-fu', clientSeq: 1 })
+
+    expect(calls.reserved).toHaveLength(1)
+    expect(calls.reserved[0]).toMatchObject({
+      kind: 'followup',
+      model: { provider: 'infomaniak', id: 'allowed-model' },
+    })
+  })
+
   it('keeps publishing chat events when sink usage/settle calls fail', async () => {
     const adapter = createAdapter()
     const failures: unknown[] = []

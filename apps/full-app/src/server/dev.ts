@@ -7,7 +7,7 @@ import {
 import { loadConfig } from '@hachej/boring-core/server'
 import { createFullAppServerPlugins } from './plugins.js'
 import { buildCreditsWiring } from './credits.js'
-import { buildGovernanceService, createGovernanceModelFilter, createGovernanceServerPlugin } from './governance/index.js'
+import { buildGovernanceService, createGovernanceMeteringSink, createGovernanceModelFilter, createGovernanceServerPlugin } from './governance/index.js'
 
 const appRoot = appRootFromImportMeta(import.meta.url, 2)
 
@@ -83,15 +83,25 @@ startCoreWorkspaceAgentDevServer({
     })
     const governance = await buildGovernanceService({ config })
     const credits = buildCreditsWiring()
+    let appDb: unknown
     const app = await createCoreWorkspaceAgentServer({
       ...options,
       config,
       plugins: createFullAppServerPlugins([createGovernanceServerPlugin(governance)]),
       externalPlugins: false,
       installPluginAuthoring: pluginAuthoringEnabledFromEnv(),
-      metering: credits.meteringSink,
+      metering: createGovernanceMeteringSink({
+        service: governance,
+        delegate: credits.meteringSink,
+        getDb: () => {
+          if (!appDb) throw new Error('governance metering db is not attached')
+          return appDb as never
+        },
+      }),
       filterModels: createGovernanceModelFilter(governance),
+      pi: { strictModelResolution: governance.isEnabled() } as never,
     })
+    appDb = app.db
     credits.attach(app)
     await registerDevLoginRoute(app)
     return app

@@ -38,6 +38,7 @@ export const ErrorCode = z.enum([
 
   // Billing / metering
   'PAYMENT_REQUIRED',
+  'MODEL_BUDGET_EXCEEDED',
 
   // Session / bridge
   'SESSION_NOT_FOUND',

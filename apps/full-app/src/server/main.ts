@@ -7,7 +7,7 @@ import { loadConfig } from '@hachej/boring-core/server'
 import { createFullAppServerPlugins } from './plugins.js'
 import { buildCreditsWiring } from './credits.js'
 import { assertProductionAgentModeIsSafe } from './productionSafety.js'
-import { buildGovernanceService, createGovernanceModelFilter, createGovernanceServerPlugin } from './governance/index.js'
+import { buildGovernanceService, createGovernanceMeteringSink, createGovernanceModelFilter, createGovernanceServerPlugin } from './governance/index.js'
 
 function pluginAuthoringEnabledFromEnv(): boolean {
   return process.env.BORING_PLUGIN_AUTHORING === '1'
@@ -24,6 +24,7 @@ async function main() {
   // Build the metering sink up-front; the credit service attaches after the
   // server (and its db) exists.
   const credits = buildCreditsWiring()
+  let appDb: unknown
   const app = await createCoreWorkspaceAgentServer({
     appRoot,
     config,
@@ -31,9 +32,18 @@ async function main() {
     plugins: createFullAppServerPlugins([createGovernanceServerPlugin(governance)]),
     externalPlugins: false,
     installPluginAuthoring: pluginAuthoringEnabledFromEnv(),
-    metering: credits.meteringSink,
+    metering: createGovernanceMeteringSink({
+      service: governance,
+      delegate: credits.meteringSink,
+      getDb: () => {
+        if (!appDb) throw new Error('governance metering db is not attached')
+        return appDb as never
+      },
+    }),
     filterModels: createGovernanceModelFilter(governance),
+    pi: { strictModelResolution: governance.isEnabled() } as never,
   })
+  appDb = app.db
   credits.attach(app)
   const address = await app.listen({ host: app.config.host, port: app.config.port })
   app.log.info({ event: 'core.server.ready', address }, 'core.server.ready')
