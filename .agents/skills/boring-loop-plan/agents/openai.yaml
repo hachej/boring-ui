@@ -1,0 +1,4 @@
+interface:
+  display_name: "Boring Loop Plan"
+  short_description: "Create issue-linked Kanzen plans."
+  default_prompt: "Run /loop-plan for the selected GitHub issue or PR."

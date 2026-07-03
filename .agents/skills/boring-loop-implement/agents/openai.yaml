@@ -1,0 +1,4 @@
+interface:
+  display_name: "Boring Loop Implement"
+  short_description: "Implement, review, prove, and hand off Kanzen work."
+  default_prompt: "Run /loop-implement for the selected GitHub issue or PR."
