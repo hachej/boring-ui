@@ -6,7 +6,7 @@ Issue: https://github.com/hachej/boring-ui/issues/485
 
 ## Summary
 
-Implement Office document support as an app/internal SharePoint plugin.
+Implement Office document support as an app/internal SharePoint plugin located at `plugins/boring-sharepoint`.
 
 - User-facing integration: **SharePoint / Microsoft 365**
 - V1 backend provider: **Arcade** via `@arcadeai/arcadejs`
@@ -93,7 +93,7 @@ Spike findings:
 
 ### PR 1 — SharePoint app/internal plugin shell + contracts
 
-- Create app/internal SharePoint plugin using existing plugin conventions.
+- Create app/internal SharePoint plugin under `plugins/boring-sharepoint` using existing plugin conventions.
 - Add `boring.front` and `boring.server` entries.
 - Add plugin workbook/runbook documentation for setting up SharePoint/Microsoft 365 with boring-ui:
   - tenant/workspace setup flow
@@ -193,6 +193,24 @@ Required topics:
   - preview iframe blocked by CSP/tenant policy
   - stale `webUrl` / moved files
   - Arcade tool failure
+
+
+## Expected repository footprint
+
+The implementation should be plugin-owned. The target location is:
+
+```txt
+plugins/boring-sharepoint/
+```
+
+Expected changes should be limited to:
+
+- `plugins/boring-sharepoint/**` for implementation, tests, docs/workbook, and custom Arcade tool code.
+- Workspace/app plugin registration/config needed to include the app/internal plugin.
+- Package manager files such as `pnpm-lock.yaml` if `@arcadeai/arcadejs` or plugin package metadata requires it.
+- Minimal docs/issue-plan updates.
+
+Avoid changing core workspace/file-tree/plugin APIs. If an implementation PR needs changes outside the plugin and registration/lockfile/docs, it must explicitly justify the missing extension point and keep the change surgical.
 
 ## Cross-stack green gates
 
