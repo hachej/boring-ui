@@ -1,9 +1,9 @@
 import { expect, test } from '@playwright/test'
 
-const BEAD = 'boring-ui-v2-o8v6'
+const TASK_ID = 'boring-ui-v2-o8v6'
 
 function log(event: string, fields: Record<string, unknown> = {}): void {
-  console.info(JSON.stringify({ level: 'info', bead: BEAD, event, ...fields }))
+  console.info(JSON.stringify({ level: 'info', task: TASK_ID, event, ...fields }))
 }
 
 test('csp header has nonce and blocks inline script + cross-origin connect', async ({ page }) => {

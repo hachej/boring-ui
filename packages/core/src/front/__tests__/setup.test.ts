@@ -1,11 +1,11 @@
 import { describe, expect, it } from 'vitest'
-import { withBeadId } from '../../server/__tests__/_setup'
+import { withTaskId } from '../../server/__tests__/_setup'
 import { useMswHandler } from './_setup'
 
 describe('front test setup', () => {
   it(
     'supports fetch mocking via handler registry',
-    withBeadId('boring-ui-v2-eyll', async ({ assertionPassed }) => {
+    withTaskId('boring-ui-v2-eyll', async ({ assertionPassed }) => {
       useMswHandler(async (input) => {
         const url = typeof input === 'string' ? input : input.toString()
         if (!url.endsWith('/api/v1/config')) return undefined

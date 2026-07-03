@@ -2,10 +2,10 @@
 import { act, renderHook } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-import { withBeadId } from '../../server/__tests__/_setup'
+import { withTaskId } from '../../server/__tests__/_setup'
 import { useViewportBreakpoint } from '../hooks/useViewportBreakpoint'
 
-const BEAD_ID = 'boring-ui-v2-d37p'
+const TASK_ID = 'boring-ui-v2-d37p'
 
 function installMatchMediaFromInnerWidth(): void {
   Object.defineProperty(window, 'matchMedia', {
@@ -35,7 +35,7 @@ beforeEach(() => {
 describe('useViewportBreakpoint hook', () => {
   it(
     'tracks Tailwind breakpoints via matchMedia',
-    withBeadId(BEAD_ID, async ({ assertionPassed }) => {
+    withTaskId(TASK_ID, async ({ assertionPassed }) => {
       Object.defineProperty(window, 'innerWidth', { configurable: true, value: 800 })
       const { result } = renderHook(() => useViewportBreakpoint())
       expect(result.current).toBe('md')

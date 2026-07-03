@@ -2,7 +2,7 @@
 
 Source of truth for architectural decisions in `@hachej/boring-agent`. Any PR that changes a locked decision must update this document and include rationale in the PR description.
 
-See also: [REVIEW_DECISIONS.md](./REVIEW_DECISIONS.md) for adopted/deferred findings from external reviews.
+See also: [REVIEW_DECISIONS.md](kanzen/REVIEW_DECISIONS.md) for adopted/deferred findings from external reviews.
 See also: [WORKSPACE_CONTRACT.md](./WORKSPACE_CONTRACT.md) for the `@hachej/boring-agent` ↔ `@hachej/boring-workspace` integration contract.
 
 > **Reader note (registry is historical; entries are not rewritten):** Some

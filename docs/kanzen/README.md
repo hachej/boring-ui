@@ -20,6 +20,12 @@ Read:
   - orchestration skill.
 - [`boring-triage`](../../.agents/skills/boring-triage/SKILL.md) - triage
   skill.
+- [`boring-loop-grill`](../../.agents/skills/boring-loop-grill/SKILL.md)
+  - `/loop-grill` clarity skill.
+- [`boring-loop-plan`](../../.agents/skills/boring-loop-plan/SKILL.md)
+  - `/loop-plan` planning skill.
+- [`boring-loop-implement`](../../.agents/skills/boring-loop-implement/SKILL.md)
+  - `/loop-implement` implementation skill.
 - Coding procedures:
   [`procedures/coding-rules.md`](procedures/coding-rules.md),
   [`procedures/coding-invariants.md`](procedures/coding-invariants.md), and
@@ -28,6 +34,12 @@ Read:
   [`procedures/trunk-flags-review-budget.md`](procedures/trunk-flags-review-budget.md).
 - Local proof/signoff workflow:
   [`procedures/local-signoff.md`](procedures/local-signoff.md).
+- Proof-of-work comments:
+  [`procedures/proof-of-work.md`](procedures/proof-of-work.md).
+- Owner review cards:
+  [`procedures/owner-review-card.md`](procedures/owner-review-card.md).
+- Well-documented issues:
+  [`procedures/well-documented-issue.md`](procedures/well-documented-issue.md).
 - Plan files live under `../issues/<issue-number>/`; see
   [`procedures/issue-plans.md`](procedures/issue-plans.md).
 - Visual owner handoffs use `visual-explainer` plus a thin ask-user-style

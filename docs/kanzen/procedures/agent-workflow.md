@@ -13,10 +13,13 @@ Use focused procedures for how-to details:
 - [`trunk-flags-review-budget.md`](trunk-flags-review-budget.md)
 - [`issue-plans.md`](issue-plans.md)
 - [`visual-review.md`](visual-review.md)
-- [`../../procedures/proof-of-work.md`](../../procedures/proof-of-work.md)
+- [`proof-of-work.md`](proof-of-work.md)
 
 Executable loop behavior lives in the skills:
 
 - [`../../../.agents/skills/boring-feedback/SKILL.md`](../../../.agents/skills/boring-feedback/SKILL.md)
 - [`../../../.agents/skills/boring-triage/SKILL.md`](../../../.agents/skills/boring-triage/SKILL.md)
 - [`../../../.agents/skills/boring-orchestration/SKILL.md`](../../../.agents/skills/boring-orchestration/SKILL.md)
+- [`../../../.agents/skills/boring-loop-grill/SKILL.md`](../../../.agents/skills/boring-loop-grill/SKILL.md)
+- [`../../../.agents/skills/boring-loop-plan/SKILL.md`](../../../.agents/skills/boring-loop-plan/SKILL.md)
+- [`../../../.agents/skills/boring-loop-implement/SKILL.md`](../../../.agents/skills/boring-loop-implement/SKILL.md)

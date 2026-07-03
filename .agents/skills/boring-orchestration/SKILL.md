@@ -8,8 +8,7 @@ description: "Use for scheduled /triage: refresh GitHub, run the first unmet gat
 Run scheduled `/triage`.
 
 Canonical model: `../../../docs/kanzen/boring-loop.md`.
-How-to details: `../../../docs/kanzen/procedures/` and
-`../../../docs/procedures/proof-of-work.md`.
+How-to details: `../../../docs/kanzen/procedures/`.
 
 ## Sweep
 
@@ -24,7 +23,8 @@ How-to details: `../../../docs/kanzen/procedures/` and
 | Gate | Action |
 | --- | --- |
 | `intake` | repair issue body: context, redaction note, first plan |
-| `clarity` | `/loop-grill`; use grill-me plus ask-user when async |
+| `triage` | run `boring-triage`; classify first real gate |
+| `clarity` | use `boring-loop-grill`; grill-me plus ask-user when async |
 | `risk` | keep `track:owner`; upgrade only when fast-track rules pass |
 | `flag` | require `not-needed`, safe feature flag, or abstraction path |
 | `plan` | use `boring-loop-plan`; issue-linked plan for risky or multi-PR work |
@@ -40,6 +40,7 @@ How-to details: `../../../docs/kanzen/procedures/` and
 - Subagents: allowed for slices/review; return findings to parent lane.
 - Trunk/budget: `../../../docs/kanzen/procedures/trunk-flags-review-budget.md`.
 - Issue plans: `../../../docs/kanzen/procedures/issue-plans.md`.
+- Proof: `../../../docs/kanzen/procedures/proof-of-work.md`.
 - Commit/coding rules: `../../../docs/kanzen/procedures/coding-rules.md`.
 - Review: fix/re-review plus thermo until clean or blocked.
 - Head SHA: proof, review, thermo must match.
