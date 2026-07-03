@@ -140,19 +140,19 @@
     },
     "monthly-chart": {
       "type": "BSLChart",
-      "props": { "queryId": "revenue_by_month", "title": "Revenue trend by month", "renderer": "echarts", "chartType": "bar", "x": "month", "y": "revenue" }
+      "props": { "queryId": "revenue_by_month", "title": "Revenue vs margin by month — multi-series line", "renderer": "echarts", "chartType": "line", "x": "month", "y": ["revenue", "margin"] }
     },
     "region-chart": {
       "type": "BSLChart",
-      "props": { "queryId": "revenue_by_region", "title": "Revenue by region", "renderer": "echarts", "chartType": "bar", "x": "region", "y": "revenue", "controls": ["region-filter"] }
+      "props": { "queryId": "revenue_by_region", "title": "Revenue by region — bar", "renderer": "echarts", "chartType": "bar", "x": "region", "y": "revenue", "controls": ["region-filter"] }
     },
     "category-chart": {
       "type": "BSLChart",
-      "props": { "queryId": "margin_by_category", "title": "Margin by category", "renderer": "echarts", "chartType": "bar", "x": "category", "y": "margin", "controls": ["category-filter"] }
+      "props": { "queryId": "margin_by_category", "title": "Revenue vs margin by category — multi-series treemap", "renderer": "echarts", "chartType": "treemap", "x": "category", "y": ["revenue", "margin"], "controls": ["category-filter"] }
     },
     "channel-chart": {
       "type": "BSLChart",
-      "props": { "queryId": "channel_mix", "title": "Channel revenue mix", "renderer": "echarts", "chartType": "bar", "x": "channel", "y": "revenue", "controls": ["channel-filter"] }
+      "props": { "queryId": "channel_mix", "title": "Channel revenue mix — area", "renderer": "echarts", "chartType": "area", "x": "channel", "y": "revenue", "controls": ["channel-filter"] }
     },
     "segment-table": {
       "type": "BSLPerspectiveViewer",
