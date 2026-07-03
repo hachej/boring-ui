@@ -1,10 +1,14 @@
 import {
   SHAREPOINT_ERROR_CODES,
   SharePointRefValidationError,
+  buildLocalOfficeImportRef,
   expectedMimeTypeForOfficeKind,
   parseSharePointDocumentRef,
+  validateLocalOfficeSourcePath,
   type CreateOfficePreviewUrlInput,
   type IntegrationAuthState,
+  type LocalOfficeImportRequest,
+  type LocalOfficeImportResult,
   type OfficeEditRequest,
   type OfficeEditResult,
   type SharePointDocumentRef,
@@ -26,6 +30,7 @@ export const ARCADE_SHAREPOINT_TOOL_NAMES = {
   addWorksheet: "MicrosoftSharepoint_AddWorksheet",
   getWorkbookMetadata: "MicrosoftSharepoint_GetWorkbookMetadata",
   createSlide: "MicrosoftSharepoint_CreateSlide",
+  uploadOfficeDocument: "BoringSharePoint_UploadOfficeDocument",
 } as const
 
 export interface ArcadeSharePointProviderOptions {
@@ -157,6 +162,26 @@ export class ArcadeSharePointProvider implements SharePointProvider {
     return { status: "succeeded", summary: `Created PowerPoint slide in ${ref.name}` }
   }
 
+  async importLocalOfficeDocument(request: LocalOfficeImportRequest, ctx: SharePointProviderContext): Promise<LocalOfficeImportResult> {
+    const officeKind = validateLocalOfficeImportRequest(request)
+    const response = await this.runtime.executeTool({
+      toolName: this.tools.uploadOfficeDocument,
+      userId: ctx.actorUserId,
+      input: {
+        source_path: request.sourcePath,
+        content_handle: request.contentHandle,
+        name: fileNameFromPath(request.sourcePath),
+        mime_type: expectedMimeTypeForOfficeKind(officeKind),
+        ...(request.target.siteUrl ? { site_url: request.target.siteUrl } : {}),
+        ...(request.target.driveId ? { drive_id: request.target.driveId } : {}),
+        ...(request.target.folderDriveItemId ? { folder_item_id: request.target.folderDriveItemId } : {}),
+        ...(request.target.folderWebUrl ? { folder_web_url: request.target.folderWebUrl } : {}),
+      },
+    })
+    const uploadedItem = toSharePointDocumentRef({ item: unwrapArcadeValueObject(response, this.tools.uploadOfficeDocument) })
+    return buildLocalOfficeImportRef({ request, uploadedItem })
+  }
+
   private async getSite(siteUrl: string, ctx: SharePointProviderContext): Promise<Record<string, unknown>> {
     const response = await this.runtime.executeTool({
       toolName: this.tools.getSite,
@@ -192,6 +217,58 @@ export class ArcadeSharePointProvider implements SharePointProvider {
 }
 
 const EDIT_SECRET_LIKE_PATTERN = /([?&#](access_token|refresh_token|id_token|authorization|cookie)=)|Bearer\s+|token|secret|cookie|authorization/i
+const IMPORT_ID_PATTERN = /^[A-Za-z0-9._~!$'(),;=:@+-]{1,512}$/
+const IMPORT_HANDLE_PATTERN = /^[A-Za-z0-9._~!$'(),;=:@+-]{1,512}$/
+
+export function validateLocalOfficeImportRequest(request: LocalOfficeImportRequest): "excel" | "powerpoint" {
+  let officeKind: "excel" | "powerpoint"
+  try {
+    officeKind = validateLocalOfficeSourcePath(request.sourcePath)
+  } catch (error) {
+    if (error instanceof SharePointRefValidationError) {
+      throw new SharePointProviderError(error.code, error.message)
+    }
+    throw error
+  }
+  validateOpaqueImportValue(request.contentHandle, "contentHandle", IMPORT_HANDLE_PATTERN)
+  const target = request.target
+  if (!target || typeof target !== "object") {
+    throw new SharePointProviderError(SHAREPOINT_ERROR_CODES.INVALID_REF, "import target is required")
+  }
+  if (!target.siteUrl && !target.driveId && !target.folderWebUrl) {
+    throw new SharePointProviderError(SHAREPOINT_ERROR_CODES.INVALID_REF, "import target requires siteUrl, driveId, or folderWebUrl")
+  }
+  if (target.siteUrl !== undefined) validateImportHttpsUrl(target.siteUrl, "siteUrl")
+  if (target.folderWebUrl !== undefined) validateImportHttpsUrl(target.folderWebUrl, "folderWebUrl")
+  if (target.driveId !== undefined) validateOpaqueImportValue(target.driveId, "driveId", IMPORT_ID_PATTERN)
+  if (target.folderDriveItemId !== undefined) validateOpaqueImportValue(target.folderDriveItemId, "folderDriveItemId", IMPORT_ID_PATTERN)
+  return officeKind
+}
+
+export function fileNameFromPath(path: string): string {
+  return path.slice(path.lastIndexOf("/") + 1)
+}
+
+function validateOpaqueImportValue(value: string, label: string, pattern: RegExp): void {
+  if (typeof value !== "string" || value.length === 0) {
+    throw new SharePointProviderError(SHAREPOINT_ERROR_CODES.INVALID_REF, `${label} must be a non-empty string`)
+  }
+  if (EDIT_SECRET_LIKE_PATTERN.test(value)) {
+    throw new SharePointProviderError(SHAREPOINT_ERROR_CODES.REF_CONTAINS_SECRET, `${label} contains forbidden credential-like data`)
+  }
+  if (!pattern.test(value)) {
+    throw new SharePointProviderError(SHAREPOINT_ERROR_CODES.INVALID_REF, `${label} is not a valid SharePoint import identifier`)
+  }
+}
+
+function validateImportHttpsUrl(value: string, label: string): void {
+  if (EDIT_SECRET_LIKE_PATTERN.test(value)) {
+    throw new SharePointProviderError(SHAREPOINT_ERROR_CODES.REF_CONTAINS_SECRET, `${label} contains forbidden credential-like data`)
+  }
+  if (!isHttpsUrl(value)) {
+    throw new SharePointProviderError(SHAREPOINT_ERROR_CODES.INVALID_REF, `${label} must be an https URL`)
+  }
+}
 
 export function validateOfficeEditRequestForRef(ref: SharePointDocumentRef, request: OfficeEditRequest): void {
   if (request.kind === "excel.add-worksheet") {

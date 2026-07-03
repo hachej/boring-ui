@@ -7,6 +7,8 @@ import {
   type CreateOfficePreviewUrlInput,
   type CreateOfficePreviewUrlResult,
   type IntegrationAuthState,
+  type LocalOfficeImportRequest,
+  type LocalOfficeImportResult,
   type OfficeEditRequest,
   type OfficeEditResult,
   type ResolveDriveItemInput,
@@ -14,7 +16,7 @@ import {
   type SharePointProvider,
   type SharePointProviderContext,
 } from "../shared"
-import { SharePointProviderError, validateOfficeEditRequestForRef } from "./sharePointProvider"
+import { SharePointProviderError, validateLocalOfficeImportRequest, validateOfficeEditRequestForRef } from "./sharePointProvider"
 
 const SHAREPOINT_DURABLE_ID_PATTERN = /^[A-Za-z0-9._~!$'(),;=:@+-]{1,512}$/
 const SECRET_LIKE_ID_PATTERN = /([?&#](access_token|refresh_token|id_token|authorization|cookie)=)|Bearer\s+|token|secret|cookie|authorization/i
@@ -24,6 +26,7 @@ export const SHAREPOINT_ROUTE_PATHS = {
   resolve: "/api/sharepoint/resolve",
   preview: "/api/sharepoint/preview",
   edit: "/api/sharepoint/edit",
+  import: "/api/sharepoint/import",
 } as const
 
 export interface SharePointRoutesOptions {
@@ -73,6 +76,16 @@ export function sharePointRoutes(app: FastifyInstance, opts: SharePointRoutesOpt
     }
   })
 
+  app.post(SHAREPOINT_ROUTE_PATHS.import, async (request, reply) => {
+    try {
+      const input = parseImportBody(request.body)
+      const ctx = await resolveContext(request, opts)
+      return safeLocalOfficeImportResultForRoute(await opts.provider.importLocalOfficeDocument(input, ctx))
+    } catch (error) {
+      return sendSharePointRouteError(reply, error)
+    }
+  })
+
   done()
 }
 
@@ -89,6 +102,20 @@ function safePreviewResultForRoute(result: CreateOfficePreviewUrlResult): Create
   return result.expiresAt ? { getUrl: result.getUrl, expiresAt: result.expiresAt } : { getUrl: result.getUrl }
 }
 
+function safeLocalOfficeImportResultForRoute(result: LocalOfficeImportResult): LocalOfficeImportResult {
+  const ref = parseSharePointDocumentRef(result.ref)
+  assertSharePointDocumentRefSafeForStorage(ref)
+  if (
+    SECRET_LIKE_ID_PATTERN.test(result.cloudRefPath) ||
+    result.cloudRefPath.startsWith("/") ||
+    result.cloudRefPath.includes("..") ||
+    (!result.cloudRefPath.endsWith(".xlsx.cloud.json") && !result.cloudRefPath.endsWith(".pptx.cloud.json"))
+  ) {
+    throw new SharePointProviderError(SHAREPOINT_ERROR_CODES.INVALID_REF, "import returned an unsafe cloud ref path", 502)
+  }
+  return { ref, cloudRefPath: result.cloudRefPath }
+}
+
 function safeOfficeEditResultForRoute(result: OfficeEditResult): OfficeEditResult {
   if (result.status === "succeeded") {
     return result.sessionId
@@ -102,6 +129,33 @@ function safeOfficeEditResultForRoute(result: OfficeEditResult): OfficeEditResul
     return { status: "conflict", code: result.code, message: safeRouteMessage(result.message, "SharePoint Office edit conflict") }
   }
   return { status: "failed", code: result.code, message: safeRouteMessage(result.message, "SharePoint Office edit failed") }
+}
+
+function parseImportBody(body: unknown): LocalOfficeImportRequest {
+  if (!body || typeof body !== "object" || Array.isArray(body)) {
+    throw new SharePointProviderError(SHAREPOINT_ERROR_CODES.INVALID_REF, "import request body must be an object")
+  }
+  const candidate = body as Record<string, unknown>
+  const request: LocalOfficeImportRequest = {
+    sourcePath: requireBodyString(candidate.sourcePath, "sourcePath"),
+    contentHandle: requireBodyString(candidate.contentHandle, "contentHandle"),
+    target: parseImportTarget(candidate.target),
+  }
+  validateLocalOfficeImportRequest(request)
+  return request
+}
+
+function parseImportTarget(value: unknown): LocalOfficeImportRequest["target"] {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    throw new SharePointProviderError(SHAREPOINT_ERROR_CODES.INVALID_REF, "import target must be an object")
+  }
+  const candidate = value as Record<string, unknown>
+  return {
+    siteUrl: optionalString(candidate.siteUrl),
+    driveId: optionalString(candidate.driveId),
+    folderDriveItemId: optionalString(candidate.folderDriveItemId),
+    folderWebUrl: optionalString(candidate.folderWebUrl),
+  }
 }
 
 function parseEditBody(body: unknown): { ref: SharePointDocumentRef; editRequest: OfficeEditRequest } {

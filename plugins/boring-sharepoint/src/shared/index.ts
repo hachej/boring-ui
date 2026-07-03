@@ -14,6 +14,7 @@ export {
 } from "./constants"
 export { officeCloudRefDisplayMetadataForPath } from "./display"
 export type { OfficeCloudRefDisplayMetadata } from "./display"
+export { buildLocalOfficeImportRef, cloudRefPathForLocalOfficePath, officeKindForLocalOfficePath, validateLocalOfficeSourcePath } from "./import"
 export { SHAREPOINT_ERROR_CODES, SharePointRefValidationError } from "./errors"
 export type { SharePointErrorCode } from "./errors"
 export {
@@ -30,6 +31,9 @@ export type {
   CreateOfficePreviewUrlInput,
   CreateOfficePreviewUrlResult,
   IntegrationAuthState,
+  LocalOfficeImportRequest,
+  LocalOfficeImportResult,
+  LocalOfficeImportTarget,
   OfficeDocumentSubtype,
   OfficeEditRequest,
   OfficeEditResult,

@@ -2,7 +2,7 @@
 
 App/internal plugin shell for SharePoint / Microsoft 365 Office document support in boring-ui.
 
-This package is intentionally a trusted app/internal plugin, not a runtime-generated `.pi/extensions` plugin. The current stack includes the plugin shell, Office cloud-ref display wiring, Arcade runtime primitives, read-only SharePoint discovery/status, on-demand Office preview, and V1 Office agent edit primitives. Future PRs will add import flows behind these contracts.
+This package is intentionally a trusted app/internal plugin, not a runtime-generated `.pi/extensions` plugin. The current stack includes the plugin shell, Office cloud-ref display wiring, Arcade runtime primitives, read-only SharePoint discovery/status, on-demand Office preview, V1 Office agent edit primitives, and route/provider primitives for importing local Office files to SharePoint canonical refs.
 
 ## Trust boundary
 
@@ -28,6 +28,7 @@ This workbook will become the operator guide as implementation PRs land.
      - `BORING_SHAREPOINT_ARCADE_PROVIDER_ID` — optional provider id, defaults to `microsoft`.
      - `BORING_SHAREPOINT_ARCADE_BASE_URL` — optional Arcade API base URL override.
    - Deploy/register the plugin-owned custom Arcade tool `BoringSharePoint_CreatePreviewUrl` in the operator's Arcade project. The tool wraps Microsoft Graph `driveItem:preview` using Arcade-managed Microsoft auth and returns only `{ getUrl, expiresAt? }`.
+   - Deploy/register the plugin-owned upload/import Arcade tool assumed by this slice: `BoringSharePoint_UploadOfficeDocument`. It should accept `{ source_path, content_handle, name, mime_type, site_url?, drive_id?, folder_item_id?, folder_web_url? }`, use Arcade-managed Microsoft auth to upload the staged `.xlsx`/`.pptx`, and return SharePoint drive item metadata only.
    - Confirm Microsoft scopes needed by each capability.
    - Confirm tenant/admin consent requirements.
 3. **boring-ui workspace connection**
@@ -43,6 +44,7 @@ This workbook will become the operator guide as implementation PRs land.
    - Preview in boring-ui through `POST /api/sharepoint/preview`, which requests a transient preview URL on demand.
    - Agent-edit Excel via `POST /api/sharepoint/edit` with `{ kind: "excel.add-worksheet", worksheetName }`.
    - Agent-edit PowerPoint via `POST /api/sharepoint/edit` with `{ kind: "powerpoint.create-slide", title, body?, layout? }`.
+   - Import a local staged `.xlsx` or `.pptx` via `POST /api/sharepoint/import` with `{ sourcePath, contentHandle, target }`. The route returns `{ ref, cloudRefPath }`; a host/workspace follow-up can write that JSON to the suggested `*.cloud.json` path.
 6. **Troubleshooting**
    - Auth required: reconnect SharePoint/Microsoft 365.
    - Admin consent required: tenant admin must approve Microsoft scopes.
@@ -76,19 +78,18 @@ The app-left action and command open the SharePoint / Microsoft 365 status surfa
 
 ## Current scope
 
-This PR adds V1 Office agent edit primitives on top of the shell/display/runtime/discovery/preview stack:
+This PR adds local Office import route/provider primitives on top of the shell/display/runtime/discovery/preview/edit stack:
 
-- `ArcadeSharePointProvider.createOfficePreviewUrl()` calls the plugin-owned custom Arcade tool `BoringSharePoint_CreatePreviewUrl` with `{ drive_id, item_id, viewer: "office" }` and normalizes `{ getUrl, expiresAt? }`.
-- `POST /api/sharepoint/preview` accepts either `{ ref }` with a canonical SharePoint document ref or `{ driveId, driveItemId }` durable identity and returns the transient preview result only.
-- `ArcadeSharePointProvider.editOfficeDocument()` supports V1 edit requests:
-  - Excel: `excel.add-worksheet` calls `MicrosoftSharepoint_AddWorksheet` with `{ drive_id, item_id, worksheet_name }`, then `MicrosoftSharepoint_GetWorkbookMetadata` with `{ drive_id, item_id, session_id? }` when a workbook session id is available.
-  - PowerPoint: `powerpoint.create-slide` calls assumed Arcade SharePoint tool `MicrosoftSharepoint_CreateSlide` with `{ drive_id, item_id, title, body?, layout? }`.
-- `POST /api/sharepoint/edit` accepts `{ ref, request }`, validates the canonical ref and edit request, and returns a stable `OfficeEditResult` without raw backend metadata or preview URLs.
-- Edit request validation rejects ref/kind mismatches, empty/oversized worksheet or slide fields, and credential-like text before provider calls.
-- Preview `getUrl` values are never stored in cloud-ref metadata, route logs, route errors, or session storage.
-- PowerPoint tool shape is inferred for this mocked slice; confirm against live Arcade tool metadata before promoting from draft.
+- `ArcadeSharePointProvider.importLocalOfficeDocument()` calls the assumed plugin-owned upload tool `BoringSharePoint_UploadOfficeDocument` with normalized snake_case input kept inside the server/provider adapter.
+- `POST /api/sharepoint/import` accepts `{ sourcePath, contentHandle, target }`, validates it, and returns canonical `{ ref, cloudRefPath }` metadata only.
+- `sourcePath` must be workspace-relative, use forward slashes, avoid traversal/dot/empty segments, and end in `.xlsx` or `.pptx`.
+- `contentHandle` is an opaque host/workspace upload-staging handle. This plugin does not read local files or accept absolute filesystem paths.
+- `target` can include `siteUrl`, `driveId`, `folderDriveItemId`, or `folderWebUrl`; IDs/URLs are validated for credential-like data before provider calls.
+- The returned `cloudRefPath` is a suggestion such as `reports/forecast.xlsx.cloud.json`; writing that ref into the workspace file tree is intentionally left to a host/workspace integration follow-up because this plugin slice has no safe workspace file IO surface.
+- Returned refs are validated and contain only SharePoint metadata. Preview URLs, tokens, raw upload metadata, and absolute paths are not returned or stored.
+- Upload tool shape is inferred for this mocked slice; confirm against deployed Arcade tool metadata before promoting from draft.
 - Tests use mocked Arcade/provider calls only.
 - no Microsoft Graph direct calls in boring-ui code
 - no Claude MCP/local MCP gateway dependency
-- no local import/upload
+- no broad filesystem access or absolute-path upload handling
 - no SharePoint-specific workspace chrome branches

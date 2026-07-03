@@ -6,6 +6,8 @@ import {
   SHAREPOINT_ERROR_CODES,
   type CreateOfficePreviewUrlResult,
   type IntegrationAuthState,
+  type LocalOfficeImportRequest,
+  type LocalOfficeImportResult,
   type OfficeEditRequest,
   type OfficeEditResult,
   type ResolveDriveItemInput,
@@ -34,7 +36,7 @@ export function createSharePointServerPlugin(options: SharePointServerPluginOpti
     id: BORING_SHAREPOINT_PLUGIN_ID,
     label: BORING_SHAREPOINT_PLUGIN_LABEL,
     systemPrompt:
-      "SharePoint / Microsoft 365 integration is installed. It can resolve SharePoint-hosted Excel and PowerPoint documents into cloud refs and request transient Office preview URLs on demand; Office edits are not enabled yet.",
+      "SharePoint / Microsoft 365 integration is installed. It can resolve SharePoint-hosted Excel and PowerPoint documents into cloud refs, request transient Office preview URLs on demand, run V1 Office edits, and import staged local Office files into canonical SharePoint refs.",
     routes,
   })
 }
@@ -69,6 +71,10 @@ class UnconfiguredSharePointProvider implements SharePointProvider {
   }
 
   async editOfficeDocument(_ref: SharePointDocumentRef, _request: OfficeEditRequest): Promise<OfficeEditResult> {
-    return { status: "failed", code: SHAREPOINT_ERROR_CODES.PROVIDER_UNAVAILABLE, message: "SharePoint Office edits are not implemented yet" }
+    return { status: "failed", code: SHAREPOINT_ERROR_CODES.PROVIDER_UNAVAILABLE, message: this.message }
+  }
+
+  async importLocalOfficeDocument(_request: LocalOfficeImportRequest): Promise<LocalOfficeImportResult> {
+    throw new SharePointProviderError(SHAREPOINT_ERROR_CODES.PROVIDER_UNAVAILABLE, this.message, 503)
   }
 }
