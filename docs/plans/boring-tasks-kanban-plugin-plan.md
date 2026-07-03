@@ -88,7 +88,6 @@ export interface BoringTaskColumn {
   title: string;
   description?: string;
   color?: string;
-  order: number;
   acceptsDrop?: boolean;
 }
 
@@ -100,10 +99,14 @@ export interface BoringTaskBoardConfig {
 
 export interface BoringTaskCard {
   id: string;
+  // Display identifier only (for example "#42", "ENG-123", "kata#abc4").
+  // It is adapter-scoped and not guaranteed globally unique; `id` is the stable key.
   number: string;
   title: string;
   description?: string;
   statusId: BoringTaskStatusId;
+  // Lets card-level actions route back to the right adapter without relying on
+  // ambient selector state.
   adapterId: string;
   url?: string;
 }
@@ -142,13 +145,12 @@ export interface BoringTasksServerPluginOptions {
 
 export function createBoringTasksServerPlugin(
   options: BoringTasksServerPluginOptions,
-): WorkspaceServerPlugin;
+): /* defineServerPlugin-compatible server plugin; exact exported type follows PLUGIN_SYSTEM.md §4.4 */ unknown;
 
 export interface BoringTaskAdapter {
   id: string;
   label: string;
   capabilities: {
-    list: true;
     move: boolean;
   };
   getBoardConfig(ctx: BoringTaskAdapterContext): Promise<BoringTaskBoardConfig>;
@@ -162,13 +164,15 @@ export interface BoringTaskAdapter {
 
 Adapter rules:
 
+- Listing is implied by the `listTasks()` method; `capabilities` only describes optional mutations/actions.
 - Adapters expose their available status tags/columns through `getBoardConfig()`.
 - The playground/dev app injects `createMockTaskAdapter()`; hosted apps inject DB or external adapters.
 - Adapters declare `capabilities.move`; the UI disables drag for adapters that cannot move tasks.
 - Adapters may normalize native statuses (`GitHub labels`, `Linear states`, `Kata status/claim`, custom DB enum) into stable `statusId` values, but the UI must not hardcode a global status enum.
 - Adapter failures revert optimistic UI changes.
+- Per-transition legality is intentionally not modeled in v1; if an adapter rejects a specific from→to move, the UI reverts through the existing failed-move path.
 - Credentials and source-native API clients stay on the server-side adapter.
-- Additional capabilities (`create`, `comment`, `assign`, `close`) are added only when a real adapter exposes the corresponding action. The UI renders those actions from adapter metadata instead of hardcoding tracker-specific buttons.
+- Additional capabilities (`create`, `comment`, `assign`, `close`) are added only when a real adapter exposes the corresponding action. The UI renders those actions from a small enumerated capability set instead of hardcoding tracker-specific buttons or inventing a generic action-descriptor DSL.
 
 ### 5. Kanban implementation
 
@@ -184,13 +188,17 @@ Use shadcn-style layout primitives from `@hachej/boring-ui-kit` where possible. 
 
 Board behavior:
 
-1. Fetch adapter board config and render its columns in `order`.
-2. Group cards by `statusId`.
-3. Provide an adapter/status selector bar so the user can switch adapter and, later, filter by status/tag.
+1. Fetch adapter board config and render its columns in returned array order.
+2. Group cards by `statusId`. Cards whose `statusId` matches no configured column render in `defaultColumnId` when set; otherwise they render in a non-droppable `Unmapped` overflow column. They must never silently disappear.
+3. Provide an adapter selector toolbar so the user can switch adapter. Status/tag filtering is a later slice.
 4. Support cross-column status moves. Within-column reordering is not persisted in v1 and should be disabled or snap back.
 5. Optimistically move the card.
 6. Call the backend move route.
 7. Revert and show a toast/inline error if the backend rejects.
+
+Surface decision: #438's current app-left registration is overlay-shaped, but a full horizontal Kanban board may be better as a workbench panel/surface opened by shell capabilities. Implementation slice 1 must choose this explicitly after #438 lands; do not let the choice happen accidentally in host-shell glue.
+
+Freshness decision for v1: fetch on open and refetch after a successful move. No polling, push, or cross-user live sync in slice 1; stale external changes are accepted until manual/open-triggered refresh.
 
 ### 6. Routes
 
@@ -208,6 +216,7 @@ Route responses should use stable error codes and typed JSON contracts. Initial 
 - `BORING_TASK_ADAPTER_NOT_FOUND`
 - `BORING_TASK_MOVE_UNSUPPORTED`
 - `BORING_TASK_NOT_FOUND`
+- `BORING_TASK_STATUS_NOT_FOUND`
 - `BORING_TASK_MOVE_FAILED`
 - `BORING_TASK_WORKSPACE_REQUIRED`
 
@@ -237,6 +246,7 @@ Acceptance:
 
 - `Tasks` appears through plugin-owned app-left/explorer contribution.
 - Opening `Tasks` shows the columns returned by the selected adapter's board config.
+- Selector lists registered adapters from `GET /adapters` (`id`, `label`, `capabilities`); switching adapters reloads board config and tasks.
 - Cards display number, title, and description.
 - Cards can be dragged across columns.
 - Within-column reorder is disabled or snaps back.
@@ -314,10 +324,14 @@ Narrow these once the files exist.
 | Drag/drop library complexity spreads | Contain `@dnd-kit` usage inside `TaskKanbanBoard` and child components. |
 | External adapter credentials leak | All adapter calls are server-side; browser sees only normalized task contracts. |
 | Hosted auth bypass | Later DB adapter must use boring-core workspace membership/auth, not a plugin-local permission model. |
+| Large external trackers need pagination/filtering | V1 `listTasks()` is unpaginated for mock/small boards. External adapters should add an optional query/cursor input as an additive interface change before GitHub/Linear-scale boards ship. |
+| Unknown task statuses drop cards | Unknown `statusId` values render in `defaultColumnId` or a non-droppable `Unmapped` column; never filter them out silently. |
+| Board surface chosen too late | #438 currently exposes overlay-shaped app-left actions; implementation must explicitly choose overlay vs workbench panel before coding slice 1. |
+| Stale data surprises users | V1 is fetch-on-open/refetch-after-move only; document no live sync until a later polling/SSE slice. |
 
 ## Open questions
 
-1. Final app-left/explorer contribution API name and opening surface after PR #438 lands. This is a hard precondition for implementation, not a detail to discover mid-slice.
+1. Final app-left/explorer contribution API name and opening surface after PR #438 lands. This is a hard precondition for implementation, not a detail to discover mid-slice. #438 is currently overlay-shaped; a Kanban board may need a workbench panel/surface instead.
 2. Whether `boring-tasks` should live as a publishable `plugins/boring-tasks` package or app-local plugin first. Default: publishable plugin package because multiple apps may want it.
 3. Whether the Postgres adapter belongs in `boring-tasks` or a child-app adapter package. Default: keep the adapter interface in `boring-tasks`, allow app-owned adapter registration later if core auth coupling gets heavy.
 
