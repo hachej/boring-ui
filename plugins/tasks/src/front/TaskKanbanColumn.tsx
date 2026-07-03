@@ -11,6 +11,7 @@ interface TaskKanbanColumnProps {
   onTaskDragStart: (event: DragEvent<HTMLElement>, task: BoringTaskCard) => void
   onTaskDragEnd: () => void
   onTaskDrop: (taskId: string, statusId: string) => void
+  canDragTask?: (task: BoringTaskCard) => boolean
 }
 
 export function TaskKanbanColumn({
@@ -20,6 +21,7 @@ export function TaskKanbanColumn({
   onTaskDragStart,
   onTaskDragEnd,
   onTaskDrop,
+  canDragTask = () => moveEnabled,
 }: TaskKanbanColumnProps) {
   const acceptsDrop = moveEnabled && canDropInColumn(column)
 
@@ -75,7 +77,7 @@ export function TaskKanbanColumn({
           <TaskCard
             key={task.id}
             task={task}
-            draggable={moveEnabled && !column.unmapped}
+            draggable={!column.unmapped && canDragTask(task)}
             unmapped={column.unmapped}
             onDragStart={onTaskDragStart}
             onDragEnd={onTaskDragEnd}

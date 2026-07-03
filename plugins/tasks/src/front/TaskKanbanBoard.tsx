@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type DragEvent } from "react"
-import type { BoringTaskAdapter, BoringTaskBoardConfig, BoringTaskCard } from "../shared"
+import type { BoringTaskAdapter, BoringTaskBoardConfig, BoringTaskCard, BoringTaskColumn } from "../shared"
 import { groupTasksByColumn } from "./taskBoardModel"
 import { TaskKanbanColumn } from "./TaskKanbanColumn"
 
@@ -8,20 +8,34 @@ interface TaskKanbanBoardProps {
 }
 
 interface BoardState {
-  config: BoringTaskBoardConfig
+  configs: Record<string, BoringTaskBoardConfig>
   tasks: BoringTaskCard[]
 }
 
-function adapterSummary(adapter: BoringTaskAdapter): string {
-  return adapter.description ?? `${adapter.label} task adapter`
+function adapterSummary(adapters: readonly BoringTaskAdapter[], selectedCount: number): string {
+  if (selectedCount === adapters.length) return "All sources"
+  if (selectedCount === 1) return adapters.find((adapter) => adapter.id)?.description ?? "1 source"
+  return `${selectedCount} sources`
 }
 
 function uniqueTags(tasks: readonly BoringTaskCard[]): string[] {
   return [...new Set(tasks.flatMap((task) => task.tags ?? []))].sort((a, b) => a.localeCompare(b))
 }
 
+function mergeColumns(configs: readonly BoringTaskBoardConfig[], visibleColumnIds: ReadonlySet<string>): BoringTaskColumn[] {
+  const byId = new Map<string, BoringTaskColumn>()
+  for (const config of configs) {
+    for (const column of config.columns) {
+      if (!visibleColumnIds.has(column.id) || byId.has(column.id)) continue
+      byId.set(column.id, column)
+    }
+  }
+  return [...byId.values()]
+}
+
 export function TaskKanbanBoard({ adapters }: TaskKanbanBoardProps) {
-  const [adapterId, setAdapterId] = useState(adapters[0]?.id ?? "")
+  const allAdapterIds = useMemo(() => adapters.map((adapter) => adapter.id), [adapters])
+  const [selectedAdapterIds, setSelectedAdapterIds] = useState<ReadonlySet<string>>(() => new Set(allAdapterIds))
   const [state, setState] = useState<BoardState | null>(null)
   const [visibleColumnIds, setVisibleColumnIds] = useState<ReadonlySet<string>>(new Set())
   const [tagFilter, setTagFilter] = useState("all")
@@ -30,19 +44,18 @@ export function TaskKanbanBoard({ adapters }: TaskKanbanBoardProps) {
   const [activeTaskId, setActiveTaskId] = useState<string | null>(null)
   const [movingTaskId, setMovingTaskId] = useState<string | null>(null)
   const requestSeq = useRef(0)
-  const adapterIdRef = useRef(adapterId)
+  const adaptersById = useMemo(() => new Map(adapters.map((adapter) => [adapter.id, adapter])), [adapters])
 
   useEffect(() => {
-    adapterIdRef.current = adapterId
-  }, [adapterId])
-
-  const adapter = useMemo(
-    () => adapters.find((candidate) => candidate.id === adapterId) ?? adapters[0],
-    [adapterId, adapters],
-  )
+    setSelectedAdapterIds((current) => {
+      const next = new Set([...current].filter((id) => adaptersById.has(id)))
+      if (next.size === 0) for (const id of allAdapterIds) next.add(id)
+      return next
+    })
+  }, [adaptersById, allAdapterIds])
 
   const load = useCallback(async () => {
-    if (!adapter) {
+    if (adapters.length === 0) {
       setState(null)
       setLoading(false)
       setError("No task adapters are registered.")
@@ -53,12 +66,17 @@ export function TaskKanbanBoard({ adapters }: TaskKanbanBoardProps) {
     setLoading(true)
     setError(null)
     try {
-      const [config, tasks] = await Promise.all([adapter.getBoardConfig(), adapter.listTasks()])
-      if (requestSeq.current === requestId) {
-        setState({ config, tasks })
-        setVisibleColumnIds(new Set(config.columns.map((column) => column.id)))
-        setTagFilter("all")
-      }
+      const entries = await Promise.all(adapters.map(async (adapter) => {
+        const [config, tasks] = await Promise.all([adapter.getBoardConfig(), adapter.listTasks()])
+        return { adapterId: adapter.id, config, tasks }
+      }))
+      if (requestSeq.current !== requestId) return
+      const configs = Object.fromEntries(entries.map((entry) => [entry.adapterId, entry.config]))
+      const tasks = entries.flatMap((entry) => entry.tasks)
+      const columnIds = new Set(entries.flatMap((entry) => entry.config.columns.map((column) => column.id)))
+      setState({ configs, tasks })
+      setVisibleColumnIds(columnIds)
+      setTagFilter("all")
     } catch (cause) {
       if (requestSeq.current === requestId) {
         setError(cause instanceof Error ? cause.message : String(cause))
@@ -67,31 +85,42 @@ export function TaskKanbanBoard({ adapters }: TaskKanbanBoardProps) {
     } finally {
       if (requestSeq.current === requestId) setLoading(false)
     }
-  }, [adapter])
+  }, [adapters])
 
   useEffect(() => {
     void load()
   }, [load])
 
-  const tags = useMemo(() => uniqueTags(state?.tasks ?? []), [state])
+  const selectedTasks = useMemo(() => {
+    if (!state) return []
+    return state.tasks.filter((task) => selectedAdapterIds.has(task.adapterId))
+  }, [selectedAdapterIds, state])
+
+  const tags = useMemo(() => uniqueTags(selectedTasks), [selectedTasks])
+
+  const selectedConfigs = useMemo(() => {
+    if (!state) return []
+    return [...selectedAdapterIds].map((id) => state.configs[id]).filter((config): config is BoringTaskBoardConfig => Boolean(config))
+  }, [selectedAdapterIds, state])
+
+  const allColumns = useMemo(() => mergeColumns(selectedConfigs, new Set(selectedConfigs.flatMap((config) => config.columns.map((column) => column.id)))), [selectedConfigs])
 
   const filteredTasks = useMemo(() => {
-    if (!state) return []
-    const configuredStatusIds = new Set(state.config.columns.map((column) => column.id))
-    return state.tasks.filter((task) => {
+    const configuredStatusIds = new Set(allColumns.map((column) => column.id))
+    return selectedTasks.filter((task) => {
       if (tagFilter !== "all" && !(task.tags ?? []).includes(tagFilter)) return false
       if (!configuredStatusIds.has(task.statusId)) return true
       return visibleColumnIds.has(task.statusId)
     })
-  }, [state, tagFilter, visibleColumnIds])
+  }, [allColumns, selectedTasks, tagFilter, visibleColumnIds])
 
-  const visibleConfig = useMemo(() => {
+  const visibleConfig = useMemo<BoringTaskBoardConfig | null>(() => {
     if (!state) return null
     return {
-      ...state.config,
-      columns: state.config.columns.filter((column) => visibleColumnIds.has(column.id)),
+      adapterId: "combined",
+      columns: mergeColumns(selectedConfigs, visibleColumnIds),
     }
-  }, [state, visibleColumnIds])
+  }, [selectedConfigs, state, visibleColumnIds])
 
   const columns = useMemo(
     () => visibleConfig ? groupTasksByColumn(visibleConfig, filteredTasks) : [],
@@ -106,31 +135,33 @@ export function TaskKanbanBoard({ adapters }: TaskKanbanBoardProps) {
   }
 
   const moveTask = async (taskId: string, statusId: string) => {
-    if (!adapter || !state || !adapter.capabilities.move || !adapter.moveTask) return
+    if (!state) return
     const task = state.tasks.find((candidate) => candidate.id === taskId)
     if (!task || task.statusId === statusId) {
       setActiveTaskId(null)
       return
     }
+    const adapter = adaptersById.get(task.adapterId)
+    if (!adapter?.capabilities.move || !adapter.moveTask) return
 
     const previous = state.tasks
-    const movingAdapterId = state.config.adapterId
+    const movingAdapterId = task.adapterId
     setMovingTaskId(taskId)
     setError(null)
-    setState((current) => current && current.config.adapterId === movingAdapterId ? {
+    setState((current) => current ? {
       ...current,
       tasks: current.tasks.map((candidate) => candidate.id === taskId ? { ...candidate, statusId } : candidate),
     } : current)
 
     try {
       const moved = await adapter.moveTask({ taskId, statusId })
-      setState((current) => current && current.config.adapterId === movingAdapterId ? {
+      setState((current) => current ? {
         ...current,
         tasks: current.tasks.map((candidate) => candidate.id === taskId ? moved : candidate),
       } : current)
     } catch (cause) {
-      setState((current) => current && current.config.adapterId === movingAdapterId ? { ...current, tasks: previous } : current)
-      if (adapterIdRef.current === movingAdapterId) {
+      setState((current) => current ? { ...current, tasks: previous } : current)
+      if (selectedAdapterIds.has(movingAdapterId)) {
         setError(cause instanceof Error ? cause.message : String(cause))
       }
     } finally {
@@ -148,30 +179,52 @@ export function TaskKanbanBoard({ adapters }: TaskKanbanBoardProps) {
     })
   }
 
-  const showAllColumns = () => {
-    if (!state) return
-    setVisibleColumnIds(new Set(state.config.columns.map((column) => column.id)))
+  const toggleSource = (adapterId: string) => {
+    setSelectedAdapterIds((current) => {
+      const next = new Set(current)
+      if (next.has(adapterId)) next.delete(adapterId)
+      else next.add(adapterId)
+      return next.size === 0 ? current : next
+    })
   }
 
-  const moveEnabled = Boolean(adapter?.capabilities.move && adapter.moveTask)
+  const showAllColumns = () => {
+    setVisibleColumnIds(new Set(allColumns.map((column) => column.id)))
+  }
+
+  const showAllSources = () => {
+    setSelectedAdapterIds(new Set(allAdapterIds))
+  }
+
+  const selectedCount = selectedAdapterIds.size
   const visibleCount = visibleColumnIds.size
-  const totalCount = state?.config.columns.length ?? 0
+  const totalCount = allColumns.length
 
   return (
     <div className="flex h-full min-h-0 flex-col gap-3 p-3">
       <div className="flex flex-wrap items-center gap-2 rounded-xl border border-border bg-card/70 p-2 shadow-sm">
-        <label className="flex items-center gap-2 text-xs font-medium text-muted-foreground">
-          Source
-          <select
-            className="h-8 rounded-lg border border-border bg-background px-2 text-sm text-foreground shadow-sm outline-none focus:border-foreground/40"
-            value={adapter?.id ?? ""}
-            onChange={(event) => setAdapterId(event.target.value)}
-          >
-            {adapters.map((candidate) => (
-              <option key={candidate.id} value={candidate.id}>{candidate.label}</option>
-            ))}
-          </select>
-        </label>
+        <details className="relative">
+          <summary className="flex h-8 cursor-pointer list-none items-center rounded-lg border border-border bg-background px-3 text-sm font-medium text-foreground shadow-sm hover:bg-muted">
+            Sources {selectedCount}/{adapters.length}
+          </summary>
+          <div className="absolute left-0 z-20 mt-2 w-72 rounded-xl border border-border bg-popover p-2 text-sm text-popover-foreground shadow-xl">
+            <div className="mb-2 flex items-center justify-between gap-2 border-b border-border pb-2">
+              <span className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Task sources</span>
+              <button type="button" className="text-xs font-medium text-primary hover:underline" onClick={showAllSources}>All</button>
+            </div>
+            <div className="flex max-h-72 flex-col gap-1 overflow-y-auto">
+              {adapters.map((adapter) => (
+                <label key={adapter.id} className="flex items-start gap-2 rounded-lg px-2 py-1.5 hover:bg-muted/70">
+                  <input type="checkbox" className="mt-0.5" checked={selectedAdapterIds.has(adapter.id)} onChange={() => toggleSource(adapter.id)} />
+                  <span className="min-w-0">
+                    <span className="block truncate font-medium text-foreground">{adapter.label}</span>
+                    <span className="block truncate text-xs text-muted-foreground">{adapter.description ?? adapter.id}</span>
+                  </span>
+                </label>
+              ))}
+            </div>
+          </div>
+        </details>
         <label className="flex items-center gap-2 text-xs font-medium text-muted-foreground">
           Tag
           <select
@@ -193,14 +246,9 @@ export function TaskKanbanBoard({ adapters }: TaskKanbanBoardProps) {
               <button type="button" className="text-xs font-medium text-primary hover:underline" onClick={showAllColumns}>All</button>
             </div>
             <div className="flex max-h-72 flex-col gap-1 overflow-y-auto">
-              {state?.config.columns.map((column) => (
+              {allColumns.map((column) => (
                 <label key={column.id} className="flex items-start gap-2 rounded-lg px-2 py-1.5 hover:bg-muted/70">
-                  <input
-                    type="checkbox"
-                    className="mt-0.5"
-                    checked={visibleColumnIds.has(column.id)}
-                    onChange={() => toggleColumn(column.id)}
-                  />
+                  <input type="checkbox" className="mt-0.5" checked={visibleColumnIds.has(column.id)} onChange={() => toggleColumn(column.id)} />
                   <span className="min-w-0">
                     <span className="block truncate font-medium text-foreground">{column.title}</span>
                     {column.description ? <span className="block truncate text-xs text-muted-foreground">{column.description}</span> : null}
@@ -219,8 +267,7 @@ export function TaskKanbanBoard({ adapters }: TaskKanbanBoardProps) {
           {loading ? "Refreshing…" : "Refresh"}
         </button>
         <div className="ml-auto flex flex-wrap items-center gap-1.5 text-xs text-muted-foreground">
-          {adapter ? <span className="rounded-full border border-border bg-muted/40 px-2 py-1">{adapterSummary(adapter)}</span> : null}
-          <span className="rounded-full border border-border bg-muted/40 px-2 py-1">Move: {moveEnabled ? "drag/drop" : "read-only"}</span>
+          <span className="rounded-full border border-border bg-muted/40 px-2 py-1">{adapterSummary(adapters, selectedCount)}</span>
           {movingTaskId ? <span className="rounded-full border border-border bg-muted/40 px-2 py-1">Moving…</span> : null}
         </div>
       </div>
@@ -242,11 +289,12 @@ export function TaskKanbanBoard({ adapters }: TaskKanbanBoardProps) {
               <TaskKanbanColumn
                 key={column.id}
                 column={column}
-                moveEnabled={moveEnabled}
+                moveEnabled={true}
                 activeTaskId={activeTaskId}
                 onTaskDragStart={handleTaskDragStart}
                 onTaskDragEnd={() => setActiveTaskId(null)}
                 onTaskDrop={(taskId, statusId) => void moveTask(taskId, statusId)}
+                canDragTask={(task) => Boolean(adaptersById.get(task.adapterId)?.capabilities.move && adaptersById.get(task.adapterId)?.moveTask)}
               />
             ))}
           </div>
