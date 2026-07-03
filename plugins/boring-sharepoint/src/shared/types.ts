@@ -70,7 +70,6 @@ export type OfficeEditRequest =
 export type OfficeEditResult =
   | {
       status: "succeeded"
-      providerBackend: "arcade" | string
       summary: string
       sessionId?: string
       metadata?: Record<string, unknown>

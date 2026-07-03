@@ -18,6 +18,7 @@ const ABSOLUTE_PATH_PATTERN = /^(?:[A-Za-z]:[\\/]|\\\\|\/)/
 export interface SharePointRefValidationResult {
   ok: boolean
   errors: string[]
+  containsForbiddenData?: boolean
 }
 
 export function officeKindForCloudRefPath(path: string): OfficeDocumentSubtype | null {
@@ -50,9 +51,8 @@ export function parseSharePointDocumentRefJson(json: string): SharePointDocument
 export function parseSharePointDocumentRef(value: unknown): SharePointDocumentRef {
   const result = validateSharePointDocumentRef(value)
   if (!result.ok) {
-    const secretError = result.errors.find((error) => error.includes("secret") || error.includes("token"))
     throw new SharePointRefValidationError(
-      secretError ? SHAREPOINT_ERROR_CODES.REF_CONTAINS_SECRET : SHAREPOINT_ERROR_CODES.INVALID_REF,
+      result.containsForbiddenData ? SHAREPOINT_ERROR_CODES.REF_CONTAINS_SECRET : SHAREPOINT_ERROR_CODES.INVALID_REF,
       result.errors.join("; "),
     )
   }
@@ -66,7 +66,9 @@ export function validateSharePointDocumentRef(value: unknown): SharePointRefVali
     return { ok: false, errors: ["ref must be an object"] }
   }
 
+  const forbiddenStart = errors.length
   collectForbiddenRefData(value, errors)
+  const containsForbiddenData = errors.length > forbiddenStart
 
   expectLiteral(value, "kind", OFFICE_CLOUD_DOCUMENT_KIND, errors)
   expectLiteral(value, "provider", SHAREPOINT_PROVIDER_ID, errors)
@@ -112,7 +114,9 @@ export function validateSharePointDocumentRef(value: unknown): SharePointRefVali
     }
   }
 
-  return { ok: errors.length === 0, errors }
+  return containsForbiddenData
+    ? { ok: errors.length === 0, errors, containsForbiddenData }
+    : { ok: errors.length === 0, errors }
 }
 
 export function assertSharePointDocumentRefSafeForStorage(ref: unknown): void {
