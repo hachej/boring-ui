@@ -19,6 +19,8 @@ export type {
   BoringFrontBindingRegistration,
   BoringFrontPanelRegistration,
   BoringFrontPanelCommandRegistration,
+  BoringFrontAppLeftActionRegistration,
+  BoringFrontAppLeftOverlayProps,
   BoringFrontWorkspaceSourceRegistration,
   BoringFrontProviderRegistration,
   BoringFrontSurfaceResolverRegistration,

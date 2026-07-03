@@ -166,6 +166,7 @@ export interface RegisteredPluginMeta {
 export interface WorkspaceContextValue {
   chatPanel: WorkspaceChatPanelComponent | null
   registeredPlugins: RegisteredPluginMeta[]
+  workspaceId?: string
   debug: boolean
 }
 
@@ -355,6 +356,7 @@ export interface WorkspaceProviderProps {
    * `@hachej/boring-workspace/plugin`.
    */
   plugins?: BoringFrontFactoryWithId[]
+  capturedPlugins?: CapturedFrontPlugin[]
   excludeDefaults?: string[]
   panels?: PanelConfig[]
   commands?: CommandConfig[]
@@ -417,6 +419,7 @@ export function WorkspaceProvider({
   children,
   chatPanel,
   plugins,
+  capturedPlugins,
   excludeDefaults,
   panels,
   commands,
@@ -531,6 +534,7 @@ export function WorkspaceProvider({
     const bootstrapResult = bootstrap({
       chatPanel: chatPanel ?? NullChatPanel,
       plugins: userPlugins,
+      capturedPlugins,
       defaults: defaultPlugins,
       excludeDefaults,
       registries: { panels: pr, workspaceSources: ws, commands: cr, catalogs: cat, surfaceResolvers: sr },
@@ -577,7 +581,7 @@ export function WorkspaceProvider({
       pluginMetas: metas,
       pluginsWithBindings: bootstrapResult.plugins,
     }
-  }, [capabilities, chatPanel, plugins, excludeDefaults, panels])
+  }, [capabilities, capturedPlugins, chatPanel, plugins, excludeDefaults, panels])
 
   const onThemeChangeRef = useRef(onThemeChange)
   onThemeChangeRef.current = onThemeChange
@@ -626,8 +630,8 @@ export function WorkspaceProvider({
     [bridgeConnected],
   )
   const workspaceValue = useMemo<WorkspaceContextValue>(
-    () => ({ chatPanel: chatPanel ?? null, registeredPlugins: pluginMetas, debug }),
-    [chatPanel, pluginMetas, debug],
+    () => ({ chatPanel: chatPanel ?? null, registeredPlugins: pluginMetas, workspaceId, debug }),
+    [chatPanel, debug, pluginMetas, workspaceId],
   )
 
   return (

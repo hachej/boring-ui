@@ -396,6 +396,23 @@ describe("WorkspaceAgentFront", () => {
     expect(screen.getByRole("button", { name: "Open app navigation" })).toBeInTheDocument()
   })
 
+  it("rejects plugin app-left actions that collide with built-in overlays", () => {
+    const collidingPlugin = definePlugin({
+      id: "colliding-action",
+      appLeftActions: [{ id: "plugins", label: "Plugins", overlay: () => <div>Plugin overlay</div> }],
+    })
+
+    expect(() => render(
+      <WorkspaceAgentFront
+        workspaceId="plugin-tabs-colliding-action"
+        workspaceLayout="plugin-tabs"
+        chatPanel={SessionIdChatPanel}
+        plugins={[collidingPlugin]}
+        persistenceEnabled={false}
+      />,
+    )).toThrow(/reserved workspace app-left action/)
+  })
+
   it("can hide plugin-tabs Skills and Plugins actions", () => {
     render(
       <WorkspaceAgentFront

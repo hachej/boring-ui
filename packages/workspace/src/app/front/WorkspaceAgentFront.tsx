@@ -18,12 +18,14 @@ import type {
   SurfaceShellSnapshot,
 } from "../../front/chrome/artifact-surface/SurfaceShell"
 import { SkillsPage } from "../../front/chrome/skills/SkillsPage"
-import { WorkspaceInboxShellProvider } from "../../plugins/inboxPlugin/front"
+import { WorkspaceInboxShellProvider, workspaceInboxPlugin } from "../../plugins/inboxPlugin/front"
 import { useWorkspaceInboxHost } from "./WorkspaceInboxHost"
 import { PluginsOverlay } from "../../front/chrome/plugins/PluginsOverlay"
 import { AppLeftPane } from "../../front/layout/plugin-tabs/AppLeftPane"
 import { PluginTabsWorkspaceShell } from "../../front/layout/plugin-tabs/PluginTabsWorkspaceShell"
-import { captureFrontPlugin } from "../../shared/plugins/frontFactory"
+import { captureBootstrapPlugins } from "../../shared/plugins/bootstrap"
+import { PluginError } from "../../shared/plugins/errors"
+import { filesystemPlugin } from "../../plugins/filesystemPlugin/front"
 import { UI_COMMAND_EVENT, dispatchUiCommand } from "../../front/bridge"
 import type { CommandPaletteSessionItem } from "../../front/components/CommandPalette"
 import type { CommandResult, DispatchContext, FileTreeBridge, Unsubscribe } from "../../front/bridge"
@@ -36,6 +38,7 @@ import { WORKSPACE_AGENT_PLUGINS_RELOADED_EVENT } from "../../front/agentPlugins
 import { WorkspaceBackgroundBoot } from "./WorkspaceBackgroundBoot"
 import { ChatSessionTransitionState, WorkbenchWarmupOverlay } from "./WorkspaceAgentStatusStates"
 import { WorkspaceUiStateSync } from "./WorkspaceUiStateSync"
+import { PluginAppLeftOverlayHost, pluginAppLeftActionIds, usePluginAppLeftActions, type AppLeftOverlayId } from "./PluginAppLeftHost"
 import { CloseLeftPaneOnQuestion } from "./CloseLeftPaneOnQuestion"
 import { workspaceRequestHeaders, type WorkspaceWarmupStatus } from "./workspacePreload"
 import {
@@ -190,7 +193,7 @@ export interface WorkspaceAgentFrontProps<
   /** Show the plugin-tabs Inbox action/overlay. Defaults to true. */
   showInbox?: boolean
   /** Initial plugin-tabs overlay, useful for demos/deep links. */
-  defaultLeftOverlay?: "inbox" | "skills" | "plugins" | null
+  defaultLeftOverlay?: string | null
   /** Show the plugin-tabs Skills action/overlay. Defaults to true. */
   showSkills?: boolean
   /** Show the plugin-tabs Plugins action/overlay. Defaults to true. */
@@ -807,16 +810,38 @@ export function WorkspaceAgentFront<
     shellPersistenceEnabled,
   )
   const effectiveAppLeftPaneWidth = clampNumber(appLeftPaneWidth, 220, 420)
-  const [leftOverlay, setLeftOverlay] = useState<"inbox" | "skills" | "plugins" | null>(defaultLeftOverlay)
+  const capturedPlugins = useMemo(() => {
+    const providedPlugins = inboxActionEnabled
+      ? plugins ?? []
+      : (plugins ?? []).filter((plugin) => plugin.pluginId !== workspaceInboxPlugin.pluginId)
+    const pluginsWithInbox = inboxActionEnabled && !providedPlugins.some((plugin) => plugin.pluginId === workspaceInboxPlugin.pluginId)
+      ? [workspaceInboxPlugin, ...providedPlugins]
+      : providedPlugins
+    const defaultPlugins = (excludeDefaults ?? []).includes(filesystemPlugin.pluginId) ? [] : [filesystemPlugin]
+    const captured = captureBootstrapPlugins({ plugins: pluginsWithInbox, defaults: defaultPlugins, excludeDefaults })
+    for (const plugin of captured) {
+      for (const action of plugin.registrations.appLeftActions) {
+        if (action.id === "plugins" || action.id === "skills") {
+          throw new PluginError(
+            "duplicate-id",
+            `app-left action "${action.id}" from plugin "${plugin.id}" collides with a reserved workspace app-left action`,
+          )
+        }
+      }
+    }
+    return captured
+  }, [excludeDefaults, inboxActionEnabled, plugins])
+  const [leftOverlay, setLeftOverlay] = useState<AppLeftOverlayId>(defaultLeftOverlay)
+  const pluginOverlayActionIds = useMemo(() => pluginAppLeftActionIds(capturedPlugins), [capturedPlugins])
   useEffect(() => {
     if (
-      (leftOverlay === "inbox" && !inboxActionEnabled)
-      || (leftOverlay === "skills" && !skillsActionEnabled)
+      (leftOverlay === "skills" && !skillsActionEnabled)
       || (leftOverlay === "plugins" && !pluginsActionEnabled)
+      || (leftOverlay !== null && leftOverlay !== "skills" && leftOverlay !== "plugins" && !pluginOverlayActionIds.has(leftOverlay))
     ) {
       setLeftOverlay(null)
     }
-  }, [inboxActionEnabled, leftOverlay, pluginsActionEnabled, skillsActionEnabled])
+  }, [leftOverlay, pluginOverlayActionIds, pluginsActionEnabled, skillsActionEnabled])
   const effectiveNavOpen = navEnabled && navOpen
   const [surfaceOpen, setSurfaceOpen] = useStoredBooleanState(
     // Key must NOT match resolvedSurfaceStorageKey (which stores the dockview
@@ -1012,10 +1037,6 @@ export function WorkspaceAgentFront<
     getActiveFile: () => getSurface()?.getSnapshot().activeTab ?? null,
     select: (): Unsubscribe => () => {},
   }), [getSurface, surfaceDispatch])
-  const capturedPlugins = useMemo(
-    () => plugins?.map(captureFrontPlugin) ?? [],
-    [plugins],
-  )
   const hasLeftTabs = useMemo(
     () => !isPluginTabsLayout && capturedPlugins.some((plugin) => plugin.registrations.workspaceSources.length > 0),
     [capturedPlugins, isPluginTabsLayout],
@@ -1507,12 +1528,7 @@ export function WorkspaceAgentFront<
       : undefined
   ), [activeChatPaneId, chatPaneIds, isPluginTabsLayout, openChatPane, resolvedSessions, switchToChatPane])
   const inboxHost = useWorkspaceInboxHost({
-    enabled: inboxActionEnabled,
-    panels: baseProviderPanels,
-    leftOverlay,
-    setLeftOverlay,
     appLeftPaneCollapsed,
-    surfaceOpen,
     workspaceId,
     effectiveAppLeftPaneWidth,
     sessionTitleById,
@@ -1520,10 +1536,12 @@ export function WorkspaceAgentFront<
     makeCenterParams,
     openChatPane,
     surfaceDispatch,
+    onDockOverlay: () => setLeftOverlay(null),
   })
-  const providerPanels = inboxHost.providerPanels
+  const providerPanels = baseProviderPanels
+  const pluginAppLeftActions = usePluginAppLeftActions({ plugins: capturedPlugins, activeOverlay: leftOverlay, setActiveOverlay: setLeftOverlay })
   const managementActions = useMemo<WorkspaceAgentAppLeftAction[]>(() => {
-    const actions: WorkspaceAgentAppLeftAction[] = [...inboxHost.primaryActions, ...(appLeftActions ?? [])]
+    const actions: WorkspaceAgentAppLeftAction[] = [...pluginAppLeftActions, ...(appLeftActions ?? [])]
     if (pluginsActionEnabled) {
       actions.push({
         id: "plugins",
@@ -1541,9 +1559,16 @@ export function WorkspaceAgentFront<
       })
     }
     return actions
-  }, [appLeftActions, inboxHost.primaryActions, pluginsActionEnabled, skillsActionEnabled])
+  }, [appLeftActions, pluginAppLeftActions, pluginsActionEnabled, skillsActionEnabled])
 
-  const leftOverlayNode = inboxHost.leftOverlayNode ?? (leftOverlay === "skills" && skillsActionEnabled ? (
+  const pluginLeftOverlayNode = PluginAppLeftOverlayHost({
+    plugins: capturedPlugins,
+    activeOverlay: leftOverlay,
+    onClose: () => setLeftOverlay(null),
+    headerInsetStart: appLeftPaneCollapsed,
+    headerInsetEnd: !surfaceOpen,
+  })
+  const leftOverlayNode = pluginLeftOverlayNode ?? (leftOverlay === "skills" && skillsActionEnabled ? (
     <SkillsPage
       onClose={() => setLeftOverlay(null)}
       headerInsetStart={appLeftPaneCollapsed}
@@ -1691,6 +1716,7 @@ export function WorkspaceAgentFront<
         commands={commands}
         catalogs={catalogs}
         plugins={plugins}
+        capturedPlugins={capturedPlugins}
         excludeDefaults={excludeDefaults}
         capabilities={capabilities}
         apiBaseUrl={apiBaseUrl}
