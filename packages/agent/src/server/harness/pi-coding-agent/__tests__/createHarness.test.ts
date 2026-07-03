@@ -10,6 +10,7 @@ import {
 } from "../createHarness.js";
 import { adaptToolsForPi } from "../tool-adapter.js";
 import { PiSessionStore } from "../sessions.js";
+import { ErrorCode } from "../../../../shared/error-codes.js";
 import type { AgentTool } from "../../../../shared/tool.js";
 
 const ENOENT_CODE = "ENOENT";
@@ -51,7 +52,7 @@ describe("createPiCodingAgentHarness", () => {
         model: { provider: "missing-provider", id: "missing-model" },
       }, { abortSignal: new AbortController().signal, workdir: cwd })).rejects.toMatchObject({
         statusCode: 400,
-        code: "TOOL_INVALID_INPUT",
+        code: ErrorCode.enum.TOOL_INVALID_INPUT,
       });
     } finally {
       await rm(cwd, { recursive: true, force: true });
