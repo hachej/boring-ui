@@ -25,6 +25,7 @@ export interface BoringTaskCard {
   title: string
   description?: string
   statusId: BoringTaskStatusId
+  tags?: string[]
   /** Allows card-level actions to route back to the owning adapter. */
   adapterId: string
   url?: string

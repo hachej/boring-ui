@@ -19,6 +19,7 @@ export const mockTasks: BoringTaskCard[] = [
     title: "Standard task card contract",
     description: "Keep number, title, description, and status small enough for every adapter to map into.",
     statusId: "triage",
+    tags: ["contract", "adapter"],
     adapterId: "mock",
   },
   {
@@ -27,6 +28,7 @@ export const mockTasks: BoringTaskCard[] = [
     title: "Adapter-supplied columns",
     description: "Columns are data from the adapter; the board does not hardcode Todo/In Progress/Done.",
     statusId: "ready",
+    tags: ["columns", "config"],
     adapterId: "mock",
   },
   {
@@ -35,6 +37,7 @@ export const mockTasks: BoringTaskCard[] = [
     title: "Drag status through adapter boundary",
     description: "A drop calls moveTask(taskId, statusId). The adapter decides what that means for GitHub, Linear, Kata, or DB tasks.",
     statusId: "doing",
+    tags: ["drag-drop", "action-loop"],
     adapterId: "mock",
   },
   {
@@ -43,6 +46,7 @@ export const mockTasks: BoringTaskCard[] = [
     title: "No tracker-specific UI actions",
     description: "Create, close, comment, and assign belong to adapter capabilities, not hardcoded board buttons.",
     statusId: "review",
+    tags: ["actions", "capabilities"],
     adapterId: "mock",
   },
   {
@@ -51,6 +55,7 @@ export const mockTasks: BoringTaskCard[] = [
     title: "Unmapped statuses never disappear",
     description: "If a task status has no matching column, render it in a safe non-droppable overflow lane.",
     statusId: "external-new-state",
+    tags: ["unmapped"],
     adapterId: "mock",
   },
 ]

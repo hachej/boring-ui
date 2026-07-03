@@ -29,9 +29,15 @@ const GITHUB_COLUMNS = [
   { id: "done", title: "Done", description: "Closed GitHub issues", color: "#64748b", acceptsDrop: false },
 ]
 
+function issueLabels(issue: GitHubIssue): string[] {
+  return (issue.labels ?? [])
+    .map((label) => label.name?.trim())
+    .filter((label): label is string => Boolean(label))
+}
+
 function issueStatus(issue: GitHubIssue): string {
   if (issue.state === "closed") return "done"
-  const labels = (issue.labels ?? []).map((label) => label.name?.toLowerCase()).filter(Boolean)
+  const labels = issueLabels(issue).map((label) => label.toLowerCase())
   const state = labels.find((label) => label?.startsWith("state:"))
   if (state === "state:active") return "active"
   if (state === "state:ready") return "ready"
@@ -86,6 +92,7 @@ export function createGitHubIssuesAdapter({ owner, repo, limit = 40 }: GitHubIss
           title: issue.title,
           description: descriptionFromBody(issue.body),
           statusId: issueStatus(issue),
+          tags: issueLabels(issue).filter((label) => !label.toLowerCase().startsWith("state:")),
           adapterId,
           url: issue.html_url,
         }))
