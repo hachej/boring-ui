@@ -8,6 +8,7 @@ COPY packages/core/package.json packages/core/package.json
 COPY packages/ui/package.json packages/ui/package.json
 COPY packages/workspace/package.json packages/workspace/package.json
 COPY packages/agent/package.json packages/agent/package.json
+COPY packages/boring-bash/package.json packages/boring-bash/package.json
 COPY plugins/boring-mcp/package.json plugins/boring-mcp/package.json
 COPY apps/full-app/package.json apps/full-app/package.json
 RUN pnpm install --frozen-lockfile
@@ -32,6 +33,8 @@ RUN pnpm --filter @hachej/boring-ui-kit exec tsup \
   && pnpm --filter @hachej/boring-ui-kit exec node scripts/build-styles.mjs
 
 RUN pnpm --filter @hachej/boring-agent run build
+
+RUN pnpm --filter @hachej/boring-bash exec tsup
 
 RUN pnpm --filter @hachej/boring-workspace exec tsup --no-dts \
   && pnpm --filter @hachej/boring-workspace exec vite build \
@@ -81,6 +84,10 @@ COPY --from=build /app/packages/ui/node_modules/ packages/ui/node_modules/
 COPY --from=build /app/packages/agent/dist/ packages/agent/dist/
 COPY --from=build /app/packages/agent/package.json packages/agent/package.json
 COPY --from=build /app/packages/agent/node_modules/ packages/agent/node_modules/
+
+COPY --from=build /app/packages/boring-bash/dist/ packages/boring-bash/dist/
+COPY --from=build /app/packages/boring-bash/package.json packages/boring-bash/package.json
+COPY --from=build /app/packages/boring-bash/node_modules/ packages/boring-bash/node_modules/
 
 COPY --from=build /app/packages/workspace/dist/ packages/workspace/dist/
 COPY --from=build /app/packages/workspace/package.json packages/workspace/package.json
