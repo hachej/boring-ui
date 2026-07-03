@@ -6,13 +6,15 @@ interface TaskCardProps {
   draggable: boolean
   unmapped?: boolean
   onDragStart: (event: DragEvent<HTMLElement>, task: BoringTaskCard) => void
+  onDragEnd: () => void
 }
 
-export function TaskCard({ task, draggable, unmapped = false, onDragStart }: TaskCardProps) {
+export function TaskCard({ task, draggable, unmapped = false, onDragStart, onDragEnd }: TaskCardProps) {
   return (
     <article
       draggable={draggable}
       onDragStart={(event) => onDragStart(event, task)}
+      onDragEnd={onDragEnd}
       className={[
         "group rounded-xl border bg-background p-3 shadow-sm transition",
         draggable ? "cursor-grab hover:-translate-y-0.5 hover:border-foreground/30 hover:shadow-md active:cursor-grabbing" : "cursor-default",

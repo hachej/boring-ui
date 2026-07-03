@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState, type DragEvent } from "react"
+import { useCallback, useEffect, useMemo, useRef, useState, type DragEvent } from "react"
 import type { BoringTaskAdapter, BoringTaskBoardConfig, BoringTaskCard } from "../shared"
 import { groupTasksByColumn } from "./taskBoardModel"
 import { TaskKanbanColumn } from "./TaskKanbanColumn"
@@ -23,6 +23,12 @@ export function TaskKanbanBoard({ adapters }: TaskKanbanBoardProps) {
   const [error, setError] = useState<string | null>(null)
   const [activeTaskId, setActiveTaskId] = useState<string | null>(null)
   const [movingTaskId, setMovingTaskId] = useState<string | null>(null)
+  const requestSeq = useRef(0)
+  const adapterIdRef = useRef(adapterId)
+
+  useEffect(() => {
+    adapterIdRef.current = adapterId
+  }, [adapterId])
 
   const adapter = useMemo(
     () => adapters.find((candidate) => candidate.id === adapterId) ?? adapters[0],
@@ -36,16 +42,20 @@ export function TaskKanbanBoard({ adapters }: TaskKanbanBoardProps) {
       setError("No task adapters are registered.")
       return
     }
+    const requestId = requestSeq.current + 1
+    requestSeq.current = requestId
     setLoading(true)
     setError(null)
     try {
       const [config, tasks] = await Promise.all([adapter.getBoardConfig(), adapter.listTasks()])
-      setState({ config, tasks })
+      if (requestSeq.current === requestId) setState({ config, tasks })
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : String(cause))
-      setState(null)
+      if (requestSeq.current === requestId) {
+        setError(cause instanceof Error ? cause.message : String(cause))
+        setState(null)
+      }
     } finally {
-      setLoading(false)
+      if (requestSeq.current === requestId) setLoading(false)
     }
   }, [adapter])
 
@@ -68,22 +78,31 @@ export function TaskKanbanBoard({ adapters }: TaskKanbanBoardProps) {
   const moveTask = async (taskId: string, statusId: string) => {
     if (!adapter || !state || !adapter.capabilities.move || !adapter.moveTask) return
     const task = state.tasks.find((candidate) => candidate.id === taskId)
-    if (!task || task.statusId === statusId) return
+    if (!task || task.statusId === statusId) {
+      setActiveTaskId(null)
+      return
+    }
 
     const previous = state.tasks
+    const movingAdapterId = state.config.adapterId
     setMovingTaskId(taskId)
     setError(null)
-    setState({ ...state, tasks: previous.map((candidate) => candidate.id === taskId ? { ...candidate, statusId } : candidate) })
+    setState((current) => current && current.config.adapterId === movingAdapterId ? {
+      ...current,
+      tasks: current.tasks.map((candidate) => candidate.id === taskId ? { ...candidate, statusId } : candidate),
+    } : current)
 
     try {
       const moved = await adapter.moveTask({ taskId, statusId })
-      setState((current) => current ? {
+      setState((current) => current && current.config.adapterId === movingAdapterId ? {
         ...current,
         tasks: current.tasks.map((candidate) => candidate.id === taskId ? moved : candidate),
       } : current)
     } catch (cause) {
-      setState((current) => current ? { ...current, tasks: previous } : current)
-      setError(cause instanceof Error ? cause.message : String(cause))
+      setState((current) => current && current.config.adapterId === movingAdapterId ? { ...current, tasks: previous } : current)
+      if (adapterIdRef.current === movingAdapterId) {
+        setError(cause instanceof Error ? cause.message : String(cause))
+      }
     } finally {
       setMovingTaskId(null)
       setActiveTaskId(null)
@@ -149,6 +168,7 @@ export function TaskKanbanBoard({ adapters }: TaskKanbanBoardProps) {
                 moveEnabled={moveEnabled}
                 activeTaskId={activeTaskId}
                 onTaskDragStart={handleTaskDragStart}
+                onTaskDragEnd={() => setActiveTaskId(null)}
                 onTaskDrop={(taskId, statusId) => void moveTask(taskId, statusId)}
               />
             ))}

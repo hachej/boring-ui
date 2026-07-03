@@ -9,6 +9,7 @@ interface TaskKanbanColumnProps {
   moveEnabled: boolean
   activeTaskId: string | null
   onTaskDragStart: (event: DragEvent<HTMLElement>, task: BoringTaskCard) => void
+  onTaskDragEnd: () => void
   onTaskDrop: (taskId: string, statusId: string) => void
 }
 
@@ -17,18 +18,23 @@ export function TaskKanbanColumn({
   moveEnabled,
   activeTaskId,
   onTaskDragStart,
+  onTaskDragEnd,
   onTaskDrop,
 }: TaskKanbanColumnProps) {
   const acceptsDrop = moveEnabled && canDropInColumn(column)
 
+  const hasTaskDragPayload = (event: DragEvent<HTMLElement>) => (
+    Array.from(event.dataTransfer.types).includes("application/x-boring-task-id")
+  )
+
   const handleDragOver = (event: DragEvent<HTMLDivElement>) => {
-    if (!acceptsDrop) return
+    if (!acceptsDrop || !hasTaskDragPayload(event)) return
     event.preventDefault()
     event.dataTransfer.dropEffect = "move"
   }
 
   const handleDrop = (event: DragEvent<HTMLDivElement>) => {
-    if (!acceptsDrop) return
+    if (!acceptsDrop || !hasTaskDragPayload(event)) return
     event.preventDefault()
     const taskId = event.dataTransfer.getData("application/x-boring-task-id") || activeTaskId
     if (taskId) onTaskDrop(taskId, column.id)
@@ -72,6 +78,7 @@ export function TaskKanbanColumn({
             draggable={moveEnabled && !column.unmapped}
             unmapped={column.unmapped}
             onDragStart={onTaskDragStart}
+            onDragEnd={onTaskDragEnd}
           />
         ))}
       </div>
