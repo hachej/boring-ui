@@ -56,8 +56,6 @@ export interface BoringFrontBindingRegistration {
 
 export interface BoringFrontAppLeftOverlayProps {
   onClose: () => void
-  headerInsetStart?: boolean
-  headerInsetEnd?: boolean
 }
 
 export interface BoringFrontAppLeftActionRegistration {

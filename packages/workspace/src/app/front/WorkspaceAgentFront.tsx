@@ -18,8 +18,8 @@ import type {
   SurfaceShellSnapshot,
 } from "../../front/chrome/artifact-surface/SurfaceShell"
 import { SkillsPage } from "../../front/chrome/skills/SkillsPage"
-import { WorkspaceInboxShellProvider } from "../../plugins/inboxPlugin/front"
-import { useWorkspaceInboxHost } from "./WorkspaceInboxHost"
+import { WorkspaceShellCapabilitiesProvider } from "../../front/shell/WorkspaceShellCapabilitiesContext"
+import { useWorkspaceShellCapabilitiesHost } from "./WorkspaceShellCapabilitiesHost"
 import { PluginsOverlay } from "../../front/chrome/plugins/PluginsOverlay"
 import { AppLeftPane } from "../../front/layout/plugin-tabs/AppLeftPane"
 import { PluginTabsWorkspaceShell } from "../../front/layout/plugin-tabs/PluginTabsWorkspaceShell"
@@ -36,7 +36,7 @@ import { WORKSPACE_AGENT_PLUGINS_RELOADED_EVENT } from "../../front/agentPlugins
 import { WorkspaceBackgroundBoot } from "./WorkspaceBackgroundBoot"
 import { ChatSessionTransitionState, WorkbenchWarmupOverlay } from "./WorkspaceAgentStatusStates"
 import { WorkspaceUiStateSync } from "./WorkspaceUiStateSync"
-import { PluginAppLeftOverlayHost, pluginAppLeftActionIds, usePluginAppLeftActions, type AppLeftOverlayId } from "./PluginAppLeftHost"
+import { PluginAppLeftOverlayHost, assertUniqueAppLeftActionIds, pluginAppLeftActionIds, usePluginAppLeftActions, type AppLeftOverlayId } from "./PluginAppLeftHost"
 import { CloseLeftPaneOnQuestion } from "./CloseLeftPaneOnQuestion"
 import { workspaceRequestHeaders, type WorkspaceWarmupStatus } from "./workspacePreload"
 import {
@@ -1509,7 +1509,7 @@ export function WorkspaceAgentFront<
         }
       : undefined
   ), [activeChatPaneId, chatPaneIds, isPluginTabsLayout, openChatPane, resolvedSessions, switchToChatPane])
-  const inboxHost = useWorkspaceInboxHost({
+  const shellCapabilitiesHost = useWorkspaceShellCapabilitiesHost({
     appLeftPaneCollapsed,
     workspaceId,
     effectiveAppLeftPaneWidth,
@@ -1540,6 +1540,7 @@ export function WorkspaceAgentFront<
         onClick: () => setLeftOverlay((cur) => cur === "skills" ? null : "skills"),
       })
     }
+    assertUniqueAppLeftActionIds(actions)
     return actions
   }, [appLeftActions, pluginAppLeftActions, pluginsActionEnabled, skillsActionEnabled])
 
@@ -1686,12 +1687,12 @@ export function WorkspaceAgentFront<
       {mainContent}
     </div>
   )
-  const floatingChatNode = inboxHost.floatingChatNode
+  const floatingChatNode = shellCapabilitiesHost.floatingChatNode
   const publishedNavOpen = isPluginTabsLayout ? !appLeftPaneCollapsed : effectiveNavOpen
 
   return (
     <div className="relative h-full bg-background text-foreground">
-      <WorkspaceInboxShellProvider value={inboxHost.shellApi}>
+      <WorkspaceShellCapabilitiesProvider value={shellCapabilitiesHost.shellCapabilities}>
       <WorkspaceProvider
         chatPanel={chatPanel}
         panels={providerPanels}
@@ -1744,7 +1745,7 @@ export function WorkspaceAgentFront<
         {floatingChatNode}
         {afterShell}
       </WorkspaceProvider>
-      </WorkspaceInboxShellProvider>
+      </WorkspaceShellCapabilitiesProvider>
     </div>
   )
 }

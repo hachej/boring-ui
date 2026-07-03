@@ -3,11 +3,23 @@
 import { createElement, useMemo, type ReactNode } from "react"
 import type { CapturedFrontPlugin } from "../../shared/plugins/frontFactory"
 import type { AppLeftPaneAction } from "../../front/layout/plugin-tabs/AppLeftPane"
+import { AppLeftOverlayChromeProvider } from "../../front/layout/plugin-tabs/AppLeftOverlayChromeContext"
 
 export type AppLeftOverlayId = string | null
 
 export function pluginAppLeftActionIds(plugins: readonly CapturedFrontPlugin[]): ReadonlySet<string> {
   return new Set(plugins.flatMap((plugin) => plugin.registrations.appLeftActions.map((action) => action.id)))
+}
+
+export function assertUniqueAppLeftActionIds(actions: readonly AppLeftPaneAction[]): void {
+  const owners = new Map<string, string>()
+  for (const action of actions) {
+    const previous = owners.get(action.id)
+    if (previous) {
+      throw new Error(`duplicate app-left action id "${action.id}" registered by ${previous} and ${action.label}`)
+    }
+    owners.set(action.id, action.label)
+  }
 }
 
 export function usePluginAppLeftActions({
@@ -58,5 +70,9 @@ export function PluginAppLeftOverlayHost({
     .flatMap((plugin) => plugin.registrations.appLeftActions)
     .find((action) => action.id === activeOverlay)
   if (!entry?.overlay) return null
-  return createElement(entry.overlay, { onClose, headerInsetStart, headerInsetEnd })
+  return createElement(
+    AppLeftOverlayChromeProvider,
+    { value: { headerInsetStart: Boolean(headerInsetStart), headerInsetEnd: Boolean(headerInsetEnd) } },
+    createElement(entry.overlay, { onClose }),
+  )
 }

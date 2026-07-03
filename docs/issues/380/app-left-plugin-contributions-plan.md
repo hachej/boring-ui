@@ -52,7 +52,7 @@ Unacceptable implementation:
 - Static app/internal plugins supported now.
 - Runtime hot-loaded plugin support is explicitly **not** included unless replace-by-plugin-id semantics are implemented for this output kind.
 
-For this PR, prefer **static support only** and document that runtime generated plugins do not get dynamic app-left provider/overlay mounting yet, matching current provider/binding limitations.
+For this PR, support **static app-left actions only**. Runtime/hot-loaded plugins that register app-left actions must warn that those outputs are skipped until the runtime plugin loader has app-left replace-by-plugin-id semantics.
 
 ### 3. Overlay topology
 
@@ -76,7 +76,7 @@ interface AppLeftOverlayProps {
 }
 ```
 
-The shell wraps plugin overlay content in an app-left overlay frame that owns header insets, close chrome, layout padding, and workspace id plumbing where needed.
+The shell owns app-left chrome state. First-party internals may read shell chrome via non-public context, but the public plugin overlay API must not pass header inset/layout props.
 
 If a plugin needs workspace-specific persistence keys, provide them through a shell/plugin context rather than passing ad-hoc layout props.
 

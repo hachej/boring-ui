@@ -413,6 +413,18 @@ describe("WorkspaceAgentFront", () => {
     )).toThrow(/reserved workspace app-left action/)
   })
 
+  it("rejects host app-left actions that collide with plugin or built-in overlays", () => {
+    expect(() => render(
+      <WorkspaceAgentFront
+        workspaceId="plugin-tabs-host-colliding-action"
+        workspaceLayout="plugin-tabs"
+        chatPanel={SessionIdChatPanel}
+        appLeftActions={[{ id: "plugins", label: "Host Plugins", icon: null, onClick: () => undefined }]}
+        persistenceEnabled={false}
+      />,
+    )).toThrow(/duplicate app-left action id/)
+  })
+
   it("can hide plugin-tabs Skills and Plugins actions", () => {
     render(
       <WorkspaceAgentFront

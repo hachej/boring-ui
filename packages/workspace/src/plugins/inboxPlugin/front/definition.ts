@@ -25,12 +25,10 @@ function InboxCountBadge() {
   )
 }
 
-function InboxAppLeftOverlay({ onClose, headerInsetStart, headerInsetEnd }: BoringFrontAppLeftOverlayProps) {
+function InboxAppLeftOverlay({ onClose }: BoringFrontAppLeftOverlayProps) {
   const { workspaceId } = useWorkspaceContext()
   return createElement(InboxOverlay, {
     onClose,
-    headerInsetStart,
-    headerInsetEnd,
     pinStorageKey: `boring-workspace:inbox-pins:${workspaceId ?? "workspace"}`,
   })
 }

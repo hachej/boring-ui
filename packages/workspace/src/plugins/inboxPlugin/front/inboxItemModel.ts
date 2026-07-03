@@ -1,3 +1,5 @@
+import type { WorkspaceShellArtifactTarget, WorkspaceShellCapabilityResult } from "../../../front/shell/WorkspaceShellCapabilitiesContext"
+
 export type InboxItemKind = "question" | "review" | "approval" | "notice"
 export type InboxItemStatus = "open" | "resolved" | "dismissed"
 export type InboxFilter = "all" | "questions" | "reviews"
@@ -8,9 +10,7 @@ export interface WorkspaceInboxItemAction {
   tone?: "primary" | "neutral" | "danger"
 }
 
-export type WorkspaceInboxItemArtifactTarget =
-  | { type: "surface"; surfaceKind: string; target?: string; params?: Record<string, unknown> }
-  | { type: "panel"; panelComponentId: string; params?: Record<string, unknown> }
+export type WorkspaceInboxItemArtifactTarget = WorkspaceShellArtifactTarget
 
 export interface WorkspaceInboxItemSourceBase {
   label: string
@@ -44,9 +44,7 @@ export type WorkspaceInboxItemViewModel = WorkspaceInboxItem & {
   pinned: boolean
 }
 
-export type WorkspaceInboxShellResult =
-  | { success: true }
-  | { success: false; reason: "no-artifact" | "open-failed" | "invalid-session" | "placement-failed"; message: string }
+export type WorkspaceInboxShellResult = WorkspaceShellCapabilityResult
 
 export interface WorkspaceInboxShellApi {
   openInboxArtifact(item: WorkspaceInboxItem): WorkspaceInboxShellResult

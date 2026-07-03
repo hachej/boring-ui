@@ -5,6 +5,7 @@ import { Inbox, MailOpen, X } from "lucide-react"
 import { IconButton } from "@hachej/boring-ui-kit"
 import { emitWorkspaceAttentionAction, useWorkspaceAttention } from "../../../front/attention"
 import { cn } from "../../../front/lib/utils"
+import { useAppLeftOverlayChrome } from "../../../front/layout/plugin-tabs/AppLeftOverlayChromeContext"
 import { attentionBlockerToInboxItem, isInboxAttentionBlocker } from "./attentionBlockerAdapter"
 import { InboxFilterBar } from "./InboxFilterBar"
 import { InboxSection } from "./InboxSection"
@@ -19,8 +20,6 @@ import { useWorkspaceInboxShell } from "./WorkspaceInboxShellContext"
 
 export interface InboxOverlayProps {
   onClose: () => void
-  headerInsetStart?: boolean
-  headerInsetEnd?: boolean
   pinStorageKey?: string
 }
 
@@ -46,7 +45,8 @@ function writePinnedIds(storageKey: string | undefined, ids: ReadonlySet<string>
   }
 }
 
-export function InboxOverlay({ onClose, headerInsetStart = false, headerInsetEnd = false, pinStorageKey }: InboxOverlayProps) {
+export function InboxOverlay({ onClose, pinStorageKey }: InboxOverlayProps) {
+  const { headerInsetStart, headerInsetEnd } = useAppLeftOverlayChrome()
   const { blockers } = useWorkspaceAttention()
   const shell = useWorkspaceInboxShell()
   const [filter, setFilter] = useState<InboxFilter>("all")

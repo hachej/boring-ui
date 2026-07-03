@@ -1,6 +1,6 @@
 export { workspaceInboxPlugin } from "./definition"
 export { InboxOverlay } from "./InboxOverlay"
-export { WorkspaceInboxShellProvider, useWorkspaceInboxShell } from "./WorkspaceInboxShellContext"
+export { useWorkspaceInboxShell } from "./WorkspaceInboxShellContext"
 export type {
   InboxFilter,
   InboxItemKind,
