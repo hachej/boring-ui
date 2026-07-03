@@ -9,7 +9,11 @@ const posthogMock = vi.hoisted(() => {
   }
 
   const clients: MockPostHogClient[] = []
-  const PostHog = vi.fn((apiKey: string, options?: Record<string, unknown>) => {
+  const PostHog = vi.fn(function MockPostHog(
+    this: MockPostHogClient,
+    apiKey: string,
+    options?: Record<string, unknown>,
+  ) {
     const client: MockPostHogClient = {
       apiKey,
       options,
