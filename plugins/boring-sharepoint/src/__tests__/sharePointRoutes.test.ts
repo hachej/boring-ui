@@ -66,6 +66,57 @@ describe("SharePoint routes", () => {
     )
   })
 
+  it("returns transient preview result without persisting ref metadata", async () => {
+    const provider = fakeProvider({ createOfficePreviewUrl: vi.fn().mockResolvedValue({ getUrl: "https://tenant.sharepoint.com/preview?token=transient" }) })
+    const app = await testApp(provider)
+
+    const response = await app.inject({ method: "POST", url: SHAREPOINT_ROUTE_PATHS.preview, payload: { ref } })
+
+    expect(response.statusCode).toBe(200)
+    expect(response.json()).toEqual({ getUrl: "https://tenant.sharepoint.com/preview?token=transient" })
+    expect(response.json()).not.toHaveProperty("ref")
+    expect(provider.createOfficePreviewUrl).toHaveBeenCalledWith(ref, { workspaceId: "default", actorUserId: "anonymous" })
+  })
+
+  it("accepts durable drive identity for preview requests", async () => {
+    const provider = fakeProvider({ createOfficePreviewUrl: vi.fn().mockResolvedValue({ getUrl: "https://tenant.sharepoint.com/preview" }) })
+    const app = await testApp(provider)
+
+    const response = await app.inject({ method: "POST", url: SHAREPOINT_ROUTE_PATHS.preview, payload: { driveId: ref.driveId, driveItemId: ref.driveItemId } })
+
+    expect(response.statusCode).toBe(200)
+    expect(provider.createOfficePreviewUrl).toHaveBeenCalledWith(
+      { driveId: ref.driveId, driveItemId: ref.driveItemId },
+      { workspaceId: "default", actorUserId: "anonymous" },
+    )
+  })
+
+  it("rejects non-HTTPS preview results from the provider", async () => {
+    const provider = fakeProvider({ createOfficePreviewUrl: vi.fn().mockResolvedValue({ getUrl: "http://tenant/preview?token=secret" }) })
+    const app = await testApp(provider)
+
+    const response = await app.inject({ method: "POST", url: SHAREPOINT_ROUTE_PATHS.preview, payload: { driveId: ref.driveId, driveItemId: ref.driveItemId } })
+
+    expect(response.statusCode).toBe(502)
+    expect(response.json()).toEqual({ error: SHAREPOINT_ERROR_CODES.PREVIEW_UNAVAILABLE, message: "SharePoint preview provider returned an invalid preview URL" })
+    expect(response.body).not.toContain("http://tenant/preview")
+  })
+
+  it("rejects token-bearing preview ref input", async () => {
+    const provider = fakeProvider({ createOfficePreviewUrl: vi.fn() })
+    const app = await testApp(provider)
+
+    const response = await app.inject({
+      method: "POST",
+      url: SHAREPOINT_ROUTE_PATHS.preview,
+      payload: { ref: { ...ref, previewUrl: "https://tenant.sharepoint.com/preview?access_token=secret" } },
+    })
+
+    expect(response.statusCode).toBe(400)
+    expect(response.json()).toMatchObject({ error: SHAREPOINT_ERROR_CODES.REF_CONTAINS_SECRET })
+    expect(provider.createOfficePreviewUrl).not.toHaveBeenCalled()
+  })
+
   it("rejects route errors with stable JSON", async () => {
     const provider = fakeProvider({
       resolveDriveItem: vi.fn().mockRejectedValue(new SharePointProviderError(SHAREPOINT_ERROR_CODES.INVALID_REF, "unsupported file type")),

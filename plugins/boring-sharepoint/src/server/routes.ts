@@ -4,8 +4,11 @@ import {
   SharePointRefValidationError,
   assertSharePointDocumentRefSafeForStorage,
   parseSharePointDocumentRef,
+  type CreateOfficePreviewUrlInput,
+  type CreateOfficePreviewUrlResult,
   type IntegrationAuthState,
   type ResolveDriveItemInput,
+  type SharePointDocumentRef,
   type SharePointProvider,
   type SharePointProviderContext,
 } from "../shared"
@@ -14,6 +17,7 @@ import { SharePointProviderError } from "./sharePointProvider"
 export const SHAREPOINT_ROUTE_PATHS = {
   status: "/api/sharepoint/status",
   resolve: "/api/sharepoint/resolve",
+  preview: "/api/sharepoint/preview",
 } as const
 
 export interface SharePointRoutesOptions {
@@ -43,6 +47,16 @@ export function sharePointRoutes(app: FastifyInstance, opts: SharePointRoutesOpt
     }
   })
 
+  app.post(SHAREPOINT_ROUTE_PATHS.preview, async (request, reply) => {
+    try {
+      const input = parsePreviewBody(request.body)
+      const ctx = await resolveContext(request, opts)
+      return safePreviewResultForRoute(await opts.provider.createOfficePreviewUrl(input, ctx))
+    } catch (error) {
+      return sendSharePointRouteError(reply, error)
+    }
+  })
+
   done()
 }
 
@@ -50,6 +64,37 @@ function safeStatusForRoute(status: IntegrationAuthState): Record<string, string
   if (status.status === "needs_auth") return { status: "needs_auth" }
   if (status.status === "pending_auth") return { status: "pending_auth" }
   return status
+}
+
+function safePreviewResultForRoute(result: CreateOfficePreviewUrlResult): CreateOfficePreviewUrlResult {
+  if (!isHttpsUrl(result.getUrl)) {
+    throw new SharePointProviderError(SHAREPOINT_ERROR_CODES.PREVIEW_UNAVAILABLE, "SharePoint preview provider returned an invalid preview URL", 502)
+  }
+  return result.expiresAt ? { getUrl: result.getUrl, expiresAt: result.expiresAt } : { getUrl: result.getUrl }
+}
+
+function parsePreviewBody(body: unknown): SharePointDocumentRef | CreateOfficePreviewUrlInput {
+  if (!body || typeof body !== "object" || Array.isArray(body)) {
+    throw new SharePointProviderError(SHAREPOINT_ERROR_CODES.INVALID_REF, "preview request body must be an object")
+  }
+  const candidate = body as Record<string, unknown>
+  if (candidate.ref !== undefined) {
+    const ref = parseSharePointDocumentRef(candidate.ref)
+    assertSharePointDocumentRefSafeForStorage(ref)
+    return ref
+  }
+  const input = {
+    driveId: optionalString(candidate.driveId),
+    driveItemId: optionalString(candidate.driveItemId),
+    viewer: optionalString(candidate.viewer),
+  }
+  if (!input.driveId || !input.driveItemId) {
+    throw new SharePointProviderError(SHAREPOINT_ERROR_CODES.INVALID_REF, "preview requires ref or driveId + driveItemId")
+  }
+  if (input.viewer !== undefined && input.viewer !== "office") {
+    throw new SharePointProviderError(SHAREPOINT_ERROR_CODES.INVALID_REF, "preview viewer must be office")
+  }
+  return input.viewer ? { driveId: input.driveId, driveItemId: input.driveItemId, viewer: input.viewer } : { driveId: input.driveId, driveItemId: input.driveItemId }
 }
 
 function parseResolveBody(body: unknown): ResolveDriveItemInput {
@@ -81,6 +126,15 @@ function sendSharePointRouteError(reply: FastifyReply, error: unknown) {
     return reply.code(400).send({ error: error.code, message: error.message })
   }
   return reply.code(500).send({ error: SHAREPOINT_ERROR_CODES.PROVIDER_UNAVAILABLE, message: "SharePoint provider request failed" })
+}
+
+function isHttpsUrl(value: unknown): value is string {
+  if (typeof value !== "string") return false
+  try {
+    return new URL(value).protocol === "https:"
+  } catch {
+    return false
+  }
 }
 
 function optionalString(value: unknown): string | undefined {

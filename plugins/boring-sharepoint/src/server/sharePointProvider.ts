@@ -3,6 +3,7 @@ import {
   SharePointRefValidationError,
   expectedMimeTypeForOfficeKind,
   parseSharePointDocumentRef,
+  type CreateOfficePreviewUrlInput,
   type IntegrationAuthState,
   type OfficeEditRequest,
   type OfficeEditResult,
@@ -21,6 +22,7 @@ export const ARCADE_SHAREPOINT_TOOL_NAMES = {
   getSite: "MicrosoftSharepoint_GetSite",
   getDriveItem: "MicrosoftSharepoint_GetDriveItem",
   getDriveItemByUrl: "MicrosoftSharepoint_GetDriveItemByUrl",
+  createPreviewUrl: "BoringSharePoint_CreatePreviewUrl",
 } as const
 
 export interface ArcadeSharePointProviderOptions {
@@ -90,12 +92,17 @@ export class ArcadeSharePointProvider implements SharePointProvider {
     return toSharePointDocumentRef({ site, item })
   }
 
-  async createOfficePreviewUrl(): Promise<CreateOfficePreviewUrlResult> {
-    throw new SharePointProviderError(
-      SHAREPOINT_ERROR_CODES.PREVIEW_UNAVAILABLE,
-      "SharePoint Office preview URLs are not implemented in this read-only discovery slice",
-      501,
-    )
+  async createOfficePreviewUrl(input: SharePointDocumentRef | CreateOfficePreviewUrlInput, ctx: SharePointProviderContext): Promise<CreateOfficePreviewUrlResult> {
+    const response = await this.runtime.executeTool({
+      toolName: this.tools.createPreviewUrl,
+      userId: ctx.actorUserId,
+      input: {
+        drive_id: input.driveId,
+        item_id: input.driveItemId,
+        viewer: "viewer" in input && input.viewer ? input.viewer : "office",
+      },
+    })
+    return toOfficePreviewUrlResult(response, this.tools.createPreviewUrl)
   }
 
   async editOfficeDocument(_ref: SharePointDocumentRef, _request: OfficeEditRequest): Promise<OfficeEditResult> {
@@ -138,6 +145,20 @@ export class ArcadeSharePointProvider implements SharePointProvider {
     })
     return unwrapArcadeValueObject(response, this.tools.getDriveItem)
   }
+}
+
+export function toOfficePreviewUrlResult(response: unknown, toolName = ARCADE_SHAREPOINT_TOOL_NAMES.createPreviewUrl): CreateOfficePreviewUrlResult {
+  const value = unwrapArcadeValueObject(response, toolName)
+  const getUrl = optionalString(value, ["getUrl", "get_url"])
+  if (!getUrl || !isHttpsUrl(getUrl)) {
+    throw new SharePointProviderError(
+      SHAREPOINT_ERROR_CODES.PREVIEW_UNAVAILABLE,
+      `${toolName} did not return a valid HTTPS preview URL`,
+      502,
+    )
+  }
+  const expiresAt = optionalString(value, ["expiresAt", "expires_at", "expirationDateTime", "expiration_date_time"])
+  return expiresAt ? { getUrl, expiresAt } : { getUrl }
 }
 
 export function toSharePointDocumentRef(input: { site?: Record<string, unknown>; item: Record<string, unknown> }): SharePointDocumentRef {
@@ -207,6 +228,14 @@ function officeKindFromName(name: string): "excel" | "powerpoint" | null {
   if (name.endsWith(".xlsx")) return "excel"
   if (name.endsWith(".pptx")) return "powerpoint"
   return null
+}
+
+function isHttpsUrl(value: string): boolean {
+  try {
+    return new URL(value).protocol === "https:"
+  } catch {
+    return false
+  }
 }
 
 function requireString(object: Record<string, unknown> | undefined, paths: string[], label: string): string {

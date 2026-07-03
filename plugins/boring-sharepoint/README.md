@@ -2,7 +2,7 @@
 
 App/internal plugin shell for SharePoint / Microsoft 365 Office document support in boring-ui.
 
-This package is intentionally a trusted app/internal plugin, not a runtime-generated `.pi/extensions` plugin. The current stack includes the plugin shell, Office cloud-ref display wiring, Arcade runtime primitives, and read-only SharePoint discovery/status. Future PRs will add preview, Office agent edits, and import flows behind these contracts.
+This package is intentionally a trusted app/internal plugin, not a runtime-generated `.pi/extensions` plugin. The current stack includes the plugin shell, Office cloud-ref display wiring, Arcade runtime primitives, read-only SharePoint discovery/status, and on-demand Office preview. Future PRs will add Office agent edits and import flows behind these contracts.
 
 ## Trust boundary
 
@@ -27,6 +27,7 @@ This workbook will become the operator guide as implementation PRs land.
      - `BORING_SHAREPOINT_ARCADE_DEFAULT_USER_ID` — optional default Arcade user id for local/operator testing.
      - `BORING_SHAREPOINT_ARCADE_PROVIDER_ID` — optional provider id, defaults to `microsoft`.
      - `BORING_SHAREPOINT_ARCADE_BASE_URL` — optional Arcade API base URL override.
+   - Deploy/register the plugin-owned custom Arcade tool `BoringSharePoint_CreatePreviewUrl` in the operator's Arcade project. The tool wraps Microsoft Graph `driveItem:preview` using Arcade-managed Microsoft auth and returns only `{ getUrl, expiresAt? }`.
    - Confirm Microsoft scopes needed by each capability.
    - Confirm tenant/admin consent requirements.
 3. **boring-ui workspace connection**
@@ -39,12 +40,12 @@ This workbook will become the operator guide as implementation PRs land.
    - Capture their SharePoint identity as `siteId`, `driveId`, and `driveItemId`.
 5. **Validate V1 flows**
    - Open in SharePoint using `webUrl`.
-   - Preview in boring-ui once the custom preview tool lands.
+   - Preview in boring-ui through `POST /api/sharepoint/preview`, which requests a transient preview URL on demand.
    - Agent-edit Excel and PowerPoint once edit providers land.
 6. **Troubleshooting**
    - Auth required: reconnect SharePoint/Microsoft 365.
    - Admin consent required: tenant admin must approve Microsoft scopes.
-   - Preview blocked: check tenant iframe policy, browser auth, and host CSP.
+   - Preview blocked: check custom Arcade tool deployment, tenant iframe policy, browser auth, and host CSP.
    - Stale `webUrl`: re-resolve by durable `driveId + driveItemId`.
    - Arcade tool failure: inspect stable `SHAREPOINT_*` error code and provider status.
 
@@ -74,23 +75,17 @@ The app-left action and command open the SharePoint / Microsoft 365 status surfa
 
 ## Current scope
 
-This PR adds read-only SharePoint discovery/status on top of the shell/display/runtime stack:
+This PR adds on-demand Office preview on top of the shell/display/runtime/discovery stack:
 
-- `ArcadeSharePointProvider` keeps Arcade tool names and snake_case inputs inside server/provider internals.
-- Status uses the read-only status probe tool `MicrosoftSharepoint_ListSites` through `ArcadeJsToolRuntime` and normalizes responses to `IntegrationAuthState`.
-- Authorization uses Arcade auth start with read-only scopes `Sites.Read.All` and `Files.Read.All`.
-- Discovery resolves SharePoint Office documents with mocked/read-only Arcade tool calls:
-  - `MicrosoftSharepoint_GetSite` with `{ site }` when a site URL is provided.
-  - `MicrosoftSharepoint_GetDriveItemByUrl` with `{ web_url }` when an Office web URL is provided.
-  - `MicrosoftSharepoint_GetDriveItem` with `{ drive_id, item_id }` when durable IDs are provided.
-- Plugin-owned routes:
-  - `GET /api/sharepoint/status` returns `{ status }` only.
-  - `POST /api/sharepoint/resolve` accepts `{ siteUrl?, webUrl?, driveId?, driveItemId? }` and returns `{ ref }` canonical metadata only.
-- The settings/status panel queries `GET /api/sharepoint/status` via a relative route and displays a compact status summary.
-- Ref mapping accepts only `.xlsx` Excel and `.pptx` PowerPoint files; unsupported Office/file types fail with stable `SHAREPOINT_INVALID_REF` errors.
+- `ArcadeSharePointProvider.createOfficePreviewUrl()` calls the plugin-owned custom Arcade tool `BoringSharePoint_CreatePreviewUrl` with `{ drive_id, item_id, viewer: "office" }` and normalizes `{ getUrl, expiresAt? }`.
+- `POST /api/sharepoint/preview` accepts either `{ ref }` with a canonical SharePoint document ref or `{ driveId, driveItemId }` durable identity and returns the transient preview result only.
+- The preview route validates canonical refs and rejects token-bearing ref input before calling the provider.
+- The Office preview panel requests the preview URL only while rendering and stores it only in React component state.
+- Preview `getUrl` values are never stored in cloud-ref metadata, route logs, route errors, or session storage.
+- The custom Arcade tool deploy/register step remains an operator runbook task; this repo contains the contract/runtime call and mocked tests only.
 - Tests use mocked Arcade/provider calls only.
-- no Microsoft Graph direct calls
-- no preview iframe or `driveItem:preview`
+- no Microsoft Graph direct calls in boring-ui code
+- no Claude MCP/local MCP gateway dependency
 - no Office edit calls
 - no local import/upload
 - no SharePoint-specific workspace chrome branches
