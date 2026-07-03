@@ -14,6 +14,9 @@ import {
 } from "../shared"
 import { SharePointProviderError } from "./sharePointProvider"
 
+const SHAREPOINT_DURABLE_ID_PATTERN = /^[A-Za-z0-9._~!$'(),;=:@+-]{1,512}$/
+const SECRET_LIKE_ID_PATTERN = /([?&#](access_token|refresh_token|id_token|authorization|cookie)=)|Bearer\s+|token|secret|cookie|authorization/i
+
 export const SHAREPOINT_ROUTE_PATHS = {
   status: "/api/sharepoint/status",
   resolve: "/api/sharepoint/resolve",
@@ -91,10 +94,21 @@ function parsePreviewBody(body: unknown): SharePointDocumentRef | CreateOfficePr
   if (!input.driveId || !input.driveItemId) {
     throw new SharePointProviderError(SHAREPOINT_ERROR_CODES.INVALID_REF, "preview requires ref or driveId + driveItemId")
   }
+  validateDurablePreviewId(input.driveId, "driveId")
+  validateDurablePreviewId(input.driveItemId, "driveItemId")
   if (input.viewer !== undefined && input.viewer !== "office") {
     throw new SharePointProviderError(SHAREPOINT_ERROR_CODES.INVALID_REF, "preview viewer must be office")
   }
   return input.viewer ? { driveId: input.driveId, driveItemId: input.driveItemId, viewer: input.viewer } : { driveId: input.driveId, driveItemId: input.driveItemId }
+}
+
+function validateDurablePreviewId(value: string, label: "driveId" | "driveItemId"): void {
+  if (SECRET_LIKE_ID_PATTERN.test(value)) {
+    throw new SharePointProviderError(SHAREPOINT_ERROR_CODES.REF_CONTAINS_SECRET, `${label} contains forbidden credential-like data`)
+  }
+  if (!SHAREPOINT_DURABLE_ID_PATTERN.test(value)) {
+    throw new SharePointProviderError(SHAREPOINT_ERROR_CODES.INVALID_REF, `${label} must be a valid SharePoint durable identifier`)
+  }
 }
 
 function parseResolveBody(body: unknown): ResolveDriveItemInput {
