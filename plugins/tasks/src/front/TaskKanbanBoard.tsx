@@ -43,7 +43,9 @@ export function TaskKanbanBoard({ adapters }: TaskKanbanBoardProps) {
   const [error, setError] = useState<string | null>(null)
   const [activeTaskId, setActiveTaskId] = useState<string | null>(null)
   const [movingTaskId, setMovingTaskId] = useState<string | null>(null)
+  const [openMenu, setOpenMenu] = useState<"sources" | "columns" | null>(null)
   const requestSeq = useRef(0)
+  const toolbarRef = useRef<HTMLDivElement | null>(null)
   const adaptersById = useMemo(() => new Map(adapters.map((adapter) => [adapter.id, adapter])), [adapters])
 
   useEffect(() => {
@@ -90,6 +92,14 @@ export function TaskKanbanBoard({ adapters }: TaskKanbanBoardProps) {
   useEffect(() => {
     void load()
   }, [load])
+
+  useEffect(() => {
+    const onPointerDown = (event: PointerEvent) => {
+      if (!toolbarRef.current?.contains(event.target as Node)) setOpenMenu(null)
+    }
+    document.addEventListener("pointerdown", onPointerDown)
+    return () => document.removeEventListener("pointerdown", onPointerDown)
+  }, [])
 
   const selectedTasks = useMemo(() => {
     if (!state) return []
@@ -202,12 +212,17 @@ export function TaskKanbanBoard({ adapters }: TaskKanbanBoardProps) {
 
   return (
     <div className="flex h-full min-h-0 flex-col gap-3 p-3">
-      <div className="flex flex-wrap items-center gap-2 rounded-xl border border-border bg-card/70 p-2 shadow-sm">
-        <details className="relative">
-          <summary className="flex h-8 cursor-pointer list-none items-center rounded-lg border border-border bg-background px-3 text-sm font-medium text-foreground shadow-sm hover:bg-muted">
+      <div ref={toolbarRef} className="flex flex-wrap items-center gap-2 rounded-xl border border-border bg-card/70 p-2 shadow-sm">
+        <div className="relative">
+          <button
+            type="button"
+            className="flex h-8 items-center rounded-lg border border-border bg-background px-3 text-sm font-medium text-foreground shadow-sm hover:bg-muted"
+            onClick={() => setOpenMenu((current) => current === "sources" ? null : "sources")}
+            aria-expanded={openMenu === "sources"}
+          >
             Sources {selectedCount}/{adapters.length}
-          </summary>
-          <div className="absolute left-0 z-20 mt-2 w-72 rounded-xl border border-border bg-popover p-2 text-sm text-popover-foreground shadow-xl">
+          </button>
+          {openMenu === "sources" ? <div className="absolute left-0 z-20 mt-2 w-72 rounded-xl border border-border bg-popover p-2 text-sm text-popover-foreground shadow-xl">
             <div className="mb-2 flex items-center justify-between gap-2 border-b border-border pb-2">
               <span className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Task sources</span>
               <button type="button" className="text-xs font-medium text-primary hover:underline" onClick={showAllSources}>All</button>
@@ -223,8 +238,8 @@ export function TaskKanbanBoard({ adapters }: TaskKanbanBoardProps) {
                 </label>
               ))}
             </div>
-          </div>
-        </details>
+          </div> : null}
+        </div>
         <label className="flex items-center gap-2 text-xs font-medium text-muted-foreground">
           Tag
           <select
@@ -236,11 +251,16 @@ export function TaskKanbanBoard({ adapters }: TaskKanbanBoardProps) {
             {tags.map((tag) => <option key={tag} value={tag}>{tag}</option>)}
           </select>
         </label>
-        <details className="relative">
-          <summary className="flex h-8 cursor-pointer list-none items-center rounded-lg border border-border bg-background px-3 text-sm font-medium text-foreground shadow-sm hover:bg-muted">
+        <div className="relative">
+          <button
+            type="button"
+            className="flex h-8 items-center rounded-lg border border-border bg-background px-3 text-sm font-medium text-foreground shadow-sm hover:bg-muted"
+            onClick={() => setOpenMenu((current) => current === "columns" ? null : "columns")}
+            aria-expanded={openMenu === "columns"}
+          >
             Columns {visibleCount}/{totalCount}
-          </summary>
-          <div className="absolute left-0 z-20 mt-2 w-64 rounded-xl border border-border bg-popover p-2 text-sm text-popover-foreground shadow-xl">
+          </button>
+          {openMenu === "columns" ? <div className="absolute left-0 z-20 mt-2 w-64 rounded-xl border border-border bg-popover p-2 text-sm text-popover-foreground shadow-xl">
             <div className="mb-2 flex items-center justify-between gap-2 border-b border-border pb-2">
               <span className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Visible columns</span>
               <button type="button" className="text-xs font-medium text-primary hover:underline" onClick={showAllColumns}>All</button>
@@ -256,8 +276,8 @@ export function TaskKanbanBoard({ adapters }: TaskKanbanBoardProps) {
                 </label>
               ))}
             </div>
-          </div>
-        </details>
+          </div> : null}
+        </div>
         <button
           type="button"
           className="h-8 rounded-lg border border-border bg-background px-3 text-sm font-medium text-foreground shadow-sm hover:bg-muted disabled:cursor-not-allowed disabled:opacity-50"

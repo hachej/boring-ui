@@ -1,9 +1,21 @@
 import type { BoringTaskAdapter, BoringTaskBoardConfig, BoringTaskCard } from "../shared"
 
+interface GitHubMoveIssueInput {
+  owner: string
+  repo: string
+  issueNumber: number
+  statusId: string
+}
+
 interface GitHubIssuesAdapterOptions {
   owner: string
   repo: string
   limit?: number
+  /**
+   * Optional hosted mover. The browser demo intentionally omits this; hosted
+   * apps can route it to a backend that uses `gh` CLI today or GitHub API later.
+   */
+  moveIssue?: (input: GitHubMoveIssueInput) => Promise<BoringTaskCard | void> | BoringTaskCard | void
 }
 
 interface GitHubIssueLabel {
@@ -56,7 +68,20 @@ function descriptionFromBody(body: string | null | undefined): string | undefine
   return compact.length > 180 ? `${compact.slice(0, 177)}…` : compact || undefined
 }
 
-export function createGitHubIssuesAdapter({ owner, repo, limit = 40 }: GitHubIssuesAdapterOptions): BoringTaskAdapter {
+function taskFromIssue(issue: GitHubIssue, adapterId: string): BoringTaskCard {
+  return {
+    id: String(issue.id),
+    number: `#${issue.number}`,
+    title: issue.title,
+    description: descriptionFromBody(issue.body),
+    statusId: issueStatus(issue),
+    tags: issueLabels(issue).filter((label) => !label.toLowerCase().startsWith("state:")),
+    adapterId,
+    url: issue.html_url,
+  }
+}
+
+export function createGitHubIssuesAdapter({ owner, repo, limit = 40, moveIssue }: GitHubIssuesAdapterOptions): BoringTaskAdapter {
   const adapterId = `github:${owner}/${repo}`
   const board: BoringTaskBoardConfig = {
     adapterId,
@@ -64,11 +89,14 @@ export function createGitHubIssuesAdapter({ owner, repo, limit = 40 }: GitHubIss
     columns: GITHUB_COLUMNS,
   }
 
+  const taskCache = new Map<string, BoringTaskCard>()
+  const issueNumberByTaskId = new Map<string, number>()
+
   return {
     id: adapterId,
     label: `GitHub ${owner}/${repo}`,
-    description: "Read-only GitHub Issues adapter; state labels drive columns",
-    capabilities: { move: false },
+    description: moveIssue ? "GitHub Issues adapter; state labels drive columns" : "Read-only GitHub Issues adapter; state labels drive columns",
+    capabilities: { move: Boolean(moveIssue) },
     getBoardConfig: () => board,
     async listTasks(): Promise<BoringTaskCard[]> {
       const params = new URLSearchParams({
@@ -84,18 +112,24 @@ export function createGitHubIssuesAdapter({ owner, repo, limit = 40 }: GitHubIss
         throw new Error(`GitHub issues request failed (${response.status})`)
       }
       const issues = await response.json() as GitHubIssue[]
-      return issues
+      const tasks = issues
         .filter((issue) => !issue.pull_request)
-        .map((issue) => ({
-          id: String(issue.id),
-          number: `#${issue.number}`,
-          title: issue.title,
-          description: descriptionFromBody(issue.body),
-          statusId: issueStatus(issue),
-          tags: issueLabels(issue).filter((label) => !label.toLowerCase().startsWith("state:")),
-          adapterId,
-          url: issue.html_url,
-        }))
+        .map((issue) => {
+          const task = taskFromIssue(issue, adapterId)
+          taskCache.set(task.id, task)
+          issueNumberByTaskId.set(task.id, issue.number)
+          return task
+        })
+      return tasks
     },
+    moveTask: moveIssue ? async ({ taskId, statusId }) => {
+      const issueNumber = issueNumberByTaskId.get(taskId)
+      const cached = taskCache.get(taskId)
+      if (!issueNumber || !cached) throw new Error("GitHub issue is not loaded; refresh tasks and try again.")
+      const moved = await moveIssue({ owner, repo, issueNumber, statusId })
+      const next = moved ?? { ...cached, statusId }
+      taskCache.set(taskId, next)
+      return next
+    } : undefined,
   }
 }

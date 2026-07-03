@@ -1,5 +1,6 @@
 import { IconButton } from "@hachej/boring-ui-kit"
 import { useAppLeftOverlayChrome, type BoringFrontAppLeftOverlayProps } from "@hachej/boring-workspace/plugin"
+import { X } from "lucide-react"
 import { createGitHubIssuesAdapter } from "./githubIssuesAdapter"
 import { createMockTaskAdapter } from "./mockAdapter"
 import { TaskKanbanBoard } from "./TaskKanbanBoard"
@@ -8,14 +9,6 @@ const demoAdapters = [
   createMockTaskAdapter(),
   createGitHubIssuesAdapter({ owner: "hachej", repo: "boring-ui" }),
 ]
-
-function XGlyph({ className }: { className?: string }) {
-  return (
-    <svg className={className} viewBox="0 0 24 24" fill="none" aria-hidden="true">
-      <path d="M6 6l12 12M18 6L6 18" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" />
-    </svg>
-  )
-}
 
 function TasksGlyph({ className }: { className?: string }) {
   return (
@@ -56,7 +49,7 @@ export function TasksOverlay({ onClose }: BoringFrontAppLeftOverlayProps) {
             title="Close"
             className="text-muted-foreground hover:text-foreground"
           >
-            <XGlyph className="size-3" />
+            <X className="size-3" strokeWidth={1.75} />
           </IconButton>
         </div>
       </header>

@@ -25,6 +25,7 @@ export function assertUniqueAppLeftActionIds(actions: readonly AppLeftPaneAction
 
 export function usePluginAppLeftActions({
   plugins,
+  activeOverlay,
   setActiveOverlay,
 }: {
   plugins: readonly CapturedFrontPlugin[]
@@ -54,6 +55,7 @@ export function usePluginAppLeftActions({
           createElement(Trailing),
         ) : undefined,
         emphasis: action.emphasis,
+        active: activeOverlay === action.id,
         onClick: () => {
           setActiveOverlay((current) => current === action.id ? null : action.id)
         },

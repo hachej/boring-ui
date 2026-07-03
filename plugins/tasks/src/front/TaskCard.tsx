@@ -9,6 +9,15 @@ interface TaskCardProps {
   onDragEnd: () => void
 }
 
+function ExternalLinkGlyph({ className }: { className?: string }) {
+  return (
+    <svg className={className} viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <path d="M14 5h5v5M19 5l-9 9" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" />
+      <path d="M11 6H7a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h9a2 2 0 0 0 2-2v-4" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" />
+    </svg>
+  )
+}
+
 export function TaskCard({ task, draggable, unmapped = false, onDragStart, onDragEnd }: TaskCardProps) {
   const tags = task.tags?.slice(0, 4) ?? []
   const hiddenTagCount = Math.max((task.tags?.length ?? 0) - tags.length, 0)
@@ -25,7 +34,23 @@ export function TaskCard({ task, draggable, unmapped = false, onDragStart, onDra
       ].join(" ")}
       data-task-id={task.id}
     >
-      <h3 className="text-sm font-semibold leading-snug text-foreground">{task.title}</h3>
+      <div className="flex items-start gap-2">
+        <h3 className="min-w-0 flex-1 text-sm font-semibold leading-snug text-foreground">{task.title}</h3>
+        {task.url ? (
+          <a
+            href={task.url}
+            target="_blank"
+            rel="noreferrer"
+            draggable={false}
+            onClick={(event) => event.stopPropagation()}
+            className="grid size-7 shrink-0 place-items-center rounded-lg text-muted-foreground opacity-80 hover:bg-muted hover:text-foreground group-hover:opacity-100"
+            aria-label={`Open ${task.number} in native task system`}
+            title="Open in native task system"
+          >
+            <ExternalLinkGlyph className="size-3.5" />
+          </a>
+        ) : null}
+      </div>
       <div className="mt-3 flex flex-wrap gap-1.5">
         <span className="rounded-full border border-border bg-muted/50 px-2 py-0.5 font-mono text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
           {task.number}

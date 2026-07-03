@@ -42,7 +42,8 @@
     "clean": "rm -rf dist .tsbuildinfo"
   },
   "dependencies": {
-    "@hachej/boring-ui-kit": "workspace:*"
+    "@hachej/boring-ui-kit": "workspace:*",
+    "lucide-react": "^1.21.0"
   },
   "peerDependencies": {
     "@hachej/boring-workspace": "workspace:*",
