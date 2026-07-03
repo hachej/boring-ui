@@ -1,95 +1,81 @@
 # Boring Loop
 
-Boring Loop is the smallest useful maintainer system:
-
 ```text
 /feedback -> enriched GitHub issue
 /triage   -> route the issue through gates
 ```
 
-Autonomy is not a mood. It is a label plus passed gates.
-
-Boundary: Boring Loop decides what should happen next for GitHub work. Actual
-coding work still follows the canonical workflow in
-[`AGENT_WORKFLOW.md`](AGENT_WORKFLOW.md).
+Rule: autonomy = label + passed gates.
 
 ## One Screen
-
-Every issue card should be understandable from these columns:
 
 | Column | Meaning | Example |
 | --- | --- | --- |
 | State | Can work move? | `queued`, `blocked`, `active`, `ready`, `done` |
 | Phase | What is next? | `triage`, `grill`, `plan`, `implement`, `review`, `merge` |
 | Track | Who merges? | `fast` or `owner` |
-| Gate | Why stopped? | `triage`, `clarity`, `plan`, `proof`, `merge` |
-| Proof | Is it verified? | tests, CI, demo, screenshot, waiver |
+| Gate | Why stopped? | `intake`, `triage`, `clarity`, `risk`, `flag`, `plan`, `implementation`, `proof`, `merge` |
+| Flag | How is runtime exposure controlled? | `not-needed`, `flag:<name>` |
+| Proof | Is it verified? | tests, CI, proof comment, demo, screenshot, waiver |
+| Session comments | Which Pi threads continue it? | id, purpose, scope, reason |
 | Next | One action | `/loop-grill`, `/loop-plan`, `/loop-implement` |
 
-The UI should show this as chips plus one sentence, not a wall of text.
-`gate` is structured state, not a GitHub label.
+- UI: chips plus one sentence.
 
 ## Skills
 
-- [`boring-feedback`](../../.agents/skills/boring-feedback/SKILL.md):
-  create the enriched issue.
-- [`boring-triage`](../../.agents/skills/boring-triage/SKILL.md):
-  run `/triage`; classify state, track, next gate, routing, proof, and merge
-  decisions.
-- [`loop-grill`](../../.agents/skills/loop-grill/SKILL.md):
-  clarify blocked issues through grill-me and ask-user.
-- [`loop-plan`](../../.agents/skills/loop-plan/SKILL.md):
-  create the smallest useful plan and run thermo review when needed.
-- [`loop-implement`](../../.agents/skills/loop-implement/SKILL.md):
-  implement, review, prove, and prepare a PR.
+- [`boring-feedback`](../../.agents/skills/boring-feedback/SKILL.md): create issue.
+- [`boring-triage`](../../.agents/skills/boring-triage/SKILL.md): classify gate.
+- [`boring-orchestration`](../../.agents/skills/boring-orchestration/SKILL.md): run sweep.
+- [`boring-loop-grill`](../../.agents/skills/boring-loop-grill/SKILL.md): run `/loop-grill`.
+- [`boring-loop-plan`](../../.agents/skills/boring-loop-plan/SKILL.md): run `/loop-plan`.
+- [`boring-loop-implement`](../../.agents/skills/boring-loop-implement/SKILL.md): run `/loop-implement`.
 - [`sources/theo_loop.md`](sources/theo_loop.md): source transcript.
 - [`sources/steinberger_loop.md`](sources/steinberger_loop.md): source notes.
 
-## Procedures
-
-Keep the loop about routing and gates. Put mechanics here:
-
-- [`procedures/branch-worktree.md`](procedures/branch-worktree.md):
-  branch, worktree, lane, and stacked-PR mechanics.
-- [`procedures/well-documented-issue.md`](procedures/well-documented-issue.md):
-  issue intake shape, context, acceptance, proof path, and first plan.
-- [`procedures/proof-of-work.md`](procedures/proof-of-work.md):
-  proof comment, demo workspace proof, and evidence.
-- [`procedures/owner-review-card.md`](procedures/owner-review-card.md):
-  human review handoff.
-
 ## Labels
-
-Use labels for routing, not judgment essays.
 
 | Kind | Rule | Values |
 | --- | --- | --- |
 | `state:*` | exactly one | `queued`, `blocked`, `active`, `ready`, `done` |
 | `phase:*` | exactly one | `triage`, `grill`, `plan`, `implement`, `review`, `merge` |
 | `track:*` | exactly one | `owner` by default, `fast` only after risk gate |
-| taxonomy | optional | `source:feedback`, `bug`, `ux`, `docs`, `plugin:*`, `package:*` |
+| source | optional | `source:feedback` |
 
-Structured fields carry the details: `gate`, `risk`, `proofRequired`,
-`proofState`, `reviewState`, `reviewedSha`, `mergeMode`, `nextAction`.
+- Labels route only.
+- No taxonomy labels: `bug`, `ui`, `accessibility`, `package:*`, `plugin:*`,
+  `gate:*`.
+- Details go in fields: `area`, `kind`, `gate`, `risk`, `flag`,
+  `proofRequired`, `proofState`, `reviewState`, `reviewedSha`, `mergeMode`,
+  `nextAction`, session comments.
+
+## Session Continuity
+
+- Session ids are comments, not labels or fixed fields.
+- Comment: id, purpose, scope, replacement reason.
+- Reuse if repo, issue/PR, and branch still match.
+- New session only when missing, inaccessible, stale, or wrong scope.
 
 ## Gates
 
-Evaluate gates top to bottom and stop at the first failing row.
+- Evaluate top to bottom.
+- Stop at first failing row.
 
 | Gate | Passes When | If It Fails |
 | --- | --- | --- |
-| `intake` | issue has context, tags, redaction note, first plan | fix issue body |
+| `intake` | issue has context, redaction note, first plan | fix issue body |
 | `triage` | queued issue has been classified into the first real gate | `/triage` |
 | `clarity` | issue is clear enough | `/loop-grill` |
 | `risk` | `track:owner` is confirmed or upgraded to `track:fast` | keep owner track |
+| `flag` | no flag needed, or safe flag/abstraction path exists | choose flag/abstraction |
 | `plan` | inline plan is enough, or plan file passed thermo review | `/loop-plan` |
 | `implementation` | PR exists and review loop is clean | `/loop-implement` |
-| `proof` | final proof comment plus tests, CI, demo, screenshots, or waiver are current | run proof |
+| `proof` | tests, CI, GitHub proof comment, demo, screenshots, or waiver are current | run proof |
 | `merge` | fast-track merge or Julien review is allowed | merge or ask owner |
 
 ```mermaid
 flowchart LR
-  Feedback["/feedback"] --> Issue["GitHub issue\nstate:queued phase:triage\ngate:triage"]
+  Feedback["/feedback"] --> Issue["GitHub issue\nstate:queued phase:triage"]
   Issue --> Triage["/triage"]
   Triage -->|"unclear"| Grill["/loop-grill\nstate:blocked phase:grill"]
   Grill --> Triage
@@ -106,62 +92,46 @@ flowchart LR
 
 ## Fast Track
 
-New work starts `track:owner`. `track:fast` is an upgrade that means "merge
-automatically once every gate passes."
+- Default: `track:owner`.
+- `track:fast` requires trusted author, non-draft worker-owned PR, small
+  low-risk diff, obvious acceptance, proof path, safe flag/default.
+- `track:fast` forbids auth, billing, permissions, secrets, migrations, public
+  API, release, deletion-heavy work, broad refactor.
+- Merge requires current review, thermo, tests, CI, proof comment, demo proof.
+- If visual review is required: approval must match the current artifact.
+- Otherwise: `track:owner`; Julien reviews.
 
-Allowed only when all are true:
+## Procedures
 
-- author/agent is trusted by repo policy and the branch is owned by one lane or
-  explicitly trusted owner/agent;
-- small low-risk diff with reduced blast radius;
-- no auth, billing, permissions, secrets, migrations, public API, release,
-  deletion-heavy, or broad refactor work;
-- acceptance criteria and proof path are obvious;
-- review, thermo check, tests, CI, and demo proof are current for the head SHA.
-
-Everything else is `track:owner`: agents may prepare the PR, but Julien reviews
-before merge.
+- [Trunk, flags, review budget](procedures/trunk-flags-review-budget.md)
+- [Issue plans](procedures/issue-plans.md)
+- [Well-documented issues](procedures/well-documented-issue.md)
+- [Proof of work](procedures/proof-of-work.md)
+- [Owner review cards](procedures/owner-review-card.md)
+- [Visual review](procedures/visual-review.md)
 
 ## Loop Commands
 
-`/feedback`: create a GitHub issue directly, enriched with safe context,
-correct labels, and a first plan. If the report is unclear, create the issue as
-`state:blocked phase:grill` with gate `clarity`.
-
-[`/loop-grill`](../../.agents/skills/loop-grill/SKILL.md): use the grill-me
-skill and ask-user pane. This can run now or wait asynchronously in the pending
-session list. Exit when the issue is clear.
-
-[`/loop-plan`](../../.agents/skills/loop-plan/SKILL.md): produce the smallest
-useful plan. Use an inline plan for small work. Use a plan file plus
-thermo-nuclear review for important, risky, or multi-PR work.
-
-[`/loop-implement`](../../.agents/skills/loop-implement/SKILL.md): implement
-the plan, run review/fix rounds, open/update the PR, and collect proof.
-
-One implementation lane owns one issue/PR and may use bounded helpers. Use
-procedures for branch/worktree, proof, and owner handoff details.
-
-`/triage`: orchestrate the queue. It should perform one next action per issue,
-then record the new state/gate.
+- `/feedback`: create issue; stop. If unclear: `state:blocked phase:grill`.
+- `/loop-grill`: grill-me plus ask-user; exit when clear.
+- `/loop-plan`: smallest plan; plan file plus thermo for risky/multi-PR work.
+- `/loop-implement`: code, PR, review/fix rounds, thermo, proof.
+- `/triage`: one next action per issue; record state/gate.
 
 ## Product Shape
 
-- Feedback form creates GitHub issues with context and first plan.
-- Triage board shows state, phase, track, gate, PR, proof, and next action.
-- Ask-user pane holds blocked grill/owner questions per session.
-- PR review pane focuses one PR: diff, findings, fixes, reviewed SHA, proof.
-- Demo proof pane starts the app when useful and tells Julien exactly what to
-  verify.
-- Owner review card shows PR, issue, risk, proof, demo URL when relevant, and
-  the exact decision needed.
-- Proof follows [`procedures/proof-of-work.md`](procedures/proof-of-work.md);
-  the review card summarizes that proof instead of replacing it.
+- Feedback form: GitHub issue, context, first plan.
+- Triage board: state, phase, track, gate, PR, proof, sessions, next action.
+- Ask-user: grill questions and fallback owner asks.
+- Visual-review: artifact, choices, session blocker.
+- PR review: diff, findings, fixes, reviewed SHA, proof.
+- Demo proof: app ready plus exact checks.
 
 ## Maintenance
 
 - Add a gate row before adding a new phase.
 - Add a structured field before adding a label.
+- Add a session comment before creating an unlinked follow-up thread.
 - Keep each skill under one screen.
 - Keep `/feedback` write-only: it creates the issue and stops.
 - Keep `/triage` action-light: one issue gets one next action per sweep.

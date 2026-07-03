@@ -23,7 +23,11 @@ Triage answers: what is the first unmet gate, then does one next action.
 | `state:*` | exactly one | `queued`, `blocked`, `active`, `ready`, `done` |
 | `phase:*` | exactly one | `triage`, `grill`, `plan`, `implement`, `review`, `merge` |
 | `track:*` | exactly one | `owner` by default, `fast` only after risk gate |
-| taxonomy | optional | `source:feedback`, `bug`, `ux`, `docs`, `plugin:*`, `package:*` |
+| source | optional | `source:feedback` only |
+
+- No taxonomy labels: `bug`, `ui`, `accessibility`, `package:*`, `plugin:*`,
+  `gate:*`.
+- Put details in body/card.
 
 ## Gate Table
 
@@ -34,6 +38,7 @@ Triage answers: what is the first unmet gate, then does one next action.
 | duplicate, invalid, out of scope | `state:done` | none |
 | unclear | `state:blocked phase:grill` | `clarity` |
 | risk classification | keep `track:owner`; upgrade to `track:fast` only if eligible | `risk` |
+| runtime exposure is not controlled | keep current state/phase | `flag` |
 | needs design or sequencing | `state:active phase:plan` | `plan` |
 | clear and no PR | `state:active phase:implement` | `implementation` |
 | PR lacks current review, has unresolved comments, or accepted findings remain | `state:active phase:review` | `implementation` |
@@ -45,11 +50,12 @@ Triage answers: what is the first unmet gate, then does one next action.
 | Gate | Action |
 | --- | --- |
 | `intake` | repair the issue using `docs/kanzen/procedures/well-documented-issue.md` |
-| `clarity` | use `loop-grill`: grill-me plus ask-user; stay `state:blocked phase:grill` |
+| `clarity` | use `boring-loop-grill`: grill-me plus ask-user; stay `state:blocked phase:grill` |
 | `triage` | classify risk, plan need, implementation state, proof, and merge readiness |
 | `risk` | keep `track:owner`; upgrade to `track:fast` only when all fast-track rules pass |
-| `plan` | use `loop-plan`: smallest useful plan; plan file plus thermo review for risky or multi-PR work |
-| `implementation` | use `loop-implement`: one accountable lane for one issue/PR |
+| `flag` | require `not-needed`, a safe feature flag, or an abstraction path before code proceeds |
+| `plan` | use `boring-loop-plan`: smallest useful plan; plan file plus thermo review for risky or multi-PR work |
+| `implementation` | use `boring-loop-implement`: one accountable lane for one issue/PR |
 | `proof` | follow `docs/kanzen/procedures/proof-of-work.md`; PR body proof is not a substitute for the final proof comment |
 | `merge` | fast-track merge or `docs/kanzen/procedures/owner-review-card.md` |
 
@@ -102,5 +108,5 @@ Next action:
 Why:
 ```
 
-Never end with vague review. Say the exact next command: `/loop-grill`,
-`/loop-plan`, `/loop-implement`, proof, fast-track merge, or owner review.
+End with exact next action: `/loop-grill`, `/loop-plan`, `/loop-implement`,
+proof, fast-track merge, or owner review.

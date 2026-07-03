@@ -18,7 +18,7 @@ context.
 - Acceptance: how the fix/change will be judged done.
 - Proof path: tests, demo workspace, screenshot, manual steps, or waiver.
 - First plan: likely area, smallest next step, known uncertainty.
-- Routing: source/taxonomy labels plus Kanzen `state:*`, `phase:*`, `track:*`,
+- Routing: optional `source:feedback` plus Kanzen `state:*`, `phase:*`, `track:*`,
   and a structured `gate` field. `gate` is not a GitHub label.
 
 ## Template
