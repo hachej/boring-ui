@@ -253,7 +253,7 @@ Acceptance:
 - Cards can be dragged across columns.
 - Within-column reorder is disabled or snaps back.
 - Move calls the adapter boundary, not local-only hardcoded mutation.
-- Baseline route/model/component tests cover provider list, board config, task list, move, move/revert, and workspace isolation.
+- Baseline route/model/component tests cover adapter list, board config, task list, move, move/revert, and workspace isolation.
 - No task-specific branches in `WorkspaceAgentFront`.
 
 ### Slice 2 — adapter hardening
@@ -328,14 +328,14 @@ Narrow these once the files exist.
 | External adapter credentials leak | All adapter calls are server-side; browser sees only normalized task contracts. |
 | Hosted auth bypass | Later DB adapter must use boring-core workspace membership/auth, not a plugin-local permission model. |
 | Large external trackers need pagination/filtering | V1 `listTasks()` is unpaginated for mock/small boards. External adapters should add an optional query/cursor input as an additive interface change before GitHub/Linear-scale boards ship. |
-| Unknown task statuses drop cards | Unknown `statusId` values render in `defaultColumnId` or a non-droppable `Unmapped` column; never filter them out silently. |
+| Unknown task statuses drop cards | Unknown `statusId` values render in a non-droppable `Unmapped` column; never filter them out silently. |
 | Board surface chosen too late | #438 currently exposes overlay-shaped app-left actions; implementation must explicitly choose overlay vs workbench panel before coding slice 1. |
 | Stale data surprises users | V1 is fetch-on-open/refetch-after-move only; document no live sync until a later polling/SSE slice. |
 
 ## Open questions
 
 1. Final app-left/explorer contribution API name and opening surface after PR #438 lands. This is a hard precondition for implementation, not a detail to discover mid-slice. #438 is currently overlay-shaped; a Kanban board may need a workbench panel/surface instead.
-2. Whether `boring-tasks` should live as a publishable `plugins/boring-tasks` package or app-local plugin first. Default: publishable plugin package because multiple apps may want it.
+2. Whether `boring-tasks` should live as a publishable `plugins/tasks` package or app-local plugin first. Default: publishable plugin package because multiple apps may want it.
 3. Whether the Postgres adapter belongs in `boring-tasks` or a child-app adapter package. Default: keep the adapter interface in `boring-tasks`, allow app-owned adapter registration later if core auth coupling gets heavy.
 4. How external adapters get per-workspace source configuration, such as GitHub repo or Linear team. Options include one adapter id per configured source (for example `github:owner/repo`) or adapter-owned workspace settings. Either way, source configuration must stay out of the Kanban UI plugin.
 
