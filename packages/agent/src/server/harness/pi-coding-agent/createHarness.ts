@@ -16,6 +16,7 @@ import {
   type SlashCommandInfo,
 } from "@mariozechner/pi-coding-agent";
 import type { AgentHarness, AgentSlashCommandSummary, SendMessageInput, RunContext } from "../../../shared/harness.js";
+import { ErrorCode } from "../../../shared/error-codes.js";
 import { createLogger } from "../../logging.js";
 import type { AgentTool } from "../../../shared/tool.js";
 import type { TelemetrySink } from "../../../shared/telemetry.js";
@@ -173,7 +174,7 @@ function buildToolErrorResultExtension(): ExtensionFactory {
 function modelUnavailableError(input: SendMessageInput): Error {
   return Object.assign(new Error('Requested model is not available.'), {
     statusCode: 400,
-    code: 'TOOL_INVALID_INPUT',
+    code: ErrorCode.enum.TOOL_INVALID_INPUT,
     details: { provider: input.model?.provider, model: input.model?.id },
   })
 }
