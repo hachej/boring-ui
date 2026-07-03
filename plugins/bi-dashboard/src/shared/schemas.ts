@@ -26,7 +26,7 @@ export const dashboardQuerySchema = z.union([
 
 export const dashboardGridPropsSchema = z.object({
   title: z.string().optional(),
-  columns: z.union([z.literal(1), z.literal(2), z.literal(3), z.literal(4), z.literal(6), z.literal(12)]).optional(),
+  columns: z.union([z.literal(1), z.literal(2), z.literal(3), z.literal(4), z.literal(5), z.literal(6), z.literal(12)]).optional(),
 })
 
 export const bslMetricPropsSchema = z.object({
