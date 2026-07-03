@@ -92,7 +92,7 @@ export interface BoringTaskColumn {
 }
 
 export interface BoringTaskBoardConfig {
-  adapterId: string;
+  sourceId: string;
   columns: BoringTaskColumn[];
   // Reserved for future create flows; unmapped existing cards still render in
   // the non-droppable Unmapped overflow column.
@@ -102,14 +102,14 @@ export interface BoringTaskBoardConfig {
 export interface BoringTaskCard {
   id: string;
   // Display identifier only (for example "#42", "ENG-123", "kata#abc4").
-  // It is adapter-scoped and not guaranteed globally unique; `id` is the stable key.
+  // It is source-scoped and not guaranteed globally unique; `id` is the stable key.
   number: string;
   title: string;
   description?: string;
   statusId: BoringTaskStatusId;
-  // Lets card-level actions route back to the right adapter without relying on
-  // ambient selector state.
-  adapterId: string;
+  // Lets card-level actions route back to the right task source without relying
+  // on ambient selector state.
+  sourceId: string;
   url?: string;
 }
 
@@ -211,6 +211,12 @@ GET  /api/boring-tasks/adapters
 GET  /api/boring-tasks/adapters/:adapterId/board
 GET  /api/boring-tasks/adapters/:adapterId/tasks
 POST /api/boring-tasks/adapters/:adapterId/tasks/:taskId/move
+
+# Before real multi-source integrations ship, graduate to:
+GET  /api/boring-tasks/sources
+GET  /api/boring-tasks/sources/:sourceId/board
+GET  /api/boring-tasks/sources/:sourceId/tasks
+POST /api/boring-tasks/sources/:sourceId/tasks/:taskId/move
 ```
 
 Route responses should use stable error codes and typed JSON contracts. Initial codes:
@@ -229,6 +235,89 @@ Do not leak adapter credentials or raw adapter errors to the browser.
 Every request must resolve a `BoringTaskAdapterContext` before touching adapter state. Even the mock adapter should be workspace-scoped so the first slice does not bake in a global task board assumption. Route tests must prove tasks and moves are isolated by workspace.
 
 For hosted/core apps, later Postgres-backed tasks should use boring-core workspace membership and auth; the task plugin should not invent its own auth model.
+
+### 8. Multi-source integration model
+
+Use two words consistently:
+
+- **Adapter type** — code that knows one external system, for example `github`, `kata`, `linear`, or `boring-db`.
+- **Task source** — one configured instance of an adapter type, for example `github-hachej-boring-ui`, `github-hachej-boring-ui-v2`, `kata-local`, or `linear-eng-team`.
+
+The Kanban UI selects **task sources**, not adapter types. This is what makes multi-repo GitHub and local Kata coexist without special UI cases.
+
+Add a source registry in front of the adapter calls:
+
+```ts
+export interface BoringTaskSourceSummary {
+  id: string;              // URL-safe opaque id, e.g. "github-hachej-boring-ui"
+  adapterType: string;     // non-behavioral metadata: "github", "kata", "linear", "boring-db"
+  label: string;           // user-facing label, e.g. "GitHub hachej/boring-ui"
+  description?: string;
+  capabilities: { move: boolean };
+}
+
+export interface BoringTaskSourceConfig {
+  id: string;              // URL-safe stable source id; do not parse it in the UI
+  adapterType: string;
+  label?: string;
+  settings: Record<string, unknown>; // adapter-owned, validated server-side
+}
+
+export interface BoringTaskListQuery {
+  limit?: number;
+  cursor?: string;
+}
+
+export interface BoringTaskListResult {
+  tasks: BoringTaskCard[];
+  nextCursor?: string;
+}
+
+export interface BoringTaskSourceRegistry {
+  listSources(ctx: BoringTaskAdapterContext): Promise<BoringTaskSourceSummary[]>;
+  getSource(ctx: BoringTaskAdapterContext, sourceId: string): Promise<BoringTaskSourceRuntime>;
+}
+
+export interface BoringTaskSourceRuntime extends BoringTaskSourceSummary {
+  getBoardConfig(ctx: BoringTaskAdapterContext): Promise<BoringTaskBoardConfig>;
+  listTasks(ctx: BoringTaskAdapterContext, query?: BoringTaskListQuery): Promise<BoringTaskListResult>;
+  moveTask?(ctx: BoringTaskAdapterContext, input: {
+    taskId: string;
+    statusId: BoringTaskStatusId;
+  }): Promise<BoringTaskCard>;
+}
+```
+
+The existing `BoringTaskAdapter` can remain a simple source runtime for slice 1, but the production integration should grow toward `BoringTaskSourceRegistry` before adding multiple real systems.
+
+Source examples:
+
+```ts
+[
+  { id: "github-hachej-boring-ui", adapterType: "github", label: "GitHub hachej/boring-ui", settings: { owner: "hachej", repo: "boring-ui" } },
+  { id: "github-hachej-boring-ui-v2", adapterType: "github", label: "GitHub hachej/boring-ui-v2", settings: { owner: "hachej", repo: "boring-ui-v2" } },
+  { id: "kata-local", adapterType: "kata", label: "Kata local", settings: { mode: "local-cli", workspace: "current" } },
+  { id: "boring-db-workspace", adapterType: "boring-db", label: "Workspace tasks", settings: { scope: "workspace" } }
+]
+```
+
+Adapter-specific ownership:
+
+- GitHub adapter validates `owner/repo`, resolves credentials server-side, maps labels/state to columns, and performs issue label/close mutations only when configured. Multiple repos are multiple task sources using the same adapter type.
+- Kata adapter is backend-only. Local mode can shell out to `kata --json` or talk to a local/remote Kata daemon; the browser never calls Kata directly. `kata-local` should be read/write only when the hosted/runtime environment actually owns that Kata daemon or CLI context.
+- Linear/Plane/custom adapters resolve their workspace/team/project identifiers from source settings and keep tokens server-side.
+- boring-db adapter uses boring-core workspace/auth and stores tasks in the app Postgres.
+
+Route shape should therefore evolve from adapter ids to source ids before real integrations ship:
+
+```txt
+GET  /api/boring-tasks/sources
+GET  /api/boring-tasks/sources/:sourceId/board
+GET  /api/boring-tasks/sources/:sourceId/tasks?cursor=...&limit=...
+POST /api/boring-tasks/sources/:sourceId/tasks/:taskId/move
+```
+
+The UI remains unchanged conceptually: it renders a source selector, fetches the selected source's board config and task cards, and calls the selected source's move endpoint. It must not know whether a source is GitHub, Kata, Linear, or Postgres. `adapterType` is metadata for badges/debug/docs only; the UI must not branch behavior on it. The current slice-1 adapter selector is therefore a temporary one-source-per-adapter shape; before multi-system support, rename the UX and routes around task sources.
 
 ## Implementation slices
 
@@ -285,16 +374,24 @@ Acceptance:
 - The Kanban board uses the same adapter interface as the mock adapter.
 - Agent tools use the same task service layer as routes.
 
-### Slice 4 — external adapters
+### Slice 4 — source registry and external adapters
 
-Add adapters one at a time:
+Add the source registry before adding multiple real systems. Then add adapters one at a time:
 
-1. GitHub Issues read-only, then status-label/close support.
-2. Kata via backend adapter if needed.
-3. Linear via API.
-4. Plane/custom API.
+1. GitHub Issues read-only for multiple configured repos, e.g. `github-hachej-boring-ui` and `github-hachej-boring-ui-v2`; then status-label/close support.
+2. Kata backend adapter, starting with `kata-local` for local CLI/daemon contexts.
+3. boring-db Postgres source if Slice 3 did not already ship it.
+4. Linear via API.
+5. Plane/custom API.
 
-Each external adapter must document auth, status/column mapping, mutation support, and failure semantics. Columns are adapter-supplied from the start. Adapters that cannot safely move between native states should set `capabilities.move = false` or mark specific columns with `acceptsDrop: false`. Adapter docs must state whether native status mapping is lossy and whether moves are safe.
+Each external adapter must document auth, source configuration, status/column mapping, mutation support, pagination, and failure semantics. Columns are adapter-supplied from the start. Adapters that cannot safely move between native states should set `capabilities.move = false` or mark specific columns with `acceptsDrop: false`. Adapter docs must state whether native status mapping is lossy and whether moves are safe.
+
+Acceptance:
+
+- UI lists at least two task sources from the same adapter type without special cases.
+- GitHub multi-repo uses source ids, not hardcoded repo constants in the Kanban UI.
+- Kata local integration is backend-mediated; no browser direct call to the Kata CLI/daemon.
+- Source-specific settings and credentials stay outside the UI plugin.
 
 ## Testing plan
 
@@ -327,7 +424,9 @@ Narrow these once the files exist.
 | Drag/drop library complexity spreads | Contain `@dnd-kit` usage inside `TaskKanbanBoard` and child components. |
 | External adapter credentials leak | All adapter calls are server-side; browser sees only normalized task contracts. |
 | Hosted auth bypass | Later DB adapter must use boring-core workspace membership/auth, not a plugin-local permission model. |
-| Large external trackers need pagination/filtering | V1 `listTasks()` is unpaginated for mock/small boards. External adapters should add an optional query/cursor input as an additive interface change before GitHub/Linear-scale boards ship. |
+| Large external trackers need pagination/filtering | V1 `listTasks()` is unpaginated for mock/small boards. Add `BoringTaskListQuery` / `BoringTaskListResult` with cursor before GitHub/Linear-scale boards ship. |
+| Multi-source systems get hardcoded into UI | Introduce task sources (`sourceId`) above adapter types before real integrations. Multi-repo GitHub and local Kata are source configs behind the same generic selector. |
+| Local Kata leaks host assumptions to browser | Kata integration must be backend-mediated through a CLI/daemon adapter; browser receives only normalized task cards. |
 | Unknown task statuses drop cards | Unknown `statusId` values render in a non-droppable `Unmapped` column; never filter them out silently. |
 | Board surface chosen too late | #438 currently exposes overlay-shaped app-left actions; implementation must explicitly choose overlay vs workbench panel before coding slice 1. |
 | Stale data surprises users | V1 is fetch-on-open/refetch-after-move only; document no live sync until a later polling/SSE slice. |
@@ -337,7 +436,8 @@ Narrow these once the files exist.
 1. Final app-left/explorer contribution API name and opening surface after PR #438 lands. This is a hard precondition for implementation, not a detail to discover mid-slice. #438 is currently overlay-shaped; a Kanban board may need a workbench panel/surface instead.
 2. Whether `boring-tasks` should live as a publishable `plugins/tasks` package or app-local plugin first. Default: publishable plugin package because multiple apps may want it.
 3. Whether the Postgres adapter belongs in `boring-tasks` or a child-app adapter package. Default: keep the adapter interface in `boring-tasks`, allow app-owned adapter registration later if core auth coupling gets heavy.
-4. How external adapters get per-workspace source configuration, such as GitHub repo or Linear team. Options include one adapter id per configured source (for example `github:owner/repo`) or adapter-owned workspace settings. Either way, source configuration must stay out of the Kanban UI plugin.
+4. Where per-workspace task source configuration is stored. Default: app/core-owned settings or plugin server config, not the Kanban UI. The UI receives only source summaries from `/sources`.
+5. Whether source ids should be user-visible or opaque stable ids with labels. Default: source ids must be URL-safe opaque identifiers; the UI displays `label` and never parses the id.
 
 ## Definition of done for implementation slice 1
 
