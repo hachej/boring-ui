@@ -1,6 +1,6 @@
 {
   "name": "@hachej/boring-bi-dashboard",
-  "version": "0.1.64",
+  "version": "0.1.63",
   "type": "module",
   "private": false,
   "license": "MIT",
@@ -50,9 +50,7 @@
     },
     "./package.json": "./package.json"
   },
-  "sideEffects": [
-    "*.css"
-  ],
+  "sideEffects": false,
   "scripts": {
     "build": "tsup",
     "typecheck": "tsc --noEmit",
