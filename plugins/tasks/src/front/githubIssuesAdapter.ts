@@ -22,6 +22,12 @@ interface GitHubIssueLabel {
   name?: string
 }
 
+interface GitHubMilestone {
+  id: number
+  title: string
+  html_url?: string
+}
+
 interface GitHubIssue {
   id: number
   number: number
@@ -30,6 +36,7 @@ interface GitHubIssue {
   html_url?: string
   state: "open" | "closed"
   labels?: GitHubIssueLabel[]
+  milestone?: GitHubMilestone | null
   pull_request?: unknown
 }
 
@@ -76,6 +83,11 @@ function taskFromIssue(issue: GitHubIssue, adapterId: string): BoringTaskCard {
     description: descriptionFromBody(issue.body),
     statusId: issueStatus(issue),
     tags: issueLabels(issue).filter((label) => !label.toLowerCase().startsWith("state:")),
+    epic: issue.milestone ? {
+      id: String(issue.milestone.id),
+      title: issue.milestone.title,
+      url: issue.milestone.html_url,
+    } : undefined,
     adapterId,
     url: issue.html_url,
   }

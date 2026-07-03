@@ -20,6 +20,7 @@ export const mockTasks: BoringTaskCard[] = [
     description: "Keep number, title, description, and status small enough for every adapter to map into.",
     statusId: "triage",
     tags: ["contract", "adapter"],
+    epic: { id: "adapter-platform", title: "Adapter platform" },
     adapterId: "mock",
   },
   {
@@ -29,6 +30,7 @@ export const mockTasks: BoringTaskCard[] = [
     description: "Columns are data from the adapter; the board does not hardcode Todo/In Progress/Done.",
     statusId: "ready",
     tags: ["columns", "config"],
+    epic: { id: "board-ux", title: "Board UX" },
     adapterId: "mock",
   },
   {
@@ -38,6 +40,7 @@ export const mockTasks: BoringTaskCard[] = [
     description: "A drop calls moveTask(taskId, statusId). The adapter decides what that means for GitHub, Linear, Kata, or DB tasks.",
     statusId: "doing",
     tags: ["drag-drop", "action-loop"],
+    epic: { id: "adapter-platform", title: "Adapter platform" },
     adapterId: "mock",
   },
   {
@@ -47,6 +50,7 @@ export const mockTasks: BoringTaskCard[] = [
     description: "Create, close, comment, and assign belong to adapter capabilities, not hardcoded board buttons.",
     statusId: "review",
     tags: ["actions", "capabilities"],
+    epic: { id: "adapter-platform", title: "Adapter platform" },
     adapterId: "mock",
   },
   {
@@ -56,6 +60,7 @@ export const mockTasks: BoringTaskCard[] = [
     description: "If a task status has no matching column, render it in a safe non-droppable overflow lane.",
     statusId: "external-new-state",
     tags: ["unmapped"],
+    epic: { id: "board-ux", title: "Board UX" },
     adapterId: "mock",
   },
 ]

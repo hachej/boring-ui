@@ -32,6 +32,7 @@ export type {
   BoringTaskBoardConfig,
   BoringTaskCard,
   BoringTaskColumn,
+  BoringTaskEpicRef,
   BoringTaskMoveInput,
   BoringTaskStatusId,
 } from "../shared"

@@ -60,6 +60,11 @@ export function TaskCard({ task, draggable, unmapped = false, onDragStart, onDra
             Unmapped
           </span>
         ) : null}
+        {task.epic ? (
+          <span className="rounded-full border border-primary/20 bg-primary/10 px-2 py-0.5 text-[10px] font-medium text-primary">
+            {task.epic.title}
+          </span>
+        ) : null}
         {tags.map((tag) => (
           <span key={tag} className="rounded-full border border-border bg-muted/30 px-2 py-0.5 text-[10px] font-medium text-muted-foreground">
             {tag}

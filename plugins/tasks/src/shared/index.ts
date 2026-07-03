@@ -18,6 +18,12 @@ export interface BoringTaskBoardConfig {
   defaultColumnId?: BoringTaskStatusId
 }
 
+export interface BoringTaskEpicRef {
+  id: string
+  title: string
+  url?: string
+}
+
 export interface BoringTaskCard {
   id: string
   /** Display identifier only, adapter-scoped. `id` is the stable key. */
@@ -26,6 +32,8 @@ export interface BoringTaskCard {
   description?: string
   statusId: BoringTaskStatusId
   tags?: string[]
+  /** Optional higher-level grouping from the native task system: GitHub milestone, Linear project, Kata epic, etc. */
+  epic?: BoringTaskEpicRef
   /** Allows card-level actions to route back to the owning adapter. */
   adapterId: string
   url?: string
