@@ -316,10 +316,16 @@ describe("SharePoint routes", () => {
 
   it("rejects unsafe import provider results", async () => {
     const provider = fakeProvider({
-      importLocalOfficeDocument: vi.fn().mockResolvedValue({
-        ref: { ...ref, previewUrl: "https://tenant/preview?access_token=secret" },
-        cloudRefPath: "/tmp/forecast.xlsx.cloud.json",
-      }),
+      importLocalOfficeDocument: vi
+        .fn()
+        .mockResolvedValueOnce({
+          ref: { ...ref, previewUrl: "https://tenant/preview?access_token=secret" },
+          cloudRefPath: "/tmp/forecast.xlsx.cloud.json",
+        })
+        .mockResolvedValueOnce({
+          ref: { ...ref, createdFrom: { type: "local-import", originalPath: "reports/forecast.xlsx" } },
+          cloudRefPath: "C:\\tmp\\forecast.xlsx.cloud.json",
+        }),
     })
     const app = await testApp(provider)
 
@@ -332,6 +338,16 @@ describe("SharePoint routes", () => {
     expect(response.statusCode).toBe(400)
     expect(response.json()).toMatchObject({ error: SHAREPOINT_ERROR_CODES.REF_CONTAINS_SECRET })
     expect(response.body).not.toMatch(/preview|access_token|\/tmp/)
+
+    const windowsPathResponse = await app.inject({
+      method: "POST",
+      url: SHAREPOINT_ROUTE_PATHS.import,
+      payload: { sourcePath: "reports/forecast.xlsx", contentHandle: "staged-upload-1", target: { driveId: ref.driveId } },
+    })
+
+    expect(windowsPathResponse.statusCode).toBe(502)
+    expect(windowsPathResponse.json()).toEqual({ error: SHAREPOINT_ERROR_CODES.INVALID_REF, message: "import returned an unsafe cloud ref path" })
+    expect(windowsPathResponse.body).not.toMatch(/C:\\tmp|forecast\.xlsx\.cloud\.json/)
   })
 
   it("rejects token-bearing edit refs before provider calls", async () => {
