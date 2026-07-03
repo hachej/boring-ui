@@ -54,6 +54,60 @@ Rules:
 - `webUrl` is display/open-link cache
 - No tokens, cookies, preview URLs, OAuth artifacts, Arcade tool names, or absolute local paths
 
+
+## Existing MCP/integrations menu integration
+
+The SharePoint plugin must integrate with the existing MCP/integrations menu instead of creating a separate settings island or hardcoding SharePoint in workspace chrome.
+
+Current documented front plugin surfaces are:
+
+- `panels`
+- `commands`
+- `leftTabs`
+- `catalogs`
+- `surfaceResolvers`
+- `providers` / `bindings`
+- `toolRenderers`
+
+There is not yet a documented generic `integrations` contribution in `definePlugin`. Therefore PR 1 must include an audit of the current MCP/integrations menu/plugin and choose the smallest compatible integration path.
+
+Preferred path if the existing MCP menu already has a contribution registry:
+
+```txt
+plugins/boring-sharepoint
+  -> contributes integration item:
+       id: sharepoint
+       label: SharePoint / Microsoft 365
+       backend: arcade
+       status: connected | needs_auth | pending_auth | failed
+       openCommandId: boring-sharepoint.open-settings
+```
+
+Fallback path if no generic integration contribution exists yet:
+
+1. Reuse existing plugin surfaces:
+   - command: `boring-sharepoint.open-settings`
+   - panel: SharePoint settings/status/setup
+   - optional left tab only if the existing MCP menu pattern uses left tabs
+2. Add the smallest generic integration-menu extension point to the existing MCP menu, not a SharePoint-specific branch.
+
+Example generic contribution shape if needed:
+
+```ts
+interface WorkspaceIntegrationContribution {
+  id: string
+  pluginId: string
+  label: string
+  description?: string
+  icon?: string
+  statusEndpoint?: string
+  openCommandId: string
+  capabilities?: string[]
+}
+```
+
+Thermo rule: no `if (integration === "sharepoint")` logic in the MCP menu. The menu should render plugin-contributed integration items, and the SharePoint plugin should own its settings/status/actions panel.
+
 ## Custom preview tool
 
 Plugin-owned contract:
@@ -94,6 +148,7 @@ Spike findings:
 ### PR 1 — SharePoint app/internal plugin shell + contracts
 
 - Create app/internal SharePoint plugin under `plugins/boring-sharepoint` using existing plugin conventions.
+- Audit the existing MCP/integrations menu/plugin and document the exact contribution path SharePoint will use.
 - Add `boring.front` and `boring.server` entries.
 - Add plugin workbook/runbook documentation for setting up SharePoint/Microsoft 365 with boring-ui:
   - tenant/workspace setup flow
@@ -121,7 +176,8 @@ Spike findings:
 - Add virtual display metadata helper.
 - Add placeholder preview panel.
 - Add **Open in SharePoint** action using `webUrl`.
-- Tests ensure no generic file-tree SharePoint spaghetti.
+- Add SharePoint settings/status panel entry through the existing MCP/integrations menu contribution path chosen in PR 1.
+- Tests ensure no generic file-tree or MCP-menu SharePoint spaghetti.
 
 ### PR 3 — Arcade JS runtime + auth normalization
 
@@ -219,8 +275,8 @@ Avoid changing core workspace/file-tree/plugin APIs. If an implementation PR nee
 - No snake_case Arcade params outside adapter boundary.
 - No raw Arcade auth/errors in UI.
 - No preview URL/token persistence/logging.
-- No SharePoint conditionals scattered through generic file tree code.
-- Existing plugin conventions only.
+- No SharePoint conditionals scattered through generic file tree or MCP menu code.
+- Existing plugin conventions and existing MCP/integrations menu patterns only; if a new menu extension point is required, it must be generic and minimal.
 - Stable error codes for every user-visible failure.
 - Surface resolver remains parse/dispatch only.
 - Workspace/user -> Arcade `user_id` mapping is centralized.
