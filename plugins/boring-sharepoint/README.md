@@ -2,7 +2,7 @@
 
 App/internal plugin shell for SharePoint / Microsoft 365 Office document support in boring-ui.
 
-This package is intentionally a trusted app/internal plugin, not a runtime-generated `.pi/extensions` plugin. The current stack includes the plugin shell, Office cloud-ref display wiring, Arcade runtime primitives, read-only SharePoint discovery/status, and on-demand Office preview. Future PRs will add Office agent edits and import flows behind these contracts.
+This package is intentionally a trusted app/internal plugin, not a runtime-generated `.pi/extensions` plugin. The current stack includes the plugin shell, Office cloud-ref display wiring, Arcade runtime primitives, read-only SharePoint discovery/status, on-demand Office preview, and V1 Office agent edit primitives. Future PRs will add import flows behind these contracts.
 
 ## Trust boundary
 
@@ -41,7 +41,8 @@ This workbook will become the operator guide as implementation PRs land.
 5. **Validate V1 flows**
    - Open in SharePoint using `webUrl`.
    - Preview in boring-ui through `POST /api/sharepoint/preview`, which requests a transient preview URL on demand.
-   - Agent-edit Excel and PowerPoint once edit providers land.
+   - Agent-edit Excel via `POST /api/sharepoint/edit` with `{ kind: "excel.add-worksheet", worksheetName }`.
+   - Agent-edit PowerPoint via `POST /api/sharepoint/edit` with `{ kind: "powerpoint.create-slide", title, body?, layout? }`.
 6. **Troubleshooting**
    - Auth required: reconnect SharePoint/Microsoft 365.
    - Admin consent required: tenant admin must approve Microsoft scopes.
@@ -75,17 +76,19 @@ The app-left action and command open the SharePoint / Microsoft 365 status surfa
 
 ## Current scope
 
-This PR adds on-demand Office preview on top of the shell/display/runtime/discovery stack:
+This PR adds V1 Office agent edit primitives on top of the shell/display/runtime/discovery/preview stack:
 
 - `ArcadeSharePointProvider.createOfficePreviewUrl()` calls the plugin-owned custom Arcade tool `BoringSharePoint_CreatePreviewUrl` with `{ drive_id, item_id, viewer: "office" }` and normalizes `{ getUrl, expiresAt? }`.
 - `POST /api/sharepoint/preview` accepts either `{ ref }` with a canonical SharePoint document ref or `{ driveId, driveItemId }` durable identity and returns the transient preview result only.
-- The preview route validates canonical refs and rejects token-bearing ref input before calling the provider.
-- The Office preview panel requests the preview URL only while rendering and stores it only in React component state.
+- `ArcadeSharePointProvider.editOfficeDocument()` supports V1 edit requests:
+  - Excel: `excel.add-worksheet` calls `MicrosoftSharepoint_AddWorksheet` with `{ drive_id, item_id, worksheet_name }`, then `MicrosoftSharepoint_GetWorkbookMetadata` with `{ drive_id, item_id, session_id? }` when a workbook session id is available.
+  - PowerPoint: `powerpoint.create-slide` calls assumed Arcade SharePoint tool `MicrosoftSharepoint_CreateSlide` with `{ drive_id, item_id, title, body?, layout? }`.
+- `POST /api/sharepoint/edit` accepts `{ ref, request }`, validates the canonical ref and edit request, and returns a stable `OfficeEditResult` without raw backend metadata or preview URLs.
+- Edit request validation rejects ref/kind mismatches, empty/oversized worksheet or slide fields, and credential-like text before provider calls.
 - Preview `getUrl` values are never stored in cloud-ref metadata, route logs, route errors, or session storage.
-- The custom Arcade tool deploy/register step remains an operator runbook task; this repo contains the contract/runtime call and mocked tests only.
+- PowerPoint tool shape is inferred for this mocked slice; confirm against live Arcade tool metadata before promoting from draft.
 - Tests use mocked Arcade/provider calls only.
 - no Microsoft Graph direct calls in boring-ui code
 - no Claude MCP/local MCP gateway dependency
-- no Office edit calls
 - no local import/upload
 - no SharePoint-specific workspace chrome branches

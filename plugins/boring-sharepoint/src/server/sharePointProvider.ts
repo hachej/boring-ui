@@ -23,6 +23,9 @@ export const ARCADE_SHAREPOINT_TOOL_NAMES = {
   getDriveItem: "MicrosoftSharepoint_GetDriveItem",
   getDriveItemByUrl: "MicrosoftSharepoint_GetDriveItemByUrl",
   createPreviewUrl: "BoringSharePoint_CreatePreviewUrl",
+  addWorksheet: "MicrosoftSharepoint_AddWorksheet",
+  getWorkbookMetadata: "MicrosoftSharepoint_GetWorkbookMetadata",
+  createSlide: "MicrosoftSharepoint_CreateSlide",
 } as const
 
 export interface ArcadeSharePointProviderOptions {
@@ -105,12 +108,53 @@ export class ArcadeSharePointProvider implements SharePointProvider {
     return toOfficePreviewUrlResult(response, this.tools.createPreviewUrl)
   }
 
-  async editOfficeDocument(_ref: SharePointDocumentRef, _request: OfficeEditRequest): Promise<OfficeEditResult> {
-    return {
-      status: "failed",
-      code: SHAREPOINT_ERROR_CODES.PROVIDER_UNAVAILABLE,
-      message: "SharePoint Office edits are not implemented in this read-only discovery slice",
+  async editOfficeDocument(ref: SharePointDocumentRef, request: OfficeEditRequest, ctx: SharePointProviderContext): Promise<OfficeEditResult> {
+    validateOfficeEditRequestForRef(ref, request)
+
+    if (request.kind === "excel.add-worksheet") {
+      const addResponse = await this.runtime.executeTool({
+        toolName: this.tools.addWorksheet,
+        userId: ctx.actorUserId,
+        input: {
+          drive_id: ref.driveId,
+          item_id: ref.driveItemId,
+          worksheet_name: request.worksheetName,
+        },
+      })
+      const addValue = unwrapArcadeValueObject(addResponse, this.tools.addWorksheet)
+      const sessionId = optionalString(addValue, ["sessionId", "session_id", "workbookSessionId", "workbook_session_id"])
+
+      const metadataInput: Record<string, unknown> = {
+        drive_id: ref.driveId,
+        item_id: ref.driveItemId,
+      }
+      if (sessionId) metadataInput.session_id = sessionId
+      const metadataResponse = await this.runtime.executeTool({
+        toolName: this.tools.getWorkbookMetadata,
+        userId: ctx.actorUserId,
+        input: metadataInput,
+      })
+      const metadataValue = unwrapArcadeValueObject(metadataResponse, this.tools.getWorkbookMetadata)
+      const normalizedSessionId = sessionId ?? optionalString(metadataValue, ["sessionId", "session_id", "workbookSessionId", "workbook_session_id"])
+
+      return normalizedSessionId
+        ? { status: "succeeded", summary: `Added worksheet ${request.worksheetName} to ${ref.name}`, sessionId: normalizedSessionId }
+        : { status: "succeeded", summary: `Added worksheet ${request.worksheetName} to ${ref.name}` }
     }
+
+    const response = await this.runtime.executeTool({
+      toolName: this.tools.createSlide,
+      userId: ctx.actorUserId,
+      input: {
+        drive_id: ref.driveId,
+        item_id: ref.driveItemId,
+        title: request.title,
+        ...(request.body ? { body: request.body } : {}),
+        ...(request.layout ? { layout: request.layout } : {}),
+      },
+    })
+    unwrapArcadeValueObject(response, this.tools.createSlide)
+    return { status: "succeeded", summary: `Created PowerPoint slide in ${ref.name}` }
   }
 
   private async getSite(siteUrl: string, ctx: SharePointProviderContext): Promise<Record<string, unknown>> {
@@ -144,6 +188,37 @@ export class ArcadeSharePointProvider implements SharePointProvider {
       input: { drive_id: input.driveId, item_id: input.driveItemId },
     })
     return unwrapArcadeValueObject(response, this.tools.getDriveItem)
+  }
+}
+
+const EDIT_SECRET_LIKE_PATTERN = /([?&#](access_token|refresh_token|id_token|authorization|cookie)=)|Bearer\s+|token|secret|cookie|authorization/i
+
+export function validateOfficeEditRequestForRef(ref: SharePointDocumentRef, request: OfficeEditRequest): void {
+  if (request.kind === "excel.add-worksheet") {
+    if (ref.officeKind !== "excel") {
+      throw new SharePointProviderError(SHAREPOINT_ERROR_CODES.EDIT_CONFLICT, "Excel edit requests require an Excel SharePoint document ref")
+    }
+    validateEditText(request.worksheetName, "worksheetName", 31)
+    return
+  }
+
+  if (ref.officeKind !== "powerpoint") {
+    throw new SharePointProviderError(SHAREPOINT_ERROR_CODES.EDIT_CONFLICT, "PowerPoint edit requests require a PowerPoint SharePoint document ref")
+  }
+  validateEditText(request.title, "title", 200)
+  if (request.body !== undefined) validateEditText(request.body, "body", 2_000)
+}
+
+function validateEditText(value: string, label: string, maxLength: number): void {
+  const trimmed = value.trim()
+  if (trimmed.length === 0) {
+    throw new SharePointProviderError(SHAREPOINT_ERROR_CODES.INVALID_REF, `${label} must be a non-empty string`)
+  }
+  if (trimmed.length > maxLength) {
+    throw new SharePointProviderError(SHAREPOINT_ERROR_CODES.INVALID_REF, `${label} must be ${maxLength} characters or fewer`)
+  }
+  if (EDIT_SECRET_LIKE_PATTERN.test(value)) {
+    throw new SharePointProviderError(SHAREPOINT_ERROR_CODES.REF_CONTAINS_SECRET, `${label} contains forbidden credential-like data`)
   }
 }
 

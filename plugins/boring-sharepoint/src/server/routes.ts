@@ -7,12 +7,14 @@ import {
   type CreateOfficePreviewUrlInput,
   type CreateOfficePreviewUrlResult,
   type IntegrationAuthState,
+  type OfficeEditRequest,
+  type OfficeEditResult,
   type ResolveDriveItemInput,
   type SharePointDocumentRef,
   type SharePointProvider,
   type SharePointProviderContext,
 } from "../shared"
-import { SharePointProviderError } from "./sharePointProvider"
+import { SharePointProviderError, validateOfficeEditRequestForRef } from "./sharePointProvider"
 
 const SHAREPOINT_DURABLE_ID_PATTERN = /^[A-Za-z0-9._~!$'(),;=:@+-]{1,512}$/
 const SECRET_LIKE_ID_PATTERN = /([?&#](access_token|refresh_token|id_token|authorization|cookie)=)|Bearer\s+|token|secret|cookie|authorization/i
@@ -21,6 +23,7 @@ export const SHAREPOINT_ROUTE_PATHS = {
   status: "/api/sharepoint/status",
   resolve: "/api/sharepoint/resolve",
   preview: "/api/sharepoint/preview",
+  edit: "/api/sharepoint/edit",
 } as const
 
 export interface SharePointRoutesOptions {
@@ -60,6 +63,16 @@ export function sharePointRoutes(app: FastifyInstance, opts: SharePointRoutesOpt
     }
   })
 
+  app.post(SHAREPOINT_ROUTE_PATHS.edit, async (request, reply) => {
+    try {
+      const { ref, editRequest } = parseEditBody(request.body)
+      const ctx = await resolveContext(request, opts)
+      return safeOfficeEditResultForRoute(await opts.provider.editOfficeDocument(ref, editRequest, ctx))
+    } catch (error) {
+      return sendSharePointRouteError(reply, error)
+    }
+  })
+
   done()
 }
 
@@ -74,6 +87,65 @@ function safePreviewResultForRoute(result: CreateOfficePreviewUrlResult): Create
     throw new SharePointProviderError(SHAREPOINT_ERROR_CODES.PREVIEW_UNAVAILABLE, "SharePoint preview provider returned an invalid preview URL", 502)
   }
   return result.expiresAt ? { getUrl: result.getUrl, expiresAt: result.expiresAt } : { getUrl: result.getUrl }
+}
+
+function safeOfficeEditResultForRoute(result: OfficeEditResult): OfficeEditResult {
+  if (result.status === "succeeded") {
+    return result.sessionId
+      ? { status: "succeeded", summary: safeRouteMessage(result.summary, "Office edit succeeded"), sessionId: safeRouteMessage(result.sessionId, "session-redacted") }
+      : { status: "succeeded", summary: safeRouteMessage(result.summary, "Office edit succeeded") }
+  }
+  if (result.status === "needs_auth") {
+    return { status: "failed", code: SHAREPOINT_ERROR_CODES.AUTH_REQUIRED, message: "SharePoint authorization is required" }
+  }
+  return { ...result, message: safeRouteMessage(result.message, "SharePoint Office edit failed") }
+}
+
+function parseEditBody(body: unknown): { ref: SharePointDocumentRef; editRequest: OfficeEditRequest } {
+  if (!body || typeof body !== "object" || Array.isArray(body)) {
+    throw new SharePointProviderError(SHAREPOINT_ERROR_CODES.INVALID_REF, "edit request body must be an object")
+  }
+  const candidate = body as Record<string, unknown>
+  const ref = parseSharePointDocumentRef(candidate.ref)
+  assertSharePointDocumentRefSafeForStorage(ref)
+  const editRequest = parseOfficeEditRequest(candidate.request)
+  validateOfficeEditRequestForRef(ref, editRequest)
+  return { ref, editRequest }
+}
+
+function parseOfficeEditRequest(value: unknown): OfficeEditRequest {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    throw new SharePointProviderError(SHAREPOINT_ERROR_CODES.INVALID_REF, "edit request must be an object")
+  }
+  const candidate = value as Record<string, unknown>
+  if (candidate.kind === "excel.add-worksheet") {
+    return { kind: "excel.add-worksheet", worksheetName: requireBodyString(candidate.worksheetName, "worksheetName") }
+  }
+  if (candidate.kind === "powerpoint.create-slide") {
+    return {
+      kind: "powerpoint.create-slide",
+      title: requireBodyString(candidate.title, "title"),
+      ...(candidate.body !== undefined ? { body: requireBodyString(candidate.body, "body") } : {}),
+      ...(candidate.layout !== undefined ? { layout: parsePowerPointLayout(candidate.layout) } : {}),
+    }
+  }
+  throw new SharePointProviderError(SHAREPOINT_ERROR_CODES.INVALID_REF, "unsupported Office edit request kind")
+}
+
+function parsePowerPointLayout(value: unknown): "TITLE_AND_CONTENT" | "TITLE_ONLY" | "BLANK" | "TWO_CONTENT" {
+  if (value === "TITLE_AND_CONTENT" || value === "TITLE_ONLY" || value === "BLANK" || value === "TWO_CONTENT") return value
+  throw new SharePointProviderError(SHAREPOINT_ERROR_CODES.INVALID_REF, "PowerPoint slide layout is not supported")
+}
+
+function requireBodyString(value: unknown, label: string): string {
+  if (typeof value !== "string") {
+    throw new SharePointProviderError(SHAREPOINT_ERROR_CODES.INVALID_REF, `${label} must be a string`)
+  }
+  return value
+}
+
+function safeRouteMessage(value: string, fallback: string): string {
+  return SECRET_LIKE_ID_PATTERN.test(value) || /preview|getUrl|access_token|refresh_token|id_token/i.test(value) ? fallback : value
 }
 
 function parsePreviewBody(body: unknown): SharePointDocumentRef | CreateOfficePreviewUrlInput {
@@ -137,7 +209,10 @@ function sendSharePointRouteError(reply: FastifyReply, error: unknown) {
     return reply.code(error.statusCode).send({ error: error.code, message: error.message })
   }
   if (error instanceof SharePointRefValidationError) {
-    return reply.code(400).send({ error: error.code, message: error.message })
+    return reply.code(400).send({
+      error: error.code,
+      message: error.code === SHAREPOINT_ERROR_CODES.REF_CONTAINS_SECRET ? "SharePoint request contains forbidden credential-like data" : error.message,
+    })
   }
   return reply.code(500).send({ error: SHAREPOINT_ERROR_CODES.PROVIDER_UNAVAILABLE, message: "SharePoint provider request failed" })
 }
