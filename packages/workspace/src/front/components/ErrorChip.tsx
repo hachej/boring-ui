@@ -4,7 +4,7 @@ import { Notice } from "@hachej/boring-ui-kit"
 export interface ErrorChipProps {
   pluginId: string
   message: string
-  kind: "panel" | "catalog-row" | "chat-suggestion"
+  kind: "panel" | "workspace-source" | "catalog-row" | "chat-suggestion"
 }
 
 export function ErrorChip({ pluginId, message, kind }: ErrorChipProps) {

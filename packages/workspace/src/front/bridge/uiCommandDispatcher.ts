@@ -7,6 +7,7 @@
  */
 import type { SurfaceShellApi, OpenPanelConfig } from "../chrome/artifact-surface/SurfaceShell"
 import type { UiCommand } from "./types"
+import { normalizeUiFilesystem } from "../../shared/types/filesystem"
 import type { SurfaceOpenRequest } from "../../shared/types/surface"
 
 /**
@@ -83,6 +84,7 @@ function surfaceRequestParam(params: Record<string, unknown>): SurfaceOpenReques
   return {
     kind,
     target,
+    filesystem: normalizeUiFilesystem(strParam(params, "filesystem")),
     meta: recordParam(params, "meta"),
   }
 }
@@ -129,7 +131,7 @@ export function dispatchUiCommand(cmd: UiCommand, ctx: DispatchContext): void {
       if (wasClosed) ctx.openWorkbench()
       const run = (surface: SurfaceShellApi) => {
         try {
-          surface.openFile(path)
+          surface.openFile(path, { filesystem: normalizeUiFilesystem(strParam(cmd.params, "filesystem")) })
         } catch (err) {
           // eslint-disable-next-line no-console -- intentional dev signal
           console.warn(

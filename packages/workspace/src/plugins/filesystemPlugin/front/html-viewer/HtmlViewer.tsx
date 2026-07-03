@@ -5,9 +5,11 @@ import { ErrorState, IconButton, Spinner } from "@hachej/boring-ui-kit"
 import { ExternalLink, RefreshCcw } from "lucide-react"
 import { cn } from "../../../../front/lib/utils"
 import { useApiBaseUrl, useWorkspaceRequestId } from "../data/DataProvider"
+import { redactedFilesystemErrorMessage } from "../data/filesystemErrorRedaction"
 
 export interface HtmlViewerProps {
   path: string
+  filesystem?: string
   className?: string
 }
 
@@ -66,42 +68,43 @@ export function resolveHtmlPreviewAssetPath(sourcePath: string, assetUrl: string
   return normalized.join("/")
 }
 
-export function rawFileUrlFor(base: string, path: string, workspaceRequestId?: string | null): string {
+export function rawFileUrlFor(base: string, path: string, workspaceRequestId?: string | null, filesystem?: string): string {
   const params = new URLSearchParams({ path })
   if (workspaceRequestId) params.set("workspaceId", workspaceRequestId)
+  if (filesystem && filesystem !== "user") params.set("filesystem", filesystem)
   return apiUrl(base, `/api/v1/files/raw?${params.toString()}`)
 }
 
-function previewAssetUrl(base: string, sourcePath: string, assetUrl: string, workspaceRequestId?: string | null): string {
+function previewAssetUrl(base: string, sourcePath: string, assetUrl: string, workspaceRequestId?: string | null, filesystem?: string): string {
   const resolvedPath = resolveHtmlPreviewAssetPath(sourcePath, assetUrl)
   if (!resolvedPath) return assetUrl
 
   const { suffix } = splitUrlSuffix(assetUrl.trim())
   const hashIndex = suffix.indexOf("#")
   const hash = hashIndex === -1 ? "" : suffix.slice(hashIndex)
-  return `${rawFileUrlFor(base, resolvedPath, workspaceRequestId)}${hash}`
+  return `${rawFileUrlFor(base, resolvedPath, workspaceRequestId, filesystem)}${hash}`
 }
 
-export function rewriteCssAssetUrls(css: string, sourcePath: string, base: string, workspaceRequestId?: string | null): string {
+export function rewriteCssAssetUrls(css: string, sourcePath: string, base: string, workspaceRequestId?: string | null, filesystem?: string): string {
   return css
     .replace(/url\(\s*(["']?)([^"')]+)\1\s*\)/gi, (_match, quote: string, url: string) => {
-      return `url(${quote}${previewAssetUrl(base, sourcePath, url, workspaceRequestId)}${quote})`
+      return `url(${quote}${previewAssetUrl(base, sourcePath, url, workspaceRequestId, filesystem)}${quote})`
     })
     .replace(/@import\s+(url\(\s*)?(["'])([^"']+)\2\s*\)?/gi, (match, urlPrefix: string | undefined, quote: string, url: string) => {
-      const rewritten = previewAssetUrl(base, sourcePath, url, workspaceRequestId)
+      const rewritten = previewAssetUrl(base, sourcePath, url, workspaceRequestId, filesystem)
       if (urlPrefix) return `@import ${urlPrefix}${quote}${rewritten}${quote})`
       return match.replace(`${quote}${url}${quote}`, `${quote}${rewritten}${quote}`)
     })
 }
 
-function rewriteSrcSet(value: string, sourcePath: string, base: string, workspaceRequestId?: string | null): string {
+function rewriteSrcSet(value: string, sourcePath: string, base: string, workspaceRequestId?: string | null, filesystem?: string): string {
   return value
     .split(",")
     .map((entry) => {
       const trimmed = entry.trim()
       const [url, ...descriptor] = trimmed.split(/\s+/)
       if (!url) return entry
-      return [previewAssetUrl(base, sourcePath, url, workspaceRequestId), ...descriptor].join(" ")
+      return [previewAssetUrl(base, sourcePath, url, workspaceRequestId, filesystem), ...descriptor].join(" ")
     })
     .join(", ")
 }
@@ -122,9 +125,10 @@ export async function prepareHtmlPreviewDocument(options: {
   apiBaseUrl: string
   headers: Record<string, string>
   workspaceRequestId?: string | null
+  filesystem?: string
   signal: AbortSignal
 }): Promise<string> {
-  const { html, path, apiBaseUrl, headers, workspaceRequestId, signal } = options
+  const { html, path, apiBaseUrl, headers, workspaceRequestId, filesystem, signal } = options
   const doc = new DOMParser().parseFromString(html, "text/html")
 
   await Promise.all(
@@ -135,25 +139,25 @@ export async function prepareHtmlPreviewDocument(options: {
       if (!stylesheetPath) return
 
       try {
-        const css = await fetchText(rawFileUrlFor(apiBaseUrl, stylesheetPath, workspaceRequestId), headers, signal)
+        const css = await fetchText(rawFileUrlFor(apiBaseUrl, stylesheetPath, workspaceRequestId, filesystem), headers, signal)
         const style = doc.createElement("style")
         style.setAttribute("data-boring-html-viewer-href", href)
-        style.textContent = rewriteCssAssetUrls(css, stylesheetPath, apiBaseUrl, workspaceRequestId)
+        style.textContent = rewriteCssAssetUrls(css, stylesheetPath, apiBaseUrl, workspaceRequestId, filesystem)
         link.replaceWith(style)
       } catch {
-        link.setAttribute("href", previewAssetUrl(apiBaseUrl, path, href, workspaceRequestId))
+        link.setAttribute("href", previewAssetUrl(apiBaseUrl, path, href, workspaceRequestId, filesystem))
       }
     }),
   )
 
   for (const style of Array.from(doc.querySelectorAll<HTMLStyleElement>("style"))) {
     if (style.hasAttribute("data-boring-html-viewer-href")) continue
-    style.textContent = rewriteCssAssetUrls(style.textContent ?? "", path, apiBaseUrl, workspaceRequestId)
+    style.textContent = rewriteCssAssetUrls(style.textContent ?? "", path, apiBaseUrl, workspaceRequestId, filesystem)
   }
 
   for (const element of Array.from(doc.querySelectorAll<HTMLElement>("[style]"))) {
     const style = element.getAttribute("style")
-    if (style) element.setAttribute("style", rewriteCssAssetUrls(style, path, apiBaseUrl, workspaceRequestId))
+    if (style) element.setAttribute("style", rewriteCssAssetUrls(style, path, apiBaseUrl, workspaceRequestId, filesystem))
   }
 
   const assetAttributes = [
@@ -172,19 +176,19 @@ export async function prepareHtmlPreviewDocument(options: {
   for (const [selector, attribute] of assetAttributes) {
     for (const element of Array.from(doc.querySelectorAll<HTMLElement>(`${selector}[${attribute}]`))) {
       const value = element.getAttribute(attribute)
-      if (value) element.setAttribute(attribute, previewAssetUrl(apiBaseUrl, path, value, workspaceRequestId))
+      if (value) element.setAttribute(attribute, previewAssetUrl(apiBaseUrl, path, value, workspaceRequestId, filesystem))
     }
   }
 
   for (const element of Array.from(doc.querySelectorAll<HTMLElement>("[srcset]"))) {
     const srcset = element.getAttribute("srcset")
-    if (srcset) element.setAttribute("srcset", rewriteSrcSet(srcset, path, apiBaseUrl, workspaceRequestId))
+    if (srcset) element.setAttribute("srcset", rewriteSrcSet(srcset, path, apiBaseUrl, workspaceRequestId, filesystem))
   }
 
   return `<!doctype html>\n${doc.documentElement.outerHTML}`
 }
 
-export function HtmlViewer({ path, className }: HtmlViewerProps) {
+export function HtmlViewer({ path, filesystem, className }: HtmlViewerProps) {
   const apiBaseUrl = useApiBaseUrl()
   const workspaceRequestId = useWorkspaceRequestId()
   const [html, setHtml] = useState<string | null>(null)
@@ -192,8 +196,8 @@ export function HtmlViewer({ path, className }: HtmlViewerProps) {
   const [loading, setLoading] = useState(true)
 
   const rawUrl = useMemo(
-    () => rawFileUrlFor(apiBaseUrl, path, workspaceRequestId),
-    [apiBaseUrl, path, workspaceRequestId],
+    () => rawFileUrlFor(apiBaseUrl, path, workspaceRequestId, filesystem),
+    [apiBaseUrl, path, workspaceRequestId, filesystem],
   )
   const [reloadKey, setReloadKey] = useState(0)
 
@@ -218,19 +222,22 @@ export function HtmlViewer({ path, className }: HtmlViewerProps) {
           apiBaseUrl,
           headers,
           workspaceRequestId,
+          filesystem,
           signal: controller.signal,
         }))
       })
       .catch((err) => {
         if (controller.signal.aborted) return
-        setError(err instanceof Error ? err.message : "Failed to load HTML preview")
+        const message = err instanceof Error ? err.message : "Failed to load HTML preview"
+        const status = /^HTTP (403|404)$/.exec(message)?.[1]
+        setError(status ? redactedFilesystemErrorMessage(filesystem, Number(status), message) : message)
       })
       .finally(() => {
         if (!controller.signal.aborted) setLoading(false)
       })
 
     return () => controller.abort()
-  }, [apiBaseUrl, path, rawUrl, workspaceRequestId, reloadKey])
+  }, [apiBaseUrl, path, rawUrl, workspaceRequestId, filesystem, reloadKey])
 
   if (!path) {
     return (

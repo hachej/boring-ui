@@ -84,4 +84,5 @@ export class LocalUserStore implements UserStore {
     this.settings.set(key, updated)
     return { ...updated }
   }
+
 }

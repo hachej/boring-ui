@@ -6,14 +6,15 @@ import {
   CREDITS_REFRESH_EVENT,
   CreditBalanceBadge,
   CreditsSettingsPanel,
-  DefaultTopBarRight,
   isPaymentRequiredNotice,
   useCreditBalance,
 } from '@hachej/boring-core/app/front'
-import { UserSettingsPage } from '@hachej/boring-core/front'
+import { UserMenu, UserSettingsPage, WorkspaceSwitcher } from '@hachej/boring-core/front'
 import '@hachej/boring-core/app/front/styles.css'
 import './app.css'
+import { BoringMcpSourcesOverlay } from '@hachej/boring-mcp/front'
 import { PublicHeroDescription, publicLaunchPlugin } from './PublicLaunchPages'
+import { fullAppBoringMcpOptions } from './boringMcp'
 
 const PRODUCT_NAME = 'Seneca AI'
 
@@ -21,6 +22,22 @@ const PRODUCT_NAME = 'Seneca AI'
 // (set this alongside the server-side LS env). The checkout itself is created
 // server-side so the buyer id can't be tampered with.
 const buyEnabled = import.meta.env.VITE_CREDITS_BUY_ENABLED === '1'
+
+// Inline multi-project left bar (projects tree) is still being consolidated
+// (persistent shell / background workspace load — follow-up PR). Ship it OFF by
+// default: the left bar shows the workspace-switcher dropdown at the top
+// (single-project). Set VITE_BORING_INLINE_PROJECTS=1 to opt in for dev.
+const inlineProjectsEnabled = import.meta.env.VITE_BORING_INLINE_PROJECTS === '1'
+
+function McpIcon({ className }: { className?: string }) {
+  return (
+    <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <path d="M12 3c4.42 0 8 1.34 8 3s-3.58 3-8 3-8-1.34-8-3 3.58-3 8-3Z" />
+      <path d="M4 6v6c0 1.66 3.58 3 8 3s8-1.34 8-3V6" />
+      <path d="M4 12v6c0 1.66 3.58 3 8 3s8-1.34 8-3v-6" />
+    </svg>
+  )
+}
 
 // Surface the current balance + a "Buy credits" action on the account settings page
 // (in addition to the top-bar badge). Gate the Billing section on the same hook the
@@ -85,6 +102,33 @@ createRoot(document.getElementById('root')!).render(
       apiTimeout={10_000}
       persistenceEnabled
       appTitle={PRODUCT_NAME}
+      workspaceLayout="plugin-tabs"
+      appLeftHeaderMode="workspace"
+      topBarLeft={<WorkspaceSwitcher displayMode="workspace" />}
+      appLeftLayoutMode={inlineProjectsEnabled ? 'multi-project' : 'single-project'}
+      workspaceSectionTitle="Projects"
+      showSkills
+      showPlugins
+      appLeftOverlayActions={[
+        {
+          id: 'boring-mcp',
+          label: 'MCP',
+          icon: <McpIcon className="h-4 w-4" />,
+          render: ({ onClose, headerInsetStart, headerInsetEnd, workspaceId }) => (
+            <BoringMcpSourcesOverlay
+              options={{
+                ...fullAppBoringMcpOptions,
+                sourceApi: fullAppBoringMcpOptions.sourceApi
+                  ? { ...fullAppBoringMcpOptions.sourceApi, workspaceId }
+                  : undefined,
+              }}
+              onClose={onClose}
+              headerInsetStart={headerInsetStart}
+              headerInsetEnd={headerInsetEnd}
+            />
+          ),
+        },
+      ]}
       chatEntryMode="chat-first"
       publicPaths={[]}
       chatFirstPublicShell={{
@@ -127,10 +171,13 @@ createRoot(document.getElementById('root')!).render(
       }}
       authPages={{ userSettings: AccountSettingsPage }}
       topBarRight={
-        <>
-          <CreditBalanceBadge buyEnabled={buyEnabled} />
-          <DefaultTopBarRight />
-        </>
+        <div className="flex w-full min-w-0 flex-col gap-1">
+          <div className="flex items-center justify-between gap-2 rounded-lg px-2 py-0.5 text-[11px] text-muted-foreground/70">
+            <span>Credits</span>
+            <CreditBalanceBadge buyEnabled={buyEnabled} />
+          </div>
+          <UserMenu variant="bar" contentSide="top" contentAlign="start" />
+        </div>
       }
     />
     {/* Post-checkout return (LS redirects to ?checkout=return); confirms server-side. */}

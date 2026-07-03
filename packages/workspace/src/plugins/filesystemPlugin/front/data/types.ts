@@ -6,6 +6,8 @@ export interface FileEntry {
 
 export interface FileContent {
   content: string
+  /** Access granted by the resolved filesystem binding, when the server exposes it. */
+  access?: "readonly" | "readwrite"
   /**
    * Server-stat'd modification time. Used as the OCC baseline for the
    * next write — the client sends it back as `expectedMtimeMs` so the

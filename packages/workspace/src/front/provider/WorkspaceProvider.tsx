@@ -11,19 +11,22 @@ import {
   type ReactNode,
 } from "react"
 import { PanelRegistry } from "../registry/PanelRegistry"
+import { WorkspaceSourceRegistry } from "../registry/WorkspaceSourceRegistry"
 import { CommandRegistry } from "../../shared/plugins/CommandRegistry"
 import { SurfaceResolverRegistry } from "../../shared/plugins/SurfaceResolverRegistry"
 import { RegistryProvider, useCatalogRegistry, useCommandRegistry } from "../registry/RegistryProvider"
 import { CatalogRegistry } from "../../shared/plugins/CatalogRegistry"
 import { PluginErrorProvider } from "../plugin/PluginErrorContext"
 import { PluginInspector } from "../plugin/PluginInspector"
+import { WorkspacePluginClientProvider } from "../plugin/useWorkspacePluginClient"
 import { FullPageBasePathProvider } from "../fullPage"
 import { createWorkspaceStore } from "../store"
 import { bindStore, useThemePreference } from "../store/selectors"
 import { createBridge } from "../bridge/createBridge"
+import { postUiCommand } from "../bridge"
 import { createBridgeClient, type BridgeClient } from "../bridge/client"
 import { PanelRenderStatusProvider } from "../registry/PanelRenderStatusBoundary"
-import { CommandPalette } from "../components/CommandPalette"
+import { CommandPalette, type CommandPaletteSessionSearchConfig } from "../components/CommandPalette"
 import { events, workspaceEvents } from "../events"
 import { Toaster } from "../toast"
 import { useKeyboardShortcuts } from "../hooks/useKeyboardShortcuts"
@@ -35,7 +38,7 @@ import type {
   PluginProvider,
 } from "../../shared/plugins/types"
 import type { BoringFrontFactoryWithId, CapturedFrontPlugin } from "../../shared/plugins/frontFactory"
-import type { CommandConfig, PanelConfig } from "../registry/types"
+import type { CommandConfig, PanelConfig, WorkspaceSourceRegistration } from "../registry/types"
 import type { CatalogConfig } from "../../shared/plugins/types"
 import type { WorkspaceChatPanelComponent, WorkspaceChatPanelProps } from "../chrome/chat/types"
 import { WorkspaceAttentionProvider } from "../attention"
@@ -385,6 +388,7 @@ export interface WorkspaceProviderProps {
    */
   frontPluginHotReload?: FrontPluginHotReloadMode
   fullPageBasePath?: string
+  commandPaletteSessionSearch?: CommandPaletteSessionSearchConfig
 }
 
 // ---------------------------------------------------------------------------
@@ -433,6 +437,7 @@ export function WorkspaceProvider({
   debug = false,
   frontPluginHotReload = (typeof import.meta !== 'undefined' && import.meta.env?.DEV) ? 'vite' as const : false,
   fullPageBasePath,
+  commandPaletteSessionSearch,
 }: WorkspaceProviderProps) {
   const storeRef = useRef<ReturnType<typeof createWorkspaceStore> | null>(null)
   if (!storeRef.current) {
@@ -499,8 +504,9 @@ export function WorkspaceProvider({
     }
   }, [bridgeEndpoint, store])
 
-  const { panelRegistry, commandRegistry, catalogRegistry, surfaceResolverRegistry, pluginMetas, pluginsWithBindings } = useMemo(() => {
+  const { panelRegistry, workspaceSourceRegistry, commandRegistry, catalogRegistry, surfaceResolverRegistry, pluginMetas, pluginsWithBindings } = useMemo(() => {
     const pr = new PanelRegistry(capabilities)
+    const ws = new WorkspaceSourceRegistry(capabilities)
     const cr = new CommandRegistry()
     const cat = new CatalogRegistry()
     const sr = new SurfaceResolverRegistry()
@@ -521,7 +527,17 @@ export function WorkspaceProvider({
       plugins: userPlugins,
       defaults: defaultPlugins,
       excludeDefaults,
-      registries: { panels: pr, commands: cr, catalogs: cat, surfaceResolvers: sr },
+      registries: { panels: pr, workspaceSources: ws, commands: cr, catalogs: cat, surfaceResolvers: sr },
+      panelCommandRunner: (command) => command.panelId
+        ? () => postUiCommand({
+            kind: "openPanel",
+            params: {
+              id: command.panelId!,
+              component: command.panelId!,
+              title: command.title,
+            },
+          })
+        : undefined,
     })
 
     const metas: RegisteredPluginMeta[] = [
@@ -535,6 +551,12 @@ export function WorkspaceProvider({
 
     if (panels) {
       for (const panel of panels) {
+        if (panel.placement === "left-tab" || panel.placement === "workspace-source") {
+          throw new Error(
+            `WorkspaceProvider panel "${panel.id}" uses removed placement "${panel.placement}". ` +
+              "Use workspaceSources/plugin workspaceSources instead.",
+          )
+        }
         const { id, ...config } = panel
         pr.register(id, config)
       }
@@ -542,6 +564,7 @@ export function WorkspaceProvider({
 
     return {
       panelRegistry: pr,
+      workspaceSourceRegistry: ws,
       commandRegistry: cr,
       catalogRegistry: cat,
       surfaceResolverRegistry: sr,
@@ -610,33 +633,43 @@ export function WorkspaceProvider({
           <PluginErrorProvider>
             <RegistryProvider
               panelRegistry={panelRegistry}
+              workspaceSourceRegistry={workspaceSourceRegistry}
               commandRegistry={commandRegistry}
               catalogRegistry={catalogRegistry}
               surfaceResolverRegistry={surfaceResolverRegistry}
             >
               <PanelRenderStatusProvider apiBaseUrl={apiBaseUrl} workspaceId={workspaceId} authHeaders={resolvedAuthHeaders}>
-              <WorkspacePluginProviders
-                plugins={pluginsWithBindings}
-                apiBaseUrl={apiBaseUrl}
-                authHeaders={resolvedAuthHeaders}
-                onAuthError={onAuthError}
-                apiTimeout={apiTimeout}
-                activeSessionId={activeSessionId}
-                openSessionIds={openSessionIds}
-              >
-                <WorkspacePluginBindings plugins={pluginsWithBindings} />
-                <AgentPluginHotReloadBridge apiBaseUrl={apiBaseUrl} workspaceId={workspaceId} mode={frontPluginHotReload} authHeaders={resolvedAuthHeaders} />
-                <WorkspaceOpenFileBinding onOpenFile={onOpenFile} />
-                <WorkspaceCommandBindings commands={commands} />
-                <WorkspaceCatalogBindings
-                  catalogs={catalogs}
-                />
-                <WorkspaceShortcuts store={store} />
-                <CommandPalette />
-                <Toaster />
-                {children}
-                {(typeof import.meta !== 'undefined' && import.meta.env?.DEV) && <PluginInspector plugins={pluginMetas} />}
-              </WorkspacePluginProviders>
+                {/* Merge: keep the branch's WorkspacePluginClientProvider wrapper
+                    + CommandPalette session search, AND main's #71 plugin-provider
+                    session context (activeSessionId/openSessionIds). */}
+                <WorkspacePluginClientProvider apiBaseUrl={apiBaseUrl} workspaceId={workspaceId} authHeaders={resolvedAuthHeaders}>
+                  <WorkspacePluginProviders
+                    plugins={pluginsWithBindings}
+                    apiBaseUrl={apiBaseUrl}
+                    authHeaders={resolvedAuthHeaders}
+                    onAuthError={onAuthError}
+                    apiTimeout={apiTimeout}
+                    activeSessionId={activeSessionId}
+                    openSessionIds={openSessionIds}
+                  >
+                    <WorkspacePluginBindings plugins={pluginsWithBindings} />
+                    <AgentPluginHotReloadBridge apiBaseUrl={apiBaseUrl} workspaceId={workspaceId} mode={frontPluginHotReload} authHeaders={resolvedAuthHeaders} />
+                    <WorkspaceOpenFileBinding onOpenFile={onOpenFile} />
+                    <WorkspaceCommandBindings commands={commands} />
+                    <WorkspaceCatalogBindings
+                      catalogs={catalogs}
+                    />
+                    <WorkspaceShortcuts store={store} />
+                    <CommandPalette
+                      sessionSearch={commandPaletteSessionSearch}
+                      apiBaseUrl={apiBaseUrl}
+                      authHeaders={resolvedAuthHeaders}
+                    />
+                    <Toaster />
+                    {children}
+                    {(typeof import.meta !== 'undefined' && import.meta.env?.DEV) && <PluginInspector plugins={pluginMetas} />}
+                  </WorkspacePluginProviders>
+                </WorkspacePluginClientProvider>
               </PanelRenderStatusProvider>
             </RegistryProvider>
           </PluginErrorProvider>

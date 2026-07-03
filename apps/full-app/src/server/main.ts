@@ -4,6 +4,11 @@ import {
 } from '@hachej/boring-core/app/server'
 import { serverPlugins } from './plugins.js'
 import { buildCreditsWiring } from './credits.js'
+import {
+  createFullAppBoringMcpAgentToolsForRequest,
+  fullAppAgentSessionNamespace,
+  registerFullAppBoringMcpRoutes,
+} from './boringMcp.js'
 import { assertProductionAgentModeIsSafe } from './productionSafety.js'
 
 function pluginAuthoringEnabledFromEnv(): boolean {
@@ -16,6 +21,7 @@ async function main() {
   // Build the metering sink up-front; the credit service attaches after the
   // server (and its db) exists.
   const credits = buildCreditsWiring()
+  let appRef: Awaited<ReturnType<typeof createCoreWorkspaceAgentServer>> | undefined
   const app = await createCoreWorkspaceAgentServer({
     appRoot,
     serveFrontend: true,
@@ -23,8 +29,12 @@ async function main() {
     externalPlugins: false,
     installPluginAuthoring: pluginAuthoringEnabledFromEnv(),
     metering: credits.meteringSink,
+    getSessionNamespace: ({ workspaceId, request }) => fullAppAgentSessionNamespace({ workspaceId, request }),
+    getExtraTools: (ctx) => appRef ? createFullAppBoringMcpAgentToolsForRequest(appRef, ctx) : [],
   })
+  appRef = app
   credits.attach(app)
+  registerFullAppBoringMcpRoutes(app)
   const address = await app.listen({ host: app.config.host, port: app.config.port })
   app.log.info({ event: 'core.server.ready', address }, 'core.server.ready')
 }

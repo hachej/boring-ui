@@ -11,7 +11,7 @@ The server is built by `createCoreWorkspaceAgentServer` (from `@hachej/boring-co
 - **Dev** (`dev`): builds agent/workspace/core, then `tsx src/server/dev.ts` runs the dev server — Vite frontend on **`http://localhost:5173`** in front of the Fastify API.
 - **Prod** (`start`): `node dist/server/main.js`, listening on **`PORT`** (default `3000`).
 
-App-specific server plugins live in `src/server/plugins.ts`. Set `BORING_PLUGIN_AUTHORING=1` to install the in-app plugin-authoring surface (dev and prod).
+App-specific server plugins live in `src/server/plugins.ts`. The generic `boring-mcp` Sources plugin is statically composed for this app; set `BORING_MCP_ENABLED=0` to disable its server prompt/plugin registration. Set `BORING_PLUGIN_AUTHORING=1` to install the in-app plugin-authoring surface (dev and prod).
 
 ## Run (local dev)
 
@@ -55,13 +55,40 @@ Common optional:
 | `PORT` / `HOST` / `LOG_LEVEL` | `3000` / `0.0.0.0` / `info` | HTTP server |
 | `CORS_ORIGINS` | `http://localhost:3000,http://localhost:5173` | Allowed origins |
 | `BORING_PLUGIN_AUTHORING` | `0` | `1` installs the plugin-authoring surface |
+| `ENABLE_DEV_LOGIN` | `0` | Dev server only. Set `1` to enable `GET /dev-login`, which creates/signs in a local dev user and redirects to `/`. Ignored in `NODE_ENV=production`. |
+| `DEV_LOGIN_EMAIL`, `DEV_LOGIN_PASSWORD`, `DEV_LOGIN_NAME` | `dev@example.test`, strong local password, `Dev` | Optional credentials for `ENABLE_DEV_LOGIN=1`. |
 | `RESEND_API_KEY` | — | Resend mail transport |
 | `BORING_AGENT_WORKSPACE_ROOT` | — | Host/control-plane workspace root. In `vercel-sandbox` prod this is `/data/workspaces`; it is not the sandbox cwd. Agent files live in sandbox `/workspace`. |
 | `BORING_AGENT_SESSION_ROOT` | — | Durable Pi chat transcript root. In Fly prod use a mounted-volume path such as `/data/pi-sessions`; do not rely on container `/root/.pi`. |
 | `BORING_AGENT_DEFAULT_MODEL_PROVIDER`, `BORING_AGENT_DEFAULT_MODEL_ID`, `INFOMANIAK_API_TOKEN`, `BORING_AGENT_INFOMANIAK_PRODUCT_ID`, `BORING_AGENT_INFOMANIAK_MODEL` | — | Default chat model, incl. OpenAI-compatible Infomaniak endpoint |
 | `BORING_AGENT_MODE` | `local` | Set `vercel-sandbox` to run the agent in a Vercel Firecracker microVM. Also configure Vercel credentials such as `VERCEL_TEAM_ID`, `VERCEL_PROJECT_ID`, and local/dev auth via `VERCEL_TOKEN` when OIDC is not available. |
+| `BORING_MCP_ENABLED` | `1` | Enables the generic boring-mcp server plugin/prompt for app-owned Sources wiring. |
+| `COMPOSIO_API_KEY` | — | Optional server-only managed connector credential resolved by the app's boring-mcp managed connector secret resolver. Do not create a `VITE_*` mirror. |
+| `BORING_MCP_MAX_READONLY_INPUT_BYTES` | `65536` | Governed read-only MCP call input limit. |
 
 The post-deploy smoke script reads `DEPLOY_URL` plus a family of `SMOKE_*` vars (e.g. `SMOKE_EMAIL`, `SMOKE_PASSWORD`, `SMOKE_AGENT_MODEL_PROVIDER`) to exercise sign-up/verify/reset/agent-chat against a deployed instance.
+
+### Local dev login
+
+For local development only, the dev server can expose a one-click login helper:
+
+```bash
+ENABLE_DEV_LOGIN=1 pnpm --filter full-app dev
+```
+
+Then open:
+
+```txt
+http://localhost:3000/dev-login
+```
+
+The route signs in `DEV_LOGIN_EMAIL` (default `dev@example.test`) or creates it if missing, sets the normal Better Auth session cookie, and redirects to `/`. The core dev server proxies `/dev-login` from the frontend port to the API server. The route is unavailable unless `ENABLE_DEV_LOGIN=1` and is ignored in `NODE_ENV=production`.
+
+The root `docker-compose.local-apps.yml` enables this helper by default for the externally reachable local full app:
+
+```txt
+http://100.68.199.114:6301/dev-login
+```
 
 ## Deployment
 

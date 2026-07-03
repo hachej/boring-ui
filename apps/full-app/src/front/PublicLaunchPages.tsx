@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef } from 'react'
 import { useConfig } from '@hachej/boring-core/front'
-import { definePanel, postUiCommand, workspaceLinkCommand } from '@hachej/boring-workspace'
+import { postUiCommand, workspaceLinkCommand } from '@hachej/boring-workspace'
 import { definePlugin } from '@hachej/boring-workspace/plugin'
 
 const calendlyUrl = 'https://calendly.com/julien-hurault-sumeo/30min'
@@ -38,31 +38,31 @@ export function PublicHeroDescription() {
 }
 
 function openPublicPanel(
-  containerApi: import('@hachej/boring-workspace').PaneProps['containerApi'],
+  openPanel: import('@hachej/boring-workspace').WorkspaceSourceProps['openPanel'],
   panel: 'landing' | 'lets-chat',
 ) {
   if (panel === 'landing') {
-    containerApi.addPanel({
+    openPanel?.({
       id: 'public-landing-page',
       component: 'public.launch.landing',
       title: 'Landing page',
     })
     return
   }
-  containerApi.addPanel({
+  openPanel?.({
     id: 'public-lets-chat',
     component: 'public.launch.lets-chat',
     title: 'Let’s chat',
   })
 }
 
-function PublicPagesPane({ containerApi }: import('@hachej/boring-workspace').PaneProps) {
+function PublicPagesPane({ openPanel }: import('@hachej/boring-workspace').WorkspaceSourceProps) {
   return (
     <div className="public-pages-pane">
-      <button type="button" onClick={() => openPublicPanel(containerApi, 'landing')}>
+      <button type="button" onClick={() => openPublicPanel(openPanel, 'landing')}>
         <strong>Landing page</strong>
       </button>
-      <button type="button" onClick={() => openPublicPanel(containerApi, 'lets-chat')}>
+      <button type="button" onClick={() => openPublicPanel(openPanel, 'lets-chat')}>
         <strong>Book a call</strong>
       </button>
       <div className="public-pages-pane-note">
@@ -305,25 +305,26 @@ export function LetsChatDemo() {
 export const publicLaunchPlugin = definePlugin({
   id: 'public-launch-pages',
   label: 'Public pages',
-  panels: [
-    definePanel({
+  workspaceSources: [
+    {
       id: 'Pages',
-      title: 'Pages',
-      placement: 'left-tab',
+      label: 'Pages',
       defaultPanelId: 'public.launch.landing',
       component: PublicPagesPane,
-    }),
-    definePanel({
+    },
+  ],
+  panels: [
+    {
       id: 'public.launch.landing',
       title: 'Landing page',
       placement: 'center',
       component: LandingPageDemo,
-    }),
-    definePanel({
+    },
+    {
       id: 'public.launch.lets-chat',
       title: 'Let’s chat',
       placement: 'center',
       component: LetsChatDemo,
-    }),
+    },
   ],
 })

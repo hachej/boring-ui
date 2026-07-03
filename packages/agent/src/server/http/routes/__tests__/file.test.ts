@@ -5,8 +5,9 @@ import { join } from 'node:path'
 import { afterEach, describe, expect, test, vi } from 'vitest'
 
 import type { Workspace } from '../../../../shared/workspace'
+import type { RuntimeFilesystemBindingOperations } from '../../../runtime/mode'
 import { createNodeWorkspace } from '../../../workspace/createNodeWorkspace'
-import { fileRoutes } from '../file'
+import { ERROR_CODE_NOT_FOUND_OR_DENIED, ERROR_CODE_READONLY, fileRoutes } from '../file'
 
 const tempRoots: string[] = []
 const apps: FastifyInstance[] = []
@@ -20,9 +21,18 @@ afterEach(async () => {
   )
 })
 
-async function createTestAppWithWorkspace(workspace: Workspace): Promise<FastifyInstance> {
+async function createTestAppWithWorkspace(
+  workspace: Workspace,
+  operations?: RuntimeFilesystemBindingOperations,
+  access: 'readonly' | 'readwrite' = 'readonly',
+): Promise<FastifyInstance> {
   const app = Fastify({ logger: false })
-  await app.register(fileRoutes, { workspace })
+  await app.register(fileRoutes, {
+    workspace,
+    ...(operations
+      ? { filesystemBindings: [{ filesystem: 'company_context', access, operations }] }
+      : {}),
+  })
   await app.ready()
   apps.push(app)
   return app
@@ -42,6 +52,214 @@ async function createTestApp(): Promise<{ app: FastifyInstance; workspaceRoot: s
 }
 
 describe('file routes (NodeWorkspace integration)', () => {
+  test('GET /api/v1/files preserves explicit company_context and sanitizes denied reads', async () => {
+    const workspaceRoot = await mkdtemp(join(tmpdir(), 'boring-ui-file-routes-'))
+    tempRoots.push(workspaceRoot)
+    const operations: RuntimeFilesystemBindingOperations = {
+      read: vi.fn(async ({ path }) => {
+        if (path.includes('denied')) {
+          const err = new Error('FORBIDDEN_FINANCE_SECRET_123 at /secret/finance.md') as Error & { statusCode?: number; code?: string }
+          err.statusCode = 404
+          err.code = 'not_found_or_denied'
+          throw err
+        }
+        return { content: `company:${path}` }
+      }),
+      list: vi.fn(),
+      find: vi.fn(),
+      grep: vi.fn(),
+      stat: vi.fn(async ({ path }) => ({ isDirectory: path.endsWith('/hr') })),
+      rejectMutation: vi.fn((operation) => {
+        throw new Error(`readonly ${operation}`)
+      }),
+    }
+    const app = await createTestAppWithWorkspace(createNodeWorkspace(workspaceRoot), operations)
+
+    const allowed = await app.inject({
+      method: 'GET',
+      url: '/api/v1/files?filesystem=company_context&path=%2Fcompany%2Fhr%2Fpolicy.md',
+    })
+    expect(allowed.statusCode).toBe(200)
+    expect(allowed.json()).toEqual({ content: 'company:/company/hr/policy.md', access: 'readonly' })
+    expect(operations.read).toHaveBeenCalledWith({ filesystem: 'company_context', path: '/company/hr/policy.md' })
+
+    const rawAllowed = await app.inject({
+      method: 'GET',
+      url: '/api/v1/files/raw?filesystem=company_context&path=%2Fcompany%2Fhr%2Fpolicy.md',
+    })
+    expect(rawAllowed.statusCode).toBe(200)
+    expect(rawAllowed.body).toBe('company:/company/hr/policy.md')
+
+    const denied = await app.inject({
+      method: 'GET',
+      url: '/api/v1/files?filesystem=company_context&path=%2Fcompany%2Fdenied.md',
+    })
+    expect(denied.statusCode).toBe(404)
+    expect(denied.json()).toEqual({ error: { code: ERROR_CODE_NOT_FOUND_OR_DENIED, message: 'not found or denied' } })
+    expect(denied.body).not.toContain('FORBIDDEN_FINANCE_SECRET_123')
+    expect(denied.body).not.toContain('/secret/finance.md')
+
+    const rawDenied = await app.inject({
+      method: 'GET',
+      url: '/api/v1/files/raw?filesystem=company_context&path=%2Fcompany%2Fdenied.md',
+    })
+    expect(rawDenied.statusCode).toBe(404)
+    expect(rawDenied.json()).toEqual({ error: { code: ERROR_CODE_NOT_FOUND_OR_DENIED, message: 'not found or denied' } })
+    expect(rawDenied.body).not.toContain('FORBIDDEN_FINANCE_SECRET_123')
+
+    const statAllowed = await app.inject({
+      method: 'GET',
+      url: '/api/v1/stat?filesystem=company_context&path=%2Fcompany%2Fhr',
+    })
+    expect(statAllowed.statusCode).toBe(200)
+    expect(statAllowed.json()).toEqual({ kind: 'dir' })
+    expect(operations.stat).toHaveBeenCalledWith({ filesystem: 'company_context', path: '/company/hr' })
+
+    const writeDenied = await app.inject({
+      method: 'POST',
+      url: '/api/v1/files',
+      payload: { filesystem: 'company_context', path: '/company/hr/policy.md', content: 'mutate' },
+    })
+    expect(writeDenied.statusCode).toBe(403)
+    expect(writeDenied.json()).toEqual({ error: { code: ERROR_CODE_READONLY, message: 'company_context binding is readonly' } })
+  })
+
+  test('GET /api/v1/files routes arbitrary named filesystem bindings without company_context special casing', async () => {
+    const workspaceRoot = await mkdtemp(join(tmpdir(), 'boring-ui-file-routes-'))
+    tempRoots.push(workspaceRoot)
+    const operations: RuntimeFilesystemBindingOperations = {
+      read: vi.fn(async ({ filesystem, path }) => ({ content: `${filesystem}:${path}` })),
+      list: vi.fn(),
+      find: vi.fn(),
+      grep: vi.fn(),
+      stat: vi.fn(async () => ({ isDirectory: false })),
+      rejectMutation: vi.fn((operation) => {
+        throw new Error(`readonly ${operation}`)
+      }),
+    }
+    const app = Fastify({ logger: false })
+    await app.register(fileRoutes, {
+      workspace: createNodeWorkspace(workspaceRoot),
+      filesystemBindings: [{ filesystem: 'project_alpha', access: 'readonly', operations }],
+    })
+    await app.ready()
+    apps.push(app)
+
+    const allowed = await app.inject({
+      method: 'GET',
+      url: '/api/v1/files?filesystem=project_alpha&path=%2Fsrc%2Findex.ts',
+    })
+    expect(allowed.statusCode).toBe(200)
+    expect(allowed.json()).toEqual({ content: 'project_alpha:/src/index.ts', access: 'readonly' })
+    expect(operations.read).toHaveBeenCalledWith({ filesystem: 'project_alpha', path: '/src/index.ts' })
+
+    const writeDenied = await app.inject({
+      method: 'POST',
+      url: '/api/v1/files',
+      payload: { filesystem: 'project_alpha', path: '/src/index.ts', content: 'mutate' },
+    })
+    expect(writeDenied.statusCode).toBe(403)
+    expect(writeDenied.json()).toEqual({ error: { code: ERROR_CODE_READONLY, message: 'project_alpha binding is readonly' } })
+  })
+
+  test('company_context readwrite binding routes management mutations through binding operations', async () => {
+    const workspaceRoot = await mkdtemp(join(tmpdir(), 'boring-ui-file-routes-'))
+    tempRoots.push(workspaceRoot)
+    const operations: RuntimeFilesystemBindingOperations = {
+      read: vi.fn(async ({ path }) => ({ content: `company:${path}` })),
+      list: vi.fn(),
+      find: vi.fn(),
+      grep: vi.fn(),
+      stat: vi.fn(async () => ({ isDirectory: false })),
+      write: vi.fn(async () => ({ mtimeMs: 789 })),
+      delete: vi.fn(async () => ({})),
+      move: vi.fn(async () => ({})),
+      mkdir: vi.fn(async () => ({})),
+      rejectMutation: vi.fn((operation) => {
+        throw new Error(`readonly ${operation}`)
+      }),
+    }
+    const app = await createTestAppWithWorkspace(createNodeWorkspace(workspaceRoot), operations, 'readwrite')
+
+    const res = await app.inject({
+      method: 'GET',
+      url: '/api/v1/files?filesystem=company_context&path=%2Fcompany%2Fcurated.md',
+    })
+
+    expect(res.statusCode).toBe(200)
+    expect(res.json()).toEqual({ content: 'company:/company/curated.md', access: 'readwrite' })
+
+    const writeRes = await app.inject({
+      method: 'POST',
+      url: '/api/v1/files',
+      payload: { filesystem: 'company_context', path: '/company/curated.md', content: 'updated', returnMtimeMs: true },
+    })
+    expect(writeRes.statusCode).toBe(200)
+    expect(writeRes.json()).toEqual({ ok: true, mtimeMs: 789 })
+    expect(operations.write).toHaveBeenCalledWith({ filesystem: 'company_context', path: '/company/curated.md', content: 'updated' })
+
+    const deleteRes = await app.inject({ method: 'DELETE', url: '/api/v1/files?filesystem=company_context&path=%2Fcompany%2Fcurated.md' })
+    expect(deleteRes.statusCode).toBe(200)
+    expect(operations.delete).toHaveBeenCalledWith({ filesystem: 'company_context', path: '/company/curated.md' })
+
+    const moveRes = await app.inject({ method: 'POST', url: '/api/v1/files/move', payload: { filesystem: 'company_context', from: '/company/a.md', to: '/company/b.md' } })
+    expect(moveRes.statusCode).toBe(200)
+    expect(operations.move).toHaveBeenCalledWith({ filesystem: 'company_context', from: '/company/a.md', to: '/company/b.md' })
+
+    const mkdirRes = await app.inject({ method: 'POST', url: '/api/v1/dirs', payload: { filesystem: 'company_context', path: '/company/new', recursive: true } })
+    expect(mkdirRes.statusCode).toBe(200)
+    expect(operations.mkdir).toHaveBeenCalledWith({ filesystem: 'company_context', path: '/company/new', recursive: true })
+  })
+
+  test('company_context filesystem rejects delete move and mkdir before user workspace mutation', async () => {
+    const workspaceRoot = await mkdtemp(join(tmpdir(), 'boring-ui-file-routes-'))
+    tempRoots.push(workspaceRoot)
+    await writeFile(join(workspaceRoot, 'user.txt'), 'safe')
+    const workspace = createNodeWorkspace(workspaceRoot)
+    const unlink = vi.spyOn(workspace, 'unlink')
+    const rename = vi.spyOn(workspace, 'rename')
+    const mkdir = vi.spyOn(workspace, 'mkdir')
+    const operations: RuntimeFilesystemBindingOperations = {
+      read: vi.fn(),
+      list: vi.fn(),
+      find: vi.fn(),
+      grep: vi.fn(),
+      stat: vi.fn(),
+      rejectMutation: vi.fn((operation) => {
+        throw new Error(`readonly ${operation}`)
+      }),
+    }
+    const app = await createTestAppWithWorkspace(workspace, operations)
+
+    const deleteDenied = await app.inject({
+      method: 'DELETE',
+      url: '/api/v1/files?filesystem=company_context&path=%2Fcompany%2Fhr%2Fpolicy.md',
+    })
+    expect(deleteDenied.statusCode).toBe(403)
+    expect(deleteDenied.json()).toEqual({ error: { code: ERROR_CODE_READONLY, message: 'company_context binding is readonly' } })
+
+    const moveDenied = await app.inject({
+      method: 'POST',
+      url: '/api/v1/files/move',
+      payload: { filesystem: 'company_context', from: '/company/hr/policy.md', to: '/company/hr/policy-2.md' },
+    })
+    expect(moveDenied.statusCode).toBe(403)
+    expect(moveDenied.json()).toEqual({ error: { code: ERROR_CODE_READONLY, message: 'company_context binding is readonly' } })
+
+    const mkdirDenied = await app.inject({
+      method: 'POST',
+      url: '/api/v1/dirs',
+      payload: { filesystem: 'company_context', path: '/company/new', recursive: true },
+    })
+    expect(mkdirDenied.statusCode).toBe(403)
+    expect(mkdirDenied.json()).toEqual({ error: { code: ERROR_CODE_READONLY, message: 'company_context binding is readonly' } })
+
+    expect(unlink).not.toHaveBeenCalled()
+    expect(rename).not.toHaveBeenCalled()
+    expect(mkdir).not.toHaveBeenCalled()
+    expect(await readFile(join(workspaceRoot, 'user.txt'), 'utf8')).toBe('safe')
+  })
+
   test('GET/POST/DELETE /api/v1/files roundtrip', async () => {
     const { app } = await createTestApp()
 

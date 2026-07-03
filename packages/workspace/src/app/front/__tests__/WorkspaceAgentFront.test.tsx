@@ -1,4 +1,4 @@
-import { act, fireEvent, render, screen, waitFor } from "@testing-library/react"
+import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react"
 import { useEffect, useState } from "react"
 import userEvent from "@testing-library/user-event"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
@@ -101,6 +101,8 @@ describe("WorkspaceAgentFront", () => {
         return new Response(JSON.stringify([]), { status: 200 })
       }
       if (url.includes("/api/v1/ready-status")) return new Response(null, { status: 200 })
+      if (url.includes("/api/v1/agent-plugins")) return new Response(JSON.stringify([]), { status: 200 })
+      if (url.includes("/api/v1/agent/reload")) return new Response(JSON.stringify({ reloaded: true }), { status: 200 })
       if (url.includes("/api/v1/ui/commands/next")) return new Response(JSON.stringify([]), { status: 200 })
       return new Response(null, { status: 204 })
     }))
@@ -321,6 +323,396 @@ describe("WorkspaceAgentFront", () => {
     expect(switchCalls).toContain("s2")
     expect(visibleChatSessionIds()).toEqual(["s2"])
     expect(screen.getByText("First session")).toBeInTheDocument()
+  })
+
+  it("renders plugin-tabs app navigation without classic session edge controls", async () => {
+    const user = userEvent.setup()
+    const onSwitchSession = vi.fn()
+    const onCreateSession = vi.fn()
+    const sessions = [
+      { id: "s1", title: "First session", updatedAt: Date.now() - 1_000 },
+      { id: "s2", title: "Second session", updatedAt: Date.now() - 2_000 },
+      { id: "s3", title: "Third session", updatedAt: Date.now() - 3_000 },
+    ]
+
+    render(
+      <WorkspaceAgentFront
+        workspaceId="plugin-tabs-nav"
+        workspaceLayout="plugin-tabs"
+        chatPanel={SessionIdChatPanel}
+        sessions={sessions}
+        activeSessionId="s1"
+        onSwitchSession={onSwitchSession}
+        onCreateSession={onCreateSession}
+        persistenceEnabled={false}
+      />,
+    )
+
+    const appNav = screen.getByLabelText("App navigation")
+    expect(appNav).toBeInTheDocument()
+    const resizeSeparator = screen.getByRole("separator", { name: "Resize app navigation" })
+    expect(resizeSeparator).toHaveAttribute("tabindex", "0")
+    expect(resizeSeparator).toHaveAttribute("aria-orientation", "vertical")
+    expect(resizeSeparator).toHaveAttribute("aria-valuemin", "220")
+    expect(resizeSeparator).toHaveAttribute("aria-valuemax", "420")
+    expect(resizeSeparator).toHaveAttribute("aria-valuenow", "268")
+    fireEvent.keyDown(resizeSeparator, { key: "ArrowRight" })
+    await waitFor(() => expect(resizeSeparator).toHaveAttribute("aria-valuenow", "284"))
+    fireEvent.keyDown(resizeSeparator, { key: "Home" })
+    await waitFor(() => expect(resizeSeparator).toHaveAttribute("aria-valuenow", "220"))
+    expect(within(appNav).getAllByRole("button", { name: "New chat" })).toHaveLength(1)
+    expect(within(appNav).getByRole("button", { name: "Search" })).toBeInTheDocument()
+    expect(within(appNav).getByRole("button", { name: "Plugins" })).toBeInTheDocument()
+    expect(within(appNav).getByRole("button", { name: "Skills" })).toBeInTheDocument()
+    await user.click(within(appNav).getByRole("button", { name: "New chat" }))
+    expect(onCreateSession).toHaveBeenCalledOnce()
+    expect(screen.queryByRole("button", { name: "Sessions" })).not.toBeInTheDocument()
+    expect(screen.queryByText("Workspaces")).not.toBeInTheDocument()
+    expect(screen.queryByText("Codex mobile")).not.toBeInTheDocument()
+    expect(screen.queryByText("Automations")).not.toBeInTheDocument()
+
+    const appRows = Array.from(appNav.querySelectorAll<HTMLElement>('[data-boring-workspace-part="app-session-row"]'))
+    const firstRow = appRows.find((row) => row.textContent?.includes("First session"))
+    const secondRow = appRows.find((row) => row.textContent?.includes("Second session"))
+    expect(firstRow).toHaveAttribute("data-boring-session-state", "active")
+    expect(firstRow?.className).not.toContain("border-l-2")
+    expect(secondRow).toHaveAttribute("data-boring-session-state", "normal")
+
+    await user.click(within(secondRow!).getByText("Second session"))
+    expect(onSwitchSession).toHaveBeenCalledWith("s2")
+
+    const switchCallsAfterRowClick = onSwitchSession.mock.calls.length
+    await user.click(within(appNav).getByRole("button", { name: "Pin Second session" }))
+    expect(onSwitchSession).toHaveBeenCalledTimes(switchCallsAfterRowClick)
+    expect(within(appNav).getByText("Pinned")).toBeInTheDocument()
+    expect(within(appNav).getByText("Chats")).toBeInTheDocument()
+
+    await user.click(within(appNav).getByRole("button", { name: "Open Third session in new chat pane" }))
+    expect(onSwitchSession).toHaveBeenCalledWith("s3")
+
+    await user.click(screen.getByRole("button", { name: "Hide app navigation" }))
+    expect(screen.queryByLabelText("App navigation")).not.toBeInTheDocument()
+    expect(document.querySelector('[data-boring-workspace-part="app-left-pane"]')).toBeNull()
+    expect(screen.getByRole("button", { name: "Open app navigation" })).toBeInTheDocument()
+  })
+
+  it("can hide plugin-tabs Skills and Plugins actions", () => {
+    render(
+      <WorkspaceAgentFront
+        workspaceId="plugin-tabs-hidden-overlays"
+        workspaceLayout="plugin-tabs"
+        chatPanel={SessionIdChatPanel}
+        sessions={[{ id: "s1", title: "First session" }]}
+        activeSessionId="s1"
+        showSkills={false}
+        showPlugins={false}
+        persistenceEnabled={false}
+      />,
+    )
+
+    const appNav = screen.getByLabelText("App navigation")
+    expect(within(appNav).getByRole("button", { name: "New chat" })).toBeInTheDocument()
+    expect(within(appNav).getByRole("button", { name: "Search" })).toBeInTheDocument()
+    expect(within(appNav).queryByRole("button", { name: "Skills" })).not.toBeInTheDocument()
+    expect(within(appNav).queryByRole("button", { name: "Plugins" })).not.toBeInTheDocument()
+  })
+
+  it("can render compact app navigation with only actions and chats", () => {
+    render(
+      <WorkspaceAgentFront
+        workspaceId="compact-project"
+        workspaceLayout="plugin-tabs"
+        appTitle="Seneca AI"
+        workspaceLabel="Default workspace"
+        appLeftHeaderMode="hidden"
+        chatPanel={SessionIdChatPanel}
+        sessions={[{ id: "s1", title: "Focused session" }]}
+        activeSessionId="s1"
+      />,
+    )
+
+    const appNav = screen.getByLabelText("App navigation")
+    expect(within(appNav).queryByText("Seneca AI")).not.toBeInTheDocument()
+    expect(within(appNav).queryByText("Default workspace")).not.toBeInTheDocument()
+    expect(within(appNav).getByRole("button", { name: "New chat" })).toBeInTheDocument()
+    expect(within(appNav).getByText("Chats")).toBeInTheDocument()
+    expect(within(appNav).getByText("Focused session")).toBeInTheDocument()
+  })
+
+  it("can render compact app navigation with a workspace picker and no brand", () => {
+    render(
+      <WorkspaceAgentFront
+        workspaceId="workspace-picker-project"
+        workspaceLayout="plugin-tabs"
+        appTitle="Seneca AI"
+        workspaceLabel="Default workspace"
+        topBarLeft={<button type="button">Default workspace</button>}
+        appLeftHeaderMode="workspace"
+        chatPanel={SessionIdChatPanel}
+        sessions={[{ id: "s1", title: "Focused session" }]}
+        activeSessionId="s1"
+      />,
+    )
+
+    const appNav = screen.getByLabelText("App navigation")
+    expect(within(appNav).queryByText("Seneca AI")).not.toBeInTheDocument()
+    expect(within(appNav).getByRole("button", { name: "Default workspace" })).toBeInTheDocument()
+    expect(within(appNav).getByText("Chats")).toBeInTheDocument()
+  })
+
+  it("renders multi-project app navigation with pinned sessions above the inline projects tree", () => {
+    const sessions = [
+      { id: "s1", title: "Active project session", updatedAt: Date.now() - 1_000 },
+      { id: "s2", title: "Pinned session", updatedAt: Date.now() - 2_000 },
+    ]
+
+    localStorage.setItem("boring-workspace:pinned-sessions:project-a", JSON.stringify({ ids: ["s2"] }))
+
+    render(
+      <WorkspaceAgentFront
+        workspaceId="project-a"
+        workspaceLayout="plugin-tabs"
+        appTitle="Seneca AI"
+        appLeftLayoutMode="multi-project"
+        workspaceSectionTitle="Projects"
+        chatPanel={SessionIdChatPanel}
+        sessions={sessions}
+        activeSessionId="s1"
+        appLeftProjects={[
+          { id: "project-a", name: "Project Alpha" },
+          { id: "project-b", name: "Project Beta", sessions: [{ id: "b1", title: "Beta kickoff" }] },
+        ]}
+        onCreateAppLeftProject={vi.fn()}
+      />,
+    )
+
+    const appNav = screen.getByLabelText("App navigation")
+    expect(within(appNav).queryByText("Seneca AI")).not.toBeInTheDocument()
+    expect(appNav.querySelector('[data-boring-workspace-part="app-left-pane-brand"]')).not.toBeInTheDocument()
+    expect(within(appNav).queryByText("Default workspace")).not.toBeInTheDocument()
+    expect(within(appNav).getByText("Pinned")).toBeInTheDocument()
+    expect(within(appNav).getByText("Projects")).toBeInTheDocument()
+    expect(within(appNav).getByRole("button", { name: "New project" })).toBeInTheDocument()
+    // Expansion is decoupled from switching: a dedicated chevron owns the
+    // open/closed state, and the active project starts expanded.
+    const collapseAlpha = within(appNav).getByRole("button", { name: "Collapse Project Alpha" })
+    expect(collapseAlpha).toHaveAttribute("aria-expanded", "true")
+    expect(within(appNav).getByRole("button", { name: "Project Alpha" })).toBeInTheDocument()
+    expect(within(appNav).getByText("Project Beta")).toBeInTheDocument()
+    fireEvent.click(within(appNav).getByRole("button", { name: "Expand Project Beta" }))
+    expect(within(appNav).getByText("Beta kickoff")).toBeInTheDocument()
+    expect(within(appNav).queryByRole("button", { name: "Pin Beta kickoff" })).not.toBeInTheDocument()
+    expect(within(appNav).getByText("Active project session")).toBeInTheDocument()
+    // The active session is already open, so it offers no "open in a new pane".
+    expect(within(appNav).queryByRole("button", { name: "Open Active project session in new chat pane" })).not.toBeInTheDocument()
+    // A session that isn't open still does.
+    expect(within(appNav).getByRole("button", { name: "Open Pinned session in new chat pane" })).toBeInTheDocument()
+    expect(within(appNav).getByRole("button", { name: "Pin Active project session" })).toBeInTheDocument()
+    expect(within(appNav).getByText("Pinned session")).toBeInTheDocument()
+    expect(within(appNav).queryByText("Chats")).not.toBeInTheDocument()
+    // Per-project action: start a new chat inside a specific project.
+    expect(within(appNav).getByRole("button", { name: "New chat in Project Alpha" })).toBeInTheDocument()
+
+    // The chevron (not the row) toggles expansion.
+    fireEvent.click(collapseAlpha)
+    expect(within(appNav).getByRole("button", { name: "Expand Project Alpha" })).toHaveAttribute("aria-expanded", "false")
+    expect(within(appNav).queryByText("Active project session")).not.toBeInTheDocument()
+  })
+
+  it("keeps classic workspace sources available outside plugin-tabs mode", async () => {
+    function SourcePanel() {
+      return <div>Classic source body</div>
+    }
+    const plugin = definePlugin({
+      id: "classic-source-plugin",
+      workspaceSources: [{ id: "classic-source", label: "Classic source", component: SourcePanel }],
+    })
+
+    render(
+      <WorkspaceAgentFront
+        workspaceId="classic-workspace-source"
+        chatPanel={SessionIdChatPanel}
+        sessions={[{ id: "s1", title: "First session" }]}
+        activeSessionId="s1"
+        plugins={[plugin]}
+        defaultSurfaceOpen
+        defaultWorkbenchLeftOpen
+        defaultWorkbenchLeftTab="classic-source"
+        provisionWorkspace={false}
+        persistenceEnabled={false}
+      />,
+    )
+
+    await waitFor(() => expect(screen.getByText("Classic source body")).toBeInTheDocument())
+  })
+
+  it("opens the Plugins overlay from the app nav and lists external plugins only", async () => {
+    const user = userEvent.setup()
+    vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input)
+      if (url.includes("/api/v1/tree")) return new Response(JSON.stringify({ entries: [] }), { status: 200 })
+      if (url.includes("/api/v1/ready-status")) return new Response(null, { status: 200 })
+      if (url.includes("/api/v1/agent-plugins")) {
+        return new Response(JSON.stringify([{ id: "external-plugin", boring: { label: "External Plugin" }, version: "1.2.3", revision: 4, frontTarget: { kind: "module-url", revision: 4 } }]), { status: 200 })
+      }
+      if (url.includes("/api/v1/agent/reload")) return new Response(JSON.stringify({ reloaded: true }), { status: 200 })
+      if (url.includes("/api/v1/ui/commands/next")) return new Response(JSON.stringify([]), { status: 200 })
+      return new Response(null, { status: 204 })
+    }))
+
+    function PluginPanel() {
+      return <div>Demo plugin panel body</div>
+    }
+    const plugin = definePlugin({
+      id: "demo-plugin",
+      label: "Demo Plugin",
+      panels: [{ id: "demo-plugin.panel", label: "Demo Panel", placement: "workspace-page", component: PluginPanel }],
+    })
+
+    render(
+      <WorkspaceAgentFront
+        workspaceId="plugin-tabs-plugins-overlay"
+        workspaceLayout="plugin-tabs"
+        chatPanel={SessionIdChatPanel}
+        sessions={[{ id: "s1", title: "First session" }]}
+        activeSessionId="s1"
+        plugins={[plugin]}
+        persistenceEnabled={false}
+      />,
+    )
+
+    await user.click(within(screen.getByLabelText("App navigation")).getByRole("button", { name: "Plugins" }))
+    const overlay = document.querySelector('[data-boring-workspace-part="plugins-overlay"]')
+    expect(overlay).not.toBeNull()
+    await waitFor(() => expect(overlay!).toHaveTextContent("External Plugin"))
+    expect(overlay!).toHaveTextContent("external-plugin")
+    expect(overlay!).not.toHaveTextContent("Demo Plugin")
+    expect(overlay!).not.toHaveTextContent("Demo Panel")
+
+    await user.click(within(screen.getByLabelText("App navigation")).getByRole("button", { name: "New chat" }))
+    expect(document.querySelector('[data-boring-workspace-part="plugins-overlay"]')).toBeNull()
+  })
+
+  it.each([
+    { action: "Plugins", part: "plugins-overlay" },
+    { action: "Skills", part: "skills-page" },
+  ])("closes the $action overlay when switching sessions from app navigation", async ({ action, part }) => {
+    const user = userEvent.setup()
+    const onSwitchSession = vi.fn()
+    vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input)
+      if (url.includes("/api/v1/tree")) return new Response(JSON.stringify({ entries: [] }), { status: 200 })
+      if (url.includes("/api/v1/ready-status")) return new Response(null, { status: 200 })
+      if (url.includes("/api/v1/agent/skills")) return new Response(JSON.stringify({ skills: [] }), { status: 200 })
+      if (url.includes("/api/v1/agent-plugins")) return new Response(JSON.stringify([]), { status: 200 })
+      if (url.includes("/api/v1/agent/reload")) return new Response(JSON.stringify({ reloaded: true }), { status: 200 })
+      if (url.includes("/api/v1/ui/commands/next")) return new Response(JSON.stringify([]), { status: 200 })
+      return new Response(null, { status: 204 })
+    }))
+
+    render(
+      <WorkspaceAgentFront
+        workspaceId={`plugin-tabs-${part}-session-switch`}
+        workspaceLayout="plugin-tabs"
+        chatPanel={SessionIdChatPanel}
+        sessions={[
+          { id: "s1", title: "First session" },
+          { id: "s2", title: "Second session" },
+        ]}
+        activeSessionId="s1"
+        onSwitchSession={onSwitchSession}
+        persistenceEnabled={false}
+      />,
+    )
+
+    const appNav = screen.getByLabelText("App navigation")
+    await user.click(within(appNav).getByRole("button", { name: action }))
+    await waitFor(() => expect(document.querySelector(`[data-boring-workspace-part="${part}"]`)).not.toBeNull())
+
+    await user.click(within(appNav).getByText("Second session"))
+
+    expect(onSwitchSession).toHaveBeenCalledWith("s2")
+    expect(document.querySelector(`[data-boring-workspace-part="${part}"]`)).toBeNull()
+    expect(visibleChatSessionIds()).toEqual(["s2"])
+  })
+
+  it("opens Skills as a chat overlay and uses the UI bridge to open a skill", async () => {
+    const user = userEvent.setup()
+    vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input)
+      if (url.includes("/api/v1/tree")) return new Response(JSON.stringify({ entries: [] }), { status: 200 })
+      if (url.includes("/api/v1/ready-status")) return new Response(null, { status: 200 })
+      if (url.includes("/api/v1/agent/skills")) {
+        return new Response(JSON.stringify({
+          skills: [{
+            name: "review",
+            description: "Review the current diff",
+            source: "project",
+            filePath: ".agents/skills/review/SKILL.md",
+          }],
+        }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        })
+      }
+      if (url.includes("/api/v1/agent-plugins")) {
+        return new Response(JSON.stringify([{ id: "external-overlay-plugin", boring: { label: "External Overlay" }, revision: 2 }]), { status: 200 })
+      }
+      if (url.includes("/api/v1/agent/reload")) return new Response(JSON.stringify({ reloaded: true }), { status: 200 })
+      if (url.includes("/api/v1/ui/commands/next")) return new Response(JSON.stringify([]), { status: 200 })
+      return new Response(null, { status: 204 })
+    }))
+
+    function PluginPanel() {
+      return <div>Plugin panel body</div>
+    }
+    const plugin = definePlugin({
+      id: "overlay-plugin",
+      label: "Demo Plugin",
+      panels: [{ id: "overlay-plugin.panel", label: "Demo Panel", placement: "workspace-page", component: PluginPanel }],
+    })
+
+    const commands: UiCommand[] = []
+    const onUiCommand = (event: Event) => commands.push((event as CustomEvent<UiCommand>).detail)
+    window.addEventListener(UI_COMMAND_EVENT, onUiCommand)
+    try {
+      render(
+        <WorkspaceAgentFront
+          workspaceId="plugin-tabs-overlays"
+          workspaceLayout="plugin-tabs"
+          chatPanel={SessionIdChatPanel}
+          sessions={[{ id: "s1", title: "First session" }]}
+          activeSessionId="s1"
+          plugins={[plugin]}
+          persistenceEnabled={false}
+        />,
+      )
+
+      await user.click(within(screen.getByLabelText("App navigation")).getByRole("button", { name: "Skills" }))
+      await waitFor(() => expect(screen.getByText("/review")).toBeInTheDocument())
+      expect(screen.getByText("Review the current diff")).toBeInTheDocument()
+
+      await user.click(screen.getByRole("button", { name: "Open skill review in workspace" }))
+      expect(commands).toContainEqual({
+        kind: "openFile",
+        params: { path: ".agents/skills/review/SKILL.md", mode: "view" },
+      })
+      expect(screen.getByText("/review")).toBeInTheDocument()
+
+      await user.click(screen.getByRole("button", { name: "Hide app navigation" }))
+      expect(screen.getByText("Skills").closest("header")?.className).toContain("pl-12")
+
+      await user.click(screen.getByRole("button", { name: "Close skills" }))
+      expect(screen.queryByText("/review")).not.toBeInTheDocument()
+      await user.click(screen.getByRole("button", { name: "Open app navigation" }))
+      await user.click(within(screen.getByLabelText("App navigation")).getByRole("button", { name: "Skills" }))
+      await waitFor(() => expect(screen.getByText("/review")).toBeInTheDocument())
+      await user.click(within(screen.getByLabelText("App navigation")).getByRole("button", { name: "New chat" }))
+      expect(screen.queryByText("/review")).not.toBeInTheDocument()
+
+    } finally {
+      window.removeEventListener(UI_COMMAND_EVENT, onUiCommand)
+    }
   })
 
   it("opens a controlled void-created session as a pane to the right", async () => {
@@ -820,7 +1212,7 @@ describe("WorkspaceAgentFront", () => {
     )
 
     expect(screen.getByText("Preparing workspace…")).toBeInTheDocument()
-    expect(screen.getByRole("button", { name: "Workbench" })).toBeInTheDocument()
+    expect(screen.getByRole("button", { name: "Open workbench" })).toBeInTheDocument()
   })
 
   it("does not start default remote session warmup when provisioning is disabled", async () => {
@@ -1451,22 +1843,30 @@ describe("WorkspaceAgentFront", () => {
     expect(create.mock.calls[0]).toEqual([])
   })
 
-  it("does not auto-create a replacement after the user deletes the last remote session", async () => {
-    vi.useFakeTimers()
-    const create = vi.fn(async () => ({ id: "created", title: "Created" }))
+  it("creates a replacement before deleting the last authoritative remote session", async () => {
+    const calls: string[] = []
+    const createArgs: unknown[] = []
     const deleted = vi.fn()
 
     function useDeletingSessions() {
       const [sessionIds, setSessionIds] = useState(["only"])
-      const sessions = sessionIds.map((id) => ({ id, title: "Only session", updatedAt: Date.now() }))
+      const create = vi.fn(async (...args: unknown[]) => {
+        calls.push("create")
+        createArgs.push(args)
+        setSessionIds((prev) => ["created", ...prev])
+        return { id: "created", title: "Created" }
+      })
+      const sessions = sessionIds.map((id) => ({ id, title: id === "created" ? "Created" : "Only session", updatedAt: Date.now() }))
       return {
         sessions,
         activeSessionId: sessions[0]?.id ?? null,
         activeSession: sessions[0] ?? null,
         loading: false,
+        hasMore: false,
         create,
         switch: vi.fn(),
         delete: (id: string) => {
+          calls.push("delete")
           deleted(id)
           setSessionIds((prev) => prev.filter((sessionId) => sessionId !== id))
         },
@@ -1478,6 +1878,7 @@ describe("WorkspaceAgentFront", () => {
         workspaceId="delete-last"
         chatPanel={ChatPanel}
         useSessions={useDeletingSessions}
+        defaultSessionTitle="New chat"
         persistenceEnabled={false}
       />,
     )
@@ -1485,11 +1886,52 @@ describe("WorkspaceAgentFront", () => {
     fireEvent.click(screen.getByRole("button", { name: "Sessions" }))
     fireEvent.click(screen.getByLabelText("Delete Only session"))
 
+    await waitFor(() => expect(calls).toEqual(["create", "delete"]))
+    expect(createArgs).toEqual([[{ title: "New chat" }]])
     expect(deleted).toHaveBeenCalledWith("only")
+    expect(screen.getAllByText("Created").length).toBeGreaterThan(0)
+    expect(screen.queryByText("Only session")).not.toBeInTheDocument()
+  })
+
+  it("does not create a replacement when deleting from a non-authoritative paginated remote page", async () => {
+    vi.useFakeTimers()
+    const create = vi.fn(async () => ({ id: "created", title: "Created" }))
+    const deleted = vi.fn()
+
+    function usePaginatedSessions() {
+      const [sessionIds, setSessionIds] = useState(["visible"])
+      const sessions = sessionIds.map((id) => ({ id, title: "Visible session", updatedAt: Date.now() }))
+      return {
+        sessions,
+        activeSessionId: sessions[0]?.id ?? null,
+        activeSession: sessions[0] ?? null,
+        loading: false,
+        hasMore: true,
+        create,
+        switch: vi.fn(),
+        delete: (id: string) => {
+          deleted(id)
+          setSessionIds((prev) => prev.filter((sessionId) => sessionId !== id))
+        },
+      }
+    }
+
+    render(
+      <WorkspaceAgentFront
+        workspaceId="delete-paginated"
+        chatPanel={ChatPanel}
+        useSessions={usePaginatedSessions}
+        persistenceEnabled={false}
+      />,
+    )
+
+    fireEvent.click(screen.getByRole("button", { name: "Sessions" }))
+    fireEvent.click(screen.getByLabelText("Delete Visible session"))
+
+    expect(deleted).toHaveBeenCalledWith("visible")
     await act(async () => {
       await vi.advanceTimersByTimeAsync(2500)
     })
-
     expect(create).not.toHaveBeenCalled()
     vi.useRealTimers()
   })
@@ -1621,6 +2063,7 @@ describe("WorkspaceAgentFront", () => {
         activeTab: string | null
         activeFile: string | null
         availablePanels: string[]
+        availableSurfaces: Array<{ id: string; kind: string; title?: string }>
       }
       causedBy: string
     }
@@ -1640,6 +2083,11 @@ describe("WorkspaceAgentFront", () => {
     })
     expect(body.state.availablePanels).toEqual(
       expect.arrayContaining(["chat", "artifact-surface"]),
+    )
+    expect(body.state.availableSurfaces).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ id: "filesystem-path", kind: "workspace.open.path" }),
+      ]),
     )
   })
 

@@ -13,7 +13,7 @@ const workspaceRoot = process.env.BOMBADIL_WORKSPACE_ROOT
   ?? await mkdtemp(path.join(tmpdir(), 'boring-agent-bombadil-workspace.'))
 const outputPath = process.env.BOMBADIL_OUTPUT_PATH
   ?? path.join(tmpdir(), 'boring-agent-bombadil-pi-native-chat')
-const timeLimit = process.env.BOMBADIL_TIME_LIMIT ?? '30s'
+const timeLimit = process.env.BOMBADIL_TIME_LIMIT ?? '90s'
 const tickMs = process.env.BORING_AGENT_E2E_SCRIPTED_PI_TICK_MS ?? '650'
 const requestedPort = Number.parseInt(process.env.BOMBADIL_AGENT_PORT ?? '', 10)
 const port = Number.isFinite(requestedPort) && requestedPort > 0

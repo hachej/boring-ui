@@ -240,7 +240,33 @@ jobs:
         run: pnpm install --frozen-lockfile
 
       - name: Install system dependencies
-        run: sudo apt-get install -y ripgrep
+        run: sudo apt-get install -y bubblewrap ripgrep
+
+      - name: Prepare bwrap user namespaces
+        run: |
+          sudo sysctl -w kernel.unprivileged_userns_clone=1 || true
+          sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0 || true
+          sudo sysctl -w kernel.apparmor_restrict_unprivileged_unconfined=0 || true
+          tmp=$(mktemp -d)
+          bwrap \
+            --unshare-all \
+            --die-with-parent \
+            --new-session \
+            --tmpfs / \
+            --proc /proc \
+            --dev /dev \
+            --tmpfs /tmp \
+            --ro-bind /usr /usr \
+            --ro-bind /lib /lib \
+            --ro-bind /lib64 /lib64 \
+            --ro-bind /bin /bin \
+            --ro-bind /sbin /sbin \
+            --ro-bind /etc /etc \
+            --bind "$tmp" /workspace \
+            --chdir /workspace \
+            --setenv HOME /workspace \
+            -- bash -c 'echo bwrap-ok > out.txt'
+          test "$(cat "$tmp/out.txt")" = bwrap-ok
 
       - name: Run affected unit tests
         run: pnpm test:changed
@@ -271,7 +297,7 @@ jobs:
           - name: rest-cli
             command: pnpm -r --filter @hachej/boring-core... --filter @hachej/boring-ui-cli... --workspace-concurrency=4 run build && pnpm -r --filter @hachej/boring-ui-kit --filter @hachej/boring-ui-plugin-cli --filter @hachej/boring-ui-cli --workspace-concurrency=4 run test
           - name: rest-plugins
-            command: pnpm -r --filter @hachej/boring-ask-user... --filter @hachej/boring-data-catalog... --filter @hachej/boring-deck... --workspace-concurrency=4 run build && pnpm -r --filter @hachej/boring-ask-user --filter @hachej/boring-data-explorer --filter @hachej/boring-data-catalog --filter @hachej/boring-deck --workspace-concurrency=4 run test
+            command: pnpm -r --filter @hachej/boring-ask-user... --filter @hachej/boring-data-catalog... --filter @hachej/boring-deck... --filter @hachej/boring-generated-pane... --filter @hachej/boring-data-bridge... --filter @hachej/boring-bi-dashboard... --workspace-concurrency=4 run build && pnpm -r --filter @hachej/boring-ask-user --filter @hachej/boring-data-explorer --filter @hachej/boring-data-catalog --filter @hachej/boring-deck --filter @hachej/boring-generated-pane --filter @hachej/boring-data-bridge --filter @hachej/boring-bi-dashboard --workspace-concurrency=4 run test
     services:
       postgres:
         image: postgres:16
@@ -303,7 +329,33 @@ jobs:
         run: pnpm install --frozen-lockfile
 
       - name: Install system dependencies
-        run: sudo apt-get install -y ripgrep
+        run: sudo apt-get install -y bubblewrap ripgrep
+
+      - name: Prepare bwrap user namespaces
+        run: |
+          sudo sysctl -w kernel.unprivileged_userns_clone=1 || true
+          sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0 || true
+          sudo sysctl -w kernel.apparmor_restrict_unprivileged_unconfined=0 || true
+          tmp=$(mktemp -d)
+          bwrap \
+            --unshare-all \
+            --die-with-parent \
+            --new-session \
+            --tmpfs / \
+            --proc /proc \
+            --dev /dev \
+            --tmpfs /tmp \
+            --ro-bind /usr /usr \
+            --ro-bind /lib /lib \
+            --ro-bind /lib64 /lib64 \
+            --ro-bind /bin /bin \
+            --ro-bind /sbin /sbin \
+            --ro-bind /etc /etc \
+            --bind "$tmp" /workspace \
+            --chdir /workspace \
+            --setenv HOME /workspace \
+            -- bash -c 'echo bwrap-ok > out.txt'
+          test "$(cat "$tmp/out.txt")" = bwrap-ok
 
       - name: Run vitest shard
         run: ${{ matrix.command }}
@@ -564,12 +616,15 @@ jobs:
           pnpm --filter @hachej/boring-ask-user build
           pnpm --filter @hachej/boring-data-explorer build
           pnpm --filter @hachej/boring-data-catalog build
+          pnpm --filter @hachej/boring-generated-pane build
+          pnpm --filter @hachej/boring-data-bridge build
+          pnpm --filter @hachej/boring-bi-dashboard build
         env:
           NODE_OPTIONS: --max-old-space-size=4096
 
       - name: Publish packages with ci dist-tag
         run: |
-          for pkg in packages/ui packages/agent packages/plugin-cli packages/workspace packages/core packages/cli plugins/deck plugins/ask-user plugins/data-explorer plugins/data-catalog; do
+          for pkg in packages/ui packages/agent packages/plugin-cli packages/workspace packages/core packages/cli plugins/deck plugins/ask-user plugins/data-explorer plugins/data-catalog plugins/generated-pane plugins/data-bridge plugins/bi-dashboard; do
             tarball=$(cd $pkg && pnpm pack 2>&1 | tail -1)
             if ! npm publish "$pkg/$tarball" --access public --tag ci --provenance; then
               echo "::warning::CI package publish failed for $pkg; continuing because release publishing is handled by release.yml"

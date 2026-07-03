@@ -24,6 +24,10 @@ function bwrapSpawnHook(
   const bwrapPrefix = ['bwrap', ...args].map(shellEscape).join(' ')
   return (context) => ({
     ...context,
+    // The inner command runs at sandboxRoot inside bwrap, but the host-side
+    // process must spawn from a real host path. GitHub runners do not have a
+    // /workspace directory, so keep the outer cwd on the mounted storage root.
+    cwd: workspaceRoot,
     command: `${bwrapPrefix} bash -lc ${shellEscape(context.command)}`,
     env: withWorkspacePythonEnv({
       workspaceRoot,

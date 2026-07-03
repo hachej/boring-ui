@@ -8,8 +8,10 @@ function fakeSurface(): SurfaceShellApi & {
   __panels: unknown[]
   __expanded: string[]
   __leftClosed: number
+  __openFileCalls: Array<{ path: string; filesystem?: string }>
 } {
   const opened: string[] = []
+  const openFileCalls: Array<{ path: string; filesystem?: string }> = []
   const surfaces: unknown[] = []
   const panels: unknown[] = []
   const expanded: string[] = []
@@ -19,8 +21,12 @@ function fakeSurface(): SurfaceShellApi & {
     __panels: unknown[]
     __expanded: string[]
     __leftClosed: number
+    __openFileCalls: Array<{ path: string; filesystem?: string }>
   } = {
-    openFile: (path: string) => opened.push(path),
+    openFile: (path: string, options?: { filesystem?: string }) => {
+      opened.push(path)
+      openFileCalls.push({ path, filesystem: options?.filesystem })
+    },
     openSurface: (request: unknown) => surfaces.push(request),
     openPanel: (cfg: unknown) => panels.push(cfg),
     expandToFile: (path: string) => expanded.push(path),
@@ -29,6 +35,7 @@ function fakeSurface(): SurfaceShellApi & {
     },
     getSnapshot: (): SurfaceShellSnapshot => ({ openTabs: [], activeTab: null }),
     __opened: opened,
+    __openFileCalls: openFileCalls,
     __surfaces: surfaces,
     __panels: panels,
     __expanded: expanded,
@@ -51,10 +58,17 @@ function ctx(over: Partial<DispatchContext> = {}, surface = fakeSurface()): Disp
 }
 
 describe("dispatchUiCommand", () => {
-  it("openFile calls surface.openFile with the path", () => {
+  it("openFile calls surface.openFile with the path and legacy user filesystem", () => {
     const c = ctx()
     dispatchUiCommand({ kind: "openFile", params: { path: "greeter.ts" } }, c)
     expect(c.__surface.__opened).toEqual(["greeter.ts"])
+    expect(c.__surface.__openFileCalls).toEqual([{ path: "greeter.ts", filesystem: "user" }])
+  })
+
+  it("openFile forwards explicit company_context filesystem", () => {
+    const c = ctx()
+    dispatchUiCommand({ kind: "openFile", params: { path: "/company/hr/policy.md", filesystem: "company_context" } }, c)
+    expect(c.__surface.__openFileCalls).toEqual([{ path: "/company/hr/policy.md", filesystem: "company_context" }])
   })
 
   it("openFile is a no-op when path is missing or non-string", () => {
@@ -157,7 +171,31 @@ describe("dispatchUiCommand", () => {
       {
         kind: "data-catalog.open-row",
         target: "orders_daily",
+        filesystem: "user",
         meta: { catalogId: "metrics" },
+      },
+    ])
+  })
+
+  it("openSurface forwards explicit filesystem for path surfaces", () => {
+    const c = ctx()
+    dispatchUiCommand(
+      {
+        kind: "openSurface",
+        params: {
+          kind: "workspace.open.path",
+          target: "/company/hr/policy.md",
+          filesystem: "company_context",
+        },
+      },
+      c,
+    )
+    expect(c.__surface.__surfaces).toEqual([
+      {
+        kind: "workspace.open.path",
+        target: "/company/hr/policy.md",
+        filesystem: "company_context",
+        meta: undefined,
       },
     ])
   })
@@ -174,7 +212,7 @@ describe("dispatchUiCommand", () => {
     }
     expect(c.__surface.__surfaces).toEqual([])
     expect(openWorkbench).not.toHaveBeenCalled()
-    expect(skipped).toHaveBeenCalledWith(expect.objectContaining({ detail: { kind: "questions", target: "q1", meta: { openOnlyWhenSessionOpen: true } } }))
+    expect(skipped).toHaveBeenCalledWith(expect.objectContaining({ detail: { kind: "questions", target: "q1", filesystem: "user", meta: { openOnlyWhenSessionOpen: true } } }))
   })
 
   it("skips session-gated openSurface when no host policy is available", () => {
@@ -189,7 +227,7 @@ describe("dispatchUiCommand", () => {
     }
     expect(c.__surface.__surfaces).toEqual([])
     expect(openWorkbench).not.toHaveBeenCalled()
-    expect(skipped).toHaveBeenCalledWith(expect.objectContaining({ detail: { kind: "questions", target: "q1", meta: { sessionId: "s1", openOnlyWhenSessionOpen: true } } }))
+    expect(skipped).toHaveBeenCalledWith(expect.objectContaining({ detail: { kind: "questions", target: "q1", filesystem: "user", meta: { sessionId: "s1", openOnlyWhenSessionOpen: true } } }))
   })
 
   it("marks openSurface as ephemeral when it had to open a closed workbench", () => {
@@ -198,7 +236,7 @@ describe("dispatchUiCommand", () => {
     let open = false
     const c = ctx({ isWorkbenchOpen: () => open, openWorkbench: () => { open = true } }, surface)
     dispatchUiCommand({ kind: "openSurface", params: { kind: "questions", target: "q1" } }, c)
-    expect(c.__surface.__surfaces).toEqual([{ kind: "questions", target: "q1", meta: { closeWorkbenchOnDone: true } }])
+    expect(c.__surface.__surfaces).toEqual([{ kind: "questions", target: "q1", filesystem: "user", meta: { closeWorkbenchOnDone: true } }])
     raf.mockRestore()
   })
 

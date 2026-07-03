@@ -1,0 +1,13 @@
+id,role,region,revenue,utilization,satisfaction
+1,engineer,EMEA,120000,0.82,0.91
+2,designer,AMER,80000,0.74,0.88
+3,engineer,EMEA,140000,0.89,0.93
+4,analyst,APAC,90000,0.69,0.84
+5,engineer,AMER,155000,0.92,0.9
+6,designer,EMEA,98000,0.77,0.86
+7,analyst,AMER,112000,0.81,0.89
+8,product,APAC,132000,0.73,0.87
+9,product,EMEA,148000,0.86,0.92
+10,engineer,APAC,126000,0.79,0.85
+12,ops,AMER,76000,0.71,0.82
+13,ops,EMEA,88000,0.76,0.86

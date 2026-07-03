@@ -1,0 +1,114 @@
+# `@hachej/boring-mcp`
+
+Reusable boring-ui MCP plugin foundation.
+
+This package is the generic MCP capability that child apps can enable. It owns:
+
+- generic MCP management overlay shell for app-left chrome;
+- provider template, source, tool, policy, redaction, status, and facade contracts;
+- deny-before-allow read-only policy helpers;
+- reusable Composio managed connector provider for hosted OAuth/session onboarding;
+- MCP SDK Streamable HTTP transport for real MCP-compatible endpoints, including Composio session MCP URLs;
+- fake-transport-testable facade seams;
+- normalized tool catalog search/describe contracts;
+- governed `mcp_readonly_call` execution boundary with audit metadata;
+- thin agent bridge tool registry for the seven stable boring-mcp operations;
+- server-only managed connector adapter seam with app-injected secret resolution.
+
+It intentionally does **not** own app-specific secret storage or app identity. Apps provide the Composio API key resolver, source persistence, enabled provider config, and actor resolution; boring-mcp owns generic Composio session creation, hosted connect URL creation, MCP protocol transport, catalog, policy, bridge tools, redaction, and read-only execution path.
+
+## Enable in an app
+
+Apps mount the MCP UI as an app-left management overlay, alongside Plugins and Skills, instead of a Workbench source/panel:
+
+```tsx
+import { BoringMcpSourcesOverlay } from '@hachej/boring-mcp/front'
+
+<CoreWorkspaceAgentFront
+  appLeftOverlayActions={[{
+    id: 'boring-mcp',
+    label: 'MCP',
+    icon: <McpIcon />,
+    render: ({ onClose, headerInsetStart, headerInsetEnd, workspaceId }) => (
+      <BoringMcpSourcesOverlay
+        options={{ enabledProviderIds: ['notion'], sourceApi: { enabled: true, workspaceId } }}
+        onClose={onClose}
+        headerInsetStart={headerInsetStart}
+        headerInsetEnd={headerInsetEnd}
+      />
+    ),
+  }]}
+/>
+```
+
+Server composition can enable just the prompt, or the full generic bridge tool stack. For hosted Composio-backed sources, the app supplies only source persistence, the server-side API key resolver, enabled provider config, and actor resolution:
+
+```ts
+import {
+  createBoringMcpServerPlugin,
+  createComposioManagedConnectorProvider,
+  createComposioMcpTransport,
+  createManagedConnectorAdapter,
+} from '@hachej/boring-mcp/server'
+
+const configs = [
+  { provider: 'notion', displayName: 'Notion', toolkitId: 'notion', connectUrlOrigins: ['https://app.composio.dev'] },
+]
+const secretResolver = {
+  async resolveSecret() {
+    return { storage: 'server-env' as const, value: process.env.COMPOSIO_API_KEY! }
+  },
+}
+
+const connector = createManagedConnectorAdapter({
+  registry: mcpSourceRegistry,
+  provider: createComposioManagedConnectorProvider(),
+  secretResolver,
+  configs,
+  redactionCanaries: ['app-owned-mcp-canary'],
+})
+
+const transport = createComposioMcpTransport({ secretResolver, configs })
+
+createCoreWorkspaceAgentServer({
+  plugins: [createBoringMcpServerPlugin({
+    registry: mcpSourceRegistry,
+    transport,
+    resolveActor: async (_params, ctx) => resolveActorForAgentSession(ctx.sessionId),
+  })],
+})
+```
+
+When `registry`, `transport`, and `resolveActor` are provided, the plugin contributes the seven stable agent tools automatically: `mcp_servers_list`, `mcp_server_status`, `mcp_server_doctor`, `mcp_server_probe`, `mcp_tools_search`, `mcp_tool_describe`, and `mcp_readonly_call`.
+
+For non-Composio MCP endpoints, apps can still use `createMcpSdkStreamableHttpTransport({ endpoint })` directly.
+
+Apps may also list the package in `package.json#boring.defaultPluginPackages` for server/plugin discovery, but shipped app chrome should mount the front overlay explicitly when the UI must render.
+
+## Security boundaries
+
+Before production provider enablement, apps should record the [Composio security preflight](./docs/composio-security-preflight.md) and run `validateManagedConnectorPreflight` as launch evidence. The runtime `createManagedConnectorAdapter` seam stays small: provider config plus an app-owned server secret resolver; reusable boring-mcp never binds app env/Vault details.
+
+- Browser UI never receives provider OAuth tokens, connector API keys, or MCP session headers.
+- Raw provider meta-tools are not exposed by this foundation.
+- Unknown tools are disabled by default.
+- Mutating/admin tool names are denied before any provider call.
+- Provider results pass redaction and secret-leak checks before agent/UI use.
+
+## Production launch gate / smoke checklist
+
+Before enabling boring-mcp in a shipped app, operators should verify:
+
+1. `evaluateBoringMcpLaunchGate` passes for the app composition: plugin id, registry list/get/disconnect, transport, provider templates, all seven bridge tools, timeout, rate/budget gate, readonly input limit, and reviewed docs.
+2. Managed providers pass `validateManagedConnectorPreflight`; app secrets stay server-side and never appear in browser/workspace files.
+3. Source list/status/probe/tool catalog/read-only call responses pass the secret-leak guard using representative OAuth/session canaries.
+4. Provider metadata calls use timeout + retry policy; read-only tool calls use timeout but no automatic retry.
+5. Rate/budget hooks block before provider `listTools`/`callTool` when local limits are exceeded.
+6. Disconnect/revoke is verified through the injected registry status/result and never performs provider tool execution.
+7. Local smoke with a fake managed connector: connect -> status connected -> search tools -> describe tool -> governed readonly call -> disconnect -> verify non-connected status.
+8. Protocol smoke with a fake Streamable HTTP MCP server: real MCP SDK client transport -> list tools -> describe -> governed readonly call -> block mutating tool -> disconnect blocks future call.
+9. Composio smoke with fake Composio HTTP API + fake MCP server: create session -> hosted connect URL -> session MCP headers + server API key on MCP calls -> meta-tool discovery when needed -> search/readonly call -> raw `COMPOSIO_*` meta-tools hidden.
+
+## Current status
+
+Reusable boring-mcp now includes source handlers, optional launch preflight helpers, generic managed connector adapter seam, reusable Composio managed connector provider, MCP SDK Streamable HTTP transport, normalized tool catalog search/describe, governed read-only execution, exported/generic agent bridge tools, and production launch-gate helpers. Real app secret binding remains app-owned; Constellation-specific code is not required for the generic MCP feature to run against Composio or another MCP-compatible endpoint.

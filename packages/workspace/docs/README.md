@@ -13,7 +13,7 @@ the doc that matches your task.
 
 - **Layout runtime** — Dockview-based panes (`IdeLayout`, `ChatLayout`,
   `ResponsiveDockviewShell`) mounted by `WorkspaceProvider`. Panels open in the
-  center/right/bottom; left-tabs stay docked in the sidebar.
+  shared-dockview panels and workspace-page full plugin pages.
 - **Plugin host** — `WorkspaceProvider` runs `bootstrap(plugins)` to populate the
   panel, command, catalog, and surface-resolver registries. Lazy panel factories
   are auto-wrapped in `React.lazy + Suspense + ErrorBoundary`.
@@ -34,9 +34,10 @@ the doc that matches your task.
 | Abstraction | Where | What it is |
 | --- | --- | --- |
 | `WorkspaceProvider` | `src/front/provider` | Root provider; boots plugins, layout, bridge. |
-| `definePlugin()` | `@hachej/boring-workspace/plugin` | Declarative front plugin: panels, leftTabs, commands, catalogs, bindings, providers, surfaceResolvers. |
+| `useWorkspaceLeftPaneActions()` | `@hachej/boring-workspace` | Public hook for host apps that want to render workspace left-pane category buttons inside their own explorer/sidebar without mounting `WorkbenchLeftPane`. |
+| `definePlugin()` | `@hachej/boring-workspace/plugin` | Declarative front plugin: panels, commands, catalogs, bindings, providers, surfaceResolvers. |
 | `defineServerPlugin()` | `@hachej/boring-workspace/server` | Trusted boot-time server plugin: routes, agent tools, system prompt, Pi packages, provisioning. |
-| `PaneProps<T>` | `src/shared/types/panel.ts` | Props every panel/left-tab component receives (`params`, `api`, `containerApi`). |
+| `PaneProps<T>` | `src/shared/types/panel.ts` | Props every panel/page component receives (`params`, `api`, `containerApi`). |
 | `UiCommand` / `UiBridge` | `src/shared/ui-bridge.ts` | Typed agent→browser command contract. |
 | `SurfaceOpenRequest` | `src/shared/types/surface.ts` | Domain open request resolved to a panel. |
 | `BoringPluginAssetManager` | `src/server/agentPlugins` | Scans plugin dirs, hashes signatures, emits load/unload/error events, backs `/api/v1/agent-plugins`. |
@@ -65,6 +66,34 @@ the doc that matches your task.
 - **Style isolation.** Workspace owns public `--boring-*` tokens and Tailwind base
   reset; agent consumes them under `[data-boring-agent]`. See
   [`docs/TAILWIND-V4-STYLE-ISOLATION.md`](../../../docs/TAILWIND-V4-STYLE-ISOLATION.md).
+
+## Host explorer composition
+
+Standalone workspaces can keep using `WorkbenchLeftPane`. Apps that already own a
+left explorer/sidebar can instead render the category actions themselves:
+
+```tsx
+import { useWorkspaceLeftPaneActions } from "@hachej/boring-workspace"
+
+function HostExplorer({ onOpenPanel, activePanelId }) {
+  const actions = useWorkspaceLeftPaneActions({ onOpenPanel, activePanelId })
+
+  return actions.map((action) => (
+    <button key={action.id} aria-pressed={action.active} onClick={action.select}>
+      {action.icon}
+      {action.title}
+    </button>
+  ))
+}
+```
+
+Pass `activePanelId` when the host also renders `workspace-page` panels and wants
+those launcher actions to show the focused page as active.
+
+Use this public hook rather than deep-importing chrome internals. Search UI,
+workspace-source content hosting, and plugin chrome action portals remain owned
+by the default `WorkbenchLeftPane` unless a host explicitly renders that full
+component.
 
 ## Docs
 

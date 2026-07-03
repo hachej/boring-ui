@@ -1,6 +1,6 @@
 import type { FastifyInstance } from "fastify"
 import { builtinModules, createRequire } from "node:module"
-import { existsSync, lstatSync, readdirSync, readFileSync, statSync } from "node:fs"
+import { existsSync, lstatSync, readdirSync, readFileSync, realpathSync, statSync } from "node:fs"
 import { readFile, realpath, stat } from "node:fs/promises"
 import { dirname, extname, isAbsolute, posix, relative, resolve as resolvePath } from "node:path"
 import { fileURLToPath } from "node:url"
@@ -85,6 +85,9 @@ const WORKSPACE_ROOT_SINGLETON_EXPORTS = [
   "PluginErrorBoundary",
   "PluginErrorProvider",
   "usePluginErrors",
+  "WorkspacePluginClientProvider",
+  "createWorkspacePluginClient",
+  "useWorkspacePluginClient",
   "filesystemPlugin",
   "emitFilesystemAgentFileChange",
   "useAutoOpenAgentFiles",
@@ -98,10 +101,12 @@ const WORKSPACE_ROOT_SINGLETON_EXPORTS = [
   "filesystemEvents",
   "cn",
   "PanelRegistry",
+  "WorkspaceSourceRegistry",
   "CommandRegistry",
   "SurfaceResolverRegistry",
   "RegistryProvider",
   "useRegistry",
+  "useWorkspaceSourceRegistry",
   "useCommandRegistry",
   "useCatalogRegistry",
   "useSurfaceResolverRegistry",
@@ -512,6 +517,21 @@ function buildViteSingletonUrl(basePath: string, source: string): string {
   return `${basePath}/__vite/singleton/${encodeURIComponent(source)}`
 }
 
+function realpathIfExists(path: string): string {
+  try {
+    return existsSync(path) ? realpathSync(path) : path
+  } catch {
+    return path
+  }
+}
+
+function isHostNodeModuleFsSpecifier(specifier: string, hostNodeModulesRoots: readonly string[]): boolean {
+  if (!specifier.startsWith("/@fs/")) return false
+  const cleanPath = specifier.slice("/@fs".length).split("?")[0] ?? ""
+  const realPath = realpathIfExists(cleanPath)
+  return hostNodeModulesRoots.some((root) => isWithin(root, realPath))
+}
+
 function optimizedDependencySingletonSource(targetPath: string): HostVirtualSingletonModule | undefined {
   const cleanPath = targetPath.split("?")[0]
   const normalizedPath = cleanPath.replaceAll("\\", "/")
@@ -554,10 +574,16 @@ function optimizedDependencySingletonSource(targetPath: string): HostVirtualSing
   return sourceByFileName[fileName]
 }
 
-function rewriteViteSupportSpecifier(specifier: string, basePath: string): string | undefined {
+function rewriteViteSupportSpecifier(specifier: string, basePath: string, options: { hostNodeModulesRoots: readonly string[]; allowHostNodeModulesFs: boolean }): string | undefined {
   if (specifier === "/@vite/client") return `${basePath}/__vite/client`
   if (specifier === "/@vite/env" || specifier === "@vite/env") return `${basePath}/__vite/env`
-  if (specifier.startsWith("/@fs/") && specifier.includes("/vite/dist/client/env.mjs")) return `${basePath}/__vite/env`
+  if (specifier.startsWith("/@fs/")) {
+    if (specifier.includes("/vite/dist/client/env.mjs")) return `${basePath}/__vite/env`
+    const singletonSource = optimizedDependencySingletonSource(specifier)
+    if (singletonSource) return buildViteSingletonUrl(basePath, singletonSource)
+    if (options.allowHostNodeModulesFs && isHostNodeModuleFsSpecifier(specifier, options.hostNodeModulesRoots)) return buildViteProxyUrl(basePath, specifier)
+    return undefined
+  }
   if (!/^\/(?:@id|node_modules|packages)\//.test(specifier)) return undefined
   const singletonSource = optimizedDependencySingletonSource(specifier)
   return singletonSource
@@ -567,21 +593,24 @@ function rewriteViteSupportSpecifier(specifier: string, basePath: string): strin
 
 function assertNoUnsafeFsSupportReference(code: string, context: Record<string, unknown>): void {
   if (!code.includes("/@fs/")) return
+  const unsafeReferences = [...code.matchAll(/["']([^"']*\/@fs\/[^"']*)["']/g)]
+    .map((match) => match[1])
+    .slice(0, 5)
   throw new PluginFrontRuntimeError(
     ErrorCode.enum.PLUGIN_RUNTIME_UNSAFE_IMPORT,
     400,
     "transform",
     "plugin runtime transform produced an unsafe Vite /@fs reference",
-    context,
+    { ...context, unsafeReferences },
   )
 }
 
-function rewriteViteSupportUrls(code: string, basePath: string): { code: string; mintedPaths: string[] } {
+function rewriteViteSupportUrls(code: string, basePath: string, options: { hostNodeModulesRoots: readonly string[]; allowHostNodeModulesFs?: boolean }): { code: string; mintedPaths: string[] } {
   const sourceFile = ts.createSourceFile("runtime-plugin-output.js", code, ts.ScriptTarget.Latest, true, ts.ScriptKind.JS)
   const replacements: Array<{ start: number; end: number; value: string }> = []
   const mintedPaths: string[] = []
   const queueReplacement = (literal: ts.StringLiteralLike) => {
-    const rewritten = rewriteViteSupportSpecifier(literal.text, basePath)
+    const rewritten = rewriteViteSupportSpecifier(literal.text, basePath, { hostNodeModulesRoots: options.hostNodeModulesRoots, allowHostNodeModulesFs: options.allowHostNodeModulesFs ?? false })
     if (!rewritten) return
     replacements.push({
       start: literal.getStart(sourceFile) + 1,
@@ -1343,6 +1372,12 @@ export async function createPluginFrontRuntimeHost(
   }
   const packageRoot = packageRootFromRuntimeFile()
   const repoRoot = findWorkspaceRoot(packageRoot)
+  const repoRootReal = realpathIfExists(repoRoot)
+  const hostNodeModulesRoots = [resolvePath(repoRoot, "node_modules"), resolvePath(packageRoot, "node_modules")]
+    .filter((path, index, all) => existsSync(path) && all.indexOf(path) === index)
+    .map((path) => realpathIfExists(path))
+  const trustedHostPackageRoots = [repoRootReal, ...hostNodeModulesRoots.map((path) => dirname(path))]
+    .filter((path, index, all) => all.indexOf(path) === index)
   const singletonResolve = createRuntimeSingletonResolve(repoRoot)
   const trackedWorkspaces = new Map<string, Map<string, TrackedPluginRecord>>()
   const trackedPluginRevisions = new Map<string, Map<string, Map<number, TrackedPluginRecord>>>()
@@ -1749,7 +1784,10 @@ export async function createPluginFrontRuntimeHost(
             resolvedPath: runtimeRequest.resolvedPath,
             durationMs: Date.now() - transformStartedAt,
           })
-          const rewritten = rewriteViteSupportUrls(transformed.code, basePath)
+          const rewritten = rewriteViteSupportUrls(transformed.code, basePath, {
+            hostNodeModulesRoots,
+            allowHostNodeModulesFs: trustedHostPackageRoots.some((root) => isWithin(root, realpathIfExists(runtimeRequest.tracked.rootDir))),
+          })
           assertNoUnsafeFsSupportReference(rewritten.code, {
             runtimeId: runtimeRequest.runtimeId,
             workspaceId: runtimeRequest.workspaceId,
@@ -1859,7 +1897,7 @@ export async function createPluginFrontRuntimeHost(
       }
       const transformed = await vite.transformRequest("/@vite/client")
       if (transformed?.code) {
-        const rewritten = rewriteViteSupportUrls(transformed.code, basePath)
+        const rewritten = rewriteViteSupportUrls(transformed.code, basePath, { hostNodeModulesRoots })
         recordMintedSupportPaths("__vite:client", rewritten.mintedPaths)
         return reply
           .type("application/javascript; charset=utf-8")
@@ -1913,7 +1951,8 @@ export async function createPluginFrontRuntimeHost(
         return reply.code(apiError.statusCode).send(apiError.body)
       }
       const targetPath = `/${decodeURIComponent(encodedTarget)}`
-      if (!/^\/(?:@id|node_modules|packages)\//.test(targetPath)) {
+      const isHostNodeModuleFsTarget = isHostNodeModuleFsSpecifier(targetPath, hostNodeModulesRoots)
+      if (!/^\/(?:@id|node_modules|packages)\//.test(targetPath) && !isHostNodeModuleFsTarget) {
         const apiError = toApiError(new PluginFrontRuntimeError(
           ErrorCode.enum.PLUGIN_RUNTIME_UNSAFE_IMPORT,
           400,
@@ -1928,7 +1967,7 @@ export async function createPluginFrontRuntimeHost(
       const viteTargetPath = targetPath.startsWith("/@id/__x00__") ? `\0${targetPath.slice("/@id/__x00__".length)}` : targetPath
       const transformed = await vite.transformRequest(`${viteTargetPath}${normalizeSearch(search)}`)
       if (transformed?.code) {
-        const rewritten = rewriteViteSupportUrls(transformed.code, basePath)
+        const rewritten = rewriteViteSupportUrls(transformed.code, basePath, { hostNodeModulesRoots, allowHostNodeModulesFs: isHostNodeModuleFsTarget })
         assertNoUnsafeFsSupportReference(rewritten.code, { targetPath })
         recordMintedSupportPaths(`support:${mintedPath}`, rewritten.mintedPaths)
         return reply

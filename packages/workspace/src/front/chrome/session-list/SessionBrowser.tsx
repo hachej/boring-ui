@@ -452,13 +452,14 @@ function SessionRow({
   onDelete?: (id: string) => void
 }) {
   const time = relativeTime(session.updatedAt)
+  const hasSessionStatus = Boolean(attentionBadge || working || time)
   return (
     <li
       role="listitem"
       data-boring-workspace-part="session-row"
       data-boring-state={active ? "selected" : undefined}
       className={cn(
-        "group relative mx-2 mt-px flex items-center gap-2 rounded-md px-2.5 py-1.5 text-[13px] transition-colors duration-150 ease-[cubic-bezier(0.22,1,0.36,1)]",
+        "group relative mx-2 mt-px flex items-center rounded-md px-2.5 py-1.5 text-[13px] transition-colors duration-150 ease-[cubic-bezier(0.22,1,0.36,1)]",
         "cursor-pointer hover:bg-foreground/[0.04]",
         active && "bg-foreground/[0.06] text-foreground",
       )}
@@ -477,7 +478,7 @@ function SessionRow({
           aria-hidden="true"
           data-boring-workspace-part="session-open-dot"
           className={cn(
-            "h-1.5 w-1.5 shrink-0 rounded-full",
+            "mr-2 h-1.5 w-1.5 shrink-0 rounded-full",
             active ? "bg-foreground/70" : "bg-foreground/30",
           )}
         />
@@ -486,99 +487,121 @@ function SessionRow({
         <span className={cn(active ? "font-medium text-foreground" : "text-foreground/90")}>
           {session.title || "Untitled"}
         </span>
-        {time && (
+      </span>
+      <span
+        className={cn(
+          "flex shrink-0 items-center transition-[margin] duration-150 ease-[cubic-bezier(0.22,1,0.36,1)]",
+          hasSessionStatus || pinned ? "ml-2" : "ml-0 group-hover:ml-2 focus-within:ml-2",
+        )}
+      >
+        {attentionBadge ? (
           <span
+            data-boring-workspace-part="session-badge"
+            data-boring-badge={attentionBadge.kind}
+            className={cn("inline-flex shrink-0 items-center gap-1 rounded-full px-1.5 py-0.5 text-[10px] font-medium leading-none", sessionBadgeToneClassName(attentionBadge.tone))}
+          >
+            <span aria-hidden="true" className={cn("h-1.5 w-1.5 animate-pulse rounded-full", sessionBadgeDotClassName(attentionBadge.tone))} />
+            {attentionBadge.label}
+          </span>
+        ) : working ? (
+          <span
+            data-boring-workspace-part="session-badge"
+            data-boring-badge="working"
+            className="inline-flex shrink-0 items-center gap-1 rounded-full bg-foreground/[0.07] px-1.5 py-0.5 text-[10px] font-medium leading-none text-muted-foreground"
+          >
+            <span aria-hidden="true" className="h-1.5 w-1.5 animate-pulse rounded-full bg-[color:var(--accent)]" />
+            working
+          </span>
+        ) : time ? (
+          <span
+            data-boring-workspace-part="session-age"
             className={cn(
-              "ml-1.5 tabular-nums text-[11px]",
+              "shrink-0 tabular-nums text-[11px]",
               active ? "text-[color:var(--accent)]" : "text-muted-foreground/60",
             )}
           >
             {time}
           </span>
-        )}
-      </span>
-      {attentionBadge ? (
-        <span
-          data-boring-workspace-part="session-badge"
-          data-boring-badge={attentionBadge.kind}
-          className={cn("inline-flex shrink-0 items-center gap-1 rounded-full px-1.5 py-0.5 text-[10px] font-medium leading-none", sessionBadgeToneClassName(attentionBadge.tone))}
-        >
-          <span aria-hidden="true" className={cn("h-1.5 w-1.5 animate-pulse rounded-full", sessionBadgeDotClassName(attentionBadge.tone))} />
-          {attentionBadge.label}
-        </span>
-      ) : working ? (
-        <span
-          data-boring-workspace-part="session-badge"
-          data-boring-badge="working"
-          className="inline-flex shrink-0 items-center gap-1 rounded-full bg-foreground/[0.07] px-1.5 py-0.5 text-[10px] font-medium leading-none text-muted-foreground"
-        >
-          <span aria-hidden="true" className="h-1.5 w-1.5 animate-pulse rounded-full bg-[color:var(--accent)]" />
-          working
-        </span>
-      ) : null}
-      {onTogglePin && (
-        <ControlTooltip label={pinned ? "Unpin session" : "Pin session"}>
-          <IconButton
-            type="button"
-            variant="ghost"
-            size="icon-xs"
-            data-boring-workspace-part="session-pin-toggle"
-            data-boring-state={pinned ? "pinned" : undefined}
+        ) : null}
+        {onTogglePin ? (
+          <span
+            data-boring-workspace-part="session-pin-action"
             className={cn(
-              "shrink-0 focus-visible:opacity-100 group-hover:opacity-100",
-              // A pinned session keeps its pin lit so the state is legible;
-              // unpinned rows reveal the affordance on hover like the others.
-              pinned
-                ? "text-[color:var(--accent)] opacity-100 hover:text-[color:var(--accent)]"
-                : "text-muted-foreground/70 opacity-0 hover:text-foreground",
+              "flex w-0 shrink-0 items-center overflow-hidden opacity-0 transition-[width,opacity,margin] duration-150 ease-[cubic-bezier(0.22,1,0.36,1)] group-hover:w-auto group-hover:opacity-100 focus-within:w-auto focus-within:opacity-100",
+              hasSessionStatus && "group-hover:ml-1.5 focus-within:ml-1.5",
+              pinned && cn("w-auto opacity-100", hasSessionStatus && "ml-1.5"),
             )}
-            onClick={(e) => {
-              e.stopPropagation()
-              onTogglePin(session.id)
-            }}
-            aria-label={pinned ? `Unpin ${session.title || "session"}` : `Pin ${session.title || "session"}`}
-            aria-pressed={pinned}
           >
-            <Pin className={cn("h-3.5 w-3.5", pinned && "fill-current")} strokeWidth={1.75} />
-          </IconButton>
-        </ControlTooltip>
-      )}
-      {onOpenAsTab && (
-        <ControlTooltip label="Open in chat pane">
-          <IconButton
-            type="button"
-            variant="ghost"
-            size="icon-xs"
-            className="shrink-0 text-muted-foreground/70 opacity-0 hover:text-foreground focus-visible:opacity-100 group-hover:opacity-100"
-            onClick={(e) => {
-              e.stopPropagation()
-              onOpenAsTab(session.id)
-            }}
-            aria-label={`Open ${session.title || "session"} in chat pane`}
-          >
-            <ExternalLink className="h-3.5 w-3.5" strokeWidth={1.75} />
-          </IconButton>
-        </ControlTooltip>
-      )}
-      {onDelete && (
-        <ControlTooltip label="Delete session">
-          <IconButton
-            type="button"
-            variant="ghost"
-            size="icon-xs"
-            className="shrink-0 text-muted-foreground opacity-0 hover:text-destructive focus-visible:opacity-100 group-hover:opacity-100"
-            onClick={(e) => {
-              e.stopPropagation()
-              onDelete(session.id)
-            }}
-            aria-label={`Delete ${session.title || "session"}`}
-          >
-            <svg width="12" height="12" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round">
-              <path d="M3.5 3.5l7 7M10.5 3.5l-7 7" />
-            </svg>
-          </IconButton>
-        </ControlTooltip>
-      )}
+            <ControlTooltip label={pinned ? "Unpin session" : "Pin session"}>
+              <IconButton
+                type="button"
+                variant="ghost"
+                size="icon-xs"
+                data-boring-workspace-part="session-pin-toggle"
+                data-boring-state={pinned ? "pinned" : undefined}
+                className={cn(
+                  "shrink-0 focus-visible:opacity-100",
+                  pinned
+                    ? "text-[color:var(--accent)] hover:text-[color:var(--accent)]"
+                    : "text-muted-foreground/70 hover:text-foreground",
+                )}
+                onClick={(e) => {
+                  e.stopPropagation()
+                  onTogglePin(session.id)
+                }}
+                aria-label={pinned ? `Unpin ${session.title || "session"}` : `Pin ${session.title || "session"}`}
+                aria-pressed={pinned}
+              >
+                <Pin className={cn("h-3.5 w-3.5", pinned && "fill-current")} strokeWidth={1.75} />
+              </IconButton>
+            </ControlTooltip>
+          </span>
+        ) : null}
+        <span
+          data-boring-workspace-part="session-actions"
+          className={cn(
+            "flex w-0 shrink-0 items-center gap-1 overflow-hidden opacity-0 transition-[width,opacity,margin] duration-150 ease-[cubic-bezier(0.22,1,0.36,1)] group-hover:w-auto group-hover:opacity-100 focus-within:w-auto focus-within:opacity-100",
+            (hasSessionStatus || onTogglePin) && "group-hover:ml-1 focus-within:ml-1",
+          )}
+        >
+          {onOpenAsTab && (
+            <ControlTooltip label="Open in chat pane">
+              <IconButton
+                type="button"
+                variant="ghost"
+                size="icon-xs"
+                className="shrink-0 text-muted-foreground/70 hover:text-foreground focus-visible:opacity-100"
+                onClick={(e) => {
+                  e.stopPropagation()
+                  onOpenAsTab(session.id)
+                }}
+                aria-label={`Open ${session.title || "session"} in chat pane`}
+              >
+                <ExternalLink className="h-3.5 w-3.5" strokeWidth={1.75} />
+              </IconButton>
+            </ControlTooltip>
+          )}
+          {onDelete && (
+            <ControlTooltip label="Delete session">
+              <IconButton
+                type="button"
+                variant="ghost"
+                size="icon-xs"
+                className="shrink-0 text-muted-foreground hover:text-destructive focus-visible:opacity-100"
+                onClick={(e) => {
+                  e.stopPropagation()
+                  onDelete(session.id)
+                }}
+                aria-label={`Delete ${session.title || "session"}`}
+              >
+                <svg width="12" height="12" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round">
+                  <path d="M3.5 3.5l7 7M10.5 3.5l-7 7" />
+                </svg>
+              </IconButton>
+            </ControlTooltip>
+          )}
+        </span>
+      </span>
     </li>
   )
 }

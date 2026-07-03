@@ -34,6 +34,7 @@ interface StageContextValue {
   activePaneId: string | null
   flashPaneId: string | null
   renderPane: ChatPaneStageProps["renderPane"]
+  topActions?: ChatPaneStageProps["topActions"]
   onActivePaneChange?: (id: string) => void
   onClosePane?: (id: string) => void
 }
@@ -105,10 +106,11 @@ function addChatPanel(
 }
 
 /**
- * Project the authoritative pane list onto the dockview layout: remove
- * panels whose session pane closed, add new ones next to their list
- * neighbour, keep titles fresh, and align the active panel. Geometry that
- * the user arranged (splits, sizes) is dockview's to keep.
+ * Project the authoritative pane list onto the dockview layout: reuse the
+ * slot of a swapped-out pane for its replacement, add genuinely-new panes
+ * next to their list neighbour, keep titles fresh, and align the active
+ * panel. Geometry that the user arranged (splits, sizes, orientation) is
+ * dockview's to keep.
  */
 function syncPanesToDock(
   api: DockviewApi,
@@ -117,9 +119,12 @@ function syncPanesToDock(
   pendingPlacements?: Map<string, PendingPlacement>,
 ): void {
   const wanted = new Map(panes.map((pane) => [pane.id, pane]))
-  for (const panel of [...api.panels]) {
-    if (!wanted.has(panel.id)) api.removePanel(panel)
-  }
+  // Panels whose session closed or was swapped out. We add replacements
+  // BEFORE removing these, so a swap can inherit the freed slot's exact
+  // position (a session switch must not reflow a vertical/custom split into
+  // the default side-by-side).
+  const removable = [...api.panels].filter((panel) => !wanted.has(panel.id))
+  const freed = [...removable]
   panes.forEach((pane, index) => {
     if (api.getPanel(pane.id)) return
     const placement = pendingPlacements?.get(pane.id)
@@ -135,6 +140,14 @@ function syncPanesToDock(
       )
       return
     }
+    // A session swap removes one pane and adds another. Drop the new pane
+    // INTO the removed pane's group (it's still present here) so it takes
+    // over that exact slot — vertical/custom arrangements stay intact.
+    const slot = freed.shift()
+    if (slot) {
+      addChatPanel(api, pane, { referencePanel: slot, direction: "within" })
+      return
+    }
     const before = index > 0 ? api.getPanel(panes[index - 1].id) : undefined
     const after = !before && index + 1 < panes.length ? api.getPanel(panes[index + 1].id) : undefined
     addChatPanel(
@@ -147,6 +160,8 @@ function syncPanesToDock(
           : undefined,
     )
   })
+  // Slots have been inherited; drop the swapped-out / closed panels now.
+  for (const panel of removable) api.removePanel(panel)
   for (const pane of panes) {
     const panel = api.getPanel(pane.id)
     if (panel && panel.title !== paneTitle(pane)) panel.api.setTitle(paneTitle(pane))
@@ -162,6 +177,7 @@ export function ChatPaneStageDock({
   panes,
   activePaneId,
   renderPane,
+  topActions,
   onActivePaneChange,
   onClosePane,
   flashPaneId,
@@ -187,9 +203,10 @@ export function ChatPaneStageDock({
     activePaneId: resolvedActiveId,
     flashPaneId: flashPaneId ?? null,
     renderPane,
+    topActions,
     onActivePaneChange,
     onClosePane: panes.length > 1 ? onClosePane : undefined,
-  }), [panes, resolvedActiveId, flashPaneId, renderPane, onActivePaneChange, onClosePane])
+  }), [panes, resolvedActiveId, flashPaneId, renderPane, topActions, onActivePaneChange, onClosePane])
 
   const handleReady = useCallback((event: DockviewReadyEvent) => {
     const api = event.api
@@ -392,6 +409,11 @@ function ChatPaneHeader(props: IDockviewPanelHeaderProps) {
           className="h-3.5 w-3.5 shrink-0 text-muted-foreground/45 transition-colors group-hover:text-muted-foreground"
           strokeWidth={1.75}
         />
+      ) : null}
+      {stage.topActions && api.id === stage.activePaneId ? (
+        <div data-boring-workspace-part="chat-pane-top-actions" className="flex shrink-0 items-center gap-1">
+          {stage.topActions}
+        </div>
       ) : null}
       <span className="min-w-0 flex-1 overflow-hidden text-ellipsis whitespace-nowrap text-foreground/70">
         {title}

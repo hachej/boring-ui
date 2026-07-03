@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useMemo, useState } from "react"
 import { createDeckPlugin } from "@hachej/boring-deck/front"
 import type { DeckWidgetDefinition } from "@hachej/boring-deck/shared"
-import { WorkspaceProvider } from "@hachej/boring-workspace"
+import { FileTreePane, WorkspaceProvider } from "@hachej/boring-workspace"
 import { WorkspaceAgentFront, WorkspaceFullPagePanel, parseFullPagePanelLocation } from "@hachej/boring-workspace/app/front"
+import { definePlugin, type WorkspaceSourceProps } from "@hachej/boring-workspace/plugin"
 import { askUserPlugin } from "@hachej/boring-ask-user/front"
 import { SHOWCASE_SESSION_ID, seedShowcase } from "./showcaseMessages"
 
@@ -14,6 +15,10 @@ function isShowcaseRoute(): boolean {
 function isFullPageRoute(): boolean {
   if (typeof window === "undefined") return false
   return window.location.pathname === "/full-page" || window.location.pathname === "/full-page/"
+}
+
+function isMultiFilesystemPlaygroundRoute(): boolean {
+  return (import.meta as ImportMeta & { env?: Record<string, string> }).env?.VITE_PLAYGROUND_MULTI_FS === "1"
 }
 
 interface WorkspaceMeta {
@@ -41,7 +46,49 @@ const playgroundDeckPlugin = createDeckPlugin({
   },
 })
 
+function MultiFilesystemFileTreeSource(props: WorkspaceSourceProps) {
+  return (
+    <FileTreePane
+      {...props}
+      params={{
+        ...(props.params as Record<string, unknown> | undefined),
+        chromeless: false,
+        roots: [
+          {
+            filesystem: "user",
+            label: "Workspace",
+            rootDir: ".",
+            access: "readwrite",
+            searchPlaceholder: "Search workspace files...",
+          },
+          {
+            filesystem: "company_context",
+            label: "Company",
+            rootDir: "/",
+            access: "readonly",
+            searchPlaceholder: "Filter company files...",
+          },
+        ],
+      }}
+    />
+  )
+}
+
+const multiFilesystemPlaygroundPlugin = definePlugin({
+  id: "workspace-playground-multi-fs",
+  label: "Workspace playground multi-filesystem fixtures",
+  workspaceSources: [
+    {
+      id: "files",
+      label: "Files",
+      source: "app",
+      component: MultiFilesystemFileTreeSource,
+    },
+  ],
+})
+
 const workspacePlugins = [askUserPlugin, playgroundDeckPlugin]
+const multiFilesystemWorkspacePlugins = [askUserPlugin, playgroundDeckPlugin, multiFilesystemPlaygroundPlugin]
 const externalPluginsEnabled = (import.meta as ImportMeta & { env?: Record<string, string> }).env?.VITE_BORING_EXTERNAL_PLUGINS === "1"
 
 function resetPlaygroundStorageIfRequested(): void {
@@ -97,6 +144,8 @@ export function WorkspaceShell() {
   resetPlaygroundStorageIfRequested()
   const showcase = useMemo(isShowcaseRoute, [])
   const fullPage = useMemo(isFullPageRoute, [])
+  const multiFilesystem = useMemo(isMultiFilesystemPlaygroundRoute, [])
+  const activeWorkspacePlugins = multiFilesystem ? multiFilesystemWorkspacePlugins : workspacePlugins
   const [projectName, setProjectName] = useState("Workspace")
   const [workspaceId, setWorkspaceId] = useState("Workspace")
   const [metaLoaded, setMetaLoaded] = useState(showcase || fullPage)
@@ -160,10 +209,11 @@ export function WorkspaceShell() {
       apiBaseUrl=""
       persistenceEnabled
       debug
-      providerStorageKey={showcase ? "boring-ui-v2:layout:playground" : `boring-ui-v2:layout:playground:${workspaceId}`}
+      providerStorageKey={showcase ? "boring-ui-v2:layout:playground" : `boring-ui-v2:layout:playground:${multiFilesystem ? "multi-fs:" : ""}${workspaceId}`}
       appTitle={showcase ? "Boring" : projectName}
       workspaceLabel={showcase ? undefined : projectName}
-      defaultSessionTitle={showcase ? "New session" : projectName}
+      workspaceLayout={multiFilesystem ? "classic" : "plugin-tabs"}
+      defaultSessionTitle="New chat"
       externalPlugins={externalPluginsEnabled}
       frontPluginHotReload={externalPluginsEnabled ? "vite" : undefined}
       fullPageBasePath="/full-page"
@@ -171,7 +221,7 @@ export function WorkspaceShell() {
       sessions={sessions}
       activeSessionId={showcase ? SHOWCASE_SESSION_ID : undefined}
       onActiveSessionIdChange={handleActiveSessionIdChange}
-      plugins={workspacePlugins}
+      plugins={activeWorkspacePlugins}
       chatParams={{ thinkingControl: true }}
     />
   )

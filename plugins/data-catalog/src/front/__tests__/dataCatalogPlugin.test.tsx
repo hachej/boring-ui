@@ -3,9 +3,9 @@ import { fireEvent, render, renderHook, screen, waitFor } from "@testing-library
 import { describe, expect, it, vi } from "vitest"
 import type {
   BoringFrontAPI,
-  BoringFrontLeftTabRegistration,
   BoringFrontPanelRegistration,
   BoringFrontSurfaceResolverRegistration,
+  BoringFrontWorkspaceSourceRegistration,
 } from "@hachej/boring-workspace/plugin"
 import type { CatalogConfig } from "@hachej/boring-workspace"
 import { workspaceEvents } from "@hachej/boring-workspace/events"
@@ -54,16 +54,16 @@ const adapter: ExplorerDataSource = {
 }
 
 interface CapturedRegistrations {
-  leftTabs: BoringFrontLeftTabRegistration<any>[]
   panels: BoringFrontPanelRegistration<any>[]
+  workspaceSources: BoringFrontWorkspaceSourceRegistration<any>[]
   catalogs: CatalogConfig[]
   surfaceResolvers: BoringFrontSurfaceResolverRegistration[]
 }
 
 function makeMockApi(): { api: BoringFrontAPI; captured: CapturedRegistrations } {
   const captured: CapturedRegistrations = {
-    leftTabs: [],
     panels: [],
+    workspaceSources: [],
     catalogs: [],
     surfaceResolvers: [],
   }
@@ -76,10 +76,10 @@ function makeMockApi(): { api: BoringFrontAPI; captured: CapturedRegistrations }
     registerPanel: vi.fn((p) => {
       captured.panels.push(p)
     }),
-    registerPanelCommand: vi.fn(),
-    registerLeftTab: vi.fn((t) => {
-      captured.leftTabs.push(t)
+    registerWorkspaceSource: vi.fn((s) => {
+      captured.workspaceSources.push(s)
     }),
+    registerPanelCommand: vi.fn(),
     registerSurfaceResolver: vi.fn((r) => {
       captured.surfaceResolvers.push(r)
     }),
@@ -89,7 +89,7 @@ function makeMockApi(): { api: BoringFrontAPI; captured: CapturedRegistrations }
 }
 
 describe("createDataCatalogPlugin (BoringFrontFactory)", () => {
-  it("registers left tab, visualization panel, catalog, and surface resolver by default", async () => {
+  it("registers workspace source, visualization panel, catalog, and surface resolver by default", async () => {
     const factory = createDataCatalogPlugin({
       id: "warehouse-data",
       label: "Data",
@@ -99,16 +99,13 @@ describe("createDataCatalogPlugin (BoringFrontFactory)", () => {
     const { api, captured } = makeMockApi()
     await factory(api)
 
-    expect(captured.leftTabs).toHaveLength(1)
-    expect(captured.leftTabs[0]).toEqual(
+    expect(captured.workspaceSources).toHaveLength(1)
+    expect(captured.workspaceSources[0]).toEqual(
       expect.objectContaining({
-        id: "warehouse-data-tab",
-        title: "Data",
-        panelId: "warehouse-data-tab",
+        id: "warehouse-data-page",
+        label: "Data",
       }),
     )
-    expect(captured.leftTabs[0]).not.toHaveProperty("chromeless", true)
-
     expect(captured.panels).toHaveLength(1)
     expect(captured.panels[0]).toEqual(
       expect.objectContaining({
@@ -131,7 +128,7 @@ describe("createDataCatalogPlugin (BoringFrontFactory)", () => {
     )
   })
 
-  it("passes workbench bridge context to left-tab row selection", async () => {
+  it("passes workbench bridge context to workspace-source row selection", async () => {
     const onSelect = vi.fn()
     const factory = createDataCatalogPlugin({
       id: "metrics",
@@ -142,9 +139,9 @@ describe("createDataCatalogPlugin (BoringFrontFactory)", () => {
     const { api, captured } = makeMockApi()
     await factory(api)
 
-    const tab = captured.leftTabs[0]
-    if (!tab) throw new Error("missing left tab")
-    const Component = tab.component as ComponentType<any>
+    const source = captured.workspaceSources.find((item) => item.id === "metrics-page")
+    if (!source) throw new Error("missing workspace source")
+    const Component = source.component as ComponentType<any>
     const bridge = { openFile: vi.fn() }
 
     render(<Component params={{ bridge }} />)
@@ -159,7 +156,7 @@ describe("createDataCatalogPlugin (BoringFrontFactory)", () => {
     )
   })
 
-  it("uses the host left-pane search when rendered chromeless with a controlled query", async () => {
+  it("uses the host chrome search when rendered chromeless with a controlled query", async () => {
     const adapterWithSpy: ExplorerDataSource = {
       search: vi.fn(adapter.search),
     }
@@ -172,9 +169,9 @@ describe("createDataCatalogPlugin (BoringFrontFactory)", () => {
     const { api, captured } = makeMockApi()
     await factory(api)
 
-    const tab = captured.leftTabs[0]
-    if (!tab) throw new Error("missing left tab")
-    const Component = tab.component as ComponentType<any>
+    const source = captured.workspaceSources.find((item) => item.id === "metrics-page")
+    if (!source) throw new Error("missing workspace source")
+    const Component = source.component as ComponentType<any>
     const chromeActionsElement = document.createElement("div")
 
     const { container } = render(
@@ -205,8 +202,9 @@ describe("createDataCatalogPlugin (BoringFrontFactory)", () => {
     const { api, captured } = makeMockApi()
     await factory(api)
 
+    expect(captured.workspaceSources).toHaveLength(1)
+    expect(captured.workspaceSources[0]).toEqual(expect.objectContaining({ id: "warehouse-data-page" }))
     expect(captured.panels).toHaveLength(0)
-    expect(captured.leftTabs).toHaveLength(1)
     expect(captured.catalogs).toHaveLength(1)
     expect(captured.surfaceResolvers).toHaveLength(1)
 

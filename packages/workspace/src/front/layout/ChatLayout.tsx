@@ -1,6 +1,6 @@
 import { Suspense, useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore, type ComponentType } from "react"
 import { IconButton, LoadingState, ResizeHandle as UiResizeHandle } from "@hachej/boring-ui-kit"
-import { ChevronLeft, MessageSquare } from "lucide-react"
+import { Maximize2, MessageSquare, Minimize2, PanelRightClose, PanelRightOpen } from "lucide-react"
 import { cn } from "../lib/utils"
 import { ControlTooltip } from "../components/ControlTooltip"
 import { dispatchUiCommand, type DispatchContext } from "../bridge"
@@ -14,6 +14,7 @@ import { readStoredNumber, writeStoredNumber } from "../store/localStorageValues
 import type { ChatLayoutProps } from "./types"
 import { useWorkspaceAttention, useWorkspaceContext, workspaceAttentionSessionBadgeForBlocker } from "../provider"
 import { ChatPaneStage } from "./ChatPaneStage"
+import { CornerChromeButton } from "./cornerChrome"
 
 export function buildChatLayout(props: ChatLayoutProps = {}): LayoutConfig {
   const {
@@ -92,6 +93,10 @@ export function ChatLayout(props: ChatLayoutProps) {
     props.storageKey ? `${props.storageKey}:surfaceWidth` : undefined,
     680,
   )
+  const [sidebarWidth, setSidebarWidth] = useStoredNumberState(
+    props.storageKey ? `${props.storageKey}:sidebarWidth` : undefined,
+    280,
+  )
   const [chatCollapsed, setChatCollapsed] = useStoredBooleanState(
     props.storageKey ? `${props.storageKey}:chatCollapsed` : undefined,
     false,
@@ -109,6 +114,7 @@ export function ChatLayout(props: ChatLayoutProps) {
   )
   const commandRegistry = useCommandRegistry()
   const effectiveNavWidth = clamp(navWidth, 200, 360)
+  const effectiveSidebarWidth = clamp(sidebarWidth, 200, Math.max(240, Math.floor(viewport * 0.5)))
   const surfaceMax = Math.max(480, Math.floor(viewport * 0.72))
   const effectiveSurfaceWidth = clamp(surfaceWidth, 480, surfaceMax)
   const uiSurface = getFunction<() => SurfaceShellApi | null>(props.centerParams, "getSurface")
@@ -156,7 +162,13 @@ export function ChatLayout(props: ChatLayoutProps) {
     scheduleComposerFocus()
   }, [chatCollapsed, closeNav, closeSurface, navOpen, setChatCollapsed, surfaceOpen])
 
+  const suppressOverlayAutoExpandRef = useRef(false)
   const toggleChatCollapsed = useCallback(() => {
+    const collapsing = !chatCollapsed
+    // If Plugins/Skills is already open, full-workbench mode should hide the
+    // chat stage without losing the overlay state. Suppress the one auto-expand
+    // effect below; when the user restores chat, the overlay is still there.
+    if (collapsing && props.chatOverlay) suppressOverlayAutoExpandRef.current = true
     setChatCollapsed((current) => {
       const next = !current
       // Collapsing the chat opens the workbench so the freed space is filled
@@ -165,7 +177,7 @@ export function ChatLayout(props: ChatLayoutProps) {
       return next
     })
     setChatRailPulse(false)
-  }, [setChatCollapsed, surfaceOpen, props.onOpenSurface])
+  }, [chatCollapsed, props.chatOverlay, props.onOpenSurface, setChatCollapsed, surfaceOpen])
 
   useKeyboardShortcuts({
     shortcuts: useMemo(() => {
@@ -318,6 +330,27 @@ export function ChatLayout(props: ChatLayoutProps) {
     }
   }, [activeSessionId, chatCollapsed, setChatCollapsed])
 
+  // On compact widths, a fixed workbench beside app navigation can crush the
+  // chat into an unusable sliver. Prefer a calm one-pane workbench takeover:
+  // the workbench fills the available center area and the chat can be restored
+  // from the stable top-right chrome.
+  useEffect(() => {
+    if (!surfaceOpen || chatCollapsed || props.chatOverlay) return
+    if (viewport < 1180) setChatCollapsed(true)
+  }, [chatCollapsed, props.chatOverlay, setChatCollapsed, surfaceOpen, viewport])
+
+  // Chat-hosted overlays (Skills/Plugins) must remain visible while workbench
+  // content opens beside them. If chat was collapsed by a previous compact
+  // workbench takeover, opening an overlay restores the chat area first.
+  useEffect(() => {
+    if (!props.chatOverlay || !chatCollapsed) return
+    if (suppressOverlayAutoExpandRef.current) {
+      suppressOverlayAutoExpandRef.current = false
+      return
+    }
+    setChatCollapsed(false)
+  }, [chatCollapsed, props.chatOverlay, setChatCollapsed])
+
   // Never leave a blank middle: if the workbench is closed while the chat is
   // collapsed, re-open the chat. Mirror of "collapsing the chat opens the
   // workbench" so at least one of the two is always visible.
@@ -344,7 +377,9 @@ export function ChatLayout(props: ChatLayoutProps) {
         className={cn(
           "relative h-full min-h-0 shrink-0 overflow-hidden bg-background",
           "transition-[width,min-width,max-width] duration-[280ms] ease-[cubic-bezier(0.22,1,0.36,1)]",
-          navOpen && "border-r border-[color:oklch(from_var(--border)_l_c_h/0.6)]",
+          navOpen
+            ? "z-30 border-r border-[color:oklch(from_var(--border)_l_c_h/0.6)]"
+            : "pointer-events-none z-0",
         )}
         style={{
           width: navOpen ? effectiveNavWidth : 0,
@@ -357,7 +392,7 @@ export function ChatLayout(props: ChatLayoutProps) {
           className={cn(
             "h-full min-h-0 overflow-hidden",
             "transition-opacity duration-[200ms] ease-[cubic-bezier(0.22,1,0.36,1)]",
-            navOpen ? "opacity-100" : "opacity-0",
+            navOpen ? "opacity-100" : "invisible pointer-events-none opacity-0",
           )}
         >
           <PanelSlot id={navId} params={props.navParams} />
@@ -367,6 +402,41 @@ export function ChatLayout(props: ChatLayoutProps) {
             side="drawer-right"
             ariaLabel="Resize sessions drawer"
             onResize={(delta) => setNavWidth((w) => clamp(w + delta, 200, 360))}
+          />
+        ) : null}
+      </aside>
+
+      <aside
+        data-boring-workspace-part="workbench-left-shell"
+        data-boring-state={sidebarOpen ? "expanded" : "collapsed"}
+        aria-label={sidebarOpen ? "Workbench left panel" : undefined}
+        aria-hidden={!sidebarOpen}
+        className={cn(
+          "relative h-full min-h-0 shrink-0 overflow-hidden bg-background",
+          "transition-[width,min-width,max-width] duration-[280ms] ease-[cubic-bezier(0.22,1,0.36,1)]",
+          sidebarOpen && "border-r border-[color:oklch(from_var(--border)_l_c_h/0.6)]",
+        )}
+        style={{
+          width: sidebarOpen ? effectiveSidebarWidth : 0,
+          minWidth: sidebarOpen ? effectiveSidebarWidth : 0,
+          maxWidth: sidebarOpen ? effectiveSidebarWidth : 0,
+          willChange: "width",
+        }}
+      >
+        <div
+          className={cn(
+            "h-full min-h-0 overflow-hidden",
+            "transition-opacity duration-[200ms] ease-[cubic-bezier(0.22,1,0.36,1)]",
+            sidebarOpen ? "opacity-100" : "opacity-0",
+          )}
+        >
+          {sidebarOpen ? <PanelSlot id={props.sidebar ?? "workbench-left"} params={props.sidebarParams} /> : null}
+        </div>
+        {sidebarOpen ? (
+          <ResizeHandle
+            side="drawer-right"
+            ariaLabel="Resize workbench left panel"
+            onResize={(delta) => setSidebarWidth((w) => clamp(w + delta, 200, Math.max(240, Math.floor(viewport * 0.5))))}
           />
         ) : null}
       </aside>
@@ -397,6 +467,7 @@ export function ChatLayout(props: ChatLayoutProps) {
             {hasChatPanes ? (
               <ChatPaneStage
                 panes={chatPanes}
+                topActions={props.chatTopActions}
                 activePaneId={props.activeChatPaneId}
                 onActivePaneChange={props.onActiveChatPaneChange}
                 onClosePane={props.onCloseChatPane}
@@ -414,25 +485,16 @@ export function ChatLayout(props: ChatLayoutProps) {
               <PanelSlot id={centerId} params={props.centerParams} />
             )}
           </div>
-          {!chatCollapsed ? (
-            <ControlTooltip label="Collapse chat" hint="⌘\" side="bottom">
-              <IconButton
-                type="button"
-                variant="ghost"
-                size="icon-xs"
-                onClick={toggleChatCollapsed}
-                // With multiple panes the rightmost pane header owns the
-                // top-right corner; drop the collapse control to the
-                // bottom-right so the two never overlap.
-                className={cn(
-                  "absolute right-2 z-30 rounded-full bg-background/80 text-muted-foreground shadow-sm backdrop-blur hover:bg-muted hover:text-foreground",
-                  hasChatPanes && chatPanes.length > 1 ? "bottom-2" : "top-2",
-                )}
-                aria-label="Collapse chat"
-              >
-                <ChevronLeft className="h-4 w-4" strokeWidth={1.75} />
-              </IconButton>
-            </ControlTooltip>
+          {props.chatOverlay ? (
+            <div
+              data-boring-workspace-part="chat-left-overlay"
+              aria-hidden={chatCollapsed}
+              className="absolute inset-0 z-40 flex bg-background"
+            >
+              <div className="flex h-full w-full flex-col border-r border-border bg-background">
+                {props.chatOverlay}
+              </div>
+            </div>
           ) : null}
         </main>
 
@@ -466,29 +528,11 @@ export function ChatLayout(props: ChatLayoutProps) {
                 "h-full min-h-0 overflow-hidden",
                 "transition-[opacity,padding] duration-[200ms] ease-[cubic-bezier(0.22,1,0.36,1)]",
                 surfaceOpen ? "opacity-100" : "opacity-0",
-                // When the chat is collapsed the workbench fills the full width
-                // and the left-edge "expand chat" float button would sit on top
-                // of the filetree — inset the content to leave a clear gutter.
-                chatCollapsed && surfaceOpen && !navOpen && "pl-14",
               )}
             >
               {props.surfaceOverlay ? (
                 <div className="relative h-full min-h-0">
                   {props.surfaceOverlay}
-                  {closeSurface ? (
-                    <ControlTooltip label="Close workbench" hint="⌘2" side="left">
-                      <IconButton
-                        type="button"
-                        variant="ghost"
-                        size="icon-sm"
-                        onClick={closeSurface}
-                        className="absolute right-3 top-3 z-20 rounded-full bg-background/80 text-muted-foreground shadow-sm backdrop-blur hover:bg-muted hover:text-foreground"
-                        aria-label="Close workbench"
-                      >
-                        <span aria-hidden="true">›</span>
-                      </IconButton>
-                    </ControlTooltip>
-                  ) : null}
                 </div>
               ) : <PanelSlot id={surfaceId} params={props.surfaceParams} />}
             </div>
@@ -503,6 +547,19 @@ export function ChatLayout(props: ChatLayoutProps) {
         ) : null}
 
       </div>
+
+      {!props.chatOverlay ? (
+        <TopRightWorkspaceControls
+          surfaceOpen={surfaceOpen}
+          canToggleSurface={canControlSurface}
+          onToggleSurface={toggleSurface}
+          chatCollapsed={chatCollapsed}
+          canToggleChat={centerId === "chat" && (!surfaceConfigured || (surfaceOpen && !chatCollapsed))}
+          onToggleChat={toggleChatCollapsed}
+          chatPulse={chatRailPulse || blockers.length > 0}
+          surfaceConfigured={surfaceConfigured}
+        />
+      ) : null}
 
       {!navOpen && props.onOpenNav ? (
         <FloatingEdgeButton
@@ -526,30 +583,6 @@ export function ChatLayout(props: ChatLayoutProps) {
           // Sits directly above the Sessions toggle; when the session drawer
           // is open the drawer's own header "+" takes over and this hides.
           stackIndex={props.onOpenNav ? 1 : 0}
-        />
-      ) : null}
-      {chatCollapsed ? (
-        <FloatingEdgeButton
-          side="left"
-          icon="chat"
-          onClick={toggleChatCollapsed}
-          label="Expand chat"
-          hint="⌘\\"
-          // Anchored to the shell's left edge (not the content region) so it
-          // stays pinned to the left even when the session drawer is open and
-          // pushes the content rightward.
-          stackIndex={1}
-          pulse={chatRailPulse || activeBlockers.length > 0}
-        />
-      ) : null}
-      {!surfaceOpen && props.onOpenSurface ? (
-        <FloatingEdgeButton
-          side="right"
-          icon="workbench"
-          onClick={props.onOpenSurface}
-          label="Workbench"
-          hint="⌘2"
-          bottomOffset={props.surfaceButtonBottomOffset}
         />
       ) : null}
     </div>
@@ -767,6 +800,68 @@ function createPanelApi(id: string): Partial<PaneProps["api"]> {
     onDidVisibilityChange: () => ({ dispose() {} }),
     onDidConstraintsChange: () => ({ dispose() {} }),
   } as Partial<PaneProps["api"]>
+}
+
+function TopRightWorkspaceControls({
+  surfaceOpen,
+  canToggleSurface,
+  onToggleSurface,
+  chatCollapsed,
+  canToggleChat,
+  onToggleChat,
+  chatPulse,
+  surfaceConfigured,
+}: {
+  surfaceOpen: boolean
+  canToggleSurface: boolean
+  onToggleSurface: () => void
+  chatCollapsed: boolean
+  canToggleChat: boolean
+  onToggleChat: () => void
+  chatPulse: boolean
+  surfaceConfigured: boolean
+}) {
+  const showSurfaceToggle = canToggleSurface
+  const showChatToggle = canToggleChat
+  if (!showSurfaceToggle && !showChatToggle) return null
+
+  const chatLabel = chatCollapsed
+    ? "Show chat"
+    : surfaceConfigured ? "Expand workbench" : "Collapse chat"
+
+  return (
+    <div className="pointer-events-none absolute right-3 top-2.5 z-[70] flex items-center gap-1">
+      {showChatToggle ? (
+        <CornerChromeButton
+          label={chatLabel}
+          hint="⌘\\"
+          onClick={onToggleChat}
+          pressed={chatCollapsed}
+          pulse={chatPulse}
+        >
+          {chatCollapsed ? (
+            <Minimize2 className="size-3" strokeWidth={1.75} />
+          ) : (
+            <Maximize2 className="size-3" strokeWidth={1.75} />
+          )}
+        </CornerChromeButton>
+      ) : null}
+      {showSurfaceToggle ? (
+        <CornerChromeButton
+          label={surfaceOpen ? "Close workbench" : "Open workbench"}
+          hint="⌘2"
+          onClick={onToggleSurface}
+          pressed={surfaceOpen}
+        >
+          {surfaceOpen ? (
+            <PanelRightClose className="size-3" strokeWidth={1.75} />
+          ) : (
+            <PanelRightOpen className="size-3" strokeWidth={1.75} />
+          )}
+        </CornerChromeButton>
+      ) : null}
+    </div>
+  )
 }
 
 function FloatingEdgeButton({

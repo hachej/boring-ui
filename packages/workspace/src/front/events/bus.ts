@@ -2,7 +2,7 @@
  * Tiny typed event bus. ~30 lines, no runtime deps.
  *
  * Design constraints (locked by reviewer feedback in
- * `docs/plans/UNIFIED_EVENT_BUS.md`):
+ * `packages/workspace/docs/plans/archive/UNIFIED_EVENT_BUS.md`):
  *
  * - Synchronous emit only. Slow subscribers fire-and-forget their own async work.
  * - Snapshot listeners before iterating so subscribe / unsubscribe

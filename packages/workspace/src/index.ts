@@ -17,6 +17,7 @@ export type {
   BootstrapOptions,
   BootstrapResult,
   PanelRegistryLike,
+  WorkspaceSourceRegistryLike,
   CommandRegistryLike,
   CatalogRegistryLike,
   SurfaceResolverRegistryLike,
@@ -51,8 +52,11 @@ export {
   PluginErrorBoundary,
   PluginErrorProvider,
   usePluginErrors,
+  WorkspacePluginClientProvider,
+  createWorkspacePluginClient,
+  useWorkspacePluginClient,
 } from "./front/plugin"
-export type { PluginError as PluginContributionError } from "./front/plugin"
+export type { PluginError as PluginContributionError, WorkspacePluginClient } from "./front/plugin"
 export {
   filesystemPlugin,
   emitFilesystemAgentFileChange,
@@ -88,11 +92,13 @@ export { cn } from "./front/lib/utils"
 
 // Registry & panel management
 export { PanelRegistry } from "./front/registry/PanelRegistry"
+export { WorkspaceSourceRegistry } from "./front/registry/WorkspaceSourceRegistry"
 export { CommandRegistry } from "./shared/plugins/CommandRegistry"
 export { SurfaceResolverRegistry } from "./shared/plugins/SurfaceResolverRegistry"
 export {
   RegistryProvider,
   useRegistry,
+  useWorkspaceSourceRegistry,
   useCommandRegistry,
   useCatalogRegistry,
   useSurfaceResolverRegistry,
@@ -104,6 +110,10 @@ export type {
   PanelRegistration,
   CommandConfig,
   PaneProps,
+  WorkspaceSourceConfig,
+  WorkspaceSourceOpenPanelConfig,
+  WorkspaceSourceProps,
+  WorkspaceSourceRegistration,
   SurfaceOpenRequest,
   SurfacePanelResolution,
   SurfaceResolverConfig,
@@ -203,7 +213,7 @@ export { createShadcnTheme } from "./front/theme"
 
 // Unified event bus — typed pubsub for cross-cutting signals
 // (filesystem mutations, panel/editor/query lifecycle). See
-// docs/plans/UNIFIED_EVENT_BUS.md.
+// packages/workspace/docs/plans/archive/UNIFIED_EVENT_BUS.md.
 export {
   events,
   useEvent,
@@ -287,6 +297,7 @@ export type {
 export { SessionBrowser } from "./front/chrome/session-list/SessionBrowser"
 export { SurfaceShell } from "./front/chrome/artifact-surface/SurfaceShell"
 export { WorkbenchLeftPane } from "./front/chrome/workbench-left/WorkbenchLeftPane"
+export { useWorkspaceLeftPaneActions } from "./front/chrome/workbench-left/useWorkspaceLeftPaneActions"
 export type { SessionBrowserProps } from "./front/chrome/session-list/SessionBrowser"
 export type {
   OpenArtifactHandler,
@@ -318,6 +329,11 @@ export type {
   WorkbenchLeftPaneProps,
   WorkbenchLeftTabId,
 } from "./front/chrome/workbench-left/WorkbenchLeftPane"
+export type {
+  UseWorkspaceLeftPaneActionsOptions,
+  WorkspaceLeftPaneAction,
+  WorkspaceLeftPaneOpenPanelConfig,
+} from "./front/chrome/workbench-left/useWorkspaceLeftPaneActions"
 
 // Provider
 export {

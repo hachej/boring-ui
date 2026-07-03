@@ -175,6 +175,13 @@ function normalizeSessionNamespace(value: string | undefined): string | undefine
   return trimmed.length > 0 ? trimmed : undefined
 }
 
+function getRequestAuthSubject(request: FastifyRequest | undefined): string | undefined {
+  const userId = (request as { user?: { id?: unknown } } | undefined)?.user?.id
+  if (typeof userId === 'string' && userId.trim()) return userId.trim()
+  const authSubject = (request?.workspaceContext as { authSubject?: unknown } | undefined)?.authSubject
+  return typeof authSubject === 'string' && authSubject.trim() ? authSubject.trim() : undefined
+}
+
 function createHttpError(
   code: typeof ErrorCode.enum[keyof typeof ErrorCode.enum],
   message: string,
@@ -256,6 +263,7 @@ export interface RegisterAgentRoutesOptions {
     workspaceRoot: string
     runtimeMode: RuntimeModeId
     workspaceFsCapability?: Workspace['fsCapability']
+    authSubject?: string
   }) => AgentTool[] | Promise<AgentTool[]>
   systemPromptAppend?: string
   /** Optional dynamic system-prompt source forwarded to the harness. */
@@ -355,6 +363,7 @@ export const registerAgentRoutes: FastifyPluginAsync<RegisterAgentRoutesOptions>
     typeof opts.getWorkspaceRoot === 'function' ||
     typeof opts.getTemplatePath === 'function' ||
     typeof opts.getPi === 'function' ||
+    typeof opts.getExtraTools === 'function' ||
     typeof opts.getSessionNamespace === 'function' ||
     typeof opts.getSystemPromptDynamic === 'function'
   const sessionChangesTracker = new InMemorySessionChangesTracker()
@@ -397,6 +406,7 @@ export const registerAgentRoutes: FastifyPluginAsync<RegisterAgentRoutesOptions>
     const sessionNamespace = normalizeSessionNamespace(opts.getSessionNamespace
       ? await opts.getSessionNamespace({ workspaceId, workspaceRoot: root, request })
       : opts.sessionNamespace)
+    const extraToolsAuthSubject = opts.getExtraTools ? getRequestAuthSubject(request) : undefined
     return {
       root,
       templatePath: scopedTemplatePath,
@@ -409,6 +419,7 @@ export const registerAgentRoutes: FastifyPluginAsync<RegisterAgentRoutesOptions>
         scopedTemplatePath ?? null,
         pi,
         sessionNamespace ?? null,
+        extraToolsAuthSubject ?? null,
       ]),
     }
   }
@@ -624,6 +635,7 @@ let runtimeProvisioning: WorkspaceProvisioningResult | undefined
           workspaceRoot: root,
           runtimeMode: resolvedMode,
           workspaceFsCapability: runtimeBundle.workspace.fsCapability,
+          authSubject: getRequestAuthSubject(request),
         })
       : []
     const tools = mergeTools({
@@ -729,6 +741,7 @@ let runtimeProvisioning: WorkspaceProvisioningResult | undefined
           workspaceId,
           scope,
           await existing.promise,
+          request,
         )
       }
     }
@@ -744,6 +757,7 @@ let runtimeProvisioning: WorkspaceProvisioningResult | undefined
         workspaceId,
         scope,
         await created.promise,
+        request,
       )
     } catch (error) {
       if (runtimeBindings.get(scope.key) === created) runtimeBindings.delete(scope.key)
@@ -754,11 +768,12 @@ let runtimeProvisioning: WorkspaceProvisioningResult | undefined
   async function recreateRuntimeBinding(
     workspaceId: string,
     scope: RuntimeScope,
+    request?: FastifyRequest,
   ): Promise<RuntimeBinding> {
     runtimeBindings.delete(scope.key)
     modeAdapter.evictCachedRuntime?.({ workspaceId })
 
-    const created = createRuntimeBindingEntry(workspaceId, scope)
+    const created = createRuntimeBindingEntry(workspaceId, scope, request)
     runtimeBindings.set(scope.key, created)
     evictRuntimeBindings()
     try {
@@ -775,6 +790,7 @@ let runtimeProvisioning: WorkspaceProvisioningResult | undefined
     workspaceId: string,
     scope: RuntimeScope,
     binding: RuntimeBinding,
+    request?: FastifyRequest,
   ): Promise<RuntimeBinding> {
     const healthCheck = modeAdapter.cachedBindingHealthCheck
     if (!healthCheck) return binding
@@ -799,7 +815,7 @@ let runtimeProvisioning: WorkspaceProvisioningResult | undefined
       workspaceId,
     }, result.message ?? '[runtime] cached runtime invalid; recreating')
 
-    return await recreateRuntimeBinding(workspaceId, scope)
+    return await recreateRuntimeBinding(workspaceId, scope, request)
   }
 
   const hasRuntimeProvisioningInput = opts.provisionWorkspace !== false && Boolean(opts.provisionRuntime)
@@ -922,6 +938,7 @@ let runtimeProvisioning: WorkspaceProvisioningResult | undefined
   })
   await app.register(treeRoutes, {
     getWorkspace: async (request) => (await getBindingForRequest(request)).runtimeBundle.workspace,
+    getFilesystemBindings: async (request) => (await getBindingForRequest(request)).runtimeBundle.filesystemBindings,
   })
   await app.register(searchRoutes, {
     getFileSearch: async (request) => (await getBindingForRequest(request)).runtimeBundle.fileSearch,

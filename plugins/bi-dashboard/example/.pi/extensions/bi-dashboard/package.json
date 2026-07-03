@@ -1,0 +1,12 @@
+{
+  "name": "bi-dashboard-demo-extension",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "boring": {
+    "id": "bi-dashboard",
+    "label": "BI Dashboard Demo",
+    "front": "front/index.ts",
+    "server": "server/index.ts"
+  }
+}
