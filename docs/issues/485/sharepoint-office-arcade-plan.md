@@ -95,6 +95,14 @@ Spike findings:
 
 - Create app/internal SharePoint plugin using existing plugin conventions.
 - Add `boring.front` and `boring.server` entries.
+- Add plugin workbook/runbook documentation for setting up SharePoint/Microsoft 365 with boring-ui:
+  - tenant/workspace setup flow
+  - Arcade provider/backend setup
+  - Microsoft consent/scopes needed
+  - how to connect SharePoint in the boring-ui integration/MCP menu
+  - how to create/upload test `.xlsx` / `.pptx` files
+  - how to validate Open in SharePoint, preview, and agent edit
+  - troubleshooting auth/admin-consent/CSP/iframe failures
 - Add canonical `SharePointDocumentRef` / Office ref schema.
 - Add stable `SHAREPOINT_*` error codes.
 - Add provider/domain contracts:
@@ -165,6 +173,26 @@ Spike findings:
 - Make SharePoint ref canonical after import.
 - Handle duplicate names/conflicts.
 - No two-way sync.
+
+## Documentation/workbook requirement
+
+The SharePoint plugin must ship a user/operator workbook explaining how to set up SharePoint/Microsoft 365 for boring-ui. It should be written for someone configuring a new tenant/workspace, not for core developers only.
+
+Required topics:
+
+- SharePoint/Microsoft 365 prerequisites.
+- Arcade backend/provider setup.
+- Tenant/workspace connection flow in boring-ui.
+- Required Microsoft consent/scopes and admin-consent expectations.
+- Creating or selecting a SharePoint site/document library.
+- Uploading sample `.xlsx` / `.pptx` files.
+- Validating file refs, Open in SharePoint, iframe preview, and agent edits.
+- Troubleshooting:
+  - auth required
+  - admin consent required
+  - preview iframe blocked by CSP/tenant policy
+  - stale `webUrl` / moved files
+  - Arcade tool failure
 
 ## Cross-stack green gates
 
