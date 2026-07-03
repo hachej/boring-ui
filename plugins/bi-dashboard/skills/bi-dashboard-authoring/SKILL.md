@@ -61,7 +61,7 @@ Use this top-level shape:
 
 Use only these component types and prop names:
 
-- `DashboardGrid` — layout container with string `children`; optional `props.columns` must be one of `1`, `2`, `3`, `4`, `6`, or `12`
+- `DashboardGrid` — layout container with string `children`; optional `props.columns` must be one of `1`, `2`, `3`, `4`, `5`, `6`, or `12`
 - `BSLMetric` — KPI card; requires `props.queryId`, `props.label`, and `props.valueField`; optional `props.format` is `number`, `currency`, or `percent`
 - `BSLChart` — native OpenUI/shadcn-style chart by default; requires `props.queryId` and `props.chartType`; `props.chartType` must be exactly one of `bar`, `line`, `area`, `scatter`, `radar`, `radial`, `pie`, `donut`, `heatmap`, `treemap`, `sunburst`, or `table`; never use `gauge`, `histogram`, or other chart types; use `props.renderer: "perspective"` only for advanced manipulation; use `props.x` only for the category/grouping axis and `props.y` only for numeric measure series; do not include the x/category field as a measure/series; optional `props.color` is allowed (not `xField`, `yField`, or `yFields`)
 - `BSLPerspectiveViewer` — exploratory table/pivot; use `props.plugin: "Datagrid"` for detail tables; optional `props.columns`, `props.groupBy`, and `props.splitBy` are string arrays; optional `props.sort` is an array of `[field, "asc" | "desc"]` tuples
@@ -71,6 +71,7 @@ Use only these component types and prop names:
 ## Authoring rules
 
 - put filters/controllers first, then KPI metrics, then charts, then detail/Perspective tables
+- layout rule: compact KPI/indicator-only sections may use `props.columns` from 1–5, but any grid containing charts, line charts, bar charts, tables, or exploratory/Perspective views must use `props.columns: 1` or `props.columns: 2` so charts are never denser than two per row
 - keep 2–4 top metrics and avoid clutter; prefer clear titles and business labels
 - use Perspective mainly for drill-down tables/pivots, not for every chart
 - every component ID referenced in `children` must exist in `elements`
