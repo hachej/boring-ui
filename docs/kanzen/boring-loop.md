@@ -27,6 +27,8 @@ Rule: autonomy = label + passed gates.
 - [`boring-feedback`](../../.agents/skills/boring-feedback/SKILL.md): create issue.
 - [`boring-triage`](../../.agents/skills/boring-triage/SKILL.md): classify gate.
 - [`boring-orchestration`](../../.agents/skills/boring-orchestration/SKILL.md): run sweep.
+- [`boring-loop-plan`](../../.agents/skills/boring-loop-plan/SKILL.md): run `/loop-plan`.
+- [`boring-loop-implement`](../../.agents/skills/boring-loop-implement/SKILL.md): run `/loop-implement`.
 - [`sources/theo_loop.md`](sources/theo_loop.md): source transcript.
 - [`sources/steinberger_loop.md`](sources/steinberger_loop.md): source notes.
 

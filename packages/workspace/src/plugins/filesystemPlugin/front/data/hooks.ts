@@ -57,16 +57,17 @@ export function useFileContent(
   })
 }
 
-export function useFileList(dir: string | null): UseQueryResult<FileEntry[]> {
+export function useFileList(dir: string | null, filesystem?: FilesystemId): UseQueryResult<FileEntry[]> {
   const client = useDataClient()
   const base = useApiBaseUrl()
   const workspaceId = useWorkspaceRequestId()
+  const fs = normalizeUiFilesystem(filesystem)
   return useQuery({
-    queryKey: [base, workspaceId, "tree", dir],
-    queryFn: async ({ signal }) => (await client.getTree(dir!, signal)) ?? [],
+    queryKey: [base, workspaceId, "tree", fs, dir],
+    queryFn: async ({ signal }) => (await (fs === "user" ? client.getTree(dir!, signal) : client.getTree(dir!, signal, fs))) ?? [],
     enabled: dir != null,
     staleTime: 3_000,
-    initialData: () => getPreloadedTreeEntries(base, workspaceId, dir),
+    initialData: () => fs === "user" ? getPreloadedTreeEntries(base, workspaceId, dir) : undefined,
     // File-event SSE invalidates this query when files change. Polling every
     // 3s made slow/dev backends self-abort before the first tree response,
     // leaving the workbench tree stuck on its skeleton.

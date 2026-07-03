@@ -15,7 +15,11 @@
 
 import { createContext, useContext, type ReactNode } from "react"
 
-export type OpenArtifactHandler = (path: string) => void
+export interface OpenArtifactOptions {
+  filesystem?: string
+}
+
+export type OpenArtifactHandler = (path: string, options?: OpenArtifactOptions) => void
 
 const ArtifactOpenContext = createContext<OpenArtifactHandler | null>(null)
 

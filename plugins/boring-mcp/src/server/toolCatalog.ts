@@ -20,6 +20,7 @@ import { assertMcpPublicPayloadSecretFree, requireActorOwnedMcpSource, validateM
 interface McpToolCatalogSnapshot {
   sourceId: string
   provider: McpProviderId
+  sourceRevision: string
   tools: McpToolCatalogEntry[]
 }
 
@@ -39,6 +40,7 @@ export interface McpToolsSearchInput {
   sourceId?: string
   query?: string
   refresh?: boolean
+  providerRefresh?: boolean
 }
 
 export interface McpToolDescribeInput {
@@ -46,6 +48,7 @@ export interface McpToolDescribeInput {
   toolName: string
   expectedSchemaHash?: string
   refresh?: boolean
+  providerRefresh?: boolean
 }
 
 export interface BoringMcpToolCatalog {
@@ -77,6 +80,16 @@ export function createMcpSchemaHash(schema: unknown): string {
 
 function displayName(toolName: string): string {
   return toolName.replace(/[_:.-]+/g, " ").replace(/\b\w/g, (char) => char.toUpperCase())
+}
+
+function sourceCatalogRevision(source: { status: string; updatedAt?: string; connectorRef?: { sessionId?: string; connectedAccountId?: string; externalSourceId?: string } }): string {
+  return createHash("sha256").update(JSON.stringify({
+    status: source.status,
+    updatedAt: source.updatedAt,
+    sessionId: source.connectorRef?.sessionId,
+    connectedAccountId: source.connectorRef?.connectedAccountId,
+    externalSourceId: source.connectorRef?.externalSourceId,
+  })).digest("hex")
 }
 
 export function normalizeMcpCatalogTool(
@@ -123,21 +136,23 @@ function assertConnectedSource(sourceId: string, status: string): void {
 export function createBoringMcpToolCatalog(options: BoringMcpToolCatalogOptions): BoringMcpToolCatalog {
   const cache = options.cache ?? new InMemoryMcpToolCatalogCache()
 
-  async function loadSourceCatalog(actor: McpActor, sourceId: string, refresh?: boolean): Promise<McpToolCatalogSnapshot> {
-    const normalizedSourceId = validateMcpSourceId(sourceId)
-    const source = await requireActorOwnedMcpSource(options.registry, actor, normalizedSourceId)
-    assertConnectedSource(normalizedSourceId, source.status)
+  async function loadSourceCatalog(actor: McpActor, sourceId: string, refresh?: boolean, providerRefresh?: boolean): Promise<McpToolCatalogSnapshot> {
+    const requestedSourceId = validateMcpSourceId(sourceId)
+    const source = await requireActorOwnedMcpSource(options.registry, actor, requestedSourceId)
+    const resolvedSourceId = validateMcpSourceId(source.id)
+    assertConnectedSource(resolvedSourceId, source.status)
 
-    if (!refresh) {
-      const cached = await cache.get(actor, normalizedSourceId)
-      if (cached && cached.provider === source.provider) return cached
+    const sourceRevision = sourceCatalogRevision(source)
+    if (!refresh && !providerRefresh) {
+      const cached = await cache.get(actor, resolvedSourceId)
+      if (cached && cached.provider === source.provider && cached.sourceRevision === sourceRevision) return cached
     }
 
-    const discoveredTools = await options.transport.listTools(source)
-    const tools = discoveredTools.map((tool) => normalizeMcpCatalogTool(normalizedSourceId, source.provider, tool, options.templates))
-    const snapshot = { sourceId: normalizedSourceId, provider: source.provider, tools }
+    const discoveredTools = await options.transport.listTools(source, { forceProviderRefresh: providerRefresh ?? refresh })
+    const tools = discoveredTools.map((tool) => normalizeMcpCatalogTool(resolvedSourceId, source.provider, tool, options.templates))
+    const snapshot = { sourceId: resolvedSourceId, provider: source.provider, sourceRevision, tools }
     assertMcpPublicPayloadSecretFree(snapshot)
-    await cache.set(actor, normalizedSourceId, snapshot)
+    await cache.set(actor, resolvedSourceId, snapshot)
     return snapshot
   }
 
@@ -148,7 +163,7 @@ export function createBoringMcpToolCatalog(options: BoringMcpToolCatalogOptions)
         : (await options.registry.listSources(actor)).filter((source) => source.status === "connected")
       const catalog: McpToolCatalogEntry[] = []
       for (const source of sources) {
-        const result = await loadSourceCatalog(actor, source.id, input.refresh)
+        const result = await loadSourceCatalog(actor, source.id, input.refresh, input.providerRefresh)
         catalog.push(...result.tools)
       }
       const response = { tools: catalog.filter((entry) => matchesQuery(entry, input.query ?? "")) }
@@ -157,7 +172,7 @@ export function createBoringMcpToolCatalog(options: BoringMcpToolCatalogOptions)
     },
 
     async describeTool(actor, input) {
-      const result = await loadSourceCatalog(actor, input.sourceId, input.refresh)
+      const result = await loadSourceCatalog(actor, input.sourceId, input.refresh, input.providerRefresh)
       const tool = result.tools.find((candidate) => candidate.toolName === input.toolName)
       if (!tool) throw new McpError(MCP_ERROR_CODES.TOOL_NOT_FOUND, "MCP tool not found")
       const schemaDrifted = Boolean(input.expectedSchemaHash && input.expectedSchemaHash !== tool.schemaHash)

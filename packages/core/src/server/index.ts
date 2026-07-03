@@ -8,7 +8,7 @@ export type { LoadConfigOptions } from './config/index.js'
 
 export { safeRedirect } from './security/index.js'
 
-export { createCoreApp, registerRoutes } from './app/index.js'
+export { createCoreApp, registerRoutes, withUserSettingsWriteLock } from './app/index.js'
 export type { CreateCoreAppOptions, RoutesOptions, UserStore, WorkspaceStore, AuthProvider, CapabilitiesContributor } from './app/index.js'
 
 export { createMailTransport, MailDeliveryError } from './mail/index.js'

@@ -16,6 +16,7 @@ import { fireEvent, render, screen, waitFor } from "@testing-library/react"
 import { renderToStaticMarkup } from "react-dom/server"
 import { afterEach, describe, expect, test, vi } from "vitest"
 import { ErrorCode } from "../../shared/error-codes"
+import { ArtifactOpenProvider } from "../ArtifactOpenContext"
 import { shadcnDefaultToolRenderers } from "../toolRenderers"
 import { Tool, ToolHeader, ToolOutput } from "../primitives/tool"
 import type { ToolPart } from "../../front/toolRenderers"
@@ -78,6 +79,24 @@ describe("shadcn filesystem renderer coverage", () => {
       expect(missing).toEqual([])
     },
   )
+})
+
+test("file tool headers preserve explicit filesystem when opened from transcript refs", async () => {
+  const onOpenArtifact = vi.fn()
+  const part = makePart({
+    toolName: "read",
+    input: { path: "/company/hr/policy.md", filesystem: "company_context" },
+    output: { content: "policy" },
+  })
+
+  render(
+    <ArtifactOpenProvider onOpenArtifact={onOpenArtifact}>
+      {shadcnDefaultToolRenderers.read!(part)}
+    </ArtifactOpenProvider>,
+  )
+
+  fireEvent.click(screen.getAllByRole("button", { name: /company\/hr\/policy\.md/ })[1]!)
+  expect(onOpenArtifact).toHaveBeenCalledWith("/company/hr/policy.md", { filesystem: "company_context" })
 })
 
 describe("workspace readiness tool status", () => {

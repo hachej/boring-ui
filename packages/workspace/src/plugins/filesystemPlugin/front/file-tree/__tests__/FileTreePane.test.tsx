@@ -15,7 +15,7 @@ const mockGetTree = vi.fn()
 const mockGetGitUrlMetadata = vi.fn()
 
 vi.mock("../../data", () => ({
-  useFileList: (dir: string) => mockFileList(dir),
+  useFileList: (dir: string, filesystem?: string) => mockFileList(dir, filesystem),
   useFileWrite: () => ({ mutateAsync: mockFileWrite }),
   useCreateDir: () => ({ mutateAsync: mockCreateDir }),
   useMoveFile: () => ({ mutateAsync: mockMoveFile }),
@@ -107,6 +107,7 @@ vi.mock("../FileTree", () => {
       onSubmitEdit,
       onCancelEdit,
       onDragDrop,
+      onExpand,
     }: {
       files: Node[]
       searchQuery?: string
@@ -119,6 +120,7 @@ vi.mock("../FileTree", () => {
       onSubmitEdit?: (p: string, v: string) => void
       onCancelEdit?: () => void
       onDragDrop?: (src: string, dst: string) => void
+      onExpand?: (path: string) => void
     }) => (
       <div
         data-testid="file-tree"
@@ -144,6 +146,13 @@ vi.mock("../FileTree", () => {
           onClick={() => onDragDrop?.("a.ts", "src")}
         >
           drag
+        </button>
+        <button
+          type="button"
+          data-testid="trigger-expand-src"
+          onClick={() => onExpand?.("src")}
+        >
+          expand src
         </button>
       </div>
     ),
@@ -238,6 +247,90 @@ describe("FileTreePane", () => {
       expect(screen.getByTestId("file-tree")).toBeInTheDocument()
     })
     expect(screen.getByText("index.ts")).toBeInTheDocument()
+  })
+
+  it("shows configured filesystem roots without probing hardcoded bindings", async () => {
+    mockFileList.mockImplementation((dir: string, filesystem?: string) => ({
+      data: filesystem === "project_alpha"
+        ? [{ name: "handbook.md", kind: "file" as const, path: "handbook.md" }]
+        : sampleFiles,
+      isLoading: false,
+      isSuccess: true,
+      error: undefined,
+    }))
+    const bridge = {
+      openFile: vi.fn(),
+      select: vi.fn(() => vi.fn()),
+      getActiveFile: vi.fn(),
+    }
+
+    render(<FileTreePane
+      bridge={bridge}
+      roots={[
+        { filesystem: "user", label: "Workspace", rootDir: ".", access: "readwrite" },
+        { filesystem: "project_alpha", label: "Project", rootDir: "/", access: "readonly", searchPlaceholder: "Filter project files..." },
+      ]}
+    />, { wrapper })
+
+    expect(await screen.findByRole("tab", { name: "Workspace" })).toBeInTheDocument()
+    fireEvent.click(screen.getByRole("tab", { name: "Project" }))
+
+    await waitFor(() => expect(screen.getByText("handbook.md")).toBeInTheDocument())
+    fireEvent.click(screen.getByText("handbook.md"))
+    expect(bridge.openFile).toHaveBeenCalledWith("handbook.md", {
+      mode: "edit",
+      filesystem: "project_alpha",
+    })
+
+    fireEvent.contextMenu(screen.getByText("handbook.md"))
+    expect(screen.queryByRole("menuitem", { name: "Rename" })).not.toBeInTheDocument()
+    expect(screen.queryByRole("menuitem", { name: "Delete" })).not.toBeInTheDocument()
+  })
+
+  it("remounts the tree when switching configured filesystems so expanded path state cannot leak", async () => {
+    mockFileList.mockImplementation((dir: string, filesystem?: string) => ({
+      data: [{ name: "src", kind: "dir" as const, path: "src" }],
+      isLoading: false,
+      isSuccess: true,
+      error: undefined,
+    }))
+    mockGetTree.mockImplementation(async (dir: string, _signal?: AbortSignal, filesystem?: string) => (
+      filesystem === "project_alpha"
+        ? [{ name: "project-only.ts", kind: "file" as const, path: `${dir}/project-only.ts` }]
+        : [{ name: "user-only.ts", kind: "file" as const, path: `${dir}/user-only.ts` }]
+    ))
+
+    render(<FileTreePane
+      roots={[
+        { filesystem: "user", label: "Workspace", rootDir: ".", access: "readwrite" },
+        { filesystem: "project_alpha", label: "Project", rootDir: "/", access: "readonly" },
+      ]}
+    />, { wrapper })
+
+    await waitFor(() => expect(screen.getByTestId("file-tree")).toBeInTheDocument())
+    fireEvent.click(screen.getByTestId("trigger-expand-src"))
+    await waitFor(() => expect(screen.getByText("user-only.ts")).toBeInTheDocument())
+
+    fireEvent.click(screen.getByRole("tab", { name: "Project" }))
+    await waitFor(() => expect(screen.getByTestId("file-tree")).toBeInTheDocument())
+    expect(screen.queryByText("user-only.ts")).not.toBeInTheDocument()
+    fireEvent.click(screen.getByTestId("trigger-expand-src"))
+    await waitFor(() => expect(screen.getByText("project-only.ts")).toBeInTheDocument())
+  })
+
+  it("does not show extra filesystem roots unless configured", async () => {
+    mockFileList.mockReturnValue({
+      data: sampleFiles,
+      isLoading: false,
+      isSuccess: true,
+      error: undefined,
+    })
+
+    render(<FileTreePane />, { wrapper })
+
+    await waitFor(() => expect(screen.getByTestId("file-tree")).toBeInTheDocument())
+    expect(screen.queryByRole("tab", { name: "Workspace" })).not.toBeInTheDocument()
+    expect(screen.queryByRole("tab", { name: "Project" })).not.toBeInTheDocument()
   })
 
   it("hides .boring-agent from the default tree view", async () => {
@@ -428,7 +521,14 @@ describe("FileTreePane", () => {
     await screen.findByText("old.ts")
     mockGetTree.mockClear()
 
-    // A remote (agent/SSE) create inside the expanded dir must re-fetch it…
+    // Cross-filesystem events must not touch this user tree.
+    act(() => {
+      events.emit(filesystemEvents.created, { ...remoteMeta(), filesystem: "project_alpha", path: "src/leak.ts", kind: "file" })
+    })
+    await new Promise((r) => setTimeout(r, 20))
+    expect(mockGetTree).not.toHaveBeenCalled()
+
+    // A remote (agent/SSE) create inside the expanded dir on the active filesystem must re-fetch it…
     act(() => {
       events.emit(filesystemEvents.created, { ...remoteMeta(), path: "src/new.ts", kind: "file" })
     })
@@ -442,6 +542,22 @@ describe("FileTreePane", () => {
     })
     await new Promise((r) => setTimeout(r, 20))
     expect(mockGetTree).not.toHaveBeenCalled()
+  })
+
+  it("does not optimistically patch root entries from another filesystem", async () => {
+    render(<FileTreePane />, { wrapper })
+    await waitFor(() => expect(screen.getByTestId("file-tree")).toBeInTheDocument())
+
+    act(() => {
+      events.emit(filesystemEvents.created, { ...remoteMeta(), filesystem: "project_alpha", path: "leak.ts", kind: "file" })
+    })
+    await new Promise((r) => setTimeout(r, 20))
+    expect(screen.queryByText("leak.ts")).not.toBeInTheDocument()
+
+    act(() => {
+      events.emit(filesystemEvents.created, { ...remoteMeta(), path: "visible.ts", kind: "file" })
+    })
+    await waitFor(() => expect(screen.getByText("visible.ts")).toBeInTheDocument())
   })
 
   it("reveals folder requests forwarded through left-tab params", async () => {
