@@ -1039,7 +1039,7 @@ describe("useAgentPluginHotReload", () => {
         boring: { front: "./front.mjs" },
       })
 
-      await waitFor(() => expect(warn).toHaveBeenCalledWith(expect.stringContaining("Dynamic provider/binding mounting is not implemented")))
+      await waitFor(() => expect(warn).toHaveBeenCalledWith(expect.stringContaining("Dynamic provider/binding/app-left mounting is not implemented")))
       await waitFor(() => expect(screen.getByTestId("hot-pane")).toHaveTextContent("version two"))
     } finally {
       warn.mockRestore()

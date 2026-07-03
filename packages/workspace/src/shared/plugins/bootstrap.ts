@@ -35,6 +35,7 @@ export interface SurfaceResolverRegistryLike {
 export interface BootstrapOptions {
   chatPanel: unknown
   plugins?: BoringFrontFactoryWithId[]
+  capturedPlugins?: CapturedFrontPlugin[]
   defaults?: BoringFrontFactoryWithId[]
   excludeDefaults?: string[]
   registries: {
@@ -132,11 +133,35 @@ export function registerCapturedFrontPlugin(
   }
 }
 
-export function bootstrap(options: BootstrapOptions): BootstrapResult {
-  if (!options.chatPanel) {
-    throw new PluginError("validation", "bootstrap requires chatPanel")
+function validateCapturedPlugins(captured: CapturedFrontPlugin[]): void {
+  const seenPluginIds = new Set<string>()
+  const appLeftActionOwners = new Map<string, string>()
+  for (const plugin of captured) {
+    if (seenPluginIds.has(plugin.id)) {
+      throw new PluginError(
+        "duplicate-id",
+        `plugin "${plugin.id}" registered twice`,
+      )
+    }
+    seenPluginIds.add(plugin.id)
+    for (const action of plugin.registrations.appLeftActions) {
+      const previous = appLeftActionOwners.get(action.id)
+      if (previous) {
+        throw new PluginError(
+          "duplicate-id",
+          `app-left action "${action.id}" registered by both "${previous}" and "${plugin.id}"`,
+        )
+      }
+      appLeftActionOwners.set(action.id, plugin.id)
+    }
   }
+}
 
+export function captureBootstrapPlugins(options: Pick<BootstrapOptions, "plugins" | "defaults" | "excludeDefaults" | "capturedPlugins">): CapturedFrontPlugin[] {
+  if (options.capturedPlugins) {
+    validateCapturedPlugins(options.capturedPlugins)
+    return options.capturedPlugins
+  }
   const excludedDefaults = new Set(options.excludeDefaults ?? [])
   const finalPlugins = [
     ...(options.defaults ?? []).filter(
@@ -157,6 +182,16 @@ export function bootstrap(options: BootstrapOptions): BootstrapResult {
   }
 
   const captured = finalPlugins.map(captureFrontPlugin)
+  validateCapturedPlugins(captured)
+  return captured
+}
+
+export function bootstrap(options: BootstrapOptions): BootstrapResult {
+  if (!options.chatPanel) {
+    throw new PluginError("validation", "bootstrap requires chatPanel")
+  }
+
+  const captured = captureBootstrapPlugins(options)
   for (const plugin of captured) {
     registerCapturedFrontPlugin(plugin, options.registries, options.panelCommandRunner)
   }

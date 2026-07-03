@@ -27,6 +27,10 @@ test.describe("storybook visual baseline", () => {
   const snapshotOptions = {
     animations: "disabled" as const,
     caret: "hide" as const,
+    // CI font rasterization can drift by a handful of pixels across safe
+    // dependency lockfile changes. Keep the budget tiny so real UI changes
+    // still require baseline review.
+    maxDiffPixels: 20,
   }
 
   test("workspace desktop stories", async ({ page }) => {

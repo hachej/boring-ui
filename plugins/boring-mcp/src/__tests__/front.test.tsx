@@ -21,6 +21,7 @@ function capturePluginRegistrations() {
     registerWorkspaceSource: vi.fn(),
     registerSurfaceResolver: vi.fn(),
     registerToolRenderer: vi.fn(),
+    registerAppLeftAction: vi.fn(),
   }
   createBoringMcpPlugin({ enabledProviderIds: ["notion"] })(api)
   return api
