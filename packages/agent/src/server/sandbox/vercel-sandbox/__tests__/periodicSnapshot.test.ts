@@ -11,7 +11,7 @@ import {
 } from '../periodicSnapshot'
 
 interface MockSnapshot extends SnapshotHandle {
-  delete: ReturnType<typeof vi.fn>
+  delete: ReturnType<typeof vi.fn<SnapshotHandle['delete']>>
 }
 
 function createHandleStore(
@@ -41,7 +41,7 @@ function createHandleStore(
 function createSnapshot(snapshotId: string): MockSnapshot {
   return {
     snapshotId,
-    delete: vi.fn(async () => {
+    delete: vi.fn<SnapshotHandle['delete']>(async () => {
       // no-op
     }),
   }

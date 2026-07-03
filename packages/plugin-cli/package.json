@@ -28,10 +28,10 @@
     "test": "pnpm run build && vitest run"
   },
   "devDependencies": {
-    "@types/node": "^22.15.3",
+    "@types/node": "^22.20.0",
     "tsup": "^8.4.0",
     "typescript": "^5.8.3",
-    "vitest": "^3.2.6"
+    "vitest": "^4.1.9"
   },
   "repository": {
     "type": "git",
