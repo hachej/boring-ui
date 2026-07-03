@@ -1,9 +1,9 @@
-import Fastify, { type FastifyInstance } from 'fastify'
+import Fastify, { type FastifyInstance, type FastifyRequest } from 'fastify'
 import type { AgentTool } from '../shared/tool'
 import type { AgentHarness, AgentHarnessFactory } from '../shared/harness'
 import type { TelemetrySink } from '../shared/telemetry'
 import { getEnv } from './config/env'
-import type { RuntimeBundle, RuntimeModeAdapter, RuntimeModeId } from './runtime/mode'
+import type { RuntimeBundle, RuntimeFilesystemBinding, RuntimeModeAdapter, RuntimeModeId } from './runtime/mode'
 import { getOptionalRuntimeBundleStorageRoot } from './runtime/mode'
 import { withRuntimeEnvContributions, type RuntimeEnvContribution } from './runtimeEnvContributions'
 import { resolveMode, autoDetectMode } from './runtime/resolveMode'
@@ -73,6 +73,8 @@ export interface CreateAgentAppOptions {
   telemetry?: TelemetrySink
   /** Optional billing sink for native Pi usage (see AgentMeteringSink). */
   metering?: AgentMeteringSink
+  /** Generic filesystem binding seam for standalone embeddings. */
+  getFilesystemBindings?: (ctx: { request?: FastifyRequest; sessionId?: string; workspaceId: string; workspaceRoot: string; userId?: string; userEmail?: string; requestId?: string }) => RuntimeFilesystemBinding[] | undefined | Promise<RuntimeFilesystemBinding[] | undefined>
   /** Generic runtime env contributors. Agent stays workspace-neutral; hosts decide env names/values. */
   runtimeEnvContributions?: RuntimeEnvContribution[]
   /** Runtime-aware provisioning hook. Runs after Workspace/Sandbox creation and before tools/harness. */
@@ -187,7 +189,18 @@ export async function createAgentApp(
         return current ? { env: current.env, pathEntries: current.pathEntries } : undefined
       },
     }),
-    ...(opts.disableDefaultFileTools ? [] : buildFilesystemAgentTools(runtimeBundle)),
+    ...(opts.disableDefaultFileTools ? [] : buildFilesystemAgentTools(runtimeBundle, {
+      getFilesystemBindings: opts.getFilesystemBindings
+        ? (ctx) => opts.getFilesystemBindings?.({
+            sessionId: ctx.sessionId,
+            workspaceId: ctx.workspaceId ?? sessionId,
+            workspaceRoot,
+            userId: ctx.userId,
+            userEmail: ctx.userEmail,
+            requestId: ctx.requestId,
+          })
+        : undefined,
+    })),
     ...(opts.extraTools ?? []),
     ...pluginTools,
     ...(externalPluginsEnabled ? [createPluginDiagnosticsTool({
@@ -235,9 +248,9 @@ export async function createAgentApp(
     getReadiness: () => readyTracker.getReadiness(),
   })
 
-  await app.register(fileRoutes, { workspace: runtimeBundle.workspace })
+  await app.register(fileRoutes, { workspace: runtimeBundle.workspace, getFilesystemBindings: opts.getFilesystemBindings ? (request) => opts.getFilesystemBindings?.({ request, workspaceId: request.workspaceContext.workspaceId, workspaceRoot, requestId: request.id }) : undefined })
   await app.register(fsEventsRoutes, { workspace: runtimeBundle.workspace })
-  await app.register(treeRoutes, { workspace: runtimeBundle.workspace, filesystemBindings: runtimeBundle.filesystemBindings })
+  await app.register(treeRoutes, { workspace: runtimeBundle.workspace, getFilesystemBindings: opts.getFilesystemBindings ? (request) => opts.getFilesystemBindings?.({ request, workspaceId: request.workspaceContext.workspaceId, workspaceRoot, requestId: request.id }) : undefined, filesystemBindings: runtimeBundle.filesystemBindings })
   // /api/v1/files/search powers BOTH the cmd-palette / file-tree
   // search (browser → fetchClient.search) AND shares the same
   // FileSearch instance the LLM's `find` tool already uses

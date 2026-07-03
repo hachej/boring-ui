@@ -463,7 +463,10 @@ export class HarnessPiChatService implements PiChatSessionService {
     return this.harness.getPiSessionAdapter(sendInput, {
       abortSignal: new AbortController().signal,
       workdir: this.workdir,
+      workspaceId: ctx.workspaceId,
+      requestId: ctx.requestId,
       userId: ctx.authSubject,
+      userEmail: ctx.authEmail,
     })
   }
 

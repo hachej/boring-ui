@@ -100,5 +100,8 @@ export interface SendMessageInput {
 export interface RunContext {
   abortSignal: AbortSignal
   workdir: string
+  workspaceId?: string
+  requestId?: string
   userId?: string
+  userEmail?: string
 }

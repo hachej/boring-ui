@@ -358,26 +358,26 @@ Evaluate existing `packages/boring-bash` before building anything new:
 
 ### TODO
 
-- [ ] Fix production binding wiring gaps:
-  - [ ] `fileRoutes` supports `getFilesystemBindings`, but production registration currently omits it; wire it;
-  - [ ] tree routes already have shape but read from shared bundle; make it use the chosen resolver;
-  - [ ] agent tools must not capture user-agnostic bindings at bundle creation.
-- [ ] Add generic resolver context:
-  - [ ] `workspaceId`;
-  - [ ] authenticated human user id/email where available;
-  - [ ] session/run/request id as needed;
-  - [ ] no tenant/YAML concepts in generic agent/workspace packages.
-- [ ] Parity behavior:
-  - [ ] when no resolver configured, current `runtimeBundle.filesystemBindings` behavior unchanged;
-  - [ ] when resolver configured, both HTTP file/tree routes and agent filesystem tools resolve bindings through the same user-aware seam.
-- [ ] Add cross-user cache-leak regression test with two users and one workspace.
+- [x] Fix production binding wiring gaps:
+  - [x] `fileRoutes` supports `getFilesystemBindings`, but production registration currently omits it; wire it;
+  - [x] tree routes already have shape but read from shared bundle; make it use the chosen resolver;
+  - [x] agent tools must not capture user-agnostic bindings at bundle creation.
+- [x] Add generic resolver context:
+  - [x] `workspaceId`;
+  - [x] authenticated human user id/email where available;
+  - [x] session/run/request id as needed;
+  - [x] no tenant/YAML concepts in generic agent/workspace packages.
+- [x] Parity behavior:
+  - [x] when no resolver configured, current `runtimeBundle.filesystemBindings` behavior unchanged;
+  - [x] when resolver configured, both HTTP file/tree routes and agent filesystem tools resolve bindings through the same user-aware seam.
+- [x] Add cross-user cache-leak regression test with two users and one workspace.
 
 ### Tests / proof
 
-- [ ] Agent file route binding tests now cover `getFilesystemBindings` wiring.
-- [ ] Agent tool tests prove per-user bindings are not cached across users.
-- [ ] Tree route tests still pass.
-- [ ] No policy semantics in this PR.
+- [x] Agent file route binding tests now cover `getFilesystemBindings` wiring.
+- [x] Agent tool tests prove per-user bindings are not cached across users.
+- [x] Tree route tests still pass.
+- [x] No policy semantics in this PR.
 
 ### Review focus
 
@@ -386,6 +386,9 @@ Evaluate existing `packages/boring-bash` before building anything new:
 - No tenant-specific logic in agent generic seam.
 
 ---
+
+
+PR5b proof note: GPT-5.5 review PASS. `packages/boring-bash` was inspected and left unchanged; this PR adds the generic bridge seam that PR5c can connect to a policy resolver/provider.
 
 ## PR 5c — Company Context policy-filtered mount + front discovery
 

@@ -123,6 +123,30 @@ describe('tool adapter telemetry', () => {
     expect(JSON.stringify(recorder.events)).not.toContain('private-path')
   })
 
+  it('reads the latest run context for reused Pi sessions', async () => {
+    const seenUsers: Array<string | undefined> = []
+    let currentUserId = 'alpha'
+    const tool = createTool({
+      async execute(_params, ctx) {
+        seenUsers.push(ctx.userId)
+        return { content: [{ type: 'text', text: ctx.userId ?? 'missing' }] }
+      },
+    })
+    const adapted = adaptToolForPi(tool, 'sess-tool', undefined, () => ({
+      abortSignal: new AbortController().signal,
+      workdir: '/workspace',
+      userId: currentUserId,
+    }))
+
+    const first = await adapted.execute('call-1', {}, undefined, undefined, {} as never)
+    currentUserId = 'beta'
+    const second = await adapted.execute('call-2', {}, undefined, undefined, {} as never)
+
+    expect(first.content).toEqual([{ type: 'text', text: 'alpha' }])
+    expect(second.content).toEqual([{ type: 'text', text: 'beta' }])
+    expect(seenUsers).toEqual(['alpha', 'beta'])
+  })
+
   it('telemetry sink failures do not change tool behavior', async () => {
     const result = await executeAdapted(createTool(), {
       capture() {

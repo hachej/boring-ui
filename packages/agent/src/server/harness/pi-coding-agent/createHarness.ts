@@ -36,6 +36,7 @@ interface PiSessionHandle {
   modelRegistry: ModelRegistry;
   sessionManager: SessionManager;
   resourceLoader: DefaultResourceLoader;
+  runContextRef: { current?: RunContext };
 }
 
 export { mergePiPackageSources } from "../../piPackages.js";
@@ -425,6 +426,7 @@ export function createPiCodingAgentHarness(opts: {
   ): Promise<PiSessionHandle> {
     const existing = piSessions.get(sessionId);
     if (existing) {
+      existing.runContextRef.current = ctx;
       await applyRequestedSessionOptions(existing, input, { strictModelResolution: pi.strictModelResolution });
       return existing;
     }
@@ -432,6 +434,7 @@ export function createPiCodingAgentHarness(opts: {
     const inFlight = piSessionCreations.get(sessionId);
     if (inFlight) {
       const handle = await inFlight;
+      handle.runContextRef.current = ctx;
       await applyRequestedSessionOptions(handle, input, { strictModelResolution: pi.strictModelResolution });
       return handle;
     }
@@ -543,13 +546,14 @@ export function createPiCodingAgentHarness(opts: {
 
     await resourceLoader?.reload()
 
+    const runContextRef: PiSessionHandle['runContextRef'] = { current: ctx }
     const { session: piSession } = await createAgentSession({
       cwd: runtimeCwd,
       // Suppress Pi's built-in filesystem/shell tools while keeping Boring's
       // adapted tool catalog active. Do NOT pass an explicit empty tool-name
       // allowlist: in the current Pi SDK that disables custom tools too.
       noTools: "builtin",
-      customTools: adaptToolsForPi(opts.tools, input.sessionId, opts.telemetry),
+      customTools: adaptToolsForPi(opts.tools, input.sessionId, opts.telemetry, () => runContextRef.current),
       model,
       thinkingLevel: input.thinkingLevel ?? "off",
       sessionManager,
@@ -565,7 +569,7 @@ export function createPiCodingAgentHarness(opts: {
       }
     }
 
-    const handle: PiSessionHandle = { piSession, modelRegistry, sessionManager, resourceLoader };
+    const handle: PiSessionHandle = { piSession, modelRegistry, sessionManager, resourceLoader, runContextRef };
     piSessions.set(sessionId, handle);
     return handle;
   }

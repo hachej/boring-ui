@@ -899,6 +899,58 @@ test('model filter makes models endpoint workspace-scoped and receives request c
   await app.close()
 }, 15_000)
 
+test('file routes use request-aware filesystem bindings from registerAgentRoutes', async () => {
+  const workspaceRoot = await makeTempDir('boring-agent-filtered-files-')
+  const app = Fastify({ logger: false })
+  const read = vi.fn(async (_target: unknown) => ({ content: 'scoped company file', metadata: { scoped: true } }))
+  const getFilesystemBindings = vi.fn(async (ctx) => [{
+    filesystem: 'company_context',
+    access: 'readonly' as const,
+    operations: {
+      read,
+      list: vi.fn(async () => ({ entries: [], metadata: {} })),
+      find: vi.fn(async () => ({ paths: [], metadata: {} })),
+      grep: vi.fn(async () => ({ matches: [], metadata: {} })),
+      stat: vi.fn(async () => ({ isDirectory: false, metadata: {} })),
+      rejectMutation: vi.fn((operation: string) => { throw new Error(`${operation} denied`) }),
+    },
+  }])
+
+  app.addHook('onRequest', async (request) => {
+    ;(request as typeof request & { user: { id: string; email: string; name: null; emailVerified: boolean } }).user = {
+      id: 'user-1',
+      email: 'user@example.com',
+      name: null,
+      emailVerified: true,
+    }
+  })
+  await app.register(registerAgentRoutes, {
+    workspaceRoot,
+    mode: 'direct',
+    getFilesystemBindings,
+    getWorkspaceId: () => 'ws-files',
+    getWorkspaceRoot: () => workspaceRoot,
+  })
+  await app.ready()
+
+  const res = await app.inject({
+    method: 'GET',
+    url: '/api/v1/files?filesystem=company_context&path=%2Fpolicy.md',
+  })
+
+  expect(res.statusCode).toBe(200)
+  expect(res.json()).toMatchObject({ content: 'scoped company file' })
+  expect(getFilesystemBindings).toHaveBeenCalledWith(expect.objectContaining({
+    workspaceId: 'ws-files',
+    workspaceRoot,
+    userId: 'user-1',
+    userEmail: 'user@example.com',
+  }))
+  expect(read).toHaveBeenCalledWith({ filesystem: 'company_context', path: '/policy.md' })
+
+  await app.close()
+}, 15_000)
+
 test('request-scoped commands endpoint uses the workspace harness', async () => {
   const workspaceRoot = await makeTempDir('boring-agent-embed-commands-')
   const app = Fastify({ logger: false })
