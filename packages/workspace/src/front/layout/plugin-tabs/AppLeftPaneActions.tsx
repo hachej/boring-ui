@@ -8,12 +8,14 @@ export function PrimaryAction({
   label,
   onClick,
   emphasis = false,
+  active = false,
   trailing,
 }: {
   icon: ReactNode
   label: string
   onClick: () => void
   emphasis?: boolean
+  active?: boolean
   trailing?: ReactNode
 }) {
   return (
@@ -22,14 +24,16 @@ export function PrimaryAction({
       onClick={onClick}
       className={cn(
         "flex h-8 w-full items-center gap-2 rounded-md px-2 text-left text-[13px] font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40",
-        emphasis
-          // Primary CTA: a solid (borderless) filled surface so it reads as a
-          // button, not an input field.
-          ? "bg-foreground/[0.06] text-foreground hover:bg-foreground/[0.1]"
-          : "text-foreground/82 hover:bg-foreground/[0.055] hover:text-foreground",
+        active
+          ? "bg-foreground/[0.08] text-foreground shadow-sm ring-1 ring-border/60"
+          : emphasis
+            // Primary CTA: a solid (borderless) filled surface so it reads as a
+            // button, not an input field.
+            ? "bg-foreground/[0.06] text-foreground hover:bg-foreground/[0.1]"
+            : "text-foreground/82 hover:bg-foreground/[0.055] hover:text-foreground",
       )}
     >
-      <span className={cn("grid size-5 shrink-0 place-items-center", emphasis ? "text-foreground/90" : "text-muted-foreground")} aria-hidden="true">{icon}</span>
+      <span className={cn("grid size-5 shrink-0 place-items-center", active || emphasis ? "text-foreground/90" : "text-muted-foreground")} aria-hidden="true">{icon}</span>
       <span className="min-w-0 flex-1 truncate">{label}</span>
       {trailing ? <span className="shrink-0">{trailing}</span> : null}
     </button>
