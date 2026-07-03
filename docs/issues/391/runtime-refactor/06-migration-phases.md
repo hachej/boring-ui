@@ -12,13 +12,16 @@
 ```txt
 Phase 0 ─ Phase 1 ──┬── Phase 2 ── Phase 3 ── Phase 4 ── Phase 5 ── Phase 6 ── Phase 7 ── Phase 8
    (ADR)  (headless │   (bash pkg)  (routes/   (file UI)  (provis./  (plugins/  (multi-    (cleanup)
-          core)     │               tools)                readiness) child-app) agent)
+          core)     │        │      tools)                readiness) child-app) agent)
+                    │        └── Phase E1 ─── Phase E2
+                    │            (env registry/ (MCP env
+                    │             attachments)  projection)
                     └── Phase T1 ── Phase T2 ─────────────── Phase S1 ── Phase S2
                         (event      (transport               (Slack      (pi-excel
                          envelope)   adapters)                channel)    embed)
 ```
 
-Track T starts after Phase 1 and runs parallel to Phases 2–4. Track S needs T2. Governance work (#475 line) continues independently on the landed #416 contracts.
+Track T starts after Phase 1 and runs parallel to Phases 2–4. Track S needs T2. Track E (environments as attachable resources, 09) starts after Phase 2 and runs parallel to Phases 3–5; E2 needs E1 only. Governance work (#475 line) continues independently on the landed #416 contracts.
 
 ## Phase 0 — ADR, naming lock, invariant update
 
@@ -114,15 +117,36 @@ Additional v2 deliverable: **credential brokering rule** — secrets are injecte
 
 Exit criteria: as v1, plus: no test can read a brokered secret from inside the sandbox.
 
+## Phase E1 — Environment registry and attachments (after Phase 2; see 09)
+
+Deliverables:
+
+- `Environment` / `EnvironmentAttachment` / `EnvironmentRegistry` contracts in boring-bash (generalizing, not replacing, the landed #416 binding shapes); `company_context` re-expressed as the reference environment + readonly attachment.
+- Scoped views (`scope.subpath`) enforced by the environment host; subagents attach explicitly (same handle or scoped view) — no cwd inheritance.
+- `createBashAgentFeature()` re-expressed as attachment sugar; agent core sees `ResolvedEnvironments` type-only (invariant-checked).
+- Environment conformance suite extended to scoped-view attachments.
+
+Exit criteria: existing workspace + company_context behavior unchanged (governance consumers green); a subagent can be attached to a scoped view of the parent's environment; an agent can hold two environments with distinct `filesystem` identities.
+
+## Phase E2 — MCP environment projection (after E1)
+
+Deliverables:
+
+- MCP server projection for any registered environment: fs ops (+ exec where policy allows) as MCP tools, enforcement via the existing readonly/management projection operations; MCP session → `BoundFilesystemContext` identity mapping.
+- No-leak conformance suite runs against the MCP projection (same suite, fourth mount: in-process / scoped / remote-worker / MCP).
+- Remote-worker reclassified in docs as an environment transport.
+
+Exit criteria: an external MCP client (e.g. Claude Code) mounts a boring environment and sees exactly what an in-process readonly attachment sees; denied files absent over MCP; no broker secret reachable from the client.
+
 ## Phase S1 — Slack reference channel (after T2; parallel to Phases 4–5)
 
 Deliverables:
 
-- `@hachej/boring-channel-slack` (`packages/channels/slack`): signature verification, event normalization → `agent.send()`, thread `ts` as surface-owned continuation with an `addressing → sessionId` store, activity → status, text deltas → streamed replies, approval parts → interactive blocks answered via `resolveInput`.
+- `@hachej/boring-channel-slack` (`packages/channels/slack`): **thin adapter over `@flue/slack` ingress** (pinned; signature verification, payload parsing, `conversationKey` come from the package) — we write only: callback → `agent.send()`, `conversationKey → sessionId` store, egress + approval blocks via `@slack/web-api`, Hono→Fastify handler wrapper (shared, reusable for every other `@flue/*` channel).
 - Surface adapter conformance suite (first consumer): message-in/events-out, approval round-trip, addressing isolation.
 - Runs against `runtime: 'none'` and against readonly `company_context` bindings (governed-context answering in Slack).
 
-Exit criteria: same agent + same session store serves the workspace UI and a Slack thread; an approval requested in Slack can be answered in Slack or the workspace; Slack package imports only the public agent contract.
+Exit criteria: same agent + same session store serves the workspace UI and a Slack thread; an approval requested in Slack can be answered in Slack or the workspace; Slack package imports only the public agent contract + `@flue/slack`; adding a second channel (e.g. Teams) requires no new ingress code beyond the per-channel callback.
 
 ## Phase S2 — Spreadsheet embed (pi-excel) (after S1 learnings)
 

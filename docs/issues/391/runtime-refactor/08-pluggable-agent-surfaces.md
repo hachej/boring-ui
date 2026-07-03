@@ -116,12 +116,23 @@ This keeps multi-tenant routing out of the core: `x-boring-workspace-id` is an H
 
 A surface adapter does three things (eve channel model): normalize input → `agent.send()`; subscribe/replay events → project to the platform; collect approval responses → `resolveInput`. It owns platform auth (Slack signing secret, Office add-in token) on the trusted side.
 
+### Channel ingress for free: reuse `@flue/*` channel packages
+
+Verified against Flue @ `ffbe359`: the 13 per-channel ingress packages (`@flue/slack`, `teams`, `discord`, `telegram`, `github`, `linear`, `intercom`, `whatsapp`, `messenger`, `twilio`, `google-chat`, `zendesk`, `notion`) import **nothing from `@flue/runtime`** — dependencies are `hono` + provider type packages only. Apache-2.0. Each package provides: signature verification, provider-native payload parsing, Hono route handlers, and a self-contained `conversationKey`/`parseConversationKey` codec.
+
+Consequences:
+
+- **We do not write platform ingress.** A boring channel adapter is ~15–50 lines: fill the channel's callback (`events`/`interactions`/`commands`) with `agent.send()`, use `channel.conversationKey(ref)` as the surface-owned addressing key (exactly the two-handles rule), and post egress via the provider SDK (`@slack/web-api` etc. — egress was never framework-specific).
+- Hono handlers mount behind Fastify via a `Request→Response` wrapper or a mini-Hono app — trivial either way.
+- Risk: the packages are pre-1.0 (`1.0.0-beta.x`); pin versions. Fallback is vendoring (~700 LOC per channel, Apache-2.0 permits it) — strictly worse, only if the beta dep becomes untenable.
+- Not adopted: mounting boring-agent *inside* Flue's runtime to also get their durable streams. Technically credible (both stacks sit on the same `@earendil-works` pi core — Flue on `pi-agent-core@0.80.x`, boring on `pi-coding-agent@0.75.x`), but it means adopting Flue's `defineAgent`/`dispatch`/queue orchestration pre-1.0. Track T1 gives us replayable streams on our own terms; revisit only if T1 proves expensive.
+
 Reference adapters, each a separate optional package:
 
 | Surface | Package (proposed) | Environment | Notes |
 | --- | --- | --- | --- |
 | Workspace UI | `@hachej/boring-agent/front` + `@hachej/boring-workspace` (existing) | full boring-bash | Refit to consume only the public contract; `ChatPanel`/`useAgentChat` unchanged externally. UI bridge (`exec_ui`/`get_ui_state`) stays workspace-owned `extraTools`. |
-| Slack | `@hachej/boring-channel-slack` (new, `packages/channels/slack`) | `runtime: none` or readonly `company_context` | Raw signature verification (or Bolt); thread `ts` = continuation; feedback + approval blocks. |
+| Slack | `@hachej/boring-channel-slack` (new, `packages/channels/slack`) | `runtime: none` or readonly `company_context` | Thin adapter over `@flue/slack` ingress; `conversationKey` = continuation; egress + approval blocks via `@slack/web-api`. |
 | Spreadsheet (pi-excel) | plugin in the pi-excel repo consuming `@hachej/boring-agent` client contract | `none` / readonly bindings | Agent tools are spreadsheet tools (read/write range) supplied by the host as `tools`; boring-bash not installed. Proves the "agent as a library inside another product" story. |
 | CLI/cron | existing hub + `createAgent()` direct | any | Headless `send()` + transcript out. |
 
@@ -151,3 +162,5 @@ Executable contract suites, in-repo, run against every implementation:
 3. **Surfaces live outside the agent package**: per-channel packages (Flue model), not subpaths of `boring-agent` (eve model) — matches the existing monorepo layout and keeps the core dependency-free.
 4. **Readonly fs is v1**: already true — shipped via #416. The 00-global-isa open decision 6 is resolved.
 5. **One namespace rule**: superseded by named `(filesystem, path)` bindings, as already reflected in the pack's V1 caveat.
+6. **Channel ingress is reused, not written**: depend on `@flue/*` channel packages (pinned beta) with per-channel thin adapters; egress via provider SDKs. Vendoring is the fallback; hosting inside Flue's runtime is explicitly not adopted.
+7. **Environments are attachable resources** (see [`09-environments-attachable.md`](09-environments-attachable.md)): fs+sandbox has identity independent of any agent; agents/subagents/external agents consume it via attachments; external agents attach via MCP projection.

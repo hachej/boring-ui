@@ -14,7 +14,8 @@ This folder replaces the original monolithic plan. The preserved source snapshot
 6. [`05-multi-agent-sessions-hooks.md`](05-multi-agent-sessions-hooks.md) — multiple agents per deployed app/workspace, session namespaces, search, external hooks.
 7. [`06-migration-phases.md`](06-migration-phases.md) — dependency-ordered implementation phases (v2: adds transport track T and surfaces track S; marks work already landed via #416).
 8. [`07-tests-review-acceptance.md`](07-tests-review-acceptance.md) — required tests, issue coverage, review gates, acceptance criteria.
-9. [`08-pluggable-agent-surfaces.md`](08-pluggable-agent-surfaces.md) — **(v2)** surface-agnostic agent: `createAgent()` façade, indexed/replayable event stream, approvals-on-stream, two-handles rule, Slack + spreadsheet reference adapters, conformance suites.
+9. [`08-pluggable-agent-surfaces.md`](08-pluggable-agent-surfaces.md) — **(v2)** surface-agnostic agent: `createAgent()` façade, indexed/replayable event stream, approvals-on-stream, two-handles rule, channel ingress reused from `@flue/*` packages, Slack + spreadsheet reference adapters, conformance suites.
+10. [`09-environments-attachable.md`](09-environments-attachable.md) — **(v2)** environments as attachable resources: fs+sandbox with own identity, attachments for agents/subagents, scoped views, MCP projection for external agents.
 
 ## Implementation rule
 
