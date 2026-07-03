@@ -42,7 +42,7 @@ describe('inbox item model', () => {
       priority: 5,
       chatAvailable: true,
     })
-    expect(inbox.artifact).toEqual({ type: 'surface', surfaceKind: 'file', target: 'file.ts' })
+    expect(inbox.artifact).toEqual({ type: 'surface', surfaceKind: 'file', target: 'file.ts', params: { sessionId: 's1' } })
     expect(inbox.actions).toEqual([{ id: 'open', label: 'Open' }])
   })
 
