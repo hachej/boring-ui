@@ -41,6 +41,7 @@ Match `06-migration-phases.md` Phase T2 exit criteria:
 - Do NOT delete `piChatStream.ts`/`remotePiSession.ts` until the refit passes the workspace playground and conformance; land the new transport behind `createRemoteSession` injection first, then remove the old path in the same PR's final commit.
 - Do NOT let `workspaceId`/storage-scope leak into `createAgent()` signatures — resolve them in the HTTP adapter (`getRequestContext`) as today.
 - Do NOT build the Slack/Excel surfaces — those are Phases S1/S2 (`06`). T2 only proves the contract with in-process + HTTP + a headless Node consumer.
+- Do NOT touch the render/projection layer (`piChatReducer.ts`, `piChatPartMerging.ts`, `piChatAssistantCommit.ts`, `selectors.ts`, `PiTimelineMessage.tsx`, `toolRenderers.tsx`, `bareToolRenderers/`, `primitives/`, composer components). Decision 8 in `../08-pluggable-agent-surfaces.md`: the front chat provider is unchanged — the UI is already an ai-elements/shadcn stack insulated from the wire protocol by the `PiChatEvent → BoringChatMessage` projection. Do not "modernize" it onto AI-SDK `UIMessage.parts` and do not swap primitives; the only sanctioned render-layer follow-up (shadcn `MessageScroller` in `PiConversationSurface`) is a separate post-T2 bead, not part of this work order.
 
 ## Beads
 
