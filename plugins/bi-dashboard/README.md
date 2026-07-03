@@ -6,10 +6,10 @@ This package is the host-side home for the BSL dashboard UX:
 
 - prompt/agent output should target a neutral `boring.generated-pane` JSON contract with `profile: "bi-dashboard"`
 - the plugin renders approved dashboard components in boring-ui
-- BSL owns semantic queries and artifacts
-- the plugin maps components to ECharts/Perspective/json-render runtimes
+- data-bridge owns query execution and adapters
+- the plugin maps dashboard components to generated-pane, data-bridge, and Perspective runtimes
 
-Current scope is an initial plugin shell and typed dashboard contract. The actual BSL server bridge, Perspective viewer runtime, ECharts runtime, and json-render adapter should be layered behind the same component schema.
+Current scope includes the generated-pane BI profile, structured validation, JSON/Arrow data-bridge query execution, and Perspective-backed dashboard charts/tables.
 
 ## Panel
 
@@ -67,9 +67,7 @@ Example workspace fixtures live in `example/`:
 Run the plugin through the existing workspace playground without making it a default playground plugin:
 
 ```bash
-BORING_EXTERNAL_PLUGINS=1 \
-BORING_AGENT_WORKSPACE_ROOT="$PWD/plugins/bi-dashboard/example" \
-pnpm --filter workspace-playground dev
+pnpm --filter @hachej/boring-bi-dashboard playground:dev
 ```
 
 Run the authoring eval through the plugin-local playground runner:

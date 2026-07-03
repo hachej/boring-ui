@@ -1,6 +1,6 @@
-import { parseGeneratedPaneSpec } from "@hachej/boring-generated-pane/shared"
+import { validateGeneratedPaneSpec } from "@hachej/boring-generated-pane/shared"
 import type { BslDashboardSpec } from "./types"
-import { componentPropsSchemas, dashboardQuerySchema } from "./schemas"
+import { biDashboardVocabulary, componentPropsSchemas, dashboardQuerySchema } from "./schemas"
 
 export interface DashboardValidationResult {
   spec: BslDashboardSpec | null
@@ -9,9 +9,22 @@ export interface DashboardValidationResult {
 
 export type DashboardDiagnosticSeverity = "error" | "warning" | "info"
 
+export const BI_DASHBOARD_DIAGNOSTIC_CODES = {
+  dashboardSchema: "dashboard.schema",
+  queryUnknown: "query.unknown",
+  filterTargetUnknown: "filter.target_unknown",
+  chartCategoryAsMeasure: "chart.category_as_measure",
+  chartCategoryMissing: "chart.category_missing",
+  chartMeasureMissing: "chart.measure_missing",
+  perspectiveGroupFieldInColumns: "perspective.group_field_in_columns",
+  layoutControlsTop: "layout.controls_top",
+} as const
+
+export type DashboardDiagnosticCode = typeof BI_DASHBOARD_DIAGNOSTIC_CODES[keyof typeof BI_DASHBOARD_DIAGNOSTIC_CODES]
+
 export interface DashboardDiagnostic {
   severity: DashboardDiagnosticSeverity
-  code: string
+  code: DashboardDiagnosticCode | string
   message: string
   elementId?: string
   queryId?: string
@@ -26,56 +39,16 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value)
 }
 
-function formatSchemaErrors(prefix: string, error: { issues: Array<{ path: PropertyKey[]; message: string }> }): string[] {
-  return error.issues.map((issue) => `${prefix}${issue.path.length ? `.${issue.path.map(String).join(".")}` : ""}: ${issue.message}`)
+function schemaPath(path: PropertyKey[]): string {
+  return path.length ? `.${path.map(String).join(".")}` : ""
 }
 
-export function parseDashboardSpec(value: unknown): DashboardValidationResult {
-  const base = parseGeneratedPaneSpec(value)
-  if (!base.spec) return { spec: null, errors: base.errors }
-
-  const errors: string[] = []
-  if (base.spec.profile !== "bi-dashboard") errors.push('dashboard spec profile must be "bi-dashboard"')
-  if (typeof base.spec.title !== "string" || base.spec.title.length === 0) errors.push("dashboard spec needs a title")
-  if (!isRecord(base.spec.queries)) errors.push("dashboard spec needs a queries object")
-  if (errors.length > 0) return { spec: null, errors }
-
-  const queries = base.spec.queries as Record<string, unknown>
-  for (const [id, query] of Object.entries(queries)) {
-    const parsed = dashboardQuerySchema.safeParse(query)
-    if (!parsed.success) {
-      errors.push(...formatSchemaErrors(`query ${id}`, parsed.error))
-      continue
-    }
-    if (parsed.data.id !== id) errors.push(`query ${id} must repeat its id field`)
-  }
-
-  for (const [id, element] of Object.entries(base.spec.elements)) {
-    const type = element.type as keyof typeof componentPropsSchemas
-    const schema = componentPropsSchemas[type]
-    if (!schema) {
-      errors.push(`component ${id} has unsupported type ${String(element.type)}`)
-      continue
-    }
-    const props = schema.safeParse(element.props ?? {})
-    if (!props.success) errors.push(...formatSchemaErrors(`component ${id}.props`, props.error))
-
-    if (type === "DashboardGrid" && !Array.isArray(element.children)) {
-      errors.push(`DashboardGrid ${id} must include string children`)
-    }
-    if ((type === "BSLMetric" || type === "BSLChart" || type === "BSLPerspectiveViewer") && props.success) {
-      const queryId = (props.data as { queryId: string }).queryId
-      if (!queries[queryId]) errors.push(`component ${id} references unknown query ${queryId}`)
-    }
-    if (type === "BSLFilter" && props.success) {
-      for (const queryId of (props.data as { targetQueries: string[] }).targetQueries) {
-        if (!queries[queryId]) errors.push(`BSLFilter ${id} references unknown query ${queryId}`)
-      }
-    }
-  }
-
-  if (errors.length > 0) return { spec: null, errors }
-  return { spec: base.spec as BslDashboardSpec, errors: [] }
+function formatSchemaDiagnostics(prefix: string, error: { issues: Array<{ path: PropertyKey[]; message: string }> }): DashboardDiagnostic[] {
+  return error.issues.map((issue) => ({
+    severity: "error",
+    code: BI_DASHBOARD_DIAGNOSTIC_CODES.dashboardSchema,
+    message: `${prefix}${schemaPath(issue.path)}: ${issue.message}`,
+  }))
 }
 
 function queryColumnsFromSql(sql: string): string[] {
@@ -90,37 +63,52 @@ function queryColumnsFromSql(sql: string): string[] {
   }).filter(Boolean)
 }
 
-export function diagnoseDashboardSpec(value: unknown): DashboardDiagnosticsResult {
-  const result = parseDashboardSpec(value)
-  const diagnostics: DashboardDiagnostic[] = result.errors.map((message) => ({ severity: "error", code: "dashboard.schema", message }))
-  if (!result.spec) return { ok: false, diagnostics }
+function staticDashboardDiagnostics(spec: BslDashboardSpec): DashboardDiagnostic[] {
+  const diagnostics: DashboardDiagnostic[] = []
+  const queries = spec.queries
 
-  const spec = result.spec
   for (const [elementId, element] of Object.entries(spec.elements)) {
-    if (element.type === "BSLChart") {
-      const props = element.props
+    const type = element.type as keyof typeof componentPropsSchemas
+    const props: Record<string, unknown> = element.props
+
+    if (type === "DashboardGrid" && !Array.isArray(element.children)) {
+      diagnostics.push({ severity: "error", code: BI_DASHBOARD_DIAGNOSTIC_CODES.dashboardSchema, elementId, message: `DashboardGrid ${elementId} must include string children` })
+    }
+
+    if ((type === "BSLMetric" || type === "BSLChart" || type === "BSLPerspectiveViewer") && "queryId" in props) {
+      const queryId = String(props.queryId)
+      if (!queries[queryId]) diagnostics.push({ severity: "error", code: BI_DASHBOARD_DIAGNOSTIC_CODES.queryUnknown, elementId, queryId, message: `component ${elementId} references unknown query ${queryId}` })
+    }
+
+    if (type === "BSLFilter" && Array.isArray(props.targetQueries)) {
+      for (const queryId of (props.targetQueries as unknown[]).map(String)) {
+        if (!queries[queryId]) diagnostics.push({ severity: "error", code: BI_DASHBOARD_DIAGNOSTIC_CODES.filterTargetUnknown, elementId, queryId, message: `BSLFilter ${elementId} references unknown query ${queryId}` })
+      }
+    }
+
+    if (type === "BSLChart") {
       const x = typeof props.x === "string" ? props.x : undefined
       const y = Array.isArray(props.y) ? props.y : typeof props.y === "string" ? [props.y] : []
-      if (!x) diagnostics.push({ severity: "warning", code: "chart.missing_category", elementId, message: "BSLChart should set props.x to the category/grouping field." })
-      if (y.length === 0) diagnostics.push({ severity: "error", code: "chart.missing_measure", elementId, message: "BSLChart must set props.y to at least one numeric measure field." })
-      if (x && y.includes(x)) diagnostics.push({ severity: "error", code: "chart.category_as_measure", elementId, message: `BSLChart props.y must not include category field ${x}; keep it only in props.x.` })
-      const query = spec.queries[String(props.queryId)]
+      if (y.length === 0) diagnostics.push({ severity: "error", code: BI_DASHBOARD_DIAGNOSTIC_CODES.chartMeasureMissing, elementId, message: "BSLChart must set props.y to at least one numeric measure field." })
+      if (x && y.includes(x)) diagnostics.push({ severity: "error", code: BI_DASHBOARD_DIAGNOSTIC_CODES.chartCategoryAsMeasure, elementId, message: `BSLChart props.y must not include category field ${x}; keep it only in props.x.` })
+      const queryId = String(props.queryId)
+      const query = spec.queries[queryId]
       if (query && "sql" in query) {
         const returned = new Set(queryColumnsFromSql(query.sql))
-        if (x && returned.size > 0 && !returned.has(x)) diagnostics.push({ severity: "error", code: "chart.category_missing", elementId, queryId: query.id, message: `Chart category field ${x} is not returned by query ${query.id}.` })
+        if (x && returned.size > 0 && !returned.has(x)) diagnostics.push({ severity: "error", code: BI_DASHBOARD_DIAGNOSTIC_CODES.chartCategoryMissing, elementId, queryId: query.id, message: `Chart category field ${x} is not returned by query ${query.id}.` })
         for (const field of y) {
-          if (returned.size > 0 && !returned.has(field)) diagnostics.push({ severity: "error", code: "chart.measure_missing", elementId, queryId: query.id, message: `Chart measure field ${field} is not returned by query ${query.id}.` })
+          if (returned.size > 0 && !returned.has(field)) diagnostics.push({ severity: "error", code: BI_DASHBOARD_DIAGNOSTIC_CODES.chartMeasureMissing, elementId, queryId: query.id, message: `Chart measure field ${field} is not returned by query ${query.id}.` })
         }
       }
     }
-    if (element.type === "BSLPerspectiveViewer") {
-      const props = element.props
+
+    if (type === "BSLPerspectiveViewer") {
       const plugin = String(props.plugin ?? "Datagrid")
       const groupBy = new Set(Array.isArray(props.groupBy) ? props.groupBy : [])
       const columns = Array.isArray(props.columns) ? props.columns : []
       if (!/datagrid/i.test(plugin)) {
         for (const column of columns) {
-          if (groupBy.has(column)) diagnostics.push({ severity: "warning", code: "perspective.group_field_in_columns", elementId, message: `Perspective chart groups by ${column}; keep grouped/category fields out of measure columns.` })
+          if (groupBy.has(column)) diagnostics.push({ severity: "warning", code: BI_DASHBOARD_DIAGNOSTIC_CODES.perspectiveGroupFieldInColumns, elementId, message: `Perspective chart groups by ${column}; keep grouped/category fields out of measure columns.` })
         }
       }
     }
@@ -131,10 +119,55 @@ export function diagnoseDashboardSpec(value: unknown): DashboardDiagnosticsResul
     const children = grid.children
     const firstNonFilter = children.findIndex((id) => spec.elements[id]?.type !== "BSLFilter" && spec.elements[id]?.type !== "BSLText")
     const lateFilter = children.find((id, index) => index > Math.max(0, firstNonFilter) && spec.elements[id]?.type === "BSLFilter")
-    if (lateFilter) diagnostics.push({ severity: "info", code: "layout.controls_top", elementId: lateFilter, message: "Filters/controllers render in the top controls bar; keep them early in dashboard children for readability." })
+    if (lateFilter) diagnostics.push({ severity: "info", code: BI_DASHBOARD_DIAGNOSTIC_CODES.layoutControlsTop, elementId: lateFilter, message: "Filters/controllers render in the top controls bar; keep them early in dashboard children for readability." })
   }
 
+  return diagnostics
+}
+
+export function diagnoseDashboardSpec(value: unknown): DashboardDiagnosticsResult {
+  const generated = validateGeneratedPaneSpec(value, biDashboardVocabulary)
+  const diagnostics: DashboardDiagnostic[] = generated.diagnostics.map((item) => ({
+    severity: item.severity,
+    code: item.code,
+    message: item.message,
+    elementId: item.elementId,
+  }))
+
+  if (!generated.spec) return { ok: false, diagnostics }
+
+  if (generated.spec.profile !== "bi-dashboard") {
+    diagnostics.push({ severity: "error", code: BI_DASHBOARD_DIAGNOSTIC_CODES.dashboardSchema, message: 'dashboard spec profile must be "bi-dashboard"' })
+  }
+  if (typeof generated.spec.title !== "string" || generated.spec.title.length === 0) {
+    diagnostics.push({ severity: "error", code: BI_DASHBOARD_DIAGNOSTIC_CODES.dashboardSchema, message: "dashboard spec needs a title" })
+  }
+  if (!isRecord(generated.spec.queries)) {
+    diagnostics.push({ severity: "error", code: BI_DASHBOARD_DIAGNOSTIC_CODES.dashboardSchema, message: "dashboard spec needs a queries object" })
+  }
+
+  if (!isRecord(generated.spec.queries)) return { ok: false, diagnostics }
+  const queries = generated.spec.queries as Record<string, unknown>
+  for (const [id, query] of Object.entries(queries)) {
+    const parsed = dashboardQuerySchema.safeParse(query)
+    if (!parsed.success) {
+      diagnostics.push(...formatSchemaDiagnostics(`query ${id}`, parsed.error))
+      continue
+    }
+    if (parsed.data.id !== id) diagnostics.push({ severity: "error", code: BI_DASHBOARD_DIAGNOSTIC_CODES.dashboardSchema, queryId: id, message: `query ${id} must repeat its id field` })
+  }
+
+  if (diagnostics.some((item) => item.severity === "error")) return { ok: false, diagnostics }
+  const spec = generated.spec as BslDashboardSpec
+  diagnostics.push(...staticDashboardDiagnostics(spec))
   return { ok: diagnostics.every((diagnostic) => diagnostic.severity !== "error"), diagnostics }
+}
+
+export function parseDashboardSpec(value: unknown): DashboardValidationResult {
+  const result = diagnoseDashboardSpec(value)
+  const errors = result.diagnostics.filter((item) => item.severity === "error").map((item) => item.message)
+  if (errors.length > 0) return { spec: null, errors }
+  return { spec: validateGeneratedPaneSpec(value, biDashboardVocabulary).spec as BslDashboardSpec, errors: [] }
 }
 
 export function validateDashboardSpec(value: unknown): { ok: boolean; errors: string[] } {

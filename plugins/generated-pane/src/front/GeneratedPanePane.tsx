@@ -3,7 +3,7 @@ import { EmptyState, Toolbar, ToolbarGroup, Badge } from "@hachej/boring-ui-kit"
 import { useApiBaseUrl, useWorkspaceRequestId } from "@hachej/boring-workspace"
 import type { PaneProps } from "@hachej/boring-workspace/plugin"
 import { parseGeneratedPaneSpec, type GeneratedPaneSpec } from "../shared"
-import { GeneratedPaneRenderer, type GeneratedPaneProfile } from "./catalog"
+import { GeneratedPaneRenderer, baseGeneratedPaneProfile, mergeGeneratedPaneProfiles, type GeneratedPaneProfile } from "./catalog"
 
 export interface GeneratedPanePaneParams {
   path?: string
@@ -48,7 +48,8 @@ export function GeneratedPanePane({ params, profile }: PaneProps<GeneratedPanePa
   if (loadedFile.loading) return <PaneState title="Loading generated pane" description={params?.path} />
   if (loadedFile.error) return <PaneState title="Could not load generated pane" description={loadedFile.error} />
 
-  const parsed = parseGeneratedPaneSpec(params?.spec ?? loadedFile.spec)
+  const activeProfile = profile ? mergeGeneratedPaneProfiles(baseGeneratedPaneProfile, profile) : baseGeneratedPaneProfile
+  const parsed = parseGeneratedPaneSpec(params?.spec ?? loadedFile.spec, activeProfile.vocabulary)
   if (!parsed.spec) return <PaneState title="Invalid generated pane spec" description={parsed.errors.slice(0, 5).join(" • ")} />
 
   return (

@@ -24,8 +24,8 @@ This plugin wraps Vercel Labs `json-render` so agents can write safe JSON pane s
 
 - Agents generate JSON specs.
 - Plugins define allowed components and prop schemas.
-- Unknown components/props are rejected by the json-render catalog.
-- Actions must be mapped by the host/plugin; no generated JavaScript is executed.
+- Unknown components/props are rejected by the generated-pane vocabulary/catalog.
+- Actions are out of scope for generated JSON specs; no generated JavaScript is executed.
 
 ## Eval
 
@@ -39,4 +39,4 @@ The eval checks that the agent writes a `panes/*.pane.json` file and the runner 
 
 ## Extending
 
-Use `defineGeneratedPaneProfile` to add app/plugin-specific components, then render with `GeneratedPaneRenderer` or a profile-specific pane.
+Use `defineGeneratedPaneVocabulary` in shared code plus `defineGeneratedPaneProfile` in front code to add app/plugin-specific components, then render with `GeneratedPaneRenderer` or a profile-specific pane.

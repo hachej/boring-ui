@@ -26,9 +26,9 @@ Required root shape:
 
 Rules:
 
-- Do not generate React, JavaScript, functions, or inline event handlers.
+- Do not generate React, JavaScript, functions, actions, or inline event handlers.
 - Use only components documented by the active profile/catalog.
 - Use only props documented for each component.
 - Keep element ids stable and descriptive.
 - Prefer a simple tree: one root layout, then cards/sections/widgets.
-- Actions must reference catalog-approved actions only.
+- For base `*.pane.json` specs, validate with WorkspaceBridge op `generated-pane.v1.validate` using `{ "spec": <json> }` when available. Profile-specific specs must use their owning plugin validate op.

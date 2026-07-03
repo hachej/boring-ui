@@ -4,7 +4,7 @@
   "type": "module",
   "private": false,
   "license": "MIT",
-  "description": "Generated pane runtime for Boring workspace using json-render catalogs and safe WorkspaceBridge-backed actions.",
+  "description": "Generated pane runtime for Boring workspace using json-render catalogs and safe profile vocabularies.",
   "repository": {
     "type": "git",
     "url": "https://github.com/hachej/boring-ui"
@@ -14,7 +14,7 @@
     "id": "generated-pane",
     "label": "Generated Pane",
     "front": "dist/front/index.js",
-    "server": false
+    "server": "dist/server/index.js"
   },
   "pi": {
     "skills": [
@@ -38,6 +38,11 @@
     "./front": {
       "types": "./dist/front/index.d.ts",
       "import": "./dist/front/index.js"
+    },
+    "./server": {
+      "types": "./dist/server/index.d.ts",
+      "import": "./dist/server/index.js",
+      "default": "./dist/server/index.js"
     },
     "./shared": {
       "types": "./dist/shared/index.d.ts",
