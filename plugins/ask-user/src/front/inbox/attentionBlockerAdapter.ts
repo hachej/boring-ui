@@ -1,4 +1,4 @@
-import { workspaceAttentionSessionBadgeForBlocker, type WorkspaceAttentionBlocker } from "../../../front/attention"
+import { workspaceAttentionSessionBadgeForBlocker, type WorkspaceAttentionBlocker } from "@hachej/boring-workspace"
 import type { InboxItemKind, WorkspaceInboxItem } from "./inboxItemModel"
 
 const FALLBACK_TIMESTAMP = "1970-01-01T00:00:00.000Z"

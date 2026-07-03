@@ -2,9 +2,7 @@
 
 import { useCallback, useMemo } from "react"
 import { MailOpen } from "lucide-react"
-import { emitWorkspaceAttentionAction, useWorkspaceAttention, type WorkspaceAttentionBlocker } from "../../../front/attention"
-import { cn } from "../../../front/lib/utils"
-import type { PaneProps } from "../../../front/registry/types"
+import { emitWorkspaceAttentionAction, useWorkspaceAttention, cn, type PaneProps, type WorkspaceAttentionBlocker } from "@hachej/boring-workspace"
 import { attentionBlockerToInboxItem } from "./attentionBlockerAdapter"
 import { formatInboxTime, inboxItemDate, inboxItemSender, type WorkspaceInboxItem } from "./inboxItemModel"
 import { useWorkspaceInboxShell } from "./WorkspaceInboxShellContext"

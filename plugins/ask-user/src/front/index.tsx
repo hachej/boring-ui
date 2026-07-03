@@ -2,9 +2,7 @@
 
 import { Button, EmptyState, Notice, Pane, PaneBody, PaneFooter, PaneHeader, PaneTitle } from "@hachej/boring-ui-kit"
 import {
-  InboxOverlay,
   WORKSPACE_COMPOSER_STOP_EVENT,
-  isInboxAttentionBlocker,
   useWorkspaceAttention,
   useWorkspaceContext,
   workspaceComposerStopAppliesToSession,
@@ -36,6 +34,8 @@ import {
   useAskUserPendingRefresh,
 } from "./providerHooks"
 import { QuestionCancelButton, QuestionFields, QuestionForm, QuestionFormProvider, QuestionSubmitButton } from "./primitives"
+import { InboxOverlay } from "./inbox/InboxOverlay"
+import { isInboxAttentionBlocker } from "./inbox/attentionBlockerAdapter"
 
 function AskUserProvider({ apiBaseUrl, authHeaders, activeSessionId, openSessionIds, children }: PluginProviderProps) {
   const runtime = useMemo<QuestionsRuntime>(() => ({
@@ -281,5 +281,7 @@ export function createAskUserPlugin(options: CreateAskUserPluginOptions = {}): B
 }
 
 export const askUserPlugin: BoringFrontFactoryWithId = createAskUserPlugin()
+
+export { inboxDemoPlugin, createInboxDemoBlockers, INBOX_DEMO_SESSION_ID } from "./inbox/examples/inboxDemoPlugin"
 
 export default askUserPlugin

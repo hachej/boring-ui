@@ -1,4 +1,4 @@
-import type { WorkspaceShellArtifactTarget, WorkspaceShellCapabilityResult } from "../../../front/shell/WorkspaceShellCapabilitiesContext"
+import type { WorkspaceShellArtifactTarget, WorkspaceShellCapabilityResult, WorkspaceShellAnchorRect } from "@hachej/boring-workspace"
 
 export type InboxItemKind = "question" | "review" | "approval" | "notice"
 export type InboxItemStatus = "open" | "resolved" | "dismissed"
@@ -48,7 +48,7 @@ export type WorkspaceInboxShellResult = WorkspaceShellCapabilityResult
 
 export interface WorkspaceInboxShellApi {
   openInboxArtifact(item: WorkspaceInboxItem): WorkspaceInboxShellResult
-  openDetachedChat(sessionId: string, options?: { anchor?: DOMRect; title?: string }): WorkspaceInboxShellResult
+  openDetachedChat(sessionId: string, options?: { anchor?: WorkspaceShellAnchorRect; title?: string }): WorkspaceInboxShellResult
 }
 
 export function inboxItemDate(item: WorkspaceInboxItem): Date {

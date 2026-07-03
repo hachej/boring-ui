@@ -1,8 +1,8 @@
 "use client"
 
 import { useEffect } from "react"
-import { WORKSPACE_OPEN_PATH_SURFACE_KIND, definePlugin } from "../../../plugin"
-import { useWorkspaceAttention, type WorkspaceAttentionBlocker } from "../../../front/attention"
+import { WORKSPACE_OPEN_PATH_SURFACE_KIND, useWorkspaceAttention, type WorkspaceAttentionBlocker } from "@hachej/boring-workspace"
+import { definePlugin } from "@hachej/boring-workspace/plugin"
 
 export const INBOX_DEMO_SESSION_ID = "showcase"
 

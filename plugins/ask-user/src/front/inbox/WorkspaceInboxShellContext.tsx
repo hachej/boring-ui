@@ -1,7 +1,7 @@
 "use client"
 
 import { useMemo } from "react"
-import { useWorkspaceShellCapabilities } from "../../../front/shell/WorkspaceShellCapabilitiesContext"
+import { useWorkspaceShellCapabilities } from "@hachej/boring-workspace"
 import type { WorkspaceInboxShellApi } from "./inboxItemModel"
 
 export function useWorkspaceInboxShell(): WorkspaceInboxShellApi {

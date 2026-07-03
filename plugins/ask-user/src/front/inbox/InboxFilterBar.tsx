@@ -1,6 +1,6 @@
 "use client"
 
-import { cn } from "../../../front/lib/utils"
+import { cn } from "@hachej/boring-workspace"
 import type { InboxFilter } from "./inboxItemModel"
 
 export function InboxFilterBar({

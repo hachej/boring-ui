@@ -57,9 +57,6 @@ export {
   useWorkspacePluginClient,
 } from "./front/plugin"
 export type { PluginError as PluginContributionError, WorkspacePluginClient } from "./front/plugin"
-export { inboxDemoPlugin, createInboxDemoBlockers, INBOX_DEMO_SESSION_ID } from "./plugins/inboxPlugin/examples/inboxDemoPlugin"
-export { InboxOverlay, isInboxAttentionBlocker } from "./plugins/inboxPlugin/front"
-
 export {
   filesystemPlugin,
   emitFilesystemAgentFileChange,
@@ -107,6 +104,15 @@ export {
   useSurfaceResolverRegistry,
   WORKSPACE_OPEN_PATH_SURFACE_KIND,
 } from "./front/registry"
+export { useAppLeftOverlayChrome } from "./shared/plugins/appLeftOverlayChrome"
+export type { AppLeftOverlayChromeValue } from "./shared/plugins/appLeftOverlayChrome"
+export { useWorkspaceShellCapabilities } from "./shared/plugins/workspaceShellCapabilities"
+export type {
+  WorkspaceShellAnchorRect,
+  WorkspaceShellArtifactTarget,
+  WorkspaceShellCapabilityResult,
+  WorkspaceShellCapabilities,
+} from "./shared/plugins/workspaceShellCapabilities"
 export { getFileIcon } from "./front/registry"
 export type {
   PanelConfig,

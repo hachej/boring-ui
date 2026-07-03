@@ -1,9 +1,9 @@
 import { useCallback, useEffect, useMemo, useState } from "react"
 import { createDeckPlugin } from "@hachej/boring-deck/front"
 import type { DeckWidgetDefinition } from "@hachej/boring-deck/shared"
-import { WorkspaceProvider, INBOX_DEMO_SESSION_ID, inboxDemoPlugin } from "@hachej/boring-workspace"
+import { WorkspaceProvider } from "@hachej/boring-workspace"
 import { WorkspaceAgentFront, WorkspaceFullPagePanel, parseFullPagePanelLocation } from "@hachej/boring-workspace/app/front"
-import { createAskUserPlugin } from "@hachej/boring-ask-user/front"
+import { createAskUserPlugin, INBOX_DEMO_SESSION_ID, inboxDemoPlugin } from "@hachej/boring-ask-user/front"
 import { SHOWCASE_SESSION_ID, seedShowcase } from "./showcaseMessages"
 
 function isShowcaseRoute(): boolean {
