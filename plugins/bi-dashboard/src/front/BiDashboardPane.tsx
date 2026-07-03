@@ -1,31 +1,23 @@
 import { useEffect, useMemo, useState } from "react"
-import { BarChart3, Database, ExternalLink, Gauge, RefreshCcw, SlidersHorizontal, Table2 } from "lucide-react"
+import { Braces, Check, Database, ExternalLink, LayoutDashboard, RefreshCcw, SlidersHorizontal } from "lucide-react"
 import {
   Card,
   CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
   EmptyState,
   IconButton,
+  Textarea,
   Toolbar,
   ToolbarGroup,
 } from "@hachej/boring-ui-kit"
 import { useApiBaseUrl, useWorkspaceRequestId } from "@hachej/boring-workspace"
 import type { PaneProps } from "@hachej/boring-workspace/plugin"
-import { defineGeneratedPaneProfile, GeneratedPaneRenderer } from "@hachej/boring-generated-pane/front"
+import { GeneratedPaneRenderer } from "@hachej/boring-generated-pane/front"
 import { parseDashboardSpec } from "../shared"
 import type { BslDashboardSpec } from "../shared"
 import { sampleBiDashboardSpec } from "./sampleSpec"
 import { useDashboardQueryData, type DashboardQueryResult } from "./dashboardData"
-import {
-  bslChartPropsSchema,
-  bslFilterPropsSchema,
-  bslMetricPropsSchema,
-  bslPerspectiveViewerPropsSchema,
-  bslTextPropsSchema,
-  dashboardGridPropsSchema,
-} from "../shared/schemas"
+import { BiDashboardRenderProvider } from "./renderContext"
+import { biDashboardGeneratedPaneProfile } from "./profile"
 
 export interface BiDashboardPaneParams {
   path?: string
@@ -44,6 +36,10 @@ export function BiDashboardPane({ params }: PaneProps<BiDashboardPaneParams>) {
   const [loadedFile, setLoadedFile] = useState<LoadedDashboardFile>({ spec: null, loading: false })
   const [controllerValues, setControllerValues] = useState<Record<string, string>>({})
   const [refreshKey, setRefreshKey] = useState(0)
+  const [showJsonEditor, setShowJsonEditor] = useState(false)
+  const [editedSpec, setEditedSpec] = useState<unknown | null>(null)
+  const [jsonDraft, setJsonDraft] = useState("")
+  const [jsonError, setJsonError] = useState<string | null>(null)
 
   useEffect(() => {
     if (!params?.path || params.spec) {
@@ -85,45 +81,55 @@ export function BiDashboardPane({ params }: PaneProps<BiDashboardPaneParams>) {
     return () => controller.abort()
   }, [apiBaseUrl, params?.path, params?.spec, refreshKey, workspaceId])
 
-  const rawSpec = loadedFile.loading || loadedFile.error ? null : (params?.spec ?? loadedFile.spec ?? sampleBiDashboardSpec)
-  const parsed = rawSpec ? parseDashboardSpec(rawSpec) : { spec: null, errors: [] }
-  const spec = useMemo(() => parsed.spec ? applyControllerFilters(parsed.spec, controllerValues) : null, [controllerValues, parsed.spec])
-  const queryData = useDashboardQueryData(spec, apiBaseUrl, workspaceId ?? undefined)
+  const sourceSpec = loadedFile.loading || loadedFile.error ? null : (params?.spec ?? loadedFile.spec ?? sampleBiDashboardSpec)
+  const rawSpec = editedSpec ?? sourceSpec
+
+  useEffect(() => {
+    setEditedSpec(null)
+    setJsonDraft("")
+    setJsonError(null)
+  }, [params?.path, params?.spec, sourceSpec])
+
+  const parsed = useMemo(() => rawSpec ? parseDashboardSpec(rawSpec) : { spec: null, errors: [] }, [rawSpec])
+  const parsedSpec = parsed.spec ?? null
+  const queryData = useDashboardQueryData(parsedSpec, apiBaseUrl, workspaceId ?? undefined, refreshKey, jsonQueryIdsForDashboard(parsedSpec))
 
   if (loadedFile.loading) {
-    return (
-      <div className="flex h-full min-h-0 min-w-0 items-center justify-center bg-background p-6 text-foreground">
-        <EmptyState title="Loading BI dashboard" description={params?.path} />
-      </div>
-    )
+    return <PaneState title="Loading BI dashboard" description={params?.path} />
   }
 
   if (loadedFile.error) {
-    return (
-      <div className="flex h-full min-h-0 min-w-0 items-center justify-center bg-background p-6 text-foreground">
-        <EmptyState title="Could not load BI dashboard" description={loadedFile.error} />
-      </div>
-    )
+    return <PaneState title="Could not load BI dashboard" description={loadedFile.error} />
   }
 
-  if (!parsed.spec) {
-    return (
-      <div className="flex h-full min-h-0 min-w-0 items-center justify-center bg-background p-6 text-foreground">
-        <EmptyState
-          title="Invalid BI dashboard spec"
-          description={parsed.errors.slice(0, 5).join(" • ")}
-        />
-      </div>
-    )
+  const openJsonEditor = () => {
+    setJsonDraft(JSON.stringify(rawSpec ?? {}, null, 2))
+    setJsonError(null)
+    setShowJsonEditor(true)
   }
 
-  if (!spec) {
-    return (
-      <div className="flex h-full min-h-0 min-w-0 items-center justify-center bg-background p-6 text-foreground">
-        <EmptyState title="Invalid BI dashboard spec" description="Dashboard could not be prepared" />
-      </div>
-    )
+  const applyJsonDraft = () => {
+    try {
+      const next = JSON.parse(jsonDraft)
+      const nextParsed = parseDashboardSpec(next)
+      if (!nextParsed.spec) {
+        setJsonError(nextParsed.errors.slice(0, 8).join(" • "))
+        return
+      }
+      setEditedSpec(next)
+      setJsonError(null)
+      setShowJsonEditor(false)
+      setRefreshKey((value) => value + 1)
+    } catch (error) {
+      setJsonError(error instanceof Error ? error.message : String(error))
+    }
   }
+
+  if (!parsedSpec && !showJsonEditor) {
+    return <PaneState title="Invalid BI dashboard spec" description={parsed.errors.slice(0, 5).join(" • ")} />
+  }
+
+  const spec = parsedSpec
 
   return (
     <div className="flex h-full min-h-0 min-w-0 flex-col bg-background text-foreground">
@@ -132,6 +138,30 @@ export function BiDashboardPane({ params }: PaneProps<BiDashboardPaneParams>) {
           <span className="text-xs font-medium text-muted-foreground">BI dashboard</span>
         </ToolbarGroup>
         <ToolbarGroup className="ml-auto">
+          {showJsonEditor ? (
+            <IconButton
+              type="button"
+              variant="ghost"
+              size="icon-xs"
+              className="text-muted-foreground hover:text-foreground"
+              onClick={applyJsonDraft}
+              aria-label="Apply JSON and return to dashboard"
+              title="Apply JSON and return to dashboard"
+            >
+              <Check className="h-3.5 w-3.5" strokeWidth={1.75} />
+            </IconButton>
+          ) : null}
+          <IconButton
+            type="button"
+            variant="ghost"
+            size="icon-xs"
+            className="text-muted-foreground hover:text-foreground"
+            onClick={() => showJsonEditor ? setShowJsonEditor(false) : openJsonEditor()}
+            aria-label={showJsonEditor ? "Show dashboard" : "Show dashboard JSON"}
+            title={showJsonEditor ? "Show dashboard" : "Show dashboard JSON"}
+          >
+            {showJsonEditor ? <LayoutDashboard className="h-3.5 w-3.5" strokeWidth={1.75} /> : <Braces className="h-3.5 w-3.5" strokeWidth={1.75} />}
+          </IconButton>
           <IconButton
             type="button"
             variant="ghost"
@@ -140,7 +170,7 @@ export function BiDashboardPane({ params }: PaneProps<BiDashboardPaneParams>) {
             onClick={() => setRefreshKey((value) => value + 1)}
             aria-label="Refresh dashboard"
             title="Refresh dashboard"
-            disabled={!params?.path || loadedFile.loading}
+            disabled={loadedFile.loading || showJsonEditor}
           >
             <RefreshCcw className={`h-3.5 w-3.5 ${loadedFile.loading ? "animate-spin" : ""}`} strokeWidth={1.75} />
           </IconButton>
@@ -162,244 +192,142 @@ export function BiDashboardPane({ params }: PaneProps<BiDashboardPaneParams>) {
       </Toolbar>
 
       <div className="min-h-0 min-w-0 flex-1 overflow-auto bg-background p-4">
+        {showJsonEditor ? (
+          <DashboardJsonEditor draft={jsonDraft} setDraft={setJsonDraft} error={jsonError} onApply={applyJsonDraft} />
+        ) : spec ? (
+          <>
         <div className="mb-4">
           <h1 className="text-2xl font-semibold tracking-tight">{spec.title}</h1>
           {spec.description ? <p className="mt-1 text-sm text-muted-foreground">{spec.description}</p> : null}
         </div>
 
-        <div className="grid min-w-0 gap-4 xl:grid-cols-[minmax(0,1fr)_360px]">
-          <div className="min-w-0 space-y-4">
-            <GeneratedPaneRenderer spec={spec} profile={createBiDashboardPaneProfile(queryData, controllerValues, setControllerValues)} />
-          </div>
-          <Card className="min-w-0">
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2 text-sm">
-                <Database className="h-4 w-4" /> Query manifest
-              </CardTitle>
-              <CardDescription>
-                The agent should generate this neutral BSL dashboard contract; the plugin maps it to BSL, ECharts, and Perspective runtime calls.
-              </CardDescription>
-            </CardHeader>
-            <CardContent>
-              <pre className="max-h-[520px] overflow-auto rounded-lg border border-border bg-muted/40 p-3 text-xs text-muted-foreground">
+        <div className="min-w-0 space-y-4">
+          <DashboardFiltersBar spec={spec} queryData={queryData} controllerValues={controllerValues} setControllerValues={setControllerValues} />
+          <BiDashboardRenderProvider value={{ apiBaseUrl, workspaceId: workspaceId ?? undefined, spec, refreshKey, queryData, controllerValues, setControllerValues }}>
+            <GeneratedPaneRenderer spec={spec} profile={biDashboardGeneratedPaneProfile} />
+          </BiDashboardRenderProvider>
+          <details className="group rounded-xl border border-border bg-card">
+            <summary className="flex cursor-pointer list-none items-center gap-2 px-4 py-3 text-sm font-medium text-foreground marker:hidden">
+              <Database className="h-4 w-4" /> Query manifest
+              <span className="ml-auto text-xs text-muted-foreground">debug</span>
+            </summary>
+            <div className="border-t border-border px-4 py-3">
+              <p className="mb-3 text-sm text-muted-foreground">
+                The agent should generate this neutral BI dashboard contract; the plugin maps it to data-bridge and Perspective runtime calls.
+              </p>
+              <pre className="max-h-[420px] overflow-auto rounded-lg border border-border bg-muted/40 p-3 text-xs text-muted-foreground">
                 {JSON.stringify({ queries: spec.queries }, null, 2)}
               </pre>
-            </CardContent>
-          </Card>
+            </div>
+          </details>
         </div>
+          </>
+        ) : (
+          <PaneState title="Invalid BI dashboard spec" description={parsed.errors.slice(0, 5).join(" • ")} />
+        )}
       </div>
     </div>
   )
 }
 
-function gridColumnsClass(columns: number | undefined): string {
-  switch (columns) {
-    case 1:
-      return "grid-cols-1"
-    case 2:
-      return "lg:grid-cols-2"
-    case 3:
-      return "lg:grid-cols-3"
-    case 4:
-      return "lg:grid-cols-4"
-    case 6:
-      return "lg:grid-cols-6"
-    case 12:
-      return "lg:grid-cols-2 xl:grid-cols-4"
-    default:
-      return "lg:grid-cols-2"
+function DashboardJsonEditor({
+  draft,
+  setDraft,
+  error,
+  onApply,
+}: {
+  draft: string
+  setDraft: (value: string) => void
+  error: string | null
+  onApply: () => void
+}) {
+  return (
+    <div className="flex min-h-0 min-w-0 flex-1 flex-col gap-3">
+      <div className="flex min-w-0 items-center justify-between gap-3">
+        <div>
+          <h1 className="text-lg font-semibold tracking-tight">Dashboard JSON</h1>
+          <p className="text-sm text-muted-foreground">Debug/edit the dashboard spec locally, then click the check icon to apply and return to the dashboard.</p>
+        </div>
+        <button
+          type="button"
+          onClick={onApply}
+          className="inline-flex h-8 items-center gap-1.5 rounded-md border border-border bg-card px-3 text-xs font-medium text-foreground shadow-sm hover:bg-muted"
+        >
+          <Check className="h-3.5 w-3.5" /> Apply JSON
+        </button>
+      </div>
+      {error ? <div className="rounded-lg border border-destructive/30 bg-destructive/5 px-3 py-2 text-sm text-destructive">{error}</div> : null}
+      <Textarea
+        value={draft}
+        onChange={(event) => setDraft(event.target.value)}
+        spellCheck={false}
+        className="min-h-[70vh] flex-1 resize-none overflow-auto font-mono text-xs leading-relaxed"
+      />
+    </div>
+  )
+}
+
+function PaneState({ title, description }: { title: string; description?: string }) {
+  return (
+    <div className="flex h-full min-h-0 min-w-0 items-center justify-center bg-background p-6 text-foreground">
+      <EmptyState title={title} description={description} />
+    </div>
+  )
+}
+
+function jsonQueryIdsForDashboard(spec: BslDashboardSpec | null): string[] {
+  if (!spec) return []
+  const ids = new Set<string>()
+  for (const element of Object.values(spec.elements)) {
+    if (element.type === "BSLMetric") ids.add(String(element.props.queryId))
+    if (element.type === "BSLChart") ids.add(String(element.props.queryId))
+    if (element.type === "BSLFilter") {
+      for (const queryId of element.props.targetQueries) ids.add(String(queryId))
+    }
   }
+  return [...ids]
 }
 
-function formatMetricValue(value: unknown, format: "number" | "currency" | "percent" | undefined): string {
-  const number = typeof value === "number" ? value : Number(value)
-  if (!Number.isFinite(number)) return value == null ? "—" : String(value)
-  if (format === "currency") return new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 }).format(number)
-  if (format === "percent") return new Intl.NumberFormat("en-US", { style: "percent", maximumFractionDigits: 1 }).format(number)
-  return new Intl.NumberFormat("en-US", { maximumFractionDigits: 2 }).format(number)
-}
-
-function applyControllerFilters(spec: BslDashboardSpec, _controllerValues: Record<string, string>): BslDashboardSpec {
-  // Query specs are intentionally either BSL expression strings or SQL strings.
-  // Do not mutate them through a parallel JSON filter DSL here.
-  return spec
-}
-
-function ChartPreview({ data, x, y, chartType }: { data?: DashboardQueryResult; x?: string; y?: string | string[]; chartType: string }) {
-  if (!data) return <Placeholder text="No live data source configured yet" />
-  if (data.loading) return <Placeholder text="Loading data…" />
-  if (data.error) return <Placeholder text={data.error} destructive />
-  const yField = Array.isArray(y) ? y[0] : y
-  if (!x || !yField || data.rows.length === 0) return <Placeholder text="No chartable rows" />
-  const values = data.rows.map((row) => Number(row[yField])).filter(Number.isFinite)
-  const max = Math.max(1, ...values)
+function DashboardFiltersBar({
+  spec,
+  queryData,
+  controllerValues,
+  setControllerValues,
+}: {
+  spec: BslDashboardSpec
+  queryData: Record<string, DashboardQueryResult>
+  controllerValues: Record<string, string>
+  setControllerValues: (updater: (previous: Record<string, string>) => Record<string, string>) => void
+}) {
+  const filters = Object.values(spec.elements).filter((element) => element.type === "BSLFilter")
+  if (filters.length === 0) return null
   return (
-    <div className="h-56 rounded-lg border border-border bg-card p-3 text-foreground">
-      <svg viewBox="0 0 640 210" className="h-full w-full overflow-visible" role="img" aria-label={`${chartType} chart`}> 
-        {data.rows.map((row, index) => {
-          const value = Number(row[yField])
-          const label = String(row[x] ?? index + 1)
-          const width = 560 / Math.max(1, data.rows.length)
-          const height = Number.isFinite(value) ? Math.max(3, (value / max) * 150) : 3
-          const left = 55 + index * width
-          if (chartType === "line" || chartType === "area") return null
-          return (
-            <g key={index}>
-              <rect x={left} y={165 - height} width={Math.max(8, width - 8)} height={height} rx="4" fill="var(--boring-primary, var(--primary))" opacity="0.9" />
-              <text x={left + width / 2} y="190" textAnchor="middle" className="fill-current text-[10px] text-muted-foreground">{label.slice(0, 10)}</text>
-            </g>
-          )
-        })}
-        {(chartType === "line" || chartType === "area") && (
-          <polyline
-            fill="none"
-            stroke="var(--boring-primary, var(--primary))"
-            strokeWidth="3"
-            points={data.rows.map((row, index) => {
-              const value = Number(row[yField])
-              const xPos = 65 + index * (540 / Math.max(1, data.rows.length - 1))
-              const yPos = 165 - ((Number.isFinite(value) ? value : 0) / max) * 150
-              return `${xPos},${yPos}`
-            }).join(" ")}
-          />
-        )}
-      </svg>
-    </div>
-  )
-}
-
-function DataTable({ data, columns }: { data?: DashboardQueryResult; columns?: string[] }) {
-  if (!data) return <Placeholder text="No live data source configured yet" />
-  if (data.loading) return <Placeholder text="Loading data…" />
-  if (data.error) return <Placeholder text={data.error} destructive />
-  const visibleColumns = columns?.length ? columns : data.columns.map((column) => column.name)
-  return (
-    <div className="max-h-72 overflow-auto rounded-lg border border-border">
-      <table className="w-full border-collapse text-xs">
-        <thead className="sticky top-0 bg-muted">
-          <tr>{visibleColumns.map((column) => <th key={column} className="border-b border-border px-2 py-1.5 text-left font-medium">{column}</th>)}</tr>
-        </thead>
-        <tbody>
-          {data.rows.map((row, rowIndex) => (
-            <tr key={rowIndex} className="odd:bg-muted/20">
-              {visibleColumns.map((column) => <td key={column} className="border-b border-border/50 px-2 py-1.5 text-muted-foreground">{String(row[column] ?? "")}</td>)}
-            </tr>
-          ))}
-        </tbody>
-      </table>
-    </div>
-  )
-}
-
-function Placeholder({ text, destructive }: { text: string; destructive?: boolean }) {
-  return <div className={`flex h-52 items-center justify-center rounded-lg border border-dashed border-border bg-card text-sm ${destructive ? "text-destructive" : "text-muted-foreground"}`}>{text}</div>
-}
-
-function createBiDashboardPaneProfile(
-  queryData: Record<string, DashboardQueryResult>,
-  controllerValues: Record<string, string>,
-  setControllerValues: (updater: (previous: Record<string, string>) => Record<string, string>) => void,
-) {
-  return defineGeneratedPaneProfile({
-    id: "bi-dashboard",
-    label: "BI Dashboard",
-    components: {
-      DashboardGrid: {
-        description: "Responsive dashboard grid for chart, table, metric, filter, and text widgets.",
-        slots: ["default"],
-        props: dashboardGridPropsSchema,
-        component: ({ props, children }) => <div className={`grid min-w-0 gap-4 ${gridColumnsClass(props.columns as number | undefined)}`}>{children}</div>,
-      },
-      BSLMetric: {
-        description: "Metric card bound to a BI query result field.",
-        props: bslMetricPropsSchema,
-        component: ({ props }) => {
-          const queryId = String(props.queryId)
-          const valueField = String(props.valueField)
-          const data = queryData[queryId]
-          const value = data?.rows[0]?.[valueField]
-          return (
-            <Card className="min-w-0">
-              <CardHeader className="pb-2">
-                <CardDescription>{String(props.label)}</CardDescription>
-                <CardTitle className="flex items-center gap-2 text-3xl">
-                  <Gauge className="h-5 w-5 text-muted-foreground" /> {data?.loading ? "…" : formatMetricValue(value, props.format as "number" | "currency" | "percent" | undefined)}
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="text-xs text-muted-foreground">
-                {data?.error ? <span className="text-destructive">{data.error}</span> : <>query <code>{queryId}</code> · field <code>{valueField}</code>{data?.source ? <> · {data.source}</> : null}</>}
-              </CardContent>
-            </Card>
-          )
-        },
-      },
-      BSLChart: {
-        description: "Chart preview bound to a BI query result.",
-        props: bslChartPropsSchema,
-        component: ({ props }) => {
-          const queryId = String(props.queryId)
-          const data = queryData[queryId]
-          return (
-            <Card className="min-w-0">
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2 text-base"><BarChart3 className="h-4 w-4" /> {typeof props.title === "string" ? props.title : queryId}</CardTitle>
-                <CardDescription>{String(props.renderer ?? "echarts")} · {String(props.chartType)} · query <code>{queryId}</code>{data?.source ? <> · {data.source}</> : null}</CardDescription>
-              </CardHeader>
-              <CardContent><ChartPreview data={data} x={props.x as string | undefined} y={props.y as string | string[] | undefined} chartType={String(props.chartType)} /></CardContent>
-            </Card>
-          )
-        },
-      },
-      BSLPerspectiveViewer: {
-        description: "Table/Perspective-style viewer bound to a BI query result.",
-        props: bslPerspectiveViewerPropsSchema,
-        component: ({ props }) => {
-          const queryId = String(props.queryId)
-          const data = queryData[queryId]
-          return (
-            <Card className="min-w-0">
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2 text-base"><Table2 className="h-4 w-4" /> {typeof props.title === "string" ? props.title : queryId}</CardTitle>
-                <CardDescription>Perspective {String(props.plugin ?? "Datagrid")} · query <code>{queryId}</code>{data?.source ? <> · {data.source}</> : null}</CardDescription>
-              </CardHeader>
-              <CardContent><DataTable data={data} columns={props.columns as string[] | undefined} /></CardContent>
-            </Card>
-          )
-        },
-      },
-      BSLFilter: {
-        description: "Dashboard filter control placeholder for target queries.",
-        props: bslFilterPropsSchema,
-        component: ({ props }) => {
+    <Card className="min-w-0 border-primary/20 bg-card/95 shadow-sm">
+      <CardContent className="flex min-w-0 flex-wrap items-end gap-3 p-3">
+        <div className="mr-1 flex min-w-[140px] items-center gap-2 pb-2 text-sm font-medium text-foreground">
+          <SlidersHorizontal className="h-4 w-4 text-primary" /> Controls
+        </div>
+        {filters.map((element) => {
+          const props = element.props
           const id = String(props.id)
           const field = String(props.field)
           const targets = props.targetQueries as string[]
           const options = [...new Set(targets.flatMap((queryId) => queryData[queryId]?.rows.map((row) => row[field]).filter((value) => value != null).map(String) ?? []))].sort((a, b) => a.localeCompare(b))
           return (
-            <Card className="min-w-0 border-primary/25 bg-card">
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2 text-base"><SlidersHorizontal className="h-4 w-4 text-primary" /> {String(props.label ?? props.field)}</CardTitle>
-                <CardDescription>{String(props.controlType)} controller · targets {targets.join(", ")}</CardDescription>
-              </CardHeader>
-              <CardContent>
-                <select
-                  className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground shadow-sm outline-none focus:ring-2 focus:ring-ring/40"
-                  value={controllerValues[id] ?? "__all"}
-                  onChange={(event) => setControllerValues((previous) => ({ ...previous, [id]: event.target.value }))}
-                >
-                  <option value="__all">All {field}</option>
-                  {options.map((option) => <option key={option} value={option}>{option}</option>)}
-                </select>
-              </CardContent>
-            </Card>
+            <label key={id} className="min-w-[180px] flex-1 text-xs font-medium text-muted-foreground sm:max-w-[260px]">
+              <span className="mb-1 block truncate">{String(props.label ?? props.field)}</span>
+              <select
+                className="h-9 w-full rounded-md border border-border bg-background px-2.5 text-sm font-normal text-foreground shadow-sm outline-none focus:ring-2 focus:ring-ring/40"
+                value={controllerValues[id] ?? "__all"}
+                onChange={(event) => setControllerValues((previous) => ({ ...previous, [id]: event.target.value }))}
+              >
+                <option value="__all">All {field}</option>
+                {options.map((option) => <option key={option} value={option}>{option}</option>)}
+              </select>
+            </label>
           )
-        },
-      },
-      BSLText: {
-        description: "Text/markdown explanation block for dashboard context.",
-        props: bslTextPropsSchema,
-        component: ({ props }) => <Card className="min-w-0"><CardContent className="p-4 text-sm text-muted-foreground">{String(props.markdown)}</CardContent></Card>,
-      },
-    },
-  })
+        })}
+      </CardContent>
+    </Card>
+  )
 }

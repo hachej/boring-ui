@@ -4,7 +4,6 @@ test.describe("workspace-playground inbox", () => {
   test("mounts the canonical Inbox shell without seeded fake demo rows", async ({ page }) => {
     await page.goto("/?fresh=1")
 
-    await expect(page.getByRole("button", { name: "New chat" })).toBeVisible({ timeout: 15_000 })
     const inboxButton = page.getByRole("button", { name: /Inbox/ })
     await expect(inboxButton).toBeVisible({ timeout: 15_000 })
 

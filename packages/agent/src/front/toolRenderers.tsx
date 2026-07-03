@@ -85,7 +85,7 @@ function toHeaderProps(part: ToolPart) {
  * affordance, valid HTML. Click + Enter/Space stop propagation and
  * prevent default so they don't also toggle the collapsible.
  */
-function PathLabel({ path }: { path: string }) {
+function PathLabel({ path, filesystem }: { path: string; filesystem?: string }) {
   const onOpen = useOpenArtifact()
   if (!onOpen) {
     return <span className="font-mono text-[12.5px] text-foreground/85">{path}</span>
@@ -93,7 +93,8 @@ function PathLabel({ path }: { path: string }) {
   const open = (e: ReactMouseEvent<HTMLSpanElement> | ReactKeyboardEvent<HTMLSpanElement>) => {
     e.preventDefault()
     e.stopPropagation()
-    onOpen(path)
+    if (filesystem) onOpen(path, { filesystem })
+    else onOpen(path)
   }
   const handleKeyDown = (e: ReactKeyboardEvent<HTMLSpanElement>) => {
     if (e.key === 'Enter' || e.key === ' ') open(e)
@@ -160,12 +161,12 @@ function renderReadinessBlock(part: ToolPart): ReactNode | null {
   return renderWorkspaceNotReady(part) ?? renderRuntimeNotReady(part)
 }
 
-function pathTitle(prefix: string, path: string): ReactNode {
+function pathTitle(prefix: string, path: string, filesystem?: string): ReactNode {
   return (
     <span className="flex min-w-0 items-center gap-1.5">
       <span className="text-muted-foreground">{prefix}</span>
       <span className="text-muted-foreground/40" aria-hidden="true">·</span>
-      <PathLabel path={path} />
+      <PathLabel path={path} filesystem={filesystem} />
     </span>
   )
 }
@@ -219,12 +220,13 @@ function renderRead(part: ToolPart): ReactNode {
   const input = asRecord(part.input)
   const output = asRecord(part.output)
   const path = typeof input.path === 'string' ? input.path : ''
+  const filesystem = typeof input.filesystem === 'string' ? input.filesystem : undefined
   const content = extractTextContent(output)
   const lang = langFromPath(path)
 
   return (
     <Tool>
-      <ToolHeader icon={<FileTextIcon className="size-4 text-muted-foreground" />} title={pathTitle('read', path)} {...toHeaderProps(part)} />
+      <ToolHeader icon={<FileTextIcon className="size-4 text-muted-foreground" />} title={pathTitle('read', path, filesystem)} {...toHeaderProps(part)} />
       <ToolContent>
         <ToolInput input={input} />
         {content && (
@@ -251,13 +253,14 @@ function renderWrite(part: ToolPart): ReactNode {
   if (readiness) return readiness
   const input = asRecord(part.input)
   const path = typeof input.path === 'string' ? input.path : ''
+  const filesystem = typeof input.filesystem === 'string' ? input.filesystem : undefined
   const content = typeof input.content === 'string' ? input.content : ''
   const bytes = content.length
   const lang = langFromPath(path)
 
   return (
     <Tool>
-      <ToolHeader icon={<FilePlus2Icon className="size-4 text-muted-foreground" />} title={pathTitle('write', path)} {...toHeaderProps(part)} />
+      <ToolHeader icon={<FilePlus2Icon className="size-4 text-muted-foreground" />} title={pathTitle('write', path, filesystem)} {...toHeaderProps(part)} />
       <ToolContent>
         {/* Flat surface: the outer <Tool> already owns a bordered card, so
          * the nested <Artifact> drops its own border/shadow to keep stacked
@@ -318,12 +321,13 @@ function renderEdit(part: ToolPart): ReactNode {
   if (readiness) return readiness
   const input = asRecord(part.input)
   const path = typeof input.path === 'string' ? input.path : ''
+  const filesystem = typeof input.filesystem === 'string' ? input.filesystem : undefined
   const oldString = typeof input.oldString === 'string' ? input.oldString : ''
   const newString = typeof input.newString === 'string' ? input.newString : ''
 
   return (
     <Tool>
-      <ToolHeader icon={<FileDiffIcon className="size-4 text-muted-foreground" />} title={pathTitle('edit', path)} {...toHeaderProps(part)} />
+      <ToolHeader icon={<FileDiffIcon className="size-4 text-muted-foreground" />} title={pathTitle('edit', path, filesystem)} {...toHeaderProps(part)} />
       <ToolContent>
         <section className="space-y-2">
           <h4 className="font-medium text-muted-foreground text-xs uppercase tracking-wide">

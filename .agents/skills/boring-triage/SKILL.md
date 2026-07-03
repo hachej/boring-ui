@@ -81,5 +81,5 @@ Next action:
 Why:
 ```
 
-End with exact next action: `/loop-grill`, `/loop-plan`, `/loop-implement`,
-proof, fast-track merge, or owner review.
+End with exact next action: `/loop-grill`, `boring-loop-plan`,
+`boring-loop-implement`, proof, fast-track merge, or owner review.

@@ -1,11 +1,14 @@
 {
-  "name": "@hachej/data-bridge",
-  "version": "0.1.53",
+  "name": "@hachej/boring-data-bridge",
+  "version": "0.1.64",
   "type": "module",
   "private": false,
   "license": "MIT",
   "description": "WorkspaceBridge-backed semantic data adapter plugin for Boring workspace.",
-  "repository": { "type": "git", "url": "https://github.com/hachej/boring-ui" },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/hachej/boring-ui"
+  },
   "homepage": "https://github.com/hachej/boring-ui",
   "boring": {
     "id": "data-bridge",
@@ -13,12 +16,27 @@
     "front": "dist/front/index.js",
     "server": "dist/server/index.js"
   },
-  "files": ["dist", "README.md"],
+  "files": [
+    "dist",
+    "README.md"
+  ],
   "exports": {
-    ".": { "types": "./dist/shared/index.d.ts", "import": "./dist/shared/index.js" },
-    "./front": { "types": "./dist/front/index.d.ts", "import": "./dist/front/index.js" },
-    "./server": { "types": "./dist/server/index.d.ts", "import": "./dist/server/index.js" },
-    "./shared": { "types": "./dist/shared/index.d.ts", "import": "./dist/shared/index.js" },
+    ".": {
+      "types": "./dist/shared/index.d.ts",
+      "import": "./dist/shared/index.js"
+    },
+    "./front": {
+      "types": "./dist/front/index.d.ts",
+      "import": "./dist/front/index.js"
+    },
+    "./server": {
+      "types": "./dist/server/index.d.ts",
+      "import": "./dist/server/index.js"
+    },
+    "./shared": {
+      "types": "./dist/shared/index.d.ts",
+      "import": "./dist/shared/index.js"
+    },
     "./package.json": "./package.json"
   },
   "sideEffects": false,
@@ -30,13 +48,26 @@
     "clean": "rm -rf dist .tsbuildinfo"
   },
   "peerDependencies": {
-    "@hachej/boring-workspace": "workspace:*"
+    "@clickhouse/client": "^1.23.0",
+    "@hachej/boring-workspace": "workspace:*",
+    "@perspective-dev/client": "4.5.1"
+  },
+  "peerDependenciesMeta": {
+    "@clickhouse/client": {
+      "optional": true
+    },
+    "@perspective-dev/client": {
+      "optional": true
+    }
   },
   "devDependencies": {
-    "@duckdb/node-api": "1.5.2-r.1",
+    "@clickhouse/client": "^1.23.0",
+    "@duckdb/node-api": "1.5.2-r.2",
     "@hachej/boring-workspace": "workspace:*",
+    "@perspective-dev/client": "4.5.1",
     "tsup": "^8.4.0",
     "typescript": "~5.9.3",
     "vitest": "^3.2.6"
-  }
+  },
+  "dependencies": {}
 }

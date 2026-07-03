@@ -5,6 +5,7 @@ import { emitWorkspaceAttentionAction, useWorkspaceAttention, useWorkspaceChatPa
 import { emitAgentData } from "../../events"
 import { dispatchUiCommand, startUiCommandStream } from "../../bridge"
 import { relativizeWorkspacePath } from "../../../app/front/workspacePreload"
+import { normalizeUiFilesystem, type FilesystemId } from "../../../shared/types/filesystem"
 import type { DispatchContext } from "../../bridge"
 import { WORKSPACE_COMPOSER_STOP_REASONS, emitWorkspaceComposerStop } from "./composerStop"
 import type { WorkspaceChatPanelProps } from "./types"
@@ -79,12 +80,14 @@ export function ChatPanelHost(props: ChatPanelHostProps) {
   }, [apiBase, metaWorkspaceId])
 
   const openArtifact = useCallback(
-    (path: string) => {
-      const resolved = relativizeWorkspacePath(path, workspaceRootRef.current)
+    (path: string, options?: { filesystem?: FilesystemId }) => {
+      const filesystem = normalizeUiFilesystem(options?.filesystem)
+      const resolved = filesystem === "user" ? relativizeWorkspacePath(path, workspaceRootRef.current) : path
       if (surfaceDispatch) {
-        dispatchUiCommand({ kind: "openFile", params: { path: resolved } }, surfaceDispatch)
+        dispatchUiCommand({ kind: "openFile", params: { path: resolved, filesystem } }, surfaceDispatch)
       }
-      props.onOpenArtifact?.(resolved)
+      if (filesystem === "user") props.onOpenArtifact?.(resolved)
+      else props.onOpenArtifact?.(resolved, { filesystem })
     },
     [surfaceDispatch, props.onOpenArtifact],
   )

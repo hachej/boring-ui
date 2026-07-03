@@ -1,5 +1,6 @@
-export { validateDashboardSpec, parseDashboardSpec } from "./validation"
-export type { DashboardValidationResult } from "./validation"
+export { BI_DASHBOARD_DIAGNOSTIC_CODES, validateDashboardSpec, parseDashboardSpec, diagnoseDashboardSpec } from "./validation"
+export type { DashboardDiagnostic, DashboardDiagnosticCode, DashboardDiagnosticsResult, DashboardDiagnosticSeverity, DashboardValidationResult } from "./validation"
+export { biDashboardVocabulary, componentPropsSchemas, dashboardQuerySchema } from "./schemas"
 
 export type {
   BslChartRenderer,

@@ -2,6 +2,7 @@
 
 import { useCallback, useMemo } from "react"
 import type { DockviewApi } from "dockview-react"
+import { normalizeUiFilesystem, uiFileResourceKey } from "../../../shared/types/filesystem"
 import { DockviewShell } from "../../dock"
 import type { LayoutConfig, SerializedLayout } from "../../dock"
 import { cn } from "../../lib/utils"
@@ -63,7 +64,49 @@ function readStoredLayoutState(
     if (typeof comp !== "string") return { status: "invalid" }
     if (allowed && !allowed.has(comp)) return { status: "blocked-by-allowed-panels" }
   }
-  return { status: "ready", layout: layout as SerializedLayout }
+  return { status: "ready", layout: normalizePersistedFilePanelIdentity(layout as SerializedLayout) }
+}
+
+function replaceLayoutPanelId(value: unknown, from: string, to: string): unknown {
+  if (value === from) return to
+  if (Array.isArray(value)) return value.map((item) => replaceLayoutPanelId(item, from, to))
+  if (!value || typeof value !== "object") return value
+  const out: Record<string, unknown> = {}
+  for (const [key, child] of Object.entries(value as Record<string, unknown>)) {
+    out[key] = replaceLayoutPanelId(child, from, to)
+  }
+  return out
+}
+
+function normalizePersistedFilePanelIdentity(layout: SerializedLayout): SerializedLayout {
+  const clone = structuredClone(layout) as { panels?: Record<string, unknown> }
+  const panels = clone.panels
+  if (!panels || typeof panels !== "object") return clone as SerializedLayout
+
+  for (const [key, entry] of Object.entries(panels)) {
+    if (!entry || typeof entry !== "object") continue
+    const panel = entry as Record<string, unknown>
+    const params = panel.params && typeof panel.params === "object"
+      ? { ...(panel.params as Record<string, unknown>) }
+      : undefined
+    const rawPath = typeof params?.path === "string"
+      ? params.path
+      : key.startsWith("file:") ? key.slice("file:".length) : undefined
+    if (!rawPath) continue
+    const filesystem = normalizeUiFilesystem(typeof params?.filesystem === "string" ? params.filesystem : undefined)
+    const nextParams = { ...(params ?? {}), path: rawPath, filesystem }
+    panel.params = nextParams
+
+    if (!key.startsWith("file:")) continue
+    const nextId = `file:${uiFileResourceKey({ filesystem, path: rawPath })}`
+    if (key === nextId) continue
+    panel.id = typeof panel.id === "string" && panel.id === key ? nextId : panel.id
+    delete panels[key]
+    panels[nextId] = panel
+    Object.assign(clone, replaceLayoutPanelId(clone, key, nextId))
+  }
+
+  return clone as SerializedLayout
 }
 
 function layoutHasPanels(layout: SerializedLayout): boolean {
@@ -126,7 +169,7 @@ export function ArtifactSurfacePane({
       ) {
         return
       }
-      const envelope: StoredEnvelope = { v: STORAGE_VERSION, layout }
+      const envelope: StoredEnvelope = { v: STORAGE_VERSION, layout: normalizePersistedFilePanelIdentity(layout) }
       try {
         window.localStorage.setItem(storageKey, JSON.stringify(envelope))
       } catch {

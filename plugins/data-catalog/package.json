@@ -1,10 +1,10 @@
 {
   "name": "@hachej/boring-data-catalog",
-  "version": "0.1.61",
+  "version": "0.1.64",
   "type": "module",
   "private": false,
   "license": "MIT",
-  "description": "Plugin BUILDER for Boring workspace data catalogs. Consumers call `createDataCatalogPlugin(options)` to bind their own adapter/facets and get a configured BoringFrontFactoryWithId. NOT a direct `defaultPluginPackages` entry (no default export, options required) — wrap in an app-local plugin module that default-exports the built factory, then list that wrapper in `defaultPluginPackages`.",
+  "description": "Plugin BUILDER for Boring workspace data catalogs. Consumers call `createDataCatalogPlugin(options)` to bind their own adapter/facets and get a configured BoringFrontFactoryWithId. NOT a direct `defaultPluginPackages` entry (no default export, options required) \u2014 wrap in an app-local plugin module that default-exports the built factory, then list that wrapper in `defaultPluginPackages`.",
   "repository": {
     "type": "git",
     "url": "https://github.com/hachej/boring-ui"
@@ -47,19 +47,19 @@
   },
   "dependencies": {
     "@hachej/boring-data-explorer": "workspace:*",
-    "lucide-react": "^1.8.0"
+    "lucide-react": "^1.23.0"
   },
   "devDependencies": {
     "@hachej/boring-workspace": "workspace:*",
     "@testing-library/jest-dom": "^6.9.1",
     "@testing-library/react": "^16.3.2",
     "@types/node": "^22.15.3",
-    "@types/react": "^19.0.0",
+    "@types/react": "^19.2.17",
     "@types/react-dom": "^19.0.0",
     "@vitejs/plugin-react": "^4.0.0",
     "jsdom": "^29.0.2",
-    "react": "^19.0.0",
-    "react-dom": "^19.0.0",
+    "react": "^19.2.7",
+    "react-dom": "^19.2.7",
     "tsup": "^8.0.0",
     "typescript": "^5.4.0",
     "vitest": "^3.2.6"

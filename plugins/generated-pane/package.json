@@ -1,27 +1,53 @@
 {
   "name": "@hachej/boring-generated-pane",
-  "version": "0.1.53",
+  "version": "0.1.64",
   "type": "module",
   "private": false,
   "license": "MIT",
-  "description": "Generated pane runtime for Boring workspace using json-render catalogs and safe WorkspaceBridge-backed actions.",
-  "repository": { "type": "git", "url": "https://github.com/hachej/boring-ui" },
+  "description": "Generated pane runtime for Boring workspace using json-render catalogs and safe profile vocabularies.",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/hachej/boring-ui"
+  },
   "homepage": "https://github.com/hachej/boring-ui",
   "boring": {
     "id": "generated-pane",
     "label": "Generated Pane",
     "front": "dist/front/index.js",
-    "server": false
+    "server": "dist/server/index.js"
   },
   "pi": {
-    "skills": ["skills/generated-pane-authoring"],
+    "skills": [
+      "skills/generated-pane-authoring"
+    ],
     "systemPrompt": "Use the generated-pane-authoring skill when the user asks to create a custom workspace pane from available components. Pane files should live under panes/*.pane.json."
   },
-  "files": ["dist", "skills", "example", "playground", "docs", "README.md"],
+  "files": [
+    "dist",
+    "skills",
+    "example",
+    "playground",
+    "docs",
+    "README.md"
+  ],
   "exports": {
-    ".": { "types": "./dist/front/index.d.ts", "import": "./dist/front/index.js" },
-    "./front": { "types": "./dist/front/index.d.ts", "import": "./dist/front/index.js" },
-    "./shared": { "types": "./dist/shared/index.d.ts", "import": "./dist/shared/index.js" },
+    ".": {
+      "types": "./dist/front/index.d.ts",
+      "import": "./dist/front/index.js"
+    },
+    "./front": {
+      "types": "./dist/front/index.d.ts",
+      "import": "./dist/front/index.js"
+    },
+    "./server": {
+      "types": "./dist/server/index.d.ts",
+      "import": "./dist/server/index.js",
+      "default": "./dist/server/index.js"
+    },
+    "./shared": {
+      "types": "./dist/shared/index.d.ts",
+      "import": "./dist/shared/index.js"
+    },
     "./package.json": "./package.json"
   },
   "sideEffects": false,
@@ -42,17 +68,17 @@
     "@hachej/boring-ui-kit": "workspace:*",
     "@json-render/core": "^0.19.0",
     "@json-render/react": "^0.19.0",
-    "lucide-react": "^1.8.0",
+    "lucide-react": "^1.23.0",
     "zod": "^4.3.6"
   },
   "devDependencies": {
     "@hachej/boring-agent": "workspace:*",
     "@hachej/boring-workspace": "workspace:*",
     "tsx": "^4.21.0",
-    "@types/react": "^19.0.0",
+    "@types/react": "^19.2.17",
     "@types/react-dom": "^19.0.0",
-    "react": "^19.0.0",
-    "react-dom": "^19.0.0",
+    "react": "^19.2.7",
+    "react-dom": "^19.2.7",
     "tsup": "^8.4.0",
     "typescript": "~5.9.3",
     "vitest": "^3.2.6"

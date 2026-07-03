@@ -15,7 +15,7 @@ const mockWriteFile = vi.fn()
 const mockFileContent = vi.fn()
 
 vi.mock("../data", () => ({
-  useFileContent: (path: string | null, options?: { createIfMissing?: string }) => (
+  useFileContent: (path: string | null, options?: { createIfMissing?: string; filesystem?: string }) => (
     options === undefined ? mockFileContent(path) : mockFileContent(path, options)
   ),
   useFileWrite: () => ({ mutateAsync: mockWriteFile }),
@@ -280,7 +280,7 @@ describe("useFilePane", () => {
       renderHook(() => useFilePane({ path: "   " }), { wrapper })
       await act(async () => {})
 
-      expect(mockFileContent).toHaveBeenCalledWith(null)
+      expect(mockFileContent).toHaveBeenCalledWith(null, { filesystem: "user" })
       expect(mockWriteFile).not.toHaveBeenCalled()
     })
 
@@ -288,7 +288,57 @@ describe("useFilePane", () => {
       renderHook(() => useFilePane({ path: " notes.md " }), { wrapper })
       await act(async () => {})
 
-      expect(mockFileContent).toHaveBeenCalledWith(" notes.md ")
+      expect(mockFileContent).toHaveBeenCalledWith(" notes.md ", { filesystem: "user" })
+    })
+
+    it("separates same-path panes by filesystem for queries", async () => {
+      const { rerender } = renderHook(
+        ({ filesystem }) => useFilePane({ path: "same.md", filesystem }),
+        { wrapper, initialProps: { filesystem: "user" as "user" | "project_alpha" } },
+      )
+      await act(async () => {})
+      expect(mockFileContent).toHaveBeenCalledWith("same.md", { filesystem: "user" })
+
+      rerender({ filesystem: "project_alpha" })
+      await act(async () => {})
+      expect(mockFileContent).toHaveBeenCalledWith("same.md", { filesystem: "project_alpha" })
+    })
+
+    it("derives named-filesystem readonly state from server access, not filesystem id", async () => {
+      const { result } = renderHook(
+        () => useFilePane({ path: "same.md", filesystem: "project_alpha", createIfMissing: "new" }),
+        { wrapper },
+      )
+      await act(async () => {})
+
+      expect(result.current.isReadonly).toBe(false)
+      expect(mockFileContent).toHaveBeenCalledWith("same.md", { filesystem: "project_alpha", createIfMissing: "new" })
+      act(() => result.current.setContent("allowed edits"))
+      expect(result.current.isDirty).toBe(true)
+    })
+
+    it("blocks edits when server marks any named filesystem readonly", async () => {
+      mockFileContent.mockReturnValue({
+        data: { content: "initial", mtimeMs: 1000, access: "readonly" },
+        isLoading: false,
+        error: undefined,
+        refetch: vi.fn(async () => ({ data: { content: "initial", mtimeMs: 1000, access: "readonly" } })),
+      })
+      const { result } = renderHook(
+        () => useFilePane({ path: "same.md", filesystem: "project_alpha", createIfMissing: "new" }),
+        { wrapper },
+      )
+      await act(async () => {})
+
+      expect(result.current.isReadonly).toBe(true)
+      expect(mockFileContent).toHaveBeenCalledWith("same.md", { filesystem: "project_alpha", createIfMissing: "new" })
+      act(() => result.current.setContent("blocked edits"))
+      expect(result.current.isDirty).toBe(false)
+      await act(async () => {
+        await result.current.flushSave()
+        await result.current.onOverwrite()
+      })
+      expect(mockWriteFile).not.toHaveBeenCalled()
     })
   })
 
@@ -297,7 +347,7 @@ describe("useFilePane", () => {
       renderHook(() => useFilePane({ path: "deck/new.md", createIfMissing: "# Default\n" }), { wrapper })
       await act(async () => {})
 
-      expect(mockFileContent).toHaveBeenCalledWith("deck/new.md", { createIfMissing: "# Default\n" })
+      expect(mockFileContent).toHaveBeenCalledWith("deck/new.md", { filesystem: "user", createIfMissing: "# Default\n" })
       expect(mockWriteFile).not.toHaveBeenCalled()
     })
   })

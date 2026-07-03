@@ -9,6 +9,7 @@ dist/
 **/.vite/
 *.tsbuildinfo
 .tsbuildinfo.*
+*.tgz
 
 # Generated app/API bundles and sourcemaps
 apps/full-app/api/generated-index.*

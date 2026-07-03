@@ -1,5 +1,6 @@
 "use client"
 
+import { normalizeUiFilesystem, type FilesystemId } from "../../../../shared/types/filesystem"
 import type { PaneProps } from "../../../../front/registry/types"
 import { useFilePane } from "../useFilePane"
 import { FilePaneShell } from "../FilePaneShell"
@@ -31,10 +32,11 @@ function extToLanguage(path: string): string {
   }
 }
 
-export type CodeEditorPaneProps = PaneProps<{ path?: string; mode?: "view" | "edit" | "diff" }>
+export type CodeEditorPaneProps = PaneProps<{ path?: string; filesystem?: FilesystemId; mode?: "view" | "edit" | "diff" }>
 
 export function CodeEditorPane({ params, api, className }: CodeEditorPaneProps) {
   const path = typeof params?.path === "string" ? params.path : ""
+  const filesystem = normalizeUiFilesystem(params?.filesystem)
   const readOnly = params?.mode === "view"
 
   const {
@@ -46,11 +48,12 @@ export function CodeEditorPane({ params, api, className }: CodeEditorPaneProps) 
     onReloadFromServer,
     onOverwrite,
     tabTitle,
-  } = useFilePane({ path, panelId: api?.id })
+    isReadonly,
+  } = useFilePane({ filesystem, path, panelId: api?.id })
 
-  // Update panel title with dirty indicator
+  // Update panel title with dirty/readonly indicator
   if (api && tabTitle) {
-    api.setTitle(tabTitle)
+    api.setTitle(isReadonly ? `${tabTitle} (readonly)` : tabTitle)
   }
 
   const language = extToLanguage(path)
@@ -58,15 +61,17 @@ export function CodeEditorPane({ params, api, className }: CodeEditorPaneProps) 
   return (
     <FilePaneShell
       path={path}
+      filesystem={filesystem}
       content={content}
       isLoading={isLoading}
       error={error}
       conflict={conflict}
+      readOnly={readOnly || isReadonly}
       onChange={setContent}
       onReload={onReloadFromServer}
       onOverwrite={onOverwrite}
       editorComponent={CodeEditor}
-      editorProps={{ language, wordWrap: true, className, readOnly }}
+      editorProps={{ language, wordWrap: true, className, readOnly: readOnly || isReadonly }}
     />
   )
 }

@@ -622,6 +622,49 @@ describe("WorkspaceAgentFront", () => {
     expect(document.querySelector('[data-boring-workspace-part="plugins-overlay"]')).toBeNull()
   })
 
+  it.each([
+    { action: "Plugins", part: "plugins-overlay" },
+    { action: "Skills", part: "skills-page" },
+  ])("closes the $action overlay when switching sessions from app navigation", async ({ action, part }) => {
+    const user = userEvent.setup()
+    const onSwitchSession = vi.fn()
+    vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input)
+      if (url.includes("/api/v1/tree")) return new Response(JSON.stringify({ entries: [] }), { status: 200 })
+      if (url.includes("/api/v1/ready-status")) return new Response(null, { status: 200 })
+      if (url.includes("/api/v1/agent/skills")) return new Response(JSON.stringify({ skills: [] }), { status: 200 })
+      if (url.includes("/api/v1/agent-plugins")) return new Response(JSON.stringify([]), { status: 200 })
+      if (url.includes("/api/v1/agent/reload")) return new Response(JSON.stringify({ reloaded: true }), { status: 200 })
+      if (url.includes("/api/v1/ui/commands/next")) return new Response(JSON.stringify([]), { status: 200 })
+      return new Response(null, { status: 204 })
+    }))
+
+    render(
+      <WorkspaceAgentFront
+        workspaceId={`plugin-tabs-${part}-session-switch`}
+        workspaceLayout="plugin-tabs"
+        chatPanel={SessionIdChatPanel}
+        sessions={[
+          { id: "s1", title: "First session" },
+          { id: "s2", title: "Second session" },
+        ]}
+        activeSessionId="s1"
+        onSwitchSession={onSwitchSession}
+        persistenceEnabled={false}
+      />,
+    )
+
+    const appNav = screen.getByLabelText("App navigation")
+    await user.click(within(appNav).getByRole("button", { name: action }))
+    await waitFor(() => expect(document.querySelector(`[data-boring-workspace-part="${part}"]`)).not.toBeNull())
+
+    await user.click(within(appNav).getByText("Second session"))
+
+    expect(onSwitchSession).toHaveBeenCalledWith("s2")
+    expect(document.querySelector(`[data-boring-workspace-part="${part}"]`)).toBeNull()
+    expect(visibleChatSessionIds()).toEqual(["s2"])
+  })
+
   it("opens Skills as a chat overlay and uses the UI bridge to open a skill", async () => {
     const user = userEvent.setup()
     vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {

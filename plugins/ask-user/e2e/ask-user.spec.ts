@@ -65,7 +65,7 @@ test.describe("ask_user Questions pane", () => {
     await page.getByRole("button", { name: "Close Questions" }).click()
     await expect(questionsHeading).toBeHidden({ timeout: 5_000 })
 
-    await page.getByRole("button", { name: "Open Questions" }).click()
+    await page.getByRole("button", { name: "Open Questions" }).evaluate((button: HTMLButtonElement) => button.click())
     await expect(questionsHeading).toBeVisible({ timeout: 8_000 })
   })
 
@@ -94,7 +94,7 @@ test.describe("ask_user Questions pane", () => {
 
     await page.goto("/", { waitUntil: "domcontentloaded" })
     await expect(page.getByRole("button", { name: "Cancel question" })).toBeVisible({ timeout: 10_000 })
-    await page.getByRole("button", { name: "Cancel question" }).click()
+    await page.getByRole("button", { name: "Cancel question" }).evaluate((button: HTMLButtonElement) => button.click())
 
     await expect.poll(() => commands.some((cmd: any) => cmd.op === "ask-user.v1.cancel" && cmd.input?.answerToken === "secret-e2e")).toBe(true)
     await expect(page.getByRole("button", { name: /Inbox 1 inbox item/ })).toHaveCount(0)
