@@ -53,9 +53,9 @@ Repo facts (verified — cite these exact paths):
 - **Tests to add:** none (doc). Add the entry's `## 19.` heading and any new cross-doc links to the markdown link-check surface if one exists (see Verification).
 - **Acceptance:** A future implementer reading only `docs/DECISIONS.md §19` understands why pure agents and boring-bash are separate packages and what the surface contract is, without rereading the framework research.
 
-### BBP0-002 — Ratify the 7 locked decisions from `08` — S
+### BBP0-002 — Ratify the locked decisions from `08` (currently 1–10) + the v2 north star — S
 
-- **Description:** Record the status of each of the 7 decisions in the "Decisions this file locks" section of `08-pluggable-agent-surfaces.md`. Enumerate them explicitly so nothing is silently dropped:
+- **Description:** Record the status of each decision in the "Decisions this file locks" section of `08-pluggable-agent-surfaces.md` (re-read it — the list below covers 1–7; `08` also locks **8. front chat provider unchanged**, **9. no feature-flag framework / version rides existing carriers**, **10. no retro-compat, no speculative abstraction** — ratify those identically → `decided`). Also ratify the **v2 north star** (`00-global-isa.md` "North star": eve-class UX, workspace as control plane, Flue internals) and **invariant 15 (EU-sovereign defaults)** as part of the §19 entry. Enumerate explicitly so nothing is silently dropped:
   1. **Wire protocol** — keep the existing harness stream unit `PiChatEvent` as the v1 event payload (matching 08's `AgentEvent.chunk: PiChatEvent` envelope), add the indexed `AgentEvent` envelope; no parallel event union. AI-SDK part alignment is revisited only at an AI-SDK v6 migration. → `decided`. Cross-reference `docs/DECISIONS.md §3` (existing "Wire protocol").
   2. **Pure mode** — pi-coding-agent with `runtime: 'none'` and sealed cwd, behind the Phase 1 audit; not a second harness. → `decided`.
   3. **Surfaces live outside the agent package** — per-channel packages (Flue model), not `boring-agent` subpaths. → `decided`.
@@ -66,7 +66,7 @@ Repo facts (verified — cite these exact paths):
 - **Files to touch:** `docs/DECISIONS.md` (either fold into §19 as a sub-list, or add a compact "§19a — v2 surface decisions ratification" table that lists all 7 with status + source pointer — pick one and be consistent).
 - **Implementation notes:** For decisions 4 and 5, note they are already shipped (#416) and this is ratification only. For the still-open items `00-global-isa.md` lists (surface `addressing → sessionId` persistence location; provider package permanence; multi-agent route shape; provisioning sharing default), record them as `deferred` with the owning phase, so nothing reads as silently decided.
 - **Tests to add:** none.
-- **Acceptance:** Each of the 7 has an explicit status and a source pointer to `08`; no decision is `open`; deferred items name their resolving phase.
+- **Acceptance:** Every locked decision in `08` (1–10) plus the north star + EU-sovereignty invariant has an explicit status and a source pointer; no decision is `open`; deferred items name their resolving phase.
 
 ### BBP0-003 — Annotate runtime docs + §7e pairing invariant — S
 

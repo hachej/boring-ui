@@ -172,7 +172,10 @@ Exit criteria: as v1.
 
 Unchanged from v1 (`agentId`-scoped routes or request-scope equivalent against the Phase 6 `AgentRegistry`; binding scope key and `sessionNamespace` include `agentId`; per-agent catalog/readiness; scoped session search; external hook target resolution).
 
-v2 note: surface adapters address agents through the same `agentId` scoping; a Slack channel or embed binds to one `agentId` per addressing entry.
+v2 additions:
+
+- surface adapters address agents through the same `agentId` scoping; a Slack channel or embed binds to one `agentId` per addressing entry;
+- **agent inspection endpoint** `GET /api/v1/agents/:agentId/info` (model, tools, readiness, channels, environments — eve `/eve/v1/info` analog) consumed by workspace panels: the steering-surface mechanism (08, 00 "North star").
 
 Exit criteria: as v1, plus: two surfaces bound to two agents in one workspace do not collide.
 

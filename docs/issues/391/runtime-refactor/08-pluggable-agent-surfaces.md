@@ -15,6 +15,17 @@ Target mounts, in order of delivery:
 3. **pi-excel / spreadsheet add-in** — reference proof that the agent embeds inside another product surface, with `runtime: none` or readonly `company_context` only.
 4. CLI / cron / API — headless invocations of the same contract.
 
+### The steering surface
+
+Surfaces are peers on the event contract, but they are not peers in the product (00 "North star"): the **boring-ui workspace is the control plane**. Concretely, the workspace is where you:
+
+- author and configure agents (north star: eve-style agent-as-directory, deferred until `AgentRegistry` — Phase 6/7);
+- wire channels and attach environments;
+- observe any session regardless of which surface it runs on — the replayable event log (T1) makes cross-surface observation free: the workspace attaches to a Slack-born session by `sessionId` like any other;
+- answer approvals centrally (same `resolveInput` path as every surface).
+
+Mechanism, not hand-waving: Phase 7 delivers an **agent inspection endpoint** (`GET /api/v1/agents/:agentId/info` — model, tools, readiness, channels, environments; eve's `/eve/v1/info` analog) consumed by workspace panels. Steering = the workspace consuming the same public contracts, with more of them — never private hooks into the core.
+
 ## What every framework converges on (adopted here)
 
 A surface and the agent core exchange exactly four things:

@@ -14,6 +14,15 @@ Today `@hachej/boring-agent` is too coupled to `Workspace + Sandbox + FileSearch
 - child apps such as Macro hosted inside the same full-app deployment without leaking tools/prompts/provisioning into generic workspaces;
 - **(v2)** the agent mountable behind any surface — boring-ui workspace (first-class UI), Slack, spreadsheet embeds (pi-excel), CLI/cron — each surface a thin ingress/egress adapter over one event-stream contract; see [`08-pluggable-agent-surfaces.md`](08-pluggable-agent-surfaces.md).
 
+### North star (v2 product vision)
+
+Land on an **eve-class UX** (`vercel/eve`) — author an agent, deploy it, converse with it from any channel, inspect it — but **steered from the boring-ui workspace** and **hosted in Europe**:
+
+- **eve's UX**: agent lifecycle as a product experience (create → configure → deploy → converse anywhere → inspect/observe), including the agent-as-directory authoring model (already a lesson below; delivery deferred until the `AgentRegistry` exists — Phase 6/7 — per the no-speculative-abstraction policy).
+- **Flue's internals**: durable indexed event streams, channel ingress packages, `SessionEnv`-shaped environments (already adopted — 08/09).
+- **boring-ui's existing UX**: the workspace stays the first-class surface and becomes the **control plane** — the one place to author agents, wire channels/environments, watch sessions across every surface, and answer approvals (08 "The steering surface").
+- **EU-sovereign hosting**: see invariant 15.
+
 ## Target package ownership
 
 | Package | Owns | Must not own |
@@ -106,6 +115,7 @@ This repo already has real seams. The refactor must extend them:
 12. **(v2)** Two handles: `sessionId` is runtime-owned; continuation/addressing is surface-owned. **"Platform addressing" = surface-native identifiers** (Slack team/channel/thread ts, workbook/sheet ids, workspace pane ids); public agent APIs never accept these. `SessionCtx { workspaceId, userId? }` is boring's OWN runtime tenancy context (the `SessionStore` key) and is explicitly ALLOWED on the façade — it is not platform addressing. A raw `x-boring-workspace-id` header resolves to a `SessionCtx` in the adapter.
 13. **(v2)** One approval channel: HITL is declared on the tool and travels as stream events; no per-surface approval side channels.
 14. **(v2)** Secrets stay on the trusted core side; credentials are brokered at the environment boundary and never enter the sandbox process or the model transcript.
+15. **(v2)** EU-sovereign defaults: every default component of the platform (event store, session store, sandbox providers, remote workers, channel egress) is self-hostable on EU infrastructure. US-hosted providers (e.g. `vercel-sandbox`) are strictly optional providers behind the standard capability matrix — never the default path, never a hard dependency.
 
 ## Issue coverage posture
 

@@ -77,3 +77,4 @@ No feature-flag framework. Version is carried where it already exists:
 - One approval channel: HITL declared on the tool, travels as stream events.
 - `filesystem + path + operation + actor` is the resource identity; path alone never selects a filesystem.
 - Existing workspace behavior and company_context no-leak conformance stay green in every phase.
+- EU-sovereign defaults (00 invariant 15): no bead may introduce a US-hosted service as a default or hard dependency; US-hosted providers are optional providers behind the capability matrix.
