@@ -1,6 +1,7 @@
 import { WORKSPACE_OPEN_PATH_SURFACE_KIND, captureFrontPlugin } from "@hachej/boring-workspace/plugin"
 import { describe, expect, it } from "vitest"
 import sharePointPlugin from "../front"
+import { previewRequestBody } from "../front/panels"
 import {
   BORING_SHAREPOINT_APP_LEFT_ACTION_ID,
   BORING_SHAREPOINT_OFFICE_PREVIEW_PANEL_ID,
@@ -59,6 +60,9 @@ describe("SharePoint front plugin", () => {
         officeKind: "excel",
         displayName: "forecast.xlsx",
         webUrl: excelRef.webUrl,
+        driveId: excelRef.driveId,
+        driveItemId: excelRef.driveItemId,
+        sharePointRef: excelRef,
       },
       score: 100,
     })
@@ -73,6 +77,12 @@ describe("SharePoint front plugin", () => {
       },
     })
     expect(resolver.resolve({ kind: WORKSPACE_OPEN_PATH_SURFACE_KIND, target: "notes.md" })).toBeUndefined()
+  })
+
+  it("builds preview request bodies without preview URLs", () => {
+    expect(previewRequestBody({ path: "forecast.xlsx.cloud.json", officeKind: "excel", displayName: "forecast.xlsx", sharePointRef: excelRef })).toEqual({ ref: excelRef })
+    expect(previewRequestBody({ path: "forecast.xlsx.cloud.json", officeKind: "excel", displayName: "forecast.xlsx", driveId: "drive-id", driveItemId: "item-id" })).toEqual({ driveId: "drive-id", driveItemId: "item-id" })
+    expect(previewRequestBody({ path: "forecast.xlsx.cloud.json", officeKind: "excel", displayName: "forecast.xlsx" })).toBeNull()
   })
 
   it("derives virtual display metadata without reading provider state", () => {

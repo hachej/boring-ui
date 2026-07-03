@@ -34,7 +34,7 @@ export function createSharePointServerPlugin(options: SharePointServerPluginOpti
     id: BORING_SHAREPOINT_PLUGIN_ID,
     label: BORING_SHAREPOINT_PLUGIN_LABEL,
     systemPrompt:
-      "SharePoint / Microsoft 365 integration is installed. It can resolve SharePoint-hosted Excel and PowerPoint documents into cloud refs; preview and Office edits are not enabled yet.",
+      "SharePoint / Microsoft 365 integration is installed. It can resolve SharePoint-hosted Excel and PowerPoint documents into cloud refs and request transient Office preview URLs on demand; Office edits are not enabled yet.",
     routes,
   })
 }
@@ -65,7 +65,7 @@ class UnconfiguredSharePointProvider implements SharePointProvider {
   }
 
   async createOfficePreviewUrl(): Promise<CreateOfficePreviewUrlResult> {
-    throw new SharePointProviderError(SHAREPOINT_ERROR_CODES.PREVIEW_UNAVAILABLE, "SharePoint Office preview URLs are not implemented yet", 501)
+    throw new SharePointProviderError(SHAREPOINT_ERROR_CODES.PREVIEW_UNAVAILABLE, this.message, 503)
   }
 
   async editOfficeDocument(_ref: SharePointDocumentRef, _request: OfficeEditRequest): Promise<OfficeEditResult> {

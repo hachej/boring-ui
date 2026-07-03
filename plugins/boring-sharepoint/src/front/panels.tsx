@@ -1,18 +1,22 @@
 import { useEffect, useState } from "react"
 import type { BoringFrontAppLeftOverlayProps, PaneProps } from "@hachej/boring-workspace/plugin"
-import type { IntegrationAuthState, OfficeDocumentSubtype } from "../shared"
+import type { CreateOfficePreviewUrlResult, IntegrationAuthState, OfficeDocumentSubtype, SharePointDocumentRef } from "../shared"
 
 export interface OfficePreviewPanelParams {
   path: string
   officeKind: OfficeDocumentSubtype
   displayName: string
   webUrl?: string
+  driveId?: string
+  driveItemId?: string
+  sharePointRef?: SharePointDocumentRef
 }
 
 export function OfficePreviewPanel({ params }: PaneProps<OfficePreviewPanelParams>) {
   const webUrl = safeHttpsUrl(params?.webUrl)
   const displayName = params?.displayName ?? "Office document"
   const officeKind = params?.officeKind === "powerpoint" ? "PowerPoint" : "Excel"
+  const preview = useOfficePreview(params)
 
   return (
     <section className="flex h-full min-h-0 flex-col bg-background p-4 text-sm text-foreground" data-boring-sharepoint-panel="office-preview">
@@ -41,8 +45,25 @@ export function OfficePreviewPanel({ params }: PaneProps<OfficePreviewPanelParam
           </button>
         )}
       </div>
-      <div className="rounded-lg border border-dashed border-border bg-muted/20 p-4 text-muted-foreground">
-        Office preview is not wired yet. A later SharePoint plugin PR will request a transient Microsoft preview URL on demand and render it here.
+      <div className="min-h-0 flex-1 overflow-hidden rounded-lg border border-border bg-muted/20">
+        {preview.status === "loading" ? (
+          <div className="p-4 text-muted-foreground">Requesting a transient Microsoft 365 preview URL…</div>
+        ) : preview.status === "error" ? (
+          <div className="p-4 text-muted-foreground" role="alert">
+            <p className="font-medium text-foreground">Preview unavailable</p>
+            <p className="mt-1">{preview.message}</p>
+          </div>
+        ) : preview.getUrl ? (
+          <iframe
+            title={`${displayName} preview`}
+            src={preview.getUrl}
+            className="h-full min-h-[480px] w-full border-0 bg-background"
+            sandbox="allow-downloads allow-forms allow-popups allow-popups-to-escape-sandbox allow-same-origin allow-scripts"
+            referrerPolicy="no-referrer"
+          />
+        ) : (
+          <div className="p-4 text-muted-foreground">Preview is unavailable for this SharePoint cloud reference.</div>
+        )}
       </div>
     </section>
   )
@@ -88,9 +109,60 @@ export function SharePointSettingsOverlay({ onClose }: BoringFrontAppLeftOverlay
   )
 }
 
+type OfficePreviewState =
+  | { status: "loading" }
+  | { status: "ready"; getUrl: string }
+  | { status: "error"; message: string }
+
 interface SharePointStatusViewModel {
   label: string
   detail: string
+}
+
+function useOfficePreview(params: OfficePreviewPanelParams | undefined): OfficePreviewState {
+  const [preview, setPreview] = useState<OfficePreviewState>({ status: "loading" })
+
+  useEffect(() => {
+    const body = previewRequestBody(params)
+    if (!body) {
+      setPreview({ status: "error", message: "This cloud reference does not include SharePoint drive identity." })
+      return
+    }
+
+    let cancelled = false
+    setPreview({ status: "loading" })
+    fetch("/api/sharepoint/preview", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(body),
+    })
+      .then(async (response) => {
+        const payload = await response.json().catch(() => undefined)
+        if (!response.ok) throw new Error(typeof payload?.message === "string" ? payload.message : "SharePoint preview request failed")
+        const getUrl = safeHttpsUrl((payload as CreateOfficePreviewUrlResult | undefined)?.getUrl)
+        if (!getUrl) throw new Error("SharePoint preview response did not include a safe HTTPS URL")
+        return getUrl
+      })
+      .then((getUrl) => {
+        if (!cancelled) setPreview({ status: "ready", getUrl })
+      })
+      .catch((error) => {
+        if (!cancelled) {
+          setPreview({ status: "error", message: error instanceof Error ? error.message : "SharePoint preview request failed" })
+        }
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [params])
+
+  return preview
+}
+
+export function previewRequestBody(params: OfficePreviewPanelParams | undefined): { ref: SharePointDocumentRef } | { driveId: string; driveItemId: string } | null {
+  if (params?.sharePointRef) return { ref: params.sharePointRef }
+  if (params?.driveId && params.driveItemId) return { driveId: params.driveId, driveItemId: params.driveItemId }
+  return null
 }
 
 function useSharePointStatus(): SharePointStatusViewModel {

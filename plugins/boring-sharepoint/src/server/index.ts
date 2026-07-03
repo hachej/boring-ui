@@ -38,6 +38,7 @@ export {
   ARCADE_SHAREPOINT_TOOL_NAMES,
   ArcadeSharePointProvider,
   SharePointProviderError,
+  toOfficePreviewUrlResult,
   toSharePointDocumentRef,
   type ArcadeSharePointProviderOptions,
 } from "./sharePointProvider"

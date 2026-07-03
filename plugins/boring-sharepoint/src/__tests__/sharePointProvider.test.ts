@@ -117,6 +117,40 @@ describe("ArcadeSharePointProvider", () => {
     })
   })
 
+  it("creates a transient Office preview URL through the custom Arcade tool", async () => {
+    const executeTool = vi.fn().mockResolvedValue({
+      success: true,
+      output: { value: { getUrl: "https://tenant.sharepoint.com/:x:/preview.aspx?token=transient", expiresAt: "2026-07-03T15:00:00Z" } },
+    })
+    const provider = new ArcadeSharePointProvider({ runtime: { executeTool, startAuthorization: vi.fn() } })
+
+    await expect(provider.createOfficePreviewUrl({ ...xlsxItemValue, kind: "office-cloud-document", provider: "sharepoint", version: 1, officeKind: "excel", mimeType: EXCEL_MIME_TYPE, siteId: siteValue.id, driveId: xlsxItemValue.parentReference.driveId, driveItemId: xlsxItemValue.id }, ctx)).resolves.toEqual({
+      getUrl: "https://tenant.sharepoint.com/:x:/preview.aspx?token=transient",
+      expiresAt: "2026-07-03T15:00:00Z",
+    })
+    expect(executeTool).toHaveBeenCalledWith({
+      toolName: ARCADE_SHAREPOINT_TOOL_NAMES.createPreviewUrl,
+      userId: ctx.actorUserId,
+      input: { drive_id: xlsxItemValue.parentReference.driveId, item_id: xlsxItemValue.id, viewer: "office" },
+    })
+  })
+
+  it("rejects missing or non-HTTPS preview URLs without echoing returned URL data", async () => {
+    const providerWithPreview = (value: Record<string, unknown>) =>
+      new ArcadeSharePointProvider({
+        runtime: { executeTool: vi.fn().mockResolvedValue({ success: true, output: { value } }), startAuthorization: vi.fn() },
+      })
+
+    await expect(providerWithPreview({}).createOfficePreviewUrl({ driveId: "drive-id", driveItemId: "item-id" }, ctx)).rejects.toMatchObject({
+      code: SHAREPOINT_ERROR_CODES.PREVIEW_UNAVAILABLE,
+      message: expect.not.stringContaining("http://tenant/preview"),
+    })
+    await expect(providerWithPreview({ getUrl: "http://tenant/preview" }).createOfficePreviewUrl({ driveId: "drive-id", driveItemId: "item-id" }, ctx)).rejects.toMatchObject({
+      code: SHAREPOINT_ERROR_CODES.PREVIEW_UNAVAILABLE,
+      message: expect.not.stringContaining("http://tenant/preview"),
+    })
+  })
+
   it("rejects mismatched Office extension and MIME metadata with a stable code", async () => {
     const providerWithItem = (item: Record<string, unknown>) =>
       new ArcadeSharePointProvider({

@@ -15,6 +15,17 @@ describe("Arcade package boundaries", () => {
 
     expect(forbiddenMatches).toEqual([])
   })
+
+  it("does not call Microsoft Graph directly from plugin source", () => {
+    const forbiddenMatches = listSourceFiles("src")
+      .filter((path) => !path.includes("/__tests__/"))
+      .flatMap((path) => {
+        const source = readFileSync(path, "utf8")
+        return /graph\.microsoft\.com|driveItem:preview/i.test(source) ? [relative(packageRoot.pathname, path)] : []
+      })
+
+    expect(forbiddenMatches).toEqual([])
+  })
 })
 
 function listSourceFiles(path: string): string[] {

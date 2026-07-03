@@ -93,6 +93,6 @@ export interface SharePointProvider {
   getStatus(ctx: SharePointProviderContext): Promise<IntegrationAuthState>
   authorize(ctx: SharePointProviderContext): Promise<IntegrationAuthState>
   resolveDriveItem(input: ResolveDriveItemInput, ctx: SharePointProviderContext): Promise<SharePointDocumentRef>
-  createOfficePreviewUrl(ref: SharePointDocumentRef, ctx: SharePointProviderContext): Promise<CreateOfficePreviewUrlResult>
+  createOfficePreviewUrl(input: SharePointDocumentRef | CreateOfficePreviewUrlInput, ctx: SharePointProviderContext): Promise<CreateOfficePreviewUrlResult>
   editOfficeDocument(ref: SharePointDocumentRef, request: OfficeEditRequest, ctx: SharePointProviderContext): Promise<OfficeEditResult>
 }
