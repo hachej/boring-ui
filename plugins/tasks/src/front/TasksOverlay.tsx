@@ -1,8 +1,12 @@
 import { useAppLeftOverlayChrome, type BoringFrontAppLeftOverlayProps } from "@hachej/boring-workspace/plugin"
+import { createGitHubIssuesAdapter } from "./githubIssuesAdapter"
 import { createMockTaskAdapter } from "./mockAdapter"
 import { TaskKanbanBoard } from "./TaskKanbanBoard"
 
-const demoAdapters = [createMockTaskAdapter()]
+const demoAdapters = [
+  createMockTaskAdapter(),
+  createGitHubIssuesAdapter({ owner: "hachej", repo: "boring-ui" }),
+]
 
 function TasksGlyph({ className }: { className?: string }) {
   return (
