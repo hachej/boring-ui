@@ -4,6 +4,7 @@ import { createElement, useMemo, type ReactNode } from "react"
 import type { CapturedFrontPlugin } from "../../shared/plugins/frontFactory"
 import type { AppLeftPaneAction } from "../../front/layout/plugin-tabs/AppLeftPane"
 import { AppLeftOverlayChromeProvider } from "../../front/layout/plugin-tabs/AppLeftOverlayChromeContext"
+import { PluginErrorBoundary } from "../../front/plugin/PluginErrorBoundary"
 
 export type AppLeftOverlayId = string | null
 
@@ -36,14 +37,22 @@ export function usePluginAppLeftActions({
       || (a.plugin.label ?? a.plugin.id).localeCompare(b.plugin.label ?? b.plugin.id)
       || a.action.label.localeCompare(b.action.label)
       || a.action.id.localeCompare(b.action.id))
-    .map(({ action }) => {
+    .map(({ plugin, action }) => {
       const Icon = action.icon
       const Trailing = action.trailing
       return {
         id: action.id,
         label: action.label,
-        icon: Icon ? createElement(Icon, { className: "h-4 w-4" }) : null,
-        trailing: Trailing ? createElement(Trailing) : undefined,
+        icon: Icon ? createElement(
+          PluginErrorBoundary,
+          { pluginId: plugin.id, contributionKind: "app-left-action", contributionId: `${action.id}:icon` },
+          createElement(Icon, { className: "h-4 w-4" }),
+        ) : null,
+        trailing: Trailing ? createElement(
+          PluginErrorBoundary,
+          { pluginId: plugin.id, contributionKind: "app-left-action", contributionId: `${action.id}:trailing` },
+          createElement(Trailing),
+        ) : undefined,
         emphasis: action.emphasis,
         onClick: () => {
           setActiveOverlay((current) => current === action.id ? null : action.id)
@@ -67,12 +76,16 @@ export function PluginAppLeftOverlayHost({
 }): ReactNode {
   if (!activeOverlay) return null
   const entry = plugins
-    .flatMap((plugin) => plugin.registrations.appLeftActions)
-    .find((action) => action.id === activeOverlay)
-  if (!entry?.overlay) return null
+    .flatMap((plugin) => plugin.registrations.appLeftActions.map((action) => ({ plugin, action })))
+    .find(({ action }) => action.id === activeOverlay)
+  if (!entry?.action.overlay) return null
   return createElement(
     AppLeftOverlayChromeProvider,
     { value: { headerInsetStart: Boolean(headerInsetStart), headerInsetEnd: Boolean(headerInsetEnd) } },
-    createElement(entry.overlay, { onClose }),
+    createElement(
+      PluginErrorBoundary,
+      { pluginId: entry.plugin.id, contributionKind: "app-left-action", contributionId: entry.action.id },
+      createElement(entry.action.overlay, { onClose }),
+    ),
   )
 }

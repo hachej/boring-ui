@@ -36,6 +36,15 @@ export {
   isValidBoringPluginId,
 } from "./shared/plugins/manifest"
 export { WORKSPACE_OPEN_PATH_SURFACE_KIND } from "./shared/types/surface"
+export { useAppLeftOverlayChrome } from "./shared/plugins/appLeftOverlayChrome"
+export type { AppLeftOverlayChromeValue } from "./shared/plugins/appLeftOverlayChrome"
+export { useWorkspaceShellCapabilities } from "./shared/plugins/workspaceShellCapabilities"
+export type {
+  WorkspaceShellAnchorRect,
+  WorkspaceShellArtifactTarget,
+  WorkspaceShellCapabilityResult,
+  WorkspaceShellCapabilities,
+} from "./shared/plugins/workspaceShellCapabilities"
 
 // In-process UI bridge access for plugin Pi slash commands. Lets a command
 // open panels / show notifications directly (no BORING_UI_URL, no fetch).
