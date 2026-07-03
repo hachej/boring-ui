@@ -29,6 +29,7 @@ export interface UseFilePaneReturn {
   // Content state
   content: string | null
   isDirty: boolean
+  isReadonly: boolean
 
   // Conflict handling
   conflict: FileConflictError | null
@@ -84,8 +85,12 @@ export function useFilePane(options: UseFilePaneOptions): UseFilePaneReturn {
   const fallbackPanelIdRef = useRef(panelId ?? `file-pane:${nextFallbackPanelId++}`)
   const lifecyclePanelId = panelId ?? fallbackPanelIdRef.current
 
+  // Readonly/readwrite is a trusted server binding property returned by the file
+  // route. Do not infer access from filesystem ids; arbitrary named filesystems
+  // may be readonly or readwrite.
   const fileContentOptions = createIfMissing === undefined ? { filesystem } : { filesystem, createIfMissing }
   const { data: fileData, isLoading, error, refetch: refetchFileData } = useFileContent(activePath, fileContentOptions)
+  const isReadonly = fileData?.access === "readonly"
   const { mutateAsync: writeFile } = useFileWrite()
 
   // Local content state
@@ -137,7 +142,7 @@ export function useFilePane(options: UseFilePaneOptions): UseFilePaneReturn {
 
   // Editor lifecycle adapter
   const adapter: EditorLifecycleAdapter | null =
-    activePath && content != null
+    activePath && content != null && !isReadonly
       ? {
           isDirty: () => dirtyRef.current,
           save: async () => {
@@ -222,28 +227,29 @@ export function useFilePane(options: UseFilePaneOptions): UseFilePaneReturn {
   // next autosave force-overwrites the external change — matching the
   // 409-recovery path in adapter.save above (continued typing wins).
   useEffect(() => {
-    if (!lifecycle.externalChangeWhileDirty || fileData?.mtimeMs == null) return
+    if (isReadonly || !lifecycle.externalChangeWhileDirty || fileData?.mtimeMs == null) return
     setConflict(new FileConflictError(activePath ?? path, fileData.mtimeMs, baselineMtimeRef.current))
     baselineMtimeRef.current = fileData.mtimeMs
     lifecycle.ackExternalChange()
-  }, [activePath, lifecycle.externalChangeWhileDirty, lifecycle, fileData, path])
+  }, [activePath, isReadonly, lifecycle.externalChangeWhileDirty, lifecycle, fileData, path])
 
   // Tab title with dirty indicator
   const fileName = activePath ? (activePath.split("/").pop() ?? activePath) : ""
   const [tabTitle, setTabTitle] = useState("")
 
   useEffect(() => {
-    const title = fileName ? (lifecycle.isDirty ? `${fileName} ●` : fileName) : ""
+    const title = fileName ? (!isReadonly && lifecycle.isDirty ? `${fileName} ●` : fileName) : ""
     setTabTitle(title)
-  }, [fileName, lifecycle.isDirty])
+  }, [fileName, isReadonly, lifecycle.isDirty])
 
   // Actions
   const setContent = useCallback((newContent: string) => {
+    if (isReadonly) return
     setContentState(newContent)
     contentRef.current = newContent
     dirtyRef.current = true
     lifecycle.markDirty()
-  }, [setContentState, lifecycle])
+  }, [isReadonly, setContentState, lifecycle])
 
   const onReloadFromServer = useCallback(async () => {
     if (!activePath) return
@@ -266,6 +272,7 @@ export function useFilePane(options: UseFilePaneOptions): UseFilePaneReturn {
   }, [activePath, lifecycle, refetchFileData, setContentState])
 
   const onOverwrite = useCallback(async () => {
+    if (isReadonly) return
     // Bump the save generation so any pending autosave (e.g., one that the
     // watchdog already abandoned) cannot later resolve and undo our state
     // mutations below.
@@ -295,23 +302,25 @@ export function useFilePane(options: UseFilePaneOptions): UseFilePaneReturn {
     } catch {
       // Leave conflict UI up so user can retry
     }
-  }, [activePath, filesystem, writeFile])
+  }, [activePath, filesystem, isReadonly, writeFile])
 
   const save = useCallback(async () => {
-    if (!adapter || !dirtyRef.current) return
+    if (isReadonly || !adapter || !dirtyRef.current) return
     await adapter.save()
-  }, [adapter])
+  }, [adapter, isReadonly])
 
   const flushSave = useCallback(async () => {
+    if (isReadonly) return
     await lifecycle.flushSave()
-  }, [lifecycle])
+  }, [isReadonly, lifecycle])
 
   return {
     isLoading,
     error: error as Error | null,
     content,
-    isDirty: lifecycle.isDirty,
-    conflict,
+    isDirty: isReadonly ? false : lifecycle.isDirty,
+    isReadonly,
+    conflict: isReadonly ? null : conflict,
     onReloadFromServer,
     onOverwrite,
     setContent,

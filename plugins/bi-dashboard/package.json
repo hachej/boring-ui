@@ -1,6 +1,6 @@
 {
   "name": "@hachej/boring-bi-dashboard",
-  "version": "0.1.61",
+  "version": "0.1.64",
   "type": "module",
   "private": false,
   "license": "MIT",
@@ -50,7 +50,9 @@
     },
     "./package.json": "./package.json"
   },
-  "sideEffects": false,
+  "sideEffects": [
+    "*.css"
+  ],
   "scripts": {
     "build": "tsup",
     "typecheck": "tsc --noEmit",
@@ -70,13 +72,17 @@
     "@hachej/boring-data-bridge": "workspace:*",
     "@hachej/boring-generated-pane": "workspace:*",
     "@hachej/boring-ui-kit": "workspace:*",
+    "@openuidev/react-headless": "0.9.1",
+    "@openuidev/react-lang": "0.2.8",
+    "@openuidev/react-ui": "0.12.1",
     "@perspective-dev/client": "4.4.1",
     "@perspective-dev/server": "4.4.1",
     "@perspective-dev/viewer": "4.4.1",
     "@perspective-dev/viewer-d3fc": "4.4.1",
     "@perspective-dev/viewer-datagrid": "4.4.1",
     "lucide-react": "^1.8.0",
-    "zod": "^4.3.6"
+    "zod": "^4.3.6",
+    "zustand": "^4.5.7"
   },
   "devDependencies": {
     "@duckdb/node-api": "1.5.2-r.1",

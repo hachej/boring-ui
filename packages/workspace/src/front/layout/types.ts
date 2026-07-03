@@ -14,6 +14,8 @@ export interface ChatLayoutProps {
   center?: string
   centerParams?: Record<string, unknown>
   chatPanes?: ChatPaneDescriptor[]
+  /** Optional host actions rendered in the active chat pane header. */
+  chatTopActions?: ReactNode
   activeChatPaneId?: string | null
   onActiveChatPaneChange?: (id: string) => void
   onCloseChatPane?: (id: string) => void
