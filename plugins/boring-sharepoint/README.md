@@ -64,7 +64,7 @@ app-left action id: boring-sharepoint.settings
 label: SharePoint
 ```
 
-The app-left action opens the placeholder SharePoint / Microsoft 365 status overlay. The command opens the same status placeholder as a center panel. A future PR can replace the placeholder body with provider status and authorization controls without changing the menu path.
+The app-left action and command open the SharePoint / Microsoft 365 status surface. It now reads provider status from the plugin-owned route; future PRs can add authorization controls without changing the menu path.
 
 ## Package surfaces
 
