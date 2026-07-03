@@ -16,9 +16,9 @@ import { PostgresUserStore } from '../db/stores/PostgresUserStore'
 import { PostgresWorkspaceStore } from '../db/stores/PostgresWorkspaceStore'
 import { registerInviteRoutes, registerMemberRoutes, registerWorkspaceRoutes } from '../routes'
 import { runConcurrent } from './_concurrency'
-import { withBeadId } from './_setup'
+import { withTaskId } from './_setup'
 
-const BEAD_ID = 'boring-ui-v2-mo58'
+const TASK_ID = 'boring-ui-v2-mo58'
 const TEST_DB_URL = process.env.DATABASE_URL ?? 'postgres://ubuntu:test@localhost/boring_ui_test'
 const APP_ID = 'race-conditions-app'
 const PASSWORD = 'Zk8$mN!qR2xFgWpJ'
@@ -205,11 +205,11 @@ afterAll(async () => {
 describe('Race conditions integration (Postgres)', () => {
   it(
     'TOCTOU invite accept: exactly one concurrent accept succeeds',
-    withBeadId(BEAD_ID, async ({ logEvent, assertionPassed }) => {
+    withTaskId(TASK_ID, async ({ logEvent, assertionPassed }) => {
       logEvent('setup.start', {
         race: 'invite_accept_toctou',
         phase: 'race.test.start',
-        beadId: BEAD_ID,
+        taskId: TASK_ID,
       })
 
       const owner = await signUpUser('owner')
@@ -285,11 +285,11 @@ describe('Race conditions integration (Postgres)', () => {
 
   it(
     'last-owner deletion race: two concurrent owner removals produce exactly one winner',
-    withBeadId(BEAD_ID, async ({ logEvent, assertionPassed }) => {
+    withTaskId(TASK_ID, async ({ logEvent, assertionPassed }) => {
       logEvent('setup.start', {
         race: 'last_owner_delete_race',
         phase: 'race.test.start',
-        beadId: BEAD_ID,
+        taskId: TASK_ID,
       })
 
       const ownerA = await signUpUser('owner-a')
@@ -354,11 +354,11 @@ describe('Race conditions integration (Postgres)', () => {
 
   it(
     'default-promotion: sole-owner account deletion promotes oldest editor; no-editor workspace is deleted',
-    withBeadId(BEAD_ID, async ({ logEvent, assertionPassed }) => {
+    withTaskId(TASK_ID, async ({ logEvent, assertionPassed }) => {
       logEvent('setup.start', {
         race: 'default_promotion',
         phase: 'race.test.start',
-        beadId: BEAD_ID,
+        taskId: TASK_ID,
       })
 
       const owner = await signUpUser('promote-owner')

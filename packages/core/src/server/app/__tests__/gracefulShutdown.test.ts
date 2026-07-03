@@ -2,9 +2,9 @@ import { spawn, type ChildProcess } from 'node:child_process'
 import { dirname, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { afterEach, describe, expect, it } from 'vitest'
-import { withBeadId } from '../../__tests__/_setup'
+import { withTaskId } from '../../__tests__/_setup'
 
-const BEAD_ID = 'boring-ui-v2-r8u5'
+const TASK_ID = 'boring-ui-v2-r8u5'
 const __dirname = dirname(fileURLToPath(import.meta.url))
 const packageRoot = resolve(__dirname, '../../../../')
 const harnessPath = resolve(__dirname, 'fixtures/shutdownHarness.ts')
@@ -90,7 +90,7 @@ async function waitForExit(
 describe('graceful shutdown (SIGTERM/SIGINT)', () => {
   it(
     'clean drain: exits 0 on SIGTERM and closes db pool',
-    withBeadId(BEAD_ID, async ({ logger, assertionPassed }) => {
+    withTaskId(TASK_ID, async ({ logger, assertionPassed }) => {
       logger.info({ event: 'shutdown.test.start', mode: 'clean' })
       const { child, readOutput } = spawnHarness('clean')
 
@@ -118,7 +118,7 @@ describe('graceful shutdown (SIGTERM/SIGINT)', () => {
 
   it(
     'timeout path: exits 1 and logs shutdown:grace-exceeded after ~30s',
-    withBeadId(BEAD_ID, async ({ logger, assertionPassed }) => {
+    withTaskId(TASK_ID, async ({ logger, assertionPassed }) => {
       logger.info({ event: 'shutdown.test.start', mode: 'slow' })
       const { child, readOutput } = spawnHarness('slow')
 

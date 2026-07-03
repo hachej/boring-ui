@@ -11,7 +11,7 @@ Models consulted in round 4:
 ## Verdict
 
 Round 4 reached near steady-state. xAI reported no P0/P1 issues. Opus reported the
-plan ready for bead conversion after localized P1 clarifications. GPT-5.5 found
+plan ready for task conversion after localized P1 clarifications. GPT-5.5 found
 three P1s, all integrated.
 
 ## Integrated changes
