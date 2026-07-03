@@ -3,9 +3,28 @@
 import { Clock3, MessageSquarePlus, Pin, X } from "lucide-react"
 import { cn } from "../../lib/utils"
 import { CHAT_SESSION_DRAG_TYPE } from "../ChatPaneStage"
+import type { WorkspaceAttentionSessionBadge } from "../../attention/WorkspaceAttentionProvider"
 import type { AppLeftPaneSession } from "./AppLeftPane"
 
 export type AppSessionRowState = "normal" | "open" | "active"
+
+function sessionBadgeToneClassName(tone: WorkspaceAttentionSessionBadge["tone"]): string {
+  switch (tone) {
+    case "danger": return "bg-destructive/12 text-destructive"
+    case "warning": return "bg-amber-500/12 text-amber-700 dark:text-amber-300"
+    case "neutral": return "bg-foreground/[0.07] text-muted-foreground"
+    default: return "bg-[color:var(--accent)]/12 text-[color:var(--accent)]"
+  }
+}
+
+function sessionBadgeDotClassName(tone: WorkspaceAttentionSessionBadge["tone"]): string {
+  switch (tone) {
+    case "danger": return "bg-destructive"
+    case "warning": return "bg-amber-500"
+    case "neutral": return "bg-muted-foreground/70"
+    default: return "bg-[color:var(--accent)]"
+  }
+}
 
 export function AppSessionRow({
   session,
@@ -13,6 +32,8 @@ export function AppSessionRow({
   pinned,
   canSplit = true,
   canPin = true,
+  working = false,
+  attentionBadge,
   onSwitch,
   onOpenAsPane,
   onTogglePinned,
@@ -25,6 +46,8 @@ export function AppSessionRow({
   canSplit?: boolean
   /** Whether this session belongs to the active project's pinned-session scope. */
   canPin?: boolean
+  working?: boolean
+  attentionBadge?: WorkspaceAttentionSessionBadge
   onSwitch: (id: string) => void
   onOpenAsPane: (id: string) => void
   onTogglePinned: (id: string) => void
@@ -49,14 +72,15 @@ export function AppSessionRow({
         event.dataTransfer.setData("text/plain", title)
         event.dataTransfer.effectAllowed = "copyMove"
       } : undefined}
+      onClick={activate}
       className={cn(
         "group flex min-h-8 w-full items-center gap-2 rounded-md border px-2.5 py-1 text-left transition-colors",
         state === "active"
           // Subtle accent-tinted fill, no heavy colored border (Linear/Stripe style).
           ? "border-transparent bg-[color:oklch(from_var(--accent)_l_c_h/0.14)] text-foreground"
           : state === "open"
-            ? "border-transparent bg-foreground/[0.05] text-foreground/90 hover:bg-foreground/[0.07]"
-            : "border-transparent text-foreground/78 hover:bg-foreground/[0.055] hover:text-foreground",
+            ? "cursor-pointer border-transparent bg-foreground/[0.05] text-foreground/90 hover:bg-foreground/[0.07]"
+            : "cursor-pointer border-transparent text-foreground/78 hover:bg-foreground/[0.055] hover:text-foreground",
       )}
     >
       <Clock3
@@ -69,13 +93,35 @@ export function AppSessionRow({
       />
       <button
         type="button"
-        onClick={activate}
+        onClick={(event) => {
+          event.stopPropagation()
+          activate()
+        }}
         disabled={state === "active"}
         className="min-w-0 flex-1 truncate rounded text-left text-[13px] font-medium leading-5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40 disabled:cursor-default"
         title={title}
       >
         {title}
       </button>
+      {attentionBadge ? (
+        <span
+          data-boring-workspace-part="app-session-badge"
+          data-boring-badge={attentionBadge.kind}
+          className={cn("pointer-events-none inline-flex shrink-0 items-center gap-1 rounded-full px-1.5 py-0.5 text-[10px] font-medium leading-none", sessionBadgeToneClassName(attentionBadge.tone))}
+        >
+          <span aria-hidden="true" className={cn("h-1.5 w-1.5 animate-pulse rounded-full", sessionBadgeDotClassName(attentionBadge.tone))} />
+          {attentionBadge.label}
+        </span>
+      ) : working ? (
+        <span
+          data-boring-workspace-part="app-session-badge"
+          data-boring-badge="working"
+          className="pointer-events-none inline-flex shrink-0 items-center gap-1 rounded-full bg-foreground/[0.07] px-1.5 py-0.5 text-[10px] font-medium leading-none text-muted-foreground"
+        >
+          <span aria-hidden="true" className="h-1.5 w-1.5 animate-pulse rounded-full bg-[color:var(--accent)]" />
+          working
+        </span>
+      ) : null}
       {canPin ? (
         <span
           data-boring-workspace-part="app-session-pin-action"
@@ -89,7 +135,10 @@ export function AppSessionRow({
             aria-label={pinned ? `Unpin ${title}` : `Pin ${title}`}
             title={pinned ? "Unpin" : "Pin"}
             aria-pressed={pinned}
-            onClick={() => onTogglePinned(session.id)}
+            onClick={(event) => {
+              event.stopPropagation()
+              onTogglePinned(session.id)
+            }}
             className={cn(
               "grid size-6 place-items-center rounded-md text-muted-foreground hover:bg-background hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40",
               pinned && "text-[color:var(--accent)]",
@@ -112,7 +161,10 @@ export function AppSessionRow({
               type="button"
               aria-label={`Open ${title} in new chat pane`}
               title="Open in new chat pane"
-              onClick={() => onOpenAsPane(session.id)}
+              onClick={(event) => {
+                event.stopPropagation()
+                onOpenAsPane(session.id)
+              }}
               className="grid size-6 place-items-center rounded-md text-muted-foreground hover:bg-background hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
             >
               <MessageSquarePlus className="h-3.5 w-3.5" strokeWidth={1.75} />
@@ -123,7 +175,10 @@ export function AppSessionRow({
               type="button"
               aria-label={`Delete ${title}`}
               title="Delete"
-              onClick={() => onDelete(session.id)}
+              onClick={(event) => {
+                event.stopPropagation()
+                onDelete(session.id)
+              }}
               className="grid size-6 place-items-center rounded-md text-muted-foreground hover:bg-background hover:text-destructive focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
             >
               <X className="h-3.5 w-3.5" strokeWidth={1.75} />

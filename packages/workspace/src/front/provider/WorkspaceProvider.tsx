@@ -166,6 +166,7 @@ export interface RegisteredPluginMeta {
 export interface WorkspaceContextValue {
   chatPanel: WorkspaceChatPanelComponent | null
   registeredPlugins: RegisteredPluginMeta[]
+  workspaceId?: string
   debug: boolean
 }
 
@@ -355,6 +356,7 @@ export interface WorkspaceProviderProps {
    * `@hachej/boring-workspace/plugin`.
    */
   plugins?: BoringFrontFactoryWithId[]
+  capturedPlugins?: CapturedFrontPlugin[]
   excludeDefaults?: string[]
   panels?: PanelConfig[]
   commands?: CommandConfig[]
@@ -368,6 +370,10 @@ export interface WorkspaceProviderProps {
   activeSessionId?: string | null
   /** Session ids that are currently open in chat panes, for plugins that must avoid opening closed-session UI. */
   openSessionIds?: readonly string[]
+  /** Authoritative chat session ids used to drop stale session-scoped Inbox/attention entries. */
+  attentionSessionIds?: readonly string[]
+  /** False while session data is loading or paginated; prevents pruning valid off-page attention entries. */
+  attentionSessionsAuthoritative?: boolean
   defaultTheme?: "light" | "dark" | undefined
   onThemeChange?: (theme: "light" | "dark") => void
   workspaceId?: string
@@ -413,6 +419,7 @@ export function WorkspaceProvider({
   children,
   chatPanel,
   plugins,
+  capturedPlugins,
   excludeDefaults,
   panels,
   commands,
@@ -423,6 +430,8 @@ export function WorkspaceProvider({
   apiTimeout,
   activeSessionId,
   openSessionIds,
+  attentionSessionIds,
+  attentionSessionsAuthoritative = true,
   defaultTheme,
   onThemeChange,
   workspaceId,
@@ -525,6 +534,7 @@ export function WorkspaceProvider({
     const bootstrapResult = bootstrap({
       chatPanel: chatPanel ?? NullChatPanel,
       plugins: userPlugins,
+      capturedPlugins,
       defaults: defaultPlugins,
       excludeDefaults,
       registries: { panels: pr, workspaceSources: ws, commands: cr, catalogs: cat, surfaceResolvers: sr },
@@ -571,7 +581,7 @@ export function WorkspaceProvider({
       pluginMetas: metas,
       pluginsWithBindings: bootstrapResult.plugins,
     }
-  }, [capabilities, chatPanel, plugins, excludeDefaults, panels])
+  }, [capabilities, capturedPlugins, chatPanel, plugins, excludeDefaults, panels])
 
   const onThemeChangeRef = useRef(onThemeChange)
   onThemeChangeRef.current = onThemeChange
@@ -620,8 +630,8 @@ export function WorkspaceProvider({
     [bridgeConnected],
   )
   const workspaceValue = useMemo<WorkspaceContextValue>(
-    () => ({ chatPanel: chatPanel ?? null, registeredPlugins: pluginMetas, debug }),
-    [chatPanel, pluginMetas, debug],
+    () => ({ chatPanel: chatPanel ?? null, registeredPlugins: pluginMetas, workspaceId, debug }),
+    [chatPanel, debug, pluginMetas, workspaceId],
   )
 
   return (
@@ -629,7 +639,7 @@ export function WorkspaceProvider({
       <ThemeContext.Provider value={themeValue}>
         <WorkspaceBridgeContext.Provider value={bridgeValue}>
           <FullPageBasePathProvider basePath={fullPageBasePath}>
-            <WorkspaceAttentionProvider>
+            <WorkspaceAttentionProvider knownSessionIds={attentionSessionIds} knownSessionsAuthoritative={attentionSessionsAuthoritative}>
           <PluginErrorProvider>
             <RegistryProvider
               panelRegistry={panelRegistry}
