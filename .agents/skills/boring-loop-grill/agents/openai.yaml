@@ -1,0 +1,4 @@
+interface:
+  display_name: "Boring Loop Grill"
+  short_description: "Clarify blocked Kanzen issues."
+  default_prompt: "Run /loop-grill for the selected GitHub issue."

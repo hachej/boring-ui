@@ -807,9 +807,9 @@ Keep v1 tests focused on the user-critical contract.
 
 ---
 
-## 13. Bead mapping
+## 13. Task mapping
 
-Current beads for this unified plan:
+Current tasks for this unified plan:
 
 - `boring-ui-v2-reorg-31w6` — minimal authenticated workspace warmup coordinator
 - `boring-ui-v2-reorg-iitg` — render workspace chat shell after identity match before preload

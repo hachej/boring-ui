@@ -2,10 +2,10 @@
 import { act, renderHook } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
-import { withBeadId } from '../../server/__tests__/_setup'
+import { withTaskId } from '../../server/__tests__/_setup'
 import { useKeyboardShortcuts } from '../hooks/useKeyboardShortcuts'
 
-const BEAD_ID = 'boring-ui-v2-d37p'
+const TASK_ID = 'boring-ui-v2-d37p'
 
 function setPlatform(platform: string): void {
   Object.defineProperty(window.navigator, 'platform', {
@@ -35,7 +35,7 @@ afterEach(() => {
 describe('useKeyboardShortcuts hook', () => {
   it(
     'maps Cmd+K to metaKey on Mac',
-    withBeadId(BEAD_ID, async ({ assertionPassed }) => {
+    withTaskId(TASK_ID, async ({ assertionPassed }) => {
       setPlatform('MacIntel')
       const handler = vi.fn()
 
@@ -54,7 +54,7 @@ describe('useKeyboardShortcuts hook', () => {
 
   it(
     'maps Cmd+K to ctrlKey on Windows/Linux and cleans up on unmount',
-    withBeadId(BEAD_ID, async ({ assertionPassed }) => {
+    withTaskId(TASK_ID, async ({ assertionPassed }) => {
       setPlatform('Win32')
       const handler = vi.fn()
 

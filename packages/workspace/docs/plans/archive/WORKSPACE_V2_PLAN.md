@@ -32,14 +32,14 @@ Use this section as the live handoff ledger while executing this plan.
   - **Phase 2 (Panes):** FileTree (react-arborist) ✓, MarkdownEditor (tiptap, 10 extensions) ✓, CodeEditor (CodeMirror 6) ✓, DataCatalogPane ✓, EmptyPane ✓, DataProvider + useFileContent/useFileList/useFileWrite ✓, useEditorLifecycle shared hook ✓
   - **Phase 3a (Integration):** Bridge SSE client ✓, Bridge command dispatch via Zustand ✓, ArtifactSurfacePane with nested DockviewShell ✓, WorkspaceProvider ✓
   - **Phase 4 (Polish):** useTheme hook ✓, CommandPalette (Cmd+P/K) ✓, ResponsiveDockviewShell with Sheet for mobile ✓, PanelErrorBoundary ✓, Testing module (@boring/workspace/testing) ✓
-- Current assessment: Package is feature-complete per this plan. Remaining work is app-shell migration (tracked in beads).
+- Current assessment: Package is feature-complete per this plan. Remaining work is app-shell migration (tracked in tasks).
 
 ### Pass 1 — Initial validation (2026-04-24)
 
 - Full package verification: `pnpm --dir packages/workspace typecheck && pnpm --dir packages/workspace test` (green: 601 tests passing).
 - Replaced placeholder lint script with real gate: `packages/workspace/package.json` now uses `"lint": "pnpm run typecheck"`.
 - Core plan phases (foundation, panes, bridge integration, responsive behaviors, testing harness) are present and covered by the existing suite.
-- Remaining plan execution is now mostly migration/integration work in app shells (`apps/ide`, `apps/chat`, etc.), tracked in beads rather than missing package internals.
+- Remaining plan execution is now mostly migration/integration work in app shells (`apps/ide`, `apps/chat`, etc.), tracked in tasks rather than missing package internals.
 
 ## Vision
 

@@ -5,11 +5,11 @@ import { MemoryRouter, Route, Routes } from 'react-router-dom'
 import type { ReactNode } from 'react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
-import { withBeadId } from '../../server/__tests__/_setup'
+import { withTaskId } from '../../server/__tests__/_setup'
 import { InviteAcceptPage } from '../auth/InviteAcceptPage'
 import { useMswHandler } from './_setup'
 
-const BEAD_ID = 'boring-ui-v2-zgbi'
+const TASK_ID = 'boring-ui-v2-zgbi'
 const TOKEN = 'test-invite-token-abc123'
 const WS_ID = 'ws-001'
 
@@ -73,7 +73,7 @@ afterEach(() => {
 describe('InviteAcceptPage', () => {
   it(
     'redirects to signin when signed out',
-    withBeadId(BEAD_ID, async ({ assertionPassed }) => {
+    withTaskId(TASK_ID, async ({ assertionPassed }) => {
       const qc = createQueryClient()
       mockSession.current = { data: null, isPending: false, error: null }
 
@@ -101,7 +101,7 @@ describe('InviteAcceptPage', () => {
 
   it(
     'renders preview with workspace name and role on resolve success',
-    withBeadId(BEAD_ID, async ({ assertionPassed }) => {
+    withTaskId(TASK_ID, async ({ assertionPassed }) => {
       const qc = createQueryClient()
 
       useMswHandler(async (input, init) => {
@@ -137,7 +137,7 @@ describe('InviteAcceptPage', () => {
 
   it(
     'renders "no longer valid" on resolve 404',
-    withBeadId(BEAD_ID, async ({ assertionPassed }) => {
+    withTaskId(TASK_ID, async ({ assertionPassed }) => {
       const qc = createQueryClient()
 
       useMswHandler(async (input, init) => {
@@ -167,7 +167,7 @@ describe('InviteAcceptPage', () => {
 
   it(
     'renders "expired" on resolve 410',
-    withBeadId(BEAD_ID, async ({ assertionPassed }) => {
+    withTaskId(TASK_ID, async ({ assertionPassed }) => {
       const qc = createQueryClient()
 
       useMswHandler(async (input, init) => {
@@ -197,7 +197,7 @@ describe('InviteAcceptPage', () => {
 
   it(
     'renders "locked" on resolve 423',
-    withBeadId(BEAD_ID, async ({ assertionPassed }) => {
+    withTaskId(TASK_ID, async ({ assertionPassed }) => {
       const qc = createQueryClient()
 
       useMswHandler(async (input, init) => {
@@ -228,7 +228,7 @@ describe('InviteAcceptPage', () => {
 
   it(
     'accept happy path: calls accept, navigates to workspace',
-    withBeadId(BEAD_ID, async ({ assertionPassed }) => {
+    withTaskId(TASK_ID, async ({ assertionPassed }) => {
       const qc = createQueryClient()
       let acceptCalled = false
 
@@ -278,7 +278,7 @@ describe('InviteAcceptPage', () => {
 
   it(
     'accept wrong email: renders "for a different email"',
-    withBeadId(BEAD_ID, async ({ assertionPassed }) => {
+    withTaskId(TASK_ID, async ({ assertionPassed }) => {
       const qc = createQueryClient()
 
       useMswHandler(async (input, init) => {
@@ -326,7 +326,7 @@ describe('InviteAcceptPage', () => {
 
   it(
     'decline navigates away without API call',
-    withBeadId(BEAD_ID, async ({ assertionPassed }) => {
+    withTaskId(TASK_ID, async ({ assertionPassed }) => {
       const qc = createQueryClient()
       let acceptCalled = false
 

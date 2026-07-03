@@ -2,7 +2,7 @@
 
 ## Status
 
-Ready for bead conversion. This version integrates multi-model review feedback
+Ready for task conversion. This version integrates multi-model review feedback
 from xAI Grok 4.3, Claude Opus 4.7, and GPT-5.5, plus Julien's follow-up
 product decisions, with a bias toward a robust but simple first implementation.
 
@@ -1077,7 +1077,7 @@ resolution as later upgrades.
 
 See focused plan: [`runtime-plugin-agent-generation-plan.md`](runtime-plugin-agent-generation-plan.md).
 
-## Suggested first beads
+## Suggested first tasks
 
 1. `docs(plugin): codify runtime plugin trust modes`
 2. `feat(workspace): add effective plugin runtime resolver`

@@ -1,11 +1,11 @@
 import { createHash, randomUUID } from 'node:crypto'
 import { describe, expect, it } from 'vitest'
 
-import { withBeadId } from '../../__tests__/_setup'
+import { withTaskId } from '../../__tests__/_setup'
 import type { UserStore, WorkspaceStore } from '../../app/types.js'
 import { ERROR_CODES } from '../../../shared/errors.js'
 
-const BEAD_ID = 'boring-ui-v2-dvmv'
+const TASK_ID = 'boring-ui-v2-dvmv'
 
 type MaybePromise<T> = T | Promise<T>
 
@@ -80,7 +80,7 @@ export function describeUserStoreConformance(
 
     it(
       'getById/getByEmail return null for unknown users',
-      withBeadId(BEAD_ID, async ({ assertionPassed }) => {
+      withTaskId(TASK_ID, async ({ assertionPassed }) => {
         const store = await make()
         const missingId = await store.getById(randomUUID())
         const missingEmail = await store.getByEmail(`missing-${randomUUID()}@test.invalid`)
@@ -92,7 +92,7 @@ export function describeUserStoreConformance(
 
     it(
       'upsert creates user retrievable by id and email',
-      withBeadId(BEAD_ID, async ({ assertionPassed }) => {
+      withTaskId(TASK_ID, async ({ assertionPassed }) => {
         const store = await make()
         const userId = randomUUID()
         const email = `create-${randomUUID().slice(0, 8)}@${emailDomain}`
@@ -112,7 +112,7 @@ export function describeUserStoreConformance(
 
     it(
       'upsert updates existing user and refreshes email lookup',
-      withBeadId(BEAD_ID, async ({ assertionPassed }) => {
+      withTaskId(TASK_ID, async ({ assertionPassed }) => {
         const store = await make()
         const userId = randomUUID()
         const oldEmail = `old-${randomUUID().slice(0, 8)}@${emailDomain}`
@@ -131,7 +131,7 @@ export function describeUserStoreConformance(
 
     it(
       'getByEmail is case-insensitive',
-      withBeadId(BEAD_ID, async ({ assertionPassed }) => {
+      withTaskId(TASK_ID, async ({ assertionPassed }) => {
         const store = await make()
         const userId = randomUUID()
         const email = `case-${randomUUID().slice(0, 8)}@${emailDomain}`
@@ -148,7 +148,7 @@ export function describeUserStoreConformance(
 
     it(
       'getUserSettings returns defaults from user profile',
-      withBeadId(BEAD_ID, async ({ assertionPassed }) => {
+      withTaskId(TASK_ID, async ({ assertionPassed }) => {
         const store = await make()
         const userId = randomUUID()
         const email = `defaults-${randomUUID().slice(0, 8)}@${emailDomain}`
@@ -164,7 +164,7 @@ export function describeUserStoreConformance(
 
     it(
       'putUserSettings writes settings and scopes by appId',
-      withBeadId(BEAD_ID, async ({ assertionPassed }) => {
+      withTaskId(TASK_ID, async ({ assertionPassed }) => {
         const store = await make()
         const userId = randomUUID()
         const email = `scope-${randomUUID().slice(0, 8)}@${emailDomain}`
@@ -189,7 +189,7 @@ export function describeUserStoreConformance(
 
     it(
       'putUserSettings partial update preserves unspecified fields',
-      withBeadId(BEAD_ID, async ({ assertionPassed }) => {
+      withTaskId(TASK_ID, async ({ assertionPassed }) => {
         const store = await make()
         const userId = randomUUID()
         const email = `partial-${randomUUID().slice(0, 8)}@${emailDomain}`
@@ -229,7 +229,7 @@ export function describeWorkspaceStoreConformance(
 
     it(
       'create adds workspace and owner membership',
-      withBeadId(BEAD_ID, async ({ assertionPassed }) => {
+      withTaskId(TASK_ID, async ({ assertionPassed }) => {
         const { workspaceStore, appId, users } = await setup()
         const ws = await workspaceStore.create(users.owner.id, 'Conformance WS', appId)
         expect(ws.appId).toBe(appId)
@@ -241,7 +241,7 @@ export function describeWorkspaceStoreConformance(
 
     it(
       'list scopes by membership and appId',
-      withBeadId(BEAD_ID, async ({ assertionPassed }) => {
+      withTaskId(TASK_ID, async ({ assertionPassed }) => {
         const { workspaceStore, appId, otherAppId, users } = await setup()
         const owned = await workspaceStore.create(users.owner.id, 'Owned', appId)
         await workspaceStore.create(users.owner.id, 'Other App', otherAppId)
@@ -257,7 +257,7 @@ export function describeWorkspaceStoreConformance(
 
     it(
       'get returns workspace by id and null for unknown id',
-      withBeadId(BEAD_ID, async ({ assertionPassed }) => {
+      withTaskId(TASK_ID, async ({ assertionPassed }) => {
         const { workspaceStore, appId, users } = await setup()
         const ws = await workspaceStore.create(users.owner.id, 'Lookup', appId)
         expect((await workspaceStore.get(ws.id))?.id).toBe(ws.id)
@@ -268,7 +268,7 @@ export function describeWorkspaceStoreConformance(
 
     it(
       'update mutates name and returns null for unknown workspace',
-      withBeadId(BEAD_ID, async ({ assertionPassed }) => {
+      withTaskId(TASK_ID, async ({ assertionPassed }) => {
         const { workspaceStore, appId, users } = await setup()
         const ws = await workspaceStore.create(users.owner.id, 'Before', appId)
         const updated = await workspaceStore.update(ws.id, { name: 'After' })
@@ -280,7 +280,7 @@ export function describeWorkspaceStoreConformance(
 
     it(
       'delete soft-deletes workspace and returns not_found for unknown id',
-      withBeadId(BEAD_ID, async ({ assertionPassed }) => {
+      withTaskId(TASK_ID, async ({ assertionPassed }) => {
         const { workspaceStore, appId, users } = await setup()
         const ws = await workspaceStore.create(users.owner.id, 'Delete Me', appId)
         expect(await workspaceStore.delete(ws.id)).toEqual({ removed: true })
@@ -296,7 +296,7 @@ export function describeWorkspaceStoreConformance(
 
     it(
       'getWorkspacesWhereSoleOwner handles none, sole-owner, and co-owned',
-      withBeadId(BEAD_ID, async ({ assertionPassed }) => {
+      withTaskId(TASK_ID, async ({ assertionPassed }) => {
         const { workspaceStore, appId, users } = await setup()
         expect(await workspaceStore.getWorkspacesWhereSoleOwner(users.owner.id)).toEqual([])
 
@@ -316,7 +316,7 @@ export function describeWorkspaceStoreConformance(
 
     it(
       'isMember/getMemberRole reflect membership accurately',
-      withBeadId(BEAD_ID, async ({ assertionPassed }) => {
+      withTaskId(TASK_ID, async ({ assertionPassed }) => {
         const { workspaceStore, appId, users } = await setup()
         const ws = await workspaceStore.create(users.owner.id, 'Member Check', appId)
         await workspaceStore.upsertMember(ws.id, users.member.id, 'editor')
@@ -331,7 +331,7 @@ export function describeWorkspaceStoreConformance(
 
     it(
       'listMembers returns enriched members joined with user info',
-      withBeadId(BEAD_ID, async ({ assertionPassed }) => {
+      withTaskId(TASK_ID, async ({ assertionPassed }) => {
         const { workspaceStore, appId, users } = await setup()
         const ws = await workspaceStore.create(users.owner.id, 'Members', appId)
         await workspaceStore.upsertMember(ws.id, users.member.id, 'editor')
@@ -350,7 +350,7 @@ export function describeWorkspaceStoreConformance(
 
     it(
       'upsertMember inserts and updates roles',
-      withBeadId(BEAD_ID, async ({ assertionPassed }) => {
+      withTaskId(TASK_ID, async ({ assertionPassed }) => {
         const { workspaceStore, appId, users } = await setup()
         const ws = await workspaceStore.create(users.owner.id, 'Upsert Member', appId)
 
@@ -364,7 +364,7 @@ export function describeWorkspaceStoreConformance(
 
     it(
       'removeMember removes members and reports not_member for missing',
-      withBeadId(BEAD_ID, async ({ assertionPassed }) => {
+      withTaskId(TASK_ID, async ({ assertionPassed }) => {
         const { workspaceStore, appId, users } = await setup()
         const ws = await workspaceStore.create(users.owner.id, 'Remove', appId)
         await workspaceStore.upsertMember(ws.id, users.member.id, 'editor')
@@ -381,7 +381,7 @@ export function describeWorkspaceStoreConformance(
 
     it(
       'removeMember blocks removing last owner',
-      withBeadId(BEAD_ID, async ({ assertionPassed }) => {
+      withTaskId(TASK_ID, async ({ assertionPassed }) => {
         const { workspaceStore, appId, users } = await setup()
         const ws = await workspaceStore.create(users.owner.id, 'Owner Rules', appId)
 
@@ -395,7 +395,7 @@ export function describeWorkspaceStoreConformance(
 
     it(
       'createInvite/listInvites produce workspace-scoped invite records',
-      withBeadId(BEAD_ID, async ({ assertionPassed }) => {
+      withTaskId(TASK_ID, async ({ assertionPassed }) => {
         const { workspaceStore, appId, users } = await setup()
         const ws = await workspaceStore.create(users.owner.id, 'Invites', appId)
         const otherWs = await workspaceStore.create(users.owner.id, 'Invites Other', appId)
@@ -415,7 +415,7 @@ export function describeWorkspaceStoreConformance(
 
     it(
       'getInvite/getInviteByTokenHash return matches and null on miss',
-      withBeadId(BEAD_ID, async ({ assertionPassed }) => {
+      withTaskId(TASK_ID, async ({ assertionPassed }) => {
         const { workspaceStore, appId, users } = await setup()
         const ws = await workspaceStore.create(users.owner.id, 'Invite Lookup', appId)
         const otherWs = await workspaceStore.create(users.owner.id, 'Invite Lookup Other', appId)
@@ -435,7 +435,7 @@ export function describeWorkspaceStoreConformance(
 
     it(
       'revokeInvite removes invite and is idempotent',
-      withBeadId(BEAD_ID, async ({ assertionPassed }) => {
+      withTaskId(TASK_ID, async ({ assertionPassed }) => {
         const { workspaceStore, appId, users } = await setup()
         const ws = await workspaceStore.create(users.owner.id, 'Invite Revoke', appId)
         const created = await workspaceStore.createInvite(ws.id, users.member.email, 'viewer', users.owner.id)
@@ -448,7 +448,7 @@ export function describeWorkspaceStoreConformance(
 
     it(
       'acceptInvite success marks accepted and creates membership',
-      withBeadId(BEAD_ID, async ({ assertionPassed }) => {
+      withTaskId(TASK_ID, async ({ assertionPassed }) => {
         const { workspaceStore, appId, users } = await setup()
         const ws = await workspaceStore.create(users.owner.id, 'Invite Accept', appId)
         const created = await workspaceStore.createInvite(ws.id, users.member.email, 'editor', users.owner.id)
@@ -464,7 +464,7 @@ export function describeWorkspaceStoreConformance(
 
     it(
       'acceptInvite throws invite_not_found and invite_already_accepted',
-      withBeadId(BEAD_ID, async ({ assertionPassed }) => {
+      withTaskId(TASK_ID, async ({ assertionPassed }) => {
         const { workspaceStore, appId, users } = await setup()
         const ws = await workspaceStore.create(users.owner.id, 'Invite Errors', appId)
         const created = await workspaceStore.createInvite(ws.id, users.member.email, 'viewer', users.owner.id)
@@ -487,7 +487,7 @@ export function describeWorkspaceStoreConformance(
 
     it(
       'acceptInvite throws invite_email_mismatch and invite_expired',
-      withBeadId(BEAD_ID, async ({ assertionPassed }) => {
+      withTaskId(TASK_ID, async ({ assertionPassed }) => {
         const { workspaceStore, appId, users } = await setup()
         const ws = await workspaceStore.create(users.owner.id, 'Invite Error Cases', appId)
 
@@ -511,7 +511,7 @@ export function describeWorkspaceStoreConformance(
 
     it(
       'getWorkspaceSettings is empty before writes',
-      withBeadId(BEAD_ID, async ({ assertionPassed }) => {
+      withTaskId(TASK_ID, async ({ assertionPassed }) => {
         const { workspaceStore, appId, users } = await setup()
         const ws = await workspaceStore.create(users.owner.id, 'Settings', appId)
         expect(await workspaceStore.getWorkspaceSettings(ws.id)).toEqual([])
@@ -521,7 +521,7 @@ export function describeWorkspaceStoreConformance(
 
     it(
       'putWorkspaceSettings returns metadata-only entries and getWorkspaceSettings reflects keys',
-      withBeadId(BEAD_ID, async ({ assertionPassed }) => {
+      withTaskId(TASK_ID, async ({ assertionPassed }) => {
         const { workspaceStore, appId, users } = await setup()
         const ws = await workspaceStore.create(users.owner.id, 'Settings Put', appId)
 
@@ -542,7 +542,7 @@ export function describeWorkspaceStoreConformance(
 
     it(
       'getWorkspaceRuntime auto-creates ready row when missing',
-      withBeadId(BEAD_ID, async ({ assertionPassed }) => {
+      withTaskId(TASK_ID, async ({ assertionPassed }) => {
         const { workspaceStore, appId, users } = await setup()
         const ws = await workspaceStore.create(users.owner.id, 'Runtime', appId)
 
@@ -564,7 +564,7 @@ export function describeWorkspaceStoreConformance(
 
     it(
       'putWorkspaceRuntime updates runtime fields',
-      withBeadId(BEAD_ID, async ({ assertionPassed }) => {
+      withTaskId(TASK_ID, async ({ assertionPassed }) => {
         const { workspaceStore, appId, users } = await setup()
         const ws = await workspaceStore.create(users.owner.id, 'Runtime Put', appId)
         const stepStartedAt = new Date().toISOString()
@@ -590,7 +590,7 @@ export function describeWorkspaceStoreConformance(
 
     it(
       'retryWorkspaceRuntime transitions error to pending and no-ops otherwise',
-      withBeadId(BEAD_ID, async ({ assertionPassed }) => {
+      withTaskId(TASK_ID, async ({ assertionPassed }) => {
         const { workspaceStore, appId, users } = await setup()
         const ws = await workspaceStore.create(users.owner.id, 'Runtime Retry', appId)
 
@@ -609,7 +609,7 @@ export function describeWorkspaceStoreConformance(
 
     it(
       'getUiState returns null when no state exists',
-      withBeadId(BEAD_ID, async ({ assertionPassed }) => {
+      withTaskId(TASK_ID, async ({ assertionPassed }) => {
         const { workspaceStore, appId, users } = await setup()
         const ws = await workspaceStore.create(users.owner.id, 'UI State', appId)
         expect(await workspaceStore.getUiState(users.owner.id, ws.id)).toBeNull()
@@ -619,7 +619,7 @@ export function describeWorkspaceStoreConformance(
 
     it(
       'putUiState stores state scoped by (userId, workspaceId)',
-      withBeadId(BEAD_ID, async ({ assertionPassed }) => {
+      withTaskId(TASK_ID, async ({ assertionPassed }) => {
         const { workspaceStore, appId, users } = await setup()
         const ws = await workspaceStore.create(users.owner.id, 'UI Put', appId)
         const state = { activePanel: 'chat', collapsed: true }

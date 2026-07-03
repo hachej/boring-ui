@@ -2,10 +2,10 @@
 import { act, renderHook } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-import { withBeadId } from '../../server/__tests__/_setup'
+import { withTaskId } from '../../server/__tests__/_setup'
 import { useReducedMotion } from '../hooks/useReducedMotion'
 
-const BEAD_ID = 'boring-ui-v2-d37p'
+const TASK_ID = 'boring-ui-v2-d37p'
 
 type ChangeListener = (event: MediaQueryListEvent) => void
 
@@ -43,7 +43,7 @@ beforeEach(() => {
 describe('useReducedMotion hook', () => {
   it(
     'tracks prefers-reduced-motion changes',
-    withBeadId(BEAD_ID, async ({ assertionPassed }) => {
+    withTaskId(TASK_ID, async ({ assertionPassed }) => {
       const { result } = renderHook(() => useReducedMotion())
       expect(result.current).toBe(true)
       assertionPassed('useReducedMotion-initial-true')

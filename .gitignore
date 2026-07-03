@@ -70,6 +70,7 @@ packages/agent/bench-results/
 **/vitest.config.ts.timestamp-*.mjs
 **/vitest.config.js.timestamp-*.mjs
 .claude/worktrees/
+/.worktrees/
 
 # LLM eval scratch directories (plugins/CSVs created by live-LLM tests)
 **/.eval/
@@ -94,6 +95,12 @@ packages/workspace/src/plugins/eval-*/
 !/.agents/skills/
 !/.agents/skills/boring-feedback/
 !/.agents/skills/boring-feedback/**
+!/.agents/skills/boring-loop-grill/
+!/.agents/skills/boring-loop-grill/**
+!/.agents/skills/boring-loop-plan/
+!/.agents/skills/boring-loop-plan/**
+!/.agents/skills/boring-loop-implement/
+!/.agents/skills/boring-loop-implement/**
 !/.agents/skills/boring-orchestration/
 !/.agents/skills/boring-orchestration/**
 !/.agents/skills/boring-triage/

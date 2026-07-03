@@ -2,7 +2,7 @@
 
 ## Status
 
-Canonical plan for the next plugin-system phase. Ready for bead conversion.
+Canonical plan for the next plugin-system phase. Ready for task conversion.
 
 This plan synthesizes:
 

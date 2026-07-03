@@ -178,7 +178,7 @@ Locked implementation choices for the first pass:
 - Keep current pi projection as temporary, adapter-owned compatibility behind `aiSdkOwnsHistory === false`.
 - Add a stable unsupported-follow-up error code: `FOLLOWUP_UNSUPPORTED`.
 
-This means the next implementation bead should transform the already-working pi follow-up branch into a pluggable design:
+This means the next implementation task should transform the already-working pi follow-up branch into a pluggable design:
 
 ```txt
 pi runtime:

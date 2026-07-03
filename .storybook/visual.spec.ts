@@ -32,6 +32,12 @@ test.describe("storybook visual baseline", () => {
     // still require baseline review.
     maxDiffPixels: 20,
   }
+  const markdownSnapshotOptions = {
+    ...snapshotOptions,
+    // GitHub runner font rasterization drifts around the Markdown word-count
+    // footer while the rendered layout stays visually identical.
+    maxDiffPixels: 300,
+  }
 
   test("workspace desktop stories", async ({ page }) => {
     await page.setViewportSize({ width: 1440, height: 900 })
@@ -43,7 +49,7 @@ test.describe("storybook visual baseline", () => {
     await expect(page.locator("#storybook-root")).toHaveScreenshot("workspace-codeeditor-desktop.png", snapshotOptions)
 
     await openStory(page, "workspace-markdowneditor--rich-content")
-    await expect(page.locator("#storybook-root")).toHaveScreenshot("workspace-markdown-desktop.png", snapshotOptions)
+    await expect(page.locator("#storybook-root")).toHaveScreenshot("workspace-markdown-desktop.png", markdownSnapshotOptions)
   })
 
   test("workspace dark-mode stories", async ({ page }) => {
