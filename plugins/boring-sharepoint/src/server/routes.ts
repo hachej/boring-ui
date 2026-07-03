@@ -4,6 +4,7 @@ import {
   SharePointRefValidationError,
   assertSharePointDocumentRefSafeForStorage,
   parseSharePointDocumentRef,
+  validateLocalOfficeSourcePath,
   type CreateOfficePreviewUrlInput,
   type CreateOfficePreviewUrlResult,
   type IntegrationAuthState,
@@ -105,15 +106,27 @@ function safePreviewResultForRoute(result: CreateOfficePreviewUrlResult): Create
 function safeLocalOfficeImportResultForRoute(result: LocalOfficeImportResult): LocalOfficeImportResult {
   const ref = parseSharePointDocumentRef(result.ref)
   assertSharePointDocumentRefSafeForStorage(ref)
-  if (
-    SECRET_LIKE_ID_PATTERN.test(result.cloudRefPath) ||
-    result.cloudRefPath.startsWith("/") ||
-    result.cloudRefPath.includes("..") ||
-    (!result.cloudRefPath.endsWith(".xlsx.cloud.json") && !result.cloudRefPath.endsWith(".pptx.cloud.json"))
-  ) {
+  if (SECRET_LIKE_ID_PATTERN.test(result.cloudRefPath)) {
     throw new SharePointProviderError(SHAREPOINT_ERROR_CODES.INVALID_REF, "import returned an unsafe cloud ref path", 502)
   }
+  validateCloudRefPathForRoute(result.cloudRefPath)
   return { ref, cloudRefPath: result.cloudRefPath }
+}
+
+function validateCloudRefPathForRoute(cloudRefPath: string): void {
+  try {
+    if (cloudRefPath.endsWith(".xlsx.cloud.json")) {
+      validateLocalOfficeSourcePath(`${cloudRefPath.slice(0, -".xlsx.cloud.json".length)}.xlsx`)
+      return
+    }
+    if (cloudRefPath.endsWith(".pptx.cloud.json")) {
+      validateLocalOfficeSourcePath(`${cloudRefPath.slice(0, -".pptx.cloud.json".length)}.pptx`)
+      return
+    }
+  } catch {
+    // Fall through to the provider-output error below without echoing the unsafe path.
+  }
+  throw new SharePointProviderError(SHAREPOINT_ERROR_CODES.INVALID_REF, "import returned an unsafe cloud ref path", 502)
 }
 
 function safeOfficeEditResultForRoute(result: OfficeEditResult): OfficeEditResult {
