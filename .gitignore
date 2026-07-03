@@ -7,6 +7,7 @@ node_modules/
 # Build output
 dist/
 **/.vite/
+.logs/
 *.tsbuildinfo
 .tsbuildinfo.*
 *.tgz
@@ -59,6 +60,7 @@ storybook-static/
 # Swarm / review artifacts (local)
 .ntm/
 .ui-review/
+.worktrees-health/
 *_review.patch
 /pr-review-*.md
 /review-*.md
