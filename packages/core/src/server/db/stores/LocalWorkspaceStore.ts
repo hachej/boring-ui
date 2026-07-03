@@ -25,10 +25,10 @@ export class LocalWorkspaceStore implements WorkspaceStore {
 
   constructor(private userStore: LocalUserStore) {}
 
-  async create(userId: string, name: string, appId: string, opts?: { isDefault?: boolean }): Promise<Workspace> {
+  async create(userId: string, name: string, appId: string, opts?: { isDefault?: boolean; id?: string }): Promise<Workspace> {
     const now = new Date().toISOString()
     const ws: Workspace = {
-      id: randomUUID(),
+      id: opts?.id ?? randomUUID(),
       appId,
       name,
       createdBy: userId,

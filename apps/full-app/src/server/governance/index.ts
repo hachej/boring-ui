@@ -5,6 +5,7 @@ import type { CoreWorkspaceAgentServerPlugin } from '@hachej/boring-core/app/ser
 import { loadGovernancePolicy, type LoadGovernancePolicyOptions } from './loadPolicy.js'
 import { createGovernanceService, type GovernanceService } from './governanceService.js'
 import { governanceRoutes } from './routes.js'
+import { reconcileCompanyContextWorkspace } from './companyContextBootstrap.js'
 
 export { GovernancePolicyError, GovernanceService } from './governanceService.js'
 export type { GovernanceMeResponse } from './governanceService.js'
@@ -44,7 +45,9 @@ export function createGovernanceModelFilter(service: GovernanceService): Registe
     const user = governanceUserFromRequest(request)
     if (!service.isEnabled()) return { models, defaultModel }
     if (!user) return { models: [] }
-    const allowedModels = service.allowedModelsForUser(user, models)
+    const allowedModels = service
+      .allowedModelsForUser(user, models)
+      .filter((model) => (service.monthlyBudgetMicros(user, model) ?? 0) > 0)
     const allowedDefault = defaultModel && allowedModels.some((model) => (
       model.available && model.provider === defaultModel.provider && model.id === defaultModel.id
     ))
@@ -58,6 +61,11 @@ export function createGovernanceServerPlugin(service: GovernanceService): CoreWo
   return {
     id: 'full-app-governance',
     label: 'Full-app governance',
-    routes: governanceRoutes(service),
+    routes: async (app) => {
+      await app.register(governanceRoutes(service))
+      app.addHook('onReady', async () => {
+        await reconcileCompanyContextWorkspace(app, service)
+      })
+    },
   }
 }

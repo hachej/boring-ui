@@ -26,6 +26,14 @@ describe('LocalWorkspaceStore', () => {
       expect(role).toBe('owner')
     })
 
+    it('creates a workspace with an explicit id for system/bootstrap resources', async () => {
+      const ws = await store.create('u1', 'Company Context', 'app1', { id: '00000000-0000-4000-8000-000000000475', isDefault: false })
+
+      expect(ws.id).toBe('00000000-0000-4000-8000-000000000475')
+      expect(ws.isDefault).toBe(false)
+      expect(await store.getMemberRole('00000000-0000-4000-8000-000000000475', 'u1')).toBe('owner')
+    })
+
     it('list filters by userId and appId', async () => {
       await store.create('u1', 'WS1', 'app1')
       await store.create('u1', 'WS2', 'app2')

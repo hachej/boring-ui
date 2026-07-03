@@ -20,7 +20,6 @@ const ModelBudgetExceededError = (coreServer as unknown as { ModelBudgetExceeded
 
 type ModelBudgetDb = ConstructorParameters<typeof PostgresModelBudgetStore>[0]
 
-const CREDIT_MICROS_PER_EUR = 1_000_000
 const DEFAULT_HOLD_TTL_SECONDS = 60 * 60
 
 function authRequiredError(): Error {
@@ -69,7 +68,9 @@ export function createGovernanceMeteringSink(options: {
     const budgetMicros = options.service.monthlyBudgetMicros(user, { provider: input.model.provider, id: input.model.id })
     if (budgetMicros === null || budgetMicros <= 0) throw new ModelBudgetExceededError(0, 0, budgetMicros ?? 0, 0)
     const policy = options.service.policy()
-    const holdMicros = Math.round((policy?.tenant.perRunHoldEur ?? 1) * CREDIT_MICROS_PER_EUR)
+    // Governance budgets and the core usage ledger both use credit micros, with
+    // the existing convention 1 EUR = 1_000_000 credit micros.
+    const holdMicros = policy?.tenant.perRunHoldMicros ?? 1_000_000
     const result = await getStore().reserve({
       userId: input.userId,
       workspaceId: input.workspaceId,

@@ -29,6 +29,14 @@ function nonEmptyString(value: unknown, path: string): string {
   return value.trim()
 }
 
+function uuidString(value: unknown, path: string): string {
+  const id = nonEmptyString(value, path)
+  if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id)) {
+    fail(`${path} must be a UUID workspace id`)
+  }
+  return id
+}
+
 function finiteNumber(value: unknown, path: string, opts: { min: number; allowZero: boolean }): number {
   if (typeof value !== 'number' || !Number.isFinite(value)) {
     fail(`${path} must be a finite number`)
@@ -55,7 +63,7 @@ function validateRegexPattern(value: unknown, path: string): string {
   return pattern
 }
 
-function validateModels(value: unknown, userPath: string): GovernanceModelGrant[] {
+function validateModels(value: unknown, userPath: string, defaultMonthlyModelBudgetEur: number): GovernanceModelGrant[] {
   if (value === undefined) return []
   if (!Array.isArray(value)) fail(`${userPath}.models must be an array`)
   return value.map((entry, index) => {
@@ -63,10 +71,12 @@ function validateModels(value: unknown, userPath: string): GovernanceModelGrant[
     if (!isRecord(entry)) fail(`${path} must be an object`)
     const provider = nonEmptyString(entry.provider, `${path}.provider`)
     const id = nonEmptyString(entry.id, `${path}.id`)
-    const monthlyBudgetEur = finiteNumber(entry.monthlyBudgetEur, `${path}.monthlyBudgetEur`, {
-      min: 0,
-      allowZero: true,
-    })
+    const monthlyBudgetEur = entry.monthlyBudgetEur === undefined
+      ? defaultMonthlyModelBudgetEur
+      : finiteNumber(entry.monthlyBudgetEur, `${path}.monthlyBudgetEur`, {
+          min: 0,
+          allowZero: true,
+        })
     return {
       provider,
       id,
@@ -103,7 +113,7 @@ export function validateGovernancePolicy(input: unknown): GovernancePolicy {
   const tenantId = nonEmptyString(tenant.id, 'tenant.id')
   const companyContextWorkspaceId = tenant.companyContextWorkspaceId === undefined || tenant.companyContextWorkspaceId === null
     ? null
-    : nonEmptyString(tenant.companyContextWorkspaceId, 'tenant.companyContextWorkspaceId')
+    : uuidString(tenant.companyContextWorkspaceId, 'tenant.companyContextWorkspaceId')
   const defaultMonthlyModelBudgetEur = tenant.defaultMonthlyModelBudgetEur === undefined
     ? 0
     : finiteNumber(tenant.defaultMonthlyModelBudgetEur, 'tenant.defaultMonthlyModelBudgetEur', { min: 0, allowZero: true })
@@ -122,12 +132,17 @@ export function validateGovernancePolicy(input: unknown): GovernancePolicy {
     const user: GovernanceUserPolicy = {
       email,
       role: validateRole(entry.role, `${path}.role`),
-      models: validateModels(entry.models, path),
+      models: validateModels(entry.models, path, defaultMonthlyModelBudgetEur),
       companyContext: validateCompanyContext(entry.companyContext, path),
     }
     usersByEmail.set(email, user)
     return user
   })
+
+  const companyContextEnforced = users.some((user) => user.companyContext.allow.length > 0)
+  if (companyContextEnforced && !companyContextWorkspaceId) {
+    fail('tenant.companyContextWorkspaceId is required when company-context rules are configured')
+  }
 
   return {
     tenant: {

@@ -22,7 +22,7 @@ async function writePolicy(contents: string): Promise<string> {
 const VALID_POLICY = `
 tenant:
   id: company
-  companyContextWorkspaceId: company-ws
+  companyContextWorkspaceId: 00000000-0000-4000-8000-000000000475
   defaultMonthlyModelBudgetEur: 0
   perRunHoldEur: 1
 users:
@@ -85,6 +85,15 @@ describe('governance policy loader', () => {
     })).rejects.toThrow()
   })
 
+  it('applies tenant defaultMonthlyModelBudgetEur to model grants that omit a budget', () => {
+    const policy = validateGovernancePolicy({
+      tenant: { id: 'company', defaultMonthlyModelBudgetEur: 7, perRunHoldEur: 1 },
+      users: [{ email: 'a@example.com', role: 'user', models: [{ provider: 'p', id: 'm' }] }],
+    })
+
+    expect(policy.users[0]?.models[0]).toMatchObject({ monthlyBudgetEur: 7, monthlyBudgetMicros: 7_000_000 })
+  })
+
   it('rejects duplicate users after lowercase trim normalization', () => {
     expect(() => validateGovernancePolicy({
       tenant: { id: 'company', perRunHoldEur: 1 },
@@ -93,6 +102,18 @@ describe('governance policy loader', () => {
         { email: 'admin@example.com', role: 'user' },
       ],
     })).toThrow(/duplicate user email/)
+  })
+
+  it('requires a UUID companyContextWorkspaceId when company-context rules are configured', () => {
+    expect(() => validateGovernancePolicy({
+      tenant: { id: 'company', perRunHoldEur: 1 },
+      users: [{ email: 'a@example.com', role: 'user', companyContext: { allow: ['^/public/.*'] } }],
+    })).toThrow(/companyContextWorkspaceId/)
+
+    expect(() => validateGovernancePolicy({
+      tenant: { id: 'company', companyContextWorkspaceId: 'company-ws', perRunHoldEur: 1 },
+      users: [{ email: 'a@example.com', role: 'user', companyContext: { allow: ['^/public/.*'] } }],
+    })).toThrow(/UUID/)
   })
 
   it('rejects invalid roles, budgets, and unsafe regexes', () => {
@@ -172,7 +193,7 @@ describe('governance service and route', () => {
     await app.close()
   })
 
-  it('filters exact models and removes denied default', async () => {
+  it('filters exact usable models and removes denied or zero-budget defaults', async () => {
     const policyPath = await writePolicy(VALID_POLICY)
     const service = createGovernanceService(await loadGovernancePolicy({
       env: { BORING_GOVERNANCE_POLICY_PATH: policyPath },
@@ -195,6 +216,23 @@ describe('governance service and route', () => {
 
     expect(result.models).toEqual([{ provider: 'infomaniak', id: 'qwen', label: 'Qwen', available: true }])
     expect(result.defaultModel).toBeUndefined()
+
+    const zeroBudgetService = createGovernanceService({
+      enabled: true,
+      status: { state: 'active', path: '/policy.yaml', tenantId: 'company', userCount: 1 },
+      policy: validateGovernancePolicy({
+        tenant: { id: 'company', defaultMonthlyModelBudgetEur: 0, perRunHoldEur: 1 },
+        users: [{ email: 'user@example.com', role: 'user', models: [{ provider: 'infomaniak', id: 'qwen' }] }],
+      }),
+    })
+    const zeroBudgetFilter = createGovernanceModelFilter(zeroBudgetService)!
+    const zeroBudgetResult = await zeroBudgetFilter(
+      { request, workspaceId: 'ws-a' },
+      [{ provider: 'infomaniak', id: 'qwen', label: 'Qwen', available: true }],
+      { provider: 'infomaniak', id: 'qwen' },
+    )
+    expect(zeroBudgetResult.models).toEqual([])
+    expect(zeroBudgetResult.defaultModel).toBeUndefined()
   })
 
   it('returns no models for unverified users when governance is enabled', async () => {
