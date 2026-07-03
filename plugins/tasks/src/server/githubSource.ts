@@ -51,7 +51,7 @@ const GITHUB_COLUMNS = [
 ]
 
 const STATUS_MAPPINGS: Record<string, GitHubStatusMapping> = {
-  queued: { removeStateLabels: true, reopen: true },
+  queued: { removeStateLabels: true, addLabels: ["state:queued"], reopen: true },
   active: { removeStateLabels: true, addLabels: ["state:active"], reopen: true },
   ready: { removeStateLabels: true, addLabels: ["state:ready"], reopen: true },
   blocked: { removeStateLabels: true, addLabels: ["state:blocked"], reopen: true },

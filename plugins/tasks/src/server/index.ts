@@ -1,17 +1,26 @@
-import { defineRuntimeServerPlugin, type RuntimePluginContext } from "@hachej/boring-workspace/server"
+import type { FastifyRequest } from "fastify"
+import { defineServerPlugin, type WorkspaceServerPlugin } from "@hachej/boring-workspace/server"
+import { TASKS_PLUGIN_ID, TASKS_PLUGIN_LABEL } from "../shared"
 import { createGitHubTaskSource } from "./githubSource"
 import { createTaskSourceRegistry } from "./sourceRuntime"
 import { createTaskSourceService, TaskSourceServiceError } from "./taskSourceService"
 
-function workspaceIdFromContext(ctx: RuntimePluginContext): string | undefined {
-  return ctx.headers.get("x-boring-workspace-id") ?? ctx.query.get("workspaceId") ?? undefined
+function workspaceIdFromRequest(request: FastifyRequest): string | undefined {
+  const header = request.headers["x-boring-workspace-id"]
+  if (typeof header === "string" && header.length > 0) return header
+  const query = request.query as { workspaceId?: unknown } | undefined
+  return typeof query?.workspaceId === "string" && query.workspaceId.length > 0 ? query.workspaceId : undefined
 }
 
 function responseError(cause: unknown) {
   if (cause instanceof TaskSourceServiceError) {
-    return { kind: "response" as const, status: cause.status, body: { ok: false, code: cause.code, error: cause.message } }
+    return { ok: false, code: cause.code, error: cause.message }
   }
-  return { kind: "response" as const, status: 500, body: { ok: false, code: "TASK_SOURCE_ERROR", error: "Task source request failed." } }
+  return { ok: false, code: "TASK_SOURCE_ERROR", error: "Task source request failed." }
+}
+
+function statusFor(cause: unknown): number {
+  return cause instanceof TaskSourceServiceError ? cause.status : 500
 }
 
 function stringArray(value: unknown): string[] | undefined {
@@ -37,39 +46,51 @@ function bodyObject(body: unknown): Record<string, unknown> {
   return body as Record<string, unknown>
 }
 
-const registry = createTaskSourceRegistry([
-  createGitHubTaskSource({ owner: "hachej", repo: "boring-ui" }),
-])
-const service = createTaskSourceService(registry)
+export interface TasksServerPluginOptions {
+  sources?: ReturnType<typeof createGitHubTaskSource>[]
+}
 
-export default defineRuntimeServerPlugin({
-  routes: async (router) => {
-    router.get("/api/boring-tasks/sources", () => ({ ok: true, sources: service.listSources() }))
+export function createTasksServerPlugin(options: TasksServerPluginOptions = {}): WorkspaceServerPlugin {
+  const registry = createTaskSourceRegistry(options.sources ?? [
+    createGitHubTaskSource({ owner: "hachej", repo: "boring-ui" }),
+  ])
+  const service = createTaskSourceService(registry)
 
-    router.post("/api/boring-tasks/sources/tasks/list", async (ctx) => {
-      try {
-        const body = ctx.body === undefined ? {} : bodyObject(ctx.body)
-        return { ok: true, ...(await service.listTasks({ workspaceId: workspaceIdFromContext(ctx) }, { sourceIds: stringArray(body.sourceIds) })) }
-      } catch (cause) {
-        return responseError(cause)
-      }
-    })
+  return defineServerPlugin({
+    id: TASKS_PLUGIN_ID,
+    label: TASKS_PLUGIN_LABEL,
+    routes: async (app) => {
+      app.get("/api/boring-tasks/sources", async () => ({ ok: true, sources: service.listSources() }))
 
-    router.post("/api/boring-tasks/sources/tasks/move", async (ctx) => {
-      try {
-        const body = bodyObject(ctx.body)
-        const task = await service.moveTask({ workspaceId: workspaceIdFromContext(ctx) }, {
-          sourceId: requiredString(body, "sourceId"),
-          taskId: requiredString(body, "taskId"),
-          statusId: requiredString(body, "statusId"),
-        })
-        return { ok: true, task }
-      } catch (cause) {
-        return responseError(cause)
-      }
-    })
-  },
-})
+      app.post("/api/boring-tasks/sources/tasks/list", async (request, reply) => {
+        try {
+          const body = request.body === undefined ? {} : bodyObject(request.body)
+          return { ok: true, ...(await service.listTasks({ workspaceId: workspaceIdFromRequest(request) }, { sourceIds: stringArray(body.sourceIds) })) }
+        } catch (cause) {
+          return reply.status(statusFor(cause)).send(responseError(cause))
+        }
+      })
+
+      app.post("/api/boring-tasks/sources/tasks/move", async (request, reply) => {
+        try {
+          const body = bodyObject(request.body)
+          const task = await service.moveTask({ workspaceId: workspaceIdFromRequest(request) }, {
+            sourceId: requiredString(body, "sourceId"),
+            taskId: requiredString(body, "taskId"),
+            statusId: requiredString(body, "statusId"),
+          })
+          return { ok: true, task }
+        } catch (cause) {
+          return reply.status(statusFor(cause)).send(responseError(cause))
+        }
+      })
+    },
+  })
+}
+
+export default function defaultTasksServerPlugin(options?: TasksServerPluginOptions): WorkspaceServerPlugin {
+  return createTasksServerPlugin(options)
+}
 
 export { createGitHubTaskSource, createGhCliGitHubIssueExecutor } from "./githubSource"
 export { createTaskSourceRegistry } from "./sourceRuntime"

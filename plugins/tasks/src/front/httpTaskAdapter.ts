@@ -1,6 +1,6 @@
 import type { BoringTaskAdapter, BoringTaskAdapterSummary, BoringTaskBoardConfig, BoringTaskCard } from "../shared"
 
-const ROUTE_PREFIX = "/api/v1/plugins/tasks/api/boring-tasks"
+const ROUTE_PREFIX = "/api/boring-tasks"
 
 interface SourcesResponse { ok?: boolean; sources?: BoringTaskAdapterSummary[]; error?: string }
 interface ListResponse { ok?: boolean; configs?: Record<string, BoringTaskBoardConfig>; tasks?: BoringTaskCard[]; error?: string }
