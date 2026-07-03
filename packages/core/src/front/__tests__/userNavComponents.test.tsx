@@ -5,14 +5,14 @@ import type { ReactNode } from 'react'
 import { MemoryRouter } from 'react-router-dom'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
-import { withBeadId } from '../../server/__tests__/_setup'
+import { withTaskId } from '../../server/__tests__/_setup'
 import type { Workspace } from '../../shared/types'
 import { useMswHandler } from './_setup'
 import { ThemeToggle } from '../components/ThemeToggle'
 import { UserMenu } from '../components/UserMenu'
 import { WorkspaceSwitcher } from '../components/WorkspaceSwitcher'
 
-const BEAD_ID = 'boring-ui-v2-3odq'
+const TASK_ID = 'boring-ui-v2-3odq'
 
 const mockNavigate = vi.fn()
 const mockUseUser = vi.fn()
@@ -196,7 +196,7 @@ afterEach(() => {
 describe('UserMenu', () => {
   it(
     'renders signed-in user name/email and signs out to /auth/signin',
-    withBeadId(BEAD_ID, async ({ assertionPassed }) => {
+    withTaskId(TASK_ID, async ({ assertionPassed }) => {
       renderWithProviders(<UserMenu />)
 
       fireEvent.pointerDown(screen.getByRole('button', { name: 'User menu' }))
@@ -223,7 +223,7 @@ describe('UserMenu', () => {
 describe('WorkspaceSwitcher', () => {
   it(
     'lists workspaces and includes create workspace action',
-    withBeadId(BEAD_ID, async ({ assertionPassed }) => {
+    withTaskId(TASK_ID, async ({ assertionPassed }) => {
       mockWorkspacesApi({ workspaces: WORKSPACES })
       renderWithProviders(<WorkspaceSwitcher />)
 
@@ -243,7 +243,7 @@ describe('WorkspaceSwitcher', () => {
 
   it(
     'navigates to selected workspace and marks current workspace',
-    withBeadId(BEAD_ID, async ({ assertionPassed }) => {
+    withTaskId(TASK_ID, async ({ assertionPassed }) => {
       mockWorkspacesApi({ workspaces: WORKSPACES })
       renderWithProviders(<WorkspaceSwitcher />)
 
@@ -261,7 +261,7 @@ describe('WorkspaceSwitcher', () => {
 
   it(
     'creates workspace, invalidates query, closes modal, and navigates to new workspace',
-    withBeadId(BEAD_ID, async ({ assertionPassed }) => {
+    withTaskId(TASK_ID, async ({ assertionPassed }) => {
       mockWorkspacesApi({
         workspaces: WORKSPACES,
         createResponse: {
@@ -309,7 +309,7 @@ describe('WorkspaceSwitcher', () => {
 
   it(
     'validates name, disables empty submit, and toasts on 400 create error',
-    withBeadId(BEAD_ID, async ({ assertionPassed }) => {
+    withTaskId(TASK_ID, async ({ assertionPassed }) => {
       mockWorkspacesApi({
         workspaces: WORKSPACES,
         createResponse: {
@@ -346,7 +346,7 @@ describe('WorkspaceSwitcher', () => {
 
   it(
     'shows empty-state CTA when no workspaces are available',
-    withBeadId(BEAD_ID, async ({ assertionPassed }) => {
+    withTaskId(TASK_ID, async ({ assertionPassed }) => {
       mockWorkspacesApi({ workspaces: [] })
       renderWithProviders(<WorkspaceSwitcher />)
 
@@ -359,7 +359,7 @@ describe('WorkspaceSwitcher', () => {
 describe('ThemeToggle', () => {
   it(
     'cycles light → dark → system → light',
-    withBeadId(BEAD_ID, async ({ assertionPassed }) => {
+    withTaskId(TASK_ID, async ({ assertionPassed }) => {
       let preference: 'light' | 'dark' | 'system' = 'light'
       const setTheme = vi.fn((next: 'light' | 'dark' | 'system') => {
         preference = next

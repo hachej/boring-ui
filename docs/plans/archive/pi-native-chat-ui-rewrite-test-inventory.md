@@ -1,8 +1,8 @@
 # Pi-native Chat UI Rewrite — Regression Inventory and TDD Mapping
 
-Status: implementation input for bead `boring-ui-v2-reorg-twdn`.
+Status: implementation input for task `boring-ui-v2-reorg-twdn`.
 
-This document turns the existing chat/session/tool/workspace tests into a TDD map for the Pi-native chat rewrite. The old tests are behavior inventory and regression scars, not architecture to copy. Later beads should port or adapt the listed tests before writing replacement code.
+This document turns the existing chat/session/tool/workspace tests into a TDD map for the Pi-native chat rewrite. The old tests are behavior inventory and regression scars, not architecture to copy. Later tasks should port or adapt the listed tests before writing replacement code.
 
 For post-rewrite quality iteration, use `docs/plans/pi-native-chat-quality-baseline.md` as the scenario baseline. It defines the full over-time browser flow for message ordering, streaming, tool state, composer controls, model menu ordering, reload, and session history. This inventory maps old tests to new targets; the baseline defines what the resulting user-visible behavior must feel like.
 
@@ -12,9 +12,9 @@ For post-rewrite quality iteration, use `docs/plans/pi-native-chat-quality-basel
 - **adapt** — same failure class, but expected behavior changes because the rewrite intentionally replaces AI SDK/projection/local queue semantics with Pi-native semantics.
 - **delete-with-rationale** — test only locks old internals intentionally removed by the plan. Use this sparingly and keep the rationale explicit.
 
-## Global TDD rules for downstream beads
+## Global TDD rules for downstream tasks
 
-1. Start each implementation bead by copying/adapting its listed regression tests into the new target test files.
+1. Start each implementation task by copying/adapting its listed regression tests into the new target test files.
 2. Do not reintroduce `@ai-sdk/react/useChat`, AI SDK `UIMessageChunk`, browser-owned transcript cache, direct route calls from React components, or generic harness-pluggability to satisfy an old test.
 3. Test logs should include session id, seq/cursor, connection state, and route names where useful, but must redact prompt bodies, token text, attachment contents, secrets, and sensitive host paths.
 4. Active browser reload while an agent turn is running is a first-class acceptance criterion across server `/state`, event replay, `RemotePiSession`, session navigation, queue, workspace, and e2e tests. It is not a standalone implementation island.
@@ -65,9 +65,9 @@ This bug is currently high-risk: browser reload while the agent is running can l
 | Workspace | `packages/workspace/src/front/chrome/chat/__tests__/ChatPanelHost.test.tsx`, `packages/workspace/src/front/chrome/session-list/__tests__/SessionBrowser.test.tsx` | Workspace forwards scoped context/headers after reload, preserves blocker/artifact/file-change bridge wiring, and does not duplicate the active running session entry. |
 | E2E/browser proof | `packages/agent/e2e/pi-native-chat-reload.spec.ts` for the package-level active-reload and replay-resume proof, `packages/agent/e2e/pi-native-replay-gap.spec.ts` for browser `/events` replay-gap, cursor-ahead, and mixed live-gap rehydrate/reconnect proof, `packages/agent/e2e/pi-native-error-scope.spec.ts` for turn-scoped stale/current stream error behavior, `packages/agent/e2e/pi-native-harness-queue-stop-reload.spec.ts` for harness-backed queue/reload/Stop/Escape proof, `packages/agent/e2e/pi-native-harness-tool-liveness.spec.ts` for slow scripted tool liveness and in-place settlement, `packages/agent/e2e/pi-native-harness-reasoning-parts.spec.ts` for multi-reasoning-part attachment and order, `packages/agent/e2e/pi-native-property-baseline.spec.ts` for repeated DOM invariant checks across a mixed scripted-harness interaction sequence, `packages/agent/e2e/pi-native-random-baseline.spec.ts` for seeded randomized valid-action exploration with observed action traces and surviving-message order checks, `packages/agent/e2e/bombadil/pi-native-chat.spec.ts` plus `pnpm --filter @hachej/boring-agent run test:bombadil:chat` for external Bombadil valid-action exploration, `packages/agent/e2e/pi-native-baseline-history.spec.ts` for history sorting/switch isolation and stale active-stream event isolation, `packages/agent/e2e/pi-native-baseline-composer-controls.spec.ts` for model order, prompt metadata, mid-stream disabled controls, and session-switch re-enable behavior, `packages/agent/e2e/pi-native-long-transcript-reload.spec.ts` for full-history reload/order proof, `packages/agent/e2e/pi-native-multi-session-cold-reload.spec.ts` for transient session-list 503 retry without active-session switch or auto-create; `apps/full-app/e2e/pi-native-chat.spec.ts` only if full app composition is required | Start a response, queue at least one follow-up if practical, reload page while active, assert committed history remains, active/reconnecting/streaming state visible, queue preview survives when server queue has it, replay-gap recovery rehydrates `/state` then reconnects without duplicating the assistant/tool state, cursor-ahead recovery rewinds to canonical `/state` and drops stale ahead-only text before later final text applies once, mixed replay-gap/cursor-ahead/live-seq-gap churn rehydrates repeatedly without duplicating the assistant or detaching tool state, stale old-turn error/end events do not settle or duplicate the active assistant, terminal current-turn errors settle the active assistant in place with one runtime notice, late non-error `agent-end` events do not mask terminal errors, final text arriving after reload/reconnect updates the existing assistant row exactly once without detaching prior tool state, a slow tool shows a live `Using` state and settles the same assistant tool group in place, multiple reasoning chunks stay grouped in one assistant before the live tool group and final text, selected model/thinking metadata reaches the next idle prompt, model/thinking controls freeze during streaming and re-enable after an idle session switch, Stop clears queued follow-ups before dispatch, Escape preserves and auto-posts the next queued follow-up as a user turn with an assistant completion after it, exactly one session-list entry exists, shared DOM invariants hold after every mixed interaction step, and randomized valid action sequences do not reorder surviving messages. Separately assert session history sort order, no transcript leakage while switching sessions, no stale old-session stream events after the selected session changes, no compacted-tail fallback when a long transcript reloads, and no selected-session loss or accidental auto-create during cold-runtime session-list retry. The tests must not use localStorage/IndexedDB transcript cache to pass. |
 
-## Per-downstream-bead TDD source map
+## Per-downstream-task TDD source map
 
-| Bead | Test sources to port/adapt first | Initial target tests |
+| Task | Test sources to port/adapt first | Initial target tests |
 | --- | --- | --- |
 | `boring-ui-v2-reorg-ltgn` — Shared Pi chat DTOs and shallow schemas | `packages/agent/src/shared/__tests__/tool-ui.test.ts`; invalid payload cases from `chat.test.ts` | `packages/agent/src/shared/chat/__tests__/piChatSchemas.test.ts`, extend `tool-ui.test.ts` |
 | `boring-ui-v2-reorg-ftms` — NDJSON parser, heartbeat, reconnect, replay-gap tests | resume/cursor tests from `chat.test.ts`; batching/unknown event cases from `piChatProjection.test.ts` | `packages/agent/src/front/chat/pi/__tests__/piChatStream.test.ts`, `packages/agent/src/server/pi-chat/__tests__/piChatReplayBuffer.test.ts` |
@@ -104,9 +104,9 @@ Only these old expectations are currently marked delete-with-rationale:
 Everything else should be ported or adapted, not silently discarded.
 
 
-## Per-bead anchors for `external_ref`
+## Per-task anchors for `external_ref`
 
-These headings provide stable anchors for bead `external_ref` values. The structured bead fields remain authoritative, but these anchors let future agents jump from a bead to the relevant inventory context without relying on non-existent plan fragments.
+These headings provide stable anchors for task `external_ref` values. The structured task fields remain authoritative, but these anchors let future agents jump from a task to the relevant inventory context without relying on non-existent plan fragments.
 
 <a id="boring-ui-v2-reorg-twdn"></a>
 
@@ -248,10 +248,10 @@ Primary sources: full inventory, active reload matrix, e2e evidence, and final g
 
 ## Lightweight validation checklist for this inventory
 
-Before closing bead `boring-ui-v2-reorg-twdn`, verify:
+Before closing task `boring-ui-v2-reorg-twdn`, verify:
 
 ```bash
 rg "ChatPanel\.test\.tsx|useAgentChat\.test\.ts|useSessions\.test\.ts|piChatProjection\.test\.ts|piNativeFollowUpQueue\.test\.ts|tool-call-group\.test\.tsx|toolRenderers\.test\.tsx|chat\.test\.ts|sessions\.test\.ts|sessions\.integration\.test\.ts|sessionChangesTracker\.test\.ts|tool-ui\.test\.ts|ChatPanelHost\.test\.tsx|SessionBrowser\.test\.tsx|plugin-integration\.test\.tsx|ModelSelect\.test\.tsx|builtins\.test\.ts|prompt-input-upload\.test\.tsx|bareToolRenderers/__tests__/renderers\.test\.tsx|WorkspaceAgentFront\.test\.tsx|registerAgentPlugin\.test\.tsx|CoreWorkspaceAgentFront\.test\.tsx" docs/plans/pi-native-chat-ui-rewrite-test-inventory.md
 rg "Active reload|active reload|reload while" docs/plans/pi-native-chat-ui-rewrite-test-inventory.md
-br show boring-ui-v2-reorg-twdn | rg "IN_PROGRESS|in_progress"
+gh issue view <issue-number> --json state,labels
 ```

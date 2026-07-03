@@ -74,8 +74,8 @@ export interface Sandbox {
    * The optional `onStdout` / `onStderr` callbacks (when implemented)
    * stream output incrementally as bytes arrive. When omitted,
    * implementations buffer normally and surface output via
-   * `ExecResult.stdout` / `stderr` only. See `Sandbox.exec` streaming
-   * extension under bead [Phase 1.0].
+   * `ExecResult.stdout` / `stderr` only. See the `Sandbox.exec` streaming
+   * extension added in Phase 1.0.
    */
   exec(cmd: string, opts?: ExecOptions): Promise<ExecResult>
 
