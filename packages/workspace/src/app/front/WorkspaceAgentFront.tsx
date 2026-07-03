@@ -22,6 +22,7 @@ import { PluginsOverlay } from "../../front/chrome/plugins/PluginsOverlay"
 import { AppLeftPane } from "../../front/layout/plugin-tabs/AppLeftPane"
 import { PluginTabsWorkspaceShell } from "../../front/layout/plugin-tabs/PluginTabsWorkspaceShell"
 import { captureFrontPlugin } from "../../shared/plugins/frontFactory"
+import type { FilesystemId } from "../../shared/types/filesystem"
 import { UI_COMMAND_EVENT, dispatchUiCommand } from "../../front/bridge"
 import type { CommandPaletteSessionItem } from "../../front/components/CommandPalette"
 import type { CommandResult, DispatchContext, FileTreeBridge, Unsubscribe } from "../../front/bridge"
@@ -115,6 +116,22 @@ export interface WorkspaceAgentAppLeftAction {
   emphasis?: boolean
 }
 
+export interface WorkspaceAgentAppLeftOverlayRenderProps {
+  onClose: () => void
+  headerInsetStart: boolean
+  headerInsetEnd: boolean
+  workspaceId: string
+}
+
+export interface WorkspaceAgentAppLeftOverlayAction {
+  id: string
+  label: string
+  icon: ReactNode
+  trailing?: ReactNode
+  emphasis?: boolean
+  render: (props: WorkspaceAgentAppLeftOverlayRenderProps) => ReactNode
+}
+
 export interface WorkspaceAgentFrontProps<
   TSession extends WorkspaceAgentSession = WorkspaceAgentSession,
 > extends Omit<WorkspaceProviderProps, "children" | "workspaceId" | "storageKey" | "chatPanel" | "commandPaletteSessionSearch">,
@@ -124,6 +141,7 @@ export interface WorkspaceAgentFrontProps<
       | "center"
       | "centerParams"
       | "chatPanes"
+      | "chatTopActions"
       | "activeChatPaneId"
       | "onActiveChatPaneChange"
       | "onCloseChatPane"
@@ -191,6 +209,8 @@ export interface WorkspaceAgentFrontProps<
   showPlugins?: boolean
   /** Extra actions inserted into the app-left primary action list before built-in management actions. */
   appLeftActions?: readonly WorkspaceAgentAppLeftAction[]
+  /** Extra chat-hosted management overlays opened from the app-left primary action list. */
+  appLeftOverlayActions?: readonly WorkspaceAgentAppLeftOverlayAction[]
   sessions?: Array<{ id: string; title?: string | null; updatedAt?: string | number; turnCount?: number }>
   activeSessionId?: string | null
   onSwitchSession?: (id: string) => void
@@ -443,6 +463,7 @@ export function WorkspaceAgentFront<
   showSkills = true,
   showPlugins = true,
   appLeftActions,
+  appLeftOverlayActions,
   chatParams,
   externalPlugins,
   hotReloadEnabled,
@@ -798,12 +819,13 @@ export function WorkspaceAgentFront<
     shellPersistenceEnabled,
   )
   const effectiveAppLeftPaneWidth = clampNumber(appLeftPaneWidth, 220, 420)
-  const [leftOverlay, setLeftOverlay] = useState<"skills" | "plugins" | null>(null)
+  const [leftOverlay, setLeftOverlay] = useState<string | null>(null)
   useEffect(() => {
-    if ((leftOverlay === "skills" && !skillsActionEnabled) || (leftOverlay === "plugins" && !pluginsActionEnabled)) {
+    const customOverlayActive = Boolean(leftOverlay && appLeftOverlayActions?.some((action) => action.id === leftOverlay))
+    if ((leftOverlay === "skills" && !skillsActionEnabled) || (leftOverlay === "plugins" && !pluginsActionEnabled) || (leftOverlay && leftOverlay !== "skills" && leftOverlay !== "plugins" && !customOverlayActive)) {
       setLeftOverlay(null)
     }
-  }, [leftOverlay, pluginsActionEnabled, skillsActionEnabled])
+  }, [appLeftOverlayActions, leftOverlay, pluginsActionEnabled, skillsActionEnabled])
   const effectiveNavOpen = navEnabled && navOpen
   const [surfaceOpen, setSurfaceOpen] = useStoredBooleanState(
     // Key must NOT match resolvedSurfaceStorageKey (which stores the dockview
@@ -984,8 +1006,8 @@ export function WorkspaceAgentFront<
   // retry + pending-op queue as agent commands (a direct getSurface().openFile()
   // drops the click when the surface hasn't mounted yet — the first-click race).
   const fileTreeBridge = useMemo<FileTreeBridge>(() => ({
-    openFile: async (path: string): Promise<CommandResult> => {
-      dispatchUiCommand({ kind: "openFile", params: { path } }, surfaceDispatch)
+    openFile: async (path: string, opts?: { filesystem?: FilesystemId }): Promise<CommandResult> => {
+      dispatchUiCommand({ kind: "openFile", params: { path, ...(opts?.filesystem ? { filesystem: opts.filesystem } : {}) } }, surfaceDispatch)
       return { seq: 0, status: "ok" }
     },
     getActiveFile: () => getSurface()?.getSnapshot().activeTab ?? null,
@@ -1472,8 +1494,47 @@ export function WorkspaceAgentFront<
         }
       : undefined
   ), [activeChatPaneId, chatPaneIds, isPluginTabsLayout, openChatPane, resolvedSessions, switchToChatPane])
+  const chatTopOverlayActions = useMemo(() => {
+    if (!isPluginTabsLayout || !appLeftOverlayActions?.length) return null
+    return (
+      <div className="flex items-center gap-1">
+        {appLeftOverlayActions.map((action) => (
+          <button
+            key={action.id}
+            type="button"
+            data-boring-workspace-part="chat-pane-control"
+            className="inline-flex h-5 items-center gap-1 rounded-md px-1.5 text-[11px] font-medium text-muted-foreground/80 transition-colors hover:bg-muted/70 hover:text-foreground aria-pressed:bg-muted aria-pressed:text-foreground"
+            aria-label={action.label}
+            aria-pressed={leftOverlay === action.id}
+            title={action.label}
+            onPointerDownCapture={(event) => event.nativeEvent.stopPropagation()}
+            onMouseDownCapture={(event) => event.nativeEvent.stopPropagation()}
+            onClick={(event) => {
+              event.preventDefault()
+              event.stopPropagation()
+              setLeftOverlay((cur) => cur === action.id ? null : action.id)
+            }}
+          >
+            {action.icon ? <span className="grid size-3.5 place-items-center">{action.icon}</span> : null}
+            <span>{action.label}</span>
+          </button>
+        ))}
+      </div>
+    )
+  }, [appLeftOverlayActions, isPluginTabsLayout, leftOverlay])
+
   const managementActions = useMemo<WorkspaceAgentAppLeftAction[]>(() => {
     const actions: WorkspaceAgentAppLeftAction[] = [...(appLeftActions ?? [])]
+    for (const action of appLeftOverlayActions ?? []) {
+      actions.push({
+        id: action.id,
+        label: action.label,
+        icon: action.icon,
+        trailing: action.trailing,
+        emphasis: action.emphasis,
+        onClick: () => setLeftOverlay((cur) => cur === action.id ? null : action.id),
+      })
+    }
     if (pluginsActionEnabled) {
       actions.push({
         id: "plugins",
@@ -1491,9 +1552,20 @@ export function WorkspaceAgentFront<
       })
     }
     return actions
-  }, [appLeftActions, pluginsActionEnabled, skillsActionEnabled])
+  }, [appLeftActions, appLeftOverlayActions, pluginsActionEnabled, skillsActionEnabled])
 
-  const leftOverlayNode = leftOverlay === "skills" && skillsActionEnabled ? (
+  const customLeftOverlayNode = useMemo(() => {
+    const overlay = appLeftOverlayActions?.find((action) => action.id === leftOverlay)
+    if (!overlay) return null
+    return overlay.render({
+      onClose: () => setLeftOverlay(null),
+      headerInsetStart: appLeftPaneCollapsed,
+      headerInsetEnd: !surfaceOpen,
+      workspaceId,
+    })
+  }, [appLeftOverlayActions, appLeftPaneCollapsed, leftOverlay, surfaceOpen, workspaceId])
+
+  const leftOverlayNode = customLeftOverlayNode ?? (leftOverlay === "skills" && skillsActionEnabled ? (
     <SkillsPage
       onClose={() => setLeftOverlay(null)}
       headerInsetStart={appLeftPaneCollapsed}
@@ -1506,7 +1578,7 @@ export function WorkspaceAgentFront<
       headerInsetStart={appLeftPaneCollapsed}
       headerInsetEnd={!surfaceOpen}
     />
-  ) : null
+  ) : null)
   const mainContent = remoteSessionsTransitioning ? (
     <ChatSessionTransitionState />
   ) : (
@@ -1517,6 +1589,7 @@ export function WorkspaceAgentFront<
       center="chat"
       centerParams={centerParams}
       chatPanes={chatPanes}
+      chatTopActions={chatTopOverlayActions}
       activeChatPaneId={activeChatPaneId}
       onActiveChatPaneChange={activateChatPane}
       onCloseChatPane={closeChatPane}

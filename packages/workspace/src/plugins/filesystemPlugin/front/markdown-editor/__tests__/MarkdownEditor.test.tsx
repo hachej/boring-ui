@@ -74,6 +74,36 @@ describe("MarkdownEditor", () => {
     ).toBe("/api/v1/files/raw?path=docs%2Fassets%2Freadme%2Fhero.png&workspaceId=boring-ui-v2-36cd3172")
   })
 
+  it("adds named filesystem identity to relative markdown image raw URLs", () => {
+    expect(
+      rawFileUrlForMarkdownImage(
+        "assets/diagram.png",
+        "handbook/index.md",
+        "",
+        null,
+        "project_alpha",
+      ),
+    ).toBe("/api/v1/files/raw?path=handbook%2Fassets%2Fdiagram.png&filesystem=project_alpha")
+    expect(
+      rawFileUrlForMarkdownImage(
+        "assets/diagram.png",
+        "/project/docs/handbook.md",
+        "",
+        null,
+        "project_alpha",
+      ),
+    ).toBe("/api/v1/files/raw?path=%2Fproject%2Fdocs%2Fassets%2Fdiagram.png&filesystem=project_alpha")
+    expect(
+      rawFileUrlForMarkdownImage(
+        "/project/docs/logo.png",
+        "/project/docs/handbook.md",
+        "",
+        null,
+        "project_alpha",
+      ),
+    ).toBe("/api/v1/files/raw?path=%2Fproject%2Fdocs%2Flogo.png&filesystem=project_alpha")
+  })
+
   it("resolves relative markdown file links against the current document", () => {
     expect(
       workspaceFilePathForMarkdownLink(
@@ -102,6 +132,54 @@ describe("MarkdownEditor", () => {
       expect(commands).toContainEqual({
         kind: "openFile",
         params: { path: "consulting-research/profiles/001-romain-rissoan.md" },
+      })
+    } finally {
+      window.removeEventListener(UI_COMMAND_EVENT, onCommand)
+    }
+  })
+
+  it("opens named-filesystem relative markdown links with filesystem identity", async () => {
+    const commands: unknown[] = []
+    const onCommand = (event: Event) => commands.push((event as CustomEvent).detail)
+    window.addEventListener(UI_COMMAND_EVENT, onCommand)
+    try {
+      render(
+        <MarkdownEditor
+          content="[Policy](policies/security.md)"
+          documentPath="/project/docs/handbook.md"
+          filesystem="project_alpha"
+          readOnly
+        />,
+      )
+      const link = await screen.findByRole("link", { name: "Policy" })
+      fireEvent.click(link)
+      expect(commands).toContainEqual({
+        kind: "openFile",
+        params: { path: "/project/docs/policies/security.md", filesystem: "project_alpha" },
+      })
+    } finally {
+      window.removeEventListener(UI_COMMAND_EVENT, onCommand)
+    }
+  })
+
+  it("opens root-relative named-filesystem markdown links with filesystem identity", async () => {
+    const commands: unknown[] = []
+    const onCommand = (event: Event) => commands.push((event as CustomEvent).detail)
+    window.addEventListener(UI_COMMAND_EVENT, onCommand)
+    try {
+      render(
+        <MarkdownEditor
+          content="[Policy](/project/docs/policies/security.md#overview)"
+          documentPath="/project/docs/handbook.md"
+          filesystem="project_alpha"
+          readOnly
+        />,
+      )
+      const link = await screen.findByRole("link", { name: "Policy" })
+      fireEvent.click(link)
+      expect(commands).toContainEqual({
+        kind: "openFile",
+        params: { path: "/project/docs/policies/security.md", filesystem: "project_alpha" },
       })
     } finally {
       window.removeEventListener(UI_COMMAND_EVENT, onCommand)
@@ -168,6 +246,14 @@ describe("MarkdownEditor", () => {
     expect(screen.getByTitle("Highlight")).toBeInTheDocument()
     expect(screen.getByTitle("Horizontal rule")).toBeInTheDocument()
     expect(screen.getByTitle("Raw markdown")).toBeInTheDocument()
+  })
+
+  it("disables workspace-backed image upload for non-user filesystems", async () => {
+    render(<MarkdownEditor content="test" filesystem="project_alpha" />)
+    await waitFor(() => {
+      expect(screen.getByRole("toolbar")).toBeInTheDocument()
+    })
+    expect(screen.getByTitle("Image upload unavailable for this filesystem")).toBeDisabled()
   })
 
   it("shows a word count footer", async () => {
@@ -746,8 +832,8 @@ describe("MarkdownEditor", () => {
         })
       })
 
-      it("renders a draggable resize handle on the image NodeView", async () => {
-        render(
+      it("renders a draggable resize handle on editable image NodeViews only", async () => {
+        const { unmount } = render(
           <MarkdownEditor content='<img src="https://example.com/x.png" />' />,
         )
         await waitFor(() => {
@@ -755,6 +841,15 @@ describe("MarkdownEditor", () => {
             document.querySelector("[data-testid='resize-handle']"),
           ).toBeTruthy()
         })
+        unmount()
+
+        render(
+          <MarkdownEditor content='<img src="https://example.com/x.png" />' readOnly />,
+        )
+        await waitFor(() => {
+          expect(document.querySelector("[data-resizable-image] img")).toBeTruthy()
+        })
+        expect(document.querySelector("[data-testid='resize-handle']")).toBeNull()
       })
     })
 

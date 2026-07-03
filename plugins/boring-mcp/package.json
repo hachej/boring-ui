@@ -7,7 +7,7 @@
   "publishConfig": {
     "access": "public"
   },
-  "description": "Reusable boring-ui MCP/Sources plugin foundation: generic Sources UI, policy, redaction, and facade contracts.",
+  "description": "Reusable boring-ui MCP plugin foundation: generic MCP UI, policy, redaction, and facade contracts.",
   "repository": {
     "type": "git",
     "url": "https://github.com/hachej/boring-ui"
@@ -15,7 +15,7 @@
   "homepage": "https://github.com/hachej/boring-ui",
   "boring": {
     "id": "boring-mcp",
-    "label": "Sources",
+    "label": "MCP",
     "front": "dist/front/index.js",
     "server": "dist/server/index.js"
   },
