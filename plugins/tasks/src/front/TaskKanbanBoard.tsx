@@ -12,12 +12,9 @@ interface BoardState {
   tasks: BoringTaskCard[]
 }
 
-type TaskGroupMode = "none" | "epic"
-
-interface TaskGroupView {
+interface EpicOption {
   id: string
   title: string
-  tasks: BoringTaskCard[]
 }
 
 function adapterSummary(adapters: readonly BoringTaskAdapter[], selectedCount: number): string {
@@ -30,20 +27,18 @@ function uniqueTags(tasks: readonly BoringTaskCard[]): string[] {
   return [...new Set(tasks.flatMap((task) => task.tags ?? []))].sort((a, b) => a.localeCompare(b))
 }
 
-function groupTasksByEpic(tasks: readonly BoringTaskCard[]): TaskGroupView[] {
-  const groups = new Map<string, TaskGroupView>()
+function uniqueEpics(tasks: readonly BoringTaskCard[]): EpicOption[] {
+  const byId = new Map<string, EpicOption>()
   for (const task of tasks) {
-    const id = task.epic?.id ? `${task.adapterId}:${task.epic.id}` : "__no_epic__"
-    const title = task.epic?.title ?? "No epic"
-    const group = groups.get(id) ?? { id, title, tasks: [] }
-    group.tasks.push(task)
-    groups.set(id, group)
+    if (!task.epic) continue
+    const id = `${task.adapterId}:${task.epic.id}`
+    if (!byId.has(id)) byId.set(id, { id, title: task.epic.title })
   }
-  return [...groups.values()].sort((a, b) => {
-    if (a.id === "__no_epic__") return 1
-    if (b.id === "__no_epic__") return -1
-    return a.title.localeCompare(b.title)
-  })
+  return [...byId.values()].sort((a, b) => a.title.localeCompare(b.title))
+}
+
+function epicFilterId(task: BoringTaskCard): string | undefined {
+  return task.epic ? `${task.adapterId}:${task.epic.id}` : undefined
 }
 
 function mergeColumns(configs: readonly BoringTaskBoardConfig[], visibleColumnIds: ReadonlySet<string>): BoringTaskColumn[] {
@@ -63,7 +58,7 @@ export function TaskKanbanBoard({ adapters }: TaskKanbanBoardProps) {
   const [state, setState] = useState<BoardState | null>(null)
   const [visibleColumnIds, setVisibleColumnIds] = useState<ReadonlySet<string>>(new Set())
   const [tagFilter, setTagFilter] = useState("all")
-  const [groupMode, setGroupMode] = useState<TaskGroupMode>("none")
+  const [epicFilter, setEpicFilter] = useState("all")
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [activeTaskRef, setActiveTaskRef] = useState<{ taskId: string; adapterId: string } | null>(null)
@@ -104,6 +99,7 @@ export function TaskKanbanBoard({ adapters }: TaskKanbanBoardProps) {
       setState({ configs, tasks })
       setVisibleColumnIds(columnIds)
       setTagFilter("all")
+      setEpicFilter("all")
     } catch (cause) {
       if (requestSeq.current === requestId) {
         setError(cause instanceof Error ? cause.message : String(cause))
@@ -132,6 +128,7 @@ export function TaskKanbanBoard({ adapters }: TaskKanbanBoardProps) {
   }, [selectedAdapterIds, state])
 
   const tags = useMemo(() => uniqueTags(selectedTasks), [selectedTasks])
+  const epics = useMemo(() => uniqueEpics(selectedTasks), [selectedTasks])
 
   const selectedConfigs = useMemo(() => {
     if (!state) return []
@@ -144,10 +141,11 @@ export function TaskKanbanBoard({ adapters }: TaskKanbanBoardProps) {
     const configuredStatusIds = new Set(allColumns.map((column) => column.id))
     return selectedTasks.filter((task) => {
       if (tagFilter !== "all" && !(task.tags ?? []).includes(tagFilter)) return false
+      if (epicFilter !== "all" && epicFilterId(task) !== epicFilter) return false
       if (!configuredStatusIds.has(task.statusId)) return true
       return visibleColumnIds.has(task.statusId)
     })
-  }, [allColumns, selectedTasks, tagFilter, visibleColumnIds])
+  }, [allColumns, epicFilter, selectedTasks, tagFilter, visibleColumnIds])
 
   const visibleConfig = useMemo<BoringTaskBoardConfig | null>(() => {
     if (!state) return null
@@ -157,17 +155,9 @@ export function TaskKanbanBoard({ adapters }: TaskKanbanBoardProps) {
     }
   }, [selectedConfigs, state, visibleColumnIds])
 
-  const taskGroups = useMemo<TaskGroupView[]>(() => {
-    if (groupMode === "epic") return groupTasksByEpic(filteredTasks)
-    return [{ id: "all", title: "All tasks", tasks: filteredTasks }]
-  }, [filteredTasks, groupMode])
-
-  const groupedColumns = useMemo(
-    () => visibleConfig ? taskGroups.map((group) => ({
-      ...group,
-      columns: groupTasksByColumn(visibleConfig, group.tasks),
-    })) : [],
-    [taskGroups, visibleConfig],
+  const columns = useMemo(
+    () => visibleConfig ? groupTasksByColumn(visibleConfig, filteredTasks) : [],
+    [filteredTasks, visibleConfig],
   )
 
   const handleTaskDragStart = (event: DragEvent<HTMLElement>, task: BoringTaskCard) => {
@@ -289,14 +279,14 @@ export function TaskKanbanBoard({ adapters }: TaskKanbanBoardProps) {
           </select>
         </label>
         <label className="flex items-center gap-2 text-xs font-medium text-muted-foreground">
-          Group
+          Epic
           <select
             className="h-8 rounded-lg border border-border bg-background px-2 text-sm text-foreground shadow-sm outline-none focus:border-foreground/40"
-            value={groupMode}
-            onChange={(event) => setGroupMode(event.target.value as TaskGroupMode)}
+            value={epicFilter}
+            onChange={(event) => setEpicFilter(event.target.value)}
           >
-            <option value="none">None</option>
-            <option value="epic">Epic</option>
+            <option value="all">All epics</option>
+            {epics.map((epic) => <option key={epic.id} value={epic.id}>{epic.title}</option>)}
           </select>
         </label>
         <div className="relative">
@@ -349,11 +339,11 @@ export function TaskKanbanBoard({ adapters }: TaskKanbanBoardProps) {
       <div className="min-h-0 flex-1 overflow-hidden">
         {loading && !state ? (
           <div className="grid h-full place-items-center rounded-2xl border border-dashed border-border text-sm text-muted-foreground">Loading task board…</div>
-        ) : groupedColumns.length === 0 ? (
+        ) : columns.length === 0 ? (
           <div className="grid h-full place-items-center rounded-2xl border border-dashed border-border text-sm text-muted-foreground">No tasks match the current filters.</div>
-        ) : groupMode === "none" ? (
+        ) : (
           <div className="flex h-full gap-3 overflow-x-auto pb-2">
-            {groupedColumns[0]?.columns.map((column) => (
+            {columns.map((column) => (
               <TaskKanbanColumn
                 key={column.id}
                 column={column}
@@ -364,33 +354,6 @@ export function TaskKanbanBoard({ adapters }: TaskKanbanBoardProps) {
                 onTaskDrop={(taskId, adapterId, statusId) => void moveTask(taskId, adapterId, statusId)}
                 canDragTask={(task) => Boolean(adaptersById.get(task.adapterId)?.capabilities.move && adaptersById.get(task.adapterId)?.moveTask)}
               />
-            ))}
-          </div>
-        ) : (
-          <div className="boring-scrollbar-discreet flex h-full flex-col gap-4 overflow-y-auto pb-2">
-            {groupedColumns.map((group) => (
-              <section key={group.id} className="rounded-2xl border border-border/70 bg-card/35 p-3">
-                <div className="mb-3 flex items-center justify-between gap-2">
-                  <h3 className="truncate text-sm font-semibold text-foreground">{group.title}</h3>
-                  <span className="rounded-full border border-border bg-background px-2 py-0.5 text-xs tabular-nums text-muted-foreground">
-                    {group.tasks.length}
-                  </span>
-                </div>
-                <div className="flex min-h-[22rem] gap-3 overflow-x-auto pb-1">
-                  {group.columns.map((column) => (
-                    <TaskKanbanColumn
-                      key={column.id}
-                      column={column}
-                      moveEnabled={true}
-                      activeTaskRef={activeTaskRef}
-                      onTaskDragStart={handleTaskDragStart}
-                      onTaskDragEnd={() => setActiveTaskRef(null)}
-                      onTaskDrop={(taskId, adapterId, statusId) => void moveTask(taskId, adapterId, statusId)}
-                      canDragTask={(task) => Boolean(adaptersById.get(task.adapterId)?.capabilities.move && adaptersById.get(task.adapterId)?.moveTask)}
-                    />
-                  ))}
-                </div>
-              </section>
             ))}
           </div>
         )}
