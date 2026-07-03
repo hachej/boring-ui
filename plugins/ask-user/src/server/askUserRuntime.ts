@@ -130,6 +130,7 @@ export class AskUserRuntime {
 
   async ask(request: AskUserRequest, signal?: AbortSignal): Promise<AskUserToolResult> {
     const ownerPrincipalId = request.ownerPrincipalId ?? this.ownerPrincipalId
+    await this.abandonOrphanedPending([request.sessionId])
     this.assertAllowed(request.sessionId, ownerPrincipalId)
     const question = this.createQuestion({ ...request, ownerPrincipalId })
     const parsed = AskUserFormSchemaSchema.safeParse(request.schema)

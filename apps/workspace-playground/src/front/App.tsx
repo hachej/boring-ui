@@ -4,7 +4,7 @@ import type { DeckWidgetDefinition } from "@hachej/boring-deck/shared"
 import { FileTreePane, WorkspaceProvider } from "@hachej/boring-workspace"
 import { WorkspaceAgentFront, WorkspaceFullPagePanel, parseFullPagePanelLocation } from "@hachej/boring-workspace/app/front"
 import { definePlugin, type WorkspaceSourceProps } from "@hachej/boring-workspace/plugin"
-import { askUserPlugin } from "@hachej/boring-ask-user/front"
+import { createAskUserPlugin } from "@hachej/boring-ask-user/front"
 import { SHOWCASE_SESSION_ID, seedShowcase } from "./showcaseMessages"
 
 function isShowcaseRoute(): boolean {
@@ -69,7 +69,7 @@ function MultiFilesystemFileTreeSource(props: WorkspaceSourceProps) {
             searchPlaceholder: "Filter company files...",
           },
         ],
-      }}
+      } as Parameters<typeof FileTreePane>[0]["params"]}
     />
   )
 }
@@ -87,6 +87,7 @@ const multiFilesystemPlaygroundPlugin = definePlugin({
   ],
 })
 
+const askUserPlugin = createAskUserPlugin({ appLeftInbox: true })
 const workspacePlugins = [askUserPlugin, playgroundDeckPlugin]
 const multiFilesystemWorkspacePlugins = [askUserPlugin, playgroundDeckPlugin, multiFilesystemPlaygroundPlugin]
 const externalPluginsEnabled = (import.meta as ImportMeta & { env?: Record<string, string> }).env?.VITE_BORING_EXTERNAL_PLUGINS === "1"
