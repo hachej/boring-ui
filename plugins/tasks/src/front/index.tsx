@@ -24,6 +24,7 @@ export default tasksPlugin
 export { TaskKanbanBoard } from "./TaskKanbanBoard"
 export { TasksOverlay } from "./TasksOverlay"
 export { createGitHubIssuesAdapter } from "./githubIssuesAdapter"
+export { createHttpTaskAdapter, listHttpTaskSources } from "./httpTaskAdapter"
 export { createMockTaskAdapter } from "./mockAdapter"
 export type {
   BoringTaskAdapter,

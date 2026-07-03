@@ -13,7 +13,8 @@
   "boring": {
     "id": "tasks",
     "label": "Tasks",
-    "front": "dist/front/index.js"
+    "front": "dist/front/index.js",
+    "server": "dist/server/index.js"
   },
   "files": [
     "dist"
@@ -30,6 +31,10 @@
     "./shared": {
       "types": "./dist/shared/index.d.ts",
       "import": "./dist/shared/index.js"
+    },
+    "./server": {
+      "types": "./dist/server/index.d.ts",
+      "import": "./dist/server/index.js"
     },
     "./package.json": "./package.json"
   },

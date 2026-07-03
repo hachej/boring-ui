@@ -66,7 +66,7 @@ export function TaskKanbanBoard({ adapters }: TaskKanbanBoardProps) {
   const [groupMode, setGroupMode] = useState<TaskGroupMode>("none")
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
-  const [activeTaskId, setActiveTaskId] = useState<string | null>(null)
+  const [activeTaskRef, setActiveTaskRef] = useState<{ taskId: string; adapterId: string } | null>(null)
   const [movingTaskId, setMovingTaskId] = useState<string | null>(null)
   const [openMenu, setOpenMenu] = useState<"sources" | "columns" | null>(null)
   const requestSeq = useRef(0)
@@ -171,21 +171,25 @@ export function TaskKanbanBoard({ adapters }: TaskKanbanBoardProps) {
   )
 
   const handleTaskDragStart = (event: DragEvent<HTMLElement>, task: BoringTaskCard) => {
-    setActiveTaskId(task.id)
+    setActiveTaskRef({ taskId: task.id, adapterId: task.adapterId })
     event.dataTransfer.effectAllowed = "move"
+    event.dataTransfer.setData("application/x-boring-task-ref", JSON.stringify({ taskId: task.id, adapterId: task.adapterId }))
     event.dataTransfer.setData("application/x-boring-task-id", task.id)
     event.dataTransfer.setData("text/plain", task.number)
   }
 
-  const moveTask = async (taskId: string, statusId: string) => {
+  const moveTask = async (taskId: string, adapterId: string, statusId: string) => {
     if (!state) return
-    const task = state.tasks.find((candidate) => candidate.id === taskId)
+    const task = state.tasks.find((candidate) => candidate.id === taskId && candidate.adapterId === adapterId)
     if (!task || task.statusId === statusId) {
-      setActiveTaskId(null)
+      setActiveTaskRef(null)
       return
     }
     const adapter = adaptersById.get(task.adapterId)
-    if (!adapter?.capabilities.move || !adapter.moveTask) return
+    if (!adapter?.capabilities.move || !adapter.moveTask) {
+      setActiveTaskRef(null)
+      return
+    }
 
     const previous = state.tasks
     const movingAdapterId = task.adapterId
@@ -193,14 +197,14 @@ export function TaskKanbanBoard({ adapters }: TaskKanbanBoardProps) {
     setError(null)
     setState((current) => current ? {
       ...current,
-      tasks: current.tasks.map((candidate) => candidate.id === taskId ? { ...candidate, statusId } : candidate),
+      tasks: current.tasks.map((candidate) => candidate.id === taskId && candidate.adapterId === adapterId ? { ...candidate, statusId } : candidate),
     } : current)
 
     try {
       const moved = await adapter.moveTask({ taskId, statusId })
       setState((current) => current ? {
         ...current,
-        tasks: current.tasks.map((candidate) => candidate.id === taskId ? moved : candidate),
+        tasks: current.tasks.map((candidate) => candidate.id === taskId && candidate.adapterId === adapterId ? moved : candidate),
       } : current)
     } catch (cause) {
       setState((current) => current ? { ...current, tasks: previous } : current)
@@ -209,7 +213,7 @@ export function TaskKanbanBoard({ adapters }: TaskKanbanBoardProps) {
       }
     } finally {
       setMovingTaskId(null)
-      setActiveTaskId(null)
+      setActiveTaskRef(null)
     }
   }
 
@@ -354,10 +358,10 @@ export function TaskKanbanBoard({ adapters }: TaskKanbanBoardProps) {
                 key={column.id}
                 column={column}
                 moveEnabled={true}
-                activeTaskId={activeTaskId}
+                activeTaskRef={activeTaskRef}
                 onTaskDragStart={handleTaskDragStart}
-                onTaskDragEnd={() => setActiveTaskId(null)}
-                onTaskDrop={(taskId, statusId) => void moveTask(taskId, statusId)}
+                onTaskDragEnd={() => setActiveTaskRef(null)}
+                onTaskDrop={(taskId, adapterId, statusId) => void moveTask(taskId, adapterId, statusId)}
                 canDragTask={(task) => Boolean(adaptersById.get(task.adapterId)?.capabilities.move && adaptersById.get(task.adapterId)?.moveTask)}
               />
             ))}
@@ -378,10 +382,10 @@ export function TaskKanbanBoard({ adapters }: TaskKanbanBoardProps) {
                       key={column.id}
                       column={column}
                       moveEnabled={true}
-                      activeTaskId={activeTaskId}
+                      activeTaskRef={activeTaskRef}
                       onTaskDragStart={handleTaskDragStart}
-                      onTaskDragEnd={() => setActiveTaskId(null)}
-                      onTaskDrop={(taskId, statusId) => void moveTask(taskId, statusId)}
+                      onTaskDragEnd={() => setActiveTaskRef(null)}
+                      onTaskDrop={(taskId, adapterId, statusId) => void moveTask(taskId, adapterId, statusId)}
                       canDragTask={(task) => Boolean(adaptersById.get(task.adapterId)?.capabilities.move && adaptersById.get(task.adapterId)?.moveTask)}
                     />
                   ))}

@@ -1,7 +1,10 @@
+import { useEffect, useMemo, useState } from "react"
 import { IconButton } from "@hachej/boring-ui-kit"
 import { useAppLeftOverlayChrome, type BoringFrontAppLeftOverlayProps } from "@hachej/boring-workspace/plugin"
 import { X } from "lucide-react"
+import type { BoringTaskAdapter } from "../shared"
 import { createGitHubIssuesAdapter } from "./githubIssuesAdapter"
+import { createHttpTaskAdapter, listHttpTaskSources } from "./httpTaskAdapter"
 import { createMockTaskAdapter } from "./mockAdapter"
 import { TaskKanbanBoard } from "./TaskKanbanBoard"
 
@@ -21,6 +24,27 @@ function TasksGlyph({ className }: { className?: string }) {
 
 export function TasksOverlay({ onClose }: BoringFrontAppLeftOverlayProps) {
   const { headerInsetStart, headerInsetEnd } = useAppLeftOverlayChrome()
+  const [httpAdapters, setHttpAdapters] = useState<BoringTaskAdapter[] | null>(null)
+
+  useEffect(() => {
+    let cancelled = false
+    const loadSources = async () => {
+      try {
+        const sources = await listHttpTaskSources()
+        if (!cancelled) setHttpAdapters(sources.map((source) => createHttpTaskAdapter(source)))
+      } catch {
+        if (!cancelled) setHttpAdapters([])
+      }
+    }
+    void loadSources()
+    return () => { cancelled = true }
+  }, [])
+
+  const adapters = useMemo(() => {
+    if (httpAdapters === null) return null
+    if (httpAdapters.length > 0) return httpAdapters
+    return demoAdapters
+  }, [httpAdapters])
 
   return (
     <div data-boring-workspace-part="tasks-overlay" className="flex h-full min-h-0 flex-col bg-background">
@@ -53,7 +77,11 @@ export function TasksOverlay({ onClose }: BoringFrontAppLeftOverlayProps) {
           </IconButton>
         </div>
       </header>
-      <TaskKanbanBoard adapters={demoAdapters} />
+      {adapters ? (
+        <TaskKanbanBoard adapters={adapters} />
+      ) : (
+        <div className="grid min-h-0 flex-1 place-items-center p-4 text-sm text-muted-foreground">Loading task sources…</div>
+      )}
     </div>
   )
 }

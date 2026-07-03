@@ -7,17 +7,17 @@ import { TaskCard } from "./TaskCard"
 interface TaskKanbanColumnProps {
   column: BoringTaskColumnView
   moveEnabled: boolean
-  activeTaskId: string | null
+  activeTaskRef: { taskId: string; adapterId: string } | null
   onTaskDragStart: (event: DragEvent<HTMLElement>, task: BoringTaskCard) => void
   onTaskDragEnd: () => void
-  onTaskDrop: (taskId: string, statusId: string) => void
+  onTaskDrop: (taskId: string, adapterId: string, statusId: string) => void
   canDragTask?: (task: BoringTaskCard) => boolean
 }
 
 export function TaskKanbanColumn({
   column,
   moveEnabled,
-  activeTaskId,
+  activeTaskRef,
   onTaskDragStart,
   onTaskDragEnd,
   onTaskDrop,
@@ -25,9 +25,10 @@ export function TaskKanbanColumn({
 }: TaskKanbanColumnProps) {
   const acceptsDrop = moveEnabled && canDropInColumn(column)
 
-  const hasTaskDragPayload = (event: DragEvent<HTMLElement>) => (
-    Array.from(event.dataTransfer.types).includes("application/x-boring-task-id")
-  )
+  const hasTaskDragPayload = (event: DragEvent<HTMLElement>) => {
+    const types = Array.from(event.dataTransfer.types)
+    return types.includes("application/x-boring-task-ref") || types.includes("application/x-boring-task-id")
+  }
 
   const handleDragOver = (event: DragEvent<HTMLDivElement>) => {
     if (!acceptsDrop || !hasTaskDragPayload(event)) return
@@ -38,8 +39,17 @@ export function TaskKanbanColumn({
   const handleDrop = (event: DragEvent<HTMLDivElement>) => {
     if (!acceptsDrop || !hasTaskDragPayload(event)) return
     event.preventDefault()
-    const taskId = event.dataTransfer.getData("application/x-boring-task-id") || activeTaskId
-    if (taskId) onTaskDrop(taskId, column.id)
+    const rawRef = event.dataTransfer.getData("application/x-boring-task-ref")
+    const fallbackTaskId = event.dataTransfer.getData("application/x-boring-task-id")
+    let ref: { taskId?: unknown; adapterId?: unknown } | undefined
+    try {
+      ref = rawRef ? JSON.parse(rawRef) as { taskId?: unknown; adapterId?: unknown } : undefined
+    } catch {
+      ref = undefined
+    }
+    const taskId = typeof ref?.taskId === "string" ? ref.taskId : fallbackTaskId || activeTaskRef?.taskId
+    const adapterId = typeof ref?.adapterId === "string" ? ref.adapterId : activeTaskRef?.adapterId
+    if (taskId && adapterId) onTaskDrop(taskId, adapterId, column.id)
   }
 
   return (
@@ -75,7 +85,7 @@ export function TaskKanbanColumn({
           </div>
         ) : column.tasks.map((task) => (
           <TaskCard
-            key={task.id}
+            key={`${task.adapterId}:${task.id}`}
             task={task}
             draggable={!column.unmapped && canDragTask(task)}
             unmapped={column.unmapped}
