@@ -35,6 +35,8 @@ Final product model:
 
 Policy v1 is YAML-backed and read-only from the app UI. Admins edit the YAML on the host/volume for v1; the Company Admin UI shows the effective policy and status. UI editing and DB-backed policy persistence are later work.
 
+Future Constellation/Microsoft auth integration should treat the Microsoft/Constellation tenant directory as the user source of truth. YAML v1 is a governance policy overlay, not the long-term user directory. Keep seams generic so a later `TenantDirectoryProvider` can list users, expose verified identity, and map stable external subjects/groups to boring tenant roles/policies. Prefer stable external IDs over email-only matching when that integration lands; email remains acceptable for YAML v1.
+
 Usage accounting uses the existing metering ledger; budget admission adds a minimal governance hold table so concurrent runs cannot all pass the same limit check.
 
 ## Superseded plan

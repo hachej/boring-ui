@@ -73,9 +73,9 @@ export class GovernanceService {
     return this.roleForUser(user) === 'admin'
   }
 
-  allowedModelsForUser<TModel extends ServedModelLike>(user: GovernanceUserLike, servedModels: TModel[]): TModel[] {
+  allowedModelsForUser<TModel extends ServedModelLike>(user: GovernanceUserLike, servedModels: readonly TModel[]): TModel[] {
     const userPolicy = this.userPolicy(user)
-    if (!this.loaded.enabled) return servedModels
+    if (!this.loaded.enabled) return [...servedModels]
     if (!userPolicy) return []
     const allowed = new Set(userPolicy.models.map((model) => `${model.provider}\u0000${model.id}`))
     return servedModels.filter((model) => allowed.has(`${model.provider}\u0000${model.id}`))

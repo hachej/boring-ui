@@ -1,3 +1,5 @@
+import type { FastifyRequest } from 'fastify'
+import type { RegisterAgentRoutesOptions } from '@hachej/boring-agent/server'
 import type { CoreConfig } from '@hachej/boring-core/shared'
 import type { CoreWorkspaceAgentServerPlugin } from '@hachej/boring-core/app/server'
 import { loadGovernancePolicy, type LoadGovernancePolicyOptions } from './loadPolicy.js'
@@ -29,6 +31,26 @@ export interface BuildGovernanceOptions extends Omit<LoadGovernancePolicyOptions
 
 export async function buildGovernanceService(options: BuildGovernanceOptions = {}): Promise<GovernanceService> {
   return createGovernanceService(await loadGovernancePolicy(options))
+}
+
+function governanceUserFromRequest(request: FastifyRequest) {
+  const user = request.user
+  return user ? { id: user.id, email: user.email, emailVerified: user.emailVerified } : null
+}
+
+export function createGovernanceModelFilter(service: GovernanceService): RegisterAgentRoutesOptions['filterModels'] {
+  return async ({ request }, models, defaultModel) => {
+    const user = governanceUserFromRequest(request)
+    if (!service.isEnabled()) return { models, defaultModel }
+    if (!user) return { models: [] }
+    const allowedModels = service.allowedModelsForUser(user, models)
+    const allowedDefault = defaultModel && allowedModels.some((model) => (
+      model.available && model.provider === defaultModel.provider && model.id === defaultModel.id
+    ))
+      ? defaultModel
+      : undefined
+    return { models: allowedModels, defaultModel: allowedDefault }
+  }
 }
 
 export function createGovernanceServerPlugin(service: GovernanceService): CoreWorkspaceAgentServerPlugin {

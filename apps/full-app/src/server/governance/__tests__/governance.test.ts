@@ -4,6 +4,7 @@ import os from 'node:os'
 import Fastify from 'fastify'
 import { describe, expect, it } from 'vitest'
 
+import { createGovernanceModelFilter } from '../index.js'
 import { createGovernanceService } from '../governanceService.js'
 import { loadGovernancePolicy, GOVERNANCE_DEV_EMAIL_VERIFICATION_OVERRIDE_ENV } from '../loadPolicy.js'
 import { governanceRoutes } from '../routes.js'
@@ -169,6 +170,53 @@ describe('governance service and route', () => {
     expect(normal.json()).toEqual({ enabled: true, role: 'user', admin: false })
 
     await app.close()
+  })
+
+  it('filters exact models and removes denied default', async () => {
+    const policyPath = await writePolicy(VALID_POLICY)
+    const service = createGovernanceService(await loadGovernancePolicy({
+      env: { BORING_GOVERNANCE_POLICY_PATH: policyPath },
+      config: configWithMail,
+    }))
+    const filter = createGovernanceModelFilter(service)!
+    const request = {
+      user: { id: 'user-1', email: 'user@example.com', name: null, emailVerified: true },
+      workspaceContext: { workspaceId: 'ws-a' },
+    } as any
+
+    const result = await filter(
+      { request, workspaceId: 'ws-a' },
+      [
+        { provider: 'infomaniak', id: 'qwen', label: 'Qwen', available: true },
+        { provider: 'openai', id: 'gpt', label: 'GPT', available: true },
+      ],
+      { provider: 'openai', id: 'gpt' },
+    )
+
+    expect(result.models).toEqual([{ provider: 'infomaniak', id: 'qwen', label: 'Qwen', available: true }])
+    expect(result.defaultModel).toBeUndefined()
+  })
+
+  it('returns no models for unverified users when governance is enabled', async () => {
+    const policyPath = await writePolicy(VALID_POLICY)
+    const service = createGovernanceService(await loadGovernancePolicy({
+      env: { BORING_GOVERNANCE_POLICY_PATH: policyPath },
+      config: configWithMail,
+    }))
+    const filter = createGovernanceModelFilter(service)!
+    const request = {
+      user: { id: 'admin', email: 'admin@example.com', name: null, emailVerified: false },
+      workspaceContext: { workspaceId: 'ws-a' },
+    } as any
+
+    const result = await filter(
+      { request, workspaceId: 'ws-a' },
+      [{ provider: 'infomaniak', id: 'qwen', label: 'Qwen', available: true }],
+      { provider: 'infomaniak', id: 'qwen' },
+    )
+
+    expect(result.models).toEqual([])
+    expect(result.defaultModel).toBeUndefined()
   })
 
   it('surfaces invalid dev policy status because no policy-derived admin exists', async () => {

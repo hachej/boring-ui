@@ -28,7 +28,7 @@ import { healthRoutes } from './http/routes/health'
 import { fileRoutes } from './http/routes/file'
 import { fsEventsRoutes } from './http/routes/fsEvents'
 import { treeRoutes } from './http/routes/tree'
-import { modelsRoutes } from './http/routes/models'
+import { modelsRoutes, type ModelsRoutesOptions } from './http/routes/models'
 import { skillsRoutes } from './http/routes/skills'
 import { piChatRoutes } from './http/routes/piChat'
 import { systemPromptRoutes } from './http/routes/systemPrompt'
@@ -162,11 +162,12 @@ function promoteRawFileWorkspaceQueryToHeader(request: FastifyRequest): void {
 
 function isWorkspaceAgnosticAgentRequest(
   request: FastifyRequest,
-  options?: { readyStatusWorkspaceScoped?: boolean },
+  options?: { readyStatusWorkspaceScoped?: boolean; modelsWorkspaceScoped?: boolean },
 ): boolean {
   const pathname = request.url.split('?')[0] ?? request.url
   if (pathname === '/api/v1/ready-status') return !options?.readyStatusWorkspaceScoped
-  return pathname === '/health' || pathname === '/ready' || pathname === '/api/v1/agent/models'
+  if (pathname === '/api/v1/agent/models') return !options?.modelsWorkspaceScoped
+  return pathname === '/health' || pathname === '/ready'
 }
 
 function normalizeSessionNamespace(value: string | undefined): string | undefined {
@@ -278,6 +279,8 @@ export interface RegisterAgentRoutesOptions {
   sessionRoot?: string
   /** Optional best-effort telemetry sink supplied by an embedding host. */
   telemetry?: TelemetrySink
+  /** Generic request-aware model filtering seam. Hosts may filter per user/workspace. */
+  filterModels?: ModelsRoutesOptions['filterModels']
   /**
    * Optional billing sink for native Pi usage. Reserve happens before
    * accepted prompt/follow-up execution (fail closed), usage is recorded from
@@ -350,6 +353,7 @@ export const registerAgentRoutes: FastifyPluginAsync<RegisterAgentRoutesOptions>
   app.addHook('onClose', async () => {
     await modeAdapter.dispose?.()
   })
+  const modelsWorkspaceScoped = Boolean(opts.filterModels)
   const requestScopedRuntime =
     typeof opts.getWorkspaceId === 'function' ||
     typeof opts.getWorkspaceRoot === 'function' ||
@@ -872,7 +876,7 @@ let runtimeProvisioning: WorkspaceProvisioningResult | undefined
     const user = (request as unknown as { user?: { id: string } | null }).user
     let workspaceId = DEFAULT_WORKSPACE_ID
     promoteRawFileWorkspaceQueryToHeader(request)
-    if (opts.getWorkspaceId && !isWorkspaceAgnosticAgentRequest(request, { readyStatusWorkspaceScoped: requestScopedRuntime })) {
+    if (opts.getWorkspaceId && !isWorkspaceAgnosticAgentRequest(request, { readyStatusWorkspaceScoped: requestScopedRuntime, modelsWorkspaceScoped })) {
       try {
         workspaceId = (await opts.getWorkspaceId(request)).trim()
       } catch (error) {
@@ -946,7 +950,9 @@ let runtimeProvisioning: WorkspaceProvisioningResult | undefined
   await app.register(systemPromptRoutes, {
     getHarness: async (request) => (await getBindingForRequest(request)).harness,
   })
-  await app.register(modelsRoutes)
+  await app.register(modelsRoutes, {
+    filterModels: opts.filterModels,
+  })
   await app.register(skillsRoutes, {
     workspaceRoot,
     additionalSkillPaths: [

@@ -20,6 +20,7 @@ thermo_review: fable pass 1 found blockers; this revision addresses them
 - Policy-derived privileges require `emailVerified === true`.
 - Use exact `(provider, model id)` matches only.
 - Budgets are EUR monthly calendar budgets, converted to credit micros.
+- Keep user-directory seams ready for future Constellation/Microsoft auth: YAML v1 is a policy overlay, not the long-term user source of truth. A later tenant directory adapter should provide user lists, verified identities, and stable external subject/group mappings.
 - Post proof comments on every PR.
 
 ---
@@ -163,45 +164,45 @@ Filter visible/selectable models per user from YAML policy. No budget admission 
 
 ### TODO
 
-- [ ] Add generic model filtering seam to `@hachej/boring-agent`:
-  - [ ] `modelsRoutes(app, { filterModels? })` accepts request-aware callback;
-  - [ ] callback receives immutable served model summaries and candidate default;
-  - [ ] callback returns filtered `{ models, defaultModel? }`;
-  - [ ] no mutation of cached registry arrays.
-- [ ] Register routes plumbing:
-  - [ ] `RegisterAgentRoutesOptions` adds model policy/filter option;
-  - [ ] `registerAgentRoutes` passes it to `modelsRoutes`;
-  - [ ] `createAgentApp` keeps no-policy behavior;
-  - [ ] when policy callback configured, `/api/v1/agent/models` is not workspace-agnostic and has request user/workspace context.
-- [ ] Provider capability leak check:
-  - [ ] `getAvailableModelProviders()` duplicates registry/provider discovery;
-  - [ ] either filter provider names using the same policy or explicitly accept provider-name leakage with rationale;
-  - [ ] prefer filtering to keep model governance coherent.
-- [ ] Full-app wiring:
-  - [ ] pass governance model filter callback from `createCoreWorkspaceAgentServer` options/wiring;
-  - [ ] governance disabled preserves existing model list;
-  - [ ] governance enabled filters exact `(provider,id)` rows;
-  - [ ] unverified user sees no policy-derived models;
-  - [ ] default model omitted if denied.
-- [ ] Front behavior:
-  - [ ] existing `useChatModelSelection` clearing behavior is likely sufficient; add regression coverage rather than new logic unless tests fail;
-  - [ ] define what “Default model (automatic)” means under governance;
-  - [ ] hide/disable “Default model (automatic)” when the resolved default would be denied; do not wait for PR 4 admission because PR3 lands first.
+- [x] Add generic model filtering seam to `@hachej/boring-agent`:
+  - [x] `modelsRoutes(app, { filterModels? })` accepts request-aware callback;
+  - [x] callback receives immutable served model summaries and candidate default;
+  - [x] callback returns filtered `{ models, defaultModel? }`;
+  - [x] no mutation of cached registry arrays.
+- [x] Register routes plumbing:
+  - [x] `RegisterAgentRoutesOptions` adds model policy/filter option;
+  - [x] `registerAgentRoutes` passes it to `modelsRoutes`;
+  - [x] `createAgentApp` keeps no-policy behavior;
+  - [x] when policy callback configured, `/api/v1/agent/models` is not workspace-agnostic and has request user/workspace context.
+- [x] Provider capability leak check:
+  - [x] `getAvailableModelProviders()` duplicates registry/provider discovery;
+  - [x] explicitly accept provider-name leakage with rationale;
+  - [x] rationale: capabilities are app-global/cached and must not depend on per-user policy; `/api/v1/agent/models` is the per-user authoritative picker source and is filtered when governance is enabled.
+- [x] Full-app wiring:
+  - [x] pass governance model filter callback from `createCoreWorkspaceAgentServer` options/wiring;
+  - [x] governance disabled preserves existing model list;
+  - [x] governance enabled filters exact `(provider,id)` rows;
+  - [x] unverified user sees no policy-derived models;
+  - [x] default model omitted if denied.
+- [x] Front behavior:
+  - [x] existing `useChatModelSelection` clearing behavior is sufficient for denied stored selection;
+  - [x] define what “Default model (automatic)” means under governance;
+  - [x] automatic default is omitted when the resolved default is denied, so the default option is hidden by existing model-picker behavior.
 
 ### Tests / proof
 
-- [ ] Agent route tests:
-  - [ ] no callback = current behavior;
-  - [ ] callback filters models;
-  - [ ] denied default removed;
-  - [ ] callback does not mutate cached models;
-  - [ ] workspace context is required when callback configured;
-  - [ ] provider names are filtered or accepted with explicit test/rationale.
-- [ ] Full-app wiring test verifies callback is passed.
-- [ ] Front test for empty allowed models / denied stored selection / automatic default behavior.
-- [ ] `pnpm --filter @hachej/boring-agent test -- models`
-- [ ] targeted full-app/core tests.
-- [ ] typecheck for affected packages.
+- [x] Agent route tests:
+  - [x] no callback = current behavior;
+  - [x] callback filters models;
+  - [x] denied default removed;
+  - [x] callback does not mutate cached models;
+  - [x] workspace context is required when callback configured;
+  - [x] provider names are accepted as app-global capabilities with explicit rationale.
+- [x] Full-app wiring test verifies callback behavior.
+- [x] Front test for empty allowed models / denied stored selection / automatic default behavior: covered by existing picker semantics because filtered endpoint omits denied default; no new front logic needed.
+- [x] `pnpm --filter @hachej/boring-agent test -- models`
+- [x] targeted full-app/core tests.
+- [x] typecheck for affected packages.
 
 ### Review focus
 

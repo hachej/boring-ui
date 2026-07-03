@@ -850,6 +850,55 @@ test('request-scoped models endpoint does not require workspace header', async (
   await app.close()
 }, 15_000)
 
+test('model filter makes models endpoint workspace-scoped and receives request context', async () => {
+  const workspaceRoot = await makeTempDir('boring-agent-filtered-models-')
+  const app = Fastify({ logger: false })
+  let scopeChecks = 0
+  const filterModels = vi.fn(async (ctx, models) => ({ models }))
+
+  app.addHook('onRequest', async (request) => {
+    ;(request as typeof request & { user: { id: string; email: string; name: null; emailVerified: boolean } }).user = {
+      id: 'user-1',
+      email: 'user@example.com',
+      name: null,
+      emailVerified: true,
+    }
+  })
+  await app.register(registerAgentRoutes, {
+    workspaceRoot,
+    mode: 'direct',
+    filterModels,
+    getWorkspaceId: (request) => {
+      scopeChecks += 1
+      const value = request.headers['x-boring-workspace-id']
+      if (typeof value !== 'string') {
+        const error = new Error('workspace id is required') as Error & { statusCode: number }
+        error.statusCode = 400
+        throw error
+      }
+      return value
+    },
+    getWorkspaceRoot: () => workspaceRoot,
+  })
+  await app.ready()
+
+  const missingScope = await app.inject({ method: 'GET', url: '/api/v1/agent/models' })
+  expect(missingScope.statusCode).toBe(400)
+
+  const scoped = await app.inject({
+    method: 'GET',
+    url: '/api/v1/agent/models',
+    headers: { 'x-boring-workspace-id': 'ws-filtered' },
+  })
+  expect(scoped.statusCode).toBe(200)
+  expect(scopeChecks).toBeGreaterThanOrEqual(2)
+  expect(filterModels).toHaveBeenCalledTimes(1)
+  expect(filterModels.mock.calls[0]?.[0]).toMatchObject({ workspaceId: 'ws-filtered' })
+  expect(filterModels.mock.calls[0]?.[0].request.user).toMatchObject({ id: 'user-1' })
+
+  await app.close()
+}, 15_000)
+
 test('request-scoped commands endpoint uses the workspace harness', async () => {
   const workspaceRoot = await makeTempDir('boring-agent-embed-commands-')
   const app = Fastify({ logger: false })

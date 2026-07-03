@@ -7,7 +7,7 @@ import {
 import { loadConfig } from '@hachej/boring-core/server'
 import { createFullAppServerPlugins } from './plugins.js'
 import { buildCreditsWiring } from './credits.js'
-import { buildGovernanceService, createGovernanceServerPlugin } from './governance/index.js'
+import { buildGovernanceService, createGovernanceModelFilter, createGovernanceServerPlugin } from './governance/index.js'
 
 const appRoot = appRootFromImportMeta(import.meta.url, 2)
 
@@ -90,6 +90,7 @@ startCoreWorkspaceAgentDevServer({
       externalPlugins: false,
       installPluginAuthoring: pluginAuthoringEnabledFromEnv(),
       metering: credits.meteringSink,
+      filterModels: createGovernanceModelFilter(governance),
     })
     credits.attach(app)
     await registerDevLoginRoute(app)

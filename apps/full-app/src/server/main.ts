@@ -7,7 +7,7 @@ import { loadConfig } from '@hachej/boring-core/server'
 import { createFullAppServerPlugins } from './plugins.js'
 import { buildCreditsWiring } from './credits.js'
 import { assertProductionAgentModeIsSafe } from './productionSafety.js'
-import { buildGovernanceService, createGovernanceServerPlugin } from './governance/index.js'
+import { buildGovernanceService, createGovernanceModelFilter, createGovernanceServerPlugin } from './governance/index.js'
 
 function pluginAuthoringEnabledFromEnv(): boolean {
   return process.env.BORING_PLUGIN_AUTHORING === '1'
@@ -32,6 +32,7 @@ async function main() {
     externalPlugins: false,
     installPluginAuthoring: pluginAuthoringEnabledFromEnv(),
     metering: credits.meteringSink,
+    filterModels: createGovernanceModelFilter(governance),
   })
   credits.attach(app)
   const address = await app.listen({ host: app.config.host, port: app.config.port })
