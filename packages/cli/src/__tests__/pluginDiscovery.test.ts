@@ -35,7 +35,11 @@ describe("plugin discovery helpers", () => {
 
   test("returns deduped global + workspace plugin source roots", () => {
     const workspaceRoot = "/tmp/workspace"
-    expect(resolveCliBoringPluginDirs(workspaceRoot, { globalRoot: "/tmp/global-extensions", globalAgentRoot: "/tmp/global-agent" })).toEqual([
+    expect(resolveCliBoringPluginDirs(workspaceRoot, {
+      globalRoot: "/tmp/global-extensions",
+      globalAgentRoot: "/tmp/global-agent",
+      includeDefaultPackages: false,
+    })).toEqual([
       { rootDir: resolve("/tmp/global-extensions"), kind: "external" },
       { rootDir: resolve("/tmp/global-agent", "npm"), kind: "external" },
       { rootDir: resolve("/tmp/global-agent", "git"), kind: "external" },
@@ -71,7 +75,7 @@ describe("plugin discovery helpers", () => {
     }), "utf8")
 
     try {
-      const snapshot = readCliPluginPiSnapshot(workspaceRoot, { globalRoot })
+      const snapshot = readCliPluginPiSnapshot(workspaceRoot, { globalRoot, includeDefaultPackages: false })
       expect(snapshot.additionalSkillPaths).toContain(resolve(localPlugin, "agent", "skills"))
       expect(snapshot.extensionPaths).toContain(resolve(localPlugin, "agent", "index.ts"))
       expect(snapshot.systemPromptAppend).toContain("Local prompt")
@@ -95,11 +99,11 @@ describe("plugin discovery helpers", () => {
     await writePiSettings(join(workspaceRoot, ".pi", "settings.json"), ["../plugins/shadow-plugin"])
 
     try {
-      const snapshot = readCliPluginPiSnapshot(workspaceRoot, { globalRoot, globalAgentRoot })
+      const snapshot = readCliPluginPiSnapshot(workspaceRoot, { globalRoot, globalAgentRoot, includeDefaultPackages: false })
       expect(snapshot.systemPromptAppend).toContain("Local shadow prompt")
       expect(snapshot.systemPromptAppend).not.toContain("Global shadow prompt")
 
-      const manager = createCliPluginAssetManager(workspaceRoot, { globalRoot, globalAgentRoot })
+      const manager = createCliPluginAssetManager(workspaceRoot, { globalRoot, globalAgentRoot, includeDefaultPackages: false })
       await manager.load()
       expect(manager.list()).toEqual([expect.objectContaining({ id: "shadow-plugin" })])
       expect(manager.inspectLoaded()).toEqual([expect.objectContaining({ id: "shadow-plugin", rootDir: resolve(localPlugin) })])
@@ -119,11 +123,11 @@ describe("plugin discovery helpers", () => {
     await writeRuntimePlugin(localPlugin, "shadow-plugin", "Local collection prompt")
 
     try {
-      const snapshot = readCliPluginPiSnapshot(workspaceRoot, { globalRoot })
+      const snapshot = readCliPluginPiSnapshot(workspaceRoot, { globalRoot, includeDefaultPackages: false })
       expect(snapshot.systemPromptAppend).toContain("Local collection prompt")
       expect(snapshot.systemPromptAppend).not.toContain("Global collection prompt")
 
-      const manager = createCliPluginAssetManager(workspaceRoot, { globalRoot })
+      const manager = createCliPluginAssetManager(workspaceRoot, { globalRoot, includeDefaultPackages: false })
       await manager.load()
       expect(manager.list()).toEqual([expect.objectContaining({ id: "shadow-plugin" })])
       expect(manager.inspectLoaded()).toEqual([expect.objectContaining({ id: "shadow-plugin", rootDir: resolve(localPlugin) })])
@@ -141,12 +145,19 @@ describe("plugin discovery helpers", () => {
     await writePiSettings(join(workspaceRoot, ".pi", "settings.json"), ["../plugins/settings-plugin"])
 
     try {
-      expect(resolveCliBoringPluginDirs(workspaceRoot, { globalRoot: join(root, "global-extensions") })).toContainEqual({
+      expect(resolveCliBoringPluginDirs(workspaceRoot, {
+        globalRoot: join(root, "global-extensions"),
+        includeDefaultPackages: false,
+      })).toContainEqual({
         rootDir: resolve(plugin),
         kind: "external",
+        registered: true,
         workspaceId: resolve(workspaceRoot),
       })
-      const snapshot = readCliPluginPiSnapshot(workspaceRoot, { globalRoot: join(root, "global-extensions") })
+      const snapshot = readCliPluginPiSnapshot(workspaceRoot, {
+        globalRoot: join(root, "global-extensions"),
+        includeDefaultPackages: false,
+      })
       expect(snapshot.systemPromptAppend).toContain("Settings prompt")
     } finally {
       await rm(root, { recursive: true, force: true })
@@ -162,24 +173,29 @@ describe("plugin discovery helpers", () => {
     await writePiSettings(join(workspaceRoot, ".pi", "settings.json"), ["file:../plugins/file-plugin"])
 
     try {
-      const snapshot = readCliPluginPiSnapshot(workspaceRoot, { globalRoot: join(root, "global-extensions") })
+      const snapshot = readCliPluginPiSnapshot(workspaceRoot, { globalRoot: join(root, "global-extensions"), includeDefaultPackages: false })
       expect(snapshot.systemPromptAppend).toContain("File prompt")
     } finally {
       await rm(root, { recursive: true, force: true })
     }
   })
 
-  test("workspace-local Pi package sources ignore uninspectable package entries", async () => {
+  test("workspace-local Pi package sources surface broken local entries as load errors", async () => {
     const root = await makeTempDir("boring-cli-plugin-settings-uninspectable-")
     const workspaceRoot = join(root, "host-workspace")
     await writePiSettings(join(workspaceRoot, ".pi", "settings.json"), ["../missing", "npm:future-package"])
 
     try {
-      const snapshot = readCliPluginPiSnapshot(workspaceRoot, { globalRoot: join(root, "global-extensions") })
+      const snapshot = readCliPluginPiSnapshot(workspaceRoot, { globalRoot: join(root, "global-extensions"), includeDefaultPackages: false })
       expect(snapshot.systemPromptAppend).toBeUndefined()
-      const manager = createCliPluginAssetManager(workspaceRoot, { globalRoot: join(root, "global-extensions") })
-      await manager.load()
+      const manager = createCliPluginAssetManager(workspaceRoot, { globalRoot: join(root, "global-extensions"), includeDefaultPackages: false })
+      const result = await manager.load()
       expect(manager.list()).toEqual([])
+      // Remote specs (npm:) stay silent until installed; the registered
+      // local path that no longer exists must not vanish silently.
+      expect(result.errors).toEqual([expect.objectContaining({
+        message: expect.stringContaining("MISSING_PLUGIN_DIR"),
+      })])
     } finally {
       await rm(root, { recursive: true, force: true })
     }
@@ -216,11 +232,11 @@ describe("plugin discovery helpers", () => {
     }), "utf8")
 
     try {
-      const managerA = createCliPluginAssetManager(workspaceA, { globalRoot })
+      const managerA = createCliPluginAssetManager(workspaceA, { globalRoot, includeDefaultPackages: false })
       await managerA.load()
       expect(managerA.list().map((plugin) => plugin.id).sort()).toEqual(["global-plugin", "local-a"])
 
-      const managerB = createCliPluginAssetManager(workspaceB, { globalRoot })
+      const managerB = createCliPluginAssetManager(workspaceB, { globalRoot, includeDefaultPackages: false })
       await managerB.load()
       expect(managerB.list().map((plugin) => plugin.id).sort()).toEqual(["global-plugin", "local-b"])
     } finally {

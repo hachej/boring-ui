@@ -1,0 +1,54 @@
+{
+  "name": "@hachej/boring-github-pr-tracker",
+  "version": "0.1.59",
+  "type": "module",
+  "private": false,
+  "license": "MIT",
+  "description": "GitHub PR Tracker plugin for Boring workspace.",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/hachej/boring-ui"
+  },
+  "homepage": "https://github.com/hachej/boring-ui",
+  "boring": {
+    "id": "github-pr-tracker",
+    "label": "GitHub PR Tracker",
+    "front": "dist/front/index.js",
+    "server": "dist/server/index.js"
+  },
+  "pi": {
+    "systemPrompt": "GitHub PR Tracker plugin. Use refresh_github_pr_tracker for PR/issue board data. Use label_github_pr for PR labels and label_github_issue for issue labels/classification. Use bclaw:ready for issues ready for boring-claw/bead workflow.",
+    "extensions": [
+      "dist/agent/index.js"
+    ]
+  },
+  "files": [
+    "dist"
+  ],
+  "exports": {
+    ".": "./dist/front/index.js",
+    "./front": "./dist/front/index.js",
+    "./server": "./dist/server/index.js",
+    "./agent": "./dist/agent/index.js",
+    "./package.json": "./package.json"
+  },
+  "sideEffects": false,
+  "scripts": {
+    "build": "esbuild front/index.tsx --bundle --format=esm --platform=browser --target=es2022 --outfile=dist/front/index.js --external:react --external:react-dom --external:@hachej/boring-workspace/plugin && esbuild server/index.ts --bundle --format=esm --platform=node --target=node22 --outfile=dist/server/index.js --external:@hachej/boring-workspace/server && esbuild agent/index.ts --bundle --format=esm --platform=node --target=node22 --outfile=dist/agent/index.js",
+    "typecheck": "tsc --noEmit",
+    "test": "echo \"No tests for github-pr-tracker\"",
+    "lint": "pnpm run typecheck"
+  },
+  "peerDependencies": {
+    "@hachej/boring-workspace": "workspace:*",
+    "react": "^18.0.0 || ^19.0.0",
+    "react-dom": "^18.0.0 || ^19.0.0"
+  },
+  "dependencies": {
+    "@pierre/diffs": "1.2.10",
+    "@pierre/trees": "1.0.0-beta.4"
+  },
+  "devDependencies": {
+    "@hachej/boring-workspace": "workspace:*"
+  }
+}

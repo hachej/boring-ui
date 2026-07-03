@@ -1,6 +1,8 @@
 import { createContext, useContext, useEffect, useState, useRef } from 'react'
 import type { ReactNode } from 'react'
+import { canUseProtectedApi, isRuntimeEmailVerificationEnabled } from '../../shared/authPolicy.js'
 import { useSession } from './AuthProvider.js'
+import { useOptionalConfig } from '../ConfigProvider.js'
 import { apiFetchJson } from '../utils.js'
 import type { User } from '../../shared/types.js'
 
@@ -25,12 +27,17 @@ export interface UserIdentityProviderProps {
 
 export function UserIdentityProvider({ children }: UserIdentityProviderProps) {
   const { data: session } = useSession()
+  const config = useOptionalConfig()
+  const canFetchIdentity = canUseProtectedApi(
+    session?.user,
+    isRuntimeEmailVerificationEnabled(config),
+  )
   const [identity, setIdentity] = useState<UserIdentity | null>(null)
   const fetchedForRef = useRef<string | null>(null)
   const lastFetchRef = useRef(0)
 
   useEffect(() => {
-    if (!session?.user) {
+    if (!session?.user || !canFetchIdentity) {
       setIdentity(null)
       fetchedForRef.current = null
       return
@@ -57,7 +64,7 @@ export function UserIdentityProvider({ children }: UserIdentityProviderProps) {
       })
 
     return () => { cancelled = true }
-  }, [session?.user?.id])
+  }, [canFetchIdentity, session?.user?.id])
 
   return <UserContext.Provider value={identity}>{children}</UserContext.Provider>
 }

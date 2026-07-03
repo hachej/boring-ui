@@ -4,6 +4,7 @@ import { renderHook } from "@testing-library/react"
 import { type ReactNode, useState } from "react"
 import {
   WorkspaceProvider,
+  formatWorkspaceDocumentTitle,
   useTheme,
   useWorkspaceBridge,
 } from "../front/provider"
@@ -208,7 +209,7 @@ describe("WorkspaceProvider — panel registration", () => {
     )
 
     const ids = screen.getByTestId("ids").textContent!.split(",")
-    // 4 core panels (chat overwritten by prop's chat) + 8 filesystem outputs/panels + testPanel
+    // 4 core panels (chat overwritten by prop's chat) + 8 filesystem outputs/panels + inbox/detail + testPanel
     expect(ids).toContain("chat")
     expect(ids).toContain("session-list")
     expect(ids).toContain("workbench-left")
@@ -216,7 +217,7 @@ describe("WorkspaceProvider — panel registration", () => {
     expect(ids).toContain("empty-file-panel")
     expect(ids).toContain("files")
     expect(ids).toContain("test-panel")
-    expect(ids).toHaveLength(13)
+    expect(ids).toHaveLength(15)
   })
 
   it("excludeDefaults removes default plugin panels but not core panels", () => {
@@ -359,10 +360,10 @@ describe("WorkspaceProvider — panel registration", () => {
       </WorkspaceProvider>,
     )
 
-    // 4 core + 8 filesystem + testPanel = 13 (prop's chat filtered by capabilities,
+    // 4 core + 8 filesystem + inbox/detail + testPanel = 15 (prop's chat filtered by capabilities,
     // but core's chat has no requiresCapabilities so stays — prop's chat overwrites
-    // core's, so chat is filtered). Result: 4-1 core + 8 filesystem + testPanel = 12
-    expect(screen.getByTestId("count").textContent).toBe("12")
+    // core's, so chat is filtered). Result: 4-1 core + 8 filesystem + inbox/detail + testPanel = 14
+    expect(screen.getByTestId("count").textContent).toBe("14")
   })
 
   it("custom panel with same ID as another overrides it", () => {
@@ -482,8 +483,8 @@ describe("WorkspaceProvider — panel registration", () => {
         <Inspector />
       </WorkspaceProvider>,
     )
-    // 4 core + 8 filesystem default outputs/panels = 12
-    expect(screen.getByTestId("count").textContent).toBe("12")
+    // 4 core + 8 filesystem default outputs/panels + inbox/detail = 14
+    expect(screen.getByTestId("count").textContent).toBe("14")
 
     render(
       <WorkspaceProvider
@@ -493,7 +494,77 @@ describe("WorkspaceProvider — panel registration", () => {
         <Inspector />
       </WorkspaceProvider>,
     )
-    expect(screen.getAllByTestId("count").at(-1)?.textContent).toBe("12")
+    expect(screen.getAllByTestId("count").at(-1)?.textContent).toBe("14")
+  })
+})
+
+describe("WorkspaceProvider — document title", () => {
+  it("formats the workspace label when present", () => {
+    expect(formatWorkspaceDocumentTitle({ workspaceLabel: "PR Issue Manager", workspaceId: "workspace-1" })).toBe("PR Issue Manager · Boring UI")
+  })
+
+  it("falls back to workspaceId when label is missing", () => {
+    expect(formatWorkspaceDocumentTitle({ workspaceId: "workspace-playground" })).toBe("workspace-playground · Boring UI")
+  })
+
+  it("keeps normal short ids that are not hostnames", () => {
+    expect(formatWorkspaceDocumentTitle({ workspaceId: "abc" })).toBe("abc · Boring UI")
+    expect(formatWorkspaceDocumentTitle({ workspaceLabel: "deadbeef" })).toBe("deadbeef · Boring UI")
+  })
+
+  it("uses the app title when provided", () => {
+    expect(formatWorkspaceDocumentTitle({ appTitle: "Seneca AI", workspaceLabel: "Workspace A" })).toBe("Workspace A · Seneca AI")
+  })
+
+  it("falls back to the default title when no safe workspace metadata exists", () => {
+    expect(formatWorkspaceDocumentTitle({})).toBe("Boring UI")
+    expect(formatWorkspaceDocumentTitle({ workspaceLabel: "   ", workspaceId: "" })).toBe("Boring UI")
+    expect(formatWorkspaceDocumentTitle({ workspaceLabel: "/home/ubuntu/projects/boring-ui-v2" })).toBe("Boring UI")
+    expect(formatWorkspaceDocumentTitle({ workspaceLabel: "127.0.0.1:5212" })).toBe("Boring UI")
+    expect(formatWorkspaceDocumentTitle({ workspaceLabel: "localhost:5212" })).toBe("Boring UI")
+    expect(formatWorkspaceDocumentTitle({ workspaceLabel: "workspace.example.com:5212" })).toBe("Boring UI")
+    expect(formatWorkspaceDocumentTitle({ workspaceLabel: "::1" })).toBe("Boring UI")
+    expect(formatWorkspaceDocumentTitle({ workspaceLabel: "C:/Users/demo/project" })).toBe("Boring UI")
+    expect(formatWorkspaceDocumentTitle({ workspaceLabel: "HTTPS://workspace.example.com" })).toBe("Boring UI")
+    expect(formatWorkspaceDocumentTitle({ workspaceId: "ac9ea9fc-0151-4e89-bd39-be38ac4d53cc" })).toBe("Boring UI")
+  })
+
+  it("updates document.title when workspace metadata changes", () => {
+    const { rerender } = render(
+      <WorkspaceProvider appTitle="Seneca AI" workspaceId="workspace-a" workspaceLabel="Workspace A" persistenceEnabled={false}>
+        <div />
+      </WorkspaceProvider>,
+    )
+
+    expect(document.title).toBe("Workspace A · Seneca AI")
+
+    rerender(
+      <WorkspaceProvider appTitle="Seneca AI" workspaceId="workspace-b" workspaceLabel="Workspace B" persistenceEnabled={false}>
+        <div />
+      </WorkspaceProvider>,
+    )
+
+    expect(document.title).toBe("Workspace B · Seneca AI")
+  })
+
+  it("falls back to workspaceId in document.title when label is missing", () => {
+    render(
+      <WorkspaceProvider workspaceId="workspace-scope" persistenceEnabled={false}>
+        <div />
+      </WorkspaceProvider>,
+    )
+
+    expect(document.title).toBe("workspace-scope · Boring UI")
+  })
+
+  it("falls back to workspaceId in document.title when workspaceLabel is unsafe", () => {
+    render(
+      <WorkspaceProvider workspaceId="workspace-scope" workspaceLabel="localhost:5212" persistenceEnabled={false}>
+        <div />
+      </WorkspaceProvider>,
+    )
+
+    expect(document.title).toBe("workspace-scope · Boring UI")
   })
 })
 

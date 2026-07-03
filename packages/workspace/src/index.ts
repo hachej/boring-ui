@@ -210,6 +210,7 @@ export {
   userMeta,
   agentMeta,
   emitAgentData,
+  workspaceEvents,
 } from "./front/events"
 export type {
   Origin,
@@ -232,7 +233,7 @@ export type {
 // Bridge
 export { createBridge } from "./front/bridge"
 export { createBridgeClient } from "./front/bridge"
-export { postUiCommand, UI_COMMAND_EVENT, WorkspaceLink, workspaceLinkCommand, workspaceLinkHref } from "./front/bridge"
+export { postUiCommand, UI_COMMAND_EVENT, WORKSPACE_SURFACE_OPEN_SKIPPED_EVENT, WorkspaceLink, workspaceLinkCommand, workspaceLinkHref } from "./front/bridge"
 export type {
   BridgeClient,
   BridgeClientOptions,
@@ -286,12 +287,27 @@ export type {
 export { SessionBrowser } from "./front/chrome/session-list/SessionBrowser"
 export { SurfaceShell } from "./front/chrome/artifact-surface/SurfaceShell"
 export { WorkbenchLeftPane } from "./front/chrome/workbench-left/WorkbenchLeftPane"
+export { useWorkspaceLeftPaneActions } from "./front/chrome/workbench-left/useWorkspaceLeftPaneActions"
 export type { SessionBrowserProps } from "./front/chrome/session-list/SessionBrowser"
 export type {
   OpenArtifactHandler,
   WorkspaceChatPanelComponent,
   WorkspaceChatPanelProps,
 } from "./front/chrome/chat/types"
+export {
+  WORKSPACE_COMPOSER_STOP_EVENT,
+  WORKSPACE_COMPOSER_STOP_REASONS,
+  emitWorkspaceComposerStop,
+  isWorkspaceComposerStopDetail,
+  isWorkspaceComposerStopReason,
+  workspaceComposerStopAppliesToSession,
+  workspaceComposerStopTargetSessionId,
+} from "./front/chrome/chat/composerStop"
+export type {
+  WorkspaceComposerStopDetail,
+  WorkspaceComposerStopMatchOptions,
+  WorkspaceComposerStopReason,
+} from "./front/chrome/chat/composerStop"
 export type {
   SurfaceShellProps,
   SurfaceShellApi,
@@ -303,6 +319,11 @@ export type {
   WorkbenchLeftPaneProps,
   WorkbenchLeftTabId,
 } from "./front/chrome/workbench-left/WorkbenchLeftPane"
+export type {
+  UseWorkspaceLeftPaneActionsOptions,
+  WorkspaceLeftPaneAction,
+  WorkspaceLeftPaneOpenPanelConfig,
+} from "./front/chrome/workbench-left/useWorkspaceLeftPaneActions"
 
 // Provider
 export {
@@ -313,7 +334,13 @@ export {
   useWorkspaceContext,
   useWorkspaceContextOptional,
   useWorkspaceChatPanel,
+  WORKSPACE_ATTENTION_ACTION_EVENT,
+  WORKSPACE_INBOX_DETAIL_PANEL_ID,
+  WORKSPACE_INBOX_LEFT_TAB_ID,
+  WORKSPACE_INBOX_PLUGIN_ID,
+  emitWorkspaceAttentionAction,
   useWorkspaceAttention,
+  workspaceAttentionSessionBadgeForBlocker,
 } from "./front/provider"
 export type {
   WorkspaceProviderProps,
@@ -321,8 +348,12 @@ export type {
   ThemeProviderProps,
   WorkspaceBridgeContextValue,
   WorkspaceContextValue,
+  WorkspaceAttentionActionDetail,
   WorkspaceAttentionBlocker,
+  WorkspaceAttentionBlockerAction,
   WorkspaceAttentionContextValue,
+  WorkspaceAttentionProviderProps,
+  WorkspaceAttentionSessionBadge,
 } from "./front/provider"
 
 // Store (selectors only — store itself is NOT exported)

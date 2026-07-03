@@ -73,7 +73,7 @@ export interface ChatEmptyStateProps {
   /** Large headline. Editorial tone. */
   title?: string
   /** Single-paragraph description below the headline. */
-  description?: string
+  description?: ReactNode
   /**
    * Suggestion cards. Pass `[]` to hide the grid entirely (headline still
    * renders). Defaults to `defaultChatSuggestions`.
@@ -109,7 +109,9 @@ export function ChatEmptyState({
         ["--chat-empty-accent" as string]: "var(--accent)",
       }}
       className={cn(
-        "mx-auto flex w-full max-w-[640px] flex-col px-2 pt-12 pb-4",
+        // @container lets the hero scale to the pane it lives in, not the
+        // viewport — split chat panes get the compact variant.
+        "@container mx-auto flex w-full max-w-[640px] flex-col px-2 pt-12 pb-4",
         className,
       )}
     >
@@ -120,19 +122,19 @@ export function ChatEmptyState({
         </div>
       )}
       {title && (
-        <h3 className="mt-3 text-[34px] font-medium leading-[1.05] tracking-[-0.02em] text-[color:var(--chat-empty-title-color)]">
+        <h3 className="mt-3 text-[24px] font-medium leading-[1.05] tracking-[-0.02em] text-[color:var(--chat-empty-title-color)] @[480px]:text-[34px]">
           {title}
         </h3>
       )}
       {description && (
-        <p className="mt-3 max-w-[440px] text-[14px] leading-relaxed text-[color:var(--chat-empty-description-color)]">
+        <p className="mt-3 hidden max-w-[440px] text-[14px] leading-relaxed text-[color:var(--chat-empty-description-color)] @[420px]:block">
           {description}
         </p>
       )}
       {suggestions.length > 0 && (
         <div
           data-boring-agent-part="suggestion-grid"
-          className="mt-8 grid w-full grid-cols-1 gap-px overflow-hidden rounded-xl bg-border/70 ring-1 ring-border/70 sm:grid-cols-2"
+          className="mt-8 grid w-full grid-cols-1 gap-px overflow-hidden rounded-xl bg-border/70 ring-1 ring-border/70 @[480px]:grid-cols-2"
         >
           {suggestions.map((suggestion) => {
             const Icon = suggestion.icon
@@ -158,11 +160,11 @@ export function ChatEmptyState({
                   />
                 )}
                 <span className="flex min-w-0 flex-1 flex-col gap-0.5">
-                  <span className="truncate text-[13px] font-medium text-foreground">
+                  <span className="text-[13px] font-medium text-foreground">
                     {suggestion.label}
                   </span>
                   {suggestion.hint && (
-                    <span className="truncate text-[12px] text-muted-foreground">
+                    <span className="text-[12px] text-muted-foreground">
                       {suggestion.hint}
                     </span>
                   )}

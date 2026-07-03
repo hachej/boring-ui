@@ -6,7 +6,11 @@ import { SessionBrowser } from "./SessionBrowser"
 interface SessionListPaneParams {
   sessions?: SessionItem[]
   activeId?: string | null
+  openIds?: string[]
+  pinnedIds?: string[]
+  onTogglePin?: (id: string) => void
   onSwitch?: (id: string) => void
+  onOpenAsTab?: (id: string) => void
   onCreate?: () => void
   onDelete?: (id: string) => void
   onLoadMore?: () => void
@@ -19,7 +23,11 @@ function SessionListPane({ params }: PaneProps<SessionListPaneParams | undefined
   return createElement(SessionBrowser, {
     sessions: params?.sessions ?? [],
     activeId: params?.activeId,
+    openIds: params?.openIds,
+    pinnedIds: params?.pinnedIds,
+    onTogglePin: params?.onTogglePin,
     onSwitch: params?.onSwitch,
+    onOpenAsTab: params?.onOpenAsTab,
     onCreate: params?.onCreate,
     onDelete: params?.onDelete,
     onLoadMore: params?.onLoadMore,

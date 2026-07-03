@@ -19,5 +19,5 @@ export function aggregatePluginPrompts(
     .map((plugin) => plugin.pi?.systemPrompt?.trim())
     .filter((prompt): prompt is string => Boolean(prompt))
   if (prompts.length === 0) return undefined
-  return `# Loaded boring-ui plugin context\n\n${prompts.join("\n\n")}`
+  return `# Loaded app-provided context\n\n${prompts.join("\n\n")}`
 }

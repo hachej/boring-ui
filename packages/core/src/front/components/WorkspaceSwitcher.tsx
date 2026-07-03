@@ -19,7 +19,7 @@ import {
   Label,
   useToast,
 } from '@hachej/boring-ui-kit'
-import { Check, ChevronsUpDown, LayoutGrid, Plus, Settings } from 'lucide-react'
+import { ChevronsUpDown, LayoutGrid, Plus, Settings } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 import { z } from 'zod'
 
@@ -29,6 +29,7 @@ import {
   useCurrentWorkspace,
   workspaceQueryKey,
 } from '../WorkspaceAuthProvider.js'
+import { useOptionalConfig } from '../ConfigProvider.js'
 import { apiFetchJson, getHttpErrorDetail } from '../utils.js'
 
 const workspaceNameSchema = z.object({
@@ -95,10 +96,22 @@ function workspaceInitial(name: string): string {
   return (name.trim()[0] ?? 'W').toUpperCase()
 }
 
+function OpenInNewTabIcon({ className }: { className?: string }) {
+  return (
+    <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <path d="M15 3h6v6" />
+      <path d="M10 14 21 3" />
+      <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" />
+    </svg>
+  )
+}
+
 export function WorkspaceSwitcher({
-  appTitle = 'Boring',
+  appTitle,
   workspacePathPrefix = '/workspace',
 }: WorkspaceSwitcherProps) {
+  const config = useOptionalConfig()
+  const resolvedAppTitle = appTitle ?? config?.appName ?? 'Boring UI'
   const navigate = useNavigate()
   const queryClient = useQueryClient()
   const { toast } = useToastCompat()
@@ -181,6 +194,10 @@ export function WorkspaceSwitcher({
 
   const switcherLabel = currentWorkspace?.name ?? 'Select workspace'
 
+  function openWorkspaceInNewTab(workspaceId: string): void {
+    window.open(hrefForWorkspace(workspacePathPrefix, workspaceId), '_blank', 'noopener,noreferrer')
+  }
+
   return (
     <>
       {workspaces.length === 0 ? (
@@ -194,7 +211,7 @@ export function WorkspaceSwitcher({
             aria-hidden="true"
             className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-foreground text-[12px] font-semibold text-background"
           >
-            {appTitle.charAt(0).toUpperCase()}
+            {resolvedAppTitle.charAt(0).toUpperCase()}
           </span>
           <span className="text-[13px] font-medium text-foreground">
             Create your first workspace
@@ -213,11 +230,11 @@ export function WorkspaceSwitcher({
                 aria-hidden="true"
                 className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-foreground text-[12px] font-semibold text-background"
               >
-                {appTitle.charAt(0).toUpperCase()}
+                {resolvedAppTitle.charAt(0).toUpperCase()}
               </span>
               <span className="flex min-w-0 items-center gap-1.5">
                 <span className="truncate text-[13px] font-medium text-foreground">
-                  {appTitle}
+                  {resolvedAppTitle}
                 </span>
                 <span aria-hidden="true" className="text-muted-foreground/30">/</span>
                 <span className="truncate text-[13px] font-normal text-muted-foreground">
@@ -242,19 +259,39 @@ export function WorkspaceSwitcher({
               {workspaces.map((workspace) => {
                 const isCurrent = currentWorkspace?.id === workspace.id
                 return (
-                  <DropdownMenuItem
-                    key={workspace.id}
-                    aria-label={workspace.name}
-                    data-current={isCurrent ? 'true' : 'false'}
-                    onSelect={() => navigate(hrefForWorkspace(workspacePathPrefix, workspace.id))}
-                    className="gap-3 rounded-md py-2 text-[13px] focus:bg-foreground/[0.06] focus:text-foreground"
-                  >
-                    <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md border border-border/60 bg-background text-xs font-semibold text-muted-foreground">
-                      {workspaceInitial(workspace.name)}
-                    </span>
-                    <span className="min-w-0 flex-1 truncate text-sm">{workspace.name}</span>
-                    {isCurrent ? <Check className="h-4 w-4 text-foreground" aria-hidden="true" /> : null}
-                  </DropdownMenuItem>
+                  <div key={workspace.id} className="group relative w-full">
+                    <DropdownMenuItem
+                      aria-label={workspace.name}
+                      data-current={isCurrent ? 'true' : 'false'}
+                      onSelect={() => navigate(hrefForWorkspace(workspacePathPrefix, workspace.id))}
+                      style={{ paddingRight: 72 }}
+                      className="gap-3 rounded-md py-2 text-[13px] focus:bg-foreground/[0.06] focus:text-foreground"
+                    >
+                      <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md border border-border/60 bg-background text-xs font-semibold text-muted-foreground">
+                        {workspaceInitial(workspace.name)}
+                      </span>
+                      <span className="min-w-0 flex-1 truncate text-sm">{workspace.name}</span>
+                    </DropdownMenuItem>
+                    <button
+                      type="button"
+                      tabIndex={-1}
+                      aria-label={`Open ${workspace.name} in new tab`}
+                      title="Open in new tab"
+                      onPointerDown={(event) => {
+                        event.preventDefault()
+                        event.stopPropagation()
+                      }}
+                      onClick={(event) => {
+                        event.preventDefault()
+                        event.stopPropagation()
+                        openWorkspaceInNewTab(workspace.id)
+                      }}
+                      style={{ right: 4, top: '50%', transform: 'translateY(-50%)' }}
+                      className="absolute z-10 flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground opacity-0 transition hover:bg-foreground/10 hover:text-foreground focus:opacity-100 focus:outline-none focus-visible:ring-1 focus-visible:ring-ring group-hover:opacity-100 group-focus-within:opacity-100"
+                    >
+                      <OpenInNewTabIcon className="h-3.5 w-3.5" />
+                    </button>
+                  </div>
                 )
               })}
             </div>
@@ -317,7 +354,7 @@ export function WorkspaceSwitcher({
                   setName(event.target.value)
                   if (serverError) setServerError(null)
                 }}
-                placeholder="My Workspace"
+                placeholder="Default workspace"
                 aria-invalid={nameError ? 'true' : 'false'}
                 autoFocus
               />

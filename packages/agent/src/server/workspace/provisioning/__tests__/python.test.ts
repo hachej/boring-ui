@@ -98,7 +98,7 @@ async function fakePyprojectRoot(prefix = 'boring macro sdk-'): Promise<{ root: 
   return { root, pyproject }
 }
 
-const VERCEL_UV = '/home/vercel-sandbox/.local/bin/uv'
+const VERCEL_UV = '/workspace/.boring-agent/sdk/uv/bin/uv'
 
 test('ensureUv prefers explicitUvBin over bare uv (PATH-independence)', async () => {
   const workspaceRoot = await tempWorkspace()

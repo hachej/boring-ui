@@ -13,6 +13,7 @@ import { bindStore } from "../../store/selectors"
 import { createWorkspaceStore } from "../../store"
 import { WorkspaceProvider, useWorkspaceAttention } from "../../provider"
 import type { SurfaceShellApi } from "../../chrome/artifact-surface/SurfaceShell"
+import type { DispatchContext } from "../../bridge"
 
 // Verify barrel exports work
 import {
@@ -615,6 +616,106 @@ describe("ChatLayout component", () => {
     expect(screen.getByLabelText("Chat")).toHaveAttribute("data-boring-state", "expanded")
   })
 
+  it("renders chat panes with active focus state and pane-level controls", async () => {
+    const user = userEvent.setup()
+    const setActive = vi.fn()
+    const closePane = vi.fn()
+    const createAfter = vi.fn()
+
+    renderWithRegistry(
+      <ChatLayout
+        center="chat"
+        nav={null}
+        chatPanes={[
+          { id: "s1", title: "First", panel: "chat", params: { sessionId: "s1" } },
+          { id: "s2", title: "Second", panel: "chat", params: { sessionId: "s2" } },
+        ]}
+        activeChatPaneId="s2"
+        onActiveChatPaneChange={setActive}
+        onCloseChatPane={closePane}
+        onCreateChatPaneAfter={createAfter}
+      />,
+      ["chat", "session-list"],
+    )
+
+    expect(screen.getByLabelText("Chat session First")).toHaveAttribute("data-boring-state", "inactive")
+    expect(screen.getByLabelText("Chat session Second")).toHaveAttribute("data-boring-state", "active")
+    expect(document.querySelector(".dv-chat-stage")).not.toBeNull()
+    expect(screen.getByRole("button", { name: "New chat" })).toBeInTheDocument()
+
+    await user.click(screen.getByLabelText("Chat session First"))
+    expect(setActive).toHaveBeenCalledWith("s1")
+
+    await user.click(screen.getByLabelText("Close Second pane"))
+    expect(closePane).toHaveBeenCalledWith("s2")
+
+    // The floating left-edge "+" creates next to the active pane.
+    await user.click(screen.getByRole("button", { name: "New chat" }))
+    expect(createAfter).toHaveBeenCalledWith("s2")
+  })
+
+  it("does not activate an inactive pane when using its header controls", async () => {
+    const user = userEvent.setup()
+    const setActive = vi.fn()
+    const closePane = vi.fn()
+    const createAfter = vi.fn()
+
+    renderWithRegistry(
+      <ChatLayout
+        center="chat"
+        nav={null}
+        chatPanes={[
+          { id: "s1", title: "First", panel: "chat", params: { sessionId: "s1" } },
+          { id: "s2", title: "Second", panel: "chat", params: { sessionId: "s2" } },
+        ]}
+        activeChatPaneId="s2"
+        onActiveChatPaneChange={setActive}
+        onCloseChatPane={closePane}
+        onCreateChatPaneAfter={createAfter}
+      />,
+      ["chat", "session-list"],
+    )
+
+    await user.click(screen.getByLabelText("Close First pane"))
+    expect(closePane).toHaveBeenCalledWith("s1")
+    expect(setActive).not.toHaveBeenCalled()
+
+    await user.click(screen.getByRole("button", { name: "New chat" }))
+    expect(createAfter).toHaveBeenCalledWith("s2")
+    expect(setActive).not.toHaveBeenCalled()
+  })
+
+  it("keeps the collapse control with a single chat pane", () => {
+    renderWithRegistry(
+      <ChatLayout
+        center="chat"
+        chatPanes={[
+          { id: "s1", title: "First", panel: "chat", params: { sessionId: "s1" } },
+        ]}
+        activeChatPaneId="s1"
+      />,
+      ["chat", "session-list"],
+    )
+
+    expect(screen.getByRole("button", { name: "Collapse chat" })).toBeInTheDocument()
+  })
+
+  it("keeps the collapse control with multiple chat panes", () => {
+    renderWithRegistry(
+      <ChatLayout
+        center="chat"
+        chatPanes={[
+          { id: "s1", title: "First", panel: "chat", params: { sessionId: "s1" } },
+          { id: "s2", title: "Second", panel: "chat", params: { sessionId: "s2" } },
+        ]}
+        activeChatPaneId="s1"
+      />,
+      ["chat", "session-list"],
+    )
+
+    expect(screen.getByRole("button", { name: "Collapse chat" })).toBeInTheDocument()
+  })
+
   it("stacks the floating expand-chat button above the sessions button on the left edge", () => {
     renderWithRegistry(
       <ChatLayout center="chat" nav={null} onOpenNav={vi.fn()} storageKey="chat-layout-stack" />,
@@ -658,6 +759,157 @@ describe("ChatLayout component", () => {
     await waitFor(() =>
       expect(screen.getByLabelText("Chat")).toHaveAttribute("data-boring-state", "expanded"),
     )
+  })
+
+  it("pulses the collapsed sessions rail when any session has plugin attention", async () => {
+    function Host() {
+      const { addBlocker } = useWorkspaceAttention()
+      return (
+        <>
+          <ChatLayout center="chat" nav={null} onOpenNav={vi.fn()} storageKey="chat-layout-session-attention-rail" />
+          <button
+            type="button"
+            onClick={() => addBlocker({ id: "review-s2", reason: "pr-review.review", label: "Review", sessionId: "s2", sessionBadge: { kind: "review", label: "review" } })}
+          >
+            Add review blocker
+          </button>
+        </>
+      )
+    }
+
+    const user = userEvent.setup()
+    renderWithRegistry(<Host />, ["chat", "session-list"])
+    expect(screen.getByRole("button", { name: "Sessions" }).querySelector('[data-boring-workspace-part="edge-attention-dot"]')).toBeNull()
+
+    await user.click(screen.getByRole("button", { name: "Add review blocker" }))
+
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: "Sessions" }).querySelector('[data-boring-workspace-part="edge-attention-dot"]')).toBeInTheDocument()
+    })
+  })
+
+  it("auto-expands collapsed chat for a session-scoped blocker when the layout has no active session id", async () => {
+    function Host() {
+      const { addBlocker } = useWorkspaceAttention()
+      return (
+        <>
+          <ChatLayout center="chat" storageKey="chat-layout-sessionless-blocker" />
+          <button
+            type="button"
+            onClick={() => addBlocker({ id: "default-question", reason: "ask-user.question", label: "Question", sessionId: "default", sessionBadge: { kind: "question", label: "question" } })}
+          >
+            Add default blocker
+          </button>
+        </>
+      )
+    }
+
+    const user = userEvent.setup()
+    renderWithRegistry(<Host />, ["chat", "session-list"])
+
+    act(() => fireShortcut("\\", { metaKey: true }))
+    expect(screen.getByLabelText("Collapsed chat")).toHaveAttribute("data-boring-state", "collapsed")
+
+    await user.click(screen.getByRole("button", { name: "Add default blocker" }))
+    await waitFor(() =>
+      expect(screen.getByLabelText("Chat")).toHaveAttribute("data-boring-state", "expanded"),
+    )
+  })
+
+  it("does not auto-expand collapsed chat for a blocker scoped to another session", async () => {
+    function Host() {
+      const { addBlocker } = useWorkspaceAttention()
+      return (
+        <>
+          <ChatLayout center="chat" centerParams={{ sessionId: "s1" }} storageKey="chat-layout-background-blocker" />
+          <button
+            type="button"
+            onClick={() => addBlocker({ id: "b2", reason: "plugin.review", label: "Review", sessionId: "s2", sessionBadge: { kind: "review", label: "review" } })}
+          >
+            Add background blocker
+          </button>
+        </>
+      )
+    }
+
+    const user = userEvent.setup()
+    renderWithRegistry(<Host />, ["chat", "session-list"])
+
+    act(() => fireShortcut("\\", { metaKey: true }))
+    expect(screen.getByLabelText("Collapsed chat")).toHaveAttribute("data-boring-state", "collapsed")
+
+    await user.click(screen.getByRole("button", { name: "Add background blocker" }))
+    await new Promise((resolve) => setTimeout(resolve, 20))
+    expect(screen.getByLabelText("Collapsed chat")).toHaveAttribute("data-boring-state", "collapsed")
+  })
+
+  it("applies a provided surface dispatch policy on the layout event path", () => {
+    const openSurface = vi.fn()
+    const openWorkbench = vi.fn()
+    const surface: SurfaceShellApi = {
+      openFile: vi.fn(),
+      openSurface,
+      openPanel: vi.fn(),
+      closeWorkbenchLeftPane: vi.fn(),
+      expandToFile: vi.fn(),
+      getSnapshot: () => ({ openTabs: [], activeTab: null }),
+    }
+    const surfaceDispatch: DispatchContext = {
+      surface: () => surface,
+      isWorkbenchOpen: () => false,
+      openWorkbench,
+      shouldOpenSurface: () => false,
+    }
+
+    renderWithRegistry(
+      <ChatLayout center="chat" centerParams={{ surfaceDispatch }} />,
+      ["chat", "session-list"],
+    )
+
+    act(() => {
+      events.emit(workspaceEvents.uiCommand, {
+        ...userMeta(),
+        command: { kind: "openSurface", params: { kind: "questions", target: "q-closed", meta: { openOnlyWhenSessionOpen: true } } },
+      })
+    })
+
+    expect(openSurface).not.toHaveBeenCalled()
+    expect(openWorkbench).not.toHaveBeenCalled()
+  })
+
+  it("fallback surface dispatch treats session-gated opens as closed when no host policy is available", () => {
+    const openSurface = vi.fn()
+    const openWorkbench = vi.fn()
+    const surface: SurfaceShellApi = {
+      openFile: vi.fn(),
+      openSurface,
+      openPanel: vi.fn(),
+      closeWorkbenchLeftPane: vi.fn(),
+      expandToFile: vi.fn(),
+      getSnapshot: () => ({ openTabs: [], activeTab: null }),
+    }
+
+    renderWithRegistry(
+      <ChatLayout
+        center="chat"
+        centerParams={{
+          getSurface: () => surface,
+          isWorkbenchOpen: () => true,
+          openWorkbench,
+        }}
+      />,
+      ["chat", "session-list"],
+    )
+
+    act(() => {
+      events.emit(workspaceEvents.uiCommand, {
+        ...userMeta(),
+        command: { kind: "openSurface", params: { kind: "questions", target: "q-closed", meta: { sessionId: "closed", openOnlyWhenSessionOpen: true } } },
+      })
+    })
+
+    expect(openSurface).not.toHaveBeenCalled()
+    expect(openWorkbench).not.toHaveBeenCalled()
   })
 
   it("dispatches plugin UI commands through the workbench contract", () => {

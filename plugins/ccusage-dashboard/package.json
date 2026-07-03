@@ -1,0 +1,52 @@
+{
+  "name": "@hachej/boring-ccusage-dashboard",
+  "version": "0.1.59",
+  "type": "module",
+  "private": false,
+  "license": "MIT",
+  "description": "ccusage dashboard plugin for Boring workspace token usage and provider quota visibility.",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/hachej/boring-ui"
+  },
+  "homepage": "https://github.com/hachej/boring-ui",
+  "boring": {
+    "id": "ccusage-dashboard",
+    "label": "ccusage Dashboard",
+    "front": "dist/front/index.js"
+  },
+  "pi": {
+    "systemPrompt": "ccusage Dashboard plugin. Use refresh_ccusage_dashboard for token usage and refresh_provider_quota for subscription quota windows.",
+    "extensions": [
+      "dist/agent/index.js"
+    ]
+  },
+  "files": [
+    "dist"
+  ],
+  "exports": {
+    ".": "./dist/front/index.js",
+    "./front": "./dist/front/index.js",
+    "./agent": "./dist/agent/index.js",
+    "./package.json": "./package.json"
+  },
+  "sideEffects": false,
+  "scripts": {
+    "build": "tsup",
+    "typecheck": "tsc --noEmit",
+    "test": "echo \"No tests for ccusage-dashboard\"",
+    "lint": "pnpm run typecheck"
+  },
+  "peerDependencies": {
+    "@hachej/boring-workspace": "workspace:*",
+    "react": "^18.0.0 || ^19.0.0",
+    "react-dom": "^18.0.0 || ^19.0.0"
+  },
+  "dependencies": {
+    "ccusage": "^20.0.11",
+    "recharts": "^2.15.0"
+  },
+  "devDependencies": {
+    "@hachej/boring-workspace": "workspace:*"
+  }
+}

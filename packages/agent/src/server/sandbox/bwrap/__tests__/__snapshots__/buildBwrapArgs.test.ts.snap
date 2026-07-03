@@ -5,6 +5,7 @@ exports[`snapshot: known workspaceRoot emits expected args ordering 1`] = `
   "--unshare-all",
   "--share-net",
   "--die-with-parent",
+  "--new-session",
   "--tmpfs",
   "/",
   "--proc",

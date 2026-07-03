@@ -75,7 +75,7 @@ export class QuestionsBridge {
     if (question.sessionId !== browserSessionId || auth.sessionId !== browserSessionId) {
       throw new QuestionsBridgeError(ASK_USER_ERROR_CODES.SESSION_MISMATCH, "session mismatch", 403)
     }
-    if (question.ownerPrincipalId !== auth.principalId) {
+    if (question.ownerPrincipalId !== "anonymous" && question.ownerPrincipalId !== auth.principalId) {
       throw new QuestionsBridgeError(ASK_USER_ERROR_CODES.UNAUTHORIZED, "principal mismatch", 403)
     }
   }

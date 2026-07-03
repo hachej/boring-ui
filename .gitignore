@@ -85,3 +85,63 @@ packages/workspace/src/plugins/eval-*/
 # read by `boring-ui-plugin verify` to detect server-file drift. Runtime
 # state, never checked in.
 **/.boring-signature.json
+
+# Skill-install artifacts (npx skills add) — per-tool symlink dirs + skill store.
+# Machine/tool-local; not part of the app source.
+/.agents/
+!/.agents/
+!/.agents/skills/
+!/.agents/skills/boring-feedback/
+!/.agents/skills/boring-feedback/**
+!/.agents/skills/boring-orchestration/
+!/.agents/skills/boring-orchestration/**
+!/.agents/skills/boring-triage/
+!/.agents/skills/boring-triage/**
+/skills/
+/skills-lock.json
+/.adal/
+/.aider-desk/
+/.augment/
+/.bob/
+/.claude/skills/stripe-best-practices
+/.claude/skills/stripe-directory
+/.claude/skills/stripe-projects
+/.claude/skills/upgrade-stripe
+/.codeartsdoer/
+/.codebuddy/
+/.codemaker/
+/.codestudio/
+/.commandcode/
+/.continue/
+/.cortex/
+/.crush/
+/.devin/
+/.factory/
+/.forge/
+/.goose/
+/.hermes/
+/.iflow/
+/.junie/
+/.kilocode/
+/.kiro/
+/.kode/
+/.mcpjam/
+/.mux/
+/.neovate/
+/.openhands/
+/.pochi/
+/.qoder/
+/.qwen/
+/.roo/
+/.rovodev/
+/.tabnine/
+/.trae/
+/.vibe/
+/.windsurf/
+/.zencoder/
+
+# Local credits-testing dev bootstrap (not committed)
+/apps/full-app/src/server/dev-credits.ts
+
+# Dev-server workspace runtime dirs (UUID-named) created under the app cwd during local runs
+/apps/full-app/*-*-*-*-*/

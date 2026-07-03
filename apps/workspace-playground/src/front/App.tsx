@@ -1,14 +1,11 @@
 import { useCallback, useEffect, useMemo, useState } from "react"
-import { ChatPanel, useSessions as useAgentSessions } from "@hachej/boring-agent"
 import { createDeckPlugin } from "@hachej/boring-deck/front"
 import type { DeckWidgetDefinition } from "@hachej/boring-deck/shared"
-import { WorkspaceProvider } from "@hachej/boring-workspace"
+import { WorkspaceProvider, useWorkspaceAttention } from "@hachej/boring-workspace"
+import { definePlugin } from "@hachej/boring-workspace/plugin"
 import { WorkspaceAgentFront, WorkspaceFullPagePanel, parseFullPagePanelLocation } from "@hachej/boring-workspace/app/front"
 import { askUserPlugin } from "@hachej/boring-ask-user/front"
 import { SHOWCASE_SESSION_ID, seedShowcase } from "./showcaseMessages"
-// Most plugin packages are declared in package.json#boring.defaultPluginPackages.
-// Provider/binding plugins need static front composition for now because the
-// hot-load bridge intentionally skips dynamic provider/binding registration.
 
 function isShowcaseRoute(): boolean {
   if (typeof window === "undefined") return false
@@ -22,6 +19,7 @@ function isFullPageRoute(): boolean {
 
 interface WorkspaceMeta {
   projectName?: string
+  workspaceId?: string
 }
 
 const playgroundDeckWidgets: DeckWidgetDefinition[] = [
@@ -44,7 +42,69 @@ const playgroundDeckPlugin = createDeckPlugin({
   },
 })
 
-const workspacePlugins = [askUserPlugin, playgroundDeckPlugin]
+function isInboxDemoRoute(): boolean {
+  if (typeof window === "undefined") return false
+  return new URLSearchParams(window.location.search).get("inboxDemo") === "1"
+}
+
+function InboxDemoAttentionSeed() {
+  const { addBlocker, removeBlocker } = useWorkspaceAttention()
+  useEffect(() => {
+    const blockers = [
+      {
+        id: "demo-question-deploy",
+        reason: "ask-user.question",
+        label: "Pick the deploy target for the release smoke",
+        sessionId: "showcase",
+        target: "deploy-plan.md",
+        sessionBadge: { kind: "question", label: "question", tone: "attention" as const, priority: 10 },
+        actions: [{ id: "answer", label: "Answer" }, { id: "dismiss", label: "Dismiss" }],
+      },
+      {
+        id: "demo-review-ui",
+        reason: "external-review.request",
+        label: "Review Codex notes on workspace inbox flow",
+        sessionId: "codex-42",
+        target: "PR #380",
+        sessionBadge: { kind: "review", label: "review", tone: "warning" as const, priority: 8 },
+        actions: [{ id: "open", label: "Open review" }],
+      },
+    ]
+    for (const blocker of blockers) addBlocker(blocker)
+    return () => blockers.forEach((blocker) => removeBlocker(blocker.id))
+  }, [addBlocker, removeBlocker])
+  return null
+}
+
+const inboxDemoPlugin = definePlugin({
+  id: "playground-inbox-demo",
+  label: "Inbox Demo",
+  setup(api) {
+    api.registerBinding({ id: "inbox-demo-attention-seed", component: InboxDemoAttentionSeed })
+  },
+})
+
+const baseWorkspacePlugins = [askUserPlugin, playgroundDeckPlugin]
+const externalPluginsEnabled = (import.meta as ImportMeta & { env?: Record<string, string> }).env?.VITE_BORING_EXTERNAL_PLUGINS === "1"
+
+function resetPlaygroundStorageIfRequested(): void {
+  if (typeof window === "undefined") return
+  const params = new URLSearchParams(window.location.search)
+  if (params.get("fresh") !== "1") return
+  const prefixes = [
+    "boring-ui-v2:layout:playground",
+    "boring-workspace:",
+    "boring-agent:",
+  ]
+  for (const key of Object.keys(window.localStorage)) {
+    if (prefixes.some((prefix) => key.startsWith(prefix))) {
+      window.localStorage.removeItem(key)
+    }
+  }
+  params.delete("fresh")
+  const nextSearch = params.toString()
+  window.history.replaceState(null, "", `${window.location.pathname}${nextSearch ? `?${nextSearch}` : ""}${window.location.hash}`)
+}
 
 function WorkspaceFullPageShell() {
   const parsed = parseFullPagePanelLocation(window.location.search)
@@ -65,8 +125,9 @@ function WorkspaceFullPageShell() {
   return (
     <WorkspaceProvider
       apiBaseUrl=""
-      plugins={workspacePlugins}
+      plugins={baseWorkspacePlugins}
       persistenceEnabled
+      manageDocumentTitle={false}
       workspaceId="playground-full-page"
       fullPageBasePath="/full-page"
     >
@@ -76,9 +137,13 @@ function WorkspaceFullPageShell() {
 }
 
 export function WorkspaceShell() {
+  resetPlaygroundStorageIfRequested()
   const showcase = useMemo(isShowcaseRoute, [])
   const fullPage = useMemo(isFullPageRoute, [])
+  const inboxDemo = useMemo(isInboxDemoRoute, [])
+  const workspacePlugins = useMemo(() => inboxDemo ? [...baseWorkspacePlugins, inboxDemoPlugin] : baseWorkspacePlugins, [inboxDemo])
   const [projectName, setProjectName] = useState("Workspace")
+  const [workspaceId, setWorkspaceId] = useState("Workspace")
   const [metaLoaded, setMetaLoaded] = useState(showcase || fullPage)
 
   const sessions = useMemo(
@@ -109,9 +174,12 @@ export function WorkspaceShell() {
       .then((meta) => {
         if (cancelled) return
         const next = meta?.projectName?.trim()
+        const nextWorkspaceId = meta?.workspaceId?.trim() || next
         if (next) {
           setProjectName(next)
-          document.title = next
+        }
+        if (nextWorkspaceId) {
+          setWorkspaceId(nextWorkspaceId)
         }
         setMetaLoaded(true)
       })
@@ -133,17 +201,21 @@ export function WorkspaceShell() {
 
   return (
     <WorkspaceAgentFront
-      chatPanel={ChatPanel}
-      workspaceId={showcase ? "playground" : projectName}
+      workspaceId={inboxDemo ? "playground-inbox-demo" : showcase ? "playground" : workspaceId}
       apiBaseUrl=""
       persistenceEnabled
-      providerStorageKey="boring-ui-v2:layout:playground"
+      debug
+      providerStorageKey={inboxDemo ? "boring-ui-v2:layout:playground:inbox-demo" : showcase ? "boring-ui-v2:layout:playground" : `boring-ui-v2:layout:playground:${workspaceId}`}
       appTitle={showcase ? "Boring" : projectName}
+      workspaceLabel={showcase ? undefined : projectName}
       defaultSessionTitle={showcase ? "New session" : projectName}
-      frontPluginHotReload="vite"
+      externalPlugins={externalPluginsEnabled}
+      frontPluginHotReload={externalPluginsEnabled ? "vite" : undefined}
       fullPageBasePath="/full-page"
+      defaultSurfaceOpen={inboxDemo ? true : undefined}
+      defaultWorkbenchLeftOpen={inboxDemo ? true : undefined}
+      defaultWorkbenchLeftTab={inboxDemo ? "workspace.inbox" : undefined}
       provisionWorkspace={!showcase}
-      useSessions={showcase ? undefined : useAgentSessions}
       sessions={sessions}
       activeSessionId={showcase ? SHOWCASE_SESSION_ID : undefined}
       onActiveSessionIdChange={handleActiveSessionIdChange}

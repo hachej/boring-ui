@@ -20,7 +20,119 @@ export {
   createExecUiTool,
   createWorkspaceUiTools,
 } from "./ui-control/tools/uiTools"
-export type { UiBridge, UiState, UiCommand, CommandResult } from "../shared/ui-bridge"
+export type { UiBridge, WorkspaceBridge, UiState, UiCommand, CommandResult } from "../shared/ui-bridge"
+export {
+  WorkspaceBridgeErrorCode,
+  createWorkspaceBridgeError,
+} from "../shared/workspace-bridge-rpc"
+export type {
+  BridgeActorAttribution,
+  BridgeActorKind,
+  BridgeAuthContext,
+  BridgeCallerClass,
+  BridgeIdempotencyPolicy,
+  BridgeRedactedActorRef,
+  WorkspaceBridgeCallFailure,
+  WorkspaceBridgeCallRequest,
+  WorkspaceBridgeCallResponse,
+  WorkspaceBridgeCallSuccess,
+  WorkspaceBridgeError,
+  WorkspaceBridgeFileAssetPointer,
+  WorkspaceBridgeJsonValue,
+  WorkspaceBridgeOperationDefinition,
+} from "../shared/workspace-bridge-rpc"
+export {
+  WorkspaceBridgeRegistry,
+  createWorkspaceBridgeRegistry,
+  validateWorkspaceBridgeOperationDefinition,
+} from "./workspaceBridge/registry"
+export type {
+  RegisterWorkspaceBridgeHandlerOptions,
+  WorkspaceBridgeCallContext,
+  WorkspaceBridgeHandler,
+  WorkspaceBridgeHandlerArgs,
+  WorkspaceBridgeRegistryCallOptions,
+  WorkspaceBridgeRegistryLogger,
+  WorkspaceBridgeRegistryOptions,
+} from "./workspaceBridge/registry"
+export {
+  createBrowserBridgeAuthPolicy,
+  createLocalCliBridgeAuthPolicy,
+} from "./workspaceBridge/authPolicy"
+export { workspaceBridgeHttpRoutes } from "./workspaceBridge/httpRoutes"
+export type { WorkspaceBridgeHttpRoutesOptions } from "./workspaceBridge/httpRoutes"
+export { InMemoryWorkspaceBridgeRuntimeRefreshTokenStore } from "./workspaceBridge/refreshTokenStore"
+export type {
+  WorkspaceBridgeRuntimeRefreshTokenStore,
+  WorkspaceBridgeRuntimeRefreshTokenUseOptions,
+  WorkspaceBridgeRuntimeRefreshTokenUseResult,
+} from "./workspaceBridge/refreshTokenStore"
+export {
+  InMemoryWorkspaceBridgeIdempotencyStore,
+  hashNormalizedInput,
+  runWithWorkspaceBridgeIdempotency,
+  stableStringify,
+} from "./workspaceBridge/idempotency"
+export type {
+  BridgeAuthPolicy,
+  BridgeAuthPolicyInput,
+  BridgeAuthPolicyRequestLike,
+  BridgeAuthResolution,
+  BridgePrincipal,
+  BridgeWorkspaceGrant,
+  BrowserBridgeAuthPolicyOptions,
+  LocalCliBridgeAuthPolicyOptions,
+} from "./workspaceBridge/authPolicy"
+export type {
+  BeginIdempotencyOptions,
+  CompleteIdempotencyOptions,
+  IdempotencyBeginResult,
+  IdempotencyRecordStatus,
+  WorkspaceBridgeIdempotencyRecord,
+  WorkspaceBridgeIdempotencyStore,
+} from "./workspaceBridge/idempotency"
+export {
+  DEFAULT_WORKSPACE_BRIDGE_RUNTIME_REFRESH_TOKEN_TTL_MS,
+  DEFAULT_WORKSPACE_BRIDGE_RUNTIME_TOKEN_TTL_MS,
+  MAX_WORKSPACE_BRIDGE_RUNTIME_TOKEN_TTL_MS,
+  WORKSPACE_BRIDGE_REFRESH_TOKEN_AUDIENCE,
+  WORKSPACE_BRIDGE_TOKEN_AUDIENCE,
+  clampWorkspaceBridgeRuntimeTokenTtlMs,
+  mintWorkspaceBridgeRuntimeRefreshToken,
+  mintWorkspaceBridgeRuntimeToken,
+  runtimeClaimsToBridgeAuthContext,
+  verifyWorkspaceBridgeRuntimeRefreshToken,
+  verifyWorkspaceBridgeRuntimeToken,
+} from "./workspaceBridge/runtimeToken"
+export type {
+  MintWorkspaceBridgeRuntimeRefreshTokenOptions,
+  MintWorkspaceBridgeRuntimeTokenOptions,
+  VerifiedWorkspaceBridgeRuntimeRefreshToken,
+  VerifiedWorkspaceBridgeRuntimeToken,
+  VerifyWorkspaceBridgeRuntimeRefreshTokenOptions,
+  VerifyWorkspaceBridgeRuntimeTokenOptions,
+  WorkspaceBridgeRuntimeRefreshTokenClaims,
+  WorkspaceBridgeRuntimeTokenClaims,
+} from "./workspaceBridge/runtimeToken"
+export {
+  createWorkspaceBridgeRuntimeEnvContribution,
+  resolveBridgeCallUrl,
+  resolveBridgeTokenUrl,
+} from "./workspaceBridge/runtimeEnv"
+export { defineTrustedDomainBridgeHandler } from "./workspaceBridge/trustedDomainHandler"
+export type {
+  CreateWorkspaceBridgeRuntimeEnvContributionOptions,
+  WorkspaceBridgeRuntimeEnvDisabledReason,
+  WorkspaceBridgeRuntimeEnvOptions,
+  WorkspaceBridgeRuntimePlacement,
+} from "./workspaceBridge/runtimeEnv"
+export type {
+  TrustedDomainBridgeHandlerOptions,
+  TrustedDomainBridgeHandlerPolicy,
+  TrustedDomainBridgeHandlerRegistration,
+} from "./workspaceBridge/trustedDomainHandler"
+export { createWorkspaceBridgeRuntimeCore } from "./workspaceBridge/runtimeCore"
+export type { WorkspaceBridgeRuntimeCore, WorkspaceBridgeRuntimeCoreOptions } from "./workspaceBridge/runtimeCore"
 export {
   bootstrapServer,
   definePluginAsset,
@@ -31,6 +143,7 @@ export {
 export type {
   ServerBootstrapOptions,
   ServerBootstrapResult,
+  WorkspaceBridgeHandlerContribution,
   WorkspacePiPackageSource,
   WorkspaceProvisioningContribution,
   WorkspaceRouteContribution,
@@ -68,6 +181,7 @@ export type {
   RuntimeBackendDiagnostic,
   RuntimeBackendDispatchRequest,
   RuntimeBackendDispatchResponse,
+  RuntimeBackendDispatcher,
   RuntimeBackendGatewayOptions,
   RuntimeBackendReloadResult,
   RuntimePluginContext,

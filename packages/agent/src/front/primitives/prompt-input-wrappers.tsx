@@ -7,7 +7,7 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from "@hachej/boring-ui-kit";
-import { cn } from "@/front/lib";
+import { cn } from "../lib";
 import type { ComponentProps, HTMLAttributes, ReactNode } from "react";
 import { Children } from "react";
 
@@ -36,17 +36,15 @@ export const PromptInputHeader = ({
   />
 );
 
-export type PromptInputFooterProps = Omit<
-  ComponentProps<typeof InputGroupAddon>,
-  "align"
->;
+export type PromptInputFooterProps = ComponentProps<typeof InputGroupAddon>;
 
 export const PromptInputFooter = ({
+  align = "block-end",
   className,
   ...props
 }: PromptInputFooterProps) => (
   <InputGroupAddon
-    align="block-end"
+    align={align}
     className={cn("justify-between gap-1", className)}
     {...props}
   />

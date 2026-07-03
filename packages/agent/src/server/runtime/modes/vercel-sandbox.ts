@@ -5,6 +5,7 @@ import { fileURLToPath } from 'node:url'
 import { Sandbox as VercelSandbox } from '@vercel/sandbox'
 
 import { type SandboxHandleStore } from '../../../shared/sandbox-handle-store'
+import { ErrorCode } from '../../../shared/error-codes'
 import { safeCapture, type TelemetrySink } from '../../../shared/telemetry'
 import { getEnv, setEnvDefault } from '../../config/env'
 import { createVercelSandboxExec } from '../../sandbox/vercel-sandbox/createVercelSandboxExec'
@@ -21,6 +22,7 @@ import {
 import {
   type ExpiredSandboxPolicy,
   type VercelSandboxClient,
+  evictSandboxHandleCacheForWorkspace,
   resolveSandboxHandle,
 } from '../../sandbox/vercel-sandbox/resolveSandboxHandle'
 import type { PeriodicSnapshotScheduler } from '../../sandbox/vercel-sandbox/periodicSnapshot'
@@ -30,7 +32,7 @@ import {
   VERCEL_SANDBOX_WORKSPACE_ROOT,
 } from '../../workspace/createVercelSandboxWorkspace'
 import { createServerFileSearch } from '../createServerFileSearch'
-import type { ModeContext, RuntimeModeAdapter } from '../mode'
+import type { ModeContext, RuntimeModeAdapter, RuntimeRemoteWorkspacePathOptions } from '../mode'
 import type { BoringAgentRuntimePaths } from '../../workspace/runtimeLayout'
 import type { WorkspaceProvisioningAdapter } from '../../workspace/provisioning'
 
@@ -44,6 +46,8 @@ const ORPHAN_GUARD_MAX_IDLE_MS = 24 * 60 * 60 * 1000
 const VERCEL_SANDBOX_TIMEOUT_MS_ENV = 'BORING_AGENT_VERCEL_SANDBOX_TIMEOUT_MS'
 const VERCEL_SANDBOX_RUNTIME_ENV = 'BORING_AGENT_VERCEL_SANDBOX_RUNTIME'
 const DEFAULT_VERCEL_SANDBOX_RUNTIME = 'node24'
+const VERCEL_BINDING_HEALTHCHECK_INTERVAL_MS = 15_000
+const VERCEL_SAFE_DEFAULT_PATH = '/vercel/runtimes/node24/bin:/vercel/runtimes/node22/bin:/usr/local/bin:/usr/bin:/bin'
 
 export interface VercelSandboxModeAdapterOptions {
   store?: SandboxHandleStore
@@ -63,6 +67,37 @@ interface VercelAuthConfig {
 }
 
 type SandboxSetupStatus = 'started' | 'ok' | 'error'
+
+function vercelRemoteWorkspacePathOptions(): RuntimeRemoteWorkspacePathOptions {
+  return {
+    rootAliases: [VERCEL_SANDBOX_REMOTE_ROOT, '/vercel/sandbox'],
+    toRemotePath(value) {
+      if (value === VERCEL_SANDBOX_WORKSPACE_ROOT) return VERCEL_SANDBOX_REMOTE_ROOT
+      if (value.startsWith(`${VERCEL_SANDBOX_WORKSPACE_ROOT}/`)) {
+        return `${VERCEL_SANDBOX_REMOTE_ROOT}${value.slice(VERCEL_SANDBOX_WORKSPACE_ROOT.length)}`
+      }
+      if (value === '/vercel/sandbox') return VERCEL_SANDBOX_REMOTE_ROOT
+      if (value.startsWith('/vercel/sandbox/')) {
+        return `${VERCEL_SANDBOX_REMOTE_ROOT}${value.slice('/vercel/sandbox'.length)}`
+      }
+      return value
+    },
+    toRuntimePath(value) {
+      if (value === VERCEL_SANDBOX_REMOTE_ROOT) return VERCEL_SANDBOX_WORKSPACE_ROOT
+      if (value.startsWith(`${VERCEL_SANDBOX_REMOTE_ROOT}/`)) {
+        return `${VERCEL_SANDBOX_WORKSPACE_ROOT}${value.slice(VERCEL_SANDBOX_REMOTE_ROOT.length)}`
+      }
+      if (value === '/vercel/sandbox') return VERCEL_SANDBOX_WORKSPACE_ROOT
+      if (value.startsWith('/vercel/sandbox/')) {
+        return `${VERCEL_SANDBOX_WORKSPACE_ROOT}${value.slice('/vercel/sandbox'.length)}`
+      }
+      return value
+    },
+    sanitizeErrorText(value) {
+      return value.replaceAll('/vercel/sandbox', VERCEL_SANDBOX_WORKSPACE_ROOT)
+    },
+  }
+}
 
 function sandboxTelemetryProperties(
   ctx: ModeContext | undefined,
@@ -234,8 +269,8 @@ async function ensureVercelRuntimePrimitives(
     throw new Error(`runtime bootstrap (uv) failed (exit ${result.exitCode ?? 'unknown'})`)
   }
   // Provisioning invokes uv by explicit path (correctness must not depend on the
-  // non-interactive exec PATH). Default BORING_AGENT_UV_BIN to where the Node
-  // bootstrap installs uv; an explicit deploy-config value still wins. Routed
+  // non-interactive exec PATH). Default BORING_AGENT_UV_BIN to the `.boring-agent`
+  // uv installed by the Node bootstrap; an explicit deploy-config value still wins. Routed
   // through config/env so we never touch process.env directly (invariant).
   if (isNodeFamilyRuntime(runtime)) {
     setEnvDefault('BORING_AGENT_UV_BIN', VERCEL_UV_BIN)
@@ -464,6 +499,28 @@ const DEFAULT_MODE_LOGGER: ModeLogger = {
   },
 }
 
+function extractHttpStatus(error: unknown): number | null {
+  const statusCode = (error as { statusCode?: unknown } | null)?.statusCode
+  if (typeof statusCode === 'number') return statusCode
+
+  const status = (error as { status?: unknown } | null)?.status
+  if (typeof status === 'number') return status
+
+  const responseStatus = (error as { response?: { status?: unknown } } | null)?.response?.status
+  return typeof responseStatus === 'number' ? responseStatus : null
+}
+
+function isExpiredSandboxRuntimeError(error: unknown): boolean {
+  const code = (error as { code?: unknown } | null)?.code
+  if (code === ErrorCode.enum.SANDBOX_EXPIRED) return true
+
+  const status = extractHttpStatus(error)
+  if (status === 404 || status === 410) return true
+
+  const message = error instanceof Error ? error.message : String(error)
+  return /status code (404|410) is not ok/i.test(message)
+}
+
 function requireEnvVar(name: string, getEnvVar: EnvGetter): string {
   const value = getEnvVar(name)?.trim()
   if (!value) {
@@ -518,6 +575,29 @@ export function createVercelSandboxModeAdapter(
   return {
     id: 'vercel-sandbox',
     workspaceFsCapability: 'best-effort',
+    readiness: {
+      initialSandboxReady: false,
+      initialWorkspaceReadiness: { state: 'preparing' },
+      onTrackerCreated: (tracker) => { queueMicrotask(() => tracker.markSandboxReady()) },
+    },
+    cachedBindingHealthCheck: {
+      intervalMs: VERCEL_BINDING_HEALTHCHECK_INTERVAL_MS,
+      async check({ runtimeBundle }) {
+        try {
+          await runtimeBundle.workspace.stat('.')
+          return { state: 'ok' as const }
+        } catch (error) {
+          if (!isExpiredSandboxRuntimeError(error)) throw error
+          return {
+            state: 'recreate' as const,
+            message: '[sandbox] cached runtime expired; recreating from persisted handle',
+            error,
+          }
+        }
+      },
+    },
+    getRuntimeLayoutRoot: () => VERCEL_SANDBOX_WORKSPACE_ROOT,
+    evictCachedRuntime: ({ workspaceId }) => { evictSandboxHandleCacheForWorkspace(workspaceId) },
     async dispose() {
       await snapshotScheduler?.shutdown()
     },
@@ -704,6 +784,8 @@ export function createVercelSandboxModeAdapter(
           sandbox,
           fileSearch: createServerFileSearch(workspace, sandbox),
           runtimeContext: workspace.runtimeContext,
+          bash: { kind: 'remote', defaultPath: VERCEL_SAFE_DEFAULT_PATH },
+          filesystem: { kind: 'remote-workspace', pathOptions: vercelRemoteWorkspacePathOptions() },
         }
       } catch (error) {
         const code = (error as { code?: unknown } | null)?.code

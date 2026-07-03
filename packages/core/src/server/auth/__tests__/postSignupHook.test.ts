@@ -4,6 +4,7 @@ import type { FastifyInstance } from 'fastify'
 import { drizzle } from 'drizzle-orm/postgres-js'
 import postgres from 'postgres'
 import { createAuth } from '../createAuth'
+import type { TelemetryEvent } from '../../../shared/telemetry'
 import { authHook } from '../authHook'
 import { registerErrorHandler } from '../../app/errorHandler'
 import { runMigrations } from '../../db/migrate'
@@ -67,11 +68,12 @@ afterAll(async () => {
   await rawSql.end()
 })
 
-function buildApp(config: CoreConfig) {
+function buildApp(config: CoreConfig, telemetry?: { capture: (e: TelemetryEvent) => void }) {
   const db = drizzle(rawSql)
   const auth = createAuth(config, db, {
     workspaceStore,
     logger: { warn: () => {} },
+    telemetry,
   })
 
   const app = Fastify({ logger: false })
@@ -111,7 +113,7 @@ describe('post-signup hook — default workspace', () => {
     await app.close()
   })
 
-  it('creates a default workspace named "My Workspace" on signup', async () => {
+  it('creates a default workspace named "Default workspace" on signup', async () => {
     const res = await app.inject({
       method: 'POST',
       url: '/auth/sign-up/email',
@@ -129,7 +131,7 @@ describe('post-signup hook — default workspace', () => {
 
     const workspaces = await workspaceStore.list(userId, 'test-app')
     expect(workspaces).toHaveLength(1)
-    expect(workspaces[0].name).toBe('My Workspace')
+    expect(workspaces[0].name).toBe('Default workspace')
     expect(workspaces[0].isDefault).toBe(true)
   })
 })
@@ -233,7 +235,7 @@ describe('post-signup hook — invite acceptance', () => {
     const inviteeId = JSON.parse(res.body)?.user?.id
     const inviteeWorkspaces = await workspaceStore.list(inviteeId, 'test-app')
     expect(inviteeWorkspaces).toHaveLength(1)
-    expect(inviteeWorkspaces[0].name).toBe('My Workspace')
+    expect(inviteeWorkspaces[0].name).toBe('Default workspace')
   })
 
   it('sets boring_invite_failed cookie on email mismatch', async () => {
@@ -290,7 +292,7 @@ describe('post-signup hook — invite acceptance', () => {
     const inviteeId = JSON.parse(res.body)?.user?.id
     const inviteeWorkspaces = await workspaceStore.list(inviteeId, 'test-app')
     expect(inviteeWorkspaces).toHaveLength(1)
-    expect(inviteeWorkspaces[0].name).toBe('My Workspace')
+    expect(inviteeWorkspaces[0].name).toBe('Default workspace')
   })
 
   it('sets boring_invite_failed cookie on already-accepted invite', async () => {
@@ -328,5 +330,35 @@ describe('post-signup hook — invite acceptance', () => {
     const failedCookie = cookies.find((c) => c.includes('boring_invite_failed'))
     expect(failedCookie).toBeDefined()
     expect(failedCookie).toContain('invite_already_accepted')
+  })
+})
+
+describe('auth telemetry', () => {
+  let app: FastifyInstance
+  const events: TelemetryEvent[] = []
+
+  beforeAll(async () => {
+    const built = buildApp(makeConfig(), { capture: (e) => { events.push(e) } })
+    app = built.app
+    await app.ready()
+  })
+  afterAll(async () => { await app.close() })
+
+  it('emits auth.signed_up (and auth.session_started) on signup — user id only, no PII', async () => {
+    const res = await app.inject({
+      method: 'POST',
+      url: '/auth/sign-up/email',
+      payload: { name: 'Telemetry User', email: 'telemetry@post-signup-test.dev', password: 'Zk8$mN!qR2xFgWpJ' },
+    })
+    expect(res.statusCode).toBe(200)
+    const userId = JSON.parse(res.body)?.user?.id
+
+    const signup = events.find((e) => e.name === 'auth.signed_up')
+    expect(signup?.distinctId).toBe(userId)
+    // The sign-up also mints a session.
+    expect(events.some((e) => e.name === 'auth.session_started' && e.distinctId === userId)).toBe(true)
+    // No raw email anywhere in the telemetry.
+    expect(JSON.stringify(events)).not.toContain('telemetry@')
+    expect(signup?.properties).toBeUndefined()
   })
 })

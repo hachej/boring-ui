@@ -2,8 +2,8 @@
 
 import { Button, EmptyState, Notice, Pane, PaneBody, PaneFooter, PaneHeader, PaneTitle } from "@hachej/boring-ui-kit"
 import {
-  UI_COMMAND_EVENT,
-  useWorkspaceAttention,
+  WORKSPACE_COMPOSER_STOP_EVENT,
+  workspaceComposerStopAppliesToSession,
   type PaneProps,
   type PluginProviderProps,
 } from "@hachej/boring-workspace"
@@ -12,144 +12,118 @@ import {
   type BoringFrontFactoryWithId,
 } from "@hachej/boring-workspace/plugin"
 import { HelpCircle, XCircle } from "lucide-react"
-import { createContext, useContext, useEffect, useMemo, useSyncExternalStore, useState } from "react"
+import { useEffect, useMemo, useRef, useSyncExternalStore, useState } from "react"
 import { ASK_USER_PANEL_ID, ASK_USER_PANEL_TITLE, ASK_USER_PLUGIN_ID, ASK_USER_SURFACE_KIND } from "../shared/constants"
-import type { AskUserQuestion } from "../shared/types"
-import { createQuestionsClient, readPendingQuestionFromState, QuestionsClientError } from "./client"
+import { createQuestionsClient, QuestionsClientError } from "./client"
+import {
+  pendingQuestionSnapshot,
+  QuestionsRuntimeContext,
+  isSessionOpen,
+  sharedQuestionsStore,
+  useQuestionsRuntime,
+  type QuestionsRuntime,
+} from "./runtime"
+import {
+  useAskUserAttentionActions,
+  useAskUserAttentionBlockers,
+  useAskUserAutoOpen,
+  useAskUserComposerStopCancel,
+  useAskUserPendingRefresh,
+} from "./providerHooks"
 import { QuestionCancelButton, QuestionFields, QuestionForm, QuestionFormProvider, QuestionSubmitButton } from "./primitives"
 
-type QuestionsStore = {
-  getPending(): AskUserQuestion | null
-  setPending(question: AskUserQuestion | null): void
-  subscribe(listener: () => void): () => void
-}
-
-type QuestionsRuntime = QuestionsStore & {
-  apiBaseUrl: string
-  authHeaders?: Record<string, string>
-}
-
-function createQuestionsStore(): QuestionsStore {
-  const listeners = new Set<() => void>()
-  let pending: AskUserQuestion | null = null
-  return {
-    getPending: () => pending,
-    setPending(question) {
-      pending = question
-      for (const listener of [...listeners]) listener()
+function AskUserProvider({ apiBaseUrl, authHeaders, activeSessionId, openSessionIds, children }: PluginProviderProps) {
+  const runtime = useMemo<QuestionsRuntime>(() => ({
+    ...sharedQuestionsStore,
+    apiBaseUrl,
+    authHeaders,
+    activeSessionId,
+    openSessionIds,
+    async refreshPending(sessionId) {
+      const pending = await createQuestionsClient({ apiBaseUrl, headers: authHeaders }).pending(sessionId)
+      sharedQuestionsStore.setPending(pending, sessionId)
+      return pending
     },
-    subscribe(listener) {
-      listeners.add(listener)
-      return () => listeners.delete(listener)
-    },
-  }
-}
-
-// Singleton store at module scope so the "Open Questions" command's `when()`
-// predicate can check the pending state without React. The provider mounts
-// this same instance into its runtime context.
-const sharedQuestionsStore: QuestionsStore = createQuestionsStore()
-
-const QuestionsRuntimeContext = createContext<QuestionsRuntime | null>(null)
-
-function sessionScopedBlockerId(sessionId: string): string | undefined {
-  return sessionId === "default" || sessionId === "anonymous" ? undefined : sessionId
-}
-
-function pendingQuestionSnapshot(store: QuestionsStore): string {
-  const pending = store.getPending()
-  return pending ? `${pending.sessionId}:${pending.questionId}:${pending.status}` : "none"
-}
-
-function useQuestionsRuntime(): QuestionsRuntime {
-  const ctx = useContext(QuestionsRuntimeContext)
-  if (!ctx) throw new Error("askUserPlugin QuestionsPane must be rendered under AskUserProvider")
-  return ctx
-}
-
-function AskUserProvider({ apiBaseUrl, authHeaders, children }: PluginProviderProps) {
-  const { addBlocker, removeBlocker } = useWorkspaceAttention()
-  const runtime = useMemo<QuestionsRuntime>(() => ({ ...sharedQuestionsStore, apiBaseUrl, authHeaders }), [apiBaseUrl, authHeaders])
+  }), [activeSessionId, apiBaseUrl, authHeaders, openSessionIds])
   const pendingSnapshot = useSyncExternalStore(runtime.subscribe, () => pendingQuestionSnapshot(runtime), () => "none")
-  useEffect(() => {
-    const pending = runtime.getPending()
-    const blockerId = pending ? `${ASK_USER_PLUGIN_ID}:${pending.sessionId}:${pending.questionId}` : null
-    if (pending?.status === "ready" && blockerId) {
-      addBlocker({
-        id: blockerId,
-        reason: "waiting_for_user_input",
-        surfaceKind: ASK_USER_SURFACE_KIND,
-        target: pending.questionId,
-        label: "Answer the question in Questions to continue",
-        sessionId: sessionScopedBlockerId(pending.sessionId),
-        actions: [{ id: "open", label: "Open Questions" }, { id: "cancel", label: "Cancel question" }],
-      })
-    }
-    return () => { if (blockerId) removeBlocker(blockerId) }
-  }, [addBlocker, removeBlocker, runtime, pendingSnapshot])
 
-  useEffect(() => {
-    const onStop = (event: Event) => {
-      const sessionId = (event as CustomEvent<{ sessionId?: string }>).detail?.sessionId
-      const pending = runtime.getPending()
-      if (!pending || (sessionId && sessionScopedBlockerId(pending.sessionId) && sessionId !== pending.sessionId)) return
-      runtime.setPending(null)
-      void createQuestionsClient({ apiBaseUrl: runtime.apiBaseUrl, headers: runtime.authHeaders }).cancel(pending).catch(() => undefined)
-    }
-    window.addEventListener("boring:workspace-composer-stop", onStop)
-    return () => window.removeEventListener("boring:workspace-composer-stop", onStop)
-  }, [runtime])
+  useAskUserAttentionBlockers(runtime, pendingSnapshot)
+  useAskUserAutoOpen(runtime, activeSessionId, pendingSnapshot)
+  useAskUserAttentionActions(runtime)
+  useAskUserComposerStopCancel(runtime)
+  useAskUserPendingRefresh(runtime, { activeSessionId, apiBaseUrl, authHeaders })
 
-  useEffect(() => {
-    let stopped = false
-    async function refreshPending() {
-      try {
-        const response = await fetch(`${apiBaseUrl}/api/v1/ui/state`, { headers: authHeaders })
-        const state = await response.json().catch(() => null) as Record<string, unknown> | null
-        if (!stopped) runtime.setPending(readPendingQuestionFromState(state))
-      } catch { /* best effort */ }
-    }
-    const onVisibility = () => { if (document.visibilityState === "visible") void refreshPending() }
-    const onUiCommand = () => { void refreshPending() }
-    void refreshPending()
-    window.addEventListener("focus", refreshPending)
-    document.addEventListener("visibilitychange", onVisibility)
-    window.addEventListener(UI_COMMAND_EVENT, onUiCommand)
-    return () => {
-      stopped = true
-      window.removeEventListener("focus", refreshPending)
-      document.removeEventListener("visibilitychange", onVisibility)
-      window.removeEventListener(UI_COMMAND_EVENT, onUiCommand)
-    }
-  }, [apiBaseUrl, authHeaders, runtime])
   return <QuestionsRuntimeContext.Provider value={runtime}>{children}</QuestionsRuntimeContext.Provider>
 }
 
-type QuestionsPaneParams = { questionId?: string; question?: AskUserQuestion; __closeWorkbenchOnDone?: () => void }
+type QuestionsPaneParams = { questionId?: string; sessionId?: string; __closeWorkbenchOnDone?: () => void }
+
+function paneQuestionSessionId(runtime: QuestionsRuntime, params: QuestionsPaneParams | undefined): string | null {
+  const activeSessionId = runtime.activeSessionId ?? null
+  if (activeSessionId && isPaneSessionVisible(runtime, activeSessionId) && hasReadyQuestion(runtime, activeSessionId)) return activeSessionId
+  if (params?.sessionId && isPaneSessionVisible(runtime, params.sessionId)) return params.sessionId
+  return activeSessionId && isPaneSessionVisible(runtime, activeSessionId) ? activeSessionId : null
+}
+
+function isPaneSessionVisible(runtime: QuestionsRuntime, sessionId: string): boolean {
+  return !runtime.openSessionIds || isSessionOpen(runtime, sessionId)
+}
+
+function isPaneSessionKnownHidden(runtime: QuestionsRuntime, sessionId: string): boolean {
+  return !!runtime.openSessionIds && !isSessionOpen(runtime, sessionId)
+}
+
+function hasReadyQuestion(runtime: QuestionsRuntime, sessionId: string): boolean {
+  const pending = runtime.getPending(sessionId)
+  if (pending?.status === "ready") return true
+  return runtime.getPendingHints().some((hint) => hint.sessionId === sessionId && (!hint.status || hint.status === "ready"))
+}
 
 function QuestionsPane({ api, params, className }: PaneProps<QuestionsPaneParams>) {
   const runtime = useQuestionsRuntime()
-  const pending = useSyncExternalStore(runtime.subscribe, runtime.getPending, runtime.getPending)
+  const paneSessionId = paneQuestionSessionId(runtime, params)
+  const pending = useSyncExternalStore(runtime.subscribe, () => runtime.getPending(paneSessionId), () => runtime.getPending(paneSessionId))
   const [closedQuestionId, setClosedQuestionId] = useState<string | null>(null)
+  const retargetRefreshRef = useRef<string | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [submitting, setSubmitting] = useState(false)
-  const paramQuestion = params?.question
-  const question = pending ?? (paramQuestion?.questionId === closedQuestionId ? null : paramQuestion) ?? null
+  const question = pending?.questionId === closedQuestionId ? null : pending
   const client = useMemo(() => createQuestionsClient({ apiBaseUrl: runtime.apiBaseUrl, headers: runtime.authHeaders }), [runtime.apiBaseUrl, runtime.authHeaders])
   useEffect(() => {
+    if (!params?.sessionId || !isPaneSessionKnownHidden(runtime, params.sessionId)) return
+    const activeSessionId = runtime.activeSessionId ?? null
+    const canShowActiveQuestion = activeSessionId && isPaneSessionVisible(runtime, activeSessionId) && hasReadyQuestion(runtime, activeSessionId)
+    if (!canShowActiveQuestion) api.close()
+  }, [api, params?.sessionId, runtime])
+
+  useEffect(() => {
     const onStop = (event: Event) => {
-      const sessionId = (event as CustomEvent<{ sessionId?: string }>).detail?.sessionId
-      if (!question || (sessionId && sessionScopedBlockerId(question.sessionId) && sessionId !== question.sessionId)) return
+      const detail = (event as CustomEvent<unknown>).detail
+      if (!question || !workspaceComposerStopAppliesToSession(detail, question.sessionId)) return
       setClosedQuestionId(question.questionId)
-      runtime.setPending(null)
+      runtime.setPending(null, question.sessionId)
       api.close()
     }
-    window.addEventListener("boring:workspace-composer-stop", onStop)
-    return () => window.removeEventListener("boring:workspace-composer-stop", onStop)
+    window.addEventListener(WORKSPACE_COMPOSER_STOP_EVENT, onStop)
+    return () => window.removeEventListener(WORKSPACE_COMPOSER_STOP_EVENT, onStop)
   }, [api, question, runtime])
   useEffect(() => {
-    if (question && pending === null && !paramQuestion) api.close()
-  }, [api, pending, paramQuestion, question])
+    if (!paneSessionId) return
+    const targetQuestionId = params?.questionId
+    if (!pending) {
+      retargetRefreshRef.current = null
+      void runtime.refreshPending(paneSessionId).catch(() => undefined)
+      return
+    }
+    if (!targetQuestionId || pending.questionId === targetQuestionId) {
+      retargetRefreshRef.current = null
+      return
+    }
+    const refreshKey = `${paneSessionId}:${targetQuestionId}`
+    if (retargetRefreshRef.current === refreshKey) return
+    retargetRefreshRef.current = refreshKey
+    void runtime.refreshPending(paneSessionId).catch(() => undefined)
+  }, [paneSessionId, params?.questionId, pending, runtime])
 
   return <div className={className ? `${className} min-h-0 overflow-hidden` : "h-full min-h-0 overflow-hidden"}>
     <Pane className="h-full min-h-0 overflow-hidden border-0 bg-background text-sm">
@@ -160,14 +134,14 @@ function QuestionsPane({ api, params, className }: PaneProps<QuestionsPaneParams
       </PaneHeader>
       {!question ? <PaneBody className="overflow-auto p-4"><EmptyState icon={<HelpCircle className="h-5 w-5" />} title="No pending questions" description="When the agent needs a decision, the form will appear here." className="border border-dashed bg-muted/20" /></PaneBody> : null}
       {question?.status === "ready" && question.schema ? (
-        <QuestionFormProvider schema={question.schema} submitting={submitting} onSubmit={async (values) => {
+        <QuestionFormProvider key={question.questionId} schema={question.schema} submitting={submitting} onSubmit={async (values) => {
           setSubmitting(true); setError(null)
-          try { await client.submit(question, values); setClosedQuestionId(question.questionId); runtime.setPending(null); api.close(); params?.__closeWorkbenchOnDone?.() }
+          try { await client.submit(question, values); setClosedQuestionId(question.questionId); runtime.setPending(null, question.sessionId); api.close(); params?.__closeWorkbenchOnDone?.() }
           catch (err) { setError(err instanceof QuestionsClientError ? err.message : String(err)) }
           finally { setSubmitting(false) }
         }} onCancel={async () => {
           setSubmitting(true); setError(null)
-          try { await client.cancel(question); setClosedQuestionId(question.questionId); runtime.setPending(null); api.close(); params?.__closeWorkbenchOnDone?.() }
+          try { await client.cancel(question); setClosedQuestionId(question.questionId); runtime.setPending(null, question.sessionId); api.close(); params?.__closeWorkbenchOnDone?.() }
           catch (err) { setError(err instanceof QuestionsClientError ? err.message : String(err)) }
           finally { setSubmitting(false) }
         }}>
@@ -232,15 +206,15 @@ export const askUserPlugin: BoringFrontFactoryWithId = definePlugin({
       // No inner kind guard — the workspace's surface registry already
       // pre-filters by the top-level `kind` field before calling resolve.
       resolve(request) {
-        const metaQuestion =
-          typeof request.meta === "object" && request.meta && "question" in request.meta
-            ? (request.meta as { question?: AskUserQuestion }).question
+        const sessionId =
+          typeof request.meta === "object" && request.meta && typeof (request.meta as { sessionId?: unknown }).sessionId === "string"
+            ? (request.meta as { sessionId: string }).sessionId
             : undefined
         return {
           component: ASK_USER_PANEL_ID,
           id: ASK_USER_PANEL_ID,
           title: ASK_USER_PANEL_TITLE,
-          params: { questionId: request.target, question: metaQuestion },
+          params: { questionId: request.target, sessionId },
         }
       },
     },

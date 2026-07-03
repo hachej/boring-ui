@@ -1,6 +1,8 @@
 import { mkdtemp, mkdir, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { execFile } from 'node:child_process'
+import { promisify } from 'node:util'
 import { afterEach, expect, test, vi } from 'vitest'
 
 import { getEnv, restoreEnvForTest, setEnvForTest } from '../config/env'
@@ -45,6 +47,42 @@ async function createTemplate(
   }
   return root
 }
+
+
+
+test('createAgentApp direct bash receives runtime env contributions without persisting values', async () => {
+  const workspaceRoot = await makeTempDir('boring-agent-direct-runtime-env-')
+  let capturedTools: import('../../shared/tool').AgentTool[] = []
+  const app = await createAgentApp({
+    workspaceRoot,
+    mode: 'direct',
+    logger: false,
+    telemetry: { capture: vi.fn() },
+    runtimeEnvContributions: [{ id: 'direct-runtime-env-test', getEnv: () => ({ GENERIC_DIRECT_RUNTIME_ENV: 'visible' }) }],
+    harnessFactory: async (input) => {
+      capturedTools = input.tools
+      return {
+        id: 'direct-env-harness',
+        placement: 'server' as const,
+        sessions: {
+          async list() { return [] },
+          async create() { const now = new Date().toISOString(); return { id: 's', title: 'S', createdAt: now, updatedAt: now, turnCount: 0 } },
+          async load() { const now = new Date().toISOString(); return { id: 's', title: 'S', createdAt: now, updatedAt: now, turnCount: 0, messages: [] } },
+          async delete() {},
+        },
+        async *sendMessage() {},
+      }
+    },
+  })
+
+  const result = await capturedTools.find((tool) => tool.name === 'bash')!.execute(
+    { command: 'printf "%s" "$GENERIC_DIRECT_RUNTIME_ENV"' },
+    { abortSignal: new AbortController().signal, toolCallId: 'direct-env' },
+  )
+
+  expect(result.content.map((part) => part.text).join('')).toContain('visible')
+  await app.close()
+})
 
 test('createAgentApp provisions from templatePath option', async () => {
   const parent = await makeTempDir('boring-ui-app-parent-')
@@ -102,7 +140,6 @@ test('createAgentApp wires runtime provisioning skill paths into harness and ski
       },
       async delete() {},
     },
-    async *sendMessage() {},
   }))
 
   const app = await createAgentApp({
@@ -137,6 +174,11 @@ test('createAgentApp can use a custom harness factory for non-pi runtimes', asyn
       telemetryEvents.push(event)
     },
   }
+  const getSlashCommands = vi.fn((sessionId: string) => [{
+    name: 'open-test-panel',
+    description: `Open test panel for ${sessionId}`,
+    source: 'extension' as const,
+  }])
   const harnessFactory = vi.fn(async (input) => ({
     id: 'custom-test-harness',
     placement: 'server' as const,
@@ -153,7 +195,7 @@ test('createAgentApp can use a custom harness factory for non-pi runtimes', asyn
       async delete() {},
     },
     reloadSession,
-    async *sendMessage() {},
+    getSlashCommands,
   }))
 
   const app = await createAgentApp({
@@ -175,23 +217,91 @@ test('createAgentApp can use a custom harness factory for non-pi runtimes', asyn
     expect(harnessFactory.mock.calls[0]?.[0].telemetry).toBe(telemetry)
     expect(harnessFactory.mock.calls[0]?.[0].tools.map((tool: { name: string }) => tool.name)).toContain('custom_runtime_tool')
 
-    const chatRes = await app.inject({
-      method: 'POST',
-      url: '/api/v1/agent/chat',
-      payload: { sessionId: 'custom', message: 'secret prompt must not be captured' },
+    const commandsRes = await app.inject({ method: 'GET', url: '/api/v1/agent/commands?sessionId=custom' })
+    expect(commandsRes.statusCode).toBe(200)
+    expect(commandsRes.json()).toMatchObject({
+      commands: [{ name: 'open-test-panel', source: 'extension' }],
     })
-    expect(chatRes.statusCode).toBe(200)
-    expect(telemetryEvents.map((event) => event.name)).toEqual([
-      'agent.chat.started',
-      'agent.chat.message.submitted',
-      'agent.chat.completed',
-    ])
-    expect(JSON.stringify(telemetryEvents)).not.toContain('secret prompt')
+
+    expect(telemetryEvents).toEqual([])
 
     const res = await app.inject({ method: 'POST', url: '/api/v1/agent/reload', payload: { sessionId: 'custom' } })
     expect(res.statusCode).toBe(200)
     expect(res.json()).toEqual({ ok: true, sessionId: 'custom', reloaded: true })
     expect(reloadSession).toHaveBeenCalledWith('custom')
+  } finally {
+    await app.close()
+  }
+})
+
+test('POST /api/v1/agent/reload surfaces harness resource diagnostics', async () => {
+  const workspaceRoot = await makeTempDir('boring-ui-reload-diagnostics-')
+  const app = await createAgentApp({
+    workspaceRoot,
+    mode: 'direct',
+    logger: false,
+    harnessFactory: vi.fn(async () => ({
+      id: 'diagnostics-harness',
+      placement: 'server' as const,
+      sessions: {
+        async list() { return [] },
+        async create() {
+          const now = new Date().toISOString()
+          return { id: 'custom', title: 'Custom', createdAt: now, updatedAt: now, turnCount: 0 }
+        },
+        async load() {
+          const now = new Date().toISOString()
+          return { id: 'custom', title: 'Custom', createdAt: now, updatedAt: now, turnCount: 0, messages: [] }
+        },
+        async delete() {},
+      },
+      reloadSession: async () => true,
+      getResourceDiagnostics: () => [
+        { source: 'pi-skills', message: 'bad SKILL.md', path: 'skills/broken' },
+      ],
+    })),
+  })
+  try {
+    const res = await app.inject({ method: 'POST', url: '/api/v1/agent/reload', payload: { sessionId: 'custom' } })
+    expect(res.statusCode).toBe(200)
+    const body = res.json()
+    expect(body.reloaded).toBe(true)
+    expect(body.diagnostics).toEqual([
+      { source: 'pi-skills', message: 'bad SKILL.md' },
+    ])
+  } finally {
+    await app.close()
+  }
+})
+
+test('GET /api/v1/agent/commands reports command discovery failures', async () => {
+  const workspaceRoot = await makeTempDir('boring-ui-command-route-failure-')
+  const app = await createAgentApp({
+    workspaceRoot,
+    mode: 'direct',
+    logger: false,
+    harnessFactory: vi.fn(async () => ({
+      id: 'failing-command-harness',
+      placement: 'server' as const,
+      sessions: {
+        async list() { return [] },
+        async create() {
+          const now = new Date().toISOString()
+          return { id: 'default', title: 'Default', createdAt: now, updatedAt: now, turnCount: 0 }
+        },
+        async load() {
+          const now = new Date().toISOString()
+          return { id: 'default', title: 'Default', createdAt: now, updatedAt: now, turnCount: 0, messages: [] }
+        },
+        async delete() {},
+      },
+      getSlashCommands: () => { throw new Error('command loader failed') },
+    })),
+  })
+  try {
+    const res = await app.inject({ method: 'GET', url: '/api/v1/agent/commands' })
+    expect(res.statusCode).toBe(500)
+    expect(res.json()).toMatchObject({ commands: [], error: 'command loader failed' })
   } finally {
     await app.close()
   }
@@ -243,6 +353,7 @@ test('POST /api/v1/agent/reload includes beforeReload restart warnings and diagn
       ],
       diagnostics: [
         { source: 'directory (/plugin)', pluginId: 'broken-plugin', message: 'syntax error' },
+        { source: 'reload', message: 'No live agent session to reload yet — changes apply to the next session.' },
       ],
     })
   } finally {
@@ -394,6 +505,48 @@ test('createAgentApp throws clearly when templatePath is missing', async () => {
   ).rejects.toThrow(`Failed to copy template from "${missingTemplate}"`)
 })
 
+test('externalPlugins=false keeps local plugin files out of the app catalog', async () => {
+  const workspaceRoot = await makeWorkspaceLocalTempDir('boring-ui-plugin-disabled-')
+  const pluginDir = join(workspaceRoot, '.pi', 'extensions')
+  await mkdir(pluginDir, { recursive: true })
+  await writeFile(
+    join(pluginDir, 'hidden.mjs'),
+    [
+      'export default {',
+      "  name: 'a4s_plugin_hidden',",
+      "  description: 'hidden plugin tool',",
+      "  parameters: { type: 'object', properties: {} },",
+      '  async execute() { return { content: [{ type: \'text\', text: \'hidden\' }] } },',
+      '}',
+      '',
+    ].join('\n'),
+    'utf-8',
+  )
+
+  const app = await createAgentApp({
+    workspaceRoot,
+    mode: 'direct',
+    logger: false,
+    externalPlugins: false,
+  })
+
+  try {
+    const res = await app.inject({ method: 'GET', url: '/api/v1/agent/catalog' })
+    expect(res.statusCode).toBe(200)
+    const names = res.json().tools.map((t: { name: string }) => t.name)
+    expect(names).not.toContain('a4s_plugin_hidden')
+    expect(names).not.toContain('plugin_diagnostics')
+    expect(names).toContain('bash')
+    const catalogText = JSON.stringify(res.json()).toLowerCase()
+    expect(catalogText).not.toContain('boring-ui-plugin')
+    expect(catalogText).not.toContain('boring-plugin-authoring')
+    expect(catalogText).not.toContain('plugin-owned')
+    expect(catalogText).not.toContain('my-plugin')
+  } finally {
+    await app.close()
+  }
+})
+
 test('real local plugin file remains callable and appears in app catalog', async () => {
   const workspaceRoot = await makeWorkspaceLocalTempDir('boring-ui-plugin-e2e-')
   const pluginDir = join(workspaceRoot, '.pi', 'extensions')
@@ -522,7 +675,66 @@ test('POST /api/v1/agent/reload is available before first turn', async () => {
     })
 
     expect(res.statusCode).toBe(200)
-    expect(res.json()).toEqual({ ok: true, sessionId: 'default', reloaded: false })
+    expect(res.json()).toEqual({
+      ok: true,
+      sessionId: 'default',
+      reloaded: false,
+      diagnostics: [
+        { source: 'reload', message: 'No live agent session to reload yet — changes apply to the next session.' },
+      ],
+    })
+  } finally {
+    await app.close()
+  }
+})
+
+test('GET /api/v1/git/file-url 404-free and disabled for a non-git workspace', async () => {
+  // Regression: the file-tree "Copy Git URL" action calls this route, which the
+  // workspace app serves via createAgentApp. It must be wired here (not only in
+  // registerAgentRoutes), or the action 404s. A bare temp dir is not a git
+  // repo, so the route resolves to a disabled result rather than 404.
+  const workspaceRoot = await makeTempDir('boring-ui-git-route-')
+  const app = await createAgentApp({
+    workspaceRoot,
+    mode: 'direct',
+    logger: false,
+  })
+
+  try {
+    const res = await app.inject({ method: 'GET', url: '/api/v1/git/file-url?path=README.md' })
+    expect(res.statusCode).toBe(200)
+    expect(res.json()).toEqual({
+      enabled: false,
+      reason: 'Workspace is not inside a Git repository.',
+    })
+  } finally {
+    await app.close()
+  }
+})
+
+test('GET /api/v1/git/file-url resolves a real repo via the host storage root', async () => {
+  // End-to-end: the route must run git against the HOST workspace path. Build a
+  // real repo with a github origin and assert the blob URL comes back.
+  const workspaceRoot = await makeTempDir('boring-ui-git-repo-')
+  const git = async (...args: string[]) => {
+    await promisify(execFile)('git', args, { cwd: workspaceRoot })
+  }
+  await git('init', '-b', 'main')
+  await git('config', 'user.email', 'test@example.com')
+  await git('config', 'user.name', 'Test')
+  await git('remote', 'add', 'origin', 'git@github.com:acme/demo.git')
+  await writeFile(join(workspaceRoot, 'README.md'), '# demo\n')
+  await git('add', '.')
+  await git('commit', '-m', 'init')
+
+  const app = await createAgentApp({ workspaceRoot, mode: 'direct', logger: false })
+  try {
+    const res = await app.inject({ method: 'GET', url: '/api/v1/git/file-url?path=README.md' })
+    expect(res.statusCode).toBe(200)
+    expect(res.json()).toEqual({
+      enabled: true,
+      url: 'https://github.com/acme/demo/blob/main/README.md',
+    })
   } finally {
     await app.close()
   }

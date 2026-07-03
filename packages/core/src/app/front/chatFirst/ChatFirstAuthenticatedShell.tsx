@@ -48,7 +48,7 @@ export function ChatFirstAuthenticatedShell<
       {...workspaceProps}
       workspaceId={workspaceId}
       appTitle={appTitle}
-      topBarLeft={null}
+      topBarLeft={workspaceProps.topBarLeft ?? null}
       sessions={[]}
       activeSessionId={null}
       onSwitchSession={() => undefined}
@@ -57,14 +57,17 @@ export function ChatFirstAuthenticatedShell<
       provisionWorkspace={false}
       bootPreloadPaths={[]}
       bridgeEndpoint={null}
-      excludeDefaults={['filesystem']}
-      plugins={[]}
+      excludeDefaults={workspaceProps.excludeDefaults ?? ['filesystem']}
+      plugins={workspaceProps.plugins ?? []}
       catalogs={[]}
       commands={[]}
       persistenceEnabled={false}
       navEnabled={false}
       defaultNavOpen={false}
-      defaultSurfaceOpen={false}
+      defaultSurfaceOpen={workspaceProps.defaultSurfaceOpen ?? false}
+      defaultWorkbenchLeftTab={workspaceProps.defaultWorkbenchLeftTab}
+      defaultWorkbenchLeftOpen={false}
+      surfaceInitialPanels={workspaceProps.surfaceInitialPanels}
       beforeShell={showComposerBlocker ? <>{workspaceProps.beforeShell}<ChatFirstComposerBlocker /></> : workspaceProps.beforeShell}
       chatParams={{
         ...workspaceProps.chatParams,

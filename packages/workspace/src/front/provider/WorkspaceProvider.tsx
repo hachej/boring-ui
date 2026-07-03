@@ -38,8 +38,9 @@ import type { BoringFrontFactoryWithId, CapturedFrontPlugin } from "../../shared
 import type { CommandConfig, PanelConfig } from "../registry/types"
 import type { CatalogConfig } from "../../shared/plugins/types"
 import type { WorkspaceChatPanelComponent, WorkspaceChatPanelProps } from "../chrome/chat/types"
-import { WorkspaceAttentionProvider } from "../attention"
+import { WorkspaceAttentionProvider, workspaceInboxPlugin } from "../attention"
 import { useAgentPluginHotReload } from "../agentPlugins/registerAgentPlugin"
+import { formatWorkspaceDocumentTitle } from "./workspaceTitle"
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -291,6 +292,8 @@ function WorkspacePluginProviders({
   authHeaders,
   onAuthError,
   apiTimeout,
+  activeSessionId,
+  openSessionIds,
   children,
 }: {
   plugins: CapturedFrontPlugin[]
@@ -298,6 +301,8 @@ function WorkspacePluginProviders({
   authHeaders?: Record<string, string>
   onAuthError?: (statusCode: number) => void
   apiTimeout?: number
+  activeSessionId?: string | null
+  openSessionIds?: readonly string[]
   children: ReactNode
 }) {
   const providers = plugins.flatMap((plugin) =>
@@ -313,6 +318,8 @@ function WorkspacePluginProviders({
         authHeaders={authHeaders}
         onAuthError={onAuthError}
         apiTimeout={apiTimeout}
+        activeSessionId={activeSessionId}
+        openSessionIds={openSessionIds}
       >
         {acc}
       </Provider>
@@ -354,11 +361,22 @@ export interface WorkspaceProviderProps {
   authHeaders?: Record<string, string>
   /** Per-request timeout for the data layer's FetchClient, in ms. */
   apiTimeout?: number
+  /** Active chat/session scope shared with plugin providers that need session-scoped data. */
+  activeSessionId?: string | null
+  /** Session ids that are currently open in chat panes, for plugins that must avoid opening closed-session UI. */
+  openSessionIds?: readonly string[]
+  /** Authoritative chat session ids used to drop stale session-scoped Inbox/attention entries. */
+  attentionSessionIds?: readonly string[]
+  /** False while session data is loading or paginated; prevents pruning valid off-page attention entries. */
+  attentionSessionsAuthoritative?: boolean
   defaultTheme?: "light" | "dark" | undefined
   onThemeChange?: (theme: "light" | "dark") => void
   workspaceId?: string
+  workspaceLabel?: string
+  appTitle?: string
   storageKey?: string
   persistenceEnabled?: boolean
+  manageDocumentTitle?: boolean
   bridgeEndpoint?: string | null
   onAuthError?: (statusCode: number) => void
   onOpenFile?: (path: string) => void
@@ -403,11 +421,18 @@ export function WorkspaceProvider({
   apiBaseUrl = "",
   authHeaders,
   apiTimeout,
+  activeSessionId,
+  openSessionIds,
+  attentionSessionIds,
+  attentionSessionsAuthoritative = true,
   defaultTheme,
   onThemeChange,
   workspaceId,
+  workspaceLabel,
+  appTitle,
   storageKey,
   persistenceEnabled = true,
+  manageDocumentTitle = true,
   bridgeEndpoint,
   onAuthError,
   onOpenFile,
@@ -492,9 +517,10 @@ export function WorkspaceProvider({
     }
 
     const excludedDefaults = new Set(excludeDefaults ?? [])
-    const defaultPlugins: BoringFrontFactoryWithId[] = excludedDefaults.has(filesystemPlugin.pluginId)
-      ? []
-      : [filesystemPlugin]
+    const defaultPlugins: BoringFrontFactoryWithId[] = [
+      ...(excludedDefaults.has(filesystemPlugin.pluginId) ? [] : [filesystemPlugin]),
+      ...(excludedDefaults.has(workspaceInboxPlugin.pluginId) ? [] : [workspaceInboxPlugin]),
+    ]
     const userPlugins = plugins ?? []
 
     const bootstrapResult = bootstrap({
@@ -566,6 +592,11 @@ export function WorkspaceProvider({
     [authHeaders, workspaceId],
   )
 
+  useEffect(() => {
+    if (!manageDocumentTitle) return
+    document.title = formatWorkspaceDocumentTitle({ appTitle, workspaceLabel, workspaceId })
+  }, [appTitle, manageDocumentTitle, workspaceId, workspaceLabel])
+
   const [bridgeConnected, setBridgeConnected] = useState(false)
 
   const bridgeValue = useMemo<WorkspaceBridgeContextValue>(
@@ -582,7 +613,7 @@ export function WorkspaceProvider({
       <ThemeContext.Provider value={themeValue}>
         <WorkspaceBridgeContext.Provider value={bridgeValue}>
           <FullPageBasePathProvider basePath={fullPageBasePath}>
-            <WorkspaceAttentionProvider>
+            <WorkspaceAttentionProvider knownSessionIds={attentionSessionIds} knownSessionsAuthoritative={attentionSessionsAuthoritative}>
           <PluginErrorProvider>
             <RegistryProvider
               panelRegistry={panelRegistry}
@@ -597,6 +628,8 @@ export function WorkspaceProvider({
                 authHeaders={resolvedAuthHeaders}
                 onAuthError={onAuthError}
                 apiTimeout={apiTimeout}
+                activeSessionId={activeSessionId}
+                openSessionIds={openSessionIds}
               >
                 <WorkspacePluginBindings plugins={pluginsWithBindings} />
                 <AgentPluginHotReloadBridge apiBaseUrl={apiBaseUrl} workspaceId={workspaceId} mode={frontPluginHotReload} authHeaders={resolvedAuthHeaders} />

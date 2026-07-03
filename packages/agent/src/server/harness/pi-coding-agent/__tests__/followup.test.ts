@@ -1,8 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
-const { mockSubscribers, promptHandle, promptCalls, mockSessions } = vi.hoisted(() => ({
+const { mockSubscribers, promptCalls, mockSessions } = vi.hoisted(() => ({
   mockSubscribers: [] as Array<(event: any) => void>,
-  promptHandle: { resolve: undefined as undefined | (() => void) },
   promptCalls: [] as Array<{ message: string; opts?: any }>,
   mockSessions: [] as any[],
 }));
@@ -26,9 +25,7 @@ vi.mock("@mariozechner/pi-coding-agent", () => ({
       },
       prompt: vi.fn().mockImplementation((msg: string, opts?: any) => {
         promptCalls.push({ message: msg, opts });
-        return new Promise<void>((resolve) => {
-          promptHandle.resolve = resolve;
-        });
+        return Promise.resolve();
       }),
       followUp: vi.fn().mockImplementation((msg: string, opts?: any) => {
         promptCalls.push({ message: msg, opts: { ...(opts ?? {}), nativeFollowUp: true } });
@@ -56,8 +53,6 @@ vi.mock("@mariozechner/pi-coding-agent", () => ({
     inMemory: () => ({ find: vi.fn(), getAvailable: () => [] }),
     create: () => ({ find: vi.fn(), getAvailable: () => [], hasConfiguredAuth: () => true, isUsingOAuth: () => false }),
   },
-  // createHarness now always builds a DefaultResourceLoader (workspace-paths
-  // guideline). Stub the pi-side lookups it needs.
   getAgentDir: () => "/tmp/test-agent-dir",
   DefaultResourceLoader: class {
     constructor(_opts: unknown) {}
@@ -71,342 +66,118 @@ vi.mock("@mariozechner/pi-coding-agent", () => ({
 import { createPiCodingAgentHarness } from "../createHarness.js";
 import type { RunContext } from "../../../../shared/harness.js";
 
-function emit(event: any): void {
-  for (const sub of [...mockSubscribers]) sub(event);
-}
-
 function makeCtx(ac = new AbortController()): RunContext {
   return { abortSignal: ac.signal, workdir: "/tmp/test-followup" };
+}
+
+// Creates the session adapter the way the pi-chat service does: through
+// getPiSessionAdapter (sessions are created lazily). Queue ops live on the
+// adapter.
+async function makeSessionAdapter(sessionId: string) {
+  const harness = createPiCodingAgentHarness({ tools: [], cwd: "/tmp/test-followup" });
+  return await harness.getPiSessionAdapter({ sessionId, message: "" }, makeCtx());
+}
+
+function simulatePiConsumes(session: any): void {
+  session.agent.followUpQueue.messages.shift();
+  session._followUpMessages.shift();
 }
 
 beforeEach(() => {
   vi.clearAllMocks();
   mockSubscribers.length = 0;
-  promptHandle.resolve = undefined;
   promptCalls.length = 0;
   mockSessions.length = 0;
 });
 
 describe("native pi follow-up integration", () => {
   it("queues follow-up through pi's native followUp API", async () => {
-    const harness = createPiCodingAgentHarness({ tools: [], cwd: "/tmp/test-followup" });
-    const iter = harness.sendMessage({ sessionId: "sess-native", message: "first" }, makeCtx());
-    const reader = iter[Symbol.asyncIterator]();
+    const adapter = await makeSessionAdapter("sess-native");
 
-    const boot = reader.next();
-    await new Promise((r) => setTimeout(r, 5));
-    emit({ type: "message_start", message: { id: "a1", role: "assistant" } });
-    await boot;
+    await adapter.followUp("second visible");
 
-    await harness.followUp!("sess-native", "second visible");
-
-    expect(promptCalls.map((c) => c.message)).toEqual(["first", "second visible"]);
-    expect(promptCalls[1]?.opts).toMatchObject({ nativeFollowUp: true });
-
-    promptHandle.resolve?.();
-    await reader.return?.();
+    expect(promptCalls.map((c) => c.message)).toEqual(["second visible"]);
+    expect(promptCalls[0]?.opts).toMatchObject({ nativeFollowUp: true });
   });
 
   it("dedupes repeated queued follow-up posts with the same nonce", async () => {
-    const harness = createPiCodingAgentHarness({ tools: [], cwd: "/tmp/test-followup" });
-    const iter = harness.sendMessage({ sessionId: "sess-dedupe", message: "first" }, makeCtx());
-    const reader = iter[Symbol.asyncIterator]();
+    const adapter = await makeSessionAdapter("sess-dedupe");
 
-    const boot = reader.next();
-    await new Promise((r) => setTimeout(r, 5));
-    emit({ type: "message_start", message: { id: "a1", role: "assistant" } });
-    await boot;
+    await adapter.followUp("same nonce", { displayText: "same nonce", clientNonce: "nonce-dedupe", clientSeq: 1 });
+    await adapter.followUp("same nonce", { displayText: "same nonce", clientNonce: "nonce-dedupe", clientSeq: 1 });
 
-    await harness.followUp!("sess-dedupe", "same nonce", undefined, "same nonce", { clientNonce: "nonce-dedupe", clientSeq: 1 });
-    await harness.followUp!("sess-dedupe", "same nonce", undefined, "same nonce", { clientNonce: "nonce-dedupe", clientSeq: 1 });
-
-    expect(promptCalls.map((c) => c.message)).toEqual(["first", "same nonce"]);
+    expect(promptCalls.map((c) => c.message)).toEqual(["same nonce"]);
     expect(mockSessions[0].agent.followUpQueue.messages.map((msg: any) => msg.content[0].text)).toEqual(["same nonce"]);
-
-    promptHandle.resolve?.();
-    await reader.return?.();
   });
 
   it("does not dedupe distinct nonces that reuse a client sequence", async () => {
-    const harness = createPiCodingAgentHarness({ tools: [], cwd: "/tmp/test-followup" });
-    const iter = harness.sendMessage({ sessionId: "sess-seq-reuse", message: "first" }, makeCtx());
-    const reader = iter[Symbol.asyncIterator]();
+    const adapter = await makeSessionAdapter("sess-seq-reuse");
 
-    const boot = reader.next();
-    await new Promise((r) => setTimeout(r, 5));
-    emit({ type: "message_start", message: { id: "a1", role: "assistant" } });
-    await boot;
+    await adapter.followUp("first seq", { displayText: "first seq", clientNonce: "nonce-seq-a", clientSeq: 1 });
+    await adapter.followUp("second seq", { displayText: "second seq", clientNonce: "nonce-seq-b", clientSeq: 1 });
 
-    await harness.followUp!("sess-seq-reuse", "first seq", undefined, "first seq", { clientNonce: "nonce-seq-a", clientSeq: 1 });
-    await harness.followUp!("sess-seq-reuse", "second seq", undefined, "second seq", { clientNonce: "nonce-seq-b", clientSeq: 1 });
-
-    expect(promptCalls.map((c) => c.message)).toEqual(["first", "first seq", "second seq"]);
+    expect(promptCalls.map((c) => c.message)).toEqual(["first seq", "second seq"]);
     expect(mockSessions[0].agent.followUpQueue.messages.map((msg: any) => msg.content[0].text)).toEqual(["first seq", "second seq"]);
-
-    promptHandle.resolve?.();
-    await reader.return?.();
   });
 
   it("dedupes a repeated follow-up post after pi consumes the first copy", async () => {
-    const harness = createPiCodingAgentHarness({ tools: [], cwd: "/tmp/test-followup" });
-    const iter = harness.sendMessage({ sessionId: "sess-consumed-dedupe", message: "first" }, makeCtx());
-    const reader = iter[Symbol.asyncIterator]();
+    const adapter = await makeSessionAdapter("sess-consumed-dedupe");
 
-    const boot = reader.next();
-    await new Promise((r) => setTimeout(r, 5));
-    emit({ type: "message_start", message: { id: "a1", role: "assistant" } });
-    await boot;
+    await adapter.followUp("same consumed nonce", { displayText: "same consumed nonce", clientNonce: "nonce-consumed", clientSeq: 1 });
+    simulatePiConsumes(mockSessions[0]);
 
-    await harness.followUp!("sess-consumed-dedupe", "same consumed nonce", undefined, "same consumed nonce", { clientNonce: "nonce-consumed", clientSeq: 1 });
+    await adapter.followUp("same consumed nonce", { displayText: "same consumed nonce", clientNonce: "nonce-consumed", clientSeq: 1 });
 
-    const consumed = reader.next();
-    emit({
-      type: "message_start",
-      message: { id: "u2", role: "user", content: [{ type: "text", text: "same consumed nonce" }] },
-    });
-    await consumed;
-
-    await harness.followUp!("sess-consumed-dedupe", "same consumed nonce", undefined, "same consumed nonce", { clientNonce: "nonce-consumed", clientSeq: 1 });
-
-    expect(promptCalls.map((c) => c.message)).toEqual(["first", "same consumed nonce"]);
-    expect(mockSessions[0].agent.followUpQueue.messages.map((msg: any) => msg.content[0].text)).toEqual(["same consumed nonce"]);
-
-    promptHandle.resolve?.();
-    await reader.return?.();
+    // seen nonces survive consumption until the turn/session boundary, so the
+    // retried post is dropped instead of double-queueing.
+    expect(promptCalls.map((c) => c.message)).toEqual(["same consumed nonce"]);
+    expect(mockSessions[0].agent.followUpQueue.messages).toEqual([]);
   });
 
   it("can delete a queued follow-up before pi drains it", async () => {
-    const harness = createPiCodingAgentHarness({ tools: [], cwd: "/tmp/test-followup" });
-    const iter = harness.sendMessage({ sessionId: "sess-delete", message: "first" }, makeCtx());
-    const reader = iter[Symbol.asyncIterator]();
+    const adapter = await makeSessionAdapter("sess-delete");
 
-    const boot = reader.next();
-    await new Promise((r) => setTimeout(r, 5));
-    emit({ type: "message_start", message: { id: "a1", role: "assistant" } });
-    await boot;
+    await adapter.followUp("delete me", { displayText: "delete me", clientNonce: "nonce-delete", clientSeq: 1 });
+    adapter.clearFollowUp({ clientNonce: "nonce-delete" });
 
-    await harness.followUp!("sess-delete", "delete me", undefined, "delete me", { clientNonce: "nonce-delete", clientSeq: 1 });
-    harness.clearFollowUp!("sess-delete", { clientNonce: "nonce-delete" });
-    emit({ type: "agent_end" });
-
-    expect(promptCalls.map((c) => c.message)).toEqual(["first", "delete me"]);
+    expect(promptCalls.map((c) => c.message)).toEqual(["delete me"]);
     expect(mockSessions[0].agent.followUpQueue.messages).toEqual([]);
     expect(mockSessions[0]._followUpMessages).toEqual([]);
-
-    promptHandle.resolve?.();
-    await reader.return?.();
   });
 
   it("deleting one duplicate-text follow-up leaves the other queued", async () => {
-    const harness = createPiCodingAgentHarness({ tools: [], cwd: "/tmp/test-followup" });
-    const iter = harness.sendMessage({ sessionId: "sess-delete-dupe", message: "first" }, makeCtx());
-    const reader = iter[Symbol.asyncIterator]();
+    const adapter = await makeSessionAdapter("sess-delete-dupe");
 
-    const boot = reader.next();
-    await new Promise((r) => setTimeout(r, 5));
-    emit({ type: "message_start", message: { id: "a1", role: "assistant" } });
-    await boot;
-
-    await harness.followUp!("sess-delete-dupe", "same text", undefined, "same text", { clientNonce: "nonce-1", clientSeq: 1 });
-    await harness.followUp!("sess-delete-dupe", "same text", undefined, "same text", { clientNonce: "nonce-2", clientSeq: 2 });
-    harness.clearFollowUp!("sess-delete-dupe", { clientNonce: "nonce-2" });
+    await adapter.followUp("same text", { displayText: "same text", clientNonce: "nonce-1", clientSeq: 1 });
+    await adapter.followUp("same text", { displayText: "same text", clientNonce: "nonce-2", clientSeq: 2 });
+    adapter.clearFollowUp({ clientNonce: "nonce-2" });
 
     expect(mockSessions[0].agent.followUpQueue.messages.map((msg: any) => msg.content[0].text)).toEqual(["same text"]);
     expect(mockSessions[0]._followUpMessages).toEqual(["same text"]);
-
-    promptHandle.resolve?.();
-    await reader.return?.();
   });
 
-  it("maps pi's consumed follow-up user message into a data marker and namespaces the next assistant parts", async () => {
-    const harness = createPiCodingAgentHarness({ tools: [], cwd: "/tmp/test-followup" });
-    const iter = harness.sendMessage({ sessionId: "sess-events", message: "first" }, makeCtx());
-    const reader = iter[Symbol.asyncIterator]();
+  it("deletes the remaining duplicate-text follow-up after pi consumes the first one", async () => {
+    const adapter = await makeSessionAdapter("sess-delete-dupe-consumed");
 
-    const chunks: any[] = [];
-    const first = reader.next();
-    await new Promise((r) => setTimeout(r, 5));
-    emit({ type: "message_start", message: { id: "a1", role: "assistant" } });
-    chunks.push((await first).value);
+    await adapter.followUp("same text", { displayText: "same text", clientNonce: "nonce-1", clientSeq: 1 });
+    await adapter.followUp("same text", { displayText: "same text", clientNonce: "nonce-2", clientSeq: 2 });
 
-    const markerNext = reader.next();
-    emit({
-      type: "message_start",
-      message: { role: "user", content: [{ type: "text", text: "queued question" }] },
-    });
-    chunks.push((await markerNext).value);
+    simulatePiConsumes(mockSessions[0]);
 
-    const piUserStartNext = reader.next();
-    chunks.push((await piUserStartNext).value);
+    adapter.clearFollowUp({ clientNonce: "nonce-2" });
 
-    const assistantStartNext = reader.next();
-    emit({ type: "message_start", message: { id: "a2", role: "assistant" } });
-    chunks.push((await assistantStartNext).value);
-
-    const sdkAssistantStartNext = reader.next();
-    chunks.push((await sdkAssistantStartNext).value);
-
-    const textStartNext = reader.next();
-    emit({ type: "message_update", assistantMessageEvent: { type: "text_start", contentIndex: 0 } });
-    chunks.push((await textStartNext).value);
-
-    const textDeltaNext = reader.next();
-    emit({ type: "message_update", assistantMessageEvent: { type: "text_delta", contentIndex: 0, delta: "hello" } });
-    chunks.push((await textDeltaNext).value);
-    chunks.push((await reader.next()).value);
-
-    expect(chunks).toContainEqual(expect.objectContaining({ type: "data-followup-consumed", data: { text: "queued question" } }));
-    expect(chunks).toContainEqual(expect.objectContaining({ type: "data-pi-message-start", data: expect.objectContaining({ role: "user", text: "queued question" }) }));
-    expect(chunks).toContainEqual(expect.objectContaining({ type: "data-pi-message-start", data: expect.objectContaining({ role: "assistant", messageId: "a2" }) }));
-    expect(chunks).toContainEqual(expect.objectContaining({ type: "start", messageId: "a2" }));
-    expect(chunks).toContainEqual(expect.objectContaining({ type: "data-pi-text-start", data: expect.objectContaining({ messageId: "a2", partId: "0" }) }));
-    expect(chunks).toContainEqual(expect.objectContaining({ type: "data-pi-text-delta", data: expect.objectContaining({ messageId: "a2", partId: "0", delta: "hello" }) }));
-    expect(chunks).not.toContainEqual(expect.objectContaining({ type: "text-start" }));
-    expect(chunks).not.toContainEqual(expect.objectContaining({ type: "text-delta", delta: "hello" }));
-    const seqs = chunks.map((chunk) => chunk.data?.seq).filter(Boolean);
-    expect(seqs).toEqual([...seqs].sort((a, b) => a - b));
-
-    promptHandle.resolve?.();
-    await reader.return?.();
+    expect(mockSessions[0].agent.followUpQueue.messages).toEqual([]);
+    expect(mockSessions[0]._followUpMessages).toEqual([]);
   });
 
-  it("suppresses canonical visible tool chunks for queued inline turns while keeping data-pi tool side channel", async () => {
-    const harness = createPiCodingAgentHarness({ tools: [], cwd: "/tmp/test-followup-tools" });
-    const iter = harness.sendMessage({ sessionId: "sess-followup-tools", message: "first" }, makeCtx());
-    const reader = iter[Symbol.asyncIterator]();
-    const chunks: any[] = [];
+  it("prefers clientNonce over colliding clientSeq when deleting a queued follow-up", async () => {
+    const adapter = await makeSessionAdapter("sess-delete-seq-collision");
 
-    const first = reader.next();
-    await new Promise((r) => setTimeout(r, 5));
-    emit({ type: "message_start", message: { id: "a1", role: "assistant" } });
-    chunks.push((await first).value);
+    await adapter.followUp("keep me", { displayText: "keep me", clientNonce: "nonce-1", clientSeq: 1 });
+    await adapter.followUp("delete me", { displayText: "delete me", clientNonce: "nonce-2", clientSeq: 1 });
+    adapter.clearFollowUp({ clientNonce: "nonce-2", clientSeq: 1 });
 
-    emit({
-      type: "message_start",
-      message: { id: "u2", role: "user", content: [{ type: "text", text: "queued question" }] },
-    });
-    emit({ type: "message_start", message: { id: "a2", role: "assistant" } });
-    emit({
-      type: "message_update",
-      messageId: "a2",
-      assistantMessageEvent: {
-        type: "toolcall_end",
-        contentIndex: 0,
-        toolCall: { id: "tool-inline", name: "bash", arguments: { command: "pwd" } },
-      },
-    });
-    emit({
-      type: "tool_execution_end",
-      toolCallId: "tool-inline",
-      result: { content: [{ type: "text", text: "ok" }] },
-      isError: false,
-    });
-    emit({ type: "agent_end" });
-    promptHandle.resolve?.();
-
-    for (;;) {
-      const next = await reader.next();
-      if (next.done) break;
-      chunks.push(next.value);
-    }
-
-    expect(chunks).toContainEqual(expect.objectContaining({ type: "data-followup-consumed", data: { text: "queued question" } }));
-    expect(chunks).toContainEqual(expect.objectContaining({
-      type: "data-pi-tool-call-end",
-      data: expect.objectContaining({ messageId: "a2", toolCallId: "tool-inline", toolName: "bash", input: { command: "pwd" } }),
-    }));
-    expect(chunks).toContainEqual(expect.objectContaining({
-      type: "data-pi-tool-result",
-      data: expect.objectContaining({ messageId: "a2", toolCallId: "tool-inline", output: { content: [{ type: "text", text: "ok" }] } }),
-    }));
-    expect(chunks).not.toContainEqual(expect.objectContaining({ type: "tool-input-available", toolCallId: "tool-inline" }));
-    expect(chunks).not.toContainEqual(expect.objectContaining({ type: "tool-output-available", toolCallId: "tool-inline" }));
-  });
-
-  it("preserves snapshot-only assistant fallback after a consumed follow-up", async () => {
-    const harness = createPiCodingAgentHarness({ tools: [], cwd: "/tmp/test-followup-snapshot" });
-    const iter = harness.sendMessage({ sessionId: "sess-snapshot-followup", message: "first" }, makeCtx());
-    const reader = iter[Symbol.asyncIterator]();
-    const chunks: any[] = [];
-
-    const first = reader.next();
-    await new Promise((r) => setTimeout(r, 5));
-    emit({ type: "message_start", message: { id: "a1", role: "assistant" } });
-    chunks.push((await first).value);
-
-    await harness.followUp!("sess-snapshot-followup", "queued question");
-
-    const consumed = reader.next();
-    emit({
-      type: "message_start",
-      message: { id: "u2", role: "user", content: [{ type: "text", text: "queued question" }] },
-    });
-    chunks.push((await consumed).value);
-
-    const userStart = reader.next();
-    chunks.push((await userStart).value);
-
-    const userEnd = reader.next();
-    emit({
-      type: "message_end",
-      message: { id: "u2", role: "user", content: [{ type: "text", text: "queued question" }] },
-    });
-    chunks.push((await userEnd).value);
-
-    emit({
-      type: "agent_end",
-      messages: [
-        { role: "user", content: [{ type: "text", text: "first" }] },
-        { role: "assistant", content: [{ type: "text", text: "first answer" }] },
-        { role: "user", content: [{ type: "text", text: "queued question" }] },
-        { role: "assistant", content: [{ type: "text", text: "follow-up answer" }] },
-      ],
-    });
-    promptHandle.resolve?.();
-
-    for (;;) {
-      const next = await reader.next();
-      if (next.done) break;
-      chunks.push(next.value);
-    }
-
-    expect(chunks).toContainEqual(expect.objectContaining({
-      type: "data-pi-message-end",
-      data: expect.objectContaining({ role: "assistant", text: "follow-up answer" }),
-    }));
-  });
-
-  it("closes the stream if pi resolves before consuming a queued follow-up", async () => {
-    const harness = createPiCodingAgentHarness({ tools: [], cwd: "/tmp/test-followup-settle" });
-    const iter = harness.sendMessage({ sessionId: "sess-settle-followup", message: "first" }, makeCtx());
-    const reader = iter[Symbol.asyncIterator]();
-
-    const first = reader.next();
-    await new Promise((r) => setTimeout(r, 5));
-    emit({ type: "message_start", message: { id: "a1", role: "assistant" } });
-    await first;
-
-    await harness.followUp!("sess-settle-followup", "queued question");
-
-    const next = reader.next();
-    emit({
-      type: "agent_end",
-      messages: [
-        { role: "user", content: [{ type: "text", text: "first" }] },
-        { role: "assistant", content: [{ type: "text", text: "first answer" }] },
-      ],
-    });
-    promptHandle.resolve?.();
-
-    await expect(next).resolves.toMatchObject({ done: false });
-    let closed = false;
-    for (let i = 0; i < 5; i++) {
-      const item = await reader.next();
-      if (item.done) {
-        closed = true;
-        break;
-      }
-    }
-    expect(closed).toBe(true);
+    expect(mockSessions[0].agent.followUpQueue.messages.map((msg: any) => msg.content[0].text)).toEqual(["keep me"]);
+    expect(mockSessions[0]._followUpMessages).toEqual(["keep me"]);
   });
 });

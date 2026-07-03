@@ -89,6 +89,7 @@ describe('renderWorkspaceInvite', () => {
     const email = await renderWorkspaceInvite({
       to: 'invitee@test.dev',
       acceptUrl: 'https://app.test/invite/accept?token=inv1',
+      appName: 'TestApp',
       inviterName: 'Alice',
       workspaceName: 'Acme Corp',
       role: 'editor',
@@ -101,6 +102,7 @@ describe('renderWorkspaceInvite', () => {
     expect(email.html).toContain('Acme Corp')
     expect(email.html).toContain('editor')
     expect(email.html).toContain('https://app.test/invite/accept?token=inv1')
+    expect(email.text).toContain('TestApp')
     expect(email.text).toContain('Accept invitation')
     expect(email.text).toContain('7 days')
   })
@@ -109,6 +111,7 @@ describe('renderWorkspaceInvite', () => {
     const email = await renderWorkspaceInvite({
       to: 'invitee@test.dev',
       acceptUrl: 'https://app.test/invite',
+      appName: 'TestApp',
       inviterName: 'Bob',
       workspaceName: 'Team',
       role: 'viewer',
@@ -160,6 +163,7 @@ describe('plaintext output', () => {
       renderWorkspaceInvite({
         to: 'd@t.dev',
         acceptUrl: 'https://x',
+        appName: 'A',
         inviterName: 'X',
         workspaceName: 'W',
         role: 'admin',

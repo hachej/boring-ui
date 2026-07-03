@@ -3,6 +3,7 @@ import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { ReactNode } from 'react'
+import { MemoryRouter, useLocation } from 'react-router-dom'
 
 const { mockUseOptionalConfig } = vi.hoisted(() => ({
   mockUseOptionalConfig: vi.fn(),
@@ -38,7 +39,16 @@ const BEAD_ID = 'boring-ui-v2-1pas'
 const GOOGLE_BEAD_ID = 'boring-ui-v2-reorg-mip7'
 
 function Wrapper({ children }: { children: ReactNode }) {
-  return <AuthProvider>{children}</AuthProvider>
+  return (
+    <MemoryRouter>
+      <AuthProvider>{children}</AuthProvider>
+    </MemoryRouter>
+  )
+}
+
+function CurrentPath() {
+  const location = useLocation()
+  return <div data-testid="current-path">{location.pathname}</div>
 }
 
 beforeEach(() => {
@@ -94,6 +104,33 @@ describe('SignUpPage', () => {
         expect(screen.getByText(/check your email/i)).toBeTruthy(),
       )
       assertionPassed('signup-check-email-state')
+    }),
+  )
+
+  it(
+    'redirects to email verification flow after signup when email verification is enabled',
+    withBeadId(BEAD_ID, async ({ assertionPassed }) => {
+      mockUseOptionalConfig.mockReturnValue({ features: { googleOauth: false, emailVerification: true } })
+      mockSignUpEmail.mockResolvedValue({ data: { user: { id: 'u1' } }, error: null })
+
+      render(
+        <>
+          <SignUpPage />
+          <CurrentPath />
+        </>,
+        { wrapper: Wrapper },
+      )
+
+      const user = userEvent.setup()
+      await user.type(screen.getByLabelText(/name/i), 'Test User')
+      await user.type(screen.getByLabelText(/email/i), 'test@example.com')
+      await user.type(screen.getByLabelText(/password/i), 'secret12345')
+      await user.click(screen.getByRole('button', { name: /sign up/i }))
+
+      await waitFor(() =>
+        expect(screen.getByTestId('current-path').textContent).toBe('/auth/verify-email'),
+      )
+      assertionPassed('signup-redirects-verify-email')
     }),
   )
 

@@ -1,5 +1,6 @@
 import type { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify'
 import type { Workspace, Entry } from '../../../shared/workspace'
+import { isIgnoredDirName } from '../../workspace/ignore'
 import {
   ERROR_CODE_INVALID_PATH,
   ERROR_CODE_PATH_REJECTED,
@@ -62,7 +63,19 @@ async function listTree(
       const entryPath = joinPath(batch.parentDir, e.name)
       entries.push({ name: e.name, kind: e.kind, path: entryPath })
 
-      if (recursive && e.kind === 'dir' && batch.depth < MAX_DEPTH) {
+      // The directory is always listed as an entry above; we only avoid
+      // *descending* into heavy/ignored dirs (node_modules, .worktrees, .git,
+      // dist, ...). On repos with many worktrees an unfiltered recursive walk
+      // takes seconds and exhausts MAX_ENTRIES on junk before reaching real
+      // source. Non-recursive listings are unaffected — the entry set for any
+      // single directory is identical to before. Users can still expand an
+      // ignored dir on demand via a non-recursive request for its path.
+      if (
+        recursive &&
+        e.kind === 'dir' &&
+        batch.depth < MAX_DEPTH &&
+        !isIgnoredDirName(e.name)
+      ) {
         try {
           const subEntries = await workspace.readdir(entryPath)
           queue.push({ parentDir: entryPath, items: subEntries, depth: batch.depth + 1 })

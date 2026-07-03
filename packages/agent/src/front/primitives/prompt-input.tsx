@@ -24,8 +24,8 @@ import {
   InputGroupTextarea,
 } from "@hachej/boring-ui-kit";
 import { Input, Spinner } from "@hachej/boring-ui-kit";
-import { cn } from "@/front/lib";
-import type { ChatStatus, FileUIPart, SourceDocumentUIPart } from "ai";
+import { cn } from "../lib";
+import type { ChatStatus, SourceDocumentUIPart } from "ai";
 import {
   CornerDownLeftIcon,
   ImageIcon,
@@ -59,6 +59,7 @@ import {
   type AttachmentEntry,
   type AttachmentsContext,
   type PromptInputControllerProps,
+  type PromptInputFilePart,
   type ReferencedSourcesContext,
 } from "./prompt-input-context";
 import {
@@ -77,6 +78,7 @@ export {
   type AttachmentEntry,
   type AttachmentsContext,
   type PromptInputControllerProps,
+  type PromptInputFilePart,
   type ReferencedSourcesContext,
   type TextInputContext,
 } from "./prompt-input-context";
@@ -181,7 +183,7 @@ const captureScreenshot = async (): Promise<File | null> => {
 
 export type PromptInputProviderProps = PropsWithChildren<{
   initialInput?: string;
-  onUploadFile?: (file: File) => Promise<{ url: string }>;
+  onUploadFile?: (file: File) => Promise<{ url: string; path?: string }>;
 }>;
 
 /**
@@ -300,7 +302,7 @@ export const PromptInputActionAddScreenshot = ({
 
 export interface PromptInputMessage {
   text: string;
-  files: FileUIPart[];
+  files: PromptInputFilePart[];
 }
 
 export type PromptInputProps = Omit<
@@ -328,7 +330,7 @@ export type PromptInputProps = Omit<
   ) => false | void | Promise<false | void>;
   /** When provided, files are uploaded to the server immediately on add and the
    * attachment URL is replaced with the stable server path before submit. */
-  onUploadFile?: (file: File) => Promise<{ url: string }>;
+  onUploadFile?: (file: File) => Promise<{ url: string; path?: string }>;
 };
 
 export const PromptInput = ({
@@ -348,6 +350,10 @@ export const PromptInput = ({
   // Try to use a provider controller if present
   const controller = useOptionalPromptInputController();
   const usingProvider = !!controller;
+  const providerTextValueRef = useRef("");
+  if (usingProvider) {
+    providerTextValueRef.current = controller.textInput.value;
+  }
 
   // Refs
   const inputRef = useRef<HTMLInputElement | null>(null);
@@ -356,11 +362,11 @@ export const PromptInput = ({
   // ----- Local attachments (only used when no provider)
   const [items, setItems] = useState<AttachmentEntry[]>([]);
 
-  const setFileUrlLocal = useCallback((id: string, url: string, status: 'ready' | 'error') => {
+  const setFileUrlLocal = useCallback((id: string, url: string, status: 'ready' | 'error', path?: string) => {
     setItems((prev) => prev.map((f) => {
       if (f.id !== id) return f;
       if (f.url !== url && f.url.startsWith('blob:')) URL.revokeObjectURL(f.url);
-      return { ...f, url, status };
+      return { ...f, url, status, ...(path ? { path } : {}) };
     }));
   }, []);
   const files = usingProvider ? controller.attachments.files : items;
@@ -455,7 +461,7 @@ export const PromptInput = ({
           const entry = entries[i];
           const file = capped[i];
           onUploadFile(file)
-            .then(({ url }) => setFileUrlLocal(entry.id, url, 'ready'))
+            .then(({ url, path }) => setFileUrlLocal(entry.id, url, 'ready', path))
             .catch(() => setFileUrlLocal(entry.id, entry.url, 'error'));
         }
       }
@@ -702,14 +708,17 @@ export const PromptInput = ({
       // where user input during async blob conversion would be lost. If a host
       // intercepts and cancels the submit (return false), restore the captured
       // draft below instead of clearing it.
-      if (!usingProvider) {
+      if (usingProvider) {
+        controller.textInput.clear();
+        providerTextValueRef.current = "";
+      } else {
         form.reset();
       }
 
       try {
         // Convert remaining blob URLs to data URLs (fallback for files without
         // onUploadFile, or files whose upload failed and kept the blob URL).
-        const convertedFiles: FileUIPart[] = await Promise.all(
+        const convertedFiles: PromptInputFilePart[] = await Promise.all(
           files.map(async ({ id: _id, status: _status, ...item }) => {
             if (item.url?.startsWith("blob:")) {
               const dataUrl = await convertBlobUrlToDataUrl(item.url);
@@ -722,21 +731,32 @@ export const PromptInput = ({
         const result = await onSubmit({ files: convertedFiles, text }, event);
         if (result === false) {
           if (usingProvider) {
-            controller.textInput.setInput(text);
+            if (providerTextValueRef.current === "") {
+              controller.textInput.setInput(text);
+              providerTextValueRef.current = text;
+            }
           } else {
             const textInput = form.elements.namedItem("message") as HTMLTextAreaElement | HTMLInputElement | null;
-            if (textInput) textInput.value = text;
+            if (textInput && textInput.value === "") textInput.value = text;
           }
           return;
         }
 
         clear();
         if (usingProvider) {
-          controller.textInput.clear();
+          if (providerTextValueRef.current === "" || providerTextValueRef.current === text) {
+            controller.textInput.clear();
+            providerTextValueRef.current = "";
+          }
         }
       } catch {
         // Don't clear on error - user may want to retry
-        if (!usingProvider) {
+        if (usingProvider) {
+          if (providerTextValueRef.current === "") {
+            controller.textInput.setInput(text);
+            providerTextValueRef.current = text;
+          }
+        } else {
           const textInput = form.elements.namedItem("message") as HTMLTextAreaElement | HTMLInputElement | null;
           if (textInput && textInput.value === "") textInput.value = text;
         }
@@ -990,6 +1010,7 @@ export const PromptInputSubmit = ({
     <InputGroupButton
       aria-label={isGenerating ? "Stop" : "Submit"}
       className={cn(className)}
+      data-boring-agent-submit-status={status ?? "ready"}
       onClick={handleClick}
       size={size}
       type={isGenerating && onStop ? "button" : "submit"}

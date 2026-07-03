@@ -4,6 +4,7 @@ export const ERROR_CODES = {
   FORBIDDEN: 'forbidden',
   WEAK_PASSWORD: 'weak_password',
   EMAIL_IN_USE: 'email_in_use',
+  EMAIL_NOT_VERIFIED: 'email_not_verified',
 
   // Workspace membership
   NOT_MEMBER: 'not_member',
@@ -31,6 +32,11 @@ export const ERROR_CODES = {
   MAIL_DISABLED: 'mail_disabled',
   DB_UNAVAILABLE: 'db_unavailable',
   INTERNAL_ERROR: 'internal_error',
+
+  // Credits + purchases
+  PAYMENT_REQUIRED: 'payment_required',
+  INVALID_PACK: 'invalid_pack',
+  CHECKOUT_FAILED: 'checkout_failed',
 } as const
 
 export type ErrorCode = (typeof ERROR_CODES)[keyof typeof ERROR_CODES]

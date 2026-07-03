@@ -25,6 +25,8 @@ const PUBLISHABLE = [
   "plugins/ask-user",
   "plugins/data-explorer",
   "plugins/data-catalog",
+  "plugins/ccusage-dashboard",
+  "plugins/github-pr-tracker",
 ]
 
 function readJson(path) {

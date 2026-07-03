@@ -1,7 +1,7 @@
 "use client"
 
 import { useEffect, useMemo, useRef, useState } from "react"
-import type { ChangeEvent } from "react"
+import type { ChangeEvent, MouseEvent as ReactMouseEvent } from "react"
 import { useEditor, useEditorState, EditorContent } from "@tiptap/react"
 import type { Editor } from "@tiptap/core"
 import StarterKit from "@tiptap/starter-kit"
@@ -45,6 +45,7 @@ import {
   Loader2Icon,
 } from "lucide-react"
 import { Input, Toolbar as UiToolbar, ToolbarButton as UiToolbarButton, ToolbarSeparator as UiToolbarSeparator } from "@hachej/boring-ui-kit"
+import { postUiCommand } from "../../../../front/bridge/uiCommandBus"
 import { cn } from "../../../../front/lib/utils"
 
 const lowlight = createLowlight(common)
@@ -74,6 +75,27 @@ export interface MarkdownEditorProps {
   className?: string
   /** Workspace-relative markdown file path, used to make uploaded image links relative. */
   documentPath?: string
+}
+
+export function countMarkdownWords(content: string): number {
+  const plainText = content
+    .replace(/```[\s\S]*?```/g, " ")
+    .replace(/`[^`]*`/g, " ")
+    .replace(/^\s{0,3}#{1,6}\s+/gm, "")
+    .replace(/!\[[^\]]*\]\([^)]*\)/g, " ")
+    .replace(/\[([^\]]+)\]\([^)]*\)/g, "$1")
+    .replace(/<[^>]+>/g, " ")
+    .replace(/^\s{0,3}[-*_]{3,}\s*$/gm, " ")
+    .replace(/^\s{0,3}(?:[-*+]\s+|\d+[.)]\s+|>\s?)/gm, "")
+    .replace(/^\s{0,3}\|?(?:\s*:?-+:?\s*\|)+\s*$/gm, " ")
+    .replace(/\|/g, " ")
+    .replace(/[*_~>#]/g, " ")
+  const matches = plainText.match(/\b[\p{L}\p{N}']+\b/gu)
+  return matches?.length ?? 0
+}
+
+function formatWordCountLabel(count: number): string {
+  return `${count} word${count === 1 ? "" : "s"}`
 }
 
 function isExternalImageSrc(src: string): boolean {
@@ -124,6 +146,34 @@ export function rawFileUrlForMarkdownImage(
   return `${base}/api/v1/files/raw?${params.toString()}`
 }
 
+function isExternalLinkHref(href: string): boolean {
+  return /^(?:[a-z][a-z0-9+.-]*:|\/\/|\/|#|\?)/i.test(href)
+}
+
+export function workspaceFilePathForMarkdownLink(href: string, documentPath?: string): string | null {
+  const trimmed = href.trim()
+  if (!trimmed || isExternalLinkHref(trimmed)) return null
+  const pathPart = trimmed.split(/[?#]/, 1)[0]
+  if (!pathPart) return null
+  const docDir = documentPath?.includes("/") ? documentPath.slice(0, documentPath.lastIndexOf("/")) : ""
+  const parts = `${docDir ? `${docDir}/` : ""}${pathPart}`.split("/")
+  const out: string[] = []
+  for (const part of parts) {
+    if (!part || part === ".") continue
+    if (part === "..") {
+      if (out.length === 0) return null
+      out.pop()
+      continue
+    }
+    out.push(part)
+  }
+  return out.join("/") || null
+}
+
+function shouldHandleWorkspaceLinkClick(event: MouseEvent): boolean {
+  return event.button === 0 && !event.metaKey && !event.ctrlKey && !event.altKey && !event.shiftKey
+}
+
 const baseExtensions = [
   StarterKit.configure({
     codeBlock: false,
@@ -136,6 +186,8 @@ const baseExtensions = [
     autolink: true,
     linkOnPaste: true,
     defaultProtocol: "https",
+    isAllowedUri: (url, ctx) =>
+      isSafeUrl(url) && (workspaceFilePathForMarkdownLink(url) !== null || ctx.defaultValidate(url)),
     HTMLAttributes: { rel: "noopener noreferrer nofollow", target: "_blank" },
   }),
   Placeholder.configure({
@@ -456,7 +508,14 @@ export function MarkdownEditor({
   const onChangeRef = useRef(onChange)
   onChangeRef.current = onChange
   const suppressChangeRef = useRef(false)
+  // Tracks the last markdown string the editor itself emitted (or was seeded
+  // with). TipTap normalizes markdown on serialize, so the `content` prop that
+  // comes back from a save round-trip rarely equals the original disk bytes.
+  // Comparing against this ref (rather than re-seeding on every refetch) keeps
+  // the editor from marking itself dirty / autosaving on its own output.
+  const lastEmittedRef = useRef<string>(content)
   const editorRef = useRef<Editor | null>(null)
+  const wordCount = useMemo(() => countMarkdownWords(content), [content])
 
   // Stable ref so handlePaste (created once in useEditor) always calls the latest version.
   const insertImageRef = useRef<(file: File) => Promise<void>>(async () => {})
@@ -548,6 +607,13 @@ export function MarkdownEditor({
     onUpdate: ({ editor: e }) => {
       if (suppressChangeRef.current) return
       const next = e.getMarkdown?.() ?? e.getHTML()
+      // Remember our own serialized output so the content-sync effect can tell
+      // a save round-trip (normalized markdown) apart from a genuine external
+      // change, and never re-seeds / re-dirties on what we produced. This is the
+      // load-bearing fix for the autosave/conflict storm — see the sync effect.
+      lastEmittedRef.current = next
+      // Drop a transient empty emission from an unfocused editor (settling on
+      // init/remount); real edits — typing AND toolbar actions — still flow.
       if (!isUserEditedChange(next, e.isFocused)) return
       onChangeRef.current?.(next)
     },
@@ -561,12 +627,34 @@ export function MarkdownEditor({
 
   useEffect(() => {
     if (!editor || editor.isDestroyed) return
+    // The incoming `content` is exactly what this editor last emitted (a save
+    // round-trip of our own normalized markdown). Re-seeding here would reset
+    // the doc and re-mark it dirty on every refetch — the autosave ping-pong.
+    if (content === lastEmittedRef.current) return
+    // Backstop: if the editor's current serialization already matches, there's
+    // nothing to apply.
     const current = editor.getMarkdown?.() ?? editor.getHTML()
     if (current === content) return
+    // Genuine external change (a different document, e.g. an agent write) —
+    // apply it and record it as our new baseline so the round-trip of THIS
+    // content doesn't re-trigger a re-seed.
     suppressChangeRef.current = true
     editor.commands.setContent(editorContent, { contentType: editorContentType })
     suppressChangeRef.current = false
+    lastEmittedRef.current = content
   }, [editor, content])
+
+  const handleEditorClick = (event: ReactMouseEvent<HTMLDivElement>) => {
+    if (!shouldHandleWorkspaceLinkClick(event.nativeEvent)) return
+    const target = event.target instanceof Element ? event.target.closest("a[href]") : null
+    const href = target?.getAttribute("href")
+    if (!href) return
+    const path = workspaceFilePathForMarkdownLink(href, documentPath)
+    if (!path) return
+    event.preventDefault()
+    event.stopPropagation()
+    postUiCommand({ kind: "openFile", params: { path } })
+  }
 
   return (
     <div className={cn("flex h-full min-h-0 flex-col overflow-hidden", className)}>
@@ -579,7 +667,7 @@ export function MarkdownEditor({
           uploading={uploading}
         />
       )}
-      <div className="min-h-0 flex-1 overflow-auto">
+      <div className="min-h-0 flex-1 overflow-auto" onClickCapture={handleEditorClick}>
         {rawMode && !readOnly ? (
           <textarea
             aria-label="Raw markdown"
@@ -593,6 +681,9 @@ export function MarkdownEditor({
         ) : (
           <EditorContent editor={editor} />
         )}
+      </div>
+      <div className="border-t border-border/60 px-4 py-2 text-right text-xs text-muted-foreground" data-testid="markdown-word-count">
+        {formatWordCountLabel(wordCount)}
       </div>
     </div>
   )

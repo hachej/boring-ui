@@ -1,6 +1,7 @@
+import { randomUUID } from "node:crypto"
 import { existsSync, mkdirSync, readdirSync, copyFileSync, statSync } from "node:fs"
-import { createRequire } from "node:module"
 import { basename, dirname, resolve } from "node:path"
+import { createRemoteWorkerModeAdapter } from "@hachej/boring-agent/server"
 import { createWorkspaceAgentServer } from "@hachej/boring-workspace/app/server"
 
 export const AGENT_API_PORT = Number(process.env.AGENT_API_PORT) || 5210
@@ -8,9 +9,7 @@ export const VITE_PORT = Number(process.env.PORT) || 5200
 export const APP_ROOT = resolve(import.meta.dirname, "../..")
 export const FIXTURES_DIR = resolve(APP_ROOT, "src/fixtures")
 export const WORKSPACE_DIR = resolve(APP_ROOT, "workspace")
-
-const require = createRequire(import.meta.url)
-const ASK_USER_PACKAGE_ROOT = dirname(require.resolve("@hachej/boring-ask-user/package.json"))
+const EXTERNAL_PLUGINS_ENABLED = process.env.BORING_EXTERNAL_PLUGINS === "1"
 
 function seedFixtureEntry(srcRoot: string, destRoot: string): void {
   for (const name of readdirSync(srcRoot)) {
@@ -41,23 +40,40 @@ export async function startPlaygroundServer(): Promise<void> {
   if (agentBoot) return agentBoot
   agentBoot = (async () => {
     const workspaceRoot = process.env.BORING_AGENT_WORKSPACE_ROOT ?? WORKSPACE_DIR
-    seedWorkspaceFromFixtures(workspaceRoot)
+    if (process.env.BORING_WORKSPACE_PLAYGROUND_SEED_FIXTURES !== "0") {
+      seedWorkspaceFromFixtures(workspaceRoot)
+    }
+    const workerBaseUrl = process.env.BORING_WORKER_BASE_URL?.trim()
+    const remoteWorkerModeAdapter = workerBaseUrl
+      ? createRemoteWorkerModeAdapter({ baseUrl: workerBaseUrl })
+      : undefined
+    const remoteWorkerWorkspaceId = remoteWorkerModeAdapter
+      ? (process.env.BORING_WORKSPACE_PLAYGROUND_WORKSPACE_ID?.trim() || randomUUID())
+      : undefined
     console.log(`[workspace-playground] workspace root: ${workspaceRoot}`)
+    console.log(`[workspace-playground] runtime mode: ${remoteWorkerModeAdapter ? "remote-worker" : "local"}`)
+    if (remoteWorkerWorkspaceId) {
+      console.log(`[workspace-playground] remote worker workspace id: ${remoteWorkerWorkspaceId}`)
+    }
     const app = await createWorkspaceAgentServer({
       workspaceRoot,
-      mode: "local",
+      appRoot: APP_ROOT,
+      sessionId: remoteWorkerWorkspaceId,
+      mode: remoteWorkerModeAdapter ? undefined : "local",
+      runtimeModeAdapter: remoteWorkerModeAdapter,
       logger: true,
-      // `ask-user` and `deck` front plugins are statically composed in
-      // src/front/App.tsx. Do not also expose their package fronts through
-      // the hot-load asset manager: provider/binding plugins must stay one
-      // module instance, or panes can render outside their provider context.
-      defaultPluginPackages: [resolve(APP_ROOT, "src/plugins/playgroundDataCatalog")],
-      plugins: [{ dir: ASK_USER_PACKAGE_ROOT, hotReload: false }],
+      externalPlugins: EXTERNAL_PLUGINS_ENABLED,
+      defaultPluginPackages: ["@hachej/boring-ask-user"],
+      workspaceBridge: { allowInsecureLocalCliBrowserAuth: true },
     })
-    app.get("/api/v1/workspace/meta", async () => ({
-      projectName: basename(workspaceRoot) || "Workspace",
-      workspaceRoot,
-    }))
+    app.get("/api/v1/workspace/meta", async () => {
+      const localName = basename(workspaceRoot) || "Workspace"
+      return {
+        projectName: remoteWorkerWorkspaceId ? "Remote worker playground" : localName,
+        workspaceId: remoteWorkerWorkspaceId ?? localName,
+        workspaceRoot,
+      }
+    })
     await app.listen({ port: AGENT_API_PORT, host: "127.0.0.1" })
   })()
   return agentBoot

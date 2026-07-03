@@ -67,6 +67,7 @@ function leftTabRegistration(tab: BoringFrontLeftTabRegistration<any>, pluginId:
     title: tab.title,
     component: tab.component ?? (() => null),
     placement: "left-tab",
+    defaultPanelId: tab.panelId,
     source: tab.source ?? "plugin",
     pluginId,
     ...(tab.icon ? { icon: tab.icon } : {}),

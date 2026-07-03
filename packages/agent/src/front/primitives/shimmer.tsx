@@ -1,6 +1,6 @@
 "use client";
 
-import { cn } from "@/front/lib";
+import { cn } from "../lib";
 import type { MotionProps } from "motion/react";
 import { motion } from "motion/react";
 import type { CSSProperties, ElementType, JSX } from "react";

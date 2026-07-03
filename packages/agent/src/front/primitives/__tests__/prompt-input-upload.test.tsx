@@ -3,6 +3,7 @@ import { render, screen, act, waitFor, fireEvent } from '@testing-library/react'
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import {
   PromptInput,
+  PromptInputProvider,
   PromptInputTextarea,
   PromptInputSubmit,
   usePromptInputAttachments,
@@ -28,7 +29,7 @@ function AttachmentStatus() {
 }
 
 interface HarnessProps {
-  onUploadFile?: (f: File) => Promise<{ url: string }>
+  onUploadFile?: (f: File) => Promise<{ url: string; path?: string }>
   onSubmit?: (v: { text: string; files: unknown[] }) => false | void | Promise<false | void>
 }
 
@@ -39,6 +40,14 @@ function Harness({ onUploadFile, onSubmit }: HarnessProps) {
       <PromptInputSubmit />
       <AttachmentStatus />
     </PromptInput>
+  )
+}
+
+function ProviderHarness({ onUploadFile, onSubmit }: HarnessProps) {
+  return (
+    <PromptInputProvider>
+      <Harness onUploadFile={onUploadFile} onSubmit={onSubmit} />
+    </PromptInputProvider>
   )
 }
 
@@ -113,6 +122,36 @@ describe('PromptInput — upload flow', () => {
     })
   })
 
+  it('submits uploaded stable attachment URLs once ready', async () => {
+    const onUploadFile = vi.fn(() => Promise.resolve({ url: 'https://example.com/img.png', path: 'assets/images/img.png' }))
+    const onSubmit = vi.fn()
+
+    render(<Harness onUploadFile={onUploadFile} onSubmit={onSubmit} />)
+
+    const textarea = screen.getByRole('textbox') as HTMLTextAreaElement
+    const file = new File(['x'], 'img.png', { type: 'image/png' })
+
+    act(() => {
+      pasteFile(textarea, file)
+    })
+
+    await waitFor(() => {
+      expect(screen.getByTestId('status').textContent).toBe('ready')
+    })
+    fireEvent.change(textarea, { target: { value: 'describe image' } })
+    fireEvent.submit(textarea.closest('form')!)
+
+    await waitFor(() => {
+      expect(onSubmit).toHaveBeenCalledWith(
+        {
+          text: 'describe image',
+          files: [expect.objectContaining({ filename: 'img.png', mediaType: 'image/png', url: 'https://example.com/img.png', path: 'assets/images/img.png' })],
+        },
+        expect.anything(),
+      )
+    })
+  })
+
   it('submit is blocked while a file is still uploading', async () => {
     const onUploadFile = vi.fn(() => new Promise<{ url: string }>(() => {}))
     const onSubmit = vi.fn()
@@ -153,5 +192,36 @@ describe('PromptInput — upload flow', () => {
       )
     })
     expect(textarea.value).toBe('keep this draft')
+  })
+
+  it('does not wipe provider-backed text typed while async submit is pending', async () => {
+    let resolveSubmit: (() => void) | undefined
+    const submitPromise = new Promise<void>((resolve) => {
+      resolveSubmit = resolve
+    })
+    const onSubmit = vi.fn(async () => submitPromise)
+
+    render(<ProviderHarness onSubmit={onSubmit} />)
+
+    const textarea = screen.getByRole('textbox') as HTMLTextAreaElement
+    fireEvent.change(textarea, { target: { value: 'submitted draft' } })
+    fireEvent.submit(textarea.closest('form')!)
+
+    await waitFor(() => {
+      expect(onSubmit).toHaveBeenCalledWith(
+        { text: 'submitted draft', files: [] },
+        expect.anything(),
+      )
+    })
+    expect(textarea.value).toBe('')
+
+    fireEvent.change(textarea, { target: { value: 'next draft' } })
+
+    await act(async () => {
+      resolveSubmit?.()
+      await submitPromise
+    })
+
+    expect(textarea.value).toBe('next draft')
   })
 })

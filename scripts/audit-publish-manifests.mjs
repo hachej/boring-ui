@@ -21,11 +21,13 @@ const PUBLISHABLE_PACKAGES = [
   "packages/plugin-cli",
   "packages/workspace",
   "packages/core",
-  "packages/cli",
   "plugins/deck",
   "plugins/ask-user",
+  "packages/cli",
   "plugins/data-explorer",
   "plugins/data-catalog",
+  "plugins/ccusage-dashboard",
+  "plugins/github-pr-tracker",
 ]
 
 const DEP_SECTIONS = [

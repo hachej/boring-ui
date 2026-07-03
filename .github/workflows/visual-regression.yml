@@ -2,21 +2,10 @@ name: Visual Regression
 
 on:
   pull_request:
-    paths:
-      - ".github/workflows/visual-regression.yml"
-      - ".storybook/**"
-      - "packages/**"
-      - "package.json"
-      - "pnpm-lock.yaml"
+    types: [opened, synchronize, reopened, labeled]
   push:
     branches:
       - main
-    paths:
-      - ".github/workflows/visual-regression.yml"
-      - ".storybook/**"
-      - "packages/**"
-      - "package.json"
-      - "pnpm-lock.yaml"
 
 env:
   CI: true
@@ -29,8 +18,45 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  changes:
+    name: Detect Visual Changes
+    runs-on: ubuntu-latest
+    outputs:
+      visual: ${{ steps.filter.outputs.visual }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+        with:
+          fetch-depth: 0
+
+      - name: Detect changed visual areas
+        id: filter
+        shell: bash
+        run: |
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            base="origin/${{ github.base_ref }}"
+            git fetch --no-tags origin "${{ github.base_ref }}:refs/remotes/origin/${{ github.base_ref }}" || true
+            files=$(git diff --name-only "$base...HEAD" || git diff --name-only "$base" HEAD)
+          else
+            files=$(git diff --name-only "${{ github.event.before }}" "${{ github.sha }}" || true)
+          fi
+
+          visual=false
+          while IFS= read -r file; do
+            [ -z "$file" ] && continue
+            case "$file" in
+              .github/workflows/visual-regression.yml|.storybook/*|.storybook/**|pnpm-lock.yaml|package.json|packages/ui/*|packages/ui/**|packages/workspace/src/front/*|packages/workspace/src/front/**|packages/core/src/front/*|packages/core/src/front/**|packages/core/src/app/front/*|packages/core/src/app/front/**|apps/*/src/front/*|apps/*/src/front/**|plugins/*/src/*.tsx|plugins/*/src/**/*.tsx|**/*.css)
+                visual=true
+                ;;
+            esac
+          done <<< "$files"
+
+          echo "visual=$visual" >> "$GITHUB_OUTPUT"
+
   storybook-visual:
     name: Storybook Visual Baseline
+    needs: changes
+    if: github.event_name == 'push' || needs.changes.outputs.visual == 'true' || contains(github.event.pull_request.labels.*.name, 'ci:visual') || contains(github.event.pull_request.labels.*.name, 'ci:full') || contains(github.event.pull_request.labels.*.name, 'release-candidate') || startsWith(github.head_ref, 'release/')
     runs-on: ubuntu-latest
     steps:
       - name: Checkout

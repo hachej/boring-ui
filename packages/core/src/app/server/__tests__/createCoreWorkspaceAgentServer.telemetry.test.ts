@@ -59,15 +59,23 @@ vi.mock('@hachej/boring-workspace/app/server', () => ({
 }))
 
 vi.mock('@hachej/boring-workspace/server', () => ({
+  createBrowserBridgeAuthPolicy: () => vi.fn(),
   createInMemoryBridge: () => ({
     drainCommands: vi.fn(),
     getState: vi.fn(),
-    postCommand: vi.fn(),
+    emitUiEffect: vi.fn(),
     setState: vi.fn(),
     subscribeCommands: vi.fn(),
   }),
+  createWorkspaceBridgeRegistry: () => ({
+    call: vi.fn(),
+    getDefinition: vi.fn(),
+    registerHandler: vi.fn(),
+  }),
   createWorkspaceUiTools: () => [],
+  InMemoryWorkspaceBridgeIdempotencyStore: class InMemoryWorkspaceBridgeIdempotencyStore {},
   uiRoutes: async () => {},
+  workspaceBridgeHttpRoutes: async () => {},
 }))
 
 vi.mock('../../../server/auth/index.js', () => ({
@@ -108,6 +116,7 @@ vi.mock('../../../server/db/index.js', () => ({
 vi.mock('../../../server/config/index.js', () => ({
   loadConfig: async () => ({
     appId: 'test-app',
+    cors: { origins: ['http://localhost:3000'], credentials: true },
     auth: { url: 'http://localhost:3000' },
     encryption: { workspaceSettingsKey: 'test-key' },
     stores: 'postgres',
@@ -325,6 +334,24 @@ describe('createCoreWorkspaceAgentServer telemetry wiring', () => {
       }
 
       expect(handler).not.toHaveBeenCalled()
+    } finally {
+      await app.close()
+    }
+  })
+
+  it('does not serve the SPA shell for missing built assets', async () => {
+    const app = await createCoreWorkspaceAgentServer({
+      appRoot: await createBuiltFrontendRoot(),
+      serveFrontend: true,
+      telemetry: { capture: vi.fn() },
+    })
+    try {
+      const res = await app.inject({ method: 'GET', url: '/assets/missing-chunk.js' })
+
+      expect(res.statusCode).toBe(404)
+      expect(res.headers['cache-control']).toBe('no-store')
+      expect(res.body).toContain('asset_not_found')
+      expect(res.body).not.toContain('<!doctype html>')
     } finally {
       await app.close()
     }
