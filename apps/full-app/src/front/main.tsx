@@ -9,9 +9,15 @@ import {
   isPaymentRequiredNotice,
   useCreditBalance,
 } from '@hachej/boring-core/app/front'
-import { UserMenu, UserSettingsPage, WorkspaceSwitcher } from '@hachej/boring-core/front'
+import {
+  UserMenu,
+  UserSettingsPage,
+  WorkspaceSwitcher,
+  type CompanyAdminStatus,
+} from '@hachej/boring-core/front'
 import '@hachej/boring-core/app/front/styles.css'
 import './app.css'
+import { GovernanceAdminView, type GovernanceMeResponse } from './GovernanceAdminView'
 import { PublicHeroDescription, publicLaunchPlugin } from './PublicLaunchPages'
 import { fullAppBoringMcpPlugin } from './boringMcp'
 
@@ -62,6 +68,26 @@ const AccountSettingsPage = () => {
 //    run-rejected notice. Wired unconditionally: BuyCreditsNoticeAction self-hides on
 //    the SERVER's checkoutEnabled, so it can't be suppressed by a missing/stale Vite
 //    flag while checkout actually works (the flag only feeds the badge fallback).
+async function loadCompanyAdminStatus(): Promise<CompanyAdminStatus | null> {
+  const response = await fetch('/api/v1/governance/me', { credentials: 'include' })
+  if (response.status === 404) return null
+  if (!response.ok) throw new Error(`Company admin status failed: HTTP ${response.status}`)
+  const body = await response.json() as GovernanceMeResponse
+  if (body.policyStatus?.state === 'invalid') {
+    throw new Error(body.policyStatus.message ?? 'Governance policy is invalid')
+  }
+  return {
+    enabled: body.enabled,
+    admin: body.admin,
+    role: body.role,
+    details: body,
+  }
+}
+
+function renderCompanyAdminContent(status: CompanyAdminStatus) {
+  return <GovernanceAdminView status={status.details as GovernanceMeResponse} />
+}
+
 const chatParams = {
   thinkingControl: true,
   hideDefaultModelOption: true,
@@ -90,6 +116,7 @@ createRoot(document.getElementById('root')!).render(
       apiBaseUrl=""
       apiTimeout={10_000}
       persistenceEnabled
+      companyAdmin={{ loadStatus: loadCompanyAdminStatus, renderContent: renderCompanyAdminContent }}
       appTitle={PRODUCT_NAME}
       workspaceLayout="plugin-tabs"
       appLeftHeaderMode="workspace"

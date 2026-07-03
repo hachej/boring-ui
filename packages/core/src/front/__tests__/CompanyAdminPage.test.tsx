@@ -1,9 +1,11 @@
 // @vitest-environment jsdom
 import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
+import type { ReactNode } from 'react'
 import { MemoryRouter, Route, Routes } from 'react-router-dom'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
+import { CompanyAdminProvider, type CompanyAdminStatus } from '../CompanyAdminProvider'
 import { CompanyAdminPage } from '../workspace/CompanyAdminPage'
 
 const mockUseCurrentWorkspace = vi.fn()
@@ -20,14 +22,15 @@ vi.mock('../WorkspaceAuthProvider', async () => {
   }
 })
 
-function renderPage(path = '/w/ws-a/admin') {
-  return render(
+function renderPage(path = '/w/ws-a/admin', wrapper?: (children: ReactNode) => ReactNode) {
+  const page = (
     <MemoryRouter initialEntries={[path]}>
       <Routes>
         <Route path="/w/:id/admin" element={<CompanyAdminPage />} />
       </Routes>
-    </MemoryRouter>,
+    </MemoryRouter>
   )
+  return render(wrapper ? <>{wrapper(page)}</> : page)
 }
 
 beforeEach(() => {
@@ -96,6 +99,34 @@ describe('CompanyAdminPage', () => {
     expect(screen.getByText('Owner access required')).toBeInTheDocument()
     expect(screen.getByText(/Only workspace owners can manage/)).toBeInTheDocument()
     expect(screen.queryByText('Loading company admin…')).toBeNull()
+  })
+
+  it('renders app-owned content for governance admins through the generic seam', async () => {
+    mockUseWorkspaceRole.mockReturnValue('viewer')
+    const status: CompanyAdminStatus = { enabled: true, role: 'admin', admin: true, details: { source: 'test' } }
+
+    renderPage('/w/ws-a/admin', (children) => (
+      <CompanyAdminProvider
+        loadStatus={async () => status}
+        renderContent={(resolved) => <div>App-owned admin content: {(resolved.details as { source: string }).source}</div>}
+      >
+        {children}
+      </CompanyAdminProvider>
+    ))
+
+    expect(await screen.findByText('App-owned admin content: test')).toBeInTheDocument()
+    expect(screen.queryByText('YAML-managed in v1')).toBeNull()
+  })
+
+  it('blocks governance-enabled non-admins even when they own the workspace', async () => {
+    const status: CompanyAdminStatus = { enabled: true, role: 'user', admin: false }
+
+    renderPage('/w/ws-a/admin', (children) => (
+      <CompanyAdminProvider loadStatus={async () => status}>{children}</CompanyAdminProvider>
+    ))
+
+    expect(await screen.findByText('Company admin access required')).toBeInTheDocument()
+    expect(screen.getByText(/do not have access/)).toBeInTheDocument()
   })
 
   it('blocks non-owner members in the client shell', () => {

@@ -1,5 +1,6 @@
 import { Navigate } from 'react-router-dom'
 import { Button, Tabs, TabsContent, TabsList, TabsTrigger } from '@hachej/boring-ui-kit'
+import { useCompanyAdminStatus } from '../CompanyAdminProvider.js'
 import { useCurrentWorkspace, useWorkspaceRole, useWorkspaceRouteStatus } from '../WorkspaceAuthProvider.js'
 import { routeHref } from '../utils.js'
 
@@ -22,6 +23,7 @@ export function CompanyAdminPage() {
   const currentWorkspace = useCurrentWorkspace()
   const role = useWorkspaceRole()
   const routeStatus = useWorkspaceRouteStatus()
+  const companyAdmin = useCompanyAdminStatus()
 
   if (routeStatus.status === 'loading') {
     return (
@@ -57,14 +59,43 @@ export function CompanyAdminPage() {
 
   if (!workspaceId) return <Navigate to="/" replace />
 
-  if (routeStatus.status === 'forbidden' || role !== 'owner') {
+  const governanceEnabled = companyAdmin.status?.enabled === true
+
+  if (companyAdmin.configured && companyAdmin.loading && !companyAdmin.status) {
+    return (
+      <main className="mx-auto flex min-h-screen max-w-3xl flex-col justify-center px-6 py-12">
+        <section className="rounded-xl border border-border bg-card p-6 shadow-sm" aria-busy="true">
+          <p className="text-sm text-muted-foreground">Loading company admin policy…</p>
+        </section>
+      </main>
+    )
+  }
+
+  if (companyAdmin.error) {
     return (
       <main className="mx-auto flex min-h-screen max-w-3xl flex-col justify-center px-6 py-12">
         <section className="rounded-xl border border-border bg-card p-6 shadow-sm">
-          <p className="text-sm font-medium text-destructive">Owner access required</p>
+          <p className="text-sm font-medium text-destructive">Company admin unavailable</p>
+          <h1 className="mt-2 text-2xl font-semibold tracking-tight text-foreground">Company admin</h1>
+          <p className="mt-2 text-sm text-muted-foreground">{companyAdmin.error}</p>
+          <Button asChild className="mt-5">
+            <a href={routeHref('workspaceSettings', { id: workspaceId })}>Back to workspace settings</a>
+          </Button>
+        </section>
+      </main>
+    )
+  }
+
+  if (routeStatus.status === 'forbidden' || (governanceEnabled ? companyAdmin.status?.admin !== true : role !== 'owner')) {
+    return (
+      <main className="mx-auto flex min-h-screen max-w-3xl flex-col justify-center px-6 py-12">
+        <section className="rounded-xl border border-border bg-card p-6 shadow-sm">
+          <p className="text-sm font-medium text-destructive">{governanceEnabled ? 'Company admin access required' : 'Owner access required'}</p>
           <h1 className="mt-2 text-2xl font-semibold tracking-tight text-foreground">Company admin</h1>
           <p className="mt-2 text-sm text-muted-foreground">
-            Only workspace owners can manage company context and model access controls.
+            {governanceEnabled
+              ? 'You do not have access to this company admin surface.'
+              : 'Only workspace owners can manage company context and model access controls.'}
           </p>
           <Button asChild className="mt-5">
             <a href={routeHref('workspaceSettings', { id: workspaceId })}>Back to workspace settings</a>
@@ -73,6 +104,12 @@ export function CompanyAdminPage() {
       </main>
     )
   }
+
+  const renderedAppContent = governanceEnabled && companyAdmin.status && companyAdmin.renderContent
+    ? companyAdmin.renderContent(companyAdmin.status)
+    : null
+
+  if (renderedAppContent) return <>{renderedAppContent}</>
 
   return (
     <main className="min-h-screen bg-background px-4 py-8 text-foreground sm:px-6 lg:px-8">

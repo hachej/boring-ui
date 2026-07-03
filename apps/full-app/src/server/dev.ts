@@ -1,10 +1,13 @@
+import path from 'node:path'
 import {
   appRootFromImportMeta,
   createCoreWorkspaceAgentServer,
   startCoreWorkspaceAgentDevServer,
 } from '@hachej/boring-core/app/server'
-import { serverPlugins } from './plugins.js'
+import { loadConfig } from '@hachej/boring-core/server'
+import { createFullAppServerPlugins } from './plugins.js'
 import { buildCreditsWiring } from './credits.js'
+import { buildGovernanceService, createGovernanceServerPlugin } from './governance/index.js'
 
 const appRoot = appRootFromImportMeta(import.meta.url, 2)
 
@@ -74,10 +77,16 @@ startCoreWorkspaceAgentDevServer({
   appRoot,
   ...(frontendPort ? { frontendPort } : {}),
   buildServer: async (options) => {
+    const config = await loadConfig({
+      allowMissingSecrets: process.env.NODE_ENV !== 'production',
+      tomlPath: path.resolve(appRoot, 'boring.app.toml'),
+    })
+    const governance = await buildGovernanceService({ config })
     const credits = buildCreditsWiring()
     const app = await createCoreWorkspaceAgentServer({
       ...options,
-      plugins: serverPlugins,
+      config,
+      plugins: createFullAppServerPlugins([createGovernanceServerPlugin(governance)]),
       externalPlugins: false,
       installPluginAuthoring: pluginAuthoringEnabledFromEnv(),
       metering: credits.meteringSink,

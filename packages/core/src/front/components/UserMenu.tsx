@@ -22,6 +22,7 @@ import {
 import { useNavigate } from 'react-router-dom'
 
 import { useSignOut, useUser } from '../auth/index.js'
+import { useCompanyAdminStatus } from '../CompanyAdminProvider.js'
 import { useCurrentWorkspace, useWorkspaceRole } from '../WorkspaceAuthProvider.js'
 import { useTheme } from '../hooks/index.js'
 import { routeHref, routes } from '../utils.js'
@@ -74,10 +75,18 @@ export function UserMenu({ contentSide = 'bottom', contentAlign = 'end', variant
   const { preference, setTheme } = useTheme()
   const workspace = useCurrentWorkspace()
   const workspaceRole = useWorkspaceRole()
+  const companyAdmin = useCompanyAdminStatus()
   const [isSigningOut, setIsSigningOut] = useState(false)
 
   const user = identity?.user
-  const companyAdminWorkspaceId = workspaceRole === 'owner' ? workspace?.id ?? null : null
+  const governanceEnabled = companyAdmin.status?.enabled === true
+  const companyAdminStatusPending = companyAdmin.configured && companyAdmin.loading && !companyAdmin.status
+  const canOpenCompanyAdmin = companyAdminStatusPending || companyAdmin.error
+    ? false
+    : governanceEnabled
+      ? companyAdmin.status?.admin === true
+      : workspaceRole === 'owner'
+  const companyAdminWorkspaceId = canOpenCompanyAdmin ? workspace?.id ?? null : null
 
   const userName = user?.name ?? 'Unknown user'
   const userEmail = user?.email ?? 'unknown@example.com'

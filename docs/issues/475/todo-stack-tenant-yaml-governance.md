@@ -75,72 +75,74 @@ Introduce full-app-owned tenant governance policy parsing and expose read-only e
 
 ### TODO
 
-- [ ] Add `yaml` dependency to `apps/full-app`.
-- [ ] Add `apps/full-app/src/server/governance/` module:
-  - [ ] `policyTypes.ts` — typed parsed policy model;
-  - [ ] `loadPolicy.ts` — reads `BORING_GOVERNANCE_POLICY_PATH`;
-  - [ ] `validatePolicy.ts` — validation + normalized policy;
-  - [ ] `governanceService.ts` — request-time methods;
-  - [ ] `routes.ts` — authenticated governance routes;
-  - [ ] `index.ts` — public full-app wiring surface.
-- [ ] Policy loading semantics:
-  - [ ] missing env/path/file => governance disabled;
-  - [ ] file present but parse/validation fails in production => refuse to boot;
-  - [ ] file present but parse/validation fails in dev => visible startup error + all policy-dependent actions denied;
-  - [ ] never silently disable governance when policy file exists but is invalid;
-  - [ ] restart-only reload for v1;
-  - [ ] max YAML size 256 KiB;
-  - [ ] duplicate user emails rejected after the same lowercase/trim normalization used at request time.
-- [ ] Email verification boot check:
-  - [ ] governance-enabled boot requires core email verification configured;
-  - [ ] define production detection explicitly (prefer `NODE_ENV === 'production'` unless codebase has a better existing signal);
-  - [ ] name the dev-only override env var before implementation;
-  - [ ] if verification is not configured, refuse production boot unless that explicit dev-only override is set;
-  - [ ] test both production fail and dev override behavior.
-- [ ] Validation:
-  - [ ] one tenant block;
-  - [ ] optional `companyContextWorkspaceId` now, but PR 5a will make it required before company-context enforcement;
-  - [ ] roles only `admin | user`;
-  - [ ] exact model rows require non-empty `provider` and `id`;
-  - [ ] `monthlyBudgetEur` finite and `>= 0`;
-  - [ ] `defaultMonthlyModelBudgetEur` is documented but not used for absent rows in v1; absent model row still denies;
-  - [ ] `perRunHoldEur` finite positive when model-budget enforcement is enabled; hold amount is `perRunHoldEur * 1_000_000` micros;
-  - [ ] regex rules compile and pass safe subset/safety check.
-- [ ] Request-time user policy:
-  - [ ] normalize request user email;
-  - [ ] if governance enabled and `emailVerified !== true`, all policy-derived privileges deny;
-  - [ ] `roleForUser`, `isAdmin`, `allowedModelsForUser`, `assertModelAllowed`, `monthlyBudgetMicros`, `companyContextRules`.
-- [ ] Per-user admin-status seam for shared core UI:
-  - [ ] before coding PR2, pick exactly one seam in a short branch note: generic core hook/prop/context vs full-app-injected menu item;
-  - [ ] do **not** hard-code `/api/v1/governance/me` into `@hachej/boring-core` UserMenu as a full-app-only dependency;
-  - [ ] add a small generic hook/prop/context in core for optional admin entry status, where absence/404 = disabled; or inject the user-menu extra item from full-app;
-  - [ ] full-app implements `/api/v1/governance/me` returning `{ enabled, role, admin }` to normal users and admin-only `policyStatus` details;
-  - [ ] per-user admin status must not use app-global capabilities because capabilities are cached globally.
-- [ ] CompanyAdminPage v1:
-  - [ ] read-only policy/status view;
-  - [ ] clear copy: “YAML-managed in v1”; no fake edit controls;
-  - [ ] tenant invites shown as deferred/not implemented if present in copy.
+Branch note / seam choice: PR2 uses a generic `CompanyAdminProvider` context in `@hachej/boring-core/front`. Core never hard-codes `/api/v1/governance/me`; full-app injects a loader that calls the full-app route. Missing provider or 404/null status preserves the PR1 owner fallback; governance loading/errors fail closed.
+
+- [x] Add `yaml` dependency to `apps/full-app`.
+- [x] Add `apps/full-app/src/server/governance/` module:
+  - [x] `policyTypes.ts` — typed parsed policy model;
+  - [x] `loadPolicy.ts` — reads `BORING_GOVERNANCE_POLICY_PATH`;
+  - [x] `validatePolicy.ts` — validation + normalized policy;
+  - [x] `governanceService.ts` — request-time methods;
+  - [x] `routes.ts` — authenticated governance routes;
+  - [x] `index.ts` — public full-app wiring surface.
+- [x] Policy loading semantics:
+  - [x] missing env/path/file => governance disabled;
+  - [x] file present but parse/validation fails in production => refuse to boot;
+  - [x] file present but parse/validation fails in dev => visible startup error + all policy-dependent actions denied;
+  - [x] never silently disable governance when policy file exists but is invalid;
+  - [x] restart-only reload for v1;
+  - [x] max YAML size 256 KiB;
+  - [x] duplicate user emails rejected after the same lowercase/trim normalization used at request time.
+- [x] Email verification boot check:
+  - [x] governance-enabled boot requires core email verification configured;
+  - [x] define production detection explicitly (prefer `NODE_ENV === 'production'` unless codebase has a better existing signal);
+  - [x] name the dev-only override env var before implementation;
+  - [x] if verification is not configured, refuse production boot unless that explicit dev-only override is set;
+  - [x] test both production fail and dev override behavior.
+- [x] Validation:
+  - [x] one tenant block;
+  - [x] optional `companyContextWorkspaceId` now, but PR 5a will make it required before company-context enforcement;
+  - [x] roles only `admin | user`;
+  - [x] exact model rows require non-empty `provider` and `id`;
+  - [x] `monthlyBudgetEur` finite and `>= 0`;
+  - [x] `defaultMonthlyModelBudgetEur` is documented but not used for absent rows in v1; absent model row still denies;
+  - [x] `perRunHoldEur` finite positive when model-budget enforcement is enabled; hold amount is `perRunHoldEur * 1_000_000` micros;
+  - [x] regex rules compile and pass safe subset/safety check.
+- [x] Request-time user policy:
+  - [x] normalize request user email;
+  - [x] if governance enabled and `emailVerified !== true`, all policy-derived privileges deny;
+  - [x] `roleForUser`, `isAdmin`, `allowedModelsForUser`, `assertModelAllowed`, `monthlyBudgetMicros`, `companyContextRules`.
+- [x] Per-user admin-status seam for shared core UI:
+  - [x] before coding PR2, pick exactly one seam in a short branch note: generic core hook/prop/context vs full-app-injected menu item;
+  - [x] do **not** hard-code `/api/v1/governance/me` into `@hachej/boring-core` UserMenu as a full-app-only dependency;
+  - [x] add a small generic hook/prop/context in core for optional admin entry status, where absence/404 = disabled; or inject the user-menu extra item from full-app;
+  - [x] full-app implements `/api/v1/governance/me` returning `{ enabled, role, admin }` to normal users and admin-only `policyStatus` details;
+  - [x] per-user admin status must not use app-global capabilities because capabilities are cached globally.
+- [x] CompanyAdminPage v1:
+  - [x] read-only policy/status view;
+  - [x] clear copy: “YAML-managed in v1”; no fake edit controls;
+  - [x] tenant invites shown as deferred/not implemented if present in copy.
 
 ### Tests / proof
 
-- [ ] Governance loader unit tests:
-  - [ ] missing policy disabled;
-  - [ ] valid policy normalizes;
-  - [ ] invalid YAML production boot fails;
-  - [ ] invalid YAML dev mode returns visible error and denies policy-dependent actions;
-  - [ ] duplicate users rejected after normalization;
-  - [ ] invalid roles rejected;
-  - [ ] invalid budgets rejected;
-  - [ ] invalid/unsafe regex rejected;
-  - [ ] governance-enabled boot fails without email verification config unless dev override;
-  - [ ] unverified admin denied;
-  - [ ] unverified normal user with configured model/context grants denied.
-- [ ] Governance route tests for `/api/v1/governance/me`.
-- [ ] UserMenu/admin-entry tests for governance admin visible/user hidden/disabled fallback/404 absence.
-- [ ] CompanyAdminPage read-only view tests.
-- [ ] `pnpm --filter full-app test -- governance`
-- [ ] targeted core/front tests affected by UserMenu/admin page.
-- [ ] typecheck for affected packages.
+- [x] Governance loader unit tests:
+  - [x] missing policy disabled;
+  - [x] valid policy normalizes;
+  - [x] invalid YAML production boot fails;
+  - [x] invalid YAML dev mode returns visible error and denies policy-dependent actions;
+  - [x] duplicate users rejected after normalization;
+  - [x] invalid roles rejected;
+  - [x] invalid budgets rejected;
+  - [x] invalid/unsafe regex rejected;
+  - [x] governance-enabled boot fails without email verification config unless dev override;
+  - [x] unverified admin denied;
+  - [x] unverified normal user with configured model/context grants denied.
+- [x] Governance route tests for `/api/v1/governance/me`.
+- [x] UserMenu/admin-entry tests for governance admin visible/user hidden/disabled fallback/404 absence.
+- [x] CompanyAdminPage read-only view tests.
+- [x] `pnpm --filter full-app test -- governance`
+- [x] targeted core/front tests affected by UserMenu/admin page.
+- [x] typecheck for affected packages.
 
 ### Review focus
 

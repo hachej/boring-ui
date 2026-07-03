@@ -8,6 +8,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { withBeadId } from '../../server/__tests__/_setup'
 import type { Workspace } from '../../shared/types'
 import { useMswHandler } from './_setup'
+import { CompanyAdminProvider, type CompanyAdminStatus } from '../CompanyAdminProvider'
 import { ThemeToggle } from '../components/ThemeToggle'
 import { UserMenu } from '../components/UserMenu'
 import { WorkspaceSwitcher } from '../components/WorkspaceSwitcher'
@@ -241,6 +242,48 @@ describe('UserMenu', () => {
     fireEvent.click(await screen.findByRole('menuitem', { name: 'Company admin' }))
 
     expect(mockNavigate).toHaveBeenCalledWith('/w/ws-a/admin')
+  })
+
+  it('shows company admin for governance admins even when they are not workspace owners', async () => {
+    mockUseWorkspaceRole.mockReturnValue('editor')
+    const status: CompanyAdminStatus = { enabled: true, role: 'admin', admin: true }
+    renderWithProviders(
+      <CompanyAdminProvider loadStatus={async () => status}>
+        <UserMenu />
+      </CompanyAdminProvider>,
+    )
+
+    await waitFor(() => expect(screen.getByRole('button', { name: 'User menu' })).toBeInTheDocument())
+    fireEvent.pointerDown(screen.getByRole('button', { name: 'User menu' }))
+
+    expect(await screen.findByRole('menuitem', { name: 'Company admin' })).toBeInTheDocument()
+  })
+
+  it('hides company admin for governance non-admins even when they own the workspace', async () => {
+    const status: CompanyAdminStatus = { enabled: true, role: 'user', admin: false }
+    renderWithProviders(
+      <CompanyAdminProvider loadStatus={async () => status}>
+        <UserMenu />
+      </CompanyAdminProvider>,
+    )
+
+    await waitFor(() => expect(screen.getByRole('button', { name: 'User menu' })).toBeInTheDocument())
+    fireEvent.pointerDown(screen.getByRole('button', { name: 'User menu' }))
+
+    expect(await screen.findByRole('menuitem', { name: 'User settings' })).toBeInTheDocument()
+    expect(screen.queryByRole('menuitem', { name: 'Company admin' })).toBeNull()
+  })
+
+  it('falls back to owner visibility when governance status is disabled or absent', async () => {
+    renderWithProviders(
+      <CompanyAdminProvider loadStatus={async () => null}>
+        <UserMenu />
+      </CompanyAdminProvider>,
+    )
+
+    fireEvent.pointerDown(screen.getByRole('button', { name: 'User menu' }))
+
+    expect(await screen.findByRole('menuitem', { name: 'Company admin' })).toBeInTheDocument()
   })
 })
 
