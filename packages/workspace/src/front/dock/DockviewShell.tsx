@@ -235,9 +235,17 @@ function initializeDockview(
   const api = event.api
   apiRef.current = api
 
+  let shouldAddDefaultPanels = true
   if (persistedLayout) {
-    api.fromJSON(persistedLayout)
-  } else {
+    try {
+      api.fromJSON(persistedLayout)
+      shouldAddDefaultPanels = false
+    } catch (error) {
+      console.warn("[DockviewShell] Ignoring invalid persisted layout", error)
+    }
+  }
+
+  if (shouldAddDefaultPanels) {
     let firstPanelAdded = false
     for (const group of layout.groups) {
       if (!group.panel) continue
