@@ -11,6 +11,7 @@ interface GitHubIssuesAdapterOptions {
   owner: string
   repo: string
   limit?: number
+  state?: "open" | "closed" | "all"
   /**
    * Optional hosted mover. The browser demo intentionally omits this; hosted
    * apps can route it to a backend that uses `gh` CLI today or GitHub API later.
@@ -93,7 +94,7 @@ function taskFromIssue(issue: GitHubIssue, adapterId: string): BoringTaskCard {
   }
 }
 
-export function createGitHubIssuesAdapter({ owner, repo, limit = 40, moveIssue }: GitHubIssuesAdapterOptions): BoringTaskAdapter {
+export function createGitHubIssuesAdapter({ owner, repo, limit = 200, state = "open", moveIssue }: GitHubIssuesAdapterOptions): BoringTaskAdapter {
   const adapterId = `github:${owner}/${repo}`
   const board: BoringTaskBoardConfig = {
     adapterId,
@@ -112,18 +113,25 @@ export function createGitHubIssuesAdapter({ owner, repo, limit = 40, moveIssue }
     getBoardConfig: () => board,
     async listTasks(): Promise<BoringTaskCard[]> {
       const params = new URLSearchParams({
-        state: "all",
+        state,
         per_page: String(Math.min(Math.max(limit, 1), 100)),
         sort: "updated",
         direction: "desc",
       })
-      const response = await fetch(`https://api.github.com/repos/${owner}/${repo}/issues?${params.toString()}`, {
-        headers: { Accept: "application/vnd.github+json" },
-      })
-      if (!response.ok) {
-        throw new Error(`GitHub issues request failed (${response.status})`)
+      const issues: GitHubIssue[] = []
+      const maxPages = Math.ceil(Math.min(Math.max(limit, 1), 300) / 100)
+      for (let page = 1; page <= maxPages; page += 1) {
+        params.set("page", String(page))
+        const response = await fetch(`https://api.github.com/repos/${owner}/${repo}/issues?${params.toString()}`, {
+          headers: { Accept: "application/vnd.github+json" },
+        })
+        if (!response.ok) {
+          throw new Error(`GitHub issues request failed (${response.status})`)
+        }
+        const pageIssues = await response.json() as GitHubIssue[]
+        issues.push(...pageIssues)
+        if (pageIssues.length < Number(params.get("per_page"))) break
       }
-      const issues = await response.json() as GitHubIssue[]
       const tasks = issues
         .filter((issue) => !issue.pull_request)
         .map((issue) => {

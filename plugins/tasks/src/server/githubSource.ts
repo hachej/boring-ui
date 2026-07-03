@@ -19,7 +19,7 @@ interface GitHubIssue {
 }
 
 export interface GitHubIssueExecutor {
-  listIssues(input: { owner: string; repo: string; limit: number }): Promise<GitHubIssue[]>
+  listIssues(input: { owner: string; repo: string; limit: number; state: "open" | "closed" | "all" }): Promise<GitHubIssue[]>
   viewIssue(input: { owner: string; repo: string; issueNumber: number }): Promise<GitHubIssue>
   addLabels(input: { owner: string; repo: string; issueNumber: number; labels: string[] }): Promise<void>
   removeLabels(input: { owner: string; repo: string; issueNumber: number; labels: string[] }): Promise<void>
@@ -38,6 +38,7 @@ interface GitHubTaskSourceOptions {
   owner: string
   repo: string
   limit?: number
+  state?: "open" | "closed" | "all"
   executor?: GitHubIssueExecutor
 }
 
@@ -92,8 +93,8 @@ export function createGhCliGitHubIssueExecutor(): GitHubIssueExecutor {
   const repoArg = (owner: string, repo: string) => `${owner}/${repo}`
   const jsonFields = "number,title,body,url,state,labels,milestone"
   return {
-    listIssues: ({ owner, repo, limit }) => runGhJson<GitHubIssue[]>([
-      "issue", "list", "--repo", repoArg(owner, repo), "--state", "all", "--limit", String(limit), "--json", jsonFields,
+    listIssues: ({ owner, repo, limit, state }) => runGhJson<GitHubIssue[]>([
+      "issue", "list", "--repo", repoArg(owner, repo), "--state", state, "--limit", String(limit), "--json", jsonFields,
     ]),
     viewIssue: ({ owner, repo, issueNumber }) => runGhJson<GitHubIssue>([
       "issue", "view", String(issueNumber), "--repo", repoArg(owner, repo), "--json", jsonFields,
@@ -154,7 +155,7 @@ function taskFromIssue(issue: GitHubIssue, adapterId: string): BoringTaskCard {
   }
 }
 
-export function createGitHubTaskSource({ owner, repo, limit = 40, executor = createGhCliGitHubIssueExecutor() }: GitHubTaskSourceOptions): BoringTaskSourceRuntime {
+export function createGitHubTaskSource({ owner, repo, limit = 200, state = "open", executor = createGhCliGitHubIssueExecutor() }: GitHubTaskSourceOptions): BoringTaskSourceRuntime {
   const sourceId = `github:${owner}/${repo}`
   const board: BoringTaskBoardConfig = {
     adapterId: sourceId,
@@ -171,7 +172,7 @@ export function createGitHubTaskSource({ owner, repo, limit = 40, executor = cre
     }),
     getBoardConfig: () => board,
     async listTasks(_ctx: BoringTaskSourceContext): Promise<BoringTaskCard[]> {
-      const issues = await executor.listIssues({ owner, repo, limit })
+      const issues = await executor.listIssues({ owner, repo, limit, state })
       return issues.map((issue) => taskFromIssue(issue, sourceId))
     },
     async moveTask(_ctx, { taskId, statusId }): Promise<BoringTaskCard> {
