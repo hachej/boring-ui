@@ -23,6 +23,13 @@ interface E2eFixtures {
 
 const fixturesDir = path.dirname(fileURLToPath(import.meta.url))
 
+const E2E_MODEL_ENV = {
+  BORING_AGENT_INFOMANIAK_PRODUCT_ID: '108321',
+  BORING_AGENT_INFOMANIAK_MODELS: 'e2e-smoke-model',
+  BORING_AGENT_INFOMANIAK_MODEL: 'e2e-smoke-model',
+  INFOMANIAK_API_TOKEN: 'e2e-smoke-token',
+}
+
 export const test = loggingTest.extend<E2eFixtures>({
   workspace: async ({}, use) => {
     const workspace = await createE2eWorkspace()
@@ -37,6 +44,7 @@ export const test = loggingTest.extend<E2eFixtures>({
     const backend = await spawnBackend({
       workspaceRoot: workspace.root,
       repoRoot,
+      env: E2E_MODEL_ENV,
     })
 
     try {
