@@ -12,6 +12,7 @@ export default defineConfig({
   clean: true,
   outDir: "dist",
   target: "es2022",
+  platform: "neutral",
   external: [
     /^@hachej\/boring-/,
     "fastify",

@@ -49,15 +49,38 @@ PR 1 only audits and documents the current menu integration path; it does not ad
 Current documented front plugin surfaces in `definePlugin` are:
 
 - `panels`
-- `workspaceSources`
 - `commands`
-- `appLeftActions`
+- `leftTabs`
 - `catalogs`
 - `surfaceResolvers`
 - `providers` / `bindings`
 - `toolRenderers`
 
-There is no documented generic `integrations` contribution in `definePlugin` today. PR 2 must either reuse an existing MCP/integrations menu contribution path if one exists, or add the smallest generic integration-menu extension point. It must not hard-code SharePoint-specific branches in workspace chrome.
+There is no documented generic `integrations` contribution in `definePlugin` today. The selected path for PR 2 is to add the smallest generic integration-menu contribution surface to the existing MCP/integrations menu, then have this plugin contribute data to that surface:
+
+```ts
+interface WorkspaceIntegrationContribution {
+  id: string
+  pluginId: string
+  label: string
+  description?: string
+  statusEndpoint?: string
+  openCommandId: string
+  capabilities?: string[]
+}
+```
+
+The SharePoint contribution should be data/config only:
+
+```txt
+id: sharepoint
+pluginId: boring-sharepoint
+label: SharePoint / Microsoft 365
+openCommandId: boring-sharepoint.open-settings
+capabilities: office.preview, office.excel.edit, office.powerpoint.edit
+```
+
+If PR 2 discovers an existing generic integration registry in the MCP menu, use that instead and document the files/API in the PR. It must not hard-code SharePoint-specific branches in workspace chrome.
 
 ## Package surfaces
 

@@ -86,6 +86,21 @@ describe("SharePoint Office cloud refs", () => {
     }
   })
 
+  it("classifies persisted preview URLs as forbidden ref data", () => {
+    const refWithPreviewOnly = {
+      ...validExcelRef,
+      previewUrl: "https://tenant.sharepoint.com/sites/team/_layouts/15/embed.aspx?uniqueId=item-id",
+    }
+
+    expect(() => parseSharePointDocumentRef(refWithPreviewOnly)).toThrow(SharePointRefValidationError)
+    try {
+      parseSharePointDocumentRef(refWithPreviewOnly)
+    } catch (error) {
+      expect(error).toBeInstanceOf(SharePointRefValidationError)
+      expect((error as SharePointRefValidationError).code).toBe(SHAREPOINT_ERROR_CODES.REF_CONTAINS_SECRET)
+    }
+  })
+
   it("rejects absolute local paths in createdFrom", () => {
     const result = validateSharePointDocumentRef({
       ...validExcelRef,
