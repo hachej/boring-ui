@@ -20,6 +20,7 @@
   },
   "dependencies": {
     "@hachej/boring-agent": "workspace:*",
+    "@hachej/boring-bash": "workspace:*",
     "@hachej/boring-core": "workspace:*",
     "@hachej/boring-mcp": "workspace:*",
     "@hachej/boring-ui-kit": "workspace:*",

@@ -104,4 +104,5 @@ export interface RunContext {
   requestId?: string
   userId?: string
   userEmail?: string
+  userEmailVerified?: boolean
 }

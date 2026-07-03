@@ -7,7 +7,7 @@ import {
 import { loadConfig } from '@hachej/boring-core/server'
 import { createFullAppServerPlugins } from './plugins.js'
 import { buildCreditsWiring } from './credits.js'
-import { buildGovernanceService, createGovernanceMeteringSink, createGovernanceModelFilter, createGovernanceServerPlugin } from './governance/index.js'
+import { buildGovernanceService, createGovernanceFilesystemBindings, createGovernanceMeteringSink, createGovernanceModelFilter, createGovernanceServerPlugin } from './governance/index.js'
 
 const appRoot = appRootFromImportMeta(import.meta.url, 2)
 
@@ -99,6 +99,7 @@ startCoreWorkspaceAgentDevServer({
         },
       }),
       filterModels: createGovernanceModelFilter(governance),
+      getFilesystemBindings: createGovernanceFilesystemBindings(governance),
       pi: { strictModelResolution: governance.isEnabled() } as never,
     })
     appDb = app.db

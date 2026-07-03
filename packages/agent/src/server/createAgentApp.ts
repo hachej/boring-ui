@@ -74,7 +74,7 @@ export interface CreateAgentAppOptions {
   /** Optional billing sink for native Pi usage (see AgentMeteringSink). */
   metering?: AgentMeteringSink
   /** Generic filesystem binding seam for standalone embeddings. */
-  getFilesystemBindings?: (ctx: { request?: FastifyRequest; sessionId?: string; workspaceId: string; workspaceRoot: string; userId?: string; userEmail?: string; requestId?: string }) => RuntimeFilesystemBinding[] | undefined | Promise<RuntimeFilesystemBinding[] | undefined>
+  getFilesystemBindings?: (ctx: { request?: FastifyRequest; sessionId?: string; workspaceId: string; workspaceRoot: string; userId?: string; userEmail?: string; userEmailVerified?: boolean; requestId?: string }) => RuntimeFilesystemBinding[] | undefined | Promise<RuntimeFilesystemBinding[] | undefined>
   /** Generic runtime env contributors. Agent stays workspace-neutral; hosts decide env names/values. */
   runtimeEnvContributions?: RuntimeEnvContribution[]
   /** Runtime-aware provisioning hook. Runs after Workspace/Sandbox creation and before tools/harness. */
@@ -197,6 +197,7 @@ export async function createAgentApp(
             workspaceRoot,
             userId: ctx.userId,
             userEmail: ctx.userEmail,
+            userEmailVerified: ctx.userEmailVerified,
             requestId: ctx.requestId,
           })
         : undefined,
@@ -248,9 +249,23 @@ export async function createAgentApp(
     getReadiness: () => readyTracker.getReadiness(),
   })
 
-  await app.register(fileRoutes, { workspace: runtimeBundle.workspace, getFilesystemBindings: opts.getFilesystemBindings ? (request) => opts.getFilesystemBindings?.({ request, workspaceId: request.workspaceContext.workspaceId, workspaceRoot, requestId: request.id }) : undefined })
+  const filesystemBindingsForRequest = opts.getFilesystemBindings
+    ? (request: FastifyRequest) => {
+        const user = (request as FastifyRequest & { user?: { id: string; email: string; emailVerified?: boolean } | null }).user
+        return opts.getFilesystemBindings?.({
+          request,
+          workspaceId: request.workspaceContext.workspaceId,
+          workspaceRoot,
+          userId: user?.id,
+          userEmail: user?.email,
+          userEmailVerified: user?.emailVerified === true,
+          requestId: request.id,
+        })
+      }
+    : undefined
+  await app.register(fileRoutes, { workspace: runtimeBundle.workspace, getFilesystemBindings: filesystemBindingsForRequest })
   await app.register(fsEventsRoutes, { workspace: runtimeBundle.workspace })
-  await app.register(treeRoutes, { workspace: runtimeBundle.workspace, getFilesystemBindings: opts.getFilesystemBindings ? (request) => opts.getFilesystemBindings?.({ request, workspaceId: request.workspaceContext.workspaceId, workspaceRoot, requestId: request.id }) : undefined, filesystemBindings: runtimeBundle.filesystemBindings })
+  await app.register(treeRoutes, { workspace: runtimeBundle.workspace, getFilesystemBindings: filesystemBindingsForRequest, filesystemBindings: runtimeBundle.filesystemBindings })
   // /api/v1/files/search powers BOTH the cmd-palette / file-tree
   // search (browser → fetchClient.search) AND shares the same
   // FileSearch instance the LLM's `find` tool already uses

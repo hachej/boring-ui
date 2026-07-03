@@ -97,6 +97,9 @@ importers:
       '@hachej/boring-agent':
         specifier: workspace:*
         version: link:../../packages/agent
+      '@hachej/boring-bash':
+        specifier: workspace:*
+        version: link:../../packages/boring-bash
       '@hachej/boring-core':
         specifier: workspace:*
         version: link:../../packages/core

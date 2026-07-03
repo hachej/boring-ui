@@ -443,6 +443,9 @@ Expose Company Context as a filtered `company_context` filesystem mount inside n
 
 ---
 
+
+PR5c implementation note: full-app now bridges YAML governance into the generic PR5b seam with a `boring-bash` `ScopedFilesystemRuntimeBindingManager` + readonly policy-filtered projection operations. `company_context` is omitted for denied/unverified users and exposed as readonly only for verified users with allow rules.
+
 ## PR 6 — Tenant invites (optional/deferred)
 
 Branch: `issue/475-tenant-invites`  

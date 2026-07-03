@@ -95,9 +95,10 @@ function projectionPath(handle: ReadonlyProjectionHandle, path: string): string 
 
 async function assertInsideProjection(handle: ReadonlyProjectionHandle, candidate: string): Promise<void> {
   const root = resolve(handle.projectionRoot);
-  const parent = dirname(candidate);
-  const existingParent = await stat(parent).then(() => parent).catch(() => root);
-  const rel = relative(root, resolve(existingParent));
+  const resolvedCandidate = resolve(candidate);
+  const candidateExists = await stat(resolvedCandidate).then(() => true).catch(() => false);
+  const anchor = candidateExists ? resolvedCandidate : resolve(dirname(resolvedCandidate));
+  const rel = relative(root, anchor);
   if (rel.startsWith("..") || isAbsolute(rel)) throw new Error("path escapes readonly projection");
 }
 

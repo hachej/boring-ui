@@ -930,6 +930,7 @@ export async function createCoreWorkspaceAgentServer(
     telemetry,
     metering: options.metering,
     filterModels: options.filterModels,
+    getFilesystemBindings: options.getFilesystemBindings,
     runtimeEnvContributions: [
       ...(options.runtimeEnvContributions ?? []),
       ...(coreBridge.runtimeEnvContribution ? [coreBridge.runtimeEnvContribution] : []),
