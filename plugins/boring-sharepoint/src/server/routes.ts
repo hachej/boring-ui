@@ -98,7 +98,10 @@ function safeOfficeEditResultForRoute(result: OfficeEditResult): OfficeEditResul
   if (result.status === "needs_auth") {
     return { status: "failed", code: SHAREPOINT_ERROR_CODES.AUTH_REQUIRED, message: "SharePoint authorization is required" }
   }
-  return { ...result, message: safeRouteMessage(result.message, "SharePoint Office edit failed") }
+  if (result.status === "conflict") {
+    return { status: "conflict", code: result.code, message: safeRouteMessage(result.message, "SharePoint Office edit conflict") }
+  }
+  return { status: "failed", code: result.code, message: safeRouteMessage(result.message, "SharePoint Office edit failed") }
 }
 
 function parseEditBody(body: unknown): { ref: SharePointDocumentRef; editRequest: OfficeEditRequest } {

@@ -214,7 +214,7 @@ function validateEditText(value: string, label: string, maxLength: number): void
   if (trimmed.length === 0) {
     throw new SharePointProviderError(SHAREPOINT_ERROR_CODES.INVALID_REF, `${label} must be a non-empty string`)
   }
-  if (trimmed.length > maxLength) {
+  if (value.length > maxLength) {
     throw new SharePointProviderError(SHAREPOINT_ERROR_CODES.INVALID_REF, `${label} must be ${maxLength} characters or fewer`)
   }
   if (EDIT_SECRET_LIKE_PATTERN.test(value)) {
