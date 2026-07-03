@@ -46,7 +46,7 @@ The first implementation slice should prove the plugin and UI shape with a mock/
 Create the package at:
 
 ```txt
-plugins/boring-tasks/
+plugins/tasks/
   package.json
   src/shared/types.ts
   README.md
@@ -62,7 +62,7 @@ plugins/boring-tasks/
   src/server/adapters/mockAdapter.ts
 ```
 
-The plugin is app/internal because later adapters need trusted server-side credentials and routes. A future runtime/generated frontend-only demo can consume the same shared model, but should not be the canonical hosted integration. Generate the package from the canonical app/internal plugin shape (`boring-ui-plugin create boring-tasks --path plugins`) rather than inventing a custom layout.
+The plugin is app/internal because later adapters need trusted server-side credentials and routes. A future runtime/generated frontend-only demo can consume the same shared model, but should not be the canonical hosted integration. Generate the package from the canonical app/internal plugin shape (`boring-ui-plugin create tasks --path plugins`) rather than inventing a custom layout. That yields the package name `@hachej/boring-tasks`; keep the public route prefix `/api/boring-tasks` as an explicit API constant rather than deriving it from the directory name.
 
 ### 2. App-left/explorer contribution, not host special-casing
 
@@ -94,6 +94,8 @@ export interface BoringTaskColumn {
 export interface BoringTaskBoardConfig {
   adapterId: string;
   columns: BoringTaskColumn[];
+  // Reserved for future create flows; unmapped existing cards still render in
+  // the non-droppable Unmapped overflow column.
   defaultColumnId?: BoringTaskStatusId;
 }
 
@@ -189,7 +191,7 @@ Use shadcn-style layout primitives from `@hachej/boring-ui-kit` where possible. 
 Board behavior:
 
 1. Fetch adapter board config and render its columns in returned array order.
-2. Group cards by `statusId`. Cards whose `statusId` matches no configured column render in `defaultColumnId` when set; otherwise they render in a non-droppable `Unmapped` overflow column. They must never silently disappear.
+2. Group cards by `statusId`. Cards whose `statusId` matches no configured column render in a non-droppable `Unmapped` overflow column. They must never silently disappear or be visually merged into a normal status column. `defaultColumnId` is reserved for future create/defaulting flows, not for rendering unmapped existing cards.
 3. Provide an adapter selector toolbar so the user can switch adapter. Status/tag filtering is a later slice.
 4. Support cross-column status moves. Within-column reordering is not persisted in v1 and should be disabled or snap back.
 5. Optimistically move the card.
@@ -232,7 +234,7 @@ For hosted/core apps, later Postgres-backed tasks should use boring-core workspa
 
 ### Slice 1 — UI and mock adapter
 
-- Add `plugins/boring-tasks` package.
+- Add `plugins/tasks` package (`@hachej/boring-tasks`).
 - Add shared task card/status types.
 - Add injected mock adapter with sample cards, registered by workspace playground/dev app.
 - Add server plugin routes for adapter list, board config, task list, and move.
@@ -251,15 +253,16 @@ Acceptance:
 - Cards can be dragged across columns.
 - Within-column reorder is disabled or snaps back.
 - Move calls the adapter boundary, not local-only hardcoded mutation.
+- Baseline route/model/component tests cover provider list, board config, task list, move, move/revert, and workspace isolation.
 - No task-specific branches in `WorkspaceAgentFront`.
 
 ### Slice 2 — adapter hardening
 
 - Add adapter capability display/read-only behavior.
 - Keep create/comment/assign/close out of the adapter contract unless a real adapter introduces those actions.
-- Add status/column mapping helpers.
+- Add status/column mapping helpers only as generic utilities (group-by-`statusId`, unmapped handling, column ordering) or shared adapter helpers; never tracker-aware UI code.
 - Add empty/loading/error states.
-- Add tests for adapter routing, frontend grouping, and move/revert behavior.
+- Add hardening/edge-case tests beyond the Slice 1 baseline.
 - Add plugin README documenting adapter contracts.
 
 Acceptance:
@@ -334,6 +337,7 @@ Narrow these once the files exist.
 1. Final app-left/explorer contribution API name and opening surface after PR #438 lands. This is a hard precondition for implementation, not a detail to discover mid-slice. #438 is currently overlay-shaped; a Kanban board may need a workbench panel/surface instead.
 2. Whether `boring-tasks` should live as a publishable `plugins/boring-tasks` package or app-local plugin first. Default: publishable plugin package because multiple apps may want it.
 3. Whether the Postgres adapter belongs in `boring-tasks` or a child-app adapter package. Default: keep the adapter interface in `boring-tasks`, allow app-owned adapter registration later if core auth coupling gets heavy.
+4. How external adapters get per-workspace source configuration, such as GitHub repo or Linear team. Options include one adapter id per configured source (for example `github:owner/repo`) or adapter-owned workspace settings. Either way, source configuration must stay out of the Kanban UI plugin.
 
 ## Definition of done for implementation slice 1
 
