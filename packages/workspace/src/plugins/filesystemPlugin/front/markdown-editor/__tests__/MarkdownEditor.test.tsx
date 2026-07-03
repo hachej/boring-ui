@@ -86,7 +86,7 @@ describe("MarkdownEditor", () => {
       await waitFor(() => {
         expect(screen.getByTestId("markdown-frontmatter-summary")).toBeInTheDocument()
       })
-      expect(screen.getByText("Frontmatter")).toBeInTheDocument()
+      expect(screen.getByText("Metadata")).toBeInTheDocument()
       expect(screen.getByText("title")).toBeInTheDocument()
       expect(screen.getByText("Launch Note")).toBeInTheDocument()
       expect(screen.getByText("status")).toBeInTheDocument()

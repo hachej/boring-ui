@@ -585,28 +585,20 @@ function FrontmatterSummary({ summary }: { summary: MarkdownFrontmatterSummary }
   return (
     <section
       aria-label="Frontmatter"
-      className="border-b border-border/60 bg-muted/30 px-6 py-4"
+      className="border-b border-border/60 bg-transparent px-6 py-5"
       data-testid="markdown-frontmatter-summary"
     >
-      <div className="mx-auto flex max-w-[68ch] flex-col gap-3">
-        <div className="flex items-center justify-between gap-3">
-          <h2 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-            Frontmatter
-          </h2>
-          <span className="rounded border border-border/70 px-2 py-0.5 font-mono text-[10px] text-muted-foreground">
-            YAML
-          </span>
-        </div>
-        <dl className="grid gap-2 sm:grid-cols-2">
+      <div className="rounded-xl border border-[#3a3a3a] bg-[#262626] px-6 py-5 shadow-sm">
+        <h2 className="mb-5 text-base font-medium text-[#c9c9c9]">
+          Metadata
+        </h2>
+        <dl className="grid gap-x-10 gap-y-4 text-sm sm:grid-cols-[minmax(9rem,17rem)_minmax(0,1fr)]">
           {summary.entries.map((entry, index) => (
-            <div
-              key={`${entry.key}-${index}`}
-              className="min-w-0 rounded-md border border-border/60 bg-background/80 px-3 py-2"
-            >
-              <dt className="truncate font-mono text-[11px] font-semibold text-muted-foreground">
+            <div key={`${entry.key}-${index}`} className="contents">
+              <dt className="font-mono text-[#b8b8b8]">
                 {entry.key}
               </dt>
-              <dd className="mt-1 break-words text-sm text-foreground">
+              <dd className="min-w-0 whitespace-pre-wrap break-words font-mono text-[#f5f5f5]">
                 {entry.value}
               </dd>
             </div>
