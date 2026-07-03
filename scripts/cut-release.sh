@@ -44,17 +44,50 @@ after=$(node -p "require('./packages/cli/package.json').version")
 node scripts/version.mjs --check
 pnpm audit:publish-manifests
 
-git add \
-  packages/core/package.json \
-  packages/plugin-cli/package.json \
-  packages/workspace/package.json \
-  packages/agent/package.json \
-  packages/ui/package.json \
-  packages/cli/package.json \
-  plugins/deck/package.json \
-  plugins/ask-user/package.json \
-  plugins/data-explorer/package.json \
+release_files=(
+  packages/core/package.json
+  packages/plugin-cli/package.json
+  packages/workspace/package.json
+  packages/agent/package.json
+  packages/ui/package.json
+  packages/cli/package.json
+  plugins/deck/package.json
+  plugins/ask-user/package.json
+  plugins/data-explorer/package.json
   plugins/data-catalog/package.json
+  plugins/generated-pane/package.json
+  plugins/data-bridge/package.json
+  plugins/bi-dashboard/package.json
+)
+if [ -f pnpm-lock.yaml ]; then
+  release_files+=(pnpm-lock.yaml)
+fi
+
+git add "${release_files[@]}"
+node scripts/check-release-staging.mjs
+
+status=$(git status --short)
+if [ -z "$status" ]; then
+  echo "No release changes staged." >&2
+  exit 1
+fi
+while IFS= read -r line; do
+  [ -z "$line" ] && continue
+  path=${line:3}
+  allowed=false
+  for release_file in "${release_files[@]}"; do
+    if [ "$path" = "$release_file" ]; then
+      allowed=true
+      break
+    fi
+  done
+  if [ "$allowed" != true ]; then
+    echo "Unexpected release tree change: $line" >&2
+    echo "$status" >&2
+    exit 1
+  fi
+done <<< "$status"
+
 git commit -m "chore(release): bump packages to $after"
 git push origin main
 

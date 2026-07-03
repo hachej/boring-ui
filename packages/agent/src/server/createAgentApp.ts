@@ -237,7 +237,7 @@ export async function createAgentApp(
 
   await app.register(fileRoutes, { workspace: runtimeBundle.workspace })
   await app.register(fsEventsRoutes, { workspace: runtimeBundle.workspace })
-  await app.register(treeRoutes, { workspace: runtimeBundle.workspace })
+  await app.register(treeRoutes, { workspace: runtimeBundle.workspace, filesystemBindings: runtimeBundle.filesystemBindings })
   // /api/v1/files/search powers BOTH the cmd-palette / file-tree
   // search (browser → fetchClient.search) AND shares the same
   // FileSearch instance the LLM's `find` tool already uses

@@ -27,8 +27,8 @@ How-to details: `../../../docs/kanzen/procedures/` and
 | `clarity` | `/loop-grill`; use grill-me plus ask-user when async |
 | `risk` | keep `track:owner`; upgrade only when fast-track rules pass |
 | `flag` | require `not-needed`, safe feature flag, or abstraction path |
-| `plan` | `/loop-plan`; use issue-linked plan file for risky or multi-PR work |
-| `implementation` | `/loop-implement`; one parent lane owns one issue/PR |
+| `plan` | use `boring-loop-plan`; issue-linked plan for risky or multi-PR work |
+| `implementation` | use `boring-loop-implement`; one parent lane owns one issue/PR |
 | `proof` | tests, CI, proof-of-work comment, screenshots, and demo proof when useful |
 | `merge` | fast-track merge if all gates pass, otherwise owner review |
 

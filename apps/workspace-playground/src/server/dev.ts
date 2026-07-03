@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto"
 import { existsSync, mkdirSync, readdirSync, copyFileSync, statSync } from "node:fs"
-import { basename, dirname, resolve } from "node:path"
+import { readFile, readdir, stat } from "node:fs/promises"
+import { basename, dirname, isAbsolute, relative, resolve } from "node:path"
 import { createRemoteWorkerModeAdapter } from "@hachej/boring-agent/server"
 import { createWorkspaceAgentServer } from "@hachej/boring-workspace/app/server"
 
@@ -34,6 +35,15 @@ export function seedWorkspaceFromFixtures(workspaceRoot = WORKSPACE_DIR): void {
   seedFixtureEntry(FIXTURES_DIR, workspaceRoot)
 }
 
+function resolvePlaygroundBindingPath(root: string, rawPath: string): string {
+  const normalized = rawPath.trim() || "/"
+  const withoutLeadingSlash = normalized.replace(/^\/+/, "")
+  const resolved = resolve(root, withoutLeadingSlash || ".")
+  const rel = relative(root, resolved)
+  if (rel === "" || (!rel.startsWith("..") && !isAbsolute(rel))) return resolved
+  throw new Error("path escapes playground binding root")
+}
+
 let agentBoot: Promise<void> | null = null
 
 export async function startPlaygroundServer(): Promise<void> {
@@ -51,6 +61,7 @@ export async function startPlaygroundServer(): Promise<void> {
       ? (process.env.BORING_WORKSPACE_PLAYGROUND_WORKSPACE_ID?.trim() || randomUUID())
       : undefined
     const localRuntimeMode = process.env.BORING_AGENT_MODE?.trim() === "direct" ? "direct" : "local"
+    const multiFilesystemPlayground = process.env.BORING_WORKSPACE_PLAYGROUND_MULTI_FS === "1" || process.env.VITE_PLAYGROUND_MULTI_FS === "1"
     console.log(`[workspace-playground] workspace root: ${workspaceRoot}`)
     console.log(`[workspace-playground] runtime mode: ${remoteWorkerModeAdapter ? "remote-worker" : localRuntimeMode}`)
     if (remoteWorkerWorkspaceId) {
@@ -65,6 +76,40 @@ export async function startPlaygroundServer(): Promise<void> {
       logger: true,
       externalPlugins: EXTERNAL_PLUGINS_ENABLED,
       defaultPluginPackages: ["@hachej/boring-ask-user"],
+      runtimeProvisioner: multiFilesystemPlayground
+        ? async ({ runtimeBundle }) => {
+            runtimeBundle.filesystemBindings = [
+              ...(runtimeBundle.filesystemBindings ?? []),
+              {
+                filesystem: "company_context",
+                access: "readonly",
+                operations: {
+                  async read({ path }) {
+                    const target = resolvePlaygroundBindingPath(workspaceRoot, path)
+                    return { content: await readFile(target, "utf8") }
+                  },
+                  async list({ path }) {
+                    const target = resolvePlaygroundBindingPath(workspaceRoot, path)
+                    return { entries: await readdir(target) }
+                  },
+                  async find() {
+                    return { paths: [] }
+                  },
+                  async grep() {
+                    return { matches: [] }
+                  },
+                  async stat({ path }) {
+                    const target = resolvePlaygroundBindingPath(workspaceRoot, path)
+                    return { isDirectory: (await stat(target)).isDirectory() }
+                  },
+                  rejectMutation(operation) {
+                    throw new Error(`company_context binding is readonly: ${operation}`)
+                  },
+                },
+              },
+            ]
+          }
+        : undefined,
       workspaceBridge: { allowInsecureLocalCliBrowserAuth: true },
     })
     app.get("/api/v1/workspace/meta", async () => {
