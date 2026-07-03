@@ -77,17 +77,32 @@ If #438 lands with a different output name than `appLeftActions`, adapt the name
 
 ### 3. Standard task card contract
 
-Define a small normalized card model in `src/shared/types.ts`:
+Define small normalized models in `src/shared/types.ts`. Columns are data, not code. A task carries a status tag/id, and the board configuration decides which status tags appear as columns and in what order.
 
 ```ts
-export type BoringTaskStatus = "todo" | "in_progress" | "review" | "done";
+export type BoringTaskStatusId = string;
+
+export interface BoringTaskColumn {
+  id: BoringTaskStatusId;
+  title: string;
+  description?: string;
+  color?: string;
+  order: number;
+  acceptsDrop?: boolean;
+}
+
+export interface BoringTaskBoardConfig {
+  providerId: string;
+  columns: BoringTaskColumn[];
+  defaultColumnId?: BoringTaskStatusId;
+}
 
 export interface BoringTaskCard {
   id: string;
   number: string;
   title: string;
   description?: string;
-  status: BoringTaskStatus;
+  statusId: BoringTaskStatusId;
   providerId: string;
   url?: string;
 }
@@ -133,19 +148,21 @@ export interface BoringTaskProvider {
     list: true;
     move: boolean;
   };
+  getBoardConfig(ctx: BoringTaskProviderContext): Promise<BoringTaskBoardConfig>;
   listTasks(ctx: BoringTaskProviderContext): Promise<BoringTaskCard[]>;
   moveTask?(ctx: BoringTaskProviderContext, input: {
     taskId: string;
-    status: BoringTaskStatus;
+    statusId: BoringTaskStatusId;
   }): Promise<BoringTaskCard>;
 }
 ```
 
 Provider rules:
 
-- Providers map their native statuses into `BoringTaskStatus`.
+- Providers expose their available status tags/columns through `getBoardConfig()`.
 - The playground/dev app injects `createMockTaskProvider()`; hosted apps inject DB or external providers.
 - Providers declare `capabilities.move`; the UI disables drag for providers that cannot move tasks.
+- Providers may normalize native statuses (`GitHub labels`, `Linear states`, `Kata status/claim`, custom DB enum) into stable `statusId` values, but the UI must not hardcode a global status enum.
 - Provider failures revert optimistic UI changes.
 - Credentials and provider-native API clients stay on the server.
 - Additional capabilities (`create`, `comment`, `assign`, `close`) are added only in the slice that introduces the corresponding route/tool.
@@ -164,12 +181,13 @@ Use shadcn-style layout primitives from `@hachej/boring-ui-kit` where possible. 
 
 Board behavior:
 
-1. Render columns: `todo`, `in_progress`, `review`, `done`.
-2. Group cards by `status`.
-3. Support cross-column status moves. Within-column reordering is not persisted in v1 and should be disabled or snap back.
-4. Optimistically move the card.
-5. Call the backend move route.
-6. Revert and show a toast/inline error if the backend rejects.
+1. Fetch provider board config and render its columns in `order`.
+2. Group cards by `statusId`.
+3. Provide a provider/status selector bar so the user can switch provider and, later, filter by status/tag.
+4. Support cross-column status moves. Within-column reordering is not persisted in v1 and should be disabled or snap back.
+5. Optimistically move the card.
+6. Call the backend move route.
+7. Revert and show a toast/inline error if the backend rejects.
 
 ### 6. Routes
 
@@ -177,6 +195,7 @@ First implementation slice needs only:
 
 ```txt
 GET  /api/boring-tasks/providers
+GET  /api/boring-tasks/providers/:providerId/board
 GET  /api/boring-tasks/providers/:providerId/tasks
 POST /api/boring-tasks/providers/:providerId/tasks/:taskId/move
 ```
@@ -204,8 +223,9 @@ For hosted/core apps, later Postgres-backed tasks should use boring-core workspa
 - Add `plugins/boring-tasks` package.
 - Add shared task card/status types.
 - Add injected mock provider with sample cards, registered by workspace playground/dev app.
-- Add server plugin routes for provider list, task list, and move.
+- Add server plugin routes for provider list, board config, task list, and move.
 - Add front plugin app-left/explorer contribution named `Tasks`.
+- Add a provider selector/status toolbar.
 - Add `TaskKanbanBoard`, `TaskKanbanColumn`, and `TaskCard`.
 - Implement drag/drop with optimistic move/revert.
 - Register plugin in workspace playground for development.
@@ -213,7 +233,7 @@ For hosted/core apps, later Postgres-backed tasks should use boring-core workspa
 Acceptance:
 
 - `Tasks` appears through plugin-owned app-left/explorer contribution.
-- Opening `Tasks` shows four Kanban columns.
+- Opening `Tasks` shows the columns returned by the selected provider's board config.
 - Cards display number, title, and description.
 - Cards can be dragged across columns.
 - Within-column reorder is disabled or snaps back.
@@ -224,7 +244,7 @@ Acceptance:
 
 - Add provider capability display/read-only behavior.
 - Keep create/comment/assign/close out of the provider contract unless this slice introduces those routes.
-- Add status mapping helpers.
+- Add status/column mapping helpers.
 - Add empty/loading/error states.
 - Add tests for provider routing, frontend grouping, and move/revert behavior.
 - Add plugin README documenting provider contracts.
@@ -233,7 +253,7 @@ Acceptance:
 
 - Read-only providers render but do not allow drag.
 - Failed moves revert the card.
-- Provider list/tasks/move routes have typed tests.
+- Provider list/board/tasks/move routes have typed tests.
 
 ### Slice 3 — boring-ui-native Postgres provider
 
@@ -258,14 +278,14 @@ Add providers one at a time:
 3. Linear via API.
 4. Plane/custom API.
 
-Each external provider must document auth, status mapping, mutation support, and failure semantics. The v1 board schema is intentionally fixed to four canonical columns; providers that cannot safely map native states must be read-only until a later slice adds provider/workspace-configurable columns. Provider docs must state whether native status mapping is lossy and whether moves are safe.
+Each external provider must document auth, status/column mapping, mutation support, and failure semantics. Columns are provider-supplied from the start. Providers that cannot safely move between native states should set `capabilities.move = false` or mark specific columns with `acceptsDrop: false`. Provider docs must state whether native status mapping is lossy and whether moves are safe.
 
 ## Testing plan
 
 First implementation PR should include:
 
-- unit tests for task grouping and status mapping;
-- route tests for provider list/task list/move;
+- unit tests for task grouping and status/column mapping;
+- route tests for provider list/board/task list/move;
 - component tests for card rendering and move callback;
 - one workspace-playground e2e smoke test for opening the Tasks action and dragging a card if the test harness can make drag deterministic.
 
@@ -285,7 +305,7 @@ Narrow these once the files exist.
 
 | Risk | Mitigation |
 | --- | --- |
-| Generic provider abstraction becomes too abstract | Keep v1 provider contract tiny: list and move only. Add methods only when a real provider needs them. |
+| Generic provider abstraction becomes too abstract | Keep v1 provider contract tiny: board config, list, and move only. Add methods only when a real provider needs them. |
 | Board leaks provider-native concepts | Normalize at provider boundary; card receives only `BoringTaskCard`. |
 | Host shell gets task-specific branches | Depend on #438 app-left/explorer plugin outputs; block implementation if this requires host special-casing. |
 | Drag/drop library complexity spreads | Contain `@dnd-kit` usage inside `TaskKanbanBoard` and child components. |
@@ -302,7 +322,7 @@ Narrow these once the files exist.
 
 - Dedicated `boring-tasks` plugin package exists with its own typecheck/test target.
 - App-left/explorer `Tasks` action is plugin-owned.
-- Four-column Kanban board renders mock tasks.
+- Provider-configured Kanban board renders mock tasks.
 - Task card includes number, title, description.
 - Drag/drop move flows through injected provider boundary and supports revert on failure.
 - Tests cover model, route, and front behavior.
