@@ -117,6 +117,27 @@ describe("ArcadeSharePointProvider", () => {
     })
   })
 
+  it("rejects mismatched Office extension and MIME metadata with a stable code", async () => {
+    const providerWithItem = (item: Record<string, unknown>) =>
+      new ArcadeSharePointProvider({
+        runtime: {
+          executeTool: vi.fn().mockResolvedValue({ success: true, output: { value: item } }),
+          startAuthorization: vi.fn(),
+        },
+      })
+
+    await expect(
+      providerWithItem({ ...xlsxItemValue, name: "notes.docx", file: { mimeType: EXCEL_MIME_TYPE } }).resolveDriveItem(
+        { webUrl: "https://tenant/notes.docx" },
+        ctx,
+      ),
+    ).rejects.toMatchObject({ code: SHAREPOINT_ERROR_CODES.INVALID_REF } satisfies Partial<SharePointProviderError>)
+
+    await expect(
+      providerWithItem({ ...xlsxItemValue, file: { mimeType: POWERPOINT_MIME_TYPE } }).resolveDriveItem({ webUrl: xlsxItemValue.webUrl }, ctx),
+    ).rejects.toMatchObject({ code: SHAREPOINT_ERROR_CODES.INVALID_REF } satisfies Partial<SharePointProviderError>)
+  })
+
   it("rejects unsupported SharePoint file types with a stable code", async () => {
     const executeTool = vi.fn().mockResolvedValue({
       success: true,

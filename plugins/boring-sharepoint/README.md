@@ -2,7 +2,7 @@
 
 App/internal plugin shell for SharePoint / Microsoft 365 Office document support in boring-ui.
 
-This package is intentionally a trusted app/internal plugin, not a runtime-generated `.pi/extensions` plugin. Future PRs will add SharePoint discovery, preview, Office agent edits, and import flows behind the contracts introduced in this shell.
+This package is intentionally a trusted app/internal plugin, not a runtime-generated `.pi/extensions` plugin. The current stack includes the plugin shell, Office cloud-ref display wiring, Arcade runtime primitives, and read-only SharePoint discovery/status. Future PRs will add preview, Office agent edits, and import flows behind these contracts.
 
 ## Trust boundary
 
