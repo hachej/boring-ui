@@ -35,8 +35,8 @@ jobs:
         run: |
           if [ "${{ github.event_name }}" = "pull_request" ]; then
             base="origin/${{ github.base_ref }}"
-            git fetch --no-tags --depth=1 origin "${{ github.base_ref }}:refs/remotes/origin/${{ github.base_ref }}" || true
-            files=$(git diff --name-only "$base...HEAD")
+            git fetch --no-tags origin "${{ github.base_ref }}:refs/remotes/origin/${{ github.base_ref }}" || true
+            files=$(git diff --name-only "$base...HEAD" || git diff --name-only "$base" HEAD)
           else
             files=$(git diff --name-only "${{ github.event.before }}" "${{ github.sha }}" || true)
           fi
