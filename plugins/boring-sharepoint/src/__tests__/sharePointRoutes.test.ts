@@ -1,6 +1,6 @@
 import Fastify from "fastify"
 import { afterEach, describe, expect, it, vi } from "vitest"
-import { EXCEL_MIME_TYPE, SHAREPOINT_ERROR_CODES, type SharePointProvider } from "../shared"
+import { EXCEL_MIME_TYPE, POWERPOINT_MIME_TYPE, SHAREPOINT_ERROR_CODES, type SharePointProvider } from "../shared"
 import { SHAREPOINT_ROUTE_PATHS, sharePointRoutes } from "../server/routes"
 import { SharePointProviderError } from "../server/sharePointProvider"
 
@@ -18,6 +18,15 @@ const ref = {
   driveId: "b!IDAE6E137UaSbPUsBzFAoT8qRJKUqM5LnmuJVVDbAnUI5HkM_PyuQovkEHDyaz3G",
   driveItemId: "01ROJOXDN53PWGVAWEJREZKIIY4VGYDIZ5",
   createdFrom: { type: "sharepoint" as const },
+}
+
+const pptxRef = {
+  ...ref,
+  name: "tttt.pptx",
+  officeKind: "powerpoint" as const,
+  mimeType: POWERPOINT_MIME_TYPE,
+  webUrl: "https://sumeo662.sharepoint.com/sites/sumeotest/Shared%20Documents/tttt.pptx",
+  driveItemId: "01ROJOXDM7345DEYRHSFE2K7NEHOW6X3P2",
 }
 
 afterEach(async () => {
@@ -135,6 +144,87 @@ describe("SharePoint routes", () => {
     expect(response.statusCode).toBe(400)
     expect(response.json()).toMatchObject({ error: SHAREPOINT_ERROR_CODES.REF_CONTAINS_SECRET })
     expect(provider.createOfficePreviewUrl).not.toHaveBeenCalled()
+  })
+
+  it("returns sanitized Office edit results from the edit route", async () => {
+    const provider = fakeProvider({
+      editOfficeDocument: vi.fn().mockResolvedValue({
+        status: "succeeded",
+        summary: "Added worksheet Forecast to tttt.xlsx",
+        sessionId: "session-123",
+        metadata: { raw: { previewUrl: "https://tenant/preview?access_token=secret" } },
+      }),
+    })
+    const app = await testApp(provider)
+
+    const response = await app.inject({
+      method: "POST",
+      url: SHAREPOINT_ROUTE_PATHS.edit,
+      payload: { ref, request: { kind: "excel.add-worksheet", worksheetName: "Forecast" } },
+    })
+
+    expect(response.statusCode).toBe(200)
+    expect(response.json()).toEqual({ status: "succeeded", summary: "Added worksheet Forecast to tttt.xlsx", sessionId: "session-123" })
+    expect(response.body).not.toMatch(/previewUrl|access_token|metadata|Bearer/i)
+    expect(provider.editOfficeDocument).toHaveBeenCalledWith(ref, { kind: "excel.add-worksheet", worksheetName: "Forecast" }, { workspaceId: "default", actorUserId: "anonymous" })
+  })
+
+  it("accepts PowerPoint edit requests through the edit route", async () => {
+    const provider = fakeProvider({ editOfficeDocument: vi.fn().mockResolvedValue({ status: "succeeded", summary: "Created PowerPoint slide in tttt.pptx" }) })
+    const app = await testApp(provider)
+
+    const response = await app.inject({
+      method: "POST",
+      url: SHAREPOINT_ROUTE_PATHS.edit,
+      payload: { ref: pptxRef, request: { kind: "powerpoint.create-slide", title: "Q3 update", body: "Revenue improved.", layout: "TITLE_AND_CONTENT" } },
+    })
+
+    expect(response.statusCode).toBe(200)
+    expect(response.json()).toEqual({ status: "succeeded", summary: "Created PowerPoint slide in tttt.pptx" })
+    expect(provider.editOfficeDocument).toHaveBeenCalledWith(
+      pptxRef,
+      { kind: "powerpoint.create-slide", title: "Q3 update", body: "Revenue improved.", layout: "TITLE_AND_CONTENT" },
+      { workspaceId: "default", actorUserId: "anonymous" },
+    )
+  })
+
+  it("rejects mismatched or invalid edit route input before provider calls", async () => {
+    const provider = fakeProvider({ editOfficeDocument: vi.fn() })
+    const app = await testApp(provider)
+
+    const mismatch = await app.inject({
+      method: "POST",
+      url: SHAREPOINT_ROUTE_PATHS.edit,
+      payload: { ref, request: { kind: "powerpoint.create-slide", title: "Wrong file" } },
+    })
+    expect(mismatch.statusCode).toBe(400)
+    expect(mismatch.json()).toMatchObject({ error: SHAREPOINT_ERROR_CODES.EDIT_CONFLICT })
+
+    const invalid = await app.inject({
+      method: "POST",
+      url: SHAREPOINT_ROUTE_PATHS.edit,
+      payload: { ref, request: { kind: "excel.add-worksheet", worksheetName: "Bearer secret-token" } },
+    })
+    expect(invalid.statusCode).toBe(400)
+    expect(invalid.json()).toMatchObject({ error: SHAREPOINT_ERROR_CODES.REF_CONTAINS_SECRET })
+    expect(invalid.body).not.toMatch(/secret-token|Bearer/i)
+    expect(provider.editOfficeDocument).not.toHaveBeenCalled()
+  })
+
+  it("rejects token-bearing edit refs before provider calls", async () => {
+    const provider = fakeProvider({ editOfficeDocument: vi.fn() })
+    const app = await testApp(provider)
+
+    const response = await app.inject({
+      method: "POST",
+      url: SHAREPOINT_ROUTE_PATHS.edit,
+      payload: { ref: { ...ref, previewUrl: "https://tenant/preview?access_token=secret" }, request: { kind: "excel.add-worksheet", worksheetName: "Forecast" } },
+    })
+
+    expect(response.statusCode).toBe(400)
+    expect(response.json()).toMatchObject({ error: SHAREPOINT_ERROR_CODES.REF_CONTAINS_SECRET })
+    expect(response.body).not.toMatch(/access_token=secret|previewUrl/)
+    expect(provider.editOfficeDocument).not.toHaveBeenCalled()
   })
 
   it("rejects route errors with stable JSON", async () => {

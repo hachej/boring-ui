@@ -25,6 +25,19 @@ const xlsxItemValue = {
   file: { mimeType: EXCEL_MIME_TYPE },
 }
 
+const xlsxRef = {
+  kind: "office-cloud-document" as const,
+  provider: "sharepoint" as const,
+  version: 1 as const,
+  name: xlsxItemValue.name,
+  officeKind: "excel" as const,
+  mimeType: EXCEL_MIME_TYPE,
+  webUrl: xlsxItemValue.webUrl,
+  siteId: siteValue.id,
+  driveId: xlsxItemValue.parentReference.driveId,
+  driveItemId: xlsxItemValue.id,
+}
+
 const pptxItemValue = {
   id: "01ROJOXDM7345DEYRHSFE2K7NEHOW6X3P2",
   name: "tttt.pptx",
@@ -34,6 +47,19 @@ const pptxItemValue = {
     site_id: siteValue.id,
   },
   file: { mime_type: POWERPOINT_MIME_TYPE },
+}
+
+const pptxRef = {
+  kind: "office-cloud-document" as const,
+  provider: "sharepoint" as const,
+  version: 1 as const,
+  name: pptxItemValue.name,
+  officeKind: "powerpoint" as const,
+  mimeType: POWERPOINT_MIME_TYPE,
+  webUrl: pptxItemValue.web_url,
+  siteId: siteValue.id,
+  driveId: pptxItemValue.parent_reference.drive_id,
+  driveItemId: pptxItemValue.id,
 }
 
 describe("ArcadeSharePointProvider", () => {
@@ -149,6 +175,83 @@ describe("ArcadeSharePointProvider", () => {
       code: SHAREPOINT_ERROR_CODES.PREVIEW_UNAVAILABLE,
       message: expect.not.stringContaining("http://tenant/preview"),
     })
+  })
+
+  it("adds an Excel worksheet through Arcade and returns a sanitized edit result", async () => {
+    const executeTool = vi
+      .fn()
+      .mockResolvedValueOnce({ success: true, output: { value: { session_id: "session-123" } } })
+      .mockResolvedValueOnce({ success: true, output: { value: { workbook: { worksheets: ["Forecast"] }, getUrl: "https://tenant/preview?token=raw" } } })
+    const provider = new ArcadeSharePointProvider({ runtime: { executeTool, startAuthorization: vi.fn() } })
+
+    await expect(provider.editOfficeDocument(xlsxRef, { kind: "excel.add-worksheet", worksheetName: "Forecast" }, ctx)).resolves.toEqual({
+      status: "succeeded",
+      summary: "Added worksheet Forecast to tttt.xlsx",
+      sessionId: "session-123",
+    })
+    expect(executeTool).toHaveBeenNthCalledWith(1, {
+      toolName: ARCADE_SHAREPOINT_TOOL_NAMES.addWorksheet,
+      userId: ctx.actorUserId,
+      input: { drive_id: xlsxRef.driveId, item_id: xlsxRef.driveItemId, worksheet_name: "Forecast" },
+    })
+    expect(executeTool).toHaveBeenNthCalledWith(2, {
+      toolName: ARCADE_SHAREPOINT_TOOL_NAMES.getWorkbookMetadata,
+      userId: ctx.actorUserId,
+      input: { drive_id: xlsxRef.driveId, item_id: xlsxRef.driveItemId, session_id: "session-123" },
+    })
+  })
+
+  it("creates a PowerPoint slide through the assumed Arcade SharePoint tool", async () => {
+    const executeTool = vi.fn().mockResolvedValue({ success: true, output: { value: { slideId: "slide-1", previewUrl: "https://tenant/preview?token=raw" } } })
+    const provider = new ArcadeSharePointProvider({ runtime: { executeTool, startAuthorization: vi.fn() } })
+
+    await expect(
+      provider.editOfficeDocument(
+        pptxRef,
+        { kind: "powerpoint.create-slide", title: "Q3 update", body: "Revenue improved.", layout: "TITLE_AND_CONTENT" },
+        ctx,
+      ),
+    ).resolves.toEqual({ status: "succeeded", summary: "Created PowerPoint slide in tttt.pptx" })
+    expect(executeTool).toHaveBeenCalledWith({
+      toolName: ARCADE_SHAREPOINT_TOOL_NAMES.createSlide,
+      userId: ctx.actorUserId,
+      input: {
+        drive_id: pptxRef.driveId,
+        item_id: pptxRef.driveItemId,
+        title: "Q3 update",
+        body: "Revenue improved.",
+        layout: "TITLE_AND_CONTENT",
+      },
+    })
+  })
+
+  it("rejects Office edit kind/ref mismatches before Arcade calls", async () => {
+    const executeTool = vi.fn()
+    const provider = new ArcadeSharePointProvider({ runtime: { executeTool, startAuthorization: vi.fn() } })
+
+    await expect(provider.editOfficeDocument(xlsxRef, { kind: "powerpoint.create-slide", title: "Wrong file" }, ctx)).rejects.toMatchObject({
+      code: SHAREPOINT_ERROR_CODES.EDIT_CONFLICT,
+    } satisfies Partial<SharePointProviderError>)
+    await expect(provider.editOfficeDocument(pptxRef, { kind: "excel.add-worksheet", worksheetName: "Wrong" }, ctx)).rejects.toMatchObject({
+      code: SHAREPOINT_ERROR_CODES.EDIT_CONFLICT,
+    } satisfies Partial<SharePointProviderError>)
+    expect(executeTool).not.toHaveBeenCalled()
+  })
+
+  it("rejects invalid Office edit fields before Arcade calls", async () => {
+    const executeTool = vi.fn()
+    const provider = new ArcadeSharePointProvider({ runtime: { executeTool, startAuthorization: vi.fn() } })
+
+    await expect(provider.editOfficeDocument(xlsxRef, { kind: "excel.add-worksheet", worksheetName: "" }, ctx)).rejects.toMatchObject({
+      code: SHAREPOINT_ERROR_CODES.INVALID_REF,
+    } satisfies Partial<SharePointProviderError>)
+    await expect(provider.editOfficeDocument(xlsxRef, { kind: "excel.add-worksheet", worksheetName: "x".repeat(32) }, ctx)).rejects.toMatchObject({
+      code: SHAREPOINT_ERROR_CODES.INVALID_REF,
+    } satisfies Partial<SharePointProviderError>)
+    await expect(provider.editOfficeDocument(pptxRef, { kind: "powerpoint.create-slide", title: "Bearer secret-token" }, ctx)).rejects.toMatchObject({
+      code: SHAREPOINT_ERROR_CODES.REF_CONTAINS_SECRET,
+    } satisfies Partial<SharePointProviderError>)
+    expect(executeTool).not.toHaveBeenCalled()
   })
 
   it("rejects mismatched Office extension and MIME metadata with a stable code", async () => {
