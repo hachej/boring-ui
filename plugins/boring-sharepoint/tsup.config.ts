@@ -15,6 +15,7 @@ export default defineConfig({
   platform: "neutral",
   external: [
     /^@hachej\/boring-/,
+    "@arcadeai/arcadejs",
     "fastify",
     "react",
     "react-dom",
