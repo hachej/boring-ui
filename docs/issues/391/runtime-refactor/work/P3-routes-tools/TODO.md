@@ -10,8 +10,8 @@ Handoff: self-contained work order for one autonomous coding agent (pi or gpt-5.
 
 ### Depends on
 
-- **Phase 1** injection: `createAgent()` accepts an injected `runtime` adapter and an extra `tools: AgentTool[]` (06 Phase 1) — **no `features` member, no `AgentFeature` abstraction**. `createBashAgentFeature()` returns a plain `{ tools, readinessRequirements }` bundle the host **spreads into `tools`**, it is not registered as a feature.
-- **Phase 2** (`TODO-P2-bash-package-providers.md`): providers + `/providers` subpath moved; `resolveMode()` in host/boring-bash composition.
+- **Phase 1** injection: `createAgent()` accepts an injected `runtime` adapter and an extra `tools: AgentTool[]` ([`../P1-headless-core/TODO.md`](../P1-headless-core/TODO.md)) — **no `features` member, no `AgentFeature` abstraction**. `createBashAgentFeature()` returns a plain `{ tools, readinessRequirements }` bundle the host **spreads into `tools`**, it is not registered as a feature.
+- **Phase 2** ([`../P2-sandbox-providers/TODO.md`](../P2-sandbox-providers/TODO.md)): providers + `/providers` subpath moved; `resolveMode()` in host/boring-bash composition.
 
 ### Already landed via #416 (behavior-freeze — move code, do not change behavior)
 
@@ -42,7 +42,7 @@ Registration/consumption call sites (grep-verified):
 
 ## Goal / exit criteria
 
-File/tree/search/fs-events/stat/dir (+ git/status) routes and file/bash/`execute_isolated_code`/upload tools live in `@hachej/boring-bash` (`/server`, `/agent`). Tools are contributed via `createBashAgentFeature()` — which returns a **plain boring-bash-local bundle `{ tools, readinessRequirements }`** (NOT a core `AgentFeature` contract; there is no `features` config member) — that host composition **spreads into the `createAgent()` config `tools`**; routes are mounted by **host composition** (cli/workspace/full-app — the same call sites that construct the bundle) next to the agent routes. Neither `packages/agent` nor the bundle ever imports `registerBashRoutes` — that would break the zero agent→bash value-import invariant (the bundle carries tools + readiness only, never routes; the agent package never mounts bash routes). Behavior frozen. Exit (06 Phase 3):
+File/tree/search/fs-events/stat/dir (+ git/status) routes and file/bash/`execute_isolated_code`/upload tools live in `@hachej/boring-bash` (`/server`, `/agent`). Tools are contributed via `createBashAgentFeature()` — which returns a **plain boring-bash-local bundle `{ tools, readinessRequirements }`** (NOT a core `AgentFeature` contract; there is no `features` config member) — that host composition **spreads into the `createAgent()` config `tools`**; routes are mounted by **host composition** (cli/workspace/full-app — the same call sites that construct the bundle) next to the agent routes. Neither `packages/agent` nor the bundle ever imports `registerBashRoutes` — that would break the zero agent→bash value-import invariant (the bundle carries tools + readiness only, never routes; the agent package never mounts bash routes). Behavior frozen. Exit per [`../../INDEX.md`](../../INDEX.md) Phase 3:
 
 - workspace playground still opens file tree/editor; read/write/edit/find/grep/ls/bash work when boring-bash enabled.
 - pure mode (`createAgent({ runtime: 'none' })`) registers none of these routes/tools.

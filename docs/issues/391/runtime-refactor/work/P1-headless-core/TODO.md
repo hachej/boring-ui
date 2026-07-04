@@ -4,7 +4,7 @@ Handoff: self-contained work order for one autonomous coding agent (pi or gpt-5.
 
 ## Context (read first)
 
-Phase 1 of the #391 runtime refactor (v2) — the critical path. Goal: extract a Fastify-free `createAgent()` façade from the agent server, make `createAgentApp()` / `registerAgentRoutes()` thin adapters over it with **zero behavior change**, add a pure `runtime: 'none'` path, and prove the core has no ambient host-file authority. Phase 0 (`TODO-P0-adr-decisions.md`) must be merged first.
+Phase 1 of the #391 runtime refactor (v2) — the critical path. Goal: extract a Fastify-free `createAgent()` façade from the agent server, make `createAgentApp()` / `registerAgentRoutes()` thin adapters over it with **zero behavior change**, add a pure `runtime: 'none'` path, and prove the core has no ambient host-file authority. Phase 0 ([`../P0-adr/TODO.md`](../P0-adr/TODO.md)) must be merged first.
 
 Required reading (relative to repo root):
 

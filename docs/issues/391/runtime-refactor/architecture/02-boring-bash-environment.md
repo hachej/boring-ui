@@ -22,7 +22,7 @@ It does not own the model loop, auth, billing, workspace membership, or UI bridg
 
 ```txt
 @hachej/boring-bash/shared
-  BashEnvironment, BashFs, BashExec, BashRequirement, provider capability types
+  BashEnvironment, BashFs, BashExec, BashRequirement, environment/file binding helper types
 
 @hachej/boring-bash/server
   file/tree/search/watch routes, createBashEnvironment, runtime route adapters
@@ -49,7 +49,7 @@ The concrete providers themselves live in a separate package:
   deployment tiers/providers/prereqs in 10-sandbox-deployment-eu.md)
 
 @hachej/boring-sandbox/shared
-  ProviderCapabilities (reported | unknown facts), provider contract types
+  ProviderCapabilities (reported | unknown facts), provider contract types — the only provider-capability contract
 ```
 
 No `@hachej/boring-agent` value import cycle is allowed (boring-sandbox imports agent **types only**; boring-bash imports boring-sandbox **values** + agent **types**).
@@ -69,7 +69,7 @@ Do not collapse current runtime modes into provider names. Mode resolution (`res
 
 ## Provider capability matrix
 
-Provider labels lie unless backed by capability facts.
+Provider labels lie unless backed by capability facts. The authoritative `ProviderCapabilities` type lives in `@hachej/boring-sandbox/shared`; boring-bash may mirror those facts in environment summaries, but must not define a second provider-capability contract.
 
 | Provider | FS | Exec | Real Bash | Real binaries | Network isolation | Notes |
 | --- | --- | --- | --- | --- | --- | --- |

@@ -29,7 +29,7 @@ Derived strictly from [TODO.md](./TODO.md) and [PLAN.md](./PLAN.md). Tick each b
 - [ ] Reconnect goes through `@durable-streams/client` + T1's DS offsets; the `?cursor=` NDJSON path and `schedulePiChatReconnect`/`replay_gap` recovery are removed from the front by the final commit.
 - [ ] `usePiSessions`/`PiChatPanel` external API unchanged; workspace UI runs unmodified (no consumer edits).
 - [ ] Public contract keyed by `sessionId` only; the platform-addressing invariant guard is active and tested; `x-boring-workspace-id → SessionCtx` documented as adapter-owned (`transport.md`).
-- [ ] Headless Node consumer interleaves with the UI against one shared `createAgent()` session (06 T2 exit).
+- [ ] Headless Node consumer interleaves with the UI against one shared `createAgent()` session ([../../INDEX.md](../../INDEX.md) Phase T2 exit).
 - [ ] No new server-side event/approval logic (T1 owns it); any T1 gap filed as a bead, not patched here.
 
 ## Exit criteria

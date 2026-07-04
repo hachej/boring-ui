@@ -7,7 +7,7 @@ Derived strictly from [TODO.md](./TODO.md) and [PLAN.md](./PLAN.md). Tick each b
 
 ## Beads
 - [ ] BBP0-001 — Write the v2 runtime-free + surface-agnostic ADR entry
-- [ ] BBP0-002 — Ratify the locked decisions from `08` (currently 1–10) + the v2 north star
+- [ ] BBP0-002 — Ratify all 11 locked decisions from `08` + the v2 north star
 - [ ] BBP0-003 — Annotate runtime docs + §7e pairing invariant
 - [ ] BBP0-004 — Draft #391 pointer comment + issue-body reconciliation
 - [ ] BBP0-005 — Supersession notes inside the plan pack
@@ -20,11 +20,11 @@ Derived strictly from [TODO.md](./TODO.md) and [PLAN.md](./PLAN.md). Tick each b
 
 ## Review gates
 - [ ] Thermo architecture review of the pack (per `README.md` "Review rule") is clean before Phase 1 coding starts: no import cycle, no duplicated provisioning/readiness system, no fs/bash split brain, no cwd leak, no scope leak, no overclaimed issue closure.
-- [ ] A reviewer confirms all 10 `08` decisions are recorded with a status and a source pointer, and that §7e's supersession note does not weaken the no-split-brain guarantee for boring-bash-active runtimes.
+- [ ] A reviewer confirms all 11 `08` decisions are recorded with a status and a source pointer, and that §7e's supersession note does not weaken the no-split-brain guarantee for boring-bash-active runtimes.
 - [ ] No implementation bead in P1 starts until BBP0-001..005 are merged and #391 points to the v2 pack.
 
 ## Exit criteria
-- [ ] A new locked decision (the v2 runtime-free + surface-agnostic ADR) is merged into `docs/DECISIONS.md` in the 4-field format, and the 10 locked decisions from `08` are each ratified with a status of `decided`/`deferred`.
+- [ ] A new locked decision (the v2 runtime-free + surface-agnostic ADR) is merged into `docs/DECISIONS.md` in the 4-field format, and all 11 locked decisions from `08` are each ratified with a status of `decided`/`deferred`.
 - [ ] `packages/agent/docs/runtime.md` no longer implies pure/headless agents require a Workspace+Sandbox pair.
 - [ ] `docs/DECISIONS.md` §7e ("Pairing invariant") carries a supersession note scoping the pairing to boring-bash-active runtimes only.
 - [ ] Issue #391 body/pointer references the v2 pack; a ready-to-post comment body is drafted in-repo.

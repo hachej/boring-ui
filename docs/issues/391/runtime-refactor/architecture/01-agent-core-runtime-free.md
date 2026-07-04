@@ -42,7 +42,7 @@ boring-agent has no bash knowledge except type-level feature hooks
 
 **No `AgentFeature` abstraction.** There is exactly one prospective contributor (boring-bash), so a `features` registry is a speculative abstraction with a single consumer — forbidden by the no-abstraction-without-two-consumers policy. `createAgent()` config uses the **existing seams directly**: `tools` (extra `AgentTool[]`), `systemPromptAppend` / `systemPromptDynamic`, and readiness gates (`mergeTools({ checkReadiness })` + `registerCapabilitiesContributor`). A pure agent and a non-workspace host use these same seams without importing workspace internals — no new registry, no `AgentFeature`/`AgentFeatureContext` interface, no `features?: AgentFeature[]` config member.
 
-Boring-bash contributes through those seams as a **plain bundle**, not a core contract: `createBashAgentFeature()` (defined in Phase 3, `TODO-P3-routes-tools-move.md`) returns `{ tools, readinessRequirements }` — a boring-bash-local type — that the host **spreads into the `createAgent()` config** (`tools: [...hostTools, ...bashBundle.tools]`). The core never learns the word "feature".
+Boring-bash contributes through those seams as a **plain bundle**, not a core contract: `createBashAgentFeature()` (defined in Phase 3, [`../work/P3-routes-tools/TODO.md`](../work/P3-routes-tools/TODO.md)) returns `{ tools, readinessRequirements }` — a boring-bash-local type — that the host **spreads into the `createAgent()` config** (`tools: [...hostTools, ...bashBundle.tools]`). The core never learns the word "feature".
 
 ```ts
 interface AgentEnvironment {

@@ -10,7 +10,7 @@ Handoff: self-contained work order for one autonomous coding agent (pi or gpt-5.
 
 ### Depends on
 
-- **Phase 3** (`TODO-P3-routes-tools-move.md`): file routes + `write`/`edit` tools already in `boring-bash/server` + `boring-bash/agent`. (The document-authority seam that would hook the moved `write`/`edit` tools is **deferred out of this epic** — BBP4-013; P4 leaves those tools as raw file ops.)
+- **Phase 3** ([`../P3-routes-tools/TODO.md`](../P3-routes-tools/TODO.md)): file routes + `write`/`edit` tools already in `boring-bash/server` + `boring-bash/agent`. (The document-authority seam that would hook the moved `write`/`edit` tools is **deferred out of this epic** — BBP4-013; P4 leaves those tools as raw file ops.)
 
 ### Front plugin inventory in `packages/workspace` (Phase 4 move targets)
 
@@ -36,7 +36,7 @@ Registration/consumers to repoint (grep-verified):
 
 ## Goal / exit criteria
 
-Filesystem front plugin lives in `@hachej/boring-bash/plugin`, registered by workspace with no package cycle; panel ids + `workspace.open.path` resolver + file panel binding + agent file bridge/session-change integration + Company file-tree root + capability-based readonly panes preserved; tree data factored into a plain internal function (the pluggable `FileTreeDataProvider` boundary is deferred to #295); the document-authority write/edit override is **deferred out of this epic** (BBP4-013). Exit (06 Phase 4):
+Filesystem front plugin lives in `@hachej/boring-bash/plugin`, registered by workspace with no package cycle; panel ids + `workspace.open.path` resolver + file panel binding + agent file bridge/session-change integration + Company file-tree root + capability-based readonly panes preserved; tree data factored into a plain internal function (the pluggable `FileTreeDataProvider` boundary is deferred to #295); the document-authority write/edit override is **deferred out of this epic** (BBP4-013). Exit per [`../../INDEX.md`](../../INDEX.md) Phase 4:
 
 - `exec_ui openFile` still opens files (same panel ids, same resolver).
 - file tree data flows through one internal function with unchanged behavior (provider boundary deferred to #295).

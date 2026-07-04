@@ -84,7 +84,7 @@ The multi-agent route model must support:
 
 ## External harness review/question hooks (#380)
 
-External systems can create review/question/approval hooks against a workspace/agent/session. The authoritative contract is defined in [`01-agent-core-runtime-free.md`](01-agent-core-runtime-free.md); this file only defines multi-agent routing requirements.
+External systems can create review/question/approval hooks against a workspace/agent/session. The authoritative request/callback/redaction contract lands in Phase 7, [`../work/P7-multi-agent-inspection/TODO.md`](../work/P7-multi-agent-inspection/TODO.md) BBP7-006; [`01-agent-core-runtime-free.md`](01-agent-core-runtime-free.md) only records that P1 defers hooks. This file defines the multi-agent routing requirements that contract must satisfy.
 
 Requirements:
 

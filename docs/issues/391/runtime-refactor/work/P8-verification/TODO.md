@@ -26,7 +26,7 @@ Handoff: self-contained work order for one autonomous coding agent (pi or gpt-5.
 
 ## Goal / exit criteria
 
-Match `06` Phase 8 (v2):
+Match [`../../INDEX.md`](../../INDEX.md) Phase 8 (v2):
 
 1. **Zero `TODO(remove:*)` markers repo-wide**, asserted by a check wired into `pnpm lint:invariants` (fails CI if any marker survives).
 2. `@hachej/boring-agent` package docs document the **four-part surface contract** (`08`) + the `createAgent()` public runtime API as the stable public surface.
@@ -36,7 +36,7 @@ Match `06` Phase 8 (v2):
 
 ## Non-negotiables
 
-- **The rule (state it, enforce it): a surviving `TODO(remove:*)` marker reopens the phase of its NAMED deletion-bead owner** (which, per rule 2's cross-TODO carve-out, may be a *later* TODO than the one that planted the marker — e.g. `TODO(remove:BBT2-006)` reopens T2, not the T1-era code that carries it). P8 does NOT delete other phases' transitional code and does NOT convert a live marker into a new "cleanup later" bead. If the marker is still live, its named owner's phase is not done — file it back to that owner phase, do not absorb it here (`README.md` rule 2; `06` Phase 8: "not a dumping ground for deferred deletions").
+- **The rule (state it, enforce it): a surviving `TODO(remove:*)` marker reopens the phase of its NAMED deletion-bead owner** (which, per rule 2's cross-TODO carve-out, may be a *later* TODO than the one that planted the marker — e.g. `TODO(remove:BBT2-006)` reopens T2, not the T1-era code that carries it). P8 does NOT delete other phases' transitional code and does NOT convert a live marker into a new "cleanup later" bead. If the marker is still live, its named owner's phase is not done — file it back to that owner phase, do not absorb it here ([`../../README.md`](../../README.md) rule 2; [`../../INDEX.md`](../../INDEX.md) Phase 8: "not a dumping ground for deferred deletions").
 - Extend the existing invariant scripts; do NOT add a parallel lint framework (`README.md` global non-negotiable: "extend, don't bypass").
 - Documentation states the **stable** public API only — the four-part contract, `createAgent()`, the two-handles rule. Do not document internal/transport internals as public.
 - Do NOT relax any `00` invariant to make the gate pass. If an invariant genuinely cannot hold, that is a finding to escalate, not to weaken.
@@ -62,7 +62,7 @@ Match `06` Phase 8 (v2):
 ### BBP8-002 — Document the four-part surface contract as stable public API · size M
 - **Title**: `@hachej/boring-agent` package docs describe the four-part surface contract + `createAgent()` as the stable public API.
 - **Files touch/create**: the canonical agent package README (`packages/agent/README.md` — confirm via `packages/agent/package.json` before editing) + `packages/agent/docs/runtime.md`. Document, from `08`: (1) message in — `AgentSendInput { sessionId?, content, attachments?, actor }` (omit `sessionId` to start a session); (2) event stream out — the indexed replayable `AgentEvent { v, eventIndex, timestamp, sessionId, chunk }`; (3) approvals — `needsApproval` on the tool → request event → `resolveInput(sessionId, requestId, ResolveInputResponse)`, one channel; (4) two handles — runtime-owned `sessionId`, surface-owned addressing; public APIs accept `sessionId`/`SessionCtx` only. Include the `createAgent()` façade surface — the **nine** members `start`/`stream`/`send`/`resolveInput`/`interrupt`/`stop`/`sessions`/`readiness`/`dispose` (`interrupt(sessionId)` = abort current turn, `stop(sessionId)` = end/close session) — and the surface-adapter three-step (`08` § "Surface adapters"). Link the conformance suites (`08` § "Conformance") as the executable contract.
-- **Notes**: This is the `06` Phase 8 additional exit criterion and `README.md` § "Phases 5–8 deltas" Phase 8 delta. Keep it a description of what shipped (P1/T1/T2/S1) — do not spec new API. If the `AGENTS.md`/`DECISIONS.md` ADR from Phase 0 needs a back-reference, add a one-line pointer, do not duplicate.
+- **Notes**: This is the [`../../INDEX.md`](../../INDEX.md) Phase 8 additional exit criterion and README Phase 8 delta. Keep it a description of what shipped (P1/T1/T2/S1) — do not spec new API. If the `AGENTS.md`/`DECISIONS.md` ADR from Phase 0 needs a back-reference, add a one-line pointer, do not duplicate.
 - **Tests**: doc build/lint if the repo has one (`pnpm check:generated-artifacts` if docs are generated); otherwise a link-check that the referenced symbols exist (`createAgent`, `AgentEvent`, `AgentSendInput`, `ResolveInputResponse`) as exports.
 - **Acceptance**: the four-part contract + `createAgent()` are documented as stable public API; referenced symbols exist.
 
@@ -84,9 +84,9 @@ Match `06` Phase 8 (v2):
   - the **document-authority write/edit override seam** (the whole seam — not just a registry — deferred out of this epic; arrives with its first real authority implementation #367/#226, P4 BBP4-013);
   - **governed-context-in-embeds** (injecting a readonly `company_context` binding into a spreadsheet/product embed) — the **post-E2 follow-up** descoped from S2 (`TODO-S2` BBS2-001);
   - **P6b — child-app scoping** (BBP6-001 consume `ResolvedChildAppContext`, BBP6-006 Macro scoping) — HARD BLOCKED on the shared child-app platform type (`ResolvedChildAppContext`, #376); a **tracked follow-up OUTSIDE the epic exit**. **P8 files this follow-up issue and confirms it is filed — it does not wait on P6b landing** (this is the anti-deadlock guarantee: P8 gates on all lanes EXCEPT P6b);
-  - `00` still-open decisions 3 (providers package location), 5 (provisioning sharing defaults), 7 (surface addressing store location);
+  - `00` still-open decisions 5 (provisioning sharing defaults) and 7 (surface addressing store location); decision 3 (providers package location) is already resolved by `08` decision 11 and must not be reopened;
   - any Phase 5 (provisioning/readiness) and Phase 6a task not yet beaded.
-- **Notes**: This bead **catalogs and files**, it does not build. Cross-check each `00` § "Issue coverage posture" item: mark which acceptance actually landed (so the plan does not overclaim) and file the rest.
+- **Notes**: This bead **catalogs and files**, it does not build. Cross-check each `00` § "Issue coverage posture" item: mark which acceptance actually landed (so the plan does not overclaim) and file the rest. It also runs the plan-pack navigability gate from `07`: canonical files outside legacy `todos/` must not reference old nonexistent TODO filenames or the removed architecture-six file; every cross-work-package pointer should be a real relative link, with `INDEX.md` as the single ordering authority.
 - **Tests**: n/a (tracking artifacts). Acceptance is the filed issue list referenced from the plan or a `docs/issues/391/runtime-refactor/BACKLOG.md`-style index if the repo prefers in-repo tracking.
 - **Acceptance**: every deferred/un-beaded plan task has a tracked issue/bead id; no actionable item lives only in prose. **The P6b follow-up issue is filed** (and P8 confirms it is filed, without gating on P6b landing).
 

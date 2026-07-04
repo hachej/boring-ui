@@ -123,7 +123,7 @@ Legend — nature: **new** = net-new code · **move** = rename-detected + import
 | pr5-split-remote-worker | BBP2-006 | move | budget-exempt (~1k churn) | protocol → `boring-sandbox/shared`, client/adapter → `boring-sandbox/providers`; bytes round-trip; worker import-graph has no agent-core dep; **worker capabilities stay `'unknown'` — NO handshake here (handshake owned solely by BBP5-008)** | `audit:imports` |
 | pr6-migrate-delete-invariants | BBP2-007 + BBP2-008 | move (delete origin exports) + new (invariant) | ~80 (invariant script) | static: agent old paths have no bash/sandbox value import / no re-export; boring-bash→sandbox value edge + sandbox→agent types-only edge both asserted; apps compile | `lint:invariants`; `audit:imports` |
 
-**P2 total: 7 PRs** (adds pr0 scaffold). Precondition: P1 injection seam present (else STOP+report). Bumps `@hachej/boring-agent` minor (relocation). New package `@hachej/boring-sandbox` scaffolded in pr0 and populated across pr1–pr5.
+**P2 total: 7 PRs** (adds pr0 scaffold). Precondition: P1 injection seam present (else STOP+report). No `@hachej/boring-agent` minor bump here; the relocation minor bump is P3 per `INDEX.md`/`08`. New package `@hachej/boring-sandbox` scaffolded in pr0 and populated across pr1–pr5.
 
 ### P3 — Move file/bash routes + tools → boring-bash (Phase 3, off P2)
 
@@ -191,12 +191,12 @@ Adds the `@hachej/boring-sandbox/mounts` export (created package from P2) + the 
 
 | PR | beads | nature | net-new vs budget | test deliverables | gate |
 | --- | --- | --- | --- | --- | --- |
-| pr1-mount-driver-lifecycle | BBX1-001 + BBX1-002 | new | ~600–900 (`./mounts` export, rclone driver, per-session lifecycle) | rclone argv (`--vfs-cache-mode full` + tuned timeout/retry); readiness gate (mountinfo + stat/readdir); lazy-unmount + reap; `ENOTCONN` re-mount vs `EIO` retry; per-session isolation | `boring-sandbox check:invariants`; `boring-sandbox test` |
+| pr1-rclone-mount-lifecycle | BBX1-001 + BBX1-002 | new | ~600–900 (`./mounts` export, concrete rclone mount module, per-session lifecycle) | rclone argv (`--vfs-cache-mode full` + tuned timeout/retry); no generic `MountDriver` interface; readiness gate (mountinfo + stat/readdir); lazy-unmount + reap; `ENOTCONN` re-mount vs `EIO` retry; per-session isolation | `boring-sandbox check:invariants`; `boring-sandbox test` |
 | pr2-bind-capability | BBX1-003 + BBX1-004 | new | ~300–500 (bwrap bind + `mounts.fuseS3` fact) | host-mount→`--(ro-)bind`, no `/dev/fuse`/`fusermount3`/cred in arg set; un-ready bind refused; `vercel`/`unknown` fail closed | `boring-sandbox test`; `audit:imports` |
 | pr3-cred-broker-env | BBX1-005 + BBX1-006 | new | ~700–1000 (STS broker + S3 `Environment` + no-leak mount) | prefix-scoped STS (sibling-prefix denied, MinIO); cred in mount-process env only + absent everywhere else; readonly-S3 no-leak conformance mount `passed:true`; `bash-sees-mount == file-routes-see-mount` | `check:isolation`; `boring-bash test` |
-| pr4-eu-matrix-overlay | BBX1-007 (+ BBX1-008 optional) | test + new | ~150–350 (EU matrix; optional fuse-overlayfs variant) | MinIO round-trip (adds `test:mounts:eu` script); secrets negative test; endpoint-config parity OVH/Scaleway/MinIO; overlay variant uses fuse-overlayfs (not kernel overlayfs over FUSE) | `boring-sandbox run test:mounts:eu` (new script); `boring-sandbox test` |
+| pr4-eu-matrix | BBX1-007 | test + new | ~150–250 (EU matrix) | MinIO round-trip (adds `test:mounts:eu` script); secrets negative test; endpoint-config parity OVH/Scaleway/MinIO; fuse-overlayfs variant deferred, not built | `boring-sandbox run test:mounts:eu` (new script); `boring-sandbox test` |
 
-**X1 total: 4 PRs** (pr4 folds the optional BBX1-008 overlay variant). Preconditions: P2 (`@hachej/boring-sandbox` + providers) **and** P5 (capability-fact + secrets-broker) present, else STOP+report. Off the critical path (bash-lane parallel, like E1/E2); gates into P8 like every delivered phase. EU-sovereign: MinIO-in-CI, no US-hosted default (invariant 15).
+**X1 total: 4 PRs** (BBX1-008 overlay variant is deferred out of X1). Preconditions: P2 (`@hachej/boring-sandbox` + providers) **and** P5 (capability-fact + secrets-broker) present, else STOP+report. Off the critical path (bash-lane parallel, like E1/E2); gates into P8 like every delivered phase. EU-sovereign: MinIO-in-CI, no US-hosted default (invariant 15).
 
 ### P6 — Plugin + child-app integration (Phase 6, off P5) — **split P6a / P6b**
 
@@ -251,7 +251,7 @@ Adds the `@hachej/boring-sandbox/mounts` export (created package from P2) + the 
 
 | PR | beads | nature | net-new vs budget | test deliverables | gate |
 | --- | --- | --- | --- | --- | --- |
-| pr1-hono-fastify-wrapper-doc | BBS1-001 + BBS1-007 | new (+ `packages/channels/*` in `pnpm-workspace.yaml`) + doc | ~200 | exact-byte passthrough + status/header round-trip; example typechecks | new-package `build`/`typecheck` |
+| pr1-hono-fastify-wrapper-doc | BBS1-001 + BBS1-007 | new (+ `packages/channels/*` in `pnpm-workspace.yaml` and root `build:packages`) + doc | ~200 | exact-byte passthrough + status/header round-trip; example typechecks; root aggregate includes Slack package | new-package `build`/`typecheck`; `pnpm run build:packages` |
 | pr2-skeleton-ingress-store | BBS1-002 + BBS1-003 | new | ~350–550 | one `agent.start()` per message (admission; runtime allocates `sessionId`, adapter writes `originSurface:'slack'`); dedupe on `event_id`; bot ignored; `conversationKey→sessionId` isolation | `audit:imports` (no boring-bash) |
 | pr3-egress-batching | BBS1-004 | new | ~250–400 | egress via `agent.stream(sessionId,{startIndex})`: N deltas <1s → 1 post + bounded updates; turn-end flush; 429 backoff | `test` |
 | pr4-approvals-slack | BBS1-005 | new | ~250–400 | button → `resolveInput` right session/request; cross-surface answer consistent | `test` |

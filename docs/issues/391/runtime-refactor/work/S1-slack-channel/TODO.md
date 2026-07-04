@@ -16,7 +16,7 @@ Handoff: self-contained work order for one autonomous coding agent (pi or gpt-5.
   - `ChannelRoute { method: string; path: string; handler: Handler<E> }` where `Handler` is a Hono handler operating on a `Context` whose `c.req.raw` is a WHATWG `Request`.
   - Signature verification, payload parsing, and URL-verification challenge are handled **inside** the package. Retries are NOT deduped by the package (dedupe on `event_id` in the adapter).
 - Egress is NOT in `@flue/slack`. Use `@slack/web-api` `WebClient` (`chat.postMessage`, `chat.update`) — verified as the plan's chosen egress (`08` Slack row).
-- Existing package layout to mirror for a new workspace package: `packages/boring-bash/package.json` (scripts: `build`=`tsup`, `typecheck`=`tsc --noEmit`, `test`=`vitest run --passWithNoTests`, `check:invariants`, `lint`), exports map with `.`/`./shared`/`./server`. `pnpm-workspace.yaml` already globs `packages/*` — a new `packages/channels/slack` is NOT matched by `packages/*`; **add `packages/channels/*` to `pnpm-workspace.yaml`**.
+- Existing package layout to mirror for a new workspace package: `packages/boring-bash/package.json` (scripts: `build`=`tsup`, `typecheck`=`tsc --noEmit`, `test`=`vitest run --passWithNoTests`, `check:invariants`, `lint`), exports map with `.`/`./shared`/`./server`. `pnpm-workspace.yaml` already globs `packages/*` — a new `packages/channels/slack` is NOT matched by `packages/*`; **add `packages/channels/*` to `pnpm-workspace.yaml`**. Root `build:packages` is also filtered to `./packages/*` + `./plugins/*`; in the same S1 PR, add `--filter './packages/channels/*'` (or the exact package filter) so `pnpm run build:packages`, root `typecheck`, and root `test` include the Slack package.
 - Two-handles rule (`08`): `sessionId` is runtime-owned; `conversationKey` is the surface-owned addressing handle. The adapter keeps its own `conversationKey → sessionId` map. Public agent APIs accept `sessionId` only.
 
 ## Goal / exit criteria
@@ -25,12 +25,12 @@ Match `INDEX.md` Phase S1 exit criteria:
 1. Same agent + same session store serves the workspace UI **and** a Slack thread.
 2. An approval requested in Slack can be answered in Slack or the workspace.
 3. The Slack package imports only the public agent contract (`@hachej/boring-agent` client/server) + `@flue/slack` + `@slack/web-api` — no `boring-bash` server code, no provider internals.
-4. Adding a second channel (e.g. Teams) needs no new ingress code beyond the per-channel callback (proven by the shared Hono→Fastify wrapper).
+4. Adding a second channel (e.g. Teams) needs no new ingress code beyond the per-channel callback; the wrapper is channel-agnostic in shape inside Slack, and extraction waits until a second channel lands.
 5. Runs against `runtime: 'none'` and against readonly `company_context` bindings.
 
 ## Non-negotiables
 
-- We write only: callback → `agent.start()` (admission; the runtime allocates the `sessionId`) + `agent.stream(sessionId, { startIndex })` (egress); `conversationKey → sessionId` store; egress + approval blocks via `@slack/web-api`; the shared Hono→Fastify handler wrapper. Ingress (signatures, parsing, codec) comes from `@flue/slack`.
+- We write only: callback → `agent.start()` (admission; the runtime allocates the `sessionId`) + `agent.stream(sessionId, { startIndex })` (egress); `conversationKey → sessionId` store; egress + approval blocks via `@slack/web-api`; the Hono→Fastify handler wrapper kept inside Slack. Ingress (signatures, parsing, codec) comes from `@flue/slack`.
 - The Hono→Fastify wrapper lives **inside `packages/channels/slack`** — Slack is the only channel that exists, so a shared package would be a single-consumer abstraction (forbidden). Keep the wrapper channel-agnostic in shape, but do **not** hoist it into a shared package upfront. **Extract `packages/channels/shared` (`@hachej/boring-channel-core`) only when a second `@flue/*` channel actually lands** — that second channel is the state trigger.
 - Surface-owned addressing: the adapter owns the `conversationKey → sessionId` map. Never pass `teamId/channelId/threadTs` into agent APIs.
 - Addressing isolation: one surface/team+channel+thread cannot resolve another's `sessionId`.
@@ -49,7 +49,7 @@ Match `INDEX.md` Phase S1 exit criteria:
 
 ### BBS1-001 — Hono→Fastify channel handler wrapper (inside the Slack package) (M)
 - Description: Util that mounts `@flue/*` `ChannelRoute[]` (Hono handlers over WHATWG `Request`) behind Fastify. Lives inside `packages/channels/slack` — **not** an upfront shared package (single consumer).
-- Files: create `packages/channels/slack/src/mountChannelRoutes.ts` (+ export from `src/index.ts`); add `packages/channels/*` to `pnpm-workspace.yaml` (needed for the Slack package itself).
+- Files: create `packages/channels/slack/src/mountChannelRoutes.ts` (+ export from `src/index.ts`); add `packages/channels/*` to `pnpm-workspace.yaml` (needed for the Slack package itself); update root `package.json` `build:packages` so the aggregate build includes `./packages/channels/*`.
 - Notes: `mountChannelRoutes(fastify, basePath, routes: ChannelRoute[])` — for each route, register a Fastify handler that builds a WHATWG `Request` from the Fastify `req` (method, URL, headers, raw body — Slack signature check needs exact bytes, so capture the raw body buffer, do not let Fastify JSON-parse the channel routes) and invokes the Hono `handler` via a minimal Hono `Context` (or a mini `Hono` app: `const app = new Hono(); app.on(method, path, handler)` then `app.fetch(request)`). Map the returned `Response` back to Fastify (status, headers, body). Prefer the mini-Hono-app path — least glue, both documented as trivial in `08`. Keep its shape channel-agnostic (so a future second `@flue/*` channel can reuse it), but **do not hoist it to a shared package yet** — extract `packages/channels/shared` (`@hachej/boring-channel-core`) **only when that second channel actually lands** (state trigger; no-abstraction-without-two-consumers).
 - Tests: `packages/channels/slack/src/__tests__/mountChannelRoutes.test.ts` — a fake `ChannelRoute` echoing `req.raw` headers/body proves exact-byte passthrough and status/header mapping.
 - Acceptance: raw request bytes reach the Hono handler unmodified; response round-trips; the wrapper is channel-agnostic in shape but ships inside the Slack package (no upfront shared package).
@@ -91,16 +91,16 @@ Match `INDEX.md` Phase S1 exit criteria:
 - Acceptance: `passed` for both runtime modes; isolation check fails a crossed key.
 
 ### BBS1-007 — Fastify mount example / host wiring doc (S)
-- Description: Show a host mounting the Slack adapter via the shared wrapper (proves "second channel = just another callback").
+- Description: Show a host mounting the Slack adapter via the local, channel-agnostic wrapper (proves the wrapper shape is reusable later without extracting it now).
 - Files: `packages/channels/slack/README.md` + a runnable `packages/channels/slack/examples/mount.ts`.
-- Notes: `mountChannelRoutes(fastify, '/slack', adapter.routes)`; env: `SLACK_SIGNING_SECRET`, `SLACK_BOT_TOKEN`. Note that a Teams channel would reuse `mountChannelRoutes` unchanged. No boring-bash import anywhere in the example.
+- Notes: `mountChannelRoutes(fastify, '/slack', adapter.routes)`; env: `SLACK_SIGNING_SECRET`, `SLACK_BOT_TOKEN`. Note that a Teams channel can reuse the wrapper shape when it lands; until then the code remains local to Slack. No boring-bash import anywhere in the example.
 - Tests: typecheck of the example (include it in the package tsconfig).
 - Acceptance: example compiles; README documents the two-handles + no-boring-bash rules.
 
 ## Verification — exact commands verified against package.json scripts (new packages mirror boring-bash)
 
 ```bash
-# after adding packages/channels/* to pnpm-workspace.yaml and installing:
+# after adding packages/channels/* to pnpm-workspace.yaml, adding packages/channels/* to root build:packages, and installing:
 pnpm install
 pnpm --filter @hachej/boring-channel-slack run build       # tsup
 pnpm --filter @hachej/boring-channel-slack run typecheck   # tsc --noEmit
@@ -108,7 +108,7 @@ pnpm --filter @hachej/boring-channel-slack run test        # vitest run
 
 # import-boundary + repo regression
 pnpm audit:imports        # must show no boring-bash / provider-internal import from the slack package
-pnpm run build:packages
+pnpm run build:packages   # must include @hachej/boring-channel-slack via the packages/channels/* filter
 pnpm run test
 ```
 (New package `package.json` scripts MUST be: `build: tsup`, `typecheck: tsc --noEmit`, `test: vitest run --passWithNoTests`, `lint: pnpm run typecheck`, mirroring `packages/boring-bash/package.json`.)

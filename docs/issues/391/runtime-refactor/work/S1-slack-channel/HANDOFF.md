@@ -23,7 +23,7 @@ Derived strictly from [TODO.md](./TODO.md) and [PLAN.md](./PLAN.md). Tick each b
 - [ ] `pnpm --filter @hachej/boring-channel-slack run typecheck`
 - [ ] `pnpm --filter @hachej/boring-channel-slack run test`
 - [ ] `pnpm audit:imports`
-- [ ] `pnpm run build:packages`
+- [ ] `pnpm run build:packages` (includes `@hachej/boring-channel-slack` via root `packages/channels/*` filter)
 - [ ] `pnpm run test`
 
 ## Review gates
@@ -38,7 +38,7 @@ Derived strictly from [TODO.md](./TODO.md) and [PLAN.md](./PLAN.md). Tick each b
 - [ ] Same agent + same session store serves the workspace UI **and** a Slack thread.
 - [ ] An approval requested in Slack can be answered in Slack or the workspace.
 - [ ] The Slack package imports only the public agent contract (`@hachej/boring-agent`) + `@flue/slack` + `@slack/web-api` — no `boring-bash` server code, no provider internals.
-- [ ] Adding a second channel (e.g. Teams) needs no new ingress code beyond the per-channel callback (shared Hono→Fastify wrapper).
+- [ ] Hono→Fastify wrapper is channel-agnostic in shape inside Slack; shared extraction is deferred until a second channel lands.
 - [ ] Runs against `runtime: 'none'` and against readonly `company_context` bindings.
 
 ## Closeout

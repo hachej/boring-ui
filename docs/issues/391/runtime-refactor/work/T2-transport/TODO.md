@@ -4,7 +4,7 @@ Handoff: self-contained work order for one autonomous coding agent (pi or gpt-5.
 
 ## Context (read first)
 
-- Plan: `docs/issues/391/runtime-refactor/INDEX.md` — "Phase T2 — Transport adapters". Depends on **Phase T1** (`TODO-T1-durable-events-approvals.md` in this folder): the durable `EventStreamStore`, `AgentEvent` envelope, DS-compliant `GET`/`HEAD` stream routes, `agent.stream(sessionId,{startIndex})` (read primitive), and on-stream approvals must already exist. Do not start T2 until T1's conformance suite is green.
+- Plan: `docs/issues/391/runtime-refactor/INDEX.md` — "Phase T2 — Transport adapters". Depends on **Phase T1** ([`../T1-durable-events/TODO.md`](../T1-durable-events/TODO.md)): the durable `EventStreamStore`, `AgentEvent` envelope, DS-compliant `GET`/`HEAD` stream routes, `agent.stream(sessionId,{startIndex})` (read primitive), and on-stream approvals must already exist. Do not start T2 until T1's conformance suite is green.
 - Plan: `docs/issues/391/runtime-refactor/architecture/08-pluggable-agent-surfaces.md` — "Vercel AI SDK `ChatTransport`" (UI state and wire protocol are separate; `sendMessages` + `reconnectToStream` is the entire transport contract), "Two handles (hard rule)", "Conformance" item 3 ("Transport conformance: `send` + `reconnect` semantics identical in-process and over HTTP").
 - Durable Streams client (locked in 08): `@durable-streams/client` (deps `@microsoft/fetch-event-source` + `fastq`) provides reconnection, backoff, offset checkpointing. T2 wires the front's reconnect onto it (or a thin `ChatTransport.reconnectToStream` backed by it) against T1's DS routes.
 
@@ -40,7 +40,7 @@ Match `INDEX.md` Phase T2 exit criteria:
 - Do NOT touch the T1-built DS code — the durable event store, the DS `GET`/`HEAD` stream routes, or approvals-on-stream. That is T1. If you find a T1 gap, file a bead, do not patch it here. **Carve-out (BBT2-006):** T2 *does* delete the **LEGACY** server-side `?cursor=` NDJSON replay path in this phase (the old `PiChatReplayBuffer` + `?cursor=` route handling) once the DS transport passes conformance + the workspace playground — that legacy path is T2's to remove, and it is distinct from the T1-built DS store/routes which stay untouched.
 - Do NOT delete `piChatStream.ts`/`remotePiSession.ts` until the refit passes the workspace playground and conformance; land the new transport behind `createRemoteSession` injection first, then remove the old path in the same PR's final commit.
 - Do NOT let `workspaceId`/storage-scope leak into `createAgent()` signatures — resolve them in the HTTP adapter (`getRequestContext`) as today.
-- Do NOT build the Slack/Excel surfaces — those are Phases S1/S2 (`06`). T2 only proves the contract with in-process + HTTP + a headless Node consumer.
+- Do NOT build the Slack/Excel surfaces — those are Phases S1/S2 ([`../S1-slack-channel/TODO.md`](../S1-slack-channel/TODO.md), [`../S2-embed-contract/TODO.md`](../S2-embed-contract/TODO.md)). T2 only proves the contract with in-process + HTTP + a headless Node consumer.
 - Do NOT touch the render/projection layer (`piChatReducer.ts`, `piChatPartMerging.ts`, `piChatAssistantCommit.ts`, `selectors.ts`, `PiTimelineMessage.tsx`, `toolRenderers.tsx`, `bareToolRenderers/`, `primitives/`, composer components). Decision 8 in `../../architecture/08-pluggable-agent-surfaces.md`: the front chat provider is unchanged — the UI is already an ai-elements/shadcn stack insulated from the wire protocol by the `PiChatEvent → BoringChatMessage` projection. Do not "modernize" it onto AI-SDK `UIMessage.parts` and do not swap primitives; the only sanctioned render-layer follow-up (shadcn `MessageScroller` in `PiConversationSurface`) is a separate post-T2 bead, not part of this work order.
 
 ## Beads
@@ -105,7 +105,7 @@ Match `INDEX.md` Phase T2 exit criteria:
 - **Files to create**:
   - `packages/agent/scripts/headless-consumer.mts` (new): `createAgent()` → in-process transport → `sendMessages` a turn, stream `AgentEvent`s to stdout, answer an approval via `resolveInput`. Runnable with `tsx` (matches existing `dev`/`eval` scripts using `tsx`).
   - `packages/agent/src/server/transport/__tests__/interleaved.test.ts` (new): one `createAgent()` shared by an in-process transport and an HTTP transport (fastify inject); the HTTP client (simulating the UI) and the Node consumer both subscribe from `startIndex`, and a turn started by one is observed losslessly by the other; an approval requested in one is answered by the other (mirrors T1 BBT1-006 cross-client resume, now at the transport layer).
-- **Acceptance**: 06 Phase T2 exit — "a headless Node consumer drives the same session interleaved with the UI." Script runs clean; interleaved test green.
+- **Acceptance**: [`../../INDEX.md`](../../INDEX.md) Phase T2 exit — "a headless Node consumer drives the same session interleaved with the UI." Script runs clean; interleaved test green.
 
 ### BBT2-006 — Delete the legacy server-side `?cursor=` NDJSON replay path (final cutover)  · size M
 - **Title**: Remove the bespoke `?cursor=` NDJSON replay end-to-end — server route handling, `PiChatReplayBuffer`, and the superseded front helpers — after the DS transport is proven.
@@ -143,5 +143,5 @@ T2 adds `@durable-streams/client` (pinned) to `packages/agent`. Node v22.22.
 - Reconnect goes through `@durable-streams/client` + T1's DS offsets; the `?cursor=` NDJSON path and `schedulePiChatReconnect`/`replay_gap` recovery are removed from the front (or fully superseded) by the final commit.
 - `usePiSessions`/`PiChatPanel` external API unchanged; workspace UI runs unmodified (no consumer edits).
 - Public contract keyed by `sessionId` only; the platform-addressing invariant guard is active and tested; `x-boring-workspace-id → SessionCtx` documented as adapter-owned (`transport.md`).
-- Headless Node consumer interleaves with the UI against one shared `createAgent()` session (06 T2 exit).
+- Headless Node consumer interleaves with the UI against one shared `createAgent()` session ([`../../INDEX.md`](../../INDEX.md) Phase T2 exit).
 - No new server-side event/approval logic (T1 owns it); any T1 gap filed as a bead, not patched here.

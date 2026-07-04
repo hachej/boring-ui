@@ -86,7 +86,8 @@ Do **not** create a parallel provisioning engine.
 Package ownership:
 
 - `@hachej/boring-agent` keeps the provisioning engine/types/orchestration (`provisionWorkspaceRuntime()`, `ProvisionWorkspaceRuntimeOptions`) over injected adapters.
-- `@hachej/boring-bash` owns `BashRequirement`, requirement normalization, provider capability validation, and concrete provisioning adapters.
+- `@hachej/boring-bash` owns `BashRequirement` and requirement normalization; it validates requirements against provider capability facts but does not own those facts.
+- `@hachej/boring-sandbox` owns the concrete provider adapters and the authoritative `ProviderCapabilities` facts/matrix.
 - host/core/CLI composition calls the boring-bash normalizer, then passes normalized `ProvisionWorkspaceRuntimeOptions` into the agent-owned engine.
 - agent must not value-import boring-bash normalizers/providers.
 

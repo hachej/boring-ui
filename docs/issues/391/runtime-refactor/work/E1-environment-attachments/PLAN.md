@@ -23,7 +23,7 @@ Address-by-id lookup (a plain `Map<environmentId, Environment>`) is deferred to 
 Subagent attachment (BBE1-005) is deferred to Phase 7, the first real subagent consumer.
 
 ## Deliverables
-- `Environment` / `EnvironmentAttachment` / `ResolvedEnvironments` contracts in boring-bash (generalizing, not replacing, the landed #416 binding shapes); `company_context` re-expressed as the reference environment + readonly attachment.
+- `Environment` / `EnvironmentAttachment` contracts in boring-bash, and the minimal core-facing `ResolvedEnvironments` contract in agent shared (generalizing, not replacing, the landed #416 binding shapes); `company_context` re-expressed as the reference environment + readonly attachment.
 - Scoped views (`scope.subpath`) enforced by the environment host — no cwd inheritance. (The subagent attachment seam that consumes scoped views is deferred to Phase 7, the first real subagent consumer.)
 - agent core sees `ResolvedEnvironments` type-only (invariant-checked).
 - A thin `resolveAttachments` adapter reduces attachments to the existing #416 `FilesystemBinding[]` via the landed `ScopedFilesystemRuntimeBindingManager` — no `EnvironmentRegistry` class and no new prepare/dispose lifecycle. Address-by-id lookup (a plain `Map<environmentId, Environment>`) is deferred to E2, where the MCP projection needs it.

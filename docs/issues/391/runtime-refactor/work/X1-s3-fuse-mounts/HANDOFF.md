@@ -9,7 +9,7 @@ Derived strictly from [TODO.md](./TODO.md) and [PLAN.md](./PLAN.md). Tick each b
 - [ ] P5 (capability-fact `reported | unknown` fail-closed rule + host-side secrets-broker BBP5-007) present — else **STOP and report**
 
 ## Beads
-- [ ] BBX1-001 — Mount driver interface + rclone driver in `boring-sandbox/src/mounts`
+- [ ] BBX1-001 — Concrete rclone mount module in `boring-sandbox/src/mounts`
 - [ ] BBX1-002 — Per-session mount lifecycle manager (readiness gate, lazy-unmount + reap, stale recovery)
 - [ ] BBX1-003 — Host-side mount → sandbox bind (bwrap; gVisor-portable)
 - [ ] BBX1-004 — Capability fact `mounts.fuseS3: reported | unknown` + mount-type facts (fail closed; vercel reports unsupported)
@@ -17,7 +17,7 @@ Derived strictly from [TODO.md](./TODO.md) and [PLAN.md](./PLAN.md). Tick each b
 - [ ] BBX1-006 — S3-backed `Environment` integration + conformance + source-of-truth test
 - [ ] BBX1-007 — EU-endpoint matrix + secrets negative test (MinIO in CI)
 - [ ] BBX1-009 — rclone-FUSE performance benchmark (edit/build loop; exit criterion has numbers)
-- [ ] BBX1-008 — fuse-overlayfs write-back variant (optional)
+- [ ] BBX1-008 — fuse-overlayfs write-back variant deferred out of X1
 
 ## Verification commands
 - [ ] `pnpm --filter @hachej/boring-sandbox run build`
@@ -33,10 +33,10 @@ Derived strictly from [TODO.md](./TODO.md) and [PLAN.md](./PLAN.md). Tick each b
 
 ## Review gates
 - [ ] P2 (`@hachej/boring-sandbox` + providers) and P5 (capability-fact + secrets-broker machinery) present, else STOP+report.
-- [ ] One rclone driver behind the thin `mount()` interface; mountpoint-s3 documented-deferred, not built (decisions 1, 2).
+- [ ] Concrete rclone mount module only; no `MountDriver` interface/registry; mountpoint-s3 documented-deferred, not built (decisions 1, 2).
 - [ ] Host-side mount + bwrap bind; `/dev/fuse`/`fusermount3`/creds never in the sandbox arg set (decision 3); no in-sandbox FUSE path (decision 4).
 - [ ] Per-session mount isolation; readiness gate before bind; lazy-unmount + explicit reap on teardown (decisions 5, 6, 7).
-- [ ] File-tool error contract: `ENOTCONN`/`ESTALE`=storage-gone, `EIO`=transient (decision 8); default write-back = VFS-full; overlay variant = fuse-overlayfs, never kernel overlayfs over FUSE (decision 9).
+- [ ] File-tool error contract: `ENOTCONN`/`ESTALE`=storage-gone, `EIO`=transient (decision 8); default write-back = VFS-full; fuse-overlayfs variant deferred; never kernel overlayfs over FUSE (decision 9).
 - [ ] `mounts.fuseS3: reported | unknown` fails closed; `vercel` reports unsupported.
 - [ ] Creds = short-lived prefix-scoped STS, mount-process-env only, refreshed via `credential_process`; sandbox gets a directory handle, never a secret (decision 10; invariant 14) — secrets negative test green.
 - [ ] Readonly S3 mount passes the no-leak conformance suite; `bash-sees-mount == file-routes-see-mount` source-of-truth test green.
@@ -49,7 +49,7 @@ Derived strictly from [TODO.md](./TODO.md) and [PLAN.md](./PLAN.md). Tick each b
 - [ ] Any intra-phase transitional code carries `TODO(remove:<bead-id>)` + a same-phase deletion bead (README policy).
 
 ## Exit criteria
-- [ ] `mount(bucket, prefix, creds, ro) -> dir` driver interface exists with a single **rclone** driver (`--vfs-cache-mode full`); mountpoint-s3 documented as a deferred AWS-only/RO driver, not built (decisions 1, 2).
+- [ ] Concrete **rclone** mount module exists (`--vfs-cache-mode full`); no generic driver interface; mountpoint-s3 documented as deferred AWS-only/RO work, not built (decisions 1, 2).
 - [ ] A per-session mount has its own mount process, VFS cache dir, scoped creds, and isolated teardown; immutable RO datasets may be shared (decision 5).
 - [ ] Mount is bound into the sandbox **host-side** via bwrap `--bind`/`--ro-bind`; `/dev/fuse`, `fusermount3`, and creds are never exposed inside the sandbox (decision 3); the same pattern is gVisor-portable (decision 4).
 - [ ] Readiness gate polls `/proc/self/mountinfo` + probes `stat`/`readdir` before binding; an un-ready mount is never bound (decision 6).

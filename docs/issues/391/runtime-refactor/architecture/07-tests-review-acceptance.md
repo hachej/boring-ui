@@ -20,13 +20,15 @@ Status: v2 rewrite. This is the **test framework** for the pluggable-agent pack 
 
 Enforced by scripts, not test files. Extend them, never bypass (`../INDEX.md` global non-negotiables).
 
-- **Value-import audit** — `pnpm audit:imports` (`scripts/audit-imports.ts`, `FORBIDDEN_PATTERNS`): `@hachej/boring-agent` has **zero value import** from `@hachej/boring-bash`; surface packages import only the public agent contract (+ their channel ingress package); no old-path imports survive a relocation (P2/P3/P4/T1/T2 add rules here).
+- **Package-edge invariants** — package `check-invariants` scripts own package-boundary assertions: `@hachej/boring-agent` has **zero value import** from `@hachej/boring-bash` or `@hachej/boring-sandbox`; boring-bash may import boring-sandbox values + agent types; boring-sandbox imports agent types only.
+- **Import audit** — `pnpm audit:imports` (`scripts/audit-imports.ts`, `FORBIDDEN_PATTERNS`) owns repo-wide old-path and surface import gates: surface packages import only the public agent contract (+ their channel ingress package); no old-path imports survive a relocation (P2/P3/P4/T1/T2 add rules here). Do not rely on this collector alone for package-edge proofs unless its scanned roots are expanded in the same PR.
 - **Agent package invariants** — `pnpm --dir packages/agent run lint:invariants` → `bash scripts/check-invariants.sh .` (ripgrep scan). Adds the **Fastify-free façade** rule (P1 BBP1-006: no Fastify in the `createAgent()` / `@hachej/boring-agent/core` module graph) and the **no `?cursor=` / `PiChatReplayBuffer` server-side** rule (T2 BBT2-006).
 - **boring-bash invariants** — `pnpm --filter @hachej/boring-bash run check:invariants` → `packages/boring-bash/scripts/check-invariants.mjs`: required exports (`.`/`./shared`/`./server`, `./mcp` after E2), agent→boring-bash + Fastify-graph checks, and the pack-doc `(filesystem, path)` / named-binding string presence.
 - **Agent isolation** — `pnpm check:agent-isolation` → `packages/agent/scripts/check-agent-isolation.ts` (dist scan; requires a build first).
 - **Workspace plugin invariants** — `pnpm lint:workspace-plugin-invariants`.
 - **`TODO(remove:*)` marker gate** — `node scripts/check-no-remove-markers.mjs` (P8 BBP8-001), wired into `pnpm lint:invariants`. Repo-wide scan of `packages/ plugins/ apps/ scripts/` (excludes `node_modules`, `dist`, `docs/issues/391/**`). **Zero markers today**; a surviving marker names and reopens its owning phase.
 - **Bundle-size** — `pnpm check:bundle-size` (T2 adds the `@durable-streams/client` front dep; must stay under gate).
+- **Plan-pack navigability** — P8 adds a markdown link/stale-reference gate over the canonical pack (excluding legacy `todos/`): no unresolved old TODO filename references, no references to the removed architecture-six file, and `INDEX.md` remains the single ordering authority.
 
 Root aggregate for L1: `pnpm lint:invariants` (= agent `check-invariants.sh` + boring-bash `check:invariants` + workspace-plugin invariants + the marker gate) and `pnpm audit:imports`.
 
@@ -110,7 +112,7 @@ A phase exits only when its named suites + commands are green. This is the table
 
 | Phase | Must-be-green suites (beyond L1) | Commands |
 | --- | --- | --- |
-| **P0** (ADR) | `docs/DECISIONS.md` has every 08 decision (1–10) + north star + invariant 15 with a status; pack `(filesystem, path)` strings intact | `pnpm --filter @hachej/boring-bash run check:invariants` |
+| **P0** (ADR) | `docs/DECISIONS.md` has every 08 decision (1–11) + north star + invariant 15 with a status; pack `(filesystem, path)` strings intact | `pnpm --filter @hachej/boring-bash run check:invariants` |
 | **P1** (headless core) | `createAgent.pure.test.ts` smoke (plain-Node turn, no Fastify/cwd leak); invariant tests (no boring-bash value import, no Fastify in graph); **existing agent unit + Playwright e2e pass unchanged** (parity guard) | `pnpm --filter @hachej/boring-agent run test` · `run test:e2e` · `run lint:invariants` · `pnpm check:agent-isolation` |
 | **T1** (durable events/approvals) | harness conformance additions (envelope ordering, replay-from-index, approval park/resume, restart survival); `runEventStreamStoreConformance`; ask-user on-stream approval | `pnpm --filter @hachej/boring-agent run test` · `run lint:invariants` · `pnpm check:agent-isolation` · `pnpm audit:imports` |
 | **T2** (transport adapters) | `runTransportConformance` green for **both** in-process and HTTP mounts; workspace-playground e2e unmodified; legacy `?cursor=`/`PiChatReplayBuffer` deleted (invariant asserts zero matches) | `pnpm --filter @hachej/boring-agent run test` · `run lint:invariants` · `pnpm --filter workspace-playground run test:e2e` · `pnpm check:bundle-size` |
@@ -124,7 +126,7 @@ A phase exits only when its named suites + commands are green. This is the table
 | **P6b** (child-app/Macro scoping — **follow-up, NOT an epic gate**) | child-app/workspace-kind requirement narrowing; Macro requirements do not leak into a generic workspace — **HARD BLOCKED on the shared child-app platform type (#376)**; runs when unblocked and never gates P7/P8 (P8 only verifies the P6b follow-up issue is filed) | (when unblocked) `pnpm --filter @hachej/boring-workspace run test` · `pnpm --filter full-app run e2e` |
 | **P7** (multi-agent/inspection) | two agents, same `sessionId`, no shared binding/transcript/catalog; `agentId` in binding scope key + `sessionNamespace`; per-agent readiness/catalogs; session search scoped by workspace+agent; agent inspection endpoint | `pnpm --filter @hachej/boring-agent run test` · `run test:e2e` |
 | **P8** (verification/cleanup) | **zero `TODO(remove:*)` markers repo-wide**; all 00 invariants green; no old-path importer; README documents the four-part surface contract; **every lane green EXCEPT P6b** (all P1–P7, T1–T2, E1–E2, S1–S3, Phase 5, P6a — P6b is a tracked follow-up: P8 only verifies its issue is filed, never waits on it landing) | `pnpm lint:invariants` (incl. marker gate) · `node scripts/check-no-remove-markers.mjs` · `pnpm run test` · `pnpm audit:imports` |
-| **S1** (Slack channel) | `runSurfaceAdapterConformance` Slack subject (message-in/events-out, approval round-trip, addressing isolation); ingress/egress/session-store/approval unit tests; no boring-bash/provider import | `pnpm --filter @hachej/boring-channel-slack run test` · `run typecheck` · `pnpm audit:imports` |
+| **S1** (Slack channel) | `runSurfaceAdapterConformance` Slack subject (message-in/events-out, approval round-trip, addressing isolation); ingress/egress/session-store/approval unit tests; no boring-bash/provider import; root aggregate build includes `packages/channels/*` | `pnpm --filter @hachej/boring-channel-slack run test` · `run typecheck` · `pnpm run build:packages` · `pnpm audit:imports` |
 | **S2** (embed contract) | `runSurfaceAdapterConformance` embed subject (the second consumer justifying `@hachej/boring-agent/testing`) | `pnpm --filter @hachej/boring-agent run test` · embed pkg `run test` |
 | **S3** (control-plane UX) | cross-surface observation (workspace attaches to a Slack-born session by `sessionId`); central approval answering; inspection-panel wiring | `pnpm --filter @hachej/boring-workspace run test` · `pnpm --filter workspace-playground run test:e2e` |
 
@@ -154,7 +156,7 @@ Output: verdict, blockers, concrete edits, non-blocking concerns.
 
 ### Approval bar (v2)
 
-- **No import cycle** — `@hachej/boring-agent` keeps zero value import from `@hachej/boring-bash`; surfaces import only the public agent contract; workspace/core compose both without cycles (`audit:imports` + boring-bash `check:invariants`).
+- **No import cycle** — `@hachej/boring-agent` keeps zero value import from `@hachej/boring-bash` or `@hachej/boring-sandbox`; surfaces import only the public agent contract; workspace/core compose both without cycles (package invariant scripts + `audit:imports` old-path gates).
 - **No split brain** — for each provider, file route ↔ bash ↔ git/status share one source of truth; readonly façade exposes no exec; partial view physically excludes denied files. A missing split-brain test is a blocker.
 - **No Fastify in the façade graph** — `createAgent()` has no Fastify import, no env-var reads, no file-based config discovery (P1 invariant).
 - **Two-handles respected** — public agent APIs never accept platform addressing; `SessionCtx { workspaceId?, userId? }` is allowlisted tenancy, a surface-native id (Slack `ts`, workbook/sheet id, pane id) is not; no surface synthesizes a fake `workspaceId`.

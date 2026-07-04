@@ -13,10 +13,10 @@ Handoff: self-contained work order for one autonomous coding agent (pi or gpt-5.
 
 ### Depends on
 
-- **Phase 6a** (`AgentRegistry`): `06` Phase 7 scopes "against the Phase 6 `AgentRegistry`". P7 depends specifically on **P6a** — the `AgentRegistry` (BBP6-003) and the workspace `agents: [...]` declaration — **not** on P6b's child-app scoping (which may still be HARD BLOCKED on the shared child-app platform type; that does not block P7). **Verified reality: `AgentRegistry` and `agentId` do not exist anywhere in `packages/agent/src` or `packages/workspace/src` today** (`grep -rn "AgentRegistry\|agentId"` → 0 matches). If P6a has not landed the `AgentRegistry` and the workspace `agents: [...]` declaration (`05` § "Workspace agent registry"), **STOP and report** — do not invent a competing registry here (`06` Phase 6: "do not define a competing child-app registry").
-- **T1** (`TODO-T1-durable-events-approvals.md`): the durable `EventStreamStore`, on-stream approvals, pending-request SQLite table, `resolveInput`. The external-hook route (BBP7-006) and the info endpoint's channel/session facts read T1 state.
-- **T2** (`TODO-T2-transport-adapters.md`): `sessionId`-only public transport; the platform-addressing invariant guard. Surface `agentId` binding (BBP7-007) rides the two-handles boundary T2 formalized.
-- **E1** (`TODO-E1-environment-attachments.md`): `Environment`/`EnvironmentAttachment`/`ResolvedEnvironments` + the `resolveAttachments` reduction (E1 ships **no** `EnvironmentRegistry` class — the address-by-id Map is an E2 concern); the scope key already carries `agentId` in `filesystemRuntimeScopeKey` (E1 context: `humanUserId\0agentId\0sessionId\0workspaceId\0requestId`). BBP7-008 lands E1's deferred `BBE1-005` (`SubagentEnvironmentGrant` / `deriveSubagentAttachment`).
+- **Phase 6a** (`AgentRegistry`): [`../../INDEX.md`](../../INDEX.md) Phase 7 scopes against the Phase 6a `AgentRegistry`. P7 depends specifically on **P6a** — the `AgentRegistry` (BBP6-003) and the workspace `agents: [...]` declaration — **not** on P6b's child-app scoping (which may still be HARD BLOCKED on the shared child-app platform type; that does not block P7). **Verified reality: `AgentRegistry` and `agentId` do not exist anywhere in `packages/agent/src` or `packages/workspace/src` today** (`grep -rn "AgentRegistry\|agentId"` → 0 matches). If P6a has not landed the `AgentRegistry` and the workspace `agents: [...]` declaration ([`../../architecture/05-multi-agent-sessions-hooks.md`](../../architecture/05-multi-agent-sessions-hooks.md) § "Workspace agent registry"), **STOP and report** — do not invent a competing registry here.
+- **T1** ([`../T1-durable-events/TODO.md`](../T1-durable-events/TODO.md)): the durable `EventStreamStore`, on-stream approvals, pending-request SQLite table, `resolveInput`. The external-hook route (BBP7-006) and the info endpoint's channel/session facts read T1 state.
+- **T2** ([`../T2-transport/TODO.md`](../T2-transport/TODO.md)): `sessionId`-only public transport; the platform-addressing invariant guard. Surface `agentId` binding (BBP7-007) rides the two-handles boundary T2 formalized.
+- **E1** ([`../E1-environment-attachments/TODO.md`](../E1-environment-attachments/TODO.md)): `Environment`/`EnvironmentAttachment`/`ResolvedEnvironments` + the `resolveAttachments` reduction (E1 ships **no** `EnvironmentRegistry` class — the address-by-id Map is an E2 concern); the scope key already carries `agentId` in `filesystemRuntimeScopeKey` (E1 context: `humanUserId\0agentId\0sessionId\0workspaceId\0requestId`). BBP7-008 lands E1's deferred `BBE1-005` (`SubagentEnvironmentGrant` / `deriveSubagentAttachment`).
 
 ### Current boring code this extends (verified paths)
 
@@ -34,7 +34,7 @@ Handoff: self-contained work order for one autonomous coding agent (pi or gpt-5.
 
 ## Goal / exit criteria
 
-Make `06` Phase 7 + `05` § "Tests" checkable:
+Make [`../../INDEX.md`](../../INDEX.md) Phase 7 + [`../../architecture/05-multi-agent-sessions-hooks.md`](../../architecture/05-multi-agent-sessions-hooks.md) § "Tests" checkable:
 
 1. Agent addressing resolves an `agentId` per request via the canonical `/api/v1/agents/:agentId/...` path-prefix family (**locked at pass 3 — no header alternative**; BBP7-002 records it) against the Phase 6 `AgentRegistry`; unknown/undeclared `agentId` fails closed.
 2. `agentId` is in the binding scope `key` **and** `sessionNamespace`; two agents in one workspace with the same `sessionId` share no bindings, tool catalog, transcripts, or readiness (`05` isolation test).
@@ -42,13 +42,13 @@ Make `06` Phase 7 + `05` § "Tests" checkable:
 4. Session index/search scoped by `workspaceId` + `agentId` (+ title/content/operational events, redacted), no filesystem requirement (`#379`).
 5. External harness hook target resolution: authenticate caller, validate `(workspace, agent, session)`, redact, route to the HITL channel, audit attribution, no boring-bash dep (`#380` / `05`).
 6. `GET /api/v1/agents/:agentId/info` returns `{ agentId, model, tools, readiness, channels, environments }` — public contract, no private core hooks (the steering mechanism, `08`/`00`).
-7. Surface adapters (workspace pane, Slack `conversationKey`, Excel workbook) each bind exactly one `agentId` per addressing entry (`06` v2 addition).
+7. Surface adapters (workspace pane, Slack `conversationKey`, Excel workbook) each bind exactly one `agentId` per addressing entry (INDEX Phase 7 addition).
 8. First real subagent consumer: `SubagentEnvironmentGrant` / `deriveSubagentAttachment` (E1-deferred `BBE1-005`) lands, jailed by `agentId` scope + `scope.subpath`, minimal.
 9. **Two surfaces × two agents in one workspace do not collide** (the Phase 7 exit test).
 
 ## Non-negotiables
 
-- Scope against the Phase 6 `AgentRegistry` — do NOT build a second registry (`00` invariant 10; `06` Phase 6).
+- Scope against the Phase 6a `AgentRegistry` — do NOT build a second registry (`00` invariant 10; [`../P6-plugin-child-app/TODO.md`](../P6-plugin-child-app/TODO.md)).
 - **Interop reservation (shape only, not built):** the `AgentRegistry` entry shape must **not preclude REMOTE entries** — leave room for `{ agentId, kind: 'local' | 'remote', endpoint?, auth? }` so a future remote agent can be addressed like a local one; the **remote client (an MCP delegation channel) is a named follow-up, NOT built in this epic** (Horizon-3 hub-and-spoke direction, `00` "Business horizons"). P7 only resolves/scopes `local` entries; do not hardcode an assumption that every entry is in-process.
 - Extend the existing `RuntimeScope.key` array and `sessionNamespace` — do NOT assume a preexisting composite key already has `agentId` (`05` explicit warning). Legacy fields (root/template/pi/sessionNamespace) stay isolated where they already are.
 - `/info` is a **public read contract** modeled on `models.ts`: cheap, safe unauthenticated at the same level `models` is, and it MUST NOT leak secrets, broker credentials, or provider key material (`00` invariant 14).
@@ -63,7 +63,7 @@ Make `06` Phase 7 + `05` § "Tests" checkable:
 - Do NOT touch `/home/ubuntu/projects/boring-ui-v2`. Work on a dedicated branch/worktree per the PR-PLAN branch naming; never commit to main directly; every bead lands as a PR per INDEX.
 - Do NOT define a competing agent/child-app registry (Phase 6 owns it).
 - Do NOT put platform-addressing (Slack thread ts, workbook id, pane id) into any core signature — `agentId`/`sessionId`/`SessionCtx` only (T2 guard must stay green).
-- Do NOT build the control-plane UI panels — that is `TODO-S3-control-plane-ux.md` (S3 consumes the `/info` endpoint this bead ships).
+- Do NOT build the control-plane UI panels — that is [`../S3-control-plane-ux/TODO.md`](../S3-control-plane-ux/TODO.md) (S3 consumes the `/info` endpoint this bead ships).
 - Do NOT build a full policy/permission engine for subagents; ship the grant contract + reduction only.
 - Do NOT leak any secret/key material through `/info` or search.
 
@@ -109,9 +109,9 @@ Make `06` Phase 7 + `05` § "Tests" checkable:
     "channels": [{ "kind": "workspace" }, { "kind": "slack" }],
     "environments": [{ "filesystem": "company_context", "access": "readonly", "exec": "none" }] }
   ```
-  **Never** emit secrets, broker credentials, provider key material, or environment handles (`00` invariant 14; `models.ts` safety posture). S3 (`TODO-S3-control-plane-ux.md`) is the consumer — this endpoint is the entire private-hook-free steering surface.
+  **Never** emit secrets, broker credentials, provider key material, or environment handles (`00` invariant 14; `models.ts` safety posture). S3 ([`../S3-control-plane-ux/TODO.md`](../S3-control-plane-ux/TODO.md)) is the consumer — this endpoint is the entire private-hook-free steering surface.
 - **Tests**: `agentInfo.route.test.ts` — reports the agent's model/tools/readiness/channels/environments; a reviewer agent shows readonly env + no bash tool; a pure concierge shows no environments and no bash; asserts no key/secret field is present in the payload.
-- **Acceptance**: `06` Phase 7 v2 "agent inspection endpoint … consumed by workspace panels"; no private core hooks, no secret leak.
+- **Acceptance**: [`../../INDEX.md`](../../INDEX.md) Phase 7 "agent inspection endpoint … consumed by workspace panels"; no private core hooks, no secret leak.
 
 ### BBP7-006 — External harness hook target resolution (#380) · size M
 - **Title**: Resolve `(workspace, agent, session)` for an external review/question/approval hook; authenticate, validate, redact, route to the HITL channel, audit.
@@ -123,7 +123,7 @@ Make `06` Phase 7 + `05` § "Tests" checkable:
 ### BBP7-007 — Surface adapters bind one `agentId` per addressing entry · size S
 - **Title**: One addressing entry (workspace pane / Slack `conversationKey` / Excel workbook) binds to exactly one `agentId`.
 - **Files touch**: the surface addressing seam from T2/S1 — extend the surface-owned `addressing → sessionId` map to carry `agentId` (the map becomes `addressing → { sessionId, agentId }`), so `agent.send`/`stream`/`resolveInput` for that entry always target that agent's scope. For the Slack adapter (`packages/channels/slack`, if landed) the `SlackSessionStore` records `agentId` alongside the `sessionId` when it `set`s the mapping (the store never allocates the `sessionId` — `agent.start` does, per S1 BBS1-003); the workspace pane binding records the pane's agent.
-- **Notes**: `agentId` stays surface-side metadata that selects the routing scope — it is NOT passed as platform addressing into a core signature (BBP7-001 resolves it into `RuntimeScope`). One surface cannot address two agents on one continuation key (`06` v2: "a Slack channel or embed binds to one `agentId` per addressing entry").
+- **Notes**: `agentId` stays surface-side metadata that selects the routing scope — it is NOT passed as platform addressing into a core signature (BBP7-001 resolves it into `RuntimeScope`). One surface cannot address two agents on one continuation key ([`../../INDEX.md`](../../INDEX.md): a Slack channel or embed binds to one `agentId` per addressing entry).
 - **Tests**: adapter test — two panes/threads bound to two agents resolve to two distinct scopes; a single continuation key never yields two `agentId`s.
 - **Acceptance**: one addressing entry ↔ one `agentId`; addressing isolation holds across agents.
 
@@ -137,7 +137,7 @@ Make `06` Phase 7 + `05` § "Tests" checkable:
 ### BBP7-009 — Two surfaces × two agents no-collision integration test (Phase 7 exit) · size M
 - **Title**: The Phase 7 exit criterion as an executable test.
 - **Files create**: `packages/agent/src/server/__tests__/multiAgentIsolation.integration.test.ts` (new) — one workspace declaring two agents (`coding` full bash, `reviewer` readonly/no-exec), driven through **two surfaces** (e.g. in-process transport + HTTP/fastify-inject) with the **same `sessionId` string** under each agent. Assert: distinct bindings, distinct tool catalogs, distinct transcripts (different session dirs), distinct readiness; an approval on agent A's session is not answerable via agent B's scope; the `/info` endpoint reports each agent correctly.
-- **Notes**: This is the `05` "Isolation test" + `06` Phase 7 exit ("two surfaces bound to two agents in one workspace do not collide"). Reuse the T2 interleaved-transport harness (`server/transport/__tests__/interleaved.test.ts`) as the two-surface driver.
+- **Notes**: This is [`../../architecture/05-multi-agent-sessions-hooks.md`](../../architecture/05-multi-agent-sessions-hooks.md) "Isolation test" + [`../../INDEX.md`](../../INDEX.md) Phase 7 exit ("two surfaces bound to two agents in one workspace do not collide"). Reuse the T2 interleaved-transport harness (`server/transport/__tests__/interleaved.test.ts`) as the two-surface driver.
 - **Tests**: the file is the test.
 - **Acceptance**: same `sessionId` under two agents never cross-contaminates bindings/catalog/transcript/readiness/approvals.
 
