@@ -112,8 +112,8 @@ importers:
         specifier: workspace:*
         version: link:../../packages/workspace
       '@vercel/sandbox':
-        specifier: 2.0.0-beta.14
-        version: 2.0.0-beta.14
+        specifier: 2.2.1
+        version: 2.2.1
       fastify:
         specifier: 5.8.5
         version: 5.8.5
@@ -273,14 +273,14 @@ importers:
         specifier: ^2.5.0
         version: 2.5.0
       '@vercel/sandbox':
-        specifier: 2.0.0-beta.14
-        version: 2.0.0-beta.14
+        specifier: 2.2.1
+        version: 2.2.1
       ai:
         specifier: ^6.0.168
         version: 6.0.219(zod@3.25.76)
       chokidar:
-        specifier: ^4.0.3
-        version: 4.0.3
+        specifier: ^5.0.0
+        version: 5.0.0
       class-variance-authority:
         specifier: ^0.7.1
         version: 0.7.1
@@ -5125,8 +5125,8 @@ packages:
     resolution: {integrity: sha512-r00laGW6Pv778RoR6M2NxX91ycSj+PBwVo+fOb9Bif+F0IyUKt25zrvBzfEzQpeAzbqOgPZyQibEWDdDFApd+A==}
     engines: {node: '>= 20'}
 
-  '@vercel/sandbox@2.0.0-beta.14':
-    resolution: {integrity: sha512-rXz0UYzDXC7nPe3BfRWe7WJMqZvvMCkDMcCWUaGnDNpfJ+AEIlCO5WIDJ4dIW5TD5d2bTPHzktUenn8wXYLsKA==}
+  '@vercel/sandbox@2.2.1':
+    resolution: {integrity: sha512-IqFYVEsPilXb28VbpTtrP5UkMgVAyQlp77zcLJUgCUo1yEbjJiClGS6sEqGjkAukhbLGS+T2vG3ZOgzSzUTyZg==}
 
   '@vitejs/plugin-react@4.7.0':
     resolution: {integrity: sha512-gUu9hwfWvvEDBBmgtAowQCojwZmJ5mcLn3aufeCsitijs3+f2NsrPtlAWIR6OPiqljl96GVCUbLe0HyqIpVaoA==}
@@ -5595,6 +5595,10 @@ packages:
   chokidar@4.0.3:
     resolution: {integrity: sha512-Qgzu8kfBvo+cA4962jnP1KkS6Dop5NS6g7R5LFYJr4b8Ub94PPQXUksCw9PvXoeXPRRddRNC5C1JQUR2SMGtnA==}
     engines: {node: '>= 14.16.0'}
+
+  chokidar@5.0.0:
+    resolution: {integrity: sha512-TQMmc3w+5AxjpL8iIiwebF73dRDF4fBIieAqGn9RGCWaEVwQ6Fb2cGe31Yns0RRIzii5goJ1Y7xbMwo1TxMplw==}
+    engines: {node: '>= 20.19.0'}
 
   chroma-js@3.2.0:
     resolution: {integrity: sha512-os/OippSlX1RlWWr+QDPcGUZs0uoqr32urfxESG9U93lhUfbnlyckte84Q8P1UQY/qth983AS1JONKmLS4T0nw==}
@@ -7944,6 +7948,10 @@ packages:
     resolution: {integrity: sha512-GDhwkLfywWL2s6vEjyhri+eXmfH6j1L7JE27WhqLeYzoh/A3DBaYGEj2H/HFZCn/kMfim73FXxEJTw06WtxQwg==}
     engines: {node: '>= 14.18.0'}
 
+  readdirp@5.0.0:
+    resolution: {integrity: sha512-9u/XQ1pvrQtYyMpZe7DXKv2p5CNvyVwzUB6uhLAnQwHMSgKMBR62lc7AHljaeteeHXn11XTAaLLUVZYVZyuRBQ==}
+    engines: {node: '>= 20.19.0'}
+
   real-require@0.2.0:
     resolution: {integrity: sha512-57frrGM/OCTLqLOAh0mhVA9VBMHd+9U7Zb2THMGdBUoZVOtGbJzjxsYGDJ3A9AYYCP4hn6y1TVbaOfzWtm5GFg==}
     engines: {node: '>= 12.13.0'}
@@ -9036,9 +9044,6 @@ packages:
     resolution: {integrity: sha512-O/PgfnpT1xKSDeQYSCfRI5Gy3hPf91mKVDuYLUHZJMiDFptvP41MSnWofm8dnCm0256ZNfZIM7DSzuSMAFnjHA==}
     peerDependencies:
       zod: ^3.25.28 || ^4
-
-  zod@3.24.4:
-    resolution: {integrity: sha512-OdqJE9UDRPwWsrHjLN2F8bPxvwJBK22EHLWtanu0LSYr5YqzsaaW3RMgmjwr8Rypg5k+meEJdSPXJZXE/yqOMg==}
 
   zod@3.25.76:
     resolution: {integrity: sha512-gzUt/qt81nXsFGKIFcC3YnfEAx5NkunCfnDlvuBSSFS02bcXu4Lmea0AFIUwbLWxWPx3d9p8S5QoaujKcNQxcQ==}
@@ -12834,18 +12839,19 @@ snapshots:
       '@vercel/cli-exec': 1.0.0
       jose: 5.10.0
 
-  '@vercel/sandbox@2.0.0-beta.14':
+  '@vercel/sandbox@2.2.1':
     dependencies:
       '@vercel/oidc': 3.2.0
       '@workflow/serde': 4.1.0-beta.2
       async-retry: 1.3.3
+      jose: 6.2.3
       jsonlines: 0.1.1
       ms: 2.1.3
       picocolors: 1.1.1
       tar-stream: 3.1.7
       undici: 7.28.0
       xdg-app-paths: 5.1.0
-      zod: 3.24.4
+      zod: 4.4.3
     transitivePeerDependencies:
       - bare-abort-controller
       - react-native-b4a
@@ -13340,6 +13346,10 @@ snapshots:
   chokidar@4.0.3:
     dependencies:
       readdirp: 4.1.2
+
+  chokidar@5.0.0:
+    dependencies:
+      readdirp: 5.0.0
 
   chroma-js@3.2.0: {}
 
@@ -16086,6 +16096,8 @@ snapshots:
 
   readdirp@4.1.2: {}
 
+  readdirp@5.0.0: {}
+
   real-require@0.2.0: {}
 
   recast@0.23.11:
@@ -17301,8 +17313,6 @@ snapshots:
   zod-to-json-schema@3.25.2(zod@4.4.3):
     dependencies:
       zod: 4.4.3
-
-  zod@3.24.4: {}
 
   zod@3.25.76: {}
 
