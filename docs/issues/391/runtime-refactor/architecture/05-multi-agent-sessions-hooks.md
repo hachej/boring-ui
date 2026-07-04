@@ -28,21 +28,21 @@ A workspace may declare:
 
 ```ts
 agents: [
-  { id: 'coding', package: '@hachej/coding-agent', features: ['boring-bash'] },
-  { id: 'reviewer', package: '@hachej/review-agent', features: ['boring-bash'], bash: { fs: 'readonly', exec: false } },
-  { id: 'concierge', package: '@hachej/email-agent', features: [] }
+  { id: 'coding', package: '@hachej/coding-agent', bash: true },
+  { id: 'reviewer', package: '@hachej/review-agent', bash: { fs: 'readonly', exec: false } },
+  { id: 'concierge', package: '@hachej/email-agent' }
 ]
 ```
 
-Child-app defaults can seed this registry, but workspace/user policy can narrow it.
+There is **no `features` config member**. Each agent's environment attachment is explicit: `bash: true` (or a `bash: { fs, exec }` scope) tells the host to spread the plain `createBashAgentFeature(...)` tool bundle into that agent's `createAgent().tools`; omitting `bash` yields a pure agent with no file/bash tools. (For richer multi-environment agents this generalizes to an `environments: [...]` attachment list per 09; the point is explicit host-side composition, never an `AgentFeature`/`features` abstraction.) Child-app defaults can seed this registry, but workspace/user policy can narrow it.
 
 ## Route/session namespace
 
 Required scoping:
 
-- routes: `/api/v1/agents/:agentId/...` or equivalent request-scope header;
+- routes: the canonical `/api/v1/agents/:agentId/...` path-prefix family (locked at pass 3; no header/request-scope alternative);
 - add `agentId` to the real per-workspace runtime binding/scope used by `registerAgentRoutes` and core workspace server caches; do not assume a preexisting single composite key has every field;
-- `sessionNamespace` includes `agentId`; legacy fields such as root/template/pi/session namespace must remain isolated where they currently exist;
+- `sessionNamespace` includes `agentId` **for non-default agents only**; the **default agent keeps the pre-P7 `sessionNamespace` unchanged** (no `:agent:` suffix) as an explicit on-disk JSONL-compatibility exception, so existing default-agent sessions keep loading byte-identically (per `../work/P7-multi-agent-inspection/TODO.md` BBP7-003 — note the route/runtime `RuntimeScope.key` still carries `agentId` for *all* agents incl. the default; only the *sessionNamespace* is left untouched for the default); legacy fields such as root/template/pi/session namespace must remain isolated where they currently exist;
 - session root layout preserves AGENTS.md rule: transcripts live under host durable `BORING_AGENT_SESSION_ROOT`, not workspace/container home;
 - tool catalog is per agent;
 - provisioning is per `(workspaceId, agentId, bashPlanFingerprint)`;
@@ -84,7 +84,7 @@ The multi-agent route model must support:
 
 ## External harness review/question hooks (#380)
 
-External systems can create review/question/approval hooks against a workspace/agent/session. The authoritative contract is defined in [`01-agent-core-runtime-free.md`](01-agent-core-runtime-free.md); this file only defines multi-agent routing requirements.
+External systems can create review/question/approval hooks against a workspace/agent/session. The authoritative request/callback/redaction contract lands in Phase 7, [`../work/P7-multi-agent-inspection/TODO.md`](../work/P7-multi-agent-inspection/TODO.md) BBP7-006; [`01-agent-core-runtime-free.md`](01-agent-core-runtime-free.md) only records that P1 defers hooks. This file defines the multi-agent routing requirements that contract must satisfy.
 
 Requirements:
 
@@ -132,8 +132,8 @@ Required safeguards:
 
 - resolved child-app/default agent set can seed the agent registry before plugin/runtime policy uses it;
 - two agents same workspace/session id do not collide;
-- session namespace includes agent id;
-- binding cache includes agent id;
+- session namespace includes agent id for non-default agents; the default agent's session namespace is byte-identical to pre-P7 (JSONL-compat exception);
+- binding cache includes agent id (for all agents, including the default);
 - per-agent tool catalog differs as expected;
 - reviewer has readonly fs/no exec while coding agent has bash;
 - pure concierge has no boring-bash;

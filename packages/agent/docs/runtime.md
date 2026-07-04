@@ -2,7 +2,15 @@
 
 # Runtime Modes and Provisioning
 
-The agent supports three execution modes controlling how `bash` and filesystem tools run.
+When a boring-bash filesystem/exec environment is attached, the agent supports
+three execution modes controlling how `bash` and filesystem tools run.
+
+Pure/headless agents use `runtime: 'none'` instead. That mode has no
+`Workspace`, no `Sandbox`, no cwd, no file routes, no file tools, and no bash
+tools. It is not selected with `BORING_AGENT_MODE`; the host composes a
+runtime-free agent and supplies only non-bash tools plus session/model
+configuration. If the host later attaches a filesystem/exec environment, that
+attachment enters the boring-bash runtime contract below.
 
 ## Modes
 
@@ -22,7 +30,7 @@ Defaults to `direct` when unset.
 
 ## Runtime cwd contract
 
-Every adapter must preserve this invariant:
+Every boring-bash runtime adapter must preserve this invariant:
 
 ```txt
 file tree root == shell cwd == model-visible cwd == BORING_AGENT_WORKSPACE_ROOT
@@ -36,7 +44,7 @@ interface WorkspaceRuntimeContext {
 }
 ```
 
-Adapter rules:
+Adapter rules for attached filesystem/exec environments:
 
 - `Workspace.root` must equal `runtimeContext.runtimeCwd`.
 - `Sandbox.runtimeContext.runtimeCwd` must equal the same value.
@@ -228,12 +236,17 @@ default this to the sibling `/data/pi-sessions` path when the env var is absent.
 
 ## Adding a custom runtime mode
 
-A mode is a `RuntimeModeAdapter` (defined in `src/server/runtime/mode.ts`).
-There is no registry to edit: pass your adapter as the `runtimeModeAdapter`
-option to `createAgentApp(opts)` or `registerAgentRoutes(app, opts)` — it takes
-precedence over `mode`/auto-detection (`createAgentApp.ts`,
-`registerAgentRoutes.ts`). `resolveMode()` only knows the three built-ins and
-throws for unknown ids, telling you to pass `runtimeModeAdapter`.
+A boring-bash-active mode is a `RuntimeModeAdapter` (defined in
+`src/server/runtime/mode.ts`). There is no registry to edit: pass your adapter
+as the `runtimeModeAdapter` option to `createAgentApp(opts)` or
+`registerAgentRoutes(app, opts)` — it takes precedence over
+`mode`/auto-detection (`createAgentApp.ts`, `registerAgentRoutes.ts`).
+`resolveMode()` only knows the three built-ins and throws for unknown ids,
+telling you to pass `runtimeModeAdapter`.
+
+This interface is for environments that intentionally provide a workspace,
+filesystem/search, and sandbox/execution substrate. Pure `runtime: 'none'`
+agents do not construct a `RuntimeBundle`.
 
 ```ts
 interface RuntimeModeAdapter {

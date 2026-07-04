@@ -19,7 +19,7 @@ Macro-specific tools/prompts/provisioning must not leak into generic workspaces.
 
 ## Relationship to shared child-app platform plan
 
-The product/registry/billing/workspace-kind design is owned by [`docs/plans/shared-child-app-platform.md`](../shared-child-app-platform.md) and issue #376.
+The product/registry/billing/workspace-kind design is owned by [`docs/issues/376/plan.md`](../../../376/plan.md) (issue #376).
 
 This plan only consumes the resolved child-app context for bash/runtime intersection. It must not define a competing `ChildAppDefinition`, workspace-kind schema, billing model, or hostname registry.
 
@@ -98,20 +98,32 @@ Do not add a competing route family. Keep:
 - workspace plugin runtime manager;
 - `WorkspaceBridge`.
 
-Add feature context:
+Add feature context. **The P6a (child-app-independent) shape carries NO `childAppId`/`workspaceKind`** — those are P6b fields (see the P6b follow-up below), and P6a is grep-gated to contain neither:
 
 ```ts
+// P6a — child-app-independent (grep-gated: no childAppId / workspaceKind)
 interface RuntimePluginContext {
   pluginId: string
   workspaceId?: string
-  childAppId?: string
-  workspaceKind?: string
   availableFeatures: {
     bash?: BashEnvironmentSummary
     uiBridge?: boolean
     secrets?: Record<string, 'missing' | 'granted' | 'denied' | 'expired'>
     services?: Record<string, 'not-started' | 'starting' | 'ready' | 'failed'>
   }
+}
+```
+
+### P6b follow-up — child-app scoping fields (outside the epic exit)
+
+When the shared child-app platform type (`ResolvedChildAppContext`, #376) lands, **P6b** extends `RuntimePluginContext` with the resolved child-app scope. These fields are **not** part of the P6a shape above and must not be added before P6b is unblocked:
+
+```ts
+// P6b — added only when ResolvedChildAppContext (#376) lands (HARD BLOCKED)
+interface RuntimePluginContext {
+  // …P6a fields…
+  childAppId?: string
+  workspaceKind?: string
 }
 ```
 

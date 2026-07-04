@@ -17,13 +17,13 @@ This creates two bugs in the architecture:
 
 ## Dependency inversion first
 
-Before moving providers to `@hachej/boring-bash`, invert composition:
+Before moving runtime-mode resolution to `@hachej/boring-bash` and concrete providers to `@hachej/boring-sandbox`, invert composition:
 
 - `createAgentApp()` and `registerAgentRoutes()` stop value-importing built-in runtime modes in the pure path.
 - Host/CLI/core passes runtime/features in.
 - `@hachej/boring-agent` exports only type contracts for features/tool registration.
-- A package invariant test fails if agent has value imports from `@hachej/boring-bash`.
-- Existing runtime mode support may remain as compatibility wiring only if it does not force a runtime bundle for pure agents.
+- A package invariant test fails if agent has value imports from `@hachej/boring-bash` or `@hachej/boring-sandbox`.
+- Existing runtime mode support is migrated to host composition **in the same PR** (no long-lived compatibility wiring); a pure agent must never be forced to build a runtime bundle. Any temporary bridge kept alive during a single PR carries a `// TODO(remove:<bead-id>)` marker and a same-phase deletion bead — it does not outlive the phase (see `../INDEX.md` "Simplicity & no-compat policy").
 
 This prevents the cycle:
 
@@ -40,39 +40,26 @@ boring-agent has no bash knowledge except type-level feature hooks
 
 ## Public core contracts
 
-This must not become a second plugin registry. `AgentFeature` is a small composition façade over existing server/plugin seams (`WorkspaceServerPlugin`, tool contributors, route contributors, system prompt contributors, `registerCapabilitiesContributor`) so pure agents and non-workspace hosts can use the same concepts without importing workspace internals.
+**No `AgentFeature` abstraction.** There is exactly one prospective contributor (boring-bash), so a `features` registry is a speculative abstraction with a single consumer — forbidden by the no-abstraction-without-two-consumers policy. `createAgent()` config uses the **existing seams directly**: `tools` (extra `AgentTool[]`), `systemPromptAppend` / `systemPromptDynamic`, and readiness gates (`mergeTools({ checkReadiness })` + `registerCapabilitiesContributor`). A pure agent and a non-workspace host use these same seams without importing workspace internals — no new registry, no `AgentFeature`/`AgentFeatureContext` interface, no `features?: AgentFeature[]` config member.
+
+Boring-bash contributes through those seams as a **plain bundle**, not a core contract: `createBashAgentFeature()` (defined in Phase 3, [`../work/P3-routes-tools/TODO.md`](../work/P3-routes-tools/TODO.md)) returns `{ tools, readinessRequirements }` — a boring-bash-local type — that the host **spreads into the `createAgent()` config** (`tools: [...hostTools, ...bashBundle.tools]`). The core never learns the word "feature".
 
 ```ts
 interface AgentEnvironment {
   sessionStorageRoot: string
   workspaceId?: string
   agentId?: string
-  featureGrants?: Record<string, unknown>
-}
-
-interface AgentFeature {
-  id: string
-  tools?(ctx: AgentFeatureContext): AgentTool[] | Promise<AgentTool[]>
-  systemPrompt?(ctx: AgentFeatureContext): string | undefined | Promise<string | undefined>
-  readinessRequirements?: string[]
-}
-
-interface AgentServerFeature extends AgentFeature {
-  routes?(ctx: AgentFeatureContext): FastifyPluginAsync | undefined
-}
-
-interface AgentFeatureContext {
-  agentId: string
-  workspaceId?: string
-  environment: AgentEnvironment
-  getGrant<T>(id: string): T | undefined
+  // No `grants` escape hatch in the P1 config. Typed grant fields arrive in P5/P7,
+  // where they are actually consumed (provisioning/secrets, multi-agent scoping) —
+  // not as an opaque `Record<string, unknown>` here.
 }
 ```
 
+HTTP routes are owned by the HTTP adapter (`createAgentApp` / `registerAgentRoutes`), which imports and mounts a route module directly (e.g. `registerBashRoutes`) via **host composition** — never through the agent core and never through the bash bundle. The bundle carries tools + readiness only, no route metadata.
+
 Rules:
 
-- `routes` is server-only; no `Fastify` value/type leaks into shared/front packages.
-- `featureGrants` must not be confused with current `AgentRuntimeCapabilities`.
+- Routes are mounted by host composition, not by the core or the bundle. No `Fastify` value/type leaks into shared/front packages.
 - `sessionStorageRoot` is transcript/session storage, not workspace file storage.
 
 ## Pure runtime mode
@@ -80,8 +67,8 @@ Rules:
 Add a composition path equivalent to:
 
 ```ts
-features: []
 runtime: 'none'
+// no bash bundle spread into `tools`; only host/app-owned non-file tools, if any
 ```
 
 It registers only:
@@ -116,40 +103,15 @@ Questions to answer:
 
 Outcome must be explicit:
 
-- either pure mode uses pi with cwd/resource loading disabled and snapshot-tested;
-- or pure mode uses a separate non-pi harness.
+- Pure mode uses the **sealed pi harness only** — pi with cwd/resource loading disabled and snapshot-tested — per the locked decision in `08-pluggable-agent-surfaces.md` (decision 2) and `00-global-isa.md` (open-decision 1). There is **no** separate non-pi harness option for Phase 1: if the audit shows pi cannot run with cwd disabled/sealed, **STOP and escalate** rather than introducing an alternative harness.
 
 ## Non-bash operational seams
 
 Some open issues are agent/session problems, not bash problems. The agent core needs optional seams for them:
 
-### External review/question hooks (#380)
+### External review/question hooks (#380) — deferred to Phase 7 (NOT P1 scope)
 
-Add a channel-neutral hook ingestion contract:
-
-```ts
-interface ExternalAgentHookRequest {
-  source: {
-    harnessId: string
-    agentId?: string
-    workspaceId?: string
-    sessionId?: string
-    provider?: string
-  }
-  kind: 'review' | 'question' | 'approval'
-  body: unknown
-  redactionPolicy?: string
-  callback?: { url: string; authRef?: string }
-}
-```
-
-Requirements:
-
-- auth before accept;
-- redaction before session write;
-- clear source attribution;
-- routing to correct workspace/agent/session;
-- works without boring-bash.
+The external-hook request/callback/redaction contract is **not a Phase 1 deliverable**. External hooks depend on durable approvals (the single on-stream approval channel, T1) and on multi-agent target resolution, so the request shape, auth/redaction/callback contract, and target resolution all land in **Phase 7** (`../work/P7-multi-agent-inspection/TODO.md`, BBP7-006), routed onto the T1 approval channel — never a second channel. P1 adds **no** external-hook request/callback/redaction contract and **no** hook route.
 
 ### Operational event/command seam (#371, #228, #224)
 
@@ -157,9 +119,9 @@ Expose command/event hooks for reload, slash commands, compaction/provider recov
 
 Do not route these through `boring-bash`; they are agent/session concerns.
 
-## Feature/tool readiness
+## Tool readiness
 
-The agent core should know readiness keys only as opaque gates. Concrete runtime readiness is supplied by features.
+The agent core should know readiness keys only as opaque gates. Concrete runtime readiness is supplied by the injected tools/bundle (e.g. the boring-bash bundle's `readinessRequirements`), not by a feature registry.
 
 Preserve existing `mergeTools({ checkReadiness })` behavior. Do not replace it with a parallel tool catalog.
 
@@ -173,7 +135,6 @@ Required tests for this area:
 - harness construction receives no host cwd/path, or receives a sealed virtual root with no host files;
 - system prompt snapshot has no cwd/workspace/AGENTS.md leakage;
 - pi pure-mode audit result is encoded in tests;
-- external hook accepts/renders/rejects with auth/redaction rules;
 - operational command seam works without boring-bash;
 - import invariant: `@hachej/boring-agent` has no value import from `@hachej/boring-bash`.
 
