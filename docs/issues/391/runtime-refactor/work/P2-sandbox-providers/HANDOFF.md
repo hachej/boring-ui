@@ -5,6 +5,8 @@ Derived strictly from [TODO.md](./TODO.md) and [PLAN.md](./PLAN.md). Tick each b
 ## Prerequisites (packages + gates)
 - [ ] P1-headless-core merged — [../P1-headless-core/HANDOFF.md](../P1-headless-core/HANDOFF.md)
 - [ ] Phase 1 dependency injection (`createAgent()` / injected runtime + tools) is complete before providers move — **STOP and report** if the injection seam is not threaded through `createAgentApp`/`registerAgentRoutes` (do not shim)
+- [ ] Preflight reality verified: `packages/boring-sandbox/` is absent before BBP2-000; `packages/boring-bash/package.json` exports only `.`, `./shared`, `./server` before BBP2-005; `pnpm-workspace.yaml` already covers `packages/*`.
+- [ ] Current moved-symbol import graph re-grepped: `resolveMode` importers, `createNodeWorkspace` importers, remote-worker protocol/provider imports, and app/composer imports match or supersede TODO's migration set.
 
 ## Beads
 - [ ] BBP2-000 — Scaffold the `@hachej/boring-sandbox` package
@@ -34,13 +36,23 @@ Derived strictly from [TODO.md](./TODO.md) and [PLAN.md](./PLAN.md). Tick each b
 - [ ] `pnpm lint:invariants`
 - [ ] `pnpm audit:imports`
 - [ ] `pnpm typecheck`
+- [ ] `pnpm --filter @hachej/boring-ui-cli run typecheck`
+- [ ] `pnpm --filter @hachej/boring-workspace run typecheck`
+- [ ] `pnpm --filter @hachej/boring-core run typecheck`
+- [ ] `pnpm --filter full-app run typecheck`
+- [ ] `pnpm --filter workspace-playground run typecheck`
+- [ ] `pnpm --filter full-app run smoke:remote-worker`
 
 ## Review gates
 - [ ] Phase 1 injection precondition confirmed (or STOP+report).
 - [ ] `@hachej/boring-sandbox` scaffolded (BBP2-000), builds, and its types-only-agent / no-bash-edge invariant is enforced.
+- [ ] Capability types and fixed/reported capability facts live in `boring-sandbox/shared` (`providerMatrix`); providers do not own a separate capability-facts authority.
 - [ ] `pnpm lint:invariants` + `pnpm audit:imports` green; zero agent→bash **and** zero agent→sandbox value imports; the only cross-package value edge is `boring-bash → boring-sandbox`; sandbox→agent is type-only.
 - [ ] #416 shared contracts / server projection ops / conformance+leak tests unchanged and passing.
 - [ ] Every moved provider carries its tests and lives in `packages/boring-sandbox/src/providers`; direct/local/vercel-sandbox behavior unchanged; `resolveMode` lands in `boring-bash/modes` with byte-identical behavior.
+- [ ] Provider-bound workspace/path helpers moved with providers: `createNodeWorkspace`, `getNodeWorkspaceHostRoot`, `createVercelSandboxWorkspace`, `createRemoteWorkerWorkspace`, and containment helpers are no longer agent-server value dependencies for moved providers.
+- [ ] Mode-private helpers moved/injected with `boring-bash/modes`: `createServerFileSearch`, template copy, provisioning artifact helpers, and env/error/telemetry helpers leave no `@hachej/boring-agent` value import in `packages/boring-bash/src/modes/**`.
+- [ ] Remote-worker worker server remains app-owned, imports protocol/provider contracts from `@hachej/boring-sandbox`, has no agent-core dep, and still exposes only the P2 health behavior (`{ ok: true }`); no capability handshake is added in P2.
 - [ ] Every importer of the moved value symbols migrated in the same PR and the origin exports deleted; no old-path re-export (value or type), no host shim, no cycle.
 - [ ] Mode-id vs provider-id distinction preserved (`local`→`bwrap`); `resolveMode` (boring-bash) resolves to boring-sandbox provider values.
 

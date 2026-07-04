@@ -87,10 +87,10 @@ Legend — nature: **new** = net-new code · **move** = rename-detected + import
 
 | PR | beads | nature | net-new vs budget | test deliverables | gate |
 | --- | --- | --- | --- | --- | --- |
-| pr1-eventstore ⚠split | BBT1-001 | new (vendor/adapt) | ~1000–1400 / 2000 — **at risk, split pre-declared** | `runEventStreamStoreConformance`: monotonic offsets, idempotent `appendEventOnce`, **transactional atomicity (no gap on mid-append throw)**, subscribe/unsubscribe; `:memory:` + temp-file | agent `test`; node:sqlite (no native dep) |
+| pr1-eventstore ⚠split | BBT1-001 | new (vendor/adapt) | ~1000–1400 / 2000 — **at risk, split pre-declared** | `events.db`-backed `runEventStreamStoreConformance`: monotonic offsets, idempotent `appendEventOnce`, **transactional atomicity (no gap on mid-append throw)**, subscribe/unsubscribe; `:memory:` + temp-file | agent `test`; node:sqlite (no native dep) |
 | pr2-envelope-tap | BBT1-002 | new | ~200–400 | `harnessPiChatService.eventStore.test`: N events, contiguous `eventIndex`, durable-before-delivery | `test` |
 | pr3-ds-routes-stream | BBT1-003 | new | ~900–1300 / 2000 (port of `handle-stream-routes` ~594 + route + `stream`) | route test (GET/HEAD/304/SSE/abort); `stream` replay-from-index; SSE drop→re-GET lossless | `lint:invariants` (façade Fastify-free) |
-| pr4-approvals-park-resume | BBT1-004 | new | ~700–1000 | `approval.test` (park/resolve/deny/cross-client); `pendingInputs.test` (redacted, durable, cross-session) | `test` |
+| pr4-approvals-park-resume | BBT1-004 | new | ~700–1000 | `approval.test` (park/resolve/deny/cross-client); `state.db`-backed `pendingInputs.test` (redacted, durable, cross-session; not `events.db`) | `test` |
 | pr5-askuser-onto-stream | BBT1-005 | move + delete | net-new ~150; deletes second channel | adapted ask-user e2e; `ask_user.execute` parks + resolves via `resolveInput`; grep `ask-user.v1.` → no live handler | `lint:invariants`; `audit:imports` |
 | pr6-conformance | BBT1-006 | test | 0 | envelope-ordering, replay-from-index, **durable pending-request survival across restart** (seeded turn, no `WaitingTurn`) | `test` |
 
@@ -115,13 +115,13 @@ Legend — nature: **new** = net-new code · **move** = rename-detected + import
 
 | PR | beads | nature | net-new vs budget | test deliverables | gate |
 | --- | --- | --- | --- | --- | --- |
-| pr0-sandbox-scaffold | BBP2-000 (new package) | new | ~150 (package.json, tsup, `/shared`+`/providers` export maps, `check-invariants.mjs`, `pnpm-workspace.yaml` entry) | new-package `build`/`typecheck`; export-map resolves; invariant script asserts agent-types-only import boundary | new-package `build`; `audit:imports` |
-| pr1-providers-subpath-matrix | BBP2-001 + BBP2-002 | new | ~250 (capability contract + matrix in `boring-sandbox/shared`) | export-map `boring-sandbox/providers`; per-fixed-provider matrix rows; `remote-worker` worker-fields `'unknown'` fail-closed | `boring-sandbox check:invariants` |
-| pr2-move-direct-bwrap | BBP2-003 | move | budget-exempt (~1.5k churn) | moved direct/bwrap conformance + snapshot pass under **boring-sandbox** | `boring-sandbox test` |
-| pr3-move-vercel-sandbox | BBP2-004 | move | budget-exempt (~2.5–3k churn, <4k) | vercel-sandbox unit tests pass under boring-sandbox; `createVercelSandboxWorkspace` typechecks | `boring-sandbox test` |
-| pr4-mode-resolution-to-bash | BBP2-005 | move | budget-exempt (~1k churn) | `resolveMode.test` passes in **boring-bash** (resolves mode id → boring-sandbox provider value); mode→provider pairs covered; **agent bin becomes pure-only (`runtime:'none'`), bash-enabled bin composition moves to `packages/cli` in THIS PR** | agent `test` (host repoint); `boring-bash test` |
-| pr5-split-remote-worker | BBP2-006 | move | budget-exempt (~1k churn) | protocol → `boring-sandbox/shared`, client/adapter → `boring-sandbox/providers`; bytes round-trip; worker import-graph has no agent-core dep; **worker capabilities stay `'unknown'` — NO handshake here (handshake owned solely by BBP5-008)** | `audit:imports` |
-| pr6-migrate-delete-invariants | BBP2-007 + BBP2-008 | move (delete origin exports) + new (invariant) | ~80 (invariant script) | static: agent old paths have no bash/sandbox value import / no re-export; boring-bash→sandbox value edge + sandbox→agent types-only edge both asserted; apps compile | `lint:invariants`; `audit:imports` |
+| pr0-sandbox-scaffold | BBP2-000 (new package) | new | ~150 (package.json, tsup, `/shared`+`/providers` export maps, `check-invariants.mjs`; `pnpm-workspace.yaml` already has `packages/*`, verify not duplicate) | new-package `build`/`typecheck`; export-map resolves; invariant script asserts agent-types-only import boundary | new-package `build`; `audit:imports` |
+| pr1-providers-subpath-matrix | BBP2-001 + BBP2-002 | new | ~250 (capability contract + matrix in `boring-sandbox/shared`) | export-map `boring-sandbox/shared` + `boring-sandbox/providers`; per-fixed-provider matrix rows live in shared; `remote-worker` worker-dependent fields are static `'unknown'`; fail-closed runtime validation/tests deferred to BBP5-008 | `boring-sandbox check:invariants` |
+| pr2-move-direct-bwrap | BBP2-003 | move | budget-exempt (~1.5k churn) | moved direct/bwrap conformance + snapshot pass under **boring-sandbox**; `createNodeWorkspace`/`getNodeWorkspaceHostRoot`/path helper importers migrated with the slice | `boring-sandbox test` |
+| pr3-move-vercel-sandbox | BBP2-004 | move | budget-exempt (~2.5–3k churn, <4k) | vercel-sandbox unit tests pass under boring-sandbox; `createVercelSandboxWorkspace` owned/exported by boring-sandbox providers; no provider adapter value-imports agent provisioning helpers | `boring-sandbox test` |
+| pr4-mode-resolution-to-bash | BBP2-005 | move | budget-exempt (~1k churn) | `resolveMode.test` passes in **boring-bash** (resolves mode id → boring-sandbox provider value); mode→provider pairs covered; mode-private helpers (`createServerFileSearch`, template copy, artifact helpers) moved/injected; no agent value import in `boring-bash/modes`; **agent bin becomes pure-only (`runtime:'none'`), bash-enabled bin composition moves to `packages/cli` in THIS PR** | agent `test` (host repoint); `boring-bash test` |
+| pr5-split-remote-worker | BBP2-006 | move | budget-exempt (~1k churn) | protocol → `boring-sandbox/shared`, client/adapter/workspace → `boring-sandbox/providers`; bytes round-trip; full-app worker import-graph has no agent-core dep; worker health remains `{ ok: true }`; **worker capabilities stay `'unknown'` — NO handshake here (handshake owned solely by BBP5-008)** | `audit:imports` |
+| pr6-migrate-delete-invariants | BBP2-007 + BBP2-008 | move (delete origin exports) + new (invariant) | ~80 (invariant script) | static: agent old paths have no bash/sandbox value import / no re-export (including moved workspace helpers); boring-bash→sandbox value edge + sandbox→agent types-only edge both asserted; apps compile | `lint:invariants`; `audit:imports` |
 
 **P2 total: 7 PRs** (adds pr0 scaffold). Precondition: P1 injection seam present (else STOP+report). No `@hachej/boring-agent` minor bump here; the relocation minor bump is P3 per `INDEX.md`/`08`. New package `@hachej/boring-sandbox` scaffolded in pr0 and populated across pr1–pr5.
 
@@ -183,11 +183,11 @@ Legend — nature: **new** = net-new code · **move** = rename-detected + import
 | pr7-remote-worker-handshake | BBP5-008 (+ BBP5-010 mount) | new + test | ~300–500 | reported\|unknown facts; fail-closed on unknown/bad-contract; no silent downgrade; **BBP5-010** remote-worker no-leak conformance mount (the deferred remote-worker env mount) rides here, gated on this handshake | `full-app smoke:remote-worker`; `boring-bash test` |
 | pr8-two-phase-fingerprint | BBP5-009 | new | ~400–600 | same fingerprint skips; changed source/contract re-provisions; onSession reruns; Vercel snapshot tests pass | `test` |
 
-**P5 total: 8 PRs.** Preconditions: P3 + P2 `providers/matrix.ts` (else STOP+report). Engine stays agent-owned; normalizer boring-bash-owned. Zero dangling `TODO(remove:*)`.
+**P5 total: 8 PRs.** Preconditions: P3 + P2 `shared/providerMatrix.ts` (else STOP+report). Engine stays agent-owned; normalizer boring-bash-owned. Zero dangling `TODO(remove:*)`.
 
-### X1 — S3/FUSE mounts for `@hachej/boring-sandbox` environments (Phase X1, off P2 **and** P5) — bash lane, parallel to E1/E2
+### X1 — S3/FUSE mounts for `@hachej/boring-sandbox` environments (Phase X1, off P2 **and** P5 **and** E1) — bash lane, parallel to E2
 
-Adds the `@hachej/boring-sandbox/mounts` export (created package from P2) + the S3-backed environment. The 10 LOCKED DECISIONS in [`work/X1-s3-fuse-mounts/TODO.md`](work/X1-s3-fuse-mounts/TODO.md) are the spine. Reuses P5's `reported | unknown` fail-closed rule + host-side secrets-broker rule.
+Adds the `@hachej/boring-sandbox/mounts` export (created package from P2) + the S3-backed environment. The 10 LOCKED DECISIONS in [`work/X1-s3-fuse-mounts/TODO.md`](work/X1-s3-fuse-mounts/TODO.md) are the spine. Reuses P5's `reported | unknown` fail-closed rule + host-side secrets-broker rule and consumes E1's `EnvironmentAttachment.mountPath` contract; without E1, X1 STOPs instead of inventing a parallel environment seam.
 
 | PR | beads | nature | net-new vs budget | test deliverables | gate |
 | --- | --- | --- | --- | --- | --- |
@@ -195,8 +195,9 @@ Adds the `@hachej/boring-sandbox/mounts` export (created package from P2) + the 
 | pr2-bind-capability | BBX1-003 + BBX1-004 | new | ~300–500 (bwrap bind + `mounts.fuseS3` fact) | host-mount→`--(ro-)bind`, no `/dev/fuse`/`fusermount3`/cred in arg set; un-ready bind refused; `vercel`/`unknown` fail closed | `boring-sandbox test`; `audit:imports` |
 | pr3-cred-broker-env | BBX1-005 + BBX1-006 | new | ~700–1000 (STS broker + S3 `Environment` + no-leak mount) | prefix-scoped STS (sibling-prefix denied, MinIO); cred in mount-process env only + absent everywhere else; readonly-S3 no-leak conformance mount `passed:true`; `bash-sees-mount == file-routes-see-mount` | `check:isolation`; `boring-bash test` |
 | pr4-eu-matrix | BBX1-007 | test + new | ~150–250 (EU matrix) | MinIO round-trip (adds `test:mounts:eu` script); secrets negative test; endpoint-config parity OVH/Scaleway/MinIO; fuse-overlayfs variant deferred, not built | `boring-sandbox run test:mounts:eu` (new script); `boring-sandbox test` |
+| pr5-rclone-fuse-benchmark | BBX1-009 | test/bench | 0 code beyond bench harness | repeatable rclone-FUSE-vs-local edit/build benchmark over MinIO; thresholds recorded in the PR; caches-on-local-NVMe variant measured | `boring-sandbox run bench:mounts` (new script); recorded numeric thresholds |
 
-**X1 total: 4 PRs** (BBX1-008 overlay variant is deferred out of X1). Preconditions: P2 (`@hachej/boring-sandbox` + providers) **and** P5 (capability-fact + secrets-broker) present, else STOP+report. Off the critical path (bash-lane parallel, like E1/E2); gates into P8 like every delivered phase. EU-sovereign: MinIO-in-CI, no US-hosted default (invariant 15).
+**X1 total: 5 PRs** (BBX1-008 overlay variant is deferred out of X1). Preconditions: P2 (`@hachej/boring-sandbox` + providers), P5 (capability-fact + secrets-broker), **and E1** (`Environment`/`EnvironmentAttachment.mountPath`) present, else STOP+report. Off the critical path (bash-lane parallel after P2/P5/E1); gates into P8 like every delivered phase. EU-sovereign: MinIO-in-CI, no US-hosted default (invariant 15).
 
 ### P6 — Plugin + child-app integration (Phase 6, off P5) — **split P6a / P6b**
 
@@ -228,12 +229,12 @@ Adds the `@hachej/boring-sandbox/mounts` export (created package from P2) + the 
 | pr1-agentid-scope-namespace | BBP7-001 | new | ~250–400 | two agents/one workspace → distinct `scope.key` + `sessionNamespace`; default-agent namespace unchanged | agent `test` |
 | pr2-agentid-addressing | BBP7-002 | new | ~200–350 (locked `/api/v1/agents/:agentId/…`) | declared resolves; undeclared → `AGENT_NOT_FOUND`; absent/empty → 404; explicit `/agents/default/` → default agent | `test` |
 | pr3-per-agent-catalog-readiness | BBP7-003 | new | ~300–500 | per-agent catalog differs; reviewer readonly/no-exec vs coding bash vs pure concierge; no readiness bleed | `test` |
-| pr4-session-search | BBP7-004 | new | ~500–800 (no fs requirement) | agent-scoped, content match, redaction, deep-link `includeId`, graceful unknown | `test` |
+| pr4-session-search | BBP7-004 | new | ~500–800 (derived `state.db`; no fs requirement) | agent-scoped session index/search table (`sessionId`, `agentId`, `workspaceId`, `originSurface`, title/status/timestamps), content match, redaction, deep-link `includeId`, rebuild proof | `test` |
 | pr5-agent-info-endpoint | BBP7-005 | new | ~250–400 (public, models.ts posture) | reports model/tools/readiness/channels/environments; **no key/secret field** | `test` |
 | pr6-external-hook-target | BBP7-006 | new | ~300–500 (boring-bash-free) | valid resolves+emits on stream; foreign/unauth rejects; redacted; audited | `check:isolation` |
 | pr7-surface-agent-binding | BBP7-007 | new | ~120 | two panes/threads → two scopes; one key never two `agentId` | `audit:imports` (guard green) |
 | pr8-subagent-grant | BBP7-008 | new (lands E1 BBE1-005) | ~150 (boring-bash) | scoped-view grant isolated by `agentId`; shares no handle; no cwd inheritance | `boring-bash test` |
-| pr9-two-surface-isolation | BBP7-009 | test | 0 | two-surfaces×two-agents no-collision integration (bindings/catalog/transcript/readiness/approvals) | `test` |
+| pr9-two-surface-isolation | BBP7-009 | test | 0 | two-surfaces×two-agents namespace-isolation integration (bindings/catalog/transcript/readiness/approvals; `sessionId` remains runtime-global) | `test` |
 
 **P7 total: 9 PRs (8 if pr7+pr8 combine).** Precondition: P6a `AgentRegistry` + E1 attachments + **T2** (the `sessionId`-only public transport + two-handles guard; the durable approvals/`resolveInput` the external-hook route and `/info` channel facts read arrive via T1→T2) (else STOP+report).
 
@@ -241,18 +242,18 @@ Adds the `@hachej/boring-sandbox/mounts` export (created package from P2) + the 
 
 | PR | beads | nature | net-new vs budget | test deliverables | gate |
 | --- | --- | --- | --- | --- | --- |
-| pr1-marker-import-gates | BBP8-001 + BBP8-003 | new (invariant scripts) | ~150 | planted `TODO(remove:*)` fails + names bead; each P2/P3/P4/T1/T2 relocation gate green | `lint:invariants`; `audit:imports` |
+| pr1-marker-import-gates | BBP8-001 + BBP8-003 | new (invariant scripts) | ~150 | planted `TODO(remove:*)` fails + names bead; each P2/P3/P4/T1/T2 relocation gate green; X1 mount gates green | `lint:invariants`; `audit:imports` |
 | pr2-surface-contract-docs | BBP8-002 | doc | 0 | referenced symbols (`createAgent`,`AgentEvent`,`AgentSendInput`,`ResolveInputResponse`) exist | doc/link check |
 | pr3-track-remaining-prose | BBP8-004 | doc/tracking | 0 | filed issue/bead list; `00` coverage reconciled (no overclaim) | n/a |
 
-**P8 total: 3 PRs.** BBP8-005 (final invariant+build/test sweep) is the **merge gate on this stack**, not a separate PR — any red gate reopens its owning phase. **Rule: a live `TODO(remove:*)` marker reopens its phase; P8 never absorbs it.** **P8 gates on every lane EXCEPT P6b** — P6b is a tracked follow-up (HARD BLOCKED on the child-app platform type), not an epic exit gate; P8 only **verifies the P6b follow-up issue is filed** (BBP8-004) and never waits on P6b landing (this is the anti-deadlock guarantee).
+**P8 total: 3 PRs.** BBP8-005 (final invariant+build/test sweep) is the **merge gate on this stack**, not a separate PR — any red gate reopens its owning phase. **Rule: a live `TODO(remove:*)` marker reopens its phase; P8 never absorbs it.** **P8 gates on every delivered lane EXCEPT P6b** — P1–P7, T1–T2, E1–E2, **X1**, S1–S3, Phase 5, and P6a must be green. P6b is a tracked follow-up (HARD BLOCKED on the child-app platform type), not an epic exit gate; P8 only **verifies the P6b follow-up issue is filed** (BBP8-004) and never waits on P6b landing (this is the anti-deadlock guarantee).
 
 ### S1 — Slack reference channel (Phase S1, off T2 + P1)
 
 | PR | beads | nature | net-new vs budget | test deliverables | gate |
 | --- | --- | --- | --- | --- | --- |
 | pr1-hono-fastify-wrapper-doc | BBS1-001 + BBS1-007 | new (+ `packages/channels/*` in `pnpm-workspace.yaml` and root `build:packages`) + doc | ~200 | exact-byte passthrough + status/header round-trip; example typechecks; root aggregate includes Slack package | new-package `build`/`typecheck`; `pnpm run build:packages` |
-| pr2-skeleton-ingress-store | BBS1-002 + BBS1-003 | new | ~350–550 | one `agent.start()` per message (admission; runtime allocates `sessionId`, adapter writes `originSurface:'slack'`); dedupe on `event_id`; bot ignored; `conversationKey→sessionId` isolation | `audit:imports` (no boring-bash) |
+| pr2-skeleton-ingress-store | BBS1-002 + BBS1-003 | new | ~350–550 | one `agent.start()` per message (admission; runtime allocates `sessionId`, adapter writes `originSurface:'slack'`); dedupe on `event_id`; bot ignored; `state.db`-backed `conversationKey→sessionId` isolation (`Map` tests only) | `audit:imports` (no boring-bash) |
 | pr3-egress-batching | BBS1-004 | new | ~250–400 | egress via `agent.stream(sessionId,{startIndex})`: N deltas <1s → 1 post + bounded updates; turn-end flush; 429 backoff | `test` |
 | pr4-approvals-slack | BBS1-005 | new | ~250–400 | button → `resolveInput` right session/request; cross-surface answer consistent | `test` |
 | pr5-conformance-suite | BBS1-006 | new (neutral `@hachej/boring-agent/testing`) + test | ~200 (suite) | message-in→out, approval round-trip, addressing isolation; runs `runtime:'none'` + readonly `company_context` | agent `build` (`./testing` subpath) |
@@ -272,12 +273,12 @@ Adds the `@hachej/boring-sandbox/mounts` export (created package from P2) + the 
 
 | PR | beads | nature | net-new vs budget | test deliverables | gate |
 | --- | --- | --- | --- | --- | --- |
-| pr1-agent-inspect-panel | BBS3-001 | new (only genuinely-new surface) | ~350–550 (registers via existing `PanelRegistry`) | renders `/info` read-only; reviewer readonly+no-bash; pure=no envs; **no secret field** | workspace `test`; `lint:plugin-invariants` |
+| pr1-fleet-page | BBS3-001 | new (only genuinely-new surface) | ~350–550 (registers via existing `PanelRegistry` + `WorkspaceSourceRegistry`) | Fleet page fetches `GET /api/v1/agents`, enriches rows from `GET /api/v1/agents/:agentId/info`, and provides a read-only per-agent drill-down (sessions, pending approvals, environments); reviewer readonly+no-bash; pure=no envs; **no secret field**; `FleetPage` tests | workspace `test`; `lint:plugin-invariants` |
 | pr2-crosssurface-sessions | BBS3-002 | new (rewire, not rebuild) | ~200–350 (`SessionSummary.originSurface` additive) | slack-origin badge + `origin:` filter; missing field defaults workspace; transcript reuses `PiChatPanel` by `sessionId` | agent+workspace `test` |
 | pr3-central-approval-inbox | BBS3-003 | new (generalize ask-user `InboxOverlay`) | ~250–400 (front-only; source → T1 `agent.sessions.pendingInputs(ctx, { sessionId? })`) | two-session/two-surface inbox; `resolveInput` on answer; single source (no second channel) | `audit:imports`; **STOP+report if `agent.sessions.pendingInputs(ctx, { sessionId? })` absent** |
 | pr4-controlplane-integration | BBS3-004 | test | 0 | one workspace inspects 2 agents + observes/approves 2 surfaces via public contracts only | workspace `test` |
 
-**S3 total: 4 PRs.** Consumes P7 `/info` + BBP7-004 search + T1 `agent.sessions.pendingInputs(ctx, { sessionId? })` (STOP+report if missing). No new registry/host; observe-only (agent-as-directory authoring deferred).
+**S3 total: 4 PRs.** Consumes P7 `GET /api/v1/agents` + `/info` + BBP7-004 search + T1 `agent.sessions.pendingInputs(ctx, { sessionId? })` (STOP+report if missing). No new registry/host; observe-only (agent-as-directory authoring deferred).
 
 ---
 
@@ -295,16 +296,16 @@ Adds the `@hachej/boring-sandbox/mounts` export (created package from P2) + the 
 | E1 | 5 | 5 | — |
 | E2 | 3 | 3 | — |
 | P5 | 8 | 9 | — |
-| X1 | 4 | 4 | — |
+| X1 | 5 | 5 | — |
 | P6 | 9 | 9 | 2 (P6b) |
 | P7 | 9 | 9 | — |
 | P8 | 3 | 3 | — |
 | S1 | 5 | 5 | — |
 | S2 | 2 | 2 | — |
 | S3 | 4 | 4 | — |
-| **TOTAL** | **87** | **~92** | 2 follow-up (P6b) |
+| **TOTAL** | **88** | **~93** | 2 follow-up (P6b) |
 
-**Expected overall: ~87 PRs (up to ~92 if every pre-declared split fires). The 2 P6b PRs are a tracked follow-up OUTSIDE the epic exit (hard-blocked on the shared child-app platform type) — they do not gate P7 or P8, so the epic's ~85 non-P6b PRs ship without them. (P4 dropped from 4 to 3 PRs: the document-authority seam BBP4-013 is deferred out of the epic. P2 rose from 6 to 7 PRs: the `@hachej/boring-sandbox` package scaffold, pr0. X1 adds 4 PRs: the S3/FUSE mount subsystem, bash-lane parallel off P2+P5.)**
+**Expected overall: ~88 PRs (up to ~93 if every pre-declared split fires). The 2 P6b PRs are a tracked follow-up OUTSIDE the epic exit (hard-blocked on the shared child-app platform type) — they do not gate P7 or P8, so the epic's ~86 non-P6b PRs ship without them. (P4 dropped from 4 to 3 PRs: the document-authority seam BBP4-013 is deferred out of the epic. P2 rose from 6 to 7 PRs: the `@hachej/boring-sandbox` package scaffold, pr0. X1 adds 5 PRs: the S3/FUSE mount subsystem plus benchmark, bash-lane parallel off P2+P5+E1.)**
 
 ### Critical-path PR sequence (longest serial chain)
 
@@ -312,9 +313,9 @@ Adds the `@hachej/boring-sandbox/mounts` export (created package from P2) + the 
 P0(1) → P1(6) → P2(7) → P3(6) → P5(8) → P6a(7) → P7(9) → P8(3)   = 47 PRs serial
 ```
 
-- **Off the same P1 root, in parallel:** the transport lane `T1(6) → T2(6) → { S1(5) → S2(2) ; S3(4) }`, the environment lane `E1(5) → E2(3)` (E1 also needs P3; E2 feeds no critical successor except P8), and the **mount lane `X1(4)`** (needs P2+P5; bash-lane parallel to E1/E2; feeds no critical successor except P8).
-- **P7 also needs E1 and T2** (T2 formalizes the `sessionId`-only transport + two-handles guard P7's addressing/binding rides, and carries the T1 durable approvals/`resolveInput` the external-hook route and `/info` channel facts read); **S3 needs T2 + P7**; **P8 gates on every lane EXCEPT P6b** (bash + transport + environment + surfaces).
+- **Off the same P1 root, in parallel:** the transport lane `T1(6) → T2(6) → { S1(5) → S2(2) ; S3(4) }`, the environment lane `E1(5) → E2(3)` (E1 also needs P3; E2 feeds no critical successor except P8), and the **mount lane `X1(5)`** (needs P2+P5+E1; bash-lane parallel after those preconditions; feeds no critical successor except P8).
+- **P7 also needs E1 and T2** (T2 formalizes the `sessionId`-only transport + two-handles guard P7's addressing/binding rides, and carries the T1 durable approvals/`resolveInput` the external-hook route and `/info` channel facts read); **S3 needs T2 + P7**; **P8 gates on every delivered lane EXCEPT P6b** (bash + transport + environment + mounts + surfaces).
 - **P6b** is off the critical path (a tracked follow-up, hard-blocked) and gates **neither P7 nor P8** (P7 consumes P6a only; P8 only verifies the P6b follow-up issue is filed) — so P6b's block can never deadlock the epic exit.
 - **Package minor bumps** on the path: `@hachej/boring-agent` at P3 (relocation) and at T2 (protocol).
 
-Merge-order rule across lanes: nothing in P2 opens until P1 pr2..pr6 are green; E1 waits on both P2 and P3; P5 dispatches off P3 (not P4); P6a off P5; P7 off P6a+E1+T2; P8 last, only when zero `TODO(remove:*)` markers remain repo-wide and all lane gates **except P6b** are green (P6b is a tracked follow-up outside the epic exit — P8 verifies its follow-up issue is filed but never waits on P6b landing).
+Merge-order rule across lanes: nothing in P2 opens until P1 pr2..pr6 are green; E1 waits on both P2 and P3; P5 dispatches off P3 (not P4); X1 waits on P2+P5+E1; P6a off P5; P7 off P6a+E1+T2; P8 last, only when zero `TODO(remove:*)` markers remain repo-wide and all delivered lane gates **except P6b** are green (P6b is a tracked follow-up outside the epic exit — P8 verifies its follow-up issue is filed but never waits on P6b landing).

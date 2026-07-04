@@ -33,7 +33,7 @@ Derived strictly from [TODO.md](./TODO.md) and [PLAN.md](./PLAN.md). Tick each b
 - [ ] Track T1 does not start until BBP1-002..006 are merged (T1 depends on the stub seams landing here).
 
 ## Exit criteria
-- [ ] `createAgent()` exported from `@hachej/boring-agent/core` returning the nine members; `start` (accepted-receipt write), `stream` (replay+live-tail read), `send` (convenience), `interrupt`/`stop` real, `resolveInput`/historical-`stream` typed stubs.
+- [ ] `createAgent()` exported from `@hachej/boring-agent/core` returning the nine members; `start` (accepted-receipt write), `stream` (replay+live-tail read with documented non-durable in-memory `eventIndex` counter until T1), `send` (convenience), `interrupt`/`stop` real, `resolveInput`/historical-`stream` typed stubs.
 - [ ] `createAgentApp()`/`registerAgentRoutes()` are adapters over `createAgent()`; all current HTTP consumers behave identically (cli hub, workspace, core, agent-playground e2e).
 - [ ] Typed config object only: no `process.env` / `process.cwd()` / `.pi/*` / `workspaces.yaml` reads inside `createAgent()`.
 - [ ] A pure agent starts via `createAgent({ runtime: 'none' })` in a plain Node script with no Fastify, no workspace/sandbox/cwd/file routes/bash tools.

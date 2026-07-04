@@ -11,7 +11,7 @@ Handoff: self-contained work order for one autonomous coding agent (pi or gpt-5.
 
 ### Depends on
 
-- **Every prior phase** of this pack **except P6b** (P1–P7, T1–T2, E1–E2, S1–S3, Phase 5, **P6a**). S3 is in the epic (VISION row 6 — workspace-as-control-plane — requires it), so P8 gates on it. P8 is the terminal gate. It **must not** land while any earlier phase's `TODO(remove:*)` marker is still live — that reopens the owning phase (see "The rule", below).
+- **Every prior delivered phase** of this pack **except P6b** (P1–P7, T1–T2, E1–E2, **X1**, S1–S3, Phase 5, **P6a**). S3 is in the epic (VISION row 6 — workspace-as-control-plane — requires it), and X1 is in the epic (mount/farm substrate), so P8 gates on both. P8 is the terminal gate. It **must not** land while any earlier phase's `TODO(remove:*)` marker is still live — that reopens the owning phase (see "The rule", below).
 - **P6b is explicitly NOT a P8 gate.** P6b (child-app scoping, BBP6-001/BBP6-006) is HARD BLOCKED on the shared child-app platform type (`ResolvedChildAppContext`, #376) and is a **tracked follow-up outside the epic exit** — the epic ships without it. **P8 does not wait on P6b landing**; it only **verifies the P6b follow-up issue is filed** (BBP8-004). This is what prevents a P8↔P6b exit deadlock: P8 gating on "all lanes" would otherwise be unsatisfiable while P6b is blocked.
 
 ### Current repo reality this bead verifies (verified paths)

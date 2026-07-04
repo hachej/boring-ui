@@ -69,6 +69,12 @@ Each vision component mapped to what exists today → the delta work orders → 
   publish snapshots rather than live workspace paths, assets are captured into
   a manifest, viewer/editor separation is mandatory, and downloads are kind metadata.
 
+### State-store reservations (no scope addition)
+
+- #397 task tables target `state.db`; the durable task service remains farm-epic scope.
+- Farm-epic artifact index targets a rebuildable `state.db` table folded from `data-artifact` events.
+- #424 share-records migration targets `state.db`; public Markdown share remains non-artifact.
+
 ## Architecture at a glance
 
 **Five clean layers** (v2 extends the original three):

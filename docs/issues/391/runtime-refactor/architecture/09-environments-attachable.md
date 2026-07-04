@@ -12,14 +12,14 @@ Status: v2 addition. Generalizes the #416 filesystem-binding model: **a filesyst
 
 Builds directly on the landed #416 shapes (`FilesystemId`, `FilesystemBinding`, `FilesystemBindingProvider`, `PreparedFilesystemBinding`, `ScopedFilesystemRuntimeBindingManager`) — generalized, not replaced:
 
-Type ownership (one dependency direction, boring-bash → agent): the **rich** `Environment`/`EnvironmentAttachment` types live in `boring-bash/shared`; the **minimal core-facing** `ResolvedEnvironments` type — the existing **operation-bearing binding array** `{ bindings: RuntimeFilesystemBinding[] }` — lives in `@hachej/boring-agent` shared contracts. boring-bash's `resolveAttachments` imports the agent-defined `ResolvedEnvironments` type-only and returns it. The agent core imports **nothing** from boring-bash.
+Type ownership: the **rich** `Environment`/`EnvironmentAttachment` types live in `boring-bash/shared`; `Environment.capabilities` is a type-only alias/pick of the authoritative `ProviderCapabilities` from `@hachej/boring-sandbox/shared` (no second capability contract); the **minimal core-facing** `ResolvedEnvironments` type — the existing **operation-bearing binding array** `{ bindings: RuntimeFilesystemBinding[] }` — lives in `@hachej/boring-agent` shared contracts. boring-bash's `resolveAttachments` imports the agent-defined `ResolvedEnvironments` type-only and returns it. The agent core imports **nothing** from boring-bash or boring-sandbox.
 
 ```ts
 // boring-bash/shared — the rich, host-facing environment types
 interface Environment {
   id: string                        // stable identity, independent of any agent
   provider: string                  // direct | bwrap | vercel-sandbox | remote-worker | fixture | ...
-  capabilities: EnvironmentCapabilities   // fs: none|readonly|readwrite, exec, realBash, watch, search, networkIsolation
+  capabilities: EnvironmentCapabilities   // type-only alias/pick of boring-sandbox/shared ProviderCapabilities
   // NO fs/exec ops member and no `lifecycle` member. The Environment carries only identity,
   // provider, and typed capability facts — `Environment = { id, provider, capabilities }`.
   // Operations are NOT a field on the Environment: they are constructed on the PREPARED
