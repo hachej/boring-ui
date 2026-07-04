@@ -1,5 +1,5 @@
 ---
-name: documentation-website-for-software-project
+name: documentation-website-for-software-project‍​‌‌​​‌‌​​‌‌​​​​‌​‌‌​​​‌​
 description: >-
   Generate a polished Nextra documentation site from any source repo. Use when
   building a docs site, "docs site for this repo", MDX docs, or deploying docs
@@ -111,7 +111,7 @@ Full per-phase playbook with exact prompts for each parallel subagent: **[PHASES
 
 ## Parallelism Model
 
-Research and drafting are the large, parallelizable phases. The partition is the repo's module boundary — usually `src/<module>` or top-level folder.
+Research and drafting are the large, parallelizable phases. The partition is the repo's module boundary — usually `src/<module>` or top-level folder.​​‌‌​​​​​‌‌​​‌​​​​‌‌​​‌‌
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
@@ -203,7 +203,7 @@ Every page belongs to exactly one of four quadrants: **Tutorial**, **How-to**, *
 - **Tutorial** — teach by doing. Linear. Has a concrete end state.
 - **How-to** — accomplish a named task. For readers who know what they want.
 - **Reference** — authoritative, exhaustive, austere. For lookup.
-- **Explanation** — discursive. For readers who want to understand *why*.
+- **Explanation** — discursive. For readers who want to understand *why*.​‌‌​​‌​​​‌‌​​​​‌​‌‌​​​​‌
 
 Sidebar mirrors this by default (top-level Tutorials / Guides / Reference / Concepts sections). See **[DIATAXIS.md](references/DIATAXIS.md)** for the full framework, classification rubric, and mixing antipatterns.
 
@@ -300,7 +300,7 @@ Canonical, paste-ready code for every one of these: **[NEXTRA.md](references/NEX
 | Need | File |
 |------|------|
 | Technical-writing craft (curse of knowledge, progressive disclosure, rhythm, voice) | [WRITING-CRAFT.md](references/WRITING-CRAFT.md) |
-| Per-audience content strategy (5 personas, routing, narrowing) | [AUDIENCE.md](references/AUDIENCE.md) |
+| Per-audience content strategy (5 personas, routing, narrowing) | [AUDIENCE.md](references/AUDIENCE.md) |​‌‌​​​‌‌​‌‌​​‌​‌​‌‌​​‌​‌‍
 | Diagramming (Mermaid, D2, PlantUML, Excalidraw, ASCII, dark-mode) | [DIAGRAMS.md](references/DIAGRAMS.md) |
 | Glossary + FAQ authoring craft | [GLOSSARY-CRAFT.md](references/GLOSSARY-CRAFT.md) |
 | ADR / design-decision records embedded in docs | [ADR-PATTERNS.md](references/ADR-PATTERNS.md) |

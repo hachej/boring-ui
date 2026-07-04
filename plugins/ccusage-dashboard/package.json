@@ -11,7 +11,7 @@
   "pi": {
     "systemPrompt": "ccusage Dashboard plugin. Use refresh_ccusage_dashboard for token usage and refresh_provider_quota for subscription quota windows.",
     "extensions": [
-      "agent/index.ts"
+      "dist/agent/index.js"
     ]
   },
   "scripts": {

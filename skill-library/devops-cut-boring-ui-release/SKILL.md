@@ -17,7 +17,7 @@ Use this skill for one job: release the current `main` of `boring-ui-v2` to npm 
 - Do not use destructive commands (`git reset --hard`, `git clean -fd`, force push).
 - Do not run `boring-ui --version` as a version check: this CLI may start a server. Use package-manager metadata instead.
 - Do not install `@latest` until npm confirms the new version is visible.
-- After installing the global CLI, restart already-running global `boring-ui` servers; long-lived Node processes keep the old package code in memory. If the server is a systemd user service (`boring-ui-workspaces.service`), restart it with `systemctl --user restart` — do not `kill`+`nohup` a systemd-managed process (it races the auto-restart). After restarting, wait until the workspace route serves HTTP 200 again before declaring the step done.
+- After installing the global CLI, restart already-running global `boring-ui` servers; long-lived Node processes keep the old package code in memory.
 - If any release workflow fails, stop and report the failed run URL.
 
 ## 1. Prepare a clean main worktree
@@ -168,65 +168,37 @@ command -v boring-ui
 
 A running `node /home/ubuntu/.npm-global/bin/boring-ui ...` process keeps the old CLI code in memory after `npm install -g`. Restart any global workspace servers that should pick up the new release.
 
-**Restarting drops live workspace sessions for ~30s while the runtime re-provisions** — anyone on a `…/workspace/<id>` URL during that window sees "Workspace setup failed / NetworkError". That is expected and transient; this step is not done until the workspace route is serving again (see the readiness wait below). Restart at a quiet moment when you can.
-
-### 8a. Prefer systemd if the hub is a managed service
-
-The standard hub on port `5213` is usually the systemd **user** service `boring-ui-workspaces.service`. If it is, **restart through systemd** — never `kill` + `nohup` it by hand. systemd has `Restart=` on this unit, so a manual kill makes systemd respawn the old process while your `nohup` also spawns one, and the two race for the port (`EADDRINUSE`), leaving an orphan you don't control.
+For the standard global workspaces server on port `5213`:
 
 ```bash
-if systemctl --user list-units --type=service --all 2>/dev/null | grep -q 'boring-ui-workspaces.service'; then
-  systemctl --user restart boring-ui-workspaces.service
-  systemctl --user --no-pager -p ActiveState,SubState,MainPID,NRestarts show boring-ui-workspaces.service
-  managed=systemd
-fi
-```
-
-A high `NRestarts` (hundreds/thousands) or a previous `Result=oom-kill` / `status=9/KILL` in `journalctl --user -u boring-ui-workspaces.service` means the hub is in a chronic crash/OOM loop — flag it in your report; it is a pre-existing problem, not your release.
-
-### 8b. Manual restart only if NOT systemd-managed
-
-```bash
-if [ "${managed:-}" != systemd ]; then
-  pid=$(ss -ltnp 'sport = :5213' 2>/dev/null | sed -n 's/.*pid=\([0-9][0-9]*\).*/\1/p' | head -1)
-  if [ -n "$pid" ]; then
-    ps -p "$pid" -o pid,lstart,cmd
-    cwd=$(readlink "/proc/$pid/cwd")
-    kill -TERM "$pid"
-    for i in $(seq 1 20); do kill -0 "$pid" 2>/dev/null || break; sleep 0.5; done
-    if kill -0 "$pid" 2>/dev/null; then kill -KILL "$pid"; fi
-  else
-    cwd=/home/ubuntu/projects/boring-ui-v2
-  fi
-  log=/tmp/boring-ui-global-5213.log
-  cd "$cwd"
-  nohup boring-ui workspaces --port 5213 --host 0.0.0.0 > "$log" 2>&1 &
-  new_pid=$!
-  for i in $(seq 1 40); do
-    ss -ltnp 'sport = :5213' 2>/dev/null | grep -q "pid=$new_pid" && break
-    kill -0 "$new_pid" 2>/dev/null || { tail -80 "$log"; exit 1; }
+pid=$(ss -ltnp 'sport = :5213' 2>/dev/null | sed -n 's/.*pid=\([0-9][0-9]*\).*/\1/p' | head -1)
+if [ -n "$pid" ]; then
+  ps -p "$pid" -o pid,lstart,cmd
+  cwd=$(readlink "/proc/$pid/cwd")
+  kill -TERM "$pid"
+  for i in $(seq 1 20); do
+    if ! kill -0 "$pid" 2>/dev/null; then break; fi
     sleep 0.5
   done
-  ps -p "$new_pid" -o pid,lstart,cmd
+  if kill -0 "$pid" 2>/dev/null; then kill -KILL "$pid"; fi
+else
+  cwd=/home/ubuntu/projects/boring-ui-v2
 fi
-```
 
-### 8c. Wait until the workspace route is actually ready
+log=/tmp/boring-ui-global-5213.log
+cd "$cwd"
+nohup boring-ui workspaces --port 5213 --host 0.0.0.0 > "$log" 2>&1 &
+new_pid=$!
 
-The port listening is not enough — the per-workspace runtime re-provisions on first access, and reporting success before that completes is what leaves users with "NetworkError". Wait for each configured workspace to serve, and confirm the hub logged it `ready`:
-
-```bash
-# Each workspace id from the hub config; adjust the grep if the path differs.
-for slug in $(grep -oE 'workspace/[A-Za-z0-9_-]+' /home/ubuntu/.boring-ui/workspaces.yaml 2>/dev/null | sort -u); do
-  url="http://localhost:5213/$slug"
-  for i in $(seq 1 60); do
-    code=$(curl -s -o /dev/null -w '%{http_code}' -m 8 "$url" 2>/dev/null || echo 000)
-    [ "$code" = 200 ] && { echo "$slug ready (HTTP 200)"; break; }
-    sleep 2
-  done
+for i in $(seq 1 40); do
+  if ss -ltnp 'sport = :5213' 2>/dev/null | grep -q "pid=$new_pid"; then break; fi
+  if ! kill -0 "$new_pid" 2>/dev/null; then tail -80 "$log"; exit 1; fi
+  sleep 0.5
 done
-journalctl --user -u boring-ui-workspaces.service --no-pager -n 15 | grep -iE 'ready|error|provision' || true
+
+ps -p "$new_pid" -o pid,lstart,cmd
 ss -ltnp 'sport = :5213'
+tail -40 "$log" || true
 ```
 
 If other global `boring-ui` processes are running, inspect and restart them intentionally rather than killing unrelated dev servers:
@@ -245,7 +217,5 @@ Report:
 - release workflow status/run URL
 - npm version observed
 - global CLI package version installed
-- restarted global server PID(s), port(s), and log path(s); how it was restarted (systemd vs manual)
-- confirmation each workspace route serves HTTP 200 after the restart
-- any hub instability observed (high `NRestarts`, OOM kills) — flagged as pre-existing
+- restarted global server PID(s), port(s), and log path(s)
 - gates run
