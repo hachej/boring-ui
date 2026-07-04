@@ -46,6 +46,24 @@ function isMeteringActive(metering: unknown): boolean {
   return typeof isEnabled === 'function' ? isEnabled() === true : true
 }
 
+function nonEmptyString(value: unknown): string | undefined {
+  return typeof value === 'string' && value.length > 0 ? value : undefined
+}
+
+function buildRunContext(request: FastifyRequest, workdir: string, options: { allowPromptDispatch?: boolean } = {}): RunContext {
+  const user = (request as FastifyRequest & { user?: { id?: unknown; email?: unknown; emailVerified?: unknown } | null }).user
+  return {
+    abortSignal: new AbortController().signal,
+    workdir,
+    workspaceId: request.workspaceContext?.workspaceId,
+    requestId: request.id,
+    userId: nonEmptyString(user?.id),
+    userEmail: nonEmptyString(user?.email),
+    userEmailVerified: user?.emailVerified === true,
+    ...(options.allowPromptDispatch === false ? { allowPromptDispatch: false } : {}),
+  }
+}
+
 function meteredCommandBlocked(command: string) {
   return {
     error: {
@@ -82,10 +100,7 @@ export function commandsRoutes(
         resolveHarness(opts, request),
         resolveWorkdir(opts, request),
       ])
-      const commands: ReadonlyArray<AgentSlashCommandSummary> = await harness.getSlashCommands?.(sessionId, {
-        abortSignal: new AbortController().signal,
-        workdir,
-      }) ?? []
+      const commands: ReadonlyArray<AgentSlashCommandSummary> = await harness.getSlashCommands?.(sessionId, buildRunContext(request, workdir)) ?? []
       return reply.code(200).send({ commands })
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error)
@@ -109,11 +124,9 @@ export function commandsRoutes(
       const args = typeof body.args === 'string' ? body.args : ''
       if (!name) return reply.code(400).send({ error: 'name body field is required' })
       const meteringActive = isMeteringActive(opts.metering)
-      const runContext: RunContext = {
-        abortSignal: new AbortController().signal,
-        workdir,
+      const runContext = buildRunContext(request, workdir, {
         ...(meteringActive ? { allowPromptDispatch: false } : {}),
-      }
+      })
       if (meteringActive) {
         // Extension handlers can call captured Pi APIs that trigger turns; until command execution is metered, fail closed.
         return reply.code(409).send(meteredCommandBlocked(name))

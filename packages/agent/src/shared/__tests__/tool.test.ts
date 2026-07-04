@@ -24,6 +24,7 @@ test('ToolExecContext contract', () => {
     sessionId?: string
     userId?: string
     userEmail?: string
+    userEmailVerified?: boolean
     workspaceId?: string
     requestId?: string
   }>()
@@ -34,6 +35,7 @@ test('ToolExecContext contract', () => {
   expectTypeOf<ToolExecContext['sessionId']>().toEqualTypeOf<string | undefined>()
   expectTypeOf<ToolExecContext['userId']>().toEqualTypeOf<string | undefined>()
   expectTypeOf<ToolExecContext['userEmail']>().toEqualTypeOf<string | undefined>()
+  expectTypeOf<ToolExecContext['userEmailVerified']>().toEqualTypeOf<boolean | undefined>()
   expectTypeOf<ToolExecContext['workspaceId']>().toEqualTypeOf<string | undefined>()
   expectTypeOf<ToolExecContext['requestId']>().toEqualTypeOf<string | undefined>()
 })

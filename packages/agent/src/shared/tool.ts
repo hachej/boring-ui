@@ -29,6 +29,7 @@ export interface ToolExecContext {
   /** Authenticated human user executing this tool, when known. */
   userId?: string
   userEmail?: string
+  userEmailVerified?: boolean
   workspaceId?: string
   requestId?: string
 }

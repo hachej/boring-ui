@@ -1,3 +1,4 @@
+import { AsyncLocalStorage } from "node:async_hooks";
 import { existsSync, readFileSync } from "node:fs";
 import { mkdir, writeFile } from "node:fs/promises";
 import { extname, join } from "node:path";
@@ -33,12 +34,17 @@ import {
   type PiPackageSource,
 } from "../../piPackages.js";
 
+interface PiRunContextState {
+  queuedFollowUpContexts: WeakMap<object, RunContext>;
+}
+
 interface PiSessionHandle {
   piSession: AgentSession;
   modelRegistry: ModelRegistry;
   sessionManager: SessionManager;
   resourceLoader: DefaultResourceLoader;
-  runContextRef: { current?: RunContext };
+  runContextState: PiRunContextState;
+  unsubscribeRunContextListener: () => void;
 }
 
 export { mergePiPackageSources } from "../../piPackages.js";
@@ -364,6 +370,43 @@ function normalizeSlashCommandInfo(command: SlashCommandInfo): AgentSlashCommand
   };
 }
 
+type PiAgentWithFollowUp = {
+  followUp?: (message: unknown) => unknown;
+}
+
+function rememberQueuedFollowUpRunContexts(
+  piSession: AgentSession,
+  state: PiRunContextState,
+  getRunContext: () => RunContext | undefined,
+): () => void {
+  const agent = (piSession as { agent?: PiAgentWithFollowUp }).agent;
+  if (!agent || typeof agent.followUp !== "function") return () => {};
+  const originalFollowUp = agent.followUp;
+  const wrappedFollowUp = function (this: PiAgentWithFollowUp, message: unknown) {
+    const ctx = getRunContext();
+    if (ctx && message && typeof message === "object") state.queuedFollowUpContexts.set(message, ctx);
+    return originalFollowUp.call(this, message);
+  };
+  agent.followUp = wrappedFollowUp;
+  return () => {
+    if (agent.followUp === wrappedFollowUp) agent.followUp = originalFollowUp;
+  };
+}
+
+function updateRunContextStateFromPiEvent(
+  state: PiRunContextState,
+  event: unknown,
+  activateRunContext: (ctx: RunContext) => void,
+): void {
+  if ((event as { type?: unknown }).type !== "message_start") return;
+  const message = (event as { message?: unknown }).message;
+  if (!message || typeof message !== "object") return;
+  const ctx = state.queuedFollowUpContexts.get(message);
+  if (!ctx) return;
+  state.queuedFollowUpContexts.delete(message);
+  activateRunContext(ctx);
+}
+
 export function createPiCodingAgentHarness(opts: {
   tools: AgentTool[];
   /** Host/storage cwd used for harness-owned resources (.pi settings, attachments, plugin discovery). */
@@ -403,6 +446,7 @@ export function createPiCodingAgentHarness(opts: {
     storageCwd: opts.cwd,
   });
   const piSessions = new Map<string, PiSessionHandle>();
+  const runContextStorage = new AsyncLocalStorage<RunContext>();
 
   // Effective Pi resources merge static caller-supplied fields with
   // getHotReloadableResources() output. Pi's DefaultResourceLoader keeps the
@@ -447,7 +491,6 @@ export function createPiCodingAgentHarness(opts: {
   ): Promise<PiSessionHandle> {
     const existing = piSessions.get(sessionId);
     if (existing) {
-      existing.runContextRef.current = ctx;
       await applyRequestedSessionOptions(existing, input, { strictModelResolution: pi.strictModelResolution });
       return existing;
     }
@@ -455,7 +498,6 @@ export function createPiCodingAgentHarness(opts: {
     const inFlight = piSessionCreations.get(sessionId);
     if (inFlight) {
       const handle = await inFlight;
-      handle.runContextRef.current = ctx;
       await applyRequestedSessionOptions(handle, input, { strictModelResolution: pi.strictModelResolution });
       return handle;
     }
@@ -467,6 +509,28 @@ export function createPiCodingAgentHarness(opts: {
     } finally {
       if (piSessionCreations.get(sessionId) === creation) piSessionCreations.delete(sessionId);
     }
+  }
+
+  async function bindRunContext<T>(ctx: RunContext, run: () => Promise<T>): Promise<T> {
+    return await runContextStorage.run(ctx, run);
+  }
+
+  function createRunBoundAdapter(handle: PiSessionHandle, input: SendMessageInput, ctx: RunContext): PiAgentSessionAdapter {
+    const adapter = createPiAgentSessionAdapter(handle.piSession, {
+      sessionId: input.sessionId,
+      ...(handle.piSession.agent && typeof handle.piSession.agent.continue === "function"
+        ? { continueQueuedFollowUp: () => handle.piSession.agent!.continue() }
+        : {}),
+    });
+    return {
+      ...adapter,
+      prompt: (promptInput) => bindRunContext(ctx, () => adapter.prompt(promptInput)),
+      followUp: (text, options) => bindRunContext(ctx, () => adapter.followUp(text, options)),
+      clearFollowUp: (options) => adapter.clearFollowUp(options),
+      ...(adapter.continueQueuedFollowUp
+        ? { continueQueuedFollowUp: () => bindRunContext(ctx, () => adapter.continueQueuedFollowUp!()) }
+        : {}),
+    };
   }
 
   async function createPiSession(
@@ -567,14 +631,14 @@ export function createPiCodingAgentHarness(opts: {
 
     await resourceLoader?.reload()
 
-    const runContextRef: PiSessionHandle['runContextRef'] = { current: ctx }
+    const runContextState: PiRunContextState = { queuedFollowUpContexts: new WeakMap() }
     const { session: piSession } = await createAgentSession({
       cwd: runtimeCwd,
       // Suppress Pi's built-in filesystem/shell tools while keeping Boring's
       // adapted tool catalog active. Do NOT pass an explicit empty tool-name
       // allowlist: in the current Pi SDK that disables custom tools too.
       noTools: "builtin",
-      customTools: adaptToolsForPi(opts.tools, input.sessionId, opts.telemetry, () => runContextRef.current),
+      customTools: adaptToolsForPi(opts.tools, input.sessionId, opts.telemetry, () => runContextStorage.getStore()),
       model,
       thinkingLevel: input.thinkingLevel ?? "off",
       sessionManager,
@@ -590,7 +654,13 @@ export function createPiCodingAgentHarness(opts: {
       }
     }
 
-    const handle: PiSessionHandle = { piSession, modelRegistry, sessionManager, resourceLoader, runContextRef };
+    const restoreFollowUpContextWrapper = rememberQueuedFollowUpRunContexts(piSession, runContextState, () => runContextStorage.getStore());
+    const unsubscribePiRunContextListener = piSession.subscribe((event) => updateRunContextStateFromPiEvent(runContextState, event, (ctx) => runContextStorage.enterWith(ctx)));
+    const unsubscribeRunContextListener = () => {
+      unsubscribePiRunContextListener();
+      restoreFollowUpContextWrapper();
+    };
+    const handle: PiSessionHandle = { piSession, modelRegistry, sessionManager, resourceLoader, runContextState, unsubscribeRunContextListener };
     piSessions.set(sessionId, handle);
     return handle;
   }
@@ -606,6 +676,7 @@ export function createPiCodingAgentHarness(opts: {
   function disposePiSession(sessionId: string): void {
     const handle = piSessions.get(sessionId);
     if (!handle) return;
+    handle.unsubscribeRunContextListener();
     handle.piSession.dispose();
     piSessions.delete(sessionId);
   }
@@ -684,31 +755,28 @@ export function createPiCodingAgentHarness(opts: {
 
     async executeSlashCommand(sessionId: string, name: string, args: string, ctx: RunContext): Promise<void> {
       const handle = await getOrCreatePiSession(sessionId, { sessionId, message: "" }, ctx);
-      const command = handle.piSession.extensionRunner.getCommand(name);
-      if (command) {
-        const commandContext = handle.piSession.extensionRunner.createCommandContext();
-        await command.handler(args, ctx.allowPromptDispatch === false
-          ? meteredExtensionCommandContext(commandContext, name)
-          : commandContext);
-        return;
-      }
+      await bindRunContext(ctx, async () => {
+        const command = handle.piSession.extensionRunner.getCommand(name);
+        if (command) {
+          const commandContext = handle.piSession.extensionRunner.createCommandContext();
+          await command.handler(args, ctx.allowPromptDispatch === false
+            ? meteredExtensionCommandContext(commandContext, name)
+            : commandContext);
+          return;
+        }
 
-      const knownCommand = handle.resourceLoader.getExtensions().runtime.getCommands().some((candidate) => candidate.name === name);
-      if (!knownCommand) throw new Error(`command '${name}' not registered in session '${sessionId}'`);
-      if (ctx.allowPromptDispatch === false) throw meteredSlashCommandPromptError(name);
+        const knownCommand = handle.resourceLoader.getExtensions().runtime.getCommands().some((candidate) => candidate.name === name);
+        if (!knownCommand) throw new Error(`command '${name}' not registered in session '${sessionId}'`);
+        if (ctx.allowPromptDispatch === false) throw meteredSlashCommandPromptError(name);
 
-      const text = args.trim() ? `/${name} ${args}` : `/${name}`;
-      await handle.piSession.prompt(text);
+        const text = args.trim() ? `/${name} ${args}` : `/${name}`;
+        await handle.piSession.prompt(text);
+      });
     },
 
     async getPiSessionAdapter(input: SendMessageInput, ctx: RunContext) {
-      const { piSession } = await getOrCreatePiSession(input.sessionId, input, ctx);
-      return createPiAgentSessionAdapter(piSession, {
-        sessionId: input.sessionId,
-        ...(piSession.agent && typeof piSession.agent.continue === "function"
-          ? { continueQueuedFollowUp: () => piSession.agent!.continue() }
-          : {}),
-      });
+      const handle = await getOrCreatePiSession(input.sessionId, input, ctx);
+      return createRunBoundAdapter(handle, input, ctx);
     },
   } as AgentHarness & {
     getPiSessionAdapter(input: SendMessageInput, ctx: RunContext): Promise<PiAgentSessionAdapter>;

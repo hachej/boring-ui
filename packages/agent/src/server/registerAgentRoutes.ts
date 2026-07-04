@@ -290,6 +290,7 @@ export interface RegisterAgentRoutesOptions {
     sessionId?: string
     userId?: string
     userEmail?: string
+    userEmailVerified?: boolean
     requestId?: string
   }) => RuntimeFilesystemBinding[] | undefined | Promise<RuntimeFilesystemBinding[] | undefined>
   /**
@@ -610,6 +611,7 @@ let runtimeProvisioning: WorkspaceProvisioningResult | undefined
               sessionId: ctx.sessionId,
               userId: ctx.userId,
               userEmail: ctx.userEmail,
+              userEmailVerified: ctx.userEmailVerified,
               requestId: ctx.requestId,
             })
           : undefined,
@@ -856,13 +858,14 @@ let runtimeProvisioning: WorkspaceProvisioningResult | undefined
   async function getFilesystemBindingsForRequest(request: FastifyRequest): Promise<RuntimeFilesystemBinding[] | undefined> {
     const binding = await getBindingForRequest(request)
     if (!opts.getFilesystemBindings) return binding.runtimeBundle.filesystemBindings
-    const user = (request as FastifyRequest & { user?: { id: string; email: string } | null }).user
+    const user = (request as FastifyRequest & { user?: { id: string; email: string; emailVerified?: boolean } | null }).user
     return await opts.getFilesystemBindings({
       request,
       workspaceId: getRequestWorkspaceId(request),
       workspaceRoot: binding.workspaceRoot,
       userId: user?.id,
       userEmail: user?.email,
+      userEmailVerified: user?.emailVerified,
       requestId: request.id,
     })
   }

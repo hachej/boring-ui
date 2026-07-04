@@ -64,6 +64,7 @@ export function adaptToolForPi(tool: AgentTool, sessionId?: string, telemetry: T
           sessionId,
           userId: runContext?.userId,
           userEmail: runContext?.userEmail,
+          userEmailVerified: runContext?.userEmailVerified,
           workspaceId: runContext?.workspaceId,
           requestId: runContext?.requestId,
         });

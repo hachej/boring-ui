@@ -42,6 +42,7 @@ test('RunContext contract', () => {
     requestId?: string
     userId?: string
     userEmail?: string
+    userEmailVerified?: boolean
     allowPromptDispatch?: boolean
   }>()
 
@@ -49,6 +50,7 @@ test('RunContext contract', () => {
   expectTypeOf<RunContext['workdir']>().toEqualTypeOf<string>()
   expectTypeOf<RunContext['userId']>().toEqualTypeOf<string | undefined>()
   expectTypeOf<RunContext['userEmail']>().toEqualTypeOf<string | undefined>()
+  expectTypeOf<RunContext['userEmailVerified']>().toEqualTypeOf<boolean | undefined>()
   expectTypeOf<RunContext['workspaceId']>().toEqualTypeOf<string | undefined>()
   expectTypeOf<RunContext['requestId']>().toEqualTypeOf<string | undefined>()
   expectTypeOf<RunContext['allowPromptDispatch']>().toEqualTypeOf<boolean | undefined>()

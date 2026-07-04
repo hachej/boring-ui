@@ -952,11 +952,21 @@ test('file routes use request-aware filesystem bindings from registerAgentRoutes
   await app.close()
 }, 15_000)
 
-test('request-scoped commands endpoint uses the workspace harness', async () => {
+test('request-scoped command endpoints use the workspace harness and request identity', async () => {
   const workspaceRoot = await makeTempDir('boring-agent-embed-commands-')
   const app = Fastify({ logger: false })
   const getSlashCommands = vi.fn(async () => [{ name: 'open-test-panel', source: 'extension' as const }])
+  const executeSlashCommand = vi.fn(async () => {})
   let scopeChecks = 0
+
+  app.addHook('onRequest', async (request) => {
+    ;(request as typeof request & { user: { id: string; email: string; name: null; emailVerified: boolean } }).user = {
+      id: 'user-1',
+      email: 'user@example.com',
+      name: null,
+      emailVerified: true,
+    }
+  })
 
   await app.register(registerAgentRoutes, {
     workspaceRoot,
@@ -988,6 +998,7 @@ test('request-scoped commands endpoint uses the workspace harness', async () => 
         async delete() {},
       },
       getSlashCommands,
+      executeSlashCommand,
     }),
   })
   await app.ready()
@@ -1002,8 +1013,32 @@ test('request-scoped commands endpoint uses the workspace harness', async () => 
     expect(commandsRes.json()).toEqual({
       commands: [{ name: 'open-test-panel', source: 'extension' }],
     })
-    expect(getSlashCommands).toHaveBeenCalledWith('custom', expect.objectContaining({ workdir: workspaceRoot }))
-    expect(scopeChecks).toBe(1)
+    expect(getSlashCommands).toHaveBeenCalledWith('custom', expect.objectContaining({
+      workdir: workspaceRoot,
+      workspaceId: 'workspace-a',
+      userId: 'user-1',
+      userEmail: 'user@example.com',
+      userEmailVerified: true,
+      requestId: expect.any(String),
+    }))
+
+    const executeRes = await app.inject({
+      method: 'POST',
+      url: '/api/v1/agent/commands/execute?sessionId=custom',
+      headers: { 'x-boring-workspace-id': 'workspace-a' },
+      payload: { name: 'open-test-panel', args: 'arg1' },
+    })
+    expect(executeRes.statusCode).toBe(200)
+    expect(executeRes.json()).toEqual({ ok: true })
+    expect(executeSlashCommand).toHaveBeenCalledWith('custom', 'open-test-panel', 'arg1', expect.objectContaining({
+      workdir: workspaceRoot,
+      workspaceId: 'workspace-a',
+      userId: 'user-1',
+      userEmail: 'user@example.com',
+      userEmailVerified: true,
+      requestId: expect.any(String),
+    }))
+    expect(scopeChecks).toBe(2)
   } finally {
     await app.close()
   }
