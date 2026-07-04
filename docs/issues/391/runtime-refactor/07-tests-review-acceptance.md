@@ -65,7 +65,7 @@ Vitest, colocated under `__tests__/`. Per package: `pnpm --filter @hachej/boring
 - **Guarantees:** `(filesystem, path)` identity; denied files physically **absent** (no leak through read/list/find/grep/search/shell/UI/transcript/metadata); readwrite management projections are distinct policy-granted bindings; `execPolicy: 'none'` default for non-`user` attachments; no broker secret in any client-reachable payload (E2 BBE2-004).
 - **Command:** `pnpm --filter @hachej/boring-bash run test`.
 
-#### 3d. Surface-adapter conformance — canonical: `surfaceAdapterConformance` (`@hachej/boring-agent/testing`)
+#### 3d. Surface-adapter conformance — canonical: `runSurfaceAdapterConformance` (`@hachej/boring-agent/testing`)
 
 - **Where:** `packages/agent/src/testing/surfaceAdapterConformance.ts`, exposed via the new `@hachej/boring-agent/testing` subpath (S1 BBS1-006). Neutral home from the start — **never inside a channel package** — so S2 (second consumer) imports it without depending on Slack.
 - **Subject** `{ deliverInbound, collectOutbound, answerApproval, addressingKeyOf }` asserts: (a) message-in → events-out ordering; (b) approval round-trip resolves the parked turn; (c) **addressing isolation** — one surface's key cannot resolve another surface's `sessionId` (two-handles rule).
@@ -123,8 +123,8 @@ A phase exits only when its named suites + commands are green. This is the table
 | **P6** (plugin/child-app) | import-free manifest validation; hosted plugin fail-closed before code exec; managed-service lifecycle; child-app/workspace-kind requirement narrowing | `pnpm --filter @hachej/boring-workspace run test` · relevant app e2e |
 | **P7** (multi-agent/inspection) | two agents, same `sessionId`, no shared binding/transcript/catalog; `agentId` in binding scope key + `sessionNamespace`; per-agent readiness/catalogs; session search scoped by workspace+agent; agent inspection endpoint | `pnpm --filter @hachej/boring-agent run test` · `run test:e2e` |
 | **P8** (verification/cleanup) | **zero `TODO(remove:*)` markers repo-wide**; all 00 invariants green; no old-path importer; README documents the four-part surface contract | `pnpm lint:invariants` (incl. marker gate) · `node scripts/check-no-remove-markers.mjs` · `pnpm run test` · `pnpm audit:imports` |
-| **S1** (Slack channel) | `surfaceAdapterConformance` Slack subject (message-in/events-out, approval round-trip, addressing isolation); ingress/egress/session-store/approval unit tests; no boring-bash/provider import | `pnpm --filter @hachej/boring-channel-slack run test` · `run typecheck` · `pnpm audit:imports` |
-| **S2** (embed contract) | `surfaceAdapterConformance` embed subject (the second consumer justifying `@hachej/boring-agent/testing`) | `pnpm --filter @hachej/boring-agent run test` · embed pkg `run test` |
+| **S1** (Slack channel) | `runSurfaceAdapterConformance` Slack subject (message-in/events-out, approval round-trip, addressing isolation); ingress/egress/session-store/approval unit tests; no boring-bash/provider import | `pnpm --filter @hachej/boring-channel-slack run test` · `run typecheck` · `pnpm audit:imports` |
+| **S2** (embed contract) | `runSurfaceAdapterConformance` embed subject (the second consumer justifying `@hachej/boring-agent/testing`) | `pnpm --filter @hachej/boring-agent run test` · embed pkg `run test` |
 | **S3** (control-plane UX) | cross-surface observation (workspace attaches to a Slack-born session by `sessionId`); central approval answering; inspection-panel wiring | `pnpm --filter @hachej/boring-workspace run test` · `pnpm --filter workspace-playground run test:e2e` |
 
 ---
@@ -184,14 +184,4 @@ Do not close unrelated backlog issues just because this abstraction lands.
 
 ### Final acceptance
 
-The pack is ready for beads/implementation when: all files pass blocker-only thermo review; issue #391 body points to the pack; open decisions are resolved or explicitly deferred (P0); every phase has the exit gates in §3; and every suite named in §1 has one canonical name reconcilable to the TODOs (§ reconcile note).
-
----
-
-## Reconcile note (naming mismatches in `todos-v2/` — do not edit the TODOs; fix at implementation)
-
-- **Fake harness:** the prompt/P1 prose says "FakeHarness"; the canonical existing fixture is `scriptedPiHarness` (`packages/agent/src/server/testing/scriptedPiHarness.ts`). P1 BBP1-006 builds an inline `fakeHarness` for the pure smoke — that is fine as a local double, but any *reusable* fake-harness helper must be the `scriptedPiHarness` family, not a new `FakeHarness` module.
-- **Surface-adapter suite:** S1 BBS1-006 names the file `surfaceAdapterConformance.ts` but does not fix the exported function name. Canonical: `runSurfaceAdapterConformance` (matches the `run*Conformance` house convention used by `runTransportConformance` / `runEventStreamStoreConformance`).
-- **Harness conformance location:** T1 BBT1-006 says "find the existing suite … or add `durableStream.conformance.test.ts`". Canonical target is the existing `packages/agent/src/server/harness/pi-coding-agent/__tests__/*conformance*.ts` (extend it); a new `durableStream.conformance.test.ts` is acceptable only if registered as part of the same exported harness factory (so T2's transport suite can layer on one suite, not two).
-- **`startIndex` vs `offset`:** in-process APIs use `{ startIndex }`; the DS wire uses `?offset=N`. Same monotonic position (`?offset=N` ⇔ `{ startIndex: N }`); the HTTP adapter translates. Conformance suites assert the equivalence, not a fork.
-- **Remote-worker mount:** 09 lists a "remote-worker (provider)" mount of the env/no-leak suite; it stays a **provider** attachment (P2/P5), not a transport — the "environment-as-transport" reclassification is deferred to a P8-filed follow-up and is **not** a mount contract change.
+The pack is ready for beads/implementation when: all files pass blocker-only thermo review; issue #391 body points to the pack; open decisions are resolved or explicitly deferred (P0); every phase has the exit gates in §3; and every suite named in §1 has one canonical name matching the TODOs.

@@ -30,7 +30,7 @@ Match `06-migration-phases.md` Phase S2 exit criteria:
 
 - Do NOT add `@hachej/boring-bash` (or any provider) to the embed's dependencies.
 - Do NOT build a real Office/Excel add-in or ship a product; a minimal spreadsheet-ish reference (in-memory grid + task-pane-style approval) is the deliverable.
-- Do NOT fork the surface-adapter conformance suite; import `surfaceAdapterConformance` from the neutral home `@hachej/boring-agent/testing` (where S1 BBS1-006 authors it) — **not** from the Slack package — and provide a spreadsheet subject.
+- Do NOT fork the surface-adapter conformance suite; import `runSurfaceAdapterConformance` from the neutral home `@hachej/boring-agent/testing` (where S1 BBS1-006 authors it) — **not** from the Slack package — and provide a spreadsheet subject.
 - Do NOT invent server APIs; if a needed façade method is missing, block on P1 rather than reaching into the harness.
 - Do NOT touch `/home/ubuntu/projects/boring-ui-v2`. Do NOT commit.
 
@@ -59,7 +59,7 @@ Match `06-migration-phases.md` Phase S2 exit criteria:
 ### BBS2-003 — Surface-adapter conformance for the embed (S)
 - Description: Run S1's conformance suite with a spreadsheet subject.
 - Files: `apps/spreadsheet-embed-playground/src/__tests__/embedConformance.test.ts`.
-- Notes: Import `surfaceAdapterConformance` from `@hachej/boring-agent/testing` (the neutral home S1 BBS1-006 authors — not the Slack package). Provide a subject whose `deliverInbound` sends a user turn, `collectOutbound` reads the event stream, `answerApproval` calls `resolveInput`, `addressingKeyOf` returns the `workbookId+sheetId` key. Assert message-in→events-out, approval round-trip, and addressing isolation (a second workbook cannot resolve the first's session).
+- Notes: Import `runSurfaceAdapterConformance` from `@hachej/boring-agent/testing` (the neutral home S1 BBS1-006 authors — not the Slack package). Provide a subject whose `deliverInbound` sends a user turn, `collectOutbound` reads the event stream, `answerApproval` calls `resolveInput`, `addressingKeyOf` returns the `workbookId+sheetId` key. Assert message-in→events-out, approval round-trip, and addressing isolation (a second workbook cannot resolve the first's session).
 - Tests: the file.
 - Acceptance: `passed: true`; isolation holds across two workbooks.
 
