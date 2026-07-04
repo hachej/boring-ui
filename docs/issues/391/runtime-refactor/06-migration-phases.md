@@ -16,6 +16,8 @@ Phase 0 ─ Phase 1 ──┬── Phase 2 ── Phase 3 ──┬── Phase
                     │                          └── Phase E1 ─────────── Phase E2
                     │                              (env attachments/     (MCP env
                     │                               resolveAttachments)   projection)
+                    │              (Phase 5 also feeds) └── Phase X1 (S3/FUSE mounts for
+                    │                                        boring-sandbox envs; needs P2+P5)
                     └── Phase T1 ── Phase T2 ──┬──────────── Phase S1 ── Phase S2
                         (event      (transport  │            (Slack      (pi-excel
                          envelope)   adapters)   │            channel)    embed)
@@ -86,10 +88,13 @@ Exit criteria: workspace UI runs unmodified against the refit; a headless Node c
 Deliverables:
 
 - package skeleton and exports **[landed via #416: skeleton, shared filesystem-binding contracts, readonly/management company-context operations, fixture provider, leakage/conformance tests]**;
+- **scaffold the new `@hachej/boring-sandbox` package** (sandbox management: providers, FUSE-S3 mounts, lifecycle, capability facts — imports agent **types only**);
 - provider capability model; mode/provider mapping docs;
-- move concrete provider implementations (direct, bwrap, vercel-sandbox, remote-worker client) to `boring-bash/providers`;
-- provisioning ownership docs: agent owns engine/types over injected adapters; boring-bash owns requirement normalizer and provider adapters;
-- remote-worker split docs: protocol/shared types, client/provider adapter, optional server package path;
+- move concrete provider implementations (direct, bwrap, vercel-sandbox, remote-worker client) to **`packages/boring-sandbox/src/providers`** (00 open decision 3, RESOLVED; 08 decision 11) — **not** `boring-bash/providers`;
+- **runtime-mode resolution (`resolveMode`/`autoDetectMode`/`hasBwrap`) lands in `@hachej/boring-bash`** (THE RUNTIME: the CHOICE of sandbox), resolving a mode id to a `@hachej/boring-sandbox` provider value;
+- provisioning ownership docs: agent owns engine/types over injected adapters; boring-bash owns requirement normalizer + runtime-mode resolution; **boring-sandbox owns the concrete provider adapters + capability facts**;
+- remote-worker split docs: protocol/shared types → `boring-sandbox/shared`, client/provider adapter → `boring-sandbox/providers`, optional server package path;
+- invariant/import boundary: **acyclic** `boring-sandbox → agent(types)`; `boring-bash → boring-sandbox(values) + agent(types)`; agent imports neither;
 - migration strategy (v2, strict): **migrate every importer in the same PR** — no type-only old-path exports, no re-export stubs, no host shims that outlive the phase. Intra-phase transitional code carries `// TODO(remove:<bead-id>)` + a deletion bead (see `todos-v2/README.md` "Simplicity & no-compat policy").
 
 Do not move providers until Phase 1 injection is complete.
@@ -123,6 +128,21 @@ Unchanged from v1: `BashRequirement` normalizer outside agent feeding `provision
 Additional v2 deliverable: **credential brokering rule** (00 invariant 14, 08 trust boundary) — brokered secrets are host-side handles consumed **only by trusted-core tools**; they **never enter any sandboxed environment** or the model transcript. There is no raw-env injection path: the `direct` provider is not a sandbox (a host process running as the developer with their own ambient environment), so nothing is "injected" there either — the distinction is sandbox vs. host process, not an exception clause.
 
 Exit criteria: as v1, plus: no test can read a brokered secret from inside the sandbox; no brokered secret is reachable from inside any sandboxed environment (there is no raw-env injection path — the `direct` provider is a host process, not a sandbox).
+
+## Phase X1 — S3/FUSE mounts for boring-sandbox environments (bash lane; after Phase 2 **and** Phase 5; see `todos-v2/TODO-X1-s3-fuse-mounts.md`)
+
+The mount subsystem of `@hachej/boring-sandbox`: an environment (E1/09) can be backed by an S3 prefix that appears as a real directory inside a sandbox. Depends on **P2** (`@hachej/boring-sandbox` + providers exist; adds the `./mounts` export) and **P5** (the capability-fact `reported | unknown` fail-closed rule + the host-side secrets-broker rule — X1 reuses both). This is the substrate the farm needs (an agent works in a mounted env and publishes an artifact — 08 `data-artifact`; VISION-MAP farm row).
+
+Deliverables (the 10 LOCKED DECISIONS in `TODO-X1` are the spine):
+
+- thin driver interface `mount(bucket, prefix, creds, ro) -> dir` with a single **rclone** driver (`--vfs-cache-mode full`, EU-endpoint-first OVH/Scaleway/MinIO); mountpoint-s3 deferred (AWS-only/RO);
+- per-session mount lifecycle (own process/VFS cache/scoped creds/isolated teardown; share only immutable RO datasets), readiness gate (`/proc/self/mountinfo` + stat/readdir probe before bind), lazy-unmount + explicit process reap, stale `ENOTCONN`/`ESTALE` re-mount vs transient `EIO` retry;
+- HOST-SIDE mount then bwrap `--bind`/`--ro-bind` into the sandbox (gVisor-portable) — `/dev/fuse`/`fusermount3`/creds never exposed to the sandbox;
+- capability fact `mounts.fuseS3: reported | unknown` (fail closed; `vercel`-PROXY reports unsupported);
+- credential broker: short-lived prefix-scoped STS (AWS session policy `s3:prefix`; Scaleway/MinIO STS; OVH per-container) injected into the mount-process env only, refreshed via `credential_process`; the sandbox receives a directory handle, never a secret (invariant 14);
+- S3-backed `Environment` integration + a readonly-S3 no-leak conformance mount + a `bash-sees-mount == file-routes-see-mount` source-of-truth test; default write-back = rclone VFS-full, optional fuse-overlayfs publish-on-save variant (never kernel overlayfs over FUSE).
+
+Exit criteria: a readonly S3 mount passes the no-leak suite; `bash`-visible files == file-route-visible files over the same mount; no credential is readable inside the sandbox; the EU-endpoint matrix (MinIO in CI) is green with no US-hosted default (invariant 15); `mounts.fuseS3: unknown`/`vercel` fail closed.
 
 ## Phase E1 — Environment attachments (after Phase 2 **and** Phase 3; see 09)
 

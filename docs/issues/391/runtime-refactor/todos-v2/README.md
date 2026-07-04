@@ -23,7 +23,7 @@ TODO-P0 ──► TODO-P1 ──┬──► TODO-P2 ──► TODO-P3 ──┬
                       └──► TODO-T1 ──► TODO-T2 ──┬──► TODO-S1 ──► TODO-S2
                                                 └──► TODO-S3
 
-Cross-deps not drawable inline: E1 needs P2 **and** P3; **P6 splits into P6a and P6b** — P6a
+Cross-deps not drawable inline: **X1 (S3/FUSE mounts for boring-sandbox envs) needs P2 and P5** (it adds the `@hachej/boring-sandbox/mounts` export and reuses P5's capability-fact + secrets-broker machinery; bash-lane, parallel to E1/E2); E1 needs P2 **and** P3; **P6 splits into P6a and P6b** — P6a
 (child-app-independent: manifest validation, plugin runtime context, AgentRegistry, hosted-plugin
 fail-closed, shared runtime, reload) is ← P5; P6b (child-app scoping: BBP6-001, BBP6-006) is ← P6a
 **and** the shared child-app platform type (`ResolvedChildAppContext`, #376), **HARD BLOCKED** until
@@ -35,7 +35,7 @@ type, **not an epic exit gate**: the epic ships without it and P8 only verifies 
 is filed (it never waits on P6b landing); S3 also needs P7 (and T2).
 ```
 
-Parallel lanes after P1: **bash lane** (P2→P3→P4), **environment lane** (E1→E2, needs P2+P3), **provisioning→child-app→multi-agent lane** (P5→P6a→P7→P8, off P3; P6b branches off P6a and is HARD BLOCKED on the shared child-app platform type), **transport lane** (T1→T2→{S1→S2, S3}). Phases 5–8 + S3 are canonical v2 work orders (below), each following its listed prerequisites.
+Parallel lanes after P1: **bash lane** (P2→P3→P4), **environment lane** (E1→E2, needs P2+P3), **mount lane** (X1, needs P2+P5 — S3/FUSE mounts for boring-sandbox envs, parallel to E1/E2), **provisioning→child-app→multi-agent lane** (P5→P6a→P7→P8, off P3; P6b branches off P6a and is HARD BLOCKED on the shared child-app platform type), **transport lane** (T1→T2→{S1→S2, S3}). Phases 5–8 + S3 are canonical v2 work orders (below), each following its listed prerequisites.
 
 ## Work orders
 
@@ -45,18 +45,21 @@ Parallel lanes after P1: **bash lane** (P2→P3→P4), **environment lane** (E1�
 | `TODO-P1-headless-core.md` | Phase 1 | P0 | L |
 | `TODO-T1-durable-events-approvals.md` | Phase T1 | P1 | L |
 | `TODO-T2-transport-adapters.md` | Phase T2 | T1 | M |
-| `TODO-P2-bash-package-providers.md` | Phase 2 | P1 | M |
+| `TODO-P2-bash-package-providers.md` | Phase 2 | P1 | M |¹
 | `TODO-P3-routes-tools-move.md` | Phase 3 | P2 | M/L |
 | `TODO-P4-file-ui-plugin.md` | Phase 4 | P3 | M |
 | `TODO-E1-environment-attachments.md` | Phase E1 | P2, P3 | M |
 | `TODO-E2-mcp-projection.md` | Phase E2 | E1 | M |
 | `TODO-P5-provisioning-secrets.md` | Phase 5 | P3 | L |
+| `TODO-X1-s3-fuse-mounts.md` | Phase X1 | P2 + P5 | M/L |
 | `TODO-P6-plugin-child-app.md` | Phase 6 | **P6a**: P5 · **P6b**: P6a + child-app platform type (HARD BLOCKED) | L |
 | `TODO-P7-multi-agent-inspection.md` | Phase 7 | P6a (AgentRegistry) + E1 + T2 | L |
 | `TODO-P8-verification-cleanup.md` | Phase 8 | all lanes | M |
 | `TODO-S1-slack-channel.md` | Phase S1 | T2 (+P1) | M |
 | `TODO-S2-embed-contract.md` | Phase S2 | S1 | S/M |
 | `TODO-S3-control-plane-ux.md` | Phase S3 | T2 + P7 | M |
+
+¹ **P2 also scaffolds the new `@hachej/boring-sandbox` package** and moves the concrete providers into `packages/boring-sandbox/src/providers` (00 open decision 3 RESOLVED; 08 decision 11). The three-package stack: `boring-agent` (contracts, imports neither) ← `boring-bash` (THE RUNTIME: fs/tools/routes/UI + bash + `resolveMode`; imports boring-sandbox values + agent types) ← `boring-sandbox` (providers/mounts/lifecycle/capability facts; imports agent types only). Acyclic. The dependency **graph is unchanged** — this is a package-boundary re-target within P2, not a new lane.
 
 ## Phases 5–8 + control-plane UX — canonical v2 work orders (in this folder)
 
@@ -93,7 +96,7 @@ No feature-flag framework. Version is carried where it already exists:
 
 ## Global non-negotiables (apply to every TODO)
 
-- `@hachej/boring-agent` keeps **zero value imports** from `@hachej/boring-bash` (enforced: `packages/boring-bash/scripts/check-invariants.mjs` — extend, don't bypass).
+- `@hachej/boring-agent` keeps **zero value imports** from `@hachej/boring-bash` **or `@hachej/boring-sandbox`** (agent defines the contracts both consume and imports neither; enforced: `packages/boring-bash/scripts/check-invariants.mjs` + the boring-sandbox invariant scripts — extend, don't bypass). Acyclic layering: `boring-sandbox → agent(types)`; `boring-bash → boring-sandbox(values) + agent(types)`.
 - Surfaces never own the loop; surface packages import only the public agent contract (+ their channel ingress package).
 - Two handles: `sessionId` runtime-owned; platform addressing surface-owned; public agent APIs never accept platform addressing.
 - One approval channel: HITL declared on the tool, travels as stream events.

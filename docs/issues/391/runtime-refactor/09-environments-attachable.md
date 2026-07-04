@@ -67,7 +67,7 @@ Any environment can be projected as an **MCP server**: fs ops (`read/list/stat/s
 
 - Every external agent already speaks MCP → zero boring-specific code on their side.
 - Identity/audit: MCP sessions map to a `BoundFilesystemContext` (actor, workspaceId, sessionId, requestId) — same audit spine as internal attachments.
-- **Remote-worker ownership (deferred direction — NOT a live instruction):** in this epic remote-worker **remains a provider** (owned by `TODO-P2`/`TODO-P5` as written; capabilities come only from the handshake). Reclassifying it as *a transport for an environment* (peer to in-process and MCP) is an attractive future direction but is **explicitly DEFERRED to a post-E2 follow-up, to be filed at P8**. Nothing here overrides or contradicts the P2/P5 remote-worker-as-provider design.
+- **Remote-worker ownership (deferred direction — NOT a live instruction):** in this epic remote-worker **remains a provider** (the concrete provider adapters — including `remote-worker` — live in **`@hachej/boring-sandbox`**, moved there by `TODO-P2`; its capability facts come only from the `TODO-P5` handshake). Reclassifying it as *a transport for an environment* (peer to in-process and MCP) is an attractive future direction but is **explicitly DEFERRED to a post-E2 follow-up, to be filed at P8**. Nothing here overrides or contradicts the P2/P5 remote-worker-as-provider design.
 
 ## Security invariants
 

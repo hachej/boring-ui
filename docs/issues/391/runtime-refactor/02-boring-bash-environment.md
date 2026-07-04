@@ -14,9 +14,9 @@ It owns:
 - file/tree/search/stat/fs-event routes;
 - file/bash/upload agent tools;
 - file tree/editor/viewer UI plugin;
-- provider adapters and provider capability descriptions.
+- **runtime-mode resolution (`resolveMode` — the CHOICE of sandbox).**
 
-It does not own the model loop, auth, billing, workspace membership, or UI bridge core.
+It does not own the model loop, auth, billing, workspace membership, or UI bridge core. **Nor does it own the concrete sandbox providers themselves:** the provider adapters (`direct`, `bwrap`, `vercel-sandbox`, `remote-worker`), their capability descriptions, FUSE-S3 mounts, and sandbox lifecycle live in **`@hachej/boring-sandbox`** (sandbox management). boring-bash imports boring-sandbox **values** (the providers it resolves a mode to) + agent **types**; boring-sandbox imports agent **types only**. Acyclic: `boring-sandbox → agent(types)`; `boring-bash → boring-sandbox(values) + agent(types)`. (00 open decision 3, RESOLVED; 08 decision 11.)
 
 ## Layered exports
 
@@ -33,17 +33,31 @@ It does not own the model loop, auth, billing, workspace membership, or UI bridg
 @hachej/boring-bash/plugin
   file tree, editor/viewer panes, workspace.open.path resolver
 
-@hachej/boring-bash/providers
-  direct, bwrap, vercel-sandbox, remote-worker, readonly, none
+@hachej/boring-bash/modes
+  resolveMode(), autoDetectMode(), hasBwrap() — runtime-mode resolution (the CHOICE of sandbox);
+  resolves a mode id to a @hachej/boring-sandbox provider value
 ```
 
-No `@hachej/boring-agent` value import cycle is allowed.
+The concrete providers themselves live in a separate package:
+
+```txt
+@hachej/boring-sandbox/providers
+  direct, bwrap, vercel-sandbox, remote-worker, readonly, none  (concrete provider adapters)
+
+@hachej/boring-sandbox/mounts
+  FUSE-S3 mount drivers + per-session mount lifecycle (see TODO-X1)
+
+@hachej/boring-sandbox/shared
+  ProviderCapabilities (reported | unknown facts), provider contract types
+```
+
+No `@hachej/boring-agent` value import cycle is allowed (boring-sandbox imports agent **types only**; boring-bash imports boring-sandbox **values** + agent **types**).
 
 ## Runtime mode vs provider names
 
-Do not collapse current runtime modes into provider names.
+Do not collapse current runtime modes into provider names. Mode resolution (`resolveMode`) is boring-bash's; the provider a mode resolves to is `@hachej/boring-sandbox`'s.
 
-| Current mode | Current sandbox provider | Boring-bash provider | Notes |
+| Current mode | Current sandbox provider | boring-sandbox provider | Notes |
 | --- | --- | --- | --- |
 | `direct` | `direct` | `direct` | Trusted host mode; no isolation. |
 | `local` | `bwrap` | `bwrap` | Linux bubblewrap. Mode id differs from provider id. |
@@ -146,9 +160,9 @@ Current code has a real split:
 
 Extraction rule:
 
-- shared protocol/types move to `boring-bash/shared`;
-- client/provider adapter moves to `boring-bash/providers/remote-worker`;
-- full-app worker server may move to `boring-bash/server/remote-worker` or stay app-owned, but it must depend only on shared protocol/provider server contracts, not on agent core.
+- shared protocol/types move to `boring-sandbox/shared`;
+- client/provider adapter moves to `boring-sandbox/providers/remote-worker`;
+- full-app worker server may move to `boring-sandbox/server/remote-worker` or stay app-owned, but it must depend only on shared protocol/provider server contracts, not on agent core.
 
 Current `WorkspaceProvisioningAdapter.mode` is closed around existing modes. Supporting `remote-worker`, `readonly`, or `none` provisioning requires explicitly widening or short-circuiting that union.
 

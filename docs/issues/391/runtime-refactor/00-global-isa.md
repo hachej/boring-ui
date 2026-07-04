@@ -16,9 +16,11 @@ Today `@hachej/boring-agent` is too coupled to `Workspace + Sandbox + FileSearch
 
 ### North star (v2 product vision)
 
-Land on an **eve-class UX** (`vercel/eve`) — author an agent, deploy it, converse with it from any channel, inspect it — but **steered from the boring-ui workspace** and **hosted in Europe**:
+The owner's vision, in one sentence: **eve-style DECLARATIVE authoring that ships agents fast, natively integrated into the boring-ui FARM, open to foreign agents.** Land on an **eve-class UX** (`vercel/eve`) — author an agent, deploy it, converse with it from any channel, inspect it — but **steered from the boring-ui workspace** and **hosted in Europe**:
 
-- **eve's UX**: agent lifecycle as a product experience (create → configure → deploy → converse anywhere → inspect/observe), including the agent-as-directory authoring model (already a lesson below; delivery deferred until the `AgentRegistry` exists — Phase 6/7 — per the no-speculative-abstraction policy).
+- **eve-style declarative authoring (ship agents fast)**: an `agents/<name>/` directory compiles to a `createAgent()` config + an `AgentRegistry` entry — no imperative wiring, just a declared agent. **Delivery is still deferred post-P7** (the `AgentRegistry` must exist first; no-speculative-abstraction policy — trigger unchanged). Its **v0 is BBP6-009's `agents: [...]` workspace declaration** (a declared set of agents seeding the registry); the directory-compiler is the same idea taken to the filesystem, filed as the post-P7 follow-up (P8 BBP8-004).
+- **the boring-ui FARM, natively integrated**: the workspace is not just a chat surface — it is the **farm control plane**: **fleet view** (every agent + session across every surface), **tasks** (work items linked to sessions), **artifacts** (outputs agents publish from their environments — 08 `data-artifact`), and **approvals** (one inbox, `resolveInput`). This epic ships the *substrate*; the farm UI is the next epic (VISION-MAP farm row).
+- **OPEN integration — foreign agents join the farm**: a non-boring agent (Claude Code, Codex, any MCP client) can attach an environment (E2 MCP projection) and — deferred — create tasks / publish artifacts / request human input over a **Farm MCP** control-plane surface (08 Farm-MCP note). The farm is open, not a walled garden.
 - **Flue's internals**: durable indexed event streams, channel ingress packages, `SessionEnv`-shaped environments (already adopted — 08/09).
 - **boring-ui's existing UX**: the workspace stays the first-class surface and becomes the **control plane** — the one place to author agents, wire channels/environments, watch sessions across every surface, and answer approvals (08 "The steering surface").
 - **EU-sovereign hosting**: see invariant 15.
@@ -27,15 +29,16 @@ Land on an **eve-class UX** (`vercel/eve`) — author an agent, deploy it, conve
 
 | Package | Owns | Must not own |
 | --- | --- | --- |
-| `@hachej/boring-agent` | model loop, sessions, runner API, tool registry, channel-neutral event stream, non-bash operational hooks, provisioning engine types/orchestration by injected adapter | filesystem, file routes, bash, file UI, concrete sandbox providers, bash requirement normalization |
-| `@hachej/boring-bash` | optional fs + exec working environment, path safety, search/watch, file routes, file/bash/upload tools, file UI, bash requirement normalizer, provider adapters/capabilities | auth, billing, app membership, LLM harness core, provisioning engine ownership |
+| `@hachej/boring-agent` | model loop, sessions, runner API, tool registry, channel-neutral event stream, non-bash operational hooks, provisioning engine types/orchestration by injected adapter — **defines ALL contracts, imports neither boring-bash nor boring-sandbox** | filesystem, file routes, bash, file UI, concrete sandbox providers, bash requirement normalization |
+| `@hachej/boring-bash` (THE RUNTIME) | optional fs + exec working environment, path safety, search/watch, file routes, file/bash/upload tools, file UI, bash requirement normalizer, **runtime-mode resolution (`resolveMode` = the CHOICE of sandbox)**; imports `@hachej/boring-sandbox` **values** + agent **types** | auth, billing, app membership, LLM harness core, provisioning engine ownership, **concrete sandbox providers / mount / lifecycle (owned by `@hachej/boring-sandbox`)** |
+| `@hachej/boring-sandbox` (sandbox management) | concrete providers (`direct`, `bwrap`-gVisor, `vercel`-PROXY, `remote-worker`-client), **FUSE-S3 mounts**, sandbox lifecycle, provider **capability facts (`reported \| unknown`)**; imports agent **types only** | model loop, sessions, file routes, bash tools, file UI, runtime-mode resolution (owned by boring-bash), auth/billing |
 | `@hachej/boring-workspace` | UI shell, layout, plugin host, UI bridge/RPC, surface registry | agent model loop, concrete bash providers |
 | `@hachej/boring-core` / app composition layer | auth, DB, workspaces, child-app context resolution, billing, deployment composition; final child-app registry location follows the shared child-app plan | concrete bash provider internals |
 | surface/channel packages (v2, e.g. `@hachej/boring-channel-slack`, spreadsheet embeds) | platform ingress/egress, platform auth, surface-owned continuation/addressing → `sessionId` mapping, event projection | agent loop, sessions, tools, provider internals, boring-bash server code |
 
-Non-negotiable: `@hachej/boring-agent` has **zero value imports** from `@hachej/boring-bash`. Bash is injected by host/CLI/composition.
+Non-negotiable: `@hachej/boring-agent` has **zero value imports** from `@hachej/boring-bash` **or `@hachej/boring-sandbox`** (it defines the contracts both consume, and imports neither). Bash + sandbox are injected by host/CLI/composition. **Acyclic layering (owner-ruled):** `boring-sandbox → boring-agent` (types only); `boring-bash → boring-sandbox` (values) `+ boring-agent` (types). boring-bash is THE RUNTIME (the CHOICE of sandbox, `resolveMode`); boring-sandbox is sandbox management (providers, FUSE-S3 mounts, lifecycle, capability facts).
 
-Provisioning ownership rule: the existing provisioning engine and `ProvisionWorkspaceRuntimeOptions` stay in agent/server as type-safe orchestration over an injected provisioning adapter. `@hachej/boring-bash` owns bash requirement normalization and concrete provider adapters. The host/core/CLI wires the two together. Agent must never import concrete bash providers.
+Provisioning ownership rule: the existing provisioning engine and `ProvisionWorkspaceRuntimeOptions` stay in agent/server as type-safe orchestration over an injected provisioning adapter. `@hachej/boring-bash` owns bash requirement normalization and runtime-mode resolution; **`@hachej/boring-sandbox` owns the concrete provider adapters + their capability facts**. The host/core/CLI wires them together. Agent must never import concrete bash providers.
 
 ## What we learned from Flue
 
@@ -149,11 +152,11 @@ v2 status — resolved (recommendations locked in [`08-pluggable-agent-surfaces.
 
 1. Pure/headless mode: **pi-coding-agent with cwd disabled/sealed** (behind the Phase 1 audit), not a second, distinct harness. Any alternative harness remains a conformance-suite consumer only (#12), never the pure-mode path.
 2. Multi-mount/overlay: superseded — named `(filesystem, path)` bindings shipped via #416; arbitrary overlays stay deferred.
+3. Providers package location: **RESOLVED** — concrete providers do **not** live under `@hachej/boring-bash/providers`; they live in a dedicated **`@hachej/boring-sandbox`** package (sandbox management: providers, FUSE-S3 mounts, lifecycle, capability facts `reported | unknown`). The three-package stack is: `boring-agent` (contracts, imports neither) ← `boring-bash` (THE RUNTIME: fs/tools/routes/UI + bash + runtime-mode resolution `resolveMode`; imports boring-sandbox values + agent types) ← `boring-sandbox` (imports agent types only). Acyclic. See 08 decision 11; P2 creates the package (PR-PLAN P2).
 4. Multi-agent route shape: **resolved (locked at pass 3)** — one canonical `/api/v1/agents/:agentId` path-prefix family (see `todos-v2/TODO-P7-multi-agent-inspection.md`). There is no header/request-scope alternative.
 6. Readonly fs: **v1 — already landed** via #416.
 
 Still open:
 
-3. Do providers live under `@hachej/boring-bash/providers` forever, or move to a private provider package later?
 5. Provisioning sharing defaults: workspace-shared, agent-private, or requirement-controlled?
 7. (v2) Where does each surface persist its `addressing → sessionId` map: surface-local store vs host DB contract?

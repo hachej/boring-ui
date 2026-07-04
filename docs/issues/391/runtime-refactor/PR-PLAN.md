@@ -109,18 +109,21 @@ Legend — nature: **new** = net-new code · **move** = rename-detected + import
 
 **T2 total: 6 PRs.** pr6 lands **last** (after DS conformance + playground green). Bumps `@hachej/boring-agent` minor (protocol change).
 
-### P2 — Move bash providers → `@hachej/boring-bash/providers` (Phase 2, off P1)
+### P2 — Scaffold `@hachej/boring-sandbox` + move providers into it; `resolveMode` → boring-bash (Phase 2, off P1)
+
+**Package re-target (00 open decision 3 RESOLVED; 08 decision 11):** concrete providers move to the **new `@hachej/boring-sandbox`** package (`packages/boring-sandbox/src/providers`), **not** `boring-bash/providers`; runtime-mode resolution (`resolveMode`) lands in `@hachej/boring-bash`. Acyclic: `boring-sandbox → agent(types)`; `boring-bash → boring-sandbox(values) + agent(types)`.
 
 | PR | beads | nature | net-new vs budget | test deliverables | gate |
 | --- | --- | --- | --- | --- | --- |
-| pr1-providers-subpath-matrix | BBP2-001 + BBP2-002 | new | ~250 (capability contract + matrix) | export-map `/providers`; per-fixed-provider matrix rows; `remote-worker` worker-fields `'unknown'` fail-closed | `boring-bash check:invariants` |
-| pr2-move-direct-bwrap | BBP2-003 | move | budget-exempt (~1.5k churn) | moved direct/bwrap conformance + snapshot pass under boring-bash | `boring-bash test` |
-| pr3-move-vercel-sandbox | BBP2-004 | move | budget-exempt (~2.5–3k churn, <4k) | vercel-sandbox unit tests pass; `createVercelSandboxWorkspace` typechecks | `boring-bash test` |
-| pr4-move-mode-adapters | BBP2-005 | move | budget-exempt (~1k churn) | `resolveMode.test` passes; mode→provider pairs covered; **agent bin becomes pure-only (`runtime:'none'`), bash-enabled bin composition moves to `packages/cli` in THIS PR** | agent `test` (host repoint) |
-| pr5-split-remote-worker | BBP2-006 | move | budget-exempt (~1k churn) | protocol compat (bytes round-trip); worker import-graph has no agent-core dep; **worker capabilities stay `'unknown'` — NO handshake here (handshake owned solely by BBP5-008)** | `audit:imports` |
-| pr6-migrate-delete-invariants | BBP2-007 + BBP2-008 | move (delete origin exports) + new (invariant) | ~80 (invariant script) | static: agent old paths have no bash value import / no re-export; apps compile | `lint:invariants`; `audit:imports` |
+| pr0-sandbox-scaffold | BBP2-000 (new package) | new | ~150 (package.json, tsup, `/shared`+`/providers` export maps, `check-invariants.mjs`, `pnpm-workspace.yaml` entry) | new-package `build`/`typecheck`; export-map resolves; invariant script asserts agent-types-only import boundary | new-package `build`; `audit:imports` |
+| pr1-providers-subpath-matrix | BBP2-001 + BBP2-002 | new | ~250 (capability contract + matrix in `boring-sandbox/shared`) | export-map `boring-sandbox/providers`; per-fixed-provider matrix rows; `remote-worker` worker-fields `'unknown'` fail-closed | `boring-sandbox check:invariants` |
+| pr2-move-direct-bwrap | BBP2-003 | move | budget-exempt (~1.5k churn) | moved direct/bwrap conformance + snapshot pass under **boring-sandbox** | `boring-sandbox test` |
+| pr3-move-vercel-sandbox | BBP2-004 | move | budget-exempt (~2.5–3k churn, <4k) | vercel-sandbox unit tests pass under boring-sandbox; `createVercelSandboxWorkspace` typechecks | `boring-sandbox test` |
+| pr4-mode-resolution-to-bash | BBP2-005 | move | budget-exempt (~1k churn) | `resolveMode.test` passes in **boring-bash** (resolves mode id → boring-sandbox provider value); mode→provider pairs covered; **agent bin becomes pure-only (`runtime:'none'`), bash-enabled bin composition moves to `packages/cli` in THIS PR** | agent `test` (host repoint); `boring-bash test` |
+| pr5-split-remote-worker | BBP2-006 | move | budget-exempt (~1k churn) | protocol → `boring-sandbox/shared`, client/adapter → `boring-sandbox/providers`; bytes round-trip; worker import-graph has no agent-core dep; **worker capabilities stay `'unknown'` — NO handshake here (handshake owned solely by BBP5-008)** | `audit:imports` |
+| pr6-migrate-delete-invariants | BBP2-007 + BBP2-008 | move (delete origin exports) + new (invariant) | ~80 (invariant script) | static: agent old paths have no bash/sandbox value import / no re-export; boring-bash→sandbox value edge + sandbox→agent types-only edge both asserted; apps compile | `lint:invariants`; `audit:imports` |
 
-**P2 total: 6 PRs.** Precondition: P1 injection seam present (else STOP+report). Bumps `@hachej/boring-agent` minor (relocation).
+**P2 total: 7 PRs** (adds pr0 scaffold). Precondition: P1 injection seam present (else STOP+report). Bumps `@hachej/boring-agent` minor (relocation). New package `@hachej/boring-sandbox` scaffolded in pr0 and populated across pr1–pr5.
 
 ### P3 — Move file/bash routes + tools → boring-bash (Phase 3, off P2)
 
@@ -181,6 +184,19 @@ Legend — nature: **new** = net-new code · **move** = rename-detected + import
 | pr8-two-phase-fingerprint | BBP5-009 | new | ~400–600 | same fingerprint skips; changed source/contract re-provisions; onSession reruns; Vercel snapshot tests pass | `test` |
 
 **P5 total: 8 PRs.** Preconditions: P3 + P2 `providers/matrix.ts` (else STOP+report). Engine stays agent-owned; normalizer boring-bash-owned. Zero dangling `TODO(remove:*)`.
+
+### X1 — S3/FUSE mounts for `@hachej/boring-sandbox` environments (Phase X1, off P2 **and** P5) — bash lane, parallel to E1/E2
+
+Adds the `@hachej/boring-sandbox/mounts` export (created package from P2) + the S3-backed environment. The 10 LOCKED DECISIONS in `TODO-X1` are the spine. Reuses P5's `reported | unknown` fail-closed rule + host-side secrets-broker rule.
+
+| PR | beads | nature | net-new vs budget | test deliverables | gate |
+| --- | --- | --- | --- | --- | --- |
+| pr1-mount-driver-lifecycle | BBX1-001 + BBX1-002 | new | ~600–900 (`./mounts` export, rclone driver, per-session lifecycle) | rclone argv (`--vfs-cache-mode full` + tuned timeout/retry); readiness gate (mountinfo + stat/readdir); lazy-unmount + reap; `ENOTCONN` re-mount vs `EIO` retry; per-session isolation | `boring-sandbox check:invariants`; `boring-sandbox test` |
+| pr2-bind-capability | BBX1-003 + BBX1-004 | new | ~300–500 (bwrap bind + `mounts.fuseS3` fact) | host-mount→`--(ro-)bind`, no `/dev/fuse`/`fusermount3`/cred in arg set; un-ready bind refused; `vercel`/`unknown` fail closed | `boring-sandbox test`; `audit:imports` |
+| pr3-cred-broker-env | BBX1-005 + BBX1-006 | new | ~700–1000 (STS broker + S3 `Environment` + no-leak mount) | prefix-scoped STS (sibling-prefix denied, MinIO); cred in mount-process env only + absent everywhere else; readonly-S3 no-leak conformance mount `passed:true`; `bash-sees-mount == file-routes-see-mount` | `check:isolation`; `boring-bash test` |
+| pr4-eu-matrix-overlay | BBX1-007 (+ BBX1-008 optional) | test + new | ~150–350 (EU matrix; optional fuse-overlayfs variant) | MinIO round-trip (adds `test:mounts:eu` script); secrets negative test; endpoint-config parity OVH/Scaleway/MinIO; overlay variant uses fuse-overlayfs (not kernel overlayfs over FUSE) | `boring-sandbox run test:mounts:eu` (new script); `boring-sandbox test` |
+
+**X1 total: 4 PRs** (pr4 folds the optional BBX1-008 overlay variant). Preconditions: P2 (`@hachej/boring-sandbox` + providers) **and** P5 (capability-fact + secrets-broker) present, else STOP+report. Off the critical path (bash-lane parallel, like E1/E2); gates into P8 like every delivered phase. EU-sovereign: MinIO-in-CI, no US-hosted default (invariant 15).
 
 ### P6 — Plugin + child-app integration (Phase 6, off P5) — **split P6a / P6b**
 
@@ -273,29 +289,30 @@ Legend — nature: **new** = net-new code · **move** = rename-detected + import
 | P1 | 6 | 7 | — |
 | T1 | 6 | 7 | — |
 | T2 | 6 | 6 | — |
-| P2 | 6 | 6 | — |
+| P2 | 7 | 7 | — |
 | P3 | 6 | 6 (moves split by family only if >4k) | — |
 | P4 | 3 | 5 | — |
 | E1 | 5 | 5 | — |
 | E2 | 3 | 3 | — |
 | P5 | 8 | 9 | — |
+| X1 | 4 | 4 | — |
 | P6 | 9 | 9 | 2 (P6b) |
 | P7 | 9 | 9 | — |
 | P8 | 3 | 3 | — |
 | S1 | 5 | 5 | — |
 | S2 | 2 | 2 | — |
 | S3 | 4 | 4 | — |
-| **TOTAL** | **82** | **~87** | 2 follow-up (P6b) |
+| **TOTAL** | **87** | **~92** | 2 follow-up (P6b) |
 
-**Expected overall: ~82 PRs (up to ~87 if every pre-declared split fires). The 2 P6b PRs are a tracked follow-up OUTSIDE the epic exit (hard-blocked on the shared child-app platform type) — they do not gate P7 or P8, so the epic's ~80 non-P6b PRs ship without them. (P4 dropped from 4 to 3 PRs: the document-authority seam BBP4-013 is deferred out of the epic.)**
+**Expected overall: ~87 PRs (up to ~92 if every pre-declared split fires). The 2 P6b PRs are a tracked follow-up OUTSIDE the epic exit (hard-blocked on the shared child-app platform type) — they do not gate P7 or P8, so the epic's ~85 non-P6b PRs ship without them. (P4 dropped from 4 to 3 PRs: the document-authority seam BBP4-013 is deferred out of the epic. P2 rose from 6 to 7 PRs: the `@hachej/boring-sandbox` package scaffold, pr0. X1 adds 4 PRs: the S3/FUSE mount subsystem, bash-lane parallel off P2+P5.)**
 
 ### Critical-path PR sequence (longest serial chain)
 
 ```
-P0(1) → P1(6) → P2(6) → P3(6) → P5(8) → P6a(7) → P7(9) → P8(3)   = 46 PRs serial
+P0(1) → P1(6) → P2(7) → P3(6) → P5(8) → P6a(7) → P7(9) → P8(3)   = 47 PRs serial
 ```
 
-- **Off the same P1 root, in parallel:** the transport lane `T1(6) → T2(6) → { S1(5) → S2(2) ; S3(4) }`, and the environment lane `E1(5) → E2(3)` (E1 also needs P3; E2 feeds no critical successor except P8).
+- **Off the same P1 root, in parallel:** the transport lane `T1(6) → T2(6) → { S1(5) → S2(2) ; S3(4) }`, the environment lane `E1(5) → E2(3)` (E1 also needs P3; E2 feeds no critical successor except P8), and the **mount lane `X1(4)`** (needs P2+P5; bash-lane parallel to E1/E2; feeds no critical successor except P8).
 - **P7 also needs E1 and T2** (T2 formalizes the `sessionId`-only transport + two-handles guard P7's addressing/binding rides, and carries the T1 durable approvals/`resolveInput` the external-hook route and `/info` channel facts read); **S3 needs T2 + P7**; **P8 gates on every lane EXCEPT P6b** (bash + transport + environment + surfaces).
 - **P6b** is off the critical path (a tracked follow-up, hard-blocked) and gates **neither P7 nor P8** (P7 consumes P6a only; P8 only verifies the P6b follow-up issue is filed) — so P6b's block can never deadlock the epic exit.
 - **Package minor bumps** on the path: `@hachej/boring-agent` at P3 (relocation) and at T2 (protocol).
