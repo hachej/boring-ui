@@ -87,20 +87,36 @@ Match `06-migration-phases.md` Phase T1 exit criteria:
   async appendAgentEvent(sessionId: string, chunk: PiChatEvent, opts?: { idempotencyKey?: string }): Promise<string> {
     const path = sessionStreamPath(sessionId)
     return this.runTransaction(() => {
+      // Idempotency FIRST, inside the SAME transaction: if this key already produced an offset
+      // for this stream, return it and allocate NO new eventIndex / insert NO new entry.
+      if (opts?.idempotencyKey !== undefined) {
+        const existing = this.sql.exec(
+          `SELECT seq FROM boring_event_stream_keys WHERE path = ? AND idempotency_key = ?`,
+          path, opts.idempotencyKey,
+        ).toArray()
+        if (existing.length > 0) return formatOffset(existing[0].seq as number)  // re-tap: same offset, no new seq
+      }
       const updated = this.sql.exec(`UPDATE boring_event_streams SET next_offset = next_offset + 1 WHERE path = ? AND closed = 0 RETURNING next_offset`, path).toArray()
       if (updated.length === 0) { /* existing not-found/closed branch */ }
       const seq = (updated[0].next_offset as number) - 1
       const envelope: AgentEvent = { v: 1, eventIndex: seq, timestamp: Date.now(), sessionId, chunk }  // constructed AFTER seq is known
       this.sql.exec(`INSERT INTO boring_event_stream_entries (path, seq, data) VALUES (?,?,?)`, path, seq, JSON.stringify(envelope))
+      if (opts?.idempotencyKey !== undefined) {
+        // record key→seq in the SAME transaction; UNIQUE(path, idempotency_key) on
+        // boring_event_stream_keys makes a concurrent duplicate fail closed (caught → re-read the
+        // existing seq), so a key can never map to two eventIndexes.
+        this.sql.exec(`INSERT INTO boring_event_stream_keys (path, idempotency_key, seq) VALUES (?,?,?)`, path, opts.idempotencyKey, seq)
+      }
       return formatOffset(seq)
     }).then(off => { this.notifyListeners(path); return off })
   }
   ```
-  No envelope is JSON-stringified before its `eventIndex` is assigned; there is exactly one monotonic counter (the SQLite `next_offset`), and it *is* `eventIndex`. The generic `appendEvent(path, event)` above stays only for already-formed opaque payloads (and `appendEventOnce`'s idempotency); the AgentEvent tap uses `appendAgentEvent`.
+  No envelope is JSON-stringified before its `eventIndex` is assigned; there is exactly one monotonic counter (the SQLite `next_offset`), and it *is* `eventIndex`. **`opts.idempotencyKey` is honored INSIDE the same transaction** via the `boring_event_stream_keys` table (`UNIQUE(path, idempotency_key)`): a duplicate key returns the **existing** offset, allocates **no** new `eventIndex`, and inserts no new entry — this is exactly what makes the BBT1-002 **restart re-tap** (`{ idempotencyKey: String(event.seq) }` replaying the in-memory buffer after a service restart) produce **zero duplicates**. This reuses the same key-table mechanism as Flue's `appendEventOnce` — do not add a second idempotency path. The generic `appendEvent(path, event)` above stays only for already-formed opaque payloads (and `appendEventOnce`'s idempotency); the AgentEvent tap uses `appendAgentEvent`.
 - **Tests**: `packages/agent/src/server/events/__tests__/eventStreamStore.conformance.test.ts` — a reusable contract suite exported as `runEventStreamStoreConformance(makeStore)`:
   - append→read monotonic offsets; `readEvents({offset})` returns strictly-after; `nextOffset`/`upToDate`/`closed` correct.
   - `createStream` idempotent; append to missing throws; append to closed throws.
   - `appendEventOnce` exact-retry returns original offset; key reuse with different payload rejects.
+  - **`appendAgentEvent` append idempotency**: two `appendAgentEvent` calls with the same `opts.idempotencyKey` return the same offset, advance `next_offset` **only once**, and leave exactly **one** entry (no new `eventIndex`) — the restart re-tap dedupe; concurrent duplicate keys fail closed on `UNIQUE(path, idempotency_key)` and re-read the existing seq.
   - **transactional atomicity**: a thrown `JSON.stringify`/insert inside the tx leaves `next_offset` unadvanced and no orphan entry (assert no gap).
   - subscribe fires on append; unsubscribe stops delivery.
   - Run against `:memory:` and a temp file DB.
@@ -128,7 +144,7 @@ Match `06-migration-phases.md` Phase T1 exit criteria:
   - The SQLite `EventStreamStore` seq is the **sole** `AgentEvent.eventIndex`, allocated and stamped into the envelope inside `appendAgentEvent`'s transaction; `PiChatEvent.seq` stays only inside `chunk` (internal to the payload, never surfaced as the index), used **only** as the `appendAgentEvent` idempotency key across a service restart replaying the buffer. There is exactly one counter; no envelope is serialized before its `eventIndex` is allocated.
 - **Implementation notes**: `publishChannelEvent` is synchronous today; appends are async. Durability-before-delivery is **required, not optional**: make the funnel `async` and `await` the durable append **before** notifying any subscriber (in-memory or remote). The store is the replay authority, so no event may ever be live-delivered but absent from the store. If the durable append fails, the turn/stream **errors** (surface the failure; do not fan the event out) — there is no fire-and-forget / swallow-and-log path.
 - **Tests**: `harnessPiChatService.eventStore.test.ts` — drive a fake adapter emitting N events; assert the store contains N `AgentEvent`s in order with contiguous `eventIndex`, each wrapping the matching `PiChatEvent`.
-- **Acceptance**: every event that reaches a live subscriber is also in the durable store with a monotonic `eventIndex`; restart + `appendEventOnce` re-tap is idempotent (no dupes).
+- **Acceptance**: every event that reaches a live subscriber is also in the durable store with a monotonic `eventIndex`; restart + `appendAgentEvent` idempotency-key re-tap is idempotent (no dupes — the duplicate key returns the existing offset in-transaction, allocates no new `eventIndex`).
 
 ### BBT1-003 — DS-compliant GET/HEAD routes + `agent.stream()`  · size L
 - **Title**: DS read handlers behind a Fastify↔WHATWG bridge; durable in-process `stream(sessionId, { startIndex })`.

@@ -196,7 +196,7 @@ Legend — nature: **new** = net-new code · **move** = rename-detected + import
 | pr6-shared-workspace-runtime | BBP6-007 | new (unify) | ~300–500 | CLI/full-app/workspace share the runtime unit; reload + registry dispose on eviction | core/cli/full-app `test` |
 | pr7-multitenant-reload | BBP6-008 | new | ~300–500 | reload per workspace; unauthorized → stable error; pure reload w/o bash; trusted routes diagnosed-not-hot | full-app `test` |
 
-**P6b — child-app scoping (HARD BLOCKED until `docs/plans/shared-child-app-platform.md`→`ResolvedChildAppContext`/#376 lands).**
+**P6b — child-app scoping (HARD BLOCKED until `docs/issues/376/plan.md`→`ResolvedChildAppContext`/#376 lands).**
 
 | PR | beads | nature | net-new vs budget | test deliverables | gate |
 | --- | --- | --- | --- | --- | --- |

@@ -55,7 +55,7 @@ Child app and workspace kind are first-class because of #376: Macro and generic 
 ```ts
 interface BashRequirement {
   id: string
-  source: 'agent' | 'plugin' | 'app' | 'child-app' | 'workspace-kind'
+  source: 'agent' | 'plugin' | 'app' | 'child-app' | 'workspace-kind' | 'workspace' | 'subagent' | 'session'
   optional?: boolean
   capabilities?: {
     fs?: 'readonly' | 'readwrite'

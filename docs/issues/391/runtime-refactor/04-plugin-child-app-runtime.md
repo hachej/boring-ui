@@ -19,7 +19,7 @@ Macro-specific tools/prompts/provisioning must not leak into generic workspaces.
 
 ## Relationship to shared child-app platform plan
 
-The product/registry/billing/workspace-kind design is owned by [`docs/plans/shared-child-app-platform.md`](../shared-child-app-platform.md) and issue #376.
+The product/registry/billing/workspace-kind design is owned by [`docs/issues/376/plan.md`](../../376/plan.md) (issue #376).
 
 This plan only consumes the resolved child-app context for bash/runtime intersection. It must not define a competing `ChildAppDefinition`, workspace-kind schema, billing model, or hostname registry.
 

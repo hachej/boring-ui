@@ -30,7 +30,7 @@ Mechanism, not hand-waving: Phase 7 delivers an **agent inspection endpoint** (`
 
 A surface and the agent core exchange exactly four things:
 
-1. **Message in** — a normalized user turn: `AgentSendInput` = `{ sessionId?, content, attachments?, actor }` (**omit `sessionId` to create a new session**). Core accepts a string or message parts; the surface does platform parsing (Slack signature + payload, Excel cell context, workspace composer state).
+1. **Message in** — a normalized user turn: `AgentSendInput` = `{ sessionId?, content, attachments?, actor, ctx?, originSurface? }` (**omit `sessionId` to create a new session**). `ctx?: SessionCtx` is boring's own tenancy context resolved by the adapter/host (the `SessionStore` scoping key — never surface-native platform addressing); `originSurface?: string` is session-create provenance written by adapters. The full type is defined once in shared (P1); façade calls are single-argument everywhere (`start(input)`, `send(input)` — never `send(input, ctx)`). Core accepts a string or message parts; the surface does platform parsing (Slack signature + payload, Excel cell context, workspace composer state).
 2. **Event stream out** — one ordered, indexed, replayable stream of typed events. Every surface renders the same stream differently; the wire/transport is swappable.
 3. **Approvals / human-in-the-loop** — a request event out + a response call in, on the same channel, declared on the tool — not per-surface special cases.
 4. **Session state** — a runtime-owned `sessionId` + serializable transcript. Persistence and addressing are boundary decisions.
