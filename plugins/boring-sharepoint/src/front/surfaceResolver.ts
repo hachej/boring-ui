@@ -30,9 +30,6 @@ export const sharePointOfficeCloudRefSurfaceResolver: BoringFrontSurfaceResolver
 
     const ref = request.meta?.sharePointRef
     if (isSharePointDocumentRef(ref)) {
-      params.webUrl = ref.webUrl
-      params.driveId = ref.driveId
-      params.driveItemId = ref.driveItemId
       params.sharePointRef = ref
     }
 

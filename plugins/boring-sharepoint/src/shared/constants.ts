@@ -1,9 +1,6 @@
 export const BORING_SHAREPOINT_PLUGIN_ID = "boring-sharepoint"
 export const BORING_SHAREPOINT_PLUGIN_LABEL = "SharePoint"
 export const BORING_SHAREPOINT_OFFICE_PREVIEW_PANEL_ID = "boring-sharepoint.office-preview"
-export const BORING_SHAREPOINT_SETTINGS_PANEL_ID = "boring-sharepoint.settings"
-export const BORING_SHAREPOINT_SETTINGS_COMMAND_ID = "boring-sharepoint.open-settings"
-export const BORING_SHAREPOINT_APP_LEFT_ACTION_ID = "boring-sharepoint.settings"
 
 export const OFFICE_CLOUD_DOCUMENT_KIND = "office-cloud-document"
 export const SHAREPOINT_PROVIDER_ID = "sharepoint"

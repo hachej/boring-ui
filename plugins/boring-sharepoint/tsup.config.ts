@@ -3,7 +3,6 @@ import { defineConfig } from "tsup"
 export default defineConfig({
   entry: {
     "front/index": "src/front/index.ts",
-    "server/index": "src/server/index.ts",
     "shared/index": "src/shared/index.ts",
   },
   format: ["esm"],
@@ -15,8 +14,6 @@ export default defineConfig({
   platform: "neutral",
   external: [
     /^@hachej\/boring-/,
-    "@arcadeai/arcadejs",
-    "fastify",
     "react",
     "react-dom",
     "react/jsx-runtime",

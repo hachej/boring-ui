@@ -4,36 +4,21 @@ import { describe, expect, it } from "vitest"
 
 const packageRoot = new URL("../..", import.meta.url)
 
-describe("Arcade package boundaries", () => {
-  it("keeps Arcade SDK imports out of shared and front source", () => {
-    const forbiddenMatches = listSourceFiles("src")
-      .filter((path) => path.includes("/shared/") || path.includes("/front/"))
-      .flatMap((path) => {
-        const source = readFileSync(path, "utf8")
-        return source.includes("@arcadeai/arcadejs") ? [relative(packageRoot.pathname, path)] : []
-      })
+describe("SharePoint plugin package boundaries", () => {
+  it("keeps Arcade SDK and server imports out of source", () => {
+    const forbiddenPackage = ["@arcadeai", "arcadejs"].join("/")
+    const forbiddenWorkspaceServer = ["@hachej", "boring-workspace", "server"].join("/")
+    const relativeServerImport = /from\s+["']\.\.?\/server(?:\/|["'])/
 
-    expect(forbiddenMatches).toEqual([])
-  })
-
-  it("keeps direct network APIs out of the server provider", () => {
-    const forbiddenMatches = listSourceFiles("src/server")
-      .filter((path) => !path.includes("/__tests__/"))
-      .flatMap((path) => {
-        const source = readFileSync(path, "utf8")
-        return /\bfetch\s*\(|XMLHttpRequest|graph\.microsoft\.com/i.test(source) ? [relative(packageRoot.pathname, path)] : []
-      })
-
-    expect(forbiddenMatches).toEqual([])
-  })
-
-  it("does not call Microsoft Graph directly from plugin source", () => {
-    const forbiddenMatches = listSourceFiles("src")
-      .filter((path) => !path.includes("/__tests__/"))
-      .flatMap((path) => {
-        const source = readFileSync(path, "utf8")
-        return /graph\.microsoft\.com|driveItem:preview/i.test(source) ? [relative(packageRoot.pathname, path)] : []
-      })
+    const forbiddenMatches = listSourceFiles("src").flatMap((path) => {
+      const source = readFileSync(path, "utf8")
+      const matches: string[] = []
+      if (source.includes(forbiddenPackage)) matches.push(`${relative(packageRoot.pathname, path)} imports Arcade SDK`)
+      if (source.includes(forbiddenWorkspaceServer) || relativeServerImport.test(source)) {
+        matches.push(`${relative(packageRoot.pathname, path)} imports server code`)
+      }
+      return matches
+    })
 
     expect(forbiddenMatches).toEqual([])
   })
