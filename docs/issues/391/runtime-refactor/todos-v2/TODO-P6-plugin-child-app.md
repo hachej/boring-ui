@@ -8,7 +8,7 @@ Handoff: self-contained work order for one autonomous coding agent (pi or gpt-5.
 - `docs/issues/391/runtime-refactor/06-migration-phases.md` — Phase 6 deliverables/exit ("as v1"). Prerequisite unchanged: **do not define a competing child-app registry here.**
 - `docs/issues/391/runtime-refactor/00-global-isa.md` — invariants 6 (no silent widening), 8 (child-app/workspace-kind narrows, never widens), 11 (surfaces never own the loop), 14 (secrets brokered), 15 (EU-sovereign). North star: `AgentRegistry` delivery is deferred until Phase 6/7 (no speculative abstraction).
 - `docs/issues/391/runtime-refactor/todos-v2/README.md` — dispatch protocol; **Simplicity & no-compat policy (binding)**: migrate importers in-PR, no shims/aliases/legacy paths, no abstraction without two real consumers (or one named consumer in the immediately following phase — `AgentRegistry` qualifies: Phase 7 consumes it), `// TODO(remove:<bead-id>)` + deletion bead for transitional code.
-- `docs/issues/391/runtime-refactor/todos/TODO-05-plugins-child-app-runtime.md` — v1 beads BBA-050..056. **This pack supersedes them.** Coverage carries over; every compatibility-export/shim/deprecation-window instruction is stripped; secret handling follows the P5 brokering rule (host-side handles; brokered secrets never enter any sandboxed environment).
+- The v1 child-app/plugin coverage (BBA-050..056) is **superseded and non-canonical** here — every compatibility-export/shim/deprecation-window instruction is stripped; secret handling follows the P5 brokering rule (host-side handles; brokered secrets never enter any sandboxed environment).
 
 ### Dependency — shared child-app platform plan (STATE PRECISELY, verify before starting)
 
@@ -75,7 +75,7 @@ Dispatch: **P6a ← P5**; **P6b ← P6a + child-app platform type**; **P7 ← P6
 
 ## Do NOT
 
-- Do not touch `/home/ubuntu/projects/boring-ui-v2`. Work only in this worktree. Do not commit.
+- Do not touch `/home/ubuntu/projects/boring-ui-v2`. Work on a dedicated branch/worktree per the PR-PLAN branch naming; never commit to main directly; every bead lands as a PR per todos-v2/README.
 - Do not build the child-app product registry/billing/hostname resolver.
 - Do not re-shape the landed #416 `packages/boring-bash/src/shared` contracts.
 - Do not add a US-hosted provider as a default (invariant 15).

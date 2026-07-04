@@ -2,7 +2,7 @@
 
 Each `TODO-*.md` in this folder is a **self-contained work order for one autonomous coding agent** (pi, gpt-5.5-xhigh, or similar). An agent receives exactly one TODO file plus repo access; it must not need this README or the conversation history — but hand it this README too when possible, for the dependency graph.
 
-Supersedes `../todos/TODO-00..07` where they overlap; unchanged v1 material is referenced, not duplicated.
+Supersedes the now-**non-canonical** `../todos/TODO-00..07` where they overlap; unchanged v1 material is referenced, not duplicated.
 
 ## Dispatch protocol
 

@@ -59,7 +59,7 @@ Make `06` Phase 7 + `05` § "Tests" checkable:
 
 ## Do NOT
 
-- Do NOT touch `/home/ubuntu/projects/boring-ui-v2`. Work only in this worktree. Do NOT commit.
+- Do NOT touch `/home/ubuntu/projects/boring-ui-v2`. Work on a dedicated branch/worktree per the PR-PLAN branch naming; never commit to main directly; every bead lands as a PR per todos-v2/README.
 - Do NOT define a competing agent/child-app registry (Phase 6 owns it).
 - Do NOT put platform-addressing (Slack thread ts, workbook id, pane id) into any core signature — `agentId`/`sessionId`/`SessionCtx` only (T2 guard must stay green).
 - Do NOT build the control-plane UI panels — that is `TODO-S3-control-plane-ux.md` (S3 consumes the `/info` endpoint this bead ships).
@@ -84,9 +84,9 @@ Make `06` Phase 7 + `05` § "Tests" checkable:
 
 ### BBP7-003 — Per-agent tool catalog + per-agent readiness · size M
 - **Title**: One tool catalog and one `ReadyStatusTracker` per `(workspaceId, agentId)`.
-- **Files touch**: the per-scope tool assembly path in `registerAgentRoutes.ts` / `createAgentApp.ts` where `mergeTools`/`buildHarnessAgentTools`/`buildFilesystemAgentTools` are composed — key the catalog by the BBP7-001 scope so a reviewer (`bash: { fs: 'readonly', exec: false }`) and a coding agent (full bash) and a pure concierge (no bash attachment) each get a distinct catalog. Readiness: instantiate/route `ReadyStatusTracker` per scope (`runtime/readyStatus.ts`); `GET /api/v1/ready-status` (and the agent-scoped `/api/v1/agents/:agentId/ready-status`, the locked path form) resolves the agent's tracker.
+- **Files touch**: the per-scope tool assembly path in `registerAgentRoutes.ts` / `createAgentApp.ts` where `mergeTools`/`buildHarnessAgentTools`/`buildFilesystemAgentTools` are composed — key the catalog by the BBP7-001 scope so a reviewer (`bash: { fs: 'readonly', exec: false }`) and a coding agent (full bash) and a pure concierge (no bash attachment) each get a distinct catalog. Readiness: instantiate a `ReadyStatusTracker` per scope (`runtime/readyStatus.ts`) and resolve the agent's tracker from the BBP7-001 scope. **P7 adds NO agent-scoped `/ready-status` route** — per-agent readiness is served inside the existing `GET /api/v1/agents/:agentId/info` payload (BBP7-005). P7 is readiness *resolution-only*; the canonical agent-scoped route family is owned/created by T1/T2, not extended here. The existing non-agent-scoped `GET /api/v1/ready-status` SSE route stays as-is; do not add an agent-scoped `/ready-status` variant.
 - **Notes**: `provisioning is per (workspaceId, agentId, bashPlanFingerprint)` (`05`) — the scope key from BBP7-001 already yields this; verify `runRuntimeProvisioning` keys off `scope.key`. No readiness bleed across agents (`05` concurrency: "tool readiness bleed").
-- **Tests**: `05` Tests — "per-agent tool catalog differs as expected"; "reviewer has readonly fs/no exec while coding agent has bash"; "pure concierge has no boring-bash"; two agents' readiness trackers report independently.
+- **Tests**: `05` Tests — "per-agent tool catalog differs as expected"; "reviewer has readonly fs/no exec while coding agent has bash"; "pure concierge has no boring-bash"; two agents' readiness trackers report independently (each surfaced via its `GET /api/v1/agents/:agentId/info` payload per BBP7-005 — assert no agent-scoped `/ready-status` route is added).
 - **Acceptance**: catalog + readiness differ per agent with no cross-agent bleed.
 
 ### BBP7-004 — Session index/search scoped by workspace + agent (#379) · size L

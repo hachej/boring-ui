@@ -33,7 +33,7 @@ Match `06-migration-phases.md` Phase S2 exit criteria:
 - Do NOT build a real Office/Excel add-in or ship a product; a minimal spreadsheet-ish reference (in-memory grid + task-pane-style approval) is the deliverable.
 - Do NOT fork the surface-adapter conformance suite; import `runSurfaceAdapterConformance` from the neutral home `@hachej/boring-agent/testing` (where S1 BBS1-006 authors it) — **not** from the Slack package — and provide a spreadsheet subject.
 - Do NOT invent server APIs; if a needed façade method is missing, block on P1 rather than reaching into the harness.
-- Do NOT touch `/home/ubuntu/projects/boring-ui-v2`. Do NOT commit.
+- Do NOT touch `/home/ubuntu/projects/boring-ui-v2`. Work on a dedicated branch/worktree per the PR-PLAN branch naming; never commit to main directly; every bead lands as a PR per todos-v2/README.
 
 ## Beads
 

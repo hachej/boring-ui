@@ -7,7 +7,6 @@ Handoff: self-contained work order for one autonomous coding agent (pi or gpt-5.
 - `docs/issues/391/runtime-refactor/02-boring-bash-environment.md` — package layers, provider capability matrix, mode↔provider mapping, remote-worker split rules.
 - `docs/issues/391/runtime-refactor/06-migration-phases.md` — Phase 2 deliverables/exit; "Do not move providers until Phase 1 injection is complete."
 - `docs/issues/391/runtime-refactor/00-global-isa.md` — invariant: `@hachej/boring-agent` has **zero value imports** from `@hachej/boring-bash`; provisioning-ownership rule.
-- `docs/issues/391/runtime-refactor/todos/TODO-02-boring-bash-package-providers.md` — v1 beads BBA-020..025 (this supersedes for the provider-move slice).
 
 ### Already landed via issue #416 (do not redo, build on it)
 
@@ -68,7 +67,7 @@ Concrete non-agent-loop providers (direct, bwrap, vercel-sandbox, remote-worker 
 
 P2 is where composition **first breaks and gets rewired** — it is the earlier of the two named cutovers (P2 = runtime-mode; P3 = routes/tools). P1 held an end-to-end compatibility promise ("all current HTTP consumers unchanged"), but **that promise ends at P2**: moving the concrete mode adapters + `resolveMode()` out of `packages/agent` means every in-repo composer that resolved a runtime mode must now **inject the resolved runtime adapter** (host-side) instead of importing `resolveMode`, and the agent bin becomes pure-only. External HTTP *callers* still see byte-identical route paths/behavior; the break is in the **composition API**, not the wire surface. **No text may claim the first composition break waits until P3.**
 
-P2 therefore **enumerates and migrates EVERY in-repo composition consumer**, each in its own PR (no big-bang), re-verifying behavior parity after each:
+P2 therefore **enumerates and migrates EVERY in-repo composition consumer** — **each relocation slice migrates ALL importers for that slice, deletes the origin exports, and merges atomically after its gates pass** (a slice = one provider family; there are **no shims between slices**) — re-verifying behavior parity after each slice:
 
 - `packages/agent/src/server/createAgentApp.ts` + `registerAgentRoutes.ts` — the Fastify adapter layer takes the resolved runtime adapter **by injection** (Phase-1 seam) instead of importing `resolveMode`; if that seam is not threaded, STOP and report the missing P1 deliverable (do not shim).
 - `packages/cli/src/server/modeApps.ts` — imports `@hachej/boring-bash/providers` and resolves the mode host-side (and **now owns the bash-enabled dev-server bin composition** moved from the agent bin — see BBP2-005 / fix 6).
@@ -90,7 +89,7 @@ P2 therefore **enumerates and migrates EVERY in-repo composition consumer**, eac
 ## Do NOT
 
 - Do not touch `/home/ubuntu/projects/boring-ui-v2`. Work only in this worktree.
-- Do not commit.
+- Work on a dedicated branch/worktree per the PR-PLAN branch naming; never commit to main directly; every bead lands as a PR per todos-v2/README.
 - Do not re-shape or re-export the #416 shared binding contracts or server projection operations.
 - Do not collapse mode ids into provider ids.
 - Do not move routes/tools/UI (Phases 3/4 own those).
@@ -109,8 +108,8 @@ P2 therefore **enumerates and migrates EVERY in-repo composition consumer**, eac
 
 - **Files create:** `packages/boring-bash/src/providers/matrix.ts` (per-provider `ProviderCapabilities` constants for `none`, `readonly`, `direct`, `bwrap`, `vercel-sandbox` — the **fixed** providers); `packages/boring-bash/src/providers/README.md` (mode→provider table copied/linked from 02, incl. `local`→`bwrap`, pure→`none`, readonly facade).
 - **Notes:** Values must match 02's matrix exactly for the fixed providers. **`remote-worker` gets NO static constant for its worker-dependent fields** — those stay `'unknown'` in P2 (the handshake that reports them is **owned solely by `TODO-P5-provisioning-secrets.md` BBP5-008**, NOT P2), and **consumers fail closed on `'unknown'`** (a policy requiring an unproven capability is rejected, not assumed). This bead only defines the matrix TYPE + the `'unknown'` typing; the runtime handshake and its fail-closed validation land in BBP5-008. Provide only `remote-worker`'s non-worker-dependent fixed fields (e.g. `fs: 'readwrite'`, `exec: true`) as a partial base; the rest come from the BBP5-008 handshake at runtime.
-- **Tests:** `packages/boring-bash/src/providers/__tests__/matrix.test.ts` — one assertion per fixed provider row; assert `local`/`bwrap` distinction preserved; assert `none`/`readonly` have `exec:false`; assert `remote-worker` worker-dependent fields are `'unknown'` in the static matrix (no baked constant) and that a policy needing them fails closed until a handshake supplies them.
-- **Acceptance:** hosts can decide provider-satisfies-requirement without guessing from a name; worker-dependent capability is a reported fact, never a static constant, and unknown fails closed.
+- **Tests:** `packages/boring-bash/src/providers/__tests__/matrix.test.ts` — one assertion per fixed provider row; assert `local`/`bwrap` distinction preserved; assert `none`/`readonly` have `exec:false`; assert `remote-worker` worker-dependent fields are `'unknown'` in the static matrix (no baked constant). **P2 keeps only the matrix-typing + `'unknown'` assertions.** The "a policy needing worker-dependent fields fails closed" test is owned by **`TODO-P5` BBP5-008 (the sole handshake owner)** — do NOT place it here.
+- **Acceptance:** hosts can decide provider-satisfies-requirement without guessing from a name; worker-dependent capability is a reported fact, never a static constant (the fail-closed-on-`'unknown'` runtime validation and its test are owned by BBP5-008, not P2).
 
 ### BBP2-003 — Move `direct` + `bwrap` sandbox providers [size M]
 

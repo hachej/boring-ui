@@ -40,7 +40,7 @@ Match `06-migration-phases.md` Phase E2 exit criteria:
 - Do NOT write a second enforcement path. If you find yourself re-implementing path jailing or readonly rejection, stop and call the existing projection op.
 - Do NOT expose `fs.write`/`fs.edit`/`exec` tools on a readonly / `execPolicy: 'none'` attachment — omit them from the registered tool list, don't just reject at call time.
 - Do NOT put the MCP/SDK dependency on the base `@hachej/boring-bash/server` import path if it forces the SDK onto non-MCP consumers; prefer a `./mcp` subpath export.
-- Do NOT touch `/home/ubuntu/projects/boring-ui-v2`. Do NOT commit.
+- Do NOT touch `/home/ubuntu/projects/boring-ui-v2`. Work on a dedicated branch/worktree per the PR-PLAN branch naming; never commit to main directly; every bead lands as a PR per todos-v2/README.
 
 ## Beads
 

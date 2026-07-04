@@ -7,7 +7,6 @@ Handoff: self-contained work order for one autonomous coding agent (pi or gpt-5.
 - `docs/issues/391/runtime-refactor/06-migration-phases.md` — Phase 3 deliverables/exit (routes/tools code-move, behavior-freeze; `createBashAgentFeature()` returns a plain `{ tools, readinessRequirements }` bundle the host **spreads into `createAgent()`'s `tools`** — there is no `features` config member and no `AgentFeature` contract).
 - `docs/issues/391/runtime-refactor/02-boring-bash-environment.md` — layered exports (`/server`, `/agent`); "Tools to move or consciously assign"; one-namespace / source-of-truth rules.
 - `docs/issues/391/runtime-refactor/00-global-isa.md` — seams to reuse (`disableDefaultFileTools`, `buildHarnessAgentTools`, `buildFilesystemAgentTools`, `buildUploadAgentTools`, readiness tags); zero agent→bash value imports.
-- `docs/issues/391/runtime-refactor/todos/TODO-03-routes-tools-ui.md` — v1 beads BBA-030..033 (superseded here for the routes/tools slice; UI is TODO-P4).
 
 ### Depends on
 
@@ -75,7 +74,7 @@ P3 therefore **enumerates and migrates EVERY in-repo composition consumer**, eac
 
 ## Do NOT
 
-- Do not touch `/home/ubuntu/projects/boring-ui-v2`. Work only in this worktree. Do not commit.
+- Do not touch `/home/ubuntu/projects/boring-ui-v2`. Work on a dedicated branch/worktree per the PR-PLAN branch naming; never commit to main directly; every bead lands as a PR per todos-v2/README.
 - Do not change tool schemas / add features / "improve" behavior beyond stale-write parity already present.
 - Do not move the filesystem front plugin (TODO-P4 owns it).
 - Do not re-shape #416 shared contracts or projection ops.

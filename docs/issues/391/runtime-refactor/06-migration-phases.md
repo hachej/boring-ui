@@ -165,15 +165,25 @@ Deliverables:
 
 Exit criteria: the embed has no boring-bash dependency; tool outputs project into the sheet; conformance suite passes.
 
-## Phase 6 — Plugin and child-app integration
+## Phase 6 — Plugin and child-app integration (split into P6a / P6b)
 
-Unchanged from v1 (consume shared child-app platform context; `AgentRegistry` introduction; import-free `boring.requires`/`bash` manifest validation; hosted plugin fail-closed; Macro scoping; multi-tenant reload). Prerequisite unchanged: do not define a competing child-app registry here.
+**Phase 6 splits into two independently-gated slices.** P6a is the child-app-independent core and the **only P6 prerequisite for P7/P8**; P6b is the child-app scoping follow-up, gated on the shared child-app platform and **outside the epic exit**.
 
-Exit criteria: as v1.
+### Phase 6a — plugin core (child-app-independent; the only P7/P8 prerequisite)
+
+Import-free `boring.requires`/`bash` manifest validation; plugin runtime context; `AgentRegistry` introduction + the workspace `agents: [...]` declaration; hosted plugin fail-closed; shared per-workspace plugin runtime; multi-tenant reload. Prerequisite unchanged: do not define a competing child-app registry here. **P6a is grep-gated: the plugin-runtime context contracts carry zero `childAppId`/`workspaceKind`/`ChildApp` fields.** P7 and P8 depend on P6a only.
+
+Exit criteria (P6a): import-free manifest validation; hosted-plugin fail-closed before code exec; managed-service lifecycle; `AgentRegistry`/`agents` declaration seeded — as v1, minus any child-app scoping.
+
+### Phase 6b — child-app / Macro scoping (follow-up outside the epic exit)
+
+Consume the resolved child-app context (`childAppId`/`workspaceKind`); child-app/workspace-kind requirement narrowing; Macro scoping so Macro tools/prompts/provisioning do not leak into a generic workspace. **HARD BLOCKED on the shared child-app platform type (`ResolvedChildAppContext`, #376)** — STOP-and-report, no local fallback shape. P6b is a **tracked follow-up gated on that shared platform, not part of the epic exit**: the epic ships without it, and P8 only verifies the P6b follow-up issue is filed (P8 never waits on P6b landing).
+
+Exit criteria (P6b, when unblocked): child-app/workspace-kind requirement narrowing; Macro requirements do not leak into a generic workspace.
 
 ## Phase 7 — Multi-agent routing/session/search
 
-Unchanged from v1 (`agentId`-scoped routes against the Phase 6 `AgentRegistry`; per-agent catalog/readiness; scoped session search; external hook target resolution). The binding/route scope key includes `agentId` for **all** agents; **`sessionNamespace` includes `agentId` for non-default agents only — the default agent keeps its pre-P7 `sessionNamespace` unchanged** as an explicit on-disk JSONL-compatibility exception (per `TODO-P7` BBP7-003 and `05-multi-agent-sessions-hooks.md`).
+Unchanged from v1 (`agentId`-scoped routes against the Phase 6a `AgentRegistry`; per-agent catalog/readiness; scoped session search; external hook target resolution). The binding/route scope key includes `agentId` for **all** agents; **`sessionNamespace` includes `agentId` for non-default agents only — the default agent keeps its pre-P7 `sessionNamespace` unchanged** as an explicit on-disk JSONL-compatibility exception (per `TODO-P7` BBP7-003 and `05-multi-agent-sessions-hooks.md`).
 
 v2 additions:
 
@@ -184,6 +194,6 @@ Exit criteria: as v1, plus: two surfaces bound to two agents in one workspace do
 
 ## Phase 8 — Cleanup and deprecation
 
-v2 rewrite — Phase 8 is a **verification** phase, not a deferred-deletion dump: assert zero `TODO(remove:*)` markers remain repo-wide (add the check to the invariant scripts); update package docs; convert remaining plan tasks into beads/issues. There is no "migration window" — all import migrations happened in-PR per the no-compat policy (`todos-v2/README.md`).
+v2 rewrite — Phase 8 is a **verification** phase, not a deferred-deletion dump: assert zero `TODO(remove:*)` markers remain repo-wide (add the check to the invariant scripts); update package docs; convert remaining plan tasks into beads/issues. There is no "migration window" — all import migrations happened in-PR per the no-compat policy (`todos-v2/README.md`). **P8 gates on every prior phase EXCEPT P6b** (P1–P7, T1–T2, E1–E2, S1–S3, Phase 5, P6a): P6b is a tracked follow-up (HARD BLOCKED on the shared child-app platform type), so P8 only verifies the P6b follow-up issue is filed and never waits on P6b landing.
 
 Additional v2 exit criterion: `@hachej/boring-agent` README documents the four-part surface contract (08) as the stable public API.

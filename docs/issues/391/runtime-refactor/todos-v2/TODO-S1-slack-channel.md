@@ -42,7 +42,7 @@ Match `06-migration-phases.md` Phase S1 exit criteria:
 - Do NOT create a second approval channel; approvals ride the agent event stream (T1) and resolve via `agent.resolveInput(sessionId, requestId, response)`.
 - Do NOT block the Slack webhook on the full agent turn — ack fast (Slack's 3s rule), stream egress asynchronously.
 - Do NOT create an upfront shared `@hachej/boring-channel-core` package for a single channel — keep the Hono→Fastify wrapper inside `packages/channels/slack` until a second `@flue/*` channel exists.
-- Do NOT touch `/home/ubuntu/projects/boring-ui-v2`. Do NOT commit.
+- Do NOT touch `/home/ubuntu/projects/boring-ui-v2`. Work on a dedicated branch/worktree per the PR-PLAN branch naming; never commit to main directly; every bead lands as a PR per todos-v2/README.
 
 ## Beads
 

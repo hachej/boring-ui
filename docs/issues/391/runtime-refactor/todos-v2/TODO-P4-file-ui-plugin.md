@@ -7,7 +7,6 @@ Handoff: self-contained work order for one autonomous coding agent (pi or gpt-5.
 - `docs/issues/391/runtime-refactor/06-migration-phases.md` — Phase 4 deliverables/exit (move front plugin; preserve panel ids + `workspace.open.path` resolver + file panel binding + agent file bridge/session changes; factor tree data into a plain internal tree function — the pluggable `FileTreeDataProvider` boundary is **deferred to #295** (BBP4-012); the document-authority override seam is **deferred out of this epic** (BBP4-013)).
 - `docs/issues/391/runtime-refactor/02-boring-bash-environment.md` — "File tree and document authority" (`FileTreeDataProvider` for #295; document-authority override for #367/#226 — **the override is deferred out of this epic**, see BBP4-013); "UI plugin ownership" (workspace bridge stays workspace-owned).
 - `docs/issues/391/runtime-refactor/00-global-isa.md` — issues supported by extension points: #295 file-tree replacement, #367/#226 document collaboration.
-- `docs/issues/391/runtime-refactor/todos/TODO-03-routes-tools-ui.md` — v1 beads BBA-034..036 (superseded here).
 
 ### Depends on
 
@@ -54,7 +53,7 @@ Filesystem front plugin lives in `@hachej/boring-bash/plugin`, registered by wor
 
 ## Do NOT
 
-- Do not touch `/home/ubuntu/projects/boring-ui-v2`. Work only in this worktree. Do not commit.
+- Do not touch `/home/ubuntu/projects/boring-ui-v2`. Work on a dedicated branch/worktree per the PR-PLAN branch naming; never commit to main directly; every bead lands as a PR per todos-v2/README.
 - Do not build TipTap/Yjs real-time collaboration; and do not add the document-authority seam either — it is deferred out of this epic (BBP4-013).
 - Do not change server routes again (Phase 3 owns them); do not re-shape #416 contracts.
 - Do not introduce a workspace value import into boring-bash (would create a cycle).
