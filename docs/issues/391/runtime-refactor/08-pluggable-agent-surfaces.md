@@ -32,6 +32,29 @@ Mechanism, not hand-waving: Phase 7 delivers an **agent inspection endpoint** (`
 
 **Farm-MCP note (deferred — filed at P8 as a follow-up):** the farm may expose **control-plane tools** (create/read task, publish artifact, request human input) over an **MCP surface** so ANY foreign agent integrates (00 North star "open integration"). It rides **E2's MCP infrastructure** + **T1's `sessions.pendingInputs`/`resolveInput`** — no new mechanism. This is deferred to the farm epic; recorded here so the direction is reserved (P8 BBP8-004 files the follow-up).
 
+### Plugin-extensibility (the host-product differentiator)
+
+The steering surface itself is **plugin-extensible, and so is the agent — internally AND externally**, over real, shipped APIs (verified against the current plugin/agent layer, not aspirational). This is what distinguishes boring from an agent framework: **eve/Flue give you APIs to extend *your own* agent; boring's plugin layer lets a third party extend the *host product* — the workspace UI and the agents running inside it — without forking it.**
+
+- **Front (workspace UI):** `definePlugin({ … })` (from `@hachej/boring-workspace/plugin`) contributes `panels` (workspace pages/panes), `workspaceSources` (left-rail entries), `commands`, `appLeftActions`, `surfaceResolvers` (map a typed open-request → a panel — the `openSurface` path), `catalogs`, and `toolRenderers` (custom rendering for a tool's transcript output). These install into the same `PanelRegistry`/`WorkspaceSourceRegistry`/`CatalogRegistry` the built-ins use.
+- **Server (agent):** `defineServerPlugin({ … })` (from `@hachej/boring-workspace/server`) is a trusted boot-time contribution: `agentTools` merged in as **`extraTools`**, Fastify `routes`, a `systemPrompt` append, and Pi `extensions`/`skills`/packages. This is how a plugin adds agent capability, not just UI.
+- **Runtime backend RPC:** a plugin's server code is reachable from its front over the workspace-owned **`/api/v1/plugins/:pluginId/*`** route family (00 "current seams to reuse").
+- **Distribution:** plugins install from **local / git / npm** via the **`boring-ui-plugin` CLI** (scaffold/verify), and a **safe subset hot-reloads** (front + Pi resources refresh via `/reload` + SSE; **server routes/tools require a restart** — hot-reload does not rewire Fastify routes or `agentTools`).
+
+**Honest caveats (do not oversell):**
+
+- **External plugins are trusted local code, NOT sandboxed** — a plugin tool's `execute()` runs in the host Node process and bypasses the sandbox by design; provenance/trust is "local developer/workspace code," not untrusted third-party.
+- The **hosted/marketplace model — untrusted external code behind iframe fronts + sandbox-proxied tools — is a FUTURE phase, not implemented.**
+- **`full-app` ships `externalPlugins: false`** today (external/runtime plugin loading off in the flagship app).
+- **`boring.requires` + bash-requirement validation is P6a** (`TODO-P6`), not already-shipped.
+
+**Named farm-epic plugin surfaces (deferred — reserved, not built here):** **fleet-page widgets** (custom per-agent/fleet-wide widgets on the Fleet page — `TODO-S3` BBS3-001), **task sources** (pluggable boring-tasks sources feeding the task board — #397/#486 direction), and **artifact viewers** (custom renderers for `data-artifact` parts in the artifact shelf). These are the plugin extension points the farm epic opens on top of this epic's substrate.
+
+### Deferred interop directions (reserved, not built)
+
+- **MCP-as-a-channel (filed at P8 with Farm MCP):** an agent **exposed as an MCP server is just another surface adapter** — it rides the **same four-part contract** (message in / event-stream out / approvals on-stream / runtime-owned `sessionId` with surface-owned addressing), where the MCP client's session/tool-call context is the surface-owned addressing. It reuses E2's MCP infrastructure; it is **not** a new mechanism and **not** built in this epic. This is the ingress dual of E2's MCP *projection* (which exposes an *environment* over MCP) and of the Farm-MCP control-plane note above.
+- **Cross-org artifact delivery (farm epic):** delivering an artifact from one org's agent to another composes two primitives already reserved here — the **`data-artifact` stream part** and **shared-S3-prefix environments** (E1/09 + `TODO-X1` prefix-scoped mounts). A publishing agent writes to a shared-prefix environment and emits `data-artifact`; a consuming org attaches the same prefix (or receives the part). No new artifact store — the environment write + the part are the only sanctioned path. Deferred to the farm epic (Horizon-3, `00` "Business horizons").
+
 ## What every framework converges on (adopted here)
 
 A surface and the agent core exchange exactly four things:

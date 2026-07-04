@@ -49,6 +49,7 @@ Make `06` Phase 7 + `05` § "Tests" checkable:
 ## Non-negotiables
 
 - Scope against the Phase 6 `AgentRegistry` — do NOT build a second registry (`00` invariant 10; `06` Phase 6).
+- **Interop reservation (shape only, not built):** the `AgentRegistry` entry shape must **not preclude REMOTE entries** — leave room for `{ agentId, kind: 'local' | 'remote', endpoint?, auth? }` so a future remote agent can be addressed like a local one; the **remote client (an MCP delegation channel) is a named follow-up, NOT built in this epic** (Horizon-3 hub-and-spoke direction, `00` "Business horizons"). P7 only resolves/scopes `local` entries; do not hardcode an assumption that every entry is in-process.
 - Extend the existing `RuntimeScope.key` array and `sessionNamespace` — do NOT assume a preexisting composite key already has `agentId` (`05` explicit warning). Legacy fields (root/template/pi/sessionNamespace) stay isolated where they already are.
 - `/info` is a **public read contract** modeled on `models.ts`: cheap, safe unauthenticated at the same level `models` is, and it MUST NOT leak secrets, broker credentials, or provider key material (`00` invariant 14).
 - Two-handles rule (`08`/T2): public agent APIs stay `sessionId`-keyed; `agentId` is boring's own routing scope (like `workspaceId`/`SessionCtx`), NOT surface-native platform addressing — allowed on the façade/routes, subject to the same rule that surface-native identifiers are not. One addressing entry → one `agentId`; a surface never multiplexes agents on one continuation key.

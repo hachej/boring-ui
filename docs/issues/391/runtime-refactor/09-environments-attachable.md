@@ -69,6 +69,15 @@ Any environment can be projected as an **MCP server**: fs ops (`read/list/stat/s
 - Identity/audit: MCP sessions map to a `BoundFilesystemContext` (actor, workspaceId, sessionId, requestId) — same audit spine as internal attachments.
 - **Remote-worker ownership (deferred direction — NOT a live instruction):** in this epic remote-worker **remains a provider** (the concrete provider adapters — including `remote-worker` — live in **`@hachej/boring-sandbox`**, moved there by `TODO-P2`; its capability facts come only from the `TODO-P5` handshake). Reclassifying it as *a transport for an environment* (peer to in-process and MCP) is an attractive future direction but is **explicitly DEFERRED to a post-E2 follow-up, to be filed at P8**. Nothing here overrides or contradicts the P2/P5 remote-worker-as-provider design.
 
+## Two access paths for external agents (projection vs native mount)
+
+An external agent can reach an environment two ways, and the choice is a **policy decision, not a capability accident**:
+
+1. **MCP projection (E2)** — **governed, policy-filtered** access. The agent speaks MCP; every op runs *under* the readonly/management projection ops + no-leak conformance (#416), so denied files are physically absent and writes are policy-gated. Use for **governed context** (`company_context`, any regulated/filtered filesystem).
+2. **Native S3 mount (`TODO-X1`)** — **prefix-granular** access where the external agent uses its **own native tools** (`bash`/`grep`/`git`, **untranslated** — no MCP tool surface in between) against a mounted prefix. Use for **trusted shared workspaces** (a shared team scratch prefix, a cross-org delivery prefix — 08 cross-org artifact direction).
+
+**Rule:** governed context → **projection**; trusted shared workspaces → **native mount**. Never raw-mount a governed filesystem (#416; `TODO-X1` `user`-fs-only scoping). Both paths sit on the **same Environment identity, the same credential broker (host-side, secrets never reach the client/sandbox), and the same audit spine** (`BoundFilesystemContext` — actor/workspaceId/sessionId/requestId) — the access mechanism differs, the identity/brokering/audit do not.
+
 ## Security invariants
 
 1. Attachment carries policy; an environment has no ambient authority. `filesystem + path + operation + actor` remains the resource identity (#416).
@@ -82,5 +91,7 @@ Any environment can be projected as an **MCP server**: fs ops (`read/list/stat/s
 `BashEnvironment` (02) remains the concrete implementation surface. Ownership framing flips: boring-bash is an **environment host**, not "the fs/bash feature of an agent". `createBashAgentFeature()` becomes sugar over "attach these environments to this agent". No landed #416 contract changes; `company_context` becomes the reference `Environment` + readonly `EnvironmentAttachment`.
 
 ## Conformance
+
+Where these environments actually run — the isolation tiers (dev bwrap / hardened gVisor systrap / VM-grade Kata·Cloud-Hypervisor+virtiofs), the FUSE×isolation matrix, EU providers, and the host-side-mount-never-in-guest-creds rule — is specified in [`10-sandbox-deployment-eu.md`](10-sandbox-deployment-eu.md). Governed filesystems (`company_context`) are never raw-mounted; they stay projection-based (#416).
 
 The environment conformance suite (07/08) runs identically against the **delivered mounts** — the in-process attachment, the scoped-view (+ symlink-escape) attachment, and the MCP projection (E2) — plus the **deferred remote-worker (provider) attachment mount, gated on the P5 remote-worker handshake work** (owning bead: `todos-v2/TODO-P5-provisioning-secrets.md` BBP5-010). One suite, N mounts — same rule as harness/transport conformance; a mount is added by the phase that delivers its implementation, and mounts are named, never numbered.

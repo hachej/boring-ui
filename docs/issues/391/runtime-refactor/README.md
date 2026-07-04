@@ -20,6 +20,7 @@ Work orders live in [`todos-v2/`](todos-v2/) (canonical) and [`todos/`](todos/) 
 8. [`07-tests-review-acceptance.md`](07-tests-review-acceptance.md) — required tests, issue coverage, review gates, acceptance criteria.
 9. [`08-pluggable-agent-surfaces.md`](08-pluggable-agent-surfaces.md) — **(v2)** surface-agnostic agent: `createAgent()` façade, indexed/replayable event stream, approvals-on-stream, two-handles rule, channel ingress reused from `@flue/*` packages, Slack + spreadsheet reference adapters, conformance suites.
 10. [`09-environments-attachable.md`](09-environments-attachable.md) — **(v2)** environments as attachable resources: fs+sandbox with own identity, attachments for agents/subagents, scoped views, MCP projection for external agents.
+11. [`10-sandbox-deployment-eu.md`](10-sandbox-deployment-eu.md) — **(v2)** EU-sovereign sandbox deployment: GO/NO-GO verdict, the FUSE×isolation matrix, the three tiers (dev bwrap / hardened gVisor systrap+netns / VM-grade Kata·Cloud-Hypervisor+virtiofs), named EU providers/prices, capacity + kernel prereqs, the 12 Decisions-To-Lock, and open risks. Grounds `TODO-X1`/`TODO-P2`/`TODO-P5` and invariant 15; canonical-with #307.
 
 ## Implementation rule
 

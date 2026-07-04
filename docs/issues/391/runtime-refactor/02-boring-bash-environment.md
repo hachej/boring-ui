@@ -45,7 +45,8 @@ The concrete providers themselves live in a separate package:
   direct, bwrap, vercel-sandbox, remote-worker, readonly, none  (concrete provider adapters)
 
 @hachej/boring-sandbox/mounts
-  FUSE-S3 mount drivers + per-session mount lifecycle (see TODO-X1)
+  FUSE-S3 mount drivers + per-session mount lifecycle (see TODO-X1;
+  deployment tiers/providers/prereqs in 10-sandbox-deployment-eu.md)
 
 @hachej/boring-sandbox/shared
   ProviderCapabilities (reported | unknown facts), provider contract types

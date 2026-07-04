@@ -23,7 +23,20 @@ The owner's vision, in one sentence: **eve-style DECLARATIVE authoring that ship
 - **OPEN integration — foreign agents join the farm**: a non-boring agent (Claude Code, Codex, any MCP client) can attach an environment (E2 MCP projection) and — deferred — create tasks / publish artifacts / request human input over a **Farm MCP** control-plane surface (08 Farm-MCP note). The farm is open, not a walled garden.
 - **Flue's internals**: durable indexed event streams, channel ingress packages, `SessionEnv`-shaped environments (already adopted — 08/09).
 - **boring-ui's existing UX**: the workspace stays the first-class surface and becomes the **control plane** — the one place to author agents, wire channels/environments, watch sessions across every surface, and answer approvals (08 "The steering surface").
-- **EU-sovereign hosting**: see invariant 15.
+- **PLUGIN-extensible host product**: both the workspace UI and the agents inside it are extensible by third parties — internally and externally — over real APIs (`definePlugin`/`defineServerPlugin`, `/api/v1/plugins/:pluginId/*`, the `boring-ui-plugin` CLI). eve/Flue extend *your own* agent; boring's plugin layer lets others extend the *host product* without forking it. See [`08-pluggable-agent-surfaces.md`](08-pluggable-agent-surfaces.md) "Plugin-extensibility" (with honest caveats: external plugins are trusted local code, hosted-iframe is future, `full-app` ships `externalPlugins:false`).
+- **EU-sovereign hosting**: see invariant 15; deployment tiers/providers in [`10-sandbox-deployment-eu.md`](10-sandbox-deployment-eu.md).
+
+## Business horizons
+
+Grounded in the owner's strategy (the boring-ui-factory brain); the epic builds the shared substrate, not any one commercial topology. **Do not build ahead of these — they frame *what the architecture must not preclude*, not this epic's scope.**
+
+- **Horizon 1 — now, services-led.** Named vertical agents (**Engagement Analyst** — sovereign deck+model agent for consulting boutiques; **MacroAnalyst** — sovereign macro/investment-research agent) deployed and managed on **dedicated sovereign tenants**, offered **managed OR as a self-host handoff**. The **farm is INTERNAL leverage** here — the factory that delivers client work (dogfooded to build/research/generate artifacts), not a product sold to clients.
+- **Horizon 2 — post 3+ repeats.** After the same SSO/governance/workroom pattern recurs across 3+ deployments, productize a **white-label "AI Analyst Workroom"** for consultancies/fiduciaries to resell; the **farm becomes client-facing**.
+- **Horizon 3 — 2027+.** A **hub-and-spoke** shape: a **free local CLI ⇄ hosted specialist agents** via **MCP delegation**, with **artifacts delivered cross-org**. This is the open-integration end state (foreign agents + the E2 MCP projection + `data-artifact`), not a near-term build.
+
+**Architecture rule: one deployable artifact; topology is the product line.** The same build runs single-tenant self-host, managed sovereign tenant, or hub-and-spoke — the *topology* is the commercial choice, not a code fork. This epic builds the **shared substrate** and **must not FORCE horizon-3 infrastructure early** (no marketplace, no billing, no multi-tenant control plane in this epic) **while not precluding it** (the surface/environment/MCP contracts compose into it).
+
+**Open tension (verbatim-ish, owner to resolve):** the current STRATEGY.md leans to a **managed retainer** default, while the older decision log has **clients owning ops** (self-hosted handoff). The architecture **supports both** (one artifact, either topology); the **commercial default is TBD by the owner** — the plan pack does not pick one.
 
 ## Target package ownership
 
