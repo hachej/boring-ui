@@ -10,7 +10,7 @@ Derived strictly from [TODO.md](./TODO.md) and [PLAN.md](./PLAN.md). Tick each b
 - [ ] BBP0-002 — Ratify all 11 locked decisions from `08` + the v2 north star
 - [ ] BBP0-003 — Annotate runtime docs + §7e pairing invariant
 - [ ] BBP0-004 — Draft #391 pointer comment + issue-body reconciliation
-- [ ] BBP0-005 — Supersession notes inside the plan pack
+- [ ] BBP0-005 — Supersession confirmations inside the plan pack
 
 ## Verification commands
 - [ ] `grep -o "docs/issues/391/[^) ]*" docs/DECISIONS.md` (and confirm each path exists)
@@ -28,7 +28,7 @@ Derived strictly from [TODO.md](./TODO.md) and [PLAN.md](./PLAN.md). Tick each b
 - [ ] `packages/agent/docs/runtime.md` no longer implies pure/headless agents require a Workspace+Sandbox pair.
 - [ ] `docs/DECISIONS.md` §7e ("Pairing invariant") carries a supersession note scoping the pairing to boring-bash-active runtimes only.
 - [ ] Issue #391 body/pointer references the v2 pack; a ready-to-post comment body is drafted in-repo.
-- [ ] Supersession notes are added in the plan pack where `08`/`09` override older text in `00`.
+- [ ] Supersession confirmations are present in `00` open decisions and `VISION.md` locked decisions where `08`/`09` override older surface/runtime text.
 
 ## Closeout
 - [ ] Zero unowned `TODO(remove:*)` markers for this phase

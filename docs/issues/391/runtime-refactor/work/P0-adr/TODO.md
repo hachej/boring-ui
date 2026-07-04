@@ -27,7 +27,7 @@ Repo facts (verified — cite these exact paths):
 - `packages/agent/docs/runtime.md` no longer implies pure/headless agents require a Workspace+Sandbox pair.
 - `docs/DECISIONS.md` §7e ("Pairing invariant") carries a supersession note scoping the pairing to boring-bash-active runtimes only.
 - Issue #391 body/pointer references the v2 pack (`docs/issues/391/runtime-refactor/`), not the legacy monolith. A ready-to-post comment body is drafted in this repo (do not require live `gh` access to author it).
-- Supersession notes are added in the plan pack where `08`/`09` override older text in `00`.
+- Supersession confirmations are present in `00` open decisions and `VISION.md` locked decisions where `08`/`09` override older surface/runtime text.
 
 ## Non-negotiables
 
@@ -88,13 +88,13 @@ Repo facts (verified — cite these exact paths):
 - **Tests to add:** none.
 - **Acceptance:** A single copy-paste-ready comment body exists in-repo that reconciles #391 with the v2 pack and contains no phase drift versus `INDEX.md`.
 
-### BBP0-005 — Supersession notes inside the plan pack — S
+### BBP0-005 — Supersession confirmations inside the plan pack — S
 
-- **Description:** Where `08` and `09` override earlier surface-related text in `00-global-isa.md`, add short "superseded by 08/09" pointers so a reader entering at `00` is not misled by pre-v2 open-decision wording.
-- **Files to touch:** `docs/issues/391/runtime-refactor/architecture/00-global-isa.md` (open-decisions section — decisions 1, 2, 6 are already resolved in-file; ensure each resolved item points to `08`). Confirm `README.md` already states `08` supersedes surface decisions (it does — verify wording is consistent).
-- **Implementation notes:** Do not renumber `00`'s decision list; annotate in place. This is the lowest-risk bead — a pure cross-reference pass.
+- **Description:** Verify the supersession confirmations live where readers now enter the v2 pack: `00-global-isa.md` "Open decisions before implementation" marks surface decisions resolved and points to `08`, and `VISION.md` "Decisions locked" lists the locked surface/runtime decisions. Add a one-line note in those locations only if genuinely absent.
+- **Files to touch:** `docs/issues/391/runtime-refactor/architecture/00-global-isa.md` and/or `docs/issues/391/runtime-refactor/VISION.md` only if a required supersession confirmation is absent.
+- **Implementation notes:** Do not renumber `00`'s decision list; annotate in place only if needed. This is the lowest-risk bead — a pure cross-reference pass.
 - **Tests to add:** none.
-- **Acceptance:** No stale "open" surface decision in `00` lacks a pointer to its resolution in `08`/`09`.
+- **Acceptance:** No stale surface supersession is asserted only in the README; the confirmation is present in `00` and `VISION.md`, with resolved surface decisions pointing to `08`/`09` where applicable.
 
 ## Verification
 
