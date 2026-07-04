@@ -1,7 +1,7 @@
 import { betterAuth, APIError, type Auth } from 'better-auth'
 import { drizzleAdapter } from 'better-auth/adapters/drizzle'
 import { magicLink } from 'better-auth/plugins/magic-link'
-import { zxcvbn, zxcvbnOptions } from '@zxcvbn-ts/core'
+import { ZxcvbnFactory } from '@zxcvbn-ts/core'
 import * as zxcvbnCommon from '@zxcvbn-ts/language-common'
 import * as zxcvbnEn from '@zxcvbn-ts/language-en'
 import type { CoreConfig } from '../../shared/types.js'
@@ -21,10 +21,10 @@ import { safeCapture, noopTelemetry, type TelemetrySink } from '../../shared/tel
 
 const MIN_ZXCVBN_SCORE = 2
 
-let zxcvbnInitialized = false
-function ensureZxcvbn() {
-  if (zxcvbnInitialized) return
-  zxcvbnOptions.setOptions({
+let zxcvbnInstance: ZxcvbnFactory | null = null
+function getZxcvbn() {
+  if (zxcvbnInstance) return zxcvbnInstance
+  zxcvbnInstance = new ZxcvbnFactory({
     translations: zxcvbnEn.translations,
     graphs: zxcvbnCommon.adjacencyGraphs,
     dictionary: {
@@ -32,12 +32,11 @@ function ensureZxcvbn() {
       ...zxcvbnEn.dictionary,
     },
   })
-  zxcvbnInitialized = true
+  return zxcvbnInstance
 }
 
 export function validatePasswordStrength(password: string): { valid: boolean; message?: string } {
-  ensureZxcvbn()
-  const result = zxcvbn(password)
+  const result = getZxcvbn().check(password)
   if (result.score < MIN_ZXCVBN_SCORE) {
     return {
       valid: false,
