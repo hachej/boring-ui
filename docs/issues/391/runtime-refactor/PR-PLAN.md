@@ -116,8 +116,8 @@ Legend — nature: **new** = net-new code · **move** = rename-detected + import
 | pr1-providers-subpath-matrix | BBP2-001 + BBP2-002 | new | ~250 (capability contract + matrix) | export-map `/providers`; per-fixed-provider matrix rows; `remote-worker` worker-fields `'unknown'` fail-closed | `boring-bash check:invariants` |
 | pr2-move-direct-bwrap | BBP2-003 | move | budget-exempt (~1.5k churn) | moved direct/bwrap conformance + snapshot pass under boring-bash | `boring-bash test` |
 | pr3-move-vercel-sandbox | BBP2-004 | move | budget-exempt (~2.5–3k churn, <4k) | vercel-sandbox unit tests pass; `createVercelSandboxWorkspace` typechecks | `boring-bash test` |
-| pr4-move-mode-adapters | BBP2-005 | move | budget-exempt (~1k churn) | `resolveMode.test` passes; mode→provider pairs covered | agent `test` (host repoint) |
-| pr5-split-remote-worker | BBP2-006 | move | budget-exempt (~1k churn) | protocol compat; handshake rejects bad version; worker import-graph has no agent-core dep | `audit:imports` |
+| pr4-move-mode-adapters | BBP2-005 | move | budget-exempt (~1k churn) | `resolveMode.test` passes; mode→provider pairs covered; **agent bin becomes pure-only (`runtime:'none'`), bash-enabled bin composition moves to `packages/cli` in THIS PR** | agent `test` (host repoint) |
+| pr5-split-remote-worker | BBP2-006 | move | budget-exempt (~1k churn) | protocol compat (bytes round-trip); worker import-graph has no agent-core dep; **worker capabilities stay `'unknown'` — NO handshake here (handshake owned solely by BBP5-008)** | `audit:imports` |
 | pr6-migrate-delete-invariants | BBP2-007 + BBP2-008 | move (delete origin exports) + new (invariant) | ~80 (invariant script) | static: agent old paths have no bash value import / no re-export; apps compile | `lint:invariants`; `audit:imports` |
 
 **P2 total: 6 PRs.** Precondition: P1 injection seam present (else STOP+report). Bumps `@hachej/boring-agent` minor (relocation).

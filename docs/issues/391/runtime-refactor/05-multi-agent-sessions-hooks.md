@@ -42,7 +42,7 @@ Required scoping:
 
 - routes: the canonical `/api/v1/agents/:agentId/...` path-prefix family (locked at pass 3; no header/request-scope alternative);
 - add `agentId` to the real per-workspace runtime binding/scope used by `registerAgentRoutes` and core workspace server caches; do not assume a preexisting single composite key has every field;
-- `sessionNamespace` includes `agentId`; legacy fields such as root/template/pi/session namespace must remain isolated where they currently exist;
+- `sessionNamespace` includes `agentId` **for non-default agents only**; the **default agent keeps the pre-P7 `sessionNamespace` unchanged** (no `:agent:` suffix) as an explicit on-disk JSONL-compatibility exception, so existing default-agent sessions keep loading byte-identically (per `todos-v2/TODO-P7-multi-agent-inspection.md` BBP7-003 — note the route/runtime `RuntimeScope.key` still carries `agentId` for *all* agents incl. the default; only the *sessionNamespace* is left untouched for the default); legacy fields such as root/template/pi/session namespace must remain isolated where they currently exist;
 - session root layout preserves AGENTS.md rule: transcripts live under host durable `BORING_AGENT_SESSION_ROOT`, not workspace/container home;
 - tool catalog is per agent;
 - provisioning is per `(workspaceId, agentId, bashPlanFingerprint)`;
@@ -132,8 +132,8 @@ Required safeguards:
 
 - resolved child-app/default agent set can seed the agent registry before plugin/runtime policy uses it;
 - two agents same workspace/session id do not collide;
-- session namespace includes agent id;
-- binding cache includes agent id;
+- session namespace includes agent id for non-default agents; the default agent's session namespace is byte-identical to pre-P7 (JSONL-compat exception);
+- binding cache includes agent id (for all agents, including the default);
 - per-agent tool catalog differs as expected;
 - reviewer has readonly fs/no exec while coding agent has bash;
 - pure concierge has no boring-bash;

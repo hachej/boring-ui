@@ -12,8 +12,10 @@ Status: v2 addition. Generalizes the #416 filesystem-binding model: **a filesyst
 
 Builds directly on the landed #416 shapes (`FilesystemId`, `FilesystemBinding`, `FilesystemBindingProvider`, `PreparedFilesystemBinding`, `ScopedFilesystemRuntimeBindingManager`) — generalized, not replaced:
 
+Type ownership (one dependency direction, boring-bash → agent): the **rich** `Environment`/`EnvironmentAttachment` types live in `boring-bash/shared`; the **minimal core-facing** `ResolvedEnvironments`/`PreparedEnvironmentAttachment` live in `@hachej/boring-agent` shared contracts. boring-bash's `resolveAttachments` imports the agent-defined `ResolvedEnvironments` type-only and returns it. The agent core imports **nothing** from boring-bash.
+
 ```ts
-// boring-bash/shared — type-only for the agent core
+// boring-bash/shared — the rich, host-facing environment types
 interface Environment {
   id: string                        // stable identity, independent of any agent
   provider: string                  // direct | bwrap | vercel-sandbox | remote-worker | fixture | ...
@@ -33,11 +35,19 @@ interface EnvironmentAttachment {
   execPolicy: 'none' | 'attached'   // whether bash/exec runs against this env (02/#416 exec rules apply)
 }
 
+// @hachej/boring-agent shared — the minimal core-facing shapes the agent OWNS
+// (boring-bash imports these type-only; the agent imports nothing from boring-bash)
+interface PreparedEnvironmentAttachment {
+  filesystem: FilesystemId          // agent-local alias, matches RuntimeFilesystemBinding
+  access: FilesystemAccess
+  scope?: { subpath?: string }
+  handle: unknown                   // opaque prepared mount/projection handle
+}
 // what an agent/session receives — resolved by the host, never self-served
 interface ResolvedEnvironments { attachments: PreparedEnvironmentAttachment[] }
 ```
 
-Resolution (no registry vocabulary in E1): hosts reduce an `EnvironmentAttachment[]` to the landed #416 `FilesystemBinding[]` via a thin `resolveAttachments` adapter in boring-bash/server (E1) — there is **no `EnvironmentRegistry` class** and **no new prepare/dispose lifecycle** (the existing `ScopedFilesystemRuntimeBindingManager` still owns preparation and disposal). The agent core only sees `ResolvedEnvironments` via injection (type-only import, invariant-checked). An **address-by-id lookup (a plain `Map<environmentId, Environment>`) is introduced later in E2**, where the MCP projection actually needs to resolve an environment by id — not in E1.
+Resolution (no registry vocabulary in E1): hosts reduce an `EnvironmentAttachment[]` to the landed #416 `FilesystemBinding[]` via a thin `resolveAttachments` adapter in boring-bash/server (E1) — there is **no `EnvironmentRegistry` class** and **no new prepare/dispose lifecycle** (the existing `ScopedFilesystemRuntimeBindingManager` still owns preparation and disposal). The agent core only sees `ResolvedEnvironments` via injection — and it **owns** that type (defined in `@hachej/boring-agent` shared), importing nothing from boring-bash; boring-bash's `resolveAttachments` imports the agent-defined `ResolvedEnvironments` type-only. The one cross-package type edge is boring-bash → agent (invariant-checked). An **address-by-id lookup (a plain `Map<environmentId, Environment>`) is introduced later in E2**, where the MCP projection actually needs to resolve an environment by id — not in E1.
 
 ## Consumers
 

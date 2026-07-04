@@ -173,7 +173,7 @@ Exit criteria: as v1.
 
 ## Phase 7 — Multi-agent routing/session/search
 
-Unchanged from v1 (`agentId`-scoped routes or request-scope equivalent against the Phase 6 `AgentRegistry`; binding scope key and `sessionNamespace` include `agentId`; per-agent catalog/readiness; scoped session search; external hook target resolution).
+Unchanged from v1 (`agentId`-scoped routes against the Phase 6 `AgentRegistry`; per-agent catalog/readiness; scoped session search; external hook target resolution). The binding/route scope key includes `agentId` for **all** agents; **`sessionNamespace` includes `agentId` for non-default agents only — the default agent keeps its pre-P7 `sessionNamespace` unchanged** as an explicit on-disk JSONL-compatibility exception (per `TODO-P7` BBP7-003 and `05-multi-agent-sessions-hooks.md`).
 
 v2 additions:
 
