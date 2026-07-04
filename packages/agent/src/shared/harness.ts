@@ -105,4 +105,6 @@ export interface RunContext {
   userId?: string
   userEmail?: string
   userEmailVerified?: boolean
+  /** When false, slash-command fallback through native model prompt must fail closed. */
+  allowPromptDispatch?: boolean
 }

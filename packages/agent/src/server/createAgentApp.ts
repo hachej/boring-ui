@@ -263,7 +263,7 @@ export async function createAgentApp(
         })
       }
     : undefined
-  await app.register(fileRoutes, { workspace: runtimeBundle.workspace, getFilesystemBindings: filesystemBindingsForRequest })
+  await app.register(fileRoutes, { workspace: runtimeBundle.workspace, getFilesystemBindings: filesystemBindingsForRequest, filesystemBindings: runtimeBundle.filesystemBindings })
   await app.register(fsEventsRoutes, { workspace: runtimeBundle.workspace })
   await app.register(treeRoutes, { workspace: runtimeBundle.workspace, getFilesystemBindings: filesystemBindingsForRequest, filesystemBindings: runtimeBundle.filesystemBindings })
   // /api/v1/files/search powers BOTH the cmd-palette / file-tree
@@ -305,7 +305,7 @@ export async function createAgentApp(
   })
   await app.register(sessionChangesRoutes, { tracker: sessionChangesTracker })
   await app.register(catalogRoutes, { tools })
-  await app.register(commandsRoutes, { harness, defaultSessionId: sessionId, workdir: runtimeBundle.workspace.root })
+  await app.register(commandsRoutes, { harness, defaultSessionId: sessionId, workdir: runtimeBundle.workspace.root, metering: opts.metering })
   await app.register(reloadRoutes, {
     harness,
     defaultSessionId: sessionId,

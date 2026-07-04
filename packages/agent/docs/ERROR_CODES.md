@@ -50,6 +50,7 @@ All API failures must use the response envelope:
 | `ABORTED` | Request cancelled via `AbortSignal` | 499 | retry | warn | stable (public API) |
 | `PAYMENT_REQUIRED` | Billing/metering sink rejected the run (e.g. credits exhausted) | 402 | user-fix | warn | stable (public API) |
 | `MODEL_BUDGET_EXCEEDED` | Governance model budget for this user/model is exhausted | 402 | user-fix | warn | stable (public API) |
+| `METERING_UNSUPPORTED_COMMAND` | Slash-command execution is disabled because metering cannot yet reserve/settle that path | 409 | user-fix | warn | stable (public API) |
 | `SESSION_NOT_FOUND` | Session id does not exist | 404 | user-fix | warn | stable (public API) |
 | `SESSION_LOCKED` | Session currently locked by concurrent writer | 409 | retry | warn | stable (public API) |
 | `STREAM_BUFFER_EVICTED` | Resume cursor evicted from in-memory stream buffer | 410 | retry | warn | stable (public API) |

@@ -51,6 +51,7 @@ export const workspaces = pgTable(
     createdAt: timestamp('created_at').defaultNow().notNull(),
     deletedAt: timestamp('deleted_at'),
     isDefault: boolean('is_default').notNull().default(false),
+    managedBy: text('managed_by'),
   },
   (table) => [
     index('workspaces_created_by_idx').on(table.createdBy),

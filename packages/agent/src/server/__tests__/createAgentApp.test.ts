@@ -1,6 +1,6 @@
 import { mkdtemp, mkdir, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { dirname, join } from 'node:path'
 import { execFile } from 'node:child_process'
 import { promisify } from 'node:util'
 import { afterEach, expect, test, vi } from 'vitest'
@@ -8,6 +8,8 @@ import { afterEach, expect, test, vi } from 'vitest'
 import { getEnv, restoreEnvForTest, setEnvForTest } from '../config/env'
 import { createAgentApp } from '../createAgentApp'
 import { loadPlugins, flattenPluginTools } from '../harness/pi-coding-agent/pluginLoader'
+import { ErrorCode } from '../../shared/error-codes'
+import type { RuntimeFilesystemBindingOperations, RuntimeModeAdapter } from '../runtime/mode'
 
 const tempDirs: string[] = []
 const ORIGINAL_TEMPLATE_PATH = getEnv('BORING_AGENT_TEMPLATE_PATH')
@@ -229,6 +231,126 @@ test('createAgentApp can use a custom harness factory for non-pi runtimes', asyn
     expect(res.statusCode).toBe(200)
     expect(res.json()).toEqual({ ok: true, sessionId: 'custom', reloaded: true })
     expect(reloadSession).toHaveBeenCalledWith('custom')
+  } finally {
+    await app.close()
+  }
+})
+
+test('createAgentApp exposes static filesystem bindings on files and tree routes', async () => {
+  const workspaceRoot = await makeTempDir('boring-ui-static-bindings-')
+  const operations: RuntimeFilesystemBindingOperations = {
+    read: vi.fn(async ({ path }) => ({ content: `company:${path}` })),
+    list: vi.fn(async ({ path }) => ({ entries: path === '/' ? ['company'] : ['policy.md'], metadata: {} })),
+    find: vi.fn(),
+    grep: vi.fn(),
+    stat: vi.fn(async ({ path }) => ({ isDirectory: path === 'company', metadata: {} })),
+    rejectMutation: vi.fn((operation) => { throw new Error(`readonly ${operation}`) }),
+  }
+  const runtimeModeAdapter: RuntimeModeAdapter = {
+    id: 'static-bindings-test',
+    workspaceFsCapability: 'strong' as const,
+    async create(ctx) {
+      const { createNodeWorkspace } = await import('../workspace/createNodeWorkspace')
+      const { createDirectSandbox } = await import('../sandbox/direct/createDirectSandbox')
+      const { createServerFileSearch } = await import('../runtime/createServerFileSearch')
+      const workspace = createNodeWorkspace(ctx.workspaceRoot)
+      const sandbox = createDirectSandbox()
+      await sandbox.init?.({ workspace, sessionId: ctx.sessionId })
+      return {
+        workspace,
+        storageRoot: ctx.workspaceRoot,
+        sandbox,
+        fileSearch: createServerFileSearch(workspace, sandbox),
+        filesystemBindings: [{ filesystem: 'company_context', access: 'readonly' as const, operations }],
+      }
+    },
+  }
+  const app = await createAgentApp({
+    workspaceRoot,
+    runtimeModeAdapter,
+    logger: false,
+    harnessFactory: vi.fn(async () => ({
+      id: 'static-bindings-harness',
+      placement: 'server' as const,
+      sessions: {
+        async list() { return [] },
+        async create() {
+          const now = new Date().toISOString()
+          return { id: 'custom', title: 'Custom', createdAt: now, updatedAt: now, turnCount: 0 }
+        },
+        async load() {
+          const now = new Date().toISOString()
+          return { id: 'custom', title: 'Custom', createdAt: now, updatedAt: now, turnCount: 0, messages: [] }
+        },
+        async delete() {},
+      },
+    })),
+  })
+
+  try {
+    const files = await app.inject({
+      method: 'GET',
+      url: '/api/v1/files?filesystem=company_context&path=%2Fpolicy.md',
+    })
+    expect(files.statusCode).toBe(200)
+    expect(files.json()).toEqual({ content: 'company:/policy.md', access: 'readonly' })
+    expect(operations.read).toHaveBeenCalledWith({ filesystem: 'company_context', path: '/policy.md' })
+
+    const tree = await app.inject({ method: 'GET', url: '/api/v1/tree?filesystem=company_context' })
+    expect(tree.statusCode).toBe(200)
+    expect(tree.json().entries).toEqual([{ name: 'company', kind: 'dir', path: 'company' }])
+    expect(operations.list).toHaveBeenCalledWith({ filesystem: 'company_context', path: '/' })
+    expect(operations.stat).toHaveBeenCalledWith({ filesystem: 'company_context', path: 'company' })
+  } finally {
+    await app.close()
+  }
+})
+
+test('createAgentApp rejects command execution when metering is configured', async () => {
+  const workspaceRoot = await makeTempDir('boring-ui-metered-commands-')
+  const executeSlashCommand = vi.fn(async () => {})
+  const app = await createAgentApp({
+    workspaceRoot,
+    mode: 'direct',
+    logger: false,
+    metering: {
+      reserveRun: vi.fn(),
+      recordUsage: vi.fn(),
+      settleRun: vi.fn(),
+      releaseRun: vi.fn(),
+    },
+    harnessFactory: vi.fn(async () => ({
+      id: 'metered-commands-harness',
+      placement: 'server' as const,
+      sessions: {
+        async list() { return [] },
+        async create() {
+          const now = new Date().toISOString()
+          return { id: 'custom', title: 'Custom', createdAt: now, updatedAt: now, turnCount: 0 }
+        },
+        async load() {
+          const now = new Date().toISOString()
+          return { id: 'custom', title: 'Custom', createdAt: now, updatedAt: now, turnCount: 0, messages: [] }
+        },
+        async delete() {},
+      },
+      getSlashCommands: async () => [{ name: 'plan', source: 'prompt' as const }],
+      executeSlashCommand,
+    })),
+  })
+  try {
+    const commandsRes = await app.inject({ method: 'GET', url: '/api/v1/agent/commands?sessionId=custom' })
+    expect(commandsRes.statusCode).toBe(200)
+    expect(commandsRes.json()).toEqual({ commands: [{ name: 'plan', source: 'prompt' }] })
+
+    const executeRes = await app.inject({
+      method: 'POST',
+      url: '/api/v1/agent/commands/execute?sessionId=custom',
+      payload: { name: 'plan', args: 'ship it' },
+    })
+    expect(executeRes.statusCode).toBe(409)
+    expect(executeRes.json()).toMatchObject({ error: { code: ErrorCode.enum.METERING_UNSUPPORTED_COMMAND } })
+    expect(executeSlashCommand).not.toHaveBeenCalled()
   } finally {
     await app.close()
   }
@@ -694,6 +816,8 @@ test('GET /api/v1/git/file-url 404-free and disabled for a non-git workspace', a
   // registerAgentRoutes), or the action 404s. A bare temp dir is not a git
   // repo, so the route resolves to a disabled result rather than 404.
   const workspaceRoot = await makeTempDir('boring-ui-git-route-')
+  const previousGitCeiling = process.env.GIT_CEILING_DIRECTORIES
+  process.env.GIT_CEILING_DIRECTORIES = dirname(workspaceRoot)
   const app = await createAgentApp({
     workspaceRoot,
     mode: 'direct',
@@ -708,6 +832,8 @@ test('GET /api/v1/git/file-url 404-free and disabled for a non-git workspace', a
       reason: 'Workspace is not inside a Git repository.',
     })
   } finally {
+    if (previousGitCeiling === undefined) delete process.env.GIT_CEILING_DIRECTORIES
+    else process.env.GIT_CEILING_DIRECTORIES = previousGitCeiling
     await app.close()
   }
 })

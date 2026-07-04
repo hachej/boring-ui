@@ -43,6 +43,14 @@ function service() {
   })
 }
 
+function disabledService() {
+  return createGovernanceService({
+    enabled: false,
+    status: { state: 'disabled', reason: 'missing-env', path: null },
+    policy: null,
+  })
+}
+
 function delegate(overrides: Partial<AgentMeteringSink> = {}): AgentMeteringSink {
   return {
     reserveRun: vi.fn(async () => ({ reservationId: 'credits-res' })),
@@ -67,6 +75,11 @@ describe('createGovernanceMeteringSink', () => {
     settle.mockResolvedValue(undefined)
   })
 
+  it('reports metering active unless both governance and delegated metering are disabled', () => {
+    expect(createGovernanceMeteringSink({ service: disabledService(), delegate: delegate(), getDb: () => ({}) }).isEnabled?.()).toBe(true)
+    expect(createGovernanceMeteringSink({ service: disabledService(), delegate: delegate({ isEnabled: () => false }), getDb: () => ({}) }).isEnabled?.()).toBe(false)
+  })
+
   it('reserves governance budget before delegating to credits', async () => {
     const credits = delegate()
     const sink = createGovernanceMeteringSink({ service: service(), delegate: credits, getDb: () => ({}) })
@@ -81,6 +94,25 @@ describe('createGovernanceMeteringSink', () => {
       userId: 'user-1', provider: 'infomaniak', model: 'qwen', budgetMicros: 5_000_000, holdMicros: 1_000_000,
     }))
     expect(credits.reserveRun).toHaveBeenCalled()
+  })
+
+  it('tags delegated usage with the governance reservation id', async () => {
+    const credits = delegate()
+    const sink = createGovernanceMeteringSink({ service: service(), delegate: credits, getDb: () => ({}) })
+    const base = { workspaceId: 'ws', userId: 'user-1', userEmail: 'user@example.com', userEmailVerified: true, sessionId: 's1', runId: 'run-usage', source: 'pi-chat' as const }
+
+    await sink.reserveRun(reserveInput({ ...base, kind: 'prompt', message: 'hi', model: { provider: 'infomaniak', id: 'qwen' } }))
+    await sink.recordUsage({
+      ...base,
+      usageId: 'usage-1',
+      model: { provider: 'infomaniak', id: 'qwen' },
+      usage: { input: 1, output: 1, cacheRead: 0, cacheWrite: 0, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } },
+      metadata: { existing: true },
+    })
+
+    expect(credits.recordUsage).toHaveBeenCalledWith(expect.objectContaining({
+      metadata: { existing: true, modelBudgetReservationId: 'gov-res' },
+    }))
   })
 
   it('returns stable model budget error and does not delegate when budget is exceeded', async () => {
