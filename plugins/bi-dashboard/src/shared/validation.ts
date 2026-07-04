@@ -18,6 +18,7 @@ export const BI_DASHBOARD_DIAGNOSTIC_CODES = {
   chartMeasureMissing: "chart.measure_missing",
   perspectiveGroupFieldInColumns: "perspective.group_field_in_columns",
   layoutControlsTop: "layout.controls_top",
+  layoutChartsTooDense: "layout.charts_too_dense",
 } as const
 
 export type DashboardDiagnosticCode = typeof BI_DASHBOARD_DIAGNOSTIC_CODES[keyof typeof BI_DASHBOARD_DIAGNOSTIC_CODES]
@@ -120,6 +121,11 @@ function staticDashboardDiagnostics(spec: BslDashboardSpec): DashboardDiagnostic
     const firstNonFilter = children.findIndex((id) => spec.elements[id]?.type !== "BSLFilter" && spec.elements[id]?.type !== "BSLText")
     const lateFilter = children.find((id, index) => index > Math.max(0, firstNonFilter) && spec.elements[id]?.type === "BSLFilter")
     if (lateFilter) diagnostics.push({ severity: "info", code: BI_DASHBOARD_DIAGNOSTIC_CODES.layoutControlsTop, elementId: lateFilter, message: "Filters/controllers render in the top controls bar; keep them early in dashboard children for readability." })
+    const gridColumns = Number(grid.props?.columns ?? 1)
+    const hasCharts = children.some((id) => spec.elements[id]?.type === "BSLChart" || spec.elements[id]?.type === "BSLPerspectiveViewer")
+    if (hasCharts && gridColumns > 2) {
+      diagnostics.push({ severity: "warning", code: BI_DASHBOARD_DIAGNOSTIC_CODES.layoutChartsTooDense, elementId: spec.root, message: "Dashboards with charts should use DashboardGrid props.columns <= 2; reserve 3-5 columns for compact indicator/KPI grids." })
+    }
   }
 
   return diagnostics

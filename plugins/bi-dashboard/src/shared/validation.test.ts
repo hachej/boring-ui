@@ -92,6 +92,19 @@ describe("validateDashboardSpec", () => {
     expect(result.errors.join("\n")).toContain("dashboard.props.columns")
   })
 
+  it("allows five-column indicator grids but warns when charts are denser than two columns", () => {
+    const spec = cloneSample()
+    const grid = spec.elements.dashboard as unknown as { props: Record<string, unknown> }
+    grid.props.columns = 5
+
+    const result = diagnoseDashboardSpec(spec)
+
+    expect(result.ok).toBe(true)
+    expect(result.diagnostics).toEqual(expect.arrayContaining([
+      expect.objectContaining({ code: BI_DASHBOARD_DIAGNOSTIC_CODES.layoutChartsTooDense, elementId: "dashboard", severity: "warning" }),
+    ]))
+  })
+
   it("diagnoses chart category fields used as measures", () => {
     const spec = cloneSample()
     const chart = spec.elements["people-role"] as unknown as { props: Record<string, unknown> }
