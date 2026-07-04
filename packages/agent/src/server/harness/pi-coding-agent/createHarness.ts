@@ -12,6 +12,7 @@ import {
   SettingsManager,
   getAgentDir,
   loadSkills,
+  type ExtensionCommandContext,
   type ExtensionFactory,
   type SlashCommandInfo,
 } from "@mariozechner/pi-coding-agent";
@@ -176,6 +177,25 @@ function modelUnavailableError(input: SendMessageInput): Error {
     code: ErrorCode.enum.TOOL_INVALID_INPUT,
     details: { provider: input.model?.provider, model: input.model?.id },
   })
+}
+
+function meteredSlashCommandPromptError(command: string): Error {
+  return Object.assign(new Error('Slash command prompt execution is disabled while metering is configured.'), {
+    statusCode: 409,
+    code: ErrorCode.enum.METERING_UNSUPPORTED_COMMAND,
+    details: { command },
+  })
+}
+
+function meteredExtensionCommandContext(ctx: ExtensionCommandContext, command: string): ExtensionCommandContext {
+  const block = (): never => { throw meteredSlashCommandPromptError(command) }
+  const guarded = Object.defineProperties({}, Object.getOwnPropertyDescriptors(ctx)) as ExtensionCommandContext
+  guarded.compact = block
+  guarded.newSession = async () => block()
+  guarded.fork = async () => block()
+  guarded.navigateTree = async () => block()
+  guarded.switchSession = async () => block()
+  return guarded
 }
 
 function resolveRequestedModel(
@@ -662,12 +682,16 @@ export function createPiCodingAgentHarness(opts: {
       const handle = await getOrCreatePiSession(sessionId, { sessionId, message: "" }, ctx);
       const command = handle.piSession.extensionRunner.getCommand(name);
       if (command) {
-        await command.handler(args, handle.piSession.extensionRunner.createCommandContext());
+        const commandContext = handle.piSession.extensionRunner.createCommandContext();
+        await command.handler(args, ctx.allowPromptDispatch === false
+          ? meteredExtensionCommandContext(commandContext, name)
+          : commandContext);
         return;
       }
 
       const knownCommand = handle.resourceLoader.getExtensions().runtime.getCommands().some((candidate) => candidate.name === name);
       if (!knownCommand) throw new Error(`command '${name}' not registered in session '${sessionId}'`);
+      if (ctx.allowPromptDispatch === false) throw meteredSlashCommandPromptError(name);
 
       const text = args.trim() ? `/${name} ${args}` : `/${name}`;
       await handle.piSession.prompt(text);

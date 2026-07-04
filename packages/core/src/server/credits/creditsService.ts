@@ -88,6 +88,7 @@ export interface CreditUsageRecord {
   runId?: string
   messageId?: string
   reservationId?: string
+  metadata?: Record<string, unknown>
   provider?: string
   model?: string
   usage: { input: number; output: number; cacheRead: number; cacheWrite: number; cost: { total: number } }
@@ -352,7 +353,7 @@ export class CreditsService {
       stopReason: input.stopReason,
       // reservationId tags the row to THIS run attempt so the fallback top-up can
       // scope to the current reservation (runId is reused on client-nonce replay).
-      metadata: { currency: 'credits', ...(input.reservationId ? { reservationId: input.reservationId } : {}) },
+      metadata: { currency: 'credits', ...(input.metadata ?? {}), ...(input.reservationId ? { reservationId: input.reservationId } : {}) },
     })
     return { billedMicros: cost.billedCreditMicros }
   }
