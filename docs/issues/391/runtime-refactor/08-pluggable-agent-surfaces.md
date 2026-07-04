@@ -79,11 +79,13 @@ const agent = createAgent({
 // No `features` member and no `AgentFeature` abstraction — a single-consumer registry is
 // forbidden. createBashAgentFeature() returns a plain { tools, readinessRequirements } bundle.
 
-// The whole public runtime API — two primitives + one convenience:
+// The whole public runtime API — NINE members (two primitives + one convenience + control + inspection):
 agent.start(input: AgentSendInput): Promise<{ sessionId, startIndex }>  // WRITE: accepted receipt (omit input.sessionId to start a new session)
 agent.stream(sessionId, { startIndex }): AsyncIterable<AgentEvent>      // READ: replay-from-offset + live tail
 agent.send(input: AgentSendInput): AsyncIterable<AgentEvent>            // convenience = start + stream (documented sugar, no new semantics)
 agent.resolveInput(sessionId, requestId, response)  // approvals / questions
+agent.interrupt(sessionId)                          // abort the current turn (turn-level stop)
+agent.stop(sessionId)                               // end/close the session (session-level stop)
 agent.sessions                                      // list/load/fork/delete
 agent.readiness                                     // per-requirement status
 agent.dispose()
@@ -92,7 +94,7 @@ agent.dispose()
 Producer/consumer split (locked — this is the core write/read contract):
 
 - `agent.start()` returns an **accepted receipt** the instant the turn is admitted. The turn then runs to completion on an **independent producer** that appends `AgentEvent`s to the `EventStreamStore` **regardless of whether any consumer is reading**. Producers are **never consumer-backpressured**.
-- `agent.stream()` is the only read primitive — it replays from `startIndex` (offset) and then live-tails; it **replaces the separate `replay()`**. Cancelling a stream iterator **never cancels the turn**; it only stops that reader. `interrupt()` is the **only** way to stop a running turn.
+- `agent.stream()` is the only read primitive — it replays from `startIndex` (offset) and then live-tails; it **replaces the separate `replay()`**. Cancelling a stream iterator **never cancels the turn**; it only stops that reader. `interrupt(sessionId)` — **abort the current turn** — is the **only** way to stop a running turn (`stop(sessionId)` ends/closes the whole session, not a single turn). The two mirror today's pi-chat routes: `interrupt` = turn abort, `stop` = session end.
 - `agent.send()` exists **only** as documented convenience defined as `start()` then `stream()` from the returned `startIndex`; it introduces no semantics of its own.
 
 Rules:

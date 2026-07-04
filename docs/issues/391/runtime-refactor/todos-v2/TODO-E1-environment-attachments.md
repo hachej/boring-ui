@@ -89,7 +89,7 @@ Match `06-migration-phases.md` Phase E1 exit criteria:
 - Acceptance: `pnpm audit:imports` green; `pnpm lint:invariants` green; agent typechecks against the new type-only field.
 
 ### BBE1-007 — Scoped-view mount of the no-leak conformance suite (S)
-- Description: Run `checkReadonlyProjectionConformance` against a scoped-view attachment as a new mount (fits `09`/`07` "one suite, N mounts" — three delivered mounts now; the remote-worker mount is deferred to BBP5-010).
+- Description: Run `checkReadonlyProjectionConformance` against a scoped-view attachment as a new mount (fits `09`/`07` "one suite, N mounts" — the delivered mounts are in-process, scoped-view, and MCP; the remote-worker provider mount is deferred to BBP5-010).
 - Files: `packages/boring-bash/src/server/__tests__/scopedViewConformance.test.ts`.
 - Notes: Build a `ReadonlyProjectionConformanceSubject` whose `operations`/`projection` come from a subpath-scoped attachment resolved through the `resolveAttachments` adapter (over the landed `ScopedFilesystemRuntimeBindingManager`). Reuse the existing fixture seeds; assert the denied directory/sentinel outside the subpath is absent and mutations reject.
 - Tests: the file is the test.

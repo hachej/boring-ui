@@ -50,7 +50,7 @@ S ≈ <300 net-new · M ≈ 300–900 · L ≈ 900–2000. Adjusted per bead nat
 
 | Bead | Reason | Declared split (only if the cap is hit) |
 | --- | --- | --- |
-| **BBP1-002** `createAgent()` façade | owner-flagged; new façade + `/core` subpath + shared types | pr2a: `createAgent.ts` + `/core` entry + `AgentConfig`/`AgentEvent`/`Agent` types + `AgentSendInput` reconcile · pr2b: `start`/`stream`/`send` producer-consumer wiring over `HarnessPiChatService` + `resolveInput`/`stream` typed stubs |
+| **BBP1-002** `createAgent()` façade | owner-flagged; new façade + `/core` subpath + shared types | pr2a: `createAgent.ts` + `/core` entry + `AgentConfig`/`AgentEvent`/`Agent` types + `AgentSendInput` reconcile · pr2b: `start`/`stream`/`send` producer-consumer wiring over `HarnessPiChatService` + `interrupt`/`stop` wrapping the existing `HarnessPiChatService` control methods + `resolveInput`/`stream` typed stubs |
 | **BBT1-001** EventStreamStore vendoring | owner-flagged; ~982 LOC ported from Flue (adapted = net-new, not a rename) | pr1a: `eventStreamStore.ts` + `sqlStorage.ts` (transactional append fix) · pr1b: `schemaVersion.ts` + `runEventStreamStoreConformance` suite |
 | **BBP4-011** filesystem front-plugin move | owner-flagged move-churn; whole `filesystemPlugin/front+shared` (editors + file-tree + data layer) far exceeds 4k soft | pr2a: `file-tree/*` + `shared/*` + `BBP4-012` tree fn · pr2b: `code-editor`+`markdown-editor`+`media/html/empty` panes · pr2c: `data/*` + `front/index.ts`+resolver+bindings rewire |
 | **BBP3-011 / BBP3-014** tool + route moves | owner-flagged (P3 moves); each is a large **move** | kept as separate move PRs (never combined); split further by tool/route family only if >4k churn |
@@ -75,7 +75,7 @@ Legend — nature: **new** = net-new code · **move** = rename-detected + import
 | PR | beads | nature | net-new vs budget | test deliverables | gate |
 | --- | --- | --- | --- | --- | --- |
 | pr1-config-inventory | BBP1-001 | doc | 0 | none (inventory doc) | grep reproducers resolve |
-| pr2-createagent-facade ⚠split | BBP1-002 | new | ~800–1200 / 2000 — **at risk, split pre-declared** | façade unit: 7-member API (`start`,`stream`,`send`,`resolveInput`,`sessions`,`readiness`,`dispose`) constructs w/o Fastify; `send` yields ≥1 event via live tail; historical `startIndex` throws `ERR_NOT_IMPLEMENTED_UNTIL_T1` | `lint:invariants`; `check:isolation` |
+| pr2-createagent-facade ⚠split | BBP1-002 | new | ~800–1200 / 2000 — **at risk, split pre-declared** | façade unit: 9-member API (`start`,`stream`,`send`,`resolveInput`,`interrupt`,`stop`,`sessions`,`readiness`,`dispose`) constructs w/o Fastify; `send` yields ≥1 event via live tail; historical `startIndex` throws `ERR_NOT_IMPLEMENTED_UNTIL_T1`; `interrupt`/`stop` wrap the existing `HarnessPiChatService` control methods | `lint:invariants`; `check:isolation` |
 | pr3-adapters-thin | BBP1-003 | new (refactor) | ~400–800 / 2000 (mostly churn into façade) | parity guarded by existing suites + pr6 | full agent `test` + `test:e2e` (parity) |
 | pr4-pure-runtime-none | BBP1-004 | new | ~300–600 | pure-mode route/tool exclusion; session round-trip under `sessionStorageRoot` w/ `workspaceId` undefined; no cwd leak | `lint:invariants` |
 | pr5-pi-harness-audit | BBP1-005 | doc + new (seals) | ~150 seals | harness-construction spy (no host cwd); system-prompt snapshot (no cwd/AGENTS.md) | `test` |
@@ -164,7 +164,7 @@ Legend — nature: **new** = net-new code · **move** = rename-detected + import
 | --- | --- | --- | --- | --- | --- |
 | pr1-mcp-server-exec-gating | BBE2-001 + BBE2-004 | new | ~400–600 (+ pinned `@modelcontextprotocol/sdk@1.29.0`, `./mcp` subpath, address-by-id Map) | readonly attachment omits write/edit/exec; denied path → no leak; exec presence tracks `execPolicy`; no broker-secret leak | `boring-bash check:invariants`; build (`./mcp` bundles) |
 | pr2-mcp-session-identity | BBE2-002 | new | ~250 (token-per-projection) | valid token → ctx; unknown rejected; two actors can't cross-read | `boring-bash test` |
-| pr3-mcp-conformance-doc | BBE2-003 + BBE2-005 | test + doc | 0 | fourth-mount conformance `passed:true`, same visible-path set; remote-worker-as-transport filed as **P8** follow-up (doc) | `boring-bash test` |
+| pr3-mcp-conformance-doc | BBE2-003 + BBE2-005 | test + doc | 0 | MCP-mount conformance `passed:true`, same visible-path set; remote-worker-as-transport filed as **P8** follow-up (doc) | `boring-bash test` |
 
 **E2 total: 3 PRs.** SDK pinned exact `1.29.0` (no caret).
 
@@ -178,7 +178,7 @@ Legend — nature: **new** = net-new code · **move** = rename-detected + import
 | pr4-sdk-archive | BBP5-005 | new | ~300–500 | archive installs + fingerprint-skip; no host-path leak; runtime-visible rewrite | `test` |
 | pr5-managed-service ⚠split | BBP5-006 | new | ~700–1000 — **split pre-declared if >2k** | start→health→port-grant; teardown kills tree; denied exec/ports blocks; no raw secret in env | `test` |
 | pr6-secret-brokering | BBP5-007 | new | ~500–800 | status without value; **brokering negative test — no sandbox-side read of brokered secret**; no serialization to browser/model/log/artifact | `check:isolation`; `smoke:capability-readiness` |
-| pr7-remote-worker-handshake | BBP5-008 (+ BBP5-010 mount) | new + test | ~300–500 | reported\|unknown facts; fail-closed on unknown/bad-contract; no silent downgrade; **BBP5-010** remote-worker no-leak conformance mount (the deferred fourth env mount) rides here, gated on this handshake | `full-app smoke:remote-worker`; `boring-bash test` |
+| pr7-remote-worker-handshake | BBP5-008 (+ BBP5-010 mount) | new + test | ~300–500 | reported\|unknown facts; fail-closed on unknown/bad-contract; no silent downgrade; **BBP5-010** remote-worker no-leak conformance mount (the deferred remote-worker env mount) rides here, gated on this handshake | `full-app smoke:remote-worker`; `boring-bash test` |
 | pr8-two-phase-fingerprint | BBP5-009 | new | ~400–600 | same fingerprint skips; changed source/contract re-provisions; onSession reruns; Vercel snapshot tests pass | `test` |
 
 **P5 total: 8 PRs.** Preconditions: P3 + P2 `providers/matrix.ts` (else STOP+report). Engine stays agent-owned; normalizer boring-bash-owned. Zero dangling `TODO(remove:*)`.

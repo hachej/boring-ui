@@ -22,7 +22,7 @@ Match `06-migration-phases.md` Phase E2 exit criteria:
 1. An external MCP client (e.g. Claude Code) mounts a boring environment and sees exactly what an in-process **readonly** attachment sees.
 2. Denied files are absent over MCP (no-leak).
 3. No broker secret is reachable from the MCP client.
-4. The existing no-leak conformance suite runs as a **fourth mount** (in-process / scoped / remote-worker provider / MCP).
+4. The existing no-leak conformance suite runs as the **MCP mount** (alongside the in-process and scoped-view delivered mounts; the remote-worker provider mount is deferred to BBP5-010).
 5. Remote-worker stays a provider (P2/P5); its reclassification as an environment transport is **deferred to a post-E2 follow-up filed at P8** — E2 does not perform it (see BBE2-005).
 
 ## Non-negotiables
@@ -58,7 +58,7 @@ Match `06-migration-phases.md` Phase E2 exit criteria:
 - Tests: `.../mcp/__tests__/mcpSessionIdentity.test.ts` — a valid token resolves to the expected `BoundFilesystemContext`; an unknown token is rejected; two tokens for two actors resolve to distinct contexts and cannot cross-read.
 - Acceptance: every projected tool call carries the session's `BoundFilesystemContext`; unauthenticated calls rejected.
 
-### BBE2-003 — No-leak conformance as the fourth mount (M)
+### BBE2-003 — No-leak conformance as the MCP mount (M)
 - Description: Run `checkReadonlyProjectionConformance` with `operations`/`projection` driven **through the MCP tool surface** (a client calling the projected server), proving parity with in-process/scoped/remote-worker.
 - Files: `packages/boring-bash/src/server/mcp/__tests__/mcpProjectionConformance.test.ts`.
 - Notes: Build a `ReadonlyProjectionConformanceSubject` whose `operations.read/list/find/grep` call the MCP client (`@modelcontextprotocol/sdk/client` in-memory transport pair) against the projected server, and whose `projection.listVisiblePaths` enumerates via the `fs.list`/`fs.find` tools. Reuse the same fixture seeds/expected paths the in-process mount uses so the assertion set is identical. The suite's existing checks (denied read rejects, grep sentinel absent, write rejects) then validate over MCP unchanged.
@@ -75,7 +75,7 @@ Match `06-migration-phases.md` Phase E2 exit criteria:
 ### BBE2-005 — File the remote-worker-as-transport follow-up (do NOT reclassify here) (S)
 - Description: Documentation-only bead. **Remote-worker stays a provider in this epic (P2/P5 as written).** Do NOT reclassify it as an environment transport in E2 — that reclassification is a **post-E2 follow-up**.
 - Files: append to `packages/boring-bash/docs/environments.md` (or the nearest existing env doc — check `packages/boring-bash/README.md`) a short note that MCP is the external-agent transport and that reclassifying remote-worker from a provider to *a transport for an environment* (peer to in-process and MCP) is an identified future direction, **deferred to a follow-up issue to be filed at P8** — it is not done here and nothing in E2 changes the P2/P5 remote-worker-as-provider design. Cross-link `docs/issues/391/runtime-refactor/09-environments-attachable.md` ("Remote-worker ownership").
-- Notes: State the "one suite, N mounts" invariant per `07` (three mounts delivered: in-process, scoped+symlink, MCP; the remote-worker provider-attachment mount is deferred, owned by BBP5-010). No code. No live instruction that contradicts P2/P5.
+- Notes: State the "one suite, N mounts" invariant per `07` (delivered mounts: in-process, scoped+symlink, MCP; the remote-worker provider-attachment mount is deferred, owned by BBP5-010). Mounts are named, never numbered. No code. No live instruction that contradicts P2/P5.
 - Tests: none (doc); ensure any doc-lint/link check in CI passes.
 - Acceptance: remote-worker still described as a provider; the transport reclassification is filed as a deferred P8 follow-up, not performed; no contradiction with `09`, P2, or P5.
 
@@ -85,7 +85,7 @@ Match `06-migration-phases.md` Phase E2 exit criteria:
 pnpm --filter @hachej/boring-bash run build       # tsup — confirms ./mcp entrypoint bundles
 pnpm --filter @hachej/boring-bash run typecheck   # tsc --noEmit
 pnpm --filter @hachej/boring-bash run check:invariants
-pnpm --filter @hachej/boring-bash run test        # vitest run — includes the four conformance mounts
+pnpm --filter @hachej/boring-bash run test        # vitest run — includes the delivered conformance mounts
 
 # repo-wide regression + import audit
 pnpm run build:packages

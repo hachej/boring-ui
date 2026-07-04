@@ -23,7 +23,7 @@ Consequence, binding:
 
 - **P6a ← P5**: P6a (BBP6-002/003/004/005/007/008) dispatches once **P5** is complete (normalizer + effective requirement resolution feeding `provisionWorkspaceRuntime()`; secret status/grant + brokering rule). It needs nothing from the child-app platform plan.
 - **P6b ← P6a + child-app platform type**: P6b (BBP6-001, BBP6-006) additionally requires the shared child-app platform type (`ResolvedChildAppContext`, #376) — HARD BLOCKED / STOP-and-report until it lands (no local fallback shape). Child-app requirements intersect through the P5 normalizer once the resolved context exists.
-- **P7 ← P6a + E1**: the `AgentRegistry` (BBP6-003) **and** the workspace `agents: [...]` declaration / default-agent composition (BBP6-009, a **P6a** bead) are introduced here and **consumed by Phase 7** — that is their second/immediately-following consumer, satisfying the no-speculative-abstraction rule. Keep them minimal. P7 needs P6a's `AgentRegistry` + `agents: [...]` declaration, **not** P6b's child-app scoping. (P7 explicitly STOPs and reports if either is absent — see `TODO-P7-multi-agent-inspection.md` "Depends on".)
+- **P7 ← P6a + E1 + T2**: the `AgentRegistry` (BBP6-003) **and** the workspace `agents: [...]` declaration / default-agent composition (BBP6-009, a **P6a** bead) are introduced here and **consumed by Phase 7** — that is their second/immediately-following consumer, satisfying the no-speculative-abstraction rule. Keep them minimal. P7 needs P6a's `AgentRegistry` + `agents: [...]` declaration (**not** P6b's child-app scoping), plus **E1** (environment attachments) and **T2** (the `sessionId`-only transport + platform-addressing guard its surface `agentId` binding rides). (P7 explicitly STOPs and reports if the P6a pieces are absent — see `TODO-P7-multi-agent-inspection.md` "Depends on".)
 
 ### Already landed (do not redo, build on it)
 
@@ -60,7 +60,7 @@ Pass-3 split (binding): P6 is **two explicitly-labeled sub-parts** with differen
 
 **P6b — child-app scoping (HARD BLOCKED).** Beads: **BBP6-001** (consume resolved child-app/workspace-kind context) and **BBP6-006** (Macro requirement scoping). These are **BLOCKED — STOP and report** until the shared child-app platform type (`docs/plans/shared-child-app-platform.md` → `ResolvedChildAppContext`, #376) exists. **No local provisional shape** — a forked type would duplicate the platform contract. When it lands, import it **type-only** and reconcile.
 
-Dispatch: **P6a ← P5**; **P6b ← P6a + child-app platform type**; **P7 ← P6a + E1** (P7 consumes the `AgentRegistry` from P6a, *not* the child-app scoping of P6b).
+Dispatch: **P6a ← P5**; **P6b ← P6a + child-app platform type**; **P7 ← P6a + E1 + T2** (P7 consumes the `AgentRegistry` from P6a, *not* the child-app scoping of P6b).
 
 ## Non-negotiables
 

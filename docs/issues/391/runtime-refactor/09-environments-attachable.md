@@ -69,4 +69,4 @@ Any environment can be projected as an **MCP server**: fs ops (`read/list/stat/s
 
 ## Conformance
 
-The environment conformance suite (07/08) runs identically against **three delivered mounts** — in-process attachment, scoped-view (+ symlink-escape) attachment, and the MCP projection (E2) — plus a **deferred fourth mount, the remote-worker (provider) attachment, gated on the P5 remote-worker handshake work** (owning bead: `todos-v2/TODO-P5-provisioning-secrets.md` BBP5-010). One suite, N mounts — same rule as harness/transport conformance; a mount is added by the phase that delivers its implementation.
+The environment conformance suite (07/08) runs identically against the **delivered mounts** — the in-process attachment, the scoped-view (+ symlink-escape) attachment, and the MCP projection (E2) — plus the **deferred remote-worker (provider) attachment mount, gated on the P5 remote-worker handshake work** (owning bead: `todos-v2/TODO-P5-provisioning-secrets.md` BBP5-010). One suite, N mounts — same rule as harness/transport conformance; a mount is added by the phase that delivers its implementation, and mounts are named, never numbered.

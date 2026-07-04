@@ -54,14 +54,14 @@ Vitest, colocated under `__tests__/`. Per package: `pnpm --filter @hachej/boring
 - **Mounts:** in-process — `inProcessTransport.test.ts` (BBT2-002); HTTP/DS — `dsHttpTransport.test.ts` (BBT2-003, in-memory Fastify app mounting T1's DS route + `createAgent()`; reconnect after forced stream close replays losslessly).
 - **Command:** `pnpm --filter @hachej/boring-agent run test`.
 
-#### 3c. Environment / no-leak conformance — canonical: `checkReadonlyProjectionConformance` (**one suite, three delivered mounts + one deferred**)
+#### 3c. Environment / no-leak conformance — canonical: `checkReadonlyProjectionConformance` (**one suite, N mounts — delivered: in-process, scoped-view, MCP; deferred: remote-worker provider**)
 
 - **Where:** `packages/boring-bash/src/server/testing/readonlyProjectionConformance.ts` (landed #416). Do not fork it; add mounts.
-- **The three mounts a bead actually delivers:**
-  1. **in-process** readonly `company_context` — landed (#416).
-  2. **scoped-view + symlink-escape** — E1 BBE1-007 `scopedViewConformance.test.ts` (mount) + E1 BBE1-004 `scopedView.test.ts` (explicit **symlink-escape** test: realpath-based containment with symlink denial, hardening the lexical-`resolve()`-only projection).
-  3. **MCP projection** — E2 BBE2-003 `mcpProjectionConformance.test.ts` (subject drives the projected `McpServer` via an in-memory MCP client pair; identical expected visible-path set to the in-process mount).
-- **Deferred fourth mount:** the **remote-worker (provider) attachment mount** — **gated on the P5 remote-worker handshake work** (owning bead: `todos-v2/TODO-P5-provisioning-secrets.md` BBP5-010). Remote-worker stays a *provider* in this epic (P2/P5); the mount lands when its handshake-backed attachment does, not before.
+- **The mounts a bead actually delivers (by name):**
+  - **in-process** readonly `company_context` — landed (#416).
+  - **scoped-view + symlink-escape** — E1 BBE1-007 `scopedViewConformance.test.ts` (mount) + E1 BBE1-004 `scopedView.test.ts` (explicit **symlink-escape** test: realpath-based containment with symlink denial, hardening the lexical-`resolve()`-only projection).
+  - **MCP projection** — E2 BBE2-003 `mcpProjectionConformance.test.ts` (subject drives the projected `McpServer` via an in-memory MCP client pair; identical expected visible-path set to the in-process mount).
+- **Deferred mount — remote-worker (provider) attachment:** **gated on the P5 remote-worker handshake work** (owning bead: `todos-v2/TODO-P5-provisioning-secrets.md` BBP5-010). Remote-worker stays a *provider* in this epic (P2/P5); the mount lands when its handshake-backed attachment does, not before.
 - **Guarantees:** `(filesystem, path)` identity; denied files physically **absent** (no leak through read/list/find/grep/search/shell/UI/transcript/metadata); readwrite management projections are distinct policy-granted bindings; `execPolicy: 'none'` default for non-`user` attachments; no broker secret in any client-reachable payload (E2 BBE2-004).
 - **Command:** `pnpm --filter @hachej/boring-bash run test`.
 
@@ -118,7 +118,7 @@ A phase exits only when its named suites + commands are green. This is the table
 | **P3** (routes/tools move) | split-brain suite green per provider; no old-path import; workspace file tree/editor e2e | `pnpm --filter @hachej/boring-bash run test` · `pnpm --filter @hachej/boring-agent run test:e2e` · `pnpm audit:imports` |
 | **P4** (file UI plugin) | fs-event delta → tree; file panes/surface-resolver ids unchanged; workspace-playground e2e | `pnpm --filter @hachej/boring-workspace run test` · `pnpm --filter workspace-playground run test:e2e` |
 | **E1** (env attachments) | env/no-leak conformance **scoped-view mount** + **symlink-escape** test; company-context behavioral-equivalence test; no diff to landed #416 signatures | `pnpm --filter @hachej/boring-bash run test` · `run check:invariants` · `pnpm audit:imports` · `pnpm lint:invariants` |
-| **E2** (MCP projection) | env/no-leak conformance **MCP mount** (fourth); MCP identity (`BoundFilesystemContext`) test; exec-gating + broker-secret-unreachable test; `./mcp` export bundles | `pnpm --filter @hachej/boring-bash run build` · `run typecheck` · `run check:invariants` · `run test` |
+| **E2** (MCP projection) | env/no-leak conformance **MCP mount**; MCP identity (`BoundFilesystemContext`) test; exec-gating + broker-secret-unreachable test; `./mcp` export bundles | `pnpm --filter @hachej/boring-bash run build` · `run typecheck` · `run check:invariants` · `run test` |
 | **P5** (provisioning/secrets) | two-tier readiness (`ReadyState`/`CapabilityState`); remote-worker fail-closed handshake; **credential-brokering** regression (no secret in sandbox); SDK artifacts leak no host paths | `pnpm --filter @hachej/boring-agent run test` · `pnpm --filter @hachej/boring-agent run smoke:capability-readiness` · `pnpm --filter full-app run smoke:remote-worker` |
 | **P6** (plugin/child-app) | import-free manifest validation; hosted plugin fail-closed before code exec; managed-service lifecycle; child-app/workspace-kind requirement narrowing | `pnpm --filter @hachej/boring-workspace run test` · `pnpm --filter full-app run e2e` · `pnpm --filter workspace-playground run test:e2e` |
 | **P7** (multi-agent/inspection) | two agents, same `sessionId`, no shared binding/transcript/catalog; `agentId` in binding scope key + `sessionNamespace`; per-agent readiness/catalogs; session search scoped by workspace+agent; agent inspection endpoint | `pnpm --filter @hachej/boring-agent run test` · `run test:e2e` |
