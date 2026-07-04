@@ -60,7 +60,7 @@ function mockWorkspaceStore(): WorkspaceStore {
     },
     delete: async (id: string) => {
       const ws = workspaces.get(id)
-      if (!ws || ws.deletedAt) return { removed: false, code: 'not_found' as const }
+      if (!ws || ws.deletedAt) return { removed: false, code: ERROR_CODES.NOT_FOUND }
       ws.deletedAt = new Date().toISOString()
       return { removed: true }
     },
@@ -114,7 +114,7 @@ function inject(method: string, url: string, userId?: string, payload?: unknown)
   return app.inject(req as any)
 }
 
-function seedWorkspaceWithMembers(name: string, ownerUserId: string, extraMembers?: Record<string, MemberRole>) {
+function seedWorkspaceWithMembers(name: string, ownerUserId: string, extraMembers?: Record<string, MemberRole>, opts?: { managedBy?: string | null }) {
   const id = `ws-${nextWsId++}`
   const ws: Workspace = {
     id,
@@ -124,6 +124,7 @@ function seedWorkspaceWithMembers(name: string, ownerUserId: string, extraMember
     createdAt: new Date().toISOString(),
     deletedAt: null,
     isDefault: false,
+    managedBy: opts?.managedBy ?? null,
   }
   workspaces.set(id, ws)
   const wsMembers = new Map<string, MemberRole>()
@@ -329,6 +330,15 @@ describe('DELETE /api/v1/workspaces/:id', () => {
     expect(res.statusCode).toBe(404)
     expect(res.json().code).toBe('not_found')
   })
+
+  it('blocks deleting the managed Company Context workspace', async () => {
+    const ws = seedWorkspaceWithMembers('Company Context', OWNER_ID, undefined, { managedBy: 'company-context' })
+
+    const res = await inject('DELETE', `/api/v1/workspaces/${ws.id}`, OWNER_ID)
+    expect(res.statusCode).toBe(403)
+    expect(res.json().code).toBe(ERROR_CODES.FORBIDDEN)
+    expect(workspaces.get(ws.id)?.deletedAt).toBeNull()
+  })
 })
 
 describe('Provisioner integration', () => {
@@ -383,7 +393,7 @@ describe('Provisioner integration', () => {
       },
       delete: async (id: string) => {
         const ws = pWorkspaces.get(id)
-        if (!ws || ws.deletedAt) return { removed: false, code: 'not_found' as const }
+        if (!ws || ws.deletedAt) return { removed: false, code: ERROR_CODES.NOT_FOUND }
         ws.deletedAt = new Date().toISOString()
         return { removed: true }
       },
