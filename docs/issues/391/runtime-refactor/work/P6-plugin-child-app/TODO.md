@@ -190,7 +190,6 @@ pnpm typecheck              # build:packages then per-pkg typecheck
 - `pnpm lint:invariants` + `pnpm audit:imports` + `lint:plugin-invariants` green; zero agent→bash value imports.
 - Import-free manifest validation proven (side-effecting plugin fixture not executed).
 - Hosted plugin fail-closed covered; iframe sandbox/CSP constraints asserted.
-- Macro requirements do not leak into a generic workspace; child-app policy narrows, never widens; unknown id → stable diagnostic.
 - Secrets are status-only in every plugin/browser/model context (P5 brokering); no raw values in manifests/logs/transcripts/artifacts.
 - `/api/v1/plugins/:pluginId/*` dispatch unchanged; `AgentRegistry` minimal and Map-backed (no framework creep).
 - Full-app reload resolves per workspace/agent/plugin runtime; trusted server routes diagnosed not hot-registered.

@@ -28,7 +28,7 @@ Derived strictly from [TODO.md](./TODO.md) and [PLAN.md](./PLAN.md). Tick each b
 - [ ] `pnpm run test`
 
 ## Review gates
-- [ ] No diff to landed #416 type/class signatures (additions only via new files / re-exports, no edits to existing declarations).
+- [ ] No diff to landed #416 type/class signatures (additions only via new files / re-exports, no edits to existing declarations). BBE1-004 may make implementation-only `readonlyProjectionOperations.ts` symlink-hardening edits; exported signatures stay frozen.
 - [ ] Agent core has zero import (value **or** type) of `@hachej/boring-bash`; the only cross-package type edge is boring-bash → `@hachej/boring-agent` (audit green).
 - [ ] Two-environments and scoped-view tests present and green (subagent attachment deferred to Phase 7).
 - [ ] Scoped-view conformance is a distinct mount, not a fork of the suite.
