@@ -23,7 +23,7 @@ Before moving runtime-mode resolution to `@hachej/boring-bash` and concrete prov
 - Host/CLI/core passes runtime/features in.
 - `@hachej/boring-agent` exports only type contracts for features/tool registration.
 - A package invariant test fails if agent has value imports from `@hachej/boring-bash` or `@hachej/boring-sandbox`.
-- Existing runtime mode support is migrated to host composition **in the same PR** (no long-lived compatibility wiring); a pure agent must never be forced to build a runtime bundle. Any temporary bridge kept alive during a single PR carries a `// TODO(remove:<bead-id>)` marker and a same-phase deletion bead — it does not outlive the phase (see `../INDEX.md` "Simplicity & no-compat policy").
+- Existing runtime mode support is migrated to host composition **in the same PR** (no long-lived compatibility wiring); a pure agent must never be forced to build a runtime bundle. Any temporary bridge carries a `// TODO(remove:<bead-id>)` marker naming its deletion-owner bead; a later owner is allowed only when explicitly named per `../INDEX.md`, and no marker outlives its named owner's phase.
 
 This prevents the cycle:
 

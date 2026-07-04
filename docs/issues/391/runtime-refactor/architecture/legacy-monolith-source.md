@@ -1,3 +1,7 @@
+# NON-CANONICAL HISTORICAL SNAPSHOT — DO NOT IMPLEMENT
+
+This file preserves the pre-v2 monolith source analysis only. The canonical runtime-refactor contracts are [`../INDEX.md`](../INDEX.md), [`00-global-isa.md`](00-global-isa.md), the area subplans `01`–`05` and `07`–`10`, and the phase work orders under [`../work/`](../work/). If this file conflicts with those sources, they win.
+
 # Boring Bash agent/runtime refactor plan
 
 ## Goal
