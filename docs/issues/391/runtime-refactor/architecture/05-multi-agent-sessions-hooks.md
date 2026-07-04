@@ -51,7 +51,7 @@ Required scoping:
 - provisioning is per `(workspaceId, agentId, bashPlanFingerprint)`;
 - UI commands include `agentId` for attribution where useful, while workspace UI state remains shared.
 
-Isolation test: two agents in one workspace with same `sessionId` do not share bindings, tool catalogs, transcripts, or provisioning readiness incorrectly.
+Isolation test: two agents in one workspace do not share bindings, tool catalogs, transcripts, approvals, or provisioning readiness incorrectly. `sessionId` is runtime-owned and globally unique across agents; event-store/replay stays keyed by `sessionId` only. Any same-string collision fixture is only a namespace/scope stress test for JSONL/sessionNamespace and binding caches, not a requirement to support duplicate event-store keys.
 
 ## Session history search (#379)
 

@@ -12,7 +12,7 @@ Derived strictly from [TODO.md](./TODO.md) and [PLAN.md](./PLAN.md). Tick each b
 - [ ] BBP7-001 — Thread `agentId` through `RuntimeScope`, the scope key, and `sessionNamespace`
 - [ ] BBP7-002 — `agentId` request addressing against the Phase 6 `AgentRegistry`
 - [ ] BBP7-003 — Per-agent tool catalog + per-agent readiness
-- [ ] BBP7-004 — Session index/search scoped by workspace + agent (#379)
+- [ ] BBP7-004 — Derived `state.db` session index/search scoped by workspace + agent (#379)
 - [ ] BBP7-005 — Agent list + inspection endpoints (the steering mechanism)
 - [ ] BBP7-006 — External harness hook target resolution (#380)
 - [ ] BBP7-007 — Surface adapters bind one `agentId` per addressing entry
@@ -37,7 +37,7 @@ Derived strictly from [TODO.md](./TODO.md) and [PLAN.md](./PLAN.md). Tick each b
 - [ ] Phase 6 `AgentRegistry` present and scoped against (not a competing registry), else STOP+report.
 - [ ] `agentId` in the `RuntimeScope.key` array for all agents; `sessionNamespace` carries `agentId` only for non-default agents, and default-agent sessions load unchanged (on-disk JSONL compat).
 - [ ] Per-agent tool catalog + readiness with zero cross-agent bleed (`05` Tests reproduced).
-- [ ] Session search scoped by `workspace+agent`, no fs requirement, redaction enforced.
+- [ ] Session search scoped by `workspace+agent`, served from a rebuildable derived `state.db` table, no fs requirement, redaction enforced.
 - [ ] External hook routes onto the single T1 approval channel; boring-bash-free; authenticates/validates/redacts/audits.
 - [ ] `/api/v1/agents` and `/api/v1/agents/:agentId/info` are public, private-hook-free, and leak no secret/key material (assert in test).
 - [ ] One addressing entry ↔ one `agentId`; T2 platform-addressing guard stays green (`agentId`/`sessionId`/`SessionCtx` only in core signatures).
@@ -47,14 +47,14 @@ Derived strictly from [TODO.md](./TODO.md) and [PLAN.md](./PLAN.md). Tick each b
 
 ## Exit criteria
 - [ ] Agent addressing resolves an `agentId` per request via the canonical `/api/v1/agents/:agentId/...` path prefix against the Phase 6 `AgentRegistry`; unknown/undeclared `agentId` fails closed.
-- [ ] `agentId` is in the binding scope `key` for all agents; `sessionNamespace` carries it only for non-default agents; two non-default agents in one workspace with the same `sessionId` share no bindings, tool catalog, transcripts, or readiness while default-agent sessions remain on the pre-P7 namespace.
+- [ ] `agentId` is in the binding scope `key` for all agents; `sessionNamespace` carries it only for non-default agents; `sessionId` remains runtime-owned/globally unique and event-store/replay stays keyed by `sessionId` only; the two-agent collision test proves namespace/scope isolation (bindings, tool catalog, transcripts, readiness, approvals), not per-agent store keys.
 - [ ] Per-agent tool catalog and per-agent readiness (reviewer readonly/no-exec; coding agent has bash; pure concierge has no boring-bash).
-- [ ] Session index/search scoped by `workspaceId` + `agentId` (+ title/content/operational events, redacted), no filesystem requirement.
+- [ ] Session index/search scoped by `workspaceId` + `agentId` (+ title/content/operational events, redacted), served from a rebuildable derived `state.db` table, no filesystem requirement.
 - [ ] External harness hook target resolution: authenticate caller, validate `(workspace, agent, session)`, redact, route to the HITL channel, audit attribution, no boring-bash dep.
 - [ ] `GET /api/v1/agents` returns a scrubbed declared-agent list, and `GET /api/v1/agents/:agentId/info` returns `{ agentId, model, tools, readiness, channels, environments }` — public contracts, no private core hooks.
 - [ ] Surface adapters each bind exactly one `agentId` per addressing entry.
 - [ ] First real subagent consumer: `SubagentEnvironmentGrant` / `deriveSubagentAttachment` lands, jailed by `agentId` scope + `scope.subpath`, minimal.
-- [ ] Two surfaces × two agents in one workspace do not collide (the Phase 7 exit test).
+- [ ] Two surfaces × two agents in one workspace do not collide by namespace/scope/metadata (the Phase 7 exit test); no implementation relies on duplicate `sessionId` strings across agents.
 
 ## Closeout
 - [ ] Zero unowned `TODO(remove:*)` markers for this phase
