@@ -82,7 +82,7 @@
     "@perspective-dev/viewer-datagrid": "4.5.1",
     "lucide-react": "^1.21.0",
     "zod": "^4.3.6",
-    "zustand": "^4.5.7"
+    "zustand": "^5.0.14"
   },
   "devDependencies": {
     "@duckdb/node-api": "1.5.2-r.2",
