@@ -65,7 +65,7 @@ describe("useFileContent", () => {
     const { result } = renderHook(() => useFileContent("/a.ts"), { wrapper })
     await waitFor(() => expect(result.current.isSuccess).toBe(true))
     expect(result.current.data).toEqual({ content: "hello" })
-    expect(mockClient.getFile).toHaveBeenCalledWith("/a.ts", expect.any(AbortSignal), "user")
+    expect(mockClient.getFile).toHaveBeenCalledWith("/a.ts", expect.any(AbortSignal))
   })
 
   it("is disabled when path is null", () => {
@@ -97,7 +97,7 @@ describe("useFileContent", () => {
     )
 
     await waitFor(() => expect(result.current.isSuccess).toBe(true))
-    expect(mockClient.writeFile).toHaveBeenCalledWith("/deck/new.md", "# Default\n", { filesystem: "user" })
+    expect(mockClient.writeFile).toHaveBeenCalledWith("/deck/new.md", "# Default\n")
     expect(result.current.data).toEqual({ content: "# Default\n", mtimeMs: 2000 })
     expect(created).toHaveBeenCalledWith(expect.objectContaining({ path: "/deck/new.md", kind: "file" }))
   })
@@ -112,15 +112,8 @@ describe("useFileContent", () => {
     )
 
     await waitFor(() => expect(result.current.isSuccess).toBe(true))
-    expect(mockClient.writeFile).toHaveBeenCalledWith("/empty.md", "", { filesystem: "user" })
+    expect(mockClient.writeFile).toHaveBeenCalledWith("/empty.md", "")
     expect(result.current.data).toEqual({ content: "", mtimeMs: 2001 })
-  })
-
-  it("preserves explicit filesystem when reading company content", async () => {
-    mockClient.getFile.mockResolvedValue({ content: "company" })
-    const { result } = renderHook(() => useFileContent("/company/hr/policy.md", { filesystem: "company_context" }), { wrapper })
-    await waitFor(() => expect(result.current.isSuccess).toBe(true))
-    expect(mockClient.getFile).toHaveBeenCalledWith("/company/hr/policy.md", expect.any(AbortSignal), "company_context")
   })
 
   it("does not create missing files unless createIfMissing is provided", async () => {
@@ -164,7 +157,7 @@ describe("useStat", () => {
     const { result } = renderHook(() => useStat("/a.ts"), { wrapper })
     await waitFor(() => expect(result.current.isSuccess).toBe(true))
     expect(result.current.data).toEqual({ size: 42, mtimeMs: 100, kind: "file" })
-    expect(mockClient.stat).toHaveBeenCalledWith("/a.ts", expect.any(AbortSignal), "user")
+    expect(mockClient.stat).toHaveBeenCalledWith("/a.ts", expect.any(AbortSignal))
   })
 })
 
@@ -199,6 +192,9 @@ describe("useFileWrite", () => {
       await result.current.mutateAsync({ path: "/a.ts", content: "new" })
     })
 
+    // useFileWrite passes through expectedMtimeMs (third arg). When
+    // not supplied, it forwards `undefined` so callers explicitly opt
+    // into OCC.
     expect(mockClient.writeFile).toHaveBeenCalledWith("/a.ts", "new", undefined)
     expect(invalidateSpy).not.toHaveBeenCalled()
   })
@@ -217,23 +213,6 @@ describe("useFileWrite", () => {
 
     expect(mockClient.writeFile).toHaveBeenCalledWith("/a.ts", "new", {
       expectedMtimeMs: 1000,
-    })
-  })
-
-  it("forwards explicit filesystem through to the data client", async () => {
-    mockClient.writeFile.mockResolvedValue({ mtimeMs: 999 })
-    const { result } = renderHook(() => useFileWrite(), { wrapper })
-
-    await act(async () => {
-      await result.current.mutateAsync({
-        filesystem: "company_context",
-        path: "/company/hr/policy.md",
-        content: "new",
-      })
-    })
-
-    expect(mockClient.writeFile).toHaveBeenCalledWith("/company/hr/policy.md", "new", {
-      filesystem: "company_context",
     })
   })
 })

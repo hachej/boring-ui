@@ -1,7 +1,6 @@
 import type { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify'
 import { dirname, extname, relative } from 'node:path/posix'
 import type { Workspace } from '../../../shared/workspace'
-import type { RuntimeFilesystemBinding } from '../../runtime/mode'
 import {
   ERROR_CODE_INVALID_PATH,
   ERROR_CODE_PATH_REJECTED,
@@ -31,9 +30,6 @@ const BORING_SETTINGS_PATH = '.boring/settings'
 const DEFAULT_MARKDOWN_IMAGE_UPLOAD_DIR = 'assets/images'
 const DEFAULT_FILE_UPLOAD_DIR = 'assets/uploads'
 const MAX_UPLOAD_BYTES = 10 * 1024 * 1024
-const USER_FILESYSTEM_ID = 'user'
-export const ERROR_CODE_NOT_FOUND_OR_DENIED = 'not_found_or_denied'
-export const ERROR_CODE_READONLY = 'readonly'
 
 const IMAGE_UPLOAD_EXTENSIONS = new Set(['avif', 'gif', 'jpg', 'jpeg', 'png', 'webp'])
 const SAFE_UNKNOWN_FILE_EXTENSIONS = new Set(['csv', 'doc', 'docx', 'json', 'md', 'pdf', 'ppt', 'pptx', 'rtf', 'txt', 'xls', 'xlsx', 'zip'])
@@ -122,16 +118,6 @@ function classifyError(
 
   return reply.code(500).send({
     error: { code: ERROR_CODE_INTERNAL, message },
-  })
-}
-
-function requestedFilesystem(value: unknown): string {
-  return typeof value === 'string' && value.length > 0 ? value : USER_FILESYSTEM_ID
-}
-
-function sendNotFoundOrDenied(reply: FastifyReply): FastifyReply {
-  return reply.code(404).send({
-    error: { code: ERROR_CODE_NOT_FOUND_OR_DENIED, message: 'not found or denied' },
   })
 }
 
@@ -260,23 +246,11 @@ function sendValidationError(reply: FastifyReply, message: string, field?: strin
   })
 }
 
-function sendFilesystemBindingMutationDenied(
-  reply: FastifyReply,
-  filesystem: string,
-  access: RuntimeFilesystemBinding['access'],
-): FastifyReply {
-  return reply.code(403).send({
-    error: { code: ERROR_CODE_READONLY, message: `${filesystem} binding is ${access}` },
-  })
-}
-
 export function fileRoutes(
   app: FastifyInstance,
   opts: {
     workspace?: Workspace
     getWorkspace?: (request: FastifyRequest) => Workspace | Promise<Workspace>
-    filesystemBindings?: RuntimeFilesystemBinding[]
-    getFilesystemBindings?: (request: FastifyRequest) => RuntimeFilesystemBinding[] | undefined | Promise<RuntimeFilesystemBinding[] | undefined>
   },
   done: (err?: Error) => void,
 ): void {
@@ -286,6 +260,7 @@ export function fileRoutes(
     throw new Error('file route requires workspace or getWorkspace')
   }
 
+<<<<<<< Updated upstream
   async function resolveFilesystemBindings(request: FastifyRequest): Promise<RuntimeFilesystemBinding[]> {
     if (opts.getFilesystemBindings) return await opts.getFilesystemBindings(request) ?? []
     if (opts.filesystemBindings) return opts.filesystemBindings
@@ -296,10 +271,13 @@ export function fileRoutes(
     return (await resolveFilesystemBindings(request)).find((binding) => binding.filesystem === filesystem)
   }
 
+=======
+>>>>>>> Stashed changes
   app.get('/api/v1/files/raw', async (request, reply) => {
     const query = request.query as Record<string, unknown>
     const path = requireStringParam(query.path, 'path', reply)
     if (path === null) return
+<<<<<<< Updated upstream
     const filesystem = requestedFilesystem(query.filesystem)
 
     if (filesystem !== USER_FILESYSTEM_ID) {
@@ -318,6 +296,8 @@ export function fileRoutes(
         return sendNotFoundOrDenied(reply)
       }
     }
+=======
+>>>>>>> Stashed changes
 
     try {
       const workspace = await resolveWorkspace(request)
@@ -379,6 +359,7 @@ export function fileRoutes(
     const query = request.query as Record<string, unknown>
     const path = requireStringParam(query.path, 'path', reply)
     if (path === null) return
+<<<<<<< Updated upstream
     const filesystem = requestedFilesystem(query.filesystem)
 
     if (filesystem !== USER_FILESYSTEM_ID) {
@@ -391,6 +372,8 @@ export function fileRoutes(
         return sendNotFoundOrDenied(reply)
       }
     }
+=======
+>>>>>>> Stashed changes
 
     try {
       if (isReadonlySkillFilePath(path)) {
@@ -430,8 +413,12 @@ export function fileRoutes(
     // read, verify the file hasn't moved underneath them. Mismatch →
     // 409 with the current mtime so the client can decide whether to
     // reload or force-overwrite.
+<<<<<<< Updated upstream
     const filesystem = requestedFilesystem(body.filesystem)
 const expectedMtimeMs = typeof body.expectedMtimeMs === 'number'
+=======
+    const expectedMtimeMs = typeof body.expectedMtimeMs === 'number'
+>>>>>>> Stashed changes
       ? body.expectedMtimeMs
       : null
     const shouldReturnMtimeMs = body.returnMtimeMs !== false || expectedMtimeMs !== null
@@ -616,6 +603,7 @@ const expectedMtimeMs = typeof body.expectedMtimeMs === 'number'
     const query = request.query as Record<string, unknown>
     const path = requireStringParam(query.path, 'path', reply)
     if (path === null) return
+<<<<<<< Updated upstream
     const filesystem = requestedFilesystem(query.filesystem)
 if (filesystem !== USER_FILESYSTEM_ID) {
       try {
@@ -631,6 +619,8 @@ if (filesystem !== USER_FILESYSTEM_ID) {
         return classifyError(err, reply, 'file')
       }
     }
+=======
+>>>>>>> Stashed changes
 
     try {
       const workspace = await resolveWorkspace(request)
@@ -647,6 +637,7 @@ if (filesystem !== USER_FILESYSTEM_ID) {
     if (from === null) return
     const to = requireStringParam(body?.to, 'to', reply)
     if (to === null) return
+<<<<<<< Updated upstream
     const filesystem = requestedFilesystem(body.filesystem)
 if (filesystem !== USER_FILESYSTEM_ID) {
       try {
@@ -662,6 +653,8 @@ if (filesystem !== USER_FILESYSTEM_ID) {
         return classifyError(err, reply, 'file')
       }
     }
+=======
+>>>>>>> Stashed changes
 
     try {
       const workspace = await resolveWorkspace(request)
@@ -678,6 +671,7 @@ if (filesystem !== USER_FILESYSTEM_ID) {
     if (path === null) return
 
     const recursive = body.recursive === true
+<<<<<<< Updated upstream
     const filesystem = requestedFilesystem(body.filesystem)
 if (filesystem !== USER_FILESYSTEM_ID) {
       try {
@@ -693,6 +687,8 @@ if (filesystem !== USER_FILESYSTEM_ID) {
         return classifyError(err, reply, 'directory')
       }
     }
+=======
+>>>>>>> Stashed changes
 
     try {
       const workspace = await resolveWorkspace(request)
@@ -707,6 +703,7 @@ if (filesystem !== USER_FILESYSTEM_ID) {
     const query = request.query as Record<string, unknown>
     const path = requireStringParam(query.path, 'path', reply)
     if (path === null) return
+<<<<<<< Updated upstream
     const filesystem = requestedFilesystem(query.filesystem)
 
     if (filesystem !== USER_FILESYSTEM_ID) {
@@ -719,6 +716,8 @@ if (filesystem !== USER_FILESYSTEM_ID) {
         return sendNotFoundOrDenied(reply)
       }
     }
+=======
+>>>>>>> Stashed changes
 
     try {
       if (isReadonlySkillFilePath(path)) {

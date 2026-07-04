@@ -17,7 +17,6 @@ const safePath = z
 export const openFileSchema = z.object({
   path: safePath,
   mode: z.enum(["view", "edit", "diff"]).optional(),
-  filesystem: z.string().min(1).optional(),
 })
 
 export const openPanelSchema = z.object({

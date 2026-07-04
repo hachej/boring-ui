@@ -11,7 +11,7 @@
     "visual:storybook:update": "pnpm storybook:build && pnpm exec playwright test -c .storybook/playwright.config.ts --update-snapshots",
     "typecheck": "pnpm run build:packages && pnpm -r --workspace-concurrency=4 run typecheck",
     "lint": "pnpm check:generated-artifacts && pnpm audit:imports",
-    "lint:invariants": "pnpm --dir packages/agent run lint:invariants && pnpm --filter @hachej/boring-bash run check:invariants && pnpm lint:workspace-plugin-invariants",
+    "lint:invariants": "pnpm --dir packages/agent run lint:invariants && pnpm lint:workspace-plugin-invariants",
     "lint:workspace-plugin-invariants": "pnpm --filter @hachej/boring-workspace run lint:plugin-invariants",
     "audit:imports": "pnpm tsx scripts/audit-imports.ts",
     "audit:publish-manifests": "node scripts/audit-publish-manifests.mjs",
@@ -68,6 +68,7 @@
       "esbuild"
     ],
     "overrides": {
+<<<<<<< Updated upstream
       "@mariozechner/pi-coding-agent": "npm:@earendil-works/pi-coding-agent@0.75.5",
       "@perspective-dev/client": "4.4.1",
       "@perspective-dev/viewer": "4.4.1",
@@ -75,6 +76,9 @@
       "@perspective-dev/viewer-d3fc": "4.4.1",
       "fastify": "5.8.5",
       "better-auth": "1.6.11"
+=======
+      "@mariozechner/pi-coding-agent": "npm:@earendil-works/pi-coding-agent@0.75.5"
+>>>>>>> Stashed changes
     }
   }
 }

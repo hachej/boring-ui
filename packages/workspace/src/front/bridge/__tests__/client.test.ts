@@ -191,22 +191,7 @@ describe("createBridgeClient", () => {
       )
       await vi.advanceTimersByTimeAsync(0)
 
-      expect(bridge.openFile).toHaveBeenCalledWith("/foo.ts", { mode: "edit", filesystem: undefined })
-      client.disconnect()
-    })
-
-    it("dispatches openFile filesystem command payloads through bridge", async () => {
-      const { client, bridge } = createClient()
-      client.connect()
-      const es = MockEventSource.instances[0]
-
-      es.emit(
-        "command",
-        JSON.stringify({ v: 1, kind: "openFile", params: { path: "/company/hr/policy.md", filesystem: "company_context" } }),
-      )
-      await vi.advanceTimersByTimeAsync(0)
-
-      expect(bridge.openFile).toHaveBeenCalledWith("/company/hr/policy.md", { mode: undefined, filesystem: "company_context" })
+      expect(bridge.openFile).toHaveBeenCalledWith("/foo.ts", { mode: "edit" })
       client.disconnect()
     })
 

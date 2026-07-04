@@ -2,31 +2,19 @@ import { mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
-import { createReadToolDefinition } from '@mariozechner/pi-coding-agent'
 import { describe, expect, test, vi } from 'vitest'
 
 import type { FileSearch } from '../../../../shared/file-search'
 import type { ExecResult, Sandbox } from '../../../../shared/sandbox'
 import type { Workspace } from '../../../../shared/workspace'
 import { createLogger } from '../../../logging'
-import type { RuntimeBundle, RuntimeFilesystemBindingOperations } from '../../../runtime/mode'
+import type { RuntimeBundle } from '../../../runtime/mode'
 import { buildFilesystemAgentTools } from '../index'
 
 const logger = createLogger('[test:tools:filesystem]')
 
 function logStep(step: string, details: Record<string, unknown> = {}): void {
   logger.info('step', { suite: 'filesystem', step, ...details })
-}
-
-function logToolE2e(details: {
-  tool: string
-  filesystem: string
-  path?: string
-  pattern?: string
-  expectedBinding: string
-  resultSummary: string
-}): void {
-  logger.info('company-fs-tool-e2e', details)
 }
 
 function mockWorkspace(root = '/workspace'): Workspace {
@@ -73,19 +61,6 @@ function mockFileSearch(): FileSearch {
   return { search: vi.fn(async () => []) }
 }
 
-function mockReadonlyBindingOperations(): RuntimeFilesystemBindingOperations {
-  return {
-    read: vi.fn(async ({ path }) => ({ content: `company read ${path}`, metadata: { filesystem: 'company_context', path, operation: 'read' } })),
-    list: vi.fn(async ({ path }) => ({ entries: [`company list ${path}`], metadata: { filesystem: 'company_context', path, operation: 'list' } })),
-    find: vi.fn(async ({ path }, pattern) => ({ paths: [`${path}/${pattern}`], metadata: { filesystem: 'company_context', path, operation: 'find' } })),
-    grep: vi.fn(async ({ path }, pattern) => ({ matches: [{ path: `${path}/match.md`, line: 1, text: `company grep ${pattern}` }], metadata: { filesystem: 'company_context', path, operation: 'grep' } })),
-    stat: vi.fn(async ({ path }) => ({ isDirectory: path.endsWith('/'), metadata: { filesystem: 'company_context', path, operation: 'stat' } })),
-    rejectMutation: vi.fn((operation, descriptor) => {
-      throw new Error(`company_context is readonly for ${operation}:${descriptor.path}`)
-    }),
-  }
-}
-
 function mockBundle(provider: string, root = '/workspace', storageRoot?: string): RuntimeBundle {
   const runtimeContext = { runtimeCwd: root }
   return {
@@ -95,17 +70,6 @@ function mockBundle(provider: string, root = '/workspace', storageRoot?: string)
     sandbox: { ...mockSandbox(provider), runtimeContext },
     fileSearch: mockFileSearch(),
     filesystem: provider === 'vercel-sandbox' ? { kind: 'remote-workspace' } : { kind: 'host' },
-  }
-}
-
-function withFilesystemBinding(bundle: RuntimeBundle, operations = mockReadonlyBindingOperations()): RuntimeBundle {
-  return {
-    ...bundle,
-    filesystemBindings: [{
-      filesystem: 'company_context',
-      access: 'readonly',
-      operations,
-    }],
   }
 }
 
@@ -228,136 +192,6 @@ describe('buildFilesystemAgentTools', () => {
     } finally {
       await rm(workspaceRoot, { recursive: true, force: true })
     }
-  })
-
-  test('preserves Pi factory tool identity and does not introduce duplicate company tools', () => {
-    const tools = buildFilesystemAgentTools(mockBundle('direct'))
-    const names = tools.map((tool) => tool.name)
-    const read = tools.find((tool) => tool.name === 'read')
-
-    expect(names).toEqual(['read', 'write', 'edit', 'find', 'grep', 'ls'])
-    expect(names).not.toContain('read_company_context')
-    expect(names).not.toContain('grep_company_context')
-    expect(read?.description).toBe(createReadToolDefinition('/workspace').description)
-    expect(read?.promptSnippet).toBe(createReadToolDefinition('/workspace').promptSnippet)
-  })
-
-  test('named filesystem prompt and schema guidance are gated on advertised binding', () => {
-    const absent = buildFilesystemAgentTools(mockBundle('direct')).find((tool) => tool.name === 'ls')!
-    const present = buildFilesystemAgentTools(withFilesystemBinding(mockBundle('direct'))).find((tool) => tool.name === 'ls')!
-
-    expect(JSON.stringify(absent.parameters)).not.toContain('company_context')
-    expect(absent.promptSnippet ?? '').not.toContain('company_context')
-    expect(JSON.stringify(present.parameters)).toContain('company_context')
-    expect(present.promptSnippet).toContain('Named filesystem bindings')
-    expect(present.promptSnippet).toContain('company_context')
-    expect(present.promptSnippet).toContain('default to the user workspace')
-    expect(present.promptSnippet).toContain('Readonly filesystem bindings reject writes')
-    expect(present.promptSnippet).toContain('do not use path prefixes')
-  })
-
-  test('filesystem parameter is optional and explicit user behaves like omission', async () => {
-    const workspaceRoot = await mkdtemp(join(tmpdir(), 'filesystem-tools-user-'))
-    try {
-      await writeFile(join(workspaceRoot, 'hello.txt'), 'hello user fs', 'utf8')
-      const tools = buildFilesystemAgentTools(withFilesystemBinding(mockBundle('direct', workspaceRoot)))
-      const read = tools.find((tool) => tool.name === 'read')
-      expect(read).toBeDefined()
-      expect((read!.parameters.properties as Record<string, unknown>).filesystem).toMatchObject({ enum: ['user', 'company_context'] })
-
-      const omitted = await read!.execute(
-        { path: 'hello.txt' },
-        { abortSignal: new AbortController().signal, toolCallId: 'read-user-omitted' },
-      )
-      const explicit = await read!.execute(
-        { filesystem: 'user', path: 'hello.txt' },
-        { abortSignal: new AbortController().signal, toolCallId: 'read-user-explicit' },
-      )
-
-      expect(omitted.content[0].text).toContain('hello user fs')
-      expect(explicit.content[0].text).toContain('hello user fs')
-      logToolE2e({ tool: 'read', filesystem: 'default', path: 'hello.txt', expectedBinding: 'user', resultSummary: 'matches explicit user output' })
-    } finally {
-      await rm(workspaceRoot, { recursive: true, force: true })
-    }
-  })
-
-  test('explicit company_context routes read ls find and grep to readonly company operations', async () => {
-    const operations = mockReadonlyBindingOperations()
-    const tools = buildFilesystemAgentTools(withFilesystemBinding(mockBundle('direct'), operations))
-
-    const read = tools.find((tool) => tool.name === 'read')!
-    const ls = tools.find((tool) => tool.name === 'ls')!
-    const find = tools.find((tool) => tool.name === 'find')!
-    const grep = tools.find((tool) => tool.name === 'grep')!
-
-    await expect(read.execute({ filesystem: 'company_context', path: '/company/hr/policy.md' }, { abortSignal: new AbortController().signal, toolCallId: 'company-read' }))
-      .resolves.toMatchObject({
-        content: [{ text: expect.stringContaining('company read /company/hr/policy.md') }],
-        details: { metadata: { filesystem: 'company_context', path: '/company/hr/policy.md', operation: 'read' } },
-      })
-    await expect(ls.execute({ filesystem: 'company_context', path: '/company' }, { abortSignal: new AbortController().signal, toolCallId: 'company-ls' }))
-      .resolves.toMatchObject({ content: [{ text: expect.stringContaining('company list /company') }] })
-    await expect(find.execute({ filesystem: 'company_context', path: '/company', pattern: '*.md' }, { abortSignal: new AbortController().signal, toolCallId: 'company-find' }))
-      .resolves.toMatchObject({ content: [{ text: expect.stringContaining('/company/*.md') }] })
-    await expect(grep.execute({ filesystem: 'company_context', path: '/company', pattern: 'vacation' }, { abortSignal: new AbortController().signal, toolCallId: 'company-grep' }))
-      .resolves.toMatchObject({ content: [{ text: expect.stringContaining('company grep vacation') }] })
-
-    expect(operations.read).toHaveBeenCalledWith({ filesystem: 'company_context', path: '/company/hr/policy.md' })
-    expect(operations.list).toHaveBeenCalledWith({ filesystem: 'company_context', path: '/company' })
-    expect(operations.find).toHaveBeenCalledWith({ filesystem: 'company_context', path: '/company' }, '*.md', { limit: undefined })
-    expect(operations.grep).toHaveBeenCalledWith({ filesystem: 'company_context', path: '/company' }, 'vacation', { limit: undefined })
-    logToolE2e({ tool: 'read', filesystem: 'company_context', path: '/company/hr/policy.md', expectedBinding: 'company_context', resultSummary: 'company read returned metadata' })
-    logToolE2e({ tool: 'ls', filesystem: 'company_context', path: '/company', expectedBinding: 'company_context', resultSummary: 'company list returned allowed entries' })
-    logToolE2e({ tool: 'find', filesystem: 'company_context', path: '/company', pattern: '*.md', expectedBinding: 'company_context', resultSummary: 'company find returned allowed paths' })
-    logToolE2e({ tool: 'grep', filesystem: 'company_context', path: '/company', pattern: 'vacation', expectedBinding: 'company_context', resultSummary: 'company grep returned allowed matches' })
-  })
-
-  test('company_context mutation tools reject readonly binding and path spoofing does not switch filesystem', async () => {
-    const operations = mockReadonlyBindingOperations()
-    const tools = buildFilesystemAgentTools(withFilesystemBinding(mockBundle('direct'), operations))
-    const write = tools.find((tool) => tool.name === 'write')!
-    const read = tools.find((tool) => tool.name === 'read')!
-
-    await expect(write.execute(
-      { filesystem: 'company_context', path: '/company/hr/policy.md', content: 'mutate' },
-      { abortSignal: new AbortController().signal, toolCallId: 'company-write' },
-    )).rejects.toThrow('company_context is readonly for write')
-    expect(operations.rejectMutation).toHaveBeenCalledWith('write', { filesystem: 'company_context', path: '/company/hr/policy.md' })
-
-    await expect(read.execute(
-      { filesystem: 'company_context', path: 'company_context:/company/hr/policy.md' },
-      { abortSignal: new AbortController().signal, toolCallId: 'company-spoof-uri' },
-    )).rejects.toThrow('filesystem prefixes are not valid path strings')
-    await expect(read.execute(
-      { filesystem: 'company_context', path: '/company_context/company/hr/policy.md' },
-      { abortSignal: new AbortController().signal, toolCallId: 'company-spoof-prefix' },
-    )).rejects.toThrow('filesystem prefixes are not valid path strings')
-    expect(operations.read).not.toHaveBeenCalledWith({ filesystem: 'company_context', path: 'company_context:/company/hr/policy.md' })
-    logToolE2e({ tool: 'write', filesystem: 'company_context', path: '/company/hr/policy.md', expectedBinding: 'company_context-readonly', resultSummary: 'mutation rejected' })
-    logToolE2e({ tool: 'read', filesystem: 'company_context', path: '<spoof>', expectedBinding: 'none', resultSummary: 'path spoof rejected before company read' })
-  })
-
-  test('remote filesystem tools also accept company_context without bypassing workspace user default', async () => {
-    const operations = mockReadonlyBindingOperations()
-    const bundle = withFilesystemBinding(mockBundle('vercel-sandbox'), operations)
-    vi.mocked(bundle.workspace.readFile).mockResolvedValueOnce('remote user content')
-    const tools = buildFilesystemAgentTools(bundle)
-    const read = tools.find((tool) => tool.name === 'read')!
-
-    const userResult = await read.execute(
-      { filesystem: 'user', path: 'remote.txt' },
-      { abortSignal: new AbortController().signal, toolCallId: 'remote-user' },
-    )
-    const companyResult = await read.execute(
-      { filesystem: 'company_context', path: '/company/hr/policy.md' },
-      { abortSignal: new AbortController().signal, toolCallId: 'remote-company' },
-    )
-
-    expect(userResult.content[0].text).toContain('remote user content')
-    expect(companyResult.content[0].text).toContain('company read /company/hr/policy.md')
-    expect(bundle.workspace.readFile).toHaveBeenCalledWith('remote.txt')
-    expect(operations.read).toHaveBeenCalledWith({ filesystem: 'company_context', path: '/company/hr/policy.md' })
   })
 
   test('direct find rejects absolute paths outside the workspace', async () => {

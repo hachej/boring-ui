@@ -82,12 +82,7 @@ async function dispatchCommand(
     case "openFile":
       await bridge.openFile(
         params.path as string,
-        params.mode || params.filesystem
-          ? {
-              mode: params.mode as "view" | "edit" | "diff" | undefined,
-              filesystem: params.filesystem as string | undefined,
-            }
-          : undefined,
+        params.mode ? { mode: params.mode as "view" | "edit" | "diff" } : undefined,
       )
       break
     case "openPanel":

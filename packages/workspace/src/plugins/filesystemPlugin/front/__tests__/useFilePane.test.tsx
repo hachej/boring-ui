@@ -280,7 +280,7 @@ describe("useFilePane", () => {
       renderHook(() => useFilePane({ path: "   " }), { wrapper })
       await act(async () => {})
 
-      expect(mockFileContent).toHaveBeenCalledWith(null, { filesystem: "user" })
+      expect(mockFileContent).toHaveBeenCalledWith(null)
       expect(mockWriteFile).not.toHaveBeenCalled()
     })
 
@@ -288,6 +288,7 @@ describe("useFilePane", () => {
       renderHook(() => useFilePane({ path: " notes.md " }), { wrapper })
       await act(async () => {})
 
+<<<<<<< Updated upstream
       expect(mockFileContent).toHaveBeenCalledWith(" notes.md ", { filesystem: "user" })
     })
 
@@ -339,6 +340,9 @@ describe("useFilePane", () => {
         await result.current.onOverwrite()
       })
       expect(mockWriteFile).not.toHaveBeenCalled()
+=======
+      expect(mockFileContent).toHaveBeenCalledWith(" notes.md ")
+>>>>>>> Stashed changes
     })
   })
 
@@ -347,7 +351,7 @@ describe("useFilePane", () => {
       renderHook(() => useFilePane({ path: "deck/new.md", createIfMissing: "# Default\n" }), { wrapper })
       await act(async () => {})
 
-      expect(mockFileContent).toHaveBeenCalledWith("deck/new.md", { filesystem: "user", createIfMissing: "# Default\n" })
+      expect(mockFileContent).toHaveBeenCalledWith("deck/new.md", { createIfMissing: "# Default\n" })
       expect(mockWriteFile).not.toHaveBeenCalled()
     })
   })

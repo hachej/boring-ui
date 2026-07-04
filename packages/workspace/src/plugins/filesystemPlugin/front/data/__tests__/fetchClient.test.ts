@@ -65,15 +65,6 @@ describe("FetchClient", () => {
     expect(result).toEqual({ content: "hello" })
   })
 
-  it("GET /api/v1/files includes explicit non-user filesystem", async () => {
-    mockFetch.mockReturnValue(ok({ content: "company" }))
-    const client = new FetchClient({ apiBaseUrl: "" })
-    await client.getFile("/company/hr/policy.md", undefined, "company_context")
-    const url = String(mockFetch.mock.calls[0][0])
-    expect(url).toContain("path=%2Fcompany%2Fhr%2Fpolicy.md")
-    expect(url).toContain("filesystem=company_context")
-  })
-
   it("POST /api/v1/files sends path and content", async () => {
     mockFetch.mockReturnValue(ok({ ok: true }))
     const client = new FetchClient({ apiBaseUrl: "" })
@@ -94,17 +85,6 @@ describe("FetchClient", () => {
       returnMtimeMs: false,
     })
     expect(result).toEqual({ mtimeMs: undefined })
-  })
-
-  it("POST /api/v1/files forwards explicit non-user filesystem when supplied", async () => {
-    mockFetch.mockReturnValue(ok({ ok: true }))
-    const client = new FetchClient({ apiBaseUrl: "" })
-    await client.writeFile("/company/hr/policy.md", "code", { filesystem: "company_context" })
-    expect(JSON.parse(mockFetch.mock.calls[0][1].body)).toEqual({
-      path: "/company/hr/policy.md",
-      content: "code",
-      filesystem: "company_context",
-    })
   })
 
   it("POST /api/v1/files forwards expectedMtimeMs when supplied", async () => {
@@ -210,18 +190,6 @@ describe("FetchClient", () => {
     await client.createDir("/src/new")
     const body = JSON.parse(mockFetch.mock.calls[0][1].body)
     expect(body).toEqual({ path: "/src/new" })
-  })
-
-  it("filesystem-aware mutations preserve explicit filesystem identity", async () => {
-    mockFetch.mockImplementation(() => ok({ ok: true }))
-    const client = new FetchClient({ apiBaseUrl: "" })
-    await client.deleteFile("/company/hr/policy.md", { filesystem: "company_context" })
-    await client.createDir("/company/new", { filesystem: "company_context" })
-    await client.moveFile("/company/a.md", "/company/b.md", { filesystem: "company_context" })
-
-    expect(mockFetch.mock.calls[0][0]).toContain("filesystem=company_context")
-    expect(JSON.parse(mockFetch.mock.calls[1][1].body)).toEqual({ path: "/company/new", filesystem: "company_context" })
-    expect(JSON.parse(mockFetch.mock.calls[2][1].body)).toEqual({ from: "/company/a.md", to: "/company/b.md", filesystem: "company_context" })
   })
 
   it("POST /api/v1/files/move sends from and to", async () => {

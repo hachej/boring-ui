@@ -4,7 +4,7 @@
 
 Follow-up plan for `@hachej/boring-bi-dashboard` after the dashboard authoring
 skeleton PR. This plan assumes WorkspaceBridge RPC v1 from PR #71 and the new
-`@hachej/boring-data-bridge` plugin.
+`@hachej/data-bridge` plugin.
 
 ## Goal
 
@@ -250,7 +250,7 @@ on data-bridge being installed by the host. If data-bridge is missing, render a
 clear empty state:
 
 ```txt
-Live data is unavailable because @hachej/boring-data-bridge is not installed.
+Live data is unavailable because @hachej/data-bridge is not installed.
 The dashboard spec is valid and can still be edited.
 ```
 
@@ -258,7 +258,7 @@ Workspace-playground should install:
 
 ```txt
 @hachej/boring-bi-dashboard
-@hachej/boring-data-bridge
+@hachej/data-bridge
 ```
 
 and configure data-bridge with a DuckDB/static adapter over fixture CSV files.

@@ -8,7 +8,7 @@ const mockFileWrite = vi.fn()
 const mockUseEditorLifecycle = vi.fn()
 
 vi.mock("../../data", () => ({
-  useFileContent: (path: string, options?: unknown) => mockFileContent(path, options),
+  useFileContent: (path: string) => mockFileContent(path),
   useFileWrite: () => ({ mutateAsync: mockFileWrite }),
   useDataClient: () => ({}),
   useApiBaseUrl: () => "/api",
@@ -39,7 +39,6 @@ vi.mock("../CodeEditor", () => ({
   ),
 }))
 
-import { FetchError } from "../../data/fetchClient"
 import { CodeEditorPane } from "../CodeEditorPane"
 import { createMockPaneProps } from "../../../../../front/testing/createMockPaneProps"
 
@@ -106,6 +105,7 @@ describe("CodeEditorPane", () => {
     expect(screen.getByText(/Not found/)).toBeInTheDocument()
   })
 
+<<<<<<< Updated upstream
   it("passes filesystem to loading hook and sanitizes denied company errors", () => {
     mockFileContent.mockReturnValue({
       data: undefined,
@@ -162,6 +162,8 @@ describe("CodeEditorPane", () => {
     expect(mockFileWrite).not.toHaveBeenCalled()
   })
 
+=======
+>>>>>>> Stashed changes
   it("infers language from file extension", async () => {
     mockFileContent.mockReturnValue({
       data: { content: "x = 1" },

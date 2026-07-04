@@ -4,13 +4,11 @@ import { useEffect, useMemo, useState } from "react"
 import { Download, RefreshCw } from "lucide-react"
 import { ErrorState, Spinner } from "@hachej/boring-ui-kit"
 import { useApiBaseUrl, useWorkspaceRequestId } from "../data/DataProvider"
-import { redactedFilesystemErrorMessage } from "../data/filesystemErrorRedaction"
 import { cn } from "../../../../front/lib/utils"
 
 export interface MediaViewerProps {
   path: string
   kind: "image" | "pdf"
-  filesystem?: string
   reloadKey?: number
   onReload?: () => void
   className?: string
@@ -25,7 +23,7 @@ function filename(path: string): string {
   return path.split("/").pop() ?? path
 }
 
-export function MediaViewer({ path, kind, filesystem, reloadKey = 0, onReload, className }: MediaViewerProps) {
+export function MediaViewer({ path, kind, reloadKey = 0, onReload, className }: MediaViewerProps) {
   const apiBaseUrl = useApiBaseUrl()
   const workspaceRequestId = useWorkspaceRequestId()
   const [objectUrl, setObjectUrl] = useState<string | null>(null)
@@ -34,10 +32,9 @@ export function MediaViewer({ path, kind, filesystem, reloadKey = 0, onReload, c
 
   const rawUrl = useMemo(() => {
     const query = new URLSearchParams({ path })
-    if (filesystem && filesystem !== "user") query.set("filesystem", filesystem)
     if (reloadKey > 0) query.set("reload", String(reloadKey))
     return apiUrl(apiBaseUrl, `/api/v1/files/raw?${query.toString()}`)
-  }, [apiBaseUrl, path, filesystem, reloadKey])
+  }, [apiBaseUrl, path, reloadKey])
 
   useEffect(() => {
     const controller = new AbortController()
@@ -55,7 +52,7 @@ export function MediaViewer({ path, kind, filesystem, reloadKey = 0, onReload, c
       signal: controller.signal,
     })
       .then(async (res) => {
-        if (!res.ok) throw new Error(redactedFilesystemErrorMessage(filesystem, res.status, `HTTP ${res.status}`))
+        if (!res.ok) throw new Error(`HTTP ${res.status}`)
         const blob = await res.blob()
         nextObjectUrl = URL.createObjectURL(blob)
         setObjectUrl(nextObjectUrl)

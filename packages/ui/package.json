@@ -1,6 +1,10 @@
 {
   "name": "@hachej/boring-ui-kit",
+<<<<<<< Updated upstream
   "version": "0.1.64",
+=======
+  "version": "0.1.61",
+>>>>>>> Stashed changes
   "type": "module",
   "license": "MIT",
   "description": "Shared shadcn-style UI primitives for Boring packages and app-generated panes.",

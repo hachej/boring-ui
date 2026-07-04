@@ -1,11 +1,10 @@
 import type { MouseEvent, ReactElement, ReactNode } from "react"
-import type { FilesystemId } from "../../shared/types/filesystem"
 import type { UiCommand } from "./types"
 import { postUiCommand } from "./uiCommandBus"
 
 export type WorkspaceLinkTarget =
-  | { kind: "openFile"; path: string; mode?: "view" | "edit" | "diff"; filesystem?: FilesystemId }
-  | { kind: "openSurface"; surfaceKind: string; target: string; filesystem?: FilesystemId; meta?: Record<string, unknown> }
+  | { kind: "openFile"; path: string; mode?: "view" | "edit" | "diff" }
+  | { kind: "openSurface"; surfaceKind: string; target: string; meta?: Record<string, unknown> }
   | { kind: "openPanel"; id: string; component: string; title?: string; params?: Record<string, unknown> }
   | { kind: "expandToFile"; path: string }
 
@@ -21,9 +20,9 @@ export interface WorkspaceLinkProps {
 export function workspaceLinkCommand(to: WorkspaceLinkTarget): UiCommand {
   switch (to.kind) {
     case "openFile":
-      return { kind: "openFile", params: { path: to.path, ...(to.mode ? { mode: to.mode } : {}), ...(to.filesystem ? { filesystem: to.filesystem } : {}) } }
+      return { kind: "openFile", params: { path: to.path, ...(to.mode ? { mode: to.mode } : {}) } }
     case "openSurface":
-      return { kind: "openSurface", params: { kind: to.surfaceKind, target: to.target, ...(to.filesystem ? { filesystem: to.filesystem } : {}), ...(to.meta ? { meta: to.meta } : {}) } }
+      return { kind: "openSurface", params: { kind: to.surfaceKind, target: to.target, ...(to.meta ? { meta: to.meta } : {}) } }
     case "openPanel":
       return {
         kind: "openPanel",

@@ -1,5 +1,6 @@
 {
   "name": "@hachej/boring-generated-pane",
+<<<<<<< Updated upstream
   "version": "0.1.64",
   "type": "module",
   "private": false,
@@ -9,6 +10,14 @@
     "type": "git",
     "url": "https://github.com/hachej/boring-ui"
   },
+=======
+  "version": "0.1.53",
+  "type": "module",
+  "private": false,
+  "license": "MIT",
+  "description": "Generated pane runtime for Boring workspace using json-render catalogs and safe WorkspaceBridge-backed actions.",
+  "repository": { "type": "git", "url": "https://github.com/hachej/boring-ui" },
+>>>>>>> Stashed changes
   "homepage": "https://github.com/hachej/boring-ui",
   "boring": {
     "id": "generated-pane",
@@ -17,20 +26,12 @@
     "server": "dist/server/index.js"
   },
   "pi": {
-    "skills": [
-      "skills/generated-pane-authoring"
-    ],
+    "skills": ["skills/generated-pane-authoring"],
     "systemPrompt": "Use the generated-pane-authoring skill when the user asks to create a custom workspace pane from available components. Pane files should live under panes/*.pane.json."
   },
-  "files": [
-    "dist",
-    "skills",
-    "example",
-    "playground",
-    "docs",
-    "README.md"
-  ],
+  "files": ["dist", "skills", "example", "playground", "docs", "README.md"],
   "exports": {
+<<<<<<< Updated upstream
     ".": {
       "types": "./dist/front/index.d.ts",
       "import": "./dist/front/index.js"
@@ -48,6 +49,11 @@
       "types": "./dist/shared/index.d.ts",
       "import": "./dist/shared/index.js"
     },
+=======
+    ".": { "types": "./dist/front/index.d.ts", "import": "./dist/front/index.js" },
+    "./front": { "types": "./dist/front/index.d.ts", "import": "./dist/front/index.js" },
+    "./shared": { "types": "./dist/shared/index.d.ts", "import": "./dist/shared/index.js" },
+>>>>>>> Stashed changes
     "./package.json": "./package.json"
   },
   "sideEffects": false,

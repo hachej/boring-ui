@@ -68,6 +68,7 @@ export interface ModeContext {
   telemetry?: TelemetrySink
 }
 
+<<<<<<< Updated upstream
 export interface RuntimeFilesystemBindingOperations {
   read(descriptor: { filesystem: string; path: string }): Promise<{ content: string; metadata?: unknown }>
   list(descriptor: { filesystem: string; path: string }): Promise<{ entries: string[]; metadata?: unknown }>
@@ -88,6 +89,8 @@ export interface RuntimeFilesystemBinding {
 }
 
 
+=======
+>>>>>>> Stashed changes
 export interface RuntimeBundle {
   runtimeContext?: WorkspaceRuntimeContext
   /**
@@ -105,8 +108,6 @@ export interface RuntimeBundle {
   bash?: RuntimeBashStrategy
   /** Runtime-owned filesystem strategy, consumed by the agent filesystem tool builder. */
   filesystem?: RuntimeFilesystemStrategy
-  /** Optional filesystem bindings prepared for this runtime/session. */
-  filesystemBindings?: RuntimeFilesystemBinding[]
 }
 
 export function getOptionalRuntimeBundleStorageRoot(bundle: RuntimeBundle): string | undefined {

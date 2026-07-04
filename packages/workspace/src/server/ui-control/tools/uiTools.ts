@@ -13,7 +13,6 @@
 import { stat } from "node:fs/promises"
 import { resolve, isAbsolute, relative, win32 } from "node:path"
 import type { AgentTool, ToolResult } from "../../../shared/types/agent-tool"
-import { normalizeUiFilesystem, USER_FILESYSTEM_ID } from "../../../shared/types/filesystem"
 import type { WorkspaceBridge, UiCommand, UiState } from "../../../shared/ui-bridge"
 
 function makeError(message: string): ToolResult {
@@ -77,10 +76,9 @@ function isOutsideWorkspaceRel(rel: string): boolean {
 function validatePathSyntax(
   relPath: string,
   workspaceRoot?: string,
-  opts: { allowAbsolute?: boolean } = {},
 ): { ok: true } | { ok: false; reason: string } {
   const rootHint = workspaceRoot ? ` (${workspaceRoot})` : ""
-  if (!opts.allowAbsolute && isPathAbsolute(relPath)) {
+  if (isPathAbsolute(relPath)) {
     return {
       ok: false,
       reason: `path "${relPath}" is absolute — pass a path relative to the workspace root${rootHint}.`,
@@ -177,11 +175,7 @@ function isVerified(
   const tabs = (state.openTabs as UiTab[] | undefined) ?? []
   if (kind === "openFile") {
     const path = typeof params.path === "string" ? params.path : null
-    const filesystem = normalizeUiFilesystem(typeof params.filesystem === "string" ? params.filesystem : undefined)
-    return path !== null && tabs.some((t) =>
-      t.params?.path === path &&
-      normalizeUiFilesystem(typeof t.params?.filesystem === "string" ? t.params.filesystem : undefined) === filesystem
-    )
+    return path !== null && tabs.some((t) => t.params?.path === path)
   }
   if (kind === "openPanel") {
     const id = typeof params.id === "string" ? params.id : null
@@ -226,7 +220,7 @@ export function createExecUiTool(
       "",
       "Supported `kind` values:",
       "",
-      "  openFile     params: { path: string, mode?: 'view'|'edit'|'diff', filesystem?: 'user'|'company_context' }",
+      "  openFile     params: { path: string, mode?: 'view'|'edit'|'diff' }",
       "               — Open a file in the workbench. The workbench pane",
       "                 auto-opens if collapsed. Path must be relative to the",
       "                 workspace root (e.g. `src/foo.ts`, not `foo.ts` if it",
@@ -241,8 +235,6 @@ export function createExecUiTool(
       "                 is found.",
       "                 If the path is a folder, openFile reveals/selects it in",
       "                 the file tree instead of opening an editor tab.",
-      "                 Omit filesystem for normal workspace files (defaults to user). Use filesystem:'company_context' only when a company_context binding is advertised.",
-      "                 Path prefixes such as company_context:/x do not switch filesystem identity.",
       "                 Example: {kind:'openFile', params:{path:'README.md'}}",
       "",
       "  openPanel    params: { id: string, component: string,",
@@ -257,15 +249,11 @@ export function createExecUiTool(
       "                          component:'chart-canvas',",
       "                          params:{seriesId:'GDPC1'}}}",
       "",
-      "  openSurface  params: { kind: string, target: string, filesystem?: 'user'|'company_context', meta?: object }",
+      "  openSurface  params: { kind: string, target: string, meta?: object }",
       "               — Open an app-owned target through the workspace",
       "                 surface resolver registry. Use this when the app",
       "                 defines the mapping from domain target to panel",
       "                 component, for example a catalog row.",
-      "                 For kind:'workspace.open.path', filesystem follows the",
-      "                 same rules as openFile: omit for user files; pass",
-      "                 filesystem:'company_context' only for advertised company",
-      "                 context bindings; path prefixes do not switch identity.",
       "                 Example: {kind:'openSurface', params:{",
       "                          kind:'catalog.open-row',",
       "                          target:'orders_daily',",
@@ -345,10 +333,9 @@ export function createExecUiTool(
 
       // Validate path-bearing kinds before queueing so the agent gets
       // immediate feedback rather than the frontend silently no-op'ing on a
-      // malformed path. Only the default user filesystem is rooted at
-      // workspaceRoot; alternate filesystem identities are separate bindings,
-      // so they get syntax validation but must not be stat-checked against the
-      // user workspace or converted to expandToFile by user-workspace dirs.
+      // malformed path. In remote modes workspaceRoot may be omitted because
+      // the host cannot stat the microVM filesystem; still enforce relative,
+      // non-traversing paths, and only stat-check when a local root is known.
       let effectiveKind = kind
 
       if (PATH_BEARING_KINDS.has(kind)) {
@@ -358,35 +345,30 @@ export function createExecUiTool(
             `${kind}: ${kind === "navigateToLine" ? "file" : "path"} param is required`,
           )
         }
-        const filesystem = kind === "openFile"
-          ? normalizeUiFilesystem(typeof cmdParams.filesystem === "string" ? cmdParams.filesystem : undefined)
-          : USER_FILESYSTEM_ID
-        const syntax = validatePathSyntax(relPath, workspaceRoot, { allowAbsolute: filesystem !== USER_FILESYSTEM_ID })
+        const syntax = validatePathSyntax(relPath, workspaceRoot)
         if (!syntax.ok) return makeError(syntax.reason)
-        if (filesystem === USER_FILESYSTEM_ID) {
-          if (workspaceRoot) {
-            const check = await validateExistingPath(workspaceRoot, relPath)
-            if (!check.ok) {
-              return makeError(check.reason)
-            }
-            if (kind === "openFile" && check.kind === "dir") {
-              effectiveKind = "expandToFile"
-            }
-          } else if (resolvePathKind) {
-            const pathKind = await resolvePathKind(relPath)
-            if (!pathKind) {
-              return makeError(`file not found at "${relPath}". Try find or grep to locate the file before retrying openFile.`)
-            }
-            if (kind === "openFile" && pathKind === "dir") {
-              effectiveKind = "expandToFile"
-            }
+        if (workspaceRoot) {
+          const check = await validateExistingPath(workspaceRoot, relPath)
+          if (!check.ok) {
+            return makeError(check.reason)
+          }
+          if (kind === "openFile" && check.kind === "dir") {
+            effectiveKind = "expandToFile"
+          }
+        } else if (resolvePathKind) {
+          const pathKind = await resolvePathKind(relPath)
+          if (!pathKind) {
+            return makeError(`file not found at "${relPath}". Try find or grep to locate the file before retrying openFile.`)
+          }
+          if (kind === "openFile" && pathKind === "dir") {
+            effectiveKind = "expandToFile"
           }
         }
       }
 
       try {
         const command: UiCommand = { kind: effectiveKind, params: cmdParams }
-        const result = await workspaceBridge.postCommand(command)
+        const result = await workspaceBridge.emitUiEffect(command)
         if (result.status === "error") {
           return {
             content: [{ type: "text", text: JSON.stringify(result) }],

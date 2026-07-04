@@ -11,5 +11,5 @@ export default defineConfig({
   dts: true,
   sourcemap: false,
   clean: true,
-  external: ["@clickhouse/client", "@hachej/boring-workspace", "@perspective-dev/client", "@perspective-dev/client/node", "ws"],
+  external: ["@hachej/boring-workspace"],
 })

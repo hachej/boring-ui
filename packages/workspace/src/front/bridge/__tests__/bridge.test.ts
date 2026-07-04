@@ -78,7 +78,7 @@ describe("createBridge", () => {
       const bridge = createBridge(store)
       const result = await bridge.openFile("/a.ts")
       expect(result.status).toBe("ok")
-      expect(store.state.openFile).toHaveBeenCalledWith("/a.ts", "file:user:/a.ts")
+      expect(store.state.openFile).toHaveBeenCalledWith("/a.ts", "file:/a.ts")
     })
 
     it("rejects path traversal", async () => {
@@ -99,7 +99,7 @@ describe("createBridge", () => {
       await bridge.openFile("/a.ts")
       const result = await bridge.openFile("/a.ts")
       expect(result.status).toBe("ok")
-      expect(store.state.activatePanel).toHaveBeenCalledWith("file:user:/a.ts")
+      expect(store.state.activatePanel).toHaveBeenCalledWith("file:/a.ts")
     })
 
     it("rejects when at max panels", async () => {
@@ -115,13 +115,13 @@ describe("createBridge", () => {
 
     it("activates existing panel even at max capacity", async () => {
       store.state.panels = Array.from({ length: 50 }, (_, i) => ({
-        id: i === 0 ? "file:user:/a.ts" : `p-${i}`,
+        id: i === 0 ? "file:/a.ts" : `p-${i}`,
         component: "editor",
       }))
       const bridge = createBridge(store)
       const result = await bridge.openFile("/a.ts")
       expect(result.status).toBe("ok")
-      expect(store.state.activatePanel).toHaveBeenCalledWith("file:user:/a.ts")
+      expect(store.state.activatePanel).toHaveBeenCalledWith("file:/a.ts")
     })
 
     it("fires file:opened event", async () => {
@@ -129,28 +129,7 @@ describe("createBridge", () => {
       const handler = vi.fn()
       bridge.subscribe("file:opened", handler)
       await bridge.openFile("/a.ts")
-      expect(handler).toHaveBeenCalledWith({ path: "/a.ts", mode: "edit", filesystem: "user" })
-    })
-
-    it("preserves explicit filesystem in openFile params, panel id, and events", async () => {
-      const bridge = createBridge(store)
-      const handler = vi.fn()
-      bridge.subscribe("file:opened", handler)
-      const result = await bridge.openFile("/company/hr/policy.md", { filesystem: "company_context", mode: "view" })
-      expect(result.status).toBe("ok")
-      expect(store.state.openPanel).toHaveBeenCalledWith(expect.objectContaining({
-        id: "file:company_context:/company/hr/policy.md",
-        params: { path: "/company/hr/policy.md", mode: "view", filesystem: "company_context" },
-      }))
-      expect(handler).toHaveBeenCalledWith({ path: "/company/hr/policy.md", mode: "view", filesystem: "company_context" })
-    })
-
-    it("opens same path in user and company_context as distinct panels", async () => {
-      const bridge = createBridge(store)
-      await bridge.openFile("/same.md")
-      await bridge.openFile("/same.md", { filesystem: "company_context" })
-      expect(store.state.openPanel).toHaveBeenCalledWith(expect.objectContaining({ id: "file:user:/same.md" }))
-      expect(store.state.openPanel).toHaveBeenCalledWith(expect.objectContaining({ id: "file:company_context:/same.md" }))
+      expect(handler).toHaveBeenCalledWith({ path: "/a.ts", mode: "edit" })
     })
   })
 

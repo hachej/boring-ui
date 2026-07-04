@@ -1,7 +1,6 @@
 "use client"
 
 import { useCallback, useEffect, useRef, useState } from "react"
-import { normalizeUiFilesystem, uiFileResourceKey, type FilesystemId } from "../../../shared/types/filesystem"
 import { useFileContent, useFileWrite } from "./data"
 import { FileConflictError } from "./data/fetchClient"
 import { useEditorLifecycle, type EditorLifecycleAdapter } from "../../../front/hooks"
@@ -11,8 +10,6 @@ let nextFallbackPanelId = 0
 export interface UseFilePaneOptions {
   /** The file path to load/edit. If empty/undefined, pane shows "no file selected". */
   path: string
-  /** Filesystem identity for cache/dirty/stale separation. Defaults to user. */
-  filesystem?: FilesystemId
   /** Unique panel ID for lifecycle tracking. Omit to use a stable per-pane fallback ID. */
   panelId?: string
   /** Initial content (optional, for draft/unsaved files). */
@@ -79,16 +76,18 @@ export interface UseFilePaneReturn {
  */
 export function useFilePane(options: UseFilePaneOptions): UseFilePaneReturn {
   const { path, panelId, initialContent = null, createIfMissing } = options
-  const filesystem = normalizeUiFilesystem(options.filesystem)
   const activePath = /\S/.test(path) ? path : null
-  const activeResourceKey = activePath ? uiFileResourceKey({ filesystem, path: activePath }) : null
   const fallbackPanelIdRef = useRef(panelId ?? `file-pane:${nextFallbackPanelId++}`)
   const lifecyclePanelId = panelId ?? fallbackPanelIdRef.current
 
+<<<<<<< Updated upstream
   // Readonly/readwrite is a trusted server binding property returned by the file
   // route. Do not infer access from filesystem ids; arbitrary named filesystems
   // may be readonly or readwrite.
   const fileContentOptions = createIfMissing === undefined ? { filesystem } : { filesystem, createIfMissing }
+=======
+  const fileContentOptions = createIfMissing === undefined ? undefined : { createIfMissing }
+>>>>>>> Stashed changes
   const { data: fileData, isLoading, error, refetch: refetchFileData } = useFileContent(activePath, fileContentOptions)
   const isReadonly = fileData?.access === "readonly"
   const { mutateAsync: writeFile } = useFileWrite()
@@ -98,7 +97,6 @@ export function useFilePane(options: UseFilePaneOptions): UseFilePaneReturn {
   const contentRef = useRef<string>("")
   const dirtyRef = useRef(false)
   const loadedPathRef = useRef<string | null>(null)
-  const loadedResourceKeyRef = useRef<string | null>(null)
   const baselineMtimeRef = useRef<number | null>(null)
   // Ref so the save callback (defined before lifecycle) can call lifecycle.notifySaved.
   const notifySavedRef = useRef<((mtime: number) => void) | null>(null)
@@ -119,7 +117,7 @@ export function useFilePane(options: UseFilePaneOptions): UseFilePaneReturn {
 
   // Reset state when path changes
   useEffect(() => {
-    if (loadedPathRef.current !== path || loadedResourceKeyRef.current !== activeResourceKey) {
+    if (loadedPathRef.current !== path) {
       setContentState(initialContent)
       contentRef.current = initialContent ?? ""
       dirtyRef.current = false
@@ -127,9 +125,8 @@ export function useFilePane(options: UseFilePaneOptions): UseFilePaneReturn {
       saveGenRef.current += 1
       setConflict(null)
       loadedPathRef.current = path
-      loadedResourceKeyRef.current = activeResourceKey
     }
-  }, [path, activeResourceKey, initialContent])
+  }, [path, initialContent])
 
   // Load file content on mount or when file data changes
   useEffect(() => {
@@ -152,7 +149,6 @@ export function useFilePane(options: UseFilePaneOptions): UseFilePaneReturn {
             const myGen = ++saveGenRef.current
             try {
               const result = await writeFile({
-                filesystem,
                 path: activePath,
                 content: contentRef.current,
                 expectedMtimeMs: baselineMtimeRef.current ?? undefined,
@@ -194,7 +190,7 @@ export function useFilePane(options: UseFilePaneOptions): UseFilePaneReturn {
         }
       : null
 
-  const lifecycle = useEditorLifecycle(activeResourceKey, {
+  const lifecycle = useEditorLifecycle(activePath, {
     adapter,
     panelId: lifecyclePanelId,
     serverMtime: fileData?.mtimeMs ?? null,
@@ -286,7 +282,7 @@ export function useFilePane(options: UseFilePaneOptions): UseFilePaneReturn {
       // content. (Earlier comment claimed the opposite — it was wrong.)
       if (!activePath) return
       const contentToSave = contentRef.current
-      const result = await writeFile({ filesystem, path: activePath, content: contentToSave })
+      const result = await writeFile({ path: activePath, content: contentToSave })
       if (saveGenRef.current !== myGen) return
       if (typeof result.mtimeMs === "number") {
         baselineMtimeRef.current = result.mtimeMs
@@ -302,7 +298,11 @@ export function useFilePane(options: UseFilePaneOptions): UseFilePaneReturn {
     } catch {
       // Leave conflict UI up so user can retry
     }
+<<<<<<< Updated upstream
   }, [activePath, filesystem, isReadonly, writeFile])
+=======
+  }, [activePath, writeFile])
+>>>>>>> Stashed changes
 
   const save = useCallback(async () => {
     if (isReadonly || !adapter || !dirtyRef.current) return

@@ -5,7 +5,6 @@ import { useQueryClient, type QueryClient } from "@tanstack/react-query"
 import { events } from "../../../../front/events"
 import { useApiBaseUrl, useWorkspaceRequestId } from "./DataProvider"
 import { filesystemEvents } from "../../shared/events"
-import { normalizeUiFilesystem, type FilesystemId } from "../../../../shared/types/filesystem"
 import { FILES_QUERY_KEY_SEGMENT } from "../../shared/constants"
 import { parentDir } from "../file-tree/treeModel"
 import type { FileEntry } from "./types"
@@ -54,7 +53,7 @@ export function useFileEventInvalidation(): void {
     }
 
     const offChanged = events.on(filesystemEvents.changed, (e) => {
-      invalidateFile(batch, base, workspaceId, e.path, e.filesystem)
+      invalidateFile(batch, base, workspaceId, e.path)
     })
     const offCreated = events.on(filesystemEvents.created, (e) => {
       upsertTreeCache(queryClient, base, workspaceId, e.filesystem, {
@@ -65,7 +64,7 @@ export function useFileEventInvalidation(): void {
       const invalidate = () => {
         invalidateTree(batch, base, workspaceId, e.path, e.filesystem)
         if (e.kind === "file") {
-          invalidateFile(batch, base, workspaceId, e.path, e.filesystem)
+          invalidateFile(batch, base, workspaceId, e.path)
         }
       }
       invalidate()
@@ -82,11 +81,19 @@ export function useFileEventInvalidation(): void {
         })
       }
       const invalidate = () => {
+<<<<<<< Updated upstream
         invalidateTree(batch, base, workspaceId, e.from, e.filesystem)
         invalidateTree(batch, base, workspaceId, e.to, e.filesystem)
         invalidateFile(batch, base, workspaceId, e.from, e.filesystem)
         invalidateFile(batch, base, workspaceId, e.to, e.filesystem)
         invalidateMovedDescendants(batch, base, workspaceId, e.from, e.filesystem)
+=======
+        invalidateTree(batch, base, workspaceId, e.from)
+        invalidateTree(batch, base, workspaceId, e.to)
+        invalidateFile(batch, base, workspaceId, e.from)
+        invalidateFile(batch, base, workspaceId, e.to)
+        invalidateMovedDescendants(batch, base, workspaceId, e.from)
+>>>>>>> Stashed changes
         invalidateSearch(batch, base, workspaceId)
       }
       invalidate()
@@ -95,8 +102,13 @@ export function useFileEventInvalidation(): void {
     const offDeleted = events.on(filesystemEvents.deleted, (e) => {
       removeTreeCacheEntry(queryClient, base, workspaceId, e.path, e.filesystem)
       const invalidate = () => {
+<<<<<<< Updated upstream
         invalidateTree(batch, base, workspaceId, e.path, e.filesystem)
         invalidateFile(batch, base, workspaceId, e.path, e.filesystem)
+=======
+        invalidateTree(batch, base, workspaceId, e.path)
+        invalidateFile(batch, base, workspaceId, e.path)
+>>>>>>> Stashed changes
         invalidateSearch(batch, base, workspaceId)
       }
       invalidate()
@@ -211,11 +223,9 @@ function invalidateFile(
   base: string,
   workspaceId: string | null,
   path: string,
-  filesystem?: FilesystemId,
 ): void {
-  const fs = normalizeUiFilesystem(filesystem)
-  batch.enqueue([base, workspaceId, FILES_QUERY_KEY_SEGMENT, fs, path])
-  batch.enqueue([base, workspaceId, "stat", fs, path])
+  batch.enqueue([base, workspaceId, FILES_QUERY_KEY_SEGMENT, path])
+  batch.enqueue([base, workspaceId, "stat", path])
 }
 
 /**
@@ -247,15 +257,14 @@ function invalidateMovedDescendants(
   base: string,
   workspaceId: string | null,
   from: string,
-  filesystem?: FilesystemId,
 ): void {
-  const fs = normalizeUiFilesystem(filesystem)
   const prefix = `${from}/`
-  batch.enqueueFilter(`descendants:${base}:${workspaceId}:${fs}:${prefix}`, {
+  batch.enqueueFilter(`descendants:${base}:${workspaceId}:${prefix}`, {
     predicate: (query) => {
       const key = query.queryKey
       return key[0] === base
         && key[1] === workspaceId
+<<<<<<< Updated upstream
         && (
           ((key[2] === FILES_QUERY_KEY_SEGMENT || key[2] === "stat")
             && key[3] === fs
@@ -266,6 +275,11 @@ function invalidateMovedDescendants(
             && typeof key[4] === "string"
             && (key[4] === from || key[4].startsWith(prefix)))
         )
+=======
+        && (key[2] === FILES_QUERY_KEY_SEGMENT || key[2] === "stat" || key[2] === "tree")
+        && typeof key[3] === "string"
+        && (key[3] === from || key[3].startsWith(prefix))
+>>>>>>> Stashed changes
     },
   })
 }

@@ -59,11 +59,11 @@ const KEY = "test:surface-layout"
 // allowedPanels component, since validation drops layouts with unknown
 // contentComponents.
 function buildLayout(
-  panels: Array<{ id: string; component: string; params?: Record<string, unknown> }> = [{ id: "p1", component: "empty" }],
+  panels: Array<{ id: string; component: string }> = [{ id: "p1", component: "empty" }],
 ): SerializedLayout {
   const panelMap: Record<string, unknown> = {}
   for (const p of panels) {
-    panelMap[p.id] = { id: p.id, contentComponent: p.component, ...(p.params ? { params: p.params } : {}) }
+    panelMap[p.id] = { id: p.id, contentComponent: p.component }
   }
   return {
     activeGroup: panels[0]?.id,
@@ -109,6 +109,7 @@ describe("ArtifactSurfacePane — layout persistence", () => {
     expect(parsed).toEqual({ v: 1, layout })
   })
 
+<<<<<<< Updated upstream
   it("drops non-serializable panel params instead of crashing persistence", () => {
     renderPane(<ArtifactSurfacePane storageKey={KEY} />)
     const layout = buildLayout([{ id: "p1", component: "empty", params: { path: "README.md", onDone: () => undefined } }])
@@ -166,6 +167,8 @@ describe("ArtifactSurfacePane — layout persistence", () => {
     })
   })
 
+=======
+>>>>>>> Stashed changes
   it("round-trips: a written layout is restored on next mount", () => {
     const { unmount } = renderPane(<ArtifactSurfacePane storageKey={KEY} />)
     const layout = buildLayout()

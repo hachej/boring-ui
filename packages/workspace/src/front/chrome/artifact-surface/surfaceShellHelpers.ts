@@ -4,7 +4,6 @@ import type {
   SurfacePanelResolution,
   SurfaceResolverConfig,
 } from "../../../shared/types/surface"
-import { normalizeUiFilesystem, uiFileResourceKey } from "../../../shared/types/filesystem"
 import { WORKSPACE_OPEN_PATH_SURFACE_KIND } from "../../../shared/types/surface"
 
 export function resolvePanelForPath(
@@ -25,13 +24,12 @@ export function normalizeWorkbenchPath(path: string): string {
   return normalized
 }
 
-export function findOpenFilePanel(api: DockviewApi, path: string, filesystem = normalizeUiFilesystem(undefined)) {
-  const panelId = `file:${uiFileResourceKey({ filesystem, path })}`
+export function findOpenFilePanel(api: DockviewApi, path: string) {
+  const panelId = `file:${path}`
   return api.getPanel(panelId)
-    ?? api.panels.find((panel) => {
-      const params = panel.params as Record<string, unknown> | undefined
-      return params?.path === path && normalizeUiFilesystem(typeof params.filesystem === "string" ? params.filesystem : undefined) === filesystem
-    })
+    ?? api.panels.find((panel) =>
+      (panel.params as Record<string, unknown> | undefined)?.path === path
+    )
 }
 
 export function normalizeSurfaceOpenRequest(
@@ -41,7 +39,6 @@ export function normalizeSurfaceOpenRequest(
   return {
     ...request,
     target: normalizeWorkbenchPath(request.target),
-    filesystem: normalizeUiFilesystem(request.filesystem),
   }
 }
 
@@ -49,8 +46,5 @@ export function surfacePanelId(
   request: SurfaceOpenRequest,
   resolved: SurfacePanelResolution,
 ): string {
-  if (request.kind === WORKSPACE_OPEN_PATH_SURFACE_KIND) {
-    return `file:${uiFileResourceKey({ filesystem: normalizeUiFilesystem(request.filesystem), path: request.target })}`
-  }
   return resolved.id ?? `surface:${request.kind}:${request.target}`
 }

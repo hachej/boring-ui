@@ -2,7 +2,6 @@
 
 import { useCallback, useMemo } from "react"
 import type { DockviewApi } from "dockview-react"
-import { normalizeUiFilesystem, uiFileResourceKey } from "../../../shared/types/filesystem"
 import { DockviewShell } from "../../dock"
 import type { LayoutConfig, SerializedLayout } from "../../dock"
 import { cn } from "../../lib/utils"
@@ -64,6 +63,7 @@ function readStoredLayoutState(
     if (typeof comp !== "string") return { status: "invalid" }
     if (allowed && !allowed.has(comp)) return { status: "blocked-by-allowed-panels" }
   }
+<<<<<<< Updated upstream
   return { status: "ready", layout: normalizePersistedFilePanelIdentity(layout as SerializedLayout) }
 }
 
@@ -114,6 +114,9 @@ function normalizePersistedFilePanelIdentity(layout: SerializedLayout): Serializ
   }
 
   return clone as SerializedLayout
+=======
+  return { status: "ready", layout: layout as SerializedLayout }
+>>>>>>> Stashed changes
 }
 
 function layoutHasPanels(layout: SerializedLayout): boolean {
@@ -176,7 +179,7 @@ export function ArtifactSurfacePane({
       ) {
         return
       }
-      const envelope: StoredEnvelope = { v: STORAGE_VERSION, layout: normalizePersistedFilePanelIdentity(layout) }
+      const envelope: StoredEnvelope = { v: STORAGE_VERSION, layout }
       try {
         window.localStorage.setItem(storageKey, JSON.stringify(envelope))
       } catch {

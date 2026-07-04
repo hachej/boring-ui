@@ -1,6 +1,10 @@
 {
   "name": "@hachej/boring-ui-cli",
+<<<<<<< Updated upstream
   "version": "0.1.64",
+=======
+  "version": "0.1.61",
+>>>>>>> Stashed changes
   "description": "Turn an agent into an app",
   "license": "MIT",
   "type": "module",

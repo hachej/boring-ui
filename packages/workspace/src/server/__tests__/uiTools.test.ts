@@ -122,32 +122,6 @@ describe("createExecUiTool — path validation", () => {
     }
   })
 
-  test("openFile with company_context bypasses user workspace stat validation", async () => {
-    const tool = createExecUiTool(bridge, { workspaceRoot })
-    const result = await tool.execute(
-      { kind: "openFile", params: { path: "/company/hr/policy.md", filesystem: "company_context" } },
-      FAKE_CTX,
-    )
-    expect(result.isError).toBeFalsy()
-    await expect(bridge.drainCommands!()).resolves.toEqual([
-      expect.objectContaining({
-        kind: "openFile",
-        params: { path: "/company/hr/policy.md", filesystem: "company_context" },
-      }),
-    ])
-  })
-
-  test("openFile with company_context still rejects traversal syntax", async () => {
-    const tool = createExecUiTool(bridge, { workspaceRoot })
-    const result = await tool.execute(
-      { kind: "openFile", params: { path: "../finance.txt", filesystem: "company_context" } },
-      FAKE_CTX,
-    )
-    expect(result.isError).toBe(true)
-    const text = result.content[0]
-    if (text?.type === "text") expect(text.text).toMatch(/escapes/)
-  })
-
   test("openFile rejects paths that escape the workspace root", async () => {
     const tool = createExecUiTool(bridge, { workspaceRoot })
     const result = await tool.execute(
@@ -191,15 +165,13 @@ describe("createExecUiTool — path validation", () => {
     expect(result.isError).toBe(true)
   })
 
-  test("exec_ui advertises openSurface filesystem", () => {
+  test("exec_ui advertises openSurface", () => {
     const tool = createExecUiTool(bridge, { workspaceRoot })
     const parameters = tool.parameters as {
       properties?: { kind?: { enum?: string[] } }
     }
     const kind = parameters.properties?.kind
     expect(kind?.enum).toContain("openSurface")
-    expect(tool.description).toContain("openSurface  params: { kind: string, target: string, filesystem?: 'user'|'company_context', meta?: object }")
-    expect(tool.description).toContain("For kind:'workspace.open.path', filesystem follows")
   })
 
   test("non-path kinds (openPanel, openSurface, showNotification, closeWorkbenchLeftPane) do not get path-validated", async () => {

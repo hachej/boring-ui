@@ -1,6 +1,10 @@
 import { describe, expect, it } from "vitest"
 import { sampleBiDashboardSpec } from "../front/sampleSpec"
+<<<<<<< Updated upstream
 import { BI_DASHBOARD_DIAGNOSTIC_CODES, diagnoseDashboardSpec, validateDashboardSpec } from "./validation"
+=======
+import { validateDashboardSpec } from "./validation"
+>>>>>>> Stashed changes
 
 function cloneSample() {
   return structuredClone(sampleBiDashboardSpec)
@@ -91,6 +95,7 @@ describe("validateDashboardSpec", () => {
     expect(result.ok).toBe(false)
     expect(result.errors.join("\n")).toContain("dashboard.props.columns")
   })
+<<<<<<< Updated upstream
 
   it("allows five-column indicator grids but warns when charts are denser than two columns", () => {
     const spec = cloneSample()
@@ -131,4 +136,6 @@ describe("validateDashboardSpec", () => {
     ]))
     expect(result.diagnostics.map((item) => item.code)).not.toContain("chart.missing_measure")
   })
+=======
+>>>>>>> Stashed changes
 })

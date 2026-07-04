@@ -5,9 +5,8 @@ import { join } from 'node:path'
 import { afterEach, describe, expect, test, vi } from 'vitest'
 
 import type { Workspace } from '../../../../shared/workspace'
-import type { RuntimeFilesystemBindingOperations } from '../../../runtime/mode'
 import { createNodeWorkspace } from '../../../workspace/createNodeWorkspace'
-import { ERROR_CODE_NOT_FOUND_OR_DENIED, ERROR_CODE_READONLY, fileRoutes } from '../file'
+import { fileRoutes } from '../file'
 
 const tempRoots: string[] = []
 const apps: FastifyInstance[] = []
@@ -21,6 +20,7 @@ afterEach(async () => {
   )
 })
 
+<<<<<<< Updated upstream
 async function createTestAppWithWorkspace(
   workspace: Workspace,
   operations?: RuntimeFilesystemBindingOperations,
@@ -33,6 +33,11 @@ async function createTestAppWithWorkspace(
       ? { filesystemBindings: [{ filesystem: 'company_context', access, operations }] }
       : {}),
   })
+=======
+async function createTestAppWithWorkspace(workspace: Workspace): Promise<FastifyInstance> {
+  const app = Fastify({ logger: false })
+  await app.register(fileRoutes, { workspace })
+>>>>>>> Stashed changes
   await app.ready()
   apps.push(app)
   return app
@@ -52,6 +57,7 @@ async function createTestApp(): Promise<{ app: FastifyInstance; workspaceRoot: s
 }
 
 describe('file routes (NodeWorkspace integration)', () => {
+<<<<<<< Updated upstream
   test('GET /api/v1/files preserves explicit company_context and sanitizes denied reads', async () => {
     const workspaceRoot = await mkdtemp(join(tmpdir(), 'boring-ui-file-routes-'))
     tempRoots.push(workspaceRoot)
@@ -260,6 +266,8 @@ describe('file routes (NodeWorkspace integration)', () => {
     expect(await readFile(join(workspaceRoot, 'user.txt'), 'utf8')).toBe('safe')
   })
 
+=======
+>>>>>>> Stashed changes
   test('GET/POST/DELETE /api/v1/files roundtrip', async () => {
     const { app } = await createTestApp()
 

@@ -122,7 +122,6 @@ describe('createNodeWorkspace.watch', () => {
     await ws.writeFile('visible.txt', 'visible')
     await waitForEvent(events, (e) => e.op === 'write' && e.path === 'visible.txt')
     expect(events.some((e) => e.op === 'write' && e.path === 'visible.txt')).toBe(true)
-    await wait(SETTLE_MS)
     events.length = 0
 
     for (const dir of ignoredDirs) {

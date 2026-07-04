@@ -8,7 +8,6 @@ import {
   assertMcpToolAllowed,
   classifyMcpTool,
   containsMcpSecret,
-  containsMcpSecretOrCanary,
   doctorMcpSource,
   redactMcpSecrets,
   toMcpSourceDto,
@@ -62,6 +61,7 @@ describe("boring-mcp shared policy", () => {
     })
   })
 
+<<<<<<< Updated upstream
   it("detects MCP secrets or seeded redaction canaries through the shared guard", () => {
     expect(containsMcpSecretOrCanary({ nested: { value: "MCP_CANARY_DO_NOT_LEAK" } }, ["MCP_CANARY_DO_NOT_LEAK", ""])).toBe(true)
     expect(containsMcpSecretOrCanary({ "MCP_CANARY_DO_NOT_LEAK": "key hit" }, ["MCP_CANARY_DO_NOT_LEAK"])).toBe(true)
@@ -81,6 +81,8 @@ describe("boring-mcp shared policy", () => {
     expect(JSON.stringify(dto)).not.toContain("account-1")
   })
 
+=======
+>>>>>>> Stashed changes
   it("reports disconnected and unknown sources in doctor output", () => {
     expect(doctorMcpSource({ ...notionSource, status: "unconfigured" }).issues).toContainEqual(expect.objectContaining({ code: MCP_ERROR_CODES.SOURCE_UNAVAILABLE }))
     expect(doctorMcpSource({ ...notionSource, provider: "unknown" }).issues).toContainEqual(expect.objectContaining({ code: MCP_ERROR_CODES.PROVIDER_CONFIG_INVALID }))

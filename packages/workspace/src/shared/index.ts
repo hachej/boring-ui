@@ -34,19 +34,6 @@ export type {
 } from "./workspace-bridge-rpc"
 export type { PanelConfig, CommandConfig, PaneProps, PanelRegistration } from "./types/panel"
 export type {
-  FilesystemId,
-  UiFileResource,
-  UiFileResourceInput,
-} from "./types/filesystem"
-export {
-  COMPANY_CONTEXT_FILESYSTEM_ID,
-  USER_FILESYSTEM_ID,
-  normalizeUiFileResource,
-  normalizeUiFilesystem,
-  uiFileResourceKey,
-  withUiFileResource,
-} from "./types/filesystem"
-export type {
   SurfaceOpenRequest,
   SurfacePanelResolution,
   SurfaceResolverConfig,

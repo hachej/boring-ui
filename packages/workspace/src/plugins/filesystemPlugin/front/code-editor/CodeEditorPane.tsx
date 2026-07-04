@@ -1,6 +1,5 @@
 "use client"
 
-import { normalizeUiFilesystem, type FilesystemId } from "../../../../shared/types/filesystem"
 import type { PaneProps } from "../../../../front/registry/types"
 import { useFilePane } from "../useFilePane"
 import { FilePaneShell } from "../FilePaneShell"
@@ -32,11 +31,10 @@ function extToLanguage(path: string): string {
   }
 }
 
-export type CodeEditorPaneProps = PaneProps<{ path?: string; filesystem?: FilesystemId; mode?: "view" | "edit" | "diff" }>
+export type CodeEditorPaneProps = PaneProps<{ path?: string; mode?: "view" | "edit" | "diff" }>
 
 export function CodeEditorPane({ params, api, className }: CodeEditorPaneProps) {
   const path = typeof params?.path === "string" ? params.path : ""
-  const filesystem = normalizeUiFilesystem(params?.filesystem)
   const readOnly = params?.mode === "view"
 
   const {
@@ -48,8 +46,12 @@ export function CodeEditorPane({ params, api, className }: CodeEditorPaneProps) 
     onReloadFromServer,
     onOverwrite,
     tabTitle,
+<<<<<<< Updated upstream
     isReadonly,
   } = useFilePane({ filesystem, path, panelId: api?.id })
+=======
+  } = useFilePane({ path, panelId: api?.id })
+>>>>>>> Stashed changes
 
   // Update panel title with dirty/readonly indicator
   if (api && tabTitle) {
@@ -61,7 +63,6 @@ export function CodeEditorPane({ params, api, className }: CodeEditorPaneProps) 
   return (
     <FilePaneShell
       path={path}
-      filesystem={filesystem}
       content={content}
       isLoading={isLoading}
       error={error}

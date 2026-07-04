@@ -1,8 +1,13 @@
 import { z } from "zod"
 import { defineGeneratedPaneVocabulary } from "@hachej/boring-generated-pane/shared"
 
+<<<<<<< Updated upstream
 export const chartRenderers = ["native", "openui", "perspective", "echarts", "vega-lite", "plotly"] as const
 export const chartTypes = ["bar", "line", "area", "scatter", "radar", "radial", "pie", "donut", "heatmap", "treemap", "sunburst", "table"] as const
+=======
+export const chartRenderers = ["echarts", "vega-lite", "plotly"] as const
+export const chartTypes = ["bar", "line", "area", "scatter", "heatmap", "pie", "treemap", "sunburst", "gauge", "table"] as const
+>>>>>>> Stashed changes
 export const perspectivePlugins = ["Datagrid", "Y Bar", "X Bar", "Y Line", "Y Area", "Y Scatter", "Y Treemap", "Sunburst", "Heatmap"] as const
 export const metricFormats = ["number", "currency", "percent"] as const
 export const filterControlTypes = ["select", "multiSelect", "dateRange", "numberRange", "search"] as const

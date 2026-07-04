@@ -2,7 +2,7 @@
 
 ## Status
 
-Draft plan for a reusable `@hachej/boring-data-bridge` plugin built on top of
+Draft plan for a reusable `@hachej/data-bridge` plugin built on top of
 WorkspaceBridge RPC v1 from PR #71. This plugin should replace ad-hoc product
 bridges such as Macro's custom workspace bridge over time, while keeping the
 workspace package domain-neutral.
@@ -72,7 +72,7 @@ plugins/data-bridge/
 Package name:
 
 ```json
-"name": "@hachej/boring-data-bridge"
+"name": "@hachej/data-bridge"
 ```
 
 The package is primarily a **trusted server plugin**. It may also export shared

@@ -1,5 +1,3 @@
-import type { FilesystemId } from "../../../shared/types/filesystem"
-
 export const FILESYSTEM_FILE_CHANGED_EVENT = "filesystem:file.changed"
 export const FILESYSTEM_FILE_CREATED_EVENT = "filesystem:file.created"
 export const FILESYSTEM_FILE_MOVED_EVENT = "filesystem:file.moved"
@@ -16,7 +14,7 @@ export type FilesystemEventMeta = (
   | { cause: "user" }
   | { cause: "agent"; toolCallId: string }
   | { cause: "remote"; toolCallId?: string }
-) & { ts: number; filesystem?: FilesystemId }
+) & { ts: number }
 
 export interface FilesystemEventMap {
   [FILESYSTEM_FILE_MOVED_EVENT]: FilesystemEventMeta & { from: string; to: string }

@@ -42,22 +42,6 @@ For each provider:
 - readonly facade exposes no exec;
 - partial view with exec physically excludes denied files.
 
-### Named filesystem binding / projection conformance
-
-For #416 and future boring-bash ownership, tests must also prove that one active runtime can carry explicit named filesystem bindings without collapsing identity into path strings:
-
-- tools/routes/UI use `(filesystem, path)` identity; legacy path-only defaults to `user`;
-- `user:/x` and `company_context:/x` are distinct resources even when paths match;
-- path strings such as `/company_context/x` or `company_context:/x` do not switch filesystem identity;
-- provider-declared projection/mount modes are represented in prepared binding lifecycle tests;
-- readonly policy-filtered projections physically omit denied files/folders before exposure to shell/tools/UI;
-- readonly full-store mounts fail conformance if denied files are present;
-- denied names, snippets, sentinel contents, hidden counts, pagination side channels, and stale cached outputs do not leak through read/list/find/grep/search/shell/UI/transcript metadata;
-- policy invalidation rebuilds or drops stale prepared bindings;
-- readwrite management projections are distinct policy-granted bindings, not role-hardcoded upgrades of a normal readonly session.
-
-This is an additive update to #391: PR1 for #416 may create only a tiny `@hachej/boring-bash` skeleton and type contracts. Existing file/bash tools/routes/providers stay on their current code paths until the later extraction plan moves them. `@hachej/boring-agent` receives injected tools/features; it does not become the long-term owner of company filesystem behavior.
-
 ### Provisioning/readiness
 
 - requirement merge by id;

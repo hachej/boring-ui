@@ -1,6 +1,10 @@
 {
   "name": "@hachej/boring-ask-user",
+<<<<<<< Updated upstream
   "version": "0.1.64",
+=======
+  "version": "0.1.61",
+>>>>>>> Stashed changes
   "type": "module",
   "private": false,
   "license": "MIT",

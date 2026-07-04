@@ -1,6 +1,10 @@
 {
   "name": "@hachej/boring-bi-dashboard",
+<<<<<<< Updated upstream
   "version": "0.1.64",
+=======
+  "version": "0.1.53",
+>>>>>>> Stashed changes
   "type": "module",
   "private": false,
   "license": "MIT",
@@ -14,7 +18,7 @@
     "id": "bi-dashboard",
     "label": "BI Dashboard",
     "front": "dist/front/index.js",
-    "server": "dist/server/index.js"
+    "server": false
   },
   "pi": {
     "skills": [
@@ -39,11 +43,6 @@
       "types": "./dist/front/index.d.ts",
       "import": "./dist/front/index.js"
     },
-    "./server": {
-      "types": "./dist/server/index.d.ts",
-      "import": "./dist/server/index.js",
-      "default": "./dist/server/index.js"
-    },
     "./shared": {
       "types": "./dist/shared/index.d.ts",
       "import": "./dist/shared/index.js"
@@ -60,8 +59,7 @@
     "playground:eval": "tsx playground/run-eval.ts",
     "playground:smoke": "tsx playground/smoke-dashboard.ts",
     "lint": "pnpm run typecheck",
-    "clean": "rm -rf dist .tsbuildinfo",
-    "playground:dev": "vite --config playground/vite.config.ts --host 0.0.0.0"
+    "clean": "rm -rf dist .tsbuildinfo"
   },
   "peerDependencies": {
     "@hachej/boring-workspace": "workspace:*",
@@ -69,9 +67,9 @@
     "react-dom": "^18.0.0 || ^19.0.0"
   },
   "dependencies": {
-    "@hachej/boring-data-bridge": "workspace:*",
     "@hachej/boring-generated-pane": "workspace:*",
     "@hachej/boring-ui-kit": "workspace:*",
+<<<<<<< Updated upstream
     "@openuidev/react-headless": "0.9.1",
     "@openuidev/react-lang": "0.2.8",
     "@openuidev/react-ui": "0.12.1",
@@ -83,23 +81,39 @@
     "lucide-react": "^1.21.0",
     "zod": "^4.3.6",
     "zustand": "^4.5.7"
+=======
+    "lucide-react": "^1.8.0",
+    "zod": "^4.3.6"
+>>>>>>> Stashed changes
   },
   "devDependencies": {
     "@duckdb/node-api": "1.5.2-r.2",
     "@hachej/boring-agent": "workspace:*",
     "@hachej/boring-workspace": "workspace:*",
+    "@hachej/data-bridge": "workspace:*",
     "@json-render/core": "^0.19.0",
     "@json-render/react": "^0.19.0",
+<<<<<<< Updated upstream
     "@tailwindcss/vite": "^4.3.1",
     "@types/react": "^19.2.17",
     "@types/react-dom": "^19.0.0",
     "@vitejs/plugin-react": "^4.7.0",
     "react": "^19.2.7",
     "react-dom": "^19.2.7",
+=======
+    "@types/react": "^19.0.0",
+    "@types/react-dom": "^19.0.0",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0",
+>>>>>>> Stashed changes
     "tsup": "^8.4.0",
     "tsx": "^4.22.4",
     "typescript": "~5.9.3",
+<<<<<<< Updated upstream
     "vite": "^6.4.2",
     "vitest": "^4.1.9"
+=======
+    "vitest": "^3.2.6"
+>>>>>>> Stashed changes
   }
 }

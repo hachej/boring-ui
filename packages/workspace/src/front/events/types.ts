@@ -9,7 +9,6 @@
  * — they get added when their concrete emitter and consumer land in
  * the same step.
  */
-import type { FilesystemId } from "../../shared/types/filesystem"
 import type { UiCommand } from "../bridge/types"
 
 export const WORKSPACE_PLUGIN_ID = "workspace"
@@ -32,8 +31,7 @@ export const workspaceEvents = {
 export type WorkspacePanelMatch =
   | { id: string }
   | { param: string; value: unknown }
-  | { params: Record<string, unknown> }
-  | { paramPrefix: string; value: string; params?: Record<string, unknown> }
+  | { paramPrefix: string; value: string }
 
 /**
  * Discriminated origin metadata. Encoded as a union (rather than a
@@ -112,10 +110,10 @@ export interface WorkspaceHostEventMap {
  * though that only works in source compilation — it does not survive dist bundling.
  */
 export interface WorkspacePluginEventMap {
-  "filesystem:file.changed": EventMeta & { filesystem?: FilesystemId; path: string }
-  "filesystem:file.created": EventMeta & { filesystem?: FilesystemId; path: string; kind: "file" | "dir" }
-  "filesystem:file.moved": EventMeta & { filesystem?: FilesystemId; from: string; to: string }
-  "filesystem:file.deleted": EventMeta & { filesystem?: FilesystemId; path: string }
+  "filesystem:file.changed": EventMeta & { path: string }
+  "filesystem:file.created": EventMeta & { path: string; kind: "file" | "dir" }
+  "filesystem:file.moved": EventMeta & { from: string; to: string }
+  "filesystem:file.deleted": EventMeta & { path: string }
 }
 
 export interface WorkspaceEventMap

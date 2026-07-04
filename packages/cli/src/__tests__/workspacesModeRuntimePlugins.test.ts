@@ -210,64 +210,6 @@ describe("workspaces mode runtime plugin wiring", () => {
     }
   }, 60_000)
 
-  test("workspaces mode exposes default plugin workspace bridge handlers", async () => {
-    const homeRoot = await makeTempDir("boring-cli-workspaces-bridge-home-")
-    const registryPath = join(await makeTempDir("boring-cli-workspaces-bridge-registry-"), "workspaces.yaml")
-    const workspaceRoot = await makeTempDir("boring-cli-workspace-bridge-")
-    process.env.HOME = homeRoot
-
-    const [workspace] = await setupRegistry([workspaceRoot], registryPath)
-    const app = await createWorkspacesModeApp({ mode: "direct", registryPath, provisionWorkspace: false })
-
-    try {
-      const headers = {
-        "content-type": "application/json",
-        "x-boring-workspace-id": workspace.id,
-        "x-boring-session-id": "s1",
-      }
-      const response = await app.inject({
-        method: "POST",
-        url: "/api/v1/workspace-bridge/call",
-        headers,
-        payload: { op: "ask-user.v1.pending", input: { sessionId: "s1" } },
-      })
-
-      expect(response.statusCode).toBe(200)
-      expect(response.json()).toMatchObject({
-        ok: true,
-        op: "ask-user.v1.pending",
-        output: { pending: null },
-      })
-
-      const pendingState = {
-        hint: { questionId: "q1", sessionId: "s1", status: "ready" },
-        hintsBySession: { s1: { questionId: "q1", sessionId: "s1", status: "ready" } },
-      }
-      const stateHeaders = { "x-boring-workspace-id": workspace.id }
-      const publishPending = await app.inject({
-        method: "PUT",
-        url: "/api/v1/ui/state",
-        headers: stateHeaders,
-        payload: { state: { "questions.pending": pendingState } },
-      })
-      expect(publishPending.statusCode).toBe(204)
-      const browserSnapshot = await app.inject({
-        method: "PUT",
-        url: "/api/v1/ui/state",
-        headers: stateHeaders,
-        payload: { state: { drawerOpen: true } },
-      })
-      expect(browserSnapshot.statusCode).toBe(204)
-      const state = await app.inject({ method: "GET", url: "/api/v1/ui/state", headers: stateHeaders })
-      expect(state.json()).toMatchObject({ drawerOpen: true, "questions.pending": pendingState })
-
-      const catalog = await app.inject({ method: "GET", url: "/api/v1/agent/catalog", headers })
-      expect((catalog.json() as { tools: Array<{ name: string }> }).tools.map((tool) => tool.name)).toContain("ask_user")
-    } finally {
-      await app.close()
-    }
-  }, 20_000)
-
   test("external plugin server routes dispatch through the gateway and hot-reload via /reload", async () => {
     const homeRoot = await makeTempDir("boring-cli-workspaces-routes-home-")
     const registryPath = join(await makeTempDir("boring-cli-workspaces-routes-registry-"), "workspaces.yaml")

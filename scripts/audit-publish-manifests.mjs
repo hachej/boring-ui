@@ -26,9 +26,6 @@ const PUBLISHABLE_PACKAGES = [
   "packages/cli",
   "plugins/data-explorer",
   "plugins/data-catalog",
-  "plugins/generated-pane",
-  "plugins/data-bridge",
-  "plugins/bi-dashboard",
 ]
 
 const DEP_SECTIONS = [

@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react"
-import { DATA_BRIDGE_QUERY_RUN_OP, type DataBridgeArrowResult } from "@hachej/boring-data-bridge/shared"
 import type { BslDashboardQuerySpec, BslDashboardSpec } from "../shared"
+
+const DATA_BRIDGE_QUERY_RUN_OP = "data.v1.query.run"
 
 export interface DashboardQueryResult {
   queryId: string
@@ -11,35 +12,16 @@ export interface DashboardQueryResult {
   error?: string
 }
 
-export type DashboardArrowQueryResult = DataBridgeArrowResult
-
 function inferColumns(rows: Record<string, unknown>[]): Array<{ name: string; type?: string }> {
   const names = [...new Set(rows.flatMap((row) => Object.keys(row)))]
   return names.map((name) => ({ name, type: typeof rows.find((row) => row[name] != null)?.[name] }))
 }
 
-function queryPayload(query: BslDashboardQuerySpec) {
-  return "sql" in query
-    ? {
-        language: "sql",
-        source: query.source ?? "default",
-        sql: query.sql,
-        params: query.params,
-        limit: query.limit,
-      }
-    : {
-        language: "bsl",
-        model: query.model,
-        query: query.query,
-        limit: query.limit,
-      }
-}
-
-async function callDataBridge<T>(options: {
+async function fetchDataBridgeQuery(options: {
   apiBaseUrl: string
   workspaceId: string | undefined
-  input: Record<string, unknown>
-}): Promise<T> {
+  query: BslDashboardQuerySpec
+}): Promise<DashboardQueryResult> {
   const response = await fetch(`${options.apiBaseUrl}/api/v1/workspace-bridge/call`, {
     method: "POST",
     credentials: "include",
@@ -47,62 +29,45 @@ async function callDataBridge<T>(options: {
       "content-type": "application/json",
       ...(options.workspaceId ? { "x-boring-workspace-id": options.workspaceId } : {}),
     },
-    body: JSON.stringify({ op: DATA_BRIDGE_QUERY_RUN_OP, input: options.input }),
+    body: JSON.stringify({
+      op: DATA_BRIDGE_QUERY_RUN_OP,
+      input: {
+        query: "sql" in options.query
+          ? {
+              language: "sql",
+              source: options.query.source ?? "default",
+              sql: options.query.sql,
+              params: options.query.params,
+              limit: options.query.limit,
+            }
+          : {
+              language: "bsl",
+              model: options.query.model,
+              query: options.query.query,
+              limit: options.query.limit,
+            },
+      },
+    }),
   })
-  const body = await response.json() as { ok?: boolean; output?: T; error?: { message?: string } }
+  const body = await response.json() as { ok?: boolean; output?: { columns?: DashboardQueryResult["columns"]; rows?: Record<string, unknown>[]; source?: string }; error?: { message?: string } }
   if (!response.ok || !body.ok || !body.output) {
     const message = body.error?.message ?? `Data bridge failed with HTTP ${response.status}`
     throw new Error(message)
   }
-  return body.output
-}
-
-export async function fetchDataBridgeQuery(options: {
-  apiBaseUrl: string
-  workspaceId: string | undefined
-  queryId: string
-  query: BslDashboardQuerySpec
-}): Promise<DashboardQueryResult> {
-  const output = await callDataBridge<{ columns?: DashboardQueryResult["columns"]; rows?: Record<string, unknown>[]; source?: string }>({
-    apiBaseUrl: options.apiBaseUrl,
-    workspaceId: options.workspaceId,
-    input: { query: queryPayload(options.query) },
-  })
-  const rows = output.rows ?? []
+  const rows = body.output.rows ?? []
   return {
-    queryId: options.queryId,
-    columns: output.columns ?? inferColumns(rows),
+    queryId: options.query.id,
+    columns: body.output.columns ?? inferColumns(rows),
     rows,
-    source: output.source,
+    source: body.output.source,
     loading: false,
   }
 }
 
-export async function fetchArrowDataBridgeQuery(options: {
-  apiBaseUrl: string
-  workspaceId: string | undefined
-  queryId: string
-  query: BslDashboardQuerySpec
-}): Promise<DashboardArrowQueryResult> {
-  return await callDataBridge<DashboardArrowQueryResult>({
-    apiBaseUrl: options.apiBaseUrl,
-    workspaceId: options.workspaceId,
-    input: {
-      format: "arrow",
-      query: queryPayload(options.query),
-    },
-  })
-}
-
-export function useDashboardQueryData(spec: BslDashboardSpec | null, apiBaseUrl: string, workspaceId: string | undefined, refreshKey = 0, queryIds?: readonly string[]) {
-  const queryIdKey = JSON.stringify(queryIds ?? [])
+export function useDashboardQueryData(spec: BslDashboardSpec | null, apiBaseUrl: string, workspaceId: string | undefined) {
   const queries = useMemo(
-    () => {
-      if (!spec) return []
-      const allowed = queryIds ? new Set(queryIds) : null
-      return Object.entries(spec.queries).filter(([queryId]) => !allowed || allowed.has(queryId))
-    },
-    [queryIdKey, spec],
+    () => spec ? Object.entries(spec.queries) : [],
+    [spec],
   )
   const [results, setResults] = useState<Record<string, DashboardQueryResult>>({})
 
@@ -117,7 +82,7 @@ export function useDashboardQueryData(spec: BslDashboardSpec | null, apiBaseUrl:
 
     void Promise.all(queries.map(async ([queryId, query]) => {
       try {
-        return [queryId, await fetchDataBridgeQuery({ apiBaseUrl, workspaceId, queryId, query })] as const
+        return [queryId, await fetchDataBridgeQuery({ apiBaseUrl, workspaceId, query })] as const
       } catch (error) {
         return [queryId, {
           queryId,
@@ -132,7 +97,7 @@ export function useDashboardQueryData(spec: BslDashboardSpec | null, apiBaseUrl:
     })
 
     return () => { cancelled = true }
-  }, [apiBaseUrl, queries, refreshKey, workspaceId])
+  }, [apiBaseUrl, queries, workspaceId])
 
   return results
 }

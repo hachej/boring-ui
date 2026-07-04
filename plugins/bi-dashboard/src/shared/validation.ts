@@ -7,6 +7,7 @@ export interface DashboardValidationResult {
   errors: string[]
 }
 
+<<<<<<< Updated upstream
 export type DashboardDiagnosticSeverity = "error" | "warning" | "info"
 
 export const BI_DASHBOARD_DIAGNOSTIC_CODES = {
@@ -36,6 +37,8 @@ export interface DashboardDiagnosticsResult {
   diagnostics: DashboardDiagnostic[]
 }
 
+=======
+>>>>>>> Stashed changes
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value)
 }
@@ -52,6 +55,7 @@ function formatSchemaDiagnostics(prefix: string, error: { issues: Array<{ path: 
   }))
 }
 
+<<<<<<< Updated upstream
 function queryColumnsFromSql(sql: string): string[] {
   const match = /^\s*select\s+([\s\S]+?)\s+from\s+/i.exec(sql)
   if (!match) return []
@@ -176,6 +180,8 @@ export function parseDashboardSpec(value: unknown): DashboardValidationResult {
   return { spec: validateGeneratedPaneSpec(value, biDashboardVocabulary).spec as BslDashboardSpec, errors: [] }
 }
 
+=======
+>>>>>>> Stashed changes
 export function validateDashboardSpec(value: unknown): { ok: boolean; errors: string[] } {
   const result = parseDashboardSpec(value)
   return { ok: result.spec !== null, errors: result.errors }

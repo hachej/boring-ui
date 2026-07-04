@@ -142,12 +142,10 @@ export class FetchClient {
     return res.entries
   }
 
-  async getFile(path: string, signal?: AbortSignal, filesystem?: string): Promise<FileContent> {
-    const params = new URLSearchParams({ path })
-    if (filesystem && filesystem !== "user") params.set("filesystem", filesystem)
+  async getFile(path: string, signal?: AbortSignal): Promise<FileContent> {
     return this.request<FileContent>(
       "GET",
-      `/api/v1/files?${params.toString()}`,
+      `/api/v1/files?path=${encodeURIComponent(path)}`,
       undefined,
       undefined,
       signal,
@@ -169,14 +167,13 @@ export class FetchClient {
   async writeFile(
     path: string,
     content: string,
-    opts?: { expectedMtimeMs?: number; returnMtimeMs?: boolean; filesystem?: string },
+    opts?: { expectedMtimeMs?: number; returnMtimeMs?: boolean },
   ): Promise<{ mtimeMs?: number }> {
     try {
-      const body: { path: string; content: string; expectedMtimeMs?: number; returnMtimeMs?: boolean; filesystem?: string } = {
+      const body: { path: string; content: string; expectedMtimeMs?: number; returnMtimeMs?: boolean } = {
         path,
         content,
       }
-      if (opts?.filesystem && opts.filesystem !== "user") body.filesystem = opts.filesystem
       if (opts?.expectedMtimeMs != null) body.expectedMtimeMs = opts.expectedMtimeMs
       if (opts?.returnMtimeMs === false) body.returnMtimeMs = false
       const res = await this.request<{ ok: boolean; mtimeMs?: number }>(
@@ -193,18 +190,14 @@ export class FetchClient {
     }
   }
 
-  async deleteFile(path: string, options?: { filesystem?: string }): Promise<void> {
-    const params = new URLSearchParams({ path })
-    if (options?.filesystem) params.set("filesystem", options.filesystem)
-    await this.request<void>("DELETE", `/api/v1/files?${params}`)
+  async deleteFile(path: string): Promise<void> {
+    await this.request<void>("DELETE", `/api/v1/files?path=${encodeURIComponent(path)}`)
   }
 
-  async stat(path: string, signal?: AbortSignal, filesystem?: string): Promise<FileStat> {
-    const params = new URLSearchParams({ path })
-    if (filesystem && filesystem !== "user") params.set("filesystem", filesystem)
+  async stat(path: string, signal?: AbortSignal): Promise<FileStat> {
     return this.request<FileStat>(
       "GET",
-      `/api/v1/stat?${params.toString()}`,
+      `/api/v1/stat?path=${encodeURIComponent(path)}`,
       undefined,
       undefined,
       signal,
@@ -234,12 +227,12 @@ export class FetchClient {
     return res.results
   }
 
-  async createDir(path: string, options?: { filesystem?: string }): Promise<void> {
-    await this.request<void>("POST", "/api/v1/dirs", { path, ...(options?.filesystem ? { filesystem: options.filesystem } : {}) })
+  async createDir(path: string): Promise<void> {
+    await this.request<void>("POST", "/api/v1/dirs", { path })
   }
 
-  async moveFile(from: string, to: string, options?: { filesystem?: string }): Promise<void> {
-    await this.request<void>("POST", "/api/v1/files/move", { from, to, ...(options?.filesystem ? { filesystem: options.filesystem } : {}) })
+  async moveFile(from: string, to: string): Promise<void> {
+    await this.request<void>("POST", "/api/v1/files/move", { from, to })
   }
 }
 

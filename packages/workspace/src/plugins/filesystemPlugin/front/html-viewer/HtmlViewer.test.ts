@@ -33,8 +33,6 @@ describe("HtmlViewer asset rewriting", () => {
       .toBe("/api/v1/files/raw?path=docs%2Fassets%2Freadme%2Fhero.png&workspaceId=boring-ui-v2-36cd3172")
     expect(rewriteCssAssetUrls("body{background:url('../img/bg.png')}", "pages/css/site.css", "", "ws-1"))
       .toBe("body{background:url('/api/v1/files/raw?path=pages%2Fimg%2Fbg.png&workspaceId=ws-1')}")
-    expect(rawFileUrlFor("", "docs/policy.html", null, "company_context"))
-      .toBe("/api/v1/files/raw?path=docs%2Fpolicy.html&filesystem=company_context")
   })
 
   it("inlines linked stylesheets and rewrites stylesheet-relative assets", async () => {
@@ -59,17 +57,6 @@ describe("HtmlViewer asset rewriting", () => {
     expect(html).toContain("url('/api/v1/files/raw?path=pages%2Fassets%2Fhero.png')")
     expect(html).toContain('src="/api/v1/files/raw?path=pages%2Fassets%2Flogo.png"')
     expect(html).toContain('src="/api/v1/files/raw?path=pages%2Fscripts%2Fbook.js"')
-  })
-
-  it("sanitizes denied company HTML preview errors", async () => {
-    const fetchMock = vi.fn(async (_input: RequestInfo | URL) => new Response("FORBIDDEN_FINANCE_SECRET_123", { status: 404 }))
-    vi.stubGlobal("fetch", fetchMock)
-
-    render(React.createElement(HtmlViewer, { path: "pages/index.html", filesystem: "company_context" }))
-
-    expect(await screen.findByText("not found or denied")).toBeTruthy()
-    expect(String(fetchMock.mock.calls[0][0])).toContain("filesystem=company_context")
-    expect(screen.queryByText(/FORBIDDEN_FINANCE_SECRET_123/)).toBeNull()
   })
 
   it("refresh button re-fetches and rebuilds the preview document", async () => {

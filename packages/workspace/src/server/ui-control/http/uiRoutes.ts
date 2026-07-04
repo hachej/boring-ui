@@ -50,7 +50,6 @@ export interface UiRoutesOptions {
    * these slots are published out-of-band by server plugins.
    */
   preserveStateKeys?: string[];
-  getPreserveStateKeys?: (request: FastifyRequest) => string[] | Promise<string[]>;
   paneStatusStore?: PaneRenderStatusStore;
 }
 
@@ -95,11 +94,8 @@ export function uiRoutes(
       const body = request.body as z.infer<typeof setStateBodySchema>;
       const bridge = await resolveBridge(request);
       const current = (await bridge.getState()) ?? {};
-      const preserveStateKeys = opts.getPreserveStateKeys
-        ? await opts.getPreserveStateKeys(request)
-        : opts.preserveStateKeys ?? [];
       const preserved = Object.fromEntries(
-        preserveStateKeys
+        (opts.preserveStateKeys ?? [])
           .filter((key) => !(key in body.state) && key in current)
           .map((key) => [key, current[key]]),
       );

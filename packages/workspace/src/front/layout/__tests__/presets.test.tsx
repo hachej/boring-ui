@@ -956,7 +956,7 @@ describe("ChatLayout component", () => {
       })
     })
 
-    expect(openFile).toHaveBeenCalledWith("src/App.tsx", { filesystem: "user" })
+    expect(openFile).toHaveBeenCalledWith("src/App.tsx")
   })
 
   it("updates panel slots when a panel registers after mount", async () => {

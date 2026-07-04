@@ -1,6 +1,10 @@
 {
   "name": "@hachej/boring-core",
+<<<<<<< Updated upstream
   "version": "0.1.64",
+=======
+  "version": "0.1.61",
+>>>>>>> Stashed changes
   "type": "module",
   "license": "MIT",
   "description": "Foundation package for boring-ui-v2 apps: DB, auth, config, HTTP app factory, and frontend app shell.",

@@ -67,10 +67,10 @@ describe("FilesystemFilePanelBinding", () => {
         cause: "agent",
         toolCallId: "tc-1",
         match: [
-          { id: "file:user:src/old.ts" },
-          { params: { path: "src/old.ts", filesystem: "user" } },
+          { id: "file:src/old.ts" },
+          { param: "path", value: "src/old.ts" },
         ],
-        params: { path: "src/new.ts", filesystem: "user" },
+        params: { path: "src/new.ts" },
         title: "new.ts",
       }),
     )
@@ -90,9 +90,9 @@ describe("FilesystemFilePanelBinding", () => {
       expect.objectContaining({
         cause: "user",
         match: [
-          { id: "file:user:src/dead.ts" },
-          { params: { path: "src/dead.ts", filesystem: "user" } },
-          { paramPrefix: "path", value: "src/dead.ts/", params: { filesystem: "user" } },
+          { id: "file:src/dead.ts" },
+          { param: "path", value: "src/dead.ts" },
+          { paramPrefix: "path", value: "src/dead.ts/" },
         ],
       }),
     )
@@ -112,59 +112,11 @@ describe("FilesystemFilePanelBinding", () => {
     expect(observed).not.toHaveBeenCalled()
   })
 
-  it("does not retarget a company panel from a same-path user move", async () => {
-    const api = renderBindingWithDockview()
-    act(() => {
-      api.addPanel({
-        id: "file:company_context:src/old.ts",
-        component: "editor",
-        title: "old.ts",
-        params: { path: "src/old.ts", filesystem: "company_context" },
-      })
-    })
-
-    act(() => {
-      events.emit(filesystemEvents.moved, {
-        ...userMeta(),
-        filesystem: "user",
-        from: "src/old.ts",
-        to: "src/new.ts",
-      })
-    })
-
-    const panel = api.getPanel("file:company_context:src/old.ts")
-    expect(panel).toBeTruthy()
-    expect((panel!.params as { path?: string; filesystem?: string }).path).toBe("src/old.ts")
-    expect((panel!.params as { path?: string; filesystem?: string }).filesystem).toBe("company_context")
-  })
-
-  it("does not close a company panel from a same-path user delete", async () => {
-    const api = renderBindingWithDockview()
-    act(() => {
-      api.addPanel({
-        id: "file:company_context:src/dead.ts",
-        component: "editor",
-        title: "dead.ts",
-        params: { path: "src/dead.ts", filesystem: "company_context" },
-      })
-    })
-
-    act(() => {
-      events.emit(filesystemEvents.deleted, {
-        ...userMeta(),
-        filesystem: "user",
-        path: "src/dead.ts",
-      })
-    })
-
-    expect(api.getPanel("file:company_context:src/dead.ts")).toBeTruthy()
-  })
-
   it("wires agent SSE rename chunks through to open Dockview file panels", async () => {
     const api = renderBindingWithDockview()
     act(() => {
       api.addPanel({
-        id: "file:user:src/old.ts",
+        id: "file:src/old.ts",
         component: "editor",
         title: "old.ts",
         params: { path: "src/old.ts" },
@@ -184,7 +136,7 @@ describe("FilesystemFilePanelBinding", () => {
     })
 
     await waitFor(() => {
-      const panel = api.getPanel("file:user:src/old.ts")
+      const panel = api.getPanel("file:src/old.ts")
       expect(panel).toBeTruthy()
       expect((panel!.params as { path?: string }).path).toBe("src/new.ts")
       expect(panel!.title).toBe("new.ts")

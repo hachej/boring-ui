@@ -6,7 +6,6 @@ export {
   createWorkspaceAgentServer,
   omitPluginAuthoringProvisioning,
   provisionWorkspaceAgentServer,
-  resolveWorkspaceAgentServerPluginCollection,
   readWorkspacePluginPackagePiSnapshot,
   readWorkspacePluginPackageRuntimePlugins,
   PLUGIN_AUTHORING_PROVISIONING_IDS,
@@ -18,7 +17,6 @@ export {
   type WorkspacePluginPackagePiSnapshot,
   type WorkspacePluginEntry,
   type WorkspaceRuntimeProvisioningInput,
-  type ResolveWorkspaceAgentServerPluginCollectionOptions,
 } from "./createWorkspaceAgentServer"
 export {
   resolveDefaultWorkspacePluginPackagePaths,

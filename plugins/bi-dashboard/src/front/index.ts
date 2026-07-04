@@ -2,7 +2,7 @@ import "@openuidev/react-ui/components.css"
 import { LayoutDashboard } from "lucide-react"
 import { definePlugin } from "@hachej/boring-workspace/plugin"
 import { BiDashboardPane } from "./BiDashboardPane"
-import { DashboardFilesPane } from "./DashboardFilesPane"
+import { createGeneratedPaneExplorerPane } from "@hachej/boring-generated-pane/front"
 import { BI_DASHBOARD_LEFT_TAB_ID, BI_DASHBOARD_PANEL_ID } from "./constants"
 import { biDashboardSurfaceResolver } from "./surfaceResolver"
 
@@ -35,13 +35,19 @@ export const biDashboardPlugin = definePlugin({
       supportsFullPage: true,
     },
   ],
-  workspaceSources: [
+  leftTabs: [
     {
       id: BI_DASHBOARD_LEFT_TAB_ID,
-      label: "Dashboards",
+      title: "Dashboards",
+      panelId: BI_DASHBOARD_LEFT_TAB_ID,
       icon: LayoutDashboard,
-      component: DashboardFilesPane,
-      defaultPanelId: BI_DASHBOARD_PANEL_ID,
+      component: createGeneratedPaneExplorerPane({
+        title: "Dashboards",
+        patterns: ["**/*.dashboard.json"],
+        panelId: BI_DASHBOARD_PANEL_ID,
+        itemLabel: "Dashboard",
+        emptyDescription: "Create dashboards/*.dashboard.json files to list BI dashboards here.",
+      }),
       chromeless: true,
     },
   ],

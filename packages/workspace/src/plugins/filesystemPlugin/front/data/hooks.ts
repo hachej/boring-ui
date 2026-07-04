@@ -13,7 +13,6 @@ import { getPreloadedTreeEntries } from "./treePreloadCache"
 import { events, userMeta } from "../../../../front/events"
 import { filesystemEvents } from "../../shared/events"
 import { FILES_QUERY_KEY_SEGMENT } from "../../shared/constants"
-import { normalizeUiFilesystem, type FilesystemId } from "../../../../shared/types/filesystem"
 import type { FileContent, FileEntry, FileStat, GitUrlMetadata } from "./types"
 
 function noRetryOn404(count: number, error: Error): boolean {
@@ -22,8 +21,6 @@ function noRetryOn404(count: number, error: Error): boolean {
 }
 
 export interface UseFileContentOptions {
-  /** Filesystem identity for cache/event separation. Data transport remains provider-owned. */
-  filesystem?: FilesystemId
   /** Create the file with this content when the initial read returns 404. */
   createIfMissing?: string
 }
@@ -36,18 +33,17 @@ export function useFileContent(
   const base = useApiBaseUrl()
   const workspaceId = useWorkspaceRequestId()
   const createIfMissing = options.createIfMissing
-  const filesystem = normalizeUiFilesystem(options.filesystem)
   return useQuery({
-    queryKey: [base, workspaceId, FILES_QUERY_KEY_SEGMENT, filesystem, path, createIfMissing ?? null],
+    queryKey: [base, workspaceId, FILES_QUERY_KEY_SEGMENT, path, createIfMissing ?? null],
     queryFn: async ({ signal }) => {
       const activePath = path!
       try {
-        return await client.getFile(activePath, signal, filesystem)
+        return await client.getFile(activePath, signal)
       } catch (err) {
         if (createIfMissing === undefined || !(err instanceof FetchError) || err.status !== 404) throw err
         if (signal.aborted) throw new DOMException("Aborted", "AbortError")
-        const created = await client.writeFile(activePath, createIfMissing, { filesystem })
-        events.emit(filesystemEvents.created, { ...userMeta(), filesystem, path: activePath, kind: "file" })
+        const created = await client.writeFile(activePath, createIfMissing)
+        events.emit(filesystemEvents.created, { ...userMeta(), path: activePath, kind: "file" })
         return { content: createIfMissing, mtimeMs: created.mtimeMs }
       }
     },
@@ -75,14 +71,13 @@ export function useFileList(dir: string | null, filesystem?: FilesystemId): UseQ
   })
 }
 
-export function useStat(path: string | null, filesystem?: FilesystemId): UseQueryResult<FileStat> {
+export function useStat(path: string | null): UseQueryResult<FileStat> {
   const client = useDataClient()
   const base = useApiBaseUrl()
   const workspaceId = useWorkspaceRequestId()
-  const fs = normalizeUiFilesystem(filesystem)
   return useQuery({
-    queryKey: [base, workspaceId, "stat", fs, path],
-    queryFn: ({ signal }) => client.stat(path!, signal, fs),
+    queryKey: [base, workspaceId, "stat", path],
+    queryFn: ({ signal }) => client.stat(path!, signal),
     enabled: path != null,
     retry: noRetryOn404,
   })
@@ -126,7 +121,6 @@ export function useFileSearch(
 }
 
 export interface FileWriteVariables {
-  filesystem?: FilesystemId
   path: string
   content: string
   /**
@@ -150,53 +144,52 @@ export interface FileWriteResult {
 export function useFileWrite(): UseMutationResult<FileWriteResult, Error, FileWriteVariables> {
   const client = useDataClient()
   return useMutation({
-    mutationFn: ({ path, content, expectedMtimeMs, returnMtimeMs, filesystem }) => {
+    mutationFn: ({ path, content, expectedMtimeMs, returnMtimeMs }) => {
       const opts = {
         ...(expectedMtimeMs != null ? { expectedMtimeMs } : {}),
         ...(returnMtimeMs === false ? { returnMtimeMs: false } : {}),
-        ...(filesystem ? { filesystem } : {}),
       }
       return client.writeFile(path, content, Object.keys(opts).length > 0 ? opts : undefined)
     },
-    onSuccess: (_, { path, filesystem }) => {
+    onSuccess: (_, { path }) => {
       // Single source of truth: emit onto the bus, the centralized
       // invalidator (`useFileEventInvalidation`) handles cache
       // invalidation. We can't tell create-vs-edit from the mutation
       // alone, so consumers wanting "created" emits do it themselves
       // at the call site (see FileTreeView.handleSubmitEdit). Plain
       // edits emit filesystem changed — file identity didn't change.
-      events.emit(filesystemEvents.changed, { ...userMeta(), filesystem: normalizeUiFilesystem(filesystem), path })
+      events.emit(filesystemEvents.changed, { ...userMeta(), path })
     },
   })
 }
 
-export function useCreateDir(): UseMutationResult<void, Error, { path: string; filesystem?: string }> {
+export function useCreateDir(): UseMutationResult<void, Error, { path: string }> {
   const client = useDataClient()
   return useMutation({
-    mutationFn: ({ path, filesystem }) => client.createDir(path, { filesystem }),
-    onSuccess: (_, { path, filesystem }) => {
+    mutationFn: ({ path }) => client.createDir(path),
+    onSuccess: (_, { path }) => {
       // Bus emit only — `useFileEventInvalidation` runs the cache invalidation.
-      events.emit(filesystemEvents.created, { ...userMeta(), path, kind: "dir", filesystem })
+      events.emit(filesystemEvents.created, { ...userMeta(), path, kind: "dir" })
     },
   })
 }
 
-export function useMoveFile(): UseMutationResult<void, Error, { from: string; to: string; filesystem?: string }> {
+export function useMoveFile(): UseMutationResult<void, Error, { from: string; to: string }> {
   const client = useDataClient()
   return useMutation({
-    mutationFn: ({ from, to, filesystem }) => client.moveFile(from, to, { filesystem }),
-    onSuccess: (_, { from, to, filesystem }) => {
-      events.emit(filesystemEvents.moved, { ...userMeta(), from, to, filesystem })
+    mutationFn: ({ from, to }) => client.moveFile(from, to),
+    onSuccess: (_, { from, to }) => {
+      events.emit(filesystemEvents.moved, { ...userMeta(), from, to })
     },
   })
 }
 
-export function useDeleteFile(): UseMutationResult<void, Error, { path: string; filesystem?: string }> {
+export function useDeleteFile(): UseMutationResult<void, Error, { path: string }> {
   const client = useDataClient()
   return useMutation({
-    mutationFn: ({ path, filesystem }) => client.deleteFile(path, { filesystem }),
-    onSuccess: (_, { path, filesystem }) => {
-      events.emit(filesystemEvents.deleted, { ...userMeta(), path, filesystem })
+    mutationFn: ({ path }) => client.deleteFile(path),
+    onSuccess: (_, { path }) => {
+      events.emit(filesystemEvents.deleted, { ...userMeta(), path })
     },
   })
 }

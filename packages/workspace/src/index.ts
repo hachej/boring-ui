@@ -306,7 +306,6 @@ export type {
 export { SessionBrowser } from "./front/chrome/session-list/SessionBrowser"
 export { SurfaceShell } from "./front/chrome/artifact-surface/SurfaceShell"
 export { WorkbenchLeftPane } from "./front/chrome/workbench-left/WorkbenchLeftPane"
-export { useWorkspaceLeftPaneActions } from "./front/chrome/workbench-left/useWorkspaceLeftPaneActions"
 export type { SessionBrowserProps } from "./front/chrome/session-list/SessionBrowser"
 export type {
   OpenArtifactHandler,
@@ -338,11 +337,6 @@ export type {
   WorkbenchLeftPaneProps,
   WorkbenchLeftTabId,
 } from "./front/chrome/workbench-left/WorkbenchLeftPane"
-export type {
-  UseWorkspaceLeftPaneActionsOptions,
-  WorkspaceLeftPaneAction,
-  WorkspaceLeftPaneOpenPanelConfig,
-} from "./front/chrome/workbench-left/useWorkspaceLeftPaneActions"
 
 // Provider
 export {
