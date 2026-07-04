@@ -5,8 +5,10 @@ Derived strictly from [TODO.md](./TODO.md) and [PLAN.md](./PLAN.md). Tick each b
 ## Prerequisites (packages + gates)
 - [ ] P2-sandbox-providers merged — [../P2-sandbox-providers/HANDOFF.md](../P2-sandbox-providers/HANDOFF.md)
 - [ ] P5-provisioning-secrets merged — [../P5-provisioning-secrets/HANDOFF.md](../P5-provisioning-secrets/HANDOFF.md)
+- [ ] E1-environment-attachments merged — [../E1-environment-attachments/HANDOFF.md](../E1-environment-attachments/HANDOFF.md)
 - [ ] P2 (`@hachej/boring-sandbox` + providers) present — if the package is absent, **STOP and report**
 - [ ] P5 (capability-fact `reported | unknown` fail-closed rule + host-side secrets-broker BBP5-007) present — else **STOP and report**
+- [ ] E1 `Environment`/`EnvironmentAttachment` contracts present — else **STOP and report**
 
 ## Beads
 - [ ] BBX1-001 — Concrete rclone mount module in `boring-sandbox/src/mounts`
@@ -32,7 +34,7 @@ Derived strictly from [TODO.md](./TODO.md) and [PLAN.md](./PLAN.md). Tick each b
 - [ ] `pnpm typecheck`
 
 ## Review gates
-- [ ] P2 (`@hachej/boring-sandbox` + providers) and P5 (capability-fact + secrets-broker machinery) present, else STOP+report.
+- [ ] P2 (`@hachej/boring-sandbox` + providers), P5 (capability-fact + secrets-broker machinery), and E1 (`Environment`/`EnvironmentAttachment`) present, else STOP+report.
 - [ ] Concrete rclone mount module only; no `MountDriver` interface/registry; mountpoint-s3 documented-deferred, not built (decisions 1, 2).
 - [ ] Host-side mount + bwrap bind; `/dev/fuse`/`fusermount3`/creds never in the sandbox arg set (decision 3); no in-sandbox FUSE path (decision 4).
 - [ ] Per-session mount isolation; readiness gate before bind; lazy-unmount + explicit reap on teardown (decisions 5, 6, 7).

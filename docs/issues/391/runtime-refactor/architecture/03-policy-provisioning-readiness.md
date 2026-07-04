@@ -79,13 +79,15 @@ interface BashRequirement {
 }
 ```
 
+The `Bash*` names above are bash-side source requirement shapes. The agent-consumed normalized runner contracts are agent-owned (`ProvisioningHealthCheckSpec`, `ProvisioningSdkArchiveSpec`, `ProvisioningManagedServiceRequirement`) and live with `ProvisionWorkspaceRuntimeOptions`; the boring-bash normalizer maps `BashRequirement` into those contracts via a type-only boring-bash→agent edge. Agent code never imports a `Bash*` shape from boring-bash.
+
 ## Extend existing provisioning
 
 Do **not** create a parallel provisioning engine.
 
 Package ownership:
 
-- `@hachej/boring-agent` keeps the provisioning engine/types/orchestration (`provisionWorkspaceRuntime()`, `ProvisionWorkspaceRuntimeOptions`) over injected adapters.
+- `@hachej/boring-agent` keeps the provisioning engine/types/orchestration (`provisionWorkspaceRuntime()`, `ProvisionWorkspaceRuntimeOptions`) over injected adapters, including the normalized runner input contracts consumed by health-check, SDK-archive, and managed-service runners.
 - `@hachej/boring-bash` owns `BashRequirement` and requirement normalization; it validates requirements against provider capability facts but does not own those facts.
 - `@hachej/boring-sandbox` owns the concrete provider adapters and the authoritative `ProviderCapabilities` facts/matrix.
 - host/core/CLI composition calls the boring-bash normalizer, then passes normalized `ProvisionWorkspaceRuntimeOptions` into the agent-owned engine.

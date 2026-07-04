@@ -1,6 +1,6 @@
 # X1-s3-fuse-mounts — Plan
 
-> Phase: Phase X1 — S3/FUSE mounts for boring-sandbox environments (bash lane; after Phase 2 **and** Phase 5) · Work order: [TODO.md](./TODO.md) · Handoff: [HANDOFF.md](./HANDOFF.md)
+> Phase: Phase X1 — S3/FUSE mounts for boring-sandbox environments (bash lane; after Phase 2, Phase 5, **and E1**) · Work order: [TODO.md](./TODO.md) · Handoff: [HANDOFF.md](./HANDOFF.md)
 > Ordering authority: [INDEX.md](../../INDEX.md) · Vision: [VISION.md](../../VISION.md)
 
 ## Governing architecture
@@ -10,7 +10,7 @@
 - [10-sandbox-deployment-eu.md](../../architecture/10-sandbox-deployment-eu.md) — the deployment counterpart: isolation tiers, the FUSE×isolation matrix, EU providers, the no-inotify contract, and the 12 Decisions-To-Lock.
 
 ## Design context
-Phase X1 is the mount subsystem of `@hachej/boring-sandbox` (created by P2): S3-backed filesystems that appear as a real directory inside a sandbox, so an agent's environment (E1) can be an object-store prefix. It rides the three-package stack — providers/mounts live in `@hachej/boring-sandbox` (`./mounts` export, server-scoped, `node:*`), environments in `boring-bash`/`boring-agent` contracts; boring-bash imports the mount values, agent imports neither. The spine is the X1 decision set: concrete `rclone mount --vfs-cache-mode full`; HOST-SIDE mount then bwrap `--bind`/`--ro-bind` (never expose `/dev/fuse`/`fusermount3`/creds to the sandbox; gVisor-portable); per-session lifecycle with a readiness gate + lazy-unmount + reap; short-lived prefix-scoped STS brokered into the mount-process env only. Capability fact `mounts.fuseS3: reported | unknown` fails closed (`vercel` reports unsupported). Mounts are scoped to the `user` filesystem only — governed filesystems (`company_context`) are never raw-mounted. EU-sovereign defaults (OVH/Scaleway/MinIO); MinIO in CI.
+Phase X1 is the mount subsystem of `@hachej/boring-sandbox` (created by P2): S3-backed filesystems that appear as a real directory inside a sandbox, so an agent's environment (E1) can be an object-store prefix. It dispatches after P2, P5, and E1 because its shipped attachment/conformance path consumes the E1 `Environment`/`EnvironmentAttachment` contract. It rides the three-package stack — providers/mounts live in `@hachej/boring-sandbox` (`./mounts` export, server-scoped, `node:*`), environments in `boring-bash`/`boring-agent` contracts; boring-bash imports the mount values, agent imports neither. The spine is the X1 decision set: concrete `rclone mount --vfs-cache-mode full`; HOST-SIDE mount then bwrap `--bind`/`--ro-bind` (never expose `/dev/fuse`/`fusermount3`/creds to the sandbox; gVisor-portable); per-session lifecycle with a readiness gate + lazy-unmount + reap; short-lived prefix-scoped STS brokered into the mount-process env only. Capability fact `mounts.fuseS3: reported | unknown` fails closed (`vercel` reports unsupported). Mounts are scoped to the `user` filesystem only — governed filesystems (`company_context`) are never raw-mounted. EU-sovereign defaults (OVH/Scaleway/MinIO); MinIO in CI.
 
 ## Deliverables
 - concrete **rclone** mount module (`--vfs-cache-mode full`, EU-endpoint-first OVH/Scaleway/MinIO); no generic driver interface until a second real mount implementation lands; mountpoint-s3 deferred (AWS-only/RO);

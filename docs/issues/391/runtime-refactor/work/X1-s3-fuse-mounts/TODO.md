@@ -17,6 +17,7 @@ Handoff: self-contained work order for one autonomous coding agent (pi or gpt-5.
 
 - **P2** ([`../P2-sandbox-providers/TODO.md`](../P2-sandbox-providers/TODO.md)): `@hachej/boring-sandbox` exists (scaffold BBP2-000 + providers). This TODO adds `@hachej/boring-sandbox/mounts`. If the package is absent, **STOP and report**.
 - **P5** ([`../P5-provisioning-secrets/TODO.md`](../P5-provisioning-secrets/TODO.md)): the **capability-fact + secrets-broker** machinery — the remote-worker handshake pattern (`reported | unknown`, fail closed) and the host-side secret-brokering rule (BBP5-007: brokered secrets are host-side handles, never enter a sandbox). X1's `mounts.fuseS3` capability fact and its STS-broker reuse that machinery; the sandbox receives a directory handle, never a secret (00 invariant 14).
+- **E1** ([`../E1-environment-attachments/TODO.md`](../E1-environment-attachments/TODO.md)): `Environment`/`EnvironmentAttachment`/`ResolvedEnvironments` and the `mountPath` attachment contract. X1's shipped `s3Environment` integration and conformance mount consume those E1 contracts; if E1 has not landed, **STOP and report** rather than inventing a parallel environment seam.
 
 ### Current reality this extends (verify before coding)
 

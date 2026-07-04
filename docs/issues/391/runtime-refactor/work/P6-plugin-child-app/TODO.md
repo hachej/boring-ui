@@ -103,7 +103,7 @@ Dispatch: **P6a ← P5**; **P6b ← P6a + child-app platform type**; **P7 ← P6
 - **Files create:** `packages/agent/src/server/agents/AgentRegistry.ts` (Map-backed registry keyed by `agentId`) + `__tests__/`.
 - **Files touch:** `packages/agent/src/server/index.ts` (export the type + class).
 - **Notes:** Minimal: `register(agentId, entry)`, `get(agentId)`, `list()`, `has(agentId)`, `delete(agentId)` over a `Map`. `entry` holds only what Phase 6/7 need now: resolved agent id, default tool/plugin set reference, readiness handle. **It carries NO child-app fields** (`childAppId`/`workspaceKind`) — child-app scoping of an agent is layered on in **P6b**, never in this P6a contract. **No lifecycle framework, no event bus, no dispose orchestration** beyond `delete`. This is the data structure Phase 7 (`agentId`-scoped routes, per-agent catalog/readiness, agent inspection endpoint) consumes — do not build those consumers here. No env-var reads (P1 rule).
-- **Tests:** register/get/list/has/delete round-trip; duplicate id policy (last-write or reject — pick one, test it); type-only shape carries `agentId` and no child-app field.
+- **Tests:** register/get/list/has/delete round-trip; duplicate registration fails closed with stable `AGENT_ALREADY_EXISTS` (never last-write replacement); type-only shape carries `agentId` and no child-app field.
 - **Acceptance:** a minimal registry exists for Phase 6a wiring and Phase 7 consumption; no framework creep. **P6a grep-gate (blocking):** `grep -rn "childAppId\|workspaceKind\|ChildApp" packages/agent/src/server/agents/AgentRegistry.ts` returns no matches.
 
 ### BBP6-004 — [P6a] Runtime plugin context (`RuntimePluginContext`) on the gateway [size M]

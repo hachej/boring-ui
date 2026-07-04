@@ -37,7 +37,7 @@ Handoff: self-contained work order for one autonomous coding agent (pi or gpt-5.
 Make [`../../INDEX.md`](../../INDEX.md) Phase 7 + [`../../architecture/05-multi-agent-sessions-hooks.md`](../../architecture/05-multi-agent-sessions-hooks.md) § "Tests" checkable:
 
 1. Agent addressing resolves an `agentId` per request via the canonical `/api/v1/agents/:agentId/...` path-prefix family (**locked at pass 3 — no header alternative**; BBP7-002 records it) against the Phase 6 `AgentRegistry`; unknown/undeclared `agentId` fails closed.
-2. `agentId` is in the binding scope `key` **and** `sessionNamespace`; two agents in one workspace with the same `sessionId` share no bindings, tool catalog, transcripts, or readiness (`05` isolation test).
+2. `agentId` is in the binding scope `key` for all agents and in `sessionNamespace` for non-default agents; the default agent's namespace stays byte-identical to pre-P7. Two non-default agents in one workspace with the same `sessionId` share no bindings, tool catalog, transcripts, or readiness (`05` isolation test).
 3. Per-agent tool catalog and per-agent readiness (reviewer readonly/no-exec while coding agent has bash; pure concierge has no boring-bash — `05` Tests).
 4. Session index/search scoped by `workspaceId` + `agentId` (+ title/content/operational events, redacted), no filesystem requirement (`#379`).
 5. External harness hook target resolution: authenticate caller, validate `(workspace, agent, session)`, redact, route to the HITL channel, audit attribution, no boring-bash dep (`#380` / `05`).
@@ -49,8 +49,8 @@ Make [`../../INDEX.md`](../../INDEX.md) Phase 7 + [`../../architecture/05-multi-
 ## Non-negotiables
 
 - Scope against the Phase 6a `AgentRegistry` — do NOT build a second registry (`00` invariant 10; [`../P6-plugin-child-app/TODO.md`](../P6-plugin-child-app/TODO.md)).
-- **Interop reservation (shape only, not built):** the `AgentRegistry` entry shape must **not preclude REMOTE entries** — leave room for `{ agentId, kind: 'local' | 'remote', endpoint?, auth? }` so a future remote agent can be addressed like a local one; the **remote client (an MCP delegation channel) is a named follow-up, NOT built in this epic** (Horizon-3 hub-and-spoke direction, `00` "Business horizons"). P7 only resolves/scopes `local` entries; do not hardcode an assumption that every entry is in-process.
-- Extend the existing `RuntimeScope.key` array and `sessionNamespace` — do NOT assume a preexisting composite key already has `agentId` (`05` explicit warning). Legacy fields (root/template/pi/sessionNamespace) stay isolated where they already are.
+- `AgentRegistry` stays local/minimal for this epic. Do not reserve speculative remote-entry fields (`endpoint`, `auth`, remote client shape, delegation channel) until a remote-delegation bead lands with a real consumer. P7 resolves/scopes the Phase 6a local entries only.
+- Extend the existing `RuntimeScope.key` array for all agents and `sessionNamespace` for non-default agents — do NOT assume a preexisting composite key already has `agentId` (`05` explicit warning). Legacy fields (root/template/pi/sessionNamespace) stay isolated where they already are, and the default agent keeps its pre-P7 `sessionNamespace` unchanged.
 - `/info` is a **public read contract** modeled on `models.ts`: cheap, safe unauthenticated at the same level `models` is, and it MUST NOT leak secrets, broker credentials, or provider key material (`00` invariant 14).
 - Two-handles rule (`08`/T2): public agent APIs stay `sessionId`-keyed; `agentId` is boring's own routing scope (like `workspaceId`/`SessionCtx`), NOT surface-native platform addressing — allowed on the façade/routes, subject to the same rule that surface-native identifiers are not. One addressing entry → one `agentId`; a surface never multiplexes agents on one continuation key.
 - User is a principal/supervisor/approval channel, NOT a model-callable agent (`00` invariant 9; `05`). Do not add the human as an `AgentRegistry` entry.
@@ -171,7 +171,7 @@ pnpm typecheck              # build:packages then per-pkg typecheck
 ## Review gates
 
 - Phase 6 `AgentRegistry` present and scoped against (not a competing registry), else STOP+report.
-- `agentId` in the `RuntimeScope.key` array **and** `sessionNamespace`; default-agent sessions load unchanged (on-disk JSONL compat).
+- `agentId` in the `RuntimeScope.key` array for all agents; `sessionNamespace` carries `agentId` only for non-default agents; default-agent sessions load unchanged (on-disk JSONL compat).
 - Per-agent tool catalog + readiness with zero cross-agent bleed (`05` Tests reproduced).
 - Session search scoped by `workspace+agent`, no fs requirement, redaction enforced.
 - External hook routes onto the single T1 approval channel; boring-bash-free; authenticates/validates/redacts/audits.

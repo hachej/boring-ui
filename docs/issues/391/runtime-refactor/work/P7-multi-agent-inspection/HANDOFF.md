@@ -35,7 +35,7 @@ Derived strictly from [TODO.md](./TODO.md) and [PLAN.md](./PLAN.md). Tick each b
 
 ## Review gates
 - [ ] Phase 6 `AgentRegistry` present and scoped against (not a competing registry), else STOP+report.
-- [ ] `agentId` in the `RuntimeScope.key` array **and** `sessionNamespace`; default-agent sessions load unchanged (on-disk JSONL compat).
+- [ ] `agentId` in the `RuntimeScope.key` array for all agents; `sessionNamespace` carries `agentId` only for non-default agents, and default-agent sessions load unchanged (on-disk JSONL compat).
 - [ ] Per-agent tool catalog + readiness with zero cross-agent bleed (`05` Tests reproduced).
 - [ ] Session search scoped by `workspace+agent`, no fs requirement, redaction enforced.
 - [ ] External hook routes onto the single T1 approval channel; boring-bash-free; authenticates/validates/redacts/audits.
@@ -47,7 +47,7 @@ Derived strictly from [TODO.md](./TODO.md) and [PLAN.md](./PLAN.md). Tick each b
 
 ## Exit criteria
 - [ ] Agent addressing resolves an `agentId` per request via the canonical `/api/v1/agents/:agentId/...` path prefix against the Phase 6 `AgentRegistry`; unknown/undeclared `agentId` fails closed.
-- [ ] `agentId` is in the binding scope `key` **and** `sessionNamespace`; two agents in one workspace with the same `sessionId` share no bindings, tool catalog, transcripts, or readiness.
+- [ ] `agentId` is in the binding scope `key` for all agents; `sessionNamespace` carries it only for non-default agents; two non-default agents in one workspace with the same `sessionId` share no bindings, tool catalog, transcripts, or readiness while default-agent sessions remain on the pre-P7 namespace.
 - [ ] Per-agent tool catalog and per-agent readiness (reviewer readonly/no-exec; coding agent has bash; pure concierge has no boring-bash).
 - [ ] Session index/search scoped by `workspaceId` + `agentId` (+ title/content/operational events, redacted), no filesystem requirement.
 - [ ] External harness hook target resolution: authenticate caller, validate `(workspace, agent, session)`, redact, route to the HITL channel, audit attribution, no boring-bash dep.

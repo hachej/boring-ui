@@ -17,12 +17,12 @@ This creates two bugs in the architecture:
 
 ## Dependency inversion first
 
-Before moving providers to `@hachej/boring-bash`, invert composition:
+Before moving runtime-mode resolution to `@hachej/boring-bash` and concrete providers to `@hachej/boring-sandbox`, invert composition:
 
 - `createAgentApp()` and `registerAgentRoutes()` stop value-importing built-in runtime modes in the pure path.
 - Host/CLI/core passes runtime/features in.
 - `@hachej/boring-agent` exports only type contracts for features/tool registration.
-- A package invariant test fails if agent has value imports from `@hachej/boring-bash`.
+- A package invariant test fails if agent has value imports from `@hachej/boring-bash` or `@hachej/boring-sandbox`.
 - Existing runtime mode support is migrated to host composition **in the same PR** (no long-lived compatibility wiring); a pure agent must never be forced to build a runtime bundle. Any temporary bridge kept alive during a single PR carries a `// TODO(remove:<bead-id>)` marker and a same-phase deletion bead — it does not outlive the phase (see `../INDEX.md` "Simplicity & no-compat policy").
 
 This prevents the cycle:

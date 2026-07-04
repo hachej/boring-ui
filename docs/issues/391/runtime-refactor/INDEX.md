@@ -18,7 +18,7 @@ Each `work/<pkg>/` holds three files: **TODO.md** (the self-contained work order
 | Phase E1 — Environment attachments | [E1-environment-attachments](work/E1-environment-attachments/) | P2, P3 | pending | workspace + company_context unchanged; a scoped view is physically jailed; an agent holds two environments with distinct `filesystem` identities |
 | Phase E2 — MCP env projection | [E2-mcp-projection](work/E2-mcp-projection/) | E1 | pending | external MCP client sees exactly an in-process readonly attachment; denied files absent; no broker secret reachable |
 | Phase 5 — Provisioning / secrets | [P5-provisioning-secrets](work/P5-provisioning-secrets/) | P3 (+P2 matrix) | pending | no test reads a brokered secret from inside the sandbox; no brokered secret reachable from any sandboxed environment |
-| Phase X1 — S3/FUSE mounts | [X1-s3-fuse-mounts](work/X1-s3-fuse-mounts/) | P2, P5 | pending | readonly S3 mount passes no-leak; bash-visible == file-route-visible over the mount; no cred readable inside the sandbox; EU-endpoint matrix green |
+| Phase X1 — S3/FUSE mounts | [X1-s3-fuse-mounts](work/X1-s3-fuse-mounts/) | P2, P5, E1 | pending | readonly S3 mount passes no-leak; bash-visible == file-route-visible over the mount; no cred readable inside the sandbox; EU-endpoint matrix green |
 | Phase 6a — Plugin core | [P6-plugin-child-app](work/P6-plugin-child-app/) | P5 | pending | import-free manifest validation; hosted-plugin fail-closed; managed-service lifecycle; `AgentRegistry`/`agents` declaration seeded |
 | Phase 6b — Child-app scoping | [P6-plugin-child-app](work/P6-plugin-child-app/) | P6a + #376 | **BLOCKED** (#376) | child-app requirement narrowing; Macro requirements don't leak into a generic workspace — tracked follow-up **outside the epic exit** |
 | Phase 7 — Multi-agent + inspection | [P7-multi-agent-inspection](work/P7-multi-agent-inspection/) | P6a, E1, T2 | pending | agentId-scoped routes/session/search + `GET /api/v1/agents/:agentId/info`; two surfaces bound to two agents in one workspace don't collide |
@@ -34,12 +34,12 @@ P0 ──► P1 ──┬──► P2 ──► P3 ──┬──► P4
             │                ├──► E1 ──► E2                     (E1 needs P2 AND P3)
             │                └──► P5 ──► P6a ─┬─► P7 ──► P8
             │                     │           └─► P6b (child-app scoping; HARD BLOCKED on #376)
-            │                     └──► X1      (X1 needs P2 AND P5; bash-lane, parallel to E1/E2)
+            │                     └──► X1      (X1 needs P2 AND P5 AND E1)
             └──► T1 ──► T2 ──┬──► S1 ──► S2
                             └──► S3           (S3 needs T2 AND P7)
 ```
 
-Parallel lanes after P1: **bash lane** (P2→P3→P4), **environment lane** (E1→E2, needs P2+P3), **mount lane** (X1, needs P2+P5), **provisioning→child-app→multi-agent lane** (P5→P6a→P7→P8, off P3), **transport lane** (T1→T2→{S1→S2, S3}). Cross-deps not drawable inline: **P7 needs P6a and E1 and T2** (the `AgentRegistry` from P6a — not P6b's child-app scoping — plus E1 attachments and T2's `sessionId`-only transport + two-handles guard, which carries the T1 durable approvals/`resolveInput` the external-hook route and `/info` channel facts read). **P8 gates on all lanes EXCEPT P6b.**
+Parallel lanes after P1: **bash lane** (P2→P3→P4), **environment lane** (E1→E2, needs P2+P3), **mount lane** (X1, needs P2+P5+E1 because its shipped attachment/conformance path consumes E1 `Environment`/`EnvironmentAttachment`), **provisioning→child-app→multi-agent lane** (P5→P6a→P7→P8, off P3), **transport lane** (T1→T2→{S1→S2, S3}). Cross-deps not drawable inline: **P7 needs P6a and E1 and T2** (the `AgentRegistry` from P6a — not P6b's child-app scoping — plus E1 attachments and T2's `sessionId`-only transport + two-handles guard, which carries the T1 durable approvals/`resolveInput` the external-hook route and `/info` channel facts read). **P8 gates on all lanes EXCEPT P6b.**
 
 **P6b is a tracked follow-up, not an epic exit gate.** It is HARD BLOCKED on the shared child-app platform type (`ResolvedChildAppContext`, #376); the epic ships without it and P8 only verifies the P6b follow-up issue is filed — P8 never waits on P6b landing. This is the anti-deadlock guarantee.
 
