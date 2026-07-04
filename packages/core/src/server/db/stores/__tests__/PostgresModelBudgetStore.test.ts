@@ -5,29 +5,113 @@ import { runMigrations } from '../../migrate'
 import { ModelBudgetExceededError, PostgresModelBudgetStore } from '../PostgresModelBudgetStore'
 import type { CoreConfig } from '../../../../shared/types'
 
-const TEST_DB_URL = process.env.DATABASE_URL ?? 'postgres://ubuntu:test@localhost/boring_ui_test'
+const TEST_DB_URL_CANDIDATES = [
+  process.env.DATABASE_URL,
+  'postgresql://ubuntu:test@127.0.0.1:5432/boring_ui_v2_local',
+].filter((url): url is string => Boolean(url))
+const POSTGRES_ADMIN_DB_URL = 'postgres://postgres:postgres@127.0.0.1:5432/postgres'
 const USER = 'budget-user-1'
 const OTHER_USER = 'budget-user-2'
 
-const BASE_CONFIG: CoreConfig = {
-  appId: 'test-app', appName: 'Test App', appLogo: null, port: 0, host: '127.0.0.1', staticDir: null,
-  databaseUrl: TEST_DB_URL, stores: 'postgres', cors: { origins: ['http://localhost:3000'], credentials: true },
-  bodyLimit: 16 * 1024 * 1024, logLevel: 'silent' as CoreConfig['logLevel'], encryption: { workspaceSettingsKey: 'a'.repeat(64) },
-  auth: { secret: 's'.repeat(64), url: 'http://localhost:3000', sessionTtlSeconds: 3600, sessionCookieSecure: false },
-  features: { githubOauth: false, googleOauth: false, invitesEnabled: true, sendWelcomeEmail: true, inviteTtlDays: 7 },
+function baseConfig(databaseUrl: string): CoreConfig {
+  return {
+    appId: 'test-app', appName: 'Test App', appLogo: null, port: 0, host: '127.0.0.1', staticDir: null,
+    databaseUrl, stores: 'postgres', cors: { origins: ['http://localhost:3000'], credentials: true },
+    bodyLimit: 16 * 1024 * 1024, logLevel: 'silent' as CoreConfig['logLevel'], encryption: { workspaceSettingsKey: 'a'.repeat(64) },
+    auth: { secret: 's'.repeat(64), url: 'http://localhost:3000', sessionTtlSeconds: 3600, sessionCookieSecure: false },
+    features: { githubOauth: false, googleOauth: false, invitesEnabled: true, sendWelcomeEmail: true, inviteTtlDays: 7 },
+  }
 }
+
+async function canConnect(databaseUrl: string): Promise<boolean> {
+  const client = postgres(databaseUrl, { max: 1, connect_timeout: 2 })
+  try {
+    await client`SELECT 1`
+    return true
+  } catch {
+    return false
+  } finally {
+    await client.end({ timeout: 1 }).catch(() => {})
+  }
+}
+
+type TestDbTarget = {
+  databaseUrl: string
+  cleanup?: () => Promise<void>
+}
+
+function quoteIdent(value: string): string {
+  return `"${value.replace(/"/g, '""')}"`
+}
+
+function databaseUrlWithName(databaseUrl: string, databaseName: string): string {
+  const parsed = new URL(databaseUrl)
+  parsed.pathname = `/${databaseName}`
+  return parsed.toString()
+}
+
+async function createTemporaryDatabase(adminUrl: string): Promise<TestDbTarget | undefined> {
+  if (!(await canConnect(adminUrl))) return undefined
+  const databaseName = `boring_model_budget_${process.pid}_${Date.now()}`
+  const admin = postgres(adminUrl, { max: 1, connect_timeout: 2 })
+  try {
+    await admin.unsafe(`CREATE DATABASE ${quoteIdent(databaseName)}`)
+    return {
+      databaseUrl: databaseUrlWithName(adminUrl, databaseName),
+      cleanup: async () => {
+        const cleanupClient = postgres(adminUrl, { max: 1, connect_timeout: 2 })
+        try {
+          await cleanupClient`SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname = ${databaseName}`
+          await cleanupClient.unsafe(`DROP DATABASE IF EXISTS ${quoteIdent(databaseName)}`)
+        } finally {
+          await cleanupClient.end({ timeout: 1 }).catch(() => {})
+        }
+      },
+    }
+  } catch {
+    return undefined
+  } finally {
+    await admin.end({ timeout: 1 }).catch(() => {})
+  }
+}
+
+async function resolveTestDb(): Promise<TestDbTarget | undefined> {
+  for (const databaseUrl of TEST_DB_URL_CANDIDATES) {
+    if (await canConnect(databaseUrl)) return { databaseUrl }
+  }
+  return createTemporaryDatabase(POSTGRES_ADMIN_DB_URL)
+}
+
+function modelBudgetLockKey(input: { userId: string; provider: string; model: string; period: string }): string {
+  return `model-budget:${input.userId}:${input.provider}:${input.model}:${input.period}`
+}
+
+function delay(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms))
+}
+
+async function expectStillPending(promise: Promise<unknown>): Promise<void> {
+  await expect(Promise.race([
+    promise.then(() => 'resolved', () => 'rejected'),
+    delay(75).then(() => 'pending'),
+  ])).resolves.toBe('pending')
+}
+
+const TEST_DB = await resolveTestDb()
 
 let sqlClient: postgres.Sql
 let store: PostgresModelBudgetStore
 
 beforeAll(async () => {
-  await runMigrations(BASE_CONFIG)
-  sqlClient = postgres(TEST_DB_URL, { max: 5 })
+  if (!TEST_DB) return
+  await runMigrations(baseConfig(TEST_DB.databaseUrl))
+  sqlClient = postgres(TEST_DB.databaseUrl, { max: 5 })
   store = new PostgresModelBudgetStore(drizzle(sqlClient))
 })
 
 afterAll(async () => {
   await sqlClient?.end()
+  await TEST_DB?.cleanup?.()
 })
 
 beforeEach(async () => {
@@ -35,7 +119,7 @@ beforeEach(async () => {
   await sqlClient`DELETE FROM boring_usage_ledger WHERE user_id IN (${USER}, ${OTHER_USER})`
 })
 
-describe('PostgresModelBudgetStore', () => {
+describe.runIf(TEST_DB)('PostgresModelBudgetStore', () => {
   it('idempotently reserves and settles/releases active holds', async () => {
     const now = new Date('2026-07-15T12:00:00Z')
     const first = await store.reserve({ userId: USER, runId: 'run-1', provider: 'infomaniak', model: 'qwen', budgetMicros: 2_000_000, holdMicros: 1_000_000, ttlSeconds: 60, now })
@@ -66,6 +150,30 @@ describe('PostgresModelBudgetStore', () => {
     await expect(store.reserve({ userId: USER, runId: 'run-after-expiry', provider: 'infomaniak', model: 'qwen', budgetMicros: 2_000_000, holdMicros: 500_000, ttlSeconds: 60, now: new Date(now.getTime() + 120_000) })).resolves.toMatchObject({ created: true })
   })
 
+  it('serializes release and reserve on the budget advisory lock', async () => {
+    const now = new Date('2026-07-15T12:00:00Z')
+    const period = PostgresModelBudgetStore.monthPeriodUtc(now)
+    const first = await store.reserve({ userId: USER, runId: 'locked-active', provider: 'infomaniak', model: 'qwen', budgetMicros: 1_000_000, holdMicros: 1_000_000, ttlSeconds: 60, now })
+
+    let overReserve!: Promise<unknown>
+    let release!: Promise<void>
+    await sqlClient.begin(async (tx) => {
+      await tx`SELECT pg_advisory_xact_lock(hashtext(${modelBudgetLockKey({ userId: USER, provider: 'infomaniak', model: 'qwen', period })}))`
+      overReserve = store.reserve({ userId: USER, runId: 'locked-over', provider: 'infomaniak', model: 'qwen', budgetMicros: 1_000_000, holdMicros: 1_000_000, ttlSeconds: 60, now })
+      await expectStillPending(overReserve)
+
+      release = store.release({ reservationId: first.reservationId })
+      await expectStillPending(release)
+      const rows = await sqlClient`SELECT status FROM boring_model_budget_reservations WHERE id = ${first.reservationId}`
+      expect(rows[0]?.status).toBe('active')
+    })
+
+    await expect(overReserve).rejects.toBeInstanceOf(ModelBudgetExceededError)
+    await expect(release).resolves.toBeUndefined()
+    const rows = await sqlClient`SELECT status FROM boring_model_budget_reservations WHERE id = ${first.reservationId}`
+    expect(rows[0]?.status).toBe('released')
+  })
+
   it('scopes active reservation idempotency by user and run id', async () => {
     const now = new Date('2026-07-15T12:00:00Z')
     const first = await store.reserve({ userId: USER, runId: 'shared-run', provider: 'infomaniak', model: 'qwen', budgetMicros: 2_000_000, holdMicros: 1_000_000, ttlSeconds: 60, now })
@@ -88,6 +196,47 @@ describe('PostgresModelBudgetStore', () => {
     await store.release({ runId: 'next-run-ok', userId: USER })
     await expect(store.reserve({ userId: USER, runId: 'next-run-over', provider: 'infomaniak', model: 'qwen', budgetMicros: 1_500_000, holdMicros: 600_000, ttlSeconds: 60, now })).rejects.toBeInstanceOf(ModelBudgetExceededError)
     await expect(store.reserve({ userId: OTHER_USER, runId: 'next-run-over', provider: 'infomaniak', model: 'qwen', budgetMicros: 1_500_000, holdMicros: 600_000, ttlSeconds: 60, now })).resolves.toMatchObject({ created: true })
+  })
+
+  it('counts reserved-run charges in the reserved UTC month exactly once across month boundaries', async () => {
+    const beforeBoundary = new Date('2026-07-31T23:59:30Z')
+    const afterBoundary = new Date('2026-08-01T00:00:30Z')
+    const afterReuse = new Date('2026-08-01T00:05:00Z')
+    const afterDelayedUsage = new Date('2026-08-01T00:06:00Z')
+
+    const exact = await store.reserve({ userId: USER, runId: 'boundary-ledger', provider: 'infomaniak', model: 'qwen', budgetMicros: 1_500_000, holdMicros: 1_000_000, ttlSeconds: 60, now: beforeBoundary })
+    await sqlClient`UPDATE boring_model_budget_reservations SET created_at = ${beforeBoundary.toISOString()}::timestamp WHERE id = ${exact.reservationId}`
+    await store.release({ reservationId: exact.reservationId })
+
+    const reused = await store.reserve({ userId: USER, runId: 'boundary-ledger', provider: 'infomaniak', model: 'qwen', budgetMicros: 1_000_000, holdMicros: 1_000_000, ttlSeconds: 60, now: afterReuse })
+    await sqlClient`UPDATE boring_model_budget_reservations SET created_at = ${afterReuse.toISOString()}::timestamp WHERE id = ${reused.reservationId}`
+    await store.release({ reservationId: reused.reservationId })
+    await sqlClient`
+      INSERT INTO boring_usage_ledger (id, user_id, run_id, provider, model, billed_cost_micros, created_at, metadata)
+      VALUES ('usage-budget-boundary-ledger', ${USER}, 'boundary-ledger', 'infomaniak', 'qwen', 1000000, ${afterDelayedUsage.toISOString()}::timestamp, ${JSON.stringify({ modelBudgetReservationId: exact.reservationId })}::jsonb)
+    `
+
+    await expect(store.reserve({ userId: USER, runId: 'boundary-aug-not-charged', provider: 'infomaniak', model: 'qwen', budgetMicros: 1_000_000, holdMicros: 1_000_000, ttlSeconds: 60, now: afterDelayedUsage })).resolves.toMatchObject({ created: true })
+    await store.release({ runId: 'boundary-aug-not-charged', userId: USER })
+    await expect(store.reserve({ userId: USER, runId: 'boundary-aug-after-reuse', provider: 'infomaniak', model: 'qwen', budgetMicros: 1_000_000, holdMicros: 1_000_000, ttlSeconds: 60, now: afterDelayedUsage })).resolves.toMatchObject({ created: true })
+    await store.release({ runId: 'boundary-aug-after-reuse', userId: USER })
+    await expect(store.reserve({ userId: USER, runId: 'boundary-jul-exact-ok', provider: 'infomaniak', model: 'qwen', budgetMicros: 1_500_000, holdMicros: 500_000, ttlSeconds: 60, now: beforeBoundary })).resolves.toMatchObject({ created: true })
+    await store.release({ runId: 'boundary-jul-exact-ok', userId: USER })
+    await expect(store.reserve({ userId: USER, runId: 'boundary-jul-over', provider: 'infomaniak', model: 'qwen', budgetMicros: 1_500_000, holdMicros: 500_001, ttlSeconds: 60, now: beforeBoundary })).rejects.toBeInstanceOf(ModelBudgetExceededError)
+
+    const fallback = await store.reserve({ userId: OTHER_USER, runId: 'boundary-fallback', provider: 'infomaniak', model: 'qwen', budgetMicros: 1_500_000, holdMicros: 1_000_000, ttlSeconds: 60, now: beforeBoundary })
+    await sqlClient`UPDATE boring_model_budget_reservations SET created_at = ${beforeBoundary.toISOString()}::timestamp WHERE id = ${fallback.reservationId}`
+    await sqlClient`
+      INSERT INTO boring_usage_ledger (id, user_id, run_id, provider, model, billed_cost_micros, created_at)
+      VALUES ('usage-budget-boundary-fallback', ${OTHER_USER}, 'boundary-fallback', 'infomaniak', 'qwen', 200000, ${afterBoundary.toISOString()}::timestamp)
+    `
+    await store.settle({ reservationId: fallback.reservationId })
+
+    await expect(store.reserve({ userId: OTHER_USER, runId: 'boundary-fallback-aug-not-charged', provider: 'infomaniak', model: 'qwen', budgetMicros: 1_000_000, holdMicros: 1_000_000, ttlSeconds: 60, now: afterBoundary })).resolves.toMatchObject({ created: true })
+    await store.release({ runId: 'boundary-fallback-aug-not-charged', userId: OTHER_USER })
+    await expect(store.reserve({ userId: OTHER_USER, runId: 'boundary-fallback-jul-ok', provider: 'infomaniak', model: 'qwen', budgetMicros: 1_500_000, holdMicros: 500_000, ttlSeconds: 60, now: beforeBoundary })).resolves.toMatchObject({ created: true })
+    await store.release({ runId: 'boundary-fallback-jul-ok', userId: OTHER_USER })
+    await expect(store.reserve({ userId: OTHER_USER, runId: 'boundary-fallback-jul-over', provider: 'infomaniak', model: 'qwen', budgetMicros: 1_500_000, holdMicros: 500_001, ttlSeconds: 60, now: beforeBoundary })).rejects.toBeInstanceOf(ModelBudgetExceededError)
   })
 
   it('does not double-count ledger rows for runs with active holds', async () => {

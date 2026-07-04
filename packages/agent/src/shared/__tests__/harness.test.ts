@@ -39,9 +39,11 @@ test('RunContext contract', () => {
     abortSignal: AbortSignal
     workdir: string
     userId?: string
+    allowPromptDispatch?: boolean
   }>()
 
   expectTypeOf<RunContext['abortSignal']>().toEqualTypeOf<AbortSignal>()
   expectTypeOf<RunContext['workdir']>().toEqualTypeOf<string>()
   expectTypeOf<RunContext['userId']>().toEqualTypeOf<string | undefined>()
+  expectTypeOf<RunContext['allowPromptDispatch']>().toEqualTypeOf<boolean | undefined>()
 })

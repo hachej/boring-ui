@@ -101,6 +101,8 @@ export function createGovernanceMeteringSink(options: {
   }
 
   return {
+    isEnabled: () => options.service.isEnabled() || options.delegate.isEnabled?.() !== false,
+
     async reserveRun(input: MeteringReserveInput): Promise<MeteringReservationResult> {
       const governanceReservationId = await reserveGovernance(input)
       try {
@@ -114,7 +116,11 @@ export function createGovernanceMeteringSink(options: {
     },
 
     recordUsage(input: MeteringUsageInput) {
-      return options.delegate.recordUsage(input)
+      const key = runKey(input)
+      const reservationId = key ? reservationsByRun.get(key) : undefined
+      return options.delegate.recordUsage(reservationId
+        ? { ...input, metadata: { ...(input.metadata ?? {}), modelBudgetReservationId: reservationId } }
+        : input)
     },
 
     async settleRun(input: MeteringSettleInput): Promise<void> {

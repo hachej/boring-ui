@@ -1,4 +1,4 @@
-import { and, eq, lt, sql } from 'drizzle-orm'
+import { and, eq, inArray, lt, or, sql } from 'drizzle-orm'
 import type { PostgresJsDatabase } from 'drizzle-orm/postgres-js'
 import { modelBudgetReservations, usageLedger } from '../schema.js'
 
@@ -44,6 +44,8 @@ export interface FinishModelBudgetReservationInput {
   userId?: string
 }
 
+const UPDATE_ID_BATCH_SIZE = 1_000
+
 function assertPositiveSafeInteger(name: string, value: number): void {
   if (!Number.isSafeInteger(value) || value <= 0) throw new Error(`${name} must be a positive safe integer`)
 }
@@ -64,6 +66,35 @@ function requireFinishKey(input: FinishModelBudgetReservationInput) {
   return and(eq(modelBudgetReservations.runId, input.runId), eq(modelBudgetReservations.userId, input.userId))
 }
 
+function chunkIds(ids: string[]): string[][] {
+  const chunks: string[][] = []
+  for (let index = 0; index < ids.length; index += UPDATE_ID_BATCH_SIZE) {
+    chunks.push(ids.slice(index, index + UPDATE_ID_BATCH_SIZE))
+  }
+  return chunks
+}
+
+type ModelBudgetLockTarget = {
+  userId: string
+  provider: string
+  model: string
+  period: string
+}
+
+function modelBudgetAdvisoryLockKey(target: ModelBudgetLockTarget): string {
+  return `model-budget:${target.userId}:${target.provider}:${target.model}:${target.period}`
+}
+
+async function lockModelBudgetTargets(
+  executor: Pick<PostgresJsDatabase, 'execute'>,
+  targets: readonly ModelBudgetLockTarget[],
+): Promise<void> {
+  const keys = Array.from(new Set(targets.map(modelBudgetAdvisoryLockKey))).sort()
+  for (const key of keys) {
+    await executor.execute(sql`SELECT pg_advisory_xact_lock(hashtext(${key}))`)
+  }
+}
+
 export class PostgresModelBudgetStore {
   constructor(private db: PostgresJsDatabase) {}
 
@@ -72,12 +103,34 @@ export class PostgresModelBudgetStore {
   }
 
   async sweepExpired(now = new Date()): Promise<number> {
-    const rows = await this.db
-      .update(modelBudgetReservations)
-      .set({ status: 'expired' })
-      .where(and(eq(modelBudgetReservations.status, 'active'), lt(modelBudgetReservations.expiresAt, now)))
-      .returning({ id: modelBudgetReservations.id })
-    return rows.length
+    return this.db.transaction(async (tx) => {
+      const expired = await tx
+        .select({
+          id: modelBudgetReservations.id,
+          userId: modelBudgetReservations.userId,
+          provider: modelBudgetReservations.provider,
+          model: modelBudgetReservations.model,
+          period: modelBudgetReservations.period,
+        })
+        .from(modelBudgetReservations)
+        .where(and(eq(modelBudgetReservations.status, 'active'), lt(modelBudgetReservations.expiresAt, now)))
+      if (expired.length === 0) return 0
+      await lockModelBudgetTargets(tx, expired)
+      let count = 0
+      for (const ids of chunkIds(expired.map((row) => row.id))) {
+        const rows = await tx
+          .update(modelBudgetReservations)
+          .set({ status: 'expired' })
+          .where(and(
+            inArray(modelBudgetReservations.id, ids),
+            eq(modelBudgetReservations.status, 'active'),
+            lt(modelBudgetReservations.expiresAt, now),
+          ))
+          .returning({ id: modelBudgetReservations.id })
+        count += rows.length
+      }
+      return count
+    })
   }
 
   async reserve(input: ReserveModelBudgetInput): Promise<ReserveModelBudgetResult> {
@@ -92,12 +145,46 @@ export class PostgresModelBudgetStore {
     const expiresAt = new Date(now.getTime() + input.ttlSeconds * 1000)
 
     return this.db.transaction(async (tx) => {
-      await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtext(${`model-budget:${input.userId}:${input.provider}:${input.model}:${period.period}`}))`)
+      const expired = await tx
+        .select({
+          id: modelBudgetReservations.id,
+          userId: modelBudgetReservations.userId,
+          provider: modelBudgetReservations.provider,
+          model: modelBudgetReservations.model,
+          period: modelBudgetReservations.period,
+        })
+        .from(modelBudgetReservations)
+        .where(and(
+          eq(modelBudgetReservations.status, 'active'),
+          lt(modelBudgetReservations.expiresAt, now),
+          or(
+            and(
+              eq(modelBudgetReservations.userId, input.userId),
+              eq(modelBudgetReservations.provider, input.provider),
+              eq(modelBudgetReservations.model, input.model),
+              eq(modelBudgetReservations.period, period.period),
+            ),
+            and(
+              eq(modelBudgetReservations.userId, input.userId),
+              eq(modelBudgetReservations.runId, input.runId),
+            ),
+          ),
+        ))
+      await lockModelBudgetTargets(tx, [
+        { userId: input.userId, provider: input.provider, model: input.model, period: period.period },
+        ...expired,
+      ])
 
-      await tx
-        .update(modelBudgetReservations)
-        .set({ status: 'expired' })
-        .where(and(eq(modelBudgetReservations.status, 'active'), lt(modelBudgetReservations.expiresAt, now)))
+      for (const ids of chunkIds(expired.map((row) => row.id))) {
+        await tx
+          .update(modelBudgetReservations)
+          .set({ status: 'expired' })
+          .where(and(
+            inArray(modelBudgetReservations.id, ids),
+            eq(modelBudgetReservations.status, 'active'),
+            lt(modelBudgetReservations.expiresAt, now),
+          ))
+      }
 
       const existing = await tx
         .select({
@@ -129,16 +216,50 @@ export class PostgresModelBudgetStore {
         WHERE ${usageLedger.userId} = ${input.userId}
           AND ${usageLedger.provider} = ${input.provider}
           AND ${usageLedger.model} = ${input.model}
-          AND ${usageLedger.createdAt} >= ${periodStartIso}::timestamp
-          AND ${usageLedger.createdAt} < ${periodEndIso}::timestamp
-          AND NOT EXISTS (
-            SELECT 1 FROM ${modelBudgetReservations} r
-            WHERE r.status IN ('active', 'settled')
-              AND r.user_id = ${usageLedger.userId}
-              AND r.provider = ${usageLedger.provider}
-              AND r.model = ${usageLedger.model}
-              AND r.period = ${period.period}
-              AND r.run_id = ${usageLedger.runId}
+          AND (
+            (
+              EXISTS (
+                SELECT 1 FROM ${modelBudgetReservations} r
+                WHERE r.user_id = ${usageLedger.userId}
+                  AND r.provider = ${usageLedger.provider}
+                  AND r.model = ${usageLedger.model}
+                  AND r.run_id = ${usageLedger.runId}
+                  AND r.period = ${period.period}
+                  AND r.status NOT IN ('active', 'settled')
+                  AND (
+                    ${usageLedger.metadata}->>'modelBudgetReservationId' = r.id::text
+                    OR (
+                      ${usageLedger.metadata}->>'modelBudgetReservationId' IS NULL
+                      AND r.created_at <= ${usageLedger.createdAt}
+                      AND NOT EXISTS (
+                        SELECT 1 FROM ${modelBudgetReservations} newer
+                        WHERE newer.user_id = r.user_id
+                          AND newer.provider = r.provider
+                          AND newer.model = r.model
+                          AND newer.run_id = r.run_id
+                          AND newer.created_at <= ${usageLedger.createdAt}
+                          AND (
+                            newer.created_at > r.created_at
+                            OR (newer.created_at = r.created_at AND newer.id > r.id)
+                          )
+                      )
+                    )
+                  )
+              )
+            )
+            OR (
+              ${usageLedger.createdAt} >= ${periodStartIso}::timestamp
+              AND ${usageLedger.createdAt} < ${periodEndIso}::timestamp
+              AND ${usageLedger.metadata}->>'modelBudgetReservationId' IS NULL
+              AND NOT EXISTS (
+                SELECT 1 FROM ${modelBudgetReservations} r
+                WHERE r.user_id = ${usageLedger.userId}
+                  AND r.provider = ${usageLedger.provider}
+                  AND r.model = ${usageLedger.model}
+                  AND r.run_id = ${usageLedger.runId}
+                  AND r.created_at <= ${usageLedger.createdAt}
+              )
+            )
           )
       `)
       const heldRows = await tx.execute(sql<{ total: string | number | null }>`
@@ -192,9 +313,26 @@ export class PostgresModelBudgetStore {
   }
 
   private async finish(input: FinishModelBudgetReservationInput, status: Exclude<ModelBudgetReservationStatus, 'active' | 'expired'>): Promise<void> {
-    await this.db
-      .update(modelBudgetReservations)
-      .set({ status })
-      .where(and(requireFinishKey(input), eq(modelBudgetReservations.status, 'active')))
+    await this.db.transaction(async (tx) => {
+      const active = await tx
+        .select({
+          id: modelBudgetReservations.id,
+          userId: modelBudgetReservations.userId,
+          provider: modelBudgetReservations.provider,
+          model: modelBudgetReservations.model,
+          period: modelBudgetReservations.period,
+        })
+        .from(modelBudgetReservations)
+        .where(and(requireFinishKey(input), eq(modelBudgetReservations.status, 'active')))
+      if (active.length === 0) return
+      await lockModelBudgetTargets(tx, active)
+      await tx
+        .update(modelBudgetReservations)
+        .set({ status })
+        .where(and(
+          inArray(modelBudgetReservations.id, active.map((row) => row.id)),
+          eq(modelBudgetReservations.status, 'active'),
+        ))
+    })
   }
 }
