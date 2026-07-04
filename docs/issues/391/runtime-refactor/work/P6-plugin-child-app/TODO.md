@@ -38,19 +38,24 @@ Consequence, binding:
 
 ## Goal / exit criteria
 
-Plugins and child apps declare runtime needs safely; one full-app deployment hosts multiple product shells (generic Seneca + Macro) without leaking tools/prompts/provisioning into generic workspaces. Exit (from `../../INDEX.md` Phase 6 = v1 exit = `../../architecture/04-plugin-child-app-runtime.md` "Tests"), each checkable:
+Plugins and child apps declare runtime needs safely. P6 is split into a dispatchable **P6a epic gate** and a **P6b blocked follow-up** exactly as in [`HANDOFF.md`](./HANDOFF.md) and [`../../INDEX.md`](../../INDEX.md): P6a ships the child-app-independent plugin/agent-registry core that P7/P8 consume; P6b later consumes the shared child-app platform type for Macro/workspace-kind scoping and is outside the epic exit.
+
+### P6a epic gate (dispatchable after P5; P7/P8 depend on this)
 
 - [ ] import-free manifest validation runs **before** any plugin code executes.
 - [ ] hosted plugin fails closed in remote mode for unsupported front/server/tool/bash/service/secret requirements.
-- [ ] child-app-scoped default plugins/prompts/provisioning apply only in the matching workspace kind.
-- [ ] Macro requirements do not leak into a generic workspace.
 - [ ] a plugin requiring bash is skipped/diagnosed when bash is disabled.
 - [ ] a plugin requiring secrets receives status only (P5 brokering; no raw values).
 - [ ] trusted service plugin lifecycle works (via P5 managed services).
 - [ ] runtime backend RPC still dispatches after bash extraction (`/api/v1/plugins/:pluginId/*` unchanged).
 - [ ] full-app reload route resolves per workspace/agent/plugin runtime.
-- [ ] child-app policy narrows but never widens workspace max policy (invariant 8); unknown `childAppId`/`workspaceKind` → stable diagnostic, never a silent fallback to Macro.
 - [ ] EU-sovereign (invariant 15): no bead introduces a US-hosted service as a default or hard dependency.
+
+### P6b follow-up (HARD BLOCKED on #376; outside epic/P8 gate)
+
+- [ ] child-app-scoped default plugins/prompts/provisioning apply only in the matching workspace kind.
+- [ ] Macro requirements do not leak into a generic workspace.
+- [ ] child-app policy narrows but never widens workspace max policy (invariant 8); unknown `childAppId`/`workspaceKind` → stable diagnostic, never a silent fallback to Macro.
 
 ## Sub-parts — P6a (dispatchable) and P6b (hard-blocked)
 
