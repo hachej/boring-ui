@@ -78,8 +78,15 @@ function replaceLayoutPanelId(value: unknown, from: string, to: string): unknown
   return out
 }
 
+function cloneSerializableLayout(layout: SerializedLayout): SerializedLayout {
+  return JSON.parse(JSON.stringify(layout, (_key, value) => {
+    if (typeof value === "function" || typeof value === "symbol") return undefined
+    return value
+  })) as SerializedLayout
+}
+
 function normalizePersistedFilePanelIdentity(layout: SerializedLayout): SerializedLayout {
-  const clone = structuredClone(layout) as { panels?: Record<string, unknown> }
+  const clone = cloneSerializableLayout(layout) as { panels?: Record<string, unknown> }
   const panels = clone.panels
   if (!panels || typeof panels !== "object") return clone as SerializedLayout
 
