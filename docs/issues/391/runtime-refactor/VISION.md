@@ -45,6 +45,30 @@ Each vision component mapped to what exists today → the delta work orders → 
 
 > **Business line (farm row):** the farm (row 9) is **Horizon-1 INTERNAL leverage** — the factory that delivers vertical-agent client work, not a product sold yet. It becomes client-facing at Horizon 2 and hub-and-spoke at Horizon 3. One deployable artifact; topology is the product line.
 
+### Artifact reservations (farm epic, not #391 scope)
+
+- **Publish protocol:** `data-artifact` stays the **only** publish path.
+  The agent writes an output to an attached environment, then emits
+  `{ artifactId, kind, title, filesystem, path, version }`;
+  `version` is monotonic per `artifactId`.
+- **Kind catalog seed:** `markdown` (Streamdown/editor), `code` (CodeMirror/code-block),
+  `dashboard` (`plugins/bi-dashboard`), `deck` (`plugins/deck`),
+  `dataset` (`plugins/data-explorer`), and `html/generated` (`plugins/generated-pane`).
+  Viewers remain pure/embeddable with no workspace-shell dependency.
+- **Editable artifacts:** edit is an explicit share capability
+  (signed, revocable, actor-attributed token); public shares default read-only.
+  Edits create new versions and emit `artifact-edited` for the owning agent
+  to consume and iterate on. Multiplayer editing is later work via #367
+  TipTap/Yjs on the same version chain.
+- **Security:** renderers run on a separate viewer origin in sandboxed iframes
+  with CSP `default-src 'none'`, no host cookies/storage, signed URLs,
+  EU S3 blob storage, and zero viewer-side credentials.
+- **Package deferral:** extract `boring-artifact` only when a second consumer appears: S2 embed, Slack link-out, or customer review page.
+  PR #424's public workspace Markdown share is explicitly **non-artifact**;
+  lessons reserved here: tokens address `artifactId+version+capability`,
+  publish snapshots rather than live workspace paths, assets are captured into
+  a manifest, viewer/editor separation is mandatory, and downloads are kind metadata.
+
 ## Architecture at a glance
 
 **Five clean layers** (v2 extends the original three):

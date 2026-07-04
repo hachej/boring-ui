@@ -9,6 +9,8 @@
 ## Design context
 S3 is a **delta** plan, not greenfield — the workspace control plane (session list/search/browser, multi-project rail, event inspector, ask-user approvals inbox, panel/source registries, model pickers, readiness badges) already exists; S3 extends those surfaces to consume the P7 public contracts. It adds one genuinely new Fleet page (every declared agent from `GET /api/v1/agents/:agentId/info`, with a per-agent drill-down composing the session list + inbox filtered by `agentId`), an origin-surface badge + filter on the existing `SessionBrowser`/`SessionList` (so Slack/embed-born sessions appear once the store is shared; transcripts reuse `PiChatPanel`/`RemotePiSession` by `sessionId`), and a central approval inbox generalizing the ask-user `InboxOverlay` onto the single T1 `resolveInput` path. Everything registers through the existing `definePlugin`/`registerPanel`/`registerWorkspaceSource` system — no new host, no new registry, public contracts only, no secrets rendered. Agent-as-directory authoring stays out of scope (observe/inspect/approve only).
 
+Design note: the artifact shelf is farm-epic scope; it folds the `data-artifact` stream, chooses viewers from 08's kind catalog, and leaves the editable-artifact loop out of S3.
+
 > Note: the migration-phase source (now absorbed into [`INDEX.md`](../../INDEX.md)) carried no dedicated Phase S3 Deliverables/Exit block — only the track-overview line "Phase S3 (control-plane UX; also needs Phase 7)". The Deliverables and Exit criteria below are drawn verbatim from the S3 [TODO.md](./TODO.md) Goal / exit-criteria section.
 
 ## Deliverables

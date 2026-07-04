@@ -156,10 +156,41 @@ Reality note: a bespoke replay path already exists (`PiChatReplayBuffer` + `?cur
 - Surface-specific projections are the adapter's job: workspace renders the full stream; Slack maps activity → `setStatus`, text deltas → `sayStream`, approval parts → buttons; Excel maps structured tool outputs → cell writes.
 - **Reserved (namespace claimed NOW, delivery deferred to the farm epic): the `data-artifact` stream part.** An agent publishes an output by **writing it to its environment** (a filesystem the agent already holds — E1/09) **and emitting a `data-artifact` part** on its stream:
   ```jsonc
-  { "type": "data-artifact", "artifactId": "…", "kind": "file|report|dataset|…",
-    "title": "…", "filesystem": "user", "path": "/out/report.md", "version": 3 }
+  {
+    "type": "data-artifact",
+    "artifactId": "…",
+    "kind": "markdown|code|dashboard|deck|dataset|html/generated",
+    "title": "…",
+    "filesystem": "user",
+    "path": "/out/report.md",
+    "version": 3
+  }
   ```
-  The farm UI folds these parts across sessions into an **artifact shelf** (the "artifacts" pillar of the farm — 00 North star). This is **deferred to the farm epic** — but the `data-artifact` part name + field shape are **reserved here NOW** so nothing else squats on the namespace, and so environment writes + this part are the *only* sanctioned publish path (no side-channel artifact store). The reference to `filesystem`/`path` is the #416 `(filesystem, path)` identity; `version` is monotonic per `artifactId`.
+  The farm UI folds these parts across sessions into an **artifact shelf** (the "artifacts" pillar of the farm — 00 North star). This is **deferred to the farm epic** — but the `data-artifact` part name + payload fields `{ artifactId, kind, title, filesystem, path, version }` are **reserved here NOW** so nothing else squats on the namespace, and so environment writes + this part are the *only* sanctioned publish protocol (no side-channel artifact store). The reference to `filesystem`/`path` is the #416 `(filesystem, path)` identity; `version` is monotonic per `artifactId`.
+
+#### Artifact renderer reservations (farm epic, no implementation here)
+
+- **Kind catalog:** seed from existing renderers only: `markdown` (Streamdown/editor),
+  `code` (CodeMirror/code-block), `dashboard` (`plugins/bi-dashboard`),
+  `deck` (`plugins/deck`), `dataset` (`plugins/data-explorer`),
+  `html/generated` (`plugins/generated-pane`). Viewers must stay pure and embeddable:
+  no workspace-shell dependencies; P4/S3 consume the catalog, they do not couple
+  viewers to the shell.
+- **Editable artifacts:** edit is a capability on the share, not a different protocol.
+  A signed, revocable, actor-attributed token grants `read` or `edit`;
+  public shares default read-only. Edits create **new artifact versions**,
+  never overwrite existing ones, and emit an `artifact-edited` stream event
+  for the owning agent to consume so client edits become the agent review loop.
+  Multiplayer editing is later #367 TipTap/Yjs work on the same version chain.
+- **Renderer security contract:** render on a separate viewer origin in a sandboxed iframe,
+  CSP `default-src 'none'`, no host cookies/storage, signed URLs only,
+  EU S3 blob storage, and zero viewer-side credentials.
+- **Package extraction:** `boring-artifact` is a named deferral, triggered only by a second consumer: S2 embed, Slack link-out, or a customer review page.
+- **PR #424 learning:** the public workspace Markdown share is explicitly **non-artifact**.
+  Carry forward only the rules: tokens address `artifactId + version + capability`,
+  never workspace paths; snapshot-on-publish beats live-file access; assets are
+  collected into a manifest at publish time; viewer/editor separation is mandatory;
+  downloads such as portable Markdown and bundle ZIPs are first-class kind metadata.
 
 ## Two handles (hard rule)
 
