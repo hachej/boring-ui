@@ -210,6 +210,13 @@ export class PostgresModelBudgetStore {
 
       const periodStartIso = period.start.toISOString()
       const periodEndIso = period.end.toISOString()
+      // Reserved-run spend is attributed to the reservation's period, not the
+      // ledger row's created_at, so a run reserved before a UTC month boundary
+      // and settled after it counts exactly once (in the reserved period).
+      // Ledger rows stamped with modelBudgetReservationId map directly; legacy
+      // rows without the stamp fall back to the newest reservation created at
+      // or before the row (run ids can be reused across periods). Unreserved
+      // legacy rows are counted by created_at month.
       const usageRows = await tx.execute(sql<{ total: string | number | null }>`
         SELECT COALESCE(SUM(${usageLedger.billedCostMicros}), 0)::text AS total
         FROM ${usageLedger}

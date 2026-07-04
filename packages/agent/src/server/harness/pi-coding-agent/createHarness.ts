@@ -374,6 +374,10 @@ type PiAgentWithFollowUp = {
   followUp?: (message: unknown) => unknown;
 }
 
+// Queued follow-ups are drained by Pi's internal agent loop, outside any
+// AsyncLocalStorage scope, so the submitting run's auth context would be lost.
+// We capture it per queued message here and re-activate it when Pi starts
+// processing that message (message_start), keyed weakly on the message object.
 function rememberQueuedFollowUpRunContexts(
   piSession: AgentSession,
   state: PiRunContextState,

@@ -1,10 +1,11 @@
 import type { FastifyInstance, FastifyRequest } from 'fastify'
 import type { AgentHarness, AgentSlashCommandSummary, RunContext } from '../../../shared/harness'
+import type { AgentMeteringSink } from '../../pi-chat/metering'
 import { ErrorCode, type ErrorCode as ErrorCodeValue } from '../../../shared/error-codes'
 
 type CommandsRoutesBaseOptions = {
   defaultSessionId: string
-  metering?: unknown
+  metering?: Pick<AgentMeteringSink, 'isEnabled'>
 }
 
 export type CommandsRoutesOptions = CommandsRoutesBaseOptions & ({
@@ -40,10 +41,9 @@ function errorStatusCode(error: unknown): number {
     : 500
 }
 
-function isMeteringActive(metering: unknown): boolean {
+function isMeteringActive(metering: Pick<AgentMeteringSink, 'isEnabled'> | undefined): boolean {
   if (!metering) return false
-  const isEnabled = (metering as { isEnabled?: unknown }).isEnabled
-  return typeof isEnabled === 'function' ? isEnabled() === true : true
+  return metering.isEnabled ? metering.isEnabled() === true : true
 }
 
 function nonEmptyString(value: unknown): string | undefined {
