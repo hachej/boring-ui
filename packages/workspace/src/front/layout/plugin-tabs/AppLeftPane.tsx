@@ -44,6 +44,7 @@ export interface AppLeftPaneAction {
   onClick: () => void
   trailing?: ReactNode
   emphasis?: boolean
+  active?: boolean
 }
 
 export interface AppLeftPaneProps {
@@ -293,6 +294,7 @@ export function AppLeftPane({
             onClick={action.onClick}
             trailing={action.trailing}
             emphasis={action.emphasis}
+            active={action.active}
           />
         ))}
       </nav>

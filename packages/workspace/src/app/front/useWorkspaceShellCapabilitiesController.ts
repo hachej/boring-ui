@@ -41,8 +41,8 @@ export function useWorkspaceShellCapabilitiesController({
           kind: artifact.surfaceKind,
           target: artifact.target,
           meta: {
+            ...(artifact.params ?? {}),
             ...(options?.sessionId ? { sessionId: options.sessionId } : {}),
-            ...(artifact.params ? { params: artifact.params } : {}),
           },
         },
       }, surfaceDispatch)

@@ -95,6 +95,28 @@ describe("DockviewShell", () => {
     }))
   })
 
+  it("falls back to default panels when a persisted layout is invalid", async () => {
+    const { panelRegistry, commandRegistry } = setupStoreAndRegistry()
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {})
+
+    render(
+      <RegistryProvider panelRegistry={panelRegistry} commandRegistry={commandRegistry}>
+        <DockviewShell
+          layout={simpleLayout}
+          persistedLayout={{ panels: { broken: undefined } } as never}
+        />
+      </RegistryProvider>,
+    )
+
+    await waitFor(() => {
+      expect(screen.getAllByTestId("dummy-panel").length).toBeGreaterThan(0)
+    })
+    expect(warn).toHaveBeenCalledWith(
+      "[DockviewShell] Ignoring invalid persisted layout",
+      expect.anything(),
+    )
+  })
+
   it("hot-swaps an already-mounted panel when its registry entry is replaced", async () => {
     const { panelRegistry, commandRegistry } = setupStoreAndRegistry()
     panelRegistry.register("hot", { title: "Hot", component: HotPanelOne })

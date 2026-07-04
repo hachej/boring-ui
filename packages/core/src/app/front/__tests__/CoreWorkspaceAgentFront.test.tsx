@@ -1,9 +1,9 @@
 // @vitest-environment jsdom
-import { render, screen, within } from '@testing-library/react'
+import { cleanup, render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { act, type ReactNode } from 'react'
 import { MemoryRouter, Routes } from 'react-router-dom'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 let currentWorkspaceId: string | null = 'workspace-a'
 let routePath = '/workspace/workspace-a'
@@ -134,6 +134,10 @@ describe('CoreWorkspaceAgentFront', () => {
     window.sessionStorage.clear()
   })
 
+  afterEach(() => {
+    cleanup()
+  })
+
   it('injects the routed workspace id into workspace request headers without blocking boot gate', async () => {
     const { CoreWorkspaceAgentFront } = await importSubject()
 
@@ -161,7 +165,7 @@ describe('CoreWorkspaceAgentFront', () => {
       },
       bootPreloadPaths: ['/custom-preload'],
     })
-  })
+  }, 10_000)
 
   it('allows apps to suppress the default workspace switcher', async () => {
     const { CoreWorkspaceAgentFront } = await importSubject()

@@ -20,7 +20,12 @@ function titleFromPath(path: string): string {
   return file.replace(/\.dashboard\.json$/i, "").replace(/[-_]+/g, " ")
 }
 
+function isWorkspaceDashboardPath(path: string): boolean {
+  return path.startsWith("dashboards/") && path.endsWith(".dashboard.json")
+}
+
 function matchesQuery(path: string, query: string | undefined): boolean {
+  if (!isWorkspaceDashboardPath(path)) return false
   const value = query?.trim().toLowerCase()
   if (!value) return true
   return path.toLowerCase().includes(value) || titleFromPath(path).toLowerCase().includes(value)
@@ -49,7 +54,7 @@ export function DashboardFilesPane({ params, openPanel }: DashboardFilesPaneProp
       .then((body) => {
         setState({
           loading: false,
-          paths: [...new Set(body.results ?? [])].sort((a, b) => a.localeCompare(b)),
+          paths: [...new Set(body.results ?? [])].filter(isWorkspaceDashboardPath).sort((a, b) => a.localeCompare(b)),
         })
       })
       .catch((error) => {
