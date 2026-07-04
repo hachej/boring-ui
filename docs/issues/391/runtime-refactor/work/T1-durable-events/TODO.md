@@ -45,7 +45,7 @@ Match `INDEX.md` Phase T1 exit criteria:
 
 ## Do NOT
 
-- Do NOT delete `piChatReplayBuffer.ts` or the `?cursor=` NDJSON route in T1 (T2 owns the front cutover; keep both live until then).
+- Do NOT delete `piChatReplayBuffer.ts` or the `?cursor=` NDJSON route in T1 (T2 owns the front cutover; keep both live until then). Every retained legacy `?cursor=` / `PiChatReplayBuffer` path must carry `TODO(remove:BBT2-006)` until T2 deletes it; BBT2-006 is the named deletion owner allowed by [`../../INDEX.md`](../../INDEX.md)'s cross-TODO cutover carve-out.
 - Do NOT add a second persistence format for approvals — persist pending requests in the same SQLite DB as the event stream, not a new JSON file and not the pi session JSONL/session store.
 - Do NOT introduce `@durable-streams/server` or the Caddy sidecar — embed the adapted store (plan 08: sidecar is an alternative, not T1).
 - Do NOT wire the browser client (`@durable-streams/client`) here — that is BBT2-002.

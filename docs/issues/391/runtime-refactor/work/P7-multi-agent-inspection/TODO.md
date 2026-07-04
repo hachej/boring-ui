@@ -4,9 +4,9 @@ Handoff: self-contained work order for one autonomous coding agent (pi or gpt-5.
 
 ## Context (read first)
 
-- Plan: `docs/issues/391/runtime-refactor/INDEX.md` § "Phase 7 — Multi-agent routing/session/search" (v1 body + v2 additions: surface adapters address agents via `agentId`; the `GET /api/v1/agents/:agentId/info` inspection endpoint). Exit: v1 + "two surfaces bound to two agents in one workspace do not collide".
+- Plan: `docs/issues/391/runtime-refactor/INDEX.md` § "Phase 7 — Multi-agent routing/session/search" (v1 body + v2 additions: surface adapters address agents via `agentId`; the `GET /api/v1/agents` list endpoint and `GET /api/v1/agents/:agentId/info` inspection endpoint). Exit: v1 + "two surfaces bound to two agents in one workspace do not collide".
 - Plan: `docs/issues/391/runtime-refactor/architecture/05-multi-agent-sessions-hooks.md` — the full requirement set: workspace agent registry, route/session namespace scoping, session history search (#379), deep links (#243/#211), external harness hooks (#380), user-as-principal, concurrency safeguards, and the § "Tests" list (these are the checkable v1 exit criteria).
-- Plan: `docs/issues/391/runtime-refactor/architecture/08-pluggable-agent-surfaces.md` § "The steering surface" (the workspace is the control plane; steering = the workspace consuming the same public contracts, with more of them — the `/info` endpoint, never private core hooks; eve `/eve/v1/info` analog) and § "Two handles (hard rule)".
+- Plan: `docs/issues/391/runtime-refactor/architecture/08-pluggable-agent-surfaces.md` § "The steering surface" (the workspace is the control plane; steering = the workspace consuming the same public contracts, with more of them — the agent-list endpoint plus `/info`, never private core hooks; eve `/eve/v1/info` analog) and § "Two handles (hard rule)".
 - Plan: `docs/issues/391/runtime-refactor/architecture/00-global-isa.md` § "North star" (eve-class UX steered from the workspace) and invariants 11 (surfaces never own the loop), 12 (two handles), 9 (user as principal, not a model-callable root agent). Open decision 4 (multi-agent route shape) is **resolved — locked at pass 3**: the single canonical `/api/v1/agents/:agentId` path-prefix family (no header alternative). BBP7-002 records and implements it.
 - Plan: `docs/issues/391/runtime-refactor/architecture/09-environments-attachable.md` § "Consumers" (subagent attaches by explicit `EnvironmentAttachment`, never cwd inheritance) — P7 is the first real subagent consumer and lands the E1-deferred grant.
 - BINDING policy: `docs/issues/391/runtime-refactor/INDEX.md` "Simplicity & no-compat policy" — no shims, no abstraction without two real consumers, `TODO(remove:<bead-id>)` regime, migrate every importer in the same PR.
@@ -41,7 +41,7 @@ Make [`../../INDEX.md`](../../INDEX.md) Phase 7 + [`../../architecture/05-multi-
 3. Per-agent tool catalog and per-agent readiness (reviewer readonly/no-exec while coding agent has bash; pure concierge has no boring-bash — `05` Tests).
 4. Session index/search scoped by `workspaceId` + `agentId` (+ title/content/operational events, redacted), no filesystem requirement (`#379`).
 5. External harness hook target resolution: authenticate caller, validate `(workspace, agent, session)`, redact, route to the HITL channel, audit attribution, no boring-bash dep (`#380` / `05`).
-6. `GET /api/v1/agents/:agentId/info` returns `{ agentId, model, tools, readiness, channels, environments }` — public contract, no private core hooks (the steering mechanism, `08`/`00`).
+6. `GET /api/v1/agents` returns a scrubbed declared-agent list sourced from the Phase 6a `AgentRegistry` / workspace declaration, and `GET /api/v1/agents/:agentId/info` returns `{ agentId, model, tools, readiness, channels, environments }` per listed id — public contracts, no private core hooks (the steering mechanism, `08`/`00`).
 7. Surface adapters (workspace pane, Slack `conversationKey`, Excel workbook) each bind exactly one `agentId` per addressing entry (INDEX Phase 7 addition).
 8. First real subagent consumer: `SubagentEnvironmentGrant` / `deriveSubagentAttachment` (E1-deferred `BBE1-005`) lands, jailed by `agentId` scope + `scope.subpath`, minimal.
 9. **Two surfaces × two agents in one workspace do not collide** (the Phase 7 exit test).
@@ -97,10 +97,10 @@ Make [`../../INDEX.md`](../../INDEX.md) Phase 7 + [`../../architecture/05-multi-
 - **Tests**: `sessionSearch.test.ts` — search scoped to agent A does not return agent B's sessions in the same workspace; content match finds a message substring; private/tool-output fields are redacted; `includeId` pins the target session (deep-link safety); unknown session resolves gracefully (`05` "resolving inaccessible/deleted sessions gracefully").
 - **Acceptance**: `05` Tests "session search scoped by workspace+agent"; `#379` parity + redaction + no-fs.
 
-### BBP7-005 — Agent inspection endpoint `GET /api/v1/agents/:agentId/info` (the steering mechanism) · size M
-- **Title**: Public per-agent info endpoint — model, tools, readiness, channels, environments — modeled on `models.ts`.
-- **Files create/touch**: `packages/agent/src/server/http/routes/agentInfo.ts` (new) — `GET /api/v1/agents/:agentId/info`. Compose from public sources already wired: model selection (`models.ts` / `modelConfig`), the per-agent tool catalog names (BBP7-003), readiness snapshot (`ReadyStatusTracker.getReadiness()`), declared channels (from the `AgentRegistry` entry / surface bindings BBP7-007), and attached environments (`ResolvedEnvironments` filesystem ids + access + exec policy — type-only shape from E1, never handles). Register beside `modelsRoutes` in `createAgentApp`.
-- **Notes**: Shape (stable public contract, eve `/eve/v1/info` analog):
+### BBP7-005 — Agent list + inspection endpoints (the steering mechanism) · size M
+- **Title**: Public agent-list and per-agent info endpoints — list declared agents, then inspect one agent's model/tools/readiness/channels/environments — modeled on `models.ts`.
+- **Files create/touch**: `packages/agent/src/server/http/routes/agentInfo.ts` (new) — `GET /api/v1/agents` and `GET /api/v1/agents/:agentId/info`. The list route is the public, checkable source for Fleet's agent ids: return a scrubbed `{ defaultAgentId, agents: [{ agentId, label? }] }` payload sourced from the Phase 6a `AgentRegistry` plus the workspace `agents: [...]` declaration; no tool/env/readiness details in the list. The info route composes from public sources already wired: model selection (`models.ts` / `modelConfig`), the per-agent tool catalog names (BBP7-003), readiness snapshot (`ReadyStatusTracker.getReadiness()`), declared channels (from the `AgentRegistry` entry / surface bindings BBP7-007), and attached environments (`ResolvedEnvironments` filesystem ids + access + exec policy — type-only shape from E1, never handles). Register beside `modelsRoutes` in `createAgentApp`.
+- **Notes**: Info shape (stable public contract, eve `/eve/v1/info` analog):
   ```jsonc
   { "agentId": "coding",
     "model": { "provider": "anthropic", "id": "claude-...", "available": true },
@@ -109,9 +109,9 @@ Make [`../../INDEX.md`](../../INDEX.md) Phase 7 + [`../../architecture/05-multi-
     "channels": [{ "kind": "workspace" }, { "kind": "slack" }],
     "environments": [{ "filesystem": "company_context", "access": "readonly", "exec": "none" }] }
   ```
-  **Never** emit secrets, broker credentials, provider key material, or environment handles (`00` invariant 14; `models.ts` safety posture). S3 ([`../S3-control-plane-ux/TODO.md`](../S3-control-plane-ux/TODO.md)) is the consumer — this endpoint is the entire private-hook-free steering surface.
-- **Tests**: `agentInfo.route.test.ts` — reports the agent's model/tools/readiness/channels/environments; a reviewer agent shows readonly env + no bash tool; a pure concierge shows no environments and no bash; asserts no key/secret field is present in the payload.
-- **Acceptance**: [`../../INDEX.md`](../../INDEX.md) Phase 7 "agent inspection endpoint … consumed by workspace panels"; no private core hooks, no secret leak.
+  **Never** emit secrets, broker credentials, provider key material, or environment handles (`00` invariant 14; `models.ts` safety posture). S3 ([`../S3-control-plane-ux/TODO.md`](../S3-control-plane-ux/TODO.md)) is the consumer — these endpoints are the entire private-hook-free steering surface.
+- **Tests**: `agentInfo.route.test.ts` — `GET /api/v1/agents` returns every declared agent id/label and the default id from the registry/declaration with no secret/detail fields; `/agents/:agentId/info` reports that agent's model/tools/readiness/channels/environments; a reviewer agent shows readonly env + no bash tool; a pure concierge shows no environments and no bash; asserts no key/secret field is present in either payload.
+- **Acceptance**: [`../../INDEX.md`](../../INDEX.md) Phase 7 "agent inspection endpoint … consumed by workspace panels"; the Fleet page has a public source for every declared agent id; no private core hooks, no secret leak.
 
 ### BBP7-006 — External harness hook target resolution (#380) · size M
 - **Title**: Resolve `(workspace, agent, session)` for an external review/question/approval hook; authenticate, validate, redact, route to the HITL channel, audit.
@@ -175,8 +175,8 @@ pnpm typecheck              # build:packages then per-pkg typecheck
 - Per-agent tool catalog + readiness with zero cross-agent bleed (`05` Tests reproduced).
 - Session search scoped by `workspace+agent`, no fs requirement, redaction enforced.
 - External hook routes onto the single T1 approval channel; boring-bash-free; authenticates/validates/redacts/audits.
-- `/api/v1/agents/:agentId/info` is public, private-hook-free, and leaks no secret/key material (assert in test).
+- `/api/v1/agents` and `/api/v1/agents/:agentId/info` are public, private-hook-free, and leak no secret/key material (assert in test).
 - One addressing entry ↔ one `agentId`; T2 platform-addressing guard stays green (`agentId`/`sessionId`/`SessionCtx` only in core signatures).
 - Subagent grant is minimal, explicit-attachment-only, `execPolicy:'none'`, isolated by `agentId`.
 - Two-surfaces × two-agents no-collision test present and green.
-- Any intra-phase transitional code carries `TODO(remove:<bead-id>)` + a same-phase deletion bead (`README.md` policy).
+- Any transitional code carries `TODO(remove:<bead-id>)` naming its deletion-owner bead; a later owner is allowed only when explicitly named per [`../../INDEX.md`](../../INDEX.md), and no marker outlives its named owner's phase.

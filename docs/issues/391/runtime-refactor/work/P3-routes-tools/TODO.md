@@ -143,7 +143,7 @@ P3 therefore **enumerates and migrates EVERY in-repo composition consumer**, eac
 
 ### BBP3-017 — Extend invariants for the routes/tools boundary [size S]
 
-- **Files touch:** `packages/boring-bash/scripts/check-invariants.mjs` (`requiredExports` += `"./agent"`; keep agent→bash value-import scan). Verify `packages/agent/src/server/index.ts` no longer value-exports moved tool builders (`buildFilesystemAgentTools`/`buildHarnessAgentTools`/`buildUploadAgentTools`) — migrate those importers or host-shim; add a static assertion if practical.
+- **Files touch:** `packages/boring-bash/scripts/check-invariants.mjs` (`requiredExports` += `"./agent"`; keep agent→bash value-import scan). Verify `packages/agent/src/server/index.ts` no longer value-exports moved tool builders (`buildFilesystemAgentTools`/`buildHarnessAgentTools`/`buildUploadAgentTools`) — migrate those importers in the same PR and delete the origin exports; add a static assertion if practical.
 - **Tests:** `pnpm lint:invariants` (root) green; `pnpm audit:imports` green.
 - **Acceptance:** boundary guarded; no agent→bash value import; no cycle.
 

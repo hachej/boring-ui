@@ -169,7 +169,7 @@ v2 status — resolved (recommendations locked in [`08-pluggable-agent-surfaces.
 4. Multi-agent route shape: **resolved (locked at pass 3)** — one canonical `/api/v1/agents/:agentId` path-prefix family (see `../work/P7-multi-agent-inspection/TODO.md`). There is no header/request-scope alternative.
 6. Readonly fs: **v1 — already landed** via #416.
 
-Still open:
+Deferred carryover ratified in [`docs/DECISIONS.md` §19](../../../../DECISIONS.md#19-runtime-free-agent-core-and-pluggable-surfaces):
 
-5. Provisioning sharing defaults: workspace-shared, agent-private, or requirement-controlled?
-7. (v2) Where does each surface persist its `addressing → sessionId` map: surface-local store vs host DB contract?
+5. Provisioning sharing defaults — deferred to **P5 provisioning/readiness** and **P6a AgentRegistry requirements**.
+7. (v2) Surface `addressing → sessionId` map persistence — deferred to **T2 transport**, **S1/S2 concrete surface stores**, and **P7 agent scoping**.

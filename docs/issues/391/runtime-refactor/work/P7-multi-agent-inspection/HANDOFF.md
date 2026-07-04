@@ -13,7 +13,7 @@ Derived strictly from [TODO.md](./TODO.md) and [PLAN.md](./PLAN.md). Tick each b
 - [ ] BBP7-002 — `agentId` request addressing against the Phase 6 `AgentRegistry`
 - [ ] BBP7-003 — Per-agent tool catalog + per-agent readiness
 - [ ] BBP7-004 — Session index/search scoped by workspace + agent (#379)
-- [ ] BBP7-005 — Agent inspection endpoint `GET /api/v1/agents/:agentId/info` (the steering mechanism)
+- [ ] BBP7-005 — Agent list + inspection endpoints (the steering mechanism)
 - [ ] BBP7-006 — External harness hook target resolution (#380)
 - [ ] BBP7-007 — Surface adapters bind one `agentId` per addressing entry
 - [ ] BBP7-008 — Subagent environment grant (first real consumer; lands E1 BBE1-005)
@@ -39,11 +39,11 @@ Derived strictly from [TODO.md](./TODO.md) and [PLAN.md](./PLAN.md). Tick each b
 - [ ] Per-agent tool catalog + readiness with zero cross-agent bleed (`05` Tests reproduced).
 - [ ] Session search scoped by `workspace+agent`, no fs requirement, redaction enforced.
 - [ ] External hook routes onto the single T1 approval channel; boring-bash-free; authenticates/validates/redacts/audits.
-- [ ] `/api/v1/agents/:agentId/info` is public, private-hook-free, and leaks no secret/key material (assert in test).
+- [ ] `/api/v1/agents` and `/api/v1/agents/:agentId/info` are public, private-hook-free, and leak no secret/key material (assert in test).
 - [ ] One addressing entry ↔ one `agentId`; T2 platform-addressing guard stays green (`agentId`/`sessionId`/`SessionCtx` only in core signatures).
 - [ ] Subagent grant is minimal, explicit-attachment-only, `execPolicy:'none'`, isolated by `agentId`.
 - [ ] Two-surfaces × two-agents no-collision test present and green.
-- [ ] Any intra-phase transitional code carries `TODO(remove:<bead-id>)` + a same-phase deletion bead.
+- [ ] Any transitional code carries `TODO(remove:<bead-id>)` naming its deletion-owner bead; a later owner is allowed only when explicitly named per [INDEX.md](../../INDEX.md), and no marker outlives its named owner's phase.
 
 ## Exit criteria
 - [ ] Agent addressing resolves an `agentId` per request via the canonical `/api/v1/agents/:agentId/...` path prefix against the Phase 6 `AgentRegistry`; unknown/undeclared `agentId` fails closed.
@@ -51,7 +51,7 @@ Derived strictly from [TODO.md](./TODO.md) and [PLAN.md](./PLAN.md). Tick each b
 - [ ] Per-agent tool catalog and per-agent readiness (reviewer readonly/no-exec; coding agent has bash; pure concierge has no boring-bash).
 - [ ] Session index/search scoped by `workspaceId` + `agentId` (+ title/content/operational events, redacted), no filesystem requirement.
 - [ ] External harness hook target resolution: authenticate caller, validate `(workspace, agent, session)`, redact, route to the HITL channel, audit attribution, no boring-bash dep.
-- [ ] `GET /api/v1/agents/:agentId/info` returns `{ agentId, model, tools, readiness, channels, environments }` — public contract, no private core hooks.
+- [ ] `GET /api/v1/agents` returns a scrubbed declared-agent list, and `GET /api/v1/agents/:agentId/info` returns `{ agentId, model, tools, readiness, channels, environments }` — public contracts, no private core hooks.
 - [ ] Surface adapters each bind exactly one `agentId` per addressing entry.
 - [ ] First real subagent consumer: `SubagentEnvironmentGrant` / `deriveSubagentAttachment` lands, jailed by `agentId` scope + `scope.subpath`, minimal.
 - [ ] Two surfaces × two agents in one workspace do not collide (the Phase 7 exit test).

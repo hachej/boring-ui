@@ -181,4 +181,4 @@ pnpm typecheck
 - Mount-type facts declared + no-inotify contract enforced; stable error codes present; egress enforced via #307 netns/nftables.
 - The six Decision-12 smoke tests pass; the BBX1-009 rclone-FUSE-vs-local benchmark exists with recorded thresholds.
 - boring-sandbox imports agent types only; mounts code never in `shared`; agent imports neither package; `pnpm audit:imports`/`pnpm lint:invariants` green.
-- Any intra-phase transitional code carries `TODO(remove:<bead-id>)` + a same-phase deletion bead (README policy).
+- Any transitional code carries `TODO(remove:<bead-id>)` naming its deletion-owner bead; a later owner is allowed only when explicitly named per [`../../INDEX.md`](../../INDEX.md), and no marker outlives its named owner's phase.

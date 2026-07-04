@@ -27,14 +27,17 @@ Defaults:
 A workspace may declare:
 
 ```ts
-agents: [
-  { id: 'coding', package: '@hachej/coding-agent', bash: true },
-  { id: 'reviewer', package: '@hachej/review-agent', bash: { fs: 'readonly', exec: false } },
-  { id: 'concierge', package: '@hachej/email-agent' }
-]
+const declaration: WorkspaceAgentsDeclaration = {
+  defaultAgentId: 'coding',
+  agents: [
+    { agentId: 'coding', label: 'Coding', toolset: 'full-bash', environments: ['user'] },
+    { agentId: 'reviewer', label: 'Reviewer', toolset: 'review-readonly', environments: ['company_context'] },
+    { agentId: 'concierge', label: 'Concierge', toolset: 'pure' },
+  ],
+}
 ```
 
-There is **no `features` config member**. Each agent's environment attachment is explicit: `bash: true` (or a `bash: { fs, exec }` scope) tells the host to spread the plain `createBashAgentFeature(...)` tool bundle into that agent's `createAgent().tools`; omitting `bash` yields a pure agent with no file/bash tools. (For richer multi-environment agents this generalizes to an `environments: [...]` attachment list per 09; the point is explicit host-side composition, never an `AgentFeature`/`features` abstraction.) Child-app defaults can seed this registry, but workspace/user policy can narrow it.
+This is the exact P6a declaration shape: `WorkspaceAgentsDeclaration { agents: WorkspaceAgentDeclaration[]; defaultAgentId }`, `WorkspaceAgentDeclaration { agentId; label?; toolset?; environments? }`. There is **no `features` config member** and no `package`/`bash` contract here. The host maps `toolset`/`environments` to explicit composition: it spreads the plain `createBashAgentFeature(...)` tool bundle into that agent's `createAgent().tools` only when the resolved toolset/environment policy says so; omitting a bash-capable toolset yields a pure agent with no file/bash tools. (For richer multi-environment agents this generalizes to the `environments: [...]` attachment list per 09; the point is explicit host-side composition, never an `AgentFeature`/`features` abstraction.) Child-app defaults can seed this registry in P6b, but workspace/user policy can narrow it.
 
 ## Route/session namespace
 
