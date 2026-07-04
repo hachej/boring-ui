@@ -60,7 +60,7 @@ Concrete non-agent-loop providers (direct, bwrap, vercel-sandbox, remote-worker 
 
 - `@hachej/boring-bash` builds; a new `/providers` subpath resolves.
 - No agent→bash value import (invariant scan green).
-- Current apps still compile after import migration or host-level shims.
+- Current apps still compile after same-PR importer migration (no old-path re-export, no host shim).
 - Landed #416 contracts unchanged; governance consumers keep working.
 - `direct`/`local`/`vercel-sandbox` behavior + existing tests preserved.
 

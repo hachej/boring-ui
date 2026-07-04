@@ -52,7 +52,8 @@ Match `06-migration-phases.md` Phase T2 exit criteria:
     ```ts
     export interface ChatTransport {
       // fire a user turn; returns when ACCEPTED (not when the turn completes)
-      sendMessages(input: AgentSendInput): Promise<{ accepted: true; startIndex: number }>
+      // returns the runtime-owned sessionId so a caller of a NEW session can reconnect
+      sendMessages(input: AgentSendInput): Promise<{ accepted: true; sessionId: string; startIndex: number }>
       // subscribe/replay the AgentEvent stream from an offset; reconnect-safe
       reconnectToStream(sessionId: string, opts: { startIndex: number }): AsyncIterable<AgentEvent>
       resolveInput(sessionId: string, requestId: string, response: ResolveInputResponse): Promise<void>
@@ -61,9 +62,9 @@ Match `06-migration-phases.md` Phase T2 exit criteria:
     }
     ```
     Keep it `sessionId`-keyed (two-handles). `AgentSendInput` is the single shared send-input type (defined in shared per TODO-P1/BBP1-002 — do not introduce a second input type here); `ResolveInputResponse` is the union defined in `TODO-T1`/`BBT1-004` (import it, do not redeclare). Document each method + reconnect semantics (at-least-once from `startIndex`, dedupe by `eventIndex`) in the file header.
-    - **Contract text (not just a bead note):** `sendMessages()` maps **1:1 onto `agent.start(input)`** — it returns the accepted receipt `{ accepted: true, startIndex }` the instant the turn is admitted and does **not** wait for the turn to complete or read any event (no "drain to first event"). The turn runs to completion on the façade's independent producer regardless of any consumer. The turn's events are consumed separately via `reconnectToStream(sessionId, { startIndex })` (which maps onto `agent.stream`). This accepted-then-stream split is part of the transport contract, identical in-process and over HTTP.
+    - **Contract text (not just a bead note):** `sendMessages()` maps **1:1 onto `agent.start(input)`** — it returns the accepted receipt `{ accepted: true, sessionId, startIndex }` the instant the turn is admitted and does **not** wait for the turn to complete or read any event (no "drain to first event"). The `sessionId` is **runtime-owned**: for a NEW session the caller does not know it up front and needs the returned value to `reconnectToStream`; it echoes back an existing `sessionId` for a follow-up turn. The turn runs to completion on the façade's independent producer regardless of any consumer. The turn's events are consumed separately via `reconnectToStream(sessionId, { startIndex })` (which maps onto `agent.stream`). This accepted-then-stream split is part of the transport contract, identical in-process and over HTTP.
   - `packages/agent/src/shared/__tests__/transport.conformance.ts` (new): `runTransportConformance(makeTransport, driveAgent)` covering:
-    - `sendMessages` accepted → events arrive in `eventIndex` order.
+    - `sendMessages` for a NEW session returns `{ accepted: true, sessionId, startIndex }` with a runtime-owned `sessionId`; passing that `sessionId` back into `reconnectToStream` yields the turn's events in `eventIndex` order.
     - `reconnectToStream` from mid-offset replays exactly the missed events (lossless), no dupes across a simulated drop.
     - approval round-trip: a `data-approval-request` event surfaces, `resolveInput` unblocks the turn.
     - `interrupt`/`stop` terminate the turn.
@@ -74,7 +75,7 @@ Match `06-migration-phases.md` Phase T2 exit criteria:
 ### BBT2-002 — In-process transport over `createAgent()`  · size M
 - **Title**: `ChatTransport` implemented by calling the façade directly (no HTTP).
 - **Files to create**:
-  - `packages/agent/src/server/transport/inProcessTransport.ts` (new): wraps `createAgent()` — `sendMessages` → `agent.start(input)` (returns the `{ accepted, startIndex }` receipt directly, no drain); `reconnectToStream` → `agent.stream(sessionId, { startIndex })`; `resolveInput`/`stop`/`interrupt` → façade methods.
+  - `packages/agent/src/server/transport/inProcessTransport.ts` (new): wraps `createAgent()` — `sendMessages` → `agent.start(input)` (returns the `{ accepted, sessionId, startIndex }` receipt directly, no drain — `agent.start` already yields the runtime-owned `{ sessionId, startIndex }`); `reconnectToStream` → `agent.stream(sessionId, { startIndex })`; `resolveInput`/`stop`/`interrupt` → façade methods.
 - **Tests**: `inProcessTransport.test.ts` calling `runTransportConformance(makeInProcess, …)` from BBT2-001.
 - **Acceptance**: in-process transport passes the shared suite; imports only `createAgent`/shared types (no Fastify, no front).
 
@@ -84,7 +85,7 @@ Match `06-migration-phases.md` Phase T2 exit criteria:
   - `packages/agent/src/front/chat/pi/dsHttpTransport.ts` (new): implements `ChatTransport`. `sendMessages` → POST `…/pi-chat/:sessionId/prompt` (reuse existing receipt shape); `reconnectToStream(sessionId,{startIndex})` → `@durable-streams/client` subscribed to `GET …/sessions/:sessionId/events/stream` (T1 route) starting at the DS offset for `startIndex`; map each `AgentEvent` back to the pi-chat UI store dispatches (`cursor-sync`, event apply) that `usePiSessions` expects. `resolveInput` → POST `…/sessions/:sessionId/input`; `stop`/`interrupt` → existing POSTs.
   - `packages/agent/src/front/chat/pi/remotePiSession.ts` (touch): re-express `RemotePiSession` on top of `dsHttpTransport` — replace `runEventStream`/`buildPiChatEventsUrl`/`readPiChatNdjsonStream`/`schedulePiChatReconnect` usage with `reconnectToStream`. `@durable-streams/client` owns backoff + offset checkpointing (delete the bespoke `calculateJitteredBackoffDelayMs`/`schedulePiChatReconnect` reconnect loop, and the `replay_gap`/`cursor_ahead` rehydrate recovery — DS catch-up makes gaps impossible). Keep the class's public methods (`start`, `prompt`, `interrupt`, `stop`, debug state) byte-compatible so `usePiSessions` is untouched.
   - Package: add pinned `@durable-streams/client` to `packages/agent/package.json` deps.
-- **Implementation notes**: `startIndex` (integer `eventIndex`) ↔ DS offset conversion lives behind the transport (T1's `replay`/routes already speak both). The old `start(cursor)` cursor becomes `startIndex`; `store.dispatch({type:'cursor-sync', cursor})` maps to the last-seen `eventIndex`. Heartbeats/`Stream-Up-To-Date` drive the `connection-state` dispatch that today comes from NDJSON heartbeats.
+- **Implementation notes**: `startIndex` (integer `eventIndex`) ↔ DS offset conversion lives behind the transport (T1's `stream`/routes already speak both). The old `start(cursor)` cursor becomes `startIndex`; `store.dispatch({type:'cursor-sync', cursor})` maps to the last-seen `eventIndex`. Heartbeats/`Stream-Up-To-Date` drive the `connection-state` dispatch that today comes from NDJSON heartbeats.
 - **Tests**: `dsHttpTransport.test.ts` via `runTransportConformance` against an in-memory fastify app mounting T1's DS route + `createAgent()`; assert reconnect after a forced stream close replays losslessly. Update `remotePiSession.test.ts` expectations.
 - **Acceptance**: HTTP transport passes the same suite as in-process (08 conformance item 3); `remotePiSession` public surface unchanged.
 

@@ -53,7 +53,7 @@ Parallel lanes after P1: **bash lane** (P2→P3→P4), **environment lane** (E1�
 
 These are now first-class v2 work orders here — **no longer delegated to `../todos/`**. Dispatch each when its prerequisites (dispatch table above) complete:
 
-- **`TODO-P5-provisioning-secrets.md`** (Phase 5, off P3) — provisioning/readiness extension + the *credential brokering rule*: brokered secrets are host-side handles consumed only by trusted-core tools; raw env exposure into a sandbox is an explicit non-default per-provider trusted exception, never for a governed filesystem (00 invariant 14, 08 trust boundary).
+- **`TODO-P5-provisioning-secrets.md`** (Phase 5, off P3) — provisioning/readiness extension + the *credential brokering rule*: brokered secrets are host-side handles consumed only by trusted-core tools and never enter any sandboxed environment (the `direct` provider is a host process, not a sandbox — nothing is injected there) (00 invariant 14, 08 trust boundary).
 - **`TODO-P6-plugin-child-app.md`** (Phase 6, off P5) — plugin/child-app integration; **also depends on the shared child-app platform plan** (do not define a competing child-app registry here).
 - **`TODO-P7-multi-agent-inspection.md`** (Phase 7, off P6 **and** E1) — multi-agent routing/session/search + the agent inspection endpoint; surface adapters address agents via the same `agentId` scoping (one addressing entry → one `agentId`).
 - **`TODO-P8-verification-cleanup.md`** (Phase 8, gates on **all** lanes) — verification phase: assert zero `TODO(remove:*)` markers repo-wide; `@hachej/boring-agent` README documents the four-part surface contract (../08) as the stable public API.

@@ -141,7 +141,7 @@ Required contracts:
 - host-owned secret store/status API;
 - browser/plugin sees only status: missing, granted, denied, expired;
 - model sees only names and availability unless a typed tool deliberately uses the brokered secret in host code;
-- **raw env exposure into a sandbox is NOT a default**: it is an explicit, per-provider **trusted exception** declared in policy (with audit logging), **never** the default path and **never** allowed for a governed filesystem (e.g. `company_context`);
+- **brokered secrets never enter any sandboxed environment, full stop**: there is no raw-env exposure path into a sandbox; the `direct` provider is not a sandbox (a host process running as the developer with their own ambient environment), so nothing is "injected" there either — the distinction is sandbox vs. host process, not an exception clause;
 - secrets never get written into provisioning plan files or logs, and never enter the model transcript.
 
 ## Managed services (#328, #258)

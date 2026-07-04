@@ -28,13 +28,13 @@ A workspace may declare:
 
 ```ts
 agents: [
-  { id: 'coding', package: '@hachej/coding-agent', features: ['boring-bash'] },
-  { id: 'reviewer', package: '@hachej/review-agent', features: ['boring-bash'], bash: { fs: 'readonly', exec: false } },
-  { id: 'concierge', package: '@hachej/email-agent', features: [] }
+  { id: 'coding', package: '@hachej/coding-agent', bash: true },
+  { id: 'reviewer', package: '@hachej/review-agent', bash: { fs: 'readonly', exec: false } },
+  { id: 'concierge', package: '@hachej/email-agent' }
 ]
 ```
 
-Child-app defaults can seed this registry, but workspace/user policy can narrow it.
+There is **no `features` config member**. Each agent's environment attachment is explicit: `bash: true` (or a `bash: { fs, exec }` scope) tells the host to spread the plain `createBashAgentFeature(...)` tool bundle into that agent's `createAgent().tools`; omitting `bash` yields a pure agent with no file/bash tools. (For richer multi-environment agents this generalizes to an `environments: [...]` attachment list per 09; the point is explicit host-side composition, never an `AgentFeature`/`features` abstraction.) Child-app defaults can seed this registry, but workspace/user policy can narrow it.
 
 ## Route/session namespace
 

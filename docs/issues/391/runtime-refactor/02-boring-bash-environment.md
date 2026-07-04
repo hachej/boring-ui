@@ -194,7 +194,7 @@ Move `packages/workspace/src/plugins/filesystemPlugin/front/*` into `boring-bash
 - `workspace.open.path` surface resolver;
 - file panel binding;
 - agent file bridge/session-change integration;
-- `/api/v1/files/*` route compatibility or aliases.
+- the existing `/api/v1/files/*` route paths exactly during the move; no aliases.
 
 The workspace bridge remains owned by `@hachej/boring-workspace`.
 

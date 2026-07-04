@@ -5,14 +5,14 @@ Handoff: self-contained work order for one autonomous coding agent (pi or gpt-5.
 ## Context (read first)
 
 - `docs/issues/391/runtime-refactor/03-policy-provisioning-readiness.md` — requirement shape, "Extend existing provisioning" ownership rules, readiness model, secrets, managed services, remote-worker hardening, two-phase lifecycle, fingerprint key composition.
-- `docs/issues/391/runtime-refactor/06-migration-phases.md` — Phase 5 deliverables/exit; the v2 delta: **credential brokering rule** — "secrets are injected at the environment boundary (provider adapter), never into the sandbox process env or the model transcript"; exit adds "no test can read a brokered secret from inside the sandbox".
+- `docs/issues/391/runtime-refactor/06-migration-phases.md` — Phase 5 deliverables/exit; the v2 delta: **credential brokering rule** — brokered secrets are host-side handles consumed only by trusted-core tools and **never enter any sandboxed environment** or the model transcript; exit adds "no test can read a brokered secret from inside the sandbox".
 - `docs/issues/391/runtime-refactor/00-global-isa.md` — invariant 6 (no silent widening), 14 (secrets brokered at the environment boundary, never in sandbox process or transcript), 15 (EU-sovereign defaults). Provisioning-ownership rule: engine + `ProvisionWorkspaceRuntimeOptions` stay agent-side over an injected adapter; boring-bash owns requirement normalizer + provider adapters.
 - `docs/issues/391/runtime-refactor/todos-v2/README.md` — dispatch protocol; **Simplicity & no-compat policy (binding)**: migrate every importer in-PR, no shims, no deprecated aliases, no abstraction without two consumers, `// TODO(remove:<bead-id>)` + deletion bead for any transitional code.
-- `docs/issues/391/runtime-refactor/todos/TODO-04-policy-provisioning-readiness.md` — v1 beads BBA-040..047. **This pack supersedes them.** Coverage carries over; every compatibility-export/shim/deprecation-window instruction is stripped. The brokering model below **replaces** BBA-044's "shell env injection requires explicit policy" phrasing: brokered secrets are host-side handles consumed by trusted-core tools; raw sandbox env exposure is an explicit non-default per-provider trusted exception, never a default path.
+- `docs/issues/391/runtime-refactor/todos/TODO-04-policy-provisioning-readiness.md` — v1 beads BBA-040..047. **This pack supersedes them.** Coverage carries over; every compatibility-export/shim/deprecation-window instruction is stripped. The brokering model below **replaces** BBA-044's "shell env injection requires explicit policy" phrasing: brokered secrets are host-side handles consumed by trusted-core tools and **never enter any sandboxed environment, full stop**. The `direct` provider is not a sandbox — it is a host process running as the developer with their own ambient environment — so nothing is "injected" there; there is no brokered-secret env-injection path in any provider.
 
 ### Dependencies
 
-- **P4** complete (file UI/plugin moved) — Phase 5 is the last bash-track phase (`../06-migration-phases.md` ordering).
+- **P3** complete (routes/tools moved to boring-bash; the host composes the plain bash bundle) — the hard prerequisite. Phase 5 does **not** gate on P4: P4-specific file-UI consumers are optional downstream integration, not a prerequisite. In linear ordering Phase 5 is still the last bash-track phase, but its dependency is P3 (parallel to P4), matching `README.md` and `../06-migration-phases.md`.
 - **P2** `@hachej/boring-bash/providers` + `providers/matrix.ts` `ProviderCapabilities` exist (the normalizer validates requirements against them). If `/providers` is absent, STOP and report — do not fork a second capability model.
 
 ### Already landed (do not redo, build on it)
@@ -50,7 +50,7 @@ Runtime needs are declarative, scoped, readiness-gated, and secret-safe, **exten
 - `@hachej/boring-agent` keeps **zero value imports** from `@hachej/boring-bash` (`packages/boring-bash/scripts/check-invariants.mjs`). The normalizer + `BashRequirement` shape live in boring-bash; the engine stays agent-side; the host wires them. boring-bash imports agent provisioning **types type-only**.
 - Extend the existing engine/readiness/fingerprint. **Do not** create a second provisioning or readiness engine.
 - Secrets are **host-side handles**, resolved and used only by trusted-core code (host tools, provider adapters). The model/browser/plugin sees status only. Raw secret values never enter `WorkspaceProvisioningResult.env`, provisioning plan files, fingerprints, logs, or the transcript.
-- Sandbox process-env injection of a secret is an **explicit, non-default, per-provider trusted exception** — off unless a policy grant + provider capability both allow it, audit-logged. Never the default path.
+- **Brokered secrets never enter any sandboxed environment, full stop** (00 invariant 14). There is no sandbox process-env injection path for a brokered secret. The `direct` provider is not a sandbox — it is a host process running as the developer with their own ambient environment — so nothing is "injected" there either; the distinction is sandbox vs. host process, not an injection exception.
 - Remote-worker capabilities are **reported facts**, typed `reported | unknown`; consumers fail closed on `unknown` (never assume a hardening property the worker did not prove).
 - No compat shims, no deprecated aliases, no old-path re-exports. Migrate every caller of the changed provisioning seam in the same PR.
 
@@ -113,10 +113,10 @@ Runtime needs are declarative, scoped, readiness-gated, and secret-safe, **exten
 ### BBP5-007 — Secret status/grant model + credential brokering rule [size L]
 
 - **Files create:** `packages/agent/src/server/secrets/secretStatus.ts` (host-owned status API: `missing|granted|denied|expired`, grant-handle model) + `__tests__/`; `packages/agent/src/server/secrets/__tests__/brokerNoSandboxLeak.test.ts` (the negative test).
-- **Files touch:** `provisioning/types.ts` (secret **names/grant ids/status** only — never values), `resolveBashProvisioningRequirements.ts` (BBP5-001: `capabilities.secrets` participate in policy intersection and readiness), `registerAgentRoutes.ts` / readiness (surface secret status), the provider-adapter env boundary (`WorkspaceProvisioningAdapter` / sandbox exec env) where a trusted exception injects.
-- **Notes:** Secrets are **host-side handles**. The status API returns status without values; the model/browser/plugin see status + names only. A brokered secret is consumed only by trusted-core code (a host tool or a provider adapter at the environment boundary). **Sandbox process-env injection is a non-default per-provider trusted exception** — requires an explicit policy grant **and** provider capability, is audit-logged, and defaults off. Raw values never enter `WorkspaceProvisioningResult.env`, provisioning plan files, fingerprints, logs, or the transcript. Fingerprints/plans may carry secret names/grant ids/status only.
-- **Tests:** status visible without value; raw value never serialized to browser/plugin/model/readiness/provisioning-artifact/log payloads; missing secret blocks only its dependent requirement; denied/expired → stable codes; default path performs **no** sandbox-side env injection. **Brokering negative test:** provision + exec a sandbox with a brokered secret configured for host-side use; assert a command reading the environment inside the sandbox (`env`, `printenv`, `/proc/self/environ`) cannot observe the secret value, and a known fake value appears in no captured log/prompt/artifact.
-- **Acceptance:** secret availability is diagnosable without exposure; no sandbox-side read of a brokered secret on the default path.
+- **Files touch:** `provisioning/types.ts` (secret **names/grant ids/status** only — never values), `resolveBashProvisioningRequirements.ts` (BBP5-001: `capabilities.secrets` participate in policy intersection and readiness), `registerAgentRoutes.ts` / readiness (surface secret status), the provider-adapter env boundary (`WorkspaceProvisioningAdapter` / sandbox exec env) — confirm no brokered secret is ever placed on a sandbox env there.
+- **Notes:** Secrets are **host-side handles**. The status API returns status without values; the model/browser/plugin see status + names only. A brokered secret is consumed only by trusted-core code (a host tool or a provider adapter running on the trusted core side). **Brokered secrets never enter any sandboxed environment** — there is no process-env injection path for them. The `direct` provider is not a sandbox (a host process running as the developer with their own ambient environment), so nothing is "injected" there either. Raw values never enter `WorkspaceProvisioningResult.env`, provisioning plan files, fingerprints, logs, or the transcript. Fingerprints/plans may carry secret names/grant ids/status only.
+- **Tests:** status visible without value; raw value never serialized to browser/plugin/model/readiness/provisioning-artifact/log payloads; missing secret blocks only its dependent requirement; denied/expired → stable codes; **no** brokered secret is ever placed on a sandbox env (there is no injection path). **Brokering negative test:** provision + exec a sandbox with a brokered secret configured for host-side use; assert a command reading the environment inside the sandbox (`env`, `printenv`, `/proc/self/environ`) cannot observe the secret value, and a known fake value appears in no captured log/prompt/artifact.
+- **Acceptance:** secret availability is diagnosable without exposure; no sandbox-side read of a brokered secret (no injection path exists).
 
 ### BBP5-008 — Remote-worker capability handshake (reported | unknown, fail-closed) [size M]
 
@@ -152,9 +152,9 @@ pnpm --filter @hachej/boring-agent run smoke:capability-readiness   # tsx ./scri
 # host callers still build/test after re-point
 pnpm --filter @hachej/boring-core run test
 pnpm --filter @hachej/boring-workspace run typecheck
-pnpm --filter @hachej/boring-cli run test
-pnpm --filter @hachej/full-app run typecheck
-pnpm --filter @hachej/full-app run smoke:remote-worker      # node scripts/remote-worker-smoke.mjs (handshake)
+pnpm --filter @hachej/boring-ui-cli run test
+pnpm --filter full-app run typecheck
+pnpm --filter full-app run smoke:remote-worker      # node scripts/remote-worker-smoke.mjs (handshake)
 
 # repo-wide boundary + cycle guards (root package.json)
 pnpm lint:invariants        # agent + boring-bash + workspace-plugin invariants
@@ -170,7 +170,7 @@ pnpm typecheck              # build:packages then per-pkg typecheck
 - `pnpm lint:invariants` + `pnpm audit:imports` green; zero agent→bash value imports; engine still agent-owned, normalizer boring-bash-owned.
 - Provisioning behavior unchanged for no-requirement workspaces; existing provisioning/readiness/Vercel-snapshot tests pass.
 - Optional-failure isolation, health gating, service lifecycle, SDK-archive leak-safety all covered by tests.
-- Brokering negative test present and green: no sandbox-side read of a brokered secret on the default path; sandbox env injection is off unless an explicit per-provider trusted grant enables it.
+- Brokering negative test present and green: no sandbox-side read of a brokered secret; no brokered secret is ever placed on a sandbox env (there is no injection path — the `direct` provider is a host process, not a sandbox).
 - Remote-worker handshake reports typed `reported|unknown` facts and fails closed on `unknown`.
 - Two-phase fingerprint composition includes all listed keys and no raw secret.
 - EU-sovereign: no US-hosted default/hard dependency introduced (invariant 15).

@@ -93,7 +93,7 @@ Deliverables:
 
 Do not move providers until Phase 1 injection is complete.
 
-Exit criteria: package builds; no import cycle; current apps still compile after import migration or safe host-level shims; landed #416 contracts unchanged (governance consumers #476–#501 keep working).
+Exit criteria: package builds; no import cycle; current apps still compile after same-PR importer migration (no old-path re-export, no host shim); landed #416 contracts unchanged (governance consumers #476–#501 keep working).
 
 ## Phase 3 — Move server routes and tools (bash track)
 
@@ -113,13 +113,15 @@ Deliverables: move filesystem front plugin to `boring-bash/plugin`; preserve pan
 
 Exit criteria: `exec_ui openFile` still opens files; file tree data flows through one internal function with unchanged behavior (provider boundary deferred to #295); active document coordinator can intercept writes.
 
-## Phase 5 — Extend provisioning/readiness (bash track)
+## Phase 5 — Extend provisioning/readiness (bash track; hard dependency P3, parallel to P4)
+
+Phase 5's hard prerequisite is **Phase 3** (routes/tools moved + host-composed bash bundle) plus the **Phase 2** provider capability matrix; it does **not** gate on Phase 4. The linear `Phase 4 ── Phase 5` arrow in the track overview reflects bash-track numbering, not a Phase-4→Phase-5 dependency: Phase 5 runs parallel to Phase 4.
 
 Unchanged from v1: `BashRequirement` normalizer outside agent feeding `provisionWorkspaceRuntime()` via host/core/CLI composition; re-point callers; import-free requirement validation; per-requirement readiness metadata; `optional_failed` derived state; health checks; SDK archive support; managed service requirements; secret status/grant model; remote-worker capability handshake; two-phase bootstrap/onSession reconciliation.
 
-Additional v2 deliverable: **credential brokering rule** (00 invariant 14, 08 trust boundary) — brokered secrets are host-side handles consumed **only by trusted-core tools**; they never enter the sandbox process env or the model transcript. Raw env exposure into a sandbox is **not** a default: it is an explicit, per-provider **trusted exception** that a policy must declare, and it is **never** allowed for a governed filesystem (e.g. `company_context`).
+Additional v2 deliverable: **credential brokering rule** (00 invariant 14, 08 trust boundary) — brokered secrets are host-side handles consumed **only by trusted-core tools**; they **never enter any sandboxed environment** or the model transcript. There is no raw-env injection path: the `direct` provider is not a sandbox (a host process running as the developer with their own ambient environment), so nothing is "injected" there either — the distinction is sandbox vs. host process, not an exception clause.
 
-Exit criteria: as v1, plus: no test can read a brokered secret from inside the sandbox; raw-env exposure is reachable only via an explicitly declared per-provider trusted exception — never by default, never for a governed filesystem.
+Exit criteria: as v1, plus: no test can read a brokered secret from inside the sandbox; no brokered secret is reachable from inside any sandboxed environment (there is no raw-env injection path — the `direct` provider is a host process, not a sandbox).
 
 ## Phase E1 — Environment registry and attachments (after Phase 2 **and** Phase 3; see 09)
 

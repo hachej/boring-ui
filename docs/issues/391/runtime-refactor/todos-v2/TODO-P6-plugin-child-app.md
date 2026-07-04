@@ -8,7 +8,7 @@ Handoff: self-contained work order for one autonomous coding agent (pi or gpt-5.
 - `docs/issues/391/runtime-refactor/06-migration-phases.md` — Phase 6 deliverables/exit ("as v1"). Prerequisite unchanged: **do not define a competing child-app registry here.**
 - `docs/issues/391/runtime-refactor/00-global-isa.md` — invariants 6 (no silent widening), 8 (child-app/workspace-kind narrows, never widens), 11 (surfaces never own the loop), 14 (secrets brokered), 15 (EU-sovereign). North star: `AgentRegistry` delivery is deferred until Phase 6/7 (no speculative abstraction).
 - `docs/issues/391/runtime-refactor/todos-v2/README.md` — dispatch protocol; **Simplicity & no-compat policy (binding)**: migrate importers in-PR, no shims/aliases/legacy paths, no abstraction without two real consumers (or one named consumer in the immediately following phase — `AgentRegistry` qualifies: Phase 7 consumes it), `// TODO(remove:<bead-id>)` + deletion bead for transitional code.
-- `docs/issues/391/runtime-refactor/todos/TODO-05-plugins-child-app-runtime.md` — v1 beads BBA-050..056. **This pack supersedes them.** Coverage carries over; every compatibility-export/shim/deprecation-window instruction is stripped; secret handling follows the P5 brokering rule (host-side handles; sandbox env injection is an explicit non-default per-provider trusted exception).
+- `docs/issues/391/runtime-refactor/todos/TODO-05-plugins-child-app-runtime.md` — v1 beads BBA-050..056. **This pack supersedes them.** Coverage carries over; every compatibility-export/shim/deprecation-window instruction is stripped; secret handling follows the P5 brokering rule (host-side handles; brokered secrets never enter any sandboxed environment).
 
 ### Dependency — shared child-app platform plan (STATE PRECISELY, verify before starting)
 
@@ -17,7 +17,7 @@ Handoff: self-contained work order for one autonomous coding agent (pi or gpt-5.
 Consequence, binding:
 
 - This TODO **consumes** resolved child-app context; it must **not** define the product registry, billing model, hostname resolver, or `workspaceKind` schema (invariant, `04` "Relationship" section).
-- Because the upstream plan/type is absent, BBP6-001 defines **only** the consumption seam: an injected, host-supplied `ResolvedChildAppContext` shape (`childAppId`, `workspaceKind`, resolved default agent set, resolved default/trusted plugin ids, resolved bash/provisioning requirements, resolved prompt contributions) that the host passes in. The host/core owns where it comes from. If, at implementation time, the shared child-app plan has landed and defines this type, **import it type-only and do not fork a second shape** — reconcile and report. Do not invent product/billing fields here.
+- The shared child-app platform plan/type (`docs/plans/shared-child-app-platform.md` → `ResolvedChildAppContext`, issue #376) is a **HARD prerequisite** for P6's child-app-**scoping** beads (BBP6-001 and anything consuming `childAppId`/`workspaceKind`). It is **not** optional and there is **no local fallback shape**: if the shared plan/type has not landed, those beads are **BLOCKED — STOP and report**. Do **not** invent a `ResolvedChildAppContext` here (a forked shape would duplicate the platform contract). When it lands, import the type **type-only** and reconcile; do not invent product/billing fields. Beads that do **not** need child-app context — manifest validation (BBP6-002), plugin runtime context, `AgentRegistry` — proceed independently of this prerequisite.
 
 ### Dependencies (phase order)
 
@@ -76,7 +76,7 @@ Plugins and child apps declare runtime needs safely; one full-app deployment hos
 
 - **Files create:** `packages/workspace/src/server/childApp/resolvedChildAppContext.ts` (the **consumption seam** type + intersection helper) + `__tests__/`.
 - **Files touch:** `packages/core/src/app/server/createCoreWorkspaceAgentServer.ts` and `packages/cli/src/server/modeApps.ts` (thread an optional host-supplied `ResolvedChildAppContext` into requirement/plugin/prompt resolution — do not source it here); the P5 normalizer call sites (child-app requirements become one requirement source).
-- **Notes:** **Blocker check first:** if `docs/plans/shared-child-app-platform.md` (or a landed successor) defines `ResolvedChildAppContext`, import it type-only and reconcile; else define the minimal consume-only shape (`childAppId`, `workspaceKind`, `defaultAgentIds`, `defaultPluginIds`, `trustedPluginIds`, `bashRequirements`, `promptContributions`) and mark it `// TODO(remove:BBP6-001)` if it must be superseded by the upstream type — report the dependency in the PR. Apply the effective policy stack (`app defaults < resolved childApp/workspaceKind < workspace < agent < session grants < plugin/tool requirement`); child-app narrows, never widens (invariant 8). Billing/product ids are core-owned metadata for diagnostics only — never consumed by boring-bash logic. Unknown `childAppId`/`workspaceKind` → stable diagnostic, no silent Macro fallback.
+- **Notes:** **Hard-prerequisite check first:** `ResolvedChildAppContext` is owned by the shared child-app platform plan (`docs/plans/shared-child-app-platform.md` / #376). Import it **type-only**. **If that plan/type has not landed, this bead is BLOCKED — STOP and report; do NOT define a local shape** (no fallback, no `// TODO(remove:BBP6-001)` stub — a forked shape would duplicate the platform contract). Once it has landed, apply the effective policy stack (`app defaults < resolved childApp/workspaceKind < workspace < agent < session grants < plugin/tool requirement`); child-app narrows, never widens (invariant 8). Billing/product ids are core-owned metadata for diagnostics only — never consumed by boring-bash logic. Unknown `childAppId`/`workspaceKind` → stable diagnostic, no silent Macro fallback.
 - **Tests:** generic workspace excludes child-app-scoped plugins/prompts/provisioning; matching kind includes them; child-app policy narrows but cannot widen workspace max; unknown id → stable error; billing/product metadata reaches diagnostics only.
 - **Acceptance:** the runtime layer consumes child-app context and scopes requirements without owning or duplicating the child-app platform.
 
@@ -147,9 +147,9 @@ pnpm --filter @hachej/boring-agent run lint:invariants
 
 # child-app consumption + reload composition
 pnpm --filter @hachej/boring-core run test
-pnpm --filter @hachej/boring-cli run test
-pnpm --filter @hachej/full-app run typecheck
-pnpm --filter @hachej/full-app run test
+pnpm --filter @hachej/boring-ui-cli run test
+pnpm --filter full-app run typecheck
+pnpm --filter full-app run test
 
 # repo-wide boundary + cycle guards (root package.json)
 pnpm lint:invariants        # agent + boring-bash + workspace-plugin invariants
@@ -161,7 +161,7 @@ pnpm typecheck              # build:packages then per-pkg typecheck
 
 ## Review gates
 
-- P5 precondition confirmed (or STOP+report). Shared child-app plan dependency reported precisely (BBP6-001 blocker check).
+- P5 precondition confirmed (or STOP+report). Shared child-app plan/type is a hard prerequisite for the child-app-scoping beads: if absent, BBP6-001 (and other `childAppId`/`workspaceKind` consumers) STOP-and-report with no local fallback shape; context-free beads (manifest validation, plugin runtime context, `AgentRegistry`) proceed.
 - No competing child-app registry / manifest scanner / plugin route family introduced.
 - `pnpm lint:invariants` + `pnpm audit:imports` + `lint:plugin-invariants` green; zero agent→bash value imports.
 - Import-free manifest validation proven (side-effecting plugin fixture not executed).
