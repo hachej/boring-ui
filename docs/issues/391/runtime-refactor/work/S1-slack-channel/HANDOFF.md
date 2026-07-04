@@ -1,0 +1,46 @@
+# S1-slack-channel — Handoff checklist
+
+Derived strictly from [TODO.md](./TODO.md) and [PLAN.md](./PLAN.md). Tick each before calling this package done. Invent nothing.
+
+## Prerequisites (packages + gates)
+- [ ] T2-transport merged — [../T2-transport/HANDOFF.md](../T2-transport/HANDOFF.md)
+- [ ] Also requires P1-headless-core merged — [../P1-headless-core/HANDOFF.md](../P1-headless-core/HANDOFF.md) (the `createAgent()` façade; block on P1 if absent — do not reach into harness internals)
+- [ ] STOP+report if `createAgent().send/resolveInput/stream/sessions` is not available (P1 not landed)
+- [ ] First action, non-negotiable: RESOLVE and record the exact published `@flue/slack` version (`1.0.0-beta.<N>`) as the literal pin — never a `.x`/range placeholder
+
+## Beads
+- [ ] BBS1-001 — Hono→Fastify channel handler wrapper (inside the Slack package)
+- [ ] BBS1-002 — Slack package skeleton + ingress wiring
+- [ ] BBS1-003 — `conversationKey → sessionId` store
+- [ ] BBS1-004 — Egress: text-delta batching into message updates
+- [ ] BBS1-005 — Approvals: agent request → Slack interactive blocks → `resolveInput`
+- [ ] BBS1-006 — Surface adapter conformance suite (neutral home; Slack first subject)
+- [ ] BBS1-007 — Fastify mount example / host wiring doc
+
+## Verification commands
+- [ ] `pnpm install`
+- [ ] `pnpm --filter @hachej/boring-channel-slack run build`
+- [ ] `pnpm --filter @hachej/boring-channel-slack run typecheck`
+- [ ] `pnpm --filter @hachej/boring-channel-slack run test`
+- [ ] `pnpm audit:imports`
+- [ ] `pnpm run build:packages`
+- [ ] `pnpm run test`
+
+## Review gates
+- [ ] `packages/channels/slack` dependency list contains no `@hachej/boring-bash` and no provider internals (grep + `pnpm audit:imports`).
+- [ ] Ingress code writes zero signature/parsing/codec logic — all from `@flue/slack`.
+- [ ] Egress update count is bounded and ≪ delta count; 429 handled.
+- [ ] Approval answerable from both Slack and workspace (no Slack-local desync).
+- [ ] Addressing isolation test present and failing on a crossed key.
+- [ ] `@flue/slack` pinned to the **exact resolved** `1.0.0-beta.<N>` version (recorded in the PR) — never a `.x`/range placeholder.
+
+## Exit criteria
+- [ ] Same agent + same session store serves the workspace UI **and** a Slack thread.
+- [ ] An approval requested in Slack can be answered in Slack or the workspace.
+- [ ] The Slack package imports only the public agent contract (`@hachej/boring-agent`) + `@flue/slack` + `@slack/web-api` — no `boring-bash` server code, no provider internals.
+- [ ] Adding a second channel (e.g. Teams) needs no new ingress code beyond the per-channel callback (shared Hono→Fastify wrapper).
+- [ ] Runs against `runtime: 'none'` and against readonly `company_context` bindings.
+
+## Closeout
+- [ ] Zero unowned `TODO(remove:*)` markers for this phase
+- [ ] PRs merged per [PR-PLAN.md](../../PR-PLAN.md) (this package's section)

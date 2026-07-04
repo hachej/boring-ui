@@ -1,6 +1,6 @@
 # PR-PLAN — #391 runtime refactor, implementation as a stacked PR series
 
-Binding execution plan that turns the `todos-v2/` work orders into reviewable PRs. Derived from `todos-v2/README.md` (dispatch protocol + dependency graph + no-compat policy) and every `TODO-*.md`. Mirrors the #416 stacked convention shipped as `bclaw/416-pr1..pr7`.
+Binding execution plan that turns the [`work/`](work/) work orders into reviewable PRs. Derived from [`INDEX.md`](INDEX.md) (dispatch protocol + dependency graph + no-compat policy) and every `work/<pkg>/TODO.md`. Mirrors the #416 stacked convention shipped as `bclaw/416-pr1..pr7`.
 
 ---
 
@@ -11,7 +11,7 @@ Binding execution plan that turns the `todos-v2/` work orders into reviewable PR
 3. **Pure code-move PRs** = rename-detected moves + import-path updates ONLY, zero logic change (review = rename verification). No hard LOC cap, but keep churn reviewable (**soft ~4k changed lines**; split by route/tool family when larger).
 4. **Every code PR carries its bead's tests in the same PR** — no test-less code PRs.
 5. **Branch naming:** `bclaw/391-<todo>-pr<N>-<slug>` (mirrors #416). One stack per TODO; each PR must be mergeable-green on its own.
-6. **Every PR description cites:** bead id(s), plan file (`docs/issues/391/runtime-refactor/…`), migration phase (`06-migration-phases.md`), and a LOC-accounting block from the script below.
+6. **Every PR description cites:** bead id(s), plan file (`docs/issues/391/runtime-refactor/…`), migration phase ([`INDEX.md`](INDEX.md) phase table + the package's `PLAN.md`), and a LOC-accounting block from the script below.
 7. **CI gate per PR:** the affected package test filter(s) + the root invariant scripts named per lane.
 
 ### LOC-accounting command (verified — run in the PR branch, prints net-new)
@@ -187,7 +187,7 @@ Legend — nature: **new** = net-new code · **move** = rename-detected + import
 
 ### X1 — S3/FUSE mounts for `@hachej/boring-sandbox` environments (Phase X1, off P2 **and** P5) — bash lane, parallel to E1/E2
 
-Adds the `@hachej/boring-sandbox/mounts` export (created package from P2) + the S3-backed environment. The 10 LOCKED DECISIONS in `TODO-X1` are the spine. Reuses P5's `reported | unknown` fail-closed rule + host-side secrets-broker rule.
+Adds the `@hachej/boring-sandbox/mounts` export (created package from P2) + the S3-backed environment. The 10 LOCKED DECISIONS in [`work/X1-s3-fuse-mounts/TODO.md`](work/X1-s3-fuse-mounts/TODO.md) are the spine. Reuses P5's `reported | unknown` fail-closed rule + host-side secrets-broker rule.
 
 | PR | beads | nature | net-new vs budget | test deliverables | gate |
 | --- | --- | --- | --- | --- | --- |

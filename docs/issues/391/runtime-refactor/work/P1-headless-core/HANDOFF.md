@@ -1,0 +1,46 @@
+# P1-headless-core — Handoff checklist
+
+Derived strictly from [TODO.md](./TODO.md) and [PLAN.md](./PLAN.md). Tick each before calling this package done. Invent nothing.
+
+## Prerequisites (packages + gates)
+- [ ] P0-adr merged — [../P0-adr/HANDOFF.md](../P0-adr/HANDOFF.md)
+- [ ] #391 points to the v2 pack and BBP0-001..005 are merged (no P1 bead starts before this — per P0 review gate)
+
+## Beads
+- [ ] BBP1-001 — Config-surface inventory: enumerate every env/cwd/file-discovery read in agent server code
+- [ ] BBP1-002 — `createAgent()` façade (Fastify-free)
+- [ ] BBP1-003 — Make `createAgentApp()` + `registerAgentRoutes()` thin adapters
+- [ ] BBP1-004 — `runtime: 'none'` pure path + `sessionStorageRoot` separation
+- [ ] BBP1-005 — pi-coding-agent cwd/resource assumption audit → findings + seals
+- [ ] BBP1-006 — Invariant + smoke tests
+
+## Verification commands
+- [ ] `pnpm --filter @hachej/boring-agent run build`
+- [ ] `pnpm --filter @hachej/boring-agent run typecheck`
+- [ ] `pnpm --filter @hachej/boring-agent run test`
+- [ ] `pnpm --filter @hachej/boring-agent run lint:invariants`
+- [ ] `pnpm --filter @hachej/boring-bash run check:invariants`
+- [ ] `pnpm --filter @hachej/boring-agent run check:isolation`
+- [ ] `pnpm --filter @hachej/boring-agent run test:e2e`
+- [ ] `pnpm lint:invariants` (optional, heavier root aggregate)
+- [ ] Manual: start the cli hub + workspace playground against the refactored build; confirm chat + file tree + sessions behave identically
+
+## Review gates
+- [ ] Thermo architecture review is clean (per `README.md` "Review rule"): no `boring-agent → boring-bash` cycle, no duplicated provisioning/readiness system, no fs/bash split brain, no hidden cwd/fs leak in pure mode.
+- [ ] BBP1-005's pi-harness audit findings are reviewed and the "sealed pi, not second harness" decision confirmed **before** the pure-mode exit criteria are claimed (BBP1-004 depends on BBP1-005's seals).
+- [ ] Behavior-parity gate: reviewer confirms the existing agent unit + e2e suites pass unchanged, and no existing route was added/removed for `direct`/`local`/`vercel-sandbox` modes.
+- [ ] The Fastify-graph invariant (BBP1-006) actually fails when a `fastify` import is introduced into the façade closure — reviewer verifies the negative case.
+- [ ] Track T1 does not start until BBP1-002..006 are merged (T1 depends on the stub seams landing here).
+
+## Exit criteria
+- [ ] `createAgent()` exported from `@hachej/boring-agent/core` returning the nine members; `start` (accepted-receipt write), `stream` (replay+live-tail read), `send` (convenience), `interrupt`/`stop` real, `resolveInput`/historical-`stream` typed stubs.
+- [ ] `createAgentApp()`/`registerAgentRoutes()` are adapters over `createAgent()`; all current HTTP consumers behave identically (cli hub, workspace, core, agent-playground e2e).
+- [ ] Typed config object only: no `process.env` / `process.cwd()` / `.pi/*` / `workspaces.yaml` reads inside `createAgent()`.
+- [ ] A pure agent starts via `createAgent({ runtime: 'none' })` in a plain Node script with no Fastify, no workspace/sandbox/cwd/file routes/bash tools.
+- [ ] `sessionStorageRoot` is separated from workspace roots.
+- [ ] pi-coding-agent cwd/resource assumptions audited; findings doc + follow-up seals produced.
+- [ ] Invariant tests: no agent value import from boring-bash; no Fastify in the façade module graph; smoke test `createAgent({ runtime: 'none' })` runs a turn with a fake harness in plain Node.
+
+## Closeout
+- [ ] Zero unowned `TODO(remove:*)` markers for this phase
+- [ ] PRs merged per [PR-PLAN.md](../../PR-PLAN.md) (this package's section)

@@ -1,0 +1,61 @@
+# P7-multi-agent-inspection — Handoff checklist
+
+Derived strictly from [TODO.md](./TODO.md) and [PLAN.md](./PLAN.md). Tick each before calling this package done. Invent nothing.
+
+## Prerequisites (packages + gates)
+- [ ] P6-plugin-child-app (P6a `AgentRegistry`) merged — [../P6-plugin-child-app/HANDOFF.md](../P6-plugin-child-app/HANDOFF.md)
+- [ ] E1-environment-attachments merged — [../E1-environment-attachments/HANDOFF.md](../E1-environment-attachments/HANDOFF.md)
+- [ ] T2-transport merged — [../T2-transport/HANDOFF.md](../T2-transport/HANDOFF.md)
+- [ ] STOP+report if the Phase 6a `AgentRegistry` and the workspace `agents: [...]` declaration have not landed — do NOT invent a competing registry here
+
+## Beads
+- [ ] BBP7-001 — Thread `agentId` through `RuntimeScope`, the scope key, and `sessionNamespace`
+- [ ] BBP7-002 — `agentId` request addressing against the Phase 6 `AgentRegistry`
+- [ ] BBP7-003 — Per-agent tool catalog + per-agent readiness
+- [ ] BBP7-004 — Session index/search scoped by workspace + agent (#379)
+- [ ] BBP7-005 — Agent inspection endpoint `GET /api/v1/agents/:agentId/info` (the steering mechanism)
+- [ ] BBP7-006 — External harness hook target resolution (#380)
+- [ ] BBP7-007 — Surface adapters bind one `agentId` per addressing entry
+- [ ] BBP7-008 — Subagent environment grant (first real consumer; lands E1 BBE1-005)
+- [ ] BBP7-009 — Two surfaces × two agents no-collision integration test (Phase 7 exit)
+
+## Verification commands
+- [ ] `pnpm --filter @hachej/boring-agent run test`
+- [ ] `pnpm --filter @hachej/boring-agent run typecheck`
+- [ ] `pnpm --filter @hachej/boring-agent run lint:invariants`
+- [ ] `pnpm --filter @hachej/boring-agent run check:isolation`
+- [ ] `pnpm --filter @hachej/boring-bash run test`
+- [ ] `pnpm --filter @hachej/boring-bash run typecheck`
+- [ ] `pnpm --filter @hachej/boring-bash run check:invariants`
+- [ ] `pnpm --filter @hachej/boring-workspace run typecheck`
+- [ ] `pnpm --filter @hachej/boring-workspace run test`
+- [ ] `pnpm lint:invariants`
+- [ ] `pnpm audit:imports`
+- [ ] `pnpm typecheck`
+
+## Review gates
+- [ ] Phase 6 `AgentRegistry` present and scoped against (not a competing registry), else STOP+report.
+- [ ] `agentId` in the `RuntimeScope.key` array **and** `sessionNamespace`; default-agent sessions load unchanged (on-disk JSONL compat).
+- [ ] Per-agent tool catalog + readiness with zero cross-agent bleed (`05` Tests reproduced).
+- [ ] Session search scoped by `workspace+agent`, no fs requirement, redaction enforced.
+- [ ] External hook routes onto the single T1 approval channel; boring-bash-free; authenticates/validates/redacts/audits.
+- [ ] `/api/v1/agents/:agentId/info` is public, private-hook-free, and leaks no secret/key material (assert in test).
+- [ ] One addressing entry ↔ one `agentId`; T2 platform-addressing guard stays green (`agentId`/`sessionId`/`SessionCtx` only in core signatures).
+- [ ] Subagent grant is minimal, explicit-attachment-only, `execPolicy:'none'`, isolated by `agentId`.
+- [ ] Two-surfaces × two-agents no-collision test present and green.
+- [ ] Any intra-phase transitional code carries `TODO(remove:<bead-id>)` + a same-phase deletion bead.
+
+## Exit criteria
+- [ ] Agent addressing resolves an `agentId` per request via the canonical `/api/v1/agents/:agentId/...` path prefix against the Phase 6 `AgentRegistry`; unknown/undeclared `agentId` fails closed.
+- [ ] `agentId` is in the binding scope `key` **and** `sessionNamespace`; two agents in one workspace with the same `sessionId` share no bindings, tool catalog, transcripts, or readiness.
+- [ ] Per-agent tool catalog and per-agent readiness (reviewer readonly/no-exec; coding agent has bash; pure concierge has no boring-bash).
+- [ ] Session index/search scoped by `workspaceId` + `agentId` (+ title/content/operational events, redacted), no filesystem requirement.
+- [ ] External harness hook target resolution: authenticate caller, validate `(workspace, agent, session)`, redact, route to the HITL channel, audit attribution, no boring-bash dep.
+- [ ] `GET /api/v1/agents/:agentId/info` returns `{ agentId, model, tools, readiness, channels, environments }` — public contract, no private core hooks.
+- [ ] Surface adapters each bind exactly one `agentId` per addressing entry.
+- [ ] First real subagent consumer: `SubagentEnvironmentGrant` / `deriveSubagentAttachment` lands, jailed by `agentId` scope + `scope.subpath`, minimal.
+- [ ] Two surfaces × two agents in one workspace do not collide (the Phase 7 exit test).
+
+## Closeout
+- [ ] Zero unowned `TODO(remove:*)` markers for this phase
+- [ ] PRs merged per [PR-PLAN.md](../../PR-PLAN.md) (this package's section)
