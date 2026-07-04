@@ -1,6 +1,6 @@
 import { EXCEL_CLOUD_REF_SUFFIX, POWERPOINT_CLOUD_REF_SUFFIX } from "./constants"
 import { officeKindForCloudRefPath } from "./ref"
-import type { OfficeDocumentSubtype } from "./types"
+import type { OfficeDocumentSubtype, SharePointDocumentRef } from "./types"
 
 export interface OfficeCloudRefDisplayMetadata {
   cloudRefPath: string
@@ -23,4 +23,16 @@ export function officeCloudRefDisplayMetadataForPath(path: string): OfficeCloudR
     displayName,
     title: displayName,
   }
+}
+
+export function officeKindDisplayLabel(kind: OfficeDocumentSubtype): string {
+  return kind === "excel" ? "Excel workbook" : "PowerPoint deck"
+}
+
+export function sharePointSiteDisplayLabel(ref: SharePointDocumentRef): string {
+  return ref.siteId
+}
+
+export function sharePointDriveDisplayLabel(ref: SharePointDocumentRef): string {
+  return ref.driveId
 }

@@ -13,11 +13,11 @@
     "noEmit": true,
     "types": ["node", "vitest/globals"],
     "paths": {
+      "@hachej/boring-agent/front": ["../../packages/agent/src/front/index.ts"],
+      "@hachej/boring-agent/shared": ["../../packages/agent/src/shared/index.ts"],
+      "@hachej/boring-ui-kit": ["../../packages/ui/src/index.ts"],
       "@hachej/boring-workspace": ["../../packages/workspace/src/index.ts"],
-      "@hachej/boring-workspace/plugin": ["../../packages/workspace/src/plugin.ts"],
-      "@hachej/boring-workspace/server": ["../../packages/workspace/src/server/index.ts"],
-      "@hachej/boring-agent/server": ["../../packages/agent/src/server/index.ts"],
-      "@hachej/boring-agent/shared": ["../../packages/agent/src/shared/index.ts"]
+      "@hachej/boring-workspace/plugin": ["../../packages/workspace/src/plugin.ts"]
     }
   },
   "include": ["src/**/*"],

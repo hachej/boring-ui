@@ -1,10 +1,7 @@
 export {
-  BORING_SHAREPOINT_APP_LEFT_ACTION_ID,
   BORING_SHAREPOINT_OFFICE_PREVIEW_PANEL_ID,
   BORING_SHAREPOINT_PLUGIN_ID,
   BORING_SHAREPOINT_PLUGIN_LABEL,
-  BORING_SHAREPOINT_SETTINGS_COMMAND_ID,
-  BORING_SHAREPOINT_SETTINGS_PANEL_ID,
   EXCEL_CLOUD_REF_SUFFIX,
   EXCEL_MIME_TYPE,
   OFFICE_CLOUD_DOCUMENT_KIND,
@@ -12,7 +9,7 @@ export {
   POWERPOINT_MIME_TYPE,
   SHAREPOINT_PROVIDER_ID,
 } from "./constants"
-export { officeCloudRefDisplayMetadataForPath } from "./display"
+export { officeCloudRefDisplayMetadataForPath, officeKindDisplayLabel, sharePointDriveDisplayLabel, sharePointSiteDisplayLabel } from "./display"
 export type { OfficeCloudRefDisplayMetadata } from "./display"
 export { buildLocalOfficeImportRef, cloudRefPathForLocalOfficePath, officeKindForLocalOfficePath, validateLocalOfficeSourcePath } from "./import"
 export { SHAREPOINT_ERROR_CODES, SharePointRefValidationError } from "./errors"
@@ -28,19 +25,10 @@ export {
 } from "./ref"
 export type { SharePointRefValidationResult } from "./ref"
 export type {
-  CreateOfficePreviewUrlInput,
-  CreateOfficePreviewUrlResult,
-  IntegrationAuthState,
   LocalOfficeImportRequest,
   LocalOfficeImportResult,
   LocalOfficeImportTarget,
   OfficeDocumentSubtype,
-  OfficeEditRequest,
-  OfficeEditResult,
-  OfficePreviewViewer,
-  ResolveDriveItemInput,
   SharePointDocumentRef,
   SharePointDocumentRefCreatedFrom,
-  SharePointProvider,
-  SharePointProviderContext,
 } from "./types"

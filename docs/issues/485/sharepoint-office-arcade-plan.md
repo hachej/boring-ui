@@ -1,5 +1,7 @@
 # Issue 485 — SharePoint Office documents via Arcade
 
+> **Status: superseded in part — see "Pivot decision (2026-07-04)" at the bottom.** The server-side Arcade execution layer described below was dropped; editing moves to pi-agent-runtime Excel/PowerPoint plugins using Arcade MCP tools. `plugins/boring-sharepoint` now only owns the cloud-ref format and front display surfaces.
+
 Plan for PowerPoint / Excel support in boring-ui.
 
 Issue: https://github.com/hachej/boring-ui/issues/485
@@ -322,3 +324,13 @@ Review checklist for the first implementation PR:
 - Generic provider marketplace.
 - Two-way local/cloud sync.
 - Notion/Airtable UI in this issue, though the backend-provider architecture can support them later.
+
+## Pivot decision (2026-07-04)
+
+Server-side Arcade execution in `plugins/boring-sharepoint` is dropped. Office editing, local Office import, and transient preview URL minting move to future pi-agent-runtime Excel and PowerPoint plugins that use Arcade MCP tools instead of trusted SharePoint plugin routes.
+
+The surviving SharePoint plugin scope is the durable cloud-ref schema, validation, import/ref-building helpers, display helpers, and front file-open surfaces for `*.xlsx.cloud.json` and `*.pptx.cloud.json` files. It should remain route-free and must not import `@arcadeai/arcadejs` or workspace server APIs.
+
+Future Office agent plugins should own Arcade/Microsoft auth UX and tool execution through the agent-side surface: `MicrosoftExcel_*`, `MicrosoftPowerpoint_*`, `MicrosoftSharepoint_*`, and `BoringSharePointPreview_CreatePreviewUrl`.
+
+PRs 508-514 are superseded by this pivot.
