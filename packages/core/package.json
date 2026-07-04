@@ -80,7 +80,7 @@
     "@zxcvbn-ts/core": "^4.1.2",
     "@zxcvbn-ts/language-common": "^4.1.2",
     "@zxcvbn-ts/language-en": "^4.1.1",
-    "better-auth": "^1.6.11",
+    "better-auth": "^1.6.22",
     "close-with-grace": "^2.2.0",
     "drizzle-orm": "^0.45.2",
     "fastify": "^5.3.3",
