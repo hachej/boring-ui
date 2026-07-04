@@ -131,6 +131,10 @@ Reality note: a bespoke replay path already exists (`PiChatReplayBuffer` + `?cur
 
 This keeps multi-tenant routing out of the core: `x-boring-workspace-id` is an HTTP-adapter concern that resolves to a `SessionCtx`, exactly as a Slack adapter resolves team+channel+thread to one. `SessionCtx.workspaceId` is **optional**: a workspace adapter fills it, but pure/headless surfaces (Slack-only, embeds, plain Node) omit it and the session store namespaces by the host-composed `sessionStorageRoot` — a surface must never synthesize a fake `workspaceId`.
 
+### Route-family scope (locked — what `/api/v1/agents/:agentId/...` covers)
+
+The canonical `/api/v1/agents/:agentId/...` path-prefix family (00 open decision 4, resolved) covers **agent-session routes ONLY**: session create/list, `events/stream`, `prompt`, `input`, `interrupt`, `stop`, `pending-inputs`, and `/info`. **File/environment routes are explicitly OUT of this family** — `/api/v1/files/*` and the tree/search/fs-events/git routes are **workspace/environment-scoped**, not agent-scoped: files belong to environments, not agents (E2 exposes them per-environment over MCP). An `agentId` therefore never prefixes a file route; those routes keep their existing paths and gain no `agents/:agentId` segment. The agent-session family and the file/environment routes are two disjoint route surfaces.
+
 ## Human-in-the-loop
 
 - `AgentTool` gains `needsApproval?: boolean | (params, ctx) => boolean | Promise<boolean>`. Policy lives with the tool/host, not the surface.

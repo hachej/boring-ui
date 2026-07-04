@@ -11,7 +11,8 @@ Handoff: self-contained work order for one autonomous coding agent (pi or gpt-5.
 
 ### Depends on
 
-- **Every prior phase** of this pack (P1–P7, T1–T2, E1–E2, S1–S2, Phases 5–6). P8 is the terminal gate. It **must not** land while any earlier phase's `TODO(remove:*)` marker is still live — that reopens the owning phase (see "The rule", below).
+- **Every prior phase** of this pack **except P6b** (P1–P7, T1–T2, E1–E2, S1–S2, Phase 5, **P6a**). P8 is the terminal gate. It **must not** land while any earlier phase's `TODO(remove:*)` marker is still live — that reopens the owning phase (see "The rule", below).
+- **P6b is explicitly NOT a P8 gate.** P6b (child-app scoping, BBP6-001/BBP6-006) is HARD BLOCKED on the shared child-app platform type (`ResolvedChildAppContext`, #376) and is a **tracked follow-up outside the epic exit** — the epic ships without it. **P8 does not wait on P6b landing**; it only **verifies the P6b follow-up issue is filed** (BBP8-004). This is what prevents a P8↔P6b exit deadlock: P8 gating on "all lanes" would otherwise be unsatisfiable while P6b is blocked.
 
 ### Current repo reality this bead verifies (verified paths)
 
@@ -80,12 +81,14 @@ Match `06` Phase 8 (v2):
 - **Files touch**: create tracking issues/beads (per the repo's `br`/beads workflow) for the explicitly deferred items and any un-beaded plan task. Known deferrals to file as future issues (do NOT implement here):
   - agent-as-directory authoring (north star, `00`/`08` — deferred post-P7, its own future issue);
   - `FileTreeDataProvider` pluggable boundary (deferred to `#295`, P4 BBP4-012);
-  - `DocumentAuthorityRegistry` (deferred until a second authority exists, P4 BBP4-013);
+  - the **document-authority write/edit override seam** (the whole seam — not just a registry — deferred out of this epic; arrives with its first real authority implementation #367/#226, P4 BBP4-013);
+  - **governed-context-in-embeds** (injecting a readonly `company_context` binding into a spreadsheet/product embed) — the **post-E2 follow-up** descoped from S2 (`TODO-S2` BBS2-001);
+  - **P6b — child-app scoping** (BBP6-001 consume `ResolvedChildAppContext`, BBP6-006 Macro scoping) — HARD BLOCKED on the shared child-app platform type (`ResolvedChildAppContext`, #376); a **tracked follow-up OUTSIDE the epic exit**. **P8 files this follow-up issue and confirms it is filed — it does not wait on P6b landing** (this is the anti-deadlock guarantee: P8 gates on all lanes EXCEPT P6b);
   - `00` still-open decisions 3 (providers package location), 5 (provisioning sharing defaults), 7 (surface addressing store location);
-  - any Phase 5 (provisioning/readiness) and Phase 6 (child-app) task not yet beaded.
+  - any Phase 5 (provisioning/readiness) and Phase 6a task not yet beaded.
 - **Notes**: This bead **catalogs and files**, it does not build. Cross-check each `00` § "Issue coverage posture" item: mark which acceptance actually landed (so the plan does not overclaim) and file the rest.
 - **Tests**: n/a (tracking artifacts). Acceptance is the filed issue list referenced from the plan or a `docs/issues/391/runtime-refactor/BACKLOG.md`-style index if the repo prefers in-repo tracking.
-- **Acceptance**: every deferred/un-beaded plan task has a tracked issue/bead id; no actionable item lives only in prose.
+- **Acceptance**: every deferred/un-beaded plan task has a tracked issue/bead id; no actionable item lives only in prose. **The P6b follow-up issue is filed** (and P8 confirms it is filed, without gating on P6b landing).
 
 ### BBP8-005 — Final invariant + build/test sweep · size S
 - **Title**: The whole pack's guarantees hold simultaneously.

@@ -7,7 +7,8 @@ Handoff: self-contained work order for one autonomous coding agent (pi or gpt-5.
 - Plan: `docs/issues/391/runtime-refactor/06-migration-phases.md` § "Phase S2" (deliverables + exit criteria; "after S1 learnings"; keep lighter — contract + example, not a product).
 - Plan: `docs/issues/391/runtime-refactor/08-pluggable-agent-surfaces.md` § "The headless façade: `createAgent()`", the reference-adapters table (Spreadsheet/pi-excel row: "Agent tools are spreadsheet tools supplied by the host as `tools`; boring-bash not installed"), § "Two handles", § "Human-in-the-loop".
 - Dependencies: **S1** (surface-adapter conformance suite + two-handles pattern, from `TODO-S1-slack-channel.md`) and **P1** (`createAgent()` façade). As with S1, `createAgent()` does not exist in the repo yet — `packages/agent/src/server/` exports `createAgentApp`/`registerAgentRoutes` only (`createAgentApp.ts`, `registerAgentRoutes.ts`, barrel `index.ts`). The embed consumes the **published client contract** of `@hachej/boring-agent`, not server internals.
-- The public runtime API the embed relies on (`08` § façade): `agent.send(input, ctx)`, `agent.resolveInput(sessionId, requestId, response)`, `agent.stream(sessionId, { startIndex })`, `agent.sessions`. Tools are supplied as `tools` (extra `AgentTool[]`); `runtime: 'none'`; optional readonly bindings.
+- The public runtime API the embed relies on (`08` § façade): `agent.send(input, ctx)`, `agent.resolveInput(sessionId, requestId, response)`, `agent.stream(sessionId, { startIndex })`, `agent.sessions`. Tools are supplied as `tools` (extra `AgentTool[]`); `runtime: 'none'` — the reference embed is host-supplied domain tools ONLY, with **no filesystem bindings**.
+- **Descope (binding):** governed-context-in-embeds (injecting a readonly `company_context` binding into the embed) is **out of S2 scope** — it becomes a named **post-E2 follow-up filed at P8** (`TODO-P8` BBP8-004). The reference embed is `runtime: 'none'` + host-supplied domain tools only; it injects no readonly binding.
 - Repo app layout (verified): `apps/` contains `agent-playground`, `full-app`, `workspace-playground` (package names identical to dir names, unscoped). There is **no `examples/` dir**; `pnpm-workspace.yaml` globs `apps/*`, `packages/*`, `plugins/*`. Recommendation: put the reference embed under **`apps/spreadsheet-embed-playground`** (matches the existing `*-playground` convention and the `apps/*` glob — no workspace-config change needed). Do not create a new top-level `examples/` tree.
 - `AgentTool` shape & approvals: `AgentTool` gains `needsApproval?: boolean | (params, ctx) => boolean | Promise<boolean>` (`08` HITL). The host declares approval policy on its own tools; the embed renders the approval request in a host dialog and answers via `resolveInput`.
 
@@ -21,7 +22,7 @@ Match `06-migration-phases.md` Phase S2 exit criteria:
 ## Non-negotiables
 
 - Embed depends only on the **published `@hachej/boring-agent` client contract** — no server internals, no `boring-bash`, no provider packages.
-- Domain tools (`read_range`, `write_range`, etc.) are supplied by the host as `tools`; the agent has `runtime: 'none'` and no filesystem unless the host injects a readonly binding.
+- Domain tools (`read_range`, `write_range`, etc.) are supplied by the host as `tools`; the agent has `runtime: 'none'` and **no filesystem** — the reference embed injects **no** readonly binding (governed-context-in-embeds is the deferred post-E2 follow-up, above).
 - Approvals go through the same on-stream path as every other surface (`resolveInput`), rendered as a host/task-pane dialog — no embed-specific approval channel.
 - Two-handles rule: the embed owns its addressing (`workbookId + sheetId` → `sessionId` map); agent APIs receive `sessionId` only.
 - S2 is lighter than S1: a **contract doc + one reference embed**, reusing S1's shared surface pieces (`@hachej/boring-channel-core` wrapper is not needed for an in-process/task-pane embed; reuse the S1 conformance suite only).
@@ -43,7 +44,6 @@ Match `06-migration-phases.md` Phase S2 exit criteria:
   - construct `createAgent({ runtime: 'none', tools: hostDomainTools, sessions, systemPrompt, ... })`;
   - the four-part surface contract (message-in, event-stream-out, approvals, session state) restated for an in-process embed;
   - how the host supplies domain tools as `tools: AgentTool[]` and marks side-effecting ones `needsApproval`;
-  - optional readonly bindings (readonly `company_context` only — reference how a host injects a binding without importing boring-bash: the binding operations arrive as an injected object, not a package import);
   - approval rendering: subscribe to approval events, show a host dialog, call `resolveInput`;
   - the two-handles rule for spreadsheet addressing (`workbookId+sheetId → sessionId`).
 - Tests: none (doc); ensure doc-link CI passes; every symbol named must exist in the published contract post-P1 (add a TODO note if P1 not yet merged).

@@ -4,14 +4,14 @@ Handoff: self-contained work order for one autonomous coding agent (pi or gpt-5.
 
 ## Context (read first)
 
-- `docs/issues/391/runtime-refactor/06-migration-phases.md` — Phase 4 deliverables/exit (move front plugin; preserve panel ids + `workspace.open.path` resolver + file panel binding + agent file bridge/session changes; factor tree data into a plain internal tree function — the pluggable `FileTreeDataProvider` boundary is **deferred to #295** (BBP4-012); add document-authority override seam).
-- `docs/issues/391/runtime-refactor/02-boring-bash-environment.md` — "File tree and document authority" (`FileTreeDataProvider` for #295; document-authority override for #367/#226); "UI plugin ownership" (workspace bridge stays workspace-owned).
+- `docs/issues/391/runtime-refactor/06-migration-phases.md` — Phase 4 deliverables/exit (move front plugin; preserve panel ids + `workspace.open.path` resolver + file panel binding + agent file bridge/session changes; factor tree data into a plain internal tree function — the pluggable `FileTreeDataProvider` boundary is **deferred to #295** (BBP4-012); the document-authority override seam is **deferred out of this epic** (BBP4-013)).
+- `docs/issues/391/runtime-refactor/02-boring-bash-environment.md` — "File tree and document authority" (`FileTreeDataProvider` for #295; document-authority override for #367/#226 — **the override is deferred out of this epic**, see BBP4-013); "UI plugin ownership" (workspace bridge stays workspace-owned).
 - `docs/issues/391/runtime-refactor/00-global-isa.md` — issues supported by extension points: #295 file-tree replacement, #367/#226 document collaboration.
 - `docs/issues/391/runtime-refactor/todos/TODO-03-routes-tools-ui.md` — v1 beads BBA-034..036 (superseded here).
 
 ### Depends on
 
-- **Phase 3** (`TODO-P3-routes-tools-move.md`): file routes + `write`/`edit` tools already in `boring-bash/server` + `boring-bash/agent`. The document-authority seam (BBP4-013) hooks the moved `write`/`edit` tools.
+- **Phase 3** (`TODO-P3-routes-tools-move.md`): file routes + `write`/`edit` tools already in `boring-bash/server` + `boring-bash/agent`. (The document-authority seam that would hook the moved `write`/`edit` tools is **deferred out of this epic** — BBP4-013; P4 leaves those tools as raw file ops.)
 
 ### Front plugin inventory in `packages/workspace` (Phase 4 move targets)
 
@@ -29,19 +29,19 @@ UI `(filesystem, path)` addressing (workspace-owned shared, ships from #416):
 Registration/consumers to repoint (grep-verified):
 - `packages/workspace/src/index.ts` (L61 exports `filesystemPlugin`), `packages/workspace/src/app/front/workspaceBuiltinPlugins.ts` (L17), `packages/workspace/src/front/provider/WorkspaceProvider.tsx` (L529-531 default-plugins list).
 
-### Document-authority current state (investigated — ground for BBP4-013)
+### Document-authority current state (investigated — context; the seam is DEFERRED)
 
 - There is **no** server-side document coordinator / Yjs today. `write`/`edit` are raw file ops (now in `boring-bash/agent` after Phase 3).
 - Front editors: `markdown-editor/*` uses **TipTap** (front-only, in-browser); `code-editor/*` uses CodeMirror. Stale-write/conflict handling exists on the front via `ConflictBanner.tsx` + `useFilePane.ts` + the `data/` layer; `agentFileBridge.tsx` emits/consumes file-change events so open panes react to agent writes.
-- Therefore the document-authority override (#367/#226) is a **greenfield server seam**: an interface a live document system can register to intercept `write`/`edit`, validate stale version/hash, and fall back to raw file edit when no authority is active. Do not build TipTap↔Yjs collaboration here — only the seam + a null/default authority.
+- The document-authority override (#367/#226) would be a **greenfield server seam**, but it has **zero real consumers in this epic** (no live document system exists). Per the no-speculative-abstraction rule it is **deferred out of #391** and arrives with its first real authority implementation (see BBP4-013). P4 leaves `write`/`edit` as raw file ops and adds no seam. Do not build TipTap↔Yjs collaboration or a null/default authority here.
 
 ## Goal / exit criteria
 
-Filesystem front plugin lives in `@hachej/boring-bash/plugin`, registered by workspace with no package cycle; panel ids + `workspace.open.path` resolver + file panel binding + agent file bridge/session-change integration + Company file-tree root + capability-based readonly panes preserved; tree data factored into a plain internal function (the pluggable `FileTreeDataProvider` boundary is deferred to #295); document-authority write/edit override consulted via a single nullable hook. Exit (06 Phase 4):
+Filesystem front plugin lives in `@hachej/boring-bash/plugin`, registered by workspace with no package cycle; panel ids + `workspace.open.path` resolver + file panel binding + agent file bridge/session-change integration + Company file-tree root + capability-based readonly panes preserved; tree data factored into a plain internal function (the pluggable `FileTreeDataProvider` boundary is deferred to #295); the document-authority write/edit override is **deferred out of this epic** (BBP4-013). Exit (06 Phase 4):
 
 - `exec_ui openFile` still opens files (same panel ids, same resolver).
 - file tree data flows through one internal function with unchanged behavior (provider boundary deferred to #295).
-- an active document authority can intercept writes; raw edits work when none is set.
+- (document-authority override deferred out of this epic — `write`/`edit` stay raw file ops; the seam arrives with #367/#226.)
 
 ## Non-negotiables
 
@@ -55,7 +55,7 @@ Filesystem front plugin lives in `@hachej/boring-bash/plugin`, registered by wor
 ## Do NOT
 
 - Do not touch `/home/ubuntu/projects/boring-ui-v2`. Work only in this worktree. Do not commit.
-- Do not build TipTap/Yjs real-time collaboration; only the document-authority seam + default null authority.
+- Do not build TipTap/Yjs real-time collaboration; and do not add the document-authority seam either — it is deferred out of this epic (BBP4-013).
 - Do not change server routes again (Phase 3 owns them); do not re-shape #416 contracts.
 - Do not introduce a workspace value import into boring-bash (would create a cycle).
 
@@ -84,14 +84,10 @@ Filesystem front plugin lives in `@hachej/boring-bash/plugin`, registered by wor
 - **Tests:** the plain function returns the current tree shape; hidden/denied files absent from the agent-visible tree; existing tree tests stay green.
 - **Acceptance:** the tree data path is a single internal function (no provider interface); behavior unchanged; the provider boundary is explicitly noted as deferred to #295.
 
-### BBP4-013 — Add document-authority write/edit override hook (#367/#226) [size M]
+### BBP4-013 — Document-authority write/edit override hook (#367/#226) — DEFERRED (out of this epic)
 
-- **Descope (binding):** ship a **single nullable hook**, not a registry. There is exactly one prospective authority (a future live-document system) — the "abstraction needs two real consumers" rule (`todos-v2/README.md`) does not justify a `DocumentAuthorityRegistry` for a single entry. Add a registry only when a **second** authority actually exists.
-- **Files create:** `packages/boring-bash/src/agent/documentAuthority.ts` — a `DocumentAuthority` interface (`ownsFile(filesystem, path): boolean`; `applyEdit({ filesystem, path, expectedVersionOrHash, content|edits }): Promise<{ ok } | { rejected, reason }>`) and a single optional `documentAuthority?: DocumentAuthority` seam (a nullable hook passed in / set on the tool config), default `undefined`. No registry, no lookup table.
-- **Files touch:** the moved `write`/`edit` tools in `packages/boring-bash/src/agent/tools/filesystem/index.ts` (from Phase 3): before raw write/edit, if `documentAuthority` is set **and** `ownsFile(...)`, route through `applyEdit`, validate stale version/hash, reject stale with a stable error; otherwise fall back to raw file edit (current behavior). Surface the authority decision in tool output/audit details.
-- **Notes:** Greenfield seam — do NOT implement Yjs/TipTap collaboration. Default = no `documentAuthority` set → behavior identical to Phase 3. Reuse the existing front stale-write handling (`ConflictBanner.tsx`, `useFilePane.ts`) as the UI counterpart; this bead only adds the server/tool hook.
-- **Tests:** with a stub `documentAuthority` set, an edit it owns routes through it; stale version rejects with stable error; with none set, raw write/edit works unchanged; authority failure returns a stable diagnostic and does not corrupt file state.
-- **Acceptance:** agent file tools consult the single nullable `documentAuthority` hook when present; raw edits unaffected when absent; no registry introduced.
+- **Descope (binding):** the document-authority write/edit override hook has **zero real consumers** in this epic — there is no live document system (TipTap↔Yjs/etc.) today. Per the "abstraction needs two real consumers" rule (`todos-v2/README.md`), it is **not built here** — not even a nullable hook, since a single-consumer-that-does-not-yet-exist is speculative. The seam **arrives with its first real authority implementation (#367/#226 live-document collaboration)**, out of #391 scope; it is filed as a tracked follow-up at P8 (`TODO-P8` BBP8-004). Until then, `write`/`edit` remain the raw file ops moved in Phase 3, unchanged. P4 adds no `DocumentAuthority` interface, no `documentAuthority?` field, no default null authority, and no registry.
+- **Acceptance:** P4 ships **no** document-authority seam; `write`/`edit` are raw file ops (Phase-3 behavior); the seam is filed as a post-epic follow-up (#367/#226) at P8.
 
 ### BBP4-014 — Repoint workspace registration + acyclicity guard [size S]
 
@@ -127,5 +123,5 @@ pnpm typecheck
 - Panel ids, `FILESYSTEM_SURFACE_RESOLVER_ID`, and `workspace.open.path` resolve output unchanged.
 - **Zero `boring-bash/plugin → @hachej/boring-workspace` imports of any kind** (no value import AND no `import type` — a type-only import still forms a package edge → cycle); pure types are local structural declarations; workspace↔boring-bash acyclic; workspace bridge still workspace-owned. The `normalizeUiFilesystem`/`USER_FILESYSTEM_ID`/`uiFileResourceKey` helper **values** are supplied through the `BashPluginHost` adapter. Gate: `grep -rn "@hachej/boring-workspace" packages/boring-bash/src/plugin` returns no matches.
 - Company file-tree root + capability-based readonly panes preserved.
-- Tree data is a single internal function (no provider interface — deferred to #295), current tree shape unchanged; document-authority is a single nullable hook (no registry) defaulting to raw-edit parity.
+- Tree data is a single internal function (no provider interface — deferred to #295), current tree shape unchanged; the document-authority write/edit override is **deferred out of this epic** (BBP4-013) — `write`/`edit` stay raw file ops, no hook/interface/null-authority added.
 - `pnpm lint:invariants` + `pnpm audit:imports` + workspace plugin-invariants green.

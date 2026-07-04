@@ -110,9 +110,9 @@ Exit criteria: workspace playground still opens file tree/editor; read/write/edi
 
 ## Phase 4 — Move filesystem front plugin (bash track)
 
-Deliverables: move filesystem front plugin to `boring-bash/plugin`; preserve panel ids and `workspace.open.path` resolver; preserve file panel binding and agent file bridge/session changes **[Company file-tree root + capability-based readonly panes landed via #416 — carry over intact]**; factor tree data into a plain internal tree function (the pluggable `FileTreeDataProvider` boundary is **deferred to #295**, per `todos-v2/TODO-P4-file-ui-plugin.md`); add document-authority override seam.
+Deliverables: move filesystem front plugin to `boring-bash/plugin`; preserve panel ids and `workspace.open.path` resolver; preserve file panel binding and agent file bridge/session changes **[Company file-tree root + capability-based readonly panes landed via #416 — carry over intact]**; factor tree data into a plain internal tree function (the pluggable `FileTreeDataProvider` boundary is **deferred to #295**, per `todos-v2/TODO-P4-file-ui-plugin.md`). The **document-authority override seam is deferred out of this epic** (zero real consumers — no live document system exists; it arrives with #367/#226), per `todos-v2/TODO-P4-file-ui-plugin.md` BBP4-013.
 
-Exit criteria: `exec_ui openFile` still opens files; file tree data flows through one internal function with unchanged behavior (provider boundary deferred to #295); active document coordinator can intercept writes.
+Exit criteria: `exec_ui openFile` still opens files; file tree data flows through one internal function with unchanged behavior (provider boundary deferred to #295). (Document-authority override deferred out of this epic — `write`/`edit` stay raw file ops.)
 
 ## Phase 5 — Extend provisioning/readiness (bash track; hard dependency P3, parallel to P4)
 

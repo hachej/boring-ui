@@ -64,6 +64,20 @@ Concrete non-agent-loop providers (direct, bwrap, vercel-sandbox, remote-worker 
 - Landed #416 contracts unchanged; governance consumers keep working.
 - `direct`/`local`/`vercel-sandbox` behavior + existing tests preserved.
 
+### This phase is the runtime-mode composition cutover (API-breaking for in-repo composers — the FIRST break)
+
+P2 is where composition **first breaks and gets rewired** — it is the earlier of the two named cutovers (P2 = runtime-mode; P3 = routes/tools). P1 held an end-to-end compatibility promise ("all current HTTP consumers unchanged"), but **that promise ends at P2**: moving the concrete mode adapters + `resolveMode()` out of `packages/agent` means every in-repo composer that resolved a runtime mode must now **inject the resolved runtime adapter** (host-side) instead of importing `resolveMode`, and the agent bin becomes pure-only. External HTTP *callers* still see byte-identical route paths/behavior; the break is in the **composition API**, not the wire surface. **No text may claim the first composition break waits until P3.**
+
+P2 therefore **enumerates and migrates EVERY in-repo composition consumer**, each in its own PR (no big-bang), re-verifying behavior parity after each:
+
+- `packages/agent/src/server/createAgentApp.ts` + `registerAgentRoutes.ts` — the Fastify adapter layer takes the resolved runtime adapter **by injection** (Phase-1 seam) instead of importing `resolveMode`; if that seam is not threaded, STOP and report the missing P1 deliverable (do not shim).
+- `packages/cli/src/server/modeApps.ts` — imports `@hachej/boring-bash/providers` and resolves the mode host-side (and **now owns the bash-enabled dev-server bin composition** moved from the agent bin — see BBP2-005 / fix 6).
+- `packages/workspace/src/app/server/createWorkspaceAgentServer.ts` — same host-side `@hachej/boring-bash/providers` resolution.
+- `packages/agent/src/bin/boring-agent.ts` — becomes **pure-only** (`runtime: 'none'`, no `--mode`, no provider, no `resolveMode`); its bash-enabled composition moves to `packages/cli` in this same PR.
+- `packages/agent/src/server/index.ts` — origin value exports of the moved providers/`resolveMode` are **deleted** (BBP2-007), no old-path re-export.
+
+**Exit re-verifies parity post-migration:** after each consumer is migrated, its previously-green behavior (dev server, workspace/CLI/full-app boot, `direct`/`local`/`vercel-sandbox` modes, existing tests + e2e) must pass unchanged. A consumer is "done" only when its migration PR is merged AND its parity checks are re-run green post-cutover.
+
 ## Non-negotiables
 
 - **Precondition:** Phase 1 dependency injection (`createAgent()` / injected runtime+features; see 06 Phase 1 and the Phase-1 TODO) is complete before providers move. If not, STOP and report — do not move providers.

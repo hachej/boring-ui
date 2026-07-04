@@ -141,10 +141,9 @@ Legend — nature: **new** = net-new code · **move** = rename-detected + import
 | --- | --- | --- | --- | --- | --- |
 | pr1-plugin-subpath-host-adapter | BBP4-010 | new | ~250 (`BashPluginHost` structural adapter) | export-map `/plugin` front-safe; front-safe scan on `src/plugin/**` | `boring-bash check:invariants` |
 | pr2-move-front-plugin ⚠split | BBP4-011 (+ BBP4-012) | move | budget-exempt (**far >4k — split into pr2a/b/c pre-declared**) | moved plugin `__tests__` pass; `grep @hachej/boring-workspace packages/boring-bash/src/plugin` → 0; tree fn returns current shape | `lint:invariants`; acyclicity |
-| pr3-document-authority-hook | BBP4-013 | new | ~200–350 (nullable hook, no registry) | stub authority owns/rejects-stale; raw edit unaffected when absent | `boring-bash test` |
-| pr4-repoint-acyclicity | BBP4-014 | move (delete workspace export) + new (guard) | ~60 | `exec_ui openFile` opens moved panel; no `plugin→workspace` edge | `lint:plugin-invariants`; `audit:imports` |
+| pr3-repoint-acyclicity | BBP4-014 | move (delete workspace export) + new (guard) | ~60 | `exec_ui openFile` opens moved panel; no `plugin→workspace` edge | `lint:plugin-invariants`; `audit:imports` |
 
-**P4 total: 4 PRs (6 if pr2 splits into 3).** Precondition: P3 write/edit tools + routes in boring-bash.
+**P4 total: 3 PRs (5 if pr2 splits into 3).** BBP4-013 document-authority write/edit override seam is **deferred out of this epic** (zero real consumers — arrives with #367/#226; filed at P8 BBP8-004) — **no PR here**. Precondition: P3 write/edit tools + routes in boring-bash.
 
 ### E1 — Environment attachments (Phase E1, off P2 **and** P3)
 
@@ -204,14 +203,14 @@ Legend — nature: **new** = net-new code · **move** = rename-detected + import
 | pr8-childapp-context 🚫blocked | BBP6-001 | new | ~300–500 (type-only import of platform type) | generic excludes child-app scope; narrows-never-widens; unknown id → stable error | `test` — **STOP+report if platform type absent** |
 | pr9-macro-scoping 🚫blocked | BBP6-006 | new + fixture | ~250 | Macro context yields Macro reqs; generic excludes; no leakage | `test` |
 
-**P6 total: 9 PRs (7 P6a + 2 P6b-blocked).** `AgentRegistry` (pr1) + the workspace `agents: [...]` declaration (pr2) are the P7 consumers that justify them.
+**P6 total: 9 PRs (7 P6a + 2 P6b follow-up).** `AgentRegistry` (pr1) + the workspace `agents: [...]` declaration (pr2) are the P7 consumers that justify them. **P6b (pr8/pr9) is a tracked follow-up OUTSIDE the epic exit** — HARD BLOCKED on the shared child-app platform type; it does **not** gate P7 (P7 consumes P6a only) and does **not** gate P8. The epic ships on the 7 P6a PRs; the 2 P6b PRs land whenever `ResolvedChildAppContext`/#376 lands.
 
 ### P7 — Multi-agent routing/session/search + inspection (Phase 7, off P6a **and** E1 **and** T2)
 
 | PR | beads | nature | net-new vs budget | test deliverables | gate |
 | --- | --- | --- | --- | --- | --- |
 | pr1-agentid-scope-namespace | BBP7-001 | new | ~250–400 | two agents/one workspace → distinct `scope.key` + `sessionNamespace`; default-agent namespace unchanged | agent `test` |
-| pr2-agentid-addressing | BBP7-002 | new | ~200–350 (locked `/api/v1/agents/:agentId/…`) | declared resolves; undeclared → `AGENT_NOT_FOUND`; absent → default | `test` |
+| pr2-agentid-addressing | BBP7-002 | new | ~200–350 (locked `/api/v1/agents/:agentId/…`) | declared resolves; undeclared → `AGENT_NOT_FOUND`; absent/empty → 404; explicit `/agents/default/` → default agent | `test` |
 | pr3-per-agent-catalog-readiness | BBP7-003 | new | ~300–500 | per-agent catalog differs; reviewer readonly/no-exec vs coding bash vs pure concierge; no readiness bleed | `test` |
 | pr4-session-search | BBP7-004 | new | ~500–800 (no fs requirement) | agent-scoped, content match, redaction, deep-link `includeId`, graceful unknown | `test` |
 | pr5-agent-info-endpoint | BBP7-005 | new | ~250–400 (public, models.ts posture) | reports model/tools/readiness/channels/environments; **no key/secret field** | `test` |
@@ -222,7 +221,7 @@ Legend — nature: **new** = net-new code · **move** = rename-detected + import
 
 **P7 total: 9 PRs (8 if pr7+pr8 combine).** Precondition: P6a `AgentRegistry` + E1 attachments + **T2** (the `sessionId`-only public transport + two-handles guard; the durable approvals/`resolveInput` the external-hook route and `/info` channel facts read arrive via T1→T2) (else STOP+report).
 
-### P8 — Verification + cleanup (Phase 8, gates on **all** lanes)
+### P8 — Verification + cleanup (Phase 8, gates on **all** lanes EXCEPT P6b)
 
 | PR | beads | nature | net-new vs budget | test deliverables | gate |
 | --- | --- | --- | --- | --- | --- |
@@ -230,19 +229,19 @@ Legend — nature: **new** = net-new code · **move** = rename-detected + import
 | pr2-surface-contract-docs | BBP8-002 | doc | 0 | referenced symbols (`createAgent`,`AgentEvent`,`AgentSendInput`,`ResolveInputResponse`) exist | doc/link check |
 | pr3-track-remaining-prose | BBP8-004 | doc/tracking | 0 | filed issue/bead list; `00` coverage reconciled (no overclaim) | n/a |
 
-**P8 total: 3 PRs.** BBP8-005 (final invariant+build/test sweep) is the **merge gate on this stack**, not a separate PR — any red gate reopens its owning phase. **Rule: a live `TODO(remove:*)` marker reopens its phase; P8 never absorbs it.**
+**P8 total: 3 PRs.** BBP8-005 (final invariant+build/test sweep) is the **merge gate on this stack**, not a separate PR — any red gate reopens its owning phase. **Rule: a live `TODO(remove:*)` marker reopens its phase; P8 never absorbs it.** **P8 gates on every lane EXCEPT P6b** — P6b is a tracked follow-up (HARD BLOCKED on the child-app platform type), not an epic exit gate; P8 only **verifies the P6b follow-up issue is filed** (BBP8-004) and never waits on P6b landing (this is the anti-deadlock guarantee).
 
 ### S1 — Slack reference channel (Phase S1, off T2 + P1)
 
 | PR | beads | nature | net-new vs budget | test deliverables | gate |
 | --- | --- | --- | --- | --- | --- |
 | pr1-hono-fastify-wrapper-doc | BBS1-001 + BBS1-007 | new (+ `packages/channels/*` in `pnpm-workspace.yaml`) + doc | ~200 | exact-byte passthrough + status/header round-trip; example typechecks | new-package `build`/`typecheck` |
-| pr2-skeleton-ingress-store | BBS1-002 + BBS1-003 | new | ~350–550 | one `agent.send` per message; dedupe on `event_id`; bot ignored; `conversationKey→sessionId` isolation | `audit:imports` (no boring-bash) |
-| pr3-egress-batching | BBS1-004 | new | ~250–400 | N deltas <1s → 1 post + bounded updates; turn-end flush; 429 backoff | `test` |
+| pr2-skeleton-ingress-store | BBS1-002 + BBS1-003 | new | ~350–550 | one `agent.start()` per message (admission; runtime allocates `sessionId`, adapter writes `originSurface:'slack'`); dedupe on `event_id`; bot ignored; `conversationKey→sessionId` isolation | `audit:imports` (no boring-bash) |
+| pr3-egress-batching | BBS1-004 | new | ~250–400 | egress via `agent.stream(sessionId,{startIndex})`: N deltas <1s → 1 post + bounded updates; turn-end flush; 429 backoff | `test` |
 | pr4-approvals-slack | BBS1-005 | new | ~250–400 | button → `resolveInput` right session/request; cross-surface answer consistent | `test` |
 | pr5-conformance-suite | BBS1-006 | new (neutral `@hachej/boring-agent/testing`) + test | ~200 (suite) | message-in→out, approval round-trip, addressing isolation; runs `runtime:'none'` + readonly `company_context` | agent `build` (`./testing` subpath) |
 
-**S1 total: 5 PRs.** `@flue/slack` pinned exact `1.0.0-beta.x`. No shared channel-core package yet (single consumer).
+**S1 total: 5 PRs.** `@flue/slack` pinned to the **exact resolved `1.0.0-beta.<N>`** — resolve and record the version + date before coding (BBS1-002 first action); never ship a `.x`/range placeholder. No shared channel-core package yet (single consumer).
 
 ### S2 — Spreadsheet embed contract (Phase S2, off S1)
 
@@ -259,10 +258,10 @@ Legend — nature: **new** = net-new code · **move** = rename-detected + import
 | --- | --- | --- | --- | --- | --- |
 | pr1-agent-inspect-panel | BBS3-001 | new (only genuinely-new surface) | ~350–550 (registers via existing `PanelRegistry`) | renders `/info` read-only; reviewer readonly+no-bash; pure=no envs; **no secret field** | workspace `test`; `lint:plugin-invariants` |
 | pr2-crosssurface-sessions | BBS3-002 | new (rewire, not rebuild) | ~200–350 (`SessionSummary.originSurface` additive) | slack-origin badge + `origin:` filter; missing field defaults workspace; transcript reuses `PiChatPanel` by `sessionId` | agent+workspace `test` |
-| pr3-central-approval-inbox | BBS3-003 | new (generalize ask-user `InboxOverlay`) | ~250–400 (front-only; source → T1 `pendingInputs`) | two-session/two-surface inbox; `resolveInput` on answer; single source (no second channel) | `audit:imports`; **STOP+report if `agent.pendingInputs` absent** |
+| pr3-central-approval-inbox | BBS3-003 | new (generalize ask-user `InboxOverlay`) | ~250–400 (front-only; source → T1 `agent.sessions.pendingInputs(ctx, { sessionId? })`) | two-session/two-surface inbox; `resolveInput` on answer; single source (no second channel) | `audit:imports`; **STOP+report if `agent.sessions.pendingInputs(ctx, { sessionId? })` absent** |
 | pr4-controlplane-integration | BBS3-004 | test | 0 | one workspace inspects 2 agents + observes/approves 2 surfaces via public contracts only | workspace `test` |
 
-**S3 total: 4 PRs.** Consumes P7 `/info` + BBP7-004 search + T1 `pendingInputs` (STOP+report if missing). No new registry/host; observe-only (agent-as-directory authoring deferred).
+**S3 total: 4 PRs.** Consumes P7 `/info` + BBP7-004 search + T1 `agent.sessions.pendingInputs(ctx, { sessionId? })` (STOP+report if missing). No new registry/host; observe-only (agent-as-directory authoring deferred).
 
 ---
 
@@ -276,7 +275,7 @@ Legend — nature: **new** = net-new code · **move** = rename-detected + import
 | T2 | 6 | 6 | — |
 | P2 | 6 | 6 | — |
 | P3 | 6 | 6 (moves split by family only if >4k) | — |
-| P4 | 4 | 6 | — |
+| P4 | 3 | 5 | — |
 | E1 | 5 | 5 | — |
 | E2 | 3 | 3 | — |
 | P5 | 8 | 9 | — |
@@ -286,9 +285,9 @@ Legend — nature: **new** = net-new code · **move** = rename-detected + import
 | S1 | 5 | 5 | — |
 | S2 | 2 | 2 | — |
 | S3 | 4 | 4 | — |
-| **TOTAL** | **83** | **~88** | 2 blocked |
+| **TOTAL** | **82** | **~87** | 2 follow-up (P6b) |
 
-**Expected overall: ~83 PRs (up to ~88 if every pre-declared split fires); 2 of them (P6b) hard-blocked on the shared child-app platform type.**
+**Expected overall: ~82 PRs (up to ~87 if every pre-declared split fires). The 2 P6b PRs are a tracked follow-up OUTSIDE the epic exit (hard-blocked on the shared child-app platform type) — they do not gate P7 or P8, so the epic's ~80 non-P6b PRs ship without them. (P4 dropped from 4 to 3 PRs: the document-authority seam BBP4-013 is deferred out of the epic.)**
 
 ### Critical-path PR sequence (longest serial chain)
 
@@ -297,8 +296,8 @@ P0(1) → P1(6) → P2(6) → P3(6) → P5(8) → P6a(7) → P7(9) → P8(3)   =
 ```
 
 - **Off the same P1 root, in parallel:** the transport lane `T1(6) → T2(6) → { S1(5) → S2(2) ; S3(4) }`, and the environment lane `E1(5) → E2(3)` (E1 also needs P3; E2 feeds no critical successor except P8).
-- **P7 also needs E1 and T2** (T2 formalizes the `sessionId`-only transport + two-handles guard P7's addressing/binding rides, and carries the T1 durable approvals/`resolveInput` the external-hook route and `/info` channel facts read); **S3 needs T2 + P7**; **P8 gates on every lane** (bash + transport + environment + surfaces).
-- **P6b** is off the critical path (blocked) and does not gate P7 (P7 consumes P6a only).
+- **P7 also needs E1 and T2** (T2 formalizes the `sessionId`-only transport + two-handles guard P7's addressing/binding rides, and carries the T1 durable approvals/`resolveInput` the external-hook route and `/info` channel facts read); **S3 needs T2 + P7**; **P8 gates on every lane EXCEPT P6b** (bash + transport + environment + surfaces).
+- **P6b** is off the critical path (a tracked follow-up, hard-blocked) and gates **neither P7 nor P8** (P7 consumes P6a only; P8 only verifies the P6b follow-up issue is filed) — so P6b's block can never deadlock the epic exit.
 - **Package minor bumps** on the path: `@hachej/boring-agent` at P3 (relocation) and at T2 (protocol).
 
-Merge-order rule across lanes: nothing in P2 opens until P1 pr2..pr6 are green; E1 waits on both P2 and P3; P5 dispatches off P3 (not P4); P6a off P5; P7 off P6a+E1+T2; P8 last, only when zero `TODO(remove:*)` markers remain repo-wide and all lane gates are green.
+Merge-order rule across lanes: nothing in P2 opens until P1 pr2..pr6 are green; E1 waits on both P2 and P3; P5 dispatches off P3 (not P4); P6a off P5; P7 off P6a+E1+T2; P8 last, only when zero `TODO(remove:*)` markers remain repo-wide and all lane gates **except P6b** are green (P6b is a tracked follow-up outside the epic exit — P8 verifies its follow-up issue is filed but never waits on P6b landing).

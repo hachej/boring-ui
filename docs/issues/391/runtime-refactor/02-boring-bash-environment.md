@@ -177,9 +177,9 @@ Must preserve:
 
 The pluggable provider boundary (a `listTree`/`listPaths`/`subscribe` interface a replacement tree UI could implement) is **deferred until #295 is actually scheduled** — add it then, with Pierre Trees as the second real consumer. Until then the tree is one internal function; server routes are unaffected.
 
-### Document-authority override (#367, #226)
+### Document-authority override (#367, #226) — DEFERRED out of this epic
 
-When a live document system owns a file (TipTap/Yjs/etc.), model-facing `write`/`edit` must be overridable:
+**Deferral (binding):** this override has **zero real consumers** in #391 — no live document system (TipTap/Yjs/etc.) exists yet — so per the no-speculative-abstraction rule it is **not built in this epic**. It arrives with its first real authority implementation (#367/#226), filed as a post-epic follow-up (`todos-v2/TODO-P4-file-ui-plugin.md` BBP4-013, `todos-v2/TODO-P8-verification-cleanup.md` BBP8-004). The target model, for when it lands: when a live document system owns a file, model-facing `write`/`edit` must be overridable:
 
 - route through document coordinator;
 - validate stale version/hash;
@@ -210,5 +210,5 @@ The workspace bridge remains owned by `@hachej/boring-workspace`.
 - `execute_isolated_code` ownership/readiness;
 - upload/download route ownership;
 - file tree data returned by the plain internal tree function (provider boundary deferred to #295);
-- document-authority write/edit override;
+- document-authority write/edit override (**deferred out of this epic** — see BBP4-013; no test in #391);
 - git/status source-of-truth consistency.

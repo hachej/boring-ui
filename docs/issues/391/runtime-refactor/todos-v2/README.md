@@ -30,7 +30,9 @@ fail-closed, shared runtime, reload) is ← P5; P6b (child-app scoping: BBP6-001
 it lands; **P7 needs P6a and E1 and T2** (the AgentRegistry from P6a, not P6b's child-app scoping; E1
 attachments; and T2's `sessionId`-only transport + two-handles guard, which carries the T1 durable
 approvals/`resolveInput` the external-hook route and `/info` channel facts read); P8 gates
-on **all** lanes; S3 also needs P7 (and T2).
+on **all** lanes **except P6b** — P6b is a **tracked follow-up** gated on the shared child-app platform
+type, **not an epic exit gate**: the epic ships without it and P8 only verifies the P6b follow-up issue
+is filed (it never waits on P6b landing); S3 also needs P7 (and T2).
 ```
 
 Parallel lanes after P1: **bash lane** (P2→P3→P4), **environment lane** (E1→E2, needs P2+P3), **provisioning→child-app→multi-agent lane** (P5→P6a→P7→P8, off P3; P6b branches off P6a and is HARD BLOCKED on the shared child-app platform type), **transport lane** (T1→T2→{S1→S2, S3}). Phases 5–8 + S3 are canonical v2 work orders (below), each following its listed prerequisites.
@@ -63,7 +65,7 @@ These are now first-class v2 work orders here — **no longer delegated to `../t
 - **`TODO-P5-provisioning-secrets.md`** (Phase 5, off P3) — provisioning/readiness extension + the *credential brokering rule*: brokered secrets are host-side handles consumed only by trusted-core tools and never enter any sandboxed environment (the `direct` provider is a host process, not a sandbox — nothing is injected there) (00 invariant 14, 08 trust boundary).
 - **`TODO-P6-plugin-child-app.md`** (Phase 6, **split into P6a/P6b**) — **P6a** (manifest validation, plugin runtime context, `AgentRegistry`, hosted-plugin fail-closed, shared runtime, reload) dispatches off **P5** and is child-app-independent (grep-gated: zero child-app fields in the three named contracts); **P6b** (consume resolved child-app context, Macro scoping) is **HARD BLOCKED** on the shared child-app platform type (`ResolvedChildAppContext`, #376) — STOP-and-report, no local fallback shape, and do not define a competing child-app registry here.
 - **`TODO-P7-multi-agent-inspection.md`** (Phase 7, off **P6a** [the `AgentRegistry`, not P6b's child-app scoping] **+ E1 + T2**) — multi-agent routing/session/search + the agent inspection endpoint; surface adapters address agents via the same `agentId` scoping (one addressing entry → one `agentId`).
-- **`TODO-P8-verification-cleanup.md`** (Phase 8, gates on **all** lanes) — verification phase: assert zero `TODO(remove:*)` markers repo-wide; `@hachej/boring-agent` README documents the four-part surface contract (../08) as the stable public API.
+- **`TODO-P8-verification-cleanup.md`** (Phase 8, gates on **all** lanes **except P6b**) — verification phase: assert zero `TODO(remove:*)` markers repo-wide; `@hachej/boring-agent` README documents the four-part surface contract (../08) as the stable public API. **P6b is a tracked follow-up (gated on the shared child-app platform type), not an epic exit gate** — P8 does not wait on it; it only verifies the P6b follow-up issue is filed.
 - **`TODO-S3-control-plane-ux.md`** (Phase S3, off T2 **and** P7) — workspace-as-control-plane UX (08 "The steering surface").
 
 `../todos/TODO-00..07` are **NON-CANONICAL wherever they conflict with the v2 pack** — in particular their compat-export / re-export shim / deprecation-window language contradicts the v2 no-compat policy below. Consult them only for v1 bead intent that the v2 files explicitly reference; where they disagree, the v2 files (and this README) win.
