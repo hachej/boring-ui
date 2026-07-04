@@ -25,16 +25,21 @@ export class LocalWorkspaceStore implements WorkspaceStore {
 
   constructor(private userStore: LocalUserStore) {}
 
-  async create(userId: string, name: string, appId: string, opts?: { isDefault?: boolean; id?: string }): Promise<Workspace> {
+  async create(userId: string, name: string, appId: string, opts?: { isDefault?: boolean; id?: string; managedBy?: string }): Promise<Workspace> {
+    const id = opts?.id ?? randomUUID()
+    const existing = opts?.id ? this.workspaces.get(id) : undefined
+    if (existing) return existing
+
     const now = new Date().toISOString()
     const ws: Workspace = {
-      id: opts?.id ?? randomUUID(),
+      id,
       appId,
       name,
       createdBy: userId,
       createdAt: now,
       deletedAt: null,
       isDefault: opts?.isDefault ?? false,
+      managedBy: opts?.managedBy ?? null,
     }
     this.workspaces.set(ws.id, ws)
     const memberKey = `${ws.id}:${userId}`
@@ -85,6 +90,18 @@ export class LocalWorkspaceStore implements WorkspaceStore {
   async get(id: string): Promise<Workspace | null> {
     const ws = this.workspaces.get(id)
     if (!ws || ws.deletedAt) return null
+    return ws
+  }
+
+  async getIncludingDeleted(id: string): Promise<Workspace | null> {
+    return this.workspaces.get(id) ?? null
+  }
+
+  async restore(id: string): Promise<Workspace | null> {
+    const ws = this.workspaces.get(id)
+    if (!ws) return null
+    ws.deletedAt = null
+    this.workspaces.set(id, ws)
     return ws
   }
 
@@ -183,11 +200,11 @@ export class LocalWorkspaceStore implements WorkspaceStore {
     return { member: updated }
   }
 
-  async removeMember(workspaceId: string, userId: string): Promise<{ removed: boolean; code?: typeof ERROR_CODES.LAST_OWNER | typeof ERROR_CODES.NOT_MEMBER }> {
+  async removeMember(workspaceId: string, userId: string, opts?: { allowLastOwner?: boolean }): Promise<{ removed: boolean; code?: typeof ERROR_CODES.LAST_OWNER | typeof ERROR_CODES.NOT_MEMBER }> {
     const key = `${workspaceId}:${userId}`
     const membership = this.members.get(key)
     if (!membership) return { removed: false, code: ERROR_CODES.NOT_MEMBER }
-    if (membership.role === 'owner') {
+    if (!opts?.allowLastOwner && membership.role === 'owner') {
       let otherOwnerExists = false
       for (const m of this.members.values()) {
         if (m.workspaceId === workspaceId && m.userId !== userId && m.role === 'owner') {

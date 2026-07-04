@@ -8,6 +8,7 @@ import { afterEach, expect, test, vi } from 'vitest'
 import { getEnv, restoreEnvForTest, setEnvForTest } from '../config/env'
 import { createAgentApp } from '../createAgentApp'
 import { loadPlugins, flattenPluginTools } from '../harness/pi-coding-agent/pluginLoader'
+import { ErrorCode } from '../../shared/error-codes'
 
 const tempDirs: string[] = []
 const ORIGINAL_TEMPLATE_PATH = getEnv('BORING_AGENT_TEMPLATE_PATH')
@@ -229,6 +230,56 @@ test('createAgentApp can use a custom harness factory for non-pi runtimes', asyn
     expect(res.statusCode).toBe(200)
     expect(res.json()).toEqual({ ok: true, sessionId: 'custom', reloaded: true })
     expect(reloadSession).toHaveBeenCalledWith('custom')
+  } finally {
+    await app.close()
+  }
+})
+
+test('createAgentApp rejects command execution when metering is configured', async () => {
+  const workspaceRoot = await makeTempDir('boring-ui-metered-commands-')
+  const executeSlashCommand = vi.fn(async () => {})
+  const app = await createAgentApp({
+    workspaceRoot,
+    mode: 'direct',
+    logger: false,
+    metering: {
+      reserveRun: vi.fn(),
+      recordUsage: vi.fn(),
+      settleRun: vi.fn(),
+      releaseRun: vi.fn(),
+    },
+    harnessFactory: vi.fn(async () => ({
+      id: 'metered-commands-harness',
+      placement: 'server' as const,
+      sessions: {
+        async list() { return [] },
+        async create() {
+          const now = new Date().toISOString()
+          return { id: 'custom', title: 'Custom', createdAt: now, updatedAt: now, turnCount: 0 }
+        },
+        async load() {
+          const now = new Date().toISOString()
+          return { id: 'custom', title: 'Custom', createdAt: now, updatedAt: now, turnCount: 0, messages: [] }
+        },
+        async delete() {},
+      },
+      getSlashCommands: async () => [{ name: 'plan', source: 'prompt' as const }],
+      executeSlashCommand,
+    })),
+  })
+  try {
+    const commandsRes = await app.inject({ method: 'GET', url: '/api/v1/agent/commands?sessionId=custom' })
+    expect(commandsRes.statusCode).toBe(200)
+    expect(commandsRes.json()).toEqual({ commands: [{ name: 'plan', source: 'prompt' }] })
+
+    const executeRes = await app.inject({
+      method: 'POST',
+      url: '/api/v1/agent/commands/execute?sessionId=custom',
+      payload: { name: 'plan', args: 'ship it' },
+    })
+    expect(executeRes.statusCode).toBe(409)
+    expect(executeRes.json()).toMatchObject({ error: { code: ErrorCode.enum.METERING_UNSUPPORTED_COMMAND } })
+    expect(executeSlashCommand).not.toHaveBeenCalled()
   } finally {
     await app.close()
   }

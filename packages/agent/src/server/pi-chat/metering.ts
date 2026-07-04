@@ -25,6 +25,8 @@ import { createLogger } from '../logging'
  * because process restarts and client retries can replay transitions.
  */
 export interface AgentMeteringSink {
+  /** False means the sink is installed but policy is disabled/no-op. Omitted means active for fail-closed callers. */
+  isEnabled?: () => boolean
   reserveRun(input: MeteringReserveInput): Promise<MeteringReservationResult>
   /** Records the usage and returns the credit micros it was actually billed. The
    * coordinator counts a usage as billable from this charged amount (not raw provider
@@ -86,6 +88,7 @@ export interface MeteringUsageInput extends MeteringRunScope {
   model?: { provider?: string; id?: string }
   usage: MeteringUsage
   stopReason?: string
+  metadata?: Record<string, unknown>
 }
 
 export type MeteringRunStatus = 'ok' | 'error' | 'aborted'

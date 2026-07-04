@@ -42,6 +42,7 @@ test('RunContext contract', () => {
     requestId?: string
     userId?: string
     userEmail?: string
+    allowPromptDispatch?: boolean
   }>()
 
   expectTypeOf<RunContext['abortSignal']>().toEqualTypeOf<AbortSignal>()
@@ -50,4 +51,5 @@ test('RunContext contract', () => {
   expectTypeOf<RunContext['userEmail']>().toEqualTypeOf<string | undefined>()
   expectTypeOf<RunContext['workspaceId']>().toEqualTypeOf<string | undefined>()
   expectTypeOf<RunContext['requestId']>().toEqualTypeOf<string | undefined>()
+  expectTypeOf<RunContext['allowPromptDispatch']>().toEqualTypeOf<boolean | undefined>()
 })

@@ -34,6 +34,18 @@ describe('LocalWorkspaceStore', () => {
       expect(await store.getMemberRole('00000000-0000-4000-8000-000000000475', 'u1')).toBe('owner')
     })
 
+    it('treats explicit-id conflicts as insert-do-nothing and re-reads the existing workspace', async () => {
+      const id = '00000000-0000-4000-8000-000000000475'
+      const first = await store.create('u1', 'Original', 'app1', { id, isDefault: false })
+      const second = await store.create('u2', 'Replacement', 'app1', { id, isDefault: true, managedBy: 'company-context' })
+
+      expect(second).toEqual(first)
+      expect((await store.get(id))?.name).toBe('Original')
+      expect((await store.get(id))?.managedBy).toBeNull()
+      expect(await store.getMemberRole(id, 'u1')).toBe('owner')
+      expect(await store.getMemberRole(id, 'u2')).toBeNull()
+    })
+
     it('list filters by userId and appId', async () => {
       await store.create('u1', 'WS1', 'app1')
       await store.create('u1', 'WS2', 'app2')

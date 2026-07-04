@@ -1080,11 +1080,13 @@ let runtimeProvisioning: WorkspaceProvisioningResult | undefined
         harness: staticBinding.harness,
         defaultSessionId: sessionId,
         workdir: staticBinding.runtimeBundle.workspace.root,
+        metering: opts.metering,
       }
     : {
         defaultSessionId: sessionId,
         getHarness: async (request) => (await getBindingForRequest(request)).harness,
         getWorkdir: async (request) => (await getBindingForRequest(request)).runtimeBundle.workspace.root,
+        metering: opts.metering,
       },
   )
   await app.register(readyStatusRoutes, staticBinding

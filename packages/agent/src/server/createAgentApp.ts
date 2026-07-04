@@ -290,7 +290,7 @@ export async function createAgentApp(
   })
   await app.register(sessionChangesRoutes, { tracker: sessionChangesTracker })
   await app.register(catalogRoutes, { tools })
-  await app.register(commandsRoutes, { harness, defaultSessionId: sessionId, workdir: runtimeBundle.workspace.root })
+  await app.register(commandsRoutes, { harness, defaultSessionId: sessionId, workdir: runtimeBundle.workspace.root, metering: opts.metering })
   await app.register(reloadRoutes, {
     harness,
     defaultSessionId: sessionId,

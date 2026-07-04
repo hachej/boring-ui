@@ -5,6 +5,7 @@ import { requireWorkspaceMember } from '../auth/requireWorkspaceMember.js'
 import { createWorkspaceBody, updateWorkspaceBody } from './__schemas__/workspaces.js'
 
 const DEFAULT_WORKSPACE_NAME = 'Default workspace'
+const COMPANY_CONTEXT_WORKSPACE_MANAGED_BY = 'company-context'
 
 const workspaceRoutesPlugin: FastifyPluginAsync = async (app) => {
   const store = app.workspaceStore
@@ -177,6 +178,24 @@ const workspaceRoutesPlugin: FastifyPluginAsync = async (app) => {
       const { id } = request.params as { id: string }
 
       request.log.info({ workspaceId: id }, 'workspace.delete.start')
+
+      const workspace = await store.get(id)
+      if (!workspace) {
+        throw new HttpError({
+          status: 404,
+          code: ERROR_CODES.NOT_FOUND,
+          message: 'Workspace not found',
+          requestId: request.id,
+        })
+      }
+      if (workspace.managedBy === COMPANY_CONTEXT_WORKSPACE_MANAGED_BY) {
+        throw new HttpError({
+          status: 403,
+          code: ERROR_CODES.FORBIDDEN,
+          message: 'Company Context workspace is managed by governance and cannot be deleted',
+          requestId: request.id,
+        })
+      }
 
       if (provisioner) {
         try {

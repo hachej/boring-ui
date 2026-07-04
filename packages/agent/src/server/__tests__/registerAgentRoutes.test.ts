@@ -6,6 +6,7 @@ import Fastify from 'fastify'
 
 import { registerAgentRoutes } from '../registerAgentRoutes'
 import { provisionWorkspaceRuntime } from '../workspace/provisioning'
+import { ErrorCode } from '../../shared/error-codes'
 import type { RuntimeModeAdapter } from '../runtime/mode'
 
 const tempDirs: string[] = []
@@ -1003,6 +1004,60 @@ test('request-scoped commands endpoint uses the workspace harness', async () => 
     })
     expect(getSlashCommands).toHaveBeenCalledWith('custom', expect.objectContaining({ workdir: workspaceRoot }))
     expect(scopeChecks).toBe(1)
+  } finally {
+    await app.close()
+  }
+}, 15_000)
+
+test('metered command execution rejects commands before harness dispatch', async () => {
+  const workspaceRoot = await makeTempDir('boring-agent-embed-metered-commands-')
+  const app = Fastify({ logger: false })
+  const getSlashCommands = vi.fn(async () => [{ name: 'plan', source: 'prompt' as const }])
+  const executeSlashCommand = vi.fn(async () => {})
+
+  await app.register(registerAgentRoutes, {
+    workspaceRoot,
+    mode: 'direct',
+    metering: {
+      reserveRun: vi.fn(),
+      recordUsage: vi.fn(),
+      settleRun: vi.fn(),
+      releaseRun: vi.fn(),
+    },
+    harnessFactory: async () => ({
+      id: 'metered-commands-test-harness',
+      placement: 'server' as const,
+      sessions: {
+        async list() { return [] },
+        async create() {
+          const now = new Date().toISOString()
+          return { id: 'default', title: 'Default', createdAt: now, updatedAt: now, turnCount: 0 }
+        },
+        async load() {
+          const now = new Date().toISOString()
+          return { id: 'default', title: 'Default', createdAt: now, updatedAt: now, turnCount: 0, messages: [] }
+        },
+        async delete() {},
+      },
+      getSlashCommands,
+      executeSlashCommand,
+    }),
+  })
+  await app.ready()
+
+  try {
+    const commandsRes = await app.inject({ method: 'GET', url: '/api/v1/agent/commands?sessionId=default' })
+    expect(commandsRes.statusCode).toBe(200)
+    expect(commandsRes.json()).toEqual({ commands: [{ name: 'plan', source: 'prompt' }] })
+
+    const executeRes = await app.inject({
+      method: 'POST',
+      url: '/api/v1/agent/commands/execute?sessionId=default',
+      payload: { name: 'plan', args: 'ship it' },
+    })
+    expect(executeRes.statusCode).toBe(409)
+    expect(executeRes.json()).toMatchObject({ error: { code: ErrorCode.enum.METERING_UNSUPPORTED_COMMAND } })
+    expect(executeSlashCommand).not.toHaveBeenCalled()
   } finally {
     await app.close()
   }
