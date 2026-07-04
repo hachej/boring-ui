@@ -27,8 +27,10 @@ Cross-deps not drawable inline: E1 needs P2 **and** P3; **P6 splits into P6a and
 (child-app-independent: manifest validation, plugin runtime context, AgentRegistry, hosted-plugin
 fail-closed, shared runtime, reload) is ← P5; P6b (child-app scoping: BBP6-001, BBP6-006) is ← P6a
 **and** the shared child-app platform type (`ResolvedChildAppContext`, #376), **HARD BLOCKED** until
-it lands; **P7 needs P6a and E1** (the AgentRegistry from P6a, not P6b's child-app scoping); P8 gates
-on **all** lanes; S3 also needs P7.
+it lands; **P7 needs P6a and E1 and T2** (the AgentRegistry from P6a, not P6b's child-app scoping; E1
+attachments; and T2's `sessionId`-only transport + two-handles guard, which carries the T1 durable
+approvals/`resolveInput` the external-hook route and `/info` channel facts read); P8 gates
+on **all** lanes; S3 also needs P7 (and T2).
 ```
 
 Parallel lanes after P1: **bash lane** (P2→P3→P4), **environment lane** (E1→E2, needs P2+P3), **provisioning→child-app→multi-agent lane** (P5→P6a→P7→P8, off P3; P6b branches off P6a and is HARD BLOCKED on the shared child-app platform type), **transport lane** (T1→T2→{S1→S2, S3}). Phases 5–8 + S3 are canonical v2 work orders (below), each following its listed prerequisites.
@@ -48,7 +50,7 @@ Parallel lanes after P1: **bash lane** (P2→P3→P4), **environment lane** (E1�
 | `TODO-E2-mcp-projection.md` | Phase E2 | E1 | M |
 | `TODO-P5-provisioning-secrets.md` | Phase 5 | P3 | L |
 | `TODO-P6-plugin-child-app.md` | Phase 6 | **P6a**: P5 · **P6b**: P6a + child-app platform type (HARD BLOCKED) | L |
-| `TODO-P7-multi-agent-inspection.md` | Phase 7 | P6a (AgentRegistry) + E1 | L |
+| `TODO-P7-multi-agent-inspection.md` | Phase 7 | P6a (AgentRegistry) + E1 + T2 | L |
 | `TODO-P8-verification-cleanup.md` | Phase 8 | all lanes | M |
 | `TODO-S1-slack-channel.md` | Phase S1 | T2 (+P1) | M |
 | `TODO-S2-embed-contract.md` | Phase S2 | S1 | S/M |

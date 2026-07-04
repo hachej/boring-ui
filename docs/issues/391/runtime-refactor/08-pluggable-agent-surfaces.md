@@ -40,7 +40,7 @@ Design rules imported:
 - **Flue `SessionEnv`**: one universal environment interface; the core has no mode-specific branching. (Already the plan's spine — 02.)
 - **Flue/eve events**: every event carries a monotonic `eventIndex` → durable, replayable, reconnectable streams (`startIndex` resume).
 - **eve two-handles rule**: the **continuation/addressing handle is owned by the surface** (Slack thread `ts`, workbook+sheet id, workspace pane id); the **`sessionId`/stream handle is owned by the runtime**. Each surface keeps its own token-joiner/mapping; the runtime never learns platform addressing.
-- **eve trust boundary**: tools execute on the trusted core side; the environment (bash/fs) is the untrusted side; credentials are injected at the environment boundary and never enter the sandbox or the model transcript.
+- **eve trust boundary**: tools execute on the trusted core side; the environment (bash/fs) is the untrusted side; credentials are brokered on the trusted core side; environments receive only derived non-secret effects/status.
 - **Vercel AI SDK `ChatTransport`**: UI state and wire protocol are separate; `sendMessages` + `reconnectToStream` is the entire transport contract.
 - **AI SDK v6 / eve HITL**: `needsApproval` declared on the tool; `tool-approval-request` / `input.requested` events park the turn durably; any surface holding the session can answer.
 
@@ -64,7 +64,7 @@ This preserves the 00-global-isa three-layer model and adds the two layers above
 Today the only delivery of the harness is Fastify (`createAgentApp` / `registerAgentRoutes`). The real loop — the harness chat service (`HarnessPiChatService`, reached via `harness.getPiSessionAdapter`, streaming `PiChatEvent`s) — is already transport-agnostic; `agent.send()` wraps that verified seam (see `todos-v2/TODO-P1-headless-core.md` for the grounded signatures). We export it properly instead of making every consumer mount routes:
 
 ```ts
-import { createAgent } from '@hachej/boring-agent/server'
+import { createAgent } from '@hachej/boring-agent/core'
 
 const agent = createAgent({
   harnessFactory,            // optional; default = pi-coding-agent harness
@@ -103,7 +103,7 @@ Rules:
 
 ## Event stream contract
 
-Do **not** replace the streaming protocol. V1 wraps the existing harness stream unit — `PiChatEvent` (the pi chat event union the front already consumes; AI-SDK part alignment is revisited at the AI-SDK v6 migration) — in an envelope:
+Do **not** replace the streaming protocol. V1 wraps the existing harness stream unit — `PiChatEvent` (the pi chat event union the front already consumes; the repo already depends on `ai ^6`, so the deferred work is not an AI-SDK version bump but **migrating the `PiChatEvent` reducer/view-model to native `UIMessage`/tool-approval parts**) — in an envelope:
 
 ```ts
 interface AgentEvent {
@@ -119,7 +119,7 @@ Reality note: a bespoke replay path already exists (`PiChatReplayBuffer` + `?cur
 
 - `eventIndex` + a persisted event log per session make the stream **replayable**: `agent.stream(sessionId, { startIndex })` (in-process) and (HTTP adapter) `GET …/events?offset=N`. Naming equivalence, stated once: in-process APIs use `startIndex`; the wire uses the Durable-Streams-native `offset` param — they are the same monotonic position (`?offset=N` ⇔ `{ startIndex: N }`), the adapter translates. This is what lets Slack reconnect after a webhook retry and the workspace survive an SSE drop without protocol forks.
 - **Implementation choice (locked, verified): adopt the Durable Streams wire protocol instead of inventing one.** Durable Streams (github.com/durable-streams/durable-streams, ElectricSQL, MIT, protocol extracted from production) specifies exactly T1's semantics: monotonic offsets, catch-up reads from arbitrary offset, SSE + long-poll live tailing, ETag caching, `Stream-Next-Offset`/`Stream-Up-To-Date` headers. Server side: embed an `EventStreamStore` (append-only SQLite, monotonic `seq` per stream) + DS-compliant read handlers — Flue's implementation of both is ~1000 lines of framework-agnostic WHATWG `Request→Response` code (`event-stream-store.ts` + `handle-stream-routes.ts`, Apache-2.0) we can adapt behind a thin Fastify bridge; `@durable-streams/server`/the Caddy binary are alternative sidecar deployments. Client side: `@durable-streams/client` (deps: fetch-event-source + fastq) gives reconnection, backoff, and offset checkpointing for free in the browser and in channel adapters. Known caveat to fix when adapting: Flue's SQLite append is two non-transactional statements (single-process only) — make it transactional.
-- Approvals ride the same stream as `data-approval-request` parts in v1, migrating to native AI-SDK `tool-approval-request/response` parts when we adopt the v6 line. Surface answers via `agent.resolveInput(...)` (in-process) or `POST …/input` (HTTP).
+- Approvals ride the same stream as `data-approval-request` parts in v1, migrating to native AI-SDK `tool-approval-request/response` parts when the `PiChatEvent` reducer/view-model migrates to native `UIMessage`/tool-approval parts. Surface answers via `agent.resolveInput(...)` (in-process) or `POST …/input` (HTTP).
 - Surface-specific projections are the adapter's job: workspace renders the full stream; Slack maps activity → `setStatus`, text deltas → `sayStream`, approval parts → buttons; Excel maps structured tool outputs → cell writes.
 
 ## Two handles (hard rule)
@@ -181,7 +181,7 @@ Executable contract suites, in-repo, run against every implementation:
 
 ## Decisions this file locks (recommendations)
 
-1. **Wire protocol**: keep the existing harness stream unit (`PiChatEvent`) as the v1 event payload, add the indexed envelope. Do not invent a parallel event union. AI-SDK part alignment is revisited only at an AI-SDK v6 migration.
+1. **Wire protocol**: keep the existing harness stream unit (`PiChatEvent`) as the v1 event payload, add the indexed envelope. Do not invent a parallel event union. The repo already depends on `ai ^6`; the deferred work is not an AI-SDK version bump but migrating the `PiChatEvent` reducer/view-model to native `UIMessage`/tool-approval parts (decision 8).
 2. **Pure mode** (#391 open decision 1): pi-coding-agent with `runtime: none` and sealed cwd, behind the Phase 1 audit — not a second harness. Epic #12 keeps pi as the batteries-included default; any alternative harness remains a conformance-suite consumer only, never a Phase 1 prerequisite or the pure-mode path.
 3. **Surfaces live outside the agent package**: per-channel packages (Flue model), not subpaths of `boring-agent` (eve model) — matches the existing monorepo layout and keeps the core dependency-free.
 4. **Readonly fs is v1**: already true — shipped via #416. The 00-global-isa open decision 6 is resolved.

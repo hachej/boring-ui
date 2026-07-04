@@ -132,6 +132,13 @@ Runtime needs are declarative, scoped, readiness-gated, and secret-safe, **exten
 - **Tests:** same fingerprint skips; changed requirement id/content/source graph/contract re-provisions; different agent/child-app requirements do not share a snapshot; onSession reruns without rebuilding the template; secret value change never alters fingerprint/logs while grant/status change affects per-session readiness; existing Vercel packaging/snapshot tests pass.
 - **Acceptance:** template reuse is safe, observable, and scoped by the same policy/provisioning facts that determine runtime powers.
 
+### BBP5-010 — Remote-worker no-leak conformance mount (the deferred fourth env mount) [size S]
+
+- **Files create:** `packages/boring-bash/src/server/testing/__tests__/remoteWorkerProjectionConformance.test.ts` — a subject adapter that drives `checkReadonlyProjectionConformance` against a **remote-worker (provider) attachment**, added as the fourth mount of the one env/no-leak suite (`09` / `07` §3c "one suite, N mounts").
+- **Notes:** This is the **deferred fourth mount** named in `09-environments-attachable.md` and `07-tests-review-acceptance.md` §3c: the three delivered mounts are in-process, scoped-view+symlink (E1), and MCP (E2); the remote-worker mount is **gated on the remote-worker handshake (BBP5-008)** because the provider attachment's capability facts come only from the handshake. Remote-worker stays a **provider** in this epic (P2/P5) — the mount is the provider attachment, not a reclassification of remote-worker as an environment transport (that reclassification is deferred to a post-E2 P8 follow-up per `09`). Reuse the existing fixture seeds and the same expected visible-path set as the in-process mount; assert denied files are physically absent and no brokered secret is reachable (BBP5-007). No new suite — a mount only.
+- **Tests:** the file is the test — remote-worker mount `passed: true`, identical visible-path set to the in-process mount, denied sentinel absent, no brokered secret in any client-reachable payload.
+- **Acceptance:** the env/no-leak conformance suite runs its fourth mount (remote-worker provider attachment) green, gated on the BBP5-008 handshake; it is the owning bead the pack names for that mount.
+
 ## Verification — exact commands verified against package.json scripts
 
 ```bash

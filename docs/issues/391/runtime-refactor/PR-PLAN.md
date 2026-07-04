@@ -26,7 +26,21 @@ git diff --numstat -M origin/main...HEAD \
 
 ### Root CI script names (verified in `package.json`)
 
-`pnpm lint:invariants` (= agent `check-invariants.sh` + `@hachej/boring-bash check:invariants` + `lint:workspace-plugin-invariants`) · `pnpm audit:imports` · `pnpm check:agent-isolation` · `pnpm check:bundle-size` · `pnpm typecheck` · `pnpm test` · `pnpm e2e`. Per-package: `pnpm --filter <pkg> run {build,typecheck,test,lint:invariants,check:isolation}`.
+`pnpm lint:invariants` (= agent `check-invariants.sh` + `@hachej/boring-bash check:invariants` + `lint:workspace-plugin-invariants`) · `pnpm audit:imports` · `pnpm check:agent-isolation` · `pnpm check:bundle-size` · `pnpm typecheck` · `pnpm test` · `pnpm e2e`.
+
+Per-package command matrix (only scripts that exist in each `package.json` — verified):
+
+| Package (filter) | Gate scripts that exist |
+| --- | --- |
+| `@hachej/boring-agent` | `build` · `typecheck` · `test` · `test:e2e` · `lint:invariants` · `check:isolation` · `smoke:capability-readiness` |
+| `@hachej/boring-bash` | `build` · `typecheck` · `test` · `check:invariants` |
+| `@hachej/boring-workspace` | `build` · `typecheck` · `test` · `check:bundle-size` · `lint:plugin-invariants` |
+| `@hachej/boring-core` | `build` · `typecheck` · `test` · `check:bundle-size` |
+| `@hachej/boring-ui-cli` (`packages/cli`) | `build` · `build:front` · `typecheck` · `test` |
+| `full-app` (`apps/full-app`) | `build` · `typecheck` · `test` · `e2e` · `smoke:remote-worker` |
+| `workspace-playground` (`apps/workspace-playground`) | `build` · `typecheck` · `test` · `test:e2e` |
+
+Invoke as `pnpm --filter <package> run <script>`. There is **no** universal `{build,typecheck,test,lint:invariants,check:isolation}` set — e.g. `lint:invariants`/`check:isolation` exist only on `@hachej/boring-agent`, `check:invariants` only on `@hachej/boring-bash`, `check:bundle-size` only on workspace/core, and `e2e`/`test:e2e` names differ per app.
 
 ### Size heuristic used for estimates
 
@@ -61,7 +75,7 @@ Legend — nature: **new** = net-new code · **move** = rename-detected + import
 | PR | beads | nature | net-new vs budget | test deliverables | gate |
 | --- | --- | --- | --- | --- | --- |
 | pr1-config-inventory | BBP1-001 | doc | 0 | none (inventory doc) | grep reproducers resolve |
-| pr2-createagent-facade ⚠split | BBP1-002 | new | ~800–1200 / 2000 — **at risk, split pre-declared** | façade unit: 6-member API constructs w/o Fastify; `send` yields ≥1 event via live tail; historical `startIndex` throws `ERR_NOT_IMPLEMENTED_UNTIL_T1` | `lint:invariants`; `check:isolation` |
+| pr2-createagent-facade ⚠split | BBP1-002 | new | ~800–1200 / 2000 — **at risk, split pre-declared** | façade unit: 7-member API (`start`,`stream`,`send`,`resolveInput`,`sessions`,`readiness`,`dispose`) constructs w/o Fastify; `send` yields ≥1 event via live tail; historical `startIndex` throws `ERR_NOT_IMPLEMENTED_UNTIL_T1` | `lint:invariants`; `check:isolation` |
 | pr3-adapters-thin | BBP1-003 | new (refactor) | ~400–800 / 2000 (mostly churn into façade) | parity guarded by existing suites + pr6 | full agent `test` + `test:e2e` (parity) |
 | pr4-pure-runtime-none | BBP1-004 | new | ~300–600 | pure-mode route/tool exclusion; session round-trip under `sessionStorageRoot` w/ `workspaceId` undefined; no cwd leak | `lint:invariants` |
 | pr5-pi-harness-audit | BBP1-005 | doc + new (seals) | ~150 seals | harness-construction spy (no host cwd); system-prompt snapshot (no cwd/AGENTS.md) | `test` |
@@ -164,34 +178,35 @@ Legend — nature: **new** = net-new code · **move** = rename-detected + import
 | pr4-sdk-archive | BBP5-005 | new | ~300–500 | archive installs + fingerprint-skip; no host-path leak; runtime-visible rewrite | `test` |
 | pr5-managed-service ⚠split | BBP5-006 | new | ~700–1000 — **split pre-declared if >2k** | start→health→port-grant; teardown kills tree; denied exec/ports blocks; no raw secret in env | `test` |
 | pr6-secret-brokering | BBP5-007 | new | ~500–800 | status without value; **brokering negative test — no sandbox-side read of brokered secret**; no serialization to browser/model/log/artifact | `check:isolation`; `smoke:capability-readiness` |
-| pr7-remote-worker-handshake | BBP5-008 | new | ~300–500 | reported\|unknown facts; fail-closed on unknown/bad-contract; no silent downgrade | `full-app smoke:remote-worker` |
+| pr7-remote-worker-handshake | BBP5-008 (+ BBP5-010 mount) | new + test | ~300–500 | reported\|unknown facts; fail-closed on unknown/bad-contract; no silent downgrade; **BBP5-010** remote-worker no-leak conformance mount (the deferred fourth env mount) rides here, gated on this handshake | `full-app smoke:remote-worker`; `boring-bash test` |
 | pr8-two-phase-fingerprint | BBP5-009 | new | ~400–600 | same fingerprint skips; changed source/contract re-provisions; onSession reruns; Vercel snapshot tests pass | `test` |
 
 **P5 total: 8 PRs.** Preconditions: P3 + P2 `providers/matrix.ts` (else STOP+report). Engine stays agent-owned; normalizer boring-bash-owned. Zero dangling `TODO(remove:*)`.
 
 ### P6 — Plugin + child-app integration (Phase 6, off P5) — **split P6a / P6b**
 
-**P6a — child-app-independent (dispatchable after P5).** Grep-gated: BBP6-002/003/004 contain **zero** `childAppId`/`workspaceKind`/`ChildApp`.
+**P6a — child-app-independent (dispatchable after P5).** Grep-gated: BBP6-002/003/004/009 contain **zero** `childAppId`/`workspaceKind`/`ChildApp`.
 
 | PR | beads | nature | net-new vs budget | test deliverables | gate |
 | --- | --- | --- | --- | --- | --- |
 | pr1-agent-registry | BBP6-003 | new | ~150 (Map-backed) | register/get/list/has/delete; duplicate-id policy; grep-gate no child-app fields | agent `test` |
-| pr2-manifest-requires-bash | BBP6-002 | new | ~400–700 | bash skipped when disabled; invalid `bash` rejected pre-import; import-free proof; raw-secret reject; grep-gate clean | `lint:plugin-invariants` |
-| pr3-runtime-plugin-context | BBP6-004 | new | ~300–500 | context derived from policy (unspoofable); status-only secrets; dispatch unchanged | workspace `test` |
-| pr4-hosted-fail-closed | BBP6-005 | new | ~400–600 | hosted mode fails closed; iframe sandbox/CSP asserted; symlink/special-file rejected | `test` |
-| pr5-shared-workspace-runtime | BBP6-007 | new (unify) | ~300–500 | CLI/full-app/workspace share the runtime unit; reload + registry dispose on eviction | core/cli/full-app `test` |
-| pr6-multitenant-reload | BBP6-008 | new | ~300–500 | reload per workspace; unauthorized → stable error; pure reload w/o bash; trusted routes diagnosed-not-hot | full-app `test` |
+| pr2-agents-declaration | BBP6-009 | new | ~150 (declaration + seed) | two-agent decl seeds two registry entries + default; absent decl → one implicit `default` (single-agent parity); dup/bad-default rejected; grep-gate no child-app fields | workspace/core/cli `test` |
+| pr3-manifest-requires-bash | BBP6-002 | new | ~400–700 | bash skipped when disabled; invalid `bash` rejected pre-import; import-free proof; raw-secret reject; grep-gate clean | `lint:plugin-invariants` |
+| pr4-runtime-plugin-context | BBP6-004 | new | ~300–500 | context derived from policy (unspoofable); status-only secrets; dispatch unchanged | workspace `test` |
+| pr5-hosted-fail-closed | BBP6-005 | new | ~400–600 | hosted mode fails closed; iframe sandbox/CSP asserted; symlink/special-file rejected | `test` |
+| pr6-shared-workspace-runtime | BBP6-007 | new (unify) | ~300–500 | CLI/full-app/workspace share the runtime unit; reload + registry dispose on eviction | core/cli/full-app `test` |
+| pr7-multitenant-reload | BBP6-008 | new | ~300–500 | reload per workspace; unauthorized → stable error; pure reload w/o bash; trusted routes diagnosed-not-hot | full-app `test` |
 
 **P6b — child-app scoping (HARD BLOCKED until `docs/plans/shared-child-app-platform.md`→`ResolvedChildAppContext`/#376 lands).**
 
 | PR | beads | nature | net-new vs budget | test deliverables | gate |
 | --- | --- | --- | --- | --- | --- |
-| pr7-childapp-context 🚫blocked | BBP6-001 | new | ~300–500 (type-only import of platform type) | generic excludes child-app scope; narrows-never-widens; unknown id → stable error | `test` — **STOP+report if platform type absent** |
-| pr8-macro-scoping 🚫blocked | BBP6-006 | new + fixture | ~250 | Macro context yields Macro reqs; generic excludes; no leakage | `test` |
+| pr8-childapp-context 🚫blocked | BBP6-001 | new | ~300–500 (type-only import of platform type) | generic excludes child-app scope; narrows-never-widens; unknown id → stable error | `test` — **STOP+report if platform type absent** |
+| pr9-macro-scoping 🚫blocked | BBP6-006 | new + fixture | ~250 | Macro context yields Macro reqs; generic excludes; no leakage | `test` |
 
-**P6 total: 8 PRs (6 P6a + 2 P6b-blocked).** `AgentRegistry` (pr1) is the P7 consumer that justifies it.
+**P6 total: 9 PRs (7 P6a + 2 P6b-blocked).** `AgentRegistry` (pr1) + the workspace `agents: [...]` declaration (pr2) are the P7 consumers that justify them.
 
-### P7 — Multi-agent routing/session/search + inspection (Phase 7, off P6a **and** E1)
+### P7 — Multi-agent routing/session/search + inspection (Phase 7, off P6a **and** E1 **and** T2)
 
 | PR | beads | nature | net-new vs budget | test deliverables | gate |
 | --- | --- | --- | --- | --- | --- |
@@ -205,7 +220,7 @@ Legend — nature: **new** = net-new code · **move** = rename-detected + import
 | pr8-subagent-grant | BBP7-008 | new (lands E1 BBE1-005) | ~150 (boring-bash) | scoped-view grant isolated by `agentId`; shares no handle; no cwd inheritance | `boring-bash test` |
 | pr9-two-surface-isolation | BBP7-009 | test | 0 | two-surfaces×two-agents no-collision integration (bindings/catalog/transcript/readiness/approvals) | `test` |
 
-**P7 total: 9 PRs (8 if pr7+pr8 combine).** Precondition: P6a `AgentRegistry` + E1 attachments (else STOP+report).
+**P7 total: 9 PRs (8 if pr7+pr8 combine).** Precondition: P6a `AgentRegistry` + E1 attachments + **T2** (the `sessionId`-only public transport + two-handles guard; the durable approvals/`resolveInput` the external-hook route and `/info` channel facts read arrive via T1→T2) (else STOP+report).
 
 ### P8 — Verification + cleanup (Phase 8, gates on **all** lanes)
 
@@ -265,25 +280,25 @@ Legend — nature: **new** = net-new code · **move** = rename-detected + import
 | E1 | 5 | 5 | — |
 | E2 | 3 | 3 | — |
 | P5 | 8 | 9 | — |
-| P6 | 8 | 8 | 2 (P6b) |
+| P6 | 9 | 9 | 2 (P6b) |
 | P7 | 9 | 9 | — |
 | P8 | 3 | 3 | — |
 | S1 | 5 | 5 | — |
 | S2 | 2 | 2 | — |
 | S3 | 4 | 4 | — |
-| **TOTAL** | **82** | **~87** | 2 blocked |
+| **TOTAL** | **83** | **~88** | 2 blocked |
 
-**Expected overall: ~82 PRs (up to ~87 if every pre-declared split fires); 2 of them (P6b) hard-blocked on the shared child-app platform type.**
+**Expected overall: ~83 PRs (up to ~88 if every pre-declared split fires); 2 of them (P6b) hard-blocked on the shared child-app platform type.**
 
 ### Critical-path PR sequence (longest serial chain)
 
 ```
-P0(1) → P1(6) → P2(6) → P3(6) → P5(8) → P6a(6) → P7(9) → P8(3)   = 45 PRs serial
+P0(1) → P1(6) → P2(6) → P3(6) → P5(8) → P6a(7) → P7(9) → P8(3)   = 46 PRs serial
 ```
 
 - **Off the same P1 root, in parallel:** the transport lane `T1(6) → T2(6) → { S1(5) → S2(2) ; S3(4) }`, and the environment lane `E1(5) → E2(3)` (E1 also needs P3; E2 feeds no critical successor except P8).
-- **P7 also needs E1**; **S3 needs T2 + P7**; **P8 gates on every lane** (bash + transport + environment + surfaces).
+- **P7 also needs E1 and T2** (T2 formalizes the `sessionId`-only transport + two-handles guard P7's addressing/binding rides, and carries the T1 durable approvals/`resolveInput` the external-hook route and `/info` channel facts read); **S3 needs T2 + P7**; **P8 gates on every lane** (bash + transport + environment + surfaces).
 - **P6b** is off the critical path (blocked) and does not gate P7 (P7 consumes P6a only).
 - **Package minor bumps** on the path: `@hachej/boring-agent` at P3 (relocation) and at T2 (protocol).
 
-Merge-order rule across lanes: nothing in P2 opens until P1 pr2..pr6 are green; E1 waits on both P2 and P3; P5 dispatches off P3 (not P4); P6a off P5; P7 off P6a+E1; P8 last, only when zero `TODO(remove:*)` markers remain repo-wide and all lane gates are green.
+Merge-order rule across lanes: nothing in P2 opens until P1 pr2..pr6 are green; E1 waits on both P2 and P3; P5 dispatches off P3 (not P4); P6a off P5; P7 off P6a+E1+T2; P8 last, only when zero `TODO(remove:*)` markers remain repo-wide and all lane gates are green.

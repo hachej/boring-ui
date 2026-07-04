@@ -23,7 +23,7 @@ Before moving providers to `@hachej/boring-bash`, invert composition:
 - Host/CLI/core passes runtime/features in.
 - `@hachej/boring-agent` exports only type contracts for features/tool registration.
 - A package invariant test fails if agent has value imports from `@hachej/boring-bash`.
-- Existing runtime mode support may remain as compatibility wiring only if it does not force a runtime bundle for pure agents.
+- Existing runtime mode support is migrated to host composition **in the same PR** (no long-lived compatibility wiring); a pure agent must never be forced to build a runtime bundle. Any temporary bridge kept alive during a single PR carries a `// TODO(remove:<bead-id>)` marker and a same-phase deletion bead — it does not outlive the phase (see `todos-v2/README.md` "Simplicity & no-compat policy").
 
 This prevents the cycle:
 
@@ -49,7 +49,9 @@ interface AgentEnvironment {
   sessionStorageRoot: string
   workspaceId?: string
   agentId?: string
-  grants?: Record<string, unknown>   // opaque host-supplied grants; NOT a feature registry
+  // No `grants` escape hatch in the P1 config. Typed grant fields arrive in P5/P7,
+  // where they are actually consumed (provisioning/secrets, multi-agent scoping) —
+  // not as an opaque `Record<string, unknown>` here.
 }
 ```
 
@@ -58,7 +60,6 @@ HTTP routes are owned by the HTTP adapter (`createAgentApp` / `registerAgentRout
 Rules:
 
 - Routes are mounted by host composition, not by the core or the bundle. No `Fastify` value/type leaks into shared/front packages.
-- `grants` must not be confused with current `AgentRuntimeCapabilities`.
 - `sessionStorageRoot` is transcript/session storage, not workspace file storage.
 
 ## Pure runtime mode
@@ -108,33 +109,9 @@ Outcome must be explicit:
 
 Some open issues are agent/session problems, not bash problems. The agent core needs optional seams for them:
 
-### External review/question hooks (#380)
+### External review/question hooks (#380) — deferred to Phase 7 (NOT P1 scope)
 
-Add a channel-neutral hook ingestion contract:
-
-```ts
-interface ExternalAgentHookRequest {
-  source: {
-    harnessId: string
-    agentId?: string
-    workspaceId?: string
-    sessionId?: string
-    provider?: string
-  }
-  kind: 'review' | 'question' | 'approval'
-  body: unknown
-  redactionPolicy?: string
-  callback?: { url: string; authRef?: string }
-}
-```
-
-Requirements:
-
-- auth before accept;
-- redaction before session write;
-- clear source attribution;
-- routing to correct workspace/agent/session;
-- works without boring-bash.
+The external-hook request/callback/redaction contract is **not a Phase 1 deliverable**. External hooks depend on durable approvals (the single on-stream approval channel, T1) and on multi-agent target resolution, so the request shape, auth/redaction/callback contract, and target resolution all land in **Phase 7** (`todos-v2/TODO-P7-multi-agent-inspection.md`, BBP7-006), routed onto the T1 approval channel — never a second channel. P1 adds **no** external-hook request/callback/redaction contract and **no** hook route.
 
 ### Operational event/command seam (#371, #228, #224)
 
@@ -158,7 +135,6 @@ Required tests for this area:
 - harness construction receives no host cwd/path, or receives a sealed virtual root with no host files;
 - system prompt snapshot has no cwd/workspace/AGENTS.md leakage;
 - pi pure-mode audit result is encoded in tests;
-- external hook accepts/renders/rejects with auth/redaction rules;
 - operational command seam works without boring-bash;
 - import invariant: `@hachej/boring-agent` has no value import from `@hachej/boring-bash`.
 

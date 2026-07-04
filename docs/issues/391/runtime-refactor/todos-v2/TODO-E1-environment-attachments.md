@@ -45,7 +45,7 @@ Match `06-migration-phases.md` Phase E1 exit criteria:
 
 - Do NOT edit `FilesystemBinding`, `FilesystemBindingResolver`, `ScopedFilesystemRuntimeBindingManager`, the projection operations, or the conformance subject signatures. Wrap them.
 - Do NOT add a value import of `@hachej/boring-bash` into `packages/agent` (the audit forbids it).
-- Do NOT build the Phase 3 `createBashAgentFeature()` public API or move routes/tools. Stop at the reduction + registry + scoped-view enforcement.
+- Do NOT build the Phase 3 `createBashAgentFeature()` public API or move routes/tools. Stop at attachments + `resolveAttachments` reduction + scoped-view enforcement. There is **no** registry vocabulary in E1: the id-lookup registry (a plain `Map<environmentId, Environment>`) is **E2-only**.
 - Do NOT invent a new scope key field; `agentId` already discriminates.
 - Do NOT touch `/home/ubuntu/projects/boring-ui-v2`. Do NOT commit.
 
@@ -68,7 +68,7 @@ Match `06-migration-phases.md` Phase E1 exit criteria:
 ### BBE1-003 — `company_context` as reference environment + readonly attachment (M)
 - Description: Adapter re-expressing the landed company-context provider as an `Environment` + a readonly `EnvironmentAttachment` — no change to `FixtureCompanyContextBindingProvider`.
 - Files: create `packages/boring-bash/src/server/companyContextEnvironment.ts`; export from server barrel.
-- Notes: Build an `Environment { id: 'company_context', provider: 'fixture', capabilities: { fs: 'readonly', exec: false } }` and a factory returning `EnvironmentAttachment { environmentId: 'company_context', filesystem: COMPANY_CONTEXT_FILESYSTEM_ID, access: 'readonly', execPolicy: 'none' }`. Registry preparation for it must route through the existing `FixtureCompanyContextBindingProvider` (or the real provider a host injects) so `createReadonlyProjectionOperations` still backs reads. Assert `execPolicy: 'none'` (invariant 4).
+- Notes: Build an `Environment { id: 'company_context', provider: 'fixture', capabilities: { fs: 'readonly', exec: false } }` and a factory returning `EnvironmentAttachment { environmentId: 'company_context', filesystem: COMPANY_CONTEXT_FILESYSTEM_ID, access: 'readonly', execPolicy: 'none' }`. Preparation for it must route through the existing `FixtureCompanyContextBindingProvider` (or the real provider a host injects) via the `ScopedFilesystemRuntimeBindingManager` — no new registry — so `createReadonlyProjectionOperations` still backs reads. Assert `execPolicy: 'none'` (invariant 4).
 - Tests: `packages/boring-bash/src/server/__tests__/companyContextEnvironment.test.ts` — resolving the reference attachment yields the same visible-path set as a direct `FixtureCompanyContextBindingProvider` prepare (behavioral equivalence with #416).
 - Acceptance: existing `readonlyCompanyContext*` tests untouched and green; the adapter produces an equivalent projection.
 
@@ -89,9 +89,9 @@ Match `06-migration-phases.md` Phase E1 exit criteria:
 - Acceptance: `pnpm audit:imports` green; `pnpm lint:invariants` green; agent typechecks against the new type-only field.
 
 ### BBE1-007 — Scoped-view mount of the no-leak conformance suite (S)
-- Description: Run `checkReadonlyProjectionConformance` against a scoped-view attachment as a new mount (fits `09` "one suite, four mounts").
+- Description: Run `checkReadonlyProjectionConformance` against a scoped-view attachment as a new mount (fits `09`/`07` "one suite, N mounts" — three delivered mounts now; the remote-worker mount is deferred to BBP5-010).
 - Files: `packages/boring-bash/src/server/__tests__/scopedViewConformance.test.ts`.
-- Notes: Build a `ReadonlyProjectionConformanceSubject` whose `operations`/`projection` come from a subpath-scoped attachment resolved through the registry. Reuse the existing fixture seeds; assert the denied directory/sentinel outside the subpath is absent and mutations reject.
+- Notes: Build a `ReadonlyProjectionConformanceSubject` whose `operations`/`projection` come from a subpath-scoped attachment resolved through the `resolveAttachments` adapter (over the landed `ScopedFilesystemRuntimeBindingManager`). Reuse the existing fixture seeds; assert the denied directory/sentinel outside the subpath is absent and mutations reject.
 - Tests: the file is the test.
 - Acceptance: conformance `passed: true` for the scoped-view mount.
 

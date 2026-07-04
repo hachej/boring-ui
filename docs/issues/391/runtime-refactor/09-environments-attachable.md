@@ -20,7 +20,9 @@ interface Environment {
   capabilities: EnvironmentCapabilities   // fs: none|readonly|readwrite, exec, realBash, watch, search, networkIsolation
   fs?: EnvironmentFsOps             // the SessionEnv-style universal ops (02)
   exec?: EnvironmentExecOps
-  lifecycle: { prepare(ctx): PreparedEnvironment; dispose?; invalidate? }
+  // No `lifecycle` member (E1 collapsed it): preparation and disposal flow through the
+  // existing `ScopedFilesystemRuntimeBindingManager` via the E1 `resolveAttachments`
+  // reduction — the environment carries no prepare/dispose/invalidate of its own.
 }
 
 interface EnvironmentAttachment {
@@ -67,4 +69,4 @@ Any environment can be projected as an **MCP server**: fs ops (`read/list/stat/s
 
 ## Conformance
 
-The environment conformance suite (07/08) runs identically against: in-process attachment, scoped-view attachment, a remote-worker (provider) attachment, and the MCP projection. One suite, four mounts — same rule as harness/transport conformance.
+The environment conformance suite (07/08) runs identically against **three delivered mounts** — in-process attachment, scoped-view (+ symlink-escape) attachment, and the MCP projection (E2) — plus a **deferred fourth mount, the remote-worker (provider) attachment, gated on the P5 remote-worker handshake work** (owning bead: `todos-v2/TODO-P5-provisioning-secrets.md` BBP5-010). One suite, N mounts — same rule as harness/transport conformance; a mount is added by the phase that delivers its implementation.

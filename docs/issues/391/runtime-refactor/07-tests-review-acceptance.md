@@ -21,7 +21,7 @@ Status: v2 rewrite. This is the **test framework** for the pluggable-agent pack 
 Enforced by scripts, not test files. Extend them, never bypass (`todos-v2/README.md` global non-negotiables).
 
 - **Value-import audit** — `pnpm audit:imports` (`scripts/audit-imports.ts`, `FORBIDDEN_PATTERNS`): `@hachej/boring-agent` has **zero value import** from `@hachej/boring-bash`; surface packages import only the public agent contract (+ their channel ingress package); no old-path imports survive a relocation (P2/P3/P4/T1/T2 add rules here).
-- **Agent package invariants** — `pnpm --dir packages/agent run lint:invariants` → `bash scripts/check-invariants.sh .` (ripgrep scan). Adds the **Fastify-free façade** rule (P1 BBP1-007: no Fastify in the `createAgent()` module graph) and the **no `?cursor=` / `PiChatReplayBuffer` server-side** rule (T2 BBT2-006).
+- **Agent package invariants** — `pnpm --dir packages/agent run lint:invariants` → `bash scripts/check-invariants.sh .` (ripgrep scan). Adds the **Fastify-free façade** rule (P1 BBP1-006: no Fastify in the `createAgent()` / `@hachej/boring-agent/core` module graph) and the **no `?cursor=` / `PiChatReplayBuffer` server-side** rule (T2 BBT2-006).
 - **boring-bash invariants** — `pnpm --filter @hachej/boring-bash run check:invariants` → `packages/boring-bash/scripts/check-invariants.mjs`: required exports (`.`/`./shared`/`./server`, `./mcp` after E2), agent→boring-bash + Fastify-graph checks, and the pack-doc `(filesystem, path)` / named-binding string presence.
 - **Agent isolation** — `pnpm check:agent-isolation` → `packages/agent/scripts/check-agent-isolation.ts` (dist scan; requires a build first).
 - **Workspace plugin invariants** — `pnpm lint:workspace-plugin-invariants`.
@@ -54,14 +54,14 @@ Vitest, colocated under `__tests__/`. Per package: `pnpm --filter @hachej/boring
 - **Mounts:** in-process — `inProcessTransport.test.ts` (BBT2-002); HTTP/DS — `dsHttpTransport.test.ts` (BBT2-003, in-memory Fastify app mounting T1's DS route + `createAgent()`; reconnect after forced stream close replays losslessly).
 - **Command:** `pnpm --filter @hachej/boring-agent run test`.
 
-#### 3c. Environment / no-leak conformance — canonical: `checkReadonlyProjectionConformance` (**one suite, four mounts**)
+#### 3c. Environment / no-leak conformance — canonical: `checkReadonlyProjectionConformance` (**one suite, three delivered mounts + one deferred**)
 
 - **Where:** `packages/boring-bash/src/server/testing/readonlyProjectionConformance.ts` (landed #416). Do not fork it; add mounts.
-- **The four mounts:**
+- **The three mounts a bead actually delivers:**
   1. **in-process** readonly `company_context` — landed (#416).
   2. **scoped-view + symlink-escape** — E1 BBE1-007 `scopedViewConformance.test.ts` (mount) + E1 BBE1-004 `scopedView.test.ts` (explicit **symlink-escape** test: realpath-based containment with symlink denial, hardening the lexical-`resolve()`-only projection).
-  3. **remote-worker (provider) attachment** — provider mount (P2/P5 remote-worker stays a *provider*; the mount is the provider attachment).
-  4. **MCP projection** — E2 BBE2-003 `mcpProjectionConformance.test.ts` (subject drives the projected `McpServer` via an in-memory MCP client pair; identical expected visible-path set to the in-process mount).
+  3. **MCP projection** — E2 BBE2-003 `mcpProjectionConformance.test.ts` (subject drives the projected `McpServer` via an in-memory MCP client pair; identical expected visible-path set to the in-process mount).
+- **Deferred fourth mount:** the **remote-worker (provider) attachment mount** — **gated on the P5 remote-worker handshake work** (owning bead: `todos-v2/TODO-P5-provisioning-secrets.md` BBP5-010). Remote-worker stays a *provider* in this epic (P2/P5); the mount lands when its handshake-backed attachment does, not before.
 - **Guarantees:** `(filesystem, path)` identity; denied files physically **absent** (no leak through read/list/find/grep/search/shell/UI/transcript/metadata); readwrite management projections are distinct policy-granted bindings; `execPolicy: 'none'` default for non-`user` attachments; no broker secret in any client-reachable payload (E2 BBE2-004).
 - **Command:** `pnpm --filter @hachej/boring-bash run test`.
 
@@ -83,7 +83,7 @@ Vitest, colocated under `__tests__/`. Per package: `pnpm --filter @hachej/boring
 
 Any PR touching the area must keep these green; most are re-mounts of L3 suites plus named regressions:
 
-- **company_context no-leak** — `checkReadonlyProjectionConformance` (all four mounts) stays green in every phase.
+- **company_context no-leak** — `checkReadonlyProjectionConformance` (all delivered mounts: in-process / scoped+symlink / MCP; the remote-worker mount is deferred to P5) stays green in every phase.
 - **Source-of-truth parity (route ↔ bash ↔ git)** — split-brain tests (see §4): a file-route write is visible to bash; a bash-created file is visible to file routes/search; git/status routes use the same source of truth; readonly façade exposes no exec; partial view physically excludes denied files.
 - **Secret non-exposure in sandbox** — brokered secrets are host-side handles consumed only by trusted-core tools, never present in any sandboxed environment, exec output, tool metadata, or the model transcript (P5 credential-brokering rule; E2 BBE2-004; the `direct` provider is a host process, not a sandbox — nothing is injected there).
 - **Symlink escape** — E1 `scopedView.test.ts` symlink-escape test (realpath-based, not lexical).
@@ -96,7 +96,7 @@ Any PR touching the area must keep these green; most are re-mounts of L3 suites 
 | Fixture | Canonical name / location | Used by |
 | --- | --- | --- |
 | Scripted/fake harness | `scriptedPiHarness` — `packages/agent/src/server/testing/scriptedPiHarness.ts` (exists; `BORING_AGENT_E2E_SCRIPTED_PI*`) | P1 `createAgent()` smoke (BBP1-006), harness/transport conformance drivers |
-| Company-context readonly fixture | `FixtureCompanyContextBindingProvider`, `COMPANY_CONTEXT_FILESYSTEM_ID`, `COMPANY_CONTEXT_SENTINEL` — `packages/boring-bash/src/server/testing/companyContextFixtureProvider.ts` (exists) | env/no-leak conformance (all four mounts), surface-adapter governed-context subject |
+| Company-context readonly fixture | `FixtureCompanyContextBindingProvider`, `COMPANY_CONTEXT_FILESYSTEM_ID`, `COMPANY_CONTEXT_SENTINEL` — `packages/boring-bash/src/server/testing/companyContextFixtureProvider.ts` (exists) | env/no-leak conformance (all delivered mounts; remote-worker mount deferred to P5), surface-adapter governed-context subject |
 | In-memory `EventStreamStore` | test double supplied as `makeStore` to `runEventStreamStoreConformance` — `packages/agent/src/server/events/__tests__/` (T1) | transport tests, surface-adapter tests needing a store without SQLite |
 | Fake channel payloads / Slack signature fixtures | signed `event_callback` / `block_actions` bodies — `packages/channels/slack/src/__tests__/` (S1; signature verification itself comes from `@flue/slack`, tests only produce signed bodies) | Slack ingress/egress/approval/conformance tests |
 
@@ -119,8 +119,8 @@ A phase exits only when its named suites + commands are green. This is the table
 | **P4** (file UI plugin) | fs-event delta → tree; file panes/surface-resolver ids unchanged; workspace-playground e2e | `pnpm --filter @hachej/boring-workspace run test` · `pnpm --filter workspace-playground run test:e2e` |
 | **E1** (env attachments) | env/no-leak conformance **scoped-view mount** + **symlink-escape** test; company-context behavioral-equivalence test; no diff to landed #416 signatures | `pnpm --filter @hachej/boring-bash run test` · `run check:invariants` · `pnpm audit:imports` · `pnpm lint:invariants` |
 | **E2** (MCP projection) | env/no-leak conformance **MCP mount** (fourth); MCP identity (`BoundFilesystemContext`) test; exec-gating + broker-secret-unreachable test; `./mcp` export bundles | `pnpm --filter @hachej/boring-bash run build` · `run typecheck` · `run check:invariants` · `run test` |
-| **P5** (provisioning/secrets) | two-tier readiness (`ReadyState`/`CapabilityState`); remote-worker fail-closed handshake; **credential-brokering** regression (no secret in sandbox); SDK artifacts leak no host paths | `pnpm --filter @hachej/boring-agent run test` · smoke `smoke:capability-readiness` |
-| **P6** (plugin/child-app) | import-free manifest validation; hosted plugin fail-closed before code exec; managed-service lifecycle; child-app/workspace-kind requirement narrowing | `pnpm --filter @hachej/boring-workspace run test` · relevant app e2e |
+| **P5** (provisioning/secrets) | two-tier readiness (`ReadyState`/`CapabilityState`); remote-worker fail-closed handshake; **credential-brokering** regression (no secret in sandbox); SDK artifacts leak no host paths | `pnpm --filter @hachej/boring-agent run test` · `pnpm --filter @hachej/boring-agent run smoke:capability-readiness` · `pnpm --filter full-app run smoke:remote-worker` |
+| **P6** (plugin/child-app) | import-free manifest validation; hosted plugin fail-closed before code exec; managed-service lifecycle; child-app/workspace-kind requirement narrowing | `pnpm --filter @hachej/boring-workspace run test` · `pnpm --filter full-app run e2e` · `pnpm --filter workspace-playground run test:e2e` |
 | **P7** (multi-agent/inspection) | two agents, same `sessionId`, no shared binding/transcript/catalog; `agentId` in binding scope key + `sessionNamespace`; per-agent readiness/catalogs; session search scoped by workspace+agent; agent inspection endpoint | `pnpm --filter @hachej/boring-agent run test` · `run test:e2e` |
 | **P8** (verification/cleanup) | **zero `TODO(remove:*)` markers repo-wide**; all 00 invariants green; no old-path importer; README documents the four-part surface contract | `pnpm lint:invariants` (incl. marker gate) · `node scripts/check-no-remove-markers.mjs` · `pnpm run test` · `pnpm audit:imports` |
 | **S1** (Slack channel) | `runSurfaceAdapterConformance` Slack subject (message-in/events-out, approval round-trip, addressing isolation); ingress/egress/session-store/approval unit tests; no boring-bash/provider import | `pnpm --filter @hachej/boring-channel-slack run test` · `run typecheck` · `pnpm audit:imports` |

@@ -13,15 +13,16 @@
 Phase 0 ─ Phase 1 ──┬── Phase 2 ── Phase 3 ──┬── Phase 4 ── Phase 5 ── Phase 6 ── Phase 7 ── Phase 8
    (ADR)  (headless │   (bash pkg)  (routes/  │   (file UI)  (provis./  (plugins/  (multi-    (cleanup)
           core)     │               tools)    │              readiness) child-app) agent)
-                    │                          └── Phase E1 ─── Phase E2
-                    │                              (env registry/ (MCP env
-                    │                               attachments)  projection)
-                    └── Phase T1 ── Phase T2 ─────────────── Phase S1 ── Phase S2
-                        (event      (transport               (Slack      (pi-excel
-                         envelope)   adapters)                channel)    embed)
+                    │                          └── Phase E1 ─────────── Phase E2
+                    │                              (env attachments/     (MCP env
+                    │                               resolveAttachments)   projection)
+                    └── Phase T1 ── Phase T2 ──┬──────────── Phase S1 ── Phase S2
+                        (event      (transport  │            (Slack      (pi-excel
+                         envelope)   adapters)   │            channel)    embed)
+                                                 └── Phase S3 (control-plane UX; also needs Phase 7)
 ```
 
-Track T starts after Phase 1 and runs parallel to Phases 2–4. Track S needs T2. Track E (environments as attachable resources, 09) starts after Phase 3 (E1 depends on Phase 2 **and** Phase 3 — it re-implements the P3 bash bundle's internals over attachments without changing its public signature) and runs parallel to Phases 4–5; E2 needs E1 only. Governance work (#475 line) continues independently on the landed #416 contracts.
+Track T starts after Phase 1 and runs parallel to Phases 2–4. Track S needs T2 (S1→S2); **S3 needs T2 and Phase 7** (it consumes the Phase 7 `/info` inspection endpoint + scoped session search). Track E (environments as attachable resources, 09) starts after Phase 3 (E1 depends on Phase 2 **and** Phase 3 — it re-implements the P3 bash bundle's internals over attachments without changing its public signature) and runs parallel to Phases 4–5; E2 needs E1 only. Governance work (#475 line) continues independently on the landed #416 contracts.
 
 ## Phase 0 — ADR, naming lock, invariant update
 
@@ -41,14 +42,14 @@ Exit criteria: ADR accepted; plan pack (incl. 08) thermo-reviewed; issue #391 po
 Deliverables:
 
 - `createAgentApp()` / `registerAgentRoutes()` receive the runtime adapter and any extra tools (incl. the boring-bash bundle's `{ tools, readinessRequirements }`) by injection — no `features` registry, no `AgentFeature` contract.
-- **Export `createAgent()`** from `@hachej/boring-agent/server`: Fastify-free façade returning `{ start, stream, send, resolveInput, sessions, readiness, dispose }` (see 08). `start(input): Promise<{ sessionId, startIndex }>` is the accepted-receipt write primitive (turn runs on an independent producer, never consumer-backpressured); `stream(sessionId, { startIndex })` is the replay+live-tail read primitive (replaces `replay()`); `send` = convenience over both. `createAgentApp()` becomes an adapter over it.
+- **Export `createAgent()`** from `@hachej/boring-agent/core` — the canonical Fastify-free public entry for `createAgent()` everywhere: façade returning `{ start, stream, send, resolveInput, sessions, readiness, dispose }` (see 08). `start(input): Promise<{ sessionId, startIndex }>` is the accepted-receipt write primitive (turn runs on an independent producer, never consumer-backpressured); `stream(sessionId, { startIndex })` is the replay+live-tail read primitive (replaces `replay()`); `send` = convenience over both. `createAgentApp()` becomes an adapter over it. The `@hachej/boring-agent/server` barrel is an **adapter that re-exports `createAgent` from `/core`** for convenience only — it carries no contract status; the Fastify-free guarantee is anchored on `/core`.
 - Typed config object only: no env-var reads or file discovery inside `createAgent()`; `.pi/*`, workspaces.yaml, env parsing move to host/CLI composition.
 - Remove static value imports from agent server composition to built-in mode resolution where needed for pure mode. Type-only `RuntimeModeAdapter` contracts may stay in agent during migration; `resolveMode()` and concrete mode adapters move to boring-bash/host composition after compatibility shims.
 - Package invariant test: no agent value import from boring-bash **[landed: `scripts/check-invariants.mjs` — extend to the façade]**.
 - Add the pure `runtime: 'none'` path (no bash bundle spread into `tools`).
 - Separate `sessionStorageRoot` from workspace roots.
 - Audit pi-coding-agent cwd/resource assumptions (blocks pure-mode exit; decision: sealed pi harness, not a second harness).
-- Add external hook and operational event seams if route composition changes.
+- Add the boring-bash-free operational event/command seam (reload, slash commands, compaction/provider recovery, session notices) if route composition changes. (**External** hook request/callback/redaction contracts and their target resolution are **not** Phase 1 scope — they depend on durable approvals (T1) and land in Phase 7; see Phase 7 "external hook target resolution".)
 
 Exit criteria:
 
