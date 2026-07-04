@@ -152,6 +152,21 @@ Reality note: a bespoke replay path already exists (`PiChatReplayBuffer` + `?cur
 
 - `eventIndex` + a persisted event log per session make the stream **replayable**: `agent.stream(sessionId, { startIndex })` (in-process) and (HTTP adapter) `GET …/events?offset=N`. Naming equivalence, stated once: in-process APIs use `startIndex`; the wire uses the Durable-Streams-native `offset` param — they are the same monotonic position (`?offset=N` ⇔ `{ startIndex: N }`), the adapter translates. This is what lets Slack reconnect after a webhook retry and the workspace survive an SSE drop without protocol forks.
 - **Implementation choice (locked, verified): adopt the Durable Streams wire protocol instead of inventing one.** Durable Streams (github.com/durable-streams/durable-streams, ElectricSQL, MIT, protocol extracted from production) specifies exactly T1's semantics: monotonic offsets, catch-up reads from arbitrary offset, SSE + long-poll live tailing, ETag caching, `Stream-Next-Offset`/`Stream-Up-To-Date` headers. Server side: embed an `EventStreamStore` (append-only SQLite, monotonic `seq` per stream) + DS-compliant read handlers — Flue's implementation of both is ~1000 lines of framework-agnostic WHATWG `Request→Response` code (`event-stream-store.ts` + `handle-stream-routes.ts`, Apache-2.0) we can adapt behind a thin Fastify bridge; `@durable-streams/server`/the Caddy binary are alternative sidecar deployments. Client side: `@durable-streams/client` (deps: fetch-event-source + fastq) gives reconnection, backoff, and offset checkpointing for free in the browser and in channel adapters. Known caveat to fix when adapting: Flue's SQLite append is two non-transactional statements (single-process only) — make it transactional.
+
+### Backend state store (CLI ↔ prod feature parity)
+
+The backend embeds **one zero-ops SQLite layer** with **two files**. `events.db`
+is the append-only event log: the replay authority, with its own
+backup/retention/compaction lifecycle. `state.db` holds mutable state and
+**derived indexes**: pending inputs, surface addressing maps, session indexes,
+and other caches that are always rebuildable from `events.db` plus host config.
+This is the headline production rationale: local CLI mode and hosted/prod mode
+ship the identical feature set without a managed database in any default path
+(invariant 15). `EventStreamStore` and state accessors are interfaces with
+conformance suites; a Postgres adapter plus `LISTEN/NOTIFY` tail is a named
+follow-up gated only on multi-instance need, changing nothing above the store.
+Backups continuously stream both SQLite files to EU S3, litestream-style.
+
 - Approvals ride the same stream as `data-approval-request` parts in v1, migrating to native AI-SDK `tool-approval-request/response` parts when the `PiChatEvent` reducer/view-model migrates to native `UIMessage`/tool-approval parts. Surface answers via `agent.resolveInput(...)` (in-process) or `POST …/input` (HTTP).
 - Surface-specific projections are the adapter's job: workspace renders the full stream; Slack maps activity → `setStatus`, text deltas → `sayStream`, approval parts → buttons; Excel maps structured tool outputs → cell writes.
 - **Reserved (namespace claimed NOW, delivery deferred to the farm epic): the `data-artifact` stream part.** An agent publishes an output by **writing it to its environment** (a filesystem the agent already holds — E1/09) **and emitting a `data-artifact` part** on its stream:
