@@ -40,40 +40,25 @@ boring-agent has no bash knowledge except type-level feature hooks
 
 ## Public core contracts
 
-This must not become a second plugin registry. `AgentFeature` is a small composition façade over existing server/plugin seams (`WorkspaceServerPlugin`, tool contributors, route contributors, system prompt contributors, `registerCapabilitiesContributor`) so pure agents and non-workspace hosts can use the same concepts without importing workspace internals.
+**No `AgentFeature` abstraction.** There is exactly one prospective contributor (boring-bash), so a `features` registry is a speculative abstraction with a single consumer — forbidden by the no-abstraction-without-two-consumers policy. `createAgent()` config uses the **existing seams directly**: `tools` (extra `AgentTool[]`), `systemPromptAppend` / `systemPromptDynamic`, and readiness gates (`mergeTools({ checkReadiness })` + `registerCapabilitiesContributor`). A pure agent and a non-workspace host use these same seams without importing workspace internals — no new registry, no `AgentFeature`/`AgentFeatureContext` interface, no `features?: AgentFeature[]` config member.
+
+Boring-bash contributes through those seams as a **plain bundle**, not a core contract: `createBashAgentFeature()` (defined in Phase 3, `TODO-P3-routes-tools-move.md`) returns `{ tools, readinessRequirements }` — a boring-bash-local type — that the host **spreads into the `createAgent()` config** (`tools: [...hostTools, ...bashBundle.tools]`). The core never learns the word "feature".
 
 ```ts
 interface AgentEnvironment {
   sessionStorageRoot: string
   workspaceId?: string
   agentId?: string
-  featureGrants?: Record<string, unknown>
-}
-
-interface AgentFeature {
-  id: string
-  tools?(ctx: AgentFeatureContext): AgentTool[] | Promise<AgentTool[]>
-  systemPrompt?(ctx: AgentFeatureContext): string | undefined | Promise<string | undefined>
-  readinessRequirements?: string[]
-}
-
-// Features contribute tools / system-prompt / readiness ONLY. Features never expose routes.
-// HTTP routes are owned by the HTTP adapter (createAgentApp / registerAgentRoutes), which
-// imports and mounts a feature's route module directly (e.g. registerBashRoutes) — not through
-// the feature contract. There is no `routes` member on the feature.
-
-interface AgentFeatureContext {
-  agentId: string
-  workspaceId?: string
-  environment: AgentEnvironment
-  getGrant<T>(id: string): T | undefined
+  grants?: Record<string, unknown>   // opaque host-supplied grants; NOT a feature registry
 }
 ```
 
+HTTP routes are owned by the HTTP adapter (`createAgentApp` / `registerAgentRoutes`), which imports and mounts a route module directly (e.g. `registerBashRoutes`) via **host composition** — never through the agent core and never through the bash bundle. The bundle carries tools + readiness only, no route metadata.
+
 Rules:
 
-- Features never contribute routes; routes are owned by the HTTP adapter, which mounts a feature's route module directly. No `Fastify` value/type leaks into feature/shared/front packages.
-- `featureGrants` must not be confused with current `AgentRuntimeCapabilities`.
+- Routes are mounted by host composition, not by the core or the bundle. No `Fastify` value/type leaks into shared/front packages.
+- `grants` must not be confused with current `AgentRuntimeCapabilities`.
 - `sessionStorageRoot` is transcript/session storage, not workspace file storage.
 
 ## Pure runtime mode
@@ -81,8 +66,8 @@ Rules:
 Add a composition path equivalent to:
 
 ```ts
-features: []
 runtime: 'none'
+// no bash bundle spread into `tools`; only host/app-owned non-file tools, if any
 ```
 
 It registers only:
@@ -158,9 +143,9 @@ Expose command/event hooks for reload, slash commands, compaction/provider recov
 
 Do not route these through `boring-bash`; they are agent/session concerns.
 
-## Feature/tool readiness
+## Tool readiness
 
-The agent core should know readiness keys only as opaque gates. Concrete runtime readiness is supplied by features.
+The agent core should know readiness keys only as opaque gates. Concrete runtime readiness is supplied by the injected tools/bundle (e.g. the boring-bash bundle's `readinessRequirements`), not by a feature registry.
 
 Preserve existing `mergeTools({ checkReadiness })` behavior. Do not replace it with a parallel tool catalog.
 

@@ -31,7 +31,7 @@ Match `06-migration-phases.md` Phase S1 exit criteria:
 ## Non-negotiables
 
 - We write only: callback → `agent.send()`; `conversationKey → sessionId` store; egress + approval blocks via `@slack/web-api`; the shared Hono→Fastify handler wrapper. Ingress (signatures, parsing, codec) comes from `@flue/slack`.
-- The Hono→Fastify wrapper is **shared and reusable** for every `@flue/*` channel — put it where other channel packages import it (`packages/channels/shared`, package `@hachej/boring-channel-core`), NOT inside the Slack package.
+- The Hono→Fastify wrapper lives **inside `packages/channels/slack`** — Slack is the only channel that exists, so a shared package would be a single-consumer abstraction (forbidden). Keep the wrapper channel-agnostic in shape, but do **not** hoist it into a shared package upfront. **Extract `packages/channels/shared` (`@hachej/boring-channel-core`) only when a second `@flue/*` channel actually lands** — that second channel is the state trigger.
 - Surface-owned addressing: the adapter owns the `conversationKey → sessionId` map. Never pass `teamId/channelId/threadTs` into agent APIs.
 - Addressing isolation: one surface/team+channel+thread cannot resolve another's `sessionId`.
 - No provider internals, no `boring-bash` import (governed context arrives as an injected readonly binding via the host, not by importing boring-bash).
@@ -41,21 +41,21 @@ Match `06-migration-phases.md` Phase S1 exit criteria:
 - Do NOT reimplement Slack signature verification, payload parsing, the URL-verification challenge, or the `conversationKey` codec — all are in `@flue/slack`.
 - Do NOT create a second approval channel; approvals ride the agent event stream (T1) and resolve via `agent.resolveInput(sessionId, requestId, response)`.
 - Do NOT block the Slack webhook on the full agent turn — ack fast (Slack's 3s rule), stream egress asynchronously.
-- Do NOT put the Hono→Fastify wrapper inside the Slack package.
+- Do NOT create an upfront shared `@hachej/boring-channel-core` package for a single channel — keep the Hono→Fastify wrapper inside `packages/channels/slack` until a second `@flue/*` channel exists.
 - Do NOT touch `/home/ubuntu/projects/boring-ui-v2`. Do NOT commit.
 
 ## Beads
 
-### BBS1-001 — Shared Hono→Fastify channel handler wrapper (`@hachej/boring-channel-core`) (M)
-- Description: Reusable util that mounts `@flue/*` `ChannelRoute[]` (Hono handlers over WHATWG `Request`) behind Fastify.
-- Files: create `packages/channels/shared/` (package `@hachej/boring-channel-core`): `package.json` (mirror boring-bash scripts), `tsconfig.json`, `tsup.config.ts`, `src/index.ts`, `src/mountChannelRoutes.ts`; add `packages/channels/*` to `pnpm-workspace.yaml`.
-- Notes: `mountChannelRoutes(fastify, basePath, routes: ChannelRoute[])` — for each route, register a Fastify handler that builds a WHATWG `Request` from the Fastify `req` (method, URL, headers, raw body — Slack signature check needs exact bytes, so capture the raw body buffer, do not let Fastify JSON-parse the channel routes) and invokes the Hono `handler` via a minimal Hono `Context` (or a mini `Hono` app: `const app = new Hono(); app.on(method, path, handler)` then `app.fetch(request)`). Map the returned `Response` back to Fastify (status, headers, body). Prefer the mini-Hono-app path — least glue, both documented as trivial in `08`. Keep it channel-agnostic (works for Teams/Discord/etc.).
-- Tests: `packages/channels/shared/src/__tests__/mountChannelRoutes.test.ts` — a fake `ChannelRoute` echoing `req.raw` headers/body proves exact-byte passthrough and status/header mapping.
-- Acceptance: raw request bytes reach the Hono handler unmodified; response round-trips; no Slack-specific code in this package.
+### BBS1-001 — Hono→Fastify channel handler wrapper (inside the Slack package) (M)
+- Description: Util that mounts `@flue/*` `ChannelRoute[]` (Hono handlers over WHATWG `Request`) behind Fastify. Lives inside `packages/channels/slack` — **not** an upfront shared package (single consumer).
+- Files: create `packages/channels/slack/src/mountChannelRoutes.ts` (+ export from `src/index.ts`); add `packages/channels/*` to `pnpm-workspace.yaml` (needed for the Slack package itself).
+- Notes: `mountChannelRoutes(fastify, basePath, routes: ChannelRoute[])` — for each route, register a Fastify handler that builds a WHATWG `Request` from the Fastify `req` (method, URL, headers, raw body — Slack signature check needs exact bytes, so capture the raw body buffer, do not let Fastify JSON-parse the channel routes) and invokes the Hono `handler` via a minimal Hono `Context` (or a mini `Hono` app: `const app = new Hono(); app.on(method, path, handler)` then `app.fetch(request)`). Map the returned `Response` back to Fastify (status, headers, body). Prefer the mini-Hono-app path — least glue, both documented as trivial in `08`. Keep its shape channel-agnostic (so a future second `@flue/*` channel can reuse it), but **do not hoist it to a shared package yet** — extract `packages/channels/shared` (`@hachej/boring-channel-core`) **only when that second channel actually lands** (state trigger; no-abstraction-without-two-consumers).
+- Tests: `packages/channels/slack/src/__tests__/mountChannelRoutes.test.ts` — a fake `ChannelRoute` echoing `req.raw` headers/body proves exact-byte passthrough and status/header mapping.
+- Acceptance: raw request bytes reach the Hono handler unmodified; response round-trips; the wrapper is channel-agnostic in shape but ships inside the Slack package (no upfront shared package).
 
 ### BBS1-002 — Slack package skeleton + ingress wiring (M)
 - Description: `@hachej/boring-channel-slack` in `packages/channels/slack`; wire `createSlackChannel` callbacks to `agent.send()`.
-- Files: `packages/channels/slack/package.json` (deps: `@flue/slack@1.0.0-beta.x` pinned, `@slack/web-api`, `@hachej/boring-channel-core`, `@hachej/boring-agent` [contract only], `hono`), `tsconfig.json`, `tsup.config.ts`, `src/index.ts`, `src/createSlackAdapter.ts`.
+- Files: `packages/channels/slack/package.json` (deps: `@flue/slack@1.0.0-beta.x` pinned, `@slack/web-api`, `@hachej/boring-agent` [contract only], `hono`), `tsconfig.json`, `tsup.config.ts`, `src/index.ts`, `src/createSlackAdapter.ts`. (No `@hachej/boring-channel-core` dep — the Hono→Fastify wrapper is local, BBS1-001.)
 - Notes: `createSlackAdapter({ agent, signingSecret, slackToken, sessionStore, botUserId })` builds `createSlackChannel({ signingSecret, events, interactions, commands })`. In `events`: on a `message`/`app_mention` event, derive `SlackThreadRef` (`teamId` from `payload.team_id`, `channelId`/`threadTs` from the event — use `event.thread_ts ?? event.ts`), compute `conversationKey(ref)`, resolve/create `sessionId` via BBS1-003, dedupe on `payload.event_id`, then `agent.send({ sessionId, content: text, actor })` and return `undefined` (fast 200) while streaming egress in the background (BBS1-004). Ignore bot's own messages (`event.bot_id`/`botUserId`). Export the channel `routes` for `mountChannelRoutes`.
 - Tests: `packages/channels/slack/src/__tests__/ingress.test.ts` — a signed `event_callback` with a user message triggers exactly one `agent.send` with the right content and a stable `sessionId`; a duplicate `event_id` triggers none; a bot message is ignored.
 - Acceptance: message-in → one `agent.send`; retries/self-messages suppressed; webhook returns fast.
@@ -70,7 +70,7 @@ Match `06-migration-phases.md` Phase S1 exit criteria:
 ### BBS1-004 — Egress: text-delta batching into message updates (M)
 - Description: Subscribe to the agent event stream and project it into Slack messages via `@slack/web-api`.
 - Files: `packages/channels/slack/src/egress.ts`.
-- Notes: For a turn, `agent.replay(sessionId,{startIndex})` / stream `AgentEvent`s (T1 envelope). Post an initial `chat.postMessage` (thread_ts = the ref's threadTs) to get a `ts`, then **batch text deltas and `chat.update` that message on a throttle**. Throttle strategy (specify + implement): coalesce deltas and flush at most once per throttle interval (**~1000 ms is an illustrative default, not a spec constant** — tune against Slack `chat.update` tier-3 limits, which tolerate steady updates but 429 bursts), plus an immediate flush on turn end / tool boundary; on 429 respect `Retry-After`. Map activity events → a lightweight status line (edit the same message or a leading context block); tool calls → a compact summary block. Keep one Slack message per assistant turn (grow it), not one per delta.
+- Notes: For a turn, `agent.stream(sessionId,{startIndex})` — the read primitive: replay-from-offset + live-tail of `AgentEvent`s (T1 envelope). Post an initial `chat.postMessage` (thread_ts = the ref's threadTs) to get a `ts`, then **batch text deltas and `chat.update` that message on a throttle**. Throttle strategy (specify + implement): coalesce deltas and flush at most once per throttle interval (**~1000 ms is an illustrative default, not a spec constant** — tune against Slack `chat.update` tier-3 limits, which tolerate steady updates but 429 bursts), plus an immediate flush on turn end / tool boundary; on 429 respect `Retry-After`. Map activity events → a lightweight status line (edit the same message or a leading context block); tool calls → a compact summary block. Keep one Slack message per assistant turn (grow it), not one per delta.
 - Tests: `.../__tests__/egress.test.ts` (fake `WebClient`) — N text deltas over <1s produce 1 `postMessage` + bounded `chat.update` count (not N); turn-end forces a final flush; a 429 backs off.
 - Acceptance: deltas batched (update count ≪ delta count); final content correct; 429 handled.
 
@@ -83,7 +83,7 @@ Match `06-migration-phases.md` Phase S1 exit criteria:
 
 ### BBS1-006 — Surface adapter conformance suite (first consumer) (M)
 - Description: The reusable surface-adapter conformance suite named in `08` § "Conformance" item 4, with Slack as first subject.
-- Files: create `packages/channels/shared/src/testing/surfaceAdapterConformance.ts` (generic) + `packages/channels/slack/src/__tests__/slackConformance.test.ts` (Slack subject).
+- Files: create `packages/channels/slack/src/testing/surfaceAdapterConformance.ts` (generic, exported from the Slack package for now) + `packages/channels/slack/src/__tests__/slackConformance.test.ts` (Slack subject). When `packages/channels/shared` is later extracted (second `@flue/*` channel — BBS1-001), move the generic suite there.
 - Notes: The generic suite asserts, against a subject exposing `{ deliverInbound, collectOutbound, answerApproval, addressingKeyOf }`: (a) message-in → events-out ordering; (b) approval round-trip resolves the turn; (c) **addressing isolation** — a second subject's key cannot resolve the first's session. Run Slack against `runtime: 'none'` AND against a readonly `company_context` binding injected by the host (governed-context answering) — proving exit criterion 5 without importing boring-bash (the binding is supplied to `createAgent` by the test harness).
 - Tests: the two files.
 - Acceptance: `passed` for both runtime modes; isolation check fails a crossed key.
@@ -100,8 +100,6 @@ Match `06-migration-phases.md` Phase S1 exit criteria:
 ```bash
 # after adding packages/channels/* to pnpm-workspace.yaml and installing:
 pnpm install
-pnpm --filter @hachej/boring-channel-core run typecheck
-pnpm --filter @hachej/boring-channel-core run test
 pnpm --filter @hachej/boring-channel-slack run build       # tsup
 pnpm --filter @hachej/boring-channel-slack run typecheck   # tsc --noEmit
 pnpm --filter @hachej/boring-channel-slack run test        # vitest run

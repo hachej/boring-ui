@@ -63,7 +63,9 @@ Provider labels lie unless backed by capability facts.
 | `direct` | readwrite | yes | host-dependent | host-dependent | none | Trusted dev/CI only. |
 | `bwrap` | readwrite | yes | host-dependent | host-dependent | process/container-ish | Linux-only. |
 | `vercel-sandbox` | readwrite | yes | yes | provider image | provider | Good sandbox-primary remote coding. |
-| `remote-worker` | readwrite | yes | worker-dependent | worker-dependent | worker-dependent | Must report matrix in handshake; provisioning adapter support requires widening current adapter mode union. |
+| `remote-worker` | readwrite | yes | reported\|unknown | reported\|unknown | reported\|unknown | Worker-dependent fields are **reported facts from the worker handshake**, not static constants; provisioning adapter support requires widening current adapter mode union. |
+
+**Worker-dependent capabilities are reported, not declared.** For `remote-worker`, every field whose truth depends on the worker (real bash, real binaries, network isolation, filesystem persistence, hardening) is typed `reported | unknown` and is populated **only** from the worker handshake — there is **no static constant** for these fields in the provider matrix. Until a handshake reports a field it is `unknown`, and **consumers fail closed on `unknown`** (a policy requiring a capability the worker has not proven is rejected, not assumed satisfied). Fixed providers (`direct`/`bwrap`/`vercel-sandbox`) keep their static matrix values; only worker-dependent fields are `reported | unknown`.
 
 ## BashEnvironment
 
@@ -80,14 +82,17 @@ interface BashEnvironment {
   providerCapabilities: {
     fs: 'none' | 'readonly' | 'readwrite'
     exec: boolean
-    realBash?: boolean
-    realBinaries?: boolean
-    networkIsolation?: 'none' | 'process' | 'container' | 'microvm' | 'provider'
+    // worker-dependent fields: reported facts from the handshake, `unknown` until reported; consumers fail closed on `unknown`.
+    realBash?: boolean | 'unknown'
+    realBinaries?: boolean | 'unknown'
+    networkIsolation?: 'none' | 'process' | 'container' | 'microvm' | 'provider' | 'unknown'
     watch: boolean
     search: boolean
   }
 }
 ```
+
+For fixed providers these are static; for `remote-worker` the worker-dependent fields (`realBash`, `realBinaries`, `networkIsolation`, and any hardening/persistence facts) arrive only via the handshake and default to `unknown` — never a static constant, and `unknown` fails closed.
 
 ## One namespace rule
 
@@ -166,19 +171,11 @@ Must preserve:
 
 ## File tree and document authority
 
-### FileTreeDataProvider (#295)
+### File tree data function (pluggable provider deferred to #295)
 
-`boring-bash/plugin` should expose a replaceable file tree data boundary:
+`boring-bash/plugin` factors tree data into a **plain internal tree function** (e.g. `loadFileTree(root, options)` returning the current tree shape) — not a pluggable `FileTreeDataProvider` boundary. A delta-streaming provider abstraction with a single implementation is forbidden by the "abstraction needs two real consumers" rule (`todos-v2/README.md`): #295 (Pierre Trees swap) is the only would-be second consumer and it is **not scheduled yet**.
 
-```ts
-interface FileTreeDataProvider {
-  listTree(root: string, options: TreeOptions): Promise<TreeNode[]>
-  listPaths?(root: string, options: PathIndexOptions): Promise<string[]>
-  subscribe?(root: string): AsyncIterable<FileTreeDelta>
-}
-```
-
-This lets Pierre Trees or another tree UI replace the view without changing server routes again.
+The pluggable provider boundary (a `listTree`/`listPaths`/`subscribe` interface a replacement tree UI could implement) is **deferred until #295 is actually scheduled** — add it then, with Pierre Trees as the second real consumer. Until then the tree is one internal function; server routes are unaffected.
 
 ### Document-authority override (#367, #226)
 
@@ -212,6 +209,6 @@ The workspace bridge remains owned by `@hachej/boring-workspace`.
 - `disableDefaultFileTools` parity;
 - `execute_isolated_code` ownership/readiness;
 - upload/download route ownership;
-- file tree provider path-list and deltas;
+- file tree data returned by the plain internal tree function (provider boundary deferred to #295);
 - document-authority write/edit override;
 - git/status source-of-truth consistency.

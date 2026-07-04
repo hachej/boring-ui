@@ -69,21 +69,31 @@ import { createAgent } from '@hachej/boring-agent/server'
 const agent = createAgent({
   harnessFactory,            // optional; default = pi-coding-agent harness
   runtime,                   // RuntimeModeAdapter | 'none'  (pure mode)
-  features,                  // AgentFeature[] e.g. createBashAgentFeature(env)
-  tools,                     // extra AgentTool[]
+  tools,                     // AgentTool[] — host spreads the boring-bash bundle in here:
+                             //   tools: [...appTools, ...createBashAgentFeature(env).tools]
+  readinessRequirements,     // opaque readiness gates (e.g. from the bash bundle)
   sessions,                  // SessionStore (default: JSONL under sessionStorageRoot)
   systemPrompt, systemPromptDynamic,
   telemetry,
 })
+// No `features` member and no `AgentFeature` abstraction — a single-consumer registry is
+// forbidden. createBashAgentFeature() returns a plain { tools, readinessRequirements } bundle.
 
-// The whole public runtime API:
-agent.send(input: AgentSendInput, ctx): AsyncIterable<AgentEvent>   // one turn (omit input.sessionId to start a new session)
+// The whole public runtime API — two primitives + one convenience:
+agent.start(input: AgentSendInput): Promise<{ sessionId, startIndex }>  // WRITE: accepted receipt (omit input.sessionId to start a new session)
+agent.stream(sessionId, { startIndex }): AsyncIterable<AgentEvent>      // READ: replay-from-offset + live tail
+agent.send(input: AgentSendInput): AsyncIterable<AgentEvent>            // convenience = start + stream (documented sugar, no new semantics)
 agent.resolveInput(sessionId, requestId, response)  // approvals / questions
 agent.sessions                                      // list/load/fork/delete
-agent.replay(sessionId, { startIndex })             // reconnect/replay
 agent.readiness                                     // per-requirement status
 agent.dispose()
 ```
+
+Producer/consumer split (locked — this is the core write/read contract):
+
+- `agent.start()` returns an **accepted receipt** the instant the turn is admitted. The turn then runs to completion on an **independent producer** that appends `AgentEvent`s to the `EventStreamStore` **regardless of whether any consumer is reading**. Producers are **never consumer-backpressured**.
+- `agent.stream()` is the only read primitive — it replays from `startIndex` (offset) and then live-tails; it **replaces the separate `replay()`**. Cancelling a stream iterator **never cancels the turn**; it only stops that reader. `interrupt()` is the **only** way to stop a running turn.
+- `agent.send()` exists **only** as documented convenience defined as `start()` then `stream()` from the returned `startIndex`; it introduces no semantics of its own.
 
 Rules:
 
@@ -107,7 +117,7 @@ interface AgentEvent {
 
 Reality note: a bespoke replay path already exists (`PiChatReplayBuffer` + `?cursor=` NDJSON in `piChat.ts`) — T1/T2 supersede it with the DS protocol; it stays live until the T2 cutover (see `todos-v2/TODO-T1-durable-events-approvals.md`).
 
-- `eventIndex` + a persisted event log per session make the stream **replayable**: `agent.replay(sessionId, { startIndex })` and (HTTP adapter) `GET …/events?startIndex=N`. This is what lets Slack reconnect after a webhook retry and the workspace survive an SSE drop without protocol forks.
+- `eventIndex` + a persisted event log per session make the stream **replayable**: `agent.stream(sessionId, { startIndex })` (in-process) and (HTTP adapter) `GET …/events?offset=N`. Naming equivalence, stated once: in-process APIs use `startIndex`; the wire uses the Durable-Streams-native `offset` param — they are the same monotonic position (`?offset=N` ⇔ `{ startIndex: N }`), the adapter translates. This is what lets Slack reconnect after a webhook retry and the workspace survive an SSE drop without protocol forks.
 - **Implementation choice (locked, verified): adopt the Durable Streams wire protocol instead of inventing one.** Durable Streams (github.com/durable-streams/durable-streams, ElectricSQL, MIT, protocol extracted from production) specifies exactly T1's semantics: monotonic offsets, catch-up reads from arbitrary offset, SSE + long-poll live tailing, ETag caching, `Stream-Next-Offset`/`Stream-Up-To-Date` headers. Server side: embed an `EventStreamStore` (append-only SQLite, monotonic `seq` per stream) + DS-compliant read handlers — Flue's implementation of both is ~1000 lines of framework-agnostic WHATWG `Request→Response` code (`event-stream-store.ts` + `handle-stream-routes.ts`, Apache-2.0) we can adapt behind a thin Fastify bridge; `@durable-streams/server`/the Caddy binary are alternative sidecar deployments. Client side: `@durable-streams/client` (deps: fetch-event-source + fastq) gives reconnection, backoff, and offset checkpointing for free in the browser and in channel adapters. Known caveat to fix when adapting: Flue's SQLite append is two non-transactional statements (single-process only) — make it transactional.
 - Approvals ride the same stream as `data-approval-request` parts in v1, migrating to native AI-SDK `tool-approval-request/response` parts when we adopt the v6 line. Surface answers via `agent.resolveInput(...)` (in-process) or `POST …/input` (HTTP).
 - Surface-specific projections are the adapter's job: workspace renders the full stream; Slack maps activity → `setStatus`, text deltas → `sayStream`, approval parts → buttons; Excel maps structured tool outputs → cell writes.
@@ -137,7 +147,7 @@ Verified against Flue @ `ffbe359`: the 13 per-channel ingress packages (`@flue/s
 Consequences:
 
 - **We do not write platform ingress.** A boring channel adapter is ~15–50 lines: fill the channel's callback (`events`/`interactions`/`commands`) with `agent.send()`, use `channel.conversationKey(ref)` as the surface-owned addressing key (exactly the two-handles rule), and post egress via the provider SDK (`@slack/web-api` etc. — egress was never framework-specific).
-- Hono handlers mount behind Fastify via a `Request→Response` wrapper or a mini-Hono app — trivial either way.
+- Hono handlers mount behind Fastify via a `Request→Response` wrapper or a mini-Hono app — trivial either way. **The wrapper lives inside the first channel package (`packages/channels/slack`), not in an upfront shared package** — a single channel is one consumer, and the no-abstraction-without-two-consumers rule applies. Extract a shared `packages/channels/shared` package **only when a second `@flue/*` channel actually lands** (that second channel is the state trigger); until then there is no `boring-channel-core`.
 - Risk: the packages are pre-1.0 (`1.0.0-beta.x`); pin versions. Fallback is vendoring (~700 LOC per channel, Apache-2.0 permits it) — strictly worse, only if the beta dep becomes untenable.
 - Not adopted — now verified, not just judged: mounting boring-agent *inside* Flue's runtime. Flue's LLM loop is a hardwired `new Agent(...)` from `pi-agent-core` inside its 125 KB `session.ts` — rich seams *around* the loop (tools, `SessionEnv`, model providers, execution interceptors) but **no seam at the loop**; hosting our pi-coding-agent harness means forking their core. Additionally: single flat `SessionEnv` per harness (our governed multi-fs would be a userland path-multiplexing hack), and session persistence is an event-sourced SQL record log (schema-gated) incompatible with pi-coding-agent JSONL sessions. The shared pi lineage (`pi-agent-core@0.80.x` vs our `pi-coding-agent@0.75.x`) makes vocabulary compatible, not runtimes. **Strategy: cherry-pick, don't adopt** — channel ingress packages (above) + the Durable Streams protocol/client for T1; keep our harness, our multi-fs, our sessions.
 

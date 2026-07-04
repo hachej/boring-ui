@@ -4,7 +4,7 @@ Handoff: self-contained work order for one autonomous coding agent (pi or gpt-5.
 
 ## Context (read first)
 
-- Plan: `docs/issues/391/runtime-refactor/06-migration-phases.md` — "Phase T2 — Transport adapters". Depends on **Phase T1** (`TODO-T1-durable-events-approvals.md` in this folder): the durable `EventStreamStore`, `AgentEvent` envelope, DS-compliant `GET`/`HEAD` stream routes, `agent.replay(sessionId,{startIndex})`, and on-stream approvals must already exist. Do not start T2 until T1's conformance suite is green.
+- Plan: `docs/issues/391/runtime-refactor/06-migration-phases.md` — "Phase T2 — Transport adapters". Depends on **Phase T1** (`TODO-T1-durable-events-approvals.md` in this folder): the durable `EventStreamStore`, `AgentEvent` envelope, DS-compliant `GET`/`HEAD` stream routes, `agent.stream(sessionId,{startIndex})` (read primitive), and on-stream approvals must already exist. Do not start T2 until T1's conformance suite is green.
 - Plan: `docs/issues/391/runtime-refactor/08-pluggable-agent-surfaces.md` — "Vercel AI SDK `ChatTransport`" (UI state and wire protocol are separate; `sendMessages` + `reconnectToStream` is the entire transport contract), "Two handles (hard rule)", "Conformance" item 3 ("Transport conformance: `send` + `reconnect` semantics identical in-process and over HTTP").
 - Durable Streams client (locked in 08): `@durable-streams/client` (deps `@microsoft/fetch-event-source` + `fastq`) provides reconnection, backoff, offset checkpointing. T2 wires the front's reconnect onto it (or a thin `ChatTransport.reconnectToStream` backed by it) against T1's DS routes.
 
@@ -15,7 +15,7 @@ Handoff: self-contained work order for one autonomous coding agent (pi or gpt-5.
 - `packages/agent/src/front/chat/session/usePiSessions.ts` — the React hook (misnamed in the task as `useAgentChat`; **there is no `useAgentChat`**). It owns session lifecycle and constructs the transport via `createRemoteSession` (default `createRemotePiSession`, injectable via `options.createRemoteSession` — L34, L83, L309). `activePiSession: RemotePiSession`. `PiChatPanel.tsx` (`packages/agent/src/front/chat/PiChatPanel.tsx`, 49KB) consumes this hook.
 - `packages/agent/src/server/http/routes/piChat.ts` — the HTTP adapter. `getRequestContext(request)` maps `request.workspaceContext?.workspaceId` (+ `x-boring-storage-scope` header) → `PiSessionRequestContext`. **This is the `x-boring-workspace-id → SessionCtx` mapping the plan wants documented as the adapter-owned pattern.**
 - `packages/agent/src/shared/harness.ts` — `SendMessageInput`, `RunContext`; L79 comment declaring the harness reconnect-unaware (T1 already moved replay to the façade — verify).
-- `packages/agent/src/server/createAgent.ts` — the Phase 1 façade (`send`, `resolveInput`, `sessions`, `replay`, `readiness`, `dispose`). T2's in-process transport consumes this directly.
+- `packages/agent/src/server/createAgent.ts` — the Phase 1 façade (`start`, `stream`, `send`, `resolveInput`, `sessions`, `readiness`, `dispose`). T2's in-process transport consumes this directly (`sendMessages`→`start`, `reconnectToStream`→`stream`).
 - Invariant scripts: root `scripts/audit-imports.ts` (`pnpm run audit:imports`), `packages/agent/src/…` isolation via `pnpm run check:agent-isolation`, `packages/agent` `lint:invariants` (`bash ../../scripts/check-invariants.sh .`). T2 adds a rule to one of these.
 
 ## Goal / exit criteria
@@ -61,7 +61,7 @@ Match `06-migration-phases.md` Phase T2 exit criteria:
     }
     ```
     Keep it `sessionId`-keyed (two-handles). `AgentSendInput` is the single shared send-input type (defined in shared per TODO-P1/BBP1-002 — do not introduce a second input type here); `ResolveInputResponse` is the union defined in `TODO-T1`/`BBT1-004` (import it, do not redeclare). Document each method + reconnect semantics (at-least-once from `startIndex`, dedupe by `eventIndex`) in the file header.
-    - **Contract text (not just a bead note):** `sendMessages()` is an **accepted-receipt wrapper over `agent.send()`** — it drives `agent.send(input, ctx)` far enough to obtain the receipt (drains to the **first `eventIndex`** = the `startIndex` the caller reconnects from) and returns `{ accepted: true, startIndex }`; it does **not** wait for the turn to complete. The turn's events are consumed via `reconnectToStream(sessionId, { startIndex })`. This accepted-then-stream split is part of the transport contract, identical in-process and over HTTP.
+    - **Contract text (not just a bead note):** `sendMessages()` maps **1:1 onto `agent.start(input)`** — it returns the accepted receipt `{ accepted: true, startIndex }` the instant the turn is admitted and does **not** wait for the turn to complete or read any event (no "drain to first event"). The turn runs to completion on the façade's independent producer regardless of any consumer. The turn's events are consumed separately via `reconnectToStream(sessionId, { startIndex })` (which maps onto `agent.stream`). This accepted-then-stream split is part of the transport contract, identical in-process and over HTTP.
   - `packages/agent/src/shared/__tests__/transport.conformance.ts` (new): `runTransportConformance(makeTransport, driveAgent)` covering:
     - `sendMessages` accepted → events arrive in `eventIndex` order.
     - `reconnectToStream` from mid-offset replays exactly the missed events (lossless), no dupes across a simulated drop.
@@ -74,7 +74,7 @@ Match `06-migration-phases.md` Phase T2 exit criteria:
 ### BBT2-002 — In-process transport over `createAgent()`  · size M
 - **Title**: `ChatTransport` implemented by calling the façade directly (no HTTP).
 - **Files to create**:
-  - `packages/agent/src/server/transport/inProcessTransport.ts` (new): wraps `createAgent()` — `sendMessages` → `agent.send(input, ctx)` (drain to `accepted` + first `eventIndex`); `reconnectToStream` → `agent.replay(sessionId, { startIndex })`; `resolveInput`/`stop`/`interrupt` → façade methods.
+  - `packages/agent/src/server/transport/inProcessTransport.ts` (new): wraps `createAgent()` — `sendMessages` → `agent.start(input)` (returns the `{ accepted, startIndex }` receipt directly, no drain); `reconnectToStream` → `agent.stream(sessionId, { startIndex })`; `resolveInput`/`stop`/`interrupt` → façade methods.
 - **Tests**: `inProcessTransport.test.ts` calling `runTransportConformance(makeInProcess, …)` from BBT2-001.
 - **Acceptance**: in-process transport passes the shared suite; imports only `createAgent`/shared types (no Fastify, no front).
 

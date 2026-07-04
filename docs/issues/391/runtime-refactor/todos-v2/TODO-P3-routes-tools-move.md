@@ -4,14 +4,14 @@ Handoff: self-contained work order for one autonomous coding agent (pi or gpt-5.
 
 ## Context (read first)
 
-- `docs/issues/391/runtime-refactor/06-migration-phases.md` — Phase 3 deliverables/exit (routes/tools code-move, behavior-freeze; `createBashAgentFeature()` consumed as `features` by `createAgent()`).
+- `docs/issues/391/runtime-refactor/06-migration-phases.md` — Phase 3 deliverables/exit (routes/tools code-move, behavior-freeze; `createBashAgentFeature()` returns a plain `{ tools, readinessRequirements }` bundle the host **spreads into `createAgent()`'s `tools`** — there is no `features` config member and no `AgentFeature` contract).
 - `docs/issues/391/runtime-refactor/02-boring-bash-environment.md` — layered exports (`/server`, `/agent`); "Tools to move or consciously assign"; one-namespace / source-of-truth rules.
 - `docs/issues/391/runtime-refactor/00-global-isa.md` — seams to reuse (`disableDefaultFileTools`, `buildHarnessAgentTools`, `buildFilesystemAgentTools`, `buildUploadAgentTools`, readiness tags); zero agent→bash value imports.
 - `docs/issues/391/runtime-refactor/todos/TODO-03-routes-tools-ui.md` — v1 beads BBA-030..033 (superseded here for the routes/tools slice; UI is TODO-P4).
 
 ### Depends on
 
-- **Phase 1** injection: `createAgent()` accepts injected `runtime` + `features` (06 Phase 1). `createBashAgentFeature()` is registered as a feature, not hardwired.
+- **Phase 1** injection: `createAgent()` accepts an injected `runtime` adapter and an extra `tools: AgentTool[]` (06 Phase 1) — **no `features` member, no `AgentFeature` abstraction**. `createBashAgentFeature()` returns a plain `{ tools, readinessRequirements }` bundle the host **spreads into `tools`**, it is not registered as a feature.
 - **Phase 2** (`TODO-P2-bash-package-providers.md`): providers + `/providers` subpath moved; `resolveMode()` in host/boring-bash composition.
 
 ### Already landed via #416 (behavior-freeze — move code, do not change behavior)
@@ -43,7 +43,7 @@ Registration/consumption call sites (grep-verified):
 
 ## Goal / exit criteria
 
-File/tree/search/fs-events/stat/dir (+ git/status) routes and file/bash/`execute_isolated_code`/upload tools live in `@hachej/boring-bash` (`/server`, `/agent`). Tools are contributed via `createBashAgentFeature()` and consumed as `features` by `createAgent()`; routes are mounted by **host composition** (cli/workspace/full-app/bin — the same call sites that construct the feature) next to the agent routes. Neither `packages/agent` nor the feature ever imports `registerBashRoutes` — that would break the zero agent→bash value-import invariant (features never expose routes; the agent package never mounts bash routes). Behavior frozen. Exit (06 Phase 3):
+File/tree/search/fs-events/stat/dir (+ git/status) routes and file/bash/`execute_isolated_code`/upload tools live in `@hachej/boring-bash` (`/server`, `/agent`). Tools are contributed via `createBashAgentFeature()` — which returns a **plain boring-bash-local bundle `{ tools, readinessRequirements }`** (NOT a core `AgentFeature` contract; there is no `features` config member) — that host composition **spreads into the `createAgent()` config `tools`**; routes are mounted by **host composition** (cli/workspace/full-app — the same call sites that construct the bundle) next to the agent routes. Neither `packages/agent` nor the bundle ever imports `registerBashRoutes` — that would break the zero agent→bash value-import invariant (the bundle carries tools + readiness only, never routes; the agent package never mounts bash routes). Behavior frozen. Exit (06 Phase 3):
 
 - workspace playground still opens file tree/editor; read/write/edit/find/grep/ls/bash work when boring-bash enabled.
 - pure mode (`createAgent({ runtime: 'none' })`) registers none of these routes/tools.
@@ -71,7 +71,7 @@ File/tree/search/fs-events/stat/dir (+ git/status) routes and file/bash/`execute
 ### BBP3-010 — Add `/agent` subpath + `createBashAgentFeature()` skeleton [size S]
 
 - **Files touch/create:** replace stub `packages/boring-bash/src/agent/index.ts` (currently `export {}`) with real exports; `packages/boring-bash/package.json` (add `"./agent"` export); `packages/boring-bash/tsup.config.ts` (add entry); `packages/boring-bash/scripts/check-invariants.mjs` (`requiredExports` += `"./agent"`).
-- **Notes:** Define `createBashAgentFeature(): AgentFeature` shape aligned with the Phase-1 `features` contract (a feature contributes tools + prompt snippets + readiness gates **only** — NOT routes). Routes are mounted by host composition (the BBP3-015 call sites), never by `packages/agent`; the feature carries no route metadata. Import `AgentTool`/`RuntimeBundle` **type-only** from `@hachej/boring-agent/server`. No behavior yet — wiring lands in BBP3-013/014.
+- **Notes:** Define `createBashAgentFeature()` returning a plain boring-bash-local bundle `{ tools: AgentTool[]; readinessRequirements: string[] }` — **NOT** an `AgentFeature` core contract (there is no such abstraction). The bundle contributes tools + readiness gates + prompt snippets **only** — NOT routes. Routes are mounted by host composition (the BBP3-015 call sites), never by `packages/agent`; the bundle carries no route metadata. Import `AgentTool`/`RuntimeBundle` **type-only** from `@hachej/boring-agent/server`. No behavior yet — wiring lands in BBP3-013/014.
 - **Tests:** export-map test imports `/agent`; invariants green.
 - **Acceptance:** `/agent` subpath resolves; feature factory type exists.
 
@@ -109,15 +109,15 @@ File/tree/search/fs-events/stat/dir (+ git/status) routes and file/bash/`execute
   - `fsEvents.ts` → `boring-bash/src/server/routes/fsEvents.ts` (+ `__tests__/fsEvents.test.ts`).
   - `git.ts` → `boring-bash/src/server/routes/git.ts` (+ `__tests__/git.test.ts`); carry `GitRouteOptions` + git source-root logic.
   - `fileRecords.ts` → `boring-bash/src/server/routes/fileRecords.ts`. **Verify** `sessionChanges.ts` coupling: if it depends on session-core (not fs), leave it in agent and note; else move.
-- **Files touch:** `packages/boring-bash/src/server/index.ts` (export a `registerBashRoutes(app, { runtime })` composing the above; keep Fastify types injected, not a hard Fastify dep if avoidable — mirror current signatures). `registerBashRoutes` is imported and mounted by **host composition only** (the BBP3-015 call sites: `packages/cli/src/server/modeApps.ts`, `packages/workspace/src/app/server/createWorkspaceAgentServer.ts`, `apps/full-app` composition, `packages/agent/src/bin/boring-agent.ts` — the bin is host code, it may import boring-bash) — never from `packages/agent/src/server/*` (zero agent→bash value imports) and NOT contributed through `createBashAgentFeature()`. `/api/v1/files/*` + git route paths stay byte-identical — no aliases, no path changes.
+- **Files touch:** `packages/boring-bash/src/server/index.ts` (export a `registerBashRoutes(app, { runtime })` composing the above; keep Fastify types injected, not a hard Fastify dep if avoidable — mirror current signatures). `registerBashRoutes` is imported and mounted by **host composition only** (the BBP3-015 call sites: `packages/cli/src/server/modeApps.ts`, `packages/workspace/src/app/server/createWorkspaceAgentServer.ts`, `apps/full-app` composition) — never from `packages/agent/src/server/*` **and never from `packages/agent/src/bin/boring-agent.ts`** (the agent bin is part of `packages/agent` and **may NOT import boring-bash** — zero agent→bash value imports, bin included), and NOT contributed through `createBashAgentFeature()`. The bash-enabled bin composition moves to `packages/cli` (BBP3-015); the remaining `packages/agent` bin composes a **pure agent only**. `/api/v1/files/*` + git route paths stay byte-identical — no aliases, no path changes.
 - **Notes:** Routes receive `Workspace`/bundle, not raw paths (already true). Preserve stable error codes + adapter-owned path validation. Pure mode registers none of these.
 - **Tests:** moved route tests pass; read/write/list/search/git parity; git root == file route root == bash cwd; pure mode registers none.
 - **Acceptance:** file-like + git-like HTTP surfaces are boring-bash-owned when enabled, absent in pure mode.
 
 ### BBP3-015 — Wire `createBashAgentFeature()` into `createAgent()` composition [size M]
 
-- **Files touch:** `packages/agent/src/server/createAgentApp.ts` (remove L14/15 tool-builder imports + L18-31 route imports for moved routes; consume **tools** from the injected `createBashAgentFeature()`; this file registers NO bash routes — after this bead `packages/agent` has zero boring-bash imports; keep `disableDefaultFileTools` honored by whether the host passes the bash feature or a filtered variant); `packages/agent/src/server/registerAgentRoutes.ts` (same for L24-41 imports and L594/601/602 tool composition); host/composition (`packages/cli/src/server/modeApps.ts`, `packages/workspace/src/app/server/createWorkspaceAgentServer.ts`, `apps/full-app` composition, `packages/agent/src/bin/boring-agent.ts`) → construct `createBashAgentFeature()`, pass it in `features`, **and mount `registerBashRoutes` on their Fastify app next to the agent routes** (one-line mount per host, same PR).
-- **Notes:** This is where the Phase-1 injection seam is consumed. If `createAgent()`/`features` is not yet threaded through `createAgentApp`/`registerAgentRoutes`, STOP and report the Phase-1 gap rather than hardwiring. `disableDefaultFileTools`: host passes the bash feature with filesystem tools suppressed (feature option) so the six tools drop while bash/routes remain — preserve exact current semantics.
+- **Files touch:** `packages/agent/src/server/createAgentApp.ts` (remove L14/15 tool-builder imports + L18-31 route imports for moved routes; consume **tools** by **spreading the injected `createBashAgentFeature()` bundle into `createAgent()`'s `tools`** — there is no `features` param; this file registers NO bash routes — after this bead `packages/agent` has zero boring-bash imports; keep `disableDefaultFileTools` honored by whether the host spreads in the bash bundle or a filtered variant); `packages/agent/src/server/registerAgentRoutes.ts` (same for L24-41 imports and L594/601/602 tool composition); host/composition (`packages/cli/src/server/modeApps.ts` — **including the bash-enabled bin composition moved here from the agent bin per BBP3-014/fix-5**, `packages/workspace/src/app/server/createWorkspaceAgentServer.ts`, `apps/full-app` composition) → construct `createBashAgentFeature()`, **spread its `tools` into the `createAgent()` config and pass its `readinessRequirements` as gates**, **and mount `registerBashRoutes` on their Fastify app next to the agent routes** (one-line mount per host, same PR). The `packages/agent` bin is NOT a bash host — it composes a pure agent only and does not import boring-bash.
+- **Notes:** This is where the Phase-1 injection seam is consumed. If the injected `tools`/runtime seam is not yet threaded through `createAgentApp`/`registerAgentRoutes`, STOP and report the Phase-1 gap rather than hardwiring. `disableDefaultFileTools`: host spreads the bash bundle with filesystem tools suppressed (bundle option) so the six tools drop while bash/routes remain — preserve exact current semantics.
 - **Tests:** `pnpm --filter @hachej/boring-agent run test` green; a pure-mode composition (`runtime: 'none'`, no bash feature) exposes no file routes/tools; a bash-enabled composition exposes all.
 - **Acceptance:** routes/tools flow through `features`; hardwired registration removed; pure vs bash split verified.
 
@@ -158,7 +158,7 @@ pnpm typecheck
 
 ## Review gates
 
-- Phase 1 (`features`/`createAgent()`) + Phase 2 (providers moved) confirmed present, else STOP+report.
+- Phase 1 (`createAgent()` with injected `tools`/runtime — no `features` param) + Phase 2 (providers moved) confirmed present, else STOP+report.
 - Behavior-freeze verified: tool names/schemas/prompt snippets/readiness tags/error codes unchanged; renderer snapshots unchanged.
 - `disableDefaultFileTools` parity test passes; pure mode has zero file routes/tools.
 - `(filesystem, path)` param + spoof guard + readonly `rejectMutation` preserved verbatim; company_context no-leak conformance green.

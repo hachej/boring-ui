@@ -10,7 +10,7 @@ Required reading (relative to repo root):
 
 - `docs/issues/391/runtime-refactor/README.md` — plan-pack index + implementation/review rules.
 - `docs/issues/391/runtime-refactor/00-global-isa.md` — intent/strategy/architecture, package ownership table, non-negotiable invariants 1–14, open-decisions list.
-- `docs/issues/391/runtime-refactor/08-pluggable-agent-surfaces.md` — **the 7 decisions this phase ratifies** live in its "Decisions this file locks" section (§ near the end).
+- `docs/issues/391/runtime-refactor/08-pluggable-agent-surfaces.md` — **the 10 locked decisions this phase ratifies** live in its "Decisions this file locks" section (§ near the end).
 - `docs/issues/391/runtime-refactor/06-migration-phases.md` — "Phase 0" section is the deliverable list this TODO expands.
 - `docs/issues/391/runtime-refactor/09-environments-attachable.md` — backing detail for decision 7 (attachable environments).
 
@@ -23,7 +23,7 @@ Repo facts (verified — cite these exact paths):
 
 ## Goal / exit criteria
 
-- A new locked decision (the v2 runtime-free + surface-agnostic ADR) is merged into `docs/DECISIONS.md` in the existing 4-field format, and the 7 locked decisions from `08` are each ratified (recorded or cross-referenced) with a status of `decided` / `deferred`.
+- A new locked decision (the v2 runtime-free + surface-agnostic ADR) is merged into `docs/DECISIONS.md` in the existing 4-field format, and the 10 locked decisions from `08` are each ratified (recorded or cross-referenced) with a status of `decided` / `deferred`.
 - `packages/agent/docs/runtime.md` no longer implies pure/headless agents require a Workspace+Sandbox pair.
 - `docs/DECISIONS.md` §7e ("Pairing invariant") carries a supersession note scoping the pairing to boring-bash-active runtimes only.
 - Issue #391 body/pointer references the v2 pack (`docs/issues/391/runtime-refactor/`), not the legacy monolith. A ready-to-post comment body is drafted in this repo (do not require live `gh` access to author it).
@@ -41,7 +41,7 @@ Repo facts (verified — cite these exact paths):
 - Do NOT create a new `docs/adr/` directory or a parallel decision system — extend `docs/DECISIONS.md`.
 - Do NOT delete or reword §7a–§7f; only annotate §7e with a supersession note.
 - Do NOT restate the full plan-pack content inside `docs/DECISIONS.md`; link to the pack.
-- Do NOT mark any of the 7 decisions `open` — `08` already locks them; record them as `decided` (or `deferred` for the ones `00` lists as still-open, e.g. surface addressing-store location).
+- Do NOT mark any of the 10 decisions `open` — `08` already locks them; record them as `decided` (or `deferred` for the ones `00` lists as still-open, e.g. surface addressing-store location).
 
 ## Beads
 
@@ -63,7 +63,7 @@ Repo facts (verified — cite these exact paths):
   5. **One-namespace rule superseded** — replaced by named `(filesystem, path)` bindings (landed via #416). → `decided (superseded)`.
   6. **Channel ingress reused, not written** — depend on `@flue/*` channel packages pinned at `1.0.0-beta.x`; vendoring is the fallback; hosting inside Flue's runtime is not adopted. → `decided`.
   7. **Environments are attachable resources** — fs+sandbox has identity independent of any agent; agents/subagents/external agents attach; external agents attach via MCP projection (see `09-environments-attachable.md`). → `decided`.
-- **Files to touch:** `docs/DECISIONS.md` (either fold into §19 as a sub-list, or add a compact "§19a — v2 surface decisions ratification" table that lists all 7 with status + source pointer — pick one and be consistent).
+- **Files to touch:** `docs/DECISIONS.md` (either fold into §19 as a sub-list, or add a compact "§19a — v2 surface decisions ratification" table that lists all 10 with status + source pointer — pick one and be consistent).
 - **Implementation notes:** For decisions 4 and 5, note they are already shipped (#416) and this is ratification only. For the still-open items `00-global-isa.md` lists (surface `addressing → sessionId` persistence location; provider package permanence; multi-agent route shape; provisioning sharing default), record them as `deferred` with the owning phase, so nothing reads as silently decided.
 - **Tests to add:** none.
 - **Acceptance:** Every locked decision in `08` (1–10) plus the north star + EU-sovereignty invariant has an explicit status and a source pointer; no decision is `open`; deferred items name their resolving phase.
@@ -104,5 +104,5 @@ Doc-only phase. Run:
 ## Review gates
 
 - Thermo architecture review of the pack (per `README.md` "Review rule") must be clean before Phase 1 coding starts: no import cycle, no duplicated provisioning/readiness system, no fs/bash split brain, no cwd leak, no scope leak, no overclaimed issue closure.
-- A reviewer must confirm all 7 `08` decisions are recorded with a status and a source pointer, and that §7e's supersession note does not weaken the no-split-brain guarantee for boring-bash-active runtimes.
+- A reviewer must confirm all 10 `08` decisions are recorded with a status and a source pointer, and that §7e's supersession note does not weaken the no-split-brain guarantee for boring-bash-active runtimes.
 - No implementation bead in `TODO-P1-headless-core.md` may start until BBP0-001..005 are merged and #391 points to the v2 pack.

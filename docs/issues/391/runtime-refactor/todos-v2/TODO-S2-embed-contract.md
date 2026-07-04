@@ -7,7 +7,7 @@ Handoff: self-contained work order for one autonomous coding agent (pi or gpt-5.
 - Plan: `docs/issues/391/runtime-refactor/06-migration-phases.md` § "Phase S2" (deliverables + exit criteria; "after S1 learnings"; keep lighter — contract + example, not a product).
 - Plan: `docs/issues/391/runtime-refactor/08-pluggable-agent-surfaces.md` § "The headless façade: `createAgent()`", the reference-adapters table (Spreadsheet/pi-excel row: "Agent tools are spreadsheet tools supplied by the host as `tools`; boring-bash not installed"), § "Two handles", § "Human-in-the-loop".
 - Dependencies: **S1** (surface-adapter conformance suite + two-handles pattern, from `TODO-S1-slack-channel.md`) and **P1** (`createAgent()` façade). As with S1, `createAgent()` does not exist in the repo yet — `packages/agent/src/server/` exports `createAgentApp`/`registerAgentRoutes` only (`createAgentApp.ts`, `registerAgentRoutes.ts`, barrel `index.ts`). The embed consumes the **published client contract** of `@hachej/boring-agent`, not server internals.
-- The public runtime API the embed relies on (`08` § façade): `agent.send(input, ctx)`, `agent.resolveInput(sessionId, requestId, response)`, `agent.replay(sessionId, { startIndex })`, `agent.sessions`. Tools are supplied as `tools` (extra `AgentTool[]`); `runtime: 'none'`; optional readonly bindings.
+- The public runtime API the embed relies on (`08` § façade): `agent.send(input, ctx)`, `agent.resolveInput(sessionId, requestId, response)`, `agent.stream(sessionId, { startIndex })`, `agent.sessions`. Tools are supplied as `tools` (extra `AgentTool[]`); `runtime: 'none'`; optional readonly bindings.
 - Repo app layout (verified): `apps/` contains `agent-playground`, `full-app`, `workspace-playground` (package names identical to dir names, unscoped). There is **no `examples/` dir**; `pnpm-workspace.yaml` globs `apps/*`, `packages/*`, `plugins/*`. Recommendation: put the reference embed under **`apps/spreadsheet-embed-playground`** (matches the existing `*-playground` convention and the `apps/*` glob — no workspace-config change needed). Do not create a new top-level `examples/` tree.
 - `AgentTool` shape & approvals: `AgentTool` gains `needsApproval?: boolean | (params, ctx) => boolean | Promise<boolean>` (`08` HITL). The host declares approval policy on its own tools; the embed renders the approval request in a host dialog and answers via `resolveInput`.
 
@@ -30,7 +30,7 @@ Match `06-migration-phases.md` Phase S2 exit criteria:
 
 - Do NOT add `@hachej/boring-bash` (or any provider) to the embed's dependencies.
 - Do NOT build a real Office/Excel add-in or ship a product; a minimal spreadsheet-ish reference (in-memory grid + task-pane-style approval) is the deliverable.
-- Do NOT fork the surface-adapter conformance suite; import S1's `surfaceAdapterConformance` from `@hachej/boring-channel-core` (or wherever S1 placed it) and provide a spreadsheet subject.
+- Do NOT fork the surface-adapter conformance suite; import S1's `surfaceAdapterConformance` from the Slack package (`@hachej/boring-channel-slack`, where S1 BBS1-006 now places it — there is no upfront `@hachej/boring-channel-core`) and provide a spreadsheet subject.
 - Do NOT invent server APIs; if a needed façade method is missing, block on P1 rather than reaching into the harness.
 - Do NOT touch `/home/ubuntu/projects/boring-ui-v2`. Do NOT commit.
 
@@ -59,7 +59,7 @@ Match `06-migration-phases.md` Phase S2 exit criteria:
 ### BBS2-003 — Surface-adapter conformance for the embed (S)
 - Description: Run S1's conformance suite with a spreadsheet subject.
 - Files: `apps/spreadsheet-embed-playground/src/__tests__/embedConformance.test.ts`.
-- Notes: Import `surfaceAdapterConformance` from `@hachej/boring-channel-core` (S1 BBS1-006). Provide a subject whose `deliverInbound` sends a user turn, `collectOutbound` drains the event stream, `answerApproval` calls `resolveInput`, `addressingKeyOf` returns the `workbookId+sheetId` key. Assert message-in→events-out, approval round-trip, and addressing isolation (a second workbook cannot resolve the first's session).
+- Notes: Import `surfaceAdapterConformance` from `@hachej/boring-channel-slack` (S1 BBS1-006 exports it there; no upfront `@hachej/boring-channel-core`). Provide a subject whose `deliverInbound` sends a user turn, `collectOutbound` reads the event stream, `answerApproval` calls `resolveInput`, `addressingKeyOf` returns the `workbookId+sheetId` key. Assert message-in→events-out, approval round-trip, and addressing isolation (a second workbook cannot resolve the first's session).
 - Tests: the file.
 - Acceptance: `passed: true`; isolation holds across two workbooks.
 

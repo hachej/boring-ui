@@ -4,6 +4,10 @@ Status: **v2 — broadened to a pluggable-agent platform.** The agent core becom
 
 This folder replaces the original monolithic plan. The preserved source snapshot is [`legacy-monolith-source.md`](legacy-monolith-source.md).
 
+Start here for the big picture: [`VISION-MAP.md`](VISION-MAP.md) — each vision component mapped to what exists today, its delta work orders, and a checkable end-state.
+
+Work orders live in [`todos-v2/`](todos-v2/) (canonical) and [`todos/`](todos/) (v1). **`todos-v2/` supersedes `todos/` on any conflict** — treat `todos/TODO-00..07` as non-canonical wherever they disagree with the v2 pack (especially compat-export / shim / deprecation language).
+
 ## Plan files
 
 1. [`00-global-isa.md`](00-global-isa.md) — global intent/strategy/architecture, framework lessons, destination, non-negotiables.

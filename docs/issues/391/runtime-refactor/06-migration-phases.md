@@ -10,18 +10,18 @@
 ## Track overview and ordering
 
 ```txt
-Phase 0 ─ Phase 1 ──┬── Phase 2 ── Phase 3 ── Phase 4 ── Phase 5 ── Phase 6 ── Phase 7 ── Phase 8
-   (ADR)  (headless │   (bash pkg)  (routes/   (file UI)  (provis./  (plugins/  (multi-    (cleanup)
-          core)     │        │      tools)                readiness) child-app) agent)
-                    │        └── Phase E1 ─── Phase E2
-                    │            (env registry/ (MCP env
-                    │             attachments)  projection)
+Phase 0 ─ Phase 1 ──┬── Phase 2 ── Phase 3 ──┬── Phase 4 ── Phase 5 ── Phase 6 ── Phase 7 ── Phase 8
+   (ADR)  (headless │   (bash pkg)  (routes/  │   (file UI)  (provis./  (plugins/  (multi-    (cleanup)
+          core)     │               tools)    │              readiness) child-app) agent)
+                    │                          └── Phase E1 ─── Phase E2
+                    │                              (env registry/ (MCP env
+                    │                               attachments)  projection)
                     └── Phase T1 ── Phase T2 ─────────────── Phase S1 ── Phase S2
                         (event      (transport               (Slack      (pi-excel
                          envelope)   adapters)                channel)    embed)
 ```
 
-Track T starts after Phase 1 and runs parallel to Phases 2–4. Track S needs T2. Track E (environments as attachable resources, 09) starts after Phase 2 and runs parallel to Phases 3–5; E2 needs E1 only. Governance work (#475 line) continues independently on the landed #416 contracts.
+Track T starts after Phase 1 and runs parallel to Phases 2–4. Track S needs T2. Track E (environments as attachable resources, 09) starts after Phase 3 (E1 depends on Phase 2 **and** Phase 3 — it re-implements the P3 bash bundle's internals over attachments without changing its public signature) and runs parallel to Phases 4–5; E2 needs E1 only. Governance work (#475 line) continues independently on the landed #416 contracts.
 
 ## Phase 0 — ADR, naming lock, invariant update
 
@@ -40,12 +40,12 @@ Exit criteria: ADR accepted; plan pack (incl. 08) thermo-reviewed; issue #391 po
 
 Deliverables:
 
-- `createAgentApp()` / `registerAgentRoutes()` receive runtime/features by injection.
-- **Export `createAgent()`** from `@hachej/boring-agent/server`: Fastify-free façade returning `{ send, resolveInput, sessions, replay, readiness, dispose }` (see 08). `createAgentApp()` becomes an adapter over it.
+- `createAgentApp()` / `registerAgentRoutes()` receive the runtime adapter and any extra tools (incl. the boring-bash bundle's `{ tools, readinessRequirements }`) by injection — no `features` registry, no `AgentFeature` contract.
+- **Export `createAgent()`** from `@hachej/boring-agent/server`: Fastify-free façade returning `{ start, stream, send, resolveInput, sessions, readiness, dispose }` (see 08). `start(input): Promise<{ sessionId, startIndex }>` is the accepted-receipt write primitive (turn runs on an independent producer, never consumer-backpressured); `stream(sessionId, { startIndex })` is the replay+live-tail read primitive (replaces `replay()`); `send` = convenience over both. `createAgentApp()` becomes an adapter over it.
 - Typed config object only: no env-var reads or file discovery inside `createAgent()`; `.pi/*`, workspaces.yaml, env parsing move to host/CLI composition.
 - Remove static value imports from agent server composition to built-in mode resolution where needed for pure mode. Type-only `RuntimeModeAdapter` contracts may stay in agent during migration; `resolveMode()` and concrete mode adapters move to boring-bash/host composition after compatibility shims.
 - Package invariant test: no agent value import from boring-bash **[landed: `scripts/check-invariants.mjs` — extend to the façade]**.
-- Add `runtime: 'none'` / `features: []` path.
+- Add the pure `runtime: 'none'` path (no bash bundle spread into `tools`).
 - Separate `sessionStorageRoot` from workspace roots.
 - Audit pi-coding-agent cwd/resource assumptions (blocks pure-mode exit; decision: sealed pi harness, not a second harness).
 - Add external hook and operational event seams if route composition changes.
@@ -64,11 +64,11 @@ Deliverables:
 
 - `AgentEvent` envelope (`v`, `eventIndex`, `timestamp`, `sessionId`, `chunk`) around the existing harness stream unit (`PiChatEvent`); monotonic index persisted in the append-only SQLite `EventStreamStore` (DS `seq`/offset). Supersedes the bespoke `PiChatReplayBuffer` + `?cursor=` NDJSON replay (kept live until T2 cutover).
 - **Two authorities, separate:** the SQLite `EventStreamStore` is the **replay authority**; the pi session JSONL remains the **conversation-state authority** for harness rehydration (unchanged — existing sessions keep loading). Pending approval requests live in the event-stream SQLite DB, not the JSONL/session store.
-- `agent.replay(sessionId, { startIndex })`; HTTP adapter = DS-compliant `GET`/`HEAD` stream routes (catch-up from offset, SSE + long-poll).
-- Approvals/HITL on-stream: `needsApproval` on `AgentTool`; approval/input-request events; `resolveInput()`; durable `session.waiting` park/resume. Migrate permission prompts + ask-user plugin onto this path (no second approval channel).
-- Harness conformance suite additions: envelope ordering, replay-from-index, approval park/resume (extends #12 conformance).
+- `agent.stream(sessionId, { startIndex })` (replay-from-offset + live tail — the read primitive from 08); HTTP adapter = DS-compliant `GET`/`HEAD` stream routes (catch-up from offset, SSE + long-poll).
+- Approvals/HITL on-stream: `needsApproval` on `AgentTool`; approval/input-request events; `resolveInput()`. **Durable = the pending request + `session.waiting` state (event-store SQLite), not an in-memory turn.** Same-process resume continues the live parked turn; after a process restart, `resolveInput` continues the session via a **new harness turn seeded with the approval outcome** (tool-result injection on pi JSONL rehydration) — no rehydrated in-memory continuation, no `WaitingTurn` state machine. Migrate permission prompts + ask-user plugin onto this path (no second approval channel).
+- Harness conformance suite additions: envelope ordering, replay-from-index, durable pending-request survival across restart, same-process approval park/resume (extends #12 conformance).
 
-Exit criteria: SSE drop + reconnect replays losslessly in the workspace; an approval issued in one client can be answered from another client holding the same session.
+Exit criteria: SSE drop + reconnect replays losslessly in the workspace; an approval issued in one client can be answered from another client holding the same session; after a process restart the pending request + `waiting` state survive and `resolveInput` continues the session via a new seeded turn (a parked turn does not resume from restored in-memory state).
 
 ## Phase T2 — Transport adapters
 
@@ -102,26 +102,26 @@ Deliverables:
 - move file/tree/search/fs-events/stat/dir routes to `boring-bash/server` — preserving the `(filesystem, path)` addressing **[landed for routes/tools wiring via #429/#454: `filesystem` param, spoof guard, readonly enforcement — this phase moves the code, not the behavior]**;
 - move filesystem tools to `boring-bash/agent`; move or explicitly assign `bash`, `execute_isolated_code`, and upload tools;
 - preserve readiness tags and `disableDefaultFileTools`;
-- replace hardwired registration with `createBashAgentFeature()` consumed as `features` by `createAgent()`;
-- `createBashAgentFeature()` re-expressed as **environment-attachment sugar** once E1 contracts exist (if E1 has landed; else a plain feature).
+- replace hardwired registration with `createBashAgentFeature()` — **defined once in Phase 3** — returning a plain boring-bash-local bundle `{ tools, readinessRequirements }` (not a core `AgentFeature` contract) that host composition **spreads into the `createAgent()` config** (`tools: [...bashBundle.tools]`, readiness gates from the bundle). There is no `features` config member.
+- E1 (which depends on P2 **and** P3) may later re-implement the bundle's **internals** over environment attachments **without changing its public `{ tools, readinessRequirements }` signature**.
 
 Exit criteria: workspace playground still opens file tree/editor; read/write/edit/find/grep/ls/bash work when boring-bash enabled; pure mode still has none of those routes/tools; company_context no-leak conformance still green.
 
 ## Phase 4 — Move filesystem front plugin (bash track)
 
-Deliverables: move filesystem front plugin to `boring-bash/plugin`; preserve panel ids and `workspace.open.path` resolver; preserve file panel binding and agent file bridge/session changes **[Company file-tree root + capability-based readonly panes landed via #416 — carry over intact]**; add `FileTreeDataProvider` boundary; add document-authority override seam.
+Deliverables: move filesystem front plugin to `boring-bash/plugin`; preserve panel ids and `workspace.open.path` resolver; preserve file panel binding and agent file bridge/session changes **[Company file-tree root + capability-based readonly panes landed via #416 — carry over intact]**; factor tree data into a plain internal tree function (the pluggable `FileTreeDataProvider` boundary is **deferred to #295**, per `todos-v2/TODO-P4-file-ui-plugin.md`); add document-authority override seam.
 
-Exit criteria: `exec_ui openFile` still opens files; file tree can consume provider boundary; active document coordinator can intercept writes.
+Exit criteria: `exec_ui openFile` still opens files; file tree data flows through one internal function with unchanged behavior (provider boundary deferred to #295); active document coordinator can intercept writes.
 
 ## Phase 5 — Extend provisioning/readiness (bash track)
 
 Unchanged from v1: `BashRequirement` normalizer outside agent feeding `provisionWorkspaceRuntime()` via host/core/CLI composition; re-point callers; import-free requirement validation; per-requirement readiness metadata; `optional_failed` derived state; health checks; SDK archive support; managed service requirements; secret status/grant model; remote-worker capability handshake; two-phase bootstrap/onSession reconciliation.
 
-Additional v2 deliverable: **credential brokering rule** — secrets are injected at the environment boundary (provider adapter), never into the sandbox process env or the model transcript (08 trust boundary).
+Additional v2 deliverable: **credential brokering rule** (00 invariant 14, 08 trust boundary) — brokered secrets are host-side handles consumed **only by trusted-core tools**; they never enter the sandbox process env or the model transcript. Raw env exposure into a sandbox is **not** a default: it is an explicit, per-provider **trusted exception** that a policy must declare, and it is **never** allowed for a governed filesystem (e.g. `company_context`).
 
-Exit criteria: as v1, plus: no test can read a brokered secret from inside the sandbox.
+Exit criteria: as v1, plus: no test can read a brokered secret from inside the sandbox; raw-env exposure is reachable only via an explicitly declared per-provider trusted exception — never by default, never for a governed filesystem.
 
-## Phase E1 — Environment registry and attachments (after Phase 2; see 09)
+## Phase E1 — Environment registry and attachments (after Phase 2 **and** Phase 3; see 09)
 
 Deliverables:
 

@@ -57,7 +57,7 @@ Any environment can be projected as an **MCP server**: fs ops (`read/list/stat/s
 ## Security invariants
 
 1. Attachment carries policy; an environment has no ambient authority. `filesystem + path + operation + actor` remains the resource identity (#416).
-2. Scoped views are enforced by the environment host (physical projection or jailed ops), never by consumer-side path filtering.
+2. Scoped views are enforced by the environment host (physical projection or jailed ops), never by consumer-side path filtering. Containment must be **realpath-based with symlink denial** (`lstat` each path component; reject a symlink, or resolve it and re-check the result is still inside the jail) — not lexical `resolve()` alone — and E1 ships an explicit **symlink-escape conformance test**. (The landed `readonlyProjectionOperations.ts` jails lexically via `resolve()` only; E1 hardens it.)
 3. Credential brokering happens at the environment boundary (08 trust rule); MCP clients never receive broker secrets.
 4. Exec against a governed filesystem follows the #416 exec rules unchanged; `execPolicy: 'none'` is the default for any non-`user` attachment.
 

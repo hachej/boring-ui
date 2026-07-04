@@ -93,7 +93,7 @@ This is an additive update to #391: PR1 for #416 may create only a tiny `@hachej
 
 ### UI/file/document
 
-- file tree provider path-list/tree-index works;
+- file tree data flows through one plain internal tree function with unchanged behavior (pluggable `FileTreeDataProvider` boundary deferred to #295);
 - fs-event deltas update tree;
 - document-authority write/edit override routes through active coordinator;
 - file panes and surface resolver keep ids/behavior;

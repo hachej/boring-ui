@@ -134,15 +134,15 @@ Existing readiness tags must continue to work:
 
 ## Secrets (#181)
 
-Secrets are names/grants, never raw values in plans or browser contexts.
+Secrets are names/grants, never raw values in plans or browser contexts. Align with 00 invariant 14 and the 08 trust boundary: **brokered secrets are host-side handles that live on the trusted core side and are consumed only by trusted-core tools** (the tool uses the secret in host code); the raw value is never handed to the model or the sandbox.
 
 Required contracts:
 
 - host-owned secret store/status API;
 - browser/plugin sees only status: missing, granted, denied, expired;
-- model sees only names and availability unless a typed tool deliberately uses the secret in host code;
-- shell env injection requires explicit policy and audit logging;
-- secrets never get written into provisioning plan files or logs.
+- model sees only names and availability unless a typed tool deliberately uses the brokered secret in host code;
+- **raw env exposure into a sandbox is NOT a default**: it is an explicit, per-provider **trusted exception** declared in policy (with audit logging), **never** the default path and **never** allowed for a governed filesystem (e.g. `company_context`);
+- secrets never get written into provisioning plan files or logs, and never enter the model transcript.
 
 ## Managed services (#328, #258)
 
