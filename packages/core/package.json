@@ -87,7 +87,7 @@
     "fastify-plugin": "^5.1.0",
     "isomorphic-dompurify": "^3.18.0",
     "lucide-react": "^1.21.0",
-    "nodemailer": "^8.0.9",
+    "nodemailer": "^9.0.1",
     "pino": "^10.3.1",
     "postgres": "^3.4.9",
     "posthog-node": "^5.38.5",
