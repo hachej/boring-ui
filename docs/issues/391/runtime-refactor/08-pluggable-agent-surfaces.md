@@ -127,7 +127,7 @@ Reality note: a bespoke replay path already exists (`PiChatReplayBuffer` + `?cur
 - `sessionId` — runtime-owned. Attaches to the stream, resumes, inspects, forks.
 - Continuation/addressing — surface-owned. Slack thread `ts`, workbook id, workspace pane binding. Each surface maintains its own `addressing → sessionId` map (its own store or the host DB). Public agent APIs never accept platform addressing; they accept `sessionId` (or create one).
 
-This keeps multi-tenant routing out of the core: `x-boring-workspace-id` is an HTTP-adapter concern that resolves to a `SessionCtx`, exactly as a Slack adapter resolves team+channel+thread to one.
+This keeps multi-tenant routing out of the core: `x-boring-workspace-id` is an HTTP-adapter concern that resolves to a `SessionCtx`, exactly as a Slack adapter resolves team+channel+thread to one. `SessionCtx.workspaceId` is **optional**: a workspace adapter fills it, but pure/headless surfaces (Slack-only, embeds, plain Node) omit it and the session store namespaces by the host-composed `sessionStorageRoot` — a surface must never synthesize a fake `workspaceId`.
 
 ## Human-in-the-loop
 
@@ -182,7 +182,7 @@ Executable contract suites, in-repo, run against every implementation:
 ## Decisions this file locks (recommendations)
 
 1. **Wire protocol**: keep the existing harness stream unit (`PiChatEvent`) as the v1 event payload, add the indexed envelope. Do not invent a parallel event union. AI-SDK part alignment is revisited only at an AI-SDK v6 migration.
-2. **Pure mode** (#391 open decision 1): pi-coding-agent with `runtime: none` and sealed cwd, behind the Phase 1 audit — not a second harness. Epic #12 keeps pi as the batteries-included default; a non-pi harness remains a conformance-suite consumer, not a prerequisite.
+2. **Pure mode** (#391 open decision 1): pi-coding-agent with `runtime: none` and sealed cwd, behind the Phase 1 audit — not a second harness. Epic #12 keeps pi as the batteries-included default; any alternative harness remains a conformance-suite consumer only, never a Phase 1 prerequisite or the pure-mode path.
 3. **Surfaces live outside the agent package**: per-channel packages (Flue model), not subpaths of `boring-agent` (eve model) — matches the existing monorepo layout and keeps the core dependency-free.
 4. **Readonly fs is v1**: already true — shipped via #416. The 00-global-isa open decision 6 is resolved.
 5. **One namespace rule**: superseded by named `(filesystem, path)` bindings, as already reflected in the pack's V1 caveat.

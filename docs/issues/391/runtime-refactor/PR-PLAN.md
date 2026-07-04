@@ -1,0 +1,289 @@
+# PR-PLAN — #391 runtime refactor, implementation as a stacked PR series
+
+Binding execution plan that turns the `todos-v2/` work orders into reviewable PRs. Derived from `todos-v2/README.md` (dispatch protocol + dependency graph + no-compat policy) and every `TODO-*.md`. Mirrors the #416 stacked convention shipped as `bclaw/416-pr1..pr7`.
+
+---
+
+## POLICY (binding — read first)
+
+1. **One bead = one PR by default.** Small same-TODO beads MAY combine when the combined budget holds. A bead exceeding budget MUST pre-declare its split into stacked PRs (see the flagged beads).
+2. **Budget: max 2,000 net-new LOC per PR, excluding tests and docs.** net-new = additions that are **not** rename-detected moves; tests = `*.test.ts` / `__tests__/**` / `testing/**`; docs = `*.md`.
+3. **Pure code-move PRs** = rename-detected moves + import-path updates ONLY, zero logic change (review = rename verification). No hard LOC cap, but keep churn reviewable (**soft ~4k changed lines**; split by route/tool family when larger).
+4. **Every code PR carries its bead's tests in the same PR** — no test-less code PRs.
+5. **Branch naming:** `bclaw/391-<todo>-pr<N>-<slug>` (mirrors #416). One stack per TODO; each PR must be mergeable-green on its own.
+6. **Every PR description cites:** bead id(s), plan file (`docs/issues/391/runtime-refactor/…`), migration phase (`06-migration-phases.md`), and a LOC-accounting block from the script below.
+7. **CI gate per PR:** the affected package test filter(s) + the root invariant scripts named per lane.
+
+### LOC-accounting command (verified — run in the PR branch, prints net-new)
+
+```bash
+git diff --numstat -M origin/main...HEAD \
+  -- ':(exclude)**/*.md' ':(exclude)**/*.test.ts' ':(exclude)**/__tests__/**' ':(exclude)**/testing/**' \
+  | awk '$1!="-"{a+=$1} END{print (a+0)"  net-new added LOC (tests/docs/pure-moves excluded)"}'
+```
+
+`-M` makes a pure move a rename (`0  0` in numstat) so it contributes 0 net-new; a freshly-added file counts full additions. A result `> 2000` on a non-move PR = policy violation → split. (Verified: the pipeline executes clean in-worktree.)
+
+### Root CI script names (verified in `package.json`)
+
+`pnpm lint:invariants` (= agent `check-invariants.sh` + `@hachej/boring-bash check:invariants` + `lint:workspace-plugin-invariants`) · `pnpm audit:imports` · `pnpm check:agent-isolation` · `pnpm check:bundle-size` · `pnpm typecheck` · `pnpm test` · `pnpm e2e`. Per-package: `pnpm --filter <pkg> run {build,typecheck,test,lint:invariants,check:isolation}`.
+
+### Size heuristic used for estimates
+
+S ≈ <300 net-new · M ≈ 300–900 · L ≈ 900–2000. Adjusted per bead nature. **Moves are budget-exempt** (listed with churn, not net-new). Doc/test-only beads are budget-exempt.
+
+### Pre-declared splits (beads flagged at risk of busting 2k net-new or 4k move-churn)
+
+| Bead | Reason | Declared split (only if the cap is hit) |
+| --- | --- | --- |
+| **BBP1-002** `createAgent()` façade | owner-flagged; new façade + `/core` subpath + shared types | pr2a: `createAgent.ts` + `/core` entry + `AgentConfig`/`AgentEvent`/`Agent` types + `AgentSendInput` reconcile · pr2b: `start`/`stream`/`send` producer-consumer wiring over `HarnessPiChatService` + `resolveInput`/`stream` typed stubs |
+| **BBT1-001** EventStreamStore vendoring | owner-flagged; ~982 LOC ported from Flue (adapted = net-new, not a rename) | pr1a: `eventStreamStore.ts` + `sqlStorage.ts` (transactional append fix) · pr1b: `schemaVersion.ts` + `runEventStreamStoreConformance` suite |
+| **BBP4-011** filesystem front-plugin move | owner-flagged move-churn; whole `filesystemPlugin/front+shared` (editors + file-tree + data layer) far exceeds 4k soft | pr2a: `file-tree/*` + `shared/*` + `BBP4-012` tree fn · pr2b: `code-editor`+`markdown-editor`+`media/html/empty` panes · pr2c: `data/*` + `front/index.ts`+resolver+bindings rewire |
+| **BBP3-011 / BBP3-014** tool + route moves | owner-flagged (P3 moves); each is a large **move** | kept as separate move PRs (never combined); split further by tool/route family only if >4k churn |
+| **BBP5-006** managed-service supervisor | L, new supervisor+lifecycle | pr5a: supervisor (start/health/port-grant/teardown) · pr5b: readiness surface + host-caller passthrough — only if >2k |
+
+---
+
+## Per-TODO PR tables
+
+Legend — nature: **new** = net-new code · **move** = rename-detected + import repoint (budget-exempt) · **doc/test** = budget-exempt. Gate = per-PR CI beyond `typecheck`+`test`.
+
+### P0 — ADR + decision ratification (Phase 0, doc-only)
+
+| PR | beads | nature | net-new vs budget | test deliverables | gate |
+| --- | --- | --- | --- | --- | --- |
+| pr1-adr-ratify | BBP0-001..005 | doc | 0 (docs exempt) | none (doc phase) | link-grep of new `docs/issues/391/*` refs resolve; `boring-bash check:invariants` (pack wording strings intact); `git diff --stat` only `docs/**` + `agent/docs/runtime.md` |
+
+**P0 total: 1 PR.**
+
+### P1 — Headless core `createAgent()` (Phase 1)
+
+| PR | beads | nature | net-new vs budget | test deliverables | gate |
+| --- | --- | --- | --- | --- | --- |
+| pr1-config-inventory | BBP1-001 | doc | 0 | none (inventory doc) | grep reproducers resolve |
+| pr2-createagent-facade ⚠split | BBP1-002 | new | ~800–1200 / 2000 — **at risk, split pre-declared** | façade unit: 6-member API constructs w/o Fastify; `send` yields ≥1 event via live tail; historical `startIndex` throws `ERR_NOT_IMPLEMENTED_UNTIL_T1` | `lint:invariants`; `check:isolation` |
+| pr3-adapters-thin | BBP1-003 | new (refactor) | ~400–800 / 2000 (mostly churn into façade) | parity guarded by existing suites + pr6 | full agent `test` + `test:e2e` (parity) |
+| pr4-pure-runtime-none | BBP1-004 | new | ~300–600 | pure-mode route/tool exclusion; session round-trip under `sessionStorageRoot` w/ `workspaceId` undefined; no cwd leak | `lint:invariants` |
+| pr5-pi-harness-audit | BBP1-005 | doc + new (seals) | ~150 seals | harness-construction spy (no host cwd); system-prompt snapshot (no cwd/AGENTS.md) | `test` |
+| pr6-invariants-smoke | BBP1-006 | test | 0 (tests + script) | Fastify-graph check on `/core`; agent→bash value-import check; plain-Node pure smoke turn | `lint:invariants`; `check:isolation`; `boring-bash check:invariants` |
+
+**P1 total: 6 PRs (7 if pr2 splits).** Merge order pr1→pr5→pr2(→a,b)→pr3→pr4→pr6. **Gate to open T1/P2/P3/S1/S2:** pr2..pr6 merged (stub seams present).
+
+### T1 — Durable event stream + on-stream approvals (Phase T1, off P1)
+
+| PR | beads | nature | net-new vs budget | test deliverables | gate |
+| --- | --- | --- | --- | --- | --- |
+| pr1-eventstore ⚠split | BBT1-001 | new (vendor/adapt) | ~1000–1400 / 2000 — **at risk, split pre-declared** | `runEventStreamStoreConformance`: monotonic offsets, idempotent `appendEventOnce`, **transactional atomicity (no gap on mid-append throw)**, subscribe/unsubscribe; `:memory:` + temp-file | agent `test`; node:sqlite (no native dep) |
+| pr2-envelope-tap | BBT1-002 | new | ~200–400 | `harnessPiChatService.eventStore.test`: N events, contiguous `eventIndex`, durable-before-delivery | `test` |
+| pr3-ds-routes-stream | BBT1-003 | new | ~900–1300 / 2000 (port of `handle-stream-routes` ~594 + route + `stream`) | route test (GET/HEAD/304/SSE/abort); `stream` replay-from-index; SSE drop→re-GET lossless | `lint:invariants` (façade Fastify-free) |
+| pr4-approvals-park-resume | BBT1-004 | new | ~700–1000 | `approval.test` (park/resolve/deny/cross-client); `pendingInputs.test` (redacted, durable, cross-session) | `test` |
+| pr5-askuser-onto-stream | BBT1-005 | move + delete | net-new ~150; deletes second channel | adapted ask-user e2e; `ask_user.execute` parks + resolves via `resolveInput`; grep `ask-user.v1.` → no live handler | `lint:invariants`; `audit:imports` |
+| pr6-conformance | BBT1-006 | test | 0 | envelope-ordering, replay-from-index, **durable pending-request survival across restart** (seeded turn, no `WaitingTurn`) | `test` |
+
+**T1 total: 6 PRs (7 if pr1 splits).** Blocks T2, S1, and any consumer of durable replay/approvals.
+
+### T2 — Transport adapters (Phase T2, off T1)
+
+| PR | beads | nature | net-new vs budget | test deliverables | gate |
+| --- | --- | --- | --- | --- | --- |
+| pr1-contract-conformance | BBT2-001 | new (contract) + test | ~150 (`transport.ts`) | `runTransportConformance` suite (send/reconnect/approval/interrupt/dedupe) | `test` |
+| pr2-inprocess-transport | BBT2-002 | new | ~150–300 | `inProcessTransport.test` via shared suite | `check:isolation` |
+| pr3-http-ds-transport | BBT2-003 | new | ~700–1000 (+ pinned `@durable-streams/client`) | `dsHttpTransport.test` via suite vs injected fastify; forced-close lossless replay | `check:bundle-size`; `audit:imports` |
+| pr4-refit-twohandles-lint | BBT2-004 | new (guard) | ~200 + `transport.md` | platform-addressing guard test (negative: surface id fails, `SessionCtx` allowlisted passes) | `lint:invariants`; `audit:imports` |
+| pr5-headless-consumer | BBT2-005 | test + script | ~100 (`headless-consumer.mts`) | interleaved in-process×HTTP shared-session test | `exec tsx scripts/headless-consumer.mts` |
+| pr6-delete-legacy-cursor | BBT2-006 | delete + move | net-new ~50 (grep gate) | route tests migrated to DS; grep gate: no `?cursor=`/`PiChatReplayBuffer`/`piChatStream.ts` | `lint:invariants`; workspace playground unmodified |
+
+**T2 total: 6 PRs.** pr6 lands **last** (after DS conformance + playground green). Bumps `@hachej/boring-agent` minor (protocol change).
+
+### P2 — Move bash providers → `@hachej/boring-bash/providers` (Phase 2, off P1)
+
+| PR | beads | nature | net-new vs budget | test deliverables | gate |
+| --- | --- | --- | --- | --- | --- |
+| pr1-providers-subpath-matrix | BBP2-001 + BBP2-002 | new | ~250 (capability contract + matrix) | export-map `/providers`; per-fixed-provider matrix rows; `remote-worker` worker-fields `'unknown'` fail-closed | `boring-bash check:invariants` |
+| pr2-move-direct-bwrap | BBP2-003 | move | budget-exempt (~1.5k churn) | moved direct/bwrap conformance + snapshot pass under boring-bash | `boring-bash test` |
+| pr3-move-vercel-sandbox | BBP2-004 | move | budget-exempt (~2.5–3k churn, <4k) | vercel-sandbox unit tests pass; `createVercelSandboxWorkspace` typechecks | `boring-bash test` |
+| pr4-move-mode-adapters | BBP2-005 | move | budget-exempt (~1k churn) | `resolveMode.test` passes; mode→provider pairs covered | agent `test` (host repoint) |
+| pr5-split-remote-worker | BBP2-006 | move | budget-exempt (~1k churn) | protocol compat; handshake rejects bad version; worker import-graph has no agent-core dep | `audit:imports` |
+| pr6-migrate-delete-invariants | BBP2-007 + BBP2-008 | move (delete origin exports) + new (invariant) | ~80 (invariant script) | static: agent old paths have no bash value import / no re-export; apps compile | `lint:invariants`; `audit:imports` |
+
+**P2 total: 6 PRs.** Precondition: P1 injection seam present (else STOP+report). Bumps `@hachej/boring-agent` minor (relocation).
+
+### P3 — Move file/bash routes + tools → boring-bash (Phase 3, off P2)
+
+| PR | beads | nature | net-new vs budget | test deliverables | gate |
+| --- | --- | --- | --- | --- | --- |
+| pr1-agent-subpath-feature | BBP3-010 | new | ~120 (`/agent` subpath + `createBashAgentFeature()` skeleton) | export-map `/agent` | `boring-bash check:invariants` |
+| pr2-move-filesystem-tools ⚠ | BBP3-011 | move | budget-exempt (large; split by tool family if >4k) | moved fs-tool tests; spoof-guard + readonly-reject preserved; `disableDefaultFileTools` parity | `boring-bash test`; company_context no-leak green |
+| pr3-move-bash-upload | BBP3-012 + BBP3-013 | move | budget-exempt | bash/isolated-code readiness+redaction; upload stable errors | `boring-bash test` |
+| pr4-move-fs-git-routes ⚠ | BBP3-014 | move | budget-exempt (large; split by route family if >4k) | moved route tests; git-root == file-root == bash-cwd | `boring-bash test` |
+| pr5-wire-composition | BBP3-015 | new (host wiring) | ~300–500 (host call sites; agent forwards host-supplied `tools`) | pure-mode composition has no file routes/tools; bash-enabled has all | `lint:invariants`; `audit:imports`; `check:isolation` |
+| pr6-sot-tests-invariants | BBP3-016 + BBP3-017 | test + new (invariant) | ~80 | source-of-truth regression; `disableDefaultFileTools` parity; boundary invariant | `lint:invariants` |
+
+**P3 total: 6 PRs.** Precondition: P1 (`tools` injection, no `features`) + P2 present. `packages/agent` ends with **zero** boring-bash imports (bin included).
+
+### P4 — Move filesystem front plugin → boring-bash/plugin (Phase 4, off P3)
+
+| PR | beads | nature | net-new vs budget | test deliverables | gate |
+| --- | --- | --- | --- | --- | --- |
+| pr1-plugin-subpath-host-adapter | BBP4-010 | new | ~250 (`BashPluginHost` structural adapter) | export-map `/plugin` front-safe; front-safe scan on `src/plugin/**` | `boring-bash check:invariants` |
+| pr2-move-front-plugin ⚠split | BBP4-011 (+ BBP4-012) | move | budget-exempt (**far >4k — split into pr2a/b/c pre-declared**) | moved plugin `__tests__` pass; `grep @hachej/boring-workspace packages/boring-bash/src/plugin` → 0; tree fn returns current shape | `lint:invariants`; acyclicity |
+| pr3-document-authority-hook | BBP4-013 | new | ~200–350 (nullable hook, no registry) | stub authority owns/rejects-stale; raw edit unaffected when absent | `boring-bash test` |
+| pr4-repoint-acyclicity | BBP4-014 | move (delete workspace export) + new (guard) | ~60 | `exec_ui openFile` opens moved panel; no `plugin→workspace` edge | `lint:plugin-invariants`; `audit:imports` |
+
+**P4 total: 4 PRs (6 if pr2 splits into 3).** Precondition: P3 write/edit tools + routes in boring-bash.
+
+### E1 — Environment attachments (Phase E1, off P2 **and** P3)
+
+| PR | beads | nature | net-new vs budget | test deliverables | gate |
+| --- | --- | --- | --- | --- | --- |
+| pr1-env-contracts | BBE1-001 | new (types) | ~150 | `.test-d` compile assertion: attachment narrows to `FilesystemBinding` selector | `boring-bash typecheck` |
+| pr2-resolve-attachments | BBE1-002 | new | ~250–400 (reduction/delegation, **no registry/Map**) | two distinct-`filesystem` prepared handles; dispose evicts | `boring-bash test` |
+| pr3-company-context-env | BBE1-003 | new (adapter) | ~200 | reference attachment == direct provider visible-path set; `execPolicy:'none'` | `readonlyCompanyContext*` green |
+| pr4-scoped-view-jail | BBE1-004 | new | ~250–400 | subpath jail (sibling denied); `..` rejected; **symlink-escape denied (realpath-based)** | `boring-bash test` |
+| pr5-agent-typeonly-conformance | BBE1-006 + BBE1-007 | new (type-only field + invariant) + test | ~80 | agent value-import fails / `import type` passes; scoped-view conformance mount `passed:true` | `audit:imports`; `lint:invariants` |
+
+**E1 total: 5 PRs.** No edits to landed #416 declarations (additions only). BBE1-005 subagent seam **deferred to P7**.
+
+### E2 — MCP environment projection (Phase E2, off E1)
+
+| PR | beads | nature | net-new vs budget | test deliverables | gate |
+| --- | --- | --- | --- | --- | --- |
+| pr1-mcp-server-exec-gating | BBE2-001 + BBE2-004 | new | ~400–600 (+ pinned `@modelcontextprotocol/sdk@1.29.0`, `./mcp` subpath, address-by-id Map) | readonly attachment omits write/edit/exec; denied path → no leak; exec presence tracks `execPolicy`; no broker-secret leak | `boring-bash check:invariants`; build (`./mcp` bundles) |
+| pr2-mcp-session-identity | BBE2-002 | new | ~250 (token-per-projection) | valid token → ctx; unknown rejected; two actors can't cross-read | `boring-bash test` |
+| pr3-mcp-conformance-doc | BBE2-003 + BBE2-005 | test + doc | 0 | fourth-mount conformance `passed:true`, same visible-path set; remote-worker-as-transport filed as **P8** follow-up (doc) | `boring-bash test` |
+
+**E2 total: 3 PRs.** SDK pinned exact `1.29.0` (no caret).
+
+### P5 — Provisioning / readiness / secrets / services (Phase 5, off P3)
+
+| PR | beads | nature | net-new vs budget | test deliverables | gate |
+| --- | --- | --- | --- | --- | --- |
+| pr1-bash-requirement-normalizer | BBP5-001 | new | ~600–900 | merge-by-id; conflict/unsafe-id reject; capability-vs-provider reject; import-free proof; no raw secret | `boring-bash check:invariants`; `audit:imports` |
+| pr2-repoint-callers | BBP5-002 | new (host wiring) | ~300–500 | existing provisioning tests unchanged; plugin `bash.nodePackages` reaches engine via normalizer | core/workspace/cli `test` |
+| pr3-readiness-health | BBP5-003 + BBP5-004 | new | ~400–700 | `optional_failed` derived state; per-requirement detail; health gates dependent tool; timeout retryable | agent `test` |
+| pr4-sdk-archive | BBP5-005 | new | ~300–500 | archive installs + fingerprint-skip; no host-path leak; runtime-visible rewrite | `test` |
+| pr5-managed-service ⚠split | BBP5-006 | new | ~700–1000 — **split pre-declared if >2k** | start→health→port-grant; teardown kills tree; denied exec/ports blocks; no raw secret in env | `test` |
+| pr6-secret-brokering | BBP5-007 | new | ~500–800 | status without value; **brokering negative test — no sandbox-side read of brokered secret**; no serialization to browser/model/log/artifact | `check:isolation`; `smoke:capability-readiness` |
+| pr7-remote-worker-handshake | BBP5-008 | new | ~300–500 | reported\|unknown facts; fail-closed on unknown/bad-contract; no silent downgrade | `full-app smoke:remote-worker` |
+| pr8-two-phase-fingerprint | BBP5-009 | new | ~400–600 | same fingerprint skips; changed source/contract re-provisions; onSession reruns; Vercel snapshot tests pass | `test` |
+
+**P5 total: 8 PRs.** Preconditions: P3 + P2 `providers/matrix.ts` (else STOP+report). Engine stays agent-owned; normalizer boring-bash-owned. Zero dangling `TODO(remove:*)`.
+
+### P6 — Plugin + child-app integration (Phase 6, off P5) — **split P6a / P6b**
+
+**P6a — child-app-independent (dispatchable after P5).** Grep-gated: BBP6-002/003/004 contain **zero** `childAppId`/`workspaceKind`/`ChildApp`.
+
+| PR | beads | nature | net-new vs budget | test deliverables | gate |
+| --- | --- | --- | --- | --- | --- |
+| pr1-agent-registry | BBP6-003 | new | ~150 (Map-backed) | register/get/list/has/delete; duplicate-id policy; grep-gate no child-app fields | agent `test` |
+| pr2-manifest-requires-bash | BBP6-002 | new | ~400–700 | bash skipped when disabled; invalid `bash` rejected pre-import; import-free proof; raw-secret reject; grep-gate clean | `lint:plugin-invariants` |
+| pr3-runtime-plugin-context | BBP6-004 | new | ~300–500 | context derived from policy (unspoofable); status-only secrets; dispatch unchanged | workspace `test` |
+| pr4-hosted-fail-closed | BBP6-005 | new | ~400–600 | hosted mode fails closed; iframe sandbox/CSP asserted; symlink/special-file rejected | `test` |
+| pr5-shared-workspace-runtime | BBP6-007 | new (unify) | ~300–500 | CLI/full-app/workspace share the runtime unit; reload + registry dispose on eviction | core/cli/full-app `test` |
+| pr6-multitenant-reload | BBP6-008 | new | ~300–500 | reload per workspace; unauthorized → stable error; pure reload w/o bash; trusted routes diagnosed-not-hot | full-app `test` |
+
+**P6b — child-app scoping (HARD BLOCKED until `docs/plans/shared-child-app-platform.md`→`ResolvedChildAppContext`/#376 lands).**
+
+| PR | beads | nature | net-new vs budget | test deliverables | gate |
+| --- | --- | --- | --- | --- | --- |
+| pr7-childapp-context 🚫blocked | BBP6-001 | new | ~300–500 (type-only import of platform type) | generic excludes child-app scope; narrows-never-widens; unknown id → stable error | `test` — **STOP+report if platform type absent** |
+| pr8-macro-scoping 🚫blocked | BBP6-006 | new + fixture | ~250 | Macro context yields Macro reqs; generic excludes; no leakage | `test` |
+
+**P6 total: 8 PRs (6 P6a + 2 P6b-blocked).** `AgentRegistry` (pr1) is the P7 consumer that justifies it.
+
+### P7 — Multi-agent routing/session/search + inspection (Phase 7, off P6a **and** E1)
+
+| PR | beads | nature | net-new vs budget | test deliverables | gate |
+| --- | --- | --- | --- | --- | --- |
+| pr1-agentid-scope-namespace | BBP7-001 | new | ~250–400 | two agents/one workspace → distinct `scope.key` + `sessionNamespace`; default-agent namespace unchanged | agent `test` |
+| pr2-agentid-addressing | BBP7-002 | new | ~200–350 (locked `/api/v1/agents/:agentId/…`) | declared resolves; undeclared → `AGENT_NOT_FOUND`; absent → default | `test` |
+| pr3-per-agent-catalog-readiness | BBP7-003 | new | ~300–500 | per-agent catalog differs; reviewer readonly/no-exec vs coding bash vs pure concierge; no readiness bleed | `test` |
+| pr4-session-search | BBP7-004 | new | ~500–800 (no fs requirement) | agent-scoped, content match, redaction, deep-link `includeId`, graceful unknown | `test` |
+| pr5-agent-info-endpoint | BBP7-005 | new | ~250–400 (public, models.ts posture) | reports model/tools/readiness/channels/environments; **no key/secret field** | `test` |
+| pr6-external-hook-target | BBP7-006 | new | ~300–500 (boring-bash-free) | valid resolves+emits on stream; foreign/unauth rejects; redacted; audited | `check:isolation` |
+| pr7-surface-agent-binding | BBP7-007 | new | ~120 | two panes/threads → two scopes; one key never two `agentId` | `audit:imports` (guard green) |
+| pr8-subagent-grant | BBP7-008 | new (lands E1 BBE1-005) | ~150 (boring-bash) | scoped-view grant isolated by `agentId`; shares no handle; no cwd inheritance | `boring-bash test` |
+| pr9-two-surface-isolation | BBP7-009 | test | 0 | two-surfaces×two-agents no-collision integration (bindings/catalog/transcript/readiness/approvals) | `test` |
+
+**P7 total: 9 PRs (8 if pr7+pr8 combine).** Precondition: P6a `AgentRegistry` + E1 attachments (else STOP+report).
+
+### P8 — Verification + cleanup (Phase 8, gates on **all** lanes)
+
+| PR | beads | nature | net-new vs budget | test deliverables | gate |
+| --- | --- | --- | --- | --- | --- |
+| pr1-marker-import-gates | BBP8-001 + BBP8-003 | new (invariant scripts) | ~150 | planted `TODO(remove:*)` fails + names bead; each P2/P3/P4/T1/T2 relocation gate green | `lint:invariants`; `audit:imports` |
+| pr2-surface-contract-docs | BBP8-002 | doc | 0 | referenced symbols (`createAgent`,`AgentEvent`,`AgentSendInput`,`ResolveInputResponse`) exist | doc/link check |
+| pr3-track-remaining-prose | BBP8-004 | doc/tracking | 0 | filed issue/bead list; `00` coverage reconciled (no overclaim) | n/a |
+
+**P8 total: 3 PRs.** BBP8-005 (final invariant+build/test sweep) is the **merge gate on this stack**, not a separate PR — any red gate reopens its owning phase. **Rule: a live `TODO(remove:*)` marker reopens its phase; P8 never absorbs it.**
+
+### S1 — Slack reference channel (Phase S1, off T2 + P1)
+
+| PR | beads | nature | net-new vs budget | test deliverables | gate |
+| --- | --- | --- | --- | --- | --- |
+| pr1-hono-fastify-wrapper-doc | BBS1-001 + BBS1-007 | new (+ `packages/channels/*` in `pnpm-workspace.yaml`) + doc | ~200 | exact-byte passthrough + status/header round-trip; example typechecks | new-package `build`/`typecheck` |
+| pr2-skeleton-ingress-store | BBS1-002 + BBS1-003 | new | ~350–550 | one `agent.send` per message; dedupe on `event_id`; bot ignored; `conversationKey→sessionId` isolation | `audit:imports` (no boring-bash) |
+| pr3-egress-batching | BBS1-004 | new | ~250–400 | N deltas <1s → 1 post + bounded updates; turn-end flush; 429 backoff | `test` |
+| pr4-approvals-slack | BBS1-005 | new | ~250–400 | button → `resolveInput` right session/request; cross-surface answer consistent | `test` |
+| pr5-conformance-suite | BBS1-006 | new (neutral `@hachej/boring-agent/testing`) + test | ~200 (suite) | message-in→out, approval round-trip, addressing isolation; runs `runtime:'none'` + readonly `company_context` | agent `build` (`./testing` subpath) |
+
+**S1 total: 5 PRs.** `@flue/slack` pinned exact `1.0.0-beta.x`. No shared channel-core package yet (single consumer).
+
+### S2 — Spreadsheet embed contract (Phase S2, off S1)
+
+| PR | beads | nature | net-new vs budget | test deliverables | gate |
+| --- | --- | --- | --- | --- | --- |
+| pr1-embed-doc-guard | BBS2-001 + BBS2-004 | doc + new (guard) | ~40 | audit fails on any boring-bash import from embed | `audit:imports` |
+| pr2-reference-embed-conformance | BBS2-002 + BBS2-003 | new (`apps/spreadsheet-embed-playground`) + test | ~300–500 | `write_range` parks on approval → projects on approve / unchanged on deny; conformance `passed:true` via `@hachej/boring-agent/testing` | `typecheck`; `test` |
+
+**S2 total: 2 PRs.** Embed deps = `@hachej/boring-agent` only.
+
+### S3 — Control-plane UX (Phase S3, off T2 + P7) — **DELTA, extend existing surfaces**
+
+| PR | beads | nature | net-new vs budget | test deliverables | gate |
+| --- | --- | --- | --- | --- | --- |
+| pr1-agent-inspect-panel | BBS3-001 | new (only genuinely-new surface) | ~350–550 (registers via existing `PanelRegistry`) | renders `/info` read-only; reviewer readonly+no-bash; pure=no envs; **no secret field** | workspace `test`; `lint:plugin-invariants` |
+| pr2-crosssurface-sessions | BBS3-002 | new (rewire, not rebuild) | ~200–350 (`SessionSummary.originSurface` additive) | slack-origin badge + `origin:` filter; missing field defaults workspace; transcript reuses `PiChatPanel` by `sessionId` | agent+workspace `test` |
+| pr3-central-approval-inbox | BBS3-003 | new (generalize ask-user `InboxOverlay`) | ~250–400 (front-only; source → T1 `pendingInputs`) | two-session/two-surface inbox; `resolveInput` on answer; single source (no second channel) | `audit:imports`; **STOP+report if `agent.pendingInputs` absent** |
+| pr4-controlplane-integration | BBS3-004 | test | 0 | one workspace inspects 2 agents + observes/approves 2 surfaces via public contracts only | workspace `test` |
+
+**S3 total: 4 PRs.** Consumes P7 `/info` + BBP7-004 search + T1 `pendingInputs` (STOP+report if missing). No new registry/host; observe-only (agent-as-directory authoring deferred).
+
+---
+
+## Totals
+
+| Lane / TODO | PRs (base) | with pre-declared splits | blocked |
+| --- | --- | --- | --- |
+| P0 | 1 | 1 | — |
+| P1 | 6 | 7 | — |
+| T1 | 6 | 7 | — |
+| T2 | 6 | 6 | — |
+| P2 | 6 | 6 | — |
+| P3 | 6 | 6 (moves split by family only if >4k) | — |
+| P4 | 4 | 6 | — |
+| E1 | 5 | 5 | — |
+| E2 | 3 | 3 | — |
+| P5 | 8 | 9 | — |
+| P6 | 8 | 8 | 2 (P6b) |
+| P7 | 9 | 9 | — |
+| P8 | 3 | 3 | — |
+| S1 | 5 | 5 | — |
+| S2 | 2 | 2 | — |
+| S3 | 4 | 4 | — |
+| **TOTAL** | **82** | **~87** | 2 blocked |
+
+**Expected overall: ~82 PRs (up to ~87 if every pre-declared split fires); 2 of them (P6b) hard-blocked on the shared child-app platform type.**
+
+### Critical-path PR sequence (longest serial chain)
+
+```
+P0(1) → P1(6) → P2(6) → P3(6) → P5(8) → P6a(6) → P7(9) → P8(3)   = 45 PRs serial
+```
+
+- **Off the same P1 root, in parallel:** the transport lane `T1(6) → T2(6) → { S1(5) → S2(2) ; S3(4) }`, and the environment lane `E1(5) → E2(3)` (E1 also needs P3; E2 feeds no critical successor except P8).
+- **P7 also needs E1**; **S3 needs T2 + P7**; **P8 gates on every lane** (bash + transport + environment + surfaces).
+- **P6b** is off the critical path (blocked) and does not gate P7 (P7 consumes P6a only).
+- **Package minor bumps** on the path: `@hachej/boring-agent` at P3 (relocation) and at T2 (protocol).
+
+Merge-order rule across lanes: nothing in P2 opens until P1 pr2..pr6 are green; E1 waits on both P2 and P3; P5 dispatches off P3 (not P4); P6a off P5; P7 off P6a+E1; P8 last, only when zero `TODO(remove:*)` markers remain repo-wide and all lane gates are green.

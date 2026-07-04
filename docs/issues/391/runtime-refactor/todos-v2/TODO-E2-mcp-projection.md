@@ -7,7 +7,7 @@ Handoff: self-contained work order for one autonomous coding agent (pi or gpt-5.
 - Plan: `docs/issues/391/runtime-refactor/09-environments-attachable.md` § "MCP projection: external reuse for free" and § "Security invariants" (read in full).
 - Plan: `docs/issues/391/runtime-refactor/06-migration-phases.md` § "Phase E2" (deliverables + exit criteria; E2 depends on E1 only).
 - Plan: `docs/issues/391/runtime-refactor/08-pluggable-agent-surfaces.md` § "Conformance" item 2 (readonly projection no-leak already exists).
-- Depends on **BBE1** (`TODO-E1-environment-attachments.md`): `Environment`, `EnvironmentAttachment`, `EnvironmentRegistry`, `ResolvedEnvironments` in `@hachej/boring-bash`. Do not start until E1's registry + scoped views land.
+- Depends on **BBE1** (`TODO-E1-environment-attachments.md`): `Environment`, `EnvironmentAttachment`, `ResolvedEnvironments`, and the `resolveAttachments` reduction in `@hachej/boring-bash`. Do not start until E1's attachment contracts + scoped views land. **E1 deliberately ships no address-by-id store** — E2 introduces the plain `Map<environmentId, Environment>` (this is the first place the projection needs address-by-id), so E2 owns that Map, not E1.
 - Enforcement code you MUST reuse (no parallel policy):
   - `packages/boring-bash/src/server/readonlyProjectionOperations.ts` — `createReadonlyProjectionOperations(handle)`, `ReadonlyProjectionOperations` (`read/list/find/grep/stat/rejectMutation`), error codes `READONLY_PROJECTION_MUTATION_CODE` / `_INVALID_PATH_CODE` / `_BINDING_NOT_FOUND_CODE`.
   - `packages/boring-bash/src/server/managementProjectionOperations.ts` — `createManagementProjectionOperations`, `ManagementProjectionOperations`, `ManagementProjectionHandle`.
@@ -22,8 +22,8 @@ Match `06-migration-phases.md` Phase E2 exit criteria:
 1. An external MCP client (e.g. Claude Code) mounts a boring environment and sees exactly what an in-process **readonly** attachment sees.
 2. Denied files are absent over MCP (no-leak).
 3. No broker secret is reachable from the MCP client.
-4. The existing no-leak conformance suite runs as a **fourth mount** (in-process / scoped / remote-worker / MCP).
-5. Docs reclassify remote-worker as an environment transport.
+4. The existing no-leak conformance suite runs as a **fourth mount** (in-process / scoped / remote-worker provider / MCP).
+5. Remote-worker stays a provider (P2/P5); its reclassification as an environment transport is **deferred to a post-E2 follow-up filed at P8** — E2 does not perform it (see BBE2-005).
 
 ## Non-negotiables
 
@@ -47,8 +47,8 @@ Match `06-migration-phases.md` Phase E2 exit criteria:
 ### BBE2-001 — MCP server projection factory (M)
 - Description: `createEnvironmentMcpServer(attachment, operations, identity)` returns a configured `McpServer` exposing the capability-gated tool surface.
 - Files: create `packages/boring-bash/src/server/mcp/environmentMcpServer.ts`; add `@modelcontextprotocol/sdk` pinned exactly to `1.29.0` (no caret) to `packages/boring-bash/package.json` deps; add a `./mcp` export in `package.json` + `packages/boring-bash/src/server/mcp/index.ts`.
-- Notes: Register tools from `@modelcontextprotocol/sdk/server/mcp.js` `McpServer`. Each tool's handler is a one-liner over the injected `ReadonlyProjectionOperations` / `ManagementProjectionOperations` (from E1's registry resolution). Gate `write`/`edit` on `attachment.access === 'readwrite'`; gate `exec` on `attachment.execPolicy === 'attached'`. Input schemas take `{ path }` (+ `{ content }` for write, `{ pattern, offset?, limit? }` for find/grep) — mirror the projection op signatures. Map thrown `ReadonlyProjectionOperationError`/`ManagementProjectionOperationError` to MCP error results using the error `code`, never the raw path.
-- Tests: `packages/boring-bash/src/server/mcp/__tests__/environmentMcpServer.test.ts` — instantiate against a readonly `company_context` attachment (via E1 registry + `FixtureCompanyContextBindingProvider`); assert `write`/`edit`/`exec` tools are NOT registered; assert `read` of an allowed path succeeds and denied path returns an error result with no denied-name/sentinel in the payload.
+- Notes: Register tools from `@modelcontextprotocol/sdk/server/mcp.js` `McpServer`. Each tool's handler is a one-liner over the injected `ReadonlyProjectionOperations` / `ManagementProjectionOperations` (from E1's `resolveAttachments` reduction). **Address-by-id lands here (not in E1):** introduce a plain `Map<environmentId, Environment>` in `packages/boring-bash/src/server/mcp/` so an MCP mount can resolve an environment by id before projecting it — this is the first real need for id-lookup, which is why E1 ships none. Gate `write`/`edit` on `attachment.access === 'readwrite'`; gate `exec` on `attachment.execPolicy === 'attached'`. Input schemas take `{ path }` (+ `{ content }` for write, `{ pattern, offset?, limit? }` for find/grep) — mirror the projection op signatures. Map thrown `ReadonlyProjectionOperationError`/`ManagementProjectionOperationError` to MCP error results using the error `code`, never the raw path.
+- Tests: `packages/boring-bash/src/server/mcp/__tests__/environmentMcpServer.test.ts` — instantiate against a readonly `company_context` attachment (via E1 `resolveAttachments` + `FixtureCompanyContextBindingProvider`); assert `write`/`edit`/`exec` tools are NOT registered; assert `read` of an allowed path succeeds and denied path returns an error result with no denied-name/sentinel in the payload.
 - Acceptance: readwrite attachment additionally registers `write`/`edit`; exec attachment additionally registers `exec`; readonly does not.
 
 ### BBE2-002 — MCP session → `BoundFilesystemContext` identity (token-per-projection v1) (M)
@@ -72,12 +72,12 @@ Match `06-migration-phases.md` Phase E2 exit criteria:
 - Tests: no-exec attachment → tool absent; a fixture exec attachment → tool present, and a brokered-secret sentinel is unreachable from the client-visible result.
 - Acceptance: exec presence tracks `execPolicy`; no broker secret leaks.
 
-### BBE2-005 — Docs: remote-worker reclassified as an environment transport (S)
-- Description: Documentation-only bead.
-- Files: create/append `packages/boring-bash/docs/environments.md` (or the nearest existing env doc — check `packages/boring-bash/README.md`); note in it that remote-worker is a **transport for an environment**, peer to in-process and MCP, not a special provider (`09` MCP projection final bullet). Cross-link `docs/issues/391/runtime-refactor/09-environments-attachable.md`.
-- Notes: State the "one suite, four mounts" invariant and that MCP is the external-agent transport. No code.
+### BBE2-005 — File the remote-worker-as-transport follow-up (do NOT reclassify here) (S)
+- Description: Documentation-only bead. **Remote-worker stays a provider in this epic (P2/P5 as written).** Do NOT reclassify it as an environment transport in E2 — that reclassification is a **post-E2 follow-up**.
+- Files: append to `packages/boring-bash/docs/environments.md` (or the nearest existing env doc — check `packages/boring-bash/README.md`) a short note that MCP is the external-agent transport and that reclassifying remote-worker from a provider to *a transport for an environment* (peer to in-process and MCP) is an identified future direction, **deferred to a follow-up issue to be filed at P8** — it is not done here and nothing in E2 changes the P2/P5 remote-worker-as-provider design. Cross-link `docs/issues/391/runtime-refactor/09-environments-attachable.md` ("Remote-worker ownership").
+- Notes: State the "one suite, four mounts" invariant (the remote-worker mount is a **provider** attachment). No code. No live instruction that contradicts P2/P5.
 - Tests: none (doc); ensure any doc-lint/link check in CI passes.
-- Acceptance: remote-worker described as a transport; no contradiction with `09`.
+- Acceptance: remote-worker still described as a provider; the transport reclassification is filed as a deferred P8 follow-up, not performed; no contradiction with `09`, P2, or P5.
 
 ## Verification — exact commands verified against package.json scripts
 

@@ -18,15 +18,20 @@ Supersedes `../todos/TODO-00..07` where they overlap; unchanged v1 material is r
 ```txt
 TODO-P0 ──► TODO-P1 ──┬──► TODO-P2 ──► TODO-P3 ──┬──► TODO-P4
                       │                          ├──► TODO-E1 ──► TODO-E2
-                      │                          └──► TODO-P5 ──► TODO-P6 ──► TODO-P7 ──► TODO-P8
+                      │                          └──► TODO-P5 ──► TODO-P6a ─┬─► TODO-P7 ──► TODO-P8
+                      │                                                     └─► TODO-P6b (child-app scoping)
                       └──► TODO-T1 ──► TODO-T2 ──┬──► TODO-S1 ──► TODO-S2
                                                 └──► TODO-S3
 
-Cross-deps not drawable inline: E1 needs P2 **and** P3; P6 also needs the shared child-app
-platform plan; P7 also needs E1; P8 gates on **all** lanes; S3 also needs P7.
+Cross-deps not drawable inline: E1 needs P2 **and** P3; **P6 splits into P6a and P6b** — P6a
+(child-app-independent: manifest validation, plugin runtime context, AgentRegistry, hosted-plugin
+fail-closed, shared runtime, reload) is ← P5; P6b (child-app scoping: BBP6-001, BBP6-006) is ← P6a
+**and** the shared child-app platform type (`ResolvedChildAppContext`, #376), **HARD BLOCKED** until
+it lands; **P7 needs P6a and E1** (the AgentRegistry from P6a, not P6b's child-app scoping); P8 gates
+on **all** lanes; S3 also needs P7.
 ```
 
-Parallel lanes after P1: **bash lane** (P2→P3→P4), **environment lane** (E1→E2, needs P2+P3), **provisioning→child-app→multi-agent lane** (P5→P6→P7→P8, off P3), **transport lane** (T1→T2→{S1→S2, S3}). Phases 5–8 + S3 are canonical v2 work orders (below), each following its listed prerequisites.
+Parallel lanes after P1: **bash lane** (P2→P3→P4), **environment lane** (E1→E2, needs P2+P3), **provisioning→child-app→multi-agent lane** (P5→P6a→P7→P8, off P3; P6b branches off P6a and is HARD BLOCKED on the shared child-app platform type), **transport lane** (T1→T2→{S1→S2, S3}). Phases 5–8 + S3 are canonical v2 work orders (below), each following its listed prerequisites.
 
 ## Work orders
 
@@ -42,8 +47,8 @@ Parallel lanes after P1: **bash lane** (P2→P3→P4), **environment lane** (E1�
 | `TODO-E1-environment-attachments.md` | Phase E1 | P2, P3 | M |
 | `TODO-E2-mcp-projection.md` | Phase E2 | E1 | M |
 | `TODO-P5-provisioning-secrets.md` | Phase 5 | P3 | L |
-| `TODO-P6-plugin-child-app.md` | Phase 6 | P5 + child-app platform | L |
-| `TODO-P7-multi-agent-inspection.md` | Phase 7 | P6 + E1 | L |
+| `TODO-P6-plugin-child-app.md` | Phase 6 | **P6a**: P5 · **P6b**: P6a + child-app platform type (HARD BLOCKED) | L |
+| `TODO-P7-multi-agent-inspection.md` | Phase 7 | P6a (AgentRegistry) + E1 | L |
 | `TODO-P8-verification-cleanup.md` | Phase 8 | all lanes | M |
 | `TODO-S1-slack-channel.md` | Phase S1 | T2 (+P1) | M |
 | `TODO-S2-embed-contract.md` | Phase S2 | S1 | S/M |
@@ -54,8 +59,8 @@ Parallel lanes after P1: **bash lane** (P2→P3→P4), **environment lane** (E1�
 These are now first-class v2 work orders here — **no longer delegated to `../todos/`**. Dispatch each when its prerequisites (dispatch table above) complete:
 
 - **`TODO-P5-provisioning-secrets.md`** (Phase 5, off P3) — provisioning/readiness extension + the *credential brokering rule*: brokered secrets are host-side handles consumed only by trusted-core tools and never enter any sandboxed environment (the `direct` provider is a host process, not a sandbox — nothing is injected there) (00 invariant 14, 08 trust boundary).
-- **`TODO-P6-plugin-child-app.md`** (Phase 6, off P5) — plugin/child-app integration; **also depends on the shared child-app platform plan** (do not define a competing child-app registry here).
-- **`TODO-P7-multi-agent-inspection.md`** (Phase 7, off P6 **and** E1) — multi-agent routing/session/search + the agent inspection endpoint; surface adapters address agents via the same `agentId` scoping (one addressing entry → one `agentId`).
+- **`TODO-P6-plugin-child-app.md`** (Phase 6, **split into P6a/P6b**) — **P6a** (manifest validation, plugin runtime context, `AgentRegistry`, hosted-plugin fail-closed, shared runtime, reload) dispatches off **P5** and is child-app-independent (grep-gated: zero child-app fields in the three named contracts); **P6b** (consume resolved child-app context, Macro scoping) is **HARD BLOCKED** on the shared child-app platform type (`ResolvedChildAppContext`, #376) — STOP-and-report, no local fallback shape, and do not define a competing child-app registry here.
+- **`TODO-P7-multi-agent-inspection.md`** (Phase 7, off **P6a** [the `AgentRegistry`, not P6b's child-app scoping] **and** E1) — multi-agent routing/session/search + the agent inspection endpoint; surface adapters address agents via the same `agentId` scoping (one addressing entry → one `agentId`).
 - **`TODO-P8-verification-cleanup.md`** (Phase 8, gates on **all** lanes) — verification phase: assert zero `TODO(remove:*)` markers repo-wide; `@hachej/boring-agent` README documents the four-part surface contract (../08) as the stable public API.
 - **`TODO-S3-control-plane-ux.md`** (Phase S3, off T2 **and** P7) — workspace-as-control-plane UX (08 "The steering surface").
 

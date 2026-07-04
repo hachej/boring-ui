@@ -123,14 +123,14 @@ Additional v2 deliverable: **credential brokering rule** (00 invariant 14, 08 tr
 
 Exit criteria: as v1, plus: no test can read a brokered secret from inside the sandbox; no brokered secret is reachable from inside any sandboxed environment (there is no raw-env injection path — the `direct` provider is a host process, not a sandbox).
 
-## Phase E1 — Environment registry and attachments (after Phase 2 **and** Phase 3; see 09)
+## Phase E1 — Environment attachments (after Phase 2 **and** Phase 3; see 09)
 
 Deliverables:
 
-- `Environment` / `EnvironmentAttachment` / `EnvironmentRegistry` contracts in boring-bash (generalizing, not replacing, the landed #416 binding shapes); `company_context` re-expressed as the reference environment + readonly attachment.
+- `Environment` / `EnvironmentAttachment` / `ResolvedEnvironments` contracts in boring-bash (generalizing, not replacing, the landed #416 binding shapes); `company_context` re-expressed as the reference environment + readonly attachment.
 - Scoped views (`scope.subpath`) enforced by the environment host — no cwd inheritance. (The subagent attachment seam that consumes scoped views is deferred to Phase 7, the first real subagent consumer.)
 - agent core sees `ResolvedEnvironments` type-only (invariant-checked).
-- `EnvironmentRegistry` is a minimal Map-backed registry (no lifecycle framework beyond prepare/dispose).
+- A thin `resolveAttachments` adapter reduces attachments to the existing #416 `FilesystemBinding[]` via the landed `ScopedFilesystemRuntimeBindingManager` — **no `EnvironmentRegistry` class and no new prepare/dispose lifecycle**. Address-by-id lookup (a plain `Map<environmentId, Environment>`) is deferred to **E2**, where the MCP projection needs it.
 - Environment conformance suite extended to scoped-view attachments.
 
 Exit criteria: existing workspace + company_context behavior unchanged (governance consumers green); a scoped view of an environment can be attached and is physically jailed (subagent consumer deferred to Phase 7); an agent can hold two environments with distinct `filesystem` identities.
@@ -139,9 +139,9 @@ Exit criteria: existing workspace + company_context behavior unchanged (governan
 
 Deliverables:
 
-- MCP server projection for any registered environment: fs ops (+ exec where policy allows) as MCP tools, enforcement via the existing readonly/management projection operations; MCP session → `BoundFilesystemContext` identity mapping.
-- No-leak conformance suite runs against the MCP projection (same suite, fourth mount: in-process / scoped / remote-worker / MCP).
-- Remote-worker reclassified in docs as an environment transport.
+- MCP server projection for any environment: fs ops (+ exec where policy allows) as MCP tools, enforcement via the existing readonly/management projection operations; MCP session → `BoundFilesystemContext` identity mapping. E2 introduces the address-by-id lookup (a plain `Map<environmentId, Environment>`) it needs to resolve an environment by id.
+- No-leak conformance suite runs against the MCP projection (same suite, fourth mount: in-process / scoped / remote-worker provider / MCP).
+- Remote-worker stays a provider in this epic (P2/P5). Reclassifying it as an environment transport is **deferred to a post-E2 follow-up filed at P8** — not an E2 deliverable.
 
 Exit criteria: an external MCP client (e.g. Claude Code) mounts a boring environment and sees exactly what an in-process readonly attachment sees; denied files absent over MCP; no broker secret reachable from the client.
 

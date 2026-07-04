@@ -102,8 +102,7 @@ Questions to answer:
 
 Outcome must be explicit:
 
-- either pure mode uses pi with cwd/resource loading disabled and snapshot-tested;
-- or pure mode uses a separate non-pi harness.
+- Pure mode uses the **sealed pi harness only** — pi with cwd/resource loading disabled and snapshot-tested — per the locked decision in `08-pluggable-agent-surfaces.md` (decision 2) and `00-global-isa.md` (open-decision 1). There is **no** separate non-pi harness option for Phase 1: if the audit shows pi cannot run with cwd disabled/sealed, **STOP and escalate** rather than introducing an alternative harness.
 
 ## Non-bash operational seams
 

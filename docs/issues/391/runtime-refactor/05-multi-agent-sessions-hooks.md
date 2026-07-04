@@ -40,7 +40,7 @@ There is **no `features` config member**. Each agent's environment attachment is
 
 Required scoping:
 
-- routes: `/api/v1/agents/:agentId/...` or equivalent request-scope header;
+- routes: the canonical `/api/v1/agents/:agentId/...` path-prefix family (locked at pass 3; no header/request-scope alternative);
 - add `agentId` to the real per-workspace runtime binding/scope used by `registerAgentRoutes` and core workspace server caches; do not assume a preexisting single composite key has every field;
 - `sessionNamespace` includes `agentId`; legacy fields such as root/template/pi/session namespace must remain isolated where they currently exist;
 - session root layout preserves AGENTS.md rule: transcripts live under host durable `BORING_AGENT_SESSION_ROOT`, not workspace/container home;

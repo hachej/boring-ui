@@ -35,7 +35,7 @@ interface EnvironmentAttachment {
 interface ResolvedEnvironments { attachments: PreparedEnvironmentAttachment[] }
 ```
 
-Registry: hosts own an `EnvironmentRegistry` (create/get/list/dispose by `id`), living in boring-bash/server; the agent core only sees `ResolvedEnvironments` via injection (type-only import, invariant-checked).
+Resolution (no registry vocabulary in E1): hosts reduce an `EnvironmentAttachment[]` to the landed #416 `FilesystemBinding[]` via a thin `resolveAttachments` adapter in boring-bash/server (E1) — there is **no `EnvironmentRegistry` class** and **no new prepare/dispose lifecycle** (the existing `ScopedFilesystemRuntimeBindingManager` still owns preparation and disposal). The agent core only sees `ResolvedEnvironments` via injection (type-only import, invariant-checked). An **address-by-id lookup (a plain `Map<environmentId, Environment>`) is introduced later in E2**, where the MCP projection actually needs to resolve an environment by id — not in E1.
 
 ## Consumers
 
@@ -52,7 +52,7 @@ Any environment can be projected as an **MCP server**: fs ops (`read/list/stat/s
 
 - Every external agent already speaks MCP → zero boring-specific code on their side.
 - Identity/audit: MCP sessions map to a `BoundFilesystemContext` (actor, workspaceId, sessionId, requestId) — same audit spine as internal attachments.
-- The remote-worker protocol is reclassified: **a transport for an environment**, peer to in-process and MCP, not a special provider.
+- **Remote-worker ownership (deferred direction — NOT a live instruction):** in this epic remote-worker **remains a provider** (owned by `TODO-P2`/`TODO-P5` as written; capabilities come only from the handshake). Reclassifying it as *a transport for an environment* (peer to in-process and MCP) is an attractive future direction but is **explicitly DEFERRED to a post-E2 follow-up, to be filed at P8**. Nothing here overrides or contradicts the P2/P5 remote-worker-as-provider design.
 
 ## Security invariants
 
@@ -67,4 +67,4 @@ Any environment can be projected as an **MCP server**: fs ops (`read/list/stat/s
 
 ## Conformance
 
-The environment conformance suite (07/08) runs identically against: in-process attachment, scoped-view attachment, remote-worker transport, and the MCP projection. One suite, four mounts — same rule as harness/transport conformance.
+The environment conformance suite (07/08) runs identically against: in-process attachment, scoped-view attachment, a remote-worker (provider) attachment, and the MCP projection. One suite, four mounts — same rule as harness/transport conformance.

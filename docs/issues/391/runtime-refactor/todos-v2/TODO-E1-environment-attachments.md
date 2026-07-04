@@ -1,4 +1,4 @@
-# TODO-E1 — Environment registry and attachments (generalize the #416 binding model)
+# TODO-E1 — Environment attachments (generalize the #416 binding model)
 
 Handoff: self-contained work order for one autonomous coding agent (pi or gpt-5.5-xhigh). Cite plan files by relative path. No prior conversation assumed.
 
@@ -35,10 +35,10 @@ Match `06-migration-phases.md` Phase E1 exit criteria:
 
 ## Non-negotiables
 
-- Generalize, do not replace. New `Environment`/`EnvironmentAttachment`/`EnvironmentRegistry`/`ResolvedEnvironments` types wrap the landed shapes. `EnvironmentAttachment.filesystem`/`access` are the existing `FilesystemId`/`FilesystemAccess`. `company_context` becomes the **reference** environment + a readonly attachment via an adapter over `FixtureCompanyContextBindingProvider` — not a rewrite of the fixture provider.
+- Generalize, do not replace. New `Environment`/`EnvironmentAttachment`/`ResolvedEnvironments` types wrap the landed shapes. **No `EnvironmentRegistry` class and no second registry/lifecycle vocabulary in E1** — E1 is `EnvironmentAttachment` contracts + a thin `resolveAttachments` adapter that reduces attachments to the existing #416 `FilesystemBinding[]`/`ScopedFilesystemRuntimeBindingManager`. `EnvironmentAttachment.filesystem`/`access` are the existing `FilesystemId`/`FilesystemAccess`. `company_context` becomes the **reference** environment + a readonly attachment via an adapter over `FixtureCompanyContextBindingProvider` — not a rewrite of the fixture provider.
 - Scoped views (`scope.subpath`) enforced **by the environment host** (physical projection root = `join(projectionRoot, subpath)`, reusing `ReadonlyProjectionHandle` jailing), never by consumer-side path filtering. `09` security invariant 2.
 - `execPolicy` default is `'none'` for any non-`user` attachment (`09` security invariant 4). Readonly/`company_context` attachments never carry exec.
-- The registry lives in `boring-bash/server`. The agent core imports `ResolvedEnvironments` **type-only** from `@hachej/boring-bash/shared`.
+- The `resolveAttachments` adapter lives in `boring-bash/server`. The agent core imports `ResolvedEnvironments` **type-only** from `@hachej/boring-bash/shared`.
 - Attachment is the only coupling: no implicit cwd inheritance for subagents. A subagent gets an environment only by an explicit `EnvironmentAttachment`.
 
 ## Do NOT
@@ -58,12 +58,12 @@ Match `06-migration-phases.md` Phase E1 exit criteria:
 - Tests: type-only; covered by BBE1-006 build/typecheck. Add a `.test-d`-style compile assertion in `packages/boring-bash/src/shared/__tests__/environment.types.test.ts` that an `EnvironmentAttachment` narrows to `{filesystem, access}` assignable into a `FilesystemBinding`-shaped selector.
 - Acceptance: exports resolve from `@hachej/boring-bash/shared`; `pnpm --filter @hachej/boring-bash run typecheck` green.
 
-### BBE1-002 — `EnvironmentRegistry` over the scoped binding manager (M)
-- Description: Host-owned registry (create/get/list/dispose by `id`) that wraps `ScopedFilesystemRuntimeBindingManager` and resolves attachments to prepared handles.
-- Files: create `packages/boring-bash/src/server/environmentRegistry.ts`; export from `packages/boring-bash/src/server/index.ts`.
-- Notes: `EnvironmentRegistry` is a **minimal Map-backed registry** — a `Map<string, Environment>` plus `create`/`get`/`list`/`resolve`/`dispose`, and **no lifecycle framework beyond `prepare`/`dispose`** (no phases, no hooks, no state machine). It delegates preparation to a `ScopedFilesystemRuntimeBindingManager` instance. `resolve(ctx, attachments[]): Promise<ResolvedEnvironments>` maps each `EnvironmentAttachment` to a `FilesystemBinding` (`{filesystem, access, mountPath, projection}`) and calls `prepareRuntime(ctx)` / `getPreparedBinding(ctx, selector)` to obtain `PreparedFilesystemBinding.handle`. Keep the existing manager as the single preparation path — the registry is orchestration, not new policy. `dispose(ctx)` delegates to `manager.disposeRuntime(ctx)`.
-- Tests: `packages/boring-bash/src/server/__tests__/environmentRegistry.test.ts` — register two environments (`user` readwrite, `company_context` readonly), resolve for one ctx, assert two prepared handles with distinct `filesystem` (exit criterion 3).
-- Acceptance: two-environments-per-agent test passes; disposing evicts the scoped plan.
+### BBE1-002 — `resolveAttachments` adapter over the scoped binding manager (M)
+- Description: A thin adapter that **REDUCES** an `EnvironmentAttachment[]` to the existing #416 `FilesystemBinding[]` and resolves them through the landed `ScopedFilesystemRuntimeBindingManager`. **No `EnvironmentRegistry` class, no address-by-id store, no new prepare/dispose lifecycle** — the manager already owns preparation and disposal.
+- Files: create `packages/boring-bash/src/server/resolveAttachments.ts`; export from `packages/boring-bash/src/server/index.ts`.
+- Notes: `resolveAttachments(ctx, attachments[]): Promise<ResolvedEnvironments>` maps each `EnvironmentAttachment` to a `FilesystemBinding` (`{filesystem, access, mountPath, projection}`) and delegates to the **existing** `ScopedFilesystemRuntimeBindingManager` (`prepareRuntime(ctx)` / `getPreparedBinding(ctx, selector)`) to obtain each `PreparedFilesystemBinding.handle`. It introduces **no** new lifecycle: preparation and disposal stay on the manager (`manager.disposeRuntime(ctx)` remains the single dispose path, called by the host — do not wrap it in a new registry/state-machine). This bead is pure reduction + delegation, not a new orchestration or policy layer. **Address-by-id lookup (a plain `Map<environmentId, Environment>`) is NOT introduced here** — it lands in **E2** (`TODO-E2-mcp-projection.md`), the first place the MCP projection actually needs to resolve an environment by id. Do not add a Map/registry speculatively in E1.
+- Tests: `packages/boring-bash/src/server/__tests__/resolveAttachments.test.ts` — reduce two attachments (`user` readwrite, `company_context` readonly) for one ctx, assert two prepared handles with distinct `filesystem` (exit criterion 3); disposing via `manager.disposeRuntime(ctx)` evicts the scoped plan.
+- Acceptance: two-environments-per-agent reduction passes; the reduction adds no lifecycle beyond the landed manager; **no `EnvironmentRegistry` class or id-lookup Map exists in E1** (that is E2).
 
 ### BBE1-003 — `company_context` as reference environment + readonly attachment (M)
 - Description: Adapter re-expressing the landed company-context provider as an `Environment` + a readonly `EnvironmentAttachment` — no change to `FixtureCompanyContextBindingProvider`.
@@ -74,7 +74,7 @@ Match `06-migration-phases.md` Phase E1 exit criteria:
 
 ### BBE1-004 — Scoped-view (subpath jail) enforcement in the host (M)
 - Description: `scope.subpath` produces a jailed projection whose root is `join(baseProjectionRoot, subpath)`, enforced physically.
-- Files: `packages/boring-bash/src/server/environmentRegistry.ts` (scoped-root computation); add helper `scopedProjectionHandle(base: ReadonlyProjectionHandle, subpath?: string): ReadonlyProjectionHandle`.
+- Files: `packages/boring-bash/src/server/resolveAttachments.ts` (scoped-root computation); add helper `scopedProjectionHandle(base: ReadonlyProjectionHandle, subpath?: string): ReadonlyProjectionHandle`.
 - Notes: Normalize `subpath` with the same rules `readonlyProjectionOperations.normalizeProjectionPath` uses (reject `..`/`.`/null-byte); compute the child root, then hand a `ReadonlyProjectionHandle { filesystem, projectionRoot: childRoot }` to `createReadonlyProjectionOperations`. All ops then inherit `assertInsideProjection` jailing. Never filter paths on the consumer side. **Harden containment to be realpath-based with symlink denial:** the landed `readonlyProjectionOperations.ts` jails **lexically via `resolve()` only** — a symlink inside the projection can point outside the jail. E1 must `lstat` each resolved path component and either **reject symlinks** or **resolve them (realpath) and re-check the result is still inside `projectionRoot`** before any op. This applies to both the base projection and every scoped child root.
 - Tests: `packages/boring-bash/src/server/__tests__/scopedView.test.ts` — a subpath-scoped attachment cannot read a sibling outside the subpath (rejects); can read inside; a `../` subpath is rejected at construction. **Plus an explicit symlink-escape conformance test**: a symlink inside the projection/subpath pointing outside the jail is denied (read/list/stat all reject), proving containment is realpath-based, not lexical.
 - Acceptance: scoped view cannot escape its subpath **including via symlink**; parent (unscoped) still sees the full tree; the symlink-escape test passes.
@@ -101,7 +101,7 @@ Subagents are not a first-class code path in `packages/agent` today (see the Ver
 
 ### BBE1-005 (deferred) — Explicit subagent attachment seam (S)
 - Description: Define the contract by which a subagent receives an environment — explicit attachment only, no cwd inheritance. Ships the **contract + reduction**, not harness wiring.
-- Files: `packages/boring-bash/src/shared/environment.ts` (add `SubagentEnvironmentGrant { parentEnvironmentId: string; scope?: { subpath?: string }; access: FilesystemAccess }`); document the seam in `packages/boring-bash/src/server/environmentRegistry.ts` as a `deriveSubagentAttachment(parent: EnvironmentAttachment, grant: SubagentEnvironmentGrant): EnvironmentAttachment` pure function.
+- Files: `packages/boring-bash/src/shared/environment.ts` (add `SubagentEnvironmentGrant { parentEnvironmentId: string; scope?: { subpath?: string }; access: FilesystemAccess }`); document the seam in `packages/boring-bash/src/server/resolveAttachments.ts` as a `deriveSubagentAttachment(parent: EnvironmentAttachment, grant: SubagentEnvironmentGrant): EnvironmentAttachment` pure function.
 - Notes: The derived attachment reuses the parent `environmentId`/`filesystem` (shared workspace) or adds `scope.subpath` (jailed view). It NEVER copies a cwd. `execPolicy` for a subagent grant defaults to `'none'`. The scope key already carries `agentId`, so a subagent with a distinct `agentId` gets an isolated prepared plan automatically.
 - Tests: `packages/boring-bash/src/server/__tests__/subagentAttachment.test.ts` — derive a scoped-view grant from a parent, resolve for a subagent `ctx` (different `agentId`), assert it reads only within the subpath and shares no prepared handle with the parent.
 - Acceptance (when scheduled): subagent scoped-view attachment resolves and is isolated by `agentId`.

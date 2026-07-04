@@ -1,165 +1,197 @@
-# 07 — Tests, review, acceptance
+# 07 — Test framework, review, acceptance (v2)
 
-## Goal
+Status: v2 rewrite. This is the **test framework** for the pluggable-agent pack (00–09 + `todos-v2/`). It defines the five test layers, the canonical contract suites, the shared fixtures, the per-phase exit gates a dispatching orchestrator checks, the review gates, and the issue-coverage posture. It supersedes the v1 07 where they conflict; the v1 split-brain / issue-coverage / thermo-review content is carried forward, re-vocabularied to v2.
 
-Define proof required before implementation is accepted.
+**Runner facts (verified against `package.json`):** every package tests with **Vitest** (`test: vitest run`, boring-bash `vitest run --passWithNoTests`). There is **no `node:test` and no Jest** anywhere. E2E is **Playwright** in two places: `packages/agent/e2e/` (`test:e2e`) and `apps/workspace-playground/e2e/` + `apps/full-app/e2e/`. Invariant gates are ripgrep/Node scripts (`scripts/check-invariants.sh`, `packages/boring-bash/scripts/check-invariants.mjs`, `scripts/audit-imports.ts`, `packages/agent/scripts/check-agent-isolation.ts`). Per-package invocation is `pnpm --filter <pkg> run test`; root aggregate is `pnpm run test` (builds packages then `pnpm -r run test`).
 
-## Global test gates
+---
 
-### Runtime-free agent
+## 1. Test architecture — five layers
 
-- pure agent server starts with no workspace/sandbox/runtime bundle;
-- no file/tree/search/git/fs-event routes;
-- no file/bash/upload tools;
-- no host cwd/path reaches harness construction, not just prompt;
-- no cwd/workspace/AGENTS.md prompt leakage;
-- pi audit encoded in snapshot tests or pure mode uses non-pi harness.
+| Layer | What | Where | When it runs |
+| --- | --- | --- | --- |
+| **L1** | Invariant / boundary gates | `scripts/*`, per-package `check-invariants` | per-PR CI, fast |
+| **L2** | Unit tests (colocated) | `packages/*/src/**/__tests__/*.test.ts` | per-PR |
+| **L3** | **Contract conformance suites** (the backbone) | exported factories, run at each mount | per-PR for the touched contract; all mounts at phase exit |
+| **L4** | Integration / e2e | `packages/agent/e2e`, `apps/*/e2e` (Playwright) | per-phase exit |
+| **L5** | Cross-phase regression pins | reuse of L3 suites + named regressions | always-on, any PR touching the area |
 
-### Package layering
+### L1 — invariant gates (per-PR, fast)
 
-- `@hachej/boring-agent` has no value import from `@hachej/boring-bash`;
-- provisioning normalizer/provider adapters live outside agent and are injected by host/core/CLI;
-- `@hachej/boring-bash` can depend on agent types/tools only through approved boundaries;
-- workspace/core compose both packages without cycles.
+Enforced by scripts, not test files. Extend them, never bypass (`todos-v2/README.md` global non-negotiables).
 
-### Existing behavior compatibility
+- **Value-import audit** — `pnpm audit:imports` (`scripts/audit-imports.ts`, `FORBIDDEN_PATTERNS`): `@hachej/boring-agent` has **zero value import** from `@hachej/boring-bash`; surface packages import only the public agent contract (+ their channel ingress package); no old-path imports survive a relocation (P2/P3/P4/T1/T2 add rules here).
+- **Agent package invariants** — `pnpm --dir packages/agent run lint:invariants` → `bash scripts/check-invariants.sh .` (ripgrep scan). Adds the **Fastify-free façade** rule (P1 BBP1-007: no Fastify in the `createAgent()` module graph) and the **no `?cursor=` / `PiChatReplayBuffer` server-side** rule (T2 BBT2-006).
+- **boring-bash invariants** — `pnpm --filter @hachej/boring-bash run check:invariants` → `packages/boring-bash/scripts/check-invariants.mjs`: required exports (`.`/`./shared`/`./server`, `./mcp` after E2), agent→boring-bash + Fastify-graph checks, and the pack-doc `(filesystem, path)` / named-binding string presence.
+- **Agent isolation** — `pnpm check:agent-isolation` → `packages/agent/scripts/check-agent-isolation.ts` (dist scan; requires a build first).
+- **Workspace plugin invariants** — `pnpm lint:workspace-plugin-invariants`.
+- **`TODO(remove:*)` marker gate** — `node scripts/check-no-remove-markers.mjs` (P8 BBP8-001), wired into `pnpm lint:invariants`. Repo-wide scan of `packages/ plugins/ apps/ scripts/` (excludes `node_modules`, `dist`, `docs/issues/391/**`). **Zero markers today**; a surviving marker names and reopens its owning phase.
+- **Bundle-size** — `pnpm check:bundle-size` (T2 adds the `@durable-streams/client` front dep; must stay under gate).
 
-- direct/local/vercel modes still launch;
-- workspace playground file tree/editor works;
-- read/write/edit/find/grep/ls/bash work when boring-bash enabled;
-- `execute_isolated_code` behavior preserved or consciously reassigned;
-- upload/download behavior preserved;
-- `exec_ui openFile` still opens file panes;
-- `/api/v1/ui/*` and `/api/v1/plugins/:pluginId/*` still work.
+Root aggregate for L1: `pnpm lint:invariants` (= agent `check-invariants.sh` + boring-bash `check:invariants` + workspace-plugin invariants + the marker gate) and `pnpm audit:imports`.
 
-### Split-brain prevention
+### L2 — unit tests (per-PR, colocated)
 
-For each provider:
+Vitest, colocated under `__tests__/`. Per package: `pnpm --filter @hachej/boring-agent run test`, `pnpm --filter @hachej/boring-bash run test`, `pnpm --filter @hachej/boring-workspace run test`, `pnpm --filter @hachej/boring-channel-slack run test` (new packages mirror boring-bash scripts). These cover behavior a conformance suite does not (e.g. `resolveAttachments` reduction, Slack `conversationKey → sessionId` map, throttle logic).
 
-- file route write visible to bash;
-- bash-created file visible to file routes/search;
-- git/status routes use same source of truth;
-- readonly facade exposes no exec;
-- partial view with exec physically excludes denied files.
+### L3 — contract conformance suites (the backbone)
 
-### Named filesystem binding / projection conformance
+**One canonical suite per contract, exported as a reusable factory, run against every implementation.** House pattern = `checkReadonlyProjectionConformance` in `packages/boring-bash/src/server/testing/readonlyProjectionConformance.ts` (a `Subject` interface + a `check*/run*` function returning `{ passed, failures }`). Every new suite follows it: framework-agnostic, no runner assertions inside the factory, driven by a per-mount `test.ts` that supplies the subject.
 
-For #416 and future boring-bash ownership, tests must also prove that one active runtime can carry explicit named filesystem bindings without collapsing identity into path strings:
+**The "one suite, N mounts" rule:** a contract has exactly one suite. Each new implementation is a **mount** — a thin subject adapter over the same suite — not a forked copy. A mount is added by the phase that introduces the implementation.
 
-- tools/routes/UI use `(filesystem, path)` identity; legacy path-only defaults to `user`;
-- `user:/x` and `company_context:/x` are distinct resources even when paths match;
-- path strings such as `/company_context/x` or `company_context:/x` do not switch filesystem identity;
-- provider-declared projection/mount modes are represented in prepared binding lifecycle tests;
-- readonly policy-filtered projections physically omit denied files/folders before exposure to shell/tools/UI;
-- readonly full-store mounts fail conformance if denied files are present;
-- denied names, snippets, sentinel contents, hidden counts, pagination side channels, and stale cached outputs do not leak through read/list/find/grep/search/shell/UI/transcript metadata;
-- policy invalidation rebuilds or drops stale prepared bindings;
-- readwrite management projections are distinct policy-granted bindings, not role-hardcoded upgrades of a normal readonly session.
+#### 3a. Harness conformance (#12) — canonical: the #12 harness suite + durable-stream additions
 
-This is an additive update to #391: PR1 for #416 may create only a tiny `@hachej/boring-bash` skeleton and type contracts. Existing file/bash tools/routes/providers stay on their current code paths until the later extraction plan moves them. `@hachej/boring-agent` receives injected tools/features; it does not become the long-term owner of company filesystem behavior.
+- **Where:** the existing harness conformance under `packages/agent/src/server/harness/pi-coding-agent/__tests__/*conformance*.ts` (e.g. `sessionMapping.conformance.test.ts`), extended by T1.
+- **Covers:** text/tool chunks, abort, sessions, follow-up (existing #12) **plus** (T1 BBT1-006): `AgentEvent` **envelope ordering**, **replay-from-index/offset**, **approval park+resume**, and **durable pending-request survival across restart** (rebuild the service against the same SQLite file; `resolveInput` continues via a *new seeded harness turn*, never a rehydrated in-memory turn).
+- **Sub-suite:** `runEventStreamStoreConformance(makeStore)` — `packages/agent/src/server/events/__tests__/eventStreamStore.conformance.test.ts` (T1 BBT1-001): monotonic offsets, catch-up read from arbitrary offset, no-gap-after-mid-append-throw (transactional `node:sqlite` append).
+- **Command:** `pnpm --filter @hachej/boring-agent run test`.
 
-### Provisioning/readiness
+#### 3b. Transport conformance — canonical: `runTransportConformance`
 
-- requirement merge by id;
-- conflict rejection;
-- fingerprint skip preserved;
-- real two-tier readiness remains compatible: aggregate `ReadyState` (`provisioning|ready|degraded`) plus per-capability `CapabilityState` (`not-started|preparing|ready|failed`);
-- optional failure is represented without breaking existing enums and does not block unrelated tools;
-- health check gates tools/panels;
-- SDK artifacts do not leak host paths;
-- remote-worker hardening handshake fail-closes;
-- remote-worker client/provider/protocol/server split preserves package boundaries.
+- **Where:** `packages/agent/src/shared/__tests__/transport.conformance.ts` (T2 BBT2-001), signature `runTransportConformance(makeTransport, driveAgent)`. Layers on the harness suite (T1 exports it as a reusable factory for exactly this).
+- **Rule (08 conformance item 3):** in-process (`createAgent()` direct) and HTTP+SSE (DS adapter) are **behaviorally identical** — same event order, same reconnect-replay, same approval round-trip.
+- **Mounts:** in-process — `inProcessTransport.test.ts` (BBT2-002); HTTP/DS — `dsHttpTransport.test.ts` (BBT2-003, in-memory Fastify app mounting T1's DS route + `createAgent()`; reconnect after forced stream close replays losslessly).
+- **Command:** `pnpm --filter @hachej/boring-agent run test`.
 
-### Plugins/child apps
+#### 3c. Environment / no-leak conformance — canonical: `checkReadonlyProjectionConformance` (**one suite, four mounts**)
 
-- import-free manifest validation;
-- hosted plugin fail-closed before code execution;
-- secret status exposed without raw value;
-- managed service plugin lifecycle: start, health, port/iframe/proxy, teardown;
-- child-app/workspace-kind policy narrows requirements;
-- Macro requirements do not leak into generic workspace;
-- full-app reload/plugin runtime resolves per workspace/agent.
+- **Where:** `packages/boring-bash/src/server/testing/readonlyProjectionConformance.ts` (landed #416). Do not fork it; add mounts.
+- **The four mounts:**
+  1. **in-process** readonly `company_context` — landed (#416).
+  2. **scoped-view + symlink-escape** — E1 BBE1-007 `scopedViewConformance.test.ts` (mount) + E1 BBE1-004 `scopedView.test.ts` (explicit **symlink-escape** test: realpath-based containment with symlink denial, hardening the lexical-`resolve()`-only projection).
+  3. **remote-worker (provider) attachment** — provider mount (P2/P5 remote-worker stays a *provider*; the mount is the provider attachment).
+  4. **MCP projection** — E2 BBE2-003 `mcpProjectionConformance.test.ts` (subject drives the projected `McpServer` via an in-memory MCP client pair; identical expected visible-path set to the in-process mount).
+- **Guarantees:** `(filesystem, path)` identity; denied files physically **absent** (no leak through read/list/find/grep/search/shell/UI/transcript/metadata); readwrite management projections are distinct policy-granted bindings; `execPolicy: 'none'` default for non-`user` attachments; no broker secret in any client-reachable payload (E2 BBE2-004).
+- **Command:** `pnpm --filter @hachej/boring-bash run test`.
 
-### Multi-agent/session
+#### 3d. Surface-adapter conformance — canonical: `surfaceAdapterConformance` (`@hachej/boring-agent/testing`)
 
-- two agents in same workspace with same `sessionId` do not share binding/transcript/catalog;
-- `agentId` included in binding scope key and `sessionNamespace`;
-- session root uses host durable session root;
-- per-agent readiness/tool catalogs;
-- session search scoped by workspace+agent;
-- deep links open target session safely;
-- external hooks authenticate/redact/route;
-- delegation depth cap and stale-write safeguards.
+- **Where:** `packages/agent/src/testing/surfaceAdapterConformance.ts`, exposed via the new `@hachej/boring-agent/testing` subpath (S1 BBS1-006). Neutral home from the start — **never inside a channel package** — so S2 (second consumer) imports it without depending on Slack.
+- **Subject** `{ deliverInbound, collectOutbound, answerApproval, addressingKeyOf }` asserts: (a) message-in → events-out ordering; (b) approval round-trip resolves the parked turn; (c) **addressing isolation** — one surface's key cannot resolve another surface's `sessionId` (two-handles rule).
+- **Mounts:** Slack subject — `packages/channels/slack/src/__tests__/slackConformance.test.ts` (run against `runtime: 'none'` **and** a host-injected readonly `company_context` binding, without importing boring-bash). S2 embed is the second subject.
+- **Command:** `pnpm --filter @hachej/boring-channel-slack run test`.
 
-### UI/file/document
+### L4 — integration / e2e (per-phase exit)
 
-- file tree data flows through one plain internal tree function with unchanged behavior (pluggable `FileTreeDataProvider` boundary deferred to #295);
-- fs-event deltas update tree;
-- document-authority write/edit override routes through active coordinator;
-- file panes and surface resolver keep ids/behavior;
-- missing panels/capabilities produce clear UI diagnostics.
+- **Agent Playwright e2e** — `pnpm --filter @hachej/boring-agent run test:e2e` (`playwright test -c e2e/playwright.config.ts`). Parity guard for P1's adapter refactor and T2's transport cutover. Load-bearing specs: `m2-modeflip`, `m3a-sessions`, `m3b-chat`, `m3c-interrupt-queue`, `bridge-protocol`, `pi-native-replay-gap`, `pi-native-multi-session-cold-reload`, `pi-native-long-transcript-reload`, `streaming-bash`, `pi-projection-ui`, `bombadil/`. Bombadil chat soak: `pnpm --filter @hachej/boring-agent run test:bombadil:chat`.
+- **Workspace-playground Playwright drive** — `pnpm --filter workspace-playground run test:e2e` (`build:deps` then `playwright test`, `apps/workspace-playground/playwright.config.ts`): file tree/editor, cmd-palette, resize-persistence, deck-plugin. The T2 front cutover must run this **unmodified** before the legacy `?cursor=` path is deleted.
+- **Full-app e2e** — `pnpm --filter full-app run e2e`.
+- **Plugin e2e** — ask-user: `plugins/ask-user/e2e/ask-user.spec.ts` (T1 BBT1-005 migrates its expectations onto on-stream `data-approval-request`).
 
-## Issue coverage acceptance
+### L5 — cross-phase regression pins (always-on)
 
-Do not close unrelated backlog issues just because this abstraction lands.
+Any PR touching the area must keep these green; most are re-mounts of L3 suites plus named regressions:
 
-Can close or materially advance:
+- **company_context no-leak** — `checkReadonlyProjectionConformance` (all four mounts) stays green in every phase.
+- **Source-of-truth parity (route ↔ bash ↔ git)** — split-brain tests (see §4): a file-route write is visible to bash; a bash-created file is visible to file routes/search; git/status routes use the same source of truth; readonly façade exposes no exec; partial view physically excludes denied files.
+- **Secret non-exposure in sandbox** — brokered secrets are host-side handles consumed only by trusted-core tools, never present in any sandboxed environment, exec output, tool metadata, or the model transcript (P5 credential-brokering rule; E2 BBE2-004; the `direct` provider is a host process, not a sandbox — nothing is injected there).
+- **Symlink escape** — E1 `scopedView.test.ts` symlink-escape test (realpath-based, not lexical).
+- **Session JSONL back-compat load** — existing on-disk pi session JSONL must keep loading; the SQLite `EventStreamStore` is the replay authority, JSONL remains the conversation-state authority (T1 keeps them separate). `pnpm --filter @hachej/boring-agent run test:regression` (`system-prompt-size.regression.test.ts`) also rides here.
 
-- #391;
-- #12 if harness pluggability acceptance is satisfied;
-- #242 if route composition acceptance is satisfied;
-- #16/#223 if provider capability abstraction and adapter composition land;
-- #26/#220/#221 if file API/UI ownership lands;
-- parts of #357/#254/#256 if plugin capability declaration lands;
-- parts of #243/#211 if multi-agent session routing/search lands.
+---
 
-Must remain separate unless explicitly implemented:
+## 2. Shared fixtures (canonical — no per-TODO reinvention)
 
-- #376 child-app platform product/deployment/billing;
-- #381/#197 product plugin specs;
-- #377/#361/#363/#362 multi-project nav UI;
-- #375/#358/#308 visual/theme/pane polish;
-- #318 desktop wrapper;
-- #267 performance;
-- #127/#51/#27 billing/auth/database;
-- #122 docs annotation UI;
-- #95 dependency migration;
-- #5 event bus typing.
+| Fixture | Canonical name / location | Used by |
+| --- | --- | --- |
+| Scripted/fake harness | `scriptedPiHarness` — `packages/agent/src/server/testing/scriptedPiHarness.ts` (exists; `BORING_AGENT_E2E_SCRIPTED_PI*`) | P1 `createAgent()` smoke (BBP1-006), harness/transport conformance drivers |
+| Company-context readonly fixture | `FixtureCompanyContextBindingProvider`, `COMPANY_CONTEXT_FILESYSTEM_ID`, `COMPANY_CONTEXT_SENTINEL` — `packages/boring-bash/src/server/testing/companyContextFixtureProvider.ts` (exists) | env/no-leak conformance (all four mounts), surface-adapter governed-context subject |
+| In-memory `EventStreamStore` | test double supplied as `makeStore` to `runEventStreamStoreConformance` — `packages/agent/src/server/events/__tests__/` (T1) | transport tests, surface-adapter tests needing a store without SQLite |
+| Fake channel payloads / Slack signature fixtures | signed `event_callback` / `block_actions` bodies — `packages/channels/slack/src/__tests__/` (S1; signature verification itself comes from `@flue/slack`, tests only produce signed bodies) | Slack ingress/egress/approval/conformance tests |
 
-## Thermo review protocol
+Rule: a bead needing one of these **imports the canonical fixture**; it does not hand-roll a parallel one.
 
-Before implementation:
+---
 
-1. Review each plan file independently.
-2. Review the pack as a whole for contradictions.
+## 3. Phase exit gates
+
+A phase exits only when its named suites + commands are green. This is the table a dispatching orchestrator checks (beads cite the phase per `todos-v2/README.md` dispatch protocol). Every phase additionally keeps the **always-on L1 gate** green: `pnpm lint:invariants && pnpm audit:imports`.
+
+| Phase | Must-be-green suites (beyond L1) | Commands |
+| --- | --- | --- |
+| **P0** (ADR) | `docs/DECISIONS.md` has every 08 decision (1–10) + north star + invariant 15 with a status; pack `(filesystem, path)` strings intact | `pnpm --filter @hachej/boring-bash run check:invariants` |
+| **P1** (headless core) | `createAgent.pure.test.ts` smoke (plain-Node turn, no Fastify/cwd leak); invariant tests (no boring-bash value import, no Fastify in graph); **existing agent unit + Playwright e2e pass unchanged** (parity guard) | `pnpm --filter @hachej/boring-agent run test` · `run test:e2e` · `run lint:invariants` · `pnpm check:agent-isolation` |
+| **T1** (durable events/approvals) | harness conformance additions (envelope ordering, replay-from-index, approval park/resume, restart survival); `runEventStreamStoreConformance`; ask-user on-stream approval | `pnpm --filter @hachej/boring-agent run test` · `run lint:invariants` · `pnpm check:agent-isolation` · `pnpm audit:imports` |
+| **T2** (transport adapters) | `runTransportConformance` green for **both** in-process and HTTP mounts; workspace-playground e2e unmodified; legacy `?cursor=`/`PiChatReplayBuffer` deleted (invariant asserts zero matches) | `pnpm --filter @hachej/boring-agent run test` · `run lint:invariants` · `pnpm --filter workspace-playground run test:e2e` · `pnpm check:bundle-size` |
+| **P2** (bash pkg/providers) | boring-bash unit + conformance; provider move leaves no old-path importer | `pnpm --filter @hachej/boring-bash run test` · `run check:invariants` · `pnpm audit:imports` |
+| **P3** (routes/tools move) | split-brain suite green per provider; no old-path import; workspace file tree/editor e2e | `pnpm --filter @hachej/boring-bash run test` · `pnpm --filter @hachej/boring-agent run test:e2e` · `pnpm audit:imports` |
+| **P4** (file UI plugin) | fs-event delta → tree; file panes/surface-resolver ids unchanged; workspace-playground e2e | `pnpm --filter @hachej/boring-workspace run test` · `pnpm --filter workspace-playground run test:e2e` |
+| **E1** (env attachments) | env/no-leak conformance **scoped-view mount** + **symlink-escape** test; company-context behavioral-equivalence test; no diff to landed #416 signatures | `pnpm --filter @hachej/boring-bash run test` · `run check:invariants` · `pnpm audit:imports` · `pnpm lint:invariants` |
+| **E2** (MCP projection) | env/no-leak conformance **MCP mount** (fourth); MCP identity (`BoundFilesystemContext`) test; exec-gating + broker-secret-unreachable test; `./mcp` export bundles | `pnpm --filter @hachej/boring-bash run build` · `run typecheck` · `run check:invariants` · `run test` |
+| **P5** (provisioning/secrets) | two-tier readiness (`ReadyState`/`CapabilityState`); remote-worker fail-closed handshake; **credential-brokering** regression (no secret in sandbox); SDK artifacts leak no host paths | `pnpm --filter @hachej/boring-agent run test` · smoke `smoke:capability-readiness` |
+| **P6** (plugin/child-app) | import-free manifest validation; hosted plugin fail-closed before code exec; managed-service lifecycle; child-app/workspace-kind requirement narrowing | `pnpm --filter @hachej/boring-workspace run test` · relevant app e2e |
+| **P7** (multi-agent/inspection) | two agents, same `sessionId`, no shared binding/transcript/catalog; `agentId` in binding scope key + `sessionNamespace`; per-agent readiness/catalogs; session search scoped by workspace+agent; agent inspection endpoint | `pnpm --filter @hachej/boring-agent run test` · `run test:e2e` |
+| **P8** (verification/cleanup) | **zero `TODO(remove:*)` markers repo-wide**; all 00 invariants green; no old-path importer; README documents the four-part surface contract | `pnpm lint:invariants` (incl. marker gate) · `node scripts/check-no-remove-markers.mjs` · `pnpm run test` · `pnpm audit:imports` |
+| **S1** (Slack channel) | `surfaceAdapterConformance` Slack subject (message-in/events-out, approval round-trip, addressing isolation); ingress/egress/session-store/approval unit tests; no boring-bash/provider import | `pnpm --filter @hachej/boring-channel-slack run test` · `run typecheck` · `pnpm audit:imports` |
+| **S2** (embed contract) | `surfaceAdapterConformance` embed subject (the second consumer justifying `@hachej/boring-agent/testing`) | `pnpm --filter @hachej/boring-agent run test` · embed pkg `run test` |
+| **S3** (control-plane UX) | cross-surface observation (workspace attaches to a Slack-born session by `sessionId`); central approval answering; inspection-panel wiring | `pnpm --filter @hachej/boring-workspace run test` · `pnpm --filter workspace-playground run test:e2e` |
+
+---
+
+## 4. Review gates
+
+Carried over from v1 07, re-vocabularied to v2. Applied per plan file and per PR before merge.
+
+### Thermo review protocol (per plan file)
+
+1. Review each plan/TODO file independently.
+2. Review the pack as a whole for contradictions across 00–09 + `todos-v2/`.
 3. Patch accepted blockers.
 4. Rerun blocker-only review.
 5. Record review artifacts in `.tmp/boring-bash-plan-reviews/`.
 
-Review prompt:
+Review prompt (unchanged intent):
 
 ```txt
 You are an extremely strict thermo architecture reviewer. Review only. Do not edit files.
-For the target plan file, find blockers, contradictions with sibling files, missing tests, package-boundary risks, split-brain risks, and implementation traps.
+For the target plan/TODO file, find blockers, contradictions with sibling files, missing tests,
+package-boundary risks, split-brain risks, two-handles violations, no-compat-policy violations,
+and implementation traps.
 Output: verdict, blockers, concrete edits, non-blocking concerns.
 ```
 
-Approval bar:
+### Approval bar (v2)
 
-- no greenfield duplication of existing seams;
-- no import cycle;
-- no vague provider capability claims;
-- no unreviewed pure-agent cwd assumption;
-- no session/agent/child-app scope leak;
-- no missing split-brain test;
-- no overclaim about open issues.
+- **No import cycle** — `@hachej/boring-agent` keeps zero value import from `@hachej/boring-bash`; surfaces import only the public agent contract; workspace/core compose both without cycles (`audit:imports` + boring-bash `check:invariants`).
+- **No split brain** — for each provider, file route ↔ bash ↔ git/status share one source of truth; readonly façade exposes no exec; partial view physically excludes denied files. A missing split-brain test is a blocker.
+- **No Fastify in the façade graph** — `createAgent()` has no Fastify import, no env-var reads, no file-based config discovery (P1 invariant).
+- **Two-handles respected** — public agent APIs never accept platform addressing; `SessionCtx { workspaceId?, userId? }` is allowlisted tenancy, a surface-native id (Slack `ts`, workbook/sheet id, pane id) is not; no surface synthesizes a fake `workspaceId`.
+- **One approval channel** — HITL declared on the tool, travels as stream events; no second approval path.
+- **No greenfield duplication of existing seams; no speculative abstraction** — no abstraction without two real consumers in the same phase (or one named consumer in the immediately following phase); no registry/plugin system for a single entry (README rule 3).
+- **No parallel implementations past cutover** — the bespoke replay dies in the same PR stack that lands DS transport; moved origin files are deleted, not stubbed (README rule 4).
+- **No `TODO(remove:*)` marker without a same-phase deletion bead** — a surviving marker reopens its owning phase (P8 rule).
+- **No session/agent/child-app scope leak; no vague provider capability claim; no unreviewed pure-mode cwd assumption; no overclaim about open issues.**
 
-## Final acceptance
+---
 
-The plan pack is ready for beads/implementation when:
+## 5. Issue coverage
 
-- all files pass blocker-only thermo review;
-- issue #391 body points to the plan pack;
-- open decisions are either resolved or explicitly deferred;
-- every implementation phase has clear exit criteria;
-- tests above are assigned to phases.
+Do not close unrelated backlog issues just because this abstraction lands.
+
+**Can close or materially advance:**
+
+- #391 (the pack);
+- #12 if harness pluggability + the harness/transport conformance suites (3a/3b) pass;
+- #242 if route composition (P3) lands;
+- #16/#223 if provider capability abstraction + adapter composition (P2/P5) land;
+- #26/#220/#221 if file API/UI ownership (P3/P4) lands;
+- #416 filesystem-binding governance is **landed** — the env/no-leak conformance suite (3c) is its acceptance surface and stays green cross-phase;
+- parts of #357/#254/#256 if plugin capability declaration (P6) lands;
+- parts of #243/#211 if multi-agent session routing/search (P7) lands.
+
+**Must remain separate unless explicitly implemented:** #376 child-app platform product/deployment/billing; #381/#197 product plugin specs; #377/#361/#363/#362 multi-project nav UI; #375/#358/#308 visual/theme/pane polish; #318 desktop wrapper; #267 performance; #127/#51/#27 billing/auth/database; #122 docs annotation UI; #95 dependency migration; #5 event bus typing.
+
+### Final acceptance
+
+The pack is ready for beads/implementation when: all files pass blocker-only thermo review; issue #391 body points to the pack; open decisions are resolved or explicitly deferred (P0); every phase has the exit gates in §3; and every suite named in §1 has one canonical name reconcilable to the TODOs (§ reconcile note).
+
+---
+
+## Reconcile note (naming mismatches in `todos-v2/` — do not edit the TODOs; fix at implementation)
+
+- **Fake harness:** the prompt/P1 prose says "FakeHarness"; the canonical existing fixture is `scriptedPiHarness` (`packages/agent/src/server/testing/scriptedPiHarness.ts`). P1 BBP1-006 builds an inline `fakeHarness` for the pure smoke — that is fine as a local double, but any *reusable* fake-harness helper must be the `scriptedPiHarness` family, not a new `FakeHarness` module.
+- **Surface-adapter suite:** S1 BBS1-006 names the file `surfaceAdapterConformance.ts` but does not fix the exported function name. Canonical: `runSurfaceAdapterConformance` (matches the `run*Conformance` house convention used by `runTransportConformance` / `runEventStreamStoreConformance`).
+- **Harness conformance location:** T1 BBT1-006 says "find the existing suite … or add `durableStream.conformance.test.ts`". Canonical target is the existing `packages/agent/src/server/harness/pi-coding-agent/__tests__/*conformance*.ts` (extend it); a new `durableStream.conformance.test.ts` is acceptable only if registered as part of the same exported harness factory (so T2's transport suite can layer on one suite, not two).
+- **`startIndex` vs `offset`:** in-process APIs use `{ startIndex }`; the DS wire uses `?offset=N`. Same monotonic position (`?offset=N` ⇔ `{ startIndex: N }`); the HTTP adapter translates. Conformance suites assert the equivalence, not a fork.
+- **Remote-worker mount:** 09 lists a "remote-worker (provider)" mount of the env/no-leak suite; it stays a **provider** attachment (P2/P5), not a transport — the "environment-as-transport" reclassification is deferred to a P8-filed follow-up and is **not** a mount contract change.

@@ -147,13 +147,13 @@ Explicitly not fully solved but must be supported by extension points:
 
 v2 status — resolved (recommendations locked in [`08-pluggable-agent-surfaces.md`](08-pluggable-agent-surfaces.md), to be ratified in the Phase 0 ADR):
 
-1. Pure/headless mode: **pi-coding-agent with cwd disabled/sealed** (behind the Phase 1 audit), not a separate non-pi harness. Non-pi harnesses remain conformance-suite consumers (#12).
+1. Pure/headless mode: **pi-coding-agent with cwd disabled/sealed** (behind the Phase 1 audit), not a second, distinct harness. Any alternative harness remains a conformance-suite consumer only (#12), never the pure-mode path.
 2. Multi-mount/overlay: superseded — named `(filesystem, path)` bindings shipped via #416; arbitrary overlays stay deferred.
+4. Multi-agent route shape: **resolved (locked at pass 3)** — one canonical `/api/v1/agents/:agentId` path-prefix family (see `todos-v2/TODO-P7-multi-agent-inspection.md`). There is no header/request-scope alternative.
 6. Readonly fs: **v1 — already landed** via #416.
 
 Still open:
 
 3. Do providers live under `@hachej/boring-bash/providers` forever, or move to a private provider package later?
-4. Multi-agent route shape: path prefix `/api/v1/agents/:agentId` or header/request-scope equivalent?
 5. Provisioning sharing defaults: workspace-shared, agent-private, or requirement-controlled?
 7. (v2) Where does each surface persist its `addressing → sessionId` map: surface-local store vs host DB contract?

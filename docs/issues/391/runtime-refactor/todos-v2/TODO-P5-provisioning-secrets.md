@@ -166,7 +166,7 @@ pnpm typecheck              # build:packages then per-pkg typecheck
 
 ## Review gates
 
-- P4 (+P2 `/providers/matrix.ts`) precondition confirmed (or STOP+report).
+- P3 + P2 `/providers/matrix.ts` precondition confirmed (or STOP+report). (P5 dispatches off P3 in parallel with P4/E1 — it does NOT depend on P4.)
 - `pnpm lint:invariants` + `pnpm audit:imports` green; zero agent→bash value imports; engine still agent-owned, normalizer boring-bash-owned.
 - Provisioning behavior unchanged for no-requirement workspaces; existing provisioning/readiness/Vercel-snapshot tests pass.
 - Optional-failure isolation, health gating, service lifecycle, SDK-archive leak-safety all covered by tests.
