@@ -1,9 +1,10 @@
 import { constants } from 'node:fs'
-import { access, chmod, copyFile, lstat, mkdir, mkdtemp, readdir, realpath, rm } from 'node:fs/promises'
+import { access, chmod, copyFile, lstat, mkdir, mkdtemp, readdir, realpath, rm, stat } from 'node:fs/promises'
 import os from 'node:os'
 import path from 'node:path'
 import type { FastifyRequest } from 'fastify'
 import type { RuntimeFilesystemBinding, RuntimeFilesystemBindingOperations } from '@hachej/boring-agent/server'
+import { ErrorCode } from '@hachej/boring-agent/shared'
 import {
   COMPANY_CONTEXT_FILESYSTEM_ID,
   ScopedFilesystemRuntimeBindingManager,
@@ -18,6 +19,9 @@ import type { GovernanceService } from './governanceService.js'
 import type { GovernanceUserLike } from './policyTypes.js'
 
 const COMPANY_CONTEXT_MOUNT_PATH = '/company_context'
+const AGENT_MODE_ENV = 'BORING_AGENT_MODE'
+const AGENT_WORKSPACE_ROOT_ENV = 'BORING_AGENT_WORKSPACE_ROOT'
+const GOVERNANCE_COMPANY_CONTEXT_ROOT_ENV = 'BORING_GOVERNANCE_COMPANY_CONTEXT_ROOT'
 
 interface GovernanceFilesystemBindingContext {
   request?: FastifyRequest
@@ -30,9 +34,14 @@ interface GovernanceFilesystemBindingContext {
   requestId?: string
 }
 
+type CompanyContextRootResolver = (
+  ctx: GovernanceFilesystemBindingContext,
+  companyContextWorkspaceId: string,
+) => string | null | undefined | Promise<string | null | undefined>
+
 interface CreateGovernanceFilesystemBindingsOptions {
-  /** Override for tests or non-standard workspace layouts. Defaults to sibling workspace root by tenant companyContextWorkspaceId. */
-  resolveCompanyContextRoot?: (ctx: GovernanceFilesystemBindingContext, companyContextWorkspaceId: string) => string | Promise<string>
+  /** Explicit source root resolver for the tenant company-context workspace. */
+  resolveCompanyContextRoot?: CompanyContextRootResolver
   projectionRootParent?: string
 }
 
@@ -64,10 +73,7 @@ async function walkFiles(root: string, current = root): Promise<string[]> {
   for (const entry of entries) {
     const absolutePath = path.join(current, entry.name)
     const entryStat = await lstat(absolutePath)
-    if (entryStat.isSymbolicLink()) {
-      await assertInsideRoot(root, absolutePath)
-      continue
-    }
+    if (entryStat.isSymbolicLink()) continue
     if (entry.isDirectory()) out.push(...await walkFiles(root, absolutePath))
     else if (entry.isFile()) out.push(absolutePath)
   }
@@ -96,10 +102,6 @@ async function makeProjectionRemovable(current: string): Promise<void> {
 
 function compileRules(rules: readonly string[]): RegExp[] {
   return rules.map((rule) => new RegExp(rule))
-}
-
-function companyRootFromWorkspaceRoot(ctx: GovernanceFilesystemBindingContext, companyContextWorkspaceId: string): string {
-  return path.join(path.dirname(path.resolve(ctx.workspaceRoot)), companyContextWorkspaceId)
 }
 
 function userFromContext(ctx: GovernanceFilesystemBindingContext): GovernanceUserLike | null {
@@ -133,7 +135,6 @@ class RegexFilteredCompanyContextProvider implements FilesystemBindingProvider {
       throw new Error('company_context policy mount only supports readonly policy-filtered bindings')
     }
 
-    await mkdir(this.sourceRoot, { recursive: true })
     await access(this.sourceRoot, constants.R_OK)
     const projectionRoot = await mkdtemp(path.join(this.projectionRootParent, 'boring-company-context-'))
     try {
@@ -177,6 +178,70 @@ function asRuntimeOperations(ops: ReadonlyProjectionOperations): RuntimeFilesyst
   }
 }
 
+export function createDefaultCompanyContextRootResolver(env: NodeJS.ProcessEnv = process.env): CompanyContextRootResolver | undefined {
+  const explicitSourceRoot = env[GOVERNANCE_COMPANY_CONTEXT_ROOT_ENV]?.trim()
+  if (explicitSourceRoot) return () => path.resolve(explicitSourceRoot)
+  if (env[AGENT_MODE_ENV]?.trim() === 'vercel-sandbox') return undefined
+  const workspaceStorageRoot = env[AGENT_WORKSPACE_ROOT_ENV]?.trim() || process.cwd()
+  return (_ctx, companyContextWorkspaceId) => path.resolve(workspaceStorageRoot, companyContextWorkspaceId)
+}
+
+function logCompanyContextBindingError(
+  ctx: GovernanceFilesystemBindingContext,
+  reason: string,
+  details: Record<string, unknown> = {},
+): void {
+  const fields = {
+    code: ErrorCode.enum.CONFIG_INVALID,
+    event: 'governance.company_context.binding_omitted',
+    reason,
+    workspaceId: ctx.workspaceId,
+    requestId: ctx.requestId ?? ctx.request?.id,
+    ...details,
+  }
+  const message = 'company_context binding omitted'
+  if (ctx.request?.log) ctx.request.log.error(fields, message)
+  else console.error(message, fields)
+}
+
+async function resolveCompanyContextSourceRoot(
+  ctx: GovernanceFilesystemBindingContext,
+  companyContextWorkspaceId: string,
+  resolver: CompanyContextRootResolver | undefined,
+): Promise<string | null> {
+  if (!resolver) {
+    logCompanyContextBindingError(ctx, 'missing_explicit_source_root_resolver', { companyContextWorkspaceId })
+    return null
+  }
+
+  let candidate: string | null | undefined
+  try {
+    candidate = await resolver(ctx, companyContextWorkspaceId)
+  } catch (error) {
+    logCompanyContextBindingError(ctx, 'source_root_resolver_failed', { companyContextWorkspaceId, err: error })
+    return null
+  }
+
+  if (!candidate?.trim()) {
+    logCompanyContextBindingError(ctx, 'missing_explicit_source_root', { companyContextWorkspaceId })
+    return null
+  }
+
+  try {
+    const sourceRoot = await realpath(path.resolve(candidate))
+    const sourceStat = await stat(sourceRoot)
+    if (!sourceStat.isDirectory()) {
+      logCompanyContextBindingError(ctx, 'source_root_not_directory', { companyContextWorkspaceId, sourceRoot })
+      return null
+    }
+    await access(sourceRoot, constants.R_OK)
+    return sourceRoot
+  } catch (error) {
+    logCompanyContextBindingError(ctx, 'source_root_unavailable', { companyContextWorkspaceId, sourceRoot: path.resolve(candidate), err: error })
+    return null
+  }
+}
+
 export function createGovernanceFilesystemBindings(
   service: GovernanceService,
   options: CreateGovernanceFilesystemBindingsOptions = {},
@@ -190,7 +255,8 @@ export function createGovernanceFilesystemBindings(
     if (!companyContextWorkspaceId || rules.length === 0) return []
     if (ctx.workspaceId === companyContextWorkspaceId) return []
 
-    const sourceRoot = await (options.resolveCompanyContextRoot?.(ctx, companyContextWorkspaceId) ?? companyRootFromWorkspaceRoot(ctx, companyContextWorkspaceId))
+    const sourceRoot = await resolveCompanyContextSourceRoot(ctx, companyContextWorkspaceId, options.resolveCompanyContextRoot)
+    if (!sourceRoot) return []
     const projectionRootParent = options.projectionRootParent ?? os.tmpdir()
     const binding: FilesystemBinding = {
       filesystem: COMPANY_CONTEXT_FILESYSTEM_ID,

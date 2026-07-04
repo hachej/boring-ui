@@ -47,11 +47,98 @@ function finiteNumber(value: unknown, path: string, opts: { min: number; allowZe
   return value
 }
 
+const LITERAL_REGEX_ESCAPES = new Set(['\\', '/', '.', '-', '^', '$', '+', '*', '?', '(', ')', '[', ']', '{', '}', '|'])
+
+function literalPathPrefix(pattern: string): { prefix: string; consumed: number; unsafeEscape: boolean } {
+  let prefix = ''
+  let index = '^/'.length
+  let unsafeEscape = false
+  while (index < pattern.length) {
+    const char = pattern[index]
+    if (!char) break
+    if (char === '\\') {
+      const escaped = pattern[index + 1]
+      if (!escaped) break
+      if (!LITERAL_REGEX_ESCAPES.has(escaped)) {
+        unsafeEscape = true
+        break
+      }
+      prefix += escaped
+      index += 2
+      continue
+    }
+    if ('^$.+*?()[]{}|'.includes(char)) break
+    prefix += char
+    index += 1
+  }
+  return { prefix, consumed: index - '^/'.length, unsafeEscape }
+}
+
+function hasTopLevelAlternation(pattern: string): boolean {
+  let escaped = false
+  let inCharacterClass = false
+  let groupDepth = 0
+  for (const char of pattern) {
+    if (escaped) {
+      escaped = false
+      continue
+    }
+    if (char === '\\') {
+      escaped = true
+      continue
+    }
+    if (inCharacterClass) {
+      if (char === ']') inCharacterClass = false
+      continue
+    }
+    if (char === '[') {
+      inCharacterClass = true
+      continue
+    }
+    if (char === '(') {
+      groupDepth += 1
+      continue
+    }
+    if (char === ')') {
+      groupDepth = Math.max(0, groupDepth - 1)
+      continue
+    }
+    if (char === '|' && groupDepth === 0) return true
+  }
+  return false
+}
+
+function validateSegmentSafePattern(pattern: string, path: string): void {
+  const { prefix, consumed, unsafeEscape } = literalPathPrefix(pattern)
+  if (unsafeEscape) fail(`${path} must use only literal regex escapes before the path-segment boundary`)
+  if (!prefix) {
+    const remainder = pattern.slice('^/'.length)
+    if (remainder.startsWith('.*') || remainder.startsWith('$')) return
+    fail(`${path} must start with a literal path segment or ^/.*`)
+  }
+  const remainder = pattern.slice('^/'.length + consumed)
+  if (prefix.endsWith('/')) {
+    if (/^[?*+{]/.test(remainder)) fail(`${path} must not make the path-segment boundary slash optional`)
+    return
+  }
+  if (remainder.startsWith('$')) return
+  for (const guard of ['(?:/|$)', '(?:$|/)', '(/|$)', '($|/)']) {
+    if (!remainder.startsWith(guard)) continue
+    if (/^[?*+{]/.test(remainder.slice(guard.length))) {
+      fail(`${path} must not make the path-segment boundary guard optional`)
+    }
+    return
+  }
+  fail(`${path} must make literal path-prefix grants segment-safe with /, $, or (?:/|$)`)
+}
+
 function validateRegexPattern(value: unknown, path: string): string {
   const pattern = nonEmptyString(value, path)
   if (pattern.length > MAX_REGEX_LENGTH) fail(`${path} must be at most ${MAX_REGEX_LENGTH} characters`)
   // v1 safety subset: require anchored path-like allow rules and reject common catastrophic nested quantifier shapes.
   if (!pattern.startsWith('^/')) fail(`${path} must start with ^/`)
+  if (hasTopLevelAlternation(pattern)) fail(`${path} must not use top-level regex alternation; add separate allow rules instead`)
+  validateSegmentSafePattern(pattern, path)
   if (/\([^)]*[+*][^)]*\)[+*{]/.test(pattern)) {
     fail(`${path} contains an unsafe nested quantifier`)
   }

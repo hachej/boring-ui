@@ -26,7 +26,7 @@ export {
 } from './loadPolicy.js'
 export { normalizePolicyEmail, validateGovernancePolicy } from './validatePolicy.js'
 export { createGovernanceMeteringSink } from './metering.js'
-export { createGovernanceFilesystemBindings } from './filesystemBindings.js'
+export { createDefaultCompanyContextRootResolver, createGovernanceFilesystemBindings } from './filesystemBindings.js'
 
 export interface BuildGovernanceOptions extends Omit<LoadGovernancePolicyOptions, 'config'> {
   config?: Pick<CoreConfig, 'auth'>

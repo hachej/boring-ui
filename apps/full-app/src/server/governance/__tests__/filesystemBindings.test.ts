@@ -1,9 +1,11 @@
-import { mkdir, mkdtemp, readdir, symlink, writeFile } from 'node:fs/promises'
+import { lstat, mkdir, mkdtemp, readdir, symlink, writeFile } from 'node:fs/promises'
 import os from 'node:os'
 import path from 'node:path'
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 
-import { createGovernanceFilesystemBindings } from '../filesystemBindings.js'
+import { ErrorCode } from '@hachej/boring-agent/shared'
+import { READONLY_PROJECTION_INVALID_PATH_CODE } from '@hachej/boring-bash/server'
+import { createDefaultCompanyContextRootResolver, createGovernanceFilesystemBindings } from '../filesystemBindings.js'
 import { createGovernanceService } from '../governanceService.js'
 import { validateGovernancePolicy } from '../validatePolicy.js'
 
@@ -18,7 +20,7 @@ async function seedCompanyRoot(): Promise<string> {
   return root
 }
 
-function serviceWithPolicy() {
+function serviceWithPolicy(allow: string[] = ['^/public/.*']) {
   return createGovernanceService({
     enabled: true,
     status: { state: 'active', path: '/policy.yaml', tenantId: 'company', userCount: 2 },
@@ -32,7 +34,7 @@ function serviceWithPolicy() {
         {
           email: 'allowed@example.com',
           role: 'user',
-          companyContext: { allow: ['^/public/.*'] },
+          companyContext: { allow },
         },
         {
           email: 'denied@example.com',
@@ -73,7 +75,7 @@ describe('createGovernanceFilesystemBindings', () => {
     expect(grep.matches).toEqual([])
     expect(await readdir(projectionRootParent)).toEqual([])
     await expect(bindings![0]!.operations.read({ filesystem: 'company_context', path: '/finance/secret.md' }))
-      .rejects.toMatchObject({ code: 'READONLY_PROJECTION_INVALID_PATH' })
+      .rejects.toMatchObject({ code: READONLY_PROJECTION_INVALID_PATH_CODE })
     expect(() => bindings![0]!.operations.rejectMutation('write', { filesystem: 'company_context', path: '/public/handbook.md' }))
       .toThrow(/readonly/)
 
@@ -100,6 +102,86 @@ describe('createGovernanceFilesystemBindings', () => {
     expect(unverified).toEqual([])
   })
 
+  it('omits company_context when no explicit source root resolver is configured', async () => {
+    const parent = await mkdtemp(path.join(os.tmpdir(), 'boring-company-no-source-'))
+    const personalRoot = path.join(parent, 'personal-ws')
+    const staleGuessedRoot = path.join(parent, COMPANY_CONTEXT_WORKSPACE_ID)
+    await mkdir(path.join(personalRoot), { recursive: true })
+    await mkdir(path.join(staleGuessedRoot, 'public'), { recursive: true })
+    await writeFile(path.join(staleGuessedRoot, 'public', 'handbook.md'), 'stale guessed source', 'utf8')
+    const logError = vi.fn()
+    const getBindings = createGovernanceFilesystemBindings(serviceWithPolicy(), {
+      resolveCompanyContextRoot: createDefaultCompanyContextRootResolver({ BORING_AGENT_MODE: 'vercel-sandbox' }),
+    })
+
+    const stale = await getBindings({
+      workspaceId: 'personal-ws',
+      workspaceRoot: personalRoot,
+      requestId: 'req-no-explicit-stale',
+      request: {
+        id: 'req-no-explicit-stale',
+        log: { error: logError },
+        user: { id: 'user-allowed', email: 'allowed@example.com', name: null, emailVerified: true },
+      } as any,
+    })
+
+    expect(stale).toEqual([])
+    expect(logError).toHaveBeenCalledWith(
+      expect.objectContaining({
+        code: ErrorCode.enum.CONFIG_INVALID,
+        reason: 'missing_explicit_source_root_resolver',
+        companyContextWorkspaceId: COMPANY_CONTEXT_WORKSPACE_ID,
+      }),
+      'company_context binding omitted',
+    )
+
+    const missingParent = await mkdtemp(path.join(os.tmpdir(), 'boring-company-missing-source-'))
+    const missingPersonalRoot = path.join(missingParent, 'personal-ws')
+    const missingGuessedRoot = path.join(missingParent, COMPANY_CONTEXT_WORKSPACE_ID)
+    await mkdir(missingPersonalRoot, { recursive: true })
+
+    const missing = await getBindings({
+      workspaceId: 'personal-ws',
+      workspaceRoot: missingPersonalRoot,
+      requestId: 'req-no-explicit-missing',
+      request: {
+        id: 'req-no-explicit-missing',
+        log: { error: logError },
+        user: { id: 'user-allowed', email: 'allowed@example.com', name: null, emailVerified: true },
+      } as any,
+    })
+
+    expect(missing).toEqual([])
+    await expect(lstat(missingGuessedRoot)).rejects.toMatchObject({ code: 'ENOENT' })
+
+    const explicitMissingRoot = path.join(missingParent, 'explicit-company-context')
+    const explicitLogError = vi.fn()
+    const explicitMissingBindings = createGovernanceFilesystemBindings(serviceWithPolicy(), {
+      resolveCompanyContextRoot: () => explicitMissingRoot,
+    })
+    const explicitMissing = await explicitMissingBindings({
+      workspaceId: 'personal-ws',
+      workspaceRoot: missingPersonalRoot,
+      requestId: 'req-explicit-missing',
+      request: {
+        id: 'req-explicit-missing',
+        log: { error: explicitLogError },
+        user: { id: 'user-allowed', email: 'allowed@example.com', name: null, emailVerified: true },
+      } as any,
+    })
+
+    expect(explicitMissing).toEqual([])
+    expect(explicitLogError).toHaveBeenCalledWith(
+      expect.objectContaining({
+        code: ErrorCode.enum.CONFIG_INVALID,
+        reason: 'source_root_unavailable',
+        sourceRoot: explicitMissingRoot,
+      }),
+      'company_context binding omitted',
+    )
+    await expect(lstat(explicitMissingRoot)).rejects.toMatchObject({ code: 'ENOENT' })
+  })
+
   it('uses tool/run context identity when no HTTP request object is available', async () => {
     const companyRoot = await seedCompanyRoot()
     const getBindings = createGovernanceFilesystemBindings(serviceWithPolicy(), {
@@ -122,7 +204,7 @@ describe('createGovernanceFilesystemBindings', () => {
       .resolves.toMatchObject({ content: expect.stringContaining('Visible policy') })
   })
 
-  it('cleans up temporary projections when prepare fails', async () => {
+  it('skips outside-pointing source symlinks while mounting other files', async () => {
     const companyRoot = await seedCompanyRoot()
     const outside = await mkdtemp(path.join(os.tmpdir(), 'boring-outside-company-'))
     await writeFile(path.join(outside, 'secret.md'), 'outside', 'utf8')
@@ -136,16 +218,49 @@ describe('createGovernanceFilesystemBindings', () => {
     const bindings = await getBindings({
       workspaceId: 'personal-ws',
       workspaceRoot: path.join(path.dirname(companyRoot), 'personal-ws'),
-      sessionId: 'sess-prepare-fail',
-      requestId: 'req-prepare-fail',
+      sessionId: 'sess-source-symlink',
+      requestId: 'req-source-symlink',
       userId: 'user-allowed',
       userEmail: 'allowed@example.com',
       userEmailVerified: true,
     })
 
     await expect(bindings![0]!.operations.read({ filesystem: 'company_context', path: '/public/handbook.md' }))
-      .rejects.toThrow(/escapes company context root/)
+      .resolves.toMatchObject({ content: expect.stringContaining('Visible policy') })
+    await expect(bindings![0]!.operations.read({ filesystem: 'company_context', path: '/public/outside-link.md' }))
+      .rejects.toMatchObject({ code: READONLY_PROJECTION_INVALID_PATH_CODE })
+    const find = await bindings![0]!.operations.find({ filesystem: 'company_context', path: '/' }, '*.md')
+    expect(find.paths).toEqual(['/public/handbook.md'])
     expect(await readdir(projectionRootParent)).toEqual([])
+  })
+
+  it('applies segment-boundary company_context rules without leaking prefix siblings', async () => {
+    const companyRoot = await mkdtemp(path.join(os.tmpdir(), 'boring-company-segment-'))
+    await mkdir(path.join(companyRoot, 'docs'), { recursive: true })
+    await mkdir(path.join(companyRoot, 'docs-secret'), { recursive: true })
+    await writeFile(path.join(companyRoot, 'docs', 'file.md'), 'visible docs', 'utf8')
+    await writeFile(path.join(companyRoot, 'docs-secret', 'x.md'), 'hidden docs secret', 'utf8')
+    const getBindings = createGovernanceFilesystemBindings(serviceWithPolicy(['^/docs(?:/|$)']), {
+      resolveCompanyContextRoot: () => companyRoot,
+      projectionRootParent: await mkdtemp(path.join(os.tmpdir(), 'boring-company-projections-')),
+    })
+
+    const bindings = await getBindings({
+      workspaceId: 'personal-ws',
+      workspaceRoot: path.join(path.dirname(companyRoot), 'personal-ws'),
+      sessionId: 'sess-segment',
+      requestId: 'req-segment',
+      userId: 'user-allowed',
+      userEmail: 'allowed@example.com',
+      userEmailVerified: true,
+    })
+
+    await expect(bindings![0]!.operations.read({ filesystem: 'company_context', path: '/docs/file.md' }))
+      .resolves.toMatchObject({ content: 'visible docs' })
+    await expect(bindings![0]!.operations.read({ filesystem: 'company_context', path: '/docs-secret/x.md' }))
+      .rejects.toMatchObject({ code: READONLY_PROJECTION_INVALID_PATH_CODE })
+    const find = await bindings![0]!.operations.find({ filesystem: 'company_context', path: '/' }, '*.md')
+    expect(find.paths).toEqual(['/docs/file.md'])
   })
 
   it('does not mount when governance is disabled or request is for the company workspace itself', async () => {

@@ -116,6 +116,48 @@ describe('governance policy loader', () => {
     })).toThrow(/UUID/)
   })
 
+  it('requires company-context grants to be path-segment safe', () => {
+    expect(() => validateGovernancePolicy({
+      tenant: { id: 'company', companyContextWorkspaceId: '00000000-0000-4000-8000-000000000475', perRunHoldEur: 1 },
+      users: [{ email: 'a@example.com', role: 'user', companyContext: { allow: ['^/docs'] } }],
+    })).toThrow(/segment-safe/)
+
+    expect(() => validateGovernancePolicy({
+      tenant: { id: 'company', companyContextWorkspaceId: '00000000-0000-4000-8000-000000000475', perRunHoldEur: 1 },
+      users: [{ email: 'a@example.com', role: 'user', companyContext: { allow: ['^/docs$|^/docs'] } }],
+    })).toThrow(/top-level regex alternation/)
+
+    expect(() => validateGovernancePolicy({
+      tenant: { id: 'company', companyContextWorkspaceId: '00000000-0000-4000-8000-000000000475', perRunHoldEur: 1 },
+      users: [{ email: 'a@example.com', role: 'user', companyContext: { allow: ['^/(docs|finance)'] } }],
+    })).toThrow(/literal path segment/)
+
+    expect(() => validateGovernancePolicy({
+      tenant: { id: 'company', companyContextWorkspaceId: '00000000-0000-4000-8000-000000000475', perRunHoldEur: 1 },
+      users: [{ email: 'a@example.com', role: 'user', companyContext: { allow: ['^/docs/?.*'] } }],
+    })).toThrow(/boundary slash optional/)
+
+    expect(() => validateGovernancePolicy({
+      tenant: { id: 'company', companyContextWorkspaceId: '00000000-0000-4000-8000-000000000475', perRunHoldEur: 1 },
+      users: [{ email: 'a@example.com', role: 'user', companyContext: { allow: ['^/docs\\W\\w+(?:/|$)'] } }],
+    })).toThrow(/literal regex escapes/)
+
+    expect(() => validateGovernancePolicy({
+      tenant: { id: 'company', companyContextWorkspaceId: '00000000-0000-4000-8000-000000000475', perRunHoldEur: 1 },
+      users: [{ email: 'a@example.com', role: 'user', companyContext: { allow: ['^/company/hr'] } }],
+    })).toThrow(/segment-safe/)
+
+    expect(() => validateGovernancePolicy({
+      tenant: { id: 'company', companyContextWorkspaceId: '00000000-0000-4000-8000-000000000475', perRunHoldEur: 1 },
+      users: [{ email: 'a@example.com', role: 'user', companyContext: { allow: ['^/docs(?:/|$)?.*'] } }],
+    })).toThrow(/boundary guard optional/)
+
+    expect(validateGovernancePolicy({
+      tenant: { id: 'company', companyContextWorkspaceId: '00000000-0000-4000-8000-000000000475', perRunHoldEur: 1 },
+      users: [{ email: 'a@example.com', role: 'user', companyContext: { allow: ['^/docs(?:/|$)', '^/handbook\\.md$'] } }],
+    }).users[0]?.companyContext.allow).toEqual(['^/docs(?:/|$)', '^/handbook\\.md$'])
+  })
+
   it('rejects invalid roles, budgets, and unsafe regexes', () => {
     expect(() => validateGovernancePolicy({
       tenant: { id: 'company', perRunHoldEur: 1 },
