@@ -98,6 +98,7 @@ flowchart LR
 - `track:fast` forbids auth, billing, permissions, secrets, migrations, public
   API, release, deletion-heavy work, broad refactor.
 - Merge requires current review, thermo, tests, CI, proof comment, demo proof.
+- Merge does **not** require the PR branch to contain the latest `main` commit unless there is a merge conflict or stale/missing proof for the changed risk area.
 - If visual review is required: approval must match the current artifact.
 - Otherwise: `track:owner`; Julien reviews.
 
