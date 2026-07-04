@@ -109,6 +109,20 @@ describe("ArtifactSurfacePane — layout persistence", () => {
     expect(parsed).toEqual({ v: 1, layout })
   })
 
+  it("drops non-serializable panel params instead of crashing persistence", () => {
+    renderPane(<ArtifactSurfacePane storageKey={KEY} />)
+    const layout = buildLayout([{ id: "p1", component: "empty", params: { path: "README.md", onDone: () => undefined } }])
+
+    expect(() => {
+      act(() => {
+        capturedProps.onLayoutChange?.(layout)
+      })
+    }).not.toThrow()
+
+    const parsed = JSON.parse(localStorage.getItem(KEY) as string)
+    expect(parsed.layout.panels.p1.params).toEqual({ path: "README.md", filesystem: "user" })
+  })
+
   it("migrates legacy persisted file panels to explicit user filesystem identity", () => {
     const layout = buildLayout([{ id: "file:README.md", component: "empty", params: { path: "README.md" } }])
     localStorage.setItem(KEY, envelope(layout))

@@ -1,6 +1,6 @@
 import { expect, test, type Page, type Route } from '@playwright/test'
 
-const BEAD = 'boring-ui-v2-cc7x'
+const TASK_ID = 'boring-ui-v2-cc7x'
 
 // ─── Fixtures ────────────────────────────────────────────────────────
 
@@ -63,7 +63,7 @@ const CONFIG = {
 }
 
 function log(event: string, fields: Record<string, unknown> = {}): void {
-  console.info(JSON.stringify({ level: 'info', bead: BEAD, event, ...fields }))
+  console.info(JSON.stringify({ level: 'info', task: TASK_ID, event, ...fields }))
 }
 
 function session(user: typeof USER_ALICE) {

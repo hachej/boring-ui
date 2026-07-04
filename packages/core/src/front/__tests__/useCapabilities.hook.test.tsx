@@ -5,12 +5,12 @@ import type { ReactNode } from 'react'
 import { Component, Suspense } from 'react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
-import { withBeadId } from '../../server/__tests__/_setup'
+import { withTaskId } from '../../server/__tests__/_setup'
 import type { CapabilitiesResponse } from '../../shared/types'
 import { useCapabilities } from '../hooks/useCapabilities'
 import { useMswHandler } from './_setup'
 
-const BEAD_ID = 'boring-ui-v2-d37p'
+const TASK_ID = 'boring-ui-v2-d37p'
 
 function createQueryClient(): QueryClient {
   return new QueryClient({
@@ -58,7 +58,7 @@ afterEach(() => {
 describe('useCapabilities hook', () => {
   it(
     'returns /api/v1/capabilities payload through suspense query',
-    withBeadId(BEAD_ID, async ({ assertionPassed }) => {
+    withTaskId(TASK_ID, async ({ assertionPassed }) => {
       const payload: CapabilitiesResponse = {
         core: {
           version: '0.1.0',
@@ -121,7 +121,7 @@ describe('useCapabilities hook', () => {
 
   it(
     'throws suspense query error to error boundary on 503',
-    withBeadId(BEAD_ID, async ({ assertionPassed }) => {
+    withTaskId(TASK_ID, async ({ assertionPassed }) => {
       vi.spyOn(console, 'error').mockImplementation(() => {})
 
       useMswHandler(async (input) => {

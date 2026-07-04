@@ -3,9 +3,9 @@ import { coreConfigSchema } from '../schema'
 import { LocalUserStore } from '../../db/stores/LocalUserStore'
 import { LocalWorkspaceStore } from '../../db/stores/LocalWorkspaceStore'
 
-import { withBeadId } from '../../__tests__/_setup'
+import { withTaskId } from '../../__tests__/_setup'
 
-const BEAD_ID = 'boring-ui-v2-ra6l'
+const TASK_ID = 'boring-ui-v2-ra6l'
 
 function buildValidConfig(overrides: Record<string, unknown> = {}) {
   return {
@@ -40,7 +40,7 @@ function buildValidConfig(overrides: Record<string, unknown> = {}) {
 describe('inviteTtlDays config', () => {
   it(
     'rejects inviteTtlDays = 0',
-    withBeadId(BEAD_ID, async ({ assertionPassed }) => {
+    withTaskId(TASK_ID, async ({ assertionPassed }) => {
       const result = coreConfigSchema.safeParse(buildValidConfig({ inviteTtlDays: 0 }))
       expect(result.success).toBe(false)
       assertionPassed('rejects-zero')
@@ -49,7 +49,7 @@ describe('inviteTtlDays config', () => {
 
   it(
     'rejects inviteTtlDays = 31',
-    withBeadId(BEAD_ID, async ({ assertionPassed }) => {
+    withTaskId(TASK_ID, async ({ assertionPassed }) => {
       const result = coreConfigSchema.safeParse(buildValidConfig({ inviteTtlDays: 31 }))
       expect(result.success).toBe(false)
       assertionPassed('rejects-31')
@@ -58,7 +58,7 @@ describe('inviteTtlDays config', () => {
 
   it(
     'accepts inviteTtlDays = 7',
-    withBeadId(BEAD_ID, async ({ assertionPassed }) => {
+    withTaskId(TASK_ID, async ({ assertionPassed }) => {
       const result = coreConfigSchema.safeParse(buildValidConfig({ inviteTtlDays: 7 }))
       expect(result.success).toBe(true)
       if (result.success) {
@@ -70,7 +70,7 @@ describe('inviteTtlDays config', () => {
 
   it(
     'defaults to 7 when omitted',
-    withBeadId(BEAD_ID, async ({ assertionPassed }) => {
+    withTaskId(TASK_ID, async ({ assertionPassed }) => {
       const result = coreConfigSchema.safeParse(buildValidConfig())
       expect(result.success).toBe(true)
       if (result.success) {
@@ -93,7 +93,7 @@ describe('createInvite TTL from config', () => {
 
   it(
     'honors ttlDays = 3 from config',
-    withBeadId(BEAD_ID, async ({ assertionPassed }) => {
+    withTaskId(TASK_ID, async ({ assertionPassed }) => {
       const ws = await store.create('alice', 'TestWS', 'test-app')
       const before = Date.now()
       const { invite } = await store.createInvite(ws.id, 'bob@test.dev', 'editor', 'alice', { ttlDays: 3 })
@@ -112,7 +112,7 @@ describe('createInvite TTL from config', () => {
 
   it(
     'defaults to 7 days when ttlDays not provided',
-    withBeadId(BEAD_ID, async ({ assertionPassed }) => {
+    withTaskId(TASK_ID, async ({ assertionPassed }) => {
       const ws = await store.create('alice', 'TestWS', 'test-app')
       const before = Date.now()
       const { invite } = await store.createInvite(ws.id, 'bob@test.dev', 'editor', 'alice')

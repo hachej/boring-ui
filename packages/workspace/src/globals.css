@@ -3,6 +3,12 @@
 /* @hachej/boring-ui-kit styles imported as a regular package. */
 @import "@hachej/boring-ui-kit/styles.css";
 
+/* Dockview chrome is part of the workspace global surface contract. Apps such
+ * as workspace-playground alias this file to source for HMR, so these imports
+ * must live here rather than only in component TS imports or dist CSS. */
+@import "./front/dock/dockview-overrides.css";
+@import "./front/layout/chat-pane-stage.css";
+
 /* Workspace's own components — every consumer that imports this CSS file
  * gets the utility classes used by workspace chrome, panes, ui-shadcn
  * primitives, etc. */

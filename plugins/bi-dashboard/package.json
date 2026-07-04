@@ -20,7 +20,7 @@
     "skills": [
       "skills/bi-dashboard-authoring"
     ],
-    "systemPrompt": "Use the bi-dashboard-authoring skill when the user asks to create, edit, or open a BI dashboard. Dashboard files should live under dashboards/*.dashboard.json."
+    "systemPrompt": "Use the bi-dashboard-authoring skill when the user asks to create, edit, or open a BI dashboard. Dashboard files should live under dashboards/*.dashboard.json. Layout rule: compact KPI/indicator-only sections may use 1-5 columns, but chart/table dashboards must use at most 2 columns per row."
   },
   "files": [
     "dist",
