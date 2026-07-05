@@ -1,6 +1,35 @@
 // @hachej/boring-agent — shared (platform-agnostic) public API
 
-export type { AgentHarness, SendMessageInput, RunContext } from './harness'
+export type {
+  AgentCoreHarness,
+  AgentCoreHarnessFactory,
+  AgentCorePromptInput,
+  AgentCoreSessionAdapter,
+  AgentCoreSessionSnapshot,
+  AgentHarness,
+  AgentSendInput,
+  MessageAttachment,
+  RunContext,
+  SendMessageInput,
+} from './harness'
+export type {
+  Agent,
+  AgentActor,
+  AgentConfig as CoreAgentConfig,
+  AgentEvent,
+  AgentMessageContent,
+  AgentMessagePart,
+  AgentReadiness,
+  AgentReadinessStatus,
+  AgentResolveInputResponse,
+  AgentRuntimeAdapter,
+  AgentStartReceipt,
+  AgentStreamOptions,
+} from './events'
+export {
+  AGENT_NOT_IMPLEMENTED_UNTIL_T1,
+  AgentNotImplementedError,
+} from './events'
 export type { WorkspaceRuntimeContext } from './runtime'
 export type { Workspace, Entry, Stat } from './workspace'
 export type {
