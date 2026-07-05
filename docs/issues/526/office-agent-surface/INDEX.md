@@ -1,0 +1,56 @@
+# INDEX — Ordering Authority
+
+This pack has five work packages. Each package owns one `PLAN.md`, one executable `TODO.md`, and one `HANDOFF.md`.
+
+## Package Map
+
+| Package | Lane | Depends on | Status | Exit |
+| --- | --- | --- | --- | --- |
+| A1-external-token-auth | A | none | queued | boring-ui accepts workspace-scoped bearer tokens for approved `/api/v1` workspace routes. |
+| A2-connector-packaging | A | A1 | queued | Connector lives in `integrations/pi-for-excel/` with CI-runnable tests and install docs. Passing spike exists. |
+| A3-workbook-identity-e2e | A | A1, A2 | queued | Live Excel workbook resolves to SharePoint IDs, saves a ref, and posts an audit note. |
+| B1-host-seam-fork | B | none | queued | `hachej/pi-for-office` has an Excel-preserving `DocumentHost` seam and PowerPoint host detection. |
+| B2-powerpoint-mvp | B | B1, A2 reuse | queued | PowerPoint MVP tools run in the fork; list/read/note reuse the connector unchanged and PowerPoint ref saving is explicitly generalized. |
+
+## Dependency Graph
+
+```text
+Lane A: A1 -> A2 -> A3
+
+Lane B: B1 -> B2
+
+Connector reuse: A2 -> B2
+
+Future W-word: after B2 ships and usage validates the seam
+```
+
+Lane A and Lane B are independent except for connector reuse. B2 must verify that the A2 connector stays host-agnostic, but B1 can start before A1.
+
+## Recommended Execution
+
+Run A1, then A2 first.
+
+That produces Excel value in days: an external Office surface can authenticate, list/read/write workspace files, and create cloud refs before the PowerPoint fork is ready.
+
+Then run A3 for the full live workbook loop.
+
+Run B1 in parallel only if a second agent can keep the fork minimally divergent from upstream. Run B2 only after B1's seam is merged in the fork.
+
+## Dispatch Protocol
+
+- One package per agent unless the owner explicitly assigns more.
+- Use the package `HANDOFF.md` before touching files.
+- Use branch names from the package handoff.
+- Keep each TODO bead independently reviewable.
+- Cite every behavior claim from a spike report or `file:line`.
+- Do not silently use the missing `/tmp` review files or inaccessible GitHub issue body as evidence.
+
+## Cross-Pack Green Gates
+
+- No secrets, bearer tokens, cookies, OAuth artifacts, preview URLs, or absolute local paths in cloud refs, tool results, logs, fixtures, or implementation docs. Plan-pack evidence citations may use absolute local paths only when the local file is the evidence source.
+- Reuse boring-sharepoint redaction and validation rules for Office refs.
+- No Arcade SDK in boring-ui.
+- The connector stays one reviewable `.mjs` file.
+- The taskpane and connector are self-hosted for company use.
+- The fork keeps upstream mergeable: new hosts in new dirs, shared-file edits minimized, upstream remote retained.
+- A and B lanes do not block each other except the explicit `A2 -> B2` connector reuse verification.
