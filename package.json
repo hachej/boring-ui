@@ -11,7 +11,7 @@
     "visual:storybook:update": "pnpm storybook:build && pnpm exec playwright test -c .storybook/playwright.config.ts --update-snapshots",
     "typecheck": "pnpm run build:packages && pnpm -r --workspace-concurrency=4 run typecheck",
     "lint": "pnpm check:generated-artifacts && pnpm audit:imports",
-    "lint:invariants": "pnpm --dir packages/agent run lint:invariants && pnpm --filter @hachej/boring-bash run check:invariants && pnpm lint:workspace-plugin-invariants",
+    "lint:invariants": "pnpm --dir packages/agent run lint:invariants && pnpm --filter @hachej/boring-bash run check:invariants && pnpm --filter @hachej/boring-sandbox run check:invariants && pnpm lint:workspace-plugin-invariants",
     "lint:workspace-plugin-invariants": "pnpm --filter @hachej/boring-workspace run lint:plugin-invariants",
     "audit:imports": "pnpm tsx scripts/audit-imports.ts",
     "audit:publish-manifests": "node scripts/audit-publish-manifests.mjs",
