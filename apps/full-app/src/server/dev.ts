@@ -6,8 +6,8 @@ import {
 } from '@hachej/boring-core/app/server'
 import { loadConfig } from '@hachej/boring-core/server'
 import { createFullAppServerPlugins } from './plugins.js'
+import { createGovernance } from '@hachej/boring-governance/server'
 import { buildCreditsWiring } from './credits.js'
-import { buildGovernanceService, createDefaultCompanyContextRootResolver, createGovernanceFilesystemBindings, createGovernanceMeteringSink, createGovernanceModelFilter, createGovernanceServerPlugin } from './governance/index.js'
 
 const appRoot = appRootFromImportMeta(import.meta.url, 2)
 
@@ -81,28 +81,22 @@ startCoreWorkspaceAgentDevServer({
       allowMissingSecrets: process.env.NODE_ENV !== 'production',
       tomlPath: path.resolve(appRoot, 'boring.app.toml'),
     })
-    const governance = await buildGovernanceService({ config })
+    const governance = await createGovernance(config)
     const credits = buildCreditsWiring()
     let appDb: unknown
     const app = await createCoreWorkspaceAgentServer({
       ...options,
       config,
-      plugins: createFullAppServerPlugins([createGovernanceServerPlugin(governance)]),
+      plugins: createFullAppServerPlugins([governance.serverPlugin]),
       externalPlugins: false,
       installPluginAuthoring: pluginAuthoringEnabledFromEnv(),
-      metering: createGovernanceMeteringSink({
-        service: governance,
-        delegate: credits.meteringSink,
-        getDb: () => {
-          if (!appDb) throw new Error('governance metering db is not attached')
-          return appDb as never
-        },
+      metering: governance.createMeteringSink(credits.meteringSink, () => {
+        if (!appDb) throw new Error('governance metering db is not attached')
+        return appDb as never
       }),
-      filterModels: createGovernanceModelFilter(governance),
-      getFilesystemBindings: createGovernanceFilesystemBindings(governance, {
-        resolveCompanyContextRoot: createDefaultCompanyContextRootResolver(),
-      }),
-      pi: { strictModelResolution: governance.isEnabled() } as never,
+      filterModels: governance.filterModels,
+      getFilesystemBindings: governance.getFilesystemBindings(),
+      pi: governance.pi,
     })
     appDb = app.db
     credits.attach(app)

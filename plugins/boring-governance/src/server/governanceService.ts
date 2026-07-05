@@ -10,8 +10,10 @@ import type {
 } from './policyTypes.js'
 import { normalizePolicyEmail } from './validatePolicy.js'
 
+export type GovernancePolicyErrorCode = 'disabled' | 'invalid' | 'denied' | 'not_allowed'
+
 export class GovernancePolicyError extends Error {
-  constructor(message: string, readonly code: 'disabled' | 'invalid' | 'denied' | 'not_allowed') {
+  constructor(message: string, readonly code: GovernancePolicyErrorCode) {
     super(message)
     this.name = 'GovernancePolicyError'
   }

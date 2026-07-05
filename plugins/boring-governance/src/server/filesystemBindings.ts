@@ -3,7 +3,7 @@ import { access, chmod, copyFile, lstat, mkdir, mkdtemp, readdir, realpath, rm, 
 import os from 'node:os'
 import path from 'node:path'
 import type { FastifyRequest } from 'fastify'
-import type { RuntimeFilesystemBinding, RuntimeFilesystemBindingOperations } from '@hachej/boring-agent/server'
+import { createLogger, type LogFields, type RuntimeFilesystemBinding, type RuntimeFilesystemBindingOperations } from '@hachej/boring-agent/server'
 import { ErrorCode } from '@hachej/boring-agent/shared'
 import {
   COMPANY_CONTEXT_FILESYSTEM_ID,
@@ -22,8 +22,14 @@ const COMPANY_CONTEXT_MOUNT_PATH = '/company_context'
 const AGENT_MODE_ENV = 'BORING_AGENT_MODE'
 const AGENT_WORKSPACE_ROOT_ENV = 'BORING_AGENT_WORKSPACE_ROOT'
 const GOVERNANCE_COMPANY_CONTEXT_ROOT_ENV = 'BORING_GOVERNANCE_COMPANY_CONTEXT_ROOT'
+const companyContextBindingCanonicalLogger = createLogger('boring-governance/company-context')
+const companyContextBindingFallbackLogger = {
+  error(fields: LogFields, message: string): void {
+    companyContextBindingCanonicalLogger.error(message, fields)
+  },
+}
 
-interface GovernanceFilesystemBindingContext {
+export interface GovernanceFilesystemBindingContext {
   request?: FastifyRequest
   workspaceId: string
   workspaceRoot: string
@@ -34,12 +40,12 @@ interface GovernanceFilesystemBindingContext {
   requestId?: string
 }
 
-type CompanyContextRootResolver = (
+export type CompanyContextRootResolver = (
   ctx: GovernanceFilesystemBindingContext,
   companyContextWorkspaceId: string,
 ) => string | null | undefined | Promise<string | null | undefined>
 
-interface CreateGovernanceFilesystemBindingsOptions {
+export interface CreateGovernanceFilesystemBindingsOptions {
   /** Explicit source root resolver for the tenant company-context workspace. */
   resolveCompanyContextRoot?: CompanyContextRootResolver
   projectionRootParent?: string
@@ -201,7 +207,7 @@ function logCompanyContextBindingError(
   }
   const message = 'company_context binding omitted'
   if (ctx.request?.log) ctx.request.log.error(fields, message)
-  else console.error(message, fields)
+  else companyContextBindingFallbackLogger.error(fields, message)
 }
 
 async function resolveCompanyContextSourceRoot(

@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { AgentMeteringSink } from '@hachej/boring-agent/server'
+import { ErrorCode } from '@hachej/boring-agent/shared'
 import { createGovernanceService } from '../governanceService.js'
 
 const reserve = vi.fn()
@@ -116,7 +117,7 @@ describe('createGovernanceMeteringSink', () => {
   })
 
   it('returns stable model budget error and does not delegate when budget is exceeded', async () => {
-    const error = Object.assign(new Error('Budget reached for this model.'), { statusCode: 402, code: 'MODEL_BUDGET_EXCEEDED' })
+    const error = Object.assign(new Error('Budget reached for this model.'), { statusCode: 402, code: ErrorCode.enum.MODEL_BUDGET_EXCEEDED })
     reserve.mockRejectedValue(error)
     const credits = delegate()
     const sink = createGovernanceMeteringSink({ service: service(), delegate: credits, getDb: () => ({}) })
@@ -125,7 +126,7 @@ describe('createGovernanceMeteringSink', () => {
       workspaceId: 'ws', userId: 'user-1', userEmail: 'user@example.com', userEmailVerified: true,
       sessionId: 's1', runId: 'run-2', source: 'pi-chat', kind: 'prompt', message: 'hi',
       model: { provider: 'infomaniak', id: 'qwen' },
-    }))).rejects.toMatchObject({ code: 'MODEL_BUDGET_EXCEEDED', message: 'Budget reached for this model.' })
+    }))).rejects.toMatchObject({ code: ErrorCode.enum.MODEL_BUDGET_EXCEEDED, message: 'Budget reached for this model.' })
     expect(credits.reserveRun).not.toHaveBeenCalled()
   })
 
