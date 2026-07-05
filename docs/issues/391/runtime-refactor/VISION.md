@@ -69,6 +69,12 @@ Each vision component mapped to what exists today → the delta work orders → 
   publish snapshots rather than live workspace paths, assets are captured into
   a manifest, viewer/editor separation is mandatory, and downloads are kind metadata.
 
+### State-store reservations (no scope addition)
+
+- #397 task tables target `state.db`; the durable task service remains farm-epic scope.
+- Farm-epic artifact index targets a rebuildable `state.db` table folded from `data-artifact` events.
+- #424 share-records migration targets `state.db`; public Markdown share remains non-artifact.
+
 ## Architecture at a glance
 
 **Five clean layers** (v2 extends the original three):
@@ -122,6 +128,7 @@ Full text and rationale: [`architecture/08-pluggable-agent-surfaces.md`](archite
 - **Subagent environment grants** — first consumer lands in P7 (kept minimal there).
 - **Durable turn continuation (WaitingTurn machine)** — restart-resume is new-turn-seeded by design (T1).
 - **Remote-worker-as-environment-transport** — remote-worker stays a provider; reclassification filed at P8.
+- **Predefined runtime image catalog** — productize pinned `boring-runtime-*` OCI images with common CLIs (`node`, `python`, `git`, `gh`, `rg`, etc.) and later vertical-agent toolchains. This pairs with the vertical-agent business line, but stays a catalog/build-pipeline follow-up; #391 only reserves provider config + provisioning fingerprint semantics.
 - **P6b child-app / Macro scoping** — HARD BLOCKED on the shared child-app platform type (#376); a tracked follow-up outside the epic exit.
 
 ## Dispatch order (summary)

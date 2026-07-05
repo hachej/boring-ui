@@ -104,4 +104,6 @@ PR Fast Summary
 signoff/local
 ```
 
+Do **not** require every PR branch to be up to date with the latest `main` commit before merge. A PR should be blocked for merge conflicts, stale or missing proof, or failed required checks — not just because `main` advanced after the branch was reviewed. Keep `main` protected by requiring the merge result checks/proof that matter.
+
 Avoid requiring path-filtered jobs directly when they may be skipped by design. Keep production deploy gates separate: protected `prod-*` tags, GHCR image build, manifest verification, attestation verification, and Kamal/deployd deploy.

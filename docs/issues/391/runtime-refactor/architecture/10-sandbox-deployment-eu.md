@@ -39,6 +39,36 @@ Tier rules:
 - **hardened default is `runsc` systrap on plain EU VMs**, because systrap needs no KVM (so no nested-virt dependency), matches #307's chosen path, and preserves the X1 host-credential rule (file ops stay host-side, only exec moves into gVisor). Egress: per-container netns + nftables (block RFC1918, CGNAT, link-local, metadata, ULA, app/DB networks; allow public DNS/package registries; add proxy/allowlist later).
 - **VM-grade uses Kata / Cloud Hypervisor with virtiofsd on EU bare metal.** **NEVER vanilla Firecracker for live host mounts** — Firecracker lacks generic virtiofs, so it cannot serve the host rclone mount into the guest; using it would force rclone (and its credentials) into the guest, violating X1. Firecracker is acceptable *only* with block images / snapshot / sync, never host rclone bind.
 
+## Runtime images (OCI runtime spec)
+
+Accept an optional provisioned-runtime image reference on provider config:
+
+```ts
+type ProviderRuntimeSpec = {
+  image?: { ref: string; digest: `sha256:${string}` }
+}
+```
+
+The `ref` is human/operator-readable (`registry.example/boring/runtime-node:2026-07`); the `digest` is the execution identity and is required for any non-dev run. Runtime images are not a new package boundary: `@hachej/boring-bash` still chooses the mode, `@hachej/boring-sandbox` still owns provider adapters/capability facts, and P5 still owns provisioning/fingerprint orchestration.
+
+Tier fit:
+
+- **gVisor `runsc`** and **Kata/Cloud Hypervisor** run OCI images through containerd/Docker-compatible plumbing, so `{ image: { ref, digest } }` is the natural runtime spec for hardened/VM-grade tiers.
+- **`bwrap` has no image concept.** It may either report runtime images unsupported or use a documented host-side unpack path: pull by digest with an OCI tool (`podman`, `skopeo`/`umoci`, or equivalent), unpack layers into a rootfs directory, then assemble bwrap with chroot-style binds. Caveats: image entrypoint/CMD/container env are not container-runtime semantics; whiteouts, UID/GID, setuid bits, device nodes, and package caches need explicit handling; it does not improve bwrap isolation. If the host cannot prove this path, capability `runtimeImage` is `unknown`/unsupported and policy fails closed.
+- **`vercel-sandbox` remains a PROXY provider.** It may accept an image only if its API exposes image/template/snapshot support with digest identity; otherwise image-backed runtime asks are unsupported and fail closed. It is still optional under invariant 15.
+- **`remote-worker` reports image support in its handshake.** The worker may implement OCI-native execution (runsc/Kata) or a bwrap-style unpack path, but the client consumes only reported facts and the resolved digest; missing/unknown support fails closed.
+
+Relationship to P5 provisioning: an image digest is a provisioning fingerprint component. Image-based provisioning is build-time baking; `BashRequirement` install scripts are runtime/bootstrap overlays on top of the selected base image. The composed key is at least `image.digest + provider contract version + normalized requirement ids/content + seed/source graph + revalidation key`. This is the same template/bootstrap split adopted from eve: reusable template first, per-session/onSession reconciliation second.
+
+X1 interplay is orthogonal: S3/FUSE mounts bind into whatever rootfs the provider starts (OCI-native, unpacked bwrap rootfs, provider template, or remote worker root). Mount policy, no-secret rules, mount-type facts, and the one model-visible namespace still decide what appears at `/workspace`.
+
+EU/security rules:
+
+- Default registries are EU/self-hostable: a self-hosted OCI registry in the tenant, or EU-region Scaleway/OVH registry only if control plane, data plane, logs, and support access satisfy Decision 10. US-hosted registries are optional, never defaults.
+- The image build pipeline is operator/host-owned. Predefined `boring-runtime-*` images (base/node-python/git-gh-rg and later vertical-agent toolchains) are named artifacts with pinned digests.
+- Dockerfile build from user input is a follow-up gated on demand, not part of this epic's implementation scope. Builds run host-side on dedicated isolated builders with no tenant/brokered secrets, restricted egress, provenance capture, and digest output; they never run inside the target sandbox session.
+- No secrets may be baked into images (invariant 14). Image labels, build logs, SBOM/provenance, fingerprints, and runtime env carry only non-secret metadata.
+
 ## Named providers and prices (July 2026 scan)
 
 Managed sandbox scan (all fail the exact X1 shape today):

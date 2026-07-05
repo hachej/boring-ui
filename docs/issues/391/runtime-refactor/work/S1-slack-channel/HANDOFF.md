@@ -11,7 +11,7 @@ Derived strictly from [TODO.md](./TODO.md) and [PLAN.md](./PLAN.md). Tick each b
 ## Beads
 - [ ] BBS1-001 — Hono→Fastify channel handler wrapper (inside the Slack package)
 - [ ] BBS1-002 — Slack package skeleton + ingress wiring
-- [ ] BBS1-003 — `conversationKey → sessionId` store
+- [ ] BBS1-003 — `conversationKey → sessionId` `state.db` store
 - [ ] BBS1-004 — Egress: text-delta batching into message updates
 - [ ] BBS1-005 — Approvals: agent request → Slack interactive blocks → `resolveInput`
 - [ ] BBS1-006 — Surface adapter conformance suite (neutral home; Slack first subject)
@@ -32,10 +32,11 @@ Derived strictly from [TODO.md](./TODO.md) and [PLAN.md](./PLAN.md). Tick each b
 - [ ] Egress update count is bounded and ≪ delta count; 429 handled.
 - [ ] Approval answerable from both Slack and workspace (no Slack-local desync).
 - [ ] Addressing isolation test present and failing on a crossed key.
+- [ ] `conversationKey → sessionId` default store is `state.db`; in-memory `Map` usage is confined to tests.
 - [ ] `@flue/slack` pinned to the **exact resolved** `1.0.0-beta.<N>` version (recorded in the PR) — never a `.x`/range placeholder.
 
 ## Exit criteria
-- [ ] Same agent + same session store serves the workspace UI **and** a Slack thread.
+- [ ] Same agent + same `state.db` session/addressing store serves the workspace UI **and** a Slack thread.
 - [ ] An approval requested in Slack can be answered in Slack or the workspace.
 - [ ] The Slack package imports only the public agent contract (`@hachej/boring-agent`) + `@flue/slack` + `@slack/web-api` — no `boring-bash` server code, no provider internals.
 - [ ] Hono→Fastify wrapper is channel-agnostic in shape inside Slack; shared extraction is deferred until a second channel lands.
