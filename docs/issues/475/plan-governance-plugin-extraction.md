@@ -102,3 +102,15 @@ deleted (moved).
    fail-closed missing source root.
 5. PR stacked on `issue/475-company-context-policy`, review-looped per stack
    rules (proof comment, GPT-5.5 review, thermo, Fable pass).
+
+## TODO — single stacked PR (`issue/475-governance-plugin-extraction`, base `issue/475-company-context-policy`)
+
+- [ ] Scaffold `plugins/boring-governance` (package.json exports ./server ./front, manifest, tsconfig, vitest, build) per boring-mcp precedent.
+- [ ] Move 9 server files + 4 test files; imports adjusted only.
+- [ ] Move `GovernanceAdminView` + add `createGovernanceCompanyAdmin()`.
+- [ ] Add `createGovernance(config)` composer; named exports unchanged.
+- [ ] Rewire full-app dev.ts/main.ts/front main.tsx (~10-line spread, boot order preserved); delete moved files.
+- [ ] pnpm lockfile + full-app dependency.
+- [ ] Proof: moved tests green under new filter; full-app typecheck+build; zero `server/governance` refs left in full-app; invariants pass.
+- [ ] Behavior-preservation smoke re-run (model filter 200 / forbidden 403 / budget 402 / command 409 / company-context allow+deny / fail-closed source root) — same results as pre-move.
+- [ ] PR with proof comment; GPT-5.5 review; thermo; Fable low-effort pass.
