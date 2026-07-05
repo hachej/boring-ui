@@ -12,17 +12,23 @@
 ## Design context
 Phase X1 is the mount subsystem of `@hachej/boring-sandbox` (created by P2): S3-backed filesystems that appear as a real directory inside a sandbox, so an agent's environment (E1) can be an object-store prefix. It dispatches after P2, P5, and E1 because its shipped attachment/conformance path consumes the E1 `Environment`/`EnvironmentAttachment` contract. It rides the three-package stack — providers/mounts live in `@hachej/boring-sandbox` (`./mounts` export, server-scoped, `node:*`), environments in `boring-bash`/`boring-agent` contracts; boring-bash imports the mount values, agent imports neither. The spine is the X1 decision set: concrete `rclone mount --vfs-cache-mode full`; HOST-SIDE mount then bwrap `--bind`/`--ro-bind` (never expose `/dev/fuse`/`fusermount3`/creds to the sandbox; gVisor-portable); per-session lifecycle with a readiness gate + lazy-unmount + reap; short-lived prefix-scoped STS brokered into the mount-process env only. Capability fact `mounts.fuseS3: reported | unknown` fails closed (`vercel` reports unsupported). Mounts are scoped to the `user` filesystem only — governed filesystems (`company_context`) are never raw-mounted. EU-sovereign defaults (OVH/Scaleway/MinIO); MinIO in CI.
 
+Verified current repo reality: this prep worktree does not yet contain `packages/boring-sandbox` (P2 creates it). Existing bwrap code is still at `packages/agent/src/server/sandbox/bwrap/buildBwrapArgs.ts`; after P2 BBP2-003 it must live under `packages/boring-sandbox/src/providers/bwrap/*`, and X1 must reuse that moved arg builder rather than forking another bwrap path. Current #416 shapes already have `FilesystemBinding.mountPath` in `packages/boring-bash/src/shared/index.ts`, and the existing no-leak suite is `checkReadonlyProjectionConformance` from `packages/boring-bash/src/server/testing/readonlyProjectionConformance.ts`; E1 generalizes those into `EnvironmentAttachment`/`ResolvedEnvironments`, and X1 consumes E1 only.
+
+Benchmark baseline: `/home/ubuntu/projects/x1-bench/report.md` (`2026-07-05 12:22 UTC`) recorded rclone-FUSE-over-MinIO numbers: warm `rg` `0.18s`, append-100 `0.05s`, `git init+commit` `5.51s` vs local `1.17s` (`4.7x local`), and sequential write 50 MiB `4.40s`. BBX1-009 must encode these as the initial locked thresholds. The same report explicitly says readonly/backend-down semantic checks need re-verification because the harness had PATH/ordering bugs; those semantic checks stay owned by BBX1-007's smoke tests, not by the benchmark bead.
+
 ## Deliverables
 - concrete **rclone** mount module (`--vfs-cache-mode full`, EU-endpoint-first OVH/Scaleway/MinIO); no generic driver interface until a second real mount implementation lands; mountpoint-s3 deferred (AWS-only/RO);
 - per-session mount lifecycle (own process/VFS cache/scoped creds/isolated teardown; share only immutable RO datasets), readiness gate (`/proc/self/mountinfo` + stat/readdir probe before bind), lazy-unmount + explicit process reap, stale `ENOTCONN`/`ESTALE` re-mount vs transient `EIO` retry;
 - HOST-SIDE mount then bwrap `--bind`/`--ro-bind` into the sandbox (gVisor-portable) — `/dev/fuse`/`fusermount3`/creds never exposed to the sandbox;
 - capability fact `mounts.fuseS3: reported | unknown` (fail closed; `vercel`-PROXY reports unsupported);
 - credential broker: short-lived prefix-scoped STS (AWS session policy `s3:prefix`; Scaleway/MinIO STS; OVH per-container) injected into the mount-process env only, refreshed via `credential_process`; the sandbox receives a directory handle, never a secret (invariant 14);
-- S3-backed `Environment` integration + a readonly-S3 no-leak conformance mount + a `bash-sees-mount == file-routes-see-mount` source-of-truth test; default write-back = rclone VFS-full; fuse-overlayfs publish-on-save variant deferred (never kernel overlayfs over FUSE).
+- S3-backed `Environment` integration + a readonly-S3 no-leak conformance mount + a `bash-sees-mount == file-routes-see-mount` source-of-truth test; default write-back = rclone VFS-full; fuse-overlayfs publish-on-save variant deferred (never kernel overlayfs over FUSE);
+- BBX1-009 benchmark harness with locked thresholds from the `2026-07-05 12:22 UTC` baseline: warm `rg <= 0.18s`, append-100 `<= 0.05s`, `git init+commit <= 4.7x local`, sequential write 50 MiB `<= 4.40s`; readonly/backend-down semantics are excluded from this benchmark acceptance and re-verified by BBX1-007.
 
 ## Exit criteria
 - a readonly S3 mount passes the no-leak suite;
 - `bash`-visible files == file-route-visible files over the same mount;
 - no credential is readable inside the sandbox;
 - the EU-endpoint matrix (MinIO in CI) is green with no US-hosted default (invariant 15);
-- `mounts.fuseS3: unknown`/`vercel` fail closed.
+- `mounts.fuseS3: unknown`/`vercel` fail closed;
+- `bench:mounts` encodes the baseline thresholds: warm `rg <= 0.18s`, append-100 `<= 0.05s`, `git init+commit <= 4.7x local`, sequential write 50 MiB `<= 4.40s`; threshold widening requires raw run output plus reviewer approval, not silent drift.

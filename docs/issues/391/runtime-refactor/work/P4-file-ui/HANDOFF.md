@@ -21,10 +21,17 @@ Derived strictly from [TODO.md](./TODO.md) and [PLAN.md](./PLAN.md). Tick each b
 - [ ] `pnpm --filter @hachej/boring-workspace run typecheck`
 - [ ] `pnpm --filter @hachej/boring-workspace run test`
 - [ ] `pnpm --filter @hachej/boring-workspace run lint:plugin-invariants`
+- [ ] `pnpm --filter workspace-playground run test:e2e`
 - [ ] `pnpm lint:invariants`
 - [ ] `pnpm audit:imports`
 - [ ] `pnpm typecheck`
 - [ ] Manual proof (workspace playground): file tree renders; open code/markdown/media/html/pdf panes; `exec_ui openFile` focuses the right panel; agent write updates an open pane via agentFileBridge. Rebuild dist before driving the playground.
+
+## PR-PLAN reconciliation
+- [ ] `pr1-plugin-subpath-host-adapter` completed BBP4-010
+- [ ] `pr2-move-front-plugin` completed BBP4-011 + BBP4-012, including any pr2a/pr2b/pr2c split required by move churn
+- [ ] BBP4-013 verified as deferred: no `DocumentAuthority`/override hook/null authority shipped; P8 follow-up recorded
+- [ ] `pr3-repoint-acyclicity` completed BBP4-014
 
 ## Review gates
 - [ ] Phase 3 present (write/edit tools + routes in boring-bash), else STOP+report.

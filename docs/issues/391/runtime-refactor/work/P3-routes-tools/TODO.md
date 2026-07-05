@@ -28,7 +28,8 @@ HTTP routes (registered from `createAgentApp.ts` and `registerAgentRoutes.ts`; n
 - `packages/agent/src/server/http/routes/search.ts` (`searchRoutes`).
 - `packages/agent/src/server/http/routes/fsEvents.ts` (`fsEventsRoutes`).
 - `packages/agent/src/server/http/routes/git.ts` (`gitRoutes`, `GitRouteOptions`).
-- `packages/agent/src/server/http/routes/fileRecords.ts`; `sessionChanges.ts` (`sessionChangesRoutes` — file-change feed; verify coupling before moving, may stay if it depends on session core).
+- `packages/agent/src/server/http/routes/fileRecords.ts` is the parser/result helper imported by `file.ts`; the `/api/v1/files/records` handler is inside `fileRoutes`, so move `fileRecords.ts` with `file.ts`.
+- `packages/agent/src/server/http/routes/sessionChanges.ts` (`sessionChangesRoutes`) plus `packages/agent/src/server/http/sessionChangesTracker.ts` are session-core/change-feed code, not a file route. **Pinned decision:** keep them in `packages/agent` in P3. Do not move them with file routes unless a later issue explicitly moves the session-change owner.
 - Backing search: `packages/agent/src/server/runtime/createServerFileSearch.ts` (+ `__tests__`).
 
 Agent tools:
@@ -117,11 +118,12 @@ P3 therefore **enumerates and migrates EVERY in-repo composition consumer**, eac
 
 - **Files move:**
   - `packages/agent/src/server/http/routes/file.ts` → `packages/boring-bash/src/server/routes/file.ts` (+ `__tests__/file.test.ts`).
+  - `packages/agent/src/server/http/routes/fileRecords.ts` → `packages/boring-bash/src/server/routes/fileRecords.ts` because `fileRoutes` owns `/api/v1/files/records` and imports this helper.
   - `tree.ts` → `boring-bash/src/server/routes/tree.ts` (+ `__tests__/tree.test.ts`).
   - `search.ts` → `boring-bash/src/server/routes/search.ts` (+ `__tests__/search.test.ts`); `runtime/createServerFileSearch.ts` → `boring-bash/src/server/createServerFileSearch.ts` (+ tests).
   - `fsEvents.ts` → `boring-bash/src/server/routes/fsEvents.ts` (+ `__tests__/fsEvents.test.ts`).
   - `git.ts` → `boring-bash/src/server/routes/git.ts` (+ `__tests__/git.test.ts`); carry `GitRouteOptions` + git source-root logic.
-  - `fileRecords.ts` → `boring-bash/src/server/routes/fileRecords.ts`. **Verify** `sessionChanges.ts` coupling: if it depends on session-core (not fs), leave it in agent and note; else move.
+  - **Do not move** `sessionChanges.ts` / `sessionChangesTracker.ts`; they remain agent-owned session change-feed code.
 - **Files touch:** `packages/boring-bash/src/server/index.ts` (export a `registerBashRoutes(app, { runtime })` composing the above; keep Fastify types injected, not a hard Fastify dep if avoidable — mirror current signatures). `registerBashRoutes` is imported and mounted by **host composition only** (the BBP3-015 call sites: `packages/cli/src/server/modeApps.ts`, `packages/workspace/src/app/server/createWorkspaceAgentServer.ts`, `apps/full-app` composition) — never from `packages/agent/src/server/*` **and never from `packages/agent/src/bin/boring-agent.ts`** (the agent bin is part of `packages/agent` and **may NOT import boring-bash** — zero agent→bash value imports, bin included), and NOT contributed through `createBashAgentFeature()`. The `packages/agent` bin is **already pure-only as of Phase 2 (`TODO-P2` BBP2-005)** — the bash-enabled bin composition moved to `packages/cli` in P2 (same PR that moved `resolveMode`), because the agent bin cannot resolve a mode/provider without importing boring-bash. **P3 does not move the bin**; it only updates the already-CLI-owned bash dev-server entry to spread `createBashAgentFeature()` + mount `registerBashRoutes` now that tools/routes have moved. `/api/v1/files/*` + git route paths stay byte-identical — no aliases, no path changes. **Rationale (so a reviewer does not flag it):** file/git routes are workspace/environment-scoped, deliberately OUTSIDE the locked `/api/v1/agents/:agentId/...` agent-session family (`08` "Route-family scope") — files belong to environments, not agents — so they keep their existing paths and are never re-prefixed with an `agentId`.
 - **Notes:** Routes receive `Workspace`/bundle, not raw paths (already true). Preserve stable error codes + adapter-owned path validation. Pure mode registers none of these.
 - **Tests:** moved route tests pass; read/write/list/search/git parity; git root == file route root == bash cwd; pure mode registers none.
@@ -158,8 +160,11 @@ pnpm --filter @hachej/boring-bash run check:invariants
 pnpm --filter @hachej/boring-agent run build
 pnpm --filter @hachej/boring-agent run typecheck
 pnpm --filter @hachej/boring-agent run test
+pnpm --filter @hachej/boring-agent run test:e2e
 pnpm --filter @hachej/boring-agent run lint:invariants
 pnpm --filter @hachej/boring-agent run check:isolation
+
+pnpm --filter workspace-playground run test:e2e
 
 pnpm lint:invariants     # root: agent + boring-bash + workspace-plugin
 pnpm audit:imports
@@ -168,6 +173,17 @@ pnpm typecheck
 # Manual behavior proof (workspace playground): open file tree + editor, run read/write/edit/find/grep/ls/bash.
 # See run-workspace-playground recipe; rebuild dist first.
 ```
+
+## PR-PLAN reconciliation
+
+Matches [`../../PR-PLAN.md`](../../PR-PLAN.md) P3 rows exactly:
+
+- `pr1-agent-subpath-feature` → BBP3-010.
+- `pr2-move-filesystem-tools` → BBP3-011.
+- `pr3-move-bash-upload` → BBP3-012 + BBP3-013.
+- `pr4-move-fs-git-routes` → BBP3-014.
+- `pr5-wire-composition` → BBP3-015.
+- `pr6-sot-tests-invariants` → BBP3-016 + BBP3-017.
 
 ## Review gates
 

@@ -9,6 +9,8 @@ Derived strictly from [TODO.md](./TODO.md) and [PLAN.md](./PLAN.md). Tick each b
 - [ ] P2 (`@hachej/boring-sandbox` + providers) present — if the package is absent, **STOP and report**
 - [ ] P5 (capability-fact `reported | unknown` fail-closed rule + host-side secrets-broker BBP5-007) present — else **STOP and report**
 - [ ] E1 `Environment`/`EnvironmentAttachment` contracts present — else **STOP and report**
+- [ ] Reuse the P2-moved bwrap arg builder under `packages/boring-sandbox/src/providers/bwrap/*`; current prep worktree still has it at `packages/agent/src/server/sandbox/bwrap/buildBwrapArgs.ts`, so STOP+report if P2 did not move it
+- [ ] Add a readonly S3 subject to the existing `checkReadonlyProjectionConformance` suite from `packages/boring-bash/src/server/testing/readonlyProjectionConformance.ts`; do not fork the suite
 
 ## Beads
 - [ ] BBX1-001 — Concrete rclone mount module in `boring-sandbox/src/mounts`
@@ -27,6 +29,7 @@ Derived strictly from [TODO.md](./TODO.md) and [PLAN.md](./PLAN.md). Tick each b
 - [ ] `pnpm --filter @hachej/boring-sandbox run check:invariants`
 - [ ] `pnpm --filter @hachej/boring-sandbox run test`
 - [ ] `pnpm --filter @hachej/boring-sandbox run test:mounts:eu`
+- [ ] `pnpm --filter @hachej/boring-sandbox run bench:mounts`
 - [ ] `pnpm --filter @hachej/boring-bash run test`
 - [ ] `pnpm --filter @hachej/boring-bash run check:invariants`
 - [ ] `pnpm lint:invariants`
@@ -46,7 +49,8 @@ Derived strictly from [TODO.md](./TODO.md) and [PLAN.md](./PLAN.md). Tick each b
 - [ ] VM-grade tier uses Kata/Cloud Hypervisor + virtiofs; **vanilla Firecracker is never used for live host mounts**.
 - [ ] X1 mounts are `user`-fs-only; governed filesystems are never raw-mounted (#416); no bead raw-mounts `company_context`.
 - [ ] Mount-type facts declared + no-inotify contract enforced; stable error codes present; egress enforced via #307 netns/nftables.
-- [ ] The six Decision-12 smoke tests pass; the BBX1-009 rclone-FUSE-vs-local benchmark exists with recorded thresholds.
+- [ ] The six Decision-12 smoke tests pass in BBX1-007; readonly/backend-down semantics are re-verified there because `/home/ubuntu/projects/x1-bench/report.md` had PATH/ordering harness bugs for those semantic rows.
+- [ ] BBX1-009 `bench:mounts` exists and encodes the locked baseline thresholds from `/home/ubuntu/projects/x1-bench/report.md` (`2026-07-05 12:22 UTC`): warm `rg <= 0.18s`, append-100 `<= 0.05s`, `git init+commit <= 4.7x local`, sequential write 50 MiB `<= 4.40s`; threshold widening requires raw run output plus reviewer approval.
 - [ ] boring-sandbox imports agent types only; mounts code never in `shared`; agent imports neither package; `pnpm audit:imports`/`pnpm lint:invariants` green.
 - [ ] Any transitional code carries `TODO(remove:<bead-id>)` naming its deletion-owner bead; a later owner is allowed only when explicitly named per [INDEX.md](../../INDEX.md), and no marker outlives its named owner's phase.
 
@@ -64,7 +68,8 @@ Derived strictly from [TODO.md](./TODO.md) and [PLAN.md](./PLAN.md). Tick each b
 - [ ] X1 mounts are scoped to the `user` filesystem only; governed filesystems (`company_context`) are never raw-mounted.
 - [ ] Mount-type capability facts (`mountType`, `noInotify`, `pollRequired`, `cachePolicy`) are reported; the no-inotify contract holds.
 - [ ] Stable error codes exist (`mount-unavailable`, `mount-stale`, `writeback-failed`, `path-outside-prefix`, `egress-denied`, `unsupported-mount-mode`).
-- [ ] The six Decision-12 smoke tests pass; the rclone-FUSE-vs-local benchmark (BBX1-009) exists with recorded numeric thresholds.
+- [ ] The six Decision-12 smoke tests pass in BBX1-007, including readonly rejection, backend-down errno/recovery, and the Decision-12 smoke semantics; do not accept the baseline report's semantic rows without this re-verification.
+- [ ] The rclone-FUSE-vs-local benchmark (BBX1-009) exists with encoded numeric thresholds: warm `rg <= 0.18s`, append-100 `<= 0.05s`, `git init+commit <= 4.7x local`, sequential write 50 MiB `<= 4.40s`.
 - [ ] Egress policy is enforced as part of the sandbox contract via the hardened tier's per-workspace netns/nftables (#307).
 
 ## Closeout

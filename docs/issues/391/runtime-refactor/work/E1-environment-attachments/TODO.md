@@ -14,14 +14,14 @@ Handoff: self-contained work order for one autonomous coding agent (pi or gpt-5.
   - `packages/boring-bash/src/server/testing/readonlyProjectionConformance.ts` — `checkReadonlyProjectionConformance(subject)`, `ReadonlyProjectionConformanceSubject`.
   - `packages/boring-bash/src/server/testing/companyContextFixtureProvider.ts` — `FixtureCompanyContextBindingProvider`, `COMPANY_CONTEXT_FILESYSTEM_ID = "company_context"`, `COMPANY_CONTEXT_SENTINEL`.
   - Exports barrels: `packages/boring-bash/src/server/index.ts`, package exports `.`/`./shared`/`./server` in `packages/boring-bash/package.json`.
-- Agent-core injection surface (type-only for the core): the shape currently lives in `packages/agent/src/server/runtime/mode.ts` — `RuntimeBundle.filesystemBindings?: RuntimeFilesystemBinding[]`, `RuntimeFilesystemBinding {filesystem, access, operations}`, `RuntimeFilesystemBindingOperations`. Before E1 consumers import it, move/export `RuntimeFilesystemBinding` and `RuntimeFilesystemBindingOperations` from a front-safe `@hachej/boring-agent` shared contract module and have `server/runtime/mode.ts` import those types from that single home. `ResolvedEnvironments` must reduce to that shared shape so the core is unchanged and no duplicate contract appears.
+- Agent-core injection surface (type-only for the core): the operation-bearing binding shape currently lives only in `packages/agent/src/server/runtime/mode.ts` — `RuntimeBundle.filesystemBindings?: RuntimeFilesystemBinding[]`, `RuntimeFilesystemBinding {filesystem, access, operations}`, `RuntimeFilesystemBindingOperations`. There is no shared home yet. **Pinned home:** extend the existing front-safe `packages/agent/src/shared/runtime.ts` to export `RuntimeFilesystemBinding` and `RuntimeFilesystemBindingOperations`, then have `server/runtime/mode.ts` import those types from `../../shared/runtime`. `ResolvedEnvironments` must reduce to that shared shape so the core is unchanged and no duplicate contract appears.
 - Invariant scripts you must extend: `packages/boring-bash/scripts/check-invariants.mjs` (checks required exports `.`/`./shared`/`./server`); repo value-import audit `scripts/audit-imports.ts` (run via `pnpm audit:imports`); agent-side invariant tests `packages/agent/src/__tests__/invariants.test.ts` + `packages/agent/src/__tests__/invariants-script.test.ts`.
 - Governance PRs (#476–#501, the #475 line) consume the landed shapes above. This bead is **additive/adapter only** — a governance consumer that imports `FilesystemBinding`/`FilesystemBindingResolver`/`ScopedFilesystemRuntimeBindingManager` must keep compiling and passing with zero source edits.
 
 **Depends on: Phase 2 AND Phase 3.** E1 runs after both per [`../../INDEX.md`](../../INDEX.md) (`P2, P3`). Rationale: P3 creates the `createBashAgentFeature()` bundle; **E1 may re-implement that bundle's internals over environment attachments without changing its public `{ tools, readinessRequirements }` signature**. E1 does not fork the bundle API — it generalizes what backs it.
 
 Verified reality check (do not assume otherwise):
-- `createBashAgentFeature()` does **not** exist yet — it is a Phase 3 name in the plan. E1 introduces the environment contracts and the attachment→`RuntimeFilesystemBinding[]` reduction; wiring the public bundle (`{ tools, readinessRequirements }`, spread into `createAgent()`'s `tools`) is Phase 3's job — there is no `features` registry. Provide the reduction function and a thin `attachEnvironments()` helper, not a full feature system.
+- `createBashAgentFeature()` does **not** exist yet — it is a Phase 3 name in the plan. E1 introduces the environment contracts and the attachment→`RuntimeFilesystemBinding[]` reduction; wiring the public bundle (`{ tools, readinessRequirements }`, spread into `createAgent()`'s `tools`) is Phase 3's job — there is no `features` registry. Provide `resolveAttachments()` only, not a feature system or a second helper vocabulary.
 - Subagents are **not** a first-class code path in `packages/agent` today. A repo-wide search finds only a `pi-subagent` renderer key in `packages/agent/src/shared/tool-ui.ts`; there is no subagent/task tool, no `spawnSubagent`, no child-session attach seam in `packages/agent/src/server`. Encode the seam as a **new explicit contract**, not a modification of existing subagent plumbing (there is none).
 
 ## Goal / exit criteria
@@ -54,7 +54,7 @@ Match `INDEX.md` Phase E1 exit criteria:
 
 ### BBE1-001 — Environment/attachment contracts, split across the two packages (S)
 - Description: Add the `09` contracts as type-only shapes generalizing #416, respecting the single type-dependency direction (boring-bash → agent).
-- Files: (a) create `packages/boring-bash/src/shared/environment.ts` for the **rich** types; re-export from `packages/boring-bash/src/shared/index.ts`. (b) create/extend the agent shared contracts module (`packages/agent/src/shared/` — the file the agent already uses for core-facing runtime types, adjacent to `RuntimeBundle`) for the **minimal core-facing** types.
+- Files: (a) create `packages/boring-bash/src/shared/environment.ts` for the **rich** types; re-export from `packages/boring-bash/src/shared/index.ts`. (b) extend `packages/agent/src/shared/runtime.ts` for the **minimal core-facing** types; `packages/agent/src/server/runtime/mode.ts` imports the operation-bearing binding types from there.
 - Notes:
   - **In `boring-bash/shared` (rich, host-facing):** `Environment { id: string; provider: string; capabilities: EnvironmentCapabilities; }`. **Do not define a second provider-capability contract.** `EnvironmentCapabilities` is a **type-only alias/pick of `ProviderCapabilities` from `@hachej/boring-sandbox/shared`** (the authoritative home named by `02-boring-bash-environment.md`), e.g. `export type EnvironmentCapabilities = Pick<ProviderCapabilities, 'fs' | 'exec' | 'watch' | 'search' | 'realBash' | 'realBinaries' | 'networkIsolation'>` or the full `ProviderCapabilities` if the environment summary needs every fact. The facts stay the P2 matrix facts: `fs: 'none' | 'readonly' | 'readwrite'`, `exec`, `watch`, `search`, `realBash?: boolean | 'unknown'`, `realBinaries?: boolean | 'unknown'`, `networkIsolation?: 'none' | 'process' | 'container' | 'microvm' | 'provider' | 'unknown'`. `networkIsolation` is the **enum**, not a boolean; worker-dependent fields are `reported | 'unknown'` and consumers fail closed on `'unknown'` (02 "Worker-dependent capabilities are reported, not declared"). Do NOT re-model any of these as plain booleans or duplicate the enum/interface in boring-bash. `EnvironmentAttachment { environmentId: string; filesystem: FilesystemId; access: FilesystemAccess; scope?: { subpath?: string }; execPolicy: 'none' | 'attached' }`. Reuse `FilesystemId`/`FilesystemAccess` from `./index`.
   - **In `@hachej/boring-agent` shared (minimal core-facing):** first move/export the existing operation-bearing runtime binding contract out of `packages/agent/src/server/runtime/mode.ts` into the shared/type-only surface, then have `server/runtime/mode.ts` consume that shared type. The agent-side injection type **IS** the operation-bearing binding array — `ResolvedEnvironments { bindings: RuntimeFilesystemBinding[] }`, where `RuntimeFilesystemBinding` is the **landed agent shape** `{ filesystem, access, operations }`. **There is NO `PreparedEnvironmentAttachment { handle: unknown }` — it is deleted.** The agent never receives an opaque handle; it receives prepared, operation-bearing bindings. `FilesystemId`/`FilesystemAccess` are the agent's own local string-literal aliases matching `RuntimeFilesystemBinding`. boring-bash's `resolveAttachments` **imports the agent-defined `ResolvedEnvironments` type-only** and returns it — wrapping prepare + operations construction (see BBE1-002).
@@ -141,6 +141,17 @@ pnpm --filter @hachej/boring-agent run typecheck
 pnpm run build:packages
 pnpm run test
 ```
+
+## PR-PLAN reconciliation
+
+Matches [`../../PR-PLAN.md`](../../PR-PLAN.md) E1 rows exactly:
+
+- `pr1-env-contracts` → BBE1-001.
+- `pr2-resolve-attachments` → BBE1-002.
+- `pr3-company-context-env` → BBE1-003.
+- `pr4-scoped-view-jail` → BBE1-004.
+- `pr5-agent-typeonly-conformance` → BBE1-006 + BBE1-007.
+- `BBE1-005` has **no E1 PR**; it is deferred to Phase 7 and lands with P7 `pr8-subagent-grant`.
 
 ## Review gates
 

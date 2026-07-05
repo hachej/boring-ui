@@ -3,18 +3,28 @@
 Derived strictly from [TODO.md](./TODO.md) and [PLAN.md](./PLAN.md). Tick each before calling this package done. Invent nothing.
 
 ## Prerequisites (packages + gates)
-P8 gates on every prior lane EXCEPT P6b. Each lane lead must be merged:
+P8 gates on every prior delivered phase EXCEPT P6b. Each package below must be merged:
 - [ ] P1-headless-core merged — [../P1-headless-core/HANDOFF.md](../P1-headless-core/HANDOFF.md)
+- [ ] T1-durable-events merged — [../T1-durable-events/HANDOFF.md](../T1-durable-events/HANDOFF.md)
 - [ ] T2-transport merged — [../T2-transport/HANDOFF.md](../T2-transport/HANDOFF.md)
+- [ ] P2-sandbox-providers merged — [../P2-sandbox-providers/HANDOFF.md](../P2-sandbox-providers/HANDOFF.md)
+- [ ] P3-routes-tools merged — [../P3-routes-tools/HANDOFF.md](../P3-routes-tools/HANDOFF.md)
 - [ ] P4-file-ui merged — [../P4-file-ui/HANDOFF.md](../P4-file-ui/HANDOFF.md)
+- [ ] E1-environment-attachments merged — [../E1-environment-attachments/HANDOFF.md](../E1-environment-attachments/HANDOFF.md)
 - [ ] E2-mcp-projection merged — [../E2-mcp-projection/HANDOFF.md](../E2-mcp-projection/HANDOFF.md)
 - [ ] X1-s3-fuse-mounts merged — [../X1-s3-fuse-mounts/HANDOFF.md](../X1-s3-fuse-mounts/HANDOFF.md)
 - [ ] P5-provisioning-secrets merged — [../P5-provisioning-secrets/HANDOFF.md](../P5-provisioning-secrets/HANDOFF.md)
+- [ ] P6-plugin-child-app P6a merged — [../P6-plugin-child-app/HANDOFF.md](../P6-plugin-child-app/HANDOFF.md)
 - [ ] P7-multi-agent-inspection merged — [../P7-multi-agent-inspection/HANDOFF.md](../P7-multi-agent-inspection/HANDOFF.md)
+- [ ] S1-slack-channel merged — [../S1-slack-channel/HANDOFF.md](../S1-slack-channel/HANDOFF.md)
 - [ ] S2-embed-contract merged — [../S2-embed-contract/HANDOFF.md](../S2-embed-contract/HANDOFF.md)
 - [ ] S3-control-plane-ux merged — [../S3-control-plane-ux/HANDOFF.md](../S3-control-plane-ux/HANDOFF.md)
 - [ ] Do NOT land while any earlier phase's `TODO(remove:*)` marker is still live — a surviving marker reopens the phase of its named deletion-bead owner (do not absorb it here)
 - [ ] P6b is explicitly NOT a P8 gate — verify only that the P6b follow-up issue is filed; never wait on P6b landing
+
+## Owner questions / verdict
+- OWNER-QUESTIONS: none.
+- GO/NO-GO: GO only as the terminal verification phase after every prerequisite above is merged and the P6b follow-up issue is filed; NO-GO if any prior delivered phase is missing, any `TODO(remove:*)` marker survives, or any invariant/import gate is red.
 
 ## Beads
 - [ ] BBP8-001 — Repo-wide `TODO(remove:*)` marker gate (zero-tolerance)
@@ -26,15 +36,22 @@ P8 gates on every prior lane EXCEPT P6b. Each lane lead must be merged:
 ## Verification commands
 - [ ] `pnpm lint:invariants`
 - [ ] `pnpm audit:imports`
-- [ ] `node scripts/check-no-remove-markers.mjs`
+- [ ] `node scripts/check-no-remove-markers.mjs` (after BBP8-001 creates/wires it)
 - [ ] `pnpm --filter @hachej/boring-bash run check:invariants`
 - [ ] `pnpm --filter @hachej/boring-workspace run lint:plugin-invariants`
 - [ ] `pnpm --filter @hachej/boring-agent run lint:invariants`
 - [ ] `pnpm --filter @hachej/boring-agent run check:isolation`
 - [ ] `pnpm typecheck`
 - [ ] `pnpm test`
-- [ ] `grep -rn "from '@hachej/boring-agent/server'" packages apps plugins | grep -E "resolveMode|createDirectSandbox|createBwrapSandbox|createVercelSandboxWorkspace" || echo "clean"`
-- [ ] `grep -rn "ask-user.v1." packages plugins apps | grep -v docs || echo "clean"`
+- [ ] `! rg -n -U "import\\s*\\{[^}]*\\b(resolveMode|autoDetectMode|hasBwrap|createDirectSandbox|createBwrapSandbox|createRemoteWorkerModeAdapter|createRemoteWorkerSandbox|createVercelSandboxWorkspace)\\b[^}]*\\}\\s*from\\s*['\"]@hachej/boring-agent/server['\"]" packages apps plugins -g '!**/*.md'`
+- [ ] `! rg -n "ask-user\\.v1\\." packages apps plugins -g '!**/*.md'`
+- [ ] `! rg -n "\\?cursor=|schedulePiChatReconnect|replay_gap|PiChatReplayBuffer" packages apps plugins -g '!**/*.md'`
+
+## PR-PLAN reconciliation
+- [ ] `pr1-marker-import-gates` completed BBP8-001 + BBP8-003
+- [ ] `pr2-surface-contract-docs` completed BBP8-002
+- [ ] `pr3-track-remaining-prose` completed BBP8-004
+- [ ] BBP8-005 completed as the final stack merge gate, not a separate PR; any red gate reopened its owning phase
 
 ## Review gates
 - [ ] `pnpm lint:invariants` runs the `TODO(remove:*)` gate; the repo has **zero** markers; a planted marker fails the gate and names its owning bead.

@@ -108,6 +108,8 @@ pnpm --filter @hachej/boring-workspace run typecheck
 pnpm --filter @hachej/boring-workspace run test
 pnpm --filter @hachej/boring-workspace run lint:plugin-invariants
 
+pnpm --filter workspace-playground run test:e2e
+
 pnpm lint:invariants     # root: agent + boring-bash + workspace-plugin
 pnpm audit:imports
 pnpm typecheck
@@ -116,6 +118,15 @@ pnpm typecheck
 # exec_ui openFile focuses the right panel; agent write updates an open pane via agentFileBridge.
 # Rebuild dist before driving the playground (see run-workspace-playground recipe).
 ```
+
+## PR-PLAN reconciliation
+
+Matches [`../../PR-PLAN.md`](../../PR-PLAN.md) P4 rows exactly:
+
+- `pr1-plugin-subpath-host-adapter` → BBP4-010.
+- `pr2-move-front-plugin` → BBP4-011 + BBP4-012, split as pr2a/pr2b/pr2c if move churn crosses the pre-declared threshold.
+- `BBP4-013` has **no PR** in this epic; its only closeout proof is that no document-authority seam was added and the follow-up is filed by P8 BBP8-004.
+- `pr3-repoint-acyclicity` → BBP4-014.
 
 ## Review gates
 

@@ -10,6 +10,13 @@
 ## Design context
 Phase 4 moves the filesystem front plugin from `packages/workspace` into `@hachej/boring-bash/plugin`, registered by workspace with **no package cycle**. The hard rule: `boring-bash/plugin` imports **NOTHING** from `@hachej/boring-workspace` — not even `import type` (a type-only import still forms a package edge → cycle). Pure type shapes become local structural types; the runtime helper VALUES (`normalizeUiFilesystem`, `USER_FILESYSTEM_ID`, `uiFileResourceKey`) arrive through the `BashPluginHost` adapter at registration. Panel ids, `FILESYSTEM_SURFACE_RESOLVER_ID`, the `workspace.open.path` resolver, file panel binding, agent file bridge/session-change integration, and the #416 Company file-tree root + capability-based readonly panes are all preserved verbatim. Tree data is factored into a **plain internal function** — the pluggable `FileTreeDataProvider` boundary is deferred to #295 (BBP4-012), and the document-authority write/edit override is deferred out of the epic (BBP4-013); `write`/`edit` stay raw file ops.
 
+## Verified current repo reality (pre-P4)
+- `packages/boring-bash/src/plugin/index.ts` is currently a stub `export {};`; `packages/boring-bash/package.json` currently has no `./plugin` export; `packages/boring-bash/tsup.config.ts` currently has no plugin entry.
+- The filesystem front plugin currently lives under `packages/workspace/src/plugins/filesystemPlugin/`, with `front/*` and `shared/*` subtrees. `packages/workspace/src/plugins/filesystemPlugin/shared/constants.ts` defines `FILES_LEFT_TAB_ID`, `FILES_CATALOG_ID`, `FILESYSTEM_SURFACE_RESOLVER_ID`, and the code/markdown/image/pdf/html/empty panel ids.
+- `packages/workspace/src/shared/types/filesystem.ts` is workspace-owned and exports the runtime helper values `USER_FILESYSTEM_ID`, `normalizeUiFilesystem()`, and `uiFileResourceKey()`, plus the structural `FilesystemId` type. P4 passes the values through `BashPluginHost`; it does not import this file from boring-bash.
+- Current workspace registration sites are `packages/workspace/src/index.ts:61-66`, `packages/workspace/src/app/front/workspaceBuiltinPlugins.ts:1` and `:17`, and `packages/workspace/src/front/provider/WorkspaceProvider.tsx:34` and `:529-531`.
+- `apps/workspace-playground/package.json` has `test:e2e`, `test`, `build`, `typecheck`, and `dev` scripts. Use `test:e2e` for checkable playground proof; use `dev` only for manual inspection.
+
 ## Deliverables
 - move filesystem front plugin to `boring-bash/plugin`;
 - preserve panel ids and `workspace.open.path` resolver;
