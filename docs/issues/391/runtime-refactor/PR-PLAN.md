@@ -12,7 +12,8 @@ Binding execution plan that turns the [`work/`](work/) work orders into reviewab
 4. **Every code PR carries its bead's tests in the same PR** — no test-less code PRs.
 5. **Branch naming:** `bclaw/391-<todo>-pr<N>-<slug>` (mirrors #416). One stack per TODO; each PR must be mergeable-green on its own.
 6. **Every PR description cites:** bead id(s), plan file (`docs/issues/391/runtime-refactor/…`), migration phase ([`INDEX.md`](INDEX.md) phase table + the package's `PLAN.md`), and a LOC-accounting block from the script below.
-7. **CI gate per PR:** the affected package test filter(s) + the root invariant scripts named per lane.
+7. **Every PR description carries review-budget metadata:** estimated review time, review-focus notes, and stacked merge order labels/notes when applicable (owner review budget: 1-2h/day).
+8. **CI gate per PR:** the affected package test filter(s) + the root invariant scripts named per lane.
 
 ### LOC-accounting command (verified — run in the PR branch, prints net-new)
 
@@ -52,7 +53,7 @@ S ≈ <300 net-new · M ≈ 300–900 · L ≈ 900–2000. Adjusted per bead nat
 | --- | --- | --- |
 | **BBP1-002** `createAgent()` façade | owner-flagged; new façade + `/core` subpath + shared types | pr2a: `createAgent.ts` + `/core` entry + `AgentConfig`/`AgentEvent`/`Agent` types + `AgentSendInput` reconcile · pr2b: `start`/`stream`/`send` producer-consumer wiring over `HarnessPiChatService` + `interrupt`/`stop` wrapping the existing `HarnessPiChatService` control methods + `resolveInput`/`stream` typed stubs |
 | **BBT1-001** EventStreamStore vendoring | owner-flagged; ~982 LOC ported from Flue (adapted = net-new, not a rename) | pr1a: `eventStreamStore.ts` + `sqlStorage.ts` (transactional append fix) · pr1b: `schemaVersion.ts` + `runEventStreamStoreConformance` suite |
-| **BBP4-011** filesystem front-plugin move | owner-flagged move-churn; whole `filesystemPlugin/front+shared` (editors + file-tree + data layer) far exceeds 4k soft | pr2a: `file-tree/*` + `shared/*` + `BBP4-012` tree fn · pr2b: `code-editor`+`markdown-editor`+`media/html/empty` panes · pr2c: `data/*` + `front/index.ts`+resolver+bindings rewire |
+| **BBP4-011** filesystem front-plugin move | owner-flagged move-churn; whole `filesystemPlugin/front+shared` (editors + file-tree + data layer) far exceeds 4k soft | pr2a: `file-tree/*` + `shared/*` + `BBP4-012` tree fn · pr2b: `code-editor`+`markdown-editor`+`media/html/empty` panes · pr2c: `data/*` + `front/index.ts`+resolver+bindings rewire onto public workspace plugin SDK imports |
 | **BBP3-011 / BBP3-014** tool + route moves | owner-flagged (P3 moves); each is a large **move** | kept as separate move PRs (never combined); split further by tool/route family only if >4k churn |
 | **BBP5-006** managed-service supervisor | L, new supervisor+lifecycle | pr5a: supervisor (start/health/port-grant/teardown) · pr5b: readiness surface + host-caller passthrough — only if >2k |
 
@@ -74,7 +75,7 @@ Legend — nature: **new** = net-new code · **move** = rename-detected + import
 
 | PR | beads | nature | net-new vs budget | test deliverables | gate |
 | --- | --- | --- | --- | --- | --- |
-| pr1-config-inventory | BBP1-001 | doc | 0 | none (inventory doc) | grep reproducers resolve |
+| pr1-config-inventory | BBP1-001 | doc | 0 | none (inventory doc); records tool/renderer source provenance needed for environment-bundle -> plugins -> host duplicate checks | grep reproducers resolve |
 | pr2-createagent-facade ⚠split | BBP1-002 | new | ~800–1200 / 2000 — **at risk, split pre-declared** | façade unit: 9-member API (`start`,`stream`,`send`,`resolveInput`,`interrupt`,`stop`,`sessions`,`readiness`,`dispose`) constructs w/o Fastify; `send` yields ≥1 event via live tail; historical `startIndex` throws `ERR_NOT_IMPLEMENTED_UNTIL_T1`; `interrupt`/`stop` wrap the existing `HarnessPiChatService` control methods | `lint:invariants`; `check:isolation` |
 | pr3-adapters-thin | BBP1-003 | new (refactor) | ~400–800 / 2000 (mostly churn into façade) | parity guarded by existing suites + pr6 | full agent `test` + `test:e2e` (parity) |
 | pr4-pure-runtime-none | BBP1-004 | new | ~300–600 | pure-mode route/tool exclusion; session round-trip under `sessionStorageRoot` w/ `workspaceId` undefined; no cwd leak | `lint:invariants` |
@@ -82,6 +83,18 @@ Legend — nature: **new** = net-new code · **move** = rename-detected + import
 | pr6-invariants-smoke | BBP1-006 | test | 0 (tests + script) | Fastify-graph check on `/core`; agent→bash value-import check; plain-Node pure smoke turn | `lint:invariants`; `check:isolation`; `boring-bash check:invariants` |
 
 **P1 total: 6 PRs (7 if pr2 splits).** Merge order pr1→pr5→pr2(→a,b)→pr3→pr4→pr6. **Gate to open T1/P2/P3/S1/S2:** pr2..pr6 merged (stub seams present).
+
+### M1 — Managed agent via MCP (outreach demo sidecar, after P1 pr2 + public share API)
+
+M1 is not a runtime-epic exit gate; it is the owner's outreach demo artifact. It still follows the outreach-week operating mode: additive/dark until smoke proof, e2e green, review-time estimate + review-focus notes on every PR, and explicit stack order.
+
+| PR | beads | nature | net-new vs budget | test deliverables | gate |
+| --- | --- | --- | --- | --- | --- |
+| pr1-exposed-mcp-delegate | BBM1-001 | new | ~600–1000 | fake MCP client delegates one brief; one delegation creates one agent session via `createAgent().start`; progress notification or polling fallback works; secret canary absent | chosen host/package `test`; `audit:imports` |
+| pr2-share-result-demo-composition | BBM1-002 | new | ~300–700 | current-main public-share API cited; returned URL uses verified share route; one vertical-agent config hosted in full-app or CLI; no raw workspace/session path in caller payload | host build/typecheck/test; share route smoke |
+| pr3-stock-client-smoke | BBM1-003 | test/doc | 0 | stock MCP client proof: delegate brief -> progress -> result -> public share opens | documented smoke + affected e2e |
+
+**M1 total: 3 PRs.** Preconditions: P1 pr2 façade merged; public Markdown share API verified on current main (owner says #424 merged; local amendment-time `origin/main` did not contain the expected files, so pr1 must re-check and cite the real mainline symbols/routes before coding). M1 works on the P1 live-tail and has **no T1 dependency**; durable streams upgrade later.
 
 ### T1 — Durable event stream + on-stream approvals (Phase T1, off P1)
 
@@ -129,11 +142,11 @@ Legend — nature: **new** = net-new code · **move** = rename-detected + import
 
 | PR | beads | nature | net-new vs budget | test deliverables | gate |
 | --- | --- | --- | --- | --- | --- |
-| pr1-agent-subpath-feature | BBP3-010 | new | ~120 (`/agent` subpath + `createBashAgentFeature()` skeleton) | export-map `/agent` | `boring-bash check:invariants` |
+| pr1-agent-subpath-feature | BBP3-010 | new | ~120 (`/agent` subpath + `createBashAgentFeature()` skeleton returning `{ tools, readinessRequirements, systemPromptFragment }`) | export-map `/agent`; bundle type includes prompt fragment; bundle marked as the environment-bundle source in tool/renderer resolution | `boring-bash check:invariants` |
 | pr2-move-filesystem-tools ⚠ | BBP3-011 | move | budget-exempt (large; split by tool family if >4k) | moved fs-tool tests; spoof-guard + readonly-reject preserved; `disableDefaultFileTools` parity | `boring-bash test`; company_context no-leak green |
 | pr3-move-bash-upload | BBP3-012 + BBP3-013 | move | budget-exempt | bash/isolated-code readiness+redaction; upload stable errors | `boring-bash test` |
 | pr4-move-fs-git-routes ⚠ | BBP3-014 | move | budget-exempt (large; split by route family if >4k) | moved route tests; git-root == file-root == bash-cwd | `boring-bash test` |
-| pr5-wire-composition | BBP3-015 | new (host wiring) | ~300–500 (host call sites; agent forwards host-supplied `tools`) | pure-mode composition has no file routes/tools; bash-enabled has all | `lint:invariants`; `audit:imports`; `check:isolation` |
+| pr5-wire-composition | BBP3-015 | new (server plugin + direct-composer wiring) | ~300–500 (boring-bash server plugin; workspace-family hosts register internal/default plugin; direct composers hand-wire only if they bypass the plugin pipeline) | pure-mode composition has no file routes/tools or bash prompt fragment; bash-enabled workspace-family hosts get routes/tools and `systemPrompt` through the server plugin; any direct CLI/library composer has explicit library wiring including `systemPromptFragment` append; duplicate tools/renderers fail typed unless later source sets `overrides:true` | `lint:invariants`; `audit:imports`; `check:isolation` |
 | pr6-sot-tests-invariants | BBP3-016 + BBP3-017 | test + new (invariant) | ~80 | source-of-truth regression; `disableDefaultFileTools` parity; boundary invariant | `lint:invariants` |
 
 **P3 total: 6 PRs.** Precondition: P1 (`tools` injection, no `features`) + P2 present. `packages/agent` ends with **zero** boring-bash imports (bin included).
@@ -142,11 +155,13 @@ Legend — nature: **new** = net-new code · **move** = rename-detected + import
 
 | PR | beads | nature | net-new vs budget | test deliverables | gate |
 | --- | --- | --- | --- | --- | --- |
-| pr1-plugin-subpath-host-adapter | BBP4-010 | new | ~250 (`BashPluginHost` structural adapter) | export-map `/plugin` front-safe; front-safe scan on `src/plugin/**` | `boring-bash check:invariants` |
-| pr2-move-front-plugin ⚠split | BBP4-011 (+ BBP4-012) | move | budget-exempt (**far >4k — split into pr2a/b/c pre-declared**) | moved plugin `__tests__` pass; `grep @hachej/boring-workspace packages/boring-bash/src/plugin` → 0; tree fn returns current shape | `lint:invariants`; acyclicity |
-| pr3-repoint-acyclicity | BBP4-014 | move (delete workspace export) + new (guard) | ~60 | `exec_ui openFile` opens moved panel; no `plugin→workspace` edge | `lint:plugin-invariants`; `audit:imports` |
+| pr1-plugin-subpath-sdk | BBP4-010 | new | ~150 (`/plugin` entry + public workspace SDK imports; no adapter) | export-map `/plugin` front-safe; front-safe scan on `src/plugin/**` | `boring-bash check:invariants` |
+| pr2-move-front-plugin ⚠split | BBP4-011 (+ BBP4-012) | move | budget-exempt (**far >4k — split into pr2a/b/c pre-declared**) | moved plugin `__tests__` pass; plugin imports public workspace SDK directly; tree fn returns current shape | `lint:invariants`; static edge gate |
+| pr3-move-tool-renderers | BBP4-015 | move | ~300–600 (renderer split/move; tests move with it) | `definePlugin({ toolRenderers })` registers `bash`/`read`/`write`/`edit`/`find`/`grep`/`ls`; pure-mode front default renderer map has none of those ids | agent + boring-bash front tests |
+| pr4-composer-providers | BBP4-016 | new + move | ~300–600 (generic composer provider seam + file provider move) | #26 `@file` mention provider, file slash commands, `@files:` enrichment, and upload affordance exist only with bash plugin attached; pure-mode front has no `/api/v1/files/search` request path | agent + boring-bash front tests |
+| pr5-remove-static-registration | BBP4-014 | move (delete workspace export/static default registration) + new (guard) | ~60 | `exec_ui openFile` opens moved panel; `rg -n "from ['\"]@hachej/boring-bash|import\\(['\"]@hachej/boring-bash" packages/workspace/src` → 0 | `lint:plugin-invariants`; `audit:imports` |
 
-**P4 total: 3 PRs (5 if pr2 splits into 3).** BBP4-013 document-authority write/edit override seam is **deferred out of this epic** (zero real consumers — arrives with #367/#226; filed at P8 BBP8-004) — **no PR here**. Precondition: P3 write/edit tools + routes in boring-bash.
+**P4 total: 5 PRs (7 if pr2 splits into 3).** BBP4-013 document-authority write/edit override seam is **deferred out of this epic** (zero real consumers — arrives with #367/#226; filed at P8 BBP8-004) — **no PR here**. Precondition: P3 write/edit tools + routes in boring-bash. Cycle safety is the static workspace edge guard: `packages/workspace/src` must not import `@hachej/boring-bash`; `boring-bash/plugin` may import the public workspace plugin SDK because the host loads it dynamically through the plugin pipeline. Capability-residue closeout: detaching bash leaves no file prompt, API, renderer, or composer-provider residue in pure mode.
 
 ### E1 — Environment attachments (Phase E1, off P2 **and** P3)
 
@@ -166,7 +181,7 @@ Legend — nature: **new** = net-new code · **move** = rename-detected + import
 | --- | --- | --- | --- | --- | --- |
 | pr1-mcp-server-exec-gating | BBE2-001 + BBE2-004 | new | ~400–600 (+ pinned `@modelcontextprotocol/sdk@1.29.0`, `./mcp` subpath, address-by-id Map) | readonly attachment omits write/edit/exec; denied path → no leak; exec presence tracks `execPolicy`; no broker-secret leak | `boring-bash check:invariants`; build (`./mcp` bundles) |
 | pr2-mcp-session-identity | BBE2-002 | new | ~250 (token-per-projection) | valid token → ctx; unknown rejected; two actors can't cross-read | `boring-bash test` |
-| pr3-mcp-conformance-doc | BBE2-003 + BBE2-005 | test + doc | 0 | MCP-mount conformance `passed:true`, same visible-path set; remote-worker-as-transport filed as **P8** follow-up (doc) | `boring-bash test` |
+| pr3-mcp-conformance-doc | BBE2-003 + BBE2-005 | test + doc | 0 | MCP-mount conformance `passed:true`, same visible-path set; remote-worker-as-transport filed as **P8** follow-up (doc); duality note confirms E2 exposes MCP and does not share machinery with boring-mcp consume | `boring-bash test` |
 
 **E2 total: 3 PRs.** SDK pinned exact `1.29.0` (no caret).
 
@@ -207,7 +222,7 @@ Adds the `@hachej/boring-sandbox/mounts` export (created package from P2) + the 
 | --- | --- | --- | --- | --- | --- |
 | pr1-agent-registry | BBP6-003 | new | ~150 (Map-backed) | register/get/list/has/delete; duplicate-id policy; grep-gate no child-app fields | agent `test` |
 | pr2-agents-declaration | BBP6-009 | new | ~150 (declaration + seed) | two-agent decl seeds two registry entries + default; absent decl → one implicit `default` (single-agent parity); dup/bad-default rejected; grep-gate no child-app fields | workspace/core/cli `test` |
-| pr3-manifest-requires-bash | BBP6-002 | new | ~400–700 | bash skipped when disabled; invalid `bash` rejected pre-import; import-free proof; raw-secret reject; grep-gate clean | `lint:plugin-invariants` |
+| pr3-manifest-requires-bash-skill-filters | BBP6-002 | new | ~450–800 | bash skipped when disabled; invalid `bash` rejected pre-import; import-free proof; raw-secret reject; skill `boring.requires`-style filter at loader boundary; generated skills-index prompt fragment uses the filtered set; grep-gate clean | `lint:plugin-invariants` |
 | pr4-runtime-plugin-context | BBP6-004 | new | ~300–500 | context derived from policy (unspoofable); status-only secrets; dispatch unchanged | workspace `test` |
 | pr5-hosted-fail-closed | BBP6-005 | new | ~400–600 | hosted mode fails closed; iframe sandbox/CSP asserted; symlink/special-file rejected | `test` |
 | pr6-shared-workspace-runtime | BBP6-007 | new (unify) | ~300–500 | CLI/full-app/workspace share the runtime unit; reload + registry dispose on eviction | core/cli/full-app `test` |
@@ -238,7 +253,7 @@ Adds the `@hachej/boring-sandbox/mounts` export (created package from P2) + the 
 
 **P7 total: 9 PRs (8 if pr7+pr8 combine).** Precondition: P6a `AgentRegistry` + E1 attachments + **T2** (the `sessionId`-only public transport + two-handles guard; the durable approvals/`resolveInput` the external-hook route and `/info` channel facts read arrive via T1→T2) (else STOP+report).
 
-### P8 — Verification + cleanup (Phase 8, gates on **all** lanes EXCEPT P6b)
+### P8 — Verification + cleanup (Phase 8, gates on runtime lanes EXCEPT P6b and M1)
 
 | PR | beads | nature | net-new vs budget | test deliverables | gate |
 | --- | --- | --- | --- | --- | --- |
@@ -246,7 +261,7 @@ Adds the `@hachej/boring-sandbox/mounts` export (created package from P2) + the 
 | pr2-surface-contract-docs | BBP8-002 | doc | 0 | referenced symbols (`createAgent`,`AgentEvent`,`AgentSendInput`,`ResolveInputResponse`) exist | doc/link check |
 | pr3-track-remaining-prose | BBP8-004 | doc/tracking | 0 | filed issue/bead list; `00` coverage reconciled (no overclaim) | n/a |
 
-**P8 total: 3 PRs.** BBP8-005 (final invariant+build/test sweep) is the **merge gate on this stack**, not a separate PR — any red gate reopens its owning phase. **Rule: a live `TODO(remove:*)` marker reopens its phase; P8 never absorbs it.** **P8 gates on every delivered lane EXCEPT P6b** — P1–P7, T1–T2, E1–E2, **X1**, S1–S3, Phase 5, and P6a must be green. P6b is a tracked follow-up (HARD BLOCKED on the child-app platform type), not an epic exit gate; P8 only **verifies the P6b follow-up issue is filed** (BBP8-004) and never waits on P6b landing (this is the anti-deadlock guarantee).
+**P8 total: 3 PRs.** BBP8-005 (final invariant+build/test sweep) is the **merge gate on this stack**, not a separate PR — any red gate reopens its owning phase. **Rule: a live `TODO(remove:*)` marker reopens its phase; P8 never absorbs it.** **P8 gates on every delivered runtime lane EXCEPT P6b and M1** — P1–P7, T1–T2, E1–E2, **X1**, S1–S3, Phase 5, and P6a must be green. P6b is a tracked follow-up (HARD BLOCKED on the child-app platform type), not an epic exit gate; P8 only **verifies the P6b follow-up issue is filed** (BBP8-004) and never waits on P6b landing (this is the anti-deadlock guarantee). M1 is the outreach-demo sidecar and has its own smoke closeout.
 
 ### S1 — Slack reference channel (Phase S1, off T2 + P1)
 
@@ -292,7 +307,8 @@ Adds the `@hachej/boring-sandbox/mounts` export (created package from P2) + the 
 | T2 | 6 | 6 | — |
 | P2 | 7 | 7 | — |
 | P3 | 6 | 6 (moves split by family only if >4k) | — |
-| P4 | 3 | 5 | — |
+| M1 | 3 | 3 | sidecar (not P8 gate) |
+| P4 | 5 | 7 | — |
 | E1 | 5 | 5 | — |
 | E2 | 3 | 3 | — |
 | P5 | 8 | 9 | — |
@@ -303,9 +319,9 @@ Adds the `@hachej/boring-sandbox/mounts` export (created package from P2) + the 
 | S1 | 5 | 5 | — |
 | S2 | 2 | 2 | — |
 | S3 | 4 | 4 | — |
-| **TOTAL** | **88** | **~93** | 2 follow-up (P6b) |
+| **TOTAL** | **93** | **~98** | 2 follow-up (P6b) + M1 sidecar |
 
-**Expected overall: ~88 PRs (up to ~93 if every pre-declared split fires). The 2 P6b PRs are a tracked follow-up OUTSIDE the epic exit (hard-blocked on the shared child-app platform type) — they do not gate P7 or P8, so the epic's ~86 non-P6b PRs ship without them. (P4 dropped from 4 to 3 PRs: the document-authority seam BBP4-013 is deferred out of the epic. P2 rose from 6 to 7 PRs: the `@hachej/boring-sandbox` package scaffold, pr0. X1 adds 5 PRs: the S3/FUSE mount subsystem plus benchmark, bash-lane parallel off P2+P5+E1.)**
+**Expected overall: ~93 PRs (up to ~98 if every pre-declared split fires). The 2 P6b PRs are a tracked follow-up OUTSIDE the epic exit (hard-blocked on the shared child-app platform type) — they do not gate P7 or P8, so the epic's ~91 non-P6b PRs ship without them. M1 is an outreach-demo sidecar and does not gate P8. (P4 is 5 PRs base / 7 with its pre-declared move split after the plugin SDK/tool-renderer/composer-provider amendment. P2 rose from 6 to 7 PRs: the `@hachej/boring-sandbox` package scaffold, pr0. X1 adds 5 PRs: the S3/FUSE mount subsystem plus benchmark, bash-lane parallel off P2+P5+E1. M1 adds 3 sidecar PRs after P1 pr2 + public-share API.)**
 
 ### Critical-path PR sequence (longest serial chain)
 
@@ -313,9 +329,9 @@ Adds the `@hachej/boring-sandbox/mounts` export (created package from P2) + the 
 P0(1) → P1(6) → P2(7) → P3(6) → P5(8) → P6a(7) → P7(9) → P8(3)   = 47 PRs serial
 ```
 
-- **Off the same P1 root, in parallel:** the transport lane `T1(6) → T2(6) → { S1(5) → S2(2) ; S3(4) }`, the environment lane `E1(5) → E2(3)` (E1 also needs P3; E2 feeds no critical successor except P8), and the **mount lane `X1(5)`** (needs P2+P5+E1; bash-lane parallel after those preconditions; feeds no critical successor except P8).
-- **P7 also needs E1 and T2** (T2 formalizes the `sessionId`-only transport + two-handles guard P7's addressing/binding rides, and carries the T1 durable approvals/`resolveInput` the external-hook route and `/info` channel facts read); **S3 needs T2 + P7**; **P8 gates on every delivered lane EXCEPT P6b** (bash + transport + environment + mounts + surfaces).
+- **Off the same P1 root, in parallel:** the M1 outreach-demo sidecar `M1(3)` after P1 pr2 + public-share API, the transport lane `T1(6) → T2(6) → { S1(5) → S2(2) ; S3(4) }`, the environment lane `E1(5) → E2(3)` (E1 also needs P3; E2 feeds no critical successor except P8), and the **mount lane `X1(5)`** (needs P2+P5+E1; bash-lane parallel after those preconditions; feeds no critical successor except P8).
+- **P7 also needs E1 and T2** (T2 formalizes the `sessionId`-only transport + two-handles guard P7's addressing/binding rides, and carries the T1 durable approvals/`resolveInput` the external-hook route and `/info` channel facts read); **S3 needs T2 + P7**; **P8 gates on every delivered runtime lane EXCEPT P6b and M1** (bash + transport + environment + mounts + surfaces).
 - **P6b** is off the critical path (a tracked follow-up, hard-blocked) and gates **neither P7 nor P8** (P7 consumes P6a only; P8 only verifies the P6b follow-up issue is filed) — so P6b's block can never deadlock the epic exit.
 - **Package minor bumps** on the path: `@hachej/boring-agent` at P3 (relocation) and at T2 (protocol).
 
-Merge-order rule across lanes: nothing in P2 opens until P1 pr2..pr6 are green; E1 waits on both P2 and P3; P5 dispatches off P3 (not P4); X1 waits on P2+P5+E1; P6a off P5; P7 off P6a+E1+T2; P8 last, only when zero `TODO(remove:*)` markers remain repo-wide and all delivered lane gates **except P6b** are green (P6b is a tracked follow-up outside the epic exit — P8 verifies its follow-up issue is filed but never waits on P6b landing).
+Merge-order rule across lanes: M1 may open after P1 pr2 and verified public-share API and is independent of the runtime lanes; nothing in P2 opens until P1 pr2..pr6 are green; E1 waits on both P2 and P3; P5 dispatches off P3 (not P4); X1 waits on P2+P5+E1; P6a off P5; P7 off P6a+E1+T2; P8 last, only when zero `TODO(remove:*)` markers remain repo-wide and all delivered lane gates **except P6b and M1** are green (P6b is a tracked follow-up outside the epic exit — P8 verifies its follow-up issue is filed but never waits on P6b landing; M1 is the outreach-demo sidecar).

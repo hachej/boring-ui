@@ -13,7 +13,7 @@ Derived strictly from [TODO.md](./TODO.md) and [PLAN.md](./PLAN.md). Tick the P6
 
 ## Beads
 ### P6a (dispatchable after P5)
-- [ ] BBP6-002 — [P6a] Extend plugin manifest validation import-free for `boring.requires` + `bash`
+- [ ] BBP6-002 — [P6a] Extend plugin manifest validation import-free for `boring.requires` + `bash`; reserve skill capability filters
 - [ ] BBP6-003 — [P6a] Introduce `AgentRegistry` (minimal, Map-backed)
 - [ ] BBP6-004 — [P6a] Runtime plugin context (`RuntimePluginContext`) on the gateway
 - [ ] BBP6-005 — [P6a] Hosted external plugin fail-closed in remote mode
@@ -45,7 +45,7 @@ Derived strictly from [TODO.md](./TODO.md) and [PLAN.md](./PLAN.md). Tick the P6
 ### P6a
 - [ ] `pr1-agent-registry` completed BBP6-003
 - [ ] `pr2-agents-declaration` completed BBP6-009
-- [ ] `pr3-manifest-requires-bash` completed BBP6-002
+- [ ] `pr3-manifest-requires-bash-skill-filters` completed BBP6-002
 - [ ] `pr4-runtime-plugin-context` completed BBP6-004
 - [ ] `pr5-hosted-fail-closed` completed BBP6-005
 - [ ] `pr6-shared-workspace-runtime` completed BBP6-007
@@ -61,6 +61,7 @@ Derived strictly from [TODO.md](./TODO.md) and [PLAN.md](./PLAN.md). Tick the P6
 - [ ] No competing child-app registry / manifest scanner / plugin route family introduced.
 - [ ] `pnpm lint:invariants` + `pnpm audit:imports` + `lint:plugin-invariants` green; zero agent→bash value imports.
 - [ ] Import-free manifest validation proven (side-effecting plugin fixture not executed).
+- [ ] Skill capability filter proven where skills are loaded: filesystem/bash-required skills are absent from Pi resources, `/api/v1/agent/skills`, slash suggestions, and the generated skills-index prompt fragment in pure mode, then visible when bash is attached.
 - [ ] Hosted plugin fail-closed covered; iframe sandbox/CSP constraints asserted.
 - [ ] Secrets are status-only in every plugin/browser/model context (P5 brokering); no raw values in manifests/logs/transcripts/artifacts.
 - [ ] `/api/v1/plugins/:pluginId/*` dispatch unchanged; `AgentRegistry` minimal and Map-backed (no framework creep).
@@ -75,6 +76,7 @@ Derived strictly from [TODO.md](./TODO.md) and [PLAN.md](./PLAN.md). Tick the P6
 ## Exit criteria
 ### P6a closeout (epic/P8 gate)
 - [ ] Import-free manifest validation runs **before** any plugin code executes.
+- [ ] Skills with `boring.requires`-style capability requirements are filtered by attached capabilities at the loader boundary, and the prompt-visible skills index is generated from that filtered set.
 - [ ] Hosted plugin fails closed in remote mode for unsupported front/server/tool/bash/service/secret requirements.
 - [ ] A plugin requiring bash is skipped/diagnosed when bash is disabled.
 - [ ] A plugin requiring secrets receives status only (P5 brokering; no raw values).

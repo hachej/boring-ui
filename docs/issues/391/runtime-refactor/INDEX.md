@@ -4,12 +4,17 @@
 
 Each `work/<pkg>/` holds three files: **TODO.md** (the self-contained work order for one autonomous agent), **PLAN.md** (that phase's deliverables + exit criteria + governing architecture links), **HANDOFF.md** (the tickable closeout checklist). The legacy `todos/TODO-00..07` are **non-canonical** wherever they conflict with this pack — consult only for v1 bead intent the v2 files reference.
 
+## Execution operating mode — outreach weeks
+
+The running app is the owner's sales demo. Every PR is **behavior-frozen for the live app** unless its work order explicitly changes a documented invariant: existing e2e stays green, risky cutovers land dark/additive, and defaults flip only after conformance proves parity. Merge continuously as small independently-safe PRs; never hold the risk for an end-loaded mega-merge. Every PR description must include a review-time estimate and review-focus notes for the owner's 1-2h/day review budget. Stacked PRs carry labels or title notes that make merge order unambiguous.
+
 ## Phase table
 
 | Phase | Work package | Depends on | Status | Exit gist |
 |---|---|---|---|---|
 | Phase 0 — ADR | [P0-adr](work/P0-adr/) | — | pending | ADR accepted; plan pack thermo-reviewed; #391 points to the v2 pack |
 | Phase 1 — Headless core | [P1-headless-core](work/P1-headless-core/) | P0 | pending | pure agent starts via `createAgent({ runtime: 'none' })` in plain Node with no workspace/sandbox/cwd/file routes/bash tools; existing modes + all HTTP consumers unchanged |
+| Phase M1 — Managed agent via MCP | [M1-mcp-managed-agent](work/M1-mcp-managed-agent/) | P1 pr2 façade merged + public Markdown share API verified on main | pending | stock MCP client delegates a brief to one configured vertical agent, receives progress, gets a public Markdown share link, and opens it |
 | Phase T1 — Durable events + approvals | [T1-durable-events](work/T1-durable-events/) | P1 | pending | SSE drop + reconnect replays losslessly; approval issued in one client answered from another; pending request + `waiting` survive restart via a new seeded turn |
 | Phase T2 — Transport adapters | [T2-transport](work/T2-transport/) | T1 | pending | workspace UI runs unmodified against the refit; a headless Node consumer drives the same session interleaved with the UI |
 | Phase 2 — boring-sandbox + providers | [P2-sandbox-providers](work/P2-sandbox-providers/) | P1 | partial (#416 skeleton) | package builds; no import cycle; apps compile after same-PR importer migration; landed #416 contracts unchanged |
@@ -22,7 +27,7 @@ Each `work/<pkg>/` holds three files: **TODO.md** (the self-contained work order
 | Phase 6a — Plugin core | [P6-plugin-child-app](work/P6-plugin-child-app/) | P5 | pending | import-free manifest validation; hosted-plugin fail-closed; managed-service lifecycle; `AgentRegistry`/`agents` declaration seeded |
 | Phase 6b — Child-app scoping | [P6-plugin-child-app](work/P6-plugin-child-app/) | P6a + #376 | **BLOCKED** (#376) | child-app requirement narrowing; Macro requirements don't leak into a generic workspace — tracked follow-up **outside the epic exit** |
 | Phase 7 — Multi-agent + inspection | [P7-multi-agent-inspection](work/P7-multi-agent-inspection/) | P6a, E1, T2 | pending | agentId-scoped routes/session/search + `GET /api/v1/agents` + `GET /api/v1/agents/:agentId/info`; two surfaces bound to two agents in one workspace don't collide |
-| Phase 8 — Verification + cleanup | [P8-verification](work/P8-verification/) | all lanes except P6b | pending | zero `TODO(remove:*)` markers repo-wide; `@hachej/boring-agent` README documents the four-part surface contract |
+| Phase 8 — Verification + cleanup | [P8-verification](work/P8-verification/) | runtime lanes except P6b and M1 | pending | zero `TODO(remove:*)` markers repo-wide; `@hachej/boring-agent` README documents the four-part surface contract |
 | Phase S1 — Slack channel | [S1-slack-channel](work/S1-slack-channel/) | T2 (+P1) | pending | same agent + session store serves the workspace UI and a Slack thread; approval answerable in either; Slack imports only the public contract + `@flue/slack` |
 | Phase S2 — Spreadsheet embed | [S2-embed-contract](work/S2-embed-contract/) | S1 | pending | the embed has no boring-bash dependency; tool outputs project into the sheet; conformance passes |
 | Phase S3 — Control-plane UX | [S3-control-plane-ux](work/S3-control-plane-ux/) | T2, P7 | pending | one workspace inspects 2 agents + observes/approves 2 surfaces via public contracts only |
@@ -30,7 +35,8 @@ Each `work/<pkg>/` holds three files: **TODO.md** (the self-contained work order
 ## Track / dependency graph
 
 ```txt
-P0 ──► P1 ──┬──► P2 ──► P3 ──┬──► P4
+P0 ──► P1 ──┬──► M1                    (sidecar demo lane; needs P1 pr2 + public share API)
+            ├──► P2 ──► P3 ──┬──► P4
             │                ├──► E1 ──► E2                     (E1 needs P2 AND P3)
             │                └──► P5 ──► P6a ─┬─► P7 ──► P8
             │                     │           └─► P6b (child-app scoping; HARD BLOCKED on #376)
@@ -39,7 +45,7 @@ P0 ──► P1 ──┬──► P2 ──► P3 ──┬──► P4
                             └──► S3           (S3 needs T2 AND P7)
 ```
 
-Parallel lanes after P1: **bash lane** (P2→P3→P4), **environment lane** (E1→E2, needs P2+P3), **mount lane** (X1, needs P2+P5+E1 because its shipped attachment/conformance path consumes E1 `Environment`/`EnvironmentAttachment`), **provisioning→child-app→multi-agent lane** (P5→P6a→P7→P8, off P3), **transport lane** (T1→T2→{S1→S2, S3}). Cross-deps not drawable inline: **P7 needs P6a and E1 and T2** (the `AgentRegistry` from P6a — not P6b's child-app scoping — plus E1 attachments and T2's `sessionId`-only transport + two-handles guard, which carries the T1 durable approvals/`resolveInput` the external-hook route and `/info` channel facts read). **P8 gates on all lanes EXCEPT P6b.**
+Parallel lanes after P1: **M1 demo lane** (after P1 pr2 + verified public share API, independent of every runtime lane), **bash lane** (P2→P3→P4), **environment lane** (E1→E2, needs P2+P3), **mount lane** (X1, needs P2+P5+E1 because its shipped attachment/conformance path consumes E1 `Environment`/`EnvironmentAttachment`), **provisioning→child-app→multi-agent lane** (P5→P6a→P7→P8, off P3), **transport lane** (T1→T2→{S1→S2, S3}). Cross-deps not drawable inline: **P7 needs P6a and E1 and T2** (the `AgentRegistry` from P6a — not P6b's child-app scoping — plus E1 attachments and T2's `sessionId`-only transport + two-handles guard, which carries the T1 durable approvals/`resolveInput` the external-hook route and `/info` channel facts read). **P8 gates on all runtime lanes EXCEPT P6b and the M1 outreach-demo sidecar.**
 
 **P6b is a tracked follow-up, not an epic exit gate.** It is HARD BLOCKED on the shared child-app platform type (`ResolvedChildAppContext`, #376); the epic ships without it and P8 only verifies the P6b follow-up issue is filed — P8 never waits on P6b landing. This is the anti-deadlock guarantee.
 
@@ -50,9 +56,10 @@ Rules baked into the ordering: dependency inversion (P1) happens **before** pack
 1. **One TODO file = one agent assignment.** Do not hand two files to one agent run.
 2. **Respect the dependency graph.** Parallel lanes are safe to dispatch concurrently.
 3. **Every PR must cite** (implementation rule — do not implement from only one file): the TODO bead id; the global ISA + the relevant area subplan (`architecture/00`–`architecture/10`); the migration phase (this INDEX + the package's PLAN.md); and the acceptance/test section ([`architecture/07-tests-review-acceptance.md`](architecture/07-tests-review-acceptance.md)).
-4. **Work happens on a dedicated branch per bead or per TODO** (small PRs preferred, branch naming per [`PR-PLAN.md`](PR-PLAN.md)). Never on main, never in a shared checkout.
-5. **Behavior freeze** unless the bead explicitly changes a documented invariant. The landed #416 contracts (`packages/boring-bash/src/shared`) are load-bearing for the governance PR line — extending is fine, breaking is not.
-6. **A bead is done when Verification commands AND Review gates pass**, not when code compiles. Each TODO ends with both; the package HANDOFF.md is the tickable closeout.
+4. **Every PR description includes review budget metadata:** estimated review time, review-focus notes, and stacked merge order when applicable.
+5. **Work happens on a dedicated branch per bead or per TODO** (small PRs preferred, branch naming per [`PR-PLAN.md`](PR-PLAN.md)). Never on main, never in a shared checkout.
+6. **Behavior freeze** unless the bead explicitly changes a documented invariant. The landed #416 contracts (`packages/boring-bash/src/shared`) are load-bearing for the governance PR line — extending is fine, breaking is not.
+7. **A bead is done when Verification commands AND Review gates pass**, not when code compiles. Each TODO ends with both; the package HANDOFF.md is the tickable closeout.
 
 **Review rule (thermo, before coding each file).** A clean review means: no package import cycle; no duplicated provisioning/readiness system; no filesystem/bash split brain; no hidden cwd/filesystem leak in pure agent mode; no child-app or multi-agent scope leak; no claim that unrelated backlog issues are solved by this abstraction.
 

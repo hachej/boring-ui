@@ -26,6 +26,17 @@ The epic builds the shared substrate, not any one commercial topology. **Do not 
 
 **Architecture rule: one deployable artifact; topology is the product line.** The same build runs single-tenant self-host, managed sovereign tenant, or hub-and-spoke — topology is a commercial choice, not a code fork. This epic must **not FORCE horizon-3 infrastructure early** (no marketplace, billing, or multi-tenant control plane) **while not precluding it**. Open tension (owner to resolve): STRATEGY.md leans managed-retainer default, the older decision log has clients owning ops (self-hosted handoff); the architecture supports both, the commercial default is TBD.
 
+## Future-scale checklist (assert, do not build)
+
+Nothing merged in this epic may preclude these later scale moves; each becomes build scope only when demand requires the named tenant/sandbox/load trigger:
+
+- **Postgres EventStreamStore/state adapter** — keep the existing interface+conformance seam; build when SQLite/state.db limits block N tenants or audited retention.
+- **Multi-region tenancy** — keep tenancy explicit in `SessionCtx`/workspace routing and avoid region-global singletons; build when N tenants require residency or latency splits.
+- **Warm sandbox pools** — preserve provider lifecycle hooks for a Firecracker-snapshot tier distinct from X1 mount tiers; build when M sandboxes need sub-cold-start admission.
+- **Model gateway** — keep model selection injectable and policy-visible; build routing/fallback/caching when N tenants or M requests/minute need centralized controls.
+- **Eval harness** — keep agent inputs/events replayable enough for benchmarks; build agent-quality evals when release decisions need measured regressions, not anecdotes.
+- **SLO/observability layer** — keep stable event/error codes and actor/session labels; build dashboards/alerts when N tenants make manual inspection insufficient.
+
 ## Vision components → checkable end-state
 
 Each vision component mapped to what exists today → the delta work orders → a checkable end-state. If every end-state below passes, the vision is delivered; anything not listed is out of scope for this epic. Work orders link into [`work/`](work/).
@@ -129,12 +140,13 @@ Full text and rationale: [`architecture/08-pluggable-agent-surfaces.md`](archite
 - **Durable turn continuation (WaitingTurn machine)** — restart-resume is new-turn-seeded by design (T1).
 - **Remote-worker-as-environment-transport** — remote-worker stays a provider; reclassification filed at P8.
 - **Predefined runtime image catalog** — productize pinned `boring-runtime-*` OCI images with common CLIs (`node`, `python`, `git`, `gh`, `rg`, etc.) and later vertical-agent toolchains. This pairs with the vertical-agent business line, but stays a catalog/build-pipeline follow-up; #391 only reserves provider config + provisioning fingerprint semantics.
+- **Farm-epic first-party plugins** — tasks, artifacts, and fleet follow the same host-mediated plugin composition pattern as bash/governance; no package imports another first-party plugin for policy/mechanism composition.
 - **P6b child-app / Macro scoping** — HARD BLOCKED on the shared child-app platform type (#376); a tracked follow-up outside the epic exit.
 
 ## Dispatch order (summary)
 
 ```txt
-P0 → P1 → { T1 → T2 → { S1 → S2, S3 } } ∥ { P2 → P3 → [ P4, E1 → E2, P5 → P6a → P7 → [P8, S3] ] } ∥ { X1 (needs P2+P5) }
+P0 → P1 → { M1 (after P1 pr2 + public share API; sidecar) } ∥ { T1 → T2 → { S1 → S2, S3 } } ∥ { P2 → P3 → [ P4, E1 → E2, P5 → P6a → P7 → [P8, S3] ] } ∥ { X1 (needs P2+P5+E1) }
 ```
 
-Rows 1→5 are infrastructure (three parallel lanes after P1); rows 6–7 are product payoff and gate on the lanes; row 8 is a standing constraint, not a phase. P5 dispatches off P3 in parallel with P4 and E1→E2. P8 gates on **all** lanes except P6b. The authoritative phase table, dependency graph, dispatch protocol, and binding policies are in [`INDEX.md`](INDEX.md).
+Rows 1→5 are infrastructure; M1 is the outreach-demo sidecar after P1 pr2 + public-share API; rows 6–7 are product payoff and gate on the runtime lanes; row 8 is a standing constraint, not a phase. P5 dispatches off P3 in parallel with P4 and E1→E2. P8 gates on **all runtime lanes** except P6b and M1. The authoritative phase table, dependency graph, dispatch protocol, and binding policies are in [`INDEX.md`](INDEX.md).

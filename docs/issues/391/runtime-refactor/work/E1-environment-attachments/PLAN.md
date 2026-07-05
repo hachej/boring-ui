@@ -12,7 +12,7 @@ E1 generalizes the landed #416 filesystem-binding model into `Environment` /
 `EnvironmentAttachment` / `ResolvedEnvironments` contracts without rewriting the
 landed shapes. It runs after Phase 2 (sandbox providers/capability facts) **and**
 Phase 3 (the host-composed bash bundle): E1 may re-implement that bundle's
-internals over attachments **without changing its public `{ tools, readinessRequirements }`
+internals over attachments **without changing its public `{ tools, readinessRequirements, systemPromptFragment }`
 signature**. The core stays runtime-free — the agent package owns the minimal
 core-facing `ResolvedEnvironments` (`{ bindings: RuntimeFilesystemBinding[] }`)
 and value/type-imports nothing from boring-bash; the only cross-package type edge
