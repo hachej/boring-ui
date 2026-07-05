@@ -2,6 +2,7 @@
 import { act, renderHook, waitFor } from '@testing-library/react'
 import { describe, expect, it, vi } from 'vitest'
 import { WORKSPACE_COMMAND_NOTIFY_EVENT } from '../../../shared/agentPluginEvents'
+import { ErrorCode } from '../../../shared/error-codes'
 import { createCommandRegistry } from '../../slashCommands/registry'
 import { useServerCommands } from '../useServerCommands'
 
@@ -16,7 +17,7 @@ describe('useServerCommands', () => {
       if (url.includes('/api/v1/agent/commands/execute?')) {
         return new Response(JSON.stringify({
           error: {
-            code: 'METERING_UNSUPPORTED_COMMAND',
+            code: ErrorCode.enum.METERING_UNSUPPORTED_COMMAND,
             message: 'Slash command execution is disabled while metering is configured.',
           },
         }), { status: 409 })
