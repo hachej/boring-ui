@@ -23,10 +23,22 @@ provider is a host process (not a sandbox), so nothing is "injected" there eithe
 Remote-worker capabilities are reported facts (`reported | unknown`); consumers
 fail closed on `unknown`.
 
+Runtime images compose with, not replace, provisioning. A pinned image digest is
+the base provisioning fingerprint (build-time bake); normalized
+`BashRequirement` contributions are runtime/bootstrap overlays on top of that
+base. A digest change forces a fresh template/bootstrap path; a requirement
+change re-runs the overlay/onSession path. Fingerprints carry image refs/digests,
+requirement ids/content, provider contract version, and secret names/status only
+— never raw secret values.
+
 ## Deliverables
 Unchanged from v1: `BashRequirement` normalizer outside agent feeding `provisionWorkspaceRuntime()` via host/core/CLI composition; re-point callers; import-free requirement validation; per-requirement readiness metadata; `optional_failed` derived state; health checks; SDK archive support; managed service requirements; secret status/grant model; remote-worker capability handshake; two-phase bootstrap/onSession reconciliation.
 
 Additional v2 deliverable: **credential brokering rule** (00 invariant 14, 08 trust boundary) — brokered secrets are host-side handles consumed only by trusted-core tools; they never enter any sandboxed environment or the model transcript. There is no raw-env injection path: the `direct` provider is not a sandbox, so nothing is "injected" there either — the distinction is sandbox vs. host process, not an exception clause.
+
+Runtime-image amendment: fold `{ image: { ref, digest } }` into the existing
+two-phase bootstrap/onSession fingerprint model; do not create an image-specific
+provisioning engine.
 
 ## Exit criteria
 As v1, plus:
