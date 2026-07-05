@@ -14,13 +14,7 @@ This pack is intentionally small. It has no `architecture/` directory; the bindi
 
 ## Work Packages
 
-| Package | Lane | Status | Purpose |
-| --- | --- | --- | --- |
-| [A1-external-token-auth](work/A1-external-token-auth/PLAN.md) | A | queued | Workspace-scoped bearer tokens for external in-app surfaces. |
-| [A2-connector-packaging](work/A2-connector-packaging/PLAN.md) | A | queued | Promote the Excel connector spike into a reviewable boring-ui integration. |
-| [A3-workbook-identity-e2e](work/A3-workbook-identity-e2e/PLAN.md) | A | queued | Resolve workbook identity and prove the live Excel loop. |
-| [B1-host-seam-fork](work/B1-host-seam-fork/PLAN.md) | B | queued | Fork pi-for-excel and extract the Office host seam. |
-| [B2-powerpoint-mvp](work/B2-powerpoint-mvp/PLAN.md) | B | queued | Ship the first PowerPoint host on the fork. |
+See [INDEX.md](INDEX.md) for package order, status, dependencies, and exits. INDEX.md is the only package-ordering authority.
 
 ## Evidence Base
 
@@ -40,4 +34,3 @@ These requested sources were not available in this worktree/session and must not
 - `/tmp/claude-1000/-home-ubuntu-projects-boring-ui-v2/93262060-380a-4287-a775-05376d9c3086/scratchpad/review/pi-for-excel-extensibility.md`
 - `/tmp/claude-1000/-home-ubuntu-projects-boring-ui-v2/93262060-380a-4287-a775-05376d9c3086/scratchpad/review/pi-for-excel-hosts.md`
 - GitHub issue #526 body. `gh issue view 526` could not reach GitHub from this environment.
-

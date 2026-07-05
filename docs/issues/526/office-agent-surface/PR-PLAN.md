@@ -10,7 +10,7 @@ Use small PRs. Each PR should close one reviewable surface and include the verif
 | A2-connector-packaging | `hachej/boring-ui` | 1 | New `integrations/pi-for-excel/` package and docs. |
 | A3-workbook-identity-e2e | `tmustier/pi-for-excel` and `hachej/boring-ui` | 2 plus E2E proof | One upstream identity PR, one boring-ui resolver/connector PR, then live proof doc. |
 | B1-host-seam-fork | `hachej/pi-for-office` | 1-2 | Fork discipline, Excel-preserving seam, PowerPoint host detection. |
-| B2-powerpoint-mvp | `hachej/pi-for-office` | 2-3 | PowerPoint context/read tools first, mutation/recovery tools second, polish/docs if needed. |
+| B2-powerpoint-mvp | `hachej/pi-for-office` plus `hachej/boring-ui` for B2-005 | 3-4 | PowerPoint context/read tools first, mutation/recovery tools second, Office-ref connector generalization/proof last. |
 
 ## A1 Slice
 
@@ -52,7 +52,7 @@ Target branches:
 
 ## B1 Slices
 
-Land in `hachej/pi-for-office`, not boring-ui.
+PowerPoint host work lands in `hachej/pi-for-office`. The B2-005 Office-ref connector generalization lands in `hachej/boring-ui` before PowerPoint connector proof.
 
 1. Fork setup, upstream remote, merge cadence doc, and shared-file guardrails.
 2. `DocumentHost` seam with Excel adapter preserving current behavior.
@@ -67,9 +67,12 @@ Land in `hachej/pi-for-office`, not boring-ui.
 
 1. PowerPoint context/read tools and prompt context.
 2. PowerPoint mutation tools and recovery checkpoints.
-3. Connector reuse verification and `.pptx.cloud.json` proof.
+3. Office-ref connector generalization, PowerPoint connector reuse verification, and `.pptx.cloud.json` proof.
 
-Target branch: `office/526-b2-powerpoint-mvp`.
+Target branches:
+
+- pi-for-office: `office/526-b2-powerpoint-mvp`.
+- boring-ui: `bclaw/526-b2-office-ref-generalization`.
 
 ## Merge Gates
 
@@ -78,4 +81,3 @@ Target branch: `office/526-b2-powerpoint-mvp`.
 - A2 connector file remains reviewable as one `.mjs`.
 - B-lane PRs can merge upstream `tmustier/pi-for-excel` main without broad conflict.
 - A3 live proof uses self-hosted taskpane assets, not the author's Vercel deployment.
-

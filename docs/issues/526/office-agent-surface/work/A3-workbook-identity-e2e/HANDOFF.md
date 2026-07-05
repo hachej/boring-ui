@@ -14,12 +14,9 @@ Pick this package up after A1 and A2 are merged or available as integration bran
   - `plugins/boring-sharepoint/README.md`
   - `plugins/boring-sharepoint/src/shared/ref.ts`
 
-## Bead Checklist
+## Bead Order
 
-- [ ] A3-001 — upstream open-document identity API.
-- [ ] A3-002 — boring-ui Graph document resolver.
-- [ ] A3-003 — connector resolver integration.
-- [ ] A3-004 — live Excel E2E proof.
+Execute beads in TODO.md order. INDEX.md is the only package-ordering authority.
 
 ## Done Definition
 
@@ -35,4 +32,3 @@ Pick this package up after A1 and A2 are merged or available as integration bran
 - Office host does not expose document URL for the target workbook.
 - Taskpane origin missing from `CORS_ORIGINS`.
 - Connector URL blocked by pi remote-extension source policy.
-

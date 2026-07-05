@@ -13,12 +13,9 @@ Pick this package up after A1 has a usable token-auth branch or merged PR.
   - `plugins/boring-sharepoint/README.md`
   - `plugins/boring-sharepoint/src/shared/ref.ts`
 
-## Bead Checklist
+## Bead Order
 
-- [ ] A2-001 — create integration package and connector file.
-- [ ] A2-002 — add connection bundle template and install runbook.
-- [ ] A2-003 — port runtime and cloud-ref tests.
-- [ ] A2-004 — add live smoke checklist.
+Execute beads in TODO.md order. INDEX.md is the only package-ordering authority.
 
 ## Done Definition
 
@@ -31,4 +28,3 @@ Pick this package up after A1 has a usable token-auth branch or merged PR.
 ## Review Notes
 
 Do not generalize this into a multi-host integration package yet. B2 verifies host-agnostic reuse after the PowerPoint fork exists.
-

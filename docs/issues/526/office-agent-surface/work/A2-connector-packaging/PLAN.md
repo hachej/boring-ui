@@ -20,7 +20,7 @@ Delta: promote the connector into boring-ui under `integrations/pi-for-excel/` w
 - Do not compile the connector into a bundle during A2. Review the shipped `.mjs` directly.
 - Keep secrets out of default templates. Use placeholders only.
 - Keep auth in pi's connection layer. The connector reads config and names a connection; it does not embed a bearer token.
-- Use the boring-sharepoint cloud-ref schema for `.xlsx.cloud.json` and `.pptx.cloud.json`.
+- Use the boring-sharepoint cloud-ref schema for `.xlsx.cloud.json`. PowerPoint ref saving requires the explicit B2 Office-ref generalization bead.
 
 ## Exit Criteria
 
@@ -28,4 +28,3 @@ Delta: promote the connector into boring-ui under `integrations/pi-for-excel/` w
 - The connector sends `Authorization` through host-injected auth and `x-boring-workspace-id` explicitly.
 - The runbook explains how to sideload the add-in and install the extension from a private HTTPS URL.
 - The runbook warns that company use must self-host the taskpane bundle and connector.
-

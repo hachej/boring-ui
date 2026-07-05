@@ -16,8 +16,7 @@
   5. Add `integrations/*` to `pnpm-workspace.yaml`.
   6. Keep config defaults token-free and host-generic.
 - **VERIFICATION:**
-  - `node --check integrations/pi-for-excel/boring-connector.mjs` — exits 0.
-  - `pnpm --filter @hachej/boring-integration-pi-for-excel run test` — exits 0 after A2-003 adds tests.
+  - `pnpm --filter @hachej/boring-integration-pi-for-excel --fail-if-no-match exec node --check boring-connector.mjs` — exits 0; package discovery and connector syntax are valid.
 - **Acceptance criteria:**
   - Connector lives under `integrations/pi-for-excel/`.
   - Connector remains one `.mjs` file.
@@ -41,7 +40,7 @@
   6. Document `install_code` fallback for environments where direct remote URL install is blocked.
   7. Add the self-hosting warning: do not send company workbook data through the author's Vercel deployment.
 - **VERIFICATION:**
-  - `pnpm --filter @hachej/boring-integration-pi-for-excel run test -- connection-bundle` — exits 0 after A2-003 adds template validation.
+  - `node -e "const fs=require('node:fs'); JSON.parse(fs.readFileSync('integrations/pi-for-excel/connection-bundle.template.json','utf8'))"` — exits 0; connection-bundle template is valid JSON at A2-002 completion.
   - `rg -n "YOUR_|<" integrations/pi-for-excel/connection-bundle.template.json` — prints only intentional placeholders.
 - **Acceptance criteria:**
   - Template includes `allowedHosts`.
@@ -61,13 +60,13 @@
 - **Steps:**
   1. Port the spike runtime test from `tmustier/pi-for-excel` test shape (`/home/ubuntu/projects/ext-pi-for-excel-test/INTEGRATION-SPIKE.md:150-190`).
   2. Mock the pi extension API: `registerTool`, `http.fetch`, `config`, and connection auth injection.
-  3. Assert the connector registers `boring_list_workspace_files`, `boring_read_workspace_file`, `boring_save_cloud_ref`, and `boring_post_note`.
+  3. Assert the connector registers `boring_list_files`, `boring_read_file`, `boring_save_cloud_ref`, and `boring_post_note`.
   4. Assert `Authorization` is supplied by connection auth, not connector source.
   5. Assert `x-boring-workspace-id` is sent.
   6. Assert cloud-ref writes reject forbidden fields and require `siteId`, `driveId`, `driveItemId`, and `webUrl`.
-  7. Assert `.pptx.cloud.json` passes the same substrate validation as `.xlsx.cloud.json`.
+  7. Assert `.xlsx.cloud.json` passes boring-sharepoint substrate validation; B2 owns PowerPoint ref-save generalization.
 - **VERIFICATION:**
-  - `pnpm --filter @hachej/boring-integration-pi-for-excel run test` — exits 0; runtime and cloud-ref tests pass.
+  - `pnpm --filter @hachej/boring-integration-pi-for-excel --fail-if-no-match run test` — exits 0; runtime and cloud-ref tests pass.
   - `pnpm --filter @hachej/boring-sharepoint run test` — exits 0.
 - **Acceptance criteria:**
   - Tests fail if the connector embeds auth instead of using host-injected connection auth.
@@ -90,10 +89,9 @@
   5. State that A3 owns full M365 workbook identity proof.
 - **VERIFICATION:**
   - `rg -n "CORS|401|403|remote-extension|install_code|self-host" integrations/pi-for-excel/docs/live-smoke.md` — prints all required terms.
-  - `pnpm --filter @hachej/boring-integration-pi-for-excel run test` — exits 0.
+  - `pnpm --filter @hachej/boring-integration-pi-for-excel --fail-if-no-match run test` — exits 0.
 - **Acceptance criteria:**
   - A3 can follow the smoke checklist without reading the old spike repo.
   - The doc does not include real tokens, tenant names, or workbook URLs.
   - Missing workbook identity is marked as an A3 blocker, not hidden.
 - **Estimated size:** S.
-

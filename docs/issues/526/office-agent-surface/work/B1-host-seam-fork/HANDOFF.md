@@ -17,12 +17,9 @@ Pick this package up only in the `hachej/pi-for-office` fork. Do not implement B
   - `src/workbook/recovery-log.ts`
   - `src/tools/mutation/finalize.ts`
 
-## Bead Checklist
+## Bead Order
 
-- [ ] B1-001 — fork setup and discipline docs.
-- [ ] B1-002 — `DocumentHost` contract and Excel adapter.
-- [ ] B1-003 — PowerPoint manifest and host detection.
-- [ ] B1-004 — upstream seam RFC.
+Execute beads in TODO.md order. INDEX.md is the only package-ordering authority.
 
 ## Done Definition
 
@@ -35,4 +32,3 @@ Pick this package up only in the `hachej/pi-for-office` fork. Do not implement B
 ## Review Notes
 
 Reject broad rewrites. The seam should make host differences explicit while keeping upstream merges boring.
-

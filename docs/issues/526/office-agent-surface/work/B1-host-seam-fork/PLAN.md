@@ -6,7 +6,7 @@ Today, upstream `tmustier/pi-for-excel` is Excel-bound. The manifest declares `H
 
 Delta: fork to `hachej/pi-for-office`, preserve Excel behavior, and extract a `DocumentHost` seam around those host-coupled joints. Add PowerPoint manifest support and host detection, but leave PowerPoint tools to B2.
 
-The requested PowerPoint feasibility report was unavailable in this session. This plan uses verified upstream source files instead.
+PowerPoint feasibility report: `work/B1-host-seam-fork/_ppt-feasibility-report.md` (reconstructed). This plan uses that report plus verified upstream source files.
 
 ## Fork Discipline
 
@@ -48,4 +48,3 @@ Open an upstream RFC issue proposing the seam before or with the fork PR. The RF
 - PowerPoint host is detected from the add-in host.
 - No B2 PowerPoint tool implementation leaks into B1.
 - Fork docs explain upstream merge cadence and shared-file discipline.
-

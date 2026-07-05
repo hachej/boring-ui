@@ -19,9 +19,9 @@
   5. Document `execute_office_js` as an interim fallback only.
   6. Add tests for URL present, URL absent, and sanitized return shape.
 - **VERIFICATION:**
-  - `pnpm test -- extension-open-document-identity` — exits 0; identity API tests pass.
-  - `pnpm typecheck` — exits 0.
-  - `pnpm build` — exits 0.
+  - `npm run test:context -- tests/extension-open-document-identity.test.ts` — exits 0; identity API tests pass.
+  - `npm run check` — exits 0.
+  - `npm run build` — exits 0.
 - **Acceptance criteria:**
   - Extension authors can call one typed API for the open document identity.
   - Returned data includes no auth material.
@@ -38,18 +38,26 @@
   - `packages/core/src/server/routes/__schemas__/officeSharePointResolve.ts`
   - `packages/core/src/server/routes/index.ts`
   - `packages/core/src/server/config/loadConfig.ts`
+  - `packages/core/src/server/config/schema.ts`
+  - `packages/core/src/shared/types.ts`
+  - `packages/core/src/shared/errors.ts`
+  - `packages/core/src/server/auth/authHook.ts`
+  - `packages/core/src/server/auth/__tests__/authHook.test.ts`
   - `packages/core/src/server/office/graphDocumentResolver.ts`
-  - `packages/core/src/server/office/graphDocumentResolver.test.ts`
-  - `packages/core/src/server/routes/officeSharePointResolve.test.ts`
+  - `packages/core/src/server/office/__tests__/graphDocumentResolver.test.ts`
+  - `packages/core/src/server/routes/__tests__/officeSharePointResolve.test.ts`
 - **Steps:**
-  1. Add config for Graph tenant/client credentials using environment variables; do not require them unless the resolver route is called.
+  1. Add optional CoreConfig plumbing for `MICROSOFT_GRAPH_TENANT_ID`, `MICROSOFT_GRAPH_CLIENT_ID`, and `MICROSOFT_GRAPH_CLIENT_SECRET` in `loadConfig.ts`, `schema.ts`, and `shared/types.ts`; parse them at startup but do not require them unless the resolver route is called.
   2. Add `POST /api/v1/office/sharepoint/resolve` guarded by workspace auth.
-  3. Validate request body as `{webUrl}`.
-  4. Reject non-HTTPS URLs and localhost/private URLs.
-  5. Convert the URL to Graph `/shares/u!<base64url>/driveItem`.
-  6. Return only `{name, webUrl, siteId, driveId, driveItemId}`.
-  7. Add stable error codes for missing config, invalid URL, Graph auth failure, Graph not found, and Graph upstream failure.
-  8. Ensure logs and error payloads do not include bearer tokens or Graph credentials.
+  3. Register `/api/v1/office/sharepoint/resolve` in A1's approved bearer-token path predicate/allowlist.
+  4. Add route coverage proving a valid workspace API token can call the resolver, with wrong-workspace/revoked token controls.
+  5. Validate request body as `{webUrl}`.
+  6. Reject non-HTTPS URLs and localhost/private URLs.
+  7. Convert the URL to Graph `/shares/u!<base64url>/driveItem`.
+  8. Use Microsoft Graph client-credentials flow with scope `https://graph.microsoft.com/.default`.
+  9. Return only `{name, webUrl, siteId, driveId, driveItemId}`.
+  10. Add stable error codes in `packages/core/src/shared/errors.ts` for typed missing configuration, invalid URL, Graph auth failure, Graph not found, and Graph upstream failure.
+  11. Ensure logs and error payloads do not include bearer tokens or Graph credentials.
 - **VERIFICATION:**
   - `pnpm --filter @hachej/boring-core run test -- graphDocumentResolver officeSharePointResolve` — exits 0; resolver and route tests pass.
   - `pnpm --filter @hachej/boring-core run typecheck` — exits 0.
@@ -58,6 +66,7 @@
   - Route works for a mocked SharePoint document URL and returns stable SharePoint IDs.
   - Route rejects non-HTTPS and private URLs.
   - Route requires workspace auth from Better Auth or A1 token auth.
+  - Missing Graph config returns a typed configuration error without exposing secrets.
   - No Arcade SDK dependency is added to boring-ui.
 - **Estimated size:** L.
 
@@ -78,7 +87,7 @@
   5. Preserve the existing manual ID path as an explicit fallback.
   6. Add tests for identity API, fallback path, resolver success, resolver failure, and forbidden field redaction.
 - **VERIFICATION:**
-  - `pnpm --filter @hachej/boring-integration-pi-for-excel run test` — exits 0; connector resolver tests pass.
+  - `pnpm --filter @hachej/boring-integration-pi-for-excel --fail-if-no-match run test` — exits 0; connector resolver tests pass.
   - `pnpm --filter @hachej/boring-sharepoint run test` — exits 0.
 - **Acceptance criteria:**
   - Happy path starts with the open workbook URL and writes a valid ref.
@@ -115,4 +124,3 @@
   - Proof excludes tokens, tenant secrets, cookies, and raw auth headers.
   - Any failure is recorded with the exact failing step and stable error code.
 - **Estimated size:** L.
-

@@ -51,10 +51,9 @@
   5. Add tests proving Excel host calls the same underlying behavior as before.
   6. Do not implement PowerPoint tools in this bead.
 - **VERIFICATION:**
-  - `cd ~/projects/pi-for-office && pnpm test -- document-host-excel` — exits 0; Excel adapter tests pass.
-  - `cd ~/projects/pi-for-office && pnpm test` — exits 0.
-  - `cd ~/projects/pi-for-office && pnpm typecheck` — exits 0.
-  - `cd ~/projects/pi-for-office && pnpm build` — exits 0.
+  - `cd ~/projects/pi-for-office && npm run test:context -- tests/document-host-excel.test.ts` — exits 0; Excel adapter tests pass.
+  - `cd ~/projects/pi-for-office && npm run check` — exits 0.
+  - `cd ~/projects/pi-for-office && npm run build` — exits 0.
 - **Acceptance criteria:**
   - Existing Excel tools still pass tests.
   - Host-coupled code has one clear `DocumentHost` entrypoint.
@@ -80,8 +79,8 @@
   4. Update install docs with PowerPoint sideload notes.
   5. Add tests for Excel host detection, PowerPoint host detection, and unsupported PowerPoint tool response.
 - **VERIFICATION:**
-  - `cd ~/projects/pi-for-office && pnpm test -- host-detection` — exits 0; Excel and PowerPoint detection tests pass.
-  - `cd ~/projects/pi-for-office && pnpm typecheck` — exits 0.
+  - `cd ~/projects/pi-for-office && npm run test:context -- tests/host-detection.test.ts` — exits 0; Excel and PowerPoint detection tests pass.
+  - `cd ~/projects/pi-for-office && npm run check` — exits 0.
   - `cd ~/projects/pi-for-office && rg -n "Host xsi:type=\"Presentation\"" manifest.xml` — prints the PowerPoint host declaration.
 - **Acceptance criteria:**
   - Excel manifest behavior is preserved.
@@ -109,4 +108,3 @@
   - RFC cites the exact Excel-coupled files changed by the seam.
   - Fork PR links the upstream issue.
 - **Estimated size:** S.
-

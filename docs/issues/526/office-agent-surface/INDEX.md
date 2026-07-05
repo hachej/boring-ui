@@ -10,7 +10,7 @@ This pack has five work packages. Each package owns one `PLAN.md`, one executabl
 | A2-connector-packaging | A | A1 | queued | Connector lives in `integrations/pi-for-excel/` with CI-runnable tests and install docs. Passing spike exists. |
 | A3-workbook-identity-e2e | A | A1, A2 | queued | Live Excel workbook resolves to SharePoint IDs, saves a ref, and posts an audit note. |
 | B1-host-seam-fork | B | none | queued | `hachej/pi-for-office` has an Excel-preserving `DocumentHost` seam and PowerPoint host detection. |
-| B2-powerpoint-mvp | B | B1, A2 reuse | queued | PowerPoint MVP tools run in the fork with the same connector file. |
+| B2-powerpoint-mvp | B | B1, A2 reuse | queued | PowerPoint MVP tools run in the fork; list/read/note reuse the connector unchanged and PowerPoint ref saving is explicitly generalized. |
 
 ## Dependency Graph
 
@@ -47,11 +47,10 @@ Run B1 in parallel only if a second agent can keep the fork minimally divergent 
 
 ## Cross-Pack Green Gates
 
-- No secrets, bearer tokens, cookies, OAuth artifacts, preview URLs, or absolute local paths in cloud refs, tool results, logs, fixtures, or docs.
+- No secrets, bearer tokens, cookies, OAuth artifacts, preview URLs, or absolute local paths in cloud refs, tool results, logs, fixtures, or implementation docs. Plan-pack evidence citations may use absolute local paths only when the local file is the evidence source.
 - Reuse boring-sharepoint redaction and validation rules for Office refs.
 - No Arcade SDK in boring-ui.
 - The connector stays one reviewable `.mjs` file.
 - The taskpane and connector are self-hosted for company use.
 - The fork keeps upstream mergeable: new hosts in new dirs, shared-file edits minimized, upstream remote retained.
 - A and B lanes do not block each other except the explicit `A2 -> B2` connector reuse verification.
-

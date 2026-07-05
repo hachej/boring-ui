@@ -13,13 +13,9 @@ Pick this package up only for boring-ui token auth work.
   - `packages/core/src/app/server/createCoreWorkspaceAgentServer.ts`
   - `packages/agent/src/server/registerAgentRoutes.ts`
 
-## Bead Checklist
+## Bead Order
 
-- [ ] A1-001 — token table, hash helpers, verification helper.
-- [ ] A1-002 — bearer branch in `authHook`.
-- [ ] A1-003 — owner-only token CRUD routes.
-- [ ] A1-004 — external workspace route tests.
-- [ ] A1-005 — CORS/trusted-origin tests and setup note.
+Execute beads in TODO.md order. INDEX.md is the only package-ordering authority.
 
 ## Done Definition
 
@@ -32,4 +28,3 @@ Pick this package up only for boring-ui token auth work.
 ## Review Notes
 
 Keep the auth change small. The purpose is to unblock external surfaces, not to add a broad admin API-token system.
-
