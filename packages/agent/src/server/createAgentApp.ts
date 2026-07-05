@@ -1,7 +1,9 @@
 import Fastify, { type FastifyInstance } from 'fastify'
 import type { AgentTool } from '../shared/tool'
-import type { AgentHarness, AgentHarnessFactory } from '../shared/harness'
+import type { AgentCoreHarnessFactory, AgentHarness, AgentHarnessFactory } from '../shared/harness'
 import type { TelemetrySink } from '../shared/telemetry'
+import type { PiChatSnapshot } from '../shared/chat'
+import { ErrorCode } from '../shared/error-codes'
 import { getEnv } from './config/env'
 import type { RuntimeBundle, RuntimeModeAdapter, RuntimeModeId } from './runtime/mode'
 import { getOptionalRuntimeBundleStorageRoot } from './runtime/mode'
@@ -20,7 +22,7 @@ import { fsEventsRoutes } from './http/routes/fsEvents'
 import { treeRoutes } from './http/routes/tree'
 import { modelsRoutes } from './http/routes/models'
 import { skillsRoutes } from './http/routes/skills'
-import { piChatRoutes } from './http/routes/piChat'
+import { piChatRoutes, type PiChatSessionService } from './http/routes/piChat'
 import { systemPromptRoutes } from './http/routes/systemPrompt'
 import { sessionChangesRoutes } from './http/routes/sessionChanges'
 import { catalogRoutes } from './http/routes/catalog'
@@ -31,10 +33,10 @@ import { searchRoutes } from './http/routes/search'
 import { gitRoutes } from './http/routes/git'
 import { InMemorySessionChangesTracker } from './http/sessionChangesTracker'
 import { createRuntimeReadyStatusTracker } from './runtime/modeReadiness'
-import { HarnessPiChatService } from './pi-chat/harnessPiChatService'
 import type { AgentMeteringSink } from './pi-chat/metering'
 import { createPluginDiagnosticsTool } from './tools/pluginDiagnostics'
 import type { ReloadHookDiagnostic } from './http/routes/reload'
+import { createAgentRuntimeBridge } from './createAgent'
 
 const DEFAULT_VERSION = '0.1.0-dev'
 const DEFAULT_SESSION_ID = 'default'
@@ -202,19 +204,32 @@ export async function createAgentApp(
     })] : []),
   ]
 
-  const harnessFactory = opts.harnessFactory ?? ((input) => createPiCodingAgentHarness({
+  const baseHarnessFactory = opts.harnessFactory ?? ((input) => createPiCodingAgentHarness({
     ...input,
     pi: runtimePi,
   }))
-  const harness = await harnessFactory({
-    tools,
-    cwd: workspaceRoot,
+  const harnessFactory = ((input) => baseHarnessFactory({
+    ...input,
     sessionNamespace: opts.sessionNamespace,
     sessionDir: opts.sessionDir,
+  })) as AgentCoreHarnessFactory
+  const coreAgent = createAgentRuntimeBridge({
+    runtime: modeAdapter,
+    tools,
+    harnessFactory,
     systemPromptAppend: opts.systemPromptAppend,
     systemPromptDynamic: opts.systemPromptDynamic,
     telemetry: opts.telemetry,
+    metering: opts.metering,
+    workdir: workspaceRoot,
+  }, {
+    service: {
+      workdir: runtimeBundle.workspace.root,
+      workspace: runtimeBundle.workspace,
+    },
   })
+  const agentRuntime = await coreAgent.getRuntime()
+  const harness = agentRuntime.harness
   harnessRef = harness
   const sessionChangesTracker = new InMemorySessionChangesTracker()
 
@@ -250,14 +265,9 @@ export async function createAgentApp(
   await app.register(gitRoutes, {
     getWorkspaceRoot: () => getOptionalRuntimeBundleStorageRoot(runtimeBundle),
   })
-  const piChatService = new HarnessPiChatService({
-    harness,
-    sessionStore: harness.sessions,
-    workdir: runtimeBundle.workspace.root,
-    workspace: runtimeBundle.workspace,
-    metering: opts.metering,
+  await app.register(piChatRoutes, {
+    service: createHttpCompatiblePiChatService(agentRuntime.service as PiChatSessionService),
   })
-  await app.register(piChatRoutes, { service: piChatService })
   await app.register(systemPromptRoutes, { harness })
   await app.register(modelsRoutes)
   await app.register(skillsRoutes, {
@@ -289,4 +299,53 @@ export async function createAgentApp(
   await app.register(readyStatusRoutes, { tracker: readyTracker })
 
   return app
+}
+
+function createHttpCompatiblePiChatService(service: PiChatSessionService): PiChatSessionService {
+  return new Proxy(service, {
+    get(target, prop, receiver) {
+      if (prop === 'readState') {
+        return async (...args: Parameters<PiChatSessionService['readState']>) => {
+          try {
+            return await target.readState(...args)
+          } catch (error) {
+            if (isSessionNotFoundError(error)) return emptyPiChatSnapshot(args[1])
+            throw error
+          }
+        }
+      }
+      if (prop === 'deleteSession' && typeof target.deleteSession === 'function') {
+        return async (...args: Parameters<NonNullable<PiChatSessionService['deleteSession']>>) => {
+          try {
+            return await target.deleteSession!(...args)
+          } catch (error) {
+            if (isSessionNotFoundError(error)) return
+            throw error
+          }
+        }
+      }
+      const value = Reflect.get(target, prop, receiver)
+      return typeof value === 'function' ? value.bind(target) : value
+    },
+  }) as PiChatSessionService
+}
+
+function isSessionNotFoundError(error: unknown): boolean {
+  if ((error as { code?: unknown })?.code === ErrorCode.enum.SESSION_NOT_FOUND) return true
+  return error instanceof Error && (
+    error.message === 'session not found' ||
+    error.message.startsWith('Session not found:')
+  )
+}
+
+function emptyPiChatSnapshot(sessionId: string): PiChatSnapshot {
+  return {
+    protocolVersion: 1,
+    sessionId,
+    seq: 0,
+    status: 'idle',
+    messages: [],
+    queue: { followUps: [] },
+    followUpMode: 'one-at-a-time',
+  }
 }
