@@ -25,7 +25,7 @@
     "@hachej/boring-ui-kit": "workspace:*",
     "@hachej/boring-workspace": "workspace:*",
     "@vercel/sandbox": "2.2.1",
-    "fastify": "^5.3.3",
+    "fastify": "^5.9.0",
     "react": "^19.2.7",
     "react-dom": "^19.2.7"
   },

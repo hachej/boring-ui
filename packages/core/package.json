@@ -83,7 +83,7 @@
     "better-auth": "^1.6.22",
     "close-with-grace": "^2.2.0",
     "drizzle-orm": "^0.45.2",
-    "fastify": "^5.3.3",
+    "fastify": "^5.9.0",
     "fastify-plugin": "^6.0.0",
     "isomorphic-dompurify": "^3.18.0",
     "lucide-react": "^1.21.0",
