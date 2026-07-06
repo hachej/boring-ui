@@ -7,7 +7,7 @@ import {
   SessionManager,
   type ToolDefinition,
 } from '@mariozechner/pi-coding-agent'
-import type { AgentHarness, RunContext, SendMessageInput } from '../../../shared/harness'
+import type { AgentHarness, RunContext, AgentSendInput } from '../../../shared/harness'
 import type { PiChatEvent } from '../../../shared/chat'
 import type { SessionStore } from '../../../shared/session'
 import type { PiAgentSessionAdapter } from '../PiAgentSessionAdapter'
@@ -244,7 +244,7 @@ async function createRealPiAdapter(options: RealPiAdapterOptions = {}) {
 }
 
 function createHarness(adapter: PiAgentSessionAdapter): AgentHarness & {
-  getPiSessionAdapter: (input: SendMessageInput, ctx: RunContext) => Promise<PiAgentSessionAdapter>
+  getPiSessionAdapter: (input: AgentSendInput, ctx: RunContext) => Promise<PiAgentSessionAdapter>
 } {
   return {
     id: 'real-pi-loop',

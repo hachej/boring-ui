@@ -25,6 +25,17 @@ export interface UserStore {
     appId: string,
     updates: { displayName?: string; email?: string; settings?: Record<string, unknown> },
   ): Promise<{ displayName: string; email: string; settings: Record<string, unknown> }>
+  putClientUserSettings?(
+    userId: string,
+    appId: string,
+    updates: { displayName?: string; settings?: Record<string, unknown> },
+  ): Promise<{ displayName: string; email: string; settings: Record<string, unknown> }>
+  patchUserSettingsJsonPath?(
+    userId: string,
+    appId: string,
+    path: string[],
+    value: unknown,
+  ): Promise<{ displayName: string; email: string; settings: Record<string, unknown> }>
 }
 
 export interface WorkspaceStore {

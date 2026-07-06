@@ -1,7 +1,8 @@
 import { z } from "zod"
+import { defineGeneratedPaneVocabulary } from "@hachej/boring-generated-pane/shared"
 
-export const chartRenderers = ["echarts", "vega-lite", "plotly"] as const
-export const chartTypes = ["bar", "line", "area", "scatter", "heatmap", "treemap", "sunburst", "table"] as const
+export const chartRenderers = ["native", "openui", "perspective", "echarts", "vega-lite", "plotly"] as const
+export const chartTypes = ["bar", "line", "area", "scatter", "radar", "radial", "pie", "donut", "heatmap", "treemap", "sunburst", "table"] as const
 export const perspectivePlugins = ["Datagrid", "Y Bar", "X Bar", "Y Line", "Y Area", "Y Scatter", "Y Treemap", "Sunburst", "Heatmap"] as const
 export const metricFormats = ["number", "currency", "percent"] as const
 export const filterControlTypes = ["select", "multiSelect", "dateRange", "numberRange", "search"] as const
@@ -25,7 +26,7 @@ export const dashboardQuerySchema = z.union([
 
 export const dashboardGridPropsSchema = z.object({
   title: z.string().optional(),
-  columns: z.union([z.literal(1), z.literal(2), z.literal(3), z.literal(4), z.literal(6), z.literal(12)]).optional(),
+  columns: z.union([z.literal(1), z.literal(2), z.literal(3), z.literal(4), z.literal(5), z.literal(6), z.literal(12)]).optional(),
 })
 
 export const bslMetricPropsSchema = z.object({
@@ -76,6 +77,38 @@ export const componentPropsSchemas = {
   BSLFilter: bslFilterPropsSchema,
   BSLText: bslTextPropsSchema,
 } as const
+
+export const biDashboardVocabulary = defineGeneratedPaneVocabulary({
+  id: "bi-dashboard",
+  label: "BI Dashboard",
+  components: {
+    DashboardGrid: {
+      description: "Responsive dashboard grid for chart, table, metric, filter, and text widgets.",
+      slots: ["default"],
+      props: dashboardGridPropsSchema,
+    },
+    BSLMetric: {
+      description: "Metric card bound to a BI query result field.",
+      props: bslMetricPropsSchema,
+    },
+    BSLChart: {
+      description: "Perspective-backed chart bound to a BI query result.",
+      props: bslChartPropsSchema,
+    },
+    BSLPerspectiveViewer: {
+      description: "Perspective table/chart viewer bound to a BI query result.",
+      props: bslPerspectiveViewerPropsSchema,
+    },
+    BSLFilter: {
+      description: "Dashboard filter control targeting one or more query IDs.",
+      props: bslFilterPropsSchema,
+    },
+    BSLText: {
+      description: "Text or markdown explanation block for dashboard context.",
+      props: bslTextPropsSchema,
+    },
+  },
+})
 
 export type DashboardGridProps = z.infer<typeof dashboardGridPropsSchema>
 export type BslMetricProps = z.infer<typeof bslMetricPropsSchema>

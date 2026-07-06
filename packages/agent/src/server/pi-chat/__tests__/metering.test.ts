@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest'
 import type { AgentSessionEvent } from '@mariozechner/pi-coding-agent'
-import type { AgentHarness, RunContext, SendMessageInput } from '../../../shared/harness'
+import type { AgentHarness, RunContext, AgentSendInput } from '../../../shared/harness'
 import type { SessionStore } from '../../../shared/session'
 import type { PiAgentSessionAdapter, PiAgentSessionSnapshot } from '../PiAgentSessionAdapter'
 import { HarnessPiChatService } from '../harnessPiChatService'
@@ -116,7 +116,7 @@ function createSink(overrides: Partial<AgentMeteringSink> = {}): { sink: AgentMe
 
 function createService(adapter: FakeAdapter, sink: AgentMeteringSink) {
   const harness: AgentHarness & {
-    getPiSessionAdapter: (input: SendMessageInput, ctx: RunContext) => Promise<PiAgentSessionAdapter>
+    getPiSessionAdapter: (input: AgentSendInput, ctx: RunContext) => Promise<PiAgentSessionAdapter>
     hasPiSession: (sessionId: string) => boolean
   } = {
     id: 'fake-pi',
@@ -1034,7 +1034,7 @@ describe('pi chat metering', () => {
         throw new Error('db still down')
       },
     })
-    const harness: AgentHarness & { getPiSessionAdapter: (input: SendMessageInput, ctx: RunContext) => Promise<PiAgentSessionAdapter> } = {
+    const harness: AgentHarness & { getPiSessionAdapter: (input: AgentSendInput, ctx: RunContext) => Promise<PiAgentSessionAdapter> } = {
       id: 'fake-pi',
       placement: 'server',
       sessions: sessionStore,

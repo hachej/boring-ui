@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest"
 import { sampleBiDashboardSpec } from "../front/sampleSpec"
-import { diagnoseDashboardSpec, validateDashboardSpec } from "./validation"
+import { BI_DASHBOARD_DIAGNOSTIC_CODES, diagnoseDashboardSpec, validateDashboardSpec } from "./validation"
 
 function cloneSample() {
   return structuredClone(sampleBiDashboardSpec)
@@ -92,6 +92,19 @@ describe("validateDashboardSpec", () => {
     expect(result.errors.join("\n")).toContain("dashboard.props.columns")
   })
 
+  it("allows five-column indicator grids but warns when charts are denser than two columns", () => {
+    const spec = cloneSample()
+    const grid = spec.elements.dashboard as unknown as { props: Record<string, unknown> }
+    grid.props.columns = 5
+
+    const result = diagnoseDashboardSpec(spec)
+
+    expect(result.ok).toBe(true)
+    expect(result.diagnostics).toEqual(expect.arrayContaining([
+      expect.objectContaining({ code: BI_DASHBOARD_DIAGNOSTIC_CODES.layoutChartsTooDense, elementId: "dashboard", severity: "warning" }),
+    ]))
+  })
+
   it("diagnoses chart category fields used as measures", () => {
     const spec = cloneSample()
     const chart = spec.elements["people-role"] as unknown as { props: Record<string, unknown> }
@@ -101,7 +114,21 @@ describe("validateDashboardSpec", () => {
 
     expect(result.ok).toBe(false)
     expect(result.diagnostics).toEqual(expect.arrayContaining([
-      expect.objectContaining({ code: "chart.category_as_measure", elementId: "people-role" }),
+      expect.objectContaining({ code: BI_DASHBOARD_DIAGNOSTIC_CODES.chartCategoryAsMeasure, elementId: "people-role" }),
     ]))
+  })
+
+  it("uses canonical missing measure diagnostic code", () => {
+    const spec = cloneSample()
+    const chart = spec.elements["people-role"] as unknown as { props: Record<string, unknown> }
+    delete chart.props.y
+
+    const result = diagnoseDashboardSpec(spec)
+
+    expect(result.ok).toBe(false)
+    expect(result.diagnostics).toEqual(expect.arrayContaining([
+      expect.objectContaining({ code: BI_DASHBOARD_DIAGNOSTIC_CODES.chartMeasureMissing, elementId: "people-role" }),
+    ]))
+    expect(result.diagnostics.map((item) => item.code)).not.toContain("chart.missing_measure")
   })
 })

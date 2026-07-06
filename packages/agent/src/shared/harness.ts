@@ -1,6 +1,8 @@
 import type { SessionStore } from './session'
 import type { TelemetrySink } from './telemetry'
 import type { AgentTool } from './tool'
+import type { AgentSendInput, MessageAttachment } from './events'
+import type { AgentSessionEvent, PromptOptions } from '@mariozechner/pi-coding-agent'
 
 export interface AgentHarnessFactoryInput {
   tools: AgentTool[]
@@ -24,6 +26,40 @@ export interface AgentHarnessFactoryInput {
 }
 
 export type AgentHarnessFactory = (input: AgentHarnessFactoryInput) => AgentHarness | Promise<AgentHarness>
+
+export interface AgentCoreSessionSnapshot {
+  state: unknown
+  messages: readonly unknown[]
+  isStreaming: boolean
+  isRetrying: boolean
+  retryAttempt: number
+  pendingMessageCount: number
+  steeringMessages: readonly string[]
+  followUpMessages: readonly string[]
+  followUpMode: 'all' | 'one-at-a-time'
+  sessionId: string
+  sessionName?: string
+}
+
+export type AgentCorePromptInput = string | { text: string; options?: PromptOptions }
+
+export interface AgentCoreSessionAdapter {
+  readSnapshot(): AgentCoreSessionSnapshot
+  subscribe(listener: (event: AgentSessionEvent) => void): () => void
+  prompt(input: AgentCorePromptInput): Promise<void>
+  followUp(text: string, options?: never): Promise<void>
+  clearFollowUp(options?: never): void
+  abort(): Promise<void>
+  abortRetry?: () => void
+  continueQueuedFollowUp?: () => Promise<void>
+}
+
+export type AgentCoreHarness = AgentHarness & {
+  getPiSessionAdapter(input: AgentSendInput, ctx: RunContext): Promise<AgentCoreSessionAdapter>
+  hasPiSession?: (sessionId: string, ctx?: { workspaceId?: string; userId?: string }) => boolean
+}
+
+export type AgentCoreHarnessFactory = (input: AgentHarnessFactoryInput) => AgentCoreHarness | Promise<AgentCoreHarness>
 
 export interface AgentHarness {
   readonly id: string
@@ -79,22 +115,11 @@ export interface AgentSlashCommandSummary {
 /* Resume is NOT a harness concern — see Stream resumption section.
    The HTTP route owns cursor buffering + replay; harness stays reconnect-unaware. */
 
-export interface MessageAttachment {
-  filename?: string
-  mediaType?: string
-  /** data: URL (base64) or remote URL */
-  url: string
-}
-
-export interface SendMessageInput {
+export type { AgentSendInput, MessageAttachment }
+/** @deprecated Use AgentSendInput.content. Kept so existing shared consumers compile during the P1 rename. */
+export type SendMessageInput = AgentSendInput & {
   sessionId: string
   message: string
-  thinkingLevel?: 'off' | 'low' | 'medium' | 'high'
-  model?: {
-    provider: string
-    id: string
-  }
-  attachments?: MessageAttachment[]
 }
 
 export interface RunContext {

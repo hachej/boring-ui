@@ -62,7 +62,7 @@ LABEL org.opencontainers.image.source=$SOURCE \
   org.opencontainers.image.title="boring-ui full-app" \
   boring.role="web"
 RUN apt-get update \
-  && apt-get install -y --no-install-recommends bubblewrap ca-certificates \
+  && apt-get install -y --no-install-recommends bubblewrap ca-certificates util-linux \
   && rm -rf /var/lib/apt/lists/* \
   && corepack enable \
   && groupadd --system --gid 10001 boring \
@@ -109,6 +109,8 @@ COPY --from=build /app/apps/full-app/dist/ apps/full-app/dist/
 COPY --from=build /app/apps/full-app/boring.app.toml apps/full-app/boring.app.toml
 COPY --from=build /app/apps/full-app/package.json apps/full-app/package.json
 COPY --from=build /app/apps/full-app/node_modules/ apps/full-app/node_modules/
+COPY apps/full-app/docker/web-entrypoint.sh /usr/local/bin/web-entrypoint
+RUN chmod 0755 /usr/local/bin/web-entrypoint
 
 # BORING_AGENT_MODE=vercel-sandbox: even on Fly.io the server itself runs here
 # but agent tool execution (bash/files) runs in remote Vercel sandbox containers.
@@ -123,7 +125,7 @@ EXPOSE 3000
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
   CMD node -e "fetch('http://localhost:3000/health').then(r=>{if(!r.ok)throw r.status}).catch(()=>process.exit(1))"
 
-USER boring
+ENTRYPOINT ["/usr/local/bin/web-entrypoint"]
 CMD ["node", "apps/full-app/dist/server/main.js"]
 
 FROM node:22-slim AS worker-runtime

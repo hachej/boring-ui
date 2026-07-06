@@ -5,7 +5,7 @@ import type { ChatModelSelection } from '../../shared/chat'
 const DEFAULT_TITLE = 'New session'
 
 export interface PiSessionRequestContext {
-  workspaceId: string
+  workspaceId?: string
   storageScope?: string
   authSubject?: string
   authEmail?: string
@@ -29,7 +29,7 @@ export interface PiSessionCreateInit {
 
 export interface PiSessionMetadata {
   sessionId: string
-  workspaceId: string
+  workspaceId?: string
   storageScope?: string
   title: string
   createdAt: string
@@ -47,7 +47,7 @@ export interface PiSessionRepository {
 
 export interface PiSessionMetadataIndex {
   get(sessionId: string): Promise<PiSessionMetadata | undefined>
-  listByWorkspace(workspaceId: string): Promise<PiSessionMetadata[]>
+  listByWorkspace(workspaceId?: string): Promise<PiSessionMetadata[]>
   upsert(metadata: PiSessionMetadata): Promise<void>
   delete(sessionId: string): Promise<void>
 }
@@ -68,7 +68,7 @@ export class InMemoryPiSessionMetadataIndex implements PiSessionMetadataIndex {
     return cloneMetadata(this.metadata.get(sessionId))
   }
 
-  async listByWorkspace(workspaceId: string): Promise<PiSessionMetadata[]> {
+  async listByWorkspace(workspaceId?: string): Promise<PiSessionMetadata[]> {
     return Array.from(this.metadata.values())
       .filter((entry) => entry.workspaceId === workspaceId)
       .map((entry) => cloneRequiredMetadata(entry))

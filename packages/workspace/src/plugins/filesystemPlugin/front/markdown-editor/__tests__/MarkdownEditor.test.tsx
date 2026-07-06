@@ -1,7 +1,17 @@
 import { describe, it, expect, vi, beforeEach } from "vitest"
 import { render, screen, fireEvent, waitFor } from "@testing-library/react"
 import { UI_COMMAND_EVENT } from "../../../../../front/bridge/uiCommandBus"
-import { MarkdownEditor, sanitizeHtml, isSafeUrl, rawFileUrlForMarkdownImage, workspaceFilePathForMarkdownLink, isUserEditedChange, countMarkdownWords } from "../MarkdownEditor"
+import {
+  MarkdownEditor,
+  sanitizeHtml,
+  isSafeUrl,
+  rawFileUrlForMarkdownImage,
+  workspaceFilePathForMarkdownLink,
+  isUserEditedChange,
+  countMarkdownWords,
+  parseMarkdownFrontmatter,
+  serializeMarkdownEditorChange,
+} from "../MarkdownEditor"
 
 describe("MarkdownEditor", () => {
   beforeEach(() => {
@@ -43,6 +53,74 @@ describe("MarkdownEditor", () => {
 
     it("ignores fenced code blocks and images", () => {
       expect(countMarkdownWords("Intro words\n\n```ts\nconst hidden = true\n```\n\n![Diagram](./diagram.png)")).toBe(2)
+    })
+
+    it("ignores YAML frontmatter", () => {
+      expect(countMarkdownWords("---\ntitle: Hidden words\n---\n# Visible words")).toBe(2)
+    })
+  })
+
+  describe("frontmatter summary", () => {
+    it("parses simple YAML frontmatter entries", () => {
+      expect(
+        parseMarkdownFrontmatter("---\ntitle: Launch Note\ntags:\n  - ui\n  - docs\n---\n# Body"),
+      ).toEqual({
+        block: "---\ntitle: Launch Note\ntags:\n  - ui\n  - docs\n---\n",
+        raw: "title: Launch Note\ntags:\n  - ui\n  - docs",
+        body: "# Body",
+        entries: [
+          { key: "title", value: "Launch Note" },
+          { key: "tags", value: "ui, docs" },
+        ],
+      })
+    })
+
+    it("renders a visual frontmatter summary above the rich editor", async () => {
+      render(
+        <MarkdownEditor
+          content={"---\ntitle: Launch Note\nstatus: draft\n---\n# Body"}
+          readOnly
+        />,
+      )
+
+      await waitFor(() => {
+        expect(screen.getByTestId("markdown-frontmatter-summary")).toBeInTheDocument()
+      })
+      expect(screen.getByText("Metadata")).toBeInTheDocument()
+      expect(screen.getByText("title")).toBeInTheDocument()
+      expect(screen.getByText("Launch Note")).toBeInTheDocument()
+      expect(screen.getByText("status")).toBeInTheDocument()
+      expect(screen.getByText("draft")).toBeInTheDocument()
+    })
+
+    it("preserves frontmatter when editing the rich body", async () => {
+      const onChange = vi.fn()
+      render(
+        <MarkdownEditor
+          content={"---\ntitle: Launch Note\n---\nBody"}
+          onChange={onChange}
+        />,
+      )
+
+      await waitFor(() => {
+        expect(screen.getByTitle("Horizontal rule")).toBeInTheDocument()
+      })
+      fireEvent.click(screen.getByTitle("Horizontal rule"))
+
+      await waitFor(() => {
+        expect(onChange).toHaveBeenCalled()
+      })
+      const next = onChange.mock.calls.at(-1)?.[0] as string
+      expect(next).toMatch(/^---\ntitle: Launch Note\n---\n/)
+      expect(next).toContain("Body")
+    })
+
+    it("drops transient empty body emissions before reattaching frontmatter", () => {
+      const summary = parseMarkdownFrontmatter("---\ntitle: Launch Note\n---\nBody")
+      expect(serializeMarkdownEditorChange("", false, summary)).toBeNull()
+      expect(serializeMarkdownEditorChange("", true, summary)).toBe(
+        "---\ntitle: Launch Note\n---\n",
+      )
     })
   })
 

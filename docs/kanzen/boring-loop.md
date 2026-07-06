@@ -14,7 +14,7 @@ Rule: autonomy = label + passed gates.
 | State | Can work move? | `queued`, `blocked`, `active`, `ready`, `done` |
 | Phase | What is next? | `triage`, `grill`, `plan`, `implement`, `review`, `merge` |
 | Track | Who merges? | `fast` or `owner` |
-| Gate | Why stopped? | `intake`, `clarity`, `risk`, `flag`, `plan`, `implementation`, `proof`, `merge` |
+| Gate | Why stopped? | `intake`, `triage`, `clarity`, `risk`, `flag`, `plan`, `implementation`, `proof`, `merge` |
 | Flag | How is runtime exposure controlled? | `not-needed`, `flag:<name>` |
 | Proof | Is it verified? | tests, CI, proof comment, demo, screenshot, waiver |
 | Session comments | Which Pi threads continue it? | id, purpose, scope, reason |
@@ -27,6 +27,9 @@ Rule: autonomy = label + passed gates.
 - [`boring-feedback`](../../.agents/skills/boring-feedback/SKILL.md): create issue.
 - [`boring-triage`](../../.agents/skills/boring-triage/SKILL.md): classify gate.
 - [`boring-orchestration`](../../.agents/skills/boring-orchestration/SKILL.md): run sweep.
+- [`boring-loop-grill`](../../.agents/skills/boring-loop-grill/SKILL.md): run `/loop-grill`.
+- [`boring-loop-plan`](../../.agents/skills/boring-loop-plan/SKILL.md): run `/loop-plan`.
+- [`boring-loop-implement`](../../.agents/skills/boring-loop-implement/SKILL.md): run `/loop-implement`.
 - [`sources/theo_loop.md`](sources/theo_loop.md): source transcript.
 - [`sources/steinberger_loop.md`](sources/steinberger_loop.md): source notes.
 
@@ -61,6 +64,7 @@ Rule: autonomy = label + passed gates.
 | Gate | Passes When | If It Fails |
 | --- | --- | --- |
 | `intake` | issue has context, redaction note, first plan | fix issue body |
+| `triage` | queued issue has been classified into the first real gate | `/triage` |
 | `clarity` | issue is clear enough | `/loop-grill` |
 | `risk` | `track:owner` is confirmed or upgraded to `track:fast` | keep owner track |
 | `flag` | no flag needed, or safe flag/abstraction path exists | choose flag/abstraction |
@@ -94,6 +98,7 @@ flowchart LR
 - `track:fast` forbids auth, billing, permissions, secrets, migrations, public
   API, release, deletion-heavy work, broad refactor.
 - Merge requires current review, thermo, tests, CI, proof comment, demo proof.
+- Merge does **not** require the PR branch to contain the latest `main` commit unless there is a merge conflict or stale/missing proof for the changed risk area.
 - If visual review is required: approval must match the current artifact.
 - Otherwise: `track:owner`; Julien reviews.
 
@@ -101,6 +106,9 @@ flowchart LR
 
 - [Trunk, flags, review budget](procedures/trunk-flags-review-budget.md)
 - [Issue plans](procedures/issue-plans.md)
+- [Well-documented issues](procedures/well-documented-issue.md)
+- [Proof of work](procedures/proof-of-work.md)
+- [Owner review cards](procedures/owner-review-card.md)
 - [Visual review](procedures/visual-review.md)
 
 ## Loop Commands

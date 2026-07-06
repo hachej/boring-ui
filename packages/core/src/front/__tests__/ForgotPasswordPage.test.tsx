@@ -23,11 +23,11 @@ vi.mock('better-auth/client/plugins', () => ({
   magicLinkClient: () => ({ id: 'magic-link' }),
 }))
 
-import { withBeadId } from '../../server/__tests__/_setup'
+import { withTaskId } from '../../server/__tests__/_setup'
 import { AuthProvider } from '../auth/AuthProvider'
 import { ForgotPasswordPage } from '../auth/ForgotPasswordPage'
 
-const BEAD_ID = 'boring-ui-v2-p8c9'
+const TASK_ID = 'boring-ui-v2-p8c9'
 
 function Wrapper({ children }: { children: ReactNode }) {
   return <AuthProvider>{children}</AuthProvider>
@@ -50,7 +50,7 @@ afterEach(() => {
 describe('ForgotPasswordPage', () => {
   it(
     'preserves redirect when linking back to sign in',
-    withBeadId(BEAD_ID, async ({ assertionPassed }) => {
+    withTaskId(TASK_ID, async ({ assertionPassed }) => {
       window.history.pushState({}, '', '/auth/forgot-password?redirect=%2Fworkspace%2Fabc')
 
       render(<ForgotPasswordPage />, { wrapper: Wrapper })
@@ -64,7 +64,7 @@ describe('ForgotPasswordPage', () => {
 
   it(
     'shows success state for any email (no enumeration)',
-    withBeadId(BEAD_ID, async ({ assertionPassed }) => {
+    withTaskId(TASK_ID, async ({ assertionPassed }) => {
       render(<ForgotPasswordPage />, { wrapper: Wrapper })
 
       const user = userEvent.setup()
@@ -89,7 +89,7 @@ describe('ForgotPasswordPage', () => {
 
   it(
     'shows success even when server throws (no enumeration)',
-    withBeadId(BEAD_ID, async ({ assertionPassed }) => {
+    withTaskId(TASK_ID, async ({ assertionPassed }) => {
       mockFetch.mockRejectedValue(new Error('Server error'))
 
       render(<ForgotPasswordPage />, { wrapper: Wrapper })
@@ -107,7 +107,7 @@ describe('ForgotPasswordPage', () => {
 
   it(
     'validates email client-side',
-    withBeadId(BEAD_ID, async ({ assertionPassed }) => {
+    withTaskId(TASK_ID, async ({ assertionPassed }) => {
       render(<ForgotPasswordPage />, { wrapper: Wrapper })
 
       const user = userEvent.setup()

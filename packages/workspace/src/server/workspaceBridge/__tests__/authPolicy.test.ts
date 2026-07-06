@@ -146,6 +146,28 @@ describe("BridgeAuthPolicy adapters", () => {
     })
   })
 
+  it("can force local CLI browser callers to the single-tenant owner workspace", async () => {
+    const policy = createLocalCliBridgeAuthPolicy({
+      workspaceId: "default",
+      capabilities: ["example:respond"],
+      forceOwnerWorkspaceId: true,
+    })
+
+    const resolved = await policy.resolve({
+      callerClass: "browser",
+      definition: browserOp,
+      workspaceId: "cosmetic-front-workspace-id",
+      sessionId: "session-1",
+    })
+
+    expect(resolved.context).toMatchObject({
+      callerClass: "browser",
+      workspaceId: "default",
+      sessionId: "session-1",
+    })
+    expect(resolved.resourceScope).toMatchObject({ workspaceId: "default", sessionId: "session-1" })
+  })
+
   it("denies local CLI browser callers for a workspace other than the configured one", async () => {
     const policy = createLocalCliBridgeAuthPolicy({
       workspaceId: "workspace-local",

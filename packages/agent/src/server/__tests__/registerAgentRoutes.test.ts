@@ -702,6 +702,48 @@ test('request-scoped catalog includes standard tools', async () => {
   await app.close()
 })
 
+test('request-scoped catalog isolates getExtraTools by authenticated subject', async () => {
+  const workspaceRoot = await makeTempDir('boring-agent-embed-auth-extra-')
+  const app = Fastify({ logger: false })
+  const seen: Array<string | undefined> = []
+
+  app.addHook('onRequest', async (request) => {
+    const userId = request.headers['x-test-user-id']
+    ;(request as unknown as { user?: { id: string } }).user = typeof userId === 'string' ? { id: userId } : undefined
+  })
+
+  await app.register(registerAgentRoutes, {
+    workspaceRoot,
+    mode: 'direct',
+    getExtraTools: ({ authSubject }) => {
+      seen.push(authSubject)
+      return [
+        {
+          name: `mcp_user_${String(authSubject).replace(/-/g, '_')}`,
+          description: 'Auth-scoped test tool.',
+          parameters: { type: 'object' as const, properties: {} },
+          async execute() {
+            return { content: [{ type: 'text' as const, text: authSubject ?? '' }] }
+          },
+        },
+      ]
+    },
+  })
+  await app.ready()
+
+  const userA = await app.inject({ method: 'GET', url: '/api/v1/agent/catalog', headers: { 'x-test-user-id': 'user-a' } })
+  const userB = await app.inject({ method: 'GET', url: '/api/v1/agent/catalog', headers: { 'x-test-user-id': 'user-b' } })
+
+  expect(userA.statusCode).toBe(200)
+  expect(userB.statusCode).toBe(200)
+  expect(userA.json().tools.map((tool: { name: string }) => tool.name)).toContain('mcp_user_user_a')
+  expect(userA.json().tools.map((tool: { name: string }) => tool.name)).not.toContain('mcp_user_user_b')
+  expect(userB.json().tools.map((tool: { name: string }) => tool.name)).toContain('mcp_user_user_b')
+  expect(seen).toEqual(['user-a', 'user-b'])
+
+  await app.close()
+})
+
 test('request-scoped catalog includes getExtraTools for workspace binding', async () => {
   const workspaceRoot = await makeTempDir('boring-agent-embed-dynamic-extra-')
   const app = Fastify({ logger: false })

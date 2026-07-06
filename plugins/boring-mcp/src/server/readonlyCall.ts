@@ -202,6 +202,7 @@ export function createBoringMcpReadonlyCaller(options: BoringMcpReadonlyCallOpti
           toolName: parsed.toolName,
           expectedSchemaHash: parsed.expectedSchemaHash,
           refresh: true,
+          providerRefresh: Boolean(parsed.expectedSchemaHash),
         })
         assertReadOnlyTool(described.tool)
         assertSchemaCurrent(described.tool, parsed.expectedSchemaHash)

@@ -343,8 +343,8 @@ describe('DELETE /api/v1/workspaces/:id', () => {
 
 describe('Provisioner integration', () => {
   let provApp: FastifyInstance
-  let provisionFn: ReturnType<typeof vi.fn>
-  let destroyFn: ReturnType<typeof vi.fn>
+  let provisionFn: ReturnType<typeof vi.fn<WorkspaceProvisioner['provision']>>
+  let destroyFn: ReturnType<typeof vi.fn<WorkspaceProvisioner['destroy']>>
   let runtimes: Map<string, Partial<WorkspaceRuntime>>
   let pNextWsId: number
   const pWorkspaces = new Map<string, Workspace>()
@@ -437,8 +437,8 @@ describe('Provisioner integration', () => {
 
   beforeAll(async () => {
     runtimes = new Map()
-    provisionFn = vi.fn().mockResolvedValue({ volumePath: '/volumes/ws-test' })
-    destroyFn = vi.fn().mockResolvedValue(undefined)
+    provisionFn = vi.fn<WorkspaceProvisioner['provision']>().mockResolvedValue({ volumePath: '/volumes/ws-test' })
+    destroyFn = vi.fn<WorkspaceProvisioner['destroy']>().mockResolvedValue(undefined)
     pNextWsId = 1
 
     const mockProvisioner: WorkspaceProvisioner = {

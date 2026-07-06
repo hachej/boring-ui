@@ -7,6 +7,11 @@ import { createGovernance } from '@hachej/boring-governance/server'
 import { loadConfig } from '@hachej/boring-core/server'
 import { createFullAppServerPlugins } from './plugins.js'
 import { buildCreditsWiring } from './credits.js'
+import {
+  createFullAppBoringMcpAgentToolsForRequest,
+  fullAppAgentSessionNamespace,
+  registerFullAppBoringMcpRoutes,
+} from './boringMcp.js'
 import { assertProductionAgentModeIsSafe } from './productionSafety.js'
 
 function pluginAuthoringEnabledFromEnv(): boolean {
@@ -25,6 +30,7 @@ async function main() {
   // server (and its db) exists.
   const credits = buildCreditsWiring()
   let appDb: unknown
+  let appRef: Awaited<ReturnType<typeof createCoreWorkspaceAgentServer>> | undefined
   const app = await createCoreWorkspaceAgentServer({
     appRoot,
     config,
@@ -39,9 +45,13 @@ async function main() {
     filterModels: governance.filterModels,
     getFilesystemBindings: governance.getFilesystemBindings(),
     pi: governance.pi,
+    getSessionNamespace: ({ workspaceId, request }) => fullAppAgentSessionNamespace({ workspaceId, request }),
+    getExtraTools: (ctx) => appRef ? createFullAppBoringMcpAgentToolsForRequest(appRef, ctx) : [],
   })
   appDb = app.db
+  appRef = app
   credits.attach(app)
+  registerFullAppBoringMcpRoutes(app)
   const address = await app.listen({ host: app.config.host, port: app.config.port })
   app.log.info({ event: 'core.server.ready', address }, 'core.server.ready')
 }

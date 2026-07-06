@@ -11,13 +11,15 @@
     "visual:storybook:update": "pnpm storybook:build && pnpm exec playwright test -c .storybook/playwright.config.ts --update-snapshots",
     "typecheck": "pnpm run build:packages && pnpm -r --workspace-concurrency=4 run typecheck",
     "lint": "pnpm check:generated-artifacts && pnpm audit:imports",
-    "lint:invariants": "pnpm --dir packages/agent run lint:invariants && pnpm --filter @hachej/boring-bash run check:invariants && pnpm lint:workspace-plugin-invariants",
+    "lint:invariants": "pnpm --dir packages/agent run lint:invariants && pnpm --filter @hachej/boring-bash run check:invariants && pnpm --filter @hachej/boring-sandbox run check:invariants && pnpm lint:workspace-plugin-invariants",
     "lint:workspace-plugin-invariants": "pnpm --filter @hachej/boring-workspace run lint:plugin-invariants",
     "audit:imports": "pnpm tsx scripts/audit-imports.ts",
     "audit:publish-manifests": "node scripts/audit-publish-manifests.mjs",
+    "audit:release-staging": "node scripts/check-release-staging.mjs",
     "check:generated-artifacts": "pnpm tsx scripts/check-generated-artifacts.ts",
     "check:agent-isolation": "pnpm --filter @hachej/boring-agent run check:isolation",
     "check:action-pins": "bash scripts/check-action-pins.sh",
+    "check:dependency-age": "node scripts/check-dependency-age.mjs",
     "check:bundle-size": "pnpm --filter @hachej/boring-workspace run check:bundle-size",
     "check:core-bundle-size": "pnpm --filter @hachej/boring-core run check:bundle-size",
     "ci:bundle-size": "pnpm --filter @hachej/boring-workspace... --workspace-concurrency=4 run build && pnpm check:bundle-size",
@@ -34,9 +36,9 @@
     "version:minor": "node scripts/version.mjs minor",
     "version:major": "node scripts/version.mjs major",
     "version:check": "node scripts/version.mjs --check",
-    "release:patch": "node scripts/release.mjs patch",
-    "release:minor": "node scripts/release.mjs minor",
-    "release:major": "node scripts/release.mjs major",
+    "release:patch": "bash scripts/cut-release.sh patch",
+    "release:minor": "bash scripts/cut-release.sh minor",
+    "release:major": "bash scripts/cut-release.sh major",
     "build:packages": "pnpm -r --filter './packages/*' --filter './plugins/*' --workspace-concurrency=4 run build",
     "typecheck:changed": "node scripts/typecheck-changed-workspaces.mjs",
     "review:workspace-ui": "node scripts/review-workspace-playground-ui.mjs",
@@ -49,14 +51,14 @@
     "node": ">=22.19.0"
   },
   "devDependencies": {
-    "@playwright/test": "^1.59.1",
+    "@playwright/test": "^1.61.1",
     "@storybook/addon-a11y": "^8.6.14",
     "@storybook/addon-essentials": "^8.6.14",
     "@storybook/addon-viewport": "^8.6.14",
     "@storybook/react": "^8.6.14",
     "@storybook/react-vite": "^8.6.14",
-    "@tailwindcss/vite": "^4.1.14",
-    "axe-core": "^4.11.3",
+    "@tailwindcss/vite": "^4.3.1",
+    "axe-core": "^4.12.1",
     "http-server": "^14.1.1",
     "storybook": "^8.6.14",
     "typescript": "^5.4.0"
@@ -70,7 +72,9 @@
       "@perspective-dev/client": "4.4.1",
       "@perspective-dev/viewer": "4.4.1",
       "@perspective-dev/viewer-datagrid": "4.4.1",
-      "@perspective-dev/viewer-d3fc": "4.4.1"
+      "@perspective-dev/viewer-d3fc": "4.4.1",
+      "fastify": "5.8.5",
+      "better-auth": "1.6.11"
     }
   }
 }

@@ -25,7 +25,7 @@ import { PiSessionStore } from "../sessions.js";
 // the same projection the live event path uses. These helpers mirror what
 // HarnessPiChatService.readPersistedState does.
 async function loadHistory(store: PiSessionStore, sessionId: string): Promise<BoringChatMessage[]> {
-  const { id, messages } = await store.loadEntries({ workspaceId: "test-ws" }, sessionId);
+  const { id, messages } = await store.loadEntries({ workspaceId: "default" }, sessionId);
   return buildPiChatHistory(messages, { sessionId: id });
 }
 
@@ -37,7 +37,7 @@ function textOf(message: BoringChatMessage): string {
 }
 
 describe("PiSessionStore.loadEntries transcript reconstruction", () => {
-  const ctx = { workspaceId: "test-ws" };
+  const ctx = { workspaceId: "default" };
   let tmpDir: string;
 
   beforeEach(async () => {

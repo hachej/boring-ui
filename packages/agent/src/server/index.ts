@@ -95,6 +95,8 @@ export type {
   WorkspaceProvisioningResult,
 } from './workspace/provisioning'
 export { autoDetectMode, hasBwrap, resolveMode } from './runtime/resolveMode'
+export { createAgent } from './createAgent'
+export type { AgentConfig } from '../shared/events'
 export { createAgentApp } from './createAgentApp'
 export type { CreateAgentAppOptions } from './createAgentApp'
 export type { AgentHarnessFactory, AgentHarnessFactoryInput } from '../shared/harness'

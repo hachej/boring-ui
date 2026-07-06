@@ -39,7 +39,9 @@ const { createdCustomTools, promptGate } = vi.hoisted(() => {
   }
 })
 
-vi.mock('@mariozechner/pi-coding-agent', () => ({
+vi.mock('@mariozechner/pi-coding-agent', () => {
+  let loaderSeq = 0
+  return {
   createAgentSession: vi.fn(async (config: { customTools?: Array<{ execute: (...args: any[]) => Promise<unknown> }> }) => {
     createdCustomTools.splice(0, createdCustomTools.length, ...(config.customTools ?? []))
     const subscribers: Array<(event: any) => void> = []
@@ -115,14 +117,16 @@ vi.mock('@mariozechner/pi-coding-agent', () => ({
   AuthStorage: { create: () => ({}) },
   ModelRegistry: { create: () => ({ find: vi.fn(), getAvailable: () => [], registerProvider: vi.fn() }) },
   DefaultResourceLoader: class {
+    private readonly commandName = `cmd-${++loaderSeq}`
     async reload() {}
     getSkills() { return { diagnostics: [] } }
-    getExtensions() { return { runtime: { getCommands: () => [] }, errors: [] } }
+    getExtensions() { return { runtime: { getCommands: () => [{ name: this.commandName, source: 'extension' }] }, errors: [] } }
   },
   SettingsManager: { create: () => ({ getDefaultProvider: () => undefined, getDefaultModel: () => undefined }) },
   getAgentDir: () => '/tmp/mock-agent-dir',
   loadSkills: () => ({ skills: [], diagnostics: [] }),
-}))
+  }
+})
 
 import { ErrorCode } from '../../../../shared/error-codes'
 import type { RunContext } from '../../../../shared/harness'
@@ -322,6 +326,16 @@ describe('tool adapter telemetry', () => {
         requestId: 'req-beta',
       },
     ])
+  })
+
+  it('scopes slash command sessions by run context', async () => {
+    const harness = createPiCodingAgentHarness({ tools: [createTool()], cwd: '/tmp/test-workspace' })
+    const commandsA = await harness.getSlashCommands?.('sess-command', makeRunContext('alpha'))
+    const commandsB = await harness.getSlashCommands?.('sess-command', makeRunContext('beta'))
+
+    expect(commandsA?.[0]?.name).toMatch(/^cmd-/)
+    expect(commandsB?.[0]?.name).toMatch(/^cmd-/)
+    expect(commandsB?.[0]?.name).not.toBe(commandsA?.[0]?.name)
   })
 
   it('keeps duplicate follow-up contexts aligned after selective clear', async () => {

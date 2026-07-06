@@ -1,6 +1,6 @@
 {
   "name": "@hachej/boring-bi-dashboard",
-  "version": "0.1.63",
+  "version": "0.1.64",
   "type": "module",
   "private": false,
   "license": "MIT",
@@ -20,7 +20,7 @@
     "skills": [
       "skills/bi-dashboard-authoring"
     ],
-    "systemPrompt": "Use the bi-dashboard-authoring skill when the user asks to create, edit, or open a BI dashboard. Dashboard files should live under dashboards/*.dashboard.json."
+    "systemPrompt": "Use the bi-dashboard-authoring skill when the user asks to create, edit, or open a BI dashboard. Dashboard files should live under dashboards/*.dashboard.json. Layout rule: compact KPI/indicator-only sections may use 1-5 columns, but chart/table dashboards must use at most 2 columns per row."
   },
   "files": [
     "dist",
@@ -50,7 +50,9 @@
     },
     "./package.json": "./package.json"
   },
-  "sideEffects": false,
+  "sideEffects": [
+    "*.css"
+  ],
   "scripts": {
     "build": "tsup",
     "typecheck": "tsc --noEmit",
@@ -70,30 +72,34 @@
     "@hachej/boring-data-bridge": "workspace:*",
     "@hachej/boring-generated-pane": "workspace:*",
     "@hachej/boring-ui-kit": "workspace:*",
-    "@perspective-dev/client": "4.4.1",
-    "@perspective-dev/server": "4.4.1",
-    "@perspective-dev/viewer": "4.4.1",
+    "@openuidev/react-headless": "0.9.1",
+    "@openuidev/react-lang": "0.2.8",
+    "@openuidev/react-ui": "0.12.1",
+    "@perspective-dev/client": "4.5.1",
+    "@perspective-dev/server": "4.5.1",
+    "@perspective-dev/viewer": "4.5.1",
     "@perspective-dev/viewer-d3fc": "4.4.1",
-    "@perspective-dev/viewer-datagrid": "4.4.1",
-    "lucide-react": "^1.8.0",
-    "zod": "^4.3.6"
+    "@perspective-dev/viewer-datagrid": "4.5.1",
+    "lucide-react": "^1.21.0",
+    "zod": "^4.3.6",
+    "zustand": "^4.5.7"
   },
   "devDependencies": {
-    "@duckdb/node-api": "1.5.2-r.1",
+    "@duckdb/node-api": "1.5.2-r.2",
     "@hachej/boring-agent": "workspace:*",
     "@hachej/boring-workspace": "workspace:*",
     "@json-render/core": "^0.19.0",
     "@json-render/react": "^0.19.0",
-    "@tailwindcss/vite": "^4.2.4",
-    "@types/react": "^19.0.0",
+    "@tailwindcss/vite": "^4.3.1",
+    "@types/react": "^19.2.17",
     "@types/react-dom": "^19.0.0",
     "@vitejs/plugin-react": "^4.7.0",
-    "react": "^19.0.0",
-    "react-dom": "^19.0.0",
+    "react": "^19.2.7",
+    "react-dom": "^19.2.7",
     "tsup": "^8.4.0",
-    "tsx": "^4.21.0",
+    "tsx": "^4.22.4",
     "typescript": "~5.9.3",
     "vite": "^6.4.2",
-    "vitest": "^3.2.6"
+    "vitest": "^4.1.9"
   }
 }

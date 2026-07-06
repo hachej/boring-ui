@@ -43,7 +43,7 @@ export interface MeteringUsageResult {
 }
 
 export interface MeteringRunScope {
-  workspaceId: string
+  workspaceId?: string
   userId?: string
   userEmail?: string
   userEmailVerified?: boolean
@@ -245,11 +245,14 @@ export function normalizeMeteringUsage(value: unknown): MeteringUsage | undefine
 }
 
 export interface ReservePromptInput {
-  workspaceId: string
+  workspaceId?: string
   userId?: string
   userEmail?: string
   userEmailVerified?: boolean
+  /** Public session id sent to the metering sink. */
   sessionId: string
+  /** Optional internal key for isolating coordinator state. */
+  stateKey?: string
   clientNonce: string
   message: string
   model?: ChatModelSelection
@@ -288,7 +291,8 @@ export class PiChatMeteringCoordinator {
 
   /** Reserve a prompt run. Throws (fail closed) when the sink rejects. */
   async reservePrompt(input: ReservePromptInput): Promise<ReserveOutcome> {
-    const state = this.sessionState(input.sessionId)
+    const stateKey = input.stateKey ?? input.sessionId
+    const state = this.sessionState(stateKey)
     const runId = promptRunId(input.sessionId, input.clientNonce)
     // Duplicate (incl. two concurrent retries racing the gap before the async
     // reserve resolves): the run is registered synchronously below, so the
@@ -302,13 +306,14 @@ export class PiChatMeteringCoordinator {
     }
     const run = this.createRun(input, 'prompt', runId)
     state.pendingPrompts.push(run)
-    return this.materializeReservation(state, run, input)
+    return this.materializeReservation(state, run, input, stateKey)
   }
 
   /** Reserve a follow-up run. Throws (fail closed) when the sink rejects.
    * Returns 'duplicate' when this selector already has a tracked/consumed run. */
   async reserveFollowUp(input: ReserveFollowUpInput): Promise<ReserveOutcome> {
-    const state = this.sessionState(input.sessionId)
+    const stateKey = input.stateKey ?? input.sessionId
+    const state = this.sessionState(stateKey)
     const runId = followUpRunId(input.sessionId, input.clientNonce, input.clientSeq)
     const existing = this.findRun(state, runId)
     if (existing) {
@@ -321,7 +326,7 @@ export class PiChatMeteringCoordinator {
     const run = this.createRun(input, 'followup', runId)
     run.followUp = { clientNonce: input.clientNonce, clientSeq: input.clientSeq }
     state.queued.push(run)
-    return this.materializeReservation(state, run, input)
+    return this.materializeReservation(state, run, input, stateKey)
   }
 
   /**
@@ -335,6 +340,7 @@ export class PiChatMeteringCoordinator {
     state: SessionMeteringState,
     run: MeteringRun,
     input: ReservePromptInput,
+    stateKey: string,
   ): Promise<ReserveOutcome> {
     run.reservation = this.applyReservation(run, input)
     const reserveOp = run.reservation.catch(() => {})
@@ -344,7 +350,7 @@ export class PiChatMeteringCoordinator {
     try {
       await run.reservation
     } catch (err) {
-      this.removeReservingRun(state, run, input.sessionId)
+      this.removeReservingRun(state, run, stateKey)
       throw err
     }
     // Cancelled mid-reserve: the release is already queued behind the reserve on
@@ -374,8 +380,8 @@ export class PiChatMeteringCoordinator {
   }
 
   /** The accepted prompt failed before/without running (sync throw or run rejection). */
-  failPromptRun(sessionId: string, clientNonce: string): void {
-    const state = this.sessions.get(sessionId)
+  failPromptRun(sessionId: string, clientNonce: string, stateKey = sessionId): void {
+    const state = this.sessions.get(stateKey)
     if (!state) return
     const runId = promptRunId(sessionId, clientNonce)
     const pendingIndex = state.pendingPrompts.findIndex((run) => run.scope.runId === runId)
@@ -386,7 +392,7 @@ export class PiChatMeteringCoordinator {
       this.finishRun(state.active, 'error')
       state.active = undefined
     }
-    this.pruneSession(sessionId, state)
+    this.pruneSession(stateKey, state)
   }
 
   /** A queued follow-up was rejected by the adapter before being queued. */
@@ -419,15 +425,15 @@ export class PiChatMeteringCoordinator {
    * pendingPrompts, where a later agent-start would otherwise misattribute
    * usage to it.
    */
-  failPromotedFollowUp(sessionId: string, selector: { clientNonce?: string; clientSeq?: number }): void {
-    const state = this.sessions.get(sessionId)
+  failPromotedFollowUp(sessionId: string, selector: { clientNonce?: string; clientSeq?: number }, stateKey = sessionId): void {
+    const state = this.sessions.get(stateKey)
     if (!state || selector.clientNonce === undefined || selector.clientSeq === undefined) return
     const runId = followUpRunId(sessionId, selector.clientNonce, selector.clientSeq)
     const index = state.pendingPrompts.findIndex((run) => run.scope.runId === runId)
     if (index < 0) return
     const [run] = state.pendingPrompts.splice(index, 1)
     if (run) this.release(run, 'run-rejected')
-    this.pruneSession(sessionId, state)
+    this.pruneSession(stateKey, state)
   }
 
   /**

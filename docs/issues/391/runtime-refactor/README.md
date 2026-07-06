@@ -1,36 +1,11 @@
-# Runtime-free agents + `@hachej/boring-bash` plan pack
+# #391 runtime refactor (v2) — plan pack
 
-Status: first split pass, thermo-review loop required before implementation.
+Runtime-free, surface-agnostic agents + the `@hachej/boring-bash` / `@hachej/boring-sandbox` split. Read in this order:
 
-This folder replaces the original monolithic plan. The preserved source snapshot is [`legacy-monolith-source.md`](legacy-monolith-source.md).
+1. [`VISION.md`](VISION.md) — what we are building and the checkable end-state per vision component.
+2. [`INDEX.md`](INDEX.md) — **the ordering authority**: phase table, dependency graph, dispatch protocol, binding policies.
+3. [`work/`](work/) — one dir per phase, each with `TODO.md` (work order), `PLAN.md` (deliverables+exit), `HANDOFF.md` (closeout checklist).
+4. [`architecture/`](architecture/) — the binding design (global ISA `00`, area subplans `01`–`05` and `07`–`10`; `legacy-monolith-source.md` is a non-canonical historical snapshot, not implementation input; there is no canonical `06` file — ordering lives in [`INDEX.md`](INDEX.md) and [`work/`](work/)).
+5. [`PR-PLAN.md`](PR-PLAN.md) — the stacked-PR execution plan.
 
-## Plan files
-
-1. [`00-global-isa.md`](00-global-isa.md) — global intent/strategy/architecture, framework lessons, destination, non-negotiables.
-2. [`01-agent-core-runtime-free.md`](01-agent-core-runtime-free.md) — make `@hachej/boring-agent` truly fs-free by default.
-3. [`02-boring-bash-environment.md`](02-boring-bash-environment.md) — `@hachej/boring-bash` package boundary, providers, file/bash/source-of-truth, tools/UI.
-4. [`03-policy-provisioning-readiness.md`](03-policy-provisioning-readiness.md) — policy intersection, child-app/workspace-kind scoping, provisioning, readiness, secrets, services.
-5. [`04-plugin-child-app-runtime.md`](04-plugin-child-app-runtime.md) — plugin manifests, hosted plugin safety, child-app/Macro hosting, runtime RPC.
-6. [`05-multi-agent-sessions-hooks.md`](05-multi-agent-sessions-hooks.md) — multiple agents per deployed app/workspace, session namespaces, search, external hooks.
-7. [`06-migration-phases.md`](06-migration-phases.md) — dependency-ordered implementation phases.
-8. [`07-tests-review-acceptance.md`](07-tests-review-acceptance.md) — required tests, issue coverage, review gates, acceptance criteria.
-
-## Implementation rule
-
-Do not implement from only one file. Every implementation bead/PR must cite:
-
-- the global ISA;
-- the relevant area subplan;
-- the migration phase;
-- the acceptance/test section.
-
-## Review rule
-
-Each file must pass a thermo architecture review before coding starts. A clean review means:
-
-- no package import cycle;
-- no duplicated provisioning/readiness system;
-- no filesystem/bash split brain;
-- no hidden cwd/filesystem leak in pure agent mode;
-- no child-app or multi-agent scope leak;
-- no claim that unrelated backlog issues are solved by this abstraction.
+The legacy [`todos/`](todos/) (`TODO-00..07`) is **non-canonical** — kept for v1 bead intent only; the v2 `work/` pack wins on any conflict.

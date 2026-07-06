@@ -77,6 +77,7 @@ export const ErrorCode = z.enum([
   'PROVISIONING_ARTIFACT_FAILED',
 
   // Internal
+  'ERR_NOT_IMPLEMENTED_UNTIL_T1',
   'INTERNAL_ERROR',
 ])
 

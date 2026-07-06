@@ -7,7 +7,7 @@
   "publishConfig": {
     "access": "public"
   },
-  "description": "Reusable boring-ui MCP/Sources plugin foundation: generic Sources UI, policy, redaction, and facade contracts.",
+  "description": "Reusable boring-ui MCP plugin foundation: generic MCP UI, policy, redaction, and facade contracts.",
   "repository": {
     "type": "git",
     "url": "https://github.com/hachej/boring-ui"
@@ -15,7 +15,7 @@
   "homepage": "https://github.com/hachej/boring-ui",
   "boring": {
     "id": "boring-mcp",
-    "label": "Sources",
+    "label": "MCP",
     "front": "dist/front/index.js",
     "server": "dist/server/index.js"
   },
@@ -61,16 +61,16 @@
     "@hachej/boring-workspace": "workspace:*",
     "@testing-library/jest-dom": "^6.9.1",
     "@testing-library/react": "^16.3.0",
-    "@types/node": "^22.0.0",
-    "@types/react": "^19.0.0",
+    "@types/node": "^22.20.0",
+    "@types/react": "^19.2.17",
     "@types/react-dom": "^19.0.0",
     "@vitejs/plugin-react": "^4.0.0",
-    "jsdom": "^29.0.2",
-    "react": "^19.0.0",
-    "react-dom": "^19.0.0",
+    "jsdom": "^29.1.1",
+    "react": "^19.2.7",
+    "react-dom": "^19.2.7",
     "tsup": "^8.4.0",
     "typescript": "~5.9.3",
-    "vitest": "^3.2.6"
+    "vitest": "^4.1.9"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.29.0"

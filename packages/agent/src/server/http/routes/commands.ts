@@ -3,6 +3,8 @@ import type { AgentHarness, AgentSlashCommandSummary, RunContext } from '../../.
 import type { AgentMeteringSink } from '../../pi-chat/metering'
 import { ErrorCode, type ErrorCode as ErrorCodeValue } from '../../../shared/error-codes'
 
+const DEFAULT_WORKSPACE_ID = 'default'
+
 type CommandsRoutesBaseOptions = {
   defaultSessionId: string
   metering?: Pick<AgentMeteringSink, 'isEnabled'>
@@ -30,6 +32,17 @@ function resolveWorkdir(opts: CommandsRoutesOptions, request: FastifyRequest): s
   return 'getWorkdir' in opts ? opts.getWorkdir(request) : opts.workdir
 }
 
+function getRequestWorkspaceId(request: FastifyRequest): string {
+  return request.workspaceContext?.workspaceId ?? DEFAULT_WORKSPACE_ID
+}
+
+function getRequestAuthSubject(request: FastifyRequest): string | undefined {
+  const userId = (request as FastifyRequest & { user?: { id?: unknown } | null }).user?.id
+  if (typeof userId === 'string' && userId.trim()) return userId.trim()
+  const authSubject = (request.workspaceContext as { authSubject?: unknown } | undefined)?.authSubject
+  return typeof authSubject === 'string' && authSubject.trim() ? authSubject.trim() : undefined
+}
+
 function isErrorCode(value: unknown): value is ErrorCodeValue {
   return typeof value === 'string' && ErrorCode.options.includes(value as ErrorCodeValue)
 }
@@ -47,7 +60,7 @@ function isMeteringActive(metering: Pick<AgentMeteringSink, 'isEnabled'> | undef
 }
 
 function nonEmptyString(value: unknown): string | undefined {
-  return typeof value === 'string' && value.length > 0 ? value : undefined
+  return typeof value === 'string' && value.trim().length > 0 ? value.trim() : undefined
 }
 
 function buildRunContext(request: FastifyRequest, workdir: string, options: { allowPromptDispatch?: boolean } = {}): RunContext {
@@ -55,9 +68,9 @@ function buildRunContext(request: FastifyRequest, workdir: string, options: { al
   return {
     abortSignal: new AbortController().signal,
     workdir,
-    workspaceId: request.workspaceContext?.workspaceId,
+    workspaceId: getRequestWorkspaceId(request),
     requestId: request.id,
-    userId: nonEmptyString(user?.id),
+    userId: getRequestAuthSubject(request),
     userEmail: nonEmptyString(user?.email),
     userEmailVerified: user?.emailVerified === true,
     ...(options.allowPromptDispatch === false ? { allowPromptDispatch: false } : {}),

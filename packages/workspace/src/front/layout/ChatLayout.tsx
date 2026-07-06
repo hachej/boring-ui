@@ -467,6 +467,7 @@ export function ChatLayout(props: ChatLayoutProps) {
             {hasChatPanes ? (
               <ChatPaneStage
                 panes={chatPanes}
+                topActions={props.chatTopActions}
                 activePaneId={props.activeChatPaneId}
                 onActivePaneChange={props.onActiveChatPaneChange}
                 onClosePane={props.onCloseChatPane}
@@ -547,18 +548,16 @@ export function ChatLayout(props: ChatLayoutProps) {
 
       </div>
 
-      {!props.chatOverlay ? (
-        <TopRightWorkspaceControls
-          surfaceOpen={surfaceOpen}
-          canToggleSurface={canControlSurface}
-          onToggleSurface={toggleSurface}
-          chatCollapsed={chatCollapsed}
-          canToggleChat={centerId === "chat" && (!surfaceConfigured || (surfaceOpen && !chatCollapsed))}
-          onToggleChat={toggleChatCollapsed}
-          chatPulse={chatRailPulse || blockers.length > 0}
-          surfaceConfigured={surfaceConfigured}
-        />
-      ) : null}
+      <TopRightWorkspaceControls
+        surfaceOpen={surfaceOpen}
+        canToggleSurface={canControlSurface}
+        onToggleSurface={toggleSurface}
+        chatCollapsed={chatCollapsed}
+        canToggleChat={centerId === "chat" && (!surfaceConfigured || (surfaceOpen && !chatCollapsed))}
+        onToggleChat={toggleChatCollapsed}
+        chatPulse={chatRailPulse || blockers.length > 0}
+        surfaceConfigured={surfaceConfigured}
+      />
 
       {!navOpen && props.onOpenNav ? (
         <FloatingEdgeButton

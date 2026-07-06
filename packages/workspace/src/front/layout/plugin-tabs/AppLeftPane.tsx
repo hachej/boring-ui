@@ -1,12 +1,13 @@
 "use client"
 
-import { useMemo, useState, type ReactNode } from "react"
+import { useEffect, useMemo, useState, type ReactNode } from "react"
 import { Plus, Search } from "lucide-react"
 import { AppLeftPaneHeader } from "./AppLeftPaneHeader"
 import { PrimaryAction, KbdHint } from "./AppLeftPaneActions"
 import { ProjectOverview, usePinnedProjectIds } from "./AppLeftPaneProjects"
 import { AppSessionRow, type AppSessionRowState } from "./AppLeftPaneSessionRow"
 import { SessionSubSection } from "./AppLeftPaneSections"
+import { useWorkspaceAttention, workspaceAttentionSessionBadgeForBlocker, type WorkspaceAttentionSessionBadge } from "../../attention/WorkspaceAttentionProvider"
 
 export interface AppLeftPaneSession {
   id: string
@@ -43,6 +44,7 @@ export interface AppLeftPaneAction {
   onClick: () => void
   trailing?: ReactNode
   emphasis?: boolean
+  active?: boolean
 }
 
 export interface AppLeftPaneProps {
@@ -88,6 +90,29 @@ export interface AppLeftPaneProps {
 
 type SessionRowState = AppSessionRowState
 
+const CHAT_SESSION_STATUS_EVENT = "boring:chat-session-status"
+
+function useWorkingSessionIds(): ReadonlySet<string> {
+  const [working, setWorking] = useState<ReadonlySet<string>>(() => new Set())
+  useEffect(() => {
+    const onStatus = (event: Event) => {
+      const detail = (event as CustomEvent).detail as { sessionId?: unknown; working?: unknown } | undefined
+      if (typeof detail?.sessionId !== "string") return
+      const isWorking = detail.working === true
+      setWorking((current) => {
+        if (current.has(detail.sessionId as string) === isWorking) return current
+        const next = new Set(current)
+        if (isWorking) next.add(detail.sessionId as string)
+        else next.delete(detail.sessionId as string)
+        return next
+      })
+    }
+    window.addEventListener(CHAT_SESSION_STATUS_EVENT, onStatus)
+    return () => window.removeEventListener(CHAT_SESSION_STATUS_EVENT, onStatus)
+  }, [])
+  return working
+}
+
 export function AppLeftPane({
   width = 268,
   appTitle,
@@ -119,6 +144,19 @@ export function AppLeftPane({
 }: AppLeftPaneProps) {
   const openSet = useMemo(() => new Set(openSessionIds), [openSessionIds])
   const pinnedSet = useMemo(() => new Set(pinnedSessionIds), [pinnedSessionIds])
+  const workingSessionIds = useWorkingSessionIds()
+  const { blockers } = useWorkspaceAttention()
+  const sessionBadges = useMemo(() => {
+    const badges = new Map<string, WorkspaceAttentionSessionBadge>()
+    for (const blocker of blockers) {
+      if (!blocker.sessionId) continue
+      const badge = workspaceAttentionSessionBadgeForBlocker(blocker)
+      if (!badge) continue
+      const existing = badges.get(blocker.sessionId)
+      if (!existing || (badge.priority ?? 0) > (existing.priority ?? 0)) badges.set(blocker.sessionId, badge)
+    }
+    return badges
+  }, [blockers])
   const pinnedSessions = useMemo(
     () => pinnedSessionIds
       .map((id) => sessions.find((session) => session.id === id))
@@ -191,6 +229,8 @@ export function AppLeftPane({
         // A session from another project switches to that workspace instead.
         canSplit={isActiveProjectSession}
         canPin={isActiveProjectSession}
+        working={isActiveProjectSession && workingSessionIds.has(session.id)}
+        attentionBadge={isActiveProjectSession ? sessionBadges.get(session.id) : undefined}
         onSwitch={isActiveProjectSession ? onSwitchSession : () => onOpenProjectSession?.(projectId, session.id)}
         onOpenAsPane={isActiveProjectSession ? onOpenSessionAsPane : () => onOpenProjectSession?.(projectId, session.id)}
         onTogglePinned={onToggleSessionPinned}
@@ -254,6 +294,7 @@ export function AppLeftPane({
             onClick={action.onClick}
             trailing={action.trailing}
             emphasis={action.emphasis}
+            active={action.active}
           />
         ))}
       </nav>

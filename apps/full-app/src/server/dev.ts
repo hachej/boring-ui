@@ -8,6 +8,11 @@ import { loadConfig } from '@hachej/boring-core/server'
 import { createFullAppServerPlugins } from './plugins.js'
 import { createGovernance } from '@hachej/boring-governance/server'
 import { buildCreditsWiring } from './credits.js'
+import {
+  createFullAppBoringMcpAgentToolsForRequest,
+  fullAppAgentSessionNamespace,
+  registerFullAppBoringMcpRoutes,
+} from './boringMcp.js'
 
 const appRoot = appRootFromImportMeta(import.meta.url, 2)
 
@@ -84,6 +89,7 @@ startCoreWorkspaceAgentDevServer({
     const governance = await createGovernance(config)
     const credits = buildCreditsWiring()
     let appDb: unknown
+    let appRef: Awaited<ReturnType<typeof createCoreWorkspaceAgentServer>> | undefined
     const app = await createCoreWorkspaceAgentServer({
       ...options,
       config,
@@ -97,9 +103,13 @@ startCoreWorkspaceAgentDevServer({
       filterModels: governance.filterModels,
       getFilesystemBindings: governance.getFilesystemBindings(),
       pi: governance.pi,
+      getSessionNamespace: ({ workspaceId, request }) => fullAppAgentSessionNamespace({ workspaceId, request }),
+      getExtraTools: (ctx) => appRef ? createFullAppBoringMcpAgentToolsForRequest(appRef, ctx) : [],
     })
     appDb = app.db
+    appRef = app
     credits.attach(app)
+    registerFullAppBoringMcpRoutes(app)
     await registerDevLoginRoute(app)
     return app
   },

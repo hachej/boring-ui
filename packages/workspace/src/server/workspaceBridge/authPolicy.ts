@@ -70,6 +70,13 @@ export interface BrowserBridgeAuthPolicyOptions {
 export interface LocalCliBridgeAuthPolicyOptions {
   workspaceId: string
   capabilities?: readonly string[]
+  /**
+   * Single-tenant/dev hosts may still pass a cosmetic x-boring-workspace-id
+   * header from the front shell. When true, authenticate all browser bridge
+   * calls as the configured owner workspace instead of rejecting that alias.
+   * Multi-workspace CLI mode must leave this false.
+   */
+  forceOwnerWorkspaceId?: boolean
 }
 
 export function createBrowserBridgeAuthPolicy(
@@ -160,17 +167,18 @@ export function createLocalCliBridgeAuthPolicy(
         )
       }
       ensureCallerAllowed(input.definition, "browser")
-      if (input.workspaceId !== options.workspaceId) {
+      if (!options.forceOwnerWorkspaceId && input.workspaceId !== options.workspaceId) {
         throw createWorkspaceBridgeError(
           WorkspaceBridgeErrorCode.ResourceScopeDenied,
           "Local CLI bridge caller is not authorized for workspace",
         )
       }
+      const workspaceId = options.forceOwnerWorkspaceId ? options.workspaceId : input.workspaceId
       const capabilities = options.capabilities ?? input.definition.requiredCapabilities
       ensureCapabilities(capabilities, input.requiredCapabilities ?? input.definition.requiredCapabilities)
       const context = makeContext({
         callerClass: "browser",
-        workspaceId: input.workspaceId,
+        workspaceId,
         sessionId: input.sessionId,
         pluginId: input.pluginId,
         capabilities,
@@ -180,7 +188,7 @@ export function createLocalCliBridgeAuthPolicy(
         context,
         effectiveCapabilities: capabilities,
         principal: { userId: "local-cli" },
-        resourceScope: { workspaceId: input.workspaceId, sessionId: input.sessionId },
+        resourceScope: { workspaceId, sessionId: input.sessionId },
       }
     },
   }

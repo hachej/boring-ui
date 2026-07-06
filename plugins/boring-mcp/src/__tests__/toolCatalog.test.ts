@@ -88,6 +88,58 @@ describe("boring-mcp tool catalog", () => {
     await expect(catalog.searchTools(actor, { sourceId: source.id })).rejects.toMatchObject({ code: MCP_ERROR_CODES.SOURCE_UNAVAILABLE })
   })
 
+  it("does not serve cached tools after a same-id source reconnects", async () => {
+    let currentSource: McpSource = { ...source, updatedAt: "2026-07-01T00:00:00.000Z", connectorRef: { provider: "notion", sessionId: "session-1" } }
+    const dynamicRegistry: McpSourceRegistry = {
+      async listSources() {
+        return [currentSource]
+      },
+      async getSource(sourceId) {
+        return sourceId === currentSource.id ? currentSource : undefined
+      },
+    }
+    const tx = transport([readonlySearch])
+    const catalog = createBoringMcpToolCatalog({ registry: dynamicRegistry, transport: tx })
+
+    await expect(catalog.searchTools(actor, { sourceId: source.id })).resolves.toMatchObject({ tools: [expect.objectContaining({ toolName: "NOTION_SEARCH_NOTION_PAGE" })] })
+    tx.listTools = vi.fn(async () => [{ name: "NOTION_GET_PAGE_MARKDOWN", inputSchema: { type: "object" } }])
+    currentSource = { ...currentSource, updatedAt: "2026-07-01T00:01:00.000Z", connectorRef: { provider: "notion", sessionId: "session-2" } }
+
+    await expect(catalog.searchTools(actor, { sourceId: source.id })).resolves.toMatchObject({ tools: [expect.objectContaining({ toolName: "NOTION_GET_PAGE_MARKDOWN" })] })
+  })
+
+  it("uses the registry-resolved source id in catalog DTOs", async () => {
+    const legacySourceId = "managed:workspace-1:user-1:notion"
+    const resolvingRegistry: McpSourceRegistry = {
+      async listSources() {
+        return [source]
+      },
+      async getSource(sourceId) {
+        return sourceId === legacySourceId || sourceId === source.id ? source : undefined
+      },
+    }
+    const catalog = createBoringMcpToolCatalog({ registry: resolvingRegistry, transport: transport([readonlySearch]) })
+
+    const result = await catalog.searchTools(actor, { sourceId: legacySourceId })
+
+    expect(result.tools).toEqual([expect.objectContaining({ sourceId: source.id, toolName: "NOTION_SEARCH_NOTION_PAGE" })])
+    expect(JSON.stringify(result)).not.toContain(legacySourceId)
+  })
+
+  it("bypasses the local catalog cache when providerRefresh is requested", async () => {
+    const tx = transport([readonlySearch])
+    const catalog = createBoringMcpToolCatalog({ registry: registry(), transport: tx })
+
+    await expect(catalog.searchTools(actor, { sourceId: source.id })).resolves.toMatchObject({ tools: [expect.objectContaining({ toolName: "NOTION_SEARCH_NOTION_PAGE" })] })
+    tx.listTools = vi.fn(async (_source, options) => {
+      expect(options).toEqual({ forceProviderRefresh: true })
+      return [{ name: "NOTION_GET_PAGE_MARKDOWN", inputSchema: { type: "object" } }]
+    })
+
+    await expect(catalog.searchTools(actor, { sourceId: source.id, providerRefresh: true })).resolves.toMatchObject({ tools: [expect.objectContaining({ toolName: "NOTION_GET_PAGE_MARKDOWN" })] })
+    expect(tx.listTools).toHaveBeenCalledTimes(1)
+  })
+
   it("describes exact schema and safety notes for a tool", async () => {
     const catalog = createBoringMcpToolCatalog({ registry: registry(), transport: transport([readonlySearch]) })
 

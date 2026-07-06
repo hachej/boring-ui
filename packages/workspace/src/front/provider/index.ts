@@ -31,7 +31,9 @@ export type {
   WorkspaceAttentionBlocker,
   WorkspaceAttentionBlockerAction,
   WorkspaceAttentionContextValue,
+  WorkspaceAttentionProviderProps,
   WorkspaceAttentionSessionBadge,
+  WorkspaceAttentionFocusMetadata,
 } from "../attention"
 export type {
   OpenArtifactHandler,
