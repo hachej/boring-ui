@@ -21,6 +21,8 @@ import { treeRoutes } from './http/routes/tree'
 import { modelsRoutes } from './http/routes/models'
 import { skillsRoutes } from './http/routes/skills'
 import { piChatRoutes, type PiChatSessionService } from './http/routes/piChat'
+import { eventStreamRoutes } from './http/routes/eventStream'
+import { agentSessionsRoutes } from './http/routes/agentSessions'
 import { systemPromptRoutes } from './http/routes/systemPrompt'
 import { sessionChangesRoutes } from './http/routes/sessionChanges'
 import { catalogRoutes } from './http/routes/catalog'
@@ -35,6 +37,8 @@ import type { AgentMeteringSink } from './pi-chat/metering'
 import { createPluginDiagnosticsTool } from './tools/pluginDiagnostics'
 import type { ReloadHookDiagnostic } from './http/routes/reload'
 import { createAgentRuntimeBridge } from './createAgent'
+import { openEventStreamStore } from './events/openEventStreamStore'
+import { resolvePiSessionDir } from './harness/pi-coding-agent/sessions'
 
 const DEFAULT_VERSION = '0.1.0-dev'
 const DEFAULT_SESSION_ID = 'default'
@@ -211,6 +215,20 @@ export async function createAgentApp(
     sessionNamespace: opts.sessionNamespace,
     sessionDir: opts.sessionDir,
   })) as AgentCoreHarnessFactory
+  const eventStoreHandle = openEventStreamStore(resolvePiSessionDir(runtimeBundle.workspace.root, {
+    sessionDir: opts.sessionDir,
+    sessionNamespace: opts.sessionNamespace,
+    storageCwd: workspaceRoot,
+  }))
+  let eventStoreClosed = false
+  const closeEventStore = () => {
+    if (eventStoreClosed) return
+    eventStoreClosed = true
+    eventStoreHandle.close()
+  }
+  app.addHook('onClose', async () => {
+    closeEventStore()
+  })
   const coreAgent = createAgentRuntimeBridge({
     runtime: modeAdapter,
     tools,
@@ -224,9 +242,13 @@ export async function createAgentApp(
     service: {
       workdir: runtimeBundle.workspace.root,
       workspace: runtimeBundle.workspace,
+      eventStore: eventStoreHandle.store,
     },
   })
-  const agentRuntime = await coreAgent.getRuntime()
+  const agentRuntime = await coreAgent.getRuntime().catch((error) => {
+    closeEventStore()
+    throw error
+  })
   const harness = agentRuntime.harness
   harnessRef = harness
   const sessionChangesTracker = new InMemorySessionChangesTracker()
@@ -265,6 +287,13 @@ export async function createAgentApp(
   })
   await app.register(piChatRoutes, {
     service: agentRuntime.service as PiChatSessionService,
+  })
+  await app.register(eventStreamRoutes, {
+    agent: coreAgent.agent,
+    eventStore: eventStoreHandle.store,
+  })
+  await app.register(agentSessionsRoutes, {
+    agent: coreAgent.agent,
   })
   await app.register(systemPromptRoutes, { harness })
   await app.register(modelsRoutes)

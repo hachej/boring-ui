@@ -9,7 +9,7 @@ import {
   mergePiPackageSources,
 } from "../createHarness.js";
 import { adaptToolsForPi } from "../tool-adapter.js";
-import { PiSessionStore } from "../sessions.js";
+import { PiSessionStore, resolvePiSessionDir } from "../sessions.js";
 import type { AgentTool } from "../../../../shared/tool.js";
 
 const ENOENT_CODE = "ENOENT";
@@ -414,6 +414,13 @@ describe("PiSessionStore", () => {
     expect(store.getSessionDir()).toBe(tmpDir);
     const firstLine = (await readFile(join(tmpDir, `${session.id}.jsonl`), "utf-8")).split("\n")[0];
     expect(JSON.parse(firstLine)).toEqual(expect.objectContaining({ cwd: "/workspace" }));
+  });
+
+  it("derives default storage directories from host storage cwd, not runtime cwd", () => {
+    expect(resolvePiSessionDir("/workspace", {
+      sessionRoot: tmpDir,
+      storageCwd: "/tmp/host-storage-root",
+    })).toBe(join(tmpDir, "--tmp-host-storage-root--"));
   });
 
   it("creates and lists sessions", async () => {

@@ -1,5 +1,5 @@
 import { HarnessPiChatService } from './pi-chat/harnessPiChatService'
-import type { EventStreamStore } from './events/eventStreamStore'
+import { formatOffset, parseOffset, type EventStreamStore } from './events/eventStreamStore'
 import type { AgentMeteringSink } from './pi-chat/metering'
 import type { PiSessionRequestContext } from './pi-chat/piSessionIdentity'
 import type { AgentHarness, AgentHarnessFactoryInput } from '../shared/harness'
@@ -14,7 +14,7 @@ import type {
   AgentStartReceipt,
   AgentStreamOptions,
 } from '../shared/events'
-import { AgentNotImplementedError } from '../shared/events'
+import { AgentNotImplementedError, sessionStreamPath } from '../shared/events'
 import type { SessionCtx, SessionListOptions, SessionStore } from '../shared/session'
 import type { PromptPayload } from '../shared/chat'
 import { ErrorCode } from '../shared/error-codes'
@@ -86,6 +86,7 @@ export function createAgentRuntimeBridge(
 
   const runtimeLoader = createRuntimeLoader(config, options)
   const getRuntime = runtimeLoader.get
+  const eventStore = options.service?.eventStore
   const live = new AgentLiveEventBuffer(DEFAULT_LIVE_BUFFER_SIZE)
   const sessionContexts = new Map<string, SessionCtx | undefined>()
   const startedSessions = new Map<string, { sessionId: string; ctx: SessionCtx | undefined }>()
@@ -136,9 +137,12 @@ export function createAgentRuntimeBridge(
   async function start(input: AgentSendInput): Promise<AgentStartReceipt> {
     const runtime = await getRuntime()
     const { sessionId, sessionKey, ctx } = await ensureSession(input, runtime)
+    if (eventStore) await eventStore.createStream(sessionStreamPath(sessionId), { reopenClosed: true })
     startedSessions.set(sessionKey, { sessionId, ctx })
     await ensureBridge(sessionKey, sessionId, ctx, runtime.service)
-    const startIndex = live.latestIndex(sessionKey)
+    const startIndex = eventStore
+      ? await durableNextEventIndex(eventStore, sessionId)
+      : live.latestIndex(sessionKey)
     await runtime.service.prompt(toPiRequestContext(ctx), sessionId, toPromptPayload(input))
     return { sessionId, startIndex }
   }
@@ -182,6 +186,7 @@ export function createAgentRuntimeBridge(
       const runtime = await getRuntime()
       const accessCtx = await authorizeSessionAccess(runtime, sessionId, ctx, sessionContexts)
       const receipt = await runtime.service.stop(toPiRequestContext(accessCtx), sessionId, {})
+      if (eventStore) await eventStore.closeStream(sessionStreamPath(sessionId))
       const sessionKey = sessionCacheKey(sessionId, accessCtx)
       live.close(sessionKey)
       startedSessions.delete(sessionKey)
@@ -193,9 +198,10 @@ export function createAgentRuntimeBridge(
       let stopError: unknown
       try {
         if (runtime) {
-          await Promise.all([...startedSessions.values()].map((started) =>
-            runtime.service.stop(toPiRequestContext(started.ctx), started.sessionId, {}),
+          const results = await Promise.allSettled([...startedSessions.values()].map((started) =>
+            stopAndCloseStartedSession(runtime, eventStore, started),
           ))
+          stopError = results.find((result): result is PromiseRejectedResult => result.status === 'rejected')?.reason
         }
       } catch (error) {
         stopError = error
@@ -217,9 +223,162 @@ export function createAgentRuntimeBridge(
 
   async function* authorizedStream(sessionId: string, options: AgentStreamOptions): AsyncIterable<AgentEvent> {
     const runtime = await getRuntime()
-    const accessCtx = await authorizeSessionAccess(runtime, sessionId, options.ctx, sessionContexts)
+    let accessCtx: SessionCtx | undefined
+    try {
+      accessCtx = await authorizeSessionAccess(runtime, sessionId, options.ctx, sessionContexts)
+    } catch (error) {
+      if (eventStore && (error as { code?: unknown })?.code === ErrorCode.enum.SESSION_NOT_FOUND) return
+      throw error
+    }
+    if (eventStore) {
+      await eventStore.createStream(sessionStreamPath(sessionId))
+      yield* durableAgentEventStream(eventStore, sessionId, options.startIndex)
+      return
+    }
     yield* live.stream(sessionCacheKey(sessionId, accessCtx), options.startIndex)
   }
+}
+
+async function stopAndCloseStartedSession(
+  runtime: AgentRuntime,
+  eventStore: EventStreamStore | undefined,
+  started: { sessionId: string; ctx: SessionCtx | undefined },
+): Promise<void> {
+  let stopError: unknown
+  try {
+    await runtime.service.stop(toPiRequestContext(started.ctx), started.sessionId, {})
+  } catch (error) {
+    stopError = error
+  }
+  try {
+    await eventStore?.closeStream(sessionStreamPath(started.sessionId))
+  } catch (error) {
+    stopError ??= error
+  }
+  if (stopError !== undefined) throw stopError
+}
+
+async function durableNextEventIndex(eventStore: EventStreamStore, sessionId: string): Promise<number> {
+  const meta = await eventStore.getStreamMeta(sessionStreamPath(sessionId))
+  if (!meta) return 0
+  return parseOffset(meta.nextOffset) + 1
+}
+
+function durableAgentEventStream(
+  eventStore: EventStreamStore,
+  sessionId: string,
+  startIndex: number,
+): AsyncIterable<AgentEvent> {
+  return {
+    [Symbol.asyncIterator]: () => createDurableAgentEventIterator(eventStore, sessionId, startIndex),
+  }
+}
+
+function createDurableAgentEventIterator(
+  eventStore: EventStreamStore,
+  sessionId: string,
+  startIndex: number,
+): AsyncIterator<AgentEvent> {
+  const path = sessionStreamPath(sessionId)
+  const queued: AgentEvent[] = []
+  let active = true
+  let initialized = false
+  let currentOffset: string | undefined
+  let wake: (() => void) | undefined
+
+  return {
+    async next() {
+      if (!active) return { value: undefined, done: true }
+      if (!Number.isInteger(startIndex) || startIndex < 0) {
+        throw cursorOutOfRangeError('startIndex must be a non-negative integer', { startIndex })
+      }
+      currentOffset ??= formatOffset(startIndex - 1)
+      if (!initialized) {
+        initialized = true
+        const meta = await eventStore.getStreamMeta(path)
+        if (!meta) {
+          active = false
+          return { value: undefined, done: true }
+        }
+        const latestIndex = parseOffset(meta.nextOffset) + 1
+        if (startIndex > latestIndex) {
+          throw cursorOutOfRangeError(`startIndex ${startIndex} is ahead of next eventIndex ${latestIndex}`, {
+            startIndex,
+            latestIndex,
+          })
+        }
+      }
+
+      while (active) {
+        if (queued.length > 0) return { value: queued.shift() as AgentEvent, done: false }
+
+        const result = await eventStore.readEvents(path, { offset: currentOffset })
+        currentOffset = result.nextOffset
+        queued.push(...result.events.map((event) => toAgentEvent(event.data)))
+        if (queued.length > 0) return { value: queued.shift() as AgentEvent, done: false }
+        if (result.closed && result.upToDate) {
+          active = false
+          return { value: undefined, done: true }
+        }
+        if (!result.upToDate) continue
+
+        await waitForDurableEvent(eventStore, path, () => active, () => currentOffset ?? '-1', (resolve) => {
+          wake = resolve
+        })
+      }
+
+      return { value: undefined, done: true }
+    },
+    async return() {
+      active = false
+      wake?.()
+      wake = undefined
+      return { value: undefined, done: true }
+    },
+  }
+}
+
+function waitForDurableEvent(
+  eventStore: EventStreamStore,
+  path: string,
+  isActive: () => boolean,
+  getOffset: () => string,
+  setWake: (wake: () => void) => void,
+): Promise<void> {
+  return new Promise((resolve) => {
+    if (!isActive()) {
+      resolve()
+      return
+    }
+
+    let settled = false
+    const settle = () => {
+      if (settled) return
+      settled = true
+      unsubscribe()
+      resolve()
+    }
+    const unsubscribe = eventStore.subscribe(path, settle)
+    setWake(settle)
+    void eventStore.readEvents(path, { offset: getOffset(), limit: 1 }).then((result) => {
+      if (result.events.length > 0 || (result.closed && result.upToDate)) settle()
+    }).catch(() => {})
+  })
+}
+
+function toAgentEvent(value: unknown): AgentEvent {
+  const event = value as Partial<AgentEvent> | undefined
+  if (
+    event?.v === 1 &&
+    typeof event.eventIndex === 'number' &&
+    typeof event.timestamp === 'number' &&
+    typeof event.sessionId === 'string' &&
+    typeof event.chunk === 'object' &&
+    event.chunk !== null
+  ) {
+    return event as AgentEvent
+  }
+  throw stableAgentError(ErrorCode.enum.INTERNAL_ERROR, 'stored event is not an AgentEvent envelope')
 }
 
 function createRuntimeLoader(config: AgentConfig, options: CreateAgentRuntimeBridgeOptions): {

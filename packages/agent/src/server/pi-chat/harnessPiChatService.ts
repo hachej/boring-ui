@@ -129,11 +129,12 @@ export class HarnessPiChatService implements PiChatSessionService {
     }
     channel?.unsubscribe()
     this.channels.delete(sessionKey)
+    await this.sessionStore.delete(sessionCtx, sessionId)
+    await this.eventStore?.closeStream(channel?.streamPath ?? sessionStreamPath(sessionId))
     this.metering?.releaseSession(sessionKey)
     this.messageMetadata.clearSession(sessionKey)
     this.syntheticPromptFailures.delete(sessionKey)
     this.activeSyntheticPromptErrors.delete(sessionKey)
-    await this.sessionStore.delete(sessionCtx, sessionId)
   }
 
   async readState(ctx: PiSessionRequestContext, sessionId: string) {
@@ -452,7 +453,8 @@ export class HarnessPiChatService implements PiChatSessionService {
         this.publishChannelEventSync(channel, enriched)
       }
       afterPublish?.(publishedEvents)
-    }).catch((error) => {
+    }).catch(async (error) => {
+      await this.eventStore?.closeStream(channel.streamPath).catch(() => {})
       channel.rejectClosed(error)
       throw error
     })

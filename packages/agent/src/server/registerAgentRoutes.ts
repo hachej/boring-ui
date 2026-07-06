@@ -16,7 +16,7 @@ import type { Workspace } from '../shared/workspace'
 import { ErrorCode } from '../shared/error-codes'
 import { resolveMode, autoDetectMode } from './runtime/resolveMode'
 import { createPiCodingAgentHarness, withPiHarnessDefaults } from './harness/pi-coding-agent/createHarness'
-import { PiSessionStore } from './harness/pi-coding-agent/sessions'
+import { PiSessionStore, resolvePiSessionDir } from './harness/pi-coding-agent/sessions'
 import type { PiHarnessOptions, ResolvedPiHarnessOptions } from './harness/pi-coding-agent/createHarness'
 import { loadPlugins } from './harness/pi-coding-agent/pluginLoader'
 import { registerConfiguredModelProviders } from './models/modelConfig'
@@ -32,6 +32,8 @@ import { treeRoutes } from './http/routes/tree'
 import { modelsRoutes } from './http/routes/models'
 import { skillsRoutes } from './http/routes/skills'
 import { piChatRoutes, type PiChatSessionService } from './http/routes/piChat'
+import { eventStreamRoutes } from './http/routes/eventStream'
+import { agentSessionsRoutes } from './http/routes/agentSessions'
 import { systemPromptRoutes } from './http/routes/systemPrompt'
 import { sessionChangesRoutes } from './http/routes/sessionChanges'
 import { catalogRoutes } from './http/routes/catalog'
@@ -48,6 +50,8 @@ import type { AgentHarness } from '../shared/harness'
 import type { AgentMeteringSink } from './pi-chat/metering'
 import { createPluginDiagnosticsTool } from './tools/pluginDiagnostics'
 import { createAgentRuntimeBridge } from './createAgent'
+import { openEventStreamStore, type EventStreamStoreHandle } from './events/openEventStreamStore'
+import type { EventStreamStore } from './events/eventStreamStore'
 
 const DEFAULT_VERSION = '0.1.0-dev'
 const DEFAULT_WORKSPACE_ID = 'default'
@@ -114,6 +118,8 @@ interface RuntimeBinding {
   tools: AgentTool[]
   readyTracker: ReadyStatusTracker
   piChatService: PiChatSessionService
+  eventStore: EventStreamStore
+  closeEventStore: () => void
   lastHealthCheckMs?: number
   /**
    * Diagnostics from the most recent /api/v1/agent/reload (merged hook +
@@ -357,7 +363,10 @@ export const registerAgentRoutes: FastifyPluginAsync<RegisterAgentRoutesOptions>
 
   const resolvedMode = opts.runtimeModeAdapter?.id ?? opts.mode ?? autoDetectMode()
   const modeAdapter = opts.runtimeModeAdapter ?? resolveMode(resolvedMode, { sandboxHandleStore: opts.sandboxHandleStore })
+  const eventStoreClosers = new Set<() => void>()
   app.addHook('onClose', async () => {
+    for (const closeEventStore of eventStoreClosers) closeEventStore()
+    eventStoreClosers.clear()
     await modeAdapter.dispose?.()
   })
   const requestScopedRuntime =
@@ -372,11 +381,37 @@ export const registerAgentRoutes: FastifyPluginAsync<RegisterAgentRoutesOptions>
   const externalPluginsEnabled = opts.externalPlugins !== false
   const runtimeBindings = new Map<string, RuntimeBindingEntry>()
   const MAX_RUNTIME_BINDINGS = 256
+  function trackEventStoreHandle(handle: EventStreamStoreHandle): EventStreamStoreHandle {
+    let closed = false
+    const close = () => {
+      if (closed) return
+      closed = true
+      eventStoreClosers.delete(close)
+      handle.close()
+    }
+    eventStoreClosers.add(close)
+    return { store: handle.store, close }
+  }
+
+  function closeRuntimeBindingEntry(entry: RuntimeBindingEntry | undefined): void {
+    if (!entry) return
+    void entry.promise.then(
+      (binding) => binding.closeEventStore(),
+      () => {},
+    )
+  }
+
+  function deleteRuntimeBinding(key: string): void {
+    const entry = runtimeBindings.get(key)
+    closeRuntimeBindingEntry(entry)
+    runtimeBindings.delete(key)
+  }
+
   function evictRuntimeBindings(): void {
     if (runtimeBindings.size <= MAX_RUNTIME_BINDINGS) return
     const keys = Array.from(runtimeBindings.keys())
     for (let i = 0; i < keys.length - MAX_RUNTIME_BINDINGS; i++) {
-      runtimeBindings.delete(keys[i])
+      deleteRuntimeBinding(keys[i] as string)
     }
   }
 
@@ -678,43 +713,56 @@ let runtimeProvisioning: WorkspaceProvisioningResult | undefined
       sessionNamespace: scope.sessionNamespace,
       sessionRoot: opts.sessionRoot,
     })) as AgentCoreHarnessFactory
-    const coreAgent = createAgentRuntimeBridge({
-      runtime: modeAdapter,
-      tools,
-      harnessFactory,
-      systemPromptAppend: opts.systemPromptAppend,
-      systemPromptDynamic,
-      telemetry: opts.telemetry,
-      metering: opts.metering,
-      sessionStorageRoot: opts.sessionRoot,
-      workdir: root,
-    }, {
-      service: {
-        workdir: runtimeBundle.workspace.root,
-        workspace: runtimeBundle.workspace,
-      },
-    })
-    const agentRuntime = await coreAgent.getRuntime()
-    const harness = agentRuntime.harness
-    readyTracker.markHarnessReady()
+    const eventStoreHandle = trackEventStoreHandle(openEventStreamStore(resolvePiSessionDir(runtimeBundle.workspace.root, {
+      sessionNamespace: scope.sessionNamespace,
+      sessionRoot: opts.sessionRoot,
+      storageCwd: root,
+    })))
+    try {
+      const coreAgent = createAgentRuntimeBridge({
+        runtime: modeAdapter,
+        tools,
+        harnessFactory,
+        systemPromptAppend: opts.systemPromptAppend,
+        systemPromptDynamic,
+        telemetry: opts.telemetry,
+        metering: opts.metering,
+        sessionStorageRoot: opts.sessionRoot,
+        workdir: root,
+      }, {
+        service: {
+          workdir: runtimeBundle.workspace.root,
+          workspace: runtimeBundle.workspace,
+          eventStore: eventStoreHandle.store,
+        },
+      })
+      const agentRuntime = await coreAgent.getRuntime()
+      const harness = agentRuntime.harness
+      readyTracker.markHarnessReady()
 
-    binding = {
-      runtimeBundle,
-      runtimeProvisioning,
-      runtimeDependencies,
-      runtimeProvisioningTask: undefined,
-      reprovision: async (reloadRequest?: FastifyRequest) => {
-        const result = await startRuntimeProvisioning(reloadRequest)
-        return await result
-      },
-      agent: coreAgent.agent,
-      harness,
-      tools,
-      readyTracker,
-      piChatService: agentRuntime.service as PiChatSessionService,
+      binding = {
+        runtimeBundle,
+        runtimeProvisioning,
+        runtimeDependencies,
+        runtimeProvisioningTask: undefined,
+        reprovision: async (reloadRequest?: FastifyRequest) => {
+          const result = await startRuntimeProvisioning(reloadRequest)
+          return await result
+        },
+        agent: coreAgent.agent,
+        harness,
+        tools,
+        readyTracker,
+        piChatService: agentRuntime.service as PiChatSessionService,
+        eventStore: eventStoreHandle.store,
+        closeEventStore: eventStoreHandle.close,
+      }
+      startRuntimeProvisioning(request)
+      return binding
+    } catch (error) {
+      eventStoreHandle.close()
+      throw error
     }
-    startRuntimeProvisioning(request)
-    return binding
   }
 
   function createRuntimeBindingEntry(
@@ -754,7 +802,7 @@ let runtimeProvisioning: WorkspaceProvisioningResult | undefined
       }
       if (existing.state === 'failed') {
         if (options.failIfPending) throw createRuntimeProvisioningFailedError(workspaceId, existing.error)
-        runtimeBindings.delete(scope.key)
+        deleteRuntimeBinding(scope.key)
       } else {
         return await ensureRuntimeBindingReady(
           workspaceId,
@@ -779,7 +827,7 @@ let runtimeProvisioning: WorkspaceProvisioningResult | undefined
         request,
       )
     } catch (error) {
-      if (runtimeBindings.get(scope.key) === created) runtimeBindings.delete(scope.key)
+      if (runtimeBindings.get(scope.key) === created) deleteRuntimeBinding(scope.key)
       throw error
     }
   }
@@ -789,7 +837,7 @@ let runtimeProvisioning: WorkspaceProvisioningResult | undefined
     scope: RuntimeScope,
     request?: FastifyRequest,
   ): Promise<RuntimeBinding> {
-    runtimeBindings.delete(scope.key)
+    deleteRuntimeBinding(scope.key)
     modeAdapter.evictCachedRuntime?.({ workspaceId })
 
     const created = createRuntimeBindingEntry(workspaceId, scope, request)
@@ -800,7 +848,7 @@ let runtimeProvisioning: WorkspaceProvisioningResult | undefined
       binding.lastHealthCheckMs = Date.now()
       return binding
     } catch (error) {
-      if (runtimeBindings.get(scope.key) === created) runtimeBindings.delete(scope.key)
+      if (runtimeBindings.get(scope.key) === created) deleteRuntimeBinding(scope.key)
       throw error
     }
   }
@@ -971,6 +1019,17 @@ let runtimeProvisioning: WorkspaceProvisioningResult | undefined
       return binding.piChatService
     },
   })
+  await app.register(eventStreamRoutes, staticBinding
+    ? { agent: staticBinding.agent, eventStore: staticBinding.eventStore }
+    : {
+        getAgent: async (request) => (await getBindingForRequest(request)).agent,
+        getEventStore: async (request) => (await getBindingForRequest(request)).eventStore,
+      },
+  )
+  await app.register(agentSessionsRoutes, staticBinding
+    ? { agent: staticBinding.agent }
+    : { getAgent: async (request) => (await getBindingForRequest(request)).agent },
+  )
   await app.register(systemPromptRoutes, {
     getHarness: async (request) => (await getBindingForRequest(request)).harness,
   })

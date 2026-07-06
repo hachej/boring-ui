@@ -140,8 +140,53 @@ describe('HarnessPiChatService event store tap', () => {
       await flushAsync()
       expect(live).toEqual([])
       await expect(inner.readEvents(sessionStreamPath('s1'), { offset: '-1' })).resolves.toMatchObject({ events: [] })
+      await expect(inner.getStreamMeta(sessionStreamPath('s1'))).resolves.toMatchObject({ closed: true })
 
       if (subscription.type === 'ok') subscription.unsubscribe()
+    } finally {
+      db.db.close()
+    }
+  })
+
+  it('closes the durable stream when deleting a cold session', async () => {
+    const db = openDatabase(':memory:')
+    try {
+      const store = new SqliteEventStreamStore(db.sql, db.runTransaction)
+      const streamPath = sessionStreamPath('s1')
+      await store.createStream(streamPath)
+      let notifications = 0
+      const unsubscribe = store.subscribe(streamPath, () => {
+        notifications += 1
+      })
+      const { service } = createService(store)
+
+      await service.deleteSession(ctx, 's1')
+
+      await expect(store.getStreamMeta(streamPath)).resolves.toMatchObject({ closed: true })
+      expect(notifications).toBeGreaterThan(0)
+      unsubscribe()
+    } finally {
+      db.db.close()
+    }
+  })
+
+  it('leaves the durable stream open when session deletion fails', async () => {
+    const db = openDatabase(':memory:')
+    try {
+      const store = new SqliteEventStreamStore(db.sql, db.runTransaction)
+      const streamPath = sessionStreamPath('s1')
+      await store.createStream(streamPath)
+      const failingStore: SessionStore = {
+        ...sessionStore,
+        delete: vi.fn(async () => {
+          throw new Error('delete failed')
+        }),
+      }
+      const { service } = createService(store, createAdapter(), failingStore)
+
+      await expect(service.deleteSession(ctx, 's1')).rejects.toThrow('delete failed')
+
+      await expect(store.getStreamMeta(streamPath)).resolves.toMatchObject({ closed: false })
     } finally {
       db.db.close()
     }

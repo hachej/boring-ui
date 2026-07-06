@@ -22,8 +22,12 @@ export interface EventStreamMeta {
   closed: boolean
 }
 
+export interface CreateStreamOptions {
+  reopenClosed?: boolean
+}
+
 export interface EventStreamStore {
-  createStream(path: string): Promise<void>
+  createStream(path: string, opts?: CreateStreamOptions): Promise<void>
   appendEvent(path: string, event: unknown): Promise<string>
   appendEventOnce(path: string, key: string, event: unknown): Promise<string>
   appendAgentEvent(sessionId: string, chunk: PiChatEvent, opts?: { idempotencyKey?: string }): Promise<string>
@@ -99,7 +103,15 @@ export class SqliteEventStreamStore implements EventStreamStore {
     })
   }
 
-  async createStream(path: string): Promise<void> {
+  async createStream(path: string, opts: CreateStreamOptions = {}): Promise<void> {
+    if (opts.reopenClosed === true) {
+      this.sql.exec(`
+        INSERT INTO boring_event_streams (path) VALUES (?)
+        ON CONFLICT(path) DO UPDATE SET closed = 0
+      `, path)
+      this.notifyListeners(path)
+      return
+    }
     this.sql.exec(`INSERT OR IGNORE INTO boring_event_streams (path) VALUES (?)`, path)
   }
 

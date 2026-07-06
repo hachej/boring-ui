@@ -100,6 +100,13 @@ export interface PiSessionStoreOptions {
   storageCwd?: string;
 }
 
+export function resolvePiSessionDir(cwd: string, options: PiSessionStoreOptions = {}): string {
+  return options.sessionDir
+    ?? (options.sessionNamespace
+      ? sessionDirForNamespace(options.sessionNamespace, options.sessionRoot)
+      : defaultSessionDir(options.storageCwd ?? cwd, options.sessionRoot));
+}
+
 export class PiSessionStore implements SessionStore {
   private cwd: string;
   private sessionDir: string;
@@ -115,10 +122,7 @@ export class PiSessionStore implements SessionStore {
       return;
     }
     this.allowLegacyUnscopedAccess = true;
-    this.sessionDir = options?.sessionDir
-      ?? (options?.sessionNamespace
-        ? sessionDirForNamespace(options.sessionNamespace, options.sessionRoot)
-        : defaultSessionDir(options?.storageCwd ?? cwd, options?.sessionRoot));
+    this.sessionDir = resolvePiSessionDir(cwd, options);
   }
 
   getSessionDir(): string {
