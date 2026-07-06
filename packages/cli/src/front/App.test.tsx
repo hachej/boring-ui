@@ -169,7 +169,7 @@ describe("CliWorkspaceShell", () => {
       workspaceLayout: "plugin-tabs",
       workspaceSectionTitle: "Project",
       appTitle: "Folder Workspace",
-      plugins: [expect.objectContaining({ pluginId: "ask-user" })],
+      plugins: expect.arrayContaining([expect.objectContaining({ pluginId: "ask-user" }), expect.any(Function)]),
     })
 
     expect(screen.getByText("v1.2.3")).not.toBeNull()

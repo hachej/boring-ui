@@ -116,7 +116,7 @@ and workspace API routes against your real filesystem. There is no database.
 
 The CLI discovers plugins from Pi-shaped roots — `~/.pi/agent/extensions/*`
 (global) and `<workspace>/.pi/extensions/*` (workspace-local) — plus
-CLI-bundled defaults (e.g. `@hachej/boring-ask-user`). Authoring is handled by
+CLI-bundled defaults (e.g. `@hachej/boring-ask-user`, `@hachej/boring-diagram`). Authoring is handled by
 the bundled `boring-ui-plugin` CLI:
 
 ```bash
