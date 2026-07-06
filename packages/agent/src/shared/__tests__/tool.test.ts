@@ -22,12 +22,22 @@ test('ToolExecContext contract', () => {
     toolCallId: string
     onUpdate?: (partial: string) => void
     sessionId?: string
+    userId?: string
+    userEmail?: string
+    userEmailVerified?: boolean
+    workspaceId?: string
+    requestId?: string
   }>()
 
   expectTypeOf<ToolExecContext['onUpdate']>().toEqualTypeOf<
     ((partial: string) => void) | undefined
   >()
   expectTypeOf<ToolExecContext['sessionId']>().toEqualTypeOf<string | undefined>()
+  expectTypeOf<ToolExecContext['userId']>().toEqualTypeOf<string | undefined>()
+  expectTypeOf<ToolExecContext['userEmail']>().toEqualTypeOf<string | undefined>()
+  expectTypeOf<ToolExecContext['userEmailVerified']>().toEqualTypeOf<boolean | undefined>()
+  expectTypeOf<ToolExecContext['workspaceId']>().toEqualTypeOf<string | undefined>()
+  expectTypeOf<ToolExecContext['requestId']>().toEqualTypeOf<string | undefined>()
 })
 
 test('ToolResult contract', () => {

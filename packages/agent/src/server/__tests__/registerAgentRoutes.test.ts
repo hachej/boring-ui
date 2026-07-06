@@ -6,6 +6,7 @@ import Fastify from 'fastify'
 
 import { registerAgentRoutes } from '../registerAgentRoutes'
 import { provisionWorkspaceRuntime } from '../workspace/provisioning'
+import { ErrorCode } from '../../shared/error-codes'
 import type { RuntimeModeAdapter } from '../runtime/mode'
 
 const tempDirs: string[] = []
@@ -896,11 +897,122 @@ test('request-scoped models endpoint does not require workspace header', async (
   await app.close()
 }, 15_000)
 
-test('request-scoped commands endpoint uses the workspace harness', async () => {
+test('model filter makes models endpoint workspace-scoped and receives request context', async () => {
+  const workspaceRoot = await makeTempDir('boring-agent-filtered-models-')
+  const app = Fastify({ logger: false })
+  let scopeChecks = 0
+  const filterModels = vi.fn(async (ctx, models) => ({ models }))
+
+  app.addHook('onRequest', async (request) => {
+    ;(request as typeof request & { user: { id: string; email: string; name: null; emailVerified: boolean } }).user = {
+      id: 'user-1',
+      email: 'user@example.com',
+      name: null,
+      emailVerified: true,
+    }
+  })
+  await app.register(registerAgentRoutes, {
+    workspaceRoot,
+    mode: 'direct',
+    filterModels,
+    getWorkspaceId: (request) => {
+      scopeChecks += 1
+      const value = request.headers['x-boring-workspace-id']
+      if (typeof value !== 'string') {
+        const error = new Error('workspace id is required') as Error & { statusCode: number }
+        error.statusCode = 400
+        throw error
+      }
+      return value
+    },
+    getWorkspaceRoot: () => workspaceRoot,
+  })
+  await app.ready()
+
+  const missingScope = await app.inject({ method: 'GET', url: '/api/v1/agent/models' })
+  expect(missingScope.statusCode).toBe(400)
+
+  const scoped = await app.inject({
+    method: 'GET',
+    url: '/api/v1/agent/models',
+    headers: { 'x-boring-workspace-id': 'ws-filtered' },
+  })
+  expect(scoped.statusCode).toBe(200)
+  expect(scopeChecks).toBeGreaterThanOrEqual(2)
+  expect(filterModels).toHaveBeenCalledTimes(1)
+  expect(filterModels.mock.calls[0]?.[0]).toMatchObject({ workspaceId: 'ws-filtered' })
+  expect(filterModels.mock.calls[0]?.[0].request.user).toMatchObject({ id: 'user-1' })
+
+  await app.close()
+}, 15_000)
+
+test('file routes use request-aware filesystem bindings from registerAgentRoutes', async () => {
+  const workspaceRoot = await makeTempDir('boring-agent-filtered-files-')
+  const app = Fastify({ logger: false })
+  const read = vi.fn(async (_target: unknown) => ({ content: 'scoped company file', metadata: { scoped: true } }))
+  const getFilesystemBindings = vi.fn(async (ctx) => [{
+    filesystem: 'company_context',
+    access: 'readonly' as const,
+    operations: {
+      read,
+      list: vi.fn(async () => ({ entries: [], metadata: {} })),
+      find: vi.fn(async () => ({ paths: [], metadata: {} })),
+      grep: vi.fn(async () => ({ matches: [], metadata: {} })),
+      stat: vi.fn(async () => ({ isDirectory: false, metadata: {} })),
+      rejectMutation: vi.fn((operation: string) => { throw new Error(`${operation} denied`) }),
+    },
+  }])
+
+  app.addHook('onRequest', async (request) => {
+    ;(request as typeof request & { user: { id: string; email: string; name: null; emailVerified: boolean } }).user = {
+      id: 'user-1',
+      email: 'user@example.com',
+      name: null,
+      emailVerified: true,
+    }
+  })
+  await app.register(registerAgentRoutes, {
+    workspaceRoot,
+    mode: 'direct',
+    getFilesystemBindings,
+    getWorkspaceId: () => 'ws-files',
+    getWorkspaceRoot: () => workspaceRoot,
+  })
+  await app.ready()
+
+  const res = await app.inject({
+    method: 'GET',
+    url: '/api/v1/files?filesystem=company_context&path=%2Fpolicy.md',
+  })
+
+  expect(res.statusCode).toBe(200)
+  expect(res.json()).toMatchObject({ content: 'scoped company file' })
+  expect(getFilesystemBindings).toHaveBeenCalledWith(expect.objectContaining({
+    workspaceId: 'ws-files',
+    workspaceRoot,
+    userId: 'user-1',
+    userEmail: 'user@example.com',
+  }))
+  expect(read).toHaveBeenCalledWith({ filesystem: 'company_context', path: '/policy.md' })
+
+  await app.close()
+}, 15_000)
+
+test('request-scoped command endpoints use the workspace harness and request identity', async () => {
   const workspaceRoot = await makeTempDir('boring-agent-embed-commands-')
   const app = Fastify({ logger: false })
   const getSlashCommands = vi.fn(async () => [{ name: 'open-test-panel', source: 'extension' as const }])
+  const executeSlashCommand = vi.fn(async () => {})
   let scopeChecks = 0
+
+  app.addHook('onRequest', async (request) => {
+    ;(request as typeof request & { user: { id: string; email: string; name: null; emailVerified: boolean } }).user = {
+      id: 'user-1',
+      email: 'user@example.com',
+      name: null,
+      emailVerified: true,
+    }
+  })
 
   await app.register(registerAgentRoutes, {
     workspaceRoot,
@@ -932,6 +1044,7 @@ test('request-scoped commands endpoint uses the workspace harness', async () => 
         async delete() {},
       },
       getSlashCommands,
+      executeSlashCommand,
     }),
   })
   await app.ready()
@@ -946,8 +1059,86 @@ test('request-scoped commands endpoint uses the workspace harness', async () => 
     expect(commandsRes.json()).toEqual({
       commands: [{ name: 'open-test-panel', source: 'extension' }],
     })
-    expect(getSlashCommands).toHaveBeenCalledWith('custom', expect.objectContaining({ workdir: workspaceRoot }))
-    expect(scopeChecks).toBe(1)
+    expect(getSlashCommands).toHaveBeenCalledWith('custom', expect.objectContaining({
+      workdir: workspaceRoot,
+      workspaceId: 'workspace-a',
+      userId: 'user-1',
+      userEmail: 'user@example.com',
+      userEmailVerified: true,
+      requestId: expect.any(String),
+    }))
+
+    const executeRes = await app.inject({
+      method: 'POST',
+      url: '/api/v1/agent/commands/execute?sessionId=custom',
+      headers: { 'x-boring-workspace-id': 'workspace-a' },
+      payload: { name: 'open-test-panel', args: 'arg1' },
+    })
+    expect(executeRes.statusCode).toBe(200)
+    expect(executeRes.json()).toEqual({ ok: true })
+    expect(executeSlashCommand).toHaveBeenCalledWith('custom', 'open-test-panel', 'arg1', expect.objectContaining({
+      workdir: workspaceRoot,
+      workspaceId: 'workspace-a',
+      userId: 'user-1',
+      userEmail: 'user@example.com',
+      userEmailVerified: true,
+      requestId: expect.any(String),
+    }))
+    expect(scopeChecks).toBe(2)
+  } finally {
+    await app.close()
+  }
+}, 15_000)
+
+test('metered command execution rejects commands before harness dispatch', async () => {
+  const workspaceRoot = await makeTempDir('boring-agent-embed-metered-commands-')
+  const app = Fastify({ logger: false })
+  const getSlashCommands = vi.fn(async () => [{ name: 'plan', source: 'prompt' as const }])
+  const executeSlashCommand = vi.fn(async () => {})
+
+  await app.register(registerAgentRoutes, {
+    workspaceRoot,
+    mode: 'direct',
+    metering: {
+      reserveRun: vi.fn(),
+      recordUsage: vi.fn(),
+      settleRun: vi.fn(),
+      releaseRun: vi.fn(),
+    },
+    harnessFactory: async () => ({
+      id: 'metered-commands-test-harness',
+      placement: 'server' as const,
+      sessions: {
+        async list() { return [] },
+        async create() {
+          const now = new Date().toISOString()
+          return { id: 'default', title: 'Default', createdAt: now, updatedAt: now, turnCount: 0 }
+        },
+        async load() {
+          const now = new Date().toISOString()
+          return { id: 'default', title: 'Default', createdAt: now, updatedAt: now, turnCount: 0, messages: [] }
+        },
+        async delete() {},
+      },
+      getSlashCommands,
+      executeSlashCommand,
+    }),
+  })
+  await app.ready()
+
+  try {
+    const commandsRes = await app.inject({ method: 'GET', url: '/api/v1/agent/commands?sessionId=default' })
+    expect(commandsRes.statusCode).toBe(200)
+    expect(commandsRes.json()).toEqual({ commands: [{ name: 'plan', source: 'prompt' }] })
+
+    const executeRes = await app.inject({
+      method: 'POST',
+      url: '/api/v1/agent/commands/execute?sessionId=default',
+      payload: { name: 'plan', args: 'ship it' },
+    })
+    expect(executeRes.statusCode).toBe(409)
+    expect(executeRes.json()).toMatchObject({ error: { code: ErrorCode.enum.METERING_UNSUPPORTED_COMMAND } })
+    expect(executeSlashCommand).not.toHaveBeenCalled()
   } finally {
     await app.close()
   }

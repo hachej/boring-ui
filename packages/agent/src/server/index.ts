@@ -133,6 +133,8 @@ export type {
   BuiltinRuntimeModeId,
   ModeContext,
   RuntimeBundle,
+  RuntimeFilesystemBinding,
+  RuntimeFilesystemBindingOperations,
   RuntimeModeAdapter,
   RuntimeModeId,
 } from './runtime/mode'

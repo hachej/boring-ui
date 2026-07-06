@@ -20,6 +20,7 @@ export type Workspace = {
   createdAt: string
   deletedAt: string | null
   isDefault: boolean
+  managedBy?: string | null
 }
 
 export type WorkspaceMember = {
