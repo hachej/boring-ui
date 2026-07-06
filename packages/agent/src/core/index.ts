@@ -22,6 +22,8 @@ export type {
   AgentCoreSessionSnapshot,
 } from '../shared/harness'
 export {
+  AGENT_NO_FILESYSTEM_FOR_ATTACHMENTS,
   AGENT_NOT_IMPLEMENTED_UNTIL_T1,
+  AgentFilesystemRequiredError,
   AgentNotImplementedError,
 } from '../shared/events'

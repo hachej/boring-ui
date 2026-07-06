@@ -46,6 +46,7 @@ function sessionBaseDir(explicitRoot?: string): string {
 }
 
 function defaultSessionDir(cwd: string, explicitRoot?: string): string {
+  if (explicitRoot && cwd.trim().length === 0) return sessionBaseDir(explicitRoot);
   const safePath = `--${cwd.replace(/^[/\\]/, "").replace(/[/\\:]/g, "-")}--`;
   return join(sessionBaseDir(explicitRoot), safePath);
 }
