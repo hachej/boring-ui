@@ -2,7 +2,9 @@ import type { AgentHarness, RunContext, AgentSendInput } from '../../shared/harn
 import type { SessionCtx, SessionListOptions, SessionStore } from '../../shared/session'
 import type { Workspace } from '../../shared/workspace'
 import type { BoringChatMessage, BoringChatPart, ChatError, FollowUpPayload, FollowUpReceipt, InterruptPayload, PiChatEvent, PiChatSnapshot, PromptPayload, PromptReceipt, QueuedUserMessage, QueueClearPayload, QueueClearReceipt, StopPayload, StopReceipt } from '../../shared/chat'
+import { sessionStreamPath, type AgentEvent } from '../../shared/events'
 import { ErrorCode } from '../../shared/error-codes'
+import { formatOffset, parseOffset, type EventStreamStore } from '../events/eventStreamStore'
 import type { PiChatSessionService, PiChatEventSubscriber, PiChatEventStreamResult } from '../http/routes/piChat'
 import type { PiSessionCreateInit, PiSessionRequestContext } from './piSessionIdentity'
 import type { PiAgentPromptInput, PiAgentSessionAdapter } from './PiAgentSessionAdapter'
@@ -30,10 +32,14 @@ type PiSessionStoreLike = SessionStore & {
 
 interface LiveSessionChannel {
   sessionKey: string
+  streamPath: string
   buffer: PiChatReplayBuffer
   adapter: PiAgentSessionAdapter
   unsubscribe: () => void
   mapper: PiChatEventMapper
+  publishQueue: Promise<void>
+  closed: Promise<void>
+  rejectClosed: (error: unknown) => void
   activeTurnId?: string
   messageTurnIds: Map<string, string>
 }
@@ -48,6 +54,7 @@ export interface HarnessPiChatServiceOptions {
   sessionStore: SessionStore
   workdir: string
   workspace?: Workspace
+  eventStore?: EventStreamStore
   /**
    * Optional host billing sink. When set, accepted prompts/follow-ups reserve
    * before execution (a rejecting sink blocks the request), native assistant
@@ -64,6 +71,7 @@ export class HarnessPiChatService implements PiChatSessionService {
   private readonly sessionStore: PiSessionStoreLike
   private readonly workdir: string
   private readonly workspace?: Workspace
+  private readonly eventStore?: EventStreamStore
   private readonly channels = new Map<string, LiveSessionChannel>()
   // Single-flight guard so concurrent cold callers (e.g. two browser tabs each
   // opening /events while the session is still being created) converge on one
@@ -81,6 +89,7 @@ export class HarnessPiChatService implements PiChatSessionService {
     this.sessionStore = options.sessionStore
     this.workdir = options.workdir
     this.workspace = options.workspace
+    this.eventStore = options.eventStore
     this.metering = options.metering
       ? new PiChatMeteringCoordinator(options.metering, options.meteringLogger)
       : undefined
@@ -158,7 +167,7 @@ export class HarnessPiChatService implements PiChatSessionService {
       return {
         protocolVersion: 1,
         sessionId: id,
-        seq: 0,
+        seq: await this.readDurableLatestPiChatSeq(sessionStreamPath(id)),
         status: 'idle',
         messages: buildPiChatHistory(messages, { sessionId: id }),
         queue: { followUps: [] },
@@ -173,13 +182,13 @@ export class HarnessPiChatService implements PiChatSessionService {
     const channel = await this.getChannel(ctx, sessionId)
     const result = channel.buffer.subscribe(cursor, subscriber)
     if (result.type !== 'ok') return result
-    return { type: 'ok', unsubscribe: result.unsubscribe }
+    return { type: 'ok', unsubscribe: result.unsubscribe, closed: channel.closed }
   }
 
   async prompt(ctx: PiSessionRequestContext, sessionId: string, payload: PromptPayload): Promise<PromptReceipt> {
     const sessionKey = this.sessionKey(ctx, sessionId)
     const adapter = await this.getAdapter(ctx, sessionId, payload)
-    await this.ensureChannel(ctx, sessionId, adapter)
+    const channel = await this.ensureChannel(ctx, sessionId, adapter)
     // Reserve before execution. The coordinator is the single source of dedup
     // truth: it awaits the owning run's reservation, so a concurrent duplicate
     // sees the same accept/reject (a rejecting sink — e.g. credits exhausted —
@@ -206,11 +215,10 @@ export class HarnessPiChatService implements PiChatSessionService {
     }
     if (outcome === 'cancelled') throw promptCancelledError()
     this.messageMetadata.recordPrompt(sessionKey, payload)
-    const channel = this.channels.get(sessionKey)
     const receiptCursor = nextPromptReceiptCursor(channel)
     try {
       const input = await toPiPromptInput(payload, this.workspace)
-      const run = this.trackActiveRun(sessionKey, adapter.prompt(input))
+      const run = this.trackActiveRun(sessionKey, this.runAndDrainPublishQueue(channel, adapter.prompt(input)))
       run.catch((error) => {
         this.metering?.failPromptRun(sessionId, payload.clientNonce, sessionKey)
         if (!this.messageMetadata.hasPrompt(sessionKey, { clientNonce: payload.clientNonce, displayText: payload.displayMessage ?? payload.message })) return
@@ -227,7 +235,7 @@ export class HarnessPiChatService implements PiChatSessionService {
   async followUp(ctx: PiSessionRequestContext, sessionId: string, payload: FollowUpPayload): Promise<FollowUpReceipt> {
     const sessionKey = this.sessionKey(ctx, sessionId)
     const adapter = await this.getAdapter(ctx, sessionId, payload.message)
-    await this.ensureChannel(ctx, sessionId, adapter)
+    const channel = await this.ensureChannel(ctx, sessionId, adapter)
     // Reserve before enqueuing; the coordinator awaits the owner's reservation
     // and dedups concurrent/consumed retries (so a duplicate doesn't take a
     // second hold or queue a second native follow-up).
@@ -263,6 +271,7 @@ export class HarnessPiChatService implements PiChatSessionService {
       this.messageMetadata.removeFollowUp(sessionKey, payload)
       throw err
     }
+    await this.drainPublishQueue(channel)
     return { accepted: true, queued: true, cursor: this.channels.get(sessionKey)?.buffer.latestSeq ?? 0, clientNonce: payload.clientNonce, clientSeq: payload.clientSeq }
   }
 
@@ -272,6 +281,7 @@ export class HarnessPiChatService implements PiChatSessionService {
     if (hasFollowUpSelector(payload)) {
       const before = adapter.readSnapshot().followUpMessages.length
       adapter.clearFollowUp(payload)
+      await this.drainPublishQueue(this.channels.get(sessionKey))
       const after = adapter.readSnapshot().followUpMessages.length
       if (after < before) {
         this.messageMetadata.removeFollowUp(sessionKey, payload)
@@ -280,6 +290,7 @@ export class HarnessPiChatService implements PiChatSessionService {
       return { accepted: true, cursor: this.channels.get(sessionKey)?.buffer.latestSeq ?? 0, cleared: Math.max(0, before - after) }
     }
     const clearedQueue = this.clearAllFollowUps(adapter, sessionId, sessionKey)
+    await this.drainPublishQueue(this.channels.get(sessionKey))
     this.metering?.releaseQueued(sessionKey)
     return { accepted: true, cursor: this.channels.get(sessionKey)?.buffer.latestSeq ?? 0, cleared: clearedQueue.length }
   }
@@ -293,6 +304,7 @@ export class HarnessPiChatService implements PiChatSessionService {
     const activeRun = this.activePromptRuns.get(sessionKey)
     adapter.abortRetry?.()
     if (wasActive) await adapter.abort()
+    await this.drainPublishQueue(this.channels.get(sessionKey))
     await activeRun?.catch(() => {})
     // Release prompt reservations stranded before agent-start. Safe before
     // auto-post: the next follow-up is still in the queue (released only when
@@ -312,6 +324,7 @@ export class HarnessPiChatService implements PiChatSessionService {
     this.metering?.releaseQueued(sessionKey)
     this.metering?.releasePending(sessionKey)
     await adapter.abort()
+    await this.drainPublishQueue(this.channels.get(sessionKey))
     return { accepted: true, stopped: true, cursor: this.channels.get(sessionKey)?.buffer.latestSeq ?? 0, clearedQueue: buildPiChatQueuedFollowUps(sessionId, clearedQueue) }
   }
 
@@ -341,7 +354,7 @@ export class HarnessPiChatService implements PiChatSessionService {
     this.messageMetadata.recordConsumingFollowUp(sessionKey, followUp, metadata?.serverText)
     if (adapter.continueQueuedFollowUp) {
       try {
-        await this.trackActiveRun(sessionKey, adapter.continueQueuedFollowUp())
+        await this.trackActiveRun(sessionKey, this.runAndDrainPublishQueue(this.channels.get(sessionKey), adapter.continueQueuedFollowUp()))
       } catch (err) {
         // Rejected before Pi consumed the follow-up; release its reservation.
         // A no-op if it was already consumed (the run left the queue).
@@ -368,7 +381,7 @@ export class HarnessPiChatService implements PiChatSessionService {
   }
 
   private async runPrompt(sessionKey: string, adapter: PiAgentSessionAdapter, input: PiAgentPromptInput): Promise<void> {
-    await this.trackActiveRun(sessionKey, adapter.prompt(input))
+    await this.trackActiveRun(sessionKey, this.runAndDrainPublishQueue(this.channels.get(sessionKey), adapter.prompt(input)))
   }
 
   private async trackActiveRun(sessionKey: string, run: Promise<void>): Promise<void> {
@@ -413,7 +426,44 @@ export class HarnessPiChatService implements PiChatSessionService {
     }
   }
 
-  private publishChannelEvent(sessionId: string, channel: LiveSessionChannel, event: PiChatEvent): void {
+  private publishChannelEvents(
+    sessionId: string,
+    channel: LiveSessionChannel,
+    events: PiChatEvent[],
+    afterPublish?: (publishedEvents: PiChatEvent[]) => void,
+  ): void {
+    if (!this.eventStore) {
+      const publishedEvents: PiChatEvent[] = []
+      for (const event of events) {
+        const enriched = this.messageMetadata.enrichEvent(channel.sessionKey, event)
+        publishedEvents.push(enriched)
+        this.publishChannelEventSync(channel, enriched)
+      }
+      afterPublish?.(publishedEvents)
+      return
+    }
+
+    const next = channel.publishQueue.then(async () => {
+      const publishedEvents: PiChatEvent[] = []
+      for (const event of events) {
+        const enriched = this.messageMetadata.enrichEvent(channel.sessionKey, event)
+        publishedEvents.push(enriched)
+        await this.eventStore?.appendAgentEvent(sessionId, enriched, { idempotencyKey: String(enriched.seq) })
+        this.publishChannelEventSync(channel, enriched)
+      }
+      afterPublish?.(publishedEvents)
+    }).catch((error) => {
+      channel.rejectClosed(error)
+      throw error
+    })
+    // A failed durable append intentionally poisons this live channel: later
+    // chunks cannot skip the failed PiChatEvent seq and still satisfy replay
+    // authority, so callers that await the queue must see the same failure.
+    channel.publishQueue = next
+    next.catch(() => {})
+  }
+
+  private publishChannelEventSync(channel: LiveSessionChannel, event: PiChatEvent): void {
     const sessionKey = channel.sessionKey
     if (event.type === 'agent-start') {
       channel.activeTurnId = event.turnId
@@ -436,15 +486,15 @@ export class HarnessPiChatService implements PiChatSessionService {
     const createdAt = new Date().toISOString()
     const messageId = `prompt-error:${payload.clientNonce}:user`
     const message = promptPayloadMessage(payload, messageId, createdAt, channel.activeTurnId)
-    this.publishChannelEvent(sessionId, channel, channel.mapper.mapSynthetic({
+    const messageEvent = channel.mapper.mapSynthetic({
       type: 'message-start',
       messageId,
-      role: 'user',
+      role: 'user' as const,
       clientNonce: payload.clientNonce,
       text: payload.displayMessage ?? payload.message,
       files: promptPayloadFileParts(payload, messageId),
       createdAt,
-    }))
+    })
     const promptError: ChatError = {
       code: ErrorCode.enum.INTERNAL_ERROR,
       message: error instanceof Error && error.message ? error.message : 'Prompt failed before the agent run completed.',
@@ -456,12 +506,34 @@ export class HarnessPiChatService implements PiChatSessionService {
       retryable: false,
       error: promptError,
     })
-    this.publishChannelEvent(sessionId, channel, errorEvent)
-    const failures = this.syntheticPromptFailures.get(sessionKey) ?? []
-    failures.push({ message, error: promptError })
-    this.syntheticPromptFailures.set(sessionKey, failures)
-    this.activeSyntheticPromptErrors.set(sessionKey, promptError)
-    channel.activeTurnId = undefined
+    this.publishChannelEvents(sessionId, channel, [messageEvent, errorEvent], () => {
+      const failures = this.syntheticPromptFailures.get(sessionKey) ?? []
+      failures.push({ message, error: promptError })
+      this.syntheticPromptFailures.set(sessionKey, failures)
+      this.activeSyntheticPromptErrors.set(sessionKey, promptError)
+      channel.activeTurnId = undefined
+    })
+  }
+
+  private async runAndDrainPublishQueue(channel: LiveSessionChannel | undefined, run: Promise<void>): Promise<void> {
+    let runError: unknown
+    try {
+      await run
+    } catch (error) {
+      runError = error
+    }
+
+    try {
+      await this.drainPublishQueue(channel)
+    } catch (error) {
+      if (runError === undefined) throw error
+    }
+
+    if (runError !== undefined) throw runError
+  }
+
+  private async drainPublishQueue(channel: LiveSessionChannel | undefined): Promise<void> {
+    await channel?.publishQueue
   }
 
   private async getAdapter(
@@ -530,29 +602,56 @@ export class HarnessPiChatService implements PiChatSessionService {
     }
   }
 
-  private buildChannel(sessionKey: string, sessionId: string, adapter: PiAgentSessionAdapter): LiveSessionChannel {
+  private async buildChannel(sessionKey: string, sessionId: string, adapter: PiAgentSessionAdapter): Promise<LiveSessionChannel> {
     const existing = this.channels.get(sessionKey)
     if (existing) return existing
-    const buffer = new PiChatReplayBuffer()
+    const streamPath = sessionStreamPath(sessionId)
+    await this.eventStore?.createStream(streamPath)
+    const initialSeq = await this.readDurableLatestPiChatSeq(streamPath)
+    const buffer = new PiChatReplayBuffer({ initialLatestSeq: initialSeq })
     const mapper = new PiChatEventMapper({ sessionId, initialSeq: buffer.latestSeq })
-    const channel: LiveSessionChannel = { sessionKey, buffer, adapter, unsubscribe: () => {}, mapper, messageTurnIds: new Map() }
+    const closed = deferred<void>()
+    closed.promise.catch(() => {})
+    const channel: LiveSessionChannel = {
+      sessionKey,
+      streamPath,
+      buffer,
+      adapter,
+      unsubscribe: () => {},
+      mapper,
+      publishQueue: Promise.resolve(),
+      closed: closed.promise,
+      rejectClosed: closed.reject,
+      messageTurnIds: new Map(),
+    }
     const unsubscribe = adapter.subscribe((event) => {
       const mappedEvents = mapper.map(event)
       // Metering observes the ENRICHED events: in production the native Pi
       // message for a consumed follow-up carries no clientNonce/clientSeq —
       // those selectors are recovered here by enrichEvent, and the metering
       // coordinator needs them to attribute the follow-up's usage correctly.
-      const enrichedEvents: PiChatEvent[] = []
-      for (const mapped of mappedEvents) {
-        const enriched = this.messageMetadata.enrichEvent(sessionKey, mapped)
-        enrichedEvents.push(enriched)
-        this.publishChannelEvent(sessionId, channel, enriched)
-      }
-      this.metering?.observe(sessionKey, event, enrichedEvents)
+      this.publishChannelEvents(sessionId, channel, mappedEvents, (enrichedEvents) => {
+        this.metering?.observe(sessionKey, event, enrichedEvents)
+      })
     })
     channel.unsubscribe = unsubscribe
     this.channels.set(sessionKey, channel)
     return channel
+  }
+
+  private async readDurableLatestPiChatSeq(streamPath: string): Promise<number> {
+    if (!this.eventStore) return 0
+    const meta = await this.eventStore.getStreamMeta(streamPath)
+    if (!meta) return 0
+    const tailIndex = parseOffset(meta.nextOffset)
+    if (tailIndex < 0) return 0
+    const tail = await this.eventStore.readEvents(streamPath, {
+      offset: formatOffset(tailIndex - 1),
+      limit: 1,
+    })
+    const envelope = tail.events[0]?.data as Partial<AgentEvent> | undefined
+    const seq = envelope?.chunk?.seq
+    return typeof seq === 'number' && Number.isInteger(seq) && seq >= 0 ? seq : tailIndex + 1
   }
 
   private async assertCanAccessSession(ctx: PiSessionRequestContext, sessionId: string): Promise<void> {
@@ -580,6 +679,16 @@ function promptCancelledError(): Error {
     code: ErrorCode.enum.ABORTED,
     retryable: true,
   })
+}
+
+function deferred<T>(): { promise: Promise<T>; resolve: (value: T) => void; reject: (error: unknown) => void } {
+  let resolve!: (value: T) => void
+  let reject!: (error: unknown) => void
+  const promise = new Promise<T>((nextResolve, nextReject) => {
+    resolve = nextResolve
+    reject = nextReject
+  })
+  return { promise, resolve, reject }
 }
 
 function normalizeSessionAccessError(error: unknown, sessionId: string): unknown {

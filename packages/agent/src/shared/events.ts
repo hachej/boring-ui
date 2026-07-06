@@ -61,6 +61,10 @@ export interface AgentEvent {
   chunk: PiChatEvent
 }
 
+export function sessionStreamPath(sessionId: string): string {
+  return `sessions/${sessionId}`
+}
+
 export interface AgentResolveInputResponse {
   approved?: boolean
   content?: string
