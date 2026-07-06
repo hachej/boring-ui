@@ -13,8 +13,8 @@ Handoff: self-contained work order for one autonomous coding agent (pi or gpt-5.
   - `packages/boring-bash/src/server/managementProjectionOperations.ts` — `createManagementProjectionOperations`, `ManagementProjectionOperations`, `ManagementProjectionHandle`.
   - `packages/boring-bash/src/server/testing/readonlyProjectionConformance.ts` — `checkReadonlyProjectionConformance(subject)`, `ReadonlyProjectionConformanceSubject`.
 - Identity spine: `packages/boring-bash/src/shared/index.ts` — `BoundFilesystemContext { humanUserId, agentId, sessionId, workspaceId, requestId }`. An MCP session maps to exactly one of these.
-- MCP SDK reality (verified): `@modelcontextprotocol/sdk` is already a dependency in the repo — `plugins/boring-mcp/package.json` pins `^1.29.0`. Existing use is **client-side only** (`plugins/boring-mcp/src/server/mcpSdkTransport.ts` imports `@modelcontextprotocol/sdk/client/index.js` `Client` + `.../client/streamableHttp.js`). E2 needs the **server** side: `McpServer` from `@modelcontextprotocol/sdk/server/mcp.js` + `StreamableHTTPServerTransport` from `@modelcontextprotocol/sdk/server/streamableHttp.js`. Same SDK; **pin it exactly (`1.29.0`, no caret)** per the pack's pin discipline (T2/S1 pin new deps to exact versions).
-- Server barrel to extend: `packages/boring-bash/src/server/index.ts`. Package exports live in `packages/boring-bash/package.json` (`.`/`./shared`/`./server`); add `./mcp` if you want a separate entrypoint (keeps the MCP/SDK dependency out of the base server import for non-MCP consumers).
+- MCP SDK reality (verified): `@modelcontextprotocol/sdk` is already present elsewhere in the repo, but not in `@hachej/boring-bash`. `plugins/boring-mcp/package.json` currently declares the range `^1.29.0`, and `pnpm-lock.yaml` currently resolves `@modelcontextprotocol/sdk@1.29.0`. Existing production use is client-side (`plugins/boring-mcp/src/server/mcpSdkTransport.ts` imports `@modelcontextprotocol/sdk/client/index.js` `Client` + `.../client/streamableHttp.js`); existing tests already import server-side SDK classes (`McpServer`, `StreamableHTTPServerTransport`) for fake MCP servers. E2 needs the **server** side in boring-bash: `McpServer` from `@modelcontextprotocol/sdk/server/mcp.js` + `StreamableHTTPServerTransport` from `@modelcontextprotocol/sdk/server/streamableHttp.js`. Add the dependency to `packages/boring-bash/package.json` pinned exactly to `"1.29.0"` (no caret).
+- Server barrel to extend: `packages/boring-bash/src/server/index.ts` may keep non-MCP exports only. Package exports live in `packages/boring-bash/package.json` (`.`/`./shared`/`./server` today). **Pinned decision:** E2 adds a separate `./mcp` entrypoint so the MCP/SDK dependency is not pulled by the base `@hachej/boring-bash/server` import path for non-MCP consumers.
 
 ## Goal / exit criteria
 
@@ -39,7 +39,7 @@ Match `INDEX.md` Phase E2 exit criteria:
 
 - Do NOT write a second enforcement path. If you find yourself re-implementing path jailing or readonly rejection, stop and call the existing projection op.
 - Do NOT expose `fs.write`/`fs.edit`/`exec` tools on a readonly / `execPolicy: 'none'` attachment — omit them from the registered tool list, don't just reject at call time.
-- Do NOT put the MCP/SDK dependency on the base `@hachej/boring-bash/server` import path if it forces the SDK onto non-MCP consumers; prefer a `./mcp` subpath export.
+- Do NOT put the MCP/SDK dependency on the base `@hachej/boring-bash/server` import path; use the required `./mcp` subpath export.
 - Do NOT touch `/home/ubuntu/projects/boring-ui-v2`. Work on a dedicated branch/worktree per the PR-PLAN branch naming; never commit to main directly; every bead lands as a PR per INDEX.
 
 ## Beads
@@ -92,6 +92,14 @@ pnpm run build:packages
 pnpm audit:imports
 pnpm run test
 ```
+
+## PR-PLAN reconciliation
+
+Matches [`../../PR-PLAN.md`](../../PR-PLAN.md) E2 rows exactly:
+
+- `pr1-mcp-server-exec-gating` → BBE2-001 + BBE2-004.
+- `pr2-mcp-session-identity` → BBE2-002.
+- `pr3-mcp-conformance-doc` → BBE2-003 + BBE2-005.
 
 ## Review gates
 

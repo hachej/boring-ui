@@ -7,6 +7,7 @@ Derived strictly from [TODO.md](./TODO.md) and [PLAN.md](./PLAN.md). Tick each b
 - [ ] Also requires P1-headless-core merged — [../P1-headless-core/HANDOFF.md](../P1-headless-core/HANDOFF.md) (the `createAgent()` façade; block on P1 if absent — do not reach into harness internals)
 - [ ] STOP+report if `createAgent().send/resolveInput/stream/sessions` is not available (P1 not landed)
 - [ ] First action, non-negotiable: RESOLVE and record the exact published `@flue/slack` version (`1.0.0-beta.<N>`) as the literal pin — never a `.x`/range placeholder
+- [ ] Add `packages/channels/*` to `pnpm-workspace.yaml` and add `--filter './packages/channels/*'` (or `--filter @hachej/boring-channel-slack`) to root `build:packages`; current repo globs/build filters do not include nested `packages/channels/*`
 
 ## Beads
 - [ ] BBS1-001 — Hono→Fastify channel handler wrapper (inside the Slack package)
@@ -22,6 +23,8 @@ Derived strictly from [TODO.md](./TODO.md) and [PLAN.md](./PLAN.md). Tick each b
 - [ ] `pnpm --filter @hachej/boring-channel-slack run build`
 - [ ] `pnpm --filter @hachej/boring-channel-slack run typecheck`
 - [ ] `pnpm --filter @hachej/boring-channel-slack run test`
+- [ ] `pnpm --filter @hachej/boring-agent run build`
+- [ ] `pnpm --filter @hachej/boring-agent run test`
 - [ ] `pnpm audit:imports`
 - [ ] `pnpm run build:packages` (includes `@hachej/boring-channel-slack` via root `packages/channels/*` filter)
 - [ ] `pnpm run test`
@@ -34,6 +37,7 @@ Derived strictly from [TODO.md](./TODO.md) and [PLAN.md](./PLAN.md). Tick each b
 - [ ] Addressing isolation test present and failing on a crossed key.
 - [ ] `conversationKey → sessionId` default store is `state.db`; in-memory `Map` usage is confined to tests.
 - [ ] `@flue/slack` pinned to the **exact resolved** `1.0.0-beta.<N>` version (recorded in the PR) — never a `.x`/range placeholder.
+- [ ] `@hachej/boring-agent/testing` exists as a real package subpath (`package.json` export + tsup entry), and the generic conformance suite lives there, not in the Slack package.
 
 ## Exit criteria
 - [ ] Same agent + same `state.db` session/addressing store serves the workspace UI **and** a Slack thread.

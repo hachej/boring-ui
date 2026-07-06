@@ -37,7 +37,7 @@ Mechanism, not hand-waving: Phase 7 delivers public **agent steering endpoints**
 The steering surface itself is **plugin-extensible, and so is the agent — internally AND externally**, over real, shipped APIs (verified against the current plugin/agent layer, not aspirational). This is what distinguishes boring from an agent framework: **eve/Flue give you APIs to extend *your own* agent; boring's plugin layer lets a third party extend the *host product* — the workspace UI and the agents running inside it — without forking it.**
 
 - **Front (workspace UI):** `definePlugin({ … })` (from `@hachej/boring-workspace/plugin`) contributes `panels` (workspace pages/panes), `workspaceSources` (left-rail entries), `commands`, `appLeftActions`, `surfaceResolvers` (map a typed open-request → a panel — the `openSurface` path), `catalogs`, and `toolRenderers` (custom rendering for a tool's transcript output). These install into the same `PanelRegistry`/`WorkspaceSourceRegistry`/`CatalogRegistry` the built-ins use.
-- **Server (agent):** `defineServerPlugin({ … })` (from `@hachej/boring-workspace/server`) is a trusted boot-time contribution: `agentTools` merged in as **`extraTools`**, Fastify `routes`, a `systemPrompt` append, and Pi `extensions`/`skills`/packages. This is how a plugin adds agent capability, not just UI.
+- **Server (agent):** `defineServerPlugin({ … })` (from `@hachej/boring-workspace/server`) is a trusted boot-time contribution: `agentTools` merged in as **`extraTools`**, Fastify `routes`, a `systemPrompt` append (`WorkspaceServerPlugin.systemPrompt?: string` in `packages/workspace/src/server/plugins/defineServerPlugin.ts`), and Pi `extensions`/`skills`/packages. Package-manifest plugins also expose `pi.systemPrompt` in `packages/workspace/src/shared/plugins/manifest.ts`; the workspace host aggregates those into the same prompt fragment stream. This is how a plugin adds agent capability, not just UI.
 - **Runtime backend RPC:** a plugin's server code is reachable from its front over the workspace-owned **`/api/v1/plugins/:pluginId/*`** route family (00 "current seams to reuse").
 - **Distribution:** plugins install from **local / git / npm** via the **`boring-ui-plugin` CLI** (scaffold/verify), and a **safe subset hot-reloads** (front + Pi resources refresh via `/reload` + SSE; **server routes/tools require a restart** — hot-reload does not rewire Fastify routes or `agentTools`).
 
@@ -59,7 +59,7 @@ The steering surface itself is **plugin-extensible, and so is the agent — inte
 
 A surface and the agent core exchange exactly four things:
 
-1. **Message in** — a normalized user turn: `AgentSendInput` = `{ sessionId?, content, attachments?, actor, ctx?, originSurface? }` (**omit `sessionId` to create a new session**). `ctx?: SessionCtx` is boring's own tenancy context resolved by the adapter/host (the `SessionStore` scoping key — never surface-native platform addressing); `originSurface?: string` is session-create provenance written by adapters. The full type is defined once in shared (P1); façade calls are single-argument everywhere (`start(input)`, `send(input)` — never `send(input, ctx)`). Core accepts a string or message parts; the surface does platform parsing (Slack signature + payload, Excel cell context, workspace composer state).
+1. **Message in** — a normalized user turn: `AgentSendInput` = `{ sessionId?, content, attachments?, actor, ctx?, originSurface? }` (**omit `sessionId` to create a new session**). `ctx?: SessionCtx` is boring's own tenancy context resolved by the adapter/host (the `SessionStore` scoping key — never surface-native platform addressing); `originSurface?: string` is session-create provenance written by adapters. The full type is defined once in shared (P1); façade calls are single-argument everywhere (`start(input)`, `send(input)` — never `send(input, ctx)`). Core accepts a string or message parts; the surface does platform parsing (Slack signature + payload, Excel cell context, workspace composer state). `attachments` require an fs-bearing environment because the current attachment flow persists through `/api/v1/files/upload`; pure mode rejects them with typed `ERR_NO_FILESYSTEM_FOR_ATTACHMENTS`, so pure surfaces inline readable content into `content` and omit `attachments`.
 2. **Event stream out** — one ordered, indexed, replayable stream of typed events. Every surface renders the same stream differently; the wire/transport is swappable.
 3. **Approvals / human-in-the-loop** — a request event out + a response call in, on the same channel, declared on the tool — not per-surface special cases.
 4. **Session state** — a runtime-owned `sessionId` + serializable transcript. Persistence and addressing are boundary decisions.
@@ -104,11 +104,12 @@ const agent = createAgent({
                              //   tools: [...appTools, ...createBashAgentFeature(env).tools]
   readinessRequirements,     // opaque readiness gates (e.g. from the bash bundle)
   sessions,                  // SessionStore (default: JSONL under sessionStorageRoot)
-  systemPrompt, systemPromptDynamic,
+  systemPromptAppend, systemPromptDynamic, // host append/dynamic after base + capability + plugin fragments
   telemetry,
 })
 // No `features` member and no `AgentFeature` abstraction — a single-consumer registry is
-// forbidden. createBashAgentFeature() returns a plain { tools, readinessRequirements } bundle.
+// forbidden. createBashAgentFeature() returns a plain
+// { tools, readinessRequirements, systemPromptFragment } bundle.
 
 // The whole public runtime API — NINE members (two primitives + one convenience + control + inspection):
 agent.start(input: AgentSendInput): Promise<{ sessionId, startIndex }>  // WRITE: accepted receipt (omit input.sessionId to start a new session)

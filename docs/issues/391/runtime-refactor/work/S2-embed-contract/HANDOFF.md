@@ -6,6 +6,8 @@ Derived strictly from [TODO.md](./TODO.md) and [PLAN.md](./PLAN.md). Tick each b
 - [ ] S1-slack-channel merged — [../S1-slack-channel/HANDOFF.md](../S1-slack-channel/HANDOFF.md) (surface-adapter conformance suite + two-handles pattern)
 - [ ] Also requires P1-headless-core merged — [../P1-headless-core/HANDOFF.md](../P1-headless-core/HANDOFF.md) (the `createAgent()` façade; block on P1 rather than reaching into the harness if a façade method is missing)
 - [ ] Import `runSurfaceAdapterConformance` from the neutral home `@hachej/boring-agent/testing` (authored by S1 BBS1-006) — NOT from the Slack package
+- [ ] STOP+report if `@hachej/boring-agent/core` or `@hachej/boring-agent/testing` is absent; current prep worktree has neither subpath before P1/S1 land
+- [ ] Use `apps/spreadsheet-embed-playground`; current repo has no pi-excel plugin and no `examples/` tree
 
 ## Beads
 - [ ] BBS2-001 — Embedding client contract doc
@@ -25,7 +27,7 @@ Derived strictly from [TODO.md](./TODO.md) and [PLAN.md](./PLAN.md). Tick each b
 - [ ] Embed `package.json` deps: `@hachej/boring-agent` only (+ dev/test tooling); no `@hachej/boring-bash`, no provider packages.
 - [ ] Domain tools supplied via `tools`; `runtime: 'none'`; side-effecting tool marked `needsApproval`.
 - [ ] Approvals use `resolveInput` on the shared stream — no embed-local approval channel.
-- [ ] Conformance suite is imported from S1, not re-implemented.
+- [ ] Conformance suite is imported from the neutral `@hachej/boring-agent/testing` subpath authored by S1 BBS1-006, not re-implemented and not imported from the Slack package.
 - [ ] Embedding doc lives in `packages/agent/docs/` and names only published-contract symbols.
 - [ ] Trust boundary explicit: `createAgent()` + model credentials + the agent loop run **host-side (trusted Node)**, never in the browser add-in; the task-pane UI consumes the `ChatTransport` contract only.
 

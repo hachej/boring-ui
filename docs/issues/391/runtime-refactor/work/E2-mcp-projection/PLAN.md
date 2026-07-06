@@ -23,6 +23,12 @@ that E1 deliberately ships without — this is the first place the projection ne
 to resolve an environment by id. Remote-worker stays a provider (P2/P5); its
 reclassification as an environment transport is a deferred post-E2 P8 follow-up.
 
+## Verified current repo reality (pre-E2)
+- `packages/boring-bash/package.json` currently has no `@modelcontextprotocol/sdk` dependency and exports only `.`, `./shared`, and `./server`. E2 adds an exact `@modelcontextprotocol/sdk` dependency and a new `./mcp` export.
+- `plugins/boring-mcp/package.json` currently declares `@modelcontextprotocol/sdk` as `^1.29.0`; `pnpm-lock.yaml` resolves `@modelcontextprotocol/sdk@1.29.0`. E2 must add `1.29.0` exactly to `@hachej/boring-bash` (no caret), not rely on the plugin range.
+- Existing production MCP SDK use is client-side in `plugins/boring-mcp/src/server/mcpSdkTransport.ts` (`Client` + `StreamableHTTPClientTransport`). Existing tests already import server-side SDK classes (`McpServer`, `StreamableHTTPServerTransport`) for fake MCP servers, so the server APIs and paths are verified in this repo.
+- The projection-operation enforcement code E2 must reuse is `packages/boring-bash/src/server/readonlyProjectionOperations.ts` and `packages/boring-bash/src/server/managementProjectionOperations.ts`; denied-path errors have stable exported codes.
+
 ## Deliverables
 - MCP server projection for any environment: fs ops (+ exec where policy allows) as MCP tools, enforcement via the existing readonly/management projection operations; MCP session → `BoundFilesystemContext` identity mapping. E2 introduces the address-by-id lookup (a plain `Map<environmentId, Environment>`) it needs to resolve an environment by id.
 - No-leak conformance suite runs against the MCP projection (same suite, MCP mount; delivered mounts by name: in-process, scoped-view, MCP — the remote-worker provider mount is deferred to BBP5-010).

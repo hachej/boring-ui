@@ -13,7 +13,7 @@ Handoff: self-contained work order for one autonomous coding agent (pi or gpt-5.
 
 ### Depends on
 
-- **Phase 6a** (`AgentRegistry`): [`../../INDEX.md`](../../INDEX.md) Phase 7 scopes against the Phase 6a `AgentRegistry`. P7 depends specifically on **P6a** — the `AgentRegistry` (BBP6-003) and the workspace `agents: [...]` declaration — **not** on P6b's child-app scoping (which may still be HARD BLOCKED on the shared child-app platform type; that does not block P7). **Verified reality: `AgentRegistry` and `agentId` do not exist anywhere in `packages/agent/src` or `packages/workspace/src` today** (`grep -rn "AgentRegistry\|agentId"` → 0 matches). If P6a has not landed the `AgentRegistry` and the workspace `agents: [...]` declaration ([`../../architecture/05-multi-agent-sessions-hooks.md`](../../architecture/05-multi-agent-sessions-hooks.md) § "Workspace agent registry"), **STOP and report** — do not invent a competing registry here.
+- **Phase 6a** (`AgentRegistry`): [`../../INDEX.md`](../../INDEX.md) Phase 7 scopes against the Phase 6a `AgentRegistry`. P7 depends specifically on **P6a** — the `AgentRegistry` (BBP6-003) and the workspace `agents: [...]` declaration — **not** on P6b's child-app scoping (which may still be HARD BLOCKED on the shared child-app platform type; that does not block P7). **Verified current reality:** `! rg -n "AgentRegistry|agentId" packages/agent/src packages/workspace/src` exits 0 today, while #416 already uses `agentId` in `packages/boring-bash/src/server/runtimeBindingManager.ts` (`filesystemRuntimeScopeKey`) and its tests. If P6a has not landed the `AgentRegistry` and the workspace `agents: [...]` declaration ([`../../architecture/05-multi-agent-sessions-hooks.md`](../../architecture/05-multi-agent-sessions-hooks.md) § "Workspace agent registry"), **STOP and report** — do not invent a competing registry here.
 - **T1** ([`../T1-durable-events/TODO.md`](../T1-durable-events/TODO.md)): the durable `EventStreamStore` (`events.db`), on-stream approvals, `state.db` pending-request table, `resolveInput`. The external-hook route (BBP7-006) and the info endpoint's channel/session facts read T1 state.
 - **T2** ([`../T2-transport/TODO.md`](../T2-transport/TODO.md)): `sessionId`-only public transport; the platform-addressing invariant guard. Surface `agentId` binding (BBP7-007) rides the two-handles boundary T2 formalized.
 - **E1** ([`../E1-environment-attachments/TODO.md`](../E1-environment-attachments/TODO.md)): `Environment`/`EnvironmentAttachment`/`ResolvedEnvironments` + the `resolveAttachments` reduction (E1 ships **no** `EnvironmentRegistry` class — the address-by-id Map is an E2 concern); the scope key already carries `agentId` in `filesystemRuntimeScopeKey` (E1 context: `humanUserId\0agentId\0sessionId\0workspaceId\0requestId`). BBP7-008 lands E1's deferred `BBE1-005` (`SubagentEnvironmentGrant` / `deriveSubagentAttachment`).
@@ -23,7 +23,7 @@ Handoff: self-contained work order for one autonomous coding agent (pi or gpt-5.
 - `packages/agent/src/server/registerAgentRoutes.ts`:
   - `interface RuntimeScope { root; key; templatePath?; pi; sessionNamespace? }` (L130-136).
   - `resolveRuntimeScope()` (L395-425) builds `key = JSON.stringify([resolvedMode, workspaceId, root, scopedTemplatePath ?? null, pi, sessionNamespace ?? null, extraToolsAuthSubject ?? null])` (L415-423). **`agentId` is NOT in this array** — this is the exact `05` note "do not assume a preexisting single composite key has every field". The per-workspace `runtimeBindings` Map is keyed on `scope.key`; `earlySessionStores` too (L848). **This is the binding scope key P7 must extend with `agentId`.**
-  - `getRequestWorkspaceId(request)` (L143) reads `request.workspaceContext?.workspaceId` — the request-scope resolver a header/path `agentId` plugs into.
+  - `getRequestWorkspaceId(request)` (L143) reads `request.workspaceContext?.workspaceId` — the request-scope resolver that P7's **path** `agentId` resolver sits beside. There is no header form for `agentId`.
 - `sessionNamespace` seam (the transcript-isolation authority — `05` "session namespace includes agent id"): `createAgentApp.ts:71,212` → `registerAgentRoutes.ts` (`normalizeSessionNamespace` L172, `resolveRuntimeScope` L406-408) → `harness.ts:12` → `harness/pi-coding-agent/createHarness.ts:349,366` → `harness/pi-coding-agent/sessions.ts:93,113` (`PiSessionStore` → `sessionDirForNamespace(namespace, sessionRoot)`). Including `agentId` in `sessionNamespace` **physically** separates transcript dirs — the AGENTS.md rule (`05`: transcripts under host durable `BORING_AGENT_SESSION_ROOT`) stays intact.
 - `packages/agent/src/server/harness/pi-coding-agent/sessions.ts` — `PiSessionStore implements SessionStore`; `list(ctx: SessionCtx, options?: SessionListOptions)` (L122) lists `.jsonl` files in `sessionDir` sorted by mtime; **no content search, no `agentId` scope**. `SessionCtx { workspaceId, userId? }` (verified `__tests__/session.test-d.ts:17-18`). What exists today: only a **front-side** fuzzy/recent filter — `packages/agent/src/front/chat/session/piSessionSearch.ts` (`searchPiSessions`, `matchPiSessionSearch`, `parsePiSessionSearchQuery` over already-loaded `PiSessionSearchItem`s). It does NOT do server-side content search, redaction, or `agentId` scoping. The `#379` delta is a **server** search API (below), not a new UI.
 - `packages/agent/src/server/pi-chat/harnessPiChatService.ts` — `listSessions(ctx, options)` (L93) delegates to `sessionStore.list(toSessionCtx(ctx), options)`; `toSessionCtx(ctx)` (L681) maps the request context to `SessionCtx`.
@@ -87,7 +87,7 @@ Make [`../../INDEX.md`](../../INDEX.md) Phase 7 + [`../../architecture/05-multi-
 ### BBP7-003 — Per-agent tool catalog + per-agent readiness · size M
 - **Title**: One tool catalog and one `ReadyStatusTracker` per `(workspaceId, agentId)`.
 - **Files touch**: the per-scope tool assembly path in `registerAgentRoutes.ts` / `createAgentApp.ts` where `mergeTools`/`buildHarnessAgentTools`/`buildFilesystemAgentTools` are composed — key the catalog by the BBP7-001 scope so a reviewer (`bash: { fs: 'readonly', exec: false }`) and a coding agent (full bash) and a pure concierge (no bash attachment) each get a distinct catalog. Readiness: instantiate a `ReadyStatusTracker` per scope (`runtime/readyStatus.ts`) and resolve the agent's tracker from the BBP7-001 scope. **P7 adds NO agent-scoped `/ready-status` route** — per-agent readiness is served inside the existing `GET /api/v1/agents/:agentId/info` payload (BBP7-005). P7 is readiness *resolution-only*; the canonical agent-scoped route family is owned/created by T1/T2, not extended here. The existing non-agent-scoped `GET /api/v1/ready-status` SSE route stays as-is; do not add an agent-scoped `/ready-status` variant.
-- **Notes**: `provisioning is per (workspaceId, agentId, bashPlanFingerprint)` (`05`) — the scope key from BBP7-001 already yields this; verify `runRuntimeProvisioning` keys off `scope.key`. No readiness bleed across agents (`05` concurrency: "tool readiness bleed").
+- **Notes**: `provisioning is per (workspaceId, agentId, bashPlanFingerprint)` (`05`) — the scope key from BBP7-001 already yields this because `getOrCreateRuntimeBinding()` reads/writes `runtimeBindings` by `scope.key` (verified current code: `registerAgentRoutes.ts` L725-777). `runRuntimeProvisioning(workspaceId, scope, request)` is called from that binding creation path; do not add a separate provisioning cache key. No readiness bleed across agents (`05` concurrency: "tool readiness bleed").
 - **Tests**: `05` Tests — "per-agent tool catalog differs as expected"; "reviewer has readonly fs/no exec while coding agent has bash"; "pure concierge has no boring-bash"; two agents' readiness trackers report independently (each surfaced via its `GET /api/v1/agents/:agentId/info` payload per BBP7-005 — assert no agent-scoped `/ready-status` route is added).
 - **Acceptance**: catalog + readiness differ per agent with no cross-agent bleed.
 
@@ -168,6 +168,20 @@ pnpm typecheck              # build:packages then per-pkg typecheck
 # Manual proof (workspace playground): declare two agents, drive two surfaces, confirm no collision.
 #   Rebuild dist before driving the playground (see run-workspace-playground recipe).
 ```
+
+## PR-PLAN reconciliation
+
+Matches [`../../PR-PLAN.md`](../../PR-PLAN.md) P7 rows exactly:
+
+- `pr1-agentid-scope-namespace` → BBP7-001.
+- `pr2-agentid-addressing` → BBP7-002.
+- `pr3-per-agent-catalog-readiness` → BBP7-003.
+- `pr4-session-search` → BBP7-004.
+- `pr5-agent-info-endpoint` → BBP7-005.
+- `pr6-external-hook-target` → BBP7-006.
+- `pr7-surface-agent-binding` → BBP7-007.
+- `pr8-subagent-grant` → BBP7-008 (may combine with pr7 only if the PR-PLAN budget still holds).
+- `pr9-two-surface-isolation` → BBP7-009.
 
 ## Review gates
 

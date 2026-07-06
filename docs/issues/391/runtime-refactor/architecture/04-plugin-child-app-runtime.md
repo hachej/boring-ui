@@ -68,6 +68,24 @@ Rules:
 - frontend-only viewers can request readonly fs without exec;
 - shell/service requirements must be explicit.
 
+## First-party plugin dogfooding
+
+First-party `@hachej/boring-bash` ships through the same plugin door as trusted internal plugins. Its package declares the normal `boring.server` and `boring.front` entries; the server entry returns `defineServerPlugin({ agentTools, routes, systemPrompt, piPackages, provisioning })` and the front entry returns `definePlugin(...)` for the file tree/panes. Workspace-family hosts register the package as an internal/default plugin and let the manifest/entry resolver import it dynamically. There is no special static workspace-to-bash import, no bespoke route mount, no hand-appended prompt fragment, and no separate tool-spreading path for these hosts.
+
+The workspace can host several first-party plugins with a mechanism/policy split. `boring-bash` is the multi-fs mechanism: the `@hachej/boring-bash` package owns contracts, enforcement, no-leak projection operations, tools/routes/tree, and the plugin only delivers that mechanism. `boring-governance` (the #475 line, extracted as `plugins/boring-governance` in PR #532) is multi-fs policy: YAML governance, `company_context` bootstrap/mount, budgets, and admin UI. Governance resolves bindings through the landed [`FilesystemBindingResolver`](../../../416/company-fs/01-foundation-binding-model.md) (#416) plus the request-scoped binding seam (#498); bash enforces those bindings. Governance may depend on `@hachej/boring-bash/shared`, never on `@hachej/boring-workspace` or workspace internals.
+
+Reserve plugin-to-plugin composition as a host-mediated seam, not a package import. The boring-bash server plugin exposes a named `bindingResolver` composition point; the governance plugin or host config fulfills it through the host plugin pipeline, following the existing `defineServerPlugin` mediation pattern for bridge handlers and provisioning. If the resolver is absent, bash falls back only to host/library-mode config or no governed bindings; it must not discover governance by importing it.
+
+## MCP consume composition (`boring-mcp`)
+
+`plugins/boring-mcp` is a normal plugin consumer of MCP tools. MCP-backed tools flow through the standard plugin agent-tool seam; they are not a side channel in agent core. Current repo reality: `plugins/boring-mcp/src/server/agentTools.ts:27-40` creates `AgentTool[]` by mapping `listBoringMcpAgentBridgeTools(...)`; `plugins/boring-mcp/src/server/agentBridge.ts:20-28` lists the seven stable bridge/catalog tool names and `agentBridge.ts:230-248` builds/list them. That proves the seam is already "plugin returns agent tools"; the dynamic MCP consume work extends this same seam.
+
+Generated direct MCP tools are named `mcp__<server>__<tool>`, where `<server>` is the stable MCP source/server id and `<tool>` is the provider tool name normalized by the boring-mcp policy layer. Collisions with ordinary tools are structurally impossible because the `mcp__` namespace is reserved for boring-mcp generated tools, and collisions between MCP servers are impossible because the server id is part of the tool name. The seven stable bridge/catalog tools may stay as management tools; provider-native MCP tools use the namespaced form.
+
+Each MCP server connection is also a readiness requirement gating its generated tools (for example `mcp:<sourceId>`), using the same `mergeTools({ checkReadiness })` / `wrapToolForReadiness` mechanism that gates `workspace-fs`. A disconnected or unhealthy MCP source means its generated tools are present only behind a not-ready result, never silently callable.
+
+Dynamic MCP tool prompt presence rides the existing dynamic prompt seam. Current code reality: `createPiCodingAgentHarness` accepts `systemPromptDynamic` in `packages/agent/src/server/harness/pi-coding-agent/createHarness.ts:341-345`, appends it through Pi's `before_agent_start` extension in `createHarness.ts:145-152`, and `registerAgentRoutes` can pass a per-request dynamic source in `packages/agent/src/server/registerAgentRoutes.ts:676-679`. boring-mcp should publish the connected, ready MCP tool index through that seam so prompt-visible tool availability matches the currently generated tool set.
+
 ## Hosted external plugins (#357)
 
 Hosted iframe plugin mode is intentionally constrained:

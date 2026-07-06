@@ -4,7 +4,11 @@ Derived strictly from [TODO.md](./TODO.md) and [PLAN.md](./PLAN.md). Tick each b
 
 ## Prerequisites (packages + gates)
 - [ ] P3-routes-tools merged — [../P3-routes-tools/HANDOFF.md](../P3-routes-tools/HANDOFF.md)
-- [ ] P2 `@hachej/boring-sandbox/providers` + `providers/matrix.ts` `ProviderCapabilities` present (or STOP+report) — [../P2-sandbox-providers/HANDOFF.md](../P2-sandbox-providers/HANDOFF.md)
+- [ ] P2 `@hachej/boring-sandbox/providers` + `@hachej/boring-sandbox/shared` `ProviderCapabilities` / `providerMatrix` present (concrete post-P2 file: `packages/boring-sandbox/src/shared/providerMatrix.ts`; or STOP+report) — [../P2-sandbox-providers/HANDOFF.md](../P2-sandbox-providers/HANDOFF.md)
+
+## Owner questions / verdict
+- OWNER-QUESTIONS: none.
+- GO/NO-GO: GO after the P3 and P2 preconditions above are true; NO-GO/STOP if either the P3 bash bundle/routes or the P2 shared provider matrix is absent.
 
 ## Beads
 - [ ] BBP5-001 — `BashRequirement` shape + import-free normalizer in boring-bash
@@ -38,8 +42,18 @@ Derived strictly from [TODO.md](./TODO.md) and [PLAN.md](./PLAN.md). Tick each b
 - [ ] `pnpm audit:imports`
 - [ ] `pnpm typecheck`
 
+## PR-PLAN reconciliation
+- [ ] `pr1-bash-requirement-normalizer` completed BBP5-001
+- [ ] `pr2-repoint-callers` completed BBP5-002
+- [ ] `pr3-readiness-health` completed BBP5-003 + BBP5-004
+- [ ] `pr4-sdk-archive` completed BBP5-005
+- [ ] `pr5-managed-service` completed BBP5-006, including any pr5a/pr5b split required by LOC cap
+- [ ] `pr6-secret-brokering` completed BBP5-007
+- [ ] `pr7-remote-worker-handshake` completed BBP5-008 + BBP5-010
+- [ ] `pr8-two-phase-fingerprint` completed BBP5-009
+
 ## Review gates
-- [ ] P3 + P2 `/providers/matrix.ts` precondition confirmed (or STOP+report). (P5 dispatches off P3 in parallel with P4/E1 — it does NOT depend on P4.)
+- [ ] P3 + P2 `@hachej/boring-sandbox/shared` `providerMatrix` precondition confirmed (or STOP+report). (P5 dispatches off P3 in parallel with P4/E1 — it does NOT depend on P4.)
 - [ ] `pnpm lint:invariants` + `pnpm audit:imports` green; zero agent→bash value imports; engine still agent-owned, normalizer boring-bash-owned.
 - [ ] Provisioning behavior unchanged for no-requirement workspaces; existing provisioning/readiness/Vercel-snapshot tests pass.
 - [ ] Optional-failure isolation, health gating, service lifecycle, SDK-archive leak-safety all covered by tests.
