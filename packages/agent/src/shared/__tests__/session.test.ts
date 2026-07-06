@@ -29,7 +29,7 @@ test('SessionStore contract', () => {
 
 test('Session shapes', () => {
   expectTypeOf<SessionCtx>().toEqualTypeOf<{
-    workspaceId: string
+    workspaceId?: string
     userId?: string
   }>()
 

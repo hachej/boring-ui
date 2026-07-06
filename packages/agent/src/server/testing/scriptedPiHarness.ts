@@ -1,6 +1,6 @@
 import { setTimeout as sleep } from 'node:timers/promises'
 import type { AgentSessionEvent } from '@mariozechner/pi-coding-agent'
-import type { AgentHarness, AgentHarnessFactoryInput, RunContext, SendMessageInput } from '../../shared/harness.js'
+import type { AgentHarness, AgentHarnessFactoryInput, RunContext, AgentSendInput } from '../../shared/harness.js'
 import type { PiFollowUpQueueOptions, PiFollowUpSelector } from '../harness/pi-coding-agent/piFollowUpQueueCompat.js'
 import type { SessionCtx, SessionDetail, SessionStore, SessionSummary } from '../../shared/session.js'
 import { getEnv } from '../config/env.js'
@@ -25,7 +25,7 @@ const DEFAULT_TIME = '2026-06-04T12:00:00.000Z'
 const DEFAULT_TICK_MS = 5
 
 export function createScriptedPiHarness(input: AgentHarnessFactoryInput): AgentHarness & {
-  getPiSessionAdapter(input: SendMessageInput, ctx: RunContext): Promise<PiAgentSessionAdapter>
+  getPiSessionAdapter(input: AgentSendInput, ctx: RunContext): Promise<PiAgentSessionAdapter>
 } {
   const sessions = new ScriptedSessionStore()
   const adapters = new Map<string, ScriptedPiSessionAdapter>()
@@ -46,7 +46,8 @@ export function createScriptedPiHarness(input: AgentHarnessFactoryInput): AgentH
     id: 'scripted-pi-e2e',
     placement: 'server',
     sessions,
-    async getPiSessionAdapter({ sessionId }: SendMessageInput) {
+    async getPiSessionAdapter({ sessionId }: AgentSendInput) {
+      if (!sessionId) throw new Error('sessionId is required')
       await sessions.ensure(sessionId)
       return getAdapter(sessionId)
     },

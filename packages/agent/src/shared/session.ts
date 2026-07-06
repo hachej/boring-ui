@@ -6,7 +6,7 @@ export interface SessionStore {
 }
 
 export interface SessionCtx {
-  workspaceId: string
+  workspaceId?: string
   userId?: string
 }
 

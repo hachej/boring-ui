@@ -1,9 +1,10 @@
 import { describe, expect, it, vi } from 'vitest'
 import type { AgentSessionEvent } from '@mariozechner/pi-coding-agent'
-import type { AgentHarness, RunContext, SendMessageInput } from '../../../shared/harness'
+import type { AgentHarness, RunContext, AgentSendInput } from '../../../shared/harness'
 import type { SessionStore } from '../../../shared/session'
 import type { PiChatEvent } from '../../../shared/chat'
 import type { Workspace } from '../../../shared/workspace'
+import { ErrorCode } from '../../../shared/error-codes'
 import { createInitialPiChatState, piChatReducer } from '../../../front/chat/pi/piChatReducer'
 import { selectMessagesForRender } from '../../../front/chat/pi/selectors'
 import type { PiAgentSessionAdapter, PiAgentSessionSnapshot } from '../PiAgentSessionAdapter'
@@ -18,7 +19,7 @@ const ctx: PiSessionRequestContext = {
 }
 
 type PersistedSessionStore = SessionStore & {
-  loadEntries?: (ctx: { workspaceId: string; userId?: string }, sessionId: string) => Promise<{ id: string; messages: unknown[] }>
+  loadEntries?: (ctx: { workspaceId?: string; userId?: string }, sessionId: string) => Promise<{ id: string; messages: unknown[] }>
 }
 
 const sessionStore: SessionStore = {
@@ -88,8 +89,8 @@ function createAdapterForNativeSession(nativeSessionId: string): FakeAdapter {
 }
 
 function createHarness(adapter: PiAgentSessionAdapter): AgentHarness & {
-  getPiSessionAdapter: (input: SendMessageInput, ctx: RunContext) => Promise<PiAgentSessionAdapter>
-  hasPiSession: (sessionId: string) => boolean
+  getPiSessionAdapter: (input: AgentSendInput, ctx: RunContext) => Promise<PiAgentSessionAdapter>
+  hasPiSession: (sessionId: string, ctx?: { workspaceId?: string; userId?: string }) => boolean
 } {
   return {
     id: 'fake-pi',
@@ -130,6 +131,33 @@ function renderMessagesFromEvents(events: PiChatEvent[]) {
 }
 
 describe('HarnessPiChatService', () => {
+  it('normalizes missing-session delete preflight without aborting a live adapter', async () => {
+    const adapter = createAdapter()
+    const load = vi.fn()
+      .mockResolvedValueOnce({ id: 'missing', title: 'New session', createdAt: '', updatedAt: '', turnCount: 0 })
+      .mockRejectedValueOnce(new Error('Session not found: missing'))
+    const deleteSession = vi.fn(async () => {})
+    const service = new HarnessPiChatService({
+      harness: createHarness(adapter),
+      sessionStore: {
+        ...sessionStore,
+        load,
+        delete: deleteSession,
+      },
+      workdir: '/workspace',
+    })
+    const subscription = await service.subscribe(ctx, 'missing', 0, () => {})
+    expect(subscription.type).toBe('ok')
+
+    await expect(service.deleteSession(ctx, 'missing')).rejects.toMatchObject({
+      code: ErrorCode.enum.SESSION_NOT_FOUND,
+    })
+    expect(adapter.abort).not.toHaveBeenCalled()
+    expect(deleteSession).not.toHaveBeenCalled()
+
+    if (subscription.type === 'ok') subscription.unsubscribe()
+  })
+
   it('threads prompt clientNonce through the first matching user message event', async () => {
     const adapter = createAdapter()
     const { service } = createService(adapter)
@@ -216,7 +244,7 @@ describe('HarnessPiChatService', () => {
 
     expect(harness.getPiSessionAdapter).toHaveBeenCalledWith(expect.objectContaining({
       sessionId: 's1',
-      message: 'prompt text',
+      content: 'prompt text',
       model: { provider: 'anthropic', id: 'claude-sonnet' },
       thinkingLevel: 'high',
       attachments,
@@ -974,6 +1002,35 @@ describe('HarnessPiChatService', () => {
         parts: [expect.objectContaining({ type: 'text', text: 'live prompt' })],
       }),
     ])
+  })
+
+  it('does not expose a live channel to a different session context', async () => {
+    const adapter = createAdapter()
+    adapter.readSnapshot().messages = [
+      { id: 'live-user', message: { role: 'user', content: [{ type: 'text', text: 'live prompt' }] } },
+    ]
+    const scopedStore: SessionStore = {
+      ...sessionStore,
+      load: vi.fn(async (sessionCtx, sessionId) => {
+        if (sessionCtx.workspaceId !== ctx.workspaceId || sessionCtx.userId !== ctx.authSubject) {
+          throw new Error(`Session not found: ${sessionId}`)
+        }
+        return { id: sessionId, title: 'Scoped', createdAt: '', updatedAt: '', turnCount: 0 }
+      }),
+    }
+    const harness = createHarness(adapter)
+    vi.mocked(harness.hasPiSession).mockImplementation((_sessionId, sessionCtx) => sessionCtx?.workspaceId === ctx.workspaceId)
+    const service = new HarnessPiChatService({
+      harness,
+      sessionStore: scopedStore,
+      workdir: '/workspace',
+    })
+
+    await service.prompt(ctx, 's1', { message: 'live prompt', clientNonce: 'nonce-live' })
+    await expect(service.readState({ ...ctx, workspaceId: 'workspace-b' }, 's1'))
+      .rejects.toMatchObject({ code: ErrorCode.enum.SESSION_NOT_FOUND })
+
+    expect(harness.getPiSessionAdapter).toHaveBeenCalledTimes(1)
   })
 
   it('threads prompt and follow-up selectors through only new recovered snapshot messages', async () => {

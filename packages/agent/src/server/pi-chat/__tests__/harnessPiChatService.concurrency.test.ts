@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest'
 import type { AgentSessionEvent } from '@mariozechner/pi-coding-agent'
-import type { AgentHarness, RunContext, SendMessageInput } from '../../../shared/harness'
+import type { AgentHarness, RunContext, AgentSendInput } from '../../../shared/harness'
 import type { SessionStore } from '../../../shared/session'
 import type { PiChatEvent } from '../../../shared/chat'
 import type { PiAgentSessionAdapter, PiAgentSessionSnapshot } from '../PiAgentSessionAdapter'
@@ -70,7 +70,7 @@ function createGatedService() {
   const adapter = createAdapter()
   const gates: Array<() => void> = []
   const harness: AgentHarness & {
-    getPiSessionAdapter: (input: SendMessageInput, ctx: RunContext) => Promise<PiAgentSessionAdapter>
+    getPiSessionAdapter: (input: AgentSendInput, ctx: RunContext) => Promise<PiAgentSessionAdapter>
     hasPiSession: (sessionId: string) => boolean
   } = {
     id: 'fake-pi',
@@ -85,7 +85,15 @@ function createGatedService() {
     }),
   }
   const service = new HarnessPiChatService({ harness, sessionStore, workdir: '/workspace' })
-  return { service, adapter, harness, releaseNext: () => gates.shift()?.() }
+  return {
+    service,
+    adapter,
+    harness,
+    async releaseNext() {
+      while (gates.length === 0) await Promise.resolve()
+      gates.shift()?.()
+    },
+  }
 }
 
 describe('HarnessPiChatService concurrent clients on the same session', () => {
@@ -97,10 +105,9 @@ describe('HarnessPiChatService concurrent clients on the same session', () => {
     const subA = service.subscribe(ctx, 's1', 0, (e) => aEvents.push(e))
     const subB = service.subscribe(ctx, 's1', 0, (e) => bEvents.push(e))
 
-    // Both cold callers are now parked inside getAdapter; release both so they
-    // race through ensureChannel.
-    releaseNext()
-    releaseNext()
+    // Both cold callers share one single-flight getAdapter; release that one
+    // creation and both subscribers should resolve to the same channel.
+    await releaseNext()
     const resultA = await subA
     const resultB = await subB
     expect(resultA.type).toBe('ok')
@@ -121,12 +128,12 @@ describe('HarnessPiChatService concurrent clients on the same session', () => {
   it('readState resolves while a long-lived subscription is open', async () => {
     const { service, releaseNext } = createGatedService()
     const sub = service.subscribe(ctx, 's1', 0, () => {})
-    releaseNext() // let subscribe finish creating the channel
+    await releaseNext() // let subscribe finish creating the channel
     await sub
 
     // readState reuses the warm channel; release its getAdapter immediately.
     const statePromise = service.readState(ctx, 's1')
-    releaseNext()
+    await releaseNext()
     const snapshot = await statePromise
     expect(snapshot.sessionId).toBe('s1')
   })

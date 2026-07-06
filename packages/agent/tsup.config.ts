@@ -6,6 +6,7 @@ const DEV_BUNDLE_EXTERNALS = ["@vitejs/plugin-react", "@babel/core"];
 export default defineConfig({
   entry: {
     "shared/index": "src/shared/index.ts",
+    "core/index": "src/core/index.ts",
     "server/index": "src/server/index.ts",
     "front/index": "src/front/index.ts",
     "eval/index": "src/eval/index.ts",

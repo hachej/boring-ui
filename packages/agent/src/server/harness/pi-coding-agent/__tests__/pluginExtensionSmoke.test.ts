@@ -121,7 +121,7 @@ describe("Plugin extension smoke test", () => {
     // Session creation is what wires plugin tools into pi's customTools —
     // same lazy path the pi-chat service uses.
     await harness.getPiSessionAdapter(
-      { sessionId: "session-smoke", message: "run hello tool" },
+      { sessionId: "session-smoke", content: "run hello tool" },
       { workdir: tempDir, abortSignal: new AbortController().signal },
     );
 

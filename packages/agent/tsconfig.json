@@ -12,6 +12,7 @@
     "baseUrl": ".",
     "paths": {
       "@hachej/boring-agent": ["src/front/index.ts"],
+      "@hachej/boring-agent/core": ["src/core/index.ts"],
       "@hachej/boring-agent/front": ["src/front/index.ts"],
       "@hachej/boring-agent/server": ["src/server/index.ts"],
       "@hachej/boring-agent/shared": ["src/shared/index.ts"],

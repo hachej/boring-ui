@@ -60,8 +60,9 @@ function redact(fields: LogFields): LogFields {
   return out
 }
 
-const verbose =
-  typeof process !== "undefined" && process.env?.BORING_AGENT_VERBOSE === "1"
+function isVerbose(): boolean {
+  return typeof process !== "undefined" && process.env?.BORING_AGENT_VERBOSE === "1"
+}
 
 export function createLogger(prefix: string): Logger {
   function emit(level: string, msg: string, fields?: LogFields) {
@@ -83,7 +84,7 @@ export function createLogger(prefix: string): Logger {
 
   return {
     debug(msg, fields?) {
-      if (verbose) emit("debug", msg, fields)
+      if (isVerbose()) emit("debug", msg, fields)
     },
     info(msg, fields?) {
       emit("info", msg, fields)

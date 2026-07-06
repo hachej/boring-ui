@@ -25,6 +25,7 @@ describe('@hachej/boring-agent/front public exports', () => {
   test('keeps package export map to documented package surfaces only', () => {
     expect(Object.keys(packageJson().exports ?? {}).sort()).toEqual([
       '.',
+      './core',
       './eval',
       './front',
       './front/styles.css',

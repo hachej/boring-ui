@@ -1,5 +1,6 @@
 import { expectTypeOf, test } from 'vitest'
-import type { AgentHarness, SendMessageInput, RunContext } from '../harness'
+import type { AgentConfig } from '../events'
+import type { AgentCoreHarnessFactory, AgentHarness, AgentHarnessFactory, AgentSendInput, RunContext } from '../harness'
 
 test('checking AgentHarness contract', () => {
   expectTypeOf<AgentHarness>().toHaveProperty('id')
@@ -10,21 +11,29 @@ test('checking AgentHarness contract', () => {
   expectTypeOf<AgentHarness['placement']>().toEqualTypeOf<'server' | 'browser'>()
 })
 
-test('checking SendMessageInput contract', () => {
-  expectTypeOf<SendMessageInput>().toHaveProperty('sessionId')
-  expectTypeOf<SendMessageInput>().toHaveProperty('message')
-  expectTypeOf<SendMessageInput>().toHaveProperty('thinkingLevel')
-  expectTypeOf<SendMessageInput>().toHaveProperty('model')
+test('checking AgentSendInput contract', () => {
+  expectTypeOf<AgentSendInput>().toHaveProperty('sessionId')
+  expectTypeOf<AgentSendInput>().toHaveProperty('content')
+  expectTypeOf<AgentSendInput>().toHaveProperty('thinkingLevel')
+  expectTypeOf<AgentSendInput>().toHaveProperty('model')
 
-  expectTypeOf<SendMessageInput['sessionId']>().toEqualTypeOf<string>()
-  expectTypeOf<SendMessageInput['message']>().toEqualTypeOf<string>()
+  expectTypeOf<AgentSendInput['sessionId']>().toEqualTypeOf<string | undefined>()
+  expectTypeOf<AgentSendInput['content']>().toEqualTypeOf<string | Array<{ type: string; text?: string; [key: string]: unknown }> | undefined>()
+})
+
+test('checking AgentConfig core harness contract', () => {
+  expectTypeOf<NonNullable<AgentConfig['harnessFactory']>>().toEqualTypeOf<AgentCoreHarnessFactory>()
+  expectTypeOf<AgentHarnessFactory>().not.toMatchTypeOf<AgentCoreHarnessFactory>()
 })
 
 test('checking RunContext contract', () => {
   expectTypeOf<RunContext>().toHaveProperty('abortSignal')
   expectTypeOf<RunContext>().toHaveProperty('workdir')
+  expectTypeOf<RunContext>().toHaveProperty('workspaceId')
   expectTypeOf<RunContext>().toHaveProperty('userId')
 
   expectTypeOf<RunContext['abortSignal']>().toEqualTypeOf<AbortSignal>()
   expectTypeOf<RunContext['workdir']>().toEqualTypeOf<string>()
+  expectTypeOf<RunContext['workspaceId']>().toEqualTypeOf<string | undefined>()
+  expectTypeOf<RunContext['userId']>().toEqualTypeOf<string | undefined>()
 })

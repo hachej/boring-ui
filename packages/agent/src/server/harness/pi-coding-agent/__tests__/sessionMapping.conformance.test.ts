@@ -17,7 +17,7 @@ const SESSION_ID = "fixture-session-001";
 async function loadHistory(tmpDir: string): Promise<BoringChatMessage[]> {
   await cp(FIXTURE_PATH, join(tmpDir, `${SESSION_ID}.jsonl`));
   const store = new PiSessionStore("/tmp/test-workspace", tmpDir);
-  const { id, messages } = await store.loadEntries({ workspaceId: "test" }, SESSION_ID);
+  const { id, messages } = await store.loadEntries({ workspaceId: "default" }, SESSION_ID);
   return buildPiChatHistory(messages, { sessionId: id });
 }
 
@@ -136,7 +136,7 @@ describe("Pi SessionEntry → BoringChatMessage cold-load conformance", () => {
   it("extracts the session title and ignores non-message entry types", async () => {
     await cp(FIXTURE_PATH, join(tmpDir, `${SESSION_ID}.jsonl`));
     const store = new PiSessionStore("/tmp/test-workspace", tmpDir);
-    const detail = await store.load({ workspaceId: "test" }, SESSION_ID);
+    const detail = await store.load({ workspaceId: "default" }, SESSION_ID);
     expect(detail.id).toBe(SESSION_ID);
     expect(detail.title).toBe("File listing chat");
     expect(detail.turnCount).toBe(2);

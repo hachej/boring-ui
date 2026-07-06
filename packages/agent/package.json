@@ -18,6 +18,10 @@
       "types": "./dist/shared/index.d.ts",
       "import": "./dist/shared/index.js"
     },
+    "./core": {
+      "types": "./dist/core/index.d.ts",
+      "import": "./dist/core/index.js"
+    },
     "./server": {
       "types": "./dist/server/index.d.ts",
       "import": "./dist/server/index.js",

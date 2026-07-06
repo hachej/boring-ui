@@ -1,3 +1,4 @@
+import { ErrorCode } from '../src/shared/error-codes'
 import { expect, test } from './fixtures'
 
 test.describe('M3a: pi-chat session CRUD', () => {
@@ -56,25 +57,27 @@ test.describe('M3a: pi-chat session CRUD', () => {
     expect(idsAfter).toContain(sessionB.id)
   })
 
-  test('state of an unknown session lazily resolves to an empty snapshot', async ({
+  test('state of an unknown session returns stable not-found error', async ({
     browserPage,
     backend,
   }) => {
     const r = await browserPage.request.get(
       `${backend.apiUrl}/api/v1/agent/pi-chat/does-not-exist/state`,
+      { failOnStatusCode: false },
     )
-    expect(r.status()).toBe(200)
-    const snapshot = (await r.json()) as { status: string; messages: unknown[] }
-    expect(snapshot.status).toBe('idle')
-    expect(snapshot.messages).toEqual([])
+    expect(r.status()).toBe(404)
+    const body = (await r.json()) as { error?: { code?: string } }
+    expect(body.error?.code).toBe(ErrorCode.enum.SESSION_NOT_FOUND)
   })
 
-  test('delete is idempotent for unknown sessions', async ({ browserPage, backend }) => {
+  test('delete returns stable not-found error for unknown sessions', async ({ browserPage, backend }) => {
     const r = await browserPage.request.delete(
       `${backend.apiUrl}/api/v1/agent/pi-chat/sessions/does-not-exist`,
       { failOnStatusCode: false },
     )
-    expect(r.status()).toBe(204)
+    expect(r.status()).toBe(404)
+    const body = (await r.json()) as { error?: { code?: string } }
+    expect(body.error?.code).toBe(ErrorCode.enum.SESSION_NOT_FOUND)
   })
 
   test('create with default title', async ({ browserPage, backend }) => {

@@ -15,10 +15,11 @@ import {
   type ExtensionFactory,
   type SlashCommandInfo,
 } from "@mariozechner/pi-coding-agent";
-import type { AgentHarness, AgentSlashCommandSummary, SendMessageInput, RunContext } from "../../../shared/harness.js";
+import type { AgentHarness, AgentSlashCommandSummary, AgentSendInput, RunContext } from "../../../shared/harness.js";
 import { createLogger } from "../../logging.js";
 import type { AgentTool } from "../../../shared/tool.js";
 import type { TelemetrySink } from "../../../shared/telemetry.js";
+import type { SessionCtx } from "../../../shared/session.js";
 import { adaptToolsForPi, unmarkToolResultErrorDetails } from "./tool-adapter.js";
 import { createPiAgentSessionAdapter, type PiAgentSessionAdapter } from "../../pi-chat/PiAgentSessionAdapter.js";
 import { PiSessionStore } from "./sessions.js";
@@ -36,6 +37,8 @@ interface PiSessionHandle {
   modelRegistry: ModelRegistry;
   sessionManager: SessionManager;
   resourceLoader: DefaultResourceLoader;
+  sessionId: string;
+  sessionCtx: SessionCtx;
 }
 
 export { mergePiPackageSources } from "../../piPackages.js";
@@ -169,7 +172,7 @@ function buildToolErrorResultExtension(): ExtensionFactory {
 
 function resolveRequestedModel(
   modelRegistry: ModelRegistry,
-  input: SendMessageInput,
+  input: AgentSendInput,
 ) {
   const requestedId = input.model?.id;
   if (!input.model || !requestedId) return undefined;
@@ -192,6 +195,26 @@ function resolveDefaultModel(modelRegistry: ModelRegistry) {
     if (model) return model;
   }
   return undefined;
+}
+
+function sessionCtxForInput(input: AgentSendInput, ctx: RunContext): SessionCtx {
+  return normalizeSessionCtx(input.ctx ?? sessionCtxFromRunContext(ctx)) ?? {};
+}
+
+function sessionCtxFromRunContext(ctx: RunContext): SessionCtx {
+  return normalizeSessionCtx({ workspaceId: ctx.workspaceId, userId: ctx.userId }) ?? {};
+}
+
+function normalizeSessionCtx(ctx: SessionCtx | undefined): SessionCtx | undefined {
+  if (!ctx?.workspaceId && !ctx?.userId) return undefined;
+  return {
+    ...(ctx.workspaceId ? { workspaceId: ctx.workspaceId } : {}),
+    ...(ctx.userId ? { userId: ctx.userId } : {}),
+  };
+}
+
+function sessionCacheKey(sessionId: string, ctx: SessionCtx): string {
+  return JSON.stringify([sessionId, ctx.workspaceId ?? "", ctx.userId ?? ""]);
 }
 
 function readSettingsFileIfPresent(path: string): string | undefined {
@@ -249,7 +272,7 @@ export function createResourceSettingsManager(
 
 async function applyRequestedSessionOptions(
   handle: PiSessionHandle,
-  input: SendMessageInput,
+  input: AgentSendInput,
 ): Promise<void> {
   const requestedModel = resolveRequestedModel(handle.modelRegistry, input);
   if (requestedModel) {
@@ -354,8 +377,8 @@ export function createPiCodingAgentHarness(opts: {
   /** Optional best-effort telemetry sink supplied by an embedding host. */
   telemetry?: TelemetrySink;
 }): AgentHarness & {
-  getPiSessionAdapter(input: SendMessageInput, ctx: RunContext): Promise<PiAgentSessionAdapter>;
-  hasPiSession(sessionId: string): boolean;
+  getPiSessionAdapter(input: AgentSendInput, ctx: RunContext): Promise<PiAgentSessionAdapter>;
+  hasPiSession(sessionId: string, ctx?: SessionCtx): boolean;
 } {
   // Normalize at the true boundary: direct callers and custom harnessFactory
   // hosts get the canonical discovery policy even if they never heard of
@@ -408,34 +431,37 @@ export function createPiCodingAgentHarness(opts: {
 
   async function getOrCreatePiSession(
     sessionId: string,
-    input: SendMessageInput,
+    input: AgentSendInput,
     ctx: RunContext,
   ): Promise<PiSessionHandle> {
-    const existing = piSessions.get(sessionId);
+    const sessionCtx = sessionCtxForInput(input, ctx);
+    const sessionKey = sessionCacheKey(sessionId, sessionCtx);
+    const existing = piSessions.get(sessionKey);
     if (existing) {
       await applyRequestedSessionOptions(existing, input);
       return existing;
     }
 
-    const inFlight = piSessionCreations.get(sessionId);
+    const inFlight = piSessionCreations.get(sessionKey);
     if (inFlight) {
       const handle = await inFlight;
       await applyRequestedSessionOptions(handle, input);
       return handle;
     }
 
-    const creation = createPiSession(sessionId, input, ctx);
-    piSessionCreations.set(sessionId, creation);
+    const creation = createPiSession(sessionId, sessionCtx, input, ctx);
+    piSessionCreations.set(sessionKey, creation);
     try {
       return await creation;
     } finally {
-      if (piSessionCreations.get(sessionId) === creation) piSessionCreations.delete(sessionId);
+      if (piSessionCreations.get(sessionKey) === creation) piSessionCreations.delete(sessionKey);
     }
   }
 
   async function createPiSession(
     sessionId: string,
-    input: SendMessageInput,
+    sessionCtx: SessionCtx,
+    input: AgentSendInput,
     ctx: RunContext,
   ): Promise<PiSessionHandle> {
     // Auth/model credentials are Pi-owned. AuthStorage.create() lets Pi read
@@ -450,8 +476,7 @@ export function createPiCodingAgentHarness(opts: {
     // and persist its path. On subsequent restarts, open the existing file.
     // Synchronous read keeps this function free of async I/O before
     // createAgentSession (required for test-timer compatibility).
-    const sessionCtx = { workspaceId: "default" };
-    const savedPiFile = sessionStore.loadPiSessionFileSync(sessionId);
+    const savedPiFile = sessionStore.loadPiSessionFileSync(sessionCtx, sessionId);
     let sessionManager: SessionManager;
     let isNewPiSession = false;
     const runtimeCwd = opts.runtimeCwd ?? ctx.workdir;
@@ -553,30 +578,49 @@ export function createPiCodingAgentHarness(opts: {
       }
     }
 
-    const handle: PiSessionHandle = { piSession, modelRegistry, sessionManager, resourceLoader };
-    piSessions.set(sessionId, handle);
+    const handle: PiSessionHandle = { piSession, modelRegistry, sessionManager, resourceLoader, sessionId, sessionCtx };
+    piSessions.set(sessionCacheKey(sessionId, sessionCtx), handle);
     return handle;
   }
 
   async function reloadPiSession(sessionId: string): Promise<boolean> {
-    const handle = piSessions.get(sessionId);
-    if (!handle) return false;
+    const handles = piSessionHandlesFor(sessionId);
+    if (handles.length === 0) return false;
     refreshEffectiveResources();
-    await handle.piSession.reload();
+    await Promise.all(handles.map((handle) => handle.piSession.reload()));
     return true;
   }
 
-  function disposePiSession(sessionId: string): void {
-    const handle = piSessions.get(sessionId);
-    if (!handle) return;
-    handle.piSession.dispose();
-    piSessions.delete(sessionId);
+  function disposePiSession(sessionId: string, ctx?: SessionCtx): void {
+    if (ctx) {
+      const key = sessionCacheKey(sessionId, ctx);
+      const handle = piSessions.get(key);
+      if (!handle) return;
+      handle.piSession.dispose();
+      piSessions.delete(key);
+      return;
+    }
+    for (const [key, handle] of piSessions) {
+      if (handle.sessionId !== sessionId) continue;
+      handle.piSession.dispose();
+      piSessions.delete(key);
+    }
+  }
+
+  function piSessionHandlesFor(sessionId: string): PiSessionHandle[] {
+    return [...piSessions.values()].filter((handle) => handle.sessionId === sessionId);
+  }
+
+  async function getOrCreatePiSessionForCommand(sessionId: string, ctx: RunContext): Promise<PiSessionHandle> {
+    const existing = piSessionHandlesFor(sessionId)[0];
+    if (existing) return existing;
+    return getOrCreatePiSession(sessionId, { sessionId, content: "", ctx: sessionCtxFromRunContext(ctx) }, ctx);
   }
 
   const originalDelete = sessionStore.delete.bind(sessionStore);
   sessionStore.delete = async (ctx, sessionId) => {
     await originalDelete(ctx, sessionId);
-    disposePiSession(sessionId);
+    disposePiSession(sessionId, ctx);
   };
 
 
@@ -592,11 +636,11 @@ export function createPiCodingAgentHarness(opts: {
      * the expected pre-first-turn state, not an error.
      */
     getSystemPrompt(sessionId: string): string | undefined {
-      return piSessions.get(sessionId)?.piSession.systemPrompt;
+      return piSessionHandlesFor(sessionId)[0]?.piSession.systemPrompt;
     },
 
-    hasPiSession(sessionId: string): boolean {
-      return piSessions.has(sessionId);
+    hasPiSession(sessionId: string, ctx?: SessionCtx): boolean {
+      return ctx ? piSessions.has(sessionCacheKey(sessionId, ctx)) : piSessionHandlesFor(sessionId).length > 0;
     },
 
     /**
@@ -606,7 +650,7 @@ export function createPiCodingAgentHarness(opts: {
      * The resourceLoader getters are synchronous.
      */
     getResourceDiagnostics(sessionId: string): Array<{ source: string; message: string; path?: string }> {
-      const handle = piSessions.get(sessionId);
+      const handle = piSessionHandlesFor(sessionId)[0];
       if (!handle) return [];
       const out: Array<{ source: string; message: string; path?: string }> = [];
       // Pi can emit the same diagnostic once per skill-path source, and its
@@ -641,12 +685,12 @@ export function createPiCodingAgentHarness(opts: {
     reloadSession: reloadPiSession,
 
     async getSlashCommands(sessionId: string, ctx: RunContext): Promise<ReadonlyArray<AgentSlashCommandSummary>> {
-      const handle = await getOrCreatePiSession(sessionId, { sessionId, message: "" }, ctx);
+      const handle = await getOrCreatePiSessionForCommand(sessionId, ctx);
       return handle.resourceLoader.getExtensions().runtime.getCommands().map(normalizeSlashCommandInfo);
     },
 
     async executeSlashCommand(sessionId: string, name: string, args: string, ctx: RunContext): Promise<void> {
-      const handle = await getOrCreatePiSession(sessionId, { sessionId, message: "" }, ctx);
+      const handle = await getOrCreatePiSessionForCommand(sessionId, ctx);
       const command = handle.piSession.extensionRunner.getCommand(name);
       if (command) {
         await command.handler(args, handle.piSession.extensionRunner.createCommandContext());
@@ -660,7 +704,8 @@ export function createPiCodingAgentHarness(opts: {
       await handle.piSession.prompt(text);
     },
 
-    async getPiSessionAdapter(input: SendMessageInput, ctx: RunContext) {
+    async getPiSessionAdapter(input: AgentSendInput, ctx: RunContext) {
+      if (!input.sessionId) throw new Error("sessionId is required to create a Pi session adapter");
       const { piSession } = await getOrCreatePiSession(input.sessionId, input, ctx);
       return createPiAgentSessionAdapter(piSession, {
         sessionId: input.sessionId,
@@ -670,7 +715,7 @@ export function createPiCodingAgentHarness(opts: {
       });
     },
   } as AgentHarness & {
-    getPiSessionAdapter(input: SendMessageInput, ctx: RunContext): Promise<PiAgentSessionAdapter>;
-    hasPiSession(sessionId: string): boolean;
+    getPiSessionAdapter(input: AgentSendInput, ctx: RunContext): Promise<PiAgentSessionAdapter>;
+    hasPiSession(sessionId: string, ctx?: SessionCtx): boolean;
   });
 }

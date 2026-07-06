@@ -427,6 +427,53 @@ describe("PiSessionStore", () => {
     expect(list[0].id).toBe(session.id);
   });
 
+  it("persists and enforces session context inside one store root", async () => {
+    const store = new PiSessionStore("/tmp", tmpDir);
+    const otherCtx = { workspaceId: "other-ws" };
+    const session = await store.create(ctx, { title: "Scoped" });
+    await store.create(otherCtx, { title: "Other" });
+
+    const firstLine = (await readFile(join(tmpDir, `${session.id}.jsonl`), "utf-8")).split("\n")[0];
+    expect(JSON.parse(firstLine)).toEqual(expect.objectContaining({
+      boringSessionCtx: { workspaceId: "test-ws" },
+    }));
+
+    await expect(store.list(ctx)).resolves.toEqual([expect.objectContaining({ id: session.id })]);
+    await expect(store.list(otherCtx)).resolves.not.toEqual(expect.arrayContaining([expect.objectContaining({ id: session.id })]));
+    await expect(store.list({})).resolves.not.toEqual(expect.arrayContaining([expect.objectContaining({ id: session.id })]));
+    await expect(store.load(otherCtx, session.id)).rejects.toThrow("Session not found");
+  });
+
+  it("keeps legacy unscoped sessions visible in default-derived stores", async () => {
+    const store = new PiSessionStore("/tmp/runtime", {
+      sessionRoot: tmpDir,
+      storageCwd: "/tmp/host-workspace",
+    });
+    await mkdir(store.getSessionDir(), { recursive: true });
+    const sessionId = "legacy-default";
+    await writeFile(
+      join(store.getSessionDir(), `${sessionId}.jsonl`),
+      [
+        JSON.stringify({ type: "session", version: 1, id: sessionId, timestamp: "2026-05-24T00:00:00.000Z", cwd: "/tmp/runtime" }),
+        JSON.stringify({
+          type: "message",
+          id: "legacy-user",
+          parentId: null,
+          timestamp: "2026-05-24T00:00:01.000Z",
+          message: { role: "user", content: [{ type: "text", text: "legacy prompt" }] },
+        }),
+        "",
+      ].join("\n"),
+      "utf-8",
+    );
+
+    const defaultCtx = { workspaceId: "default" };
+    await expect(store.list(defaultCtx)).resolves.toEqual([expect.objectContaining({ id: sessionId })]);
+    await expect(store.load(defaultCtx, sessionId)).resolves.toEqual(expect.objectContaining({ id: sessionId, turnCount: 1 }));
+    await expect(store.list(ctx)).resolves.toEqual([]);
+    await expect(store.load(ctx, sessionId)).rejects.toThrow("Session not found");
+  });
+
   it("loads a freshly created session with no message entries", async () => {
     const store = new PiSessionStore("/tmp", tmpDir);
     const session = await store.create(ctx);
@@ -453,12 +500,14 @@ describe("PiSessionStore", () => {
     );
 
     const store = new PiSessionStore("/tmp", tmpDir);
+    const defaultCtx = { workspaceId: "default" };
 
-    expect(store.loadPiSessionFileSync(sessionId)).toBe(nativePath);
-    await expect(store.loadPiSessionFile(ctx, sessionId)).resolves.toBe(nativePath);
+    expect(store.loadPiSessionFileSync(defaultCtx, sessionId)).toBe(nativePath);
+    await expect(store.loadPiSessionFile(defaultCtx, sessionId)).resolves.toBe(nativePath);
 
     const wrapperContent = await readFile(wrapperPath, "utf-8");
     expect(wrapperContent).toContain("\"pi_session_file\"");
+    expect(wrapperContent).toContain("\"boringSessionCtx\":{\"workspaceId\":\"default\"}");
     expect(wrapperContent).toContain(nativePath);
   });
 
@@ -507,24 +556,25 @@ describe("PiSessionStore", () => {
     );
 
     const store = new PiSessionStore("/tmp", tmpDir);
+    const defaultCtx = { workspaceId: "default" };
 
-    expect(store.loadPiSessionFileSync(nativeSessionId)).toBeNull();
-    await expect(store.loadPiSessionFile(ctx, nativeSessionId)).resolves.toBeNull();
+    expect(store.loadPiSessionFileSync(defaultCtx, nativeSessionId)).toBeNull();
+    await expect(store.loadPiSessionFile(defaultCtx, nativeSessionId)).resolves.toBeNull();
     await expect(readFile(join(tmpDir, `${nativeSessionId}.jsonl`), "utf-8"))
       .rejects.toMatchObject({ code: ENOENT_CODE });
 
-    await expect(store.load(ctx, nativeSessionId)).rejects.toThrow("Session not found");
-    const detail = await store.load(ctx, boringSessionId);
+    await expect(store.load(defaultCtx, nativeSessionId)).rejects.toThrow("Session not found");
+    const detail = await store.load(defaultCtx, boringSessionId);
     expect(detail.id).toBe(boringSessionId);
-    const entries = await store.loadEntries(ctx, boringSessionId);
+    const entries = await store.loadEntries(defaultCtx, boringSessionId);
     expect((entries.messages[0] as { content: unknown }).content).toEqual([
       { type: "text", text: "linked prompt" },
     ]);
 
-    const summaries = await store.list(ctx);
+    const summaries = await store.list(defaultCtx);
     expect(summaries.map((summary) => summary.id)).toEqual([boringSessionId]);
 
-    await store.delete(ctx, nativeSessionId);
+    await store.delete(defaultCtx, nativeSessionId);
     await expect(readFile(boringPath, "utf-8")).resolves.toContain("\"pi_session_file\"");
     await expect(readFile(nativePath, "utf-8")).resolves.toContain("\"native-linked\"");
   });
@@ -542,8 +592,9 @@ describe("PiSessionStore", () => {
       "",
     ].join("\n"), "utf-8");
 
-    expect(store.loadPiSessionFileSync(sessionId)).toBe(piFile);
-    await expect(store.loadPiSessionFile(ctx, sessionId)).resolves.toBe(piFile);
+    const defaultCtx = { workspaceId: "default" };
+    expect(store.loadPiSessionFileSync(defaultCtx, sessionId)).toBe(piFile);
+    await expect(store.loadPiSessionFile(defaultCtx, sessionId)).resolves.toBe(piFile);
   });
 
   it("deletes a session", async () => {
@@ -669,7 +720,8 @@ describe("PiSessionStore", () => {
     await writeFile(nativePath, `${nativeLines.map((line) => JSON.stringify(line)).join("\n")}\n`, "utf-8");
     await writeFile(boringPath, `${boringLines.map((line) => JSON.stringify(line)).join("\n")}\n`, "utf-8");
 
-    const firstList = await store.list(ctx, { limit: 1 });
+    const defaultCtx = { workspaceId: "default" };
+    const firstList = await store.list(defaultCtx, { limit: 1 });
     expect(firstList[0]).toEqual(expect.objectContaining({ id: "boring-linked", turnCount: 1 }));
 
     const { appendFile } = await import("node:fs/promises");
@@ -683,7 +735,7 @@ describe("PiSessionStore", () => {
     const touched = new Date(Date.now() + 1000);
     await utimes(nativePath, touched, touched);
 
-    const secondList = await store.list(ctx, { limit: 1 });
+    const secondList = await store.list(defaultCtx, { limit: 1 });
     expect(secondList[0]).toEqual(expect.objectContaining({ id: "boring-linked", turnCount: 2 }));
   });
 
@@ -747,7 +799,8 @@ describe("PiSessionStore", () => {
     await utimes(olderDirectPath, new Date(now - 1_000), new Date(now - 1_000));
     await utimes(nativePath, new Date(now), new Date(now));
 
-    const firstPage = await store.list(ctx, { limit: 1 });
+    const defaultCtx = { workspaceId: "default" };
+    const firstPage = await store.list(defaultCtx, { limit: 1 });
 
     expect(firstPage.map((session) => session.id)).toEqual(["boring-active"]);
   });
