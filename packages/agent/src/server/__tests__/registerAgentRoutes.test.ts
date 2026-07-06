@@ -869,12 +869,15 @@ test('request-scoped models endpoint does not require workspace header', async (
 }, 15_000)
 
 test('request-scoped mutating routes preserve host authorization error codes', async () => {
+  // Arbitrary host-owned code (core's error space, not this package's enum);
+  // the contract under test is that it passes through unmodified.
+  const hostForbiddenCode = 'forbidden'
   const workspaceRoot = await makeTempDir('boring-agent-embed-authz-code-')
   const app = Fastify({ logger: false })
   const authorizeWorkspaceAccess = vi.fn(async () => {
     const error = new Error('workspace editor role required') as Error & { statusCode: number; code: string }
     error.statusCode = 403
-    error.code = 'forbidden'
+    error.code = hostForbiddenCode
     throw error
   })
 
@@ -897,7 +900,7 @@ test('request-scoped mutating routes preserve host authorization error codes', a
 
     expect(res.statusCode).toBe(403)
     expect(res.json()).toMatchObject({
-      error: { code: 'forbidden', message: 'workspace editor role required' },
+      error: { code: hostForbiddenCode, message: 'workspace editor role required' },
     })
     expect(authorizeWorkspaceAccess).toHaveBeenCalledWith(expect.objectContaining({
       workspaceId: 'workspace-a',
