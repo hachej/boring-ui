@@ -282,6 +282,38 @@ describe('buildFilesystemAgentTools', () => {
     }
   })
 
+  test('resolves filesystem bindings per tool execution context', async () => {
+    const bundle = mockBundle('direct')
+    const alphaOps = mockReadonlyBindingOperations()
+    const betaOps = mockReadonlyBindingOperations()
+    vi.mocked(alphaOps.read).mockResolvedValue({ content: 'alpha-context', metadata: { user: 'alpha' } })
+    vi.mocked(betaOps.read).mockResolvedValue({ content: 'beta-context', metadata: { user: 'beta' } })
+
+    const tools = buildFilesystemAgentTools(bundle, {
+      getFilesystemBindings: (ctx) => [{
+        filesystem: 'company_context',
+        access: 'readonly',
+        operations: ctx.userId === 'alpha' ? alphaOps : betaOps,
+      }],
+    })
+    const read = tools.find((tool) => tool.name === 'read')
+    expect(read).toBeDefined()
+
+    const alpha = await read!.execute(
+      { filesystem: 'company_context', path: '/' },
+      { abortSignal: new AbortController().signal, toolCallId: 'read-alpha', userId: 'alpha' },
+    )
+    const beta = await read!.execute(
+      { filesystem: 'company_context', path: '/' },
+      { abortSignal: new AbortController().signal, toolCallId: 'read-beta', userId: 'beta' },
+    )
+
+    expect(alpha.content[0]?.text).toBe('alpha-context')
+    expect(beta.content[0]?.text).toBe('beta-context')
+    expect(alphaOps.read).toHaveBeenCalledTimes(1)
+    expect(betaOps.read).toHaveBeenCalledTimes(1)
+  })
+
   test('explicit company_context routes read ls find and grep to readonly company operations', async () => {
     const operations = mockReadonlyBindingOperations()
     const tools = buildFilesystemAgentTools(withFilesystemBinding(mockBundle('direct'), operations))

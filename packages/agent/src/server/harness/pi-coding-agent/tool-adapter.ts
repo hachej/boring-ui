@@ -1,4 +1,5 @@
 import type { ToolDefinition } from "@mariozechner/pi-coding-agent";
+import type { RunContext } from "../../../shared/harness.js";
 import type { AgentTool, ToolResult } from "../../../shared/tool.js";
 import { noopTelemetry, safeCapture, type TelemetrySink } from "../../../shared/telemetry.js";
 import { ErrorCode } from "../../../shared/error-codes.js";
@@ -42,7 +43,7 @@ function toolTelemetryProperties(
   return properties
 }
 
-export function adaptToolForPi(tool: AgentTool, sessionId?: string, telemetry: TelemetrySink = noopTelemetry): ToolDefinition {
+export function adaptToolForPi(tool: AgentTool, sessionId?: string, telemetry: TelemetrySink = noopTelemetry, getRunContext?: () => RunContext | undefined): ToolDefinition {
   return {
     name: tool.name,
     label: tool.name,
@@ -53,6 +54,7 @@ export function adaptToolForPi(tool: AgentTool, sessionId?: string, telemetry: T
       const startedAt = Date.now();
       let emittedFailure = false;
       try {
+        const runContext = getRunContext?.();
         const result = await tool.execute(params as Record<string, unknown>, {
           toolCallId,
           abortSignal: signal ?? new AbortController().signal,
@@ -60,6 +62,11 @@ export function adaptToolForPi(tool: AgentTool, sessionId?: string, telemetry: T
             ? (partial) => onUpdate({ content: [{ type: "text", text: partial }], details: undefined })
             : undefined,
           sessionId,
+          userId: runContext?.userId,
+          userEmail: runContext?.userEmail,
+          userEmailVerified: runContext?.userEmailVerified,
+          workspaceId: runContext?.workspaceId,
+          requestId: runContext?.requestId,
         });
         safeCapture(telemetry, {
           name: result.isError ? 'agent.tool.failed' : 'agent.tool.completed',
@@ -99,6 +106,7 @@ export function adaptToolsForPi(
   tools: AgentTool[],
   sessionId?: string,
   telemetry?: TelemetrySink,
+  getRunContext?: () => RunContext | undefined,
 ): ToolDefinition[] {
-  return tools.map((tool) => adaptToolForPi(tool, sessionId, telemetry));
+  return tools.map((tool) => adaptToolForPi(tool, sessionId, telemetry, getRunContext));
 }

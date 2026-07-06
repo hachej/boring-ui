@@ -16,13 +16,16 @@ import {
   Monitor,
   Moon,
   Settings,
+  ShieldCheck,
   Sun,
 } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 
 import { useSignOut, useUser } from '../auth/index.js'
+import { useCompanyAdminStatus } from '../CompanyAdminProvider.js'
+import { useCurrentWorkspace } from '../WorkspaceAuthProvider.js'
 import { useTheme } from '../hooks/index.js'
-import { routes } from '../utils.js'
+import { routeHref, routes } from '../utils.js'
 
 type ThemePreference = 'light' | 'dark' | 'system'
 
@@ -70,9 +73,19 @@ export function UserMenu({ contentSide = 'bottom', contentAlign = 'end', variant
   const signOut = useSignOut()
   const navigate = useNavigate()
   const { preference, setTheme } = useTheme()
+  const workspace = useCurrentWorkspace()
+  const companyAdmin = useCompanyAdminStatus()
   const [isSigningOut, setIsSigningOut] = useState(false)
 
   const user = identity?.user
+  const adminMenuLabel = companyAdmin.labels.menuLabel ?? 'Admin'
+  const companyAdminStatusPending = companyAdmin.configured && companyAdmin.loading && !companyAdmin.status
+  const canOpenCompanyAdmin = companyAdmin.configured && (
+    companyAdminStatusPending
+    || Boolean(companyAdmin.error)
+    || (companyAdmin.status?.enabled === true && companyAdmin.status.admin === true)
+  )
+  const companyAdminWorkspaceId = canOpenCompanyAdmin ? workspace?.id ?? null : null
 
   const userName = user?.name ?? 'Unknown user'
   const userEmail = user?.email ?? 'unknown@example.com'
@@ -180,6 +193,20 @@ export function UserMenu({ contentSide = 'bottom', contentAlign = 'end', variant
             <span className="text-xs text-muted-foreground">Password and account controls</span>
           </span>
         </DropdownMenuItem>
+
+        {companyAdminWorkspaceId ? (
+          <DropdownMenuItem
+            aria-label={adminMenuLabel}
+            onSelect={() => navigate(routeHref('companyAdmin', { id: companyAdminWorkspaceId }))}
+            className="gap-3 rounded-md py-2 text-[13px] focus:bg-foreground/[0.06] focus:text-foreground"
+          >
+            <ShieldCheck className="h-4 w-4" aria-hidden="true" />
+            <span className="flex min-w-0 flex-col">
+              <span>{adminMenuLabel}</span>
+              <span className="text-xs text-muted-foreground">Admin controls</span>
+            </span>
+          </DropdownMenuItem>
+        ) : null}
 
         <DropdownMenuSeparator className="-mx-2" />
 

@@ -24,7 +24,7 @@ export {
 
 export { createDatabase, runMigrations } from './db/index.js'
 export type { Database } from './db/index.js'
-export { PostgresMeteringStore, InsufficientCreditError } from './db/index.js'
+export { PostgresMeteringStore, InsufficientCreditError, PostgresModelBudgetStore, ModelBudgetExceededError } from './db/index.js'
 export type {
   MeteringBalance,
   GrantOnceInput,

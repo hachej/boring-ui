@@ -167,7 +167,7 @@ export class HarnessPiChatService implements PiChatSessionService {
       return {
         protocolVersion: 1,
         sessionId: id,
-        seq: await this.readDurableLatestPiChatSeq(sessionStreamPath(id)),
+        seq: await this.readDurableLatestPiChatSeq(sessionStreamPath(this.sessionKey(ctx, id))),
         status: 'idle',
         messages: buildPiChatHistory(messages, { sessionId: id }),
         queue: { followUps: [] },
@@ -199,11 +199,13 @@ export class HarnessPiChatService implements PiChatSessionService {
     const outcome = (await this.metering?.reservePrompt({
       workspaceId: ctx.workspaceId,
       userId: ctx.authSubject,
+      userEmail: ctx.authEmail,
+      userEmailVerified: ctx.authEmailVerified,
       sessionId,
       stateKey: sessionKey,
       clientNonce: payload.clientNonce,
       message: payload.message,
-      model: payload.model,
+      model: adapter.currentModel?.() ?? payload.model,
     })) ?? 'created'
     if (outcome === 'duplicate') {
       return {
@@ -242,11 +244,14 @@ export class HarnessPiChatService implements PiChatSessionService {
     const outcome = (await this.metering?.reserveFollowUp({
       workspaceId: ctx.workspaceId,
       userId: ctx.authSubject,
+      userEmail: ctx.authEmail,
+      userEmailVerified: ctx.authEmailVerified,
       sessionId,
       stateKey: sessionKey,
       clientNonce: payload.clientNonce,
       clientSeq: payload.clientSeq,
       message: payload.message,
+      model: adapter.currentModel?.(),
     })) ?? 'created'
     if (outcome === 'duplicate') {
       return {
@@ -448,7 +453,7 @@ export class HarnessPiChatService implements PiChatSessionService {
       for (const event of events) {
         const enriched = this.messageMetadata.enrichEvent(channel.sessionKey, event)
         publishedEvents.push(enriched)
-        await this.eventStore?.appendAgentEvent(sessionId, enriched, { idempotencyKey: String(enriched.seq) })
+        await this.eventStore?.appendAgentEvent(sessionId, enriched, { idempotencyKey: String(enriched.seq), streamPath: channel.streamPath })
         this.publishChannelEventSync(channel, enriched)
       }
       afterPublish?.(publishedEvents)
@@ -558,7 +563,10 @@ export class HarnessPiChatService implements PiChatSessionService {
       abortSignal: new AbortController().signal,
       workdir: this.workdir,
       workspaceId: ctx.workspaceId,
+      requestId: ctx.requestId,
       userId: ctx.authSubject,
+      userEmail: ctx.authEmail,
+      userEmailVerified: ctx.authEmailVerified,
     })
   }
 
@@ -605,7 +613,7 @@ export class HarnessPiChatService implements PiChatSessionService {
   private async buildChannel(sessionKey: string, sessionId: string, adapter: PiAgentSessionAdapter): Promise<LiveSessionChannel> {
     const existing = this.channels.get(sessionKey)
     if (existing) return existing
-    const streamPath = sessionStreamPath(sessionId)
+    const streamPath = sessionStreamPath(sessionKey)
     await this.eventStore?.createStream(streamPath)
     const initialSeq = await this.readDurableLatestPiChatSeq(streamPath)
     const buffer = new PiChatReplayBuffer({ initialLatestSeq: initialSeq })

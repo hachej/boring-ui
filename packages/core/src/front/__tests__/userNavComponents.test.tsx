@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import type { ReactNode } from 'react'
 import { MemoryRouter } from 'react-router-dom'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -8,6 +8,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { withTaskId } from '../../server/__tests__/_setup'
 import type { Workspace } from '../../shared/types'
 import { useMswHandler } from './_setup'
+import { CompanyAdminProvider, type CompanyAdminStatus } from '../CompanyAdminProvider'
 import { ThemeToggle } from '../components/ThemeToggle'
 import { UserMenu } from '../components/UserMenu'
 import { WorkspaceSwitcher } from '../components/WorkspaceSwitcher'
@@ -18,6 +19,7 @@ const mockNavigate = vi.fn()
 const mockUseUser = vi.fn()
 const mockSignOut = vi.fn()
 const mockUseCurrentWorkspace = vi.fn()
+const mockUseWorkspaceRole = vi.fn()
 const mockUseTheme = vi.fn()
 const mockToast = vi.fn()
 
@@ -43,6 +45,7 @@ vi.mock('../WorkspaceAuthProvider', async () => {
   return {
     ...actual,
     useCurrentWorkspace: () => mockUseCurrentWorkspace(),
+    useWorkspaceRole: () => mockUseWorkspaceRole(),
   }
 })
 
@@ -61,6 +64,8 @@ vi.mock('@hachej/boring-ui-kit', async () => {
     useToast: () => ({ toast: mockToast }),
   }
 })
+
+const renderEmptyAdminContent = () => null
 
 const WORKSPACES: Workspace[] = [
   {
@@ -159,6 +164,7 @@ beforeEach(() => {
   mockUseUser.mockReset()
   mockSignOut.mockReset()
   mockUseCurrentWorkspace.mockReset()
+  mockUseWorkspaceRole.mockReset()
   mockUseTheme.mockReset()
   mockToast.mockReset()
 
@@ -181,6 +187,7 @@ beforeEach(() => {
 
   mockSignOut.mockResolvedValue(undefined)
   mockUseCurrentWorkspace.mockReturnValue(WORKSPACES[0])
+  mockUseWorkspaceRole.mockReturnValue('owner')
   mockUseTheme.mockReturnValue({
     theme: 'light',
     preference: 'light',
@@ -194,6 +201,16 @@ afterEach(() => {
 })
 
 describe('UserMenu', () => {
+  async function settleLoadStatus(loadStatus: ReturnType<typeof vi.fn>) {
+    await waitFor(() => expect(loadStatus).toHaveBeenCalledTimes(1))
+    const result = loadStatus.mock.results[0]
+    if (result?.type === 'return') {
+      await act(async () => {
+        await (result.value as Promise<unknown>).catch(() => undefined)
+      })
+    }
+  }
+
   it(
     'renders signed-in user name/email and signs out to /auth/signin',
     withTaskId(TASK_ID, async ({ assertionPassed }) => {
@@ -205,6 +222,7 @@ describe('UserMenu', () => {
       expect(screen.getByText('menu-user@boring.dev')).toBeInTheDocument()
       expect(screen.getByRole('menuitem', { name: 'Light' })).toHaveAttribute('data-current', 'true')
       expect(screen.getByRole('menuitem', { name: 'User settings' })).toBeInTheDocument()
+      expect(screen.queryByRole('menuitem', { name: 'Admin' })).toBeNull()
       expect(screen.queryByRole('menuitem', { name: 'Create workspace' })).toBeNull()
       expect(screen.queryByRole('menuitem', { name: 'Workspace settings' })).toBeNull()
       assertionPassed('user-menu-renders-user')
@@ -218,6 +236,113 @@ describe('UserMenu', () => {
       assertionPassed('user-menu-signout-navigates')
     }),
   )
+
+  it('shows the default admin entry for provider admins even when they are not workspace owners', async () => {
+    mockUseWorkspaceRole.mockReturnValue('editor')
+    const status: CompanyAdminStatus = { enabled: true, role: 'admin', admin: true }
+    const loadStatus = vi.fn(async () => status)
+    renderWithProviders(
+      <CompanyAdminProvider loadStatus={loadStatus} renderContent={renderEmptyAdminContent}>
+        <UserMenu />
+      </CompanyAdminProvider>,
+    )
+    await settleLoadStatus(loadStatus)
+
+    fireEvent.pointerDown(screen.getByRole('button', { name: 'User menu' }))
+
+    expect(await screen.findByRole('menuitem', { name: 'Admin' })).toBeInTheDocument()
+  })
+
+  it('uses provider menu labels and navigates provider admins to the admin route', async () => {
+    const status: CompanyAdminStatus = { enabled: true, role: 'admin', admin: true }
+    const loadStatus = vi.fn(async () => status)
+    renderWithProviders(
+      <CompanyAdminProvider loadStatus={loadStatus} renderContent={renderEmptyAdminContent} labels={{ menuLabel: 'Company Admin' }}>
+        <UserMenu />
+      </CompanyAdminProvider>,
+    )
+    await settleLoadStatus(loadStatus)
+
+    fireEvent.pointerDown(screen.getByRole('button', { name: 'User menu' }))
+    fireEvent.click(await screen.findByRole('menuitem', { name: 'Company Admin' }))
+
+    expect(mockNavigate).toHaveBeenCalledWith('/w/ws-a/admin')
+  })
+
+  it('hides the admin entry when the provider reports a disabled surface', async () => {
+    const status: CompanyAdminStatus = { enabled: false, role: 'admin', admin: true }
+    const loadStatus = vi.fn(async () => status)
+    renderWithProviders(
+      <CompanyAdminProvider loadStatus={loadStatus} renderContent={renderEmptyAdminContent}>
+        <UserMenu />
+      </CompanyAdminProvider>,
+    )
+    await settleLoadStatus(loadStatus)
+
+    fireEvent.pointerDown(screen.getByRole('button', { name: 'User menu' }))
+
+    expect(await screen.findByRole('menuitem', { name: 'User settings' })).toBeInTheDocument()
+    expect(screen.queryByRole('menuitem', { name: 'Admin' })).toBeNull()
+  })
+
+  it('hides the admin entry when the provider reports a non-admin user', async () => {
+    const status: CompanyAdminStatus = { enabled: true, role: 'user', admin: false }
+    const loadStatus = vi.fn(async () => status)
+    renderWithProviders(
+      <CompanyAdminProvider loadStatus={loadStatus} renderContent={renderEmptyAdminContent}>
+        <UserMenu />
+      </CompanyAdminProvider>,
+    )
+    await settleLoadStatus(loadStatus)
+
+    fireEvent.pointerDown(screen.getByRole('button', { name: 'User menu' }))
+
+    expect(await screen.findByRole('menuitem', { name: 'User settings' })).toBeInTheDocument()
+    expect(screen.queryByRole('menuitem', { name: 'Admin' })).toBeNull()
+  })
+
+  it('hides the admin entry when the provider resolves without a status', async () => {
+    const loadStatus = vi.fn(async () => null)
+    renderWithProviders(
+      <CompanyAdminProvider loadStatus={loadStatus} renderContent={renderEmptyAdminContent}>
+        <UserMenu />
+      </CompanyAdminProvider>,
+    )
+    await settleLoadStatus(loadStatus)
+
+    fireEvent.pointerDown(screen.getByRole('button', { name: 'User menu' }))
+
+    expect(await screen.findByRole('menuitem', { name: 'User settings' })).toBeInTheDocument()
+    expect(screen.queryByRole('menuitem', { name: 'Admin' })).toBeNull()
+  })
+
+  it('shows the admin entry while provider status is pending', async () => {
+    const loadStatus = vi.fn(() => new Promise<CompanyAdminStatus | null>(() => {}))
+    renderWithProviders(
+      <CompanyAdminProvider loadStatus={loadStatus} renderContent={renderEmptyAdminContent}>
+        <UserMenu />
+      </CompanyAdminProvider>,
+    )
+
+    await waitFor(() => expect(loadStatus).toHaveBeenCalledTimes(1))
+    fireEvent.pointerDown(screen.getByRole('button', { name: 'User menu' }))
+
+    expect(await screen.findByRole('menuitem', { name: 'Admin' })).toBeInTheDocument()
+  })
+
+  it('shows the admin entry when the provider status check fails', async () => {
+    const loadStatus = vi.fn(async () => { throw new Error('Status check failed') })
+    renderWithProviders(
+      <CompanyAdminProvider loadStatus={loadStatus} renderContent={renderEmptyAdminContent}>
+        <UserMenu />
+      </CompanyAdminProvider>,
+    )
+    await settleLoadStatus(loadStatus)
+
+    fireEvent.pointerDown(screen.getByRole('button', { name: 'User menu' }))
+
+    expect(await screen.findByRole('menuitem', { name: 'Admin' })).toBeInTheDocument()
+  })
 })
 
 describe('WorkspaceSwitcher', () => {

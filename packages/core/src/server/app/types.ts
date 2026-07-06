@@ -39,9 +39,11 @@ export interface UserStore {
 }
 
 export interface WorkspaceStore {
-  create(userId: string, name: string, appId: string, opts?: { isDefault?: boolean }): Promise<Workspace>
+  create(userId: string, name: string, appId: string, opts?: { isDefault?: boolean; id?: string; managedBy?: string }): Promise<Workspace>
   list(userId: string, appId: string): Promise<Workspace[]>
   get(id: string): Promise<Workspace | null>
+  getIncludingDeleted(id: string): Promise<Workspace | null>
+  restore(id: string): Promise<Workspace | null>
   update(id: string, updates: Partial<Pick<Workspace, 'name'>>): Promise<Workspace | null>
   delete(id: string): Promise<{ removed: boolean; code?: typeof ERROR_CODES.NOT_FOUND }>
   getWorkspacesWhereSoleOwner(userId: string): Promise<Workspace[]>
@@ -50,7 +52,7 @@ export interface WorkspaceStore {
   listMembers(workspaceId: string): Promise<Array<WorkspaceMember & { user: Pick<User, 'id' | 'email' | 'name' | 'image'> }>>
   upsertMember(workspaceId: string, userId: string, role: MemberRole): Promise<WorkspaceMember>
   updateMemberRole(workspaceId: string, userId: string, role: MemberRole): Promise<{ member?: WorkspaceMember; code?: typeof ERROR_CODES.LAST_OWNER | typeof ERROR_CODES.NOT_MEMBER }>
-  removeMember(workspaceId: string, userId: string): Promise<{ removed: boolean; code?: typeof ERROR_CODES.LAST_OWNER | typeof ERROR_CODES.NOT_MEMBER }>
+  removeMember(workspaceId: string, userId: string, opts?: { allowLastOwner?: boolean }): Promise<{ removed: boolean; code?: typeof ERROR_CODES.LAST_OWNER | typeof ERROR_CODES.NOT_MEMBER }>
   listInvites(workspaceId: string): Promise<WorkspaceInvite[]>
   createInvite(workspaceId: string, email: string, role: MemberRole, invitedBy: string | null, opts?: { ttlDays?: number }): Promise<{ invite: WorkspaceInvite; rawToken: string }>
   getInvite(workspaceId: string, inviteId: string): Promise<WorkspaceInvite | null>

@@ -47,7 +47,17 @@ export function useChatModelSelection({
     writePiComposerModelSelection(next, { storageScope, storage })
   }, [storage, storageScope])
 
+  const discoveryKey = useMemo(
+    () => JSON.stringify({
+      apiBaseUrl: apiBaseUrl ?? '',
+      headers: Object.entries(requestHeaders ?? {}).sort(([a], [b]) => a.localeCompare(b)),
+      storageScope: storageScope ?? '',
+    }),
+    [apiBaseUrl, requestHeaders, storageScope],
+  )
   const [availableModels, setAvailableModels] = useState<AvailableModel[]>([])
+  const [loaded, setLoaded] = useState(!enabled)
+  const [loadedDiscoveryKey, setLoadedDiscoveryKey] = useState<string | null>(enabled ? null : discoveryKey)
 
   useEffect(() => {
     if (loadedSettingsSourceRef.current.storage !== storage || loadedSettingsSourceRef.current.storageScope !== storageScope) return
@@ -71,16 +81,33 @@ export function useChatModelSelection({
   // Fetch the live list from pi's ModelRegistry so the dropdown reflects
   // what the server actually has auth for, not a hardcoded alias set.
   useEffect(() => {
-    if (!enabled) return
+    if (!enabled) {
+      setLoaded(true)
+      setLoadedDiscoveryKey(discoveryKey)
+      return
+    }
     let aborted = false
+    setLoaded(false)
     const nextFetch = fetchImpl ?? globalThis.fetch.bind(globalThis)
     nextFetch(agentResourceUrl(apiBaseUrl, '/api/v1/agent/models'), {
       headers: scopedHeaders(requestHeaders, storageScope),
     })
       .then((res) => (res.ok ? res.json() : null))
       .then((payload: { models?: AvailableModel[]; defaultModel?: ModelSelection } | null) => {
-        if (aborted || !payload?.models) return
+        if (aborted) return
+        if (!payload?.models) {
+          userSelectedModelRef.current = false
+          setUserSelectedModel(false)
+          setAvailableModels([])
+          setModelState(null)
+          writePiComposerModelSelection(null, { storageScope, storage })
+          setLoadedDiscoveryKey(discoveryKey)
+          setLoaded(true)
+          return
+        }
         setAvailableModels(payload.models)
+        setLoadedDiscoveryKey(discoveryKey)
+        setLoaded(true)
         const available = payload.models.filter((m) => m.available)
         setModelState((current) => {
           const currentAvailable = current
@@ -92,14 +119,23 @@ export function useChatModelSelection({
           setUserSelectedModel(false)
           writePiComposerModelSelection(null, { storageScope, storage })
 
-          return payload.defaultModel
-            ? { provider: payload.defaultModel.provider, id: payload.defaultModel.id }
-            : null
+          if (payload.defaultModel) return { provider: payload.defaultModel.provider, id: payload.defaultModel.id }
+          const firstAvailable = available[0]
+          return firstAvailable ? { provider: firstAvailable.provider, id: firstAvailable.id } : null
         })
       })
-      .catch(() => { /* offline — leave list empty, fall back to raw id text */ })
+      .catch(() => {
+        if (aborted) return
+        userSelectedModelRef.current = false
+        setUserSelectedModel(false)
+        setAvailableModels([])
+        setModelState(null)
+        writePiComposerModelSelection(null, { storageScope, storage })
+        setLoadedDiscoveryKey(discoveryKey)
+        setLoaded(true)
+      })
     return () => { aborted = true }
-  }, [apiBaseUrl, enabled, fetchImpl, requestHeaders, storage, storageScope])
+  }, [apiBaseUrl, discoveryKey, enabled, fetchImpl, requestHeaders, storage, storageScope])
 
   // Optional integration hook for host slash commands. Accepts explicit
   // provider-qualified selections only ({ provider, id } or "provider:id");
@@ -114,7 +150,11 @@ export function useChatModelSelection({
     return () => globalThis.removeEventListener?.('boring:model-change', onChange)
   }, [setModel])
 
-  return { availableModels, model, setModel }
+  const currentDiscoveryLoaded = !enabled || (loaded && loadedDiscoveryKey === discoveryKey)
+  const currentAvailableModels = currentDiscoveryLoaded ? availableModels : []
+  const currentModel = currentDiscoveryLoaded ? model : null
+
+  return { availableModels: currentAvailableModels, loaded: currentDiscoveryLoaded, model: currentModel, setModel }
 }
 
 function agentResourceUrl(apiBaseUrl: string | undefined, path: string): string {

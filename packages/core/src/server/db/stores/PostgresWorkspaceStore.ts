@@ -135,6 +135,7 @@ function toWorkspace(row: typeof workspaces.$inferSelect): Workspace {
     createdAt: row.createdAt.toISOString(),
     deletedAt: row.deletedAt?.toISOString() ?? null,
     isDefault: row.isDefault,
+    managedBy: row.managedBy,
   }
 }
 
@@ -162,18 +163,35 @@ export class PostgresWorkspaceStore implements WorkspaceStore {
   // Workspace CRUD (Sub-PR 1)
   // ---------------------------------------------------------------------------
 
-  async create(userId: string, name: string, appId: string, opts?: { isDefault?: boolean }): Promise<Workspace> {
+  async create(userId: string, name: string, appId: string, opts?: { isDefault?: boolean; id?: string; managedBy?: string }): Promise<Workspace> {
     return this.db.transaction(async (tx) => {
-      const [row] = await tx
+      const insert = tx
         .insert(workspaces)
-        .values({ appId, name, createdBy: userId, isDefault: opts?.isDefault ?? false })
-        .returning()
+        .values({
+          ...(opts?.id ? { id: opts.id } : {}),
+          appId,
+          name,
+          createdBy: userId,
+          isDefault: opts?.isDefault ?? false,
+          managedBy: opts?.managedBy ?? null,
+        })
 
-      await tx.insert(workspaceMembers).values({
-        workspaceId: row.id,
-        userId,
-        role: 'owner',
-      })
+      const insertedRows = opts?.id
+        ? await insert.onConflictDoNothing().returning()
+        : await insert.returning()
+
+      const row = insertedRows[0] ?? (opts?.id
+        ? (await tx.select().from(workspaces).where(eq(workspaces.id, opts.id)).limit(1))[0]
+        : undefined)
+      if (!row) throw new Error(`Workspace ${opts?.id ?? name} was not created`)
+
+      if (insertedRows.length > 0) {
+        await tx.insert(workspaceMembers).values({
+          workspaceId: row.id,
+          userId,
+          role: 'owner',
+        })
+      }
 
       return toWorkspace(row)
     })
@@ -202,6 +220,24 @@ export class PostgresWorkspaceStore implements WorkspaceStore {
       .from(workspaces)
       .where(and(eq(workspaces.id, id), isNull(workspaces.deletedAt)))
       .limit(1)
+    return rows.length > 0 ? toWorkspace(rows[0]) : null
+  }
+
+  async getIncludingDeleted(id: string): Promise<Workspace | null> {
+    const rows = await this.db
+      .select()
+      .from(workspaces)
+      .where(eq(workspaces.id, id))
+      .limit(1)
+    return rows.length > 0 ? toWorkspace(rows[0]) : null
+  }
+
+  async restore(id: string): Promise<Workspace | null> {
+    const rows = await this.db
+      .update(workspaces)
+      .set({ deletedAt: null })
+      .where(eq(workspaces.id, id))
+      .returning()
     return rows.length > 0 ? toWorkspace(rows[0]) : null
   }
 
@@ -408,6 +444,7 @@ export class PostgresWorkspaceStore implements WorkspaceStore {
   async removeMember(
     workspaceId: string,
     userId: string,
+    opts?: { allowLastOwner?: boolean },
   ): Promise<{
     removed: boolean
     code?:
@@ -436,7 +473,7 @@ export class PostgresWorkspaceStore implements WorkspaceStore {
       const role = memberRows[0]?.role as MemberRole | undefined
       if (!role) return { removed: false, code: ERROR_CODES.NOT_MEMBER }
 
-      if (role === 'owner') {
+      if (!opts?.allowLastOwner && role === 'owner') {
         const [{ count }] = await tx
           .select({ count: sql<number>`count(*)::int` })
           .from(workspaceMembers)
