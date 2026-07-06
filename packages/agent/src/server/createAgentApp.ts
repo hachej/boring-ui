@@ -1,5 +1,6 @@
 import Fastify, { type FastifyInstance, type FastifyRequest } from 'fastify'
 import type { AgentTool } from '../shared/tool'
+import type { Agent } from '../shared/events'
 import type { AgentCoreHarnessFactory, AgentHarness, AgentHarnessFactory } from '../shared/harness'
 import type { TelemetrySink } from '../shared/telemetry'
 import { getEnv } from './config/env'
@@ -23,6 +24,7 @@ import { skillsRoutes } from './http/routes/skills'
 import { piChatRoutes, type PiChatSessionService } from './http/routes/piChat'
 import { eventStreamRoutes } from './http/routes/eventStream'
 import { agentSessionsRoutes } from './http/routes/agentSessions'
+import { inputRoutes } from './http/routes/input'
 import { systemPromptRoutes } from './http/routes/systemPrompt'
 import { sessionChangesRoutes } from './http/routes/sessionChanges'
 import { catalogRoutes } from './http/routes/catalog'
@@ -38,6 +40,7 @@ import { createPluginDiagnosticsTool } from './tools/pluginDiagnostics'
 import type { ReloadHookDiagnostic } from './http/routes/reload'
 import { createAgentRuntimeBridge } from './createAgent'
 import { openEventStreamStore } from './events/openEventStreamStore'
+import { openPendingInputStore } from './events/pendingRequests'
 import { resolvePiSessionDir } from './harness/pi-coding-agent/sessions'
 
 const DEFAULT_VERSION = '0.1.0-dev'
@@ -229,19 +232,28 @@ export async function createAgentApp(
     sessionNamespace: opts.sessionNamespace,
     sessionDir: opts.sessionDir,
   })) as AgentCoreHarnessFactory
-  const eventStoreHandle = openEventStreamStore(resolvePiSessionDir(runtimeBundle.workspace.root, {
+  const stateRoot = resolvePiSessionDir(runtimeBundle.workspace.root, {
     sessionDir: opts.sessionDir,
     sessionNamespace: opts.sessionNamespace,
     storageCwd: workspaceRoot,
-  }))
+  })
+  const eventStoreHandle = openEventStreamStore(stateRoot)
+  const pendingInputStoreHandle = openPendingInputStore(stateRoot)
   let eventStoreClosed = false
+  let pendingInputStoreClosed = false
   const closeEventStore = () => {
     if (eventStoreClosed) return
     eventStoreClosed = true
     eventStoreHandle.close()
   }
+  const closePendingInputStore = () => {
+    if (pendingInputStoreClosed) return
+    pendingInputStoreClosed = true
+    pendingInputStoreHandle.close()
+  }
   app.addHook('onClose', async () => {
     closeEventStore()
+    closePendingInputStore()
   })
   const coreAgent = createAgentRuntimeBridge({
     runtime: modeAdapter,
@@ -257,10 +269,12 @@ export async function createAgentApp(
       workdir: runtimeBundle.workspace.root,
       workspace: runtimeBundle.workspace,
       eventStore: eventStoreHandle.store,
+      pendingInputs: pendingInputStoreHandle.store,
     },
   })
   const agentRuntime = await coreAgent.getRuntime().catch((error) => {
     closeEventStore()
+    closePendingInputStore()
     throw error
   })
   const harness = agentRuntime.harness
@@ -314,13 +328,16 @@ export async function createAgentApp(
     getWorkspaceRoot: () => getOptionalRuntimeBundleStorageRoot(runtimeBundle),
   })
   await app.register(piChatRoutes, {
-    service: agentRuntime.service as PiChatSessionService,
+    service: legacyPiChatServiceWithAgentLifecycle(agentRuntime.service as PiChatSessionService, coreAgent.agent),
   })
   await app.register(eventStreamRoutes, {
     agent: coreAgent.agent,
     eventStore: eventStoreHandle.store,
   })
   await app.register(agentSessionsRoutes, {
+    agent: coreAgent.agent,
+  })
+  await app.register(inputRoutes, {
     agent: coreAgent.agent,
   })
   await app.register(systemPromptRoutes, { harness })
@@ -354,4 +371,39 @@ export async function createAgentApp(
   await app.register(readyStatusRoutes, { tracker: readyTracker })
 
   return app
+}
+
+function legacyPiChatServiceWithAgentLifecycle(service: PiChatSessionService, agent: Agent): PiChatSessionService {
+  return new Proxy(service, {
+    get(target, property, receiver) {
+      if (property === 'deleteSession') {
+        return async (ctx: Parameters<NonNullable<PiChatSessionService['deleteSession']>>[0], sessionId: string) => {
+          await agent.sessions.delete(toAgentSessionCtx(ctx), sessionId)
+        }
+      }
+      if (property === 'interrupt') {
+        return async (
+          ctx: Parameters<PiChatSessionService['interrupt']>[0],
+          sessionId: string,
+          _payload: Parameters<PiChatSessionService['interrupt']>[2],
+        ) => await agent.interrupt(sessionId, toAgentSessionCtx(ctx)) as Awaited<ReturnType<PiChatSessionService['interrupt']>>
+      }
+      if (property === 'stop') {
+        return async (
+          ctx: Parameters<PiChatSessionService['stop']>[0],
+          sessionId: string,
+          _payload: Parameters<PiChatSessionService['stop']>[2],
+        ) => await agent.stop(sessionId, toAgentSessionCtx(ctx), { closeStream: false }) as Awaited<ReturnType<PiChatSessionService['stop']>>
+      }
+      const value = Reflect.get(target, property, receiver)
+      return typeof value === 'function' ? value.bind(target) : value
+    },
+  })
+}
+
+function toAgentSessionCtx(ctx: Parameters<PiChatSessionService['interrupt']>[0]): { workspaceId?: string; userId?: string } {
+  return {
+    workspaceId: ctx.workspaceId,
+    userId: ctx.authSubject,
+  }
 }

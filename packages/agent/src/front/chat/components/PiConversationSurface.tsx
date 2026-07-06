@@ -7,6 +7,7 @@ import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react
 import { useStickToBottomContext } from 'use-stick-to-bottom'
 import type { BoringChatMessage } from '../../../shared/chat'
 import type { ToolRendererOverrides } from '../../bareToolRenderers'
+import type { ResolveApprovalHandler } from '../../primitives/tool-call-group'
 import { ChatEmptyState, type ChatSuggestion } from '../../ChatEmptyState'
 import { cn } from '../../lib'
 import {
@@ -39,6 +40,7 @@ export interface PiConversationSurfaceProps {
   isStreaming: boolean
   showThoughts: boolean
   toolRenderers: ToolRendererOverrides
+  onResolveApproval?: ResolveApprovalHandler
   runtimeNotices: PanelNotice[]
   onDismissNotice: (id: string) => void
   /** Host-supplied recovery action node for a runtime notice, keyed off its error
@@ -61,6 +63,7 @@ export function PiConversationSurface({
   isStreaming,
   showThoughts,
   toolRenderers,
+  onResolveApproval,
   runtimeNotices,
   onDismissNotice,
   renderNoticeAction,
@@ -132,6 +135,7 @@ export function PiConversationSurface({
             isStreaming={isStreaming}
             showThoughts={showThoughts}
             toolRenderers={toolRenderers}
+            onResolveApproval={onResolveApproval}
           />
         ))}
         <RuntimeNoticeMessages notices={runtimeNotices} onDismiss={onDismissNotice} renderAction={renderNoticeAction} />

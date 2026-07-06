@@ -640,6 +640,37 @@ describe('RemotePiSession', () => {
     session.dispose()
   })
 
+  it('posts resolved inputs to the canonical agent input route', async () => {
+    const fetchMock = vi.fn(async () => jsonResponse({ accepted: true })) as unknown as MockFetch
+    const session = createSession(fetchMock, {
+      autoStart: false,
+      headers: { authorization: 'Bearer test-token' },
+    })
+
+    await expect(session.resolveInput('approval-1', {
+      kind: 'approval',
+      decision: 'approve',
+    })).resolves.toEqual({ accepted: true })
+
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+    const [url, init] = fetchMock.mock.calls[0]!
+    expect(url).toBe('https://agent.test/api/v1/agents/default/sessions/s1/input')
+    expect(init).toMatchObject({
+      method: 'POST',
+      headers: {
+        authorization: 'Bearer test-token',
+        'x-boring-storage-scope': 'scope-a',
+        'Content-Type': 'application/json',
+      },
+    })
+    expect(JSON.parse(String(init?.body))).toEqual({
+      requestId: 'approval-1',
+      response: { kind: 'approval', decision: 'approve' },
+    })
+
+    session.dispose()
+  })
+
   it('opens events from the current cursor before the first command when autoStart is false', async () => {
     const events = openNdjsonStream()
     const promptResponse = deferred<Response>()

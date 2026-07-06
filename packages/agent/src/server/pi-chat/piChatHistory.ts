@@ -132,7 +132,9 @@ function assistantParts(message: RecordLike, messageId: string): BoringChatPart[
     }
     if (part.type === 'toolCall') {
       const toolCallId = optionalString(part.id) ?? `${messageId}:tool:${index}`
-      const state = part.state === 'output-error'
+      const state = part.state === 'output-denied'
+        ? 'output-denied'
+        : part.state === 'output-error'
         ? 'output-error'
         : part.state === 'output-available'
           ? 'output-available'
@@ -170,7 +172,9 @@ function updateToolResult(messages: BoringChatMessage[], message: RecordLike): v
     const nextPart: BoringChatPart = {
       ...current,
       output: toolResultOutput(message),
-      state: message.isError === true ? 'output-error' : 'output-available',
+      state: message.isError === true
+        ? isDeniedApprovalToolResult(message) ? 'output-denied' : 'output-error'
+        : 'output-available',
       errorText: message.isError === true ? toolResultErrorText(message) : current.errorText,
       ui: current.ui ?? extractToolUiMetadata({ details: { ui: isRecord(message.details) ? message.details.ui : undefined } }),
     }
@@ -178,6 +182,10 @@ function updateToolResult(messages: BoringChatMessage[], message: RecordLike): v
     candidate.parts = [...candidate.parts.slice(0, partIndex), nextPart, ...candidate.parts.slice(partIndex + 1)]
     return
   }
+}
+
+function isDeniedApprovalToolResult(message: RecordLike): boolean {
+  return isRecord(message.details) && message.details.boringApprovalDenied === true
 }
 
 function toolResultOutput(message: RecordLike): unknown {

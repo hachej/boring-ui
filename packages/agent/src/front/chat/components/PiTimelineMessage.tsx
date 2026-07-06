@@ -16,7 +16,12 @@ import {
 } from '../../primitives/attachments'
 import { Message, MessageContent, MessageResponse } from '../../primitives/message'
 import { Reasoning, ReasoningContent, ReasoningTrigger } from '../../primitives/reasoning'
-import { ToolCallGroup, type GroupedToolEntry } from '../../primitives/tool-call-group'
+import {
+  ToolApprovalActions,
+  ToolCallGroup,
+  type GroupedToolEntry,
+  type ResolveApprovalHandler,
+} from '../../primitives/tool-call-group'
 import { noticeSurfaceClass, noticeTextClass } from './noticeStyles'
 
 /**
@@ -39,9 +44,17 @@ export interface PiTimelineMessageProps {
   isStreaming: boolean
   showThoughts: boolean
   toolRenderers: ToolRendererOverrides
+  onResolveApproval?: ResolveApprovalHandler
 }
 
-export function PiTimelineMessage({ message, isLast, isStreaming, showThoughts, toolRenderers }: PiTimelineMessageProps) {
+export function PiTimelineMessage({
+  message,
+  isLast,
+  isStreaming,
+  showThoughts,
+  toolRenderers,
+  onResolveApproval,
+}: PiTimelineMessageProps) {
   const role = message.role
   const isAssistant = role === 'assistant'
   const textParts = message.parts.filter((part): part is Extract<BoringChatPart, { type: 'text' }> => part.type === 'text')
@@ -132,14 +145,22 @@ export function PiTimelineMessage({ message, isLast, isStreaming, showThoughts, 
           if (item.kind === 'tool-group') {
             return (
               <div key={item.key} data-boring-agent-part="message-tools">
-                <ToolCallGroup tools={item.tools} mergedToolRenderers={toolRenderers} />
+                <ToolCallGroup
+                  tools={item.tools}
+                  mergedToolRenderers={toolRenderers}
+                  onResolveApproval={onResolveApproval}
+                />
               </div>
             )
           }
           if (item.kind === 'tool-plain') {
             return (
               <div key={item.key} data-boring-agent-part="message-tools">
-                <PlainToolCard part={item.part} renderers={toolRenderers} />
+                <PlainToolCard
+                  part={item.part}
+                  renderers={toolRenderers}
+                  onResolveApproval={onResolveApproval}
+                />
               </div>
             )
           }
@@ -227,7 +248,15 @@ function TimelineReasoningPart({ item, showThoughts }: { item: Extract<Renderabl
  * default; click the header to expand). Unlike read-only tools it is not folded
  * into the grouped "Used X · Y" summary — each action tool gets its own row.
  */
-function PlainToolCard({ part, renderers }: { part: Extract<BoringChatPart, { type: 'tool-call' }>; renderers: ToolRendererOverrides }) {
+function PlainToolCard({
+  part,
+  renderers,
+  onResolveApproval,
+}: {
+  part: Extract<BoringChatPart, { type: 'tool-call' }>
+  renderers: ToolRendererOverrides
+  onResolveApproval?: ResolveApprovalHandler
+}) {
   const toolPart = toToolPart(part)
   if (!toolPart) return null
   const { renderer, part: resolved, resolution } = resolveToolRendererForPart(toolPart, renderers)
@@ -238,6 +267,13 @@ function PlainToolCard({ part, renderers }: { part: Extract<BoringChatPart, { ty
       data-tool-renderer-source={resolution.source}
     >
       {renderer(resolved)}
+      {resolved.state === 'approval-requested' && resolved.approvalRequestId && onResolveApproval ? (
+        <ToolApprovalActions
+          requestId={resolved.approvalRequestId}
+          onResolveApproval={onResolveApproval}
+          className="ml-0.5"
+        />
+      ) : null}
     </div>
   )
 }

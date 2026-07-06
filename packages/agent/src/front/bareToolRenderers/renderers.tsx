@@ -27,6 +27,7 @@ export interface ToolPart {
   input?: unknown
   output?: unknown
   errorText?: string
+  approvalRequestId?: string
   ui?: ToolUiMetadata
   rendererResolution?: ToolRendererResolution
 }
@@ -84,6 +85,7 @@ export function toToolPart(part: ToolRenderablePart): ToolPart | null {
       input: part.input,
       output: part.output,
       errorText: part.errorText,
+      approvalRequestId: part.approvalRequestId,
       ui: normalizeToolUiMetadata(part),
     }
   }
@@ -104,6 +106,7 @@ export function toToolPart(part: ToolRenderablePart): ToolPart | null {
     input: record.input,
     output: record.output,
     errorText: typeof record.errorText === 'string' ? record.errorText : undefined,
+    approvalRequestId: typeof record.approvalRequestId === 'string' ? record.approvalRequestId : undefined,
     ui: normalizeToolUiMetadata(record),
   }
 }

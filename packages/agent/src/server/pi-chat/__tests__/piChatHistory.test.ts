@@ -120,6 +120,48 @@ describe('buildPiChatHistory', () => {
     ])
   })
 
+  it('reconstructs denied approval tool results as output-denied', () => {
+    const history = buildPiChatHistory(
+      [
+        {
+          id: 'entry-assistant',
+          message: {
+            role: 'assistant',
+            content: [
+              { type: 'toolCall', id: 'call-bash', name: 'bash', arguments: { command: 'deploy' } },
+            ],
+            api: 'test',
+            provider: 'test',
+            model: 'model',
+            usage,
+            stopReason: 'stop',
+            timestamp: 1,
+          },
+        },
+        {
+          id: 'entry-tool',
+          message: {
+            role: 'toolResult',
+            toolCallId: 'call-bash',
+            toolName: 'bash',
+            content: [{ type: 'text', text: 'Denied by user.' }],
+            details: { code: ErrorCode.enum.ABORTED, boringApprovalDenied: true },
+            isError: true,
+            timestamp: 2,
+          },
+        },
+      ],
+      { sessionId: 'session-1' },
+    )
+
+    expect(history[0]?.parts[0]).toMatchObject({
+      type: 'tool-call',
+      id: 'call-bash',
+      state: 'output-denied',
+      errorText: 'Denied by user.',
+    })
+  })
+
   it('uses stable fallback ids only when Pi entry ids are unavailable', () => {
     const history = buildPiChatHistory(
       [

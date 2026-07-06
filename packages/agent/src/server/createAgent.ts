@@ -10,6 +10,9 @@ import type {
   AgentEvent,
   AgentReadiness,
   AgentResolveInputResponse,
+  AgentSessions,
+  PendingInputRequest,
+  ResolveInputResponse,
   AgentSendInput,
   AgentStartReceipt,
   AgentStreamOptions,
@@ -18,6 +21,8 @@ import { AgentNotImplementedError, sessionStreamPath } from '../shared/events'
 import type { SessionCtx, SessionListOptions, SessionStore } from '../shared/session'
 import type { PromptPayload } from '../shared/chat'
 import { ErrorCode } from '../shared/error-codes'
+import type { AgentTool, ToolExecContext, ToolResult } from '../shared/tool'
+import { MemoryPendingInputStore, type PendingInputRecord, type PendingInputStore } from './events/pendingRequests'
 
 const DEFAULT_WORKDIR = ''
 const DEFAULT_LIVE_BUFFER_SIZE = 1_000
@@ -42,6 +47,7 @@ export interface CreateAgentRuntimeBridgeOptions {
     workdir?: string
     workspace?: Workspace
     eventStore?: EventStreamStore
+    pendingInputs?: PendingInputStore
   }
 }
 
@@ -84,7 +90,9 @@ export function createAgentRuntimeBridge(
     throw new Error('createAgent sessions override requires a harnessFactory that uses the same SessionStore')
   }
 
-  const runtimeLoader = createRuntimeLoader(config, options)
+  const pendingInputs = options.service?.pendingInputs ?? new MemoryPendingInputStore()
+  const approvalCoordinator = new ApprovalCoordinator(pendingInputs)
+  const runtimeLoader = createRuntimeLoader(config, options, approvalCoordinator)
   const getRuntime = runtimeLoader.get
   const eventStore = options.service?.eventStore
   const live = new AgentLiveEventBuffer(DEFAULT_LIVE_BUFFER_SIZE)
@@ -92,7 +100,7 @@ export function createAgentRuntimeBridge(
   const startedSessions = new Map<string, { sessionId: string; ctx: SessionCtx | undefined }>()
   const sendLocks = new Map<string, Promise<void>>()
 
-  const sessions = createFacadeSessionStore(config.sessions, getRuntime, live, sessionContexts, startedSessions)
+  const sessions = createFacadeSessionStore(config.sessions, getRuntime, live, sessionContexts, startedSessions, pendingInputs, approvalCoordinator)
   const readiness = createReadiness(config)
 
   async function ensureSession(input: AgentSendInput, runtime: AgentRuntime): Promise<{ sessionId: string; sessionKey: string; ctx: SessionCtx | undefined }> {
@@ -172,21 +180,30 @@ export function createAgentRuntimeBridge(
       }
     },
 
-    async resolveInput(_sessionId: string, _requestId: string, _response: AgentResolveInputResponse): Promise<never> {
-      throw new AgentNotImplementedError('resolveInput is not implemented until T1.')
+    async resolveInput(sessionId: string, requestId: string, response: AgentResolveInputResponse, ctx?: SessionCtx): Promise<void> {
+      const runtime = await getRuntime()
+      const pending = await pendingInputs.get(sessionId, requestId)
+      if (!pending) throw inputRequestNotFoundError(sessionId, requestId)
+      if (!sameSessionCtx(ctx, pending.ctx)) {
+        throw stableAgentError(ErrorCode.enum.UNAUTHORIZED, 'input request context mismatch')
+      }
+      const accessCtx = await authorizeSessionAccess(runtime, sessionId, ctx, sessionContexts)
+      await approvalCoordinator.resolve(toPiRequestContext(accessCtx), sessionId, requestId, response)
     },
 
     async interrupt(sessionId: string, ctx?: SessionCtx): Promise<unknown> {
       const runtime = await getRuntime()
       const accessCtx = await authorizeSessionAccess(runtime, sessionId, ctx, sessionContexts)
+      approvalCoordinator.abortRecoveredSession(sessionId, accessCtx)
       return runtime.service.interrupt(toPiRequestContext(accessCtx), sessionId, {})
     },
 
-    async stop(sessionId: string, ctx?: SessionCtx): Promise<unknown> {
+    async stop(sessionId: string, ctx?: SessionCtx, opts?: { closeStream?: boolean }): Promise<unknown> {
       const runtime = await getRuntime()
       const accessCtx = await authorizeSessionAccess(runtime, sessionId, ctx, sessionContexts)
+      approvalCoordinator.abortRecoveredSession(sessionId, accessCtx)
       const receipt = await runtime.service.stop(toPiRequestContext(accessCtx), sessionId, {})
-      if (eventStore) await eventStore.closeStream(sessionStreamPath(sessionId))
+      if (eventStore && opts?.closeStream !== false) await eventStore.closeStream(sessionStreamPath(sessionId))
       const sessionKey = sessionCacheKey(sessionId, accessCtx)
       live.close(sessionKey)
       startedSessions.delete(sessionKey)
@@ -199,13 +216,17 @@ export function createAgentRuntimeBridge(
       try {
         if (runtime) {
           const results = await Promise.allSettled([...startedSessions.values()].map((started) =>
-            stopAndCloseStartedSession(runtime, eventStore, started),
+            {
+              approvalCoordinator.abortRecoveredSession(started.sessionId, started.ctx)
+              return stopAndCloseStartedSession(runtime, eventStore, started)
+            },
           ))
           stopError = results.find((result): result is PromiseRejectedResult => result.status === 'rejected')?.reason
         }
       } catch (error) {
         stopError = error
       } finally {
+        approvalCoordinator.abortAllRecovered()
         live.dispose()
         startedSessions.clear()
         sessionContexts.clear()
@@ -381,14 +402,14 @@ function toAgentEvent(value: unknown): AgentEvent {
   throw stableAgentError(ErrorCode.enum.INTERNAL_ERROR, 'stored event is not an AgentEvent envelope')
 }
 
-function createRuntimeLoader(config: AgentConfig, options: CreateAgentRuntimeBridgeOptions): {
+function createRuntimeLoader(config: AgentConfig, options: CreateAgentRuntimeBridgeOptions, approvalCoordinator: ApprovalCoordinator): {
   get(): Promise<AgentRuntime>
   current(): Promise<AgentRuntime> | undefined
 } {
   let runtimePromise: Promise<AgentRuntime> | undefined
   return {
     get() {
-      runtimePromise ??= createRuntime(config, options)
+      runtimePromise ??= createRuntime(config, options, approvalCoordinator)
       return runtimePromise
     },
     current() {
@@ -397,10 +418,11 @@ function createRuntimeLoader(config: AgentConfig, options: CreateAgentRuntimeBri
   }
 }
 
-async function createRuntime(config: AgentConfig, options: CreateAgentRuntimeBridgeOptions): Promise<AgentRuntime> {
+async function createRuntime(config: AgentConfig, options: CreateAgentRuntimeBridgeOptions, approvalCoordinator: ApprovalCoordinator): Promise<AgentRuntime> {
   const harnessFactory = config.harnessFactory ?? (await import('./harness/pi-coding-agent/createHarness')).createPiCodingAgentHarness
+  const tools = wrapToolsForApproval(config.tools ?? [], approvalCoordinator)
   const harnessInput: AgentHarnessFactoryInput = {
-    tools: config.tools ?? [],
+    tools,
     cwd: config.workdir ?? DEFAULT_WORKDIR,
     runtimeCwd: options.harness?.runtimeCwd ?? options.service?.workdir ?? config.workdir,
     systemPromptAppend: config.systemPromptAppend,
@@ -410,17 +432,20 @@ async function createRuntime(config: AgentConfig, options: CreateAgentRuntimeBri
   }
   const harness = await harnessFactory(harnessInput)
   const sessionStore = config.sessions ?? harness.sessions
+  const service = new HarnessPiChatService({
+    harness,
+    sessionStore,
+    workdir: options.service?.workdir ?? config.workdir ?? DEFAULT_WORKDIR,
+    workspace: options.service?.workspace,
+    eventStore: options.service?.eventStore,
+    pendingInputs: approvalCoordinator.pendingInputs,
+    metering: config.metering as AgentMeteringSink | undefined,
+  })
+  approvalCoordinator.attachService(service)
   return {
     harness,
     sessionStore,
-    service: new HarnessPiChatService({
-      harness,
-      sessionStore,
-      workdir: options.service?.workdir ?? config.workdir ?? DEFAULT_WORKDIR,
-      workspace: options.service?.workspace,
-      eventStore: options.service?.eventStore,
-      metering: config.metering as AgentMeteringSink | undefined,
-    }),
+    service,
   }
 }
 
@@ -444,7 +469,9 @@ function createFacadeSessionStore(
   live: AgentLiveEventBuffer,
   sessionContexts: Map<string, SessionCtx | undefined>,
   startedSessions: Map<string, { sessionId: string; ctx: SessionCtx | undefined }>,
-): SessionStore {
+  pendingInputs: PendingInputStore,
+  approvalCoordinator: ApprovalCoordinator,
+): AgentSessions {
   const store = async () => baseStore ?? (await getRuntime()).harness.sessions
   return {
     async list(ctx: SessionCtx, options?: SessionListOptions) {
@@ -464,11 +491,15 @@ function createFacadeSessionStore(
     async delete(ctx: SessionCtx, sessionId: string) {
       const runtime = await getRuntime()
       const accessCtx = await authorizeSessionAccess(runtime, sessionId, ctx, sessionContexts)
+      approvalCoordinator.abortRecoveredSession(sessionId, accessCtx)
       await runtime.service.deleteSession(toPiRequestContext(accessCtx), sessionId)
       const sessionKey = sessionCacheKey(sessionId, accessCtx)
       live.close(sessionKey)
       sessionContexts.delete(sessionKey)
       startedSessions.delete(sessionKey)
+    },
+    async pendingInputs(ctx: SessionCtx, opts?: { sessionId?: string }) {
+      return pendingInputs.list(ctx, opts)
     },
   }
 }
@@ -575,6 +606,347 @@ function sessionCacheKey(sessionId: string, ctx: SessionCtx | undefined): string
 
 function stableAgentError(code: string, message: string): Error & { code: string } {
   return Object.assign(new Error(message), { code })
+}
+
+function inputRequestNotFoundError(sessionId: string, requestId: string): Error & { code: string } {
+  return Object.assign(new Error('input request not found'), {
+    code: ErrorCode.enum.SESSION_NOT_FOUND,
+    details: { sessionId, requestId },
+  })
+}
+
+function inputResponseKindMismatchError(expected: string, received: string): Error & { code: string; statusCode: number } {
+  return Object.assign(new Error('input response kind mismatch'), {
+    code: ErrorCode.enum.BRIDGE_COMMAND_INVALID,
+    statusCode: 400,
+    details: { expected, received },
+  })
+}
+
+function wrapToolsForApproval(tools: AgentTool[], approvalCoordinator: ApprovalCoordinator): AgentTool[] {
+  approvalCoordinator.registerTools(tools)
+  return tools.map((tool) => ({
+    ...tool,
+    execute(params, ctx) {
+      return approvalCoordinator.executeTool(tool, params, ctx)
+    },
+  }))
+}
+
+const RECOVERED_TOOL_ABORTED = Symbol('recovered-tool-aborted')
+type RecoveredToolResult = ToolResult | undefined | typeof RECOVERED_TOOL_ABORTED
+
+class ApprovalCoordinator {
+  private service?: HarnessPiChatService
+  private readonly waiters = new Map<string, Deferred<ResolveInputResponse>>()
+  private readonly toolsByName = new Map<string, AgentTool>()
+  private readonly recoveredToolAbortControllers = new Map<string, Set<AbortController>>()
+
+  constructor(readonly pendingInputs: PendingInputStore) {}
+
+  attachService(service: HarnessPiChatService): void {
+    this.service = service
+  }
+
+  registerTools(tools: AgentTool[]): void {
+    for (const tool of tools) this.toolsByName.set(tool.name, tool)
+  }
+
+  abortRecoveredSession(sessionId: string, ctx: SessionCtx | undefined): void {
+    const key = sessionCacheKey(sessionId, ctx)
+    const controllers = this.recoveredToolAbortControllers.get(key)
+    if (!controllers) return
+    this.recoveredToolAbortControllers.delete(key)
+    for (const controller of controllers) controller.abort()
+  }
+
+  abortAllRecovered(): void {
+    const controllerSets = [...this.recoveredToolAbortControllers.values()]
+    this.recoveredToolAbortControllers.clear()
+    for (const controllers of controllerSets) {
+      for (const controller of controllers) controller.abort()
+    }
+  }
+
+  async executeTool(tool: AgentTool, params: Record<string, unknown>, ctx: ToolExecContext): Promise<ToolResult> {
+    if (!(await toolNeedsApproval(tool, params, ctx))) return tool.execute(params, ctx)
+    if (!ctx.sessionId) throw stableToolError(ErrorCode.enum.TOOL_EXECUTION_ERROR, 'tool approval requires a session id')
+    if (ctx.abortSignal.aborted) throw approvalAbortedError()
+
+    const request = await this.pendingInputs.create({
+      sessionId: ctx.sessionId,
+      requestId: createInputRequestId(ctx.sessionId, ctx.toolCallId),
+      ctx: { workspaceId: ctx.workspaceId, userId: ctx.userId },
+      auth: { userEmail: ctx.userEmail, userEmailVerified: ctx.userEmailVerified },
+      kind: 'approval',
+      toolName: tool.name,
+      toolCallId: ctx.toolCallId,
+      payload: { params },
+    })
+    const waiter = deferred<ResolveInputResponse>()
+    const waiterKey = inputWaiterKey(ctx.sessionId, request.requestId)
+    this.waiters.set(waiterKey, waiter)
+
+    let aborted = false
+    const abort = () => {
+      if (aborted) return
+      aborted = true
+      waiter.reject(approvalAbortedError())
+      void this.clearAbortedRequest(request).catch(() => undefined)
+    }
+    ctx.abortSignal.addEventListener('abort', abort, { once: true })
+    if (ctx.abortSignal.aborted) abort()
+
+    try {
+      try {
+        if (!aborted) {
+          await this.service?.publishApprovalRequest(toPiRequestContext(request.ctx), request.sessionId, toPendingInputRequest(request))
+        }
+      } catch (error) {
+        await this.pendingInputs.resolve(request.sessionId, request.requestId)
+        throw error
+      }
+      const response = await waiter.promise
+      if (response.kind !== 'approval') {
+        throw stableToolError(ErrorCode.enum.TOOL_INVALID_INPUT, 'approval response expected')
+      }
+      if (response.decision === 'deny') return deniedApprovalResult(response)
+      return tool.execute(params, ctx)
+    } finally {
+      ctx.abortSignal.removeEventListener('abort', abort)
+      this.waiters.delete(waiterKey)
+    }
+  }
+
+  async resolve(ctx: PiSessionRequestContext, sessionId: string, requestId: string, response: ResolveInputResponse): Promise<void> {
+    const record = await this.pendingInputs.resolve(sessionId, requestId)
+    if (!record) throw inputRequestNotFoundError(sessionId, requestId)
+    if (record.kind !== response.kind) {
+      await this.pendingInputs.create(record)
+      throw inputResponseKindMismatchError(record.kind, response.kind)
+    }
+    const request = toPendingInputRequest(record)
+    const recordCtx = withPendingInputAuth(ctx, record)
+    try {
+      await this.service?.publishApprovalResolved(recordCtx, sessionId, request, response)
+    } catch (error) {
+      await this.pendingInputs.create(record)
+      throw error
+    }
+
+    const waiter = this.waiters.get(inputWaiterKey(sessionId, requestId))
+    if (waiter) {
+      waiter.resolve(response)
+      return
+    }
+
+    void this.continueRecoveredResolvedInput(ctx, sessionId, request, record, response)
+      .catch((error) => this.handleRecoveredContinuationFailure(ctx, sessionId, record, error))
+  }
+
+  private async continueRecoveredResolvedInput(
+    ctx: PiSessionRequestContext,
+    sessionId: string,
+    request: PendingInputRequest,
+    record: PendingInputRecord,
+    response: ResolveInputResponse,
+  ): Promise<void> {
+    if (!this.service?.canContinueResolvedInput()) {
+      throw new RecoveredApprovalContinuationError(new Error('resolved input recovery is unavailable'), false)
+    }
+    const abortController = new AbortController()
+    const releaseAbortController = this.trackRecoveredToolAbort(record, abortController)
+    let toolResultProduced = false
+    try {
+      const recoveredResult = await this.recoverToolResult(record, response, abortController.signal)
+      toolResultProduced = recoveredResult !== undefined
+      if (recoveredResult === RECOVERED_TOOL_ABORTED || abortController.signal.aborted) {
+        throw new RecoveredApprovalContinuationError(new Error('recovered tool execution aborted'), true)
+      }
+      await this.service.continueResolvedInput(
+        withPendingInputAuth(ctx, record),
+        sessionId,
+        request,
+        response,
+        recoveredResult,
+        abortController.signal,
+      )
+    } catch (error) {
+      if (error instanceof RecoveredApprovalContinuationError) throw error
+      throw new RecoveredApprovalContinuationError(error, toolResultProduced)
+    } finally {
+      releaseAbortController()
+    }
+  }
+
+  private async handleRecoveredContinuationFailure(
+    ctx: PiSessionRequestContext,
+    sessionId: string,
+    record: PendingInputRecord,
+    error: unknown,
+  ): Promise<void> {
+    if (!(error instanceof RecoveredApprovalContinuationError) || !error.toolResultProduced) {
+      await this.pendingInputs.create(record)
+      await this.service?.publishApprovalRequest(
+        withPendingInputAuth(ctx, record),
+        sessionId,
+        toPendingInputRequest(record),
+      ).catch(() => undefined)
+    }
+    await this.service?.publishResolvedInputRecoveryError(
+      withPendingInputAuth(ctx, record),
+      sessionId,
+      error,
+    ).catch(() => undefined)
+  }
+
+  private async clearAbortedRequest(request: PendingInputRecord): Promise<void> {
+    const record = await this.pendingInputs.resolve(request.sessionId, request.requestId)
+    if (!record) return
+    await this.service?.publishApprovalResolved(
+      toPiRequestContext(record.ctx),
+      record.sessionId,
+      toPendingInputRequest(record),
+      { kind: 'approval', decision: 'deny', reason: 'aborted' },
+    )
+  }
+
+  private async recoverToolResult(
+    record: PendingInputRecord,
+    response: ResolveInputResponse,
+    abortSignal: AbortSignal,
+  ): Promise<RecoveredToolResult> {
+    if (record.kind !== 'approval') return undefined
+    if (response.kind !== 'approval') return failClosedToolResult('approval response expected')
+    if (response.decision === 'deny') return deniedApprovalResult(response)
+    if (abortSignal.aborted) return RECOVERED_TOOL_ABORTED
+
+    const params = paramsFromPendingPayload(record.payload)
+    const tool = record.toolName ? this.toolsByName.get(record.toolName) : undefined
+    if (!tool || !params || !record.toolCallId) {
+      return failClosedToolResult('approved tool request could not be recovered')
+    }
+
+    try {
+      return await tool.execute(params, {
+        abortSignal,
+        toolCallId: record.toolCallId,
+        sessionId: record.sessionId,
+        workspaceId: record.ctx?.workspaceId,
+        userId: record.ctx?.userId,
+        userEmail: record.auth?.userEmail,
+        userEmailVerified: record.auth?.userEmailVerified,
+        requestId: 'agent-core:resolve-input',
+      })
+    } catch (error) {
+      if (abortSignal.aborted) return RECOVERED_TOOL_ABORTED
+      return failClosedToolResult(error instanceof Error && error.message ? error.message : 'recovered tool execution failed')
+    }
+  }
+
+  private trackRecoveredToolAbort(record: PendingInputRecord, controller: AbortController): () => void {
+    const key = sessionCacheKey(record.sessionId, record.ctx)
+    const controllers = this.recoveredToolAbortControllers.get(key) ?? new Set<AbortController>()
+    controllers.add(controller)
+    this.recoveredToolAbortControllers.set(key, controllers)
+    return () => {
+      controllers.delete(controller)
+      if (controllers.size === 0) this.recoveredToolAbortControllers.delete(key)
+    }
+  }
+}
+
+class RecoveredApprovalContinuationError extends Error {
+  constructor(readonly cause: unknown, readonly toolResultProduced: boolean) {
+    super(cause instanceof Error && cause.message ? cause.message : 'resolved input recovery failed')
+    this.name = 'RecoveredApprovalContinuationError'
+  }
+}
+
+interface Deferred<T> {
+  promise: Promise<T>
+  resolve(value: T): void
+  reject(error: unknown): void
+}
+
+function deferred<T>(): Deferred<T> {
+  let resolve!: (value: T) => void
+  let reject!: (error: unknown) => void
+  const promise = new Promise<T>((nextResolve, nextReject) => {
+    resolve = nextResolve
+    reject = nextReject
+  })
+  return { promise, resolve, reject }
+}
+
+async function toolNeedsApproval(tool: AgentTool, params: Record<string, unknown>, ctx: ToolExecContext): Promise<boolean> {
+  if (typeof tool.needsApproval === 'function') return await tool.needsApproval(params, ctx)
+  return tool.needsApproval === true
+}
+
+function createInputRequestId(sessionId: string, toolCallId: string): string {
+  const suffix = globalThis.crypto?.randomUUID?.() ?? `${Date.now()}:${Math.random().toString(36).slice(2)}`
+  return `approval:${sessionId}:${toolCallId}:${suffix}`
+}
+
+function inputWaiterKey(sessionId: string, requestId: string): string {
+  return JSON.stringify([sessionId, requestId])
+}
+
+function toPendingInputRequest(record: PendingInputRecord): PendingInputRequest {
+  return {
+    sessionId: record.sessionId,
+    requestId: record.requestId,
+    kind: record.kind,
+    ...(record.toolName ? { toolName: record.toolName } : {}),
+    ...(record.toolCallId ? { toolCallId: record.toolCallId } : {}),
+    ...(record.schema ? { schema: record.schema } : {}),
+    createdAt: record.createdAt,
+  }
+}
+
+function withPendingInputAuth(ctx: PiSessionRequestContext, record: PendingInputRecord): PiSessionRequestContext {
+  return {
+    ...ctx,
+    ...(record.auth?.userEmail ? { authEmail: record.auth.userEmail } : {}),
+    ...(record.auth?.userEmailVerified === undefined ? {} : { authEmailVerified: record.auth.userEmailVerified }),
+  }
+}
+
+function stableToolError(code: string, message: string): Error & { code: string } {
+  return Object.assign(new Error(message), { code })
+}
+
+function approvalAbortedError(): Error & { code: string } {
+  return stableToolError(ErrorCode.enum.ABORTED, 'tool approval was aborted')
+}
+
+function deniedApprovalResult(response: Extract<ResolveInputResponse, { kind: 'approval' }>): ToolResult {
+  return {
+    content: [{ type: 'text', text: response.reason ? `Denied by user: ${response.reason}` : 'Denied by user.' }],
+    isError: true,
+    details: {
+      code: ErrorCode.enum.ABORTED,
+      reason: response.reason,
+      boringApprovalDenied: true,
+    },
+  }
+}
+
+function failClosedToolResult(message: string): ToolResult {
+  return {
+    content: [{ type: 'text', text: message }],
+    isError: true,
+    details: { code: ErrorCode.enum.TOOL_EXECUTION_ERROR },
+  }
+}
+
+function paramsFromPendingPayload(payload: unknown): Record<string, unknown> | undefined {
+  if (!payload || typeof payload !== 'object' || Array.isArray(payload)) return undefined
+  const params = (payload as { params?: unknown }).params
+  return params && typeof params === 'object' && !Array.isArray(params)
+    ? params as Record<string, unknown>
+    : undefined
 }
 
 async function acquireSessionLock(locks: Map<string, Promise<void>>, sessionId: string): Promise<() => void> {

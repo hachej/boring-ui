@@ -1,7 +1,7 @@
 import type { BoringChatMessage } from './boringChatMessage'
 import type { ChatError } from './chatError'
 
-export type PiChatStatus = 'idle' | 'hydrating' | 'submitted' | 'streaming' | 'aborting' | 'error'
+export type PiChatStatus = 'idle' | 'hydrating' | 'submitted' | 'streaming' | 'waiting' | 'aborting' | 'error'
 
 export interface QueuedUserMessage {
   id: string

@@ -214,14 +214,17 @@ describe('createAgent', () => {
     await agent.dispose()
   })
 
-  it('resolveInput is a typed T1 stub', async () => {
+  it('resolveInput reports missing pending requests with a stable error', async () => {
     const agent = createAgent({
       runtime: 'none',
       harnessFactory: createFakeHarnessFactory(),
     })
 
-    await expect(agent.resolveInput('session-1', 'request-1', { approved: true })).rejects.toMatchObject({
-      code: AGENT_NOT_IMPLEMENTED_UNTIL_T1,
+    await expect(agent.resolveInput('session-1', 'request-1', {
+      kind: 'approval',
+      decision: 'approve',
+    }, {})).rejects.toMatchObject({
+      code: ErrorCode.enum.SESSION_NOT_FOUND,
     })
   })
 

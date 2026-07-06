@@ -20,7 +20,7 @@ import {
 } from '../../primitives/conversation'
 import { Message, MessageContent, MessageResponse } from '../../primitives/message'
 import { Reasoning, ReasoningContent, ReasoningTrigger } from '../../primitives/reasoning'
-import { ToolCallGroup, type GroupedToolEntry } from '../../primitives/tool-call-group'
+import { ToolCallGroup, type GroupedToolEntry, type ResolveApprovalHandler } from '../../primitives/tool-call-group'
 import type { ToolRendererOverrides } from '../../bareToolRenderers'
 import { noticeSurfaceClass, noticeTextClass } from './noticeStyles'
 
@@ -35,6 +35,7 @@ export interface MessageTimelineProps extends Omit<HTMLAttributes<HTMLDivElement
   messages: BoringChatMessage[]
   emptyState?: MessageTimelineEmptyState
   toolRenderers?: ToolRendererOverrides
+  onResolveApproval?: ResolveApprovalHandler
   onScrollToBottomReady?: ConversationProps['onScrollToBottomReady']
 }
 
@@ -42,6 +43,7 @@ export const MessageTimeline = memo(({
   messages,
   emptyState,
   toolRenderers,
+  onResolveApproval,
   onScrollToBottomReady,
   className,
   ...props
@@ -67,7 +69,12 @@ export const MessageTimeline = memo(({
           />
         ) : (
           messages.map((message) => (
-            <TimelineMessage key={message.id} message={message} toolRenderers={toolRenderers} />
+            <TimelineMessage
+              key={message.id}
+              message={message}
+              toolRenderers={toolRenderers}
+              onResolveApproval={onResolveApproval}
+            />
           ))
         )}
       </ConversationContent>
@@ -81,10 +88,14 @@ MessageTimeline.displayName = 'MessageTimeline'
 interface TimelineMessageProps {
   message: BoringChatMessage
   toolRenderers?: ToolRendererOverrides
+  onResolveApproval?: ResolveApprovalHandler
 }
 
-const TimelineMessage = memo(({ message, toolRenderers }: TimelineMessageProps) => {
-  const renderedParts = useMemo(() => renderMessageParts(message, toolRenderers), [message, toolRenderers])
+const TimelineMessage = memo(({ message, toolRenderers, onResolveApproval }: TimelineMessageProps) => {
+  const renderedParts = useMemo(
+    () => renderMessageParts(message, toolRenderers, onResolveApproval),
+    [message, onResolveApproval, toolRenderers],
+  )
   const statusLabel = message.status === 'pending' ? 'Pending' : message.status === 'streaming' ? 'Streaming' : undefined
 
   return (
@@ -107,7 +118,11 @@ const TimelineMessage = memo(({ message, toolRenderers }: TimelineMessageProps) 
 
 TimelineMessage.displayName = 'TimelineMessage'
 
-function renderMessageParts(message: BoringChatMessage, toolRenderers?: ToolRendererOverrides): ReactNode[] {
+function renderMessageParts(
+  message: BoringChatMessage,
+  toolRenderers?: ToolRendererOverrides,
+  onResolveApproval?: ResolveApprovalHandler,
+): ReactNode[] {
   const nodes: ReactNode[] = []
   let pendingTools: GroupedToolEntry[] = []
 
@@ -116,7 +131,11 @@ function renderMessageParts(message: BoringChatMessage, toolRenderers?: ToolRend
     const firstKey = pendingTools[0]?.key ?? `tools:${nodes.length}`
     nodes.push(
       <div key={`tools:${firstKey}`} data-boring-agent-part="message-tools">
-        <ToolCallGroup tools={pendingTools} mergedToolRenderers={toolRenderers ?? {}} />
+        <ToolCallGroup
+          tools={pendingTools}
+          mergedToolRenderers={toolRenderers ?? {}}
+          onResolveApproval={onResolveApproval}
+        />
       </div>,
     )
     pendingTools = []

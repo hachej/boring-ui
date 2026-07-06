@@ -12,6 +12,7 @@ import type {
   StopReceipt,
   PiChatEvent,
 } from '../../../shared/chat'
+import type { ResolveInputResponse } from '../../../shared/events'
 import {
   CommandReceiptSchema,
   FollowUpReceiptSchema,
@@ -260,6 +261,22 @@ export class RemotePiSession {
       this.store.dispatch({ type: 'clear-optimistic-followups' }, { flush: true })
     }
     return receipt
+  }
+
+  async resolveInput(requestId: string, response: ResolveInputResponse): Promise<{ accepted: true }> {
+    const generation = this.generation
+    if (!this.isGenerationActive(generation)) throw abortError('Remote Pi session disposed before input resolution.')
+    const headers = await this.requestHeaders()
+    if (!this.isGenerationActive(generation)) throw abortError('Remote Pi session disposed before input resolution.')
+    const raw = await this.fetchJson(this.agentInputUrl(), {
+      method: 'POST',
+      headers: { ...headers, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ requestId, response }),
+    })
+    if (!this.isGenerationActive(generation)) {
+      throw abortError('Remote Pi session disposed before input resolution receipt.')
+    }
+    return parseResolveInputReceipt(raw)
   }
 
   dispose(): void {
@@ -550,6 +567,10 @@ export class RemotePiSession {
     return `${this.apiBaseUrl}/api/v1/agent/pi-chat/${encodeURIComponent(this.options.sessionId)}${path}`
   }
 
+  private agentInputUrl(): string {
+    return `${this.apiBaseUrl}/api/v1/agents/default/sessions/${encodeURIComponent(this.options.sessionId)}/input`
+  }
+
   private dispatchProtocolError(message: string): void {
     if (this.disposed) return
     const error: ChatError = { code: ErrorCode.enum.INTERNAL_ERROR, message, retryable: true }
@@ -681,6 +702,13 @@ function routeErrorCode(body: unknown): string | undefined {
 
 function errorMessage(error: unknown, fallback: string): string {
   return error instanceof Error && error.message ? error.message : fallback
+}
+
+function parseResolveInputReceipt(value: unknown): { accepted: true } {
+  if (typeof value === 'object' && value !== null && (value as { accepted?: unknown }).accepted === true) {
+    return { accepted: true }
+  }
+  throw new Error('Invalid resolve input receipt.')
 }
 
 function readProtocolVersion(value: unknown): unknown {

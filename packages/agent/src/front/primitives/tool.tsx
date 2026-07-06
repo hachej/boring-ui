@@ -58,6 +58,7 @@ export type ToolPart = {
   input?: unknown;
   output?: unknown;
   errorText?: string;
+  approvalRequestId?: string;
 };
 
 export type ToolHeaderProps = {

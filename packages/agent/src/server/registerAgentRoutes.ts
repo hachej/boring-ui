@@ -34,6 +34,7 @@ import { skillsRoutes } from './http/routes/skills'
 import { piChatRoutes, type PiChatSessionService } from './http/routes/piChat'
 import { eventStreamRoutes } from './http/routes/eventStream'
 import { agentSessionsRoutes } from './http/routes/agentSessions'
+import { inputRoutes } from './http/routes/input'
 import { systemPromptRoutes } from './http/routes/systemPrompt'
 import { sessionChangesRoutes } from './http/routes/sessionChanges'
 import { catalogRoutes } from './http/routes/catalog'
@@ -52,6 +53,7 @@ import { createPluginDiagnosticsTool } from './tools/pluginDiagnostics'
 import { createAgentRuntimeBridge } from './createAgent'
 import { openEventStreamStore, type EventStreamStoreHandle } from './events/openEventStreamStore'
 import type { EventStreamStore } from './events/eventStreamStore'
+import { openPendingInputStore, type PendingInputStoreHandle, type PendingInputStore } from './events/pendingRequests'
 
 const DEFAULT_VERSION = '0.1.0-dev'
 const DEFAULT_WORKSPACE_ID = 'default'
@@ -120,7 +122,9 @@ interface RuntimeBinding {
   readyTracker: ReadyStatusTracker
   piChatService: PiChatSessionService
   eventStore: EventStreamStore
+  pendingInputs: PendingInputStore
   closeEventStore: () => void
+  closePendingInputStore: () => void
   lastHealthCheckMs?: number
   /**
    * Diagnostics from the most recent /api/v1/agent/reload (merged hook +
@@ -409,10 +413,25 @@ export const registerAgentRoutes: FastifyPluginAsync<RegisterAgentRoutesOptions>
     return { store: handle.store, close }
   }
 
+  function trackPendingInputStoreHandle(handle: PendingInputStoreHandle): PendingInputStoreHandle {
+    let closed = false
+    const close = () => {
+      if (closed) return
+      closed = true
+      eventStoreClosers.delete(close)
+      handle.close()
+    }
+    eventStoreClosers.add(close)
+    return { store: handle.store, close }
+  }
+
   function closeRuntimeBindingEntry(entry: RuntimeBindingEntry | undefined): void {
     if (!entry) return
     void entry.promise.then(
-      (binding) => binding.closeEventStore(),
+      (binding) => {
+        binding.closeEventStore()
+        binding.closePendingInputStore()
+      },
       () => {},
     )
   }
@@ -741,11 +760,13 @@ let runtimeProvisioning: WorkspaceProvisioningResult | undefined
       sessionNamespace: scope.sessionNamespace,
       sessionRoot: opts.sessionRoot,
     })) as AgentCoreHarnessFactory
-    const eventStoreHandle = trackEventStoreHandle(openEventStreamStore(resolvePiSessionDir(runtimeBundle.workspace.root, {
+    const stateRoot = resolvePiSessionDir(runtimeBundle.workspace.root, {
       sessionNamespace: scope.sessionNamespace,
       sessionRoot: opts.sessionRoot,
       storageCwd: root,
-    })))
+    })
+    const eventStoreHandle = trackEventStoreHandle(openEventStreamStore(stateRoot))
+    const pendingInputStoreHandle = trackPendingInputStoreHandle(openPendingInputStore(stateRoot))
     try {
       const coreAgent = createAgentRuntimeBridge({
         runtime: modeAdapter,
@@ -762,6 +783,7 @@ let runtimeProvisioning: WorkspaceProvisioningResult | undefined
           workdir: runtimeBundle.workspace.root,
           workspace: runtimeBundle.workspace,
           eventStore: eventStoreHandle.store,
+          pendingInputs: pendingInputStoreHandle.store,
         },
       })
       const agentRuntime = await coreAgent.getRuntime()
@@ -784,12 +806,15 @@ let runtimeProvisioning: WorkspaceProvisioningResult | undefined
         readyTracker,
         piChatService: agentRuntime.service as PiChatSessionService,
         eventStore: eventStoreHandle.store,
+        pendingInputs: pendingInputStoreHandle.store,
         closeEventStore: eventStoreHandle.close,
+        closePendingInputStore: pendingInputStoreHandle.close,
       }
       startRuntimeProvisioning(request)
       return binding
     } catch (error) {
       eventStoreHandle.close()
+      pendingInputStoreHandle.close()
       throw error
     }
   }
@@ -1061,7 +1086,7 @@ let runtimeProvisioning: WorkspaceProvisioningResult | undefined
   await app.register(piChatRoutes, {
     getService: async (request) => {
       const binding = await getBindingForRequest(request)
-      return binding.piChatService
+      return legacyPiChatServiceWithAgentLifecycle(binding)
     },
   })
   await app.register(eventStreamRoutes, staticBinding
@@ -1072,6 +1097,10 @@ let runtimeProvisioning: WorkspaceProvisioningResult | undefined
       },
   )
   await app.register(agentSessionsRoutes, staticBinding
+    ? { agent: staticBinding.agent }
+    : { getAgent: async (request) => (await getBindingForRequest(request)).agent },
+  )
+  await app.register(inputRoutes, staticBinding
     ? { agent: staticBinding.agent }
     : { getAgent: async (request) => (await getBindingForRequest(request)).agent },
   )
@@ -1183,4 +1212,40 @@ let runtimeProvisioning: WorkspaceProvisioningResult | undefined
     ? { tracker: staticBinding.readyTracker }
     : { getTracker: async (request) => (await getBindingForRequest(request)).readyTracker },
   )
+}
+
+function legacyPiChatServiceWithAgentLifecycle(binding: RuntimeBinding): PiChatSessionService {
+  const service = binding.piChatService
+  return new Proxy(service, {
+    get(target, property, receiver) {
+      if (property === 'deleteSession') {
+        return async (ctx: Parameters<NonNullable<PiChatSessionService['deleteSession']>>[0], sessionId: string) => {
+          await binding.agent.sessions.delete(toAgentSessionCtx(ctx), sessionId)
+        }
+      }
+      if (property === 'interrupt') {
+        return async (
+          ctx: Parameters<PiChatSessionService['interrupt']>[0],
+          sessionId: string,
+          _payload: Parameters<PiChatSessionService['interrupt']>[2],
+        ) => await binding.agent.interrupt(sessionId, toAgentSessionCtx(ctx)) as Awaited<ReturnType<PiChatSessionService['interrupt']>>
+      }
+      if (property === 'stop') {
+        return async (
+          ctx: Parameters<PiChatSessionService['stop']>[0],
+          sessionId: string,
+          _payload: Parameters<PiChatSessionService['stop']>[2],
+        ) => await binding.agent.stop(sessionId, toAgentSessionCtx(ctx), { closeStream: false }) as Awaited<ReturnType<PiChatSessionService['stop']>>
+      }
+      const value = Reflect.get(target, property, receiver)
+      return typeof value === 'function' ? value.bind(target) : value
+    },
+  })
+}
+
+function toAgentSessionCtx(ctx: Parameters<PiChatSessionService['interrupt']>[0]): { workspaceId?: string; userId?: string } {
+  return {
+    workspaceId: ctx.workspaceId,
+    userId: ctx.authSubject,
+  }
 }

@@ -24,6 +24,28 @@ export type PiChatEvent =
   | { type: 'message-end'; seq: number; messageId: string; final: BoringChatMessage }
   | { type: 'tool-call'; seq: number; messageId: string; toolCallId: string; toolName: string; input: unknown; ui?: ToolUiMetadata }
   | {
+      type: 'data-approval-request'
+      seq: number
+      id: string
+      requestId: string
+      kind: 'approval' | 'input'
+      toolCallId?: string
+      toolName?: string
+      schema?: Record<string, unknown>
+      createdAt?: string
+    }
+  | {
+      type: 'data-approval-resolved'
+      seq: number
+      id: string
+      requestId: string
+      kind: 'approval' | 'input'
+      toolCallId?: string
+      toolName?: string
+      decision?: 'approve' | 'deny'
+      createdAt?: string
+    }
+  | {
       type: 'tool-result'
       seq: number
       messageId: string

@@ -65,10 +65,24 @@ export function sessionStreamPath(sessionId: string): string {
   return `sessions/${sessionId}`
 }
 
-export interface AgentResolveInputResponse {
-  approved?: boolean
-  content?: string
-  value?: unknown
+export type ResolveInputResponse =
+  | { kind: 'approval'; decision: 'approve' | 'deny'; reason?: string }
+  | { kind: 'input'; values: Record<string, unknown> }
+
+export type AgentResolveInputResponse = ResolveInputResponse
+
+export interface PendingInputRequest {
+  sessionId: string
+  requestId: string
+  kind: 'approval' | 'input'
+  toolName?: string
+  toolCallId?: string
+  schema?: Record<string, unknown>
+  createdAt: string
+}
+
+export interface AgentSessions extends SessionStore {
+  pendingInputs(ctx: SessionCtx, opts?: { sessionId?: string }): Promise<PendingInputRequest[]>
 }
 
 export interface AgentRuntimeAdapter {
@@ -105,10 +119,10 @@ export interface Agent {
   start(input: AgentSendInput): Promise<AgentStartReceipt>
   stream(sessionId: string, options: AgentStreamOptions): AsyncIterable<AgentEvent>
   send(input: AgentSendInput): AsyncIterable<AgentEvent>
-  resolveInput(sessionId: string, requestId: string, response: AgentResolveInputResponse): Promise<never>
+  resolveInput(sessionId: string, requestId: string, response: AgentResolveInputResponse, ctx?: SessionCtx): Promise<void>
   interrupt(sessionId: string, ctx?: SessionCtx): Promise<unknown>
-  stop(sessionId: string, ctx?: SessionCtx): Promise<unknown>
-  sessions: SessionStore
+  stop(sessionId: string, ctx?: SessionCtx, opts?: { closeStream?: boolean }): Promise<unknown>
+  sessions: AgentSessions
   readiness: AgentReadiness
   dispose(): Promise<void>
 }

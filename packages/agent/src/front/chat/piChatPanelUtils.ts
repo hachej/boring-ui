@@ -30,12 +30,12 @@ export function shouldHoldLocalSubmitted(session: { getState(): PiChatState } | 
 }
 
 export function isPiBusyStatus(status: PiChatStatus): boolean {
-  return status === 'submitted' || status === 'streaming' || status === 'aborting'
+  return status === 'submitted' || status === 'streaming' || status === 'waiting' || status === 'aborting'
 }
 
 export function toPromptSubmitStatus(status: PiChatStatus): 'ready' | 'submitted' | 'streaming' | 'error' {
   if (status === 'submitted' || status === 'hydrating') return 'submitted'
-  if (status === 'streaming' || status === 'aborting') return 'streaming'
+  if (status === 'streaming' || status === 'waiting' || status === 'aborting') return 'streaming'
   if (status === 'error') return 'error'
   return 'ready'
 }

@@ -13,6 +13,7 @@ import type { PiChatEvent, PiChatStatus } from '../../shared/chat'
 import type { AvailableModel, ModelSelection, ThinkingLevel } from '../chatPanelSettings'
 import { DEFAULT_THINKING } from '../chatPanelSettings'
 import { cn } from '../lib'
+import type { ResolveApprovalHandler } from '../primitives/tool-call-group'
 import { defaultChatSuggestions, type ChatSuggestion } from '../ChatEmptyState'
 import type { SlashCommand } from '../slashCommands'
 import { builtinCommands, createCommandRegistry } from '../slashCommands'
@@ -780,6 +781,24 @@ export function PiChatPanel<
     })
   }, [addLocalNotice, dropLocalNotice])
 
+  const resolveApproval = useCallback<ResolveApprovalHandler>(async (requestId, decision) => {
+    if (!selectedPiSession) return
+    const noticeId = `approval:${requestId}:error`
+    try {
+      await selectedPiSession.resolveInput(requestId, { kind: 'approval', decision })
+      dropLocalNotice(noticeId)
+    } catch (error) {
+      const errorCode = piChatErrorCode(error)
+      addLocalNotice({
+        id: noticeId,
+        level: 'error',
+        text: errorMessage(error, 'Could not resolve approval.'),
+        dismissible: true,
+        ...(errorCode ? { errorCode } : {}),
+      })
+    }
+  }, [addLocalNotice, dropLocalNotice, selectedPiSession])
+
   const sendComposerMessage = useCallback(async ({ text, files, source = 'composer' }: ComposerSendPayload) => {
     if (!policy) {
       addLocalNotice({ id: 'composer-no-session', level: 'warning', text: 'Create or select a chat session before sending.', dismissible: true })
@@ -1054,6 +1073,7 @@ export function PiChatPanel<
               isStreaming={isStreaming}
               showThoughts={showThoughts}
               toolRenderers={mergedToolRenderers}
+              onResolveApproval={resolveApproval}
               runtimeNotices={runtimeNotices}
               onDismissNotice={clearLocalNotice}
               renderNoticeAction={renderNoticeAction}

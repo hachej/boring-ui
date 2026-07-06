@@ -780,6 +780,38 @@ test('standalone /api/v1/ui/state does NOT exist (404)', async () => {
   }
 })
 
+test('standalone createAgentApp exposes canonical pending input route', async () => {
+  const workspaceRoot = await makeTempDir('boring-agent-input-route-')
+  const app = await createAgentApp({
+    workspaceRoot,
+    mode: 'direct',
+    logger: false,
+    harnessFactory: async () => ({
+      id: 'input-route-harness',
+      placement: 'server' as const,
+      sessions: {
+        async list() { return [] },
+        async create() { const now = new Date().toISOString(); return { id: 's', title: 'S', createdAt: now, updatedAt: now, turnCount: 0 } },
+        async load(_ctx, id) { const now = new Date().toISOString(); return { id, title: id, createdAt: now, updatedAt: now, turnCount: 0, messages: [] } },
+        async delete() {},
+      },
+      async *sendMessage() {},
+    }),
+  })
+
+  try {
+    const res = await app.inject({
+      method: 'GET',
+      url: '/api/v1/agents/default/pending-inputs',
+    })
+
+    expect(res.statusCode).toBe(200)
+    expect(res.json()).toEqual([])
+  } finally {
+    await app.close()
+  }
+})
+
 
 test('POST /api/v1/agent/reload is available before first turn', async () => {
   const workspaceRoot = await makeTempDir('boring-ui-reload-route-')

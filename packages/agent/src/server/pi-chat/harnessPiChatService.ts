@@ -2,9 +2,11 @@ import type { AgentHarness, RunContext, AgentSendInput } from '../../shared/harn
 import type { SessionCtx, SessionListOptions, SessionStore } from '../../shared/session'
 import type { Workspace } from '../../shared/workspace'
 import type { BoringChatMessage, BoringChatPart, ChatError, FollowUpPayload, FollowUpReceipt, InterruptPayload, PiChatEvent, PiChatSnapshot, PromptPayload, PromptReceipt, QueuedUserMessage, QueueClearPayload, QueueClearReceipt, StopPayload, StopReceipt } from '../../shared/chat'
-import { sessionStreamPath, type AgentEvent } from '../../shared/events'
+import { sessionStreamPath, type AgentEvent, type PendingInputRequest, type ResolveInputResponse } from '../../shared/events'
 import { ErrorCode } from '../../shared/error-codes'
 import { formatOffset, parseOffset, type EventStreamStore } from '../events/eventStreamStore'
+import type { PendingInputRecord, PendingInputStore } from '../events/pendingRequests'
+import type { ToolResult } from '../../shared/tool'
 import type { PiChatSessionService, PiChatEventSubscriber, PiChatEventStreamResult } from '../http/routes/piChat'
 import type { PiSessionCreateInit, PiSessionRequestContext } from './piSessionIdentity'
 import type { PiAgentPromptInput, PiAgentSessionAdapter } from './PiAgentSessionAdapter'
@@ -55,6 +57,7 @@ export interface HarnessPiChatServiceOptions {
   workdir: string
   workspace?: Workspace
   eventStore?: EventStreamStore
+  pendingInputs?: PendingInputStore
   /**
    * Optional host billing sink. When set, accepted prompts/follow-ups reserve
    * before execution (a rejecting sink blocks the request), native assistant
@@ -72,6 +75,7 @@ export class HarnessPiChatService implements PiChatSessionService {
   private readonly workdir: string
   private readonly workspace?: Workspace
   private readonly eventStore?: EventStreamStore
+  private readonly pendingInputs?: PendingInputStore
   private readonly channels = new Map<string, LiveSessionChannel>()
   // Single-flight guard so concurrent cold callers (e.g. two browser tabs each
   // opening /events while the session is still being created) converge on one
@@ -90,6 +94,7 @@ export class HarnessPiChatService implements PiChatSessionService {
     this.workdir = options.workdir
     this.workspace = options.workspace
     this.eventStore = options.eventStore
+    this.pendingInputs = options.pendingInputs
     this.metering = options.metering
       ? new PiChatMeteringCoordinator(options.metering, options.meteringLogger)
       : undefined
@@ -130,6 +135,7 @@ export class HarnessPiChatService implements PiChatSessionService {
     channel?.unsubscribe()
     this.channels.delete(sessionKey)
     await this.sessionStore.delete(sessionCtx, sessionId)
+    await this.pendingInputs?.clearSession(sessionCtx, sessionId)
     await this.eventStore?.closeStream(channel?.streamPath ?? sessionStreamPath(sessionId))
     this.metering?.releaseSession(sessionKey)
     this.messageMetadata.clearSession(sessionKey)
@@ -146,13 +152,16 @@ export class HarnessPiChatService implements PiChatSessionService {
     }
 
     const adapter = await this.getAdapter(ctx, sessionId, '')
+    const pendingInputs = await this.pendingInputsFor(ctx, sessionId)
+    const latestSeq = channel?.buffer.latestSeq ?? 0
     const snapshot = this.messageMetadata.enrichSnapshot(sessionKey, buildPiChatSnapshot(adapter, {
-      seq: channel?.buffer.latestSeq ?? 0,
+      seq: latestSeq,
       sessionId,
       activeTurnId: channel?.activeTurnId,
       messageTurnIds: channel?.messageTurnIds,
+      ...(pendingInputs.length > 0 ? { status: 'waiting' as const } : {}),
     }))
-    return this.enrichSyntheticPromptFailures(sessionKey, snapshot)
+    return this.enrichSyntheticPromptFailures(sessionKey, applyPendingInputsToSnapshot(snapshot, pendingInputs))
   }
 
   private harnessMayHaveLiveSession(ctx: PiSessionRequestContext, sessionId: string): boolean {
@@ -165,12 +174,14 @@ export class HarnessPiChatService implements PiChatSessionService {
     if (!this.sessionStore.loadEntries) return null
     try {
       const { id, messages } = await this.sessionStore.loadEntries(toSessionCtx(ctx), sessionId)
+      const latestSeq = await this.readDurableLatestPiChatSeq(sessionStreamPath(id))
+      const pendingInputs = await this.pendingInputsFor(ctx, id)
       return {
         protocolVersion: 1,
         sessionId: id,
-        seq: await this.readDurableLatestPiChatSeq(sessionStreamPath(id)),
-        status: 'idle',
-        messages: buildPiChatHistory(messages, { sessionId: id }),
+        seq: latestSeq,
+        status: pendingInputs.length > 0 ? 'waiting' : 'idle',
+        messages: applyPendingInputsToMessages(buildPiChatHistory(messages, { sessionId: id }), pendingInputs),
         queue: { followUps: [] },
         followUpMode: 'one-at-a-time',
       }
@@ -309,6 +320,7 @@ export class HarnessPiChatService implements PiChatSessionService {
     const nextFollowUp = wasActive ? this.nextFollowUpForInterrupt(sessionId, sessionKey, adapter) : undefined
     const activeRun = this.activePromptRuns.get(sessionKey)
     adapter.abortRetry?.()
+    await this.clearPendingInputsAsAborted(ctx, sessionId)
     if (wasActive) await adapter.abort()
     await this.drainPublishQueue(this.channels.get(sessionKey))
     await activeRun?.catch(() => {})
@@ -329,9 +341,128 @@ export class HarnessPiChatService implements PiChatSessionService {
     // hold the user's balance until TTL.
     this.metering?.releaseQueued(sessionKey)
     this.metering?.releasePending(sessionKey)
+    await this.clearPendingInputsAsAborted(ctx, sessionId)
     await adapter.abort()
     await this.drainPublishQueue(this.channels.get(sessionKey))
     return { accepted: true, stopped: true, cursor: this.channels.get(sessionKey)?.buffer.latestSeq ?? 0, clearedQueue: buildPiChatQueuedFollowUps(sessionId, clearedQueue) }
+  }
+
+  async publishApprovalRequest(ctx: PiSessionRequestContext, sessionId: string, request: PendingInputRequest): Promise<void> {
+    const channel = await this.getChannel(ctx, sessionId)
+    if (!await this.pendingInputs?.get(sessionId, request.requestId)) return
+    this.publishChannelEvents(sessionId, channel, [
+      channel.mapper.mapSynthetic({
+        type: 'data-approval-request',
+        id: request.requestId,
+        requestId: request.requestId,
+        kind: request.kind,
+        toolCallId: request.toolCallId,
+        toolName: request.toolName,
+        schema: request.schema,
+        createdAt: request.createdAt,
+      }),
+    ])
+    await this.drainPublishQueue(channel)
+  }
+
+  async publishApprovalResolved(
+    ctx: PiSessionRequestContext,
+    sessionId: string,
+    request: PendingInputRequest,
+    response: ResolveInputResponse,
+  ): Promise<void> {
+    const channel = await this.getChannel(ctx, sessionId)
+    this.publishChannelEvents(sessionId, channel, [
+      channel.mapper.mapSynthetic({
+        type: 'data-approval-resolved',
+        id: request.requestId,
+        requestId: request.requestId,
+        kind: request.kind,
+        toolCallId: request.toolCallId,
+        toolName: request.toolName,
+        decision: response.kind === 'approval' ? response.decision : undefined,
+        createdAt: new Date().toISOString(),
+      }),
+    ])
+    await this.drainPublishQueue(channel)
+  }
+
+  async continueResolvedInput(
+    ctx: PiSessionRequestContext,
+    sessionId: string,
+    request: PendingInputRequest,
+    response: ResolveInputResponse,
+    toolResult?: ToolResult,
+    abortSignal?: AbortSignal,
+  ): Promise<void> {
+    if (!this.harness.seedResolvedInput) return
+    if (abortSignal?.aborted) throw promptCancelledError()
+    await this.harness.seedResolvedInput(sessionId, runContextFromRequest(ctx, this.workdir), { request, response, toolResult })
+    if (abortSignal?.aborted) throw promptCancelledError()
+    const sessionKey = this.sessionKey(ctx, sessionId)
+    const adapter = await this.getAdapter(ctx, sessionId, '')
+    const channel = await this.ensureChannel(ctx, sessionId, adapter)
+    await this.publishResolvedInputToolResult(sessionId, channel, request, toolResult)
+    if (abortSignal?.aborted) throw promptCancelledError()
+    const meteringClientNonce = `resolved-input:${request.requestId}`
+    const meteringMessage = formatResolvedInputForPrompt(response)
+    const outcome = (await this.metering?.reservePrompt({
+      workspaceId: ctx.workspaceId,
+      userId: ctx.authSubject,
+      userEmail: ctx.authEmail,
+      userEmailVerified: ctx.authEmailVerified,
+      sessionId,
+      stateKey: sessionKey,
+      clientNonce: meteringClientNonce,
+      message: meteringMessage,
+      model: adapter.currentModel?.(),
+    })) ?? 'created'
+    if (outcome === 'duplicate') return
+    if (outcome === 'cancelled') throw promptCancelledError()
+    if (abortSignal?.aborted) throw promptCancelledError()
+    const run = adapter.continueQueuedFollowUp
+      ? adapter.continueQueuedFollowUp()
+      : adapter.prompt(meteringMessage)
+    const tracked = this.trackActiveRun(sessionKey, this.runAndDrainPublishQueue(channel, run))
+    tracked.catch((error) => {
+      this.metering?.failPromptRun(sessionId, meteringClientNonce, sessionKey)
+      this.publishResolvedInputRunError(sessionId, channel, error)
+    })
+  }
+
+  canContinueResolvedInput(): boolean {
+    return Boolean(this.harness.seedResolvedInput)
+  }
+
+  async publishResolvedInputRecoveryError(ctx: PiSessionRequestContext, sessionId: string, error: unknown): Promise<void> {
+    const channel = await this.getChannel(ctx, sessionId)
+    this.publishResolvedInputRunError(sessionId, channel, error)
+    await this.drainPublishQueue(channel)
+  }
+
+  private async publishResolvedInputToolResult(
+    sessionId: string,
+    channel: LiveSessionChannel,
+    request: PendingInputRequest,
+    toolResult: ToolResult | undefined,
+  ): Promise<void> {
+    if (!toolResult || !request.toolCallId) return
+    this.publishChannelEvents(sessionId, channel, [
+      ...extractToolResultFileChanges(toolResult).map((fileChange) => channel.mapper.mapSynthetic({
+        type: 'file-changed' as const,
+        path: fileChange.path,
+        changeType: fileChange.op,
+      })),
+      channel.mapper.mapSynthetic({
+        type: 'tool-result',
+        messageId: `recovered-tool:${request.requestId}`,
+        toolCallId: request.toolCallId,
+        output: toolResult,
+        isError: toolResult.isError === true,
+        errorText: toolResult.isError === true ? toolResultErrorText(toolResult) : undefined,
+      }),
+    ])
+    await this.drainPublishQueue(channel)
   }
 
   private clearAllFollowUps(adapter: PiAgentSessionAdapter, sessionId: string, sessionKey: string): string[] {
@@ -522,6 +653,24 @@ export class HarnessPiChatService implements PiChatSessionService {
     })
   }
 
+  private publishResolvedInputRunError(sessionId: string, channel: LiveSessionChannel | undefined, error: unknown): void {
+    if (!channel) return
+    this.publishChannelEvents(sessionId, channel, [
+      channel.mapper.mapSynthetic({
+        type: 'error',
+        turnId: channel.activeTurnId,
+        retryable: false,
+        error: {
+          code: ErrorCode.enum.INTERNAL_ERROR,
+          message: error instanceof Error && error.message ? error.message : 'Resolved input continuation failed.',
+          retryable: false,
+        },
+      }),
+    ], () => {
+      channel.activeTurnId = undefined
+    })
+  }
+
   private async runAndDrainPublishQueue(channel: LiveSessionChannel | undefined, run: Promise<void>): Promise<void> {
     let runError: unknown
     try {
@@ -676,6 +825,52 @@ export class HarnessPiChatService implements PiChatSessionService {
     return sessionCacheKey(sessionId, toSessionCtx(ctx))
   }
 
+  private async pendingInputsFor(ctx: PiSessionRequestContext, sessionId: string): Promise<PendingInputRequest[]> {
+    return await this.pendingInputs?.list(toSessionCtx(ctx), { sessionId }) ?? []
+  }
+
+  private async clearPendingInputsAsAborted(ctx: PiSessionRequestContext, sessionId: string): Promise<void> {
+    const pending = await this.pendingInputs?.list(toSessionCtx(ctx), { sessionId }) ?? []
+    for (const request of pending) {
+      const record = await this.pendingInputs?.resolve(sessionId, request.requestId)
+      if (!record) continue
+      const pendingRequest = pendingInputRequestFromRecord(record)
+      const response = abortedInputResponse(record)
+      const toolResult = record.kind === 'approval' && record.toolCallId ? abortedApprovalToolResult() : undefined
+      try {
+        if (this.harness.seedResolvedInput) {
+          await this.harness.seedResolvedInput(sessionId, runContextFromRequest(ctx, this.workdir), {
+            request: pendingRequest,
+            response,
+            toolResult,
+          })
+        }
+        await this.publishApprovalResolved(ctx, sessionId, pendingRequest, response)
+        const channel = await this.getChannel(ctx, sessionId)
+        await this.publishResolvedInputToolResult(sessionId, channel, pendingRequest, toolResult)
+        await this.publishResolvedInputAbortEnd(sessionId, channel, pendingRequest)
+      } catch (error) {
+        await this.pendingInputs?.create(record)
+        throw error
+      }
+    }
+  }
+
+  private async publishResolvedInputAbortEnd(
+    sessionId: string,
+    channel: LiveSessionChannel,
+    request: PendingInputRequest,
+  ): Promise<void> {
+    this.publishChannelEvents(sessionId, channel, [
+      channel.mapper.mapSynthetic({
+        type: 'agent-end',
+        turnId: channel.activeTurnId ?? request.toolCallId ?? request.requestId,
+        status: 'aborted',
+      }),
+    ])
+    await this.drainPublishQueue(channel)
+  }
+
 }
 
 class AutoPostFollowUpError extends Error {}
@@ -763,6 +958,40 @@ function mergeSyntheticMessages(messages: BoringChatMessage[], syntheticMessages
     else merged.splice(insertAt, 0, synthetic)
   }
   return merged
+}
+
+function applyPendingInputsToSnapshot(snapshot: PiChatSnapshot, pendingInputs: PendingInputRequest[]): PiChatSnapshot {
+  if (pendingInputs.length === 0) return snapshot
+  return {
+    ...snapshot,
+    messages: applyPendingInputsToMessages(snapshot.messages, pendingInputs),
+  }
+}
+
+function applyPendingInputsToMessages(messages: BoringChatMessage[], pendingInputs: PendingInputRequest[]): BoringChatMessage[] {
+  if (pendingInputs.length === 0) return messages
+  const byToolCallId = new Map(pendingInputs
+    .filter((input) => input.toolCallId)
+    .map((input) => [input.toolCallId as string, input]))
+  if (byToolCallId.size === 0) return messages
+  let changed = false
+  const nextMessages = messages.map((message) => {
+    let messageChanged = false
+    const parts = message.parts.map((part) => {
+      if (part.type !== 'tool-call') return part
+      const pending = byToolCallId.get(part.id)
+      if (!pending) return part
+      changed = true
+      messageChanged = true
+      return {
+        ...part,
+        state: 'approval-requested' as const,
+        approvalRequestId: pending.requestId,
+      }
+    })
+    return messageChanged ? { ...message, parts } : message
+  })
+  return changed ? nextMessages : messages
 }
 
 function messageTime(message: BoringChatMessage): number | undefined {
@@ -858,6 +1087,95 @@ function removedFollowUps(before: readonly string[], after: readonly string[]): 
 
 function toSessionCtx(ctx: PiSessionRequestContext) {
   return { workspaceId: ctx.workspaceId, userId: ctx.authSubject }
+}
+
+function runContextFromRequest(ctx: PiSessionRequestContext, workdir: string): RunContext {
+  return {
+    abortSignal: new AbortController().signal,
+    workdir,
+    workspaceId: ctx.workspaceId,
+    requestId: ctx.requestId,
+    userId: ctx.authSubject,
+    userEmail: ctx.authEmail,
+    userEmailVerified: ctx.authEmailVerified,
+  }
+}
+
+function formatResolvedInputForPrompt(response: ResolveInputResponse): string {
+  if (response.kind === 'approval') {
+    if (response.decision === 'approve') return 'The pending tool request was approved. Continue from the approved tool result.'
+    return response.reason
+      ? `The pending tool request was denied: ${response.reason}`
+      : 'The pending tool request was denied.'
+  }
+  return `The pending input request was answered: ${JSON.stringify(response.values)}`
+}
+
+function toolResultErrorText(result: ToolResult): string | undefined {
+  const text = result.content
+    .map((part) => part.type === 'text' ? part.text : '')
+    .filter(Boolean)
+    .join('\n')
+  return text || undefined
+}
+
+type ToolResultFileChangeOp = 'write' | 'edit' | 'unlink' | 'rename' | 'mkdir'
+
+interface ToolResultFileChange {
+  op: ToolResultFileChangeOp
+  path: string
+}
+
+const TOOL_RESULT_FILE_CHANGE_OPS = new Set<ToolResultFileChangeOp>(['write', 'edit', 'unlink', 'rename', 'mkdir'])
+
+function extractToolResultFileChanges(result: ToolResult): ToolResultFileChange[] {
+  if (!isRecord(result.details)) return []
+  const entries = result.details.fileChanges
+  if (Array.isArray(entries)) return entries.map(normalizeToolResultFileChange).filter((entry): entry is ToolResultFileChange => entry !== null)
+  const single = normalizeToolResultFileChange(result.details.fileChange)
+  return single ? [single] : []
+}
+
+function normalizeToolResultFileChange(value: unknown): ToolResultFileChange | null {
+  if (!isRecord(value)) return null
+  const op = value.op
+  const path = value.path
+  if (typeof op !== 'string' || !TOOL_RESULT_FILE_CHANGE_OPS.has(op as ToolResultFileChangeOp)) return null
+  if (typeof path !== 'string' || path.length === 0) return null
+  return { op: op as ToolResultFileChangeOp, path }
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value && typeof value === 'object' && !Array.isArray(value))
+}
+
+function pendingInputRequestFromRecord(record: PendingInputRecord): PendingInputRequest {
+  return {
+    sessionId: record.sessionId,
+    requestId: record.requestId,
+    kind: record.kind,
+    ...(record.toolName ? { toolName: record.toolName } : {}),
+    ...(record.toolCallId ? { toolCallId: record.toolCallId } : {}),
+    ...(record.schema ? { schema: record.schema } : {}),
+    createdAt: record.createdAt,
+  }
+}
+
+function abortedInputResponse(record: PendingInputRecord): ResolveInputResponse {
+  if (record.kind === 'approval') return { kind: 'approval', decision: 'deny', reason: 'aborted' }
+  return { kind: 'input', values: { aborted: true } }
+}
+
+function abortedApprovalToolResult(): ToolResult {
+  return {
+    content: [{ type: 'text', text: 'Denied by user: aborted' }],
+    isError: true,
+    details: {
+      code: ErrorCode.enum.ABORTED,
+      reason: 'aborted',
+      boringApprovalDenied: true,
+    },
+  }
 }
 
 function sessionCacheKey(sessionId: string, ctx: SessionCtx): string {

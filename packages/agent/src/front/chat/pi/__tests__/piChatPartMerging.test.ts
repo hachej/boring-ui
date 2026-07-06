@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import type { BoringChatPart } from '../../../../shared/chat'
-import { mergeFinalMessageParts } from '../piChatPartMerging'
+import { isToolPending, mergeFinalMessageParts, mergeToolResultPart } from '../piChatPartMerging'
 
 const text = (id: string, value: string): BoringChatPart => ({ type: 'text', id, text: value })
 const tool = (id: string, name: string): BoringChatPart => ({
@@ -66,5 +66,97 @@ describe('mergeFinalMessageParts ordering', () => {
     const merged = mergeFinalMessageParts(seq, seq)
     // Not collapsed into [reasoning, reasoning, tool, tool].
     expect(merged.map((part) => part.id)).toEqual(['think1', 'a', 'think2', 'b'])
+  })
+
+  it('preserves pending approval request ids when the final snapshot merges the same tool', () => {
+    const existing: BoringChatPart[] = [{
+      type: 'tool-call',
+      id: 'tool-1',
+      toolName: 'bash',
+      state: 'approval-requested',
+      approvalRequestId: 'approval-1',
+      input: { command: 'deploy' },
+    }]
+    const final: BoringChatPart[] = [{
+      type: 'tool-call',
+      id: 'tool-1',
+      toolName: 'bash',
+      state: 'input-available',
+      input: { command: 'deploy' },
+    }]
+
+    const [merged] = mergeFinalMessageParts(existing, final)
+
+    expect(merged).toMatchObject({
+      type: 'tool-call',
+      id: 'tool-1',
+      state: 'approval-requested',
+      approvalRequestId: 'approval-1',
+    })
+  })
+
+  it('treats approval states as pending until a terminal tool result arrives', () => {
+    expect(isToolPending({
+      type: 'tool-call',
+      id: 'tool-1',
+      toolName: 'bash',
+      state: 'approval-requested',
+      approvalRequestId: 'approval-1',
+    })).toBe(true)
+    expect(isToolPending({
+      type: 'tool-call',
+      id: 'tool-1',
+      toolName: 'bash',
+      state: 'approval-responded',
+    })).toBe(true)
+  })
+})
+
+describe('mergeToolResultPart', () => {
+  it('preserves denied approval state when the denied tool-result arrives', () => {
+    const denied: Extract<BoringChatPart, { type: 'tool-call' }> = {
+      type: 'tool-call',
+      id: 'tool-1',
+      toolName: 'bash',
+      state: 'output-denied',
+    }
+
+    const merged = mergeToolResultPart(denied, {
+      type: 'tool-result',
+      seq: 3,
+      messageId: 'assistant-1',
+      toolCallId: 'tool-1',
+      output: { content: [{ type: 'text', text: 'Denied by user.' }] },
+      isError: true,
+      errorText: 'Denied by user.',
+    })
+
+    expect(merged.state).toBe('output-denied')
+    expect(merged.errorText).toBe('Denied by user.')
+  })
+
+  it('maps marked denied approval results to output-denied after reconnect', () => {
+    const pending: Extract<BoringChatPart, { type: 'tool-call' }> = {
+      type: 'tool-call',
+      id: 'tool-1',
+      toolName: 'bash',
+      state: 'input-available',
+    }
+
+    const merged = mergeToolResultPart(pending, {
+      type: 'tool-result',
+      seq: 3,
+      messageId: 'assistant-1',
+      toolCallId: 'tool-1',
+      output: {
+        content: [{ type: 'text', text: 'Denied by user.' }],
+        details: { boringApprovalDenied: true },
+      },
+      isError: true,
+      errorText: 'Denied by user.',
+    })
+
+    expect(merged.state).toBe('output-denied')
+    expect(merged.errorText).toBe('Denied by user.')
   })
 })

@@ -40,7 +40,7 @@ describe('ToolCallGroup renderer metadata', () => {
     expect(html).not.toContain('Running 0s')
   })
 
-  test.each(['output-denied', 'approval-responded'] as const)('marks %s groups settled', (state) => {
+  test.each(['output-denied'] as const)('marks %s groups settled', (state) => {
     const part = toolPart({ state })
 
     const html = renderToStaticMarkup(
@@ -50,6 +50,18 @@ describe('ToolCallGroup renderer metadata', () => {
     expect(html).toContain('data-boring-agent-tool-state="settled"')
     expect(html).not.toContain('data-boring-agent-tool-state="running"')
     expect(html).not.toContain('Running 0s')
+  })
+
+  test('keeps approved tools running until a terminal result arrives', () => {
+    const part = toolPart({ state: 'approval-responded' })
+
+    const html = renderToStaticMarkup(
+      <ToolCallGroup tools={[{ part: part as any, key: 'call-1' }]} mergedToolRenderers={{}} />,
+    )
+
+    expect(html).toContain('data-boring-agent-tool-state="running"')
+    expect(html).toContain('Running')
+    expect(html).not.toContain('data-boring-agent-tool-state="settled"')
   })
 
   test('marks aborted groups separately from used tools', () => {

@@ -9,6 +9,24 @@ export function mergeToolResultPart(
   event: Extract<PiChatEvent, { type: 'tool-result' }>,
 ): Extract<BoringChatPart, { type: 'tool-call' }> {
   if (part.state === 'aborted') return { ...part, ui: mergeToolUiMetadata(part.ui, event.ui) }
+  if (isApprovalDeniedToolResult(event)) {
+    return {
+      ...part,
+      state: 'output-denied',
+      output: chooseMergedToolValue(part.output, event.output, false),
+      errorText: chooseMergedToolValue(part.errorText, event.errorText, false),
+      ui: mergeToolUiMetadata(part.ui, event.ui),
+    }
+  }
+  if (part.state === 'output-denied') {
+    if (!event.isError) return { ...part, ui: mergeToolUiMetadata(part.ui, event.ui) }
+    return {
+      ...part,
+      output: chooseMergedToolValue(part.output, event.output, false),
+      errorText: chooseMergedToolValue(part.errorText, event.errorText, false),
+      ui: mergeToolUiMetadata(part.ui, event.ui),
+    }
+  }
   if (part.state === 'output-error') {
     if (!event.isError) return { ...part, ui: mergeToolUiMetadata(part.ui, event.ui) }
     return {
@@ -26,6 +44,12 @@ export function mergeToolResultPart(
     errorText: event.isError ? chooseMergedToolValue(part.errorText, event.errorText, false) : part.errorText,
     ui: mergeToolUiMetadata(part.ui, event.ui),
   }
+}
+
+function isApprovalDeniedToolResult(event: Extract<PiChatEvent, { type: 'tool-result' }>): boolean {
+  if (!event.isError || !event.output || typeof event.output !== 'object' || Array.isArray(event.output)) return false
+  const details = (event.output as { details?: unknown }).details
+  return Boolean(details && typeof details === 'object' && !Array.isArray(details) && (details as { boringApprovalDenied?: unknown }).boringApprovalDenied === true)
 }
 
 export function preservedFinalMessageStatus(
@@ -381,9 +405,16 @@ function mergeMatchingFinalPart(existingPart: BoringChatPart, finalPart: BoringC
     input: chooseMergedToolValue(existingPart.input, finalPart.input, false),
     output: chooseMergedToolValue(existingPart.output, finalPart.output, preserveExisting),
     errorText: chooseMergedToolValue(existingPart.errorText, finalPart.errorText, preserveExisting),
+    approvalRequestId: finalPart.approvalRequestId ?? existingPart.approvalRequestId,
     ui: mergeToolUiMetadata(existingPart.ui, finalPart.ui),
   })
-  if (isToolPending(existingPart)) return mergeToolMetadata(false)
+  if (isToolPending(existingPart)) {
+    const merged = mergeToolMetadata(false)
+    return {
+      ...merged,
+      state: shouldPreserveExistingApprovalState(existingPart, finalPart) ? existingPart.state : merged.state,
+    }
+  }
   if (!isToolPending(existingPart)) {
     const existingHasResultPayload = existingPart.output !== undefined || existingPart.errorText !== undefined
     const finalHasResultPayload = finalPart.output !== undefined || finalPart.errorText !== undefined
@@ -407,6 +438,13 @@ function chooseMergedToolValue<T>(existingValue: T | undefined, finalValue: T | 
   if (existingValue === undefined) return finalValue
   if (finalValue === undefined) return existingValue
   return payloadRichness(finalValue) > payloadRichness(existingValue) ? finalValue : existingValue
+}
+
+function shouldPreserveExistingApprovalState(
+  existingPart: Extract<BoringChatPart, { type: 'tool-call' }>,
+  finalPart: Extract<BoringChatPart, { type: 'tool-call' }>,
+): boolean {
+  return (existingPart.state === 'approval-requested' || existingPart.state === 'approval-responded') && isToolPending(finalPart)
 }
 
 function chooseMergedToolName(existingValue: string, finalValue: string): string {
@@ -488,5 +526,8 @@ function finalizePreservedPart(part: BoringChatPart): BoringChatPart {
 }
 
 export function isToolPending(part: Extract<BoringChatPart, { type: 'tool-call' }>): boolean {
-  return part.state === 'input-streaming' || part.state === 'input-available'
+  return part.state === 'input-streaming' ||
+    part.state === 'input-available' ||
+    part.state === 'approval-requested' ||
+    part.state === 'approval-responded'
 }

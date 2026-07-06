@@ -13,6 +13,7 @@ export interface AgentTool {
   /** Optional one-line prompt entry. Pi-built tools should preserve pi's snippet verbatim. */
   promptSnippet?: string
   readinessRequirements?: ToolReadinessRequirement[]
+  needsApproval?: boolean | ((params: Record<string, unknown>, ctx: ToolExecContext) => boolean | Promise<boolean>)
   parameters: JSONSchema
   execute(
     params: Record<string, unknown>,

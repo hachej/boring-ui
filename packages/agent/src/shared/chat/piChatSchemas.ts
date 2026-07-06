@@ -72,9 +72,10 @@ export const BoringChatPartSchema: z.ZodType<BoringChatPart, z.ZodTypeDef, unkno
     id: nonEmptyString,
     toolName: nonEmptyString,
     input: z.unknown().optional(),
-    state: z.enum(['input-streaming', 'input-available', 'output-available', 'output-error', 'aborted']),
+    state: z.enum(['input-streaming', 'input-available', 'approval-requested', 'approval-responded', 'output-available', 'output-denied', 'output-error', 'aborted']),
     output: z.unknown().optional(),
     errorText: z.string().optional(),
+    approvalRequestId: z.string().optional(),
     ui: OptionalToolUiMetadataSchema,
   }),
   z.object({
@@ -115,7 +116,7 @@ export const QueuedUserMessageSchema = z.object({
   createdAt: z.string().optional(),
 }) satisfies z.ZodType<QueuedUserMessage>
 
-export const PiChatStatusSchema = z.enum(['idle', 'hydrating', 'submitted', 'streaming', 'aborting', 'error'])
+export const PiChatStatusSchema = z.enum(['idle', 'hydrating', 'submitted', 'streaming', 'waiting', 'aborting', 'error'])
 
 export const PiChatSnapshotSchema = z.object({
   protocolVersion: z.literal(1),
@@ -166,6 +167,26 @@ export const PiChatEventSchema = z.discriminatedUnion('type', [
     toolName: nonEmptyString,
     input: ShallowPayloadSchema,
     ui: OptionalToolUiMetadataSchema,
+  }),
+  baseEvent.extend({
+    type: z.literal('data-approval-request'),
+    id: nonEmptyString,
+    requestId: nonEmptyString,
+    kind: z.enum(['approval', 'input']),
+    toolCallId: z.string().optional(),
+    toolName: z.string().optional(),
+    schema: z.record(z.unknown()).optional(),
+    createdAt: z.string().optional(),
+  }),
+  baseEvent.extend({
+    type: z.literal('data-approval-resolved'),
+    id: nonEmptyString,
+    requestId: nonEmptyString,
+    kind: z.enum(['approval', 'input']),
+    toolCallId: z.string().optional(),
+    toolName: z.string().optional(),
+    decision: z.enum(['approve', 'deny']).optional(),
+    createdAt: z.string().optional(),
   }),
   baseEvent.extend({
     type: z.literal('tool-result'),

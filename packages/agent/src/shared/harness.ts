@@ -1,7 +1,7 @@
 import type { SessionStore } from './session'
 import type { TelemetrySink } from './telemetry'
-import type { AgentTool } from './tool'
-import type { AgentSendInput, MessageAttachment } from './events'
+import type { AgentTool, ToolResult } from './tool'
+import type { AgentSendInput, MessageAttachment, PendingInputRequest, ResolveInputResponse } from './events'
 import type { AgentSessionEvent, PromptOptions } from '@mariozechner/pi-coding-agent'
 
 export interface AgentHarnessFactoryInput {
@@ -89,6 +89,17 @@ export interface AgentHarness {
 
   /** List slash commands registered in the agent runtime for a given session. */
   getSlashCommands?: (sessionId: string, ctx: RunContext) => ReadonlyArray<AgentSlashCommandSummary> | Promise<ReadonlyArray<AgentSlashCommandSummary>>
+
+  /**
+   * Seed a resolved input/approval as a tool-result in the persisted native
+   * conversation before a new continuation turn. This is only for restart
+   * recovery; live parked turns resume through their in-memory waiter.
+   */
+  seedResolvedInput?: (sessionId: string, ctx: RunContext, input: {
+    request: PendingInputRequest
+    response: ResolveInputResponse
+    toolResult?: ToolResult
+  }) => Promise<void>
 
   /**
    * Execute a named slash command registered via `pi.registerCommand` in a

@@ -337,6 +337,10 @@ function reduceEvent(state: PiChatState, event: PiChatEvent): PiChatState {
       return commitFinalMessage(state, event.messageId, event.final)
     case 'tool-call':
       return applyToolCall(state, event)
+    case 'data-approval-request':
+      return applyApprovalRequest(state, event)
+    case 'data-approval-resolved':
+      return applyApprovalResolved(state, event)
     case 'tool-result':
       return applyToolResult(state, event)
     case 'queue-updated': {
@@ -391,6 +395,27 @@ function reduceEvent(state: PiChatState, event: PiChatEvent): PiChatState {
     case 'usage':
       return state
   }
+}
+
+function applyApprovalRequest(state: PiChatState, event: Extract<PiChatEvent, { type: 'data-approval-request' }>): PiChatState {
+  const waitingState = { ...state, status: 'waiting' as PiChatStatus }
+  if (!event.toolCallId) return waitingState
+  return updateApprovalToolPart(waitingState, event.toolCallId, (part) => ({
+    ...part,
+    state: 'approval-requested',
+    approvalRequestId: event.requestId,
+  }))
+}
+
+function applyApprovalResolved(state: PiChatState, event: Extract<PiChatEvent, { type: 'data-approval-resolved' }>): PiChatState {
+  const nextState = state.status === 'waiting'
+    ? { ...state, status: 'streaming' as PiChatStatus }
+    : state
+  if (!event.toolCallId) return nextState
+  return updateApprovalToolPart(nextState, event.toolCallId, (part) => ({
+    ...withoutApprovalRequestId(part),
+    state: event.decision === 'deny' ? 'output-denied' : 'approval-responded',
+  }))
 }
 
 function isStaleTurnScopedEvent(state: PiChatState, eventTurnId: string | undefined): boolean {
@@ -511,6 +536,20 @@ function updateToolCallTarget(
   const nextCommitted = [...state.committedMessages]
   nextCommitted[target.index] = updateToolPart(message, toolCallId, update)
   return { ...state, committedMessages: nextCommitted }
+}
+
+function updateApprovalToolPart(
+  state: PiChatState,
+  toolCallId: string,
+  update: (part: Extract<BoringChatPart, { type: 'tool-call' }>) => BoringChatPart,
+): PiChatState {
+  const target = findToolCallTarget(state, toolCallId)
+  return target ? updateToolCallTarget(state, target, toolCallId, update) : state
+}
+
+function withoutApprovalRequestId(part: Extract<BoringChatPart, { type: 'tool-call' }>): Extract<BoringChatPart, { type: 'tool-call' }> {
+  const { approvalRequestId: _approvalRequestId, ...rest } = part
+  return rest
 }
 
 function normalizeChatMessage(message: BoringChatMessage): BoringChatMessage {

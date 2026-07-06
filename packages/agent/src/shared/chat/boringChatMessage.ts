@@ -9,7 +9,10 @@ export type BoringChatReasoningState = 'streaming' | 'done'
 export type BoringChatToolState =
   | 'input-streaming'
   | 'input-available'
+  | 'approval-requested'
+  | 'approval-responded'
   | 'output-available'
+  | 'output-denied'
   | 'output-error'
   | 'aborted'
 
@@ -24,6 +27,7 @@ export type BoringChatPart =
       state: BoringChatToolState
       output?: unknown
       errorText?: string
+      approvalRequestId?: string
       ui?: ToolUiMetadata
     }
   | { type: 'file'; id?: string; filename?: string; mediaType?: string; url?: string; path?: string; filesystem?: string }

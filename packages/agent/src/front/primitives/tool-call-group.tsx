@@ -2,7 +2,7 @@
 
 import { ChevronDownIcon } from 'lucide-react'
 import { memo, useCallback, useEffect, useMemo, useState } from 'react'
-import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@hachej/boring-ui-kit'
+import { Button, Collapsible, CollapsibleContent, CollapsibleTrigger } from '@hachej/boring-ui-kit'
 import {
   resolveToolRendererForPart,
   toToolPart,
@@ -27,13 +27,12 @@ function isSettledState(state: ToolPart['state']): boolean {
     state === 'output-available' ||
     state === 'output-error' ||
     state === 'output-denied' ||
-    state === 'approval-responded' ||
     state === 'aborted'
   )
 }
 
 function isInputRunningState(state: ToolPart['state']): boolean {
-  return state === 'input-streaming' || state === 'input-available'
+  return state === 'input-streaming' || state === 'input-available' || state === 'approval-responded'
 }
 
 function isApprovalRequestedState(state: ToolPart['state']): boolean {
@@ -77,7 +76,11 @@ function formatElapsed(seconds: number): string {
 interface ToolCallGroupProps {
   tools: GroupedToolEntry[]
   mergedToolRenderers: ToolRendererOverrides
+  onResolveApproval?: ResolveApprovalHandler
 }
+
+export type ApprovalDecision = 'approve' | 'deny'
+export type ResolveApprovalHandler = (requestId: string, decision: ApprovalDecision) => void | Promise<void>
 
 function resolveVisualState({
   hasRunningTool,
@@ -100,7 +103,7 @@ function resolveVisualState({
   return 'settled'
 }
 
-export const ToolCallGroup = memo(({ tools, mergedToolRenderers }: ToolCallGroupProps) => {
+export const ToolCallGroup = memo(({ tools, mergedToolRenderers, onResolveApproval }: ToolCallGroupProps) => {
   const toolParts = useMemo(() => tools
     .map(({ part, key }) => {
       const toolPart = toToolPart(part)
@@ -223,6 +226,12 @@ export const ToolCallGroup = memo(({ tools, mergedToolRenderers }: ToolCallGroup
                   data-tool-renderer-source={resolution.source}
                 >
                   {renderer(resolvedPart)}
+                  {resolvedPart.state === 'approval-requested' && resolvedPart.approvalRequestId && onResolveApproval ? (
+                    <ToolApprovalActions
+                      requestId={resolvedPart.approvalRequestId}
+                      onResolveApproval={onResolveApproval}
+                    />
+                  ) : null}
                 </div>
               )
             })}
@@ -234,3 +243,51 @@ export const ToolCallGroup = memo(({ tools, mergedToolRenderers }: ToolCallGroup
 })
 
 ToolCallGroup.displayName = 'ToolCallGroup'
+
+export function ToolApprovalActions({
+  requestId,
+  onResolveApproval,
+  className,
+}: {
+  requestId: string
+  onResolveApproval: ResolveApprovalHandler
+  className?: string
+}) {
+  const [pendingDecision, setPendingDecision] = useState<ApprovalDecision | null>(null)
+
+  const resolve = useCallback((decision: ApprovalDecision) => {
+    setPendingDecision(decision)
+    void Promise.resolve(onResolveApproval(requestId, decision))
+      .catch(() => undefined)
+      .finally(() => setPendingDecision(null))
+  }, [onResolveApproval, requestId])
+
+  return (
+    <div
+      data-boring-agent-part="approval-actions"
+      data-approval-request-id={requestId}
+      className={cn('mt-2 flex flex-wrap gap-2', className)}
+    >
+      <Button
+        type="button"
+        size="xs"
+        variant="outline"
+        disabled={pendingDecision !== null}
+        aria-label="Approve tool request"
+        onClick={() => resolve('approve')}
+      >
+        {pendingDecision === 'approve' ? 'Approving...' : 'Approve'}
+      </Button>
+      <Button
+        type="button"
+        size="xs"
+        variant="ghost"
+        disabled={pendingDecision !== null}
+        aria-label="Deny tool request"
+        onClick={() => resolve('deny')}
+      >
+        {pendingDecision === 'deny' ? 'Denying...' : 'Deny'}
+      </Button>
+    </div>
+  )
+}

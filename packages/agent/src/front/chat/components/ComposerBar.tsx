@@ -65,7 +65,7 @@ export const ComposerBar = memo(({
   className,
   ...promptInputProps
 }: ComposerBarProps) => {
-  const isBusy = status === 'submitted' || status === 'streaming' || status === 'aborting'
+  const isBusy = status === 'submitted' || status === 'streaming' || status === 'waiting' || status === 'aborting'
   const submitStatus = toPromptSubmitStatus(status)
   const rootRef = useRef<HTMLDivElement | null>(null)
 
@@ -142,7 +142,7 @@ ComposerBar.displayName = 'ComposerBar'
 
 function toPromptSubmitStatus(status: PiChatStatus): 'ready' | 'submitted' | 'streaming' | 'error' {
   if (status === 'submitted' || status === 'hydrating') return 'submitted'
-  if (status === 'streaming' || status === 'aborting') return 'streaming'
+  if (status === 'streaming' || status === 'waiting' || status === 'aborting') return 'streaming'
   if (status === 'error') return 'error'
   return 'ready'
 }

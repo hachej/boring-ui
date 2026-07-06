@@ -26,6 +26,12 @@ vi.mock('../../../primitives/reasoning', () => ({
 }))
 
 vi.mock('../../../primitives/tool-call-group', () => ({
+  ToolApprovalActions: ({ requestId, onResolveApproval }: any) => (
+    <div data-testid="approval-actions" data-approval-request-id={requestId}>
+      <button type="button" onClick={() => onResolveApproval(requestId, 'approve')}>Approve</button>
+      <button type="button" onClick={() => onResolveApproval(requestId, 'deny')}>Deny</button>
+    </div>
+  ),
   ToolCallGroup: ({ tools }: any) => (
     <div data-testid="tool-call-group">
       {tools.map(({ part }: any) => `${part.toolName}:${part.state}`).join(',')}
@@ -115,6 +121,44 @@ describe('PiTimelineMessage', () => {
     // read group precedes the bash card (emitted order preserved).
     expect(group.closest('[data-boring-agent-part="message-tools"]')!
       .compareDocumentPosition(bashCard!) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+  })
+
+  test('resolves standalone approval tool cards from the request id', () => {
+    const onResolveApproval = vi.fn()
+    const message: BoringChatMessage = {
+      id: 'a-approval',
+      role: 'assistant',
+      status: 'streaming',
+      parts: [
+        {
+          type: 'tool-call',
+          id: 'call-bash',
+          toolName: 'bash',
+          input: { command: 'touch approved.txt' },
+          state: 'approval-requested',
+          approvalRequestId: 'approval-1',
+        },
+      ],
+    }
+
+    render(
+      <PiTimelineMessage
+        message={message}
+        isLast
+        isStreaming={false}
+        showThoughts={false}
+        toolRenderers={{}}
+        onResolveApproval={onResolveApproval}
+      />,
+    )
+
+    expect(screen.getByTestId('approval-actions').getAttribute('data-approval-request-id')).toBe('approval-1')
+
+    fireEvent.click(screen.getByRole('button', { name: 'Approve' }))
+    expect(onResolveApproval).toHaveBeenLastCalledWith('approval-1', 'approve')
+
+    fireEvent.click(screen.getByRole('button', { name: 'Deny' }))
+    expect(onResolveApproval).toHaveBeenLastCalledWith('approval-1', 'deny')
   })
 
   test('renders user file attachments separately from model-only attachment markers', () => {

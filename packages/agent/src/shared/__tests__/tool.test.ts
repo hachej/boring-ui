@@ -8,6 +8,7 @@ test('AgentTool contract', () => {
     description: string
     promptSnippet?: string
     readinessRequirements?: ToolReadinessRequirement[]
+    needsApproval?: boolean | ((params: Record<string, unknown>, ctx: ToolExecContext) => boolean | Promise<boolean>)
     parameters: JSONSchema
     execute: (
       params: Record<string, unknown>,

@@ -18,9 +18,10 @@ import {
   type SlashCommandInfo,
 } from "@mariozechner/pi-coding-agent";
 import type { AgentHarness, AgentSlashCommandSummary, AgentSendInput, RunContext } from "../../../shared/harness.js";
+import type { PendingInputRequest, ResolveInputResponse } from "../../../shared/events.js";
 import { ErrorCode } from "../../../shared/error-codes.js";
 import { createLogger } from "../../logging.js";
-import type { AgentTool } from "../../../shared/tool.js";
+import type { AgentTool, ToolResult } from "../../../shared/tool.js";
 import type { TelemetrySink } from "../../../shared/telemetry.js";
 import type { SessionCtx } from "../../../shared/session.js";
 import { adaptToolsForPi, unmarkToolResultErrorDetails } from "./tool-adapter.js";
@@ -744,6 +745,33 @@ export function createPiCodingAgentHarness(opts: {
     return getOrCreatePiSession(sessionId, { sessionId, content: "", ctx: sessionCtx }, ctx);
   }
 
+  function appendResolvedInputToolResult(manager: SessionManager, request: PendingInputRequest, response: ResolveInputResponse, toolResult?: ToolResult): void {
+    if (!request.toolCallId || !request.toolName) return;
+    manager.appendMessage({
+      role: "toolResult",
+      toolCallId: request.toolCallId,
+      toolName: request.toolName,
+      content: toolResult?.content ?? [{ type: "text", text: formatResolvedInputForToolResult(response) }],
+      details: toolResult?.details ?? { boringResolvedInput: response },
+      isError: toolResult?.isError ?? (response.kind === "approval" && response.decision === "deny"),
+      timestamp: Date.now(),
+    } as any);
+  }
+
+  function refreshLiveSessionMessages(handle: PiSessionHandle): void {
+    handle.piSession.agent.state.messages = handle.sessionManager.buildSessionContext().messages;
+  }
+
+  function seedResolvedInputBeforeLiveSession(sessionId: string, ctx: RunContext, request: PendingInputRequest, response: ResolveInputResponse, toolResult?: ToolResult): boolean {
+    const sessionCtx = sessionCtxFromRunContext(ctx);
+    if (piSessions.has(sessionCacheKey(sessionId, sessionCtx))) return false;
+    const savedPiFile = sessionStore.loadPiSessionFileSync(sessionCtx, sessionId);
+    if (!savedPiFile) return false;
+    const manager = SessionManager.open(savedPiFile, undefined, opts.runtimeCwd ?? ctx.workdir);
+    appendResolvedInputToolResult(manager, request, response, toolResult);
+    return true;
+  }
+
   const originalDelete = sessionStore.delete.bind(sessionStore);
   sessionStore.delete = async (ctx, sessionId) => {
     await originalDelete(ctx, sessionId);
@@ -837,6 +865,13 @@ export function createPiCodingAgentHarness(opts: {
       });
     },
 
+    async seedResolvedInput(sessionId, ctx, input): Promise<void> {
+      if (seedResolvedInputBeforeLiveSession(sessionId, ctx, input.request, input.response, input.toolResult)) return;
+      const handle = await getOrCreatePiSessionForCommand(sessionId, ctx);
+      appendResolvedInputToolResult(handle.sessionManager, input.request, input.response, input.toolResult);
+      refreshLiveSessionMessages(handle);
+    },
+
     async getPiSessionAdapter(input: AgentSendInput, ctx: RunContext) {
       if (!input.sessionId) throw new Error("sessionId is required to create a Pi session adapter");
       const handle = await getOrCreatePiSession(input.sessionId, input, ctx);
@@ -846,4 +881,12 @@ export function createPiCodingAgentHarness(opts: {
     getPiSessionAdapter(input: AgentSendInput, ctx: RunContext): Promise<PiAgentSessionAdapter>;
     hasPiSession(sessionId: string, ctx?: SessionCtx): boolean;
   });
+}
+
+function formatResolvedInputForToolResult(response: ResolveInputResponse): string {
+  if (response.kind === "approval") {
+    if (response.decision === "approve") return "Approved by user.";
+    return response.reason ? `Denied by user: ${response.reason}` : "Denied by user.";
+  }
+  return JSON.stringify({ values: response.values });
 }

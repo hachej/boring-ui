@@ -185,13 +185,14 @@ function authorizeAllAgent(): Agent {
       create: async () => sessionDetail('created'),
       load: async (_ctx: SessionCtx, sessionId: string) => sessionDetail(sessionId),
       delete: async () => {},
+      pendingInputs: async () => [],
     },
     readiness: {
       requirements: [],
       status: async () => [],
     },
     dispose: async () => {},
-  } as Agent
+  } as unknown as Agent
 }
 
 function sessionDetail(sessionId: string): SessionDetail {

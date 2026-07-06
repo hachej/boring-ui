@@ -155,7 +155,7 @@ export function createPiFollowUpQueueController(
 }
 
 export function isPiChatBusy(status: PiChatStatus): boolean {
-  return status === 'submitted' || status === 'streaming' || status === 'aborting'
+  return status === 'submitted' || status === 'streaming' || status === 'waiting' || status === 'aborting'
 }
 
 export function canPromptDuringInitialHydration(state: PiChatState): boolean {
