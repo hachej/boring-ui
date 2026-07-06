@@ -24,6 +24,8 @@ const PUBLISHABLE = [
   "plugins/generated-pane",
   "plugins/data-bridge",
   "plugins/bi-dashboard",
+  "packages/boring-bash",
+  "plugins/boring-governance",
 ]
 
 function readJson(path) {
