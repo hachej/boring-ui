@@ -14,6 +14,8 @@ const packageRoot = path.resolve(
 const requiredFiles = [
   'dist/shared/index.js',
   'dist/shared/index.d.ts',
+  'dist/core/index.js',
+  'dist/core/index.d.ts',
   'dist/server/index.js',
   'dist/server/index.d.ts',
   'dist/front/index.js',
@@ -85,11 +87,13 @@ async function main() {
   }
 
   assertNodeParsable('dist/shared/index.js')
+  assertNodeParsable('dist/core/index.js')
   assertNodeParsable('dist/server/index.js')
   assertNodeParsable('dist/front/index.js')
   assertNodeParsable('dist/eval/index.js')
 
   assertTsParsable('dist/shared/index.d.ts')
+  assertTsParsable('dist/core/index.d.ts')
   assertTsParsable('dist/server/index.d.ts')
   assertTsParsable('dist/front/index.d.ts')
   assertTsParsable('dist/eval/index.d.ts')

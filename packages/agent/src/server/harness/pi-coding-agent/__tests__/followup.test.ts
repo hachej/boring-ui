@@ -75,7 +75,7 @@ function makeCtx(ac = new AbortController()): RunContext {
 // adapter.
 async function makeSessionAdapter(sessionId: string) {
   const harness = createPiCodingAgentHarness({ tools: [], cwd: "/tmp/test-followup" });
-  return await harness.getPiSessionAdapter({ sessionId, message: "" }, makeCtx());
+  return await harness.getPiSessionAdapter({ sessionId, content: "" }, makeCtx());
 }
 
 function simulatePiConsumes(session: any): void {

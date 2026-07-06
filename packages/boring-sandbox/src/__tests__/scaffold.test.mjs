@@ -29,6 +29,7 @@ describe("@hachej/boring-sandbox scaffold", () => {
     expect(providers).toBeDefined();
   });
 
+
   it("allows only type-only agent imports", () => {
     expect(
       findForbiddenPatterns(
