@@ -14,6 +14,7 @@
     "lint": "pnpm run typecheck",
     "e2e": "playwright test --config e2e/playwright.config.ts",
     "e2e:smoke": "playwright test --config e2e/playwright.config.ts",
+    "smoke:mcp-managed-agent": "pnpm --filter @hachej/boring-agent... --workspace-concurrency=4 run build && tsx scripts/mcp-managed-agent-smoke.ts",
     "smoke:post-deploy": "tsx scripts/post-deploy-smoke.ts",
     "smoke:remote-worker": "node scripts/remote-worker-smoke.mjs",
     "backup:fly-worker-volume": "node scripts/fly-worker-volume-backup.mjs"
