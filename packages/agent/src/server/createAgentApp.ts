@@ -31,6 +31,7 @@ import { searchRoutes } from './http/routes/search'
 import { gitRoutes } from './http/routes/git'
 import { InMemorySessionChangesTracker } from './http/sessionChangesTracker'
 import { createRuntimeReadyStatusTracker } from './runtime/modeReadiness'
+import { ReadyStatusTracker } from './runtime/readyStatus'
 import type { AgentMeteringSink } from './pi-chat/metering'
 import { createPluginDiagnosticsTool } from './tools/pluginDiagnostics'
 import type { ReloadHookDiagnostic } from './http/routes/reload'
@@ -38,6 +39,7 @@ import { createAgentRuntimeBridge } from './createAgent'
 
 const DEFAULT_VERSION = '0.1.0-dev'
 const DEFAULT_SESSION_ID = 'default'
+const PURE_RUNTIME_MODE = 'none'
 
 export interface CreateAgentAppOptions {
   workspaceRoot?: string
@@ -83,6 +85,8 @@ export interface CreateAgentAppOptions {
   }) => Promise<void>
   /** Optional explicit file-backed session directory. Mostly for tests/hosts. */
   sessionDir?: string
+  /** Optional explicit root for file-backed session directories. */
+  sessionRoot?: string
   /**
    * Enable user/global Pi extension auto-discovery from .pi/ and ~/.pi.
    * App/internal plugins should be passed through extraTools/pi instead.
@@ -120,12 +124,66 @@ export interface CreateAgentAppOptions {
 export async function createAgentApp(
   opts: CreateAgentAppOptions = {},
 ): Promise<FastifyInstance> {
-  const workspaceRoot = opts.workspaceRoot ?? process.cwd()
   const sessionId = opts.sessionId ?? DEFAULT_SESSION_ID
-  const templatePath = opts.templatePath ?? getEnv('BORING_AGENT_TEMPLATE_PATH')
   const app = Fastify({ logger: opts.logger ?? true, bodyLimit: 16 * 1024 * 1024 })
 
   const resolvedMode = opts.runtimeModeAdapter?.id ?? opts.mode ?? autoDetectMode()
+  if (!opts.runtimeModeAdapter && resolvedMode === PURE_RUNTIME_MODE) {
+    const runtimePi = withPiHarnessDefaults(opts.pi)
+    const baseHarnessFactory = opts.harnessFactory ?? ((input) => createPiCodingAgentHarness({
+      ...input,
+      pi: runtimePi,
+    }))
+    const harnessFactory = ((input) => baseHarnessFactory({
+      ...input,
+      sessionNamespace: opts.sessionNamespace,
+      sessionRoot: opts.sessionRoot,
+      sessionDir: opts.sessionDir ?? input.sessionDir,
+    })) as AgentCoreHarnessFactory
+    const tools = opts.extraTools ?? []
+    const coreAgent = createAgentRuntimeBridge({
+      runtime: 'none',
+      tools,
+      harnessFactory,
+      systemPromptAppend: opts.systemPromptAppend,
+      systemPromptDynamic: opts.systemPromptDynamic,
+      telemetry: opts.telemetry,
+      metering: opts.metering,
+      sessionStorageRoot: opts.sessionRoot,
+    })
+    const agentRuntime = await coreAgent.getRuntime()
+    const sessionChangesTracker = new InMemorySessionChangesTracker()
+    const readyTracker = new ReadyStatusTracker({ sandboxReady: true, harnessReady: true })
+
+    app.addHook(
+      'onRequest',
+      createAuthMiddleware({
+        authToken: opts.authToken,
+        publicPaths: ['/health', '/ready', '/api/v1/ready-status'],
+      }),
+    )
+    app.addHook('onClose', async () => {
+      await coreAgent.agent.dispose()
+    })
+
+    await app.register(healthRoutes, {
+      version: opts.version ?? DEFAULT_VERSION,
+      getReadiness: () => ({ sandboxReady: true, harnessReady: true }),
+    })
+    await app.register(piChatRoutes, {
+      service: agentRuntime.service as PiChatSessionService,
+      defaultWorkspaceId: false,
+    })
+    await app.register(modelsRoutes)
+    await app.register(sessionChangesRoutes, { tracker: sessionChangesTracker })
+    await app.register(catalogRoutes, { tools })
+    await app.register(readyStatusRoutes, { tracker: readyTracker })
+
+    return app
+  }
+
+  const workspaceRoot = opts.workspaceRoot ?? process.cwd()
+  const templatePath = opts.templatePath ?? getEnv('BORING_AGENT_TEMPLATE_PATH')
   const modeAdapter = opts.runtimeModeAdapter ?? resolveMode(resolvedMode)
   let runtimeBundle = await modeAdapter.create({
     workspaceRoot,
@@ -209,7 +267,8 @@ export async function createAgentApp(
   const harnessFactory = ((input) => baseHarnessFactory({
     ...input,
     sessionNamespace: opts.sessionNamespace,
-    sessionDir: opts.sessionDir,
+    sessionRoot: opts.sessionRoot,
+    sessionDir: opts.sessionDir ?? input.sessionDir,
   })) as AgentCoreHarnessFactory
   const coreAgent = createAgentRuntimeBridge({
     runtime: modeAdapter,
@@ -219,6 +278,7 @@ export async function createAgentApp(
     systemPromptDynamic: opts.systemPromptDynamic,
     telemetry: opts.telemetry,
     metering: opts.metering,
+    sessionStorageRoot: opts.sessionRoot,
     workdir: workspaceRoot,
   }, {
     service: {

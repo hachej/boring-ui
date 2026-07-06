@@ -10,6 +10,8 @@ export interface AgentHarnessFactoryInput {
   cwd: string
   /** Agent-visible cwd used by Pi/system prompt/session metadata. */
   runtimeCwd?: string
+  /** Optional cwd used only to derive the default transcript storage directory. */
+  sessionStorageCwd?: string
   systemPromptAppend?: string
   sessionNamespace?: string
   sessionRoot?: string
