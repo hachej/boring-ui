@@ -1,5 +1,6 @@
 import type { PiChatEvent } from '../../shared/chat'
 import type { AgentEvent } from '../../shared/events'
+import { sessionStreamPath } from '../../shared/events'
 import { migrateEventStreamSqlSchema } from './schemaVersion'
 import type { RunTransaction, SqlStorage } from './sqlStorage'
 
@@ -347,10 +348,6 @@ export class SqliteEventStreamStore implements EventStreamStore {
       }
     }
   }
-}
-
-function sessionStreamPath(sessionId: string): string {
-  return `sessions/${sessionId}`
 }
 
 function clampLimit(value: number | undefined, defaultValue: number, maxValue: number): number {

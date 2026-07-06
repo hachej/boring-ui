@@ -29,6 +29,7 @@ export type {
 export {
   AGENT_NOT_IMPLEMENTED_UNTIL_T1,
   AgentNotImplementedError,
+  sessionStreamPath,
 } from './events'
 export type { WorkspaceRuntimeContext } from './runtime'
 export type { Workspace, Entry, Stat } from './workspace'

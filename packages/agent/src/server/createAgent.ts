@@ -1,4 +1,5 @@
 import { HarnessPiChatService } from './pi-chat/harnessPiChatService'
+import type { EventStreamStore } from './events/eventStreamStore'
 import type { AgentMeteringSink } from './pi-chat/metering'
 import type { PiSessionRequestContext } from './pi-chat/piSessionIdentity'
 import type { AgentHarness, AgentHarnessFactoryInput } from '../shared/harness'
@@ -40,6 +41,7 @@ export interface CreateAgentRuntimeBridgeOptions {
   service?: {
     workdir?: string
     workspace?: Workspace
+    eventStore?: EventStreamStore
   }
 }
 
@@ -257,6 +259,7 @@ async function createRuntime(config: AgentConfig, options: CreateAgentRuntimeBri
       sessionStore,
       workdir: options.service?.workdir ?? config.workdir ?? DEFAULT_WORKDIR,
       workspace: options.service?.workspace,
+      eventStore: options.service?.eventStore,
       metering: config.metering as AgentMeteringSink | undefined,
     }),
   }
