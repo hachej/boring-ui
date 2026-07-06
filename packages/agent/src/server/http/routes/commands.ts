@@ -1,6 +1,8 @@
 import type { FastifyInstance, FastifyRequest } from 'fastify'
 import type { AgentHarness, AgentSlashCommandSummary } from '../../../shared/harness'
 
+const DEFAULT_WORKSPACE_ID = 'default'
+
 export type CommandsRoutesOptions = {
   harness: AgentHarness
   defaultSessionId: string
@@ -25,6 +27,17 @@ function resolveWorkdir(opts: CommandsRoutesOptions, request: FastifyRequest): s
   return 'getWorkdir' in opts ? opts.getWorkdir(request) : opts.workdir
 }
 
+function getRequestWorkspaceId(request: FastifyRequest): string {
+  return request.workspaceContext?.workspaceId ?? DEFAULT_WORKSPACE_ID
+}
+
+function getRequestAuthSubject(request: FastifyRequest): string | undefined {
+  const userId = (request as FastifyRequest & { user?: { id?: unknown } | null }).user?.id
+  if (typeof userId === 'string' && userId.trim()) return userId.trim()
+  const authSubject = (request.workspaceContext as { authSubject?: unknown } | undefined)?.authSubject
+  return typeof authSubject === 'string' && authSubject.trim() ? authSubject.trim() : undefined
+}
+
 export function commandsRoutes(
   app: FastifyInstance,
   opts: CommandsRoutesOptions,
@@ -41,6 +54,8 @@ export function commandsRoutes(
       const commands: ReadonlyArray<AgentSlashCommandSummary> = await harness.getSlashCommands?.(sessionId, {
         abortSignal: new AbortController().signal,
         workdir,
+        workspaceId: getRequestWorkspaceId(request),
+        userId: getRequestAuthSubject(request),
       }) ?? []
       return reply.code(200).send({ commands })
     } catch (error) {
@@ -67,6 +82,8 @@ export function commandsRoutes(
       await harness.executeSlashCommand(sessionId, name, args, {
         abortSignal: new AbortController().signal,
         workdir,
+        workspaceId: getRequestWorkspaceId(request),
+        userId: getRequestAuthSubject(request),
       })
       return reply.code(200).send({ ok: true })
     } catch (error) {

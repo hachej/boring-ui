@@ -7,7 +7,7 @@ import { createScriptedPiHarness } from '../scriptedPiHarness'
 describe('createScriptedPiHarness', () => {
   it('clears the selected queued follow-up by client selector', async () => {
     const harness = createScriptedPiHarness({ tools: [], cwd: '/workspace' })
-    const adapter = await harness.getPiSessionAdapter({ sessionId: 's1', message: '' }, {
+    const adapter = await harness.getPiSessionAdapter({ sessionId: 's1', content: '' }, {
       abortSignal: new AbortController().signal,
       workdir: '/workspace',
     })
@@ -23,7 +23,7 @@ describe('createScriptedPiHarness', () => {
 
   it('keeps snapshot messages synchronized with in-flight scripted events', async () => {
     const harness = createScriptedPiHarness({ tools: [], cwd: '/workspace' })
-    const adapter = await harness.getPiSessionAdapter({ sessionId: 's1', message: '' }, {
+    const adapter = await harness.getPiSessionAdapter({ sessionId: 's1', content: '' }, {
       abortSignal: new AbortController().signal,
       workdir: '/workspace',
     })
@@ -51,7 +51,7 @@ describe('createScriptedPiHarness', () => {
     const previous = setEnvForTest('BORING_AGENT_E2E_SCRIPTED_PI_REASONING_PARTS', '2')
     try {
       const harness = createScriptedPiHarness({ tools: [], cwd: '/workspace' })
-      const adapter = await harness.getPiSessionAdapter({ sessionId: 's1', message: '' }, {
+      const adapter = await harness.getPiSessionAdapter({ sessionId: 's1', content: '' }, {
         abortSignal: new AbortController().signal,
         workdir: '/workspace',
       })
@@ -79,7 +79,7 @@ describe('createScriptedPiHarness', () => {
 
   it('cancels the scripted turn when aborted', async () => {
     const harness = createScriptedPiHarness({ tools: [], cwd: '/workspace' })
-    const adapter = await harness.getPiSessionAdapter({ sessionId: 's1', message: '' }, {
+    const adapter = await harness.getPiSessionAdapter({ sessionId: 's1', content: '' }, {
       abortSignal: new AbortController().signal,
       workdir: '/workspace',
     })
@@ -115,7 +115,7 @@ describe('createScriptedPiHarness', () => {
 
   it('continues the next queued follow-up after an abort', async () => {
     const harness = createScriptedPiHarness({ tools: [], cwd: '/workspace' })
-    const adapter = await harness.getPiSessionAdapter({ sessionId: 's1', message: '' }, {
+    const adapter = await harness.getPiSessionAdapter({ sessionId: 's1', content: '' }, {
       abortSignal: new AbortController().signal,
       workdir: '/workspace',
     })

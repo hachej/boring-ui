@@ -17,7 +17,7 @@ test('checking SessionCtx contract', () => {
   expectTypeOf<SessionCtx>().toHaveProperty('workspaceId')
   expectTypeOf<SessionCtx>().toHaveProperty('userId')
 
-  expectTypeOf<SessionCtx['workspaceId']>().toEqualTypeOf<string>()
+  expectTypeOf<SessionCtx['workspaceId']>().toEqualTypeOf<string | undefined>()
 })
 
 test('checking SessionSummary contract', () => {
