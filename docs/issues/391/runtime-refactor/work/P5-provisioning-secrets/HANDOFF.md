@@ -21,6 +21,8 @@ Derived strictly from [TODO.md](./TODO.md) and [PLAN.md](./PLAN.md). Tick each b
 - [ ] BBP5-008 — Remote-worker capability handshake (reported | unknown, fail-closed)
 - [ ] BBP5-009 — Two-phase bootstrap/onSession + fingerprint key composition
 - [ ] BBP5-010 — Remote-worker no-leak conformance mount (the deferred remote-worker env mount)
+- [ ] BBP5-011 — Louder readiness signal for a missing governance policy source (#550 gap 2; Amendment 2026-07-06)
+- [ ] BBP5-012 — Forbid the `process.cwd()` company-context root fallback outside dev (#550 gap 7; Amendment 2026-07-06)
 
 ## Verification commands
 - [ ] `pnpm --filter @hachej/boring-bash run build`
@@ -51,6 +53,7 @@ Derived strictly from [TODO.md](./TODO.md) and [PLAN.md](./PLAN.md). Tick each b
 - [ ] `pr6-secret-brokering` completed BBP5-007
 - [ ] `pr7-remote-worker-handshake` completed BBP5-008 + BBP5-010
 - [ ] `pr8-two-phase-fingerprint` completed BBP5-009
+- [ ] `pr9-governance-550-hardening` completed BBP5-011 + BBP5-012 (Amendment 2026-07-06)
 
 ## Review gates
 - [ ] P3 + P2 `@hachej/boring-sandbox/shared` `providerMatrix` precondition confirmed (or STOP+report). (P5 dispatches off P3 in parallel with P4/E1 — it does NOT depend on P4.)
@@ -75,6 +78,8 @@ Derived strictly from [TODO.md](./TODO.md) and [PLAN.md](./PLAN.md). Tick each b
 - [ ] Two-phase bootstrap/onSession: same fingerprint skips; changed requirement/source/contract re-provisions; onSession reruns without rebuilding a stable template; existing Vercel snapshot/fingerprint tests pass.
 - [ ] v2 brokering: no test can read a brokered secret from inside the sandbox (BBP5-007).
 - [ ] EU-sovereign (invariant 15): no bead introduces a US-hosted service as a default or hard dependency.
+- [ ] **Amendment (2026-07-06, #550 gap 2):** missing governance policy source surfaces a louder readiness/diagnostics signal ("governance: disabled — no policy source"), fail-closed default unchanged (BBP5-011).
+- [ ] **Amendment (2026-07-06, #550 gap 7):** outside dev, a missing `BORING_GOVERNANCE_COMPANY_CONTEXT_ROOT` is a fail-closed configuration error — no `process.cwd()` fallback (BBP5-012).
 
 ## Closeout
 - [ ] Zero unowned `TODO(remove:*)` markers for this phase

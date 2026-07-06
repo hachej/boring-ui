@@ -139,6 +139,20 @@ Runtime needs are declarative, scoped, readiness-gated, and secret-safe, **exten
 - **Tests:** the file is the test — remote-worker mount `passed: true`, identical visible-path set to the in-process mount, denied sentinel absent, no brokered secret in any client-reachable payload.
 - **Acceptance:** the env/no-leak conformance suite runs its remote-worker (provider attachment) mount green, gated on the BBP5-008 handshake; it is the owning bead the pack names for that mount.
 
+### BBP5-011 — Louder readiness signal for a missing governance policy source (#550 gap 2) [size S] — **Amendment (2026-07-06)**
+
+- **Files touch:** `plugins/boring-governance/src/server/*` (policy-source load path), the governance readiness/diagnostics surface (ride the BBP5-003 per-requirement readiness detail — do not invent a parallel signal), `plugins/boring-governance` admin view copy if a banner is chosen.
+- **Notes:** Missing policy YAML silently disables governance today (safe fail-closed default, decided — keep it). Add a **louder operational signal** on top: surface "governance: disabled — no policy source" through a readiness/health detail (and/or an admin banner), not only the existing startup log. No behavior change to the disable itself; diagnosability only.
+- **Tests:** with no policy source configured, the readiness/diagnostics payload (or admin surface) reports governance disabled with a stable code; with a policy source present, no such signal; governance still fails closed either way.
+- **Acceptance:** ops can see "governance disabled — no policy source" without reading boot logs; the safe default is unchanged.
+
+### BBP5-012 — Forbid the `process.cwd()` company-context root fallback outside dev (#550 gap 7) [size S] — **Amendment (2026-07-06)**
+
+- **Files touch:** the default company-context root resolver in `plugins/boring-governance` server config (+ its tests).
+- **Notes:** Explicit `BORING_GOVERNANCE_COMPANY_CONTEXT_ROOT` is the intended prod path; the cwd-relative default is a dev convenience that can surprise in odd deployments. Require the env var outside dev: in non-dev environments a missing `BORING_GOVERNANCE_COMPANY_CONTEXT_ROOT` is a fail-closed configuration error with a stable code, never a silent `process.cwd()` fallback. Keep the cwd fallback for dev only.
+- **Tests:** non-dev + unset env var → stable configuration error (no cwd fallback); dev + unset → cwd fallback preserved; set env var → used verbatim in both.
+- **Acceptance:** no production deployment can silently resolve the company-context root from `process.cwd()`.
+
 ## Verification — exact commands verified against package.json scripts
 
 ```bash
@@ -183,6 +197,7 @@ Matches [`../../PR-PLAN.md`](../../PR-PLAN.md) P5 rows exactly:
 - `pr6-secret-brokering` → BBP5-007.
 - `pr7-remote-worker-handshake` → BBP5-008 + BBP5-010 (remote-worker no-leak conformance mount rides the handshake PR).
 - `pr8-two-phase-fingerprint` → BBP5-009.
+- `pr9-governance-550-hardening` → BBP5-011 + BBP5-012 (Amendment 2026-07-06; #550 gaps 2 + 7).
 
 ## Review gates
 

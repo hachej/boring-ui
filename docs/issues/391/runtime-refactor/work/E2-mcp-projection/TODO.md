@@ -34,6 +34,7 @@ Match `INDEX.md` Phase E2 exit criteria:
   - `exec` **iff** `execPolicy: 'attached'` (default `'none'` → no exec tool). Follows #416 exec rules unchanged.
 - MCP session → `BoundFilesystemContext` identity mapping is mandatory; every tool call carries the same audit identity as an in-process attachment (`09` MCP projection bullet + security invariant 1).
 - Credential brokering stays at the environment boundary; the MCP client never receives broker secrets (`09` security invariant 3).
+- **Amendment (2026-07-06) — run-context threading guardrail (475 watch-list):** the run-context threading via `createHarness.ts` AsyncLocalStorage is fragile — a run spawned without binding context silently loses identity (fails closed, but a debugging tax). Every new run-spawn path added in E2 (MCP-projection tool sessions) MUST bind `BoundFilesystemContext` and MUST extend the #498 binding test suite with that path.
 
 ## Do NOT
 

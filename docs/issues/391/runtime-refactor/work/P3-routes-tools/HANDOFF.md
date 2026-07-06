@@ -15,6 +15,7 @@ Derived strictly from [TODO.md](./TODO.md) and [PLAN.md](./PLAN.md). Tick each b
 - [ ] BBP3-015 — Register boring-bash server plugin in workspace-family hosts; keep library wiring for direct composers
 - [ ] BBP3-016 — Route + tool source-of-truth regression tests
 - [ ] BBP3-017 — Extend invariants for the routes/tools boundary
+- [ ] BBP3-018 — Dedicated `MODEL_NOT_ALLOWED` 403 error code in agent shared (#550 gap 3; Amendment 2026-07-06)
 
 ## Verification commands
 - [ ] `pnpm --filter @hachej/boring-bash run build`
@@ -39,7 +40,7 @@ Derived strictly from [TODO.md](./TODO.md) and [PLAN.md](./PLAN.md). Tick each b
 - [ ] `pr3-move-bash-upload` completed BBP3-012 + BBP3-013
 - [ ] `pr4-move-fs-git-routes` completed BBP3-014
 - [ ] `pr5-wire-composition` completed BBP3-015 (workspace-family hosts through server plugin; direct composers through library mode only where the plugin pipeline is absent)
-- [ ] `pr6-sot-tests-invariants` completed BBP3-016 + BBP3-017
+- [ ] `pr6-sot-tests-invariants` completed BBP3-016 + BBP3-017 + BBP3-018 (folded; Amendment 2026-07-06)
 
 ## Review gates
 - [ ] Phase 1 (`createAgent()` with injected `tools`/runtime — no `features` param) + Phase 2 (providers moved) confirmed present, else STOP+report.
@@ -54,6 +55,8 @@ Derived strictly from [TODO.md](./TODO.md) and [PLAN.md](./PLAN.md). Tick each b
 - [ ] pure mode (`createAgent({ runtime: 'none' })`) registers none of these routes/tools.
 - [ ] company_context no-leak conformance still green.
 - [ ] `(filesystem, path)` addressing + readonly enforcement identical to #416.
+- [ ] **Amendment (2026-07-06) — UI/agent parity:** both surfaces still resolve visibility through the SINGLE `getFilesystemBindings` decision path; grep-gate proves no second "what can this user see" path exists.
+- [ ] **Amendment (2026-07-06) — published package:** moved routes/tools land as ADDITIVE export entries (`./agent`) in the same cohort bump as any governance-consumed `/server` change.
 
 ## Closeout
 - [ ] Zero unowned `TODO(remove:*)` markers for this phase

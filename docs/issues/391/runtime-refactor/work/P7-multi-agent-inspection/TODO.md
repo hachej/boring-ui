@@ -58,6 +58,7 @@ Make [`../../INDEX.md`](../../INDEX.md) Phase 7 + [`../../architecture/05-multi-
 - Subagent grant is minimal (E1 BBE1-005 shape) — explicit attachment only, `execPolicy: 'none'` default, no cwd inheritance, no lifecycle framework. Abstraction is justified only because P7 is its **first real consumer** (`README.md` rule 3).
 - Session search has **no filesystem requirement** and redacts private/tool outputs (`05` Requirements). Query serving uses a derived `state.db` session index, not workspace files.
 - `@hachej/boring-agent` keeps zero value imports from `@hachej/boring-bash`; `#380` hooks and search stay boring-bash-free (`05`).
+- **Amendment (2026-07-06) — run-context threading guardrail (475 watch-list):** the run-context threading via `createHarness.ts` AsyncLocalStorage is fragile — a run spawned without binding context silently loses identity (fails closed, but a debugging tax). Every new run-spawn path added in P7 (subagent runs, BBP7-008) MUST bind `BoundFilesystemContext` and MUST extend the #498 binding test suite with that path.
 
 ## Do NOT
 
