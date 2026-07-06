@@ -30,6 +30,10 @@ type IncomingMessageWithNonce = IncomingMessage & {
   cspNonce?: string
 }
 
+export function redactSensitiveLogString(value: string): string {
+  return value.replace(/\/o\/[^/?#]+/g, '/o/[REDACTED]')
+}
+
 function redactObject(
   obj: Record<string, unknown>,
   keywords: string[],
@@ -44,6 +48,8 @@ function redactObject(
         value as Record<string, unknown>,
         keywords,
       )
+    } else if (typeof value === 'string') {
+      result[key] = redactSensitiveLogString(value)
     } else {
       result[key] = value
     }

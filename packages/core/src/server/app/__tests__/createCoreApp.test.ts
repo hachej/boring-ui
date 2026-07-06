@@ -1,5 +1,5 @@
 import { describe, it, expect, afterEach } from 'vitest'
-import { createCoreApp } from '../createCoreApp'
+import { createCoreApp, redactSensitiveLogString } from '../createCoreApp'
 import type { CoreConfig } from '../../../shared/types'
 
 const TEST_CONFIG: CoreConfig = {
@@ -153,6 +153,11 @@ describe('createCoreApp', () => {
     app = await createCoreApp(TEST_CONFIG, { manageShutdown: false })
     expect(typeof app.addRedactionPaths).toBe('function')
     app.addRedactionPaths(['myCustomSecret'])
+  })
+
+  it('redacts raw outreach bearer tokens from logged URL strings', () => {
+    expect(redactSensitiveLogString('/o/raw-token_123?utm=x')).toBe('/o/[REDACTED]?utm=x')
+    expect(redactSensitiveLogString('https://example.test/o/raw-token_123#claim')).toBe('https://example.test/o/[REDACTED]#claim')
   })
 
   it('includes CSP nonce directives and allows layout style attributes only', async () => {

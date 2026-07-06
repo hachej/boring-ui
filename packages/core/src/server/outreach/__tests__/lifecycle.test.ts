@@ -143,6 +143,19 @@ describe('outreach lifecycle', () => {
     const adminUserId = (adminMe.json() as { user: { id: string } }).user.id
     const templateWorkspace = await workspaceStore.create(adminUserId, 'Outreach Template', APP_ID)
 
+    const unsupportedExperienceRes = await app.inject({
+      method: 'POST',
+      url: '/api/v1/outreach/experiences',
+      headers: { cookie: adminCookie },
+      payload: {
+        name: 'Unsupported clone demo',
+        provisioningMode: 'clone_per_lead',
+        templateWorkspaceId: templateWorkspace.id,
+        defaultTargetPath: '/workspace/:workspaceId',
+      },
+    })
+    expect(unsupportedExperienceRes.statusCode).toBe(400)
+
     const experienceRes = await app.inject({
       method: 'POST',
       url: '/api/v1/outreach/experiences',

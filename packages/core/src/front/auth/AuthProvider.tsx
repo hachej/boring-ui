@@ -26,15 +26,16 @@ function toISOString(value: string | Date | undefined | null): string {
 }
 
 function normalizeUser(raw: Record<string, unknown>): User {
+  const isAnonymousLead = raw.isAnonymousLead === true || raw.isAnonymous === true
   return {
     id: raw.id as string,
     email: raw.email as string,
     name: (raw.name as string | null) ?? null,
-    emailVerified: Boolean(raw.emailVerified),
+    emailVerified: Boolean(raw.emailVerified) || isAnonymousLead,
     image: (raw.image as string | null) ?? null,
     createdAt: toISOString(raw.createdAt as string | Date),
     updatedAt: toISOString(raw.updatedAt as string | Date),
-    isAnonymousLead: raw.isAnonymousLead === true ? true : undefined,
+    isAnonymousLead: isAnonymousLead ? true : undefined,
   }
 }
 

@@ -140,6 +140,14 @@ export async function createOutreachExperience(input: {
 }): Promise<OutreachExperience> {
   normalizeOutreachTargetPath(input.defaultTargetPath)
 
+  if (input.provisioningMode === 'clone_per_lead') {
+    throw new HttpError({
+      status: 400,
+      code: ERROR_CODES.VALIDATION_FAILED,
+      message: 'clone_per_lead outreach provisioning is not implemented yet',
+    })
+  }
+
   if (input.templateWorkspaceId) {
     const rows = await input.db
       .select({ id: workspaces.id })
@@ -187,12 +195,20 @@ export async function createOutreachLink(input: {
   createdBy: string | null
 }): Promise<{ url: string; expiresAt: string; id: string }> {
   const experienceRows = await input.db
-    .select({ id: outreachExperiences.id })
+    .select({ id: outreachExperiences.id, provisioningMode: outreachExperiences.provisioningMode })
     .from(outreachExperiences)
     .where(and(eq(outreachExperiences.id, input.experienceId), eq(outreachExperiences.appId, input.appId)))
     .limit(1)
-  if (!experienceRows[0]) {
+  const experience = experienceRows[0]
+  if (!experience) {
     throw new HttpError({ status: 404, code: ERROR_CODES.NOT_FOUND, message: 'Outreach experience not found' })
+  }
+  if (experience.provisioningMode === 'clone_per_lead') {
+    throw new HttpError({
+      status: 400,
+      code: ERROR_CODES.VALIDATION_FAILED,
+      message: 'clone_per_lead outreach provisioning is not implemented yet',
+    })
   }
 
   const initialCreditMicros = input.initialCreditMicros ?? 0

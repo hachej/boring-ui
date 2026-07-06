@@ -93,6 +93,35 @@ describe('useSession', () => {
     expect(result.current.data!.expiresAt).toBe('2026-02-01T00:00:00.000Z')
   })
 
+  it('maps better-auth anonymous sessions to verified anonymous leads', () => {
+    mockUseSession.mockReturnValue({
+      data: {
+        user: {
+          id: 'anon-1',
+          email: 'anon-1@anonymous.invalid',
+          name: 'Anonymous lead',
+          emailVerified: false,
+          image: null,
+          createdAt: new Date('2026-01-01'),
+          updatedAt: new Date('2026-01-02'),
+          isAnonymous: true,
+        },
+        session: {
+          expiresAt: new Date('2026-02-01'),
+        },
+      },
+      isPending: false,
+      error: null,
+    })
+
+    const { result } = renderHook(() => useSession(), {
+      wrapper: createWrapper(),
+    })
+
+    expect(result.current.data!.user.isAnonymousLead).toBe(true)
+    expect(result.current.data!.user.emailVerified).toBe(true)
+  })
+
   it('returns null data when no session', () => {
     mockUseSession.mockReturnValue({
       data: null,
