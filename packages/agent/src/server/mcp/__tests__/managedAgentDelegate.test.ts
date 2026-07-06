@@ -7,6 +7,7 @@ import { afterEach, describe, expect, it } from 'vitest'
 
 import {
   MANAGED_AGENT_MCP_DELIVERY_RULE,
+  MANAGED_AGENT_MCP_DELIVERY_VERSION,
   MANAGED_AGENT_MCP_INLINE_ARTIFACT_CONTENT_MAX_CHARS,
   MANAGED_AGENT_MCP_ORIGIN_SURFACE,
   ManagedAgentMcpError,
@@ -71,12 +72,17 @@ describe('ManagedAgentMcpDelegateController', () => {
         mediaType: 'text/markdown',
         title: 'Final report',
         content: '# Final report\nDone.',
+        shareUrl: null,
       }],
       inlineArtifactContentMaxChars: MANAGED_AGENT_MCP_INLINE_ARTIFACT_CONTENT_MAX_CHARS,
+      deliveryVersion: MANAGED_AGENT_MCP_DELIVERY_VERSION,
       deliveryRule: MANAGED_AGENT_MCP_DELIVERY_RULE,
     })
     expect(second.delegationId).toBe('delegation-2')
-    expect(first).not.toHaveProperty('shareUrl')
+    // Forward-compatible delivery fields: shareUrl exists per artifact but is
+    // pinned to null until BBM1-004 gated on PR #424.
+    expect(first.deliveryVersion).toBe('v0')
+    expect(first.artifacts.every((artifact) => artifact.shareUrl === null)).toBe(true)
     expect(first).not.toHaveProperty('shareLink')
     expect(JSON.stringify(first)).not.toMatch(/\/share\//i)
     expect(progressMessages).toContain('Agent turn started.')
@@ -277,8 +283,8 @@ describe('ManagedAgentMcpDelegateController', () => {
 
     expect(result.inlineArtifactContentMaxChars).toBe(10)
     expect(result.artifacts).toEqual([
-      { path: 'out/small.md', mediaType: 'text/markdown', content: '1234567890' },
-      { path: 'out/large.md', mediaType: 'text/markdown', truncated: true },
+      { path: 'out/small.md', mediaType: 'text/markdown', content: '1234567890', shareUrl: null },
+      { path: 'out/large.md', mediaType: 'text/markdown', truncated: true, shareUrl: null },
     ])
   })
 
@@ -373,10 +379,11 @@ describe('createManagedAgentMcpHttpHandler', () => {
       delegationId: 'delegation-1',
       status: 'completed',
       finalAssistantText: 'Final answer',
-      artifacts: [{ path: 'out/result.md', content: 'Final artifact' }],
+      artifacts: [{ path: 'out/result.md', content: 'Final artifact', shareUrl: null }],
+      deliveryVersion: MANAGED_AGENT_MCP_DELIVERY_VERSION,
       deliveryRule: MANAGED_AGENT_MCP_DELIVERY_RULE,
     })
-    expect(JSON.stringify(result.structuredContent)).not.toMatch(/shareUrl|shareLink|\/share\//i)
+    expect(JSON.stringify(result.structuredContent)).not.toMatch(/shareLink|\/share\//i)
   })
 
   it('serves delegate_task_start and delegate_task_status to a stock MCP Streamable HTTP client', async () => {
@@ -410,10 +417,11 @@ describe('createManagedAgentMcpHttpHandler', () => {
       status: 'completed',
       result: {
         finalAssistantText: 'Final answer',
+        deliveryVersion: MANAGED_AGENT_MCP_DELIVERY_VERSION,
         deliveryRule: MANAGED_AGENT_MCP_DELIVERY_RULE,
       },
     })
-    expect(JSON.stringify(completed)).not.toMatch(/shareUrl|shareLink|\/share\//i)
+    expect(JSON.stringify(completed)).not.toMatch(/shareLink|\/share\//i)
   })
 
   it('uses the configured brief length limit in the MCP input schema', async () => {

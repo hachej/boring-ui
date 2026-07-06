@@ -7,8 +7,9 @@ import type { SessionCtx } from '../../shared/session'
 
 export const MANAGED_AGENT_MCP_ORIGIN_SURFACE = 'mcp-managed-agent'
 export const MANAGED_AGENT_MCP_INLINE_ARTIFACT_CONTENT_MAX_CHARS = 8_000
+export const MANAGED_AGENT_MCP_DELIVERY_VERSION = 'v0'
 export const MANAGED_AGENT_MCP_DELIVERY_RULE =
-  'M1 delivery v0: delegate_task returns final assistant text and workspace-relative artifact references only; share-link delivery is gated on PR #424.'
+  'M1 delivery v0: delegate_task returns final assistant text and workspace-relative artifact references; `shareUrl` stays null until BBM1-004 gated on PR #424, and the workspace-relative `path` is the temporary v0 access mechanism.'
 
 export type ManagedAgentDelegationStatus = 'running' | 'completed' | 'error'
 export type ManagedAgentDelegateStatus = ManagedAgentDelegationStatus
@@ -19,6 +20,16 @@ export interface ManagedAgentArtifactRef {
   title?: string
   content?: string
   truncated?: boolean
+  /**
+   * Workspace-shareable artifact link. null until BBM1-004 gated on PR #424;
+   * the workspace-relative `path` is the temporary v0 access mechanism.
+   */
+  shareUrl: string | null
+}
+
+export type ManagedAgentArtifactRefInput = Omit<ManagedAgentArtifactRef, 'shareUrl'> & {
+  /** Optional for v0 host collectors; output refs always include shareUrl: null. */
+  shareUrl?: string | null
 }
 
 export interface ManagedAgentDelegateProgress {
@@ -34,6 +45,8 @@ export interface ManagedAgentDelegateResult {
   finalAssistantText: string
   artifacts: ManagedAgentArtifactRef[]
   inlineArtifactContentMaxChars: number
+  /** Delivery payload version. 'v0' until share-link delivery (BBM1-004, gated on PR #424) revs it. */
+  deliveryVersion: typeof MANAGED_AGENT_MCP_DELIVERY_VERSION
   deliveryRule: typeof MANAGED_AGENT_MCP_DELIVERY_RULE
 }
 
@@ -77,7 +90,7 @@ export interface ManagedAgentMcpDelegateOptions {
   agent: Agent
   resolveSessionCtx(input: { brief: string; request: ManagedAgentDelegateRequestContext }): SessionCtx | Promise<SessionCtx>
   resolveActor?(input: { brief: string; ctx: SessionCtx; request: ManagedAgentDelegateRequestContext }): AgentActor | Promise<AgentActor>
-  collectArtifacts?(input: ManagedAgentCollectArtifactsInput): ManagedAgentArtifactRef[] | Promise<ManagedAgentArtifactRef[]>
+  collectArtifacts?(input: ManagedAgentCollectArtifactsInput): ManagedAgentArtifactRefInput[] | Promise<ManagedAgentArtifactRefInput[]>
   createDelegationId?: () => string
   now?: () => Date
   maxBriefChars?: number
@@ -220,6 +233,7 @@ export class ManagedAgentMcpDelegateController {
         finalAssistantText,
         artifacts,
         inlineArtifactContentMaxChars: this.maxInlineArtifactContentChars,
+        deliveryVersion: MANAGED_AGENT_MCP_DELIVERY_VERSION,
         deliveryRule: MANAGED_AGENT_MCP_DELIVERY_RULE,
       }
       this.assertPublicPayloadSafe(result)
@@ -509,6 +523,7 @@ function extractArtifactRefs(events: readonly AgentEvent[]): ManagedAgentArtifac
         path: part.path,
         mediaType: part.mediaType,
         title: part.filename,
+        shareUrl: null,
       })
     }
   }
@@ -516,7 +531,7 @@ function extractArtifactRefs(events: readonly AgentEvent[]): ManagedAgentArtifac
 }
 
 function normalizeArtifactRef(
-  artifact: ManagedAgentArtifactRef,
+  artifact: ManagedAgentArtifactRefInput,
   maxInlineArtifactContentChars: number,
 ): ManagedAgentArtifactRef {
   const path = normalizeArtifactPath(artifact.path)
@@ -524,6 +539,9 @@ function normalizeArtifactRef(
     path,
     mediaType: optionalNonEmptyString(artifact.mediaType),
     title: optionalNonEmptyString(artifact.title),
+    // null until BBM1-004 gated on PR #424; the workspace-relative `path` is
+    // the temporary v0 access mechanism.
+    shareUrl: null,
   }
   if (artifact.content !== undefined) {
     if (typeof artifact.content !== 'string') {
