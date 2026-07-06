@@ -60,6 +60,7 @@ standalone (`createAgentApp`) with zero core dependency.
 - [`WORKSPACE_CONTRACT.md`](WORKSPACE_CONTRACT.md) — the agent ↔ workspace integration contract: HTTP routes, component exports, UiBridge/UiCommand semantics, import boundaries.
 - [`TAILWIND-V4-STYLE-ISOLATION.md`](TAILWIND-V4-STYLE-ISOLATION.md) — how packages share Tailwind v4 tokens: workspace owns `--boring-*` `:root` tokens; agent inherits them scoped to `[data-boring-agent]` (test-enforced).
 - [`PERFORMANCE.md`](PERFORMANCE.md) — historical Vercel-sandbox vs local FS latency benchmarks (harness removed; kept for reference).
+- [`FIXES.md`](FIXES.md) — production/runtime fix ledger for recurring incidents and deploy bugs.
 - [`kanzen/`](kanzen/) — agent workflow, maintainer loop, coding practices,
   review history, procedures, proof gates, owner decisions, and budgeted
   autonomy.
