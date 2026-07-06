@@ -11,11 +11,11 @@ import {
   provisionRuntimeWorkspace,
   provisionWorkspaceRuntime,
   resolveMode,
-  VERCEL_SANDBOX_WORKSPACE_ROOT,
   type CreateAgentAppOptions,
   type PiExtensionFactory,
   type ProvisionWorkspaceRuntimeOptions,
 } from "@hachej/boring-agent/server"
+import { VERCEL_SANDBOX_WORKSPACE_ROOT } from "@hachej/boring-sandbox/providers"
 import type { FastifyInstance } from "fastify"
 import { existsSync, mkdirSync, readFileSync } from "node:fs"
 import { dirname, isAbsolute, join, resolve } from "node:path"

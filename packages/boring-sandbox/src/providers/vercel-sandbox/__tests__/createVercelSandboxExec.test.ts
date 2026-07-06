@@ -2,8 +2,8 @@ import type { Writable } from 'node:stream'
 import type { Sandbox as VercelSandbox } from '@vercel/sandbox'
 import { expect, test, vi } from 'vitest'
 
-import { createVercelSandboxWorkspace } from '../../../workspace/createVercelSandboxWorkspace'
-import { createMockVercelSandboxHarness } from '../../../workspace/__tests__/helpers/mockVercelSandbox'
+import { createVercelSandboxWorkspace } from '../createVercelSandboxWorkspace'
+import { createMockVercelSandboxHarness } from './mockVercelSandbox'
 import { createVercelSandboxExec } from '../createVercelSandboxExec'
 
 const decoder = new TextDecoder()

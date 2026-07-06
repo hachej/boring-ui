@@ -1,6 +1,6 @@
-import { workspaceConformance } from '../../../__tests__/conformance/workspace'
+import { workspaceConformance } from '../../__tests__/conformance/workspace'
 import { createVercelSandboxWorkspace } from '../createVercelSandboxWorkspace'
-import { createMockVercelSandboxHarness } from './helpers/mockVercelSandbox'
+import { createMockVercelSandboxHarness } from './mockVercelSandbox'
 
 workspaceConformance('vercel-sandbox-workspace', async () => {
   const harness = await createMockVercelSandboxHarness()

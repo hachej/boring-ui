@@ -1,5 +1,4 @@
-import { getEnv } from '../../config/env'
-import type { SandboxHandleStore } from '../../../shared/sandbox-handle-store'
+import type { SandboxHandleStore } from '@hachej/boring-agent/shared'
 
 const SNAPSHOT_KEEP_ENV_VAR = 'BORING_AGENT_SNAPSHOT_KEEP'
 const DEFAULT_SNAPSHOT_KEEP = 2
@@ -66,7 +65,7 @@ export async function applySnapshotRetention(
     signal?: AbortSignal
   } = {},
 ): Promise<void> {
-  const keepCount = resolveSnapshotKeepCount(opts.getEnvVar ?? getEnv)
+  const keepCount = resolveSnapshotKeepCount(opts.getEnvVar ?? ((name) => process.env[name]))
   const existing = snapshotsByWorkspaceId.get(workspaceId) ?? []
   const ordered = [latestSnapshot, ...existing]
   const retained = ordered.slice(0, keepCount)

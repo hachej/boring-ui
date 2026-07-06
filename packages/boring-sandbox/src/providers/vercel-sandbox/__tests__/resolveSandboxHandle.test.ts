@@ -4,8 +4,7 @@ import { afterEach, expect, test, vi } from 'vitest'
 import type {
   SandboxHandleRecord,
   SandboxHandleStore,
-} from '../../../../shared/sandbox-handle-store'
-import { ErrorCode } from '../../../../shared/error-codes'
+} from '@hachej/boring-agent/shared'
 import {
   SandboxHandleUnavailableError,
   type VercelSandboxClient,
@@ -481,7 +480,7 @@ test('expired sandbox policy can reject stopped persisted sandbox instead of rec
     }),
   ).rejects.toMatchObject({
     name: 'SandboxHandleUnavailableError',
-    code: ErrorCode.enum.SANDBOX_EXPIRED,
+      code: 'SANDBOX_EXPIRED',
     statusCode: 410,
     workspaceId: 'workspace-stopped-error',
     sandboxId: 'sb-stopped-error',
@@ -551,7 +550,7 @@ test('expired sandbox policy can reject missing persisted sandbox instead of rec
       expiredSandboxPolicy: 'error',
     }),
   ).rejects.toMatchObject({
-    code: ErrorCode.enum.SANDBOX_EXPIRED,
+      code: 'SANDBOX_EXPIRED',
     statusCode: 410,
     workspaceId: 'workspace-410-error',
     sandboxId: 'sb-410-error',

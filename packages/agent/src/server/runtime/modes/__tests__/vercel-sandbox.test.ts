@@ -4,18 +4,18 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, expect, test, vi } from 'vitest'
 
+import {
+  evictSandboxHandleCacheForWorkspace,
+  resetSandboxHandleCacheForTests,
+  type PeriodicSnapshotScheduler,
+  type VercelSandboxClient,
+} from '@hachej/boring-sandbox/providers'
 import type { Sandbox as VercelSandbox } from '@vercel/sandbox'
 import type {
   SandboxHandleRecord,
   SandboxHandleStore,
 } from '../../../../shared/sandbox-handle-store'
-import {
-  evictSandboxHandleCacheForWorkspace,
-  resetSandboxHandleCacheForTests,
-  type VercelSandboxClient,
-} from '../../../sandbox/vercel-sandbox/resolveSandboxHandle'
-import type { PeriodicSnapshotScheduler } from '../../../sandbox/vercel-sandbox/periodicSnapshot'
-import { createMockVercelSandboxHarness } from '../../../workspace/__tests__/helpers/mockVercelSandbox'
+import { createMockVercelSandboxHarness } from '../../../../../../boring-sandbox/src/providers/vercel-sandbox/__tests__/mockVercelSandbox'
 import { getBoringAgentRuntimePaths } from '../../../workspace/runtimeLayout'
 import { buildWorkspaceRootSetupScript, createVercelSandboxModeAdapter } from '../vercel-sandbox'
 

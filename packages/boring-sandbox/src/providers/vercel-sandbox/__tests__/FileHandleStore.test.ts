@@ -2,7 +2,7 @@ import { mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { afterEach, expect, test } from 'vitest'
-import type { SandboxHandleRecord } from '../../../../shared/sandbox-handle-store'
+import type { SandboxHandleRecord } from '@hachej/boring-agent/shared'
 import { FileHandleStore } from '../FileHandleStore'
 
 const tempDirs: string[] = []

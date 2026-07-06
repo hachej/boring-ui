@@ -3,34 +3,32 @@ import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 import { Sandbox as VercelSandbox } from '@vercel/sandbox'
+import {
+  collectFiles,
+  computeTemplateHash,
+  createVercelProvisioningAdapter,
+  createVercelSandboxExec,
+  createVercelSandboxWorkspace,
+  evictSandboxHandleCacheForWorkspace,
+  FileHandleStore,
+  isNodeFamilyRuntime,
+  packageTemplate,
+  resolveSandboxHandle,
+  uvSetupCommandsForRuntime,
+  VERCEL_SANDBOX_REMOTE_ROOT,
+  VERCEL_SANDBOX_WORKSPACE_ROOT,
+  VERCEL_UV_BIN,
+  type ExpiredSandboxPolicy,
+  type PackageTemplateOptions,
+  type PeriodicSnapshotScheduler,
+  type VercelSandboxClient,
+} from '@hachej/boring-sandbox/providers'
 
 import { type SandboxHandleStore } from '../../../shared/sandbox-handle-store'
 import { ErrorCode } from '../../../shared/error-codes'
 import { safeCapture, type TelemetrySink } from '../../../shared/telemetry'
 import { getEnv, setEnvDefault } from '../../config/env'
-import { createVercelSandboxExec } from '../../sandbox/vercel-sandbox/createVercelSandboxExec'
-import { createVercelProvisioningAdapter } from '../../sandbox/vercel-sandbox/provisioningAdapter'
 import { packProvisioningArtifact } from '../../workspace/provisioning/packArtifact'
-import { isNodeFamilyRuntime, uvSetupCommandsForRuntime, VERCEL_UV_BIN } from '../../sandbox/snapshots/deploymentSnapshot'
-import { FileHandleStore } from '../../sandbox/vercel-sandbox/FileHandleStore'
-import {
-  collectFiles,
-  computeTemplateHash,
-  packageTemplate,
-  type PackageTemplateOptions,
-} from '../../sandbox/vercel-sandbox/packageTemplate'
-import {
-  type ExpiredSandboxPolicy,
-  type VercelSandboxClient,
-  evictSandboxHandleCacheForWorkspace,
-  resolveSandboxHandle,
-} from '../../sandbox/vercel-sandbox/resolveSandboxHandle'
-import type { PeriodicSnapshotScheduler } from '../../sandbox/vercel-sandbox/periodicSnapshot'
-import {
-  createVercelSandboxWorkspace,
-  VERCEL_SANDBOX_REMOTE_ROOT,
-  VERCEL_SANDBOX_WORKSPACE_ROOT,
-} from '../../workspace/createVercelSandboxWorkspace'
 import { createServerFileSearch } from '../createServerFileSearch'
 import type { ModeContext, RuntimeModeAdapter, RuntimeRemoteWorkspacePathOptions } from '../mode'
 import type { BoringAgentRuntimePaths } from '../../workspace/runtimeLayout'

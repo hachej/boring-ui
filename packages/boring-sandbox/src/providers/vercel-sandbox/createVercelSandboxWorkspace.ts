@@ -6,8 +6,8 @@ import type {
   Workspace,
   WorkspaceChangeEvent,
   WorkspaceWatcher,
-} from '../../shared/workspace'
-import { validatePath } from './paths'
+} from '@hachej/boring-agent/shared'
+import { validatePath } from '../node-workspace/paths'
 
 export const VERCEL_SANDBOX_WORKSPACE_ROOT = '/workspace'
 export const VERCEL_SANDBOX_REMOTE_ROOT = VERCEL_SANDBOX_WORKSPACE_ROOT

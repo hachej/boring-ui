@@ -1,30 +1,4 @@
 // @hachej/boring-agent — server (Node-only) public API
-export { FileHandleStore } from './sandbox/vercel-sandbox/FileHandleStore'
-export { resolveSandboxHandle } from './sandbox/vercel-sandbox/resolveSandboxHandle'
-export { bakeSnapshotIfNeeded, buildPackageHash, buildSnapshotRecipeHash } from './sandbox/vercel-sandbox/bake'
-export type {
-  SnapshotBakeOptions,
-  SnapshotBakeResult,
-  VercelBakeClient,
-  VercelBakeSandbox,
-} from './sandbox/vercel-sandbox/bake'
-export {
-  buildDeploymentSnapshotRecipe,
-  prepareDeploymentSnapshot,
-  UV_SETUP_COMMANDS,
-} from './sandbox/snapshots/deploymentSnapshot'
-export type {
-  DeploymentSnapshotProvider,
-  DeploymentSnapshotRecipe,
-  DeploymentSnapshotResult,
-  DeploymentSnapshotStatus,
-} from './sandbox/snapshots/deploymentSnapshot'
-export {
-  createVercelDeploymentSnapshotProvider,
-  prepareVercelDeploymentSnapshot,
-  VERCEL_UV_SETUP_COMMANDS,
-} from './sandbox/vercel-sandbox/deploymentSnapshot'
-export type { VercelDeploymentSnapshotOptions } from './sandbox/vercel-sandbox/deploymentSnapshot'
 export { createRemoteWorkerModeAdapter } from './runtime/modes/remote-worker'
 export type { RemoteWorkerModeAdapterOptions } from './runtime/modes/remote-worker'
 export { createRemoteWorkerWorkspace } from './workspace/createRemoteWorkerWorkspace'
@@ -68,16 +42,6 @@ export {
   getBoringAgentPathEntries,
 } from './workspace/runtimeLayout'
 export type { BoringAgentRuntimePaths } from './workspace/runtimeLayout'
-export {
-  createVercelSandboxWorkspace,
-  VERCEL_SANDBOX_WORKSPACE_ROOT,
-} from './workspace/createVercelSandboxWorkspace'
-export {
-  createVercelProvisioningAdapter,
-  VERCEL_PROVISIONING_CACHE_ROOT,
-} from './sandbox/vercel-sandbox/provisioningAdapter'
-export type { CreateVercelProvisioningAdapterOptions } from './sandbox/vercel-sandbox/provisioningAdapter'
-export type { ProvisioningArtifactRequest } from './workspace/provisioning/packArtifact'
 export { provisionWorkspaceRuntime } from './workspace/provisioning'
 export type {
   PluginSkillSource,

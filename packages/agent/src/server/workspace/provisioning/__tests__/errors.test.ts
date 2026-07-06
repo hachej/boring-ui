@@ -4,8 +4,8 @@ import { tmpdir } from 'node:os'
 import { expect, test } from 'vitest'
 
 import { ErrorCode } from '../../../../shared/error-codes'
+import { createVercelProvisioningAdapter } from '@hachej/boring-sandbox/providers'
 import { getBoringAgentRuntimePaths } from '../../runtimeLayout'
-import { createVercelProvisioningAdapter } from '../../../sandbox/vercel-sandbox/provisioningAdapter'
 import { ProvisioningError } from '../errors'
 import { provisionWorkspaceRuntime } from '../provisionWorkspaceRuntime'
 import type { WorkspaceProvisioningAdapter } from '../types'
@@ -103,6 +103,42 @@ test('Vercel artifact failures use stable provisioning artifact code', async () 
     kind: 'node',
     id: 'cli',
     fingerprint: 'sha256:abcdef',
+  })).rejects.toMatchObject({
+    code: ErrorCode.enum.PROVISIONING_ARTIFACT_FAILED,
+    details: { phase: 'adapter-artifact', runtime: 'node', id: 'cli' },
+  })
+})
+
+test('Vercel artifact failures keep stable provisioning artifact code through full provisioning', async () => {
+  const runtimeLayout = getBoringAgentRuntimePaths('/workspace')
+  const adapter = createVercelProvisioningAdapter({
+    runtimeLayout,
+    workspaceFs: {
+      async exists() { return false },
+      async rm() {},
+      async mkdir() {},
+      async writeText() {},
+      async readText() { return null },
+      async copyFromHost() {},
+    },
+    async exec(command, args) {
+      if (command === 'node' && args[0] === '--version') return { stdout: 'v20.11.0\n' }
+      if (command === 'npm' && args[0] === '--version') return { stdout: '10.2.4\n' }
+    },
+    async prepareArtifact() {
+      throw new Error('artifact pack failed')
+    },
+  })
+
+  await expect(provisionWorkspaceRuntime({
+    plugins: [{
+      id: 'plugin',
+      provisioning: {
+        nodePackages: [{ id: 'cli', packageName: '@hachej/boring-ui-cli', packageRoot: '/tmp/pkg' }],
+      },
+    }],
+    adapter,
+    runtimeLayout,
   })).rejects.toMatchObject({
     code: ErrorCode.enum.PROVISIONING_ARTIFACT_FAILED,
     details: { phase: 'adapter-artifact', runtime: 'node', id: 'cli' },

@@ -3,7 +3,7 @@ import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { Sandbox } from '@vercel/sandbox'
 
-import { FileHandleStore } from '../src/server/sandbox/vercel-sandbox/FileHandleStore'
+import { FileHandleStore } from '@hachej/boring-sandbox/providers'
 import { createVercelSandboxModeAdapter } from '../src/server/runtime/modes/vercel-sandbox'
 import { getBoringAgentRuntimePaths } from '../src/server/workspace/runtimeLayout'
 import { provisionWorkspaceRuntime } from '../src/server/workspace/provisioning'

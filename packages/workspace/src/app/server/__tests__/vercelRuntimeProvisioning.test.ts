@@ -2,8 +2,8 @@ import { mkdir, mkdtemp, readFile, readdir, rm, stat, writeFile } from "node:fs/
 import { dirname, join } from "node:path"
 import { tmpdir } from "node:os"
 import { afterEach, expect, test } from "vitest"
+import { createVercelProvisioningAdapter } from "@hachej/boring-sandbox/providers"
 import {
-  createVercelProvisioningAdapter,
   getBoringAgentRuntimePaths,
   type RuntimeModeAdapter,
   type WorkspaceProvisioningAdapter,

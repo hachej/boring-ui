@@ -2,7 +2,7 @@ import { afterEach, expect, test, vi } from 'vitest'
 import type {
   SandboxHandleRecord,
   SandboxHandleStore,
-} from '../../../../shared/sandbox-handle-store'
+} from '@hachej/boring-agent/shared'
 
 import {
   applySnapshotRetention,

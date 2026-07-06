@@ -8,7 +8,7 @@ import type { AgentHarness } from '../src/shared/harness'
 import type { AgentTool } from '../src/shared/tool'
 import { ErrorCode } from '../src/shared/error-codes'
 import { registerAgentRoutes } from '../src/server/registerAgentRoutes'
-import { FileHandleStore } from '../src/server/sandbox/vercel-sandbox/FileHandleStore'
+import { FileHandleStore } from '@hachej/boring-sandbox/providers'
 import { provisionWorkspaceRuntime } from '../src/server/workspace/provisioning'
 
 const SAFE_TIMEOUT_MS = 10 * 60_000

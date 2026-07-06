@@ -250,8 +250,7 @@ test('createAgentApp exposes static filesystem bindings on files and tree routes
     id: 'static-bindings-test',
     workspaceFsCapability: 'strong' as const,
     async create(ctx) {
-      const { createNodeWorkspace } = await import('../workspace/createNodeWorkspace')
-      const { createDirectSandbox } = await import('../sandbox/direct/createDirectSandbox')
+      const { createDirectSandbox, createNodeWorkspace } = await import('@hachej/boring-sandbox/providers')
       const { createServerFileSearch } = await import('../runtime/createServerFileSearch')
       const workspace = createNodeWorkspace(ctx.workspaceRoot)
       const sandbox = createDirectSandbox()
