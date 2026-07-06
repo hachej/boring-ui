@@ -10,6 +10,7 @@ import {
   createNodeWorkspace,
   type AgentMeteringSink,
   type ManagedAgentArtifactRef,
+  type ManagedAgentArtifactRefInput,
   type ManagedAgentCollectArtifactsInput,
   type ManagedAgentMcpDelegateOptions,
 } from '@hachej/boring-agent/server'
@@ -18,8 +19,41 @@ import type { CoreWorkspaceAgentServer } from '@hachej/boring-core/app/server'
 
 export const FULL_APP_MCP_MANAGED_AGENT_ENDPOINT = '/mcp/managed-agent'
 export const FULL_APP_MCP_MANAGED_AGENT_ARTIFACT_ROOT = 'artifacts/mcp-managed-agent'
-export const FULL_APP_MCP_MANAGED_AGENT_NAME = 'Engagement Analyst'
 export const FULL_APP_MCP_MANAGED_AGENT_RUNTIME_CWD = '/workspace'
+
+/**
+ * Host-supplied vertical definition for the managed-agent MCP endpoint.
+ * The host passes one of these when mounting the endpoint; keep this a seam,
+ * NOT a registry. P6a owns registries later.
+ */
+export interface ManagedAgentVerticalConfig {
+  /** Human-readable vertical name; used as the delegated-agent actor name. */
+  name: string
+  /** MCP server implementation name advertised to connecting clients. */
+  serverName: string
+  /** Vertical instructions appended to the base agent system prompt. */
+  instructions: string
+  /** Vertical-specific tool grants. Delivery plumbing (the artifact publish tool) is host-owned and always present. */
+  tools: readonly AgentTool[]
+}
+
+/**
+ * DEMO-ONLY: Engagement Analyst prompt/tool policy for the BBM1-002 demo
+ * slice. This is not the managed-agent abstraction; real verticals are
+ * host-supplied config. Keep this a seam, NOT a registry; P6a owns registries
+ * later.
+ */
+export const DEMO_ENGAGEMENT_ANALYST_VERTICAL: ManagedAgentVerticalConfig = {
+  name: 'Engagement Analyst',
+  serverName: 'full-app-engagement-analyst',
+  instructions: [
+    'You are the Engagement Analyst demo agent for boring-ui full-app.',
+    'Answer delegated outreach/research briefs with concise, executive-ready Markdown.',
+    'Use the publish_mcp_delivery_markdown tool once to publish the final Markdown artifact before your final response.',
+    'Do not mention host paths, session storage, credentials, tokens, or internal implementation details.',
+  ].join('\n'),
+  tools: [],
+}
 
 const ENABLED_VALUE = '1'
 const DEFAULT_SESSION_ROOT_DIR = 'mcp-managed-agent'
@@ -38,7 +72,7 @@ export interface FullAppMcpManagedAgentConfig {
 
 export interface FullAppMcpManagedAgentComposition {
   agent: Agent
-  collectArtifacts(input: ManagedAgentCollectArtifactsInput): Promise<ManagedAgentArtifactRef[]>
+  collectArtifacts(input: ManagedAgentCollectArtifactsInput): Promise<ManagedAgentArtifactRefInput[]>
 }
 
 export interface RegisterFullAppMcpManagedAgentRoutesOptions {
@@ -67,6 +101,7 @@ export function readFullAppMcpManagedAgentConfig(
 
 export function createFullAppMcpManagedAgentComposition(
   config: FullAppMcpManagedAgentConfig,
+  vertical: ManagedAgentVerticalConfig,
   options: { metering?: AgentMeteringSink } = {},
 ): FullAppMcpManagedAgentComposition {
   const workspaceId = requireConfiguredWorkspaceId(config)
@@ -77,8 +112,8 @@ export function createFullAppMcpManagedAgentComposition(
   const bridge = createAgentRuntimeBridge({
     runtime: 'none',
     workdir: workspaceHostRoot,
-    tools: [artifacts.createPublishTool()],
-    systemPromptAppend: FULL_APP_MCP_MANAGED_AGENT_SYSTEM_PROMPT,
+    tools: [artifacts.createPublishTool(), ...vertical.tools],
+    systemPromptAppend: vertical.instructions,
     sessionStorageRoot: config.sessionRoot,
     metering: options.metering,
   }, {
@@ -93,6 +128,7 @@ export function createFullAppMcpManagedAgentComposition(
 
 export function registerFullAppMcpManagedAgentRoutes(
   app: CoreWorkspaceAgentServer,
+  vertical: ManagedAgentVerticalConfig,
   options: RegisterFullAppMcpManagedAgentRoutesOptions = {},
 ): void {
   const env = options.env ?? process.env
@@ -100,15 +136,15 @@ export function registerFullAppMcpManagedAgentRoutes(
   if (!config.enabled) return
   assertEnabledConfig(config, env, options.metering)
 
-  const composition = options.composition ?? createFullAppMcpManagedAgentComposition(config, { metering: options.metering })
+  const composition = options.composition ?? createFullAppMcpManagedAgentComposition(config, vertical, { metering: options.metering })
   const handler = createManagedAgentMcpHttpHandler({
-    name: 'full-app-engagement-analyst',
+    name: vertical.serverName,
     version: '0.0.0',
     agent: composition.agent,
     resolveSessionCtx: () => resolveConfiguredSessionCtx(app, config),
     resolveActor: () => ({
       id: config.userId ?? 'full-app-mcp-managed-agent',
-      name: FULL_APP_MCP_MANAGED_AGENT_NAME,
+      name: vertical.name,
     }),
     collectArtifacts: composition.collectArtifacts,
     maxInlineArtifactContentChars: config.inlineArtifactContentMaxChars,
@@ -225,6 +261,9 @@ class FullAppMcpManagedAgentArtifacts {
         mediaType: 'text/markdown',
         title: record.title,
         content: await this.workspace.readFile(record.path),
+        // null until BBM1-004 gated on PR #424; the workspace-relative `path`
+        // is the temporary v0 access mechanism.
+        shareUrl: null,
       })
     }
     return refs
@@ -236,13 +275,6 @@ class FullAppMcpManagedAgentArtifacts {
     await this.workspace.writeFile(path, content.endsWith('\n') ? content : `${content}\n`)
   }
 }
-
-const FULL_APP_MCP_MANAGED_AGENT_SYSTEM_PROMPT = [
-  'You are the Engagement Analyst demo agent for boring-ui full-app.',
-  'Answer delegated outreach/research briefs with concise, executive-ready Markdown.',
-  'Use the publish_mcp_delivery_markdown tool once to publish the final Markdown artifact before your final response.',
-  'Do not mention host paths, session storage, credentials, tokens, or internal implementation details.',
-].join('\n')
 
 function artifactPath(sessionId: string, filename: string): string {
   return `${FULL_APP_MCP_MANAGED_AGENT_ARTIFACT_ROOT}/${safeSegment(sessionId)}/${safeMarkdownFilename(filename)}`

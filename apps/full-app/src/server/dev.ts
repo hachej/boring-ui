@@ -10,7 +10,7 @@ import {
   fullAppAgentSessionNamespace,
   registerFullAppBoringMcpRoutes,
 } from './boringMcp.js'
-import { registerFullAppMcpManagedAgentRoutes } from './mcpManagedAgent.js'
+import { DEMO_ENGAGEMENT_ANALYST_VERTICAL, registerFullAppMcpManagedAgentRoutes } from './mcpManagedAgent.js'
 
 const appRoot = appRootFromImportMeta(import.meta.url, 2)
 
@@ -94,7 +94,7 @@ startCoreWorkspaceAgentDevServer({
     appRef = app
     credits.attach(app)
     registerFullAppBoringMcpRoutes(app)
-    registerFullAppMcpManagedAgentRoutes(app, { metering: credits.meteringSink })
+    registerFullAppMcpManagedAgentRoutes(app, DEMO_ENGAGEMENT_ANALYST_VERTICAL, { metering: credits.meteringSink })
     await registerDevLoginRoute(app)
     return app
   },

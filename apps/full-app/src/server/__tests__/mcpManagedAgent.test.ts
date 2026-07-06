@@ -7,15 +7,18 @@ import { Client } from '@modelcontextprotocol/sdk/client/index.js'
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js'
 import { afterEach, describe, expect, it } from 'vitest'
 import {
+  DEMO_ENGAGEMENT_ANALYST_VERTICAL,
   FULL_APP_MCP_MANAGED_AGENT_ENDPOINT,
   FULL_APP_MCP_MANAGED_AGENT_SECRET_CANARY,
   createFullAppMcpManagedAgentComposition,
   readFullAppMcpManagedAgentConfig,
   registerFullAppMcpManagedAgentRoutes,
   type FullAppMcpManagedAgentComposition,
+  type ManagedAgentVerticalConfig,
 } from '../mcpManagedAgent'
 import {
   MANAGED_AGENT_MCP_DELIVERY_RULE,
+  MANAGED_AGENT_MCP_DELIVERY_VERSION,
   MANAGED_AGENT_MCP_INLINE_ARTIFACT_CONTENT_MAX_CHARS,
   type AgentMeteringSink,
   type ManagedAgentCollectArtifactsInput,
@@ -63,7 +66,7 @@ describe('full-app M1 MCP managed agent composition', () => {
       BORING_M1_MCP_USER_ID: USER_ID,
       BORING_AGENT_WORKSPACE_ROOT: workspaceRootBase,
     } as NodeJS.ProcessEnv)
-    const composition = createFullAppMcpManagedAgentComposition(config)
+    const composition = createFullAppMcpManagedAgentComposition(config, DEMO_ENGAGEMENT_ANALYST_VERTICAL)
 
     const refs = await composition.collectArtifacts({
       delegationId: 'delegation-1',
@@ -79,6 +82,7 @@ describe('full-app M1 MCP managed agent composition', () => {
       mediaType: 'text/markdown',
       title: 'Delegated brief result',
       content: '# Outreach result\n\nReady.\n',
+      shareUrl: null,
     })
     if (!ref?.path) throw new Error('expected artifact path')
     await expect(readFile(join(workspaceRootBase, WORKSPACE_ID, ref.path), 'utf8')).resolves.toBe('# Outreach result\n\nReady.\n')
@@ -113,11 +117,41 @@ describe('full-app M1 MCP managed agent composition', () => {
       delegationId: expect.any(String),
       status: 'completed',
       finalAssistantText: 'Final answer',
-      artifacts: [{ path: 'out/result.md', mediaType: 'text/markdown', content: '# Result\nDone.' }],
+      artifacts: [{ path: 'out/result.md', mediaType: 'text/markdown', content: '# Result\nDone.', shareUrl: null }],
       inlineArtifactContentMaxChars: MANAGED_AGENT_MCP_INLINE_ARTIFACT_CONTENT_MAX_CHARS,
+      deliveryVersion: MANAGED_AGENT_MCP_DELIVERY_VERSION,
       deliveryRule: MANAGED_AGENT_MCP_DELIVERY_RULE,
     })
-    expect(JSON.stringify(result.structuredContent)).not.toMatch(/^\/|\/tmp|pi-sessions|shareUrl|shareLink|\/share\//i)
+    // shareUrl exists as a forward-compatible field but stays null until BBM1-004 gated on PR #424.
+    const payload = result.structuredContent as { artifacts: Array<{ shareUrl: string | null }> }
+    expect(payload.artifacts.every((artifact) => artifact.shareUrl === null)).toBe(true)
+    expect(JSON.stringify(result.structuredContent)).not.toMatch(/^\/|\/tmp|pi-sessions|shareLink|\/share\//i)
+  })
+
+  it('uses the host-supplied vertical config for server identity and actor name', async () => {
+    const agent = new FakeAgent()
+    const vertical: ManagedAgentVerticalConfig = {
+      name: 'Custom Vertical',
+      serverName: 'full-app-custom-vertical',
+      instructions: 'You are a host-configured vertical.',
+      tools: [],
+    }
+    const app = routeHarness({
+      agent,
+      vertical,
+      collectArtifacts: async () => [{ path: 'out/result.md', content: '# ok' }],
+    })
+    const endpoint = await listen(app)
+    const client = new Client({ name: 'full-app-m1-vertical-client', version: '0.0.0-test' })
+
+    await connectClient(client, endpoint)
+    const result = await client.callTool({ name: 'delegate_task', arguments: { brief: 'memo' } })
+    const serverInfo = client.getServerVersion()
+    await client.close()
+
+    expect(result.isError).not.toBe(true)
+    expect(serverInfo?.name).toBe('full-app-custom-vertical')
+    expect(agent.starts[0]?.actor).toEqual({ id: USER_ID, name: 'Custom Vertical' })
   })
 
   it('requires bearer auth without changing the stock MCP endpoint shape', async () => {
@@ -200,6 +234,7 @@ function routeHarness(options: {
   bearerToken?: string | null
   metering?: AgentMeteringSink
   env?: NodeJS.ProcessEnv
+  vertical?: ManagedAgentVerticalConfig
 }): CoreWorkspaceAgentServer {
   const app = Fastify({ logger: false }) as unknown as CoreWorkspaceAgentServer
   app.decorate('config', { appId: 'full-app-test' } as never)
@@ -213,7 +248,7 @@ function routeHarness(options: {
       return workspaceId === CTX.workspaceId && userId === CTX.userId ? 'owner' : null
     },
   } as never)
-  registerFullAppMcpManagedAgentRoutes(app, {
+  registerFullAppMcpManagedAgentRoutes(app, options.vertical ?? DEMO_ENGAGEMENT_ANALYST_VERTICAL, {
     env: {
       BORING_M1_MCP_MANAGED_AGENT_ENABLED: '1',
       BORING_M1_MCP_WORKSPACE_ID: WORKSPACE_ID,

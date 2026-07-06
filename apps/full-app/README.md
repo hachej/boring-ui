@@ -96,13 +96,13 @@ http://100.68.199.114:6301/dev-login
 
 ### M1 Managed-Agent MCP Endpoint
 
-BBM1-002 hosts one vertical `Engagement Analyst` managed-agent composition in full-app. When enabled, stock MCP clients connect to:
+BBM1-002 hosts one vertical managed-agent composition in full-app. The vertical (name, instructions, tool policy) is host-supplied config: `registerFullAppMcpManagedAgentRoutes` takes a `ManagedAgentVerticalConfig`, and full-app passes the demo-only `DEMO_ENGAGEMENT_ANALYST_VERTICAL`. The Engagement Analyst prompt/tool policy is not the managed-agent abstraction; real verticals supply their own config (a vertical registry is deferred to P6a). When enabled, stock MCP clients connect to:
 
 ```txt
 https://<full-app-host>/mcp/managed-agent
 ```
 
-The endpoint exposes `delegate_task`, `delegate_task_start`, and `delegate_task_status` over Streamable HTTP. Delivery v0 returns final assistant text plus workspace-relative Markdown artifact references only. It does not return share links; BBM1-004 owns share-link delivery after PR #424 lands. Small text artifacts are inlined when their content is at most `8000` characters; larger text artifacts keep the workspace-relative path and set `truncated: true`.
+The endpoint exposes `delegate_task`, `delegate_task_start`, and `delegate_task_status` over Streamable HTTP. Delivery v0 (`deliveryVersion: 'v0'` in the result payload) returns final assistant text plus workspace-relative Markdown artifact references. Each artifact ref carries a forward-compatible `shareUrl` field that stays `null` until BBM1-004 gated on PR #424; the workspace-relative `path` is the temporary v0 access mechanism until then. Small text artifacts are inlined when their content is at most `8000` characters; larger text artifacts keep the workspace-relative path and set `truncated: true`.
 
 Artifacts are written under `artifacts/mcp-managed-agent/...` inside the configured workspace. Caller-visible refs never include absolute host paths or Pi/session-storage paths. Use `BORING_AGENT_SESSION_ROOT` for durable sidecar chat transcripts; with `BORING_AGENT_WORKSPACE_ROOT=/data/workspaces`, keep it on the sibling mounted volume `/data/pi-sessions`.
 
