@@ -7,6 +7,7 @@ import { afterEach, describe, expect, it } from 'vitest'
 
 import {
   MANAGED_AGENT_MCP_DELIVERY_RULE,
+  MANAGED_AGENT_MCP_INLINE_ARTIFACT_CONTENT_MAX_CHARS,
   MANAGED_AGENT_MCP_ORIGIN_SURFACE,
   ManagedAgentMcpError,
   createManagedAgentMcpDelegateController,
@@ -71,6 +72,7 @@ describe('ManagedAgentMcpDelegateController', () => {
         title: 'Final report',
         content: '# Final report\nDone.',
       }],
+      inlineArtifactContentMaxChars: MANAGED_AGENT_MCP_INLINE_ARTIFACT_CONTENT_MAX_CHARS,
       deliveryRule: MANAGED_AGENT_MCP_DELIVERY_RULE,
     })
     expect(second.delegationId).toBe('delegation-2')
@@ -260,6 +262,45 @@ describe('ManagedAgentMcpDelegateController', () => {
     expect(progressMessages).toContain('Agent progress updated.')
     expect(progressMessages.join('\n')).not.toContain('SECRET_CANARY')
     expect(JSON.stringify(controller.getStatus('delegation-1', CTX))).not.toContain('SECRET_CANARY')
+  })
+
+  it('enforces inline artifact content cutoff', async () => {
+    const controller = createManagedAgentMcpDelegateController(options(new FakeAgent(), {
+      maxInlineArtifactContentChars: 10,
+      collectArtifacts: async () => [
+        { path: 'out/small.md', mediaType: 'text/markdown', content: '1234567890' },
+        { path: 'out/large.md', mediaType: 'text/markdown', content: '12345678901' },
+      ],
+    }))
+
+    const result = await controller.delegateTask({ brief: 'cutoff check' })
+
+    expect(result.inlineArtifactContentMaxChars).toBe(10)
+    expect(result.artifacts).toEqual([
+      { path: 'out/small.md', mediaType: 'text/markdown', content: '1234567890' },
+      { path: 'out/large.md', mediaType: 'text/markdown', truncated: true },
+    ])
+  })
+
+  it('rejects absolute, escaping, and session-storage artifact references', async () => {
+    async function expectArtifactPathRejected(path: string, message: string) {
+      const controller = createManagedAgentMcpDelegateController(options(new FakeAgent(), {
+        collectArtifacts: async () => [{ path, mediaType: 'text/markdown', content: 'artifact' }],
+      }))
+
+      await expect(controller.delegateTask({ brief: `reject ${path}` })).rejects.toMatchObject({
+        code: ErrorCode.enum.INTERNAL_ERROR,
+        message,
+      })
+    }
+
+    await expectArtifactPathRejected('/tmp/out.md', 'artifact path must be workspace-relative')
+    await expectArtifactPathRejected('file:///tmp/out.md', 'artifact path must be workspace-relative')
+    await expectArtifactPathRejected('\\\\server\\share\\secret.md', 'artifact path must be workspace-relative')
+    await expectArtifactPathRejected('reports/../secret.md', 'artifact path must stay within the workspace')
+    await expectArtifactPathRejected('sessions/session-1.jsonl', 'artifact path must not reference session storage')
+    await expectArtifactPathRejected('./sessions/session-1.jsonl', 'artifact path must not reference session storage')
+    await expectArtifactPathRejected('./.boring-agent/sessions/session-1.jsonl', 'artifact path must not reference session storage')
   })
 
   it('rejects host configurations that do not resolve real workspace tenancy', async () => {

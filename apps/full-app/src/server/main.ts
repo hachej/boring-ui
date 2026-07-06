@@ -9,6 +9,7 @@ import {
   fullAppAgentSessionNamespace,
   registerFullAppBoringMcpRoutes,
 } from './boringMcp.js'
+import { registerFullAppMcpManagedAgentRoutes } from './mcpManagedAgent.js'
 import { assertProductionAgentModeIsSafe } from './productionSafety.js'
 
 function pluginAuthoringEnabledFromEnv(): boolean {
@@ -35,6 +36,7 @@ async function main() {
   appRef = app
   credits.attach(app)
   registerFullAppBoringMcpRoutes(app)
+  registerFullAppMcpManagedAgentRoutes(app, { metering: credits.meteringSink })
   const address = await app.listen({ host: app.config.host, port: app.config.port })
   app.log.info({ event: 'core.server.ready', address }, 'core.server.ready')
 }

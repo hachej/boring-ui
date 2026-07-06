@@ -95,13 +95,15 @@ export type {
   WorkspaceProvisioningResult,
 } from './workspace/provisioning'
 export { autoDetectMode, hasBwrap, resolveMode } from './runtime/resolveMode'
-export { createAgent } from './createAgent'
+export { createAgent, createAgentRuntimeBridge } from './createAgent'
+export type { AgentRuntimeBridge, CreateAgentRuntimeBridgeOptions } from './createAgent'
 export type { AgentConfig } from '../shared/events'
 export {
   createManagedAgentMcpDelegateController,
   createManagedAgentMcpHttpHandler,
   createManagedAgentMcpServer,
   MANAGED_AGENT_MCP_DELIVERY_RULE,
+  MANAGED_AGENT_MCP_INLINE_ARTIFACT_CONTENT_MAX_CHARS,
   MANAGED_AGENT_MCP_ORIGIN_SURFACE,
   ManagedAgentMcpDelegateController,
   ManagedAgentMcpError,

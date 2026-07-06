@@ -65,6 +65,10 @@ Common optional:
 | `BORING_MCP_ENABLED` | `1` | Enables the generic boring-mcp server plugin/prompt for app-owned Sources wiring. |
 | `COMPOSIO_API_KEY` | — | Optional server-only managed connector credential resolved by the app's boring-mcp managed connector secret resolver. Do not create a `VITE_*` mirror. |
 | `BORING_MCP_MAX_READONLY_INPUT_BYTES` | `65536` | Governed read-only MCP call input limit. |
+| `BORING_M1_MCP_MANAGED_AGENT_ENABLED` | `0` | `1` mounts the M1 vertical managed-agent MCP endpoint in full-app. |
+| `BORING_M1_MCP_WORKSPACE_ID`, `BORING_M1_MCP_USER_ID` | — | Host-selected real `SessionCtx` for the M1 endpoint. The MCP caller cannot supply tenant authority; `BORING_M1_MCP_USER_ID` is required when full-app metering is wired. |
+| `BORING_M1_MCP_BEARER_TOKEN` | — | Required bearer token for the M1 endpoint when `BORING_M1_MCP_MANAGED_AGENT_ENABLED=1`. |
+| `BORING_M1_MCP_ENDPOINT_PATH` | `/mcp/managed-agent` | Streamable HTTP MCP endpoint path for stock MCP clients. |
 
 The post-deploy smoke script reads `DEPLOY_URL` plus a family of `SMOKE_*` vars (e.g. `SMOKE_EMAIL`, `SMOKE_PASSWORD`, `SMOKE_AGENT_MODEL_PROVIDER`) to exercise sign-up/verify/reset/agent-chat against a deployed instance.
 
@@ -89,6 +93,18 @@ The root `docker-compose.local-apps.yml` enables this helper by default for the 
 ```txt
 http://100.68.199.114:6301/dev-login
 ```
+
+### M1 Managed-Agent MCP Endpoint
+
+BBM1-002 hosts one vertical `Engagement Analyst` managed-agent composition in full-app. When enabled, stock MCP clients connect to:
+
+```txt
+https://<full-app-host>/mcp/managed-agent
+```
+
+The endpoint exposes `delegate_task`, `delegate_task_start`, and `delegate_task_status` over Streamable HTTP. Delivery v0 returns final assistant text plus workspace-relative Markdown artifact references only. It does not return share links; BBM1-004 owns share-link delivery after PR #424 lands. Small text artifacts are inlined when their content is at most `8000` characters; larger text artifacts keep the workspace-relative path and set `truncated: true`.
+
+Artifacts are written under `artifacts/mcp-managed-agent/...` inside the configured workspace. Caller-visible refs never include absolute host paths or Pi/session-storage paths. Use `BORING_AGENT_SESSION_ROOT` for durable sidecar chat transcripts; with `BORING_AGENT_WORKSPACE_ROOT=/data/workspaces`, keep it on the sibling mounted volume `/data/pi-sessions`.
 
 ## Deployment
 

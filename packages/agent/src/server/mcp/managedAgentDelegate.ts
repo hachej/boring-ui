@@ -6,8 +6,9 @@ import type { BoringChatMessage, BoringChatPart } from '../../shared/chat'
 import type { SessionCtx } from '../../shared/session'
 
 export const MANAGED_AGENT_MCP_ORIGIN_SURFACE = 'mcp-managed-agent'
+export const MANAGED_AGENT_MCP_INLINE_ARTIFACT_CONTENT_MAX_CHARS = 8_000
 export const MANAGED_AGENT_MCP_DELIVERY_RULE =
-  'M1-pr1 DELIVERY v0: delegate_task returns final assistant text and artifact file references only; share-link delivery is gated on PR #424.'
+  'M1 delivery v0: delegate_task returns final assistant text and workspace-relative artifact references only; share-link delivery is gated on PR #424.'
 
 export type ManagedAgentDelegationStatus = 'running' | 'completed' | 'error'
 export type ManagedAgentDelegateStatus = ManagedAgentDelegationStatus
@@ -32,6 +33,7 @@ export interface ManagedAgentDelegateResult {
   status: 'completed'
   finalAssistantText: string
   artifacts: ManagedAgentArtifactRef[]
+  inlineArtifactContentMaxChars: number
   deliveryRule: typeof MANAGED_AGENT_MCP_DELIVERY_RULE
 }
 
@@ -102,7 +104,7 @@ interface DelegationRecord {
 type AgentEndEvent = AgentEvent & { chunk: Extract<AgentEvent['chunk'], { type: 'agent-end' }> }
 
 const DEFAULT_MAX_BRIEF_CHARS = 12_000
-const DEFAULT_MAX_INLINE_ARTIFACT_CONTENT_CHARS = 8_000
+const DEFAULT_MAX_INLINE_ARTIFACT_CONTENT_CHARS = MANAGED_AGENT_MCP_INLINE_ARTIFACT_CONTENT_MAX_CHARS
 const DEFAULT_TERMINAL_RETENTION_MS = 15 * 60_000
 const DEFAULT_MAX_DELEGATIONS = 100
 const MAX_RETAINED_PROGRESS = 100
@@ -217,6 +219,7 @@ export class ManagedAgentMcpDelegateController {
         status: 'completed',
         finalAssistantText,
         artifacts,
+        inlineArtifactContentMaxChars: this.maxInlineArtifactContentChars,
         deliveryRule: MANAGED_AGENT_MCP_DELIVERY_RULE,
       }
       this.assertPublicPayloadSafe(result)
@@ -541,14 +544,27 @@ function normalizeArtifactPath(path: string): string {
   const trimmed = path.trim()
   if (!trimmed) throw new ManagedAgentMcpError(ErrorCode.enum.INTERNAL_ERROR, 'artifact path is required')
   if (trimmed.includes('\0')) throw new ManagedAgentMcpError(ErrorCode.enum.INTERNAL_ERROR, 'artifact path is invalid')
-  if (trimmed.startsWith('/') || /^[A-Za-z]:[\\/]/.test(trimmed)) {
+  if (trimmed.startsWith('/') || trimmed.startsWith('\\\\') || /^[A-Za-z][A-Za-z0-9+.-]*:/.test(trimmed)) {
     throw new ManagedAgentMcpError(ErrorCode.enum.INTERNAL_ERROR, 'artifact path must be workspace-relative')
   }
-  const parts = trimmed.split(/[\\/]+/)
-  if (parts.some((part) => part === '..')) {
+  const rawParts = trimmed.split(/[\\/]+/)
+  if (rawParts.some((part) => part === '..')) {
     throw new ManagedAgentMcpError(ErrorCode.enum.INTERNAL_ERROR, 'artifact path must stay within the workspace')
   }
-  return parts.filter((part) => part && part !== '.').join('/')
+  const parts = rawParts.filter((part) => part && part !== '.')
+  if (parts.length === 0) throw new ManagedAgentMcpError(ErrorCode.enum.INTERNAL_ERROR, 'artifact path is required')
+  if (isSessionStorageArtifactPath(parts)) {
+    throw new ManagedAgentMcpError(ErrorCode.enum.INTERNAL_ERROR, 'artifact path must not reference session storage')
+  }
+  return parts.join('/')
+}
+
+function isSessionStorageArtifactPath(parts: readonly string[]): boolean {
+  const normalized = parts.map((part) => part.toLowerCase())
+  if (normalized.length === 0) return false
+  const first = normalized[0]
+  if (first === '.boring-agent' || first === '.pi' || first === 'pi-sessions') return true
+  return first === 'sessions' && normalized.some((part) => part.endsWith('.jsonl') || part.endsWith('.sqlite') || part.endsWith('.db'))
 }
 
 function optionalNonEmptyString(value: string | undefined): string | undefined {

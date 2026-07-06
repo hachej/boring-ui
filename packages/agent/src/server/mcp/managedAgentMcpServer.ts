@@ -121,7 +121,7 @@ export function createManagedAgentMcpServer(
     'delegate_task_status',
     {
       title: 'Delegate task status',
-      description: 'Returns redacted progress and the final M1-pr1 delivery payload for a server-side delegation id.',
+      description: 'Returns redacted progress and the final M1 delivery v0 payload for a server-side delegation id.',
       inputSchema: delegateTaskStatusInputSchema,
     },
     async ({ delegationId }, extra): Promise<CallToolResult> => {
