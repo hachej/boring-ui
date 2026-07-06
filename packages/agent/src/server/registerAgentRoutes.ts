@@ -1,8 +1,9 @@
 import type { FastifyInstance, FastifyPluginAsync, FastifyRequest } from 'fastify'
 import { basename } from 'node:path'
 import type { AgentTool, ToolReadinessRequirement } from '../shared/tool'
-import type { AgentHarnessFactory } from '../shared/harness'
+import type { AgentCoreHarnessFactory, AgentHarnessFactory } from '../shared/harness'
 import type { SessionStore } from '../shared/session'
+import type { Agent } from '../shared/events'
 import type { SandboxHandleStore } from '../shared/sandbox-handle-store'
 import type { TelemetrySink } from '../shared/telemetry'
 import { AuthStorage, ModelRegistry } from '@mariozechner/pi-coding-agent'
@@ -30,7 +31,7 @@ import { fsEventsRoutes } from './http/routes/fsEvents'
 import { treeRoutes } from './http/routes/tree'
 import { modelsRoutes } from './http/routes/models'
 import { skillsRoutes } from './http/routes/skills'
-import { piChatRoutes } from './http/routes/piChat'
+import { piChatRoutes, type PiChatSessionService } from './http/routes/piChat'
 import { systemPromptRoutes } from './http/routes/systemPrompt'
 import { sessionChangesRoutes } from './http/routes/sessionChanges'
 import { catalogRoutes } from './http/routes/catalog'
@@ -44,9 +45,9 @@ import type { ReadyStatusTracker } from './runtime/readyStatus'
 import { createRuntimeReadyStatusTracker } from './runtime/modeReadiness'
 import { withRuntimeEnvContributions, type RuntimeEnvContribution } from './runtimeEnvContributions'
 import type { AgentHarness } from '../shared/harness'
-import { HarnessPiChatService } from './pi-chat/harnessPiChatService'
 import type { AgentMeteringSink } from './pi-chat/metering'
 import { createPluginDiagnosticsTool } from './tools/pluginDiagnostics'
+import { createAgentRuntimeBridge } from './createAgent'
 
 const DEFAULT_VERSION = '0.1.0-dev'
 const DEFAULT_WORKSPACE_ID = 'default'
@@ -108,10 +109,11 @@ interface RuntimeBinding {
   runtimeDependencies: RuntimeDependencyReadiness
   runtimeProvisioningTask?: Promise<WorkspaceProvisioningResult | undefined>
   reprovision: (request?: FastifyRequest) => Promise<WorkspaceProvisioningResult | undefined>
+  agent: Agent
   harness: AgentHarness
   tools: AgentTool[]
   readyTracker: ReadyStatusTracker
-  piChatService?: HarnessPiChatService
+  piChatService: PiChatSessionService
   lastHealthCheckMs?: number
   /**
    * Diagnostics from the most recent /api/v1/agent/reload (merged hook +
@@ -648,7 +650,7 @@ let runtimeProvisioning: WorkspaceProvisioningResult | undefined
       logger: app.log,
       checkReadiness,
     })
-    const harnessFactory = opts.harnessFactory ?? ((input) => createPiCodingAgentHarness({
+    const baseHarnessFactory = opts.harnessFactory ?? ((input) => createPiCodingAgentHarness({
       ...input,
       pi: {
         // scope.pi is already defaulted at the resolveScopePi chokepoint.
@@ -668,17 +670,32 @@ let runtimeProvisioning: WorkspaceProvisioningResult | undefined
         },
       },
     }))
-    const harness = await harnessFactory({
-      tools,
-      cwd: root,
+    const systemPromptDynamic = opts.getSystemPromptDynamic
+      ? () => opts.getSystemPromptDynamic?.({ workspaceId, workspaceRoot: root })
+      : opts.systemPromptDynamic
+    const harnessFactory = ((input) => baseHarnessFactory({
+      ...input,
       sessionNamespace: scope.sessionNamespace,
       sessionRoot: opts.sessionRoot,
+    })) as AgentCoreHarnessFactory
+    const coreAgent = createAgentRuntimeBridge({
+      runtime: modeAdapter,
+      tools,
+      harnessFactory,
       systemPromptAppend: opts.systemPromptAppend,
-      systemPromptDynamic: opts.getSystemPromptDynamic
-        ? () => opts.getSystemPromptDynamic?.({ workspaceId, workspaceRoot: root })
-        : opts.systemPromptDynamic,
+      systemPromptDynamic,
       telemetry: opts.telemetry,
+      metering: opts.metering,
+      sessionStorageRoot: opts.sessionRoot,
+      workdir: root,
+    }, {
+      service: {
+        workdir: runtimeBundle.workspace.root,
+        workspace: runtimeBundle.workspace,
+      },
     })
+    const agentRuntime = await coreAgent.getRuntime()
+    const harness = agentRuntime.harness
     readyTracker.markHarnessReady()
 
     binding = {
@@ -690,9 +707,11 @@ let runtimeProvisioning: WorkspaceProvisioningResult | undefined
         const result = await startRuntimeProvisioning(reloadRequest)
         return await result
       },
+      agent: coreAgent.agent,
       harness,
       tools,
       readyTracker,
+      piChatService: agentRuntime.service as PiChatSessionService,
     }
     startRuntimeProvisioning(request)
     return binding
@@ -949,13 +968,6 @@ let runtimeProvisioning: WorkspaceProvisioningResult | undefined
   await app.register(piChatRoutes, {
     getService: async (request) => {
       const binding = await getBindingForRequest(request)
-      binding.piChatService ??= new HarnessPiChatService({
-        harness: binding.harness,
-        sessionStore: binding.harness.sessions,
-        workdir: binding.runtimeBundle.workspace.root,
-        workspace: binding.runtimeBundle.workspace,
-        metering: opts.metering,
-      })
       return binding.piChatService
     },
   })

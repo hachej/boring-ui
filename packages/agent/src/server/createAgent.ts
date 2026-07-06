@@ -1,8 +1,9 @@
 import { HarnessPiChatService } from './pi-chat/harnessPiChatService'
+import type { EventStreamStore } from './events/eventStreamStore'
 import type { AgentMeteringSink } from './pi-chat/metering'
 import type { PiSessionRequestContext } from './pi-chat/piSessionIdentity'
-import type { PiChatEventStreamSubscription } from './http/routes/piChat'
 import type { AgentHarness, AgentHarnessFactoryInput } from '../shared/harness'
+import type { Workspace } from '../shared/workspace'
 import type {
   Agent,
   AgentConfig,
@@ -27,8 +28,31 @@ interface AgentRuntime {
   service: HarnessPiChatService
 }
 
+export interface AgentRuntimeAdapterView {
+  harness: AgentHarness
+  sessionStore: SessionStore
+  service: unknown
+}
+
+export interface CreateAgentRuntimeBridgeOptions {
+  harness?: {
+    runtimeCwd?: string
+  }
+  service?: {
+    workdir?: string
+    workspace?: Workspace
+    eventStore?: EventStreamStore
+  }
+}
+
+export interface AgentRuntimeBridge {
+  agent: Agent
+  getRuntime(): Promise<AgentRuntimeAdapterView>
+  currentRuntime(): Promise<AgentRuntimeAdapterView> | undefined
+}
+
 interface AgentSessionLiveState {
-  bridge?: PiChatEventStreamSubscription
+  bridge?: AgentPiChatEventStreamSubscription
   bridgePromise?: Promise<AgentSessionLiveState>
   events: AgentEvent[]
   subscribers: Set<StreamSubscriber>
@@ -42,12 +66,25 @@ interface StreamSubscriber {
   close(): void
 }
 
+interface AgentPiChatEventStreamSubscription {
+  type: 'ok'
+  unsubscribe(): void
+  closed?: Promise<void>
+}
+
 export function createAgent(config: AgentConfig): Agent {
+  return createAgentRuntimeBridge(config).agent
+}
+
+export function createAgentRuntimeBridge(
+  config: AgentConfig,
+  options: CreateAgentRuntimeBridgeOptions = {},
+): AgentRuntimeBridge {
   if (config.sessions && !config.harnessFactory) {
     throw new Error('createAgent sessions override requires a harnessFactory that uses the same SessionStore')
   }
 
-  const runtimeLoader = createRuntimeLoader(config)
+  const runtimeLoader = createRuntimeLoader(config, options)
   const getRuntime = runtimeLoader.get
   const live = new AgentLiveEventBuffer(DEFAULT_LIVE_BUFFER_SIZE)
   const sessionContexts = new Map<string, SessionCtx | undefined>()
@@ -106,7 +143,7 @@ export function createAgent(config: AgentConfig): Agent {
     return { sessionId, startIndex }
   }
 
-  return {
+  const agent: Agent = {
     sessions,
     readiness,
 
@@ -172,6 +209,12 @@ export function createAgent(config: AgentConfig): Agent {
     },
   }
 
+  return {
+    agent,
+    getRuntime,
+    currentRuntime: runtimeLoader.current,
+  }
+
   async function* authorizedStream(sessionId: string, options: AgentStreamOptions): AsyncIterable<AgentEvent> {
     const runtime = await getRuntime()
     const accessCtx = await authorizeSessionAccess(runtime, sessionId, options.ctx, sessionContexts)
@@ -179,14 +222,14 @@ export function createAgent(config: AgentConfig): Agent {
   }
 }
 
-function createRuntimeLoader(config: AgentConfig): {
+function createRuntimeLoader(config: AgentConfig, options: CreateAgentRuntimeBridgeOptions): {
   get(): Promise<AgentRuntime>
   current(): Promise<AgentRuntime> | undefined
 } {
   let runtimePromise: Promise<AgentRuntime> | undefined
   return {
     get() {
-      runtimePromise ??= createRuntime(config)
+      runtimePromise ??= createRuntime(config, options)
       return runtimePromise
     },
     current() {
@@ -195,12 +238,12 @@ function createRuntimeLoader(config: AgentConfig): {
   }
 }
 
-async function createRuntime(config: AgentConfig): Promise<AgentRuntime> {
+async function createRuntime(config: AgentConfig, options: CreateAgentRuntimeBridgeOptions): Promise<AgentRuntime> {
   const harnessFactory = config.harnessFactory ?? (await import('./harness/pi-coding-agent/createHarness')).createPiCodingAgentHarness
   const harnessInput: AgentHarnessFactoryInput = {
     tools: config.tools ?? [],
     cwd: config.workdir ?? DEFAULT_WORKDIR,
-    runtimeCwd: config.workdir,
+    runtimeCwd: options.harness?.runtimeCwd ?? options.service?.workdir ?? config.workdir,
     systemPromptAppend: config.systemPromptAppend,
     systemPromptDynamic: config.systemPromptDynamic,
     sessionRoot: config.sessionStorageRoot,
@@ -214,7 +257,9 @@ async function createRuntime(config: AgentConfig): Promise<AgentRuntime> {
     service: new HarnessPiChatService({
       harness,
       sessionStore,
-      workdir: config.workdir ?? DEFAULT_WORKDIR,
+      workdir: options.service?.workdir ?? config.workdir ?? DEFAULT_WORKDIR,
+      workspace: options.service?.workspace,
+      eventStore: options.service?.eventStore,
       metering: config.metering as AgentMeteringSink | undefined,
     }),
   }
