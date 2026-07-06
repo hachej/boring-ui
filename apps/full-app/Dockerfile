@@ -10,6 +10,7 @@ COPY packages/workspace/package.json packages/workspace/package.json
 COPY packages/agent/package.json packages/agent/package.json
 COPY packages/boring-bash/package.json packages/boring-bash/package.json
 COPY plugins/boring-mcp/package.json plugins/boring-mcp/package.json
+COPY plugins/boring-governance/package.json plugins/boring-governance/package.json
 COPY apps/full-app/package.json apps/full-app/package.json
 RUN pnpm install --frozen-lockfile
 
@@ -17,6 +18,7 @@ FROM deps AS build
 ENV NODE_OPTIONS=--max-old-space-size=4096
 COPY packages/ packages/
 COPY plugins/boring-mcp/ plugins/boring-mcp/
+COPY plugins/boring-governance/ plugins/boring-governance/
 COPY apps/full-app/ apps/full-app/
 
 # Build packages in dependency order.
@@ -41,6 +43,8 @@ RUN pnpm --filter @hachej/boring-workspace exec tsup --no-dts \
   && pnpm --filter @hachej/boring-workspace exec node scripts/build-workspace-css.mjs
 
 RUN pnpm --filter @hachej/boring-mcp exec tsup --no-dts
+
+RUN pnpm --filter @hachej/boring-governance exec tsup --no-dts
 
 # BORING_USE_LOCAL_PACKAGES=1 lets Vite resolve @hachej/* from source so
 # Tailwind scans the actual TSX files instead of compiled dist JS. Without
@@ -96,6 +100,10 @@ COPY --from=build /app/packages/workspace/node_modules/ packages/workspace/node_
 COPY --from=build /app/plugins/boring-mcp/dist/ plugins/boring-mcp/dist/
 COPY --from=build /app/plugins/boring-mcp/package.json plugins/boring-mcp/package.json
 COPY --from=build /app/plugins/boring-mcp/node_modules/ plugins/boring-mcp/node_modules/
+
+COPY --from=build /app/plugins/boring-governance/dist/ plugins/boring-governance/dist/
+COPY --from=build /app/plugins/boring-governance/package.json plugins/boring-governance/package.json
+COPY --from=build /app/plugins/boring-governance/node_modules/ plugins/boring-governance/node_modules/
 
 COPY --from=build /app/apps/full-app/dist/ apps/full-app/dist/
 COPY --from=build /app/apps/full-app/boring.app.toml apps/full-app/boring.app.toml

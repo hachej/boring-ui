@@ -152,7 +152,7 @@ describe('createGovernanceFilesystemBindings', () => {
     })
 
     expect(missing).toEqual([])
-    await expect(lstat(missingGuessedRoot)).rejects.toMatchObject({ code: 'ENOENT' })
+    await expect(lstat(missingGuessedRoot).catch((error: NodeJS.ErrnoException) => error.code)).resolves.toBe('ENOENT')
 
     const explicitMissingRoot = path.join(missingParent, 'explicit-company-context')
     const explicitLogError = vi.fn()
@@ -179,7 +179,7 @@ describe('createGovernanceFilesystemBindings', () => {
       }),
       'company_context binding omitted',
     )
-    await expect(lstat(explicitMissingRoot)).rejects.toMatchObject({ code: 'ENOENT' })
+    await expect(lstat(explicitMissingRoot).catch((error: NodeJS.ErrnoException) => error.code)).resolves.toBe('ENOENT')
   })
 
   it('uses tool/run context identity when no HTTP request object is available', async () => {

@@ -6,6 +6,7 @@ import type {
   MeteringSettleInput,
   MeteringUsageInput,
 } from '@hachej/boring-agent/server'
+import { ErrorCode } from '@hachej/boring-agent/shared'
 import * as coreServer from '@hachej/boring-core/server'
 import type { GovernanceService } from './governanceService.js'
 
@@ -23,15 +24,15 @@ type ModelBudgetDb = ConstructorParameters<typeof PostgresModelBudgetStore>[0]
 const DEFAULT_HOLD_TTL_SECONDS = 60 * 60
 
 function authRequiredError(): Error {
-  return Object.assign(new Error('authentication required'), { statusCode: 401, code: 'UNAUTHORIZED' })
+  return Object.assign(new Error('authentication required'), { statusCode: 401, code: ErrorCode.enum.UNAUTHORIZED })
 }
 
 function modelRequiredError(): Error {
-  return Object.assign(new Error('model is required by governance policy'), { statusCode: 400, code: 'TOOL_INVALID_INPUT' })
+  return Object.assign(new Error('model is required by governance policy'), { statusCode: 400, code: ErrorCode.enum.TOOL_INVALID_INPUT })
 }
 
 function policyDeniedError(): Error {
-  return Object.assign(new Error('model is not allowed by governance policy'), { statusCode: 403, code: 'TOOL_INVALID_INPUT' })
+  return Object.assign(new Error('model is not allowed by governance policy'), { statusCode: 403, code: ErrorCode.enum.TOOL_INVALID_INPUT })
 }
 
 function budgetError(error: unknown): Error {

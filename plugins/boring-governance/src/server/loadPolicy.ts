@@ -32,7 +32,7 @@ function shouldAllowDevEmailVerificationOverride(env: NodeJS.ProcessEnv, nodeEnv
 
 export async function loadGovernancePolicy({
   env = process.env,
-  nodeEnv = process.env.NODE_ENV ?? 'development',
+  nodeEnv = process.env['NODE_ENV'] ?? 'development',
   config,
 }: LoadGovernancePolicyOptions = {}): Promise<GovernanceLoadResult> {
   const configuredPath = env[GOVERNANCE_POLICY_PATH_ENV]?.trim()
