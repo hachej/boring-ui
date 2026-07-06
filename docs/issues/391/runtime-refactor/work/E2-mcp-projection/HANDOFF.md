@@ -22,6 +22,11 @@ Derived strictly from [TODO.md](./TODO.md) and [PLAN.md](./PLAN.md). Tick each b
 - [ ] `pnpm audit:imports`
 - [ ] `pnpm run test`
 
+## PR-PLAN reconciliation
+- [ ] `pr1-mcp-server-exec-gating` completed BBE2-001 + BBE2-004
+- [ ] `pr2-mcp-session-identity` completed BBE2-002
+- [ ] `pr3-mcp-conformance-doc` completed BBE2-003 + BBE2-005
+
 ## Review gates
 - [ ] Grep the new MCP handlers: every fs/exec handler calls an existing projection op — zero new jailing/readonly/traversal logic.
 - [ ] Readonly attachment registers exactly the read-family tools; readwrite adds write/edit; exec only under `execPolicy: 'attached'`.

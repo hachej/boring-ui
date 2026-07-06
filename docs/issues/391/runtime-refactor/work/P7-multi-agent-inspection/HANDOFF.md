@@ -8,6 +8,10 @@ Derived strictly from [TODO.md](./TODO.md) and [PLAN.md](./PLAN.md). Tick each b
 - [ ] T2-transport merged — [../T2-transport/HANDOFF.md](../T2-transport/HANDOFF.md)
 - [ ] STOP+report if the Phase 6a `AgentRegistry` and the workspace `agents: [...]` declaration have not landed — do NOT invent a competing registry here
 
+## Owner questions / verdict
+- OWNER-QUESTIONS: none.
+- GO/NO-GO: GO after P6a, E1, and T2 are merged; NO-GO/STOP if the Phase 6a `AgentRegistry` or workspace `agents: [...]` declaration is missing.
+
 ## Beads
 - [ ] BBP7-001 — Thread `agentId` through `RuntimeScope`, the scope key, and `sessionNamespace`
 - [ ] BBP7-002 — `agentId` request addressing against the Phase 6 `AgentRegistry`
@@ -32,6 +36,17 @@ Derived strictly from [TODO.md](./TODO.md) and [PLAN.md](./PLAN.md). Tick each b
 - [ ] `pnpm lint:invariants`
 - [ ] `pnpm audit:imports`
 - [ ] `pnpm typecheck`
+
+## PR-PLAN reconciliation
+- [ ] `pr1-agentid-scope-namespace` completed BBP7-001
+- [ ] `pr2-agentid-addressing` completed BBP7-002
+- [ ] `pr3-per-agent-catalog-readiness` completed BBP7-003
+- [ ] `pr4-session-search` completed BBP7-004
+- [ ] `pr5-agent-info-endpoint` completed BBP7-005
+- [ ] `pr6-external-hook-target` completed BBP7-006
+- [ ] `pr7-surface-agent-binding` completed BBP7-007
+- [ ] `pr8-subagent-grant` completed BBP7-008, or explicitly combined with pr7 within PR-PLAN budget
+- [ ] `pr9-two-surface-isolation` completed BBP7-009
 
 ## Review gates
 - [ ] Phase 6 `AgentRegistry` present and scoped against (not a competing registry), else STOP+report.

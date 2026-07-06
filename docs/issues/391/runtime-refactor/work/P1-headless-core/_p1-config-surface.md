@@ -120,3 +120,13 @@ No unknown ambient read remains from the non-test server-source scan above. The
 provider/harness rows marked **B** are intentionally not facade config unless the
 owning later bead (BBP1-005, P2, or P5) turns them into explicit provider/harness
 options.
+
+## Tool and renderer source-order amendment
+
+BBP1 must not flatten tool contributions so early that source provenance is lost. The config/adapters must preserve enough source metadata for the single `mergeTools` seam to enforce the owner ruling:
+
+1. environment bundle;
+2. plugins, in manifest/resolved plugin order;
+3. host config.
+
+Duplicate tool names fail with a typed error unless the later source declares `overrides: true`; silent replacement is forbidden. `ToolUiMetadata.rendererId`/tool-renderer ownership follows the same source chain and explicit override rule. Current code to extend: `packages/agent/src/server/catalog/mergeTools.ts:29-59` owns the centralized merge and currently logs/overwrites; `packages/agent/src/server/catalog/toolReadiness.ts:98-112` applies `checkReadiness` after merge. Keep that seam; do not create a second catalog or renderer resolver.

@@ -16,13 +16,13 @@ Handoff: self-contained work order for one autonomous coding agent (pi or gpt-5.
 
 ### Current repo reality this bead verifies (verified paths)
 
-- **No `TODO(remove:` markers exist yet** — `grep -rn "TODO(remove:" packages/ scripts/` → 0 matches today. Markers are introduced by earlier phases (T1's `?cursor=` window, T2's front cutover, P2's provider move, etc.) and deleted in-phase. P8 asserts the count is back to **zero** across the whole repo.
+- **No `TODO(remove:` markers exist yet** — `! rg -n "TODO\\(remove:" packages apps plugins scripts` exits 0 today. Markers are introduced by earlier phases (T1's `?cursor=` window, T2's front cutover, P2's provider move, etc.) and deleted in-phase. P8 asserts the count is back to **zero** across the whole repo.
 - Invariant script wiring to extend (do NOT bypass — `README.md` global non-negotiable): root `pnpm lint:invariants` = `pnpm --dir packages/agent run lint:invariants && pnpm --filter @hachej/boring-bash run check:invariants && pnpm lint:workspace-plugin-invariants` (verified `package.json`). Root `pnpm audit:imports` = `pnpm tsx scripts/audit-imports.ts`. Agent invariants = `bash scripts/check-invariants.sh .` (ripgrep-based `run_check` pattern helper, verified `scripts/check-invariants.sh`). `scripts/audit-imports.ts` holds the `FORBIDDEN_PATTERNS` array (verified) — the natural home for old-path-import gates.
 - **Moved-path gates to assert empty** (each was migrated + deleted in-PR by its phase; P8 proves no straggler importer resurfaced):
   - P2/P3: no `@hachej/boring-agent/server` value import of moved providers (`createDirectSandbox`, `createBwrapSandbox`, `createRemoteWorker*`, `createVercelSandboxWorkspace`) — they live under `@hachej/boring-sandbox/providers` now — nor of `resolveMode`/`autoDetectMode`/`hasBwrap` — those live under `@hachej/boring-bash/modes` now. Also assert agent has zero value import from `@hachej/boring-sandbox`.
   - P4: no `filesystemPlugin` import from `@hachej/boring-workspace` (moved to `@hachej/boring-bash/plugin`); no `boring-bash/plugin → @hachej/boring-workspace` value import.
   - T1/T2: no live `ask-user.v1.*` WorkspaceBridge handler (deleted in BBT1-005); no `?cursor=` NDJSON front path / `schedulePiChatReconnect` / `replay_gap` recovery (removed in T2 BBT2-003); `piChatReplayBuffer.ts` gone if T2 removed it.
-- README to update: `packages/agent/README.md` (or `packages/agent/docs/runtime.md` + the front `packages/agent/src/front/index.ts` header) — must document the four-part surface contract + `createAgent()` public API. Verify which file is the canonical package README (`packages/agent/package.json` `"readme"`/root) before editing.
+- README to update: verified current package reality is that `packages/agent/package.json` has **no** `"readme"` field and ships `files: ["dist", "docs"]`; the canonical package README is therefore `packages/agent/README.md`, with `packages/agent/docs/runtime.md` as the runtime deep-dive. P8 must document the four-part surface contract + `createAgent()` public API in those docs. Do not put contract authority in a front entrypoint header.
 
 ## Goal / exit criteria
 
@@ -61,7 +61,7 @@ Match [`../../INDEX.md`](../../INDEX.md) Phase 8 (v2):
 
 ### BBP8-002 — Document the four-part surface contract as stable public API · size M
 - **Title**: `@hachej/boring-agent` package docs describe the four-part surface contract + `createAgent()` as the stable public API.
-- **Files touch/create**: the canonical agent package README (`packages/agent/README.md` — confirm via `packages/agent/package.json` before editing) + `packages/agent/docs/runtime.md`. Document, from `08`: (1) message in — `AgentSendInput { sessionId?, content, attachments?, actor }` (omit `sessionId` to start a session); (2) event stream out — the indexed replayable `AgentEvent { v, eventIndex, timestamp, sessionId, chunk }`; (3) approvals — `needsApproval` on the tool → request event → `resolveInput(sessionId, requestId, ResolveInputResponse)`, one channel; (4) two handles — runtime-owned `sessionId`, surface-owned addressing; public APIs accept `sessionId`/`SessionCtx` only. Include the `createAgent()` façade surface — the **nine** members `start`/`stream`/`send`/`resolveInput`/`interrupt`/`stop`/`sessions`/`readiness`/`dispose` (`interrupt(sessionId)` = abort current turn, `stop(sessionId)` = end/close session) — and the surface-adapter three-step (`08` § "Surface adapters"). Link the conformance suites (`08` § "Conformance") as the executable contract.
+- **Files touch/create**: `packages/agent/README.md` (canonical package README; package.json has no `readme` field) + `packages/agent/docs/runtime.md`. Document, from `08`: (1) message in — `AgentSendInput { sessionId?, content, attachments?, actor }` (omit `sessionId` to start a session); (2) event stream out — the indexed replayable `AgentEvent { v, eventIndex, timestamp, sessionId, chunk }`; (3) approvals — `needsApproval` on the tool → request event → `resolveInput(sessionId, requestId, ResolveInputResponse)`, one channel; (4) two handles — runtime-owned `sessionId`, surface-owned addressing; public APIs accept `sessionId`/`SessionCtx` only. Include the `createAgent()` façade surface — the **nine** members `start`/`stream`/`send`/`resolveInput`/`interrupt`/`stop`/`sessions`/`readiness`/`dispose` (`interrupt(sessionId)` = abort current turn, `stop(sessionId)` = end/close session) — and the surface-adapter three-step (`08` § "Surface adapters"). Link the conformance suites (`08` § "Conformance") as the executable contract.
 - **Notes**: This is the [`../../INDEX.md`](../../INDEX.md) Phase 8 additional exit criterion and README Phase 8 delta. Keep it a description of what shipped (P1/T1/T2/S1) — do not spec new API. If the `AGENTS.md`/`DECISIONS.md` ADR from Phase 0 needs a back-reference, add a one-line pointer, do not duplicate.
 - **Tests**: doc build/lint if the repo has one (`pnpm check:generated-artifacts` if docs are generated); otherwise a link-check that the referenced symbols exist (`createAgent`, `AgentEvent`, `AgentSendInput`, `ResolveInputResponse`) as exports.
 - **Acceptance**: the four-part contract + `createAgent()` are documented as stable public API; referenced symbols exist.
@@ -115,10 +115,20 @@ pnpm --filter @hachej/boring-agent run check:isolation
 pnpm typecheck              # build:packages then -r typecheck
 pnpm test                   # build:packages then -r test
 
-# spot-check: no live moved-path importer (should print nothing)
-grep -rn "from '@hachej/boring-agent/server'" packages apps plugins | grep -E "resolveMode|createDirectSandbox|createBwrapSandbox|createVercelSandboxWorkspace" || echo "clean"
-grep -rn "ask-user.v1." packages plugins apps | grep -v docs || echo "clean"
+# spot-checks: no live moved-path importer / legacy approval or cursor path (each should print nothing)
+! rg -n -U "import\\s*\\{[^}]*\\b(resolveMode|autoDetectMode|hasBwrap|createDirectSandbox|createBwrapSandbox|createRemoteWorkerModeAdapter|createRemoteWorkerSandbox|createVercelSandboxWorkspace)\\b[^}]*\\}\\s*from\\s*['\"]@hachej/boring-agent/server['\"]" packages apps plugins -g '!**/*.md'
+! rg -n "ask-user\\.v1\\." packages apps plugins -g '!**/*.md'
+! rg -n "\\?cursor=|schedulePiChatReconnect|replay_gap|PiChatReplayBuffer" packages apps plugins -g '!**/*.md'
 ```
+
+## PR-PLAN reconciliation
+
+Matches [`../../PR-PLAN.md`](../../PR-PLAN.md) P8 rows exactly:
+
+- `pr1-marker-import-gates` → BBP8-001 + BBP8-003.
+- `pr2-surface-contract-docs` → BBP8-002.
+- `pr3-track-remaining-prose` → BBP8-004.
+- BBP8-005 is the final merge gate on the stack, not a separate PR. Any red gate reopens its owning phase; P8 does not absorb it.
 
 ## Review gates
 

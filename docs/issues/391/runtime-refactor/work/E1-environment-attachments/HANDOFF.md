@@ -27,6 +27,14 @@ Derived strictly from [TODO.md](./TODO.md) and [PLAN.md](./PLAN.md). Tick each b
 - [ ] `pnpm run build:packages`
 - [ ] `pnpm run test`
 
+## PR-PLAN reconciliation
+- [ ] `pr1-env-contracts` completed BBE1-001
+- [ ] `pr2-resolve-attachments` completed BBE1-002
+- [ ] `pr3-company-context-env` completed BBE1-003
+- [ ] `pr4-scoped-view-jail` completed BBE1-004
+- [ ] `pr5-agent-typeonly-conformance` completed BBE1-006 + BBE1-007
+- [ ] BBE1-005 verified as deferred to Phase 7 / P7 `pr8-subagent-grant`, with no E1 implementation
+
 ## Review gates
 - [ ] No diff to landed #416 type/class signatures (additions only via new files / re-exports, no edits to existing declarations). BBE1-004 may make implementation-only `readonlyProjectionOperations.ts` symlink-hardening edits; exported signatures stay frozen.
 - [ ] Agent core has zero import (value **or** type) of `@hachej/boring-bash`; the only cross-package type edge is boring-bash → `@hachej/boring-agent` (audit green).

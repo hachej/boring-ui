@@ -6,10 +6,10 @@ Handoff: self-contained work order for one autonomous coding agent (pi or gpt-5.
 
 - Plan: `docs/issues/391/runtime-refactor/INDEX.md` § "Phase S2" (deliverables + exit criteria; "after S1 learnings"; keep lighter — contract + example, not a product).
 - Plan: `docs/issues/391/runtime-refactor/architecture/08-pluggable-agent-surfaces.md` § "The headless façade: `createAgent()`", the reference-adapters table (Spreadsheet/pi-excel row: "Agent tools are spreadsheet tools supplied by the host as `tools`; boring-bash not installed"), § "Two handles", § "Human-in-the-loop".
-- Dependencies: **S1** (surface-adapter conformance suite + two-handles pattern, from [`../S1-slack-channel/TODO.md`](../S1-slack-channel/TODO.md)) and **P1** (`createAgent()` façade). As with S1, `createAgent()` does not exist in the repo yet — `packages/agent/src/server/` exports `createAgentApp`/`registerAgentRoutes` only (`createAgentApp.ts`, `registerAgentRoutes.ts`, barrel `index.ts`). The embed consumes the **published client contract** of `@hachej/boring-agent`, not server internals.
+- Dependencies: **S1** (surface-adapter conformance suite + two-handles pattern, from [`../S1-slack-channel/TODO.md`](../S1-slack-channel/TODO.md)) and **P1** (`createAgent()` façade). As with S1, `createAgent()` does not exist in the repo yet — `packages/agent/src/server/` exports `createAgentApp`/`registerAgentRoutes` only (`createAgentApp.ts`, `registerAgentRoutes.ts`, barrel `index.ts`). Current `packages/agent/package.json` also has no `./core` or `./testing` export; P1 adds `./core`, and S1 BBS1-006 adds `./testing`. If either required public subpath is absent, STOP+report the missing prerequisite rather than reaching into server internals. The embed consumes the **published client contract** of `@hachej/boring-agent`, not server internals.
 - The public runtime API the embed relies on (`08` § façade): `agent.start(input)` (or the `agent.send(input)` convenience = `start` + `stream`), `agent.resolveInput(sessionId, requestId, response)`, `agent.stream(sessionId, { startIndex })`, `agent.sessions` — all **single-argument** and `sessionId`-keyed (two-handles; never `send(input, ctx)` — any tenancy `ctx` rides inside `AgentSendInput`). Tools are supplied as `tools` (extra `AgentTool[]`); `runtime: 'none'` — the reference embed is host-supplied domain tools ONLY, with **no filesystem bindings**.
 - **Descope (binding):** governed-context-in-embeds (injecting a readonly `company_context` binding into the embed) is **out of S2 scope** — it becomes a named **post-E2 follow-up filed at P8** (`TODO-P8` BBP8-004). The reference embed is `runtime: 'none'` + host-supplied domain tools only; it injects no readonly binding.
-- Repo app layout (verified): `apps/` contains `agent-playground`, `full-app`, `workspace-playground` (package names identical to dir names, unscoped). There is **no `examples/` dir**; `pnpm-workspace.yaml` globs `apps/*`, `packages/*`, `plugins/*`. Recommendation: put the reference embed under **`apps/spreadsheet-embed-playground`** (matches the existing `*-playground` convention and the `apps/*` glob — no workspace-config change needed). Do not create a new top-level `examples/` tree.
+- Repo app layout (verified): `apps/` contains `agent-playground`, `full-app`, `workspace-playground` (package names identical to dir names, unscoped). There is **no `examples/` dir** and **no pi-excel plugin** in this worktree; `pnpm-workspace.yaml` globs `apps/*`, `packages/*`, `plugins/*`. Put the reference embed under **`apps/spreadsheet-embed-playground`** (matches the existing `*-playground` convention and the `apps/*` glob — no workspace-config change needed). Do not create a new top-level `examples/` tree or a fake plugin just to satisfy the name "pi-excel".
 - `AgentTool` shape & approvals: `AgentTool` gains `needsApproval?: boolean | (params, ctx) => boolean | Promise<boolean>` (`08` HITL). The host declares approval policy on its own tools; the embed renders the approval request in a host dialog and answers via `resolveInput`.
 
 ## Goal / exit criteria
@@ -26,7 +26,7 @@ Match `INDEX.md` Phase S2 exit criteria:
 - Approvals go through the same on-stream path as every other surface (`resolveInput`), rendered as a host/task-pane dialog — no embed-specific approval channel.
 - Two-handles rule: the embed owns its addressing (`workbookId + sheetId` → `sessionId` map); agent APIs receive `sessionId` only.
 - **Trust boundary — `createAgent()` runs host-side, never in the browser add-in.** The reference embed runs `createAgent()` in a **TRUSTED host/server (Node) process**; the task-pane / browser add-in UI consumes the **`ChatTransport` contract only** (message-in, event-stream-out, approvals, session state). **Model credentials and the agent loop NEVER run in the browser add-in process** — the add-in talks to the host over the transport, exactly as the workspace UI does. A minimal reference MAY co-locate both in one Node process for demonstration, but the contract boundary (UI ↔ `ChatTransport` ↔ host-side `createAgent`) must stay explicit and the loop + credentials stay host-side.
-- S2 is lighter than S1: a **contract doc + one reference embed**, reusing S1's shared surface pieces (`@hachej/boring-channel-core` wrapper is not needed for an in-process/task-pane embed; reuse the S1 conformance suite only).
+- S2 is lighter than S1: a **contract doc + one reference embed**, reusing only S1's neutral conformance suite (`@hachej/boring-channel-core` / the Hono-Fastify wrapper is not needed for an in-process/task-pane embed).
 
 ## Do NOT
 
@@ -47,7 +47,7 @@ Match `INDEX.md` Phase S2 exit criteria:
   - how the host supplies domain tools as `tools: AgentTool[]` and marks side-effecting ones `needsApproval`;
   - approval rendering: subscribe to approval events, show a host dialog, call `resolveInput`;
   - the two-handles rule for spreadsheet addressing (`workbookId+sheetId → sessionId`).
-- Tests: none (doc); ensure doc-link CI passes; every symbol named must exist in the published contract post-P1 (add a TODO note if P1 not yet merged).
+- Tests: none (doc); ensure doc-link CI passes; every symbol named must exist in the published contract post-P1. If P1 is not merged, block on P1 and report the missing public symbol instead of adding speculative server-internal references.
 - Acceptance: a host engineer can wire an embed from this doc alone; zero boring-bash references.
 
 ### BBS2-002 — Reference embed under `apps/spreadsheet-embed-playground` (M)
@@ -88,6 +88,6 @@ pnpm run test
 - Embed `package.json` deps: `@hachej/boring-agent` only (+ dev/test tooling); no `@hachej/boring-bash`, no provider packages.
 - Domain tools supplied via `tools`; `runtime: 'none'`; side-effecting tool marked `needsApproval`.
 - Approvals use `resolveInput` on the shared stream — no embed-local approval channel.
-- Conformance suite is imported from S1, not re-implemented.
+- Conformance suite is imported from the neutral `@hachej/boring-agent/testing` subpath authored by S1 BBS1-006, not re-implemented and not imported from the Slack package.
 - Embedding doc lives in `packages/agent/docs/` and names only published-contract symbols.
 - Trust boundary explicit: `createAgent()` + model credentials + the agent loop run **host-side (trusted Node)**, never in the browser add-in; the task-pane UI consumes the `ChatTransport` contract only.

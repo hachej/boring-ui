@@ -18,7 +18,8 @@ second scanner), introduces a minimal Map-backed `AgentRegistry` + the workspace
 `agents: [...]` declaration, and keeps the `/api/v1/plugins/:pluginId/*` route
 family. P6a is **grep-gated**: its contracts carry zero `childAppId`/`workspaceKind`/`ChildApp`
 fields. **P6b** consumes resolved child-app context and scopes Macro requirements;
-it is **HARD BLOCKED** on the shared child-app platform type (`ResolvedChildAppContext`,
+it is **HARD BLOCKED** on the shared child-app platform implementation exporting
+the owner-approved resolved context type (expected name: `ResolvedChildAppContext`,
 #376) with no local fallback shape — STOP-and-report until it lands. P6b is a
 tracked follow-up outside the epic exit: it does not gate P7 or P8, and P8 only
 verifies the P6b follow-up issue is filed. Secrets follow the P5 brokering rule
@@ -27,15 +28,15 @@ verifies the P6b follow-up issue is filed. Secrets follow the P5 brokering rule
 ## Deliverables
 
 ### Phase 6a — plugin core (child-app-independent; the only P7/P8 prerequisite)
-Import-free `boring.requires`/`bash` manifest validation; plugin runtime context; `AgentRegistry` introduction + the workspace `agents: [...]` declaration; hosted plugin fail-closed; shared per-workspace plugin runtime; multi-tenant reload. Prerequisite unchanged: do not define a competing child-app registry here. P6a is grep-gated: the plugin-runtime context contracts carry zero `childAppId`/`workspaceKind`/`ChildApp` fields. P7 and P8 depend on P6a only.
+Import-free `boring.requires`/`bash` manifest validation; lightweight skill capability filters at the skill-loading boundary; generated skills-index prompt fragment derived from the filtered skill set; plugin runtime context; `AgentRegistry` introduction + the workspace `agents: [...]` declaration; hosted plugin fail-closed; shared per-workspace plugin runtime; multi-tenant reload. Prerequisite unchanged: do not define a competing child-app registry here. P6a is grep-gated: the plugin-runtime context contracts carry zero `childAppId`/`workspaceKind`/`ChildApp` fields. P7 and P8 depend on P6a only.
 
 ### Phase 6b — child-app / Macro scoping (follow-up outside the epic exit)
-Consume the resolved child-app context (`childAppId`/`workspaceKind`); child-app/workspace-kind requirement narrowing; Macro scoping so Macro tools/prompts/provisioning do not leak into a generic workspace. HARD BLOCKED on the shared child-app platform type (`ResolvedChildAppContext`, #376) — STOP-and-report, no local fallback shape. P6b is a tracked follow-up gated on that shared platform, not part of the epic exit: the epic ships without it, and P8 only verifies the P6b follow-up issue is filed (P8 never waits on P6b landing).
+Consume the resolved child-app context (`childAppId`/`workspaceKind`); child-app/workspace-kind requirement narrowing; Macro scoping so Macro tools/prompts/provisioning do not leak into a generic workspace. HARD BLOCKED on the shared child-app platform implementation exporting the owner-approved resolved context type (expected name: `ResolvedChildAppContext`, #376) — STOP-and-report, no local fallback shape. P6b is a tracked follow-up gated on that shared platform, not part of the epic exit: the epic ships without it, and P8 only verifies the P6b follow-up issue is filed (P8 never waits on P6b landing).
 
 ## Exit criteria
 
 ### Phase 6a
-Import-free manifest validation; hosted-plugin fail-closed before code exec; managed-service lifecycle; `AgentRegistry`/`agents` declaration seeded — as v1, minus any child-app scoping.
+Import-free manifest validation; skills filtered by attached capabilities before Pi resources, `/api/v1/agent/skills`, skill slash suggestions, and the generated skills-index prompt fragment; hosted-plugin fail-closed before code exec; managed-service lifecycle; `AgentRegistry`/`agents` declaration seeded — as v1, minus any child-app scoping.
 
 ### Phase 6b (when unblocked)
 Child-app/workspace-kind requirement narrowing; Macro requirements do not leak into a generic workspace.

@@ -132,6 +132,7 @@ This repo already has real seams. The refactor must extend them:
 13. **(v2)** One approval channel: HITL is declared on the tool and travels as stream events; no per-surface approval side channels.
 14. **(v2)** Secrets stay on the trusted core side; credentials are brokered at the environment boundary and never enter the sandbox process or the model transcript.
 15. **(v2)** EU-sovereign defaults: every default component of the platform (event store, session store, sandbox providers, remote workers, channel egress) is self-hostable on EU infrastructure. US-hosted providers (e.g. `vercel-sandbox`) are strictly optional providers behind the standard capability matrix — never the default path, never a hard dependency.
+16. **(v2)** Capability residue: every capability travels as a complete bundle (tools + routes + UI + renderers + prompt fragment + composer providers + skill filters). Detaching a capability leaves **zero residue** in prompt, UI, or API surface. Pure mode is the test: an agent with no filesystem shows no filesystem vocabulary anywhere.
 
 ## Issue coverage posture
 
