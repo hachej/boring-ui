@@ -28,6 +28,7 @@ const PUBLISHABLE = [
   "plugins/generated-pane",
   "plugins/data-bridge",
   "plugins/bi-dashboard",
+  "packages/boring-sandbox",
   "packages/boring-bash",
   "plugins/boring-governance",
 ]
