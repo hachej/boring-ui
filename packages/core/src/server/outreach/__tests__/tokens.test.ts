@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { buildOutreachUrl, generateOutreachToken, hashOutreachToken } from '../tokens.js'
-import { isSafeInternalPath, resolveWorkspaceTargetPath } from '../../../shared/outreach/paths.js'
+import { isSafeInternalPath, resolveWorkspaceTargetPath, sanitizeOutreachTargetPath } from '../../../shared/outreach/paths.js'
 
 describe('outreach tokens', () => {
   it('generates opaque URL-safe tokens and hashes them with the app secret', () => {
@@ -27,9 +27,18 @@ describe('outreach target paths', () => {
     expect(isSafeInternalPath('workspace/123')).toBe(false)
   })
 
+  it('rejects control characters and returns a safe fallback', () => {
+    expect(isSafeInternalPath('/workspace/123\nLocation: //evil.test')).toBe(false)
+    expect(isSafeInternalPath('/workspace/123\r')).toBe(false)
+    expect(isSafeInternalPath('/workspace/123\u007f')).toBe(false)
+    expect(sanitizeOutreachTargetPath('/workspace/123\nLocation: //evil.test')).toBe('/')
+    expect(sanitizeOutreachTargetPath('/workspace/123\r', '/workspace/fallback')).toBe('/workspace/fallback')
+  })
+
   it('resolves workspace placeholders from durable provisioned state', () => {
     expect(resolveWorkspaceTargetPath('/', 'ws_1')).toBe('/workspace/ws_1')
     expect(resolveWorkspaceTargetPath('/workspace/{workspaceId}/output/a', 'ws_1')).toBe('/workspace/ws_1/output/a')
     expect(resolveWorkspaceTargetPath('/workspace/:workspaceId/output/a', 'ws_1')).toBe('/workspace/ws_1/output/a')
+    expect(resolveWorkspaceTargetPath('/workspace/:workspaceId\r\nLocation: //evil.test', 'ws_1')).toBe('/workspace/ws_1')
   })
 })

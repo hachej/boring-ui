@@ -111,16 +111,19 @@ function assertRateLimitEnvelope(res: {
 
 describe('rate limiting hardening (xzhz)', () => {
   for (const endpoint of RATE_LIMITED_ENDPOINTS) {
-    const runtimeUrl =
-      endpoint.url === '/api/v1/workspaces/:id/invites'
-        ? '/api/v1/workspaces/ws-1/invites'
-        : endpoint.url
+    const runtimeUrl = endpoint.url
+      .replace(':id', 'ws-1')
+      .replace(':token', 'token-1')
 
     it(
       `${endpoint.url} — ${endpoint.limit + 1}th request returns 429 with envelope`,
       withBeadId('boring-ui-v2-xzhz', async ({ logEvent, assertionPassed }) => {
         app = await createCoreApp(createConfig(), { manageShutdown: false })
-        app.post(endpoint.url, async () => ({ ok: true }))
+        if (endpoint.method === 'GET') {
+          app.get(endpoint.url, async () => ({ ok: true }))
+        } else {
+          app.post(endpoint.url, async () => ({ ok: true }))
+        }
         await app.ready()
 
         logEvent('assertion.passed', {
@@ -144,6 +147,59 @@ describe('rate limiting hardening (xzhz)', () => {
       }),
     )
   }
+
+  it(
+    'outreach admin creation limits are keyed by user when authenticated',
+    withBeadId('boring-ui-v2-xzhz', async ({ assertionPassed }) => {
+      app = await createCoreApp(
+        createConfig({
+          rateLimit: {
+            '/api/v1/outreach-links': { max: 2, window: '1 minute' },
+          },
+        }),
+        { manageShutdown: false },
+      )
+      app.addHook('onRequest', async (request) => {
+        const userId = request.headers['x-test-user-id']
+        if (typeof userId === 'string' && userId.length > 0) {
+          request.user = {
+            id: userId,
+            email: `${userId}@example.test`,
+            name: userId,
+            emailVerified: true,
+          }
+        }
+      })
+      app.post('/api/v1/outreach-links', async () => ({ ok: true }))
+      await app.ready()
+
+      const userA = []
+      for (let index = 0; index < 3; index += 1) {
+        userA.push(await app.inject({
+          method: 'POST',
+          url: '/api/v1/outreach-links',
+          headers: {
+            'x-forwarded-for': '1.2.3.4',
+            'x-test-user-id': 'user-a',
+          },
+          payload: {},
+        }))
+      }
+      assertRateLimitEnvelope(userA[2])
+
+      const userB = await app.inject({
+        method: 'POST',
+        url: '/api/v1/outreach-links',
+        headers: {
+          'x-forwarded-for': '1.2.3.4',
+          'x-test-user-id': 'user-b',
+        },
+        payload: {},
+      })
+      expect(userB.statusCode).not.toBe(429)
+      assertionPassed('outreach-admin-user-key')
+    }),
+  )
 
   it(
     'workspace-scoped invite limit uses workspace key (not per-IP)',

@@ -47,7 +47,7 @@ export function SignUpPage() {
   const [success, setSuccess] = useState(false)
 
   const { inviteToken, claim, callbackURL } = readSignUpParams()
-  const showGoogleAuth = config?.features.googleOauth === true && !inviteToken
+  const showGoogleAuth = config?.features.googleOauth === true && !inviteToken && !claim
 
   const {
     register,

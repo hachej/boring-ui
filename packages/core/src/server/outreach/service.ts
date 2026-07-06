@@ -117,8 +117,7 @@ export class DefaultExperienceProvisioner implements ExperienceProvisioner {
       })
     }
 
-    const role = experience.provisioningMode === 'shared_readonly' ? 'viewer' : 'viewer'
-    await this.workspaceStore.upsertMember(workspace.id, input.userId, role)
+    await this.workspaceStore.upsertMember(workspace.id, input.userId, 'viewer')
 
     return {
       workspaceId: workspace.id,

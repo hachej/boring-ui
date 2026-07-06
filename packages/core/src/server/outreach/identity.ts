@@ -1,6 +1,7 @@
 import { and, eq, sql } from 'drizzle-orm'
 import type { Database } from '../db/connection.js'
-import { outreachLeads, workspaceMembers, workspaces } from '../db/schema.js'
+import { creditGrants, outreachLeads, outreachLinks, workspaceMembers, workspaces } from '../db/schema.js'
+import { ERROR_CODES, HttpError } from '../../shared/errors.js'
 
 export interface AuthIdentityAdapter {
   transferAnonymousOwnership(input: {
@@ -34,17 +35,45 @@ export function createOutreachAuthIdentityAdapter(db: Database, appId: string): 
           .limit(1)
 
         if (anonymousLead && claimedLead && claimedLead.outreachLinkId !== anonymousLead.outreachLinkId) {
-          throw new Error('Cannot claim anonymous outreach lead into an account with another outreach lead')
+          throw new HttpError({
+            status: 409,
+            code: ERROR_CODES.OUTREACH_CLAIM_CONFLICT,
+            message: 'Cannot claim anonymous outreach lead into an account with another outreach lead',
+          })
         }
         if (anonymousLead && claimedLead && claimedLead.outreachLinkId === anonymousLead.outreachLinkId) {
           await tx
             .delete(outreachLeads)
             .where(and(
               eq(outreachLeads.appId, appId),
-              eq(outreachLeads.userId, input.anonymousUserId),
+                eq(outreachLeads.userId, input.anonymousUserId),
             ))
         }
 
+        await tx.execute(sql`
+          DELETE FROM ${creditGrants} source
+          USING ${creditGrants} target, ${outreachLinks} link
+          WHERE source.user_id = ${input.anonymousUserId}
+            AND target.user_id = ${input.claimedUserId}
+            AND target.reason = source.reason
+            AND source.reason = ('outreach:' || link.id || ':initial_credit')
+            AND link.app_id = ${appId}
+        `)
+        await tx.execute(sql`
+          UPDATE ${creditGrants}
+          SET user_id = ${input.claimedUserId}
+          WHERE user_id = ${input.anonymousUserId}
+            AND EXISTS (
+              SELECT 1 FROM ${outreachLinks} link
+              WHERE link.app_id = ${appId}
+                AND ${creditGrants.reason} = ('outreach:' || link.id || ':initial_credit')
+            )
+            AND NOT EXISTS (
+              SELECT 1 FROM ${creditGrants} target
+              WHERE target.user_id = ${input.claimedUserId}
+                AND target.reason = ${creditGrants.reason}
+            )
+        `)
         await tx.execute(sql`
           DELETE FROM ${workspaceMembers} source
           USING ${workspaceMembers} target, ${workspaces} ws

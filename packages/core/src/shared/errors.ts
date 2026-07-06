@@ -37,6 +37,9 @@ export const ERROR_CODES = {
   PAYMENT_REQUIRED: 'payment_required',
   INVALID_PACK: 'invalid_pack',
   CHECKOUT_FAILED: 'checkout_failed',
+
+  // Outreach
+  OUTREACH_CLAIM_CONFLICT: 'outreach_claim_conflict',
 } as const
 
 export type ErrorCode = (typeof ERROR_CODES)[keyof typeof ERROR_CODES]

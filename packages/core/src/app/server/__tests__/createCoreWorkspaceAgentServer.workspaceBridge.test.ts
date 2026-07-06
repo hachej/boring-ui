@@ -18,8 +18,44 @@ vi.mock('@hachej/boring-agent/server', () => ({
   compactPiPackages: (packages: unknown[]) => packages,
   registerAgentRoutes: async (app: any, opts: Record<string, unknown>) => {
     agentServerMock.registerOpts.push(opts)
+    const resolveWorkspace = async (request: any, reply: any) => {
+      try {
+        return {
+          ok: true as const,
+          workspaceId: await (opts.getWorkspaceId as Function)?.(request),
+        }
+      } catch (error) {
+        const statusCode = typeof (error as { statusCode?: unknown })?.statusCode === 'number'
+          ? (error as { statusCode: number }).statusCode
+          : 500
+        return {
+          ok: false as const,
+          response: reply.code(statusCode).send({
+            error: {
+              code: (error as { code?: string }).code ?? 'workspace_scope_failed',
+              message: error instanceof Error ? error.message : 'workspace scope failed',
+            },
+          }),
+        }
+      }
+    }
     app.post('/api/v1/agent/chat', async () => ({ ok: true }))
     app.get('/api/v1/agent/chat/:sessionId/messages', async () => ({ ok: true }))
+    app.get('/api/v1/files', async (request: any, reply: any) => {
+      const scoped = await resolveWorkspace(request, reply)
+      if (!scoped.ok) return scoped.response
+      return { ok: true, workspaceId: scoped.workspaceId }
+    })
+    app.post('/api/v1/files', async (request: any, reply: any) => {
+      const scoped = await resolveWorkspace(request, reply)
+      if (!scoped.ok) return scoped.response
+      return { ok: true, workspaceId: scoped.workspaceId }
+    })
+    app.post('/api/v1/agent/commands/execute', async (request: any, reply: any) => {
+      const scoped = await resolveWorkspace(request, reply)
+      if (!scoped.ok) return scoped.response
+      return { ok: true, workspaceId: scoped.workspaceId }
+    })
     app.get('/__bridge-owner/:sessionId', async (request: any) => {
       const tools = await (opts.getExtraTools as Function)?.({
         workspaceId: String(request.headers['x-boring-workspace-id'] ?? 'default'),
@@ -169,6 +205,7 @@ vi.mock('../../../server/app/index.js', () => ({
 vi.mock('../../../server/routes/index.js', () => ({
   registerInviteRoutes: async () => {},
   registerMemberRoutes: async () => {},
+  registerOutreachRoutes: async () => {},
   registerSettingsRoutes: async () => {},
   registerWorkspaceRoutes: async () => {},
 }))
@@ -178,10 +215,17 @@ vi.mock('../../../server/db/index.js', () => ({
     db: {},
     sql: { end: vi.fn() },
   }),
+  PostgresMeteringStore: class PostgresMeteringStore {},
   PostgresUserStore: class PostgresUserStore {},
   PostgresWorkspaceStore: class PostgresWorkspaceStore {
-    async isMember() {
-      return true
+    async isMember(workspaceId: string, userId: string) {
+      return Boolean(await this.getMemberRole(workspaceId, userId))
+    }
+
+    async getMemberRole(_workspaceId: string, userId: string) {
+      if (userId === 'viewer') return 'viewer'
+      if (userId === 'outsider') return null
+      return 'editor'
     }
   },
 }))
@@ -211,6 +255,62 @@ afterEach(() => {
 })
 
 describe('createCoreWorkspaceAgentServer workspace bridge wiring', () => {
+  it('requires editor role for mutating agent file and command routes', async () => {
+    const app = await createCoreWorkspaceAgentServer({ serveFrontend: false })
+
+    try {
+      const viewerRead = await app.inject({
+        method: 'GET',
+        url: '/api/v1/files?path=/README.md',
+        headers: { 'x-boring-workspace-id': 'workspace-1', 'x-test-user-id': 'viewer' },
+      })
+      expect(viewerRead.statusCode).toBe(200)
+
+      const viewerWrite = await app.inject({
+        method: 'POST',
+        url: '/api/v1/files',
+        headers: { 'content-type': 'application/json', 'x-boring-workspace-id': 'workspace-1', 'x-test-user-id': 'viewer' },
+        payload: { path: '/README.md', content: 'changed' },
+      })
+      expect(viewerWrite.statusCode).toBe(403)
+      expect(viewerWrite.json()).toMatchObject({
+        error: { code: 'forbidden', message: 'workspace editor role required' },
+      })
+
+      const viewerCommand = await app.inject({
+        method: 'POST',
+        url: '/api/v1/agent/commands/execute',
+        headers: { 'content-type': 'application/json', 'x-boring-workspace-id': 'workspace-1', 'x-test-user-id': 'viewer' },
+        payload: { command: 'test' },
+      })
+      expect(viewerCommand.statusCode).toBe(403)
+      expect(viewerCommand.json()).toMatchObject({
+        error: { code: 'forbidden', message: 'workspace editor role required' },
+      })
+
+      const editorWrite = await app.inject({
+        method: 'POST',
+        url: '/api/v1/files',
+        headers: { 'content-type': 'application/json', 'x-boring-workspace-id': 'workspace-1', 'x-test-user-id': 'editor' },
+        payload: { path: '/README.md', content: 'changed' },
+      })
+      expect(editorWrite.statusCode).toBe(200)
+
+      const anonymousWrite = await app.inject({
+        method: 'POST',
+        url: '/api/v1/files',
+        headers: { 'content-type': 'application/json', 'x-boring-workspace-id': 'workspace-1' },
+        payload: { path: '/README.md', content: 'changed' },
+      })
+      expect(anonymousWrite.statusCode).toBe(401)
+      expect(anonymousWrite.json()).toMatchObject({
+        error: { code: 'unauthorized' },
+      })
+    } finally {
+      await app.close()
+    }
+  })
+
   it('wires runtime env contributions and runtime token auth into the core host', async () => {
     const app = await createCoreWorkspaceAgentServer({
       serveFrontend: false,

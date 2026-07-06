@@ -177,6 +177,20 @@ describe('SignUpPage', () => {
   )
 
   it(
+    'hides Google sign-up during the outreach claim flow',
+    withBeadId(GOOGLE_BEAD_ID, async ({ assertionPassed }) => {
+      mockUseOptionalConfig.mockReturnValue({ features: { googleOauth: true } })
+      window.history.pushState({}, '', '/auth/signup?claim=1&callbackURL=%2Fworkspace%2Fw1')
+
+      render(<SignUpPage />, { wrapper: Wrapper })
+
+      expect(screen.queryByRole('button', { name: /continue with google/i })).toBeNull()
+      expect(screen.getByRole('button', { name: /^sign up$/i })).toBeTruthy()
+      assertionPassed('signup-google-hidden-claim')
+    }),
+  )
+
+  it(
     'passes the signup route as the Google OAuth error callback URL',
     withBeadId(GOOGLE_BEAD_ID, async ({ assertionPassed }) => {
       mockUseOptionalConfig.mockReturnValue({ features: { googleOauth: true } })

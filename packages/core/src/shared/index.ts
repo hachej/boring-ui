@@ -36,4 +36,5 @@ export {
   isSafeInternalPath,
   normalizeOutreachTargetPath,
   resolveWorkspaceTargetPath,
+  sanitizeOutreachTargetPath,
 } from './outreach/paths.js'

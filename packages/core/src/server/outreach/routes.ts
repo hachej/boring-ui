@@ -195,13 +195,6 @@ const outreachRoutesPlugin: FastifyPluginAsync<OutreachRoutesOptions> = async (a
       throw new HttpError({ status: 404, code: ERROR_CODES.NOT_FOUND, message: 'Outreach link not found' })
     }
 
-    await findValidOutreachLink({
-      db: opts.db,
-      appId: app.config.appId,
-      authSecret: app.config.auth.secret,
-      token,
-    })
-
     const sessionHeaders = toHeaders(request.headers)
     if (request.user?.id) {
       const existingLead = await getLeadForUser({ db: opts.db, appId: app.config.appId, userId: request.user.id })
@@ -221,6 +214,13 @@ const outreachRoutesPlugin: FastifyPluginAsync<OutreachRoutesOptions> = async (a
       reply.redirect(consumed.targetPath)
       return
     }
+
+    await findValidOutreachLink({
+      db: opts.db,
+      appId: app.config.appId,
+      authSecret: app.config.auth.secret,
+      token,
+    })
 
     const anonymous = await signInAnonymous(app, sessionHeaders)
     const consumed = await consumeOutreachForUser({

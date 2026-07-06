@@ -10,6 +10,10 @@ interface RateLimitRule {
   keyGenerator?: (req: FastifyRequest) => string
 }
 
+function userOrIpKey(req: FastifyRequest): string {
+  return req.user?.id ?? req.ip
+}
+
 export const DEFAULT_RATE_LIMIT_RULES: readonly RateLimitRule[] = [
   {
     endpoint: '/auth/sign-in/email',
@@ -69,6 +73,37 @@ export const DEFAULT_RATE_LIMIT_RULES: readonly RateLimitRule[] = [
       return `${req.ip}:${userId}`
     },
   },
+  {
+    endpoint: '/o/:token',
+    url: '/o/:token',
+    method: 'GET',
+    max: 60,
+    timeWindow: '1 minute',
+  },
+  {
+    endpoint: '/api/v1/outreach/experiences',
+    url: '/api/v1/outreach/experiences',
+    method: 'POST',
+    max: 20,
+    timeWindow: '1 hour',
+    keyGenerator: userOrIpKey,
+  },
+  {
+    endpoint: '/api/v1/outreach-links',
+    url: '/api/v1/outreach-links',
+    method: 'POST',
+    max: 60,
+    timeWindow: '1 hour',
+    keyGenerator: userOrIpKey,
+  },
+  {
+    endpoint: '/api/v1/outreach/claim',
+    url: '/api/v1/outreach/claim',
+    method: 'POST',
+    max: 10,
+    timeWindow: '1 minute',
+    keyGenerator: (req) => `${req.ip}:${req.user?.id ?? 'anon'}`,
+  },
 ]
 
 function matchesRule(
@@ -113,6 +148,7 @@ export async function registerRateLimits(app: FastifyInstance) {
     routeOptions.config = {
       ...routeOptions.config,
       rateLimit: {
+        hook: 'preHandler',
         max: rule.max,
         timeWindow: rule.timeWindow,
         ...(rule.keyGenerator ? { keyGenerator: rule.keyGenerator } : {}),
