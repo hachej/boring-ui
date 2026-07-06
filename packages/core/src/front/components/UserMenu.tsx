@@ -23,7 +23,7 @@ import { useNavigate } from 'react-router-dom'
 
 import { useSignOut, useUser } from '../auth/index.js'
 import { useCompanyAdminStatus } from '../CompanyAdminProvider.js'
-import { useCurrentWorkspace, useWorkspaceRole } from '../WorkspaceAuthProvider.js'
+import { useCurrentWorkspace } from '../WorkspaceAuthProvider.js'
 import { useTheme } from '../hooks/index.js'
 import { routeHref, routes } from '../utils.js'
 
@@ -74,18 +74,17 @@ export function UserMenu({ contentSide = 'bottom', contentAlign = 'end', variant
   const navigate = useNavigate()
   const { preference, setTheme } = useTheme()
   const workspace = useCurrentWorkspace()
-  const workspaceRole = useWorkspaceRole()
   const companyAdmin = useCompanyAdminStatus()
   const [isSigningOut, setIsSigningOut] = useState(false)
 
   const user = identity?.user
-  const governanceEnabled = companyAdmin.status?.enabled === true
+  const adminMenuLabel = companyAdmin.labels.menuLabel ?? 'Admin'
   const companyAdminStatusPending = companyAdmin.configured && companyAdmin.loading && !companyAdmin.status
-  const canOpenCompanyAdmin = companyAdminStatusPending || companyAdmin.error
-    ? false
-    : governanceEnabled
-      ? companyAdmin.status?.admin === true
-      : workspaceRole === 'owner'
+  const canOpenCompanyAdmin = companyAdmin.configured && (
+    companyAdminStatusPending
+    || Boolean(companyAdmin.error)
+    || (companyAdmin.status?.enabled === true && companyAdmin.status.admin === true)
+  )
   const companyAdminWorkspaceId = canOpenCompanyAdmin ? workspace?.id ?? null : null
 
   const userName = user?.name ?? 'Unknown user'
@@ -197,14 +196,14 @@ export function UserMenu({ contentSide = 'bottom', contentAlign = 'end', variant
 
         {companyAdminWorkspaceId ? (
           <DropdownMenuItem
-            aria-label="Company admin"
+            aria-label={adminMenuLabel}
             onSelect={() => navigate(routeHref('companyAdmin', { id: companyAdminWorkspaceId }))}
             className="gap-3 rounded-md py-2 text-[13px] focus:bg-foreground/[0.06] focus:text-foreground"
           >
             <ShieldCheck className="h-4 w-4" aria-hidden="true" />
             <span className="flex min-w-0 flex-col">
-              <span>Company admin</span>
-              <span className="text-xs text-muted-foreground">Context and model controls</span>
+              <span>{adminMenuLabel}</span>
+              <span className="text-xs text-muted-foreground">Admin controls</span>
             </span>
           </DropdownMenuItem>
         ) : null}

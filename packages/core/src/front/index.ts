@@ -5,6 +5,7 @@ export { ThemeProvider } from './ThemeProvider.js'
 export type { ThemeApi, ThemeProviderProps } from './ThemeProvider.js'
 export { CompanyAdminProvider, useCompanyAdminStatus } from './CompanyAdminProvider.js'
 export type {
+  CompanyAdminLabels,
   CompanyAdminProviderProps,
   CompanyAdminStatus,
   LoadCompanyAdminStatus,

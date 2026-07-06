@@ -11,9 +11,16 @@ export interface CreateGovernanceCompanyAdminOptions {
   fetchImpl?: typeof fetch
 }
 
+interface CompanyAdminLabels {
+  menuLabel?: string
+  pageTitle?: string
+  deniedMessage?: string
+}
+
 export interface GovernanceCompanyAdminProvider {
   loadStatus: LoadCompanyAdminStatus
   renderContent: RenderCompanyAdminContent
+  labels: CompanyAdminLabels
 }
 
 export function createGovernanceCompanyAdmin({ fetchImpl = fetch }: CreateGovernanceCompanyAdminOptions = {}): GovernanceCompanyAdminProvider {
@@ -37,7 +44,13 @@ export function createGovernanceCompanyAdmin({ fetchImpl = fetch }: CreateGovern
     <GovernanceAdminView status={status.details as GovernanceMeResponse} />
   )
 
-  return { loadStatus, renderContent }
+  const labels: CompanyAdminLabels = {
+    menuLabel: 'Company Admin',
+    pageTitle: 'Company Admin',
+    deniedMessage: 'You do not have access to Company Admin.',
+  }
+
+  return { loadStatus, renderContent, labels }
 }
 
 type GovernanceFrontPlugin = ((api: unknown) => void) & { pluginId: string; pluginLabel?: string }

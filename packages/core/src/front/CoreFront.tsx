@@ -9,7 +9,7 @@ import { ConfigProvider, useConfig } from './ConfigProvider.js'
 import { ThemeProvider } from './ThemeProvider.js'
 import { AuthProvider, useSession } from './auth/AuthProvider.js'
 import { UserIdentityProvider } from './auth/UserIdentityProvider.js'
-import { CompanyAdminProvider, type LoadCompanyAdminStatus, type RenderCompanyAdminContent } from './CompanyAdminProvider.js'
+import { CompanyAdminProvider, type CompanyAdminLabels, type LoadCompanyAdminStatus, type RenderCompanyAdminContent } from './CompanyAdminProvider.js'
 import { WorkspaceAuthProvider } from './WorkspaceAuthProvider.js'
 import { AuthGate } from './AuthGate.js'
 import { TopBarSlotProvider, UserMenu } from './components/index.js'
@@ -41,6 +41,7 @@ export interface CoreFrontAuthPagesOverride {
 export interface CoreFrontCompanyAdminOptions {
   loadStatus?: LoadCompanyAdminStatus
   renderContent?: RenderCompanyAdminContent
+  labels?: CompanyAdminLabels
 }
 
 export interface CoreFrontProps {
@@ -84,6 +85,7 @@ function CompanyAdminScopedProvider({ children, companyAdmin }: { children: Reac
     <CompanyAdminProvider
       loadStatus={companyAdmin?.loadStatus}
       renderContent={companyAdmin?.renderContent}
+      labels={companyAdmin?.labels}
       identityKey={identityKey}
     >
       {children}

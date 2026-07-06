@@ -192,7 +192,7 @@ const workspaceRoutesPlugin: FastifyPluginAsync = async (app) => {
         throw new HttpError({
           status: 403,
           code: ERROR_CODES.FORBIDDEN,
-          message: 'Company Context workspace is managed by governance and cannot be deleted',
+          message: 'Managed workspace cannot be deleted',
           requestId: request.id,
         })
       }

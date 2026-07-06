@@ -10,12 +10,19 @@ export interface CompanyAdminStatus {
 export type LoadCompanyAdminStatus = () => Promise<CompanyAdminStatus | null>
 export type RenderCompanyAdminContent = (status: CompanyAdminStatus) => ReactNode
 
+export interface CompanyAdminLabels {
+  menuLabel?: string
+  pageTitle?: string
+  deniedMessage?: string
+}
+
 interface CompanyAdminContextValue {
   configured: boolean
   loading: boolean
   status: CompanyAdminStatus | null
   error: string | null
   renderContent: RenderCompanyAdminContent | null
+  labels: CompanyAdminLabels
   refresh(): Promise<void>
 }
 
@@ -25,6 +32,7 @@ const CompanyAdminContext = createContext<CompanyAdminContextValue>({
   status: null,
   error: null,
   renderContent: null,
+  labels: {},
   refresh: async () => {},
 })
 
@@ -32,6 +40,7 @@ export interface CompanyAdminProviderProps {
   children: ReactNode
   loadStatus?: LoadCompanyAdminStatus
   renderContent?: RenderCompanyAdminContent
+  labels?: CompanyAdminLabels
   /**
    * Optional authenticated-user cache key. When null, status is cleared and no
    * request is made. When it changes, status is refetched.
@@ -39,7 +48,7 @@ export interface CompanyAdminProviderProps {
   identityKey?: string | null
 }
 
-export function CompanyAdminProvider({ children, loadStatus, renderContent, identityKey }: CompanyAdminProviderProps) {
+export function CompanyAdminProvider({ children, loadStatus, renderContent, labels, identityKey }: CompanyAdminProviderProps) {
   const [status, setStatus] = useState<CompanyAdminStatus | null>(null)
   const [loading, setLoading] = useState(Boolean(loadStatus && identityKey !== null))
   const [error, setError] = useState<string | null>(null)
@@ -87,13 +96,14 @@ export function CompanyAdminProvider({ children, loadStatus, renderContent, iden
   }, [identityKey, loadStatus])
 
   const value = useMemo<CompanyAdminContextValue>(() => ({
-    configured: Boolean(loadStatus),
+    configured: Boolean(loadStatus && renderContent),
     loading,
     status,
     error,
     renderContent: renderContent ?? null,
+    labels: labels ?? {},
     refresh,
-  }), [error, loadStatus, loading, renderContent, status])
+  }), [error, labels, loadStatus, loading, renderContent, status])
 
   return <CompanyAdminContext.Provider value={value}>{children}</CompanyAdminContext.Provider>
 }
