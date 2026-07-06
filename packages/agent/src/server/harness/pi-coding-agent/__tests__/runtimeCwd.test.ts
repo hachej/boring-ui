@@ -137,7 +137,7 @@ describe("runtime cwd separation", () => {
       abortSignal: new AbortController().signal,
       workdir: "/workspace",
     };
-    await harness.getPiSessionAdapter({ sessionId: "sess-runtime-cwd", message: "" }, ctx);
+    await harness.getPiSessionAdapter({ sessionId: "sess-runtime-cwd", content: "" }, ctx);
 
     expect(mockResourceLoaderOptions[0]?.cwd).toBe("/tmp/host-storage-root");
     expect(mockSessionManagerCreate).toHaveBeenCalledWith("/workspace", "/tmp/pi-session-storage");
