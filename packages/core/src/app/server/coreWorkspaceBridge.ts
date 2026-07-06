@@ -22,14 +22,9 @@ import {
 } from '@hachej/boring-workspace/server'
 import type { RuntimeEnvContribution, RuntimeEnvContributionContext } from '@hachej/boring-agent/server'
 import type { MemberRole } from '../../shared/types.js'
+import { isWorkspaceRoleAtLeast } from '../../server/auth/workspaceRoles.js'
 
 const MAX_SESSION_OWNER_CACHE = 5_000
-
-const ROLE_LEVELS: Record<MemberRole, number> = {
-  viewer: 0,
-  editor: 1,
-  owner: 2,
-}
 
 interface CoreWorkspaceBridgeRuntime {
   registry: WorkspaceBridgeRegistry
@@ -225,7 +220,7 @@ export function createCoreWorkspaceBridge(options: CoreWorkspaceBridgeOptions): 
           const role = await workspaceStore.getMemberRole(workspaceId, principal.userId)
           const minimumRole: MemberRole = definition.idempotencyPolicy === 'none' ? 'viewer' : 'editor'
           return {
-            allowed: Boolean(role && ROLE_LEVELS[role] >= ROLE_LEVELS[minimumRole]),
+            allowed: Boolean(role && isWorkspaceRoleAtLeast(role, minimumRole)),
             role: role ?? undefined,
             capabilities: definition.requiredCapabilities,
           }

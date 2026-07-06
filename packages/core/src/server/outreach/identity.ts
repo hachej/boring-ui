@@ -1,6 +1,6 @@
 import { sql } from 'drizzle-orm'
 import type { Database } from '../db/connection.js'
-import { creditGrants, outreachLeads, outreachLinks, workspaceMembers, workspaces } from '../db/schema.js'
+import { creditGrants, outreachLeads, outreachLinks, users, workspaceMembers, workspaces } from '../db/schema.js'
 import { ERROR_CODES, HttpError } from '../../shared/errors.js'
 
 export interface AuthIdentityAdapter {
@@ -30,12 +30,44 @@ function outreachClaimConflict(message: string): HttpError {
   })
 }
 
+function isOutreachLeadUserUniqueViolation(error: unknown): boolean {
+  let current: unknown = error
+  while (current && typeof current === 'object') {
+    const candidate = current as {
+      code?: unknown
+      constraint?: unknown
+      constraint_name?: unknown
+      message?: unknown
+      cause?: unknown
+    }
+    const constraint = candidate.constraint_name ?? candidate.constraint
+    const message = typeof candidate.message === 'string' ? candidate.message : ''
+    if (
+      candidate.code === '23505' &&
+      (constraint === 'outreach_leads_user_id_idx' || message.includes('outreach_leads_user_id_idx'))
+    ) {
+      return true
+    }
+    current = candidate.cause
+  }
+  return false
+}
+
 export function createOutreachAuthIdentityAdapter(db: Database, appId: string): AuthIdentityAdapter {
   return {
     async transferAnonymousOwnership(input) {
       if (input.anonymousUserId === input.claimedUserId) return
 
-      await db.transaction(async (tx) => {
+      try {
+        await db.transaction(async (tx) => {
+          await tx.execute(sql`
+            SELECT id
+            FROM ${users}
+            WHERE id IN (${input.anonymousUserId}, ${input.claimedUserId})
+            ORDER BY id
+            FOR UPDATE
+          `)
+
         const [anonymousLead] = rowsFromExecute<LeadTransferRow>(await tx.execute(sql`
           SELECT id, outreach_link_id AS "outreachLinkId"
           FROM ${outreachLeads}
@@ -141,7 +173,13 @@ export function createOutreachAuthIdentityAdapter(db: Database, appId: string): 
         if (transferred.length !== 1) {
           throw outreachClaimConflict('Anonymous outreach lead transfer lost the claim race')
         }
-      })
+        })
+      } catch (error) {
+        if (isOutreachLeadUserUniqueViolation(error)) {
+          throw outreachClaimConflict('Anonymous outreach lead transfer lost the claim race')
+        }
+        throw error
+      }
     },
   }
 }

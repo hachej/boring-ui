@@ -1,7 +1,7 @@
 import type { FastifyInstance, FastifyRequest, RouteOptions } from 'fastify'
 import rateLimit from '@fastify/rate-limit'
 
-interface RateLimitRule {
+export interface RateLimitRule {
   endpoint: string
   url: string
   method: 'POST' | 'GET'
@@ -14,7 +14,7 @@ function userOrIpKey(req: FastifyRequest): string {
   return req.user?.id ?? req.ip
 }
 
-export const DEFAULT_RATE_LIMIT_RULES: readonly RateLimitRule[] = [
+export const AUTH_RATE_LIMIT_RULES = [
   {
     endpoint: '/auth/sign-in/email',
     url: '/auth/sign-in/email',
@@ -43,6 +43,15 @@ export const DEFAULT_RATE_LIMIT_RULES: readonly RateLimitRule[] = [
     max: 3,
     timeWindow: '1 hour',
   },
+] as const satisfies readonly RateLimitRule[]
+
+export const AUTH_PROXY_RATE_LIMITED_ROUTES = AUTH_RATE_LIMIT_RULES.map((rule) => ({
+  method: rule.method,
+  url: rule.url,
+}))
+
+export const DEFAULT_RATE_LIMIT_RULES: readonly RateLimitRule[] = [
+  ...AUTH_RATE_LIMIT_RULES,
   {
     // Override key uses the templated route string, not a concrete workspace ID.
     endpoint: '/api/v1/workspaces/:id/invites',

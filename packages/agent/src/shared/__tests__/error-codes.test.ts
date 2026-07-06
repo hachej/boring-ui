@@ -65,6 +65,7 @@ const EXPECTED_ERROR_CODES = [
   'PROVISIONING_ARTIFACT_FAILED',
   'INTERNAL_ERROR',
 ] as const
+const HOST_FORBIDDEN_CODE = 'forbidden'
 
 function docCodesFromMarkdown(markdown: string): string[] {
   const matches = Array.from(
@@ -100,6 +101,17 @@ describe('error response and logs', () => {
     })
 
     expect(parsed.error.code).toBe('PATH_ESCAPE')
+  })
+
+  test('accepts embedded host-owned stable API error codes', () => {
+    const parsed = ApiErrorResponseSchema.parse({
+      error: {
+        code: HOST_FORBIDDEN_CODE,
+        message: 'workspace editor role required',
+      },
+    })
+
+    expect(parsed.error.code).toBe(HOST_FORBIDDEN_CODE)
   })
 
   test('validates structured error log shape', () => {

@@ -1,12 +1,7 @@
 import type { preHandlerHookHandler } from 'fastify'
 import type { MemberRole } from '../../shared/types.js'
 import { HttpError, ERROR_CODES } from '../../shared/errors.js'
-
-const ROLE_LEVELS: Record<MemberRole, number> = {
-  viewer: 0,
-  editor: 1,
-  owner: 2,
-}
+import { isWorkspaceRoleAtLeast } from './workspaceRoles.js'
 
 const WORKSPACE_ID_RE = /^[A-Za-z0-9_-]{1,128}$/
 
@@ -61,7 +56,7 @@ export function requireWorkspaceMember(
       })
     }
 
-    if (minimumRole && ROLE_LEVELS[role] < ROLE_LEVELS[minimumRole]) {
+    if (minimumRole && !isWorkspaceRoleAtLeast(role, minimumRole)) {
       throw new HttpError({
         status: 403,
         code: ERROR_CODES.FORBIDDEN,

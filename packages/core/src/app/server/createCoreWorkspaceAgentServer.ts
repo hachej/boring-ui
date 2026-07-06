@@ -1,4 +1,4 @@
-import { access, mkdir, readFile, stat } from 'node:fs/promises'
+import { access, readFile, stat } from 'node:fs/promises'
 import { createReadStream } from 'node:fs'
 import path from 'node:path'
 
@@ -36,9 +36,21 @@ import {
   type WorkspaceServerPlugin,
 } from '@hachej/boring-workspace/server'
 import { createCoreWorkspaceBridge } from './coreWorkspaceBridge.js'
+import {
+  FRONTEND_AUTH_PAGES,
+  FRONTEND_AUTH_PAGES_SPA_ONLY,
+  registerAuthProxy,
+} from './authProxy.js'
+import {
+  authorizeWorkspaceAccess,
+  isSharedUiMutationRequest,
+  resolveWorkspaceMemberId,
+  resolveWorkspaceRoot,
+  validateWorkspaceIdSegment,
+} from './workspaceAccess.js'
 import type { FastifyInstance, FastifyRequest } from 'fastify'
 import type postgres from 'postgres'
-import type { CoreConfig, MemberRole } from '../../shared/types.js'
+import type { CoreConfig } from '../../shared/types.js'
 import { ERROR_CODES } from '../../shared/errors.js'
 import { safeCapture, type TelemetrySink } from '../../shared/telemetry.js'
 import {
@@ -84,45 +96,6 @@ const MIME_TYPES: Record<string, string> = {
   '.webp': 'image/webp',
 }
 
-const AUTH_PROXY_BLOCKED_RESPONSE_HEADERS = new Set([
-  'connection',
-  'content-encoding',
-  'content-length',
-  'keep-alive',
-  'transfer-encoding',
-])
-
-// Pages that are served as the SPA shell (catch-all) AND get explicit GET routes
-// so the browser can navigate directly to them without hitting the auth proxy.
-const FRONTEND_AUTH_PAGES = new Set([
-  '/auth/signin',
-  '/auth/signup',
-  '/auth/forgot-password',
-  '/auth/reset-password',
-])
-
-// Pages that still belong to the SPA for browser navigation, but must NOT get
-// explicit GET shell routes because doing so would shadow real auth proxy GETs.
-// /auth/verify-email, /auth/error, and social callback routes are in this bucket:
-// browser GETs with Accept: text/html should fall through to the catch-all shell
-// when that is the intended UX, but the proxy must still be able to handle real
-// auth GETs.
-const FRONTEND_AUTH_PAGES_SPA_ONLY = new Set([
-  '/auth/verify-email',
-  '/auth/error',
-  '/auth/callback/github',
-  '/auth/callback/google',
-])
-
-const RATE_LIMITED_AUTH_PROXY_ROUTES = [
-  '/auth/sign-in/email',
-  // Outreach claim links account through Better Auth signup; there is no
-  // separate /api/v1/outreach/claim route to protect.
-  '/auth/sign-up/email',
-  '/auth/forget-password',
-  '/auth/send-verification-email',
-] as const
-
 export type CoreWorkspaceAgentServer = FastifyInstance & {
   auth: BetterAuthInstance
   db: Database
@@ -145,12 +118,6 @@ export type CoreWorkspaceDirPluginEntry = Omit<DirPluginEntry, 'hotReload'> & {
 export type CoreWorkspacePluginEntry = CoreWorkspaceAgentServerPlugin | CoreWorkspaceDirPluginEntry
 
 type CoreWorkspaceBridgeExtraTool = NonNullable<RegisterAgentRoutesOptions['extraTools']>[number]
-
-const ROLE_LEVELS: Record<MemberRole, number> = {
-  viewer: 0,
-  editor: 1,
-  owner: 2,
-}
 
 export interface CoreWorkspaceBridgeExtraToolsContext {
   workspaceId: string
@@ -332,135 +299,6 @@ function agentSessionIdFromRequest(request: FastifyRequest): string | undefined 
   return undefined
 }
 
-function toHeaders(
-  source: Record<string, string | string[] | undefined>,
-): Headers {
-  const headers = new Headers()
-
-  for (const [key, value] of Object.entries(source)) {
-    if (!value) continue
-    headers.set(key, Array.isArray(value) ? value[0] : value)
-  }
-
-  return headers
-}
-
-function extractSetCookies(headers: Headers): string[] {
-  const withGetSetCookie = headers as Headers & { getSetCookie?: () => string[] }
-  if (typeof withGetSetCookie.getSetCookie === 'function') {
-    return withGetSetCookie.getSetCookie()
-  }
-
-  const value = headers.get('set-cookie')
-  return value ? [value] : []
-}
-
-function encodeAuthRequestBody(
-  request: {
-    method: string
-    body?: unknown
-    headers?: Record<string, string | string[] | undefined>
-  },
-): string | Uint8Array | URLSearchParams | undefined {
-  const isBodyless = request.method === 'GET' || request.method === 'HEAD'
-  if (isBodyless) return undefined
-
-  const bodyValue = request.body
-  if (bodyValue == null) return undefined
-  if (typeof bodyValue === 'string') return bodyValue
-  if (bodyValue instanceof Uint8Array) return bodyValue
-  if (bodyValue instanceof URLSearchParams) return bodyValue
-
-  const requestContentType = String(request.headers?.['content-type'] ?? '').toLowerCase()
-  if (requestContentType.includes('application/x-www-form-urlencoded')) {
-    const params = new URLSearchParams()
-    for (const [key, value] of Object.entries(bodyValue as Record<string, unknown>)) {
-      if (value == null) continue
-      params.append(key, String(value))
-    }
-    return params
-  }
-
-  return JSON.stringify(bodyValue)
-}
-
-function httpError(message: string, statusCode: number, code: string): Error & { statusCode: number; code: string } {
-  const error = new Error(message) as Error & { statusCode: number; code: string }
-  error.statusCode = statusCode
-  error.code = code
-  return error
-}
-
-function firstString(value: unknown): string | undefined {
-  if (typeof value === 'string') return value
-  if (!Array.isArray(value)) return undefined
-  return value.find((item): item is string => typeof item === 'string')
-}
-
-function validateWorkspaceIdSegment(value: string): string {
-  const workspaceId = value.trim()
-  if (!workspaceId) throw httpError('workspace id is required', 400, ERROR_CODES.VALIDATION_FAILED)
-  if (
-    workspaceId.includes('\0') ||
-    workspaceId.includes('/') ||
-    workspaceId.includes('\\') ||
-    workspaceId.includes('..') ||
-    path.isAbsolute(workspaceId)
-  ) {
-    throw httpError('invalid workspace id', 400, ERROR_CODES.VALIDATION_FAILED)
-  }
-  return workspaceId
-}
-
-function resolveWorkspaceIdFromRequest(request: { headers?: Record<string, unknown>; query?: unknown }): string {
-  const headers = request.headers ?? {}
-  const headerValue = headers['x-boring-workspace-id']
-    ?? Object.entries(headers).find(([key]) => key.toLowerCase() === 'x-boring-workspace-id')?.[1]
-  const query = request.query as Record<string, unknown> | undefined
-  return validateWorkspaceIdSegment(firstString(headerValue) ?? firstString(query?.workspaceId) ?? '')
-}
-
-async function authorizeWorkspaceAccess(
-  request: { user?: { id?: string } | null; log?: { error: (obj: Record<string, unknown>, msg: string) => void } },
-  workspaceId: string,
-  workspaceStore: WorkspaceStore,
-  options: { minimumRole?: MemberRole } = {},
-): Promise<void> {
-  const user = request.user
-  if (!user?.id) throw httpError('authentication required', 401, ERROR_CODES.UNAUTHORIZED)
-
-  let role: MemberRole | null = null
-  try {
-    role = await workspaceStore.getMemberRole(workspaceId, user.id)
-  } catch (error) {
-    request.log?.error({ err: error, workspaceId }, 'workspace access check failed')
-    throw httpError('workspace access check failed', 500, ERROR_CODES.INTERNAL_ERROR)
-  }
-  if (!role) throw httpError('workspace access denied', 403, ERROR_CODES.NOT_MEMBER)
-  if (options.minimumRole && ROLE_LEVELS[role] < ROLE_LEVELS[options.minimumRole]) {
-    throw httpError('workspace editor role required', 403, ERROR_CODES.FORBIDDEN)
-  }
-}
-
-async function resolveWorkspaceMemberId(
-  request: { headers?: Record<string, unknown>; query?: unknown; user?: { id?: string } | null; log?: { error: (obj: Record<string, unknown>, msg: string) => void } },
-  workspaceStore: WorkspaceStore,
-): Promise<string> {
-  const normalizedWorkspaceId = resolveWorkspaceIdFromRequest(request)
-  await authorizeWorkspaceAccess(request, normalizedWorkspaceId, workspaceStore)
-  return normalizedWorkspaceId
-}
-
-async function resolveWorkspaceRoot(baseRoot: string, workspaceId: string): Promise<string> {
-  const base = path.resolve(baseRoot)
-  const scopedRoot = path.resolve(base, workspaceId)
-  if (scopedRoot === base || !scopedRoot.startsWith(`${base}${path.sep}`)) {
-    throw httpError('invalid workspace id', 400, ERROR_CODES.VALIDATION_FAILED)
-  }
-  await mkdir(scopedRoot, { recursive: true })
-  return scopedRoot
-}
-
 function shouldServeFrontend(pathname: string): boolean {
   if (pathname === '/health') return false
   if (pathname.startsWith('/api/')) return false
@@ -495,61 +333,6 @@ async function serveFrontendShell(
   reply.header('cache-control', 'no-store')
   reply.type('text/html; charset=utf-8')
   return reply.send(injectCspNonceIntoHtml(html, request.cspNonce))
-}
-
-async function registerAuthProxy(
-  app: CoreWorkspaceAgentServer,
-  options?: { serveSpaShell?: (request: any, reply: any) => Promise<unknown> },
-) {
-  const handleAuthProxy = async (request: any, reply: any) => {
-    const accept = String(request.headers?.accept ?? '')
-    const pathname = request.url.split('?')[0] ?? '/'
-    const isSpaOnlyAuthPage = FRONTEND_AUTH_PAGES_SPA_ONLY.has(pathname)
-    const isExplicitShellAuthPage = FRONTEND_AUTH_PAGES.has(pathname)
-
-    if (
-      request.method === 'GET'
-      && accept.includes('text/html')
-      && (isExplicitShellAuthPage || (isSpaOnlyAuthPage && pathname !== '/auth/callback/github' && pathname !== '/auth/callback/google'))
-    ) {
-      if (options?.serveSpaShell) {
-        return options.serveSpaShell(request, reply)
-      }
-      return reply.callNotFound()
-    }
-
-    const body = encodeAuthRequestBody(request)
-    const targetUrl = new URL(request.url, app.config.auth.url).toString()
-
-    const response = await app.auth.handler(
-      new Request(targetUrl, {
-        method: request.method,
-        headers: toHeaders(request.headers),
-        body: body as BodyInit | undefined,
-      }),
-    )
-
-    for (const [key, value] of response.headers.entries()) {
-      const lowered = key.toLowerCase()
-      if (lowered === 'set-cookie') continue
-      if (AUTH_PROXY_BLOCKED_RESPONSE_HEADERS.has(lowered)) continue
-      reply.header(key, value)
-    }
-
-    const setCookies = extractSetCookies(response.headers)
-    if (setCookies.length > 0) {
-      reply.header('set-cookie', setCookies.length === 1 ? setCookies[0] : setCookies)
-    }
-
-    reply.status(response.status)
-    const responseBody = Buffer.from(await response.arrayBuffer())
-    return reply.send(responseBody)
-  }
-
-  for (const route of RATE_LIMITED_AUTH_PROXY_ROUTES) {
-    app.post(route, handleAuthProxy)
-  }
-  app.all('/auth/*', handleAuthProxy)
 }
 
 function captureAppOpened(telemetry: TelemetrySink, requestId: string): void {
@@ -808,12 +591,7 @@ export async function createCoreWorkspaceAgentServer(
   }
   const resolveSharedUiWorkspaceId = async (request: Parameters<NonNullable<RegisterAgentRoutesOptions['getWorkspaceId']>>[0]) => {
     const workspaceId = await resolveWorkspaceId(request)
-    const pathname = request.url.split('?')[0] ?? request.url
-    const method = request.method.toUpperCase()
-    const mutatesSharedUiState = (
-      (method === 'PUT' && (pathname === '/api/v1/ui/state' || pathname === '/api/v1/ui/panels/status')) ||
-      (method === 'POST' && pathname === '/api/v1/ui/commands')
-    )
+    const mutatesSharedUiState = isSharedUiMutationRequest(request)
     if (mutatesSharedUiState && options.authorizeWorkspaceAccess) {
       await options.authorizeWorkspaceAccess({ request, workspaceId, minimumRole: 'editor' })
     } else if (mutatesSharedUiState && !options.getWorkspaceId) {

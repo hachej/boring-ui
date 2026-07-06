@@ -82,8 +82,16 @@ export type ErrorCode = z.infer<typeof ErrorCode>
 
 export const ERROR_CODES = ErrorCode.options
 
+/**
+ * Agent-owned errors use the canonical ErrorCode enum. Embedded hosts may pass
+ * through their own stable code strings on agent route responses.
+ */
+export type ApiErrorCode = ErrorCode | (string & {})
+
+export const ApiErrorCodeSchema = z.string().min(1) as z.ZodType<ApiErrorCode>
+
 export const ApiErrorPayloadSchema = z.object({
-  code: ErrorCode,
+  code: ApiErrorCodeSchema,
   message: z.string().min(1),
   details: z.record(z.unknown()).optional(),
 })

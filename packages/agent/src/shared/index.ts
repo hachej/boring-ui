@@ -38,11 +38,13 @@ export type { RuntimeModeId, AgentConfig, AgentEnv } from './config-schema'
 export {
   ErrorCode,
   ERROR_CODES,
+  ApiErrorCodeSchema,
   ApiErrorPayloadSchema,
   ApiErrorResponseSchema,
   ErrorLogFieldsSchema,
 } from './error-codes'
 export type {
+  ApiErrorCode,
   ApiErrorPayload,
   ApiErrorResponse,
   ErrorLogFields,

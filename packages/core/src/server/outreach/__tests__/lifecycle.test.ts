@@ -480,4 +480,64 @@ describe('outreach lifecycle', () => {
     ])
     expect(leads.some((lead) => lead.user_id === anonymousUserId)).toBe(false)
   })
+
+  it('returns a coded conflict when two anonymous leads race into one new claimed account', async () => {
+    const first = await createOutreachFixture()
+    const second = await createOutreachFixture()
+
+    const firstOpen = await app.inject({ method: 'GET', url: first.outreachPath })
+    expect(firstOpen.statusCode).toBe(302)
+    const secondOpen = await app.inject({ method: 'GET', url: second.outreachPath })
+    expect(secondOpen.statusCode).toBe(302)
+
+    const firstCookie = cookieHeader(firstOpen.headers['set-cookie'])
+    const secondCookie = cookieHeader(secondOpen.headers['set-cookie'])
+    const firstMe = await app.inject({ method: 'GET', url: '/api/v1/me', headers: { cookie: firstCookie } })
+    const secondMe = await app.inject({ method: 'GET', url: '/api/v1/me', headers: { cookie: secondCookie } })
+    const firstAnonymousUserId = firstMe.json().user.id as string
+    const secondAnonymousUserId = secondMe.json().user.id as string
+
+    const email = claimedEmail('fresh-race')
+    const [claimedUser] = await sql<{ id: string }[]>`
+      INSERT INTO users (name, email, email_verified)
+      VALUES ('Fresh Claim Race', ${email}, true)
+      RETURNING id
+    `
+    expect(claimedUser?.id).toBeTruthy()
+
+    const adapter = createOutreachAuthIdentityAdapter(drizzle(sql), APP_ID)
+    const results = await Promise.allSettled([
+      adapter.transferAnonymousOwnership({
+        anonymousUserId: firstAnonymousUserId,
+        claimedUserId: claimedUser.id,
+        claimedEmail: email,
+      }),
+      adapter.transferAnonymousOwnership({
+        anonymousUserId: secondAnonymousUserId,
+        claimedUserId: claimedUser.id,
+        claimedEmail: email,
+      }),
+    ])
+
+    const fulfilled = results.filter((result) => result.status === 'fulfilled')
+    const rejected = results.filter((result): result is PromiseRejectedResult => result.status === 'rejected')
+    expect(fulfilled).toHaveLength(1)
+    expect(rejected).toHaveLength(1)
+    expect(rejected[0].reason).toBeInstanceOf(HttpError)
+    expect(rejected[0].reason).toMatchObject({
+      status: 409,
+      code: ERROR_CODES.OUTREACH_CLAIM_CONFLICT,
+    })
+    expect((rejected[0].reason as { code?: unknown }).code).not.toBe('23505')
+
+    const leads = await sql<{ outreach_link_id: string; user_id: string; status: string }[]>`
+      SELECT outreach_link_id, user_id, status
+      FROM outreach_leads
+      WHERE app_id = ${APP_ID}
+        AND outreach_link_id IN (${first.linkId}, ${second.linkId})
+      ORDER BY outreach_link_id
+    `
+    expect(leads.filter((lead) => lead.user_id === claimedUser.id && lead.status === 'claimed')).toHaveLength(1)
+    expect(leads.filter((lead) => [firstAnonymousUserId, secondAnonymousUserId].includes(lead.user_id))).toHaveLength(1)
+  })
 })

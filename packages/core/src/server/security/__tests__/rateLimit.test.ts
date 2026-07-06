@@ -3,7 +3,7 @@ import { createCoreApp } from '../../app/createCoreApp'
 import type { CoreConfig } from '../../../shared/types'
 import { withBeadId } from '../../__tests__/_setup'
 import { registerOutreachRoutes } from '../../outreach/routes'
-import { DEFAULT_RATE_LIMIT_RULES } from '../rateLimit'
+import { AUTH_PROXY_RATE_LIMITED_ROUTES, AUTH_RATE_LIMIT_RULES, DEFAULT_RATE_LIMIT_RULES } from '../rateLimit'
 
 const BASE_CONFIG: CoreConfig = {
   appId: 'test-app',
@@ -128,6 +128,12 @@ describe('rate limiting hardening (xzhz)', () => {
   it('does not register a phantom outreach claim route limit', () => {
     expect(DEFAULT_RATE_LIMIT_RULES.map((rule) => rule.url)).not.toContain('/api/v1/outreach/claim')
     expect(DEFAULT_RATE_LIMIT_RULES.map((rule) => rule.url)).toContain('/auth/sign-up/email')
+  })
+
+  it('derives auth proxy rate-limited routes from the canonical auth rules', () => {
+    expect(AUTH_PROXY_RATE_LIMITED_ROUTES).toEqual(
+      AUTH_RATE_LIMIT_RULES.map((rule) => ({ method: rule.method, url: rule.url })),
+    )
   })
 
   it(
