@@ -16,7 +16,14 @@ Seen on `app.enecaapi.ai` when opening/creating an agent chat session.
 
 This path is the host-side Pi session transcript store, not the Vercel sandbox workspace. In `BORING_AGENT_MODE=vercel-sandbox`, shell/files run in the Vercel sandbox, but chat transcripts remain host app user data under `BORING_AGENT_SESSION_ROOT` (normally `/data/pi-sessions`).
 
-On Fly, the volume mounted at `/data` hides Dockerfile build-time ownership. The app process runs as uid/gid `10001`, so a root-owned mounted `/data/pi-sessions` causes `mkdir` to fail with `EACCES`.
+The regression was caused by a deployment-hardening/storage interaction:
+
+1. Older images either stored sessions under the container user's home or ran the web process as root, so session directory creation did not hit a mounted-volume ownership boundary.
+2. Durable-session work moved Pi transcripts to the Fly volume (`BORING_AGENT_SESSION_ROOT=/data/pi-sessions`) so chat history survives restarts/redeploys.
+3. The self-host/Fly image hardening then changed the web image to run as the unprivileged `boring` user (uid/gid `10001`) and attempted `chown -R boring:boring /data` at Docker build time.
+4. On Fly, the runtime volume is mounted over `/data`, hiding the build-time `/data` directory and its ownership. The actual mounted volume can still be root-owned, so the unprivileged app cannot create `/data/pi-sessions/<namespace>`.
+
+Per-user session namespaces such as `<workspace>_user_<hash>` made the failure visible at first chat/session creation, but they were not the underlying permission cause.
 
 **Fix**
 
