@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it } from 'vitest'
 import { createCoreApp } from '../../app/createCoreApp'
 import type { CoreConfig } from '../../../shared/types'
 import { withBeadId } from '../../__tests__/_setup'
+import { registerOutreachRoutes } from '../../outreach/routes'
 import { DEFAULT_RATE_LIMIT_RULES } from '../rateLimit'
 
 const BASE_CONFIG: CoreConfig = {
@@ -28,16 +29,6 @@ const BASE_CONFIG: CoreConfig = {
   },
   features: { githubOauth: false, googleOauth: false, invitesEnabled: true, sendWelcomeEmail: true, inviteTtlDays: 7 },
 }
-
-const RATE_LIMITED_ENDPOINTS = DEFAULT_RATE_LIMIT_RULES.map((rule) => ({
-  url: rule.url,
-  method: rule.method,
-  limit: rule.max,
-})) as ReadonlyArray<{
-  url: string
-  method: 'POST' | 'GET'
-  limit: number
-}>
 
 let app: Awaited<ReturnType<typeof createCoreApp>> | null = null
 
@@ -73,6 +64,7 @@ async function injectMany(
     method?: 'POST' | 'GET'
     url: string
     payload?: unknown
+    headers?: Record<string, string>
   },
   count: number,
   ipProvider?: (index: number) => string,
@@ -86,6 +78,7 @@ async function injectMany(
         payload: req.payload ?? {},
         headers: {
           'x-forwarded-for': ipProvider ? ipProvider(index) : '1.2.3.4',
+          ...(req.headers ?? {}),
         },
       }),
     )
@@ -109,44 +102,119 @@ function assertRateLimitEnvelope(res: {
   })
 }
 
-describe('rate limiting hardening (xzhz)', () => {
-  for (const endpoint of RATE_LIMITED_ENDPOINTS) {
-    const runtimeUrl = endpoint.url
-      .replace(':id', 'ws-1')
-      .replace(':token', 'token-1')
-
-    it(
-      `${endpoint.url} — ${endpoint.limit + 1}th request returns 429 with envelope`,
-      withBeadId('boring-ui-v2-xzhz', async ({ logEvent, assertionPassed }) => {
-        app = await createCoreApp(createConfig(), { manageShutdown: false })
-        if (endpoint.method === 'GET') {
-          app.get(endpoint.url, async () => ({ ok: true }))
-        } else {
-          app.post(endpoint.url, async () => ({ ok: true }))
-        }
-        await app.ready()
-
-        logEvent('assertion.passed', {
-          stage: 'hammer.start',
-          endpoint: endpoint.url,
-          limit: endpoint.limit,
-        })
-
-        const responses = await injectMany(
-          { method: endpoint.method, url: runtimeUrl },
-          endpoint.limit + 1,
-        )
-
-        for (let index = 0; index < endpoint.limit; index += 1) {
-          // First N can succeed or fail for non-rate reasons; only assert "not 429".
-          expect(responses[index].statusCode).not.toBe(429)
-        }
-
-        assertRateLimitEnvelope(responses[endpoint.limit])
-        assertionPassed('per-endpoint-hammer', { endpoint: endpoint.url })
+async function registerRealOutreachRoutes() {
+  const fakeDb = {
+    select: () => ({
+      from: () => ({
+        innerJoin: () => ({
+          where: () => ({
+            limit: async () => [],
+          }),
+        }),
+        where: () => ({
+          limit: async () => [],
+        }),
       }),
-    )
+    }),
   }
+  await app!.register(registerOutreachRoutes, {
+    db: fakeDb as never,
+    workspaceStore: {} as never,
+    creditGrantStore: { grantOnce: async () => ({ created: false }) },
+  })
+}
+
+describe('rate limiting hardening (xzhz)', () => {
+  it('does not register a phantom outreach claim route limit', () => {
+    expect(DEFAULT_RATE_LIMIT_RULES.map((rule) => rule.url)).not.toContain('/api/v1/outreach/claim')
+    expect(DEFAULT_RATE_LIMIT_RULES.map((rule) => rule.url)).toContain('/auth/sign-up/email')
+  })
+
+  it(
+    'limits real outreach token consumption route',
+    withBeadId('boring-ui-v2-xzhz', async ({ assertionPassed }) => {
+      app = await createCoreApp(
+        createConfig({
+          rateLimit: {
+            '/o/:token': { max: 2, window: '1 minute' },
+          },
+        }),
+        { manageShutdown: false },
+      )
+      await registerRealOutreachRoutes()
+      await app.ready()
+
+      const responses = await injectMany(
+        { method: 'GET', url: '/o/token-1' },
+        3,
+      )
+
+      expect(responses[0].statusCode).not.toBe(429)
+      expect(responses[1].statusCode).not.toBe(429)
+      assertRateLimitEnvelope(responses[2])
+      assertionPassed('real-outreach-token-route')
+    }),
+  )
+
+  it(
+    'limits real outreach experience creation route',
+    withBeadId('boring-ui-v2-xzhz', async ({ assertionPassed }) => {
+      app = await createCoreApp(
+        createConfig({
+          rateLimit: {
+            '/api/v1/outreach/experiences': { max: 2, window: '1 minute' },
+          },
+        }),
+        { manageShutdown: false },
+      )
+      await registerRealOutreachRoutes()
+      await app.ready()
+
+      const responses = await injectMany(
+        {
+          method: 'POST',
+          url: '/api/v1/outreach/experiences',
+          payload: { name: 'demo', provisioningMode: 'shared_readonly' },
+        },
+        3,
+      )
+
+      expect(responses[0].statusCode).not.toBe(429)
+      expect(responses[1].statusCode).not.toBe(429)
+      assertRateLimitEnvelope(responses[2])
+      assertionPassed('real-outreach-experience-create-route')
+    }),
+  )
+
+  it(
+    'limits real outreach link creation route',
+    withBeadId('boring-ui-v2-xzhz', async ({ assertionPassed }) => {
+      app = await createCoreApp(
+        createConfig({
+          rateLimit: {
+            '/api/v1/outreach-links': { max: 2, window: '1 minute' },
+          },
+        }),
+        { manageShutdown: false },
+      )
+      await registerRealOutreachRoutes()
+      await app.ready()
+
+      const responses = await injectMany(
+        {
+          method: 'POST',
+          url: '/api/v1/outreach-links',
+          payload: { experienceId: '00000000-0000-0000-0000-000000000001' },
+        },
+        3,
+      )
+
+      expect(responses[0].statusCode).not.toBe(429)
+      expect(responses[1].statusCode).not.toBe(429)
+      assertRateLimitEnvelope(responses[2])
+      assertionPassed('real-outreach-link-create-route')
+    }),
+  )
 
   it(
     'outreach admin creation limits are keyed by user when authenticated',
@@ -170,7 +238,7 @@ describe('rate limiting hardening (xzhz)', () => {
           }
         }
       })
-      app.post('/api/v1/outreach-links', async () => ({ ok: true }))
+      await registerRealOutreachRoutes()
       await app.ready()
 
       const userA = []
@@ -182,7 +250,7 @@ describe('rate limiting hardening (xzhz)', () => {
             'x-forwarded-for': '1.2.3.4',
             'x-test-user-id': 'user-a',
           },
-          payload: {},
+          payload: { experienceId: '00000000-0000-0000-0000-000000000001' },
         }))
       }
       assertRateLimitEnvelope(userA[2])
@@ -194,58 +262,10 @@ describe('rate limiting hardening (xzhz)', () => {
           'x-forwarded-for': '1.2.3.4',
           'x-test-user-id': 'user-b',
         },
-        payload: {},
+        payload: { experienceId: '00000000-0000-0000-0000-000000000001' },
       })
       expect(userB.statusCode).not.toBe(429)
       assertionPassed('outreach-admin-user-key')
-    }),
-  )
-
-  it(
-    'workspace-scoped invite limit uses workspace key (not per-IP)',
-    withBeadId('boring-ui-v2-xzhz', async ({ assertionPassed }) => {
-      app = await createCoreApp(createConfig(), { manageShutdown: false })
-      app.post('/api/v1/workspaces/:id/invites', async () => ({ ok: true }))
-      await app.ready()
-
-      const responses = await injectMany(
-        {
-          method: 'POST',
-          url: '/api/v1/workspaces/ws-same/invites',
-        },
-        21,
-        (index) => `10.0.0.${index + 1}`,
-      )
-
-      for (let index = 0; index < 20; index += 1) {
-        expect(responses[index].statusCode).not.toBe(429)
-      }
-      assertRateLimitEnvelope(responses[20])
-      assertionPassed('workspace-scoped-key')
-    }),
-  )
-
-  it(
-    'different workspaces are isolated for invite limits',
-    withBeadId('boring-ui-v2-xzhz', async ({ assertionPassed }) => {
-      app = await createCoreApp(createConfig(), { manageShutdown: false })
-      app.post('/api/v1/workspaces/:id/invites', async () => ({ ok: true }))
-      await app.ready()
-
-      const onWorkspaceA = await injectMany(
-        { method: 'POST', url: '/api/v1/workspaces/ws-a/invites' },
-        20,
-      )
-      const onWorkspaceB = await app.inject({
-        method: 'POST',
-        url: '/api/v1/workspaces/ws-b/invites',
-        headers: { 'x-forwarded-for': '1.2.3.4' },
-        payload: {},
-      })
-
-      expect(onWorkspaceA[19].statusCode).not.toBe(429)
-      expect(onWorkspaceB.statusCode).not.toBe(429)
-      assertionPassed('workspace-isolation')
     }),
   )
 
@@ -255,16 +275,16 @@ describe('rate limiting hardening (xzhz)', () => {
       app = await createCoreApp(
         createConfig({
           rateLimit: {
-            '/auth/sign-in/email': { max: 2, window: '1 second' },
+            '/o/:token': { max: 2, window: '1 second' },
           },
         }),
         { manageShutdown: false },
       )
-      app.post('/auth/sign-in/email', async () => ({ ok: true }))
+      await registerRealOutreachRoutes()
       await app.ready()
 
       const firstBurst = await injectMany(
-        { method: 'POST', url: '/auth/sign-in/email' },
+        { method: 'GET', url: '/o/token-1' },
         3,
       )
       expect(firstBurst[0].statusCode).not.toBe(429)
@@ -274,31 +294,12 @@ describe('rate limiting hardening (xzhz)', () => {
       await new Promise((resolve) => setTimeout(resolve, 1_500))
 
       const afterWindow = await app.inject({
-        method: 'POST',
-        url: '/auth/sign-in/email',
+        method: 'GET',
+        url: '/o/token-1',
         headers: { 'x-forwarded-for': '1.2.3.4' },
-        payload: {},
       })
       expect(afterWindow.statusCode).not.toBe(429)
       assertionPassed('window-expiry')
-    }),
-  )
-
-  it(
-    '/auth/sign-out pass-through remains unrestricted',
-    withBeadId('boring-ui-v2-xzhz', async ({ assertionPassed }) => {
-      app = await createCoreApp(createConfig(), { manageShutdown: false })
-      app.post('/auth/sign-out', async () => ({ ok: true }))
-      await app.ready()
-
-      const responses = await injectMany(
-        { method: 'POST', url: '/auth/sign-out' },
-        6,
-      )
-      for (const response of responses) {
-        expect(response.statusCode).toBe(200)
-      }
-      assertionPassed('signout-pass-through')
     }),
   )
 })

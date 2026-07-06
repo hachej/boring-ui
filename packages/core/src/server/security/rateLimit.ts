@@ -96,14 +96,6 @@ export const DEFAULT_RATE_LIMIT_RULES: readonly RateLimitRule[] = [
     timeWindow: '1 hour',
     keyGenerator: userOrIpKey,
   },
-  {
-    endpoint: '/api/v1/outreach/claim',
-    url: '/api/v1/outreach/claim',
-    method: 'POST',
-    max: 10,
-    timeWindow: '1 minute',
-    keyGenerator: (req) => `${req.ip}:${req.user?.id ?? 'anon'}`,
-  },
 ]
 
 function matchesRule(

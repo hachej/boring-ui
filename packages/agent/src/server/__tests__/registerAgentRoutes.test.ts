@@ -1,5 +1,5 @@
 import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
-import { homedir, tmpdir } from 'node:os'
+import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { afterEach, expect, test, vi } from 'vitest'
 import Fastify from 'fastify'
@@ -383,8 +383,12 @@ test('registerAgentRoutes mounts health endpoint', async () => {
 test('registerAgentRoutes isolates same-root sessions with getSessionNamespace', async () => {
   const workspaceRoot = await makeTempDir('boring-agent-embed-session-namespace-')
   const unique = `test-agent-${Date.now()}-${Math.random().toString(36).slice(2)}`
-  const namespaceDir = (workspaceId: string) => join(homedir(), '.pi', 'agent', 'sessions', `${unique}-${workspaceId}`)
+  const sessionRoot = join(workspaceRoot, '.test-sessions')
+  const previousSessionRoot = process.env.BORING_AGENT_SESSION_ROOT
+  process.env.BORING_AGENT_SESSION_ROOT = sessionRoot
+  const namespaceDir = (workspaceId: string) => join(sessionRoot, `${unique}-${workspaceId}`)
   const app = Fastify({ logger: false })
+  await mkdir(sessionRoot, { recursive: true })
 
   await app.register(registerAgentRoutes, {
     workspaceRoot,
@@ -419,6 +423,11 @@ test('registerAgentRoutes isolates same-root sessions with getSessionNamespace',
     expect(workspaceB.json()).toHaveLength(0)
   } finally {
     await app.close()
+    if (previousSessionRoot === undefined) {
+      delete process.env.BORING_AGENT_SESSION_ROOT
+    } else {
+      process.env.BORING_AGENT_SESSION_ROOT = previousSessionRoot
+    }
     await rm(namespaceDir('workspace-a'), { recursive: true, force: true })
     await rm(namespaceDir('workspace-b'), { recursive: true, force: true })
   }
@@ -427,8 +436,12 @@ test('registerAgentRoutes isolates same-root sessions with getSessionNamespace',
 test('registerAgentRoutes treats dynamic session namespace as request scoped', async () => {
   const workspaceRoot = await makeTempDir('boring-agent-embed-session-cache-')
   const unique = `test-agent-cache-${Date.now()}-${Math.random().toString(36).slice(2)}`
-  const namespaceDir = (name: string) => join(homedir(), '.pi', 'agent', 'sessions', `${unique}-${name}`)
+  const sessionRoot = join(workspaceRoot, '.test-sessions')
+  const previousSessionRoot = process.env.BORING_AGENT_SESSION_ROOT
+  process.env.BORING_AGENT_SESSION_ROOT = sessionRoot
+  const namespaceDir = (name: string) => join(sessionRoot, `${unique}-${name}`)
   const app = Fastify({ logger: false })
+  await mkdir(sessionRoot, { recursive: true })
 
   await app.register(registerAgentRoutes, {
     workspaceRoot,
@@ -461,6 +474,11 @@ test('registerAgentRoutes treats dynamic session namespace as request scoped', a
     expect(namespaceB.json()).toHaveLength(0)
   } finally {
     await app.close()
+    if (previousSessionRoot === undefined) {
+      delete process.env.BORING_AGENT_SESSION_ROOT
+    } else {
+      process.env.BORING_AGENT_SESSION_ROOT = previousSessionRoot
+    }
     await rm(namespaceDir('namespace-a'), { recursive: true, force: true })
     await rm(namespaceDir('namespace-b'), { recursive: true, force: true })
     await rm(namespaceDir('default'), { recursive: true, force: true })
@@ -849,6 +867,46 @@ test('request-scoped models endpoint does not require workspace header', async (
 
   await app.close()
 }, 15_000)
+
+test('request-scoped mutating routes preserve host authorization error codes', async () => {
+  const workspaceRoot = await makeTempDir('boring-agent-embed-authz-code-')
+  const app = Fastify({ logger: false })
+  const authorizeWorkspaceAccess = vi.fn(async () => {
+    const error = new Error('workspace editor role required') as Error & { statusCode: number; code: string }
+    error.statusCode = 403
+    error.code = 'forbidden'
+    throw error
+  })
+
+  await app.register(registerAgentRoutes, {
+    workspaceRoot,
+    mode: 'direct',
+    getWorkspaceId: () => 'workspace-a',
+    getWorkspaceRoot: () => workspaceRoot,
+    authorizeWorkspaceAccess,
+  })
+  await app.ready()
+
+  try {
+    const res = await app.inject({
+      method: 'POST',
+      url: '/api/v1/files',
+      headers: { 'content-type': 'application/json' },
+      payload: { path: 'README.md', content: 'changed' },
+    })
+
+    expect(res.statusCode).toBe(403)
+    expect(res.json()).toMatchObject({
+      error: { code: 'forbidden', message: 'workspace editor role required' },
+    })
+    expect(authorizeWorkspaceAccess).toHaveBeenCalledWith(expect.objectContaining({
+      workspaceId: 'workspace-a',
+      minimumRole: 'editor',
+    }))
+  } finally {
+    await app.close()
+  }
+})
 
 test('request-scoped commands endpoint uses the workspace harness', async () => {
   const workspaceRoot = await makeTempDir('boring-agent-embed-commands-')

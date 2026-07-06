@@ -114,6 +114,15 @@ const FRONTEND_AUTH_PAGES_SPA_ONLY = new Set([
   '/auth/callback/google',
 ])
 
+const RATE_LIMITED_AUTH_PROXY_ROUTES = [
+  '/auth/sign-in/email',
+  // Outreach claim links account through Better Auth signup; there is no
+  // separate /api/v1/outreach/claim route to protect.
+  '/auth/sign-up/email',
+  '/auth/forget-password',
+  '/auth/send-verification-email',
+] as const
+
 export type CoreWorkspaceAgentServer = FastifyInstance & {
   auth: BetterAuthInstance
   db: Database
@@ -403,12 +412,6 @@ function validateWorkspaceIdSegment(value: string): string {
   return workspaceId
 }
 
-function requiresWorkspaceEditor(request: { method?: string }): boolean {
-  const method = request.method?.toUpperCase()
-  if (!method) return false
-  return method !== 'GET' && method !== 'HEAD' && method !== 'OPTIONS'
-}
-
 function resolveWorkspaceIdFromRequest(request: { headers?: Record<string, unknown>; query?: unknown }): string {
   const headers = request.headers ?? {}
   const headerValue = headers['x-boring-workspace-id']
@@ -417,25 +420,34 @@ function resolveWorkspaceIdFromRequest(request: { headers?: Record<string, unkno
   return validateWorkspaceIdSegment(firstString(headerValue) ?? firstString(query?.workspaceId) ?? '')
 }
 
-async function resolveAuthorizedWorkspaceId(
-  request: { method?: string; headers?: Record<string, unknown>; query?: unknown; user?: { id?: string } | null; log?: { error: (obj: Record<string, unknown>, msg: string) => void } },
+async function authorizeWorkspaceAccess(
+  request: { user?: { id?: string } | null; log?: { error: (obj: Record<string, unknown>, msg: string) => void } },
+  workspaceId: string,
   workspaceStore: WorkspaceStore,
-): Promise<string> {
-  const normalizedWorkspaceId = resolveWorkspaceIdFromRequest(request)
+  options: { minimumRole?: MemberRole } = {},
+): Promise<void> {
   const user = request.user
   if (!user?.id) throw httpError('authentication required', 401, ERROR_CODES.UNAUTHORIZED)
 
   let role: MemberRole | null = null
   try {
-    role = await workspaceStore.getMemberRole(normalizedWorkspaceId, user.id)
+    role = await workspaceStore.getMemberRole(workspaceId, user.id)
   } catch (error) {
-    request.log?.error({ err: error, workspaceId: normalizedWorkspaceId }, 'workspace access check failed')
+    request.log?.error({ err: error, workspaceId }, 'workspace access check failed')
     throw httpError('workspace access check failed', 500, ERROR_CODES.INTERNAL_ERROR)
   }
   if (!role) throw httpError('workspace access denied', 403, ERROR_CODES.NOT_MEMBER)
-  if (requiresWorkspaceEditor(request) && ROLE_LEVELS[role] < ROLE_LEVELS.editor) {
+  if (options.minimumRole && ROLE_LEVELS[role] < ROLE_LEVELS[options.minimumRole]) {
     throw httpError('workspace editor role required', 403, ERROR_CODES.FORBIDDEN)
   }
+}
+
+async function resolveWorkspaceMemberId(
+  request: { headers?: Record<string, unknown>; query?: unknown; user?: { id?: string } | null; log?: { error: (obj: Record<string, unknown>, msg: string) => void } },
+  workspaceStore: WorkspaceStore,
+): Promise<string> {
+  const normalizedWorkspaceId = resolveWorkspaceIdFromRequest(request)
+  await authorizeWorkspaceAccess(request, normalizedWorkspaceId, workspaceStore)
   return normalizedWorkspaceId
 }
 
@@ -489,7 +501,7 @@ async function registerAuthProxy(
   app: CoreWorkspaceAgentServer,
   options?: { serveSpaShell?: (request: any, reply: any) => Promise<unknown> },
 ) {
-  app.all('/auth/*', async (request, reply) => {
+  const handleAuthProxy = async (request: any, reply: any) => {
     const accept = String(request.headers?.accept ?? '')
     const pathname = request.url.split('?')[0] ?? '/'
     const isSpaOnlyAuthPage = FRONTEND_AUTH_PAGES_SPA_ONLY.has(pathname)
@@ -532,7 +544,12 @@ async function registerAuthProxy(
     reply.status(response.status)
     const responseBody = Buffer.from(await response.arrayBuffer())
     return reply.send(responseBody)
-  })
+  }
+
+  for (const route of RATE_LIMITED_AUTH_PROXY_ROUTES) {
+    app.post(route, handleAuthProxy)
+  }
+  app.all('/auth/*', handleAuthProxy)
 }
 
 function captureAppOpened(telemetry: TelemetrySink, requestId: string): void {
@@ -776,7 +793,36 @@ export async function createCoreWorkspaceAgentServer(
   const resolveWorkspaceId = async (request: Parameters<NonNullable<RegisterAgentRoutesOptions['getWorkspaceId']>>[0]) =>
     options.getWorkspaceId
       ? await options.getWorkspaceId(request)
-      : await resolveAuthorizedWorkspaceId(request, workspaceStore)
+      : await resolveWorkspaceMemberId(request, workspaceStore)
+  const authorizeAgentWorkspaceAccess: NonNullable<RegisterAgentRoutesOptions['authorizeWorkspaceAccess']> = async ({
+    request,
+    workspaceId,
+    minimumRole,
+  }) => {
+    if (options.authorizeWorkspaceAccess) {
+      await options.authorizeWorkspaceAccess({ request, workspaceId, minimumRole })
+      return
+    }
+    if (options.getWorkspaceId) return
+    await authorizeWorkspaceAccess(request, workspaceId, workspaceStore, { minimumRole })
+  }
+  const resolveSharedUiWorkspaceId = async (request: Parameters<NonNullable<RegisterAgentRoutesOptions['getWorkspaceId']>>[0]) => {
+    const workspaceId = await resolveWorkspaceId(request)
+    const pathname = request.url.split('?')[0] ?? request.url
+    const method = request.method.toUpperCase()
+    const mutatesSharedUiState = (
+      (method === 'PUT' && (pathname === '/api/v1/ui/state' || pathname === '/api/v1/ui/panels/status')) ||
+      (method === 'POST' && pathname === '/api/v1/ui/commands')
+    )
+    if (mutatesSharedUiState && options.authorizeWorkspaceAccess) {
+      await options.authorizeWorkspaceAccess({ request, workspaceId, minimumRole: 'editor' })
+    } else if (mutatesSharedUiState && !options.getWorkspaceId) {
+      // Core's in-memory UI bridge is scoped by workspace, not by user, so
+      // writes to this shared workspace state require editor access.
+      await authorizeWorkspaceAccess(request, workspaceId, workspaceStore, { minimumRole: 'editor' })
+    }
+    return workspaceId
+  }
   const resolveRoot = async (
     workspaceId: string,
     request: Parameters<NonNullable<RegisterAgentRoutesOptions['getWorkspaceRoot']>>[1],
@@ -912,6 +958,7 @@ export async function createCoreWorkspaceAgentServer(
     },
     sandboxHandleStore: options.sandboxHandleStore ?? new WorkspaceRuntimeSandboxHandleStore(workspaceStore),
     getWorkspaceId: resolveWorkspaceId,
+    authorizeWorkspaceAccess: authorizeAgentWorkspaceAccess,
     getWorkspaceRoot: resolveRoot,
     provisionRuntime: async ({ provisioningAdapter, runtimeLayout, workspaceId, request, runtimeMode }) => {
       if (!provisioningAdapter) return undefined
@@ -944,8 +991,8 @@ export async function createCoreWorkspaceAgentServer(
   })
 
   await app.register(uiRoutes, {
-    getWorkspaceId: resolveWorkspaceId,
-    getBridge: async (request) => coreBridge.getBridge(await resolveWorkspaceId(request)),
+    getWorkspaceId: resolveSharedUiWorkspaceId,
+    getBridge: async (request) => coreBridge.getBridge(await resolveSharedUiWorkspaceId(request)),
     preserveStateKeys: pluginCollection.preservedUiStateKeys,
   })
 

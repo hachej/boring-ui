@@ -10,6 +10,7 @@ const workspaceServerMock = vi.hoisted(() => ({
   browserAuthPolicyOptions: [] as Array<Record<string, unknown>>,
   runtimeEnvCalls: [] as Array<Record<string, unknown>>,
   httpRouteOpts: [] as Array<Record<string, unknown>>,
+  uiRouteOpts: [] as Array<Record<string, unknown>>,
   runtimeTokenVerifications: [] as string[],
   idempotencyCalls: [] as Array<Record<string, unknown>>,
 }))
@@ -20,9 +21,17 @@ vi.mock('@hachej/boring-agent/server', () => ({
     agentServerMock.registerOpts.push(opts)
     const resolveWorkspace = async (request: any, reply: any) => {
       try {
+        const workspaceId = await (opts.getWorkspaceId as Function)?.(request)
+        if (request.method && request.method !== 'GET' && request.method !== 'HEAD' && request.method !== 'OPTIONS') {
+          await (opts.authorizeWorkspaceAccess as Function)?.({
+            request,
+            workspaceId,
+            minimumRole: 'editor',
+          })
+        }
         return {
           ok: true as const,
-          workspaceId: await (opts.getWorkspaceId as Function)?.(request),
+          workspaceId,
         }
       } catch (error) {
         const statusCode = typeof (error as { statusCode?: unknown })?.statusCode === 'number'
@@ -164,7 +173,9 @@ vi.mock('@hachej/boring-workspace/server', () => {
   }),
   InMemoryWorkspaceBridgeIdempotencyStore: class InMemoryWorkspaceBridgeIdempotencyStore {},
   InMemoryWorkspaceBridgeRuntimeRefreshTokenStore: class InMemoryWorkspaceBridgeRuntimeRefreshTokenStore {},
-  uiRoutes: async () => {},
+  uiRoutes: async (_app: unknown, opts: Record<string, unknown>) => {
+    workspaceServerMock.uiRouteOpts.push(opts)
+  },
   verifyWorkspaceBridgeRuntimeToken: vi.fn((token: string) => {
     workspaceServerMock.runtimeTokenVerifications.push(token)
     return { authContext: { workspaceId: 'workspace-1' } }
@@ -250,6 +261,7 @@ afterEach(() => {
   workspaceServerMock.browserAuthPolicyOptions.length = 0
   workspaceServerMock.runtimeEnvCalls.length = 0
   workspaceServerMock.httpRouteOpts.length = 0
+  workspaceServerMock.uiRouteOpts.length = 0
   workspaceServerMock.runtimeTokenVerifications.length = 0
   workspaceServerMock.idempotencyCalls.length = 0
 })
@@ -394,6 +406,92 @@ describe('createCoreWorkspaceAgentServer workspace bridge wiring', () => {
     expect(storeOne).not.toBe(storeTwo)
     // ...and the same workspace reuses one store (revoke/rate-limit state persists).
     expect(storeOne).toBe(storeOneAgain)
+
+    await app.close()
+  })
+
+  it('keeps shared UI writes editor-only while allowing viewer UI reads', async () => {
+    const app = await createCoreWorkspaceAgentServer({ serveFrontend: false })
+    const uiOpts = workspaceServerMock.uiRouteOpts.at(-1)
+    const getWorkspaceId = uiOpts?.getWorkspaceId as ((request: Record<string, unknown>) => Promise<string>) | undefined
+    expect(typeof getWorkspaceId).toBe('function')
+
+    const viewerRead = await getWorkspaceId!({
+      method: 'GET',
+      url: '/api/v1/ui/state',
+      headers: { 'x-boring-workspace-id': 'workspace-1' },
+      query: {},
+      user: { id: 'viewer' },
+      log: { error: vi.fn() },
+    })
+    expect(viewerRead).toBe('workspace-1')
+
+    await expect(getWorkspaceId!({
+      method: 'PUT',
+      url: '/api/v1/ui/state',
+      headers: { 'x-boring-workspace-id': 'workspace-1' },
+      query: {},
+      user: { id: 'viewer' },
+      log: { error: vi.fn() },
+    })).rejects.toMatchObject({
+      statusCode: 403,
+      code: 'forbidden',
+    })
+
+    await expect(getWorkspaceId!({
+      method: 'PUT',
+      url: '/api/v1/ui/state',
+      headers: { 'x-boring-workspace-id': 'workspace-1' },
+      query: {},
+      user: { id: 'editor' },
+      log: { error: vi.fn() },
+    })).resolves.toBe('workspace-1')
+
+    await app.close()
+  })
+
+  it('requires editor role for mutating browser workspace-bridge operations', async () => {
+    const app = await createCoreWorkspaceAgentServer({ serveFrontend: false })
+    const policyOpts = workspaceServerMock.browserAuthPolicyOptions.at(-1)
+    const authorizeWorkspace = policyOpts?.authorizeWorkspace as ((input: Record<string, unknown>) => Promise<Record<string, unknown>>) | undefined
+    expect(typeof authorizeWorkspace).toBe('function')
+
+    const readDefinition = {
+      requiredCapabilities: ['test:read'],
+      idempotencyPolicy: 'none',
+    }
+    const writeDefinition = {
+      requiredCapabilities: ['test:write'],
+      idempotencyPolicy: 'required',
+    }
+
+    await expect(authorizeWorkspace!({
+      principal: { userId: 'viewer' },
+      workspaceId: 'workspace-1',
+      definition: readDefinition,
+    })).resolves.toMatchObject({
+      allowed: true,
+      role: 'viewer',
+      capabilities: ['test:read'],
+    })
+    await expect(authorizeWorkspace!({
+      principal: { userId: 'viewer' },
+      workspaceId: 'workspace-1',
+      definition: writeDefinition,
+    })).resolves.toMatchObject({
+      allowed: false,
+      role: 'viewer',
+      capabilities: ['test:write'],
+    })
+    await expect(authorizeWorkspace!({
+      principal: { userId: 'editor' },
+      workspaceId: 'workspace-1',
+      definition: writeDefinition,
+    })).resolves.toMatchObject({
+      allowed: true,
+      role: 'editor',
+      capabilities: ['test:write'],
+    })
 
     await app.close()
   })

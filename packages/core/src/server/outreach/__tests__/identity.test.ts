@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 
 import { ERROR_CODES, HttpError } from '../../../shared/errors.js'
 import type { Database } from '../../db/connection.js'
@@ -6,21 +6,14 @@ import { createOutreachAuthIdentityAdapter } from '../identity.js'
 
 describe('createOutreachAuthIdentityAdapter', () => {
   it('throws a stable coded error when a claimed account already has another outreach lead', async () => {
-    const leads = [
-      { id: 'anonymous-lead', outreachLinkId: 'link-a' },
-      { id: 'claimed-lead', outreachLinkId: 'link-b' },
-    ]
+    const execute = vi.fn(async () => {
+      const callIndex = execute.mock.calls.length
+      if (callIndex === 1) return [{ id: 'anonymous-lead', outreachLinkId: 'link-a' }]
+      if (callIndex === 2) return [{ id: 'claimed-lead', outreachLinkId: 'link-b' }]
+      return []
+    })
     const tx = {
-      select: () => {
-        const row = leads.shift()
-        return {
-          from: () => ({
-            where: () => ({
-              limit: async () => row ? [row] : [],
-            }),
-          }),
-        }
-      },
+      execute,
     }
     const db = {
       transaction: async (fn: (txArg: typeof tx) => Promise<void>) => fn(tx),

@@ -21,8 +21,15 @@ import {
   type WorkspaceBridgeRuntimeEnvOptions,
 } from '@hachej/boring-workspace/server'
 import type { RuntimeEnvContribution, RuntimeEnvContributionContext } from '@hachej/boring-agent/server'
+import type { MemberRole } from '../../shared/types.js'
 
 const MAX_SESSION_OWNER_CACHE = 5_000
+
+const ROLE_LEVELS: Record<MemberRole, number> = {
+  viewer: 0,
+  editor: 1,
+  owner: 2,
+}
 
 interface CoreWorkspaceBridgeRuntime {
   registry: WorkspaceBridgeRegistry
@@ -39,7 +46,7 @@ export interface CoreWorkspaceBridgeOptions {
     handlers?: ReadonlyArray<{ definition: WorkspaceBridgeOperationDefinition; handler: WorkspaceBridgeHandler }>
   }
   resolveWorkspaceId: (request: FastifyRequest) => Promise<string>
-  workspaceStore: { isMember(workspaceId: string, userId: string): Promise<boolean> }
+  workspaceStore: { getMemberRole(workspaceId: string, userId: string): Promise<MemberRole | null> }
   corsOrigins: readonly string[]
   validateWorkspaceId: (value: string) => string
   agentSessionId: (request: FastifyRequest) => string | undefined
@@ -214,10 +221,15 @@ export function createCoreWorkspaceBridge(options: CoreWorkspaceBridgeOptions): 
           const user = input.request?.user as { id?: string; email?: string | null; name?: string | null } | null | undefined
           return user?.id ? { userId: user.id, email: user.email ?? undefined } : null
         },
-        authorizeWorkspace: async ({ principal, workspaceId, definition }) => ({
-          allowed: await workspaceStore.isMember(workspaceId, principal.userId),
-          capabilities: definition.requiredCapabilities,
-        }),
+        authorizeWorkspace: async ({ principal, workspaceId, definition }) => {
+          const role = await workspaceStore.getMemberRole(workspaceId, principal.userId)
+          const minimumRole: MemberRole = definition.idempotencyPolicy === 'none' ? 'viewer' : 'editor'
+          return {
+            allowed: Boolean(role && ROLE_LEVELS[role] >= ROLE_LEVELS[minimumRole]),
+            role: role ?? undefined,
+            capabilities: definition.requiredCapabilities,
+          }
+        },
         allowedOrigins: options.corsOrigins,
         requireCsrfHeader: true,
       }),

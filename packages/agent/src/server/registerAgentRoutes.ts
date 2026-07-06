@@ -169,6 +169,20 @@ function isWorkspaceAgnosticAgentRequest(
   return pathname === '/health' || pathname === '/ready' || pathname === '/api/v1/agent/models'
 }
 
+function isSafeHttpMethod(method: string | undefined): boolean {
+  const normalized = method?.toUpperCase()
+  return normalized === 'GET' || normalized === 'HEAD' || normalized === 'OPTIONS'
+}
+
+function requiresWorkspaceMutationAccess(request: FastifyRequest): boolean {
+  if (isSafeHttpMethod(request.method)) return false
+  const pathname = request.url.split('?')[0] ?? request.url
+  return pathname.startsWith('/api/v1/files') ||
+    pathname.startsWith('/api/v1/dirs') ||
+    pathname.startsWith('/api/v1/workspace-settings') ||
+    pathname.startsWith('/api/v1/agent/')
+}
+
 function normalizeSessionNamespace(value: string | undefined): string | undefined {
   if (typeof value !== 'string') return undefined
   const trimmed = value.trim()
@@ -297,6 +311,11 @@ export interface RegisterAgentRoutesOptions {
   registerHealthRoute?: boolean
   sandboxHandleStore?: SandboxHandleStore
   getWorkspaceId?: (request: FastifyRequest) => string | Promise<string>
+  authorizeWorkspaceAccess?: (input: {
+    request: FastifyRequest
+    workspaceId: string
+    minimumRole?: 'editor'
+  }) => void | Promise<void>
   getWorkspaceRoot?: (workspaceId: string, request: FastifyRequest) => string | Promise<string>
   /** Generic runtime env contributors. Agent stays workspace-neutral; hosts decide env names/values. */
   runtimeEnvContributions?: RuntimeEnvContribution[]
@@ -875,13 +894,16 @@ let runtimeProvisioning: WorkspaceProvisioningResult | undefined
         const statusCode = typeof (error as { statusCode?: unknown })?.statusCode === 'number'
           ? (error as { statusCode: number }).statusCode
           : 400
+        const stableCode = typeof (error as { code?: unknown })?.code === 'string'
+          ? (error as { code: string }).code
+          : ErrorCode.enum.WORKSPACE_UNINITIALIZED
         const message = statusCode >= 500
           ? 'workspace scope failed'
           : error instanceof Error
             ? error.message
             : 'workspace id is required'
         return reply.code(statusCode).send({
-          error: { code: ErrorCode.enum.WORKSPACE_UNINITIALIZED, message },
+          error: { code: stableCode, message },
         })
       }
       if (workspaceId.length === 0) {
@@ -891,6 +913,30 @@ let runtimeProvisioning: WorkspaceProvisioningResult | undefined
             message: 'workspace id is required',
           },
         })
+      }
+      if (opts.authorizeWorkspaceAccess && requiresWorkspaceMutationAccess(request)) {
+        try {
+          await opts.authorizeWorkspaceAccess({
+            request,
+            workspaceId,
+            minimumRole: 'editor',
+          })
+        } catch (error) {
+          const statusCode = typeof (error as { statusCode?: unknown })?.statusCode === 'number'
+            ? (error as { statusCode: number }).statusCode
+            : 400
+          const stableCode = typeof (error as { code?: unknown })?.code === 'string'
+            ? (error as { code: string }).code
+            : ErrorCode.enum.WORKSPACE_UNINITIALIZED
+          const message = statusCode >= 500
+            ? 'workspace scope failed'
+            : error instanceof Error
+              ? error.message
+              : 'workspace access denied'
+          return reply.code(statusCode).send({
+            error: { code: stableCode, message },
+          })
+        }
       }
     }
     request.workspaceContext = {
