@@ -1,6 +1,7 @@
 "use client"
 
 import type {
+  CompanyAdminLabels,
   CompanyAdminStatus,
   LoadCompanyAdminStatus,
   RenderCompanyAdminContent,
@@ -9,12 +10,6 @@ import { GovernanceAdminView, type GovernanceMeResponse } from './GovernanceAdmi
 
 export interface CreateGovernanceCompanyAdminOptions {
   fetchImpl?: typeof fetch
-}
-
-interface CompanyAdminLabels {
-  menuLabel?: string
-  pageTitle?: string
-  deniedMessage?: string
 }
 
 export interface GovernanceCompanyAdminProvider {
