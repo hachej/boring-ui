@@ -126,5 +126,10 @@ export interface RunContext {
   abortSignal: AbortSignal
   workdir: string
   workspaceId?: string
+  requestId?: string
   userId?: string
+  userEmail?: string
+  userEmailVerified?: boolean
+  /** When false, slash-command fallback through native model prompt must fail closed. */
+  allowPromptDispatch?: boolean
 }

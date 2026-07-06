@@ -26,6 +26,8 @@ function authRequiredError(): Error {
  */
 export function createCreditsMeteringSink(getService: () => CreditsService): AgentMeteringSink {
   return {
+    isEnabled: () => getService().config.enabled,
+
     async reserveRun(input: MeteringReserveInput): Promise<MeteringReservationResult> {
       const service = getService()
       if (!service.config.enabled) return {}
@@ -49,6 +51,7 @@ export function createCreditsMeteringSink(getService: () => CreditsService): Age
         runId: input.runId,
         messageId: input.messageId,
         reservationId: input.reservationId,
+        metadata: input.metadata,
         provider: input.model?.provider,
         model: input.model?.id,
         usage: input.usage,

@@ -7,8 +7,9 @@ import { Helmet, HelmetProvider } from 'react-helmet-async'
 import { AppErrorBoundary } from './AppErrorBoundary.js'
 import { ConfigProvider, useConfig } from './ConfigProvider.js'
 import { ThemeProvider } from './ThemeProvider.js'
-import { AuthProvider } from './auth/AuthProvider.js'
+import { AuthProvider, useSession } from './auth/AuthProvider.js'
 import { UserIdentityProvider } from './auth/UserIdentityProvider.js'
+import { CompanyAdminProvider, type CompanyAdminLabels, type LoadCompanyAdminStatus, type RenderCompanyAdminContent } from './CompanyAdminProvider.js'
 import { WorkspaceAuthProvider } from './WorkspaceAuthProvider.js'
 import { AuthGate } from './AuthGate.js'
 import { TopBarSlotProvider, UserMenu } from './components/index.js'
@@ -22,6 +23,7 @@ import { UserSettingsPage as DefaultUserSettingsPage } from './auth/UserSettings
 import { InvitesPage } from './workspace/InvitesPage.js'
 import { MembersPage } from './workspace/MembersPage.js'
 import { WorkspaceSettingsPage } from './workspace/WorkspaceSettingsPage.js'
+import { CompanyAdminPage } from './workspace/CompanyAdminPage.js'
 import { InviteAcceptPage } from './auth/InviteAcceptPage.js'
 import { isRuntimeEmailVerificationEnabled } from '../shared/authPolicy.js'
 import { routes } from './utils.js'
@@ -36,6 +38,12 @@ export interface CoreFrontAuthPagesOverride {
   userSettings?: React.FC
 }
 
+export interface CoreFrontCompanyAdminOptions {
+  loadStatus?: LoadCompanyAdminStatus
+  renderContent?: RenderCompanyAdminContent
+  labels?: CompanyAdminLabels
+}
+
 export interface CoreFrontProps {
   children?: ReactNode
   authPages?: CoreFrontAuthPagesOverride
@@ -43,6 +51,7 @@ export interface CoreFrontProps {
   workspaceRoute?: string
   workspaceIdParam?: string
   publicPaths?: string[]
+  companyAdmin?: CoreFrontCompanyAdminOptions
 }
 
 const CSP_NONCE_META_NAME = 'boring-csp-nonce'
@@ -67,6 +76,21 @@ function createDefaultQueryClient(): QueryClient {
       },
     },
   })
+}
+
+function CompanyAdminScopedProvider({ children, companyAdmin }: { children: ReactNode; companyAdmin?: CoreFrontCompanyAdminOptions }) {
+  const session = useSession()
+  const identityKey = session.data?.user?.id ?? null
+  return (
+    <CompanyAdminProvider
+      loadStatus={companyAdmin?.loadStatus}
+      renderContent={companyAdmin?.renderContent}
+      labels={companyAdmin?.labels}
+      identityKey={identityKey}
+    >
+      {children}
+    </CompanyAdminProvider>
+  )
 }
 
 function RouterAuthGate({ children, publicPaths }: { children: ReactNode; publicPaths?: string[] }) {
@@ -96,7 +120,7 @@ function RouterAuthGate({ children, publicPaths }: { children: ReactNode; public
   )
 }
 
-export function CoreFront({ children, authPages, cspNonce, workspaceRoute, workspaceIdParam, publicPaths }: CoreFrontProps) {
+export function CoreFront({ children, authPages, cspNonce, workspaceRoute, workspaceIdParam, publicPaths, companyAdmin }: CoreFrontProps) {
   const queryClient = useMemo(createDefaultQueryClient, [])
   const resolvedCspNonce = useMemo(
     () => cspNonce ?? readCspNonceFromDom(),
@@ -120,9 +144,10 @@ export function CoreFront({ children, authPages, cspNonce, workspaceRoute, works
               <AuthProvider queryClient={queryClient}>
                 <UserIdentityProvider>
                   <BrowserRouter>
-                    <WorkspaceAuthProvider workspaceRoute={workspaceRoute} workspaceIdParam={workspaceIdParam}>
-                      <TopBarSlotProvider slot={<UserMenu />}>
-                        <Helmet>
+                    <CompanyAdminScopedProvider companyAdmin={companyAdmin}>
+                      <WorkspaceAuthProvider workspaceRoute={workspaceRoute} workspaceIdParam={workspaceIdParam}>
+                        <TopBarSlotProvider slot={<UserMenu />}>
+                          <Helmet>
                           {resolvedCspNonce ? (
                             <>
                               <meta name={CSP_NONCE_META_NAME} content={resolvedCspNonce} />
@@ -154,13 +179,16 @@ export function CoreFront({ children, authPages, cspNonce, workspaceRoute, works
                               <Route path="/workspace/:id/invites" element={<InvitesPage />} />
                               <Route path={routes.workspaceSettings} element={<WorkspaceSettingsPage />} />
                               <Route path="/workspace/:id/settings" element={<WorkspaceSettingsPage />} />
+                              <Route path={routes.companyAdmin} element={<CompanyAdminPage />} />
+                              <Route path="/workspace/:id/admin" element={<CompanyAdminPage />} />
                               <Route path={routes.inviteAccept} element={<InviteAcceptPage />} />
                               {children}
                             </Routes>
                           </Suspense>
                         </RouterAuthGate>
-                      </TopBarSlotProvider>
-                    </WorkspaceAuthProvider>
+                        </TopBarSlotProvider>
+                      </WorkspaceAuthProvider>
+                    </CompanyAdminScopedProvider>
                   </BrowserRouter>
                 </UserIdentityProvider>
               </AuthProvider>

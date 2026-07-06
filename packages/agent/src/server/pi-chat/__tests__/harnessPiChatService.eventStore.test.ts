@@ -104,19 +104,63 @@ describe('HarnessPiChatService event store tap', () => {
 
       await waitFor(() => expect(store.appendStarted).toEqual([1]))
       expect(live).toHaveLength(0)
-      await expect(inner.readEvents(sessionStreamPath('s1'), { offset: '-1' })).resolves.toMatchObject({ events: [] })
+      await expect(inner.readEvents(streamPathFor(ctx, 's1'), { offset: '-1' })).resolves.toMatchObject({ events: [] })
 
       gate.resolve()
       await waitFor(() => expect(live).toHaveLength(3))
       expect(store.appendStarted).toEqual([1, 2, 3])
 
-      const result = await inner.readEvents(sessionStreamPath('s1'), { offset: '-1' })
+      const result = await inner.readEvents(streamPathFor(ctx, 's1'), { offset: '-1' })
       const envelopes = result.events.map((event) => event.data as AgentEvent)
       expect(envelopes.map((event) => event.eventIndex)).toEqual([0, 1, 2])
       expect(envelopes.map((event) => event.sessionId)).toEqual(['s1', 's1', 's1'])
       expect(envelopes.map((event) => event.chunk)).toEqual(live)
 
       if (subscription.type === 'ok') subscription.unsubscribe()
+    } finally {
+      db.db.close()
+    }
+  })
+
+  it('isolates durable event streams by workspace and auth subject for the same public session id', async () => {
+    const db = openDatabase(':memory:')
+    try {
+      const store = new SqliteEventStreamStore(db.sql, db.runTransaction)
+      const adapterA = createAdapter()
+      const adapterB = createAdapter()
+      const ctxB: PiSessionRequestContext = { ...ctx, workspaceId: 'workspace-b', storageScope: 'scope-b', authSubject: 'user-b' }
+      const harness: AgentHarness & {
+        getPiSessionAdapter(input: AgentSendInput, ctx: RunContext): Promise<PiAgentSessionAdapter>
+        hasPiSession(sessionId: string): boolean
+      } = {
+        id: 'fake-pi',
+        placement: 'server',
+        sessions: sessionStore,
+        hasPiSession: vi.fn(() => false),
+        getPiSessionAdapter: vi.fn(async (_input, runCtx) => runCtx.workspaceId === ctxB.workspaceId ? adapterB : adapterA),
+      }
+      const service = new HarnessPiChatService({ harness, sessionStore, workdir: '/workspace', eventStore: store })
+
+      const liveA: PiChatEvent[] = []
+      const liveB: PiChatEvent[] = []
+      const subA = await service.subscribe(ctx, 's1', 0, (event) => liveA.push(event))
+      const subB = await service.subscribe(ctxB, 's1', 0, (event) => liveB.push(event))
+      expect(subA.type).toBe('ok')
+      expect(subB.type).toBe('ok')
+
+      adapterA.emit({ type: 'agent_start', turnId: 'turn-a' } as unknown as AgentSessionEvent)
+      adapterB.emit({ type: 'agent_start', turnId: 'turn-b' } as unknown as AgentSessionEvent)
+      await waitFor(() => expect(liveA).toHaveLength(1))
+      await waitFor(() => expect(liveB).toHaveLength(1))
+
+      const streamA = await store.readEvents(streamPathFor(ctx, 's1'), { offset: '-1' })
+      const streamB = await store.readEvents(streamPathFor(ctxB, 's1'), { offset: '-1' })
+      await expect(store.readEvents(sessionStreamPath('s1'), { offset: '-1' })).resolves.toMatchObject({ events: [] })
+      expect(streamA.events.map((event) => ((event.data as AgentEvent).chunk as { turnId?: string }).turnId)).toEqual(['turn-a'])
+      expect(streamB.events.map((event) => ((event.data as AgentEvent).chunk as { turnId?: string }).turnId)).toEqual(['turn-b'])
+
+      if (subA.type === 'ok') subA.unsubscribe()
+      if (subB.type === 'ok') subB.unsubscribe()
     } finally {
       db.db.close()
     }
@@ -139,7 +183,7 @@ describe('HarnessPiChatService event store tap', () => {
       await expect(closed).rejects.toThrow('append failed for seq 1')
       await flushAsync()
       expect(live).toEqual([])
-      await expect(inner.readEvents(sessionStreamPath('s1'), { offset: '-1' })).resolves.toMatchObject({ events: [] })
+      await expect(inner.readEvents(streamPathFor(ctx, 's1'), { offset: '-1' })).resolves.toMatchObject({ events: [] })
 
       if (subscription.type === 'ok') subscription.unsubscribe()
     } finally {
@@ -212,7 +256,7 @@ describe('HarnessPiChatService event store tap', () => {
       await waitFor(() => expect(secondLive).toHaveLength(2))
       if (secondSub.type === 'ok') secondSub.unsubscribe()
 
-      const result = await store.readEvents(sessionStreamPath('s1'), { offset: '-1' })
+      const result = await store.readEvents(streamPathFor(ctx, 's1'), { offset: '-1' })
       const envelopes = result.events.map((event) => event.data as AgentEvent)
       expect(envelopes).toHaveLength(4)
       expect(envelopes.map((event) => event.eventIndex)).toEqual([0, 1, 2, 3])
@@ -228,8 +272,8 @@ describe('HarnessPiChatService event store tap', () => {
     const db = openDatabase(':memory:')
     try {
       const store = new SqliteEventStreamStore(db.sql, db.runTransaction)
-      await store.createStream(sessionStreamPath('s1'))
-      await store.appendAgentEvent('s1', { type: 'agent-start', seq: 9, turnId: 'old-turn' })
+      await store.createStream(streamPathFor(ctx, 's1'))
+      await store.appendAgentEvent('s1', { type: 'agent-start', seq: 9, turnId: 'old-turn' }, { streamPath: streamPathFor(ctx, 's1') })
 
       const restarted = createService(store)
       const live: PiChatEvent[] = []
@@ -239,7 +283,7 @@ describe('HarnessPiChatService event store tap', () => {
       await waitFor(() => expect(live).toHaveLength(2))
       if (subscription.type === 'ok') subscription.unsubscribe()
 
-      const result = await store.readEvents(sessionStreamPath('s1'), { offset: '-1' })
+      const result = await store.readEvents(streamPathFor(ctx, 's1'), { offset: '-1' })
       const envelopes = result.events.map((event) => event.data as AgentEvent)
       expect(envelopes.map((event) => event.eventIndex)).toEqual([0, 1, 2])
       expect(envelopes.map((event) => event.chunk.seq)).toEqual([9, 10, 11])
@@ -252,8 +296,8 @@ describe('HarnessPiChatService event store tap', () => {
     const db = openDatabase(':memory:')
     try {
       const store = new SqliteEventStreamStore(db.sql, db.runTransaction)
-      await store.createStream(sessionStreamPath('s1'))
-      await store.appendAgentEvent('s1', { type: 'agent-start', seq: 9, turnId: 'old-turn' })
+      await store.createStream(streamPathFor(ctx, 's1'))
+      await store.appendAgentEvent('s1', { type: 'agent-start', seq: 9, turnId: 'old-turn' }, { streamPath: streamPathFor(ctx, 's1') })
 
       const persistedStore: SessionStore & {
         loadEntries(ctx: { workspaceId?: string; userId?: string }, sessionId: string): Promise<{ id: string; messages: unknown[] }>
@@ -294,7 +338,7 @@ class DelayedEventStreamStore implements EventStreamStore {
     return this.inner.appendEventOnce(path, key, event)
   }
 
-  async appendAgentEvent(sessionId: string, chunk: PiChatEvent, opts?: { idempotencyKey?: string }): Promise<string> {
+  async appendAgentEvent(sessionId: string, chunk: PiChatEvent, opts?: { idempotencyKey?: string; streamPath?: string }): Promise<string> {
     this.appendStarted.push(chunk.seq)
     await this.gates.get(chunk.seq)
     if (this.failingSeqs.has(chunk.seq)) throw new Error(`append failed for seq ${chunk.seq}`)
@@ -316,6 +360,10 @@ class DelayedEventStreamStore implements EventStreamStore {
   subscribe(path: string, listener: () => void): () => void {
     return this.inner.subscribe(path, listener)
   }
+}
+
+function streamPathFor(ctx: PiSessionRequestContext, sessionId: string): string {
+  return sessionStreamPath(JSON.stringify([sessionId, ctx.workspaceId ?? '', ctx.authSubject ?? '']))
 }
 
 function emitSimpleTurn(adapter: FakeAdapter, turnId = 'turn-1'): void {

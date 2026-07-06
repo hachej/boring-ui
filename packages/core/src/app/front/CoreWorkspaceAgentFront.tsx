@@ -11,6 +11,7 @@ import {
   useSession,
   useWorkspaceRouteStatus,
   type CoreFrontAuthPagesOverride,
+  type CoreFrontCompanyAdminOptions,
 } from '../../front/index.js'
 import {
   parseFullPagePanelLocation,
@@ -53,6 +54,7 @@ export interface CoreWorkspaceAgentFrontProps<
   chatFirstPublicWorkspaceProps?: Partial<RoutedWorkspaceAgentProps<TSession>>
   publicPaths?: string[]
   authPages?: CoreFrontAuthPagesOverride
+  companyAdmin?: CoreFrontCompanyAdminOptions
   cspNonce?: string
   children?: ReactNode
   workspaceRoute?: string
@@ -510,6 +512,7 @@ export function CoreWorkspaceAgentFront<
   TSession extends WorkspaceAgentSession = WorkspaceAgentSession,
 >({
   authPages,
+  companyAdmin,
   cspNonce,
   children,
   workspaceRoute = DEFAULT_WORKSPACE_ROUTE,
@@ -543,6 +546,7 @@ export function CoreWorkspaceAgentFront<
   return (
     <CoreFront
       authPages={authPages}
+      companyAdmin={companyAdmin}
       cspNonce={cspNonce}
       workspaceRoute={workspaceRoute}
       workspaceIdParam={workspaceIdParam}
