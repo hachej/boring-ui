@@ -95,7 +95,8 @@ http://100.68.199.114:6301/dev-login
 - **Fly.io**: `fly.toml` (app `boring-full-app`, region `cdg`, `/health` checks, `release_command` runs `migrate.js`, mounted `workspace_data` volume at `/data`). Secrets via `fly secrets set`.
 - **Docker**: `Dockerfile` builds the app; run with `-p 3000:3000 --env-file apps/full-app/.env`.
 
-In the production Docker image, `BORING_AGENT_MODE=vercel-sandbox` splits storage:
+In the production Docker image, `BORING_AGENT_MODE=vercel-sandbox` splits storage. The image starts through `apps/full-app/docker/web-entrypoint.sh`, which repairs ownership of the mounted `/data/workspaces` and `/data/pi-sessions` roots before dropping to the unprivileged app user.
+
 
 ```txt
 Fly volume:
@@ -108,7 +109,8 @@ Vercel sandbox:
 
 Do not debug missing sandbox files by looking under `/data/workspaces/<id>`; inspect
 the Vercel sandbox `/workspace` instead. Do inspect `/data/pi-sessions/<id>` when
-checking whether chat history survives Fly deploy/restart.
+checking whether chat history survives Fly deploy/restart. If session creation fails
+with `EACCES mkdir /data/pi-sessions/...`, see `docs/FIXES.md`.
 
 After deploy, run `pnpm --filter full-app smoke:post-deploy` (with `DEPLOY_URL` set) to verify the live instance.
 
