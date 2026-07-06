@@ -406,6 +406,18 @@ importers:
         specifier: ^4.1.9
         version: 4.1.9(@opentelemetry/api@1.9.1)(@types/node@22.20.0)(jsdom@29.1.1(@noble/hashes@2.2.0))(vite@8.1.3(@types/node@22.20.0)(esbuild@0.28.1)(jiti@2.7.0)(tsx@4.22.5)(yaml@2.9.0))
 
+  packages/boring-sandbox:
+    devDependencies:
+      tsup:
+        specifier: ^8.4.0
+        version: 8.5.1(@microsoft/api-extractor@7.58.7(@types/node@22.20.0))(jiti@2.7.0)(postcss@8.5.16)(tsx@4.22.5)(typescript@5.9.3)(yaml@2.9.0)
+      typescript:
+        specifier: ^5.8.3
+        version: 5.9.3
+      vitest:
+        specifier: ^4.1.9
+        version: 4.1.9(@opentelemetry/api@1.9.1)(@types/node@22.20.0)(jsdom@29.1.1(@noble/hashes@2.2.0))(vite@8.1.3(@types/node@22.20.0)(esbuild@0.28.1)(jiti@2.7.0)(tsx@4.22.5)(yaml@2.9.0))
+
   packages/cli:
     dependencies:
       '@fastify/compress':
