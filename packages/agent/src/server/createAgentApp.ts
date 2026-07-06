@@ -2,8 +2,6 @@ import Fastify, { type FastifyInstance } from 'fastify'
 import type { AgentTool } from '../shared/tool'
 import type { AgentCoreHarnessFactory, AgentHarness, AgentHarnessFactory } from '../shared/harness'
 import type { TelemetrySink } from '../shared/telemetry'
-import type { PiChatSnapshot } from '../shared/chat'
-import { ErrorCode } from '../shared/error-codes'
 import { getEnv } from './config/env'
 import type { RuntimeBundle, RuntimeModeAdapter, RuntimeModeId } from './runtime/mode'
 import { getOptionalRuntimeBundleStorageRoot } from './runtime/mode'
@@ -266,7 +264,7 @@ export async function createAgentApp(
     getWorkspaceRoot: () => getOptionalRuntimeBundleStorageRoot(runtimeBundle),
   })
   await app.register(piChatRoutes, {
-    service: createHttpCompatiblePiChatService(agentRuntime.service as PiChatSessionService),
+    service: agentRuntime.service as PiChatSessionService,
   })
   await app.register(systemPromptRoutes, { harness })
   await app.register(modelsRoutes)
@@ -299,53 +297,4 @@ export async function createAgentApp(
   await app.register(readyStatusRoutes, { tracker: readyTracker })
 
   return app
-}
-
-function createHttpCompatiblePiChatService(service: PiChatSessionService): PiChatSessionService {
-  return new Proxy(service, {
-    get(target, prop, receiver) {
-      if (prop === 'readState') {
-        return async (...args: Parameters<PiChatSessionService['readState']>) => {
-          try {
-            return await target.readState(...args)
-          } catch (error) {
-            if (isSessionNotFoundError(error)) return emptyPiChatSnapshot(args[1])
-            throw error
-          }
-        }
-      }
-      if (prop === 'deleteSession' && typeof target.deleteSession === 'function') {
-        return async (...args: Parameters<NonNullable<PiChatSessionService['deleteSession']>>) => {
-          try {
-            return await target.deleteSession!(...args)
-          } catch (error) {
-            if (isSessionNotFoundError(error)) return
-            throw error
-          }
-        }
-      }
-      const value = Reflect.get(target, prop, receiver)
-      return typeof value === 'function' ? value.bind(target) : value
-    },
-  }) as PiChatSessionService
-}
-
-function isSessionNotFoundError(error: unknown): boolean {
-  if ((error as { code?: unknown })?.code === ErrorCode.enum.SESSION_NOT_FOUND) return true
-  return error instanceof Error && (
-    error.message === 'session not found' ||
-    error.message.startsWith('Session not found:')
-  )
-}
-
-function emptyPiChatSnapshot(sessionId: string): PiChatSnapshot {
-  return {
-    protocolVersion: 1,
-    sessionId,
-    seq: 0,
-    status: 'idle',
-    messages: [],
-    queue: { followUps: [] },
-    followUpMode: 'one-at-a-time',
-  }
 }
