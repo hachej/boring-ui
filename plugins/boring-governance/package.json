@@ -1,8 +1,8 @@
 {
   "name": "@hachej/boring-governance",
-  "version": "0.0.0",
+  "version": "0.1.64",
   "type": "module",
-  "private": true,
+  "private": false,
   "license": "MIT",
   "description": "Reusable boring-ui tenant governance plugin: YAML policy loading, model filtering, budget metering, company-context bindings, and Company Admin UI.",
   "repository": {
