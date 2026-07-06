@@ -1,6 +1,6 @@
 # INDEX — Ordering Authority
 
-This pack has five work packages. Each package owns one `PLAN.md`, one executable `TODO.md`, and one `HANDOFF.md`.
+This pack has eight work packages. Each package owns one `PLAN.md`, one executable `TODO.md`, and one `HANDOFF.md`.
 
 ## Package Map
 
@@ -11,6 +11,9 @@ This pack has five work packages. Each package owns one `PLAN.md`, one executabl
 | A3-workbook-identity-e2e | A | A1, A2 | queued | Live Excel workbook resolves to SharePoint IDs, saves a ref, and posts an audit note. |
 | B1-host-seam-fork | B | none | queued | `hachej/pi-for-office` has an Excel-preserving `DocumentHost` seam and PowerPoint host detection. |
 | B2-powerpoint-mvp | B | B1, A2 reuse | queued | PowerPoint MVP tools run in the fork; list/read/note reuse the connector unchanged and PowerPoint ref saving is explicitly generalized. |
+| C1-wrapper-shell-login-gate | C | A1 | queued | Wrapper soft fork exists with `src/wrapper/**` shell and a login gate that blocks runtime creation until Boring auth succeeds; baked demo bearer token deleted. |
+| C2-model-gateway-policy | C | C1 + the gateway server bead in boring-ui | queued | Gateway-only mode enforces the Boring model policy at every selection path; BYO-key is optional and off by default. |
+| C3-branding-packaging-release | C | C1 | queued | Boring-branded wrapper builds with production manifest/CSP; built assets contain no demo token/workspace id/tailnet host; release proof passes. |
 
 ## Dependency Graph
 
@@ -19,12 +22,16 @@ Lane A: A1 -> A2 -> A3
 
 Lane B: B1 -> B2
 
+Lane C: A1 -> C1 -> {C2, C3}   (C2 also needs the gateway server bead in boring-ui)
+
 Connector reuse: A2 -> B2
+
+Wrapper tool pack reuse: A2 -> C1 (bundled builtin.boring first-party extension)
 
 Future W-word: after B2 ships and usage validates the seam
 ```
 
-Lane A and Lane B are independent except for connector reuse. B2 must verify that the A2 connector stays host-agnostic, but B1 can start before A1.
+Lane A and Lane B are independent except for connector reuse. B2 must verify that the A2 connector stays host-agnostic, but B1 can start before A1. Lane C (#551) depends on A1 for the external login/token contract and consumes the A2 tool pack; it never blocks Lane A or Lane B.
 
 ## Recommended Execution
 
@@ -54,3 +61,6 @@ Run B1 in parallel only if a second agent can keep the fork minimally divergent 
 - The taskpane and connector are self-hosted for company use.
 - The fork keeps upstream mergeable: new hosts in new dirs, shared-file edits minimized, upstream remote retained.
 - A and B lanes do not block each other except the explicit `A2 -> B2` connector reuse verification.
+- **Amendment (2026-07-06, Lane C):** the wrapper `dist/` contains no demo token, workspace id, or tailnet host.
+- **Amendment (2026-07-06, Lane C):** wrapper divergences from upstream are documented in `docs/upstream-divergences.md`.
+- **Amendment (2026-07-06, Lane C):** upstream drift for `src/taskpane/init.ts`, `src/compat/model-selector-patch.ts`, and `src/prompt/system-prompt.ts` is tracked in every C-lane PR description.

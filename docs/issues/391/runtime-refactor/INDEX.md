@@ -59,6 +59,7 @@ Rules baked into the ordering: dependency inversion (P1) happens **before** pack
 4. **Every PR description includes review budget metadata:** estimated review time, review-focus notes, and stacked merge order when applicable.
 5. **Work happens on a dedicated branch per bead or per TODO** (small PRs preferred, branch naming per [`PR-PLAN.md`](PR-PLAN.md)). Never on main, never in a shared checkout.
 6. **Behavior freeze** unless the bead explicitly changes a documented invariant. The landed #416 contracts (`packages/boring-bash/src/shared`) are load-bearing for the governance PR line — extending is fine, breaking is not.
+   **Amendment (2026-07-06):** since #552, `@hachej/boring-bash` and `@hachej/boring-governance` are published to npm (cohort-versioned) with an external consumer (Constellation). The frozen surface is therefore not only `packages/boring-bash/src/shared` but every `@hachej/boring-bash/server` export that `@hachej/boring-governance` imports (`COMPANY_CONTEXT_FILESYSTEM_ID`, `ScopedFilesystemRuntimeBindingManager`, `createReadonlyProjectionOperations`, the projection error codes/types). In-repo same-PR importer migration remains the rule, but changes to these exports must keep the bash+governance pair compatible at equal cohort versions; a breaking change requires a coordinated cohort bump with both packages migrated in the same PR.
 7. **A bead is done when Verification commands AND Review gates pass**, not when code compiles. Each TODO ends with both; the package HANDOFF.md is the tickable closeout.
 
 **Review rule (thermo, before coding each file).** A clean review means: no package import cycle; no duplicated provisioning/readiness system; no filesystem/bash split brain; no hidden cwd/filesystem leak in pure agent mode; no child-app or multi-agent scope leak; no claim that unrelated backlog issues are solved by this abstraction.
@@ -76,7 +77,7 @@ All `@hachej/*` consumers live in this monorepo. There is **no external migratio
 5. **New options never grow env-var fallbacks.** Env/file parsing lives in host/CLI composition only (P1).
 6. **If a bead seems to need a compat shim for anything outside this repo — stop and ask.**
 
-The only legitimate compat surfaces (do NOT break): on-disk pi session JSONL (existing user sessions must load), the landed #416 shared contracts (`packages/boring-bash/src/shared`), and server↔front within one release train.
+The only legitimate compat surfaces (do NOT break): on-disk pi session JSONL (existing user sessions must load), the landed #416 shared contracts (`packages/boring-bash/src/shared`), server↔front within one release train, and — **Amendment (2026-07-06), since #552** — the `@hachej/boring-bash/server` exports consumed by the npm-published `@hachej/boring-governance` (the pair must stay compatible at equal cohort versions; see rule 6).
 
 ### Versioning & flagging (how cutovers ship)
 

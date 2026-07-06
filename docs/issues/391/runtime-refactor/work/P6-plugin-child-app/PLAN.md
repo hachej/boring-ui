@@ -33,6 +33,10 @@ Import-free `boring.requires`/`bash` manifest validation; lightweight skill capa
 ### Phase 6b — child-app / Macro scoping (follow-up outside the epic exit)
 Consume the resolved child-app context (`childAppId`/`workspaceKind`); child-app/workspace-kind requirement narrowing; Macro scoping so Macro tools/prompts/provisioning do not leak into a generic workspace. HARD BLOCKED on the shared child-app platform implementation exporting the owner-approved resolved context type (expected name: `ResolvedChildAppContext`, #376) — STOP-and-report, no local fallback shape. P6b is a tracked follow-up gated on that shared platform, not part of the epic exit: the epic ships without it, and P8 only verifies the P6b follow-up issue is filed (P8 never waits on P6b landing).
 
+### Deferred design notes
+
+**Amendment (2026-07-06, #550 gap 10) — plugin-owned migrations trigger:** `PostgresModelBudgetStore` and migrations 0015/0016 live in core because core owns drizzle. That stays the model for now. **Trigger to revisit:** if internal plugins multiply and need their own tables, design plugin-owned migration infra then — P6 does not build it, and no P6 bead may add a second migration owner in the meantime.
+
 ## Exit criteria
 
 ### Phase 6a
