@@ -20,13 +20,12 @@ Handoff: self-contained work order for one autonomous coding agent. This work-or
 ## Prerequisites - stop if false
 
 - P1 pr2 `createAgent()` facade is merged into current main. Verify current main, not an old branch. The M1 implementation depends on `createAgent().start`, `createAgent().stream`, and the P1 live-tail behavior.
-- Public Markdown share API is merged into current main. Owner says this is #424; verify the real symbols/routes on current main before coding and cite them in the PR.
-- Local amendment-time fact: the available `origin/main` did **not** contain the public-share files, while `feature/cli-public-md-share` contained `createMarkdownReviewShare`, `registerPublicShareRoutes`, and `/share/:token/...` routes. Treat those names as expected provenance only until current main confirms them.
-- If either prerequisite is absent, do not build a parallel share implementation or facade shim. Update the M1 docs with the current fact and stop.
+- **Orchestrator ruling (2026-07-06, supersedes the earlier share prerequisite):** the public Markdown share API (#424) is **NOT** merged on main — the original "owner says merged" premise was verified wrong at execution time. M1 delivery is therefore **decoupled** from #424: **delivery v0** = the `delegate_task` result returns (a) the final assistant text and (b) artifact file references (workspace-relative paths + inline content for small text artifacts) — **no share links**. Share-link delivery is a later M1 slice (`pr2b-share-links`, see PR-PLAN) explicitly gated on PR #424 merging; when it lands, re-verify the real symbols/routes on current main (`createMarkdownReviewShare`, `registerPublicShareRoutes`, `/share/:token/...` from `feature/cli-public-md-share` are expected provenance only) and cite them in that PR.
+- Do not build a parallel share implementation or facade shim under any circumstance.
 
 ## Goal / exit criteria
 
-Expose one configured boring vertical agent as MCP tools. From a stock MCP client, a reviewer can delegate a brief, watch progress, receive a public Markdown share link, and open the artifact.
+Expose one configured boring vertical agent as MCP tools. From a stock MCP client, a reviewer can delegate a brief, watch progress, and receive the result (final text + artifact references; share links arrive in the #424-gated later slice).
 
 Exit criteria:
 
@@ -34,14 +33,14 @@ Exit criteria:
 2. `delegate_task(brief)` starts exactly one fresh agent session via `createAgent().start`.
 3. Session tenancy uses a real `SessionCtx` chosen by the host composition; no fake workspace id and no caller-supplied tenant authority.
 4. Progress is exposed via MCP progress notifications if supported by the SDK/client path; otherwise via an explicit polling tool.
-5. Result includes final text plus a public Markdown share link generated through the verified public-share API.
-6. Share link opens and renders the artifact; no secrets, internal file APIs, shell routes, session storage paths, or model/provider credentials reach the caller.
+5. Result includes the final assistant text plus artifact file references (workspace-relative paths; inline content for small text artifacts). Public share links are NOT part of v0 — they land in the later slice gated on PR #424.
+6. No secrets, internal file APIs, shell routes, session storage paths, or model/provider credentials reach the caller; artifact references never expose absolute host paths.
 
 ## Non-negotiables
 
 - This package **exposes** a boring agent over MCP. `plugins/boring-mcp` **consumes** external MCP sources. Use it for SDK transport patterns only; do not inherit its read-only source policy model as the server design.
 - Session-per-delegation. No shared long-running session across independent `delegate_task` calls in M1.
-- No secrets to callers. Return public share URLs and redacted status only.
+- No secrets to callers. Return redacted status, final text, and workspace-relative artifact references only (public share URLs once the #424-gated slice lands).
 - Behavior freeze for the live demo app. Land additive/dark; flip exposure only after smoke proof.
 - PR descriptions must include review-time estimate, review-focus notes, and stack merge order.
 
@@ -50,7 +49,7 @@ Exit criteria:
 - Do NOT build a farm UI.
 - Do NOT depend on T1 durable events; use P1 pr2 live-tail and document the durable-stream upgrade path.
 - Do NOT add billing, marketplace, task service, or multi-agent control-plane concepts.
-- Do NOT create a second public Markdown share route if #424 is not present; stop and report.
+- Do NOT create a second public Markdown share route while #424 is unmerged; delivery v0 returns artifact references instead (see prerequisites ruling).
 - Do NOT expose raw transcripts, workspace roots, broker secrets, env vars, OAuth tokens, or model keys through MCP payloads/logs.
 
 ## Beads
@@ -69,15 +68,21 @@ Exit criteria:
 - Tests: unit/integration with a fake MCP client and fake `createAgent()` facade: one delegation creates one session; progress can be observed; unknown delegation is a stable error; no secret canary appears in tool results.
 - Acceptance: `delegate_task` and fallback progress path work without T1; no workspace/file/shell routes are exposed through the MCP endpoint.
 
-### BBM1-002 - Public share result integration + vertical demo composition (M)
+### BBM1-002 - Delivery v0 result payload + vertical demo composition (M)
 
-- Description: Wire the delegation result to the public Markdown share API and host one vertical-agent config for the demo.
-- Files: demo host config plus the verified public-share API import path from current main.
+- Description: Wire the delegation result to the **delivery v0** payload (final text + artifact references) and host one vertical-agent config for the demo. (Share-link delivery moved to BBM1-004, gated on #424.)
+- Files: demo host config plus the delegation result assembly in the M1 server code.
 - Implementation notes:
-  - Re-check current main and cite actual public-share symbols/routes in the PR. Expected names from the local branch are `createMarkdownReviewShare`, `registerPublicShareRoutes`, `PublicShareRecord`, and routes under `/share/:token/`.
-  - The agent writes or returns a Markdown artifact. The host creates a public share record using the verified API and returns the share URL in the MCP result.
+  - The agent writes or returns a Markdown artifact. The MCP result carries the final assistant text plus artifact file references: workspace-relative paths, and inline content for small text artifacts (pick and document a size cutoff). Never absolute host paths.
   - Host one vertical-agent config (instructions + tools) in full-app or CLI. Pick one host for M1; do not build two compositions unless the second is only a smoke fixture.
   - The endpoint URL must be usable by any stock MCP client that supports Streamable HTTP or the repo's chosen MCP transport.
+- Tests: result payload contains final text + artifact refs; refs are workspace-relative (no absolute path, no session storage path); inline-content cutoff enforced; secret canary absent.
+- Acceptance: a delegated brief completes with a result whose artifact reference resolves to the produced Markdown artifact.
+
+### BBM1-004 - Share-link delivery slice (S) — HARD GATED on PR #424 merging
+
+- Description: Once #424 is merged on main, upgrade the delivery payload with a public Markdown share URL created through the verified public-share API.
+- Implementation notes: re-check current main and cite the actual public-share symbols/routes in the PR (expected provenance: `createMarkdownReviewShare`, `registerPublicShareRoutes`, `PublicShareRecord`, routes under `/share/:token/`). Do not start this bead while #424 is unmerged.
 - Tests: share creation uses the verified API; returned share URL points at the mounted public route; caller-visible result contains no raw workspace path beyond the public share URL.
 - Acceptance: a delegated brief completes with a share link that opens the rendered Markdown artifact.
 
@@ -89,10 +94,10 @@ Exit criteria:
   - Run a stock MCP client against the URL.
   - Call `delegate_task` with a representative outreach-demo brief.
   - Observe progress through notification or polling.
-  - Capture the returned share URL and open it.
+  - Capture the returned result payload and verify the artifact reference resolves to the produced artifact (share-URL smoke moves to BBM1-004 once #424 lands).
   - Record exact command/client/version, URL shape, and proof notes.
 - Tests: smoke script or documented manual smoke, whichever the repo already accepts for MCP endpoint proof.
-- Acceptance: proof shows delegate -> progress -> result -> public share open.
+- Acceptance: proof shows delegate -> progress -> result with resolvable artifact reference.
 
 ## Verification
 
@@ -111,14 +116,14 @@ If M1 lands in `apps/full-app`, also run its existing build/typecheck/test/e2e s
 ## PR-PLAN reconciliation
 
 - `pr1-exposed-mcp-delegate` -> BBM1-001.
-- `pr2-share-result-demo-composition` -> BBM1-002.
+- `pr2-delivery-v0-demo-composition` -> BBM1-002.
 - `pr3-stock-client-smoke` -> BBM1-003.
+- `pr2b-share-links` -> BBM1-004 (HARD GATED on PR #424 merging; not part of the M1 v0 exit).
 
 ## Review gates
 
-- Public-share API symbols/routes are cited from current main in the PR.
 - P1 pr2 facade API is cited from current main in the PR.
 - `plugins/boring-mcp` duality is explicitly noted: consumes MCP there, exposes MCP here.
 - Each delegation creates exactly one session and does not leak `SessionCtx`.
-- MCP result payloads pass a secret-canary check.
-- Share URL opens without exposing workspace APIs, shell routes, model keys, or internal session details.
+- MCP result payloads pass a secret-canary check; artifact references are workspace-relative only.
+- (BBM1-004 only) Public-share API symbols/routes are cited from current main; share URL opens without exposing workspace APIs, shell routes, model keys, or internal session details.

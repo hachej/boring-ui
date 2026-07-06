@@ -5,14 +5,14 @@ Derived strictly from [TODO.md](./TODO.md) and [PLAN.md](./PLAN.md). Tick each b
 ## Prerequisites
 
 - [ ] P1 pr2 `createAgent()` facade is merged on current main.
-- [ ] Public Markdown share API is merged on current main; PR cites the actual mainline functions/routes.
-- [ ] If the public-share API names differ from the amendment-time expected names, M1 docs were updated before implementation.
+- [ ] Delivery v0 ruling honored: no share dependency in BBM1-001..003; share-link work exists only as BBM1-004, hard-gated on #424 merging.
 
 ## Beads
 
 - [ ] BBM1-001 - Exposed MCP delegate server.
-- [ ] BBM1-002 - Public share result integration + vertical demo composition.
+- [ ] BBM1-002 - Delivery v0 result payload + vertical demo composition.
 - [ ] BBM1-003 - Stock-client smoke and docs.
+- [ ] BBM1-004 - Share-link delivery slice (only after #424 merges; not an M1 v0 exit gate).
 
 ## Verification commands
 
@@ -26,8 +26,9 @@ Derived strictly from [TODO.md](./TODO.md) and [PLAN.md](./PLAN.md). Tick each b
 ## PR-PLAN reconciliation
 
 - [ ] `pr1-exposed-mcp-delegate` completed BBM1-001.
-- [ ] `pr2-share-result-demo-composition` completed BBM1-002.
+- [ ] `pr2-delivery-v0-demo-composition` completed BBM1-002.
 - [ ] `pr3-stock-client-smoke` completed BBM1-003.
+- [ ] `pr2b-share-links` (post-#424) completed BBM1-004, or is explicitly parked with #424 still open.
 
 ## Review gates
 
@@ -35,18 +36,18 @@ Derived strictly from [TODO.md](./TODO.md) and [PLAN.md](./PLAN.md). Tick each b
 - [ ] `plugins/boring-mcp` duality documented: it consumes MCP; M1 exposes a boring agent over MCP.
 - [ ] One session per delegation; no cross-delegation session reuse.
 - [ ] `SessionCtx` is host-chosen and real; MCP caller cannot spoof tenancy.
-- [ ] No secret canary appears in MCP tool results, logs, or public share output.
+- [ ] No secret canary appears in MCP tool results or logs.
 - [ ] Progress uses MCP progress notifications or the documented polling fallback.
-- [ ] Result returns a public Markdown share link from the verified public-share API.
-- [ ] Share link opens and does not expose workspace APIs, shell routes, model keys, broker secrets, or internal session details.
+- [ ] Result returns final text + workspace-relative artifact references; no absolute host paths.
+- [ ] (BBM1-004 only) Share link from the verified public-share API opens and does not expose workspace APIs, shell routes, model keys, broker secrets, or internal session details.
 
 ## Exit criteria
 
 - [ ] A stock MCP client connects to the M1 endpoint.
 - [ ] The client delegates a representative brief.
 - [ ] Progress is visible.
-- [ ] The final result includes a public share URL.
-- [ ] The share URL opens to the rendered Markdown artifact.
+- [ ] The final result includes the final text and an artifact reference that resolves to the produced artifact.
+- [ ] (Post-#424, BBM1-004) The result additionally includes a public share URL that opens to the rendered Markdown artifact.
 
 ## Closeout
 

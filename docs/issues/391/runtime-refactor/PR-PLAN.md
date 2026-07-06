@@ -84,17 +84,18 @@ Legend — nature: **new** = net-new code · **move** = rename-detected + import
 
 **P1 total: 6 PRs (7 if pr2 splits).** Merge order pr1→pr5→pr2(→a,b)→pr3→pr4→pr6. **Gate to open T1/P2/P3/S1/S2:** pr2..pr6 merged (stub seams present).
 
-### M1 — Managed agent via MCP (outreach demo sidecar, after P1 pr2 + public share API)
+### M1 — Managed agent via MCP (outreach demo sidecar, after P1 pr2)
 
 M1 is not a runtime-epic exit gate; it is the owner's outreach demo artifact. It still follows the outreach-week operating mode: additive/dark until smoke proof, e2e green, review-time estimate + review-focus notes on every PR, and explicit stack order.
 
 | PR | beads | nature | net-new vs budget | test deliverables | gate |
 | --- | --- | --- | --- | --- | --- |
 | pr1-exposed-mcp-delegate | BBM1-001 | new | ~600–1000 | fake MCP client delegates one brief; one delegation creates one agent session via `createAgent().start`; progress notification or polling fallback works; secret canary absent | chosen host/package `test`; `audit:imports` |
-| pr2-share-result-demo-composition | BBM1-002 | new | ~300–700 | current-main public-share API cited; returned URL uses verified share route; one vertical-agent config hosted in full-app or CLI; no raw workspace/session path in caller payload | host build/typecheck/test; share route smoke |
-| pr3-stock-client-smoke | BBM1-003 | test/doc | 0 | stock MCP client proof: delegate brief -> progress -> result -> public share opens | documented smoke + affected e2e |
+| pr2-delivery-v0-demo-composition | BBM1-002 | new | ~300–700 | result carries final text + workspace-relative artifact refs (inline content for small text artifacts, documented cutoff); one vertical-agent config hosted in full-app or CLI; no raw workspace/session path in caller payload | host build/typecheck/test |
+| pr3-stock-client-smoke | BBM1-003 | test/doc | 0 | stock MCP client proof: delegate brief -> progress -> result with resolvable artifact reference | documented smoke + affected e2e |
+| pr2b-share-links (HARD GATED on #424) | BBM1-004 | new | ~150–400 | current-main public-share API cited; returned URL uses verified share route; share opens without exposing internals | host build/typecheck/test; share route smoke |
 
-**M1 total: 3 PRs.** Preconditions: P1 pr2 façade merged; public Markdown share API verified on current main (owner says #424 merged; local amendment-time `origin/main` did not contain the expected files, so pr1 must re-check and cite the real mainline symbols/routes before coding). M1 works on the P1 live-tail and has **no T1 dependency**; durable streams upgrade later.
+**M1 total: 3 PRs (v0) + 1 gated follow-up.** Preconditions: P1 pr2 façade merged. **Ruling 2026-07-06:** #424 verified unmerged on main at execution time; delivery v0 is decoupled (final text + artifact refs, no share links) and `pr2b-share-links` is HARD GATED on #424 merging — it is not part of the M1 v0 exit. M1 works on the P1 live-tail and has **no T1 dependency**; durable streams upgrade later.
 
 ### T1 — Durable event stream + on-stream approvals (Phase T1, off P1)
 
@@ -307,7 +308,7 @@ Adds the `@hachej/boring-sandbox/mounts` export (created package from P2) + the 
 | T2 | 6 | 6 | — |
 | P2 | 7 | 7 | — |
 | P3 | 6 | 6 (moves split by family only if >4k) | — |
-| M1 | 3 | 3 | sidecar (not P8 gate) |
+| M1 | 4 | 3 + 1 gated (pr2b on #424) | sidecar (not P8 gate) |
 | P4 | 5 | 7 | — |
 | E1 | 5 | 5 | — |
 | E2 | 3 | 3 | — |
