@@ -20,6 +20,16 @@ describe("@hachej/boring-sandbox scaffold", () => {
     }
   });
 
+  it("resolves public shared and providers subpaths", async () => {
+    const shared = await import("@hachej/boring-sandbox/shared");
+    const providers = await import("@hachej/boring-sandbox/providers");
+
+    expect(shared.PROVIDER_CAPABILITIES.direct.fs).toBe("readwrite");
+    expect(shared.MODE_TO_PROVIDER.local).toBe("bwrap");
+    expect(providers).toBeDefined();
+  });
+
+
   it("allows only type-only agent imports", () => {
     expect(
       findForbiddenPatterns(
