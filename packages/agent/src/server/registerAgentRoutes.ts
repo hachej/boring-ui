@@ -8,7 +8,7 @@ import type { SandboxHandleStore } from '../shared/sandbox-handle-store'
 import type { TelemetrySink } from '../shared/telemetry'
 import { AuthStorage, ModelRegistry } from '@mariozechner/pi-coding-agent'
 import { getEnv } from './config/env'
-import type { RuntimeBundle, RuntimeModeAdapter, RuntimeModeId } from './runtime/mode'
+import type { RuntimeBundle, RuntimeFilesystemBinding, RuntimeModeAdapter, RuntimeModeId } from './runtime/mode'
 import { getOptionalRuntimeBundleStorageRoot } from './runtime/mode'
 import { getBoringAgentRuntimePaths, type BoringAgentRuntimePaths } from './workspace/runtimeLayout'
 import type { WorkspaceProvisioningAdapter, WorkspaceProvisioningResult } from './workspace/provisioning'
@@ -29,7 +29,7 @@ import { healthRoutes } from './http/routes/health'
 import { fileRoutes } from './http/routes/file'
 import { fsEventsRoutes } from './http/routes/fsEvents'
 import { treeRoutes } from './http/routes/tree'
-import { modelsRoutes } from './http/routes/models'
+import { modelsRoutes, type ModelsRoutesOptions } from './http/routes/models'
 import { skillsRoutes } from './http/routes/skills'
 import { piChatRoutes, type PiChatSessionService } from './http/routes/piChat'
 import { eventStreamRoutes } from './http/routes/eventStream'
@@ -109,6 +109,7 @@ interface RuntimeDependencyReadiness {
 
 interface RuntimeBinding {
   runtimeBundle: RuntimeBundle
+  workspaceRoot: string
   runtimeProvisioning?: WorkspaceProvisioningResult
   runtimeDependencies: RuntimeDependencyReadiness
   runtimeProvisioningTask?: Promise<WorkspaceProvisioningResult | undefined>
@@ -170,11 +171,12 @@ function promoteRawFileWorkspaceQueryToHeader(request: FastifyRequest): void {
 
 function isWorkspaceAgnosticAgentRequest(
   request: FastifyRequest,
-  options?: { readyStatusWorkspaceScoped?: boolean },
+  options?: { readyStatusWorkspaceScoped?: boolean; modelsWorkspaceScoped?: boolean },
 ): boolean {
   const pathname = request.url.split('?')[0] ?? request.url
   if (pathname === '/api/v1/ready-status') return !options?.readyStatusWorkspaceScoped
-  return pathname === '/health' || pathname === '/ready' || pathname === '/api/v1/agent/models'
+  if (pathname === '/api/v1/agent/models') return !options?.modelsWorkspaceScoped
+  return pathname === '/health' || pathname === '/ready'
 }
 
 function normalizeSessionNamespace(value: string | undefined): string | undefined {
@@ -294,6 +296,19 @@ export interface RegisterAgentRoutesOptions {
   sessionRoot?: string
   /** Optional best-effort telemetry sink supplied by an embedding host. */
   telemetry?: TelemetrySink
+  /** Generic request-aware model filtering seam. Hosts may filter per user/workspace. */
+  filterModels?: ModelsRoutesOptions['filterModels']
+  /** Generic per-request/per-run filesystem binding seam. Hosts may return user/session-filtered bindings. */
+  getFilesystemBindings?: (ctx: {
+    request?: FastifyRequest
+    workspaceId: string
+    workspaceRoot: string
+    sessionId?: string
+    userId?: string
+    userEmail?: string
+    userEmailVerified?: boolean
+    requestId?: string
+  }) => RuntimeFilesystemBinding[] | undefined | Promise<RuntimeFilesystemBinding[] | undefined>
   /**
    * Optional billing sink for native Pi usage. Reserve happens before
    * accepted prompt/follow-up execution (fail closed), usage is recorded from
@@ -369,6 +384,7 @@ export const registerAgentRoutes: FastifyPluginAsync<RegisterAgentRoutesOptions>
     eventStoreClosers.clear()
     await modeAdapter.dispose?.()
   })
+  const modelsWorkspaceScoped = Boolean(opts.filterModels)
   const requestScopedRuntime =
     typeof opts.getWorkspaceId === 'function' ||
     typeof opts.getWorkspaceRoot === 'function' ||
@@ -635,7 +651,19 @@ let runtimeProvisioning: WorkspaceProvisioningResult | undefined
         } : undefined,
         getReadiness: () => checkReadiness('runtime:python', {} as AgentTool),
       }),
-      ...buildFilesystemAgentTools(runtimeBundle),
+      ...buildFilesystemAgentTools(runtimeBundle, {
+        getFilesystemBindings: opts.getFilesystemBindings
+          ? async (ctx) => opts.getFilesystemBindings?.({
+              workspaceId,
+              workspaceRoot: root,
+              sessionId: ctx.sessionId,
+              userId: ctx.userId,
+              userEmail: ctx.userEmail,
+              userEmailVerified: ctx.userEmailVerified,
+              requestId: ctx.requestId,
+            })
+          : undefined,
+      }),
       ...buildUploadAgentTools(runtimeBundle),
       ...(externalPluginsEnabled ? [createPluginDiagnosticsTool({
         // `binding` is assigned later in this function; read through thunks.
@@ -742,6 +770,7 @@ let runtimeProvisioning: WorkspaceProvisioningResult | undefined
 
       binding = {
         runtimeBundle,
+        workspaceRoot: root,
         runtimeProvisioning,
         runtimeDependencies,
         runtimeProvisioningTask: undefined,
@@ -909,6 +938,21 @@ let runtimeProvisioning: WorkspaceProvisioningResult | undefined
     return await getOrCreateRuntimeBinding(getRequestWorkspaceId(request), request, options)
   }
 
+  async function getFilesystemBindingsForRequest(request: FastifyRequest): Promise<RuntimeFilesystemBinding[] | undefined> {
+    const binding = await getBindingForRequest(request)
+    if (!opts.getFilesystemBindings) return binding.runtimeBundle.filesystemBindings
+    const user = (request as FastifyRequest & { user?: { id: string; email: string; emailVerified?: boolean } | null }).user
+    return await opts.getFilesystemBindings({
+      request,
+      workspaceId: getRequestWorkspaceId(request),
+      workspaceRoot: binding.workspaceRoot,
+      userId: user?.id,
+      userEmail: user?.email,
+      userEmailVerified: user?.emailVerified === true,
+      requestId: request.id,
+    })
+  }
+
   async function getSessionStoreForRequest(request: FastifyRequest): Promise<SessionStore> {
     if (staticBinding) return staticBinding.harness.sessions
     const scope = await resolveRuntimeScope(getRequestWorkspaceId(request), request)
@@ -955,7 +999,7 @@ let runtimeProvisioning: WorkspaceProvisioningResult | undefined
     const user = (request as unknown as { user?: { id: string } | null }).user
     let workspaceId = DEFAULT_WORKSPACE_ID
     promoteRawFileWorkspaceQueryToHeader(request)
-    if (opts.getWorkspaceId && !isWorkspaceAgnosticAgentRequest(request, { readyStatusWorkspaceScoped: requestScopedRuntime })) {
+    if (opts.getWorkspaceId && !isWorkspaceAgnosticAgentRequest(request, { readyStatusWorkspaceScoped: requestScopedRuntime, modelsWorkspaceScoped })) {
       try {
         workspaceId = (await opts.getWorkspaceId(request)).trim()
       } catch (error) {
@@ -999,13 +1043,14 @@ let runtimeProvisioning: WorkspaceProvisioningResult | undefined
 
   await app.register(fileRoutes, {
     getWorkspace: async (request) => (await getBindingForRequest(request)).runtimeBundle.workspace,
+    getFilesystemBindings: getFilesystemBindingsForRequest,
   })
   await app.register(fsEventsRoutes, {
     getWorkspace: async (request) => (await getBindingForRequest(request)).runtimeBundle.workspace,
   })
   await app.register(treeRoutes, {
     getWorkspace: async (request) => (await getBindingForRequest(request)).runtimeBundle.workspace,
-    getFilesystemBindings: async (request) => (await getBindingForRequest(request)).runtimeBundle.filesystemBindings,
+    getFilesystemBindings: getFilesystemBindingsForRequest,
   })
   await app.register(searchRoutes, {
     getFileSearch: async (request) => (await getBindingForRequest(request)).runtimeBundle.fileSearch,
@@ -1033,7 +1078,9 @@ let runtimeProvisioning: WorkspaceProvisioningResult | undefined
   await app.register(systemPromptRoutes, {
     getHarness: async (request) => (await getBindingForRequest(request)).harness,
   })
-  await app.register(modelsRoutes)
+  await app.register(modelsRoutes, {
+    filterModels: opts.filterModels,
+  })
   await app.register(skillsRoutes, {
     workspaceRoot,
     additionalSkillPaths: [
@@ -1077,7 +1124,7 @@ let runtimeProvisioning: WorkspaceProvisioningResult | undefined
       binding.runtimeProvisioning = await binding.reprovision(request)
       const hookResult = await opts.beforeReload?.({
         workspaceId,
-        workspaceRoot: binding.runtimeBundle.workspace.root,
+        workspaceRoot: binding.workspaceRoot,
         request,
       })
       const reloadSessionId = request.body?.sessionId || sessionId
@@ -1123,11 +1170,13 @@ let runtimeProvisioning: WorkspaceProvisioningResult | undefined
         harness: staticBinding.harness,
         defaultSessionId: sessionId,
         workdir: staticBinding.runtimeBundle.workspace.root,
+        metering: opts.metering,
       }
     : {
         defaultSessionId: sessionId,
         getHarness: async (request) => (await getBindingForRequest(request)).harness,
         getWorkdir: async (request) => (await getBindingForRequest(request)).runtimeBundle.workspace.root,
+        metering: opts.metering,
       },
   )
   await app.register(readyStatusRoutes, staticBinding

@@ -9,9 +9,14 @@ import {
   isPaymentRequiredNotice,
   useCreditBalance,
 } from '@hachej/boring-core/app/front'
-import { UserMenu, UserSettingsPage, WorkspaceSwitcher } from '@hachej/boring-core/front'
+import {
+  UserMenu,
+  UserSettingsPage,
+  WorkspaceSwitcher,
+} from '@hachej/boring-core/front'
 import '@hachej/boring-core/app/front/styles.css'
 import './app.css'
+import { createGovernanceCompanyAdmin } from '@hachej/boring-governance/front'
 import { BoringMcpSourcesOverlay } from '@hachej/boring-mcp/front'
 import { PublicHeroDescription, publicLaunchPlugin } from './PublicLaunchPages'
 import { fullAppBoringMcpOptions } from './boringMcp'
@@ -73,6 +78,8 @@ const AccountSettingsPage = () => {
 //    run-rejected notice. Wired unconditionally: BuyCreditsNoticeAction self-hides on
 //    the SERVER's checkoutEnabled, so it can't be suppressed by a missing/stale Vite
 //    flag while checkout actually works (the flag only feeds the badge fallback).
+const governanceCompanyAdmin = createGovernanceCompanyAdmin()
+
 const chatParams = {
   thinkingControl: true,
   hideDefaultModelOption: true,
@@ -101,6 +108,7 @@ createRoot(document.getElementById('root')!).render(
       apiBaseUrl=""
       apiTimeout={10_000}
       persistenceEnabled
+      companyAdmin={governanceCompanyAdmin}
       appTitle={PRODUCT_NAME}
       workspaceLayout="plugin-tabs"
       appLeftHeaderMode="workspace"

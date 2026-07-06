@@ -200,11 +200,13 @@ export class HarnessPiChatService implements PiChatSessionService {
     const outcome = (await this.metering?.reservePrompt({
       workspaceId: ctx.workspaceId,
       userId: ctx.authSubject,
+      userEmail: ctx.authEmail,
+      userEmailVerified: ctx.authEmailVerified,
       sessionId,
       stateKey: sessionKey,
       clientNonce: payload.clientNonce,
       message: payload.message,
-      model: payload.model,
+      model: adapter.currentModel?.() ?? payload.model,
     })) ?? 'created'
     if (outcome === 'duplicate') {
       return {
@@ -243,11 +245,14 @@ export class HarnessPiChatService implements PiChatSessionService {
     const outcome = (await this.metering?.reserveFollowUp({
       workspaceId: ctx.workspaceId,
       userId: ctx.authSubject,
+      userEmail: ctx.authEmail,
+      userEmailVerified: ctx.authEmailVerified,
       sessionId,
       stateKey: sessionKey,
       clientNonce: payload.clientNonce,
       clientSeq: payload.clientSeq,
       message: payload.message,
+      model: adapter.currentModel?.(),
     })) ?? 'created'
     if (outcome === 'duplicate') {
       return {
@@ -560,7 +565,10 @@ export class HarnessPiChatService implements PiChatSessionService {
       abortSignal: new AbortController().signal,
       workdir: this.workdir,
       workspaceId: ctx.workspaceId,
+      requestId: ctx.requestId,
       userId: ctx.authSubject,
+      userEmail: ctx.authEmail,
+      userEmailVerified: ctx.authEmailVerified,
     })
   }
 

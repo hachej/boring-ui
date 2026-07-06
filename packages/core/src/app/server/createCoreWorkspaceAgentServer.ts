@@ -929,6 +929,8 @@ export async function createCoreWorkspaceAgentServer(
     registerHealthRoute: options.registerHealthRoute ?? false,
     telemetry,
     metering: options.metering,
+    filterModels: options.filterModels,
+    getFilesystemBindings: options.getFilesystemBindings,
     runtimeEnvContributions: [
       ...(options.runtimeEnvContributions ?? []),
       ...(coreBridge.runtimeEnvContribution ? [coreBridge.runtimeEnvContribution] : []),
