@@ -6,17 +6,19 @@ import type {
   WorkspaceChangeEvent,
   WorkspaceWatcher,
   WorkspaceWatcherReadiness,
-} from '../../shared/workspace'
-import { isIgnoredDirName } from './ignore'
-import { getEnv } from '../config/env'
-import { createLogger } from '../logging'
+} from '@hachej/boring-agent/shared'
 
-const log = createLogger('workspace-watch')
+import { isIgnoredDirName } from './ignore'
 
 function shouldIgnoreWatchPath(root: string, path: string): boolean {
   const relPath = relative(root, path)
   const parts = relPath.split(sep)
   return parts.some((part) => isIgnoredDirName(part))
+}
+
+function logWatcherError(message: string, fields?: Record<string, unknown>): void {
+  const suffix = fields ? ` ${JSON.stringify(fields)}` : ''
+  process.stderr.write(`[workspace-watch] ${message}${suffix}\n`)
 }
 
 /** Workspace-relative path with POSIX separators — the wire format for
@@ -74,7 +76,7 @@ const RENAME_ECHO_TO_KINDS: ReadonlySet<ChokidarEventKind> = new Set(['add', 'ad
 const DEFAULT_MAX_WATCHED_ENTRIES = 50_000
 
 function maxWatchedEntries(): number {
-  const raw = getEnv('BORING_MAX_WATCHED_ENTRIES')
+  const raw = process.env.BORING_MAX_WATCHED_ENTRIES
   if (!raw) return DEFAULT_MAX_WATCHED_ENTRIES
   const n = Number.parseInt(raw, 10)
   return Number.isFinite(n) && n > 0 ? n : DEFAULT_MAX_WATCHED_ENTRIES
@@ -150,7 +152,7 @@ export function createNodeWatcher(root: string): NodeWorkspaceWatcher {
       // first one so there's a trail.
       if (loggedError) return
       loggedError = true
-      log.error('file watcher error — live file events may be incomplete', {
+      logWatcherError('file watcher error - live file events may be incomplete', {
         root,
         error: err instanceof Error ? err.message : String(err),
       })
@@ -171,7 +173,7 @@ export function createNodeWatcher(root: string): NodeWorkspaceWatcher {
           `workspace at ${root} has more than ${cap} entries — file watching disabled. `
           + `Start boring-ui in a smaller subfolder for live file updates, `
           + `or raise BORING_MAX_WATCHED_ENTRIES.`
-        log.error(message, { root, cap })
+        logWatcherError(message, { root, cap })
         return { ok: false, reason: 'workspace_too_large', message }
       }
       startFsw()

@@ -4,8 +4,8 @@ import {
   type BashToolOptions,
   createLocalBashOperations,
 } from '@mariozechner/pi-coding-agent'
+import { buildBwrapArgs } from '@hachej/boring-sandbox/providers'
 
-import { buildBwrapArgs } from '../../sandbox/bwrap/buildBwrapArgs'
 import { withWorkspacePythonEnv } from '../../sandbox/workspacePythonEnv'
 import { remoteSandboxBashOps } from '../operations/remoteSandbox'
 import { mergeRuntimeProvisioningEnv, type RuntimeProvisioningOptions } from '../../runtime/env'

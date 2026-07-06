@@ -32,7 +32,16 @@ export {
   sessionStreamPath,
 } from './events'
 export type { WorkspaceRuntimeContext } from './runtime'
-export type { Workspace, Entry, Stat } from './workspace'
+export type {
+  Workspace,
+  Entry,
+  Stat,
+  WorkspaceChangeEvent,
+  WorkspaceWatchControlEvent,
+  WorkspaceWatcher,
+  WorkspaceWatcherReadiness,
+  WorkspaceWatchSubscribeOptions,
+} from './workspace'
 export type {
   Sandbox,
   SandboxCapability,

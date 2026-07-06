@@ -1,9 +1,10 @@
+import { getNodeWorkspaceHostRoot } from '@hachej/boring-sandbox/providers'
+
 import type { FileSearch } from '../../shared/file-search'
 import type { WorkspaceRuntimeContext } from '../../shared/runtime'
 import type { Sandbox } from '../../shared/sandbox'
 import type { TelemetrySink } from '../../shared/telemetry'
 import type { Workspace } from '../../shared/workspace'
-import { getNodeWorkspaceHostRoot } from '../workspace/createNodeWorkspace'
 import type { BoringAgentRuntimePaths } from '../workspace/runtimeLayout'
 import type { WorkspaceProvisioningAdapter } from '../workspace/provisioning'
 import type { CapabilityReadinessDetail, ReadyStatusTracker } from './readyStatus'
@@ -110,7 +111,7 @@ export interface RuntimeBundle {
 }
 
 export function getOptionalRuntimeBundleStorageRoot(bundle: RuntimeBundle): string | undefined {
-  return bundle.storageRoot ?? getNodeWorkspaceHostRoot(bundle.workspace) ?? undefined
+  return bundle.storageRoot ?? getNodeWorkspaceHostRoot(bundle.workspace)
 }
 
 export function getRuntimeBundleStorageRoot(bundle: RuntimeBundle): string {

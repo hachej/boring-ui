@@ -1,5 +1,5 @@
-import { sandboxConformance } from '../../../../__tests__/conformance/sandbox'
-import { createTempWorkspace } from '../../../../__tests__/helpers'
+import { sandboxConformance } from '../../__tests__/conformance/sandbox'
+import { createTempWorkspace } from '../../__tests__/helpers'
 import { createDirectSandbox } from '../createDirectSandbox'
 
 sandboxConformance('direct-sandbox', async () => {

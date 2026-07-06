@@ -1,10 +1,10 @@
-import { rm, mkdtemp } from 'node:fs/promises'
+import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
-import { createNodeWorkspace } from '@hachej/boring-sandbox/providers'
+import type { Workspace } from '@hachej/boring-agent/shared'
 
-import type { Workspace } from '../../shared/workspace'
+import { createNodeWorkspace } from '../node-workspace/createNodeWorkspace'
 
 export interface TempWorkspaceHandle {
   root: string
@@ -13,7 +13,7 @@ export interface TempWorkspaceHandle {
 }
 
 export async function createTempWorkspace(
-  prefix = 'boring-ui-agent-test-',
+  prefix = 'boring-ui-sandbox-test-',
 ): Promise<TempWorkspaceHandle> {
   const root = await mkdtemp(join(tmpdir(), prefix))
   return {

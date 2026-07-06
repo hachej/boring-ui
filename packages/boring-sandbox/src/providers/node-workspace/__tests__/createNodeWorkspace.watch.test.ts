@@ -3,7 +3,7 @@ import { mkdir, mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { createNodeWorkspace } from '../createNodeWorkspace'
-import type { WorkspaceChangeEvent, WorkspaceWatcher } from '../../../shared/workspace'
+import type { WorkspaceChangeEvent, WorkspaceWatcher } from '@hachej/boring-agent/shared'
 
 // Generous timing because chokidar's awaitWriteFinish (50ms) plus initial
 // scan can stretch under parallel test load. Watch-events have at-least-once

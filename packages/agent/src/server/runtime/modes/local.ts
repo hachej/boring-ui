@@ -1,9 +1,9 @@
 import { mkdir } from 'node:fs/promises'
 
+import { createBwrapSandbox, createNodeWorkspace } from '@hachej/boring-sandbox/providers'
+
 import type { RuntimeModeAdapter } from '../mode'
 import { createServerFileSearch } from '../createServerFileSearch'
-import { createBwrapSandbox } from '../../sandbox/bwrap/createBwrapSandbox'
-import { createNodeWorkspace } from '../../workspace/createNodeWorkspace'
 import { copyTemplate } from '../../workspace/provision'
 import { createLocalProvisioningAdapter } from './provisioningAdapter'
 

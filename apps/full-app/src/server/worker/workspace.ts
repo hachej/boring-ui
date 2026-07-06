@@ -2,13 +2,15 @@ import { mkdir } from 'node:fs/promises'
 import { join } from 'node:path'
 
 import {
-  createBwrapSandbox,
-  createNodeWorkspace,
   REMOTE_WORKER_RUNTIME_CWD,
-  type BwrapResourceLimits,
   type RemoteWorkerWorkspaceOp,
   type RemoteWorkerWorkspaceResult,
 } from '@hachej/boring-agent/server'
+import {
+  createBwrapSandbox,
+  createNodeWorkspace,
+  type BwrapResourceLimits,
+} from '@hachej/boring-sandbox/providers'
 import type { Sandbox } from '@hachej/boring-agent/shared'
 import type { Workspace } from '@hachej/boring-agent/shared'
 

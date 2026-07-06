@@ -3,16 +3,15 @@ import { constants } from 'node:fs'
 import { spawn } from 'node:child_process'
 import { dirname, isAbsolute, join, posix, relative, resolve, sep } from 'node:path'
 
-import type { WorkspaceRuntimeContext } from '../../../shared/runtime'
-import type { Sandbox } from '../../../shared/sandbox'
-import type { Workspace } from '../../../shared/workspace'
+import type { Sandbox, Workspace, WorkspaceRuntimeContext } from '@hachej/boring-agent/shared'
+
 import {
   BWRAP_TIMEOUT_SECONDS,
   KILL_GRACE_SECONDS,
   buildBwrapArgs,
 } from './buildBwrapArgs'
-import { getNodeWorkspaceHostRoot } from '../../workspace/createNodeWorkspace'
-import { withWorkspacePythonEnv } from '../workspacePythonEnv'
+import { getNodeWorkspaceHostRoot } from '../node-workspace/createNodeWorkspace'
+import { withWorkspacePythonEnv } from '../node-workspace/workspacePythonEnv'
 
 const DEFAULT_TIMEOUT_MS = BWRAP_TIMEOUT_SECONDS * 1_000
 const DEFAULT_MAX_OUTPUT_BYTES = 1_048_576

@@ -4,8 +4,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, test } from 'vitest'
 
-import { restoreEnvForTest, setEnvForTest } from '../../../config/env'
-import { createNodeWorkspace } from '../../../workspace/createNodeWorkspace'
+import { createNodeWorkspace } from '../../node-workspace/createNodeWorkspace'
 import { computeSandboxCwd, createBwrapSandbox } from '../createBwrapSandbox'
 
 const tempDirs: string[] = []
@@ -21,6 +20,18 @@ afterEach(async () => {
     }),
   )
 })
+
+function setEnvForTest(name: string, value: string | undefined): string | undefined {
+  const previous = process.env[name]
+  if (typeof value === 'string') process.env[name] = value
+  else delete process.env[name]
+  return previous
+}
+
+function restoreEnvForTest(name: string, previous: string | undefined): void {
+  if (typeof previous === 'string') process.env[name] = previous
+  else delete process.env[name]
+}
 
 async function setupSandbox() {
   const root = await mkdtemp(join(tmpdir(), 'boring-ui-bwrap-sandbox-'))

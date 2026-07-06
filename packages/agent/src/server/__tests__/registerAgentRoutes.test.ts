@@ -795,13 +795,17 @@ test('registerAgentRoutes accepts a custom runtime adapter for pluggable sandbox
   const customAdapter: RuntimeModeAdapter = {
     id: 'custom-sandbox',
     async create(ctx) {
-      const { createNodeWorkspace } = await import('../workspace/createNodeWorkspace')
-      const { createDirectSandbox } = await import('../sandbox/direct/createDirectSandbox')
+      const { createDirectSandbox, createNodeWorkspace } = await import('@hachej/boring-sandbox/providers')
       const { createServerFileSearch } = await import('../runtime/createServerFileSearch')
       const workspace = createNodeWorkspace(ctx.workspaceRoot)
       const sandbox = createDirectSandbox()
       await sandbox.init?.({ workspace, sessionId: ctx.sessionId })
-      return { workspace, sandbox, fileSearch: createServerFileSearch(workspace, sandbox) }
+      return {
+        storageRoot: ctx.workspaceRoot,
+        workspace,
+        sandbox,
+        fileSearch: createServerFileSearch(workspace, sandbox),
+      }
     },
   }
   const seen: string[] = []
@@ -1103,7 +1107,7 @@ test('runtimeEnvContributions merge generic host env into sandbox exec without w
     id: 'custom-env-sandbox',
     workspaceFsCapability: 'strong',
     async create(ctx) {
-      const { createNodeWorkspace } = await import('../workspace/createNodeWorkspace')
+      const { createNodeWorkspace } = await import('@hachej/boring-sandbox/providers')
       const { createServerFileSearch } = await import('../runtime/createServerFileSearch')
       const runtimeContext = { runtimeCwd: '/workspace' }
       const workspace = createNodeWorkspace(ctx.workspaceRoot)
@@ -1118,7 +1122,14 @@ test('runtimeEnvContributions merge generic host env into sandbox exec without w
           return { stdout: new TextEncoder().encode('ok'), stderr: new Uint8Array(), exitCode: 0, durationMs: 1, truncated: false }
         },
       }
-      return { runtimeContext, workspace, sandbox, fileSearch: createServerFileSearch(workspace, sandbox), bash: { kind: 'remote' } }
+      return {
+        runtimeContext,
+        storageRoot: ctx.workspaceRoot,
+        workspace,
+        sandbox,
+        fileSearch: createServerFileSearch(workspace, sandbox),
+        bash: { kind: 'remote' },
+      }
     },
   }
   let capturedTools: import('../../shared/tool').AgentTool[] = []

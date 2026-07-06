@@ -7,6 +7,10 @@
     "strict": true,
     "esModuleInterop": true,
     "skipLibCheck": true,
+    "baseUrl": ".",
+    "paths": {
+      "@hachej/boring-agent/shared": ["../agent/src/shared/index.ts"]
+    },
     "forceConsistentCasingInFileNames": true,
     "noEmit": true
   },

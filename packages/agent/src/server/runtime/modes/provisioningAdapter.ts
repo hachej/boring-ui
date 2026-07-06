@@ -3,6 +3,8 @@ import { cp, lstat, mkdir, readFile, realpath, rm, stat, writeFile } from 'node:
 import { dirname, isAbsolute, relative, resolve, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
+import { buildBwrapArgs } from '@hachej/boring-sandbox/providers'
+
 import type { BoringAgentRuntimePaths } from '../../workspace/runtimeLayout'
 import type { WorkspaceProvisioningAdapter, WorkspaceProvisioningExecResult } from '../../workspace/provisioning'
 import {
@@ -13,7 +15,6 @@ import {
   packProvisioningArtifact,
   resolveArtifactInstallSource,
 } from '../../workspace/provisioning/packArtifact'
-import { buildBwrapArgs } from '../../sandbox/bwrap/buildBwrapArgs'
 
 const LOCAL_SANDBOX_WORKSPACE_ROOT = '/workspace'
 

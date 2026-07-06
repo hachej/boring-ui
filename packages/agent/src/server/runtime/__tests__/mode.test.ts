@@ -1,5 +1,7 @@
 import { describe, expect, test, vi } from 'vitest'
 
+import { createNodeWorkspace } from '@hachej/boring-sandbox/providers'
+
 import type { FileSearch } from '../../../shared/file-search'
 import type { Sandbox } from '../../../shared/sandbox'
 import type { Workspace } from '../../../shared/workspace'
@@ -42,6 +44,15 @@ function bundle(overrides: Partial<RuntimeBundle> = {}): RuntimeBundle {
 describe('runtime mode helpers', () => {
   test('returns explicit storage root when present', () => {
     expect(getRuntimeBundleStorageRoot(bundle({ storageRoot: '/host/workspace' }))).toBe('/host/workspace')
+  })
+
+  test('falls back to provider-owned node workspace host root', () => {
+    const nodeWorkspace = createNodeWorkspace('/host/node-workspace', {
+      runtimeContext: { runtimeCwd: '/workspace' },
+    })
+
+    expect(getOptionalRuntimeBundleStorageRoot(bundle({ workspace: nodeWorkspace }))).toBe('/host/node-workspace')
+    expect(getRuntimeBundleStorageRoot(bundle({ workspace: nodeWorkspace }))).toBe('/host/node-workspace')
   })
 
   test('returns undefined from the optional helper when no host storage root exists', () => {

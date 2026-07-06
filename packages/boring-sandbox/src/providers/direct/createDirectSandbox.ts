@@ -1,9 +1,8 @@
 import { spawn } from 'node:child_process'
 
-import type { WorkspaceRuntimeContext } from '../../../shared/runtime'
-import type { Sandbox } from '../../../shared/sandbox'
-import type { Workspace } from '../../../shared/workspace'
-import { withWorkspacePythonEnv } from '../workspacePythonEnv'
+import type { Sandbox, Workspace, WorkspaceRuntimeContext } from '@hachej/boring-agent/shared'
+
+import { withWorkspacePythonEnv } from '../node-workspace/workspacePythonEnv'
 
 const DEFAULT_TIMEOUT_MS = 30_000
 const DEFAULT_MAX_OUTPUT_BYTES = 1_048_576

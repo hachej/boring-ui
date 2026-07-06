@@ -7,6 +7,7 @@ COPY .npmrc pnpm-workspace.yaml package.json pnpm-lock.yaml ./
 COPY packages/core/package.json packages/core/package.json
 COPY packages/ui/package.json packages/ui/package.json
 COPY packages/workspace/package.json packages/workspace/package.json
+COPY packages/boring-sandbox/package.json packages/boring-sandbox/package.json
 COPY packages/agent/package.json packages/agent/package.json
 COPY plugins/boring-mcp/package.json plugins/boring-mcp/package.json
 COPY apps/full-app/package.json apps/full-app/package.json
@@ -30,6 +31,8 @@ RUN pnpm --filter @hachej/boring-core exec tsup --no-dts \
 
 RUN pnpm --filter @hachej/boring-ui-kit exec tsup \
   && pnpm --filter @hachej/boring-ui-kit exec node scripts/build-styles.mjs
+
+RUN pnpm --filter @hachej/boring-sandbox run build
 
 RUN pnpm --filter @hachej/boring-agent run build
 
@@ -82,6 +85,10 @@ COPY --from=build /app/packages/agent/dist/ packages/agent/dist/
 COPY --from=build /app/packages/agent/package.json packages/agent/package.json
 COPY --from=build /app/packages/agent/node_modules/ packages/agent/node_modules/
 
+COPY --from=build /app/packages/boring-sandbox/dist/ packages/boring-sandbox/dist/
+COPY --from=build /app/packages/boring-sandbox/package.json packages/boring-sandbox/package.json
+COPY --from=build /app/packages/boring-sandbox/node_modules/ packages/boring-sandbox/node_modules/
+
 COPY --from=build /app/packages/workspace/dist/ packages/workspace/dist/
 COPY --from=build /app/packages/workspace/package.json packages/workspace/package.json
 COPY --from=build /app/packages/workspace/node_modules/ packages/workspace/node_modules/
@@ -132,13 +139,16 @@ RUN apt-get update \
   && chown -R boring:boring /data
 
 # Worker image intentionally excludes the full-app frontend and main server.
-# It contains only the internal worker entrypoint plus the agent package it uses
-# for workspace/path validation and bwrap execution.
+# It contains only the internal worker entrypoint plus the agent/sandbox packages
+# it uses for workspace/path validation and bwrap execution.
 RUN printf '{"type":"module"}\n' > package.json
 COPY --from=build /app/node_modules/ node_modules/
 COPY --from=build /app/packages/agent/dist/ packages/agent/dist/
 COPY --from=build /app/packages/agent/package.json packages/agent/package.json
 COPY --from=build /app/packages/agent/node_modules/ packages/agent/node_modules/
+COPY --from=build /app/packages/boring-sandbox/dist/ packages/boring-sandbox/dist/
+COPY --from=build /app/packages/boring-sandbox/package.json packages/boring-sandbox/package.json
+COPY --from=build /app/packages/boring-sandbox/node_modules/ packages/boring-sandbox/node_modules/
 COPY --from=build /app/apps/full-app/dist/server/agent-worker.js worker/agent-worker.js
 COPY --from=build /app/apps/full-app/dist/server/worker/ worker/worker/
 COPY apps/full-app/docker/worker-entrypoint.sh /usr/local/bin/worker-entrypoint

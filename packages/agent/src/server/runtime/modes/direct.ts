@@ -1,9 +1,9 @@
 import { mkdir } from 'node:fs/promises'
 
+import { createDirectSandbox, createNodeWorkspace } from '@hachej/boring-sandbox/providers'
+
 import type { RuntimeModeAdapter } from '../mode'
 import { createServerFileSearch } from '../createServerFileSearch'
-import { createDirectSandbox } from '../../sandbox/direct/createDirectSandbox'
-import { createNodeWorkspace } from '../../workspace/createNodeWorkspace'
 import { copyTemplate } from '../../workspace/provision'
 import { createDirectProvisioningAdapter } from './provisioningAdapter'
 

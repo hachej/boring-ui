@@ -45,8 +45,8 @@
     "docs"
   ],
   "scripts": {
-    "build": "tsup && node ./scripts/build-front-css.mjs && pnpm run build:assert",
-    "build:dev": "{ [ -d '../ui/dist' ] || pnpm --filter @hachej/boring-ui-kit build; } && tsup --config tsup.dev.config.ts && node ./scripts/build-front-css.mjs",
+    "build": "pnpm --filter @hachej/boring-sandbox build && tsup && node ./scripts/build-front-css.mjs && pnpm run build:assert",
+    "build:dev": "{ [ -d '../ui/dist' ] || pnpm --filter @hachej/boring-ui-kit build; } && pnpm --filter @hachej/boring-sandbox build && tsup --config tsup.dev.config.ts && node ./scripts/build-front-css.mjs",
     "build:assert": "node ./scripts/assert-build-artifacts.mjs",
     "dev": "tsx src/server/dev.ts",
     "test": "vitest run",
@@ -71,6 +71,7 @@
     "smoke:capability-readiness:vercel": "tsx ./scripts/smoke-capability-readiness-vercel.mts"
   },
   "dependencies": {
+    "@hachej/boring-sandbox": "workspace:*",
     "@hachej/boring-ui-kit": "workspace:*",
     "@mariozechner/pi-coding-agent": "npm:@earendil-works/pi-coding-agent@0.75.5",
     "@radix-ui/react-collapsible": "^1.1.14",

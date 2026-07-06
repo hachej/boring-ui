@@ -20,6 +20,7 @@ RUN pnpm install --frozen-lockfile
 # Prebuild packages consumed by the three local app surfaces. Runtime commands
 # start dev/serve processes directly so compose boot is just server startup.
 RUN pnpm --filter @hachej/boring-ui-kit build \
+ && pnpm --filter @hachej/boring-sandbox build \
  && pnpm --filter @hachej/boring-agent build \
  && pnpm --filter @hachej/boring-workspace build \
  && pnpm --filter @hachej/boring-core build \
