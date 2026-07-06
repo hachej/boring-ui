@@ -15,6 +15,9 @@ const allowed = new Set([
   "plugins/generated-pane/package.json",
   "plugins/data-bridge/package.json",
   "plugins/bi-dashboard/package.json",
+  "packages/boring-sandbox/package.json",
+  "packages/boring-bash/package.json",
+  "plugins/boring-governance/package.json",
   "pnpm-lock.yaml",
 ])
 
