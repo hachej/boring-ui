@@ -55,6 +55,8 @@ jobs:
             --filter @hachej/boring-generated-pane \
             --filter @hachej/boring-data-bridge \
             --filter @hachej/boring-bi-dashboard \
+            --filter @hachej/boring-bash \
+            --filter @hachej/boring-governance \
             --workspace-concurrency=4 \
             run build
           pnpm --filter @hachej/boring-ui-cli build:full
@@ -64,7 +66,7 @@ jobs:
 
       - name: Publish
         run: |
-          for pkg in packages/ui packages/agent packages/plugin-cli packages/workspace packages/core plugins/deck plugins/ask-user packages/cli plugins/data-explorer plugins/data-catalog plugins/generated-pane plugins/data-bridge plugins/bi-dashboard; do
+          for pkg in packages/ui packages/agent packages/plugin-cli packages/workspace packages/core plugins/deck plugins/ask-user packages/cli plugins/data-explorer plugins/data-catalog plugins/generated-pane plugins/data-bridge plugins/bi-dashboard packages/boring-bash plugins/boring-governance; do
             name=$(node -p "require('./$pkg/package.json').name")
             version=$(node -p "require('./$pkg/package.json').version")
             if npm view "$name@$version" version >/dev/null 2>&1; then
