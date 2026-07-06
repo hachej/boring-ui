@@ -290,6 +290,15 @@ Each decision has four fields:
 
 ---
 
+## 19. Company-admin front surface: single app-composed provider slot, no plugin self-registration
+
+| Field | |
+|---|---|
+| **What** | Core front exposes exactly one optional, declarative admin-surface slot: `CoreFront`'s `companyAdmin?: { loadStatus, renderContent, labels? }` prop, threaded through `CompanyAdminProvider`. The app composes it (e.g. full-app passes `createGovernanceCompanyAdmin()` from `@hachej/boring-governance/front`); plugins never register themselves into core front. With no provider configured — or a provider reporting `enabled !== true` / `admin !== true` — core renders **no trace** of the surface: no `UserMenu` entry, and the admin route navigates away. Core contains zero governance vocabulary (enforced by review grep: `grep -ri governance packages/core/src` must be empty). |
+| **Why** | Core must stay generic: it knows "an admin surface descriptor was provided", never which plugin provided it. App-side composition (props, not a registry) makes ordering and conflicts a non-problem — the app decides explicitly in readable code, matching how the server seams compose (`plugins`, `filterModels`, `metering`, `getFilesystemBindings` are also app-spread). The workspace-pane plugin system is not reused because admin surfaces are app-level routes gated on a different axis (company admin) than workspace panes (workspace membership); conflating the two lifecycles would be wrong. |
+| **Rationale** | v1 has exactly one consumer (boring-governance), so a multi-surface registry would be designed from a single example — the descriptor shape `{ loadStatus, renderContent, labels }` was instead made self-describing so pluralizing is mechanical. Designing a generic slot from one example risks wrong abstractions (composition order, deep-linking, per-section gating are unknowable without a second consumer). |
+| **Re-evaluate when** | A second plugin needs an admin/workspace-management surface. Planned evolution: `companyAdmin` becomes `adminSections: Section[]` (same descriptor shape, plus an `id` for deep-linking); the admin page hosts one tab per section whose `loadStatus` reports `admin: true`; app array order is authoritative for display order; still no dynamic registration. |
+
 ## Process
 
 1. Any PR that changes a locked decision **must** update this document.
