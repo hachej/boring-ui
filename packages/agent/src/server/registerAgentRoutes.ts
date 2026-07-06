@@ -16,7 +16,7 @@ import type { WorkspaceProvisioningAdapter, WorkspaceProvisioningResult } from '
 import type { Workspace } from '../shared/workspace'
 import { ErrorCode } from '../shared/error-codes'
 import { resolveMode, autoDetectMode } from './runtime/resolveMode'
-import { createPiCodingAgentHarness, withPiHarnessDefaults } from './harness/pi-coding-agent/createHarness'
+import { createPiCodingAgentHarness, withPiHarnessDefaults, withPurePiHarnessDefaults } from './harness/pi-coding-agent/createHarness'
 import { PiSessionStore } from './harness/pi-coding-agent/sessions'
 import type { PiHarnessOptions, ResolvedPiHarnessOptions } from './harness/pi-coding-agent/createHarness'
 import { loadPlugins } from './harness/pi-coding-agent/pluginLoader'
@@ -389,7 +389,7 @@ export const registerAgentRoutes: FastifyPluginAsync<RegisterAgentRoutesOptions>
       const workspaceRoot = request && opts.getWorkspaceRoot
         ? await opts.getWorkspaceRoot(workspaceId, request)
         : opts.workspaceRoot ?? ''
-      const pi = withPiHarnessDefaults(opts.getPi
+      const pi = withPurePiHarnessDefaults(opts.getPi
         ? await opts.getPi({ workspaceId, workspaceRoot, request })
         : opts.pi)
       const configuredSessionNamespace = normalizeSessionNamespace(opts.getSessionNamespace

@@ -241,7 +241,6 @@ function createRuntimeLoader(config: AgentConfig, options: CreateAgentRuntimeBri
 }
 
 async function createRuntime(config: AgentConfig, options: CreateAgentRuntimeBridgeOptions): Promise<AgentRuntime> {
-  const harnessFactory = config.harnessFactory ?? (await import('./harness/pi-coding-agent/createHarness')).createPiCodingAgentHarness
   const pureRuntimeCwd = config.runtime === 'none'
     ? await createPureRuntimeCwd(config.sessionStorageRoot)
     : undefined
@@ -255,7 +254,9 @@ async function createRuntime(config: AgentConfig, options: CreateAgentRuntimeBri
     sessionRoot: config.sessionStorageRoot,
     telemetry: config.telemetry,
   }
-  const harness = await harnessFactory(harnessInput)
+  const harness = config.harnessFactory
+    ? await config.harnessFactory(harnessInput)
+    : await createDefaultPiHarness(config, harnessInput)
   const sessionStore = config.sessions ?? harness.sessions
   return {
     harness,
@@ -270,6 +271,16 @@ async function createRuntime(config: AgentConfig, options: CreateAgentRuntimeBri
       metering: config.metering as AgentMeteringSink | undefined,
     }),
   }
+}
+
+async function createDefaultPiHarness(config: AgentConfig, input: AgentHarnessFactoryInput): Promise<AgentHarness> {
+  const piHarness = await import('./harness/pi-coding-agent/createHarness')
+  return piHarness.createPiCodingAgentHarness({
+    ...input,
+    ...(config.runtime === 'none'
+      ? { pi: piHarness.withPurePiHarnessDefaults() }
+      : {}),
+  })
 }
 
 function assertFilesystemAttachmentsAllowed(config: AgentConfig, input: AgentSendInput): void {

@@ -7,7 +7,7 @@ import type { RuntimeBundle, RuntimeModeAdapter, RuntimeModeId } from './runtime
 import { getOptionalRuntimeBundleStorageRoot } from './runtime/mode'
 import { withRuntimeEnvContributions, type RuntimeEnvContribution } from './runtimeEnvContributions'
 import { resolveMode, autoDetectMode } from './runtime/resolveMode'
-import { createPiCodingAgentHarness, withPiHarnessDefaults } from './harness/pi-coding-agent/createHarness'
+import { createPiCodingAgentHarness, withPiHarnessDefaults, withPurePiHarnessDefaults } from './harness/pi-coding-agent/createHarness'
 import type { PiHarnessOptions } from './harness/pi-coding-agent/createHarness'
 import type { WorkspaceProvisioningResult } from './workspace/provisioning'
 import { loadPlugins } from './harness/pi-coding-agent/pluginLoader'
@@ -129,7 +129,7 @@ export async function createAgentApp(
 
   const resolvedMode = opts.runtimeModeAdapter?.id ?? opts.mode ?? autoDetectMode()
   if (!opts.runtimeModeAdapter && resolvedMode === PURE_RUNTIME_MODE) {
-    const runtimePi = withPiHarnessDefaults(opts.pi)
+    const runtimePi = withPurePiHarnessDefaults(opts.pi)
     const baseHarnessFactory = opts.harnessFactory ?? ((input) => createPiCodingAgentHarness({
       ...input,
       pi: runtimePi,

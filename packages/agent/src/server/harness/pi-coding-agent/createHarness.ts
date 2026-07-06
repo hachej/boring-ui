@@ -12,7 +12,14 @@ import {
   SettingsManager,
   getAgentDir,
   loadSkills,
+  createEventBus,
+  createExtensionRuntime,
+  createSyntheticSourceInfo,
   type ExtensionFactory,
+  type Extension,
+  type ExtensionRuntime,
+  type LoadExtensionsResult,
+  type ResourceLoader,
   type SlashCommandInfo,
 } from "@mariozechner/pi-coding-agent";
 import type { AgentHarness, AgentSlashCommandSummary, AgentSendInput, RunContext } from "../../../shared/harness.js";
@@ -36,7 +43,7 @@ interface PiSessionHandle {
   piSession: AgentSession;
   modelRegistry: ModelRegistry;
   sessionManager: SessionManager;
-  resourceLoader: DefaultResourceLoader;
+  resourceLoader: ResourceLoader;
   sessionId: string;
   sessionCtx: SessionCtx;
 }
@@ -79,15 +86,183 @@ const PYTHON_RUNTIME_GUIDELINE = [
   "- Create venvs with `uv venv` if needed.",
 ].join("\n");
 
+const HEADLESS_SYSTEM_PROMPT = "You are a helpful assistant.";
+
 function composeSystemPromptAppend(hostAppend: string | undefined): string {
   return [WORKSPACE_PATHS_GUIDELINE, PYTHON_RUNTIME_GUIDELINE, hostAppend?.trim()]
     .filter(Boolean)
     .join("\n\n");
 }
 
+function composeHeadlessSystemPromptAppend(hostAppend: string | undefined): string {
+  return hostAppend?.trim() ?? "";
+}
+
+function stripCurrentWorkingDirectoryLine(systemPrompt: string): string {
+  return systemPrompt
+    .replace(/\n?Current working directory: [^\n]*(?=\n|$)/g, "")
+    .trimEnd();
+}
+
+function buildHeadlessPromptSealExtension(): ExtensionFactory {
+  return (pi) => {
+    pi.on("before_agent_start", async (event) => ({
+      systemPrompt: stripCurrentWorkingDirectoryLine(event.systemPrompt),
+    }));
+  };
+}
+
+function createHeadlessResourceLoader(options: {
+  cwd: string;
+  systemPromptAppend: string;
+  extensionFactories: ExtensionFactory[];
+}): ResourceLoader {
+  let extensionsResult: LoadExtensionsResult = {
+    extensions: [],
+    errors: [],
+    runtime: createExtensionRuntime(),
+  };
+  return {
+    getExtensions: () => extensionsResult,
+    getSkills: () => ({ skills: [], diagnostics: [] }),
+    getPrompts: () => ({ prompts: [], diagnostics: [] }),
+    getThemes: () => ({ themes: [], diagnostics: [] }),
+    getAgentsFiles: () => ({ agentsFiles: [] }),
+    getSystemPrompt: () => HEADLESS_SYSTEM_PROMPT,
+    getAppendSystemPrompt: () => options.systemPromptAppend ? [options.systemPromptAppend] : [],
+    extendResources: () => {},
+    reload: async () => {
+      extensionsResult = await loadHeadlessExtensionFactories(options.cwd, options.extensionFactories);
+    },
+  };
+}
+
+async function loadHeadlessExtensionFactories(
+  cwd: string,
+  extensionFactories: ExtensionFactory[],
+): Promise<LoadExtensionsResult> {
+  const eventBus = createEventBus();
+  const runtime = createExtensionRuntime();
+  const extensions: Extension[] = [];
+  const errors: Array<{ path: string; error: string }> = [];
+  for (const [index, factory] of extensionFactories.entries()) {
+    const extensionPath = `<inline:${index + 1}>`;
+    const extension = createHeadlessExtension(extensionPath);
+    try {
+      await factory(createHeadlessExtensionApi(extension, runtime, cwd, eventBus));
+      extensions.push(extension);
+    } catch (error) {
+      errors.push({
+        path: extensionPath,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+  }
+  return { extensions, errors, runtime };
+}
+
+function createHeadlessExtension(extensionPath: string): Extension {
+  return {
+    path: extensionPath,
+    resolvedPath: extensionPath,
+    sourceInfo: createSyntheticSourceInfo(extensionPath, {
+      source: "inline",
+      scope: "temporary",
+      origin: "top-level",
+    }),
+    handlers: new Map(),
+    tools: new Map(),
+    messageRenderers: new Map(),
+    commands: new Map(),
+    flags: new Map(),
+    shortcuts: new Map(),
+  };
+}
+
+function createHeadlessExtensionApi(
+  extension: Extension,
+  runtime: ExtensionRuntime,
+  cwd: string,
+  eventBus: ReturnType<typeof createEventBus>,
+): Parameters<ExtensionFactory>[0] {
+  const runtimeActions = runtime as unknown as Record<string, (...args: unknown[]) => unknown>;
+  const callRuntime = (name: string, ...args: unknown[]) => {
+    runtime.assertActive();
+    return runtimeActions[name]?.(...args);
+  };
+  const execUnavailable = () => {
+    throw new Error(`Headless pure Pi extensions cannot execute commands from ${cwd}.`);
+  };
+  return {
+    on(event, handler) {
+      runtime.assertActive();
+      const handlers = extension.handlers as Map<string, Array<(event: unknown, ctx: unknown) => unknown>>;
+      const list = handlers.get(event) ?? [];
+      list.push(handler as (event: unknown, ctx: unknown) => unknown);
+      handlers.set(event, list);
+    },
+    registerTool(tool) {
+      runtime.assertActive();
+      extension.tools.set(tool.name, { definition: tool, sourceInfo: extension.sourceInfo } as never);
+      runtime.refreshTools();
+    },
+    registerCommand(name, options) {
+      runtime.assertActive();
+      extension.commands.set(name, { name, sourceInfo: extension.sourceInfo, ...options });
+    },
+    registerShortcut(shortcut, options) {
+      runtime.assertActive();
+      extension.shortcuts.set(shortcut, { shortcut, extensionPath: extension.path, ...options });
+    },
+    registerFlag(name, options) {
+      runtime.assertActive();
+      extension.flags.set(name, { name, extensionPath: extension.path, ...options });
+      if (options.default !== undefined && !runtime.flagValues.has(name)) {
+        runtime.flagValues.set(name, options.default);
+      }
+    },
+    registerMessageRenderer(customType, renderer) {
+      runtime.assertActive();
+      extension.messageRenderers.set(customType, renderer as never);
+    },
+    getFlag(name) {
+      runtime.assertActive();
+      if (!extension.flags.has(name)) return undefined;
+      return runtime.flagValues.get(name);
+    },
+    sendMessage: (...args) => { callRuntime("sendMessage", ...args); },
+    sendUserMessage: (...args) => { callRuntime("sendUserMessage", ...args); },
+    appendEntry: (...args) => { callRuntime("appendEntry", ...args); },
+    setSessionName: (...args) => { callRuntime("setSessionName", ...args); },
+    getSessionName: () => callRuntime("getSessionName") as ReturnType<Parameters<ExtensionFactory>[0]["getSessionName"]>,
+    setLabel: (...args) => { callRuntime("setLabel", ...args); },
+    exec: async () => execUnavailable(),
+    getActiveTools: () => callRuntime("getActiveTools") as ReturnType<Parameters<ExtensionFactory>[0]["getActiveTools"]>,
+    getAllTools: () => callRuntime("getAllTools") as ReturnType<Parameters<ExtensionFactory>[0]["getAllTools"]>,
+    setActiveTools: (...args) => { callRuntime("setActiveTools", ...args); },
+    getCommands: () => callRuntime("getCommands") as ReturnType<Parameters<ExtensionFactory>[0]["getCommands"]>,
+    setModel: (...args) => callRuntime("setModel", ...args) as ReturnType<Parameters<ExtensionFactory>[0]["setModel"]>,
+    getThinkingLevel: () => callRuntime("getThinkingLevel") as ReturnType<Parameters<ExtensionFactory>[0]["getThinkingLevel"]>,
+    setThinkingLevel: (...args) => { callRuntime("setThinkingLevel", ...args); },
+    registerProvider(name, config) {
+      runtime.assertActive();
+      runtime.registerProvider(name, config, extension.path);
+    },
+    unregisterProvider(name) {
+      runtime.assertActive();
+      runtime.unregisterProvider(name);
+    },
+    events: eventBus,
+  };
+}
+
 export interface PiHarnessOptions {
+  noExtensions?: boolean;
   noContextFiles?: boolean;
   noSkills?: boolean;
+  noPromptTemplates?: boolean;
+  noThemes?: boolean;
+  systemPromptMode?: "workspace" | "headless";
   additionalSkillPaths?: string[];
   /**
    * Additional native Pi package sources to enable for this agent runtime.
@@ -115,8 +290,12 @@ export interface PiHarnessOptions {
 
 /** Pi harness options with the discovery flags resolved to definite booleans. */
 export type ResolvedPiHarnessOptions = PiHarnessOptions & {
+  noExtensions: boolean;
   noContextFiles: boolean;
   noSkills: boolean;
+  noPromptTemplates: boolean;
+  noThemes: boolean;
+  systemPromptMode: "workspace" | "headless";
 };
 
 /**
@@ -124,6 +303,11 @@ export type ResolvedPiHarnessOptions = PiHarnessOptions & {
  * get their defaults. Harness factories must apply this instead of inlining
  * flag literals; hosts override per-field through their `pi` config.
  *
+ * - `noExtensions: false` — workspace runtimes keep Pi extension discovery;
+ *   pure runtimes call withPurePiHarnessDefaults() to disable ambient
+ *   extension discovery while keeping explicit extension paths/factories.
+ * - `noPromptTemplates: false` and `noThemes: false` — workspace runtimes
+ *   keep Pi prompt-template/theme discovery; pure runtimes disable both.
  * - `noContextFiles: true` — boring composes its own workspace context
  *   prompt; pi's ambient AGENTS.md/CLAUDE.md discovery stays off.
  * - `noSkills: true` — ambient skill discovery (workspace + user-global
@@ -132,8 +316,28 @@ export type ResolvedPiHarnessOptions = PiHarnessOptions & {
  *   opt in with `pi: { noSkills: false }`.
  */
 export function withPiHarnessDefaults(pi?: PiHarnessOptions): ResolvedPiHarnessOptions {
-  const { noContextFiles = true, noSkills = true, ...rest } = pi ?? {};
-  return { ...rest, noContextFiles, noSkills };
+  const {
+    noExtensions = false,
+    noContextFiles = true,
+    noSkills = true,
+    noPromptTemplates = false,
+    noThemes = false,
+    systemPromptMode = "workspace",
+    ...rest
+  } = pi ?? {};
+  return { ...rest, noExtensions, noContextFiles, noSkills, noPromptTemplates, noThemes, systemPromptMode };
+}
+
+export function withPurePiHarnessDefaults(pi?: PiHarnessOptions): ResolvedPiHarnessOptions {
+  return {
+    ...withPiHarnessDefaults(pi),
+    noExtensions: true,
+    noContextFiles: true,
+    noSkills: true,
+    noPromptTemplates: true,
+    noThemes: true,
+    systemPromptMode: "headless",
+  };
 }
 
 export interface HotReloadablePiResources {
@@ -510,51 +714,73 @@ export function createPiCodingAgentHarness(opts: {
     // packages, hot-reloadable extension entrypoints, and dynamic plugin
     // prompt/resources.
     refreshEffectiveResources()
-    const composedSystemPromptAppend = composeSystemPromptAppend(opts.systemPromptAppend)
+    const composedSystemPromptAppend = pi.systemPromptMode === "headless"
+      ? composeHeadlessSystemPromptAppend(opts.systemPromptAppend)
+      : composeSystemPromptAppend(opts.systemPromptAppend)
+    const appendSystemPromptOverride = pi.systemPromptMode === "headless"
+      ? () => composedSystemPromptAppend ? [composedSystemPromptAppend] : []
+      : (base: string[]) => composedSystemPromptAppend
+          ? [...base, composedSystemPromptAppend]
+          : base
     const dynamicPromptExtension = opts.systemPromptDynamic
       ? buildDynamicPromptExtension(opts.systemPromptDynamic)
       : undefined
-    const agentDir = getAgentDir()
+    const headlessPromptSealExtension = pi.systemPromptMode === "headless"
+      ? buildHeadlessPromptSealExtension()
+      : undefined
     const toolErrorResultExtension = buildToolErrorResultExtension()
     const extensionFactories = [
+      ...(headlessPromptSealExtension ? [headlessPromptSealExtension] : []),
       toolErrorResultExtension,
       ...(dynamicPromptExtension ? [dynamicPromptExtension] : []),
       ...(pi.extensionFactories ?? []),
     ]
-    const settingsManager = createResourceSettingsManager(
-      opts.cwd,
-      agentDir,
-      effectivePackages,
-    )
-    const resourceLoader = new DefaultResourceLoader({
-      cwd: opts.cwd,
-      agentDir,
-      settingsManager,
-      appendSystemPromptOverride: (base: string[]) => [...base, composedSystemPromptAppend],
-      ...(effectiveExtensionPaths.length ? { additionalExtensionPaths: effectiveExtensionPaths } : {}),
-      ...(extensionFactories.length ? { extensionFactories } : {}),
-      ...(pi.noContextFiles ? { noContextFiles: true } : {}),
-      ...(pi.noSkills ? { noSkills: true } : {}),
-      ...(effectiveSkillPaths.length ? { additionalSkillPaths: effectiveSkillPaths } : {}),
-      // skillsOverride REPLACES Pi's resolved skill set, which includes
-      // skills contributed by host-declared pi packages (e.g.
-      // @hachej/boring-pi → boring-plugin-authoring). Only trigger it for
-      // the explicit `noSkills` opt-out, where the host wants a clean slate.
-      // Passing additionalSkillPaths is not, by itself, a request to throw
-      // away package skills — those should keep flowing through Pi's loader
-      // and merge with the additional paths.
-      ...(pi.noSkills
-        ? {
-            skillsOverride: () =>
-              loadSkills({
-                cwd: opts.cwd,
-                agentDir,
-                skillPaths: effectiveSkillPaths,
-                includeDefaults: false,
-              }),
-          }
-        : {}),
-    })
+    const resourceLoader = pi.systemPromptMode === "headless"
+      ? createHeadlessResourceLoader({
+          cwd: opts.cwd,
+          systemPromptAppend: composedSystemPromptAppend,
+          extensionFactories,
+        })
+      : (() => {
+          const agentDir = getAgentDir()
+          const settingsManager = createResourceSettingsManager(
+            opts.cwd,
+            agentDir,
+            effectivePackages,
+          )
+          return new DefaultResourceLoader({
+            cwd: opts.cwd,
+            agentDir,
+            settingsManager,
+            appendSystemPromptOverride,
+            ...(effectiveExtensionPaths.length ? { additionalExtensionPaths: effectiveExtensionPaths } : {}),
+            ...(extensionFactories.length ? { extensionFactories } : {}),
+            ...(pi.noExtensions ? { noExtensions: true } : {}),
+            ...(pi.noContextFiles ? { noContextFiles: true } : {}),
+            ...(pi.noSkills ? { noSkills: true } : {}),
+            ...(pi.noPromptTemplates ? { noPromptTemplates: true } : {}),
+            ...(pi.noThemes ? { noThemes: true } : {}),
+            ...(effectiveSkillPaths.length ? { additionalSkillPaths: effectiveSkillPaths } : {}),
+            // skillsOverride REPLACES Pi's resolved skill set, which includes
+            // skills contributed by host-declared pi packages (e.g.
+            // @hachej/boring-pi → boring-plugin-authoring). Only trigger it for
+            // the explicit `noSkills` opt-out, where the host wants a clean slate.
+            // Passing additionalSkillPaths is not, by itself, a request to throw
+            // away package skills — those should keep flowing through Pi's loader
+            // and merge with the additional paths.
+            ...(pi.noSkills
+              ? {
+                  skillsOverride: () =>
+                    loadSkills({
+                      cwd: opts.cwd,
+                      agentDir,
+                      skillPaths: effectiveSkillPaths,
+                      includeDefaults: false,
+                    }),
+                }
+              : {}),
+          })
+        })()
 
     await resourceLoader?.reload()
 
