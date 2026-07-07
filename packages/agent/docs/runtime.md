@@ -12,6 +12,18 @@ runtime-free agent and supplies only non-bash tools plus session/model
 configuration. If the host later attaches a filesystem/exec environment, that
 attachment enters the boring-bash runtime contract below.
 
+If a host renders the workspace frontend against `runtime: 'none'`, it must also
+exclude the default filesystem frontend plugin today: pass
+`excludeDefaults: ['filesystem']` through `WorkspaceAgentFront`/`WorkspaceProvider`
+(or the equivalent core workspace props). The frontend default is still
+`filesystemPlugin`, whose plugin id is `"filesystem"`; without that exclusion the
+file tree/editor contributions render and call file routes that pure mode does
+not register. `ChatFirstAuthenticatedShell` already supplies this exclusion by
+default. The planned end state is capability-driven auto-exclusion from an
+environment filesystem capability of `none`, owned by the P3/P4 route/tool and
+file-UI plugin move and the #391 zero-residue invariant 16; this PR does not add
+frontend gating.
+
 ## Modes
 
 | mode | description | use when |

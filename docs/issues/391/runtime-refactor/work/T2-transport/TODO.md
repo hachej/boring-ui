@@ -118,6 +118,20 @@ Match `INDEX.md` Phase T2 exit criteria:
 - **Tests**: existing pi-chat route + reconnect tests updated to the DS path (no `?cursor=` expectations remain); the new grep gate fails on a reintroduced legacy branch and passes on the cutover tree.
 - **Acceptance**: no `?cursor=` NDJSON replay code (route branch, `PiChatReplayBuffer`, or `piChatStream.ts`) remains anywhere in `packages/agent`; no legacy `…/pi-chat/:sessionId/{prompt,interrupt,stop}` write route remains (the canonical `…/api/v1/agents/:agentId/sessions/:sessionId/*` family is the sole write surface); the grep/invariant gate is active in `lint:invariants`; the DS transport is the sole reconnect/replay path; workspace UI runs unmodified.
 
+### BBT2-007 — Split attachment capability: `none | direct | workspace`  · size S
+- **Title**: Replace pure mode's temporary blanket attachment rejection with an environment-scoped attachment capability.
+- **Files to touch**:
+  - `packages/agent/src/shared/events.ts` / transport-facing shared types: declare the attachment capability shape as `none | direct | workspace`.
+  - `packages/agent/src/server/createAgent.ts` and `packages/agent/src/server/pi-chat/harnessPiChatService.ts`: replace the temporary `ERR_NO_FILESYSTEM_FOR_ATTACHMENTS` blanket rejection with capability-specific validation.
+  - Front/transport send path touched by BBT2-003/004: pass the environment's attachment capability instead of inferring from runtime id.
+- **Contract**:
+  - `none`: reject all attachments.
+  - `direct`: accept only data-URL or HTTPS image parts that never touch workspace storage; reject workspace-backed uploads/file refs.
+  - `workspace`: accept both direct image parts and workspace-backed attachments.
+  - Pure/headless environments normally use `direct`; filesystem-backed modes use `workspace`; locked-down embedders may choose `none`.
+- **Tests**: pure direct accepts `data:` and `https:` image parts and rejects workspace-backed attachment payloads; pure none rejects all; direct/local/vercel filesystem modes accept both direct and workspace-backed attachments; capability is supplied per environment, not guessed from `runtime`.
+- **Acceptance**: temporary comments naming BBT2-007 are removed; attachment validation is capability-driven and preserves the no-filesystem side-channel guarantee for `none` while allowing direct image parts that do not write workspace storage.
+
 ## Verification — exact commands (verified against package.json scripts)
 
 ```bash
