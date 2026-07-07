@@ -193,6 +193,8 @@ export interface WorkspaceAgentFrontProps<
   workspaceLayout?: WorkspaceAgentLayout
   navEnabled?: boolean
   defaultNavOpen?: boolean
+  /** Initial collapsed state for the plugin-tabs app-left pane. */
+  defaultAppLeftPaneCollapsed?: boolean
   defaultSurfaceOpen?: boolean
   defaultWorkbenchLeftTab?: string
   defaultWorkbenchLeftOpen?: boolean
@@ -458,6 +460,7 @@ export function WorkspaceAgentFront<
   workspaceLayout = "classic",
   navEnabled = true,
   defaultNavOpen = false,
+  defaultAppLeftPaneCollapsed,
   defaultSurfaceOpen,
   defaultWorkbenchLeftTab,
   defaultWorkbenchLeftOpen,
@@ -816,7 +819,7 @@ export function WorkspaceAgentFront<
   )
   const [appLeftPaneCollapsed, setAppLeftPaneCollapsed] = useStoredBooleanState(
     `${shellStorageKey}:appLeftPaneCollapsed`,
-    false,
+    defaultAppLeftPaneCollapsed ?? false,
     shellPersistenceEnabled,
   )
   const [appLeftPaneWidth, setAppLeftPaneWidth] = useStoredNumberState(
@@ -1364,14 +1367,19 @@ export function WorkspaceAgentFront<
     }
   }, [apiBaseUrl, resolvedRequestHeaders])
 
+  const chatRemoteSessionOptions = useMemo(() => {
+    const base = (chatParams?.remoteSessionOptions && typeof chatParams.remoteSessionOptions === "object")
+      ? chatParams.remoteSessionOptions as Record<string, unknown>
+      : undefined
+    if (!apiTimeout) return base
+    return { ...(base ?? {}), requestTimeoutMs: apiTimeout }
+  }, [apiTimeout, chatParams?.remoteSessionOptions])
+
   const makeCenterParams = useCallback(
     (sessionId: string, options: { bridgeEnabled?: boolean } = {}) => {
       const bridgeEnabled = options.bridgeEnabled ?? true
       const chatToolRenderers = (chatParams?.toolRenderers && typeof chatParams.toolRenderers === "object")
         ? chatParams.toolRenderers as ToolRendererOverrides
-        : undefined
-      const chatRemoteSessionOptions = (chatParams?.remoteSessionOptions && typeof chatParams.remoteSessionOptions === "object")
-        ? chatParams.remoteSessionOptions as Record<string, unknown>
         : undefined
       return {
       ...chatParams,
@@ -1381,7 +1389,7 @@ export function WorkspaceAgentFront<
       workspaceId,
       storageScope: workspaceId,
       requestHeaders: resolvedRequestHeaders,
-      remoteSessionOptions: apiTimeout ? { ...(chatRemoteSessionOptions ?? {}), requestTimeoutMs: apiTimeout } : chatRemoteSessionOptions,
+      remoteSessionOptions: chatRemoteSessionOptions,
       showSessions: false,
       onReloadAgentPlugins: chatParams?.onReloadAgentPlugins ?? (() => reloadAgentPluginsForSession(sessionId)),
       toolRenderers: { ...pluginToolRenderers, ...(chatToolRenderers ?? {}) },
@@ -1418,7 +1426,7 @@ export function WorkspaceAgentFront<
       ...(resolvedHotReloadEnabled !== undefined ? { hotReloadEnabled: resolvedHotReloadEnabled } : {}),
     }
     },
-    [apiBaseUrl, apiTimeout, chatParams, delayAutoSubmitDraft, resolvedRequestHeaders, bridgeEndpoint, surfaceDispatch, extraCommands, workspaceWarmupStatus, hydrateMessages, emptySessionIds, resolvedHotReloadEnabled, pluginToolRenderers, reloadAgentPluginsForSession, sessionApi, workspaceId],
+    [apiBaseUrl, chatParams, chatRemoteSessionOptions, delayAutoSubmitDraft, resolvedRequestHeaders, bridgeEndpoint, surfaceDispatch, extraCommands, workspaceWarmupStatus, hydrateMessages, emptySessionIds, resolvedHotReloadEnabled, pluginToolRenderers, reloadAgentPluginsForSession, sessionApi, workspaceId],
   )
   const centerParams = useMemo(
     () => makeCenterParams(chatSessionId),

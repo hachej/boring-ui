@@ -182,6 +182,54 @@ describe('createGovernanceFilesystemBindings', () => {
     await expect(lstat(explicitMissingRoot).catch((error: NodeJS.ErrnoException) => error.code)).resolves.toBe('ENOENT')
   })
 
+  it('does not borrow context verification for a different request user', async () => {
+    const companyRoot = await seedCompanyRoot()
+    const getBindings = createGovernanceFilesystemBindings(serviceWithPolicy(), {
+      resolveCompanyContextRoot: () => companyRoot,
+      projectionRootParent: await mkdtemp(path.join(os.tmpdir(), 'boring-company-projections-')),
+    })
+
+    const bindings = await getBindings({
+      workspaceId: 'personal-ws',
+      workspaceRoot: path.join(path.dirname(companyRoot), 'personal-ws'),
+      requestId: 'req-mismatched-user',
+      userId: 'user-allowed',
+      userEmail: 'allowed@example.com',
+      userEmailVerified: true,
+      request: {
+        id: 'req-mismatched-user',
+        user: { id: 'user-denied', email: 'denied@example.com', name: null },
+      } as any,
+    })
+
+    expect(bindings).toEqual([])
+  })
+
+  it('uses normalized context verification when request.user lacks emailVerified', async () => {
+    const companyRoot = await seedCompanyRoot()
+    const getBindings = createGovernanceFilesystemBindings(serviceWithPolicy(), {
+      resolveCompanyContextRoot: () => companyRoot,
+      projectionRootParent: await mkdtemp(path.join(os.tmpdir(), 'boring-company-projections-')),
+    })
+
+    const bindings = await getBindings({
+      workspaceId: 'personal-ws',
+      workspaceRoot: path.join(path.dirname(companyRoot), 'personal-ws'),
+      requestId: 'req-partial-user',
+      userId: 'user-allowed',
+      userEmail: 'allowed@example.com',
+      userEmailVerified: true,
+      request: {
+        id: 'req-partial-user',
+        user: { id: 'user-allowed', email: 'allowed@example.com', name: null },
+      } as any,
+    })
+
+    expect(bindings).toHaveLength(1)
+    await expect(bindings![0]!.operations.read({ filesystem: 'company_context', path: '/public/handbook.md' }))
+      .resolves.toMatchObject({ content: expect.stringContaining('Visible policy') })
+  })
+
   it('uses tool/run context identity when no HTTP request object is available', async () => {
     const companyRoot = await seedCompanyRoot()
     const getBindings = createGovernanceFilesystemBindings(serviceWithPolicy(), {
