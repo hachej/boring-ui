@@ -211,8 +211,7 @@ const outreachRoutesPlugin: FastifyPluginAsync<OutreachRoutesOptions> = async (a
         provisioner,
         creditGrantStore: opts.creditGrantStore,
       })
-      reply.redirect(consumed.targetPath)
-      return
+      return reply.redirect(consumed.targetPath)
     }
 
     await findValidOutreachLink({
@@ -233,7 +232,7 @@ const outreachRoutesPlugin: FastifyPluginAsync<OutreachRoutesOptions> = async (a
       creditGrantStore: opts.creditGrantStore,
     })
     setResponseCookies(reply, anonymous.response)
-    reply.redirect(consumed.targetPath)
+    return reply.redirect(consumed.targetPath)
   })
 }
 
