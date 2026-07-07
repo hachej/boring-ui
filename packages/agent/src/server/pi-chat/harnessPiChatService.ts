@@ -239,8 +239,8 @@ export class HarnessPiChatService implements PiChatSessionService {
 
   private assertAttachmentsAllowed(payload: PromptPayload): void {
     if (this.allowAttachments || !payload.attachments || payload.attachments.length === 0) return
-    // BBP1-004 pure runtime rejects all attachments, even inline data URLs,
-    // because the public attachment contract belongs to filesystem-capable mode.
+    // TEMPORARY(BBT2-007): split attachment capability into none|direct|workspace.
+    // Until then pure runtime rejects all attachments, even inline data URLs.
     throw new AgentFilesystemRequiredError()
   }
 

@@ -274,8 +274,9 @@ async function createRuntime(config: AgentConfig, options: CreateAgentRuntimeBri
 
 function assertFilesystemAttachmentsAllowed(config: AgentConfig, input: AgentSendInput): void {
   if (config.runtime !== 'none' || !input.attachments || input.attachments.length === 0) return
-  // BBP1-004 pure runtime deliberately rejects every non-empty attachment,
-  // including inline data URLs, so fs-free mode has no attachment side channel.
+  // TEMPORARY(BBT2-007): split attachment capability into none|direct|workspace.
+  // Until then pure mode rejects every non-empty attachment, including inline
+  // data URLs, so fs-free mode has no attachment side channel.
   throw new AgentFilesystemRequiredError()
 }
 

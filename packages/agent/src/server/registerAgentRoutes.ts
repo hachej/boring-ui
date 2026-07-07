@@ -26,21 +26,8 @@ import type { ToolReadinessState } from './catalog/toolReadiness'
 import { buildFilesystemAgentTools } from './tools/filesystem'
 import { buildHarnessAgentTools } from './tools/harness'
 import { buildUploadAgentTools } from './tools/upload'
-import { healthRoutes } from './http/routes/health'
-import { fileRoutes } from './http/routes/file'
-import { fsEventsRoutes } from './http/routes/fsEvents'
-import { treeRoutes } from './http/routes/tree'
-import { modelsRoutes } from './http/routes/models'
-import { skillsRoutes } from './http/routes/skills'
-import { piChatRoutes, type PiChatSessionService } from './http/routes/piChat'
-import { systemPromptRoutes } from './http/routes/systemPrompt'
-import { sessionChangesRoutes } from './http/routes/sessionChanges'
-import { catalogRoutes } from './http/routes/catalog'
-import { readyStatusRoutes } from './http/routes/readyStatus'
-import { commandsRoutes } from './http/routes/commands'
+import type { PiChatSessionService } from './http/routes/piChat'
 import type { ReloadHookResult } from './http/routes/reload'
-import { searchRoutes } from './http/routes/search'
-import { gitRoutes } from './http/routes/git'
 import { InMemorySessionChangesTracker } from './http/sessionChangesTracker'
 import { ReadyStatusTracker } from './runtime/readyStatus'
 import { createRuntimeReadyStatusTracker } from './runtime/modeReadiness'
@@ -49,6 +36,11 @@ import type { AgentHarness } from '../shared/harness'
 import type { AgentMeteringSink } from './pi-chat/metering'
 import { createPluginDiagnosticsTool } from './tools/pluginDiagnostics'
 import { createAgentRuntimeBridge } from './createAgent'
+import {
+  registerAgentRouteBindingProfile,
+  toolNames,
+  type AgentRouteBindingProfile,
+} from './agentRouteBindingProfile'
 
 const DEFAULT_VERSION = '0.1.0-dev'
 const DEFAULT_WORKSPACE_ID = 'default'
@@ -91,6 +83,29 @@ function getAvailableModelProviders(): string[] {
   return Array.from(
     new Set(availableModels.map((model) => model.provider)),
   ).sort((a, b) => a.localeCompare(b))
+}
+
+function registerAgentCapabilitiesContributor(
+  app: FastifyInstance,
+  profile: AgentRouteBindingProfile,
+): void {
+  const hostWithCapabilitiesContributor = app as HostWithCapabilitiesContributor
+  if (
+    typeof hostWithCapabilitiesContributor.registerCapabilitiesContributor !==
+    'function'
+  ) {
+    return
+  }
+  hostWithCapabilitiesContributor.registerCapabilitiesContributor(
+    'agent',
+    () => ({
+      agent: {
+        runtimeMode: profile.runtimeMode,
+        tools: profile.capabilities.tools,
+        modelProviders: getAvailableModelProviders(),
+      },
+    }),
+  )
 }
 
 type RuntimeDependencyState = 'not-started' | 'preparing' | 'ready' | 'failed'
@@ -367,6 +382,7 @@ export const registerAgentRoutes: FastifyPluginAsync<RegisterAgentRoutesOptions>
   const sessionId = opts.sessionId ?? DEFAULT_WORKSPACE_ID
 
   const resolvedMode = opts.runtimeModeAdapter?.id ?? opts.mode ?? autoDetectMode()
+  let profile: AgentRouteBindingProfile
   if (!opts.runtimeModeAdapter && resolvedMode === PURE_RUNTIME_MODE) {
     const sessionChangesTracker = new InMemorySessionChangesTracker()
     type PureBinding = {
@@ -486,95 +502,75 @@ export const registerAgentRoutes: FastifyPluginAsync<RegisterAgentRoutesOptions>
 
     const staticBinding = requestScopedPure ? undefined : await createPureBinding()
 
-    app.addHook('onClose', async () => {
-      const bindings = await Promise.allSettled(pureBindings.values())
-      await Promise.all(bindings
-        .filter((result): result is PromiseFulfilledResult<PureBinding> => result.status === 'fulfilled')
-        .map((result) => result.value.agent.dispose()))
-    })
-    app.addHook('onRequest', async (request, reply) => {
-      const user = (request as unknown as { user?: { id: string } | null }).user
-      let workspaceId = DEFAULT_WORKSPACE_ID
-      if (opts.getWorkspaceId && !isWorkspaceAgnosticAgentRequest(request, { readyStatusWorkspaceScoped: requestScopedPure })) {
-        try {
-          workspaceId = (await opts.getWorkspaceId(request)).trim()
-        } catch (error) {
-          const statusCode = typeof (error as { statusCode?: unknown })?.statusCode === 'number'
-            ? (error as { statusCode: number }).statusCode
-            : 400
-          const message = statusCode >= 500
-            ? 'workspace scope failed'
-            : error instanceof Error
-              ? error.message
-              : 'workspace id is required'
-          return reply.code(statusCode).send({
-            error: { code: ErrorCode.enum.WORKSPACE_UNINITIALIZED, message },
-          })
-        }
-        if (workspaceId.length === 0) {
-          return reply.code(400).send({
-            error: {
-              code: ErrorCode.enum.WORKSPACE_UNINITIALIZED,
-              message: 'workspace id is required',
-            },
-          })
-        }
-      }
-      request.workspaceContext = {
-        workspaceId,
-        authenticated: !!user,
-      }
-    })
-
-    const hostWithCapabilitiesContributor = app as HostWithCapabilitiesContributor
-    if (
-      typeof hostWithCapabilitiesContributor.registerCapabilitiesContributor ===
-      'function'
-    ) {
-      hostWithCapabilitiesContributor.registerCapabilitiesContributor(
-        'agent',
-        () => ({
-          agent: {
-            runtimeMode: resolvedMode,
-            tools: staticBinding?.tools.map((tool) => tool.name) ?? (opts.extraTools ?? []).map((tool) => tool.name),
-            modelProviders: getAvailableModelProviders(),
-          },
-        }),
-      )
-    }
-
-    const registerHealthRoute = opts.registerHealthRoute ?? true
-    if (registerHealthRoute) {
-      await app.register(healthRoutes, {
+    profile = {
+      runtimeMode: resolvedMode,
+      capabilities: {
+        tools: staticBinding ? toolNames(staticBinding.tools) : toolNames(opts.extraTools ?? []),
+      },
+      sessionChangesTracker,
+      health: {
+        register: opts.registerHealthRoute ?? true,
         version: opts.version ?? DEFAULT_VERSION,
         getReadiness: () => ({ sandboxReady: true, harnessReady: true }),
-      })
+      },
+      chat: {
+        ...(staticBinding
+          ? { service: staticBinding.piChatService }
+          : { getService: async (request) => (await createPureBinding(request)).piChatService }),
+        defaultWorkspaceId: false,
+      },
+      catalog: staticBinding
+        ? { tools: staticBinding.tools }
+        : { getTools: async (request) => (await createPureBinding(request)).tools },
+      readyStatus: staticBinding
+        ? { tracker: staticBinding.readyTracker }
+        : { getTracker: async (request) => (await createPureBinding(request)).readyTracker },
+      dispose: async () => {
+        const bindings = await Promise.allSettled(pureBindings.values())
+        await Promise.all(bindings
+          .filter((result): result is PromiseFulfilledResult<PureBinding> => result.status === 'fulfilled')
+          .map((result) => result.value.agent.dispose()))
+      },
+      beforeRegister: (profileApp) => {
+        profileApp.addHook('onRequest', async (request, reply) => {
+          const user = (request as unknown as { user?: { id: string } | null }).user
+          let workspaceId = DEFAULT_WORKSPACE_ID
+          if (opts.getWorkspaceId && !isWorkspaceAgnosticAgentRequest(request, { readyStatusWorkspaceScoped: requestScopedPure })) {
+            try {
+              workspaceId = (await opts.getWorkspaceId(request)).trim()
+            } catch (error) {
+              const statusCode = typeof (error as { statusCode?: unknown })?.statusCode === 'number'
+                ? (error as { statusCode: number }).statusCode
+                : 400
+              const message = statusCode >= 500
+                ? 'workspace scope failed'
+                : error instanceof Error
+                  ? error.message
+                  : 'workspace id is required'
+              return reply.code(statusCode).send({
+                error: { code: ErrorCode.enum.WORKSPACE_UNINITIALIZED, message },
+              })
+            }
+            if (workspaceId.length === 0) {
+              return reply.code(400).send({
+                error: {
+                  code: ErrorCode.enum.WORKSPACE_UNINITIALIZED,
+                  message: 'workspace id is required',
+                },
+              })
+            }
+          }
+          request.workspaceContext = {
+            workspaceId,
+            authenticated: !!user,
+          }
+        })
+      },
     }
-    await app.register(piChatRoutes, {
-      ...(staticBinding
-        ? { service: staticBinding.piChatService }
-        : { getService: async (request) => (await createPureBinding(request)).piChatService }),
-      defaultWorkspaceId: false,
-    })
-    await app.register(modelsRoutes)
-    await app.register(sessionChangesRoutes, { tracker: sessionChangesTracker })
-    await app.register(catalogRoutes, staticBinding
-      ? { tools: staticBinding.tools }
-      : { getTools: async (request) => (await createPureBinding(request)).tools },
-    )
-    await app.register(readyStatusRoutes, staticBinding
-      ? { tracker: staticBinding.readyTracker }
-      : { getTracker: async (request) => (await createPureBinding(request)).readyTracker },
-    )
-    return
-  }
-
+  } else {
   const workspaceRoot = opts.workspaceRoot ?? process.cwd()
   const templatePath = opts.templatePath ?? getEnv('BORING_AGENT_TEMPLATE_PATH')
   const modeAdapter = opts.runtimeModeAdapter ?? resolveMode(resolvedMode, { sandboxHandleStore: opts.sandboxHandleStore })
-  app.addHook('onClose', async () => {
-    await modeAdapter.dispose?.()
-  })
   const requestScopedRuntime =
     typeof opts.getWorkspaceId === 'function' ||
     typeof opts.getWorkspaceRoot === 'function' ||
@@ -1090,204 +1086,195 @@ let runtimeProvisioning: WorkspaceProvisioningResult | undefined
     return store
   }
 
-  const agentToolNames = staticBinding
-    ? staticBinding.tools.map((tool) => tool.name)
-    : [
-        ...STANDARD_AGENT_TOOL_NAMES,
-        ...(opts.extraTools ?? []).map((tool) => tool.name),
-      ]
-
-  const hostWithCapabilitiesContributor = app as HostWithCapabilitiesContributor
-  if (
-    typeof hostWithCapabilitiesContributor.registerCapabilitiesContributor ===
-    'function'
-  ) {
-    hostWithCapabilitiesContributor.registerCapabilitiesContributor(
-      'agent',
-      () => ({
-        agent: {
-          runtimeMode: resolvedMode,
-          tools: agentToolNames,
-          modelProviders: getAvailableModelProviders(),
-        },
-      }),
-    )
-  }
-
-  // Bridge host app's request.user → agent's request.workspaceContext.
-  // In embedded mode core's authHook already populates request.user;
-  // this hook maps it to the shape agent routes expect. Scoped to agent
-  // routes only (Fastify encapsulates hooks within the plugin).
-  app.addHook('onRequest', async (request, reply) => {
-    const user = (request as unknown as { user?: { id: string } | null }).user
-    let workspaceId = DEFAULT_WORKSPACE_ID
-    promoteRawFileWorkspaceQueryToHeader(request)
-    if (opts.getWorkspaceId && !isWorkspaceAgnosticAgentRequest(request, { readyStatusWorkspaceScoped: requestScopedRuntime })) {
-      try {
-        workspaceId = (await opts.getWorkspaceId(request)).trim()
-      } catch (error) {
-        const statusCode = typeof (error as { statusCode?: unknown })?.statusCode === 'number'
-          ? (error as { statusCode: number }).statusCode
-          : 400
-        const message = statusCode >= 500
-          ? 'workspace scope failed'
-          : error instanceof Error
-            ? error.message
-            : 'workspace id is required'
-        return reply.code(statusCode).send({
-          error: { code: ErrorCode.enum.WORKSPACE_UNINITIALIZED, message },
-        })
-      }
-      if (workspaceId.length === 0) {
-        return reply.code(400).send({
-          error: {
-            code: ErrorCode.enum.WORKSPACE_UNINITIALIZED,
-            message: 'workspace id is required',
-          },
-        })
-      }
-    }
-    request.workspaceContext = {
-      workspaceId,
-      authenticated: !!user,
-    }
-  })
-
-  const registerHealthRoute = opts.registerHealthRoute ?? true
-  if (registerHealthRoute) {
-    await app.register(healthRoutes, {
+  profile = {
+    runtimeMode: resolvedMode,
+    capabilities: {
+      tools: staticBinding
+        ? toolNames(staticBinding.tools)
+        : [
+            ...STANDARD_AGENT_TOOL_NAMES,
+            ...toolNames(opts.extraTools ?? []),
+          ],
+    },
+    sessionChangesTracker,
+    health: {
+      register: opts.registerHealthRoute ?? true,
       version: opts.version ?? DEFAULT_VERSION,
       getReadiness: () => staticBinding?.readyTracker.getReadiness() ?? {
         sandboxReady: true,
         harnessReady: true,
       },
-    })
-  }
-
-  await app.register(fileRoutes, {
-    getWorkspace: async (request) => (await getBindingForRequest(request)).runtimeBundle.workspace,
-  })
-  await app.register(fsEventsRoutes, {
-    getWorkspace: async (request) => (await getBindingForRequest(request)).runtimeBundle.workspace,
-  })
-  await app.register(treeRoutes, {
-    getWorkspace: async (request) => (await getBindingForRequest(request)).runtimeBundle.workspace,
-    getFilesystemBindings: async (request) => (await getBindingForRequest(request)).runtimeBundle.filesystemBindings,
-  })
-  await app.register(searchRoutes, {
-    getFileSearch: async (request) => (await getBindingForRequest(request)).runtimeBundle.fileSearch,
-  })
-  await app.register(gitRoutes, {
-    getWorkspaceRoot: async (request) => getOptionalRuntimeBundleStorageRoot((await getBindingForRequest(request)).runtimeBundle),
-  })
-  await app.register(piChatRoutes, {
-    getService: async (request) => {
-      const binding = await getBindingForRequest(request)
-      return binding.piChatService
     },
-  })
-  await app.register(systemPromptRoutes, {
-    getHarness: async (request) => (await getBindingForRequest(request)).harness,
-  })
-  await app.register(modelsRoutes)
-  await app.register(skillsRoutes, {
-    workspaceRoot,
-    additionalSkillPaths: [
-      ...(staticBinding?.runtimeProvisioning?.skillPaths ?? []),
-      ...(opts.pi?.additionalSkillPaths ?? []),
-    ],
-    piPackages: opts.pi?.packages,
-    // Undefined is fine: skillsRoutes resolves it through the canonical
-    // harness policy (withPiHarnessDefaults), same as the factory above.
-    noSkills: opts.pi?.noSkills,
-    getWorkspaceRoot: staticBinding
-      ? undefined
-      : async (request) => (await getSkillsScopeForRequest(request)).root,
-    getAdditionalSkillPaths: staticBinding && !hasRuntimeProvisioningInput
-      ? undefined
-      : async (request) => {
-          const scope = await getSkillsScopeForRequest(request)
-          if (!hasRuntimeProvisioningInput) return scope.pi.additionalSkillPaths
-          const binding = await getBindingForRequest(request)
-          return [
-            ...(binding.runtimeProvisioning?.skillPaths ?? []),
-            ...(scope.pi.additionalSkillPaths ?? []),
-          ]
-        },
-    getPiPackages: staticBinding
-      ? undefined
-      : async (request) => (await getSkillsScopeForRequest(request)).pi.packages,
-    getNoSkills: staticBinding
-      ? undefined
-      : async (request) => (await getSkillsScopeForRequest(request)).pi.noSkills,
-  })
-  await app.register(sessionChangesRoutes, { tracker: sessionChangesTracker })
-  app.post<{ Body: { sessionId?: string } }>('/api/v1/agent/reload', async (request, reply) => {
-    const workspaceId = getRequestWorkspaceId(request)
-    const binding = await getBindingForRequest(request)
-    if (!binding.harness.reloadSession) {
-      return reply.status(501).send({ ok: false, error: 'Agent harness does not support reload' })
-    }
-
-    try {
-      binding.runtimeProvisioning = await binding.reprovision(request)
-      const hookResult = await opts.beforeReload?.({
-        workspaceId,
-        workspaceRoot: binding.runtimeBundle.workspace.root,
-        request,
-      })
-      const reloadSessionId = request.body?.sessionId || sessionId
-      const reloaded = await binding.harness.reloadSession(reloadSessionId)
-      const restart_warnings = hookResult?.restart_warnings
-      const diagnostics: Array<{ source: string; message: string; pluginId?: string }> = [
-        ...(hookResult?.diagnostics ?? []),
-        ...(binding.harness.getResourceDiagnostics?.(reloadSessionId) ?? []).map((d) => ({
-          source: d.source,
-          // The harness already folds the path into the message (front only
-          // renders `.message`).
-          message: d.message,
-        })),
-      ]
-      // If the harness reported nothing reloaded (no live agent session yet),
-      // surface a note so a "/reload had no effect" state is observable rather
-      // than looking like a clean reload.
-      if (!reloaded) {
-        diagnostics.push({
-          source: 'reload',
-          message: 'No live agent session to reload yet — changes apply to the next session.',
-        })
-      }
-      binding.lastReloadDiagnostics = diagnostics
-      return {
-        ok: true,
-        sessionId: reloadSessionId,
-        reloaded,
-        ...(restart_warnings && restart_warnings.length > 0 ? { restart_warnings } : {}),
-        ...(diagnostics.length > 0 ? { diagnostics } : {}),
-      }
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error)
-      return reply.status(422).send({ ok: false, error: message })
-    }
-  })
-  await app.register(catalogRoutes, staticBinding
-    ? { tools: staticBinding.tools }
-    : { getTools: async (request) => (await getBindingForRequest(request)).tools },
-  )
-  await app.register(commandsRoutes, staticBinding
-    ? {
-        harness: staticBinding.harness,
-        defaultSessionId: sessionId,
-        workdir: staticBinding.runtimeBundle.workspace.root,
-      }
-    : {
-        defaultSessionId: sessionId,
-        getHarness: async (request) => (await getBindingForRequest(request)).harness,
-        getWorkdir: async (request) => (await getBindingForRequest(request)).runtimeBundle.workspace.root,
+    filesystem: {
+      file: {
+        getWorkspace: async (request) => (await getBindingForRequest(request)).runtimeBundle.workspace,
       },
-  )
-  await app.register(readyStatusRoutes, staticBinding
-    ? { tracker: staticBinding.readyTracker }
-    : { getTracker: async (request) => (await getBindingForRequest(request)).readyTracker },
-  )
+      fsEvents: {
+        getWorkspace: async (request) => (await getBindingForRequest(request)).runtimeBundle.workspace,
+      },
+      tree: {
+        getWorkspace: async (request) => (await getBindingForRequest(request)).runtimeBundle.workspace,
+        getFilesystemBindings: async (request) => (await getBindingForRequest(request)).runtimeBundle.filesystemBindings,
+      },
+      search: {
+        getFileSearch: async (request) => (await getBindingForRequest(request)).runtimeBundle.fileSearch,
+      },
+      git: {
+        getWorkspaceRoot: async (request) => getOptionalRuntimeBundleStorageRoot((await getBindingForRequest(request)).runtimeBundle),
+      },
+    },
+    chat: {
+      getService: async (request) => {
+        const binding = await getBindingForRequest(request)
+        return binding.piChatService
+      },
+    },
+    systemPrompt: {
+      getHarness: async (request) => (await getBindingForRequest(request)).harness,
+    },
+    skills: {
+      workspaceRoot,
+      additionalSkillPaths: [
+        ...(staticBinding?.runtimeProvisioning?.skillPaths ?? []),
+        ...(opts.pi?.additionalSkillPaths ?? []),
+      ],
+      piPackages: opts.pi?.packages,
+      // Undefined is fine: skillsRoutes resolves it through the canonical
+      // harness policy (withPiHarnessDefaults), same as the factory above.
+      noSkills: opts.pi?.noSkills,
+      getWorkspaceRoot: staticBinding
+        ? undefined
+        : async (request) => (await getSkillsScopeForRequest(request)).root,
+      getAdditionalSkillPaths: staticBinding && !hasRuntimeProvisioningInput
+        ? undefined
+        : async (request) => {
+            const scope = await getSkillsScopeForRequest(request)
+            if (!hasRuntimeProvisioningInput) return scope.pi.additionalSkillPaths
+            const binding = await getBindingForRequest(request)
+            return [
+              ...(binding.runtimeProvisioning?.skillPaths ?? []),
+              ...(scope.pi.additionalSkillPaths ?? []),
+            ]
+          },
+      getPiPackages: staticBinding
+        ? undefined
+        : async (request) => (await getSkillsScopeForRequest(request)).pi.packages,
+      getNoSkills: staticBinding
+        ? undefined
+        : async (request) => (await getSkillsScopeForRequest(request)).pi.noSkills,
+    },
+    reload: async (profileApp) => {
+      profileApp.post<{ Body: { sessionId?: string } }>('/api/v1/agent/reload', async (request, reply) => {
+        const workspaceId = getRequestWorkspaceId(request)
+        const binding = await getBindingForRequest(request)
+        if (!binding.harness.reloadSession) {
+          return reply.status(501).send({ ok: false, error: 'Agent harness does not support reload' })
+        }
+
+        try {
+          binding.runtimeProvisioning = await binding.reprovision(request)
+          const hookResult = await opts.beforeReload?.({
+            workspaceId,
+            workspaceRoot: binding.runtimeBundle.workspace.root,
+            request,
+          })
+          const reloadSessionId = request.body?.sessionId || sessionId
+          const reloaded = await binding.harness.reloadSession(reloadSessionId)
+          const restart_warnings = hookResult?.restart_warnings
+          const diagnostics: Array<{ source: string; message: string; pluginId?: string }> = [
+            ...(hookResult?.diagnostics ?? []),
+            ...(binding.harness.getResourceDiagnostics?.(reloadSessionId) ?? []).map((d) => ({
+              source: d.source,
+              // The harness already folds the path into the message (front only
+              // renders `.message`).
+              message: d.message,
+            })),
+          ]
+          // If the harness reported nothing reloaded (no live agent session yet),
+          // surface a note so a "/reload had no effect" state is observable rather
+          // than looking like a clean reload.
+          if (!reloaded) {
+            diagnostics.push({
+              source: 'reload',
+              message: 'No live agent session to reload yet — changes apply to the next session.',
+            })
+          }
+          binding.lastReloadDiagnostics = diagnostics
+          return {
+            ok: true,
+            sessionId: reloadSessionId,
+            reloaded,
+            ...(restart_warnings && restart_warnings.length > 0 ? { restart_warnings } : {}),
+            ...(diagnostics.length > 0 ? { diagnostics } : {}),
+          }
+        } catch (error) {
+          const message = error instanceof Error ? error.message : String(error)
+          return reply.status(422).send({ ok: false, error: message })
+        }
+      })
+    },
+    catalog: staticBinding
+      ? { tools: staticBinding.tools }
+      : { getTools: async (request) => (await getBindingForRequest(request)).tools },
+    commands: staticBinding
+      ? {
+          harness: staticBinding.harness,
+          defaultSessionId: sessionId,
+          workdir: staticBinding.runtimeBundle.workspace.root,
+        }
+      : {
+          defaultSessionId: sessionId,
+          getHarness: async (request) => (await getBindingForRequest(request)).harness,
+          getWorkdir: async (request) => (await getBindingForRequest(request)).runtimeBundle.workspace.root,
+        },
+    readyStatus: staticBinding
+      ? { tracker: staticBinding.readyTracker }
+      : { getTracker: async (request) => (await getBindingForRequest(request)).readyTracker },
+    dispose: async () => {
+      await modeAdapter.dispose?.()
+    },
+    beforeRegister: (profileApp) => {
+      // Bridge host app's request.user -> agent's request.workspaceContext.
+      // In embedded mode core's authHook already populates request.user;
+      // this hook maps it to the shape agent routes expect. Scoped to agent
+      // routes only (Fastify encapsulates hooks within the plugin).
+      profileApp.addHook('onRequest', async (request, reply) => {
+        const user = (request as unknown as { user?: { id: string } | null }).user
+        let workspaceId = DEFAULT_WORKSPACE_ID
+        promoteRawFileWorkspaceQueryToHeader(request)
+        if (opts.getWorkspaceId && !isWorkspaceAgnosticAgentRequest(request, { readyStatusWorkspaceScoped: requestScopedRuntime })) {
+          try {
+            workspaceId = (await opts.getWorkspaceId(request)).trim()
+          } catch (error) {
+            const statusCode = typeof (error as { statusCode?: unknown })?.statusCode === 'number'
+              ? (error as { statusCode: number }).statusCode
+              : 400
+            const message = statusCode >= 500
+              ? 'workspace scope failed'
+              : error instanceof Error
+                ? error.message
+                : 'workspace id is required'
+            return reply.code(statusCode).send({
+              error: { code: ErrorCode.enum.WORKSPACE_UNINITIALIZED, message },
+            })
+          }
+          if (workspaceId.length === 0) {
+            return reply.code(400).send({
+              error: {
+                code: ErrorCode.enum.WORKSPACE_UNINITIALIZED,
+                message: 'workspace id is required',
+              },
+            })
+          }
+        }
+        request.workspaceContext = {
+          workspaceId,
+          authenticated: !!user,
+        }
+      })
+    },
+  }
+  }
+  registerAgentCapabilitiesContributor(app, profile)
+  await registerAgentRouteBindingProfile(app, profile)
 }

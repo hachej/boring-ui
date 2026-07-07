@@ -106,6 +106,7 @@ Legend — nature: **new** = net-new code · **move** = rename-detected + import
 | pr4-refit-twohandles-lint | BBT2-004 | new (guard) | ~200 + `transport.md` | platform-addressing guard test (negative: surface id fails, `SessionCtx` allowlisted passes) | `lint:invariants`; `audit:imports` |
 | pr5-headless-consumer | BBT2-005 | test + script | ~100 (`headless-consumer.mts`) | interleaved in-process×HTTP shared-session test | `exec tsx scripts/headless-consumer.mts` |
 | pr6-delete-legacy-cursor | BBT2-006 | delete + move | net-new ~50 (grep gate) | route tests migrated to DS; grep gate: no `?cursor=`/`PiChatReplayBuffer`/`piChatStream.ts` | `lint:invariants`; workspace playground unmodified |
+| pr7-attachment-capability | BBT2-007 | refine | ~100 | pure direct accepts data-URL/HTTPS image parts and rejects workspace-backed attachments; fs modes accept direct + workspace | `test`; `lint:invariants` |
 
 **T2 total: 6 PRs.** pr6 lands **last** (after DS conformance + playground green). Bumps `@hachej/boring-agent` minor (protocol change).
 
