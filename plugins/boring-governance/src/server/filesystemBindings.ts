@@ -17,6 +17,7 @@ import {
 } from '@hachej/boring-bash/server'
 import type { GovernanceService } from './governanceService.js'
 import type { GovernanceUserLike } from './policyTypes.js'
+import { normalizePolicyEmail } from './validatePolicy.js'
 
 const COMPANY_CONTEXT_MOUNT_PATH = '/company_context'
 const AGENT_MODE_ENV = 'BORING_AGENT_MODE'
@@ -113,7 +114,20 @@ function compileRules(rules: readonly string[]): RegExp[] {
 function userFromContext(ctx: GovernanceFilesystemBindingContext): GovernanceUserLike | null {
   const requestUser = ctx.request?.user
   if (requestUser?.email) {
-    return { id: requestUser.id, email: requestUser.email, emailVerified: requestUser.emailVerified === true }
+    const requestEmail = normalizePolicyEmail(requestUser.email)
+    const contextEmail = ctx.userEmail ? normalizePolicyEmail(ctx.userEmail) : null
+    const sameContextPrincipal =
+      contextEmail === requestEmail &&
+      (!requestUser.id || !ctx.userId || requestUser.id === ctx.userId)
+    return {
+      id: requestUser.id ?? (sameContextPrincipal ? ctx.userId : undefined),
+      email: requestUser.email,
+      // Some host auth hooks expose the principal on request.user but keep the
+      // normalized verification bit in the binding context. Trust the context
+      // bit only when it names the same principal; never combine verification
+      // from one principal with another request user's email.
+      emailVerified: requestUser.emailVerified === true || (sameContextPrincipal && ctx.userEmailVerified === true),
+    }
   }
   if (!ctx.userEmail) return null
   return { id: ctx.userId, email: ctx.userEmail, emailVerified: ctx.userEmailVerified === true }
