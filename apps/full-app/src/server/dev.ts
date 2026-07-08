@@ -108,6 +108,7 @@ startCoreWorkspaceAgentDevServer({
         return appDb as never
       }),
       filterModels: governance.filterModels,
+      getSkillAccess: governance.getSkillAccess(),
       getFilesystemBindings: governance.getFilesystemBindings(),
       pi: governance.pi,
       getSessionNamespace: ({ workspaceId, request, userId }) => fullAppAgentSessionNamespace({ workspaceId, request, userId }),

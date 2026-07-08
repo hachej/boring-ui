@@ -1,11 +1,13 @@
+import { createHash } from 'node:crypto'
 import { stat } from 'node:fs/promises'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 import type { BoringAgentRuntimePaths } from '../runtimeLayout'
-import type { ProvisionWorkspaceRuntimeOptions, WorkspaceProvisioningAdapter } from './types'
+import type { PluginSkillAccess, ProvisionWorkspaceRuntimeOptions, WorkspaceProvisioningAdapter } from './types'
 
 const GENERATED_SKILLS_REL = '.boring-agent/skills'
+const USER_SCOPED_GENERATED_SKILLS_REL = '.boring-agent/skills-users'
 const USER_SKILLS_REL = '.agents/skills'
 
 export interface MirrorPluginSkillsResult {
@@ -30,17 +32,43 @@ function assertSafeSegment(kind: string, value: string): void {
   }
 }
 
-export function getProvisionedSkillPaths(paths: BoringAgentRuntimePaths): string[] {
-  return [paths.skills, join(paths.workspaceRoot, USER_SKILLS_REL)]
+const PLUGIN_SKILL_ACCESSES = ['invisible', 'readonly', 'readwrite'] as const satisfies readonly PluginSkillAccess[]
+
+function assertSkillAccess(value: string): asserts value is PluginSkillAccess {
+  if (!PLUGIN_SKILL_ACCESSES.includes(value as PluginSkillAccess)) {
+    throw new Error(`Invalid skill access for plugin skill mirror: ${value}`)
+  }
+}
+
+function userSkillNamespace(context: ProvisionWorkspaceRuntimeOptions['skillAccessContext']): string {
+  const identity = context?.userId?.trim() || context?.userEmail?.trim() || 'anonymous'
+  return createHash('sha256').update(identity).digest('hex').slice(0, 24)
+}
+
+export function getProvisionedSkillPaths(
+  paths: BoringAgentRuntimePaths,
+  context?: ProvisionWorkspaceRuntimeOptions['skillAccessContext'],
+): string[] {
+  if (!context) return [paths.skills, join(paths.workspaceRoot, USER_SKILLS_REL)]
+  const namespace = userSkillNamespace(context)
+  return [join(paths.workspaceRoot, USER_SCOPED_GENERATED_SKILLS_REL, namespace)]
 }
 
 export async function mirrorPluginSkills(options: {
   plugins: ProvisionWorkspaceRuntimeOptions['plugins']
   adapter: WorkspaceProvisioningAdapter
   runtimeLayout: BoringAgentRuntimePaths
+  skillAccessContext?: ProvisionWorkspaceRuntimeOptions['skillAccessContext']
+  resolvePluginSkillAccess?: ProvisionWorkspaceRuntimeOptions['resolvePluginSkillAccess']
 }): Promise<MirrorPluginSkillsResult> {
-  await options.adapter.workspaceFs.rm(GENERATED_SKILLS_REL)
-  await options.adapter.workspaceFs.mkdir(GENERATED_SKILLS_REL)
+  const namespace = options.skillAccessContext ? userSkillNamespace(options.skillAccessContext) : undefined
+  const generatedSkillsRel = namespace
+    ? `${USER_SCOPED_GENERATED_SKILLS_REL}/${namespace}`
+    : GENERATED_SKILLS_REL
+  const writableSkillsRel = USER_SKILLS_REL
+
+  await options.adapter.workspaceFs.rm(generatedSkillsRel)
+  await options.adapter.workspaceFs.mkdir(generatedSkillsRel)
 
   const seen = new Set<string>()
   let copiedSkillCount = 0
@@ -50,6 +78,19 @@ export async function mirrorPluginSkills(options: {
 
     for (const skill of plugin.skills ?? []) {
       assertSafeSegment('skill name', skill.name)
+      const defaultAccess = skill.access ?? 'readonly'
+      assertSkillAccess(defaultAccess)
+      const access = options.resolvePluginSkillAccess
+        ? await options.resolvePluginSkillAccess({
+            ...(options.skillAccessContext ?? {}),
+            pluginId: plugin.id,
+            skillName: skill.name,
+            defaultAccess,
+          }) ?? defaultAccess
+        : defaultAccess
+      assertSkillAccess(access)
+      if (access === 'invisible') continue
+
       const key = `${plugin.id}/${skill.name}`
       if (seen.has(key)) {
         throw new Error(`Duplicate plugin skill mirror target: ${key}`)
@@ -58,10 +99,25 @@ export async function mirrorPluginSkills(options: {
 
       const sourcePath = sourceToPath(skill.source)
       const sourceStat = await stat(sourcePath)
-      const skillTarget = `${GENERATED_SKILLS_REL}/${plugin.id}/${skill.name}`
+      // Request-scoped access (governance/RBAC) must not materialize editable
+      // files into the shared workspace: a hashed path under .agents/ would
+      // still be visible to every user with workspace filesystem access. Until
+      // there is a real per-user filesystem boundary, governed readwrite means
+      // "available for this user" and is mirrored into the user's generated
+      // skill set. Self-contained plugin defaults without a request context keep
+      // the historical readwrite behavior and seed .agents/skills once.
+      const materializeReadwrite = access === 'readwrite' && !options.skillAccessContext
+      const skillTarget = materializeReadwrite
+        ? `${writableSkillsRel}/${plugin.id}/${skill.name}`
+        : `${generatedSkillsRel}/${plugin.id}/${skill.name}`
       const target = sourceStat.isDirectory()
         ? skillTarget
         : `${skillTarget}/SKILL.md`
+
+      if (materializeReadwrite) {
+        await options.adapter.workspaceFs.mkdir(`${writableSkillsRel}/${plugin.id}`)
+        if (await options.adapter.workspaceFs.exists(skillTarget)) continue
+      }
 
       await options.adapter.workspaceFs.copyFromHost(skill.source, target)
       copiedSkillCount += 1
@@ -70,6 +126,6 @@ export async function mirrorPluginSkills(options: {
 
   return {
     changed: copiedSkillCount > 0,
-    skillPaths: getProvisionedSkillPaths(options.runtimeLayout),
+    skillPaths: getProvisionedSkillPaths(options.runtimeLayout, options.skillAccessContext),
   }
 }

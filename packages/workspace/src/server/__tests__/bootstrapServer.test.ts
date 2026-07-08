@@ -405,6 +405,13 @@ describe("bootstrapServer", () => {
         skills: [{ name: "", source: new URL("file:///tmp/SKILL.md") }],
       }),
     ).toThrow("skills[0].name must be a non-empty string")
+
+    expect(() =>
+      defineServerPlugin({
+        id: "bad-skill-access",
+        skills: [{ name: "skill", source: new URL("file:///tmp/SKILL.md"), access: "editable" as never }],
+      }),
+    ).toThrow("skills[0].access must be one of invisible, readonly, readwrite")
   })
 
   it("defineServerPlugin accepts valid route and provisioning contributions", () => {

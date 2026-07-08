@@ -137,6 +137,99 @@ test('mirrors file and directory plugin skills into generated .boring-agent/skil
   ])
 })
 
+test('skill access controls plugin skill visibility and editability', async () => {
+  const host = await mkdtemp(join(tmpdir(), 'boring-skill-access-'))
+  const readonlySkill = await writeHostFile(host, 'readonly.md', '# Readonly\n')
+  const readwriteSkill = await writeHostFile(host, 'readwrite.md', '# Readwrite\n')
+  const invisibleSkill = await writeHostFile(host, 'invisible.md', '# Invisible\n')
+  const state: FakeWorkspaceFsState = {
+    files: new Map(),
+    dirs: new Set(),
+    removed: [],
+    copied: [],
+  }
+
+  await mirrorPluginSkills({
+    plugins: [{
+      id: 'clinic',
+      skills: [
+        { name: 'readonly-skill', source: readonlySkill, access: 'readonly' },
+        { name: 'editable-skill', source: readwriteSkill, access: 'readwrite' },
+        { name: 'hidden-skill', source: invisibleSkill, access: 'invisible' },
+      ],
+    }],
+    adapter: createFakeAdapter(state),
+    runtimeLayout: getBoringAgentRuntimePaths('/workspace'),
+  })
+
+  expect(state.files.get('.boring-agent/skills/clinic/readonly-skill/SKILL.md')).toBe('# Readonly\n')
+  expect(state.files.get('.agents/skills/clinic/editable-skill/SKILL.md')).toBe('# Readwrite\n')
+  expect([...state.files.keys()].some((path) => path.includes('hidden-skill'))).toBe(false)
+})
+
+test('request-scoped skill access mirrors into per-user generated paths', async () => {
+  const host = await mkdtemp(join(tmpdir(), 'boring-skill-user-access-'))
+  const readonlySkill = await writeHostFile(host, 'readonly.md', '# Readonly\n')
+  const readwriteSkill = await writeHostFile(host, 'readwrite.md', '# Readwrite\n')
+  const hiddenSkill = await writeHostFile(host, 'hidden.md', '# Hidden\n')
+  const state: FakeWorkspaceFsState = {
+    files: new Map(),
+    dirs: new Set(),
+    removed: [],
+    copied: [],
+  }
+
+  const result = await mirrorPluginSkills({
+    plugins: [{
+      id: 'clinic',
+      skills: [
+        { name: 'readonly', source: readonlySkill, access: 'invisible' },
+        { name: 'editable', source: readwriteSkill, access: 'readonly' },
+        { name: 'hidden', source: hiddenSkill, access: 'readonly' },
+      ],
+    }],
+    adapter: createFakeAdapter(state),
+    runtimeLayout: getBoringAgentRuntimePaths('/workspace'),
+    skillAccessContext: { userId: 'user-1', userEmail: 'user@example.com', userEmailVerified: true },
+    resolvePluginSkillAccess: ({ skillName }) => {
+      if (skillName === 'readonly') return 'readonly'
+      if (skillName === 'editable') return 'readwrite'
+      return 'invisible'
+    },
+  })
+
+  const readonlyPath = [...state.files.keys()].find((path) => path.endsWith('/clinic/readonly/SKILL.md'))
+  const editablePath = [...state.files.keys()].find((path) => path.endsWith('/clinic/editable/SKILL.md'))
+  expect(readonlyPath).toMatch(/^\.boring-agent\/skills-users\/[a-f0-9]{24}\/clinic\/readonly\/SKILL\.md$/)
+  expect(editablePath).toMatch(/^\.boring-agent\/skills-users\/[a-f0-9]{24}\/clinic\/editable\/SKILL\.md$/)
+  expect([...state.files.keys()].some((path) => path.includes('/hidden/'))).toBe(false)
+  expect(result.skillPaths).toHaveLength(1)
+  expect(result.skillPaths[0]).toContain('/.boring-agent/skills-users/')
+  expect(result.skillPaths.some((path) => path.includes('/.agents/'))).toBe(false)
+})
+
+test('readwrite plugin skills seed once and preserve workspace edits', async () => {
+  const host = await mkdtemp(join(tmpdir(), 'boring-skill-readwrite-preserve-'))
+  const skill = await writeHostFile(host, 'skill.md', '# Plugin default\n')
+  const state: FakeWorkspaceFsState = {
+    files: new Map([
+      ['.agents/skills/clinic/editable/SKILL.md', '# User edit\n'],
+    ]),
+    dirs: new Set(['.agents/skills', '.agents/skills/clinic']),
+    removed: [],
+    copied: [],
+  }
+
+  await mirrorPluginSkills({
+    plugins: [{ id: 'clinic', skills: [{ name: 'editable', source: skill, access: 'readwrite' }] }],
+    adapter: createFakeAdapter(state),
+    runtimeLayout: getBoringAgentRuntimePaths('/workspace'),
+  })
+
+  expect(state.files.get('.agents/skills/clinic/editable/SKILL.md')).toBe('# User edit\n')
+  expect(state.copied).toEqual([])
+})
+
 test('nuke-and-pave prunes removed or renamed generated skills but leaves user .agents/skills untouched', async () => {
   const host = await mkdtemp(join(tmpdir(), 'boring-skill-prune-'))
   const currentSkill = await writeHostFile(host, 'current.md', '# Current\n')

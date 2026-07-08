@@ -86,6 +86,10 @@ export type { CreateVercelProvisioningAdapterOptions } from './sandbox/vercel-sa
 export type { ProvisioningArtifactRequest } from './workspace/provisioning/packArtifact'
 export { provisionWorkspaceRuntime } from './workspace/provisioning'
 export type {
+  PluginSkillAccess,
+  PluginSkillAccessContext,
+  PluginSkillAccessRequest,
+  PluginSkillAccessResolver,
   PluginSkillSource,
   ProvisionWorkspaceRuntimeOptions,
   RuntimeNodePackageSpec,

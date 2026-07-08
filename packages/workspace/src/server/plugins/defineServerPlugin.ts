@@ -126,6 +126,14 @@ function validateSkills(pluginId: string, skills: PluginSkillSource[]): void {
     if (!isPathLike(skill.source)) {
       fail(pluginId, `skills[${i}].source must be a string or URL`)
     }
+    if (
+      skill.access !== undefined
+      && skill.access !== "invisible"
+      && skill.access !== "readonly"
+      && skill.access !== "readwrite"
+    ) {
+      fail(pluginId, `skills[${i}].access must be one of invisible, readonly, readwrite`)
+    }
   }
 }
 

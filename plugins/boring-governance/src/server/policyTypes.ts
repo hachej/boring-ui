@@ -1,4 +1,13 @@
+import type { PluginSkillAccess } from '@hachej/boring-agent/server'
+
 export type TenantRole = 'admin' | 'user'
+export type GovernanceSkillAccess = PluginSkillAccess
+
+export interface GovernanceSkillGrant {
+  plugin: string
+  name: string
+  access: GovernanceSkillAccess
+}
 
 export interface GovernancePolicyFile {
   tenant?: {
@@ -7,6 +16,7 @@ export interface GovernancePolicyFile {
     defaultMonthlyModelBudgetEur?: unknown
     perRunHoldEur?: unknown
   }
+  roles?: unknown
   users?: unknown
 }
 
@@ -30,6 +40,11 @@ export interface GovernanceUserPolicy {
   companyContext: {
     allow: string[]
   }
+  skills: GovernanceSkillGrant[]
+}
+
+export interface GovernanceRolePolicy {
+  skills: GovernanceSkillGrant[]
 }
 
 export interface GovernancePolicy {
@@ -40,6 +55,7 @@ export interface GovernancePolicy {
     perRunHoldEur: number
     perRunHoldMicros: number
   }
+  roles: Record<TenantRole, GovernanceRolePolicy>
   users: GovernanceUserPolicy[]
   usersByEmail: Map<string, GovernanceUserPolicy>
 }

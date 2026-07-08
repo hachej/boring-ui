@@ -16,7 +16,7 @@ import {
 } from './runtime/mode'
 import { getBoringAgentRuntimePaths, type BoringAgentRuntimePaths } from './workspace/runtimeLayout'
 import { createNodeWorkspace } from './workspace/createNodeWorkspace'
-import type { WorkspaceProvisioningAdapter, WorkspaceProvisioningResult } from './workspace/provisioning'
+import type { PluginSkillAccessResolver, WorkspaceProvisioningAdapter, WorkspaceProvisioningResult } from './workspace/provisioning'
 import type { Workspace } from '../shared/workspace'
 import { ErrorCode } from '../shared/error-codes'
 import { collectToolReadinessRequirements, createAgentReadinessFromTracker } from './agentReadiness'
@@ -355,6 +355,8 @@ export interface RegisterAgentRoutesOptions {
   admitEffect?: AgentEffectAdmission
   /** Generic request-aware model filtering seam. Hosts may filter per user/workspace. */
   filterModels?: ModelsRoutesOptions['filterModels']
+  /** Generic per-request plugin skill access seam. Hosts may override plugin defaults per user/workspace. */
+  getSkillAccess?: PluginSkillAccessResolver
   /** Generic per-request/per-run filesystem binding seam. Hosts may return user/session-filtered bindings. */
   getFilesystemBindings?: (ctx: {
     request?: FastifyRequest
@@ -476,6 +478,7 @@ export const registerAgentRoutes: FastifyPluginAsync<RegisterAgentRoutesOptions>
     typeof opts.getWorkspaceRoot === 'function' ||
     typeof opts.getTemplatePath === 'function' ||
     typeof opts.getPi === 'function' ||
+    typeof opts.getSkillAccess === 'function' ||
     typeof opts.getExtraTools === 'function' ||
     typeof opts.getSessionNamespace === 'function' ||
     typeof opts.getSystemPromptDynamic === 'function' ||
@@ -525,6 +528,9 @@ export const registerAgentRoutes: FastifyPluginAsync<RegisterAgentRoutesOptions>
       : opts.sessionNamespace)
     const extraToolsAuthSubject = opts.getExtraTools ? trustedCtx?.userId ?? getRequestAuthSubject(request) : undefined
     const contribution = await opts.getRuntimeScopeContribution?.({ workspaceId, workspaceRoot: root, request })
+    const skillAccessUser = opts.getSkillAccess
+      ? (request as FastifyRequest & { user?: { id?: string; email?: string; emailVerified?: boolean } | null } | undefined)?.user
+      : undefined
     return {
       root,
       templatePath: scopedTemplatePath,
@@ -540,6 +546,9 @@ export const registerAgentRoutes: FastifyPluginAsync<RegisterAgentRoutesOptions>
         sessionNamespace ?? null,
         extraToolsAuthSubject ?? null,
         contribution?.identity ?? null,
+        skillAccessUser?.id ?? null,
+        skillAccessUser?.email ?? null,
+        skillAccessUser?.emailVerified === true,
       ]),
     }
   }

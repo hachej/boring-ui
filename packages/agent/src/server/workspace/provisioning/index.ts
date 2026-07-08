@@ -16,6 +16,10 @@ export { ensureNodeEnv, ensureNodeRuntime } from './node'
 export { ensurePythonRuntime, ensureUv } from './python'
 export { seedWorkspaceFiles } from './workspaceFiles'
 export type {
+  PluginSkillAccess,
+  PluginSkillAccessContext,
+  PluginSkillAccessRequest,
+  PluginSkillAccessResolver,
   PluginSkillSource,
   ProvisionWorkspaceRuntimeOptions,
   RuntimeNodePackageSpec,

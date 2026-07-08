@@ -173,6 +173,8 @@ export async function provisionWorkspaceRuntime(
         plugins: opts.plugins,
         adapter: opts.adapter,
         runtimeLayout: opts.runtimeLayout,
+        skillAccessContext: opts.skillAccessContext,
+        resolvePluginSkillAccess: opts.resolvePluginSkillAccess,
       }),
     })
     const workspaceFiles = await runPhase({

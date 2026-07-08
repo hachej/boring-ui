@@ -2,9 +2,38 @@ import type { TelemetrySink } from '../../../shared/telemetry'
 import type { BoringAgentRuntimePaths } from '../runtimeLayout'
 import type { ProvisioningLogger } from './errors'
 
+export type PluginSkillAccess = 'invisible' | 'readonly' | 'readwrite'
+
+export interface PluginSkillAccessContext {
+  userId?: string
+  userEmail?: string
+  userEmailVerified?: boolean
+}
+
+export interface PluginSkillAccessRequest extends PluginSkillAccessContext {
+  pluginId: string
+  skillName: string
+  defaultAccess: PluginSkillAccess
+}
+
+export type PluginSkillAccessResolver = (
+  request: PluginSkillAccessRequest,
+) => PluginSkillAccess | undefined | Promise<PluginSkillAccess | undefined>
+
 export interface PluginSkillSource {
   name: string
   source: string | URL
+  /**
+   * Controls how a plugin-contributed skill is surfaced in the workspace.
+   * Uses the same `access` naming as governance/filesystem bindings.
+   *
+   * - invisible: do not expose the skill to Pi or the workspace UI.
+   * - readonly: mirror into generated .boring-agent/skills; visible but plugin-owned.
+   * - readwrite: seed into .agents/skills once; user/workspace-owned after creation.
+   *
+   * Defaults to readonly for backwards compatibility.
+   */
+  access?: PluginSkillAccess
 }
 
 export interface RuntimeTemplateContribution {
@@ -100,4 +129,6 @@ export interface ProvisionWorkspaceRuntimeOptions {
   logger?: ProvisioningLogger
   telemetry?: TelemetrySink
   telemetryContext?: ProvisioningTelemetryContext
+  skillAccessContext?: PluginSkillAccessContext
+  resolvePluginSkillAccess?: PluginSkillAccessResolver
 }

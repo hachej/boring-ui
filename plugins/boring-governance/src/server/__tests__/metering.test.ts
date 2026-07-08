@@ -39,12 +39,14 @@ function service() {
     status: { state: 'active', path: '/policy.yaml', tenantId: 'company', userCount: 1 },
     policy: {
       tenant: { id: 'company', companyContextWorkspaceId: null, defaultMonthlyModelBudgetEur: 0, perRunHoldEur: 1, perRunHoldMicros: 1_000_000 },
+      roles: { admin: { skills: [] }, user: { skills: [] } },
       users: [{
         email: 'user@example.com',
         role: 'user',
         budgets: { monthlyEur: 10, monthlyMicros: 10_000_000 },
         models: [{ provider: 'infomaniak', id: 'qwen', monthlyBudgetEur: 5, monthlyBudgetMicros: 5_000_000 }],
         companyContext: { allow: [] },
+        skills: [],
       }],
       usersByEmail: new Map([['user@example.com', {
         email: 'user@example.com',
@@ -52,6 +54,7 @@ function service() {
         budgets: { monthlyEur: 10, monthlyMicros: 10_000_000 },
         models: [{ provider: 'infomaniak', id: 'qwen', monthlyBudgetEur: 5, monthlyBudgetMicros: 5_000_000 }],
         companyContext: { allow: [] },
+        skills: [],
       }]]),
     },
   })
