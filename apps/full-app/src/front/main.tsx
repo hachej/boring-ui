@@ -18,7 +18,7 @@ import '@hachej/boring-core/app/front/styles.css'
 import './app.css'
 import { createGovernanceCompanyAdmin } from '@hachej/boring-governance/front'
 import { BoringMcpSourcesOverlay } from '@hachej/boring-mcp/front'
-import { PublicHeroDescription, publicLaunchPlugin } from './PublicLaunchPages'
+import { PublicHeroDescription } from './PublicHeroDescription'
 import { fullAppBoringMcpOptions } from './boringMcp'
 
 const PRODUCT_NAME = 'Seneca AI'
@@ -147,8 +147,8 @@ createRoot(document.getElementById('root')!).render(
       chatEntryMode="chat-first"
       publicPaths={[]}
       chatFirstPublicShell={{
-        showTeachingArrows: true,
-        composerPlaceholder: 'Sign in to chat with the agent — or type a command like /landing-page',
+        showTeachingArrows: false,
+        composerPlaceholder: 'Sign in to chat with the agent',
         emptyState: {
           eyebrow: PRODUCT_NAME,
           title: 'One workspace. Any AI provider',
@@ -166,10 +166,7 @@ createRoot(document.getElementById('root')!).render(
             </div>
           ),
         },
-        suggestions: [
-          { label: '/landing-page', hint: 'Get more details.', prompt: '/landing-page' },
-          { label: '/reach-out', hint: 'Book a 30-minute live walkthrough.', prompt: '/reach-out' },
-        ],
+        suggestions: [],
         models: [
           // European-hosted · Frontier · Local — one per category.
           { provider: 'infomaniak', id: 'minimax-2.5', label: 'MiniMax 2.5 · Infomaniak' },
@@ -179,10 +176,8 @@ createRoot(document.getElementById('root')!).render(
       }}
       chatParams={chatParams}
       chatFirstPublicWorkspaceProps={{
-        surfaceInitialPanels: [
-          { id: 'public-landing-page', component: 'public.launch.landing', title: 'Landing page' },
-        ],
-        plugins: [publicLaunchPlugin],
+        surfaceInitialPanels: [],
+        plugins: [],
       }}
       authPages={{ userSettings: AccountSettingsPage }}
       topBarRight={
