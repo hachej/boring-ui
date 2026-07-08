@@ -68,13 +68,12 @@
       "esbuild"
     ],
     "overrides": {
-      "@mariozechner/pi-coding-agent": "npm:@earendil-works/pi-coding-agent@0.75.5",
+      "@mariozechner/pi-coding-agent": "npm:@earendil-works/pi-coding-agent@0.80.3",
       "@perspective-dev/client": "4.4.1",
       "@perspective-dev/viewer": "4.4.1",
       "@perspective-dev/viewer-datagrid": "4.4.1",
       "@perspective-dev/viewer-d3fc": "4.4.1",
-      "fastify": "5.8.5",
-      "better-auth": "1.6.11"
+      "better-auth": "1.6.22"
     }
   }
 }

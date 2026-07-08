@@ -1,6 +1,6 @@
 {
   "name": "@hachej/boring-bash",
-  "version": "0.1.64",
+  "version": "0.1.71",
   "type": "module",
   "license": "MIT",
   "description": "Filesystem and shell binding contracts for Boring runtimes.",
@@ -35,6 +35,7 @@
     "clean": "rm -rf dist .tsbuildinfo"
   },
   "devDependencies": {
+    "@types/node": "^22.20.0",
     "tsup": "^8.4.0",
     "typescript": "^6.0.3",
     "vitest": "^4.1.9"

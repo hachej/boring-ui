@@ -62,9 +62,10 @@ Use this top-level shape:
 Use only these component types and prop names:
 
 - `DashboardGrid` — layout container with string `children`; optional `props.columns` must be one of `1`, `2`, `3`, `4`, `5`, `6`, or `12`
-- `BSLMetric` — KPI card; requires `props.queryId`, `props.label`, and `props.valueField`; optional `props.format` is `number`, `currency`, or `percent`
-- `BSLChart` — native OpenUI/shadcn-style chart by default; requires `props.queryId` and `props.chartType`; `props.chartType` must be exactly one of `bar`, `line`, `area`, `scatter`, `radar`, `radial`, `pie`, `donut`, `heatmap`, `treemap`, `sunburst`, or `table`; never use `gauge`, `histogram`, or other chart types; use `props.renderer: "perspective"` only for advanced manipulation; use `props.x` only for the category/grouping axis and `props.y` only for numeric measure series; do not include the x/category field as a measure/series; optional `props.color` is allowed (not `xField`, `yField`, or `yFields`)
+- `BSLMetric` — KPI card; requires `props.queryId`, `props.label`, and `props.valueField`; optional `props.format` is `number`, `currency`, or `percent`; optional `props.description` becomes an info tooltip; optional `props.showMeta: true` exposes query/source metadata
+- `BSLChart` — native OpenUI/shadcn-style chart by default; requires `props.queryId` and `props.chartType`; `props.chartType` must be exactly one of `bar`, `line`, `area`, `scatter`, `radar`, `radial`, `pie`, `donut`, `heatmap`, `treemap`, `sunburst`, or `table`; never use `gauge`, `histogram`, or other chart types; use `props.renderer: "perspective"` only for advanced manipulation; use `props.x` only for the category/grouping axis and `props.y` only for numeric measure series; do not include the x/category field as a measure/series; optional `props.color` is allowed (not `xField`, `yField`, or `yFields`); optional `props.description` becomes an info tooltip; optional `props.xAxisLabel`, `props.yAxisLabel`, `props.fieldLabels`, and `props.fieldFormats` improve reader-facing labels
 - `BSLPerspectiveViewer` — exploratory table/pivot; use `props.plugin: "Datagrid"` for detail tables; optional `props.columns`, `props.groupBy`, and `props.splitBy` are string arrays; optional `props.sort` is an array of `[field, "asc" | "desc"]` tuples
+- `BSLTable` — native dashboard detail table; requires `props.queryId`; optional `props.title`, `props.description`, `props.columns`, `props.fieldLabels`, `props.fieldFormats`, and `props.sort`; prefer this over `BSLPerspectiveViewer` for small dashboard tables
 - `BSLFilter` — filter control targeting one or more query IDs; requires `props.id`, `props.field`, `props.controlType`, and `props.targetQueries`; `controlType` is `select`, `multiSelect`, `dateRange`, `numberRange`, or `search`
 - `BSLText` — markdown notes or section text; requires `props.markdown`
 
@@ -72,8 +73,10 @@ Use only these component types and prop names:
 
 - put filters/controllers first, then KPI metrics, then charts, then detail/Perspective tables
 - layout rule: compact KPI/indicator-only sections may use `props.columns` from 1–5, but any grid containing charts, line charts, bar charts, tables, or exploratory/Perspective views must use `props.columns: 1` or `props.columns: 2` so charts are never denser than two per row
+- a dashboard can mix row widths by using nested `DashboardGrid` sections, for example a KPI row with `columns: 4`, then chart rows with `columns: 2`, then a detail row with `columns: 1`
 - keep 2–4 top metrics and avoid clutter; prefer clear titles and business labels
-- use Perspective mainly for drill-down tables/pivots, not for every chart
+- use `props.description` for short chart/table context; do not create a text card beside a single chart just to explain it
+- use Perspective mainly for drill-down pivots or advanced views, not for every chart or ordinary detail table
 - every component ID referenced in `children` must exist in `elements`
 - every `queryId` and filter `targetQueries` entry must exist in `queries`
 - use the exact validated prop names above; avoid invented aliases such as `xField`, `yField`, or `yFields`
@@ -83,3 +86,4 @@ Use only these component types and prop names:
 - SQL dashboard queries use `{ "id", "source", "sql", "params", "limit" }`; BSL dashboard queries use `{ "id", "model", "query", "limit" }`; do not invent `language`, `groupBy`, or `measures` fields in dashboard JSON
 - prefer semantic fields such as `revenue`, `order_count`, `month`, `region`,
   `customer_id`, and `cohort_month` over UI-specific names
+- render dates as date strings (`YYYY-MM-DD`, `YYYY-MM`, or reader-facing labels), not raw timestamps, unless time-of-day is essential

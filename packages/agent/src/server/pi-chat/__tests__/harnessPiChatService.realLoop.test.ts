@@ -232,11 +232,7 @@ async function createRealPiAdapter(options: RealPiAdapterOptions = {}) {
   })
 
   return {
-    adapter: createPiAgentSessionAdapter(session, {
-      ...(session.agent && typeof session.agent.continue === 'function'
-        ? { continueQueuedFollowUp: () => session.agent!.continue() }
-        : {}),
-    }),
+    adapter: createPiAgentSessionAdapter(session),
     providerCalls,
     toolCalls,
     waitForToolCall: () => toolCalls.length > 0 ? Promise.resolve() : new Promise<void>((resolve) => toolCallWaiters.push(resolve)),
@@ -566,7 +562,8 @@ describe('HarnessPiChatService real Pi loop', () => {
       event.text === 'ESCAPE_QUEUE_LOOP_DONE'
     ))
 
-    expect(providerCalls).toHaveLength(3)
+    expect(providerCalls.length).toBeGreaterThanOrEqual(3)
+    expect(providerCalls.some((context) => JSON.stringify(context).includes(queuedText))).toBe(true)
     expect(toolCalls).toEqual([{ toolCallId: 'tool-escape', params: { query: 'wait-abort' } }])
     expect(events).toEqual(expect.arrayContaining([
       expect.objectContaining({

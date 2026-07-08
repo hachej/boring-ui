@@ -69,6 +69,33 @@ async function closeDbPoolIfPresent(app: FastifyInstance): Promise<void> {
 
 function installShutdownHandlers(app: FastifyInstance): void {
   let shuttingDown = false
+  const activeRequests = new Set<unknown>()
+  const drainWaiters = new Set<() => void>()
+
+  const notifyRequestDrained = () => {
+    if (activeRequests.size > 0) return
+    for (const resolve of drainWaiters) resolve()
+    drainWaiters.clear()
+  }
+
+  app.addHook('onRequest', async (request) => {
+    activeRequests.add(request.id)
+  })
+  app.addHook('onResponse', async (request) => {
+    activeRequests.delete(request.id)
+    notifyRequestDrained()
+  })
+  app.addHook('onError', async (request) => {
+    activeRequests.delete(request.id)
+    notifyRequestDrained()
+  })
+
+  const waitForInflightRequests = async () => {
+    if (activeRequests.size === 0) return
+    await new Promise<void>((resolve) => {
+      drainWaiters.add(resolve)
+    })
+  }
 
   const onSignal = async (signal: NodeJS.Signals) => {
     if (shuttingDown) return
@@ -79,7 +106,7 @@ function installShutdownHandlers(app: FastifyInstance): void {
     try {
       let timeoutHandle: ReturnType<typeof setTimeout> | undefined
       const result = await Promise.race([
-        app.close(),
+        Promise.all([app.close(), waitForInflightRequests()]).then(() => 'closed' as const),
         new Promise<'timeout'>((resolve) => {
           timeoutHandle = setTimeout(() => {
             resolve('timeout')
