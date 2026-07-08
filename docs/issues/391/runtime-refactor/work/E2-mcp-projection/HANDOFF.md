@@ -4,7 +4,7 @@ Derived strictly from [TODO.md](./TODO.md) and [PLAN.md](./PLAN.md). Tick each b
 
 ## Prerequisites (packages + gates)
 - [ ] E1-environment-attachments merged — [../E1-environment-attachments/HANDOFF.md](../E1-environment-attachments/HANDOFF.md)
-- [ ] E1's attachment contracts + scoped views landed (`Environment`, `EnvironmentAttachment`, `ResolvedEnvironments`, `resolveAttachments`) before starting
+- [ ] E1's attachment contracts + scoped views landed (`Environment`, `EnvironmentAttachment`, `AttachedEnvironmentRuntime`, `ResolvedEnvironment`, `resolveAttachments`) before starting
 
 ## Beads
 - [ ] BBE2-001 — MCP server projection factory

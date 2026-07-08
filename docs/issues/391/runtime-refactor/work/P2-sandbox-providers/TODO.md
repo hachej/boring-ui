@@ -4,6 +4,14 @@ Handoff: self-contained work order for one autonomous coding agent (pi or gpt-5.
 
 **Package re-target (00 open decision 3, RESOLVED; 08 decision 11 — READ THIS FIRST):** concrete providers do **NOT** move to `@hachej/boring-bash/providers`. They move to a **new dedicated package `@hachej/boring-sandbox`** (`packages/boring-sandbox/src/providers`). The three-package stack, top-down: **`@hachej/boring-agent`** (defines ALL contracts, imports neither boring-bash nor boring-sandbox) ← **`@hachej/boring-bash`** (THE RUNTIME: fs bindings/tools/routes/UI + bash tool + runtime modes = the CHOICE of sandbox; **`resolveMode` lives here**; imports boring-sandbox **values** + agent **types**) ← **`@hachej/boring-sandbox`** (sandbox management: providers `direct`/`bwrap`-gVisor/`vercel`-PROXY/`remote-worker`-client, FUSE-S3 mounts, lifecycle; capability facts/types `reported | unknown` live in `boring-sandbox/shared` only; imports agent **types only**). Acyclic: `sandbox → agent(types)`; `bash → sandbox(values) + agent(types)`. Everywhere below, "move a provider" means move it to `packages/boring-sandbox/src/providers`, and "`resolveMode`" lands in boring-bash.
 
+**Amendment (2026-07-08):** provider capability facts feed environment
+resolution; they are not mode labels for surfaces to branch on. P2 reports
+facts such as filesystem access, exec, image support, mount support, network
+isolation, and unknown/reported status. The host/environment resolver turns
+those facts into `AttachedEnvironmentRuntime[]` and `ResolvedEnvironment[]`
+projections. New consumers must target those resolved environment facts, not
+`runtimeMode` or provider ids.
+
 ## Context (read first)
 
 - `docs/issues/391/runtime-refactor/architecture/02-boring-bash-environment.md` — package layers, provider capability matrix, mode↔provider mapping, remote-worker split rules.

@@ -8,6 +8,16 @@ Status: v2 architecture doc. Grounds the sandbox/mount work (`TODO-X1`, `TODO-P2
 
 **GO** for **self-hosting on EU infrastructure**. The closest managed products (Daytona, Northflank BYOC, Scaleway serverless-containers/gVisor) either expose vendor-managed volumes/FUSE, write S3 credentials *into* the sandbox, do not publish a sovereign EU control-plane guarantee, or do not expose host mounts. Self-host is the viable path; managed vendors may be adopted later only against contractual EU-residency proof (Decision 10).
 
+## Tenant provisioning command/API
+
+**Amendment (2026-07-08):** this deployment architecture requires a dedicated
+work package, [D1-tenant-provisioning](../work/D1-tenant-provisioning/), size
+**L/XL**. Its exit criterion is one command/API call that creates the tenant and
+workspace, runtime config, DB/storage/session roots, secrets, demo endpoint
+config, and deployment manifest for the chosen EU host. Without D1, T0/T1
+factory claims must be described as manual provisioning, not same-day repeatable
+platform delivery.
+
 ## FUSE × isolation matrix (condensed)
 
 Question for each runtime: can the host `rclone`-mount an S3 prefix and then expose that already-mounted path *inside* the sandbox, without the sandbox ever seeing `/dev/fuse`/`fusermount3`/credentials?

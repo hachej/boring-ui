@@ -3,7 +3,7 @@
 Derived strictly from [TODO.md](./TODO.md) and [PLAN.md](./PLAN.md). Tick each before calling this package done. Invent nothing.
 
 ## Prerequisites (packages + gates)
-P8 gates on every prior delivered phase EXCEPT P6b. Each package below must be merged:
+P8 gates on every delivered runtime phase EXCEPT P6b, M1, M2, D1, and S4; M2 may land after P8 as a committed follow-up. Each runtime package below must be merged:
 - [ ] P1-headless-core merged — [../P1-headless-core/HANDOFF.md](../P1-headless-core/HANDOFF.md)
 - [ ] T1-durable-events merged — [../T1-durable-events/HANDOFF.md](../T1-durable-events/HANDOFF.md)
 - [ ] T2-transport merged — [../T2-transport/HANDOFF.md](../T2-transport/HANDOFF.md)
@@ -20,11 +20,11 @@ P8 gates on every prior delivered phase EXCEPT P6b. Each package below must be m
 - [ ] S2-embed-contract merged — [../S2-embed-contract/HANDOFF.md](../S2-embed-contract/HANDOFF.md)
 - [ ] S3-control-plane-ux merged — [../S3-control-plane-ux/HANDOFF.md](../S3-control-plane-ux/HANDOFF.md)
 - [ ] Do NOT land while any earlier phase's `TODO(remove:*)` marker is still live — a surviving marker reopens the phase of its named deletion-bead owner (do not absorb it here)
-- [ ] P6b is explicitly NOT a P8 gate — verify only that the P6b follow-up issue is filed; never wait on P6b landing
+- [ ] P6b, M1, M2, D1, and S4 are explicitly NOT P8 gates; M2 may land after P8 — verify follow-up/status tracking is filed, never wait on those lanes landing.
 
 ## Owner questions / verdict
 - OWNER-QUESTIONS: none.
-- GO/NO-GO: GO only as the terminal verification phase after every prerequisite above is merged and the P6b follow-up issue is filed; NO-GO if any prior delivered phase is missing, any `TODO(remove:*)` marker survives, or any invariant/import gate is red.
+- GO/NO-GO: GO only as the terminal verification phase after every runtime prerequisite above is merged and the P6b/M2/D1/S4 follow-up or status tracking is filed; NO-GO if any required runtime phase is missing, any `TODO(remove:*)` marker survives, or any invariant/import gate is red.
 
 ## Beads
 - [ ] BBP8-001 — Repo-wide `TODO(remove:*)` marker gate (zero-tolerance)
@@ -64,7 +64,7 @@ P8 gates on every prior delivered phase EXCEPT P6b. Each package below must be m
 ## Exit criteria
 - [ ] Zero `TODO(remove:*)` markers repo-wide, asserted by a check wired into `pnpm lint:invariants` (fails CI if any marker survives).
 - [ ] `@hachej/boring-agent` package docs document the four-part surface contract (08) + the `createAgent()` public runtime API as the stable public surface.
-- [ ] Remaining plan tasks converted into tracked beads/issues — nothing left only in prose; the P6b follow-up issue is filed.
+- [ ] Remaining plan tasks converted into tracked beads/issues — nothing left only in prose; P6b/M2/D1/S4 follow-up or status tracking is filed.
 - [ ] No code imports old moved paths (grep gates green for every relocation in P2/P3/P4/T1/T2).
 - [ ] All `00` invariants + package invariant scripts + `audit:imports` green; full build+test green.
 

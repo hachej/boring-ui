@@ -13,6 +13,7 @@ Derived strictly from [TODO.md](./TODO.md) and [PLAN.md](./PLAN.md). Tick each b
 - [ ] BBP1-004 — `runtime: 'none'` pure path + `sessionStorageRoot` separation
 - [ ] BBP1-005 — pi-coding-agent cwd/resource assumption audit → findings + seals
 - [ ] BBP1-006 — Invariant + smoke tests
+- [ ] BBP1-007 — Minimal `ResolvedAgentCapabilities` projection
 
 ## Verification commands
 - [ ] `pnpm --filter @hachej/boring-agent run build`
@@ -30,16 +31,17 @@ Derived strictly from [TODO.md](./TODO.md) and [PLAN.md](./PLAN.md). Tick each b
 - [ ] BBP1-005's pi-harness audit findings are reviewed and the "sealed pi, not second harness" decision confirmed **before** the pure-mode exit criteria are claimed (BBP1-004 depends on BBP1-005's seals).
 - [ ] Behavior-parity gate: reviewer confirms the existing agent unit + e2e suites pass unchanged, and no existing route was added/removed for `direct`/`local`/`vercel-sandbox` modes.
 - [ ] The Fastify-graph invariant (BBP1-006) actually fails when a `fastify` import is introduced into the façade closure — reviewer verifies the negative case.
-- [ ] Track T1 does not start until BBP1-002..006 are merged (T1 depends on the stub seams landing here).
+- [ ] Track T1 does not start until BBP1-002..007 are merged (T1 depends on the stub seams landing here).
 
 ## Exit criteria
 - [ ] `createAgent()` exported from `@hachej/boring-agent/core` returning the nine members; `start` (accepted-receipt write), `stream` (replay+live-tail read with documented non-durable in-memory `eventIndex` counter until T1), `send` (convenience), `interrupt`/`stop` real, `resolveInput`/historical-`stream` typed stubs.
 - [ ] `createAgentApp()`/`registerAgentRoutes()` are adapters over `createAgent()`; all current HTTP consumers behave identically (cli hub, workspace, core, agent-playground e2e).
 - [ ] Typed config object only: no `process.env` / `process.cwd()` / `.pi/*` / `workspaces.yaml` reads inside `createAgent()`.
-- [ ] A pure agent starts via `createAgent({ runtime: 'none' })` in a plain Node script with no Fastify, no workspace/sandbox/cwd/file routes/bash tools.
+- [ ] A pure agent starts via `createAgent()` with no runtime/environment attachment in a plain Node script with no Fastify, no workspace/sandbox/cwd/file routes/bash tools; existing `runtime: 'none'` remains an adapter/host shim input during migration.
 - [ ] `sessionStorageRoot` is separated from workspace roots.
+- [ ] Minimal `ResolvedAgentCapabilities` projection exists for pure mode and coarse existing coding modes.
 - [ ] pi-coding-agent cwd/resource assumptions audited; findings doc + follow-up seals produced.
-- [ ] Invariant tests: no agent value import from boring-bash; no Fastify in the façade module graph; smoke test `createAgent({ runtime: 'none' })` runs a turn with a fake harness in plain Node.
+- [ ] Invariant tests: no agent value import from boring-bash; no Fastify in the façade module graph; smoke test `createAgent()` with no runtime/environment attachment runs a turn with a fake harness in plain Node.
 
 ## Closeout
 - [ ] Zero unowned `TODO(remove:*)` markers for this phase

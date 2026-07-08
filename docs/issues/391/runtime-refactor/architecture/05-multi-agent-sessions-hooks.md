@@ -30,14 +30,27 @@ A workspace may declare:
 const declaration: WorkspaceAgentsDeclaration = {
   defaultAgentId: 'coding',
   agents: [
-    { agentId: 'coding', label: 'Coding', toolset: 'full-bash', environments: ['user'] },
-    { agentId: 'reviewer', label: 'Reviewer', toolset: 'review-readonly', environments: ['company_context'] },
-    { agentId: 'concierge', label: 'Concierge', toolset: 'pure' },
+    {
+      agentId: 'coding',
+      label: 'Coding',
+      instructionsRef: 'coding.default',
+      capabilityBundles: ['full-bash'],
+      environmentAttachments: ['user'],
+      sandboxPolicyRef: 'workspace-default',
+    },
+    {
+      agentId: 'reviewer',
+      label: 'Reviewer',
+      instructionsRef: 'review.readonly',
+      capabilityBundles: ['review-readonly'],
+      environmentAttachments: ['company_context'],
+      governancePolicyRef: 'company-context-readonly',
+    },
   ],
 }
 ```
 
-This is the exact P6a declaration shape: `WorkspaceAgentsDeclaration { agents: WorkspaceAgentDeclaration[]; defaultAgentId }`, `WorkspaceAgentDeclaration { agentId; label?; toolset?; environments? }`. There is **no `features` config member** and no `package`/`bash` contract here. The host maps `toolset`/`environments` to explicit composition: it spreads the plain `createBashAgentFeature(...)` tool bundle into that agent's `createAgent().tools` only when the resolved toolset/environment policy says so; omitting a bash-capable toolset yields a pure agent with no file/bash tools. (For richer multi-environment agents this generalizes to the `environments: [...]` attachment list per 09; the point is explicit host-side composition, never an `AgentFeature`/`features` abstraction.) Child-app defaults can seed this registry in P6b, but workspace/user policy can narrow it.
+**Amendment (2026-07-08):** the exact P6a authored wrapper is `WorkspaceAgentsDeclaration { agents: AgentDefinitionDeclaration[]; defaultAgentId }`. Each per-agent `AgentDefinitionDeclaration` replaces the earlier narrow `WorkspaceAgentDeclaration`: it carries `agentId`/display metadata plus refs for instructions/persona, capability bundles/tools/skills/MCP servers, environment attachments, sandbox/governance/model/demo/pricing policy, and exposure config. Unknown refs fail closed. There is **no `features` config member** and no executable `package`/`bash` contract here. The declaration is requirements-only: the host maps capability/environment/policy refs to explicit composition, spreading the boring-bash environment bundle into that agent's `createAgent().tools` only when resolved policy and environment facts allow it. Omitting a bash-capable bundle yields a pure agent with no file/bash tools. Child-app defaults can seed this registry in P6b, but workspace/user policy can narrow it.
 
 ## Route/session namespace
 
