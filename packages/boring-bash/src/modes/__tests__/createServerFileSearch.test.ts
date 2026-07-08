@@ -1,7 +1,6 @@
 import { expect, test } from 'vitest'
 
-import type { Sandbox } from '../../../shared/sandbox'
-import type { Workspace } from '../../../shared/workspace'
+import type { Sandbox, Workspace } from '@hachej/boring-agent/shared'
 import { createServerFileSearch } from '../createServerFileSearch'
 
 const encoder = new TextEncoder()

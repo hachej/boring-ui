@@ -3,7 +3,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, expect, test } from 'vitest'
 
-import { getEnv, restoreEnvForTest, setEnvForTest } from '../../config/env'
+import { getEnv, restoreEnvForTest, setEnvForTest } from '../env'
 import {
   autoDetectMode,
   hasBwrap,

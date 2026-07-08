@@ -7,6 +7,7 @@ import { createServer as createViteServer } from 'vite'
 import { applyCspHeaders } from '../csp'
 import type { AgentTool } from '../../src/shared/tool'
 import { createAgentApp } from '../../src/server/createAgentApp'
+import { resolveMode } from '@hachej/boring-bash/modes'
 
 const reverseTool: AgentTool = {
   name: 'reverse',
@@ -30,7 +31,7 @@ const reverseTool: AgentTool = {
 
 const app = await createAgentApp({
   extraTools: [reverseTool],
-  mode: 'direct',
+  runtimeModeAdapter: resolveMode('direct'),
   sessionId: 'demo',
 })
 

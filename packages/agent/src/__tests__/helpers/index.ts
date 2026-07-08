@@ -1,4 +1,5 @@
 export { createTempWorkspace } from './createTempWorkspace'
+export { createTestNodeWorkspace } from './testNodeWorkspace'
 export { mockSandbox } from './mockSandbox'
 export { mockWorkspace } from './mockWorkspace'
 export { spawnBackend } from './spawnBackend'

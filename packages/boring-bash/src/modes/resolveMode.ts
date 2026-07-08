@@ -1,11 +1,12 @@
 import { spawnSync } from 'node:child_process'
 
-import { getEnv } from '../config/env'
-import type { SandboxHandleStore } from '../../shared/sandbox-handle-store'
-import type { BuiltinRuntimeModeId, RuntimeModeAdapter, RuntimeModeId } from './mode'
-import { directModeAdapter } from './modes/direct'
-import { localModeAdapter } from './modes/local'
-import { createVercelSandboxModeAdapter, vercelSandboxModeAdapter } from './modes/vercel-sandbox'
+import type { SandboxHandleStore } from '@hachej/boring-agent/shared'
+import type { BuiltinRuntimeModeId, RuntimeModeAdapter, RuntimeModeId } from '@hachej/boring-agent/server'
+
+import { getEnv } from './env'
+import { directModeAdapter } from './direct'
+import { localModeAdapter } from './local'
+import { createVercelSandboxModeAdapter, vercelSandboxModeAdapter } from './vercel-sandbox'
 
 const MODE_ADAPTERS: Record<BuiltinRuntimeModeId, RuntimeModeAdapter> = {
   direct: directModeAdapter,

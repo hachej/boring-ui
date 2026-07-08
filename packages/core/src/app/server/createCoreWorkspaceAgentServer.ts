@@ -4,13 +4,14 @@ import path from 'node:path'
 
 import {
   compactPiPackages,
-  createRemoteWorkerModeAdapter,
   provisionWorkspaceRuntime,
   registerAgentRoutes,
   type RegisterAgentRoutesOptions,
+  type RuntimeModeId,
   type RuntimeEnvContributionContext,
   type RuntimeProvisioningContribution,
 } from '@hachej/boring-agent/server'
+import { autoDetectMode, createRemoteWorkerModeAdapter, resolveMode } from '@hachej/boring-bash/modes'
 import {
   assertWorkspaceBridgeHandlersTrusted,
   collectWorkspaceAgentServerPlugins,
@@ -146,7 +147,9 @@ export interface CoreWorkspaceBridgeExtraToolsContext {
 export type CoreWorkspaceBridgePiContext = CoreWorkspaceBridgeExtraToolsContext
 
 export interface CreateCoreWorkspaceAgentServerOptions
-  extends Omit<RegisterAgentRoutesOptions, 'extraTools'> {
+  extends Omit<RegisterAgentRoutesOptions, 'extraTools' | 'runtimeModeAdapter'> {
+  mode?: RuntimeModeId
+  runtimeModeAdapter?: RegisterAgentRoutesOptions['runtimeModeAdapter']
   appRoot?: string
   config?: CoreConfig
   loadConfigOptions?: LoadConfigOptions
@@ -799,6 +802,10 @@ export async function createCoreWorkspaceAgentServer(
   const remoteWorkerModeAdapter = workerBaseUrl
     ? createRemoteWorkerModeAdapter({ baseUrl: workerBaseUrl })
     : undefined
+  const sandboxHandleStore = options.sandboxHandleStore ?? new WorkspaceRuntimeSandboxHandleStore(workspaceStore)
+  const modeAdapter = remoteWorkerModeAdapter
+    ?? options.runtimeModeAdapter
+    ?? resolveMode(options.mode ?? autoDetectMode(), { sandboxHandleStore })
   const piOptionsByRoot = new Map<string, AgentPiOptions>()
   const getPluginPiOptions = (root: string): AgentPiOptions => {
     const resolvedRoot = path.resolve(root)
@@ -872,9 +879,8 @@ export async function createCoreWorkspaceAgentServer(
     sessionId: options.sessionId,
     templatePath: options.templatePath,
     getTemplatePath: options.getTemplatePath,
-    mode: options.mode,
     externalPlugins: externalPluginsEnabled,
-    runtimeModeAdapter: remoteWorkerModeAdapter,
+    runtimeModeAdapter: modeAdapter,
     version: options.version,
     extraTools: [
       ...(options.extraTools ?? []),
@@ -902,7 +908,7 @@ export async function createCoreWorkspaceAgentServer(
         }),
       ]
     },
-    sandboxHandleStore: options.sandboxHandleStore ?? new WorkspaceRuntimeSandboxHandleStore(workspaceStore),
+    sandboxHandleStore,
     getWorkspaceId: resolveWorkspaceId,
     getWorkspaceRoot: resolveRoot,
     provisionRuntime: async ({ provisioningAdapter, runtimeLayout, workspaceId, request, runtimeMode }) => {

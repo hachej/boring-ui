@@ -24,6 +24,10 @@
     "./server": {
       "types": "./dist/server/index.d.ts",
       "import": "./dist/server/index.js"
+    },
+    "./modes": {
+      "types": "./dist/modes/index.d.ts",
+      "import": "./dist/modes/index.js"
     }
   },
   "scripts": {
@@ -33,6 +37,10 @@
     "lint": "pnpm run typecheck && pnpm run check:invariants",
     "test": "vitest run --passWithNoTests",
     "clean": "rm -rf dist .tsbuildinfo"
+  },
+  "dependencies": {
+    "@hachej/boring-agent": "workspace:*",
+    "@hachej/boring-sandbox": "workspace:*"
   },
   "devDependencies": {
     "tsup": "^8.4.0",

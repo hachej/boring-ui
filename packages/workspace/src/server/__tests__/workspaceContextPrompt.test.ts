@@ -13,8 +13,10 @@ import { mkdtemp, rm } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest"
+import { resolveMode } from "@hachej/boring-bash/modes"
 import { buildWorkspaceContextPrompt } from "../../app/server/createWorkspaceAgentServer"
 import { createWorkspaceAgentServer } from "../../app/server/createWorkspaceAgentServer"
+import { createFakeVercelRuntimeModeAdapter } from "./fakeRuntimeModeAdapter"
 
 // ── spy ───────────────────────────────────────────────────────────────────────
 let capturedSystemPromptAppend: string | undefined
@@ -25,7 +27,7 @@ vi.mock("@hachej/boring-agent/server", async (importOriginal) => {
     ...mod,
     createAgentApp: (opts: Parameters<typeof mod.createAgentApp>[0]) => {
       capturedSystemPromptAppend = opts?.systemPromptAppend
-      return mod.createAgentApp({ ...opts, mode: "direct" })
+      return mod.createAgentApp({ ...opts, runtimeModeAdapter: resolveMode("direct") })
     },
   }
 })
@@ -113,6 +115,7 @@ describe("createWorkspaceAgentServer — workspace context injection", () => {
     const app = await createWorkspaceAgentServer({
       workspaceRoot,
       mode: "vercel-sandbox",
+      runtimeModeAdapter: createFakeVercelRuntimeModeAdapter(),
       logger: false,
       provisionWorkspace: false,
       plugins: [{ id: "my-plugin", systemPrompt: "Plugin prompt only." }],
@@ -188,6 +191,7 @@ describe("createWorkspaceAgentServer — workspace context injection", () => {
     const app = await createWorkspaceAgentServer({
       workspaceRoot,
       mode: "vercel-sandbox",
+      runtimeModeAdapter: createFakeVercelRuntimeModeAdapter(),
       logger: false,
       provisionWorkspace: false,
     })
@@ -201,6 +205,7 @@ describe("createWorkspaceAgentServer — workspace context injection", () => {
     const app = await createWorkspaceAgentServer({
       workspaceRoot,
       mode: "vercel-sandbox",
+      runtimeModeAdapter: createFakeVercelRuntimeModeAdapter(),
       logger: false,
       provisionWorkspace: false,
       installPluginAuthoring: true,

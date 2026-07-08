@@ -17,6 +17,7 @@ import { evalAgentPrompt } from '../src/eval/evalPrompt'
 import { EvalRegex } from '../src/eval/types'
 import { createAgentApp } from '../src/server/createAgentApp'
 import { provisionRuntimeWorkspace } from '../src/server/workspace/provisionRuntime'
+import { resolveMode } from '@hachej/boring-bash/modes'
 
 const here = path.dirname(fileURLToPath(import.meta.url))
 const packageRoot = path.resolve(here, '..')
@@ -62,7 +63,7 @@ async function main(): Promise<number> {
 
     app = await createAgentApp({
       workspaceRoot,
-      mode: 'direct',
+      runtimeModeAdapter: resolveMode('direct'),
       logger: false,
       systemPromptAppend: `
 The workspace includes a skill named test-sdk. When asked to validate provisioning, follow that skill exactly.

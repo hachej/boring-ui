@@ -5,6 +5,7 @@ export default defineConfig({
     index: "src/index.ts",
     "shared/index": "src/shared/index.ts",
     "server/index": "src/server/index.ts",
+    "modes/index": "src/modes/index.ts",
   },
   format: ["esm"],
   dts: true,

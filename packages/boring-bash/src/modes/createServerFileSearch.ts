@@ -1,6 +1,4 @@
-import type { FileSearch } from '../../shared/file-search'
-import type { Sandbox } from '../../shared/sandbox'
-import type { Workspace } from '../../shared/workspace'
+import type { FileSearch, Sandbox, Workspace } from '@hachej/boring-agent/shared'
 
 const DEFAULT_LIMIT = 500
 const MAX_LIMIT = 5_000

@@ -10,7 +10,12 @@
     "skipLibCheck": true,
     "resolveJsonModule": true,
     "forceConsistentCasingInFileNames": true,
-    "noEmit": true
+    "noEmit": true,
+    "baseUrl": ".",
+    "paths": {
+      "@hachej/boring-bash/modes": ["../../packages/boring-bash/src/modes/index.ts"],
+      "@hachej/boring-sandbox/providers": ["../../packages/boring-sandbox/src/providers/index.ts"]
+    }
   },
   "include": ["src/**/*"],
   "exclude": ["node_modules", "dist"]

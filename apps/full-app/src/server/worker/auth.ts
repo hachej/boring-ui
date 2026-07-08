@@ -1,5 +1,6 @@
 import type { FastifyReply, FastifyRequest } from 'fastify'
-import { constantTimeTokenEqual, WORKER_INTERNAL_TOKEN_HEADER } from '@hachej/boring-agent/server'
+import { constantTimeTokenEqual } from '@hachej/boring-sandbox/providers'
+import { WORKER_INTERNAL_TOKEN_HEADER } from '@hachej/boring-sandbox/shared'
 
 export function verifyInternalToken(
   request: FastifyRequest,

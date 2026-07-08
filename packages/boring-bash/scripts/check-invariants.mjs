@@ -7,7 +7,7 @@ const packageRoot = resolve(import.meta.dirname, "..");
 const packageJsonPath = join(packageRoot, "package.json");
 const packageJson = JSON.parse(readFileSync(packageJsonPath, "utf8"));
 
-const requiredExports = [".", "./shared", "./server"];
+const requiredExports = [".", "./shared", "./server", "./modes"];
 const pass = (message) => console.log(`[boring-bash invariant] PASS ${message}`);
 const fail = (message) => {
   console.error(`[boring-bash invariant] FAIL ${message}`);

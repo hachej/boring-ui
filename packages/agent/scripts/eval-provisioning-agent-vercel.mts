@@ -18,7 +18,7 @@ import { fileURLToPath } from 'node:url'
 import { evalAgentPrompt } from '../src/eval/evalPrompt'
 import { EvalRegex } from '../src/eval/types'
 import { createAgentApp } from '../src/server/createAgentApp'
-import { resolveMode } from '../src/server/runtime/resolveMode'
+import { resolveMode } from '@hachej/boring-bash/modes'
 import type { RuntimeModeAdapter } from '../src/server/runtime/mode'
 
 const here = path.dirname(fileURLToPath(import.meta.url))
@@ -105,7 +105,7 @@ async function main(): Promise<number> {
       workspaceRoot,
       sessionId: workspaceRoot,
       templatePath,
-      mode: 'vercel-sandbox',
+      runtimeModeAdapter: adapter,
       logger: false,
       systemPromptAppend: `
 The workspace includes a skill named test-sdk and a local fixture SDK at ./test-sdk.

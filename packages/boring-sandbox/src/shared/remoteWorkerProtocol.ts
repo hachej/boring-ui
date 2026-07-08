@@ -1,5 +1,4 @@
-import type { Entry, Stat, WorkspaceChangeEvent } from '../../../shared/workspace'
-import type { ExecResult } from '../../../shared/sandbox'
+import type { Entry, ExecResult, Stat, WorkspaceChangeEvent } from '@hachej/boring-agent/shared'
 
 export const REMOTE_WORKER_RUNTIME_CWD = '/workspace'
 export const REMOTE_WORKER_PROVIDER = 'remote-worker'

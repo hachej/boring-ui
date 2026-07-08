@@ -5,7 +5,7 @@ import {
   REMOTE_WORKER_RUNTIME_CWD,
   type RemoteWorkerWorkspaceOp,
   type RemoteWorkerWorkspaceResult,
-} from '@hachej/boring-agent/server'
+} from '@hachej/boring-sandbox/shared'
 import {
   createBwrapSandbox,
   createNodeWorkspace,

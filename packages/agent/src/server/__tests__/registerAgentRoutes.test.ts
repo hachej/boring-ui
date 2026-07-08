@@ -4,7 +4,7 @@ import { dirname, join } from 'node:path'
 import { afterEach, expect, test, vi } from 'vitest'
 import Fastify from 'fastify'
 
-import { registerAgentRoutes } from '../registerAgentRoutes'
+import { createTestRuntimeModeAdapter, registerTestAgentRoutes } from './testRuntimeAdapter'
 import { provisionWorkspaceRuntime } from '../workspace/provisioning'
 import { ErrorCode } from '../../shared/error-codes'
 import type { RuntimeModeAdapter } from '../runtime/mode'
@@ -90,7 +90,7 @@ test('registerAgentRoutes externalPlugins=false keeps local plugin files out of 
     ].join('\n'),
   )
   const app = Fastify({ logger: false })
-  await app.register(registerAgentRoutes, {
+  await registerTestAgentRoutes(app, {
     workspaceRoot,
     mode: 'direct',
     externalPlugins: false,
@@ -119,7 +119,7 @@ test('registerAgentRoutes provisions embedded runtime plugins before host app ro
   const skillRoot = await createDummySkill()
   const app = Fastify({ logger: false })
 
-  await app.register(registerAgentRoutes, {
+  await registerTestAgentRoutes(app, {
     workspaceRoot,
     mode: 'direct',
     provisionRuntime: async ({ provisioningAdapter, runtimeLayout }) => {
@@ -165,7 +165,7 @@ test('registerAgentRoutes provisions the resolved request workspace, not the hos
   const packageRoot = await createDummyNodeSdkPackage()
   const app = Fastify({ logger: false })
 
-  await app.register(registerAgentRoutes, {
+  await registerTestAgentRoutes(app, {
     workspaceRoot: baseRoot,
     mode: 'direct',
     getWorkspaceId: async (request) => String(request.headers['x-boring-workspace-id'] ?? ''),
@@ -217,7 +217,7 @@ test('registerAgentRoutes resolves raw file preview workspace from query param',
   const getWorkspaceRoot = vi.fn(async (workspaceId: string) => workspaceId === 'workspace-a' ? workspaceA : baseRoot)
   const app = Fastify({ logger: false })
 
-  await app.register(registerAgentRoutes, {
+  await registerTestAgentRoutes(app, {
     workspaceRoot: baseRoot,
     mode: 'direct',
     getWorkspaceId,
@@ -249,7 +249,7 @@ test('request-scoped ready-status resolves the requested workspace', async () =>
   const getWorkspaceRoot = vi.fn(async (workspaceId: string) => workspaceId === 'workspace-a' ? workspaceA : baseRoot)
   const app = Fastify({ logger: false })
 
-  await app.register(registerAgentRoutes, {
+  await registerTestAgentRoutes(app, {
     workspaceRoot: baseRoot,
     mode: 'direct',
     getWorkspaceId,
@@ -284,7 +284,7 @@ test('registerAgentRoutes reload reruns provisioning and refreshes skills scope'
   const reloadSession = vi.fn(async () => true)
   const app = Fastify({ logger: false })
 
-  await app.register(registerAgentRoutes, {
+  await registerTestAgentRoutes(app, {
     workspaceRoot,
     mode: 'direct',
     provisionRuntime: async () => {
@@ -346,7 +346,7 @@ test('registerAgentRoutes mounts catalog endpoint on host app', async () => {
   const workspaceRoot = await makeTempDir('boring-agent-embed-')
   const app = Fastify({ logger: false })
 
-  await app.register(registerAgentRoutes, {
+  await registerTestAgentRoutes(app, {
     workspaceRoot,
     mode: 'direct',
   })
@@ -367,7 +367,7 @@ test('registerAgentRoutes mounts health endpoint', async () => {
   const workspaceRoot = await makeTempDir('boring-agent-embed-health-')
   const app = Fastify({ logger: false })
 
-  await app.register(registerAgentRoutes, {
+  await registerTestAgentRoutes(app, {
     workspaceRoot,
     mode: 'direct',
     version: '1.2.3-test',
@@ -387,7 +387,7 @@ test('registerAgentRoutes isolates same-root sessions with getSessionNamespace',
   const namespaceDir = (workspaceId: string) => join(homedir(), '.pi', 'agent', 'sessions', `${unique}-${workspaceId}`)
   const app = Fastify({ logger: false })
 
-  await app.register(registerAgentRoutes, {
+  await registerTestAgentRoutes(app, {
     workspaceRoot,
     mode: 'direct',
     getWorkspaceId: async (request) => String(request.headers['x-boring-workspace-id'] ?? ''),
@@ -431,7 +431,7 @@ test('registerAgentRoutes treats dynamic session namespace as request scoped', a
   const namespaceDir = (name: string) => join(homedir(), '.pi', 'agent', 'sessions', `${unique}-${name}`)
   const app = Fastify({ logger: false })
 
-  await app.register(registerAgentRoutes, {
+  await registerTestAgentRoutes(app, {
     workspaceRoot,
     mode: 'direct',
     getSessionNamespace: async ({ request }) => `${unique}-${String(request?.headers['x-session-namespace'] ?? 'default')}`,
@@ -472,7 +472,7 @@ test('registerAgentRoutes mounts sessions endpoint', async () => {
   const workspaceRoot = await makeTempDir('boring-agent-embed-sessions-')
   const app = Fastify({ logger: false })
 
-  await app.register(registerAgentRoutes, {
+  await registerTestAgentRoutes(app, {
     workspaceRoot,
     mode: 'direct',
   })
@@ -489,7 +489,7 @@ test('registerAgentRoutes does not add its own auth middleware', async () => {
   const workspaceRoot = await makeTempDir('boring-agent-embed-noauth-')
   const app = Fastify({ logger: false })
 
-  await app.register(registerAgentRoutes, {
+  await registerTestAgentRoutes(app, {
     workspaceRoot,
     mode: 'direct',
   })
@@ -509,7 +509,7 @@ test('registerAgentRoutes coexists with host routes', async () => {
 
   app.get('/api/v1/host-route', async () => ({ source: 'host' }))
 
-  await app.register(registerAgentRoutes, {
+  await registerTestAgentRoutes(app, {
     workspaceRoot,
     mode: 'direct',
   })
@@ -534,7 +534,7 @@ test('registerAgentRoutes bridges request.user to workspaceContext', async () =>
     ;(request as any).user = { id: 'user-1', email: 'test@test.dev', name: 'Test' }
   })
 
-  await app.register(registerAgentRoutes, {
+  await registerTestAgentRoutes(app, {
     workspaceRoot,
     mode: 'direct',
   })
@@ -574,7 +574,7 @@ test('registerAgentRoutes registers agent capabilities contributor when host sup
     return merged
   })
 
-  await app.register(registerAgentRoutes, {
+  await registerTestAgentRoutes(app, {
     workspaceRoot,
     mode: 'direct',
   })
@@ -656,7 +656,7 @@ test('extraTools appear in catalog when using registerAgentRoutes', async () => 
     },
   }
 
-  await app.register(registerAgentRoutes, {
+  await registerTestAgentRoutes(app, {
     workspaceRoot,
     mode: 'direct',
     extraTools: [customTool],
@@ -676,7 +676,7 @@ test('request-scoped catalog includes standard tools', async () => {
   const workspaceRoot = await makeTempDir('boring-agent-embed-dynamic-catalog-')
   const app = Fastify({ logger: false })
 
-  await app.register(registerAgentRoutes, {
+  await registerTestAgentRoutes(app, {
     workspaceRoot,
     mode: 'direct',
     getWorkspaceId: (request) => {
@@ -712,7 +712,7 @@ test('request-scoped catalog isolates getExtraTools by authenticated subject', a
     ;(request as unknown as { user?: { id: string } }).user = typeof userId === 'string' ? { id: userId } : undefined
   })
 
-  await app.register(registerAgentRoutes, {
+  await registerTestAgentRoutes(app, {
     workspaceRoot,
     mode: 'direct',
     getExtraTools: ({ authSubject }) => {
@@ -749,7 +749,7 @@ test('request-scoped catalog includes getExtraTools for workspace binding', asyn
   const app = Fastify({ logger: false })
   const seen: Array<{ workspaceId: string; runtimeMode: string; fsCapability: string | undefined }> = []
 
-  await app.register(registerAgentRoutes, {
+  await registerTestAgentRoutes(app, {
     workspaceRoot,
     mode: 'direct',
     getWorkspaceId: (request) => {
@@ -796,22 +796,12 @@ test('registerAgentRoutes accepts a custom runtime adapter for pluggable sandbox
   const customAdapter: RuntimeModeAdapter = {
     id: 'custom-sandbox',
     async create(ctx) {
-      const { createDirectSandbox, createNodeWorkspace } = await import('@hachej/boring-sandbox/providers')
-      const { createServerFileSearch } = await import('../runtime/createServerFileSearch')
-      const workspace = createNodeWorkspace(ctx.workspaceRoot)
-      const sandbox = createDirectSandbox()
-      await sandbox.init?.({ workspace, sessionId: ctx.sessionId })
-      return {
-        storageRoot: ctx.workspaceRoot,
-        workspace,
-        sandbox,
-        fileSearch: createServerFileSearch(workspace, sandbox),
-      }
+      return await createTestRuntimeModeAdapter({ id: 'custom-sandbox' }).create(ctx)
     },
   }
   const seen: string[] = []
 
-  await app.register(registerAgentRoutes, {
+  await registerTestAgentRoutes(app, {
     workspaceRoot,
     runtimeModeAdapter: customAdapter,
     getExtraTools: ({ runtimeMode, workspaceFsCapability }) => {
@@ -834,7 +824,7 @@ test('request-scoped health endpoints do not require workspace header', async ()
   const app = Fastify({ logger: false })
   let scopeChecks = 0
 
-  await app.register(registerAgentRoutes, {
+  await registerTestAgentRoutes(app, {
     workspaceRoot,
     mode: 'direct',
     getWorkspaceId: () => {
@@ -862,7 +852,7 @@ test('request-scoped models endpoint does not require workspace header', async (
   const app = Fastify({ logger: false })
   let scopeChecks = 0
 
-  await app.register(registerAgentRoutes, {
+  await registerTestAgentRoutes(app, {
     workspaceRoot,
     mode: 'direct',
     getWorkspaceId: (request) => {
@@ -911,7 +901,7 @@ test('model filter makes models endpoint workspace-scoped and receives request c
       emailVerified: true,
     }
   })
-  await app.register(registerAgentRoutes, {
+  await registerTestAgentRoutes(app, {
     workspaceRoot,
     mode: 'direct',
     filterModels,
@@ -971,7 +961,7 @@ test('file routes use request-aware filesystem bindings from registerAgentRoutes
       emailVerified: true,
     }
   })
-  await app.register(registerAgentRoutes, {
+  await registerTestAgentRoutes(app, {
     workspaceRoot,
     mode: 'direct',
     getFilesystemBindings,
@@ -1014,7 +1004,7 @@ test('request-scoped command endpoints use the workspace harness and request ide
     }
   })
 
-  await app.register(registerAgentRoutes, {
+  await registerTestAgentRoutes(app, {
     workspaceRoot,
     mode: 'direct',
     getWorkspaceId: (request) => {
@@ -1096,7 +1086,7 @@ test('metered command execution rejects commands before harness dispatch', async
   const getSlashCommands = vi.fn(async () => [{ name: 'plan', source: 'prompt' as const }])
   const executeSlashCommand = vi.fn(async () => {})
 
-  await app.register(registerAgentRoutes, {
+  await registerTestAgentRoutes(app, {
     workspaceRoot,
     mode: 'direct',
     metering: {
@@ -1155,7 +1145,7 @@ test('skills endpoint lists Pi-resolved project skills', async () => {
   )
 
   const app = Fastify({ logger: false })
-  await app.register(registerAgentRoutes, {
+  await registerTestAgentRoutes(app, {
     workspaceRoot,
     mode: 'direct',
     // Skill discovery is off by default (withPiHarnessDefaults); hosts that
@@ -1183,7 +1173,7 @@ test('skills endpoint discovers workspace .agents/skills when ambient skills are
   )
 
   const app = Fastify({ logger: false })
-  await app.register(registerAgentRoutes, {
+  await registerTestAgentRoutes(app, {
     workspaceRoot,
     mode: 'direct',
     // The standalone CLI's config: ambient discovery on (default is off).
@@ -1211,7 +1201,7 @@ test('skills endpoint does not require unrelated runtime-only dynamic hooks', as
   )
 
   const app = Fastify({ logger: false })
-  await app.register(registerAgentRoutes, {
+  await registerTestAgentRoutes(app, {
     workspaceRoot,
     mode: 'direct',
     pi: { noSkills: false },
@@ -1247,7 +1237,7 @@ test('skills endpoint mirrors noSkills while preserving explicit additional skil
   )
 
   const app = Fastify({ logger: false })
-  await app.register(registerAgentRoutes, {
+  await registerTestAgentRoutes(app, {
     workspaceRoot,
     mode: 'direct',
     pi: {
@@ -1270,7 +1260,7 @@ test('registerAgentRoutes does NOT expose /api/v1/ui/* (moved to @hachej/boring-
   const workspaceRoot = await makeTempDir('boring-agent-embed-no-ui-')
   const app = Fastify({ logger: false })
 
-  await app.register(registerAgentRoutes, {
+  await registerTestAgentRoutes(app, {
     workspaceRoot,
     mode: 'direct',
   })
@@ -1298,10 +1288,8 @@ test('runtimeEnvContributions merge generic host env into sandbox exec without w
     id: 'custom-env-sandbox',
     workspaceFsCapability: 'strong',
     async create(ctx) {
-      const { createNodeWorkspace } = await import('@hachej/boring-sandbox/providers')
-      const { createServerFileSearch } = await import('../runtime/createServerFileSearch')
+      const bundle = await createTestRuntimeModeAdapter({ id: 'custom-env-sandbox' }).create(ctx)
       const runtimeContext = { runtimeCwd: '/workspace' }
-      const workspace = createNodeWorkspace(ctx.workspaceRoot)
       const sandbox = {
         id: 'env-sandbox',
         placement: 'server' as const,
@@ -1314,11 +1302,9 @@ test('runtimeEnvContributions merge generic host env into sandbox exec without w
         },
       }
       return {
+        ...bundle,
         runtimeContext,
-        storageRoot: ctx.workspaceRoot,
-        workspace,
         sandbox,
-        fileSearch: createServerFileSearch(workspace, sandbox),
         bash: { kind: 'remote' },
       }
     },
@@ -1339,7 +1325,7 @@ test('runtimeEnvContributions merge generic host env into sandbox exec without w
     }
   })
 
-  await app.register(registerAgentRoutes, {
+  await registerTestAgentRoutes(app, {
     workspaceRoot,
     runtimeModeAdapter: customAdapter,
     harnessFactory,

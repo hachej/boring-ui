@@ -3,7 +3,7 @@ import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, test } from 'vitest'
-import { createAgentApp } from '../createAgentApp'
+import { createTestAgentApp } from './testRuntimeAdapter'
 
 function ensureApiKey(): boolean {
   if (process.env.ANTHROPIC_API_KEY) return true
@@ -36,7 +36,7 @@ describe('system-prompt-size regression', () => {
 
   test.skipIf(!hasKey)('prompt size stays within budget and contains no per-tool guideline patterns', async () => {
     const workspaceRoot = await makeTempDir()
-    const app = await createAgentApp({
+    const app = await createTestAgentApp({
       workspaceRoot,
       mode: 'direct',
       logger: false,

@@ -4,9 +4,9 @@ import {
   type BashToolOptions,
   createLocalBashOperations,
 } from '@mariozechner/pi-coding-agent'
-import { buildBwrapArgs } from '@hachej/boring-sandbox/providers'
 
 import { withWorkspacePythonEnv } from '../../sandbox/workspacePythonEnv'
+import { ErrorCode } from '../../../shared/error-codes'
 import { remoteSandboxBashOps } from '../operations/remoteSandbox'
 import { mergeRuntimeProvisioningEnv, type RuntimeProvisioningOptions } from '../../runtime/env'
 import { getRuntimeBundleStorageRoot, type RuntimeBashStrategy, type RuntimeBundle } from '../../runtime/mode'
@@ -17,10 +17,11 @@ function shellEscape(s: string): string {
 
 function bwrapSpawnHook(
   workspaceRoot: string,
-  runtime?: RuntimeProvisioningOptions,
+  runtime: RuntimeProvisioningOptions | undefined,
+  bwrapArgs: readonly string[],
   sandboxRoot = '/workspace',
 ): BashSpawnHook {
-  const args = buildBwrapArgs(workspaceRoot)
+  const args = [...bwrapArgs]
   const bwrapPrefix = ['bwrap', ...args].map(shellEscape).join(' ')
   return (context) => ({
     ...context,
@@ -83,13 +84,19 @@ function localSandboxBashToolOptions(
   strategy: Extract<RuntimeBashStrategy, { kind: 'local-sandbox' }>,
 ): BashToolOptions {
   const storageRoot = getRuntimeBundleStorageRoot(bundle)
+  if (strategy.bwrapArgs.length === 0) {
+    throw Object.assign(
+      new Error('local-sandbox runtime strategy requires non-empty bwrapArgs'),
+      { code: ErrorCode.enum.CONFIG_INVALID },
+    )
+  }
   return {
     // localBashOperationsWithRuntimeEnv() injects bundle.getRuntimeEnv()
     // into the outer shell env before the spawned sandbox shell command runs,
     // so bridge runtime env reaches local sandboxed commands without relying
     // on provisioning PATH/env alone.
     operations: localBashOperationsWithRuntimeEnv(bundle),
-    spawnHook: bwrapSpawnHook(storageRoot, runtime, strategy.sandboxRoot),
+    spawnHook: bwrapSpawnHook(storageRoot, runtime, strategy.bwrapArgs, strategy.sandboxRoot),
   }
 }
 

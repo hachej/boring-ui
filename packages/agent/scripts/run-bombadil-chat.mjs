@@ -1,4 +1,4 @@
-import { spawn } from 'node:child_process'
+import { execFileSync, spawn } from 'node:child_process'
 import { mkdtemp } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
@@ -9,6 +9,8 @@ const BOOT_TIMEOUT_MS = 30_000
 const EXIT_TIMEOUT_MS = 5_000
 
 const packageRoot = path.resolve(import.meta.dirname, '..')
+const cliPackageRoot = path.resolve(packageRoot, '..', 'cli')
+const repoRoot = path.resolve(packageRoot, '..', '..')
 const workspaceRoot = process.env.BOMBADIL_WORKSPACE_ROOT
   ?? await mkdtemp(path.join(tmpdir(), 'boring-agent-bombadil-workspace.'))
 const outputPath = process.env.BOMBADIL_OUTPUT_PATH
@@ -20,21 +22,28 @@ const port = Number.isFinite(requestedPort) && requestedPort > 0
   ? requestedPort
   : await findOpenPort()
 
+execFileSync('pnpm', ['--filter', '@hachej/boring-ui-cli...', 'run', 'build'], {
+  cwd: repoRoot,
+  stdio: 'inherit',
+})
+execFileSync('pnpm', ['--filter', '@hachej/boring-ui-cli', 'run', 'build:front'], {
+  cwd: repoRoot,
+  stdio: 'inherit',
+})
+
 const server = spawn('node', [
   '--import',
   'tsx',
-  'src/bin/boring-agent.ts',
-  '--dev',
-  '--no-open',
-  '--no-gitignore',
+  'src/index.ts',
   '--mode',
-  'direct',
+  'local',
   '--port',
   String(port),
-  '--workspace',
+  '--host',
+  '127.0.0.1',
   workspaceRoot,
 ], {
-  cwd: packageRoot,
+  cwd: cliPackageRoot,
   env: {
     ...process.env,
     BORING_AGENT_E2E_SCRIPTED_PI: '1',
@@ -106,7 +115,7 @@ async function waitForBrowserUrl(child, logs) {
     if (child.exitCode !== null) {
       throw new Error(`agent server exited before Bombadil target was ready\n${logs.join('')}`)
     }
-    const match = logs.join('').match(/\[cli\]\s+(?:listening at|attached to existing server at)\s+(http:\/\/(?:127\.0\.0\.1|localhost):\d+\/?)/u)
+    const match = logs.join('').match(/(?:\[cli\]\s+(?:listening at|attached to existing server at)\s+|\n\s*)(http:\/\/(?:127\.0\.0\.1|localhost):\d+\/?)(?:\s+ready)?/u)
     if (match?.[1]) return match[1]
     await sleep(100)
   }

@@ -2,9 +2,8 @@ import { rm, mkdtemp } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
-import { createNodeWorkspace } from '@hachej/boring-sandbox/providers'
-
 import type { Workspace } from '../../shared/workspace'
+import { createTestNodeWorkspace } from './testNodeWorkspace'
 
 export interface TempWorkspaceHandle {
   root: string
@@ -18,7 +17,7 @@ export async function createTempWorkspace(
   const root = await mkdtemp(join(tmpdir(), prefix))
   return {
     root,
-    workspace: createNodeWorkspace(root),
+    workspace: createTestNodeWorkspace(root),
     async cleanup() {
       await rm(root, { recursive: true, force: true })
     },

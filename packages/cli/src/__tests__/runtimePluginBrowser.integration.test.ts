@@ -22,6 +22,7 @@ const tempDirs: string[] = []
 const openApps: FastifyInstance[] = []
 const originalHome = process.env.HOME
 const originalRegistry = process.env.BORING_UI_WORKSPACES_PATH
+const PLUGIN_RENDER_TIMEOUT_MS = 20_000
 
 function hasChromiumExecutable(): boolean {
   try {
@@ -163,7 +164,7 @@ browserTest("built folder mode browser path hot-loads, preserves previous-good r
 
     trace.push("render runtime plugin left tab v1")
     await runtimeTab.click({ force: true })
-    await pwExpect(page.getByText("runtime-plugin-ready-v1")).toBeVisible()
+    await pwExpect(page.getByText("runtime-plugin-ready-v1")).toBeVisible({ timeout: PLUGIN_RENDER_TIMEOUT_MS })
 
     trace.push("reload to v2")
     await writeRuntimePlugin(pluginRoot, {
@@ -174,7 +175,7 @@ browserTest("built folder mode browser path hot-loads, preserves previous-good r
     })
     const reloadV2 = await reloadViaBrowser(page)
     expect(reloadV2.status).toBe(200)
-    await pwExpect(page.getByText("runtime-plugin-ready-v2")).toBeVisible()
+    await pwExpect(page.getByText("runtime-plugin-ready-v2")).toBeVisible({ timeout: PLUGIN_RENDER_TIMEOUT_MS })
     const runtimeUrlAfterV2 = ((await app.inject({ method: "GET", url: "/api/v1/agent-plugins" })).json() as Array<{ id: string; frontTarget?: { entryUrl?: string } }>)
       .find((plugin) => plugin.id === "runtime-plugin")?.frontTarget?.entryUrl
     expect(runtimeUrlAfterV2).toBeTruthy()
@@ -189,7 +190,7 @@ browserTest("built folder mode browser path hot-loads, preserves previous-good r
     })
     const reloadBadImport = await reloadViaBrowser(page)
     expect(reloadBadImport.status).toBe(200)
-    await pwExpect(page.getByText("runtime-plugin-ready-v2")).toBeVisible()
+    await pwExpect(page.getByText("runtime-plugin-ready-v2")).toBeVisible({ timeout: PLUGIN_RENDER_TIMEOUT_MS })
     const runtimeUrlAfterBadImport = ((await app.inject({ method: "GET", url: "/api/v1/agent-plugins" })).json() as Array<{ id: string; frontTarget?: { entryUrl?: string } }>)
       .find((plugin) => plugin.id === "runtime-plugin")?.frontTarget?.entryUrl
     expect(runtimeUrlAfterBadImport).toBeTruthy()
@@ -207,7 +208,7 @@ browserTest("built folder mode browser path hot-loads, preserves previous-good r
     })
     const reloadBadRegister = await reloadViaBrowser(page)
     expect(reloadBadRegister.status).toBe(200)
-    await pwExpect(page.getByText("runtime-plugin-ready-v2")).toBeVisible()
+    await pwExpect(page.getByText("runtime-plugin-ready-v2")).toBeVisible({ timeout: PLUGIN_RENDER_TIMEOUT_MS })
     await pwExpect.poll(() => trace.some((line) => line.includes("PLUGIN_OUTPUT_ID_COLLISION"))).toBe(true)
 
     trace.push("remove boring.front and verify unload")

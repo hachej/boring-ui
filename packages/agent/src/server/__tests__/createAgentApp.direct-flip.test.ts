@@ -3,7 +3,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, expect, test } from 'vitest'
 
-import { createAgentApp } from '../createAgentApp'
+import { createTestAgentApp } from './testRuntimeAdapter'
 
 const tempDirs: string[] = []
 
@@ -23,7 +23,7 @@ async function makeTempDir(): Promise<string> {
 
 test('direct mode produces pi tool names: bash, read, write, edit, find, grep, ls', async () => {
   const workspaceRoot = await makeTempDir()
-  const app = await createAgentApp({
+  const app = await createTestAgentApp({
     workspaceRoot,
     mode: 'direct',
     logger: false,
@@ -46,7 +46,7 @@ test('direct mode produces pi tool names: bash, read, write, edit, find, grep, l
 
 test('disableDefaultFileTools omits filesystem tools', async () => {
   const workspaceRoot = await makeTempDir()
-  const app = await createAgentApp({
+  const app = await createTestAgentApp({
     workspaceRoot,
     mode: 'direct',
     disableDefaultFileTools: true,
@@ -70,7 +70,7 @@ test('disableDefaultFileTools omits filesystem tools', async () => {
 
 test('extraTools are included after bundle tools', async () => {
   const workspaceRoot = await makeTempDir()
-  const app = await createAgentApp({
+  const app = await createTestAgentApp({
     workspaceRoot,
     mode: 'direct',
     logger: false,

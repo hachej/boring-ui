@@ -239,10 +239,10 @@ default this to the sibling `/data/pi-sessions` path when the env var is absent.
 A boring-bash-active mode is a `RuntimeModeAdapter` (defined in
 `src/server/runtime/mode.ts`). There is no registry to edit: pass your adapter
 as the `runtimeModeAdapter` option to `createAgentApp(opts)` or
-`registerAgentRoutes(app, opts)` — it takes precedence over
-`mode`/auto-detection (`createAgentApp.ts`, `registerAgentRoutes.ts`).
-`resolveMode()` only knows the three built-ins and throws for unknown ids,
-telling you to pass `runtimeModeAdapter`.
+`registerAgentRoutes(app, opts)`. Built-in mode resolution is host-owned:
+import `resolveMode()` from `@hachej/boring-bash/modes`, resolve the desired
+mode there, and pass the resulting adapter into the agent server factory.
+`resolveMode()` only knows the three built-ins and throws for unknown ids.
 
 This interface is for environments that intentionally provide a workspace,
 filesystem/search, and sandbox/execution substrate. Pure `runtime: 'none'`

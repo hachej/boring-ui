@@ -1,32 +1,4 @@
 // @hachej/boring-agent — server (Node-only) public API
-export { createRemoteWorkerModeAdapter } from './runtime/modes/remote-worker'
-export type { RemoteWorkerModeAdapterOptions } from './runtime/modes/remote-worker'
-export { createRemoteWorkerWorkspace } from './workspace/createRemoteWorkerWorkspace'
-export { createRemoteWorkerSandbox } from './sandbox/remote-worker/createRemoteWorkerSandbox'
-export {
-  RemoteWorkerClient,
-  RemoteWorkerClientError,
-  constantTimeTokenEqual,
-  decodeBytesFromWorker,
-  encodeBytesForWorker,
-} from './sandbox/remote-worker/workerClient'
-export type { RemoteWorkerClientOptions } from './sandbox/remote-worker/workerClient'
-export {
-  REMOTE_WORKER_PROVIDER,
-  REMOTE_WORKER_RUNTIME_CWD,
-  WORKER_INTERNAL_TOKEN_HEADER,
-  WORKER_REQUEST_ID_HEADER,
-  WORKER_WORKSPACE_ID_HEADER,
-}
-  from './sandbox/remote-worker/protocol'
-export type {
-  RemoteWorkerErrorPayload,
-  RemoteWorkerExecRequest,
-  RemoteWorkerExecResponse,
-  RemoteWorkerFsEventEnvelope,
-  RemoteWorkerWorkspaceOp,
-  RemoteWorkerWorkspaceResult,
-} from './sandbox/remote-worker/protocol'
 // Exposed so consumers (and integration tests in dependent packages) can
 // mount the file-routes plugin onto a standalone Fastify without booting
 // the whole agent app. Used by workspace's FetchClient ↔ server contract tests.
@@ -50,11 +22,11 @@ export type {
   RuntimeProvisioningContribution,
   RuntimePythonSpec,
   RuntimeTemplateContribution,
+  ResolveInstallSourceOpts,
   WorkspaceProvisioningAdapter,
   WorkspaceProvisioningExecResult,
   WorkspaceProvisioningResult,
 } from './workspace/provisioning'
-export { autoDetectMode, hasBwrap, resolveMode } from './runtime/resolveMode'
 export { createAgent } from './createAgent'
 export type { AgentConfig } from '../shared/events'
 export { createAgentApp } from './createAgentApp'
@@ -101,4 +73,5 @@ export type {
   RuntimeFilesystemBindingOperations,
   RuntimeModeAdapter,
   RuntimeModeId,
+  RuntimeRemoteWorkspacePathOptions,
 } from './runtime/mode'

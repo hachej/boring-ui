@@ -8,15 +8,14 @@
 </div>
 
 A pane-embeddable coding agent: an LLM agent loop, a tool catalog, and a chat UI
-behind one interface, with three swappable execution modes. The same agent,
-tools, and UI run in `direct` (host process), `local` (bwrap sandbox), or
-`vercel-sandbox` (Firecracker microVM) mode.
+behind one interface. Host apps provide the execution runtime adapter; built-in
+runtime mode resolution lives in `@hachej/boring-bash/modes`.
 
 ## Install
 
 ```bash
-pnpm add @hachej/boring-agent
-# or: npm install @hachej/boring-agent
+pnpm add @hachej/boring-agent @hachej/boring-bash
+# or: npm install @hachej/boring-agent @hachej/boring-bash
 ```
 
 Peer deps (optional): `react`, `react-dom`, `tailwindcss`.
@@ -27,10 +26,11 @@ Peer deps (optional): `react`, `react-dom`, `tailwindcss`.
 
 ```ts
 import { createAgentApp } from "@hachej/boring-agent/server"
+import { resolveMode } from "@hachej/boring-bash/modes"
 
 const app = await createAgentApp({
-  mode: "local",                 // "direct" | "local" | "vercel-sandbox"
   workspaceRoot: process.cwd(),
+  runtimeModeAdapter: resolveMode("local"),
 })
 await app.listen({ port: 3001 })
 ```

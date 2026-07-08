@@ -11,6 +11,7 @@ export async function createLocalFolderModeApp(opts: {
     mode: opts.mode,
     projectName: opts.projectName,
     provisionWorkspace: false,
+    allowInsecureLocalBridgeAuth: true,
   })
 }
 

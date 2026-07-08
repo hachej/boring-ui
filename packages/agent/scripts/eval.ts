@@ -19,6 +19,7 @@ import { fileURLToPath } from "node:url"
 import { dirname } from "node:path"
 import { runEvalSuite } from "../src/eval"
 import { createAgentApp } from "../src/server"
+import { resolveMode } from "@hachej/boring-bash/modes"
 
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = dirname(__filename)
@@ -38,7 +39,7 @@ async function main(): Promise<number> {
 
   const app = await createAgentApp({
     workspaceRoot: process.env.BORING_AGENT_WORKSPACE_ROOT ?? process.cwd(),
-    mode: "direct",
+    runtimeModeAdapter: resolveMode("direct"),
     logger: false,
   })
 

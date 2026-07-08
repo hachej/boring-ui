@@ -36,8 +36,9 @@ function expectedVirtualMemoryKb() {
 async function importBuiltModules() {
   try {
     const agent = await import('@hachej/boring-agent/server')
+    const modes = await import('@hachej/boring-bash/modes')
     const worker = await import('../dist/server/agent-worker.js')
-    return { agent, worker }
+    return { agent, modes, worker }
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error)
     fail(
@@ -125,8 +126,9 @@ async function main() {
   log('remote_worker_smoke.start', { workspaceRoot, workspaceId })
   await rm(join(workspaceRoot, workspaceId), { recursive: true, force: true })
 
-  const { agent, worker } = await importBuiltModules()
-  const { createAgentApp, createRemoteWorkerModeAdapter } = agent
+  const { agent, modes, worker } = await importBuiltModules()
+  const { createAgentApp } = agent
+  const { createRemoteWorkerModeAdapter } = modes
   const { createAgentWorkerApp } = worker
 
   const { app: workerApp } = await createAgentWorkerApp()

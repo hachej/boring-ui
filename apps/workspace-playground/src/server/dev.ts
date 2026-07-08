@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto"
 import { existsSync, mkdirSync, readdirSync, copyFileSync, statSync } from "node:fs"
 import { readFile, readdir, stat } from "node:fs/promises"
 import { basename, dirname, isAbsolute, relative, resolve } from "node:path"
-import { createRemoteWorkerModeAdapter } from "@hachej/boring-agent/server"
+import { createRemoteWorkerModeAdapter, resolveMode } from "@hachej/boring-bash/modes"
 import { createWorkspaceAgentServer } from "@hachej/boring-workspace/app/server"
 
 export const AGENT_API_PORT = Number(process.env.AGENT_API_PORT) || 5210
@@ -61,6 +61,7 @@ export async function startPlaygroundServer(): Promise<void> {
       ? (process.env.BORING_WORKSPACE_PLAYGROUND_WORKSPACE_ID?.trim() || randomUUID())
       : undefined
     const localRuntimeMode = process.env.BORING_AGENT_MODE?.trim() === "direct" ? "direct" : "local"
+    const modeAdapter = remoteWorkerModeAdapter ?? resolveMode(localRuntimeMode)
     const multiFilesystemPlayground = process.env.BORING_WORKSPACE_PLAYGROUND_MULTI_FS === "1" || process.env.VITE_PLAYGROUND_MULTI_FS === "1"
     console.log(`[workspace-playground] workspace root: ${workspaceRoot}`)
     console.log(`[workspace-playground] runtime mode: ${remoteWorkerModeAdapter ? "remote-worker" : localRuntimeMode}`)
@@ -71,8 +72,8 @@ export async function startPlaygroundServer(): Promise<void> {
       workspaceRoot,
       appRoot: APP_ROOT,
       sessionId: remoteWorkerWorkspaceId,
-      mode: remoteWorkerModeAdapter ? undefined : localRuntimeMode,
-      runtimeModeAdapter: remoteWorkerModeAdapter,
+      mode: modeAdapter.id,
+      runtimeModeAdapter: modeAdapter,
       logger: true,
       externalPlugins: EXTERNAL_PLUGINS_ENABLED,
       defaultPluginPackages: ["@hachej/boring-ask-user"],

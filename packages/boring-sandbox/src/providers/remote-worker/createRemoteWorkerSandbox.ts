@@ -1,5 +1,9 @@
-import type { ExecOptions, Sandbox } from '../../../shared/sandbox'
-import { REMOTE_WORKER_PROVIDER, REMOTE_WORKER_RUNTIME_CWD, type RemoteWorkerExecRequest } from './protocol'
+import type { ExecOptions, Sandbox } from '@hachej/boring-agent/shared'
+import {
+  REMOTE_WORKER_PROVIDER,
+  REMOTE_WORKER_RUNTIME_CWD,
+  type RemoteWorkerExecRequest,
+} from '../../shared/remoteWorkerProtocol'
 import type { RemoteWorkerClient } from './workerClient'
 
 function filteredEnv(env: Record<string, string> | undefined): Record<string, string> | undefined {

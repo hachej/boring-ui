@@ -4,7 +4,6 @@ import { tmpdir } from 'node:os'
 import { expect, test } from 'vitest'
 
 import { ErrorCode } from '../../../../shared/error-codes'
-import { createVercelProvisioningAdapter } from '@hachej/boring-sandbox/providers'
 import { getBoringAgentRuntimePaths } from '../../runtimeLayout'
 import { ProvisioningError } from '../errors'
 import { provisionWorkspaceRuntime } from '../provisionWorkspaceRuntime'
@@ -12,7 +11,7 @@ import type { WorkspaceProvisioningAdapter } from '../types'
 
 interface LogEntry { message: string; fields?: Record<string, unknown> }
 
-function createFailingAdapter(workspaceRoot: string, fail: 'layout' | 'skill' | 'template' | 'node' | 'python'): WorkspaceProvisioningAdapter {
+function createFailingAdapter(workspaceRoot: string, fail: 'none' | 'layout' | 'skill' | 'template' | 'node' | 'python'): WorkspaceProvisioningAdapter {
   const toAbs = (rel: string) => join(workspaceRoot, rel)
   return {
     mode: 'direct',
@@ -39,6 +38,19 @@ function createFailingAdapter(workspaceRoot: string, fail: 'layout' | 'skill' | 
       },
     },
     getRuntimeCacheRoot() { return toAbs('.boring-agent/cache') },
+  }
+}
+
+function createArtifactFailingAdapter(workspaceRoot: string): WorkspaceProvisioningAdapter {
+  const adapter = createFailingAdapter(workspaceRoot, 'none')
+  return {
+    ...adapter,
+    async resolveInstallSource(_source, request) {
+      throw Object.assign(new Error('artifact pack failed'), {
+        code: ErrorCode.enum.PROVISIONING_ARTIFACT_FAILED,
+        details: { phase: 'adapter-artifact', runtime: request.kind, id: request.id },
+      })
+    },
   }
 }
 
@@ -82,22 +94,8 @@ test('phase logs include useful context without dumping env secrets', async () =
   expect(JSON.stringify(logs)).not.toContain('SECRET_TOKEN')
 })
 
-test('Vercel artifact failures use stable provisioning artifact code', async () => {
-  const adapter = createVercelProvisioningAdapter({
-    runtimeLayout: getBoringAgentRuntimePaths('/workspace'),
-    workspaceFs: {
-      async exists() { return false },
-      async rm() {},
-      async mkdir() {},
-      async writeText() {},
-      async readText() { return null },
-      async copyFromHost() {},
-    },
-    async exec() {},
-    async prepareArtifact() {
-      throw new Error('artifact pack failed')
-    },
-  })
+test('adapter artifact failures use stable provisioning artifact code', async () => {
+  const adapter = createArtifactFailingAdapter('/workspace')
 
   await expect(adapter.resolveInstallSource('/tmp/pkg', {
     kind: 'node',
@@ -109,26 +107,9 @@ test('Vercel artifact failures use stable provisioning artifact code', async () 
   })
 })
 
-test('Vercel artifact failures keep stable provisioning artifact code through full provisioning', async () => {
+test('adapter artifact failures keep stable provisioning artifact code through full provisioning', async () => {
   const runtimeLayout = getBoringAgentRuntimePaths('/workspace')
-  const adapter = createVercelProvisioningAdapter({
-    runtimeLayout,
-    workspaceFs: {
-      async exists() { return false },
-      async rm() {},
-      async mkdir() {},
-      async writeText() {},
-      async readText() { return null },
-      async copyFromHost() {},
-    },
-    async exec(command, args) {
-      if (command === 'node' && args[0] === '--version') return { stdout: 'v20.11.0\n' }
-      if (command === 'npm' && args[0] === '--version') return { stdout: '10.2.4\n' }
-    },
-    async prepareArtifact() {
-      throw new Error('artifact pack failed')
-    },
-  })
+  const adapter = createArtifactFailingAdapter('/workspace')
 
   await expect(provisionWorkspaceRuntime({
     plugins: [{

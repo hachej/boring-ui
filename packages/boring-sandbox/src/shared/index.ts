@@ -22,3 +22,18 @@ export {
   PROVIDER_CAPABILITIES,
   PROVIDER_CONTRACT_VERSION,
 } from "./providerMatrix";
+export {
+  REMOTE_WORKER_PROVIDER,
+  REMOTE_WORKER_RUNTIME_CWD,
+  WORKER_INTERNAL_TOKEN_HEADER,
+  WORKER_REQUEST_ID_HEADER,
+  WORKER_WORKSPACE_ID_HEADER,
+} from "./remoteWorkerProtocol";
+export type {
+  RemoteWorkerErrorPayload,
+  RemoteWorkerExecRequest,
+  RemoteWorkerExecResponse,
+  RemoteWorkerFsEventEnvelope,
+  RemoteWorkerWorkspaceOp,
+  RemoteWorkerWorkspaceResult,
+} from "./remoteWorkerProtocol";

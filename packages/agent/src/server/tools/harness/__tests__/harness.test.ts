@@ -48,7 +48,7 @@ function mockBundle(provider: string, capabilities?: string[], workspaceRoot = '
   const bash: RuntimeBashStrategy | undefined = provider === 'vercel-sandbox'
     ? { kind: 'remote', defaultPath: '/vercel/runtimes/node24/bin:/vercel/runtimes/node22/bin:/usr/local/bin:/usr/bin:/bin' }
     : provider === 'bwrap'
-      ? { kind: 'local-sandbox', sandboxRoot: '/workspace' }
+      ? { kind: 'local-sandbox', sandboxRoot: '/workspace', bwrapArgs: buildBwrapArgsForTest(workspaceRoot) }
       : undefined
   return {
     workspace: mockWorkspace(workspaceRoot),
@@ -63,6 +63,32 @@ function mockBundle(provider: string, capabilities?: string[], workspaceRoot = '
 function hasBwrap(): boolean {
   if (process.platform !== 'linux') return false
   return spawnSync('bwrap', ['--version'], { stdio: 'ignore' }).status === 0
+}
+
+function buildBwrapArgsForTest(workspaceRoot: string): string[] {
+  return [
+    '--unshare-all',
+    '--share-net',
+    '--die-with-parent',
+    '--new-session',
+    '--tmpfs', '/',
+    '--proc', '/proc',
+    '--dev', '/dev',
+    '--tmpfs', '/tmp',
+    '--ro-bind', '/usr', '/usr',
+    '--ro-bind', '/lib', '/lib',
+    '--ro-bind', '/lib64', '/lib64',
+    '--ro-bind', '/bin', '/bin',
+    '--ro-bind', '/sbin', '/sbin',
+    '--ro-bind', '/etc', '/etc',
+    '--ro-bind', '/etc/ssl', '/etc/ssl',
+    '--ro-bind', '/etc/ca-certificates', '/etc/ca-certificates',
+    '--ro-bind-try', '/run/systemd/resolve', '/run/systemd/resolve',
+    '--bind', workspaceRoot, '/workspace',
+    '--chdir', '/workspace',
+    '--setenv', 'HOME', '/workspace',
+    '--',
+  ]
 }
 
 const tempDirs: string[] = []
@@ -98,6 +124,15 @@ describe('buildHarnessAgentTools', () => {
     const tools = buildHarnessAgentTools(bundle)
 
     expect(tools.map((t) => t.name)).toEqual(['bash'])
+  })
+
+  test('bwrap mode rejects missing bwrap args', () => {
+    const bundle = {
+      ...mockBundle('bwrap'),
+      bash: { kind: 'local-sandbox', sandboxRoot: '/workspace', bwrapArgs: [] },
+    } satisfies RuntimeBundle
+
+    expect(() => buildHarnessAgentTools(bundle)).toThrow('requires non-empty bwrapArgs')
   })
 
   test('vercel-sandbox mode returns bash tool', () => {
@@ -261,7 +296,7 @@ describe('buildHarnessAgentTools', () => {
       workspace: mockWorkspace('/workspace'),
       sandbox: mockSandbox('bwrap'),
       fileSearch: { search: vi.fn(async () => []) },
-      bash: { kind: 'local-sandbox', sandboxRoot: '/workspace' },
+      bash: { kind: 'local-sandbox', sandboxRoot: '/workspace', bwrapArgs: buildBwrapArgsForTest(storageRoot) },
     }
     const tools = buildHarnessAgentTools(bundle, {
       pathEntries: ['/workspace/.boring-agent/node/node_modules/.bin'],

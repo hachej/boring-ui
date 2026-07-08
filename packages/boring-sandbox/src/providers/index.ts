@@ -23,6 +23,14 @@ export {
   getNodeWorkspaceHostRoot,
 } from './node-workspace/createNodeWorkspace'
 export type { CreateNodeWorkspaceOptions } from './node-workspace/createNodeWorkspace'
+export {
+  assertRealPathWithinWorkspace,
+  validatePath,
+} from './node-workspace/paths'
+export type {
+  PathRejectReason,
+  PathValidationError,
+} from './node-workspace/paths'
 
 export { FileHandleStore } from './vercel-sandbox/FileHandleStore'
 export {
@@ -52,6 +60,10 @@ export type {
   DeploymentSnapshotResult,
   DeploymentSnapshotStatus,
 } from './vercel-sandbox/snapshotRecipe'
+export {
+  createDefaultVercelClient,
+  type VercelAuthConfig,
+} from './vercel-sandbox/defaultVercelClient'
 export {
   createVercelDeploymentSnapshotProvider,
   prepareVercelDeploymentSnapshot,
@@ -109,3 +121,14 @@ export type {
   TemplateFile,
   TemplatePackageResult,
 } from './vercel-sandbox/packageTemplate'
+
+export { createRemoteWorkerSandbox } from './remote-worker/createRemoteWorkerSandbox'
+export {
+  RemoteWorkerClient,
+  RemoteWorkerClientError,
+  constantTimeTokenEqual,
+  decodeBytesFromWorker,
+  encodeBytesForWorker,
+} from './remote-worker/workerClient'
+export type { RemoteWorkerClientOptions } from './remote-worker/workerClient'
+export { createRemoteWorkerWorkspace } from './remote-worker/createRemoteWorkerWorkspace'

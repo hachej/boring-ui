@@ -4,6 +4,7 @@ export default defineConfig({
   entry: [
     "src/index.ts",
     "src/server/cli.ts",
+    "src/server/help.ts",
     "src/server/localWorkspaces.ts",
     "src/server/modeApps.ts",
     "src/server/pluginDiscovery.ts",

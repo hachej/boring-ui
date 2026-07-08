@@ -10,6 +10,7 @@ import { ErrorCode } from '../src/shared/error-codes'
 import { registerAgentRoutes } from '../src/server/registerAgentRoutes'
 import { FileHandleStore } from '@hachej/boring-sandbox/providers'
 import { provisionWorkspaceRuntime } from '../src/server/workspace/provisioning'
+import { resolveMode } from '@hachej/boring-bash/modes'
 
 const SAFE_TIMEOUT_MS = 10 * 60_000
 
@@ -189,8 +190,8 @@ async function main(): Promise<void> {
   try {
     const packageRoot = await createSmokePythonPackage(tempDir)
     await app.register(registerAgentRoutes, {
-      mode: 'vercel-sandbox',
       sandboxHandleStore: store,
+      runtimeModeAdapter: resolveMode('vercel-sandbox', { sandboxHandleStore: store }),
       getWorkspaceId: () => workspaceId,
       getWorkspaceRoot: () => tempDir,
       harnessFactory: makeHarness((tools) => { capturedTools = tools }),

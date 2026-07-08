@@ -14,6 +14,8 @@
     "noEmit": true,
     "types": ["node", "vitest/globals"],
     "paths": {
+      "@hachej/boring-bash/modes": ["../boring-bash/src/modes/index.ts"],
+      "@hachej/boring-sandbox/providers": ["../boring-sandbox/src/providers/index.ts"],
       "@hachej/boring-ui-plugin-cli/plugin-sources": ["../plugin-cli/src/server/pluginSources.ts"],
       "@hachej/boring-workspace/runtime-server": ["./src/server/runtimeBackend/defineRuntimeServerPlugin.ts"],
       "@hachej/boring-workspace/server": ["./src/server/index.ts"]
@@ -28,6 +30,9 @@
     "src/plugins/**/agent/**/*",
     "src/plugins/**/shared/**/*",
     "src/plugins/**/constants.ts",
+    "../boring-bash/src/modes/**/*",
+    "../boring-sandbox/src/providers/**/*",
+    "../boring-sandbox/src/shared/**/*",
     "../plugin-cli/src/server/pluginSources.ts",
     "../plugin-cli/src/manifest.ts"
   ],

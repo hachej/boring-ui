@@ -5,16 +5,16 @@
  * workspace entrypoints must not.
  */
 import {
-  autoDetectMode,
   createAgentApp,
   getBoringAgentRuntimePaths,
   provisionRuntimeWorkspace,
   provisionWorkspaceRuntime,
-  resolveMode,
   type CreateAgentAppOptions,
   type PiExtensionFactory,
   type ProvisionWorkspaceRuntimeOptions,
+  type RuntimeModeId,
 } from "@hachej/boring-agent/server"
+import { autoDetectMode, resolveMode } from "@hachej/boring-bash/modes"
 import { VERCEL_SANDBOX_WORKSPACE_ROOT } from "@hachej/boring-sandbox/providers"
 import type { FastifyInstance } from "fastify"
 import { existsSync, mkdirSync, readFileSync } from "node:fs"
@@ -77,9 +77,10 @@ export interface WorkspaceAgentPiOptions {
 
 type WorkspaceAgentCreateOptions = Omit<
   CreateAgentAppOptions,
-  "pi"
+  "pi" | "runtimeModeAdapter"
 > & {
   pi?: WorkspaceAgentPiOptions
+  runtimeModeAdapter?: CreateAgentAppOptions["runtimeModeAdapter"]
 }
 
 export interface WorkspaceAgentServerPluginContext {
@@ -101,6 +102,7 @@ export type WorkspacePluginEntry = WorkspaceServerPlugin | DirPluginEntry
 export interface CreateWorkspaceAgentServerOptions
   extends WorkspaceAgentCreateOptions,
     Pick<ServerBootstrapOptions, "defaults" | "excludeDefaults"> {
+  mode?: RuntimeModeId
   /**
    * Host-installed server plugins. Accepts pre-built `WorkspaceServerPlugin`
    * objects or `{ dir, options?, hotReload?, trust? }` directory-source entries.
@@ -826,7 +828,7 @@ export async function createWorkspaceAgentServer(
 
   const app = await createAgentApp({
     ...opts,
-    mode: resolvedMode,
+    runtimeModeAdapter: modeAdapter,
     workspaceRoot,
     externalPlugins: externalPluginsEnabled,
     runtimeEnvContributions: [

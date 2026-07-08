@@ -3,7 +3,7 @@ import { afterAll, beforeAll, describe, expect, test } from 'vitest'
 import { mkdtemp, mkdir, writeFile, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { createAgentApp } from '../createAgentApp'
+import { createTestAgentApp } from './testRuntimeAdapter'
 import type { FastifyInstance } from 'fastify'
 
 const HAS_BWRAP = (() => {
@@ -35,7 +35,7 @@ beforeAll(async () => {
   await writeFile(join(workspaceRoot, 'src', 'b.ts'), 'export const b = 2\n')
   await writeFile(join(workspaceRoot, 'src', 'c.tsx'), 'export const c = 3\n')
 
-  app = await createAgentApp({
+  app = await createTestAgentApp({
     workspaceRoot,
     mode: 'local',
     logger: false,

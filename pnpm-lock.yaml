@@ -56,6 +56,9 @@ importers:
       '@hachej/boring-agent':
         specifier: workspace:*
         version: link:../../packages/agent
+      '@hachej/boring-bash':
+        specifier: workspace:*
+        version: link:../../packages/boring-bash
       react:
         specifier: ^19.2.7
         version: 19.2.7
@@ -178,6 +181,9 @@ importers:
       '@hachej/boring-ask-user':
         specifier: workspace:*
         version: link:../../plugins/ask-user
+      '@hachej/boring-bash':
+        specifier: workspace:*
+        version: link:../../packages/boring-bash
       '@hachej/boring-data-catalog':
         specifier: workspace:*
         version: link:../../plugins/data-catalog
@@ -230,9 +236,6 @@ importers:
 
   packages/agent:
     dependencies:
-      '@hachej/boring-sandbox':
-        specifier: workspace:*
-        version: link:../boring-sandbox
       '@hachej/boring-ui-kit':
         specifier: workspace:*
         version: link:../ui
@@ -407,6 +410,13 @@ importers:
         version: 6.4.3(@types/node@22.20.0)(jiti@2.7.0)(lightningcss@1.32.0)(tsx@4.22.5)(yaml@2.9.0)
 
   packages/boring-bash:
+    dependencies:
+      '@hachej/boring-agent':
+        specifier: workspace:*
+        version: link:../agent
+      '@hachej/boring-sandbox':
+        specifier: workspace:*
+        version: link:../boring-sandbox
     devDependencies:
       tsup:
         specifier: ^8.4.0
@@ -420,6 +430,9 @@ importers:
 
   packages/boring-sandbox:
     dependencies:
+      '@hachej/boring-agent':
+        specifier: workspace:*
+        version: link:../agent
       '@vercel/blob':
         specifier: ^2.5.0
         version: 2.5.0
@@ -454,6 +467,12 @@ importers:
       '@hachej/boring-ask-user':
         specifier: workspace:*
         version: link:../../plugins/ask-user
+      '@hachej/boring-bash':
+        specifier: workspace:*
+        version: link:../boring-bash
+      '@hachej/boring-core':
+        specifier: workspace:*
+        version: link:../core
       '@hachej/boring-ui-kit':
         specifier: workspace:*
         version: link:../ui
@@ -521,6 +540,9 @@ importers:
       '@hachej/boring-agent':
         specifier: workspace:*
         version: link:../agent
+      '@hachej/boring-bash':
+        specifier: workspace:*
+        version: link:../boring-bash
       '@hachej/boring-ui-kit':
         specifier: workspace:*
         version: link:../ui
@@ -786,6 +808,9 @@ importers:
       '@hachej/boring-agent':
         specifier: workspace:*
         version: link:../agent
+      '@hachej/boring-bash':
+        specifier: workspace:*
+        version: link:../boring-bash
       '@hachej/boring-sandbox':
         specifier: workspace:*
         version: link:../boring-sandbox

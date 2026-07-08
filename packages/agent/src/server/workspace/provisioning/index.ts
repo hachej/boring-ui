@@ -22,6 +22,7 @@ export type {
   RuntimeProvisioningContribution,
   RuntimePythonSpec,
   RuntimeTemplateContribution,
+  ResolveInstallSourceOpts,
   WorkspaceProvisioningAdapter,
   WorkspaceProvisioningExecResult,
   WorkspaceProvisioningResult,

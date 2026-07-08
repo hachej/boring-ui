@@ -1,0 +1,16 @@
+export const HELP_TEXT = [
+  "Usage: boring-ui [workspace] [options]",
+  "",
+  "Commands:",
+  "  boring-ui [workspace]                 Start the workspace UI for a folder",
+  "  boring-ui workspaces <subcommand>     Manage saved local workspaces",
+  "  boring-ui plugin <subcommand>         Install, list, and remove plugin sources",
+  "",
+  "Options:",
+  "  -p, --port <port>       HTTP port (default: 5200)",
+  "      --host <host>       Listen host (default: 127.0.0.1)",
+  "      --allow-insecure-local-bridge",
+  "                            Allow unauthenticated local-cli bridge auth when binding a non-loopback host",
+  "  -m, --mode <mode>       local-sandbox or local (default: local)",
+  "  -h, --help              Show this help",
+].join("\n")

@@ -3,7 +3,7 @@ import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { expect, test } from 'vitest'
 
-import { getBoringAgentRuntimePaths } from '../../../workspace/runtimeLayout'
+import { getBoringAgentRuntimePaths } from './runtimeLayout.testHelper'
 import {
   createDirectProvisioningAdapter,
   createLocalProvisioningAdapter,

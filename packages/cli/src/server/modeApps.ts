@@ -7,6 +7,7 @@ import type {
   WorkspaceProvisioningAdapter,
   WorkspaceProvisioningResult,
 } from "@hachej/boring-agent/server"
+import { resolveMode } from "@hachej/boring-bash/modes"
 import { existsSync, readFileSync } from "node:fs"
 import { createRequire } from "node:module"
 import { basename, isAbsolute, join, resolve } from "node:path"
@@ -131,7 +132,7 @@ export async function provisionCliWorkspaceRuntime(opts: {
   const runtimeLayout = opts.runtimeLayout ?? agent.getBoringAgentRuntimePaths(opts.workspaceRoot)
   const adapter = opts.adapter
     ?? opts.modeAdapter?.createProvisioningAdapter?.(runtimeLayout)
-    ?? agent.resolveMode(opts.mode).createProvisioningAdapter?.(runtimeLayout)
+    ?? resolveMode(opts.mode).createProvisioningAdapter?.(runtimeLayout)
   if (!adapter) {
     throw new Error(`runtime mode ${opts.mode} does not support workspace provisioning`)
   }
@@ -358,16 +359,20 @@ export async function createFolderModeApp(opts: {
   const runtimeHost = await createPluginFrontRuntimeHost({
     onDiagnostic: (diagnostic) => diagnosticsStore.record(diagnostic),
   })
+  const modeAdapter = resolveMode(opts.mode)
   const pluginDirs = pluginDiscovery.resolveCliBoringPluginDirs(workspaceRoot)
   const runtimeProvisioning = await provisionCliWorkspaceRuntime({
     workspaceRoot,
     mode: opts.mode,
+    modeAdapter,
     provisionWorkspace: opts.provisionWorkspace,
     plugins: readWorkspacePluginPackageRuntimePlugins(pluginDirs),
   })
   const app = await createWorkspaceAgentServer({
     workspaceRoot,
     mode: opts.mode,
+    runtimeModeAdapter: modeAdapter,
+    version: `@hachej/boring-agent@${CLI_VERSION}`,
     logger: false,
     provisionWorkspace: false,
     runtimeProvisioning,
@@ -450,6 +455,7 @@ export async function createWorkspacesModeApp(opts: {
     import("./pluginDiscovery.js"),
   ])
   const registry = createLocalWorkspaceRegistry(opts.registryPath)
+  const modeAdapter = resolveMode(opts.mode)
   const app = fastifyModule.default({ logger: false, bodyLimit: 16 * 1024 * 1024 })
   const diagnosticsStore = createRuntimePluginDiagnosticsStore()
   const runtimeHost = await createPluginFrontRuntimeHost({
@@ -669,7 +675,7 @@ export async function createWorkspacesModeApp(opts: {
   })
 
   await app.register(agentServer.registerAgentRoutes, {
-    mode: opts.mode,
+    runtimeModeAdapter: modeAdapter,
     systemPromptAppend: workspaceAppServer.buildWorkspaceContextPrompt(),
     getSystemPromptDynamic: async ({ workspaceId }) => {
       const workspace = await requireWorkspace(workspaceId)

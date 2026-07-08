@@ -46,11 +46,10 @@ The Node runtime. Key exports:
 - `registerAgentRoutes(app, opts)` — mounts the agent HTTP routes onto an
   existing Fastify instance (used by `@hachej/boring-workspace`). Paths are
   absolute under `/api/v1/agent/*`, `/api/v1/files`, etc.
-- Sandbox adapters: `createDirectSandbox`, `createBwrapSandbox`, plus the
-  Vercel sandbox/snapshot helpers (`createVercelSandboxWorkspace`,
-  `bakeSnapshotIfNeeded`, deployment-snapshot providers, `FileHandleStore`).
-- Workspace adapters: `createNodeWorkspace`, `createVercelSandboxWorkspace`.
-- Mode resolution: `autoDetectMode`, `resolveMode`, `hasBwrap`. Custom execution backends are injected via the `runtimeModeAdapter` option — see [runtime.md §Adding a custom runtime mode](./runtime.md#adding-a-custom-runtime-mode).
+- Runtime adapter injection: pass a `runtimeModeAdapter` to `createAgentApp`
+  or `registerAgentRoutes`. Built-in mode resolution is exported by
+  `@hachej/boring-bash/modes`; concrete sandbox providers live in
+  `@hachej/boring-sandbox/providers`.
 - Provisioning: `provisionRuntimeWorkspace`, `provisionWorkspaceRuntime`,
   `getBoringAgentRuntimePaths`, `getBoringAgentRuntimeEnv`,
   `createVercelProvisioningAdapter`.

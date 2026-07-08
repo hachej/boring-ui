@@ -3,7 +3,7 @@ import {
   type RemoteWorkerExecRequest,
   type RemoteWorkerExecResponse,
   type RemoteWorkerWorkspaceOp,
-} from '@hachej/boring-agent/server'
+} from '@hachej/boring-sandbox/shared'
 import type { ExecResult } from '@hachej/boring-agent/shared'
 
 import type { WorkerConfig } from './config.js'

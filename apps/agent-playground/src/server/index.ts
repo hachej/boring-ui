@@ -5,9 +5,10 @@ import tailwindcss from '@tailwindcss/vite'
 import { createServer as createViteServer } from 'vite'
 
 import { applyCspHeaders, createAgentApp } from '@hachej/boring-agent/server'
+import { resolveMode } from '@hachej/boring-bash/modes'
 
 const app = await createAgentApp({
-  mode: 'direct',
+  runtimeModeAdapter: resolveMode('direct'),
   sessionId: 'playground',
 })
 

@@ -6,7 +6,6 @@ import { getEnv } from './config/env'
 import type { RuntimeBundle, RuntimeFilesystemBinding, RuntimeModeAdapter, RuntimeModeId } from './runtime/mode'
 import { getOptionalRuntimeBundleStorageRoot } from './runtime/mode'
 import { withRuntimeEnvContributions, type RuntimeEnvContribution } from './runtimeEnvContributions'
-import { resolveMode, autoDetectMode } from './runtime/resolveMode'
 import { createPiCodingAgentHarness, withPiHarnessDefaults } from './harness/pi-coding-agent/createHarness'
 import type { PiHarnessOptions } from './harness/pi-coding-agent/createHarness'
 import type { WorkspaceProvisioningResult } from './workspace/provisioning'
@@ -43,9 +42,8 @@ export interface CreateAgentAppOptions {
   workspaceRoot?: string
   sessionId?: string
   templatePath?: string
-  mode?: RuntimeModeId
-  /** Supply a custom runtime adapter to plug in non-built-in sandbox/workspace modes. */
-  runtimeModeAdapter?: RuntimeModeAdapter
+  /** Supply the host-resolved runtime adapter. */
+  runtimeModeAdapter: RuntimeModeAdapter
   authToken?: string
   version?: string
   logger?: boolean
@@ -120,15 +118,20 @@ export interface CreateAgentAppOptions {
 }
 
 export async function createAgentApp(
-  opts: CreateAgentAppOptions = {},
+  opts: CreateAgentAppOptions,
 ): Promise<FastifyInstance> {
   const workspaceRoot = opts.workspaceRoot ?? process.cwd()
   const sessionId = opts.sessionId ?? DEFAULT_SESSION_ID
   const templatePath = opts.templatePath ?? getEnv('BORING_AGENT_TEMPLATE_PATH')
   const app = Fastify({ logger: opts.logger ?? true, bodyLimit: 16 * 1024 * 1024 })
 
-  const resolvedMode = opts.runtimeModeAdapter?.id ?? opts.mode ?? autoDetectMode()
-  const modeAdapter = opts.runtimeModeAdapter ?? resolveMode(resolvedMode)
+  if (!opts.runtimeModeAdapter) {
+    throw new Error(
+      'createAgentApp requires runtimeModeAdapter. Host apps must resolve mode with @hachej/boring-bash/modes before calling @hachej/boring-agent/server.',
+    )
+  }
+  const modeAdapter = opts.runtimeModeAdapter
+  const resolvedMode = modeAdapter.id
   let runtimeBundle = await modeAdapter.create({
     workspaceRoot,
     sessionId,
@@ -216,7 +219,10 @@ export async function createAgentApp(
     })] : []),
   ]
 
-  const baseHarnessFactory = opts.harnessFactory ?? ((input) => createPiCodingAgentHarness({
+  const envHarnessFactory = !opts.harnessFactory && getEnv('BORING_AGENT_E2E_SCRIPTED_PI') === '1'
+    ? (await import('./testing/scriptedPiHarness')).createScriptedPiHarness
+    : undefined
+  const baseHarnessFactory = opts.harnessFactory ?? envHarnessFactory ?? ((input) => createPiCodingAgentHarness({
     ...input,
     pi: runtimePi,
   }))

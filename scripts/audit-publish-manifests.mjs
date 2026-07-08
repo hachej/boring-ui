@@ -18,6 +18,8 @@ const root = resolve(__dirname, "..")
 const PUBLISHABLE_PACKAGES = [
   "packages/ui",
   "packages/agent",
+  "packages/boring-sandbox",
+  "packages/boring-bash",
   "packages/plugin-cli",
   "packages/workspace",
   "packages/core",
@@ -29,8 +31,6 @@ const PUBLISHABLE_PACKAGES = [
   "plugins/generated-pane",
   "plugins/data-bridge",
   "plugins/bi-dashboard",
-  "packages/boring-sandbox",
-  "packages/boring-bash",
   "plugins/boring-governance",
 ]
 

@@ -14,7 +14,6 @@ import { getBoringAgentRuntimePaths, type BoringAgentRuntimePaths } from './work
 import type { WorkspaceProvisioningAdapter, WorkspaceProvisioningResult } from './workspace/provisioning'
 import type { Workspace } from '../shared/workspace'
 import { ErrorCode } from '../shared/error-codes'
-import { resolveMode, autoDetectMode } from './runtime/resolveMode'
 import { createPiCodingAgentHarness, withPiHarnessDefaults } from './harness/pi-coding-agent/createHarness'
 import { PiSessionStore } from './harness/pi-coding-agent/sessions'
 import type { PiHarnessOptions, ResolvedPiHarnessOptions } from './harness/pi-coding-agent/createHarness'
@@ -257,9 +256,8 @@ export interface RegisterAgentRoutesOptions {
     workspaceRoot: string
     request?: FastifyRequest
   }) => string | undefined | Promise<string | undefined>
-  mode?: RuntimeModeId
-  /** Supply a custom runtime adapter to plug in non-built-in sandbox/workspace modes. */
-  runtimeModeAdapter?: RuntimeModeAdapter
+  /** Supply the host-resolved runtime adapter. */
+  runtimeModeAdapter: RuntimeModeAdapter
   version?: string
   extraTools?: AgentTool[]
   getExtraTools?: (ctx: {
@@ -370,8 +368,13 @@ export const registerAgentRoutes: FastifyPluginAsync<RegisterAgentRoutesOptions>
   const sessionId = opts.sessionId ?? DEFAULT_WORKSPACE_ID
   const templatePath = opts.templatePath ?? getEnv('BORING_AGENT_TEMPLATE_PATH')
 
-  const resolvedMode = opts.runtimeModeAdapter?.id ?? opts.mode ?? autoDetectMode()
-  const modeAdapter = opts.runtimeModeAdapter ?? resolveMode(resolvedMode, { sandboxHandleStore: opts.sandboxHandleStore })
+  if (!opts.runtimeModeAdapter) {
+    throw new Error(
+      'registerAgentRoutes requires runtimeModeAdapter. Host apps must resolve mode with @hachej/boring-bash/modes before registering @hachej/boring-agent/server routes.',
+    )
+  }
+  const modeAdapter = opts.runtimeModeAdapter
+  const resolvedMode = modeAdapter.id
   app.addHook('onClose', async () => {
     await modeAdapter.dispose?.()
   })

@@ -1,10 +1,10 @@
 import { mkdir } from 'node:fs/promises'
 
-import { createBwrapSandbox, createNodeWorkspace } from '@hachej/boring-sandbox/providers'
+import { buildBwrapArgs, createBwrapSandbox, createNodeWorkspace } from '@hachej/boring-sandbox/providers'
 
-import type { RuntimeModeAdapter } from '../mode'
-import { createServerFileSearch } from '../createServerFileSearch'
-import { copyTemplate } from '../../workspace/provision'
+import type { RuntimeModeAdapter } from '@hachej/boring-agent/server'
+import { createServerFileSearch } from './createServerFileSearch'
+import { copyTemplate } from './copyTemplate'
 import { createLocalProvisioningAdapter } from './provisioningAdapter'
 
 export const localModeAdapter: RuntimeModeAdapter = {
@@ -30,7 +30,7 @@ export const localModeAdapter: RuntimeModeAdapter = {
     return {
       runtimeContext,
       storageRoot: ctx.workspaceRoot,
-      bash: { kind: 'local-sandbox', sandboxRoot: '/workspace' },
+      bash: { kind: 'local-sandbox', sandboxRoot: '/workspace', bwrapArgs: buildBwrapArgs(ctx.workspaceRoot) },
       filesystem: { kind: 'host' },
       workspace,
       sandbox,

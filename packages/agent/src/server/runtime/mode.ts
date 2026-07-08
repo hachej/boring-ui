@@ -1,5 +1,3 @@
-import { getNodeWorkspaceHostRoot } from '@hachej/boring-sandbox/providers'
-
 import type { FileSearch } from '../../shared/file-search'
 import type { WorkspaceRuntimeContext } from '../../shared/runtime'
 import type { Sandbox } from '../../shared/sandbox'
@@ -29,7 +27,7 @@ export interface RuntimeCachedBindingHealthCheck {
 
 export type RuntimeBashStrategy =
   | { kind: 'host'; preserveHostHome?: boolean }
-  | { kind: 'local-sandbox'; sandboxRoot: string }
+  | { kind: 'local-sandbox'; sandboxRoot: string; bwrapArgs: readonly string[] }
   | { kind: 'remote'; defaultPath?: string }
 
 export interface RuntimeRemoteWorkspacePathOptions {
@@ -111,7 +109,7 @@ export interface RuntimeBundle {
 }
 
 export function getOptionalRuntimeBundleStorageRoot(bundle: RuntimeBundle): string | undefined {
-  return bundle.storageRoot ?? getNodeWorkspaceHostRoot(bundle.workspace)
+  return bundle.storageRoot
 }
 
 export function getRuntimeBundleStorageRoot(bundle: RuntimeBundle): string {

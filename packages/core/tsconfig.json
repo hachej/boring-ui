@@ -21,6 +21,8 @@
       "@hachej/boring-workspace/app/server": ["../workspace/src/app/server/index.ts"],
       "@hachej/boring-workspace/server": ["../workspace/src/server/index.ts"],
       "@hachej/boring-agent/server": ["../agent/src/server/index.ts"],
+      "@hachej/boring-bash/modes": ["../boring-bash/src/modes/index.ts"],
+      "@hachej/boring-sandbox/providers": ["../boring-sandbox/src/providers/index.ts"],
       "@/*": ["../workspace/src/*"],
       "@hachej/boring-core/front": ["src/front/index.ts"],
       "@hachej/boring-core/shared": ["src/shared/index.ts"]

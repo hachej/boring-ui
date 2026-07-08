@@ -2,9 +2,9 @@ import { mkdir } from 'node:fs/promises'
 
 import { createDirectSandbox, createNodeWorkspace } from '@hachej/boring-sandbox/providers'
 
-import type { RuntimeModeAdapter } from '../mode'
-import { createServerFileSearch } from '../createServerFileSearch'
-import { copyTemplate } from '../../workspace/provision'
+import type { RuntimeModeAdapter } from '@hachej/boring-agent/server'
+import { createServerFileSearch } from './createServerFileSearch'
+import { copyTemplate } from './copyTemplate'
 import { createDirectProvisioningAdapter } from './provisioningAdapter'
 
 export const directModeAdapter: RuntimeModeAdapter = {

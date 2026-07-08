@@ -2,10 +2,10 @@ import { mkdir, readFile, readdir, stat } from 'node:fs/promises'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
-import { Sandbox as VercelSandbox } from '@vercel/sandbox'
 import {
   collectFiles,
   computeTemplateHash,
+  createDefaultVercelClient,
   createVercelProvisioningAdapter,
   createVercelSandboxExec,
   createVercelSandboxWorkspace,
@@ -22,17 +22,14 @@ import {
   type PackageTemplateOptions,
   type PeriodicSnapshotScheduler,
   type VercelSandboxClient,
+  type VercelSandboxHandle,
 } from '@hachej/boring-sandbox/providers'
+import type { SandboxHandleStore, TelemetrySink } from '@hachej/boring-agent/shared'
+import type { BoringAgentRuntimePaths, ModeContext, RuntimeModeAdapter, RuntimeRemoteWorkspacePathOptions, WorkspaceProvisioningAdapter } from '@hachej/boring-agent/server'
 
-import { type SandboxHandleStore } from '../../../shared/sandbox-handle-store'
-import { ErrorCode } from '../../../shared/error-codes'
-import { safeCapture, type TelemetrySink } from '../../../shared/telemetry'
-import { getEnv, setEnvDefault } from '../../config/env'
-import { packProvisioningArtifact } from '../../workspace/provisioning/packArtifact'
-import { createServerFileSearch } from '../createServerFileSearch'
-import type { ModeContext, RuntimeModeAdapter, RuntimeRemoteWorkspacePathOptions } from '../mode'
-import type { BoringAgentRuntimePaths } from '../../workspace/runtimeLayout'
-import type { WorkspaceProvisioningAdapter } from '../../workspace/provisioning'
+import { getEnv, setEnvDefault } from './env'
+import { packProvisioningArtifact } from './provisioningArtifacts'
+import { createServerFileSearch } from './createServerFileSearch'
 
 interface ModeLogger {
   info(message: string, metadata: Record<string, unknown>): void
@@ -46,6 +43,7 @@ const VERCEL_SANDBOX_RUNTIME_ENV = 'BORING_AGENT_VERCEL_SANDBOX_RUNTIME'
 const DEFAULT_VERCEL_SANDBOX_RUNTIME = 'node24'
 const VERCEL_BINDING_HEALTHCHECK_INTERVAL_MS = 15_000
 const VERCEL_SAFE_DEFAULT_PATH = '/vercel/runtimes/node24/bin:/vercel/runtimes/node22/bin:/usr/local/bin:/usr/bin:/bin'
+const SANDBOX_EXPIRED_ERROR_CODE = 'SANDBOX_EXPIRED'
 
 export interface VercelSandboxModeAdapterOptions {
   store?: SandboxHandleStore
@@ -58,13 +56,13 @@ export interface VercelSandboxModeAdapterOptions {
   snapshotScheduler?: PeriodicSnapshotScheduler | null
 }
 
-interface VercelAuthConfig {
-  token: string
-  teamId: string
-  projectId?: string
-}
-
 type SandboxSetupStatus = 'started' | 'ok' | 'error'
+
+function safeCapture(telemetry: TelemetrySink, event: { name: string; properties?: Record<string, unknown> }): void {
+  try {
+    void Promise.resolve(telemetry.capture(event)).catch(() => {})
+  } catch {}
+}
 
 function vercelRemoteWorkspacePathOptions(): RuntimeRemoteWorkspacePathOptions {
   return {
@@ -150,55 +148,7 @@ async function runSandboxSetupStep<T>(options: {
   }
 }
 
-function createDefaultVercelClient(
-  auth: VercelAuthConfig,
-  opts: { timeoutMs?: number; runtime?: string } = {},
-): VercelSandboxClient {
-  const credentials = {
-    token: auth.token,
-    teamId: auth.teamId,
-    ...(auth.projectId ? { projectId: auth.projectId } : {}),
-  }
-  const createOptions = opts.timeoutMs
-    ? { ...credentials, timeout: opts.timeoutMs }
-    : credentials
-
-  return {
-    async create(params) {
-      const base = {
-        ...createOptions,
-        ...(params?.name ? { name: params.name } : {}),
-        ...(opts.runtime ? { runtime: opts.runtime } : {}),
-        persistent: params?.persistent ?? true,
-        snapshotExpiration: params?.snapshotExpiration ?? 0,
-      }
-      if (params?.source?.type === 'snapshot') {
-        const { runtime: _runtime, ...snapshotBase } = base
-        return await VercelSandbox.create({
-          ...snapshotBase,
-          source: { type: 'snapshot', snapshotId: params.source.snapshotId },
-        })
-      }
-      if (params?.source?.type === 'tarball') {
-        return await VercelSandbox.create({
-          ...base,
-          source: { type: 'tarball', url: params.source.url },
-        })
-      }
-      return await VercelSandbox.create(base)
-    },
-    async get(params) {
-      const getParams = {
-        ...credentials,
-        name: params.name ?? params.sandboxId ?? '',
-        resume: params.resume ?? true,
-      } as unknown as Parameters<typeof VercelSandbox.get>[0] & { name?: string }
-      return await VercelSandbox.get(getParams)
-    },
-  }
-}
-
-type VercelSandboxWithRunCommand = VercelSandbox & {
+type VercelSandboxWithRunCommand = VercelSandboxHandle & {
   fs?: { mkdir(path: string, opts?: { recursive?: boolean }): Promise<unknown> }
   mkDir?: (path: string) => Promise<void>
   runCommand?: (params: { cmd: string; args?: string[] }) => Promise<{ exitCode?: number }>
@@ -510,7 +460,7 @@ function extractHttpStatus(error: unknown): number | null {
 
 function isExpiredSandboxRuntimeError(error: unknown): boolean {
   const code = (error as { code?: unknown } | null)?.code
-  if (code === ErrorCode.enum.SANDBOX_EXPIRED) return true
+  if (code === SANDBOX_EXPIRED_ERROR_CODE) return true
 
   const status = extractHttpStatus(error)
   if (status === 404 || status === 410) return true

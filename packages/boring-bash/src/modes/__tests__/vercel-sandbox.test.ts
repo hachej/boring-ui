@@ -9,15 +9,12 @@ import {
   resetSandboxHandleCacheForTests,
   type PeriodicSnapshotScheduler,
   type VercelSandboxClient,
+  type VercelSandboxHandle,
 } from '@hachej/boring-sandbox/providers'
-import type { Sandbox as VercelSandbox } from '@vercel/sandbox'
-import type {
-  SandboxHandleRecord,
-  SandboxHandleStore,
-} from '../../../../shared/sandbox-handle-store'
-import { createMockVercelSandboxHarness } from '../../../../../../boring-sandbox/src/providers/vercel-sandbox/__tests__/mockVercelSandbox'
-import { getBoringAgentRuntimePaths } from '../../../workspace/runtimeLayout'
+import type { SandboxHandleRecord, SandboxHandleStore } from '@hachej/boring-agent/shared'
+import { createMockVercelSandboxHarness } from '../../../../boring-sandbox/src/providers/vercel-sandbox/__tests__/mockVercelSandbox'
 import { buildWorkspaceRootSetupScript, createVercelSandboxModeAdapter } from '../vercel-sandbox'
+import { getBoringAgentRuntimePaths } from './runtimeLayout.testHelper'
 
 const decoder = new TextDecoder()
 
@@ -43,14 +40,14 @@ function createStore(
 }
 
 function addSandboxMeta(
-  sandbox: VercelSandbox,
+  sandbox: VercelSandboxHandle,
   meta: {
     sandboxId: string
     status?: string
     sourceSnapshotId?: string
     snapshot?: () => Promise<{ snapshotId: string }>
   },
-): VercelSandbox {
+): VercelSandboxHandle {
   const target = sandbox as unknown as {
     sandboxId: string
     status?: string
@@ -68,7 +65,7 @@ function createManualSnapshotScheduler(): PeriodicSnapshotScheduler & {
   flush(workspaceId: string): Promise<void>
 } {
   const tracked = new Map<string, {
-    sandbox: VercelSandbox & {
+    sandbox: VercelSandboxHandle & {
       sandboxId: string
       snapshot?: () => Promise<{ snapshotId: string }>
     }
@@ -79,7 +76,7 @@ function createManualSnapshotScheduler(): PeriodicSnapshotScheduler & {
   return {
     trackWorkspace({ workspaceId, sandbox, store }) {
       tracked.set(workspaceId, {
-        sandbox: sandbox as VercelSandbox & {
+        sandbox: sandbox as VercelSandboxHandle & {
           sandboxId: string
           snapshot?: () => Promise<{ snapshotId: string }>
         },
@@ -458,7 +455,7 @@ test('mode seeds template files into an existing persistent sandbox', async () =
   const sandbox = addSandboxMeta(harness.sandbox, {
     sandboxId: 'sb-existing-template',
     status: 'running',
-  }) as VercelSandbox & { persistent: boolean }
+  }) as VercelSandboxHandle & { persistent: boolean }
   sandbox.persistent = true
   const store = createStore([{
     workspaceId: 'workspace-template-existing',

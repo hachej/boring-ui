@@ -18,7 +18,7 @@ import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { evalAgentPrompt } from "../evalPrompt"
 import { EvalRegex } from "../types"
-import { createAgentApp } from "../../server"
+import { createTestAgentApp } from "../../server/__tests__/testRuntimeAdapter"
 import type { FastifyInstance } from "fastify"
 
 const HAS_KEY = !!process.env.ANTHROPIC_API_KEY
@@ -31,7 +31,7 @@ describeIf("eval canary (live LLM)", () => {
   beforeAll(async () => {
     workspaceRoot = mkdtempSync(join(tmpdir(), "agent-eval-canary-"))
     writeFileSync(join(workspaceRoot, "README.md"), "# canary fixture\n")
-    app = await createAgentApp({ workspaceRoot, mode: "direct", logger: false })
+    app = await createTestAgentApp({ workspaceRoot, mode: "direct", logger: false })
     return async () => {
       await app.close()
     }

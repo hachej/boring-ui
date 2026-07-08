@@ -1,4 +1,5 @@
-import { spawn } from 'node:child_process'
+import { execFileSync, spawn } from 'node:child_process'
+import { existsSync } from 'node:fs'
 import { createServer } from 'node:net'
 import path from 'node:path'
 import { setTimeout as sleep } from 'node:timers/promises'
@@ -8,6 +9,7 @@ const HEALTH_POLL_INTERVAL_MS = 200
 const PROCESS_EXIT_TIMEOUT_MS = 5_000
 const SOURCE_BROWSER_URL_TIMEOUT_MS = 5_000
 const MAX_PORT_INCREMENT_PROBE = 10
+let cliFrontendBuilt = false
 
 export interface BackendLogs {
   stdout: string[]
@@ -148,18 +150,56 @@ async function waitForHealthy(
 }
 
 function findBrowserUrl(logs: BackendLogs): string | undefined {
-  const pattern =
-    /\[cli\]\s+(?:listening at|attached to existing server at)\s+(http:\/\/(?:127\.0\.0\.1|localhost):\d+\/?)/u
+  const patterns = [
+    /\[cli\]\s+(?:listening at|attached to existing server at)\s+(http:\/\/(?:127\.0\.0\.1|localhost):\d+\/?)/u,
+    /^\s*(http:\/\/(?:127\.0\.0\.1|localhost):\d+\/?)\s+ready\s*$/u,
+  ]
 
   const allLines = [...logs.stdout, ...logs.stderr]
   for (let index = allLines.length - 1; index >= 0; index -= 1) {
     const line = allLines[index] ?? ''
-    const match = line.match(pattern)
-    if (match?.[1]) {
-      return match[1]
+    for (const pattern of patterns) {
+      const match = line.match(pattern)
+      if (match?.[1]) {
+        return match[1]
+      }
     }
   }
   return undefined
+}
+
+function toCliMode(mode: SpawnBackendOptions['mode']): 'local' | 'local-sandbox' {
+  if (mode === 'local') return 'local-sandbox'
+  if (!mode || mode === 'direct') return 'local'
+  throw new Error('vercel-sandbox E2E backend must be launched by a host-specific helper')
+}
+
+function cliRuntimeArtifactsExist(cliPackageDir: string): boolean {
+  const packagesDir = path.dirname(cliPackageDir)
+  return [
+    path.join(cliPackageDir, 'dist', 'index.js'),
+    path.join(cliPackageDir, 'public', 'index.html'),
+    path.join(packagesDir, 'agent', 'dist', 'server', 'index.js'),
+    path.join(packagesDir, 'boring-bash', 'dist', 'modes', 'index.js'),
+    path.join(packagesDir, 'workspace', 'dist', 'app-server.js'),
+  ].every((artifact) => existsSync(artifact))
+}
+
+function ensureCliRuntimeBuilt(cliPackageDir: string): void {
+  if (cliFrontendBuilt || cliRuntimeArtifactsExist(cliPackageDir)) {
+    cliFrontendBuilt = true
+    return
+  }
+  const repoRoot = path.resolve(cliPackageDir, '..', '..')
+  execFileSync('pnpm', ['--filter', '@hachej/boring-ui-cli...', 'run', 'build'], {
+    cwd: repoRoot,
+    stdio: 'inherit',
+  })
+  execFileSync('pnpm', ['--filter', '@hachej/boring-ui-cli', 'run', 'build:front'], {
+    cwd: repoRoot,
+    stdio: 'inherit',
+  })
+  cliFrontendBuilt = true
 }
 
 async function waitForBrowserUrl(
@@ -205,28 +245,27 @@ export async function spawnBackend(
 
   const stdoutCollector = createLineCollector(logs.stdout)
   const stderrCollector = createLineCollector(logs.stderr)
-  const agentPackageDir = path.join(options.repoRoot, 'packages', 'agent')
+  const cliPackageDir = path.join(options.repoRoot, 'packages', 'cli')
+  const cliMode = toCliMode(options.mode)
+  ensureCliRuntimeBuilt(cliPackageDir)
 
-  // The CLI retries bind attempts by incrementing the requested port.
-  // waitForHealthy() probes the same increment window to discover the actual API port.
+  // The CLI-owned server is now the bash-enabled composition path.
   const child = spawn(
     'node',
     [
       '--import',
       'tsx',
-      'src/bin/boring-agent.ts',
-      '--dev',
-      '--no-open',
-      '--no-gitignore',
+      'src/index.ts',
       '--mode',
-      options.mode ?? 'direct',
+      cliMode,
       '--port',
       String(port),
-      '--workspace',
+      '--host',
+      '127.0.0.1',
       options.workspaceRoot,
     ],
     {
-      cwd: agentPackageDir,
+      cwd: cliPackageDir,
       env: {
         ...process.env,
         ...E2E_MODEL_ENV,

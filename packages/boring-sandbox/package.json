@@ -35,6 +35,7 @@
     "clean": "rm -rf dist .tsbuildinfo"
   },
   "dependencies": {
+    "@hachej/boring-agent": "workspace:*",
     "@vercel/blob": "^2.5.0",
     "@vercel/sandbox": "2.0.0-beta.14",
     "chokidar": "^4.0.3"

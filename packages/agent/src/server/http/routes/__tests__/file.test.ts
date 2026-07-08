@@ -5,8 +5,8 @@ import { join } from 'node:path'
 import { afterEach, describe, expect, test, vi } from 'vitest'
 
 import type { Workspace } from '../../../../shared/workspace'
+import { createTestNodeWorkspace } from '../../../../__tests__/helpers/testNodeWorkspace'
 import type { RuntimeFilesystemBindingOperations } from '../../../runtime/mode'
-import { createNodeWorkspace } from '@hachej/boring-sandbox/providers'
 import { ERROR_CODE_NOT_FOUND_OR_DENIED, ERROR_CODE_READONLY, fileRoutes } from '../file'
 
 const tempRoots: string[] = []
@@ -42,7 +42,7 @@ async function createTestApp(): Promise<{ app: FastifyInstance; workspaceRoot: s
   const workspaceRoot = await mkdtemp(join(tmpdir(), 'boring-ui-file-routes-'))
   tempRoots.push(workspaceRoot)
 
-  const workspace = createNodeWorkspace(workspaceRoot)
+  const workspace = createTestNodeWorkspace(workspaceRoot)
   const app = Fastify({ logger: false })
   await app.register(fileRoutes, { workspace })
   await app.ready()
@@ -73,7 +73,7 @@ describe('file routes (NodeWorkspace integration)', () => {
         throw new Error(`readonly ${operation}`)
       }),
     }
-    const app = await createTestAppWithWorkspace(createNodeWorkspace(workspaceRoot), operations)
+    const app = await createTestAppWithWorkspace(createTestNodeWorkspace(workspaceRoot), operations)
 
     const allowed = await app.inject({
       method: 'GET',
@@ -139,7 +139,7 @@ describe('file routes (NodeWorkspace integration)', () => {
     }
     const app = Fastify({ logger: false })
     await app.register(fileRoutes, {
-      workspace: createNodeWorkspace(workspaceRoot),
+      workspace: createTestNodeWorkspace(workspaceRoot),
       filesystemBindings: [{ filesystem: 'project_alpha', access: 'readonly', operations }],
     })
     await app.ready()
@@ -179,7 +179,7 @@ describe('file routes (NodeWorkspace integration)', () => {
         throw new Error(`readonly ${operation}`)
       }),
     }
-    const app = await createTestAppWithWorkspace(createNodeWorkspace(workspaceRoot), operations, 'readwrite')
+    const app = await createTestAppWithWorkspace(createTestNodeWorkspace(workspaceRoot), operations, 'readwrite')
 
     const res = await app.inject({
       method: 'GET',
@@ -215,7 +215,7 @@ describe('file routes (NodeWorkspace integration)', () => {
     const workspaceRoot = await mkdtemp(join(tmpdir(), 'boring-ui-file-routes-'))
     tempRoots.push(workspaceRoot)
     await writeFile(join(workspaceRoot, 'user.txt'), 'safe')
-    const workspace = createNodeWorkspace(workspaceRoot)
+    const workspace = createTestNodeWorkspace(workspaceRoot)
     const unlink = vi.spyOn(workspace, 'unlink')
     const rename = vi.spyOn(workspace, 'rename')
     const mkdir = vi.spyOn(workspace, 'mkdir')

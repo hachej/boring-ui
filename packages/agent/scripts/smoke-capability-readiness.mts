@@ -9,6 +9,7 @@ import type { AgentHarness } from '../src/shared/harness'
 import type { AgentTool } from '../src/shared/tool'
 import { mergeTools } from '../src/server/catalog/mergeTools'
 import { registerAgentRoutes } from '../src/server/registerAgentRoutes'
+import { resolveMode } from '@hachej/boring-bash/modes'
 
 function log(name: string, fields: Record<string, unknown>): void {
   const pairs = Object.entries(fields).map(([key, value]) => `${key}=${String(value)}`)
@@ -43,7 +44,7 @@ async function main(): Promise<void> {
   const startedAt = performance.now()
   await app.register(registerAgentRoutes, {
     workspaceRoot,
-    mode: 'direct',
+    runtimeModeAdapter: resolveMode('direct'),
     getWorkspaceId: () => 'smoke-workspace',
     getWorkspaceRoot: () => workspaceRoot,
     provisionRuntime: async () => {

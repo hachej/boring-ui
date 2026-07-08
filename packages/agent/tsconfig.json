@@ -16,6 +16,8 @@
       "@hachej/boring-agent/front": ["src/front/index.ts"],
       "@hachej/boring-agent/server": ["src/server/index.ts"],
       "@hachej/boring-agent/shared": ["src/shared/index.ts"],
+      "@hachej/boring-bash/modes": ["../boring-bash/src/modes/index.ts"],
+      "@hachej/boring-sandbox/providers": ["../boring-sandbox/src/providers/index.ts"],
       "@/*": ["src/*"]
     },
     "allowJs": true,
