@@ -1,6 +1,6 @@
 {
   "name": "@hachej/boring-ui-cli",
-  "version": "0.1.64",
+  "version": "0.1.67",
   "description": "Turn an agent into an app",
   "license": "MIT",
   "type": "module",
@@ -23,6 +23,7 @@
     "@fastify/static": "^9.1.1",
     "@hachej/boring-agent": "workspace:*",
     "@hachej/boring-ask-user": "workspace:*",
+    "@hachej/boring-diagram": "workspace:*",
     "@hachej/boring-tasks": "workspace:*",
     "@hachej/boring-ui-kit": "workspace:*",
     "@hachej/boring-ui-plugin-cli": "workspace:*",

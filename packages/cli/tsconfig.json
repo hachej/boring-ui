@@ -16,6 +16,9 @@
       "node"
     ],
     "paths": {
+      "@hachej/boring-agent/front": [
+        "../agent/src/front/index.ts"
+      ],
       "@hachej/boring-agent/shared": [
         "../agent/src/shared/index.ts"
       ],
@@ -33,6 +36,12 @@
       ],
       "@hachej/boring-ask-user/shared": [
         "../../plugins/ask-user/src/shared/index.ts"
+      ],
+      "@hachej/boring-diagram/front": [
+        "../../plugins/diagram/src/front/index.tsx"
+      ],
+      "@hachej/boring-diagram/shared": [
+        "../../plugins/diagram/src/shared/index.ts"
       ],
       "@hachej/boring-workspace": [
         "../workspace/src/index.ts"
