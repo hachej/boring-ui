@@ -783,6 +783,57 @@ test('registerAgentRoutes mode none evicts old request-scoped pure bindings', as
   }
 })
 
+test('registerAgentRoutes tears down evicted request-scoped runtime bindings without disposing the shared adapter', async () => {
+  const workspaceRoot = await makeTempDir('boring-agent-embed-runtime-evict-')
+  const app = Fastify({ logger: false })
+  const dispose = vi.fn(async () => {})
+  const evictCachedRuntime = vi.fn()
+  const customAdapter: RuntimeModeAdapter = {
+    id: 'runtime-eviction-test',
+    workspaceFsCapability: 'strong',
+    evictCachedRuntime,
+    dispose,
+    async create(ctx) {
+      const { createNodeWorkspace } = await import('../workspace/createNodeWorkspace')
+      const { createDirectSandbox } = await import('../sandbox/direct/createDirectSandbox')
+      const { createServerFileSearch } = await import('../runtime/createServerFileSearch')
+      const workspace = createNodeWorkspace(ctx.workspaceRoot)
+      const sandbox = createDirectSandbox()
+      await sandbox.init?.({ workspace, sessionId: ctx.sessionId })
+      return { workspace, sandbox, fileSearch: createServerFileSearch(workspace, sandbox) }
+    },
+  }
+
+  await app.register(registerAgentRoutes, {
+    workspaceRoot,
+    runtimeModeAdapter: customAdapter,
+    externalPlugins: false,
+    harnessFactory: createNoopHarnessFactory().factory,
+    getWorkspaceId: async (request) => String(request.headers['x-boring-workspace-id'] ?? 'default'),
+  })
+  await app.ready()
+
+  let closed = false
+  try {
+    for (let i = 0; i < 257; i += 1) {
+      const res = await app.inject({
+        method: 'GET',
+        url: '/api/v1/agent/catalog',
+        headers: { 'x-boring-workspace-id': `workspace-${i}` },
+      })
+      expect(res.statusCode).toBe(200)
+    }
+
+    expect(evictCachedRuntime).toHaveBeenCalledWith({ workspaceId: 'workspace-0' })
+    expect(dispose).not.toHaveBeenCalled()
+    await app.close()
+    closed = true
+    expect(dispose).toHaveBeenCalledTimes(1)
+  } finally {
+    if (!closed) await app.close()
+  }
+})
+
 test('registerAgentRoutes mode none retries after scoped binding creation fails', async () => {
   const sessionRoot = await makeTempDir('boring-agent-routes-pure-retry-session-root-')
   const harness = createNoopHarnessFactory()

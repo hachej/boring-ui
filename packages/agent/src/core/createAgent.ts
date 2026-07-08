@@ -40,6 +40,7 @@ export interface AgentCoreConfig {
   runtimeFactory: AgentCoreRuntimeFactory
   environments?: readonly ResolvedEnvironment[]
   providerDirectInputAssets?: boolean
+  readiness?: AgentReadiness
   readinessRequirements?: string[]
   sessions?: SessionStore
 }
@@ -234,16 +235,13 @@ function createRuntimeLoader(runtimeFactory: AgentCoreRuntimeFactory, inputAsset
   }
 }
 
-function createReadiness(config: Pick<AgentCoreConfig, 'readinessRequirements'>): AgentReadiness {
+function createReadiness(config: Pick<AgentCoreConfig, 'readiness' | 'readinessRequirements'>): AgentReadiness {
+  if (config.readiness) return config.readiness
   const requirements = [...(config.readinessRequirements ?? [])]
   return {
     requirements,
     async status() {
-      return requirements.map((key) => ({
-        key,
-        ready: false,
-        message: 'readiness status is not available in the core facade',
-      }))
+      return []
     },
   }
 }

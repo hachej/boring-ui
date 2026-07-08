@@ -29,6 +29,7 @@ import {
   toolNames,
   type AgentRouteBindingProfile,
 } from './agentRouteBindingProfile'
+import { collectToolReadinessRequirements, createAgentReadinessFromTracker } from './agentReadiness'
 
 const DEFAULT_VERSION = '0.1.0-dev'
 const DEFAULT_SESSION_ID = 'default'
@@ -155,10 +156,15 @@ async function createPureAgentAppProfile(
   })) as AgentCoreHarnessFactory
   const tools = opts.extraTools ?? []
   const capabilities = createPureAgentCapabilities(resolvedMode, toolNames(tools))
+  const readyTracker = new ReadyStatusTracker({ sandboxReady: true, harnessReady: true })
   const coreAgent = createAgentRuntimeBridge({
     runtime: 'none',
     environments: capabilities.environments,
     tools,
+    readiness: createAgentReadinessFromTracker({
+      requirements: collectToolReadinessRequirements(tools),
+      tracker: readyTracker,
+    }),
     harnessFactory,
     systemPromptAppend: opts.systemPromptAppend,
     systemPromptDynamic: opts.systemPromptDynamic,
@@ -167,7 +173,6 @@ async function createPureAgentAppProfile(
     sessionStorageRoot: opts.sessionRoot,
   })
   const agentRuntime = await coreAgent.getRuntime()
-  const readyTracker = new ReadyStatusTracker({ sandboxReady: true, harnessReady: true })
   return {
     runtimeMode: resolvedMode,
     capabilities,
@@ -281,10 +286,17 @@ async function createWorkspaceAgentAppProfile(
     sessionDir: opts.sessionDir ?? input.sessionDir,
   })) as AgentCoreHarnessFactory
   const capabilities = createWorkspaceAgentCapabilities(resolvedMode, toolNames(tools))
+  const readyTracker = createRuntimeReadyStatusTracker(modeAdapter, {
+    harnessReady: true,
+  })
   const coreAgent = createAgentRuntimeBridge({
     runtime: modeAdapter,
     environments: capabilities.environments,
     tools,
+    readiness: createAgentReadinessFromTracker({
+      requirements: collectToolReadinessRequirements(tools),
+      tracker: readyTracker,
+    }),
     harnessFactory,
     systemPromptAppend: opts.systemPromptAppend,
     systemPromptDynamic: opts.systemPromptDynamic,
@@ -301,9 +313,6 @@ async function createWorkspaceAgentAppProfile(
   const agentRuntime = await coreAgent.getRuntime()
   const harness = agentRuntime.harness
   harnessRef = harness
-  const readyTracker = createRuntimeReadyStatusTracker(modeAdapter, {
-    harnessReady: true,
-  })
 
   return {
     runtimeMode: resolvedMode,

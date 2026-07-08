@@ -81,6 +81,11 @@ export interface AgentRuntimeAdapter {
 export interface AgentReadinessStatus {
   key: string
   ready: boolean
+  state?: 'not-started' | 'preparing' | 'ready' | 'failed'
+  errorCode?: string
+  causeCode?: string
+  retryable?: boolean
+  workspaceId?: string
   message?: string
 }
 
@@ -100,6 +105,7 @@ export interface AgentConfig {
   /** Provider + host-policy fact for direct model input assets. */
   providerDirectInputAssets?: boolean
   tools?: AgentTool[]
+  readiness?: AgentReadiness
   readinessRequirements?: string[]
   sessions?: SessionStore
   systemPromptAppend?: string

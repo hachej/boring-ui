@@ -28,6 +28,12 @@ export interface AgentRuntimeAdapterView {
 }
 
 export interface CreateAgentRuntimeBridgeOptions {
+  /**
+   * RuntimeModeAdapter.dispose() is adapter-global. Request-scoped route
+   * bindings dispose their facade per binding and close the shared adapter once
+   * from the profile onClose hook.
+   */
+  disposeRuntime?: boolean
   harness?: {
     runtimeCwd?: string
   }
@@ -99,7 +105,9 @@ async function createRuntime(
     ? await config.harnessFactory(harnessInput)
     : await createDefaultPiHarness(config, harnessInput)
   const sessionStore = config.sessions ?? harness.sessions
-  const runtimeDispose = config.runtime !== 'none' ? config.runtime.dispose?.bind(config.runtime) : undefined
+  const runtimeDispose = config.runtime !== 'none' && options.disposeRuntime !== false
+    ? config.runtime.dispose?.bind(config.runtime)
+    : undefined
   return {
     harness,
     sessionStore,

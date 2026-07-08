@@ -67,17 +67,42 @@ describe('createAgent', () => {
     expect(agent.readiness.requirements).toEqual([])
   })
 
-  it('does not report configured readiness requirements as ready without a tracker', async () => {
+  it('reports an explicit empty readiness status without an injected tracker', async () => {
     const agent = createAgent({
       runtime: 'none',
       harnessFactory: createFakeHarnessFactory(),
       readinessRequirements: ['workspace-fs'],
     })
 
+    expect(agent.readiness.requirements).toEqual(['workspace-fs'])
+    await expect(agent.readiness.status()).resolves.toEqual([])
+  })
+
+  it('reports injected readiness status as data', async () => {
+    const agent = createAgent({
+      runtime: 'none',
+      harnessFactory: createFakeHarnessFactory(),
+      readiness: {
+        requirements: ['runtime:python'],
+        async status() {
+          return [{
+            key: 'runtime:python',
+            ready: false,
+            state: 'preparing',
+            message: 'Python runtime dependencies are still installing.',
+            retryable: true,
+          }]
+        },
+      },
+    })
+
+    expect(agent.readiness.requirements).toEqual(['runtime:python'])
     await expect(agent.readiness.status()).resolves.toEqual([{
-      key: 'workspace-fs',
+      key: 'runtime:python',
       ready: false,
-      message: 'readiness status is not available in the core facade',
+      state: 'preparing',
+      message: 'Python runtime dependencies are still installing.',
+      retryable: true,
     }])
   })
 

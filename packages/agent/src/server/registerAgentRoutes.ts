@@ -43,6 +43,7 @@ import {
   toolNames,
   type AgentRouteBindingProfile,
 } from './agentRouteBindingProfile'
+import { collectToolReadinessRequirements, createAgentReadinessFromTracker } from './agentReadiness'
 
 const DEFAULT_VERSION = '0.1.0-dev'
 const DEFAULT_WORKSPACE_ID = 'default'
@@ -143,6 +144,7 @@ interface RuntimeBinding {
 interface RuntimeBindingEntry {
   promise: Promise<RuntimeBinding>
   state: 'pending' | 'ready' | 'failed'
+  workspaceId: string
   error?: unknown
 }
 
@@ -462,10 +464,15 @@ export const registerAgentRoutes: FastifyPluginAsync<RegisterAgentRoutesOptions>
           sessionDir: input.sessionDir,
         })) as AgentCoreHarnessFactory
         const capabilities = createPureAgentCapabilities(resolvedMode, toolNames(tools))
+        const readyTracker = new ReadyStatusTracker({ sandboxReady: true, harnessReady: true })
         const coreAgent = createAgentRuntimeBridge({
           runtime: 'none',
           environments: capabilities.environments,
           tools,
+          readiness: createAgentReadinessFromTracker({
+            requirements: collectToolReadinessRequirements(tools),
+            tracker: readyTracker,
+          }),
           harnessFactory,
           systemPromptAppend: opts.systemPromptAppend,
           systemPromptDynamic,
@@ -477,7 +484,7 @@ export const registerAgentRoutes: FastifyPluginAsync<RegisterAgentRoutesOptions>
         return {
           agent: coreAgent.agent,
           tools,
-          readyTracker: new ReadyStatusTracker({ sandboxReady: true, harnessReady: true }),
+          readyTracker,
           piChatService: agentRuntime.service as PiChatSessionService,
         }
       })()
@@ -585,11 +592,28 @@ export const registerAgentRoutes: FastifyPluginAsync<RegisterAgentRoutesOptions>
   const externalPluginsEnabled = opts.externalPlugins !== false
   const runtimeBindings = new Map<string, RuntimeBindingEntry>()
   const MAX_RUNTIME_BINDINGS = 256
+
+  async function disposeRuntimeBindingEntry(entry: RuntimeBindingEntry | undefined): Promise<void> {
+    if (!entry) return
+    const binding = await entry.promise
+    await binding.agent.dispose()
+  }
+
+  function disposeEvictedRuntimeBinding(entry: RuntimeBindingEntry | undefined): void {
+    if (!entry) return
+    modeAdapter.evictCachedRuntime?.({ workspaceId: entry.workspaceId })
+    disposeRuntimeBindingEntry(entry).catch(() => {})
+  }
+
   function evictRuntimeBindings(): void {
     if (runtimeBindings.size <= MAX_RUNTIME_BINDINGS) return
     const keys = Array.from(runtimeBindings.keys())
     for (let i = 0; i < keys.length - MAX_RUNTIME_BINDINGS; i++) {
-      runtimeBindings.delete(keys[i])
+      const key = keys[i]
+      if (!key) continue
+      const entry = runtimeBindings.get(key)
+      runtimeBindings.delete(key)
+      disposeEvictedRuntimeBinding(entry)
     }
   }
 
@@ -896,6 +920,11 @@ let runtimeProvisioning: WorkspaceProvisioningResult | undefined
       runtime: modeAdapter,
       environments: capabilities.environments,
       tools,
+      readiness: createAgentReadinessFromTracker({
+        requirements: collectToolReadinessRequirements(tools),
+        tracker: readyTracker,
+        checkReadiness,
+      }),
       harnessFactory,
       systemPromptAppend: opts.systemPromptAppend,
       systemPromptDynamic,
@@ -904,6 +933,7 @@ let runtimeProvisioning: WorkspaceProvisioningResult | undefined
       sessionStorageRoot: opts.sessionRoot,
       workdir: root,
     }, {
+      disposeRuntime: false,
       service: {
         workdir: runtimeBundle.workspace.root,
         workspace: runtimeBundle.workspace,
@@ -939,6 +969,7 @@ let runtimeProvisioning: WorkspaceProvisioningResult | undefined
   ): RuntimeBindingEntry {
     const entry: RuntimeBindingEntry = {
       state: 'pending',
+      workspaceId,
       promise: Promise.resolve(null as unknown as RuntimeBinding),
     }
     entry.promise = createRuntimeBinding(workspaceId, scope, request).then(
@@ -1004,7 +1035,9 @@ let runtimeProvisioning: WorkspaceProvisioningResult | undefined
     scope: RuntimeScope,
     request?: FastifyRequest,
   ): Promise<RuntimeBinding> {
+    const previous = runtimeBindings.get(scope.key)
     runtimeBindings.delete(scope.key)
+    disposeRuntimeBindingEntry(previous).catch(() => {})
     modeAdapter.evictCachedRuntime?.({ workspaceId })
 
     const created = createRuntimeBindingEntry(workspaceId, scope, request)
@@ -1236,6 +1269,14 @@ let runtimeProvisioning: WorkspaceProvisioningResult | undefined
       ? { tracker: staticBinding.readyTracker }
       : { getTracker: async (request) => (await getBindingForRequest(request)).readyTracker },
     dispose: async () => {
+      const entries = [...runtimeBindings.values()]
+      runtimeBindings.clear()
+      const disposed = await Promise.allSettled(entries.map((entry) => disposeRuntimeBindingEntry(entry)))
+      for (const result of disposed) {
+        if (result.status === 'rejected') {
+          app.log.warn({ err: result.reason }, '[agent] failed to dispose runtime binding')
+        }
+      }
       await modeAdapter.dispose?.()
     },
     beforeRegister: (profileApp) => {
