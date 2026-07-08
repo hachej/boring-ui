@@ -160,10 +160,11 @@ Introduce or document `ResolvedAgentCapabilities` with:
   tools: string[]
   skills: string[]
   mcpServers: string[]
+  plugins: string[]
 }
 ```
 
-Do not store scalar `filesystem`, `shell`, or `attachments` facts. Derive helper answers from `environments[]`.
+**Amendment (2026-07-08):** `plugins[]` carries the resolved plugin ids the agent actually carries, and `tools[]`/`skills[]`/`mcpServers[]` reflect plugin-contributed capabilities after per-agent plugin resolution. Do not store scalar `filesystem`, `shell`, or `attachments` facts. Derive helper answers from `environments[]`.
 
 P1 can keep this in server/shared types if that is the smallest low-risk step. Later phases can move/expand it into the public core contract. Workspace/front consumers should consume the JSON wire schema from `/api/v1/capabilities` or `/agents/:id/info`, not value-import agent package runtime code.
 
@@ -398,6 +399,8 @@ Skills/resource loading may be tied to pi harness/cwd assumptions. MCP projectio
 ### P6
 
 Implement plugin manifest validation, skill filtering, prompt fragment filtering, and MCP projection against `ResolvedAgentCapabilities`.
+
+**Amendment (2026-07-08):** P6 adds per-agent resolved plugins to the capability facts; surfaces read the resolved plugin set from facts rather than inferring workspace-global plugin state.
 
 ## Subagent migration
 

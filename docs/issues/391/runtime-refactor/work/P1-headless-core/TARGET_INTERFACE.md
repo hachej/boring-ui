@@ -151,6 +151,10 @@ Do not put status in the definition. Do not put lifecycle methods in status. Do 
 
 Keep the public resolved model small.
 
+**Amendment (2026-07-08):** `ResolvedAgentCapabilities` includes resolved
+`plugins[]`; plugin-contributed tools/skills/MCP servers appear in the same
+projection as built-in contributions after per-agent plugin composition.
+
 ```ts
 interface ResolvedAgentComposition {
   readonly definition: AgentDefinitionManifest
@@ -173,6 +177,8 @@ interface ResolvedAgentCapabilities {
   readonly tools: readonly string[]
   readonly skills: readonly string[]
   readonly mcpServers: readonly string[]
+  /** Resolved plugin ids this agent carries. */
+  readonly plugins: readonly string[]
 
   /** Optional wire-schema version for future P2/P3 projection changes. */
   readonly v?: 1

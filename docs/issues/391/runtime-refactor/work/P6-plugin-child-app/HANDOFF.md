@@ -20,6 +20,7 @@ Derived strictly from [TODO.md](./TODO.md) and [PLAN.md](./PLAN.md). Tick the P6
 - [ ] BBP6-007 — [P6a] Shared per-workspace plugin runtime compatibility (#254)
 - [ ] BBP6-008 — [P6a] Multi-tenant full-app reload (#41)
 - [ ] BBP6-009 — [P6a] Workspace `agents: [...]` `AgentDefinitionDeclaration` + default-agent composition (seeds `AgentRegistry`)
+- [ ] BBP6-010 — [P6a] Per-agent plugin composition from `AgentDefinitionDeclaration.plugins`
 
 ### P6b (HARD BLOCKED on #376 `ResolvedChildAppContext`)
 - [ ] BBP6-001 — [P6b · HARD BLOCKED] Consume resolved child-app/workspace-kind context
@@ -50,14 +51,15 @@ Derived strictly from [TODO.md](./TODO.md) and [PLAN.md](./PLAN.md). Tick the P6
 - [ ] `pr5-hosted-fail-closed` completed BBP6-005
 - [ ] `pr6-shared-workspace-runtime` completed BBP6-007
 - [ ] `pr7-multitenant-reload` completed BBP6-008
+- [ ] `pr8-per-agent-plugin-composition` completed BBP6-010
 
 ### P6b follow-up
-- [ ] `pr8-childapp-context` completed BBP6-001 only after #376 exports the shared resolved context type
-- [ ] `pr9-macro-scoping` completed BBP6-006 only after BBP6-001 is unblocked
+- [ ] `pr9-childapp-context` completed BBP6-001 only after #376 exports the shared resolved context type
+- [ ] `pr10-macro-scoping` completed BBP6-006 only after BBP6-001 is unblocked
 
 ## P6a review gates
 - [ ] P6a/P6b split (blocking): P5 precondition confirmed for P6a (or STOP+report); the shared child-app platform code export (expected `ResolvedChildAppContext`, #376) is the HARD prerequisite for P6b — if absent, BBP6-001/006 STOP-and-report with no local fallback shape; P6a proceeds independently.
-- [ ] P6a grep-gate (blocking): each named P6a contract contains ZERO child-app fields/types — `! rg -n "childAppId|workspaceKind|ChildApp"` on each created file (manifest validator, `AgentRegistry.ts`, `agentDefinitionDeclaration.ts`, `runtimePluginContext.ts`) exits 0.
+- [ ] P6a grep-gate (blocking): each named P6a contract contains ZERO child-app fields/types — `! rg -n "childAppId|workspaceKind|ChildApp"` on each created file (manifest validator, `AgentRegistry.ts`, `agentDefinitionDeclaration.ts`, BBP6-010 composition contracts, `runtimePluginContext.ts`) exits 0.
 - [ ] No competing child-app registry / manifest scanner / plugin route family introduced.
 - [ ] `pnpm lint:invariants` + `pnpm audit:imports` + `lint:plugin-invariants` green; zero agent→bash value imports.
 - [ ] Import-free manifest validation proven (side-effecting plugin fixture not executed).

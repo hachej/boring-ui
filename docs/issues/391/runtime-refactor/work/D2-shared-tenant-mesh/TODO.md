@@ -91,11 +91,14 @@ tenant boundary.
 - **Files touch/create:** P5 provisioning entry or adapter mode for in-process
   new-tenant seeding, seed-ref resolver, tests.
 - **Notes:** Extend `provisionWorkspaceRuntime()` with a hot new-tenant mode
-  that seeds a tenant's environment pool, skills, templates, and context into
-  the running app. Do not create a second provisioning engine.
-- **Tests:** new tenant roots/skills/context are created while the app is
-  running; missing seed ref fails closed; rerun applies a safe delta; no raw
-  broker secret enters tenant files or sandbox env.
+  that seeds a tenant's environment pool, skills, templates, plugins, and
+  context into the running app. **Amendment (2026-07-08):** hot registration
+  resolves and installs the declared agents' plugin refs as part of seeding,
+  with unknown refs and unsatisfied plugin requirements failing closed. Do not
+  create a second provisioning engine.
+- **Tests:** new tenant roots/skills/plugins/context are created while the app
+  is running; missing seed ref or plugin ref fails closed; rerun applies a safe
+  delta; no raw broker secret enters tenant files or sandbox env.
 - **Acceptance:** D2 can provision a new tenant inside the running shared
   deployment.
 

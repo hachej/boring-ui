@@ -79,6 +79,11 @@ policy per tenant (`SessionCtx.workspaceId` / `governancePolicyRef`) and include
 that resolution in tenant-isolation conformance. An unknown `governancePolicyRef`
 fails closed and never falls back to another tenant's policy.
 
+**Amendment (2026-07-08):** `governancePolicyRef` may also deny plugins an
+agent or tenant is allowed to load. Plugin denial is governance-gated and
+fail-closed; a denied plugin contributes no tools, skills, MCP servers, routes,
+or UI panels for that agent.
+
 Reserve plugin-to-plugin composition as a host-mediated seam, not a package import. The boring-bash server plugin exposes a named `bindingResolver` composition point; the governance plugin or host config fulfills it through the host plugin pipeline, following the existing `defineServerPlugin` mediation pattern for bridge handlers and provisioning. If the resolver is absent, bash falls back only to host/library-mode config or no governed bindings; it must not discover governance by importing it.
 
 ## MCP consume composition (`boring-mcp`)

@@ -25,6 +25,9 @@ files by relative path. No prior conversation assumed.
 Expose declared agents as MCP servers by config. A stock MCP client can mount an
 agent by `agentId`, authenticate through `bearer` or `public-demo` policy, submit
 a brief, observe progress, and receive a safe result/share URL shape.
+**Amendment (2026-07-08):** an agent exposed over MCP exposes its resolved
+plugin-contributed tools through the delegate surface, subject to the same
+no-secret and policy rules as built-in tools.
 
 ## Non-negotiables
 
@@ -32,6 +35,8 @@ a brief, observe progress, and receive a safe result/share URL shape.
   `AgentDefinitionDeclaration` or a lossless projection.
 - Do not expose raw workspace roots, session roots, environment handles, broker
   secrets, model keys, or raw transcripts.
+- Do not expose plugin-contributed tools that are absent from the agent's
+  resolved plugin set or denied by policy.
 - Do not bypass P7 registry/info or T1/T2 transport.
 - Public-demo access is policy-controlled by `demoPolicy`; it is never an
   unauthenticated backdoor to tenant data.
