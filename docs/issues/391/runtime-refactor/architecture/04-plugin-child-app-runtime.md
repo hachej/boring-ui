@@ -74,6 +74,11 @@ First-party `@hachej/boring-bash` ships through the same plugin door as trusted 
 
 The workspace can host several first-party plugins with a mechanism/policy split. `boring-bash` is the multi-fs mechanism: the `@hachej/boring-bash` package owns contracts, enforcement, no-leak projection operations, tools/routes/tree, and the plugin only delivers that mechanism. `boring-governance` (the #475 line, extracted as `plugins/boring-governance` in PR #532) is multi-fs policy: YAML governance, `company_context` bootstrap/mount, budgets, and admin UI. Governance resolves bindings through the landed [`FilesystemBindingResolver`](../../../416/company-fs/01-foundation-binding-model.md) (#416) plus the request-scoped binding seam (#498); bash enforces those bindings. Governance may depend on `@hachej/boring-bash/shared`, never on `@hachej/boring-workspace` or workspace internals.
 
+**Amendment (2026-07-08):** D2 shared subdomain tenancy resolves governance
+policy per tenant (`SessionCtx.workspaceId` / `governancePolicyRef`) and includes
+that resolution in tenant-isolation conformance. An unknown `governancePolicyRef`
+fails closed and never falls back to another tenant's policy.
+
 Reserve plugin-to-plugin composition as a host-mediated seam, not a package import. The boring-bash server plugin exposes a named `bindingResolver` composition point; the governance plugin or host config fulfills it through the host plugin pipeline, following the existing `defineServerPlugin` mediation pattern for bridge handlers and provisioning. If the resolver is absent, bash falls back only to host/library-mode config or no governed bindings; it must not discover governance by importing it.
 
 ## MCP consume composition (`boring-mcp`)

@@ -11,6 +11,7 @@ files by relative path. No prior conversation assumed.
 - Definitions: [`../P6-plugin-child-app/TODO.md`](../P6-plugin-child-app/TODO.md) BBP6-009
 - MCP/demo exposure: [`../M2-mcp-agent-surface/TODO.md`](../M2-mcp-agent-surface/TODO.md)
 - Tenant provisioning: [`../D1-tenant-provisioning/TODO.md`](../D1-tenant-provisioning/TODO.md)
+- Shared subdomain tenancy: [`../D2-shared-tenant-mesh/TODO.md`](../D2-shared-tenant-mesh/TODO.md)
 
 ## Prerequisites - stop if false
 
@@ -18,12 +19,14 @@ files by relative path. No prior conversation assumed.
 - `AgentDefinitionDeclaration` validation exists.
 - M2 exposes demo endpoint status.
 - D1 exposes provisioning status.
+- D2 exposes shared-tier tenant readiness status.
 
 ## Goal / exit criteria
 
 Add read-only onboarding status so an operator can see definition readiness,
-demo URL status, provisioning status, and missing policy refs for each declared
-agent. Do not add authoring/configuration controls.
+demo URL status, dedicated provisioning status, shared-tier tenant readiness,
+and missing policy refs for each declared agent. Do not add
+authoring/configuration controls.
 
 ## Non-negotiables
 
@@ -32,6 +35,9 @@ agent. Do not add authoring/configuration controls.
 - No create/edit/delete agent controls.
 - Unknown refs are shown as blocking readiness, matching BBP6-009 fail-closed
   semantics.
+- **Amendment (2026-07-08):** shared-tier tenant readiness covers subdomain live,
+  isolation-conformance green, and tenant lifecycle/demo gate status. S4 remains
+  read-only; D2 BBD2-006 owns `plan_tenant`/`register_tenant` authoring.
 - No secret values, raw policy docs, model keys, or deployment internals rendered.
 
 ## Beads
@@ -39,7 +45,8 @@ agent. Do not add authoring/configuration controls.
 ### BBS4-001 - Readiness data model and status client (M)
 
 - **Files touch/create:** shared/front status types and clients for definition
-  validation, M2 demo exposure status, and D1 provisioning status.
+  validation, M2 demo exposure status, D1 provisioning status, and D2 shared-tier
+  tenant readiness.
 - **Notes:** Status is read-only and may be a lossless projection of server
   validation results. Stable codes are required for missing refs.
 - **Tests:** missing instruction/persona/capability/environment/sandbox/
@@ -51,8 +58,8 @@ agent. Do not add authoring/configuration controls.
 
 - **Files touch/create:** S3 Fleet drill-down extension or adjacent panel.
 - **Notes:** Show definition readiness, demo URL status, provisioning status,
-  and missing policy refs. Link to existing inspect/provisioning/demo docs or
-  statuses; do not add edit controls.
+  shared-tier tenant readiness, and missing policy refs. Link to existing
+  inspect/provisioning/demo/tenant statuses; do not add edit controls.
 - **Tests:** ready, blocked, and partial states render; no create/configure
   buttons exist; keyboard/accessibility follows existing panel patterns.
 - **Acceptance:** an operator can diagnose why an agent is not demo-ready.
