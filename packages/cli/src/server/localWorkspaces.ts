@@ -78,16 +78,35 @@ function parseRegistryYaml(content: string): StoredLocalWorkspace[] {
   const result: StoredLocalWorkspace[] = []
   let current: Partial<StoredLocalWorkspace> | null = null
 
+  const pushCurrent = () => {
+    if (current?.id && current.name && current.path && current.createdAt && current.updatedAt) {
+      result.push(current as StoredLocalWorkspace)
+    }
+  }
+
   for (const line of content.split(/\r?\n/)) {
     const trimmed = line.trim()
     if (!trimmed || trimmed.startsWith("#") || trimmed === "version: 1" || trimmed === "workspaces:") continue
 
     const itemMatch = line.match(/^\s*-\s+id:\s*(.*)$/)
     if (itemMatch) {
-      if (current?.id && current.name && current.path && current.createdAt && current.updatedAt) {
-        result.push(current as StoredLocalWorkspace)
-      }
+      pushCurrent()
       current = { id: unquoteYamlString(itemMatch[1] ?? "") }
+      continue
+    }
+
+    const providerItemMatch = line.match(/^\s*-\s+provider:\s*(.*)$/)
+    if (providerItemMatch && current) {
+      const provider = parseTaskProvider(unquoteYamlString(providerItemMatch[1] ?? ""))
+      if (provider) current.taskProviders = [...(current.taskProviders ?? []), provider]
+      continue
+    }
+
+    const providerRepoMatch = line.match(/^\s+repo:\s*(.*)$/)
+    if (providerRepoMatch && current?.taskProviders?.length) {
+      const repo = unquoteYamlString(providerRepoMatch[1] ?? "").trim()
+      const last = current.taskProviders[current.taskProviders.length - 1]
+      if (last?.type === "github" && repo && repo !== "auto") last.repo = repo
       continue
     }
 
@@ -105,9 +124,7 @@ function parseRegistryYaml(content: string): StoredLocalWorkspace[] {
     }
   }
 
-  if (current?.id && current.name && current.path && current.createdAt && current.updatedAt) {
-    result.push(current as StoredLocalWorkspace)
-  }
+  pushCurrent()
   return result
 }
 
@@ -122,7 +139,13 @@ function serializeRegistryYaml(workspaces: StoredLocalWorkspace[]): string {
       `    updatedAt: ${yamlString(workspace.updatedAt)}`,
     )
     if (workspace.taskProviders?.length) {
-      lines.push(`    taskProviders: ${yamlString(workspace.taskProviders.map(serializeTaskProvider).join(", "))}`)
+      lines.push("    taskProviders:")
+      for (const provider of workspace.taskProviders) {
+        lines.push(
+          `      - provider: ${yamlString(provider.type)}`,
+          `        repo: ${yamlString(provider.repo ?? "auto")}`,
+        )
+      }
     } else if (workspace.taskProvider) {
       lines.push(`    taskProvider: ${yamlString(serializeTaskProvider(workspace.taskProvider))}`)
     }
