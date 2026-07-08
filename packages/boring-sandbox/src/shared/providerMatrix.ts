@@ -61,6 +61,13 @@ export const PROVIDER_CAPABILITIES = {
     runtimeImage: false,
     hardening: "none",
     filesystemPersistence: "durable",
+    mounts: {
+      fuseS3: "unknown",
+      mountType: "host-bind",
+      noInotify: true,
+      pollRequired: true,
+      cachePolicy: "vfs-full",
+    },
   },
   bwrap: {
     fs: "readwrite",
@@ -76,6 +83,13 @@ export const PROVIDER_CAPABILITIES = {
     runtimeImage: false,
     hardening: "process",
     filesystemPersistence: "durable",
+    mounts: {
+      fuseS3: "unknown",
+      mountType: "host-bind",
+      noInotify: true,
+      pollRequired: true,
+      cachePolicy: "vfs-full",
+    },
   },
   "vercel-sandbox": {
     fs: "readwrite",
@@ -91,6 +105,13 @@ export const PROVIDER_CAPABILITIES = {
     runtimeImage: "unknown",
     hardening: "provider",
     filesystemPersistence: "provider",
+    mounts: {
+      fuseS3: false,
+      mountType: "remote-fs",
+      noInotify: true,
+      pollRequired: true,
+      cachePolicy: "none",
+    },
   },
   "remote-worker": {
     fs: "readwrite",
@@ -106,6 +127,9 @@ export const PROVIDER_CAPABILITIES = {
     runtimeImage: "unknown",
     hardening: "unknown",
     filesystemPersistence: "unknown",
+    mounts: {
+      fuseS3: "unknown",
+    },
   },
 } as const satisfies Record<SandboxProviderId, ProviderCapabilities>;
 

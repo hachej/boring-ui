@@ -7,7 +7,7 @@ const repoRoot = resolve(import.meta.dirname, "../../..");
 const packageRoot = resolve(import.meta.dirname, "..");
 const packageJsonPath = join(packageRoot, "package.json");
 
-export const requiredExports = [".", "./shared", "./providers"];
+export const requiredExports = [".", "./shared", "./providers", "./mounts"];
 
 const sourceFilePattern = /\.(ts|tsx|mts|cts|js|mjs|cjs)$/;
 const importExportFromPattern = /\b(import|export)\s+(type\s+)?[\s\S]*?\s+from\s+["']([^"']+)["']/g;
@@ -30,6 +30,11 @@ const isBoringBashSpecifier = (specifier) =>
 const isSharedFile = (file) => {
   const normalized = file.replaceAll("\\", "/");
   return normalized.includes("/src/shared/") || normalized.endsWith("/src/shared/index.ts") || normalized.startsWith("src/shared/");
+};
+
+const isMountsFile = (file) => {
+  const normalized = file.replaceAll("\\", "/");
+  return normalized.includes("/src/mounts/") || normalized.endsWith("/src/mounts/index.ts") || normalized.startsWith("src/mounts/");
 };
 
 export function findForbiddenPatterns(file, text) {
@@ -66,6 +71,21 @@ export function findForbiddenPatterns(file, text) {
     if (/\bBuffer\b/.test(text)) {
       add("shared Buffer");
     }
+  }
+
+  if (isSharedFile(file)) {
+    for (const pattern of [importExportFromPattern, sideEffectImportPattern, dynamicImportPattern, requirePattern]) {
+      for (const match of text.matchAll(pattern)) {
+        const specifier = match[3] ?? match[1];
+        if (typeof specifier === "string" && (specifier.includes("/mounts") || specifier.startsWith("../mounts") || specifier.startsWith("./mounts"))) {
+          add("shared -> mounts import");
+        }
+      }
+    }
+  }
+
+  if (isMountsFile(file) && file.includes("src/shared/")) {
+    add("mounts file under shared");
   }
 
   return violations;

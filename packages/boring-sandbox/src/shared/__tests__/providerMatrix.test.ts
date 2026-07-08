@@ -48,6 +48,13 @@ describe("provider capability matrix", () => {
       sourceOfTruth: "storage-primary",
       provisioningSupport: true,
       runtimeImage: false,
+      mounts: {
+        fuseS3: "unknown",
+        mountType: "host-bind",
+        noInotify: true,
+        pollRequired: true,
+        cachePolicy: "vfs-full",
+      },
     });
   });
 
@@ -63,6 +70,13 @@ describe("provider capability matrix", () => {
       sourceOfTruth: "storage-primary",
       provisioningSupport: true,
       runtimeImage: false,
+      mounts: {
+        fuseS3: "unknown",
+        mountType: "host-bind",
+        noInotify: true,
+        pollRequired: true,
+        cachePolicy: "vfs-full",
+      },
     });
   });
 
@@ -78,6 +92,13 @@ describe("provider capability matrix", () => {
       sourceOfTruth: "sandbox-primary",
       provisioningSupport: true,
       runtimeImage: "unknown",
+      mounts: {
+        fuseS3: false,
+        mountType: "remote-fs",
+        noInotify: true,
+        pollRequired: true,
+        cachePolicy: "none",
+      },
     });
   });
 
@@ -103,6 +124,9 @@ describe("provider capability matrix", () => {
       runtimeImage: "unknown",
       hardening: "unknown",
       filesystemPersistence: "unknown",
+      mounts: {
+        fuseS3: "unknown",
+      },
     });
   });
 

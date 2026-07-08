@@ -24,10 +24,15 @@
     "./providers": {
       "types": "./dist/providers/index.d.ts",
       "import": "./dist/providers/index.js"
+    },
+    "./mounts": {
+      "types": "./dist/mounts/index.d.ts",
+      "import": "./dist/mounts/index.js"
     }
   },
   "scripts": {
     "build": "tsup",
+    "build+typecheck+test": "pnpm run build && pnpm run typecheck && pnpm run test",
     "typecheck": "tsc --noEmit",
     "check:invariants": "node ./scripts/check-invariants.mjs",
     "lint": "pnpm run typecheck && pnpm run check:invariants",

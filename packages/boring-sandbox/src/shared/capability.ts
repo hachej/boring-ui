@@ -3,6 +3,8 @@ export type ProviderNetworkIsolation = "none" | "process" | "container" | "micro
 export type ProviderSourceOfTruth = "sandbox-primary" | "storage-primary";
 export type ProviderHardening = "none" | "process" | "container" | "microvm" | "provider";
 export type ProviderFilesystemPersistence = "none" | "ephemeral" | "session" | "durable" | "provider";
+export type ProviderMountType = "host-bind" | "virtiofs" | "remote-fs";
+export type ProviderMountCachePolicy = "vfs-full" | "overlay" | "none";
 export type ReportedProviderCapability<T> = T | "unknown";
 
 export interface ProviderRuntimeImage {
@@ -14,6 +16,14 @@ export interface ProviderRuntimeImage {
 
 export interface ProviderRuntimeSpec {
   image?: ProviderRuntimeImage;
+}
+
+export interface ProviderMountCapabilities {
+  fuseS3?: ReportedProviderCapability<boolean>;
+  mountType?: ProviderMountType;
+  noInotify?: boolean;
+  pollRequired?: boolean;
+  cachePolicy?: ProviderMountCachePolicy;
 }
 
 export interface ProviderCapabilities {
@@ -30,6 +40,7 @@ export interface ProviderCapabilities {
   runtimeImage: ReportedProviderCapability<boolean>;
   hardening?: ReportedProviderCapability<ProviderHardening>;
   filesystemPersistence?: ReportedProviderCapability<ProviderFilesystemPersistence>;
+  mounts?: ProviderMountCapabilities;
 }
 
 export const PROVIDER_CAPABILITY_ERROR_CODES = {
@@ -40,4 +51,3 @@ export const PROVIDER_CAPABILITY_ERROR_CODES = {
 
 export type ProviderCapabilityErrorCode =
   (typeof PROVIDER_CAPABILITY_ERROR_CODES)[keyof typeof PROVIDER_CAPABILITY_ERROR_CODES];
-

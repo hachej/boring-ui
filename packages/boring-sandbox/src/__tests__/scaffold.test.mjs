@@ -66,4 +66,13 @@ describe("@hachej/boring-sandbox scaffold", () => {
       { file: "src/shared/fixture.ts", name: "shared Buffer" },
     ]);
   });
+
+  it("keeps server-only mounts out of shared", () => {
+    expect(
+      findForbiddenPatterns(
+        "src/shared/fixture.ts",
+        "import { mountRcloneS3 } from '../mounts';",
+      ),
+    ).toContainEqual(expect.objectContaining({ name: "shared -> mounts import" }));
+  });
 });
