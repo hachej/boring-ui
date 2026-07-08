@@ -18,6 +18,7 @@ const PUBLISHABLE = [
   "packages/ui",
   "plugins/deck",
   "plugins/ask-user",
+  "plugins/diagram",
   "packages/cli", // @hachej/boring-ui-cli
   "plugins/data-explorer",
   "plugins/data-catalog",

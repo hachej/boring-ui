@@ -12,6 +12,7 @@ const allowed = new Set([
   "plugins/boring-governance/package.json",
   "plugins/deck/package.json",
   "plugins/ask-user/package.json",
+  "plugins/diagram/package.json",
   "plugins/data-explorer/package.json",
   "plugins/data-catalog/package.json",
   "plugins/generated-pane/package.json",

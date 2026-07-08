@@ -195,7 +195,7 @@ describe("workspaces mode runtime plugin wiring", () => {
 
       const listA = await app.inject({ method: "GET", url: `/api/v1/agent-plugins?workspaceId=${registeredA.id}` })
       const pluginsA = listA.json() as Array<{ id: string; frontTarget?: { entryUrl?: string } }>
-      expect(pluginsA.map((plugin) => plugin.id).sort()).toEqual(["ask-user", "global-plugin", "local-a"])
+      expect(pluginsA.map((plugin) => plugin.id).sort()).toEqual(["ask-user", "diagram", "global-plugin", "local-a"])
       for (const plugin of pluginsA) {
         expect(plugin.frontTarget?.entryUrl).toBeTruthy()
         const runtime = await app.inject({ method: "GET", url: plugin.frontTarget!.entryUrl! })
@@ -203,7 +203,7 @@ describe("workspaces mode runtime plugin wiring", () => {
       }
 
       const listB = await app.inject({ method: "GET", url: `/api/v1/agent-plugins?workspaceId=${registeredB.id}` })
-      expect((listB.json() as Array<{ id: string }>).map((plugin) => plugin.id).sort()).toEqual(["ask-user", "global-plugin", "local-b"])
+      expect((listB.json() as Array<{ id: string }>).map((plugin) => plugin.id).sort()).toEqual(["ask-user", "diagram", "global-plugin", "local-b"])
     } finally {
       await sse.close()
       await app.close()
@@ -379,17 +379,16 @@ describe("workspaces mode runtime plugin wiring", () => {
       const replayComplete = await sse.nextEvent((event) => event.event === "boring.plugin.replay-complete")
       expect(replayComplete.data).toMatchObject({ workspaceId: workspace.id, replay: true })
 
-      // ask-user is the CLI's default plugin package and is present even
-      // for zero-external-plugin workspaces. The fixture only writes
-      // `later-plugin` mid-test, so the pre-reload list should contain
-      // exactly the ask-user default.
+      // CLI default plugin packages are present even for zero-external-plugin
+      // workspaces. The fixture only writes `later-plugin` mid-test, so the
+      // pre-reload list should contain exactly the bundled defaults.
       const before = await app.inject({ method: "GET", url: `/api/v1/agent-plugins?workspaceId=${workspace.id}` })
-      expect((before.json() as Array<{ id: string }>).map((plugin) => plugin.id)).toEqual(["ask-user"])
+      expect((before.json() as Array<{ id: string }>).map((plugin) => plugin.id).sort()).toEqual(["ask-user", "diagram"])
 
       await writePlugin(join(workspaceRoot, ".pi", "extensions", "later-plugin"), "later-plugin")
 
       const stillBeforeReload = await app.inject({ method: "GET", url: `/api/v1/agent-plugins?workspaceId=${workspace.id}` })
-      expect((stillBeforeReload.json() as Array<{ id: string }>).map((plugin) => plugin.id)).toEqual(["ask-user"])
+      expect((stillBeforeReload.json() as Array<{ id: string }>).map((plugin) => plugin.id).sort()).toEqual(["ask-user", "diagram"])
 
       const reload = await app.inject({
         method: "POST",
@@ -400,7 +399,7 @@ describe("workspaces mode runtime plugin wiring", () => {
       expect(reload.json()).toMatchObject({ ok: true, sessionId: expect.any(String), reloaded: expect.any(Boolean) })
 
       const afterReload = await app.inject({ method: "GET", url: `/api/v1/agent-plugins?workspaceId=${workspace.id}` })
-      expect((afterReload.json() as Array<{ id: string }>).map((plugin) => plugin.id).sort()).toEqual(["ask-user", "later-plugin"])
+      expect((afterReload.json() as Array<{ id: string }>).map((plugin) => plugin.id).sort()).toEqual(["ask-user", "diagram", "later-plugin"])
     } finally {
       await sse.close()
       await app.close()
@@ -417,9 +416,9 @@ describe("workspaces mode runtime plugin wiring", () => {
     const app = await createWorkspacesModeApp({ mode: "direct", registryPath, provisionWorkspace: false })
 
     try {
-      // Boot the workspace runtime with only the CLI default ask-user plugin.
+      // Boot the workspace runtime with only the CLI default plugins.
       const before = await app.inject({ method: "GET", url: `/api/v1/agent-plugins?workspaceId=${workspace.id}` })
-      expect((before.json() as Array<{ id: string }>).map((plugin) => plugin.id)).toEqual(["ask-user"])
+      expect((before.json() as Array<{ id: string }>).map((plugin) => plugin.id).sort()).toEqual(["ask-user", "diagram"])
 
       // Simulate `boring-ui-plugin install ../some-plugin`: a package source
       // dir outside .pi/extensions, registered in .pi/settings.json packages.
@@ -438,7 +437,7 @@ describe("workspaces mode runtime plugin wiring", () => {
       expect(reload.statusCode).toBe(200)
 
       const afterReload = await app.inject({ method: "GET", url: `/api/v1/agent-plugins?workspaceId=${workspace.id}` })
-      expect((afterReload.json() as Array<{ id: string }>).map((plugin) => plugin.id).sort()).toEqual(["ask-user", "settings-plugin"])
+      expect((afterReload.json() as Array<{ id: string }>).map((plugin) => plugin.id).sort()).toEqual(["ask-user", "diagram", "settings-plugin"])
     } finally {
       await app.close()
     }
