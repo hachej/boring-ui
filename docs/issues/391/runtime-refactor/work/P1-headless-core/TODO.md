@@ -191,6 +191,7 @@ Matches `INDEX.md` "Phase 1":
     }
     ```
   - **Amendment (2026-07-08):** the projection includes resolved `plugins[]`; after P6, plugin-contributed tools/skills/MCP servers appear in the same facts projection as built-in contributions.
+  - **Amendment (2026-07-08):** the projection includes optional `runtime?: { profileId?; image?: { ref, digest }; provider }`, populated by the host. `profileId` is absent for a provider-default image; `image?` is non-secret identity metadata only. Do not add an agent-side sandbox import to populate this facet.
   - Coarse direct/local/vercel compatibility projection preserves current behavior:
     ```ts
     {
@@ -209,7 +210,7 @@ Matches `INDEX.md` "Phase 1":
     ```
   - Expose via the existing `registerCapabilitiesContributor` / `/api/v1/capabilities` seam where available. Workspace/front consumers must consume the JSON wire schema, not value-import agent runtime code.
   - Do not implement YAML authoring, full requirement intersection, plugin manifest validation, frontend auto-exclusion, skill filtering, or MCP projection in P1.
-- **Tests to add:** pure/headless capabilities match the target block; direct coding capabilities report a writable `user` environment with input-asset sink and environment-bound file/bash tools plus real registered tool names; no test branches on `runtimeMode` except the compatibility derivation shim.
+- **Tests to add:** pure/headless capabilities match the target block; direct coding capabilities report a writable `user` environment with input-asset sink and environment-bound file/bash tools plus real registered tool names; runtime projection preserves optional `profileId` and optional non-secret `image` facts; no test branches on `runtimeMode` except the compatibility derivation shim.
 - **Acceptance:** PLAN's pure-mode capability facts exit criterion is executable and green; existing HTTP behavior is unchanged.
 
 ## Verification
