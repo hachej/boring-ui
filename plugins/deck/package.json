@@ -1,6 +1,6 @@
 {
   "name": "@hachej/boring-deck",
-  "version": "0.1.64",
+  "version": "0.1.66",
   "type": "module",
   "license": "MIT",
   "description": "Front-only markdown deck plugin scaffold for Boring workspace.",
@@ -73,7 +73,7 @@
     "react": "^19.2.7",
     "react-dom": "^19.2.7",
     "tsup": "^8.0.0",
-    "typescript": "^5.4.0",
+    "typescript": "^6.0.3",
     "vitest": "^4.1.9"
   }
 }

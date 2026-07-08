@@ -6,8 +6,20 @@
     "rootDir": "src",
     "module": "NodeNext",
     "moduleResolution": "NodeNext",
-    "lib": ["ES2022"]
+    "lib": [
+      "ES2022"
+    ],
+    "ignoreDeprecations": "5.0"
   },
-  "include": ["src/server/**/*.ts", "src/plugins/**/server.ts", "src/types/**/*.d.ts"],
-  "exclude": ["src/front", "src/plugins/demo", "node_modules", "dist"]
+  "include": [
+    "src/server/**/*.ts",
+    "src/plugins/**/server.ts",
+    "src/types/**/*.d.ts"
+  ],
+  "exclude": [
+    "src/front",
+    "src/plugins/demo",
+    "node_modules",
+    "dist"
+  ]
 }

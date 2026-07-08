@@ -21,9 +21,9 @@ import { safeCapture, noopTelemetry, type TelemetrySink } from '../../shared/tel
 
 const MIN_ZXCVBN_SCORE = 2
 
-let zxcvbnInitialized = false
-function ensureZxcvbn() {
-  if (zxcvbnInitialized) return
+let zxcvbnConfigured = false
+function configureZxcvbn() {
+  if (zxcvbnConfigured) return
   zxcvbnOptions.setOptions({
     translations: zxcvbnEn.translations,
     graphs: zxcvbnCommon.adjacencyGraphs,
@@ -32,11 +32,11 @@ function ensureZxcvbn() {
       ...zxcvbnEn.dictionary,
     },
   })
-  zxcvbnInitialized = true
+  zxcvbnConfigured = true
 }
 
 export function validatePasswordStrength(password: string): { valid: boolean; message?: string } {
-  ensureZxcvbn()
+  configureZxcvbn()
   const result = zxcvbn(password)
   if (result.score < MIN_ZXCVBN_SCORE) {
     return {
@@ -62,6 +62,32 @@ export interface CreateAuthOptions {
   logger?: { warn: (obj: Record<string, unknown>, msg: string) => void }
   /** Telemetry sink for auth.signed_up / auth.session_started (defaults to noop). */
   telemetry?: TelemetrySink
+}
+
+async function createReplayableRequest(request: Request): Promise<Request> {
+  if (request.bodyUsed || request.method === 'GET' || request.method === 'HEAD') return request
+
+  const body = await request.text()
+  const init: RequestInit = {
+    method: request.method,
+    headers: request.headers,
+    body,
+    redirect: request.redirect,
+    referrer: request.referrer,
+    referrerPolicy: request.referrerPolicy,
+    integrity: request.integrity,
+    keepalive: request.keepalive,
+    credentials: request.credentials,
+    cache: request.cache,
+    mode: request.mode,
+  }
+
+  const replayable = new Request(request.url, init)
+  Object.defineProperty(replayable, 'clone', {
+    configurable: true,
+    value: () => new Request(request.url, init),
+  })
+  return replayable
 }
 
 export function createAuth(config: CoreConfig, db: Database, opts?: CreateAuthOptions): Auth<any> {
@@ -140,7 +166,7 @@ export function createAuth(config: CoreConfig, db: Database, opts?: CreateAuthOp
       : {}),
   }
 
-  return betterAuth({
+  const auth = betterAuth({
     database: drizzleAdapter(db, { provider: 'pg', schema }),
     secret: config.auth.secret,
     baseURL: config.auth.url,
@@ -245,6 +271,11 @@ export function createAuth(config: CoreConfig, db: Database, opts?: CreateAuthOp
     socialProviders,
     plugins,
   })
+
+  const handler = auth.handler.bind(auth)
+  auth.handler = async (request: Request) => handler(await createReplayableRequest(request))
+
+  return auth
 }
 
 export type BetterAuthInstance = Auth<any>

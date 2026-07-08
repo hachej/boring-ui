@@ -3,7 +3,11 @@
     "target": "ES2022",
     "module": "ESNext",
     "moduleResolution": "Bundler",
-    "lib": ["ES2022", "DOM", "DOM.Iterable"],
+    "lib": [
+      "ES2022",
+      "DOM",
+      "DOM.Iterable"
+    ],
     "jsx": "react-jsx",
     "strict": true,
     "esModuleInterop": true,
@@ -11,24 +15,60 @@
     "resolveJsonModule": true,
     "baseUrl": ".",
     "paths": {
-      "@hachej/boring-core/server": ["src/server/index.ts"],
-      "@hachej/boring-core/server/db": ["src/server/db/index.ts"],
-      "@hachej/boring-core/app/server": ["src/app/server/index.ts"],
-      "@hachej/boring-core/app/front": ["src/app/front/index.ts"],
-      "@hachej/boring-core/app/vite": ["src/app/vite/index.ts"],
-      "@hachej/boring-workspace": ["../workspace/src/index.ts"],
-      "@hachej/boring-workspace/app/front": ["../workspace/src/app/front/index.ts"],
-      "@hachej/boring-workspace/app/server": ["../workspace/src/app/server/index.ts"],
-      "@hachej/boring-workspace/server": ["../workspace/src/server/index.ts"],
-      "@hachej/boring-agent/server": ["../agent/src/server/index.ts"],
-      "@/*": ["../workspace/src/*"],
-      "@hachej/boring-core/front": ["src/front/index.ts"],
-      "@hachej/boring-core/shared": ["src/shared/index.ts"]
+      "@hachej/boring-core/server": [
+        "src/server/index.ts"
+      ],
+      "@hachej/boring-core/server/db": [
+        "src/server/db/index.ts"
+      ],
+      "@hachej/boring-core/app/server": [
+        "src/app/server/index.ts"
+      ],
+      "@hachej/boring-core/app/front": [
+        "src/app/front/index.ts"
+      ],
+      "@hachej/boring-core/app/vite": [
+        "src/app/vite/index.ts"
+      ],
+      "@hachej/boring-workspace": [
+        "../workspace/src/index.ts"
+      ],
+      "@hachej/boring-workspace/app/front": [
+        "../workspace/src/app/front/index.ts"
+      ],
+      "@hachej/boring-workspace/app/server": [
+        "../workspace/src/app/server/index.ts"
+      ],
+      "@hachej/boring-workspace/server": [
+        "../workspace/src/server/index.ts"
+      ],
+      "@hachej/boring-agent/server": [
+        "../agent/src/server/index.ts"
+      ],
+      "@/*": [
+        "../workspace/src/*"
+      ],
+      "@hachej/boring-core/front": [
+        "src/front/index.ts"
+      ],
+      "@hachej/boring-core/shared": [
+        "src/shared/index.ts"
+      ]
     },
     "forceConsistentCasingInFileNames": true,
     "noEmit": true,
-    "types": ["vitest/globals", "node", "@testing-library/jest-dom"]
+    "types": [
+      "vitest/globals",
+      "node",
+      "@testing-library/jest-dom"
+    ],
+    "ignoreDeprecations": "5.0"
   },
-  "include": ["src/**/*"],
-  "exclude": ["node_modules", "dist"]
+  "include": [
+    "src/**/*"
+  ],
+  "exclude": [
+    "node_modules",
+    "dist"
+  ]
 }

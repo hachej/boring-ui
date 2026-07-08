@@ -1,7 +1,14 @@
 {
   "files": [],
   "references": [
-    { "path": "./tsconfig.front.json" },
-    { "path": "./tsconfig.server.json" }
-  ]
+    {
+      "path": "./tsconfig.front.json"
+    },
+    {
+      "path": "./tsconfig.server.json"
+    }
+  ],
+  "compilerOptions": {
+    "ignoreDeprecations": "5.0"
+  }
 }

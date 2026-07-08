@@ -1,6 +1,6 @@
 {
   "name": "@hachej/boring-data-bridge",
-  "version": "0.1.64",
+  "version": "0.1.66",
   "type": "module",
   "private": false,
   "license": "MIT",
@@ -66,7 +66,7 @@
     "@hachej/boring-workspace": "workspace:*",
     "@perspective-dev/client": "4.5.1",
     "tsup": "^8.4.0",
-    "typescript": "~5.9.3",
+    "typescript": "~6.0.3",
     "vitest": "^4.1.9"
   },
   "dependencies": {}

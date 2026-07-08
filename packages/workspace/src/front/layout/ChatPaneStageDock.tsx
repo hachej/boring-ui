@@ -251,11 +251,13 @@ export function ChatPaneStageDock({
     // Accept session rows dragged in from outside the dock (the session
     // browser). The drop opens the session as a pane at the drop position.
     const dragOverDisposable = api.onUnhandledDragOverEvent((dragEvent) => {
-      const types = dragEvent.nativeEvent.dataTransfer?.types
+      const nativeEvent = dragEvent.nativeEvent
+      const types = nativeEvent instanceof DragEvent ? nativeEvent.dataTransfer?.types : undefined
       if (types && Array.from(types).includes(CHAT_SESSION_DRAG_TYPE)) dragEvent.accept()
     })
     const dropDisposable = api.onDidDrop((dropEvent) => {
-      const sessionId = dropEvent.nativeEvent.dataTransfer?.getData(CHAT_SESSION_DRAG_TYPE)
+      const nativeEvent = dropEvent.nativeEvent
+      const sessionId = nativeEvent instanceof DragEvent ? nativeEvent.dataTransfer?.getData(CHAT_SESSION_DRAG_TYPE) : undefined
       if (!sessionId) return
       pendingPlacementsRef.current.set(sessionId, {
         referencePanelId: dropEvent.group?.activePanel?.id ?? null,

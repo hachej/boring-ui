@@ -397,6 +397,7 @@ describe('CoreWorkspaceAgentFront', () => {
       workspaceId: 'public',
       plugins: [publicPlugin],
       surfaceInitialPanels: publicPanels,
+      defaultAppLeftPaneCollapsed: true,
     })
   })
 

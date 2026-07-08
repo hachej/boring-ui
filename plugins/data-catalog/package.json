@@ -1,10 +1,10 @@
 {
   "name": "@hachej/boring-data-catalog",
-  "version": "0.1.64",
+  "version": "0.1.66",
   "type": "module",
   "private": false,
   "license": "MIT",
-  "description": "Plugin BUILDER for Boring workspace data catalogs. Consumers call `createDataCatalogPlugin(options)` to bind their own adapter/facets and get a configured BoringFrontFactoryWithId. NOT a direct `defaultPluginPackages` entry (no default export, options required) \u2014 wrap in an app-local plugin module that default-exports the built factory, then list that wrapper in `defaultPluginPackages`.",
+  "description": "Plugin BUILDER for Boring workspace data catalogs. Consumers call `createDataCatalogPlugin(options)` to bind their own adapter/facets and get a configured BoringFrontFactoryWithId. NOT a direct `defaultPluginPackages` entry (no default export, options required) — wrap in an app-local plugin module that default-exports the built factory, then list that wrapper in `defaultPluginPackages`.",
   "repository": {
     "type": "git",
     "url": "https://github.com/hachej/boring-ui"
@@ -61,7 +61,7 @@
     "react": "^19.2.7",
     "react-dom": "^19.2.7",
     "tsup": "^8.0.0",
-    "typescript": "^5.4.0",
+    "typescript": "^6.0.3",
     "vitest": "^4.1.9"
   }
 }

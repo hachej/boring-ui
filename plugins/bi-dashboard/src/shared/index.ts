@@ -13,6 +13,7 @@ export type {
   BslMetricSpec,
   BslChartSpec,
   BslPerspectiveViewerSpec,
+  BslTableSpec,
   BslFilterControlSpec,
   BslTextSpec,
 } from "./types"
