@@ -461,8 +461,10 @@ export const registerAgentRoutes: FastifyPluginAsync<RegisterAgentRoutesOptions>
           sessionRoot: opts.sessionRoot,
           sessionDir: input.sessionDir,
         })) as AgentCoreHarnessFactory
+        const capabilities = createPureAgentCapabilities(resolvedMode, toolNames(tools))
         const coreAgent = createAgentRuntimeBridge({
           runtime: 'none',
+          environments: capabilities.environments,
           tools,
           harnessFactory,
           systemPromptAppend: opts.systemPromptAppend,
@@ -889,8 +891,10 @@ let runtimeProvisioning: WorkspaceProvisioningResult | undefined
       sessionNamespace: scope.sessionNamespace,
       sessionRoot: opts.sessionRoot,
     })) as AgentCoreHarnessFactory
+    const capabilities = createWorkspaceAgentCapabilities(resolvedMode, toolNames(tools))
     const coreAgent = createAgentRuntimeBridge({
       runtime: modeAdapter,
+      environments: capabilities.environments,
       tools,
       harnessFactory,
       systemPromptAppend: opts.systemPromptAppend,

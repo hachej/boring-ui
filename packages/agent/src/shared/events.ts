@@ -1,4 +1,5 @@
 import type { PiChatEvent } from './chat'
+import type { ResolvedEnvironment } from './capabilities'
 import type { ErrorCode } from './error-codes'
 import type { AgentCoreHarnessFactory } from './harness'
 import type { SessionCtx, SessionStore } from './session'
@@ -91,6 +92,13 @@ export interface AgentReadiness {
 export interface AgentConfig {
   harnessFactory?: AgentCoreHarnessFactory
   runtime: AgentRuntimeAdapter | 'none'
+  /**
+   * Resolved environment facts used by core behavior checks. runtimeMode is
+   * intentionally not part of this core input; it remains diagnostic.
+   */
+  environments?: readonly ResolvedEnvironment[]
+  /** Provider + host-policy fact for direct model input assets. */
+  providerDirectInputAssets?: boolean
   tools?: AgentTool[]
   readinessRequirements?: string[]
   sessions?: SessionStore

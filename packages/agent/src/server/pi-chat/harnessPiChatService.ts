@@ -2,9 +2,14 @@ import type { AgentHarness, RunContext, AgentSendInput } from '../../shared/harn
 import type { SessionCtx, SessionListOptions, SessionStore } from '../../shared/session'
 import type { Workspace } from '../../shared/workspace'
 import type { BoringChatMessage, BoringChatPart, ChatError, FollowUpPayload, FollowUpReceipt, InterruptPayload, PiChatEvent, PiChatSnapshot, PromptPayload, PromptReceipt, QueuedUserMessage, QueueClearPayload, QueueClearReceipt, StopPayload, StopReceipt } from '../../shared/chat'
-import { AgentFilesystemRequiredError, sessionStreamPath, type AgentEvent } from '../../shared/events'
+import { sessionStreamPath, type AgentEvent } from '../../shared/events'
 import { ErrorCode } from '../../shared/error-codes'
 import { formatOffset, parseOffset, type EventStreamStore } from '../events/eventStreamStore'
+import {
+  assertInputAssetsAccepted,
+  LEGACY_WRITABLE_ENV_INPUT_ASSET_INTAKE,
+  type InputAssetIntakeDecision,
+} from '../inputAssetIntake'
 import type { PiChatSessionService, PiChatEventSubscriber, PiChatEventStreamResult } from '../http/routes/piChat'
 import type { PiSessionCreateInit, PiSessionRequestContext } from './piSessionIdentity'
 import type { PiAgentPromptInput, PiAgentSessionAdapter } from './PiAgentSessionAdapter'
@@ -64,8 +69,8 @@ export interface HarnessPiChatServiceOptions {
   metering?: AgentMeteringSink
   /** Receives non-fatal metering pipeline failures (default: console.warn). */
   meteringLogger?: MeteringErrorLogger
-  /** Filesystem-less runtimes cannot resolve attachment URLs/paths. */
-  allowAttachments?: boolean
+  /** Legacy `attachments` payloads are input assets; intake is derived upstream from environment/provider facts. */
+  inputAssetIntake?: InputAssetIntakeDecision
 }
 
 export class HarnessPiChatService implements PiChatSessionService {
@@ -74,7 +79,7 @@ export class HarnessPiChatService implements PiChatSessionService {
   private readonly workdir: string
   private readonly workspace?: Workspace
   private readonly eventStore?: EventStreamStore
-  private readonly allowAttachments: boolean
+  private readonly inputAssetIntake: InputAssetIntakeDecision
   private readonly channels = new Map<string, LiveSessionChannel>()
   // Single-flight guard so concurrent cold callers (e.g. two browser tabs each
   // opening /events while the session is still being created) converge on one
@@ -93,7 +98,7 @@ export class HarnessPiChatService implements PiChatSessionService {
     this.workdir = options.workdir
     this.workspace = options.workspace
     this.eventStore = options.eventStore
-    this.allowAttachments = options.allowAttachments !== false
+    this.inputAssetIntake = options.inputAssetIntake ?? LEGACY_WRITABLE_ENV_INPUT_ASSET_INTAKE
     this.metering = options.metering
       ? new PiChatMeteringCoordinator(options.metering, options.meteringLogger)
       : undefined
@@ -190,7 +195,7 @@ export class HarnessPiChatService implements PiChatSessionService {
   }
 
   async prompt(ctx: PiSessionRequestContext, sessionId: string, payload: PromptPayload): Promise<PromptReceipt> {
-    this.assertAttachmentsAllowed(payload)
+    this.assertPromptInputAssetsAccepted(payload)
     const sessionKey = this.sessionKey(ctx, sessionId)
     const adapter = await this.getAdapter(ctx, sessionId, payload)
     const channel = await this.ensureChannel(ctx, sessionId, adapter)
@@ -237,11 +242,8 @@ export class HarnessPiChatService implements PiChatSessionService {
     return { accepted: true, cursor: receiptCursor, clientNonce: payload.clientNonce }
   }
 
-  private assertAttachmentsAllowed(payload: PromptPayload): void {
-    if (this.allowAttachments || !payload.attachments || payload.attachments.length === 0) return
-    // TEMPORARY(BBT2-007): split attachment capability into none|direct|workspace.
-    // Until then pure runtime rejects all attachments, even inline data URLs.
-    throw new AgentFilesystemRequiredError()
+  private assertPromptInputAssetsAccepted(payload: PromptPayload): void {
+    assertInputAssetsAccepted(this.inputAssetIntake, payload)
   }
 
   async followUp(ctx: PiSessionRequestContext, sessionId: string, payload: FollowUpPayload): Promise<FollowUpReceipt> {

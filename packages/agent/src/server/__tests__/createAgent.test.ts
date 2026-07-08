@@ -15,6 +15,7 @@ import type { AgentHarness, AgentHarnessFactoryInput, AgentSendInput, RunContext
 import type { SessionCtx, SessionDetail, SessionStore, SessionSummary } from '../../shared/session'
 import type { PiAgentPromptInput, PiAgentSessionAdapter, PiAgentSessionSnapshot } from '../pi-chat/PiAgentSessionAdapter'
 import { ErrorCode } from '../../shared/error-codes'
+import { decideInputAssetIntake } from '../inputAssetIntake'
 
 const CTX: SessionCtx = { workspaceId: 'workspace-test', userId: 'user-test' }
 
@@ -125,7 +126,45 @@ describe('createAgent', () => {
     await agent.dispose()
   })
 
-  it('rejects attachments in runtime none before creating sessions or harness adapters', async () => {
+  it('derives input-asset intake from environment sinks and provider-direct facts', () => {
+    expect(decideInputAssetIntake({ environments: [] })).toEqual({
+      strategy: 'stable-rejection',
+      reason: 'no-writable-env-sink',
+    })
+    expect(decideInputAssetIntake({
+      environments: [{
+        id: 'user',
+        filesystem: { access: 'readwrite', acceptsInputAssets: true },
+        tools: [],
+      }],
+    })).toEqual({
+      strategy: 'writable-env-sink',
+      environmentId: 'user',
+    })
+    expect(decideInputAssetIntake({
+      environments: [
+        {
+          id: 'scratch',
+          filesystem: { access: 'readwrite', acceptsInputAssets: true },
+          tools: [],
+        },
+        {
+          id: 'user',
+          filesystem: { access: 'readwrite', acceptsInputAssets: true, defaultInputAssetSink: true },
+          tools: [],
+        },
+      ],
+    })).toEqual({
+      strategy: 'writable-env-sink',
+      environmentId: 'user',
+    })
+    expect(decideInputAssetIntake({
+      environments: [],
+      providerDirectInputAssets: true,
+    })).toEqual({ strategy: 'provider-direct-asset' })
+  })
+
+  it('rejects input assets without a writable environment sink before creating sessions or harness adapters', async () => {
     const fake = createFakeHarnessFactory()
     const agent = createAgent({
       runtime: 'none',
@@ -147,6 +186,51 @@ describe('createAgent', () => {
     })
     expect(fake.sessions.createContexts).toEqual([])
     expect(fake.contexts('session-1')).toEqual([])
+    await agent.dispose()
+  })
+
+  it('does not treat a non-none runtime id as input-asset support', async () => {
+    const fake = createFakeHarnessFactory()
+    const agent = createAgent({
+      runtime: { id: 'test-runtime' },
+      harnessFactory: fake.factory,
+    })
+    const input = {
+      content: 'look at this',
+      attachments: [{ filename: 'chart.png', mediaType: 'image/png', url: '/api/v1/files/raw?path=chart.png' }],
+    }
+
+    await expect(agent.start(input)).rejects.toMatchObject({
+      code: AGENT_NO_FILESYSTEM_FOR_ATTACHMENTS,
+    })
+    expect(fake.sessions.createContexts).toEqual([])
+    expect(fake.contexts('session-1')).toEqual([])
+    await agent.dispose()
+  })
+
+  it('accepts input assets when a writable environment sink exists', async () => {
+    const fake = createFakeHarnessFactory({ autoCompletePrompt: true })
+    const agent = createAgent({
+      runtime: { id: 'test-runtime' },
+      environments: [{
+        id: 'user',
+        filesystem: {
+          access: 'readwrite',
+          acceptsInputAssets: true,
+          defaultInputAssetSink: true,
+        },
+        tools: ['read', 'write'],
+      }],
+      harnessFactory: fake.factory,
+    })
+
+    await expect(agent.start({
+      content: 'look at this',
+      attachments: [{ filename: 'chart.png', mediaType: 'image/png', url: '/api/v1/files/raw?path=chart.png' }],
+      ctx: CTX,
+    })).resolves.toMatchObject({ sessionId: 'session-1', startIndex: 0 })
+    expect(fake.sessions.createContexts).toHaveLength(1)
+    expect(fake.contexts('session-1').length).toBeGreaterThan(0)
     await agent.dispose()
   })
 

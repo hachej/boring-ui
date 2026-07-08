@@ -154,8 +154,10 @@ async function createPureAgentAppProfile(
     sessionDir: opts.sessionDir ?? input.sessionDir,
   })) as AgentCoreHarnessFactory
   const tools = opts.extraTools ?? []
+  const capabilities = createPureAgentCapabilities(resolvedMode, toolNames(tools))
   const coreAgent = createAgentRuntimeBridge({
     runtime: 'none',
+    environments: capabilities.environments,
     tools,
     harnessFactory,
     systemPromptAppend: opts.systemPromptAppend,
@@ -168,7 +170,7 @@ async function createPureAgentAppProfile(
   const readyTracker = new ReadyStatusTracker({ sandboxReady: true, harnessReady: true })
   return {
     runtimeMode: resolvedMode,
-    capabilities: createPureAgentCapabilities(resolvedMode, toolNames(tools)),
+    capabilities,
     sessionChangesTracker: new InMemorySessionChangesTracker(),
     health: {
       version: opts.version ?? DEFAULT_VERSION,
@@ -278,8 +280,10 @@ async function createWorkspaceAgentAppProfile(
     sessionRoot: opts.sessionRoot,
     sessionDir: opts.sessionDir ?? input.sessionDir,
   })) as AgentCoreHarnessFactory
+  const capabilities = createWorkspaceAgentCapabilities(resolvedMode, toolNames(tools))
   const coreAgent = createAgentRuntimeBridge({
     runtime: modeAdapter,
+    environments: capabilities.environments,
     tools,
     harnessFactory,
     systemPromptAppend: opts.systemPromptAppend,
@@ -303,7 +307,7 @@ async function createWorkspaceAgentAppProfile(
 
   return {
     runtimeMode: resolvedMode,
-    capabilities: createWorkspaceAgentCapabilities(resolvedMode, toolNames(tools)),
+    capabilities,
     sessionChangesTracker: new InMemorySessionChangesTracker(),
     health: {
       version: opts.version ?? DEFAULT_VERSION,
