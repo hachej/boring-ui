@@ -6,6 +6,7 @@ import * as ReactJsxRuntime from "react/jsx-runtime"
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { createAskUserPlugin } from "@hachej/boring-ask-user/front"
 import { diagramPlugin } from "@hachej/boring-diagram/front"
+import { createTasksPlugin } from "@hachej/boring-tasks/front"
 import * as WorkspaceSingleton from "@hachej/boring-workspace"
 import * as WorkspaceEventsSingleton from "@hachej/boring-workspace/events"
 import * as WorkspacePluginSingleton from "@hachej/boring-workspace/plugin"
@@ -307,7 +308,7 @@ export function CliWorkspaceShell() {
 
   // CLI-default plugins are app code: statically imported, composed once.
   // Keep in sync with CLI_DEFAULT_PLUGIN_PACKAGES in server/pluginDiscovery.ts.
-  const plugins = useMemo(() => [createAskUserPlugin({ appLeftInbox: true }), diagramPlugin], [])
+  const plugins = useMemo(() => [createAskUserPlugin({ appLeftInbox: true }), diagramPlugin, createTasksPlugin()], [])
   const activeWorkspaceRequestHeaders = useMemo(
     () => activeWorkspaceId ? { "x-boring-workspace-id": activeWorkspaceId } : null,
     [activeWorkspaceId],

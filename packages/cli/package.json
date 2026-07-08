@@ -24,6 +24,7 @@
     "@hachej/boring-agent": "workspace:*",
     "@hachej/boring-ask-user": "workspace:*",
     "@hachej/boring-diagram": "workspace:*",
+    "@hachej/boring-tasks": "workspace:*",
     "@hachej/boring-ui-kit": "workspace:*",
     "@hachej/boring-ui-plugin-cli": "workspace:*",
     "@hachej/boring-workspace": "workspace:*",
@@ -32,7 +33,8 @@
     "fastify": "^5.9.0",
     "lucide-react": "^1.21.0",
     "typescript": "^6.0.3",
-    "vite": "^8.1.0"
+    "vite": "^8.1.0",
+    "yaml": "^2.9.0"
   },
   "devDependencies": {
     "@tailwindcss/vite": "^4.3.1",
