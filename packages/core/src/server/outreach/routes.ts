@@ -4,6 +4,7 @@ import { z } from 'zod'
 import type { Database } from '../db/connection.js'
 import type { WorkspaceStore } from '../app/types.js'
 import { ERROR_CODES, HttpError } from '../../shared/errors.js'
+import { isCoreEmailVerificationEnabled } from '../../shared/authPolicy.js'
 import {
   DefaultExperienceProvisioner,
   type OutreachCreditGrantStore,
@@ -61,9 +62,18 @@ function readMaxInitialCreditMicros(): number {
   return parsed
 }
 
-function requireOutreachAdmin(user: { email: string; isAnonymousLead?: boolean } | null | undefined): void {
+function requireOutreachAdmin(
+  user: { email: string; emailVerified?: boolean; isAnonymousLead?: boolean } | null | undefined,
+  emailVerificationEnabled: boolean,
+): void {
   if (!user || user.isAnonymousLead) {
     throw new HttpError({ status: 403, code: ERROR_CODES.FORBIDDEN, message: 'Outreach administration requires a non-anonymous account' })
+  }
+  // When email verification is on, admin powers require a verified email in their
+  // own right — the claimed-lead exemption in authHook only unlocks workspace
+  // access, never admin routes, so a claimed lead cannot reach admin unverified.
+  if (emailVerificationEnabled && user.emailVerified !== true) {
+    throw new HttpError({ status: 403, code: ERROR_CODES.FORBIDDEN, message: 'Outreach administration requires a verified email' })
   }
   const allowlist = (process.env.BORING_OUTREACH_ADMIN_EMAILS ?? '')
     .split(',')
@@ -130,7 +140,7 @@ const outreachRoutesPlugin: FastifyPluginAsync<OutreachRoutesOptions> = async (a
   app.addRedactionPaths(['token', '/o/'])
 
   app.post('/api/v1/outreach/experiences', async (request, reply) => {
-    requireOutreachAdmin(request.user)
+    requireOutreachAdmin(request.user, isCoreEmailVerificationEnabled(app.config))
     const parsed = createExperienceBody.safeParse(request.body)
     if (!parsed.success) {
       throw new HttpError({
@@ -158,7 +168,7 @@ const outreachRoutesPlugin: FastifyPluginAsync<OutreachRoutesOptions> = async (a
   })
 
   app.post('/api/v1/outreach-links', async (request, reply) => {
-    requireOutreachAdmin(request.user)
+    requireOutreachAdmin(request.user, isCoreEmailVerificationEnabled(app.config))
     const parsed = createLinkBody.safeParse(request.body)
     if (!parsed.success) {
       throw new HttpError({
