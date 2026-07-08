@@ -34,6 +34,11 @@ const buyEnabled = import.meta.env.VITE_CREDITS_BUY_ENABLED === '1'
 // (single-project). Set VITE_BORING_INLINE_PROJECTS=1 to opt in for dev.
 const inlineProjectsEnabled = import.meta.env.VITE_BORING_INLINE_PROJECTS === '1'
 
+// Keep production deployments focused by default: hide advanced workspace tooling
+// unless explicitly enabled. Dev keeps it visible for local dogfooding.
+const workspaceToolingEnabled = import.meta.env.DEV || import.meta.env.VITE_BORING_WORKSPACE_TOOLING === '1'
+const boringMcpUiEnabled = import.meta.env.VITE_BORING_MCP_ENABLED === '1' || (import.meta.env.DEV && import.meta.env.VITE_BORING_MCP_ENABLED !== '0')
+
 function McpIcon({ className }: { className?: string }) {
   return (
     <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
@@ -115,9 +120,9 @@ createRoot(document.getElementById('root')!).render(
       topBarLeft={<WorkspaceSwitcher displayMode="workspace" />}
       appLeftLayoutMode={inlineProjectsEnabled ? 'multi-project' : 'single-project'}
       workspaceSectionTitle="Projects"
-      showSkills
-      showPlugins
-      appLeftOverlayActions={[
+      showSkills={workspaceToolingEnabled}
+      showPlugins={workspaceToolingEnabled}
+      appLeftOverlayActions={boringMcpUiEnabled ? [
         {
           id: 'boring-mcp',
           label: 'MCP',
@@ -136,7 +141,7 @@ createRoot(document.getElementById('root')!).render(
             />
           ),
         },
-      ]}
+      ] : []}
       chatEntryMode="chat-first"
       publicPaths={[]}
       chatFirstPublicShell={{
