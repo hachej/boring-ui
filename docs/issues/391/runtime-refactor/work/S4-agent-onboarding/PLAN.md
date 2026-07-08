@@ -9,6 +9,7 @@
 - [P6-plugin-child-app](../P6-plugin-child-app/TODO.md) - `AgentDefinitionDeclaration`.
 - [M2-mcp-agent-surface](../M2-mcp-agent-surface/TODO.md) - demo endpoint status.
 - [D1-tenant-provisioning](../D1-tenant-provisioning/TODO.md) - provisioning status.
+- [D2-shared-tenant-mesh](../D2-shared-tenant-mesh/TODO.md) - shared-tier tenant readiness status.
 
 ## Design context
 
@@ -17,13 +18,18 @@ top of S3's control-plane surfaces. It answers whether a declared agent is ready
 to demo or provision: definition readiness, demo URL status, provisioning status,
 and missing policy refs.
 
+**Amendment (2026-07-08):** S4 also shows shared-tier tenant readiness from D2:
+subdomain live, isolation-conformance green, and tenant lifecycle/demo gate
+status. It remains read-only; D2 BBD2-006 owns authoring controls.
+
 ## Deliverables
 
 - Read-only onboarding status for each declared agent.
 - Definition readiness: missing/unknown instruction/persona/capability/
   environment/sandbox/governance/model/demo/pricing/exposure refs.
 - Demo URL status from M2 exposure config.
-- Provisioning status from D1.
+- Dedicated provisioning status from D1.
+- Shared subdomain tenant readiness from D2.
 - Links back to S3 Fleet/inspection without adding create/configure controls.
 
 ## Exit criteria

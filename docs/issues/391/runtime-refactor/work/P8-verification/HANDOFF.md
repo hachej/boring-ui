@@ -3,7 +3,7 @@
 Derived strictly from [TODO.md](./TODO.md) and [PLAN.md](./PLAN.md). Tick each before calling this package done. Invent nothing.
 
 ## Prerequisites (packages + gates)
-P8 gates on every delivered runtime phase EXCEPT P6b, M1, M2, D1, and S4; M2 may land after P8 as a committed follow-up. Each runtime package below must be merged:
+P8 gates on every delivered runtime phase EXCEPT P6b, M1, M2, D1, D2, and S4; M2 may land after P8 as a committed follow-up. **Amendment (2026-07-08):** S1/S2 are relocated out of #391 active scope, so Slack and spreadsheet/embed work are not P8 gates. Each runtime package below must be merged:
 - [ ] P1-headless-core merged — [../P1-headless-core/HANDOFF.md](../P1-headless-core/HANDOFF.md)
 - [ ] T1-durable-events merged — [../T1-durable-events/HANDOFF.md](../T1-durable-events/HANDOFF.md)
 - [ ] T2-transport merged — [../T2-transport/HANDOFF.md](../T2-transport/HANDOFF.md)
@@ -16,15 +16,13 @@ P8 gates on every delivered runtime phase EXCEPT P6b, M1, M2, D1, and S4; M2 may
 - [ ] P5-provisioning-secrets merged — [../P5-provisioning-secrets/HANDOFF.md](../P5-provisioning-secrets/HANDOFF.md)
 - [ ] P6-plugin-child-app P6a merged — [../P6-plugin-child-app/HANDOFF.md](../P6-plugin-child-app/HANDOFF.md)
 - [ ] P7-multi-agent-inspection merged — [../P7-multi-agent-inspection/HANDOFF.md](../P7-multi-agent-inspection/HANDOFF.md)
-- [ ] S1-slack-channel merged — [../S1-slack-channel/HANDOFF.md](../S1-slack-channel/HANDOFF.md)
-- [ ] S2-embed-contract merged — [../S2-embed-contract/HANDOFF.md](../S2-embed-contract/HANDOFF.md)
 - [ ] S3-control-plane-ux merged — [../S3-control-plane-ux/HANDOFF.md](../S3-control-plane-ux/HANDOFF.md)
 - [ ] Do NOT land while any earlier phase's `TODO(remove:*)` marker is still live — a surviving marker reopens the phase of its named deletion-bead owner (do not absorb it here)
-- [ ] P6b, M1, M2, D1, and S4 are explicitly NOT P8 gates; M2 may land after P8 — verify follow-up/status tracking is filed, never wait on those lanes landing.
+- [ ] P6b, M1, M2, D1, D2, and S4 are explicitly NOT P8 gates; M2 may land after P8 — verify follow-up/status tracking is filed, never wait on those lanes landing.
 
 ## Owner questions / verdict
 - OWNER-QUESTIONS: none.
-- GO/NO-GO: GO only as the terminal verification phase after every runtime prerequisite above is merged and the P6b/M2/D1/S4 follow-up or status tracking is filed; NO-GO if any required runtime phase is missing, any `TODO(remove:*)` marker survives, or any invariant/import gate is red.
+- GO/NO-GO: GO only as the terminal verification phase after every runtime prerequisite above is merged and the P6b/M2/D1/D2/S4 follow-up or status tracking is filed; NO-GO if any required runtime phase is missing, any `TODO(remove:*)` marker survives, or any invariant/import gate is red.
 
 ## Beads
 - [ ] BBP8-001 — Repo-wide `TODO(remove:*)` marker gate (zero-tolerance)
@@ -64,7 +62,7 @@ P8 gates on every delivered runtime phase EXCEPT P6b, M1, M2, D1, and S4; M2 may
 ## Exit criteria
 - [ ] Zero `TODO(remove:*)` markers repo-wide, asserted by a check wired into `pnpm lint:invariants` (fails CI if any marker survives).
 - [ ] `@hachej/boring-agent` package docs document the four-part surface contract (08) + the `createAgent()` public runtime API as the stable public surface.
-- [ ] Remaining plan tasks converted into tracked beads/issues — nothing left only in prose; P6b/M2/D1/S4 follow-up or status tracking is filed.
+- [ ] Remaining plan tasks converted into tracked beads/issues — nothing left only in prose; P6b/M2/D1/D2/S4 follow-up or status tracking is filed.
 - [ ] No code imports old moved paths (grep gates green for every relocation in P2/P3/P4/T1/T2).
 - [ ] All `00` invariants + package invariant scripts + `audit:imports` green; full build+test green.
 

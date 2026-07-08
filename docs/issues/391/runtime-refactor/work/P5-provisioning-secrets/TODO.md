@@ -43,6 +43,7 @@ Runtime needs are declarative, scoped, readiness-gated, and secret-safe, **exten
 - [ ] remote-worker handshake reports its capability matrix; consumers fail closed on `unknown`/unverifiable hardening.
 - [ ] two-phase bootstrap/onSession: same fingerprint skips; changed requirement/source/contract re-provisions; onSession reruns without rebuilding a stable template; existing Vercel snapshot/fingerprint tests pass.
 - [ ] **v2 brokering:** no test can read a brokered secret from inside the sandbox (see BBP5-007).
+- [ ] **Amendment (2026-07-08): D2 hot tenant mode:** P5 exposes a hot / in-process new-tenant provisioning mode so D2 can seed a new tenant's roots, environment pool, skills, templates, and context into a running shared deployment without a redeploy.
 - [ ] EU-sovereign (invariant 15): no bead introduces a US-hosted service as a default or hard dependency.
 
 ## Non-negotiables

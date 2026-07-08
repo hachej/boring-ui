@@ -18,6 +18,25 @@ config, and deployment manifest for the chosen EU host. Without D1, T0/T1
 factory claims must be described as manual provisioning, not same-day repeatable
 platform delivery.
 
+## Tenant topologies
+
+**Amendment (2026-07-08):** name the two factory tiers explicitly:
+**D1 = dedicated/sovereign**, and **D2 = shared subdomain**. They are deployment
+topologies over the same runtime stack and the same `WorkspaceAgentsDeclaration`,
+not separate agent-definition systems.
+
+| Topology | Shape | Work package | Use for |
+| --- | --- | --- | --- |
+| Self-host / owner-operated | one deployment operated directly for the owner or client | base architecture 10 + P5/X1 | client-owned ops, dev/trusted, regulated handoff |
+| Dedicated / sovereign tenant | one deployment per company, with tenant/workspace/runtime config and deployment manifest | [D1-tenant-provisioning](../work/D1-tenant-provisioning/) | managed sovereign clients, strong isolation, bespoke deployment review |
+| Shared Subdomain tier | one shared EU deployment serves N subdomain tenants; wildcard DNS/TLS terminates at the shared host, and a fail-closed Host router maps `company.senecapp.ai` -> `workspaceId` | [D2-shared-tenant-mesh](../work/D2-shared-tenant-mesh/) | instant outreach/demo tenants with near-zero marginal deployment cost |
+
+The D2 shared topology requires wildcard DNS, wildcard TLS, and a
+`Host:`-header tenant router seated beside the existing workspace-id adapter.
+Unknown hosts fail closed and never map to a default tenant. D2 must prove
+cross-tenant isolation in one process across sessions, files, pending inputs,
+search, artifacts, governance, and brokered secrets.
+
 ## FUSE × isolation matrix (condensed)
 
 Question for each runtime: can the host `rclone`-mount an S3 prefix and then expose that already-mounted path *inside* the sandbox, without the sandbox ever seeing `/dev/fuse`/`fusermount3`/credentials?

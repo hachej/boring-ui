@@ -35,6 +35,8 @@ a brief, observe progress, and receive a safe result/share URL shape.
 - Do not bypass P7 registry/info or T1/T2 transport.
 - Public-demo access is policy-controlled by `demoPolicy`; it is never an
   unauthenticated backdoor to tenant data.
+- **Amendment (2026-07-08):** `demoPolicy`/`exposureId` must be reusable as a
+  per-tenant subdomain trial gate for D2, not only as a per-agent MCP mount.
 - M2 exposes an agent over MCP. E2 exposes an environment over MCP. Keep those
   two authority models separate.
 
@@ -44,7 +46,8 @@ a brief, observe progress, and receive a safe result/share URL shape.
 
 - **Files touch/create:** shared/server types for `McpAgentExposureConfig` with
   `agentId`, `authMode: 'bearer' | 'public-demo'`, `demoPolicy`, `exposureId`,
-  endpoint path/URL shape, result/share URL policy, and redaction policy.
+  endpoint path/URL shape, result/share URL policy, redaction policy, and a
+  D2-consumable per-tenant subdomain trial-gate projection.
 - **Notes:** The config is derived from the canonical definition registry. Unknown
   `agentId`, exposure id, or policy ref fails closed.
 - **Tests:** definition with exposure config resolves to one MCP mount; unknown

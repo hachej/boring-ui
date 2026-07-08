@@ -19,6 +19,9 @@ separate vertical-agent schema. The endpoint uses the same public agent contract
 as workspace, Slack, and embeds. M1's `ManagedAgentVerticalConfig` may survive
 only as a temporary projection derived from the canonical definition.
 
+**Amendment (2026-07-08):** M2 `demoPolicy`/`exposureId` must also be reusable
+as the D2 per-tenant subdomain trial gate, not only as a per-agent MCP mount.
+
 M2 is the ingress dual of E2. E2 projects an environment over MCP; M2 exposes a
 boring agent over MCP. They can reuse SDK transport patterns, but the authority
 model is different: M2 never exposes raw environment tools unless the agent
@@ -29,6 +32,7 @@ definition and resolved environment facts grant them through the normal agent.
 - Per-agent MCP mount config derived from the P6a definition registry.
 - Auth modes: `bearer` and `public-demo`.
 - `demoPolicy`, `exposureId`, and exposure URL/result URL shape carried from the definition or a lossless projection.
+- Per-tenant subdomain trial-gate projection for D2 using the same `demoPolicy`/`exposureId`.
 - MCP result/share URL shape documented and tested: no absolute paths, no raw workspace/session roots, no secrets.
 - Conformance proof that the MCP surface resolves agents through P7 registry/info and drives sessions through T1/T2 transport.
 - M1 projection migration note: no hardcoded production demo verticals outside fixtures.
