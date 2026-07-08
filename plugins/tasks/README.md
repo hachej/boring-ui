@@ -12,4 +12,4 @@ Lean Kanban task-board plugin for boring-ui.
 
 Source-specific behavior belongs in adapters. A GitHub, Linear, Kata, or custom DB adapter maps native status/actions to the normalized board model; the Kanban UI does not know those systems.
 
-This first implementation ships a client-side mock adapter so the plugin can be loaded and reviewed without adding app/core routes or database migrations.
+By default, the server plugin exposes a GitHub Issues source for the current workspace repository. It detects the repository with `gh repo view --json nameWithOwner` from the workspace root, so each local CLI workspace maps to its own associated GitHub repo. The GitHub source requires `gh auth login` and repository access. If backend routes are unavailable, the front end still falls back to demo adapters for review/playground usage.
