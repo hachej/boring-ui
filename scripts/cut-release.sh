@@ -56,6 +56,7 @@ release_files=(
   plugins/deck/package.json
   plugins/ask-user/package.json
   plugins/diagram/package.json
+  plugins/tasks/package.json
   plugins/data-explorer/package.json
   plugins/data-catalog/package.json
   plugins/generated-pane/package.json
