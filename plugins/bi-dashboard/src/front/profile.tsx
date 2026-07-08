@@ -394,11 +394,12 @@ export const biDashboardGeneratedPaneProfile = defineGeneratedPaneProfile({
     },
     BSLMetric: {
       component: ({ props }) => {
-        const { queryData } = useBiDashboardRenderContext()
+        const { spec, queryData, controllerValues } = useBiDashboardRenderContext()
         const queryId = String(props.queryId)
         const valueField = String(props.valueField)
         const data = queryData[queryId]
-        const value = data?.rows[0]?.[valueField]
+        const rows = filterRows(data?.rows ?? [], perspectiveFiltersForQuery(spec, controllerValues, queryId))
+        const value = rows[0]?.[valueField]
         const showMeta = props.showMeta === true
         return (
           <Card className="min-w-0 overflow-hidden border-border/70 shadow-sm">
