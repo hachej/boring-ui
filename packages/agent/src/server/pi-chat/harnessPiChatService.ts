@@ -9,9 +9,14 @@ import {
   assertInputAssetsAccepted,
   LEGACY_WRITABLE_ENV_INPUT_ASSET_INTAKE,
   type InputAssetIntakeDecision,
-} from '../inputAssetIntake'
-import type { PiChatSessionService, PiChatEventSubscriber, PiChatEventStreamResult } from '../http/routes/piChat'
-import type { PiSessionCreateInit, PiSessionRequestContext } from './piSessionIdentity'
+} from '../../core/inputAssetIntake'
+import type {
+  PiChatEventStreamResult,
+  PiChatEventSubscriber,
+  PiChatSessionService,
+  PiSessionCreateInit,
+  PiSessionRequestContext,
+} from '../../core/piChatSessionService'
 import type { PiAgentPromptInput, PiAgentSessionAdapter } from './PiAgentSessionAdapter'
 import { buildPiChatQueuedFollowUps, buildPiChatSnapshot } from './piChatSnapshot'
 import { PiChatEventMapper } from './piChatEvents'

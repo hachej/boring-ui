@@ -1,15 +1,11 @@
 import { ErrorCode } from '../../shared/error-codes'
 import type { SessionSummary } from '../../shared/session'
 import type { ChatModelSelection } from '../../shared/chat'
+import type { PiSessionCreateInit, PiSessionRequestContext } from '../../core/piChatSessionService'
+
+export type { PiSessionCreateInit, PiSessionRequestContext } from '../../core/piChatSessionService'
 
 const DEFAULT_TITLE = 'New session'
-
-export interface PiSessionRequestContext {
-  workspaceId?: string
-  storageScope?: string
-  authSubject?: string
-  requestId: string
-}
 
 export interface PiSessionRecord {
   sessionId: string
@@ -18,11 +14,6 @@ export interface PiSessionRecord {
   updatedAt: string
   turnCount?: number
   isStreaming?: boolean
-}
-
-export interface PiSessionCreateInit {
-  title?: string
-  modelDefault?: ChatModelSelection
 }
 
 export interface PiSessionMetadata {
