@@ -16,7 +16,9 @@ export interface LocalWorkspace {
   createdAt: string
   updatedAt: string
   available: boolean
+  /** @deprecated Use taskProviders. Kept for older registry files. */
   taskProvider?: LocalWorkspaceTaskProvider
+  taskProviders?: LocalWorkspaceTaskProvider[]
 }
 
 interface StoredLocalWorkspace extends Omit<LocalWorkspace, "available"> {}
@@ -89,14 +91,16 @@ function parseRegistryYaml(content: string): StoredLocalWorkspace[] {
       continue
     }
 
-    const fieldMatch = line.match(/^\s+(name|path|createdAt|updatedAt|taskProvider):\s*(.*)$/)
+    const fieldMatch = line.match(/^\s+(name|path|createdAt|updatedAt|taskProvider|taskProviders):\s*(.*)$/)
     if (fieldMatch && current) {
       const key = fieldMatch[1]
       const value = unquoteYamlString(fieldMatch[2] ?? "")
       if (key === "taskProvider") {
         current.taskProvider = parseTaskProvider(value)
+      } else if (key === "taskProviders") {
+        current.taskProviders = parseTaskProviders(value)
       } else {
-        current[key as keyof Omit<StoredLocalWorkspace, "taskProvider">] = value
+        current[key as keyof Omit<StoredLocalWorkspace, "taskProvider" | "taskProviders">] = value
       }
     }
   }
@@ -117,7 +121,11 @@ function serializeRegistryYaml(workspaces: StoredLocalWorkspace[]): string {
       `    createdAt: ${yamlString(workspace.createdAt)}`,
       `    updatedAt: ${yamlString(workspace.updatedAt)}`,
     )
-    if (workspace.taskProvider) lines.push(`    taskProvider: ${yamlString(serializeTaskProvider(workspace.taskProvider))}`)
+    if (workspace.taskProviders?.length) {
+      lines.push(`    taskProviders: ${yamlString(workspace.taskProviders.map(serializeTaskProvider).join(", "))}`)
+    } else if (workspace.taskProvider) {
+      lines.push(`    taskProvider: ${yamlString(serializeTaskProvider(workspace.taskProvider))}`)
+    }
   }
   return `${lines.join("\n")}\n`
 }
@@ -131,6 +139,14 @@ function parseTaskProvider(value: string): LocalWorkspaceTaskProvider | undefine
     if (/^[^/\s]+\/[^/\s]+$/.test(repo)) return { type: "github", repo }
   }
   return undefined
+}
+
+function parseTaskProviders(value: string): LocalWorkspaceTaskProvider[] | undefined {
+  const providers = value
+    .split(",")
+    .map((entry) => parseTaskProvider(entry))
+    .filter((entry): entry is LocalWorkspaceTaskProvider => Boolean(entry))
+  return providers.length > 0 ? providers : undefined
 }
 
 function serializeTaskProvider(provider: LocalWorkspaceTaskProvider): string {

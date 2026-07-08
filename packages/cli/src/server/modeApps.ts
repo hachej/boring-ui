@@ -554,16 +554,22 @@ export async function createWorkspacesModeApp(opts: {
 
   async function createWorkspaceTaskService(workspace: LocalWorkspace) {
     const tasks = await import("@hachej/boring-tasks/server")
-    const provider = workspace.taskProvider
-    const sources = provider?.type === "github"
-      ? [provider.repo
-        ? tasks.createGitHubTaskSource({
-          owner: provider.repo.split("/")[0]!,
-          repo: provider.repo.split("/")[1]!,
+    const providers = workspace.taskProviders ?? (workspace.taskProvider ? [workspace.taskProvider] : [])
+    const sources = providers.flatMap((provider, index) => {
+      if (provider.type !== "github") return []
+      if (provider.repo) {
+        const [owner, repo] = provider.repo.split("/")
+        return [tasks.createGitHubTaskSource({
+          owner: owner!,
+          repo: repo!,
           executor: tasks.createGhCliGitHubIssueExecutor({ workspaceRoot: workspace.path }),
-        })
-        : tasks.createWorkspaceGitHubTaskSource({ workspaceRoot: workspace.path })]
-      : []
+        })]
+      }
+      return [tasks.createWorkspaceGitHubTaskSource({
+        workspaceRoot: workspace.path,
+        sourceId: index === 0 ? "github:workspace" : `github:workspace:${index + 1}`,
+      })]
+    })
     return tasks.createTaskSourceService(tasks.createTaskSourceRegistry(sources))
   }
 
