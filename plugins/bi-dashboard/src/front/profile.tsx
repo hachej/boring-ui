@@ -43,17 +43,6 @@ const OPENUI_CHART_PALETTE = [
   "var(--chart-8, var(--muted-foreground))",
 ]
 
-const OPENUI_CHART_THEME_CSS = `
-.bi-dashboard-chart :is(.recharts-cartesian-axis-tick-value, .recharts-label, .openui-chart-svg-x-axis-tick, .openui-chart-y-axis-tick, text, tspan) {
-  fill: var(--muted-foreground) !important;
-  color: var(--muted-foreground) !important;
-}
-.bi-dashboard-chart :is(.recharts-legend-item-text, .openui-default-legend-label, .openui-chart-legend-item-label) {
-  fill: var(--foreground) !important;
-  color: var(--foreground) !important;
-}
-`
-
 function fallbackRandomUuid(): `${string}-${string}-${string}-${string}-${string}` {
   const bytes = new Uint8Array(16)
   const browserCrypto = (globalThis as { crypto?: { getRandomValues?: (array: Uint8Array) => Uint8Array } }).crypto
@@ -159,37 +148,68 @@ function filterRows(rows: Record<string, unknown>[], filters: PerspectiveFilter[
   return rows.filter((row) => filtersToApply.every(([field, operator, value]) => operator === "==" ? String(row[field] ?? "") === value : true))
 }
 
-function chartRows(rows: Record<string, unknown>[], x: unknown, y: unknown, color?: unknown, chartType?: string, labels?: FieldLabels, formats?: FieldFormats): Array<Record<string, string | number>> {
+interface ChartDataKeys {
+  xField: string
+  categoryKey: string
+  yFields: string[]
+  yKeys: Map<string, string>
+}
+
+function uniqueChartKey(label: string, field: string, used: Set<string>): string {
+  let key = label
+  if (used.has(key)) key = `${label} (${field})`
+  let suffix = 2
+  while (used.has(key)) {
+    key = `${label} (${field} ${suffix})`
+    suffix += 1
+  }
+  used.add(key)
+  return key
+}
+
+function chartDataKeys(x: unknown, y: unknown, labels?: FieldLabels): ChartDataKeys {
   const xField = typeof x === "string" && x.length > 0 ? x : "category"
-  const categoryKey = fieldLabel(xField, labels)
   const yFields = Array.isArray(y)
     ? y.filter((value): value is string => typeof value === "string" && value.length > 0)
     : typeof y === "string" && y.length > 0
       ? [y]
       : []
+  const used = new Set<string>()
+  const categoryKey = uniqueChartKey(fieldLabel(xField, labels), xField, used)
+  const yKeys = new Map(yFields.map((field) => [field, uniqueChartKey(fieldLabel(field, labels), field, used)]))
+  return { xField, categoryKey, yFields, yKeys }
+}
+
+function chartRows(rows: Record<string, unknown>[], keys: ChartDataKeys, color?: unknown, chartType?: string, labels?: FieldLabels, formats?: FieldFormats): Array<Record<string, string | number>> {
+  const { xField, categoryKey, yFields, yKeys } = keys
   const colorField = typeof color === "string" && color.length > 0 ? color : undefined
   const canPivotColorSeries = ["area", "bar", "line", "radar"].includes(String(chartType ?? "").toLowerCase())
   if (canPivotColorSeries && colorField && yFields.length === 1) {
     const measureField = yFields[0]
     const grouped = new Map<string, Record<string, string | number>>()
-    const seriesNames = new Set<string>()
+    const usedSeries = new Set([categoryKey])
+    const seriesKeys = new Map<string, string>()
     for (const row of rows) {
       const category = row[xField] == null ? String(grouped.size + 1) : String(row[xField])
-      const series = row[colorField] == null ? fieldLabel(measureField, labels) : humanizeFieldName(String(row[colorField]))
-      seriesNames.add(series)
+      const seriesLabel = row[colorField] == null ? fieldLabel(measureField, labels) : humanizeFieldName(String(row[colorField]))
+      let series = seriesKeys.get(seriesLabel)
+      if (!series) {
+        series = uniqueChartKey(seriesLabel, measureField, usedSeries)
+        seriesKeys.set(seriesLabel, series)
+      }
       const output = grouped.get(category) ?? { [categoryKey]: category }
       output[series] = chartNumber(row[measureField], fieldFormat(measureField, formats))
       grouped.set(category, output)
     }
     return [...grouped.values()].map((row) => {
-      for (const series of seriesNames) row[series] ??= 0
+      for (const series of seriesKeys.values()) row[series] ??= 0
       return row
     })
   }
   return rows.map((row, index) => {
     const output: Record<string, string | number> = { [categoryKey]: row[xField] == null ? String(index + 1) : String(row[xField]) }
     for (const field of yFields) {
-      output[fieldLabel(field, labels)] = chartNumber(row[field], fieldFormat(field, formats))
+      output[yKeys.get(field) ?? field] = chartNumber(row[field], fieldFormat(field, formats))
     }
     return output
   })
@@ -322,13 +342,12 @@ function explicitAxisLabel(explicit: unknown): string | undefined {
 }
 
 function OpenUiDashboardChart({ chartType, rows, x, y, color, fieldLabels, fieldFormats, xAxisLabel, yAxisLabel }: { chartType: string; rows: Record<string, unknown>[]; x: unknown; y: unknown; color?: unknown; fieldLabels?: FieldLabels; fieldFormats?: FieldFormats; xAxisLabel?: unknown; yAxisLabel?: unknown }) {
-  const rawCategoryKey = typeof x === "string" && x.length > 0 ? x : "category"
-  const categoryKey = fieldLabel(rawCategoryKey, fieldLabels)
-  const data = chartRows(rows, x, y, color, chartType, fieldLabels, fieldFormats)
+  const keys = chartDataKeys(x, y, fieldLabels)
+  const data = chartRows(rows, keys, color, chartType, fieldLabels, fieldFormats)
   const rawDataKey = firstMeasure(y)
-  const dataKey = rawDataKey ? fieldLabel(rawDataKey, fieldLabels) : undefined
+  const dataKey = rawDataKey ? keys.yKeys.get(rawDataKey) : undefined
   if (data.length === 0 || !dataKey) return <div className="flex h-44 items-center justify-center rounded-md border border-dashed border-border bg-card text-sm text-muted-foreground">No chart data</div>
-  const common = { data, categoryKey, customPalette: OPENUI_CHART_PALETTE, legend: true, grid: true, isAnimationActive: false, height: 280, xAxisLabel: explicitAxisLabel(xAxisLabel), yAxisLabel: explicitAxisLabel(yAxisLabel) }
+  const common = { data, categoryKey: keys.categoryKey, customPalette: OPENUI_CHART_PALETTE, legend: true, grid: true, isAnimationActive: false, height: 280, xAxisLabel: explicitAxisLabel(xAxisLabel), yAxisLabel: explicitAxisLabel(yAxisLabel) }
   const chartStyle = {
     "--openui-text-neutral-primary": "var(--foreground)",
     "--openui-text-neutral-secondary": "var(--muted-foreground)",
@@ -350,19 +369,18 @@ function OpenUiDashboardChart({ chartType, rows, x, y, color, fieldLabels, field
       case "radar":
         return <RadarChart {...common} variant="area" />
       case "radial":
-        return <RadialChart data={data} categoryKey={categoryKey} dataKey={dataKey} customPalette={OPENUI_CHART_PALETTE} legend grid isAnimationActive={false} height={280} />
+        return <RadialChart data={data} categoryKey={keys.categoryKey} dataKey={dataKey} customPalette={OPENUI_CHART_PALETTE} legend grid isAnimationActive={false} height={280} />
       case "pie":
       case "donut":
-        return <PieChart data={data} categoryKey={categoryKey} dataKey={dataKey} variant={chartType === "donut" ? "donut" : "pie"} customPalette={OPENUI_CHART_PALETTE} legend isAnimationActive={false} height={280} />
+        return <PieChart data={data} categoryKey={keys.categoryKey} dataKey={dataKey} variant={chartType === "donut" ? "donut" : "pie"} customPalette={OPENUI_CHART_PALETTE} legend isAnimationActive={false} height={280} />
       case "bar":
         return <BarChart {...common} variant="grouped" />
       default:
-        return <HorizontalBarChart data={data} categoryKey={categoryKey} customPalette={OPENUI_CHART_PALETTE} legend grid isAnimationActive={false} height={280} />
+        return <HorizontalBarChart data={data} categoryKey={keys.categoryKey} customPalette={OPENUI_CHART_PALETTE} legend grid isAnimationActive={false} height={280} />
     }
   })()
   return (
-    <div className="bi-dashboard-chart min-w-0 text-foreground" style={chartStyle}>
-      <style>{OPENUI_CHART_THEME_CSS}</style>
+    <div className="bi-dashboard-chart min-w-0 text-foreground [&_.openui-chart-legend-item-label]:!text-foreground [&_.openui-default-legend-label]:!text-foreground [&_.recharts-cartesian-axis-tick-value]:!fill-muted-foreground [&_.recharts-label]:!fill-muted-foreground [&_.recharts-legend-item-text]:!text-foreground [&_text]:!fill-muted-foreground [&_tspan]:!fill-muted-foreground" style={chartStyle}>
       {chart}
     </div>
   )
