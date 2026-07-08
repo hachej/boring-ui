@@ -27,7 +27,7 @@
         "../../packages/workspace/src/plugin.ts"
       ]
     },
-    "ignoreDeprecations": "5.0"
+    "ignoreDeprecations": "6.0"
   },
   "include": [
     "src/**/*"

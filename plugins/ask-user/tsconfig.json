@@ -31,7 +31,7 @@
         "../../packages/workspace/src/front/events/index.ts"
       ]
     },
-    "ignoreDeprecations": "5.0"
+    "ignoreDeprecations": "6.0"
   },
   "include": [
     "src/**/*"

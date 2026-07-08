@@ -228,9 +228,9 @@ export function ChatPaneStageDock({
       syncingRef.current = false
     }
 
-    const activeDisposable = api.onDidActivePanelChange((panel) => {
+    const activeDisposable = api.onDidActivePanelChange((event) => {
       if (syncingRef.current) return
-      const id = panel?.id
+      const id = event.panel?.id
       if (id && id !== latestRef.current.activePaneId) {
         latestRef.current.onActivePaneChange?.(id)
       }
@@ -250,7 +250,7 @@ export function ChatPaneStageDock({
 
     // Accept session rows dragged in from outside the dock (the session
     // browser). The drop opens the session as a pane at the drop position.
-    const dragOverDisposable = api.onUnhandledDragOverEvent((dragEvent) => {
+    const dragOverDisposable = api.onUnhandledDragOver((dragEvent) => {
       const nativeEvent = dragEvent.nativeEvent
       const types = nativeEvent instanceof DragEvent ? nativeEvent.dataTransfer?.types : undefined
       if (types && Array.from(types).includes(CHAT_SESSION_DRAG_TYPE)) dragEvent.accept()
