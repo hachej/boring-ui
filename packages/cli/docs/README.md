@@ -65,9 +65,10 @@ workspaces mode and the `boring-ui workspaces` subcommands.
 asset manager scans, in this order:
 
 1. **CLI-bundled defaults** — packages shipped inside the CLI's own
-   `node_modules` (currently `@hachej/boring-ask-user`), resolved from the CLI
-   package root regardless of cwd. The front side mirrors these as static
-   imports in `src/front/App.tsx` — keep the two lists in sync.
+   `node_modules` (currently `@hachej/boring-ask-user` and
+   `@hachej/boring-diagram`), resolved from the CLI package root regardless
+   of cwd. The front side mirrors these as static imports in `src/front/App.tsx`
+   — keep the two lists in sync.
 2. **Global Pi roots** — `~/.pi/agent/extensions/*`, plus `git`/`npm` source
    dirs under `~/.pi/agent`.
 3. **Workspace-local Pi roots** — `<workspace>/.pi/extensions/*`, plus
