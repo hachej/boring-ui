@@ -4,6 +4,11 @@ import { mkdir, readFile, realpath, rename, writeFile } from "node:fs/promises"
 import { homedir } from "node:os"
 import { basename, dirname, join, resolve } from "node:path"
 
+export interface LocalWorkspaceTaskProvider {
+  type: "github"
+  repo?: string
+}
+
 export interface LocalWorkspace {
   id: string
   name: string
@@ -11,6 +16,7 @@ export interface LocalWorkspace {
   createdAt: string
   updatedAt: string
   available: boolean
+  taskProvider?: LocalWorkspaceTaskProvider
 }
 
 interface StoredLocalWorkspace extends Omit<LocalWorkspace, "available"> {}
@@ -83,9 +89,15 @@ function parseRegistryYaml(content: string): StoredLocalWorkspace[] {
       continue
     }
 
-    const fieldMatch = line.match(/^\s+(name|path|createdAt|updatedAt):\s*(.*)$/)
+    const fieldMatch = line.match(/^\s+(name|path|createdAt|updatedAt|taskProvider):\s*(.*)$/)
     if (fieldMatch && current) {
-      current[fieldMatch[1] as keyof StoredLocalWorkspace] = unquoteYamlString(fieldMatch[2] ?? "")
+      const key = fieldMatch[1]
+      const value = unquoteYamlString(fieldMatch[2] ?? "")
+      if (key === "taskProvider") {
+        current.taskProvider = parseTaskProvider(value)
+      } else {
+        current[key as keyof Omit<StoredLocalWorkspace, "taskProvider">] = value
+      }
     }
   }
 
@@ -105,8 +117,24 @@ function serializeRegistryYaml(workspaces: StoredLocalWorkspace[]): string {
       `    createdAt: ${yamlString(workspace.createdAt)}`,
       `    updatedAt: ${yamlString(workspace.updatedAt)}`,
     )
+    if (workspace.taskProvider) lines.push(`    taskProvider: ${yamlString(serializeTaskProvider(workspace.taskProvider))}`)
   }
   return `${lines.join("\n")}\n`
+}
+
+function parseTaskProvider(value: string): LocalWorkspaceTaskProvider | undefined {
+  const trimmed = value.trim()
+  if (!trimmed || trimmed === "none") return undefined
+  if (trimmed === "github" || trimmed === "github:auto") return { type: "github" }
+  if (trimmed.startsWith("github:")) {
+    const repo = trimmed.slice("github:".length).trim()
+    if (/^[^/\s]+\/[^/\s]+$/.test(repo)) return { type: "github", repo }
+  }
+  return undefined
+}
+
+function serializeTaskProvider(provider: LocalWorkspaceTaskProvider): string {
+  return provider.repo ? `github:${provider.repo}` : "github:auto"
 }
 
 function expandHomePath(input: string): string {

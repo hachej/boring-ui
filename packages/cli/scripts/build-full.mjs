@@ -19,6 +19,7 @@ run("pnpm --filter @hachej/boring-workspace build", resolve(__dirname, "../../..
 
 console.log("3/5  building CLI default plugin packages…")
 run("pnpm --filter @hachej/boring-ask-user build", resolve(__dirname, "../../.."))
+run("pnpm --filter @hachej/boring-tasks build", resolve(__dirname, "../../.."))
 
 console.log("4/5  building CLI frontend…")
 run("pnpm build:front")

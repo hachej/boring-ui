@@ -443,6 +443,9 @@ importers:
       '@hachej/boring-ask-user':
         specifier: workspace:*
         version: link:../../plugins/ask-user
+      '@hachej/boring-tasks':
+        specifier: workspace:*
+        version: link:../../plugins/tasks
       '@hachej/boring-ui-kit':
         specifier: workspace:*
         version: link:../ui

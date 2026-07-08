@@ -552,6 +552,65 @@ export async function createWorkspacesModeApp(opts: {
     return await requireWorkspace(resolveWorkspaceIdFromRequest(request))
   }
 
+  async function createWorkspaceTaskService(workspace: LocalWorkspace) {
+    const tasks = await import("@hachej/boring-tasks/server")
+    const provider = workspace.taskProvider
+    const sources = provider?.type === "github"
+      ? [provider.repo
+        ? tasks.createGitHubTaskSource({
+          owner: provider.repo.split("/")[0]!,
+          repo: provider.repo.split("/")[1]!,
+          executor: tasks.createGhCliGitHubIssueExecutor({ workspaceRoot: workspace.path }),
+        })
+        : tasks.createWorkspaceGitHubTaskSource({ workspaceRoot: workspace.path })]
+      : []
+    return tasks.createTaskSourceService(tasks.createTaskSourceRegistry(sources))
+  }
+
+  function taskResponseError(cause: unknown) {
+    if (cause instanceof Error && "status" in cause && "code" in cause) {
+      return { ok: false, code: (cause as { code: unknown }).code, error: cause.message }
+    }
+    return { ok: false, code: "TASK_SOURCE_ERROR", error: "Task source request failed." }
+  }
+
+  function taskStatusFor(cause: unknown): number {
+    const status = (cause as { status?: unknown })?.status
+    return typeof status === "number" ? status : 500
+  }
+
+  function taskBodyObject(body: unknown): Record<string, unknown> {
+    if (!body || typeof body !== "object" || Array.isArray(body)) {
+      const error = new Error("request body must be an object") as Error & { status: number; code: string }
+      error.status = 400
+      error.code = "TASK_INVALID_BODY"
+      throw error
+    }
+    return body as Record<string, unknown>
+  }
+
+  function taskStringArray(value: unknown): string[] | undefined {
+    if (value === undefined) return undefined
+    if (!Array.isArray(value) || value.some((entry) => typeof entry !== "string" || entry.length === 0)) {
+      const error = new Error("sourceIds must be an array of non-empty strings") as Error & { status: number; code: string }
+      error.status = 400
+      error.code = "TASK_INVALID_BODY"
+      throw error
+    }
+    return value
+  }
+
+  function taskRequiredString(body: Record<string, unknown>, key: string): string {
+    const value = body[key]
+    if (typeof value !== "string" || value.length === 0) {
+      const error = new Error(`${key} must be a non-empty string`) as Error & { status: number; code: string }
+      error.status = 400
+      error.code = "TASK_INVALID_BODY"
+      throw error
+    }
+    return value
+  }
+
   function pluginRuntimeKey(workspace: LocalWorkspace): string {
     return `${workspace.id}:${workspace.path}`
   }
@@ -656,6 +715,43 @@ export async function createWorkspacesModeApp(opts: {
     await registry.remove(id)
     if (workspace) await disposeWorkspaceRuntime(workspace)
     return reply.send({ ok: true })
+  })
+
+  app.get("/api/boring-tasks/sources", async (request, reply) => {
+    try {
+      const workspace = await workspaceFromRequest(request)
+      const service = await createWorkspaceTaskService(workspace)
+      return { ok: true, sources: service.listSources() }
+    } catch (cause) {
+      return reply.status(taskStatusFor(cause)).send(taskResponseError(cause))
+    }
+  })
+
+  app.post("/api/boring-tasks/sources/tasks/list", async (request, reply) => {
+    try {
+      const workspace = await workspaceFromRequest(request)
+      const body = request.body === undefined ? {} : taskBodyObject(request.body)
+      const service = await createWorkspaceTaskService(workspace)
+      return { ok: true, ...(await service.listTasks({ workspaceId: workspace.id, workspaceRoot: workspace.path }, { sourceIds: taskStringArray(body.sourceIds) })) }
+    } catch (cause) {
+      return reply.status(taskStatusFor(cause)).send(taskResponseError(cause))
+    }
+  })
+
+  app.post("/api/boring-tasks/sources/tasks/move", async (request, reply) => {
+    try {
+      const workspace = await workspaceFromRequest(request)
+      const body = taskBodyObject(request.body)
+      const service = await createWorkspaceTaskService(workspace)
+      const task = await service.moveTask({ workspaceId: workspace.id, workspaceRoot: workspace.path }, {
+        sourceId: taskRequiredString(body, "sourceId"),
+        taskId: taskRequiredString(body, "taskId"),
+        statusId: taskRequiredString(body, "statusId"),
+      })
+      return { ok: true, task }
+    } catch (cause) {
+      return reply.status(taskStatusFor(cause)).send(taskResponseError(cause))
+    }
   })
 
   app.get("/api/v1/workspaces", async () => ({

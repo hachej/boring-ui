@@ -24,6 +24,11 @@ vi.mock("@hachej/boring-ask-user/front", () => {
   return { askUserPlugin, createAskUserPlugin, default: askUserPlugin }
 })
 
+vi.mock("@hachej/boring-tasks/front", () => {
+  const createTasksPlugin = () => ({ pluginId: "tasks", pluginLabel: "Tasks" })
+  return { createTasksPlugin, default: createTasksPlugin() }
+})
+
 vi.mock("@hachej/boring-workspace/app/front", () => ({
   WorkspaceAgentFront: (props: Record<string, unknown>) => workspaceAgentFrontSpy(props),
 }))
@@ -170,7 +175,10 @@ describe("CliWorkspaceShell", () => {
       workspaceLayout: "plugin-tabs",
       workspaceSectionTitle: "Project",
       appTitle: "Folder Workspace",
-      plugins: [expect.objectContaining({ pluginId: "ask-user", options: { appLeftInbox: true } })],
+      plugins: [
+        expect.objectContaining({ pluginId: "ask-user", options: { appLeftInbox: true } }),
+        expect.objectContaining({ pluginId: "tasks" }),
+      ],
     })
 
     expect(screen.getByText("v1.2.3")).not.toBeNull()

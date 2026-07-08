@@ -59,7 +59,7 @@ function getGlobalPiAgentRoot(options: ResolveCliBoringPluginDirsOptions = {}): 
  * side mirrors it with static imports in src/front/App.tsx. Keep the two
  * in sync when adding a default plugin.
  */
-const CLI_DEFAULT_PLUGIN_PACKAGES = ["@hachej/boring-ask-user"]
+const CLI_DEFAULT_PLUGIN_PACKAGES = ["@hachej/boring-ask-user", "@hachej/boring-tasks"]
 
 // Resolve the CLI's bundled default plugin packages from the CLI's own
 // node_modules. Delegates to the shared workspace utility so resolution
