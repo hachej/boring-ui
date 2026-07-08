@@ -37,7 +37,9 @@ const inlineProjectsEnabled = import.meta.env.VITE_BORING_INLINE_PROJECTS === '1
 // Keep production deployments focused by default: hide advanced workspace tooling
 // unless explicitly enabled. Dev keeps it visible for local dogfooding.
 const workspaceToolingEnabled = import.meta.env.DEV || import.meta.env.VITE_BORING_WORKSPACE_TOOLING === '1'
-const boringMcpUiEnabled = import.meta.env.VITE_BORING_MCP_ENABLED === '1' || (import.meta.env.DEV && import.meta.env.VITE_BORING_MCP_ENABLED !== '0')
+const boringMcpUiEnabled = import.meta.env.PROD
+  ? import.meta.env.VITE_BORING_MCP_PROD_ENABLED === '1'
+  : import.meta.env.VITE_BORING_MCP_ENABLED !== '0'
 
 function McpIcon({ className }: { className?: string }) {
   return (

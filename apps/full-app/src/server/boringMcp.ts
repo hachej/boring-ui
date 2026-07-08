@@ -50,10 +50,10 @@ function parseReadonlyInputLimit(value: string | undefined): number {
 }
 
 export function readFullAppBoringMcpServerConfig(env: NodeJS.ProcessEnv = process.env): FullAppBoringMcpServerConfig {
-  const explicitEnabled = env.BORING_MCP_ENABLED === '1'
-  const productionDefaultDisabled = env.NODE_ENV === 'production' && env.BORING_MCP_ENABLED !== '1'
+  const productionEnabled = env.BORING_MCP_PROD_ENABLED === '1'
+  const nonProductionEnabled = env.BORING_MCP_ENABLED !== '0'
   return {
-    enabled: explicitEnabled || (!productionDefaultDisabled && env.BORING_MCP_ENABLED !== '0'),
+    enabled: env.NODE_ENV === 'production' ? productionEnabled : nonProductionEnabled,
     composioApiKeyConfigured: Boolean(env.COMPOSIO_API_KEY?.trim()),
     maxReadonlyInputBytes: parseReadonlyInputLimit(env.BORING_MCP_MAX_READONLY_INPUT_BYTES),
   }
