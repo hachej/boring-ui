@@ -81,7 +81,7 @@ import {
 import { loadConfig, type LoadConfigOptions } from '../../server/config/index.js'
 import { WorkspaceRuntimeSandboxHandleStore } from '../../server/runtime/index.js'
 import { createDatabaseTelemetryFromEnv } from '../../server/telemetry/db.js'
-import { isAnonymousOutreachUser } from '../../server/outreach/policy.js'
+import { isAnonymousOutreachUser, isClaimedOutreachUser } from '../../server/outreach/policy.js'
 
 const MIME_TYPES: Record<string, string> = {
   '.css': 'text/css; charset=utf-8',
@@ -460,6 +460,7 @@ async function createCoreRuntime(config: CoreConfig, customTelemetry?: Telemetry
   app.decorate('workspaceStore', workspaceStore)
   app.decorate('telemetry', telemetry)
   app.decorate('isAnonymousOutreachUser', (appId: string, userId: string) => isAnonymousOutreachUser(db, appId, userId))
+  app.decorate('isClaimedOutreachUser', (appId: string, userId: string) => isClaimedOutreachUser(db, appId, userId))
 
   app.addHook('onClose', async () => {
     await sql.end()

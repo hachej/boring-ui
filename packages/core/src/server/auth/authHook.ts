@@ -98,13 +98,23 @@ const authHookPlugin: FastifyPluginAsync<AuthHookOptions> = async (app, opts) =>
       }
     }
 
-    if (isProtectedApi && !request.user?.isAnonymousLead && isCoreEmailVerificationEnabled(app.config) && request.user?.emailVerified !== true) {
-      throw new HttpError({
-        status: 403,
-        code: ERROR_CODES.EMAIL_NOT_VERIFIED,
-        message: 'Email verification required',
-        requestId: request.id,
-      })
+    const verifyUser = request.user
+    if (isProtectedApi && verifyUser && !verifyUser.isAnonymousLead && isCoreEmailVerificationEnabled(app.config) && verifyUser.emailVerified !== true) {
+      // Outreach leads who claimed an account arrived through a trusted token
+      // and were provisioned into a workspace; keep that access frictionless
+      // instead of walling them out behind email verification. They remain
+      // ordinary role-scoped members, so the workspace role gate still applies.
+      const isClaimedOutreachLead = app.isClaimedOutreachUser
+        ? await app.isClaimedOutreachUser(app.config.appId, verifyUser.id)
+        : false
+      if (!isClaimedOutreachLead) {
+        throw new HttpError({
+          status: 403,
+          code: ERROR_CODES.EMAIL_NOT_VERIFIED,
+          message: 'Email verification required',
+          requestId: request.id,
+        })
+      }
     }
   })
 }

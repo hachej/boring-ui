@@ -44,6 +44,7 @@ function makeConfig(): CoreConfig {
 let app: FastifyInstance
 let rawSql: postgres.Sql
 let sessionCookie: string
+const claimedOutreachUserIds = new Set<string>()
 
 async function signUpAndReadCookie(email: string): Promise<string> {
   const signupRes = await app.inject({
@@ -75,6 +76,9 @@ beforeAll(async () => {
   app = Fastify({ logger: false })
   app.decorate('config', config)
   app.decorate('auth', auth)
+  app.decorate('isClaimedOutreachUser', async (_appId: string, userId: string) =>
+    claimedOutreachUserIds.has(userId),
+  )
 
   registerErrorHandler(app)
   await app.register(authHook)
@@ -162,6 +166,26 @@ describe('authHook', () => {
     expect(body.user.email).toBe('hook-test@auth-test.dev')
     expect(body.user.emailVerified).toBe(true)
     expect(body.user.id).toBeDefined()
+  })
+
+  it('claimed outreach lead bypasses email verification while non-leads stay gated', async () => {
+    const email = `claimed-${Date.now()}@auth-test.dev`
+    const cookie = await signUpAndReadCookie(email)
+
+    // Unverified and not yet a claimed lead → still walled out.
+    const before = await app.inject({ method: 'GET', url: '/api/v1/me', headers: { cookie } })
+    expect(before.statusCode).toBe(403)
+    expect(before.json().code).toBe('email_not_verified')
+
+    // Mark this user as a claimed outreach lead → frictionless access despite unverified email.
+    const rows = await rawSql`SELECT id FROM users WHERE email = ${email}`
+    claimedOutreachUserIds.add(rows[0].id as string)
+
+    const after = await app.inject({ method: 'GET', url: '/api/v1/me', headers: { cookie } })
+    expect(after.statusCode).toBe(200)
+    const user = after.json().user
+    expect(user.emailVerified).toBe(false)
+    expect(user.isAnonymousLead).toBe(false)
   })
 
   it('auth paths are public (bypass hook)', async () => {
