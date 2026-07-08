@@ -69,7 +69,7 @@
   "dependencies": {
     "@fastify/cors": "^11.0.0",
     "@fastify/helmet": "^13.0.1",
-    "@fastify/rate-limit": "^11.0.0",
+    "@fastify/rate-limit": "^11.1.0",
     "@hachej/boring-agent": "workspace:*",
     "@hachej/boring-ui-kit": "workspace:*",
     "@hachej/boring-workspace": "workspace:*",
