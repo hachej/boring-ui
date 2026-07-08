@@ -7,6 +7,8 @@ export const perspectivePlugins = ["Datagrid", "Y Bar", "X Bar", "Y Line", "Y Ar
 export const metricFormats = ["number", "currency", "percent"] as const
 export const filterControlTypes = ["select", "multiSelect", "dateRange", "numberRange", "search"] as const
 export const sortDirections = ["asc", "desc"] as const
+const fieldLabelsSchema = z.record(z.string(), z.string())
+const fieldFormatsSchema = z.record(z.string(), z.enum(metricFormats))
 
 export const dashboardQuerySchema = z.union([
   z.object({
@@ -33,27 +35,48 @@ export const bslMetricPropsSchema = z.object({
   queryId: z.string(),
   valueField: z.string(),
   label: z.string(),
+  description: z.string().optional(),
   format: z.enum(metricFormats).optional(),
+  showMeta: z.boolean().optional(),
 })
 
 export const bslChartPropsSchema = z.object({
   queryId: z.string(),
   title: z.string().optional(),
+  description: z.string().optional(),
+  showMeta: z.boolean().optional(),
   renderer: z.enum(chartRenderers).optional(),
   chartType: z.enum(chartTypes),
   x: z.string().optional(),
   y: z.union([z.string(), z.array(z.string())]).optional(),
+  xAxisLabel: z.string().optional(),
+  yAxisLabel: z.string().optional(),
   color: z.string().optional(),
+  fieldLabels: fieldLabelsSchema.optional(),
+  fieldFormats: fieldFormatsSchema.optional(),
   controls: z.array(z.string()).optional(),
 })
 
 export const bslPerspectiveViewerPropsSchema = z.object({
   queryId: z.string(),
   title: z.string().optional(),
+  description: z.string().optional(),
+  showMeta: z.boolean().optional(),
   plugin: z.enum(perspectivePlugins).optional(),
   columns: z.array(z.string()).optional(),
   groupBy: z.array(z.string()).optional(),
   splitBy: z.array(z.string()).optional(),
+  sort: z.array(z.tuple([z.string(), z.enum(sortDirections)])).optional(),
+})
+
+export const bslTablePropsSchema = z.object({
+  queryId: z.string(),
+  title: z.string().optional(),
+  description: z.string().optional(),
+  showMeta: z.boolean().optional(),
+  columns: z.array(z.string()).optional(),
+  fieldLabels: fieldLabelsSchema.optional(),
+  fieldFormats: fieldFormatsSchema.optional(),
   sort: z.array(z.tuple([z.string(), z.enum(sortDirections)])).optional(),
 })
 
@@ -74,6 +97,7 @@ export const componentPropsSchemas = {
   BSLMetric: bslMetricPropsSchema,
   BSLChart: bslChartPropsSchema,
   BSLPerspectiveViewer: bslPerspectiveViewerPropsSchema,
+  BSLTable: bslTablePropsSchema,
   BSLFilter: bslFilterPropsSchema,
   BSLText: bslTextPropsSchema,
 } as const
@@ -92,12 +116,16 @@ export const biDashboardVocabulary = defineGeneratedPaneVocabulary({
       props: bslMetricPropsSchema,
     },
     BSLChart: {
-      description: "Perspective-backed chart bound to a BI query result.",
+      description: "Chart bound to a BI query result. Use props.description for chart-specific context instead of placing a standalone text card beside the chart.",
       props: bslChartPropsSchema,
     },
     BSLPerspectiveViewer: {
       description: "Perspective table/chart viewer bound to a BI query result.",
       props: bslPerspectiveViewerPropsSchema,
+    },
+    BSLTable: {
+      description: "Native dashboard table bound to a BI query result. Use props.description for table-specific context instead of placing a standalone text card beside the table.",
+      props: bslTablePropsSchema,
     },
     BSLFilter: {
       description: "Dashboard filter control targeting one or more query IDs.",
@@ -114,6 +142,7 @@ export type DashboardGridProps = z.infer<typeof dashboardGridPropsSchema>
 export type BslMetricProps = z.infer<typeof bslMetricPropsSchema>
 export type BslChartProps = z.infer<typeof bslChartPropsSchema>
 export type BslPerspectiveViewerProps = z.infer<typeof bslPerspectiveViewerPropsSchema>
+export type BslTableProps = z.infer<typeof bslTablePropsSchema>
 export type BslFilterProps = z.infer<typeof bslFilterPropsSchema>
 export type BslTextProps = z.infer<typeof bslTextPropsSchema>
 export type BslDashboardQuerySpec = z.infer<typeof dashboardQuerySchema>
