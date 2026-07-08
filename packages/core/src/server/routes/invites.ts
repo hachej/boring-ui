@@ -2,6 +2,7 @@ import { createHash } from 'node:crypto'
 import type { FastifyPluginAsync } from 'fastify'
 import fp from 'fastify-plugin'
 import { HttpError, ERROR_CODES } from '../../shared/errors.js'
+import { isCoreEmailVerificationEnabled } from '../../shared/authPolicy.js'
 import { requireWorkspaceMember } from '../auth/requireWorkspaceMember.js'
 import { createMailTransport } from '../mail/transport.js'
 import type { MailTransport } from '../mail/transport.js'
@@ -266,6 +267,19 @@ const inviteRoutesPlugin: FastifyPluginAsync<InviteRoutesOptions> = async (app, 
         status: 401,
         code: ERROR_CODES.UNAUTHORIZED,
         message: 'Authentication required',
+        requestId: request.id,
+      })
+    }
+
+    // Invite acceptance binds a membership by matching the session email to the
+    // invite recipient, so it needs proof the caller owns that email. The
+    // claimed-lead authHook exemption unlocks workspace access without email
+    // verification; keep it out of this email-keyed grant when verification is on.
+    if (isCoreEmailVerificationEnabled(app.config) && user.emailVerified !== true) {
+      throw new HttpError({
+        status: 403,
+        code: ERROR_CODES.EMAIL_NOT_VERIFIED,
+        message: 'Email verification required',
         requestId: request.id,
       })
     }

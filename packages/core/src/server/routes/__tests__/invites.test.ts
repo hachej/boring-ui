@@ -596,3 +596,54 @@ describe('POST /api/v1/invites/accept', () => {
     expect(inviteDb.get(invite.id)?.failedAttempts).toBe(0)
   })
 })
+
+describe('POST /api/v1/invites/accept email-verification guard', () => {
+  // Invite acceptance binds membership by email match, so when verification is
+  // enabled the caller must have a verified email — a claimed outreach lead
+  // (exempt from the authHook wall for workspace access) must not accept an
+  // email-keyed invite unverified. The guard runs before store access.
+  async function buildApp(mailEnabled: boolean, emailVerified: boolean): Promise<FastifyInstance> {
+    const app = Fastify({ logger: false })
+    app.decorate('config', {
+      appId: APP_ID,
+      auth: {
+        url: 'http://localhost:3000',
+        ...(mailEnabled ? { mail: { transportUrl: 'console://', from: 'no@reply.test' } } : {}),
+      },
+      features: { inviteTtlDays: 7 },
+    } as any)
+    app.decorate('workspaceStore', mockWorkspaceStore())
+    registerErrorHandler(app)
+    app.addHook('onRequest', async (request) => {
+      request.user = { id: INVITEE_ID, email: 'invitee@test.dev', name: null, emailVerified }
+    })
+    await app.register(registerInviteRoutes)
+    await app.ready()
+    return app
+  }
+
+  it('unverified caller with verification enabled → 403 email_not_verified', async () => {
+    const app = await buildApp(true, false)
+    const res = await app.inject({ method: 'POST', url: '/api/v1/invites/accept', payload: { token: 'anything' } })
+    expect(res.statusCode).toBe(403)
+    expect(res.json().code).toBe(ERROR_CODES.EMAIL_NOT_VERIFIED)
+    await app.close()
+  })
+
+  it('verified caller with verification enabled passes the guard', async () => {
+    const app = await buildApp(true, true)
+    const res = await app.inject({ method: 'POST', url: '/api/v1/invites/accept', payload: { token: 'anything' } })
+    // Past the guard → fails on the unknown token, not on verification.
+    expect(res.statusCode).toBe(404)
+    expect(res.json().code).toBe(ERROR_CODES.INVITE_NOT_FOUND)
+    await app.close()
+  })
+
+  it('unverified caller with verification disabled passes the guard', async () => {
+    const app = await buildApp(false, false)
+    const res = await app.inject({ method: 'POST', url: '/api/v1/invites/accept', payload: { token: 'anything' } })
+    expect(res.statusCode).toBe(404)
+    expect(res.json().code).toBe(ERROR_CODES.INVITE_NOT_FOUND)
+    await app.close()
+  })
+})
