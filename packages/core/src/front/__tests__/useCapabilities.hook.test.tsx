@@ -78,8 +78,12 @@ describe('useCapabilities hook', () => {
           },
         },
         agent: {
+          v: 1,
           runtimeMode: 'local',
+          environments: [],
           tools: ['terminal'],
+          skills: [],
+          mcpServers: [],
           modelProviders: ['anthropic'],
         },
       }

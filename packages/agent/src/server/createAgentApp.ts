@@ -23,6 +23,8 @@ import { createPluginDiagnosticsTool } from './tools/pluginDiagnostics'
 import type { ReloadHookDiagnostic } from './http/routes/reload'
 import { createAgentRuntimeBridge } from './createAgent'
 import {
+  createPureAgentCapabilities,
+  createWorkspaceAgentCapabilities,
   registerAgentRouteBindingProfile,
   toolNames,
   type AgentRouteBindingProfile,
@@ -166,7 +168,7 @@ async function createPureAgentAppProfile(
   const readyTracker = new ReadyStatusTracker({ sandboxReady: true, harnessReady: true })
   return {
     runtimeMode: resolvedMode,
-    capabilities: { tools: toolNames(tools) },
+    capabilities: createPureAgentCapabilities(resolvedMode, toolNames(tools)),
     sessionChangesTracker: new InMemorySessionChangesTracker(),
     health: {
       version: opts.version ?? DEFAULT_VERSION,
@@ -301,7 +303,7 @@ async function createWorkspaceAgentAppProfile(
 
   return {
     runtimeMode: resolvedMode,
-    capabilities: { tools: toolNames(tools) },
+    capabilities: createWorkspaceAgentCapabilities(resolvedMode, toolNames(tools)),
     sessionChangesTracker: new InMemorySessionChangesTracker(),
     health: {
       version: opts.version ?? DEFAULT_VERSION,

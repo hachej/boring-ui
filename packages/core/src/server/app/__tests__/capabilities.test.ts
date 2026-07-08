@@ -161,8 +161,12 @@ describe('capabilities contributor API', () => {
 
     app.registerCapabilitiesContributor('agent', () => ({
       agent: {
+        v: 1,
         runtimeMode: 'local' as const,
+        environments: [],
         tools: ['shell', 'browser'],
+        skills: [],
+        mcpServers: [],
         modelProviders: ['anthropic'],
       },
     }))

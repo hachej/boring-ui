@@ -83,7 +83,11 @@ export {
   DEFAULT_AGENT_RUNTIME_CAPABILITIES,
   PI_AGENT_RUNTIME_CAPABILITIES,
 } from './capabilities'
-export type { AgentRuntimeCapabilities } from './capabilities'
+export type {
+  AgentRuntimeCapabilities,
+  ResolvedAgentCapabilities,
+  ResolvedEnvironment,
+} from './capabilities'
 export { validateTool } from './validateTool'
 export {
   WORKSPACE_AGENT_PLUGINS_RELOADED_EVENT,

@@ -220,13 +220,31 @@ export type CoreCapabilities = {
   }
 }
 
+export type AgentResolvedEnvironment = {
+  id: string
+  filesystem?: {
+    access: 'read' | 'readwrite'
+    acceptsInputAssets?: boolean
+    defaultInputAssetSink?: boolean
+  }
+  tools: string[]
+  provider?: string
+  label?: string
+}
+
+export type AgentResolvedCapabilities = {
+  v: 1
+  runtimeMode?: string
+  environments: AgentResolvedEnvironment[]
+  tools: string[]
+  skills: string[]
+  mcpServers: string[]
+  modelProviders: string[]
+}
+
 export type CapabilitiesResponse = {
   core: CoreCapabilities
-  agent?: {
-    runtimeMode: 'direct' | 'local' | 'vercel-sandbox'
-    tools: string[]
-    modelProviders: string[]
-  }
+  agent?: AgentResolvedCapabilities
   workspace?: { panels: string[] }
-  [contributorName: string]: JsonValue | CoreCapabilities | undefined
+  [contributorName: string]: JsonValue | CoreCapabilities | AgentResolvedCapabilities | undefined
 }

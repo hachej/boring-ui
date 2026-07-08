@@ -1,5 +1,6 @@
 import type { FastifyInstance } from 'fastify'
 import type { RuntimeModeId } from './runtime/mode'
+import type { ResolvedAgentCapabilities } from '../shared/capabilities'
 import type { AgentTool } from '../shared/tool'
 import { fileRoutes } from './http/routes/file'
 import { fsEventsRoutes } from './http/routes/fsEvents'
@@ -18,6 +19,8 @@ import { gitRoutes } from './http/routes/git'
 import { healthRoutes, type HealthRouteOptions } from './http/routes/health'
 import type { InMemorySessionChangesTracker } from './http/sessionChangesTracker'
 
+const COMPATIBILITY_ENVIRONMENT_TOOL_NAMES = ['read', 'write', 'edit', 'find', 'grep', 'ls', 'bash']
+
 type RouteOptions<T> = T extends (
   app: FastifyInstance,
   opts: infer Options,
@@ -33,9 +36,7 @@ type RouteRegistrar = (app: FastifyInstance) => void | Promise<void>
  */
 export interface AgentRouteBindingProfile {
   runtimeMode: RuntimeModeId
-  capabilities: {
-    tools: string[]
-  }
+  capabilities: ResolvedAgentCapabilities
   sessionChangesTracker: InMemorySessionChangesTracker
   health: HealthRouteOptions & { register?: boolean }
   chat: PiChatRoutesOptions
@@ -58,6 +59,45 @@ export interface AgentRouteBindingProfile {
 
 export function toolNames(tools: readonly AgentTool[]): string[] {
   return tools.map((tool) => tool.name)
+}
+
+export function createPureAgentCapabilities(
+  runtimeMode: RuntimeModeId,
+  tools: readonly string[],
+): ResolvedAgentCapabilities {
+  return {
+    v: 1,
+    runtimeMode,
+    environments: [],
+    tools: [...tools],
+    skills: [],
+    mcpServers: [],
+  }
+}
+
+export function createWorkspaceAgentCapabilities(
+  runtimeMode: RuntimeModeId,
+  tools: readonly string[],
+): ResolvedAgentCapabilities {
+  return {
+    v: 1,
+    runtimeMode,
+    environments: [
+      {
+        id: 'user',
+        filesystem: {
+          access: 'readwrite',
+          acceptsInputAssets: true,
+          defaultInputAssetSink: true,
+        },
+        tools: COMPATIBILITY_ENVIRONMENT_TOOL_NAMES,
+        provider: runtimeMode,
+      },
+    ],
+    tools: [...tools],
+    skills: [],
+    mcpServers: [],
+  }
 }
 
 export async function registerAgentRouteBindingProfile(

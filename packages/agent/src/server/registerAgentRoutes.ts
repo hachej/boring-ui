@@ -37,6 +37,8 @@ import type { AgentMeteringSink } from './pi-chat/metering'
 import { createPluginDiagnosticsTool } from './tools/pluginDiagnostics'
 import { createAgentRuntimeBridge } from './createAgent'
 import {
+  createPureAgentCapabilities,
+  createWorkspaceAgentCapabilities,
   registerAgentRouteBindingProfile,
   toolNames,
   type AgentRouteBindingProfile,
@@ -49,9 +51,7 @@ const MAX_PURE_BINDINGS = 256
 const STANDARD_AGENT_TOOL_NAMES = ['bash', 'read', 'write', 'edit', 'find', 'grep', 'ls']
 
 type AgentCapabilities = {
-  agent: {
-    runtimeMode: RuntimeModeId
-    tools: string[]
+  agent: AgentRouteBindingProfile['capabilities'] & {
     modelProviders: string[]
   }
 }
@@ -100,8 +100,7 @@ function registerAgentCapabilitiesContributor(
     'agent',
     () => ({
       agent: {
-        runtimeMode: profile.runtimeMode,
-        tools: profile.capabilities.tools,
+        ...profile.capabilities,
         modelProviders: getAvailableModelProviders(),
       },
     }),
@@ -504,9 +503,10 @@ export const registerAgentRoutes: FastifyPluginAsync<RegisterAgentRoutesOptions>
 
     profile = {
       runtimeMode: resolvedMode,
-      capabilities: {
-        tools: staticBinding ? toolNames(staticBinding.tools) : toolNames(opts.extraTools ?? []),
-      },
+      capabilities: createPureAgentCapabilities(
+        resolvedMode,
+        staticBinding ? toolNames(staticBinding.tools) : toolNames(opts.extraTools ?? []),
+      ),
       sessionChangesTracker,
       health: {
         register: opts.registerHealthRoute ?? true,
@@ -1088,14 +1088,15 @@ let runtimeProvisioning: WorkspaceProvisioningResult | undefined
 
   profile = {
     runtimeMode: resolvedMode,
-    capabilities: {
-      tools: staticBinding
+    capabilities: createWorkspaceAgentCapabilities(
+      resolvedMode,
+      staticBinding
         ? toolNames(staticBinding.tools)
         : [
             ...STANDARD_AGENT_TOOL_NAMES,
             ...toolNames(opts.extraTools ?? []),
           ],
-    },
+    ),
     sessionChangesTracker,
     health: {
       register: opts.registerHealthRoute ?? true,
