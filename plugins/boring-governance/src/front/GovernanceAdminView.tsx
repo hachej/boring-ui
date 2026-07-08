@@ -23,6 +23,7 @@ export interface GovernanceMeResponse {
   users?: Array<{
     email: string
     role: 'admin' | 'user'
+    monthlyBudgetEur: number | null
     modelCount: number
     contextRuleCount: number
   }>
@@ -133,17 +134,18 @@ export function GovernanceAdminView({ status }: { status: GovernanceMeResponse }
                 <div className="mt-5 overflow-hidden rounded-lg border border-border bg-background">
                   <table className="w-full text-left text-sm">
                     <thead className="bg-muted/60 text-xs uppercase tracking-[0.12em] text-muted-foreground">
-                      <tr><th className="px-3 py-2 font-medium">User</th><th className="px-3 py-2 font-medium">Role</th><th className="px-3 py-2 font-medium">Models</th><th className="px-3 py-2 font-medium">Context rules</th></tr>
+                      <tr><th className="px-3 py-2 font-medium">User</th><th className="px-3 py-2 font-medium">Role</th><th className="px-3 py-2 font-medium">Monthly budget</th><th className="px-3 py-2 font-medium">Models</th><th className="px-3 py-2 font-medium">Context rules</th></tr>
                     </thead>
                     <tbody>
                       {(status.users ?? []).length > 0 ? status.users!.map((user) => (
                         <tr key={user.email} className="border-t border-border">
                           <td className="px-3 py-2 font-medium">{user.email}</td>
                           <td className="px-3 py-2">{user.role}</td>
+                          <td className="px-3 py-2">{user.monthlyBudgetEur == null ? '—' : `€${user.monthlyBudgetEur}`}</td>
                           <td className="px-3 py-2">{user.modelCount}</td>
                           <td className="px-3 py-2">{user.contextRuleCount}</td>
                         </tr>
-                      )) : <tr><td colSpan={4} className="px-3 py-4 text-muted-foreground">No users in policy.</td></tr>}
+                      )) : <tr><td colSpan={5} className="px-3 py-4 text-muted-foreground">No users in policy.</td></tr>}
                     </tbody>
                   </table>
                 </div>

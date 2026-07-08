@@ -173,6 +173,18 @@ function validateModels(value: unknown, userPath: string, defaultMonthlyModelBud
   })
 }
 
+function validateUserBudgets(value: unknown, userPath: string): { monthlyEur: number | null; monthlyMicros: number | null } {
+  if (value === undefined) return { monthlyEur: null, monthlyMicros: null }
+  if (!isRecord(value)) fail(`${userPath}.budgets must be an object`)
+  const monthlyEur = value.monthlyEur === undefined
+    ? null
+    : finiteNumber(value.monthlyEur, `${userPath}.budgets.monthlyEur`, { min: 0, allowZero: true })
+  return {
+    monthlyEur,
+    monthlyMicros: monthlyEur === null ? null : Math.round(monthlyEur * MICROS_PER_EUR),
+  }
+}
+
 function validateCompanyContext(value: unknown, userPath: string): { allow: string[] } {
   if (value === undefined) return { allow: [] }
   if (!isRecord(value)) fail(`${userPath}.companyContext must be an object`)
@@ -219,6 +231,7 @@ export function validateGovernancePolicy(input: unknown): GovernancePolicy {
     const user: GovernanceUserPolicy = {
       email,
       role: validateRole(entry.role, `${path}.role`),
+      budgets: validateUserBudgets(entry.budgets, path),
       models: validateModels(entry.models, path, defaultMonthlyModelBudgetEur),
       companyContext: validateCompanyContext(entry.companyContext, path),
     }
