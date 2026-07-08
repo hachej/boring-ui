@@ -48,6 +48,12 @@ interface BashSandboxPolicy {
 }
 ```
 
+`BashSandboxPolicy.provider` is a requested policy input. Capability validation
+that depends on the concrete sandbox provider, including the BBP6-009
+provider-`runtimeImage` support check, must use the resolved provider id:
+boring-bash `resolveMode(mode)` -> `MODE_TO_PROVIDER` -> boring-sandbox
+`PROVIDER_CAPABILITIES[providerId]`.
+
 Child app and workspace kind are first-class because of #376: Macro and generic Seneca can share deployment/auth/DB while having different default tools/prompts/provisioning.
 
 ## Requirement shape
@@ -184,8 +190,13 @@ Requirements:
 - same-host cross-workspace boundary;
 - filesystem persistence model;
 - real bash/binaries availability.
+- runtime image support (`runtimeImage`) when an agent/provider-default selected
+  a runtime image.
 
-If a policy requires a hardening property that the worker cannot prove, fail closed.
+If a policy requires a hardening property that the worker cannot prove, fail
+closed. BBP6-009b consumes BBP5-008's handshake result to validate the
+P6a-stashed `SelectedRuntimeImage` after the handshake; it reuses the existing
+`SANDBOX_PROVIDER_*` fail-closed codes.
 
 ## Two-phase sandbox lifecycle
 
@@ -197,6 +208,8 @@ Adopt eve’s useful split while preserving existing Vercel packaging/snapshot c
 Fingerprint keys should include:
 
 - provider;
+- resolved runtime image ref + digest, from `runtimeProfileRef` when present
+  else the validated provider-default image;
 - workspace/child-app/agent ids;
 - requirement ids;
 - seed content hash;

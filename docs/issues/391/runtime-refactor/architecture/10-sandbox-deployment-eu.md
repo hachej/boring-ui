@@ -80,6 +80,15 @@ type ProviderRuntimeSpec = {
 
 The `ref` is human/operator-readable (`registry.example/boring/runtime-node:2026-07`); the `digest` is the execution identity and is required for any non-dev run. Runtime images are not a new package boundary: `@hachej/boring-bash` still chooses the mode, `@hachej/boring-sandbox` still owns provider adapters/capability facts, and P5 still owns provisioning/fingerprint orchestration.
 
+BBP6-009 adds the agent authoring surface: `AgentDefinitionDeclaration.runtimeProfileRef?`.
+It is a host-resolved reference to an operator-supplied runtime-profile catalog,
+not an inline image spec or Dockerfile. The resolved profile image fills this
+provider-config `{ image: { ref, digest } }` slot; if no ref is declared, the
+host may use the validated provider-default image. A declared no-image profile
+does not fall back at image level. Unknown/malformed refs and provider-default
+images fail closed at the host seam, and any selected image is checked against
+the resolved provider's `runtimeImage` capability before the agent is ready.
+
 Tier fit:
 
 - **gVisor `runsc`** and **Kata/Cloud Hypervisor** run OCI images through containerd/Docker-compatible plumbing, so `{ image: { ref, digest } }` is the natural runtime spec for hardened/VM-grade tiers.

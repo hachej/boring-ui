@@ -169,6 +169,13 @@ interface ResolvedAgentCapabilities {
   readonly agentId?: string
   /** Diagnostic only. Consumers MUST NOT branch on this for behavior. */
   readonly runtimeMode?: string
+  /** Host-populated runtime projection; image ref/digest are non-secret identity facts. */
+  readonly runtime?: {
+    /** Optional: absent when the image came from provider default instead of a profile. */
+    readonly profileId?: string
+    readonly image?: { readonly ref: string; readonly digest: string }
+    readonly provider: string
+  }
 
   /** Source of truth for filesystem/bash/environment authority. */
   readonly environments: readonly ResolvedEnvironment[]

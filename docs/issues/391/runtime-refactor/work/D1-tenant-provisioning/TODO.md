@@ -43,8 +43,9 @@ host. Without this, T0/T1 factory claims remain manual-infra claims.
 - **Files touch/create:** command/API entry point, plan schema, dry-run output,
   stable error codes.
 - **Notes:** Plan input references tenant id/name, workspace seed, agent
-  definition id, EU host profile, runtime tier, storage/session root policy,
-  secrets refs, and optional demo exposure id.
+  definition id, EU host profile, runtime tier, `runtimeProfileRef`-derived
+  selected image, storage/session root policy, secrets refs, and optional demo
+  exposure id.
 - **Tests:** dry-run emits deterministic plan; unknown definition/host/secret ref
   fails closed; no apply side effects in dry-run.
 - **Acceptance:** operators can review a complete plan before apply.
@@ -64,9 +65,13 @@ host. Without this, T0/T1 factory claims remain manual-infra claims.
 - **Files touch/create:** secret-ref resolver, runtime config writer, redacted
   manifest projection.
 - **Notes:** Consume P5 brokering. Store secret refs/handles, never raw secret
-  values. Runtime config records provider facts and selected image/tier.
+  values. Runtime config records provider facts and selected image/tier; the
+  image is derived from `AgentDefinitionDeclaration.runtimeProfileRef` when
+  present, else the validated provider-default image, while tier stays the
+  host/EU deployment choice.
 - **Tests:** raw secret canary absent from logs/manifests; missing secret ref
-  fails closed; runtime config includes selected EU host/tier facts.
+  fails closed; runtime config includes the selected runtime image plus EU
+  host/tier facts.
 - **Acceptance:** deployed runtime can start without leaking secrets.
 
 ### BBD1-004 - Demo endpoint config + deployment manifest (L)
@@ -75,10 +80,11 @@ host. Without this, T0/T1 factory claims remain manual-infra claims.
   generator for the chosen EU host.
 - **Notes:** Demo endpoint config includes `exposureId`, auth mode, demo policy,
   result/share URL base, CORS/embedding rules, and telemetry hooks. The
-  deployment manifest captures image digest, host tier, storage roots, network
-  policy, and service commands.
+  deployment manifest captures the resolved image digest, host tier, storage
+  roots, network policy, and service commands.
 - **Tests:** public-demo and bearer endpoint configs generated from definitions;
-  manifest contains no raw secrets; unsupported host/tier combinations reject.
+  manifest contains no raw secrets; unsupported image/host/tier combinations
+  reject.
 - **Acceptance:** operator receives a deployable, reviewable manifest.
 
 ### BBD1-005 - Apply smoke + rollback notes (M)
