@@ -26,7 +26,7 @@
     "@hachej/boring-mcp": "workspace:*",
     "@hachej/boring-ui-kit": "workspace:*",
     "@hachej/boring-workspace": "workspace:*",
-    "@vercel/sandbox": "2.2.1",
+    "@vercel/sandbox": "2.3.0",
     "fastify": "^5.9.0",
     "react": "^19.2.7",
     "react-dom": "^19.2.7"
@@ -42,6 +42,6 @@
     "tailwindcss": "^4.3.1",
     "tsx": "^4.22.4",
     "typescript": "^6.0.3",
-    "vite": "^8.1.0"
+    "vite": "^8.1.2"
   }
 }
