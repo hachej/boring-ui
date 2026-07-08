@@ -231,10 +231,7 @@ function resolveDefaultModel(modelRegistry: ModelRegistry) {
   const configured = readConfiguredDefaultModel();
   if (configured) {
     const model = modelRegistry.find(configured.provider, configured.id);
-    const getAvailable = (modelRegistry as unknown as { getAvailable?: () => Array<{ provider: string; id: string }> }).getAvailable;
-    if (!model || typeof getAvailable !== "function") return model;
-    const available = getAvailable.call(modelRegistry);
-    if (available.some((m) => m.provider === model.provider && m.id === model.id)) return model;
+    if (model) return model;
   }
   return undefined;
 }
@@ -322,15 +319,14 @@ async function applyRequestedSessionOptions(
   options: { strictModelResolution?: boolean } = {},
 ): Promise<void> {
   const requestedModel = resolveRequestedModel(handle.modelRegistry, input, { strict: options.strictModelResolution });
-  const nextModel = requestedModel ?? resolveDefaultModel(handle.modelRegistry);
-  if (nextModel) {
+  if (requestedModel) {
     const current = handle.piSession.model;
     if (
       !current ||
-      current.provider !== nextModel.provider ||
-      current.id !== nextModel.id
+      current.provider !== requestedModel.provider ||
+      current.id !== requestedModel.id
     ) {
-      await handle.piSession.setModel(nextModel);
+      await handle.piSession.setModel(requestedModel);
     }
   }
 
