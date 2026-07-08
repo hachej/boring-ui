@@ -77,6 +77,7 @@ The workspace is the eve-class control plane over public contracts only:
 
 - Do NOT touch `/home/ubuntu/projects/boring-ui-v2`. Work on a dedicated branch/worktree per the PR-PLAN branch naming; never commit to main directly; every bead lands as a PR per INDEX.
 - Do NOT build **agent-as-directory authoring** (create/configure agents from `agent.ts`/`instructions.md`/`tools/*` filesystem slots). That is the north-star authoring model, **explicitly deferred until the `AgentRegistry` exists (Phase 6/7), post-P7**, per `00` North star + the no-speculative-abstraction policy. S3 is **observe/inspect/approve only** — the inspect panel is read-only; agent *configuration/wiring* UI is out of scope.
+- S4 owns onboarding/readiness status for definitions, demo URLs, provisioning, and missing policy refs; S3 remains observe/inspect/approve only.
 - Do NOT rebuild the session list/search/browser, the transcript viewer, the debug/event inspector, or the approvals UI — extend the existing components named above.
 - Do NOT build the `/info` endpoint, the agent-scoped routes, the session-search API, or the T1 approval store — those are P7/T1/T2. If missing, STOP and report.
 - Do NOT introduce a new UI framework, state library, or a second registry/host.

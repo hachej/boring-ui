@@ -10,6 +10,13 @@
 ## Design context
 Phase 4 moves the filesystem front plugin from `packages/workspace` into `@hachej/boring-bash/plugin`, loaded through the normal workspace plugin pipeline. `boring-bash/plugin` imports the public workspace plugin SDK directly (`@hachej/boring-workspace/plugin`, public bridge/registry/surface exports, and the filesystem helpers from `@hachej/boring-workspace/shared` or a narrower public plugin SDK export). Cycle safety comes from dynamic plugin loading: workspace-family hosts discover/import the plugin from manifest entries at runtime, so `packages/workspace/src` must have no static import from `@hachej/boring-bash`. Panel ids, `FILESYSTEM_SURFACE_RESOLVER_ID`, the `workspace.open.path` resolver, file panel binding, agent file bridge/session-change integration, the bash/file tool renderers, file mention/slash composer providers, and the #416 Company file-tree root + capability-based readonly panes are all preserved verbatim. Tree data is factored into a **plain internal function** — the pluggable `FileTreeDataProvider` boundary is deferred to #295 (BBP4-012), and the document-authority write/edit override is deferred out of the epic (BBP4-013); `write`/`edit` stay raw file ops.
 
+**Amendment (2026-07-08):** composer/upload gating reads resolved environment
+facts and input-asset intake policy, not a scalar bash/filesystem capability.
+Readable filesystem facts enable file mentions/search. A writable environment
+with `acceptsInputAssets` enables workspace-backed upload. Provider-direct
+asset support may enable direct assets without `/api/v1/files/upload`. Missing
+facts mean the provider is absent.
+
 ## Verified current repo reality (pre-P4)
 - `packages/boring-bash/src/plugin/index.ts` is currently a stub `export {};`; `packages/boring-bash/package.json` currently has no `./plugin` export; `packages/boring-bash/tsup.config.ts` currently has no plugin entry.
 - The filesystem front plugin currently lives under `packages/workspace/src/plugins/filesystemPlugin/`, with `front/*` and `shared/*` subtrees. `packages/workspace/src/plugins/filesystemPlugin/shared/constants.ts` defines `FILES_LEFT_TAB_ID`, `FILES_CATALOG_ID`, `FILESYSTEM_SURFACE_RESOLVER_ID`, and the code/markdown/image/pdf/html/empty panel ids.
@@ -26,7 +33,7 @@ Phase 4 moves the filesystem front plugin from `packages/workspace` into `@hache
 - preserve panel ids and `workspace.open.path` resolver;
 - preserve file panel binding and agent file bridge/session changes **[Company file-tree root + capability-based readonly panes landed via #416 — carry over intact]**;
 - move bash/file tool renderers (`bash`, `read`, `write`, `edit`, `find`, `grep`, `ls`) with the bash plugin through existing `definePlugin({ toolRenderers })`; pure-mode front keeps generic fallback renderer plumbing only and ships no filesystem/bash renderer registrations;
-- move file mention provider + file-related slash commands into capability-gated composer providers shipped by `boring-bash/plugin`; agent front keeps generic picker/composer primitives and no `/api/v1/files/search`, `@files`, upload, or filesystem vocabulary in pure mode;
+- move file mention provider + file-related slash commands into environment-fact-gated composer providers shipped by `boring-bash/plugin`; agent front keeps generic picker/composer primitives and no `/api/v1/files/search`, `@files`, workspace upload, or filesystem vocabulary in pure mode;
 - factor tree data into a plain internal tree function (the pluggable `FileTreeDataProvider` boundary is **deferred to #295**, per `../P4-file-ui/TODO.md`);
 - the **document-authority override seam is deferred out of this epic** (zero real consumers — no live document system exists; it arrives with #367/#226), per `../P4-file-ui/TODO.md` BBP4-013.
 - add the static edge gate: `rg -n "from ['\"]@hachej/boring-bash|import\\(['\"]@hachej/boring-bash" packages/workspace/src` returns no matches.
@@ -34,6 +41,6 @@ Phase 4 moves the filesystem front plugin from `packages/workspace` into `@hache
 ## Exit criteria
 - `exec_ui openFile` still opens files;
 - bash/file tool calls render through the boring-bash plugin when attached, and fall back generically when detached;
-- pure-mode front exposes no file mention provider, file slash command, file upload affordance, or bash/file renderer registration;
+- pure-mode front exposes no file mention provider, file slash command, workspace upload affordance, or bash/file renderer registration;
 - file tree data flows through one internal function with unchanged behavior (provider boundary deferred to #295).
 - (Document-authority override deferred out of this epic — `write`/`edit` stay raw file ops.)

@@ -118,6 +118,25 @@ Match `INDEX.md` Phase T2 exit criteria:
 - **Tests**: existing pi-chat route + reconnect tests updated to the DS path (no `?cursor=` expectations remain); the new grep gate fails on a reintroduced legacy branch and passes on the cutover tree.
 - **Acceptance**: no `?cursor=` NDJSON replay code (route branch, `PiChatReplayBuffer`, or `piChatStream.ts`) remains anywhere in `packages/agent`; no legacy `…/pi-chat/:sessionId/{prompt,interrupt,stop}` write route remains (the canonical `…/api/v1/agents/:agentId/sessions/:sessionId/*` family is the sole write surface); the grep/invariant gate is active in `lint:invariants`; the DS transport is the sole reconnect/replay path; workspace UI runs unmodified.
 
+### BBT2-007 — Input-asset intake strategy over environment facts  · size S/M
+- **Title**: Replace the old attachment capability axis with input-asset intake derived from resolved environment facts and provider/host policy.
+- **Amendment (2026-07-08):** the old `none | direct | workspace` attachment capability framing is superseded. User-supplied files/images/blobs are **input assets**. Intake is a strategy, not a scalar capability:
+  1. Persist to the single/default writable environment whose resolved filesystem fact has `acceptsInputAssets`.
+  2. Else pass direct to the model if host policy and provider facts allow direct assets.
+  3. Else reject with a stable error.
+- **Files to touch:**
+  - `packages/agent/src/shared/events.ts` / transport-facing shared types: carry input assets without declaring `attachments` as capability truth.
+  - `packages/agent/src/server/createAgent.ts` and `packages/agent/src/server/pi-chat/harnessPiChatService.ts`: validate intake from resolved environment facts and provider/host direct-asset support instead of `runtime` or mode labels.
+  - Front/transport send path touched by BBT2-003/004: submit input assets to the chosen intake path; do not infer acceptance from runtime id.
+- **Rules:**
+  - If exactly one writable environment accepts input assets, persist there.
+  - If multiple writable environments accept input assets, exactly one must have `defaultInputAssetSink`; otherwise resolver error.
+  - Direct-to-model support is a provider/host fact, not an agent capability.
+  - A workspace-backed upload path is unavailable when no accepting environment sink exists.
+  - Rejection uses a stable error code and does not mention `runtimeMode`.
+- **Tests**: writable accepting environment persists an input asset to the default sink; multiple accepting sinks without a default fail closed; provider-direct path accepts only when provider + host policy allow it; no sink and no direct support rejects with a stable error; no test branches on `runtimeMode` except migration shims.
+- **Acceptance**: temporary attachment-mode comments naming BBT2-007 are removed; intake is environment-fact/provider-policy-driven and preserves the no-filesystem side-channel guarantee for pure/headless agents.
+
 ## Verification — exact commands (verified against package.json scripts)
 
 ```bash

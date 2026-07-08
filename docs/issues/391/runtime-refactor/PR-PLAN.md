@@ -56,6 +56,7 @@ S ≈ <300 net-new · M ≈ 300–900 · L ≈ 900–2000. Adjusted per bead nat
 | **BBP4-011** filesystem front-plugin move | owner-flagged move-churn; whole `filesystemPlugin/front+shared` (editors + file-tree + data layer) far exceeds 4k soft | pr2a: `file-tree/*` + `shared/*` + `BBP4-012` tree fn · pr2b: `code-editor`+`markdown-editor`+`media/html/empty` panes · pr2c: `data/*` + `front/index.ts`+resolver+bindings rewire onto public workspace plugin SDK imports |
 | **BBP3-011 / BBP3-014** tool + route moves | owner-flagged (P3 moves); each is a large **move** | kept as separate move PRs (never combined); split further by tool/route family only if >4k churn |
 | **BBP5-006** managed-service supervisor | L, new supervisor+lifecycle | pr5a: supervisor (start/health/port-grant/teardown) · pr5b: readiness surface + host-caller passthrough — only if >2k |
+| **BBD1-004** demo endpoint + deployment manifest | L/XL tenant provisioning slice | pr4a: demo endpoint config + exposure policy · pr4b: EU deployment manifest + host profile matrix — only if >2k |
 
 ---
 
@@ -81,8 +82,12 @@ Legend — nature: **new** = net-new code · **move** = rename-detected + import
 | pr4-pure-runtime-none | BBP1-004 | new | ~300–600 | pure-mode route/tool exclusion; session round-trip under `sessionStorageRoot` w/ `workspaceId` undefined; no cwd leak | `lint:invariants` |
 | pr5-pi-harness-audit | BBP1-005 | doc + new (seals) | ~150 seals | harness-construction spy (no host cwd); system-prompt snapshot (no cwd/AGENTS.md) | `test` |
 | pr6-invariants-smoke | BBP1-006 | test | 0 (tests + script) | Fastify-graph check on `/core`; agent→bash value-import check; plain-Node pure smoke turn | `lint:invariants`; `check:isolation`; `boring-bash check:invariants` |
+| prA-facts-projection | BBP1-007 | new | M | `ResolvedAgentCapabilities` projection through existing capability exposure; pure facts report `environments: []`, actual registered tools, empty skills/MCP; direct/local/vercel get coarse compatibility environment facts | agent `test`; capability route tests |
+| prB-de-mode-gating | reopened-P1 follow-up | new | S/M | remove runtimeMode feature gating; derive input-asset intake from environment sinks/direct-provider policy; no behavior branches on `runtimeMode` except diagnostics/migration shims | agent `test`; T2 BBT2-007 alignment |
+| prC-core-relocation | reopened-P1 follow-up | move + new | M/L | move/split core implementation under `src/core/createAgent.ts`; server wrapper injects Pi/defaults; `/core` graph imports no server/Pi defaults unless injected | `lint:invariants`; `check:isolation` |
+| prD-readiness-honesty | reopened-P1 follow-up | new | S/M | readiness/lifecycle state is honest: no placeholder false-ready state; runtime binding eviction disposes agents or reports tracked lifecycle | agent `test`; readiness smoke |
 
-**P1 total: 6 PRs (7 if pr2 splits).** Merge order pr1→pr5→pr2(→a,b)→pr3→pr4→pr6. **Gate to open T1/P2/P3/S1/S2:** pr2..pr6 merged (stub seams present).
+**P1 total: 10 PRs (11 if pr2 splits).** Merge order pr1→pr5→pr2(→a,b)→pr3→pr4→pr6→prA→prB→prC→prD. **Gate to call rewritten P1 complete:** pr2..pr6 plus prA..prD merged. Runtime lanes must not consume capability facts until prA lands; input-asset consumers must not branch on `runtimeMode` after prB.
 
 ### M1 — Managed agent via MCP (outreach demo sidecar, after P1 pr2)
 
@@ -91,11 +96,26 @@ M1 is not a runtime-epic exit gate; it is the owner's outreach demo artifact. It
 | PR | beads | nature | net-new vs budget | test deliverables | gate |
 | --- | --- | --- | --- | --- | --- |
 | pr1-exposed-mcp-delegate | BBM1-001 | new | ~600–1000 | fake MCP client delegates one brief; one delegation creates one agent session via `createAgent().start`; progress notification or polling fallback works; secret canary absent | chosen host/package `test`; `audit:imports` |
-| pr2-delivery-v0-demo-composition | BBM1-002 | new | ~300–700 | result carries final text + workspace-relative artifact refs (inline content for small text artifacts, documented cutoff); one vertical-agent config hosted in full-app or CLI; no raw workspace/session path in caller payload | host build/typecheck/test |
+| pr2-delivery-v0-demo-composition | BBM1-002 | new | ~300–700 | result carries final text + workspace-relative artifact refs (inline content for small text artifacts, documented cutoff); before P6a, `ManagedAgentVerticalConfig` is the local v0 demo-host config; after P6a, demo config mounts by `agentId` from `AgentDefinitionDeclaration` and the M1 config becomes a temporary lossless projection only; no raw workspace/session path in caller payload | host build/typecheck/test |
 | pr3-stock-client-smoke | BBM1-003 | test/doc | 0 | stock MCP client proof: delegate brief -> progress -> result with resolvable artifact reference | documented smoke + affected e2e |
 | pr2b-share-links (HARD GATED on #424) | BBM1-004 | new | ~150–400 | current-main public-share API cited; returned URL uses verified share route; share opens without exposing internals | host build/typecheck/test; share route smoke |
 
 **M1 total: 3 PRs (v0) + 1 gated follow-up.** Preconditions: P1 pr2 façade merged. **Ruling 2026-07-06:** #424 verified unmerged on main at execution time; delivery v0 is decoupled (final text + artifact refs, no share links) and `pr2b-share-links` is HARD GATED on #424 merging — it is not part of the M1 v0 exit. M1 works on the P1 live-tail and has **no T1 dependency**; durable streams upgrade later.
+
+### M2 — MCP as an agent surface (registry-driven, after P7 + T2)
+
+M2 turns M1's sidecar shape into a committed surface backed by the canonical
+agent definition registry. It is the ingress dual of E2: E2 exposes environments
+over MCP; M2 exposes declared agents over MCP.
+
+| PR | beads | nature | net-new vs budget | test deliverables | gate |
+| --- | --- | --- | --- | --- | --- |
+| pr1-mcp-exposure-config | BBM2-001 | new | ~250–450 | definition-derived `McpAgentExposureConfig`; `authMode: bearer\|public-demo`, `demoPolicy`, `exposureId`; unknown refs fail closed | agent/host `test` |
+| pr2-mcp-surface-adapter | BBM2-002 | new | ~500–900 | fake MCP client drives a declared agent through T1/T2 transport; approval/progress path works | host build/typecheck/test |
+| pr3-auth-demo-policy | BBM2-003 | new | ~300–600 | bearer invalid/foreign rejects; public-demo obeys demo policy and never widens environment facts | host `test`; secret canary |
+| pr4-result-share-conformance | BBM2-004 | test + new | ~200–400 | result/share URL shape stable; no raw paths/secrets; stock-client smoke | documented smoke + affected e2e |
+
+**M2 total: 4 PRs.** Preconditions: P7 registry/info endpoints and T1/T2 transport. M2 is a committed surface follow-up; it does not retroactively make M1 a runtime-exit gate.
 
 ### T1 — Durable event stream + on-stream approvals (Phase T1, off P1)
 
@@ -120,8 +140,9 @@ M1 is not a runtime-epic exit gate; it is the owner's outreach demo artifact. It
 | pr4-refit-twohandles-lint | BBT2-004 | new (guard) | ~200 + `transport.md` | platform-addressing guard test (negative: surface id fails, `SessionCtx` allowlisted passes) | `lint:invariants`; `audit:imports` |
 | pr5-headless-consumer | BBT2-005 | test + script | ~100 (`headless-consumer.mts`) | interleaved in-process×HTTP shared-session test | `exec tsx scripts/headless-consumer.mts` |
 | pr6-delete-legacy-cursor | BBT2-006 | delete + move | net-new ~50 (grep gate) | route tests migrated to DS; grep gate: no `?cursor=`/`PiChatReplayBuffer`/`piChatStream.ts` | `lint:invariants`; workspace playground unmodified |
+| pr7-input-asset-intake | BBT2-007 | new | ~150–300 | writable accepting env sink, provider-direct asset path, and stable rejection covered; no `runtimeMode` gating | agent `test`; transport tests |
 
-**T2 total: 6 PRs.** pr6 lands **last** (after DS conformance + playground green). Bumps `@hachej/boring-agent` minor (protocol change).
+**T2 total: 7 PRs.** pr6 lands **last** for the legacy cursor deletion (after DS conformance + playground green); pr7 may land after the shared input-asset type exists and before P4 composer/upload consumers rely on it. Bumps `@hachej/boring-agent` minor (protocol change).
 
 ### P2 — Scaffold `@hachej/boring-sandbox` + move providers into it; `resolveMode` → boring-bash (Phase 2, off P1)
 
@@ -169,7 +190,7 @@ M1 is not a runtime-epic exit gate; it is the owner's outreach demo artifact. It
 | PR | beads | nature | net-new vs budget | test deliverables | gate |
 | --- | --- | --- | --- | --- | --- |
 | pr1-env-contracts | BBE1-001 | new (types) | ~150 | `.test-d` compile assertion: attachment narrows to `FilesystemBinding` selector | `boring-bash typecheck` |
-| pr2-resolve-attachments | BBE1-002 | new | ~250–400 (reduction/delegation, **no registry/Map**) | two distinct-`filesystem` prepared handles; dispose evicts | `boring-bash test` |
+| pr2-resolve-attachments | BBE1-002 | new | ~250–400 (reduction/delegation, **no registry/Map**) | two distinct attached runtimes with `RuntimeFilesystemBinding[]` filesystem facets plus matching methodless `ResolvedEnvironment[]` facts; no opaque handles returned; dispose evicts | `boring-bash test` |
 | pr3-company-context-env | BBE1-003 | new (adapter) | ~200 | reference attachment == direct provider visible-path set; `execPolicy:'none'` | `readonlyCompanyContext*` green |
 | pr4-scoped-view-jail | BBE1-004 | new | ~250–400 | subpath jail (sibling denied); `..` rejected; **symlink-escape denied (realpath-based)** | `boring-bash test` |
 | pr5-agent-typeonly-conformance | BBE1-006 + BBE1-007 | new (type-only field + invariant) + test | ~80 | agent value-import fails / `import type` passes; scoped-view conformance mount `passed:true` | `audit:imports`; `lint:invariants` |
@@ -222,8 +243,8 @@ Adds the `@hachej/boring-sandbox/mounts` export (created package from P2) + the 
 | PR | beads | nature | net-new vs budget | test deliverables | gate |
 | --- | --- | --- | --- | --- | --- |
 | pr1-agent-registry | BBP6-003 | new | ~150 (Map-backed) | register/get/list/has/delete; duplicate-id policy; grep-gate no child-app fields | agent `test` |
-| pr2-agents-declaration | BBP6-009 | new | ~150 (declaration + seed) | two-agent decl seeds two registry entries + default; absent decl → one implicit `default` (single-agent parity); dup/bad-default rejected; grep-gate no child-app fields | workspace/core/cli `test` |
-| pr3-manifest-requires-bash-skill-filters | BBP6-002 | new | ~450–800 | bash skipped when disabled; invalid `bash` rejected pre-import; import-free proof; raw-secret reject; skill `boring.requires`-style filter at loader boundary; generated skills-index prompt fragment uses the filtered set; grep-gate clean | `lint:plugin-invariants` |
+| pr2-agents-declaration | BBP6-009 | new | ~300–600 (definition schema + seed) | two-agent `AgentDefinitionDeclaration` seeds two registry entries + default; absent decl → one implicit `default`; dup/bad-default/unknown refs rejected; same-definition projection for P7/M1/M2/S1/S2/S3/S4/D1; grep-gate no child-app fields | workspace/core/cli `test` |
+| pr3-manifest-requires-bash-skill-filters | BBP6-002 | new | ~450–800 | requirements evaluated against resolved environment facts; invalid `bash` rejected pre-import; import-free proof; raw-secret reject; skill `boring.requires`-style filter at loader boundary; generated skills-index prompt fragment uses the filtered set; grep-gate clean | `lint:plugin-invariants` |
 | pr4-runtime-plugin-context | BBP6-004 | new | ~300–500 | context derived from policy (unspoofable); status-only secrets; dispatch unchanged | workspace `test` |
 | pr5-hosted-fail-closed | BBP6-005 | new | ~400–600 | hosted mode fails closed; iframe sandbox/CSP asserted; symlink/special-file rejected | `test` |
 | pr6-shared-workspace-runtime | BBP6-007 | new (unify) | ~300–500 | CLI/full-app/workspace share the runtime unit; reload + registry dispose on eviction | core/cli/full-app `test` |
@@ -254,7 +275,19 @@ Adds the `@hachej/boring-sandbox/mounts` export (created package from P2) + the 
 
 **P7 total: 9 PRs (8 if pr7+pr8 combine).** Precondition: P6a `AgentRegistry` + E1 attachments + **T2** (the `sessionId`-only public transport + two-handles guard; the durable approvals/`resolveInput` the external-hook route and `/info` channel facts read arrive via T1→T2) (else STOP+report).
 
-### P8 — Verification + cleanup (Phase 8, gates on runtime lanes EXCEPT P6b and M1)
+### D1 — Tenant provisioning command/API (factory lane, after P5 + P6a + M2)
+
+| PR | beads | nature | net-new vs budget | test deliverables | gate |
+| --- | --- | --- | --- | --- | --- |
+| pr1-plan-command-api | BBD1-001 | new | ~400–700 | dry-run plan schema; unknown definition/host/secret refs fail closed | affected package `test` |
+| pr2-tenant-roots | BBD1-002 | new | ~400–700 | tenant/workspace created once; DB/storage/session roots allocated outside container home/root; rerun idempotent | core/cli/full-app `test` |
+| pr3-secrets-runtime-config | BBD1-003 | new | ~400–700 | raw secret canary absent; runtime config records selected EU host/tier facts | `audit:imports`; secret negative tests |
+| pr4-demo-manifest ⚠split | BBD1-004 | new | ~700–1200 — split pre-declared if >2k | M2 exposure config generated; deployment manifest has image digest, roots, network policy, no raw secrets | affected host build/typecheck/test |
+| pr5-apply-smoke-runbook | BBD1-005 | test/doc | ~150–300 | fake/local-provider apply smoke; rollback/runbook covers every resource category | provisioning smoke |
+
+**D1 total: 5 PRs (6 if pr4 splits).** Preconditions: P5 provisioning/secrets, P6a definition registry, and M2 exposure config for demo endpoints. D1 is the repeatable tenant factory lane; LP/GTM/pricing/CTA assets remain outside platform scope.
+
+### P8 — Verification + cleanup (Phase 8, gates on runtime lanes EXCEPT P6b, M1, M2, D1, S4; M2 may land after P8)
 
 | PR | beads | nature | net-new vs budget | test deliverables | gate |
 | --- | --- | --- | --- | --- | --- |
@@ -262,9 +295,9 @@ Adds the `@hachej/boring-sandbox/mounts` export (created package from P2) + the 
 | pr2-surface-contract-docs | BBP8-002 | doc | 0 | referenced symbols (`createAgent`,`AgentEvent`,`AgentSendInput`,`ResolveInputResponse`) exist | doc/link check |
 | pr3-track-remaining-prose | BBP8-004 | doc/tracking | 0 | filed issue/bead list; `00` coverage reconciled (no overclaim) | n/a |
 
-**P8 total: 3 PRs.** BBP8-005 (final invariant+build/test sweep) is the **merge gate on this stack**, not a separate PR — any red gate reopens its owning phase. **Rule: a live `TODO(remove:*)` marker reopens its phase; P8 never absorbs it.** **P8 gates on every delivered runtime lane EXCEPT P6b and M1** — P1–P7, T1–T2, E1–E2, **X1**, S1–S3, Phase 5, and P6a must be green. P6b is a tracked follow-up (HARD BLOCKED on the child-app platform type), not an epic exit gate; P8 only **verifies the P6b follow-up issue is filed** (BBP8-004) and never waits on P6b landing (this is the anti-deadlock guarantee). M1 is the outreach-demo sidecar and has its own smoke closeout.
+**P8 total: 3 PRs.** BBP8-005 (final invariant+build/test sweep) is the **merge gate on this stack**, not a separate PR — any red gate reopens its owning phase. **Rule: a live `TODO(remove:*)` marker reopens its phase; P8 never absorbs it.** **P8 gates on every delivered runtime lane EXCEPT P6b, M1, M2, D1, and S4; M2 may land after P8 but must be tracked as a committed follow-up** — P1–P7, T1–T2, E1–E2, **X1**, S1–S3, Phase 5, and P6a must be green. P6b is a tracked follow-up (HARD BLOCKED on the child-app platform type), not an epic exit gate; P8 only **verifies P6b plus M2/D1/S4 follow-up or status tracking** (BBP8-004) and never waits on those lanes landing (this is the anti-deadlock guarantee). M1 is the outreach-demo sidecar and has its own smoke closeout; D1 is tenant/factory provisioning, and S4 is onboarding status on top of S3.
 
-### S1 — Slack reference channel (Phase S1, off T2 + P1)
+### S1 — Slack reference channel (Phase S1, off T2 + P6a + P1)
 
 | PR | beads | nature | net-new vs budget | test deliverables | gate |
 | --- | --- | --- | --- | --- | --- |
@@ -274,16 +307,16 @@ Adds the `@hachej/boring-sandbox/mounts` export (created package from P2) + the 
 | pr4-approvals-slack | BBS1-005 | new | ~250–400 | button → `resolveInput` right session/request; cross-surface answer consistent | `test` |
 | pr5-conformance-suite | BBS1-006 | new (neutral `@hachej/boring-agent/testing`) + test | ~200 (suite) | message-in→out, approval round-trip, addressing isolation; runs `runtime:'none'` + readonly `company_context` | agent `build` (`./testing` subpath) |
 
-**S1 total: 5 PRs.** `@flue/slack` pinned to the **exact resolved `1.0.0-beta.<N>`** — resolve and record the version + date before coding (BBS1-002 first action); never ship a `.x`/range placeholder. No shared channel-core package yet (single consumer).
+**S1 total: 5 PRs.** `@flue/slack` pinned to the **exact resolved `1.0.0-beta.<N>`** — resolve and record the version + date before coding (BBS1-002 first action); never ship a `.x`/range placeholder. No shared channel-core package yet (single consumer). **Amendment (2026-07-08):** S1 waits on P6a/BBP6-009 and consumes `AgentDefinitionDeclaration` or a lossless projection for agent binding; do not invent a Slack-local agent schema.
 
-### S2 — Spreadsheet embed contract (Phase S2, off S1)
+### S2 — Spreadsheet embed contract (Phase S2, off S1 + P6a)
 
 | PR | beads | nature | net-new vs budget | test deliverables | gate |
 | --- | --- | --- | --- | --- | --- |
 | pr1-embed-doc-guard | BBS2-001 + BBS2-004 | doc + new (guard) | ~40 | audit fails on any boring-bash import from embed | `audit:imports` |
 | pr2-reference-embed-conformance | BBS2-002 + BBS2-003 | new (`apps/spreadsheet-embed-playground`) + test | ~300–500 | `write_range` parks on approval → projects on approve / unchanged on deny; conformance `passed:true` via `@hachej/boring-agent/testing` | `typecheck`; `test` |
 
-**S2 total: 2 PRs.** Embed deps = `@hachej/boring-agent` only.
+**S2 total: 2 PRs.** Embed deps = `@hachej/boring-agent` only. **Amendment (2026-07-08):** S2 inherits the S1/P6a same-definition dependency and consumes `AgentDefinitionDeclaration` or a lossless projection for agent binding; do not invent an embed-local agent schema.
 
 ### S3 — Control-plane UX (Phase S3, off T2 + P7) — **DELTA, extend existing surfaces**
 
@@ -296,6 +329,16 @@ Adds the `@hachej/boring-sandbox/mounts` export (created package from P2) + the 
 
 **S3 total: 4 PRs.** Consumes P7 `GET /api/v1/agents` + `/info` + BBP7-004 search + T1 `agent.sessions.pendingInputs(ctx, { sessionId? })` (STOP+report if missing). No new registry/host; observe-only (agent-as-directory authoring deferred).
 
+### S4 — Agent onboarding status (after S3 + M2 + D1)
+
+| PR | beads | nature | net-new vs budget | test deliverables | gate |
+| --- | --- | --- | --- | --- | --- |
+| pr1-status-model-client | BBS4-001 | new | ~250–450 | normalized onboarding status per agent; missing refs render stable blocking codes; secret canary absent | workspace `test` |
+| pr2-onboarding-panel | BBS4-002 + BBS4-003 | new | ~350–650 | read-only Fleet drill-down status for definition readiness, demo URL status, provisioning status, missing policy refs; no authoring controls | workspace `test`; plugin invariants |
+| pr3-onboarding-integration | BBS4-004 | test | 0 | ready + blocked agent scenario; no create/configure controls; public contracts only | workspace `test` |
+
+**S4 total: 3 PRs.** Consumes S3 Fleet/inspection, M2 demo exposure status, and D1 provisioning status. S4 is read-only onboarding/status; it does not turn S3 into an authoring UI.
+
 ---
 
 ## Totals
@@ -303,12 +346,13 @@ Adds the `@hachej/boring-sandbox/mounts` export (created package from P2) + the 
 | Lane / TODO | PRs (base) | with pre-declared splits | blocked |
 | --- | --- | --- | --- |
 | P0 | 1 | 1 | — |
-| P1 | 6 | 7 | — |
+| P1 | 10 | 11 | — |
 | T1 | 6 | 7 | — |
-| T2 | 6 | 6 | — |
+| T2 | 7 | 7 | — |
 | P2 | 7 | 7 | — |
 | P3 | 6 | 6 (moves split by family only if >4k) | — |
 | M1 | 4 | 3 + 1 gated (pr2b on #424) | sidecar (not P8 gate) |
+| M2 | 4 | 4 | committed surface follow-up |
 | P4 | 5 | 7 | — |
 | E1 | 5 | 5 | — |
 | E2 | 3 | 3 | — |
@@ -316,23 +360,26 @@ Adds the `@hachej/boring-sandbox/mounts` export (created package from P2) + the 
 | X1 | 5 | 5 | — |
 | P6 | 9 | 9 | 2 (P6b) |
 | P7 | 9 | 9 | — |
+| D1 | 5 | 6 | factory lane |
 | P8 | 3 | 3 | — |
 | S1 | 5 | 5 | — |
 | S2 | 2 | 2 | — |
 | S3 | 4 | 4 | — |
-| **TOTAL** | **93** | **~98** | 2 follow-up (P6b) + M1 sidecar |
+| S4 | 3 | 3 | onboarding/status follow-up |
+| **TOTAL** | **111** | **~117** | 2 follow-up (P6b) + M1 sidecar + factory/onboarding follow-ups |
 
-**Expected overall: ~93 PRs (up to ~98 if every pre-declared split fires). The 2 P6b PRs are a tracked follow-up OUTSIDE the epic exit (hard-blocked on the shared child-app platform type) — they do not gate P7 or P8, so the epic's ~91 non-P6b PRs ship without them. M1 is an outreach-demo sidecar and does not gate P8. (P4 is 5 PRs base / 7 with its pre-declared move split after the plugin SDK/tool-renderer/composer-provider amendment. P2 rose from 6 to 7 PRs: the `@hachej/boring-sandbox` package scaffold, pr0. X1 adds 5 PRs: the S3/FUSE mount subsystem plus benchmark, bash-lane parallel off P2+P5+E1. M1 adds 3 sidecar PRs after P1 pr2 + public-share API.)**
+**Expected overall: ~111 PRs (up to ~117 if every pre-declared split fires). The 2 P6b PRs are a tracked follow-up OUTSIDE the epic exit (hard-blocked on the shared child-app platform type) — they do not gate P7 or P8. M1 is an outreach-demo sidecar and does not gate P8. M2 is the committed MCP agent-surface follow-up; D1/S4 are factory/onboarding follow-ups. P1 now includes reopened-P1 follow-ups A-D; T2 includes BBT2-007 input-asset intake; M2 adds 4 PRs; D1 adds 5 PRs (6 if its manifest slice splits); S4 adds 3 PRs.**
 
 ### Critical-path PR sequence (longest serial chain)
 
 ```
-P0(1) → P1(6) → P2(7) → P3(6) → P5(8) → P6a(7) → P7(9) → P8(3)   = 47 PRs serial
+P0(1) → P1(10) → P2(7) → P3(6) → P5(8) → P6a(7) → P7(9) → P8(3)   = 51 PRs serial
 ```
 
-- **Off the same P1 root, in parallel:** the M1 outreach-demo sidecar `M1(3)` after P1 pr2 + public-share API, the transport lane `T1(6) → T2(6) → { S1(5) → S2(2) ; S3(4) }`, the environment lane `E1(5) → E2(3)` (E1 also needs P3; E2 feeds no critical successor except P8), and the **mount lane `X1(5)`** (needs P2+P5+E1; bash-lane parallel after those preconditions; feeds no critical successor except P8).
-- **P7 also needs E1 and T2** (T2 formalizes the `sessionId`-only transport + two-handles guard P7's addressing/binding rides, and carries the T1 durable approvals/`resolveInput` the external-hook route and `/info` channel facts read); **S3 needs T2 + P7**; **P8 gates on every delivered runtime lane EXCEPT P6b and M1** (bash + transport + environment + mounts + surfaces).
-- **P6b** is off the critical path (a tracked follow-up, hard-blocked) and gates **neither P7 nor P8** (P7 consumes P6a only; P8 only verifies the P6b follow-up issue is filed) — so P6b's block can never deadlock the epic exit.
+- **All-factory serial path if D1/S4 are included:** `P0(1) → P1(10) → P2(7) → P3(6) → P5(8) → P6a(7) → P7(9) → M2(4) → D1(5) → S4(3) = 60 PRs serial` (S4 also needs S3, but S3's P7+T2 path is shorter than D1).
+- **Off the same P1 root, in parallel:** the M1 outreach-demo sidecar `M1(3)` after P1 pr2 (share-link slice is separately gated on #424/public-share API), the transport lane `T1(6) → T2(7) → { S1(5) → S2(2) ; S3(4) → S4(3) }` with **S1/S2 also waiting on P6a/BBP6-009 for the same definition/projection**, the environment lane `E1(5) → E2(3)` (E1 also needs P3; E2 feeds no critical successor except P8), the **mount lane `X1(5)`** (needs P2+P5+E1; bash-lane parallel after those preconditions; feeds no critical successor except P8), and the **MCP/factory lane `M2(4) → D1(5) → S4(3)`** after P7/T2.
+- **P7 also needs E1 and T2** (T2 formalizes the `sessionId`-only transport + two-handles guard P7's addressing/binding rides, and carries the T1 durable approvals/`resolveInput` the external-hook route and `/info` channel facts read); **S3 needs T2 + P7**; **P8 gates on every delivered runtime lane EXCEPT P6b, M1, M2, D1, and S4**. M2 is a committed surface follow-up and may ship after P8 if the runtime exit is otherwise green.
+- **P6b** is off the critical path (a tracked follow-up, hard-blocked) and gates **neither P7 nor P8** (P7 consumes P6a only; P8 only verifies P6b plus M2/D1/S4 follow-up or status tracking) — so P6b's block can never deadlock the epic exit.
 - **Package minor bumps** on the path: `@hachej/boring-agent` at P3 (relocation) and at T2 (protocol).
 
-Merge-order rule across lanes: M1 may open after P1 pr2 and verified public-share API and is independent of the runtime lanes; nothing in P2 opens until P1 pr2..pr6 are green; E1 waits on both P2 and P3; P5 dispatches off P3 (not P4); X1 waits on P2+P5+E1; P6a off P5; P7 off P6a+E1+T2; P8 last, only when zero `TODO(remove:*)` markers remain repo-wide and all delivered lane gates **except P6b and M1** are green (P6b is a tracked follow-up outside the epic exit — P8 verifies its follow-up issue is filed but never waits on P6b landing; M1 is the outreach-demo sidecar).
+Merge-order rule across lanes: M1 v0 may open after P1 pr2 and is independent of the runtime lanes; only M1 `pr2b-share-links` waits on #424/public-share API. Nothing in P2 opens until rewritten P1's required seams/facts are green; E1 waits on both P2 and P3; P5 dispatches off P3 (not P4); X1 waits on P2+P5+E1; P6a off P5; S1 waits on T2+P6a; S2 waits on S1+P6a; P7 off P6a+E1+T2; M2 waits on P7+T2; D1 waits on P5+P6a+M2; S4 waits on S3+D1+M2; P8 last for the runtime epic, only when zero `TODO(remove:*)` markers remain repo-wide and all delivered runtime-lane gates **except P6b, M1, M2, D1, and S4** are green (P6b is a tracked follow-up outside the epic exit — P8 verifies its follow-up issue is filed but never waits on P6b landing; M1 is the outreach-demo sidecar; M2 is the committed MCP agent-surface follow-up; D1/S4 are factory/onboarding follow-ups).

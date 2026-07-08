@@ -5,6 +5,7 @@ Derived strictly from [TODO.md](./TODO.md) and [PLAN.md](./PLAN.md). Tick each b
 ## Prerequisites (packages + gates)
 - [ ] T2-transport merged — [../T2-transport/HANDOFF.md](../T2-transport/HANDOFF.md)
 - [ ] Also requires P1-headless-core merged — [../P1-headless-core/HANDOFF.md](../P1-headless-core/HANDOFF.md) (the `createAgent()` façade; block on P1 if absent — do not reach into harness internals)
+- [ ] Also requires P6a/BBP6-009 `AgentDefinitionDeclaration` merged; Slack agent binding consumes it or a lossless projection, never a Slack-local schema.
 - [ ] STOP+report if `createAgent().send/resolveInput/stream/sessions` is not available (P1 not landed)
 - [ ] First action, non-negotiable: RESOLVE and record the exact published `@flue/slack` version (`1.0.0-beta.<N>`) as the literal pin — never a `.x`/range placeholder
 - [ ] Add `packages/channels/*` to `pnpm-workspace.yaml` and add `--filter './packages/channels/*'` (or `--filter @hachej/boring-channel-slack`) to root `build:packages`; current repo globs/build filters do not include nested `packages/channels/*`

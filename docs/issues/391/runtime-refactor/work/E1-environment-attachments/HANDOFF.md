@@ -12,7 +12,7 @@ Derived strictly from [TODO.md](./TODO.md) and [PLAN.md](./PLAN.md). Tick each b
 - [ ] BBE1-002 — `resolveAttachments` adapter over the scoped binding manager
 - [ ] BBE1-003 — `company_context` as reference environment + readonly attachment
 - [ ] BBE1-004 — Scoped-view (subpath jail) enforcement in the host
-- [ ] BBE1-006 — Agent-owned `ResolvedEnvironments` core-facing type + invariant extension
+- [ ] BBE1-006 — Agent-owned `AttachedEnvironmentRuntime`/`ResolvedEnvironment` core-facing types + invariant extension
 - [ ] BBE1-007 — Scoped-view mount of the no-leak conformance suite
 - [ ] BBE1-005 — Explicit subagent attachment seam — DEFERRED to Phase 7 (NOT E1 scope)
 
@@ -45,7 +45,7 @@ Derived strictly from [TODO.md](./TODO.md) and [PLAN.md](./PLAN.md). Tick each b
 - [ ] Existing workspace + `company_context` behavior unchanged; governance consumers green (no edits to landed shapes).
 - [ ] A scoped view (`scope.subpath`) of an environment is attachable and physically jailed (BBE1-004/007), including via symlink escape.
 - [ ] An agent can hold two environments with distinct `filesystem` identities simultaneously.
-- [ ] Agent core owns the `ResolvedEnvironments` core-facing type and value/type-imports nothing from `@hachej/boring-bash` (invariant-checked).
+- [ ] Agent core owns the `AttachedEnvironmentRuntime`/`ResolvedEnvironment` core-facing types and value/type-imports nothing from `@hachej/boring-bash` (invariant-checked).
 - [ ] Scoped-view no-leak conformance passes as a new mount of the existing suite.
 
 ## Closeout
