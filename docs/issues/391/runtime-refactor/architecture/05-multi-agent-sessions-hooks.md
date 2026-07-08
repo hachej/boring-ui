@@ -28,14 +28,25 @@ A workspace may declare:
 
 ```ts
 const declaration: WorkspaceAgentsDeclaration = {
-  defaultAgentId: 'coding',
+  defaultAgentId: 'concierge',              // who answers when no agent is named
+  environments: [                           // the project's pool of filesystems (declared once)
+    { id: 'user', provider: 'bwrap', access: 'readwrite' },
+    { id: 'company_context', provider: 'fixture', access: 'readonly',
+      governancePolicyRef: 'company-context-readonly' },
+  ],
   agents: [
+    {
+      agentId: 'concierge',
+      label: 'Concierge',
+      instructionsRef: 'concierge.default',
+      capabilityBundles: ['pure'],          // no files — conversation only
+    },
     {
       agentId: 'coding',
       label: 'Coding',
       instructionsRef: 'coding.default',
-      capabilityBundles: ['full-bash'],
-      environmentAttachments: ['user'],
+      capabilityBundles: ['full-bash'],     // files + shell
+      environmentAttachments: ['user'],     // its own private workspace
       sandboxPolicyRef: 'workspace-default',
     },
     {
@@ -43,11 +54,14 @@ const declaration: WorkspaceAgentsDeclaration = {
       label: 'Reviewer',
       instructionsRef: 'review.readonly',
       capabilityBundles: ['review-readonly'],
-      environmentAttachments: ['company_context'],
+      environmentAttachments: ['company_context'], // SHARES the company files, read-only
       governancePolicyRef: 'company-context-readonly',
+      modelPolicyRef: 'eu-sovereign-only',
     },
   ],
 }
+// Every *Ref/*Bundle is a pointer the host resolves; an unknown ref fails closed.
+// Two agents naming the same environment id share that filesystem; different ids are isolated.
 ```
 
 **Amendment (2026-07-08):** the exact P6a authored wrapper is `WorkspaceAgentsDeclaration { agents: AgentDefinitionDeclaration[]; defaultAgentId }`. Each per-agent `AgentDefinitionDeclaration` replaces the earlier narrow `WorkspaceAgentDeclaration`: it carries `agentId`/display metadata plus refs for instructions/persona, capability bundles/tools/skills/MCP servers, environment attachments, sandbox/governance/model/demo/pricing policy, and exposure config. Unknown refs fail closed. There is **no `features` config member** and no executable `package`/`bash` contract here. The declaration is requirements-only: the host maps capability/environment/policy refs to explicit composition, spreading the boring-bash environment bundle into that agent's `createAgent().tools` only when resolved policy and environment facts allow it. Omitting a bash-capable bundle yields a pure agent with no file/bash tools. Child-app defaults can seed this registry in P6b, but workspace/user policy can narrow it.
