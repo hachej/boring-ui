@@ -120,3 +120,16 @@ No unknown ambient read remains from the non-test server-source scan above. The
 provider/harness rows marked **B** are intentionally not facade config unless the
 owning later bead (BBP1-005, P2, or P5) turns them into explicit provider/harness
 options.
+
+## Tool contribution authority not delivered by P1
+
+P1 only establishes the typed injection surface (`tools?: AgentTool[]`,
+`readinessRequirements?: string[]`). It does **not** deliver authoritative typed
+duplicate-tool or renderer-provenance enforcement. The current merge path is
+still `packages/agent/src/server/catalog/mergeTools.ts`, which keeps the
+last-registered tool on name collision and emits a warning.
+
+Reassign stricter duplicate/provenance enforcement to P3's routes/tools boundary
+work, especially [`../P3-routes-tools/TODO.md`](../P3-routes-tools/TODO.md)
+`BBP3-017`. Do not read this P1 inventory as completed authority that flattens
+or validates all tool contributions.

@@ -1,5 +1,11 @@
 # P1-headless-core — Handoff checklist
 
+## Implementation status (2026-07-08)
+
+BBP1-001/002/003 are merged on `main` (#523/#529/#530, relanded by #537).
+BBP1-004/005/006 are implemented and in review as #543/#545/#547 (this stack).
+This pack text is authoritative as of this branch.
+
 Derived strictly from [TODO.md](./TODO.md) and [PLAN.md](./PLAN.md). Tick each before calling this package done. Invent nothing.
 
 ## Prerequisites (packages + gates)
@@ -7,12 +13,12 @@ Derived strictly from [TODO.md](./TODO.md) and [PLAN.md](./PLAN.md). Tick each b
 - [ ] #391 points to the v2 pack and BBP0-001..005 are merged (no P1 bead starts before this — per P0 review gate)
 
 ## Beads
-- [ ] BBP1-001 — Config-surface inventory: enumerate every env/cwd/file-discovery read in agent server code
-- [ ] BBP1-002 — `createAgent()` façade (Fastify-free)
-- [ ] BBP1-003 — Make `createAgentApp()` + `registerAgentRoutes()` thin adapters
-- [ ] BBP1-004 — `runtime: 'none'` pure path + `sessionStorageRoot` separation
-- [ ] BBP1-005 — pi-coding-agent cwd/resource assumption audit → findings + seals
-- [ ] BBP1-006 — Invariant + smoke tests
+- [x] BBP1-001 — Config-surface inventory: enumerate every env/cwd/file-discovery read in agent server code
+- [x] BBP1-002 — `createAgent()` façade (Fastify-free)
+- [x] BBP1-003 — Make `createAgentApp()` + `registerAgentRoutes()` thin adapters
+- [x] BBP1-004 — `runtime: 'none'` pure path + `sessionStorageRoot` separation
+- [x] BBP1-005 — pi-coding-agent cwd/resource assumption audit → findings + seals
+- [x] BBP1-006 — Invariant + smoke tests
 
 ## Verification commands
 - [ ] `pnpm --filter @hachej/boring-agent run build`
