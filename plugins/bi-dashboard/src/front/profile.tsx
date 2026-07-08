@@ -144,8 +144,12 @@ function formatMetricValue(value: unknown, format: MetricFormat | undefined): st
 }
 
 function chartNumber(value: unknown, format: MetricFormat | undefined): number {
+  return chartNumericValue(value, format) ?? 0
+}
+
+function chartNumericValue(value: unknown, format: MetricFormat | undefined): number | undefined {
   const number = Number(value)
-  if (!Number.isFinite(number)) return 0
+  if (!Number.isFinite(number)) return undefined
   return format === "percent" ? number * 100 : number
 }
 
@@ -282,9 +286,9 @@ function scatterDatasets(rows: Record<string, unknown>[], x: unknown, y: unknown
   const colorField = typeof color === "string" && color.length > 0 ? color : undefined
   const groups = new Map<string, Array<{ x: number; y: number; label?: string }>>()
   for (const row of rows) {
-    const xValue = chartNumber(row[xField], fieldFormat(xField, formats))
-    const yValue = chartNumber(row[yField], fieldFormat(yField, formats))
-    if (!Number.isFinite(xValue) || !Number.isFinite(yValue)) continue
+    const xValue = chartNumericValue(row[xField], fieldFormat(xField, formats))
+    const yValue = chartNumericValue(row[yField], fieldFormat(yField, formats))
+    if (xValue === undefined || yValue === undefined) continue
     const group = colorField && row[colorField] != null ? humanizeFieldName(String(row[colorField])) : fieldLabel(yField, labels)
     const data = groups.get(group) ?? []
     data.push({ x: xValue, y: yValue, label: row[colorField ?? xField] == null ? undefined : String(row[colorField ?? xField]) })

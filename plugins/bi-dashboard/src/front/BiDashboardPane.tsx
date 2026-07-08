@@ -161,13 +161,10 @@ export function BiDashboardPane({ params }: PaneProps<BiDashboardPaneParams>) {
           <DashboardJsonViewer draft={jsonDraft} />
         ) : spec ? (
           <>
-            <div className="mb-3 flex min-w-0 flex-wrap items-end justify-between gap-3">
+            <div className="mb-3 min-w-0">
               <div className="min-w-0">
                 <h1 className="truncate text-2xl font-semibold tracking-tight">{spec.title}</h1>
                 {spec.description ? <p className="mt-1 max-w-4xl text-sm text-muted-foreground">{spec.description}</p> : null}
-              </div>
-              <div className="shrink-0 rounded-md border border-border/70 bg-card px-2.5 py-1.5 text-xs text-muted-foreground shadow-sm">
-                Local PostgreSQL
               </div>
             </div>
 
