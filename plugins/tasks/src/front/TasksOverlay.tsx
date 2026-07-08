@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react"
 import { IconButton } from "@hachej/boring-ui-kit"
+import { useWorkspacePluginClient } from "@hachej/boring-workspace"
 import { useAppLeftOverlayChrome, type BoringFrontAppLeftOverlayProps } from "@hachej/boring-workspace/plugin"
 import { X } from "lucide-react"
 import type { BoringTaskAdapter } from "../shared"
@@ -24,21 +25,22 @@ function TasksGlyph({ className }: { className?: string }) {
 
 export function TasksOverlay({ onClose }: BoringFrontAppLeftOverlayProps) {
   const { headerInsetStart, headerInsetEnd } = useAppLeftOverlayChrome()
+  const pluginClient = useWorkspacePluginClient()
   const [httpAdapters, setHttpAdapters] = useState<BoringTaskAdapter[] | null>(null)
 
   useEffect(() => {
     let cancelled = false
     const loadSources = async () => {
       try {
-        const sources = await listHttpTaskSources()
-        if (!cancelled) setHttpAdapters(sources.map((source) => createHttpTaskAdapter(source)))
+        const sources = await listHttpTaskSources(pluginClient)
+        if (!cancelled) setHttpAdapters(sources.map((source) => createHttpTaskAdapter(source, pluginClient)))
       } catch {
         if (!cancelled) setHttpAdapters([])
       }
     }
     void loadSources()
     return () => { cancelled = true }
-  }, [])
+  }, [pluginClient])
 
   const adapters = useMemo(() => {
     if (httpAdapters === null) return null
