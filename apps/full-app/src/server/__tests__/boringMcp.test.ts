@@ -173,6 +173,8 @@ describe('full-app boring-mcp binding', () => {
 
   it('uses a pure server plugin factory for enabled/disabled config', () => {
     expect(createFullAppBoringMcpServerPlugins({ BORING_MCP_ENABLED: '0' } as NodeJS.ProcessEnv)).toEqual([])
+    expect(createFullAppBoringMcpServerPlugins({ NODE_ENV: 'production' } as NodeJS.ProcessEnv)).toEqual([])
+    expect(createFullAppBoringMcpServerPlugins({ NODE_ENV: 'production', BORING_MCP_ENABLED: '1' } as NodeJS.ProcessEnv).map((plugin) => plugin.id)).toEqual([BORING_MCP_PLUGIN_ID])
     expect(createFullAppBoringMcpServerPlugins({ BORING_MCP_ENABLED: '1' } as NodeJS.ProcessEnv).map((plugin) => plugin.id)).toEqual([BORING_MCP_PLUGIN_ID])
   })
 
