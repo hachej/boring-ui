@@ -187,8 +187,10 @@ Matches `INDEX.md` "Phase 1":
       tools: toolNames(actualRegisteredTools),
       skills: [],
       mcpServers: [],
+      plugins: [],
     }
     ```
+  - **Amendment (2026-07-08):** the projection includes resolved `plugins[]`; after P6, plugin-contributed tools/skills/MCP servers appear in the same facts projection as built-in contributions.
   - Coarse direct/local/vercel compatibility projection preserves current behavior:
     ```ts
     {
