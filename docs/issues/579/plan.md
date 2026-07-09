@@ -83,9 +83,17 @@ recordings/2026-07-09-1530-recording.recording/
 
 Use browser-native `MediaRecorder` output (`webm`/`ogg` depending on support). Do not promise `.mp4` unless we add a conversion pipeline.
 
+## Chunk container strategy
+
+Do not assume every `MediaRecorder.start(timesliceMs)` `dataavailable` blob is an independently decodable media file. For WebM/Opus, later blobs can depend on the initial container/header segment.
+
+V1 strategy: **short rolling MediaRecorder files**. The client records each chunk as an independent file by starting a recorder, stopping it at the chunk boundary, waiting for the final `dataavailable`, then immediately starting the next recorder. Each uploaded chunk must be independently decodable by the backend. The UI should treat the tiny restart gap as acceptable for v1 doctor-note transcription; exact audio continuity/word-level sync is explicitly out of scope.
+
+If later proof shows restart gaps are unacceptable, replace this with a server-side container-normalization strategy, but do not mix the two models in v1. The manifest, retry, resume, and re-transcription logic all assume independently decodable chunk files.
+
 ## Audio ingestion contract
 
-The frontend must choose the first supported MIME type from a backend-advertised list, for example:
+The frontend must choose the first MIME type in the intersection of backend-advertised types and `MediaRecorder.isTypeSupported(...)`, for example:
 
 ```text
 audio/webm;codecs=opus
@@ -132,7 +140,7 @@ Capture recovery is different from transcription recovery: browser audio capture
 - `lastHeartbeatAt`: updated while MediaRecorder is alive;
 - `status`: `recording | interrupted | stopping | finalizing | done | failed | cancelled`.
 
-If heartbeats stop past a timeout, backend marks the recording `interrupted`, releases the one-active-recording lock, and continues transcribing chunks already saved. The global bar should show `Recording interrupted. Saved audio is being finalized.` if the user reloads into an interrupted recording. Starting a new recording is allowed after interruption, but never silently appends to the old one.
+If heartbeats stop past a timeout, backend marks the recording `interrupted`, releases the one-active-recording lock, and continues transcribing chunks already saved. Interruption is terminal for that owner token: later heartbeat/chunk/stop/cancel calls from the stale owner return `TRANSCRIPTION_RECORDING_OWNER_MISMATCH` (or `TRANSCRIPTION_RECORDING_INTERRUPTED`) and must not append more audio. The global bar should show `Recording interrupted. Saved audio is being finalized.` if the user reloads into an interrupted recording. Starting a new recording is allowed after interruption, but never silently appends to the old one.
 
 ## Transcript timestamp metadata
 
@@ -191,7 +199,7 @@ Add long recording APIs:
 
 ```http
 POST /api/v1/transcription/document-recordings
-POST /api/v1/transcription/document-recordings/:recordingId/chunks
+PUT  /api/v1/transcription/document-recordings/:recordingId/chunks/:index
 POST /api/v1/transcription/document-recordings/:recordingId/heartbeat
 GET  /api/v1/transcription/document-recordings/:recordingId
 POST /api/v1/transcription/document-recordings/:recordingId/stop
@@ -199,6 +207,15 @@ POST /api/v1/transcription/document-recordings/:recordingId/cancel
 ```
 
 `document-recordings` creation returns an owner/session token. Chunk upload, heartbeat, stop, and cancel must include that owner token and fail with `TRANSCRIPTION_RECORDING_OWNER_MISMATCH` if another tab/session tries to mutate the active recording.
+
+Chunk upload is idempotent and ordered by explicit metadata:
+
+- route key: `recordingId + index`;
+- required metadata: `index`, `startMs`, `endMs`, `mimeType`, `byteLength`, and optional checksum;
+- retrying the same `index` overwrites/replaces the incomplete same-index chunk, never appends a duplicate;
+- retrying an already-transcribed `index` is rejected with `TRANSCRIPTION_CHUNK_ALREADY_TRANSCRIBED` unless an explicit admin/reprocess endpoint is added later;
+- out-of-order arrival is allowed, but manifest ordering is always by `index`;
+- the client keeps an in-memory retry queue for chunks until the backend acknowledges them, and promotion/stop must not discard unacknowledged chunks.
 
 Backend must reject concurrent long recordings:
 
@@ -214,7 +231,9 @@ Frontend should focus/show the existing global recording bar instead of starting
 
 ## Backend ownership and behavior
 
-The first implementation slice must introduce the transcription package/plugin/service in the workspace backend. It owns:
+The first implementation slice must introduce an **internal/app plugin package or core workspace service** in the workspace backend. It must register trusted boot-time Fastify routes; it is not a runtime/generated plugin and must not rely on dynamic backend routes. This keeps route ownership, `Workspace` handoff, and path validation in the same trusted boundary as other built-in workspace services.
+
+It owns:
 
 - route registration for `/api/v1/transcription/*`;
 - shared request/response types and stable error codes;
@@ -227,8 +246,12 @@ Backend behavior:
 - Save every chunk before enqueueing transcription.
 - Transcribe chunk-by-chunk with the configured backend (`whisper.cpp` first).
 - Write chunk transcripts to recording sidecars (`chunk-000000-000060.md`) and update a generated managed transcript document/section. Do not directly mutate arbitrary user-authored prose outside the managed transcript section.
-- If the target markdown file exists and already has user edits, append/update only the managed block delimited by stable comments; otherwise create the generated transcript document.
-- Store timestamps with every chunk and render each transcript segment with a visible start/end timestamp heading.
+- If the target markdown file exists and already has user edits, append/update only a managed block delimited by stable sentinels:
+  - `<!-- boring:transcript:begin recordingId=rec_abc123 -->`
+  - `<!-- boring:transcript:end recordingId=rec_abc123 -->`
+- A document may contain multiple recording blocks over time, but v1 only mutates the block whose `recordingId` matches the active/finalizing recording. New recordings append a new managed block; they do not reuse or merge into older blocks.
+- Serialize transcript merges through one writer per recording/document. Chunks may transcribe out of order, but managed-block writes must sort by `index` so late chunks land in the correct position and never corrupt user prose outside the sentinels.
+- Store timestamps with every chunk and render each transcript segment with a visible start/end timestamp heading inside the managed block.
 - Never overwrite arbitrary paths; document-relative sidecars must use the same workspace path validation rules as the transcription plugin.
 - Keep `/transcribe` for small snippets only after it is introduced; enforce a size/duration limit and return a stable promote-required error (`TRANSCRIPTION_REQUIRES_DOCUMENT_RECORDING`) when exceeded.
 
@@ -245,16 +268,16 @@ Backend behavior:
 - Partial transcript survives refresh/restart and can resume from saved chunks.
 - Recording capabilities endpoint advertises supported MIME types and short-mode size/duration limits.
 - Heartbeats keep active recording ownership alive; chunk/stop/cancel mutations reject stale or wrong owner tokens.
-- If browser capture is interrupted by refresh/crash, the backend marks the recording interrupted, releases the active-recording lock, and finalizes already-saved chunks.
+- If browser capture is interrupted by refresh/crash, the backend marks the recording interrupted and releases the active-recording lock in the long-recording backend slice; final transcription of already-saved chunks is proven once the chunk transcription/resume slice lands.
 - User can open the transcript from the global recording bar.
 - Short transcription endpoint remains compatible for quick composer dictation once introduced.
 
 ## Slices
 
-1. **Transcription backend foundation** — introduce the package/plugin/service, route registration, shared types/errors, STT adapter boundary, `GET /capabilities`, supported MIME discovery, and the short `/transcribe` endpoint.
+1. **Transcription backend foundation** — introduce the internal/app plugin package or core workspace service, route registration, shared types/errors, STT adapter boundary, `GET /capabilities`, supported MIME discovery, and the short `/transcribe` endpoint.
 2. **Short composer dictation** — mic button, chunked in-memory short buffer, capabilities-driven MIME/limit selection, short transcription POST, transcript insert/send, size/duration guard.
-3. **Auto-promotion handoff** — upload buffered short-mode chunks as initial long-recording chunks, then continue background uploads.
-4. **Long recording backend** — document-recording APIs, manifest, chunk upload, heartbeat API, owner-token lock, stale interruption handling, stop/cancel.
+3. **Long recording backend** — document-recording APIs, manifest, idempotent chunk upload, heartbeat API, owner-token lock, stale interruption handling, stop/cancel.
+4. **Auto-promotion handoff** — upload buffered short-mode chunks as initial long-recording chunks, then continue background uploads.
 5. **Global recording bar** — app-wide status, stop/cancel/open transcript, state polling or SSE.
 6. **Document Record button** — markdown editor/document action, attach recording to current markdown file.
 7. **Chunk transcription + resume** — transcribe chunks as they arrive, write sidecars plus managed transcript section/file, recover pending work after restart.
