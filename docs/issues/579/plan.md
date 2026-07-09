@@ -105,6 +105,33 @@ Each long recording owns a manifest:
 
 The manifest is the recovery source of truth. On restart, the backend skips chunks already transcribed and resumes pending chunks.
 
+## Transcript timestamp metadata
+
+Every transcript segment should include passive timestamp metadata from the first implementation, even before building an audio/doc sync UI.
+
+Use simple timestamp headings in markdown:
+
+```md
+# Consultation transcript
+
+> Recording started: 2026-07-09 14:00
+
+## 00:00–01:00
+
+Patient reports...
+
+## 01:00–02:00
+
+Doctor asks...
+```
+
+These headings are useful on their own and preserve enough structure for later audio affordances:
+
+- show an audio player under the document top bar when a recording manifest is linked;
+- show which transcript segment is currently visible in the document;
+- click a segment/timestamp to play the matching audio chunk;
+- avoid exact word-level sync or moving play indicators in v1.
+
 ## API shape
 
 Keep the existing short transcription endpoint for composer snippets:
@@ -140,7 +167,7 @@ Frontend should focus/show the existing global recording bar instead of starting
 - Save every chunk before enqueueing transcription.
 - Transcribe chunk-by-chunk with the configured backend (`whisper.cpp` first).
 - Append/update partial transcript in the target markdown document or a sidecar partial file, then reconcile final text when chunks complete.
-- Store timestamps with every chunk.
+- Store timestamps with every chunk and render each transcript segment with a visible start/end timestamp heading.
 - Never overwrite arbitrary paths; document-relative sidecars must use the same workspace path validation rules as the transcription plugin.
 - Keep sync `/transcribe` for small snippets only; enforce a size/duration limit and return a promote-required error when exceeded.
 
@@ -152,6 +179,7 @@ Frontend should focus/show the existing global recording bar instead of starting
 - Only one long recording can run at a time across the app.
 - Stop is always visible while a long recording is active.
 - Audio chunks are saved beside the target document with start/end timestamp names.
+- Transcript output includes visible start/end timestamp headings for each segment.
 - Partial transcript survives refresh/restart and can resume from saved chunks.
 - User can open the transcript from the global recording bar.
 - Existing short transcription endpoint remains compatible for quick composer dictation.
