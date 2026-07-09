@@ -8,7 +8,7 @@ For the bare agent chat use [`agent-playground`](../agent-playground/README.md);
 
 `pnpm --filter workspace-playground dev` builds the workspace stack to `dist/` (`build:deps`) and starts Vite on **`http://localhost:5200`**. A Vite plugin boots `createWorkspaceAgentServer({ mode: 'local' })` in-process on **`http://127.0.0.1:5210`**; Vite proxies `/api/v1` to it. The agent owns the filesystem and the UI bridge — there is no mock API.
 
-The frontend (`src/front/App.tsx`) mounts `WorkspaceAgentFront` with two front plugins: `askUserPlugin` (`@hachej/boring-ask-user`) and a local deck plugin built on `@hachej/boring-deck`. The server registers `defaultPluginPackages`: `@hachej/boring-ask-user` plus the local `src/plugins/playgroundDataCatalog` adapter (the data-catalog panel loads **server-side**).
+The frontend (`src/front/App.tsx`) mounts `WorkspaceAgentFront` with front plugins for ask-user (`@hachej/boring-ask-user`), deck (`@hachej/boring-deck`), and Diagram (`@hachej/boring-diagram`). The server registers `defaultPluginPackages`: `@hachej/boring-ask-user` and `@hachej/boring-diagram`.
 
 ### Rebuild required after package edits
 
@@ -25,13 +25,13 @@ Unlike `agent-playground`, the Vite aliases here point at the **built `dist/` ar
 pnpm --filter workspace-playground dev
 ```
 
-Open `http://localhost:5200`. Append `?showcase=1` for the showcase route, visit `/full-page` for the full-page panel, or visit `/mobile-spike?state=one` for the issue #580 front-only mobile shell spike. The mobile spike supports `state=one|two|drawer|workbench|dense` and uses fixture-only in-memory chat sessions.
+Open `http://localhost:5200`. Append `?showcase=1` for the showcase route, or visit `/full-page` for the full-page panel.
 
 ## Scripts
 
 | Script | What it does |
 |--------|--------------|
-| `build:deps` | Build core, agent, ui-kit, workspace, deck, ask-user, data-explorer, data-catalog to `dist/` |
+| `build:deps` | Build core, agent, ui-kit, workspace, deck, ask-user, diagram, data-explorer, data-catalog to `dist/` |
 | `dev` | `build:deps`, then `vite` (UI :5200 + in-process agent :5210) |
 | `build` | `build:deps`, then `vite build` |
 | `typecheck` | `tsc --noEmit` |
@@ -51,7 +51,7 @@ Open `http://localhost:5200`. Append `?showcase=1` for the showcase route, visit
 
 ## Composition
 
-Depends on `@hachej/boring-workspace` (the workbench shell + `createWorkspaceAgentServer`), `@hachej/boring-agent` (the runtime), `@hachej/boring-deck` and `@hachej/boring-ask-user` (plugins), and `@hachej/boring-data-catalog` / `@hachej/boring-data-explorer`. It does **not** use `@hachej/boring-core` — there is no auth or database layer.
+Depends on `@hachej/boring-workspace` (the workbench shell + `createWorkspaceAgentServer`), `@hachej/boring-agent` (the runtime), `@hachej/boring-deck`, `@hachej/boring-ask-user`, and `@hachej/boring-diagram` (plugins), and `@hachej/boring-data-catalog` / `@hachej/boring-data-explorer`. It does **not** use `@hachej/boring-core` — there is no auth or database layer.
 
 ## License
 

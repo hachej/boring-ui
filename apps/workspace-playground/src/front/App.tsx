@@ -5,8 +5,8 @@ import { FileTreePane, WorkspaceProvider } from "@hachej/boring-workspace"
 import { WorkspaceAgentFront, WorkspaceFullPagePanel, parseFullPagePanelLocation } from "@hachej/boring-workspace/app/front"
 import { definePlugin, type WorkspaceSourceProps } from "@hachej/boring-workspace/plugin"
 import { createAskUserPlugin } from "@hachej/boring-ask-user/front"
+import { diagramPlugin } from "@hachej/boring-diagram/front"
 import { SHOWCASE_SESSION_ID, seedShowcase } from "./showcaseMessages"
-import { MobileSpikeShell, isMobileSpikeRoute } from "./MobileSpike"
 
 function isShowcaseRoute(): boolean {
   if (typeof window === "undefined") return false
@@ -89,8 +89,8 @@ const multiFilesystemPlaygroundPlugin = definePlugin({
 })
 
 const askUserPlugin = createAskUserPlugin({ appLeftInbox: true })
-const workspacePlugins = [askUserPlugin, playgroundDeckPlugin]
-const multiFilesystemWorkspacePlugins = [askUserPlugin, playgroundDeckPlugin, multiFilesystemPlaygroundPlugin]
+const workspacePlugins = [askUserPlugin, playgroundDeckPlugin, diagramPlugin]
+const multiFilesystemWorkspacePlugins = [askUserPlugin, playgroundDeckPlugin, diagramPlugin, multiFilesystemPlaygroundPlugin]
 const externalPluginsEnabled = (import.meta as ImportMeta & { env?: Record<string, string> }).env?.VITE_BORING_EXTERNAL_PLUGINS === "1"
 
 function resetPlaygroundStorageIfRequested(): void {
@@ -146,12 +146,11 @@ export function WorkspaceShell() {
   resetPlaygroundStorageIfRequested()
   const showcase = useMemo(isShowcaseRoute, [])
   const fullPage = useMemo(isFullPageRoute, [])
-  const mobileSpike = useMemo(isMobileSpikeRoute, [])
   const multiFilesystem = useMemo(isMultiFilesystemPlaygroundRoute, [])
   const activeWorkspacePlugins = multiFilesystem ? multiFilesystemWorkspacePlugins : workspacePlugins
   const [projectName, setProjectName] = useState("Workspace")
   const [workspaceId, setWorkspaceId] = useState("Workspace")
-  const [metaLoaded, setMetaLoaded] = useState(showcase || fullPage || mobileSpike)
+  const [metaLoaded, setMetaLoaded] = useState(showcase || fullPage)
 
   const sessions = useMemo(
     () =>
@@ -174,7 +173,7 @@ export function WorkspaceShell() {
   )
 
   useEffect(() => {
-    if (showcase || fullPage || mobileSpike) return
+    if (showcase || fullPage) return
     let cancelled = false
     void fetch("/api/v1/workspace/meta")
       .then(async (res) => res.ok ? await res.json() as WorkspaceMeta : null)
@@ -194,16 +193,12 @@ export function WorkspaceShell() {
         if (!cancelled) setMetaLoaded(true)
       })
     return () => { cancelled = true }
-  }, [showcase, fullPage, mobileSpike])
+  }, [showcase, fullPage])
 
   if (showcase) seedShowcase(SHOWCASE_SESSION_ID)
 
   if (fullPage) {
     return <WorkspaceFullPageShell />
-  }
-
-  if (mobileSpike) {
-    return <MobileSpikeShell />
   }
 
   if (!metaLoaded) {
