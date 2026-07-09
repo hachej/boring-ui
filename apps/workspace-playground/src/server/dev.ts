@@ -75,7 +75,7 @@ export async function startPlaygroundServer(): Promise<void> {
       runtimeModeAdapter: remoteWorkerModeAdapter,
       logger: true,
       externalPlugins: EXTERNAL_PLUGINS_ENABLED,
-      defaultPluginPackages: ["@hachej/boring-ask-user", "@hachej/boring-diagram"],
+      defaultPluginPackages: ["@hachej/boring-ask-user", "@hachej/boring-tasks", "@hachej/boring-diagram"],
       runtimeProvisioner: multiFilesystemPlayground
         ? async ({ runtimeBundle }) => {
             const bundle = runtimeBundle as typeof runtimeBundle & { filesystemBindings?: unknown[] }
