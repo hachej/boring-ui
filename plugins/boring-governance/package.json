@@ -41,7 +41,8 @@
     "typecheck": "tsc --noEmit",
     "test": "vitest run --no-file-parallelism",
     "lint": "pnpm run typecheck",
-    "clean": "rm -rf dist .tsbuildinfo"
+    "clean": "rm -rf dist .tsbuildinfo",
+    "smoke:governance-matrix": "tsx src/scripts/governance-access-matrix.ts"
   },
   "peerDependencies": {
     "@hachej/boring-agent": "workspace:*",
@@ -71,6 +72,10 @@
     "react-dom": "^19.0.0",
     "tsup": "^8.4.0",
     "typescript": "~5.9.3",
-    "vitest": "^3.2.6"
+    "vitest": "^3.2.6",
+    "tsx": "^4.20.6"
+  },
+  "bin": {
+    "boring-governance-access-matrix": "./dist/scripts/governance-access-matrix.js"
   }
 }
