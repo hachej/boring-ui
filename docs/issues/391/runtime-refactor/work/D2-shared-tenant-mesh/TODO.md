@@ -77,12 +77,15 @@ tenant boundary.
   runtime binding installation path, registry lifecycle tests.
 - **Notes:** `register(spec)` validates the `WorkspaceAgentsDeclaration`
   through BBP6-009, seeds `sessionStorageRoot` + workspace/env-pool roots +
-  files/skills/context, materializes secret refs through P5 broker, and installs
-  a runtime binding plus `AgentRegistry` instance for the new `workspaceId`.
+  files/skills/context, resolves `runtimeProfileRef` or the provider-default
+  image, runs the provider-image-support check, materializes secret refs through
+  P5 broker, and installs a runtime binding plus `AgentRegistry` instance for
+  the new `workspaceId`.
   Registration is idempotent and does not require redeploy.
 - **Tests:** valid tenant spec installs one binding; rerun is idempotent;
-  duplicate host/workspace conflicts fail closed; unknown declaration refs fail
-  closed; no raw secret appears in registry snapshots/logs.
+  duplicate host/workspace conflicts fail closed; unknown declaration refs and
+  unsupported/unknown runtime-image support fail closed before binding; no raw
+  secret appears in registry snapshots/logs.
 - **Acceptance:** a running process can add a tenant binding safely without
   restart or redeploy.
 

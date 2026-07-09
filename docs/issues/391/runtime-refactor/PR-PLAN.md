@@ -238,12 +238,13 @@ Adds the `@hachej/boring-sandbox/mounts` export (created package from P2) + the 
 
 ### P6 — Plugin + child-app integration (Phase 6, off P5) — **split P6a / P6b**
 
-**P6a — child-app-independent (dispatchable after P5).** Grep-gated: BBP6-002/003/004/009/010 contain **zero** `childAppId`/`workspaceKind`/`ChildApp`.
+**P6a — child-app-independent (dispatchable after P5).** Grep-gated: BBP6-002/003/004/009/009b/010 contain **zero** `childAppId`/`workspaceKind`/`ChildApp`.
 
 | PR | beads | nature | net-new vs budget | test deliverables | gate |
 | --- | --- | --- | --- | --- | --- |
 | pr1-agent-registry | BBP6-003 | new | ~150 (Map-backed) | register/get/list/has/delete; duplicate-id policy; grep-gate no child-app fields | agent `test` |
-| pr2-agents-declaration | BBP6-009 | new | ~300–600 (definition schema + seed) | two-agent `AgentDefinitionDeclaration` seeds two registry entries + default; `plugins?: PluginRef[]` accepted per agent; absent decl → one implicit `default`; dup/bad-default/unknown refs rejected incl. plugin refs; same-definition projection for P7/M1/M2/S3/S4/D1/D2 includes resolved plugins; optional host/subdomain binding + seed-source refs for D2; grep-gate no child-app fields | workspace/core/cli `test` |
+| pr2-agents-declaration | BBP6-009 | new | ~420–800 (definition schema + seed + runtime-profile seam) | two-agent `AgentDefinitionDeclaration` seeds two registry entries + default; `plugins?: PluginRef[]` and `runtimeProfileRef?` accepted per agent; absent decl → one implicit `default`; dup/bad-default/unknown refs rejected incl. plugin/runtime refs; shared runtime-profile types; host-seam ref resolution + provider-default digest validation; unified `SelectedRuntimeImage` stash in `AgentRegistry`; fixed-provider image-support check via `MODE_TO_PROVIDER` + `PROVIDER_CAPABILITIES`; malformed/unsupported/unknown fail closed with the named codes and `requirement:'runtimeImage'`; Vercel image pins fail closed at pr2; remote-worker defers support check to pr2b; same-definition projection for P7/M1/M2/S3/S4/D1/D2 includes resolved plugins/runtime; optional host/subdomain binding + seed-source refs for D2; grep-gate no child-app fields | workspace/core/cli `test` |
+| pr2b-remote-worker-image-support | BBP6-009b | new | ~60–120 | after BBP5-008 handshake resolves `runtimeImage`, remote-worker readiness reads the P6a-stashed `SelectedRuntimeImage` from `AgentRegistry` (not route binding) and support-checks both `source:'profile'` and `source:'provider-default'`; `true` readies, `false`/`'unknown'` fail closed with existing `SANDBOX_PROVIDER_*` codes and `requirement:'runtimeImage'` | boring-sandbox/host readiness `test` |
 | pr3-manifest-requires-bash-skill-filters | BBP6-002 | new | ~450–800 | requirements evaluated against resolved environment facts; invalid `bash` rejected pre-import; import-free proof; raw-secret reject; skill `boring.requires`-style filter at loader boundary; generated skills-index prompt fragment uses the filtered set; grep-gate clean | `lint:plugin-invariants` |
 | pr4-runtime-plugin-context | BBP6-004 | new | ~300–500 | context derived from policy (unspoofable); status-only secrets; dispatch unchanged | workspace `test` |
 | pr5-hosted-fail-closed | BBP6-005 | new | ~400–600 | hosted mode fails closed; iframe sandbox/CSP asserted; symlink/special-file rejected | `test` |
@@ -258,7 +259,7 @@ Adds the `@hachej/boring-sandbox/mounts` export (created package from P2) + the 
 | pr9-childapp-context 🚫blocked | BBP6-001 | new | ~300–500 (type-only import of platform type) | generic excludes child-app scope; narrows-never-widens; unknown id → stable error | `test` — **STOP+report if platform type absent** |
 | pr10-macro-scoping 🚫blocked | BBP6-006 | new + fixture | ~250 | Macro context yields Macro reqs; generic excludes; no leakage | `test` |
 
-**P6 total: 10 PRs (8 P6a + 2 P6b follow-up).** **Amendment (2026-07-08):** BBP6-010 adds the per-agent plugin-composition P6a PR. `AgentRegistry` (pr1) + the workspace `agents: [...]` declaration (pr2) are the P7 consumers that justify them. **P6b (pr9/pr10) is a tracked follow-up OUTSIDE the epic exit** — HARD BLOCKED on the shared child-app platform type; it does **not** gate P7 (P7 consumes P6a only) and does **not** gate P8. The epic ships on the 8 P6a PRs; the 2 P6b PRs land whenever `ResolvedChildAppContext`/#376 lands.
+**P6 total: 11 PRs (9 P6a + 2 P6b follow-up).** **Amendment (2026-07-08):** BBP6-009 gains per-agent `runtimeProfileRef?` plus provider-image-support validation, BBP6-009b adds the remote-worker post-handshake image-support companion, and BBP6-010 remains the per-agent plugin-composition P6a PR. `AgentRegistry` (pr1) + the workspace `agents: [...]` declaration (pr2) are the P7 consumers that justify them. **P6b (pr9/pr10) is a tracked follow-up OUTSIDE the epic exit** — HARD BLOCKED on the shared child-app platform type; it does **not** gate P7 (P7 consumes P6a only) and does **not** gate P8. The epic ships on the 9 P6a PRs; the 2 P6b PRs land whenever `ResolvedChildAppContext`/#376 lands.
 
 ### P7 — Multi-agent routing/session/search + inspection (Phase 7, off P6a **and** E1 **and** T2)
 
@@ -354,24 +355,24 @@ Adds the `@hachej/boring-sandbox/mounts` export (created package from P2) + the 
 | E2 | 3 | 3 | — |
 | P5 | 8 | 9 | — |
 | X1 | 5 | 5 | — |
-| P6 | 10 | 10 | 2 (P6b) |
+| P6 | 11 | 11 | 2 (P6b) |
 | P7 | 9 | 9 | — |
 | D1 | 5 | 6 | factory lane |
 | D2 | 7 | 7 | factory sidecar lane |
 | P8 | 3 | 3 | — |
 | S3 | 4 | 4 | — |
 | S4 | 3 | 3 | onboarding/status follow-up |
-| **TOTAL** | **112** | **~118** | 2 follow-up (P6b) + M1 sidecar + factory/onboarding follow-ups |
+| **TOTAL** | **113** | **~119** | 2 follow-up (P6b) + M1 sidecar + factory/onboarding follow-ups |
 
-**Expected overall: ~112 PRs (up to ~118 if every pre-declared split fires).** **Amendment (2026-07-08):** S1's 5 PRs and S2's 2 PRs are removed from #391 active scope, while D2 adds 7 factory-sidecar PRs and P6 adds 1 per-agent plugin-composition PR. The 2 P6b PRs are a tracked follow-up OUTSIDE the epic exit (hard-blocked on the shared child-app platform type) — they do not gate P7 or P8. M1 is an outreach-demo sidecar and does not gate P8. M2 is the committed MCP agent-surface follow-up; D1/D2/S4 are factory/onboarding follow-ups. P1 now includes reopened-P1 follow-ups A-D; T2 includes BBT2-007 input-asset intake; M2 adds 4 PRs; D1 adds 5 PRs (6 if its manifest slice splits); D2 adds 7 PRs; S4 adds 3 PRs.
+**Expected overall: ~113 PRs (up to ~119 if every pre-declared split fires).** **Amendment (2026-07-08):** S1's 5 PRs and S2's 2 PRs are removed from #391 active scope, while D2 adds 7 factory-sidecar PRs, P6 keeps the per-agent plugin-composition PR, and P6 adds 1 remote-worker image-support companion PR. The 2 P6b PRs are a tracked follow-up OUTSIDE the epic exit (hard-blocked on the shared child-app platform type) — they do not gate P7 or P8. M1 is an outreach-demo sidecar and does not gate P8. M2 is the committed MCP agent-surface follow-up; D1/D2/S4 are factory/onboarding follow-ups. P1 now includes reopened-P1 follow-ups A-D; T2 includes BBT2-007 input-asset intake; M2 adds 4 PRs; D1 adds 5 PRs (6 if its manifest slice splits); D2 adds 7 PRs; S4 adds 3 PRs.
 
 ### Critical-path PR sequence (longest serial chain)
 
 ```
-P0(1) → P1(10) → P2(7) → P3(6) → P5(8) → P6a(8) → P7(9) → P8(3)   = 52 PRs serial
+P0(1) → P1(10) → P2(7) → P3(6) → P5(8) → P6a(9) → P7(9) → P8(3)   = 53 PRs serial
 ```
 
-- **All-factory serial path if D1/D2/S4 are included:** `P0(1) → P1(10) → P2(7) → P3(6) → P5(8) → P6a(8) → P7(9) → M2(4) → D2(7) → S4(3) = 63 PRs serial` (D1 is parallel after M2 and shorter than D2 if its manifest slice does not split; S4 also needs S3, but S3's P7+T2 path is shorter than D2).
+- **All-factory serial path if D1/D2/S4 are included:** `P0(1) → P1(10) → P2(7) → P3(6) → P5(8) → P6a(9) → P7(9) → M2(4) → D2(7) → S4(3) = 64 PRs serial` (D1 is parallel after M2 and shorter than D2 if its manifest slice does not split; S4 also needs S3, but S3's P7+T2 path is shorter than D2).
 - **Off the same P1 root, in parallel:** the M1 outreach-demo sidecar `M1(3)` after P1 pr2 (share-link slice is separately gated on #424/public-share API), the transport lane `T1(6) → T2(7) → S3(4) → S4(3)`, the environment lane `E1(5) → E2(3)` (E1 also needs P3; E2 feeds no critical successor except P8), the **mount lane `X1(5)`** (needs P2+P5+E1; bash-lane parallel after those preconditions; feeds no critical successor except P8), and the **MCP/factory lane `M2(4) → { D1(5), D2(7) } → S4(3)`** after P7/T2. **Amendment (2026-07-08):** S1/S2 are no longer #391 lanes; concrete Slack moves to "Slack via flue channels" and spreadsheet/pi-excel moves to issue #551.
 - **P7 also needs E1 and T2** (T2 formalizes the `sessionId`-only transport + two-handles guard P7's addressing/binding rides, and carries the T1 durable approvals/`resolveInput` the external-hook route and `/info` channel facts read); **D2 also needs T1/P1/P5/P6a/P7/M2**; **S3 needs T2 + P7**; **P8 gates on every delivered runtime lane EXCEPT P6b, M1, M2, D1, D2, and S4**. M2 is a committed surface follow-up and may ship after P8 if the runtime exit is otherwise green.
 - **P6b** is off the critical path (a tracked follow-up, hard-blocked) and gates **neither P7 nor P8** (P7 consumes P6a only; P8 only verifies P6b plus M2/D1/D2/S4 follow-up or status tracking) — so P6b's block can never deadlock the epic exit.
