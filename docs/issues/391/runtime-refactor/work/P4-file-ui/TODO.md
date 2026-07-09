@@ -121,6 +121,13 @@ Filesystem front plugin lives in `@hachej/boring-bash/plugin` and is loaded thro
 - **Tests:** existing mention-picker/useComposerPickers/chatSubmit tests move or are rewritten under boring-bash; add a pure-mode ChatPanel/composer test that no file mention provider appears, no file upload button is enabled, no `/api/v1/files/search` request is made, and submitting a draft does not append `@files:`; add a bash-enabled test that file mentions/search/uploads preserve current behavior and filesystem identity.
 - **Acceptance:** file mentions, file slash commands, workspace/file upload affordances, and `@files:` enrichment exist only when `boring-bash/plugin` is attached and resolved environment facts allow them; pure-mode front has zero filesystem vocabulary in the composer. Provider-neutral direct input-asset affordances may appear when host/provider policy permits provider-direct intake and must not call `/api/v1/files/upload` or synthesize `@files:`.
 
+### BBP4-017 — Files-pane mount discovery affordance (#550 gap 5) [size S] — **Amendment (2026-07-06)**
+
+- **Files touch/create:** the moved file-tree pane (`packages/boring-bash/src/plugin/filesystem/front/file-tree/*` post-BBP4-011) + its tests.
+- **Notes:** No affordance in the Files pane advertises that a company-context mount exists or is filtered — users find it by exploring. Add a **capability-gated file-tree affordance**: a labeled mount node (and/or an empty-state hint) for governed mounts, driven by `/governance/me`. Capability-gated means: no governance capability → no affordance, no `/governance/me` request, zero governance vocabulary in pure mode (the capability-residue invariant). Discovery only — the affordance never becomes a second visibility decision path; what the user can see still resolves solely through `getFilesystemBindings` (UI/agent parity, 475 watch-list).
+- **Tests:** with a governed company-context mount, the tree shows the labeled mount node / filtered empty-state hint sourced from `/governance/me`; without governance, no affordance and no `/governance/me` request; visible paths remain identical to the binding-resolved set.
+- **Acceptance:** users can discover that a governed mount exists/is filtered from the Files pane; pure mode is unchanged; no second visibility path.
+
 ## Verification — exact commands verified against package.json scripts
 
 ```bash
@@ -157,6 +164,7 @@ Matches [`../../PR-PLAN.md`](../../PR-PLAN.md) P4 rows exactly:
 - `pr3-move-tool-renderers` → BBP4-015.
 - `pr4-composer-providers` → BBP4-016.
 - `pr5-remove-static-registration` → BBP4-014.
+- `pr6-mount-discovery` → BBP4-017 (Amendment 2026-07-06; new small PR — it is post-move front behavior, so it cannot fold into the pure-move PRs).
 
 ## Review gates
 

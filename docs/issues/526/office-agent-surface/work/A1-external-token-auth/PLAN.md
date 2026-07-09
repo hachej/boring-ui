@@ -15,6 +15,12 @@ Delta: add workspace-scoped bearer tokens for external Office surfaces. Tokens a
 - Tests proving bearer auth works for workspace file/agent routes and does not open admin routes.
 - CORS documentation/test coverage for taskpane origins through existing `CORS_ORIGINS`.
 
+**Amendment (2026-07-06):** A1 also fixes the external login contract consumed by the #551 wrapper gate (Lane C, C1):
+
+- A browser-session-authenticated endpoint lists the user's workspaces and issues a workspace token, returning `{baseUrl, workspaceId, token, expiresAt, user}`.
+- Token principals still cannot reach token CRUD; re-issue after expiry goes back through the browser-session login flow.
+- Document the `CORS_ORIGINS` values required for the production taskpane origin.
+
 ## Threat Notes
 
 - Store only a hash of the secret, never the raw token.

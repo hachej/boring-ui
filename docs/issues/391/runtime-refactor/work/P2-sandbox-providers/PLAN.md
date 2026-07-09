@@ -36,6 +36,7 @@ resolved facts; they do not infer authority from mode/provider labels.
 - remote-worker split docs: protocol/shared types → `boring-sandbox/shared`, client/provider adapter → `boring-sandbox/providers`, optional server package path;
 - invariant/import boundary: **acyclic** `boring-sandbox → agent(types)`; `boring-bash → boring-sandbox(values) + agent(types)`; agent imports neither;
 - migration strategy (v2, strict): **migrate every importer in the same PR** — no type-only old-path exports, no re-export stubs, no host shims that outlive the phase. Intra-phase transitional code carries `// TODO(remove:<bead-id>)` + a deletion bead.
+- **Amendment (2026-07-06):** publish-pipeline parity for `@hachej/boring-sandbox` (BBP2-009, before BBP2-005): before `@hachej/boring-bash` gains a value dependency on `@hachej/boring-sandbox`, add sandbox to all five publish lists (`scripts/audit-publish-manifests.mjs`, version bump, CI versioning, CI publish, release workflow), ordered before `packages/boring-bash`, and bring it onto the current version cohort (it sits at `0.1.61` vs the `0.1.64` cohort). Until then, the published boring-bash must not depend on sandbox.
 - Do not move providers until Phase 1 injection is complete.
 
 ## Exit criteria

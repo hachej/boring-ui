@@ -14,6 +14,7 @@ Derived strictly from [TODO.md](./TODO.md) and [PLAN.md](./PLAN.md). Tick each b
 - [ ] BBP2-002 — Provider capability matrix values + mode→provider mapping docs
 - [ ] BBP2-003 — Move `direct` + `bwrap` sandbox providers
 - [ ] BBP2-004 — Move `vercel-sandbox` provider
+- [ ] BBP2-009 — Publish-pipeline parity for `@hachej/boring-sandbox` (Amendment 2026-07-06; executes before BBP2-005)
 - [ ] BBP2-005 — Land runtime-mode resolution (`resolveMode()` + mode adapters) in `@hachej/boring-bash`
 - [ ] BBP2-006 — Split remote-worker: shared protocol → shared, client → providers, server path decision
 - [ ] BBP2-007 — Migrate importers + delete origin exports (no compat shims)
@@ -55,6 +56,7 @@ Derived strictly from [TODO.md](./TODO.md) and [PLAN.md](./PLAN.md). Tick each b
 - [ ] Remote-worker worker server remains app-owned, imports protocol/provider contracts from `@hachej/boring-sandbox`, has no agent-core dep, and still exposes only the P2 health behavior (`{ ok: true }`); no capability handshake is added in P2.
 - [ ] Every importer of the moved value symbols migrated in the same PR and the origin exports deleted; no old-path re-export (value or type), no host shim, no cycle.
 - [ ] Mode-id vs provider-id distinction preserved (`local`→`bwrap`); `resolveMode` (boring-bash) resolves to boring-sandbox provider values.
+- [ ] Publish-pipeline parity (BBP2-009): `@hachej/boring-sandbox` in all five publish lists, ordered before `packages/boring-bash`, on the current version cohort — landed before BBP2-005's bash→sandbox value edge.
 
 ## Exit criteria
 - [ ] `@hachej/boring-sandbox` package exists, builds, and resolves `boring-sandbox/shared` + `boring-sandbox/providers` subpaths.

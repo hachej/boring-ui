@@ -123,6 +123,10 @@ Subagents are not a first-class code path in `packages/agent` today (see the Ver
 - Tests: `packages/boring-bash/src/server/__tests__/subagentAttachment.test.ts` — derive a scoped-view grant from a parent, resolve for a subagent `ctx` (different `agentId`), assert it reads only within the subpath and shares no prepared handle with the parent.
 - Acceptance (when scheduled): subagent scoped-view attachment resolves and is isolated by `agentId`.
 
+## Explicitly deferred design note — readwrite company-context (#550 gap 4; Amendment 2026-07-06)
+
+Design-only note, **no code bead**: v1 company-context rules are readonly-only projections, and E1 keeps that (readonly/`company_context` attachments never carry exec, and the E1 `access`/`projection` map allows only the two landed combinations). **Readwrite company-context grants need conflict/ownership semantics designed before any code** — who wins on concurrent writes, and how writes interact with the managed-workspace marker. That design is out of E1 scope and stays deferred; nothing in E1's `EnvironmentAttachment` contract may pre-commit readwrite company-context semantics.
+
 ## Verification — exact commands verified against package.json scripts
 
 ```bash
