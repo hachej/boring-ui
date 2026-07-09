@@ -23,11 +23,26 @@ The product/registry/billing/workspace-kind design is owned by [`docs/issues/376
 
 This plan only consumes the resolved child-app context for bash/runtime intersection. It must not define a competing `ChildAppDefinition`, workspace-kind schema, billing model, or hostname registry.
 
-Effective bash policy includes the resolved context:
+Effective authority uses the same algebra as architecture 03:
 
 ```txt
-app defaults < resolved childApp/workspaceKind policy < workspace policy < agent policy < session grants < plugin/tool requirements
+maximumAuthority =
+  providerFacts
+  ∩ host/app policy
+  ∩ resolved childApp/workspaceKind policy
+  ∩ workspace policy
+  ∩ deployment policy
+
+activeAuthority =
+  maximumAuthority
+  ∩ authenticated grants
+  ∩ session/subagent scope
+
+validate plugin/tool requirements(activeAuthority)
 ```
+
+The resolved child-app policy can narrow the maximum. Requirements never grant
+or narrow authority; a missing active capability fails readiness/activation.
 
 Inputs consumed from the child-app plan:
 
@@ -234,3 +249,5 @@ For a Macro child app:
 - trusted service plugin lifecycle works;
 - runtime backend RPC still dispatches after bash extraction;
 - full-app reload route resolves per workspace/agent/plugin runtime.
+- declaring a requirement never grants its capability; a requirement absent
+  from active authority fails readiness/activation.

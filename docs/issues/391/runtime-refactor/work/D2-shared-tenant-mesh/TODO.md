@@ -1,7 +1,7 @@
 # TODO-D2 - Shared-deployment subdomain tenancy
 
-Handoff: self-contained work order for one autonomous coding agent. Cite plan
-files by relative path. No prior conversation assumed.
+Coordinator: never assign this whole file. Dispatch one bead/PR with this
+file's context, dependencies, and non-negotiables included in the assignment.
 
 ## Context (read first)
 
@@ -14,16 +14,25 @@ files by relative path. No prior conversation assumed.
 - Registry/info: [`../P7-multi-agent-inspection/TODO.md`](../P7-multi-agent-inspection/TODO.md)
 - Durable stores: [`../T1-durable-events/TODO.md`](../T1-durable-events/TODO.md)
 - MCP/demo exposure: [`../M2-mcp-agent-surface/TODO.md`](../M2-mcp-agent-surface/TODO.md)
+- Dedicated delivery maturity: [`../D1-tenant-provisioning/TODO.md`](../D1-tenant-provisioning/TODO.md)
 
 ## Prerequisites - stop if false
 
-- P6a/BBP6-009 `WorkspaceAgentsDeclaration`, environment pool, validator, and
-  project-scoped `AgentRegistry` exist.
+- D1 has completed on at least two distinct tenant targets using the same
+  contract with zero new platform-source edits/contract forks on the second;
+  evidence records apply time, operational gaps, and rollback. The owner has
+  given written GO for shared-tenancy risk. Without both repetition and GO,
+  STOP; do not dispatch BBD2-001.
+- A trusted adapter-created `TenantContext` prototype/proof rejects unknown and
+  foreign hosts/principals before any workspace lookup. Caller `SessionCtx` is
+  not accepted as authority.
+- P6-D/P6-R `WorkspaceAgentsDeclaration`, separate E1 environment catalog,
+  validator, and project-scoped `ResolvedAgentRegistry` exist.
 - P1 supports optional `workspaceId` in `SessionCtx` and `sessionStorageRoot`.
 - P5 provisioning/readiness/secret-brokering seams exist.
 - P7 `agentId` routing and `/info` exist.
-- T1 durable stores are keyed by `SessionCtx` and have cross-context leakage
-  tests.
+- T1 durable stores use authenticated server-only structured `SessionKey` and
+  have cross-context/duplicate-public-id leakage tests.
 - M2 `public-demo`, `demoPolicy`, and `exposureId` exist.
 - Wildcard DNS/TLS is available in the chosen shared EU host profile or is
   represented by a fake provider in tests.
@@ -44,11 +53,15 @@ tenant boundary.
 
 - Unknown subdomain returns a stable rejection; it never falls back to a default
   tenant or workspace.
+- `Host` and `x-boring-workspace-id` are caller-controlled routing inputs, not
+  tenant authority. Only the authenticated host adapter may create
+  `TenantContext { tenantId, workspaceId, principal }` after validating both
+  binding and principal policy.
 - Tenant YAML is requirements/config only. It never carries executable code or
   raw secrets.
 - One `WorkspaceAgentsDeclaration` definition model feeds D1 and D2; do not
   fork a shared-tier schema.
-- `AgentRegistry` remains project-scoped. `LiveTenantRegistry` is
+- `ResolvedAgentRegistry` remains project-scoped. `LiveTenantRegistry` is
   process-level tenant binding state.
 - Path validation remains in adapters. Tenant roots and session roots must not
   collide.
@@ -57,19 +70,24 @@ tenant boundary.
 
 ## Beads
 
-### BBD2-001 - Host→tenant router (L)
+### BBD2-001 - Authenticated host→tenant router (L)
 
-- **Files touch/create:** host routing adapter, wildcard host parser,
-  `HostTenantResolver`, tests for Host header resolution and rejection.
-- **Notes:** Seat the resolver beside the existing `x-boring-workspace-id`
-  adapter. Resolve `Host:` to `workspaceId` only when a live tenant binding
-  exists. Mirror P7's absent-id rule: absent/unknown id is a 404-style stable
-  rejection, never a default mapping.
-- **Tests:** known `company_a.senecapp.ai` resolves to its tenant `SessionCtx`;
-  unknown subdomain rejects; malformed/foreign host rejects; explicit
-  `x-boring-workspace-id` behavior remains unchanged where still supported.
-- **Acceptance:** wildcard subdomain routing is fail-closed and does not widen
-  existing workspace-id adapter authority.
+- **Files touch/create:** authenticated host routing adapter, canonical wildcard
+  host parser, `TenantContext` and `HostTenantResolver`, tests for routing,
+  authentication, authorization, and rejection.
+- **Notes:** Define
+  `HostTenantResolver.resolve(requestHost, authenticatedPrincipal): TenantContext | { rejected }`.
+  Canonicalize host/port and IDNA form, find a live host binding, authenticate
+  the principal, then verify the principal may enter that tenant before
+  returning `{ tenantId, workspaceId, principal }`. A raw Host header or
+  `x-boring-workspace-id` never creates authority. Mirror P7's absent-id rule:
+  absent/unknown id is a stable rejection, never a default mapping.
+- **Tests:** known host plus authorized principal resolves; the same host plus a
+  foreign/anonymous principal rejects; unknown, malformed, spoofed-forwarded,
+  or foreign host rejects; a caller-supplied workspace header cannot override
+  the host binding.
+- **Acceptance:** only a trusted authenticated adapter creates tenant context;
+  routing data alone grants nothing.
 
 ### BBD2-002 - Live tenant registry + hot registration (L)
 
@@ -79,7 +97,7 @@ tenant boundary.
   through BBP6-009, seeds `sessionStorageRoot` + workspace/env-pool roots +
   files/skills/context, resolves `runtimeProfileRef` or the provider-default
   image, runs the provider-image-support check, materializes secret refs through
-  P5 broker, and installs a runtime binding plus `AgentRegistry` instance for
+  P5 broker, and installs a runtime binding plus `ResolvedAgentRegistry` instance for
   the new `workspaceId`.
   Registration is idempotent and does not require redeploy.
 - **Tests:** valid tenant spec installs one binding; rerun is idempotent;
@@ -111,8 +129,8 @@ tenant boundary.
   live subdomain tenants in one process, tenant-keyed search/events/artifact/
   governance checks.
 - **Notes:** Prove A-never-sees-B across sessions, `boring_pending_requests`,
-  session search (`state.db`), event store, artifacts, and governance, all keyed
-  on `SessionCtx.workspaceId`. Include per-tenant governance via
+  session search (`agent.db`), event store, artifacts, and governance, all keyed
+  on a structured session key derived from trusted `TenantContext`. Include per-tenant governance via
   `governancePolicyRef` and noisy-neighbor caps.
 - **Tests:** two tenants cannot cross-read sessions, files, pending inputs,
   search, artifacts, or governance; unknown subdomain fails closed; no broker
@@ -158,7 +176,8 @@ tenant boundary.
 
 ## Key interfaces
 
-- `HostTenantResolver(host)->SessionCtx|{rejected}`
+- `HostTenantResolver.resolve(requestHost, authenticatedPrincipal): TenantContext | { rejected }`
+- `TenantContext { tenantId, workspaceId, principal }`
 - `LiveTenantRegistry {register/get/list/suspend/archive/delete}`
 - `TenantSpec {workspaceId,host,tier,declaration:WorkspaceAgentsDeclaration,environments,seedRefs,secretRefs,demo?}`
 - `TenantIsolationConformance` suite
@@ -188,11 +207,12 @@ and `TenantIsolationConformance` suite added by this package.
 
 ## Review gates
 
-- Unknown host/subdomain fails closed.
+- Unknown host/subdomain and unauthorized principal fail closed; caller routing
+  fields cannot create or override `TenantContext`.
 - No second agent-definition schema.
 - No raw secrets in tenant YAML, logs, registry snapshots, provisioning output,
   files, transcripts, artifacts, or sandbox env.
-- D2 adds process-level tenant registry only; project-scoped `AgentRegistry`
+- D2 adds process-level tenant registry only; project-scoped `ResolvedAgentRegistry`
   remains project-scoped.
 - Cross-tenant isolation conformance is green for two live tenants in one
   process.

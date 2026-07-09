@@ -1,6 +1,7 @@
 # TODO-P2 — Scaffold `@hachej/boring-sandbox`, move concrete providers into it, land `resolveMode` in `@hachej/boring-bash`
 
-Handoff: self-contained work order for one autonomous coding agent (pi or gpt-5.5-xhigh). Cite plan files by relative path. No prior conversation assumed.
+Coordinator: never assign this whole file. Dispatch one bead/PR with this
+file's context, dependencies, and non-negotiables included in the assignment.
 
 **Package re-target (00 open decision 3, RESOLVED; 08 decision 11 — READ THIS FIRST):** concrete providers do **NOT** move to `@hachej/boring-bash/providers`. They move to a **new dedicated package `@hachej/boring-sandbox`** (`packages/boring-sandbox/src/providers`). The three-package stack, top-down: **`@hachej/boring-agent`** (defines ALL contracts, imports neither boring-bash nor boring-sandbox) ← **`@hachej/boring-bash`** (THE RUNTIME: fs bindings/tools/routes/UI + bash tool + runtime modes = the CHOICE of sandbox; **`resolveMode` lives here**; imports boring-sandbox **values** + agent **types**) ← **`@hachej/boring-sandbox`** (sandbox management: providers `direct`/`bwrap`-gVisor/`vercel`-PROXY/`remote-worker`-client, FUSE-S3 mounts, lifecycle; capability facts/types `reported | unknown` live in `boring-sandbox/shared` only; imports agent **types only**). Acyclic: `sandbox → agent(types)`; `bash → sandbox(values) + agent(types)`. Everywhere below, "move a provider" means move it to `packages/boring-sandbox/src/providers`, and "`resolveMode`" lands in boring-bash.
 
@@ -8,9 +9,12 @@ Handoff: self-contained work order for one autonomous coding agent (pi or gpt-5.
 resolution; they are not mode labels for surfaces to branch on. P2 reports
 facts such as filesystem access, exec, image support, mount support, network
 isolation, and unknown/reported status. The host/environment resolver turns
-those facts into `AttachedEnvironmentRuntime[]` and `ResolvedEnvironment[]`
-projections. New consumers must target those resolved environment facts, not
-`runtimeMode` or provider ids.
+those facts into host-owned attachment lifetimes; internal prepared handles stay
+behind E1's authorization callback. It flattens auth-gated contributions into
+core inputs and supplies methodless
+`ResolvedEnvironment[]` projections. New consumers must target those resolved
+environment facts, not `runtimeMode` or provider ids. No operation-bearing
+environment object enters agent core.
 
 ## Context (read first)
 
@@ -91,7 +95,10 @@ Concrete non-agent-loop providers (direct, bwrap, vercel-sandbox, remote-worker 
 - No agent→bash **or** agent→sandbox value import (invariant scan green); the only cross-package value edge is `boring-bash → boring-sandbox`; the only sandbox→agent edge is type-only.
 - Current apps still compile after same-PR importer migration (no old-path re-export, no host shim).
 - Landed #416 contracts unchanged; governance consumers keep working.
-- `direct`/`local`/`vercel-sandbox` behavior + existing tests preserved; `resolveMode` behavior byte-identical after moving to boring-bash.
+- `local`/`vercel-sandbox` behavior + existing tests are preserved. The one
+  intentional behavior correction is selection safety: deployed/tenant
+  composers fail closed when no approved provider is available, and `direct`
+  requires explicit trusted-local policy.
 
 ### This phase is the runtime-mode composition cutover (API-breaking for in-repo composers — the FIRST break)
 
@@ -112,7 +119,11 @@ P2 therefore **enumerates and migrates EVERY in-repo composition consumer** — 
 - **Precondition:** Phase 1 dependency injection (`createAgent()` / injected runtime+tools; see [`../P1-headless-core/TODO.md`](../P1-headless-core/TODO.md)) is complete before providers move. If not, STOP and report — do not move providers.
 - `@hachej/boring-agent` keeps **zero value imports** from `@hachej/boring-bash`. Value flows one-way: host/CLI/composition imports both.
 - Do not add re-exports of moved providers from old agent paths — **neither value nor type-only** (value re-exports re-create the cycle; any old-path re-export violates the no-compat policy). Every importer migrates in the same PR; the origin export is deleted in that PR.
-- Provisioning-ownership rule (00): provisioning engine + `ProvisionWorkspaceRuntimeOptions` stay agent-side over an injected adapter; boring-bash owns requirement normalizer + provider adapters.
+- Provisioning transition: P2 does not expand or canonize the currently agent-
+  located engine/`ProvisionWorkspaceRuntimeOptions`. P5 BBP5-002 atomically
+  moves engine, runner contracts, and fingerprints to boring-bash/server and
+  deletes the agent origin. P2 moves provider-specific adapters/helpers to
+  boring-sandbox or boring-bash as appropriate and adds no compatibility export.
 - Preserve path-safety ownership: adapters validate containment; routes/tools never accept raw unchecked host paths.
 - Preserve the mode-id vs provider-id distinction: `local` mode → `bwrap` provider (02 table).
 - Before any mode file lands in `packages/boring-bash/src/modes`, eliminate all `@hachej/boring-agent` **value** imports it relied on in agent (`ErrorCode`, `safeCapture`, `getEnv`, `createServerFileSearch`, `copyTemplate`, provisioning artifact helpers, provider factories). Move the helper to `boring-bash/modes`, move provider-bound helpers to `boring-sandbox/providers`, or inject it from the host. Type-only imports from `@hachej/boring-agent/server` are allowed only for agent-owned contracts.
@@ -166,7 +177,12 @@ P2 therefore **enumerates and migrates EVERY in-repo composition consumer** — 
 
 - **Files move:** all of `packages/agent/src/server/sandbox/vercel-sandbox/*` → `packages/boring-sandbox/src/providers/vercel-sandbox/*` (incl. `provisioningAdapter.ts`, `bake.ts`, `oidcRefresh.ts`, `circuitBreaker.ts`, `FileHandleStore.ts`, `deploymentSnapshot.ts`, `packageTemplate.ts`, `periodicSnapshot.ts`, `readyStatus.ts`, `resolveSandboxHandle.ts`, `createVercelSandboxExec.ts`, + `__tests__/*`).
 - **Files move:** `packages/agent/src/server/workspace/createVercelSandboxWorkspace.ts` → `packages/boring-sandbox/src/providers/vercel-sandbox/createVercelSandboxWorkspace.ts`; move/port the path-containment helper subset it uses from `workspace/paths.ts` into boring-sandbox providers if not already moved by BBP2-003.
-- **Notes:** `provisioningAdapter.ts` here is a **provider adapter** (allowed to move) — distinct from the agent-owned provisioning engine (00 rule). Verify no agent-engine value import remains; if `deploymentSnapshot`/`readyStatus` are shared with agent, split shared types to `boring-sandbox/shared` or keep a type-only seam. The current provider adapter imports artifact-resolution helpers from the agent provisioning area; move the adapter-local artifact materialization helper with the provider or inject it from the agent-owned provisioning engine, but do not leave a boring-sandbox → agent value import. (`vercel-sandbox` is the US-hosted PROXY provider — stays an optional provider behind the capability matrix per invariant 15.)
+- **Notes:** `provisioningAdapter.ts` here is a **provider adapter** (allowed to
+  move), distinct from the temporarily agent-located central engine that P5
+  removes. Verify no agent-engine value import remains; provider-local artifact
+  materialization moves with the provider or is injected by the host-facing
+  seam. Do not create an agent compatibility export or make boring-sandbox
+  depend on the transitional engine.
 - **Files touch:** `packages/boring-sandbox/src/providers/index.ts`; every importer of `createVercelSandboxWorkspace` migrates to `@hachej/boring-sandbox/providers`.
 - **Tests:** vercel-sandbox unit tests pass under boring-sandbox; `createVercelSandboxWorkspace` still typechecks.
 - **Acceptance:** vercel-sandbox provider and its workspace factory are owned by boring-sandbox; no agent-engine value import remains; every importer uses `@hachej/boring-sandbox/providers`.
@@ -181,15 +197,24 @@ P2 therefore **enumerates and migrates EVERY in-repo composition consumer** — 
 ### BBP2-005 — Land runtime-mode resolution (`resolveMode()` + mode adapters) in `@hachej/boring-bash` [size M]
 
 - **Files move:** `packages/agent/src/server/runtime/modes/{direct,local,vercel-sandbox,remote-worker,provisioningAdapter}.ts` and `runtime/resolveMode.ts` → **`packages/boring-bash/src/modes/*`** (keep filenames) — this is the CHOICE-of-sandbox layer and it lives in **boring-bash (THE RUNTIME)**, not boring-sandbox and not `boring-bash/providers`. Add a `@hachej/boring-bash` `"./modes"` export. Move `runtime/modes/__tests__/*` and `runtime/__tests__/resolveMode.test.ts` with them. The mode adapters **import the concrete provider values from `@hachej/boring-sandbox/providers`** (this is the single legitimate `boring-bash → boring-sandbox` value edge) and resolve a mode id → a boring-sandbox provider.
-- **Mode-private helper moves required by the current import graph:** move `packages/agent/src/server/runtime/createServerFileSearch.ts` → `packages/boring-bash/src/modes/createServerFileSearch.ts`; move `packages/agent/src/server/workspace/provision.ts` (`copyTemplate`) → `packages/boring-bash/src/modes/copyTemplate.ts` or inject an equivalent template copier into the mode; move adapter-local provisioning artifact helpers currently pulled from `workspace/provisioning/packArtifact.ts` into `boring-bash/src/modes/provisioningArtifacts.ts` **or** inject them from the agent-owned provisioning engine. The end state is mandatory: `rg "from '@hachej/boring-agent" packages/boring-bash/src/modes` shows only `import type` lines.
+- **Mode-private helper moves required by the current import graph:** move `packages/agent/src/server/runtime/createServerFileSearch.ts` → `packages/boring-bash/src/modes/createServerFileSearch.ts`; move `packages/agent/src/server/workspace/provision.ts` (`copyTemplate`) → `packages/boring-bash/src/modes/copyTemplate.ts` or inject an equivalent template copier into the mode; move adapter-local provisioning artifact helpers currently pulled from `workspace/provisioning/packArtifact.ts` into `boring-bash/src/modes/provisioningArtifacts.ts` or inject through a host seam compatible with the P5 target. Never add a new dependency on the transitional agent engine. The end state is mandatory: `rg "from '@hachej/boring-agent" packages/boring-bash/src/modes` shows only `import type` lines.
 - **Files keep (agent, type-only):** `packages/agent/src/server/runtime/mode.ts` stays — it is type-only contracts (`RuntimeModeAdapter`, `RuntimeBundle`). boring-bash mode adapters import these **type-only** from `@hachej/boring-agent/server` (allowed).
 - **Files touch (repoint `resolveMode`/`autoDetectMode` value imports):** `packages/agent/src/server/createAgentApp.ts`, `registerAgentRoutes.ts`, `index.ts`, `packages/workspace/src/app/server/createWorkspaceAgentServer.ts`, `packages/core/src/app/server/createCoreWorkspaceAgentServer.ts`, `packages/cli/src/server/modeApps.ts`, `packages/agent/scripts/eval-provisioning-agent-vercel.mts`, plus any test/helper import found by `rg "resolveMode|autoDetectMode|hasBwrap" packages apps plugins`. These are host/composition/CLI layers → they may import `@hachej/boring-bash/modes` directly (which in turn pulls `@hachej/boring-sandbox` provider values). For `packages/agent/*` callers that must stay bash-free (createAgentApp/registerAgentRoutes are the Fastify adapter layer): inject the resolved adapter from the host instead of importing `resolveMode` — confirm against the Phase-1 injection seam; if injection is not yet threaded there, **STOP and report the missing P1 seam** (do not leave a shim — the seam is a P1 deliverable, not something P2 patches around).
 - **Agent bin decision (resolved in THIS same P2 PR — the bin cannot survive P2 unchanged):** the `packages/agent` bin (`packages/agent/src/bin/boring-agent.ts`) today composes a bash-enabled dev server via `createAgentApp({ mode: 'direct', ... })`, which after this move would force the agent bin to resolve a mode → pull `@hachej/boring-bash/modes` (an agent→bash value import — forbidden). Resolution: **the agent bin becomes PURE-ONLY — it composes `runtime: 'none'` (no `mode`, no provider, no `resolveMode`)**, keeping agent value-import-free. Its **bash-enabled composition (the `--mode`/`direct` dev-server + provider wiring) MOVES to `packages/cli`** (the CLI is a host/composition layer allowed to import `@hachej/boring-bash/modes` + `@hachej/boring-sandbox/providers`) in this same PR. Any E2E helper that needs a bash-backed backend targets the CLI-owned entry point, not the agent bin. Remove the `RuntimeModeId`/`--mode` handling from the agent bin.
+- **Fail-closed selection correction:** auto-detection may choose `direct` only
+  when an explicit trusted-local policy is present. Deployed/core/tenant hosts
+  with no acceptable provider return a stable unsafe-fallback error. Log the
+  trusted-local choice; never silently reduce isolation because `bwrap` is
+  unavailable.
 - **Notes:** `none`/`readonly` must short-circuit the closed provisioning-adapter mode union rather than throw (02 remote-worker split note). Replace agent value imports used by the current mode files (`ErrorCode`, `safeCapture`, `getEnv`/env defaults) with boring-bash-local helpers or host-injected functions before moving; do not import those values from agent.
 - **Tests:** moved `resolveMode.test.ts` passes in boring-bash; `pnpm --filter @hachej/boring-agent run test` green; mode/provider mapping test (BBP2-002) covers every current pair; the agent bin composes `runtime: 'none'` and has zero `@hachej/boring-bash`/`@hachej/boring-sandbox` import (invariant scan); the migrated CLI-owned bash dev-server entry starts a `direct`-mode backend for E2E; static grep proves `packages/boring-bash/src/modes/**` has no agent value import.
 - **Acceptance:** `resolveMode()` + mode adapters live in **boring-bash** (`boring-bash/modes`), resolving to `@hachej/boring-sandbox` provider values; agent keeps only type-only mode contracts; the agent bin is pure-only (`runtime: 'none'`) and its bash-enabled composition now lives in `packages/cli`.
 
 ### BBP2-006 — Split remote-worker: shared protocol → shared, client → providers, server path decision [size M]
+
+This is a separate PR from the mode/composer cutover. Move protocol, client,
+provider, and their direct importers without simultaneously rewiring every mode
+composer.
 
 - **Files move:** `packages/agent/src/server/sandbox/remote-worker/protocol.ts` → `packages/boring-sandbox/src/shared/remoteWorkerProtocol.ts` (front-safe: no `node:*`/`Buffer`; convert bytes to `Uint8Array` if any). `workerClient.ts` + `createRemoteWorkerSandbox.ts` → `packages/boring-sandbox/src/providers/remote-worker/*` (+ `__tests__/workerClient.test.ts`). `packages/agent/src/server/workspace/createRemoteWorkerWorkspace.ts` → `packages/boring-sandbox/src/providers/remote-worker/createRemoteWorkerWorkspace.ts`.
 - **Files touch:** `packages/boring-sandbox/src/shared/index.ts` (export protocol types); `packages/boring-sandbox/src/providers/index.ts` (export client/adapter). `apps/full-app/src/server/worker/{auth,config,routes,workspace}.ts` + `agent-worker.ts` + `apps/full-app/scripts/remote-worker-smoke.mjs`: repoint protocol imports to `@hachej/boring-sandbox/shared` and provider/workspace imports to `@hachej/boring-sandbox/providers`. **Decision to record in `boring-sandbox/src/providers/remote-worker/README.md`:** worker server stays app-owned (recommended, least churn) but imports only shared protocol + provider server contracts — never agent core.
@@ -199,6 +224,10 @@ P2 therefore **enumerates and migrates EVERY in-repo composition consumer** — 
 - **Acceptance:** remote-worker protocol provided by `@hachej/boring-sandbox/shared` and client/adapter provided by `@hachej/boring-sandbox/providers/remote-worker` without coupling the worker server to agent core; worker-dependent capabilities remain `'unknown'` (handshake deferred to BBP5-008); no handshake or fail-closed logic added in P2.
 
 ### BBP2-007 — Migrate importers + delete origin exports (no compat shims) [size M]
+
+Stack this after BBP2-006 and merged publish parity. Review mode/composer/CLI
+wiring separately from the remote-worker relocation; no cherry-picked publish
+commit remains in the branch.
 
 - **Policy (binding — `INDEX.md` "Simplicity & no-compat policy"):** all `@hachej/*` consumers are in-repo, so there is **no** old-path re-export of any kind — **not even type-only**. Every importer migrates to the new path in the **same PR** that moves the provider, and the origin export is deleted in that same PR. Grep is the migration tool; no re-export stub, no host shim that outlives the phase.
 - **Notes / strategy (enumerate, migrate, delete):**
@@ -217,6 +246,37 @@ P2 therefore **enumerates and migrates EVERY in-repo composition consumer** — 
   - **agent / root** (`audit-imports.ts`): `packages/agent/**` has no value import from `@hachej/boring-bash` **or `@hachej/boring-sandbox`**; `packages/agent/src/server/index.ts` contains no value export of the moved provider symbols (regex allowlist).
 - **Tests:** `pnpm --filter @hachej/boring-sandbox run check:invariants` + `pnpm --filter @hachej/boring-bash run check:invariants` pass; a planted agent→bash OR agent→sandbox value import fails; a planted sandbox→bash import fails; a planted sandbox→agent **value** import fails (type-only passes) (manual spot check, revert).
 - **Acceptance:** invariants guard all three package edges; `pnpm lint:invariants` + `pnpm audit:imports` (root) stay green.
+
+### BBP2-010 — Hardened gVisor runsc provider for production v1 [size L]
+
+- **Purpose:** close the gap between a production/sovereign D1 claim and the
+  development or unverified providers above. This is the one hardened v1
+  execution path; do not build a general scheduler or image catalog.
+- **Files create/touch:** add
+  `@hachej/boring-sandbox/providers/runsc` and the worker-side host adapter. The
+  provider accepts a host-verified OCI bundle/image digest and explicit
+  workspace/network/resource policy; it implements the existing Sandbox
+  lifecycle exactly once. Image pull/catalog concerns stay outside this bead.
+- **Preflight:** prove `runsc` version/contract, `--platform=systrap`, usable
+  namespace/cgroup/nftables facilities, digest-pinned OCI bundle, configured
+  uid/gid and root paths, and requested limits before readiness. Emit methodless
+  reported capability facts; missing or unknown facts fail with stable codes.
+- **Isolation policy:** one network namespace per workspace; nftables blocks
+  metadata, RFC1918, CGNAT, link-local, ULA, host app/DB networks, and other
+  workspaces; apply explicit CPU, memory, pid, and cgroup limits. Mount only
+  declared workspace paths. Never place brokered secrets in OCI config, env,
+  mounts, command args, logs, or guest-readable files.
+- **Lifecycle:** create/start/exec/stop/dispose are idempotent and bounded;
+  partial create is reconciled or removed; dispose tears down container,
+  namespace, firewall rules, cgroup, and temporary bundle state exactly once.
+- **Tests:** fixture/command-runner tests cover plan/failure semantics, but v1
+  acceptance also runs provider lifecycle and network/limit/secret probes on a
+  preconfigured real EU runsc worker. The probe verifies metadata/private CIDR
+  denial, cross-workspace denial, public allowlisted egress, enforced pid/CPU/
+  memory limits, digest identity, and absence of a secret canary.
+- **Acceptance:** real-target conformance records the verified runsc version,
+  systrap platform, image digest, network and limit facts, and cleanup. A mock or
+  bwrap/Vercel/direct execution cannot satisfy this bead.
 
 ## Verification — exact commands verified against package.json scripts
 
@@ -265,3 +325,8 @@ pnpm --filter full-app run smoke:remote-worker
 - `packages/boring-bash/src/modes/**` has no `@hachej/boring-agent` value import; only `import type` from agent contracts is allowed.
 - Every importer of the moved value symbols migrated in the same PR and the origin exports deleted; no old-path re-export (value or type), no host shim, no cycle.
 - Mode-id vs provider-id distinction preserved (`local`→`bwrap`); `resolveMode` (boring-bash) resolves to boring-sandbox provider values.
+- BBP2-010 real-target evidence proves the hardened runsc provider; P5a's
+  authenticated worker handshake is still required before D1 may select it
+  remotely.
+- P2 adds no central provisioning API or compatibility export in agent; P5 is
+  the declared owner of the move to boring-bash/server.

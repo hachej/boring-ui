@@ -222,6 +222,11 @@ The pluggable provider boundary (a `listTree`/`listPaths`/`subscribe` interface 
 
 ## UI plugin ownership
 
+**Post-v1 ownership move.** V1 keeps this plugin workspace-owned and P3
+BBP3-019 capability-gates its registration, renderers, providers, affordances,
+and API calls from resolved filesystem facts. The move below is P4 and does not
+gate P8.
+
 Move `packages/workspace/src/plugins/filesystemPlugin/front/*` into `boring-bash/plugin` while preserving:
 
 - panel ids;

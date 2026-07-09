@@ -1,9 +1,13 @@
-# P6-plugin-child-app — Handoff checklist
+# P6-plugin-child-app — Aggregate handoff checklist
 
-Derived strictly from [TODO.md](./TODO.md) and [PLAN.md](./PLAN.md). Tick the P6a closeout before calling the epic package done. The P6b section is a blocked follow-up checklist outside the epic/P8 gate. Invent nothing.
+This file includes post-v1 plugin and child-app expansion. P8 uses the narrower
+[`P6-V1-HANDOFF.md`](./P6-V1-HANDOFF.md), not this aggregate closeout.
+
+Derived from the binding 2026-07-09 v1 slice in [TODO.md](./TODO.md) and [PLAN.md](./PLAN.md). Plugin/child-app sections are post-v1.
 
 ## Prerequisites (packages + gates)
-- [ ] (P6a) P5-provisioning-secrets merged — [../P5-provisioning-secrets/HANDOFF.md](../P5-provisioning-secrets/HANDOFF.md)
+- [ ] (P6-D) P1 merged.
+- [ ] (P6-R) E1 and P5a merged.
 - [ ] (P6b follow-up only) P6a beads landed (this package's P6a slice complete)
 - [ ] (P6b follow-up only) Shared child-app platform code export landed (expected type name `ResolvedChildAppContext`, #376; `docs/issues/376/plan.md` is only the plan today) — **HARD BLOCKED / STOP-and-report until it exists; no local fallback shape**
 
@@ -12,15 +16,18 @@ Derived strictly from [TODO.md](./TODO.md) and [PLAN.md](./PLAN.md). Tick the P6
 - GO/NO-GO: GO for P6a after P5; NO-GO for P6b until #376 exports the shared resolved child-app context type. P6b remains outside the #391 epic/P8 gate.
 
 ## Beads
-### P6a (dispatchable after P5)
-- [ ] BBP6-002 — [P6a] Extend plugin manifest validation import-free for `boring.requires` + `bash`; reserve skill filters over resolved environment facts
-- [ ] BBP6-003 — [P6a] Introduce `AgentRegistry` (minimal, Map-backed)
+### V1
+- [ ] BBP6-009 — [P6-D] Separate AgentDefinition/AgentDeployment schemas + digest
+- [ ] BBP6-003 — [P6-D] Minimal immutable verified-bundle Map registry
+- [ ] BBP6-011 — [P6-R] Current pointer + durable immutable resolved generation
+
+### Post-v1 plugin expansion
+- [ ] BBP6-002 — Import-free manifest requirements + skill filters
 - [ ] BBP6-004 — [P6a] Runtime plugin context (`RuntimePluginContext`) on the gateway
 - [ ] BBP6-005 — [P6a] Hosted external plugin fail-closed in remote mode
 - [ ] BBP6-007 — [P6a] Shared per-workspace plugin runtime compatibility (#254)
 - [ ] BBP6-008 — [P6a] Multi-tenant full-app reload (#41)
-- [ ] BBP6-009 — [P6a] Workspace `agents: [...]` `AgentDefinitionDeclaration` + default-agent composition (seeds `AgentRegistry`)
-- [ ] BBP6-010 — [P6a] Per-agent plugin composition from `AgentDefinitionDeclaration.plugins`
+- [ ] BBP6-010 — Per-agent plugin composition after P7 routing
 
 ### P6b (HARD BLOCKED on #376 `ResolvedChildAppContext`)
 - [ ] BBP6-001 — [P6b · HARD BLOCKED] Consume resolved child-app/workspace-kind context
@@ -43,10 +50,14 @@ Derived strictly from [TODO.md](./TODO.md) and [PLAN.md](./PLAN.md). Tick the P6
 - [ ] `pnpm typecheck`
 
 ## PR-PLAN reconciliation
-### P6a
-- [ ] `pr1-agent-registry` completed BBP6-003
-- [ ] `pr2-agents-declaration` completed BBP6-009
-- [ ] `pr3-manifest-requires-bash-skill-filters` completed BBP6-002
+### V1 (use `P6-V1-HANDOFF.md` as closeout authority)
+- [ ] `pr1-definition-deployment-schema` completed BBP6-009
+- [ ] `pr2-definition-registry` completed BBP6-003
+- [ ] `pr3-resolved-agent` completed BBP6-011
+
+### Post-v1 plugin/runtime expansion
+- [ ] `pr2b-remote-worker-image-support` completed BBP6-009b
+- [ ] `pr4-manifest-requires-bash-skill-filters` completed BBP6-002
 - [ ] `pr4-runtime-plugin-context` completed BBP6-004
 - [ ] `pr5-hosted-fail-closed` completed BBP6-005
 - [ ] `pr6-shared-workspace-runtime` completed BBP6-007
@@ -57,16 +68,19 @@ Derived strictly from [TODO.md](./TODO.md) and [PLAN.md](./PLAN.md). Tick the P6
 - [ ] `pr9-childapp-context` completed BBP6-001 only after #376 exports the shared resolved context type
 - [ ] `pr10-macro-scoping` completed BBP6-006 only after BBP6-001 is unblocked
 
-## P6a review gates
+## Aggregate review gates
 - [ ] P6a/P6b split (blocking): P5 precondition confirmed for P6a (or STOP+report); the shared child-app platform code export (expected `ResolvedChildAppContext`, #376) is the HARD prerequisite for P6b — if absent, BBP6-001/006 STOP-and-report with no local fallback shape; P6a proceeds independently.
-- [ ] P6a grep-gate (blocking): each named P6a contract contains ZERO child-app fields/types — `! rg -n "childAppId|workspaceKind|ChildApp"` on each created file (manifest validator, `AgentRegistry.ts`, `agentDefinitionDeclaration.ts`, BBP6-010 composition contracts, `runtimePluginContext.ts`) exits 0.
+- [ ] Child-app grep-gate: bundle registry, resolved registry, manifest
+      validator, BBP6-010 contracts, and runtime plugin context contain zero
+      child-app fields/types.
 - [ ] No competing child-app registry / manifest scanner / plugin route family introduced.
 - [ ] `pnpm lint:invariants` + `pnpm audit:imports` + `lint:plugin-invariants` green; zero agent→bash value imports.
 - [ ] Import-free manifest validation proven (side-effecting plugin fixture not executed).
 - [ ] Skill filter proven where skills are loaded: filesystem/bash-required skills are absent from Pi resources, `/api/v1/agent/skills`, slash suggestions, and the generated skills-index prompt fragment when resolved environment facts do not satisfy them, then visible when those facts are present.
 - [ ] Hosted plugin fail-closed covered; iframe sandbox/CSP constraints asserted.
 - [ ] Secrets are status-only in every plugin/browser/model context (P5 brokering); no raw values in manifests/logs/transcripts/artifacts.
-- [ ] `/api/v1/plugins/:pluginId/*` dispatch unchanged; `AgentRegistry` minimal and Map-backed (no framework creep).
+- [ ] `/api/v1/plugins/:pluginId/*` dispatch unchanged; the bundle registry
+      stores only verified definition/digest/assets (no framework creep).
 - [ ] Full-app reload resolves per workspace/agent/plugin runtime; trusted server routes diagnosed not hot-registered.
 - [ ] EU-sovereign: no US-hosted default/hard dependency introduced (invariant 15).
 - [ ] Zero `// TODO(remove:*)` markers left dangling; any transitional code has a deletion bead in this file.

@@ -18,7 +18,12 @@ Today `@hachej/boring-agent` is too coupled to `Workspace + Sandbox + FileSearch
 
 The owner's vision, in one sentence: **eve-style DECLARATIVE authoring that ships agents fast, natively integrated into the boring-ui FARM, open to foreign agents.** Land on an **eve-class UX** (`vercel/eve`) — author an agent, deploy it, converse with it from any channel, inspect it — but **steered from the boring-ui workspace** and **hosted in Europe**:
 
-- **eve-style declarative authoring (ship agents fast)**: an `agents/<name>/` directory compiles to a `createAgent()` config + an `AgentRegistry` entry — no imperative wiring, just a declared agent. **Delivery is still deferred post-P7** (the `AgentRegistry` must exist first; no-speculative-abstraction policy — trigger unchanged). Its **v0 is BBP6-009's `agents: [...]` workspace declaration** (a declared set of agents seeding the registry); the directory-compiler is the same idea taken to the filesystem, filed as the post-P7 follow-up (P8 BBP8-004).
+- **eve-style declarative authoring (ship agents fast)**: an `agents/<name>/`
+  directory compiles to a self-contained content-addressed bundle containing a
+  versioned behavior-only `AgentDefinition` and immutable referenced assets;
+  the host combines it with a separate `AgentDeployment` and records an
+  immutable `ResolvedAgent` digest. Local development and D1 dedicated delivery
+  consume the same bundle, so the minimal compiler is no longer deferred.
 - **the boring-ui FARM, natively integrated**: the workspace is not just a chat surface — it is the **farm control plane**: **fleet view** (every agent + session across every surface), **tasks** (work items linked to sessions), **artifacts** (outputs agents publish from their environments — 08 `data-artifact`), and **approvals** (one inbox, `resolveInput`). This epic ships the *substrate*; the farm UI is the next epic (VISION farm row).
 - **OPEN integration — foreign agents join the farm**: a non-boring agent (Claude Code, Codex, any MCP client) can attach an environment (E2 MCP projection) and — deferred — create tasks / publish artifacts / request human input over a **Farm MCP** control-plane surface (08 Farm-MCP note). The farm is open, not a walled garden.
 - **Flue's internals**: durable indexed event streams, channel ingress packages, `SessionEnv`-shaped environments (already adopted — 08/09).
@@ -34,7 +39,7 @@ Grounded in the owner's strategy (the boring-ui-factory brain); the epic builds 
 - **Horizon 2 — post 3+ repeats.** After the same SSO/governance/workroom pattern recurs across 3+ deployments, productize a **white-label "AI Analyst Workroom"** for consultancies/fiduciaries to resell; the **farm becomes client-facing**.
 - **Horizon 3 — 2027+.** A **hub-and-spoke** shape: a **free local CLI ⇄ hosted specialist agents** via **MCP delegation**, with **artifacts delivered cross-org**. This is the open-integration end state (foreign agents + the E2 MCP projection + `data-artifact`), not a near-term build.
 
-**Architecture rule: one deployable artifact; topology is the product line.** The same build runs single-tenant self-host, managed sovereign tenant, or hub-and-spoke — the *topology* is the commercial choice, not a code fork. This epic builds the **shared substrate** and **must not FORCE horizon-3 infrastructure early** (no marketplace, no billing, no multi-tenant control plane in this epic) **while not precluding it** (the surface/environment/MCP contracts compose into it).
+**Architecture rule: one deployable artifact; topology is the product line.** The same build may eventually run single-tenant self-host, managed sovereign tenant, shared tenant, or hub-and-spoke — the *topology* is the commercial choice, not a code fork. Version 1 proves only the dedicated EU topology. It must not force marketplace, billing, FUSE, or a shared multi-tenant control plane while keeping later adapters possible.
 
 **Open tension (verbatim-ish, owner to resolve):** the current STRATEGY.md leans to a **managed retainer** default, while the older decision log has **clients owning ops** (self-hosted handoff). The architecture **supports both** (one artifact, either topology); the **commercial default is TBD by the owner** — the plan pack does not pick one.
 
@@ -42,16 +47,22 @@ Grounded in the owner's strategy (the boring-ui-factory brain); the epic builds 
 
 | Package | Owns | Must not own |
 | --- | --- | --- |
-| `@hachej/boring-agent` | model loop, sessions, runner API, tool registry, channel-neutral event stream, non-bash operational hooks, provisioning engine types/orchestration by injected adapter — **defines ALL contracts, imports neither boring-bash nor boring-sandbox** | filesystem, file routes, bash, file UI, concrete sandbox providers, bash requirement normalization |
-| `@hachej/boring-bash` (THE RUNTIME) | optional fs + exec working environment, path safety, search/watch, file routes, file/bash/upload tools, file UI, bash requirement normalizer, **runtime-mode resolution (`resolveMode` = the CHOICE of sandbox)**; imports `@hachej/boring-sandbox` **values** + agent **types** | auth, billing, app membership, LLM harness core, provisioning engine ownership, **concrete sandbox providers / mount / lifecycle (owned by `@hachej/boring-sandbox`)** |
+| `@hachej/boring-agent` | model loop, sessions, runner API, tool registry, channel-neutral event stream, admission/idempotency, and methodless resolved capability facts — **defines its consumed contracts, imports neither boring-bash nor boring-sandbox** | filesystem, file routes, bash, file UI, concrete sandbox providers, environment preparation, provider lifecycle, provisioning execution |
+| `@hachej/boring-bash` (THE RUNTIME) | optional fs + exec working environment, path safety, search/watch, file routes/tools/UI, requirement normalizer, extracted environment provisioning engine/runners/fingerprints, **runtime-mode resolution (`resolveMode` = the CHOICE of sandbox)**; imports sandbox **values** + agent **types** | auth, billing, app membership, LLM harness core, host orchestration, concrete sandbox providers/mount/lifecycle |
 | `@hachej/boring-sandbox` (sandbox management) | concrete providers (`direct`, `bwrap`-gVisor, `vercel`-PROXY, `remote-worker`-client), **FUSE-S3 mounts**, sandbox lifecycle, provider **capability facts (`reported \| unknown`)**; imports agent **types only** | model loop, sessions, file routes, bash tools, file UI, runtime-mode resolution (owned by boring-bash), auth/billing |
 | `@hachej/boring-workspace` | UI shell, layout, plugin host, UI bridge/RPC, surface registry | agent model loop, concrete bash providers |
-| `@hachej/boring-core` / app composition layer | auth, DB, workspaces, child-app context resolution, billing, deployment composition; final child-app registry location follows the shared child-app plan | concrete bash provider internals |
+| `@hachej/boring-core` / app composition layer | auth, DB, workspaces, definition/deployment resolution, provisioning orchestration, prepared-environment ownership, child-app context resolution, billing, deployment composition | model loop, concrete provider internals outside injected adapters |
 | surface/channel packages (v2, e.g. `@hachej/boring-channel-slack`, spreadsheet embeds) | platform ingress/egress, platform auth, surface-owned continuation/addressing → `sessionId` mapping, event projection | agent loop, sessions, tools, provider internals, boring-bash server code |
 
 Non-negotiable: `@hachej/boring-agent` has **zero value imports** from `@hachej/boring-bash` **or `@hachej/boring-sandbox`** (it defines the contracts both consume, and imports neither). Bash + sandbox are injected by host/CLI/composition. **Acyclic layering (owner-ruled):** `boring-sandbox → boring-agent` (types only); `boring-bash → boring-sandbox` (values) `+ boring-agent` (types). boring-bash is THE RUNTIME (the CHOICE of sandbox, `resolveMode`); boring-sandbox is sandbox management (providers, FUSE-S3 mounts, lifecycle, capability facts).
 
-Provisioning ownership rule: the existing provisioning engine and `ProvisionWorkspaceRuntimeOptions` stay in agent/server as type-safe orchestration over an injected provisioning adapter. `@hachej/boring-bash` owns bash requirement normalization and runtime-mode resolution; **`@hachej/boring-sandbox` owns the concrete provider adapters + their capability facts**. The host/core/CLI wires them together. Agent must never import concrete bash providers.
+Provisioning ownership rule: v1 moves the existing implementation to
+`@hachej/boring-bash/server` without reimplementation. Boring-bash owns
+requirement normalization plus environment provisioning runners/fingerprints;
+**boring-sandbox owns concrete provider adapters + capability facts**; the host
+owns orchestration, prepared resources, and disposal. Agent consumes only bound
+tools, prompt/readiness inputs, input-asset handling, and methodless facts. No
+agent-owned provisioning contract or compatibility re-export is introduced.
 
 ## What we learned from Flue
 
@@ -133,6 +144,11 @@ This repo already has real seams. The refactor must extend them:
 14. **(v2)** Secrets stay on the trusted core side; credentials are brokered at the environment boundary and never enter the sandbox process or the model transcript.
 15. **(v2)** EU-sovereign defaults: every default component of the platform (event store, session store, sandbox providers, remote workers, channel egress) is self-hostable on EU infrastructure. US-hosted providers (e.g. `vercel-sandbox`) are strictly optional providers behind the standard capability matrix — never the default path, never a hard dependency.
 16. **(v2)** Capability residue: every capability travels as a complete bundle (tools + routes + UI + renderers + prompt fragment + composer providers + skill filters). Detaching a capability leaves **zero residue** in prompt, UI, or API surface. Pure mode is the test: an agent with no filesystem shows no filesystem vocabulary anywhere.
+17. **(v1 delivery)** Definitions and deployments are separately versioned. A
+    session records definition, deployment, and resolved-snapshot identity/
+    digests; hot registry or policy changes never mutate an existing session's
+    snapshot.
+18. **(v1 reliability)** Core turn admission is per session, retries carry a caller-supplied idempotency key, and actor/origin attribution survives into durable session/event metadata.
 
 ## Issue coverage posture
 

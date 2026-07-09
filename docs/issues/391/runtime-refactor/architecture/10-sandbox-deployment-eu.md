@@ -18,6 +18,17 @@ config, and deployment manifest for the chosen EU host. Without D1, T0/T1
 factory claims must be described as manual provisioning, not same-day repeatable
 platform delivery.
 
+**V1 ruling (2026-07-09):** D1 dedicated/sovereign delivery is the only v1
+topology and is a v1 exit gate. It consumes `AgentDeployment` and the compiled
+definition digest and uses an existing HTTP/workspace surface; it does not
+depend on M2. Local/provider volumes and explicit artifact synchronization are
+sufficient for v1. X1 host-rclone/FUSE is optional post-v1 infrastructure.
+Production acceptance is not satisfied by `direct`, bwrap, Vercel, a fake
+provider, or unverified remote-worker claims: P2 must deliver the hardened
+gVisor `runsc --platform=systrap` provider, P5a must authenticate its worker
+contract/hardening facts, and the final P8 proof must execute on a preconfigured
+EU runsc host. The fake provider remains only for deterministic fault semantics.
+
 ## Tenant topologies
 
 **Amendment (2026-07-08):** name the two factory tiers explicitly:
@@ -31,11 +42,16 @@ not separate agent-definition systems.
 | Dedicated / sovereign tenant | one deployment per company, with tenant/workspace/runtime config and deployment manifest | [D1-tenant-provisioning](../work/D1-tenant-provisioning/) | managed sovereign clients, strong isolation, bespoke deployment review |
 | Shared Subdomain tier | one shared EU deployment serves N subdomain tenants; wildcard DNS/TLS terminates at the shared host, and a fail-closed Host router maps `company.senecapp.ai` -> `workspaceId` | [D2-shared-tenant-mesh](../work/D2-shared-tenant-mesh/) | instant outreach/demo tenants with near-zero marginal deployment cost |
 
-The D2 shared topology requires wildcard DNS, wildcard TLS, and a
+The D2 shared topology is post-v1. It requires wildcard DNS, wildcard TLS, and a
 `Host:`-header tenant router seated beside the existing workspace-id adapter.
 Unknown hosts fail closed and never map to a default tenant. D2 must prove
 cross-tenant isolation in one process across sessions, files, pending inputs,
 search, artifacts, governance, and brokered secrets.
+
+Do not start D2 until D1 has repeated enough to establish the deployment
+contract and a trusted adapter-created `TenantContext { tenantId, workspaceId,
+principal }` exists. Caller-supplied or optional `SessionCtx` is not a shared
+tenancy authorization boundary.
 
 ## FUSE × isolation matrix (condensed)
 
@@ -80,7 +96,7 @@ type ProviderRuntimeSpec = {
 
 The `ref` is human/operator-readable (`registry.example/boring/runtime-node:2026-07`); the `digest` is the execution identity and is required for any non-dev run. Runtime images are not a new package boundary: `@hachej/boring-bash` still chooses the mode, `@hachej/boring-sandbox` still owns provider adapters/capability facts, and P5 still owns provisioning/fingerprint orchestration.
 
-BBP6-009 adds the agent authoring surface: `AgentDefinitionDeclaration.runtimeProfileRef?`.
+BBP6-009 adds the deployment surface: `AgentDeployment.runtimeProfileRef?`.
 It is a host-resolved reference to an operator-supplied runtime-profile catalog,
 not an inline image spec or Dockerfile. The resolved profile image fills this
 provider-config `{ image: { ref, digest } }` slot; if no ref is declared, the

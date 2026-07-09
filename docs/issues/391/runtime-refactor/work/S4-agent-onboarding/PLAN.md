@@ -1,4 +1,6 @@
-# S4-agent-onboarding - Plan
+# S4-agent-onboarding — Plan
+
+Status: post-v1; not a #391 v1 exit gate.
 
 > Phase: Phase S4 - agent onboarding status · Work order: [TODO.md](./TODO.md) · Handoff: [HANDOFF.md](./HANDOFF.md)
 > Ordering authority: [INDEX.md](../../INDEX.md) · Vision: [VISION.md](../../VISION.md) · PR plan: [PR-PLAN.md](../../PR-PLAN.md)
@@ -6,7 +8,8 @@
 ## Governing architecture
 
 - [S3-control-plane-ux](../S3-control-plane-ux/TODO.md) - observe/inspect/approve control-plane UX that S4 extends, not rewrites.
-- [P6-plugin-child-app](../P6-plugin-child-app/TODO.md) - `AgentDefinitionDeclaration`.
+- [P6-plugin-child-app](../P6-plugin-child-app/TODO.md) - canonical
+  `AgentDefinition`/`AgentDeployment` and P6-R resolution.
 - [M2-mcp-agent-surface](../M2-mcp-agent-surface/TODO.md) - demo endpoint status.
 - [D1-tenant-provisioning](../D1-tenant-provisioning/TODO.md) - provisioning status.
 - [D2-shared-tenant-mesh](../D2-shared-tenant-mesh/TODO.md) - shared-tier tenant readiness status.

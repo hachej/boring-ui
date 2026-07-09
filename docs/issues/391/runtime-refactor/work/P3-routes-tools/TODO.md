@@ -1,6 +1,7 @@
 # TODO-P3 — Move file/bash server routes + tools into `@hachej/boring-bash`
 
-Handoff: self-contained work order for one autonomous coding agent (pi or gpt-5.5-xhigh). Cite plan files by relative path. No prior conversation assumed.
+Coordinator: never assign this whole file. Dispatch one bead/PR with this
+file's context, dependencies, and non-negotiables included in the assignment.
 
 ## Context (read first)
 
@@ -91,7 +92,7 @@ P3 therefore **enumerates and migrates EVERY in-repo composition consumer**, eac
 ### BBP3-010 — Add `/agent` subpath + `createBashAgentFeature()` skeleton [size S]
 
 - **Files touch/create:** replace stub `packages/boring-bash/src/agent/index.ts` (currently `export {}`) with real exports; `packages/boring-bash/package.json` (add `"./agent"` export); `packages/boring-bash/tsup.config.ts` (add entry); `packages/boring-bash/scripts/check-invariants.mjs` (`requiredExports` += `"./agent"`).
-- **Notes:** Define `createBashAgentFeature()` as an **environment bundle factory** returning a plain boring-bash-local bundle `{ tools: AgentTool[]; readinessRequirements: string[]; systemPromptFragment: string }` — **NOT** an `AgentFeature` core contract (there is no such abstraction). The name may survive for source compatibility inside the phase, but reviewers should read it as "create the bash/filesystem capability residue for resolved environments." The bundle contributes tools + readiness gates + the bash/file prompt fragment **only** — NOT routes. `systemPromptFragment` is the file/bash guidance text adapted/split from Pi's default prompt text; in this checkout `node_modules` is absent, so the exact Pi source file is not locally findable and the implementation note is: **adapt from pi default prompt text**. In plugin mode, the boring-bash server plugin calls this factory and exposes the result as `defineServerPlugin({ agentTools: bundle.tools, systemPrompt: bundle.systemPromptFragment })`; in library mode, a direct composer may spread `tools`/`readinessRequirements` into `createAgent()` and append `systemPromptFragment` with them. Routes are never carried by the bundle and are never mounted by `packages/agent`. Import `AgentTool`/`RuntimeBundle` **type-only** from `@hachej/boring-agent/server`. The bundle is the first source in the deterministic tool/renderer chain (environment bundle -> plugins in manifest order -> host config); it should not declare overrides against itself, and later duplicate names must fail unless the later source explicitly says `overrides: true`. **After E1, the factory internals must derive from `AttachedEnvironmentRuntime[]` / `ResolvedEnvironment[]` facts rather than runtime-mode labels while preserving this public bundle shape.** No behavior yet — wiring lands in BBP3-013/014.
+  - **Notes:** Define `createBashAgentFeature()` as an **environment bundle factory** returning a plain boring-bash-local bundle `{ tools: AgentTool[]; readinessRequirements: string[]; systemPromptFragment: string }` — **NOT** an `AgentFeature` core contract (there is no such abstraction). The name may survive for source compatibility inside the phase, but reviewers should read it as "create the bash/filesystem capability residue for resolved environments." The bundle contributes tools + readiness gates + the bash/file prompt fragment **only** — NOT routes. `systemPromptFragment` is the file/bash guidance text adapted/split from Pi's default prompt text. In plugin mode, the boring-bash server plugin calls this factory; in library mode, a direct composer spreads its core inputs. Routes are never carried by the bundle or mounted by agent. The bundle is first in the deterministic merge chain and duplicates fail unless the later source explicitly overrides. **After E1, factory internals derive from auth-gated contribution closures plus methodless facts; every operation reauthorizes through `withAuthorizedView` and no raw handle enters the bundle/core.** No behavior yet — wiring lands in BBP3-013/014.
 - **Tests:** export-map test imports `/agent`; invariants green.
 - **Acceptance:** `/agent` subpath resolves; feature factory type exists.
 
@@ -165,6 +166,25 @@ P3 therefore **enumerates and migrates EVERY in-repo composition consumer**, eac
 - **Tests:** a policy-denied model selection returns `MODEL_NOT_ALLOWED` + 403; a malformed model id still returns `TOOL_INVALID_INPUT` + 400; the code is exported from agent shared and asserted stable.
 - **Acceptance:** the front can distinguish typo from policy denial by code; no error-code reuse for model policy denial remains.
 
+### BBP3-019 — Capability-gate the existing filesystem front plugin [size M]
+
+- **Scope:** v1 non-move closeout. Keep `filesystemPlugin` workspace-owned; P4
+  remains the post-v1 relocation owner.
+- **Files touch:** existing workspace builtin-plugin registration,
+  filesystem composer/data providers, tool renderers, file/search/upload UI
+  affordances, and their API clients. Consume the same host-resolved
+  environment capability projection used by P3 server composition; do not
+  derive visibility from `runtimeMode`, route probing, or a second resolver.
+- **Behavior:** with no resolved filesystem environment, do not register the
+  plugin/providers/renderers and do not issue file/tree/search/upload API calls.
+  With a resolved filesystem environment, preserve current behavior and the
+  single `getFilesystemBindings` visibility decision path.
+- **Tests:** pure/headless composition has zero filesystem UI registration and
+  zero related API calls; capable workspace composition retains existing tree,
+  editor, renderer, search, and upload behavior.
+- **Acceptance:** detaching filesystem capability leaves no UI/API residue while
+  no files or exports move to boring-bash.
+
 ## Verification — exact commands verified against package.json scripts
 
 ```bash
@@ -200,12 +220,15 @@ Matches [`../../PR-PLAN.md`](../../PR-PLAN.md) P3 rows exactly:
 - `pr4-move-fs-git-routes` → BBP3-014.
 - `pr5-wire-composition` → BBP3-015 (server plugin registration for workspace-family hosts; library-mode hand wiring only for direct composers such as the current CLI workspaces path if it is not moved onto the plugin pipeline).
 - `pr6-sot-tests-invariants` → BBP3-016 + BBP3-017 + BBP3-018 (Amendment 2026-07-06: the small `MODEL_NOT_ALLOWED` bead folds into this PR — no new PR row).
+- `pr7-capability-gate-filesystem-ui` → BBP3-019.
 
 ## Review gates
 
 - Phase 1 (`createAgent()` with injected `tools`/runtime — no `features` param) + Phase 2 (providers moved) confirmed present, else STOP+report.
 - Behavior-freeze verified: tool names/schemas/prompt snippets/readiness tags/error codes unchanged; renderer snapshots unchanged.
 - `disableDefaultFileTools` parity test passes; pure mode has zero file routes/tools.
+- Pure mode has no filesystem plugin/providers/renderers/affordances and makes
+  no related API requests; capable mode remains unchanged.
 - `(filesystem, path)` param + spoof guard + readonly `rejectMutation` preserved verbatim; company_context no-leak conformance green.
 - Single source-of-truth regression tests pass; no second storage-root resolver introduced.
 - `pnpm lint:invariants` + `pnpm audit:imports` green; zero agent→bash value imports; workspace-family hosts have no static `packages/workspace/src` import from `@hachej/boring-bash`.

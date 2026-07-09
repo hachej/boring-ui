@@ -1,13 +1,35 @@
 # TODO-P6 — Plugin and child-app integration
 
-Handoff: self-contained work order for one autonomous coding agent (pi or gpt-5.5-xhigh). Cite plan files by relative path. No prior conversation assumed.
+## Binding v1 slice (2026-07-09)
+
+Dispatch these first and independently of plugin/child-app work:
+
+1. **BBP6-009 / P6-D:** front-safe behavior-only `AgentDefinition`, separate
+   `AgentDeployment`, and deterministic canonical digest.
+2. **BBP6-003 / P6-D:** minimal Map registry stores immutable verified bundles
+   by definition id/version. Duplicate id/version with the same digest is
+   idempotent; a different digest fails closed.
+3. **BBP6-011 / P6-R:** after E1/P5a, host-resolve definition + deployment +
+   active authority to `ResolvedAgent`; validate requirements and store
+   definition/deployment/resolved-snapshot identity on new sessions. Keep a
+   current agent pointer separate from durable immutable generations so pinned
+   sessions remain addressable after reload/restart.
+
+A1 and D1 justify these abstractions. All plugin runtime, hosted mode, reload,
+remote-worker image, per-agent plugin UI/routes, and child-app beads below are
+post-v1. BBP6-010 cannot implement UI/route gating before P7 supplies trusted
+agent-aware routing.
+
+Coordinator only. Dispatch exactly one bead/PR per implementation assignment;
+never hand this whole multi-increment TODO to one coding agent. Each assignment
+cites its bead plus the architecture and milestone authorities.
 
 ## Context (read first)
 
 - `docs/issues/391/runtime-refactor/architecture/04-plugin-child-app-runtime.md` — child-app target, "Relationship to shared child-app platform plan" (consume, do not define), plugin manifest requirements, hosted external plugins (#357 fail-closed), `RuntimePluginContext`, shared per-workspace plugin runtime (#254), hot reload in full-app (#41), Macro-hosted-inside-full-app, secrets, managed-service plugins, Tests list.
 - `docs/issues/391/runtime-refactor/INDEX.md` — Phase 6 deliverables/exit ("as v1"). Prerequisite unchanged: **do not define a competing child-app registry here.**
-- `docs/issues/391/runtime-refactor/architecture/00-global-isa.md` — invariants 6 (no silent widening), 8 (child-app/workspace-kind narrows, never widens), 11 (surfaces never own the loop), 14 (secrets brokered), 15 (EU-sovereign). North star: `AgentRegistry` delivery is deferred until Phase 6/7 (no speculative abstraction).
-- `docs/issues/391/runtime-refactor/INDEX.md` — dispatch protocol; **Simplicity & no-compat policy (binding)**: migrate importers in-PR, no shims/aliases/legacy paths, no abstraction without two real consumers (or one named consumer in the immediately following phase — `AgentRegistry` qualifies: Phase 7 consumes it), `// TODO(remove:<bead-id>)` + deletion bead for transitional code.
+- `docs/issues/391/runtime-refactor/architecture/00-global-isa.md` — invariants 6 (no silent widening), 8 (child-app/workspace-kind narrows, never widens), 11 (surfaces never own the loop), 14 (secrets brokered), 15 (EU-sovereign). P6-D owns immutable definition lookup; P6-R owns resolved agent lookup.
+- `docs/issues/391/runtime-refactor/INDEX.md` — dispatch protocol; **Simplicity & no-compat policy (binding)**: migrate importers in-PR, no shims/aliases/legacy paths, no abstraction without two real consumers (or one named consumer in the immediately following phase — P6-R resolved lookup qualifies because D1 and later P7 consume it), `// TODO(remove:<bead-id>)` + deletion bead for transitional code.
 - The v1 child-app/plugin coverage (BBA-050..056) is **superseded and non-canonical** here — every compatibility-export/shim/deprecation-window instruction is stripped; secret handling follows the P5 brokering rule (host-side handles; brokered secrets never enter any sandboxed environment).
 
 ### Dependency — shared child-app platform plan (STATE PRECISELY, verify before starting)
@@ -21,9 +43,16 @@ Consequence, binding:
 
 ### Dependencies (phase order)
 
-- **P6a ← P5**: P6a (BBP6-002/003/004/005/007/008/009/010) dispatches once **P5** is complete (normalizer + effective requirement resolution feeding `provisionWorkspaceRuntime()`; secret status/grant + brokering rule). It needs nothing from the child-app platform plan.
-- **P6b ← P6a + child-app platform type**: P6b (BBP6-001, BBP6-006) additionally requires the shared child-app platform code export (expected `ResolvedChildAppContext`, #376) — HARD BLOCKED / STOP-and-report until it lands (no local fallback shape). Child-app requirements intersect through the P5 normalizer once the resolved context exists.
-- **P7 ← P6a + E1 + T2**: the `AgentRegistry` (BBP6-003) **and** the workspace `agents: [...]` `AgentDefinitionDeclaration` / default-agent composition (BBP6-009, a **P6a** bead) are introduced here and **consumed by Phase 7** — that is their second/immediately-following consumer, satisfying the no-speculative-abstraction rule. Keep the registry minimal; the definition schema is the canonical authored declaration. P7 needs P6a's `AgentRegistry` + definition declaration (**not** P6b's child-app scoping), plus **E1** (environment attachments/facts) and **T2** (the `sessionId`-only transport + platform-addressing guard its surface `agentId` binding rides). (P7 explicitly STOPs and reports if the P6a pieces are absent — see [`../P7-multi-agent-inspection/TODO.md`](../P7-multi-agent-inspection/TODO.md) "Depends on".)
+- **P6-D ← P1:** BBP6-009 and BBP6-003 establish behavior/deployment
+  schemas, bundle digest rules, and immutable definition-version lookup.
+- **P6-R ← P6-D + E1 + P5a:** BBP6-011 resolves deployment authority and
+  prepared environment inputs to immutable agents.
+- **Post-v1 plugin expansion ← P6-R + P5:** BBP6-002/004/005/007/008/010
+  extend manifest, hosted-mode, and reload behavior. They are not a P8 gate.
+- **P6b ← P6a + child-app platform type**: P6b (BBP6-001, BBP6-006) additionally requires the shared child-app platform code export (expected `ResolvedChildAppContext`, #376) — HARD BLOCKED / STOP-and-report until it lands (no local fallback shape). Child-app policy may narrow maximum authority; child-app requirements only validate active authority through the P5 normalizer once the resolved context exists.
+- **Consumers:** A1 local development and D1 dedicated delivery justify P6-D/
+  P6-R in v1. Post-v1 P7 consumes the P6-R resolved registry; it is not the
+  reason to delay the definition boundary.
 
 ### Already landed (do not redo, build on it)
 
@@ -34,13 +63,17 @@ Consequence, binding:
 - Front plugin trust union (the seam hosted/iframe extends): `packages/workspace/src/shared/plugins/runtimePluginTypes.ts` — `BoringPluginNativeFrontTargetTrust = "local-trusted-native"`, `BoringPluginFrontTarget` union (comment: iframe/artifact kinds extend it without breaking).
 - Reload route: `POST /api/v1/agent/reload` in `packages/agent/src/server/registerAgentRoutes.ts` (~line 998) + `http/routes/reload.ts`; `beforeReload` hook (ctx `{ workspaceId, workspaceRoot, request }`); plugin diagnostics tool `packages/agent/src/server/tools/pluginDiagnostics.ts`; `getPluginDiagnostics` option.
 - Macro reference fixture: `packages/workspace/src/app/server/__tests__/macroRuntimeProvisioning.test.ts` (grounds child-app-scoped provisioning without hardcoding Macro in the runtime layer).
-- **`AgentRegistry` does not exist** in `packages/agent/src` or `packages/workspace/src` (`! rg -n "AgentRegistry" packages/agent/src packages/workspace/src` exits 0 today) — BBP6-003 introduces it.
+- No definition-version or resolved-agent registry exists in current code;
+  BBP6-003 introduces only the former and BBP6-011 introduces the latter.
 
 ## Goal / exit criteria
 
-Plugins and child apps declare runtime needs safely. P6 is split into a dispatchable **P6a epic gate** and a **P6b blocked follow-up** exactly as in [`HANDOFF.md`](./HANDOFF.md) and [`../../INDEX.md`](../../INDEX.md): P6a ships the child-app-independent plugin/agent-registry core that P7/P8 consume; P6b later consumes the shared child-app platform type for Macro/workspace-kind scoping and is outside the epic exit.
+V1 P6 establishes immutable definition/deployment data and host resolution for
+A1 and D1. Plugin/runtime expansion and child-app scoping remain separately
+dispatchable post-v1 work. P8 uses [`P6-V1-HANDOFF.md`](./P6-V1-HANDOFF.md),
+not the aggregate package handoff.
 
-### P6a epic gate (dispatchable after P5; P7/P8 depend on this)
+### Post-v1 plugin expansion acceptance (not a P8 gate)
 
 - [ ] import-free manifest validation runs **before** any plugin code executes.
 - [ ] hosted plugin fails closed in remote mode for unsupported front/server/tool/bash/service/secret requirements.
@@ -61,11 +94,15 @@ Plugins and child apps declare runtime needs safely. P6 is split into a dispatch
 
 Pass-3 split (binding): P6 is **two explicitly-labeled sub-parts** with different readiness. Dispatch them independently — do not let P6b's hard block hold P6a hostage, and do not let P6a smuggle child-app scoping forward.
 
-**P6a — child-app-independent (dispatchable after P5).** Beads: **BBP6-002** (manifest validation for `boring.requires`/`bash` plus skill filters over resolved environment facts), **BBP6-003** (`AgentRegistry`), **BBP6-009** (workspace `agents: [...]` `AgentDefinitionDeclaration` + default-agent composition that seeds the `AgentRegistry`), **BBP6-010** (per-agent plugin composition), **BBP6-004** (plugin runtime context) — plus the child-app-independent infra beads **BBP6-005** (hosted plugin fail-closed), **BBP6-007** (shared per-workspace plugin runtime), **BBP6-008** (multi-tenant reload). None of these needs anything from the shared child-app platform plan. **Grep-gated guarantee (blocking — in the acceptance of each of the named beads BBP6-002/003/004/009/010): these contracts contain ZERO child-app fields/types.** `! rg -n "childAppId|workspaceKind|ChildApp" <the file(s) each bead creates>` exits 0. Child-app scoping is layered on only in P6b.
+**Post-v1 plugin core:** BBP6-002/004/005/007/008/010. These beads remain
+child-app-independent, but they do not gate A1, D1, or P8.
 
-**P6b — child-app scoping (HARD BLOCKED; a tracked follow-up OUTSIDE the epic exit).** Beads: **BBP6-001** (consume resolved child-app/workspace-kind context) and **BBP6-006** (Macro requirement scoping). These are **BLOCKED — STOP and report** until the shared child-app platform code export (expected `ResolvedChildAppContext`, #376) exists. **No local provisional shape** — a forked type would duplicate the platform contract. When it lands, import it **type-only** and reconcile to the owner-approved export. **P6b is NOT an epic exit gate: it does not gate P7 (P7 consumes P6a only) and it does not gate P8.** The #391 epic ships without P6b; P8 only verifies the P6b follow-up plus M2/D1/S4 follow-up or status tracking (it never waits on P6b landing), so P6b's hard block can never deadlock the epic's exit.
+**P6b — child-app scoping (post-v1, blocked on #376).** No provisional local
+type. It gates neither P6-R nor P8.
 
-Dispatch: **P6a ← P5**; **P6b ← P6a + child-app platform type**; **P7 ← P6a + E1 + T2** (P7 consumes the `AgentRegistry` from P6a, *not* the child-app scoping of P6b).
+Dispatch: **P6-D ← P1**; **P6-R ← P6-D + E1 + P5a**; plugin expansion
+follows P6-R/P5; **P6b ← plugin expansion + child-app platform type**; **P7 ←
+P6-R + E1 + T2** and does not wait for P6b.
 
 ## Non-negotiables
 
@@ -75,8 +112,11 @@ Dispatch: **P6a ← P5**; **P6b ← P6a + child-app platform type**; **P7 ← P6
 - Do **not** leak Macro tools/prompts/provisioning/panels into generic workspaces.
 - Secrets follow the P5 brokering rule: plugin/browser/model contexts see status only (`missing|granted|denied|expired`); no raw values in manifests, logs, transcripts, or provisioning artifacts.
 - Hosted/untrusted plugin mode stays deliberately constrained (fail-closed) unless host policy promotes the plugin to a trusted tier.
-- `AgentRegistry` is a **minimal Map-backed** data structure — no lifecycle framework, no plugin system, no speculative parameters. Phase 7 is its consumer.
-- `AgentDefinitionDeclaration` is the canonical authored agent definition shape. P7, M1/M2, S1, S2, S3, S4, and later factory/provisioning work consume this same definition or a lossless projection. Unknown instruction/persona/capability/environment/sandbox/governance/model/demo/pricing/exposure refs fail closed.
+- The P6-D definition registry is a **minimal Map-backed** data structure — no
+  runtime handles, lifecycle framework, plugin system, or speculative
+  parameters. P6-R/P7 own deployed/resolved agent lookup separately.
+- `AgentDefinition` is canonical reusable behavior. `AgentDeployment` owns
+  environments/runtime/policy/exposure. Unknown references fail closed.
 - `@hachej/boring-agent` keeps zero value imports from `@hachej/boring-bash`; surfaces never own the loop (invariant 11).
 
 ## Do NOT
@@ -93,8 +133,8 @@ Dispatch: **P6a ← P5**; **P6b ← P6a + child-app platform type**; **P7 ← P6
 
 - **Files create:** `packages/workspace/src/server/childApp/resolvedChildAppContext.ts` (the **consumption seam** wrapper + intersection helper around the owner-approved #376 exported type; no local source-of-truth shape) + `__tests__/`.
 - **Files touch:** `packages/core/src/app/server/createCoreWorkspaceAgentServer.ts` and `packages/cli/src/server/modeApps.ts` (thread an optional host-supplied `ResolvedChildAppContext` into requirement/plugin/prompt resolution — do not source it here); the P5 normalizer call sites (child-app requirements become one requirement source).
-- **Notes:** **Hard-prerequisite check first:** the resolved child-app context type is owned by the shared child-app platform implementation (#376; expected export `ResolvedChildAppContext`). Import it **type-only**. **If that code export has not landed, this bead is BLOCKED — STOP and report; do NOT define a local shape** (no fallback, no `// TODO(remove:BBP6-001)` stub — a forked shape would duplicate the platform contract). Once it has landed, apply the effective policy stack (`app defaults < resolved childApp/workspaceKind < workspace < agent < session grants < plugin/tool requirement`); child-app narrows, never widens (invariant 8). Billing/product ids are core-owned metadata for diagnostics only — never consumed by boring-bash logic. Unknown `childAppId`/`workspaceKind` → stable diagnostic, no silent Macro fallback.
-- **Tests:** generic workspace excludes child-app-scoped plugins/prompts/provisioning; matching kind includes them; child-app policy narrows but cannot widen workspace max; unknown id → stable error; billing/product metadata reaches diagnostics only.
+- **Notes:** **Hard-prerequisite check first:** the resolved child-app context type is owned by the shared child-app platform implementation (#376; expected export `ResolvedChildAppContext`). Import it **type-only**. **If that code export has not landed, this bead is BLOCKED — STOP and report; do NOT define a local shape** (no fallback, no `// TODO(remove:BBP6-001)` stub — a forked shape would duplicate the platform contract). Once it has landed, compute `maximumAuthority = providerFacts ∩ host/app policy ∩ resolved childApp/workspaceKind policy ∩ workspace policy ∩ deployment policy`, then `activeAuthority = maximumAuthority ∩ authenticated grants ∩ session/subagent scope`; validate plugin/tool requirements against active authority. Child-app policy narrows, never widens; requirements never grant or narrow. Billing/product ids are core-owned metadata for diagnostics only — never consumed by boring-bash logic. Unknown `childAppId`/`workspaceKind` → stable diagnostic, no silent Macro fallback.
+- **Tests:** generic workspace excludes child-app-scoped plugins/prompts/provisioning; matching kind includes them; child-app policy narrows but cannot widen workspace max; declaring a requirement does not grant the capability; missing active capability fails readiness; unknown id → stable error; billing/product metadata reaches diagnostics only.
 - **Acceptance:** the runtime layer consumes child-app context and scopes requirements without owning or duplicating the child-app platform.
 
 ### BBP6-002 — [P6a] Extend plugin manifest validation import-free for `boring.requires` + `bash`; reserve skill filters over resolved environment facts [size M]
@@ -106,13 +146,30 @@ Dispatch: **P6a ← P5**; **P6b ← P6a + child-app platform type**; **P7 ← P6
 - **Tests:** manifest requiring bash/exec/filesystem facts is skipped/diagnosed when the resolved facts are missing or unknown; invalid `bash` block rejected before import; side-effecting `boring.server`/`boring.front` fixture proves validation is import-free; existing trusted plugins still load; hosted iframe fields still validate; raw secret value in manifest rejected with stable code; optional requirement failure degrades; `boring.id` behavior unchanged; a skill declaring filesystem/bash requirements is filtered from Pi resources, `/api/v1/agent/skills`, slash suggestions, and the generated skills-index prompt fragment when no resolved environment fact satisfies it but visible when the fact is present.
 - **Acceptance:** hosts determine whether a plugin is allowed/ready without executing untrusted plugin code, and skill availability is filtered by resolved environment facts where skills are loaded. The generated skills-index prompt fragment is downstream of the same filter and never advertises a skill whose requirements are unsatisfied. **P6a grep-gate (blocking):** the manifest validator carries ZERO child-app fields/types — `! rg -n "childAppId|workspaceKind|ChildApp" packages/workspace/src/shared/plugins/manifest.ts packages/workspace/src/server/agentPlugins/scan.ts packages/workspace/src/server/agentPlugins/types.ts` exits 0 (child-app scoping of manifests is P6b, layered elsewhere).
 
-### BBP6-003 — [P6a] Introduce `AgentRegistry` (minimal, Map-backed) [size S]
+### BBP6-003 — [P6-D] Introduce immutable bundle registry [size S]
 
-- **Files create:** `packages/agent/src/server/agents/AgentRegistry.ts` (Map-backed registry keyed by `agentId`) + `__tests__/`.
+- **Files create:** `packages/agent/src/server/agents/AgentDefinitionRegistry.ts`
+  plus `__tests__/`.
 - **Files touch:** `packages/agent/src/server/index.ts` (export the type + class).
-- **Notes:** Minimal: `register(agentId, entry)`, `get(agentId)`, `list()`, `has(agentId)`, `delete(agentId)` over a `Map`. `entry` holds only what Phase 6/7 need now: resolved agent id, default tool/plugin set reference, readiness handle. **It carries NO child-app fields** (`childAppId`/`workspaceKind`) — child-app scoping of an agent is layered on in **P6b**, never in this P6a contract. **No lifecycle framework, no event bus, no dispose orchestration** beyond `delete`. This is the data structure Phase 7 (`agentId`-scoped routes, per-agent catalog/readiness, agent inspection endpoint) consumes — do not build those consumers here. No env-var reads (P1 rule).
-- **Tests:** register/get/list/has/delete round-trip; duplicate registration fails closed with stable `AGENT_ALREADY_EXISTS` (never last-write replacement); type-only shape carries `agentId` and no child-app field.
-- **Acceptance:** a minimal registry exists for Phase 6a wiring and Phase 7 consumption; no framework creep. **P6a grep-gate (blocking):** `! rg -n "childAppId|workspaceKind|ChildApp" packages/agent/src/server/agents/AgentRegistry.ts` exits 0.
+- **Notes:** Back one registry with `Map<definitionId, Map<version, CompiledAgentBundle>>`.
+  Provide register, get,
+  list-versions, and has operations by `(definitionId, version)`. Registering
+  the same tuple and digest is idempotent; registering the same tuple with a
+  different digest fails with a stable conflict code. On registration, verify
+  canonical definition+asset digest, contained normalized asset paths, unique
+  asset names, each asset digest, and every `instructionsRef`; then deep-freeze
+  or defensively copy the bundle. No delete, agentId, runtime handle, tool/plugin
+  catalog, readiness handle, lifecycle, event bus, or disposal belongs here.
+  P6-R and P7 own resolved runtime agent-id lookup.
+- **Tests:** register/get/list-versions/has round-trip after source-checkout
+  removal; same digest is
+  idempotent; conflicting digest fails closed; returned data cannot mutate the
+  stored bundle; tampered/missing/duplicate/traversing assets reject; no
+  agentId/runtime/child-app field exists.
+- **Acceptance:** A1 and P6-R can select an immutable definition version without
+  importing runtime lifecycle. **P6-D grep-gate:**
+  `! rg -n "agentId|readiness|tool|childAppId|workspaceKind|ChildApp" packages/agent/src/server/agents/AgentDefinitionRegistry.ts`
+  exits 0 (asset `path`/`content` fields are allowed).
 
 ### BBP6-004 — [P6a] Runtime plugin context (`RuntimePluginContext`) on the gateway [size M]
 
@@ -145,12 +202,37 @@ Dispatch: **P6a ← P5**; **P6b ← P6a + child-app platform type**; **P7 ← P6
 
 ### BBP6-008 — [P6a] Multi-tenant full-app reload (#41) [size M]
 
-- **Files touch:** `packages/agent/src/server/registerAgentRoutes.ts` (`/api/v1/agent/reload`, `beforeReload`, `getPluginDiagnostics`) and the full-app composition (`apps/full-app/src/server/*`, `packages/core/src/app/server/createCoreWorkspaceAgentServer.ts`) to resolve per request: workspace, agent binding (BBP6-003 `AgentRegistry`), plugin runtime, boring-bash requirement/readiness state, `beforeReload` hook, asset manager, backend registry, Pi/plugin snapshots.
+- **Files touch:** `packages/agent/src/server/registerAgentRoutes.ts` (`/api/v1/agent/reload`, `beforeReload`, `getPluginDiagnostics`) and the full-app composition (`apps/full-app/src/server/*`, `packages/core/src/app/server/createCoreWorkspaceAgentServer.ts`) to resolve per request: workspace, P6-R/P7 resolved agent binding (not the BBP6-003 definition registry), plugin runtime, boring-bash requirement/readiness state, `beforeReload` hook, asset manager, backend registry, Pi/plugin snapshots.
 - **Notes:** `/api/v1/agent/reload` works in full-app where enabled. Pure/headless agents reload without boring-bash unless a plugin requirement pulls it. Reload diagnostics include manifest validation, requirement validation, provisioning readiness, and plugin import/runtime errors (surface via `getPluginDiagnostics`/`plugin_diagnostics` tool). Trusted server-plugin route/tool changes are **diagnosed, not hot-registered** (no unsafe hot route registration). Missing/unauthorized workspace → stable error.
 - **Tests:** reload resolves per workspace; missing/unauthorized workspace → stable error; plugin assets reload and backend dispatch still work; pure/headless reload works without boring-bash; trusted server-plugin backend changes diagnosed not hot-swapped; reload surfaces requirement/provisioning errors without losing a previously working UI where applicable.
 - **Acceptance:** multi-tenant full-app reload works without route 404s or silent slash-command failures.
 
-### BBP6-009 — [P6a] Workspace `agents: [...]` `AgentDefinitionDeclaration` + default-agent composition (seeds `AgentRegistry`) [size M]
+### BBP6-009 — [P6-D, v1] Versioned definition/deployment schemas + digest rules [size M]
+
+- **Current binding acceptance:** implement the contracts from architecture 05.
+  Definition behavior is reusable and versioned. Deployment has its own
+  `deploymentId` and `version` and owns environments,
+  runtime/model/sandbox/governance policy and tenancy. Pricing and exposure stay
+  outside reusable behavior. Definition digest covers verified instruction
+  assets; deployment digest covers every authority/policy reference; neither
+  contains a raw secret. P6-R adds resolved-snapshot digest. Every new session
+  snapshots all three identities.
+- `AgentDeployment` in P6-D carries only
+  `environmentAttachmentRefs?: string[]`: validated opaque ids, sorted and
+  duplicate-free for canonical digesting. It imports no E1/boring-bash type.
+  P6-R resolves those refs through its host attachment catalog after E1; unknown
+  or unauthorized refs fail closed.
+- `WorkspaceAgentsDeclaration` in P6-D contains bundles, deployments, and
+  `defaultAgentId` only. BBP6-011 creates the separate concrete host-only
+  `DeploymentAttachmentCatalog` after E1; do not define or import an
+  `EnvironmentDefinition` in agent shared.
+- **Rejected fields on `AgentDefinition`:** environment attachments,
+  `runtimeProfileRef`, sandbox/governance/model/demo/pricing/exposure refs,
+  host/subdomain, tenant roots, seed-source refs, and `pluginRefs`/`plugins`.
+  Reject unsupported v1 fields with `AGENT_DEFINITION_UNSUPPORTED_FIELD`; do
+  not reserve a silently ignored plugin field.
+
+### Historical BBP6-009 text (2026-07-08) — SUPERSEDED; do not implement
 
 - **Files create:** `packages/agent/src/shared/agents/agentDefinitionDeclaration.ts` (import-free, **front-safe** declaration schema + validator — no `node:*`, no `Buffer`, no Fastify) + `__tests__/`; `packages/boring-sandbox/src/shared/runtimeProfile.ts` (**types only**, front-safe) with `ResolvedRuntimeProfile { profileId, image? }` and `RuntimeProfileCatalog` interface. **Amendment (2026-07-08):** the canonical definition schema lives in `@hachej/boring-agent`, not `boring-workspace`. Rationale: once BBP6-009 became the *canonical* authored agent definition (not a narrow workspace declaration), it is a contract consumed by non-workspace surfaces (M1/M2 MCP, S1 Slack, S2 embed, D1 tenant provisioning) that must not depend on the workspace package; `boring-agent` is the "defines all contracts, imports nothing" package and the definition is the input to the agent core resolver. Invariant compliance: the workspace/core/cli **server** composition seams value-import the validator (server-side, allowed), and the workspace **front** (S3/S4 lists) uses `import type` only (allowed under the "zero value imports from `@hachej/boring-agent` in workspace base front/shared" invariant). It sits alongside `packages/agent/src/shared/capabilities.ts`. **Amendment (2026-07-08):** the canonical schema is `WorkspaceAgentsDeclaration { agents: AgentDefinitionDeclaration[]; defaultAgentId: string; environments?: EnvironmentPoolEntry[] }`, where each `AgentDefinitionDeclaration` may carry `plugins?: PluginRef[]` (the `agents:[]` array is *workspace config that carries* the definitions; the definition *type* is agent-owned; `environments?:[]` is the project environment pool that `environmentAttachments` refs resolve against — see the pool invariant below). `AgentDefinitionDeclaration` includes:
   - `agentId`, `label?`, `description?`;
@@ -191,7 +273,75 @@ Dispatch: **P6a ← P5**; **P6b ← P6a + child-app platform type**; **P7 ← P6
 - **Tests:** mock handshake reports `runtimeImage:true` and an image-pinning remote-worker agent readies; reports `false` or `'unknown'` and the agent fails closed with the existing code and `requirement:'runtimeImage'`; both `source:'profile'` and `source:'provider-default'` selection records are read and support-checked post-handshake; the stashed image is read from `AgentRegistry`, with no route-binding / P7 dependency.
 - **Acceptance:** a remote-worker agent pinning an image through either `runtimeProfileRef` or provider default is validated after handshake, never prematurely at pr2, using the unified `SelectedRuntimeImage`.
 
-### §3 Deferred / follow-up — BBP6-011 reqs-vs-facts validation + install optimization
+### BBP6-011 — [P6-R, v1] Resolve immutable agent snapshot
+
+- Resolve a verified `CompiledAgentBundle` plus versioned `AgentDeployment`,
+  provider facts,
+  host/workspace/agent policy, approved grants, E1 facts, and P5a readiness.
+- Resolve every deployment `environmentAttachmentRef` to an E1 attachment at
+  this boundary. Do not accept inline attachment objects and do not add a P6-D
+  dependency on E1.
+- **Lookup owner/files:** create
+  `packages/boring-bash/src/server/deploymentAttachmentCatalog.ts` in this bead.
+  It is a workspace-scoped injected `Map<string, { environment, attachment,
+  mountPath }>` with duplicate/unsafe-id validation and stable unknown/
+  unauthorized-ref errors. It has no resource lifecycle, no global singleton,
+  and returns entries only to `prepareAttachmentLifetime`; raw prepared handles
+  never enter the catalog or agent core. A1 dev and D1 are its two v1 consumers.
+- The catalog exposes `bindLifetime(refs, trustedLifetimeScope, owner)` and
+  `bindProjection(ref, trustedLifetimeScope, owner)`. It resolves/sorts entries,
+  derives `attachmentSetDigest`, constructs the full E1 key, prepares the
+  lifetime, and returns one opaque ref-bound `{ facts, contributions }` unit.
+  Callers cannot supply a lifetime key or contributions independently.
+- Re-verify the bundle at the resolver boundary and load instructions only from
+  its immutable assets. Resolution must work after the source checkout is
+  unavailable. Compute canonical `deploymentDigest` before policy resolution.
+- Compute maximum/active authority using architecture 03, then validate
+  requirements. Requirements never grant or narrow authority.
+- Return immutable `ResolvedAgent` with methodless environment facts, bound
+  core inputs, and identity containing definition, deployment, and
+  `resolvedSnapshotDigest`. Host retains prepared environments/provider
+  lifecycle. The resolved digest covers redacted resolution facts and never raw
+  secret values.
+- `stageResolvedAgent(...)` writes the immutable generation and returns its
+  digest; it never changes live routing. Add a host-owned
+  `ActiveResolvedGenerationPointer` interface and make `ResolvedAgentRegistry`
+  a read view resolving validated `agentId` through that pointer. D1 supplies
+  its durable `currentCompleteGeneration`; A1 dev supplies a local pointer
+  published only after readiness. There is no second mutable P6 current map.
+- Add an immutable durable `ResolvedAgentGenerationStore` keyed by
+  `resolvedSnapshotDigest`. Each generation contains the verified self-
+  contained bundle, immutable deployment snapshot, and complete redacted
+  resolution inputs/catalog versions needed to reproduce the resolved agent.
+  It contains no live prepared attachment/provider handle and no raw secret.
+- A new session pins the current digest. Follow-up/restart loads that generation,
+  reprepares host resources, re-resolves, and requires the same digest. Missing
+  or non-reproducible generations fail `RESOLVED_GENERATION_UNAVAILABLE`; never
+  use the current registry entry as fallback. Reauthenticate current grants and
+  intersect them with the pinned active-authority ceiling: they may narrow or
+  fail, never widen the pinned generation.
+- New-session admission must call `pinCurrentForSession(agentId, admissionId)`:
+  atomically read the active pointer and acquire a durable temporary generation
+  lease before returning the digest. Persist lease id + digest with the session,
+  then `commitSessionPin` transfers the lease to a session retention ref. A
+  pointer swap/rollback prune/GC between those steps cannot delete it. Crash
+  recovery reconciles by admission id; failed creation releases the lease and
+  session deletion releases the ref.
+- `stageResolvedAgent` durably acquires a staging lease before returning the
+  digest. Host pointer publication changes new sessions only and atomically
+  transfers that lease to an active-pointer reference. D1 completion transfers
+  it to active + rollback references; a fenced/terminal abandoned apply releases
+  it explicitly. Retention roots are staging/in-flight leases, active pointers,
+  retained sessions, and rollback-eligible completions. GC runs only when all
+  roots are absent.
+- Tests cover reload and process restart of a pinned session, unavailable
+  generation failure, current-pointer drift rejection, current-grant narrowing,
+  retention/GC reference transfer/release, concurrent GC during staging/
+  publication, concurrent session-create/pointer-swap/prune/GC, lease/session
+  crash reconciliation, and crash after staging but before host
+  publication (the old generation remains routed).
+
+### §3 Deferred / follow-up — runtime-image requirements vs facts optimization
 
 This is an explicit follow-up, not an active bead in this amendment. It would validate an agent's required libraries against the resolved image's declared capability facts and skip reinstalling what the image ships (`overlayDelta = runtimeNeeds - imageFacts`, feeding the BBP5-009 fingerprint). It is blocked on three unmet prerequisites:
 
@@ -201,10 +351,15 @@ This is an explicit follow-up, not an active bead in this amendment. It would va
 
 Until those prerequisites exist, do not ship `RuntimeImageCapabilityFacts`, `requirementToRuntimeNeeds`, `overlayDelta`, `RUNTIME_REQUIREMENT_UNSATISFIED`, `RUNTIME_FACTS_UNAVAILABLE`, `ResolvedRuntimeProfile.capabilityFacts`, or `allowedTiers`. `allowedTiers` also needs a real isolation-tier identity; provider id is not one.
 
-### BBP6-010 — [P6a] Per-agent plugin composition from `AgentDefinitionDeclaration.plugins` [size M/L]
+### BBP6-010 — [post-v1, after P7] Per-agent plugin composition [size M/L]
 
 - **Files touch:** the composition seams that build each agent's resolved capabilities and `AgentRegistry` entry (`packages/cli/src/server/modeApps.ts`, `packages/workspace/src/app/server/createWorkspaceAgentServer.ts`, `packages/core/src/app/server/createCoreWorkspaceAgentServer.ts`), plugin manifest/scan consumption from BBP6-002, `BoringPluginAssetManager` / runtime-plugin RPC gating, and capability fact projection.
-- **Notes:** Resolve `AgentDefinitionDeclaration.plugins?: PluginRef[]` per agent after BBP6-009 validation. A `PluginRef` is requirements-only and host-resolved; unknown plugin ids fail closed. Split each plugin's contributions by scope. **Agent-scoped** contributions (`tools`, `skills`, MCP servers, renderers) compose only into the declaring agent's capabilities via the existing `mergeTools`/capability composition seam. Duplicate tool/renderer names across ordered sources resolve by the existing law **environment-bundle -> plugins -> host**: fail closed unless the later source explicitly sets `overrides: true`; do not invent another duplicate rule. **Workspace-scoped** contributions (front UI panels, server routes) mount through the existing `BoringPluginAssetManager` / runtime-plugin RPC, but are gated to sessions for agents that declared the plugin, so one agent's plugin UI/routes are never globally exposed to another agent in the same workspace. Each plugin manifest's `boring.requires` must be satisfiable against the declaring agent's resolved environment/capability facts through the P5 normalizer; unsatisfied or unknown required facts fail closed for that agent. Hosted/external plugins reuse BBP6-005 remote-mode constraints. Governance may deny plugins per agent/tenant through `governancePolicyRef`, fail closed. Keep the declaration child-app-free: no `childAppId`/`workspaceKind`/`ChildApp`.
+- **Notes:** introduce `pluginRefs` in an additive post-v1 schema version and
+  resolve it as requirements after P6-R. Schema v1 continues to reject the
+  field with `AGENT_DEFINITION_UNSUPPORTED_FIELD`.
+  Agent-scoped contributions may resolve without UI routing. Workspace-scoped
+  UI/routes require P7's trusted `agentId`. Duplicate names fail closed unless
+  an explicit validated override contract exists.
 - **Tests:** an agent declaring plugins receives those plugins' tools, skills, MCP servers, and renderers in its resolved capabilities; a sibling agent without those refs does not; plugin UI panels/routes are visible/active only in sessions for declaring agents; unknown plugin ref fails closed; unsatisfiable `boring.requires` fails closed for that agent; hosted plugin constraints still fail closed via BBP6-005; duplicate tool/renderer names across environment bundle/plugin/host error unless `overrides: true`; `governancePolicyRef` denial rejects plugin activation with a stable code.
 - **Acceptance:** per-agent plugin refs produce a resolved plugin set and scoped capabilities without making plugins workspace-global-only; workspace-scoped plugin surfaces are agent-gated; plugin `boring.requires` is resolved through P5; duplicate resolution reuses the environment-bundle -> plugins -> host law. **P6a grep-gate (blocking):** `! rg -n "childAppId|workspaceKind|ChildApp" <BBP6-010-created-or-touched-contract-files>` exits 0.
 
@@ -240,11 +395,14 @@ pnpm typecheck              # build:packages then per-pkg typecheck
 
 Matches [`../../PR-PLAN.md`](../../PR-PLAN.md) P6 rows exactly:
 
-### P6a
-- `pr1-agent-registry` → BBP6-003.
-- `pr2-agents-declaration` → BBP6-009.
+### V1 P6-D/P6-R
+- `pr1-definition-deployment-schema` → BBP6-009.
+- `pr2-definition-registry` → BBP6-003.
+- `pr3-resolved-agent` → BBP6-011.
+
+### Post-v1 plugin/runtime expansion
 - `pr2b-remote-worker-image-support` → BBP6-009b.
-- `pr3-manifest-requires-bash-skill-filters` → BBP6-002.
+- `pr4-manifest-requires-bash-skill-filters` → BBP6-002.
 - `pr4-runtime-plugin-context` → BBP6-004.
 - `pr5-hosted-fail-closed` → BBP6-005.
 - `pr6-shared-workspace-runtime` → BBP6-007.
@@ -257,13 +415,19 @@ Matches [`../../PR-PLAN.md`](../../PR-PLAN.md) P6 rows exactly:
 
 ## Review gates
 
-- **P6a/P6b split (blocking):** P5 precondition confirmed for **P6a** (or STOP+report). The shared child-app platform code export (expected `ResolvedChildAppContext`, #376) is a **HARD prerequisite for P6b** (BBP6-001, BBP6-006): if absent, those **STOP-and-report with no local fallback shape**. **P6a** (BBP6-002 manifest validation, BBP6-003 `AgentRegistry`, BBP6-009 `AgentDefinitionDeclaration`, BBP6-009b remote-worker image support, BBP6-010 per-agent plugin composition, BBP6-004 plugin runtime context, plus BBP6-005/007/008) proceeds independently. **P6a grep-gate (blocking):** each named P6a contract contains ZERO child-app fields/types — `! rg -n "childAppId|workspaceKind|ChildApp"` on each created file (manifest validator, `AgentRegistry.ts`, `agentDefinitionDeclaration.ts`, BBP6-010 composition contracts, `runtimePluginContext.ts`) exits 0.
+- **V1/post-v1 split (blocking):** P6-D/P6-R close only against
+  `P6-V1-HANDOFF.md`. The shared child-app platform code export (expected
+  `ResolvedChildAppContext`, #376) is a **HARD prerequisite for P6b**
+  (BBP6-001, BBP6-006); if absent, those STOP-and-report with no fallback.
+  Definition, resolved-agent, manifest, and runtime-context contracts contain
+  zero child-app fields/types.
 - No competing child-app registry / manifest scanner / plugin route family introduced.
 - `pnpm lint:invariants` + `pnpm audit:imports` + `lint:plugin-invariants` green; zero agent→bash value imports.
 - Import-free manifest validation proven (side-effecting plugin fixture not executed).
 - Hosted plugin fail-closed covered; iframe sandbox/CSP constraints asserted.
 - Secrets are status-only in every plugin/browser/model context (P5 brokering); no raw values in manifests/logs/transcripts/artifacts.
-- `/api/v1/plugins/:pluginId/*` dispatch unchanged; `AgentRegistry` minimal and Map-backed (no framework creep).
+- `/api/v1/plugins/:pluginId/*` dispatch unchanged; definition and resolved
+  registries remain separate and minimal (no framework creep).
 - Full-app reload resolves per workspace/agent/plugin runtime; trusted server routes diagnosed not hot-registered.
 - EU-sovereign: no US-hosted default/hard dependency introduced (invariant 15).
 - Zero `// TODO(remove:*)` markers left dangling; any transitional code has a deletion bead in this file.

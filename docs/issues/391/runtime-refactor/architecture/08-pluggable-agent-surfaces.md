@@ -52,7 +52,12 @@ The steering surface itself is **plugin-extensible, and so is the agent — inte
 
 ### Interop directions
 
-- **MCP as an agent surface (committed M2 work package):** **Amendment (2026-07-08):** an agent **exposed as an MCP server is just another surface adapter** — it rides the **same four-part contract** (message in / event-stream out / approvals on-stream / runtime-owned `sessionId` with surface-owned addressing), where the MCP client's session/tool-call context is the surface-owned addressing. M2 turns this from a deferral into a committed follow-up WP: per-agent MCP mount config comes from the canonical definition registry, supports `authMode: bearer | public-demo`, `demoPolicy`, `exposureId`, result/share URL shape, and conformance against the P7 registry plus T1/T2 transport. This is the ingress dual of E2's MCP *projection* (which exposes an *environment* over MCP) and of the Farm-MCP control-plane note above.
+- **MCP as an agent surface (committed M2 work package):** an agent exposed as
+  an MCP server is another adapter over the four-part contract. M2 binds P6-R
+  `ResolvedAgent` behavior to deployment/host-owned `McpAgentExposureConfig`
+  (`bearer | public-demo`, demo policy, exposure id, result/share policy).
+  Definition behavior cannot grant itself exposure. M2 conforms against P7 and
+  T1/T2. This is the ingress dual of E2's environment projection.
 - **Deferred Farm MCP control plane:** task/artifact/human-input control-plane tools for arbitrary foreign agents remain farm-epic scope. They can reuse the M2 surface pattern plus E2/T1 primitives once the task service exists.
 - **Cross-org artifact delivery (farm epic):** delivering an artifact from one org's agent to another composes two primitives already reserved here — the **`data-artifact` stream part** and **shared-S3-prefix environments** (E1/09 + `TODO-X1` prefix-scoped mounts). A publishing agent writes to a shared-prefix environment and emits `data-artifact`; a consuming org attaches the same prefix (or receives the part). No new artifact store — the environment write + the part are the only sanctioned path. Deferred to the farm epic (Horizon-3, `00` "Business horizons").
 
@@ -60,7 +65,7 @@ The steering surface itself is **plugin-extensible, and so is the agent — inte
 
 A surface and the agent core exchange exactly four things:
 
-1. **Message in** — a normalized user turn: `AgentSendInput` = `{ sessionId?, content, inputAssets?, actor, ctx?, originSurface? }` (**omit `sessionId` to create a new session**). `ctx?: SessionCtx` is boring's own tenancy context resolved by the adapter/host (the `SessionStore` scoping key — never surface-native platform addressing); `originSurface?: string` is session-create provenance written by adapters. The full type is defined once in shared (P1); façade calls are single-argument everywhere (`start(input)`, `send(input)` — never `send(input, ctx)`). Core accepts a string or message parts; the surface does platform parsing (Slack signature + payload, Excel cell context, workspace composer state). **Amendment (2026-07-08):** user-supplied files/images/blobs are input assets, not a scalar attachment capability. Intake strategy is resolved from environment facts and provider/host policy: persist to the single/default writable environment with `acceptsInputAssets`, else pass direct to the model if provider + policy allow direct assets, else reject with a stable error.
+1. **Message in** — `AgentSendInput = { sessionId?, content, inputAssets?, actor?, ctx?, originSurface?, requestId }`. `requestId` is caller-generated write idempotency: same id+payload returns the original receipt, conflicting payload fails with a stable code. Actor/origin persist into session/run metadata. `ctx` is trusted host tenancy context, never surface-native addressing. Surfaces parse platform payloads and resolve asset policy before calling the core.
 2. **Event stream out** — one ordered, indexed, replayable stream of typed events. Every surface renders the same stream differently; the wire/transport is swappable.
 3. **Approvals / human-in-the-loop** — a request event out + a response call in, on the same channel, declared on the tool — not per-surface special cases.
 4. **Session state** — a runtime-owned `sessionId` + serializable transcript. Persistence and addressing are boundary decisions.
@@ -129,6 +134,13 @@ Producer/consumer split (locked — this is the core write/read contract):
 - `agent.start()` returns an **accepted receipt** the instant the turn is admitted. The turn then runs to completion on an **independent producer** that appends `AgentEvent`s to the `EventStreamStore` **regardless of whether any consumer is reading**. Producers are **never consumer-backpressured**.
 - `agent.stream()` is the only read primitive — it replays from `startIndex` (offset) and then live-tails; it **replaces the separate `replay()`**. Cancelling a stream iterator **never cancels the turn**; it only stops that reader. `interrupt(sessionId)` — **abort the current turn** — is the **only** way to stop a running turn (`stop(sessionId)` ends/closes the whole session, not a single turn). The two mirror today's pi-chat routes: `interrupt` = turn abort, `stop` = session end.
 - `agent.send()` exists **only** as documented convenience defined as `start()` then `stream()` from the returned `startIndex`; it introduces no semantics of its own.
+- The façade is a trusted-host primitive, not a bearer-capability API. Every T2
+  transport is constructed under a host-created
+  `AuthenticatedTransportBinding { admissionScopeId, subjectId, ctx, agentId }`.
+  Public methods remain `sessionId`-keyed for the two-handles rule, but adapters
+  authorize the canonical T1 `SessionKey` under that binding before every read
+  or control operation. HTTP derives the binding from the authenticated request;
+  in-process composition must inject it. A known session id never grants access.
 
 Rules:
 
@@ -157,17 +169,37 @@ Reality note: a bespoke replay path already exists (`PiChatReplayBuffer` + `?cur
 
 ### Backend state store (CLI ↔ prod feature parity)
 
-The backend embeds **one zero-ops SQLite layer** with **two files**. `events.db`
-is the append-only event log: the replay authority, with its own
-backup/retention/compaction lifecycle. `state.db` holds mutable state and
-**derived indexes**: pending inputs, surface addressing maps, session indexes,
-and other caches that are always rebuildable from `events.db` plus host config.
-This is the headline production rationale: local CLI mode and hosted/prod mode
-ship the identical feature set without a managed database in any default path
-(invariant 15). `EventStreamStore` and state accessors are interfaces with
-conformance suites; a Postgres adapter plus `LISTEN/NOTIFY` tail is a named
-follow-up gated only on multi-instance need, changing nothing above the store.
-Backups continuously stream both SQLite files to EU S3, litestream-style.
+V1 embeds one zero-ops SQLite database, `agent.db`, alongside the existing Pi
+JSONL compatibility store. Separate tables hold append-only stream events,
+authoritative pending-input/waiting records, caller request receipts, Pi event
+re-tap keys, and derived
+session/search indexes. Event append plus any pending-input mutation caused by
+that event occurs in one SQLite transaction. There is one backup/restore and
+retention lifecycle.
+
+This is production wiring, not only an adapter interface. A trusted host path
+adapter opens/migrates one file-backed database beneath the durable session root
+and injects it into standalone `createAgentApp()` plus CLI/core/workspace/full-
+app composition. Registering T1
+HTTP/DS routes with no store or an in-memory store fails closed. The in-memory
+adapter is explicit and limited to transport-less headless/dev/test use. Store
+ownership includes ordered shutdown, SQLite-safe backup/checkpoint, restore, and
+fresh-process recovery. Trusted `SessionKey` encoding and DB paths stay under
+server modules; shared exports only public event/session types.
+
+Caller receipts are uniquely keyed by authenticated subject plus a trusted host
+admission scope and caller `requestId`, not by caller-supplied tenancy or a `sessionId` that may not
+exist yet. Exact payload retry returns the original `{ sessionId, startIndex }`
+after restart; key reuse with a different canonical payload fails with a stable
+conflict. A nonterminal receipt after crash is explicitly reconciled or marked
+interrupted and never launches a second model run automatically.
+
+Do not call mutable state rebuildable unless every mutation is explicitly
+represented in the event log and a reconciler is implemented. Pending
+approvals are authoritative state. Surface addressing maps are surface-owned;
+when a surface elects to use `agent.db`, those rows are also authoritative.
+`EventStreamStore` and state accessors retain interfaces/conformance seams. A
+Postgres adapter is deferred until multi-instance demand proves it necessary.
 
 - Approvals ride the same stream as `data-approval-request` parts in v1, migrating to native AI-SDK `tool-approval-request/response` parts when the `PiChatEvent` reducer/view-model migrates to native `UIMessage`/tool-approval parts. Surface answers via `agent.resolveInput(...)` (in-process) or `POST …/input` (HTTP).
 - Surface-specific projections are the adapter's job: workspace renders the full stream; Slack maps activity → `setStatus`, text deltas → `sayStream`, approval parts → buttons; Excel maps structured tool outputs → cell writes.
@@ -223,9 +255,10 @@ The canonical `/api/v1/agents/:agentId/...` path-prefix family (00 open decision
 ## Human-in-the-loop
 
 - `AgentTool` gains `needsApproval?: boolean | (params, ctx) => boolean | Promise<boolean>`. Policy lives with the tool/host, not the surface.
-- When approval is needed (or the ask-user tool fires), the harness emits an approval/input-request event, persists the pending request, and parks the turn (`session.waiting`). Durable across process restarts once the session event log lands.
+- When approval is needed (or the ask-user tool fires), one transaction appends the request event and persists the pending record before the turn enters `session.waiting`.
 - Any surface holding the `sessionId` answers via `resolveInput`. A web modal, a Slack button, and an Excel task-pane dialog are the same protocol.
 - Existing permission prompts and the ask-user plugin migrate onto this path; no second approval channel.
+- V1 does not claim transparent continuation of an in-memory tool call after restart. A pending request remains visible, but restart either cancels/expires the waiting turn and requires a new user turn, or a later increment supplies a durable `WaitingTurn` plus tool-call idempotency journal. Seeding a new turn is recovery, not resume.
 
 ## Surface adapters
 
