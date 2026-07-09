@@ -56,18 +56,20 @@ interface WorkspaceGitHubTaskSourceOptions {
 }
 
 const GITHUB_COLUMNS = [
-  { id: "queued", title: "Queued", description: "Open issues waiting for work", color: "#8b5cf6" },
-  { id: "active", title: "Active", description: "In flight or currently owned", color: "#f59e0b" },
-  { id: "ready", title: "Ready", description: "Ready for merge/review/next gate", color: "#22c55e" },
-  { id: "blocked", title: "Blocked", description: "Waiting on clarification or external input", color: "#ef4444" },
+  { id: "needs-triage", title: "Needs triage", description: "Not evaluated yet", color: "#d4c5f9" },
+  { id: "needs-info", title: "Needs info", description: "Waiting on specific answers", color: "#f9d0c4" },
+  { id: "ready-for-agent", title: "Ready for agent", description: "Agent can plan or implement safely", color: "#0e8a16" },
+  { id: "ready-for-human", title: "Ready for human", description: "Human judgment, access, approval, review, or merge needed", color: "#f9a825" },
   { id: "done", title: "Done", description: "Closed GitHub issues", color: "#64748b" },
 ]
 
+const BORING_V2_STATE_LABELS = ["needs-triage", "needs-info", "ready-for-agent", "ready-for-human"]
+
 const STATUS_MAPPINGS: Record<string, GitHubStatusMapping> = {
-  queued: { removeStateLabels: true, addLabels: ["state:queued"], reopen: true },
-  active: { removeStateLabels: true, addLabels: ["state:active"], reopen: true },
-  ready: { removeStateLabels: true, addLabels: ["state:ready"], reopen: true },
-  blocked: { removeStateLabels: true, addLabels: ["state:blocked"], reopen: true },
+  "needs-triage": { removeStateLabels: true, addLabels: ["needs-triage"], reopen: true },
+  "needs-info": { removeStateLabels: true, addLabels: ["needs-info"], reopen: true },
+  "ready-for-agent": { removeStateLabels: true, addLabels: ["ready-for-agent"], reopen: true },
+  "ready-for-human": { removeStateLabels: true, addLabels: ["ready-for-human"], reopen: true },
   done: { removeStateLabels: true, close: true },
 }
 
@@ -146,11 +148,10 @@ function issueLabels(issue: GitHubIssue): string[] {
 function issueStatus(issue: GitHubIssue): string {
   if (issue.state.toLowerCase() === "closed") return "done"
   const labels = issueLabels(issue).map((label) => label.toLowerCase())
-  const state = labels.find((label) => label.startsWith("state:"))
-  if (state === "state:active") return "active"
-  if (state === "state:ready") return "ready"
-  if (state === "state:blocked") return "blocked"
-  return "queued"
+  if (labels.includes("needs-info")) return "needs-info"
+  if (labels.includes("ready-for-human")) return "ready-for-human"
+  if (labels.includes("ready-for-agent")) return "ready-for-agent"
+  return "needs-triage"
 }
 
 function descriptionFromBody(body: string | null | undefined): string | undefined {
@@ -171,7 +172,7 @@ function taskFromIssue(issue: GitHubIssue, adapterId: string): BoringTaskCard {
     title: issue.title,
     description: descriptionFromBody(issue.body),
     statusId: issueStatus(issue),
-    tags: issueLabels(issue).filter((label) => !label.toLowerCase().startsWith("state:")),
+    tags: issueLabels(issue).filter((label) => !["needs-triage", "needs-info", "ready-for-agent", "ready-for-human"].includes(label.toLowerCase())),
     epic: issue.milestone?.title ? {
       id: String(issue.milestone.id ?? issue.milestone.number ?? issue.milestone.title),
       title: issue.milestone.title,
@@ -214,7 +215,7 @@ export function createGitHubTaskSource({ owner, repo, limit = 200, state = "open
       if (mapping.close) await executor.closeIssue({ owner, repo, issueNumber })
       if (mapping.reopen && before.state.toLowerCase() === "closed") await executor.reopenIssue({ owner, repo, issueNumber })
       if (mapping.removeStateLabels) {
-        const stateLabels = issueLabels(before).filter((label) => label.toLowerCase().startsWith("state:"))
+        const stateLabels = issueLabels(before).filter((label) => BORING_V2_STATE_LABELS.includes(label.toLowerCase()))
         await executor.removeLabels({ owner, repo, issueNumber, labels: stateLabels })
       }
       await executor.addLabels({ owner, repo, issueNumber, labels: mapping.addLabels ?? [] })
@@ -274,7 +275,7 @@ export function createWorkspaceGitHubTaskSource({
       if (mapping.close) await executor.closeIssue(input)
       if (mapping.reopen && before.state.toLowerCase() === "closed") await executor.reopenIssue(input)
       if (mapping.removeStateLabels) {
-        const stateLabels = issueLabels(before).filter((label) => label.toLowerCase().startsWith("state:"))
+        const stateLabels = issueLabels(before).filter((label) => BORING_V2_STATE_LABELS.includes(label.toLowerCase()))
         await executor.removeLabels({ ...input, labels: stateLabels })
       }
       await executor.addLabels({ ...input, labels: mapping.addLabels ?? [] })

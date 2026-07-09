@@ -42,11 +42,11 @@ interface GitHubIssue {
 }
 
 const GITHUB_COLUMNS = [
-  { id: "queued", title: "Queued", description: "Open issues waiting for work", color: "#8b5cf6" },
-  { id: "active", title: "Active", description: "In flight or currently owned", color: "#f59e0b" },
-  { id: "ready", title: "Ready", description: "Ready for merge/review/next gate", color: "#22c55e" },
-  { id: "blocked", title: "Blocked", description: "Waiting on clarification or external input", color: "#ef4444", acceptsDrop: false },
-  { id: "done", title: "Done", description: "Closed GitHub issues", color: "#64748b", acceptsDrop: false },
+  { id: "needs-triage", title: "Needs triage", description: "Not evaluated yet", color: "#d4c5f9" },
+  { id: "needs-info", title: "Needs info", description: "Waiting on specific answers", color: "#f9d0c4" },
+  { id: "ready-for-agent", title: "Ready for agent", description: "Agent can plan or implement safely", color: "#0e8a16" },
+  { id: "ready-for-human", title: "Ready for human", description: "Human judgment, access, approval, review, or merge needed", color: "#f9a825" },
+  { id: "done", title: "Done", description: "Closed GitHub issues", color: "#64748b" },
 ]
 
 function issueLabels(issue: GitHubIssue): string[] {
@@ -58,11 +58,10 @@ function issueLabels(issue: GitHubIssue): string[] {
 function issueStatus(issue: GitHubIssue): string {
   if (issue.state === "closed") return "done"
   const labels = issueLabels(issue).map((label) => label.toLowerCase())
-  const state = labels.find((label) => label?.startsWith("state:"))
-  if (state === "state:active") return "active"
-  if (state === "state:ready") return "ready"
-  if (state === "state:blocked") return "blocked"
-  return "queued"
+  if (labels.includes("needs-info")) return "needs-info"
+  if (labels.includes("ready-for-human")) return "ready-for-human"
+  if (labels.includes("ready-for-agent")) return "ready-for-agent"
+  return "needs-triage"
 }
 
 function descriptionFromBody(body: string | null | undefined): string | undefined {
@@ -83,7 +82,7 @@ function taskFromIssue(issue: GitHubIssue, adapterId: string): BoringTaskCard {
     title: issue.title,
     description: descriptionFromBody(issue.body),
     statusId: issueStatus(issue),
-    tags: issueLabels(issue).filter((label) => !label.toLowerCase().startsWith("state:")),
+    tags: issueLabels(issue).filter((label) => !["needs-triage", "needs-info", "ready-for-agent", "ready-for-human"].includes(label.toLowerCase())),
     epic: issue.milestone ? {
       id: String(issue.milestone.id),
       title: issue.milestone.title,
