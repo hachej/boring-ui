@@ -7,20 +7,11 @@ import type {
   MeteringUsageInput,
 } from '@hachej/boring-agent/server'
 import { ErrorCode } from '@hachej/boring-agent/shared'
-import * as coreServer from '@hachej/boring-core/server'
+import { ModelBudgetExceededError, PostgresBudgetReservationStore, UserBudgetExceededError } from '@hachej/boring-core/server'
+import type { BudgetReservationAdmission, ReserveBudgetInput } from '@hachej/boring-core/server'
 import type { GovernanceService } from './governanceService.js'
 
-const PostgresModelBudgetStore = (coreServer as unknown as {
-  PostgresModelBudgetStore: new (db: unknown) => {
-    reserve(input: unknown): Promise<{ reservationId: string }>
-    settle(input: unknown): Promise<void>
-    release(input: unknown): Promise<void>
-  }
-}).PostgresModelBudgetStore
-const ModelBudgetExceededError = (coreServer as unknown as { ModelBudgetExceededError: new (usedMicros: number, heldMicros: number, budgetMicros: number, requestedMicros: number) => Error }).ModelBudgetExceededError
-
-type ModelBudgetDb = ConstructorParameters<typeof PostgresModelBudgetStore>[0]
-
+type BudgetDb = ConstructorParameters<typeof PostgresBudgetReservationStore>[0]
 const DEFAULT_HOLD_TTL_SECONDS = 60 * 60
 
 function authRequiredError(): Error {
@@ -46,16 +37,16 @@ function runKey(input: { userId?: string; runId: string }): string | null {
 
 export function createGovernanceMeteringSink(options: {
   service: GovernanceService
-  getDb: () => ModelBudgetDb
+  getDb: () => BudgetDb
   delegate: AgentMeteringSink
   holdTtlSeconds?: number
 }): AgentMeteringSink {
-  let store: InstanceType<typeof PostgresModelBudgetStore> | undefined
-  const getStore = () => (store ??= new PostgresModelBudgetStore(options.getDb()))
-  const reservationsByRun = new Map<string, string>()
+  let store: InstanceType<typeof PostgresBudgetReservationStore> | undefined
+  const getStore = () => (store ??= new PostgresBudgetReservationStore(options.getDb(), { eligibleLegacySources: ['pi-chat', 'pi-chat-fallback', 'pi-chat-expired'] }))
+  const admissionsByRun = new Map<string, BudgetReservationAdmission>()
   const holdTtlSeconds = options.holdTtlSeconds ?? DEFAULT_HOLD_TTL_SECONDS
 
-  async function reserveGovernance(input: MeteringReserveInput): Promise<string | undefined> {
+  async function reserveGovernance(input: MeteringReserveInput): Promise<BudgetReservationAdmission | undefined> {
     if (!options.service.isEnabled()) return undefined
     const identity = input as MeteringReserveInput & { userEmail?: string; userEmailVerified?: boolean }
     if (!input.userId || !identity.userEmail) throw authRequiredError()
@@ -66,36 +57,59 @@ export function createGovernanceMeteringSink(options: {
     } catch {
       throw policyDeniedError()
     }
-    const budgetMicros = options.service.monthlyBudgetMicros(user, { provider: input.model.provider, id: input.model.id })
-    if (budgetMicros === null || budgetMicros <= 0) throw new ModelBudgetExceededError(0, 0, budgetMicros ?? 0, 0)
+
+    const modelBudgetMicros = options.service.monthlyBudgetMicros(user, { provider: input.model.provider, id: input.model.id })
+    if (modelBudgetMicros === null || modelBudgetMicros <= 0) throw new ModelBudgetExceededError(0, 0, modelBudgetMicros ?? 0, 0)
     const policy = options.service.policy()
-    // Governance budgets and the core usage ledger both use credit micros, with
-    // the existing convention 1 EUR = 1_000_000 credit micros.
     const holdMicros = policy?.tenant.perRunHoldMicros ?? 1_000_000
-    const result = await getStore().reserve({
+    const now = new Date()
+    let userReservationInput: Extract<ReserveBudgetInput, { scope: 'user' }> | undefined
+    const userBudgetMicros = options.service.userMonthlyBudgetMicros(user)
+    if (userBudgetMicros !== null) {
+      if (userBudgetMicros <= 0) throw new (UserBudgetExceededError ?? ModelBudgetExceededError)(0, 0, userBudgetMicros, 0)
+      userReservationInput = {
+        scope: 'user',
+        userId: input.userId,
+        workspaceId: input.workspaceId,
+        sessionId: input.sessionId,
+        runId: input.runId,
+        budgetMicros: userBudgetMicros,
+        holdMicros,
+        ttlSeconds: holdTtlSeconds,
+        now,
+      }
+    }
+    const modelReservationInput: Extract<ReserveBudgetInput, { scope: 'model' }> = {
+      scope: 'model',
       userId: input.userId,
       workspaceId: input.workspaceId,
       sessionId: input.sessionId,
       runId: input.runId,
       provider: input.model.provider,
       model: input.model.id,
-      budgetMicros,
+      budgetMicros: modelBudgetMicros,
       holdMicros,
       ttlSeconds: holdTtlSeconds,
-    }).catch((error: unknown) => { throw budgetError(error) })
+      now,
+    }
+    const admission = await getStore().reserveAdmission({ user: userReservationInput, model: modelReservationInput }).catch((error: unknown) => { throw budgetError(error) })
     const key = runKey(input)
-    if (key) reservationsByRun.set(key, result.reservationId)
-    return result.reservationId
+    if (key) admissionsByRun.set(key, admission)
+    return admission
   }
 
   async function finishGovernance(input: MeteringSettleInput | MeteringReleaseInput, action: 'settle' | 'release'): Promise<void> {
     if (!options.service.isEnabled()) return
     const key = runKey(input)
-    const reservationId = key ? reservationsByRun.get(key) : undefined
-    if (!reservationId && (!input.userId || !input.runId)) return
-    if (action === 'settle') await getStore().settle({ reservationId, runId: input.runId, userId: input.userId })
-    else await getStore().release({ reservationId, runId: input.runId, userId: input.userId })
-    if (key) reservationsByRun.delete(key)
+    const admission = key ? admissionsByRun.get(key) : undefined
+    const status = action === 'settle' ? 'settled' : 'released'
+    if (admission) {
+      await getStore().finishAdmission(admission, status)
+      if (key) admissionsByRun.delete(key)
+      return
+    }
+    if (!input.userId || !input.runId) return
+    await getStore().finishRun({ runId: input.runId, userId: input.userId }, status)
   }
 
   function releaseConsumesBudget(input: MeteringReleaseInput): boolean {
@@ -106,22 +120,29 @@ export function createGovernanceMeteringSink(options: {
     isEnabled: () => options.service.isEnabled() || options.delegate.isEnabled?.() !== false,
 
     async reserveRun(input: MeteringReserveInput): Promise<MeteringReservationResult> {
-      const governanceReservationId = await reserveGovernance(input)
+      const admission = await reserveGovernance(input)
       try {
         return await options.delegate.reserveRun(input)
       } catch (error) {
-        if (governanceReservationId) await getStore().release({ reservationId: governanceReservationId }).catch(() => {})
-        const key = runKey(input)
-        if (key) reservationsByRun.delete(key)
+        try {
+          // Only release holds created by this reserve attempt; existing idempotent
+          // handles may belong to an already-admitted run whose delegate retry failed.
+          if (admission) await getStore().releaseCreated(admission)
+        } catch {
+          // Preserve the delegated reservation failure; budget cleanup remains idempotent and retryable.
+        } finally {
+          const key = runKey(input)
+          if (key) admissionsByRun.delete(key)
+        }
         throw error
       }
     },
 
     recordUsage(input: MeteringUsageInput) {
       const key = runKey(input)
-      const reservationId = key ? reservationsByRun.get(key) : undefined
-      return options.delegate.recordUsage(reservationId
-        ? { ...input, metadata: { ...(input.metadata ?? {}), modelBudgetReservationId: reservationId } }
+      const admission = key ? admissionsByRun.get(key) : undefined
+      return options.delegate.recordUsage(admission
+        ? { ...input, metadata: { ...(input.metadata ?? {}), ...getStore().metadataForAdmission(admission) } }
         : input)
     },
 
@@ -129,19 +150,12 @@ export function createGovernanceMeteringSink(options: {
       try {
         await options.delegate.settleRun(input)
       } finally {
-        // Normal successful runs write provider/model ledger rows; release the
-        // admission hold so future budget checks count exact ledger spend, not
-        // the conservative per-run hold.
         await finishGovernance(input, 'release')
       }
     },
 
     async releaseRun(input: MeteringReleaseInput): Promise<void> {
       if (releaseConsumesBudget(input)) {
-        // Fallback-charge releases may have no provider/model ledger row, or
-        // only a partial provider/model ledger row. Settle the governance hold
-        // before delegating so model-budget accounting remains durable even if
-        // the credit fallback write is transiently unavailable.
         await finishGovernance(input, 'settle')
         await options.delegate.releaseRun(input)
         return
