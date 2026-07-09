@@ -3,6 +3,7 @@ import postgres from 'postgres'
 import { drizzle } from 'drizzle-orm/postgres-js'
 import { runMigrations } from '../../migrate'
 import { ModelBudgetExceededError, PostgresModelBudgetStore } from '../PostgresModelBudgetStore'
+import { PostgresBudgetReservationStore, UserBudgetExceededError } from '../PostgresBudgetReservationStore'
 import type { CoreConfig } from '../../../../shared/types'
 
 const TEST_DB_URL_CANDIDATES = [
@@ -101,12 +102,14 @@ const TEST_DB = await resolveTestDb()
 
 let sqlClient: postgres.Sql
 let store: PostgresModelBudgetStore
+let budgetStore: PostgresBudgetReservationStore
 
 beforeAll(async () => {
   if (!TEST_DB) return
   await runMigrations(baseConfig(TEST_DB.databaseUrl))
   sqlClient = postgres(TEST_DB.databaseUrl, { max: 5 })
   store = new PostgresModelBudgetStore(drizzle(sqlClient))
+  budgetStore = new PostgresBudgetReservationStore(drizzle(sqlClient))
 })
 
 afterAll(async () => {
@@ -115,7 +118,7 @@ afterAll(async () => {
 })
 
 beforeEach(async () => {
-  await sqlClient`DELETE FROM boring_model_budget_reservations WHERE user_id IN (${USER}, ${OTHER_USER})`
+  await sqlClient`DELETE FROM boring_budget_reservations WHERE user_id IN (${USER}, ${OTHER_USER})`
   await sqlClient`DELETE FROM boring_usage_ledger WHERE user_id IN (${USER}, ${OTHER_USER})`
 })
 
@@ -127,12 +130,12 @@ describe.runIf(TEST_DB)('PostgresModelBudgetStore', () => {
 
     expect(second).toEqual({ ...first, created: false })
     await store.settle({ reservationId: first.reservationId })
-    const settled = await sqlClient`SELECT status FROM boring_model_budget_reservations WHERE id = ${first.reservationId}`
+    const settled = await sqlClient`SELECT status FROM boring_budget_reservations WHERE id = ${first.reservationId}`
     expect(settled[0]?.status).toBe('settled')
 
     const released = await store.reserve({ userId: USER, runId: 'run-2', provider: 'infomaniak', model: 'qwen', budgetMicros: 2_000_000, holdMicros: 1_000_000, ttlSeconds: 60, now })
     await store.release({ reservationId: released.reservationId })
-    const rows = await sqlClient`SELECT status FROM boring_model_budget_reservations WHERE id = ${released.reservationId}`
+    const rows = await sqlClient`SELECT status FROM boring_budget_reservations WHERE id = ${released.reservationId}`
     expect(rows[0]?.status).toBe('released')
   })
 
@@ -164,13 +167,13 @@ describe.runIf(TEST_DB)('PostgresModelBudgetStore', () => {
 
       release = store.release({ reservationId: first.reservationId })
       await expectStillPending(release)
-      const rows = await sqlClient`SELECT status FROM boring_model_budget_reservations WHERE id = ${first.reservationId}`
+      const rows = await sqlClient`SELECT status FROM boring_budget_reservations WHERE id = ${first.reservationId}`
       expect(rows[0]?.status).toBe('active')
     })
 
     await expect(overReserve).rejects.toBeInstanceOf(ModelBudgetExceededError)
     await expect(release).resolves.toBeUndefined()
-    const rows = await sqlClient`SELECT status FROM boring_model_budget_reservations WHERE id = ${first.reservationId}`
+    const rows = await sqlClient`SELECT status FROM boring_budget_reservations WHERE id = ${first.reservationId}`
     expect(rows[0]?.status).toBe('released')
   })
 
@@ -205,11 +208,11 @@ describe.runIf(TEST_DB)('PostgresModelBudgetStore', () => {
     const afterDelayedUsage = new Date('2026-08-01T00:06:00Z')
 
     const exact = await store.reserve({ userId: USER, runId: 'boundary-ledger', provider: 'infomaniak', model: 'qwen', budgetMicros: 1_500_000, holdMicros: 1_000_000, ttlSeconds: 60, now: beforeBoundary })
-    await sqlClient`UPDATE boring_model_budget_reservations SET created_at = ${beforeBoundary.toISOString()}::timestamp WHERE id = ${exact.reservationId}`
+    await sqlClient`UPDATE boring_budget_reservations SET created_at = ${beforeBoundary.toISOString()}::timestamp WHERE id = ${exact.reservationId}`
     await store.release({ reservationId: exact.reservationId })
 
     const reused = await store.reserve({ userId: USER, runId: 'boundary-ledger', provider: 'infomaniak', model: 'qwen', budgetMicros: 1_000_000, holdMicros: 1_000_000, ttlSeconds: 60, now: afterReuse })
-    await sqlClient`UPDATE boring_model_budget_reservations SET created_at = ${afterReuse.toISOString()}::timestamp WHERE id = ${reused.reservationId}`
+    await sqlClient`UPDATE boring_budget_reservations SET created_at = ${afterReuse.toISOString()}::timestamp WHERE id = ${reused.reservationId}`
     await store.release({ reservationId: reused.reservationId })
     await sqlClient`
       INSERT INTO boring_usage_ledger (id, user_id, run_id, provider, model, billed_cost_micros, created_at, metadata)
@@ -225,7 +228,7 @@ describe.runIf(TEST_DB)('PostgresModelBudgetStore', () => {
     await expect(store.reserve({ userId: USER, runId: 'boundary-jul-over', provider: 'infomaniak', model: 'qwen', budgetMicros: 1_500_000, holdMicros: 500_001, ttlSeconds: 60, now: beforeBoundary })).rejects.toBeInstanceOf(ModelBudgetExceededError)
 
     const fallback = await store.reserve({ userId: OTHER_USER, runId: 'boundary-fallback', provider: 'infomaniak', model: 'qwen', budgetMicros: 1_500_000, holdMicros: 1_000_000, ttlSeconds: 60, now: beforeBoundary })
-    await sqlClient`UPDATE boring_model_budget_reservations SET created_at = ${beforeBoundary.toISOString()}::timestamp WHERE id = ${fallback.reservationId}`
+    await sqlClient`UPDATE boring_budget_reservations SET created_at = ${beforeBoundary.toISOString()}::timestamp WHERE id = ${fallback.reservationId}`
     await sqlClient`
       INSERT INTO boring_usage_ledger (id, user_id, run_id, provider, model, billed_cost_micros, created_at)
       VALUES ('usage-budget-boundary-fallback', ${OTHER_USER}, 'boundary-fallback', 'infomaniak', 'qwen', 200000, ${afterBoundary.toISOString()}::timestamp)
@@ -237,6 +240,26 @@ describe.runIf(TEST_DB)('PostgresModelBudgetStore', () => {
     await expect(store.reserve({ userId: OTHER_USER, runId: 'boundary-fallback-jul-ok', provider: 'infomaniak', model: 'qwen', budgetMicros: 1_500_000, holdMicros: 500_000, ttlSeconds: 60, now: beforeBoundary })).resolves.toMatchObject({ created: true })
     await store.release({ runId: 'boundary-fallback-jul-ok', userId: OTHER_USER })
     await expect(store.reserve({ userId: OTHER_USER, runId: 'boundary-fallback-jul-over', provider: 'infomaniak', model: 'qwen', budgetMicros: 1_500_000, holdMicros: 500_001, ttlSeconds: 60, now: beforeBoundary })).rejects.toBeInstanceOf(ModelBudgetExceededError)
+  })
+
+  it('enforces user-scope aggregate budgets with active holds and fallback rows', async () => {
+    const now = new Date('2026-07-15T12:00:00Z')
+    const userHold = await budgetStore.reserve({ scope: 'user', userId: USER, runId: 'user-active', budgetMicros: 2_000_000, holdMicros: 1_000_000, ttlSeconds: 60, now })
+    await sqlClient`
+      INSERT INTO boring_usage_ledger (id, user_id, run_id, source, provider, model, billed_cost_micros, created_at, metadata)
+      VALUES ('usage-user-active', ${USER}, 'user-active', 'pi-chat', 'infomaniak', 'qwen', 900000, ${now.toISOString()}::timestamp, ${JSON.stringify({ userBudgetReservationId: userHold.reservationId })}::jsonb)
+    `
+
+    await expect(budgetStore.reserve({ scope: 'user', userId: USER, runId: 'user-next-ok', budgetMicros: 2_000_000, holdMicros: 1_000_000, ttlSeconds: 60, now })).resolves.toMatchObject({ created: true })
+    await budgetStore.release({ scope: 'user', runId: 'user-next-ok', userId: USER })
+
+    const fallback = await budgetStore.reserve({ scope: 'user', userId: OTHER_USER, runId: 'user-fallback', budgetMicros: 1_500_000, holdMicros: 1_000_000, ttlSeconds: 60, now })
+    await sqlClient`
+      INSERT INTO boring_usage_ledger (id, user_id, run_id, source, billed_cost_micros, created_at, metadata)
+      VALUES ('usage-user-fallback', ${OTHER_USER}, 'user-fallback', 'pi-chat-fallback', 1000000, ${now.toISOString()}::timestamp, ${JSON.stringify({ userBudgetReservationId: fallback.reservationId })}::jsonb)
+    `
+    await budgetStore.release({ scope: 'user', reservationId: fallback.reservationId })
+    await expect(budgetStore.reserve({ scope: 'user', userId: OTHER_USER, runId: 'user-over', budgetMicros: 1_500_000, holdMicros: 600_000, ttlSeconds: 60, now })).rejects.toBeInstanceOf(UserBudgetExceededError)
   })
 
   it('does not double-count ledger rows for runs with active holds', async () => {
