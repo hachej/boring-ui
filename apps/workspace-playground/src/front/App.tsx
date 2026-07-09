@@ -219,7 +219,6 @@ export function WorkspaceShell() {
       appTitle={showcase ? "Boring" : projectName}
       workspaceLabel={showcase ? undefined : projectName}
       workspaceLayout={multiFilesystem ? "classic" : "plugin-tabs"}
-      mobileShellEnabled
       defaultSessionTitle="New chat"
       externalPlugins={externalPluginsEnabled}
       frontPluginHotReload={externalPluginsEnabled ? "vite" : undefined}

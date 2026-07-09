@@ -32,10 +32,7 @@ export interface ChatLayoutProps {
   sidebar?: string | null
   sidebarParams?: Record<string, unknown>
   storageKey?: string
-  /**
-   * Opt-in marker for mobile-shell experiments. Defaults off and currently only
-   * exposes a data attribute for host-scoped prototype CSS.
-   */
+  /** Enable the phone-width one-surface mobile shell for direct ChatLayout hosts. */
   mobileShellEnabled?: boolean
   onOpenNav?: () => void
   onOpenSurface?: () => void

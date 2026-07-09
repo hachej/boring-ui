@@ -485,7 +485,7 @@ export function WorkspaceAgentFront<
   onOpenNav,
   onOpenSurface,
   surfaceButtonBottomOffset,
-  mobileShellEnabled,
+  mobileShellEnabled = true,
   className,
 }: WorkspaceAgentFrontProps<TSession>) {
   const externalPluginsEnabled = externalPlugins !== false

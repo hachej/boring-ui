@@ -111,7 +111,6 @@ createRoot(document.getElementById('root')!).render(
       companyAdmin={governanceCompanyAdmin}
       appTitle={PRODUCT_NAME}
       workspaceLayout="plugin-tabs"
-      mobileShellEnabled
       appLeftHeaderMode="workspace"
       topBarLeft={<WorkspaceSwitcher displayMode="workspace" />}
       appLeftLayoutMode={inlineProjectsEnabled ? 'multi-project' : 'single-project'}
