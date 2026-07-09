@@ -97,7 +97,7 @@ function buildOpenAICompatibleProviderConfig(opts: {
 }): ProviderConfigInput {
   return {
     baseUrl: opts.baseUrl,
-    apiKey: opts.apiKeyEnv,
+    apiKey: `$${opts.apiKeyEnv}`,
     api: 'openai-completions',
     models: opts.models.map((model) => ({
       id: model.id,

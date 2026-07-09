@@ -643,12 +643,37 @@ export class PostgresMeteringStore {
           billedCostMicros: usageLedger.billedCostMicros,
           stopReason: usageLedger.stopReason,
           reservationId: sql<string | null>`${usageLedger.metadata}->>'reservationId'`,
+          modelBudgetReservationId: sql<string | null>`${usageLedger.metadata}->>'modelBudgetReservationId'`,
+          userBudgetReservationId: sql<string | null>`${usageLedger.metadata}->>'userBudgetReservationId'`,
         })
         .from(usageLedger)
         .where(eq(usageLedger.id, input.usageId))
         .limit(1)
       const e = existing[0]
+      if (!e) throw new Error(`usage ledger id collision for ${input.usageId}: conflicting row disappeared before idempotency check`)
       const incomingReservationId = (input.metadata?.reservationId as string | undefined) ?? null
+      const incomingModelBudgetReservationId = (input.metadata?.modelBudgetReservationId as string | undefined) ?? null
+      const incomingUserBudgetReservationId = (input.metadata?.userBudgetReservationId as string | undefined) ?? null
+      const legacyMetadataCanBeBackfilled = (existing: string | null, incoming: string | null) => existing === null && incoming !== null
+      const retryMetadataIsAbsent = (existing: string | null, incoming: string | null) => existing !== null && incoming === null
+      const metadataFieldIsIdempotent = (existing: string | null, incoming: string | null) =>
+        existing === incoming || legacyMetadataCanBeBackfilled(existing, incoming) || retryMetadataIsAbsent(existing, incoming)
+      const exactBudgetMetadataMatch =
+        e.modelBudgetReservationId === incomingModelBudgetReservationId &&
+        e.userBudgetReservationId === incomingUserBudgetReservationId
+      const backfillableBudgetMetadata =
+        !exactBudgetMetadataMatch &&
+        (legacyMetadataCanBeBackfilled(e.modelBudgetReservationId, incomingModelBudgetReservationId) ||
+          legacyMetadataCanBeBackfilled(e.userBudgetReservationId, incomingUserBudgetReservationId)) &&
+        metadataFieldIsIdempotent(e.modelBudgetReservationId, incomingModelBudgetReservationId) &&
+        metadataFieldIsIdempotent(e.userBudgetReservationId, incomingUserBudgetReservationId)
+      const budgetMetadataIsIdempotent =
+        exactBudgetMetadataMatch ||
+        backfillableBudgetMetadata ||
+        ((retryMetadataIsAbsent(e.modelBudgetReservationId, incomingModelBudgetReservationId) ||
+          retryMetadataIsAbsent(e.userBudgetReservationId, incomingUserBudgetReservationId)) &&
+          metadataFieldIsIdempotent(e.modelBudgetReservationId, incomingModelBudgetReservationId) &&
+          metadataFieldIsIdempotent(e.userBudgetReservationId, incomingUserBudgetReservationId))
       const matches =
         e &&
         e.userId === input.userId &&
@@ -664,9 +689,20 @@ export class PostgresMeteringStore {
         e.providerCostMicros === (input.providerCostMicros ?? 0) &&
         e.billedCostMicros === input.billedCostMicros &&
         e.stopReason === (input.stopReason ?? null) &&
-        e.reservationId === incomingReservationId
+        e.reservationId === incomingReservationId &&
+        budgetMetadataIsIdempotent
       if (!matches) {
         throw new Error(`usage ledger id collision for ${input.usageId}: existing row does not match this usage (refusing to silently drop the debit or corrupt the audit trail)`)
+      }
+      if (!exactBudgetMetadataMatch && backfillableBudgetMetadata) {
+        const metadataPatch: Record<string, string> = {}
+        if (legacyMetadataCanBeBackfilled(e.modelBudgetReservationId, incomingModelBudgetReservationId)) metadataPatch.modelBudgetReservationId = incomingModelBudgetReservationId!
+        if (legacyMetadataCanBeBackfilled(e.userBudgetReservationId, incomingUserBudgetReservationId)) metadataPatch.userBudgetReservationId = incomingUserBudgetReservationId!
+        await tx.update(usageLedger)
+          .set({
+            metadata: sql`COALESCE(${usageLedger.metadata}, '{}'::jsonb) || ${JSON.stringify(metadataPatch)}::jsonb`,
+          })
+          .where(eq(usageLedger.id, input.usageId))
       }
       return { inserted: false }
     })

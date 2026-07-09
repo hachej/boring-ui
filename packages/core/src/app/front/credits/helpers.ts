@@ -57,10 +57,23 @@ export function creditNetMicros(balance: Pick<CreditBalanceResponse, 'remainingM
 /** Format SIGNED credit micros as a currency string with an explicit +/− sign.
  * `currency` is the configured display currency (1 credit-unit = 1 major unit); defaults
  * to EUR for callers without a configured purchase currency. */
-export function formatSignedCreditMicros(micros: number, currency = 'EUR', locale?: string): string {
+export interface CreditFormatOptions {
+  /** Show sub-cent/sub-rappen/sub-credit usage instead of rounding tiny amounts to 0.00. */
+  highPrecision?: boolean
+}
+
+function creditFractionDigits(major: number, options?: CreditFormatOptions): Intl.NumberFormatOptions {
+  if (!options?.highPrecision) return {}
+  return {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: Math.abs(major) > 0 && Math.abs(major) < 0.01 ? 6 : 2,
+  }
+}
+
+export function formatSignedCreditMicros(micros: number, currency = 'EUR', locale?: string, options?: CreditFormatOptions): string {
   const major = (Number.isFinite(micros) ? micros : 0) / 1_000_000
   const sign = major > 0 ? '+' : major < 0 ? '−' : ''
-  const abs = new Intl.NumberFormat(locale, { style: 'currency', currency }).format(Math.abs(major))
+  const abs = new Intl.NumberFormat(locale, { style: 'currency', currency, ...creditFractionDigits(major, options) }).format(Math.abs(major))
   return `${sign}${abs}`
 }
 
@@ -73,9 +86,9 @@ export function formatMinorPrice(priceMinor: number, currency: string, locale?: 
 /** Format credit micros as a currency string. 1 credit-unit = 1 major unit of the
  * configured display `currency` (µ/1e6). Defaults to EUR for callers without a
  * configured purchase currency (e.g. a consumption-only deployment). */
-export function formatCreditMicros(micros: number, currency = 'EUR', locale?: string): string {
+export function formatCreditMicros(micros: number, currency = 'EUR', locale?: string, options?: CreditFormatOptions): string {
   const major = (Number.isFinite(micros) ? Math.max(0, micros) : 0) / 1_000_000
-  return new Intl.NumberFormat(locale, { style: 'currency', currency }).format(major)
+  return new Intl.NumberFormat(locale, { style: 'currency', currency, ...creditFractionDigits(major, options) }).format(major)
 }
 
 /** True when the remaining balance is at or below the low-balance threshold. */

@@ -107,7 +107,7 @@ export function CreditsSettingsPanel({ apiBaseUrl = '', locale }: CreditsSetting
             </p>
           </DetailLine>
           <DetailLine label="Used so far">
-            <p style={{ fontVariantNumeric: 'tabular-nums' }}>{formatCreditMicros(balance.usedMicros, currency, locale)}</p>
+            <p style={{ fontVariantNumeric: 'tabular-nums' }}>{formatCreditMicros(balance.usedMicros, currency, locale, { highPrecision: true })}</p>
           </DetailLine>
         </DetailList>
 
@@ -193,7 +193,7 @@ export function CreditsSettingsPanel({ apiBaseUrl = '', locale }: CreditsSetting
                       style={{ fontVariantNumeric: 'tabular-nums' }}
                       className={e.amountMicros >= 0 ? 'text-foreground' : 'text-muted-foreground'}
                     >
-                      {formatSignedCreditMicros(e.amountMicros, currency, locale)}
+                      {formatSignedCreditMicros(e.amountMicros, currency, locale, e.kind === 'usage' ? { highPrecision: true } : undefined)}
                     </span>
                   </li>
                 ))}

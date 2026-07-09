@@ -80,7 +80,7 @@ describe('agent model env config', () => {
     expect(registered[0]?.provider).toBe('infomaniak')
     expect(registered[0]?.config).toMatchObject({
       baseUrl: 'https://api.infomaniak.com/2/ai/108321/openai/v1',
-      apiKey: 'INFOMANIAK_API_TOKEN',
+      apiKey: '$INFOMANIAK_API_TOKEN',
       api: 'openai-completions',
       models: [
         {

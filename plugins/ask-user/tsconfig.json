@@ -3,7 +3,11 @@
     "target": "ES2022",
     "module": "ESNext",
     "moduleResolution": "Bundler",
-    "lib": ["ES2022", "DOM", "DOM.Iterable"],
+    "lib": [
+      "ES2022",
+      "DOM",
+      "DOM.Iterable"
+    ],
     "jsx": "react-jsx",
     "strict": true,
     "esModuleInterop": true,
@@ -11,13 +15,29 @@
     "resolveJsonModule": true,
     "forceConsistentCasingInFileNames": true,
     "noEmit": true,
-    "types": ["node", "vitest/globals", "@testing-library/jest-dom"],
+    "types": [
+      "node",
+      "vitest/globals",
+      "@testing-library/jest-dom"
+    ],
     "paths": {
-      "@hachej/boring-workspace": ["../../packages/workspace/src/index.ts"],
-      "@hachej/boring-workspace/server": ["../../packages/workspace/src/server/index.ts"],
-      "@hachej/boring-workspace/events": ["../../packages/workspace/src/front/events/index.ts"]
-    }
+      "@hachej/boring-workspace": [
+        "../../packages/workspace/src/index.ts"
+      ],
+      "@hachej/boring-workspace/server": [
+        "../../packages/workspace/src/server/index.ts"
+      ],
+      "@hachej/boring-workspace/events": [
+        "../../packages/workspace/src/front/events/index.ts"
+      ]
+    },
+    "ignoreDeprecations": "6.0"
   },
-  "include": ["src/**/*"],
-  "exclude": ["node_modules", "dist"]
+  "include": [
+    "src/**/*"
+  ],
+  "exclude": [
+    "node_modules",
+    "dist"
+  ]
 }

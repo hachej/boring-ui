@@ -5,6 +5,7 @@ import type {
   BslFilterProps,
   BslMetricProps,
   BslPerspectiveViewerProps,
+  BslTableProps,
   BslTextProps,
   DashboardGridProps,
 } from "./schemas"
@@ -15,6 +16,7 @@ export type {
   BslFilterProps,
   BslMetricProps,
   BslPerspectiveViewerProps,
+  BslTableProps,
   BslTextProps,
   DashboardGridProps,
 } from "./schemas"
@@ -37,6 +39,7 @@ export type BiDashboardElementSpec =
   | BslMetricSpec
   | BslChartSpec
   | BslPerspectiveViewerSpec
+  | BslTableSpec
   | BslFilterControlSpec
   | BslTextSpec
 
@@ -65,6 +68,12 @@ export interface BslChartSpec extends BaseElementSpec {
 export interface BslPerspectiveViewerSpec extends BaseElementSpec {
   type: "BSLPerspectiveViewer"
   props: BslPerspectiveViewerProps
+  children?: []
+}
+
+export interface BslTableSpec extends BaseElementSpec {
+  type: "BSLTable"
+  props: BslTableProps
   children?: []
 }
 

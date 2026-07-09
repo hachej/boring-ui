@@ -1,15 +1,24 @@
 ---
 github: https://github.com/hachej/boring-ui/issues/475
 issue: 475
-state: active
-phase: plan
+state: shipped
+phase: shipped
 track: owner
 flag: not-needed
-updated: 2026-07-02
+updated: 2026-07-06
 supersedes: docs/issues/475/plan.md
 ---
 
 # gh-475 tenant YAML governance plan
+
+## Status: SHIPPED (2026-07-06)
+
+Delivered as the #476→#539 stack, rolled up and merged to `main` via #544, then
+extracted into `plugins/boring-governance` and published to npm
+(`@hachej/boring-governance@0.1.64`, `@hachej/boring-bash@0.1.64`). See
+[`plan-governance-plugin-extraction.md`](./plan-governance-plugin-extraction.md)
+for the extraction record and [`future-improvements.md`](./future-improvements.md)
+for deferred v1 work.
 
 ## Decision
 

@@ -372,17 +372,33 @@ export class HarnessPiChatService implements PiChatSessionService {
       throw new AutoPostFollowUpError('Cannot auto-post queued follow-up because this runtime cannot safely remove only the consumed queued item.')
     }
     // Fallback re-posts the follow-up as a plain prompt; no followup-consumed
-    // event will fire, so hand its reservation to the next agent-start.
+    // event will fire, so remove it from Pi's native follow-up queue before
+    // prompting. Pi 0.80 drains native follow-ups during prompt/continue, so
+    // clearing after the repost would duplicate the queued user turn.
+    this.clearAutoPostedFollowUpForFallback(sessionId, sessionKey, adapter, followUp)
     this.metering?.promoteQueuedToPrompt(sessionKey, followUp)
     try {
       await this.runPrompt(sessionKey, adapter, metadata?.serverText ?? followUp.displayText)
     } catch (err) {
       // The repost rejected before agent-start; release the promoted hold so
-      // it doesn't strand in pendingPrompts and misattribute later usage.
+      // it doesn't strand in pendingPrompts and misattribute later usage, then
+      // restore the queue item because fallback reposting never consumed it.
       this.metering?.failPromotedFollowUp(sessionId, followUp, sessionKey)
+      await adapter.followUp(metadata?.serverText ?? followUp.displayText, {
+        displayText: followUp.displayText,
+        clientNonce: followUp.clientNonce,
+        clientSeq: followUp.clientSeq,
+      })
+      if (followUp.clientNonce && followUp.clientSeq !== undefined) {
+        this.messageMetadata.recordFollowUp(sessionKey, {
+          message: metadata?.serverText ?? followUp.displayText,
+          displayMessage: followUp.displayText,
+          clientNonce: followUp.clientNonce,
+          clientSeq: followUp.clientSeq,
+        })
+      }
       throw err
     }
-    this.clearAutoPostedFollowUpForFallback(sessionId, sessionKey, adapter, followUp)
   }
 
   private async runPrompt(sessionKey: string, adapter: PiAgentSessionAdapter, input: PiAgentPromptInput): Promise<void> {
@@ -404,12 +420,12 @@ export class HarnessPiChatService implements PiChatSessionService {
     adapter: PiAgentSessionAdapter,
     followUp: QueuedUserMessage,
   ): boolean {
-    if (hasFollowUpSelector(followUp)) {
-      adapter.clearFollowUp(followUpSelector(followUp))
-      return true
-    }
     if (adapter.readSnapshot().followUpMessages.length <= 1) {
       this.clearAllFollowUps(adapter, sessionId, sessionKey)
+      return true
+    }
+    if (hasFollowUpSelector(followUp)) {
+      adapter.clearFollowUp(followUpSelector(followUp))
       return true
     }
     return false

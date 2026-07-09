@@ -28,16 +28,45 @@ A workspace may declare:
 
 ```ts
 const declaration: WorkspaceAgentsDeclaration = {
-  defaultAgentId: 'coding',
+  defaultAgentId: 'concierge',              // who answers when no agent is named
+  environments: [                           // the project's pool of filesystems (declared once)
+    { id: 'user', provider: 'bwrap', access: 'readwrite' },
+    { id: 'company_context', provider: 'fixture', access: 'readonly',
+      governancePolicyRef: 'company-context-readonly' },
+  ],
   agents: [
-    { agentId: 'coding', label: 'Coding', toolset: 'full-bash', environments: ['user'] },
-    { agentId: 'reviewer', label: 'Reviewer', toolset: 'review-readonly', environments: ['company_context'] },
-    { agentId: 'concierge', label: 'Concierge', toolset: 'pure' },
+    {
+      agentId: 'concierge',
+      label: 'Concierge',
+      instructionsRef: 'concierge.default',
+      capabilityBundles: ['pure'],          // no files — conversation only
+    },
+    {
+      agentId: 'coding',
+      label: 'Coding',
+      instructionsRef: 'coding.default',
+      capabilityBundles: ['full-bash'],     // files + shell
+      environmentAttachments: ['user'],     // its own private workspace
+      sandboxPolicyRef: 'workspace-default',
+    },
+    {
+      agentId: 'reviewer',
+      label: 'Reviewer',
+      instructionsRef: 'review.readonly',
+      capabilityBundles: ['review-readonly'],
+      environmentAttachments: ['company_context'], // SHARES the company files, read-only
+      governancePolicyRef: 'company-context-readonly',
+      modelPolicyRef: 'eu-sovereign-only',
+    },
   ],
 }
+// Every *Ref/*Bundle is a pointer the host resolves; an unknown ref fails closed.
+// Two agents naming the same environment id share that filesystem; different ids are isolated.
 ```
 
-This is the exact P6a declaration shape: `WorkspaceAgentsDeclaration { agents: WorkspaceAgentDeclaration[]; defaultAgentId }`, `WorkspaceAgentDeclaration { agentId; label?; toolset?; environments? }`. There is **no `features` config member** and no `package`/`bash` contract here. The host maps `toolset`/`environments` to explicit composition: it spreads the plain `createBashAgentFeature(...)` tool bundle into that agent's `createAgent().tools` only when the resolved toolset/environment policy says so; omitting a bash-capable toolset yields a pure agent with no file/bash tools. (For richer multi-environment agents this generalizes to the `environments: [...]` attachment list per 09; the point is explicit host-side composition, never an `AgentFeature`/`features` abstraction.) Child-app defaults can seed this registry in P6b, but workspace/user policy can narrow it.
+**Amendment (2026-07-08):** the exact P6a authored wrapper is `WorkspaceAgentsDeclaration { agents: AgentDefinitionDeclaration[]; defaultAgentId }`. Each per-agent `AgentDefinitionDeclaration` replaces the earlier narrow `WorkspaceAgentDeclaration`: it carries `agentId`/display metadata plus refs for instructions/persona, capability bundles/tools/skills/MCP servers, plugins, environment attachments, sandbox/governance/model/demo/pricing policy, and exposure config. Unknown refs fail closed. There is **no `features` config member** and no executable `package`/`bash` contract here. The declaration is requirements-only: the host maps capability/environment/policy/plugin refs to explicit composition, spreading the boring-bash environment bundle into that agent's `createAgent().tools` only when resolved policy and environment facts allow it. Omitting a bash-capable bundle yields a pure agent with no file/bash tools. Child-app defaults can seed this registry in P6b, but workspace/user policy can narrow it.
+
+**Amendment (2026-07-08):** per-agent plugin composition resolves `AgentDefinitionDeclaration.plugins?: PluginRef[]` after the agent's environment/capability facts are known. Agent-scoped plugin contributions (tools, skills, MCP servers, renderers) compose only into the declaring agent. Workspace-scoped plugin contributions (front panels/routes) mount through the existing workspace plugin runtime but are gated to sessions for agents that declared the plugin. Duplicate tool/renderer names use the existing source order and override law: environment-bundle -> plugins -> host, fail closed unless the later source explicitly sets `overrides: true`.
 
 ## Route/session namespace
 

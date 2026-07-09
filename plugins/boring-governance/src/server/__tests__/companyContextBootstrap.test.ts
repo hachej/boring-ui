@@ -14,8 +14,8 @@ function service() {
     policy: {
       tenant: { id: 'company', companyContextWorkspaceId: WORKSPACE_ID, defaultMonthlyModelBudgetEur: 0, perRunHoldEur: 1, perRunHoldMicros: 1_000_000 },
       users: [
-        { email: 'admin@example.com', role: 'admin', models: [], companyContext: { allow: ['^/.*'] } },
-        { email: 'user@example.com', role: 'user', models: [], companyContext: { allow: ['^/public/.*'] } },
+        { email: 'admin@example.com', role: 'admin', budgets: { monthlyEur: null, monthlyMicros: null }, models: [], companyContext: { allow: ['^/.*'] } },
+        { email: 'user@example.com', role: 'user', budgets: { monthlyEur: null, monthlyMicros: null }, models: [], companyContext: { allow: ['^/public/.*'] } },
       ],
       usersByEmail: new Map(),
     },

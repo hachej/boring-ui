@@ -23,6 +23,8 @@ const PUBLISHABLE_PACKAGES = [
   "packages/core",
   "plugins/deck",
   "plugins/ask-user",
+  "plugins/diagram",
+  "plugins/tasks",
   "packages/cli",
   "plugins/data-explorer",
   "plugins/data-catalog",

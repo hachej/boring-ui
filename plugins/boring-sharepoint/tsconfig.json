@@ -12,6 +12,7 @@
     "forceConsistentCasingInFileNames": true,
     "noEmit": true,
     "types": ["node", "vitest/globals"],
+    "ignoreDeprecations": "6.0",
     "paths": {
       "@hachej/boring-agent/front": ["../../packages/agent/src/front/index.ts"],
       "@hachej/boring-agent/shared": ["../../packages/agent/src/shared/index.ts"],

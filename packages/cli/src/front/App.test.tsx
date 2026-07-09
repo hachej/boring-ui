@@ -19,8 +19,18 @@ vi.mock("@hachej/boring-agent", () => ({
 }))
 
 vi.mock("@hachej/boring-ask-user/front", () => {
-  const askUserPlugin = { pluginId: "ask-user", pluginLabel: "Questions" }
-  return { askUserPlugin, default: askUserPlugin }
+  const createAskUserPlugin = (options?: Record<string, unknown>) => ({ pluginId: "ask-user", pluginLabel: "Questions", options })
+  const askUserPlugin = createAskUserPlugin()
+  return { askUserPlugin, createAskUserPlugin, default: askUserPlugin }
+})
+
+vi.mock("@hachej/boring-diagram/front", () => ({
+  diagramPlugin: { pluginId: "diagram", pluginLabel: "Diagram" },
+}))
+
+vi.mock("@hachej/boring-tasks/front", () => {
+  const createTasksPlugin = () => ({ pluginId: "tasks", pluginLabel: "Tasks" })
+  return { createTasksPlugin, default: createTasksPlugin() }
 })
 
 vi.mock("@hachej/boring-workspace/app/front", () => ({
@@ -169,7 +179,11 @@ describe("CliWorkspaceShell", () => {
       workspaceLayout: "plugin-tabs",
       workspaceSectionTitle: "Project",
       appTitle: "Folder Workspace",
-      plugins: [expect.objectContaining({ pluginId: "ask-user" })],
+      plugins: [
+        expect.objectContaining({ pluginId: "ask-user", options: { appLeftInbox: true } }),
+        expect.objectContaining({ pluginId: "diagram" }),
+        expect.objectContaining({ pluginId: "tasks" }),
+      ],
     })
 
     expect(screen.getByText("v1.2.3")).not.toBeNull()

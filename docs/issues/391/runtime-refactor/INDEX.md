@@ -10,11 +10,16 @@ The running app is the owner's sales demo. Every PR is **behavior-frozen for the
 
 ## Phase table
 
+**Amendment (2026-07-08):** add D2 as the shared subdomain factory sidecar
+lane and relocate S1/S2 out of #391 active scope (S1 -> Slack via flue
+channels; S2 -> pi-for-excel issue #551).
+
 | Phase | Work package | Depends on | Status | Exit gist |
 |---|---|---|---|---|
 | Phase 0 — ADR | [P0-adr](work/P0-adr/) | — | pending | ADR accepted; plan pack thermo-reviewed; #391 points to the v2 pack |
-| Phase 1 — Headless core | [P1-headless-core](work/P1-headless-core/) | P0 | pending | pure agent starts via `createAgent({ runtime: 'none' })` in plain Node with no workspace/sandbox/cwd/file routes/bash tools; existing modes + all HTTP consumers unchanged |
-| Phase M1 — Managed agent via MCP | [M1-mcp-managed-agent](work/M1-mcp-managed-agent/) | P1 pr2 façade merged + public Markdown share API verified on main | pending | stock MCP client delegates a brief to one configured vertical agent, receives progress, gets a public Markdown share link, and opens it |
+| Phase 1 — Headless core | [P1-headless-core](work/P1-headless-core/) | P0 | pending | pure agent starts via `createAgent()` in plain Node with no environment attachment; minimal capability facts report `environments: []` plus actual registered tools; existing modes + all HTTP consumers unchanged |
+| Phase M1 — Managed agent via MCP | [M1-mcp-managed-agent](work/M1-mcp-managed-agent/) | P1 pr2 façade merged | pending | stock MCP client delegates a brief to one configured vertical agent, receives progress, and gets final text + artifact refs; public share URL is BBM1-004 gated on #424/public-share API |
+| Phase M2 — MCP agent surface | [M2-mcp-agent-surface](work/M2-mcp-agent-surface/) | P7, T2 | pending | per-agent MCP endpoint mounts from the canonical agent definition registry with bearer/public-demo auth, demo policy, exposure id, result/share URL shape, and conformance proof |
 | Phase T1 — Durable events + approvals | [T1-durable-events](work/T1-durable-events/) | P1 | pending | SSE drop + reconnect replays losslessly; approval issued in one client answered from another; pending request + `waiting` survive restart via a new seeded turn |
 | Phase T2 — Transport adapters | [T2-transport](work/T2-transport/) | T1 | pending | workspace UI runs unmodified against the refit; a headless Node consumer drives the same session interleaved with the UI |
 | Phase 2 — boring-sandbox + providers | [P2-sandbox-providers](work/P2-sandbox-providers/) | P1 | partial (#416 skeleton) | package builds; no import cycle; apps compile after same-PR importer migration; landed #416 contracts unchanged |
@@ -24,30 +29,36 @@ The running app is the owner's sales demo. Every PR is **behavior-frozen for the
 | Phase E2 — MCP env projection | [E2-mcp-projection](work/E2-mcp-projection/) | E1 | pending | external MCP client sees exactly an in-process readonly attachment; denied files absent; no broker secret reachable |
 | Phase 5 — Provisioning / secrets | [P5-provisioning-secrets](work/P5-provisioning-secrets/) | P3 (+P2 matrix) | pending | no test reads a brokered secret from inside the sandbox; no brokered secret reachable from any sandboxed environment |
 | Phase X1 — S3/FUSE mounts | [X1-s3-fuse-mounts](work/X1-s3-fuse-mounts/) | P2, P5, E1 | pending | readonly S3 mount passes no-leak; bash-visible == file-route-visible over the mount; no cred readable inside the sandbox; EU-endpoint matrix green |
-| Phase 6a — Plugin core | [P6-plugin-child-app](work/P6-plugin-child-app/) | P5 | pending | import-free manifest validation; hosted-plugin fail-closed; managed-service lifecycle; `AgentRegistry`/`agents` declaration seeded |
+| Phase D1 — Tenant provisioning | [D1-tenant-provisioning](work/D1-tenant-provisioning/) | P5, P6a, M2 | pending | one command creates tenant/workspace, runtime config, DB/storage/session roots, secrets, demo endpoint config, and a deployment manifest for the chosen EU host |
+| Phase D2 — Shared subdomain tenancy | [D2-shared-tenant-mesh](work/D2-shared-tenant-mesh/) | P6a, P1, P5, P7, T1, M2 | pending | one shared EU deployment hot-registers subdomain tenants from `WorkspaceAgentsDeclaration`; unknown hosts fail closed; cross-tenant isolation conformance proves no sessions/files/pending-inputs/search/artifacts/governance leakage |
+| Phase 6a — Plugin core | [P6-plugin-child-app](work/P6-plugin-child-app/) | P5 | pending | import-free manifest validation; hosted-plugin fail-closed; managed-service lifecycle; `AgentRegistry`/`AgentDefinitionDeclaration` seeded; per-agent plugin composition; AgentDefinitionDeclaration carries `runtimeProfileRef` (host-resolved digest-pinned image; fail-closed on unknown/malformed/unsupported-image via a provider-`runtimeImage` support check; remote-worker checked post-handshake from the P6a registry) |
 | Phase 6b — Child-app scoping | [P6-plugin-child-app](work/P6-plugin-child-app/) | P6a + #376 | **BLOCKED** (#376) | child-app requirement narrowing; Macro requirements don't leak into a generic workspace — tracked follow-up **outside the epic exit** |
 | Phase 7 — Multi-agent + inspection | [P7-multi-agent-inspection](work/P7-multi-agent-inspection/) | P6a, E1, T2 | pending | agentId-scoped routes/session/search + `GET /api/v1/agents` + `GET /api/v1/agents/:agentId/info`; two surfaces bound to two agents in one workspace don't collide |
-| Phase 8 — Verification + cleanup | [P8-verification](work/P8-verification/) | runtime lanes except P6b and M1 | pending | zero `TODO(remove:*)` markers repo-wide; `@hachej/boring-agent` README documents the four-part surface contract |
-| Phase S1 — Slack channel | [S1-slack-channel](work/S1-slack-channel/) | T2 (+P1) | pending | same agent + session store serves the workspace UI and a Slack thread; approval answerable in either; Slack imports only the public contract + `@flue/slack` |
-| Phase S2 — Spreadsheet embed | [S2-embed-contract](work/S2-embed-contract/) | S1 | pending | the embed has no boring-bash dependency; tool outputs project into the sheet; conformance passes |
+| Phase 8 — Verification + cleanup | [P8-verification](work/P8-verification/) | runtime lanes except P6b, M1, M2, D1, D2, S4 | pending | zero `TODO(remove:*)` markers repo-wide; `@hachej/boring-agent` README documents the four-part surface contract |
 | Phase S3 — Control-plane UX | [S3-control-plane-ux](work/S3-control-plane-ux/) | T2, P7 | pending | one workspace inspects 2 agents + observes/approves 2 surfaces via public contracts only |
+| Phase S4 — Agent onboarding | [S4-agent-onboarding](work/S4-agent-onboarding/) | S3, D1, D2, M2 | pending | workspace shows definition readiness, demo URL status, dedicated/shared tenant provisioning status, and missing policy refs without becoming an authoring UI |
 
 ## Track / dependency graph
 
 ```txt
-P0 ──► P1 ──┬──► M1                    (sidecar demo lane; needs P1 pr2 + public share API)
+P0 ──► P1 ──┬──► M1                    (sidecar demo lane; v0 needs P1 pr2; share-link slice gated on #424)
             ├──► P2 ──► P3 ──┬──► P4
             │                ├──► E1 ──► E2                     (E1 needs P2 AND P3)
             │                └──► P5 ──► P6a ─┬─► P7 ──► P8
+            │                     │           │    └──► M2 ──┬──► D1
+            │                     │           │              └──► D2
             │                     │           └─► P6b (child-app scoping; HARD BLOCKED on #376)
             │                     └──► X1      (X1 needs P2 AND P5 AND E1)
-            └──► T1 ──► T2 ──┬──► S1 ──► S2
-                            └──► S3           (S3 needs T2 AND P7)
+            └──► T1 ──► T2 ──► S3
+                  │
+                  └──────────────► D2          (D2 also needs P1/P5/P6a/P7/M2)
+
+M2 + D1 + D2 + S3 ──► S4      (S4 needs S3 AND M2 AND D1 AND D2)
 ```
 
-Parallel lanes after P1: **M1 demo lane** (after P1 pr2 + verified public share API, independent of every runtime lane), **bash lane** (P2→P3→P4), **environment lane** (E1→E2, needs P2+P3), **mount lane** (X1, needs P2+P5+E1 because its shipped attachment/conformance path consumes E1 `Environment`/`EnvironmentAttachment`), **provisioning→child-app→multi-agent lane** (P5→P6a→P7→P8, off P3), **transport lane** (T1→T2→{S1→S2, S3}). Cross-deps not drawable inline: **P7 needs P6a and E1 and T2** (the `AgentRegistry` from P6a — not P6b's child-app scoping — plus E1 attachments and T2's `sessionId`-only transport + two-handles guard, which carries the T1 durable approvals/`resolveInput` the external-hook route and `/info` channel facts read). **P8 gates on all runtime lanes EXCEPT P6b and the M1 outreach-demo sidecar.**
+Parallel lanes after P1: **M1 demo lane** (v0 after P1 pr2; share-link slice only after #424/public-share API, independent of every runtime lane), **bash lane** (P2→P3→P4), **environment lane** (E1→E2, needs P2+P3), **mount lane** (X1, needs P2+P5+E1 because its shipped environment-attachment/fact path consumes E1 `Environment`/`EnvironmentAttachment`), **provisioning→child-app→multi-agent lane** (P5→P6a→P7→P8, off P3), **MCP agent-surface lane** (M2 after P7+T2), **tenant factory lane** (D1 dedicated/sovereign after P5+P6a+M2; D2 shared subdomain after P1+P5+P6a+P7+T1+M2), **transport lane** (T1→T2→S3→S4). Cross-deps not drawable inline: **P7 needs P6a and E1 and T2** (the `AgentRegistry` from P6a — not P6b's child-app scoping — plus E1 environment attachments/facts and T2's `sessionId`-only transport + two-handles guard, which carries the T1 durable approvals/`resolveInput` the external-hook route and `/info` channel facts read). **Amendment (2026-07-08):** **S1 and S2 are relocated out of #391 active scope**: S1 becomes the separate "Slack via flue channels" story, and S2 belongs to pi-for-excel issue #551. **S4 needs S3, M2, D1, and D2.** **P8 gates on all runtime lanes EXCEPT P6b, M1, M2, D1, D2, and S4; M2 is a committed follow-up surface that may ship after P8 if the runtime exit is otherwise green.**
 
-**P6b is a tracked follow-up, not an epic exit gate.** It is HARD BLOCKED on the shared child-app platform type (`ResolvedChildAppContext`, #376); the epic ships without it and P8 only verifies the P6b follow-up issue is filed — P8 never waits on P6b landing. This is the anti-deadlock guarantee.
+**P6b is a tracked follow-up, not an epic exit gate.** It is HARD BLOCKED on the shared child-app platform type (`ResolvedChildAppContext`, #376); the epic ships without it and P8 verifies the P6b follow-up plus M2/D1/D2/S4 follow-up or status tracking — P8 never waits on P6b/M1/D1/D2/S4 landing, and M2 may land after P8 as a committed follow-up. This is the anti-deadlock guarantee.
 
 Rules baked into the ordering: dependency inversion (P1) happens **before** package extraction (P2) — otherwise an agent↔bash import cycle. Each phase preserves existing workspace behavior unless it explicitly changes a documented invariant. Work already landed via #416 (company-fs stack #437/#440/#429/#454) is marked landed and must not be redone.
 

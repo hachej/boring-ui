@@ -31,3 +31,21 @@ const governanceCompanyAdmin = createGovernanceCompanyAdmin()
 ```
 
 Policy source is configured with `BORING_GOVERNANCE_POLICY_PATH`. Company context source roots use `BORING_GOVERNANCE_COMPANY_CONTEXT_ROOT` or the default workspace root resolver outside sandbox mode.
+
+## Policy budgets
+
+Model grants remain the model picker allowlist. Optional user budgets cap aggregate monthly spend across all allowed models; optional per-model budgets cap individual models.
+
+```yaml
+users:
+  - email: readonly@example.com
+    role: user
+    budgets:
+      monthlyEur: 10
+    models:
+      - provider: infomaniak
+        id: Qwen/Qwen3.5-122B-A10B-FP8
+        monthlyBudgetEur: 2
+```
+
+A run is admitted only when the user is allowed to use the selected model, the aggregate user budget has remaining monthly capacity, and the selected model budget has remaining monthly capacity.

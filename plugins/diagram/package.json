@@ -1,0 +1,81 @@
+{
+  "name": "@hachej/boring-diagram",
+  "version": "0.1.71",
+  "type": "module",
+  "private": false,
+  "license": "MIT",
+  "description": "Diagram workspace plugin for viewing and editing .excalidraw files.",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/hachej/boring-ui"
+  },
+  "homepage": "https://github.com/hachej/boring-ui",
+  "boring": {
+    "id": "diagram",
+    "label": "Diagram",
+    "front": "dist/front/index.js",
+    "server": "dist/server/index.js"
+  },
+  "pi": {
+    "systemPrompt": "Diagram plugin: open .excalidraw and .excalidraw.png workspace files through workspace.open.path. The editor autosaves .excalidraw JSON with optimistic conflict detection."
+  },
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "exports": {
+    ".": {
+      "types": "./dist/front/index.d.ts",
+      "import": "./dist/front/index.js"
+    },
+    "./front": {
+      "types": "./dist/front/index.d.ts",
+      "import": "./dist/front/index.js"
+    },
+    "./server": {
+      "types": "./dist/server/index.d.ts",
+      "import": "./dist/server/index.js"
+    },
+    "./shared": {
+      "types": "./dist/shared/index.d.ts",
+      "import": "./dist/shared/index.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "sideEffects": [
+    "**/*.css"
+  ],
+  "scripts": {
+    "build": "tsup",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run --passWithNoTests",
+    "lint": "pnpm run typecheck",
+    "clean": "rm -rf dist .tsbuildinfo"
+  },
+  "peerDependencies": {
+    "@hachej/boring-workspace": "workspace:*",
+    "react": "^18.0.0 || ^19.0.0",
+    "react-dom": "^18.0.0 || ^19.0.0"
+  },
+  "dependencies": {
+    "@earendil-works/pi-ai": "^0.79.1",
+    "@excalidraw/excalidraw": "^0.18.1",
+    "@hachej/boring-agent": "workspace:*",
+    "@hachej/boring-ui-kit": "workspace:*",
+    "@mariozechner/pi-coding-agent": "npm:@earendil-works/pi-coding-agent@0.75.5"
+  },
+  "devDependencies": {
+    "@hachej/boring-workspace": "workspace:*",
+    "@testing-library/jest-dom": "^6.9.1",
+    "@types/node": "^22.20.0",
+    "@types/react": "^19.2.17",
+    "@types/react-dom": "^19.0.0",
+    "@vitejs/plugin-react": "^4.0.0",
+    "jsdom": "^29.1.1",
+    "react": "^19.2.7",
+    "react-dom": "^19.2.7",
+    "tsup": "^8.4.0",
+    "typescript": "~5.9.3",
+    "vitest": "^4.1.9"
+  }
+}

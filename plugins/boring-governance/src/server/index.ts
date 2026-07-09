@@ -86,6 +86,8 @@ export function createGovernanceModelFilter(service: GovernanceService): Registe
     const user = governanceUserFromRequest(request)
     if (!service.isEnabled()) return { models, defaultModel }
     if (!user) return { models: [] }
+    const aggregateBudgetMicros = service.userMonthlyBudgetMicros(user)
+    if (aggregateBudgetMicros !== null && aggregateBudgetMicros <= 0) return { models: [], defaultModel: undefined }
     const allowedModels = service
       .allowedModelsForUser(user, models)
       .filter((model) => (service.monthlyBudgetMicros(user, model) ?? 0) > 0)

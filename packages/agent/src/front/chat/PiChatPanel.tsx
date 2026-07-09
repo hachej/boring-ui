@@ -979,15 +979,11 @@ export function PiChatPanel<
     window.dispatchEvent(new CustomEvent('boring:chat-session-status', {
       detail: { sessionId: activeChatSessionId, working: isStreaming },
     }))
-    if (!isStreaming) return
-    const sessionId = activeChatSessionId
-    return () => {
-      // Pane unmounted (or session switched) mid-stream: clear the signal
-      // rather than leaving a stale "working" badge behind.
-      window.dispatchEvent(new CustomEvent('boring:chat-session-status', {
-        detail: { sessionId, working: false },
-      }))
-    }
+    // Do not clear on unmount/session switch. A background session can keep
+    // running after its panel is no longer selected; clearing here makes the
+    // session-list "working" badge disappear while the run is still active.
+    // The selected/running panel emits `working: false` when it observes the
+    // terminal status, and a later remount of an idle session also reconciles it.
   }, [activeChatSessionId, isStreaming])
 
   const onTextareaKeyDown = useCallback((event: ReactKeyboardEvent<HTMLTextAreaElement>) => {

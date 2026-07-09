@@ -17,9 +17,15 @@ export interface GovernanceModelGrant {
   monthlyBudgetMicros: number
 }
 
+export interface GovernanceUserBudgets {
+  monthlyEur: number | null
+  monthlyMicros: number | null
+}
+
 export interface GovernanceUserPolicy {
   email: string
   role: TenantRole
+  budgets: GovernanceUserBudgets
   models: GovernanceModelGrant[]
   companyContext: {
     allow: string[]

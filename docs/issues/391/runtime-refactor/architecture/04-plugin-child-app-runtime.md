@@ -74,7 +74,17 @@ First-party `@hachej/boring-bash` ships through the same plugin door as trusted 
 
 The workspace can host several first-party plugins with a mechanism/policy split. `boring-bash` is the multi-fs mechanism: the `@hachej/boring-bash` package owns contracts, enforcement, no-leak projection operations, tools/routes/tree, and the plugin only delivers that mechanism. `boring-governance` (the #475 line, extracted as `plugins/boring-governance` in PR #532, rolled up in #544) is multi-fs policy: YAML governance, `company_context` bootstrap/mount, budgets, and admin UI. Governance depends on `@hachej/boring-bash/shared` **and value-imports the `/server` mechanism exports** (projection operations, `ScopedFilesystemRuntimeBindingManager`, `COMPANY_CONTEXT_FILESYSTEM_ID`); bash enforces the bindings governance resolves. The invariants that hold are: **governance never imports `@hachej/boring-workspace` or workspace internals**, and **bash never imports governance**.
 
-The live seam is agent-owned, not a plugin-to-plugin composition point: governance exposes `getFilesystemBindings()` typed as `RegisterAgentRoutesOptions['getFilesystemBindings']`, hand-spread by the app ([`docs/issues/475/future-improvements.md`](../../475/future-improvements.md) item 9 locks this — do not pre-build seam composition until a second plugin needs it). The bash-plugin `bindingResolver` composition point remains **name-reserved only**; P3 must not implement it with governance as its lone consumer — governance keeps its app-spread wiring unchanged, and bash must never discover governance by importing it. Governance's server half is deliberately outside the plugin pipeline (`boring.server: false`) because policy load must complete before `createCoreWorkspaceAgentServer` (fail-closed boot).
+**Amendment (2026-07-08):** D2 shared subdomain tenancy resolves governance
+policy per tenant (`SessionCtx.workspaceId` / `governancePolicyRef`) and includes
+that resolution in tenant-isolation conformance. An unknown `governancePolicyRef`
+fails closed and never falls back to another tenant's policy.
+
+**Amendment (2026-07-08):** `governancePolicyRef` may also deny plugins an
+agent or tenant is allowed to load. Plugin denial is governance-gated and
+fail-closed; a denied plugin contributes no tools, skills, MCP servers, routes,
+or UI panels for that agent.
+
+Reserve plugin-to-plugin composition as a host-mediated seam, not a package import. The boring-bash server plugin exposes a named `bindingResolver` composition point; the governance plugin or host config fulfills it through the host plugin pipeline, following the existing `defineServerPlugin` mediation pattern for bridge handlers and provisioning. If the resolver is absent, bash falls back only to host/library-mode config or no governed bindings; it must not discover governance by importing it.
 
 ## MCP consume composition (`boring-mcp`)
 

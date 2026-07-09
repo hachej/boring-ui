@@ -1,6 +1,6 @@
 {
   "name": "@hachej/boring-bi-dashboard",
-  "version": "0.1.64",
+  "version": "0.1.71",
   "type": "module",
   "private": false,
   "license": "MIT",
@@ -82,7 +82,7 @@
     "@perspective-dev/viewer-datagrid": "4.5.1",
     "lucide-react": "^1.21.0",
     "zod": "^4.3.6",
-    "zustand": "^4.5.7"
+    "zustand": "^5.0.14"
   },
   "devDependencies": {
     "@duckdb/node-api": "1.5.2-r.2",
@@ -98,8 +98,8 @@
     "react-dom": "^19.2.7",
     "tsup": "^8.4.0",
     "tsx": "^4.22.4",
-    "typescript": "~5.9.3",
-    "vite": "^6.4.2",
+    "typescript": "~6.0.3",
+    "vite": "^8.1.2",
     "vitest": "^4.1.9"
   }
 }
