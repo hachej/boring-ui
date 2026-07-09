@@ -10,7 +10,7 @@ Current workflow:
 ask-boring -> feedback -> triage -> plan -> implement
 ```
 
-Draft skills live in [`../../../skill-library/boring-v2/skills/`](../../../skill-library/boring-v2/skills/). They are not active until copied into `.agents/skills/`.
+Active skills live in [`../../../.agents/skills/`](../../../.agents/skills/). Draft/reference copies live in [`../../../skill-library/boring-v2/skills/`](../../../skill-library/boring-v2/skills/).
 
 Use focused procedures for how-to details:
 
