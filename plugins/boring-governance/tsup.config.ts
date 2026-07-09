@@ -4,6 +4,7 @@ export default defineConfig({
   entry: {
     "front/index": "src/front/index.tsx",
     "server/index": "src/server/index.ts",
+    "scripts/governance-access-matrix": "src/scripts/governance-access-matrix.ts",
   },
   format: ["esm"],
   dts: true,

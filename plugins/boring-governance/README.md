@@ -49,3 +49,38 @@ users:
 ```
 
 A run is admitted only when the user is allowed to use the selected model, the aggregate user budget has remaining monthly capacity, and the selected model budget has remaining monthly capacity.
+
+## Governance access matrix smoke
+
+The package includes a reusable HTTP matrix runner for deployment smoke tests:
+
+```bash
+boring-governance-access-matrix
+# or from the source package:
+pnpm --filter @hachej/boring-governance smoke:governance-matrix
+```
+
+It signs in two environment-provided users and verifies the expected read/write behavior for:
+
+- company-context public paths
+- company-context Adam-private paths
+- each user's own `user` workspace filesystem
+- cross-user workspace access denial
+
+All deployment-specific values must be supplied explicitly; the reusable package intentionally does not ship real credentials or workspace IDs.
+
+| Var | Required value |
+| --- | --- |
+| `MATRIX_BASE_URL` / `DEPLOY_URL` | Deployment base URL |
+| `MATRIX_ADAM_EMAIL` | Admin fixture email |
+| `MATRIX_ADAM_PASSWORD` | Admin fixture password |
+| `MATRIX_ADAM_WORKSPACE_ID` | Admin fixture workspace ID |
+| `MATRIX_READONLY_EMAIL` | Readonly fixture email |
+| `MATRIX_READONLY_PASSWORD` | Readonly fixture password |
+| `MATRIX_READONLY_WORKSPACE_ID` | Readonly fixture workspace ID |
+| `MATRIX_COMPANY_PUBLIC_READ_PATH` | Existing public company-context file readable by both users |
+| `MATRIX_COMPANY_PRIVATE_READ_PATH` | Existing private company-context file readable by admin and denied to readonly |
+| `MATRIX_COMPANY_PUBLIC_WRITE_DIR` | Company-context directory used for admin public write probes |
+| `MATRIX_COMPANY_PRIVATE_WRITE_DIR` | Company-context directory used for admin private write probes |
+| `MATRIX_ADMIN_COMPANY_WRITE_EXPECTED` | Optional admin company-context write status, defaults to `403` for the base readonly plugin |
+| `MATRIX_READONLY_COMPANY_WRITE_EXPECTED` | Optional readonly company-context write status, defaults to `403` |
