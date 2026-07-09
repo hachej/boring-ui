@@ -1,53 +1,55 @@
-# Kanzen
+# Boring Workflow
 
-Kanzen is the boring-ui maintainer loop:
+Boring v2 is the maintainer workflow for turning feedback into safe PRs.
 
 ```text
-/feedback -> enriched GitHub issue
-/triage   -> grill, plan, implement, review, prove, or merge
+ask-boring -> feedback -> triage -> plan -> implement
 ```
 
-Keep it simple: state says whether work can move, phase says what kind of work
-is next, gates say why it cannot move yet.
+## Skills
 
-Read:
+Active skill drafts live in `skill-library/boring-v2/skills/`.
 
-- [`boring-loop.md`](boring-loop.md) - vision/index, clean model, labels,
-  gates, and product shape.
-- [`boring-feedback`](../../.agents/skills/boring-feedback/SKILL.md)
-  - `/feedback` intake skill.
-- [`boring-orchestration`](../../.agents/skills/boring-orchestration/SKILL.md)
-  - orchestration skill.
-- [`boring-triage`](../../.agents/skills/boring-triage/SKILL.md) - triage
-  skill.
-- [`boring-loop-grill`](../../.agents/skills/boring-loop-grill/SKILL.md)
-  - `/loop-grill` clarity skill.
-- [`boring-loop-plan`](../../.agents/skills/boring-loop-plan/SKILL.md)
-  - `/loop-plan` planning skill.
-- [`boring-loop-implement`](../../.agents/skills/boring-loop-implement/SKILL.md)
-  - `/loop-implement` implementation skill.
-- Coding procedures:
-  [`procedures/coding-rules.md`](procedures/coding-rules.md),
-  [`procedures/coding-invariants.md`](procedures/coding-invariants.md), and
-  [`procedures/repo-commands.md`](procedures/repo-commands.md).
-- Trunk/flag/review budget procedure:
-  [`procedures/trunk-flags-review-budget.md`](procedures/trunk-flags-review-budget.md).
-- Local proof/signoff workflow:
-  [`procedures/local-signoff.md`](procedures/local-signoff.md).
-- Proof-of-work comments:
-  [`procedures/proof-of-work.md`](procedures/proof-of-work.md).
-- Owner review cards:
-  [`procedures/owner-review-card.md`](procedures/owner-review-card.md).
-- Well-documented issues:
-  [`procedures/well-documented-issue.md`](procedures/well-documented-issue.md).
-- Plan files live under `../issues/<issue-number>/`; see
-  [`procedures/issue-plans.md`](procedures/issue-plans.md).
-- Visual owner handoffs use `visual-explainer` plus a thin ask-user-style
-  pending review surface; see
-  [`procedures/visual-review.md`](procedures/visual-review.md).
+| Skill | Job |
+| --- | --- |
+| `ask-boring` | Route to the right workflow. Does no work. |
+| `feedback` | Create a GitHub issue from user feedback. Stops there. |
+| `triage` | Classify an issue/PR and pick the next action. |
+| `plan` | Turn an issue into a spec/plan; split into slices only when needed. |
+| `implement` | Build one ready issue/slice with proof, review, and PR handoff. |
 
-Source notes live in [`sources/`](sources/):
+## Labels
 
-- [`theo_loop.md`](sources/theo_loop.md) - Theo transcript.
-- [`steinberger_loop.md`](sources/steinberger_loop.md) - Steinberger skill
-  analysis.
+Use a simple surface model.
+
+Category, choose one when possible:
+
+- `bug`
+- `enhancement`
+
+State, choose one:
+
+- `needs-triage`
+- `needs-info`
+- `ready-for-agent`
+- `ready-for-human`
+- `wontfix`
+
+Do not reintroduce `state:*`, `phase:*`, `track:*`, or `gate:*` labels. Put details in comments or PR handoff cards.
+
+## Keep these procedures
+
+- [`procedures/coding-rules.md`](procedures/coding-rules.md)
+- [`procedures/coding-invariants.md`](procedures/coding-invariants.md)
+- [`procedures/repo-commands.md`](procedures/repo-commands.md)
+- [`procedures/proof-of-work.md`](procedures/proof-of-work.md)
+- [`procedures/owner-review-card.md`](procedures/owner-review-card.md)
+- [`procedures/well-documented-issue.md`](procedures/well-documented-issue.md)
+- [`procedures/issue-plans.md`](procedures/issue-plans.md)
+- [`procedures/trunk-flags-review-budget.md`](procedures/trunk-flags-review-budget.md)
+
+Everything else in this folder is legacy/reference unless linked by a current skill.
+
+## Model and review policy
+
+See [`../../skill-library/boring-v2/MODEL-CARD.md`](../../skill-library/boring-v2/MODEL-CARD.md).
