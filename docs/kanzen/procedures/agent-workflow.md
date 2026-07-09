@@ -2,8 +2,15 @@
 
 Compatibility pointer only. Do not add new process here.
 
-Use [`../boring-loop.md`](../boring-loop.md) as the canonical Kanzen workflow:
-labels, gates, loop commands, fast-track policy, and product shape.
+Use [`../boring-loop.md`](../boring-loop.md) for the current Boring v2 workflow.
+
+Current workflow:
+
+```text
+ask-boring -> feedback -> triage -> plan -> implement
+```
+
+Draft skills live in [`../../../skill-library/boring-v2/skills/`](../../../skill-library/boring-v2/skills/). They are not active until copied into `.agents/skills/`.
 
 Use focused procedures for how-to details:
 
@@ -15,11 +22,4 @@ Use focused procedures for how-to details:
 - [`visual-review.md`](visual-review.md)
 - [`proof-of-work.md`](proof-of-work.md)
 
-Executable loop behavior lives in the skills:
-
-- [`../../../.agents/skills/boring-feedback/SKILL.md`](../../../.agents/skills/boring-feedback/SKILL.md)
-- [`../../../.agents/skills/boring-triage/SKILL.md`](../../../.agents/skills/boring-triage/SKILL.md)
-- [`../../../.agents/skills/boring-orchestration/SKILL.md`](../../../.agents/skills/boring-orchestration/SKILL.md)
-- [`../../../.agents/skills/boring-loop-grill/SKILL.md`](../../../.agents/skills/boring-loop-grill/SKILL.md)
-- [`../../../.agents/skills/boring-loop-plan/SKILL.md`](../../../.agents/skills/boring-loop-plan/SKILL.md)
-- [`../../../.agents/skills/boring-loop-implement/SKILL.md`](../../../.agents/skills/boring-loop-implement/SKILL.md)
+Human review or decision requests should use the `ask_user` tool when available so the request appears in the Boring UI inbox. If `ask_user` is unavailable, leave a clear GitHub/PR comment instead.

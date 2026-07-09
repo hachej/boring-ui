@@ -1,28 +1,32 @@
-# Owner Review Card Procedure
+# Owner review card
 
-Use this when a PR needs Julien or owner review instead of fast-track merge.
+Use when a PR needs Julien/human review.
 
-Post the final proof comment first, following
-[`proof-of-work.md`](proof-of-work.md). Then leave this card in the PR and final
-thread:
+Post proof first. Then leave this card in the PR:
 
-```text
+```md
+## Owner Review
+
 PR:
 Issue:
+
 What changed:
+- ...
+
 Why:
-Risk:
+- ...
+
+Risk / rollback:
+- ...
+
 Proof:
-Demo: URL or N/A
+- Link or summary of proof comment
+
 Please test:
+1. ...
+
 Decision needed:
+- approve / request changes / answer specific question
 ```
 
-`Proof` summarizes or links to the final proof comment; it does not replace it.
-
-Use `Demo` for a preview/dev URL when safe and relevant. For public GitHub
-comments, follow the proof-of-work safety rule: never post host/IP addresses;
-use ports, local/operator paths, or a safe preview URL.
-
-Make `Please test` concrete enough that Julien can approve, reject, or request a
-specific change without reconstructing the whole PR.
+Make `Please test` concrete enough that the owner can decide without reconstructing the whole PR.
