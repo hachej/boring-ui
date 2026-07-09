@@ -15,8 +15,10 @@ Do not make long doctor/consultation recordings a single synchronous transcripti
 
 - Composer gets a mic/dictation control.
 - While recording, composer shows local state: `Recording… 00:42 [Stop] [Cancel]`.
-- If the user stops before the long-recording threshold, the browser sends one audio blob to the transcription backend and inserts/sends the resulting transcript.
-- Default threshold: **2 minutes** or backend-reported max inline audio size, whichever comes first.
+- Recording uses `MediaRecorder.start(timesliceMs)` from the beginning, even for short composer dictation. Default chunk duration: 30–60 seconds.
+- Before promotion, chunks stay in browser memory as a short-mode buffer.
+- If the user stops before the long-recording threshold, the browser combines/uploads the buffered chunks to the short transcription endpoint and inserts/sends the resulting transcript.
+- Default promotion threshold: **2 minutes** or backend-reported max inline audio size, whichever comes first.
 
 ### Auto-promote to long recording
 
@@ -25,6 +27,7 @@ If a composer recording crosses the threshold:
 - The app creates a document recording automatically.
 - The user is informed immediately:
   - `Long recording started. Audio and transcript are being saved to recordings/<timestamp>-recording.md.`
+- The browser first uploads every buffered pre-promotion chunk to the document recording with deterministic indexes/timestamps (`index=0...n`, `startMs/endMs` from recording start), then continues streaming new chunks.
 - Subsequent chunks are no longer composer-owned.
 - The composer remains usable while the recording continues in the background.
 
@@ -80,6 +83,24 @@ recordings/2026-07-09-1530-recording.recording/
 
 Use browser-native `MediaRecorder` output (`webm`/`ogg` depending on support). Do not promise `.mp4` unless we add a conversion pipeline.
 
+## Audio ingestion contract
+
+The frontend must choose the first supported MIME type from a backend-advertised list, for example:
+
+```text
+audio/webm;codecs=opus
+audio/webm
+audio/ogg;codecs=opus
+audio/mp4   (only if the backend declares support)
+```
+
+The backend transcription adapter owns conversion into the format required by the STT engine. For local `whisper.cpp`, v1 should either:
+
+- convert uploaded chunks server-side to mono 16 kHz WAV before calling `/inference`; or
+- reject unsupported MIME types with a stable error (`TRANSCRIPTION_AUDIO_FORMAT_UNSUPPORTED`) and a supported-format list.
+
+Acceptance proof must cover at least Chromium's `audio/webm` path. Safari/iOS support can ship behind the same advertised-MIME contract once the backend can ingest `audio/mp4`/`audio/aac` or a compatible fallback.
+
 ## Manifest
 
 Each long recording owns a manifest:
@@ -104,6 +125,14 @@ Each long recording owns a manifest:
 ```
 
 The manifest is the recovery source of truth. On restart, the backend skips chunks already transcribed and resumes pending chunks.
+
+Capture recovery is different from transcription recovery: browser audio capture cannot resume after tab close/refresh. The active recording lock therefore includes:
+
+- `ownerId`: browser recording-session id;
+- `lastHeartbeatAt`: updated while MediaRecorder is alive;
+- `status`: `recording | interrupted | stopping | finalizing | done | failed | cancelled`.
+
+If heartbeats stop past a timeout, backend marks the recording `interrupted`, releases the one-active-recording lock, and continues transcribing chunks already saved. The global bar should show `Recording interrupted. Saved audio is being finalized.` if the user reloads into an interrupted recording. Starting a new recording is allowed after interruption, but never silently appends to the old one.
 
 ## Transcript timestamp metadata
 
@@ -134,7 +163,25 @@ These headings are useful on their own and preserve enough structure for later a
 
 ## API shape
 
-Keep the existing short transcription endpoint for composer snippets:
+Expose backend capabilities before recording starts:
+
+```http
+GET /api/v1/transcription/capabilities
+```
+
+Example response:
+
+```json
+{
+  "inlineMaxDurationMs": 120000,
+  "inlineMaxBytes": 8388608,
+  "chunkDurationMs": 60000,
+  "supportedMimeTypes": ["audio/webm;codecs=opus", "audio/webm"],
+  "longRecording": { "enabled": true, "heartbeatIntervalMs": 10000, "staleAfterMs": 45000 }
+}
+```
+
+Introduce the short transcription endpoint for composer snippets:
 
 ```http
 POST /api/v1/transcription/transcribe
@@ -145,10 +192,13 @@ Add long recording APIs:
 ```http
 POST /api/v1/transcription/document-recordings
 POST /api/v1/transcription/document-recordings/:recordingId/chunks
+POST /api/v1/transcription/document-recordings/:recordingId/heartbeat
 GET  /api/v1/transcription/document-recordings/:recordingId
 POST /api/v1/transcription/document-recordings/:recordingId/stop
 POST /api/v1/transcription/document-recordings/:recordingId/cancel
 ```
+
+`document-recordings` creation returns an owner/session token. Chunk upload, heartbeat, stop, and cancel must include that owner token and fail with `TRANSCRIPTION_RECORDING_OWNER_MISMATCH` if another tab/session tries to mutate the active recording.
 
 Backend must reject concurrent long recordings:
 
@@ -162,18 +212,30 @@ Backend must reject concurrent long recordings:
 
 Frontend should focus/show the existing global recording bar instead of starting a second recording.
 
-## Backend behavior
+## Backend ownership and behavior
+
+The first implementation slice must introduce the transcription package/plugin/service in the workspace backend. It owns:
+
+- route registration for `/api/v1/transcription/*`;
+- shared request/response types and stable error codes;
+- the short transcription endpoint;
+- long recording manifests/chunk storage;
+- the STT adapter boundary (`whisper.cpp` first).
+
+Backend behavior:
 
 - Save every chunk before enqueueing transcription.
 - Transcribe chunk-by-chunk with the configured backend (`whisper.cpp` first).
-- Append/update partial transcript in the target markdown document or a sidecar partial file, then reconcile final text when chunks complete.
+- Write chunk transcripts to recording sidecars (`chunk-000000-000060.md`) and update a generated managed transcript document/section. Do not directly mutate arbitrary user-authored prose outside the managed transcript section.
+- If the target markdown file exists and already has user edits, append/update only the managed block delimited by stable comments; otherwise create the generated transcript document.
 - Store timestamps with every chunk and render each transcript segment with a visible start/end timestamp heading.
 - Never overwrite arbitrary paths; document-relative sidecars must use the same workspace path validation rules as the transcription plugin.
-- Keep sync `/transcribe` for small snippets only; enforce a size/duration limit and return a promote-required error when exceeded.
+- Keep `/transcribe` for small snippets only after it is introduced; enforce a size/duration limit and return a stable promote-required error (`TRANSCRIPTION_REQUIRES_DOCUMENT_RECORDING`) when exceeded.
 
 ## Acceptance
 
 - Composer dictation works for short snippets and does not create sidecar files unless promoted.
+- Short-mode recording chunks from before promotion are not lost; if auto-promotion occurs, they are uploaded as the first document-recording chunks.
 - A composer recording longer than the threshold auto-promotes to long recording, informs the user, and shows the global recording bar.
 - A markdown document can start a long recording from a document-level Record button.
 - Only one long recording can run at a time across the app.
@@ -181,22 +243,25 @@ Frontend should focus/show the existing global recording bar instead of starting
 - Audio chunks are saved beside the target document with start/end timestamp names.
 - Transcript output includes visible start/end timestamp headings for each segment.
 - Partial transcript survives refresh/restart and can resume from saved chunks.
+- Recording capabilities endpoint advertises supported MIME types and short-mode size/duration limits.
+- Heartbeats keep active recording ownership alive; chunk/stop/cancel mutations reject stale or wrong owner tokens.
+- If browser capture is interrupted by refresh/crash, the backend marks the recording interrupted, releases the active-recording lock, and finalizes already-saved chunks.
 - User can open the transcript from the global recording bar.
-- Existing short transcription endpoint remains compatible for quick composer dictation.
+- Short transcription endpoint remains compatible for quick composer dictation once introduced.
 
 ## Slices
 
-1. **Plan/API contracts** — document this plan, define shared types/errors, keep plugin implementation unchanged.
-2. **Short composer dictation** — mic button, short recording POST, transcript insert/send, size/duration guard.
-3. **Long recording backend** — document-recording APIs, manifest, chunk upload, one-active-recording lock, stop/cancel.
-4. **Global recording bar** — app-wide status, stop/cancel/open transcript, state polling or SSE.
-5. **Document Record button** — markdown editor/document action, attach recording to current markdown file.
-6. **Chunk transcription + resume** — transcribe chunks as they arrive, append partials, recover pending work after restart.
-7. **Polish/proof** — screenshots/recording proof for short composer and 30+ minute simulated recording.
+1. **Transcription backend foundation** — introduce the package/plugin/service, route registration, shared types/errors, STT adapter boundary, `GET /capabilities`, supported MIME discovery, and the short `/transcribe` endpoint.
+2. **Short composer dictation** — mic button, chunked in-memory short buffer, capabilities-driven MIME/limit selection, short transcription POST, transcript insert/send, size/duration guard.
+3. **Auto-promotion handoff** — upload buffered short-mode chunks as initial long-recording chunks, then continue background uploads.
+4. **Long recording backend** — document-recording APIs, manifest, chunk upload, heartbeat API, owner-token lock, stale interruption handling, stop/cancel.
+5. **Global recording bar** — app-wide status, stop/cancel/open transcript, state polling or SSE.
+6. **Document Record button** — markdown editor/document action, attach recording to current markdown file.
+7. **Chunk transcription + resume** — transcribe chunks as they arrive, write sidecars plus managed transcript section/file, recover pending work after restart.
+8. **Polish/proof** — screenshots/recording proof for short composer and 30+ minute simulated recording.
 
 ## Open questions
 
 - Exact auto-promotion threshold: start with 2 minutes, tune after UX proof.
-- Whether partial transcript writes directly into the user document or into `<doc>.transcript.partial.md` until finalization.
 - Whether pause/resume is in v1 or deferred.
 - Medical post-processing (SOAP note, speaker labels, summaries) should be separate from raw transcription capture.
