@@ -375,8 +375,8 @@ export const usageReservations = pgTable(
   ],
 )
 
-export const modelBudgetReservations = pgTable(
-  'boring_model_budget_reservations',
+export const budgetReservations = pgTable(
+  'boring_budget_reservations',
   {
     id: uuid('id')
       .default(sql`gen_random_uuid()`)
@@ -385,8 +385,9 @@ export const modelBudgetReservations = pgTable(
     workspaceId: text('workspace_id'),
     sessionId: text('session_id'),
     runId: text('run_id').notNull(),
-    provider: text('provider').notNull(),
-    model: text('model').notNull(),
+    scope: text('scope').notNull().default('model'),
+    provider: text('provider'),
+    model: text('model'),
     period: text('period').notNull(),
     amountMicros: bigint('amount_micros', { mode: 'number' }).notNull(),
     status: text('status').notNull().default('active'),
@@ -394,18 +395,25 @@ export const modelBudgetReservations = pgTable(
     expiresAt: timestamp('expires_at').notNull(),
   },
   (table) => [
-    uniqueIndex('boring_model_budget_reservations_active_user_run_idx')
-      .on(table.userId, table.runId)
+    uniqueIndex('boring_budget_reservations_active_user_run_idx')
+      .on(table.scope, table.userId, table.runId)
       .where(sql`${table.status} = 'active'`),
-    index('boring_model_budget_reservations_budget_idx').on(table.userId, table.provider, table.model, table.period, table.status),
-    index('boring_model_budget_reservations_stale_idx').on(table.status, table.expiresAt),
-    check('boring_model_budget_reservations_amount_check', sql`${table.amountMicros} > 0`),
+    index('boring_budget_reservations_budget_idx').on(table.scope, table.userId, table.provider, table.model, table.period, table.status),
+    index('boring_budget_reservations_user_budget_idx').on(table.scope, table.userId, table.period, table.status),
+    index('boring_budget_reservations_stale_idx').on(table.status, table.expiresAt),
+    check('boring_budget_reservations_amount_check', sql`${table.amountMicros} > 0`),
+    check('boring_budget_reservations_scope_check', sql`${table.scope} IN ('model', 'user')`),
     check(
-      'boring_model_budget_reservations_status_check',
+      'boring_budget_reservations_scope_shape_check',
+      sql`(${table.scope} = 'model' AND ${table.provider} IS NOT NULL AND length(btrim(${table.provider})) > 0 AND ${table.model} IS NOT NULL AND length(btrim(${table.model})) > 0) OR (${table.scope} = 'user' AND ${table.provider} IS NULL AND ${table.model} IS NULL)`,
+    ),
+    check(
+      'boring_budget_reservations_status_check',
       sql`${table.status} IN ('active', 'settled', 'released', 'expired')`,
     ),
   ],
 )
+export const modelBudgetReservations = budgetReservations
 
 export const usageLedger = pgTable(
   'boring_usage_ledger',

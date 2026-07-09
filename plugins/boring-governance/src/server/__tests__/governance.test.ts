@@ -85,6 +85,21 @@ describe('governance policy loader', () => {
     })).rejects.toThrow()
   })
 
+  it('loads per-user monthly budgets independently from model grant budgets', () => {
+    const policy = validateGovernancePolicy({
+      tenant: { id: 'company', defaultMonthlyModelBudgetEur: 7, perRunHoldEur: 1 },
+      users: [{
+        email: 'a@example.com',
+        role: 'user',
+        budgets: { monthlyEur: 20 },
+        models: [{ provider: 'p', id: 'm', monthlyBudgetEur: 3 }],
+      }],
+    })
+
+    expect(policy.users[0]?.budgets).toEqual({ monthlyEur: 20, monthlyMicros: 20_000_000 })
+    expect(policy.users[0]?.models[0]).toMatchObject({ monthlyBudgetEur: 3, monthlyBudgetMicros: 3_000_000 })
+  })
+
   it('applies tenant defaultMonthlyModelBudgetEur to model grants that omit a budget', () => {
     const policy = validateGovernancePolicy({
       tenant: { id: 'company', defaultMonthlyModelBudgetEur: 7, perRunHoldEur: 1 },
@@ -166,6 +181,11 @@ describe('governance policy loader', () => {
 
     expect(() => validateGovernancePolicy({
       tenant: { id: 'company', perRunHoldEur: 1 },
+      users: [{ email: 'a@example.com', role: 'user', budgets: { monthlyEur: -1 } }],
+    })).toThrow(/budgets\.monthlyEur/)
+
+    expect(() => validateGovernancePolicy({
+      tenant: { id: 'company', perRunHoldEur: 1 },
       users: [{ email: 'a@example.com', role: 'user', models: [{ provider: 'p', id: 'm', monthlyBudgetEur: -1 }] }],
     })).toThrow(/monthlyBudgetEur/)
 
@@ -208,6 +228,7 @@ describe('governance service and route', () => {
     expect(service.isAdmin(user)).toBe(false)
     expect(service.allowedModelsForUser(user, [{ provider: 'infomaniak', id: 'qwen' }])).toEqual([])
     expect(service.monthlyBudgetMicros(user, { provider: 'infomaniak', id: 'qwen' })).toBeNull()
+    expect(service.userMonthlyBudgetMicros(user)).toBeNull()
     expect(service.companyContextRules(user)).toEqual([])
   })
 

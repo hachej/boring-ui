@@ -34,6 +34,7 @@ export interface GovernanceMeResponse {
     email: string
     role: TenantRole
     modelCount: number
+    monthlyBudgetEur: number | null
     contextRuleCount: number
   }>
   models?: Array<GovernanceModelGrant & { email: string }>
@@ -96,6 +97,11 @@ export class GovernanceService {
     return grant?.monthlyBudgetMicros ?? null
   }
 
+  userMonthlyBudgetMicros(user: GovernanceUserLike): number | null {
+    if (!this.loaded.enabled) return null
+    return this.userPolicy(user)?.budgets.monthlyMicros ?? null
+  }
+
   companyContextRules(user: GovernanceUserLike): string[] {
     if (!this.loaded.enabled) return []
     return this.userPolicy(user)?.companyContext.allow ?? []
@@ -132,6 +138,7 @@ export class GovernanceService {
         email: entry.email,
         role: entry.role,
         modelCount: entry.models.length,
+        monthlyBudgetEur: entry.budgets.monthlyEur,
         contextRuleCount: entry.companyContext.allow.length,
       })),
       models: policy.users.flatMap((entry) => entry.models.map((model) => ({ ...model, email: entry.email }))),

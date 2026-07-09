@@ -171,6 +171,7 @@ export function ChatFirstPublicShell<
             // a fresh load/hard refresh shows just the hero, not a re-opened
             // panel unless the app explicitly overrides defaultSurfaceOpen.
             defaultSurfaceOpen: workspaceProps.defaultSurfaceOpen ?? false,
+            defaultAppLeftPaneCollapsed: workspaceProps.defaultAppLeftPaneCollapsed ?? true,
             topBarRight: <PublicTopBarActions contact={publicShell?.contact} onSignIn={() => openAuth()} />,
             // No-auth shell has no real session yet — show just the brand, hide the
             // "· New session" placeholder that the default TopBar would render.

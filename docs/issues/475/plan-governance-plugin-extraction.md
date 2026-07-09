@@ -1,14 +1,31 @@
 ---
 github: https://github.com/hachej/boring-ui/issues/475
 issue: 475
-state: active
-phase: plan
+state: shipped
+phase: shipped
 track: owner
-updated: 2026-07-05
+updated: 2026-07-06
 source_plan: docs/issues/475/plan-tenant-yaml-governance.md
 ---
 
 # gh-475 — Extract governance into `plugins/boring-governance`
+
+## Status: SHIPPED (2026-07-06)
+
+Landed to `main` via the #544 roll-up (single squashed commit of the full
+#476→#539 stack), then published to npm:
+
+- `@hachej/boring-governance@0.1.64` and its dependency
+  `@hachej/boring-bash@0.1.64` — both on the `latest` dist-tag, consumable by
+  external repos (e.g. constellation).
+- Publish pipeline wired in #552 (both packages in every publish list; ordered
+  boring-bash → governance).
+- Retrospective of deferred v1 work: [`future-improvements.md`](./future-improvements.md).
+- Composition contract locked as Decision 19 in [`docs/DECISIONS.md`](../../DECISIONS.md).
+
+Proof: 31 plugin tests + 23 core-shell tests green, package/full-app typecheck,
+invariants clean, live governance HTTP smoke 13/13 PASS, `grep -ri governance
+packages/core/src` empty. All acceptance criteria below met.
 
 ## Why
 
@@ -105,12 +122,12 @@ deleted (moved).
 
 ## TODO — single stacked PR (`issue/475-governance-plugin-extraction`, base `issue/475-company-context-policy`)
 
-- [ ] Scaffold `plugins/boring-governance` (package.json exports ./server ./front, manifest, tsconfig, vitest, build) per boring-mcp precedent.
-- [ ] Move 9 server files + 4 test files; imports adjusted only.
-- [ ] Move `GovernanceAdminView` + add `createGovernanceCompanyAdmin()`.
-- [ ] Add `createGovernance(config)` composer; named exports unchanged.
-- [ ] Rewire full-app dev.ts/main.ts/front main.tsx (~10-line spread, boot order preserved); delete moved files.
-- [ ] pnpm lockfile + full-app dependency.
-- [ ] Proof: moved tests green under new filter; full-app typecheck+build; zero `server/governance` refs left in full-app; invariants pass.
-- [ ] Behavior-preservation smoke re-run (model filter 200 / forbidden 403 / budget 402 / command 409 / company-context allow+deny / fail-closed source root) — same results as pre-move.
-- [ ] PR with proof comment; GPT-5.5 review; thermo; Fable low-effort pass.
+- [x] Scaffold `plugins/boring-governance` (package.json exports ./server ./front, manifest, tsconfig, vitest, build) per boring-mcp precedent.
+- [x] Move 9 server files + 4 test files; imports adjusted only.
+- [x] Move `GovernanceAdminView` + add `createGovernanceCompanyAdmin()`.
+- [x] Add `createGovernance(config)` composer; named exports unchanged.
+- [x] Rewire full-app dev.ts/main.ts/front main.tsx (~10-line spread, boot order preserved); delete moved files.
+- [x] pnpm lockfile + full-app dependency.
+- [x] Proof: moved tests green under new filter; full-app typecheck+build; zero `server/governance` refs left in full-app; invariants pass.
+- [x] Behavior-preservation smoke re-run (model filter 200 / forbidden 403 / budget 402 / command 409 / company-context allow+deny / fail-closed source root) — same results as pre-move.
+- [x] PR with proof comment; GPT-5.5 review; thermo; Fable low-effort pass.

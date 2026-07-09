@@ -1,11 +1,10 @@
-import type { FastifyRequest } from "fastify"
 import { defineServerPlugin, type WorkspaceServerPlugin } from "@hachej/boring-workspace/server"
 import { TASKS_PLUGIN_ID, TASKS_PLUGIN_LABEL } from "../shared"
-import { createGitHubTaskSource } from "./githubSource"
-import { createTaskSourceRegistry } from "./sourceRuntime"
+import { createGitHubTaskSource, createGhCliGitHubIssueExecutor, createWorkspaceGitHubTaskSource } from "./githubSource"
+import { createTaskSourceRegistry, type BoringTaskSourceRegistry, type BoringTaskSourceRuntime } from "./sourceRuntime"
 import { createTaskSourceService, TaskSourceServiceError } from "./taskSourceService"
 
-function workspaceIdFromRequest(request: FastifyRequest): string | undefined {
+function workspaceIdFromRequest(request: { headers: Record<string, string | string[] | undefined>; query?: unknown }): string | undefined {
   const header = request.headers["x-boring-workspace-id"]
   if (typeof header === "string" && header.length > 0) return header
   const query = request.query as { workspaceId?: unknown } | undefined
@@ -47,13 +46,49 @@ function bodyObject(body: unknown): Record<string, unknown> {
 }
 
 export interface TasksServerPluginOptions {
-  sources?: ReturnType<typeof createGitHubTaskSource>[]
+  config?: unknown
+  sources?: BoringTaskSourceRuntime[]
+  workspaceRoot?: string
+}
+
+interface TaskProviderConfig {
+  provider?: unknown
+  repo?: unknown
+}
+
+function taskProvidersFromConfig(config: unknown): TaskProviderConfig[] {
+  if (!config || typeof config !== "object" || Array.isArray(config)) return []
+  const providers = (config as { providers?: unknown }).providers
+  return Array.isArray(providers)
+    ? providers.filter((provider): provider is TaskProviderConfig => Boolean(provider) && typeof provider === "object" && !Array.isArray(provider))
+    : []
+}
+
+export function createTaskSourceRegistryFromConfig(config: unknown, options: { workspaceRoot?: string } = {}): BoringTaskSourceRegistry {
+  const sources = taskProvidersFromConfig(config).flatMap((provider, index): BoringTaskSourceRuntime[] => {
+    if (provider.provider !== "github") return []
+    const repo = typeof provider.repo === "string" ? provider.repo.trim() : ""
+    if (repo && repo !== "auto") {
+      const [owner, name] = repo.split("/")
+      if (!owner || !name) return []
+      return [createGitHubTaskSource({
+        owner,
+        repo: name,
+        executor: createGhCliGitHubIssueExecutor({ workspaceRoot: options.workspaceRoot }),
+      })]
+    }
+    return [createWorkspaceGitHubTaskSource({
+      workspaceRoot: options.workspaceRoot,
+      sourceId: index === 0 ? "github:workspace" : `github:workspace:${index + 1}`,
+    })]
+  })
+  return createTaskSourceRegistry(sources)
 }
 
 export function createTasksServerPlugin(options: TasksServerPluginOptions = {}): WorkspaceServerPlugin {
-  const registry = createTaskSourceRegistry(options.sources ?? [
-    createGitHubTaskSource({ owner: "hachej", repo: "boring-ui" }),
-  ])
+  const registry = options.sources
+    ? createTaskSourceRegistry(options.sources)
+    : createTaskSourceRegistryFromConfig(options.config, { workspaceRoot: options.workspaceRoot })
   const service = createTaskSourceService(registry)
 
   return defineServerPlugin({
@@ -65,7 +100,7 @@ export function createTasksServerPlugin(options: TasksServerPluginOptions = {}):
       app.post("/api/boring-tasks/sources/tasks/list", async (request, reply) => {
         try {
           const body = request.body === undefined ? {} : bodyObject(request.body)
-          return { ok: true, ...(await service.listTasks({ workspaceId: workspaceIdFromRequest(request) }, { sourceIds: stringArray(body.sourceIds) })) }
+          return { ok: true, ...(await service.listTasks({ workspaceId: workspaceIdFromRequest(request), workspaceRoot: options.workspaceRoot }, { sourceIds: stringArray(body.sourceIds) })) }
         } catch (cause) {
           return reply.status(statusFor(cause)).send(responseError(cause))
         }
@@ -74,7 +109,7 @@ export function createTasksServerPlugin(options: TasksServerPluginOptions = {}):
       app.post("/api/boring-tasks/sources/tasks/move", async (request, reply) => {
         try {
           const body = bodyObject(request.body)
-          const task = await service.moveTask({ workspaceId: workspaceIdFromRequest(request) }, {
+          const task = await service.moveTask({ workspaceId: workspaceIdFromRequest(request), workspaceRoot: options.workspaceRoot }, {
             sourceId: requiredString(body, "sourceId"),
             taskId: requiredString(body, "taskId"),
             statusId: requiredString(body, "statusId"),
@@ -88,10 +123,10 @@ export function createTasksServerPlugin(options: TasksServerPluginOptions = {}):
   })
 }
 
-export default function defaultTasksServerPlugin(options?: TasksServerPluginOptions): WorkspaceServerPlugin {
-  return createTasksServerPlugin(options)
+export default function defaultTasksServerPlugin(options?: TasksServerPluginOptions, ctx?: { workspaceRoot?: string }): WorkspaceServerPlugin {
+  return createTasksServerPlugin({ ...options, workspaceRoot: options?.workspaceRoot ?? ctx?.workspaceRoot })
 }
 
-export { createGitHubTaskSource, createGhCliGitHubIssueExecutor } from "./githubSource"
+export { createGitHubTaskSource, createWorkspaceGitHubTaskSource, createGhCliGitHubIssueExecutor, createGhCliGitHubRepositoryDetector } from "./githubSource"
 export { createTaskSourceRegistry } from "./sourceRuntime"
 export { createTaskSourceService, TaskSourceServiceError } from "./taskSourceService"

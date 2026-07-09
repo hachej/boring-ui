@@ -82,6 +82,17 @@ The hard-fork path remains reserved for `hachej/pi-for-office` (B1).
 
 The wrapper consumes A1 tokens and the A2 tool pack; it does **not** consume the #391 `createAgent()` façade — `pi-for-excel` runs its own pi-agent-core loop and reaches boring-ui only through `/api/v1` and the model gateway.
 
+## Same-Definition Boundary
+
+**Amendment (2026-07-08):** this Office pack does not by itself satisfy the
+#391 same-definition requirement. `pi-for-excel` / `pi-for-office` runs its own
+loop and reaches boring-ui through `/api/v1`, model gateway, and connector
+contracts. If Office must become part of the #391 Shape C story, add a future
+size-L work package that either maps the canonical
+`AgentDefinitionDeclaration` into the Office wrapper without loss or routes
+Office requests through deployed boring agents instead of the separate
+pi-for-excel loop.
+
 ## Self-Hosting Decision
 
 Company use must not send workbook data through the author's Vercel deployment. The production taskpane bundle and connector must be self-hosted on a controlled HTTPS origin, and that origin must be the one added to `CORS_ORIGINS` and pi remote-extension allowlists.
@@ -93,4 +104,3 @@ Company use must not send workbook data through the author's Vercel deployment. 
 - No attempt to clone Excel's UI in boring-ui.
 - No PowerPoint chart authoring, calc semantics, animations, or speaker notes in B2.
 - No Word package in this pack.
-

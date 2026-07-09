@@ -133,6 +133,7 @@ export function PerspectiveTable({
   sort,
   filters,
   refreshKey,
+  showMeta,
 }: {
   apiBaseUrl: string
   workspaceId: string | undefined
@@ -145,6 +146,7 @@ export function PerspectiveTable({
   sort?: Array<[string, "asc" | "desc"]>
   filters?: PerspectiveFilter[]
   refreshKey: number
+  showMeta?: boolean
 }) {
   const hostRef = useRef<HTMLDivElement | null>(null)
   const [state, setState] = useState<{ loading: boolean; error?: string; snapshot?: DashboardArrowQueryResult }>({ loading: true })
@@ -261,7 +263,7 @@ export function PerspectiveTable({
       {state.loading ? <Placeholder text="Loading chart…" /> : null}
       {state.error ? <Placeholder text={state.error} destructive /> : null}
       <div ref={hostRef} className={state.loading || state.error ? "hidden" : "block overflow-hidden rounded-xl"} />
-      {state.snapshot && !state.error ? <p className="mt-2 truncate text-[11px] text-muted-foreground">{typeof state.snapshot.rowCount === "number" ? `${state.snapshot.rowCount.toLocaleString()} rows · ` : ""}Arrow snapshot</p> : null}
+      {showMeta && state.snapshot && !state.error ? <p className="mt-2 truncate text-[11px] text-muted-foreground">{typeof state.snapshot.rowCount === "number" ? `${state.snapshot.rowCount.toLocaleString()} rows · ` : ""}Arrow snapshot</p> : null}
     </div>
   )
 }

@@ -11,7 +11,8 @@
     "resolveJsonModule": true,
     "forceConsistentCasingInFileNames": true,
     "noEmit": true,
-    "types": ["node", "vitest/globals", "@testing-library/jest-dom"]
+    "types": ["node", "vitest/globals", "@testing-library/jest-dom"],
+    "ignoreDeprecations": "6.0"
   },
   "include": ["src/**/*", "vitest.config.ts", "tsup.config.ts"],
   "exclude": ["node_modules", "dist"]

@@ -366,7 +366,7 @@ export function createVercelSandboxWorkspace(
       const sandboxPath = toSandboxPath(relPath)
       const payload = Buffer.from(data, 'utf-8')
 
-      if (remote.fs?.stat || payload.byteLength > MAX_INLINE_WRITE_BYTES) {
+      if (remote.fs || payload.byteLength > MAX_INLINE_WRITE_BYTES) {
         await sandbox.writeFiles([
           {
             path: sandboxPath,
@@ -396,7 +396,7 @@ export function createVercelSandboxWorkspace(
       const sandboxPath = toSandboxPath(relPath)
       const payload = Buffer.from(data)
 
-      if (remote.fs?.stat || payload.byteLength > MAX_INLINE_WRITE_BYTES) {
+      if (remote.fs || payload.byteLength > MAX_INLINE_WRITE_BYTES) {
         await sandbox.writeFiles([
           {
             path: sandboxPath,

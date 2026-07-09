@@ -8,6 +8,7 @@ export default defineConfig({
     "src/server/modeApps.ts",
     "src/server/pluginDiscovery.ts",
     "src/server/pluginFrontRuntime.ts",
+    "src/server/workspacePluginRoutes.ts",
   ],
   format: ["esm"],
   target: "node20",

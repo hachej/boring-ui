@@ -1,6 +1,6 @@
 # P8-verification — Plan
 
-> Phase: Phase 8 — Cleanup and deprecation · Work order: [TODO.md](./TODO.md) · Handoff: [HANDOFF.md](./HANDOFF.md)
+> Phase: Phase 8 — Verification + cleanup · Work order: [TODO.md](./TODO.md) · Handoff: [HANDOFF.md](./HANDOFF.md)
 > Ordering authority: [INDEX.md](../../INDEX.md) · Vision: [VISION.md](../../VISION.md)
 
 ## Governing architecture
@@ -8,10 +8,10 @@
 - [08-pluggable-agent-surfaces.md](../../architecture/08-pluggable-agent-surfaces.md) — the four-part surface contract + `createAgent()` façade P8 documents as the stable public API.
 
 ## Design context
-Phase 8 is the terminal **verification** phase — not a deferred-deletion dump. Every import migration already happened in-PR under the no-compat policy, so P8 asserts the repo is actually clean rather than doing late cleanup. It wires a repo-wide `TODO(remove:*)` marker gate into `pnpm lint:invariants` (zero markers at exit; a surviving marker reopens the phase of its named deletion-bead owner, never absorbed here), confirms every P2/P3/P4/T1/T2 old-moved-path import gate is present and green, confirms X1 mount gates including `bench:mounts` are green, documents the four-part surface contract + the nine-member `createAgent()` façade as stable public API, and files every deferred/un-beaded plan task as a tracked issue. P8 gates on every prior delivered phase EXCEPT P6b — it only verifies the P6b follow-up issue is filed and never waits on P6b landing (the anti-deadlock guarantee).
+Phase 8 is the terminal **verification** phase — not a deferred-deletion dump. Every import migration already happened in-PR under the no-compat policy, so P8 asserts the repo is actually clean rather than doing late cleanup. It wires a repo-wide `TODO(remove:*)` marker gate into `pnpm lint:invariants` (zero markers at exit; a surviving marker reopens the phase of its named deletion-bead owner, never absorbed here), confirms every P2/P3/P4/T1/T2 old-moved-path import gate is present and green, confirms X1 mount gates including `bench:mounts` are green, documents the four-part surface contract + the nine-member `createAgent()` façade as stable public API, and files every deferred/un-beaded plan task as a tracked issue. **Amendment (2026-07-08):** P8 gates on every delivered runtime phase EXCEPT P6b, M1, M2, D1, D2, and S4; M2 may land after P8 as a committed follow-up. S1/S2 are relocated out of #391 active scope, so P8 does not gate on Slack or spreadsheet/embed work. P8 verifies the P6b/M2/D1/D2/S4 follow-up or status tracking is filed and never waits on those lanes landing.
 
 ## Deliverables
-v2 rewrite — Phase 8 is a **verification** phase, not a deferred-deletion dump: assert zero `TODO(remove:*)` markers remain repo-wide (add the check to the invariant scripts); update package docs; convert remaining plan tasks into beads/issues. There is no "migration window" — all import migrations happened in-PR per the no-compat policy. **P8 gates on every prior delivered phase EXCEPT P6b** (P1–P7, T1–T2, E1–E2, **X1**, S1–S3, Phase 5, P6a): P6b is a tracked follow-up (HARD BLOCKED on the shared child-app platform type), so P8 only verifies the P6b follow-up issue is filed and never waits on P6b landing.
+v2 rewrite — Phase 8 is a **verification** phase, not a deferred-deletion dump: assert zero `TODO(remove:*)` markers remain repo-wide (add the check to the invariant scripts); update package docs; convert remaining plan tasks into beads/issues. There is no "migration window" — all import migrations happened in-PR per the no-compat policy. **P8 gates on every delivered runtime phase EXCEPT P6b, M1, M2, D1, D2, and S4; M2 may land after P8 as a committed follow-up** (P1–P7, T1–T2, E1–E2, **X1**, S3, Phase 5, P6a): P8 only verifies the P6b/M2/D1/D2/S4 follow-up or status tracking is filed and never waits on those lanes landing.
 
 ## Exit criteria
 - Zero `TODO(remove:*)` markers repo-wide, asserted by a check wired into `pnpm lint:invariants`.
