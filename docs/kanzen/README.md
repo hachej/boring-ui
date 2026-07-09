@@ -8,7 +8,7 @@ ask-boring -> feedback -> triage -> plan -> implement
 
 ## Skills
 
-Draft skills live in `skill-library/boring-v2/skills/`. They are not active until copied into `.agents/skills/`.
+Active skills live in `.agents/skills/`. Draft/reference copies live in `skill-library/boring-v2/skills/`.
 
 | Skill | Job |
 | --- | --- |

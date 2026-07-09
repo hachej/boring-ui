@@ -8,7 +8,7 @@ For the bare agent chat use [`agent-playground`](../agent-playground/README.md);
 
 `pnpm --filter workspace-playground dev` builds the workspace stack to `dist/` (`build:deps`) and starts Vite on **`http://localhost:5200`**. A Vite plugin boots `createWorkspaceAgentServer({ mode: 'local' })` in-process on **`http://127.0.0.1:5210`**; Vite proxies `/api/v1` to it. The agent owns the filesystem and the UI bridge — there is no mock API.
 
-The frontend (`src/front/App.tsx`) mounts `WorkspaceAgentFront` with front plugins for ask-user (`@hachej/boring-ask-user`), deck (`@hachej/boring-deck`), and Diagram (`@hachej/boring-diagram`). The server registers `defaultPluginPackages`: `@hachej/boring-ask-user` and `@hachej/boring-diagram`.
+The frontend (`src/front/App.tsx`) mounts `WorkspaceAgentFront` with front plugins for ask-user/inbox (`@hachej/boring-ask-user` with `appLeftInbox: true`), tasks (`@hachej/boring-tasks`), deck (`@hachej/boring-deck`), and Diagram (`@hachej/boring-diagram`). The server registers `defaultPluginPackages`: `@hachej/boring-ask-user`, `@hachej/boring-tasks`, and `@hachej/boring-diagram`.
 
 ### Rebuild required after package edits
 
@@ -51,7 +51,7 @@ Open `http://localhost:5200`. Append `?showcase=1` for the showcase route, or vi
 
 ## Composition
 
-Depends on `@hachej/boring-workspace` (the workbench shell + `createWorkspaceAgentServer`), `@hachej/boring-agent` (the runtime), `@hachej/boring-deck`, `@hachej/boring-ask-user`, and `@hachej/boring-diagram` (plugins), and `@hachej/boring-data-catalog` / `@hachej/boring-data-explorer`. It does **not** use `@hachej/boring-core` — there is no auth or database layer.
+Depends on `@hachej/boring-workspace` (the workbench shell + `createWorkspaceAgentServer`), `@hachej/boring-agent` (the runtime), `@hachej/boring-deck`, `@hachej/boring-ask-user`, `@hachej/boring-tasks`, and `@hachej/boring-diagram` (plugins), and `@hachej/boring-data-catalog` / `@hachej/boring-data-explorer`. It does **not** use `@hachej/boring-core` — there is no auth or database layer.
 
 ## License
 

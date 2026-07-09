@@ -186,6 +186,9 @@ importers:
       '@hachej/boring-diagram':
         specifier: workspace:*
         version: link:../../plugins/diagram
+      '@hachej/boring-tasks':
+        specifier: workspace:*
+        version: link:../../plugins/tasks
       '@hachej/boring-workspace':
         specifier: workspace:*
         version: link:../../packages/workspace
