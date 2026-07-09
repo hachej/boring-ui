@@ -13,13 +13,14 @@ Derived strictly from [TODO.md](./TODO.md) and [PLAN.md](./PLAN.md). Tick the P6
 
 ## Beads
 ### P6a (dispatchable after P5)
-- [ ] BBP6-002 — [P6a] Extend plugin manifest validation import-free for `boring.requires` + `bash`; reserve skill capability filters
+- [ ] BBP6-002 — [P6a] Extend plugin manifest validation import-free for `boring.requires` + `bash`; reserve skill filters over resolved environment facts
 - [ ] BBP6-003 — [P6a] Introduce `AgentRegistry` (minimal, Map-backed)
 - [ ] BBP6-004 — [P6a] Runtime plugin context (`RuntimePluginContext`) on the gateway
 - [ ] BBP6-005 — [P6a] Hosted external plugin fail-closed in remote mode
 - [ ] BBP6-007 — [P6a] Shared per-workspace plugin runtime compatibility (#254)
 - [ ] BBP6-008 — [P6a] Multi-tenant full-app reload (#41)
-- [ ] BBP6-009 — [P6a] Workspace `agents: [...]` declaration + default-agent composition (seeds `AgentRegistry`)
+- [ ] BBP6-009 — [P6a] Workspace `agents: [...]` `AgentDefinitionDeclaration` + default-agent composition (seeds `AgentRegistry`)
+- [ ] BBP6-010 — [P6a] Per-agent plugin composition from `AgentDefinitionDeclaration.plugins`
 
 ### P6b (HARD BLOCKED on #376 `ResolvedChildAppContext`)
 - [ ] BBP6-001 — [P6b · HARD BLOCKED] Consume resolved child-app/workspace-kind context
@@ -50,18 +51,19 @@ Derived strictly from [TODO.md](./TODO.md) and [PLAN.md](./PLAN.md). Tick the P6
 - [ ] `pr5-hosted-fail-closed` completed BBP6-005
 - [ ] `pr6-shared-workspace-runtime` completed BBP6-007
 - [ ] `pr7-multitenant-reload` completed BBP6-008
+- [ ] `pr8-per-agent-plugin-composition` completed BBP6-010
 
 ### P6b follow-up
-- [ ] `pr8-childapp-context` completed BBP6-001 only after #376 exports the shared resolved context type
-- [ ] `pr9-macro-scoping` completed BBP6-006 only after BBP6-001 is unblocked
+- [ ] `pr9-childapp-context` completed BBP6-001 only after #376 exports the shared resolved context type
+- [ ] `pr10-macro-scoping` completed BBP6-006 only after BBP6-001 is unblocked
 
 ## P6a review gates
 - [ ] P6a/P6b split (blocking): P5 precondition confirmed for P6a (or STOP+report); the shared child-app platform code export (expected `ResolvedChildAppContext`, #376) is the HARD prerequisite for P6b — if absent, BBP6-001/006 STOP-and-report with no local fallback shape; P6a proceeds independently.
-- [ ] P6a grep-gate (blocking): each named P6a contract contains ZERO child-app fields/types — `! rg -n "childAppId|workspaceKind|ChildApp"` on each created file (manifest validator, `AgentRegistry.ts`, `workspaceAgentsDeclaration.ts`, `runtimePluginContext.ts`) exits 0.
+- [ ] P6a grep-gate (blocking): each named P6a contract contains ZERO child-app fields/types — `! rg -n "childAppId|workspaceKind|ChildApp"` on each created file (manifest validator, `AgentRegistry.ts`, `agentDefinitionDeclaration.ts`, BBP6-010 composition contracts, `runtimePluginContext.ts`) exits 0.
 - [ ] No competing child-app registry / manifest scanner / plugin route family introduced.
 - [ ] `pnpm lint:invariants` + `pnpm audit:imports` + `lint:plugin-invariants` green; zero agent→bash value imports.
 - [ ] Import-free manifest validation proven (side-effecting plugin fixture not executed).
-- [ ] Skill capability filter proven where skills are loaded: filesystem/bash-required skills are absent from Pi resources, `/api/v1/agent/skills`, slash suggestions, and the generated skills-index prompt fragment in pure mode, then visible when bash is attached.
+- [ ] Skill filter proven where skills are loaded: filesystem/bash-required skills are absent from Pi resources, `/api/v1/agent/skills`, slash suggestions, and the generated skills-index prompt fragment when resolved environment facts do not satisfy them, then visible when those facts are present.
 - [ ] Hosted plugin fail-closed covered; iframe sandbox/CSP constraints asserted.
 - [ ] Secrets are status-only in every plugin/browser/model context (P5 brokering); no raw values in manifests/logs/transcripts/artifacts.
 - [ ] `/api/v1/plugins/:pluginId/*` dispatch unchanged; `AgentRegistry` minimal and Map-backed (no framework creep).
@@ -76,7 +78,7 @@ Derived strictly from [TODO.md](./TODO.md) and [PLAN.md](./PLAN.md). Tick the P6
 ## Exit criteria
 ### P6a closeout (epic/P8 gate)
 - [ ] Import-free manifest validation runs **before** any plugin code executes.
-- [ ] Skills with `boring.requires`-style capability requirements are filtered by attached capabilities at the loader boundary, and the prompt-visible skills index is generated from that filtered set.
+- [ ] Skills with `boring.requires`-style requirements are filtered by resolved environment facts at the loader boundary, and the prompt-visible skills index is generated from that filtered set.
 - [ ] Hosted plugin fails closed in remote mode for unsupported front/server/tool/bash/service/secret requirements.
 - [ ] A plugin requiring bash is skipped/diagnosed when bash is disabled.
 - [ ] A plugin requiring secrets receives status only (P5 brokering; no raw values).

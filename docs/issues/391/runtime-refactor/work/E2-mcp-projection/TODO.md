@@ -7,7 +7,7 @@ Handoff: self-contained work order for one autonomous coding agent (pi or gpt-5.
 - Plan: `docs/issues/391/runtime-refactor/architecture/09-environments-attachable.md` § "MCP projection: external reuse for free" and § "Security invariants" (read in full).
 - Plan: `docs/issues/391/runtime-refactor/INDEX.md` § "Phase E2" (deliverables + exit criteria; E2 depends on E1 only).
 - Plan: `docs/issues/391/runtime-refactor/architecture/08-pluggable-agent-surfaces.md` § "Conformance" item 2 (readonly projection no-leak already exists).
-- Depends on **BBE1** ([`../E1-environment-attachments/TODO.md`](../E1-environment-attachments/TODO.md)): `Environment`, `EnvironmentAttachment`, `ResolvedEnvironments`, and the `resolveAttachments` reduction in `@hachej/boring-bash`. Do not start until E1's attachment contracts + scoped views land. **E1 deliberately ships no address-by-id store** — E2 introduces the plain `Map<environmentId, Environment>` (this is the first place the projection needs address-by-id), so E2 owns that Map, not E1.
+- Depends on **BBE1** ([`../E1-environment-attachments/TODO.md`](../E1-environment-attachments/TODO.md)): `Environment`, `EnvironmentAttachment`, `AttachedEnvironmentRuntime`, `ResolvedEnvironment`, and the `resolveAttachments` reduction in `@hachej/boring-bash`. Do not start until E1's attachment contracts + scoped views land. **E1 deliberately ships no address-by-id store** — E2 introduces the plain `Map<environmentId, Environment>` (this is the first place the projection needs address-by-id), so E2 owns that Map, not E1.
 - Enforcement code you MUST reuse (no parallel policy):
   - `packages/boring-bash/src/server/readonlyProjectionOperations.ts` — `createReadonlyProjectionOperations(handle)`, `ReadonlyProjectionOperations` (`read/list/find/grep/stat/rejectMutation`), error codes `READONLY_PROJECTION_MUTATION_CODE` / `_INVALID_PATH_CODE` / `_BINDING_NOT_FOUND_CODE`.
   - `packages/boring-bash/src/server/managementProjectionOperations.ts` — `createManagementProjectionOperations`, `ManagementProjectionOperations`, `ManagementProjectionHandle`.
@@ -34,6 +34,7 @@ Match `INDEX.md` Phase E2 exit criteria:
   - `exec` **iff** `execPolicy: 'attached'` (default `'none'` → no exec tool). Follows #416 exec rules unchanged.
 - MCP session → `BoundFilesystemContext` identity mapping is mandatory; every tool call carries the same audit identity as an in-process attachment (`09` MCP projection bullet + security invariant 1).
 - Credential brokering stays at the environment boundary; the MCP client never receives broker secrets (`09` security invariant 3).
+- **Amendment (2026-07-06) — run-context threading guardrail (475 watch-list):** the run-context threading via `createHarness.ts` AsyncLocalStorage is fragile — a run spawned without binding context silently loses identity (fails closed, but a debugging tax). Every new run-spawn path added in E2 (MCP-projection tool sessions) MUST bind `BoundFilesystemContext` and MUST extend the #498 binding test suite with that path.
 
 ## Do NOT
 

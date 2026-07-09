@@ -50,7 +50,7 @@ archaeology. None of these block v1; all failure modes are fail-closed.
 
 8. **Admin surface plurality.** Single `companyAdmin` slot today. When a
    second plugin needs an admin/workspace-management surface, evolve to
-   `adminSections: Section[]` — see DECISIONS.md §19 (app array order
+   `adminSections: Section[]` — see DECISIONS.md §20 (app array order
    authoritative; no dynamic registration).
 9. **Server plugin contract width.** Governance seams (`filterModels`,
    `metering`, `getFilesystemBindings`, `pi`) are hand-spread by the app. When

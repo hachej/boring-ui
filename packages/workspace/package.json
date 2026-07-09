@@ -1,6 +1,6 @@
 {
   "name": "@hachej/boring-workspace",
-  "version": "0.1.64",
+  "version": "0.1.71",
   "type": "module",
   "license": "MIT",
   "description": "Workspace UI, plugin, and bridge package for composing chat, files, catalogs, editors, and app-specific panes.",
@@ -172,7 +172,7 @@
     "tailwindcss": "^4.3.1",
     "tsup": "^8.0.0",
     "typescript": "^6.0.3",
-    "vite": "^8.1.0",
+    "vite": "^8.1.2",
     "vite-plugin-dts": "^5.0.3",
     "vitest": "^4.1.9"
   }

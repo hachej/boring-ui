@@ -9,18 +9,30 @@
 ## Design context
 
 E1 generalizes the landed #416 filesystem-binding model into `Environment` /
-`EnvironmentAttachment` / `ResolvedEnvironments` contracts without rewriting the
-landed shapes. It runs after Phase 2 (sandbox providers/capability facts) **and**
+`EnvironmentAttachment` plus agent-owned `AttachedEnvironmentRuntime[]` and
+`ResolvedEnvironment[]` contracts without rewriting the landed shapes. It runs after Phase 2 (sandbox providers/capability facts) **and**
 Phase 3 (the host-composed bash bundle): E1 may re-implement that bundle's
 internals over attachments **without changing its public `{ tools, readinessRequirements, systemPromptFragment }`
 signature**. The core stays runtime-free — the agent package owns the minimal
-core-facing `ResolvedEnvironments` (`{ bindings: RuntimeFilesystemBinding[] }`)
-and value/type-imports nothing from boring-bash; the only cross-package type edge
-is boring-bash → agent. There is **no `EnvironmentRegistry` class and no new
+core-facing `AttachedEnvironmentRuntime[]` (operation-bearing runtime objects)
+and `ResolvedEnvironment[]` (methodless public facts), and value/type-imports
+nothing from boring-bash; the old `RuntimeFilesystemBinding[]` array is only the
+filesystem facet of an attached runtime. The only cross-package type edge is
+boring-bash → agent. There is **no `EnvironmentRegistry` class and no new
 prepare/dispose lifecycle**: a thin `resolveAttachments` adapter reduces
-attachments to `FilesystemBinding[]` over the landed `ScopedFilesystemRuntimeBindingManager`.
+attachments to prepared attached runtimes over the landed `ScopedFilesystemRuntimeBindingManager`.
 Address-by-id lookup (a plain `Map<environmentId, Environment>`) is deferred to E2.
 Subagent attachment (BBE1-005) is deferred to Phase 7, the first real subagent consumer.
+
+**Amendment (2026-07-06):** there is no `bindingResolver` composition point today —
+governance owns its own `ScopedFilesystemRuntimeBindingManager`
+(`plugins/boring-governance/src/server/filesystemBindings.ts`) and returns
+operation-bearing `RuntimeFilesystemBinding`s through the agent's
+`getFilesystemBindings` option. `resolveAttachments` takes host-supplied
+`{manager, entries}`; governance is a valid host supplier only if it can pass its
+internal manager without source edits (the zero-source-edit guarantee). If it
+cannot, governance adoption of `resolveAttachments` is a separate later
+governance-side bead — E1 must not force it.
 
 ## Verified current repo reality (pre-E1)
 - The landed #416 types exist in `packages/boring-bash/src/shared/index.ts`: `FilesystemId`, `FilesystemAccess`, `FilesystemProjection`, `FilesystemBinding`, `BoundFilesystemContext`, `FilesystemBindingResolver`, `PreparedFilesystemBinding`, `FilesystemBindingProvider`, and `RuntimeBindingPlan`.
@@ -30,10 +42,10 @@ Subagent attachment (BBE1-005) is deferred to Phase 7, the first real subagent c
 - `packages/agent/src/shared/session.ts` currently requires `SessionCtx.workspaceId: string`; P1 makes it optional for pure sessions, but E1 environment attachments still require a real workspace-bound `BoundFilesystemContext.workspaceId`.
 
 ## Deliverables
-- `Environment` / `EnvironmentAttachment` contracts in boring-bash, and the minimal core-facing `ResolvedEnvironments` contract in agent shared (generalizing, not replacing, the landed #416 binding shapes); `company_context` re-expressed as the reference environment + readonly attachment.
+- `Environment` / `EnvironmentAttachment` contracts in boring-bash, and the minimal core-facing `AttachedEnvironmentRuntime[]` + `ResolvedEnvironment[]` contracts in agent shared (generalizing, not replacing, the landed #416 binding shapes); `company_context` re-expressed as the reference environment + readonly attachment.
 - Scoped views (`scope.subpath`) enforced by the environment host — no cwd inheritance. (The subagent attachment seam that consumes scoped views is deferred to Phase 7, the first real subagent consumer.)
-- agent core sees `ResolvedEnvironments` type-only (invariant-checked).
-- A thin `resolveAttachments` adapter reduces attachments to the existing #416 `FilesystemBinding[]` via the landed `ScopedFilesystemRuntimeBindingManager` — no `EnvironmentRegistry` class and no new prepare/dispose lifecycle. Address-by-id lookup (a plain `Map<environmentId, Environment>`) is deferred to E2, where the MCP projection needs it.
+- agent core sees `AttachedEnvironmentRuntime[]` and `ResolvedEnvironment[]` type-only (invariant-checked).
+- A thin `resolveAttachments` adapter reduces attachments to prepared `AttachedEnvironmentRuntime[]` plus public `ResolvedEnvironment[]` facts via the landed `ScopedFilesystemRuntimeBindingManager` — no `EnvironmentRegistry` class and no new prepare/dispose lifecycle. Address-by-id lookup (a plain `Map<environmentId, Environment>`) is deferred to E2, where the MCP projection needs it.
 - Environment conformance suite extended to scoped-view attachments.
 
 ## Exit criteria

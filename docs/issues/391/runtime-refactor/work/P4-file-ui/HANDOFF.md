@@ -14,6 +14,7 @@ Derived strictly from [TODO.md](./TODO.md) and [PLAN.md](./PLAN.md). Tick each b
 - [ ] BBP4-014 — Remove static workspace registration + static-import guard
 - [ ] BBP4-015 — Move bash/file tool renderers into `boring-bash/plugin`
 - [ ] BBP4-016 — Move file composer providers to the bash plugin (#26)
+- [ ] BBP4-017 — Files-pane mount discovery affordance (#550 gap 5; Amendment 2026-07-06)
 
 ## Verification commands
 - [ ] `pnpm --filter @hachej/boring-bash run build`
@@ -38,6 +39,7 @@ Derived strictly from [TODO.md](./TODO.md) and [PLAN.md](./PLAN.md). Tick each b
 - [ ] `pr3-move-tool-renderers` completed BBP4-015
 - [ ] `pr4-composer-providers` completed BBP4-016
 - [ ] `pr5-remove-static-registration` completed BBP4-014
+- [ ] `pr6-mount-discovery` completed BBP4-017 (Amendment 2026-07-06)
 
 ## Review gates
 - [ ] Phase 3 present (write/edit tools + routes in boring-bash), else STOP+report.
@@ -55,6 +57,8 @@ Derived strictly from [TODO.md](./TODO.md) and [PLAN.md](./PLAN.md). Tick each b
 - [ ] file mentions, file slash commands, and uploads exist only with the bash plugin attached.
 - [ ] file tree data flows through one internal function with unchanged behavior (provider boundary deferred to #295).
 - [ ] document-authority override deferred out of this epic — `write`/`edit` stay raw file ops; the seam arrives with #367/#226.
+- [ ] **Amendment (2026-07-06) — UI/agent parity:** after the file-UI move, both surfaces still resolve visibility through the SINGLE `getFilesystemBindings` decision path; grep-gate proves no second "what can this user see" path exists.
+- [ ] **Amendment (2026-07-06) — published package:** `@hachej/boring-bash` is npm-published — the moved file UI lands as an ADDITIVE export entry (`./plugin`) in the same cohort bump as any governance-consumed `/server` change.
 
 ## Closeout
 - [ ] Zero unowned `TODO(remove:*)` markers for this phase

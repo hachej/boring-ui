@@ -4,6 +4,14 @@ Handoff: self-contained work order for one autonomous coding agent (pi or gpt-5.
 
 **Package re-target (00 open decision 3, RESOLVED; 08 decision 11 — READ THIS FIRST):** concrete providers do **NOT** move to `@hachej/boring-bash/providers`. They move to a **new dedicated package `@hachej/boring-sandbox`** (`packages/boring-sandbox/src/providers`). The three-package stack, top-down: **`@hachej/boring-agent`** (defines ALL contracts, imports neither boring-bash nor boring-sandbox) ← **`@hachej/boring-bash`** (THE RUNTIME: fs bindings/tools/routes/UI + bash tool + runtime modes = the CHOICE of sandbox; **`resolveMode` lives here**; imports boring-sandbox **values** + agent **types**) ← **`@hachej/boring-sandbox`** (sandbox management: providers `direct`/`bwrap`-gVisor/`vercel`-PROXY/`remote-worker`-client, FUSE-S3 mounts, lifecycle; capability facts/types `reported | unknown` live in `boring-sandbox/shared` only; imports agent **types only**). Acyclic: `sandbox → agent(types)`; `bash → sandbox(values) + agent(types)`. Everywhere below, "move a provider" means move it to `packages/boring-sandbox/src/providers`, and "`resolveMode`" lands in boring-bash.
 
+**Amendment (2026-07-08):** provider capability facts feed environment
+resolution; they are not mode labels for surfaces to branch on. P2 reports
+facts such as filesystem access, exec, image support, mount support, network
+isolation, and unknown/reported status. The host/environment resolver turns
+those facts into `AttachedEnvironmentRuntime[]` and `ResolvedEnvironment[]`
+projections. New consumers must target those resolved environment facts, not
+`runtimeMode` or provider ids.
+
 ## Context (read first)
 
 - `docs/issues/391/runtime-refactor/architecture/02-boring-bash-environment.md` — package layers, provider capability matrix, mode↔provider mapping, remote-worker split rules.
@@ -162,6 +170,13 @@ P2 therefore **enumerates and migrates EVERY in-repo composition consumer** — 
 - **Files touch:** `packages/boring-sandbox/src/providers/index.ts`; every importer of `createVercelSandboxWorkspace` migrates to `@hachej/boring-sandbox/providers`.
 - **Tests:** vercel-sandbox unit tests pass under boring-sandbox; `createVercelSandboxWorkspace` still typechecks.
 - **Acceptance:** vercel-sandbox provider and its workspace factory are owned by boring-sandbox; no agent-engine value import remains; every importer uses `@hachej/boring-sandbox/providers`.
+
+### BBP2-009 — Publish-pipeline parity for `@hachej/boring-sandbox` [size S] — **Amendment (2026-07-06); executes BEFORE BBP2-005** (before `@hachej/boring-bash` gains a value dependency on `@hachej/boring-sandbox`)
+
+- **Files touch:** `scripts/audit-publish-manifests.mjs`, `scripts/version.mjs` (version bump list), `scripts/set-ci-package-version.mjs` (CI versioning list), `.github/workflows/ci.yml` (CI publish list), `.github/workflows/release.yml` (release workflow list); `packages/boring-sandbox/package.json` (version).
+- **Notes:** `@hachej/boring-bash` is npm-published (cohort-versioned, with the external `@hachej/boring-governance` consumer — see `../../INDEX.md` rule 6 amendment). Before boring-bash gains a **value** dependency on `@hachej/boring-sandbox` (the BBP2-005 `boring-bash → boring-sandbox` edge), sandbox must be publishable too: add `packages/boring-sandbox` to **all five publish lists** (audit script, version bump, CI versioning, CI publish, release workflow), ordered **before** `packages/boring-bash` in each list, and bring it onto the current version cohort (it sits at `0.1.61` vs the `0.1.64` cohort). **Until this bead lands, the published boring-bash must not depend on sandbox.**
+- **Tests / verification:** `node scripts/audit-publish-manifests.mjs` passes with sandbox listed; grep gates — `rg -n "boring-sandbox" scripts/audit-publish-manifests.mjs scripts/version.mjs scripts/set-ci-package-version.mjs .github/workflows/ci.yml .github/workflows/release.yml` hits all five, each ordered before `packages/boring-bash`.
+- **Acceptance:** `@hachej/boring-sandbox` is in every publish list, ordered before boring-bash, on the current version cohort; BBP2-005 may then add the bash→sandbox value edge.
 
 ### BBP2-005 — Land runtime-mode resolution (`resolveMode()` + mode adapters) in `@hachej/boring-bash` [size M]
 

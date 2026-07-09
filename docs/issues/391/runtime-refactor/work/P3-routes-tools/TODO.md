@@ -4,13 +4,13 @@ Handoff: self-contained work order for one autonomous coding agent (pi or gpt-5.
 
 ## Context (read first)
 
-- `docs/issues/391/runtime-refactor/INDEX.md` — Phase 3 deliverables/exit (routes/tools code-move, behavior-freeze; `createBashAgentFeature()` returns a plain `{ tools, readinessRequirements, systemPromptFragment }` bundle — there is no `features` config member and no `AgentFeature` contract. Workspace-family hosts consume that bundle through the boring-bash **server plugin**; library-mode hosts may spread it into `createAgent()`'s `tools` and prompt composition directly).
+- `docs/issues/391/runtime-refactor/INDEX.md` — Phase 3 deliverables/exit (routes/tools code-move, behavior-freeze; `createBashAgentFeature()` is the legacy factory name for the boring-bash **environment bundle**. It returns a plain `{ tools, readinessRequirements, systemPromptFragment }` bundle — there is no `features` config member and no `AgentFeature` contract. Workspace-family hosts consume that bundle through the boring-bash **server plugin**; library-mode hosts may spread it into `createAgent()`'s `tools` and prompt composition directly).
 - `docs/issues/391/runtime-refactor/architecture/02-boring-bash-environment.md` — layered exports (`/server`, `/agent`); "Tools to move or consciously assign"; one-namespace / source-of-truth rules.
 - `docs/issues/391/runtime-refactor/architecture/00-global-isa.md` — seams to reuse (`disableDefaultFileTools`, `buildHarnessAgentTools`, `buildFilesystemAgentTools`, `buildUploadAgentTools`, readiness tags); zero agent→bash value imports.
 
 ### Depends on
 
-- **Phase 1** injection: `createAgent()` accepts an injected `runtime` adapter, extra `tools: AgentTool[]`, readiness gates, and host prompt append/dynamic seams ([`../P1-headless-core/TODO.md`](../P1-headless-core/TODO.md)) — **no `features` member, no `AgentFeature` abstraction**. `createBashAgentFeature()` returns a plain `{ tools, readinessRequirements, systemPromptFragment }` bundle; the boring-bash server plugin exposes the tools as `agentTools` and the fragment through `systemPrompt` in plugin mode, and direct library-mode hosts may spread tools/readiness and append the fragment.
+- **Phase 1** injection: `createAgent()` accepts an injected `runtime` adapter, extra `tools: AgentTool[]`, readiness gates, and host prompt append/dynamic seams ([`../P1-headless-core/TODO.md`](../P1-headless-core/TODO.md)) — **no `features` member, no `AgentFeature` abstraction**. `createBashAgentFeature()` returns a plain environment bundle `{ tools, readinessRequirements, systemPromptFragment }`; the boring-bash server plugin exposes the tools as `agentTools` and the fragment through `systemPrompt` in plugin mode, and direct library-mode hosts may spread tools/readiness and append the fragment.
 - **Phase 2** ([`../P2-sandbox-providers/TODO.md`](../P2-sandbox-providers/TODO.md)): providers + `/providers` subpath moved; `resolveMode()` in host/boring-bash composition.
 
 ### Already landed via #416 (behavior-freeze — move code, do not change behavior)
@@ -91,7 +91,7 @@ P3 therefore **enumerates and migrates EVERY in-repo composition consumer**, eac
 ### BBP3-010 — Add `/agent` subpath + `createBashAgentFeature()` skeleton [size S]
 
 - **Files touch/create:** replace stub `packages/boring-bash/src/agent/index.ts` (currently `export {}`) with real exports; `packages/boring-bash/package.json` (add `"./agent"` export); `packages/boring-bash/tsup.config.ts` (add entry); `packages/boring-bash/scripts/check-invariants.mjs` (`requiredExports` += `"./agent"`).
-- **Notes:** Define `createBashAgentFeature()` returning a plain boring-bash-local bundle `{ tools: AgentTool[]; readinessRequirements: string[]; systemPromptFragment: string }` — **NOT** an `AgentFeature` core contract (there is no such abstraction). The bundle contributes tools + readiness gates + the bash/file prompt fragment **only** — NOT routes. `systemPromptFragment` is the file/bash guidance text adapted/split from Pi's default prompt text; in this checkout `node_modules` is absent, so the exact Pi source file is not locally findable and the implementation note is: **adapt from pi default prompt text**. In plugin mode, the boring-bash server plugin calls this factory and exposes the result as `defineServerPlugin({ agentTools: bundle.tools, systemPrompt: bundle.systemPromptFragment })`; in library mode, a direct composer may spread `tools`/`readinessRequirements` into `createAgent()` and append `systemPromptFragment` with them. Routes are never carried by the bundle and are never mounted by `packages/agent`. Import `AgentTool`/`RuntimeBundle` **type-only** from `@hachej/boring-agent/server`. The bundle is the first source in the deterministic tool/renderer chain (environment bundle -> plugins in manifest order -> host config); it should not declare overrides against itself, and later duplicate names must fail unless the later source explicitly says `overrides: true`. No behavior yet — wiring lands in BBP3-013/014.
+- **Notes:** Define `createBashAgentFeature()` as an **environment bundle factory** returning a plain boring-bash-local bundle `{ tools: AgentTool[]; readinessRequirements: string[]; systemPromptFragment: string }` — **NOT** an `AgentFeature` core contract (there is no such abstraction). The name may survive for source compatibility inside the phase, but reviewers should read it as "create the bash/filesystem capability residue for resolved environments." The bundle contributes tools + readiness gates + the bash/file prompt fragment **only** — NOT routes. `systemPromptFragment` is the file/bash guidance text adapted/split from Pi's default prompt text; in this checkout `node_modules` is absent, so the exact Pi source file is not locally findable and the implementation note is: **adapt from pi default prompt text**. In plugin mode, the boring-bash server plugin calls this factory and exposes the result as `defineServerPlugin({ agentTools: bundle.tools, systemPrompt: bundle.systemPromptFragment })`; in library mode, a direct composer may spread `tools`/`readinessRequirements` into `createAgent()` and append `systemPromptFragment` with them. Routes are never carried by the bundle and are never mounted by `packages/agent`. Import `AgentTool`/`RuntimeBundle` **type-only** from `@hachej/boring-agent/server`. The bundle is the first source in the deterministic tool/renderer chain (environment bundle -> plugins in manifest order -> host config); it should not declare overrides against itself, and later duplicate names must fail unless the later source explicitly says `overrides: true`. **After E1, the factory internals must derive from `AttachedEnvironmentRuntime[]` / `ResolvedEnvironment[]` facts rather than runtime-mode labels while preserving this public bundle shape.** No behavior yet — wiring lands in BBP3-013/014.
 - **Tests:** export-map test imports `/agent`; invariants green.
 - **Acceptance:** `/agent` subpath resolves; feature factory type exists.
 
@@ -158,6 +158,13 @@ P3 therefore **enumerates and migrates EVERY in-repo composition consumer**, eac
 - **Tests:** `pnpm lint:invariants` (root) green; `pnpm audit:imports` green.
 - **Acceptance:** boundary guarded; no agent→bash value import; no cycle.
 
+### BBP3-018 — Dedicated `MODEL_NOT_ALLOWED` 403 error code in agent shared (#550 gap 3) [size S] — **Amendment (2026-07-06)**
+
+- **Files touch:** the agent shared stable error-code home (`packages/agent/src/shared/` error codes), the model-grant rejection path that currently reuses `TOOL_INVALID_INPUT` (400), governance `filterModels` consumer tests.
+- **Notes:** Model-grant rejection currently reuses `TOOL_INVALID_INPUT` (400), so the front cannot distinguish "typo" from "denied by policy". Add a dedicated stable `MODEL_NOT_ALLOWED` code returned with HTTP 403 for policy denial; keep `TOOL_INVALID_INPUT` for malformed input. Every error keeps a stable code (repo invariant 8). Additive only — no existing code is renamed or removed (the published bash+governance pair stays compatible; see PLAN amendment).
+- **Tests:** a policy-denied model selection returns `MODEL_NOT_ALLOWED` + 403; a malformed model id still returns `TOOL_INVALID_INPUT` + 400; the code is exported from agent shared and asserted stable.
+- **Acceptance:** the front can distinguish typo from policy denial by code; no error-code reuse for model policy denial remains.
+
 ## Verification — exact commands verified against package.json scripts
 
 ```bash
@@ -192,7 +199,7 @@ Matches [`../../PR-PLAN.md`](../../PR-PLAN.md) P3 rows exactly:
 - `pr3-move-bash-upload` → BBP3-012 + BBP3-013.
 - `pr4-move-fs-git-routes` → BBP3-014.
 - `pr5-wire-composition` → BBP3-015 (server plugin registration for workspace-family hosts; library-mode hand wiring only for direct composers such as the current CLI workspaces path if it is not moved onto the plugin pipeline).
-- `pr6-sot-tests-invariants` → BBP3-016 + BBP3-017.
+- `pr6-sot-tests-invariants` → BBP3-016 + BBP3-017 + BBP3-018 (Amendment 2026-07-06: the small `MODEL_NOT_ALLOWED` bead folds into this PR — no new PR row).
 
 ## Review gates
 

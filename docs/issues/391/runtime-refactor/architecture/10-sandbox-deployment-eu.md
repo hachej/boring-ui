@@ -8,6 +8,35 @@ Status: v2 architecture doc. Grounds the sandbox/mount work (`TODO-X1`, `TODO-P2
 
 **GO** for **self-hosting on EU infrastructure**. The closest managed products (Daytona, Northflank BYOC, Scaleway serverless-containers/gVisor) either expose vendor-managed volumes/FUSE, write S3 credentials *into* the sandbox, do not publish a sovereign EU control-plane guarantee, or do not expose host mounts. Self-host is the viable path; managed vendors may be adopted later only against contractual EU-residency proof (Decision 10).
 
+## Tenant provisioning command/API
+
+**Amendment (2026-07-08):** this deployment architecture requires a dedicated
+work package, [D1-tenant-provisioning](../work/D1-tenant-provisioning/), size
+**L/XL**. Its exit criterion is one command/API call that creates the tenant and
+workspace, runtime config, DB/storage/session roots, secrets, demo endpoint
+config, and deployment manifest for the chosen EU host. Without D1, T0/T1
+factory claims must be described as manual provisioning, not same-day repeatable
+platform delivery.
+
+## Tenant topologies
+
+**Amendment (2026-07-08):** name the two factory tiers explicitly:
+**D1 = dedicated/sovereign**, and **D2 = shared subdomain**. They are deployment
+topologies over the same runtime stack and the same `WorkspaceAgentsDeclaration`,
+not separate agent-definition systems.
+
+| Topology | Shape | Work package | Use for |
+| --- | --- | --- | --- |
+| Self-host / owner-operated | one deployment operated directly for the owner or client | base architecture 10 + P5/X1 | client-owned ops, dev/trusted, regulated handoff |
+| Dedicated / sovereign tenant | one deployment per company, with tenant/workspace/runtime config and deployment manifest | [D1-tenant-provisioning](../work/D1-tenant-provisioning/) | managed sovereign clients, strong isolation, bespoke deployment review |
+| Shared Subdomain tier | one shared EU deployment serves N subdomain tenants; wildcard DNS/TLS terminates at the shared host, and a fail-closed Host router maps `company.senecapp.ai` -> `workspaceId` | [D2-shared-tenant-mesh](../work/D2-shared-tenant-mesh/) | instant outreach/demo tenants with near-zero marginal deployment cost |
+
+The D2 shared topology requires wildcard DNS, wildcard TLS, and a
+`Host:`-header tenant router seated beside the existing workspace-id adapter.
+Unknown hosts fail closed and never map to a default tenant. D2 must prove
+cross-tenant isolation in one process across sessions, files, pending inputs,
+search, artifacts, governance, and brokered secrets.
+
 ## FUSE × isolation matrix (condensed)
 
 Question for each runtime: can the host `rclone`-mount an S3 prefix and then expose that already-mounted path *inside* the sandbox, without the sandbox ever seeing `/dev/fuse`/`fusermount3`/credentials?
@@ -50,6 +79,15 @@ type ProviderRuntimeSpec = {
 ```
 
 The `ref` is human/operator-readable (`registry.example/boring/runtime-node:2026-07`); the `digest` is the execution identity and is required for any non-dev run. Runtime images are not a new package boundary: `@hachej/boring-bash` still chooses the mode, `@hachej/boring-sandbox` still owns provider adapters/capability facts, and P5 still owns provisioning/fingerprint orchestration.
+
+BBP6-009 adds the agent authoring surface: `AgentDefinitionDeclaration.runtimeProfileRef?`.
+It is a host-resolved reference to an operator-supplied runtime-profile catalog,
+not an inline image spec or Dockerfile. The resolved profile image fills this
+provider-config `{ image: { ref, digest } }` slot; if no ref is declared, the
+host may use the validated provider-default image. A declared no-image profile
+does not fall back at image level. Unknown/malformed refs and provider-default
+images fail closed at the host seam, and any selected image is checked against
+the resolved provider's `runtimeImage` capability before the agent is ready.
 
 Tier fit:
 

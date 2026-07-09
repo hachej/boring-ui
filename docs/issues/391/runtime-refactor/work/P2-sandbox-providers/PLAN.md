@@ -11,6 +11,13 @@
 ## Design context
 Phase 2 stands up the three-package stack. Concrete providers do **not** land in `boring-bash/providers`; they move to a new dedicated `@hachej/boring-sandbox` package (`packages/boring-sandbox/src/providers`) that imports agent **types only**. `@hachej/boring-bash` (THE RUNTIME — the CHOICE of sandbox) owns runtime-mode resolution (`resolveMode`/`autoDetectMode`/`hasBwrap`), importing boring-sandbox **values** + agent **types**. The acyclic edges are: `sandbox → agent(types)`; `bash → sandbox(values) + agent(types)`; agent imports neither. This is also the first composition cutover (runtime-mode) — every in-repo composer that resolved a mode is migrated in-PR to inject the resolved adapter or import `@hachej/boring-bash/modes`; no old-path re-exports, no host shims. Providers do not move until Phase 1 injection is complete.
 
+**Amendment (2026-07-08):** P2's provider matrix is an input to environment
+resolution, not a behavior switch surface. Provider facts (`reported|unknown`
+filesystem/exec/image/mount/network facts) are consumed by hosts and
+boring-bash to resolve `AttachedEnvironmentRuntime[]` plus methodless
+`ResolvedEnvironment[]` projections. Surfaces and later packs consume the
+resolved facts; they do not infer authority from mode/provider labels.
+
 ## Verified current repo reality (pre-P2)
 - `packages/boring-sandbox/` does not exist yet. `pnpm-workspace.yaml` already includes `packages/*`, so BBP2-000 verifies coverage rather than adding a duplicate workspace pattern unless that file changes.
 - `@hachej/boring-bash@0.1.61` currently exports only `.`, `./shared`, and `./server`; `./modes` is added in BBP2-005. `packages/boring-bash/scripts/check-invariants.mjs` currently requires those three exports and scans `packages/agent/src` for `@hachej/boring-bash` value imports.
@@ -21,7 +28,7 @@ Phase 2 stands up the three-package stack. Concrete providers do **not** land in
 ## Deliverables
 - package skeleton and exports **[landed via #416: skeleton, shared filesystem-binding contracts, readonly/management company-context operations, fixture provider, leakage/conformance tests]**;
 - **scaffold the new `@hachej/boring-sandbox` package** (sandbox management: providers, FUSE-S3 mounts, lifecycle — imports agent **types only**);
-- provider capability model + fixed/reported capability facts in `boring-sandbox/shared` only; mode/provider mapping docs;
+- provider capability model + fixed/reported capability facts in `boring-sandbox/shared` only; mode/provider mapping docs; provider facts feed environment resolution and never become user-facing capability truth by themselves;
 - move concrete provider implementations (direct, bwrap, vercel-sandbox, remote-worker client) to **`packages/boring-sandbox/src/providers`** (00 open decision 3, RESOLVED; 08 decision 11) — **not** `boring-bash/providers`; this includes provider-bound workspace helpers (`createNodeWorkspace`, `getNodeWorkspaceHostRoot`, remote/vercel workspace factories, path-containment helpers) required by those providers;
 - **runtime-mode resolution (`resolveMode`/`autoDetectMode`/`hasBwrap`) lands in `@hachej/boring-bash`** (THE RUNTIME: the CHOICE of sandbox), resolving a mode id to a `@hachej/boring-sandbox` provider value;
 - mode-private helpers (`createServerFileSearch`, template copy, provider-adapter artifact helpers) move with `boring-bash/modes` or are injected; no moved mode file may value-import `@hachej/boring-agent`;
@@ -29,6 +36,7 @@ Phase 2 stands up the three-package stack. Concrete providers do **not** land in
 - remote-worker split docs: protocol/shared types → `boring-sandbox/shared`, client/provider adapter → `boring-sandbox/providers`, optional server package path;
 - invariant/import boundary: **acyclic** `boring-sandbox → agent(types)`; `boring-bash → boring-sandbox(values) + agent(types)`; agent imports neither;
 - migration strategy (v2, strict): **migrate every importer in the same PR** — no type-only old-path exports, no re-export stubs, no host shims that outlive the phase. Intra-phase transitional code carries `// TODO(remove:<bead-id>)` + a deletion bead.
+- **Amendment (2026-07-06):** publish-pipeline parity for `@hachej/boring-sandbox` (BBP2-009, before BBP2-005): before `@hachej/boring-bash` gains a value dependency on `@hachej/boring-sandbox`, add sandbox to all five publish lists (`scripts/audit-publish-manifests.mjs`, version bump, CI versioning, CI publish, release workflow), ordered before `packages/boring-bash`, and bring it onto the current version cohort (it sits at `0.1.61` vs the `0.1.64` cohort). Until then, the published boring-bash must not depend on sandbox.
 - Do not move providers until Phase 1 injection is complete.
 
 ## Exit criteria
