@@ -2,6 +2,8 @@
 
 **Amendment (2026-07-08):** S1 is relocated out of #391 active scope.
 
+**Alternative under review (2026-07-08):** CHAN-A — Slack via the Vercel Chat SDK as transport-only (spike verdict ADAPT). See CHAN-A-chat-sdk-transport.md. Supersedes the flue relocation ONLY IF D-RATIFY-1 is approved; until then the flue path stands.
+
 Slack is no longer a from-scratch `boring-channel-slack` package in this runtime
 refactor. It becomes a separate lightweight story: **Slack via flue channels**,
 reusing flue channel integration directly.
