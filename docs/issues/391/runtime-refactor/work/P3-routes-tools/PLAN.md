@@ -13,6 +13,13 @@ Phase 3 moves the file/tree/search/fs-events/stat/dir/git routes into `boring-ba
 
 `boring-bash` has two consumption modes. Workspace-family hosts consume it as one internal plugin through the existing plugin pipeline: the manifest-declared server entry returns `defineServerPlugin({ agentTools, routes, systemPrompt, piPackages, provisioning })`, where `agentTools` and `systemPrompt` come from `createBashAgentFeature()` and `routes` adapts `registerBashRoutes`. Direct/headless composers that do not use the workspace plugin pipeline use library mode: import `createBashAgentFeature()` and `registerBashRoutes`, spread/mount the tools/readiness and append the bundle's `systemPromptFragment` explicitly. `packages/agent` never constructs the bundle nor mounts bash routes. This is the second composition cutover (P2 = runtime-mode, P3 = routes/tools) — API-breaking for in-repo composers, migrated per-consumer, external wire paths byte-identical.
 
+**Amendment (2026-07-08):** `createBashAgentFeature()` is an environment
+bundle factory despite the legacy "Feature" name. It creates the residue bundle
+for resolved bash/filesystem environments: tools, readiness gates, and prompt
+fragment. It is not a core `AgentFeature` abstraction. After E1, its internals
+derive from `AttachedEnvironmentRuntime[]` / `ResolvedEnvironment[]` facts,
+not from runtime-mode labels, while the public bundle shape stays stable.
+
 Tool and renderer resolution follows the owner-ratified source order: environment bundle (the boring-bash bundle in this phase) -> plugins in manifest order -> host config. A duplicate tool name or renderer id is a typed error unless the later source declares `overrides: true`; there is no warning-only replacement. Implement this by extending the existing `mergeTools({ checkReadiness })` seam, not by adding a second catalog.
 
 ## Verified current repo reality (pre-P3)
@@ -28,7 +35,7 @@ Tool and renderer resolution follows the owner-ratified source order: environmen
 - move file/tree/search/fs-events/stat/dir routes to `boring-bash/server` — preserving the `(filesystem, path)` addressing **[landed for routes/tools wiring via #429/#454: `filesystem` param, spoof guard, readonly enforcement — this phase moves the code, not the behavior]**;
 - move filesystem tools to `boring-bash/agent`; move or explicitly assign `bash`, `execute_isolated_code`, and upload tools;
 - preserve readiness tags and `disableDefaultFileTools`;
-- replace hardwired registration with the boring-bash server plugin for workspace-family hosts — `defineServerPlugin({ agentTools, routes, systemPrompt, piPackages, provisioning })` composed from `createBashAgentFeature()` + `registerBashRoutes`. Keep the public library-mode exports (`createBashAgentFeature()` returning `{ tools, readinessRequirements, systemPromptFragment }`, plus `registerBashRoutes`) for direct/headless composers. There is no `features` config member.
+- replace hardwired registration with the boring-bash server plugin for workspace-family hosts — `defineServerPlugin({ agentTools, routes, systemPrompt, piPackages, provisioning })` composed from the `createBashAgentFeature()` environment-bundle factory + `registerBashRoutes`. Keep the public library-mode exports (`createBashAgentFeature()` returning `{ tools, readinessRequirements, systemPromptFragment }`, plus `registerBashRoutes`) for direct/headless composers. There is no `features` config member.
 - enforce the deterministic tool/renderer source-order law through the existing merge/readiness seam.
 - E1 (which depends on P2 **and** P3) may later re-implement the bundle's **internals** over environment attachments **without changing its public `{ tools, readinessRequirements, systemPromptFragment }` signature**.
 

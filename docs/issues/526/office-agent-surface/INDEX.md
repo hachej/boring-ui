@@ -26,6 +26,13 @@ Future W-word: after B2 ships and usage validates the seam
 
 Lane A and Lane B are independent except for connector reuse. B2 must verify that the A2 connector stays host-agnostic, but B1 can start before A1.
 
+**Amendment (2026-07-08):** any future Lane C wrapper work consumes boring-ui
+through public API/model-gateway contracts and resolved environment
+attachments/facts where applicable. It does **not** satisfy #391's canonical
+same-definition requirement unless a later work package maps
+`AgentDefinitionDeclaration` losslessly into the Office wrapper or routes Office
+requests through deployed boring agents.
+
 ## Recommended Execution
 
 Run A1, then A2 first.
