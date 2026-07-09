@@ -74,6 +74,15 @@ Target branches:
 - pi-for-office: `office/526-b2-powerpoint-mvp`.
 - boring-ui: `bclaw/526-b2-office-ref-generalization`.
 
+## Lane C / Same-Definition Note
+
+**Amendment (2026-07-08):** if the #551 wrapper lane is applied to this pack,
+its PRs must describe Office integration as public API/model-gateway consumption
+plus resolved environment attachment/fact consumption where applicable, not as an
+attachment capability axis and not as a #391 canonical agent-definition
+consumer. A future size-L work package is required if Office must consume the
+same `AgentDefinitionDeclaration` as workspace/MCP/Slack/embed surfaces.
+
 ## Merge Gates
 
 - All package verification commands pass.

@@ -73,6 +73,8 @@ Exit criteria:
 - Description: Wire the delegation result to the **delivery v0** payload (final text + artifact references) and host one vertical-agent config for the demo. (Share-link delivery moved to BBM1-004, gated on #424.)
 - Files: demo host config plus the delegation result assembly in the M1 server code.
 - Implementation notes:
+  - **Amendment (2026-07-08):** M1 remains dispatchable before P6a. Before the P6a registry exists, `ManagedAgentVerticalConfig` is the local v0 demo-host config. Once P6a `AgentDefinitionDeclaration` exists, M1 mounts the demo agent by `agentId` from that registry and treats `ManagedAgentVerticalConfig` only as a temporary lossless projection derived from the canonical definition; it must not become a second long-term vertical-agent schema.
+  - The projection carries `authMode`, `demoPolicy`, and `exposureId` fields needed by the MCP endpoint. Hardcoded demo verticals are allowed only as fixtures; production/demo host config resolves through the registry after P6a lands.
   - The agent writes or returns a Markdown artifact. The MCP result carries the final assistant text plus artifact file references: workspace-relative paths, and inline content for small text artifacts (pick and document a size cutoff). Never absolute host paths.
   - Host one vertical-agent config (instructions + tools) in full-app or CLI. Pick one host for M1; do not build two compositions unless the second is only a smoke fixture.
   - The endpoint URL must be usable by any stock MCP client that supports Streamable HTTP or the repo's chosen MCP transport.

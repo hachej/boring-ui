@@ -24,7 +24,29 @@ The epic builds the shared substrate, not any one commercial topology. **Do not 
 - **Horizon 2 — post 3+ repeats.** After the SSO/governance/workroom pattern recurs across 3+ deployments, productize a **white-label "AI Analyst Workroom"** for consultancies/fiduciaries to resell; the **farm becomes client-facing**.
 - **Horizon 3 — 2027+.** A **hub-and-spoke** shape: a **free local CLI ⇄ hosted specialist agents** via **MCP delegation**, with **artifacts delivered cross-org**. The open-integration end state, not a near-term build.
 
-**Architecture rule: one deployable artifact; topology is the product line.** The same build runs single-tenant self-host, managed sovereign tenant, or hub-and-spoke — topology is a commercial choice, not a code fork. This epic must **not FORCE horizon-3 infrastructure early** (no marketplace, billing, or multi-tenant control plane) **while not precluding it**. Open tension (owner to resolve): STRATEGY.md leans managed-retainer default, the older decision log has clients owning ops (self-hosted handoff); the architecture supports both, the commercial default is TBD.
+**Architecture rule: one deployable artifact; topology is the product line.** The same build runs single-tenant self-host, managed sovereign tenant, shared subdomain tenant, or hub-and-spoke — topology is a commercial choice, not a code fork. This epic must **not FORCE horizon-3 infrastructure early** (no marketplace or billing) **while not precluding it**. Open tension (owner to resolve): STRATEGY.md leans managed-retainer default, the older decision log has clients owning ops (self-hosted handoff); the architecture supports both, the commercial default is TBD.
+
+**Amendment (2026-07-08): Instant Subdomain Tenancy.** In one shared EU
+deployment, an agent turns a tenant YAML into a live `company.senecapp.ai` - its
+own skills, files, context, and environment pool - hot, with no redeploy: the
+near-zero-marginal-cost outreach engine. This is the **Shared Subdomain tier**.
+The two-tier model is explicit: D1 is the **Sovereign / EU Tenant Factory**
+tier, one dedicated deployment per company; D2 is the **Shared Subdomain** tier,
+many subdomain tenants in one deployment. Both consume the same
+`WorkspaceAgentsDeclaration`.
+
+## Platform / factory boundary
+
+**Amendment (2026-07-08):** `boring-ui` owns the reusable platform seams:
+the canonical agent-definition schema, the provisioning command/API, deployed
+agent endpoints, public demo/share contracts, and telemetry hooks. It also owns
+stable endpoint/result URL shapes so a factory can wire public flows without
+knowing runtime internals.
+
+`boring-ui-factory` owns landing pages, positioning/copy, GTM assets, pricing
+page content, and CTA workflows such as try/book/request. Factory assets may
+consume the platform's demo/share/lead contracts, but they do not define agent
+runtime authority, provisioning, or the canonical agent definition.
 
 ## Future-scale checklist (assert, do not build)
 
@@ -43,13 +65,13 @@ Each vision component mapped to what exists today → the delta work orders → 
 
 | # | Vision component | Exists today | Delta (work orders) | Checkable end-state |
 |---|---|---|---|---|
-| 1 | **Headless agent** — pure config object, no fs/bash/HTTP/React | Transport-agnostic harness seam exists but only via Fastify; config sprawls across env vars + file discovery | [P0](work/P0-adr/) → [P1](work/P1-headless-core/) | `createAgent({ runtime: 'none' })` runs a full turn in a plain Node script with zero Fastify/boring-bash imports; all current HTTP consumers unchanged |
-| 2 | **Multi-fs** — governed named filesystems attached per agent/session | **Landed (#416)**: `FilesystemBinding`, `user` + readonly `company_context`, no-leak conformance | [E1](work/E1-environment-attachments/) (generalized `Environment`/attachments, scoped views, symlink hardening) → [P4](work/P4-file-ui/) (file UI move) | An agent holds ≥2 filesystems with distinct identities; a scoped view passes the symlink-escape test; company_context no-leak stays green |
+| 1 | **Headless agent** — pure config object, no fs/bash/HTTP/React | Transport-agnostic harness seam exists but only via Fastify; config sprawls across env vars + file discovery | [P0](work/P0-adr/) → [P1](work/P1-headless-core/) | `createAgent()` with no environment attachment runs a full turn in a plain Node script, reports `environments: []` facts, imports zero Fastify/boring-bash; all current HTTP consumers unchanged |
+| 2 | **Multi-fs** — governed named filesystems attached per agent/session | **Landed (#416)**: `FilesystemBinding`, `user` + readonly `company_context`, no-leak conformance | [E1](work/E1-environment-attachments/) (generalized `Environment` attachments/facts, scoped views, symlink hardening) → [P4](work/P4-file-ui/) (file UI move) | An agent holds ≥2 filesystems with distinct identities; a scoped view passes the symlink-escape test; company_context no-leak stays green |
 | 3 | **Flexible sandbox** — swappable exec providers, honest capabilities | direct/bwrap/vercel-sandbox behind `Sandbox`/`RuntimeBundle`, inside `packages/agent`, static capability claims | [P2](work/P2-sandbox-providers/) (providers → `@hachej/boring-sandbox`; `resolveMode` → boring-bash; capabilities `reported\|unknown`) → [P5](work/P5-provisioning-secrets/) (provisioning, secret brokering) | Provider swap needs no agent-package change; acyclic layering; a test proves no brokered secret is readable inside a sandbox; remote-worker capabilities only from handshake |
 | 4 | **External agent access** — any MCP client mounts an environment | None (MCP used client-side only) | [E2](work/E2-mcp-projection/) (MCP projection, token→`BoundFilesystemContext`) | An external MCP client mounts a boring environment; denied files absent over MCP; no-leak suite green on the MCP mount |
-| 5 | **Flue building blocks** — durable replayable streams + channels-for-free | Bespoke replay (`PiChatReplayBuffer` + `?cursor=` NDJSON); no channel adapters | [T1](work/T1-durable-events/) (DS protocol: SQLite `EventStreamStore` + approvals-on-stream) → [T2](work/T2-transport/) (transport contract, front refit) → [S1](work/S1-slack-channel/) (Slack via `@flue/slack`) | SSE drop reconnects losslessly by `offset`; an approval raised in one client is answered from another; a Slack thread and the workspace UI share one agent + session store |
-| 6 | **eve UX — workspace as control plane** | Partial: `SessionList`/search, `DebugDrawer`, ask-user UI, model pickers. No agent registry, no cross-surface view, no unified approvals | [P6](work/P6-plugin-child-app/) (`AgentRegistry`, plugin/child-app scoping) → [P7](work/P7-multi-agent-inspection/) (agentId routing + public agent list + `/info`) → [S3](work/S3-control-plane-ux/) (inspect + cross-surface sessions + approval inbox) | Workspace lists agents from the scrubbed agent-list endpoint and inspects each through `/info`; a Slack-born session is observable by `sessionId`; a pending approval from any surface is answerable from the workspace inbox |
-| 7 | **Embeds** — agent inside another product (pi-excel) | None | [S2](work/S2-embed-contract/) (embed contract, host-supplied domain tools, `runtime: 'none'`) | The reference embed runs with zero boring-bash dependency; host tools render; approvals work via the host dialog |
+| 5 | **Flue building blocks** — durable replayable streams and surface transport substrate | Bespoke replay (`PiChatReplayBuffer` + `?cursor=` NDJSON); no durable public transport | [T1](work/T1-durable-events/) (DS protocol: SQLite `EventStreamStore` + approvals-on-stream) → [T2](work/T2-transport/) (transport contract, front refit) | SSE drop reconnects losslessly by `offset`; an approval raised in one client is answered from another over the shared public transport |
+| 6 | **eve UX — workspace as control plane** | Partial: `SessionList`/search, `DebugDrawer`, ask-user UI, model pickers. No agent registry, no cross-surface view, no unified approvals | [P6](work/P6-plugin-child-app/) (`AgentRegistry`, plugin/child-app scoping) → [P7](work/P7-multi-agent-inspection/) (agentId routing + public agent list + `/info`) → [S3](work/S3-control-plane-ux/) (inspect + cross-surface sessions + approval inbox) | Workspace lists agents from the scrubbed agent-list endpoint and inspects each through `/info`; external-surface sessions are observable by `sessionId`; a pending approval from any surface is answerable from the workspace inbox |
+| 7 | **Instant Subdomain Tenancy** — shared EU deployment, hot subdomain tenants | Dedicated/manual tenant provisioning only | [D1](work/D1-tenant-provisioning/) (dedicated/sovereign tenant factory) + [D2](work/D2-shared-tenant-mesh/) (shared subdomain tenant mesh) | One `WorkspaceAgentsDeclaration` supports both tiers: D1 emits a dedicated deployment manifest; D2 hot-registers `company.senecapp.ai` in one shared EU deployment with cross-tenant isolation conformance |
 | 8 | **EU-sovereign hosting** | Implicitly true but unstated | Invariant 15 enforced across every work order | Default stack deploys on EU infra with no US-hosted hard dependency; `vercel-sandbox` is optional |
 | — | **S3/FUSE mounts** — object-store-backed environments (farm substrate) | None | [X1](work/X1-s3-fuse-mounts/) (S3 prefix as a real directory in a sandbox; needs P2+P5) | A readonly S3 mount passes the no-leak suite; `bash`-visible == file-route-visible over the mount; no credential readable inside the sandbox; EU-endpoint matrix green |
 | 9 | **The farm (next epic — deferred; does NOT gate this epic's exit)** | boring-tasks kanban (#486) + this epic's substrate (runtime-owned `sessionId`, `agentId` scoping, replayable streams, S3/FUSE mounts, reserved `data-artifact` part) | **#397 durable task service** + the **farm epic** (fleet view, artifact shelf, Farm MCP control plane) | A foreign agent creates a task, works it in a mounted env, publishes an artifact, requests approval — all visible in the workspace (this epic guarantees only the substrate) |
@@ -74,7 +96,7 @@ Each vision component mapped to what exists today → the delta work orders → 
 - **Security:** renderers run on a separate viewer origin in sandboxed iframes
   with CSP `default-src 'none'`, no host cookies/storage, signed URLs,
   EU S3 blob storage, and zero viewer-side credentials.
-- **Package deferral:** extract `boring-artifact` only when a second consumer appears: S2 embed, Slack link-out, or customer review page.
+- **Package deferral:** extract `boring-artifact` only when a second consumer appears: pi-for-excel (#551), Slack via flue channels, or customer review page.
   PR #424's public workspace Markdown share is explicitly **non-artifact**;
   lessons reserved here: tokens address `artifactId+version+capability`,
   publish snapshots rather than live workspace paths, assets are captured into
@@ -91,7 +113,7 @@ Each vision component mapped to what exists today → the delta work orders → 
 **Five clean layers** (v2 extends the original three):
 
 ```txt
-Surfaces         workspace UI | Slack | pi-excel | CLI — ingress/egress adapters only
+Surfaces         workspace UI | CLI | future Slack/pi-excel adapters — ingress/egress adapters only
 Transport        in-process | HTTP+SSE | future WS/durable — send + reconnect
 Agent core       model/session/tool loop; no implicit runtime; typed event stream
 Feature layer    optional UI, bash, web, plugin, approval, search capabilities
@@ -110,22 +132,28 @@ Layering edges: `sandbox → agent(types)`; `bash → sandbox(values) + agent(ty
 
 A surface and the agent core exchange exactly four things ([08 "What every framework converges on"](architecture/08-pluggable-agent-surfaces.md)):
 
-1. **Message in** — a normalized user turn `AgentSendInput = { sessionId?, content, attachments?, actor, ctx?, originSurface? }` (omit `sessionId` to create a session). `ctx?: SessionCtx` is boring's own tenancy context, never surface-native addressing.
+1. **Message in** — a normalized user turn `AgentSendInput = { sessionId?, content, inputAssets?, actor, ctx?, originSurface? }` (omit `sessionId` to create a session). `ctx?: SessionCtx` is boring's own tenancy context, never surface-native addressing. **Amendment (2026-07-08):** user files/images/blobs are input assets, not a core `attachments` capability; intake resolves to a writable accepting environment sink, a provider-direct asset path allowed by host policy, or a stable rejection.
 2. **Event stream out** — one ordered, indexed, replayable stream of typed events; wire/transport swappable.
 3. **Approvals / HITL** — a request event out + a response call in, on the same channel, declared on the tool — not per-surface special cases.
 4. **Session state** — a runtime-owned `sessionId` + serializable transcript; persistence and addressing are boundary decisions.
+
+**Amendment (2026-07-08):** `environments[]` are the semantic capability truth
+for filesystem/bash/environment authority. `runtimeMode` is diagnostic only; it
+must not drive feature gating. Surfaces render from resolved environment facts
+and capability bundles, not from scalar `filesystem`/`shell`/`attachments`
+flags.
 
 ## Decisions locked (one line each)
 
 Full text and rationale: [`architecture/08-pluggable-agent-surfaces.md`](architecture/08-pluggable-agent-surfaces.md) "Decisions this file locks", ratified in the Phase 0 ADR ([P0](work/P0-adr/)).
 
 1. **Wire protocol** — keep `PiChatEvent` as the v1 payload, add the indexed envelope; no parallel event union.
-2. **Pure mode** — pi-coding-agent with `runtime: none` + sealed cwd behind the Phase 1 audit, not a second harness.
+2. **Pure mode** — pi-coding-agent with no environment attachment + sealed cwd behind the Phase 1 audit, not a second harness; legacy `runtime: none` is a host/adapter diagnostic during migration.
 3. **Surfaces outside the agent package** — per-channel packages (Flue model), not `boring-agent` subpaths.
 4. **Readonly fs is v1** — already shipped via #416.
 5. **One namespace rule** — superseded by named `(filesystem, path)` bindings.
 6. **Channel ingress is reused, not written** — depend on pinned `@flue/*` packages with thin adapters; egress via provider SDKs.
-7. **Environments are attachable resources** — fs+sandbox has identity independent of any agent; consumed via attachments; external agents attach via MCP projection ([09](architecture/09-environments-attachable.md)).
+7. **Environments are attachable resources** — fs+sandbox has identity independent of any agent; agents consume resolved environment attachments/facts; external agents attach via MCP projection ([09](architecture/09-environments-attachable.md)).
 8. **Front chat provider unchanged** — vendored ai-elements fork insulated from the wire by the `PiChatEvent → reducer → BoringChatMessage` projection; T2 forces zero render-layer work.
 9. **No feature-flag framework** — version rides existing carriers (`AgentEvent.v`, additive DS routes, injectable front transport, minor bumps at T2/P3).
 10. **No retro-compat, no speculative abstraction** — importers migrate in the same PR; transitional code carries `TODO(remove:<bead-id>)` naming its deletion-owner bead; a later TODO owner is allowed only when explicitly named per [`INDEX.md`](INDEX.md); no abstraction without two real consumers.
@@ -142,11 +170,15 @@ Full text and rationale: [`architecture/08-pluggable-agent-surfaces.md`](archite
 - **Predefined runtime image catalog** — productize pinned `boring-runtime-*` OCI images with common CLIs (`node`, `python`, `git`, `gh`, `rg`, etc.) and later vertical-agent toolchains. This pairs with the vertical-agent business line, but stays a catalog/build-pipeline follow-up; #391 only reserves provider config + provisioning fingerprint semantics.
 - **Farm-epic first-party plugins** — tasks, artifacts, and fleet follow the same host-mediated plugin composition pattern as bash/governance; no package imports another first-party plugin for policy/mechanism composition.
 - **P6b child-app / Macro scoping** — HARD BLOCKED on the shared child-app platform type (#376); a tracked follow-up outside the epic exit.
+- **Concrete Slack/spreadsheet/Office surfaces** — Slack moves to the separate
+  "Slack via flue channels" story; spreadsheet/pi-excel moves to issue #551;
+  Office Lane A/B/C remains issue #526. #391 keeps only the pluggable transport
+  and control-plane substrate these later surfaces consume.
 
 ## Dispatch order (summary)
 
 ```txt
-P0 → P1 → { M1 (after P1 pr2 + public share API; sidecar) } ∥ { T1 → T2 → { S1 → S2, S3 } } ∥ { P2 → P3 → [ P4, E1 → E2, P5 → P6a → P7 → [P8, S3] ] } ∥ { X1 (needs P2+P5+E1) }
+P0 → P1 → { M1 (v0 after P1 pr2; share-link slice gated on #424/public-share API; sidecar) } ∥ { T1 → T2 → S3 → S4 } ∥ { P2 → P3 → [ P4, E1 → E2, P5 → P6a → P7 → [P8, M2 → {D1, D2} → S4] ] } ∥ { X1 (needs P2+P5+E1) }
 ```
 
-Rows 1→5 are infrastructure; M1 is the outreach-demo sidecar after P1 pr2 + public-share API; rows 6–7 are product payoff and gate on the runtime lanes; row 8 is a standing constraint, not a phase. P5 dispatches off P3 in parallel with P4 and E1→E2. P8 gates on **all runtime lanes** except P6b and M1. The authoritative phase table, dependency graph, dispatch protocol, and binding policies are in [`INDEX.md`](INDEX.md).
+Rows 1→5 are infrastructure; M1 is the outreach-demo sidecar after P1 pr2 for v0, with only the share-link slice gated on #424/public-share API; M2 is the committed MCP agent-surface follow-up after P7+T2; D1/D2/S4 are factory/onboarding follow-ups. Rows 6–7 are product payoff and gate on the runtime lanes; row 8 is a standing constraint, not a phase. P5 dispatches off P3 in parallel with P4 and E1→E2. P8 gates on **all runtime lanes** except P6b, M1, M2, D1, D2, and S4; M2 may ship after P8 if the runtime exit is otherwise green. **Amendment (2026-07-08):** S1/S2 are relocated out of #391 active scope, so this dispatch summary intentionally does not include Slack, spreadsheet, or Office implementation lanes. The authoritative phase table, dependency graph, dispatch protocol, and binding policies are in [`INDEX.md`](INDEX.md).
