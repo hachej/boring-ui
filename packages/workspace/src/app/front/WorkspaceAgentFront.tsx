@@ -23,6 +23,7 @@ import { useWorkspaceShellCapabilitiesHost } from "./WorkspaceShellCapabilitiesH
 import { PluginsOverlay } from "../../front/chrome/plugins/PluginsOverlay"
 import { AppLeftPane } from "../../front/layout/plugin-tabs/AppLeftPane"
 import { PluginTabsWorkspaceShell } from "../../front/layout/plugin-tabs/PluginTabsWorkspaceShell"
+import { useViewportWidth } from "../../front/layout/useViewportWidth"
 import { captureWorkspaceFrontPlugins } from "./workspaceBuiltinPlugins"
 import type { FilesystemId } from "../../shared/types/filesystem"
 import { UI_COMMAND_EVENT, dispatchUiCommand } from "../../front/bridge"
@@ -485,8 +486,11 @@ export function WorkspaceAgentFront<
   onOpenNav,
   onOpenSurface,
   surfaceButtonBottomOffset,
+  mobileShellEnabled = true,
   className,
 }: WorkspaceAgentFrontProps<TSession>) {
+  const viewport = useViewportWidth()
+  const mobileShellActive = mobileShellEnabled && viewport < 640
   const externalPluginsEnabled = externalPlugins !== false
   const resolvedFrontPluginHotReload = externalPluginsEnabled ? frontPluginHotReload : false
   const resolvedHotReloadEnabled = externalPluginsEnabled ? hotReloadEnabled : false
@@ -1692,6 +1696,7 @@ export function WorkspaceAgentFront<
         onOpenSurface?.()
       }}
       surfaceButtonBottomOffset={surfaceButtonBottomOffset}
+      mobileShellEnabled={mobileShellEnabled}
       onOpenSidebar={hasLeftTabs ? () => {
         surfaceOpenRef.current = true
         setSurfaceOpen(true)
@@ -1709,6 +1714,7 @@ export function WorkspaceAgentFront<
       leftPaneWidth={effectiveAppLeftPaneWidth}
       minLeftPaneWidth={220}
       maxLeftPaneWidth={420}
+      mobileShellEnabled={mobileShellEnabled}
       leftPane={(
         <AppLeftPane
           width={effectiveAppLeftPaneWidth}
@@ -1798,7 +1804,7 @@ export function WorkspaceAgentFront<
         appTitle={appTitle}
         storageKey={resolvedProviderStorageKey}
         persistenceEnabled={persistenceEnabled}
-        debug={debug}
+        debug={mobileShellActive ? false : debug}
         bridgeEndpoint={null}
         onAuthError={onAuthError}
         frontPluginHotReload={resolvedFrontPluginHotReload}
