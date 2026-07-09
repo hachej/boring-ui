@@ -306,7 +306,7 @@ Each decision has four fields:
 
 ---
 
-## 19. Company-admin front surface: single app-composed provider slot, no plugin self-registration
+## 20. Company-admin front surface: single app-composed provider slot, no plugin self-registration
 
 | Field | |
 |---|---|

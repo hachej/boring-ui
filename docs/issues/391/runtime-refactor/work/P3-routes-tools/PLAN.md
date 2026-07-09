@@ -43,3 +43,7 @@ Tool and renderer resolution follows the owner-ratified source order: environmen
 - workspace playground still opens file tree/editor; read/write/edit/find/grep/ls/bash work when boring-bash enabled;
 - pure mode still has none of those routes/tools;
 - company_context no-leak conformance still green.
+
+**Amendment (2026-07-06):**
+- **UI/agent parity** (475 watch-list): after the route/tool move, both surfaces still resolve visibility through the SINGLE `getFilesystemBindings` decision path — grep-gate that no second "what can this user see" path exists.
+- `@hachej/boring-bash` is npm-published (cohort-versioned, external governance consumer): moved routes/tools land as **ADDITIVE** export entries (`./agent`; P4's `./plugin` likewise) in the same cohort bump as any governance-consumed `/server` change (see `../../INDEX.md` rule 6 amendment). The `bindingResolver` composition point stays name-reserved only — P3 must not implement it with governance as its lone consumer (see `../../architecture/02-boring-bash-environment.md`).

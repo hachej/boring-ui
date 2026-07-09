@@ -154,11 +154,12 @@ over MCP; M2 exposes declared agents over MCP.
 | pr1-providers-subpath-matrix | BBP2-001 + BBP2-002 | new | ~250 (capability contract + matrix in `boring-sandbox/shared`) | export-map `boring-sandbox/shared` + `boring-sandbox/providers`; per-fixed-provider matrix rows live in shared; `remote-worker` worker-dependent fields are static `'unknown'`; fail-closed runtime validation/tests deferred to BBP5-008 | `boring-sandbox check:invariants` |
 | pr2-move-direct-bwrap | BBP2-003 | move | budget-exempt (~1.5k churn) | moved direct/bwrap conformance + snapshot pass under **boring-sandbox**; `createNodeWorkspace`/`getNodeWorkspaceHostRoot`/path helper importers migrated with the slice | `boring-sandbox test` |
 | pr3-move-vercel-sandbox | BBP2-004 | move | budget-exempt (~2.5–3k churn, <4k) | vercel-sandbox unit tests pass under boring-sandbox; `createVercelSandboxWorkspace` owned/exported by boring-sandbox providers; no provider adapter value-imports agent provisioning helpers | `boring-sandbox test` |
+| pr3b-sandbox-publish-parity | BBP2-009 (Amendment 2026-07-06) | chore | ~30–60 (five publish lists + cohort version bump; lands BEFORE pr4's bash→sandbox value edge) | `node scripts/audit-publish-manifests.mjs` passes with sandbox listed; grep gate: sandbox present in all five lists, ordered before `packages/boring-bash` | `audit:imports`; publish-manifest audit |
 | pr4-mode-resolution-to-bash | BBP2-005 | move | budget-exempt (~1k churn) | `resolveMode.test` passes in **boring-bash** (resolves mode id → boring-sandbox provider value); mode→provider pairs covered; mode-private helpers (`createServerFileSearch`, template copy, artifact helpers) moved/injected; no agent value import in `boring-bash/modes`; **agent bin becomes pure-only (`runtime:'none'`), bash-enabled bin composition moves to `packages/cli` in THIS PR** | agent `test` (host repoint); `boring-bash test` |
 | pr5-split-remote-worker | BBP2-006 | move | budget-exempt (~1k churn) | protocol → `boring-sandbox/shared`, client/adapter/workspace → `boring-sandbox/providers`; bytes round-trip; full-app worker import-graph has no agent-core dep; worker health remains `{ ok: true }`; **worker capabilities stay `'unknown'` — NO handshake here (handshake owned solely by BBP5-008)** | `audit:imports` |
 | pr6-migrate-delete-invariants | BBP2-007 + BBP2-008 | move (delete origin exports) + new (invariant) | ~80 (invariant script) | static: agent old paths have no bash/sandbox value import / no re-export (including moved workspace helpers); boring-bash→sandbox value edge + sandbox→agent types-only edge both asserted; apps compile | `lint:invariants`; `audit:imports` |
 
-**P2 total: 7 PRs** (adds pr0 scaffold). Precondition: P1 injection seam present (else STOP+report). No `@hachej/boring-agent` minor bump here; the relocation minor bump is P3 per `INDEX.md`/`08`. New package `@hachej/boring-sandbox` scaffolded in pr0 and populated across pr1–pr5.
+**P2 total: 8 PRs** (adds pr0 scaffold; **Amendment 2026-07-06:** adds pr3b sandbox publish parity, BBP2-009, which must merge before pr4). Precondition: P1 injection seam present (else STOP+report). No `@hachej/boring-agent` minor bump here; the relocation minor bump is P3 per `INDEX.md`/`08`. New package `@hachej/boring-sandbox` scaffolded in pr0 and populated across pr1–pr5.
 
 ### P3 — Move file/bash routes + tools → boring-bash (Phase 3, off P2)
 
@@ -182,8 +183,9 @@ over MCP; M2 exposes declared agents over MCP.
 | pr3-move-tool-renderers | BBP4-015 | move | ~300–600 (renderer split/move; tests move with it) | `definePlugin({ toolRenderers })` registers `bash`/`read`/`write`/`edit`/`find`/`grep`/`ls`; pure-mode front default renderer map has none of those ids | agent + boring-bash front tests |
 | pr4-composer-providers | BBP4-016 | new + move | ~300–600 (generic composer provider seam + file provider move) | #26 `@file` mention provider, file slash commands, `@files:` enrichment, and upload affordance exist only with bash plugin attached; pure-mode front has no `/api/v1/files/search` request path | agent + boring-bash front tests |
 | pr5-remove-static-registration | BBP4-014 | move (delete workspace export/static default registration) + new (guard) | ~60 | `exec_ui openFile` opens moved panel; `rg -n "from ['\"]@hachej/boring-bash|import\\(['\"]@hachej/boring-bash" packages/workspace/src` → 0 | `lint:plugin-invariants`; `audit:imports` |
+| pr6-mount-discovery | BBP4-017 (Amendment 2026-07-06; #550 gap 5) | new | ~100–200 (capability-gated file-tree affordance via `/governance/me`) | labeled mount node / empty-state hint with a governed mount; no affordance and no `/governance/me` request without governance; visible set unchanged (single `getFilesystemBindings` path) | boring-bash front tests; `lint:plugin-invariants` |
 
-**P4 total: 5 PRs (7 if pr2 splits into 3).** BBP4-013 document-authority write/edit override seam is **deferred out of this epic** (zero real consumers — arrives with #367/#226; filed at P8 BBP8-004) — **no PR here**. Precondition: P3 write/edit tools + routes in boring-bash. Cycle safety is the static workspace edge guard: `packages/workspace/src` must not import `@hachej/boring-bash`; `boring-bash/plugin` may import the public workspace plugin SDK because the host loads it dynamically through the plugin pipeline. Capability-residue closeout: detaching bash leaves no file prompt, API, renderer, or composer-provider residue in pure mode.
+**P4 total: 6 PRs (8 if pr2 splits into 3; Amendment 2026-07-06 adds pr6-mount-discovery).** BBP4-013 document-authority write/edit override seam is **deferred out of this epic** (zero real consumers — arrives with #367/#226; filed at P8 BBP8-004) — **no PR here**. Precondition: P3 write/edit tools + routes in boring-bash. Cycle safety is the static workspace edge guard: `packages/workspace/src` must not import `@hachej/boring-bash`; `boring-bash/plugin` may import the public workspace plugin SDK because the host loads it dynamically through the plugin pipeline. Capability-residue closeout: detaching bash leaves no file prompt, API, renderer, or composer-provider residue in pure mode.
 
 ### E1 — Environment attachments (Phase E1, off P2 **and** P3)
 
@@ -219,8 +221,9 @@ over MCP; M2 exposes declared agents over MCP.
 | pr6-secret-brokering | BBP5-007 | new | ~500–800 | status without value; **brokering negative test — no sandbox-side read of brokered secret**; no serialization to browser/model/log/artifact | `check:isolation`; `smoke:capability-readiness` |
 | pr7-remote-worker-handshake | BBP5-008 (+ BBP5-010 mount) | new + test | ~300–500 | reported\|unknown facts; fail-closed on unknown/bad-contract; no silent downgrade; **BBP5-010** remote-worker no-leak conformance mount (the deferred remote-worker env mount) rides here, gated on this handshake | `full-app smoke:remote-worker`; `boring-bash test` |
 | pr8-two-phase-fingerprint | BBP5-009 | new | ~400–600 | same fingerprint skips; changed source/contract re-provisions; onSession reruns; Vercel snapshot tests pass | `test` |
+| pr9-governance-550-hardening | BBP5-011 + BBP5-012 (Amendment 2026-07-06; #550 gaps 2 + 7) | new | ~100–200 | governance-disabled readiness/diagnostics signal with stable code; non-dev missing `BORING_GOVERNANCE_COMPANY_CONTEXT_ROOT` fails closed (no cwd fallback); dev fallback preserved | governance plugin tests |
 
-**P5 total: 8 PRs.** Preconditions: P3 + P2 `shared/providerMatrix.ts` (else STOP+report). Engine stays agent-owned; normalizer boring-bash-owned. Zero dangling `TODO(remove:*)`.
+**P5 total: 9 PRs (Amendment 2026-07-06 adds pr9-governance-550-hardening).** Preconditions: P3 + P2 `shared/providerMatrix.ts` (else STOP+report). Engine stays agent-owned; normalizer boring-bash-owned. Zero dangling `TODO(remove:*)`.
 
 ### X1 — S3/FUSE mounts for `@hachej/boring-sandbox` environments (Phase X1, off P2 **and** P5 **and** E1) — bash lane, parallel to E2
 
@@ -353,7 +356,7 @@ Adds the `@hachej/boring-sandbox/mounts` export (created package from P2) + the 
 | P4 | 5 | 7 | — |
 | E1 | 5 | 5 | — |
 | E2 | 3 | 3 | — |
-| P5 | 8 | 9 | — |
+| P5 | 9 | 10 | — |
 | X1 | 5 | 5 | — |
 | P6 | 11 | 11 | 2 (P6b) |
 | P7 | 9 | 9 | — |

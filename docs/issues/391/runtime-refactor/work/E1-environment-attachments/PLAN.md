@@ -24,6 +24,16 @@ attachments to prepared attached runtimes over the landed `ScopedFilesystemRunti
 Address-by-id lookup (a plain `Map<environmentId, Environment>`) is deferred to E2.
 Subagent attachment (BBE1-005) is deferred to Phase 7, the first real subagent consumer.
 
+**Amendment (2026-07-06):** there is no `bindingResolver` composition point today —
+governance owns its own `ScopedFilesystemRuntimeBindingManager`
+(`plugins/boring-governance/src/server/filesystemBindings.ts`) and returns
+operation-bearing `RuntimeFilesystemBinding`s through the agent's
+`getFilesystemBindings` option. `resolveAttachments` takes host-supplied
+`{manager, entries}`; governance is a valid host supplier only if it can pass its
+internal manager without source edits (the zero-source-edit guarantee). If it
+cannot, governance adoption of `resolveAttachments` is a separate later
+governance-side bead — E1 must not force it.
+
 ## Verified current repo reality (pre-E1)
 - The landed #416 types exist in `packages/boring-bash/src/shared/index.ts`: `FilesystemId`, `FilesystemAccess`, `FilesystemProjection`, `FilesystemBinding`, `BoundFilesystemContext`, `FilesystemBindingResolver`, `PreparedFilesystemBinding`, `FilesystemBindingProvider`, and `RuntimeBindingPlan`.
 - `packages/boring-bash/src/server/runtimeBindingManager.ts` exports `ScopedFilesystemRuntimeBindingManager`, `filesystemRuntimeScopeKey(ctx)`, `PreparedBindingSelector`, `ScopedPreparedFilesystemBinding`, and `ScopedRuntimeBindingPlan`. The scope key is `humanUserId\0agentId\0sessionId\0workspaceId\0requestId`.

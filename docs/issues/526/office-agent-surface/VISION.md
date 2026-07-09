@@ -69,6 +69,19 @@ The host seam covers these Excel-coupled joints from current pi-for-excel source
 
 Excel should wrap existing behavior first. PowerPoint should use the same extension API surface after the seam exists.
 
+## Wrapper Boundary (Lane C, #551)
+
+**Amendment (2026-07-06):** Lane C ships the Boring-branded product wrapper for `pi-for-excel` (#551) as a **patch-overlay soft fork**, not a hard fork:
+
+- All product code lives in `src/wrapper/**`.
+- Upstream `tmustier/pi-for-excel` stays a tracked remote.
+- Upstream merges happen at the start of every C-lane PR.
+- Every sustained non-wrapper divergence is recorded in `docs/upstream-divergences.md`.
+
+The hard-fork path remains reserved for `hachej/pi-for-office` (B1).
+
+The wrapper consumes A1 tokens and the A2 tool pack; it does **not** consume the #391 `createAgent()` façade — `pi-for-excel` runs its own pi-agent-core loop and reaches boring-ui only through `/api/v1` and the model gateway.
+
 ## Same-Definition Boundary
 
 **Amendment (2026-07-08):** this Office pack does not by itself satisfy the
