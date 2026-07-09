@@ -25,7 +25,7 @@ Unlike `agent-playground`, the Vite aliases here point at the **built `dist/` ar
 pnpm --filter workspace-playground dev
 ```
 
-Open `http://localhost:5200`. Append `?showcase=1` for the showcase route, or visit `/full-page` for the full-page panel.
+Open `http://localhost:5200`. Append `?showcase=1` for the showcase route, visit `/full-page` for the full-page panel, or visit `/mobile-spike?state=one` for the issue #580 front-only mobile shell spike. The mobile spike supports `state=one|two|drawer|workbench|dense` and uses fixture-only in-memory chat sessions.
 
 ## Scripts
 

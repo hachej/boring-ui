@@ -485,6 +485,7 @@ export function WorkspaceAgentFront<
   onOpenNav,
   onOpenSurface,
   surfaceButtonBottomOffset,
+  mobileShellEnabled,
   className,
 }: WorkspaceAgentFrontProps<TSession>) {
   const externalPluginsEnabled = externalPlugins !== false
@@ -1692,6 +1693,7 @@ export function WorkspaceAgentFront<
         onOpenSurface?.()
       }}
       surfaceButtonBottomOffset={surfaceButtonBottomOffset}
+      mobileShellEnabled={mobileShellEnabled}
       onOpenSidebar={hasLeftTabs ? () => {
         surfaceOpenRef.current = true
         setSurfaceOpen(true)
@@ -1709,6 +1711,7 @@ export function WorkspaceAgentFront<
       leftPaneWidth={effectiveAppLeftPaneWidth}
       minLeftPaneWidth={220}
       maxLeftPaneWidth={420}
+      mobileShellEnabled={mobileShellEnabled}
       leftPane={(
         <AppLeftPane
           width={effectiveAppLeftPaneWidth}

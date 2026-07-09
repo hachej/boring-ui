@@ -439,6 +439,7 @@ export function CliWorkspaceShell() {
         workspaceLabel={activeWorkspace.name}
         workspaceSectionTitle="Projects"
         workspaceLayout="plugin-tabs"
+        mobileShellEnabled
         appLeftHeaderMode="workspace"
         appLeftProjects={appLeftProjects}
         appLeftActiveProjectId={activeWorkspace.id}
@@ -494,6 +495,7 @@ export function CliWorkspaceShell() {
       workspaceLabel={projectName}
       workspaceSectionTitle="Project"
       workspaceLayout="plugin-tabs"
+      mobileShellEnabled
       defaultSessionTitle={projectName}
       activeSessionId={initialSessionId ?? undefined}
       chatParams={{ thinkingControl: true }}

@@ -6,6 +6,7 @@ import { WorkspaceAgentFront, WorkspaceFullPagePanel, parseFullPagePanelLocation
 import { definePlugin, type WorkspaceSourceProps } from "@hachej/boring-workspace/plugin"
 import { createAskUserPlugin } from "@hachej/boring-ask-user/front"
 import { SHOWCASE_SESSION_ID, seedShowcase } from "./showcaseMessages"
+import { MobileSpikeShell, isMobileSpikeRoute } from "./MobileSpike"
 
 function isShowcaseRoute(): boolean {
   if (typeof window === "undefined") return false
@@ -145,11 +146,12 @@ export function WorkspaceShell() {
   resetPlaygroundStorageIfRequested()
   const showcase = useMemo(isShowcaseRoute, [])
   const fullPage = useMemo(isFullPageRoute, [])
+  const mobileSpike = useMemo(isMobileSpikeRoute, [])
   const multiFilesystem = useMemo(isMultiFilesystemPlaygroundRoute, [])
   const activeWorkspacePlugins = multiFilesystem ? multiFilesystemWorkspacePlugins : workspacePlugins
   const [projectName, setProjectName] = useState("Workspace")
   const [workspaceId, setWorkspaceId] = useState("Workspace")
-  const [metaLoaded, setMetaLoaded] = useState(showcase || fullPage)
+  const [metaLoaded, setMetaLoaded] = useState(showcase || fullPage || mobileSpike)
 
   const sessions = useMemo(
     () =>
@@ -172,7 +174,7 @@ export function WorkspaceShell() {
   )
 
   useEffect(() => {
-    if (showcase || fullPage) return
+    if (showcase || fullPage || mobileSpike) return
     let cancelled = false
     void fetch("/api/v1/workspace/meta")
       .then(async (res) => res.ok ? await res.json() as WorkspaceMeta : null)
@@ -192,12 +194,16 @@ export function WorkspaceShell() {
         if (!cancelled) setMetaLoaded(true)
       })
     return () => { cancelled = true }
-  }, [showcase, fullPage])
+  }, [showcase, fullPage, mobileSpike])
 
   if (showcase) seedShowcase(SHOWCASE_SESSION_ID)
 
   if (fullPage) {
     return <WorkspaceFullPageShell />
+  }
+
+  if (mobileSpike) {
+    return <MobileSpikeShell />
   }
 
   if (!metaLoaded) {
@@ -209,11 +215,11 @@ export function WorkspaceShell() {
       workspaceId={showcase ? "playground" : workspaceId}
       apiBaseUrl=""
       persistenceEnabled
-      debug
       providerStorageKey={showcase ? "boring-ui-v2:layout:playground" : `boring-ui-v2:layout:playground:${multiFilesystem ? "multi-fs:" : ""}${workspaceId}`}
       appTitle={showcase ? "Boring" : projectName}
       workspaceLabel={showcase ? undefined : projectName}
       workspaceLayout={multiFilesystem ? "classic" : "plugin-tabs"}
+      mobileShellEnabled
       defaultSessionTitle="New chat"
       externalPlugins={externalPluginsEnabled}
       frontPluginHotReload={externalPluginsEnabled ? "vite" : undefined}
