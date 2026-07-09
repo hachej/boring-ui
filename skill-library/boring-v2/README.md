@@ -16,3 +16,26 @@ Stored unchanged under `raw-mattpocock/`:
 - `code-review-thermo` -> reference for strict maintainability / code-judo review
 
 No active skills live here. Copy/adapt one into `.agents/skills/` only when ready to test.
+
+
+## Draft Boring v2 skills
+
+Stored under `skills/`:
+
+- `ask-boring` — router only
+- `feedback` — issue creation only, with redaction and simple labels
+- `triage` — issue/PR state classification and next action
+- `plan` — `to-spec` first, `to-tickets` only when slicing is needed
+- `implement` — build one ready issue/slice with proof, review, and PR handoff
+
+Implementation proof must name at least one of: exact command, screenshot/demo, manual steps, or an explicit waiver with residual risk.
+
+
+## Model/reviewer policy
+
+See `MODEL-CARD.md` for model selection, escalation, and adversarial reviewer triggers.
+
+Loop skills are aliases/reference flows, not separate heavy workflows by default:
+
+- `plan-loop` = `plan` plus adversarial plan review for the first pass when risk is non-trivial.
+- `implement-loop` = `implement` plus review/fix/re-review/proof until the PR handoff is safe.
