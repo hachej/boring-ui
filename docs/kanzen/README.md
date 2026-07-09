@@ -8,7 +8,7 @@ ask-boring -> feedback -> triage -> plan -> implement
 
 ## Skills
 
-Active skill drafts live in `skill-library/boring-v2/skills/`.
+Draft skills live in `skill-library/boring-v2/skills/`. They are not active until copied into `.agents/skills/`.
 
 | Skill | Job |
 | --- | --- |
@@ -35,7 +35,7 @@ State, choose one:
 - `ready-for-human`
 - `wontfix`
 
-Do not reintroduce `state:*`, `phase:*`, `track:*`, or `gate:*` labels. Put details in comments or PR handoff cards.
+Do not reintroduce `state:*`, `phase:*`, `track:*`, or `gate:*` labels. Put details in comments, PR handoff cards, or `ask_user` review requests.
 
 ## Keep these procedures
 
@@ -53,3 +53,5 @@ Everything else in this folder is legacy/reference unless linked by a current sk
 ## Model and review policy
 
 See [`../../skill-library/boring-v2/MODEL-CARD.md`](../../skill-library/boring-v2/MODEL-CARD.md).
+
+When human review or a decision is needed, use the `ask_user` tool if available so the request appears in the Boring UI inbox. If unavailable, fall back to a GitHub/PR comment.

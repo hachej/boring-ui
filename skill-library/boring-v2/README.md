@@ -30,6 +30,8 @@ Stored under `skills/`:
 
 Implementation proof must name at least one of: exact command, screenshot/demo, manual steps, or an explicit waiver with residual risk.
 
+Human review/decision requests should use `ask_user` when available so they appear in the Boring UI inbox; fallback to GitHub/PR comments when unavailable.
+
 
 ## Model/reviewer policy
 

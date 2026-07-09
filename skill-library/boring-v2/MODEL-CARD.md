@@ -57,3 +57,9 @@ No implementation is done with only “tested” or “looks good”.
 ## Escalation rule
 
 If the first pass is weak, shallow, generic, or misses project context, rerun with a stronger model or add an independent reviewer. Escalation costs less than shipping mediocre work.
+
+## Human-in-the-loop surface
+
+When a workflow needs owner review, visual review, merge approval, product judgment, or missing information, use the `ask_user` tool when available. This should create a Boring UI inbox entry and keep the workspace as the control plane.
+
+Fallback only when `ask_user` is unavailable: post the same concrete request as a GitHub issue/PR comment.

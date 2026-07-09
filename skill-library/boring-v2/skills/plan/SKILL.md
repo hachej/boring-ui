@@ -23,6 +23,7 @@ Plan before coding. This is a planning loop: produce the first useful spec/plan,
 6. Run an adversarial plan review when triggered by the model card: challenge scope, flag path, blockers, proof, review budget, and whether the plan is too broad.
 7. Revise for accepted findings.
 8. Mark the next action: `ready-for-agent`, `ready-for-human`, or `needs-info`.
+9. If the next action requires human input, use the `ask_user` tool when available so the request appears in the Boring UI inbox. If unavailable, leave a GitHub issue comment.
 
 ## Plan Shape
 
@@ -78,4 +79,4 @@ Exit only with one of:
 - `ready-for-human` — human judgment/access/approval is required.
 - `needs-info` — specific unanswered questions block safe planning.
 
-Return: state, plan path/comment, slices, blockers, proof path, adversarial review result, and next action.
+Return: state, plan path/comment, slices, blockers, proof path, adversarial review result, and next action. If human input is needed, include the `ask_user` request id or the fallback GitHub comment URL.

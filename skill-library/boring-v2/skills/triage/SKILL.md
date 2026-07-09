@@ -36,6 +36,7 @@ State, exactly one:
    - `merge` — ready but human/merge decision remains
 4. Apply simple labels.
 5. Post/update a short routing comment.
+6. If the issue needs human input, use the `ask_user` tool when available so it appears in the Boring UI inbox. If unavailable, post specific questions as a GitHub issue/PR comment.
 
 ## Routing Comment
 
@@ -52,6 +53,9 @@ Proof expected:
 - Screenshot/demo:
 - Manual steps:
 - Waiver if proof is not possible:
+
+Human request:
+- `ask_user` id or GitHub/PR comment URL, if applicable
 
 Notes:
 - ...

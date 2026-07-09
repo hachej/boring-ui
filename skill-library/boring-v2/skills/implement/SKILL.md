@@ -32,6 +32,7 @@ Build one ready issue/slice. This is an implementation loop: implement → prove
 9. Re-review when fixes are non-trivial or the first review found structural issues.
 10. Open/update PR.
 11. Post proof and handoff card.
+12. If owner review or a human decision is needed, use the `ask_user` tool when available so the request appears in the Boring UI inbox. If `ask_user` is unavailable, leave a clear GitHub/PR comment instead.
 
 ## Proof Requirements
 
@@ -43,6 +44,20 @@ Every implementation must record at least one proof path, preferring automated p
 - **Waiver:** allowed only when proof is genuinely not possible or not worth the cost; explain why and name the residual risk.
 
 Do not say “tested” without the command, screenshot/demo, manual steps, or waiver.
+
+## Human Review Requests
+
+When asking for owner review, visual review, merge approval, or a product decision, prefer `ask_user` if the tool is available. This creates a Boring UI inbox entry and keeps the workspace as the control plane.
+
+Use a concise prompt with:
+
+- PR/issue link
+- decision needed
+- proof summary
+- concrete test steps
+- risk/rollback notes
+
+Fallback: if `ask_user` is unavailable, post the same request as a GitHub/PR comment.
 
 ## PR Handoff Card
 
@@ -68,7 +83,7 @@ Do not say “tested” without the command, screenshot/demo, manual steps, or w
 ## Risk / Rollback
 
 ## Next
-- `ready-for-human` owner review, or
+- `ready-for-human` owner review, preferably via `ask_user`, or
 - merge path if explicitly approved and safe.
 ```
 
@@ -82,3 +97,4 @@ Do not exit as done until:
 - Standards and Spec review are clean, or accepted residual risk is documented.
 - Thermo review ran for risky/broad/structural changes.
 - The next action is clear: owner review, merge path, or blocked reason.
+- Human review/decision requests were sent through `ask_user` when available, or clearly posted as GitHub/PR comments otherwise.

@@ -90,6 +90,8 @@ expand -> migrate batches -> contract
 - thermo review ran for risky/broad/structural changes
 - next action is clear
 
+If the next action needs human review or a decision, use `ask_user` when available so the request appears in the Boring UI inbox. If not available, use a GitHub/PR comment.
+
 ## Human safety defaults
 
 Default to `ready-for-human` for:
