@@ -31,7 +31,8 @@ If a composer recording crosses the threshold:
 - Promotion closes the current rolling recorder at a chunk boundary: wait for the current recorder's final `dataavailable`, include it as the last buffered chunk, and immediately start the next rolling recorder on the same persistent stream before any network round-trip.
 - The browser continues buffering locally while `create-document-and-start` runs. Once the document recording id/token returns, it assigns deterministic indexes/timestamps (`index=0...n`, `startMs/endMs` from original capture start) to all buffered chunks and uploads them; already-captured post-promotion chunks become the next indexes.
 - Subsequent chunks are no longer composer-owned.
-- The composer remains usable while the recording continues in the background.
+- The composer remains usable while the recording continues in the background: users can keep chatting with the agent, ask questions, request summaries, or work with already-transcribed partials.
+- Long recording only constrains additional microphone recording, not normal chat/agent interaction.
 - While any long recording is active, composer mic recording is capped to short mode: auto-promotion is suppressed and the UI must stop-and-transcribe-inline at the threshold or disable composer mic recording. It must not create a second long recording or orphan buffered chunks.
 - If a race still causes `TRANSCRIPTION_RECORDING_ALREADY_ACTIVE` during promotion, the composer immediately closes the current rolling recorder, flushes buffered chunks to inline `/transcribe` if within capabilities, or shows an explicit `Could not save recording because another recording is active` error while preserving the buffered chunks for retry/download. It never silently drops them.
 
@@ -43,6 +44,7 @@ For intentional doctor/consultation transcription:
 - Any trusted frontend entrypoint can create a new markdown file and start a recording directly, for example chat/agent UX, a future dedicated clinic surface, a plugin panel, or another capture channel. Example: `start a consultation recording for Jane Doe` creates `recordings/<timestamp>-jane-doe.md` then starts the document recording.
 - Recording attaches to the current or newly created markdown file regardless of which entrypoint requested it.
 - Transcript updates continuously as chunks finish.
+- Agent tools can read the current partial transcript/sidecar state while recording continues, with clear partial/still-recording status, so the user can ask the agent to summarize, extract action items, or inspect prior segments without stopping capture.
 - Audio chunks are saved next to the document for audit/re-transcription.
 
 ### Global recording bar
