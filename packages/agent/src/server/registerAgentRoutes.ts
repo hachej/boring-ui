@@ -894,10 +894,10 @@ export const registerAgentRoutes: FastifyPluginAsync<RegisterAgentRoutesOptions>
       checkReadiness,
     })
     const hotPiResources = scope.pi.getHotReloadableResources?.() ?? {}
-    const scopeSkillPaths = hasRuntimeProvisioningInput
+    const scopeSkillPaths = governedSkillDiscovery
       ? []
       : scope.pi.additionalSkillPaths ?? []
-    const hotSkillPaths = hasRuntimeProvisioningInput
+    const hotSkillPaths = governedSkillDiscovery
       ? []
       : hotPiResources.additionalSkillPaths ?? []
     const baseHarnessFactory = opts.harnessFactory ?? ((input) => createPiCodingAgentHarness({
@@ -910,9 +910,10 @@ export const registerAgentRoutes: FastifyPluginAsync<RegisterAgentRoutesOptions>
           const currentHotPiResources = scope.pi.getHotReloadableResources?.() ?? hotPiResources
           return {
             ...currentHotPiResources,
-            additionalSkillPaths: hasRuntimeProvisioningInput
-              ? runtimeProvisioning?.skillPaths ?? []
-              : hotSkillPaths,
+            additionalSkillPaths: [
+              ...(hasRuntimeProvisioningInput ? runtimeProvisioning?.skillPaths ?? [] : []),
+              ...hotSkillPaths,
+            ],
           }
         },
       },
@@ -1134,6 +1135,7 @@ export const registerAgentRoutes: FastifyPluginAsync<RegisterAgentRoutesOptions>
   }
 
   const hasRuntimeProvisioningInput = opts.provisionWorkspace !== false && Boolean(opts.provisionRuntime)
+  const governedSkillDiscovery = Boolean(opts.getSkillAccess)
   const staticBinding = requestScopedRuntime
     ? null
     : await getOrCreateRuntimeBinding(sessionId)
@@ -1358,10 +1360,20 @@ export const registerAgentRoutes: FastifyPluginAsync<RegisterAgentRoutesOptions>
       const scope = await getSkillsScopeForRequest(request)
       const binding = await getBindingForRequest(request)
       if (hasRuntimeProvisioningInput) {
-        if (binding.runtimeProvisioning?.readonlySkillRoots) {
-          return normalizeReadonlySkillRoots(binding.runtimeProvisioning.readonlySkillRoots, scope.root)
+        const runtimeReadonlyRoots = binding.runtimeProvisioning?.readonlySkillRoots
+          ? normalizeReadonlySkillRoots(binding.runtimeProvisioning.readonlySkillRoots, scope.root)
+          : readonlySkillRootsFromPaths(binding.runtimeProvisioning?.skillPaths, scope.root)
+        if (!governedSkillDiscovery) {
+          return [...new Set([
+            ...runtimeReadonlyRoots,
+            ...readonlySkillRootsFromPaths([
+              ...(scope.pi.additionalSkillPaths ?? []),
+              '.pi/skills',
+              '.pi/agent/skills',
+            ], scope.root),
+          ])]
         }
-        return readonlySkillRootsFromPaths(binding.runtimeProvisioning?.skillPaths, scope.root)
+        return runtimeReadonlyRoots
       }
       return readonlySkillRootsFromPaths([
         ...(scope.pi.additionalSkillPaths ?? []),
@@ -1430,6 +1442,7 @@ export const registerAgentRoutes: FastifyPluginAsync<RegisterAgentRoutesOptions>
           const binding = await getBindingForRequest(request)
           return [
             ...(binding.runtimeProvisioning?.skillPaths ?? []),
+            ...(governedSkillDiscovery ? [] : scope.pi.additionalSkillPaths ?? []),
           ]
         },
     getPiPackages: staticBinding

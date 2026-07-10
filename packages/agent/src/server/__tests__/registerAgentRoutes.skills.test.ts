@@ -175,6 +175,51 @@ test('runtime-provisioned skillPaths remain readonly when readonlySkillRoots is 
   }
 })
 
+test('non-governed runtime provisioning preserves static and hot Pi skill paths', async () => {
+  const workspaceRoot = await makeTempDir('boring-agent-embed-skills-provisioned-union-')
+  const provisionedRoot = join(workspaceRoot, '.boring-agent', 'skills')
+  const staticRoot = join(workspaceRoot, 'static-skills')
+  const hotRoot = join(workspaceRoot, 'hot-skills')
+  await Promise.all([
+    mkdir(join(provisionedRoot, 'provisioned-skill'), { recursive: true }),
+    mkdir(join(staticRoot, 'static-skill'), { recursive: true }),
+    mkdir(join(hotRoot, 'hot-skill'), { recursive: true }),
+  ])
+  await Promise.all([
+    writeFile(join(provisionedRoot, 'provisioned-skill', 'SKILL.md'), '---\nname: provisioned-skill\ndescription: Provisioned.\n---\n'),
+    writeFile(join(staticRoot, 'static-skill', 'SKILL.md'), '---\nname: static-skill\ndescription: Static.\n---\n'),
+    writeFile(join(hotRoot, 'hot-skill', 'SKILL.md'), '---\nname: hot-skill\ndescription: Hot.\n---\n'),
+  ])
+
+  const app = Fastify({ logger: false })
+  await app.register(registerAgentRoutes, {
+    workspaceRoot,
+    mode: 'direct',
+    pi: {
+      additionalSkillPaths: [staticRoot],
+      getHotReloadableResources: () => ({ additionalSkillPaths: [hotRoot] }),
+    },
+    provisionRuntime: async () => ({
+      changed: false,
+      env: {},
+      pathEntries: [],
+      skillPaths: [provisionedRoot],
+    }),
+  })
+  await app.ready()
+
+  try {
+    const skills = await app.inject({ method: 'GET', url: '/api/v1/agent/skills?refresh=1' })
+    expect(skills.statusCode).toBe(200)
+    const names: string[] = skills.json().skills.map((skill: { name: string }) => skill.name)
+    expect(names).toContain('provisioned-skill')
+    expect(names).toContain('static-skill')
+    expect(names).toContain('hot-skill')
+  } finally {
+    await app.close()
+  }
+})
+
 test('runtime-provisioned readonlySkillRoots are authoritative for .agents skills', async () => {
   const workspaceRoot = await makeTempDir('boring-agent-embed-skills-readonly-explicit-agents-')
   const skillRoot = join(workspaceRoot, '.agents', 'skills', 'locked-plugin')

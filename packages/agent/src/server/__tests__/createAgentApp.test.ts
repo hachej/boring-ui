@@ -310,8 +310,8 @@ test('createAgentApp wires runtime provisioning skill paths into harness and ski
   await mkdir(ambientSkill, { recursive: true })
   await mkdir(hotSkill, { recursive: true })
   await writeFile(join(generatedSkill, 'SKILL.md'), '---\ndescription: Macro transform skill\n---\n# Macro transform\n')
-  await writeFile(join(ambientSkill, 'SKILL.md'), '---\nname: ambient-skill\ndescription: Should not leak into provisioned mode.\n---\n')
-  await writeFile(join(hotSkill, 'SKILL.md'), '---\nname: hot-skill\ndescription: Should not leak into provisioned mode.\n---\n')
+  await writeFile(join(ambientSkill, 'SKILL.md'), '---\nname: ambient-skill\ndescription: Static app skill.\n---\n')
+  await writeFile(join(hotSkill, 'SKILL.md'), '---\nname: hot-skill\ndescription: Hot app skill.\n---\n')
   const harnessFactory = vi.fn(async (input) => ({
     id: 'custom-test-harness',
     placement: 'server' as const,
@@ -350,8 +350,8 @@ test('createAgentApp wires runtime provisioning skill paths into harness and ski
     expect(skills.statusCode).toBe(200)
     const skillNames = skills.json().skills.map((skill: { name: string }) => skill.name)
     expect(skillNames).toContain('macro-transform')
-    expect(skillNames).not.toContain('ambient-skill')
-    expect(skillNames).not.toContain('hot-skill')
+    expect(skillNames).toContain('ambient-skill')
+    expect(skillNames).toContain('hot-skill')
     const save = await app.inject({
       method: 'POST',
       url: '/api/v1/files',
