@@ -1,5 +1,7 @@
 import { and, eq, inArray, lt, or, sql } from 'drizzle-orm'
 import type { PostgresJsDatabase } from 'drizzle-orm/postgres-js'
+
+type BudgetDatabase = PostgresJsDatabase<Record<string, unknown>>
 import { budgetReservations, usageLedger } from '../schema.js'
 import { assertPositiveSafeInteger, chunkIds, lockBudgetTargets, monthPeriodUtc } from './BudgetReservationSupport.js'
 import { computeBudgetSpend } from './BudgetSpendAttribution.js'
@@ -185,7 +187,10 @@ function assertReserveInput(input: ReserveBudgetInput): void {
 }
 
 export class PostgresBudgetReservationStore {
-  constructor(private db: PostgresJsDatabase, private readonly options: { eligibleLegacySources?: readonly string[] } = {}) {}
+  constructor(
+    private db: BudgetDatabase,
+    private readonly options: { eligibleLegacySources?: readonly string[] } = {},
+  ) {}
 
   static monthPeriodUtc(now = new Date()): string {
     return monthPeriodUtc(now).period
@@ -244,7 +249,7 @@ export class PostgresBudgetReservationStore {
     })
   }
 
-  private async reserveInTransaction(tx: PostgresJsDatabase, input: ReserveBudgetInput, now: Date): Promise<ReserveBudgetResult> {
+  private async reserveInTransaction(tx: BudgetDatabase, input: ReserveBudgetInput, now: Date): Promise<ReserveBudgetResult> {
     const period = monthPeriodUtc(now)
     const expiresAt = new Date(now.getTime() + input.ttlSeconds * 1000)
     const expired = await tx
@@ -382,7 +387,7 @@ export class PostgresBudgetReservationStore {
   }
 
   private async reservationTotal(
-    tx: PostgresJsDatabase,
+    tx: BudgetDatabase,
     input: ReserveBudgetInput,
     period: string,
     status: 'active' | 'settled',
@@ -396,7 +401,7 @@ export class PostgresBudgetReservationStore {
     return Number(rows[0]?.total ?? 0)
   }
 
-  private async spend(tx: PostgresJsDatabase, input: ReserveBudgetInput, period: string, start: Date, end: Date) {
+  private async spend(tx: BudgetDatabase, input: ReserveBudgetInput, period: string, start: Date, end: Date) {
     return computeBudgetSpend(
       tx,
       input,
@@ -408,7 +413,7 @@ export class PostgresBudgetReservationStore {
     )
   }
 
-  private async spendTotals(tx: PostgresJsDatabase, input: ReserveBudgetInput, period: string, usageMicros: number) {
+  private async spendTotals(tx: BudgetDatabase, input: ReserveBudgetInput, period: string, usageMicros: number) {
     const heldMicros = await this.reservationTotal(tx, input, period, 'active')
     const settledFallbackMicros = await this.reservationTotal(tx, input, period, 'settled')
     return { usedMicros: usageMicros + settledFallbackMicros, heldMicros }
@@ -418,7 +423,7 @@ export class PostgresBudgetReservationStore {
     await this.db.transaction((tx) => this.finishInTransaction(tx, input, status))
   }
 
-  private async finishInTransaction(tx: PostgresJsDatabase, input: FinishReservationInput, status: Exclude<BudgetReservationStatus, 'active' | 'expired'>): Promise<void> {
+  private async finishInTransaction(tx: BudgetDatabase, input: FinishReservationInput, status: Exclude<BudgetReservationStatus, 'active' | 'expired'>): Promise<void> {
     const scope = input.scope
     const active = await tx.select({
       id: budgetReservations.id,
