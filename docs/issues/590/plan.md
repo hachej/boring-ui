@@ -4,6 +4,8 @@
 
 Add a self-contained trusted plugin, `boring-automation`, for scheduled agent prompts. Users define automations with a cron schedule, timezone, model, and editable prompt, then inspect prior automation runs as normal chat sessions.
 
+This supersedes the recurring-jobs portion of #197. The #197 GitHub issue auto-picker / Boring Claw operator surface is intentionally not part of this plugin slice; it can be revived later as a separate operator plugin if that product direction returns.
+
 The plugin must work first in local CLI mode and later in hosted mode without moving automation-specific concepts into core. Generic seams may still be needed in workspace/agent for headless session launch or hosted plugin persistence; those are explicit gates, not assumed.
 
 ## Solution
@@ -409,6 +411,7 @@ Any such change must be planned as a generic platform seam, not automation-speci
 - New transcript viewer.
 - Moving automation concepts into core.
 - Untrusted/runtime plugin support.
+- Boring Claw / GitHub issue auto-picker operator controls from #197; #590 only carries forward the recurring scheduled-prompt automation part.
 
 ## Open Questions / Gates
 
