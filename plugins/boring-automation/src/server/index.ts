@@ -11,7 +11,6 @@ import type { AutomationStore } from "./store"
 export interface BoringAutomationServerPluginOptions {
   workspaceRoot?: string
   store?: AutomationStore
-  defaultWorkspaceId?: string
 }
 
 export function createBoringAutomationServerPlugin(options: BoringAutomationServerPluginOptions = {}): WorkspaceServerPlugin {
@@ -20,7 +19,7 @@ export function createBoringAutomationServerPlugin(options: BoringAutomationServ
     id: BORING_AUTOMATION_PLUGIN_ID,
     label: BORING_AUTOMATION_PLUGIN_LABEL,
     routes: async (app) => {
-      await automationRoutes(app, { store, defaultWorkspaceId: options.defaultWorkspaceId })
+      await automationRoutes(app, { store })
     },
   })
 }

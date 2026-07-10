@@ -7,53 +7,54 @@ Canonical plan: [`plan.md`](./plan.md)
 - [x] Create issue #590.
 - [x] Close superseded issue #197.
 - [x] Complete thermo plan review loop to GREEN.
-- [ ] Reconcile PR #592 with the green Slice 1 plan.
+- [x] Reconcile PR #592 with the green Slice 1 plan.
 
 ## Slice 1 — required before PR #592 can merge
 
 ### Local store contract
 
-- [ ] Make `FileAutomationStore` single-workspace by construction.
-- [ ] Remove `AutomationStoreCtx` and per-call `workspaceId` parameters.
-- [ ] Remove `workspaceId` from local `Automation` and `AutomationRun` records.
-- [ ] Keep the thin plugin-local store interface only where it earns dependency injection/testability.
-- [ ] Replace shared cross-store conformance claims with concrete file-store behavior tests; design cross-store conformance only when a real second store exists.
+- [x] Make `FileAutomationStore` single-workspace by construction.
+- [x] Remove `AutomationStoreCtx` and per-call `workspaceId` parameters.
+- [x] Remove `workspaceId` from local `Automation` and `AutomationRun` records.
+- [x] Keep the thin plugin-local store interface only where it earns dependency injection/testability.
+- [x] Replace shared cross-store conformance claims with concrete file-store behavior tests; design cross-store conformance only when a real second store exists.
 
 ### Run ownership
 
-- [ ] Remove public HTTP run-create route.
-- [ ] Remove public HTTP run-patch route.
-- [ ] Keep public run history read-only.
-- [ ] Reserve run creation/transitions for the future executor seam.
-- [ ] Keep only `promptSnapshot` and `modelSnapshot` on runs.
-- [ ] Remove `cronSnapshot` and `timezoneSnapshot`; retain `scheduledFor`.
+- [x] Remove public HTTP run-create route.
+- [x] Remove public HTTP run-patch route.
+- [x] Keep public run history read-only.
+- [x] Reserve run creation/transitions for the future executor seam.
+- [x] Keep only `promptSnapshot` and `modelSnapshot` on runs.
+- [x] Remove `cronSnapshot` and `timezoneSnapshot`; retain `scheduledFor`.
 
 ### Storage-neutral model
 
-- [ ] Use explicit `null` for persisted nullable run fields.
-- [ ] Remove absent-key/null-clearing semantics that cannot map cleanly to SQL.
-- [ ] Keep store errors domain-only; map them to HTTP status in routes.
+- [x] Use explicit `null` for persisted nullable run fields.
+- [x] Remove absent-key/null-clearing semantics that cannot map cleanly to SQL.
+- [x] Keep store errors domain-only; map them to HTTP status in routes.
 
 ### Canonical editable Markdown
 
-- [ ] Keep `.pi/automation/prompts/<automation-id>.md` canonical in CLI mode.
-- [ ] Write prompt first and `store.json` last as the commit point.
-- [ ] Test orphan prompt recovery/cleanup eligibility.
-- [ ] Test missing prompt behavior: load empty body and repair by saving again.
+- [x] Keep `.pi/automation/prompts/<automation-id>.md` canonical in CLI mode.
+- [x] Write prompt first and `store.json` last as the commit point.
+- [x] Test orphan prompt recovery/cleanup eligibility.
+- [x] Test missing prompt behavior: load empty body and repair by saving again.
 
 ### Remove speculative scaffolding
 
-- [ ] Remove empty `src/server/schedule.ts`.
-- [ ] Do not add scheduler/session-launch/Postgres files before their slice.
+- [x] Remove empty `src/server/schedule.ts`.
+- [x] Do not add scheduler/session-launch/Postgres files before their slice.
 
 ### Slice 1 proof and review loop
 
-- [ ] Run `pnpm --filter @hachej/boring-automation typecheck`.
-- [ ] Run `pnpm --filter @hachej/boring-automation test`.
-- [ ] Run `pnpm --filter @hachej/boring-automation build`.
-- [ ] Run Claude Code review.
-- [ ] Run Opus 4.8 thermo review.
-- [ ] Fix accepted findings and re-review until GREEN.
+- [x] Run `pnpm --filter @hachej/boring-automation typecheck`.
+- [x] Run `pnpm --filter @hachej/boring-automation test`.
+- [x] Run `pnpm --filter @hachej/boring-automation build`.
+- [x] Run GPT-5.5 implementation/spec review.
+- [x] Run Claude Code review.
+- [x] Run Opus 4.8 thermo review.
+- [x] Fix accepted findings and re-review until GREEN.
 - [ ] Update PR #592 proof/handoff.
 
 ## Slice 0 — seam confirmation before execution/hosted work

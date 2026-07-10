@@ -12,17 +12,24 @@ describe("automation schemas", () => {
     expect(AutomationPatchSchema.parse({ enabled: false })).toEqual({ enabled: false })
   })
 
-  it("validates run metadata create and patch input", () => {
+  it("validates storage-neutral run metadata input", () => {
     expect(AutomationRunCreateSchema.parse({
       automationId: "a1",
       trigger: "manual",
       promptSnapshot: "prompt",
       modelSnapshot: "model-a",
-      cronSnapshot: "0 9 * * *",
-      timezoneSnapshot: "UTC",
-    })).toMatchObject({ automationId: "a1", trigger: "manual" })
+      scheduledFor: null,
+      sessionId: null,
+    })).toMatchObject({ automationId: "a1", trigger: "manual", scheduledFor: null, sessionId: null })
     expect(() => AutomationRunCreateSchema.parse({ automationId: "a1", trigger: "manual" })).toThrow()
+    expect(() => AutomationRunCreateSchema.parse({
+      automationId: "a1",
+      trigger: "manual",
+      promptSnapshot: "prompt",
+      modelSnapshot: "model-a",
+      cronSnapshot: "0 9 * * *",
+    })).toThrow()
     expect(() => AutomationRunPatchSchema.parse({})).toThrow()
-    expect(AutomationRunPatchSchema.parse({ status: "succeeded", totalTokens: 1 })).toEqual({ status: "succeeded", totalTokens: 1 })
+    expect(AutomationRunPatchSchema.parse({ status: "succeeded", totalTokens: null })).toEqual({ status: "succeeded", totalTokens: null })
   })
 })

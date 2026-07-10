@@ -30,21 +30,19 @@ export const PromptUpdateSchema = z.object({
 
 export const AutomationRunCreateSchema = z.object({
   automationId: nonEmptyString,
-  sessionId: nonEmptyString.optional(),
+  sessionId: nonEmptyString.nullable().optional(),
   status: AutomationRunStatusSchema.optional(),
   trigger: AutomationRunTriggerSchema,
-  scheduledFor: isoString.optional(),
-  startedAt: isoString.optional(),
-  completedAt: isoString.optional(),
-  durationMs: nonNegativeInteger.optional(),
-  inputTokens: nonNegativeInteger.optional(),
-  outputTokens: nonNegativeInteger.optional(),
-  totalTokens: nonNegativeInteger.optional(),
+  scheduledFor: isoString.nullable().optional(),
+  startedAt: isoString.nullable().optional(),
+  completedAt: isoString.nullable().optional(),
+  durationMs: nonNegativeInteger.nullable().optional(),
+  inputTokens: nonNegativeInteger.nullable().optional(),
+  outputTokens: nonNegativeInteger.nullable().optional(),
+  totalTokens: nonNegativeInteger.nullable().optional(),
   promptSnapshot: z.string(),
   modelSnapshot: nonEmptyString,
-  cronSnapshot: nonEmptyString,
-  timezoneSnapshot: nonEmptyString,
-  error: z.string().optional(),
+  error: z.string().nullable().optional(),
 }).strict()
 
 export const AutomationRunPatchSchema = z.object({
@@ -61,7 +59,6 @@ export const AutomationRunPatchSchema = z.object({
 }).strict().refine((value) => Object.keys(value).length > 0, "at least one field must be provided")
 
 export const IdParamsSchema = z.object({ id: nonEmptyString })
-export const RunIdParamsSchema = z.object({ id: nonEmptyString, runId: nonEmptyString })
 
 export type AutomationCreateInput = z.infer<typeof AutomationCreateSchema>
 export type AutomationPatchInput = z.infer<typeof AutomationPatchSchema>
