@@ -120,10 +120,10 @@ Patch semantics must be storage-neutral before a second store is added: nullable
 
 - Trusted plugin shape: `packages/workspace/docs/PLUGIN_SYSTEM.md` and `PLUGIN_STRUCTURE.md`.
 - Model override: Pi chat `PromptPayload.model` is honored.
-- Headless session launch: no clean public plugin API confirmed; Slice 0 must resolve it.
+- Headless session launch: public `Agent.send()` is canonical and already creates normal sessions, forwards model/context, and streams terminal events; Slice 3A must expose the host's existing workspace-scoped agent through a minimal trusted dispatcher.
 - Chat opening: plugin-facing `WorkspaceShellCapabilities.openDetachedChat(sessionId)` exists.
-- Token usage: existing metering lives under `packages/agent/src/server/pi-chat/metering.ts` and governance code.
-- Hosted workspace identity: raw `x-boring-workspace-id` is insufficient authorization; hosted composition must provide verified identity.
+- Token usage: the executor aggregates live Pi `usage` events from `Agent.send()`; it must not query billing tables directly.
+- Hosted workspace identity: raw `x-boring-workspace-id` is insufficient authorization; hosted composition injects a verified actor resolver.
 - Error boundary: stores throw domain errors only; route code maps those errors to HTTP status and persistence code never carries HTTP status codes.
 
 ## Test Seams
@@ -182,20 +182,18 @@ Execution slice:
 
 ## Slices
 
-### Slice 0: Seam confirmation spike
+### Slice 0: Seam confirmation spike — complete
 
-**Delivers:**
-- chosen headless session-launch path;
-- chosen trigger model: external host/CLI trigger or a justified generic lifecycle seam;
-- confirmed hosted topology: persistent/serverless, sandbox boundaries, and instance count;
-- confirmed hosted migration and verified-workspace-identity ownership;
-- a revised plan for execution and hosted work based on those findings.
+**Delivered:**
+- canonical headless path: inject the host's existing workspace-scoped `Agent` dispatcher and consume `Agent.send()`;
+- trigger model: plugin-owned deterministic due policy invoked by CLI/OS cron or a host/platform trigger; no hidden timer;
+- hosted topology: orchestration on the authenticated public host, execution through the existing sandbox/remote-worker runtime, transcripts on `BORING_AGENT_SESSION_ROOT`;
+- hosted gates: generic/app-owned migration registration, verified actor resolver, service principal, and billing owner decision;
+- token path: aggregate live Pi `usage` events for the first executor slice.
 
-**Blocked by:** None.
+**Proof:** [`seam-spike.md`](./seam-spike.md) with code references, decisions, rejected alternatives, and residual risks.
 
-**Proof:** `docs/issues/590/seam-spike.md` with code references, decisions, and rejected alternatives.
-
-**Review budget:** inside; mandatory before any execution or hosted slice.
+**Review budget:** inside.
 
 ### Slice 1: Local plugin shell, file store, and safe routes
 
@@ -232,19 +230,69 @@ Execution slice:
 
 **Review budget:** inside.
 
-### Later execution and hosted slices
+### Slice 3A: Generic workspace agent dispatcher
 
-**Status:** `needs-replan-after-slice-0`.
+**Delivers:**
+- an automation-agnostic trusted-host capability that resolves the existing workspace runtime;
+- delegation to the existing `Agent.send()`, `interrupt()`, and `stop()` rather than creating a second runtime;
+- an explicit trust boundary: upstream actor resolution authorizes context; the dispatcher trusts that caller-supplied context;
+- tests for workspace/user context, normal session creation, model forwarding, terminal streaming, interruption/stop, and failure behavior.
 
-Slice 0 must determine the minimal vertical slices for:
+**Blocked by:** None.
 
-- executor-owned manual run + headless session launch;
-- due-run schedule policy and trigger integration;
-- hosted persistence/composition/duplicate-run protection;
-- token attribution;
-- final UI polish.
+**Review budget:** medium; public/generic agent-workspace seam.
 
-Do not pre-commit APIs, locking mechanisms, migration ownership, or hosted store semantics before Slice 0 resolves topology.
+### Slice 3B: Plugin manual-run executor
+
+**Delivers:**
+- executor-owned run creation and transitions;
+- prompt/model snapshots;
+- normal Pi session creation via Slice 3A;
+- live usage aggregation with missing usage represented as unknown;
+- deterministic `Run now` operation and proof linking to the normal session.
+
+**Blocked by:** Slice 3A.
+
+**Review budget:** medium.
+
+### Slice 4: Pure due policy and external trigger adapter
+
+**Delivers:**
+- cron/timezone validation;
+- deterministic `findDue(now)` / `runDue(now)`;
+- no-backfill, overlap, DST, and stale-run policies;
+- local CLI/OS-cron invocation and a host-callable adapter;
+- no plugin-owned background timer.
+
+**Blocked by:** Slice 3B.
+
+**Review budget:** medium.
+
+### Slice 5: Hosted persistence and verified actor composition
+
+**State:** `ready-for-human` before implementation.
+
+**Delivers after owner decisions:**
+- app-owned registration of plugin migrations using core's DB connection;
+- plugin-backed Postgres store;
+- verified actor resolver for hosted routes;
+- stored automation owner and fail-closed reassignment behavior;
+- duplicate-safe scheduled-occurrence lease.
+
+**Blocked by:** owner decisions on migration registration, billing identity, and hosted automation role policy.
+
+**Review budget:** high.
+
+### Slice 6: Hosted platform trigger
+
+**Delivers:**
+- authenticated internal service-principal invocation;
+- duplicate-safe hosted due runs;
+- operational proof across restart/multiple invocations.
+
+**Blocked by:** Slice 5.
+
+**Review budget:** high.
 
 ## Schedule Policy To Preserve During Replan
 
@@ -271,22 +319,23 @@ Not a wide refactor. Any missing generic workspace/agent capability must be plan
 
 ## Open Questions / Gates
 
-All are owned by Slice 0:
+Confirmed by Slice 0:
 
-1. What is the supported headless session-launch API?
-2. What invokes due-run evaluation in CLI and hosted deployments?
-3. What is the real hosted topology and sandbox boundary?
-4. Who owns hosted plugin schema migrations?
-5. How does hosted composition provide verified workspace/user identity?
-6. Is usage queryable after a run, or must the executor capture it live?
+- headless execution uses the host's existing `Agent.send()` through a minimal trusted dispatcher seam;
+- due evaluation is externally invoked, never a hidden plugin timer;
+- hosted orchestration stays on the public host while sandbox/worker executes workspace operations;
+- first-pass token totals come from live usage events, not direct billing-ledger queries.
+
+Owner decisions still required before Slice 5:
+
+1. Should hosted migrations use app-owned explicit registration (recommended first) or a generic trusted-plugin migration contribution?
+2. Is scheduled usage billed to the automation owner (recommended) or a future workspace billing account?
+3. Which roles may create, edit, disable, delete, or reassign hosted automations?
 
 ## Loop Exit
 
-- State: `ready-for-agent` for the revised Slice 1 only after PR #592 is reconciled with this plan.
-- Plan path: `docs/issues/590/plan.md`.
-- Thermo plan reviews:
-  - initial findings: `docs/issues/590/thermo-plan-code-quality-opus48.md`;
-  - green second pass: `docs/issues/590/thermo-plan-code-quality-opus48-pass2.md`;
-  - final green confirmation: `docs/issues/590/thermo-plan-code-quality-opus48-final.md`.
-- Blocker: current Slice 1 implementation must remove public run mutation routes, optional per-call workspace context, SQL-incompatible absent-key patch semantics, and empty future scaffolding before merge.
-- Next action: amend PR #592 to match revised Slice 1, then re-run implementation proof and thermo review.
+- Slice 0 state: complete; see `docs/issues/590/seam-spike.md`.
+- `ready-for-agent`: Slice 2 UI, Slice 3A generic dispatcher, then Slice 3B local manual executor.
+- `ready-for-human`: Slice 5 hosted migration/billing/role decisions.
+- First hosted blockers: owner decisions on migration registration, scheduled billing identity, and hosted automation role policy.
+- Next recommended work: Slice 2 can proceed independently; execution should start with Slice 3A.
