@@ -1,4 +1,5 @@
 import { readFile, stat } from 'node:fs/promises'
+import { basename, normalize } from 'node:path/posix'
 
 export interface ReadonlySkillFileStat {
   kind: 'file' | 'directory'
@@ -37,14 +38,16 @@ function safeSkillPathSegments(path: string): string[] | null {
 }
 
 export function isGeneratedReadonlySkillPath(path: string): boolean {
-  if (path.startsWith('/')) return false
-  const segments = safeSkillPathSegments(path)
-  if (!segments || segments[0] !== '.boring-agent') return false
+  if (path.startsWith('/') || path.includes('\0')) return false
+  const canonical = normalize(path)
+  if (canonical === '..' || canonical.startsWith('../')) return false
+  const segments = canonical.split('/')
+  if (segments[0] !== '.boring-agent') return false
   return segments[1] === 'skills' || segments[1] === 'skills-users'
 }
 
 export function isGeneratedReadonlySkillFilePath(path: string): boolean {
-  return path.endsWith('/SKILL.md') && isGeneratedReadonlySkillPath(path)
+  return basename(normalize(path)) === 'SKILL.md' && isGeneratedReadonlySkillPath(path)
 }
 
 export function isReadonlySkillFilePath(path: string): boolean {
