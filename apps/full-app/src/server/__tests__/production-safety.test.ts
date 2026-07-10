@@ -35,12 +35,13 @@ describe('production full-app safety guards', () => {
     ).not.toThrow()
   })
 
-  it('keeps the full-app web image as the default non-root Docker target', () => {
+  it('keeps the full-app web image as the default privilege-dropping Docker target', () => {
     const dockerfile = readFileSync(dockerfilePath, 'utf8')
 
     expect(dockerfile).toMatch(/FROM node:22-slim AS runtime/)
     expect(dockerfile).toMatch(/boring\.role="web"/)
-    expect(dockerfile).toMatch(/USER boring\nCMD \["node", "apps\/full-app\/dist\/server\/main\.js"\]/)
+    expect(dockerfile).toMatch(/COPY apps\/full-app\/docker\/web-entrypoint\.sh \/usr\/local\/bin\/web-entrypoint/)
+    expect(dockerfile).toMatch(/ENTRYPOINT \["\/usr\/local\/bin\/web-entrypoint"\]\nCMD \["node", "apps\/full-app\/dist\/server\/main\.js"\]/)
     expect(dockerfile.trimEnd()).toMatch(/FROM runtime AS web-runtime$/)
   })
 

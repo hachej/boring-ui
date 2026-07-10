@@ -1,4 +1,4 @@
-import { mkdtemp } from "node:fs/promises";
+import { mkdir, mkdtemp, symlink, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 
@@ -89,5 +89,30 @@ describe("createReadonlyProjectionOperations", () => {
       .rejects.toMatchObject({ code: READONLY_PROJECTION_INVALID_PATH_CODE });
     await expect(ops.read({ filesystem: COMPANY_CONTEXT_FILESYSTEM_ID, path: "/company/../finance/budget.md" }))
       .rejects.toMatchObject({ code: READONLY_PROJECTION_INVALID_PATH_CODE });
+  });
+
+  test("rejects symlinks planted inside a projection", async () => {
+    const projectionRoot = await mkdtemp(join(tmpdir(), "boring-company-symlink-projection-"));
+    const outside = await mkdtemp(join(tmpdir(), "boring-company-symlink-outside-"));
+    await mkdir(join(projectionRoot, "company", "hr"), { recursive: true });
+    await writeFile(join(projectionRoot, "company", "hr", "policy.md"), "safe", "utf8");
+    await writeFile(join(outside, "secret.md"), "secret", "utf8");
+    await symlink(join(outside, "secret.md"), join(projectionRoot, "company", "hr", "escape.md"));
+    await symlink(outside, join(projectionRoot, "company", "hr", "escape-dir"));
+    const ops = createReadonlyProjectionOperations({
+      filesystem: COMPANY_CONTEXT_FILESYSTEM_ID,
+      projectionRoot,
+    });
+
+    await expect(ops.read({ filesystem: COMPANY_CONTEXT_FILESYSTEM_ID, path: "/company/hr/escape.md" }))
+      .rejects.toMatchObject({ code: READONLY_PROJECTION_INVALID_PATH_CODE });
+    await expect(ops.list({ filesystem: COMPANY_CONTEXT_FILESYSTEM_ID, path: "/company/hr" }))
+      .rejects.toMatchObject({ code: READONLY_PROJECTION_INVALID_PATH_CODE });
+    await expect(ops.list({ filesystem: COMPANY_CONTEXT_FILESYSTEM_ID, path: "/company/hr/escape-dir" }))
+      .rejects.toMatchObject({ code: READONLY_PROJECTION_INVALID_PATH_CODE });
+    await expect(ops.stat({ filesystem: COMPANY_CONTEXT_FILESYSTEM_ID, path: "/company/hr/escape.md" }))
+      .rejects.toMatchObject({ code: READONLY_PROJECTION_INVALID_PATH_CODE });
+    await expect(ops.read({ filesystem: COMPANY_CONTEXT_FILESYSTEM_ID, path: "/company/hr/policy.md" }))
+      .resolves.toMatchObject({ content: "safe" });
   });
 });

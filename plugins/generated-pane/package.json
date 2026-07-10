@@ -1,6 +1,6 @@
 {
   "name": "@hachej/boring-generated-pane",
-  "version": "0.1.64",
+  "version": "0.1.73",
   "type": "module",
   "private": false,
   "license": "MIT",
@@ -80,7 +80,7 @@
     "react": "^19.2.7",
     "react-dom": "^19.2.7",
     "tsup": "^8.4.0",
-    "typescript": "~5.9.3",
+    "typescript": "~6.0.3",
     "vitest": "^4.1.9"
   }
 }

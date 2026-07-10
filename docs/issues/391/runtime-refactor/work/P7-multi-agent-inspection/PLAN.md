@@ -1,5 +1,8 @@
 # P7-multi-agent-inspection — Plan
 
+Status: post-v1; not a #391 v1 exit gate. Route/scope/catalog/info are the
+first slice; search, external hooks, and subagent grants are later slices.
+
 > Phase: Phase 7 — Multi-agent routing/session/search · Work order: [TODO.md](./TODO.md) · Handoff: [HANDOFF.md](./HANDOFF.md)
 > Ordering authority: [INDEX.md](../../INDEX.md) · Vision: [VISION.md](../../VISION.md)
 
@@ -8,10 +11,17 @@
 - [08-pluggable-agent-surfaces.md](../../architecture/08-pluggable-agent-surfaces.md) — the steering surface: the workspace consumes the same public contracts (the scrubbed agent-list endpoint plus `/info`), never private core hooks; two-handles rule.
 
 ## Design context
-Phase 7 makes agents individually addressable within one workspace. Routes resolve a validated `agentId` per request via the canonical `/api/v1/agents/:agentId/...` path-prefix family (locked at pass 3 — no header form) against the Phase 6a `AgentRegistry`; unknown agents fail closed. `agentId` enters the binding scope `key` for all agents, the `sessionNamespace` for non-default agents only (the default agent keeps its pre-P7 namespace so on-disk JSONL sessions load unchanged), and session metadata for validation/search/filtering. `sessionId` remains runtime-owned and globally unique across agents; event-store/replay stays keyed by `sessionId` only. Each `(workspaceId, agentId)` gets its own tool catalog and `ReadyStatusTracker`. It adds a boring-bash-free scoped session-index/search API backed by a derived `state.db` table, external-harness hook target resolution routed onto the single T1 approval channel, the public `GET /api/v1/agents` list endpoint plus `/info` inspection endpoint (the steering mechanisms S3 consumes), surface adapters binding one `agentId` per addressing entry, and the first real subagent environment grant (E1-deferred BBE1-005). No competing registry — it scopes against Phase 6a's.
+Phase 7 makes agents individually addressable within one workspace. Routes
+resolve trusted `agentId` against P6-R. Internal stores/caches use a validated
+structured scope containing tenant/workspace, agent, and public session id;
+UUID uniqueness is not authorization. Each agent gets its own catalog and
+readiness. Route/scope/catalog/info form the first P7 slice; derived `agent.db`
+search, external hooks, and subagent grants are separately reviewable later
+slices.
 
 ## Deliverables
-Unchanged from v1 (`agentId`-scoped routes against the Phase 6a `AgentRegistry`; per-agent catalog/readiness; scoped `state.db` session index/search; external hook target resolution). The binding/route scope key includes `agentId` for **all** agents; **`sessionNamespace` includes `agentId` for non-default agents only — the default agent keeps its pre-P7 `sessionNamespace` unchanged** as an explicit on-disk JSONL-compatibility exception.
+Post-v1 P7 keeps JSONL compatibility for the default agent while using
+structured trusted scope for authorization and derived `agent.db` indexes.
 
 v2 additions:
 - surface adapters address agents through the same `agentId` scoping; a Slack channel or embed binds to one `agentId` per addressing entry;

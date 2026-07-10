@@ -3,25 +3,68 @@
     "target": "ES2022",
     "module": "ESNext",
     "moduleResolution": "Bundler",
-    "lib": ["ES2022", "DOM", "DOM.Iterable"],
+    "lib": [
+      "ES2022",
+      "DOM",
+      "DOM.Iterable"
+    ],
     "jsx": "react-jsx",
     "strict": true,
     "skipLibCheck": true,
     "resolveJsonModule": true,
-    "types": ["node"],
+    "types": [
+      "node"
+    ],
     "paths": {
-      "@hachej/boring-agent/shared": ["../agent/src/shared/index.ts"],
-      "@hachej/boring-agent/server": ["../agent/src/server/index.ts"],
-      "@hachej/boring-agent/eval": ["../agent/src/eval/index.ts"],
-      "@hachej/boring-ask-user/front": ["../../plugins/ask-user/src/front/index.tsx"],
-      "@hachej/boring-ask-user/server": ["../../plugins/ask-user/src/server/index.ts"],
-      "@hachej/boring-ask-user/shared": ["../../plugins/ask-user/src/shared/index.ts"],
-      "@hachej/boring-workspace": ["../workspace/src/index.ts"],
-      "@hachej/boring-workspace/server": ["../workspace/src/server/index.ts"],
-      "@hachej/boring-workspace/app/server": ["../workspace/src/app/server/index.ts"],
-      "@hachej/boring-ui-plugin-cli": ["../plugin-cli/src/index.ts"]
-    }
+      "@hachej/boring-agent/front": [
+        "../agent/src/front/index.ts"
+      ],
+      "@hachej/boring-agent/shared": [
+        "../agent/src/shared/index.ts"
+      ],
+      "@hachej/boring-agent/server": [
+        "../agent/src/server/index.ts"
+      ],
+      "@hachej/boring-agent/eval": [
+        "../agent/src/eval/index.ts"
+      ],
+      "@hachej/boring-ask-user/front": [
+        "../../plugins/ask-user/src/front/index.tsx"
+      ],
+      "@hachej/boring-ask-user/server": [
+        "../../plugins/ask-user/src/server/index.ts"
+      ],
+      "@hachej/boring-ask-user/shared": [
+        "../../plugins/ask-user/src/shared/index.ts"
+      ],
+      "@hachej/boring-diagram/front": [
+        "../../plugins/diagram/src/front/index.tsx"
+      ],
+      "@hachej/boring-diagram/shared": [
+        "../../plugins/diagram/src/shared/index.ts"
+      ],
+      "@hachej/boring-workspace": [
+        "../workspace/src/index.ts"
+      ],
+      "@hachej/boring-workspace/server": [
+        "../workspace/src/server/index.ts"
+      ],
+      "@hachej/boring-workspace/app/server": [
+        "../workspace/src/app/server/index.ts"
+      ],
+      "@hachej/boring-ui-plugin-cli": [
+        "../plugin-cli/src/index.ts"
+      ]
+    },
+    "ignoreDeprecations": "6.0"
   },
-  "include": ["src/**/*", "scripts/**/*"],
-  "exclude": ["node_modules", "dist", "public"]
+  "include": [
+    "src/**/*",
+    "scripts/**/*"
+  ],
+  "exclude": [
+    "node_modules",
+    "dist",
+    "public"
+  ]
 }

@@ -11,6 +11,10 @@ import {
 } from "../front/provider"
 import { createShadcnTheme } from "../front/theme/codemirror-theme"
 
+vi.mock("../plugins/filesystemPlugin/front/file-tree/dndManager", () => ({
+  getFileTreeDndManager: () => undefined,
+}))
+
 // ---------------------------------------------------------------------------
 // localStorage mock
 // ---------------------------------------------------------------------------

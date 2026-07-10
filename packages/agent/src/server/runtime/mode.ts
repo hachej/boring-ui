@@ -69,7 +69,7 @@ export interface ModeContext {
 }
 
 export interface RuntimeFilesystemBindingOperations {
-  read(descriptor: { filesystem: string; path: string }): Promise<{ content: string; metadata?: unknown }>
+  read(descriptor: { filesystem: string; path: string }): Promise<{ content: string; mtimeMs?: number; metadata?: unknown }>
   list(descriptor: { filesystem: string; path: string }): Promise<{ entries: string[]; metadata?: unknown }>
   find(descriptor: { filesystem: string; path: string }, pattern: string, options?: { limit?: number; offset?: number }): Promise<{ paths: string[]; metadata?: unknown }>
   grep(descriptor: { filesystem: string; path: string }, pattern: string, options?: { limit?: number; offset?: number }): Promise<{ matches: Array<{ path: string; line: number; text: string }>; metadata?: unknown }>

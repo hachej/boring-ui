@@ -1,6 +1,6 @@
 {
   "name": "@hachej/boring-tasks",
-  "version": "0.1.61",
+  "version": "0.1.73",
   "type": "module",
   "private": false,
   "license": "MIT",
@@ -67,7 +67,7 @@
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
     "tsup": "^8.4.0",
-    "typescript": "~5.9.3",
-    "vitest": "^3.2.6"
+    "typescript": "~6.0.3",
+    "vitest": "^4.1.9"
   }
 }
