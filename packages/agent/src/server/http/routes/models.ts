@@ -49,8 +49,8 @@ export type ModelFilterResult = {
 }
 
 export interface ModelsRoutesOptions {
-  /** Read host env/Pi settings to choose a default model. Disable for pure profiles. */
-  allowConfiguredDefaultModel?: boolean
+  /** Allow Pi's process-cwd/global settings fallback. Disable for pure profiles. */
+  allowPiSettingsDefaultModel?: boolean
   filterModels?: (
     ctx: ModelFilterContext,
     models: readonly ModelSummary[],
@@ -96,9 +96,9 @@ export function modelsRoutes(
       if (a.provider !== b.provider) return a.provider.localeCompare(b.provider)
       return a.id.localeCompare(b.id)
     })
-    const configuredDefaultModel = opts.allowConfiguredDefaultModel === false
-      ? undefined
-      : readConfiguredDefaultModel()
+    const configuredDefaultModel = readConfiguredDefaultModel({
+      allowPiSettings: opts.allowPiSettingsDefaultModel !== false,
+    })
     const defaultModel = configuredDefaultModel
       && models.some((m) => m.available && m.provider === configuredDefaultModel.provider && m.id === configuredDefaultModel.id)
       ? configuredDefaultModel

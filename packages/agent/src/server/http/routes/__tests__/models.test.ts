@@ -82,11 +82,11 @@ describe('modelsRoutes', () => {
     }
   })
 
-  it('does not read an ambient configured default when the profile disables it', async () => {
+  it('keeps the host default when the profile disables only Pi settings fallback', async () => {
     configureInfomaniakModels()
 
     const app = Fastify({ logger: false })
-    await app.register(modelsRoutes, { allowConfiguredDefaultModel: false })
+    await app.register(modelsRoutes, { allowPiSettingsDefaultModel: false })
     await app.ready()
 
     try {
@@ -94,7 +94,7 @@ describe('modelsRoutes', () => {
       expect(res.statusCode).toBe(200)
       expect(res.json().defaultModel).toEqual({
         provider: 'infomaniak',
-        id: 'moonshotai/Kimi-K2.6',
+        id: 'Qwen/Qwen3.5-122B-A10B-FP8',
       })
     } finally {
       await app.close()

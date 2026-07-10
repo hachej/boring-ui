@@ -130,6 +130,8 @@ function createHeadlessResources(options: {
     noSkills: true,
     noPromptTemplates: true,
     noThemes: true,
+    systemPrompt: "",
+    appendSystemPrompt: [],
     systemPromptOverride: () => HEADLESS_SYSTEM_PROMPT,
     appendSystemPromptOverride: () =>
       options.systemPromptAppend ? [options.systemPromptAppend] : [],
@@ -312,8 +314,11 @@ function resolveRequestedModel(
   return model;
 }
 
-function resolveDefaultModel(modelRegistry: ModelRegistry) {
-  const configured = readConfiguredDefaultModel();
+function resolveDefaultModel(
+  modelRegistry: ModelRegistry,
+  options: { allowPiSettings?: boolean } = {},
+) {
+  const configured = readConfiguredDefaultModel(options);
   if (configured) {
     const model = modelRegistry.find(configured.provider, configured.id);
     if (model) return model;
@@ -695,12 +700,11 @@ export function createPiCodingAgentHarness(opts: {
     }
 
     const resolvedModel = resolveRequestedModel(modelRegistry, input, { strict: pi.strictModelResolution });
-    // Prefer an explicit available selection. Workspace mode keeps its
-    // configured default; headless mode leaves fallback to Pi's empty
-    // in-memory settings plus the credential-backed registry.
-    const model = resolvedModel ?? (pi.systemPromptMode === "headless"
-      ? undefined
-      : resolveDefaultModel(modelRegistry));
+    // Prefer an explicit available selection. Headless mode keeps explicit
+    // host/provider defaults but skips Pi's file-backed settings fallback.
+    const model = resolvedModel ?? resolveDefaultModel(modelRegistry, {
+      allowPiSettings: pi.systemPromptMode !== "headless",
+    });
 
     // Workspace mode keeps Pi's resource composition and Boring's path/Python
     // guidance. Headless mode starts from explicit prompt inputs and trusted

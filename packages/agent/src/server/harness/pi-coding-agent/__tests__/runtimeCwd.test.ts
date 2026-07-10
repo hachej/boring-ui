@@ -134,13 +134,13 @@ vi.mock("@mariozechner/pi-coding-agent", () => ({
     async reload() { /* no-op */ }
     getSystemPrompt() {
       const ambientSystemPrompt = "Ambient SYSTEM.md says AGENTS.md can read/edit/write files.";
-      if (this.opts.systemPrompt !== undefined) return this.opts.systemPrompt;
-      return this.opts.systemPromptOverride?.(ambientSystemPrompt) ?? ambientSystemPrompt;
+      const source = this.opts.systemPrompt ?? ambientSystemPrompt;
+      return this.opts.systemPromptOverride?.(source) ?? source;
     }
     getAppendSystemPrompt() {
       const ambientAppend = ["Ambient APPEND_SYSTEM.md from AGENTS.md"];
-      if (this.opts.appendSystemPrompt !== undefined) return this.opts.appendSystemPrompt;
-      return this.opts.appendSystemPromptOverride?.(ambientAppend) ?? ambientAppend;
+      const source = this.opts.appendSystemPrompt ?? ambientAppend;
+      return this.opts.appendSystemPromptOverride?.(source) ?? source;
     }
     getSkills() {
       return this.opts.noSkills ? { skills: [], diagnostics: [] } : { skills: ["ambient"], diagnostics: [] };
@@ -262,8 +262,8 @@ describe("runtime cwd separation", () => {
         noPromptTemplates: true,
         noThemes: true,
       });
-      expect(mockResourceLoaderOptions[0]).not.toHaveProperty("systemPrompt");
-      expect(mockResourceLoaderOptions[0]).not.toHaveProperty("appendSystemPrompt");
+      expect(mockResourceLoaderOptions[0]?.systemPrompt).toBe("");
+      expect(mockResourceLoaderOptions[0]?.appendSystemPrompt).toEqual([]);
       expect(mockResourceLoaderOptions[0]?.systemPromptOverride("ambient path source")).toBe("You are a helpful assistant.");
       expect(mockResourceLoaderOptions[0]?.appendSystemPromptOverride(["ambient path source"])).toEqual([
         "relative/path/to/host-prompt.md",
@@ -313,7 +313,6 @@ describe("runtime cwd separation", () => {
     });
 
     expect(getHotReloadableResources).not.toHaveBeenCalled();
-    expect(mockCreateAgentSessionConfigs[0]?.model).toBeUndefined();
     expect(mockCreateAgentSessionConfigs[0]?.settingsManager).toBe(mockInMemorySettingsManager);
     expect(mockSettingsManagerCreate).not.toHaveBeenCalled();
     expect(mockGetAgentDir).not.toHaveBeenCalled();

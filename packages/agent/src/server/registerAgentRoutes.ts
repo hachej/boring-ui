@@ -1304,7 +1304,7 @@ async function registerPureAgentRoutes(
       defaultWorkspaceId: false,
     },
     models: {
-      allowConfiguredDefaultModel: false,
+      allowPiSettingsDefaultModel: false,
       filterModels: opts.filterModels,
     },
     catalog: staticBinding
