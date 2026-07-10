@@ -23,7 +23,7 @@ function automation(overrides: Partial<Automation> = {}): Automation {
     enabled: true,
     cron: "0 9 * * *",
     timezone: "UTC",
-    model: "gpt-5.5",
+    model: "test:gpt-5.5",
     promptRef: ".pi/automation/prompts/auto-1.md",
     createdAt: "2026-01-01T00:00:00.000Z",
     updatedAt: "2026-01-02T00:00:00.000Z",
@@ -63,6 +63,7 @@ function createClient(overrides: Partial<Record<keyof AutomationClient, ReturnTy
     deleteAutomation: vi.fn(async () => undefined),
     getPrompt: vi.fn(async () => "# Prompt"),
     updatePrompt: vi.fn(async () => undefined),
+    runNow: vi.fn(async () => automationRun()),
     listRuns: vi.fn(async () => []),
     ...overrides,
   } as unknown as AutomationClient & Record<keyof AutomationClient, ReturnType<typeof vi.fn>>
@@ -224,6 +225,30 @@ describe("AutomationPanel", () => {
       expect(screen.getByLabelText("Markdown prompt")).toHaveValue("# Fresh canonical prompt")
     })
     expect(client.getPrompt).toHaveBeenCalledTimes(2)
+  })
+
+  it("runs once, disables duplicate clicks, and inserts the completed run into expanded history", async () => {
+    const existing = automation()
+    const run = automationRun()
+    const pending = deferred<AutomationRun>()
+    const client = createClient({
+      listAutomations: vi.fn(async () => [existing]),
+      runNow: vi.fn(() => pending.promise),
+    })
+
+    renderPanel(client)
+    await screen.findByText(existing.title)
+    const runButton = screen.getByRole("button", { name: `Run ${existing.title} now` })
+    fireEvent.click(runButton)
+    fireEvent.click(runButton)
+
+    expect(runButton).toBeDisabled()
+    expect(client.runNow).toHaveBeenCalledTimes(1)
+    await act(async () => pending.resolve(run))
+
+    expect(await screen.findByText("Automation finished. Open its session from run history.")).toBeInTheDocument()
+    expect(screen.getByText("Succeeded")).toBeInTheDocument()
+    expect(runButton).not.toBeDisabled()
   })
 
   it("expands run history, disables no-session runs, opens sessions, and reports shell open failures", async () => {

@@ -15,8 +15,9 @@ import {
   type CreateAgentAppOptions,
   type PiExtensionFactory,
   type ProvisionWorkspaceRuntimeOptions,
+  type WorkspaceAgentDispatcherResolver,
 } from "@hachej/boring-agent/server"
-import type { FastifyInstance } from "fastify"
+import type { FastifyInstance, FastifyRequest } from "fastify"
 import { existsSync, mkdirSync, readFileSync } from "node:fs"
 import { dirname, isAbsolute, join, resolve } from "node:path"
 import { homedir } from "node:os"
@@ -85,6 +86,11 @@ type WorkspaceAgentCreateOptions = Omit<
 export interface WorkspaceAgentServerPluginContext {
   workspaceRoot: string
   bridge: ReturnType<typeof createInMemoryBridge>
+  /** Available only to boot-time internal package plugins in standalone/local composition. */
+  trusted?: {
+    workspaceAgentDispatcherResolver: WorkspaceAgentDispatcherResolver
+    actorResolver: (request: FastifyRequest) => Promise<{ workspaceId: string; userId: string }> | { workspaceId: string; userId: string }
+  }
 }
 
 /**
@@ -357,6 +363,7 @@ export interface ResolveWorkspaceAgentServerPluginCollectionOptions
   defaultPluginPackages?: string[]
   appRoot?: string
   plugins?: WorkspacePluginEntry[]
+  trustedPluginContext?: WorkspaceAgentServerPluginContext["trusted"]
 }
 
 export function buildWorkspaceContextPrompt(options: { pluginAuthoringEnabled?: boolean } = {}): string {
@@ -432,7 +439,8 @@ export function collectWorkspaceAgentServerPlugins(
 export async function resolveWorkspaceAgentServerPluginCollection(
   opts: ResolveWorkspaceAgentServerPluginCollectionOptions,
 ): Promise<WorkspaceAgentServerPluginCollection> {
-  const ctx: WorkspaceAgentServerPluginContext = { workspaceRoot: opts.workspaceRoot, bridge: opts.bridge }
+  const baseCtx: WorkspaceAgentServerPluginContext = { workspaceRoot: opts.workspaceRoot, bridge: opts.bridge }
+  const trustedCtx: WorkspaceAgentServerPluginContext = { ...baseCtx, trusted: opts.trustedPluginContext }
   const defaultPluginPackagePaths = resolveDefaultWorkspacePluginPackagePaths({
     workspaceRoot: opts.workspaceRoot,
     defaultPluginPackages: opts.defaultPluginPackages,
@@ -447,7 +455,10 @@ export async function resolveWorkspaceAgentServerPluginCollection(
   ]
   const resolvedPlugins = await Promise.all(
     allPluginEntries.map(async (entry) => {
-      const plugin = await resolveOnePluginEntry<WorkspaceServerPlugin>(entry, ctx)
+      const plugin = await resolveOnePluginEntry<WorkspaceServerPlugin>(
+        entry,
+        "dir" in entry && entry.trust === "internal" ? trustedCtx : baseCtx,
+      )
       assertWorkspaceBridgeHandlersTrusted(plugin, entry)
       return plugin
     }),
@@ -689,7 +700,18 @@ export async function createWorkspaceAgentServer(
   const pluginAuthoringEnabled = externalPluginsEnabled
     && (opts.installPluginAuthoring ?? workspaceFsCapability === "strong")
     && !(opts.excludeDefaults ?? []).includes("boring-ui-plugin-cli-package")
+  let workspaceAgentDispatcherResolver: WorkspaceAgentDispatcherResolver | undefined
+  const trustedDispatcherProxy: WorkspaceAgentDispatcherResolver = {
+    async resolve(actor, options) {
+      if (!workspaceAgentDispatcherResolver) throw new Error("workspace agent dispatcher is not ready")
+      return await workspaceAgentDispatcherResolver.resolve(actor, options)
+    },
+  }
   const pluginCollection = await resolveWorkspaceAgentServerPluginCollection({
+    trustedPluginContext: {
+      workspaceAgentDispatcherResolver: trustedDispatcherProxy,
+      actorResolver: () => ({ workspaceId: opts.sessionId ?? "default", userId: "local" }),
+    },
     ...opts,
     workspaceRoot,
     bridge,
@@ -826,6 +848,10 @@ export async function createWorkspaceAgentServer(
 
   const app = await createAgentApp({
     ...opts,
+    onWorkspaceAgentDispatcher: (resolver) => {
+      workspaceAgentDispatcherResolver = resolver
+      opts.onWorkspaceAgentDispatcher?.(resolver)
+    },
     mode: resolvedMode,
     workspaceRoot,
     externalPlugins: externalPluginsEnabled,

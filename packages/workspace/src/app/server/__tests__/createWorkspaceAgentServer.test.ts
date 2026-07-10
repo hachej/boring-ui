@@ -26,6 +26,7 @@ import {
   collectWorkspaceAgentServerPlugins,
   createWorkspaceAgentServer,
   readWorkspacePluginPackagePiSnapshot,
+  resolveWorkspaceAgentServerPluginCollection,
 } from "../createWorkspaceAgentServer"
 import { resolveDefaultWorkspacePluginPackagePaths } from "../defaultPluginPackages"
 
@@ -576,6 +577,35 @@ describe("createWorkspaceAgentServer plugin runtime options", () => {
     } finally {
       await app.close()
     }
+  })
+
+  test("trusted host capabilities are passed only to internal directory plugins", async () => {
+    const workspaceRoot = await makeTempDir("boring-trusted-plugin-context-")
+    const internalRoot = join(workspaceRoot, "internal")
+    const externalRoot = join(workspaceRoot, "external")
+    for (const [root, id] of [[internalRoot, "internal-plugin"], [externalRoot, "external-plugin"]] as const) {
+      await mkdir(join(root, "server"), { recursive: true })
+      await writeFile(
+        join(root, "server", "index.mjs"),
+        `export default (_options, ctx) => ({ id: ${JSON.stringify(id)}, systemPrompt: ctx?.trusted ? ${JSON.stringify(`${id}:trusted`)} : ${JSON.stringify(`${id}:untrusted`)} })\n`,
+        "utf8",
+      )
+      await writeFile(join(root, "package.json"), JSON.stringify({ name: id, boring: { server: "server/index.mjs" } }), "utf8")
+    }
+
+    const collection = await resolveWorkspaceAgentServerPluginCollection({
+      workspaceRoot,
+      bridge: {} as never,
+      defaultPluginPackages: [internalRoot],
+      plugins: [{ dir: externalRoot, hotReload: true }],
+      trustedPluginContext: {
+        workspaceAgentDispatcherResolver: { resolve: vi.fn() } as never,
+        actorResolver: vi.fn(async () => ({ workspaceId: "default", userId: "local" })),
+      },
+    })
+
+    expect(collection.agentOptions.systemPromptAppend).toContain("internal-plugin:trusted")
+    expect(collection.agentOptions.systemPromptAppend).toContain("external-plugin:untrusted")
   })
 
   test("additionalBoringPluginDirs discovers front/Pi-only plugins from an extra global root", async () => {

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest"
-import { AutomationCreateSchema, AutomationPatchSchema, AutomationRunCreateSchema, AutomationRunPatchSchema } from "../schema"
+import { AutomationCreateSchema, AutomationPatchSchema, AutomationRunBeginSchema, AutomationRunLifecyclePatchSchema } from "../schema"
 
 describe("automation schemas", () => {
   it("validates automation create and patch input", () => {
@@ -12,24 +12,25 @@ describe("automation schemas", () => {
     expect(AutomationPatchSchema.parse({ enabled: false })).toEqual({ enabled: false })
   })
 
-  it("validates storage-neutral run metadata input", () => {
-    expect(AutomationRunCreateSchema.parse({
+  it("validates executor-owned run metadata input", () => {
+    expect(AutomationRunBeginSchema.parse({
       automationId: "a1",
       trigger: "manual",
       promptSnapshot: "prompt",
       modelSnapshot: "model-a",
       scheduledFor: null,
-      sessionId: null,
-    })).toMatchObject({ automationId: "a1", trigger: "manual", scheduledFor: null, sessionId: null })
-    expect(() => AutomationRunCreateSchema.parse({ automationId: "a1", trigger: "manual" })).toThrow()
-    expect(() => AutomationRunCreateSchema.parse({
+      createdAt: "2026-07-09T09:00:00.000Z",
+    })).toMatchObject({ automationId: "a1", trigger: "manual", scheduledFor: null })
+    expect(() => AutomationRunBeginSchema.parse({ automationId: "a1", trigger: "manual" })).toThrow()
+    expect(() => AutomationRunBeginSchema.parse({
       automationId: "a1",
       trigger: "manual",
       promptSnapshot: "prompt",
       modelSnapshot: "model-a",
-      cronSnapshot: "0 9 * * *",
+      sessionId: null,
     })).toThrow()
-    expect(() => AutomationRunPatchSchema.parse({})).toThrow()
-    expect(AutomationRunPatchSchema.parse({ status: "succeeded", totalTokens: null })).toEqual({ status: "succeeded", totalTokens: null })
+    expect(() => AutomationRunLifecyclePatchSchema.parse({})).toThrow()
+    expect(() => AutomationRunLifecyclePatchSchema.parse({ scheduledFor: null })).toThrow()
+    expect(AutomationRunLifecyclePatchSchema.parse({ status: "succeeded", totalTokens: null })).toEqual({ status: "succeeded", totalTokens: null })
   })
 })

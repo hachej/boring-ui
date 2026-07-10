@@ -44,6 +44,8 @@ export interface ResolveCliBoringPluginDirsOptions {
    * exact set of *user* plugin sources can pass `false` to opt out.
    */
   includeDefaultPackages?: boolean
+  /** Include the local-only automation executor package in folder mode. */
+  includeFolderModeAutomation?: boolean
 }
 
 export function getGlobalPiExtensionsRoot(options: ResolveCliBoringPluginDirsOptions = {}): string {
@@ -60,15 +62,16 @@ function getGlobalPiAgentRoot(options: ResolveCliBoringPluginDirsOptions = {}): 
  * in sync when adding a default plugin.
  */
 const CLI_DEFAULT_PLUGIN_PACKAGES = ["@hachej/boring-ask-user", "@hachej/boring-diagram", "@hachej/boring-tasks"]
+const CLI_FOLDER_MODE_PLUGIN_PACKAGES = [...CLI_DEFAULT_PLUGIN_PACKAGES, "@hachej/boring-automation"]
 
 // Resolve the CLI's bundled default plugin packages from the CLI's own
-// node_modules. Delegates to the shared workspace utility so resolution
-// semantics (anchors, error policy) stay consistent across hosts.
-export function resolveCliDefaultPluginPackagePaths(): string[] {
+// node_modules. Automation execution is folder-mode-only until workspaces mode
+// has an equivalent request-scoped trusted actor composition.
+export function resolveCliDefaultPluginPackagePaths(options: { includeFolderModeAutomation?: boolean } = {}): string[] {
   try {
     return resolveDefaultWorkspacePluginPackagePaths({
       anchorDir: resolveBoringUiCliPackageRoot(),
-      defaultPluginPackages: CLI_DEFAULT_PLUGIN_PACKAGES,
+      defaultPluginPackages: options.includeFolderModeAutomation ? CLI_FOLDER_MODE_PLUGIN_PACKAGES : CLI_DEFAULT_PLUGIN_PACKAGES,
     })
   } catch (error) {
     // Missing dep in the CLI package is a packaging error; swallow here so a
@@ -97,7 +100,7 @@ export function resolveCliBoringPluginDirs(
   const includeDefaultPackages = options.includeDefaultPackages ?? true
   const roots: BoringPluginSourceInput[] = [
     ...(includeDefaultPackages
-      ? resolveCliDefaultPluginPackagePaths().map((rootDir): BoringPluginSourceInput => ({ rootDir, kind: "internal" }))
+      ? resolveCliDefaultPluginPackagePaths({ includeFolderModeAutomation: options.includeFolderModeAutomation }).map((rootDir): BoringPluginSourceInput => ({ rootDir, kind: "internal" }))
       : []),
     { rootDir: getGlobalPiExtensionsRoot(options), kind: "external" },
     { rootDir: globalScope.npmDir, kind: "external" },

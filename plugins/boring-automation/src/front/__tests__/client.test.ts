@@ -35,6 +35,17 @@ describe("automation front client", () => {
     expect(JSON.parse(String(fetchMock.mock.calls[1]?.[1]?.body))).toEqual({ prompt: "# Prompt" })
   })
 
+  it("runs an automation through the narrow run-now route", async () => {
+    const run = { id: "r1", automationId: "a1", status: "succeeded" }
+    const fetchMock = vi.fn<typeof fetch>(async () => Response.json({ ok: true, run }))
+    vi.stubGlobal("fetch", fetchMock)
+
+    await expect(createAutomationClient().runNow("a1")).resolves.toEqual(run)
+
+    expect(fetchMock).toHaveBeenCalledWith(`${BORING_AUTOMATION_ROUTE_PREFIX}/automations/a1/run`, expect.objectContaining({ method: "POST" }))
+    expect(fetchMock.mock.calls[0]?.[1]?.body).toBeUndefined()
+  })
+
   it("throws accessible route errors with server code and status", async () => {
     vi.stubGlobal("fetch", vi.fn(async () => Response.json({ ok: false, code: "BORING_AUTOMATION_NOT_FOUND", error: "missing" }, { status: 404 })))
 

@@ -153,6 +153,11 @@ export function createAutomationClient(options: AutomationClientOptions = {}) {
       })
     },
 
+    async runNow(id: string): Promise<AutomationRun> {
+      const payload = await request<{ run: AutomationRun }>(`/automations/${encodeURIComponent(id)}/run`, { method: "POST" })
+      return payload.run
+    },
+
     async listRuns(id: string, requestOptions: AutomationClientRequestOptions = {}): Promise<AutomationRun[]> {
       const payload = await request<{ runs: AutomationRun[] }>(`/automations/${encodeURIComponent(id)}/runs`, { signal: requestOptions.signal })
       return payload.runs
