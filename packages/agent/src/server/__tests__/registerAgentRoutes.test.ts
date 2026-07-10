@@ -5,6 +5,7 @@ import { afterEach, expect, test, vi } from 'vitest'
 import Fastify from 'fastify'
 
 import { registerAgentRoutes } from '../registerAgentRoutes'
+import { ERROR_CODE_READONLY } from '../http/routes/file'
 import { provisionWorkspaceRuntime } from '../workspace/provisioning'
 import { ErrorCode } from '../../shared/error-codes'
 import type { RuntimeModeAdapter } from '../runtime/mode'
@@ -1189,11 +1190,166 @@ test('skills endpoint discovers workspace .agents/skills when ambient skills are
 
   const res = await app.inject({ method: 'GET', url: '/api/v1/agent/skills?refresh=1' })
   expect(res.statusCode).toBe(200)
-  expect(res.json().skills).toEqual(expect.arrayContaining([
-    expect.objectContaining({ name: 'cli-project-skill' }),
-  ]))
+  const workspaceSkill = res.json().skills.find((skill: { name: string }) => skill.name === 'cli-project-skill')
+  expect(workspaceSkill).toMatchObject({
+    name: 'cli-project-skill',
+    filePath: '.agents/skills/cli-project-skill/SKILL.md',
+  })
+
+  const write = await app.inject({
+    method: 'POST',
+    url: '/api/v1/files',
+    payload: {
+      path: workspaceSkill.filePath,
+      content: '---\nname: cli-project-skill\ndescription: Workspace edit.\n---\n',
+    },
+  })
+  expect(write.statusCode).toBe(200)
+  await expect(readFile(join(skillRoot, 'SKILL.md'), 'utf-8')).resolves.toContain('Workspace edit.')
 
   await app.close()
+})
+
+test('external .agents skills open readonly and reject file mutations', async () => {
+  const workspaceRoot = await makeTempDir('boring-agent-embed-skills-workspace-')
+  const externalRoot = await makeTempDir('boring-agent-embed-skills-external-')
+  const externalSkillDir = join(externalRoot, '.agents', 'skills', 'plugin-skill')
+  const externalSkillFile = join(externalSkillDir, 'SKILL.md')
+  const original = '---\nname: plugin-skill\ndescription: External plugin skill.\n---\n'
+  await mkdir(externalSkillDir, { recursive: true })
+  await writeFile(externalSkillFile, original, 'utf-8')
+
+  const app = Fastify({ logger: false })
+  await app.register(registerAgentRoutes, {
+    workspaceRoot,
+    mode: 'direct',
+    pi: { noSkills: true, additionalSkillPaths: [externalSkillDir] },
+  })
+  await app.ready()
+
+  try {
+    const skills = await app.inject({ method: 'GET', url: '/api/v1/agent/skills?refresh=1' })
+    expect(skills.statusCode).toBe(200)
+    const externalSkill = skills.json().skills.find((skill: { name: string }) => skill.name === 'plugin-skill')
+    expect(externalSkill).toMatchObject({ name: 'plugin-skill', filePath: externalSkillFile })
+
+    const open = await app.inject({
+      method: 'GET',
+      url: `/api/v1/files?path=${encodeURIComponent(externalSkillFile)}`,
+    })
+    expect(open.statusCode).toBe(200)
+    expect(open.json()).toMatchObject({ content: original, access: 'readonly' })
+
+    const save = await app.inject({
+      method: 'POST',
+      url: '/api/v1/files',
+      payload: { path: externalSkillFile, content: '# Mutated\n' },
+    })
+    const remove = await app.inject({
+      method: 'DELETE',
+      url: `/api/v1/files?path=${encodeURIComponent(externalSkillFile)}`,
+    })
+    const moveFrom = await app.inject({
+      method: 'POST',
+      url: '/api/v1/files/move',
+      payload: { from: externalSkillFile, to: 'copied-skill.md' },
+    })
+    const moveTo = await app.inject({
+      method: 'POST',
+      url: '/api/v1/files/move',
+      payload: { from: 'workspace-skill.md', to: externalSkillFile },
+    })
+
+    for (const response of [save, remove, moveFrom, moveTo]) {
+      expect(response.statusCode).toBe(403)
+      expect(response.json()).toEqual({
+        error: { code: ERROR_CODE_READONLY, message: 'skill file is readonly' },
+      })
+    }
+    await expect(readFile(externalSkillFile, 'utf-8')).resolves.toBe(original)
+  } finally {
+    await app.close()
+  }
+})
+
+test('workspace generated plugin skills open readonly and reject file mutations', async () => {
+  const workspaceRoot = await makeTempDir('boring-agent-embed-skills-generated-')
+  const generatedSkills = [
+    {
+      name: 'generated-skill',
+      path: '.boring-agent/skills/plugin/generated-skill/SKILL.md',
+    },
+    {
+      name: 'user-scoped-skill',
+      path: '.boring-agent/skills-users/user-namespace/plugin/user-scoped-skill/SKILL.md',
+    },
+  ]
+  await Promise.all(generatedSkills.map(async (skill) => {
+    await mkdir(dirname(join(workspaceRoot, skill.path)), { recursive: true })
+    await writeFile(
+      join(workspaceRoot, skill.path),
+      `---\nname: ${skill.name}\ndescription: Generated plugin skill.\n---\n`,
+      'utf-8',
+    )
+  }))
+
+  const app = Fastify({ logger: false })
+  await app.register(registerAgentRoutes, {
+    workspaceRoot,
+    mode: 'direct',
+    pi: {
+      noSkills: true,
+      additionalSkillPaths: generatedSkills.map((skill) => dirname(join(workspaceRoot, skill.path))),
+    },
+  })
+  await app.ready()
+
+  try {
+    const skills = await app.inject({ method: 'GET', url: '/api/v1/agent/skills?refresh=1' })
+    expect(skills.statusCode).toBe(200)
+
+    for (const generated of generatedSkills) {
+      expect(skills.json().skills).toEqual(expect.arrayContaining([
+        expect.objectContaining({ name: generated.name, filePath: generated.path }),
+      ]))
+      const open = await app.inject({
+        method: 'GET',
+        url: `/api/v1/files?path=${encodeURIComponent(generated.path)}`,
+      })
+      expect(open.statusCode).toBe(200)
+      expect(open.json()).toMatchObject({ access: 'readonly' })
+
+      const save = await app.inject({
+        method: 'POST',
+        url: '/api/v1/files',
+        payload: { path: generated.path, content: '# Mutated\n' },
+      })
+      const remove = await app.inject({
+        method: 'DELETE',
+        url: `/api/v1/files?path=${encodeURIComponent(generated.path)}`,
+      })
+      const moveFrom = await app.inject({
+        method: 'POST',
+        url: '/api/v1/files/move',
+        payload: { from: generated.path, to: 'copied-skill.md' },
+      })
+      const moveTo = await app.inject({
+        method: 'POST',
+        url: '/api/v1/files/move',
+        payload: { from: 'workspace-skill.md', to: generated.path },
+      })
+
+      for (const response of [save, remove, moveFrom, moveTo]) {
+        expect(response.statusCode).toBe(403)
+        expect(response.json()).toEqual({
+          error: { code: ERROR_CODE_READONLY, message: 'skill file is readonly' },
+        })
+      }
+      await expect(readFile(join(workspaceRoot, generated.path), 'utf-8')).resolves.toContain(`name: ${generated.name}`)
+    }
+  } finally {
+    await app.close()
+  }
 })
 
 test('skills endpoint does not require unrelated runtime-only dynamic hooks', async () => {

@@ -10,6 +10,7 @@
  *   { skills: [{ name: string, description: string }] }
  */
 import type { FastifyInstance, FastifyRequest } from 'fastify'
+import { isAbsolute, relative, resolve, sep } from 'node:path'
 import {
   DefaultPackageManager,
   getAgentDir,
@@ -32,6 +33,20 @@ interface SkillsQuery {
 }
 
 const CACHE_TTL_MS = 30_000
+
+function skillFilePathForWorkspace(filePath: string, workspaceRoot: string): string {
+  if (!isAbsolute(filePath)) return filePath
+  const workspaceRelative = relative(resolve(workspaceRoot), resolve(filePath))
+  if (
+    workspaceRelative === ''
+    || workspaceRelative === '..'
+    || workspaceRelative.startsWith(`..${sep}`)
+    || isAbsolute(workspaceRelative)
+  ) {
+    return filePath
+  }
+  return workspaceRelative.split(sep).join('/')
+}
 
 export interface SkillsRoutesOptions {
   workspaceRoot: string
@@ -103,7 +118,7 @@ export function skillsRoutes(
     const skills: SkillSummary[] = (result.skills as unknown as Array<Record<string, unknown>>).map((s) => ({
       name: String(s.name),
       description: String(s.description ?? ''),
-      ...(typeof s.filePath === 'string' ? { filePath: s.filePath } : {}),
+      ...(typeof s.filePath === 'string' ? { filePath: skillFilePathForWorkspace(s.filePath, workspaceRoot) } : {}),
       ...(typeof (s.sourceInfo as { scope?: unknown } | undefined)?.scope === 'string' ? { source: (s.sourceInfo as { scope: string }).scope } : {}),
     }))
     const entry = { skills, expiresAt: now + CACHE_TTL_MS }
