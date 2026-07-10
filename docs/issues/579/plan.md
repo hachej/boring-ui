@@ -355,6 +355,194 @@ Backend behavior:
 8. **Recording entrypoint polish** — full markdown editor/document action using `attach`, agent/chat `prepare-document` tool plus browser `claim-owner`, and a channel-agnostic entrypoint contract so future plugin/clinic/non-chat capture surfaces can attach recording to current or newly created markdown files without backend forks.
 9. **Polish/proof** — screenshots/recording proof for short composer and 30+ minute simulated recording.
 
+## Ticket breakdown
+
+Use these as implementation tickets. Each ticket should be small enough to review independently and should include tests/proof before merge.
+
+### T1 — Transcription backend foundation
+
+Goal: introduce the first-party transcription backend without UI coupling.
+
+To do:
+
+- Create/finish `plugins/boring-transcription` as an internal/app plugin.
+- Add shared request/response/error types.
+- Add stable errors for unsupported MIME, owner mismatch, already active, too large, managed-block corrupt, target missing, etc.
+- Add plugin-local same-directory temp-file + atomic rename helper.
+- Add STT adapter boundary with `whisper.cpp` first.
+- Add `GET /api/v1/transcription/capabilities`.
+- Add `POST /api/v1/transcription/transcribe` for short snippets.
+- Add browser proof spike for rolling `audio/webm;codecs=opus` independent chunk decoding.
+- If proof fails, document fallback to single-blob short mode and defer multipart/auto-promotion until normalization.
+
+Proof:
+
+- Unit tests for capabilities, MIME rejection, size limits, atomic write helper.
+- Integration test for `/transcribe` with fixture audio.
+- Browser proof artifact for chunk decodability decision.
+
+### T2 — Short composer dictation
+
+Goal: ship safe short voice input before long recording.
+
+To do:
+
+- Add composer mic control and local recording state.
+- Query capabilities and select MIME by backend/client intersection.
+- Disable mic with `TRANSCRIPTION_NO_SUPPORTED_MIME` explanation when needed.
+- Record short audio using rolling chunks only if T1 proof passed; otherwise use single blob.
+- Hard-stop before inline ceiling using `inlineHardStopDurationMs`/size guard.
+- POST to `/transcribe` and insert/send transcript.
+- On overflow, show explicit too-long-for-dictation message and preserve buffered audio for retry/download.
+
+Proof:
+
+- Composer UI tests for record/stop/cancel/disabled states.
+- Mock backend test for successful transcript insertion/send.
+- Overflow/no-supported-MIME proof.
+
+### T3 — Long recording backend state machine
+
+Goal: make document-recording APIs work from tests/curl without browser capture.
+
+To do:
+
+- Implement reserve-and-create primitive.
+- Implement `attach`, `create-document-and-start`, `prepare-document`, `claim-owner`.
+- Implement owner-token hash model; never persist raw token.
+- Implement `.transcription/active.json`, `.transcription/pending.json`, and `.transcription/recordings.log`.
+- Implement per-recording manifest under `<doc>.recording/<recordingId>/manifest.json`.
+- Implement idempotent chunk upload with temp-file + rename.
+- Implement heartbeat, stop, cancel, acknowledge-interruption, delete-audio contracts.
+- Implement restart recovery from pending/log/scan fallback.
+- Enforce one active capture globally.
+
+Proof:
+
+- Route tests for all state transitions.
+- Concurrent start tests.
+- Retry/idempotent chunk upload tests.
+- Crash/recovery simulations for missing pointer/manifest/pending cases.
+
+### T4 — Minimal browser long recording + global bar
+
+Goal: prove a real browser can start/stop long capture while chat stays usable.
+
+To do:
+
+- Add minimal document Record button/client for existing backend start path.
+- Add persistent `MediaStream` rolling recorder client.
+- Add Web Worker heartbeat with immediate `onstart` heartbeat.
+- Add global recording bar visible across app surfaces.
+- Add Open transcript, Stop, Cancel, acknowledge-interruption UI.
+- Keep composer/chat usable during active recording.
+- Allow agent reads of partial status/transcript sidecars once available; until transcript slice, show status-only.
+- Poll `GET /active` and `GET /:recordingId` for status.
+- Add background-tab/lock/chunk-size proof or ship conservative keep-awake UX.
+
+Proof:
+
+- Playwright proof for start/stop/cancel/global bar.
+- Browser proof that composer remains usable during recording.
+- Background/keep-awake decision artifact.
+
+### T5 — Core per-document write queue
+
+Goal: prepare safe document mutation before transcript projection.
+
+To do:
+
+- Add Workspace-owned per-document serialized writer with mtime/CAS.
+- Migrate every markdown-capable editor autosave path to the writer.
+- Ensure core Workspace/editor code does not import transcription plugin code.
+- Add CAS conflict handling hooks.
+
+Proof:
+
+- Tests for serialized writes and CAS rejection/retry.
+- Editor autosave regression tests.
+- Import-boundary check/review.
+
+### T6 — Chunk transcription and transcript projection
+
+Goal: turn saved chunks into timestamped transcript text safely.
+
+To do:
+
+- Queue/transcribe chunks as they arrive.
+- Write `chunk-*.md` sidecars.
+- Add `GET /:recordingId/transcript` ordered segment API with version/etag.
+- Add documentPath-keyed global transcript lease records/API.
+- Add neutral shared projection module for sentinel merge.
+- Add managed block sentinels and corruption handling.
+- Enable backend projection only after T5 writer migration and lease API are live.
+- Support partial transcript reads while recording continues.
+
+Proof:
+
+- Out-of-order chunk transcription test.
+- Managed-block projection tests: absent block, valid block, duplicate/corrupt sentinels.
+- Editor/backend lease contention tests.
+- Partial transcript agent-read proof.
+
+### T7 — Composer auto-promotion
+
+Goal: safely move long composer recordings into document-recording mode.
+
+To do:
+
+- Query `GET /active` before/during composer mic use.
+- Suppress promotion or hard-stop inline while another long recording is active.
+- On promotion threshold, close current rolling chunk and immediately continue local capture before network call.
+- Create document recording with original `recordingStartedAt`.
+- Upload buffered chunks as initial long-recording chunks.
+- Preserve chunks on `TRANSCRIPTION_RECORDING_ALREADY_ACTIVE` or failed promotion.
+
+Proof:
+
+- Simulated long composer recording test.
+- Race test for already-active long recording.
+- Proof no pre-promotion chunks are lost.
+
+### T8 — Channel-agnostic recording entrypoints
+
+Goal: make recording start reusable beyond chat.
+
+To do:
+
+- Finalize generic entrypoint metadata (`composer`, `document-toolbar`, `agent`, `plugin`, future channels).
+- Add full document toolbar action using `attach`.
+- Add agent/chat `prepare-document` tool plus browser `claim-owner` handoff.
+- Ensure future plugin/clinic surfaces can call the same backend contracts without forks.
+- Keep global bar and transcript open behavior independent of entrypoint.
+
+Proof:
+
+- Document toolbar recording proof.
+- Agent-created document recording proof.
+- API test showing `entrypoint` does not alter backend behavior.
+
+### T9 — End-to-end polish and proof
+
+Goal: prove the whole feature is safe enough to ship.
+
+To do:
+
+- Run short dictation proof.
+- Run 30+ minute simulated long recording proof.
+- Verify restart/recovery with pending chunks.
+- Verify one-active-capture enforcement.
+- Verify chat/agent interaction during active recording.
+- Verify boundary-loss decision is acceptable or defer long unattended capture.
+- Document local `whisper.cpp` setup and troubleshooting.
+
+Proof:
+
+- Screenshots/video for key UI states.
+- Test logs for backend route/state coverage.
+- Recovery proof notes.
+- Review comment with residual risks.
+
 ## Open questions
 
 - Exact auto-promotion threshold: start below the backend inline maximum, e.g. 90 seconds with `inlineMaxDurationMs=120000`, tune after UX proof. For auto-promoted recordings, `recordingStartedAt` is the original composer capture start, not the promotion time, so chunk timestamps and transcript headings stay consistent.
