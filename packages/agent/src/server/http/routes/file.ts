@@ -19,6 +19,7 @@ import {
   parseFileRecordsRequest,
 } from './fileRecords'
 import {
+  isGeneratedReadonlySkillContainerPath,
   isGeneratedReadonlySkillFilePath,
   isGeneratedReadonlySkillPath,
   isReadonlySkillFilePath,
@@ -659,7 +660,7 @@ const expectedMtimeMs = typeof body.expectedMtimeMs === 'number'
     const filesystem = requestedFilesystem(query.filesystem)
     if (
       filesystem === USER_FILESYSTEM_ID
-      && (isReadonlySkillFilePath(path) || isGeneratedReadonlySkillPath(path))
+      && (isReadonlySkillFilePath(path) || isGeneratedReadonlySkillContainerPath(path))
     ) {
       return sendReadonlySkillMutationDenied(reply)
     }
@@ -699,8 +700,8 @@ if (filesystem !== USER_FILESYSTEM_ID) {
       && (
         isReadonlySkillFilePath(from)
         || isReadonlySkillFilePath(to)
-        || isGeneratedReadonlySkillPath(from)
-        || isGeneratedReadonlySkillPath(to)
+        || isGeneratedReadonlySkillContainerPath(from)
+        || isGeneratedReadonlySkillContainerPath(to)
       )
     ) {
       return sendReadonlySkillMutationDenied(reply)
