@@ -48,6 +48,13 @@ The two tiers differ by **provenance and trust**, not just lifecycle:
 | Server/routes/tools | Full power: Fastify routes, static `agentTools`, providers, domain APIs | Route-free; no `boring.server`; backend work goes through Pi tools |
 | Reload | Restart/redeploy | `/reload` hot-swaps front + Pi resources |
 
+App-owned boot composition may inject narrowly scoped trusted host
+capabilities, such as `WorkspaceAgentDispatcher`, into an app/internal
+integration. The host must verify the workspace actor before injection; the
+dispatcher trusts the supplied `{ workspaceId, userId }` and performs no
+authorization. Runtime/generated plugins never receive this capability and do
+not gain backend services, routes, runtime bindings, or raw filesystem paths.
+
 Plugin tools' `execute()` run in the **host Node process and bypass the
 sandbox by design**; plugin loading is local-mode-only (skipped under
 `vercel-sandbox`). Hosted/marketplace plugins — untrusted external code that
