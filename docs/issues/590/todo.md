@@ -55,18 +55,21 @@ Canonical plan: [`plan.md`](./plan.md)
 - [x] Run Claude Code review.
 - [x] Run Opus 4.8 thermo review.
 - [x] Fix accepted findings and re-review until GREEN.
-- [x] Update PR #592 proof/handoff.
+- [x] Update and merge dedicated PR #600.
 
 ## Slice 0 — seam confirmation before execution/hosted work
 
-- [ ] Confirm supported headless session-launch path.
-- [ ] Choose trigger model: external host/CLI trigger or justified generic lifecycle seam.
-- [ ] Confirm hosted topology and sandbox boundaries.
-- [ ] Confirm hosted migration ownership.
-- [ ] Confirm verified workspace/user identity seam for hosted plugin routes.
-- [ ] Confirm token usage attribution/query path.
-- [ ] Record decisions in `docs/issues/590/seam-spike.md`.
-- [ ] Re-plan execution and hosted slices from those findings.
+- [x] Confirm canonical headless path: host-injected existing workspace `Agent.send()` dispatcher.
+- [x] Choose trigger model: externally invoked idempotent due operation; no hidden plugin timer.
+- [x] Confirm hosted topology and sandbox/remote-worker/session-volume boundaries.
+- [x] Confirm current migration ownership gap and recommended app-owned registration path.
+- [x] Confirm verified actor resolver requirement for hosted plugin routes.
+- [x] Confirm first-pass token attribution from live Pi usage events.
+- [x] Record decisions in `docs/issues/590/seam-spike.md`.
+- [x] Re-plan execution and hosted slices from those findings.
+- [ ] Owner decision: app-owned explicit plugin migration registration vs generic trusted-plugin migrations.
+- [ ] Owner decision: scheduled usage billing owner vs future workspace billing account.
+- [ ] Owner decision: hosted automation role policy and reassignment permissions.
 
 ## Slice 2 — front UI
 
@@ -78,10 +81,11 @@ Canonical plan: [`plan.md`](./plan.md)
 - [ ] Loading, empty, validation, and error states.
 - [ ] Screenshot and component/integration proof.
 
-## Deferred until Slice 0
+## Next execution/hosted slices
 
-- [ ] Executor-owned manual run.
-- [ ] Due-run schedule evaluation and trigger integration.
-- [ ] Hosted persistence/composition/duplicate-run protection.
-- [ ] Token accounting.
+- [ ] Slice 3A: generic trusted workspace agent dispatcher.
+- [ ] Slice 3B: executor-owned manual run with live usage aggregation.
+- [ ] Slice 4: pure due policy and external trigger adapter.
+- [ ] Slice 5: hosted persistence, verified actor composition, and duplicate-run lease after owner decisions.
+- [ ] Slice 6: authenticated hosted platform trigger.
 - [ ] Final UI polish.
