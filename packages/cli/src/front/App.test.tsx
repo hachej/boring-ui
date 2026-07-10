@@ -181,6 +181,7 @@ describe("CliWorkspaceShell", () => {
       appTitle: "Folder Workspace",
       plugins: [
         expect.objectContaining({ pluginId: "ask-user", options: { appLeftInbox: true } }),
+        expect.any(Function),
         expect.objectContaining({ pluginId: "diagram" }),
         expect.objectContaining({ pluginId: "tasks" }),
       ],
