@@ -1,6 +1,7 @@
 import Fastify from 'fastify'
 import { describe, expect, it, vi } from 'vitest'
 import type { AgentHarness } from '../../../../shared/harness'
+import type { SessionCtx } from '../../../../shared/session'
 import { ErrorCode } from '../../../../shared/error-codes'
 import { commandsRoutes } from '../commands'
 
@@ -13,6 +14,10 @@ function fakeHarness(overrides: Partial<AgentHarness>): AgentHarness {
       async create() {
         const now = new Date().toISOString()
         return { id: 'default', title: 'Default', createdAt: now, updatedAt: now, turnCount: 0 }
+      },
+      async rename(_ctx: SessionCtx, sessionId: string, title: string) {
+        const now = new Date().toISOString()
+        return { id: sessionId, title, createdAt: now, updatedAt: now, turnCount: 0 }
       },
       async load() {
         const now = new Date().toISOString()

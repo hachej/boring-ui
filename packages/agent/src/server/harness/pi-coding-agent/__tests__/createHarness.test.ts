@@ -517,6 +517,61 @@ describe("PiSessionStore", () => {
     expect(list[0].id).toBe(session.id);
   });
 
+  it("renames sessions by appending native session_info entries", async () => {
+    const store = new PiSessionStore("/tmp", tmpDir);
+    const session = await store.create(ctx, { title: "Original" });
+
+    const renamed = await store.rename(ctx, session.id, "Renamed");
+
+    expect(renamed).toEqual(expect.objectContaining({ id: session.id, title: "Renamed" }));
+    await expect(store.load(ctx, session.id)).resolves.toEqual(expect.objectContaining({ title: "Renamed" }));
+    await expect(store.list(ctx)).resolves.toEqual([expect.objectContaining({ id: session.id, title: "Renamed" })]);
+    const lines = (await readFile(join(tmpDir, `${session.id}.jsonl`), "utf-8")).trim().split("\n").map((line) => JSON.parse(line));
+    expect(lines.filter((line) => line.type === "session_info").map((line) => line.name)).toEqual(["Original", "Renamed"]);
+  });
+
+  it("authorizes rename with the session context", async () => {
+    const store = new PiSessionStore("/tmp", tmpDir);
+    const session = await store.create(ctx, { title: "Scoped" });
+
+    await expect(store.rename({ workspaceId: "other-ws" }, session.id, "Attack")).rejects.toThrow("Session not found");
+    await expect(store.load(ctx, session.id)).resolves.toEqual(expect.objectContaining({ title: "Scoped" }));
+  });
+
+  it("renames linked native Pi transcripts instead of the Boring wrapper", async () => {
+    const nativeSessionId = "native-rename";
+    const boringSessionId = "boring-rename";
+    const nativePath = join(tmpDir, `2026-06-04T15-23-19-668Z_${nativeSessionId}.jsonl`);
+    const boringPath = join(tmpDir, `${boringSessionId}.jsonl`);
+    await writeFile(
+      nativePath,
+      [
+        { type: "session", version: 1, id: nativeSessionId, timestamp: "2026-06-04T15:23:19.668Z", cwd: "/tmp" },
+        { type: "session_info", id: "native-info", parentId: null, timestamp: "2026-06-04T15:23:20.000Z", name: "Native title" },
+      ].map((line) => JSON.stringify(line)).join("\n") + "\n",
+      "utf-8",
+    );
+    await writeFile(
+      boringPath,
+      [
+        { type: "session", version: 1, id: boringSessionId, timestamp: "2026-06-04T15:23:19.668Z", cwd: "/tmp" },
+        { type: "session_info", id: "wrapper-info", parentId: null, timestamp: "2026-06-04T15:23:20.000Z", name: "Wrapper title" },
+        { type: "pi_session_file", timestamp: "2026-06-04T15:23:21.000Z", path: nativePath },
+      ].map((line) => JSON.stringify(line)).join("\n") + "\n",
+      "utf-8",
+    );
+
+    const store = new PiSessionStore("/tmp", tmpDir);
+    await expect(store.load({ workspaceId: "default" }, boringSessionId)).resolves.toEqual(expect.objectContaining({ title: "Native title" }));
+    await store.rename({ workspaceId: "default" }, boringSessionId, "Linked rename");
+
+    const nativeLines = (await readFile(nativePath, "utf-8")).trim().split("\n").map((line) => JSON.parse(line));
+    const wrapperLines = (await readFile(boringPath, "utf-8")).trim().split("\n").map((line) => JSON.parse(line));
+    expect(nativeLines.filter((line) => line.type === "session_info").map((line) => line.name)).toEqual(["Native title", "Linked rename"]);
+    expect(wrapperLines.filter((line) => line.type === "session_info").map((line) => line.name)).toEqual(["Wrapper title"]);
+    await expect(store.list({ workspaceId: "default" })).resolves.toEqual([expect.objectContaining({ id: boringSessionId, title: "Linked rename" })]);
+  });
+
   it("persists and enforces session context inside one store root", async () => {
     const store = new PiSessionStore("/tmp", tmpDir);
     const otherCtx = { workspaceId: "other-ws" };

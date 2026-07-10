@@ -1,6 +1,7 @@
 "use client"
 
-import { Clock3, MessageSquarePlus, Pin, X } from "lucide-react"
+import { useEffect, useRef, useState } from "react"
+import { Clock3, MessageSquarePlus, Pencil, Pin, X } from "lucide-react"
 import { cn } from "../../lib/utils"
 import { CHAT_SESSION_DRAG_TYPE } from "../ChatPaneStage"
 import type { WorkspaceAttentionSessionBadge } from "../../attention/WorkspaceAttentionProvider"
@@ -37,6 +38,7 @@ export function AppSessionRow({
   onSwitch,
   onOpenAsPane,
   onTogglePinned,
+  onRename,
   onDelete,
 }: {
   session: AppLeftPaneSession
@@ -51,9 +53,18 @@ export function AppSessionRow({
   onSwitch: (id: string) => void
   onOpenAsPane: (id: string) => void
   onTogglePinned: (id: string) => void
+  onRename?: (id: string, title: string) => void | Promise<unknown>
   onDelete?: (id: string) => void
 }) {
   const title = session.title || "Untitled"
+  const [editingTitle, setEditingTitle] = useState<string | null>(null)
+  const [saving, setSaving] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const inputRef = useRef<HTMLInputElement | null>(null)
+  const isEditing = editingTitle !== null
+  useEffect(() => {
+    if (isEditing) inputRef.current?.focus()
+  }, [isEditing])
   const activate = () => {
     if (state !== "active") onSwitch(session.id)
   }
@@ -66,13 +77,16 @@ export function AppSessionRow({
       // stage accepts CHAT_SESSION_DRAG_TYPE; see ChatPaneStageDock). Only
       // same-project sessions are draggable — a split pane lives in the loaded
       // workspace's stage, so cross-project sessions can't join it.
-      draggable={canSplit}
+      draggable={canSplit && !isEditing}
       onDragStart={canSplit ? (event) => {
+        if (isEditing) return
         event.dataTransfer.setData(CHAT_SESSION_DRAG_TYPE, session.id)
         event.dataTransfer.setData("text/plain", title)
         event.dataTransfer.effectAllowed = "copyMove"
       } : undefined}
-      onClick={activate}
+      onClick={() => {
+        if (!isEditing) activate()
+      }}
       className={cn(
         "group flex min-h-8 w-full items-center gap-2 rounded-md border px-2.5 py-1 text-left transition-colors",
         state === "active"
@@ -91,18 +105,55 @@ export function AppSessionRow({
         strokeWidth={1.75}
         aria-hidden="true"
       />
-      <button
-        type="button"
-        onClick={(event) => {
-          event.stopPropagation()
-          activate()
-        }}
-        disabled={state === "active"}
-        className="min-w-0 flex-1 truncate rounded text-left text-[13px] font-medium leading-5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40 disabled:cursor-default"
-        title={title}
-      >
-        {title}
-      </button>
+      {isEditing ? (
+        <span className="min-w-0 flex-1">
+          <input
+            ref={inputRef}
+            value={editingTitle ?? ""}
+            disabled={saving}
+            onChange={(event) => setEditingTitle(event.currentTarget.value)}
+            onClick={(event) => event.stopPropagation()}
+            onKeyDown={(event) => {
+              if (event.key === "Enter") {
+                event.preventDefault()
+                const next = (editingTitle ?? "").trim()
+                if (!next) {
+                  setError("Session title is required")
+                  return
+                }
+                setSaving(true)
+                setError(null)
+                void Promise.resolve(onRename?.(session.id, next)).then(() => {
+                  setEditingTitle(null)
+                }).catch((err) => {
+                  setError(err instanceof Error ? err.message : "Rename failed")
+                }).finally(() => setSaving(false))
+              } else if (event.key === "Escape") {
+                event.preventDefault()
+                setEditingTitle(null)
+                setError(null)
+              }
+            }}
+            aria-label={`Rename ${title}`}
+            aria-invalid={error ? true : undefined}
+            className="h-6 w-full rounded border border-border bg-background px-1.5 text-[13px] text-foreground outline-none focus-visible:ring-2 focus-visible:ring-ring/40 disabled:opacity-60"
+          />
+          {error ? <span className="sr-only" role="alert">{error}</span> : null}
+        </span>
+      ) : (
+        <button
+          type="button"
+          onClick={(event) => {
+            event.stopPropagation()
+            activate()
+          }}
+          disabled={state === "active"}
+          className="min-w-0 flex-1 truncate rounded text-left text-[13px] font-medium leading-5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40 disabled:cursor-default"
+          title={title}
+        >
+          {title}
+        </button>
+      )}
       {attentionBadge ? (
         <span
           data-boring-workspace-part="app-session-badge"
@@ -151,11 +202,26 @@ export function AppSessionRow({
       {/* "Open in new chat pane" only for closed, same-project sessions —
           it's pointless once open, and a cross-project session can't share
           this workspace's split stage. */}
-      {(state === "normal" && canSplit) || onDelete ? (
+      {onRename || (state === "normal" && canSplit) || onDelete ? (
         <span
           data-boring-workspace-part="app-session-actions"
           className="flex w-0 shrink-0 items-center gap-0.5 overflow-hidden opacity-0 transition-[width,opacity,margin] group-hover:ml-1 group-hover:w-auto group-hover:opacity-100 group-focus-within:ml-1 group-focus-within:w-auto group-focus-within:opacity-100"
         >
+          {onRename && !isEditing ? (
+            <button
+              type="button"
+              aria-label={`Rename ${title}`}
+              title="Rename"
+              onClick={(event) => {
+                event.stopPropagation()
+                setEditingTitle(title)
+                setError(null)
+              }}
+              className="grid size-6 place-items-center rounded-md text-muted-foreground hover:bg-background hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
+            >
+              <Pencil className="h-3.5 w-3.5" strokeWidth={1.75} />
+            </button>
+          ) : null}
           {state === "normal" && canSplit ? (
             <button
               type="button"

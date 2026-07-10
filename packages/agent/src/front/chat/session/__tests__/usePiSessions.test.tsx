@@ -764,6 +764,61 @@ describe('usePiSessions', () => {
     expect(result.current.sessions.filter((item) => item.id === 'pi-new')).toHaveLength(1)
   })
 
+  test('rename optimistically updates the list, patches the server, and refreshes in the background', async () => {
+    const remote = remoteFactory()
+    fetchMock
+      .mockResolvedValueOnce(jsonResponse([session('pi-rename')]))
+      .mockResolvedValueOnce(jsonResponse({ ...session('pi-rename'), title: 'Renamed session', updatedAt: '2026-06-04T00:00:00.000Z' }))
+      .mockResolvedValueOnce(jsonResponse([{ ...session('pi-rename'), title: 'Renamed session', updatedAt: '2026-06-04T00:00:00.000Z' }]))
+
+    const { result } = renderHook(() => usePiSessions({
+      storageScope: 'scope-a',
+      requestHeaders: { authorization: 'Bearer redacted' },
+      fetch: fetchMock as unknown as typeof fetch,
+      createRemoteSession: remote.factory,
+    }))
+    await waitFor(() => expect(result.current.activeSessionId).toBe('pi-rename'))
+
+    let renamed!: SessionSummary
+    await act(async () => {
+      renamed = await result.current.rename('pi-rename', { title: ' Renamed session ' })
+    })
+
+    expect(renamed).toMatchObject({ id: 'pi-rename', title: 'Renamed session' })
+    expect(result.current.sessions[0]).toMatchObject({ id: 'pi-rename', title: 'Renamed session' })
+    expect(fetchMock).toHaveBeenNthCalledWith(2, '/api/v1/agent/pi-chat/sessions/pi-rename', {
+      method: 'PATCH',
+      headers: {
+        authorization: 'Bearer redacted',
+        'x-boring-storage-scope': 'scope-a',
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ title: 'Renamed session' }),
+    })
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(3))
+  })
+
+  test('rename rolls back the optimistic title when the server rejects it', async () => {
+    const remote = remoteFactory()
+    fetchMock
+      .mockResolvedValueOnce(jsonResponse([session('pi-rename')]))
+      .mockResolvedValueOnce(jsonResponse({ error: { message: 'forbidden' } }, 403))
+
+    const { result } = renderHook(() => usePiSessions({
+      storageScope: 'scope-a',
+      fetch: fetchMock as unknown as typeof fetch,
+      createRemoteSession: remote.factory,
+    }))
+    await waitFor(() => expect(result.current.activeSessionId).toBe('pi-rename'))
+
+    await act(async () => {
+      await expect(result.current.rename('pi-rename', { title: 'Blocked rename' })).rejects.toThrow('Failed to rename session: 403')
+    })
+
+    expect(result.current.sessions[0]).toMatchObject({ id: 'pi-rename', title: 'Session pi-rename' })
+    expect(fetchMock).toHaveBeenCalledTimes(3)
+  })
+
   test('created-session overlay clears when request headers change before refresh completes', async () => {
     const remote = remoteFactory()
     const oldHeaderRefresh = deferred<Response>()

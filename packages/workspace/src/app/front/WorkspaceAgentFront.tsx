@@ -74,6 +74,7 @@ export interface WorkspaceAgentSessionsApi<
   workspaceId?: string | null
   switch: (id: string) => void
   create: (input?: { title?: string }) => void | Promise<unknown>
+  rename?: (id: string, input: { title: string }) => void | Promise<unknown>
   delete: (id: string) => void | Promise<unknown>
   loadMore?: () => void | Promise<unknown>
   refresh?: (options?: { background?: boolean }) => void | Promise<unknown>
@@ -824,6 +825,11 @@ export function WorkspaceAgentFront<
       : onCreateSession
         ? () => onCreateSession()
         : () => localSessionStore.create()
+  const resolvedRename = remoteSessionsPending
+    ? undefined
+    : sessionApi?.rename
+      ? (id: string, title: string) => sessionApi.rename?.(id, { title })
+      : undefined
   const rawDelete = remoteSessionsPending
     ? remoteSessionActionsUnavailable
     : sessionApi?.delete ?? onDeleteSession ?? localSessionStore.remove
@@ -1575,6 +1581,7 @@ export function WorkspaceAgentFront<
     onSwitch: switchToChatPane,
     onOpenAsTab: openChatPane,
     onCreate: resolvedCreate,
+    onRename: resolvedRename,
     onDelete: deleteSessionAndPane,
     onLoadMore: sessionApi?.loadMore,
     hasMore: sessionApi?.hasMore,
@@ -1806,6 +1813,7 @@ export function WorkspaceAgentFront<
           onSwitchSession={switchToChatPane}
           onOpenSessionAsPane={openChatPane}
           onToggleSessionPinned={toggleSessionPinned}
+          onRenameSession={resolvedRename}
           onDeleteSession={canDeleteSessions ? deleteSessionAndPane : undefined}
           actions={managementActions}
         />

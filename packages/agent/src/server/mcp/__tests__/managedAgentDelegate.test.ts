@@ -574,6 +574,10 @@ class FakeSessionStore implements SessionStore {
     return summary(sessionId)
   }
 
+  async rename(_ctx: SessionCtx, sessionId: string, title: string): Promise<SessionSummary> {
+    return { ...summary(sessionId), title }
+  }
+
   async delete(): Promise<void> {}
 }
 

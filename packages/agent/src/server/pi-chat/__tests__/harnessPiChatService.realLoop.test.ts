@@ -46,6 +46,7 @@ const ctx: PiSessionRequestContext = {
 const sessionStore: SessionStore = {
   list: vi.fn(async () => []),
   create: vi.fn(async () => ({ id: 's1', title: 'New session', createdAt: '', updatedAt: '', turnCount: 0 })),
+  rename: vi.fn(async (_ctx, sessionId, title) => ({ id: sessionId, title, createdAt: '', updatedAt: '', turnCount: 0 })),
   load: vi.fn(async () => ({ id: 's1', title: 'New session', createdAt: '', updatedAt: '', turnCount: 0, messages: [] })),
   delete: vi.fn(async () => {}),
 }

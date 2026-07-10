@@ -2,6 +2,7 @@ export interface SessionStore {
   list(ctx: SessionCtx, options?: SessionListOptions): Promise<SessionSummary[]>
   create(ctx: SessionCtx, init?: { title?: string }): Promise<SessionSummary>
   load(ctx: SessionCtx, sessionId: string): Promise<SessionDetail>
+  rename(ctx: SessionCtx, sessionId: string, title: string): Promise<SessionSummary>
   delete(ctx: SessionCtx, sessionId: string): Promise<void>
 }
 

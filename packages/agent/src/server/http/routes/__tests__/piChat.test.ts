@@ -64,6 +64,15 @@ class FakePiChatService implements PiChatSessionService {
     return session
   }
 
+  async renameSession(ctx: PiSessionRequestContext, sessionId: string, title: string) {
+    this.calls.push({ method: 'renameSession', ctx, sessionId, payload: { title } })
+    const existing = this.sessions.find((session) => session.id === sessionId)
+    if (!existing) throw Object.assign(new Error('session not found'), { code: ErrorCode.enum.SESSION_NOT_FOUND })
+    const renamed = { ...existing, title, updatedAt: '2026-06-03T00:03:00.000Z' }
+    this.sessions = this.sessions.map((session) => session.id === sessionId ? renamed : session)
+    return renamed
+  }
+
   async deleteSession(ctx: PiSessionRequestContext, sessionId: string) {
     this.calls.push({ method: 'deleteSession', ctx, sessionId })
     this.sessions = this.sessions.filter((session) => session.id !== sessionId)
@@ -139,6 +148,15 @@ describe('piChatRoutes', () => {
     expect(created.statusCode).toBe(201)
     expect(created.json()).toMatchObject({ id: 'pi-new', title: 'New Pi session' })
 
+    const renamed = await app.inject({
+      method: 'PATCH',
+      url: '/api/v1/agent/pi-chat/sessions/pi-new',
+      headers: { 'x-boring-storage-scope': 'scope-a' },
+      payload: { title: 'Renamed Pi session' },
+    })
+    expect(renamed.statusCode).toBe(200)
+    expect(renamed.json()).toMatchObject({ id: 'pi-new', title: 'Renamed Pi session' })
+
     const deleted = await app.inject({
       method: 'DELETE',
       url: '/api/v1/agent/pi-chat/sessions/pi-new',
@@ -146,7 +164,7 @@ describe('piChatRoutes', () => {
     })
     expect(deleted.statusCode).toBe(204)
 
-    expect(service.calls.map((call) => call.method)).toEqual(['listSessions', 'createSession', 'deleteSession'])
+    expect(service.calls.map((call) => call.method)).toEqual(['listSessions', 'createSession', 'renameSession', 'deleteSession'])
     expect(service.calls[0]).toMatchObject({
       ctx: { workspaceId: 'workspace-a', storageScope: 'scope-a', authSubject: 'user-a' },
       options: { limit: 50, offset: 0 },

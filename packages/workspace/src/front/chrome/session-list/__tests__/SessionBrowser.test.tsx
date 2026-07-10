@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from "vitest"
-import { act, render, fireEvent, screen } from "@testing-library/react"
+import { act, render, fireEvent, screen, waitFor } from "@testing-library/react"
 import { useEffect } from "react"
 import { SessionBrowser } from "../SessionBrowser"
 import { WorkspaceAttentionProvider, useWorkspaceAttention } from "../../../attention/WorkspaceAttentionProvider"
@@ -63,6 +63,20 @@ describe("SessionBrowser", () => {
     render(<SessionBrowser sessions={sample} activeId="s1" onSwitch={onSwitch} onDelete={onDelete} />)
     fireEvent.click(screen.getByLabelText(/Delete Second session/))
     expect(onDelete).toHaveBeenCalledWith("s2")
+    expect(onSwitch).not.toHaveBeenCalled()
+  })
+
+  it("renames a session inline without also switching sessions", async () => {
+    const onSwitch = vi.fn()
+    const onRename = vi.fn().mockResolvedValue(undefined)
+    render(<SessionBrowser sessions={sample} activeId="s1" onSwitch={onSwitch} onRename={onRename} />)
+
+    fireEvent.click(screen.getByLabelText("Rename Second session"))
+    const input = screen.getByLabelText("Rename Second session")
+    fireEvent.change(input, { target: { value: "Renamed session" } })
+    fireEvent.keyDown(input, { key: "Enter" })
+
+    await waitFor(() => expect(onRename).toHaveBeenCalledWith("s2", "Renamed session"))
     expect(onSwitch).not.toHaveBeenCalled()
   })
 

@@ -5,11 +5,13 @@ test('checking SessionStore contract', () => {
   expectTypeOf<SessionStore>().toHaveProperty('list')
   expectTypeOf<SessionStore>().toHaveProperty('create')
   expectTypeOf<SessionStore>().toHaveProperty('load')
+  expectTypeOf<SessionStore>().toHaveProperty('rename')
   expectTypeOf<SessionStore>().toHaveProperty('delete')
 
   expectTypeOf<SessionStore['list']>().toBeFunction()
   expectTypeOf<SessionStore['create']>().toBeFunction()
   expectTypeOf<SessionStore['load']>().toBeFunction()
+  expectTypeOf<SessionStore['rename']>().toBeFunction()
   expectTypeOf<SessionStore['delete']>().toBeFunction()
 })
 

@@ -58,6 +58,9 @@ const EmptyBodySchema = z.preprocess((value) => value ?? {}, z.object({}).strict
 const CreateSessionBodySchema = z.preprocess((value) => value ?? {}, z.object({
   title: z.string().min(1).max(200).optional(),
 }).strict())
+const RenameSessionBodySchema = z.object({
+  title: z.string().trim().min(1).max(200),
+}).strict()
 
 export interface PiChatEventStreamSubscription {
   type: 'ok'
@@ -73,6 +76,7 @@ export type PiChatEventSubscriber = (event: PiChatEvent) => void
 export interface PiChatSessionService {
   listSessions?(ctx: PiSessionRequestContext, options?: SessionListOptions): Promise<SessionSummary[]>
   createSession?(ctx: PiSessionRequestContext, init?: PiSessionCreateInit): Promise<SessionSummary>
+  renameSession?(ctx: PiSessionRequestContext, sessionId: string, title: string): Promise<SessionSummary>
   deleteSession?(ctx: PiSessionRequestContext, sessionId: string): Promise<void>
   readState(ctx: PiSessionRequestContext, sessionId: string): Promise<PiChatSnapshot>
   subscribe(ctx: PiSessionRequestContext, sessionId: string, cursor: number, subscriber: PiChatEventSubscriber): Promise<PiChatEventStreamResult>
@@ -148,6 +152,20 @@ export function piChatRoutes(
       return reply.code(201).send(await service.createSession(getRequestContext(request, opts), body))
     } catch (err) {
       return sendRouteError(reply, err, 'create pi chat session failed')
+    }
+  })
+
+  app.patch('/api/v1/agent/pi-chat/sessions/:sessionId', async (request, reply) => {
+    const params = parseParams(request, reply)
+    if (!params) return
+    const body = parseWithSchema(RenameSessionBodySchema, request.body, reply, 'body')
+    if (!body) return
+    try {
+      const service = await resolveService(opts, request)
+      if (!service.renameSession) throw unsupportedServiceMethod('rename Pi chat session')
+      return reply.send(await service.renameSession(getRequestContext(request, opts), params.sessionId, body.title))
+    } catch (err) {
+      return sendRouteError(reply, err, 'rename pi chat session failed')
     }
   })
 

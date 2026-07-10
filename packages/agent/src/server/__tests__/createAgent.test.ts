@@ -663,6 +663,15 @@ class MemorySessionStore implements SessionStore {
     return record
   }
 
+  async rename(ctx: SessionCtx, sessionId: string, title: string): Promise<SessionSummary> {
+    const record = this.records.get(sessionId)
+    if (!record) throw new Error(`missing session ${sessionId}`)
+    this.assertOwner(ctx, sessionId)
+    const updated = { ...record, title, updatedAt: new Date().toISOString() }
+    this.records.set(sessionId, updated)
+    return updated
+  }
+
   async delete(ctx: SessionCtx, sessionId: string): Promise<void> {
     this.assertOwner(ctx, sessionId)
     this.deleted.push(sessionId)

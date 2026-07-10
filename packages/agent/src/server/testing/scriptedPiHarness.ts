@@ -94,6 +94,14 @@ class ScriptedSessionStore implements SessionStore {
     return toSummary(record)
   }
 
+  async rename(_ctx: SessionCtx, sessionId: string, title: string): Promise<SessionSummary> {
+    const record = this.records.get(sessionId)
+    if (!record) throw new Error(`Session not found: ${sessionId}`)
+    record.title = title
+    record.updatedAt = new Date().toISOString()
+    return toSummary(record)
+  }
+
   async delete(_ctx: SessionCtx, sessionId: string): Promise<void> {
     this.records.delete(sessionId)
   }

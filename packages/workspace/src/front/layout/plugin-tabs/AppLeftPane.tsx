@@ -77,6 +77,7 @@ export interface AppLeftPaneProps {
   onSwitchSession: (id: string) => void
   onOpenSessionAsPane: (id: string) => void
   onToggleSessionPinned: (id: string) => void
+  onRenameSession?: (id: string, title: string) => void | Promise<unknown>
   onDeleteSession?: (id: string) => void
   /** Primary app-left actions supplied by the host/app/plugin shell after New chat/Search. */
   actions?: readonly AppLeftPaneAction[]
@@ -138,6 +139,7 @@ export function AppLeftPane({
   onSwitchSession,
   onOpenSessionAsPane,
   onToggleSessionPinned,
+  onRenameSession,
   onDeleteSession,
   actions = [],
   layoutMode = "single-project",
@@ -234,6 +236,7 @@ export function AppLeftPane({
         onSwitch={isActiveProjectSession ? onSwitchSession : () => onOpenProjectSession?.(projectId, session.id)}
         onOpenAsPane={isActiveProjectSession ? onOpenSessionAsPane : () => onOpenProjectSession?.(projectId, session.id)}
         onTogglePinned={onToggleSessionPinned}
+        onRename={isActiveProjectSession ? onRenameSession : undefined}
         onDelete={isActiveProjectSession ? onDeleteSession : undefined}
       />
     )

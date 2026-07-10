@@ -12,6 +12,7 @@ interface SessionListPaneParams {
   onSwitch?: (id: string) => void
   onOpenAsTab?: (id: string) => void
   onCreate?: () => void
+  onRename?: (id: string, title: string) => void | Promise<unknown>
   onDelete?: (id: string) => void
   onLoadMore?: () => void
   hasMore?: boolean
@@ -29,6 +30,7 @@ function SessionListPane({ params }: PaneProps<SessionListPaneParams | undefined
     onSwitch: params?.onSwitch,
     onOpenAsTab: params?.onOpenAsTab,
     onCreate: params?.onCreate,
+    onRename: params?.onRename,
     onDelete: params?.onDelete,
     onLoadMore: params?.onLoadMore,
     hasMore: params?.hasMore,

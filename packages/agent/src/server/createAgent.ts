@@ -317,6 +317,11 @@ function createFacadeSessionStore(
       const accessCtx = await authorizeSessionAccess(runtime, sessionId, ctx, sessionContexts)
       return (await store()).load(accessCtx ?? {}, sessionId)
     },
+    async rename(ctx: SessionCtx, sessionId: string, title: string) {
+      const runtime = await getRuntime()
+      const accessCtx = await authorizeSessionAccess(runtime, sessionId, ctx, sessionContexts)
+      return (await store()).rename(accessCtx ?? {}, sessionId, title)
+    },
     async delete(ctx: SessionCtx, sessionId: string) {
       const runtime = await getRuntime()
       const accessCtx = await authorizeSessionAccess(runtime, sessionId, ctx, sessionContexts)

@@ -1,7 +1,7 @@
 "use client"
 
-import { useEffect, useMemo, useState } from "react"
-import { ChevronLeft, ChevronRight, ExternalLink, Pin, Plus } from "lucide-react"
+import { useEffect, useMemo, useRef, useState } from "react"
+import { ChevronLeft, ChevronRight, ExternalLink, Pencil, Pin, Plus } from "lucide-react"
 import { IconButton } from "@hachej/boring-ui-kit"
 import { cn } from "../../lib/utils"
 import { ControlTooltip } from "../../components/ControlTooltip"
@@ -49,6 +49,7 @@ export interface SessionBrowserProps {
   onSwitch?: (id: string) => void
   onOpenAsTab?: (id: string) => void
   onCreate?: () => void
+  onRename?: (id: string, title: string) => void | Promise<unknown>
   onDelete?: (id: string) => void
   onLoadMore?: () => void
   hasMore?: boolean
@@ -159,6 +160,7 @@ export function SessionBrowser({
   onSwitch,
   onOpenAsTab,
   onCreate,
+  onRename,
   onDelete,
   onLoadMore,
   hasMore = false,
@@ -280,6 +282,7 @@ export function SessionBrowser({
                     onSwitch={onSwitch}
                     onOpenAsTab={onOpenAsTab}
                     onTogglePin={onTogglePin}
+                    onRename={onRename}
                     onDelete={onDelete}
                   />
                 ))}
@@ -311,6 +314,7 @@ export function SessionBrowser({
                     onSwitch={onSwitch}
                     onOpenAsTab={onOpenAsTab}
                     onTogglePin={onTogglePin}
+                    onRename={onRename}
                     onDelete={onDelete}
                   />
                 ))}
@@ -352,6 +356,7 @@ export function SessionBrowser({
                           onSwitch={onSwitch}
                           onOpenAsTab={onOpenAsTab}
                           onTogglePin={onTogglePin}
+                          onRename={onRename}
                           onDelete={onDelete}
                         />
                       ))}
@@ -438,6 +443,7 @@ function SessionRow({
   onSwitch,
   onOpenAsTab,
   onTogglePin,
+  onRename,
   onDelete,
 }: {
   session: SessionItem
@@ -449,10 +455,53 @@ function SessionRow({
   onSwitch?: (id: string) => void
   onOpenAsTab?: (id: string) => void
   onTogglePin?: (id: string) => void
+  onRename?: (id: string, title: string) => void | Promise<unknown>
   onDelete?: (id: string) => void
 }) {
   const time = relativeTime(session.updatedAt)
+  const title = session.title || "Untitled"
+  const [editingTitle, setEditingTitle] = useState<string | null>(null)
+  const [saving, setSaving] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const inputRef = useRef<HTMLInputElement | null>(null)
+  const isEditing = editingTitle !== null
   const hasSessionStatus = Boolean(attentionBadge || working || time)
+
+  useEffect(() => {
+    if (isEditing) inputRef.current?.focus()
+  }, [isEditing])
+
+  const startRename = () => {
+    setEditingTitle(title)
+    setError(null)
+  }
+  const cancelRename = () => {
+    setEditingTitle(null)
+    setError(null)
+  }
+  const saveRename = async () => {
+    if (!onRename || editingTitle === null) return
+    const nextTitle = editingTitle.trim()
+    if (!nextTitle) {
+      setError("Session title is required")
+      return
+    }
+    if (nextTitle === title) {
+      cancelRename()
+      return
+    }
+    setSaving(true)
+    setError(null)
+    try {
+      await onRename(session.id, nextTitle)
+      setEditingTitle(null)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Rename failed")
+    } finally {
+      setSaving(false)
+    }
+  }
+
   return (
     <li
       role="listitem"
@@ -463,13 +512,16 @@ function SessionRow({
         "cursor-pointer hover:bg-foreground/[0.04]",
         active && "bg-foreground/[0.06] text-foreground",
       )}
-      onClick={() => onSwitch?.(session.id)}
+      onClick={() => {
+        if (!isEditing) onSwitch?.(session.id)
+      }}
       // Rows can be dragged onto the chat stage to open the session as a
       // pane at the drop position (dock engine).
-      draggable
+      draggable={!isEditing}
       onDragStart={(e) => {
+        if (isEditing) return
         e.dataTransfer.setData(CHAT_SESSION_DRAG_TYPE, session.id)
-        e.dataTransfer.setData("text/plain", session.title || session.id)
+        e.dataTransfer.setData("text/plain", title)
         e.dataTransfer.effectAllowed = "copyMove"
       }}
     >
@@ -483,10 +535,35 @@ function SessionRow({
           )}
         />
       )}
-      <span className="min-w-0 flex-1 truncate leading-5" title={session.title}>
-        <span className={cn(active ? "font-medium text-foreground" : "text-foreground/90")}>
-          {session.title || "Untitled"}
-        </span>
+      <span className="min-w-0 flex-1 truncate leading-5" title={title}>
+        {isEditing ? (
+          <span className="block">
+            <input
+              ref={inputRef}
+              value={editingTitle ?? ""}
+              disabled={saving}
+              onChange={(event) => setEditingTitle(event.currentTarget.value)}
+              onClick={(event) => event.stopPropagation()}
+              onKeyDown={(event) => {
+                if (event.key === "Enter") {
+                  event.preventDefault()
+                  void saveRename()
+                } else if (event.key === "Escape") {
+                  event.preventDefault()
+                  cancelRename()
+                }
+              }}
+              aria-label={`Rename ${title}`}
+              aria-invalid={error ? true : undefined}
+              className="h-6 w-full rounded border border-border bg-background px-1.5 text-[13px] text-foreground outline-none focus-visible:ring-2 focus-visible:ring-ring/50 disabled:opacity-60"
+            />
+            {error ? <span className="sr-only" role="alert">{error}</span> : null}
+          </span>
+        ) : (
+          <span className={cn(active ? "font-medium text-foreground" : "text-foreground/90")}>
+            {title}
+          </span>
+        )}
       </span>
       <span
         className={cn(
@@ -564,6 +641,23 @@ function SessionRow({
             (hasSessionStatus || onTogglePin) && "group-hover:ml-1 focus-within:ml-1",
           )}
         >
+          {onRename && !isEditing && (
+            <ControlTooltip label="Rename session">
+              <IconButton
+                type="button"
+                variant="ghost"
+                size="icon-xs"
+                className="shrink-0 text-muted-foreground/70 hover:text-foreground focus-visible:opacity-100"
+                onClick={(e) => {
+                  e.stopPropagation()
+                  startRename()
+                }}
+                aria-label={`Rename ${title}`}
+              >
+                <Pencil className="h-3.5 w-3.5" strokeWidth={1.75} />
+              </IconButton>
+            </ControlTooltip>
+          )}
           {onOpenAsTab && (
             <ControlTooltip label="Open in chat pane">
               <IconButton
@@ -575,7 +669,7 @@ function SessionRow({
                   e.stopPropagation()
                   onOpenAsTab(session.id)
                 }}
-                aria-label={`Open ${session.title || "session"} in chat pane`}
+                aria-label={`Open ${title} in chat pane`}
               >
                 <ExternalLink className="h-3.5 w-3.5" strokeWidth={1.75} />
               </IconButton>
@@ -592,7 +686,7 @@ function SessionRow({
                   e.stopPropagation()
                   onDelete(session.id)
                 }}
-                aria-label={`Delete ${session.title || "session"}`}
+                aria-label={`Delete ${title}`}
               >
                 <svg width="12" height="12" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round">
                   <path d="M3.5 3.5l7 7M10.5 3.5l-7 7" />

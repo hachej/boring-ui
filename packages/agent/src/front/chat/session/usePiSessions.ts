@@ -16,6 +16,10 @@ export interface PiSessionCreateInit {
   title?: string
 }
 
+export interface PiSessionRenameInit {
+  title: string
+}
+
 export interface PiSessionRefreshOptions {
   background?: boolean
 }
@@ -54,6 +58,7 @@ export interface UsePiSessionsResult {
   refresh: (options?: PiSessionRefreshOptions) => Promise<void>
   create: (init?: PiSessionCreateInit) => Promise<SessionSummary>
   switch: (id: string) => void
+  rename: (id: string, init: PiSessionRenameInit) => Promise<SessionSummary>
   delete: (id: string) => Promise<void>
   loadMore: () => Promise<void>
   reset: () => void
@@ -351,6 +356,36 @@ export function usePiSessions(options: UsePiSessionsOptions = {}): UsePiSessions
     persistActive(next)
   }, [persistActive])
 
+  const renameSession = useCallback(async (id: string, init: PiSessionRenameInit): Promise<SessionSummary> => {
+    if (!enabled) throw new Error('Pi sessions are disabled')
+    const title = init.title.trim()
+    if (!title) throw new Error('Session title is required')
+    const previous = sessionsRef.current
+    const optimisticUpdatedAt = new Date().toISOString()
+    setDataStorageScope(storageScope)
+    setSessions((current) => current.map((session) => session.id === id ? { ...session, title, updatedAt: optimisticUpdatedAt } : session))
+
+    try {
+      const response = await fetchImpl(sessionsUrl(`/${encodeURIComponent(id)}`), {
+        method: 'PATCH',
+        headers: { ...requestHeaders(), 'Content-Type': 'application/json' },
+        body: JSON.stringify({ title }),
+      })
+      if (!response.ok) throw new Error(`Failed to rename session: ${response.status}`)
+      const session = toSessionSummary(await response.json())
+      setSessions((current) => mergeSessions(current.map((item) => item.id === id ? session : item)))
+      setError(undefined)
+      void refresh({ background: true })
+      return session
+    } catch (err) {
+      const error = err instanceof Error ? err : new Error(String(err))
+      setSessions(previous)
+      setError(error)
+      void refresh({ background: true })
+      throw error
+    }
+  }, [enabled, fetchImpl, refresh, requestHeaders, sessionsUrl, storageScope])
+
   const deleteSession = useCallback(async (id: string): Promise<void> => {
     if (!enabled) throw new Error('Pi sessions are disabled')
     ensurePendingScope()
@@ -409,6 +444,7 @@ export function usePiSessions(options: UsePiSessionsOptions = {}): UsePiSessions
     refresh,
     create,
     switch: switchSession,
+    rename: renameSession,
     delete: deleteSession,
     loadMore,
     reset,

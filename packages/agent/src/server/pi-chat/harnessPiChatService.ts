@@ -112,6 +112,14 @@ export class HarnessPiChatService implements PiChatSessionService {
     return this.sessionStore.create(toSessionCtx(ctx), init)
   }
 
+  async renameSession(ctx: PiSessionRequestContext, sessionId: string, title: string) {
+    try {
+      return await this.sessionStore.rename(toSessionCtx(ctx), sessionId, title)
+    } catch (error) {
+      throw normalizeSessionAccessError(error, sessionId)
+    }
+  }
+
   async deleteSession(ctx: PiSessionRequestContext, sessionId: string) {
     const sessionCtx = toSessionCtx(ctx)
     const sessionKey = sessionCacheKey(sessionId, sessionCtx)

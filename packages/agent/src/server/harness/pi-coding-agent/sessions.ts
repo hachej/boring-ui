@@ -222,7 +222,7 @@ export class PiSessionStore implements SessionStore {
   async load(ctx: SessionCtx, sessionId: string): Promise<SessionDetail> {
     const resolved = await this.resolveSessionTranscript(ctx, sessionId);
     const title =
-      extractTitle(resolved.sessionEntries) ?? extractTitle(resolved.linkedEntries) ?? "New session";
+      extractTitle(resolved.linkedEntries) ?? extractTitle(resolved.sessionEntries) ?? "New session";
     const turnCount = countUserTurns(resolved.transcriptEntries);
     const updatedAtMs = Math.max(resolved.fileStat.mtime.getTime(), resolved.linkedMtimeMs ?? 0);
 
@@ -233,6 +233,30 @@ export class PiSessionStore implements SessionStore {
       updatedAt: new Date(updatedAtMs).toISOString(),
       turnCount,
     };
+  }
+
+  async rename(ctx: SessionCtx, sessionId: string, title: string): Promise<SessionSummary> {
+    const normalizedTitle = normalizeSessionTitle(title);
+    const filepath = await this.resolveSessionFile(sessionId, ctx);
+    const fileSessionId = await this.readSessionFileId(filepath);
+    if (fileSessionId && fileSessionId !== sessionId) throw new Error(`Session not found: ${sessionId}`);
+
+    const linkedPiFile = await this.linkedPiFileFor(filepath);
+    const targetPath = linkedPiFile && resolve(linkedPiFile) !== resolve(filepath) && await fileExists(linkedPiFile)
+      ? linkedPiFile
+      : filepath;
+    const now = new Date().toISOString();
+    const infoEntry: SessionInfoEntry = {
+      type: "session_info",
+      id: randomUUID(),
+      parentId: null,
+      timestamp: now,
+      name: normalizedTitle,
+    };
+    await appendFile(targetPath, JSON.stringify(infoEntry) + "\n", "utf-8");
+    this.prefixCache.delete(filepath);
+    this.prefixCache.delete(targetPath);
+    return this.load(ctx, sessionId);
   }
 
   /**
@@ -557,8 +581,8 @@ export class PiSessionStore implements SessionStore {
       ) ?? [];
 
       const title =
-        extractTitle(sessionEntries) ??
         extractTitle(linkedEntries) ??
+        extractTitle(sessionEntries) ??
         firstUserMessage(linkedEntries) ??
         firstUserMessage(sessionEntries) ??
         "New session";
@@ -858,6 +882,22 @@ function normalizeSessionCtx(ctx: SessionCtx | undefined): SessionCtx | undefine
     ...(ctx.workspaceId ? { workspaceId: ctx.workspaceId } : {}),
     ...(ctx.userId ? { userId: ctx.userId } : {}),
   };
+}
+
+function normalizeSessionTitle(title: string): string {
+  const normalized = title.replace(/[\r\n]+/g, " ").trim();
+  if (!normalized) throw new Error("session title is required");
+  if (normalized.length > 200) throw new Error("session title must be at most 200 characters");
+  return normalized;
+}
+
+async function fileExists(filepath: string): Promise<boolean> {
+  try {
+    await fsStat(filepath);
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 function sameSessionCtx(a: SessionCtx | undefined, b: SessionCtx | undefined): boolean {

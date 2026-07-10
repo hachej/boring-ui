@@ -73,6 +73,14 @@ class TestSessionStore implements SessionStore {
     return record
   }
 
+  async rename(_ctx: SessionCtx, sessionId: string, title: string): Promise<SessionSummary> {
+    const record = this.records.get(sessionId)
+    if (!record) throw new Error(`missing session ${sessionId}`)
+    const updated = { ...record, title, updatedAt: new Date().toISOString() }
+    this.records.set(sessionId, updated)
+    return updated
+  }
+
   async delete(_ctx: SessionCtx, sessionId: string): Promise<void> {
     this.records.delete(sessionId)
   }
@@ -377,6 +385,10 @@ test('registerAgentRoutes reload reruns provisioning and refreshes skills scope'
         async create() {
           const now = new Date().toISOString()
           return { id: 'reload-test', title: 'Reload', createdAt: now, updatedAt: now, turnCount: 0 }
+        },
+        async rename(_ctx: SessionCtx, sessionId: string, title: string) {
+          const now = new Date().toISOString()
+          return { id: sessionId, title, createdAt: now, updatedAt: now, turnCount: 0 }
         },
         async load() {
           const now = new Date().toISOString()
@@ -1493,6 +1505,10 @@ test('request-scoped command endpoints use the workspace harness and request ide
           const now = new Date().toISOString()
           return { id: 'custom', title: 'Custom', createdAt: now, updatedAt: now, turnCount: 0 }
         },
+        async rename(_ctx: SessionCtx, sessionId: string, title: string) {
+          const now = new Date().toISOString()
+          return { id: sessionId, title, createdAt: now, updatedAt: now, turnCount: 0 }
+        },
         async load() {
           const now = new Date().toISOString()
           return { id: 'custom', title: 'Custom', createdAt: now, updatedAt: now, turnCount: 0, messages: [] }
@@ -1569,6 +1585,10 @@ test('metered command execution rejects commands before harness dispatch', async
         async create() {
           const now = new Date().toISOString()
           return { id: 'default', title: 'Default', createdAt: now, updatedAt: now, turnCount: 0 }
+        },
+        async rename(_ctx: SessionCtx, sessionId: string, title: string) {
+          const now = new Date().toISOString()
+          return { id: sessionId, title, createdAt: now, updatedAt: now, turnCount: 0 }
         },
         async load() {
           const now = new Date().toISOString()
@@ -1790,6 +1810,10 @@ test('runtimeEnvContributions merge generic host env into sandbox exec without w
       sessions: {
         async list() { return [] },
         async create() { const now = new Date().toISOString(); return { id: 's', title: 'S', createdAt: now, updatedAt: now, turnCount: 0 } },
+        async rename(_ctx: SessionCtx, sessionId: string, title: string) {
+          const now = new Date().toISOString()
+          return { id: sessionId, title, createdAt: now, updatedAt: now, turnCount: 0 }
+        },
         async load() { const now = new Date().toISOString(); return { id: 's', title: 'S', createdAt: now, updatedAt: now, turnCount: 0, messages: [] } },
         async delete() {},
       },
