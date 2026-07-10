@@ -1360,9 +1360,11 @@ export const registerAgentRoutes: FastifyPluginAsync<RegisterAgentRoutesOptions>
       const scope = await getSkillsScopeForRequest(request)
       const binding = await getBindingForRequest(request)
       if (hasRuntimeProvisioningInput) {
-        const runtimeReadonlyRoots = binding.runtimeProvisioning?.readonlySkillRoots
-          ? normalizeReadonlySkillRoots(binding.runtimeProvisioning.readonlySkillRoots, scope.root)
-          : readonlySkillRootsFromPaths(binding.runtimeProvisioning?.skillPaths, scope.root)
+        const runtimeProvisioning = binding.runtimeProvisioning
+          ?? await binding.runtimeProvisioningTask
+        const runtimeReadonlyRoots = runtimeProvisioning?.readonlySkillRoots
+          ? normalizeReadonlySkillRoots(runtimeProvisioning.readonlySkillRoots, scope.root)
+          : readonlySkillRootsFromPaths(runtimeProvisioning?.skillPaths, scope.root)
         if (!governedSkillDiscovery) {
           return [...new Set([
             ...runtimeReadonlyRoots,
@@ -1440,8 +1442,10 @@ export const registerAgentRoutes: FastifyPluginAsync<RegisterAgentRoutesOptions>
           const scope = await getSkillsScopeForRequest(request)
           if (!hasRuntimeProvisioningInput) return scope.pi.additionalSkillPaths
           const binding = await getBindingForRequest(request)
+          const runtimeProvisioning = binding.runtimeProvisioning
+            ?? await binding.runtimeProvisioningTask
           return [
-            ...(binding.runtimeProvisioning?.skillPaths ?? []),
+            ...(runtimeProvisioning?.skillPaths ?? []),
             ...(governedSkillDiscovery ? [] : scope.pi.additionalSkillPaths ?? []),
           ]
         },

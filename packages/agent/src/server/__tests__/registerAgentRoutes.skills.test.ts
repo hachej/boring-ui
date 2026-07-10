@@ -175,6 +175,54 @@ test('runtime-provisioned skillPaths remain readonly when readonlySkillRoots is 
   }
 })
 
+test('skills route waits for in-flight runtime provisioning before listing skills', async () => {
+  const workspaceRoot = await makeTempDir('boring-agent-embed-skills-provisioning-race-')
+  const provisionedRoot = join(workspaceRoot, '.boring-agent', 'skills')
+  await mkdir(join(provisionedRoot, 'delayed-skill'), { recursive: true })
+  await writeFile(
+    join(provisionedRoot, 'delayed-skill', 'SKILL.md'),
+    '---\nname: delayed-skill\ndescription: Provisioned after route registration.\n---\n',
+  )
+
+  let markProvisioningStarted!: () => void
+  const provisioningStarted = new Promise<void>((resolve) => {
+    markProvisioningStarted = resolve
+  })
+  let releaseProvisioning!: () => void
+  const provisioningReleased = new Promise<void>((resolve) => {
+    releaseProvisioning = resolve
+  })
+
+  const app = Fastify({ logger: false })
+  await app.register(registerAgentRoutes, {
+    workspaceRoot,
+    mode: 'direct',
+    provisionRuntime: async () => {
+      markProvisioningStarted()
+      await provisioningReleased
+      return {
+        changed: false,
+        env: {},
+        pathEntries: [],
+        skillPaths: [provisionedRoot],
+      }
+    },
+  })
+  await app.ready()
+
+  try {
+    await provisioningStarted
+    const skillsPromise = app.inject({ method: 'GET', url: '/api/v1/agent/skills?refresh=1' })
+    releaseProvisioning()
+    const skills = await skillsPromise
+    expect(skills.statusCode).toBe(200)
+    const names: string[] = skills.json().skills.map((skill: { name: string }) => skill.name)
+    expect(names).toContain('delayed-skill')
+  } finally {
+    await app.close()
+  }
+})
+
 test('non-governed runtime provisioning preserves static and hot Pi skill paths', async () => {
   const workspaceRoot = await makeTempDir('boring-agent-embed-skills-provisioned-union-')
   const provisionedRoot = join(workspaceRoot, '.boring-agent', 'skills')
