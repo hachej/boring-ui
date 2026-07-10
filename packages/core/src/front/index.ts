@@ -3,6 +3,14 @@ export { ConfigProvider, useConfig, useConfigLoaded } from './ConfigProvider.js'
 export type { ConfigProviderProps } from './ConfigProvider.js'
 export { ThemeProvider } from './ThemeProvider.js'
 export type { ThemeApi, ThemeProviderProps } from './ThemeProvider.js'
+export { CompanyAdminProvider, useCompanyAdminStatus } from './CompanyAdminProvider.js'
+export type {
+  CompanyAdminLabels,
+  CompanyAdminProviderProps,
+  CompanyAdminStatus,
+  LoadCompanyAdminStatus,
+  RenderCompanyAdminContent,
+} from './CompanyAdminProvider.js'
 export {
   useTheme,
   useKeyboardShortcuts,
@@ -70,7 +78,7 @@ export { AuthGate } from './AuthGate.js'
 export type { AuthGateProps } from './AuthGate.js'
 
 export { CoreFront } from './CoreFront.js'
-export type { CoreFrontProps, CoreFrontAuthPagesOverride } from './CoreFront.js'
+export type { CoreFrontProps, CoreFrontAuthPagesOverride, CoreFrontCompanyAdminOptions } from './CoreFront.js'
 
 export { useCoreCommands } from './commands/CoreCommandContributions.js'
 export type { CoreCommand } from './commands/CoreCommandContributions.js'
@@ -78,6 +86,7 @@ export type { CoreCommand } from './commands/CoreCommandContributions.js'
 export { InvitesPage } from './workspace/InvitesPage.js'
 export { MembersPage } from './workspace/MembersPage.js'
 export { WorkspaceSettingsPage } from './workspace/WorkspaceSettingsPage.js'
+export { CompanyAdminPage } from './workspace/CompanyAdminPage.js'
 export { getWorkspaceCommands } from './workspace/commands.js'
 export type { WorkspaceCommand } from './workspace/commands.js'
 

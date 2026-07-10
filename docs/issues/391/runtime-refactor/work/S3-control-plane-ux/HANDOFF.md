@@ -25,12 +25,14 @@ Derived strictly from [TODO.md](./TODO.md) and [PLAN.md](./PLAN.md). Tick each b
 - [ ] `pnpm lint:workspace-plugin-invariants`
 - [ ] `pnpm audit:imports`
 - [ ] `pnpm typecheck`
+- [ ] `pnpm --filter workspace-playground run test:e2e`
 
 ## Review gates
 - [ ] The **Fleet page** consumes only `GET /api/v1/agents` plus `GET /api/v1/agents/:agentId/info`, lists every declared agent with a per-agent drill-down (sessions, pending approvals, environments), is read-only (no authoring), renders no secret/handle, and registers as a `workspace-page` through the existing `PanelRegistry`/`WorkspaceSourceRegistry` (not a new host); the fleet-widget extension point is deferred (farm epic), not built.
 - [ ] Cross-surface sessions surface in the **existing** `SessionBrowser`/`SessionList` via an origin badge + filter; transcript viewing reuses `PiChatPanel`/`RemotePiSession` by `sessionId` (assert no new viewer).
 - [ ] `SessionSummary.originSurface` is additive/optional; existing JSONL sessions load unchanged (default workspace).
 - [ ] Central inbox is the **generalized ask-user `InboxOverlay`** on the single T1 `resolveInput` path; the ask-user-only pending channel is deleted, not paralleled; any temporary `TODO(remove:*)` marker names its deletion-owner bead and is gone before that owner phase closes.
+- [ ] Preserve the current ask-user UI placement unless a bead explicitly changes it: `QuestionForm` remains placement `"center"`, and the inbox remains an `appLeftActions` overlay; do not create a second workspace-page inbox.
 - [ ] Public contracts only — no core-internal import, no private hook, no platform addressing in any UI signature (`pnpm audit:imports` green).
 - [ ] Agent-as-directory authoring is **not** present (deferred post-P7); the inspect panel exposes no create/configure controls.
 - [ ] No new UI framework or registry; new surfaces register via `definePlugin`.
@@ -40,7 +42,7 @@ Derived strictly from [TODO.md](./TODO.md) and [PLAN.md](./PLAN.md). Tick each b
 - [ ] A Fleet page lists every declared agent from `GET /api/v1/agents`, enriches rows with model/tools/readiness/environments from `/info`, stays read-only, and provides a per-agent drill-down (that agent's sessions, pending approvals, environments), registered through the existing workspace-page registration.
 - [ ] Sessions born on other surfaces (Slack, embed) appear in the existing `SessionBrowser`/`SessionList` with an origin-surface badge + filter once the session store is shared; viewing any transcript reuses `PiChatPanel`/`RemotePiSession` by `sessionId`.
 - [ ] A central approval inbox generalizes the existing ask-user `InboxOverlay`: pending input-requests across sessions and surfaces on the single T1 `resolveInput` path, answerable inline; the ask-user-specific pending channel folded in (no second inbox).
-- [ ] No new UI framework, no new registry/host; every new surface registers through `definePlugin`/`registerPanel`/`registerWorkspaceSource`. Agent-as-directory authoring not built.
+- [ ] No new UI framework, no new registry/host; every new surface registers through `definePlugin`/`registerPanel`/`registerWorkspaceSource`/`appLeftActions` as appropriate. Agent-as-directory authoring not built.
 
 ## Closeout
 - [ ] Zero unowned `TODO(remove:*)` markers for this phase

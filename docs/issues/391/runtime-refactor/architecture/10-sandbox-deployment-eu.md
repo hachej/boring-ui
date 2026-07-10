@@ -6,9 +6,127 @@ Status: v2 architecture doc. Grounds the sandbox/mount work (`TODO-X1`, `TODO-P2
 
 **NO-GO** for an exact *managed* EU offering of "microVM + host-side rclone/FUSE bind mount + no guest credentials." As of July 2026 no vendor proves all of: microVM-grade isolation, host-side FUSE mount bound into the sandbox, no cloud credentials inside the sandbox, and a contractually EU-resident control plane + data plane + logs + support access.
 
+This NO-GO applies to the optional post-v1 X1 mount offering, not D1. D1's
+durable local/provider workspace volume on a self-hosted EU runsc worker is GO.
+
 **GO** for **self-hosting on EU infrastructure**. The closest managed products (Daytona, Northflank BYOC, Scaleway serverless-containers/gVisor) either expose vendor-managed volumes/FUSE, write S3 credentials *into* the sandbox, do not publish a sovereign EU control-plane guarantee, or do not expose host mounts. Self-host is the viable path; managed vendors may be adopted later only against contractual EU-residency proof (Decision 10).
 
-## FUSE × isolation matrix (condensed)
+## Tenant provisioning command/API
+
+**Amendment (2026-07-08):** this deployment architecture requires a dedicated
+work package, [D1-tenant-provisioning](../work/D1-tenant-provisioning/), size
+**L/XL**. Its exit criterion is one command/API call that creates the tenant and
+workspace, runtime config, DB/storage/session roots, secrets, and an exact-host
+existing-surface endpoint plus landing/sign-in/workspace/default-agent binding,
+and emits the deployment manifest for the chosen EU host. Without D1, T0/T1
+factory claims must be described as manual provisioning, not same-day repeatable
+platform delivery.
+
+**V1 ruling (2026-07-09):** D1 dedicated/sovereign delivery is the only v1
+topology and is a v1 exit gate. It consumes `AgentDeployment` and the compiled
+definition digest and uses an existing HTTP/workspace surface behind one exact
+dedicated hostname; it does not depend on M2. The hostname serves a bounded
+landing page, then existing auth/membership resolves the provisioned workspace,
+which selects the deployment as agent `default`. Local/provider volumes and
+explicit artifact synchronization are sufficient for v1. X1 host-rclone/FUSE
+is optional post-v1 infrastructure.
+
+The v1 dedicated-site input is deliberately small and host-owned:
+
+```ts
+interface DedicatedSiteSpec {
+  appId: string
+  hostname: string
+  workspaceOwnerRef: string
+  landing: {
+    title: string
+    summary: string
+    ctaLabel?: string
+  }
+}
+```
+
+The validator accepts one exact operator-approved hostname and bounded escaped
+landing text. Principal refs resolve only in the trusted host. This spec is
+included in D1 desired-state digesting and rollback, but is not part of
+`AgentDefinition` or `AgentDeployment` and grants no runtime/workspace
+authority. The provisioned workspace plus D1 active-generation pointer remain
+the authority for the selected `default` agent.
+
+After apply, the complete generation exposes a server-only
+`DedicatedWorkspaceScope { appId, workspaceId, agentId: 'default' }`. Dedicated
+app composition intersects every workspace-bearing route and front selection
+with this scope: list returns only the bound member workspace; create/switch/
+ordinary delete are disabled; foreign ids fail before lookup even when the
+principal belongs to another workspace. The D1 workspace is marked managed and
+only the fenced D1 lifecycle may remove it. This optional scope must not change
+generic multi-workspace hosts when absent. The same optional scope reaches the
+existing post-signup hook: dedicated mode skips personal default-workspace
+creation and grants no membership, while existing invite acceptance is
+unchanged. The same managed-workspace guard blocks account deletion or member
+ownership mutation that would delete, transfer, or orphan the workspace outside
+the fenced D1 lifecycle. This is workspace provisioning/lifecycle scope, not a
+second auth policy.
+
+D1 endpoint publication is ordered after the isolation surface. The staged host
+emits a non-caller-forgeable `DedicatedSiteCapability` attestation only when the
+fixed-workspace enforcement and landing/sign-in/default-agent surface are both
+installed at named contract versions. The attestation binds target key, fencing
+token, staged desired-state digest, exact app/hostname/workspace/agent binding,
+host-app artifact digest, and activated-plugin snapshot digest. It is never a
+caller-supplied record: an in-process staged host returns an opaque handle from
+an unexported mint; a remote staged host returns a nonce-, issuer-, audience-,
+expiry-, and contract-version-bound response directly over P5a's pinned-TLS
+authenticated worker channel. Publication and pointer CAS validate provenance
+and every field against the current staged generation; an old generation,
+caller, or another target cannot forge/replay it.
+
+For first apply, the route/certificate may be prepared but external exact-host
+activation happens only after the completion is appended and
+`currentCompleteGeneration` CAS selects the safe scoped generation. A reserved
+D1 host with no matching complete pointer is an explicit inactive state that
+rejects before generic routing. On reapply the prior complete pointer remains
+the scope authority until the replacement CAS. Without a matching attestation,
+apply may stage artifacts but must not advance the pointer or publish DNS/TLS.
+Production acceptance is not satisfied by `direct`, bwrap, Vercel, a fake
+provider, or unverified remote-worker claims: P2 must deliver the hardened
+gVisor `runsc --platform=systrap` provider, P5a must authenticate its worker
+contract/hardening facts, and the final P8 proof must execute on a preconfigured
+EU runsc host. The fake provider remains only for deterministic fault semantics.
+
+## Tenant topologies
+
+**Amendment (2026-07-08):** name the two factory tiers explicitly:
+**D1 = dedicated/sovereign**, and **D2 = shared subdomain**. They are deployment
+topologies over the same runtime stack and the same `WorkspaceAgentsDeclaration`,
+not separate agent-definition systems.
+
+| Topology | Shape | Work package | Use for |
+| --- | --- | --- | --- |
+| Self-host / owner-operated | one deployment operated directly for the owner or client | base architecture 10 + P5; X1 optional | client-owned ops, dev/trusted, regulated handoff |
+| Dedicated / sovereign tenant | one deployment and exact hostname per company/site, with bounded landing/auth handoff, tenant/workspace/runtime config, default-agent binding, and deployment manifest | [D1-tenant-provisioning](../work/D1-tenant-provisioning/) | managed sovereign clients, strong isolation, dedicated agent sites, bespoke deployment review |
+| Shared Subdomain tier | one shared EU deployment serves N subdomain tenants; wildcard DNS/TLS terminates at the shared host, and a fail-closed Host router maps `company.senecapp.ai` -> `workspaceId` | [D2-shared-tenant-mesh](../work/D2-shared-tenant-mesh/) | instant outreach/demo tenants with near-zero marginal deployment cost |
+
+The D1 exact hostname may use an operator-preconfigured DNS/TLS adapter, but its
+application instance accepts only that bound host and routes to only its own
+workspace. It is not a wildcard multi-tenant application router.
+
+The D2 shared topology is post-v1. It requires wildcard DNS, wildcard TLS, and a
+`Host:`-header tenant router seated beside the existing workspace-id adapter.
+Unknown hosts fail closed and never map to a default tenant. D2 must prove
+cross-tenant isolation in one process across sessions, files, pending inputs,
+search, artifacts, governance, and brokered secrets.
+
+Do not start D2 until D1 has repeated enough to establish the deployment
+contract and a trusted adapter-created `TenantContext { tenantId, workspaceId,
+principal }` exists. Caller-supplied or optional `SessionCtx` is not a shared
+tenancy authorization boundary.
+
+## Post-v1 X1 FUSE x isolation matrix (condensed)
+
+This section evaluates the optional X1 storage tier. It is not a D1 v1 host
+prerequisite. D1 uses a durable local/provider workspace volume and explicit
+backup/artifact synchronization.
 
 Question for each runtime: can the host `rclone`-mount an S3 prefix and then expose that already-mounted path *inside* the sandbox, without the sandbox ever seeing `/dev/fuse`/`fusermount3`/credentials?
 
@@ -27,16 +145,16 @@ Shared gotchas: rclone mount is FUSE, so X1 inherits object-store semantics, VFS
 
 ## The three tiers
 
-| Tier | Runtime | Where | Mount path | Use for |
+| Tier | Runtime | Where | V1 workspace storage / optional X1 path | Use for |
 | --- | --- | --- | --- | --- |
-| **dev / trusted** | `bwrap` userns | anywhere with userns | host mount → `--bind` | dev, CI, invite-only, trusted single-tenant. **Not** hostile multi-tenant. |
-| **hardened default** | **gVisor `runsc --platform=systrap`** + per-workspace **netns/nftables** | plain EU VMs (Hetzner Cloud / Scaleway / OVH / IONOS / STACKIT) | host rclone mount on the worker → bind (gofer) | the recommended production path for public untrusted workloads. **Canonical with #307.** |
-| **VM-grade** | **Kata Containers or Cloud Hypervisor + virtiofsd** | EU **bare metal** (needs `/dev/kvm`) | host rclone mount → **virtiofs** into guest | strongest isolation for the most hostile tenants / regulated workloads. |
+| **dev / trusted** | `bwrap` userns | anywhere with userns | v1 local/provider volume -> bind; X1 may later bind a host rclone mount | dev, CI, invite-only, trusted single-tenant. **Not** hostile multi-tenant. |
+| **hardened default** | **gVisor `runsc --platform=systrap`** + per-workspace **netns/nftables** | plain EU VMs (Hetzner Cloud / Scaleway / OVH / IONOS / STACKIT) | v1 durable local/provider volume -> gofer bind; X1 may later substitute host rclone/FUSE | the recommended production path for public untrusted workloads. **Canonical with #307.** |
+| **VM-grade** | **Kata Containers or Cloud Hypervisor + virtiofsd** | EU **bare metal** (needs `/dev/kvm`) | post-v1 X1 host rclone mount -> **virtiofs** into guest | strongest isolation for the most hostile tenants / regulated workloads. |
 
 Tier rules:
 
 - **dev tier** is `bwrap` only, trusted/dev/invite-only. It does not satisfy public hostile multi-tenant isolation (shared network namespace, shared kernel/uid/process, no seccomp — the #307 finding).
-- **hardened default is `runsc` systrap on plain EU VMs**, because systrap needs no KVM (so no nested-virt dependency), matches #307's chosen path, and preserves the X1 host-credential rule (file ops stay host-side, only exec moves into gVisor). Egress: per-container netns + nftables (block RFC1918, CGNAT, link-local, metadata, ULA, app/DB networks; allow public DNS/package registries; add proxy/allowlist later).
+- **hardened default is `runsc` systrap on plain EU VMs**, because systrap needs no KVM (so no nested-virt dependency) and matches #307's chosen path. D1 binds its durable local/provider workspace volume; the same host-side boundary remains compatible with X1 later. Egress: per-container netns + nftables (block RFC1918, CGNAT, link-local, metadata, ULA, app/DB networks; allow public DNS/package registries; add proxy/allowlist later).
 - **VM-grade uses Kata / Cloud Hypervisor with virtiofsd on EU bare metal.** **NEVER vanilla Firecracker for live host mounts** — Firecracker lacks generic virtiofs, so it cannot serve the host rclone mount into the guest; using it would force rclone (and its credentials) into the guest, violating X1. Firecracker is acceptable *only* with block images / snapshot / sync, never host rclone bind.
 
 ## Runtime images (OCI runtime spec)
@@ -50,6 +168,15 @@ type ProviderRuntimeSpec = {
 ```
 
 The `ref` is human/operator-readable (`registry.example/boring/runtime-node:2026-07`); the `digest` is the execution identity and is required for any non-dev run. Runtime images are not a new package boundary: `@hachej/boring-bash` still chooses the mode, `@hachej/boring-sandbox` still owns provider adapters/capability facts, and P5 still owns provisioning/fingerprint orchestration.
+
+BBP6-009 adds the deployment surface: `AgentDeployment.runtimeProfileRef?`.
+It is a host-resolved reference to an operator-supplied runtime-profile catalog,
+not an inline image spec or Dockerfile. The resolved profile image fills this
+provider-config `{ image: { ref, digest } }` slot; if no ref is declared, the
+host may use the validated provider-default image. A declared no-image profile
+does not fall back at image level. Unknown/malformed refs and provider-default
+images fail closed at the host seam, and any selected image is checked against
+the resolved provider's `runtimeImage` capability before the agent is ready.
 
 Tier fit:
 
@@ -93,17 +220,29 @@ Self-host reference hardware (EU, verify final SKU price at order):
 
 ## Capacity model
 
-- Reserve **25–35% RAM/CPU** for the host, dockerd/containerd, runsc/Kata, the rclone VFS cache, image pulls, and monitoring.
-- Cap concurrency by `min(cpu_active_exec, memory_limit, pids, fd/mount count, rclone cache disk, outbound bandwidth)`.
-- Start gVisor nodes at **8 vCPU / 32 GB** → roughly **8–16 active-exec** sandboxes or **20–40 mostly-idle** sandboxes; prove the real number with `npm i`, `uv pip install`, `rg`, and build/test workloads (this is the same benchmark X1 owes — see Open risks + `TODO-X1`).
-- Bare-metal 64–128 GB boxes pack more, but **FUSE/object-store metadata becomes the limiter before CPU**.
+- D1 reserves **25–35% RAM/CPU** for the host, dockerd/containerd, runsc,
+  image pulls, local workspace/cache IO, and monitoring.
+- D1 caps concurrency by
+  `min(cpu_active_exec, memory_limit, pids, fd count, local disk, outbound bandwidth)`.
+- Start gVisor nodes at **8 vCPU / 32 GB** -> roughly **8–16 active-exec**
+  sandboxes or **20–40 mostly-idle** sandboxes; prove the real number with
+  `npm i`, `uv pip install`, `rg`, and build/test workloads.
+- X1 separately re-benchmarks capacity with mount count, rclone VFS cache disk,
+  and object-store metadata because those may become the limiter before CPU.
 
 ## Kernel / host prerequisites
 
-- Common: **Linux 6.x**, cgroup v2, user namespaces, `fuse3` + `/dev/fuse`, `/etc/fuse.conf: user_allow_other` (if cross-UID), nftables, overlayfs, and the **rclone VFS cache on local NVMe** (never on the FUSE mount).
-- VM-grade tier adds: `/dev/kvm`, `virtiofsd`, a guest kernel with virtiofs, Cloud Hypervisor or Kata, and explicit shared-memory (`/dev/shm`) sizing.
+- D1 v1 common: **Linux 6.x**, cgroup v2, user namespaces, nftables,
+  overlayfs, a durable local/provider workspace volume, and local NVMe for
+  package/build caches. No `fuse3`, `/dev/fuse`, rclone, or object-store
+  credential is required.
+- X1 post-v1 adds: `fuse3` + `/dev/fuse`,
+  `/etc/fuse.conf: user_allow_other` when cross-UID, and the rclone VFS cache on
+  local NVMe (never on the FUSE mount).
+- VM-grade X1 adds: `/dev/kvm`, `virtiofsd`, a guest kernel with virtiofs,
+  Cloud Hypervisor or Kata, and explicit shared-memory (`/dev/shm`) sizing.
 
-## The 12 Decisions To Lock (verbatim from verified research)
+## The 12 post-v1 X1 decisions to lock
 
 1. X1 storage uses **host-side rclone/FUSE only**; sandbox never receives S3/R2/AWS credentials.
 2. Mount one workspace prefix per sandbox; never bind bucket root; IAM/policy is prefix-limited and least-privilege.

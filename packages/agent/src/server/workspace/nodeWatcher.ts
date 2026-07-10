@@ -175,6 +175,13 @@ export function createNodeWatcher(root: string): NodeWorkspaceWatcher {
         return { ok: false, reason: 'workspace_too_large', message }
       }
       startFsw()
+      if (fsw) {
+        await new Promise<void>((resolve) => {
+          fsw!.once('ready', resolve)
+          fsw!.once('error', () => resolve())
+        })
+      }
+      if (closed) return { ok: false, reason: 'closed' }
       return { ok: true }
     })()
     return readiness

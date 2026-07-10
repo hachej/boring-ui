@@ -1,3 +1,4 @@
+import { AsyncLocalStorage } from "node:async_hooks";
 import { existsSync, readFileSync } from "node:fs";
 import { mkdir, writeFile } from "node:fs/promises";
 import { extname, join } from "node:path";
@@ -12,17 +13,12 @@ import {
   SettingsManager,
   getAgentDir,
   loadSkills,
-  createEventBus,
-  createExtensionRuntime,
-  createSyntheticSourceInfo,
+  type ExtensionCommandContext,
   type ExtensionFactory,
-  type Extension,
-  type ExtensionRuntime,
-  type LoadExtensionsResult,
-  type ResourceLoader,
   type SlashCommandInfo,
 } from "@mariozechner/pi-coding-agent";
 import type { AgentHarness, AgentSlashCommandSummary, AgentSendInput, RunContext } from "../../../shared/harness.js";
+import { ErrorCode } from "../../../shared/error-codes.js";
 import { createLogger } from "../../logging.js";
 import type { AgentTool } from "../../../shared/tool.js";
 import type { TelemetrySink } from "../../../shared/telemetry.js";
@@ -39,13 +35,19 @@ import {
   type PiPackageSource,
 } from "../../piPackages.js";
 
+interface PiRunContextState {
+  queuedFollowUpContexts: WeakMap<object, RunContext>;
+}
+
 interface PiSessionHandle {
   piSession: AgentSession;
   modelRegistry: ModelRegistry;
   sessionManager: SessionManager;
-  resourceLoader: ResourceLoader;
+  resourceLoader: DefaultResourceLoader;
   sessionId: string;
   sessionCtx: SessionCtx;
+  runContextState: PiRunContextState;
+  unsubscribeRunContextListener: () => void;
 }
 
 export { mergePiPackageSources } from "../../piPackages.js";
@@ -116,144 +118,20 @@ function createHeadlessResourceLoader(options: {
   cwd: string;
   systemPromptAppend: string;
   extensionFactories: ExtensionFactory[];
-}): ResourceLoader {
-  let extensionsResult: LoadExtensionsResult = {
-    extensions: [],
-    errors: [],
-    runtime: createExtensionRuntime(),
-  };
-  return {
-    getExtensions: () => extensionsResult,
-    getSkills: () => ({ skills: [], diagnostics: [] }),
-    getPrompts: () => ({ prompts: [], diagnostics: [] }),
-    getThemes: () => ({ themes: [], diagnostics: [] }),
-    getAgentsFiles: () => ({ agentsFiles: [] }),
-    getSystemPrompt: () => HEADLESS_SYSTEM_PROMPT,
-    getAppendSystemPrompt: () => options.systemPromptAppend ? [options.systemPromptAppend] : [],
-    extendResources: () => {},
-    reload: async () => {
-      extensionsResult = await loadHeadlessExtensionFactories(options.cwd, options.extensionFactories);
-    },
-  };
-}
-
-async function loadHeadlessExtensionFactories(
-  cwd: string,
-  extensionFactories: ExtensionFactory[],
-): Promise<LoadExtensionsResult> {
-  const eventBus = createEventBus();
-  const runtime = createExtensionRuntime();
-  const extensions: Extension[] = [];
-  const errors: Array<{ path: string; error: string }> = [];
-  for (const [index, factory] of extensionFactories.entries()) {
-    const extensionPath = `<inline:${index + 1}>`;
-    const extension = createHeadlessExtension(extensionPath);
-    try {
-      await factory(createHeadlessExtensionApi(extension, runtime, cwd, eventBus));
-      extensions.push(extension);
-    } catch (error) {
-      errors.push({
-        path: extensionPath,
-        error: error instanceof Error ? error.message : String(error),
-      });
-    }
-  }
-  return { extensions, errors, runtime };
-}
-
-function createHeadlessExtension(extensionPath: string): Extension {
-  return {
-    path: extensionPath,
-    resolvedPath: extensionPath,
-    sourceInfo: createSyntheticSourceInfo(extensionPath, {
-      source: "inline",
-      scope: "temporary",
-      origin: "top-level",
-    }),
-    handlers: new Map(),
-    tools: new Map(),
-    messageRenderers: new Map(),
-    commands: new Map(),
-    flags: new Map(),
-    shortcuts: new Map(),
-  };
-}
-
-function createHeadlessExtensionApi(
-  extension: Extension,
-  runtime: ExtensionRuntime,
-  cwd: string,
-  eventBus: ReturnType<typeof createEventBus>,
-): Parameters<ExtensionFactory>[0] {
-  const runtimeActions = runtime as unknown as Record<string, (...args: unknown[]) => unknown>;
-  const callRuntime = (name: string, ...args: unknown[]) => {
-    runtime.assertActive();
-    return runtimeActions[name]?.(...args);
-  };
-  const execUnavailable = () => {
-    throw new Error(`Headless pure Pi extensions cannot execute commands from ${cwd}.`);
-  };
-  return {
-    on(event, handler) {
-      runtime.assertActive();
-      const handlers = extension.handlers as Map<string, Array<(event: unknown, ctx: unknown) => unknown>>;
-      const list = handlers.get(event) ?? [];
-      list.push(handler as (event: unknown, ctx: unknown) => unknown);
-      handlers.set(event, list);
-    },
-    registerTool(tool) {
-      runtime.assertActive();
-      extension.tools.set(tool.name, { definition: tool, sourceInfo: extension.sourceInfo } as never);
-      runtime.refreshTools();
-    },
-    registerCommand(name, options) {
-      runtime.assertActive();
-      extension.commands.set(name, { name, sourceInfo: extension.sourceInfo, ...options });
-    },
-    registerShortcut(shortcut, options) {
-      runtime.assertActive();
-      extension.shortcuts.set(shortcut, { shortcut, extensionPath: extension.path, ...options });
-    },
-    registerFlag(name, options) {
-      runtime.assertActive();
-      extension.flags.set(name, { name, extensionPath: extension.path, ...options });
-      if (options.default !== undefined && !runtime.flagValues.has(name)) {
-        runtime.flagValues.set(name, options.default);
-      }
-    },
-    registerMessageRenderer(customType, renderer) {
-      runtime.assertActive();
-      extension.messageRenderers.set(customType, renderer as never);
-    },
-    getFlag(name) {
-      runtime.assertActive();
-      if (!extension.flags.has(name)) return undefined;
-      return runtime.flagValues.get(name);
-    },
-    sendMessage: (...args) => { callRuntime("sendMessage", ...args); },
-    sendUserMessage: (...args) => { callRuntime("sendUserMessage", ...args); },
-    appendEntry: (...args) => { callRuntime("appendEntry", ...args); },
-    setSessionName: (...args) => { callRuntime("setSessionName", ...args); },
-    getSessionName: () => callRuntime("getSessionName") as ReturnType<Parameters<ExtensionFactory>[0]["getSessionName"]>,
-    setLabel: (...args) => { callRuntime("setLabel", ...args); },
-    exec: async () => execUnavailable(),
-    getActiveTools: () => callRuntime("getActiveTools") as ReturnType<Parameters<ExtensionFactory>[0]["getActiveTools"]>,
-    getAllTools: () => callRuntime("getAllTools") as ReturnType<Parameters<ExtensionFactory>[0]["getAllTools"]>,
-    setActiveTools: (...args) => { callRuntime("setActiveTools", ...args); },
-    getCommands: () => callRuntime("getCommands") as ReturnType<Parameters<ExtensionFactory>[0]["getCommands"]>,
-    setModel: (...args) => callRuntime("setModel", ...args) as ReturnType<Parameters<ExtensionFactory>[0]["setModel"]>,
-    getThinkingLevel: () => callRuntime("getThinkingLevel") as ReturnType<Parameters<ExtensionFactory>[0]["getThinkingLevel"]>,
-    setThinkingLevel: (...args) => { callRuntime("setThinkingLevel", ...args); },
-    registerProvider(name, config) {
-      runtime.assertActive();
-      runtime.registerProvider(name, config, extension.path);
-    },
-    unregisterProvider(name) {
-      runtime.assertActive();
-      runtime.unregisterProvider(name);
-    },
-    events: eventBus,
-  };
+}): DefaultResourceLoader {
+  return new DefaultResourceLoader({
+    cwd: options.cwd,
+    agentDir: options.cwd,
+    settingsManager: SettingsManager.inMemory(),
+    extensionFactories: options.extensionFactories,
+    noExtensions: true,
+    noContextFiles: true,
+    noSkills: true,
+    noPromptTemplates: true,
+    noThemes: true,
+    systemPrompt: HEADLESS_SYSTEM_PROMPT,
+    appendSystemPrompt: options.systemPromptAppend ? [options.systemPromptAppend] : [],
+  });
 }
 
 export interface PiHarnessOptions {
@@ -286,6 +164,8 @@ export interface PiHarnessOptions {
    * arrays that the harness already captured.
    */
   getHotReloadableResources?: () => HotReloadablePiResources;
+  /** Reject an explicit unavailable/unknown model instead of silently falling back. */
+  strictModelResolution?: boolean;
 }
 
 /** Pi harness options with the discovery flags resolved to definite booleans. */
@@ -304,8 +184,9 @@ export type ResolvedPiHarnessOptions = PiHarnessOptions & {
  * flag literals; hosts override per-field through their `pi` config.
  *
  * - `noExtensions: false` — workspace runtimes keep Pi extension discovery;
- *   pure runtimes call withPurePiHarnessDefaults() to disable ambient
- *   extension discovery while keeping explicit extension paths/factories.
+ *   pure runtimes call withPurePiHarnessDefaults() and the headless loader
+ *   ignores every path/package resource while retaining trusted in-process
+ *   extension factories.
  * - `noPromptTemplates: false` and `noThemes: false` — workspace runtimes
  *   keep Pi prompt-template/theme discovery; pure runtimes disable both.
  * - `noContextFiles: true` — boring composes its own workspace context
@@ -325,7 +206,15 @@ export function withPiHarnessDefaults(pi?: PiHarnessOptions): ResolvedPiHarnessO
     systemPromptMode = "workspace",
     ...rest
   } = pi ?? {};
-  return { ...rest, noExtensions, noContextFiles, noSkills, noPromptTemplates, noThemes, systemPromptMode };
+  return {
+    ...rest,
+    noExtensions,
+    noContextFiles,
+    noSkills,
+    noPromptTemplates,
+    noThemes,
+    systemPromptMode,
+  };
 }
 
 export function withPurePiHarnessDefaults(pi?: PiHarnessOptions): ResolvedPiHarnessOptions {
@@ -374,22 +263,50 @@ function buildToolErrorResultExtension(): ExtensionFactory {
 }
 
 
+function modelUnavailableError(input: AgentSendInput): Error {
+  return Object.assign(new Error('Requested model is not available.'), {
+    statusCode: 400,
+    code: ErrorCode.enum.TOOL_INVALID_INPUT,
+    details: { provider: input.model?.provider, model: input.model?.id },
+  })
+}
+
+function meteredSlashCommandPromptError(command: string): Error {
+  return Object.assign(new Error('Slash command prompt execution is disabled while metering is configured.'), {
+    statusCode: 409,
+    code: ErrorCode.enum.METERING_UNSUPPORTED_COMMAND,
+    details: { command },
+  })
+}
+
+function meteredExtensionCommandContext(ctx: ExtensionCommandContext, command: string): ExtensionCommandContext {
+  const block = (): never => { throw meteredSlashCommandPromptError(command) }
+  const guarded = Object.defineProperties({}, Object.getOwnPropertyDescriptors(ctx)) as ExtensionCommandContext
+  guarded.compact = block
+  guarded.newSession = async () => block()
+  guarded.fork = async () => block()
+  guarded.navigateTree = async () => block()
+  guarded.switchSession = async () => block()
+  return guarded
+}
+
 function resolveRequestedModel(
   modelRegistry: ModelRegistry,
   input: AgentSendInput,
+  options: { strict?: boolean } = {},
 ) {
   const requestedId = input.model?.id;
   if (!input.model || !requestedId) return undefined;
   const model = modelRegistry.find(input.model.provider, requestedId);
-  if (!model) return undefined;
-  // Only return the model if the provider actually has credentials — otherwise
-  // fall through to resolveDefaultModel so a stale localStorage selection
-  // (e.g. openai-codex/gpt-5.1 with no API key) doesn't break the chat.
   const available = modelRegistry.getAvailable();
-  const hasAuth = available.some(
-    (m) => m.provider === model.provider && m.id === model.id,
+  const hasAuth = Boolean(model) && available.some(
+    (m) => m.provider === model!.provider && m.id === model!.id,
   );
-  return hasAuth ? model : undefined;
+  if (!model || !hasAuth) {
+    if (options.strict) throw modelUnavailableError(input)
+    return undefined
+  }
+  return model;
 }
 
 function resolveDefaultModel(modelRegistry: ModelRegistry) {
@@ -402,7 +319,11 @@ function resolveDefaultModel(modelRegistry: ModelRegistry) {
 }
 
 function sessionCtxForInput(input: AgentSendInput, ctx: RunContext): SessionCtx {
-  return normalizeSessionCtx(input.ctx ?? sessionCtxFromRunContext(ctx)) ?? {};
+  // AgentSendInput.ctx is the explicit storage/session identity. The per-run
+  // RunContext carries the live auth context for tools and commands; when a
+  // direct harness caller omits input.ctx, do not let a read-only lookup from a
+  // different user fork the native Pi session while another run is in flight.
+  return normalizeSessionCtx(input.ctx ?? { workspaceId: ctx.workspaceId }) ?? {};
 }
 
 function sessionCtxFromRunContext(ctx: RunContext): SessionCtx {
@@ -477,8 +398,9 @@ export function createResourceSettingsManager(
 async function applyRequestedSessionOptions(
   handle: PiSessionHandle,
   input: AgentSendInput,
+  options: { strictModelResolution?: boolean } = {},
 ): Promise<void> {
-  const requestedModel = resolveRequestedModel(handle.modelRegistry, input);
+  const requestedModel = resolveRequestedModel(handle.modelRegistry, input, { strict: options.strictModelResolution });
   if (requestedModel) {
     const current = handle.piSession.model;
     if (
@@ -557,6 +479,47 @@ function normalizeSlashCommandInfo(command: SlashCommandInfo): AgentSlashCommand
   };
 }
 
+type PiAgentWithFollowUp = {
+  followUp?: (message: unknown) => unknown;
+}
+
+// Queued follow-ups are drained by Pi's internal agent loop, outside any
+// AsyncLocalStorage scope, so the submitting run's auth context would be lost.
+// We capture it per queued message here and re-activate it when Pi starts
+// processing that message (message_start), keyed weakly on the message object.
+function rememberQueuedFollowUpRunContexts(
+  piSession: AgentSession,
+  state: PiRunContextState,
+  getRunContext: () => RunContext | undefined,
+): () => void {
+  const agent = (piSession as { agent?: PiAgentWithFollowUp }).agent;
+  if (!agent || typeof agent.followUp !== "function") return () => {};
+  const originalFollowUp = agent.followUp;
+  const wrappedFollowUp = function (this: PiAgentWithFollowUp, message: unknown) {
+    const ctx = getRunContext();
+    if (ctx && message && typeof message === "object") state.queuedFollowUpContexts.set(message, ctx);
+    return originalFollowUp.call(this, message);
+  };
+  agent.followUp = wrappedFollowUp;
+  return () => {
+    if (agent.followUp === wrappedFollowUp) agent.followUp = originalFollowUp;
+  };
+}
+
+function updateRunContextStateFromPiEvent(
+  state: PiRunContextState,
+  event: unknown,
+  activateRunContext: (ctx: RunContext) => void,
+): void {
+  if ((event as { type?: unknown }).type !== "message_start") return;
+  const message = (event as { message?: unknown }).message;
+  if (!message || typeof message !== "object") return;
+  const ctx = state.queuedFollowUpContexts.get(message);
+  if (!ctx) return;
+  state.queuedFollowUpContexts.delete(message);
+  activateRunContext(ctx);
+}
+
 export function createPiCodingAgentHarness(opts: {
   tools: AgentTool[];
   /** Host/storage cwd used for harness-owned resources (.pi settings, attachments, plugin discovery). */
@@ -598,6 +561,7 @@ export function createPiCodingAgentHarness(opts: {
     storageCwd: opts.sessionStorageCwd ?? opts.cwd,
   });
   const piSessions = new Map<string, PiSessionHandle>();
+  const runContextStorage = new AsyncLocalStorage<RunContext>();
 
   // Effective Pi resources merge static caller-supplied fields with
   // getHotReloadableResources() output. Pi's DefaultResourceLoader keeps the
@@ -607,6 +571,12 @@ export function createPiCodingAgentHarness(opts: {
   const effectivePackages: PiPackageSource[] = []
   const effectiveExtensionPaths: string[] = []
   const refreshEffectiveResources = (): void => {
+    if (pi.systemPromptMode === "headless") {
+      effectiveSkillPaths.splice(0);
+      effectivePackages.splice(0);
+      effectiveExtensionPaths.splice(0);
+      return;
+    }
     const dynamic = pi.getHotReloadableResources?.() ?? {}
     effectiveSkillPaths.splice(
       0,
@@ -644,14 +614,14 @@ export function createPiCodingAgentHarness(opts: {
     const sessionKey = sessionCacheKey(sessionId, sessionCtx);
     const existing = piSessions.get(sessionKey);
     if (existing) {
-      await applyRequestedSessionOptions(existing, input);
+      await applyRequestedSessionOptions(existing, input, { strictModelResolution: pi.strictModelResolution });
       return existing;
     }
 
     const inFlight = piSessionCreations.get(sessionKey);
     if (inFlight) {
       const handle = await inFlight;
-      await applyRequestedSessionOptions(handle, input);
+      await applyRequestedSessionOptions(handle, input, { strictModelResolution: pi.strictModelResolution });
       return handle;
     }
 
@@ -662,6 +632,28 @@ export function createPiCodingAgentHarness(opts: {
     } finally {
       if (piSessionCreations.get(sessionKey) === creation) piSessionCreations.delete(sessionKey);
     }
+  }
+
+  async function bindRunContext<T>(ctx: RunContext, run: () => Promise<T>): Promise<T> {
+    return await runContextStorage.run(ctx, run);
+  }
+
+  function createRunBoundAdapter(handle: PiSessionHandle, sessionId: string, ctx: RunContext): PiAgentSessionAdapter {
+    const adapter = createPiAgentSessionAdapter(handle.piSession, {
+      sessionId,
+      ...(handle.piSession.agent && typeof handle.piSession.agent.continue === "function"
+        ? { continueQueuedFollowUp: () => handle.piSession.agent!.continue() }
+        : {}),
+    });
+    return {
+      ...adapter,
+      prompt: (promptInput) => bindRunContext(ctx, () => adapter.prompt(promptInput)),
+      followUp: (text, options) => bindRunContext(ctx, () => adapter.followUp(text, options)),
+      clearFollowUp: (options) => adapter.clearFollowUp(options),
+      ...(adapter.continueQueuedFollowUp
+        ? { continueQueuedFollowUp: () => bindRunContext(ctx, () => adapter.continueQueuedFollowUp!()) }
+        : {}),
+    };
   }
 
   async function createPiSession(
@@ -699,29 +691,22 @@ export function createPiCodingAgentHarness(opts: {
       isNewPiSession = true;
     }
 
-    const resolvedModel = resolveRequestedModel(modelRegistry, input);
+    const resolvedModel = resolveRequestedModel(modelRegistry, input, { strict: pi.strictModelResolution });
     // Prefer an explicit available UI selection; otherwise use configured
     // Boring/Pi default if present. Undefined is intentional: Pi/session owns
     // the final fallback model selection.
     const model = resolvedModel ?? resolveDefaultModel(modelRegistry);
 
-    // Hosts may extend pi's base prompt and/or isolate resource discovery.
-    // We keep pi's default system prompt but always tack on a workspace-paths
-    // guideline (relative-paths only) on top of whatever the host supplied —
-    // pi's cwd line otherwise lures the model into passing absolute paths
-    // that fail the workspace bounds check. Hosts can also disable ambient
-    // AGENTS.md / global skill discovery while injecting explicit skill paths,
-    // packages, hot-reloadable extension entrypoints, and dynamic plugin
-    // prompt/resources.
+    // Workspace mode keeps Pi's resource composition and Boring's path/Python
+    // guidance. Headless mode starts from explicit prompt inputs and trusted
+    // in-process factories only; every path/package resource stays detached.
     refreshEffectiveResources()
     const composedSystemPromptAppend = pi.systemPromptMode === "headless"
       ? composeHeadlessSystemPromptAppend(opts.systemPromptAppend)
       : composeSystemPromptAppend(opts.systemPromptAppend)
-    const appendSystemPromptOverride = pi.systemPromptMode === "headless"
-      ? () => composedSystemPromptAppend ? [composedSystemPromptAppend] : []
-      : (base: string[]) => composedSystemPromptAppend
-          ? [...base, composedSystemPromptAppend]
-          : base
+    const appendSystemPromptOverride = (base: string[]) => composedSystemPromptAppend
+      ? [...base, composedSystemPromptAppend]
+      : base
     const dynamicPromptExtension = opts.systemPromptDynamic
       ? buildDynamicPromptExtension(opts.systemPromptDynamic)
       : undefined
@@ -784,13 +769,14 @@ export function createPiCodingAgentHarness(opts: {
 
     await resourceLoader?.reload()
 
+    const runContextState: PiRunContextState = { queuedFollowUpContexts: new WeakMap() }
     const { session: piSession } = await createAgentSession({
       cwd: runtimeCwd,
       // Suppress Pi's built-in filesystem/shell tools while keeping Boring's
       // adapted tool catalog active. Do NOT pass an explicit empty tool-name
       // allowlist: in the current Pi SDK that disables custom tools too.
       noTools: "builtin",
-      customTools: adaptToolsForPi(opts.tools, input.sessionId, opts.telemetry),
+      customTools: adaptToolsForPi(opts.tools, input.sessionId, opts.telemetry, () => runContextStorage.getStore()),
       model,
       thinkingLevel: input.thinkingLevel ?? "off",
       sessionManager,
@@ -806,7 +792,22 @@ export function createPiCodingAgentHarness(opts: {
       }
     }
 
-    const handle: PiSessionHandle = { piSession, modelRegistry, sessionManager, resourceLoader, sessionId, sessionCtx };
+    const restoreFollowUpContextWrapper = rememberQueuedFollowUpRunContexts(piSession, runContextState, () => runContextStorage.getStore());
+    const unsubscribePiRunContextListener = piSession.subscribe((event) => updateRunContextStateFromPiEvent(runContextState, event, (ctx) => runContextStorage.enterWith(ctx)));
+    const unsubscribeRunContextListener = () => {
+      unsubscribePiRunContextListener();
+      restoreFollowUpContextWrapper();
+    };
+    const handle: PiSessionHandle = {
+      piSession,
+      modelRegistry,
+      sessionManager,
+      resourceLoader,
+      sessionId,
+      sessionCtx,
+      runContextState,
+      unsubscribeRunContextListener,
+    };
     piSessions.set(sessionCacheKey(sessionId, sessionCtx), handle);
     return handle;
   }
@@ -824,12 +825,14 @@ export function createPiCodingAgentHarness(opts: {
       const key = sessionCacheKey(sessionId, ctx);
       const handle = piSessions.get(key);
       if (!handle) return;
+      handle.unsubscribeRunContextListener();
       handle.piSession.dispose();
       piSessions.delete(key);
       return;
     }
     for (const [key, handle] of piSessions) {
       if (handle.sessionId !== sessionId) continue;
+      handle.unsubscribeRunContextListener();
       handle.piSession.dispose();
       piSessions.delete(key);
     }
@@ -840,9 +843,10 @@ export function createPiCodingAgentHarness(opts: {
   }
 
   async function getOrCreatePiSessionForCommand(sessionId: string, ctx: RunContext): Promise<PiSessionHandle> {
-    const existing = piSessionHandlesFor(sessionId)[0];
+    const sessionCtx = sessionCtxFromRunContext(ctx);
+    const existing = piSessions.get(sessionCacheKey(sessionId, sessionCtx));
     if (existing) return existing;
-    return getOrCreatePiSession(sessionId, { sessionId, content: "", ctx: sessionCtxFromRunContext(ctx) }, ctx);
+    return getOrCreatePiSession(sessionId, { sessionId, content: "", ctx: sessionCtx }, ctx);
   }
 
   const originalDelete = sessionStore.delete.bind(sessionStore);
@@ -919,28 +923,29 @@ export function createPiCodingAgentHarness(opts: {
 
     async executeSlashCommand(sessionId: string, name: string, args: string, ctx: RunContext): Promise<void> {
       const handle = await getOrCreatePiSessionForCommand(sessionId, ctx);
-      const command = handle.piSession.extensionRunner.getCommand(name);
-      if (command) {
-        await command.handler(args, handle.piSession.extensionRunner.createCommandContext());
-        return;
-      }
+      await bindRunContext(ctx, async () => {
+        const command = handle.piSession.extensionRunner.getCommand(name);
+        if (command) {
+          const commandContext = handle.piSession.extensionRunner.createCommandContext();
+          await command.handler(args, ctx.allowPromptDispatch === false
+            ? meteredExtensionCommandContext(commandContext, name)
+            : commandContext);
+          return;
+        }
 
-      const knownCommand = handle.resourceLoader.getExtensions().runtime.getCommands().some((candidate) => candidate.name === name);
-      if (!knownCommand) throw new Error(`command '${name}' not registered in session '${sessionId}'`);
+        const knownCommand = handle.resourceLoader.getExtensions().runtime.getCommands().some((candidate) => candidate.name === name);
+        if (!knownCommand) throw new Error(`command '${name}' not registered in session '${sessionId}'`);
+        if (ctx.allowPromptDispatch === false) throw meteredSlashCommandPromptError(name);
 
-      const text = args.trim() ? `/${name} ${args}` : `/${name}`;
-      await handle.piSession.prompt(text);
+        const text = args.trim() ? `/${name} ${args}` : `/${name}`;
+        await handle.piSession.prompt(text);
+      });
     },
 
     async getPiSessionAdapter(input: AgentSendInput, ctx: RunContext) {
       if (!input.sessionId) throw new Error("sessionId is required to create a Pi session adapter");
-      const { piSession } = await getOrCreatePiSession(input.sessionId, input, ctx);
-      return createPiAgentSessionAdapter(piSession, {
-        sessionId: input.sessionId,
-        ...(piSession.agent && typeof piSession.agent.continue === "function"
-          ? { continueQueuedFollowUp: () => piSession.agent!.continue() }
-          : {}),
-      });
+      const handle = await getOrCreatePiSession(input.sessionId, input, ctx);
+      return createRunBoundAdapter(handle, input.sessionId, ctx);
     },
   } as AgentHarness & {
     getPiSessionAdapter(input: AgentSendInput, ctx: RunContext): Promise<PiAgentSessionAdapter>;

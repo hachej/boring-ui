@@ -1,0 +1,1417 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="dark light">
+  <title>#391 Agent Factory Plan Navigator</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      --bg: oklch(0.16 0.012 150);
+      --surface: oklch(0.195 0.014 150);
+      --surface-raised: oklch(0.225 0.015 150);
+      --surface-soft: oklch(0.185 0.01 150);
+      --text: oklch(0.93 0.012 85);
+      --muted: oklch(0.7 0.016 145);
+      --faint: oklch(0.56 0.014 145);
+      --line: oklch(0.34 0.018 150);
+      --line-strong: oklch(0.43 0.025 150);
+      --accent: oklch(0.72 0.16 32);
+      --accent-soft: oklch(0.25 0.045 32);
+      --green: oklch(0.77 0.12 158);
+      --green-soft: oklch(0.24 0.04 158);
+      --amber: oklch(0.81 0.14 80);
+      --amber-soft: oklch(0.25 0.04 80);
+      --blue: oklch(0.76 0.095 232);
+      --blue-soft: oklch(0.24 0.035 232);
+      --danger: oklch(0.72 0.16 20);
+      --radius-sm: 4px;
+      --radius-md: 6px;
+      --space-1: 4px;
+      --space-2: 8px;
+      --space-3: 12px;
+      --space-4: 16px;
+      --space-5: 24px;
+      --space-6: 32px;
+      --space-7: 48px;
+      --shadow: 0 18px 48px oklch(0.08 0.01 150 / 0.28);
+      --display: Charter, "Bitstream Charter", "Sitka Text", serif;
+      --body: "Avenir Next", Avenir, "Segoe UI", sans-serif;
+      --mono: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+    }
+
+    * { box-sizing: border-box; }
+    html { scroll-behavior: smooth; }
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--text);
+      font-family: var(--body);
+      font-size: 15px;
+      line-height: 1.55;
+      letter-spacing: 0;
+    }
+
+    a { color: inherit; }
+    button, input { font: inherit; }
+    button { color: inherit; }
+    code {
+      font-family: var(--mono);
+      font-size: 0.88em;
+      color: var(--blue);
+    }
+
+    :focus-visible {
+      outline: 2px solid var(--accent);
+      outline-offset: 3px;
+    }
+
+    .topbar {
+      position: sticky;
+      top: 0;
+      z-index: 20;
+      border-bottom: 1px solid var(--line);
+      background: oklch(0.16 0.012 150 / 0.96);
+    }
+
+    .topbar-inner {
+      max-width: 1540px;
+      min-height: 66px;
+      margin: 0 auto;
+      padding: var(--space-3) var(--space-5);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: var(--space-5);
+    }
+
+    .brand {
+      display: flex;
+      align-items: baseline;
+      gap: var(--space-3);
+      min-width: 0;
+    }
+
+    .brand-mark {
+      color: var(--accent);
+      font-family: var(--mono);
+      font-size: 13px;
+      font-weight: 700;
+      white-space: nowrap;
+    }
+
+    .brand h1 {
+      margin: 0;
+      font-family: var(--display);
+      font-size: 21px;
+      font-weight: 600;
+      line-height: 1.1;
+      letter-spacing: 0;
+    }
+
+    .top-links {
+      display: flex;
+      align-items: center;
+      gap: var(--space-4);
+      color: var(--muted);
+      font-size: 13px;
+      white-space: nowrap;
+    }
+
+    .top-links a {
+      text-decoration: none;
+      border-bottom: 1px solid transparent;
+    }
+
+    .top-links a:hover { border-bottom-color: currentColor; color: var(--text); }
+
+    .layout {
+      max-width: 1540px;
+      margin: 0 auto;
+      padding: var(--space-6) var(--space-5) 96px;
+      display: grid;
+      grid-template-columns: 228px minmax(0, 1fr);
+      gap: var(--space-6);
+    }
+
+    .sidebar {
+      position: sticky;
+      top: 98px;
+      align-self: start;
+      display: grid;
+      gap: var(--space-5);
+    }
+
+    .sidebar-block {
+      display: grid;
+      gap: var(--space-2);
+    }
+
+    .sidebar-title,
+    .kicker,
+    .label {
+      margin: 0;
+      color: var(--faint);
+      font-size: 11px;
+      font-weight: 700;
+      line-height: 1.3;
+      text-transform: uppercase;
+      letter-spacing: 0;
+    }
+
+    .sidebar nav {
+      display: grid;
+      gap: 2px;
+    }
+
+    .sidebar nav a {
+      min-height: 34px;
+      padding: 7px 9px;
+      border-radius: var(--radius-sm);
+      color: var(--muted);
+      text-decoration: none;
+    }
+
+    .sidebar nav a:hover,
+    .sidebar nav a[aria-current="true"] {
+      background: var(--surface-raised);
+      color: var(--text);
+    }
+
+    .authority-note {
+      padding: var(--space-3);
+      border: 1px solid var(--line);
+      border-radius: var(--radius-md);
+      background: var(--surface-soft);
+      color: var(--muted);
+      font-size: 12px;
+    }
+
+    .authority-note strong { color: var(--text); }
+
+    main {
+      min-width: 0;
+      display: grid;
+      gap: 72px;
+    }
+
+    section {
+      min-width: 0;
+      scroll-margin-top: 92px;
+    }
+
+    .section-heading {
+      max-width: 860px;
+      margin-bottom: var(--space-5);
+      display: grid;
+      gap: var(--space-2);
+    }
+
+    .section-heading h2 {
+      margin: 0;
+      font-family: var(--display);
+      font-size: 30px;
+      font-weight: 600;
+      line-height: 1.12;
+      letter-spacing: 0;
+    }
+
+    .section-heading p {
+      max-width: 72ch;
+      margin: 0;
+      color: var(--muted);
+      font-size: 15px;
+    }
+
+    .overview {
+      display: grid;
+      gap: var(--space-6);
+    }
+
+    .overview-header {
+      display: grid;
+      grid-template-columns: minmax(0, 1.45fr) minmax(260px, 0.55fr);
+      gap: var(--space-6);
+      align-items: end;
+    }
+
+    .overview-copy {
+      display: grid;
+      gap: var(--space-3);
+    }
+
+    .overview-copy h2 {
+      max-width: 900px;
+      margin: 0;
+      font-family: var(--display);
+      font-size: 42px;
+      font-weight: 600;
+      line-height: 1.04;
+      letter-spacing: 0;
+    }
+
+    .overview-copy p {
+      max-width: 72ch;
+      margin: 0;
+      color: var(--muted);
+      font-size: 16px;
+    }
+
+    .release-state {
+      border-top: 1px solid var(--line-strong);
+      padding-top: var(--space-3);
+      display: grid;
+      grid-template-columns: 1fr auto;
+      gap: var(--space-3);
+      align-items: start;
+    }
+
+    .release-state strong {
+      display: block;
+      margin-top: var(--space-1);
+      font-size: 14px;
+    }
+
+    .state-tag,
+    .status {
+      display: inline-flex;
+      align-items: center;
+      min-height: 25px;
+      padding: 4px 8px;
+      border: 1px solid var(--line-strong);
+      border-radius: 999px;
+      font-size: 11px;
+      font-weight: 700;
+      line-height: 1;
+      white-space: nowrap;
+    }
+
+    .state-tag { color: var(--amber); background: var(--amber-soft); }
+    .status.merged { color: var(--green); background: var(--green-soft); }
+    .status.active { color: var(--accent); background: var(--accent-soft); }
+    .status.ready { color: var(--blue); background: var(--blue-soft); }
+    .status.blocked,
+    .status.deferred { color: var(--amber); background: var(--amber-soft); }
+
+    .journey {
+      display: grid;
+      grid-template-columns: repeat(7, minmax(116px, 1fr));
+      border-top: 1px solid var(--line);
+      border-bottom: 1px solid var(--line);
+      overflow-x: auto;
+    }
+
+    .journey-step {
+      position: relative;
+      min-width: 116px;
+      min-height: 108px;
+      padding: var(--space-4) var(--space-3);
+      border-right: 1px solid var(--line);
+      display: grid;
+      align-content: space-between;
+      gap: var(--space-3);
+    }
+
+    .journey-step:last-child { border-right: 0; }
+    .journey-step b { font-size: 13px; }
+    .journey-step span { color: var(--faint); font-family: var(--mono); font-size: 11px; }
+
+    .scope-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: var(--space-6);
+    }
+
+    .scope-column {
+      border-top: 1px solid var(--line-strong);
+      padding-top: var(--space-4);
+    }
+
+    .scope-column h3 {
+      margin: 0 0 var(--space-3);
+      font-size: 14px;
+    }
+
+    .scope-list {
+      margin: 0;
+      padding: 0;
+      list-style: none;
+      display: grid;
+      gap: var(--space-2);
+    }
+
+    .scope-list li {
+      position: relative;
+      padding-left: 18px;
+      color: var(--muted);
+    }
+
+    .scope-list li::before {
+      content: "";
+      position: absolute;
+      left: 0;
+      top: 9px;
+      width: 7px;
+      height: 7px;
+      border-radius: 50%;
+      background: var(--green);
+    }
+
+    .scope-column.out .scope-list li::before { background: var(--amber); }
+
+    .lanes {
+      border-top: 1px solid var(--line);
+    }
+
+    .lane {
+      display: grid;
+      grid-template-columns: 148px minmax(0, 1fr);
+      border-bottom: 1px solid var(--line);
+      min-height: 78px;
+    }
+
+    .lane-name {
+      padding: var(--space-4) var(--space-3) var(--space-4) 0;
+      color: var(--muted);
+      font-size: 12px;
+      font-weight: 700;
+    }
+
+    .lane-flow {
+      padding: var(--space-3) 0 var(--space-3) var(--space-4);
+      border-left: 1px solid var(--line);
+      display: flex;
+      align-items: center;
+      gap: var(--space-2);
+      overflow-x: auto;
+    }
+
+    .node {
+      flex: 0 0 auto;
+      min-width: 88px;
+      min-height: 42px;
+      padding: 7px 10px;
+      border: 1px solid var(--line-strong);
+      border-radius: var(--radius-sm);
+      background: var(--surface);
+      text-decoration: none;
+      display: grid;
+      align-content: center;
+      gap: 1px;
+    }
+
+    .node:hover { border-color: var(--accent); background: var(--surface-raised); }
+    .node b { font-family: var(--mono); font-size: 12px; }
+    .node span { color: var(--faint); font-size: 10px; }
+    .arrow { color: var(--faint); flex: 0 0 auto; }
+    .join { border-color: var(--accent); }
+    .proof { border-color: var(--green); }
+
+    .table-wrap {
+      overflow-x: auto;
+      border-top: 1px solid var(--line-strong);
+      border-bottom: 1px solid var(--line-strong);
+    }
+
+    table {
+      width: 100%;
+      min-width: 860px;
+      border-collapse: collapse;
+    }
+
+    th, td {
+      padding: var(--space-3);
+      border-bottom: 1px solid var(--line);
+      text-align: left;
+      vertical-align: top;
+    }
+
+    th {
+      color: var(--faint);
+      font-size: 11px;
+      font-weight: 700;
+      text-transform: uppercase;
+    }
+
+    tr:last-child td { border-bottom: 0; }
+    td { color: var(--muted); font-size: 13px; }
+    td strong { color: var(--text); }
+    td a { text-underline-offset: 3px; }
+
+    .track-name {
+      display: grid;
+      gap: var(--space-2);
+      min-width: 154px;
+    }
+
+    .track-name .status { width: max-content; }
+
+    .x1-rule {
+      margin-top: var(--space-5);
+      padding: var(--space-4);
+      border: 1px solid var(--amber);
+      border-radius: var(--radius-md);
+      background: var(--amber-soft);
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto;
+      gap: var(--space-5);
+      align-items: center;
+    }
+
+    .x1-rule strong { display: block; margin-bottom: var(--space-1); }
+    .x1-rule p { margin: 0; color: var(--muted); max-width: 78ch; }
+    .x1-rule a { color: var(--amber); font-weight: 700; text-underline-offset: 3px; }
+
+    .work-toolbar {
+      margin-bottom: var(--space-5);
+      display: grid;
+      grid-template-columns: minmax(240px, 1fr) auto;
+      gap: var(--space-4);
+      align-items: center;
+    }
+
+    .search-wrap { position: relative; }
+    .search-wrap input {
+      width: 100%;
+      height: 42px;
+      padding: 0 var(--space-3);
+      border: 1px solid var(--line-strong);
+      border-radius: var(--radius-md);
+      background: var(--surface);
+      color: var(--text);
+    }
+
+    .search-wrap input::placeholder { color: var(--faint); }
+
+    .segments {
+      display: inline-flex;
+      border: 1px solid var(--line-strong);
+      border-radius: var(--radius-md);
+      overflow: hidden;
+      background: var(--surface);
+    }
+
+    .segments button {
+      min-height: 40px;
+      padding: 0 var(--space-3);
+      border: 0;
+      border-right: 1px solid var(--line);
+      background: transparent;
+      color: var(--muted);
+      cursor: pointer;
+      font-size: 12px;
+      font-weight: 700;
+    }
+
+    .segments button:last-child { border-right: 0; }
+    .segments button[aria-pressed="true"] { background: var(--surface-raised); color: var(--text); }
+
+    .work-meta {
+      min-height: 24px;
+      margin-bottom: var(--space-3);
+      color: var(--faint);
+      font-size: 12px;
+    }
+
+    .work-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: var(--space-3);
+    }
+
+    .work-item {
+      border: 1px solid var(--line);
+      border-radius: var(--radius-md);
+      background: var(--surface);
+      min-width: 0;
+    }
+
+    .work-item[open] { border-color: var(--line-strong); background: var(--surface-raised); }
+    .work-item[hidden] { display: none; }
+
+    .work-item summary {
+      min-height: 88px;
+      padding: var(--space-4);
+      cursor: pointer;
+      list-style: none;
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto;
+      gap: var(--space-3);
+      align-items: start;
+    }
+
+    .work-item summary::-webkit-details-marker { display: none; }
+    .work-item summary::after {
+      content: "+";
+      color: var(--faint);
+      font-family: var(--mono);
+      font-size: 18px;
+    }
+
+    .work-item[open] summary::after { content: "-"; }
+
+    .work-summary {
+      min-width: 0;
+      display: grid;
+      gap: var(--space-2);
+    }
+
+    .work-title {
+      display: flex;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: var(--space-2);
+    }
+
+    .work-title code { color: var(--accent); font-weight: 700; }
+    .work-title strong { font-size: 14px; }
+    .work-subtitle { color: var(--muted); font-size: 12px; }
+
+    .work-body {
+      padding: 0 var(--space-4) var(--space-4);
+      border-top: 1px solid var(--line);
+      display: grid;
+      gap: var(--space-4);
+    }
+
+    .work-facts {
+      padding-top: var(--space-4);
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: var(--space-4);
+    }
+
+    .fact {
+      min-width: 0;
+      display: grid;
+      gap: var(--space-1);
+    }
+
+    .fact p { margin: 0; color: var(--muted); font-size: 12px; }
+
+    .doc-links {
+      display: flex;
+      flex-wrap: wrap;
+      gap: var(--space-3);
+    }
+
+    .doc-links a {
+      color: var(--blue);
+      font-size: 12px;
+      text-underline-offset: 3px;
+    }
+
+    .risk-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: var(--space-3);
+    }
+
+    .risk {
+      min-height: 146px;
+      padding: var(--space-4);
+      border: 1px solid var(--line);
+      border-radius: var(--radius-md);
+      background: var(--surface);
+      display: grid;
+      align-content: start;
+      gap: var(--space-2);
+    }
+
+    .risk-head {
+      display: flex;
+      align-items: baseline;
+      justify-content: space-between;
+      gap: var(--space-3);
+    }
+
+    .risk h3 { margin: 0; font-size: 14px; }
+    .risk p { margin: 0; color: var(--muted); font-size: 13px; }
+    .severity { color: var(--amber); font-family: var(--mono); font-size: 11px; }
+
+    .review-path {
+      counter-reset: review-step;
+      border-top: 1px solid var(--line-strong);
+    }
+
+    .review-step {
+      counter-increment: review-step;
+      display: grid;
+      grid-template-columns: 56px minmax(0, 1fr) auto;
+      gap: var(--space-4);
+      padding: var(--space-4) 0;
+      border-bottom: 1px solid var(--line);
+      align-items: start;
+    }
+
+    .review-step::before {
+      content: counter(review-step, decimal-leading-zero);
+      color: var(--accent);
+      font-family: var(--mono);
+      font-size: 13px;
+      font-weight: 700;
+    }
+
+    .review-step h3 { margin: 0 0 var(--space-1); font-size: 14px; }
+    .review-step p { max-width: 74ch; margin: 0; color: var(--muted); font-size: 13px; }
+    .review-step a { color: var(--blue); font-size: 12px; text-underline-offset: 3px; }
+
+    .decision-grid {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: var(--space-3);
+    }
+
+    .decision {
+      min-height: 130px;
+      padding: var(--space-4);
+      border-top: 1px solid var(--line-strong);
+      display: grid;
+      align-content: start;
+      gap: var(--space-2);
+    }
+
+    .decision h3 { margin: 0; font-size: 14px; }
+    .decision p { margin: 0; color: var(--muted); font-size: 13px; }
+
+    .footer {
+      padding-top: var(--space-5);
+      border-top: 1px solid var(--line);
+      color: var(--faint);
+      font-size: 12px;
+      display: flex;
+      justify-content: space-between;
+      gap: var(--space-4);
+    }
+
+    .footer a { color: var(--muted); }
+
+    @media (max-width: 1080px) {
+      .layout { grid-template-columns: 1fr; }
+      .sidebar {
+        position: static;
+        grid-template-columns: minmax(0, 1fr) minmax(220px, 0.4fr);
+        align-items: start;
+      }
+      .sidebar nav { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+      .overview-header { grid-template-columns: 1fr; }
+      .journey { grid-template-columns: repeat(7, 150px); }
+    }
+
+    @media (max-width: 760px) {
+      .topbar-inner { align-items: flex-start; padding-inline: var(--space-4); }
+      .brand { display: grid; gap: var(--space-1); }
+      .brand h1 { font-size: 18px; }
+      .top-links { display: none; }
+      .layout { padding: var(--space-5) var(--space-4) 72px; gap: var(--space-7); }
+      .sidebar { grid-template-columns: 1fr; }
+      .sidebar nav { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+      main { gap: 64px; }
+      .overview-copy h2 { font-size: 32px; }
+      .scope-grid,
+      .work-grid,
+      .risk-grid,
+      .decision-grid { grid-template-columns: 1fr; }
+      .lane { grid-template-columns: 104px minmax(0, 1fr); }
+      .work-toolbar { grid-template-columns: 1fr; }
+      .segments { width: 100%; overflow-x: auto; }
+      .segments button { flex: 1 0 auto; }
+      .work-facts { grid-template-columns: 1fr; }
+      .x1-rule { grid-template-columns: 1fr; }
+      .review-step { grid-template-columns: 40px minmax(0, 1fr); }
+      .review-step a { grid-column: 2; }
+      .footer { display: grid; }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      html { scroll-behavior: auto; }
+    }
+  </style>
+</head>
+<body>
+  <header class="topbar">
+    <div class="topbar-inner">
+      <div class="brand">
+        <span class="brand-mark">ISSUE #391</span>
+        <h1>Agent Factory Runtime Refactor</h1>
+      </div>
+      <nav class="top-links" aria-label="Plan authorities">
+        <a href="VISION.md">Vision</a>
+        <a href="INDEX.md">Ordering</a>
+        <a href="OWNER-REVIEW.md">Owner review</a>
+        <a href="PR-PLAN.md">PR plan</a>
+      </nav>
+    </div>
+  </header>
+
+  <div class="layout">
+    <aside class="sidebar">
+      <div class="sidebar-block">
+        <p class="sidebar-title">Navigate</p>
+        <nav aria-label="Page sections">
+          <a href="#overview">V1 contract</a>
+          <a href="#critical-path">Critical path</a>
+          <a href="#parallel">Parallel tracks</a>
+          <a href="#packages">Work packages</a>
+          <a href="#risks">Risk ledger</a>
+          <a href="#review">Review path</a>
+          <a href="#decisions">Owner decisions</a>
+        </nav>
+      </div>
+      <div class="authority-note">
+        <strong>Navigation, not authority.</strong><br>
+        <a href="INDEX.md">INDEX.md</a> owns ordering. Package TODO/PLAN/HANDOFF
+        files own implementation and proof.
+      </div>
+    </aside>
+
+    <main>
+      <section class="overview" id="overview">
+        <div class="overview-header">
+          <div class="overview-copy">
+            <p class="kicker">Binding product outcome</p>
+            <h2>Ship a specific agent as a dedicated, repeatable product.</h2>
+            <p>
+              Author one immutable agent bundle, prove it locally, deploy it to
+              one exact EU hostname, and route an authenticated member into one
+              managed workspace where that deployment is the server-selected
+              <code>default</code> agent.
+            </p>
+          </div>
+          <div class="release-state">
+            <div>
+              <span class="label">Plan state</span>
+              <strong>Incremental v1, owner review</strong>
+            </div>
+            <span class="state-tag">Ready for human</span>
+          </div>
+        </div>
+
+        <div class="journey" aria-label="V1 product journey">
+          <div class="journey-step"><span>01</span><b>Agent directory</b></div>
+          <div class="journey-step"><span>02</span><b>Validate and run locally</b></div>
+          <div class="journey-step"><span>03</span><b>Dedicated EU hostname</b></div>
+          <div class="journey-step"><span>04</span><b>Bounded landing page</b></div>
+          <div class="journey-step"><span>05</span><b>Existing-member sign-in</b></div>
+          <div class="journey-step"><span>06</span><b>One managed workspace</b></div>
+          <div class="journey-step"><span>07</span><b>Deployed default agent</b></div>
+        </div>
+
+        <div class="scope-grid">
+          <div class="scope-column">
+            <h3>Binding in v1</h3>
+            <ul class="scope-list">
+              <li>Versioned behavior definition and separate deployment identity.</li>
+              <li>Workspace-level trusted plugins, atomically activated at server boot.</li>
+              <li>One exact host, bounded landing content, current auth and membership.</li>
+              <li>One D1-managed workspace with create, switch, and ordinary delete disabled.</li>
+              <li>Durable local/provider workspace volume on hardened EU runsc.</li>
+              <li>Fenced apply, idempotent reapply, immutable rollback, and timed proof.</li>
+            </ul>
+          </div>
+          <div class="scope-column out">
+            <h3>Deliberately after v1</h3>
+            <ul class="scope-list">
+              <li>FUSE/S3 workspace mounts and their object-store semantics.</li>
+              <li>Per-agent <code>pluginRefs</code> and plugin requirement policy.</li>
+              <li>Shared-host multi-tenant routing and multiple agents per workspace.</li>
+              <li>Public demo and canonical MCP exposure.</li>
+              <li>Hosted child apps, control-plane UX, custom GTM, pricing, and bespoke LPs.</li>
+              <li>A generic system-prompt-fragment registry.</li>
+            </ul>
+          </div>
+        </div>
+      </section>
+
+      <section id="critical-path">
+        <div class="section-heading">
+          <p class="kicker">Dependency map</p>
+          <h2>Two joins: resolve at P6-R, release at P8.</h2>
+          <p>
+            Work inside a lane is serial. Lanes may run concurrently after P1
+            freezes the public boundary. Definition and runtime meet at P6-R;
+            dedicated delivery and the independent transport lane meet at P8.
+            P8 is proof, not a place to finish missing implementation.
+          </p>
+        </div>
+
+        <div class="lanes">
+          <div class="lane">
+            <div class="lane-name">Foundation</div>
+            <div class="lane-flow">
+              <a class="node" href="#pkg-p0"><b>P0</b><span>decisions</span></a>
+              <span class="arrow">&rarr;</span>
+              <a class="node" href="#pkg-p1"><b>P1</b><span>safe core</span></a>
+            </div>
+          </div>
+          <div class="lane">
+            <div class="lane-name">Definition</div>
+            <div class="lane-flow">
+              <a class="node" href="#pkg-p6d"><b>P6-D</b><span>schema</span></a>
+              <span class="arrow">&rarr;</span>
+              <a class="node" href="#pkg-a1"><b>A1-C</b><span>compile</span></a>
+              <span class="arrow">&rarr;</span>
+              <a class="node join" href="#pkg-d1"><b>D1</b><span>delivery input</span></a>
+            </div>
+          </div>
+          <div class="lane">
+            <div class="lane-name">Transport</div>
+            <div class="lane-flow">
+              <a class="node" href="#pkg-t1"><b>T1</b><span>durability</span></a>
+              <span class="arrow">&rarr;</span>
+              <a class="node" href="#pkg-t2"><b>T2</b><span>adapters</span></a>
+              <span class="arrow">&rarr;</span>
+              <a class="node proof" href="#pkg-p8"><b>P8</b><span>release join</span></a>
+            </div>
+          </div>
+          <div class="lane">
+            <div class="lane-name">Runtime</div>
+            <div class="lane-flow">
+              <a class="node" href="#pkg-p2"><b>P2</b><span>providers</span></a>
+              <span class="arrow">&rarr;</span>
+              <a class="node" href="#pkg-p3"><b>P3</b><span>contributions</span></a>
+              <span class="arrow">&rarr;</span>
+              <a class="node" href="#pkg-e1"><b>E1</b><span>attachments</span></a>
+              <span class="arrow">&rarr;</span>
+              <a class="node" href="#pkg-p5a"><b>P5a</b><span>readiness</span></a>
+              <span class="arrow">&rarr;</span>
+              <a class="node join" href="#pkg-p6r"><b>P6-R</b><span>resolve join</span></a>
+            </div>
+          </div>
+          <div class="lane">
+            <div class="lane-name">Delivery</div>
+            <div class="lane-flow">
+              <a class="node join" href="#pkg-p6r"><b>P6-R</b><span>resolve</span></a>
+              <span class="arrow">&rarr;</span>
+              <a class="node" href="#pkg-a1"><b>A1-D</b><span>local dev</span></a>
+              <span class="arrow">&rarr;</span>
+              <a class="node join" href="#pkg-d1"><b>D1</b><span>dedicated site</span></a>
+              <span class="arrow">&rarr;</span>
+              <a class="node proof" href="#pkg-p8"><b>P8</b><span>proof</span></a>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section id="parallel">
+        <div class="section-heading">
+          <p class="kicker">Delegation map</p>
+          <h2>Parallel work is bounded by frozen contracts.</h2>
+          <p>
+            A background branch may progress without becoming a v1 dependency.
+            It must stop at its integration boundary and may merge only when its
+            named consumer and conformance proof exist.
+          </p>
+        </div>
+
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Track</th>
+                <th>Start after</th>
+                <th>Isolation boundary</th>
+                <th>Merge gate</th>
+                <th>Now</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td><div class="track-name"><strong>R0 / M1 tracer</strong><span class="status ready">safe leaf</span></div></td>
+                <td>P1 admission and attribution</td>
+                <td>Additive bearer sidecar. No definition or exposure-policy ownership.</td>
+                <td>Stock-client smoke and bounded self-contained result.</td>
+                <td>Run after P1 PR E.</td>
+              </tr>
+              <tr>
+                <td><div class="track-name"><strong>P6-D / A1 compile</strong><span class="status active">critical parallel</span></div></td>
+                <td>P1</td>
+                <td>Definition and compiler only. No E1, tenant, plugin policy, or lifecycle.</td>
+                <td>Deterministic self-contained bundle.</td>
+                <td>Run beside transport/runtime lanes.</td>
+              </tr>
+              <tr>
+                <td><div class="track-name"><strong>T1 / T2</strong><span class="status active">critical parallel</span></div></td>
+                <td>P1</td>
+                <td>No provider or filesystem work. One event and approval authority.</td>
+                <td>Crash recovery, then two-transport conformance.</td>
+                <td>Run in lane order.</td>
+              </tr>
+              <tr>
+                <td><div class="track-name"><strong>P2 / P3 / E1 / P5a</strong><span class="status active">critical parallel</span></div></td>
+                <td>P1</td>
+                <td>P1 API and #416 contracts stay frozen.</td>
+                <td>Hardened runsc, no-leak, readiness, and secret brokerage.</td>
+                <td>Run in lane order.</td>
+              </tr>
+              <tr>
+                <td><div class="track-name"><strong>X1 S3/FUSE</strong><span class="status deferred">draft only</span></div></td>
+                <td>P2 + P5a + E1 + named native-mount consumer</td>
+                <td><code>boring-sandbox/mounts</code>, MinIO proof, and benchmark. No D1/E1/P5/agent/workspace contract edits.</td>
+                <td>E1 integration, bash/file parity, credential canary, EU matrix, numeric benchmark.</td>
+                <td>Keep #581 draft; never gate v1.</td>
+              </tr>
+              <tr>
+                <td><div class="track-name"><strong>E2 / M2 adapters</strong><span class="status deferred">later leaves</span></div></td>
+                <td>E1 + P6-R / P7 + T2</td>
+                <td>Thin adapters over frozen environment and runtime contracts.</td>
+                <td>Identity, auth, no-leak, exec, and result conformance.</td>
+                <td>Dispatch only after contracts land.</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        <div class="x1-rule">
+          <div>
+            <strong>X1 is isolated operational research, not v1 storage.</strong>
+            <p>
+              V1 uses a durable local/provider volume plus explicit artifact
+              synchronization. The X1 agent may work in a separate worktree, but
+              it cannot invent provisional E1/P5 contracts or change D1 to depend
+              on FUSE/S3.
+            </p>
+          </div>
+          <a href="work/X1-s3-fuse-mounts/PLAN.md">Open X1 plan</a>
+        </div>
+      </section>
+
+      <section id="packages">
+        <div class="section-heading">
+          <p class="kicker">Drill-down index</p>
+          <h2>Every work package, one review surface.</h2>
+          <p>
+            Each package expands into its outcome, prerequisite, frozen boundary,
+            exit gate, and authoritative documents. One bead/PR is the autonomous
+            implementation unit; never dispatch an entire package TODO.
+          </p>
+        </div>
+
+        <div class="work-toolbar">
+          <label class="search-wrap">
+            <span class="label">Find a work package</span>
+            <input id="package-search" type="search" placeholder="Search phase, outcome, boundary, or gate" autocomplete="off">
+          </label>
+          <div class="segments" role="group" aria-label="Work package filter">
+            <button type="button" data-filter="all" aria-pressed="true">All</button>
+            <button type="button" data-filter="critical" aria-pressed="false">V1 critical</button>
+            <button type="button" data-filter="leaf" aria-pressed="false">Parallel leaves</button>
+            <button type="button" data-filter="later" aria-pressed="false">Later</button>
+          </div>
+        </div>
+        <div class="work-meta" id="work-meta" aria-live="polite"></div>
+        <div class="work-grid" id="work-grid"></div>
+      </section>
+
+      <section id="risks">
+        <div class="section-heading">
+          <p class="kicker">Risk ledger</p>
+          <h2>Robustness is concentrated at irreversible boundaries.</h2>
+          <p>
+            The plan removes speculative generality and keeps stronger controls
+            where failure would expose authority, corrupt identity, strand data,
+            or publish an incomplete product.
+          </p>
+        </div>
+
+        <div class="risk-grid">
+          <article class="risk">
+            <div class="risk-head"><h3>Scope collapse</h3><span class="severity">P1</span></div>
+            <p>Shared tenancy, per-agent plugins, public demo/MCP, FUSE, custom GTM, and control-plane UX stay outside the v1 merge gate.</p>
+            <p><strong>Control:</strong> INDEX is ordering authority; P8 explicitly ignores post-v1 packages.</p>
+          </article>
+          <article class="risk">
+            <div class="risk-head"><h3>Partial dedicated site</h3><span class="severity">P1</span></div>
+            <p>A half-upgraded host could otherwise publish the generic multi-workspace app on the dedicated hostname.</p>
+            <p><strong>Control:</strong> authenticated capability mint, reserved-host inactive deny, pointer CAS, then first external publication.</p>
+          </article>
+          <article class="risk">
+            <div class="risk-head"><h3>Workspace escape</h3><span class="severity">P1</span></div>
+            <p>Foreign ids can enter through core routes, indirect session/project ids, tokens, plugin RPC, MCP, pane status, or WorkspaceBridge.</p>
+            <p><strong>Control:</strong> trusted host mode plus bound scope everywhere; D1 mounts only scoped plugin routes and rejects raw Fastify contributions.</p>
+          </article>
+          <article class="risk">
+            <div class="risk-head"><h3>Managed-workspace deletion</h3><span class="severity">P1</span></div>
+            <p>Account deletion or owner demotion could orphan or remove the product workspace.</p>
+            <p><strong>Control:</strong> creator/last-owner operations fail before mutation; only fenced D1 lifecycle may transfer or decommission.</p>
+          </article>
+          <article class="risk">
+            <div class="risk-head"><h3>Prompt without capability</h3><span class="severity">P1</span></div>
+            <p>Plugin or environment prose could remain after the corresponding tools and routes disappear.</p>
+            <p><strong>Control:</strong> prompt fragments activate only with the verified server contribution that owns the capability.</p>
+          </article>
+          <article class="risk">
+            <div class="risk-head"><h3>Browser/server false atomicity</h3><span class="severity">P2</span></div>
+            <p>A browser import failure cannot roll back Fastify routes already installed at boot.</p>
+            <p><strong>Control:</strong> boot-time server activation is atomic; browser failure preserves previous-good UI and reports diagnostics.</p>
+          </article>
+          <article class="risk">
+            <div class="risk-head"><h3>Static behavior drift</h3><span class="severity">P1</span></div>
+            <p>Plugin options or static host prompt input could change behavior while artifact ids remain stable.</p>
+            <p><strong>Control:</strong> plugin activation inputs and the full source-labeled static prompt plan are retained in resolved identity.</p>
+          </article>
+          <article class="risk">
+            <div class="risk-head"><h3>FUSE operational drag</h3><span class="severity">P2</span></div>
+            <p>Object-store latency, weak notifications, credentials, and mount health can dominate the delivery path.</p>
+            <p><strong>Control:</strong> X1 is a draft-only parallel track with its own benchmark and security exit.</p>
+          </article>
+        </div>
+      </section>
+
+      <section id="review">
+        <div class="section-heading">
+          <p class="kicker">Top-down owner review</p>
+          <h2>Review the promise before the machinery.</h2>
+          <p>
+            The sequence prevents local implementation detail from silently
+            changing the product contract or pulling deferred platform scope
+            back into v1.
+          </p>
+        </div>
+
+        <div class="review-path">
+          <article class="review-step">
+            <div><h3>Validate the v1 product contract</h3><p>Confirm exact host, bounded landing, current member auth, one managed workspace, and deployed agent as <code>default</code>.</p></div>
+            <a href="VISION.md">VISION</a>
+          </article>
+          <article class="review-step">
+            <div><h3>Approve the exclusions</h3><p>Check that FUSE/S3, shared tenancy, public demo/MCP, per-agent plugins, custom GTM, and control-plane UX cannot block v1.</p></div>
+            <a href="INDEX.md">INDEX</a>
+          </article>
+          <article class="review-step">
+            <div><h3>Inspect the critical joins</h3><p>P1 freezes the public boundary. P6-R joins definition, environment, authority, readiness, and activated-plugin identity. D1 is the only publication authority.</p></div>
+            <a href="architecture/05-multi-agent-sessions-hooks.md">Architecture 05</a>
+          </article>
+          <article class="review-step">
+            <div><h3>Threat-model dedicated delivery</h3><p>Review selector scope, account lifecycle, reserved-host inactive state, authenticated readiness mint, pointer-before-publication order, fencing, and rollback identity.</p></div>
+            <a href="work/D1-tenant-provisioning/PLAN.md">D1 plan</a>
+          </article>
+          <article class="review-step">
+            <div><h3>Review one work package at a time</h3><p>Open its PLAN for intent, TODO for beads and proof, and HANDOFF for the closeout gate. Reject package-wide agent assignments.</p></div>
+            <a href="#packages">Packages</a>
+          </article>
+          <article class="review-step">
+            <div><h3>Review PR shape and order</h3><p>Verify each PR is independently reviewable, preserves frozen behavior, names its proof, and fits the owner review budget.</p></div>
+            <a href="PR-PLAN.md">PR plan</a>
+          </article>
+          <article class="review-step">
+            <div><h3>Close only on product proof</h3><p>P8 must execute the exact URL journey, negative selector matrix, fresh-resolved no-op, old-origin rejection, stale-fence proof, immutable rollback, and secret scan.</p></div>
+            <a href="work/P8-verification/HANDOFF.md">P8 handoff</a>
+          </article>
+        </div>
+      </section>
+
+      <section id="decisions">
+        <div class="section-heading">
+          <p class="kicker">Owner sign-off</p>
+          <h2>Three decisions keep the plan coherent.</h2>
+        </div>
+        <div class="decision-grid">
+          <article class="decision">
+            <span class="status active">binding</span>
+            <h3>V1 product acceptance</h3>
+            <p>Exact hostname to landing to member sign-in to one managed workspace to deployed default agent.</p>
+          </article>
+          <article class="decision">
+            <span class="status active">binding</span>
+            <h3>Plugin model</h3>
+            <p>Workspace-level trusted activation in v1. <code>pluginRefs</code> and requirement policy arrive together later.</p>
+          </article>
+          <article class="decision">
+            <span class="status deferred">isolated track</span>
+            <h3>FUSE/S3</h3>
+            <p>X1 may progress in a background draft, but v1 storage and D1 acceptance do not depend on it.</p>
+          </article>
+        </div>
+      </section>
+
+      <footer class="footer">
+        <span>Issue #391 plan navigator. Markdown authorities win on conflict.</span>
+        <span><a href="README.md">Plan pack README</a> &middot; <a href="OWNER-REVIEW.md">Owner review card</a></span>
+      </footer>
+    </main>
+  </div>
+
+  <script>
+    const packages = [
+      {
+        id: "p0", phase: "P0", title: "Decisions", category: "critical", status: "merged",
+        subtitle: "Ratify the architecture and package boundaries.",
+        starts: "None",
+        outcome: "Canonical decisions, global invariants, and the no-compat operating policy.",
+        boundary: "No implementation. Later packages consume these rulings instead of reopening them.",
+        gate: "Every architecture decision has an explicit status and owner.",
+        docs: [["Plan", "work/P0-adr/PLAN.md"], ["TODO", "work/P0-adr/TODO.md"], ["Handoff", "work/P0-adr/HANDOFF.md"]]
+      },
+      {
+        id: "p1", phase: "P1", title: "Safe headless core", category: "critical", status: "active",
+        subtitle: "Freeze the real agent boundary before extracting runtime concerns.",
+        starts: "P0",
+        outcome: "One public core facade with serialized admission, idempotency, attribution, deterministic tools, and exact lifecycle.",
+        boundary: "No provider, filesystem, workspace, or surface-specific authority in core.",
+        gate: "Open P1 stack plus PR E; admission and disposal faults proven.",
+        docs: [["Plan", "work/P1-headless-core/PLAN.md"], ["TODO", "work/P1-headless-core/TODO.md"], ["Handoff", "work/P1-headless-core/HANDOFF.md"]]
+      },
+      {
+        id: "m1", phase: "R0/M1", title: "Managed MCP tracer", category: "leaf", status: "ready",
+        subtitle: "Ship one bounded business-facing vertical without blocking v1.",
+        starts: "P1 admission and attribution",
+        outcome: "Bearer-authenticated stock-client agent returning bounded self-contained output.",
+        boundary: "Additive sidecar only; no canonical definition, public demo, or exposure-policy ownership.",
+        gate: "Stock-client smoke, one session/delegation, no path or secret leak.",
+        docs: [["Plan", "work/M1-mcp-managed-agent/PLAN.md"], ["TODO", "work/M1-mcp-managed-agent/TODO.md"], ["Handoff", "work/M1-mcp-managed-agent/HANDOFF.md"]]
+      },
+      {
+        id: "p6d", phase: "P6-D", title: "Definition and registry", category: "critical", status: "ready",
+        subtitle: "Separate reusable behavior from deployment authority.",
+        starts: "P1",
+        outcome: "Versioned AgentDefinition, AgentDeployment, canonical digests, and immutable verified bundle registry.",
+        boundary: "No E1 types, plugin refs, tenant host, pricing, exposure, live handles, or lifecycle.",
+        gate: "Contained bundle remains reproducible after source checkout removal.",
+        docs: [["Plan", "work/P6-plugin-child-app/PLAN.md"], ["TODO", "work/P6-plugin-child-app/TODO.md"], ["V1 handoff", "work/P6-plugin-child-app/P6-V1-HANDOFF.md"]]
+      },
+      {
+        id: "a1", phase: "A1", title: "Agent authoring", category: "critical", status: "ready",
+        subtitle: "Make a small agent directory the shipping unit.",
+        starts: "P6-D for compile; P6-R for local run",
+        outcome: "Validate, compile, and locally run the exact self-contained bundle later deployed by D1.",
+        boundary: "No platform-source edit, tenant provisioning, second schema, or hidden runtime configuration.",
+        gate: "One scripted local turn with deterministic definition and asset digest.",
+        docs: [["Plan", "work/A1-agent-authoring/PLAN.md"], ["TODO", "work/A1-agent-authoring/TODO.md"], ["Handoff", "work/A1-agent-authoring/HANDOFF.md"]]
+      },
+      {
+        id: "t1", phase: "T1", title: "Durable events and approvals", category: "critical", status: "active",
+        subtitle: "Create one durable replay and input authority.",
+        starts: "P1",
+        outcome: "SQLite event stream, transactional pending input, durable receipts, attribution, and explicit crash recovery.",
+        boundary: "JSONL remains conversation-state authority; no second approval channel or surface-native addressing.",
+        gate: "Fault recovery cannot silently omit committed conversation content.",
+        docs: [["Plan", "work/T1-durable-events/PLAN.md"], ["TODO", "work/T1-durable-events/TODO.md"], ["Handoff", "work/T1-durable-events/HANDOFF.md"]]
+      },
+      {
+        id: "t2", phase: "T2", title: "Transport adapters", category: "critical", status: "ready",
+        subtitle: "Give in-process and HTTP consumers identical semantics.",
+        starts: "T1",
+        outcome: "Shared admission, replay, attribution, approvals, interrupt, and idempotency across both transports.",
+        boundary: "Transport carries runtime session ids; surfaces own external addressing.",
+        gate: "Two-adapter conformance passes and the legacy cursor/replay path is removed.",
+        docs: [["Plan", "work/T2-transport/PLAN.md"], ["TODO", "work/T2-transport/TODO.md"], ["Handoff", "work/T2-transport/HANDOFF.md"]]
+      },
+      {
+        id: "p2", phase: "P2", title: "Sandbox providers", category: "critical", status: "active",
+        subtitle: "Move provider ownership out of agent core and fail closed.",
+        starts: "P1",
+        outcome: "Dedicated sandbox package plus hardened EU runsc/systrap provider and honest mode selection.",
+        boundary: "No silent direct fallback, no agent value import, no FUSE mount requirement.",
+        gate: "Real target proves isolation, egress, limits, cleanup, and secret absence.",
+        docs: [["Plan", "work/P2-sandbox-providers/PLAN.md"], ["TODO", "work/P2-sandbox-providers/TODO.md"], ["Handoff", "work/P2-sandbox-providers/HANDOFF.md"]]
+      },
+      {
+        id: "p3", phase: "P3", title: "Routes, tools, and contribution residue", category: "critical", status: "ready",
+        subtitle: "Make capability ownership complete and removable.",
+        starts: "P2",
+        outcome: "Bash/file routes and tools move to their runtime owner; trusted v1 plugin server contributions activate from one verified record.",
+        boundary: "No P4 extraction, per-agent plugin refs, requirement policy, or browser-to-server rollback protocol.",
+        gate: "Pure mode has zero filesystem residue; plugin snapshot includes artifact and redacted activation inputs.",
+        docs: [["Plan", "work/P3-routes-tools/PLAN.md"], ["TODO", "work/P3-routes-tools/TODO.md"], ["Handoff", "work/P3-routes-tools/HANDOFF.md"]]
+      },
+      {
+        id: "e1", phase: "E1", title: "Environment attachments", category: "critical", status: "ready",
+        subtitle: "Bind one authorized environment for a stable runtime lifetime.",
+        starts: "P2 and P3",
+        outcome: "Tools, routes, and UI observe the same host-owned prepared attachment view.",
+        boundary: "Extend #416; do not replace it. Lifetime identity excludes request id and raw secret.",
+        gate: "No-leak, symlink escape, parity, invalidation, and disposal conformance.",
+        docs: [["Plan", "work/E1-environment-attachments/PLAN.md"], ["TODO", "work/E1-environment-attachments/TODO.md"], ["Handoff", "work/E1-environment-attachments/HANDOFF.md"]]
+      },
+      {
+        id: "p5a", phase: "P5a", title: "Minimum provisioning", category: "critical", status: "ready",
+        subtitle: "Prepare runtime requirements without moving authority into agent core.",
+        starts: "P2, P3, and E1",
+        outcome: "Host orchestration, readiness, deterministic fingerprint, secret brokerage, and authenticated worker facts.",
+        boundary: "No advanced SDK archive, managed-service, or remote-mount generality without a consumer.",
+        gate: "Hardened worker claims authenticate and unknown capability fails closed.",
+        docs: [["Plan", "work/P5-provisioning-secrets/PLAN.md"], ["TODO", "work/P5-provisioning-secrets/TODO.md"], ["Handoff", "work/P5-provisioning-secrets/HANDOFF.md"]]
+      },
+      {
+        id: "p6r", phase: "P6-R", title: "Immutable agent resolution", category: "critical", status: "ready",
+        subtitle: "Join bundle, deployment, authority, environment, readiness, and plugin identity.",
+        starts: "P6-D, E1, P5a, and P3 BBP3-020",
+        outcome: "Reproducible ResolvedAgent generation and static prompt plan, host complete pointer, same-generation session restart, and rollback retention.",
+        boundary: "Consume P3 snapshot; one boot generation per site, no multi-generation router, second plugin loader, per-agent selection, or publication authority.",
+        gate: "Restart reproduces the active digest; a changed digest commits and switches under a closed gate, then retires prior-generation sessions before reopening.",
+        docs: [["Plan", "work/P6-plugin-child-app/PLAN.md"], ["TODO", "work/P6-plugin-child-app/TODO.md"], ["V1 handoff", "work/P6-plugin-child-app/P6-V1-HANDOFF.md"]]
+      },
+      {
+        id: "d1", phase: "D1", title: "Dedicated EU site delivery", category: "critical", status: "ready",
+        subtitle: "Turn the framework into a repeatable specific-agent product.",
+        starts: "A1, hardened P2, P5a, and P6-R",
+        outcome: "Exact host, bounded landing, member auth, one managed workspace, default agent, and fenced apply/rollback with explicit session retirement.",
+        boundary: "No M2, D2, FUSE/S3, arbitrary HTML, custom GTM, or generic auth-policy lifecycle.",
+        gate: "Authenticated readiness, trusted exact-host mode, scoped-only plugin routes, pre-preparation inactive deny, forward-recoverable one-process transition, pointer-before-publication, selector/account negatives, reapply, and rollback.",
+        docs: [["Plan", "work/D1-tenant-provisioning/PLAN.md"], ["TODO", "work/D1-tenant-provisioning/TODO.md"], ["Handoff", "work/D1-tenant-provisioning/HANDOFF.md"]]
+      },
+      {
+        id: "p8", phase: "P8", title: "V1 verification", category: "critical", status: "ready",
+        subtitle: "Prove the product path and close the refactor without absorbing unfinished work.",
+        starts: "Every v1 gate",
+        outcome: "Timed exact-URL journey, full negative matrix, real restart, fresh-resolved no-op, old-origin rejection, transition retirement, stale-fence rejection, rollback, and secret scan.",
+        boundary: "Verification and tracking only. A failed earlier gate reopens its owner package.",
+        gate: "One command emits complete product evidence in 900 seconds or less.",
+        docs: [["Plan", "work/P8-verification/PLAN.md"], ["TODO", "work/P8-verification/TODO.md"], ["Handoff", "work/P8-verification/HANDOFF.md"]]
+      },
+      {
+        id: "x1", phase: "X1", title: "S3/FUSE mounts", category: "leaf", status: "deferred",
+        subtitle: "Evaluate host-side object-store mounts as an optional storage tier.",
+        starts: "P2, P5a, E1, and a named native-mount consumer",
+        outcome: "Package-local mount lifecycle, no-leak integration, EU MinIO matrix, and measured performance.",
+        boundary: "No in-sandbox FUSE or credentials; no D1/E1/P5 contract changes; user filesystem only.",
+        gate: "Bash/file parity, credential canary, health/recovery, and locked numeric benchmark.",
+        docs: [["Plan", "work/X1-s3-fuse-mounts/PLAN.md"], ["TODO", "work/X1-s3-fuse-mounts/TODO.md"], ["Handoff", "work/X1-s3-fuse-mounts/HANDOFF.md"]]
+      },
+      {
+        id: "p4", phase: "P4", title: "Filesystem presentation extraction", category: "later", status: "deferred",
+        subtitle: "Move the editor/tree UI only after a second consumer justifies it.",
+        starts: "P3 and a real second consumer",
+        outcome: "Runtime-owned filesystem presentation package with full behavior parity.",
+        boundary: "P3 capability gating is sufficient for v1; do not churn workspace UI early.",
+        gate: "Second consumer and complete UI/API parity.",
+        docs: [["Plan", "work/P4-file-ui/PLAN.md"], ["TODO", "work/P4-file-ui/TODO.md"], ["Handoff", "work/P4-file-ui/HANDOFF.md"]]
+      },
+      {
+        id: "e2", phase: "E2", title: "Environment MCP projection", category: "leaf", status: "deferred",
+        subtitle: "Expose the already-authorized environment to an external MCP client.",
+        starts: "E1 and P6-R",
+        outcome: "Bound MCP projection with the same visible paths and operation policy as the native attachment.",
+        boundary: "No new environment authority, lifecycle, or credential path.",
+        gate: "MCP no-leak, identity, per-call auth, and exec gating.",
+        docs: [["Plan", "work/E2-mcp-projection/PLAN.md"], ["TODO", "work/E2-mcp-projection/TODO.md"], ["Handoff", "work/E2-mcp-projection/HANDOFF.md"]]
+      },
+      {
+        id: "p5b", phase: "P5b", title: "Advanced provisioning", category: "later", status: "deferred",
+        subtitle: "Add archives, managed services, and remote mount generality for named consumers.",
+        starts: "P5a plus a real consumer",
+        outcome: "Consumer-specific provisioning extensions over the stable P5a engine.",
+        boundary: "P5a fingerprint, readiness, and secret brokerage stay frozen.",
+        gate: "Each extension carries its own lifecycle and no-secret proof.",
+        docs: [["Plan", "work/P5-provisioning-secrets/PLAN.md"], ["TODO", "work/P5-provisioning-secrets/TODO.md"], ["Handoff", "work/P5-provisioning-secrets/HANDOFF.md"]]
+      },
+      {
+        id: "p7", phase: "P7", title: "Multi-agent routing and inspection", category: "later", status: "deferred",
+        subtitle: "Introduce trusted agent routing before agent-scoped plugin UI.",
+        starts: "P6-R, E1, and T2",
+        outcome: "Agent-aware routing, catalog, info, and later search/hooks/subagent slices.",
+        boundary: "D1 remains the single default-agent route; no scope leaks into v1.",
+        gate: "Two-agent and two-surface namespace isolation.",
+        docs: [["Plan", "work/P7-multi-agent-inspection/PLAN.md"], ["TODO", "work/P7-multi-agent-inspection/TODO.md"], ["Handoff", "work/P7-multi-agent-inspection/HANDOFF.md"]]
+      },
+      {
+        id: "m2", phase: "M2", title: "Canonical MCP agent surface", category: "leaf", status: "deferred",
+        subtitle: "Turn the R0 tracer into a governed public surface adapter.",
+        starts: "P7 and T2",
+        outcome: "Registry-backed bearer/public-demo exposure with result conformance.",
+        boundary: "Thin adapter only; deployment and host own exposure, runtime owns the loop.",
+        gate: "Auth, dedupe, demo-policy, size, and secret/path conformance.",
+        docs: [["Plan", "work/M2-mcp-agent-surface/PLAN.md"], ["TODO", "work/M2-mcp-agent-surface/TODO.md"], ["Handoff", "work/M2-mcp-agent-surface/HANDOFF.md"]]
+      },
+      {
+        id: "d2", phase: "D2", title: "Shared subdomain tenancy", category: "later", status: "blocked",
+        subtitle: "Add the shared-host tier only after dedicated delivery is repeatable.",
+        starts: "Successful unchanged D1 for two tenants, trusted TenantContext, and owner GO",
+        outcome: "Shared EU deployment with safe hostname tenant registration and lifecycle.",
+        boundary: "No wildcard routing or tenant context in D1; no shortcut around full isolation proof.",
+        gate: "Cross-tenant sessions, files, approvals, search, artifacts, and governance isolation.",
+        docs: [["Plan", "work/D2-shared-tenant-mesh/PLAN.md"], ["TODO", "work/D2-shared-tenant-mesh/TODO.md"], ["Handoff", "work/D2-shared-tenant-mesh/HANDOFF.md"]]
+      },
+      {
+        id: "s3s4", phase: "S3/S4", title: "Control plane and onboarding", category: "later", status: "deferred",
+        subtitle: "Add read-oriented fleet and onboarding UX after public status APIs stabilize.",
+        starts: "P7 plus delivery/status APIs; S4 also needs M2, D1, and D2",
+        outcome: "Fleet inspection, cross-surface sessions, approval inbox, and onboarding status.",
+        boundary: "Public contracts only; no private runtime hooks or authoring framework.",
+        gate: "Workspace e2e across agents, surfaces, approvals, and delivery status.",
+        docs: [["S3 plan", "work/S3-control-plane-ux/PLAN.md"], ["S4 plan", "work/S4-agent-onboarding/PLAN.md"], ["Ordering", "INDEX.md"]]
+      }
+    ];
+
+    const grid = document.querySelector("#work-grid");
+    const meta = document.querySelector("#work-meta");
+    const search = document.querySelector("#package-search");
+    const filterButtons = [...document.querySelectorAll("[data-filter]")];
+    let activeFilter = "all";
+
+    function statusLabel(status) {
+      return ({ merged: "merged", active: "in flight", ready: "ready", blocked: "blocked", deferred: "deferred" })[status] || status;
+    }
+
+    function renderPackages() {
+      grid.innerHTML = packages.map((item) => `
+        <details class="work-item" id="pkg-${item.id}" data-category="${item.category}" data-search="${[item.phase, item.title, item.subtitle, item.starts, item.outcome, item.boundary, item.gate].join(" ").toLowerCase()}">
+          <summary>
+            <span class="work-summary">
+              <span class="work-title"><code>${item.phase}</code><strong>${item.title}</strong><span class="status ${item.status}">${statusLabel(item.status)}</span></span>
+              <span class="work-subtitle">${item.subtitle}</span>
+            </span>
+          </summary>
+          <div class="work-body">
+            <div class="work-facts">
+              <div class="fact"><span class="label">Delivers</span><p>${item.outcome}</p></div>
+              <div class="fact"><span class="label">Starts after</span><p>${item.starts}</p></div>
+              <div class="fact"><span class="label">Frozen boundary</span><p>${item.boundary}</p></div>
+              <div class="fact"><span class="label">Exit gate</span><p>${item.gate}</p></div>
+            </div>
+            <div class="doc-links">${item.docs.map(([label, href]) => `<a href="${href}">${label}</a>`).join("")}</div>
+          </div>
+        </details>
+      `).join("");
+      applyFilter();
+      openHashTarget();
+    }
+
+    function applyFilter() {
+      const query = search.value.trim().toLowerCase();
+      let visible = 0;
+      document.querySelectorAll(".work-item").forEach((item) => {
+        const categoryMatch = activeFilter === "all" || item.dataset.category === activeFilter;
+        const queryMatch = !query || item.dataset.search.includes(query);
+        item.hidden = !(categoryMatch && queryMatch);
+        if (!item.hidden) visible += 1;
+      });
+      meta.textContent = `${visible} of ${packages.length} work packages`;
+    }
+
+    function openHashTarget() {
+      if (!location.hash.startsWith("#pkg-")) return;
+      const target = document.querySelector(location.hash);
+      if (target instanceof HTMLDetailsElement) {
+        target.hidden = false;
+        target.open = true;
+        requestAnimationFrame(() => target.scrollIntoView({ block: "start" }));
+      }
+    }
+
+    filterButtons.forEach((button) => {
+      button.addEventListener("click", () => {
+        activeFilter = button.dataset.filter;
+        filterButtons.forEach((candidate) => candidate.setAttribute("aria-pressed", String(candidate === button)));
+        applyFilter();
+      });
+    });
+
+    search.addEventListener("input", applyFilter);
+    window.addEventListener("hashchange", openHashTarget);
+
+    const sectionLinks = [...document.querySelectorAll(".sidebar nav a")];
+    const sections = sectionLinks.map((link) => document.querySelector(link.getAttribute("href"))).filter(Boolean);
+    const observer = new IntersectionObserver((entries) => {
+      const current = entries.filter((entry) => entry.isIntersecting).sort((a, b) => b.intersectionRatio - a.intersectionRatio)[0];
+      if (!current) return;
+      sectionLinks.forEach((link) => link.setAttribute("aria-current", String(link.getAttribute("href") === `#${current.target.id}`)));
+    }, { rootMargin: "-18% 0px -68%", threshold: [0, 0.2, 0.6] });
+    sections.forEach((section) => observer.observe(section));
+
+    renderPackages();
+  </script>
+</body>
+</html>

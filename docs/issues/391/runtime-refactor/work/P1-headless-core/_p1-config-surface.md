@@ -44,7 +44,7 @@ False positives in the first command:
 | `packages/agent/src/server/sandbox/direct/createDirectSandbox.ts:74` | `opts.runtimeContext ?? { runtimeCwd: process.cwd() }` | Direct sandbox fallback runtime cwd. | B | Runtime provider option `runtimeContext`; pure mode must not construct this provider. |
 | `packages/agent/src/server/createAgentApp.ts:125` | `opts.templatePath ?? getEnv('BORING_AGENT_TEMPLATE_PATH')` | Template passed to `modeAdapter.create(...)`. | A | Adapter-resolved `templatePath`; facade takes resolved config only. |
 | `packages/agent/src/server/registerAgentRoutes.ts:354` | `opts.templatePath ?? getEnv('BORING_AGENT_TEMPLATE_PATH')` | Same template fallback for host-mounted routes. | A | Adapter/host-resolved `templatePath` or request-scoped `getTemplatePath`; no facade env read. |
-| `packages/agent/src/server/runtime/resolveMode.ts:26` | `getEnv('BORING_AGENT_MODE')`; also probes `bwrap` in `hasBwrap()` | Built-in runtime auto-detection. | B | Host/adapter supplies `runtime: RuntimeModeAdapter | 'none'` or `runtimeModeAdapter`; P2 moves runtime-mode resolution out of agent. |
+| `packages/agent/src/server/runtime/resolveMode.ts:26` | `getEnv('BORING_AGENT_MODE')`; also probes `bwrap` in `hasBwrap()` | Built-in runtime auto-detection. | B | Host/adapter may accept `'none'` only as a shim selector before lowering; core receives `runtime?: RuntimeModeAdapter` where absent means pure/no environment attachment. P2 moves runtime-mode resolution out of agent. |
 | `packages/agent/src/server/config/loadEnv.ts:15,21` | Default `env = process.env` over `EnvSchema` | Generic env parser; no production callers found. | B | Host/bin config parser. If revived, it must stay outside `createAgent()`. |
 | `packages/agent/src/server/config/env.ts:1-35` | Central `process.env` helper (`getEnv`, `getEnvSnapshot`, `setEnvDefault`, test mutators) | Existing adapter/provider env access point. | B | Allowed only in hosts/adapters/providers/tests. `createAgent()` must not import this module. |
 | `packages/agent/src/server/harness/pi-coding-agent/sessions.ts:44-45,55` | `BORING_AGENT_SESSION_ROOT`; fallback `homedir()/.pi/agent/sessions` | File-backed Pi session root. | A | `sessionStorageRoot` / harness `sessionRoot`; BBP1-004 also makes `SessionCtx.workspaceId` optional and prevents synthetic workspace ids. |
@@ -102,10 +102,10 @@ The facade must receive typed values; it must not import `config/env.ts`,
 `config/workspaceRoot.ts`, `runtime/resolveMode.ts`, or the Pi plugin loader.
 The first implementation pass should account for these explicit inputs:
 
-- `runtime: RuntimeModeAdapter | 'none'`
+- `runtime?: RuntimeModeAdapter` (absent means pure; `'none'` is adapter/host shim input only)
 - `tools?: AgentTool[]`
 - `readinessRequirements?: string[]`
-- `harnessFactory?`
+- `harnessFactory` (required at core; server adapters inject Pi default)
 - `sessions?`
 - `systemPromptAppend?`
 - `systemPromptDynamic?`
@@ -113,10 +113,24 @@ The first implementation pass should account for these explicit inputs:
 - `metering?`
 - `sessionStorageRoot?`
 - adapter/provider-resolved `workspaceRoot` / `workdir` / runtime bundle values when
-  `runtime !== 'none'`
+  `runtime` is supplied
 - adapter/provider-resolved `templatePath` where the selected runtime needs it
 
 No unknown ambient read remains from the non-test server-source scan above. The
 provider/harness rows marked **B** are intentionally not facade config unless the
 owning later bead (BBP1-005, P2, or P5) turns them into explicit provider/harness
 options.
+
+## Tool contribution authority not delivered by P1
+
+**Amendment (2026-07-08):** P1 only establishes the typed injection surface
+(`tools?: AgentTool[]`, `readinessRequirements?: string[]`). It does **not**
+deliver authoritative typed duplicate-tool or renderer-provenance enforcement.
+The current merge path is still
+`packages/agent/src/server/catalog/mergeTools.ts`, which keeps the
+last-registered tool on name collision and emits a warning.
+
+Reassign stricter duplicate/provenance enforcement to P3's routes/tools boundary
+work, especially [`../P3-routes-tools/TODO.md`](../P3-routes-tools/TODO.md)
+`BBP3-017`. Do not read this P1 inventory as completed authority that flattens
+or validates all tool contributions.

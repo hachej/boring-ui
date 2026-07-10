@@ -1,13 +1,13 @@
-import Fastify, { type FastifyInstance } from 'fastify'
+import Fastify, { type FastifyInstance, type FastifyRequest } from 'fastify'
 import type { AgentTool } from '../shared/tool'
 import type { AgentCoreHarnessFactory, AgentHarness, AgentHarnessFactory } from '../shared/harness'
 import type { TelemetrySink } from '../shared/telemetry'
 import { getEnv } from './config/env'
-import type { RuntimeBundle, RuntimeModeAdapter, RuntimeModeId } from './runtime/mode'
+import type { RuntimeBundle, RuntimeFilesystemBinding, RuntimeModeAdapter, RuntimeModeId } from './runtime/mode'
 import { getOptionalRuntimeBundleStorageRoot } from './runtime/mode'
 import { withRuntimeEnvContributions, type RuntimeEnvContribution } from './runtimeEnvContributions'
 import { resolveMode, autoDetectMode } from './runtime/resolveMode'
-import { createPiCodingAgentHarness, withPiHarnessDefaults } from './harness/pi-coding-agent/createHarness'
+import { createPiCodingAgentHarness, withPiHarnessDefaults, withPurePiHarnessDefaults } from './harness/pi-coding-agent/createHarness'
 import type { PiHarnessOptions } from './harness/pi-coding-agent/createHarness'
 import type { WorkspaceProvisioningResult } from './workspace/provisioning'
 import { loadPlugins } from './harness/pi-coding-agent/pluginLoader'
@@ -66,6 +66,8 @@ export interface CreateAgentAppOptions {
   telemetry?: TelemetrySink
   /** Optional billing sink for native Pi usage (see AgentMeteringSink). */
   metering?: AgentMeteringSink
+  /** Generic filesystem binding seam for standalone embeddings. */
+  getFilesystemBindings?: (ctx: { request?: FastifyRequest; sessionId?: string; workspaceId: string; workspaceRoot: string; userId?: string; userEmail?: string; userEmailVerified?: boolean; requestId?: string }) => RuntimeFilesystemBinding[] | undefined | Promise<RuntimeFilesystemBinding[] | undefined>
   /** Generic runtime env contributors. Agent stays workspace-neutral; hosts decide env names/values. */
   runtimeEnvContributions?: RuntimeEnvContribution[]
   /** Runtime-aware provisioning hook. Runs after Workspace/Sandbox creation and before tools/harness. */
@@ -120,7 +122,7 @@ export async function createAgentApp(
 
   const resolvedMode = opts.runtimeModeAdapter?.id ?? opts.mode ?? autoDetectMode()
   const profile = !opts.runtimeModeAdapter && resolvedMode === PURE_RUNTIME_MODE
-    ? await createPureAgentAppProfile(opts, sessionId, resolvedMode)
+    ? await createPureAgentAppProfile(opts, resolvedMode)
     : await createWorkspaceAgentAppProfile(opts, sessionId, resolvedMode, app)
 
   app.addHook(
@@ -137,10 +139,9 @@ export async function createAgentApp(
 
 async function createPureAgentAppProfile(
   opts: CreateAgentAppOptions,
-  sessionId: string,
   resolvedMode: RuntimeModeId,
 ): Promise<AgentRouteBindingProfile> {
-  const runtimePi = withPiHarnessDefaults(opts.pi)
+  const runtimePi = withPurePiHarnessDefaults(opts.pi)
   const baseHarnessFactory = opts.harnessFactory ?? ((input) => createPiCodingAgentHarness({
     ...input,
     pi: runtimePi,
@@ -251,7 +252,19 @@ async function createWorkspaceAgentAppProfile(
         return current ? { env: current.env, pathEntries: current.pathEntries } : undefined
       },
     }),
-    ...(opts.disableDefaultFileTools ? [] : buildFilesystemAgentTools(runtimeBundle)),
+    ...(opts.disableDefaultFileTools ? [] : buildFilesystemAgentTools(runtimeBundle, {
+      getFilesystemBindings: opts.getFilesystemBindings
+        ? (ctx) => opts.getFilesystemBindings?.({
+            sessionId: ctx.sessionId,
+            workspaceId: ctx.workspaceId ?? sessionId,
+            workspaceRoot,
+            userId: ctx.userId,
+            userEmail: ctx.userEmail,
+            userEmailVerified: ctx.userEmailVerified,
+            requestId: ctx.requestId,
+          })
+        : undefined,
+    })),
     ...(opts.extraTools ?? []),
     ...pluginTools,
     ...(externalPluginsEnabled ? [createPluginDiagnosticsTool({
@@ -299,6 +312,21 @@ async function createWorkspaceAgentAppProfile(
     harnessReady: true,
   })
 
+  const filesystemBindingsForRequest = opts.getFilesystemBindings
+    ? (request: FastifyRequest) => {
+        const user = (request as FastifyRequest & { user?: { id: string; email: string; emailVerified?: boolean } | null }).user
+        return opts.getFilesystemBindings?.({
+          request,
+          workspaceId: request.workspaceContext.workspaceId,
+          workspaceRoot,
+          userId: user?.id,
+          userEmail: user?.email,
+          userEmailVerified: user?.emailVerified === true,
+          requestId: request.id,
+        })
+      }
+    : undefined
+
   return {
     runtimeMode: resolvedMode,
     capabilities: { tools: toolNames(tools) },
@@ -308,23 +336,23 @@ async function createWorkspaceAgentAppProfile(
       getReadiness: () => readyTracker.getReadiness(),
     },
     filesystem: {
-      file: { workspace: runtimeBundle.workspace },
+      file: {
+        workspace: runtimeBundle.workspace,
+        getFilesystemBindings: filesystemBindingsForRequest,
+        filesystemBindings: runtimeBundle.filesystemBindings,
+      },
       fsEvents: { workspace: runtimeBundle.workspace },
-      tree: { workspace: runtimeBundle.workspace, filesystemBindings: runtimeBundle.filesystemBindings },
-      // /api/v1/files/search powers BOTH the cmd-palette / file-tree
-      // search (browser → fetchClient.search) AND shares the same
-      // FileSearch instance the LLM's `find` tool already uses
-      // (runtimeBundle.fileSearch). One impl, one set of glob semantics,
-      // one bound-to-workspace-root guarantee.
+      tree: {
+        workspace: runtimeBundle.workspace,
+        getFilesystemBindings: filesystemBindingsForRequest,
+        filesystemBindings: runtimeBundle.filesystemBindings,
+      },
+      // File search shares the same bound implementation as the model tool.
       search: { fileSearch: runtimeBundle.fileSearch },
-      // Powers the file-tree "Copy Git URL" action. Must use the HOST storage root
-      // (where .git lives), not workspace.root — in sandbox modes the latter is the
-      // in-sandbox cwd (e.g. /workspace) and git would not find the repo.
+      // Git metadata resolves against host storage, not a sandbox-internal cwd.
       git: { getWorkspaceRoot: () => getOptionalRuntimeBundleStorageRoot(runtimeBundle) },
     },
-    chat: {
-      service: agentRuntime.service as PiChatSessionService,
-    },
+    chat: { service: agentRuntime.service as PiChatSessionService },
     systemPrompt: { harness },
     skills: {
       workspaceRoot,
@@ -342,7 +370,12 @@ async function createWorkspaceAgentAppProfile(
       ],
     },
     catalog: { tools },
-    commands: { harness, defaultSessionId: sessionId, workdir: runtimeBundle.workspace.root },
+    commands: {
+      harness,
+      defaultSessionId: sessionId,
+      workdir: runtimeBundle.workspace.root,
+      metering: opts.metering,
+    },
     reload: {
       harness,
       defaultSessionId: sessionId,

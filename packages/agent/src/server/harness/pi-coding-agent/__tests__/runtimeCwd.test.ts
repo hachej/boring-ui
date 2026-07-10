@@ -15,6 +15,7 @@ const {
   mockSessionManagerCreate,
   mockSessionManagerOpen,
   mockResourceLoaderOptions,
+  mockInMemorySettingsManager,
 } = vi.hoisted(() => ({
   mockSubscribers: [] as Array<(event: any) => void>,
   promptHandle: { resolve: undefined as undefined | (() => void) },
@@ -23,6 +24,7 @@ const {
   mockSessionManagerCreate: vi.fn(() => ({ getSessionFile: () => null })),
   mockSessionManagerOpen: vi.fn(() => ({ getSessionFile: () => null })),
   mockResourceLoaderOptions: [] as any[],
+  mockInMemorySettingsManager: { kind: "in-memory" },
   mockCurrentModel: {
     value: undefined as undefined | { provider: string; id: string },
   },
@@ -114,22 +116,6 @@ vi.mock("@mariozechner/pi-coding-agent", () => ({
   // createHarness always builds a DefaultResourceLoader now so it can inject
   // the workspace-paths system-prompt guideline. Stub the lookups it needs.
   getAgentDir: () => "/tmp/test-agent-dir",
-  createEventBus: () => ({}),
-  createExtensionRuntime: () => ({
-    assertActive: () => {},
-    refreshTools: () => {},
-    flagValues: new Map(),
-    pendingProviderRegistrations: [],
-    registerProvider: vi.fn(),
-    unregisterProvider: vi.fn(),
-  }),
-  createSyntheticSourceInfo: (path: string, options: any) => ({
-    path,
-    source: options.source,
-    scope: options.scope ?? "temporary",
-    origin: options.origin ?? "top-level",
-    ...(options.baseDir ? { baseDir: options.baseDir } : {}),
-  }),
   DefaultResourceLoader: class {
     private opts: any;
     constructor(opts: unknown) {
@@ -139,17 +125,35 @@ vi.mock("@mariozechner/pi-coding-agent", () => ({
     async reload() { /* no-op */ }
     getSystemPrompt() {
       const ambientSystemPrompt = "Ambient SYSTEM.md says AGENTS.md can read/edit/write files.";
+      if (this.opts.systemPrompt !== undefined) return this.opts.systemPrompt;
       return this.opts.systemPromptOverride?.(ambientSystemPrompt) ?? ambientSystemPrompt;
     }
     getAppendSystemPrompt() {
       const ambientAppend = ["Ambient APPEND_SYSTEM.md from AGENTS.md"];
+      if (this.opts.appendSystemPrompt !== undefined) return this.opts.appendSystemPrompt;
       return this.opts.appendSystemPromptOverride?.(ambientAppend) ?? ambientAppend;
+    }
+    getSkills() {
+      return this.opts.noSkills ? { skills: [], diagnostics: [] } : { skills: ["ambient"], diagnostics: [] };
+    }
+    getPrompts() {
+      return this.opts.noPromptTemplates ? { prompts: [], diagnostics: [] } : { prompts: ["ambient"], diagnostics: [] };
+    }
+    getThemes() {
+      return this.opts.noThemes ? { themes: [], diagnostics: [] } : { themes: ["ambient"], diagnostics: [] };
+    }
+    getAgentsFiles() {
+      return this.opts.noContextFiles ? { agentsFiles: [] } : { agentsFiles: ["ambient"] };
+    }
+    getExtensions() {
+      return { extensions: [], errors: [], runtime: {} };
     }
     getExtensionFactories() {
       return this.opts.extensionFactories ?? [];
     }
   },
   SettingsManager: {
+    inMemory: () => mockInMemorySettingsManager,
     create: () => ({
       getResolvedSettings: () => ({}),
       loadAllSettings: vi.fn(),
@@ -169,7 +173,7 @@ vi.mock("@mariozechner/pi-coding-agent", () => ({
   },
 }));
 
-import { createPiCodingAgentHarness } from "../createHarness.js";
+import { createPiCodingAgentHarness, withPurePiHarnessDefaults } from "../createHarness.js";
 import { createAgentRuntimeBridge } from "../../../createAgent.js";
 import type { AgentCoreHarness, RunContext } from "../../../../shared/harness.js";
 
@@ -231,7 +235,21 @@ describe("runtime cwd separation", () => {
 
       expect(mockSessionManagerCreate).toHaveBeenCalledWith(sealedCwd, sessionRoot);
       expect(mockCreateAgentSessionConfigs[0]?.cwd).toBe(sealedCwd);
-      expect(mockResourceLoaderOptions).toEqual([]);
+      expect(mockResourceLoaderOptions).toHaveLength(1);
+      expect(mockResourceLoaderOptions[0]).toMatchObject({
+        cwd: sealedCwd,
+        agentDir: sealedCwd,
+        settingsManager: mockInMemorySettingsManager,
+        noExtensions: true,
+        noContextFiles: true,
+        noSkills: true,
+        noPromptTemplates: true,
+        noThemes: true,
+        systemPrompt: "You are a helpful assistant.",
+        appendSystemPrompt: [],
+      });
+      expect(mockResourceLoaderOptions[0]).not.toHaveProperty("additionalExtensionPaths");
+      expect(mockResourceLoaderOptions[0]).not.toHaveProperty("additionalSkillPaths");
       const resourceLoader = mockCreateAgentSessionConfigs[0]?.resourceLoader;
       expect(resourceLoader.getSystemPrompt()).toBe("You are a helpful assistant.");
       expect(resourceLoader.getAppendSystemPrompt()).toEqual([]);
@@ -240,7 +258,7 @@ describe("runtime cwd separation", () => {
       expect(resourceLoader.getThemes()).toEqual({ themes: [], diagnostics: [] });
       expect(resourceLoader.getAgentsFiles()).toEqual({ agentsFiles: [] });
       expect(resourceLoader.getExtensions().errors).toEqual([]);
-      expect(resourceLoader.getExtensions().extensions.length).toBeGreaterThan(0);
+      expect(mockResourceLoaderOptions[0]?.extensionFactories.length).toBeGreaterThan(0);
       expect(JSON.stringify({
         createAgentSession: mockCreateAgentSessionConfigs[0],
       })).not.toContain(process.cwd());
@@ -248,6 +266,36 @@ describe("runtime cwd separation", () => {
       await bridge.agent.dispose();
       await rm(sessionRoot, { recursive: true, force: true });
     }
+  });
+
+  it("does not evaluate path-based Pi resources in headless mode", async () => {
+    const getHotReloadableResources = vi.fn(() => ({
+      additionalSkillPaths: ["/host/hot-skill"],
+      extensionPaths: ["/host/hot-extension.ts"],
+      packages: ["host-hot-package"],
+    }));
+    const harness = createPiCodingAgentHarness({
+      tools: [],
+      cwd: "/sealed/headless",
+      runtimeCwd: "/sealed/headless",
+      sessionDir: "/sealed/sessions",
+      pi: withPurePiHarnessDefaults({
+        additionalSkillPaths: ["/host/static-skill"],
+        extensionPaths: ["/host/static-extension.ts"],
+        packages: ["host-static-package"],
+        getHotReloadableResources,
+      }),
+    });
+
+    await harness.getPiSessionAdapter({ sessionId: "pure-resource-seal", content: "" }, {
+      abortSignal: new AbortController().signal,
+      workdir: process.cwd(),
+    });
+
+    expect(getHotReloadableResources).not.toHaveBeenCalled();
+    expect(mockResourceLoaderOptions[0]).not.toHaveProperty("additionalExtensionPaths");
+    expect(mockResourceLoaderOptions[0]).not.toHaveProperty("additionalSkillPaths");
+    expect(JSON.stringify(mockResourceLoaderOptions[0])).not.toContain("/host/");
   });
 
   it("snapshots the pure-mode system prompt seal", async () => {

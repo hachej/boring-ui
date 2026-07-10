@@ -27,6 +27,10 @@ export interface GitHubIssueExecutor {
   reopenIssue(input: { owner: string; repo: string; issueNumber: number }): Promise<void>
 }
 
+export interface GitHubRepositoryDetector {
+  detectRepository(input: { workspaceRoot: string }): Promise<{ owner: string; repo: string }>
+}
+
 interface GitHubStatusMapping {
   addLabels?: string[]
   removeStateLabels?: boolean
@@ -40,6 +44,15 @@ interface GitHubTaskSourceOptions {
   limit?: number
   state?: "open" | "closed" | "all"
   executor?: GitHubIssueExecutor
+}
+
+interface WorkspaceGitHubTaskSourceOptions {
+  workspaceRoot?: string
+  sourceId?: string
+  limit?: number
+  state?: "open" | "closed" | "all"
+  detector?: GitHubRepositoryDetector
+  executorFactory?: (input: { workspaceRoot: string; owner: string; repo: string }) => GitHubIssueExecutor
 }
 
 const GITHUB_COLUMNS = [
@@ -58,14 +71,14 @@ const STATUS_MAPPINGS: Record<string, GitHubStatusMapping> = {
   done: { removeStateLabels: true, close: true },
 }
 
-function workspaceRoot(): string {
+function defaultWorkspaceRoot(): string {
   return process.env.BORING_AGENT_WORKSPACE_ROOT || process.cwd()
 }
 
-async function runGhJson<T>(args: string[]): Promise<T> {
+async function runGhJson<T>(args: string[], cwd = defaultWorkspaceRoot()): Promise<T> {
   try {
     const { stdout } = await execFileAsync("gh", args, {
-      cwd: workspaceRoot(),
+      cwd,
       env: { ...process.env, GH_PROMPT_DISABLED: "1" },
       maxBuffer: 1024 * 1024 * 8,
       timeout: 30_000,
@@ -76,10 +89,10 @@ async function runGhJson<T>(args: string[]): Promise<T> {
   }
 }
 
-async function runGh(args: string[]): Promise<void> {
+async function runGh(args: string[], cwd = defaultWorkspaceRoot()): Promise<void> {
   try {
     await execFileAsync("gh", args, {
-      cwd: workspaceRoot(),
+      cwd,
       env: { ...process.env, GH_PROMPT_DISABLED: "1" },
       maxBuffer: 1024 * 1024,
       timeout: 30_000,
@@ -89,26 +102,40 @@ async function runGh(args: string[]): Promise<void> {
   }
 }
 
-export function createGhCliGitHubIssueExecutor(): GitHubIssueExecutor {
+export function createGhCliGitHubIssueExecutor(options: { workspaceRoot?: string } = {}): GitHubIssueExecutor {
   const repoArg = (owner: string, repo: string) => `${owner}/${repo}`
   const jsonFields = "number,title,body,url,state,labels,milestone"
+  const cwd = options.workspaceRoot
   return {
     listIssues: ({ owner, repo, limit, state }) => runGhJson<GitHubIssue[]>([
       "issue", "list", "--repo", repoArg(owner, repo), "--state", state, "--limit", String(limit), "--json", jsonFields,
-    ]),
+    ], cwd),
     viewIssue: ({ owner, repo, issueNumber }) => runGhJson<GitHubIssue>([
       "issue", "view", String(issueNumber), "--repo", repoArg(owner, repo), "--json", jsonFields,
-    ]),
+    ], cwd),
     addLabels: async ({ owner, repo, issueNumber, labels }) => {
       if (labels.length === 0) return
-      await runGh(["issue", "edit", String(issueNumber), "--repo", repoArg(owner, repo), "--add-label", labels.join(",")])
+      await runGh(["issue", "edit", String(issueNumber), "--repo", repoArg(owner, repo), "--add-label", labels.join(",")], cwd)
     },
     removeLabels: async ({ owner, repo, issueNumber, labels }) => {
       if (labels.length === 0) return
-      await runGh(["issue", "edit", String(issueNumber), "--repo", repoArg(owner, repo), "--remove-label", labels.join(",")])
+      await runGh(["issue", "edit", String(issueNumber), "--repo", repoArg(owner, repo), "--remove-label", labels.join(",")], cwd)
     },
-    closeIssue: ({ owner, repo, issueNumber }) => runGh(["issue", "close", String(issueNumber), "--repo", repoArg(owner, repo)]),
-    reopenIssue: ({ owner, repo, issueNumber }) => runGh(["issue", "reopen", String(issueNumber), "--repo", repoArg(owner, repo)]),
+    closeIssue: ({ owner, repo, issueNumber }) => runGh(["issue", "close", String(issueNumber), "--repo", repoArg(owner, repo)], cwd),
+    reopenIssue: ({ owner, repo, issueNumber }) => runGh(["issue", "reopen", String(issueNumber), "--repo", repoArg(owner, repo)], cwd),
+  }
+}
+
+export function createGhCliGitHubRepositoryDetector(): GitHubRepositoryDetector {
+  return {
+    async detectRepository({ workspaceRoot }) {
+      const payload = await runGhJson<{ nameWithOwner?: string }>(["repo", "view", "--json", "nameWithOwner"], workspaceRoot)
+      const [owner, repo] = payload.nameWithOwner?.split("/") ?? []
+      if (!owner || !repo) {
+        throw new TaskSourceServiceError(404, "TASK_GITHUB_REPO_NOT_FOUND", "No GitHub repository is associated with this workspace.")
+      }
+      return { owner, repo }
+    },
   }
 }
 
@@ -192,6 +219,66 @@ export function createGitHubTaskSource({ owner, repo, limit = 200, state = "open
       }
       await executor.addLabels({ owner, repo, issueNumber, labels: mapping.addLabels ?? [] })
       const after = await executor.viewIssue({ owner, repo, issueNumber })
+      return taskFromIssue(after, sourceId)
+    },
+  }
+}
+
+export function createWorkspaceGitHubTaskSource({
+  workspaceRoot,
+  sourceId = "github:workspace",
+  limit = 200,
+  state = "open",
+  detector = createGhCliGitHubRepositoryDetector(),
+  executorFactory = ({ workspaceRoot }) => createGhCliGitHubIssueExecutor({ workspaceRoot }),
+}: WorkspaceGitHubTaskSourceOptions = {}): BoringTaskSourceRuntime {
+  const board: BoringTaskBoardConfig = {
+    adapterId: sourceId,
+    defaultColumnId: "queued",
+    columns: GITHUB_COLUMNS,
+  }
+
+  const resolveWorkspaceRoot = (ctx: BoringTaskSourceContext): string => ctx.workspaceRoot ?? workspaceRoot ?? defaultWorkspaceRoot()
+  const resolveRepo = async (ctx: BoringTaskSourceContext) => {
+    const root = resolveWorkspaceRoot(ctx)
+    const repoInfo = await detector.detectRepository({ workspaceRoot: root })
+    return { ...repoInfo, workspaceRoot: root }
+  }
+
+  return {
+    summary: () => ({
+      id: sourceId,
+      label: "GitHub repository",
+      description: "GitHub Issues from the current workspace repository via gh CLI",
+      capabilities: { move: true },
+    }),
+    getBoardConfig: () => board,
+    async listTasks(ctx): Promise<BoringTaskCard[]> {
+      const repoInfo = await resolveRepo(ctx)
+      const executor = executorFactory(repoInfo)
+      const issues = await executor.listIssues({ owner: repoInfo.owner, repo: repoInfo.repo, limit, state })
+      return issues.map((issue) => taskFromIssue(issue, sourceId))
+    },
+    async moveTask(ctx, { taskId, statusId }): Promise<BoringTaskCard> {
+      const issueNumber = Number(taskId)
+      if (!Number.isInteger(issueNumber) || issueNumber <= 0) {
+        throw new TaskSourceServiceError(400, "TASK_INVALID_ID", `Invalid GitHub issue task id: ${taskId}`)
+      }
+      const mapping = STATUS_MAPPINGS[statusId]
+      if (!mapping) throw new TaskSourceServiceError(400, "TASK_STATUS_NOT_FOUND", `Unknown GitHub task status: ${statusId}`)
+
+      const repoInfo = await resolveRepo(ctx)
+      const executor = executorFactory(repoInfo)
+      const input = { owner: repoInfo.owner, repo: repoInfo.repo, issueNumber }
+      const before = await executor.viewIssue(input)
+      if (mapping.close) await executor.closeIssue(input)
+      if (mapping.reopen && before.state.toLowerCase() === "closed") await executor.reopenIssue(input)
+      if (mapping.removeStateLabels) {
+        const stateLabels = issueLabels(before).filter((label) => label.toLowerCase().startsWith("state:"))
+        await executor.removeLabels({ ...input, labels: stateLabels })
+      }
+      await executor.addLabels({ ...input, labels: mapping.addLabels ?? [] })
+      const after = await executor.viewIssue(input)
       return taskFromIssue(after, sourceId)
     },
   }

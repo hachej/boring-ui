@@ -26,7 +26,7 @@ export interface EventStreamStore {
   createStream(path: string): Promise<void>
   appendEvent(path: string, event: unknown): Promise<string>
   appendEventOnce(path: string, key: string, event: unknown): Promise<string>
-  appendAgentEvent(sessionId: string, chunk: PiChatEvent, opts?: { idempotencyKey?: string }): Promise<string>
+  appendAgentEvent(sessionId: string, chunk: PiChatEvent, opts?: { idempotencyKey?: string; streamPath?: string }): Promise<string>
   readEvents(path: string, opts?: { offset?: string; limit?: number }): Promise<EventStreamReadResult>
   closeStream(path: string): Promise<void>
   getStreamMeta(path: string): Promise<EventStreamMeta | null>
@@ -154,8 +154,8 @@ export class SqliteEventStreamStore implements EventStreamStore {
     }
   }
 
-  async appendAgentEvent(sessionId: string, chunk: PiChatEvent, opts: { idempotencyKey?: string } = {}): Promise<string> {
-    const path = sessionStreamPath(sessionId)
+  async appendAgentEvent(sessionId: string, chunk: PiChatEvent, opts: { idempotencyKey?: string; streamPath?: string } = {}): Promise<string> {
+    const path = opts.streamPath ?? sessionStreamPath(sessionId)
     let inserted = false
     try {
       const offset = this.runTransaction(() => {

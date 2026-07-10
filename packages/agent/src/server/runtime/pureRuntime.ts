@@ -13,7 +13,8 @@ export async function createPureRuntimeCwd(sessionRoot: string | undefined): Pro
   }
 
   const cwd = join(resolve(explicitRoot), PURE_RUNTIME_CWD_NAME)
-  await mkdir(cwd, { recursive: true })
+  await mkdir(cwd, { recursive: true, mode: 0o700 })
+  await chmod(cwd, 0o700)
   return cwd
 }
 

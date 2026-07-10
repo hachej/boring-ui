@@ -23,11 +23,16 @@ const PUBLISHABLE = [
   "packages/cli",
   "plugins/deck",
   "plugins/ask-user",
+  "plugins/diagram",
+  "plugins/tasks",
   "plugins/data-explorer",
   "plugins/data-catalog",
   "plugins/generated-pane",
   "plugins/data-bridge",
   "plugins/bi-dashboard",
+  "packages/boring-sandbox",
+  "packages/boring-bash",
+  "plugins/boring-governance",
 ]
 
 function readJson(path) {

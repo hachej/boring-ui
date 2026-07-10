@@ -15,6 +15,8 @@ import type { ChatLayoutProps } from "./types"
 import { useWorkspaceAttention, useWorkspaceContext, workspaceAttentionSessionBadgeForBlocker } from "../provider"
 import { ChatPaneStage } from "./ChatPaneStage"
 import { CornerChromeButton } from "./cornerChrome"
+import { MobileChatBar, MobileSingleChatPane, MobileWorkspaceBar } from "./mobileShell"
+import { useViewportWidth } from "./useViewportWidth"
 
 export function buildChatLayout(props: ChatLayoutProps = {}): LayoutConfig {
   const {
@@ -113,10 +115,11 @@ export function ChatLayout(props: ChatLayoutProps) {
     [blockers],
   )
   const commandRegistry = useCommandRegistry()
-  const effectiveNavWidth = clamp(navWidth, 200, 360)
-  const effectiveSidebarWidth = clamp(sidebarWidth, 200, Math.max(240, Math.floor(viewport * 0.5)))
-  const surfaceMax = Math.max(480, Math.floor(viewport * 0.72))
-  const effectiveSurfaceWidth = clamp(surfaceWidth, 480, surfaceMax)
+  const mobileShell = props.mobileShellEnabled === true && viewport < 640
+  const effectiveNavWidth = mobileShell ? Math.min(Math.max(280, Math.floor(viewport * 0.86)), 360) : clamp(navWidth, 200, 360)
+  const effectiveSidebarWidth = mobileShell ? viewport : clamp(sidebarWidth, 200, Math.max(240, Math.floor(viewport * 0.5)))
+  const surfaceMax = mobileShell ? viewport : Math.max(480, Math.floor(viewport * 0.72))
+  const effectiveSurfaceWidth = mobileShell ? viewport : clamp(surfaceWidth, 480, surfaceMax)
   const uiSurface = getFunction<() => SurfaceShellApi | null>(props.centerParams, "getSurface")
   const uiIsWorkbenchOpen = getFunction<() => boolean>(props.centerParams, "isWorkbenchOpen")
   const uiOpenWorkbench = getFunction<() => void>(props.centerParams, "openWorkbench")
@@ -129,6 +132,9 @@ export function ChatLayout(props: ChatLayoutProps) {
   const createSession = getCallback(props.navParams, "onCreate")
   const chatPanes = props.chatPanes?.filter((pane) => pane.id.length > 0) ?? []
   const hasChatPanes = chatPanes.length > 0
+  const activeMobileChatPane = hasChatPanes
+    ? chatPanes.find((pane) => pane.id === props.activeChatPaneId) ?? chatPanes[0]
+    : undefined
   const sidebarOpen = Boolean(props.sidebar)
   const canControlNav = navOpen ? Boolean(closeNav) : Boolean(props.onOpenNav)
   const canControlSurface = surfaceOpen ? Boolean(closeSurface) : Boolean(props.onOpenSurface)
@@ -330,14 +336,11 @@ export function ChatLayout(props: ChatLayoutProps) {
     }
   }, [activeSessionId, chatCollapsed, setChatCollapsed])
 
-  // On compact widths, a fixed workbench beside app navigation can crush the
-  // chat into an unusable sliver. Prefer a calm one-pane workbench takeover:
-  // the workbench fills the available center area and the chat can be restored
-  // from the stable top-right chrome.
+  // On compact widths, prefer a one-pane workbench takeover instead of squeezing chat.
   useEffect(() => {
-    if (!surfaceOpen || chatCollapsed || props.chatOverlay) return
+    if (mobileShell || !surfaceOpen || chatCollapsed || props.chatOverlay) return
     if (viewport < 1180) setChatCollapsed(true)
-  }, [chatCollapsed, props.chatOverlay, setChatCollapsed, surfaceOpen, viewport])
+  }, [chatCollapsed, mobileShell, props.chatOverlay, setChatCollapsed, surfaceOpen, viewport])
 
   // Chat-hosted overlays (Skills/Plugins) must remain visible while workbench
   // content opens beside them. If chat was collapsed by a previous compact
@@ -363,22 +366,44 @@ export function ChatLayout(props: ChatLayoutProps) {
     }
   }, [surfaceOpen, chatCollapsed, setChatCollapsed])
 
+  const chatHidden = chatCollapsed || (mobileShell && surfaceOpen)
+  const mobileWorkspaceOpen = mobileShell && surfaceOpen
+
   return (
     <div
       data-boring-workspace=""
       data-boring-workspace-part="shell"
+      data-boring-mobile-shell={props.mobileShellEnabled === true ? "" : undefined}
+      data-mobile-shell={mobileShell ? "true" : "false"}
       className={cn("relative flex h-full min-h-0 w-full overflow-hidden bg-background", props.className)}
     >
+      {mobileShell && navOpen && closeNav ? (
+        <div
+          aria-hidden="true"
+          data-boring-workspace-part="session-drawer-mobile-scrim"
+          className="absolute inset-0 z-40 bg-foreground/30"
+          onClick={closeNav}
+        />
+      ) : null}
+      {mobileShell && sidebarOpen && closeSidebar ? (
+        <div
+          aria-hidden="true"
+          data-boring-workspace-part="workbench-left-mobile-scrim"
+          className="absolute inset-0 z-30 bg-foreground/30"
+          onClick={closeSidebar}
+        />
+      ) : null}
       <aside
         data-boring-workspace-part="session-drawer"
         data-boring-state={navOpen ? "expanded" : "collapsed"}
         aria-label="Session browser"
         aria-hidden={!navOpen}
         className={cn(
-          "relative h-full min-h-0 shrink-0 overflow-hidden bg-background",
+          mobileShell ? "absolute inset-y-0 left-0 z-50 h-full shadow-2xl" : "relative h-full shrink-0",
+          "min-h-0 overflow-hidden bg-background",
           "transition-[width,min-width,max-width] duration-[280ms] ease-[cubic-bezier(0.22,1,0.36,1)]",
           navOpen
-            ? "z-30 border-r border-[color:oklch(from_var(--border)_l_c_h/0.6)]"
+            ? "border-r border-[color:oklch(from_var(--border)_l_c_h/0.6)]"
             : "pointer-events-none z-0",
         )}
         style={{
@@ -397,7 +422,7 @@ export function ChatLayout(props: ChatLayoutProps) {
         >
           <PanelSlot id={navId} params={props.navParams} />
         </div>
-        {navOpen ? (
+        {navOpen && !mobileShell ? (
           <ResizeHandle
             side="drawer-right"
             ariaLabel="Resize sessions drawer"
@@ -412,7 +437,8 @@ export function ChatLayout(props: ChatLayoutProps) {
         aria-label={sidebarOpen ? "Workbench left panel" : undefined}
         aria-hidden={!sidebarOpen}
         className={cn(
-          "relative h-full min-h-0 shrink-0 overflow-hidden bg-background",
+          mobileShell ? "absolute inset-0 z-40 h-full" : "relative h-full shrink-0",
+          "min-h-0 overflow-hidden bg-background",
           "transition-[width,min-width,max-width] duration-[280ms] ease-[cubic-bezier(0.22,1,0.36,1)]",
           sidebarOpen && "border-r border-[color:oklch(from_var(--border)_l_c_h/0.6)]",
         )}
@@ -432,7 +458,7 @@ export function ChatLayout(props: ChatLayoutProps) {
         >
           {sidebarOpen ? <PanelSlot id={props.sidebar ?? "workbench-left"} params={props.sidebarParams} /> : null}
         </div>
-        {sidebarOpen ? (
+        {sidebarOpen && !mobileShell ? (
           <ResizeHandle
             side="drawer-right"
             ariaLabel="Resize workbench left panel"
@@ -444,27 +470,49 @@ export function ChatLayout(props: ChatLayoutProps) {
       <div className="relative flex h-full min-h-0 min-w-0 flex-1 overflow-hidden bg-background">
         <main
           data-boring-workspace-part="chat-stage"
-          data-boring-state={chatCollapsed ? "collapsed" : "expanded"}
-          aria-label={chatCollapsed ? "Collapsed chat" : "Chat"}
-          aria-hidden={chatCollapsed}
+          data-boring-state={chatHidden ? "collapsed" : "expanded"}
+          aria-label={chatHidden ? "Collapsed chat" : "Chat"}
+          aria-hidden={chatHidden}
           className={cn(
             "relative h-full min-h-0 min-w-0 overflow-hidden bg-background",
+            mobileShell && !chatHidden && "flex flex-col",
             // Animate flex-grow (not just width) so the chat slides open/closed
             // like the fixed-width nav/workbench panes instead of snapping.
             "transition-[flex-grow,flex-basis,width,min-width,max-width] duration-[280ms] ease-[cubic-bezier(0.22,1,0.36,1)]",
-            chatCollapsed
+            chatHidden
               ? "min-w-0 flex-[0_0_0px]"
               : "flex-1 border-r border-[color:oklch(from_var(--border)_l_c_h/0.6)]",
           )}
         >
+          {mobileShell && !chatHidden ? (
+            <MobileChatBar
+              canOpenNav={Boolean(props.onOpenNav)}
+              canOpenWorkspace={canControlSurface}
+              onOpenNav={props.onOpenNav}
+              onOpenWorkspace={toggleSurface}
+            />
+          ) : null}
           <div
             className={cn(
-              "h-full min-h-0 overflow-hidden",
+              mobileShell && !chatHidden ? "min-h-0 flex-1 overflow-hidden" : "h-full min-h-0 overflow-hidden",
               "transition-opacity duration-[200ms] ease-[cubic-bezier(0.22,1,0.36,1)]",
-              chatCollapsed ? "opacity-0" : "opacity-100",
+              chatHidden ? "opacity-0" : "opacity-100",
             )}
           >
-            {hasChatPanes ? (
+            {hasChatPanes && mobileShell && activeMobileChatPane ? (
+              <MobileSingleChatPane
+                pane={activeMobileChatPane}
+                totalPanes={chatPanes.length}
+                topActions={props.chatTopActions}
+                onClosePane={props.onCloseChatPane}
+                renderPane={(pane) => (
+                  <PanelSlot
+                    id={pane.panel ?? centerId}
+                    params={pane.params ?? props.centerParams}
+                  />
+                )}
+              />
+            ) : hasChatPanes ? (
               <ChatPaneStage
                 panes={chatPanes}
                 topActions={props.chatTopActions}
@@ -505,16 +553,16 @@ export function ChatLayout(props: ChatLayoutProps) {
             aria-label={surfaceOpen ? "Surface" : undefined}
             aria-hidden={!surfaceOpen}
             className={cn(
-              "relative h-full min-h-0 overflow-hidden bg-background",
-              // When chat is collapsed the workbench grows to fill the freed
-              // space (full width); otherwise it's a fixed-width side panel.
-              chatCollapsed && surfaceOpen ? "min-w-0 flex-1" : "shrink-0",
+              mobileShell ? "absolute inset-0 z-40" : "relative",
+              "h-full min-h-0 overflow-hidden bg-background",
+              // Collapsed/mobile workbench fills available width; otherwise it is a side panel.
+              (chatCollapsed || mobileWorkspaceOpen) && surfaceOpen ? "min-w-0 flex-1" : "shrink-0",
               "transition-[flex-grow,flex-basis,width,min-width,max-width] duration-[280ms] ease-[cubic-bezier(0.22,1,0.36,1)]",
-              surfaceOpen && "border-l border-[color:oklch(from_var(--border)_l_c_h/0.6)]",
+              surfaceOpen && !mobileShell && "border-l border-[color:oklch(from_var(--border)_l_c_h/0.6)]",
             )}
             style={
-              chatCollapsed && surfaceOpen
-                ? { willChange: "width" }
+              (chatCollapsed || mobileWorkspaceOpen) && surfaceOpen
+                ? { width: surfaceOpen ? effectiveSurfaceWidth : 0, minWidth: surfaceOpen ? effectiveSurfaceWidth : 0, maxWidth: surfaceOpen ? effectiveSurfaceWidth : 0, willChange: "width" }
                 : {
                     width: surfaceOpen ? effectiveSurfaceWidth : 0,
                     minWidth: surfaceOpen ? effectiveSurfaceWidth : 0,
@@ -530,13 +578,24 @@ export function ChatLayout(props: ChatLayoutProps) {
                 surfaceOpen ? "opacity-100" : "opacity-0",
               )}
             >
-              {props.surfaceOverlay ? (
+              {mobileWorkspaceOpen ? (
+                <div className="flex h-full min-h-0 flex-col">
+                  <MobileWorkspaceBar onBack={focusChat} />
+                  <div className="min-h-0 flex-1 overflow-hidden">
+                    {props.surfaceOverlay ? (
+                      <div className="relative h-full min-h-0">
+                        {props.surfaceOverlay}
+                      </div>
+                    ) : <PanelSlot id={surfaceId} params={props.surfaceParams} />}
+                  </div>
+                </div>
+              ) : props.surfaceOverlay ? (
                 <div className="relative h-full min-h-0">
                   {props.surfaceOverlay}
                 </div>
               ) : <PanelSlot id={surfaceId} params={props.surfaceParams} />}
             </div>
-            {surfaceOpen && !chatCollapsed ? (
+            {surfaceOpen && !chatCollapsed && !mobileShell ? (
               <ResizeHandle
                 side="surface-left"
                 ariaLabel="Resize workbench"
@@ -548,18 +607,20 @@ export function ChatLayout(props: ChatLayoutProps) {
 
       </div>
 
-      <TopRightWorkspaceControls
-        surfaceOpen={surfaceOpen}
-        canToggleSurface={canControlSurface}
-        onToggleSurface={toggleSurface}
-        chatCollapsed={chatCollapsed}
-        canToggleChat={centerId === "chat" && (!surfaceConfigured || (surfaceOpen && !chatCollapsed))}
-        onToggleChat={toggleChatCollapsed}
-        chatPulse={chatRailPulse || blockers.length > 0}
-        surfaceConfigured={surfaceConfigured}
-      />
+      {!mobileShell ? (
+        <TopRightWorkspaceControls
+          surfaceOpen={surfaceOpen}
+          canToggleSurface={canControlSurface}
+          onToggleSurface={toggleSurface}
+          chatCollapsed={chatCollapsed}
+          canToggleChat={centerId === "chat" && (!surfaceConfigured || (surfaceOpen && !chatCollapsed))}
+          onToggleChat={toggleChatCollapsed}
+          chatPulse={chatRailPulse || blockers.length > 0}
+          surfaceConfigured={surfaceConfigured}
+        />
+      ) : null}
 
-      {!navOpen && props.onOpenNav ? (
+      {!mobileShell && !navOpen && props.onOpenNav ? (
         <FloatingEdgeButton
           side="left"
           icon="sessions"
@@ -569,7 +630,7 @@ export function ChatLayout(props: ChatLayoutProps) {
           pulse={hasSessionAttention}
         />
       ) : null}
-      {!chatCollapsed && !navOpen && hasChatPanes && props.onCreateChatPaneAfter ? (
+      {!mobileShell && !chatCollapsed && !navOpen && hasChatPanes && props.onCreateChatPaneAfter ? (
         <FloatingEdgeButton
           side="left"
           icon="plus"
@@ -578,8 +639,7 @@ export function ChatLayout(props: ChatLayoutProps) {
             if (targetId) props.onCreateChatPaneAfter?.(targetId)
           }}
           label="New chat"
-          // Sits directly above the Sessions toggle; when the session drawer
-          // is open the drawer's own header "+" takes over and this hides.
+          // Sits above Sessions; drawer header owns creation while open.
           stackIndex={props.onOpenNav ? 1 : 0}
         />
       ) : null}
@@ -652,16 +712,6 @@ function useStoredBooleanState(
   )
 
   return [value, setStoredValue]
-}
-
-function useViewportWidth(): number {
-  const [w, setW] = useState<number>(() => (typeof window !== "undefined" ? window.innerWidth : 1200))
-  useEffect(() => {
-    const onResize = () => setW(window.innerWidth)
-    window.addEventListener("resize", onResize)
-    return () => window.removeEventListener("resize", onResize)
-  }, [])
-  return w
 }
 
 interface ResizeHandleProps {

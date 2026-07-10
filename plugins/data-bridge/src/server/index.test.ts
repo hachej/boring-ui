@@ -4,8 +4,8 @@ import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { describe, expect, it, vi } from "vitest"
 import { createWorkspaceBridgeRegistry, type WorkspaceBridgeCallResponse } from "@hachej/boring-workspace/server"
-import type { DataBridgeTableResult } from "../shared"
-import { createClickHouseDataBridgeAdapter, createDataBridgeServerPlugin, type DataBridgeSqlAdapter } from "./index"
+import { DATA_BRIDGE_QUERY_BATCH_OP, DATA_BRIDGE_QUERY_RUN_OP, type DataBridgeQueryBatchOutput, type DataBridgeTableResult } from "../shared"
+import { createClickHouseDataBridgeAdapter, createDataBridgeQueryAgentTool, createDataBridgeServerPlugin, type DataBridgeSqlAdapter } from "./index"
 
 const { clickHouseQuery, clickHouseExec } = vi.hoisted(() => ({ clickHouseQuery: vi.fn(), clickHouseExec: vi.fn() }))
 
@@ -19,6 +19,10 @@ function createWorkspaceFixture() {
   return workspaceRoot
 }
 
+function toolContext() {
+  return { abortSignal: new AbortController().signal, toolCallId: "tool-call-test" }
+}
+
 async function sqlQuery(adapter: DataBridgeSqlAdapter, capabilities: string[], overrides: Record<string, unknown> = {}, format?: "json" | "arrow", pluginOptions: Parameters<typeof createDataBridgeServerPlugin>[0] = { workspaceRoot: createWorkspaceFixture() }): Promise<WorkspaceBridgeCallResponse> {
   const plugin = createDataBridgeServerPlugin({
     ...pluginOptions,
@@ -29,7 +33,7 @@ async function sqlQuery(adapter: DataBridgeSqlAdapter, capabilities: string[], o
     registry.registerHandler(contribution.definition, contribution.handler)
   }
   return await registry.call({
-    op: "data.v1.query.run",
+    op: DATA_BRIDGE_QUERY_RUN_OP,
     input: {
       ...(format ? { format } : {}),
       query: {
@@ -146,6 +150,112 @@ describe("data bridge SQL adapters", () => {
     }))
   })
 
+  it("runs SQL query batches through one bridge call", async () => {
+    const sqlAdapter = adapter()
+    const plugin = createDataBridgeServerPlugin({
+      workspaceRoot: createWorkspaceFixture(),
+      sqlAdapters: { macro: sqlAdapter },
+    })
+    const registry = createWorkspaceBridgeRegistry()
+    for (const contribution of plugin.workspaceBridgeHandlers ?? []) {
+      registry.registerHandler(contribution.definition, contribution.handler)
+    }
+
+    const res = await registry.call({
+      op: DATA_BRIDGE_QUERY_BATCH_OP,
+      input: {
+        queries: [
+          {
+            id: "gdp",
+            input: {
+              query: {
+                language: "sql",
+                source: "macro",
+                sql: "SELECT series_id FROM series_catalog WHERE series_id = 'GDP'",
+                limit: 1,
+              },
+            },
+          },
+          {
+            id: "cpi",
+            input: {
+              query: {
+                language: "sql",
+                source: "macro",
+                sql: "SELECT series_id FROM series_catalog WHERE series_id = 'CPI'",
+                limit: 2,
+              },
+            },
+          },
+        ],
+      },
+    }, {
+      callerClass: "runtime",
+      workspaceId: "workspace-test",
+      capabilities: ["data:read", "data:sql-query", "data:macro-clickhouse"],
+      actor: { actorKind: "agent", performedBy: { label: "test" } },
+    })
+
+    expect(res.ok).toBe(true)
+    const output = res.ok ? res.output as DataBridgeQueryBatchOutput : undefined
+    expect(output?.kind).toBe("data-bridge.batch")
+    expect(output?.results.map((result) => [result.id, result.ok])).toEqual([["gdp", true], ["cpi", true]])
+    expect(sqlAdapter.execute).toHaveBeenCalledTimes(2)
+  })
+
+  it("keeps batch item errors isolated", async () => {
+    const sqlAdapter = adapter([{ series_id: "GDP" }])
+    const plugin = createDataBridgeServerPlugin({
+      workspaceRoot: createWorkspaceFixture(),
+      sqlAdapters: { macro: sqlAdapter },
+    })
+    const registry = createWorkspaceBridgeRegistry()
+    for (const contribution of plugin.workspaceBridgeHandlers ?? []) {
+      registry.registerHandler(contribution.definition, contribution.handler)
+    }
+
+    const res = await registry.call({
+      op: DATA_BRIDGE_QUERY_BATCH_OP,
+      input: {
+        queries: [
+          {
+            id: "bad",
+            input: {
+              query: {
+                language: "sql",
+                source: "macro",
+                sql: "DROP TABLE series_catalog",
+                limit: 1,
+              },
+            },
+          },
+          {
+            id: "good",
+            input: {
+              query: {
+                language: "sql",
+                source: "macro",
+                sql: "SELECT series_id FROM series_catalog",
+                limit: 1,
+              },
+            },
+          },
+        ],
+      },
+    }, {
+      callerClass: "runtime",
+      workspaceId: "workspace-test",
+      capabilities: ["data:read", "data:sql-query", "data:macro-clickhouse"],
+      actor: { actorKind: "agent", performedBy: { label: "test" } },
+    })
+
+    expect(res.ok).toBe(true)
+    const output = res.ok ? res.output as DataBridgeQueryBatchOutput : undefined
+    expect(output?.results[0]).toMatchObject({ id: "bad", ok: false })
+    expect(output?.results[1]).toMatchObject({ id: "good", ok: true })
+    expect(sqlAdapter.execute).toHaveBeenCalledTimes(1)
+  })
+
   it("runs an end-to-end SQL query through a DuckDB file adapter", async () => {
     const workspaceRoot = createWorkspaceFixture()
     const dbPath = join(workspaceRoot, "macro-fixture.duckdb")
@@ -187,5 +297,79 @@ describe("data bridge SQL adapters", () => {
       connection.closeSync()
       instance.closeSync()
     }
+  })
+})
+
+describe("data bridge agent tool", () => {
+  function adapter(rows: Record<string, unknown>[] = [{ series_id: "GDP" }]): DataBridgeSqlAdapter {
+    return {
+      requiredCapabilities: ["data:macro-clickhouse"],
+      maxRows: 10,
+      execute: vi.fn(async ({ sql, params, limit }) => ({
+        kind: "data-bridge.table" as const,
+        version: 1 as const,
+        columns: [{ name: "series_id", type: "string" as const }],
+        rows,
+        rowCount: rows.length,
+        source: JSON.stringify({ sql, params, limit }),
+      })),
+    }
+  }
+
+  it("registers query_data by default", () => {
+    const plugin = createDataBridgeServerPlugin({ workspaceRoot: createWorkspaceFixture() })
+
+    expect(plugin.agentTools?.map((tool) => tool.name)).toEqual(["query_data"])
+    expect(plugin.systemPrompt).toContain("query_data")
+  })
+
+  it("can disable the agent query tool", () => {
+    const plugin = createDataBridgeServerPlugin({ workspaceRoot: createWorkspaceFixture(), agentTool: false })
+
+    expect(plugin.agentTools).toEqual([])
+  })
+
+  it("runs read-only SQL through the same adapter path as data.v1.query.run", async () => {
+    const sqlAdapter = adapter()
+    const tool = createDataBridgeQueryAgentTool({
+      workspaceRoot: createWorkspaceFixture(),
+      sqlAdapters: { macro: sqlAdapter },
+      agentTool: { capabilities: ["data:read", "data:sql-query", "data:macro-clickhouse"] },
+    })
+
+    const result = await tool.execute({
+      language: "sql",
+      source: "macro",
+      sql: " SELECT series_id FROM series_catalog;;; ",
+      params: { frequency: "monthly" },
+      limit: 2,
+    }, toolContext())
+
+    expect(result.isError).toBeUndefined()
+    expect(result.details).toMatchObject({
+      kind: "data-bridge.table",
+      rows: [{ series_id: "GDP" }],
+      source: expect.stringContaining("SELECT series_id FROM series_catalog"),
+    })
+    expect(sqlAdapter.execute).toHaveBeenCalledWith(expect.objectContaining({
+      sql: "SELECT series_id FROM series_catalog",
+      params: { frequency: "monthly" },
+      limit: 2,
+    }))
+  })
+
+  it("rejects invalid tool inputs before execution", async () => {
+    const sqlAdapter = adapter()
+    const tool = createDataBridgeQueryAgentTool({
+      workspaceRoot: createWorkspaceFixture(),
+      sqlAdapters: { macro: sqlAdapter },
+      agentTool: { capabilities: ["data:read", "data:sql-query", "data:macro-clickhouse"] },
+    })
+
+    await expect(tool.execute({ language: "bsl", query: "sm" }, toolContext()))
+      .resolves.toMatchObject({ isError: true, content: [{ text: "model is required for bsl queries" }] })
+    await expect(tool.execute({ language: "sql", sql: "SELECT 1" }, toolContext()))
+      .resolves.toMatchObject({ isError: true, content: [{ text: "source is required for sql queries" }] })
+    expect(sqlAdapter.execute).not.toHaveBeenCalled()
   })
 })
