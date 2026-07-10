@@ -8,7 +8,7 @@ import {
 } from '@mariozechner/pi-coding-agent'
 
 import type { AgentTool, ToolExecContext } from '../../../shared/tool'
-import { getRuntimeBundleStorageRoot, type RuntimeBundle, type RuntimeFilesystemBindingOperations, type RuntimeFilesystemStrategy } from '../../runtime/mode'
+import { getRuntimeBundleStorageRoot, type RuntimeBundle, type RuntimeFilesystemBinding, type RuntimeFilesystemStrategy } from '../../runtime/mode'
 import { boundFs } from '../operations/bound'
 import { buildRemoteWorkspaceFilesystemAgentTools } from './remoteWorkspaceTools'
 
@@ -59,7 +59,7 @@ function withFilesystemParameter(parameters: unknown, filesystemIds: readonly st
       filesystem: {
         type: 'string',
         description: filesystemIds.length > 0
-          ? 'Logical filesystem to use. Omit or use user for workspace files; use an advertised named filesystem for bound readonly context.'
+          ? 'Logical filesystem to use. Omit or use user for workspace files; use an advertised named filesystem for bound context.'
           : 'Logical filesystem to use. Omit or use user for workspace files.',
         ...(dynamicBindings ? {} : { enum: ['user', ...filesystemIds] }),
       },
@@ -89,14 +89,10 @@ function assertNotFilesystemPathSpoof(path: string, filesystemIds: readonly stri
   }
 }
 
-function filesystemBinding(bindings: readonly { filesystem: string; operations: RuntimeFilesystemBindingOperations }[], filesystem: string) {
-  return bindings.find((binding) => binding.filesystem === filesystem)
-}
-
-function boundOperations(bindings: readonly { filesystem: string; operations: RuntimeFilesystemBindingOperations }[], filesystem: string): RuntimeFilesystemBindingOperations {
-  const binding = filesystemBinding(bindings, filesystem)
+function filesystemBinding(bindings: readonly RuntimeFilesystemBinding[], filesystem: string): RuntimeFilesystemBinding {
+  const binding = bindings.find((entry) => entry.filesystem === filesystem)
   if (!binding) throw new Error(`No filesystem binding is available for ${filesystem}`)
-  return binding.operations
+  return binding
 }
 
 function formatBoundRead(content: string): PiToolResultLike {
@@ -115,15 +111,45 @@ function formatBoundGrep(matches: Array<{ path: string; line: number; text: stri
   return { content: [{ type: 'text', text: matches.map((match) => `${match.path}:${match.line}:${match.text}`).join('\n') }] }
 }
 
+interface ExactEdit {
+  oldText: string
+  newText: string
+}
+
+function applyExactEdits(original: string, edits: readonly ExactEdit[]): string {
+  if (edits.length === 0) throw new Error('edit requires at least one edit')
+  const ranges = edits.map((edit) => {
+    if (!edit.oldText) throw new Error('edit oldText must not be empty')
+    const start = original.indexOf(edit.oldText)
+    const duplicate = start >= 0 ? original.indexOf(edit.oldText, start + 1) : -1
+    if (start < 0 || duplicate >= 0) {
+      const occurrences = start < 0 ? 0 : 2
+      throw new Error(`edit requires oldText to match exactly once; found ${occurrences}`)
+    }
+    return { ...edit, start, end: start + edit.oldText.length }
+  }).sort((left, right) => left.start - right.start)
+
+  for (let index = 1; index < ranges.length; index += 1) {
+    if (ranges[index]!.start < ranges[index - 1]!.end) throw new Error('edit ranges must not overlap')
+  }
+
+  let output = original
+  for (const range of ranges.reverse()) {
+    output = `${output.slice(0, range.start)}${range.newText}${output.slice(range.end)}`
+  }
+  return output
+}
+
 async function executeBoundFilesystemTool(
   toolName: string,
   filesystem: string,
   params: Record<string, unknown>,
-  bindings: readonly { filesystem: string; operations: RuntimeFilesystemBindingOperations }[],
+  bindings: readonly RuntimeFilesystemBinding[],
 ): Promise<PiToolResultLike> {
   const path = boundFilesystemPath(params)
   assertNotFilesystemPathSpoof(path, bindings.map((binding) => binding.filesystem))
-  const operations = boundOperations(bindings, filesystem)
+  const binding = filesystemBinding(bindings, filesystem)
+  const operations = binding.operations
 
   if (toolName === 'read') {
     const result = await operations.read({ filesystem, path })
@@ -145,8 +171,39 @@ async function executeBoundFilesystemTool(
     const result = await operations.grep({ filesystem, path }, pattern, { limit })
     return { ...formatBoundGrep(result.matches), details: { metadata: result.metadata } }
   }
-  if (toolName === 'write' || toolName === 'edit') {
-    operations.rejectMutation(toolName, { filesystem, path })
+  if (toolName === 'write') {
+    if (binding.access !== 'readwrite' || !operations.write) operations.rejectMutation(toolName, { filesystem, path })
+    const write = operations.write
+    if (!write) throw new Error(`Tool ${toolName} does not support filesystem ${filesystem}`)
+    const content = typeof params.content === 'string' ? params.content : ''
+    const parent = path.includes('/') ? path.slice(0, path.lastIndexOf('/')) || '/' : null
+    if (parent && operations.mkdir) await operations.mkdir({ filesystem, path: parent, recursive: true })
+    const result = await write({ filesystem, path, content })
+    return { content: [{ type: 'text', text: `Wrote ${path}` }], details: { metadata: result.metadata, mtimeMs: result.mtimeMs } }
+  }
+  if (toolName === 'edit') {
+    if (binding.access !== 'readwrite' || !operations.write) operations.rejectMutation(toolName, { filesystem, path })
+    const write = operations.write
+    if (!write) throw new Error(`Tool ${toolName} does not support filesystem ${filesystem}`)
+    const edits = Array.isArray(params.edits)
+      ? params.edits.map((edit) => {
+          if (!edit || typeof edit !== 'object') throw new Error('edit entries must be objects')
+          const record = edit as Record<string, unknown>
+          if (typeof record.oldText !== 'string' || typeof record.newText !== 'string') {
+            throw new Error('edit entries require string oldText and newText')
+          }
+          return { oldText: record.oldText, newText: record.newText }
+        })
+      : []
+    const current = await operations.read({ filesystem, path })
+    const content = applyExactEdits(current.content, edits)
+    const result = await write({
+      filesystem,
+      path,
+      content,
+      ...(current.mtimeMs !== undefined ? { expectedMtimeMs: current.mtimeMs } : {}),
+    })
+    return { content: [{ type: 'text', text: `Edited ${path}` }], details: { metadata: result.metadata, mtimeMs: result.mtimeMs } }
   }
   throw new Error(`Tool ${toolName} does not support filesystem ${filesystem}`)
 }
@@ -156,8 +213,8 @@ function withBoundFilesystemPromptGuidance(promptSnippet: string | undefined, fi
   const target = filesystemIds.length > 0 ? ` (${filesystemIds.join(', ')})` : ''
   const guidance = [
     'Named filesystem bindings: file tools default to the user workspace when filesystem is omitted.',
-    `Use the filesystem parameter explicitly for bound readonly context${target}, and start browsing at / unless told otherwise.`,
-    'Readonly filesystem bindings reject writes; do not use path prefixes like filesystem:/x to switch filesystem.',
+    `Use the filesystem parameter explicitly for named context${target}, and start browsing at / unless told otherwise.`,
+    'A binding may be readonly or readwrite; do not use path prefixes like filesystem:/x to switch filesystem.',
   ].join('\n')
   return [promptSnippet, guidance].filter(Boolean).join('\n')
 }

@@ -30,7 +30,7 @@ const governanceCompanyAdmin = createGovernanceCompanyAdmin()
 <CoreWorkspaceAgentFront companyAdmin={governanceCompanyAdmin} />
 ```
 
-Policy source is configured with `BORING_GOVERNANCE_POLICY_PATH`. Company context source roots use `BORING_GOVERNANCE_COMPANY_CONTEXT_ROOT` or the default workspace root resolver outside sandbox mode.
+Policy source is configured with `BORING_GOVERNANCE_POLICY_PATH`. Company context source roots use `BORING_GOVERNANCE_COMPANY_CONTEXT_ROOT` or the default workspace root resolver outside sandbox mode. When an explicit, governance-owned company-context root is configured, verified tenant admins receive a tenant-wide read/write `company_context` binding; ordinary policy users receive only their regex-filtered readonly projection. Custom resolvers must opt into admin mutations with `allowAdminMutations: true` only when no other actor can mutate the root outside the governance store.
 
 ## Policy budgets
 
