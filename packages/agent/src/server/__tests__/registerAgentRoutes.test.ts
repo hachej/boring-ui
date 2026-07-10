@@ -1423,6 +1423,61 @@ test('skills endpoint discovers workspace .agents/skills when ambient skills are
   await app.close()
 })
 
+test('governed skill discovery excludes stale workspace-owned skill copies', async () => {
+  const workspaceRoot = await makeTempDir('boring-agent-embed-skills-governed-')
+  const workspaceSkillsRoot = join(workspaceRoot, '.agents', 'skills')
+  const staleSkillRoot = join(workspaceSkillsRoot, 'stale-plugin-copy')
+  const governedSkillsRoot = join(workspaceRoot, '.boring-agent', 'skills-users', 'request-user')
+  const governedSkillRoot = join(governedSkillsRoot, 'governed-skill')
+  await Promise.all([
+    mkdir(staleSkillRoot, { recursive: true }),
+    mkdir(governedSkillRoot, { recursive: true }),
+  ])
+  await Promise.all([
+    writeFile(
+      join(staleSkillRoot, 'SKILL.md'),
+      '---\nname: stale-plugin-copy\ndescription: Must not bypass governance.\n---\n',
+      'utf-8',
+    ),
+    writeFile(
+      join(governedSkillRoot, 'SKILL.md'),
+      '---\nname: governed-skill\ndescription: Request-scoped skill.\n---\n',
+      'utf-8',
+    ),
+  ])
+
+  const app = Fastify({ logger: false })
+  await app.register(registerAgentRoutes, {
+    workspaceRoot,
+    mode: 'direct',
+    getSkillAccess: () => 'invisible',
+    pi: {
+      noSkills: false,
+      additionalSkillPaths: [workspaceSkillsRoot],
+      getHotReloadableResources: () => ({ additionalSkillPaths: [staleSkillRoot] }),
+    },
+    provisionRuntime: async () => ({
+      changed: true,
+      env: {},
+      pathEntries: [],
+      skillPaths: [governedSkillsRoot],
+    }),
+  })
+  await app.ready()
+
+  try {
+    await eventually(async () => {
+      const response = await app.inject({ method: 'GET', url: '/api/v1/agent/skills?refresh=1' })
+      expect(response.statusCode).toBe(200)
+      const names: string[] = response.json().skills.map((skill: { name: string }) => skill.name)
+      expect(names).toContain('governed-skill')
+      expect(names).not.toContain('stale-plugin-copy')
+    })
+  } finally {
+    await app.close()
+  }
+})
+
 test('skills endpoint does not require unrelated runtime-only dynamic hooks', async () => {
   const workspaceRoot = await makeTempDir('boring-agent-embed-skills-runtime-hooks-')
   const projectSkillDir = join(workspaceRoot, '.pi', 'skills', 'project-skill')

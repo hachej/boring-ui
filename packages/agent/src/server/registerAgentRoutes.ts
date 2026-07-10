@@ -1,5 +1,5 @@
 import type { FastifyInstance, FastifyPluginAsync, FastifyRequest } from 'fastify'
-import { basename } from 'node:path'
+import { basename, isAbsolute, relative, resolve, sep } from 'node:path'
 import type { AgentTool, ToolReadinessRequirement } from '../shared/tool'
 import type { AgentCoreHarnessFactory, AgentHarness, AgentHarnessFactory } from '../shared/harness'
 import type { Agent } from '../shared/events'
@@ -130,6 +130,47 @@ function registerAgentCapabilitiesContributor(
       },
     }),
   )
+}
+
+function isWorkspaceOwnedSkillPath(candidate: string, workspaceRoot: string): boolean {
+  const workspaceSkillsRoot = resolve(workspaceRoot, '.agents', 'skills')
+  const candidatePath = resolve(workspaceRoot, candidate)
+  const relativePath = relative(workspaceSkillsRoot, candidatePath)
+  return relativePath === '' || (
+    relativePath !== '..'
+    && !relativePath.startsWith(`..${sep}`)
+    && !isAbsolute(relativePath)
+  )
+}
+
+function applyGovernedSkillDiscoveryPolicy(
+  pi: ResolvedPiHarnessOptions,
+  workspaceRoot: string,
+): ResolvedPiHarnessOptions {
+  const filterSkillPaths = (paths: readonly string[] | undefined) => (
+    paths?.filter((candidate) => !isWorkspaceOwnedSkillPath(candidate, workspaceRoot))
+  )
+  const getHotReloadableResources = pi.getHotReloadableResources
+
+  return {
+    ...pi,
+    // Governed plugin skills are selected exclusively through provisioning's
+    // request-scoped paths. Ambient or explicit workspace-owned .agents/skills
+    // paths could contain stale copies that bypass the resolver.
+    noSkills: true,
+    additionalSkillPaths: filterSkillPaths(pi.additionalSkillPaths),
+    ...(getHotReloadableResources
+      ? {
+          getHotReloadableResources: () => {
+            const hot = getHotReloadableResources()
+            return {
+              ...hot,
+              additionalSkillPaths: filterSkillPaths(hot.additionalSkillPaths),
+            }
+          },
+        }
+      : {}),
+  }
 }
 
 type RuntimeDependencyState = 'not-started' | 'preparing' | 'ready' | 'failed'
@@ -497,9 +538,12 @@ export const registerAgentRoutes: FastifyPluginAsync<RegisterAgentRoutesOptions>
     root: string,
     request?: FastifyRequest,
   ): Promise<ResolvedPiHarnessOptions> {
-    return withPiHarnessDefaults(opts.getPi
+    const pi = withPiHarnessDefaults(opts.getPi
       ? await opts.getPi({ workspaceId, workspaceRoot: root, request })
       : opts.pi)
+    return opts.getSkillAccess
+      ? applyGovernedSkillDiscoveryPolicy(pi, root)
+      : pi
   }
 
   async function resolveRuntimeScope(
