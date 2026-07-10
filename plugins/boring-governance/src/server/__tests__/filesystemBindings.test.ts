@@ -32,6 +32,11 @@ function serviceWithPolicy(allow: string[] = ['^/public/.*']) {
       },
       users: [
         {
+          email: 'admin@example.com',
+          role: 'admin',
+          companyContext: { allow: [] },
+        },
+        {
           email: 'allowed@example.com',
           role: 'user',
           companyContext: { allow },
@@ -100,6 +105,47 @@ describe('createGovernanceFilesystemBindings', () => {
       } as any,
     })
     expect(unverified).toEqual([])
+  })
+
+  it('gives verified admins a mutable tenant-wide company_context binding', async () => {
+    const companyRoot = await seedCompanyRoot()
+    const getBindings = createGovernanceFilesystemBindings(serviceWithPolicy(), {
+      resolveCompanyContextRoot: () => companyRoot,
+      allowAdminMutations: true,
+      projectionRootParent: await mkdtemp(path.join(os.tmpdir(), 'boring-company-projections-')),
+    })
+
+    const bindings = await getBindings({
+      workspaceId: 'personal-ws',
+      workspaceRoot: path.join(path.dirname(companyRoot), 'personal-ws'),
+      requestId: 'req-admin',
+      userId: 'user-admin',
+      userEmail: 'admin@example.com',
+      userEmailVerified: true,
+    })
+
+    expect(bindings).toHaveLength(1)
+    expect(bindings?.[0]).toMatchObject({ filesystem: 'company_context', access: 'readwrite' })
+    const binding = bindings![0]!
+    const original = await binding.operations.read({ filesystem: 'company_context', path: '/finance/secret.md' })
+    expect(original).toMatchObject({ content: expect.stringContaining('FORBIDDEN_FINANCE_SECRET_123'), mtimeMs: expect.any(Number) })
+
+    const written = await binding.operations.write!({ filesystem: 'company_context', path: '/public/admin-note.md', content: 'admin note' })
+    expect(written.mtimeMs).toEqual(expect.any(Number))
+    await expect(binding.operations.find({ filesystem: 'company_context', path: '/' }, '*.md'))
+      .resolves.toMatchObject({ paths: expect.arrayContaining(['/finance/secret.md', '/public/admin-note.md']) })
+    await expect(binding.operations.grep({ filesystem: 'company_context', path: '/' }, 'admin note'))
+      .resolves.toMatchObject({ matches: [expect.objectContaining({ path: '/public/admin-note.md' })] })
+    await expect(binding.operations.read({ filesystem: 'company_context', path: '/public/admin-note.md' }))
+      .resolves.toMatchObject({ content: 'admin note', mtimeMs: written.mtimeMs })
+
+    await binding.operations.mkdir!({ filesystem: 'company_context', path: '/managed', recursive: false })
+    await binding.operations.move!({ filesystem: 'company_context', from: '/public/admin-note.md', to: '/managed/admin-note.md' })
+    await expect(binding.operations.read({ filesystem: 'company_context', path: '/managed/admin-note.md' }))
+      .resolves.toMatchObject({ content: 'admin note' })
+    await binding.operations.delete!({ filesystem: 'company_context', path: '/managed/admin-note.md' })
+    await expect(binding.operations.read({ filesystem: 'company_context', path: '/managed/admin-note.md' }))
+      .rejects.toMatchObject({ code: 'ENOENT' })
   })
 
   it('omits company_context when no explicit source root resolver is configured', async () => {
@@ -180,6 +226,54 @@ describe('createGovernanceFilesystemBindings', () => {
       'company_context binding omitted',
     )
     await expect(lstat(explicitMissingRoot).catch((error: NodeJS.ErrnoException) => error.code)).resolves.toBe('ENOENT')
+  })
+
+  it('does not borrow context verification for a different request user', async () => {
+    const companyRoot = await seedCompanyRoot()
+    const getBindings = createGovernanceFilesystemBindings(serviceWithPolicy(), {
+      resolveCompanyContextRoot: () => companyRoot,
+      projectionRootParent: await mkdtemp(path.join(os.tmpdir(), 'boring-company-projections-')),
+    })
+
+    const bindings = await getBindings({
+      workspaceId: 'personal-ws',
+      workspaceRoot: path.join(path.dirname(companyRoot), 'personal-ws'),
+      requestId: 'req-mismatched-user',
+      userId: 'user-allowed',
+      userEmail: 'allowed@example.com',
+      userEmailVerified: true,
+      request: {
+        id: 'req-mismatched-user',
+        user: { id: 'user-denied', email: 'denied@example.com', name: null },
+      } as any,
+    })
+
+    expect(bindings).toEqual([])
+  })
+
+  it('uses normalized context verification when request.user lacks emailVerified', async () => {
+    const companyRoot = await seedCompanyRoot()
+    const getBindings = createGovernanceFilesystemBindings(serviceWithPolicy(), {
+      resolveCompanyContextRoot: () => companyRoot,
+      projectionRootParent: await mkdtemp(path.join(os.tmpdir(), 'boring-company-projections-')),
+    })
+
+    const bindings = await getBindings({
+      workspaceId: 'personal-ws',
+      workspaceRoot: path.join(path.dirname(companyRoot), 'personal-ws'),
+      requestId: 'req-partial-user',
+      userId: 'user-allowed',
+      userEmail: 'allowed@example.com',
+      userEmailVerified: true,
+      request: {
+        id: 'req-partial-user',
+        user: { id: 'user-allowed', email: 'allowed@example.com', name: null },
+      } as any,
+    })
+
+    expect(bindings).toHaveLength(1)
+    await expect(bindings![0]!.operations.read({ filesystem: 'company_context', path: '/public/handbook.md' }))
+      .resolves.toMatchObject({ content: expect.stringContaining('Visible policy') })
   })
 
   it('uses tool/run context identity when no HTTP request object is available', async () => {

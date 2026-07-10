@@ -37,7 +37,7 @@ Mechanism, not hand-waving: Phase 7 delivers public **agent steering endpoints**
 The steering surface itself is **plugin-extensible, and so is the agent — internally AND externally**, over real, shipped APIs (verified against the current plugin/agent layer, not aspirational). This is what distinguishes boring from an agent framework: **eve/Flue give you APIs to extend *your own* agent; boring's plugin layer lets a third party extend the *host product* — the workspace UI and the agents running inside it — without forking it.**
 
 - **Front (workspace UI):** `definePlugin({ … })` (from `@hachej/boring-workspace/plugin`) contributes `panels` (workspace pages/panes), `workspaceSources` (left-rail entries), `commands`, `appLeftActions`, `surfaceResolvers` (map a typed open-request → a panel — the `openSurface` path), `catalogs`, and `toolRenderers` (custom rendering for a tool's transcript output). These install into the same `PanelRegistry`/`WorkspaceSourceRegistry`/`CatalogRegistry` the built-ins use.
-- **Server (agent):** `defineServerPlugin({ … })` (from `@hachej/boring-workspace/server`) is a trusted boot-time contribution: `agentTools` merged in as **`extraTools`**, Fastify `routes`, a `systemPrompt` append (`WorkspaceServerPlugin.systemPrompt?: string` in `packages/workspace/src/server/plugins/defineServerPlugin.ts`), and Pi `extensions`/`skills`/packages. Package-manifest plugins also expose `pi.systemPrompt` in `packages/workspace/src/shared/plugins/manifest.ts`; the workspace host aggregates those into the same prompt fragment stream. This is how a plugin adds agent capability, not just UI.
+- **Server (agent):** `defineServerPlugin({ … })` (from `@hachej/boring-workspace/server`) is a trusted boot-time contribution: `agentTools` merged in as **`extraTools`**, Fastify `routes`, a `systemPrompt` append (`WorkspaceServerPlugin.systemPrompt?: string` in `packages/workspace/src/server/plugins/defineServerPlugin.ts`), and Pi `extensions`/`skills`/packages. Package-manifest plugins also expose `pi.systemPrompt` in `packages/workspace/src/shared/plugins/manifest.ts`; the workspace host aggregates prompt text only from plugin contributions activated for the resolved agent. The prompt is removed with the contribution, never appended from package discovery alone. This is how a plugin adds agent capability, not just UI. For D1, BBP3-020 adds `scopedRoutes`: the dedicated host supplies only its bound `Workspace` and scoped repositories and rejects legacy raw `routes` before registration. Generic hosts retain raw-route compatibility; no host hook claims it can infer every plugin's semantic selector.
 - **Runtime backend RPC:** a plugin's server code is reachable from its front over the workspace-owned **`/api/v1/plugins/:pluginId/*`** route family (00 "current seams to reuse").
 - **Distribution:** plugins install from **local / git / npm** via the **`boring-ui-plugin` CLI** (scaffold/verify), and a **safe subset hot-reloads** (front + Pi resources refresh via `/reload` + SSE; **server routes/tools require a restart** — hot-reload does not rewire Fastify routes or `agentTools`).
 
@@ -50,16 +50,22 @@ The steering surface itself is **plugin-extensible, and so is the agent — inte
 
 **Named farm-epic plugin surfaces (deferred — reserved, not built here):** **fleet-page widgets** (custom per-agent/fleet-wide widgets on the Fleet page — `TODO-S3` BBS3-001), **task sources** (pluggable boring-tasks sources feeding the task board — #397/#486 direction), and **artifact viewers** (custom renderers for `data-artifact` parts in the artifact shelf). These are the plugin extension points the farm epic opens on top of this epic's substrate.
 
-### Deferred interop directions (reserved, not built)
+### Interop directions
 
-- **MCP-as-a-channel (filed at P8 with Farm MCP):** an agent **exposed as an MCP server is just another surface adapter** — it rides the **same four-part contract** (message in / event-stream out / approvals on-stream / runtime-owned `sessionId` with surface-owned addressing), where the MCP client's session/tool-call context is the surface-owned addressing. It reuses E2's MCP infrastructure; it is **not** a new mechanism and **not** built in this epic. This is the ingress dual of E2's MCP *projection* (which exposes an *environment* over MCP) and of the Farm-MCP control-plane note above.
+- **MCP as an agent surface (committed M2 work package):** an agent exposed as
+  an MCP server is another adapter over the four-part contract. M2 binds P6-R
+  `ResolvedAgent` behavior to deployment/host-owned `McpAgentExposureConfig`
+  (`bearer | public-demo`, demo policy, exposure id, result/share policy).
+  Definition behavior cannot grant itself exposure. M2 conforms against P7 and
+  T1/T2. This is the ingress dual of E2's environment projection.
+- **Deferred Farm MCP control plane:** task/artifact/human-input control-plane tools for arbitrary foreign agents remain farm-epic scope. They can reuse the M2 surface pattern plus E2/T1 primitives once the task service exists.
 - **Cross-org artifact delivery (farm epic):** delivering an artifact from one org's agent to another composes two primitives already reserved here — the **`data-artifact` stream part** and **shared-S3-prefix environments** (E1/09 + `TODO-X1` prefix-scoped mounts). A publishing agent writes to a shared-prefix environment and emits `data-artifact`; a consuming org attaches the same prefix (or receives the part). No new artifact store — the environment write + the part are the only sanctioned path. Deferred to the farm epic (Horizon-3, `00` "Business horizons").
 
 ## What every framework converges on (adopted here)
 
 A surface and the agent core exchange exactly four things:
 
-1. **Message in** — a normalized user turn: `AgentSendInput` = `{ sessionId?, content, attachments?, actor, ctx?, originSurface? }` (**omit `sessionId` to create a new session**). `ctx?: SessionCtx` is boring's own tenancy context resolved by the adapter/host (the `SessionStore` scoping key — never surface-native platform addressing); `originSurface?: string` is session-create provenance written by adapters. The full type is defined once in shared (P1); façade calls are single-argument everywhere (`start(input)`, `send(input)` — never `send(input, ctx)`). Core accepts a string or message parts; the surface does platform parsing (Slack signature + payload, Excel cell context, workspace composer state). `attachments` require an fs-bearing environment because the current attachment flow persists through `/api/v1/files/upload`; pure mode rejects them with typed `ERR_NO_FILESYSTEM_FOR_ATTACHMENTS`, so pure surfaces inline readable content into `content` and omit `attachments`.
+1. **Message in** — `AgentSendInput = { sessionId?, content, inputAssets?, actor?, ctx?, originSurface?, requestId }`. `requestId` is caller-generated write idempotency: same id+payload returns the original receipt, conflicting payload fails with a stable code. Actor/origin persist into session/run metadata. `ctx` is trusted host tenancy context, never surface-native addressing. Surfaces parse platform payloads and resolve asset policy before calling the core.
 2. **Event stream out** — one ordered, indexed, replayable stream of typed events. Every surface renders the same stream differently; the wire/transport is swappable.
 3. **Approvals / human-in-the-loop** — a request event out + a response call in, on the same channel, declared on the tool — not per-surface special cases.
 4. **Session state** — a runtime-owned `sessionId` + serializable transcript. Persistence and addressing are boundary decisions.
@@ -104,7 +110,7 @@ const agent = createAgent({
                              //   tools: [...appTools, ...createBashAgentFeature(env).tools]
   readinessRequirements,     // opaque readiness gates (e.g. from the bash bundle)
   sessions,                  // SessionStore (default: JSONL under sessionStorageRoot)
-  systemPromptAppend, systemPromptDynamic, // host append/dynamic after base + capability + plugin fragments
+  systemPromptAppend, systemPromptDynamic, // host context after base + instructions + resolved fragments + skill index
   telemetry,
 })
 // No `features` member and no `AgentFeature` abstraction — a single-consumer registry is
@@ -128,6 +134,13 @@ Producer/consumer split (locked — this is the core write/read contract):
 - `agent.start()` returns an **accepted receipt** the instant the turn is admitted. The turn then runs to completion on an **independent producer** that appends `AgentEvent`s to the `EventStreamStore` **regardless of whether any consumer is reading**. Producers are **never consumer-backpressured**.
 - `agent.stream()` is the only read primitive — it replays from `startIndex` (offset) and then live-tails; it **replaces the separate `replay()`**. Cancelling a stream iterator **never cancels the turn**; it only stops that reader. `interrupt(sessionId)` — **abort the current turn** — is the **only** way to stop a running turn (`stop(sessionId)` ends/closes the whole session, not a single turn). The two mirror today's pi-chat routes: `interrupt` = turn abort, `stop` = session end.
 - `agent.send()` exists **only** as documented convenience defined as `start()` then `stream()` from the returned `startIndex`; it introduces no semantics of its own.
+- The façade is a trusted-host primitive, not a bearer-capability API. Every T2
+  transport is constructed under a host-created
+  `AuthenticatedTransportBinding { admissionScopeId, subjectId, ctx, agentId }`.
+  Public methods remain `sessionId`-keyed for the two-handles rule, but adapters
+  authorize the canonical T1 `SessionKey` under that binding before every read
+  or control operation. HTTP derives the binding from the authenticated request;
+  in-process composition must inject it. A known session id never grants access.
 
 Rules:
 
@@ -156,17 +169,37 @@ Reality note: a bespoke replay path already exists (`PiChatReplayBuffer` + `?cur
 
 ### Backend state store (CLI ↔ prod feature parity)
 
-The backend embeds **one zero-ops SQLite layer** with **two files**. `events.db`
-is the append-only event log: the replay authority, with its own
-backup/retention/compaction lifecycle. `state.db` holds mutable state and
-**derived indexes**: pending inputs, surface addressing maps, session indexes,
-and other caches that are always rebuildable from `events.db` plus host config.
-This is the headline production rationale: local CLI mode and hosted/prod mode
-ship the identical feature set without a managed database in any default path
-(invariant 15). `EventStreamStore` and state accessors are interfaces with
-conformance suites; a Postgres adapter plus `LISTEN/NOTIFY` tail is a named
-follow-up gated only on multi-instance need, changing nothing above the store.
-Backups continuously stream both SQLite files to EU S3, litestream-style.
+V1 embeds one zero-ops SQLite database, `agent.db`, alongside the existing Pi
+JSONL compatibility store. Separate tables hold append-only stream events,
+authoritative pending-input/waiting records, caller request receipts, Pi event
+re-tap keys, and derived
+session/search indexes. Event append plus any pending-input mutation caused by
+that event occurs in one SQLite transaction. There is one backup/restore and
+retention lifecycle.
+
+This is production wiring, not only an adapter interface. A trusted host path
+adapter opens/migrates one file-backed database beneath the durable session root
+and injects it into standalone `createAgentApp()` plus CLI/core/workspace/full-
+app composition. Registering T1
+HTTP/DS routes with no store or an in-memory store fails closed. The in-memory
+adapter is explicit and limited to transport-less headless/dev/test use. Store
+ownership includes ordered shutdown, SQLite-safe backup/checkpoint, restore, and
+fresh-process recovery. Trusted `SessionKey` encoding and DB paths stay under
+server modules; shared exports only public event/session types.
+
+Caller receipts are uniquely keyed by authenticated subject plus a trusted host
+admission scope and caller `requestId`, not by caller-supplied tenancy or a `sessionId` that may not
+exist yet. Exact payload retry returns the original `{ sessionId, startIndex }`
+after restart; key reuse with a different canonical payload fails with a stable
+conflict. A nonterminal receipt after crash is explicitly reconciled or marked
+interrupted and never launches a second model run automatically.
+
+Do not call mutable state rebuildable unless every mutation is explicitly
+represented in the event log and a reconciler is implemented. Pending
+approvals are authoritative state. Surface addressing maps are surface-owned;
+when a surface elects to use `agent.db`, those rows are also authoritative.
+`EventStreamStore` and state accessors retain interfaces/conformance seams. A
+Postgres adapter is deferred until multi-instance demand proves it necessary.
 
 - Approvals ride the same stream as `data-approval-request` parts in v1, migrating to native AI-SDK `tool-approval-request/response` parts when the `PiChatEvent` reducer/view-model migrates to native `UIMessage`/tool-approval parts. Surface answers via `agent.resolveInput(...)` (in-process) or `POST …/input` (HTTP).
 - Surface-specific projections are the adapter's job: workspace renders the full stream; Slack maps activity → `setStatus`, text deltas → `sayStream`, approval parts → buttons; Excel maps structured tool outputs → cell writes.
@@ -222,9 +255,10 @@ The canonical `/api/v1/agents/:agentId/...` path-prefix family (00 open decision
 ## Human-in-the-loop
 
 - `AgentTool` gains `needsApproval?: boolean | (params, ctx) => boolean | Promise<boolean>`. Policy lives with the tool/host, not the surface.
-- When approval is needed (or the ask-user tool fires), the harness emits an approval/input-request event, persists the pending request, and parks the turn (`session.waiting`). Durable across process restarts once the session event log lands.
+- When approval is needed (or the ask-user tool fires), one transaction appends the request event and persists the pending record before the turn enters `session.waiting`.
 - Any surface holding the `sessionId` answers via `resolveInput`. A web modal, a Slack button, and an Excel task-pane dialog are the same protocol.
 - Existing permission prompts and the ask-user plugin migrate onto this path; no second approval channel.
+- V1 does not claim transparent continuation of an in-memory tool call after restart. A pending request remains visible, but restart either cancels/expires the waiting turn and requires a new user turn, or a later increment supplies a durable `WaitingTurn` plus tool-call idempotency journal. Seeding a new turn is recovery, not resume.
 
 ## Surface adapters
 
@@ -247,7 +281,7 @@ Reference adapters, each a separate optional package:
 | --- | --- | --- | --- |
 | Workspace UI | `@hachej/boring-agent/front` + `@hachej/boring-workspace` (existing) | full boring-bash | Refit to consume only the public contract; `ChatPanel`/`useAgentChat` unchanged externally. UI bridge (`exec_ui`/`get_ui_state`) stays workspace-owned `extraTools`. |
 | Slack | `@hachej/boring-channel-slack` (new, `packages/channels/slack`) | `runtime: none` or readonly `company_context` | Thin adapter over `@flue/slack` ingress; `conversationKey` = continuation; egress + approval blocks via `@slack/web-api`. |
-| Spreadsheet (pi-excel) | plugin in the pi-excel repo consuming `@hachej/boring-agent` client contract | `none` / readonly bindings | Agent tools are spreadsheet tools (read/write range) supplied by the host as `tools`; boring-bash not installed. Proves the "agent as a library inside another product" story. |
+| Spreadsheet (pi-excel) | plugin in the pi-excel repo consuming `@hachej/boring-agent` client contract | `none` / readonly bindings | Agent tools are spreadsheet tools (read/write range) supplied by the host as `tools`; boring-bash not installed. Proves the "agent as a library inside another product" story. **Note (2026-07-06):** the near-term production Excel surface is the #551 wrapper over pi-for-excel's own runtime (REST connector per #526), not a `@hachej/boring-agent` consumer; this row describes the future library-embedding proof (S2) only. |
 | CLI/cron | existing hub + `createAgent()` direct | any | Headless `send()` + transcript out. |
 
 Non-negotiable: no surface package imports provider internals or `boring-bash` server code; a surface depends on `@hachej/boring-agent` (client or server contract) only.
@@ -277,8 +311,8 @@ Executable contract suites, in-repo, run against every implementation:
 4. **Readonly fs is v1**: already true — shipped via #416. The 00-global-isa open decision 6 is resolved.
 5. **One namespace rule**: superseded by named `(filesystem, path)` bindings, as already reflected in the pack's V1 caveat.
 6. **Channel ingress is reused, not written**: depend on `@flue/*` channel packages (pinned beta) with per-channel thin adapters; egress via provider SDKs. Vendoring is the fallback; hosting inside Flue's runtime is explicitly not adopted.
-7. **Environments are attachable resources** (see [`09-environments-attachable.md`](09-environments-attachable.md)): fs+sandbox has identity independent of any agent; agents/subagents/external agents consume it via attachments; external agents attach via MCP projection.
+7. **Environments are attachable resources** (see [`09-environments-attachable.md`](09-environments-attachable.md)): fs+sandbox has identity independent of any agent; agents/subagents/external agents consume resolved environment attachments/facts; external agents attach via MCP projection.
 8. **Front chat provider unchanged.** The chat UI is already a vendored ai-elements fork on shadcn primitives (`boring-ui-kit`, Tailwind v4), and the render layer is insulated from the wire protocol by the `PiChatEvent → piChatReducer → BoringChatMessage` projection — T2 therefore forces zero render-layer work, and "adopt shadcn" is a no-op. Two follow-ups only: (a) opportunistic S-sized upgrade after T2 — replace `use-stick-to-bottom` + the custom transcript windowing in `PiConversationSurface` with shadcn's headless `MessageScroller` (June 2026 release; purely presentational, zero AI-SDK coupling, verified); (b) the `BoringChatMessage → UIMessage.parts` view-model swap (to use Vercel AI Elements' Tool/Reasoning/Confirmation cards natively) stays **deferred** — M–L rewrite of the reducer pipeline (~1,600 LOC) + both tool-renderer stacks for little present gain; if ever done, it rides with T2's `AgentEvent` as the single projection, per decision 1.
 9. **No feature-flag framework; version rides existing carriers.** `AgentEvent.v` is the wire version; DS routes land additive in T1 next to the legacy `?cursor=` route (that additive window is the only "flag") and the legacy route is deleted at the T2 cutover; the injectable front transport (`usePiSessions({ createRemoteSession })`) may dark-launch DS for at most one PR before the default flips; minor version bumps of `@hachej/boring-agent` mark the T2 (protocol) and P3 (relocation) cutovers. Server+front ship together in the CLI package — no long-lived skew exists to flag for.
-10. **No retro-compat, no speculative abstraction.** All `@hachej/*` consumers are in-repo: importers migrate in the same PR, transitional code carries `TODO(remove:<bead-id>)` naming its deletion-owner bead (a later TODO owner is allowed only when explicitly named per `../INDEX.md`), no abstraction without two real consumers (binding policy: `../INDEX.md` "Simplicity & no-compat policy"). Exceptions that MUST stay compatible: on-disk pi session JSONL, the landed #416 shared contracts, server↔front within one release train.
+10. **No retro-compat, no speculative abstraction.** All `@hachej/*` consumers are in-repo: importers migrate in the same PR, transitional code carries `TODO(remove:<bead-id>)` naming its deletion-owner bead (a later TODO owner is allowed only when explicitly named per `../INDEX.md`), no abstraction without two real consumers (binding policy: `../INDEX.md` "Simplicity & no-compat policy"). Exceptions that MUST stay compatible: on-disk pi session JSONL, the landed #416 shared contracts, server↔front within one release train. **Amendment (2026-07-06):** one published-pair exception — since #552, `@hachej/boring-bash` and `@hachej/boring-governance` are npm-published (cohort-versioned) with an external consumer (Constellation); the `@hachej/boring-bash/server` exports governance imports must stay compatible at equal cohort versions, and a breaking change requires a coordinated cohort bump with both packages migrated in the same PR (see `../INDEX.md` rule 6).
 11. **Three-package runtime stack (00 open decision 3, RESOLVED).** Concrete sandbox providers are **not** subpaths of boring-bash; they live in a dedicated **`@hachej/boring-sandbox`** package. The stack, top-down: **`@hachej/boring-agent`** (top — defines ALL contracts, imports neither boring-bash nor boring-sandbox) ← **`@hachej/boring-bash`** (THE RUNTIME — fs bindings/tools/routes/UI + bash tool + runtime modes = the CHOICE of sandbox; `resolveMode` lives here; imports boring-sandbox **values** + agent **types**) ← **`@hachej/boring-sandbox`** (sandbox management — providers `direct`/`bwrap`-gVisor/`vercel`-PROXY/`remote-worker`-client, FUSE-S3 mounts, sandbox lifecycle, capability facts `reported | unknown`; imports agent **types only**). Acyclic: `sandbox → agent(types)`; `bash → sandbox(values) + agent(types)`. P2 creates the `boring-sandbox` scaffold and moves the providers into it; `resolveMode` stays/lands in boring-bash.

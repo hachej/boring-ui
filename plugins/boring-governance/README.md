@@ -30,4 +30,57 @@ const governanceCompanyAdmin = createGovernanceCompanyAdmin()
 <CoreWorkspaceAgentFront companyAdmin={governanceCompanyAdmin} />
 ```
 
-Policy source is configured with `BORING_GOVERNANCE_POLICY_PATH`. Company context source roots use `BORING_GOVERNANCE_COMPANY_CONTEXT_ROOT` or the default workspace root resolver outside sandbox mode.
+Policy source is configured with `BORING_GOVERNANCE_POLICY_PATH`. Company context source roots use `BORING_GOVERNANCE_COMPANY_CONTEXT_ROOT` or the default workspace root resolver outside sandbox mode. When an explicit, governance-owned company-context root is configured, verified tenant admins receive a tenant-wide read/write `company_context` binding; ordinary policy users receive only their regex-filtered readonly projection. Custom resolvers must opt into admin mutations with `allowAdminMutations: true` only when no other actor can mutate the root outside the governance store.
+
+## Policy budgets
+
+Model grants remain the model picker allowlist. Optional user budgets cap aggregate monthly spend across all allowed models; optional per-model budgets cap individual models.
+
+```yaml
+users:
+  - email: readonly@example.com
+    role: user
+    budgets:
+      monthlyEur: 10
+    models:
+      - provider: infomaniak
+        id: Qwen/Qwen3.5-122B-A10B-FP8
+        monthlyBudgetEur: 2
+```
+
+A run is admitted only when the user is allowed to use the selected model, the aggregate user budget has remaining monthly capacity, and the selected model budget has remaining monthly capacity.
+
+## Governance access matrix smoke
+
+The package includes a reusable HTTP matrix runner for deployment smoke tests:
+
+```bash
+boring-governance-access-matrix
+# or from the source package:
+pnpm --filter @hachej/boring-governance smoke:governance-matrix
+```
+
+It signs in two environment-provided users and verifies the expected read/write behavior for:
+
+- company-context public paths
+- company-context Adam-private paths
+- each user's own `user` workspace filesystem
+- cross-user workspace access denial
+
+All deployment-specific values must be supplied explicitly; the reusable package intentionally does not ship real credentials or workspace IDs.
+
+| Var | Required value |
+| --- | --- |
+| `MATRIX_BASE_URL` / `DEPLOY_URL` | Deployment base URL |
+| `MATRIX_ADAM_EMAIL` | Admin fixture email |
+| `MATRIX_ADAM_PASSWORD` | Admin fixture password |
+| `MATRIX_ADAM_WORKSPACE_ID` | Admin fixture workspace ID |
+| `MATRIX_READONLY_EMAIL` | Readonly fixture email |
+| `MATRIX_READONLY_PASSWORD` | Readonly fixture password |
+| `MATRIX_READONLY_WORKSPACE_ID` | Readonly fixture workspace ID |
+| `MATRIX_COMPANY_PUBLIC_READ_PATH` | Existing public company-context file readable by both users |
+| `MATRIX_COMPANY_PRIVATE_READ_PATH` | Existing private company-context file readable by admin and denied to readonly |
+| `MATRIX_COMPANY_PUBLIC_WRITE_DIR` | Company-context directory used for admin public write probes |
+| `MATRIX_COMPANY_PRIVATE_WRITE_DIR` | Company-context directory used for admin private write probes |
+| `MATRIX_ADMIN_COMPANY_WRITE_EXPECTED` | Optional admin company-context write status, defaults to `403` for the base readonly plugin |
+| `MATRIX_READONLY_COMPANY_WRITE_EXPECTED` | Optional readonly company-context write status, defaults to `403` |

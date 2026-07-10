@@ -1,6 +1,6 @@
 {
   "name": "@hachej/boring-ui-cli",
-  "version": "0.1.64",
+  "version": "0.1.72",
   "description": "Turn an agent into an app",
   "license": "MIT",
   "type": "module",
@@ -19,19 +19,22 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "@fastify/compress": "^8.3.1",
+    "@fastify/compress": "^9.0.0",
     "@fastify/static": "^9.1.1",
     "@hachej/boring-agent": "workspace:*",
     "@hachej/boring-ask-user": "workspace:*",
+    "@hachej/boring-diagram": "workspace:*",
+    "@hachej/boring-tasks": "workspace:*",
     "@hachej/boring-ui-kit": "workspace:*",
     "@hachej/boring-ui-plugin-cli": "workspace:*",
     "@hachej/boring-workspace": "workspace:*",
     "@vitejs/plugin-react": "^4.0.0",
     "cjs-module-lexer": "^2.0.0",
-    "fastify": "^5.4.0",
+    "fastify": "^5.9.0",
     "lucide-react": "^1.21.0",
-    "typescript": "^5.8.3",
-    "vite": "^6.0.0"
+    "typescript": "^6.0.3",
+    "vite": "^8.1.2",
+    "yaml": "^2.9.0"
   },
   "devDependencies": {
     "@tailwindcss/vite": "^4.3.1",

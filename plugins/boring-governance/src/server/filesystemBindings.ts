@@ -15,8 +15,10 @@ import {
   type PreparedFilesystemBinding,
   type ReadonlyProjectionOperations,
 } from '@hachej/boring-bash/server'
+import { COMPANY_CONTEXT_STATE_DIR, CompanyContextStore } from './companyContextStore.js'
 import type { GovernanceService } from './governanceService.js'
 import type { GovernanceUserLike } from './policyTypes.js'
+import { normalizePolicyEmail } from './validatePolicy.js'
 
 const COMPANY_CONTEXT_MOUNT_PATH = '/company_context'
 const AGENT_MODE_ENV = 'BORING_AGENT_MODE'
@@ -48,6 +50,8 @@ export type CompanyContextRootResolver = (
 export interface CreateGovernanceFilesystemBindingsOptions {
   /** Explicit source root resolver for the tenant company-context workspace. */
   resolveCompanyContextRoot?: CompanyContextRootResolver
+  /** Enable admin mutations only when the resolved root is exclusively managed by the governance service. */
+  allowAdminMutations?: boolean
   projectionRootParent?: string
 }
 
@@ -77,6 +81,7 @@ async function walkFiles(root: string, current = root): Promise<string[]> {
   const entries = await readdir(current, { withFileTypes: true })
   const out: string[] = []
   for (const entry of entries) {
+    if (current === root && entry.name === COMPANY_CONTEXT_STATE_DIR) continue
     const absolutePath = path.join(current, entry.name)
     const entryStat = await lstat(absolutePath)
     if (entryStat.isSymbolicLink()) continue
@@ -113,7 +118,20 @@ function compileRules(rules: readonly string[]): RegExp[] {
 function userFromContext(ctx: GovernanceFilesystemBindingContext): GovernanceUserLike | null {
   const requestUser = ctx.request?.user
   if (requestUser?.email) {
-    return { id: requestUser.id, email: requestUser.email, emailVerified: requestUser.emailVerified === true }
+    const requestEmail = normalizePolicyEmail(requestUser.email)
+    const contextEmail = ctx.userEmail ? normalizePolicyEmail(ctx.userEmail) : null
+    const sameContextPrincipal =
+      contextEmail === requestEmail &&
+      (!requestUser.id || !ctx.userId || requestUser.id === ctx.userId)
+    return {
+      id: requestUser.id ?? (sameContextPrincipal ? ctx.userId : undefined),
+      email: requestUser.email,
+      // Some host auth hooks expose the principal on request.user but keep the
+      // normalized verification bit in the binding context. Trust the context
+      // bit only when it names the same principal; never combine verification
+      // from one principal with another request user's email.
+      emailVerified: requestUser.emailVerified === true || (sameContextPrincipal && ctx.userEmailVerified === true),
+    }
   }
   if (!ctx.userEmail) return null
   return { id: ctx.userId, email: ctx.userEmail, emailVerified: ctx.userEmailVerified === true }
@@ -256,13 +274,38 @@ export function createGovernanceFilesystemBindings(
     if (!service.isEnabled()) return undefined
     const user = userFromContext(ctx)
     if (!user?.id) return []
-    const rules = service.companyContextRules(user)
+    const policyAccess = service.companyContextAccessForUser(user)
+    const accessMode = policyAccess === 'readwrite' && options.allowAdminMutations !== true ? 'readonly' : policyAccess
     const companyContextWorkspaceId = service.companyContextWorkspaceId()
-    if (!companyContextWorkspaceId || rules.length === 0) return []
+    if (!companyContextWorkspaceId || accessMode === 'none') return []
     if (ctx.workspaceId === companyContextWorkspaceId) return []
 
     const sourceRoot = await resolveCompanyContextSourceRoot(ctx, companyContextWorkspaceId, options.resolveCompanyContextRoot)
     if (!sourceRoot) return []
+
+    if (accessMode === 'readwrite') {
+      const store = await CompanyContextStore.open(sourceRoot)
+      const operations: RuntimeFilesystemBindingOperations = {
+        read: (descriptor) => store.read(descriptor.path),
+        list: (descriptor) => store.list(descriptor.path),
+        find: (descriptor, pattern, opOptions) => store.find(descriptor.path, pattern, opOptions),
+        grep: (descriptor, pattern, opOptions) => store.grep(descriptor.path, pattern, opOptions),
+        stat: async (descriptor) => {
+          const result = await store.stat(descriptor.path)
+          return { isDirectory: result.isDirectory, metadata: { mtimeMs: result.mtimeMs } }
+        },
+        write: (descriptor) => store.write(descriptor.path, descriptor.content, descriptor.expectedMtimeMs),
+        delete: async (descriptor) => { await store.delete(descriptor.path); return {} },
+        move: async (descriptor) => { await store.move(descriptor.from, descriptor.to); return {} },
+        mkdir: async (descriptor) => { await store.mkdir(descriptor.path, descriptor.recursive); return {} },
+        rejectMutation(operation): never {
+          throw new Error(`company_context ${operation} operation is unavailable`)
+        },
+      }
+      return [{ filesystem: COMPANY_CONTEXT_FILESYSTEM_ID, access: 'readwrite', operations } satisfies RuntimeFilesystemBinding]
+    }
+
+    const rules = service.companyContextRules(user)
     const projectionRootParent = options.projectionRootParent ?? os.tmpdir()
     const binding: FilesystemBinding = {
       filesystem: COMPANY_CONTEXT_FILESYSTEM_ID,

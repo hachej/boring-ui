@@ -51,16 +51,18 @@ release_files=(
   packages/agent/package.json
   packages/ui/package.json
   packages/cli/package.json
+  packages/boring-sandbox/package.json
+  packages/boring-bash/package.json
+  plugins/boring-governance/package.json
   plugins/deck/package.json
   plugins/ask-user/package.json
+  plugins/diagram/package.json
+  plugins/tasks/package.json
   plugins/data-explorer/package.json
   plugins/data-catalog/package.json
   plugins/generated-pane/package.json
   plugins/data-bridge/package.json
   plugins/bi-dashboard/package.json
-  packages/boring-sandbox/package.json
-  packages/boring-bash/package.json
-  plugins/boring-governance/package.json
 )
 if [ -f pnpm-lock.yaml ]; then
   release_files+=(pnpm-lock.yaml)

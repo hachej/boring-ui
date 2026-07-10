@@ -6,13 +6,28 @@ Status: v2 addition. Generalizes the #416 filesystem-binding model: **a filesyst
 
 - One environment (fs + optional exec), many consumers: the main agent, subagents, *other* boring agents, and **external agents** (Claude Code, Codex, any MCP client).
 - One agent, many environments: zero (pure mode), its private `user` workspace, readonly `company_context`, a shared team scratch fs, an ephemeral per-task sandbox.
+- **One workspace/project, many agents (post-v1 P7).** A workspace may hold N
+  `AgentDeployment`s referencing versioned `AgentDefinition`s. Environments are
+  project-scoped resources with agent-independent ids. Trusted identifiers are
+  validated and encoded as a structured scope tuple; delimiter concatenation
+  and UUID uniqueness are not security boundaries.
+- **Sharing semantics.** Shared **readonly** (e.g. `company_context`, a team reference fs) is clean — many agents, no contention. Shared **writable** (e.g. `team_scratch`) is genuine concurrent access: it must be an **explicit authored choice** in both agents' `environmentAttachments` (`access: 'readwrite'`), and v1 provides **no cross-agent locking** — semantics are last-writer-wins at the filesystem layer and readers may observe partial writes. Accidental write-sharing is prevented by the default: any non-`user` attachment defaults to readonly/`execPolicy: 'none'` (security invariant 4). Multi-agent *within one project* is a different axis from multi-**project** navigation (issues #361/#363/#377, the cross-project left bar) — those are separate workspaces each with their own registry and pool; do not conflate.
 - Attachment is the only coupling, in both directions. No implicit cwd inheritance anywhere.
 
 ## Contracts
 
 Builds directly on the landed #416 shapes (`FilesystemId`, `FilesystemBinding`, `FilesystemBindingProvider`, `PreparedFilesystemBinding`, `ScopedFilesystemRuntimeBindingManager`) — generalized, not replaced:
 
-Type ownership: the **rich** `Environment`/`EnvironmentAttachment` types live in `boring-bash/shared`; `Environment.capabilities` is a type-only alias/pick of the authoritative `ProviderCapabilities` from `@hachej/boring-sandbox/shared` (no second capability contract); the **minimal core-facing** `ResolvedEnvironments` type — the existing **operation-bearing binding array** `{ bindings: RuntimeFilesystemBinding[] }` — lives in `@hachej/boring-agent` shared contracts. boring-bash's `resolveAttachments` imports the agent-defined `ResolvedEnvironments` type-only and returns it. The agent core imports **nothing** from boring-bash or boring-sandbox.
+Type ownership: the **rich** `Environment`/`EnvironmentAttachment` and
+operation-bearing `PreparedEnvironmentAttachment` types live in `boring-bash`;
+`Environment.capabilities` is a type-only alias/pick of the authoritative
+`ProviderCapabilities` from `@hachej/boring-sandbox/shared` (no second
+capability contract). The agent core owns only methodless `ResolvedEnvironment`
+facts. The host owns preparation and disposal, then flattens prepared
+attachments into the core's existing injected tools, prompt fragments,
+readiness requirements, and input-asset handler. The agent core imports
+**nothing** from boring-bash or boring-sandbox and never receives raw `exec`,
+filesystem handles, or provider lifecycle authority.
 
 ```ts
 // boring-bash/shared — the rich, host-facing environment types
@@ -23,9 +38,9 @@ interface Environment {
   // NO fs/exec ops member and no `lifecycle` member. The Environment carries only identity,
   // provider, and typed capability facts — `Environment = { id, provider, capabilities }`.
   // Operations are NOT a field on the Environment: they are constructed on the PREPARED
-  // bindings by `resolveAttachments` (host-supplied mount facts + the #416 projection ops).
+  // bindings by `prepareAttachmentLifetime` (host-supplied mount facts + the #416 projection ops).
   // Preparation and disposal flow through the existing `ScopedFilesystemRuntimeBindingManager`
-  // via the E1 `resolveAttachments` reduction — the environment carries no prepare/dispose/
+  // via the E1 `prepareAttachmentLifetime` reduction — the environment carries no prepare/dispose/
   // invalidate of its own, and its mount path is host-supplied per attachment entry.
 }
 
@@ -37,20 +52,47 @@ interface EnvironmentAttachment {
   execPolicy: 'none' | 'attached'   // whether bash/exec runs against this env (02/#416 exec rules apply)
 }
 
-// @hachej/boring-agent shared — the minimal core-facing shape the agent OWNS.
-// The agent-side injection type IS the existing operation-bearing binding array. There is NO
-// separate `PreparedEnvironmentAttachment { handle: unknown }` (deleted): the agent never
-// receives an opaque handle, it receives prepared, operation-bearing bindings.
-// `resolveAttachments` RETURNS these directly (it wraps prepare + operations construction).
-// (boring-bash imports this type-only; the agent imports nothing from boring-bash)
-//
-// what an agent/session receives — resolved by the host, never self-served
-interface ResolvedEnvironments {
-  bindings: RuntimeFilesystemBinding[]   // the landed agent shape: { filesystem, access, operations }
+// @hachej/boring-agent/shared — public facts only: no methods, handles, cwd,
+// raw exec value, or lifecycle authority.
+interface ResolvedEnvironment {
+  id: string
+  filesystem?: {
+    access: 'readonly' | 'readwrite'
+    acceptsInputAssets?: boolean
+    defaultInputAssetSink?: boolean
+  }
+  tools: string[]
+  provider?: string
+  label?: string
 }
 ```
 
-Resolution (no registry vocabulary in E1): hosts reduce an `EnvironmentAttachment[]` to the landed #416 `FilesystemBinding[]` via a thin `resolveAttachments` adapter in boring-bash/server (E1) — there is **no `EnvironmentRegistry` class** and **no new prepare/dispose lifecycle** (the existing `ScopedFilesystemRuntimeBindingManager` still owns preparation and disposal). The agent core only sees `ResolvedEnvironments` via injection — and it **owns** that type (defined in `@hachej/boring-agent` shared), importing nothing from boring-bash; boring-bash's `resolveAttachments` imports the agent-defined `ResolvedEnvironments` type-only. The one cross-package type edge is boring-bash → agent (invariant-checked). An **address-by-id lookup (a plain `Map<environmentId, Environment>`) is introduced later in E2**, where the MCP projection actually needs to resolve an environment by id — not in E1.
+Resolution (no registry vocabulary in E1): the host prepares an
+`EnvironmentAttachment[]` through `prepareAttachmentLifetime` in
+boring-bash/server. A stable `AttachmentLifetimeKey` contains trusted storage/
+workspace/subject/agent/runtime-instance identity, optional session identity,
+and `attachmentSetDigest` derived from the canonical selected catalog entries;
+it explicitly excludes per-request ids. `prepareAttachmentLifetime` recomputes
+and verifies that digest before cache lookup. A separate authenticated request
+context authorizes each route/UI/tool access through
+`AttachmentLifetimeOwner.withAuthorizedView(requestContext, lifetimeKey, fn)`.
+The callback receives a short-lived lease; it cannot be retained and becomes
+invalid when the callback settles. `prepareAttachmentLifetime(...)` returns
+only `{ facts, contributions }`: methodless `ResolvedEnvironment[]` plus
+auth-gated tool/route/UI/prompt/input-asset contribution closures. It never
+returns raw `PreparedEnvironmentAttachment[]` to a consumer. Each operation on
+a contribution enters `withAuthorizedView`, so a long-lived route, tool, or UI
+binding cannot bypass a later authorization check. One host-owned lifetime owner
+prepares each attachment once for that stable key; tools, routes, and UI resolve
+through the same view across many authorized operations. The landed
+`ScopedFilesystemRuntimeBindingManager` remains the
+filesystem preparation primitive, but receives a stable preparation context,
+never the current HTTP request id. Eviction, invalidation, failure, and shutdown
+dispose a prepared attachment exactly once. The agent receives only flattened
+capability inputs plus matching `ResolvedEnvironment[]` facts. E1 itself adds no
+registry. P6-R, the first real v1 lookup consumer, owns a minimal host-only
+`DeploymentAttachmentCatalog` from opaque deployment ref to validated E1 entry;
+it is injected, workspace-scoped, and has no lifecycle or global singleton.
 
 ## Consumers
 
@@ -85,7 +127,7 @@ An external agent can reach an environment two ways, and the choice is a **polic
 2. Scoped views are enforced by the environment host (physical projection or jailed ops), never by consumer-side path filtering. Containment must be **realpath-based with symlink denial** (`lstat` each path component; reject a symlink, or resolve it and re-check the result is still inside the jail) — not lexical `resolve()` alone — and E1 ships an explicit **symlink-escape conformance test**. (The landed `readonlyProjectionOperations.ts` jails lexically via `resolve()` only; E1 hardens it.)
 3. Credential brokering happens at the environment boundary (08 trust rule); MCP clients never receive broker secrets.
 4. Exec against a governed filesystem follows the #416 exec rules unchanged; `execPolicy: 'none'` is the default for any non-`user` attachment.
-5. **Workspace-bound context is required for any environment attachment.** Environment attachments (`company_context`, any governed fs, the E2 MCP projection) REQUIRE a workspace-bound context — `BoundFilesystemContext.workspaceId` is **real** (the locked #416 shape, unchanged). Workspace-less / pure surfaces run `runtime: 'none'` with **no attachments** until the host binds them to a workspace; surfaces **never synthesize a `workspaceId`**. This is the attachment-side counterpart to 08's optional-`SessionCtx.workspaceId` rule: a session may omit tenancy, but the moment it attaches a governed environment it must be workspace-bound — `resolveAttachments`/MCP projection are never invoked to attach governed context for a session that has no `workspaceId`.
+5. **Workspace-bound context is required for any environment attachment.** Environment attachments (`company_context`, any governed fs, the E2 MCP projection) REQUIRE a workspace-bound context — `BoundFilesystemContext.workspaceId` is **real** (the locked #416 shape, unchanged). Workspace-less / pure surfaces run with **no environment attachments** until the host binds them to a workspace; surfaces **never synthesize a `workspaceId`**. This is the attachment-side counterpart to 08's optional-`SessionCtx.workspaceId` rule: a session may omit tenancy, but the moment it attaches a governed environment it must be workspace-bound — environment resolution/MCP projection are never invoked to attach governed context for a session that has no `workspaceId`.
 
 ## What changes vs 02
 

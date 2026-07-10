@@ -4,28 +4,88 @@
 > Ordering authority: [INDEX.md](../../INDEX.md) · Vision: [VISION.md](../../VISION.md)
 
 ## Governing architecture
-- [00-global-isa.md](../../architecture/00-global-isa.md) — package ownership, non-negotiable invariants 1–14, and the seams to reuse.
-- [01-agent-core-runtime-free.md](../../architecture/01-agent-core-runtime-free.md) — the pure-mode contract, the `AgentEnvironment` shape, the **no-`AgentFeature`** rule, the pi-harness audit questions, required tests.
-- [08-pluggable-agent-surfaces.md](../../architecture/08-pluggable-agent-surfaces.md) — the `createAgent()` nine-member API surface, the two-handles rule, the "façade has no Fastify import / no env reads / no file discovery" rule.
 
-## Design context
-Phase 1 is the critical path. It extracts a Fastify-free `createAgent()` façade (published at `@hachej/boring-agent/core`) from the agent server and makes `createAgentApp()`/`registerAgentRoutes()` thin adapters over it with **zero behavior change**. The façade exposes the **nine** members `start`/`stream`/`send`/`resolveInput`/`interrupt`/`stop`/`sessions`/`readiness`/`dispose`: `start` is the accepted-receipt write primitive (turn runs on an independent producer, never consumer-backpressured), `stream` the replay+live-tail read primitive, `send` convenience over both, `interrupt`/`stop` the turn-abort / session-end control pair. Dependency inversion comes first: config is a typed object with **no** `process.env`/`process.cwd()`/`.pi/*`/`workspaces.yaml` reads inside the façade — all ambient reads move to host/CLI composition. It adds a pure `runtime: 'none'` path (no bash bundle spread into `tools`, sealed/absent cwd, no file routes/tools) and separates `sessionStorageRoot` from workspace roots (`SessionCtx.workspaceId` becomes optional). Durable events, approvals, and historical replay are typed stubs (`ERR_NOT_IMPLEMENTED_UNTIL_T1`) that land in T1; `stream` ships a minimal non-durable live tail so `send` works end-to-end, with `AgentEvent.eventIndex` assigned by an in-memory monotonic per-process counter until T1 replaces that field's source with SQLite `seq`. Nothing new is designed — this expands the ratified Phase 0 contract.
+- [00-global-isa.md](../../architecture/00-global-isa.md) — package ownership, non-negotiable invariants 1–14, and seams to reuse.
+- [01-agent-core-runtime-free.md](../../architecture/01-agent-core-runtime-free.md) — pure-mode contract, session/storage config shape, **no-`AgentFeature`** rule, pi-harness audit, required tests. Its historical `AgentEnvironment` name is not the P1 Flue-inspired `AttachedEnvironmentRuntime` seam.
+- [08-pluggable-agent-surfaces.md](../../architecture/08-pluggable-agent-surfaces.md) — `createAgent()` nine-member API, two-handles rule, no Fastify/env/file discovery inside the façade.
+- [09-environments-attachable.md](../../architecture/09-environments-attachable.md) — filesystems/environments are attachable resources; one agent can have zero, one, or many.
 
-`AgentSendInput.attachments` is explicitly filesystem-gated. Current composer attachments upload through `/api/v1/files/upload` and are persisted by the resolved `Workspace`; Pi may read uploaded workspace image bytes back before prompting. P1 therefore rejects non-empty `attachments` in pure mode with stable typed code `ERR_NO_FILESYSTEM_FOR_ATTACHMENTS`; pure/headless callers must inline readable content into `content` and omit `attachments`.
+## The three design documents
 
-## Deliverables
-- `createAgentApp()` / `registerAgentRoutes()` receive the runtime adapter and any extra tools (incl. the boring-bash bundle's `{ tools, readinessRequirements, systemPromptFragment }`) by injection — no `features` registry, no `AgentFeature` contract.
-- **Export `createAgent()`** from `@hachej/boring-agent/core` — the canonical Fastify-free public entry: façade returning the **nine** members `{ start, stream, send, resolveInput, interrupt, stop, sessions, readiness, dispose }` (see 08). `start(input): Promise<{ sessionId, startIndex }>` is the accepted-receipt write primitive; `stream(sessionId, { startIndex })` is the replay+live-tail read primitive (replaces `replay()`); `send` = convenience over both; `interrupt(sessionId)` aborts the current turn and `stop(sessionId)` ends/closes the session. `createAgentApp()` becomes an adapter over it. The `@hachej/boring-agent/server` barrel re-exports `createAgent` from `/core` for convenience only; the Fastify-free guarantee is anchored on `/core`.
-- Typed config object only: no env-var reads or file discovery inside `createAgent()`; `.pi/*`, workspaces.yaml, env parsing move to host/CLI composition.
-- Remove static value imports from agent server composition to built-in mode resolution where needed for pure mode. Type-only `RuntimeModeAdapter` contracts may stay in agent during migration. P1 creates the injection seam only; P2 atomically moves `resolveMode()`/mode adapters to boring-bash/host composition and migrates every importer in the same PR. No compatibility shim, old-path re-export, or host bridge is allowed.
-- Package invariant test: no agent value import from boring-bash **[landed: `scripts/check-invariants.mjs` — extend to the façade]**.
-- Add the pure `runtime: 'none'` path (no bash bundle spread into `tools`).
-- Reject `AgentSendInput.attachments` in pure mode with typed `ERR_NO_FILESYSTEM_FOR_ATTACHMENTS`; attachments require an fs-bearing environment.
-- Separate `sessionStorageRoot` from workspace roots.
-- Audit pi-coding-agent cwd/resource assumptions and prompt/tool consistency (blocks pure-mode exit; decision: sealed pi harness, not a second harness). P1 introduces the boring-owned base prompt that replaces Pi's default prompt via the existing harness/resource-loader option seam; pure mode must snapshot zero filesystem/bash vocabulary.
-- Add the boring-bash-free operational event/command seam (reload, slash commands, compaction/provider recovery, session notices) if route composition changes. (External hook request/callback/redaction contracts are **not** Phase 1 scope — they land in Phase 7.)
+This P1 plan is now split into three focused documents so the full universe is captured without mixing research, ideal design, and migration mechanics:
+
+1. [RESEARCH.md](./RESEARCH.md) — what Anthropic Managed Agents, Flue, and eve teach us.
+2. [TARGET_INTERFACE.md](./TARGET_INTERFACE.md) — the ideal pluggable-agent interface and invariants.
+3. [MIGRATION_FROM_TODAY.md](./MIGRATION_FROM_TODAY.md) — how today's code maps to the target and how P1/P2/P3/P4/P6 get there.
+
+Read them in that order.
+
+## One-sentence design
+
+```txt
+Authored agent definition -> requirements only
+Host/plugin/environment resolver -> policy ∩ provider facts ∩ manifests ∩ readiness
+ResolvedAgentComposition -> semantic capability facts + concrete capability bundles
+Surfaces/adapters -> render/register from facts, never from runtimeMode
+```
+
+## Non-negotiable decisions
+
+- Refactor/extract from the existing agent package; do **not** reimplement from scratch. Current `createAgent()`/shared contracts/runtime/tool/profile seams are the building blocks, and P1 must preserve HTTP behavior.
+- `runtimeMode` is diagnostic only. New consumers must not branch on it for feature gating.
+- `AgentRouteBindingProfile` is Fastify adapter output only. It must not become the capability registry.
+- Workspace UI plugin/panel names are surface implementation details, not capability truth.
+- P1 does **not** introduce a generic `AgentFeature` abstraction.
+- `environments[]` is the source of truth for filesystem/bash/environment authority. Do not store scalar `filesystem`, `shell`, or `attachments` as capability truth.
+- User-provided files/images are input assets. Intake is derived from writable environment sinks, provider direct-asset support, and host policy — not an `attachments` capability axis.
+- Prompt fragments, skills, MCP servers/toolsets, asset intake, routes, tools, UI affordances, renderers, composer providers, and readiness/status are all capability residue.
+- Detaching a capability removes the whole bundle, not only tools.
+- Subagents get their own resolved composition unless explicitly configured as self/copy sharing.
+
+## Target minimal capability facts
+
+P1 should make pure mode report the honest target shape:
+
+```ts
+{
+  v: 1,
+  runtimeMode: 'none', // diagnostic only; adapter shim during migration
+  environments: [],
+  tools: [...actualRegisteredToolNames],
+  skills: [],
+  mcpServers: [],
+}
+```
+
+Existing direct/local/vercel modes keep behavior unchanged. They may expose a coarse compatibility projection until P2/P3 move real filesystem/bash bundles into boring-bash.
+
+## P1 deliverables
+
+- Export `createAgent()` from `@hachej/boring-agent/core` with the nine-member Fastify-free API: `start`, `stream`, `send`, `resolveInput`, `interrupt`, `stop`, `sessions`, `readiness`, `dispose`.
+- Keep `createAgentApp()` and `registerAgentRoutes()` as adapters over the core path where practical, with no HTTP behavior change.
+- Add pure default core path: no runtime/environment attachment means no workspace, sandbox, cwd, file routes, or bash/file tools. Existing `runtime: 'none'` remains a server/host shim input during migration.
+- Add/document minimal `ResolvedAgentCapabilities` projection through the existing capability exposure seam where practical.
+- Keep `createAgent()` typed-config-only: no env-var reads, cwd discovery, `.pi/*`, or `workspaces.yaml` reads inside the façade.
+- Create the injection seam for runtime adapters and extra tools. P2 moves `resolveMode()` and concrete adapters out atomically.
+- Preserve/extend invariant tests: no agent value import from boring-bash or boring-sandbox, including the new façade.
+- Separate `sessionStorageRoot` from workspace/environment roots.
+- Audit pi-coding-agent cwd/resource assumptions enough for pure mode.
+- Make `start()` the single per-session admission boundary used by `send()` and
+  every surface. Add caller `requestId` idempotency, actor/origin propagation,
+  and one fail-closed duplicate-tool policy.
+- Separate agent-local cleanup from host/provider-global lifecycle; bound all
+  runtime/session caches.
 
 ## Exit criteria
-- pure agent starts via `createAgent({ runtime: 'none' })` with no workspace/sandbox/cwd/file routes/bash tools, in a plain Node script with no Fastify;
-- existing direct/local/vercel modes still work through host composition;
-- all current HTTP consumers unchanged.
+
+- Pure agent starts via `createAgent()` with no runtime/environment attachment in a plain Node script with no Fastify.
+- Pure mode has no attached environments, no workspace/sandbox/cwd authority, no file/bash environment tools, no filesystem prompt residue, and no file skills.
+- Pure-mode capability facts match the target minimal projection.
+- Existing direct/local/vercel modes continue to work through existing server adapters with current HTTP behavior unchanged; adapter relocation to host composition is P2.
+- New code uses semantic capabilities, not `runtimeMode`, for feature gating.
+- `AgentRouteBindingProfile` remains adapter plumbing.
+- Concurrent starts have a documented queue-or-busy rule; retries cannot create
+  a second run; `interrupt()` targets the admitted run.
+- Session/run metadata retains `actor` and `originSurface`.
+- Core does not own or dispose a provider-global runtime adapter.
+- `git diff --check` passes and relevant tests/typechecks run or blockers are recorded.

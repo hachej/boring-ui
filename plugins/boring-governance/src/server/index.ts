@@ -1,3 +1,4 @@
+import path from 'node:path'
 import type { FastifyRequest } from 'fastify'
 import type { AgentMeteringSink, RegisterAgentRoutesOptions } from '@hachej/boring-agent/server'
 import type { CoreConfig } from '@hachej/boring-core/shared'
@@ -60,6 +61,16 @@ export interface CreateGovernanceResult {
   pi: { strictModelResolution: boolean }
 }
 
+function defaultAdminMutationsAllowed(options: CreateGovernanceFilesystemBindingsOptions): boolean {
+  if (options.resolveCompanyContextRoot) return false
+  const companyRoot = process.env.BORING_GOVERNANCE_COMPANY_CONTEXT_ROOT?.trim()
+  if (!companyRoot) return false
+  const workspaceRoot = path.resolve(process.env.BORING_AGENT_WORKSPACE_ROOT?.trim() || process.cwd())
+  const resolvedCompanyRoot = path.resolve(companyRoot)
+  const relative = path.relative(workspaceRoot, resolvedCompanyRoot)
+  return relative.startsWith('..') || path.isAbsolute(relative)
+}
+
 export async function createGovernance(config: CoreConfig): Promise<CreateGovernanceResult> {
   const service = await buildGovernanceService({ config })
   return {
@@ -69,8 +80,9 @@ export async function createGovernance(config: CoreConfig): Promise<CreateGovern
     filterModels: createGovernanceModelFilter(service),
     createMeteringSink: (delegate, getDb) => createGovernanceMeteringSink({ service, delegate, getDb }),
     getFilesystemBindings: (options = {}) => createGovernanceFilesystemBindings(service, {
-      resolveCompanyContextRoot: createDefaultCompanyContextRootResolver(),
       ...options,
+      resolveCompanyContextRoot: options.resolveCompanyContextRoot ?? createDefaultCompanyContextRootResolver(),
+      allowAdminMutations: options.allowAdminMutations ?? defaultAdminMutationsAllowed(options),
     }),
     pi: { strictModelResolution: service.isEnabled() },
   }
@@ -86,6 +98,8 @@ export function createGovernanceModelFilter(service: GovernanceService): Registe
     const user = governanceUserFromRequest(request)
     if (!service.isEnabled()) return { models, defaultModel }
     if (!user) return { models: [] }
+    const aggregateBudgetMicros = service.userMonthlyBudgetMicros(user)
+    if (aggregateBudgetMicros !== null && aggregateBudgetMicros <= 0) return { models: [], defaultModel: undefined }
     const allowedModels = service
       .allowedModelsForUser(user, models)
       .filter((model) => (service.monthlyBudgetMicros(user, model) ?? 0) > 0)

@@ -4,8 +4,10 @@ Derived strictly from [TODO.md](./TODO.md) and [PLAN.md](./PLAN.md). Tick each b
 
 ## Prerequisites
 
-- [ ] P1 pr2 `createAgent()` facade is merged on current main.
+- [ ] P1 through BBP1-008 admission/idempotency/attribution is merged on current main.
 - [ ] Delivery v0 ruling honored: no share dependency in BBM1-001..003; share-link work exists only as BBM1-004, hard-gated on #424 merging.
+- [ ] Bearer verifier, principal-to-tenant/agent policy, and rate/concurrency
+      limits are configured before the endpoint is enabled.
 
 ## Beads
 
@@ -33,20 +35,30 @@ Derived strictly from [TODO.md](./TODO.md) and [PLAN.md](./PLAN.md). Tick each b
 ## Review gates
 
 - [ ] Every PR description includes review-time estimate, review-focus notes, and stack merge order.
+- [ ] `delegate_task` requires caller `idempotencyKey` (<=128 UTF-8 bytes),
+      scopes it by authenticated subject/tenant/agent, and derives stable
+      `requestId`; changing JSON-RPC/tool-call id never starts a second session.
+- [ ] Existing-key dedupe runs before rate/quota/concurrency admission; same
+      payload returns the original and a different payload conflicts.
 - [ ] `plugins/boring-mcp` duality documented: it consumes MCP; M1 exposes a boring agent over MCP.
 - [ ] One session per delegation; no cross-delegation session reuse.
 - [ ] `SessionCtx` is host-chosen and real; MCP caller cannot spoof tenancy.
+- [ ] Missing/invalid/expired/foreign bearer and quota excess reject before
+      `agent.start`.
 - [ ] No secret canary appears in MCP tool results or logs.
-- [ ] Progress uses MCP progress notifications or the documented polling fallback.
-- [ ] Result returns final text + workspace-relative artifact references; no absolute host paths.
+- [ ] Progress uses MCP progress notifications or polling and enforces 4 KiB per
+      item, 128 items/64 KiB retained, and 96 KiB polling payload limits.
+- [ ] Brief <=32 KiB, final text <=96 KiB, optional UTF-8 Markdown <=256 KiB,
+      and complete serialized result <=384 KiB; exact/over boundaries use the
+      stable input/result/artifact codes and no path.
 - [ ] (BBM1-004 only) Share link from the verified public-share API opens and does not expose workspace APIs, shell routes, model keys, broker secrets, or internal session details.
 
 ## Exit criteria
 
-- [ ] A stock MCP client connects to the M1 endpoint.
+- [ ] A stock MCP client connects with an authorized bearer credential.
 - [ ] The client delegates a representative brief.
 - [ ] Progress is visible.
-- [ ] The final result includes the final text and an artifact reference that resolves to the produced artifact.
+- [ ] The final result is self-contained and includes no inaccessible artifact reference.
 - [ ] (Post-#424, BBM1-004) The result additionally includes a public share URL that opens to the rendered Markdown artifact.
 
 ## Closeout
