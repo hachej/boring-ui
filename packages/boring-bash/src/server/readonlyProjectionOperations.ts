@@ -1,4 +1,4 @@
-import { readdir, readFile, stat } from "node:fs/promises";
+import { lstat, readdir, readFile, realpath } from "node:fs/promises";
 import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 
 import type { FilesystemId } from "../shared/index";
@@ -93,12 +93,49 @@ function projectionPath(handle: ReadonlyProjectionHandle, path: string): string 
   return join(handle.projectionRoot, ...normalized.slice(1).split("/"));
 }
 
+function isNotFoundError(error: unknown): boolean {
+  return (error as { code?: unknown })?.code === "ENOENT";
+}
+
+async function assertNoSymlinkInProjectionPath(root: string, candidate: string): Promise<void> {
+  const rootStat = await lstat(root);
+  if (rootStat.isSymbolicLink()) throw new Error("readonly projection root must not be a symlink");
+
+  const rel = relative(root, candidate);
+  if (!rel) return;
+
+  let current = root;
+  for (const part of rel.split(sep).filter(Boolean)) {
+    current = join(current, part);
+    const currentStat = await lstat(current).catch((error) => {
+      if (isNotFoundError(error)) return null;
+      throw error;
+    });
+    if (!currentStat) return;
+    if (currentStat.isSymbolicLink()) throw new Error("symlinks are not readable in readonly projections");
+  }
+}
+
 async function assertInsideProjection(handle: ReadonlyProjectionHandle, candidate: string): Promise<void> {
   const root = resolve(handle.projectionRoot);
-  const parent = dirname(candidate);
-  const existingParent = await stat(parent).then(() => parent).catch(() => root);
-  const rel = relative(root, resolve(existingParent));
+  const resolvedCandidate = resolve(candidate);
+  const rel = relative(root, resolvedCandidate);
   if (rel.startsWith("..") || isAbsolute(rel)) throw new Error("path escapes readonly projection");
+  await assertNoSymlinkInProjectionPath(root, resolvedCandidate);
+
+  const realRoot = await realpath(root);
+  const targetExists = await lstat(resolvedCandidate).then(() => true).catch((error) => {
+    if (isNotFoundError(error)) return false;
+    throw error;
+  });
+  const anchor = targetExists ? resolvedCandidate : resolve(dirname(resolvedCandidate));
+  const realAnchor = await realpath(anchor).catch((error) => {
+    if (isNotFoundError(error)) return null;
+    throw error;
+  });
+  if (!realAnchor) return;
+  const realRel = relative(realRoot, realAnchor);
+  if (realRel.startsWith("..") || isAbsolute(realRel)) throw new Error("path escapes readonly projection");
 }
 
 async function walkFiles(root: string, current = root): Promise<string[]> {
@@ -106,8 +143,10 @@ async function walkFiles(root: string, current = root): Promise<string[]> {
   const out: string[] = [];
   for (const entry of entries) {
     const absolutePath = join(current, entry.name);
-    if (entry.isDirectory()) out.push(...await walkFiles(root, absolutePath));
-    else if (entry.isFile()) out.push(absolutePath);
+    const entryStat = await lstat(absolutePath);
+    if (entryStat.isSymbolicLink()) continue;
+    if (entryStat.isDirectory()) out.push(...await walkFiles(root, absolutePath));
+    else if (entryStat.isFile()) out.push(absolutePath);
   }
   return out;
 }
@@ -137,7 +176,8 @@ export function createReadonlyProjectionOperations(handle: ReadonlyProjectionHan
   async function filesUnder(path: string): Promise<string[]> {
     const root = projectionPath(handle, path);
     await assertInsideProjection(handle, root);
-    const rootStat = await stat(root);
+    const rootStat = await lstat(root);
+    if (rootStat.isSymbolicLink()) throw new Error("symlinks are not readable in readonly projections");
     const files = rootStat.isDirectory() ? await walkFiles(handle.projectionRoot, root) : [root];
     return files.map((file) => `/${relative(handle.projectionRoot, file).split(sep).join("/")}`).sort();
   }
@@ -146,8 +186,8 @@ export function createReadonlyProjectionOperations(handle: ReadonlyProjectionHan
     async read(descriptor) {
       const metadata = assertProjectionDescriptor(descriptor, "read", expectedFilesystem);
       const target = projectionPath(handle, metadata.path);
-      await assertInsideProjection(handle, target);
       try {
+        await assertInsideProjection(handle, target);
         return { content: await readFile(target, "utf8"), metadata };
       } catch {
         throw unreadableProjectionPathError(metadata);
@@ -156,10 +196,11 @@ export function createReadonlyProjectionOperations(handle: ReadonlyProjectionHan
     async list(descriptor) {
       const metadata = assertProjectionDescriptor(descriptor, "list", expectedFilesystem);
       const target = projectionPath(handle, metadata.path);
-      await assertInsideProjection(handle, target);
       try {
-        const entries = (await readdir(target)).sort();
-        return { entries, metadata };
+        await assertInsideProjection(handle, target);
+        const entries = await readdir(target, { withFileTypes: true });
+        if (entries.some((entry) => entry.isSymbolicLink())) throw new Error("symlinks are not readable in readonly projections");
+        return { entries: entries.map((entry) => entry.name).sort(), metadata };
       } catch {
         throw unreadableProjectionPathError(metadata);
       }
@@ -192,9 +233,9 @@ export function createReadonlyProjectionOperations(handle: ReadonlyProjectionHan
     async stat(descriptor) {
       const metadata = assertProjectionDescriptor(descriptor, "stat", expectedFilesystem);
       const target = projectionPath(handle, metadata.path);
-      await assertInsideProjection(handle, target);
       try {
-        return { isDirectory: (await stat(target)).isDirectory(), metadata };
+        await assertInsideProjection(handle, target);
+        return { isDirectory: (await lstat(target)).isDirectory(), metadata };
       } catch {
         throw unreadableProjectionPathError(metadata);
       }

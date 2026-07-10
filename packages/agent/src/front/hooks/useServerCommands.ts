@@ -9,6 +9,16 @@ interface ServerCommandSummary {
   sourcePlugin?: string
 }
 
+interface ServerCommandErrorBody {
+  error?: string | { message?: unknown }
+}
+
+function serverCommandErrorMessage(body: ServerCommandErrorBody, fallback: string): string {
+  if (typeof body.error === 'string') return body.error
+  if (body.error && typeof body.error === 'object' && typeof body.error.message === 'string') return body.error.message
+  return fallback
+}
+
 function toSlashCommand(
   command: ServerCommandSummary,
   getSessionId: () => string,
@@ -32,10 +42,10 @@ function toSlashCommand(
           body: JSON.stringify({ name: command.name, args }),
         })
         if (!res.ok) {
-          const body = await res.json().catch(() => ({})) as { error?: string }
+          const body = await res.json().catch(() => ({})) as ServerCommandErrorBody
           if (typeof globalThis.dispatchEvent === 'function') {
             globalThis.dispatchEvent(new CustomEvent(WORKSPACE_COMMAND_NOTIFY_EVENT, {
-              detail: { message: body.error ?? `/${command.name} failed`, tone: 'error', command: command.name },
+              detail: { message: serverCommandErrorMessage(body, `/${command.name} failed`), tone: 'error', command: command.name },
             }))
           }
         }

@@ -4,7 +4,7 @@ import type { AgentTool } from '../shared/tool'
 import { fileRoutes } from './http/routes/file'
 import { fsEventsRoutes } from './http/routes/fsEvents'
 import { treeRoutes } from './http/routes/tree'
-import { modelsRoutes } from './http/routes/models'
+import { modelsRoutes, type ModelsRoutesOptions } from './http/routes/models'
 import { skillsRoutes } from './http/routes/skills'
 import { piChatRoutes, type PiChatRoutesOptions } from './http/routes/piChat'
 import { systemPromptRoutes } from './http/routes/systemPrompt'
@@ -39,6 +39,7 @@ export interface AgentRouteBindingProfile {
   sessionChangesTracker: InMemorySessionChangesTracker
   health: HealthRouteOptions & { register?: boolean }
   chat: PiChatRoutesOptions
+  models?: ModelsRoutesOptions
   catalog: CatalogRoutesOptions
   readyStatus: ReadyStatusRouteOptions
   filesystem?: {
@@ -84,7 +85,7 @@ export async function registerAgentRouteBindingProfile(
 
   await app.register(piChatRoutes, profile.chat)
   if (profile.systemPrompt) await app.register(systemPromptRoutes, profile.systemPrompt)
-  await app.register(modelsRoutes)
+  await app.register(modelsRoutes, profile.models ?? {})
   if (profile.skills) await app.register(skillsRoutes, profile.skills)
   await app.register(sessionChangesRoutes, { tracker: profile.sessionChangesTracker })
   if (profile.reload) {

@@ -306,6 +306,26 @@ Each decision has four fields:
 
 ---
 
+## 19a. #391 ships a dedicated agent-factory v1 before platform expansion
+
+| Field | |
+|---|---|
+| **What** | Amend decision 19 without replacing its long-term direction. #391 ships incrementally. Release 0 is a bearer-authenticated managed-MCP tracer with bounded self-contained output. V1 compiles a minimal agent directory to a self-contained content-addressed bundle containing a versioned behavior-only `AgentDefinition` and immutable assets, combines it with a separately versioned tenant/runtime `AgentDeployment`, records definition/deployment/resolved-snapshot digests on sessions, and delivers the same bundle through one dedicated EU deployment path. Events, pending approvals, waiting state, and authenticated-subject-scoped caller receipts share one SQLite `agent.db`. Authority is calculated from provider facts and policy/grants; requirements only validate active authority. D1 uses a fenced crash-safe apply journal and is the sole v1 topology. P4, E2, X1/FUSE, P5 advanced services, P6 plugin/child-app expansion, P7, M2, D2, and S3/S4 are post-v1. |
+| **Why** | The prior plan could complete a large substrate while deferring the stated product goal of quickly authoring and shipping an agent. It also coupled reusable behavior to pricing/deployment/tenancy, split one approval transition across two SQLite files, mixed requirements into the authority algebra, and required speculative FUSE/control-plane work before a dedicated delivery path. |
+| **Rationale** | Two real consumers justify the small definition boundary immediately: local development and D1 deployment. A separate deployment object keeps reusable behavior portable. One SQLite transaction removes the event/pending-state crash window. Dedicated tenancy gives a strong isolation baseline without inventing a shared tenant authority. Later capabilities retain their plans but earn implementation through a concrete consumer and separate exit. |
+| **Re-evaluate when** | D1 has repeated enough to justify shared tenancy; a second host needs the full filesystem presentation bundle; a native-mount consumer proves X1; multi-instance load requires Postgres; or a durable waiting-turn journal is required for restart continuation. |
+
+---
+
+## 20. Company-admin front surface: single app-composed provider slot, no plugin self-registration
+
+| Field | |
+|---|---|
+| **What** | Core front exposes exactly one optional, declarative admin-surface slot: `CoreFront`'s `companyAdmin?: { loadStatus, renderContent, labels? }` prop, threaded through `CompanyAdminProvider`. The app composes it (e.g. full-app passes `createGovernanceCompanyAdmin()` from `@hachej/boring-governance/front`); plugins never register themselves into core front. With no provider configured — or a provider reporting `enabled !== true` / `admin !== true` — core renders **no trace** of the surface: no `UserMenu` entry, and the admin route navigates away. Core contains zero governance vocabulary (enforced by review grep: `grep -ri governance packages/core/src` must be empty). |
+| **Why** | Core must stay generic: it knows "an admin surface descriptor was provided", never which plugin provided it. App-side composition (props, not a registry) makes ordering and conflicts a non-problem — the app decides explicitly in readable code, matching how the server seams compose (`plugins`, `filterModels`, `metering`, `getFilesystemBindings` are also app-spread). The workspace-pane plugin system is not reused because admin surfaces are app-level routes gated on a different axis (company admin) than workspace panes (workspace membership); conflating the two lifecycles would be wrong. |
+| **Rationale** | v1 has exactly one consumer (boring-governance), so a multi-surface registry would be designed from a single example — the descriptor shape `{ loadStatus, renderContent, labels }` was instead made self-describing so pluralizing is mechanical. Designing a generic slot from one example risks wrong abstractions (composition order, deep-linking, per-section gating are unknowable without a second consumer). |
+| **Re-evaluate when** | A second plugin needs an admin/workspace-management surface. Planned evolution: `companyAdmin` becomes `adminSections: Section[]` (same descriptor shape, plus an `id` for deep-linking); the admin page hosts one tab per section whose `loadStatus` reports `admin: true`; app array order is authoritative for display order; still no dynamic registration. |
+
 ## Process
 
 1. Any PR that changes a locked decision **must** update this document.

@@ -97,7 +97,7 @@ function buildOpenAICompatibleProviderConfig(opts: {
 }): ProviderConfigInput {
   return {
     baseUrl: opts.baseUrl,
-    apiKey: opts.apiKeyEnv,
+    apiKey: `$${opts.apiKeyEnv}`,
     api: 'openai-completions',
     models: opts.models.map((model) => ({
       id: model.id,
@@ -242,7 +242,9 @@ function readPiSettingsDefaultModel(): AgentModelSelection | undefined {
   }
 }
 
-export function readConfiguredDefaultModel(): AgentModelSelection | undefined {
+export function readConfiguredDefaultModel(
+  options: { allowPiSettings?: boolean } = {},
+): AgentModelSelection | undefined {
   const encoded = clean(getEnv('BORING_AGENT_DEFAULT_MODEL'))
   if (encoded) {
     const idx = encoded.indexOf(':')
@@ -257,7 +259,7 @@ export function readConfiguredDefaultModel(): AgentModelSelection | undefined {
     return { provider: explicitProvider, id: explicitId }
   }
 
-  return readPiSettingsDefaultModel()
+  return (options.allowPiSettings === false ? undefined : readPiSettingsDefaultModel())
     ?? readInfomaniakProvider()?.defaultModel
     ?? readCustomProvider()?.defaultModel
 }

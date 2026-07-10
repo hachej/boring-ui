@@ -14,16 +14,20 @@ Detailed coding practices, workflow, architecture, and package docs live under `
 5. **Never push directly to remote `main`.** Use a branch/worktree unless the
    owner or Kanzen trunk procedure explicitly authorizes local-main work; keep
    local `main` green.
-6. **Do not overwrite other agents' work.** Investigate unexpected changes before editing.
-7. **Run relevant quality gates** before calling work done.
-8. **Session history is host app user data:** Pi chat transcripts/session lists
+6. **Keep the canonical project checkout on `main`.** The primary
+   `boring-ui-v2` checkout is the coordination anchor and should track
+   `origin/main`, not an agent feature branch. Agents must do coding in
+   isolated branch worktrees and leave the anchor clean/current for handoffs.
+7. **Do not overwrite other agents' work.** Investigate unexpected changes before editing.
+8. **Run relevant quality gates** before calling work done.
+9. **Session history is host app user data:** Pi chat transcripts/session lists
    are owned by the deployed core app host, not by the sandbox/workspace
    runtime. Store them on the host app's durable volume via
    `BORING_AGENT_SESSION_ROOT` (typically `/data/pi-sessions`), not in
    container home/root. If host-side `BORING_AGENT_WORKSPACE_ROOT=/data/workspaces`,
    keep the host session root as sibling `/data/pi-sessions` unless the user
    explicitly chooses another mounted volume.
-9. **Default communication style:** concise, direct, high-signal. Honor user
+10. **Default communication style:** concise, direct, high-signal. Honor user
    requests for `stop caveman`, `normal mode`, or any other explicit tone
    change.
 

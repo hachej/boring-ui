@@ -23,12 +23,17 @@ const PUBLISHABLE_PACKAGES = [
   "packages/core",
   "plugins/deck",
   "plugins/ask-user",
+  "plugins/diagram",
+  "plugins/tasks",
   "packages/cli",
   "plugins/data-explorer",
   "plugins/data-catalog",
   "plugins/generated-pane",
   "plugins/data-bridge",
   "plugins/bi-dashboard",
+  "packages/boring-sandbox",
+  "packages/boring-bash",
+  "plugins/boring-governance",
 ]
 
 const DEP_SECTIONS = [

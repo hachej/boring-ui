@@ -1,6 +1,7 @@
 # TODO-P7 — Multi-agent routing/session/search + agent inspection (the steering mechanism)
 
-Handoff: self-contained work order for one autonomous coding agent (pi or gpt-5.5-xhigh). Cite plan files by relative path. No prior conversation assumed.
+Coordinator: never assign this whole file. Dispatch one bead/PR with this
+file's context, dependencies, and non-negotiables included in the assignment.
 
 ## Context (read first)
 
@@ -13,17 +14,21 @@ Handoff: self-contained work order for one autonomous coding agent (pi or gpt-5.
 
 ### Depends on
 
-- **Phase 6a** (`AgentRegistry`): [`../../INDEX.md`](../../INDEX.md) Phase 7 scopes against the Phase 6a `AgentRegistry`. P7 depends specifically on **P6a** — the `AgentRegistry` (BBP6-003) and the workspace `agents: [...]` declaration — **not** on P6b's child-app scoping (which may still be HARD BLOCKED on the shared child-app platform type; that does not block P7). **Verified reality: `AgentRegistry` and `agentId` do not exist anywhere in `packages/agent/src` or `packages/workspace/src` today** (`grep -rn "AgentRegistry\|agentId"` → 0 matches). If P6a has not landed the `AgentRegistry` and the workspace `agents: [...]` declaration ([`../../architecture/05-multi-agent-sessions-hooks.md`](../../architecture/05-multi-agent-sessions-hooks.md) § "Workspace agent registry"), **STOP and report** — do not invent a competing registry here.
-- **T1** ([`../T1-durable-events/TODO.md`](../T1-durable-events/TODO.md)): the durable `EventStreamStore` (`events.db`), on-stream approvals, `state.db` pending-request table, `resolveInput`. The external-hook route (BBP7-006) and the info endpoint's channel/session facts read T1 state.
+- **P6-R** (`ResolvedAgentRegistry`): [`../../INDEX.md`](../../INDEX.md) Phase 7
+  scopes against the host-owned resolved registry from BBP6-011, not the P6-D
+  definition-version Map. P7 does not depend on P6b child-app scoping. If P6-R
+  lookup by validated deployment `agentId` has not landed, **STOP and report**;
+  do not invent a competing registry here.
+- **T1** supplies `agent.db`, on-stream approvals, pending requests, and `resolveInput`.
 - **T2** ([`../T2-transport/TODO.md`](../T2-transport/TODO.md)): `sessionId`-only public transport; the platform-addressing invariant guard. Surface `agentId` binding (BBP7-007) rides the two-handles boundary T2 formalized.
-- **E1** ([`../E1-environment-attachments/TODO.md`](../E1-environment-attachments/TODO.md)): `Environment`/`EnvironmentAttachment`/`ResolvedEnvironments` + the `resolveAttachments` reduction (E1 ships **no** `EnvironmentRegistry` class — the address-by-id Map is an E2 concern); the scope key already carries `agentId` in `filesystemRuntimeScopeKey` (E1 context: `humanUserId\0agentId\0sessionId\0workspaceId\0requestId`). BBP7-008 lands E1's deferred `BBE1-005` (`SubagentEnvironmentGrant` / `deriveSubagentAttachment`).
+- **E1** ([`../E1-environment-attachments/TODO.md`](../E1-environment-attachments/TODO.md)): `prepareAttachmentLifetime` returns methodless facts plus auth-gated contributions; every operation enters `AttachmentLifetimeOwner.withAuthorizedView`. Raw prepared handles never leave that callback. `AttachmentLifetimeKey` is canonically encoded from trusted storage/workspace/subject/agent/runtime/session identity and excludes request id. BBP7-008 lands E1's deferred `BBE1-005` (`SubagentEnvironmentGrant` / `deriveSubagentAttachment`) on that API.
 
 ### Current boring code this extends (verified paths)
 
 - `packages/agent/src/server/registerAgentRoutes.ts`:
   - `interface RuntimeScope { root; key; templatePath?; pi; sessionNamespace? }` (L130-136).
   - `resolveRuntimeScope()` (L395-425) builds `key = JSON.stringify([resolvedMode, workspaceId, root, scopedTemplatePath ?? null, pi, sessionNamespace ?? null, extraToolsAuthSubject ?? null])` (L415-423). **`agentId` is NOT in this array** — this is the exact `05` note "do not assume a preexisting single composite key has every field". The per-workspace `runtimeBindings` Map is keyed on `scope.key`; `earlySessionStores` too (L848). **This is the binding scope key P7 must extend with `agentId`.**
-  - `getRequestWorkspaceId(request)` (L143) reads `request.workspaceContext?.workspaceId` — the request-scope resolver a header/path `agentId` plugs into.
+  - `getRequestWorkspaceId(request)` (L143) reads `request.workspaceContext?.workspaceId` — the request-scope resolver that P7's **path** `agentId` resolver sits beside. There is no header form for `agentId`.
 - `sessionNamespace` seam (the transcript-isolation authority — `05` "session namespace includes agent id"): `createAgentApp.ts:71,212` → `registerAgentRoutes.ts` (`normalizeSessionNamespace` L172, `resolveRuntimeScope` L406-408) → `harness.ts:12` → `harness/pi-coding-agent/createHarness.ts:349,366` → `harness/pi-coding-agent/sessions.ts:93,113` (`PiSessionStore` → `sessionDirForNamespace(namespace, sessionRoot)`). Including `agentId` in `sessionNamespace` **physically** separates transcript dirs — the AGENTS.md rule (`05`: transcripts under host durable `BORING_AGENT_SESSION_ROOT`) stays intact.
 - `packages/agent/src/server/harness/pi-coding-agent/sessions.ts` — `PiSessionStore implements SessionStore`; `list(ctx: SessionCtx, options?: SessionListOptions)` (L122) lists `.jsonl` files in `sessionDir` sorted by mtime; **no content search, no `agentId` scope**. `SessionCtx { workspaceId, userId? }` (verified `__tests__/session.test-d.ts:17-18`). What exists today: only a **front-side** fuzzy/recent filter — `packages/agent/src/front/chat/session/piSessionSearch.ts` (`searchPiSessions`, `matchPiSessionSearch`, `parsePiSessionSearchQuery` over already-loaded `PiSessionSearchItem`s). It does NOT do server-side content search, redaction, or `agentId` scoping. The `#379` delta is a **server** search API (below), not a new UI.
 - `packages/agent/src/server/pi-chat/harnessPiChatService.ts` — `listSessions(ctx, options)` (L93) delegates to `sessionStore.list(toSessionCtx(ctx), options)`; `toSessionCtx(ctx)` (L681) maps the request context to `SessionCtx`.
@@ -36,28 +41,38 @@ Handoff: self-contained work order for one autonomous coding agent (pi or gpt-5.
 
 Make [`../../INDEX.md`](../../INDEX.md) Phase 7 + [`../../architecture/05-multi-agent-sessions-hooks.md`](../../architecture/05-multi-agent-sessions-hooks.md) § "Tests" checkable:
 
-1. Agent addressing resolves an `agentId` per request via the canonical `/api/v1/agents/:agentId/...` path-prefix family (**locked at pass 3 — no header alternative**; BBP7-002 records it) against the Phase 6 `AgentRegistry`; unknown/undeclared `agentId` fails closed.
-2. `agentId` is in the binding scope `key` for all agents and in `sessionNamespace` for non-default agents; the default agent's namespace stays byte-identical to pre-P7. `sessionId` remains runtime-owned and globally unique across agents; event-store/replay stays keyed by `sessionId` only. Two non-default agents in one workspace share no bindings, tool catalog, transcripts, readiness, or approvals; the collision test proves namespace/scope isolation, not per-agent event-store keys (`05` isolation test, updated by the T1/P7 ruling).
+1. Agent addressing resolves an `agentId` per request via the canonical `/api/v1/agents/:agentId/...` path-prefix family (**locked at pass 3 — no header alternative**; BBP7-002 records it) against the P6-R `ResolvedAgentRegistry`; unknown/undeclared `agentId` fails closed.
+2. Trusted structured scope contains workspace/tenant, `agentId`, and public
+   `sessionId`; UUID uniqueness is not authorization. Default JSONL namespace
+   compatibility remains an adapter concern.
 3. Per-agent tool catalog and per-agent readiness (reviewer readonly/no-exec while coding agent has bash; pure concierge has no boring-bash — `05` Tests).
-4. Session index/search scoped by `workspaceId` + `agentId` (+ title/content/operational events, redacted), no filesystem requirement, served from a derived `state.db` table (`#379`).
+4. Later P7 slice: redacted no-filesystem search from a derived `agent.db` table.
 5. External harness hook target resolution: authenticate caller, validate `(workspace, agent, session)`, redact, route to the HITL channel, audit attribution, no boring-bash dep (`#380` / `05`).
-6. `GET /api/v1/agents` returns a scrubbed declared-agent list sourced from the Phase 6a `AgentRegistry` / workspace declaration, and `GET /api/v1/agents/:agentId/info` returns `{ agentId, model, tools, readiness, channels, environments }` per listed id — public contracts, no private core hooks (the steering mechanism, `08`/`00`).
+6. `GET /api/v1/agents` returns a scrubbed list sourced from P6-R
+   `ResolvedAgentRegistry`, and `GET /api/v1/agents/:agentId/info` returns
+   `{ agentId, model, tools, readiness, channels, environments }` per listed id
+   — public contracts, no private core hooks (the steering mechanism, `08`/`00`).
 7. Surface adapters (workspace pane, Slack `conversationKey`, Excel workbook) each bind exactly one `agentId` per addressing entry (INDEX Phase 7 addition).
 8. First real subagent consumer: `SubagentEnvironmentGrant` / `deriveSubagentAttachment` (E1-deferred `BBE1-005`) lands, jailed by `agentId` scope + `scope.subpath`, minimal.
 9. **Two surfaces × two agents in one workspace do not collide by namespace/scope/metadata** (the Phase 7 exit test); no implementation relies on duplicate `sessionId` strings across agents.
 
 ## Non-negotiables
 
-- Scope against the Phase 6a `AgentRegistry` — do NOT build a second registry (`00` invariant 10; [`../P6-plugin-child-app/TODO.md`](../P6-plugin-child-app/TODO.md)).
-- `AgentRegistry` stays local/minimal for this epic. Do not reserve speculative remote-entry fields (`endpoint`, `auth`, remote client shape, delegation channel) until a remote-delegation bead lands with a real consumer. P7 resolves/scopes the Phase 6a local entries only.
+- Scope against P6-R `ResolvedAgentRegistry` — do NOT build a second registry
+  (`00` invariant 10; [`../P6-plugin-child-app/TODO.md`](../P6-plugin-child-app/TODO.md)).
+- `ResolvedAgentRegistry` stays local/minimal. Do not reserve speculative
+  remote-entry fields (`endpoint`, `auth`, remote client shape, delegation
+  channel) until a remote-delegation bead lands with a real consumer.
 - Extend the existing `RuntimeScope.key` array for all agents and `sessionNamespace` for non-default agents — do NOT assume a preexisting composite key already has `agentId` (`05` explicit warning). Legacy fields (root/template/pi/sessionNamespace) stay isolated where they already are, and the default agent keeps its pre-P7 `sessionNamespace` unchanged.
 - `/info` is a **public read contract** modeled on `models.ts`: cheap, safe unauthenticated at the same level `models` is, and it MUST NOT leak secrets, broker credentials, or provider key material (`00` invariant 14).
 - Two-handles rule (`08`/T2): public agent APIs stay `sessionId`-keyed; `agentId` is boring's own routing scope (like `workspaceId`/`SessionCtx`), NOT surface-native platform addressing — allowed on the façade/routes, subject to the same rule that surface-native identifiers are not. One addressing entry → one `agentId`; a surface never multiplexes agents on one continuation key.
-- `sessionId` is allocated by the runtime and globally unique across agents. `agentId` is recorded as session metadata and used for route validation/search/filtering, but it does not enter `sessionStreamPath`, pending-request keys, or replay/store signatures.
-- User is a principal/supervisor/approval channel, NOT a model-callable agent (`00` invariant 9; `05`). Do not add the human as an `AgentRegistry` entry.
+- `sessionId` is runtime-owned public identity. Store/cache access always checks
+  trusted structured scope including `agentId`; public id alone grants nothing.
+- User is a principal/supervisor/approval channel, NOT a model-callable agent (`00` invariant 9; `05`). Do not add the human as a `ResolvedAgentRegistry` entry.
 - Subagent grant is minimal (E1 BBE1-005 shape) — explicit attachment only, `execPolicy: 'none'` default, no cwd inheritance, no lifecycle framework. Abstraction is justified only because P7 is its **first real consumer** (`README.md` rule 3).
-- Session search has **no filesystem requirement** and redacts private/tool outputs (`05` Requirements). Query serving uses a derived `state.db` session index, not workspace files.
+- Session search has no filesystem requirement and uses a derived `agent.db` index.
 - `@hachej/boring-agent` keeps zero value imports from `@hachej/boring-bash`; `#380` hooks and search stay boring-bash-free (`05`).
+- **Amendment (2026-07-06) — run-context threading guardrail (475 watch-list):** the run-context threading via `createHarness.ts` AsyncLocalStorage is fragile — a run spawned without binding context silently loses identity (fails closed, but a debugging tax). Every new run-spawn path added in P7 (subagent runs, BBP7-008) MUST bind `BoundFilesystemContext` and MUST extend the #498 binding test suite with that path.
 
 ## Do NOT
 
@@ -77,9 +92,9 @@ Make [`../../INDEX.md`](../../INDEX.md) Phase 7 + [`../../architecture/05-multi-
 - **Tests**: `registerAgentRoutes.test.ts` — two **non-default** `agentId`s in one `workspaceId` produce distinct `scope.key` and distinct `:agent:`-suffixed `sessionNamespace`; the **default agent yields the pre-P7 namespace unchanged** (no `:agent:` suffix, no session-dir migration). **Explicit compat test:** seed a session-dir with a pre-P7 default-agent JSONL transcript, then load it through the P7 default-agent path and assert it resolves to the SAME `sessionDir` and the existing session loads unchanged (no migration, no new dir). Extend `createHarness.test.ts` namespace cases with an `agentId` axis (default vs non-default).
 - **Acceptance**: binding cache + session namespace include `agentId` (`05` Tests: "session namespace includes agent id", "binding cache includes agent id"); default-agent sessions load unchanged.
 
-### BBP7-002 — `agentId` request addressing against the Phase 6 `AgentRegistry` · size M
+### BBP7-002 — `agentId` request addressing against P6-R resolved registry · size M
 - **Title**: Resolve a validated `agentId` per request from the canonical `/api/v1/agents/:agentId` path prefix; fail closed on unknown agents.
-- **Files touch/create**: `packages/agent/src/server/registerAgentRoutes.ts` — add an `getAgentId(request)` resolver alongside `getRequestWorkspaceId` (L143): read the `/api/v1/agents/:agentId/...` path param (the locked route shape — **no header form**), validate it against the injected `AgentRegistry` (`agents` declared for the workspace). **There is NO absent-`agentId` fallback: `default` is an explicit path segment (`/api/v1/agents/default/...`) that resolves to the workspace's default agent; an absent/empty `:agentId` is an invalid route → 404, never silently mapped to the default.** Reject both an undeclared `agentId` and an absent `:agentId` with a stable `AGENT_NOT_FOUND`/invalid-route error (mirror `createHttpError`, `error-codes.ts`). Wire the resolved `agentId` into `resolveRuntimeScope` (BBP7-001).
+- **Files touch/create**: `packages/agent/src/server/registerAgentRoutes.ts` — add an `getAgentId(request)` resolver alongside `getRequestWorkspaceId` (L143): read the `/api/v1/agents/:agentId/...` path param (the locked route shape — **no header form**), validate it against injected `ResolvedAgentRegistry`. **There is NO absent-`agentId` fallback: `default` is an explicit path segment (`/api/v1/agents/default/...`) that resolves to the workspace's default agent; an absent/empty `:agentId` is an invalid route → 404, never silently mapped to the default.** Reject both an undeclared `agentId` and an absent `:agentId` with a stable `AGENT_NOT_FOUND`/invalid-route error (mirror `createHttpError`, `error-codes.ts`). Wire the resolved `agentId` into `resolveRuntimeScope` (BBP7-001).
 - **Notes (`00` open decision 4 — resolved/locked at pass 3; record it in the file header)**: the decision is already made — adopt **ONE canonical route family — the path prefix `/api/v1/agents/:agentId/...`** for all agent-**session** routes (explicit, cache-key-friendly, matches the `/info` endpoint and the eve `/eve/v1/*` analog). **No header/request-scope form exists.** **T1 owns and created this canonical family from day one, and T2 already deleted the legacy `…/pi-chat/:sessionId/*` routes** — so **P7 migrates no legacy route paths; it still adds `/info` and `/sessions/search` within the canonical family** (BBP7-005/004): nothing unprefixed is left to move and P7 introduces no bridge, but P7 does grow the already-canonical family with these two agent-session sub-paths. P7 **only adds** `agentId` resolution against the registry, scoping validation, and per-agent catalog/info on top of the already-canonical family (BBP7-003/005). Do not add a header form for any agent-scoped route. **Route-family scope (locked, `08` "Route-family scope"):** this family is agent-**session** routes ONLY (sessions, events/stream, prompt, input, interrupt, stop, pending-inputs, `/info`); file/environment routes (`/api/v1/files/*`, tree/search/fs-events/git) are workspace/environment-scoped and explicitly OUT of the family — `agentId` never prefixes a file route.
 - **Tests**: route test — a request for a declared `agentId` resolves + scopes; an undeclared one 404/`AGENT_NOT_FOUND`; the explicit `default` segment (`/api/v1/agents/default/...`) resolves to the workspace default agent; an **absent/empty** `:agentId` is an invalid route → 404 (NOT mapped to the default).
 - **Acceptance**: `05` "resolved child-app/default agent set can seed the agent registry before plugin/runtime policy uses it"; unknown agent fails closed; decision recorded.
@@ -87,20 +102,23 @@ Make [`../../INDEX.md`](../../INDEX.md) Phase 7 + [`../../architecture/05-multi-
 ### BBP7-003 — Per-agent tool catalog + per-agent readiness · size M
 - **Title**: One tool catalog and one `ReadyStatusTracker` per `(workspaceId, agentId)`.
 - **Files touch**: the per-scope tool assembly path in `registerAgentRoutes.ts` / `createAgentApp.ts` where `mergeTools`/`buildHarnessAgentTools`/`buildFilesystemAgentTools` are composed — key the catalog by the BBP7-001 scope so a reviewer (`bash: { fs: 'readonly', exec: false }`) and a coding agent (full bash) and a pure concierge (no bash attachment) each get a distinct catalog. Readiness: instantiate a `ReadyStatusTracker` per scope (`runtime/readyStatus.ts`) and resolve the agent's tracker from the BBP7-001 scope. **P7 adds NO agent-scoped `/ready-status` route** — per-agent readiness is served inside the existing `GET /api/v1/agents/:agentId/info` payload (BBP7-005). P7 is readiness *resolution-only*; the canonical agent-scoped route family is owned/created by T1/T2, not extended here. The existing non-agent-scoped `GET /api/v1/ready-status` SSE route stays as-is; do not add an agent-scoped `/ready-status` variant.
-- **Notes**: `provisioning is per (workspaceId, agentId, bashPlanFingerprint)` (`05`) — the scope key from BBP7-001 already yields this; verify `runRuntimeProvisioning` keys off `scope.key`. No readiness bleed across agents (`05` concurrency: "tool readiness bleed").
+- **Notes**: `provisioning is per (workspaceId, agentId, bashPlanFingerprint)` (`05`) — the scope key from BBP7-001 already yields this because `getOrCreateRuntimeBinding()` reads/writes `runtimeBindings` by `scope.key` (verified current code: `registerAgentRoutes.ts` L725-777). `runRuntimeProvisioning(workspaceId, scope, request)` is called from that binding creation path; do not add a separate provisioning cache key. No readiness bleed across agents (`05` concurrency: "tool readiness bleed").
 - **Tests**: `05` Tests — "per-agent tool catalog differs as expected"; "reviewer has readonly fs/no exec while coding agent has bash"; "pure concierge has no boring-bash"; two agents' readiness trackers report independently (each surfaced via its `GET /api/v1/agents/:agentId/info` payload per BBP7-005 — assert no agent-scoped `/ready-status` route is added).
 - **Acceptance**: catalog + readiness differ per agent with no cross-agent bleed.
 
 ### BBP7-004 — Session index/search scoped by workspace + agent (#379) · size L
-- **Title**: A derived `state.db` session index/search API independent of boring-bash, scoped by `workspaceId` + `agentId`, with title/content/operational-event search and redaction.
-- **Files create/touch**: `packages/agent/src/server/sessions/sessionIndex.ts` (new) — fold the event log into a derived `state.db` table keyed by `sessionId` with at least `(sessionId, agentId, workspaceId, originSurface, title, status, createdAt, updatedAt, lastEventAt)`; rebuildable from `events.db` plus host/session metadata, never an authority. `packages/agent/src/server/sessions/sessionSearch.ts` (new) — `searchSessions(ctx: SessionCtx & { agentId }, query: { text?; title?; limit?; offset?; includeId? }): Promise<SessionSearchResult[]>` over that derived table (and any attached FTS/derived content rows), redacting private/tool outputs before returning and carrying deep-link metadata (`#243`/`#211`). Extend `harnessPiChatService.listSessions` or add `searchSessions`; add route `GET /api/v1/agents/:agentId/sessions/search?q=&title=&limit=&offset=` plus the session-listing shape needed by `GET /api/v1/agents` consumers.
-- **Notes**: **no filesystem requirement** — query serving reads `state.db`, not workspace fs and not raw JSONL on the hot path. JSONL remains the conversation-state authority per T1 and can be used only for fold/rebuild/backfill. The derived table serves the existing `SessionList`, cross-surface Fleet queries, and `GET /api/v1/agents` session listings. Multi-project browse without loading every workspace (`05`): page/scope by `(workspaceId, agentId)`; do not enumerate all workspaces. Redaction is mandatory before any content leaves the store.
-- **Tests**: `sessionSearch.test.ts` — search scoped to agent A does not return agent B's sessions in the same workspace; content match finds a message substring; private/tool-output fields are redacted; `includeId` pins the target session (deep-link safety); unknown session resolves gracefully (`05` "resolving inaccessible/deleted sessions gracefully"). Rebuild test: drop/recreate the derived `state.db` session index from the event log and assert `SessionList`, Fleet query, and route results match the pre-rebuild view.
-- **Acceptance**: `05` Tests "session search scoped by workspace+agent"; `#379` parity + redaction + no-fs; session index/search is a rebuildable `state.db` derivative, not a replay authority.
+- **Title**: A derived `agent.db` session index/search API independent of boring-bash, scoped by trusted workspace + agent context.
+- **Files create/touch**: fold the `agent.db` event tables into a derived session
+  index keyed by trusted structured scope; search redacts private/tool output and
+  carries deep-link metadata. The index is rebuildable and never authority.
+- **Notes**: no filesystem requirement; query serving reads derived `agent.db`
+  tables, not workspace files or raw JSONL on the hot path.
+- **Tests**: agent A cannot return agent B; redaction and deep links work; drop/rebuild the derived index from `agent.db` events and compare results.
+- **Acceptance**: scoped, redacted, no-fs search over a rebuildable `agent.db` derivative.
 
 ### BBP7-005 — Agent list + inspection endpoints (the steering mechanism) · size M
 - **Title**: Public agent-list and per-agent info endpoints — list declared agents, then inspect one agent's model/tools/readiness/channels/environments — modeled on `models.ts`.
-- **Files create/touch**: `packages/agent/src/server/http/routes/agentInfo.ts` (new) — `GET /api/v1/agents` and `GET /api/v1/agents/:agentId/info`. The list route is the public, checkable source for Fleet's agent ids: return a scrubbed `{ defaultAgentId, agents: [{ agentId, label? }] }` payload sourced from the Phase 6a `AgentRegistry` plus the workspace `agents: [...]` declaration; no tool/env/readiness details in the list. The info route composes from public sources already wired: model selection (`models.ts` / `modelConfig`), the per-agent tool catalog names (BBP7-003), readiness snapshot (`ReadyStatusTracker.getReadiness()`), declared channels (from the `AgentRegistry` entry / surface bindings BBP7-007), and attached environments (`ResolvedEnvironments` filesystem ids + access + exec policy — type-only shape from E1, never handles). Register beside `modelsRoutes` in `createAgentApp`.
+- **Files create/touch**: `packages/agent/src/server/http/routes/agentInfo.ts` (new) — `GET /api/v1/agents` and `GET /api/v1/agents/:agentId/info`. The list route is the public, checkable source for Fleet's agent ids: return a scrubbed `{ defaultAgentId, agents: [{ agentId, label? }] }` payload sourced from P6-R `ResolvedAgentRegistry`; no tool/env/readiness details in the list. The info route composes from public sources already wired: model selection (`models.ts` / `modelConfig`), the per-agent tool catalog names (BBP7-003), readiness snapshot (`ReadyStatusTracker.getReadiness()`), declared channels (from the resolved entry / surface bindings BBP7-007), and attached environments (`ResolvedEnvironment` facts: filesystem ids, access, accepts-input-assets, tools/provider labels — type-only shape from E1, never handles or methods). Register beside `modelsRoutes` in `createAgentApp`.
 - **Notes**: Info shape (stable public contract, eve `/eve/v1/info` analog):
   ```jsonc
   { "agentId": "coding",
@@ -116,7 +134,7 @@ Make [`../../INDEX.md`](../../INDEX.md) Phase 7 + [`../../architecture/05-multi-
 
 ### BBP7-006 — External harness hook target resolution (#380) · size M
 - **Title**: Resolve `(workspace, agent, session)` for an external review/question/approval hook; authenticate, validate, redact, route to the HITL channel, audit.
-- **Files create**: `packages/agent/src/server/hooks/externalHookTarget.ts` (new) — the external-hook **request/callback/redaction contract** `ExternalAgentHookRequest { source{ harnessId, agentId?, workspaceId?, sessionId?, provider? }; kind: 'review'|'question'|'approval'; body; redactionPolicy?; callback?{ url; authRef? } }` **and** `resolveHookTarget({ authCaller, workspaceId, agentId, sessionId }): Promise<{ ctx; agentId; sessionId } | { rejected, reason }>`: authenticate the caller (host auth seam), validate the workspace/agent (`AgentRegistry`) and session (exists + belongs to that agent scope), reject cross-agent/cross-workspace targets. Route the hook onto the **single approval channel** (T1 on-stream request/`resolveInput`) — an external question becomes a `data-approval-request` on that session's stream; no second channel. Redact before writing to history; record audit attribution (caller id).
+- **Files create**: `packages/agent/src/server/hooks/externalHookTarget.ts` (new) — the external-hook **request/callback/redaction contract** `ExternalAgentHookRequest { source{ harnessId, agentId?, workspaceId?, sessionId?, provider? }; kind: 'review'|'question'|'approval'; body; redactionPolicy?; callback?{ url; authRef? } }` **and** `resolveHookTarget({ authCaller, workspaceId, agentId, sessionId }): Promise<{ ctx; agentId; sessionId } | { rejected, reason }>`: authenticate the caller (host auth seam), validate the workspace/agent (`ResolvedAgentRegistry`) and session (exists + belongs to that agent scope), reject cross-agent/cross-workspace targets. Route the hook onto the **single approval channel** (T1 on-stream request/`resolveInput`) — an external question becomes a `data-approval-request` on that session's stream; no second channel. Redact before writing to history; record audit attribution (caller id).
 - **Notes**: boring-bash-free (`05` Requirements: "no boring-bash dependency"). This is target *resolution + routing onto T1*, not a new approval mechanism (`00` invariant 13 — one approval channel). The external-hook contract itself is **P7 scope** — it was **moved out of Phase 1 in pass-4** (it depends on the T1 durable approval channel, so it cannot land before durable approvals); `01-agent-core-runtime-free.md` now de-scopes it from P1 and points here. This bead **owns** the request/callback/redaction contract shape (above) plus the multi-agent routing/validation (`05` § "External harness review/question hooks").
 - **Tests**: `externalHookTarget.test.ts` — a valid caller/workspace/agent/session resolves and emits a request on that session's stream; a foreign agent/session or unauthenticated caller rejects; the written history entry is redacted; audit attribution recorded.
 - **Acceptance**: `05` Tests "external hooks authenticate/redact/route"; routes onto the single T1 approval channel; no boring-bash import.
@@ -130,17 +148,19 @@ Make [`../../INDEX.md`](../../INDEX.md) Phase 7 + [`../../architecture/05-multi-
 
 ### BBP7-008 — Subagent environment grant (first real consumer; lands E1 BBE1-005) · size S
 - **Title**: `SubagentEnvironmentGrant` + `deriveSubagentAttachment` — explicit attachment, jailed by `agentId` + `scope.subpath`.
-- **Files create/touch**: `packages/boring-bash/src/shared/environment.ts` — add `SubagentEnvironmentGrant { parentEnvironmentId: string; scope?: { subpath?: string }; access: FilesystemAccess }` (E1-deferred shape). `packages/boring-bash/src/server/deriveSubagentAttachment.ts` — add the pure function `deriveSubagentAttachment(parent: EnvironmentAttachment, grant: SubagentEnvironmentGrant): EnvironmentAttachment` (reuses parent `environmentId`/`filesystem`, adds `scope.subpath` for a jailed view, `execPolicy: 'none'` default, never copies a cwd). **This is a pure helper — no registry object, no lifecycle, no state** (the address-by-id Map is an E2 concern; this file adds only the reduction function). Export from the server barrel. The subagent runs under a distinct `agentId`, so the scope key (BBP7-001 + E1 `filesystemRuntimeScopeKey`) gives it an isolated prepared plan automatically.
+- **Files create/touch**: `packages/boring-bash/src/shared/environment.ts` — add `SubagentEnvironmentGrant { parentEnvironmentId: string; scope?: { subpath?: string }; access: FilesystemAccess }` (E1-deferred shape). `packages/boring-bash/src/server/deriveSubagentAttachment.ts` — add the pure function `deriveSubagentAttachment(parent: EnvironmentAttachment, grant: SubagentEnvironmentGrant): EnvironmentAttachment` (reuses parent `environmentId`/`filesystem`, adds `scope.subpath` for a jailed view, `execPolicy: 'none'` default, never copies a cwd). **This is a pure helper — no registry object, no lifecycle, no state.** Export from the server barrel. The host prepares a distinct child `AttachmentLifetimeKey` containing the subagent `agentId`; consumers receive only child facts/contributions and each operation reauthorizes through `withAuthorizedView`.
 - **Notes**: Minimal (`README.md` rule 3) — this is the first real subagent consumer, so the abstraction is now justified. No harness spawn plumbing beyond the grant + reduction; if the Phase 6/7 subagent/task tool is the caller, wire it to `deriveSubagentAttachment` and stop. Do NOT build a delegation-depth engine here beyond honoring the cap contract (`05`).
-- **Tests**: `packages/boring-bash/src/server/__tests__/subagentAttachment.test.ts` (the E1 BBE1-005 test, now scheduled) — derive a scoped-view grant from a parent, resolve for a subagent `ctx` (different `agentId`), assert it reads only within the subpath and shares no prepared handle with the parent.
+- **Tests**: `packages/boring-bash/src/server/__tests__/subagentAttachment.test.ts` (the E1 BBE1-005 test, now scheduled) — derive a scoped-view grant from a parent, prepare under a distinct child lifetime, assert authorized child operations read only within the subpath; foreign/parent request context rejects; no raw handle is returned or capturable and an expired callback lease rejects.
 - **Acceptance**: E1 deferred acceptance — "subagent scoped-view attachment resolves and is isolated by `agentId`"; no cwd inheritance.
 
 ### BBP7-009 — Two surfaces × two agents no-collision integration test (Phase 7 exit) · size M
 - **Title**: The Phase 7 exit criterion as an executable test.
-  - **Files create**: `packages/agent/src/server/__tests__/multiAgentIsolation.integration.test.ts` (new) — one workspace declaring two agents (`coding` full bash, `reviewer` readonly/no-exec), driven through **two surfaces** (e.g. in-process transport + HTTP/fastify-inject) with runtime-allocated globally unique `sessionId`s. Assert: distinct bindings, distinct tool catalogs, distinct transcripts (different session namespaces), distinct readiness; an approval on agent A's session is not answerable via agent B's scope; the event store and pending requests remain keyed by `sessionId` only; the `/info` endpoint reports each agent correctly.
-  - **Notes**: This is [`../../architecture/05-multi-agent-sessions-hooks.md`](../../architecture/05-multi-agent-sessions-hooks.md) "Isolation test" + [`../../INDEX.md`](../../INDEX.md) Phase 7 exit ("two surfaces bound to two agents in one workspace do not collide"), updated by the orchestrator ruling: a same-string collision fixture, if used at all, is only a namespace/scoping stress test for JSONL/sessionNamespace and binding caches, never a requirement to support duplicate event-store `sessionId` keys. Reuse the T2 interleaved-transport harness (`server/transport/__tests__/interleaved.test.ts`) as the two-surface driver.
+  - **Files create**: `packages/agent/src/server/__tests__/multiAgentIsolation.integration.test.ts` (new) — one workspace declaring two agents (`coding` full bash, `reviewer` readonly/no-exec), driven through **two surfaces** (e.g. in-process transport + HTTP/fastify-inject). Assert distinct bindings, catalogs, transcripts, readiness; an approval on A is not answerable through B. Public calls use runtime-owned `sessionId`, while event/pending/receipt storage resolves the authenticated server-only `SessionKey`; include imported/restored same-string ids under different subject/agent scopes and prove no collision/access.
+  - **Notes**: This is [`../../architecture/05-multi-agent-sessions-hooks.md`](../../architecture/05-multi-agent-sessions-hooks.md) "Isolation test" + [`../../INDEX.md`](../../INDEX.md) Phase 7 exit. UUID global uniqueness is a generation invariant, not an authorization/storage-key assumption. Reuse the T2 interleaved-transport harness.
 - **Tests**: the file is the test.
-- **Acceptance**: two agents/two surfaces never cross-contaminate bindings/catalog/transcript/readiness/approvals; `sessionId` remains globally unique and store/replay remains keyed by `sessionId` only.
+- **Acceptance**: two agents/two surfaces never cross-contaminate bindings/
+  catalog/transcript/readiness/approvals; APIs remain `sessionId`-shaped and all
+  internal store/replay resolution remains separated by trusted structured key.
 
 ## Verification — exact commands verified against package.json scripts
 
@@ -156,7 +176,7 @@ pnpm --filter @hachej/boring-bash run test
 pnpm --filter @hachej/boring-bash run typecheck
 pnpm --filter @hachej/boring-bash run check:invariants
 
-# workspace (surface binding / AgentRegistry consumers)
+# workspace (surface binding / ResolvedAgentRegistry consumers)
 pnpm --filter @hachej/boring-workspace run typecheck
 pnpm --filter @hachej/boring-workspace run test
 
@@ -169,9 +189,23 @@ pnpm typecheck              # build:packages then per-pkg typecheck
 #   Rebuild dist before driving the playground (see run-workspace-playground recipe).
 ```
 
+## PR-PLAN reconciliation
+
+Matches [`../../PR-PLAN.md`](../../PR-PLAN.md) P7 rows exactly:
+
+- `pr1-agentid-scope-namespace` → BBP7-001.
+- `pr2-agentid-addressing` → BBP7-002.
+- `pr3-per-agent-catalog-readiness` → BBP7-003.
+- `pr4-session-search` → BBP7-004.
+- `pr5-agent-info-endpoint` → BBP7-005.
+- `pr6-external-hook-target` → BBP7-006.
+- `pr7-surface-agent-binding` → BBP7-007.
+- `pr8-subagent-grant` → BBP7-008 (may combine with pr7 only if the PR-PLAN budget still holds).
+- `pr9-two-surface-isolation` → BBP7-009.
+
 ## Review gates
 
-- Phase 6 `AgentRegistry` present and scoped against (not a competing registry), else STOP+report.
+- P6-R `ResolvedAgentRegistry` present and scoped against (not a competing registry), else STOP+report.
 - `agentId` in the `RuntimeScope.key` array for all agents; `sessionNamespace` carries `agentId` only for non-default agents; default-agent sessions load unchanged (on-disk JSONL compat).
 - Per-agent tool catalog + readiness with zero cross-agent bleed (`05` Tests reproduced).
 - Session search scoped by `workspace+agent`, no fs requirement, redaction enforced.

@@ -171,7 +171,7 @@ export class HarnessPiChatService implements PiChatSessionService {
       return {
         protocolVersion: 1,
         sessionId: id,
-        seq: await this.readDurableLatestPiChatSeq(sessionStreamPath(id)),
+        seq: await this.readDurableLatestPiChatSeq(sessionStreamPath(this.sessionKey(ctx, id))),
         status: 'idle',
         messages: buildPiChatHistory(messages, { sessionId: id }),
         queue: { followUps: [] },
@@ -204,11 +204,13 @@ export class HarnessPiChatService implements PiChatSessionService {
     const outcome = (await this.metering?.reservePrompt({
       workspaceId: ctx.workspaceId,
       userId: ctx.authSubject,
+      userEmail: ctx.authEmail,
+      userEmailVerified: ctx.authEmailVerified,
       sessionId,
       stateKey: sessionKey,
       clientNonce: payload.clientNonce,
       message: payload.message,
-      model: payload.model,
+      model: adapter.currentModel?.() ?? payload.model,
     })) ?? 'created'
     if (outcome === 'duplicate') {
       return {
@@ -254,11 +256,14 @@ export class HarnessPiChatService implements PiChatSessionService {
     const outcome = (await this.metering?.reserveFollowUp({
       workspaceId: ctx.workspaceId,
       userId: ctx.authSubject,
+      userEmail: ctx.authEmail,
+      userEmailVerified: ctx.authEmailVerified,
       sessionId,
       stateKey: sessionKey,
       clientNonce: payload.clientNonce,
       clientSeq: payload.clientSeq,
       message: payload.message,
+      model: adapter.currentModel?.(),
     })) ?? 'created'
     if (outcome === 'duplicate') {
       return {
@@ -379,17 +384,33 @@ export class HarnessPiChatService implements PiChatSessionService {
       throw new AutoPostFollowUpError('Cannot auto-post queued follow-up because this runtime cannot safely remove only the consumed queued item.')
     }
     // Fallback re-posts the follow-up as a plain prompt; no followup-consumed
-    // event will fire, so hand its reservation to the next agent-start.
+    // event will fire, so remove it from Pi's native follow-up queue before
+    // prompting. Pi 0.80 drains native follow-ups during prompt/continue, so
+    // clearing after the repost would duplicate the queued user turn.
+    this.clearAutoPostedFollowUpForFallback(sessionId, sessionKey, adapter, followUp)
     this.metering?.promoteQueuedToPrompt(sessionKey, followUp)
     try {
       await this.runPrompt(sessionKey, adapter, metadata?.serverText ?? followUp.displayText)
     } catch (err) {
       // The repost rejected before agent-start; release the promoted hold so
-      // it doesn't strand in pendingPrompts and misattribute later usage.
+      // it doesn't strand in pendingPrompts and misattribute later usage, then
+      // restore the queue item because fallback reposting never consumed it.
       this.metering?.failPromotedFollowUp(sessionId, followUp, sessionKey)
+      await adapter.followUp(metadata?.serverText ?? followUp.displayText, {
+        displayText: followUp.displayText,
+        clientNonce: followUp.clientNonce,
+        clientSeq: followUp.clientSeq,
+      })
+      if (followUp.clientNonce && followUp.clientSeq !== undefined) {
+        this.messageMetadata.recordFollowUp(sessionKey, {
+          message: metadata?.serverText ?? followUp.displayText,
+          displayMessage: followUp.displayText,
+          clientNonce: followUp.clientNonce,
+          clientSeq: followUp.clientSeq,
+        })
+      }
       throw err
     }
-    this.clearAutoPostedFollowUpForFallback(sessionId, sessionKey, adapter, followUp)
   }
 
   private async runPrompt(sessionKey: string, adapter: PiAgentSessionAdapter, input: PiAgentPromptInput): Promise<void> {
@@ -411,12 +432,12 @@ export class HarnessPiChatService implements PiChatSessionService {
     adapter: PiAgentSessionAdapter,
     followUp: QueuedUserMessage,
   ): boolean {
-    if (hasFollowUpSelector(followUp)) {
-      adapter.clearFollowUp(followUpSelector(followUp))
-      return true
-    }
     if (adapter.readSnapshot().followUpMessages.length <= 1) {
       this.clearAllFollowUps(adapter, sessionId, sessionKey)
+      return true
+    }
+    if (hasFollowUpSelector(followUp)) {
+      adapter.clearFollowUp(followUpSelector(followUp))
       return true
     }
     return false
@@ -460,7 +481,7 @@ export class HarnessPiChatService implements PiChatSessionService {
       for (const event of events) {
         const enriched = this.messageMetadata.enrichEvent(channel.sessionKey, event)
         publishedEvents.push(enriched)
-        await this.eventStore?.appendAgentEvent(sessionId, enriched, { idempotencyKey: String(enriched.seq) })
+        await this.eventStore?.appendAgentEvent(sessionId, enriched, { idempotencyKey: String(enriched.seq), streamPath: channel.streamPath })
         this.publishChannelEventSync(channel, enriched)
       }
       afterPublish?.(publishedEvents)
@@ -570,7 +591,10 @@ export class HarnessPiChatService implements PiChatSessionService {
       abortSignal: new AbortController().signal,
       workdir: this.workdir,
       workspaceId: ctx.workspaceId,
+      requestId: ctx.requestId,
       userId: ctx.authSubject,
+      userEmail: ctx.authEmail,
+      userEmailVerified: ctx.authEmailVerified,
     })
   }
 
@@ -617,7 +641,7 @@ export class HarnessPiChatService implements PiChatSessionService {
   private async buildChannel(sessionKey: string, sessionId: string, adapter: PiAgentSessionAdapter): Promise<LiveSessionChannel> {
     const existing = this.channels.get(sessionKey)
     if (existing) return existing
-    const streamPath = sessionStreamPath(sessionId)
+    const streamPath = sessionStreamPath(sessionKey)
     await this.eventStore?.createStream(streamPath)
     const initialSeq = await this.readDurableLatestPiChatSeq(streamPath)
     const buffer = new PiChatReplayBuffer({ initialLatestSeq: initialSeq })

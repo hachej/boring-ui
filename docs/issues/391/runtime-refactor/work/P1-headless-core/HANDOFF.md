@@ -1,11 +1,5 @@
 # P1-headless-core — Handoff checklist
 
-## Implementation status (2026-07-08)
-
-BBP1-001/002/003 are merged on `main` (#523/#529/#530, relanded by #537).
-BBP1-004/005/006 are implemented and in review as #543/#545/#547 (this stack).
-This pack text is authoritative as of this branch.
-
 Derived strictly from [TODO.md](./TODO.md) and [PLAN.md](./PLAN.md). Tick each before calling this package done. Invent nothing.
 
 ## Prerequisites (packages + gates)
@@ -13,12 +7,14 @@ Derived strictly from [TODO.md](./TODO.md) and [PLAN.md](./PLAN.md). Tick each b
 - [ ] #391 points to the v2 pack and BBP0-001..005 are merged (no P1 bead starts before this — per P0 review gate)
 
 ## Beads
-- [x] BBP1-001 — Config-surface inventory: enumerate every env/cwd/file-discovery read in agent server code
-- [x] BBP1-002 — `createAgent()` façade (Fastify-free)
-- [x] BBP1-003 — Make `createAgentApp()` + `registerAgentRoutes()` thin adapters
-- [x] BBP1-004 — `runtime: 'none'` pure path + `sessionStorageRoot` separation
-- [x] BBP1-005 — pi-coding-agent cwd/resource assumption audit → findings + seals
-- [x] BBP1-006 — Invariant + smoke tests
+- [ ] BBP1-001 — Config-surface inventory: enumerate every env/cwd/file-discovery read in agent server code
+- [ ] BBP1-002 — `createAgent()` façade (Fastify-free)
+- [ ] BBP1-003 — Make `createAgentApp()` + `registerAgentRoutes()` thin adapters
+- [ ] BBP1-004 — `runtime: 'none'` pure path + `sessionStorageRoot` separation
+- [ ] BBP1-005 — pi-coding-agent cwd/resource assumption audit → findings + seals
+- [ ] BBP1-006 — Invariant + smoke tests
+- [ ] BBP1-007 — Minimal `ResolvedAgentCapabilities` projection
+- [ ] BBP1-008 — Admission, idempotency, attribution, catalog, and lifecycle closeout
 
 ## Verification commands
 - [ ] `pnpm --filter @hachej/boring-agent run build`
@@ -36,16 +32,22 @@ Derived strictly from [TODO.md](./TODO.md) and [PLAN.md](./PLAN.md). Tick each b
 - [ ] BBP1-005's pi-harness audit findings are reviewed and the "sealed pi, not second harness" decision confirmed **before** the pure-mode exit criteria are claimed (BBP1-004 depends on BBP1-005's seals).
 - [ ] Behavior-parity gate: reviewer confirms the existing agent unit + e2e suites pass unchanged, and no existing route was added/removed for `direct`/`local`/`vercel-sandbox` modes.
 - [ ] The Fastify-graph invariant (BBP1-006) actually fails when a `fastify` import is introduced into the façade closure — reviewer verifies the negative case.
-- [ ] Track T1 does not start until BBP1-002..006 are merged (T1 depends on the stub seams landing here).
+- [ ] Track T1 does not start until BBP1-002..007 are merged (T1 depends on the stub seams landing here).
+- [ ] T1/T2 and multi-surface work do not proceed until BBP1-008 is merged.
 
 ## Exit criteria
 - [ ] `createAgent()` exported from `@hachej/boring-agent/core` returning the nine members; `start` (accepted-receipt write), `stream` (replay+live-tail read with documented non-durable in-memory `eventIndex` counter until T1), `send` (convenience), `interrupt`/`stop` real, `resolveInput`/historical-`stream` typed stubs.
 - [ ] `createAgentApp()`/`registerAgentRoutes()` are adapters over `createAgent()`; all current HTTP consumers behave identically (cli hub, workspace, core, agent-playground e2e).
 - [ ] Typed config object only: no `process.env` / `process.cwd()` / `.pi/*` / `workspaces.yaml` reads inside `createAgent()`.
-- [ ] A pure agent starts via `createAgent({ runtime: 'none' })` in a plain Node script with no Fastify, no workspace/sandbox/cwd/file routes/bash tools.
+- [ ] A pure agent starts via `createAgent()` with no runtime/environment attachment in a plain Node script with no Fastify, no workspace/sandbox/cwd/file routes/bash tools; existing `runtime: 'none'` remains an adapter/host shim input during migration.
 - [ ] `sessionStorageRoot` is separated from workspace roots.
+- [ ] Minimal `ResolvedAgentCapabilities` projection exists for pure mode and coarse existing coding modes.
+- [ ] `start()` is the single per-session admission gate; request retries are
+      idempotent within trusted admission scope + authenticated subject and
+      isolated across subjects; actor/origin survive; duplicate tools fail.
+- [ ] Agent-local and host-global lifecycle ownership are separate; every cache is bounded and disposed by its owner.
 - [ ] pi-coding-agent cwd/resource assumptions audited; findings doc + follow-up seals produced.
-- [ ] Invariant tests: no agent value import from boring-bash; no Fastify in the façade module graph; smoke test `createAgent({ runtime: 'none' })` runs a turn with a fake harness in plain Node.
+- [ ] Invariant tests: no agent value import from boring-bash; no Fastify in the façade module graph; smoke test `createAgent()` with no runtime/environment attachment runs a turn with a fake harness in plain Node.
 
 ## Closeout
 - [ ] Zero unowned `TODO(remove:*)` markers for this phase

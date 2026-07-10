@@ -1,10 +1,10 @@
 {
   "name": "@hachej/boring-ask-user",
-  "version": "0.1.64",
+  "version": "0.1.75",
   "type": "module",
   "private": false,
   "license": "MIT",
-  "description": "Ask-user plugin for Boring workspace \u2014 surfaces agent questions to the user and streams answers back.",
+  "description": "Ask-user plugin for Boring workspace — surfaces agent questions to the user and streams answers back.",
   "repository": {
     "type": "git",
     "url": "https://github.com/hachej/boring-ui"
@@ -51,7 +51,7 @@
   },
   "peerDependencies": {
     "@hachej/boring-workspace": "workspace:*",
-    "fastify": "^5.3.3",
+    "fastify": "^5.9.0",
     "react": "^18.0.0 || ^19.0.0",
     "react-dom": "^18.0.0 || ^19.0.0"
   },
@@ -68,12 +68,12 @@
     "@types/react": "^19.2.17",
     "@types/react-dom": "^19.0.0",
     "@vitejs/plugin-react": "^4.0.0",
-    "fastify": "^5.3.3",
+    "fastify": "^5.9.0",
     "jsdom": "^29.1.1",
     "react": "^19.2.7",
     "react-dom": "^19.2.7",
     "tsup": "^8.4.0",
-    "typescript": "~5.9.3",
+    "typescript": "~6.0.3",
     "vitest": "^4.1.9"
   },
   "peerDependenciesMeta": {

@@ -12,6 +12,7 @@ Use it as a fast triage map, then jump into the canonical package docs.
 - Vercel sandbox mode works locally but not in the deployed full app
 
 **Look here first**
+- `docs/FIXES.md` for recent production/runtime fix entries
 - `apps/full-app/README.md`
 - `packages/core/docs/DEPLOYMENT_WORKFLOW.md`
 
@@ -19,6 +20,7 @@ Use it as a fast triage map, then jump into the canonical package docs.
 - Today, `apps/full-app/fly.toml` runs `migrate.js` as the release command.
 - `release.js` and deployment snapshots are target-shape docs unless a specific app has wired them.
 - Fly uses `BORING_AGENT_MODE=vercel-sandbox` and `BORING_AGENT_WORKSPACE_ROOT=/data/workspaces`; Vercel sandbox credentials still need to be configured as secrets.
+- Pi chat transcripts still live on the Fly host volume at `BORING_AGENT_SESSION_ROOT` (normally `/data/pi-sessions`), even in `vercel-sandbox` mode. If you see `EACCES mkdir /data/pi-sessions/...`, check the fix ledger entry for mounted-volume ownership repair.
 - Post-deploy validation runs through `pnpm --filter full-app smoke:post-deploy` with `DEPLOY_URL` and `SMOKE_*` vars.
 
 ## 1. Workspace never finishes booting

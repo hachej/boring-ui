@@ -18,7 +18,7 @@
  * Safe to call unauthenticated — we only report {provider, id, label,
  * available}, never any key material.
  */
-import type { FastifyInstance } from 'fastify'
+import type { FastifyInstance, FastifyRequest } from 'fastify'
 import { AuthStorage, ModelRegistry } from '@mariozechner/pi-coding-agent'
 import {
   readConfiguredDefaultModel,
@@ -38,9 +38,29 @@ export interface ModelsResponse {
   defaultModel?: AgentModelSelection
 }
 
+export interface ModelFilterContext {
+  request: FastifyRequest
+  workspaceId?: string
+}
+
+export type ModelFilterResult = {
+  models: readonly ModelSummary[]
+  defaultModel?: AgentModelSelection
+}
+
+export interface ModelsRoutesOptions {
+  /** Allow Pi's process-cwd/global settings fallback. Disable for pure profiles. */
+  allowPiSettingsDefaultModel?: boolean
+  filterModels?: (
+    ctx: ModelFilterContext,
+    models: readonly ModelSummary[],
+    defaultModel: AgentModelSelection | undefined,
+  ) => ModelFilterResult | Promise<ModelFilterResult>
+}
+
 export function modelsRoutes(
   app: FastifyInstance,
-  _opts: unknown,
+  opts: ModelsRoutesOptions,
   done: (err?: Error) => void,
 ): void {
   // Build one registry per process — reads env + ~/.pi/agent/auth.json.
@@ -51,7 +71,7 @@ export function modelsRoutes(
   const configuredModelSet = new Set(
     configuredModels.map((model) => `${model.provider}:${model.id}`),
   )
-  app.get('/api/v1/agent/models', async (_request, reply) => {
+  app.get('/api/v1/agent/models', async (request, reply) => {
     const availableModels = registry.getAvailable()
     const availableSet = new Set(
       availableModels.map((m) => `${m.provider}:${m.id}`),
@@ -76,14 +96,29 @@ export function modelsRoutes(
       if (a.provider !== b.provider) return a.provider.localeCompare(b.provider)
       return a.id.localeCompare(b.id)
     })
-    const configuredDefaultModel = readConfiguredDefaultModel()
+    const configuredDefaultModel = readConfiguredDefaultModel({
+      allowPiSettings: opts.allowPiSettingsDefaultModel !== false,
+    })
     const defaultModel = configuredDefaultModel
       && models.some((m) => m.available && m.provider === configuredDefaultModel.provider && m.id === configuredDefaultModel.id)
       ? configuredDefaultModel
       : undefined
-    const payload: ModelsResponse = defaultModel
-      ? { models, defaultModel: { provider: defaultModel.provider, id: defaultModel.id } }
-      : { models }
+    const filtered = opts.filterModels
+      ? await opts.filterModels(
+        { request, workspaceId: request.workspaceContext?.workspaceId },
+        models.map((model) => ({ ...model })),
+        defaultModel ? { provider: defaultModel.provider, id: defaultModel.id } : undefined,
+      )
+      : { models, defaultModel }
+    const responseModels = filtered.models.map((model) => ({ ...model }))
+    const fallbackDefault = responseModels.find((model) => model.available)
+    const responseDefault = filtered.defaultModel
+      && responseModels.some((m) => m.available && m.provider === filtered.defaultModel?.provider && m.id === filtered.defaultModel.id)
+      ? { provider: filtered.defaultModel.provider, id: filtered.defaultModel.id }
+      : fallbackDefault ? { provider: fallbackDefault.provider, id: fallbackDefault.id } : undefined
+    const payload: ModelsResponse = responseDefault
+      ? { models: responseModels, defaultModel: responseDefault }
+      : { models: responseModels }
     return reply.code(200).send(payload)
   })
 

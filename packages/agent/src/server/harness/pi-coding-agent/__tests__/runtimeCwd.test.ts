@@ -15,6 +15,9 @@ const {
   mockSessionManagerCreate,
   mockSessionManagerOpen,
   mockResourceLoaderOptions,
+  mockInMemorySettingsManager,
+  mockSettingsManagerCreate,
+  mockGetAgentDir,
 } = vi.hoisted(() => ({
   mockSubscribers: [] as Array<(event: any) => void>,
   promptHandle: { resolve: undefined as undefined | (() => void) },
@@ -23,6 +26,14 @@ const {
   mockSessionManagerCreate: vi.fn(() => ({ getSessionFile: () => null })),
   mockSessionManagerOpen: vi.fn(() => ({ getSessionFile: () => null })),
   mockResourceLoaderOptions: [] as any[],
+  mockInMemorySettingsManager: { kind: "in-memory" },
+  mockSettingsManagerCreate: vi.fn(() => ({
+    getDefaultProvider: () => undefined,
+    getDefaultModel: () => undefined,
+    getResolvedSettings: () => ({}),
+    loadAllSettings: vi.fn(),
+  })),
+  mockGetAgentDir: vi.fn(() => "/tmp/test-agent-dir"),
   mockCurrentModel: {
     value: undefined as undefined | { provider: string; id: string },
   },
@@ -111,25 +122,9 @@ vi.mock("@mariozechner/pi-coding-agent", () => ({
   }),
   SessionManager: { inMemory: () => ({}), create: mockSessionManagerCreate, open: mockSessionManagerOpen },
   AuthStorage: { inMemory: () => ({}), create: () => ({}) },
-  // createHarness always builds a DefaultResourceLoader now so it can inject
-  // the workspace-paths system-prompt guideline. Stub the lookups it needs.
-  getAgentDir: () => "/tmp/test-agent-dir",
-  createEventBus: () => ({}),
-  createExtensionRuntime: () => ({
-    assertActive: () => {},
-    refreshTools: () => {},
-    flagValues: new Map(),
-    pendingProviderRegistrations: [],
-    registerProvider: vi.fn(),
-    unregisterProvider: vi.fn(),
-  }),
-  createSyntheticSourceInfo: (path: string, options: any) => ({
-    path,
-    source: options.source,
-    scope: options.scope ?? "temporary",
-    origin: options.origin ?? "top-level",
-    ...(options.baseDir ? { baseDir: options.baseDir } : {}),
-  }),
+  // Both workspace and headless paths use Pi's DefaultResourceLoader. Stub
+  // its resolved inputs so the tests can inspect discovery and prompt policy.
+  getAgentDir: mockGetAgentDir,
   DefaultResourceLoader: class {
     private opts: any;
     constructor(opts: unknown) {
@@ -139,21 +134,36 @@ vi.mock("@mariozechner/pi-coding-agent", () => ({
     async reload() { /* no-op */ }
     getSystemPrompt() {
       const ambientSystemPrompt = "Ambient SYSTEM.md says AGENTS.md can read/edit/write files.";
-      return this.opts.systemPromptOverride?.(ambientSystemPrompt) ?? ambientSystemPrompt;
+      const source = this.opts.systemPrompt ?? ambientSystemPrompt;
+      return this.opts.systemPromptOverride?.(source) ?? source;
     }
     getAppendSystemPrompt() {
       const ambientAppend = ["Ambient APPEND_SYSTEM.md from AGENTS.md"];
-      return this.opts.appendSystemPromptOverride?.(ambientAppend) ?? ambientAppend;
+      const source = this.opts.appendSystemPrompt ?? ambientAppend;
+      return this.opts.appendSystemPromptOverride?.(source) ?? source;
+    }
+    getSkills() {
+      return this.opts.noSkills ? { skills: [], diagnostics: [] } : { skills: ["ambient"], diagnostics: [] };
+    }
+    getPrompts() {
+      return this.opts.noPromptTemplates ? { prompts: [], diagnostics: [] } : { prompts: ["ambient"], diagnostics: [] };
+    }
+    getThemes() {
+      return this.opts.noThemes ? { themes: [], diagnostics: [] } : { themes: ["ambient"], diagnostics: [] };
+    }
+    getAgentsFiles() {
+      return this.opts.noContextFiles ? { agentsFiles: [] } : { agentsFiles: ["ambient"] };
+    }
+    getExtensions() {
+      return { extensions: [], errors: [], runtime: {} };
     }
     getExtensionFactories() {
       return this.opts.extensionFactories ?? [];
     }
   },
   SettingsManager: {
-    create: () => ({
-      getResolvedSettings: () => ({}),
-      loadAllSettings: vi.fn(),
-    }),
+    inMemory: () => mockInMemorySettingsManager,
+    create: mockSettingsManagerCreate,
   },
   ModelRegistry: {
     inMemory: () => ({
@@ -169,7 +179,7 @@ vi.mock("@mariozechner/pi-coding-agent", () => ({
   },
 }));
 
-import { createPiCodingAgentHarness } from "../createHarness.js";
+import { createPiCodingAgentHarness, withPurePiHarnessDefaults } from "../createHarness.js";
 import { createAgentRuntimeBridge } from "../../../createAgent.js";
 import type { AgentCoreHarness, RunContext } from "../../../../shared/harness.js";
 
@@ -220,27 +230,55 @@ describe("runtime cwd separation", () => {
     const bridge = createAgentRuntimeBridge({
       runtime: "none",
       sessionStorageRoot: sessionRoot,
+      systemPromptAppend: "relative/path/to/host-prompt.md",
     });
     try {
       const runtime = await bridge.getRuntime();
       const harness = runtime.harness as AgentCoreHarness;
-      await harness.getPiSessionAdapter({ sessionId: "pure-spy", content: "" }, {
+      await harness.getPiSessionAdapter({
+        sessionId: "pure-spy",
+        content: "",
+        model: { provider: "test-provider", id: "test-model" },
+      }, {
         abortSignal: new AbortController().signal,
         workdir: process.cwd(),
       });
 
       expect(mockSessionManagerCreate).toHaveBeenCalledWith(sealedCwd, sessionRoot);
       expect(mockCreateAgentSessionConfigs[0]?.cwd).toBe(sealedCwd);
-      expect(mockResourceLoaderOptions).toEqual([]);
+      expect(mockCreateAgentSessionConfigs[0]?.agentDir).toBe(sealedCwd);
+      expect(mockCreateAgentSessionConfigs[0]?.settingsManager).toBe(mockInMemorySettingsManager);
+      expect(mockCreateAgentSessionConfigs[0]?.model).toEqual({ provider: "test-provider", id: "test-model" });
+      expect(mockSettingsManagerCreate).not.toHaveBeenCalled();
+      expect(mockGetAgentDir).not.toHaveBeenCalled();
+      expect(mockResourceLoaderOptions).toHaveLength(1);
+      expect(mockResourceLoaderOptions[0]).toMatchObject({
+        cwd: sealedCwd,
+        agentDir: sealedCwd,
+        settingsManager: mockInMemorySettingsManager,
+        noExtensions: true,
+        noContextFiles: true,
+        noSkills: true,
+        noPromptTemplates: true,
+        noThemes: true,
+      });
+      expect(mockResourceLoaderOptions[0]?.systemPrompt).toBe("");
+      expect(mockResourceLoaderOptions[0]?.appendSystemPrompt).toEqual([]);
+      expect(mockResourceLoaderOptions[0]?.systemPromptOverride("ambient path source")).toBe("You are a helpful assistant.");
+      expect(mockResourceLoaderOptions[0]?.appendSystemPromptOverride(["ambient path source"])).toEqual([
+        "relative/path/to/host-prompt.md",
+      ]);
+      expect(mockResourceLoaderOptions[0]).not.toHaveProperty("additionalExtensionPaths");
+      expect(mockResourceLoaderOptions[0]).not.toHaveProperty("additionalSkillPaths");
       const resourceLoader = mockCreateAgentSessionConfigs[0]?.resourceLoader;
       expect(resourceLoader.getSystemPrompt()).toBe("You are a helpful assistant.");
-      expect(resourceLoader.getAppendSystemPrompt()).toEqual([]);
+      expect(resourceLoader.getAppendSystemPrompt()).toEqual(["relative/path/to/host-prompt.md"]);
       expect(resourceLoader.getSkills()).toEqual({ skills: [], diagnostics: [] });
       expect(resourceLoader.getPrompts()).toEqual({ prompts: [], diagnostics: [] });
       expect(resourceLoader.getThemes()).toEqual({ themes: [], diagnostics: [] });
       expect(resourceLoader.getAgentsFiles()).toEqual({ agentsFiles: [] });
       expect(resourceLoader.getExtensions().errors).toEqual([]);
-      expect(resourceLoader.getExtensions().extensions.length).toBeGreaterThan(0);
+      expect(mockResourceLoaderOptions[0]?.extensionFactories.length).toBeGreaterThan(0);
       expect(JSON.stringify({
         createAgentSession: mockCreateAgentSessionConfigs[0],
       })).not.toContain(process.cwd());
@@ -248,6 +286,39 @@ describe("runtime cwd separation", () => {
       await bridge.agent.dispose();
       await rm(sessionRoot, { recursive: true, force: true });
     }
+  });
+
+  it("does not evaluate path-based Pi resources in headless mode", async () => {
+    const getHotReloadableResources = vi.fn(() => ({
+      additionalSkillPaths: ["/host/hot-skill"],
+      extensionPaths: ["/host/hot-extension.ts"],
+      packages: ["host-hot-package"],
+    }));
+    const harness = createPiCodingAgentHarness({
+      tools: [],
+      cwd: "/sealed/headless",
+      runtimeCwd: "/sealed/headless",
+      sessionDir: "/sealed/sessions",
+      pi: withPurePiHarnessDefaults({
+        additionalSkillPaths: ["/host/static-skill"],
+        extensionPaths: ["/host/static-extension.ts"],
+        packages: ["host-static-package"],
+        getHotReloadableResources,
+      }),
+    });
+
+    await harness.getPiSessionAdapter({ sessionId: "pure-resource-seal", content: "" }, {
+      abortSignal: new AbortController().signal,
+      workdir: process.cwd(),
+    });
+
+    expect(getHotReloadableResources).not.toHaveBeenCalled();
+    expect(mockCreateAgentSessionConfigs[0]?.settingsManager).toBe(mockInMemorySettingsManager);
+    expect(mockSettingsManagerCreate).not.toHaveBeenCalled();
+    expect(mockGetAgentDir).not.toHaveBeenCalled();
+    expect(mockResourceLoaderOptions[0]).not.toHaveProperty("additionalExtensionPaths");
+    expect(mockResourceLoaderOptions[0]).not.toHaveProperty("additionalSkillPaths");
+    expect(JSON.stringify(mockResourceLoaderOptions[0])).not.toContain("/host/");
   });
 
   it("snapshots the pure-mode system prompt seal", async () => {

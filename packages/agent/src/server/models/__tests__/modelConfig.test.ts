@@ -80,7 +80,7 @@ describe('agent model env config', () => {
     expect(registered[0]?.provider).toBe('infomaniak')
     expect(registered[0]?.config).toMatchObject({
       baseUrl: 'https://api.infomaniak.com/2/ai/108321/openai/v1',
-      apiKey: 'INFOMANIAK_API_TOKEN',
+      apiKey: '$INFOMANIAK_API_TOKEN',
       api: 'openai-completions',
       models: [
         {
@@ -108,6 +108,10 @@ describe('agent model env config', () => {
       provider: 'infomaniak',
       id: 'Qwen/Qwen3.5-122B-A10B-FP8',
     })
+    expect(readConfiguredDefaultModel({ allowPiSettings: false })).toEqual({
+      provider: 'infomaniak',
+      id: 'Qwen/Qwen3.5-122B-A10B-FP8',
+    })
   })
 
   it('supports encoded default model ids that contain colons', () => {
@@ -117,6 +121,32 @@ describe('agent model env config', () => {
     expect(readConfiguredDefaultModel()).toEqual({
       provider: 'amazon-bedrock',
       id: 'anthropic.claude-sonnet-4-6:0',
+    })
+    expect(readConfiguredDefaultModel({ allowPiSettings: false })).toEqual({
+      provider: 'amazon-bedrock',
+      id: 'anthropic.claude-sonnet-4-6:0',
+    })
+  })
+
+  it('keeps explicit provider/id defaults when Pi settings fallback is disabled', () => {
+    process.env.BORING_AGENT_DEFAULT_MODEL_PROVIDER = 'anthropic'
+    process.env.BORING_AGENT_DEFAULT_MODEL_ID = 'claude-sonnet-4-6'
+
+    expect(readConfiguredDefaultModel({ allowPiSettings: false })).toEqual({
+      provider: 'anthropic',
+      id: 'claude-sonnet-4-6',
+    })
+  })
+
+  it('keeps custom-provider defaults when Pi settings fallback is disabled', () => {
+    process.env.BORING_AGENT_CUSTOM_MODEL_PROVIDER = 'tenant-models'
+    process.env.BORING_AGENT_CUSTOM_MODEL_ID = 'tenant-default'
+    process.env.BORING_AGENT_CUSTOM_MODEL_BASE_URL = 'https://models.example.test/v1'
+    process.env.BORING_AGENT_CUSTOM_MODEL_API_KEY = 'test-token'
+
+    expect(readConfiguredDefaultModel({ allowPiSettings: false })).toEqual({
+      provider: 'tenant-models',
+      id: 'tenant-default',
     })
   })
 
@@ -136,6 +166,7 @@ describe('agent model env config', () => {
       provider: 'openai-codex',
       id: 'gpt-5.4',
     })
+    expect(readConfiguredDefaultModel({ allowPiSettings: false })).toBeUndefined()
   })
 
   it('does not register partial custom provider config', () => {

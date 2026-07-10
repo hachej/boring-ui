@@ -17,6 +17,7 @@ export const BI_DASHBOARD_DIAGNOSTIC_CODES = {
   chartCategoryMissing: "chart.category_missing",
   chartMeasureMissing: "chart.measure_missing",
   perspectiveGroupFieldInColumns: "perspective.group_field_in_columns",
+  tableQueryLimitMissing: "table.query_limit_missing",
   layoutControlsTop: "layout.controls_top",
   layoutChartsTooDense: "layout.charts_too_dense",
 } as const
@@ -64,6 +65,10 @@ function queryColumnsFromSql(sql: string): string[] {
   }).filter(Boolean)
 }
 
+function isVisualDashboardElement(type: unknown): boolean {
+  return type === "BSLChart" || type === "BSLPerspectiveViewer" || type === "BSLTable"
+}
+
 function staticDashboardDiagnostics(spec: BslDashboardSpec): DashboardDiagnostic[] {
   const diagnostics: DashboardDiagnostic[] = []
   const queries = spec.queries
@@ -76,7 +81,7 @@ function staticDashboardDiagnostics(spec: BslDashboardSpec): DashboardDiagnostic
       diagnostics.push({ severity: "error", code: BI_DASHBOARD_DIAGNOSTIC_CODES.dashboardSchema, elementId, message: `DashboardGrid ${elementId} must include string children` })
     }
 
-    if ((type === "BSLMetric" || type === "BSLChart" || type === "BSLPerspectiveViewer") && "queryId" in props) {
+    if ((type === "BSLMetric" || type === "BSLChart" || type === "BSLPerspectiveViewer" || type === "BSLTable") && "queryId" in props) {
       const queryId = String(props.queryId)
       if (!queries[queryId]) diagnostics.push({ severity: "error", code: BI_DASHBOARD_DIAGNOSTIC_CODES.queryUnknown, elementId, queryId, message: `component ${elementId} references unknown query ${queryId}` })
     }
@@ -113,6 +118,14 @@ function staticDashboardDiagnostics(spec: BslDashboardSpec): DashboardDiagnostic
         }
       }
     }
+
+    if (type === "BSLTable") {
+      const queryId = String(props.queryId)
+      const query = spec.queries[queryId]
+      if (query && (typeof query.limit !== "number" || query.limit > 1000)) {
+        diagnostics.push({ severity: "warning", code: BI_DASHBOARD_DIAGNOSTIC_CODES.tableQueryLimitMissing, elementId, queryId, message: `BSLTable ${elementId} should use a bounded query limit of 1000 rows or less.` })
+      }
+    }
   }
 
   const grid = spec.elements[spec.root]
@@ -121,10 +134,14 @@ function staticDashboardDiagnostics(spec: BslDashboardSpec): DashboardDiagnostic
     const firstNonFilter = children.findIndex((id) => spec.elements[id]?.type !== "BSLFilter" && spec.elements[id]?.type !== "BSLText")
     const lateFilter = children.find((id, index) => index > Math.max(0, firstNonFilter) && spec.elements[id]?.type === "BSLFilter")
     if (lateFilter) diagnostics.push({ severity: "info", code: BI_DASHBOARD_DIAGNOSTIC_CODES.layoutControlsTop, elementId: lateFilter, message: "Filters/controllers render in the top controls bar; keep them early in dashboard children for readability." })
-    const gridColumns = Number(grid.props?.columns ?? 1)
-    const hasCharts = children.some((id) => spec.elements[id]?.type === "BSLChart" || spec.elements[id]?.type === "BSLPerspectiveViewer")
-    if (hasCharts && gridColumns > 2) {
-      diagnostics.push({ severity: "warning", code: BI_DASHBOARD_DIAGNOSTIC_CODES.layoutChartsTooDense, elementId: spec.root, message: "Dashboards with charts should use DashboardGrid props.columns <= 2; reserve 3-5 columns for compact indicator/KPI grids." })
+  }
+
+  for (const [elementId, element] of Object.entries(spec.elements)) {
+    if (element.type !== "DashboardGrid" || !Array.isArray(element.children)) continue
+    const gridColumns = Number(element.props?.columns ?? 1)
+    const hasVisualChildren = element.children.some((id) => isVisualDashboardElement(spec.elements[id]?.type))
+    if (hasVisualChildren && gridColumns > 2) {
+      diagnostics.push({ severity: "warning", code: BI_DASHBOARD_DIAGNOSTIC_CODES.layoutChartsTooDense, elementId, message: "DashboardGrid sections with charts or tables should use props.columns <= 2; reserve 3-5 columns for compact indicator/KPI grids." })
     }
   }
 

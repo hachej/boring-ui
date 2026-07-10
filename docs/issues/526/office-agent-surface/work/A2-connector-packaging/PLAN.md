@@ -22,6 +22,8 @@ Delta: promote the connector into boring-ui under `integrations/pi-for-excel/` w
 - Keep auth in pi's connection layer. The connector reads config and names a connection; it does not embed a bearer token.
 - Use the boring-sharepoint cloud-ref schema for `.xlsx.cloud.json`. PowerPoint ref saving requires the explicit B2 Office-ref generalization bead.
 
+**Amendment (2026-07-06):** `integrations/pi-for-excel/` is the single source of truth for the Boring tool pack. Refactor tool registration into a `BORING_TOOLS` descriptor list (`{name, description, parameters, execute}`) so the same descriptors serve both the remote-install `.mjs` and the wrapper's bundled `builtin.boring` first-party extension (#551 Axis 1). Adding a tool = one descriptor + tests; a fixture asserts every descriptor registers exactly once and declares `additionalProperties: false`.
+
 ## Exit Criteria
 
 - A fresh agent can run the connector tests with one pnpm command.

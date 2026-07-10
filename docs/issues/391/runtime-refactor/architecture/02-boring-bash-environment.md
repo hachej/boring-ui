@@ -13,7 +13,7 @@ It owns:
 - file watch/search;
 - file/tree/search/stat/fs-event routes;
 - file/bash/upload agent tools;
-- file tree/editor/viewer UI plugin;
+- file tree/editor/viewer UI plugin, bash/file tool renderers, and file composer providers;
 - **runtime-mode resolution (`resolveMode` — the CHOICE of sandbox).**
 
 It does not own the model loop, auth, billing, workspace membership, or UI bridge core. **Nor does it own the concrete sandbox providers themselves:** the provider adapters (`direct`, `bwrap`, `vercel-sandbox`, `remote-worker`), their capability descriptions, FUSE-S3 mounts, and sandbox lifecycle live in **`@hachej/boring-sandbox`** (sandbox management). boring-bash imports boring-sandbox **values** (the providers it resolves a mode to) + agent **types**; boring-sandbox imports agent **types only**. Acyclic: `boring-sandbox → agent(types)`; `boring-bash → boring-sandbox(values) + agent(types)`. (00 open decision 3, RESOLVED; 08 decision 11.)
@@ -31,12 +31,26 @@ It does not own the model loop, auth, billing, workspace membership, or UI bridg
   createBashAgentFeature(), file/bash/upload tools
 
 @hachej/boring-bash/plugin
-  file tree, editor/viewer panes, workspace.open.path resolver
+  file tree, editor/viewer panes, workspace.open.path resolver,
+  bash/file tool renderers, file mention/slash composer providers
 
 @hachej/boring-bash/modes
   resolveMode(), autoDetectMode(), hasBwrap() — runtime-mode resolution (the CHOICE of sandbox);
   resolves a mode id to a @hachej/boring-sandbox provider value
 ```
+
+## Two consumption modes
+
+`@hachej/boring-bash` has two supported consumption modes:
+
+1. **Plugin mode (workspace-family hosts).** `boring-bash` ships as one internal plugin through the existing workspace plugin pipeline: a manifest-declared server entry returns `defineServerPlugin({ agentTools, routes, systemPrompt, piPackages, provisioning })`, where `agentTools` and `systemPrompt` come from the bash tool bundle and `routes` composes `registerBashRoutes`; the front entry returns `definePlugin(...)` for the file tree, panes, bash/file tool renderers, and file composer providers. Hosts such as `createWorkspaceAgentServer`, core/full-app, and playground-style workspace hosts register the package as an internal/default plugin and let the manifest/entry resolver load it dynamically. The resolver activates or omits the plugin contribution as a unit, so removing bash/filesystem capability also removes its prompt fragment. Hosts do not statically import `@hachej/boring-bash`, hand-spread its tools, hand-append its prompt fragment, hand-mount its routes, or hardcode its renderers/composer providers. The `/plugin` subpath may import the public workspace plugin SDK because the reverse workspace→bash edge is dynamic, not static.
+2. **Library mode (headless/direct composers).** Non-workspace hosts that do not use the workspace plugin pipeline may import the public bundle and route helpers directly: `createBashAgentFeature()` from `/agent` and `registerBashRoutes` from `/server`. This is for plain `createAgent` embedders and any CLI composition path that still calls the agent server directly instead of entering the workspace plugin pipeline.
+
+`packages/agent` supports neither mode by importing bash. It remains pure and receives only already-composed tools/readiness/runtime adapters from its caller.
+
+Workspace-family hosts may load several first-party plugins through this door; the split is mechanism vs policy. The `boring-bash` plugin is the multi-fs **mechanism**: the `@hachej/boring-bash` package owns the shared binding contracts, enforcement, no-leak projection operations, tools/routes/tree, and the plugin is only its delivery vehicle. The `boring-governance` plugin (the #475 line, extracted as `plugins/boring-governance` in PR #532, rolled up in #544) is multi-fs **policy**: YAML governance, `company_context` bootstrap/mount, budgets, and admin UI. Governance depends on `@hachej/boring-bash/shared` **and value-imports the `/server` mechanism exports** (the projection operations, `ScopedFilesystemRuntimeBindingManager`, `COMPANY_CONTEXT_FILESYSTEM_ID`); bash enforces the bindings governance resolves. The invariants that hold are: **governance never imports workspace internals**, and **bash never imports governance**.
+
+The live seam is agent-owned, not a plugin-to-plugin composition point: governance exposes `getFilesystemBindings()` typed as `RegisterAgentRoutesOptions['getFilesystemBindings']`, hand-spread by the app ([`docs/issues/475/future-improvements.md`](../../475/future-improvements.md) item 9 locks this — do not pre-build seam composition until a second plugin needs it). The bash-plugin `bindingResolver` composition point is **name-reserved only**; P3 must not implement it with governance as its lone consumer — governance keeps its app-spread wiring unchanged. Governance's server half is deliberately outside the plugin pipeline (`boring.server: false`) because policy load must complete before `createCoreWorkspaceAgentServer` (fail-closed boot).
 
 The concrete providers themselves live in a separate package:
 
@@ -174,8 +188,13 @@ Current true inventory:
 - `buildFilesystemAgentTools()` → `read`, `write`, `edit`, `find`, `grep`, `ls`;
 - `buildHarnessAgentTools()` → `bash`, `execute_isolated_code`;
 - `buildUploadAgentTools()` → upload/runtime artifact tools.
+- bash/file tool renderers currently live in `packages/agent/src/front/toolRenderers.tsx` and `packages/agent/src/front/bareToolRenderers/`; the bash-owned renderer ids are `bash`, `read`, `write`, `edit`, `find`, `grep`, and `ls`.
+- file composer providers currently live in the agent front (`packages/agent/src/front/useComposerPickers.ts`, `packages/agent/src/front/primitives/mention-picker.tsx`, `packages/agent/src/front/chatSubmit.ts`, and `packages/agent/src/front/chat/components/PiChatComposerSurface.tsx`) and call `/api/v1/files/search`, emit `@files: ...`, and upload through `/api/v1/files/upload`.
 
-Move these to `boring-bash/agent` or document why a tool stays elsewhere.
+Move the tool bundles above to `boring-bash/agent` or document why a tool stays elsewhere.
+Move the bash/file renderers and file composer providers with `boring-bash/plugin`. Pure-mode agent front keeps only generic tool-renderer plumbing/fallbacks and generic composer primitives; it registers no filesystem/bash renderer or file provider by default.
+
+Ownership rule: `@hachej/boring-sandbox` defines **how code is confined** (provider adapters, lifecycle, capability facts, and the injected `Sandbox` contract). `@hachej/boring-bash` defines **what the model means by the filesystem and working environment** (the coherent namespace, `(filesystem, path)` binding semantics, file/search/watch/git routes, bash/file/upload tools, and file UI). Filesystem tools dispatch through binding operations; the `bash` tool executes through the injected `Sandbox` contract supplied by the resolved runtime bundle. `execute_isolated_code` stays in the bash tool bundle for DX because it is model-facing coding-environment affordance, but its actual isolation remains a sandbox provider capability.
 
 Must preserve:
 
@@ -203,12 +222,19 @@ The pluggable provider boundary (a `listTree`/`listPaths`/`subscribe` interface 
 
 ## UI plugin ownership
 
+**Post-v1 ownership move.** V1 keeps this plugin workspace-owned and P3
+BBP3-019 capability-gates its registration, renderers, providers, affordances,
+and API calls from resolved filesystem facts. The move below is P4 and does not
+gate P8.
+
 Move `packages/workspace/src/plugins/filesystemPlugin/front/*` into `boring-bash/plugin` while preserving:
 
 - panel ids;
 - `workspace.open.path` surface resolver;
 - file panel binding;
 - agent file bridge/session-change integration;
+- file tool renderers (`bash`, `read`, `write`, `edit`, `find`, `grep`, `ls`) through the existing `definePlugin({ toolRenderers })` field exported by `packages/workspace/src/plugin.ts` and defined/captured in `packages/workspace/src/shared/plugins/frontFactory.ts`;
+- file mention/slash composer providers as capability-gated front-plugin contributions;
 - the existing `/api/v1/files/*` route paths exactly during the move; no aliases.
 
 The workspace bridge remains owned by `@hachej/boring-workspace`.

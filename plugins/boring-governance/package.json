@@ -1,0 +1,83 @@
+{
+  "name": "@hachej/boring-governance",
+  "version": "0.1.75",
+  "type": "module",
+  "private": false,
+  "license": "MIT",
+  "description": "Reusable boring-ui tenant governance plugin: YAML policy loading, model filtering, budget metering, company-context bindings, and Company Admin UI.",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/hachej/boring-ui"
+  },
+  "homepage": "https://github.com/hachej/boring-ui",
+  "boring": {
+    "id": "boring-governance",
+    "label": "Governance",
+    "front": "dist/front/index.js",
+    "server": false
+  },
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "bin": {
+    "boring-governance-access-matrix": "./dist/scripts/governance-access-matrix.js"
+  },
+  "exports": {
+    ".": {
+      "types": "./dist/front/index.d.ts",
+      "import": "./dist/front/index.js"
+    },
+    "./front": {
+      "types": "./dist/front/index.d.ts",
+      "import": "./dist/front/index.js"
+    },
+    "./server": {
+      "types": "./dist/server/index.d.ts",
+      "import": "./dist/server/index.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "sideEffects": false,
+  "scripts": {
+    "build": "tsup",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run --no-file-parallelism",
+    "lint": "pnpm run typecheck",
+    "clean": "rm -rf dist .tsbuildinfo",
+    "smoke:governance-matrix": "tsx src/scripts/governance-access-matrix.ts"
+  },
+  "peerDependencies": {
+    "@hachej/boring-agent": "workspace:*",
+    "@hachej/boring-bash": "workspace:*",
+    "@hachej/boring-core": "workspace:*",
+    "@hachej/boring-ui-kit": "workspace:*",
+    "react": "^18.0.0 || ^19.0.0",
+    "react-dom": "^18.0.0 || ^19.0.0"
+  },
+  "dependencies": {
+    "proper-lockfile": "^4.1.2",
+    "yaml": "^2.9.0"
+  },
+  "devDependencies": {
+    "@hachej/boring-agent": "workspace:*",
+    "@hachej/boring-bash": "workspace:*",
+    "@hachej/boring-core": "workspace:*",
+    "@hachej/boring-ui-kit": "workspace:*",
+    "@testing-library/jest-dom": "^6.9.1",
+    "@testing-library/react": "^16.3.0",
+    "@types/node": "^22.0.0",
+    "@types/proper-lockfile": "^4.1.4",
+    "@types/react": "^19.0.0",
+    "@types/react-dom": "^19.0.0",
+    "@vitejs/plugin-react": "^4.0.0",
+    "fastify": "^5.9.0",
+    "jsdom": "^29.0.2",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0",
+    "tsup": "^8.4.0",
+    "tsx": "^4.20.6",
+    "typescript": "~6.0.3",
+    "vitest": "^4.1.9"
+  }
+}

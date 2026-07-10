@@ -1,5 +1,6 @@
 import { spawn } from "node:child_process"
 import type { NodeClickHouseClientConfigOptions } from "@clickhouse/client/dist/config"
+import type { AgentTool, ToolResult } from "@hachej/boring-workspace"
 import {
   defineServerPlugin,
   defineTrustedDomainBridgeHandler,
@@ -9,12 +10,15 @@ import {
 import type {
   DataBridgeArrowResult,
   DataBridgeBslQuery,
+  DataBridgeQueryBatchInput,
+  DataBridgeQueryBatchItemResult,
+  DataBridgeQueryBatchOutput,
   DataBridgeQueryRunInput,
   DataBridgeQueryRunOutput,
   DataBridgeSqlQuery,
   DataBridgeTableResult,
 } from "../shared"
-import { DATA_BRIDGE_QUERY_RUN_OP } from "../shared"
+import { DATA_BRIDGE_QUERY_BATCH_OP, DATA_BRIDGE_QUERY_RUN_OP } from "../shared"
 
 export interface DataBridgeSqlAdapter {
   requiredCapabilities?: string[]
@@ -40,12 +44,18 @@ export interface ClickHouseDataBridgeAdapterOptions {
   clientConfig?: NodeClickHouseClientConfigOptions
 }
 
-interface CreateDataBridgeServerPluginOptions {
+export interface DataBridgeAgentToolOptions {
+  name?: string
+  capabilities?: string[]
+}
+
+export interface CreateDataBridgeServerPluginOptions {
   workspaceRoot: string
   bslModelPath?: string
   bslProfile?: string
   bslProfileFile?: string
   sqlAdapters?: Record<string, DataBridgeSqlAdapter>
+  agentTool?: false | DataBridgeAgentToolOptions
 }
 
 const SQL_DEFAULT_LIMIT = 1000
@@ -93,10 +103,10 @@ function truncateResult(result: DataBridgeTableResult, limit: number): DataBridg
   }
 }
 
-async function runBslQuery(options: CreateDataBridgeServerPluginOptions, input: DataBridgeQueryRunInput & { query: DataBridgeBslQuery }, signal?: AbortSignal): Promise<DataBridgeTableResult> {
+function bslPayload(options: CreateDataBridgeServerPluginOptions, input: DataBridgeQueryRunInput & { query: DataBridgeBslQuery }): Record<string, unknown> {
   const modelPath = options.bslModelPath ?? process.env.BORING_BSL_MODEL_PATH ?? process.env.BSL_MODEL_PATH
   if (!modelPath) throw new Error("BSL adapter is not configured: set BORING_BSL_MODEL_PATH")
-  const payload = {
+  return {
     modelPath,
     profile: options.bslProfile ?? process.env.BORING_BSL_PROFILE,
     profileFile: options.bslProfileFile ?? process.env.BORING_BSL_PROFILE_FILE,
@@ -104,7 +114,10 @@ async function runBslQuery(options: CreateDataBridgeServerPluginOptions, input: 
     query: input.query.query,
     limit: input.query.limit ?? 5000,
   }
-  return await runPythonBsl(payload, signal)
+}
+
+async function runBslQuery(options: CreateDataBridgeServerPluginOptions, input: DataBridgeQueryRunInput & { query: DataBridgeBslQuery }, signal?: AbortSignal): Promise<DataBridgeTableResult> {
+  return await runPythonBsl(bslPayload(options, input), signal)
 }
 
 async function runSqlQuery(options: CreateDataBridgeServerPluginOptions, input: DataBridgeQueryRunInput, capabilities: readonly string[], format: "json" | "arrow", signal?: AbortSignal): Promise<DataBridgeTableResult | DataBridgeArrowResult> {
@@ -178,6 +191,75 @@ print(json.dumps({"kind":"data-bridge.table","version":1,"columns":columns,"rows
   if (signal?.aborted) throw new Error("BSL query aborted")
   if (code !== 0) throw new Error(stderr.trim() || `BSL query failed with exit code ${code}`)
   return JSON.parse(stdout) as DataBridgeTableResult
+}
+
+async function runPythonBslBatch(payloads: Record<string, unknown>[], signal?: AbortSignal): Promise<Array<{ ok: true; output: DataBridgeTableResult } | { ok: false; error: { message: string } }>> {
+  const script = String.raw`
+import json, sys
+from pathlib import Path
+import ibis
+from ibis import _
+from returns.result import Failure, Success
+from boring_semantic_layer import from_yaml
+from boring_semantic_layer.utils import safe_eval
+payloads = json.loads(sys.stdin.read())
+model_cache = {}
+def model_cache_key(payload):
+    return json.dumps({
+        "modelPath": payload["modelPath"],
+        "profile": payload.get("profile"),
+        "profileFile": payload.get("profileFile"),
+    }, sort_keys=True)
+def table_result(payload):
+    key = model_cache_key(payload)
+    if key not in model_cache:
+        model_cache[key] = from_yaml(Path(payload["modelPath"]), profile=payload.get("profile"), profile_path=payload.get("profileFile"))
+    models = model_cache[key]
+    sm = models[payload["model"]]
+    evaluated = safe_eval(payload["query"], context={**models, "sm": sm, "ibis": ibis, "_": _})
+    if isinstance(evaluated, Failure):
+        raise evaluated.failure()
+    result = evaluated.unwrap() if isinstance(evaluated, Success) else evaluated
+    df = result.execute()
+    limit = int(payload.get("limit") or 5000)
+    rows = json.loads(df.head(limit).to_json(orient="records", date_format="iso"))
+    columns = []
+    for name in df.columns:
+        series = df[name]
+        kind = "string"
+        if str(series.dtype).startswith("int"):
+            kind = "integer"
+        elif str(series.dtype).startswith("float") or str(series.dtype).startswith("decimal"):
+            kind = "float"
+        elif str(series.dtype).startswith("bool"):
+            kind = "boolean"
+        elif "datetime" in str(series.dtype):
+            kind = "datetime"
+        columns.append({"name": str(name), "type": kind})
+    return {"kind":"data-bridge.table","version":1,"columns":columns,"rows":rows,"rowCount":len(rows),"truncated": len(df) > len(rows), "source":"bsl"}
+results = []
+for payload in payloads:
+    try:
+        results.append({"ok": True, "output": table_result(payload)})
+    except Exception as exc:
+        results.append({"ok": False, "error": {"message": str(exc) or exc.__class__.__name__}})
+print(json.dumps(results))
+`
+  if (signal?.aborted) throw new Error("BSL query aborted")
+  const child = spawn(process.env.BORING_DATA_BRIDGE_PYTHON ?? "python3", ["-c", script], { stdio: ["pipe", "pipe", "pipe"] })
+  const abort = () => child.kill("SIGKILL")
+  signal?.addEventListener("abort", abort, { once: true })
+  child.stdin.end(JSON.stringify(payloads))
+  const [stdout, stderr, code] = await new Promise<[string, string, number | null]>((resolvePromise) => {
+    let out = ""
+    let err = ""
+    child.stdout.on("data", (chunk) => { out += String(chunk) })
+    child.stderr.on("data", (chunk) => { err += String(chunk) })
+    child.on("close", (exitCode) => resolvePromise([out, err, exitCode]))
+  }).finally(() => signal?.removeEventListener("abort", abort))
+  if (signal?.aborted) throw new Error("BSL query aborted")
+  if (code !== 0) throw new Error(stderr.trim() || `BSL query batch failed with exit code ${code}`)
+  return JSON.parse(stdout) as Array<{ ok: true; output: DataBridgeTableResult } | { ok: false; error: { message: string } }>
 }
 
 async function materializeArrowSnapshot(result: DataBridgeTableResult): Promise<DataBridgeArrowResult> {
@@ -289,6 +371,177 @@ async function executeQuery(options: CreateDataBridgeServerPluginOptions, input:
   return await runBslQuery(options, input as DataBridgeQueryRunInput & { query: DataBridgeBslQuery }, signal)
 }
 
+function textResult(text: string, details?: unknown): ToolResult {
+  return { content: [{ type: "text", text }], details }
+}
+
+function errorResult(text: string): ToolResult {
+  return { content: [{ type: "text", text }], isError: true }
+}
+
+function normalizeToolLanguage(value: unknown): "bsl" | "sql" | undefined {
+  return value === "bsl" || value === "sql" ? value : undefined
+}
+
+function normalizeToolLimit(value: unknown): number {
+  return normalizeLimit(value, SQL_MAX_LIMIT)
+}
+
+function createDataBridgeToolInput(params: Record<string, unknown>): DataBridgeQueryRunInput | string {
+  const language = normalizeToolLanguage(params.language)
+  if (!language) return "language must be either bsl or sql"
+  const limit = normalizeToolLimit(params.limit)
+
+  if (language === "bsl") {
+    const model = String(params.model ?? "").trim()
+    const query = String(params.query ?? "").trim()
+    if (!model) return "model is required for bsl queries"
+    if (!query) return "query is required for bsl queries"
+    return { format: "json", query: { language, model, query, limit } }
+  }
+
+  const source = String(params.source ?? "").trim()
+  const sql = String(params.sql ?? "").trim()
+  if (!source) return "source is required for sql queries"
+  if (!sql) return "sql is required for sql queries"
+  const query: DataBridgeSqlQuery = { language, source, sql, limit }
+  if (isRecord(params.params)) query.params = params.params
+  return { format: "json", query }
+}
+
+export function createDataBridgeQueryAgentTool(options: CreateDataBridgeServerPluginOptions): AgentTool {
+  const name = options.agentTool && typeof options.agentTool === "object" && options.agentTool.name
+    ? options.agentTool.name
+    : "query_data"
+  const capabilities = options.agentTool && typeof options.agentTool === "object" && options.agentTool.capabilities
+    ? options.agentTool.capabilities
+    : ["data:read", "data:sql-query"]
+
+  return {
+    name,
+    description: "Run a small read-only data query through Boring Data Bridge. Use language=bsl for semantic-layer queries or language=sql for configured read-only SQL sources. Prefer this over shell, database clients, or ad hoc scripts for dashboard/reporting data.",
+    parameters: {
+      type: "object",
+      properties: {
+        language: {
+          type: "string",
+          enum: ["bsl", "sql"],
+          description: "Query mode. Use bsl for semantic-layer/Ibis expressions, sql for configured read-only SQL adapters.",
+        },
+        model: {
+          type: "string",
+          description: "BSL model name. Required when language=bsl.",
+        },
+        query: {
+          type: "string",
+          description: "BSL/Ibis expression. Required when language=bsl.",
+        },
+        source: {
+          type: "string",
+          description: "Configured SQL source name. Required when language=sql.",
+        },
+        sql: {
+          type: "string",
+          description: "Read-only SQL statement. Required when language=sql.",
+        },
+        params: {
+          type: "object",
+          description: "Optional SQL query parameters when language=sql.",
+        },
+        limit: {
+          type: "number",
+          description: `Maximum rows to return. Default ${SQL_DEFAULT_LIMIT}, max ${SQL_MAX_LIMIT}.`,
+          minimum: 1,
+          maximum: SQL_MAX_LIMIT,
+        },
+      },
+      required: ["language"],
+      additionalProperties: false,
+    },
+    async execute(params, ctx) {
+      const input = createDataBridgeToolInput(params)
+      if (typeof input === "string") return errorResult(input)
+      try {
+        const result = await executeQuery(options, input, capabilities, "json", ctx.abortSignal)
+        return textResult(JSON.stringify(result, null, 2), result)
+      } catch (error) {
+        return errorResult(error instanceof Error ? error.message : String(error))
+      }
+    },
+  }
+}
+
+function errorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error)
+}
+
+async function executeBatch(options: CreateDataBridgeServerPluginOptions, input: DataBridgeQueryBatchInput, capabilities: readonly string[], signal?: AbortSignal): Promise<DataBridgeQueryBatchOutput> {
+  if (!isRecord(input) || !Array.isArray(input.queries)) throw new Error("Invalid data bridge query batch input")
+  const results: DataBridgeQueryBatchItemResult[] = input.queries.map((query, index) => ({
+    id: isRecord(query) && typeof query.id === "string" ? query.id : String(index),
+    ok: false,
+    error: { message: "Query was not executed" },
+  }))
+  const bslItems: Array<{ index: number; id: string; input: DataBridgeQueryRunInput; format: "json" | "arrow" }> = []
+  const otherItems: Array<Promise<void>> = []
+
+  for (const [index, item] of input.queries.entries()) {
+    const id = isRecord(item) && typeof item.id === "string" ? item.id : String(index)
+    if (!isRecord(item) || !isRecord(item.input)) {
+      results[index] = { id, ok: false, error: { message: "Invalid data bridge query batch item" } }
+      continue
+    }
+    const typedInput = item.input as DataBridgeQueryRunInput
+    const executionFormat = typedInput.format === "arrow" ? "arrow" : "json"
+    if (isRecord(typedInput.query) && typedInput.query.language === "bsl") {
+      bslItems.push({ index, id, input: typedInput, format: executionFormat })
+      continue
+    }
+    otherItems.push((async () => {
+      try {
+        const output = await executeQuery(options, typedInput, capabilities, executionFormat, signal)
+        results[index] = {
+          id,
+          ok: true,
+          output: executionFormat === "arrow" && !isDataBridgeArrowResult(output) ? await materializeArrowSnapshot(output) : output,
+        }
+      } catch (error) {
+        results[index] = { id, ok: false, error: { message: errorMessage(error) } }
+      }
+    })())
+  }
+
+  await Promise.all(otherItems)
+
+  if (bslItems.length > 0) {
+    try {
+      const bslOutputs = await runPythonBslBatch(
+        bslItems.map((item) => bslPayload(options, item.input as DataBridgeQueryRunInput & { query: DataBridgeBslQuery })),
+        signal,
+      )
+      await Promise.all(bslOutputs.map(async (output, outputIndex) => {
+        const item = bslItems[outputIndex]
+        if (!item) return
+        if (!output.ok) {
+          results[item.index] = { id: item.id, ok: false, error: output.error }
+          return
+        }
+        results[item.index] = {
+          id: item.id,
+          ok: true,
+          output: item.format === "arrow" ? await materializeArrowSnapshot(output.output) : output.output,
+        }
+      }))
+    } catch (error) {
+      for (const item of bslItems) {
+        results[item.index] = { id: item.id, ok: false, error: { message: errorMessage(error) } }
+      }
+    }
+  }
+
+  return { kind: "data-bridge.batch", version: 1, results }
+}
+
 export function createDataBridgeServerPlugin(options: CreateDataBridgeServerPluginOptions): WorkspaceServerPlugin {
   const queryRun = defineTrustedDomainBridgeHandler<DataBridgeQueryRunInput, DataBridgeQueryRunOutput>({
     op: DATA_BRIDGE_QUERY_RUN_OP,
@@ -308,12 +561,28 @@ export function createDataBridgeServerPlugin(options: CreateDataBridgeServerPlug
       return result
     },
   })
+  const queryBatch = defineTrustedDomainBridgeHandler<DataBridgeQueryBatchInput, DataBridgeQueryBatchOutput>({
+    op: DATA_BRIDGE_QUERY_BATCH_OP,
+    version: 1,
+    owner: "data-bridge",
+    callerClassesAllowed: ["browser", "runtime", "server"],
+    requiredCapabilities: ["data:read"],
+    inputSchema: { type: "object" },
+    maxInputBytes: 5 * 1024 * 1024,
+    maxOutputBytes: 10 * 1024 * 1024,
+    timeoutMs: 30_000,
+    idempotencyPolicy: "none",
+    handler: async ({ input, context, signal }) => {
+      return await executeBatch(options, input as unknown as DataBridgeQueryBatchInput, context.capabilities, signal)
+    },
+  })
 
   return defineServerPlugin({
     id: "data-bridge",
     label: "Data Bridge",
-    workspaceBridgeHandlers: [queryRun as unknown as WorkspaceBridgeHandlerContribution],
-    systemPrompt: "Use data.v1.query.run through WorkspaceBridge for dashboard data. Supported query languages are bsl and sql; set format=arrow for BI/Perspective snapshot viewers."
+    agentTools: options.agentTool === false ? [] : [createDataBridgeQueryAgentTool(options)],
+    workspaceBridgeHandlers: [queryRun as unknown as WorkspaceBridgeHandlerContribution, queryBatch as unknown as WorkspaceBridgeHandlerContribution],
+    systemPrompt: "Use query_data for dashboard/reporting data. Supported query languages are bsl and sql. Use data.v1.query.run for individual requests and data.v1.query.batch when loading multiple queries; set format=arrow for BI/Perspective snapshot viewers.",
   })
 }
 

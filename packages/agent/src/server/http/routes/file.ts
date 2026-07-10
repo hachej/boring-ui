@@ -111,11 +111,20 @@ function classifyError(
   const statusCode = (err as { statusCode?: unknown })?.statusCode
   const stableCode = (err as { code?: unknown })?.code
   if (typeof statusCode === 'number' && statusCode >= 400 && statusCode < 600) {
+    const details = (err as { details?: unknown })?.details
+    const conflictDetails = stableCode === ERROR_CODE_CONFLICT && details && typeof details === 'object' && !Array.isArray(details)
+      ? details as Record<string, unknown>
+      : null
     return reply.code(statusCode).send({
       error: {
         code: typeof stableCode === 'string' ? stableCode : ERROR_CODE_INTERNAL,
         message,
-        details: (err as { details?: unknown })?.details,
+        ...(conflictDetails
+          ? {
+              currentMtimeMs: conflictDetails.currentMtimeMs,
+              expectedMtimeMs: conflictDetails.expectedMtimeMs,
+            }
+          : { details }),
       },
     })
   }
@@ -386,7 +395,7 @@ export function fileRoutes(
         const binding = await resolveFilesystemBinding(request, filesystem)
         if (!binding) return sendNotFoundOrDenied(reply)
         const result = await binding.operations.read({ filesystem, path })
-        return { content: result.content, access: binding.access }
+        return { content: result.content, mtimeMs: result.mtimeMs, access: binding.access }
       } catch {
         return sendNotFoundOrDenied(reply)
       }

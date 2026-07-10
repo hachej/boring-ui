@@ -3,16 +3,22 @@
 Derived strictly from [TODO.md](./TODO.md) and [PLAN.md](./PLAN.md). Tick each before calling this package done. Invent nothing.
 
 ## Prerequisites (packages + gates)
-- [ ] P6-plugin-child-app (P6a `AgentRegistry`) merged — [../P6-plugin-child-app/HANDOFF.md](../P6-plugin-child-app/HANDOFF.md)
+- [ ] P6-R `ResolvedAgentRegistry` merged — [../P6-plugin-child-app/P6-V1-HANDOFF.md](../P6-plugin-child-app/P6-V1-HANDOFF.md)
 - [ ] E1-environment-attachments merged — [../E1-environment-attachments/HANDOFF.md](../E1-environment-attachments/HANDOFF.md)
 - [ ] T2-transport merged — [../T2-transport/HANDOFF.md](../T2-transport/HANDOFF.md)
-- [ ] STOP+report if the Phase 6a `AgentRegistry` and the workspace `agents: [...]` declaration have not landed — do NOT invent a competing registry here
+- [ ] STOP+report if P6-R resolved lookup by deployment `agentId` has not landed;
+      do NOT invent a competing registry here.
+
+## Owner questions / verdict
+- OWNER-QUESTIONS: none.
+- GO/NO-GO: GO after P6-R, E1, and T2 are merged; NO-GO/STOP if
+  `ResolvedAgentRegistry` is missing.
 
 ## Beads
 - [ ] BBP7-001 — Thread `agentId` through `RuntimeScope`, the scope key, and `sessionNamespace`
-- [ ] BBP7-002 — `agentId` request addressing against the Phase 6 `AgentRegistry`
+- [ ] BBP7-002 — `agentId` request addressing against P6-R `ResolvedAgentRegistry`
 - [ ] BBP7-003 — Per-agent tool catalog + per-agent readiness
-- [ ] BBP7-004 — Derived `state.db` session index/search scoped by workspace + agent (#379)
+- [ ] BBP7-004 — Derived `agent.db` session index/search scoped by workspace + agent (#379)
 - [ ] BBP7-005 — Agent list + inspection endpoints (the steering mechanism)
 - [ ] BBP7-006 — External harness hook target resolution (#380)
 - [ ] BBP7-007 — Surface adapters bind one `agentId` per addressing entry
@@ -33,11 +39,22 @@ Derived strictly from [TODO.md](./TODO.md) and [PLAN.md](./PLAN.md). Tick each b
 - [ ] `pnpm audit:imports`
 - [ ] `pnpm typecheck`
 
+## PR-PLAN reconciliation
+- [ ] `pr1-agentid-scope-namespace` completed BBP7-001
+- [ ] `pr2-agentid-addressing` completed BBP7-002
+- [ ] `pr3-per-agent-catalog-readiness` completed BBP7-003
+- [ ] `pr4-session-search` completed BBP7-004
+- [ ] `pr5-agent-info-endpoint` completed BBP7-005
+- [ ] `pr6-external-hook-target` completed BBP7-006
+- [ ] `pr7-surface-agent-binding` completed BBP7-007
+- [ ] `pr8-subagent-grant` completed BBP7-008, or explicitly combined with pr7 within PR-PLAN budget
+- [ ] `pr9-two-surface-isolation` completed BBP7-009
+
 ## Review gates
-- [ ] Phase 6 `AgentRegistry` present and scoped against (not a competing registry), else STOP+report.
+- [ ] P6-R `ResolvedAgentRegistry` present and scoped against (not a competing registry), else STOP+report.
 - [ ] `agentId` in the `RuntimeScope.key` array for all agents; `sessionNamespace` carries `agentId` only for non-default agents, and default-agent sessions load unchanged (on-disk JSONL compat).
 - [ ] Per-agent tool catalog + readiness with zero cross-agent bleed (`05` Tests reproduced).
-- [ ] Session search scoped by `workspace+agent`, served from a rebuildable derived `state.db` table, no fs requirement, redaction enforced.
+- [ ] Session search scoped by trusted workspace+agent, served from a rebuildable derived `agent.db` table, no fs requirement, redaction enforced.
 - [ ] External hook routes onto the single T1 approval channel; boring-bash-free; authenticates/validates/redacts/audits.
 - [ ] `/api/v1/agents` and `/api/v1/agents/:agentId/info` are public, private-hook-free, and leak no secret/key material (assert in test).
 - [ ] One addressing entry ↔ one `agentId`; T2 platform-addressing guard stays green (`agentId`/`sessionId`/`SessionCtx` only in core signatures).
@@ -46,14 +63,21 @@ Derived strictly from [TODO.md](./TODO.md) and [PLAN.md](./PLAN.md). Tick each b
 - [ ] Any transitional code carries `TODO(remove:<bead-id>)` naming its deletion-owner bead; a later owner is allowed only when explicitly named per [INDEX.md](../../INDEX.md), and no marker outlives its named owner's phase.
 
 ## Exit criteria
-- [ ] Agent addressing resolves an `agentId` per request via the canonical `/api/v1/agents/:agentId/...` path prefix against the Phase 6 `AgentRegistry`; unknown/undeclared `agentId` fails closed.
-- [ ] `agentId` is in the binding scope `key` for all agents; `sessionNamespace` carries it only for non-default agents; `sessionId` remains runtime-owned/globally unique and event-store/replay stays keyed by `sessionId` only; the two-agent collision test proves namespace/scope isolation (bindings, tool catalog, transcripts, readiness, approvals), not per-agent store keys.
+- [ ] Agent addressing resolves an `agentId` per request via the canonical `/api/v1/agents/:agentId/...` path prefix against P6-R `ResolvedAgentRegistry`; unknown/undeclared `agentId` fails closed.
+- [ ] `agentId` is in the binding scope `key` for all agents; `sessionNamespace`
+      carries it only for non-default agents. `sessionId` remains the public
+      runtime-owned handle, while event/replay access uses T1's server-only
+      encoded structured `SessionKey` including authenticated scope/subject/
+      agent. Duplicate public ids across scopes cannot collide or authorize.
 - [ ] Per-agent tool catalog and per-agent readiness (reviewer readonly/no-exec; coding agent has bash; pure concierge has no boring-bash).
-- [ ] Session index/search scoped by `workspaceId` + `agentId` (+ title/content/operational events, redacted), served from a rebuildable derived `state.db` table, no filesystem requirement.
+- [ ] Session index/search scoped by trusted workspace+agent, served from a rebuildable derived `agent.db` table, no filesystem requirement.
 - [ ] External harness hook target resolution: authenticate caller, validate `(workspace, agent, session)`, redact, route to the HITL channel, audit attribution, no boring-bash dep.
 - [ ] `GET /api/v1/agents` returns a scrubbed declared-agent list, and `GET /api/v1/agents/:agentId/info` returns `{ agentId, model, tools, readiness, channels, environments }` — public contracts, no private core hooks.
 - [ ] Surface adapters each bind exactly one `agentId` per addressing entry.
-- [ ] First real subagent consumer: `SubagentEnvironmentGrant` / `deriveSubagentAttachment` lands, jailed by `agentId` scope + `scope.subpath`, minimal.
+- [ ] First real subagent consumer: `SubagentEnvironmentGrant` /
+      `deriveSubagentAttachment` lands, jailed by child lifetime `agentId` +
+      `scope.subpath`; every operation uses E1 `withAuthorizedView`, no raw
+      prepared handle.
 - [ ] Two surfaces × two agents in one workspace do not collide by namespace/scope/metadata (the Phase 7 exit test); no implementation relies on duplicate `sessionId` strings across agents.
 
 ## Closeout
