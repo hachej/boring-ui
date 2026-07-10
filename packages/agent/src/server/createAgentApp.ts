@@ -1,4 +1,5 @@
 import Fastify, { type FastifyInstance, type FastifyRequest } from 'fastify'
+import { isAbsolute, normalize, relative, sep } from 'node:path'
 import type { Agent } from '../shared/events'
 import type { AgentTool } from '../shared/tool'
 import type { AgentCoreHarnessFactory, AgentHarness, AgentHarnessFactory } from '../shared/harness'
@@ -57,6 +58,25 @@ function readonlySkillScope(request: FastifyRequest): string {
     user?.email ?? null,
     user?.emailVerified === true,
   ])
+}
+
+function readonlySkillRootsFromPaths(
+  paths: readonly string[] | undefined,
+  workspaceRoot: string,
+): string[] {
+  const roots: string[] = []
+  for (const path of paths ?? []) {
+    const relativeToWorkspace = normalize(isAbsolute(path) ? relative(workspaceRoot, path) : path)
+    const pathIsInWorkspace = !isAbsolute(path)
+      || (relativeToWorkspace !== '..' && !relativeToWorkspace.startsWith(`..${sep}`) && !isAbsolute(relativeToWorkspace))
+    const workspaceRelative = relativeToWorkspace.split(sep).join('/')
+    const relativeSegments = workspaceRelative.split('/')
+    const isWorkspaceUserSkill = relativeSegments[0] === '.agents' && relativeSegments[1] === 'skills'
+    if (isWorkspaceUserSkill) continue
+    const root = pathIsInWorkspace ? workspaceRelative : path
+    if (!roots.includes(root)) roots.push(root)
+  }
+  return roots
 }
 
 export interface CreateAgentAppOptions {
@@ -393,6 +413,13 @@ async function createWorkspaceAgentAppProfile(
         filesystemBindings: runtimeBundle.filesystemBindings,
         readonlySkillFiles,
         getReadonlySkillScope: readonlySkillScope,
+        getReadonlySkillRoots: () => readonlySkillRootsFromPaths([
+          ...(runtimePi.additionalSkillPaths ?? []),
+          ...(opts.pi?.getHotReloadableResources?.().additionalSkillPaths ?? []),
+          ...(getRuntimeProvisioning()?.skillPaths ?? []),
+          '.pi/skills',
+          '.pi/agent/skills',
+        ], workspaceRoot),
       },
       fsEvents: { workspace: runtimeBundle.workspace },
       tree: {

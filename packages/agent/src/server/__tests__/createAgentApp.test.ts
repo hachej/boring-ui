@@ -337,7 +337,18 @@ test('createAgentApp wires runtime provisioning skill paths into harness and ski
   })
   try {
     const bashTool = harnessFactory.mock.calls[0]?.[0].tools.find((tool: { name: string }) => tool.name === 'bash')
+    const writeTool = harnessFactory.mock.calls[0]?.[0].tools.find((tool: { name: string }) => tool.name === 'write')
     expect(bashTool).toBeTruthy()
+    const bashResult = await bashTool!.execute(
+      { command: 'printf mutated > .boring-agent/skills/plugin/macro-transform/SKILL.md' },
+      { abortSignal: new AbortController().signal, toolCallId: 'standalone-readonly-skill-bash' },
+    )
+    expect(bashResult).toMatchObject({ isError: true })
+    expect(bashResult.content[0]?.text).toContain('bash is disabled')
+    await expect(writeTool?.execute(
+      { path: '.boring-agent/skills/plugin/macro-transform/SKILL.md', content: '# Mutated\n' },
+      { abortSignal: new AbortController().signal, toolCallId: 'standalone-readonly-skill-write' },
+    )).rejects.toThrow('skill file is readonly')
     const skills = await app.inject({ method: 'GET', url: '/api/v1/agent/skills' })
     expect(skills.statusCode).toBe(200)
     expect(skills.json().skills.map((skill: { name: string }) => skill.name)).toContain('macro-transform')

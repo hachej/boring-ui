@@ -7,12 +7,13 @@ import type { BoringAgentRuntimePaths } from '../runtimeLayout'
 import type { PluginSkillAccess, ProvisionWorkspaceRuntimeOptions, WorkspaceProvisioningAdapter } from './types'
 
 const GENERATED_SKILLS_REL = '.boring-agent/skills'
-const USER_SCOPED_GENERATED_SKILLS_REL = '.boring-agent/skills-users'
+const REQUEST_SKILLS_REL = '.boring-agent/skills-requests'
 const USER_SKILLS_REL = '.agents/skills'
 
 export interface MirrorPluginSkillsResult {
   changed: boolean
   skillPaths: string[]
+  excludedSkillFilePaths?: string[]
 }
 
 function sourceToPath(source: string | URL): string {
@@ -40,10 +41,14 @@ function assertSkillAccess(value: string): asserts value is PluginSkillAccess {
   }
 }
 
-function userSkillNamespace(context: ProvisionWorkspaceRuntimeOptions['skillAccessContext']): string {
-  const identity = context?.userId?.trim() || context?.userEmail?.trim() || 'anonymous'
-  const verification = context?.userEmailVerified === true ? 'verified' : 'unverified'
-  return createHash('sha256').update(`${identity}\0${verification}`).digest('hex').slice(0, 24)
+function requestScopeId(context: ProvisionWorkspaceRuntimeOptions['skillAccessContext']): string {
+  const hash = createHash('sha256')
+  hash.update(JSON.stringify({
+    userId: context?.userId ?? null,
+    userEmail: context?.userEmail ?? null,
+    userEmailVerified: context?.userEmailVerified === true,
+  }))
+  return hash.digest('hex').slice(0, 24)
 }
 
 export function getProvisionedSkillPaths(
@@ -51,8 +56,7 @@ export function getProvisionedSkillPaths(
   context?: ProvisionWorkspaceRuntimeOptions['skillAccessContext'],
 ): string[] {
   if (!context) return [paths.skills, join(paths.workspaceRoot, USER_SKILLS_REL)]
-  const namespace = userSkillNamespace(context)
-  return [join(paths.workspaceRoot, USER_SCOPED_GENERATED_SKILLS_REL, namespace)]
+  return []
 }
 
 export async function mirrorPluginSkills(options: {
@@ -62,23 +66,37 @@ export async function mirrorPluginSkills(options: {
   skillAccessContext?: ProvisionWorkspaceRuntimeOptions['skillAccessContext']
   resolvePluginSkillAccess?: ProvisionWorkspaceRuntimeOptions['resolvePluginSkillAccess']
 }): Promise<MirrorPluginSkillsResult> {
-  const namespace = options.skillAccessContext ? userSkillNamespace(options.skillAccessContext) : undefined
-  const generatedSkillsRel = namespace
-    ? `${USER_SCOPED_GENERATED_SKILLS_REL}/${namespace}`
-    : GENERATED_SKILLS_REL
+  const generatedSkillsRel = GENERATED_SKILLS_REL
   const writableSkillsRel = USER_SKILLS_REL
 
-  await options.adapter.workspaceFs.rm(generatedSkillsRel)
-  await options.adapter.workspaceFs.mkdir(generatedSkillsRel)
+  if (!options.skillAccessContext) {
+    await options.adapter.workspaceFs.rm(generatedSkillsRel)
+    await options.adapter.workspaceFs.mkdir(generatedSkillsRel)
+  }
 
   const seen = new Set<string>()
   let copiedSkillCount = 0
+  const excludedSkillFilePaths: string[] = []
+  const requestScopedSkillPaths: string[] = []
+  const requestSkillsRel = options.skillAccessContext
+    ? `${REQUEST_SKILLS_REL}/${requestScopeId(options.skillAccessContext)}`
+    : undefined
+  let requestScopePrepared = false
+  const prepareRequestScope = async () => {
+    if (!requestSkillsRel || requestScopePrepared) return
+    await options.adapter.workspaceFs.rm(requestSkillsRel)
+    await options.adapter.workspaceFs.mkdir(requestSkillsRel)
+    requestScopePrepared = true
+  }
 
   for (const plugin of options.plugins) {
     assertSafeSegment('plugin id', plugin.id)
 
     for (const skill of plugin.skills ?? []) {
       assertSafeSegment('skill name', skill.name)
+      if (options.skillAccessContext) {
+        excludedSkillFilePaths.push(`${USER_SKILLS_REL}/${plugin.id}/${skill.name}/SKILL.md`)
+      }
       const defaultAccess = skill.access ?? 'readonly'
       assertSkillAccess(defaultAccess)
       const access = options.resolvePluginSkillAccess
@@ -100,6 +118,18 @@ export async function mirrorPluginSkills(options: {
 
       const sourcePath = sourceToPath(skill.source)
       const sourceStat = await stat(sourcePath)
+      if (options.skillAccessContext) {
+        await prepareRequestScope()
+        const skillTarget = `${requestSkillsRel}/${plugin.id}/${skill.name}`
+        const target = sourceStat.isDirectory()
+          ? skillTarget
+          : `${skillTarget}/SKILL.md`
+        await options.adapter.workspaceFs.copyFromHost(skill.source, target)
+        requestScopedSkillPaths.push(join(options.runtimeLayout.workspaceRoot, skillTarget))
+        copiedSkillCount += 1
+        continue
+      }
+
       // Request-scoped access (governance/RBAC) must not materialize editable
       // files into the shared workspace: a hashed path under .agents/ would
       // still be visible to every user with workspace filesystem access. Until
@@ -127,6 +157,9 @@ export async function mirrorPluginSkills(options: {
 
   return {
     changed: copiedSkillCount > 0,
-    skillPaths: getProvisionedSkillPaths(options.runtimeLayout, options.skillAccessContext),
+    skillPaths: options.skillAccessContext
+      ? requestScopedSkillPaths
+      : getProvisionedSkillPaths(options.runtimeLayout, options.skillAccessContext),
+    ...(excludedSkillFilePaths.length > 0 ? { excludedSkillFilePaths } : {}),
   }
 }

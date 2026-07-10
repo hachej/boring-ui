@@ -20,9 +20,8 @@ import {
 } from './fileRecords'
 import {
   isGeneratedReadonlySkillContainerPath,
-  isGeneratedReadonlySkillFilePath,
   isGeneratedReadonlySkillPath,
-  isReadonlySkillFilePath,
+  protectsReadonlySkillPath,
   readReadonlySkillFile,
   statReadonlySkillFile,
   type ReadonlySkillFileRegistry,
@@ -293,6 +292,10 @@ function sendReadonlySkillMutationDenied(reply: FastifyReply): FastifyReply {
   })
 }
 
+function isSkillMarkdownPath(path: string): boolean {
+  return path === 'SKILL.md' || path.endsWith('/SKILL.md')
+}
+
 export function fileRoutes(
   app: FastifyInstance,
   opts: {
@@ -302,6 +305,7 @@ export function fileRoutes(
     getFilesystemBindings?: (request: FastifyRequest) => RuntimeFilesystemBinding[] | undefined | Promise<RuntimeFilesystemBinding[] | undefined>
     readonlySkillFiles?: ReadonlySkillFileRegistry
     getReadonlySkillScope?: (request: FastifyRequest) => string | Promise<string>
+    getReadonlySkillRoots?: (request: FastifyRequest) => string[] | undefined | Promise<string[] | undefined>
   },
   done: (err?: Error) => void,
 ): void {
@@ -321,10 +325,18 @@ export function fileRoutes(
     return (await resolveFilesystemBindings(request)).find((binding) => binding.filesystem === filesystem)
   }
 
-  async function isDiscoveredReadonlySkillFile(request: FastifyRequest, path: string): Promise<boolean> {
-    if (!isReadonlySkillFilePath(path) || !opts.readonlySkillFiles) return false
+  async function isDiscoveredReadonlySkillPath(request: FastifyRequest, path: string): Promise<boolean> {
+    if (!opts.readonlySkillFiles) return false
     const scope = opts.getReadonlySkillScope ? await opts.getReadonlySkillScope(request) : 'default'
     return opts.readonlySkillFiles.has(scope, path)
+  }
+
+  async function isProtectedReadonlySkillPath(request: FastifyRequest, path: string): Promise<boolean> {
+    const roots = opts.getReadonlySkillRoots ? await opts.getReadonlySkillRoots(request) ?? [] : []
+    if (protectsReadonlySkillPath(roots, path)) return true
+    if (!opts.readonlySkillFiles) return false
+    const scope = opts.getReadonlySkillScope ? await opts.getReadonlySkillScope(request) : 'default'
+    return opts.readonlySkillFiles.protects(scope, path)
   }
 
   app.get('/api/v1/files/raw', async (request, reply) => {
@@ -424,7 +436,9 @@ export function fileRoutes(
     }
 
     try {
-      if (await isDiscoveredReadonlySkillFile(request, path)) {
+      const readonlyDiscoveredSkill = await isDiscoveredReadonlySkillPath(request, path)
+      const readonlyProtectedSkill = await isProtectedReadonlySkillPath(request, path)
+      if (readonlyDiscoveredSkill && path.startsWith('/') && isSkillMarkdownPath(path)) {
         const { content, stat } = await readReadonlySkillFile(path)
         if (stat.kind !== 'file') {
           return reply.code(400).send({
@@ -434,7 +448,9 @@ export function fileRoutes(
         return { content, mtimeMs: stat.mtimeMs, access: 'readonly' }
       }
       const workspace = await resolveWorkspace(request)
-      const access = isGeneratedReadonlySkillFilePath(path) ? 'readonly' : 'readwrite'
+      const access = readonlyDiscoveredSkill || readonlyProtectedSkill || isGeneratedReadonlySkillPath(path)
+        ? 'readonly'
+        : 'readwrite'
       if (workspace.readFileWithStat) {
         const { content, stat } = await workspace.readFileWithStat(path)
         return { content, mtimeMs: stat.kind === 'file' ? stat.mtimeMs : undefined, access }
@@ -465,11 +481,14 @@ export function fileRoutes(
     const filesystem = requestedFilesystem(body.filesystem)
     if (
       filesystem === USER_FILESYSTEM_ID
-      && (isReadonlySkillFilePath(path) || isGeneratedReadonlySkillPath(path))
+      && (
+        await isProtectedReadonlySkillPath(request, path)
+        || isGeneratedReadonlySkillPath(path)
+      )
     ) {
       return sendReadonlySkillMutationDenied(reply)
     }
-const expectedMtimeMs = typeof body.expectedMtimeMs === 'number'
+    const expectedMtimeMs = typeof body.expectedMtimeMs === 'number'
       ? body.expectedMtimeMs
       : null
     const shouldReturnMtimeMs = body.returnMtimeMs !== false || expectedMtimeMs !== null
@@ -565,7 +584,7 @@ const expectedMtimeMs = typeof body.expectedMtimeMs === 'number'
       const dir = isImage
         ? normalizeUploadDir(body.directory) ?? normalizeUploadDir(settings.markdown?.imageUploadDir) ?? DEFAULT_MARKDOWN_IMAGE_UPLOAD_DIR
         : DEFAULT_FILE_UPLOAD_DIR
-      if (isGeneratedReadonlySkillPath(dir)) {
+      if (await isProtectedReadonlySkillPath(request, dir) || isGeneratedReadonlySkillPath(dir)) {
         return sendReadonlySkillMutationDenied(reply)
       }
       const ext = extForUpload(filename, contentType)
@@ -660,11 +679,14 @@ const expectedMtimeMs = typeof body.expectedMtimeMs === 'number'
     const filesystem = requestedFilesystem(query.filesystem)
     if (
       filesystem === USER_FILESYSTEM_ID
-      && (isReadonlySkillFilePath(path) || isGeneratedReadonlySkillContainerPath(path))
+      && (
+        await isProtectedReadonlySkillPath(request, path)
+        || isGeneratedReadonlySkillContainerPath(path)
+      )
     ) {
       return sendReadonlySkillMutationDenied(reply)
     }
-if (filesystem !== USER_FILESYSTEM_ID) {
+    if (filesystem !== USER_FILESYSTEM_ID) {
       try {
         const binding = await resolveFilesystemBinding(request, filesystem)
         if (!binding) return sendNotFoundOrDenied(reply)
@@ -698,15 +720,15 @@ if (filesystem !== USER_FILESYSTEM_ID) {
     if (
       filesystem === USER_FILESYSTEM_ID
       && (
-        isReadonlySkillFilePath(from)
-        || isReadonlySkillFilePath(to)
+        await isProtectedReadonlySkillPath(request, from)
+        || await isProtectedReadonlySkillPath(request, to)
         || isGeneratedReadonlySkillContainerPath(from)
         || isGeneratedReadonlySkillContainerPath(to)
       )
     ) {
       return sendReadonlySkillMutationDenied(reply)
     }
-if (filesystem !== USER_FILESYSTEM_ID) {
+    if (filesystem !== USER_FILESYSTEM_ID) {
       try {
         const binding = await resolveFilesystemBinding(request, filesystem)
         if (!binding) return sendNotFoundOrDenied(reply)
@@ -737,10 +759,16 @@ if (filesystem !== USER_FILESYSTEM_ID) {
 
     const recursive = body.recursive === true
     const filesystem = requestedFilesystem(body.filesystem)
-    if (filesystem === USER_FILESYSTEM_ID && isGeneratedReadonlySkillPath(path)) {
+    if (
+      filesystem === USER_FILESYSTEM_ID
+      && (
+        await isProtectedReadonlySkillPath(request, path)
+        || isGeneratedReadonlySkillPath(path)
+      )
+    ) {
       return sendReadonlySkillMutationDenied(reply)
     }
-if (filesystem !== USER_FILESYSTEM_ID) {
+    if (filesystem !== USER_FILESYSTEM_ID) {
       try {
         const binding = await resolveFilesystemBinding(request, filesystem)
         if (!binding) return sendNotFoundOrDenied(reply)

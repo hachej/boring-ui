@@ -1,5 +1,5 @@
 import type { FastifyInstance, FastifyPluginAsync, FastifyRequest } from 'fastify'
-import { basename, isAbsolute, relative, resolve, sep } from 'node:path'
+import { basename, isAbsolute, normalize, relative, resolve, sep } from 'node:path'
 import type { AgentTool, ToolReadinessRequirement } from '../shared/tool'
 import type { AgentCoreHarnessFactory, AgentHarness, AgentHarnessFactory } from '../shared/harness'
 import type { Agent } from '../shared/events'
@@ -172,6 +172,25 @@ function applyGovernedSkillDiscoveryPolicy(
         }
       : {}),
   }
+}
+
+function readonlySkillRootsFromPaths(
+  paths: readonly string[] | undefined,
+  workspaceRoot: string,
+): string[] {
+  const roots: string[] = []
+  for (const path of paths ?? []) {
+    const relativeToWorkspace = normalize(isAbsolute(path) ? relative(workspaceRoot, path) : path)
+    const pathIsInWorkspace = !isAbsolute(path)
+      || (relativeToWorkspace !== '..' && !relativeToWorkspace.startsWith(`..${sep}`) && !isAbsolute(relativeToWorkspace))
+    const workspaceRelative = relativeToWorkspace.split(sep).join('/')
+    const relativeSegments = workspaceRelative.split('/')
+    const isWorkspaceUserSkill = relativeSegments[0] === '.agents' && relativeSegments[1] === 'skills'
+    if (isWorkspaceUserSkill) continue
+    const root = pathIsInWorkspace ? workspaceRelative : path
+    if (!roots.includes(root)) roots.push(root)
+  }
+  return roots
 }
 
 type RuntimeDependencyState = 'not-started' | 'preparing' | 'ready' | 'failed'
@@ -1347,6 +1366,17 @@ export const registerAgentRoutes: FastifyPluginAsync<RegisterAgentRoutesOptions>
     getFilesystemBindings: getFilesystemBindingsForRequest,
     readonlySkillFiles,
     getReadonlySkillScope: readonlySkillScope,
+    getReadonlySkillRoots: async (request) => {
+      const scope = await getSkillsScopeForRequest(request)
+      const binding = await getBindingForRequest(request)
+      return readonlySkillRootsFromPaths([
+        ...(scope.pi.additionalSkillPaths ?? []),
+        ...(scope.pi.getHotReloadableResources?.().additionalSkillPaths ?? []),
+        ...(binding.runtimeProvisioning?.skillPaths ?? []),
+        '.pi/skills',
+        '.pi/agent/skills',
+      ], scope.root)
+    },
   })
   await app.register(fsEventsRoutes, {
     getWorkspace: async (request) => (await getBindingForRequest(request)).runtimeBundle.workspace,

@@ -167,10 +167,11 @@ test('skill access controls plugin skill visibility and editability', async () =
   expect([...state.files.keys()].some((path) => path.includes('hidden-skill'))).toBe(false)
 })
 
-test('request-scoped skill access mirrors into per-user generated paths', async () => {
+test('request-scoped skill access materializes file and directory sources', async () => {
   const host = await mkdtemp(join(tmpdir(), 'boring-skill-user-access-'))
   const readonlySkill = await writeHostFile(host, 'readonly.md', '# Readonly\n')
   const readwriteSkill = await writeHostFile(host, 'readwrite.md', '# Readwrite\n')
+  const directorySkill = await createHostDirSkill(host)
   const hiddenSkill = await writeHostFile(host, 'hidden.md', '# Hidden\n')
   const state: FakeWorkspaceFsState = {
     files: new Map(),
@@ -185,6 +186,7 @@ test('request-scoped skill access mirrors into per-user generated paths', async 
       skills: [
         { name: 'readonly', source: readonlySkill, access: 'invisible' },
         { name: 'editable', source: readwriteSkill, access: 'readonly' },
+        { name: 'deck', source: directorySkill, access: 'readonly' },
         { name: 'hidden', source: hiddenSkill, access: 'readonly' },
       ],
     }],
@@ -194,21 +196,27 @@ test('request-scoped skill access mirrors into per-user generated paths', async 
     resolvePluginSkillAccess: ({ skillName }) => {
       if (skillName === 'readonly') return 'readonly'
       if (skillName === 'editable') return 'readwrite'
+      if (skillName === 'deck') return 'readonly'
       return 'invisible'
     },
   })
 
-  const readonlyPath = [...state.files.keys()].find((path) => path.endsWith('/clinic/readonly/SKILL.md'))
-  const editablePath = [...state.files.keys()].find((path) => path.endsWith('/clinic/editable/SKILL.md'))
-  expect(readonlyPath).toMatch(/^\.boring-agent\/skills-users\/[a-f0-9]{24}\/clinic\/readonly\/SKILL\.md$/)
-  expect(editablePath).toMatch(/^\.boring-agent\/skills-users\/[a-f0-9]{24}\/clinic\/editable\/SKILL\.md$/)
+  expect(state.files.get([...state.files.keys()].find((path) => path.endsWith('/clinic/readonly/SKILL.md')) ?? '')).toBe('# Readonly\n')
+  expect(state.files.get([...state.files.keys()].find((path) => path.endsWith('/clinic/editable/SKILL.md')) ?? '')).toBe('# Readwrite\n')
+  expect(state.files.get([...state.files.keys()].find((path) => path.endsWith('/clinic/deck/SKILL.md')) ?? '')).toBe('# Macro deck\n')
+  expect(state.files.get([...state.files.keys()].find((path) => path.endsWith('/clinic/deck/examples/demo.md')) ?? '')).toBe('demo\n')
   expect([...state.files.keys()].some((path) => path.includes('/hidden/'))).toBe(false)
-  expect(result.skillPaths).toHaveLength(1)
-  expect(result.skillPaths[0]).toContain('/.boring-agent/skills-users/')
+  expect(state.files.size).toBe(4)
+  expect(state.dirs.size).toBe(3)
+  expect(state.removed).toHaveLength(1)
+  expect(state.removed[0]).toMatch(/^\.boring-agent\/skills-requests\/[a-f0-9]{24}$/)
+  expect(state.copied).toHaveLength(6)
+  expect(result.skillPaths).toHaveLength(3)
+  expect(result.skillPaths.filter((path) => path.includes('/.boring-agent/skills-requests/'))).toHaveLength(3)
   expect(result.skillPaths.some((path) => path.includes('/.agents/'))).toBe(false)
 })
 
-test('verified and unverified access use distinct generated skill paths for the same user', async () => {
+test('verified request-scoped access selects generated file skill paths without exposing unverified users', async () => {
   const host = await mkdtemp(join(tmpdir(), 'boring-skill-verification-access-'))
   const skill = await writeHostFile(host, 'verified.md', '# Verified only\n')
   const state: FakeWorkspaceFsState = {
@@ -235,11 +243,15 @@ test('verified and unverified access use distinct generated skill paths for the 
     resolvePluginSkillAccess: () => 'readonly',
   })
 
-  expect(unverified.skillPaths[0]).not.toBe(verified.skillPaths[0])
-  const unverifiedNamespace = unverified.skillPaths[0]?.split('/').at(-1)
-  const verifiedNamespace = verified.skillPaths[0]?.split('/').at(-1)
-  expect(state.files.has(`.boring-agent/skills-users/${unverifiedNamespace}/clinic/verified-only/SKILL.md`)).toBe(false)
-  expect(state.files.get(`.boring-agent/skills-users/${verifiedNamespace}/clinic/verified-only/SKILL.md`)).toBe('# Verified only\n')
+  expect(unverified.skillPaths).toEqual([])
+  expect(verified.skillPaths).toHaveLength(1)
+  expect(verified.skillPaths[0]).toContain('/.boring-agent/skills-requests/')
+  expect(state.files.get([...state.files.keys()][0])).toBe('# Verified only\n')
+  expect(state.files.size).toBe(1)
+  expect(state.dirs.size).toBe(1)
+  expect(state.removed).toHaveLength(1)
+  expect(state.removed[0]).toMatch(/^\.boring-agent\/skills-requests\/[a-f0-9]{24}$/)
+  expect(state.copied).toHaveLength(1)
 })
 
 test('ungoverned readwrite plugin skills seed once, preserve workspace edits, and keep ordinary skill paths', async () => {
@@ -254,7 +266,7 @@ test('ungoverned readwrite plugin skills seed once, preserve workspace edits, an
     copied: [],
   }
 
-  await mirrorPluginSkills({
+  const result = await mirrorPluginSkills({
     plugins: [{ id: 'clinic', skills: [{ name: 'editable', source: skill, access: 'readwrite' }] }],
     adapter: createFakeAdapter(state),
     runtimeLayout: getBoringAgentRuntimePaths('/workspace'),
@@ -262,6 +274,10 @@ test('ungoverned readwrite plugin skills seed once, preserve workspace edits, an
 
   expect(state.files.get('.agents/skills/clinic/editable/SKILL.md')).toBe('# User edit\n')
   expect(state.copied).toEqual([])
+  expect(result.skillPaths).toEqual([
+    '/workspace/.boring-agent/skills',
+    '/workspace/.agents/skills',
+  ])
 })
 
 test('nuke-and-pave prunes removed or renamed generated skills but leaves user .agents/skills untouched', async () => {

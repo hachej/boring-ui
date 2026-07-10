@@ -6,6 +6,7 @@ import {
   createReadToolDefinition,
   createWriteToolDefinition,
 } from '@mariozechner/pi-coding-agent'
+import { isAbsolute, relative } from 'node:path'
 
 import type { AgentTool, ToolExecContext } from '../../../shared/tool'
 import { getRuntimeBundleStorageRoot, type RuntimeBundle, type RuntimeFilesystemBinding, type RuntimeFilesystemStrategy } from '../../runtime/mode'
@@ -70,6 +71,12 @@ function withFilesystemParameter(parameters: unknown, filesystemIds: readonly st
 function requestedFilesystem(params: Record<string, unknown>): string {
   const value = params.filesystem
   return typeof value === 'string' && value.length > 0 ? value : 'user'
+}
+
+function workspaceRelativeGuardPath(path: string, bundle: RuntimeBundle): string {
+  if (!isAbsolute(path)) return path
+  const rel = relative(bundle.workspace.root, path)
+  return rel && rel !== '..' && !rel.startsWith('../') && !isAbsolute(rel) ? rel : path
 }
 
 function withoutFilesystem<TParams extends Record<string, unknown>>(params: Record<string, unknown>): TParams {
@@ -221,6 +228,7 @@ function withBoundFilesystemPromptGuidance(promptSnippet: string | undefined, fi
 
 export interface BuildFilesystemAgentToolsOptions {
   getFilesystemBindings?: (ctx: ToolExecContext) => Promise<RuntimeBundle['filesystemBindings'] | undefined> | RuntimeBundle['filesystemBindings'] | undefined
+  isReadonlyWorkspacePath?: (path: string, ctx: ToolExecContext) => boolean | Promise<boolean>
 }
 
 function withFilesystemRouting(tool: AgentTool, bundle: RuntimeBundle, options: BuildFilesystemAgentToolsOptions = {}): AgentTool {
@@ -243,6 +251,13 @@ function withFilesystemRouting(tool: AgentTool, bundle: RuntimeBundle, options: 
           isError: false,
           details: result.details,
         }
+      }
+      if (
+        (tool.name === 'write' || tool.name === 'edit')
+        && typeof params.path === 'string'
+        && await options.isReadonlyWorkspacePath?.(workspaceRelativeGuardPath(params.path, bundle), ctx)
+      ) {
+        throw new Error('skill file is readonly')
       }
       return await tool.execute(withoutFilesystem(params), ctx)
     },

@@ -77,4 +77,31 @@ describe('buildUploadAgentTools', () => {
       expect.any(Buffer),
     )
   })
+
+  test('rejects readonly skill destination directories', async () => {
+    const storageRoot = await mkdtemp(join(tmpdir(), 'upload-tool-readonly-'))
+    tempDirs.push(storageRoot)
+    await writeFile(join(storageRoot, 'plot.png'), new Uint8Array([1, 2, 3]))
+    const workspace = mockWorkspace()
+    const bundle: RuntimeBundle = {
+      runtimeContext: { runtimeCwd: '/workspace' },
+      storageRoot,
+      workspace,
+      sandbox: mockSandbox(),
+      fileSearch: { search: vi.fn(async () => []) },
+    }
+    const [upload] = buildUploadAgentTools(bundle, {
+      isReadonlyWorkspacePath: (path) => path.startsWith('.boring-agent/skills'),
+    })
+
+    const result = await upload.execute(
+      { path: 'plot.png', directory: '.boring-agent/skills/plugin/skill' },
+      { abortSignal: new AbortController().signal, toolCallId: 'upload-readonly-skill' },
+    )
+
+    expect(result).toMatchObject({ isError: true })
+    expect(result.content[0]?.text).toContain('skill file is readonly')
+    expect(workspace.mkdir).not.toHaveBeenCalled()
+    expect(workspace.writeBinaryFile).not.toHaveBeenCalled()
+  })
 })
