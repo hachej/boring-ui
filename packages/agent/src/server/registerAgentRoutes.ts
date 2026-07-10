@@ -31,6 +31,7 @@ import { fsEventsRoutes } from './http/routes/fsEvents'
 import { treeRoutes } from './http/routes/tree'
 import { modelsRoutes, type ModelsRoutesOptions } from './http/routes/models'
 import { skillsRoutes } from './http/routes/skills'
+import { createReadonlySkillFileRegistry } from './http/readonlySkillFiles'
 import { piChatRoutes, type PiChatSessionService } from './http/routes/piChat'
 import { systemPromptRoutes } from './http/routes/systemPrompt'
 import { sessionChangesRoutes } from './http/routes/sessionChanges'
@@ -145,6 +146,18 @@ interface SkillScope {
 
 function getRequestWorkspaceId(request: FastifyRequest): string {
   return request.workspaceContext?.workspaceId ?? DEFAULT_WORKSPACE_ID
+}
+
+function readonlySkillScope(request: FastifyRequest): string {
+  const user = (request as FastifyRequest & {
+    user?: { id?: string; email?: string; emailVerified?: boolean } | null
+  }).user
+  return JSON.stringify([
+    getRequestWorkspaceId(request),
+    user?.id ?? null,
+    user?.email ?? null,
+    user?.emailVerified === true,
+  ])
 }
 
 function promoteRawFileWorkspaceQueryToHeader(request: FastifyRequest): void {
@@ -870,6 +883,7 @@ let runtimeProvisioning: WorkspaceProvisioningResult | undefined
   const staticBinding = requestScopedRuntime
     ? null
     : await getOrCreateRuntimeBinding(sessionId)
+  const readonlySkillFiles = createReadonlySkillFileRegistry()
   const skillsScopeByRequest = new WeakMap<FastifyRequest, Promise<SkillScope>>()
   const earlySessionStores = new Map<string, SessionStore>()
 
@@ -996,6 +1010,8 @@ let runtimeProvisioning: WorkspaceProvisioningResult | undefined
   await app.register(fileRoutes, {
     getWorkspace: async (request) => (await getBindingForRequest(request)).runtimeBundle.workspace,
     getFilesystemBindings: getFilesystemBindingsForRequest,
+    readonlySkillFiles,
+    getReadonlySkillScope: readonlySkillScope,
   })
   await app.register(fsEventsRoutes, {
     getWorkspace: async (request) => (await getBindingForRequest(request)).runtimeBundle.workspace,
@@ -1052,6 +1068,8 @@ let runtimeProvisioning: WorkspaceProvisioningResult | undefined
     getNoSkills: staticBinding
       ? undefined
       : async (request) => (await getSkillsScopeForRequest(request)).pi.noSkills,
+    readonlySkillFiles,
+    getReadonlySkillScope: readonlySkillScope,
   })
   await app.register(sessionChangesRoutes, { tracker: sessionChangesTracker })
   app.post<{ Body: { sessionId?: string } }>('/api/v1/agent/reload', async (request, reply) => {

@@ -20,6 +20,7 @@ import { fsEventsRoutes } from './http/routes/fsEvents'
 import { treeRoutes } from './http/routes/tree'
 import { modelsRoutes } from './http/routes/models'
 import { skillsRoutes } from './http/routes/skills'
+import { createReadonlySkillFileRegistry } from './http/readonlySkillFiles'
 import { piChatRoutes, type PiChatSessionService } from './http/routes/piChat'
 import { systemPromptRoutes } from './http/routes/systemPrompt'
 import { sessionChangesRoutes } from './http/routes/sessionChanges'
@@ -38,6 +39,18 @@ import { createAgentRuntimeBridge } from './createAgent'
 
 const DEFAULT_VERSION = '0.1.0-dev'
 const DEFAULT_SESSION_ID = 'default'
+
+function readonlySkillScope(request: FastifyRequest): string {
+  const user = (request as FastifyRequest & {
+    user?: { id?: string; email?: string; emailVerified?: boolean } | null
+  }).user
+  return JSON.stringify([
+    request.workspaceContext?.workspaceId ?? DEFAULT_SESSION_ID,
+    user?.id ?? null,
+    user?.email ?? null,
+    user?.emailVerified === true,
+  ])
+}
 
 export interface CreateAgentAppOptions {
   workspaceRoot?: string
@@ -276,7 +289,14 @@ export async function createAgentApp(
         })
       }
     : undefined
-  await app.register(fileRoutes, { workspace: runtimeBundle.workspace, getFilesystemBindings: filesystemBindingsForRequest, filesystemBindings: runtimeBundle.filesystemBindings })
+  const readonlySkillFiles = createReadonlySkillFileRegistry()
+  await app.register(fileRoutes, {
+    workspace: runtimeBundle.workspace,
+    getFilesystemBindings: filesystemBindingsForRequest,
+    filesystemBindings: runtimeBundle.filesystemBindings,
+    readonlySkillFiles,
+    getReadonlySkillScope: readonlySkillScope,
+  })
   await app.register(fsEventsRoutes, { workspace: runtimeBundle.workspace })
   await app.register(treeRoutes, { workspace: runtimeBundle.workspace, getFilesystemBindings: filesystemBindingsForRequest, filesystemBindings: runtimeBundle.filesystemBindings })
   // /api/v1/files/search powers BOTH the cmd-palette / file-tree
@@ -310,6 +330,8 @@ export async function createAgentApp(
       ...(opts.pi?.packages ?? []),
       ...(opts.pi?.getHotReloadableResources?.().packages ?? []),
     ],
+    readonlySkillFiles,
+    getReadonlySkillScope: readonlySkillScope,
   })
   await app.register(sessionChangesRoutes, { tracker: sessionChangesTracker })
   await app.register(catalogRoutes, { tools })

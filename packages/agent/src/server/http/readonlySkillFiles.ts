@@ -6,23 +6,51 @@ export interface ReadonlySkillFileStat {
   mtimeMs: number
 }
 
-function safeSkillFileSegments(path: string): string[] | null {
-  if (path.includes('\0') || !path.endsWith('/SKILL.md')) return null
+export interface ReadonlySkillFileRegistry {
+  replace(scope: string, paths: readonly string[]): void
+  has(scope: string, path: string): boolean
+}
+
+export function createReadonlySkillFileRegistry(maxScopes = 256): ReadonlySkillFileRegistry {
+  const pathsByScope = new Map<string, Set<string>>()
+  return {
+    replace(scope, paths) {
+      pathsByScope.delete(scope)
+      pathsByScope.set(scope, new Set(paths))
+      while (pathsByScope.size > maxScopes) {
+        const oldest = pathsByScope.keys().next().value
+        if (typeof oldest !== 'string') break
+        pathsByScope.delete(oldest)
+      }
+    },
+    has(scope, path) {
+      return pathsByScope.get(scope)?.has(path) === true
+    },
+  }
+}
+
+function safeSkillPathSegments(path: string): string[] | null {
+  if (path.includes('\0')) return null
   const segments = path.split('/')
   if (segments.includes('.') || segments.includes('..')) return null
   return segments
 }
 
-export function isGeneratedReadonlySkillFilePath(path: string): boolean {
+export function isGeneratedReadonlySkillPath(path: string): boolean {
   if (path.startsWith('/')) return false
-  const segments = safeSkillFileSegments(path)
+  const segments = safeSkillPathSegments(path)
   if (!segments || segments[0] !== '.boring-agent') return false
   return segments[1] === 'skills' || segments[1] === 'skills-users'
 }
 
+export function isGeneratedReadonlySkillFilePath(path: string): boolean {
+  return path.endsWith('/SKILL.md') && isGeneratedReadonlySkillPath(path)
+}
+
 export function isReadonlySkillFilePath(path: string): boolean {
   if (!path.startsWith('/')) return false
-  const segments = safeSkillFileSegments(path)
+  if (!path.endsWith('/SKILL.md')) return false
+  const segments = safeSkillPathSegments(path)
   if (!segments) return false
   const skillsIndex = segments.lastIndexOf('skills')
   if (skillsIndex < 0) return false
