@@ -13,6 +13,8 @@ import type { AgentHarness, AgentHarnessFactoryInput } from '../../shared/harnes
 import type { SessionCtx, SessionDetail, SessionStore, SessionSummary } from '../../shared/session'
 import { ErrorCode } from '../../shared/error-codes'
 import type { RuntimeFilesystemBindingOperations, RuntimeModeAdapter } from '../runtime/mode'
+import type { WorkspaceAgentDispatcherResolver } from '../workspaceAgentDispatcher'
+import { createDispatcherTestHarness } from './workspaceAgentDispatcherTestHarness'
 
 const tempDirs: string[] = []
 const ORIGINAL_TEMPLATE_PATH = getEnv('BORING_AGENT_TEMPLATE_PATH')
@@ -102,7 +104,41 @@ function createNoopHarnessFactory() {
   return { factory, inputs, sessions }
 }
 
+test('createAgentApp composes its trusted dispatcher over the standalone runtime', async () => {
+  const harness = createDispatcherTestHarness()
+  let resolver: WorkspaceAgentDispatcherResolver | undefined
+  const app = await createAgentApp({
+    mode: 'none',
+    sessionId: 'standalone-dispatcher',
+    sessionRoot: await makeTempDir('boring-agent-app-dispatcher-sessions-'),
+    logger: false,
+    harnessFactory: harness.factory,
+    onWorkspaceAgentDispatcher: (value) => { resolver = value },
+  })
 
+  try {
+    const dispatcher = await resolver!.resolve({ workspaceId: 'standalone-dispatcher', userId: 'standalone-user' })
+    const events = []
+    for await (const event of dispatcher.send({
+      content: 'standalone prompt',
+      model: { provider: 'test', id: 'gpt-5.5' },
+    })) events.push(event)
+
+    expect(harness.factoryInputs).toHaveLength(1)
+    expect(harness.sessions.createContexts).toEqual([{ workspaceId: 'standalone-dispatcher', userId: 'standalone-user' }])
+    expect(harness.sendInputs.find((input) => input.model)).toMatchObject({
+      model: { provider: 'test', id: 'gpt-5.5' },
+      ctx: { workspaceId: 'standalone-dispatcher', userId: 'standalone-user' },
+    })
+    expect(events.some((event) => event.chunk.type === 'usage')).toBe(true)
+    expect(events.at(-1)?.chunk.type).toBe('agent-end')
+    await expect(resolver!.resolve({ workspaceId: 'other-workspace', userId: 'standalone-user' })).rejects.toMatchObject({
+      code: ErrorCode.enum.UNAUTHORIZED,
+    })
+  } finally {
+    await app.close()
+  }
+})
 
 test('createAgentApp direct bash receives runtime env contributions without persisting values', async () => {
   const workspaceRoot = await makeTempDir('boring-agent-direct-runtime-env-')

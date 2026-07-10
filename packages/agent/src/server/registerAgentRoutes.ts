@@ -54,6 +54,14 @@ import {
   toolNames,
   type AgentRouteBindingProfile,
 } from './agentRouteBindingProfile'
+import {
+  assertWorkspaceAgentDispatcherRequestContext,
+  createBoundWorkspaceAgentDispatcher,
+  createWorkspaceAgentDispatcherError,
+  normalizeWorkspaceAgentDispatcherContext,
+  type WorkspaceAgentDispatcherResolver,
+} from './workspaceAgentDispatcher'
+import type { WorkspaceAgentDispatcherContext } from '../shared/workspaceAgentDispatcher'
 
 const DEFAULT_VERSION = '0.1.0-dev'
 const DEFAULT_WORKSPACE_ID = 'default'
@@ -356,11 +364,14 @@ export interface RegisterAgentRoutesOptions {
     workspaceId: string
     workspaceRoot: string
     request?: FastifyRequest
+    /** Verified actor id for trusted requestless dispatcher resolution. */
+    userId?: string
   }) => string | undefined | Promise<string | undefined>
   registerHealthRoute?: boolean
   sandboxHandleStore?: SandboxHandleStore
   getWorkspaceId?: (request: FastifyRequest) => string | Promise<string>
   getWorkspaceRoot?: (workspaceId: string, request: FastifyRequest) => string | Promise<string>
+  getTrustedWorkspaceRoot?: (ctx: WorkspaceAgentDispatcherContext) => string | Promise<string>
   /** Generic runtime env contributors. Agent stays workspace-neutral; hosts decide env names/values. */
   runtimeEnvContributions?: RuntimeEnvContribution[]
   /**
@@ -392,6 +403,11 @@ export interface RegisterAgentRoutesOptions {
     workspaceId: string
     workspaceRoot: string
   }) => Promise<Array<{ source: string; message: string; pluginId?: string }>>
+  /**
+   * Trusted in-process host composition seam. The resolver trusts caller-supplied
+   * workspace/user context; callers must authorize that context before resolving.
+   */
+  onWorkspaceAgentDispatcher?: (resolver: WorkspaceAgentDispatcherResolver) => void
 }
 
 /**
@@ -423,7 +439,8 @@ export const registerAgentRoutes: FastifyPluginAsync<RegisterAgentRoutesOptions>
     typeof opts.getPi === 'function' ||
     typeof opts.getExtraTools === 'function' ||
     typeof opts.getSessionNamespace === 'function' ||
-    typeof opts.getSystemPromptDynamic === 'function'
+    typeof opts.getSystemPromptDynamic === 'function' ||
+    typeof opts.getTrustedWorkspaceRoot === 'function'
   const sessionChangesTracker = new InMemorySessionChangesTracker()
   const externalPluginsEnabled = opts.externalPlugins !== false
   const runtimeBindings = new Map<string, RuntimeBindingEntry>()
@@ -453,18 +470,28 @@ export const registerAgentRoutes: FastifyPluginAsync<RegisterAgentRoutesOptions>
   async function resolveRuntimeScope(
     workspaceId: string,
     request?: FastifyRequest,
+    trustedCtx?: WorkspaceAgentDispatcherContext,
   ): Promise<RuntimeScope> {
-    const root = request && opts.getWorkspaceRoot
-      ? await opts.getWorkspaceRoot(workspaceId, request)
-      : workspaceRoot
+    let root = workspaceRoot
+    if (request && opts.getWorkspaceRoot) {
+      root = await opts.getWorkspaceRoot(workspaceId, request)
+    } else if (trustedCtx && opts.getTrustedWorkspaceRoot) {
+      root = await opts.getTrustedWorkspaceRoot(trustedCtx)
+    } else if (!request && opts.getWorkspaceRoot) {
+      throw createWorkspaceAgentDispatcherError(
+        ErrorCode.enum.WORKSPACE_UNINITIALIZED,
+        'workspace root resolution requires trusted workspace context',
+        400,
+      )
+    }
     const scopedTemplatePath = opts.getTemplatePath
       ? await opts.getTemplatePath({ workspaceId, workspaceRoot: root, request })
       : templatePath
     const pi = await resolveScopePi(workspaceId, root, request)
     const sessionNamespace = normalizeSessionNamespace(opts.getSessionNamespace
-      ? await opts.getSessionNamespace({ workspaceId, workspaceRoot: root, request })
+      ? await opts.getSessionNamespace({ workspaceId, workspaceRoot: root, request, userId: trustedCtx?.userId })
       : opts.sessionNamespace)
-    const extraToolsAuthSubject = opts.getExtraTools ? getRequestAuthSubject(request) : undefined
+    const extraToolsAuthSubject = opts.getExtraTools ? trustedCtx?.userId ?? getRequestAuthSubject(request) : undefined
     return {
       root,
       templatePath: scopedTemplatePath,
@@ -540,6 +567,7 @@ export const registerAgentRoutes: FastifyPluginAsync<RegisterAgentRoutesOptions>
     workspaceId: string,
     scope: RuntimeScope,
     request?: FastifyRequest,
+    trustedCtx?: WorkspaceAgentDispatcherContext,
   ): Promise<RuntimeBinding> {
     const root = scope.root
     const modeCtx = {
@@ -705,7 +733,7 @@ let runtimeProvisioning: WorkspaceProvisioningResult | undefined
           workspaceRoot: root,
           runtimeMode: resolvedMode,
           workspaceFsCapability: runtimeBundle.workspace.fsCapability,
-          authSubject: getRequestAuthSubject(request),
+          authSubject: trustedCtx?.userId ?? getRequestAuthSubject(request),
         })
       : []
     const tools = mergeTools({
@@ -790,12 +818,13 @@ let runtimeProvisioning: WorkspaceProvisioningResult | undefined
     workspaceId: string,
     scope: RuntimeScope,
     request?: FastifyRequest,
+    trustedCtx?: WorkspaceAgentDispatcherContext,
   ): RuntimeBindingEntry {
     const entry: RuntimeBindingEntry = {
       state: 'pending',
       promise: Promise.resolve(null as unknown as RuntimeBinding),
     }
-    entry.promise = createRuntimeBinding(workspaceId, scope, request).then(
+    entry.promise = createRuntimeBinding(workspaceId, scope, request, trustedCtx).then(
       (binding) => {
         entry.state = 'ready'
         return binding
@@ -813,9 +842,9 @@ let runtimeProvisioning: WorkspaceProvisioningResult | undefined
   async function getOrCreateRuntimeBinding(
     workspaceId: string,
     request?: FastifyRequest,
-    options: { failIfPending?: boolean } = {},
+    options: { failIfPending?: boolean; trustedCtx?: WorkspaceAgentDispatcherContext } = {},
   ): Promise<RuntimeBinding> {
-    const scope = await resolveRuntimeScope(workspaceId, request)
+    const scope = await resolveRuntimeScope(workspaceId, request, options.trustedCtx)
     const existing = runtimeBindings.get(scope.key)
     if (existing) {
       if (options.failIfPending && existing.state === 'pending') {
@@ -834,7 +863,7 @@ let runtimeProvisioning: WorkspaceProvisioningResult | undefined
       }
     }
 
-    const created = createRuntimeBindingEntry(workspaceId, scope, request)
+    const created = createRuntimeBindingEntry(workspaceId, scope, request, options.trustedCtx)
     runtimeBindings.set(scope.key, created)
     evictRuntimeBindings()
     if (options.failIfPending) {
@@ -912,6 +941,25 @@ let runtimeProvisioning: WorkspaceProvisioningResult | undefined
     : await getOrCreateRuntimeBinding(sessionId)
   const skillsScopeByRequest = new WeakMap<FastifyRequest, Promise<SkillScope>>()
   const earlySessionStores = new Map<string, SessionStore>()
+
+  opts.onWorkspaceAgentDispatcher?.({
+    async resolve(ctx, options) {
+      const boundCtx = normalizeWorkspaceAgentDispatcherContext(ctx)
+      assertWorkspaceAgentDispatcherRequestContext(boundCtx, options?.request)
+      if (staticBinding) {
+        if (boundCtx.workspaceId !== sessionId) {
+          throw createWorkspaceAgentDispatcherError(
+            ErrorCode.enum.UNAUTHORIZED,
+            'workspace agent dispatcher context does not match bound workspace',
+            401,
+          )
+        }
+        return createBoundWorkspaceAgentDispatcher(staticBinding.agent, boundCtx)
+      }
+      const binding = await getOrCreateRuntimeBinding(boundCtx.workspaceId, options?.request, { trustedCtx: boundCtx })
+      return createBoundWorkspaceAgentDispatcher(binding.agent, boundCtx)
+    },
+  })
 
   function getSkillsScopeForRequest(request: FastifyRequest): Promise<SkillScope> {
     let promise = skillsScopeByRequest.get(request)
@@ -1186,7 +1234,8 @@ async function registerPureAgentRoutes(
     typeof opts.getExtraTools === 'function' ||
     typeof opts.getPi === 'function' ||
     typeof opts.getSessionNamespace === 'function' ||
-    typeof opts.getSystemPromptDynamic === 'function'
+    typeof opts.getSystemPromptDynamic === 'function' ||
+    typeof opts.getTrustedWorkspaceRoot === 'function'
 
   function evictPureBindings(): void {
     if (pureBindings.size <= MAX_PURE_BINDINGS) return
@@ -1200,18 +1249,27 @@ async function registerPureAgentRoutes(
     }
   }
 
-  async function createPureBinding(request?: FastifyRequest): Promise<PureBinding> {
-    const workspaceId = request ? getRequestWorkspaceId(request) : sessionId
-    const workspaceRoot = request && opts.getWorkspaceRoot
-      ? await opts.getWorkspaceRoot(workspaceId, request)
-      : opts.workspaceRoot ?? ''
+  async function createPureBinding(request?: FastifyRequest, trustedCtx?: WorkspaceAgentDispatcherContext): Promise<PureBinding> {
+    const workspaceId = trustedCtx?.workspaceId ?? (request ? getRequestWorkspaceId(request) : sessionId)
+    let workspaceRoot = opts.workspaceRoot ?? ''
+    if (request && opts.getWorkspaceRoot) {
+      workspaceRoot = await opts.getWorkspaceRoot(workspaceId, request)
+    } else if (trustedCtx && opts.getTrustedWorkspaceRoot) {
+      workspaceRoot = await opts.getTrustedWorkspaceRoot(trustedCtx)
+    } else if (!request && opts.getWorkspaceRoot) {
+      throw createWorkspaceAgentDispatcherError(
+        ErrorCode.enum.WORKSPACE_UNINITIALIZED,
+        'workspace root resolution requires trusted workspace context',
+        400,
+      )
+    }
     const pi = withPiHarnessDefaults(opts.getPi
       ? await opts.getPi({ workspaceId, workspaceRoot, request })
       : opts.pi)
     const configuredSessionNamespace = normalizeSessionNamespace(opts.getSessionNamespace
-      ? await opts.getSessionNamespace({ workspaceId, workspaceRoot, request })
+      ? await opts.getSessionNamespace({ workspaceId, workspaceRoot, request, userId: trustedCtx?.userId })
       : opts.sessionNamespace)
-    const authSubject = opts.getExtraTools ? getRequestAuthSubject(request) : undefined
+    const authSubject = opts.getExtraTools ? trustedCtx?.userId ?? getRequestAuthSubject(request) : undefined
     const pureScopeNamespace = opts.getWorkspaceId
       ? pureSessionNamespaceFromWorkspaceId(workspaceId)
       : requestScopedPure
@@ -1286,6 +1344,24 @@ async function registerPureAgentRoutes(
   }
 
   const staticBinding = requestScopedPure ? undefined : await createPureBinding()
+  opts.onWorkspaceAgentDispatcher?.({
+    async resolve(ctx, options) {
+      const boundCtx = normalizeWorkspaceAgentDispatcherContext(ctx)
+      assertWorkspaceAgentDispatcherRequestContext(boundCtx, options?.request)
+      if (staticBinding) {
+        if (boundCtx.workspaceId !== sessionId) {
+          throw createWorkspaceAgentDispatcherError(
+            ErrorCode.enum.UNAUTHORIZED,
+            'workspace agent dispatcher context does not match bound workspace',
+            401,
+          )
+        }
+        return createBoundWorkspaceAgentDispatcher(staticBinding.agent, boundCtx)
+      }
+      const binding = await createPureBinding(options?.request, boundCtx)
+      return createBoundWorkspaceAgentDispatcher(binding.agent, boundCtx)
+    },
+  })
   const profile: AgentRouteBindingProfile = {
     runtimeMode: resolvedMode,
     capabilities: {
