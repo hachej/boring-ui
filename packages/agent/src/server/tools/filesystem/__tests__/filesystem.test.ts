@@ -98,12 +98,16 @@ function mockBundle(provider: string, root = '/workspace', storageRoot?: string)
   }
 }
 
-function withFilesystemBinding(bundle: RuntimeBundle, operations = mockReadonlyBindingOperations()): RuntimeBundle {
+function withFilesystemBinding(
+  bundle: RuntimeBundle,
+  operations = mockReadonlyBindingOperations(),
+  access: 'readonly' | 'readwrite' = 'readonly',
+): RuntimeBundle {
   return {
     ...bundle,
     filesystemBindings: [{
       filesystem: 'company_context',
-      access: 'readonly',
+      access,
       operations,
     }],
   }
@@ -252,7 +256,7 @@ describe('buildFilesystemAgentTools', () => {
     expect(present.promptSnippet).toContain('Named filesystem bindings')
     expect(present.promptSnippet).toContain('company_context')
     expect(present.promptSnippet).toContain('default to the user workspace')
-    expect(present.promptSnippet).toContain('Readonly filesystem bindings reject writes')
+    expect(present.promptSnippet).toContain('A binding may be readonly or readwrite')
     expect(present.promptSnippet).toContain('do not use path prefixes')
   })
 
@@ -368,6 +372,65 @@ describe('buildFilesystemAgentTools', () => {
     expect(operations.read).not.toHaveBeenCalledWith({ filesystem: 'company_context', path: 'company_context:/company/hr/policy.md' })
     logToolE2e({ tool: 'write', filesystem: 'company_context', path: '/company/hr/policy.md', expectedBinding: 'company_context-readonly', resultSummary: 'mutation rejected' })
     logToolE2e({ tool: 'read', filesystem: 'company_context', path: '<spoof>', expectedBinding: 'none', resultSummary: 'path spoof rejected before company read' })
+  })
+
+  test('company_context mutation tools use readwrite binding operations', async () => {
+    const operations = mockReadonlyBindingOperations()
+    operations.read = vi.fn(async () => ({ content: 'before target middle final after', mtimeMs: 123 }))
+    operations.write = vi.fn(async () => ({ mtimeMs: 456 }))
+    operations.mkdir = vi.fn(async () => ({}))
+    const tools = buildFilesystemAgentTools(withFilesystemBinding(mockBundle('direct'), operations, 'readwrite'))
+    const write = tools.find((tool) => tool.name === 'write')!
+    const edit = tools.find((tool) => tool.name === 'edit')!
+
+    await expect(write.execute(
+      { filesystem: 'company_context', path: '/company/new.md', content: 'new content' },
+      { abortSignal: new AbortController().signal, toolCallId: 'company-write' },
+    )).resolves.toMatchObject({ content: [{ text: 'Wrote /company/new.md' }] })
+    expect(operations.mkdir).toHaveBeenCalledWith({ filesystem: 'company_context', path: '/company', recursive: true })
+    expect(operations.write).toHaveBeenCalledWith({ filesystem: 'company_context', path: '/company/new.md', content: 'new content' })
+
+    await expect(edit.execute(
+      {
+        filesystem: 'company_context',
+        path: '/company/existing.md',
+        edits: [
+          { oldText: 'target', newText: 'updated' },
+          { oldText: 'final', newText: 'done' },
+        ],
+      },
+      { abortSignal: new AbortController().signal, toolCallId: 'company-edit' },
+    )).resolves.toMatchObject({ content: [{ text: 'Edited /company/existing.md' }] })
+    expect(operations.write).toHaveBeenCalledWith({
+      filesystem: 'company_context',
+      path: '/company/existing.md',
+      content: 'before updated middle done after',
+      expectedMtimeMs: 123,
+    })
+    expect(operations.rejectMutation).not.toHaveBeenCalled()
+
+    vi.mocked(operations.read).mockResolvedValueOnce({ content: 'a', mtimeMs: 456 })
+    await expect(edit.execute(
+      {
+        filesystem: 'company_context',
+        path: '/company/existing.md',
+        edits: [
+          { oldText: 'a', newText: 'b' },
+          { oldText: 'b', newText: 'c' },
+        ],
+      },
+      { abortSignal: new AbortController().signal, toolCallId: 'company-edit-invalid-chain' },
+    )).rejects.toThrow('found 0')
+
+    vi.mocked(operations.read).mockResolvedValueOnce({ content: 'aaa', mtimeMs: 789 })
+    await expect(edit.execute(
+      {
+        filesystem: 'company_context',
+        path: '/company/existing.md',
+        edits: [{ oldText: 'aa', newText: 'x' }],
+      },
+      { abortSignal: new AbortController().signal, toolCallId: 'company-edit-overlapping-match' },
+    )).rejects.toThrow('found 2')
   })
 
   test('remote filesystem tools also accept company_context without bypassing workspace user default', async () => {

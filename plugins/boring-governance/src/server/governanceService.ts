@@ -11,6 +11,7 @@ import type {
 import { normalizePolicyEmail } from './validatePolicy.js'
 
 export type GovernancePolicyErrorCode = 'disabled' | 'invalid' | 'denied' | 'not_allowed'
+export type CompanyContextAccess = 'none' | 'readonly' | 'readwrite'
 
 export class GovernancePolicyError extends Error {
   constructor(message: string, readonly code: GovernancePolicyErrorCode) {
@@ -105,6 +106,14 @@ export class GovernanceService {
   companyContextRules(user: GovernanceUserLike): string[] {
     if (!this.loaded.enabled) return []
     return this.userPolicy(user)?.companyContext.allow ?? []
+  }
+
+  companyContextAccessForUser(user: GovernanceUserLike | null | undefined): CompanyContextAccess {
+    if (!this.loaded.enabled) return 'none'
+    const policy = this.userPolicy(user)
+    if (!policy) return 'none'
+    if (policy.role === 'admin') return 'readwrite'
+    return policy.companyContext.allow.length > 0 ? 'readonly' : 'none'
   }
 
   companyContextWorkspaceId(): string | null {
