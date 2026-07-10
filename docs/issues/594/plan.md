@@ -111,11 +111,14 @@ interface TaskSessionBindingStore {
 
 ### Live task activity
 
+Spike result: see [`session-status-spike.md`](./session-status-spike.md). Project-wide session inventory is feasible through the existing authorized native Pi session store. Project-wide status is feasible for Boring-owned live sessions and persisted idle sessions. Boring UI cannot currently know that a standalone Pi process is actively working on a shared local session; those sessions can be listed and linked, but their active status must be `idle`/`unknown` until a future native Pi heartbeat/status integration exists.
+
 - Activity is derived from the authoritative project session runtime/read model; it is not persisted in `TaskSessionBindingStore`.
 - Target behavior: Boring UI lists all authorized native Pi sessions for the project/workspace and exposes a status read model for those sessions, whether or not a chat pane is currently mounted.
-- A task is `working` when at least one authorized linked session is executing, retrying, or processing a queued continuation. Merely having an open chat pane does not make a task active.
-- Add a scoped bulk session-activity read seam so Tasks does not issue one state request per binding. The response maps requested session IDs to a small stable state such as `idle | working | waiting | error` and omits unauthorized sessions.
-- The task panel may subscribe to the existing browser session-status signal for immediate updates from mounted chats, but that event is only an optimization. It is not the authoritative source because it misses unmounted/standalone project sessions.
+- A task is `working` when at least one authorized linked **Boring-owned live runtime** session is executing, retrying, or actively processing a queued continuation. Merely having an open chat pane does not make a task active.
+- Persisted sessions with no Boring live runtime channel are `idle` or `unknown` and must not be shown as actively working solely because their transcript exists. Standalone Pi live-working detection is out of scope for the first implementation.
+- Add a scoped bulk session-activity read seam so Tasks does not issue one state request per binding. The response maps requested session IDs to a small stable state such as `idle | queued | working | error | unknown`, includes a source such as `live-runtime | persisted`, and omits unauthorized sessions.
+- The task panel may subscribe to the existing browser session-status signal for immediate updates from mounted chats, but that event is only an optimization. It is not the authoritative source because it misses unmounted project sessions.
 - While the Tasks panel is open, refresh bulk activity on a bounded interval and immediately after binding/opening actions. Do not persist polling results.
 - Task cards show a concise `working` badge/spinner. If multiple linked sessions are active, show the active count. Selecting the indicator opens the active linked chat when unambiguous or the linked-session chooser otherwise.
 
@@ -250,19 +253,11 @@ Hosted proof:
 
 ### Spike: Project-wide Pi session inventory and status read model
 
-**Delivers:** a short technical spike that proves how Boring UI can list every authorized native Pi session in a project/workspace and derive a status for each one independent of mounted chat panes.
+**Delivers:** completed in [`session-status-spike.md`](./session-status-spike.md).
 
-**Questions to answer:**
+**Result:** Boring can list all authorized native Pi sessions via the existing session store. Bulk status should be implemented from the server runtime without cold-instantiating Pi sessions. Boring-owned live sessions can report `working`; persisted-only sessions can report `idle`/`unknown`; standalone Pi live work is not knowable today.
 
-- What statuses can be known for persisted-only, live-in-Boring, live-standalone-Pi, errored, waiting, and queued sessions?
-- Is status derivable from existing in-process runtime channels/event stores, or do we need a durable sidecar/index for live session status?
-- What is the local-mode story for sessions created or currently running in standalone Pi outside Boring UI? Can they be marked only as `idle/unknown` unless Pi writes a status event Boring can read?
-- How expensive is bulk status for all sessions in a large project, and what cache/poll interval is safe?
-- What authorization boundary owns this read model in hosted mode?
-
-**Proof:** prototype or test fixture demonstrating list-all + bulk status for at least: mounted working session, closed-pane Boring session, persisted idle session, and standalone-Pi-created session. Document any `unknown` limitation explicitly.
-
-**Review budget:** inside as a spike; implementation may split afterward.
+**Review budget:** complete; findings feed Slice 2 and Slice 3.
 
 ### Slice 1: Shared session rename
 
@@ -278,7 +273,7 @@ Hosted proof:
 
 **Delivers:** shared service search semantics, one `manage_sessions` tool for search/rename/guarded delete, and a scoped bulk session-activity read seam informed by the project-wide session-status spike.
 
-**Blocked by:** Slice 1 shared rename service and the project-wide session-status spike for non-mounted session semantics.
+**Blocked by:** Slice 1 shared rename service.
 
 **Proof:** tool contract/authorization tests and existing route tests.
 
@@ -288,7 +283,7 @@ Hosted proof:
 
 **Delivers:** binding model/store contract, file adapter, routes, TaskCard create+link/reopen/multiple/unlink flow, task-reference title convention, manual link of an existing session, and live working indicators backed by immediate browser events plus the bulk activity read seam.
 
-**Blocked by:** Slice 1 for title rename and the project-wide session-status spike for working indicators; binding CRUD can otherwise be developed independently.
+**Blocked by:** Slice 1 for title rename and Slice 2 for authoritative working indicators; binding CRUD can otherwise be developed independently.
 
 **Proof:** store conformance, routes/UI tests, CLI restart and standalone-Pi manual-link recording.
 
