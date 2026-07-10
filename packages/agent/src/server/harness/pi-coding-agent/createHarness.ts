@@ -444,6 +444,8 @@ export function createPiCodingAgentHarness(opts: {
   cwd: string;
   /** Agent-visible cwd used by Pi's system prompt and native session metadata. */
   runtimeCwd?: string;
+  /** Cwd used only to derive the default transcript storage directory. */
+  sessionStorageCwd?: string;
   /** Append-only addendum to pi's base system prompt. */
   systemPromptAppend?: string;
   /**
@@ -474,7 +476,7 @@ export function createPiCodingAgentHarness(opts: {
     sessionNamespace: opts.sessionNamespace,
     sessionRoot: opts.sessionRoot,
     sessionDir: opts.sessionDir,
-    storageCwd: opts.cwd,
+    storageCwd: opts.sessionStorageCwd ?? opts.cwd,
   });
   const piSessions = new Map<string, PiSessionHandle>();
   const runContextStorage = new AsyncLocalStorage<RunContext>();

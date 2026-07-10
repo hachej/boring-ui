@@ -430,6 +430,73 @@ describe("PiSessionStore", () => {
     }
   });
 
+  it("round-trips pure sessions under sessionRoot without synthesizing workspaceId", async () => {
+    const sessionRoot = join(tmpDir, "pure-sessions");
+    const store = new PiSessionStore("", { sessionRoot });
+    expect(store.getSessionDir()).toBe(sessionRoot);
+
+    const session = await store.create({}, { title: "Pure" });
+    const firstLine = (await readFile(join(sessionRoot, `${session.id}.jsonl`), "utf-8")).split("\n")[0];
+    const header = JSON.parse(firstLine);
+    expect(header).toEqual(expect.objectContaining({
+      cwd: "",
+      boringSessionCtx: {},
+    }));
+    expect(header.boringSessionCtx).not.toHaveProperty("workspaceId");
+
+    const freshStore = new PiSessionStore("", { sessionRoot });
+    await expect(freshStore.list({})).resolves.toEqual([expect.objectContaining({
+      id: session.id,
+      title: "Pure",
+    })]);
+    await expect(freshStore.load({}, session.id)).resolves.toEqual(expect.objectContaining({
+      id: session.id,
+      title: "Pure",
+    }));
+    await freshStore.delete({}, session.id);
+    await expect(new PiSessionStore("", { sessionRoot }).list({})).resolves.toEqual([]);
+  });
+
+  it("keeps pure harness storage stable when runtime cwd is sealed", () => {
+    const previous = process.env.BORING_AGENT_SESSION_ROOT;
+    const envRoot = join(tmpDir, "pure-env-root");
+    process.env.BORING_AGENT_SESSION_ROOT = envRoot;
+    try {
+      const first = createPiCodingAgentHarness({
+        tools: [noopTool],
+        cwd: join(tmpDir, "sealed-a"),
+        runtimeCwd: join(tmpDir, "sealed-a"),
+        sessionStorageCwd: "",
+      });
+      const second = createPiCodingAgentHarness({
+        tools: [noopTool],
+        cwd: join(tmpDir, "sealed-b"),
+        runtimeCwd: join(tmpDir, "sealed-b"),
+        sessionStorageCwd: "",
+      });
+
+      expect((first.sessions as PiSessionStore).getSessionDir()).toBe(join(envRoot, "----"));
+      expect((second.sessions as PiSessionStore).getSessionDir()).toBe(join(envRoot, "----"));
+    } finally {
+      if (previous === undefined) delete process.env.BORING_AGENT_SESSION_ROOT;
+      else process.env.BORING_AGENT_SESSION_ROOT = previous;
+    }
+  });
+
+  it("keeps pure harness session namespaces under an explicit session root", () => {
+    const sessionRoot = join(tmpDir, "pure-namespaced-root");
+    const harness = createPiCodingAgentHarness({
+      tools: [noopTool],
+      cwd: join(sessionRoot, ".runtime-none"),
+      runtimeCwd: join(sessionRoot, ".runtime-none"),
+      sessionStorageCwd: "",
+      sessionRoot,
+      sessionNamespace: "workspace-a",
+    });
+
+    expect((harness.sessions as PiSessionStore).getSessionDir()).toBe(join(sessionRoot, "workspace-a"));
+  });
+
   it("can store session files under host cwd while writing runtime cwd in session header", async () => {
     const store = new PiSessionStore("/workspace", { storageCwd: "/tmp/host-storage-root", sessionDir: tmpDir });
     const session = await store.create(ctx, { title: "Runtime cwd" });
