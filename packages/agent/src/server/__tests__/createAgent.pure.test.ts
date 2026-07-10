@@ -12,49 +12,50 @@ import { PiSessionStore } from '../harness/pi-coding-agent/sessions'
 import type { PiAgentPromptInput, PiAgentSessionAdapter, PiAgentSessionSnapshot } from '../pi-chat/PiAgentSessionAdapter'
 
 describe('createAgent pure smoke', () => {
-  it('runs a bare runtime none turn with a fake harness and no workspace', async () => {
+  it('runs a Node-hosted runtime none turn with a fake harness and no workspace', async () => {
     const sessionStorageRoot = await mkdtemp(join(tmpdir(), 'boring-agent-pure-smoke-'))
     const harness = createPureSmokeHarnessFactory()
-    const echoTool = createEchoTool()
     const agent = createAgent({
       runtime: 'none',
       sessionStorageRoot,
       harnessFactory: harness.factory,
-      tools: [echoTool],
+      tools: [createHostOnlyTool()],
     })
 
     try {
       const events = await collectEvents(agent.send({ content: 'hello from pure mode' }))
-      expect(events.length).toBeGreaterThan(0)
       expect(events.map((event) => event.chunk.type)).toEqual(expect.arrayContaining([
         'agent-start',
         'message-delta',
         'agent-end',
       ]))
-      expect(events).toContainEqual(expect.objectContaining({
+      expect(events.map((event) => event.eventIndex)).toEqual(events.map((_, index) => index))
+      expect(events[0]).toMatchObject({
         eventIndex: 0,
         sessionId: expect.any(String),
-        chunk: expect.objectContaining({ type: 'agent-start' }),
-      }))
+        chunk: { type: 'agent-start' },
+      })
+      expect(events.at(-1)).toMatchObject({
+        sessionId: events[0]?.sessionId,
+        chunk: { type: 'agent-end', status: 'ok' },
+      })
+      expect(events.every((event) => event.sessionId === events[0]?.sessionId)).toBe(true)
       expect(events.some((event) => event.chunk.type === 'message-delta' && event.chunk.delta === 'pong')).toBe(true)
 
+      const sealedCwd = join(sessionStorageRoot, '.runtime-none')
       expect(harness.inputs).toHaveLength(1)
       expect(harness.inputs[0]).toMatchObject({
-        cwd: join(sessionStorageRoot, '.runtime-none'),
-        runtimeCwd: join(sessionStorageRoot, '.runtime-none'),
+        cwd: sealedCwd,
+        runtimeCwd: sealedCwd,
         sessionRoot: sessionStorageRoot,
         sessionStorageCwd: '',
       })
-      expect(harness.inputs[0]?.tools.map((tool) => tool.name)).toEqual(['echo'])
-      for (const forbiddenTool of ['bash', 'read', 'write', 'edit', 'find', 'grep', 'ls', 'upload_file', 'execute_isolated_code']) {
-        expect(harness.inputs[0]?.tools.map((tool) => tool.name)).not.toContain(forbiddenTool)
-      }
+      expect(harness.inputs[0]?.tools.map((tool) => tool.name)).toEqual(['host_echo'])
 
-      expect(harness.contexts.length).toBeGreaterThan(0)
-      for (const ctx of harness.contexts) {
-        expect(ctx.workspaceId).toBeUndefined()
-        expect(ctx.userId).toBeUndefined()
-      }
+      expect(harness.contexts).toHaveLength(1)
+      expect(harness.contexts[0]).toMatchObject({ workdir: sealedCwd })
+      expect(harness.contexts[0]?.workspaceId).toBeUndefined()
+      expect(harness.contexts[0]?.userId).toBeUndefined()
       expect(harness.prompts).toEqual(['hello from pure mode'])
       expect(JSON.stringify({
         contexts: harness.contexts,
@@ -120,10 +121,10 @@ function createPureSmokeHarnessFactory() {
   return { contexts, factory, inputs, prompts }
 }
 
-function createEchoTool(): AgentTool {
+function createHostOnlyTool(): AgentTool {
   return {
-    name: 'echo',
-    description: 'Echoes the provided value.',
+    name: 'host_echo',
+    description: 'Host-provided echo tool.',
     parameters: {
       type: 'object',
       additionalProperties: false,
