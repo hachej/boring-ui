@@ -633,6 +633,7 @@ jobs:
           pnpm --filter @hachej/boring-generated-pane build
           pnpm --filter @hachej/boring-data-bridge build
           pnpm --filter @hachej/boring-bi-dashboard build
+          pnpm --filter @hachej/boring-sandbox build
           pnpm --filter @hachej/boring-bash build
           pnpm --filter @hachej/boring-governance build
         env:
@@ -640,7 +641,7 @@ jobs:
 
       - name: Publish packages with ci dist-tag
         run: |
-          for pkg in packages/ui packages/agent packages/plugin-cli packages/workspace packages/core packages/cli plugins/deck plugins/diagram plugins/ask-user plugins/data-explorer plugins/data-catalog plugins/generated-pane plugins/data-bridge plugins/bi-dashboard packages/boring-bash plugins/boring-governance; do
+          for pkg in packages/ui packages/agent packages/plugin-cli packages/workspace packages/core packages/cli plugins/deck plugins/diagram plugins/ask-user plugins/data-explorer plugins/data-catalog plugins/generated-pane plugins/data-bridge plugins/bi-dashboard packages/boring-sandbox packages/boring-bash plugins/boring-governance; do
             tarball=$(cd $pkg && pnpm pack 2>&1 | tail -1)
             if ! npm publish "$pkg/$tarball" --access public --tag ci --provenance; then
               echo "::warning::CI package publish failed for $pkg; continuing because release publishing is handled by release.yml"
