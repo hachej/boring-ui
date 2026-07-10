@@ -6,11 +6,11 @@ import type {
   AutomationCreate,
   AutomationPatch,
   AutomationRun,
-  AutomationRunCreate,
-  AutomationRunPatch,
+  AutomationRunBegin,
+  AutomationRunLifecyclePatch,
 } from "../shared/types"
 import type { AutomationStore } from "./store"
-import { automationNotFound, runNotFound } from "./store"
+import { automationNotFound, runAlreadyActive, runNotFound } from "./store"
 
 type StoredAutomationState = {
   automations: Record<string, Automation>
@@ -21,6 +21,7 @@ type AtomicWriter = (path: string, content: string) => Promise<void>
 
 export interface FileAutomationStoreOptions {
   writer?: AtomicWriter
+  clock?: () => Date
 }
 
 const EMPTY_STATE: StoredAutomationState = {
@@ -35,13 +36,17 @@ export class FileAutomationStore implements AutomationStore {
   private state: StoredAutomationState | null = null
   private loadInFlight: Promise<StoredAutomationState> | null = null
   private writeChain = Promise.resolve()
+  /** Active runs owned by this store process; persisted active runs are orphaned after restart. */
+  private readonly activeRunIds = new Set<string>()
   private readonly writer: AtomicWriter
+  private readonly clock: () => Date
 
   constructor(
     private readonly rootDir: string,
     options: FileAutomationStoreOptions = {},
   ) {
     this.writer = options.writer ?? writeAtomic
+    this.clock = options.clock ?? (() => new Date())
   }
 
   async listAutomations(): Promise<Automation[]> {
@@ -58,7 +63,7 @@ export class FileAutomationStore implements AutomationStore {
   }
 
   async createAutomation(input: AutomationCreate): Promise<Automation> {
-    const now = nowIso()
+    const now = this.nowIso()
     const id = randomUUID()
     const automation: Automation = {
       id,
@@ -92,7 +97,7 @@ export class FileAutomationStore implements AutomationStore {
         id: automation.id,
         promptRef: automation.promptRef,
         createdAt: automation.createdAt,
-        updatedAt: nowIso(),
+        updatedAt: this.nowIso(),
       }
       state.automations[id] = updated
     })
@@ -128,47 +133,55 @@ export class FileAutomationStore implements AutomationStore {
     await this.mutate((state) => {
       const current = state.automations[automationId]
       if (!current) throw automationNotFound(automationId)
-      current.updatedAt = nowIso()
+      current.updatedAt = this.nowIso()
     })
   }
 
-  async createRun(input: AutomationRunCreate): Promise<AutomationRun> {
-    const now = nowIso()
+  async beginRun(input: AutomationRunBegin): Promise<AutomationRun> {
+    const now = input.createdAt ?? this.nowIso()
     let run: AutomationRun | undefined
     await this.mutate((state) => {
       if (!state.automations[input.automationId]) throw automationNotFound(input.automationId)
+      reconcileOrphanedRuns(state, input.automationId, this.activeRunIds, now)
+      const active = Object.values(state.runs).find((candidate) => (
+        candidate.automationId === input.automationId
+        && (candidate.status === "queued" || candidate.status === "running")
+      ))
+      if (active) throw runAlreadyActive(input.automationId)
       run = {
         id: randomUUID(),
         automationId: input.automationId,
-        sessionId: input.sessionId ?? null,
-        status: input.status ?? "queued",
+        sessionId: null,
+        status: "queued",
         trigger: input.trigger,
         scheduledFor: input.scheduledFor ?? null,
-        startedAt: input.startedAt ?? null,
-        completedAt: input.completedAt ?? null,
-        durationMs: input.durationMs ?? null,
-        inputTokens: input.inputTokens ?? null,
-        outputTokens: input.outputTokens ?? null,
-        totalTokens: input.totalTokens ?? null,
+        startedAt: null,
+        completedAt: null,
+        durationMs: null,
+        inputTokens: null,
+        outputTokens: null,
+        totalTokens: null,
         promptSnapshot: input.promptSnapshot,
         modelSnapshot: input.modelSnapshot,
-        error: input.error ?? null,
+        error: null,
         createdAt: now,
         updatedAt: now,
       }
       state.runs[run.id] = clone(run)
+      this.activeRunIds.add(run.id)
     })
     return clone(requireValue(run))
   }
 
-  async updateRun(runId: string, patch: AutomationRunPatch): Promise<AutomationRun> {
+  async updateRunLifecycle(runId: string, patch: AutomationRunLifecyclePatch): Promise<AutomationRun> {
     let updated: AutomationRun | undefined
     await this.mutate((state) => {
       const run = state.runs[runId]
       if (!run) throw runNotFound(runId)
-      updated = applyRunPatch(run, patch)
+      updated = applyRunPatch(run, patch, this.nowIso())
       state.runs[runId] = updated
     })
+    if (updated && isTerminalRunStatus(updated.status)) this.activeRunIds.delete(runId)
     return clone(requireValue(updated))
   }
 
@@ -180,11 +193,6 @@ export class FileAutomationStore implements AutomationStore {
       .filter((run) => run.automationId === automationId)
       .sort((a, b) => runSortTimestamp(b).localeCompare(runSortTimestamp(a)))
       .map(clone)
-  }
-
-  async findRunningRun(automationId: string): Promise<AutomationRun | null> {
-    const runs = await this.listRuns(automationId)
-    return runs.find((run) => run.status === "running") ?? null
   }
 
   private statePath(): string {
@@ -209,6 +217,10 @@ export class FileAutomationStore implements AutomationStore {
     })
     this.writeChain = run.catch(() => undefined)
     return run
+  }
+
+  private nowIso(): string {
+    return this.clock().toISOString()
   }
 
   private async load(): Promise<StoredAutomationState> {
@@ -239,10 +251,30 @@ function promptRefForId(id: string): string {
   return `prompts/${id}.md`
 }
 
-function applyRunPatch(run: AutomationRun, patch: AutomationRunPatch): AutomationRun {
-  const next: AutomationRun = { ...run, updatedAt: nowIso() }
-  for (const [key, value] of Object.entries(patch) as Array<[keyof AutomationRunPatch, AutomationRunPatch[keyof AutomationRunPatch]]>) {
-    if (value !== undefined) (next as Record<keyof AutomationRunPatch, unknown>)[key] = value
+function reconcileOrphanedRuns(
+  state: StoredAutomationState,
+  automationId: string,
+  activeRunIds: ReadonlySet<string>,
+  completedAt: string,
+): void {
+  for (const run of Object.values(state.runs)) {
+    if (run.automationId !== automationId || isTerminalRunStatus(run.status) || activeRunIds.has(run.id)) continue
+    run.status = "failed"
+    run.completedAt = completedAt
+    run.durationMs = Math.max(0, new Date(completedAt).getTime() - new Date(run.startedAt ?? run.createdAt).getTime())
+    run.error = "Automation host restarted before the run completed"
+    run.updatedAt = completedAt
+  }
+}
+
+function isTerminalRunStatus(status: AutomationRun["status"]): boolean {
+  return status === "succeeded" || status === "failed" || status === "cancelled"
+}
+
+function applyRunPatch(run: AutomationRun, patch: AutomationRunLifecyclePatch, updatedAt: string): AutomationRun {
+  const next: AutomationRun = { ...run, updatedAt }
+  for (const [key, value] of Object.entries(patch) as Array<[keyof AutomationRunLifecyclePatch, AutomationRunLifecyclePatch[keyof AutomationRunLifecyclePatch]]>) {
+    if (value !== undefined) (next as Record<keyof AutomationRunLifecyclePatch, unknown>)[key] = value
   }
   return next
 }
@@ -256,10 +288,6 @@ async function writeAtomic(path: string, content: string): Promise<void> {
   const tmp = join(dirname(path), `.${randomUUID()}.tmp`)
   await writeFile(tmp, content, "utf8")
   await rename(tmp, path)
-}
-
-function nowIso(): string {
-  return new Date().toISOString()
 }
 
 function requireValue<T>(value: T | undefined): T {

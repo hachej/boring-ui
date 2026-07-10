@@ -8,10 +8,12 @@ import {
   IdParamsSchema,
   PromptUpdateSchema,
 } from "../shared"
+import { ManualRunExecutor } from "./manualRunExecutor"
 import { AutomationStoreError, automationNotFound, type AutomationStore } from "./store"
 
 export interface AutomationRoutesOptions {
   store: AutomationStore
+  manualRunExecutor?: Pick<ManualRunExecutor, "run">
 }
 
 export async function automationRoutes(app: FastifyInstance, opts: AutomationRoutesOptions): Promise<void> {
@@ -83,6 +85,22 @@ export async function automationRoutes(app: FastifyInstance, opts: AutomationRou
     }
   })
 
+  app.post(`${BORING_AUTOMATION_ROUTE_PREFIX}/automations/:id/run`, async (request, reply) => {
+    try {
+      const { id } = parseParams(IdParamsSchema, request.params)
+      if (!opts.manualRunExecutor) {
+        throw new AutomationStoreError(
+          BORING_AUTOMATION_ERROR_CODES.RUN_EXECUTOR_UNAVAILABLE,
+          "automation run executor is unavailable",
+        )
+      }
+      const run = await opts.manualRunExecutor.run({ automationId: id, request })
+      return reply.status(201).send({ ok: true, run })
+    } catch (cause) {
+      return sendError(reply, cause)
+    }
+  })
+
   app.get(`${BORING_AUTOMATION_ROUTE_PREFIX}/automations/:id/runs`, async (request, reply) => {
     try {
       const { id } = parseParams(IdParamsSchema, request.params)
@@ -124,9 +142,14 @@ function sendError(reply: FastifyReply, cause: unknown) {
 function httpStatusForStoreError(error: AutomationStoreError): number {
   switch (error.code) {
     case BORING_AUTOMATION_ERROR_CODES.INVALID_BODY:
+    case BORING_AUTOMATION_ERROR_CODES.INVALID_MODEL:
       return 400
     case BORING_AUTOMATION_ERROR_CODES.AUTOMATION_NOT_FOUND:
     case BORING_AUTOMATION_ERROR_CODES.RUN_NOT_FOUND:
       return 404
+    case BORING_AUTOMATION_ERROR_CODES.RUN_ALREADY_ACTIVE:
+      return 409
+    case BORING_AUTOMATION_ERROR_CODES.RUN_EXECUTOR_UNAVAILABLE:
+      return 503
   }
 }

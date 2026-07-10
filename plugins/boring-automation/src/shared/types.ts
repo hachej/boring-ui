@@ -50,27 +50,18 @@ export interface AutomationRun {
   updatedAt: string
 }
 
-export interface AutomationRunCreate {
+export interface AutomationRunBegin {
   automationId: string
-  sessionId?: string | null
-  status?: AutomationRunStatus
   trigger: AutomationRunTrigger
   scheduledFor?: string | null
-  startedAt?: string | null
-  completedAt?: string | null
-  durationMs?: number | null
-  inputTokens?: number | null
-  outputTokens?: number | null
-  totalTokens?: number | null
   promptSnapshot: string
   modelSnapshot: string
-  error?: string | null
+  createdAt?: string
 }
 
-export interface AutomationRunPatch {
+export interface AutomationRunLifecyclePatch {
   sessionId?: string | null
   status?: AutomationRunStatus
-  scheduledFor?: string | null
   startedAt?: string | null
   completedAt?: string | null
   durationMs?: number | null

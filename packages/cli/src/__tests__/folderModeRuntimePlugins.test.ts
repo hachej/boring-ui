@@ -310,6 +310,23 @@ describe("folder mode runtime plugin wiring", () => {
       // ask-user is sourced as an `internal` package; the CLI should
       // not advertise it via the legacy `frontUrl` field.
       expect((askUser as Record<string, unknown>).frontUrl).toBeUndefined()
+
+      const automation = plugins.find((plugin) => plugin.id === "boring-automation")
+      expect(automation).toBeDefined()
+      const automations = await app.inject({ method: "GET", url: "/api/v1/boring-automation/automations" })
+      expect(automations.statusCode).toBe(200)
+      expect(automations.json()).toMatchObject({ ok: true, automations: [] })
+      const created = await app.inject({
+        method: "POST",
+        url: "/api/v1/boring-automation/automations",
+        payload: { title: "Manual proof", cron: "0 9 * * *", timezone: "UTC", model: "legacy-model" },
+      })
+      const run = await app.inject({
+        method: "POST",
+        url: `/api/v1/boring-automation/automations/${created.json().automation.id}/run`,
+      })
+      expect(run.statusCode).toBe(400)
+      expect(run.json()).toMatchObject({ code: "BORING_AUTOMATION_INVALID_MODEL" })
     } finally {
       await app.close()
     }

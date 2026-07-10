@@ -449,6 +449,9 @@ importers:
       '@hachej/boring-ask-user':
         specifier: workspace:*
         version: link:../../plugins/ask-user
+      '@hachej/boring-automation':
+        specifier: workspace:*
+        version: link:../../plugins/boring-automation
       '@hachej/boring-diagram':
         specifier: workspace:*
         version: link:../../plugins/diagram

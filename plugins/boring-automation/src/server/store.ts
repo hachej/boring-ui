@@ -4,8 +4,8 @@ import type {
   AutomationCreate,
   AutomationPatch,
   AutomationRun,
-  AutomationRunCreate,
-  AutomationRunPatch,
+  AutomationRunBegin,
+  AutomationRunLifecyclePatch,
 } from "../shared/types"
 
 export type {
@@ -13,8 +13,8 @@ export type {
   AutomationCreate,
   AutomationPatch,
   AutomationRun,
-  AutomationRunCreate,
-  AutomationRunPatch,
+  AutomationRunBegin,
+  AutomationRunLifecyclePatch,
 } from "../shared/types"
 
 /** Plugin-local dependency injection seam for the single-workspace automation store. */
@@ -28,11 +28,10 @@ export interface AutomationStore {
   getPrompt(automationId: string): Promise<string>
   updatePrompt(automationId: string, body: string): Promise<void>
 
-  // Future executor-owned operations. Public HTTP routes expose run history read-only.
-  createRun(input: AutomationRunCreate): Promise<AutomationRun>
-  updateRun(runId: string, patch: AutomationRunPatch): Promise<AutomationRun>
+  // Executor-owned operations. Public HTTP routes expose run history read-only.
+  beginRun(input: AutomationRunBegin): Promise<AutomationRun>
+  updateRunLifecycle(runId: string, patch: AutomationRunLifecyclePatch): Promise<AutomationRun>
   listRuns(automationId: string): Promise<AutomationRun[]>
-  findRunningRun(automationId: string): Promise<AutomationRun | null>
 }
 
 export class AutomationStoreError extends Error {
@@ -50,4 +49,8 @@ export function automationNotFound(id: string): AutomationStoreError {
 
 export function runNotFound(id: string): AutomationStoreError {
   return new AutomationStoreError(BORING_AUTOMATION_ERROR_CODES.RUN_NOT_FOUND, `automation run ${id} not found`)
+}
+
+export function runAlreadyActive(automationId: string): AutomationStoreError {
+  return new AutomationStoreError(BORING_AUTOMATION_ERROR_CODES.RUN_ALREADY_ACTIVE, `automation ${automationId} already has an active run`)
 }
