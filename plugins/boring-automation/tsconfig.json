@@ -13,6 +13,7 @@
     "noEmit": true,
     "types": ["vitest/globals", "@testing-library/jest-dom"],
     "paths": {
+      "@hachej/boring-ui-kit": ["../../packages/ui/src/index.ts"],
       "@hachej/boring-workspace": ["../../packages/workspace/src/index.ts"],
       "@hachej/boring-workspace/plugin": ["../../packages/workspace/src/plugin.ts"],
       "@hachej/boring-workspace/server": ["../../packages/workspace/src/server/index.ts"]
