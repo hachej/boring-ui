@@ -35,12 +35,18 @@ interface SkillsQuery {
 
 const CACHE_TTL_MS = 30_000
 
-function pathForWorkspaceEditor(workspaceRoot: string, filePath: string): string {
-  const pathWithinWorkspace = relative(resolve(workspaceRoot), resolve(filePath))
-  if (pathWithinWorkspace === '' || pathWithinWorkspace === '..' || pathWithinWorkspace.startsWith(`..${sep}`) || isAbsolute(pathWithinWorkspace)) {
+function skillFilePathForWorkspace(filePath: string, workspaceRoot: string): string {
+  if (!isAbsolute(filePath)) return filePath
+  const workspaceRelative = relative(resolve(workspaceRoot), resolve(filePath))
+  if (
+    workspaceRelative === ''
+    || workspaceRelative === '..'
+    || workspaceRelative.startsWith(`..${sep}`)
+    || isAbsolute(workspaceRelative)
+  ) {
     return filePath
   }
-  return pathWithinWorkspace.split(sep).join('/')
+  return workspaceRelative.split(sep).join('/')
 }
 
 export interface SkillsRoutesOptions {
@@ -115,7 +121,7 @@ export function skillsRoutes(
     const skills: SkillSummary[] = (result.skills as unknown as Array<Record<string, unknown>>).map((s) => ({
       name: String(s.name),
       description: String(s.description ?? ''),
-      ...(typeof s.filePath === 'string' ? { filePath: pathForWorkspaceEditor(workspaceRoot, s.filePath) } : {}),
+      ...(typeof s.filePath === 'string' ? { filePath: skillFilePathForWorkspace(s.filePath, workspaceRoot) } : {}),
       ...(typeof (s.sourceInfo as { scope?: unknown } | undefined)?.scope === 'string' ? { source: (s.sourceInfo as { scope: string }).scope } : {}),
     }))
     const entry = { skills, expiresAt: now + CACHE_TTL_MS }

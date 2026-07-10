@@ -15,19 +15,35 @@ interface ReadonlySkillConfinementError extends Error {
   requestedPath: string
 }
 
+function safeSkillFileSegments(path: string): string[] | null {
+  if (path.includes('\0') || !path.endsWith('/SKILL.md')) return null
+  const segments = path.split('/')
+  if (segments.includes('.') || segments.includes('..')) return null
+  return segments
+}
+
+export function isGeneratedReadonlySkillFilePath(path: string): boolean {
+  if (path.startsWith('/')) return false
+  const segments = safeSkillFileSegments(path)
+  if (!segments || segments[0] !== '.boring-agent') return false
+  return segments[1] === 'skills' || segments[1] === 'skills-users'
+}
+
 export function isReadonlySkillFilePath(path: string): boolean {
   if (!path.startsWith('/')) return false
-  if (path.includes('\0')) return false
-  if (!path.endsWith('/SKILL.md')) return false
-  // Defensive: never accept traversal segments. `resolve()` would collapse
-  // them, but keeping them out means the accepted set is only literal,
-  // already-normalized absolute paths — no surprising `..` rewrites.
-  if (path.split('/').some((segment) => segment === '..')) return false
-  // Narrow absolute-path exception: discovered pi skills may live outside the
-  // workspace root (for example <agentDir>/skills/... — a shared, read-only
-  // global skills location). Confinement to the caller's allowed roots is
-  // enforced separately by `assertReadonlySkillFileConfined` before any read.
-  return path.includes('/.pi/agent/') && path.includes('/skills/')
+  const segments = safeSkillFileSegments(path)
+  if (!segments) return false
+  const skillsIndex = segments.lastIndexOf('skills')
+  if (skillsIndex < 0) return false
+  const piIndex = segments.indexOf('.pi')
+  const agentsIndex = segments.indexOf('.agents')
+  // Narrow absolute-path exceptions: discovered skills may live outside the
+  // workspace under Pi's legacy .pi/agent tree or a plugin-owned .agents tree.
+  // Let the editor read actual SKILL.md files there, but never mutate them.
+  return (
+    (piIndex >= 0 && segments[piIndex + 1] === 'agent' && piIndex < skillsIndex)
+    || (agentsIndex >= 0 && agentsIndex < skillsIndex)
+  )
 }
 
 function isLexicallyInside(root: string, resolvedPath: string): boolean {

@@ -19,7 +19,12 @@ import {
   buildFileRecordsResult,
   parseFileRecordsRequest,
 } from './fileRecords'
-import { isReadonlySkillFilePath, readReadonlySkillFile, statReadonlySkillFile } from '../readonlySkillFiles'
+import {
+  isGeneratedReadonlySkillFilePath,
+  isReadonlySkillFilePath,
+  readReadonlySkillFile,
+  statReadonlySkillFile,
+} from '../readonlySkillFiles'
 
 const log = createLogger('boring/workspace-settings')
 
@@ -291,6 +296,12 @@ function sendFilesystemBindingMutationDenied(
   })
 }
 
+function sendReadonlySkillMutationDenied(reply: FastifyReply): FastifyReply {
+  return reply.code(403).send({
+    error: { code: ERROR_CODE_READONLY, message: 'skill file is readonly' },
+  })
+}
+
 export function fileRoutes(
   app: FastifyInstance,
   opts: {
@@ -422,15 +433,16 @@ export function fileRoutes(
             error: { code: ERROR_CODE_VALIDATION_ERROR, message: 'path is not a file', field: 'path' },
           })
         }
-        return { content, mtimeMs: stat.mtimeMs }
+        return { content, mtimeMs: stat.mtimeMs, access: 'readonly' }
       }
+      const access = isGeneratedReadonlySkillFilePath(path) ? 'readonly' : 'readwrite'
       if (workspace.readFileWithStat) {
         const { content, stat } = await workspace.readFileWithStat(path)
-        return { content, mtimeMs: stat.kind === 'file' ? stat.mtimeMs : undefined, access: 'readwrite' }
+        return { content, mtimeMs: stat.kind === 'file' ? stat.mtimeMs : undefined, access }
       }
       const content = await workspace.readFile(path)
       const stat = await workspace.stat(path)
-      return { content, mtimeMs: stat.kind === 'file' ? stat.mtimeMs : undefined, access: 'readwrite' }
+      return { content, mtimeMs: stat.kind === 'file' ? stat.mtimeMs : undefined, access }
     } catch (err) {
       return classifyError(err, reply, 'file')
     }
@@ -452,6 +464,12 @@ export function fileRoutes(
     // 409 with the current mtime so the client can decide whether to
     // reload or force-overwrite.
     const filesystem = requestedFilesystem(body.filesystem)
+    if (
+      filesystem === USER_FILESYSTEM_ID
+      && (isReadonlySkillFilePath(path) || isGeneratedReadonlySkillFilePath(path))
+    ) {
+      return sendReadonlySkillMutationDenied(reply)
+    }
 const expectedMtimeMs = typeof body.expectedMtimeMs === 'number'
       ? body.expectedMtimeMs
       : null
@@ -638,6 +656,12 @@ const expectedMtimeMs = typeof body.expectedMtimeMs === 'number'
     const path = requireStringParam(query.path, 'path', reply)
     if (path === null) return
     const filesystem = requestedFilesystem(query.filesystem)
+    if (
+      filesystem === USER_FILESYSTEM_ID
+      && (isReadonlySkillFilePath(path) || isGeneratedReadonlySkillFilePath(path))
+    ) {
+      return sendReadonlySkillMutationDenied(reply)
+    }
 if (filesystem !== USER_FILESYSTEM_ID) {
       try {
         const binding = await resolveFilesystemBinding(request, filesystem)
@@ -669,6 +693,17 @@ if (filesystem !== USER_FILESYSTEM_ID) {
     const to = requireStringParam(body?.to, 'to', reply)
     if (to === null) return
     const filesystem = requestedFilesystem(body.filesystem)
+    if (
+      filesystem === USER_FILESYSTEM_ID
+      && (
+        isReadonlySkillFilePath(from)
+        || isReadonlySkillFilePath(to)
+        || isGeneratedReadonlySkillFilePath(from)
+        || isGeneratedReadonlySkillFilePath(to)
+      )
+    ) {
+      return sendReadonlySkillMutationDenied(reply)
+    }
 if (filesystem !== USER_FILESYSTEM_ID) {
       try {
         const binding = await resolveFilesystemBinding(request, filesystem)
