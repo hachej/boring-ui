@@ -10,6 +10,7 @@
  *   { skills: [{ name: string, description: string }] }
  */
 import type { FastifyInstance, FastifyRequest } from 'fastify'
+import { isAbsolute, relative, resolve, sep } from 'node:path'
 import {
   DefaultPackageManager,
   getAgentDir,
@@ -21,7 +22,7 @@ import { createResourceSettingsManager, withPiHarnessDefaults } from '../../harn
 export interface SkillSummary {
   name: string
   description: string
-  /** Absolute path to the resolved SKILL.md, used by workspace UIs to open it. */
+  /** Workspace-relative path when the skill lives in the workspace; otherwise its absolute source path. */
   filePath?: string
   /** Human-readable source/scope label for diagnostics and disabled rows. */
   source?: string
@@ -32,6 +33,14 @@ interface SkillsQuery {
 }
 
 const CACHE_TTL_MS = 30_000
+
+function pathForWorkspaceEditor(workspaceRoot: string, filePath: string): string {
+  const pathWithinWorkspace = relative(resolve(workspaceRoot), resolve(filePath))
+  if (pathWithinWorkspace === '' || pathWithinWorkspace === '..' || pathWithinWorkspace.startsWith(`..${sep}`) || isAbsolute(pathWithinWorkspace)) {
+    return filePath
+  }
+  return pathWithinWorkspace.split(sep).join('/')
+}
 
 export interface SkillsRoutesOptions {
   workspaceRoot: string
@@ -103,7 +112,7 @@ export function skillsRoutes(
     const skills: SkillSummary[] = (result.skills as unknown as Array<Record<string, unknown>>).map((s) => ({
       name: String(s.name),
       description: String(s.description ?? ''),
-      ...(typeof s.filePath === 'string' ? { filePath: s.filePath } : {}),
+      ...(typeof s.filePath === 'string' ? { filePath: pathForWorkspaceEditor(workspaceRoot, s.filePath) } : {}),
       ...(typeof (s.sourceInfo as { scope?: unknown } | undefined)?.scope === 'string' ? { source: (s.sourceInfo as { scope: string }).scope } : {}),
     }))
     const entry = { skills, expiresAt: now + CACHE_TTL_MS }

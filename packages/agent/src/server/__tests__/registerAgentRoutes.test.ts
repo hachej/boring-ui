@@ -1649,9 +1649,18 @@ test('skills endpoint discovers workspace .agents/skills when ambient skills are
 
   const res = await app.inject({ method: 'GET', url: '/api/v1/agent/skills?refresh=1' })
   expect(res.statusCode).toBe(200)
-  expect(res.json().skills).toEqual(expect.arrayContaining([
-    expect.objectContaining({ name: 'cli-project-skill' }),
-  ]))
+  const skill = res.json().skills.find((candidate: { name: string }) => candidate.name === 'cli-project-skill')
+  expect(skill).toMatchObject({
+    name: 'cli-project-skill',
+    filePath: '.agents/skills/cli-project-skill/SKILL.md',
+  })
+
+  const fileRes = await app.inject({
+    method: 'GET',
+    url: `/api/v1/files?path=${encodeURIComponent(skill.filePath)}`,
+  })
+  expect(fileRes.statusCode).toBe(200)
+  expect(fileRes.json().content).toContain('# CLI project skill')
 
   await app.close()
 })
