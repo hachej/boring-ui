@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type DragEvent } from "react"
+import { Columns3, List } from "lucide-react"
 import type { BoringTaskAdapter, BoringTaskBoardConfig, BoringTaskCard, BoringTaskColumn } from "../shared"
 import { groupTasksByColumn } from "./taskBoardModel"
+import { TaskCard } from "./TaskCard"
 import { TaskKanbanColumn } from "./TaskKanbanColumn"
 
 interface TaskKanbanBoardProps {
@@ -12,10 +14,17 @@ interface BoardState {
   tasks: BoringTaskCard[]
 }
 
+interface CachedBoardState extends BoardState {
+  cachedAt: number
+}
+
 interface EpicOption {
   id: string
   title: string
 }
+
+const TASK_BOARD_CACHE_TTL_MS = 2 * 60 * 1000
+type TaskBoardViewMode = "kanban" | "list"
 
 function adapterSummary(adapters: readonly BoringTaskAdapter[], selectedCount: number): string {
   if (selectedCount === adapters.length) return "All sources"
@@ -52,21 +61,79 @@ function mergeColumns(configs: readonly BoringTaskBoardConfig[], visibleColumnId
   return [...byId.values()]
 }
 
+function readCachedBoardState(cacheKey: string): CachedBoardState | null {
+  if (typeof window === "undefined") return null
+  try {
+    const raw = window.localStorage.getItem(cacheKey)
+    if (!raw) return null
+    const parsed = JSON.parse(raw) as Partial<CachedBoardState>
+    if (!parsed || typeof parsed !== "object" || !parsed.configs || !Array.isArray(parsed.tasks)) return null
+    return {
+      configs: parsed.configs as Record<string, BoringTaskBoardConfig>,
+      tasks: parsed.tasks as BoringTaskCard[],
+      cachedAt: typeof parsed.cachedAt === "number" ? parsed.cachedAt : 0,
+    }
+  } catch {
+    return null
+  }
+}
+
+function writeCachedBoardState(cacheKey: string, state: BoardState): void {
+  if (typeof window === "undefined") return
+  try {
+    window.localStorage.setItem(cacheKey, JSON.stringify({ ...state, cachedAt: Date.now() } satisfies CachedBoardState))
+  } catch {
+    // Best-effort cache only.
+  }
+}
+
+function readViewMode(cacheKey: string): TaskBoardViewMode {
+  if (typeof window === "undefined") return "kanban"
+  try {
+    return window.localStorage.getItem(`${cacheKey}:view`) === "list" ? "list" : "kanban"
+  } catch {
+    return "kanban"
+  }
+}
+
+function writeViewMode(cacheKey: string, mode: TaskBoardViewMode): void {
+  if (typeof window === "undefined") return
+  try {
+    window.localStorage.setItem(`${cacheKey}:view`, mode)
+  } catch {
+    // Best-effort preference only.
+  }
+}
+
 export function TaskKanbanBoard({ adapters }: TaskKanbanBoardProps) {
   const allAdapterIds = useMemo(() => adapters.map((adapter) => adapter.id), [adapters])
+  const cacheKey = useMemo(() => `boring-tasks:board-cache:v1:${allAdapterIds.join("|")}`, [allAdapterIds])
+  const cachedState = useMemo(() => readCachedBoardState(cacheKey), [cacheKey])
+  const cachedColumnIds = useMemo(
+    () => cachedState ? new Set(Object.values(cachedState.configs).flatMap((config) => config.columns.map((column) => column.id))) : new Set<string>(),
+    [cachedState],
+  )
   const [selectedAdapterIds, setSelectedAdapterIds] = useState<ReadonlySet<string>>(() => new Set(allAdapterIds))
-  const [state, setState] = useState<BoardState | null>(null)
-  const [visibleColumnIds, setVisibleColumnIds] = useState<ReadonlySet<string>>(new Set())
+  const [state, setState] = useState<BoardState | null>(() => cachedState ? { configs: cachedState.configs, tasks: cachedState.tasks } : null)
+  const [visibleColumnIds, setVisibleColumnIds] = useState<ReadonlySet<string>>(cachedColumnIds)
   const [tagFilter, setTagFilter] = useState("all")
   const [epicFilter, setEpicFilter] = useState("all")
-  const [loading, setLoading] = useState(true)
+  const [loading, setLoading] = useState(!cachedState)
   const [error, setError] = useState<string | null>(null)
   const [activeTaskRef, setActiveTaskRef] = useState<{ taskId: string; adapterId: string } | null>(null)
   const [movingTaskId, setMovingTaskId] = useState<string | null>(null)
+  const [deletingTaskId, setDeletingTaskId] = useState<string | null>(null)
   const [openMenu, setOpenMenu] = useState<"sources" | "columns" | null>(null)
+  const [viewMode, setViewModeState] = useState<TaskBoardViewMode>(() => readViewMode(cacheKey))
+  const [collapsedSectionIds, setCollapsedSectionIds] = useState<ReadonlySet<string>>(new Set())
   const requestSeq = useRef(0)
   const toolbarRef = useRef<HTMLDivElement | null>(null)
   const adaptersById = useMemo(() => new Map(adapters.map((adapter) => [adapter.id, adapter])), [adapters])
+
+  const setViewMode = (mode: TaskBoardViewMode) => {
+    setViewModeState(mode)
+    writeViewMode(cacheKey, mode)
+  }
 
   useEffect(() => {
     setSelectedAdapterIds((current) => {
@@ -76,13 +143,26 @@ export function TaskKanbanBoard({ adapters }: TaskKanbanBoardProps) {
     })
   }, [adaptersById, allAdapterIds])
 
-  const load = useCallback(async () => {
+  const load = useCallback(async (options: { force?: boolean } = {}) => {
     if (adapters.length === 0) {
       setState(null)
       setLoading(false)
       setError("No task adapters are registered.")
       return
     }
+    const cached = readCachedBoardState(cacheKey)
+    const cacheFresh = cached && Date.now() - cached.cachedAt < TASK_BOARD_CACHE_TTL_MS
+    if (cached && !options.force) {
+      const columnIds = new Set(Object.values(cached.configs).flatMap((config) => config.columns.map((column) => column.id)))
+      setState({ configs: cached.configs, tasks: cached.tasks })
+      setVisibleColumnIds((current) => current.size > 0 ? current : columnIds)
+      if (cacheFresh) {
+        setLoading(false)
+        setError(null)
+        return
+      }
+    }
+
     const requestId = requestSeq.current + 1
     requestSeq.current = requestId
     setLoading(true)
@@ -96,19 +176,21 @@ export function TaskKanbanBoard({ adapters }: TaskKanbanBoardProps) {
       const configs = Object.fromEntries(entries.map((entry) => [entry.adapterId, entry.config]))
       const tasks = entries.flatMap((entry) => entry.tasks)
       const columnIds = new Set(entries.flatMap((entry) => entry.config.columns.map((column) => column.id)))
-      setState({ configs, tasks })
+      const nextState = { configs, tasks }
+      setState(nextState)
+      writeCachedBoardState(cacheKey, nextState)
       setVisibleColumnIds(columnIds)
       setTagFilter("all")
       setEpicFilter("all")
     } catch (cause) {
       if (requestSeq.current === requestId) {
         setError(cause instanceof Error ? cause.message : String(cause))
-        setState(null)
+        setState((current) => current ?? null)
       }
     } finally {
       if (requestSeq.current === requestId) setLoading(false)
     }
-  }, [adapters])
+  }, [adapters, cacheKey])
 
   useEffect(() => {
     void load()
@@ -207,6 +289,29 @@ export function TaskKanbanBoard({ adapters }: TaskKanbanBoardProps) {
     }
   }
 
+  const deleteTask = async (task: BoringTaskCard) => {
+    const adapter = adaptersById.get(task.adapterId)
+    if (!adapter?.capabilities.delete || !adapter.deleteTask) {
+      setError(`Task source does not support issue deletion: ${task.adapterId}`)
+      return
+    }
+    const previous = state?.tasks ?? []
+    setDeletingTaskId(task.id)
+    setError(null)
+    setState((current) => current ? {
+      ...current,
+      tasks: current.tasks.filter((candidate) => !(candidate.id === task.id && candidate.adapterId === task.adapterId)),
+    } : current)
+    try {
+      await adapter.deleteTask({ taskId: task.id })
+    } catch (cause) {
+      setState((current) => current ? { ...current, tasks: previous } : current)
+      if (selectedAdapterIds.has(task.adapterId)) setError(cause instanceof Error ? cause.message : String(cause))
+    } finally {
+      setDeletingTaskId(null)
+    }
+  }
+
   const toggleColumn = (columnId: string) => {
     setVisibleColumnIds((current) => {
       const next = new Set(current)
@@ -231,6 +336,15 @@ export function TaskKanbanBoard({ adapters }: TaskKanbanBoardProps) {
 
   const showAllSources = () => {
     setSelectedAdapterIds(new Set(allAdapterIds))
+  }
+
+  const toggleSection = (sectionId: string) => {
+    setCollapsedSectionIds((current) => {
+      const next = new Set(current)
+      if (next.has(sectionId)) next.delete(sectionId)
+      else next.add(sectionId)
+      return next
+    })
   }
 
   const selectedCount = selectedAdapterIds.size
@@ -319,14 +433,35 @@ export function TaskKanbanBoard({ adapters }: TaskKanbanBoardProps) {
         <button
           type="button"
           className="h-8 rounded-lg border border-border bg-background px-3 text-sm font-medium text-foreground shadow-sm hover:bg-muted disabled:cursor-not-allowed disabled:opacity-50"
-          onClick={() => void load()}
+          onClick={() => void load({ force: true })}
           disabled={loading}
         >
           {loading ? "Refreshing…" : "Refresh"}
         </button>
+        <div className="inline-flex h-8 overflow-hidden rounded-lg border border-border bg-background shadow-sm" aria-label="Task view mode">
+          <button
+            type="button"
+            className={["grid w-8 place-items-center", viewMode === "kanban" ? "bg-muted text-foreground" : "text-muted-foreground hover:bg-muted/70 hover:text-foreground"].join(" ")}
+            onClick={() => setViewMode("kanban")}
+            aria-label="Show kanban view"
+            title="Kanban view"
+          >
+            <Columns3 className="size-3.5" strokeWidth={1.75} />
+          </button>
+          <button
+            type="button"
+            className={["grid w-8 place-items-center", viewMode === "list" ? "bg-muted text-foreground" : "text-muted-foreground hover:bg-muted/70 hover:text-foreground"].join(" ")}
+            onClick={() => setViewMode("list")}
+            aria-label="Show list view"
+            title="List view"
+          >
+            <List className="size-3.5" strokeWidth={1.75} />
+          </button>
+        </div>
         <div className="ml-auto flex flex-wrap items-center gap-1.5 text-xs text-muted-foreground">
           <span className="rounded-full border border-border bg-muted/40 px-2 py-1">{adapterSummary(adapters, selectedCount)}</span>
           {movingTaskId ? <span className="rounded-full border border-border bg-muted/40 px-2 py-1">Moving…</span> : null}
+          {deletingTaskId ? <span className="rounded-full border border-border bg-muted/40 px-2 py-1">Deleting…</span> : null}
         </div>
       </div>
 
@@ -341,6 +476,57 @@ export function TaskKanbanBoard({ adapters }: TaskKanbanBoardProps) {
           <div className="grid h-full place-items-center rounded-2xl border border-dashed border-border text-sm text-muted-foreground">Loading task board…</div>
         ) : columns.length === 0 ? (
           <div className="grid h-full place-items-center rounded-2xl border border-dashed border-border text-sm text-muted-foreground">No tasks match the current filters.</div>
+        ) : viewMode === "list" ? (
+          <div className="boring-scrollbar-discreet flex h-full flex-col gap-3 overflow-y-auto pr-1">
+            {columns.map((column) => {
+              const collapsed = collapsedSectionIds.has(column.id)
+              return (
+                <section
+                  key={column.id}
+                  className={["rounded-2xl border bg-muted/20", column.unmapped ? "border-dashed border-amber-400/50" : "border-border/80"].join(" ")}
+                >
+                  <button
+                    type="button"
+                    className="flex w-full items-center justify-between gap-3 border-b border-border/70 p-3 text-left hover:bg-muted/50"
+                    onClick={() => toggleSection(column.id)}
+                    aria-expanded={!collapsed}
+                  >
+                    <span className="flex min-w-0 items-start gap-2">
+                      {column.color ? <span className="mt-1.5 h-2 w-2 shrink-0 rounded-full" style={{ backgroundColor: column.color }} aria-hidden="true" /> : null}
+                      <span className="min-w-0">
+                      <span className="block truncate text-sm font-semibold text-foreground">{collapsed ? "▸" : "▾"} {column.title}</span>
+                      {column.description ? <span className="mt-0.5 block line-clamp-2 text-[11px] leading-4 text-muted-foreground">{column.description}</span> : null}
+                      </span>
+                    </span>
+                    <span className="shrink-0 rounded-full border border-border bg-background px-2 py-0.5 text-xs tabular-nums text-muted-foreground">
+                      {column.tasks.length}
+                    </span>
+                  </button>
+                  {!collapsed ? (
+                    <div className="flex flex-col gap-2 p-2">
+                      {column.tasks.length === 0 ? (
+                        <div className="rounded-xl border border-dashed border-border/80 p-3 text-center text-xs text-muted-foreground">
+                          No tasks
+                        </div>
+                      ) : column.tasks.map((task) => (
+                        <TaskCard
+                          key={`${task.adapterId}:${task.id}`}
+                          task={task}
+                          draggable={false}
+                          unmapped={column.unmapped}
+                          compact
+                          deleteEnabled={Boolean(adaptersById.get(task.adapterId)?.capabilities.delete && adaptersById.get(task.adapterId)?.deleteTask)}
+                          onDelete={(task) => void deleteTask(task)}
+                          onDragStart={handleTaskDragStart}
+                          onDragEnd={() => setActiveTaskRef(null)}
+                        />
+                      ))}
+                    </div>
+                  ) : null}
+                </section>
+              )
+            })}
+          </div>
         ) : (
           <div className="flex h-full gap-3 overflow-x-auto pb-2">
             {columns.map((column) => (
@@ -352,7 +538,9 @@ export function TaskKanbanBoard({ adapters }: TaskKanbanBoardProps) {
                 onTaskDragStart={handleTaskDragStart}
                 onTaskDragEnd={() => setActiveTaskRef(null)}
                 onTaskDrop={(taskId, adapterId, statusId) => void moveTask(taskId, adapterId, statusId)}
+                onTaskDelete={(task) => void deleteTask(task)}
                 canDragTask={(task) => Boolean(adaptersById.get(task.adapterId)?.capabilities.move && adaptersById.get(task.adapterId)?.moveTask)}
+                canDeleteTask={(task) => Boolean(adaptersById.get(task.adapterId)?.capabilities.delete && adaptersById.get(task.adapterId)?.deleteTask)}
               />
             ))}
           </div>

@@ -112,9 +112,9 @@ function safeSessionNamespaceSegment(value: string): string {
   return value.replace(/[^A-Za-z0-9_-]/g, '_').slice(0, 80) || 'workspace'
 }
 
-export function fullAppAgentSessionNamespace(ctx: { workspaceId: string; request?: FastifyRequest }): string {
+export function fullAppAgentSessionNamespace(ctx: { workspaceId: string; request?: FastifyRequest; userId?: string }): string {
   const workspaceSegment = safeSessionNamespaceSegment(ctx.workspaceId)
-  const userId = requestUserId(ctx.request)
+  const userId = ctx.userId?.trim() || requestUserId(ctx.request)
   return `${workspaceSegment}_user_${userId ? shortHash(userId) : 'anonymous'}`
 }
 

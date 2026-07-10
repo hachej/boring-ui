@@ -1,4 +1,5 @@
 import Fastify, { type FastifyInstance, type FastifyRequest } from 'fastify'
+import type { Agent } from '../shared/events'
 import type { AgentTool } from '../shared/tool'
 import type { AgentCoreHarnessFactory, AgentHarness, AgentHarnessFactory } from '../shared/harness'
 import type { TelemetrySink } from '../shared/telemetry'
@@ -27,6 +28,14 @@ import {
   toolNames,
   type AgentRouteBindingProfile,
 } from './agentRouteBindingProfile'
+import {
+  assertWorkspaceAgentDispatcherRequestContext,
+  createBoundWorkspaceAgentDispatcher,
+  createWorkspaceAgentDispatcherError,
+  normalizeWorkspaceAgentDispatcherContext,
+  type WorkspaceAgentDispatcherResolver,
+} from './workspaceAgentDispatcher'
+import { ErrorCode } from '../shared/error-codes'
 
 const DEFAULT_VERSION = '0.1.0-dev'
 const DEFAULT_SESSION_ID = 'default'
@@ -112,6 +121,31 @@ export interface CreateAgentAppOptions {
     workspaceId: string
     workspaceRoot: string
   }) => Promise<Array<{ source: string; message: string; pluginId?: string }>>
+  /**
+   * Trusted in-process host composition seam. The resolver trusts caller-supplied
+   * workspace/user context; callers must authorize that context before resolving.
+   */
+  onWorkspaceAgentDispatcher?: (resolver: WorkspaceAgentDispatcherResolver) => void
+}
+
+function createStaticWorkspaceAgentDispatcherResolver(
+  agent: Agent,
+  workspaceId: string,
+): WorkspaceAgentDispatcherResolver {
+  return {
+    async resolve(ctx, options) {
+      const boundCtx = normalizeWorkspaceAgentDispatcherContext(ctx)
+      assertWorkspaceAgentDispatcherRequestContext(boundCtx, options?.request)
+      if (boundCtx.workspaceId !== workspaceId) {
+        throw createWorkspaceAgentDispatcherError(
+          ErrorCode.enum.UNAUTHORIZED,
+          'workspace agent dispatcher context does not match bound workspace',
+          401,
+        )
+      }
+      return createBoundWorkspaceAgentDispatcher(agent, boundCtx)
+    },
+  }
 }
 
 export async function createAgentApp(
@@ -122,7 +156,7 @@ export async function createAgentApp(
 
   const resolvedMode = opts.runtimeModeAdapter?.id ?? opts.mode ?? autoDetectMode()
   const profile = !opts.runtimeModeAdapter && resolvedMode === PURE_RUNTIME_MODE
-    ? await createPureAgentAppProfile(opts, resolvedMode)
+    ? await createPureAgentAppProfile(opts, sessionId, resolvedMode)
     : await createWorkspaceAgentAppProfile(opts, sessionId, resolvedMode, app)
 
   app.addHook(
@@ -139,6 +173,7 @@ export async function createAgentApp(
 
 async function createPureAgentAppProfile(
   opts: CreateAgentAppOptions,
+  sessionId: string,
   resolvedMode: RuntimeModeId,
 ): Promise<AgentRouteBindingProfile> {
   const runtimePi = withPiHarnessDefaults(opts.pi)
@@ -164,6 +199,7 @@ async function createPureAgentAppProfile(
     sessionStorageRoot: opts.sessionRoot,
   })
   const agentRuntime = await coreAgent.getRuntime()
+  opts.onWorkspaceAgentDispatcher?.(createStaticWorkspaceAgentDispatcherResolver(coreAgent.agent, sessionId))
   const readyTracker = new ReadyStatusTracker({ sandboxReady: true, harnessReady: true })
   return {
     runtimeMode: resolvedMode,
@@ -306,6 +342,7 @@ async function createWorkspaceAgentAppProfile(
     },
   })
   const agentRuntime = await coreAgent.getRuntime()
+  opts.onWorkspaceAgentDispatcher?.(createStaticWorkspaceAgentDispatcherResolver(coreAgent.agent, sessionId))
   const harness = agentRuntime.harness
   harnessRef = harness
   const readyTracker = createRuntimeReadyStatusTracker(modeAdapter, {

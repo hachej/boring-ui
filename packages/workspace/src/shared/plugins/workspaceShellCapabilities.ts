@@ -21,7 +21,7 @@ export interface WorkspaceShellAnchorRect {
 
 export interface WorkspaceShellCapabilities {
   openArtifact(target: WorkspaceShellArtifactTarget | null, options?: { sessionId?: string | null; title?: string; instanceId?: string }): WorkspaceShellCapabilityResult
-  openDetachedChat(sessionId: string, options?: { anchor?: WorkspaceShellAnchorRect; title?: string }): WorkspaceShellCapabilityResult
+  openDetachedChat(sessionId: string, options?: { anchor?: WorkspaceShellAnchorRect; title?: string; initialDraft?: string; composingEnabled?: boolean }): WorkspaceShellCapabilityResult
 }
 
 const failed = (message: string): WorkspaceShellCapabilityResult => ({ success: false, reason: "open-failed", message })

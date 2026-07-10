@@ -2,13 +2,15 @@ import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { homedir, tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { afterEach, expect, test, vi } from 'vitest'
-import Fastify from 'fastify'
+import Fastify, { type FastifyRequest } from 'fastify'
 
 import { registerAgentRoutes } from '../registerAgentRoutes'
 import { provisionWorkspaceRuntime } from '../workspace/provisioning'
 import { ErrorCode } from '../../shared/error-codes'
 import type { RuntimeModeAdapter } from '../runtime/mode'
 import { AGENT_NO_FILESYSTEM_FOR_ATTACHMENTS } from '../../shared/events'
+import type { WorkspaceAgentDispatcherResolver } from '../workspaceAgentDispatcher'
+import { createDispatcherTestHarness } from './workspaceAgentDispatcherTestHarness'
 import type { AgentHarness, AgentHarnessFactoryInput } from '../../shared/harness'
 import type { SessionCtx, SessionDetail, SessionStore, SessionSummary } from '../../shared/session'
 
@@ -145,6 +147,48 @@ async function createDummySkill(): Promise<string> {
   return root
 }
 
+test('registerAgentRoutes composes a trusted dispatcher over the same pure runtime', async () => {
+  const harness = createDispatcherTestHarness()
+  let resolver: WorkspaceAgentDispatcherResolver | undefined
+  const app = Fastify({ logger: false })
+  await app.register(registerAgentRoutes, {
+    mode: 'none',
+    sessionId: 'workspace-dispatcher',
+    sessionRoot: await makeTempDir('boring-agent-dispatcher-sessions-'),
+    harnessFactory: harness.factory,
+    onWorkspaceAgentDispatcher: (value) => { resolver = value },
+  })
+
+  try {
+    expect(resolver).toBeDefined()
+    const dispatcher = await resolver!.resolve({ workspaceId: 'workspace-dispatcher', userId: 'user-dispatcher' })
+    const events = []
+    for await (const event of dispatcher.send({
+      content: 'headless prompt',
+      model: { provider: 'test', id: 'gpt-5.5' },
+    })) events.push(event)
+
+    expect(harness.factoryInputs).toHaveLength(1)
+    expect(harness.sessions.createContexts).toEqual([{ workspaceId: 'workspace-dispatcher', userId: 'user-dispatcher' }])
+    expect(harness.sendInputs.find((input) => input.model)).toMatchObject({
+      ctx: { workspaceId: 'workspace-dispatcher', userId: 'user-dispatcher' },
+      model: { provider: 'test', id: 'gpt-5.5' },
+    })
+    expect(events.some((event) => event.chunk.type === 'usage')).toBe(true)
+    expect(events.at(-1)?.chunk).toMatchObject({ type: 'agent-end', status: 'ok' })
+    const sessionId = events[0]?.sessionId
+    expect(sessionId).toBe('dispatcher-session-1')
+    await expect(dispatcher.interrupt(sessionId!)).resolves.toMatchObject({ accepted: true })
+    await expect(dispatcher.stop(sessionId!)).resolves.toMatchObject({ accepted: true, stopped: true })
+    expect(harness.factoryInputs).toHaveLength(1)
+    await expect(resolver!.resolve({ workspaceId: 'wrong-workspace', userId: 'user-dispatcher' })).rejects.toMatchObject({
+      code: ErrorCode.enum.UNAUTHORIZED,
+    })
+  } finally {
+    await app.close()
+  }
+})
+
 test('registerAgentRoutes externalPlugins=false keeps local plugin files out of catalog', async () => {
   const workspaceRoot = await makeTempDir('boring-agent-embed-plugin-disabled-')
   const pluginDir = join(workspaceRoot, '.pi', 'extensions')
@@ -180,6 +224,80 @@ test('registerAgentRoutes externalPlugins=false keeps local plugin files out of 
     expect(catalogText).not.toContain('boring-plugin-authoring')
     expect(catalogText).not.toContain('plugin-owned')
     expect(catalogText).not.toContain('my-plugin')
+  } finally {
+    await app.close()
+  }
+})
+
+test('registerAgentRoutes dispatcher fails closed when dynamic workspace resolution lacks request context', async () => {
+  let resolver: WorkspaceAgentDispatcherResolver | undefined
+  const app = Fastify({ logger: false })
+  await app.register(registerAgentRoutes, {
+    mode: 'none',
+    workspaceRoot: await makeTempDir('boring-agent-dispatcher-base-'),
+    getWorkspaceId: async (request) => String(request.headers['x-boring-workspace-id'] ?? ''),
+    getWorkspaceRoot: async () => await makeTempDir('boring-agent-dispatcher-workspace-'),
+    harnessFactory: createDispatcherTestHarness().factory,
+    onWorkspaceAgentDispatcher: (value) => { resolver = value },
+  })
+
+  try {
+    await expect(resolver!.resolve({ workspaceId: 'workspace-dynamic', userId: 'user-dynamic' })).rejects.toMatchObject({
+      code: ErrorCode.enum.WORKSPACE_UNINITIALIZED,
+    })
+  } finally {
+    await app.close()
+  }
+})
+
+test('registerAgentRoutes dispatcher reuses a dynamic runtime with trusted requestless scope', async () => {
+  const workspaceRoot = await makeTempDir('boring-agent-dispatcher-dynamic-')
+  const harness = createDispatcherTestHarness()
+  const getTrustedWorkspaceRoot = vi.fn(async () => workspaceRoot)
+  let resolver: WorkspaceAgentDispatcherResolver | undefined
+  const app = Fastify({ logger: false })
+  app.addHook('onRequest', async (request) => {
+    ;(request as FastifyRequest & { user?: { id: string } }).user = { id: 'user-dynamic' }
+  })
+  await app.register(registerAgentRoutes, {
+    mode: 'direct',
+    externalPlugins: false,
+    workspaceRoot: await makeTempDir('boring-agent-dispatcher-dynamic-base-'),
+    sessionRoot: await makeTempDir('boring-agent-dispatcher-dynamic-sessions-'),
+    getWorkspaceId: async (request) => String(request.headers['x-boring-workspace-id'] ?? ''),
+    getWorkspaceRoot: async () => workspaceRoot,
+    getTrustedWorkspaceRoot,
+    getSessionNamespace: ({ request, userId }) => {
+      const requestUser = (request as FastifyRequest & { user?: { id: string } } | undefined)?.user?.id
+      return `actor-${userId ?? requestUser ?? 'anonymous'}`
+    },
+    harnessFactory: harness.factory,
+    onWorkspaceAgentDispatcher: (value) => { resolver = value },
+  })
+
+  try {
+    const catalog = await app.inject({
+      method: 'GET',
+      url: '/api/v1/agent/catalog',
+      headers: { 'x-boring-workspace-id': 'workspace-dynamic' },
+    })
+    expect(catalog.statusCode).toBe(200)
+    expect(harness.factoryInputs).toHaveLength(1)
+
+    await resolver!.resolve({ workspaceId: 'workspace-dynamic', userId: 'user-dynamic' })
+    expect(getTrustedWorkspaceRoot).toHaveBeenCalledWith({ workspaceId: 'workspace-dynamic', userId: 'user-dynamic' })
+    expect(harness.factoryInputs).toHaveLength(1)
+
+    await expect(resolver!.resolve(
+      { workspaceId: 'workspace-dynamic', userId: 'user-dynamic' },
+      { request: {} as FastifyRequest },
+    )).resolves.toBeDefined()
+    expect(harness.factoryInputs).toHaveLength(1)
+
+    await expect(resolver!.resolve(
+      { workspaceId: 'workspace-dynamic', userId: 'user-dynamic' },
+      { request: { workspaceContext: { workspaceId: 'other-workspace' } } as FastifyRequest },
+    )).rejects.toMatchObject({ code: ErrorCode.enum.UNAUTHORIZED })
   } finally {
     await app.close()
   }

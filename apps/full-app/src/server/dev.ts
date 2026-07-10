@@ -103,7 +103,7 @@ startCoreWorkspaceAgentDevServer({
       filterModels: governance.filterModels,
       getFilesystemBindings: governance.getFilesystemBindings(),
       pi: governance.pi,
-      getSessionNamespace: ({ workspaceId, request }) => fullAppAgentSessionNamespace({ workspaceId, request }),
+      getSessionNamespace: ({ workspaceId, request, userId }) => fullAppAgentSessionNamespace({ workspaceId, request, userId }),
       getExtraTools: (ctx) => appRef ? createFullAppBoringMcpAgentToolsForRequest(appRef, ctx) : [],
     })
     appDb = app.db
