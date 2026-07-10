@@ -19,6 +19,7 @@ import {
 import type { PiPackageSource } from '../../piPackages'
 import type { Workspace } from '../../../shared/workspace'
 import { createResourceSettingsManager, withPiHarnessDefaults } from '../../harness/pi-coding-agent/createHarness'
+import { isReadonlySkillFilePath, type ReadonlySkillFileRegistry } from '../readonlySkillFiles'
 
 export interface SkillSummary {
   name: string
@@ -58,6 +59,8 @@ export interface SkillsRoutesOptions {
   getAdditionalSkillPaths?: (request: FastifyRequest) => string[] | undefined | Promise<string[] | undefined>
   getPiPackages?: (request: FastifyRequest) => PiPackageSource[] | undefined | Promise<PiPackageSource[] | undefined>
   getNoSkills?: (request: FastifyRequest) => boolean | undefined | Promise<boolean | undefined>
+  readonlySkillFiles?: ReadonlySkillFileRegistry
+  getReadonlySkillScope?: (request: FastifyRequest) => string | Promise<string>
 }
 
 export function skillsRoutes(
@@ -66,6 +69,17 @@ export function skillsRoutes(
   done: (err?: Error) => void,
 ): void {
   const cached = new Map<string, { skills: SkillSummary[]; expiresAt: number }>()
+
+  async function registerReadonlySkillFiles(request: FastifyRequest, skills: readonly SkillSummary[]): Promise<void> {
+    if (!opts.readonlySkillFiles) return
+    const scope = opts.getReadonlySkillScope ? await opts.getReadonlySkillScope(request) : 'default'
+    opts.readonlySkillFiles.replace(
+      scope,
+      skills.flatMap((skill) => (
+        skill.filePath && isReadonlySkillFilePath(skill.filePath) ? [skill.filePath] : []
+      )),
+    )
+  }
 
   async function resolveSkillsForRequest(request: FastifyRequest, refresh = false) {
     const workspace = opts.getWorkspace
@@ -91,7 +105,10 @@ export function skillsRoutes(
       if (entry.expiresAt <= now) cached.delete(key)
     }
     const cachedEntry = cached.get(cacheKey)
-    if (!refresh && cachedEntry && cachedEntry.expiresAt > now) return cachedEntry
+    if (!refresh && cachedEntry && cachedEntry.expiresAt > now) {
+      await registerReadonlySkillFiles(request, cachedEntry.skills)
+      return cachedEntry
+    }
 
     const agentDir = getAgentDir()
     const packageSkillPaths = noSkills
@@ -126,6 +143,7 @@ export function skillsRoutes(
     }))
     const entry = { skills, expiresAt: now + CACHE_TTL_MS }
     cached.set(cacheKey, entry)
+    await registerReadonlySkillFiles(request, skills)
     return entry
   }
 

@@ -36,6 +36,7 @@ import { fsEventsRoutes } from './http/routes/fsEvents'
 import { treeRoutes } from './http/routes/tree'
 import { modelsRoutes, type ModelsRoutesOptions } from './http/routes/models'
 import { skillsRoutes } from './http/routes/skills'
+import { createReadonlySkillFileRegistry } from './http/readonlySkillFiles'
 import { piChatRoutes } from './http/routes/piChat'
 import { AgentEffectAdmissionError, type AgentEffectAdmission, type PiChatSessionService } from '../core/piChatSessionService'
 import { systemPromptRoutes } from './http/routes/systemPrompt'
@@ -223,6 +224,18 @@ interface SkillScope {
 
 function getRequestWorkspaceId(request: FastifyRequest): string {
   return request.workspaceContext?.workspaceId ?? DEFAULT_WORKSPACE_ID
+}
+
+function readonlySkillScope(request: FastifyRequest): string {
+  const user = (request as FastifyRequest & {
+    user?: { id?: string; email?: string; emailVerified?: boolean } | null
+  }).user
+  return JSON.stringify([
+    getRequestWorkspaceId(request),
+    user?.id ?? null,
+    user?.email ?? null,
+    user?.emailVerified === true,
+  ])
 }
 
 function promoteRawFileWorkspaceQueryToHeader(request: FastifyRequest): void {
@@ -1117,6 +1130,7 @@ export const registerAgentRoutes: FastifyPluginAsync<RegisterAgentRoutesOptions>
   const staticBinding = requestScopedRuntime
     ? null
     : await getOrCreateRuntimeBinding(sessionId)
+  const readonlySkillFiles = createReadonlySkillFileRegistry()
   const skillsScopeByRequest = new WeakMap<FastifyRequest, Promise<SkillScope>>()
 
   async function acquireDispatcherOperation(
@@ -1331,6 +1345,8 @@ export const registerAgentRoutes: FastifyPluginAsync<RegisterAgentRoutesOptions>
   await app.register(fileRoutes, {
     getWorkspace: async (request) => (await getBindingForRequest(request)).runtimeBundle.workspace,
     getFilesystemBindings: getFilesystemBindingsForRequest,
+    readonlySkillFiles,
+    getReadonlySkillScope: readonlySkillScope,
   })
   await app.register(fsEventsRoutes, {
     getWorkspace: async (request) => (await getBindingForRequest(request)).runtimeBundle.workspace,
@@ -1401,6 +1417,8 @@ export const registerAgentRoutes: FastifyPluginAsync<RegisterAgentRoutesOptions>
     getNoSkills: staticBinding
       ? undefined
       : async (request) => (await getSkillsScopeForRequest(request)).pi.noSkills,
+    readonlySkillFiles,
+    getReadonlySkillScope: readonlySkillScope,
   })
   await app.register(sessionChangesRoutes, { tracker: sessionChangesTracker })
   app.post<{ Body: { sessionId?: string } }>('/api/v1/agent/reload', async (request, reply) => {

@@ -1488,9 +1488,12 @@ test('external .agents skills open readonly and reject file mutations', async ()
   const externalRoot = await makeTempDir('boring-agent-embed-skills-external-')
   const externalSkillDir = join(externalRoot, '.agents', 'skills', 'plugin-skill')
   const externalSkillFile = join(externalSkillDir, 'SKILL.md')
+  const undiscoveredSkillFile = join(externalRoot, '.agents', 'skills', 'undiscovered', 'SKILL.md')
   const original = '---\nname: plugin-skill\ndescription: External plugin skill.\n---\n'
   await mkdir(externalSkillDir, { recursive: true })
+  await mkdir(dirname(undiscoveredSkillFile), { recursive: true })
   await writeFile(externalSkillFile, original, 'utf-8')
+  await writeFile(undiscoveredSkillFile, '# Must stay private\n', 'utf-8')
 
   const app = Fastify({ logger: false })
   await app.register(registerAgentRoutes, {
@@ -1512,6 +1515,13 @@ test('external .agents skills open readonly and reject file mutations', async ()
     })
     expect(open.statusCode).toBe(200)
     expect(open.json()).toMatchObject({ content: original, access: 'readonly' })
+
+    const undiscovered = await app.inject({
+      method: 'GET',
+      url: `/api/v1/files?path=${encodeURIComponent(undiscoveredSkillFile)}`,
+    })
+    expect(undiscovered.statusCode).toBe(403)
+    expect(undiscovered.body).not.toContain('Must stay private')
 
     const save = await app.inject({
       method: 'POST',
@@ -1611,8 +1621,23 @@ test('workspace generated plugin skills open readonly and reject file mutations'
         url: '/api/v1/files/move',
         payload: { from: 'workspace-skill.md', to: generated.path },
       })
+      const generatedDir = dirname(generated.path)
+      const removeDir = await app.inject({
+        method: 'DELETE',
+        url: `/api/v1/files?path=${encodeURIComponent(generatedDir)}`,
+      })
+      const moveDirFrom = await app.inject({
+        method: 'POST',
+        url: '/api/v1/files/move',
+        payload: { from: generatedDir, to: 'copied-skill' },
+      })
+      const moveDirTo = await app.inject({
+        method: 'POST',
+        url: '/api/v1/files/move',
+        payload: { from: 'workspace-skill', to: generatedDir },
+      })
 
-      for (const response of [save, remove, moveFrom, moveTo]) {
+      for (const response of [save, remove, moveFrom, moveTo, removeDir, moveDirFrom, moveDirTo]) {
         expect(response.statusCode).toBe(403)
         expect(response.json()).toEqual({
           error: { code: ERROR_CODE_READONLY, message: 'skill file is readonly' },
