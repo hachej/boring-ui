@@ -428,8 +428,9 @@ async function createWorkspaceAgentAppProfile(
       piPackages: runtimePi.packages,
       noSkills: runtimePi.noSkills,
       getAdditionalSkillPaths: () => [
-        ...(getRuntimeSkillPaths() ?? opts.pi?.additionalSkillPaths ?? []),
-        ...(getRuntimeSkillPaths() ? [] : opts.pi?.getHotReloadableResources?.().additionalSkillPaths ?? []),
+        ...(getRuntimeProvisioning()?.skillPaths ?? []),
+        ...(opts.pi?.additionalSkillPaths ?? []),
+        ...(opts.pi?.getHotReloadableResources?.().additionalSkillPaths ?? []),
       ],
       getPiPackages: () => [
         ...(opts.pi?.packages ?? []),
