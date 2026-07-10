@@ -1,4 +1,4 @@
-import type { BoringTaskAdapterSummary, BoringTaskBoardConfig, BoringTaskCard, BoringTaskMoveInput } from "../shared"
+import type { BoringTaskAdapterSummary, BoringTaskBoardConfig, BoringTaskCard, BoringTaskDeleteInput, BoringTaskMoveInput } from "../shared"
 
 export interface BoringTaskSourceContext {
   workspaceId?: string
@@ -12,6 +12,7 @@ export interface BoringTaskSourceRuntime {
   getBoardConfig(ctx: BoringTaskSourceContext): Promise<BoringTaskBoardConfig> | BoringTaskBoardConfig
   listTasks(ctx: BoringTaskSourceContext): Promise<BoringTaskCard[]> | BoringTaskCard[]
   moveTask?(ctx: BoringTaskSourceContext, input: BoringTaskMoveInput): Promise<BoringTaskCard> | BoringTaskCard
+  deleteTask?(ctx: BoringTaskSourceContext, input: BoringTaskDeleteInput): Promise<void> | void
 }
 
 export interface BoringTaskSourceRegistry {

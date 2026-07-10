@@ -21,6 +21,11 @@ export interface TaskMoveInput extends BoringTaskMoveInput {
   sourceId: string
 }
 
+export interface TaskDeleteInput {
+  sourceId: string
+  taskId: string
+}
+
 export function createTaskSourceService(registry: BoringTaskSourceRegistry) {
   return {
     listSources(): BoringTaskSourceSummary[] {
@@ -55,6 +60,15 @@ export function createTaskSourceService(registry: BoringTaskSourceRegistry) {
         throw new TaskSourceServiceError(409, "TASK_SOURCE_MOVE_UNSUPPORTED", `Task source does not support moves: ${input.sourceId}`)
       }
       return await source.moveTask(ctx, { taskId: input.taskId, statusId: input.statusId })
+    },
+
+    async deleteTask(ctx: BoringTaskSourceContext, input: TaskDeleteInput): Promise<void> {
+      const source = registry.getSource(input.sourceId)
+      if (!source) throw new TaskSourceServiceError(404, "TASK_SOURCE_NOT_FOUND", `Task source not found: ${input.sourceId}`)
+      if (!source.summary().capabilities.delete || !source.deleteTask) {
+        throw new TaskSourceServiceError(409, "TASK_SOURCE_DELETE_UNSUPPORTED", `Task source does not support issue deletion: ${input.sourceId}`)
+      }
+      await source.deleteTask(ctx, { taskId: input.taskId })
     },
   }
 }
