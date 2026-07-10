@@ -1,5 +1,6 @@
 import { spawn } from "node:child_process"
 import type { NodeClickHouseClientConfigOptions } from "@clickhouse/client/dist/config"
+import type { AgentTool, ToolResult } from "@hachej/boring-workspace"
 import {
   defineServerPlugin,
   defineTrustedDomainBridgeHandler,
@@ -40,12 +41,18 @@ export interface ClickHouseDataBridgeAdapterOptions {
   clientConfig?: NodeClickHouseClientConfigOptions
 }
 
-interface CreateDataBridgeServerPluginOptions {
+export interface DataBridgeAgentToolOptions {
+  name?: string
+  capabilities?: string[]
+}
+
+export interface CreateDataBridgeServerPluginOptions {
   workspaceRoot: string
   bslModelPath?: string
   bslProfile?: string
   bslProfileFile?: string
   sqlAdapters?: Record<string, DataBridgeSqlAdapter>
+  agentTool?: false | DataBridgeAgentToolOptions
 }
 
 const SQL_DEFAULT_LIMIT = 1000
@@ -289,6 +296,106 @@ async function executeQuery(options: CreateDataBridgeServerPluginOptions, input:
   return await runBslQuery(options, input as DataBridgeQueryRunInput & { query: DataBridgeBslQuery }, signal)
 }
 
+function textResult(text: string, details?: unknown): ToolResult {
+  return { content: [{ type: "text", text }], details }
+}
+
+function errorResult(text: string): ToolResult {
+  return { content: [{ type: "text", text }], isError: true }
+}
+
+function normalizeToolLanguage(value: unknown): "bsl" | "sql" | undefined {
+  return value === "bsl" || value === "sql" ? value : undefined
+}
+
+function normalizeToolLimit(value: unknown): number {
+  return normalizeLimit(value, SQL_MAX_LIMIT)
+}
+
+function createDataBridgeToolInput(params: Record<string, unknown>): DataBridgeQueryRunInput | string {
+  const language = normalizeToolLanguage(params.language)
+  if (!language) return "language must be either bsl or sql"
+  const limit = normalizeToolLimit(params.limit)
+
+  if (language === "bsl") {
+    const model = String(params.model ?? "").trim()
+    const query = String(params.query ?? "").trim()
+    if (!model) return "model is required for bsl queries"
+    if (!query) return "query is required for bsl queries"
+    return { format: "json", query: { language, model, query, limit } }
+  }
+
+  const source = String(params.source ?? "").trim()
+  const sql = String(params.sql ?? "").trim()
+  if (!source) return "source is required for sql queries"
+  if (!sql) return "sql is required for sql queries"
+  const query: DataBridgeSqlQuery = { language, source, sql, limit }
+  if (isRecord(params.params)) query.params = params.params
+  return { format: "json", query }
+}
+
+export function createDataBridgeQueryAgentTool(options: CreateDataBridgeServerPluginOptions): AgentTool {
+  const name = options.agentTool && typeof options.agentTool === "object" && options.agentTool.name
+    ? options.agentTool.name
+    : "query_data"
+  const capabilities = options.agentTool && typeof options.agentTool === "object" && options.agentTool.capabilities
+    ? options.agentTool.capabilities
+    : ["data:read", "data:sql-query"]
+
+  return {
+    name,
+    description: "Run a small read-only data query through Boring Data Bridge. Use language=bsl for semantic-layer queries or language=sql for configured read-only SQL sources. Prefer this over shell, database clients, or ad hoc scripts for dashboard/reporting data.",
+    parameters: {
+      type: "object",
+      properties: {
+        language: {
+          type: "string",
+          enum: ["bsl", "sql"],
+          description: "Query mode. Use bsl for semantic-layer/Ibis expressions, sql for configured read-only SQL adapters.",
+        },
+        model: {
+          type: "string",
+          description: "BSL model name. Required when language=bsl.",
+        },
+        query: {
+          type: "string",
+          description: "BSL/Ibis expression. Required when language=bsl.",
+        },
+        source: {
+          type: "string",
+          description: "Configured SQL source name. Required when language=sql.",
+        },
+        sql: {
+          type: "string",
+          description: "Read-only SQL statement. Required when language=sql.",
+        },
+        params: {
+          type: "object",
+          description: "Optional SQL query parameters when language=sql.",
+        },
+        limit: {
+          type: "number",
+          description: `Maximum rows to return. Default ${SQL_DEFAULT_LIMIT}, max ${SQL_MAX_LIMIT}.`,
+          minimum: 1,
+          maximum: SQL_MAX_LIMIT,
+        },
+      },
+      required: ["language"],
+      additionalProperties: false,
+    },
+    async execute(params, ctx) {
+      const input = createDataBridgeToolInput(params)
+      if (typeof input === "string") return errorResult(input)
+      try {
+        const result = await executeQuery(options, input, capabilities, "json", ctx.abortSignal)
+        return textResult(JSON.stringify(result, null, 2), result)
+      } catch (error) {
+        return errorResult(error instanceof Error ? error.message : String(error))
+      }
+    },
+  }
+}
+
 export function createDataBridgeServerPlugin(options: CreateDataBridgeServerPluginOptions): WorkspaceServerPlugin {
   const queryRun = defineTrustedDomainBridgeHandler<DataBridgeQueryRunInput, DataBridgeQueryRunOutput>({
     op: DATA_BRIDGE_QUERY_RUN_OP,
@@ -312,8 +419,9 @@ export function createDataBridgeServerPlugin(options: CreateDataBridgeServerPlug
   return defineServerPlugin({
     id: "data-bridge",
     label: "Data Bridge",
+    agentTools: options.agentTool === false ? [] : [createDataBridgeQueryAgentTool(options)],
     workspaceBridgeHandlers: [queryRun as unknown as WorkspaceBridgeHandlerContribution],
-    systemPrompt: "Use data.v1.query.run through WorkspaceBridge for dashboard data. Supported query languages are bsl and sql; set format=arrow for BI/Perspective snapshot viewers."
+    systemPrompt: "Use query_data for dashboard/reporting data. Supported query languages are bsl and sql. Use data.v1.query.run through WorkspaceBridge for browser/runtime dashboard data; set format=arrow for BI/Perspective snapshot viewers."
   })
 }
 

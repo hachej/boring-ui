@@ -5,7 +5,7 @@ import { join } from "node:path"
 import { describe, expect, it, vi } from "vitest"
 import { createWorkspaceBridgeRegistry, type WorkspaceBridgeCallResponse } from "@hachej/boring-workspace/server"
 import type { DataBridgeTableResult } from "../shared"
-import { createClickHouseDataBridgeAdapter, createDataBridgeServerPlugin, type DataBridgeSqlAdapter } from "./index"
+import { createClickHouseDataBridgeAdapter, createDataBridgeQueryAgentTool, createDataBridgeServerPlugin, type DataBridgeSqlAdapter } from "./index"
 
 const { clickHouseQuery, clickHouseExec } = vi.hoisted(() => ({ clickHouseQuery: vi.fn(), clickHouseExec: vi.fn() }))
 
@@ -17,6 +17,10 @@ function createWorkspaceFixture() {
   const workspaceRoot = mkdtempSync(join(tmpdir(), "data-bridge-test-"))
   writeFileSync(join(workspaceRoot, "data.csv"), "id,role\n1,engineer\n2,designer\n3,engineer\n")
   return workspaceRoot
+}
+
+function toolContext() {
+  return { abortSignal: new AbortController().signal, toolCallId: "tool-call-test" }
 }
 
 async function sqlQuery(adapter: DataBridgeSqlAdapter, capabilities: string[], overrides: Record<string, unknown> = {}, format?: "json" | "arrow", pluginOptions: Parameters<typeof createDataBridgeServerPlugin>[0] = { workspaceRoot: createWorkspaceFixture() }): Promise<WorkspaceBridgeCallResponse> {
@@ -187,5 +191,79 @@ describe("data bridge SQL adapters", () => {
       connection.closeSync()
       instance.closeSync()
     }
+  })
+})
+
+describe("data bridge agent tool", () => {
+  function adapter(rows: Record<string, unknown>[] = [{ series_id: "GDP" }]): DataBridgeSqlAdapter {
+    return {
+      requiredCapabilities: ["data:macro-clickhouse"],
+      maxRows: 10,
+      execute: vi.fn(async ({ sql, params, limit }) => ({
+        kind: "data-bridge.table" as const,
+        version: 1 as const,
+        columns: [{ name: "series_id", type: "string" as const }],
+        rows,
+        rowCount: rows.length,
+        source: JSON.stringify({ sql, params, limit }),
+      })),
+    }
+  }
+
+  it("registers query_data by default", () => {
+    const plugin = createDataBridgeServerPlugin({ workspaceRoot: createWorkspaceFixture() })
+
+    expect(plugin.agentTools?.map((tool) => tool.name)).toEqual(["query_data"])
+    expect(plugin.systemPrompt).toContain("query_data")
+  })
+
+  it("can disable the agent query tool", () => {
+    const plugin = createDataBridgeServerPlugin({ workspaceRoot: createWorkspaceFixture(), agentTool: false })
+
+    expect(plugin.agentTools).toEqual([])
+  })
+
+  it("runs read-only SQL through the same adapter path as data.v1.query.run", async () => {
+    const sqlAdapter = adapter()
+    const tool = createDataBridgeQueryAgentTool({
+      workspaceRoot: createWorkspaceFixture(),
+      sqlAdapters: { macro: sqlAdapter },
+      agentTool: { capabilities: ["data:read", "data:sql-query", "data:macro-clickhouse"] },
+    })
+
+    const result = await tool.execute({
+      language: "sql",
+      source: "macro",
+      sql: " SELECT series_id FROM series_catalog;;; ",
+      params: { frequency: "monthly" },
+      limit: 2,
+    }, toolContext())
+
+    expect(result.isError).toBeUndefined()
+    expect(result.details).toMatchObject({
+      kind: "data-bridge.table",
+      rows: [{ series_id: "GDP" }],
+      source: expect.stringContaining("SELECT series_id FROM series_catalog"),
+    })
+    expect(sqlAdapter.execute).toHaveBeenCalledWith(expect.objectContaining({
+      sql: "SELECT series_id FROM series_catalog",
+      params: { frequency: "monthly" },
+      limit: 2,
+    }))
+  })
+
+  it("rejects invalid tool inputs before execution", async () => {
+    const sqlAdapter = adapter()
+    const tool = createDataBridgeQueryAgentTool({
+      workspaceRoot: createWorkspaceFixture(),
+      sqlAdapters: { macro: sqlAdapter },
+      agentTool: { capabilities: ["data:read", "data:sql-query", "data:macro-clickhouse"] },
+    })
+
+    await expect(tool.execute({ language: "bsl", query: "sm" }, toolContext()))
+      .resolves.toMatchObject({ isError: true, content: [{ text: "model is required for bsl queries" }] })
+    await expect(tool.execute({ language: "sql", sql: "SELECT 1" }, toolContext()))
+      .resolves.toMatchObject({ isError: true, content: [{ text: "source is required for sql queries" }] })
+    expect(sqlAdapter.execute).not.toHaveBeenCalled()
   })
 })
