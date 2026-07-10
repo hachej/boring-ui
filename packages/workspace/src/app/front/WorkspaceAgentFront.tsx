@@ -1230,6 +1230,7 @@ export function WorkspaceAgentFront<
   }, [switchToChatPane])
 
   const activateChatPane = useCallback((nextSessionId: string) => {
+    setLeftOverlay(null)
     setChatPaneState((previous) => {
       const current = previous.workspaceId === workspaceId
         ? previous
