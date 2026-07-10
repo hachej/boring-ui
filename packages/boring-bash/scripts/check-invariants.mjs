@@ -141,6 +141,10 @@ function isFastifySpecifier(specifier) {
   return specifier === "fastify" || specifier.startsWith("fastify/") || specifier.startsWith("@fastify/");
 }
 
+function isAgentSelfSpecifier(specifier) {
+  return specifier === "@hachej/boring-agent" || specifier.startsWith("@hachej/boring-agent/");
+}
+
 function resolveRelativeJsImport(fromFile, specifier, fileExists = (file) =>
   existsSync(file) && statSync(file).isFile()) {
   if (!specifier.startsWith(".")) return undefined;
@@ -182,6 +186,7 @@ function walkJsImportGraph(entry, options = {}) {
   const unknownLoads = [];
   const unresolved = [];
   const fastifyViolations = [];
+  const selfReferenceViolations = [];
   const stack = [entry];
 
   while (stack.length > 0) {
@@ -200,6 +205,7 @@ function walkJsImportGraph(entry, options = {}) {
     parseErrors.push(...parsed.parseErrors);
     unknownLoads.push(...parsed.unknownLoads);
     fastifyViolations.push(...parsed.references.filter(({ specifier }) => isFastifySpecifier(specifier)));
+    selfReferenceViolations.push(...parsed.references.filter(({ specifier }) => isAgentSelfSpecifier(specifier)));
 
     for (const { specifier, line } of parsed.references) {
       if (!isLocalModuleSpecifier(specifier)) continue;
@@ -217,6 +223,7 @@ function walkJsImportGraph(entry, options = {}) {
     fastifyViolations,
     parseErrors,
     readErrors,
+    selfReferenceViolations,
     unknownLoads,
     unresolved,
   };
@@ -280,7 +287,10 @@ function assertNegativeFixtures() {
   const fixtureNested = resolve("/virtual/core/nested.js");
   const fixtureModules = new Map([
     [fixtureEntry, "export { nested } from './nested.js'"],
-    [fixtureNested, "export const nested = () => import('@fastify/static', { with: { type: 'json' } })"],
+    [fixtureNested, [
+      "export { createAgentApp } from '@hachej/boring-agent/server'",
+      "export const nested = () => import('@fastify/static', { with: { type: 'json' } })",
+    ].join("\n")],
   ]);
   const fixtureGraph = walkJsImportGraph(fixtureEntry, {
     readModule(file) {
@@ -297,13 +307,17 @@ function assertNegativeFixtures() {
     && fixtureGraph.fastifyViolations.length === 1
     && fastifyViolation?.file === fixtureNested
     && fastifyViolation?.kind === "dynamic import"
-    && fastifyViolation?.line === 1
+    && fastifyViolation?.line === 2
     && fastifyViolation?.specifier === "@fastify/static"
+    && fixtureGraph.selfReferenceViolations.length === 1
+    && fixtureGraph.selfReferenceViolations[0]?.file === fixtureNested
+    && fixtureGraph.selfReferenceViolations[0]?.line === 1
+    && fixtureGraph.selfReferenceViolations[0]?.specifier === "@hachej/boring-agent/server"
     && fixtureGraph.parseErrors.length === 0
     && fixtureGraph.readErrors.length === 0
     && fixtureGraph.unknownLoads.length === 0
     && fixtureGraph.unresolved.length === 0) {
-    pass("agent core graph fixture follows a nested chunk and rejects its @fastify specifier");
+    pass("agent core graph fixture follows a nested chunk and rejects Fastify and package self-references");
   } else {
     fail(`agent core graph fixture mismatch: ${JSON.stringify(fixtureGraph)}`);
   }
@@ -396,6 +410,9 @@ if (!negativeFixturesOnly) {
       for (const violation of result.fastifyViolations) {
         fail(`agent core Fastify graph scan: ${relative(repoRoot, violation.file)}:${violation.line} imports ${violation.specifier}`);
       }
+      for (const violation of result.selfReferenceViolations) {
+        fail(`agent core Fastify graph scan: ${relative(repoRoot, violation.file)}:${violation.line} has package self-reference ${violation.specifier}`);
+      }
       for (const error of result.parseErrors) {
         fail(`agent core Fastify graph scan: could not parse ${relative(repoRoot, error.file)}:${error.line}: ${error.message}`);
       }
@@ -409,6 +426,7 @@ if (!negativeFixturesOnly) {
         fail(`agent core Fastify graph scan: ${relative(repoRoot, violation.file)}:${violation.line} has unresolved or out-of-dist import ${violation.specifier}`);
       }
       if (result.fastifyViolations.length === 0
+        && result.selfReferenceViolations.length === 0
         && result.parseErrors.length === 0
         && result.readErrors.length === 0
         && result.unknownLoads.length === 0
