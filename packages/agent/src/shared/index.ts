@@ -27,9 +27,7 @@ export type {
   AgentStreamOptions,
 } from './events'
 export {
-  AGENT_NO_FILESYSTEM_FOR_ATTACHMENTS,
   AGENT_NOT_IMPLEMENTED_UNTIL_T1,
-  AgentFilesystemRequiredError,
   AgentNotImplementedError,
   sessionStreamPath,
 } from './events'

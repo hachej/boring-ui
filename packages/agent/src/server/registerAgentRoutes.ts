@@ -1,5 +1,4 @@
 import type { FastifyInstance, FastifyPluginAsync, FastifyRequest } from 'fastify'
-import { createHash } from 'node:crypto'
 import { basename } from 'node:path'
 import type { AgentTool, ToolReadinessRequirement } from '../shared/tool'
 import type { AgentCoreHarnessFactory, AgentHarnessFactory } from '../shared/harness'
@@ -65,8 +64,6 @@ import type { WorkspaceAgentDispatcherContext } from '../shared/workspaceAgentDi
 
 const DEFAULT_VERSION = '0.1.0-dev'
 const DEFAULT_WORKSPACE_ID = 'default'
-const PURE_RUNTIME_MODE = 'none'
-const MAX_PURE_BINDINGS = 256
 const STANDARD_AGENT_TOOL_NAMES = ['bash', 'read', 'write', 'edit', 'find', 'grep', 'ls']
 
 type AgentCapabilities = {
@@ -211,16 +208,6 @@ function normalizeSessionNamespace(value: string | undefined): string | undefine
   if (typeof value !== 'string') return undefined
   const trimmed = value.trim()
   return trimmed.length > 0 ? trimmed : undefined
-}
-
-function pureSessionNamespaceFromWorkspaceId(workspaceId: string): string {
-  const digest = createHash('sha256').update(workspaceId).digest('hex').slice(0, 16)
-  return `workspace-${digest}`
-}
-
-function pureSessionNamespaceFromScope(parts: unknown[]): string {
-  const digest = createHash('sha256').update(JSON.stringify(parts)).digest('hex').slice(0, 16)
-  return `scope-${digest}`
 }
 
 function getRequestAuthSubject(request: FastifyRequest | undefined): string | undefined {
@@ -420,11 +407,6 @@ export interface RegisterAgentRoutesOptions {
 export const registerAgentRoutes: FastifyPluginAsync<RegisterAgentRoutesOptions> = async (app, opts) => {
   const sessionId = opts.sessionId ?? DEFAULT_WORKSPACE_ID
   const resolvedMode = opts.runtimeModeAdapter?.id ?? opts.mode ?? autoDetectMode()
-  if (!opts.runtimeModeAdapter && resolvedMode === PURE_RUNTIME_MODE) {
-    await registerPureAgentRoutes(app, opts, sessionId, resolvedMode)
-    return
-  }
-
   const workspaceRoot = opts.workspaceRoot ?? process.cwd()
   const templatePath = opts.templatePath ?? getEnv('BORING_AGENT_TEMPLATE_PATH')
   const modeAdapter = opts.runtimeModeAdapter ?? resolveMode(resolvedMode, { sandboxHandleStore: opts.sandboxHandleStore })
@@ -1214,221 +1196,3 @@ let runtimeProvisioning: WorkspaceProvisioningResult | undefined
   )
 }
 
-async function registerPureAgentRoutes(
-  app: FastifyInstance,
-  opts: RegisterAgentRoutesOptions,
-  sessionId: string,
-  resolvedMode: RuntimeModeId,
-): Promise<void> {
-  type PureBinding = {
-    agent: Agent
-    tools: AgentTool[]
-    readyTracker: ReadyStatusTracker
-    piChatService: PiChatSessionService
-  }
-
-  const pureBindings = new Map<string, Promise<PureBinding>>()
-  const requestScopedPure =
-    typeof opts.getWorkspaceId === 'function' ||
-    typeof opts.getWorkspaceRoot === 'function' ||
-    typeof opts.getExtraTools === 'function' ||
-    typeof opts.getPi === 'function' ||
-    typeof opts.getSessionNamespace === 'function' ||
-    typeof opts.getSystemPromptDynamic === 'function' ||
-    typeof opts.getTrustedWorkspaceRoot === 'function'
-
-  function evictPureBindings(): void {
-    if (pureBindings.size <= MAX_PURE_BINDINGS) return
-    const keys = Array.from(pureBindings.keys())
-    for (let i = 0; i < keys.length - MAX_PURE_BINDINGS; i += 1) {
-      const key = keys[i]
-      if (!key) continue
-      const binding = pureBindings.get(key)
-      pureBindings.delete(key)
-      binding?.then((resolved) => resolved.agent.dispose()).catch(() => {})
-    }
-  }
-
-  async function createPureBinding(request?: FastifyRequest, trustedCtx?: WorkspaceAgentDispatcherContext): Promise<PureBinding> {
-    const workspaceId = trustedCtx?.workspaceId ?? (request ? getRequestWorkspaceId(request) : sessionId)
-    let workspaceRoot = opts.workspaceRoot ?? ''
-    if (request && opts.getWorkspaceRoot) {
-      workspaceRoot = await opts.getWorkspaceRoot(workspaceId, request)
-    } else if (trustedCtx && opts.getTrustedWorkspaceRoot) {
-      workspaceRoot = await opts.getTrustedWorkspaceRoot(trustedCtx)
-    } else if (!request && opts.getWorkspaceRoot) {
-      throw createWorkspaceAgentDispatcherError(
-        ErrorCode.enum.WORKSPACE_UNINITIALIZED,
-        'workspace root resolution requires trusted workspace context',
-        400,
-      )
-    }
-    const pi = withPiHarnessDefaults(opts.getPi
-      ? await opts.getPi({ workspaceId, workspaceRoot, request })
-      : opts.pi)
-    const configuredSessionNamespace = normalizeSessionNamespace(opts.getSessionNamespace
-      ? await opts.getSessionNamespace({ workspaceId, workspaceRoot, request, userId: trustedCtx?.userId })
-      : opts.sessionNamespace)
-    const authSubject = opts.getExtraTools ? trustedCtx?.userId ?? getRequestAuthSubject(request) : undefined
-    const pureScopeNamespace = opts.getWorkspaceId
-      ? pureSessionNamespaceFromWorkspaceId(workspaceId)
-      : requestScopedPure
-        ? pureSessionNamespaceFromScope([resolvedMode, workspaceId, workspaceRoot, pi, authSubject ?? null])
-        : undefined
-    const sessionNamespace = configuredSessionNamespace && pureScopeNamespace
-      ? `${configuredSessionNamespace}-${pureScopeNamespace}`
-      : configuredSessionNamespace ?? pureScopeNamespace
-    const key = JSON.stringify([
-      resolvedMode,
-      workspaceId,
-      workspaceRoot,
-      pi,
-      sessionNamespace ?? null,
-      authSubject ?? null,
-    ])
-    const existing = pureBindings.get(key)
-    if (existing) return existing
-
-    const bindingPromise = (async () => {
-      const scopedExtraTools = opts.getExtraTools
-        ? await opts.getExtraTools({
-            workspaceId,
-            workspaceRoot,
-            runtimeMode: resolvedMode,
-            workspaceFsCapability: 'none',
-            authSubject,
-          })
-        : []
-      const tools = mergeTools({
-        standardTools: [],
-        extraTools: [...(opts.extraTools ?? []), ...scopedExtraTools],
-        logger: app.log,
-      })
-      const baseHarnessFactory = opts.harnessFactory ?? ((input) => createPiCodingAgentHarness({
-        ...input,
-        pi,
-      }))
-      const systemPromptDynamic = opts.getSystemPromptDynamic
-        ? () => opts.getSystemPromptDynamic?.({ workspaceId, workspaceRoot })
-        : opts.systemPromptDynamic
-      const harnessFactory = ((input) => baseHarnessFactory({
-        ...input,
-        sessionNamespace,
-        sessionRoot: opts.sessionRoot,
-        sessionDir: input.sessionDir,
-      })) as AgentCoreHarnessFactory
-      const coreAgent = createAgentRuntimeBridge({
-        runtime: 'none',
-        tools,
-        harnessFactory,
-        systemPromptAppend: opts.systemPromptAppend,
-        systemPromptDynamic,
-        telemetry: opts.telemetry,
-        metering: opts.metering,
-        sessionStorageRoot: opts.sessionRoot,
-      })
-      const agentRuntime = await coreAgent.getRuntime()
-      return {
-        agent: coreAgent.agent,
-        tools,
-        readyTracker: new ReadyStatusTracker({ sandboxReady: true, harnessReady: true }),
-        piChatService: agentRuntime.service as PiChatSessionService,
-      }
-    })()
-    pureBindings.set(key, bindingPromise)
-    bindingPromise.catch(() => {
-      if (pureBindings.get(key) === bindingPromise) pureBindings.delete(key)
-    })
-    evictPureBindings()
-    return bindingPromise
-  }
-
-  const staticBinding = requestScopedPure ? undefined : await createPureBinding()
-  opts.onWorkspaceAgentDispatcher?.({
-    async resolve(ctx, options) {
-      const boundCtx = normalizeWorkspaceAgentDispatcherContext(ctx)
-      assertWorkspaceAgentDispatcherRequestContext(boundCtx, options?.request)
-      if (staticBinding) {
-        if (boundCtx.workspaceId !== sessionId) {
-          throw createWorkspaceAgentDispatcherError(
-            ErrorCode.enum.UNAUTHORIZED,
-            'workspace agent dispatcher context does not match bound workspace',
-            401,
-          )
-        }
-        return createBoundWorkspaceAgentDispatcher(staticBinding.agent, boundCtx)
-      }
-      const binding = await createPureBinding(options?.request, boundCtx)
-      return createBoundWorkspaceAgentDispatcher(binding.agent, boundCtx)
-    },
-  })
-  const profile: AgentRouteBindingProfile = {
-    runtimeMode: resolvedMode,
-    capabilities: {
-      tools: staticBinding ? toolNames(staticBinding.tools) : toolNames(opts.extraTools ?? []),
-    },
-    sessionChangesTracker: new InMemorySessionChangesTracker(),
-    health: {
-      register: opts.registerHealthRoute ?? true,
-      version: opts.version ?? DEFAULT_VERSION,
-      getReadiness: () => ({ sandboxReady: true, harnessReady: true }),
-    },
-    chat: {
-      ...(staticBinding
-        ? { service: staticBinding.piChatService }
-        : { getService: async (request) => (await createPureBinding(request)).piChatService }),
-      defaultWorkspaceId: false,
-    },
-    models: { filterModels: opts.filterModels },
-    catalog: staticBinding
-      ? { tools: staticBinding.tools }
-      : { getTools: async (request) => (await createPureBinding(request)).tools },
-    readyStatus: staticBinding
-      ? { tracker: staticBinding.readyTracker }
-      : { getTracker: async (request) => (await createPureBinding(request)).readyTracker },
-    dispose: async () => {
-      const bindings = await Promise.allSettled(pureBindings.values())
-      await Promise.all(bindings
-        .filter((result): result is PromiseFulfilledResult<PureBinding> => result.status === 'fulfilled')
-        .map((result) => result.value.agent.dispose()))
-    },
-    beforeRegister: (profileApp) => {
-      profileApp.addHook('onRequest', async (request, reply) => {
-        const user = (request as unknown as { user?: { id: string } | null }).user
-        let workspaceId = DEFAULT_WORKSPACE_ID
-        if (opts.getWorkspaceId && !isWorkspaceAgnosticAgentRequest(request, {
-          readyStatusWorkspaceScoped: requestScopedPure,
-          modelsWorkspaceScoped: Boolean(opts.filterModels),
-        })) {
-          try {
-            workspaceId = (await opts.getWorkspaceId(request)).trim()
-          } catch (error) {
-            const statusCode = typeof (error as { statusCode?: unknown })?.statusCode === 'number'
-              ? (error as { statusCode: number }).statusCode
-              : 400
-            const message = statusCode >= 500
-              ? 'workspace scope failed'
-              : error instanceof Error
-                ? error.message
-                : 'workspace id is required'
-            return reply.code(statusCode).send({
-              error: { code: ErrorCode.enum.WORKSPACE_UNINITIALIZED, message },
-            })
-          }
-          if (workspaceId.length === 0) {
-            return reply.code(400).send({
-              error: {
-                code: ErrorCode.enum.WORKSPACE_UNINITIALIZED,
-                message: 'workspace id is required',
-              },
-            })
-          }
-        }
-        request.workspaceContext = { workspaceId, authenticated: !!user }
-      })
-    },
-  }
-
-  registerAgentCapabilitiesContributor(app, profile)
-  await registerAgentRouteBindingProfile(app, profile)
-}
