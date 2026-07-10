@@ -55,7 +55,7 @@ Canonical plan: [`plan.md`](./plan.md)
 - [x] Run Claude Code review.
 - [x] Run Opus 4.8 thermo review.
 - [x] Fix accepted findings and re-review until GREEN.
-- [ ] Update PR #592 proof/handoff.
+- [x] Update PR #592 proof/handoff.
 
 ## Slice 0 — seam confirmation before execution/hosted work
 
