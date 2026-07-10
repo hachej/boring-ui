@@ -73,13 +73,13 @@ Canonical plan: [`plan.md`](./plan.md)
 
 ## Slice 2 — front UI
 
-- [ ] Automation list/cards.
-- [ ] Prompt editor for canonical Markdown.
-- [ ] Cron/timezone/model/enabled controls.
-- [ ] Expanded read-only run history.
-- [ ] Open run session through `openDetachedChat(sessionId)`.
-- [ ] Loading, empty, validation, and error states.
-- [ ] Screenshot and component/integration proof.
+- [x] Automation list/cards.
+- [x] Prompt editor for canonical Markdown.
+- [x] Cron/timezone/model/enabled controls.
+- [x] Expanded read-only run history.
+- [x] Open run session through `openDetachedChat(sessionId)`.
+- [x] Loading, empty, validation, and error states.
+- [x] Screenshot and component/integration proof.
 
 ## Next execution/hosted slices
 
