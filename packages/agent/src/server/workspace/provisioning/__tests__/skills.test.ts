@@ -208,7 +208,41 @@ test('request-scoped skill access mirrors into per-user generated paths', async 
   expect(result.skillPaths.some((path) => path.includes('/.agents/'))).toBe(false)
 })
 
-test('readwrite plugin skills seed once and preserve workspace edits', async () => {
+test('verified and unverified access use distinct generated skill paths for the same user', async () => {
+  const host = await mkdtemp(join(tmpdir(), 'boring-skill-verification-access-'))
+  const skill = await writeHostFile(host, 'verified.md', '# Verified only\n')
+  const state: FakeWorkspaceFsState = {
+    files: new Map(),
+    dirs: new Set(),
+    removed: [],
+    copied: [],
+  }
+  const baseContext = { userId: 'user-1', userEmail: 'user@example.com' }
+  const options = {
+    plugins: [{ id: 'clinic', skills: [{ name: 'verified-only', source: skill, access: 'readonly' as const }] }],
+    adapter: createFakeAdapter(state),
+    runtimeLayout: getBoringAgentRuntimePaths('/workspace'),
+  }
+
+  const unverified = await mirrorPluginSkills({
+    ...options,
+    skillAccessContext: { ...baseContext, userEmailVerified: false },
+    resolvePluginSkillAccess: () => 'invisible',
+  })
+  const verified = await mirrorPluginSkills({
+    ...options,
+    skillAccessContext: { ...baseContext, userEmailVerified: true },
+    resolvePluginSkillAccess: () => 'readonly',
+  })
+
+  expect(unverified.skillPaths[0]).not.toBe(verified.skillPaths[0])
+  const unverifiedNamespace = unverified.skillPaths[0]?.split('/').at(-1)
+  const verifiedNamespace = verified.skillPaths[0]?.split('/').at(-1)
+  expect(state.files.has(`.boring-agent/skills-users/${unverifiedNamespace}/clinic/verified-only/SKILL.md`)).toBe(false)
+  expect(state.files.get(`.boring-agent/skills-users/${verifiedNamespace}/clinic/verified-only/SKILL.md`)).toBe('# Verified only\n')
+})
+
+test('ungoverned readwrite plugin skills seed once, preserve workspace edits, and keep ordinary skill paths', async () => {
   const host = await mkdtemp(join(tmpdir(), 'boring-skill-readwrite-preserve-'))
   const skill = await writeHostFile(host, 'skill.md', '# Plugin default\n')
   const state: FakeWorkspaceFsState = {

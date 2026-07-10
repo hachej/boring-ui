@@ -42,7 +42,8 @@ function assertSkillAccess(value: string): asserts value is PluginSkillAccess {
 
 function userSkillNamespace(context: ProvisionWorkspaceRuntimeOptions['skillAccessContext']): string {
   const identity = context?.userId?.trim() || context?.userEmail?.trim() || 'anonymous'
-  return createHash('sha256').update(identity).digest('hex').slice(0, 24)
+  const verification = context?.userEmailVerified === true ? 'verified' : 'unverified'
+  return createHash('sha256').update(`${identity}\0${verification}`).digest('hex').slice(0, 24)
 }
 
 export function getProvisionedSkillPaths(
