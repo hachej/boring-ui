@@ -1,5 +1,4 @@
 import Fastify, { type FastifyInstance, type FastifyRequest } from 'fastify'
-import { isAbsolute, normalize, relative, sep } from 'node:path'
 import type { Agent } from '../shared/events'
 import type { AgentTool } from '../shared/tool'
 import type { AgentCoreHarnessFactory, AgentHarness, AgentHarnessFactory } from '../shared/harness'
@@ -22,7 +21,11 @@ import { loadPlugins } from './harness/pi-coding-agent/pluginLoader'
 import { buildFilesystemAgentTools } from './tools/filesystem'
 import { buildHarnessAgentTools } from './tools/harness'
 import { createAuthMiddleware } from './http/middleware'
-import { createReadonlySkillFileRegistry } from './http/readonlySkillFiles'
+import {
+  createReadonlySkillFileRegistry,
+  normalizeReadonlySkillRoots,
+  readonlySkillRootsFromPaths,
+} from './http/readonlySkillFiles'
 import type { PiChatSessionService } from '../core/piChatSessionService'
 import { InMemorySessionChangesTracker } from './http/sessionChangesTracker'
 import { createRuntimeReadyStatusTracker } from './runtime/modeReadiness'
@@ -58,25 +61,6 @@ function readonlySkillScope(request: FastifyRequest): string {
     user?.email ?? null,
     user?.emailVerified === true,
   ])
-}
-
-function readonlySkillRootsFromPaths(
-  paths: readonly string[] | undefined,
-  workspaceRoot: string,
-): string[] {
-  const roots: string[] = []
-  for (const path of paths ?? []) {
-    const relativeToWorkspace = normalize(isAbsolute(path) ? relative(workspaceRoot, path) : path)
-    const pathIsInWorkspace = !isAbsolute(path)
-      || (relativeToWorkspace !== '..' && !relativeToWorkspace.startsWith(`..${sep}`) && !isAbsolute(relativeToWorkspace))
-    const workspaceRelative = relativeToWorkspace.split(sep).join('/')
-    const relativeSegments = workspaceRelative.split('/')
-    const isWorkspaceUserSkill = relativeSegments[0] === '.agents' && relativeSegments[1] === 'skills'
-    if (isWorkspaceUserSkill) continue
-    const root = pathIsInWorkspace ? workspaceRelative : path
-    if (!roots.includes(root)) roots.push(root)
-  }
-  return roots
 }
 
 export interface CreateAgentAppOptions {
@@ -292,12 +276,10 @@ async function createWorkspaceAgentAppProfile(
   }
 
   const getRuntimeProvisioning = opts.getRuntimeProvisioning ?? (() => opts.runtimeProvisioning)
+  const getRuntimeSkillPaths = (): string[] | undefined => getRuntimeProvisioning()?.skillPaths
   const runtimePi: PiHarnessOptions = {
     ...withPiHarnessDefaults(opts.pi),
-    additionalSkillPaths: [
-      ...(getRuntimeProvisioning()?.skillPaths ?? []),
-      ...(opts.pi?.additionalSkillPaths ?? []),
-    ],
+    additionalSkillPaths: getRuntimeSkillPaths() ?? opts.pi?.additionalSkillPaths,
   }
 
   // Captured after the harness is built; read through thunks because the
@@ -413,13 +395,19 @@ async function createWorkspaceAgentAppProfile(
         filesystemBindings: runtimeBundle.filesystemBindings,
         readonlySkillFiles,
         getReadonlySkillScope: readonlySkillScope,
-        getReadonlySkillRoots: () => readonlySkillRootsFromPaths([
-          ...(runtimePi.additionalSkillPaths ?? []),
-          ...(opts.pi?.getHotReloadableResources?.().additionalSkillPaths ?? []),
-          ...(getRuntimeProvisioning()?.skillPaths ?? []),
-          '.pi/skills',
-          '.pi/agent/skills',
-        ], workspaceRoot),
+        getReadonlySkillRoots: () => {
+          const provisioning = getRuntimeProvisioning()
+          if (provisioning?.readonlySkillRoots) {
+            return normalizeReadonlySkillRoots(provisioning.readonlySkillRoots, workspaceRoot)
+          }
+          if (provisioning?.skillPaths) return readonlySkillRootsFromPaths(provisioning.skillPaths, workspaceRoot)
+          return readonlySkillRootsFromPaths([
+            ...(runtimePi.additionalSkillPaths ?? []),
+            ...(opts.pi?.getHotReloadableResources?.().additionalSkillPaths ?? []),
+            '.pi/skills',
+            '.pi/agent/skills',
+          ], workspaceRoot)
+        },
       },
       fsEvents: { workspace: runtimeBundle.workspace },
       tree: {
@@ -440,9 +428,8 @@ async function createWorkspaceAgentAppProfile(
       piPackages: runtimePi.packages,
       noSkills: runtimePi.noSkills,
       getAdditionalSkillPaths: () => [
-        ...(getRuntimeProvisioning()?.skillPaths ?? []),
-        ...(opts.pi?.additionalSkillPaths ?? []),
-        ...(opts.pi?.getHotReloadableResources?.().additionalSkillPaths ?? []),
+        ...(getRuntimeSkillPaths() ?? opts.pi?.additionalSkillPaths ?? []),
+        ...(getRuntimeSkillPaths() ? [] : opts.pi?.getHotReloadableResources?.().additionalSkillPaths ?? []),
       ],
       getPiPackages: () => [
         ...(opts.pi?.packages ?? []),

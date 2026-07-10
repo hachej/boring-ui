@@ -1,6 +1,6 @@
 import { readFile } from 'node:fs/promises'
 import { extname, join } from 'node:path'
-import type { AgentTool, ToolExecContext } from '../../../shared/tool'
+import type { AgentTool } from '../../../shared/tool'
 import { getRuntimeBundleStorageRoot, type RuntimeBundle } from '../../runtime/mode'
 
 const DEFAULT_UPLOAD_DIR = 'assets/images'
@@ -40,11 +40,7 @@ function basenameForUpload(filename: string): string {
   return safe || 'image'
 }
 
-export interface BuildUploadAgentToolsOptions {
-  isReadonlyWorkspacePath?: (path: string, ctx: ToolExecContext) => boolean | Promise<boolean>
-}
-
-export function buildUploadAgentTools(bundle: RuntimeBundle, options: BuildUploadAgentToolsOptions = {}): AgentTool[] {
+export function buildUploadAgentTools(bundle: RuntimeBundle): AgentTool[] {
   const { workspace } = bundle
 
   return [
@@ -70,7 +66,7 @@ export function buildUploadAgentTools(bundle: RuntimeBundle, options: BuildUploa
         required: ['path'],
         additionalProperties: false,
       },
-      async execute(input, ctx) {
+      async execute(input) {
         const filePath = typeof input.path === 'string' ? input.path.trim() : ''
         if (
           !filePath ||
@@ -85,10 +81,6 @@ export function buildUploadAgentTools(bundle: RuntimeBundle, options: BuildUploa
         const dir = rawDir
           ? rawDir.replace(/^\.\/+/, '').replace(/\/+$/, '')
           : DEFAULT_UPLOAD_DIR
-        if (await options.isReadonlyWorkspacePath?.(dir, ctx)) {
-          return { content: [{ type: 'text', text: 'skill file is readonly' }], isError: true }
-        }
-
         try {
           const bytes = workspace.readBinaryFile
             ? Buffer.from(await workspace.readBinaryFile(filePath))

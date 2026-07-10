@@ -12,37 +12,6 @@ export type HarnessRuntimeProvisioningSnapshot = RuntimeProvisioningSnapshot
 
 export interface HarnessRuntimeProvisioningOptions extends RuntimeProvisioningOptions {
   getReadiness?: () => ToolReadinessState
-  isReadonlyWorkspacePath?: (path: string, ctx: ToolExecContext) => boolean | Promise<boolean>
-  disableBash?: (ctx: ToolExecContext) => boolean | Promise<boolean>
-}
-
-const READONLY_COMMAND_PATH_CANDIDATES = [
-  '.boring-agent',
-  '.boring-agent/skills',
-  '.boring-agent/skills-users',
-  '.boring-agent/skills-requests',
-  '.pi/skills',
-  '.pi/agent/skills',
-  '.agents/skills',
-]
-
-async function commandReferencesReadonlyPath(
-  command: string,
-  guard: HarnessRuntimeProvisioningOptions['isReadonlyWorkspacePath'],
-  ctx: ToolExecContext,
-): Promise<boolean> {
-  if (!guard) return false
-  const candidates = new Set<string>()
-  for (const path of READONLY_COMMAND_PATH_CANDIDATES) {
-    if (command.includes(path)) candidates.add(path)
-  }
-  for (const match of command.matchAll(/(?:^|[\s"'`=])((?:\.\/)?(?:\.boring-agent|\.agents\/skills|\.pi\/skills|\.pi\/agent\/skills)[^\s"'`;|&<>]*)/g)) {
-    if (match[1]) candidates.add(match[1].replace(/^\.\//, ''))
-  }
-  for (const candidate of candidates) {
-    if (await guard(candidate, ctx)) return true
-  }
-  return false
 }
 
 function bashOptionsForBundle(
@@ -117,12 +86,6 @@ function adaptPiTool(
     async execute(params, ctx) {
       const command = typeof params.command === 'string' ? params.command : ''
       const readiness = runtime?.getReadiness?.()
-      if (await runtime?.disableBash?.(ctx)) {
-        return { content: [{ type: 'text', text: 'bash is disabled while readonly skill paths are active' }], isError: true }
-      }
-      if (command && await commandReferencesReadonlyPath(command, runtime?.isReadonlyWorkspacePath, ctx)) {
-        return { content: [{ type: 'text', text: 'skill file is readonly' }], isError: true }
-      }
       const commandRuntimeRequirement = command ? runtimeRequirementForCommand(command) : undefined
       if (commandRuntimeRequirement && !isRuntimeReady(readiness)) {
         return runtimeNotReadyFromState(commandRuntimeRequirement, readiness)

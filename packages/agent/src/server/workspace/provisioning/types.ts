@@ -72,7 +72,7 @@ export interface WorkspaceProvisioningResult {
   env: Record<string, string>
   pathEntries: string[]
   skillPaths: string[]
-  excludedSkillFilePaths?: string[]
+  readonlySkillRoots?: string[]
 }
 
 export interface WorkspaceProvisioningExecResult {

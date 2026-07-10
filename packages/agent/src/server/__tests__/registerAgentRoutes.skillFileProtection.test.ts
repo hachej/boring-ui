@@ -327,10 +327,6 @@ test('workspace generated plugin skills open readonly and reject file mutations'
       path: '.boring-agent/skills/plugin/generated-skill/SKILL.md',
     },
     {
-      name: 'user-scoped-skill',
-      path: '.boring-agent/skills-users/user-namespace/plugin/user-scoped-skill/SKILL.md',
-    },
-    {
       name: 'request-scoped-skill',
       path: '.boring-agent/skills-requests/request-namespace/plugin/request-scoped-skill/SKILL.md',
     },

@@ -1,5 +1,5 @@
 import { readFile, stat } from 'node:fs/promises'
-import { basename, normalize } from 'node:path/posix'
+import { basename, isAbsolute, normalize, relative, sep } from 'node:path/posix'
 
 export interface ReadonlySkillFileStat {
   kind: 'file' | 'directory'
@@ -77,6 +77,40 @@ export function protectsReadonlySkillPath(paths: readonly string[], path: string
   return false
 }
 
+function normalizeReadonlyRoots(
+  paths: readonly string[] | undefined,
+  workspaceRoot: string,
+  options: { skipWorkspaceUserSkills?: boolean } = {},
+): string[] {
+  const roots: string[] = []
+  for (const path of paths ?? []) {
+    const relativeToWorkspace = normalize(isAbsolute(path) ? relative(workspaceRoot, path) : path)
+    const pathIsInWorkspace = !isAbsolute(path)
+      || (relativeToWorkspace !== '..' && !relativeToWorkspace.startsWith(`..${sep}`) && !isAbsolute(relativeToWorkspace))
+    const workspaceRelative = relativeToWorkspace.split(sep).join('/')
+    const relativeSegments = workspaceRelative.split('/')
+    const isWorkspaceUserSkill = relativeSegments[0] === '.agents' && relativeSegments[1] === 'skills'
+    if (options.skipWorkspaceUserSkills && isWorkspaceUserSkill) continue
+    const root = pathIsInWorkspace ? workspaceRelative : path
+    if (!roots.includes(root)) roots.push(root)
+  }
+  return roots
+}
+
+export function normalizeReadonlySkillRoots(
+  paths: readonly string[] | undefined,
+  workspaceRoot: string,
+): string[] {
+  return normalizeReadonlyRoots(paths, workspaceRoot)
+}
+
+export function readonlySkillRootsFromPaths(
+  paths: readonly string[] | undefined,
+  workspaceRoot: string,
+): string[] {
+  return normalizeReadonlyRoots(paths, workspaceRoot, { skipWorkspaceUserSkills: true })
+}
+
 export function createReadonlySkillFileRegistry(maxScopes = 256): ReadonlySkillFileRegistry {
   const pathsByScope = new Map<string, Set<string>>()
   const rootsByScope = new Map<string, Set<string>>()
@@ -123,7 +157,6 @@ export function isGeneratedReadonlySkillPath(path: string): boolean {
   const segments = canonical.split('/')
   if (segments[0] !== '.boring-agent') return false
   return segments[1] === 'skills'
-    || segments[1] === 'skills-users'
     || segments[1] === 'skills-requests'
 }
 

@@ -232,6 +232,7 @@ export async function provisionWorkspaceRuntime(
       },
       pathEntries: getBoringAgentPathEntries(opts.runtimeLayout),
       skillPaths: skills.skillPaths,
+      readonlySkillRoots: skills.readonlySkillRoots,
     }
     captureProvisioningEvent(opts, 'agent.runtime.provisioning.completed', {
       status: 'ok',

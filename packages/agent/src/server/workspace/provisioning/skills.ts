@@ -13,7 +13,7 @@ const USER_SKILLS_REL = '.agents/skills'
 export interface MirrorPluginSkillsResult {
   changed: boolean
   skillPaths: string[]
-  excludedSkillFilePaths?: string[]
+  readonlySkillRoots: string[]
 }
 
 function sourceToPath(source: string | URL): string {
@@ -76,7 +76,6 @@ export async function mirrorPluginSkills(options: {
 
   const seen = new Set<string>()
   let copiedSkillCount = 0
-  const excludedSkillFilePaths: string[] = []
   const requestScopedSkillPaths: string[] = []
   const requestSkillsRel = options.skillAccessContext
     ? `${REQUEST_SKILLS_REL}/${requestScopeId(options.skillAccessContext)}`
@@ -94,9 +93,6 @@ export async function mirrorPluginSkills(options: {
 
     for (const skill of plugin.skills ?? []) {
       assertSafeSegment('skill name', skill.name)
-      if (options.skillAccessContext) {
-        excludedSkillFilePaths.push(`${USER_SKILLS_REL}/${plugin.id}/${skill.name}/SKILL.md`)
-      }
       const defaultAccess = skill.access ?? 'readonly'
       assertSkillAccess(defaultAccess)
       const access = options.resolvePluginSkillAccess
@@ -160,6 +156,8 @@ export async function mirrorPluginSkills(options: {
     skillPaths: options.skillAccessContext
       ? requestScopedSkillPaths
       : getProvisionedSkillPaths(options.runtimeLayout, options.skillAccessContext),
-    ...(excludedSkillFilePaths.length > 0 ? { excludedSkillFilePaths } : {}),
+    readonlySkillRoots: options.skillAccessContext
+      ? requestScopedSkillPaths
+      : [options.runtimeLayout.skills],
   }
 }

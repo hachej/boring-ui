@@ -455,37 +455,6 @@ describe('buildFilesystemAgentTools', () => {
     expect(operations.read).toHaveBeenCalledWith({ filesystem: 'company_context', path: '/company/hr/policy.md' })
   })
 
-  test('workspace write and edit respect readonly skill path guard', async () => {
-    const readonlyPaths: string[] = []
-    const tools = buildFilesystemAgentTools(mockBundle('direct'), {
-      isReadonlyWorkspacePath: (path) => {
-        readonlyPaths.push(path)
-        return path.startsWith('.boring-agent/skills/')
-      },
-    })
-    const write = tools.find((tool) => tool.name === 'write')!
-    const edit = tools.find((tool) => tool.name === 'edit')!
-    const ctx = { abortSignal: new AbortController().signal, toolCallId: 'readonly-skill-mutation' }
-
-    await expect(write.execute(
-      { path: '.boring-agent/skills/plugin/skill/SKILL.md', content: '# Mutated\n' },
-      ctx,
-    )).rejects.toThrow('skill file is readonly')
-    await expect(edit.execute(
-      { path: '.boring-agent/skills/plugin/skill/SKILL.md', edits: [{ oldText: 'a', newText: 'b' }] },
-      ctx,
-    )).rejects.toThrow('skill file is readonly')
-    await expect(write.execute(
-      { path: '/workspace/.boring-agent/skills/plugin/skill/SKILL.md', content: '# Mutated\n' },
-      ctx,
-    )).rejects.toThrow('skill file is readonly')
-    expect(readonlyPaths).toEqual([
-      '.boring-agent/skills/plugin/skill/SKILL.md',
-      '.boring-agent/skills/plugin/skill/SKILL.md',
-      '.boring-agent/skills/plugin/skill/SKILL.md',
-    ])
-  })
-
   test('direct find rejects absolute paths outside the workspace', async () => {
     const workspaceRoot = await mkdtemp(join(tmpdir(), 'filesystem-tools-'))
     try {

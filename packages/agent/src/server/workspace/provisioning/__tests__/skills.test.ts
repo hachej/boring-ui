@@ -319,6 +319,7 @@ test('missing generated skill directory is success', async () => {
   })).resolves.toEqual({
     changed: false,
     skillPaths: ['/workspace/.boring-agent/skills', '/workspace/.agents/skills'],
+    readonlySkillRoots: ['/workspace/.boring-agent/skills'],
   })
   expect(state.dirs.has('.boring-agent/skills')).toBe(true)
 })

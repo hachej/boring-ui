@@ -1,5 +1,5 @@
 import type { FastifyInstance, FastifyPluginAsync, FastifyRequest } from 'fastify'
-import { basename, isAbsolute, normalize, relative, resolve, sep } from 'node:path'
+import { basename, isAbsolute, relative, resolve, sep } from 'node:path'
 import type { AgentTool, ToolReadinessRequirement } from '../shared/tool'
 import type { AgentCoreHarnessFactory, AgentHarness, AgentHarnessFactory } from '../shared/harness'
 import type { Agent } from '../shared/events'
@@ -36,7 +36,11 @@ import { fsEventsRoutes } from './http/routes/fsEvents'
 import { treeRoutes } from './http/routes/tree'
 import { modelsRoutes, type ModelsRoutesOptions } from './http/routes/models'
 import { skillsRoutes } from './http/routes/skills'
-import { createReadonlySkillFileRegistry } from './http/readonlySkillFiles'
+import {
+  createReadonlySkillFileRegistry,
+  normalizeReadonlySkillRoots,
+  readonlySkillRootsFromPaths,
+} from './http/readonlySkillFiles'
 import { piChatRoutes } from './http/routes/piChat'
 import { AgentEffectAdmissionError, type AgentEffectAdmission, type PiChatSessionService } from '../core/piChatSessionService'
 import { systemPromptRoutes } from './http/routes/systemPrompt'
@@ -172,25 +176,6 @@ function applyGovernedSkillDiscoveryPolicy(
         }
       : {}),
   }
-}
-
-function readonlySkillRootsFromPaths(
-  paths: readonly string[] | undefined,
-  workspaceRoot: string,
-): string[] {
-  const roots: string[] = []
-  for (const path of paths ?? []) {
-    const relativeToWorkspace = normalize(isAbsolute(path) ? relative(workspaceRoot, path) : path)
-    const pathIsInWorkspace = !isAbsolute(path)
-      || (relativeToWorkspace !== '..' && !relativeToWorkspace.startsWith(`..${sep}`) && !isAbsolute(relativeToWorkspace))
-    const workspaceRelative = relativeToWorkspace.split(sep).join('/')
-    const relativeSegments = workspaceRelative.split('/')
-    const isWorkspaceUserSkill = relativeSegments[0] === '.agents' && relativeSegments[1] === 'skills'
-    if (isWorkspaceUserSkill) continue
-    const root = pathIsInWorkspace ? workspaceRelative : path
-    if (!roots.includes(root)) roots.push(root)
-  }
-  return roots
 }
 
 type RuntimeDependencyState = 'not-started' | 'preparing' | 'ready' | 'failed'
@@ -574,7 +559,7 @@ export const registerAgentRoutes: FastifyPluginAsync<RegisterAgentRoutesOptions>
       ? await opts.getPi({ workspaceId, workspaceRoot: root, request })
       : opts.pi)
     return opts.getSkillAccess
-      ? applyGovernedSkillDiscoveryPolicy(pi, root)
+      ? applyGovernedSkillDiscoveryPolicy(pi)
       : pi
   }
 
@@ -835,7 +820,6 @@ export const registerAgentRoutes: FastifyPluginAsync<RegisterAgentRoutesOptions>
     }
 
     const checkReadiness = createRuntimeReadinessCheck(workspaceId, () => runtimeDependencies)
-
     // UI tools (get_ui_state / exec_ui) and the /api/v1/ui/* routes moved
     // to @hachej/boring-workspace. Hosts that want them register uiRoutes
     // alongside this plugin.
@@ -909,22 +893,26 @@ export const registerAgentRoutes: FastifyPluginAsync<RegisterAgentRoutesOptions>
       logger: app.log,
       checkReadiness,
     })
+    const hotPiResources = scope.pi.getHotReloadableResources?.() ?? {}
+    const scopeSkillPaths = hasRuntimeProvisioningInput
+      ? []
+      : scope.pi.additionalSkillPaths ?? []
+    const hotSkillPaths = hasRuntimeProvisioningInput
+      ? []
+      : hotPiResources.additionalSkillPaths ?? []
     const baseHarnessFactory = opts.harnessFactory ?? ((input) => createPiCodingAgentHarness({
       ...input,
       pi: {
         // scope.pi is already defaulted at the resolveScopePi chokepoint.
         ...scope.pi,
-        additionalSkillPaths: [
-          ...(scope.pi.additionalSkillPaths ?? []),
-        ],
+        additionalSkillPaths: scopeSkillPaths,
         getHotReloadableResources: () => {
-          const hot = scope.pi.getHotReloadableResources?.() ?? {}
+          const currentHotPiResources = scope.pi.getHotReloadableResources?.() ?? hotPiResources
           return {
-            ...hot,
-            additionalSkillPaths: [
-              ...(runtimeProvisioning?.skillPaths ?? []),
-              ...(hot.additionalSkillPaths ?? []),
-            ],
+            ...currentHotPiResources,
+            additionalSkillPaths: hasRuntimeProvisioningInput
+              ? runtimeProvisioning?.skillPaths ?? []
+              : hotSkillPaths,
           }
         },
       },
@@ -1369,10 +1357,15 @@ export const registerAgentRoutes: FastifyPluginAsync<RegisterAgentRoutesOptions>
     getReadonlySkillRoots: async (request) => {
       const scope = await getSkillsScopeForRequest(request)
       const binding = await getBindingForRequest(request)
+      if (hasRuntimeProvisioningInput) {
+        if (binding.runtimeProvisioning?.readonlySkillRoots) {
+          return normalizeReadonlySkillRoots(binding.runtimeProvisioning.readonlySkillRoots, scope.root)
+        }
+        return readonlySkillRootsFromPaths(binding.runtimeProvisioning?.skillPaths, scope.root)
+      }
       return readonlySkillRootsFromPaths([
         ...(scope.pi.additionalSkillPaths ?? []),
         ...(scope.pi.getHotReloadableResources?.().additionalSkillPaths ?? []),
-        ...(binding.runtimeProvisioning?.skillPaths ?? []),
         '.pi/skills',
         '.pi/agent/skills',
       ], scope.root)
@@ -1419,10 +1412,9 @@ export const registerAgentRoutes: FastifyPluginAsync<RegisterAgentRoutesOptions>
   })
   await app.register(skillsRoutes, {
     workspace: staticBinding ? createNodeWorkspace(workspaceRoot) : undefined,
-    additionalSkillPaths: [
-      ...(staticBinding?.runtimeProvisioning?.skillPaths ?? []),
-      ...(opts.pi?.additionalSkillPaths ?? []),
-    ],
+    additionalSkillPaths: hasRuntimeProvisioningInput
+      ? staticBinding?.runtimeProvisioning?.skillPaths
+      : opts.pi?.additionalSkillPaths,
     piPackages: opts.pi?.packages,
     // Undefined is fine: skillsRoutes resolves it through the canonical
     // harness policy (withPiHarnessDefaults), same as the factory above.
@@ -1438,7 +1430,6 @@ export const registerAgentRoutes: FastifyPluginAsync<RegisterAgentRoutesOptions>
           const binding = await getBindingForRequest(request)
           return [
             ...(binding.runtimeProvisioning?.skillPaths ?? []),
-            ...(scope.pi.additionalSkillPaths ?? []),
           ]
         },
     getPiPackages: staticBinding
