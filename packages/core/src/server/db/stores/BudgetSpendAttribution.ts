@@ -3,6 +3,8 @@ import type { PostgresJsDatabase } from 'drizzle-orm/postgres-js'
 import { budgetReservations, usageLedger } from '../schema.js'
 import type { ReserveBudgetInput } from './PostgresBudgetReservationStore.js'
 
+type BudgetDatabase = PostgresJsDatabase<Record<string, unknown>>
+
 export interface BudgetSpendTotals {
   usedMicros: number
   heldMicros: number
@@ -11,7 +13,7 @@ export interface BudgetSpendTotals {
 type SpendTotals = (input: ReserveBudgetInput, usageMicros: number) => Promise<BudgetSpendTotals>
 
 interface BudgetSpendAttributionStrategy<S extends ReserveBudgetInput['scope']> {
-  usageMicros(tx: PostgresJsDatabase, input: Extract<ReserveBudgetInput, { scope: S }>, period: string, start: Date, end: Date, eligibleLegacySources: readonly string[]): Promise<number>
+  usageMicros(tx: BudgetDatabase, input: Extract<ReserveBudgetInput, { scope: S }>, period: string, start: Date, end: Date, eligibleLegacySources: readonly string[]): Promise<number>
 }
 
 const budgetSpendAttributionStrategies: { [S in ReserveBudgetInput['scope']]: BudgetSpendAttributionStrategy<S> } = {
@@ -20,7 +22,7 @@ const budgetSpendAttributionStrategies: { [S in ReserveBudgetInput['scope']]: Bu
 }
 
 export async function computeBudgetSpend<S extends ReserveBudgetInput['scope']>(
-  tx: PostgresJsDatabase,
+  tx: BudgetDatabase,
   input: Extract<ReserveBudgetInput, { scope: S }>,
   period: string,
   start: Date,
@@ -32,7 +34,7 @@ export async function computeBudgetSpend<S extends ReserveBudgetInput['scope']>(
   return totals(input, await strategy.usageMicros(tx, input, period, start, end, eligibleLegacySources))
 }
 
-async function modelUsageMicros(tx: PostgresJsDatabase, input: Extract<ReserveBudgetInput, { scope: 'model' }>, period: string, start: Date, end: Date): Promise<number> {
+async function modelUsageMicros(tx: BudgetDatabase, input: Extract<ReserveBudgetInput, { scope: 'model' }>, period: string, start: Date, end: Date): Promise<number> {
   const periodStartIso = start.toISOString()
   const periodEndIso = end.toISOString()
   const metadataExpr = sql`${usageLedger.metadata}->>'modelBudgetReservationId'`
@@ -89,7 +91,7 @@ async function modelUsageMicros(tx: PostgresJsDatabase, input: Extract<ReserveBu
   return Number(usageRows[0]?.total ?? 0)
 }
 
-async function userUsageMicros(tx: PostgresJsDatabase, input: Extract<ReserveBudgetInput, { scope: 'user' }>, period: string, start: Date, end: Date, eligibleLegacySources: readonly string[]): Promise<number> {
+async function userUsageMicros(tx: BudgetDatabase, input: Extract<ReserveBudgetInput, { scope: 'user' }>, period: string, start: Date, end: Date, eligibleLegacySources: readonly string[]): Promise<number> {
   const periodStartIso = start.toISOString()
   const periodEndIso = end.toISOString()
   const metadataExpr = sql`${usageLedger.metadata}->>'userBudgetReservationId'`
