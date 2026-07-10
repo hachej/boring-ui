@@ -309,6 +309,19 @@ Hosted proof:
 
 **Review budget:** inside after the persistence target is fixed.
 
+## Published Implementation Tickets
+
+Work the frontier: begin with #609. Each ticket is labelled `ready-for-agent`; dependencies are recorded in its body.
+
+1. [#609 Shared native session rename](https://github.com/hachej/boring-ui/issues/609) — no blocker.
+2. [#610 Agent session management](https://github.com/hachej/boring-ui/issues/610) — blocked by #609.
+3. [#611 Project-wide session activity read model](https://github.com/hachej/boring-ui/issues/611) — blocked by #609.
+4. [#612 CLI task session bindings and inline task-card sessions](https://github.com/hachej/boring-ui/issues/612) — blocked by #610.
+5. [#613 Task active-agent indicators](https://github.com/hachej/boring-ui/issues/613) — blocked by #611 and #612.
+6. [#614 Hosted Postgres task-session bindings](https://github.com/hachej/boring-ui/issues/614) — blocked by #612.
+
+Ticket thermo review: [`tickets-thermo-review-terra.md`](./tickets-thermo-review-terra.md); green rerun: [`tickets-thermo-review-terra-rerun-1.md`](./tickets-thermo-review-terra-rerun-1.md).
+
 ## Out of Scope
 
 - Encoding task identity into session IDs.
