@@ -1,6 +1,6 @@
 {
   "name": "@hachej/boring-bash",
-  "version": "0.1.71",
+  "version": "0.1.72",
   "type": "module",
   "license": "MIT",
   "description": "Filesystem and shell binding contracts for Boring runtimes.",
