@@ -10,6 +10,7 @@ import {
 } from "../createHarness.js";
 import { adaptToolsForPi } from "../tool-adapter.js";
 import { PiSessionStore } from "../sessions.js";
+import { ErrorCode } from "../../../../shared/error-codes.js";
 import type { AgentTool } from "../../../../shared/tool.js";
 
 const ENOENT_CODE = "ENOENT";
@@ -34,6 +35,28 @@ describe("createPiCodingAgentHarness", () => {
     expect(harness.sessions).toBeInstanceOf(PiSessionStore);
     expect(typeof harness.getPiSessionAdapter).toBe("function");
     expect(typeof harness.reloadSession).toBe("function");
+  });
+
+  it("rejects unavailable requested models when strict model resolution is enabled", async () => {
+    const cwd = await mkdtemp(join(tmpdir(), "pi-strict-model-"));
+    try {
+      const harness = createPiCodingAgentHarness({
+        tools: [noopTool],
+        cwd,
+        pi: { strictModelResolution: true },
+      });
+
+      await expect(harness.getPiSessionAdapter({
+        sessionId: "strict-session",
+        message: "hello",
+        model: { provider: "missing-provider", id: "missing-model" },
+      }, { abortSignal: new AbortController().signal, workdir: cwd })).rejects.toMatchObject({
+        statusCode: 400,
+        code: ErrorCode.enum.TOOL_INVALID_INPUT,
+      });
+    } finally {
+      await rm(cwd, { recursive: true, force: true });
+    }
   });
 
   it("returns false when reloading a session that has not been created yet", async () => {

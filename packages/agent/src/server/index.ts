@@ -97,6 +97,29 @@ export type {
 export { autoDetectMode, hasBwrap, resolveMode } from './runtime/resolveMode'
 export { createAgent } from './createAgent'
 export type { AgentConfig } from '../shared/events'
+export {
+  createManagedAgentMcpDelegateController,
+  createManagedAgentMcpHttpHandler,
+  createManagedAgentMcpServer,
+  MANAGED_AGENT_MCP_DELIVERY_RULE,
+  MANAGED_AGENT_MCP_ORIGIN_SURFACE,
+  ManagedAgentMcpDelegateController,
+  ManagedAgentMcpError,
+} from './mcp'
+export type {
+  ManagedAgentArtifactRef,
+  ManagedAgentCollectArtifactsInput,
+  ManagedAgentDelegateInput,
+  ManagedAgentDelegateProgress,
+  ManagedAgentDelegateRequestContext,
+  ManagedAgentDelegateResult,
+  ManagedAgentDelegateStatus,
+  ManagedAgentDelegateStatusResult,
+  ManagedAgentMcpDelegateOptions,
+  ManagedAgentMcpHttpHandlerOptions,
+  ManagedAgentMcpServerOptions,
+  ManagedAgentSafeError,
+} from './mcp'
 export { createAgentApp } from './createAgentApp'
 export type { CreateAgentAppOptions } from './createAgentApp'
 export type { AgentHarnessFactory, AgentHarnessFactoryInput } from '../shared/harness'
@@ -137,6 +160,8 @@ export type {
   BuiltinRuntimeModeId,
   ModeContext,
   RuntimeBundle,
+  RuntimeFilesystemBinding,
+  RuntimeFilesystemBindingOperations,
   RuntimeModeAdapter,
   RuntimeModeId,
 } from './runtime/mode'

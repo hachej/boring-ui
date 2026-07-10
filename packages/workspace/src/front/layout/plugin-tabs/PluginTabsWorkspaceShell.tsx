@@ -4,6 +4,7 @@ import { useCallback, useRef, useState, type KeyboardEvent as ReactKeyboardEvent
 import { PanelLeftClose, PanelLeftOpen } from "lucide-react"
 import { cn } from "../../lib/utils"
 import { PaneCollapseButton } from "../paneCollapseButton"
+import { useViewportWidth } from "../useViewportWidth"
 
 function AppLeftPaneResizeHandle({
   width,
@@ -86,6 +87,7 @@ export interface PluginTabsWorkspaceShellProps {
   minLeftPaneWidth?: number
   maxLeftPaneWidth?: number
   className?: string
+  mobileShellEnabled?: boolean
 }
 
 export function PluginTabsWorkspaceShell({
@@ -99,19 +101,25 @@ export function PluginTabsWorkspaceShell({
   minLeftPaneWidth = 220,
   maxLeftPaneWidth = 420,
   className,
+  mobileShellEnabled,
 }: PluginTabsWorkspaceShellProps) {
   // Ephemeral peek: when the pane is collapsed, hovering the left edge slides
   // the pane in as an overlay (it does not push the content or pin open). It
   // retracts when the pointer leaves the overlay.
   const [peek, setPeek] = useState(false)
+  const [mobileOpen, setMobileOpen] = useState(false)
+  const viewport = useViewportWidth()
+  const mobileShell = mobileShellEnabled === true && viewport < 640
+  const effectiveCollapsed = mobileShell ? !mobileOpen : collapsed
   return (
     <div
       data-boring-workspace-part="plugin-tabs-shell"
-      data-boring-state={collapsed ? "collapsed" : "expanded"}
+      data-boring-state={effectiveCollapsed ? "collapsed" : "expanded"}
+      data-mobile-shell={mobileShell ? "true" : "false"}
       className={cn("relative flex h-full min-h-0 w-full overflow-hidden bg-background", className)}
     >
-      {collapsed ? null : leftPane}
-      {!collapsed && onResizeLeftPane && leftPaneWidth != null ? (
+      {mobileShell ? null : collapsed ? null : leftPane}
+      {!mobileShell && !collapsed && onResizeLeftPane && leftPaneWidth != null ? (
         <AppLeftPaneResizeHandle
           width={leftPaneWidth}
           minWidth={minLeftPaneWidth}
@@ -127,7 +135,29 @@ export function PluginTabsWorkspaceShell({
           pane as an overlay. The overlay is mounted ONLY while peeking, so the
           collapsed state is genuinely empty otherwise (an always-mounted,
           transform-hidden overlay left the pane visible). */}
-      {collapsed ? (
+      {mobileShell ? (
+        mobileOpen ? (
+          <>
+            <div
+              aria-hidden="true"
+              data-boring-workspace-part="app-left-mobile-scrim"
+              className="absolute inset-0 z-[64] bg-foreground/30"
+              onClick={() => setMobileOpen(false)}
+            />
+            <div
+              data-boring-workspace-part="app-left-mobile-overlay"
+              data-boring-state="open"
+              onClick={(event) => {
+                const target = event.target as HTMLElement | null
+                if (target?.closest("button")) setMobileOpen(false)
+              }}
+              className="absolute inset-y-0 left-0 z-[65] flex w-[min(86vw,360px)] max-w-[360px] shadow-2xl"
+            >
+              {leftPane}
+            </div>
+          </>
+        ) : null
+      ) : collapsed ? (
         <>
           <div
             data-boring-workspace-part="app-left-peek-trigger"
@@ -154,11 +184,11 @@ export function PluginTabsWorkspaceShell({
           chat tab strip keeps 48px leading clearance via dockview-overrides.css. */}
       <div className="pointer-events-none absolute left-1.5 top-2 z-[70]">
         <PaneCollapseButton
-          label={collapsed ? "Open app navigation" : "Hide app navigation"}
+          label={effectiveCollapsed ? "Open app navigation" : "Hide app navigation"}
           side="right"
-          onClick={collapsed ? onExpand : onCollapse}
+          onClick={mobileShell ? () => setMobileOpen((open) => !open) : collapsed ? onExpand : onCollapse}
         >
-          {collapsed ? (
+          {effectiveCollapsed ? (
             <PanelLeftOpen className="h-4 w-4" strokeWidth={1.75} />
           ) : (
             <PanelLeftClose className="h-4 w-4" strokeWidth={1.75} />

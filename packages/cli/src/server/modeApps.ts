@@ -11,6 +11,7 @@ import { existsSync, readFileSync } from "node:fs"
 import { createRequire } from "node:module"
 import { basename, isAbsolute, join, resolve } from "node:path"
 import { createLocalWorkspaceRegistry, type LocalWorkspace } from "./localWorkspaces.js"
+import { registerWorkspacePluginConfigRoutes, registerWorkspaceTaskRoutes } from "./workspacePluginRoutes.js"
 import type {
   RuntimePluginDiagnosticsResponse,
   RuntimePluginFrontError,
@@ -657,6 +658,9 @@ export async function createWorkspacesModeApp(opts: {
     if (workspace) await disposeWorkspaceRuntime(workspace)
     return reply.send({ ok: true })
   })
+
+  await registerWorkspacePluginConfigRoutes(app, registry)
+  await registerWorkspaceTaskRoutes(app, registry)
 
   app.get("/api/v1/workspaces", async () => ({
     workspaces: (await registry.list()).map(toCoreWorkspace),

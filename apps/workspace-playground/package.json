@@ -4,7 +4,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "build:deps": "pnpm --filter @hachej/boring-ui-kit build && pnpm --filter @hachej/boring-ui-plugin-cli build && pnpm --filter @hachej/boring-agent build && pnpm --filter @hachej/boring-workspace build && pnpm --filter @hachej/boring-core build && pnpm --filter @hachej/boring-deck build && pnpm --filter @hachej/boring-ask-user build && pnpm --filter @hachej/boring-data-explorer build && pnpm --filter @hachej/boring-data-catalog build",
+    "build:deps": "pnpm --filter @hachej/boring-ui-kit build && pnpm --filter @hachej/boring-ui-plugin-cli build && pnpm --filter @hachej/boring-agent build && pnpm --filter @hachej/boring-workspace build && pnpm --filter @hachej/boring-core build && pnpm --filter @hachej/boring-deck build && pnpm --filter @hachej/boring-ask-user build && pnpm --filter @hachej/boring-tasks build && pnpm --filter @hachej/boring-diagram build && pnpm --filter @hachej/boring-data-explorer build && pnpm --filter @hachej/boring-data-catalog build",
     "dev": "pnpm run build:deps && vite",
     "build": "pnpm run build:deps && vite build",
     "typecheck": "tsc --noEmit",
@@ -20,6 +20,8 @@
     "@hachej/boring-workspace": "workspace:*",
     "@hachej/boring-deck": "workspace:*",
     "@hachej/boring-ask-user": "workspace:*",
+    "@hachej/boring-tasks": "workspace:*",
+    "@hachej/boring-diagram": "workspace:*",
     "@duckdb/node-api": "1.5.2-r.2",
     "react": "^19.2.7",
     "react-dom": "^19.2.7",
@@ -34,8 +36,8 @@
     "@vitejs/plugin-react": "^4.0.0",
     "tailwindcss": "^4.3.1",
     "tsx": "^4.22.4",
-    "typescript": "^5.4.0",
+    "typescript": "^6.0.3",
     "vitest": "^4.1.9",
-    "vite": "^6.0.0"
+    "vite": "^8.1.2"
   }
 }

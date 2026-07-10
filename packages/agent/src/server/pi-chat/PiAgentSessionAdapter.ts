@@ -32,6 +32,7 @@ export type PiAgentPromptInput =
 
 export interface PiAgentSessionAdapter {
   readSnapshot(): PiAgentSessionSnapshot;
+  currentModel?: () => { provider: string; id: string } | undefined;
   subscribe(listener: (event: AgentSessionEvent) => void): () => void;
   prompt(input: PiAgentPromptInput): Promise<void>;
   /** Queue a follow-up for after the current turn. Nonce-deduped per session. */
@@ -59,6 +60,7 @@ export interface PiAgentSessionLike {
   readonly followUpMode: "all" | "one-at-a-time";
   readonly sessionId: string;
   readonly sessionName?: string;
+  readonly model?: { provider?: string; id?: string };
   getSteeringMessages(): readonly string[];
   getFollowUpMessages(): readonly string[];
   subscribe(listener: AgentSessionEventListener): () => void;
@@ -95,6 +97,13 @@ export function createPiAgentSessionAdapter(session: PiAgentSessionLike, options
         sessionId: options.sessionId ?? session.sessionId,
         sessionName: session.sessionName,
       };
+    },
+
+    currentModel() {
+      const model = session.model
+      return typeof model?.provider === 'string' && typeof model?.id === 'string'
+        ? { provider: model.provider, id: model.id }
+        : undefined
     },
 
     subscribe(listener) {

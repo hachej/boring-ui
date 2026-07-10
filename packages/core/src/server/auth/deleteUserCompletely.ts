@@ -12,6 +12,7 @@ import {
   creditGrants,
   usageLedger,
   usageReservations,
+  modelBudgetReservations,
   creditPurchases,
 } from '../db/schema.js'
 
@@ -220,6 +221,7 @@ export async function deleteUserCompletely(
         // rows with the account. (Refund-before-grant tombstones in credit_purchases
         // have a NULL user_id and are intentionally left as cross-store/mode guards.)
         await tx.delete(usageReservations).where(eq(usageReservations.userId, userId))
+        await tx.delete(modelBudgetReservations).where(eq(modelBudgetReservations.userId, userId))
         await tx.delete(usageLedger).where(eq(usageLedger.userId, userId))
         await tx.delete(creditGrants).where(eq(creditGrants.userId, userId))
         await tx.delete(creditPurchases).where(eq(creditPurchases.userId, userId))

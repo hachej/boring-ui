@@ -61,20 +61,19 @@
     "axe-core": "^4.12.1",
     "http-server": "^14.1.1",
     "storybook": "^8.6.14",
-    "typescript": "^5.4.0"
+    "typescript": "^6.0.3"
   },
   "pnpm": {
     "onlyBuiltDependencies": [
       "esbuild"
     ],
     "overrides": {
-      "@mariozechner/pi-coding-agent": "npm:@earendil-works/pi-coding-agent@0.75.5",
+      "@mariozechner/pi-coding-agent": "npm:@earendil-works/pi-coding-agent@0.80.3",
       "@perspective-dev/client": "4.4.1",
       "@perspective-dev/viewer": "4.4.1",
       "@perspective-dev/viewer-datagrid": "4.4.1",
       "@perspective-dev/viewer-d3fc": "4.4.1",
-      "fastify": "5.8.5",
-      "better-auth": "1.6.11"
+      "better-auth": "1.6.22"
     }
   }
 }

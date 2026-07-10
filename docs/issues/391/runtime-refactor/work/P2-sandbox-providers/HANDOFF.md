@@ -14,10 +14,12 @@ Derived strictly from [TODO.md](./TODO.md) and [PLAN.md](./PLAN.md). Tick each b
 - [ ] BBP2-002 — Provider capability matrix values + mode→provider mapping docs
 - [ ] BBP2-003 — Move `direct` + `bwrap` sandbox providers
 - [ ] BBP2-004 — Move `vercel-sandbox` provider
+- [ ] BBP2-009 — Publish-pipeline parity for `@hachej/boring-sandbox` (Amendment 2026-07-06; executes before BBP2-005)
 - [ ] BBP2-005 — Land runtime-mode resolution (`resolveMode()` + mode adapters) in `@hachej/boring-bash`
 - [ ] BBP2-006 — Split remote-worker: shared protocol → shared, client → providers, server path decision
 - [ ] BBP2-007 — Migrate importers + delete origin exports (no compat shims)
 - [ ] BBP2-008 — Extend invariant scripts for the three-package boundary
+- [ ] BBP2-010 — Hardened gVisor runsc provider for production v1
 
 ## Verification commands
 - [ ] `pnpm --filter @hachej/boring-sandbox run build`
@@ -49,19 +51,30 @@ Derived strictly from [TODO.md](./TODO.md) and [PLAN.md](./PLAN.md). Tick each b
 - [ ] Capability types and fixed/reported capability facts live in `boring-sandbox/shared` (`providerMatrix`); providers do not own a separate capability-facts authority.
 - [ ] `pnpm lint:invariants` + `pnpm audit:imports` green; zero agent→bash **and** zero agent→sandbox value imports; the only cross-package value edge is `boring-bash → boring-sandbox`; sandbox→agent is type-only.
 - [ ] #416 shared contracts / server projection ops / conformance+leak tests unchanged and passing.
-- [ ] Every moved provider carries its tests and lives in `packages/boring-sandbox/src/providers`; direct/local/vercel-sandbox behavior unchanged; `resolveMode` lands in `boring-bash/modes` with byte-identical behavior.
+- [ ] Every moved provider carries its tests and lives in boring-sandbox; the intentional selection change is explicit trusted-local `direct` and fail-closed deployed fallback.
 - [ ] Provider-bound workspace/path helpers moved with providers: `createNodeWorkspace`, `getNodeWorkspaceHostRoot`, `createVercelSandboxWorkspace`, `createRemoteWorkerWorkspace`, and containment helpers are no longer agent-server value dependencies for moved providers.
 - [ ] Mode-private helpers moved/injected with `boring-bash/modes`: `createServerFileSearch`, template copy, provisioning artifact helpers, and env/error/telemetry helpers leave no `@hachej/boring-agent` value import in `packages/boring-bash/src/modes/**`.
 - [ ] Remote-worker worker server remains app-owned, imports protocol/provider contracts from `@hachej/boring-sandbox`, has no agent-core dep, and still exposes only the P2 health behavior (`{ ok: true }`); no capability handshake is added in P2.
 - [ ] Every importer of the moved value symbols migrated in the same PR and the origin exports deleted; no old-path re-export (value or type), no host shim, no cycle.
 - [ ] Mode-id vs provider-id distinction preserved (`local`→`bwrap`); `resolveMode` (boring-bash) resolves to boring-sandbox provider values.
+- [ ] Publish-pipeline parity (BBP2-009): `@hachej/boring-sandbox` in all five publish lists, ordered before `packages/boring-bash`, on the current version cohort — landed before BBP2-005's bash→sandbox value edge.
+- [ ] Real preconfigured EU worker evidence proves runsc systrap lifecycle,
+      digest-pinned OCI input, per-workspace netns/nftables denial, cgroup/pid/
+      CPU/memory limits, secret-canary absence, and exact cleanup. Mocks alone
+      are insufficient.
 
 ## Exit criteria
 - [ ] `@hachej/boring-sandbox` package exists, builds, and resolves `boring-sandbox/shared` + `boring-sandbox/providers` subpaths.
 - [ ] No agent→bash **or** agent→sandbox value import (invariant scan green); the only cross-package value edge is `boring-bash → boring-sandbox`; the only sandbox→agent edge is type-only.
 - [ ] Current apps still compile after same-PR importer migration (no old-path re-export, no host shim).
 - [ ] Landed #416 contracts unchanged; governance consumers keep working.
-- [ ] `direct`/`local`/`vercel-sandbox` behavior + existing tests preserved; `resolveMode` behavior byte-identical after moving to boring-bash.
+- [ ] No deployed/core/tenant composer silently falls back to direct execution; CLI/dev can opt in explicitly.
+- [ ] Remote-worker relocation and mode/composer cutover are separate reviewable PRs.
+- [ ] P2 adds no new agent-owned provisioning contract/export; the existing
+      engine location is explicitly transitional until P5 BBP5-002 moves and
+      deletes it.
+- [ ] Hardened runsc is the sole v1 production provider; selection through a
+      remote worker also requires P5a's authenticated hardening handshake.
 
 ## Closeout
 - [ ] Zero unowned `TODO(remove:*)` markers for this phase

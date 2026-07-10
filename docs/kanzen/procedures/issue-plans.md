@@ -1,64 +1,77 @@
-# Issue Plans
+# Issue plans
+
+Use when an issue needs a spec, design decision, proof path, or slices before implementation.
 
 Every plan belongs to a GitHub issue.
 
 ```text
-docs/issues/
-  123/
-    plan.md
-    plan-frontend-slice.md
-    plan-stack-2.md
+docs/issues/<issue-number>/plan.md
 ```
 
-- Folder: `docs/issues/<issue-number>/`
-- Main plan: `plan.md`
-- Slices/stacks: `plan-<short-slice>.md`
-- No issue: create or choose one first.
-- PR: name primary issue; link folder.
-- Commits: start with issue number.
+Plan-only edits can happen without a feature branch when the workspace is otherwise safe. Code starts only after the issue, proof path, and next slice are clear.
 
-```text
-#123 docs(plan): add review handoff slice
-```
-
-- Multi-issue PR: split commits by primary issue; secondary links in body.
-- Do not move plans by state.
-- State lives in frontmatter:
+## Frontmatter
 
 ```yaml
 github: https://github.com/hachej/boring-ui/issues/123
 issue: 123
-state: active
-phase: plan
-track: owner
-flag: not-needed
-updated: 2026-06-25
+state: ready-for-agent
+updated: 2026-07-09
 ```
 
-- Plan-only edits: no branch/worktree needed.
-- Code starts after: issue mapping, flag/abstraction, proof path, owner gate.
+Optional fields:
 
-Body shape:
+```yaml
+flag: not-needed | flag:<name> | not-flaggable
+track: owner | fast
+```
 
-```markdown
+## Body
+
+```md
 # gh-123 short title
 
-## Decision
-What should happen and why this is worth doing.
+## Problem
 
-## Flag
-`not-needed`, `flag:<name>`, or `not-flaggable` with the abstraction path.
+## Solution
+
+## Decisions
+
+## Flag / Abstraction
+- Needed?:
+- Path:
+- Rollback:
+
+## Test Seams
+- Highest public seam:
+- Existing prior art:
+- Avoid testing:
 
 ## Acceptance
-Small bullets that can be tested or reviewed.
-
-## Slices
-Tiny PRs or implementation steps. Keep each slice near the review budget; say
-when a stack is needed.
 
 ## Proof
-Commands, CI, demo workspace, screenshots, or explicit waiver.
+- Exact command:
+- Screenshot/demo:
+- Manual steps:
+- Waiver if proof is not possible:
+
+## Slices
+
+### Slice: <name>
+**Delivers:**
+**Blocked by:** None / <slice or issue>
+**Proof:**
+**Review budget:** inside / exceeds / why
+
+## Out of Scope
 
 ## Open Questions
-Only questions that block safe implementation or merge.
+```
+
+Prefer one implementable slice. Split only when the work would exceed review budget or needs parallel/stacked work.
+
+For wide mechanical refactors, use:
+
+```text
+expand -> migrate batches -> contract
 ```

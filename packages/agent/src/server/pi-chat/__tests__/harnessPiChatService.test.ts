@@ -1205,7 +1205,7 @@ describe('HarnessPiChatService', () => {
     if (subscription.type === 'ok') subscription.unsubscribe()
   })
 
-  it('clears the selected follow-up before fallback repost when native continue is unavailable', async () => {
+  it('clears the queued follow-up before fallback repost when native continue is unavailable', async () => {
     const adapter = createAdapter()
     delete adapter.continueQueuedFollowUp
     const { service, harness } = createService(adapter)
@@ -1217,10 +1217,7 @@ describe('HarnessPiChatService', () => {
     })
     await expect(service.interrupt(ctx, 's1', {})).resolves.toMatchObject({ accepted: true })
 
-    expect(adapter.clearFollowUp).toHaveBeenCalledWith({
-      clientNonce: 'nonce-fallback',
-      clientSeq: 5,
-    })
+    expect(adapter.clearFollowUp).toHaveBeenCalledWith()
     expect(adapter.prompt).toHaveBeenCalledWith('fallback queued')
     await expect(service.readState(ctx, 's1')).resolves.toMatchObject({
       queue: { followUps: [] },

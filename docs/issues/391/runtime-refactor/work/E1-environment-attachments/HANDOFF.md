@@ -9,10 +9,10 @@ Derived strictly from [TODO.md](./TODO.md) and [PLAN.md](./PLAN.md). Tick each b
 
 ## Beads
 - [ ] BBE1-001 — Environment/attachment contracts, split across the two packages
-- [ ] BBE1-002 — `resolveAttachments` adapter over the scoped binding manager
+- [ ] BBE1-002 — auth-gated `prepareAttachmentLifetime` over the scoped manager
 - [ ] BBE1-003 — `company_context` as reference environment + readonly attachment
 - [ ] BBE1-004 — Scoped-view (subpath jail) enforcement in the host
-- [ ] BBE1-006 — Agent-owned `ResolvedEnvironments` core-facing type + invariant extension
+- [ ] BBE1-006 — Agent-owned methodless `ResolvedEnvironment` facts + invariant extension
 - [ ] BBE1-007 — Scoped-view mount of the no-leak conformance suite
 - [ ] BBE1-005 — Explicit subagent attachment seam — DEFERRED to Phase 7 (NOT E1 scope)
 
@@ -27,6 +27,14 @@ Derived strictly from [TODO.md](./TODO.md) and [PLAN.md](./PLAN.md). Tick each b
 - [ ] `pnpm run build:packages`
 - [ ] `pnpm run test`
 
+## PR-PLAN reconciliation
+- [ ] `pr1-env-contracts` completed BBE1-001
+- [ ] `pr2-resolve-attachments` completed BBE1-002
+- [ ] `pr3-company-context-env` completed BBE1-003
+- [ ] `pr4-scoped-view-jail` completed BBE1-004
+- [ ] `pr5-agent-typeonly-conformance` completed BBE1-006 + BBE1-007
+- [ ] BBE1-005 verified as deferred to Phase 7 / P7 `pr8-subagent-grant`, with no E1 implementation
+
 ## Review gates
 - [ ] No diff to landed #416 type/class signatures (additions only via new files / re-exports, no edits to existing declarations). BBE1-004 may make implementation-only `readonlyProjectionOperations.ts` symlink-hardening edits; exported signatures stay frozen.
 - [ ] Agent core has zero import (value **or** type) of `@hachej/boring-bash`; the only cross-package type edge is boring-bash → `@hachej/boring-agent` (audit green).
@@ -37,7 +45,17 @@ Derived strictly from [TODO.md](./TODO.md) and [PLAN.md](./PLAN.md). Tick each b
 - [ ] Existing workspace + `company_context` behavior unchanged; governance consumers green (no edits to landed shapes).
 - [ ] A scoped view (`scope.subpath`) of an environment is attachable and physically jailed (BBE1-004/007), including via symlink escape.
 - [ ] An agent can hold two environments with distinct `filesystem` identities simultaneously.
-- [ ] Agent core owns the `ResolvedEnvironments` core-facing type and value/type-imports nothing from `@hachej/boring-bash` (invariant-checked).
+- [ ] Host/boring-bash owns prepared operations and disposal; agent core owns only methodless facts and imports nothing from boring-bash.
+- [ ] Tools/routes/UI observe one prepared attachment lifetime; invalidation and shutdown dispose exactly once.
+- [ ] Stable `AttachmentLifetimeKey` excludes request id; multiple authorized
+      requests reuse one view, unauthorized access rejects, and a new lifetime
+      gets a new view.
+- [ ] Key includes verified `attachmentSetDigest`; same trusted scope with a
+      different/mismatched catalog entry set cannot reuse the cached lifetime.
+- [ ] `prepareAttachmentLifetime` returns only methodless facts and auth-gated
+      contributions. Every tool/route/UI/input operation enters
+      `withAuthorizedView`; no raw handle escapes and a settled callback lease
+      cannot be reused.
 - [ ] Scoped-view no-leak conformance passes as a new mount of the existing suite.
 
 ## Closeout

@@ -381,6 +381,21 @@ describe("ChatLayout component", () => {
     expect(container.querySelector("main")).toBeInTheDocument()
   })
 
+  it("marks the opt-in mobile shell without enabling it by default", () => {
+    const defaultRender = renderWithRegistry(
+      <ChatLayout center="empty" />,
+      ["session-list", "empty"],
+    )
+    expect(defaultRender.container.querySelector("[data-boring-mobile-shell]")).not.toBeInTheDocument()
+    defaultRender.unmount()
+
+    const mobileRender = renderWithRegistry(
+      <ChatLayout center="empty" mobileShellEnabled />,
+      ["session-list", "empty"],
+    )
+    expect(mobileRender.container.querySelector("[data-boring-mobile-shell]")).toBeInTheDocument()
+  })
+
   it("treats nav={null} as a closed session history drawer", () => {
     renderWithRegistry(
       <ChatLayout center="empty" nav={null} onOpenNav={vi.fn()} />,

@@ -32,6 +32,8 @@ export interface ChatLayoutProps {
   sidebar?: string | null
   sidebarParams?: Record<string, unknown>
   storageKey?: string
+  /** Enable the phone-width one-surface mobile shell for direct ChatLayout hosts. */
+  mobileShellEnabled?: boolean
   onOpenNav?: () => void
   onOpenSurface?: () => void
   surfaceButtonBottomOffset?: number

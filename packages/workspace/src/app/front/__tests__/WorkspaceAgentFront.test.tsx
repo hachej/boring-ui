@@ -1644,7 +1644,7 @@ describe("WorkspaceAgentFront", () => {
     )
 
     expect(screen.queryByLabelText("Surface")).not.toBeInTheDocument()
-    await user.click(screen.getByRole("button", { name: "Open artifact" }))
+    await user.click(await screen.findByRole("button", { name: "Open artifact" }))
 
     await waitFor(() => {
       expect(screen.getByLabelText("Surface")).toHaveAttribute("aria-hidden", "false")

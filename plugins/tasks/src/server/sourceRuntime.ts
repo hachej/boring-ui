@@ -2,6 +2,7 @@ import type { BoringTaskAdapterSummary, BoringTaskBoardConfig, BoringTaskCard, B
 
 export interface BoringTaskSourceContext {
   workspaceId?: string
+  workspaceRoot?: string
 }
 
 export type BoringTaskSourceSummary = BoringTaskAdapterSummary

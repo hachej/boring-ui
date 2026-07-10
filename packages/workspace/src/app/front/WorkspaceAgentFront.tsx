@@ -23,6 +23,7 @@ import { useWorkspaceShellCapabilitiesHost } from "./WorkspaceShellCapabilitiesH
 import { PluginsOverlay } from "../../front/chrome/plugins/PluginsOverlay"
 import { AppLeftPane } from "../../front/layout/plugin-tabs/AppLeftPane"
 import { PluginTabsWorkspaceShell } from "../../front/layout/plugin-tabs/PluginTabsWorkspaceShell"
+import { useViewportWidth } from "../../front/layout/useViewportWidth"
 import { captureWorkspaceFrontPlugins } from "./workspaceBuiltinPlugins"
 import type { FilesystemId } from "../../shared/types/filesystem"
 import { UI_COMMAND_EVENT, dispatchUiCommand } from "../../front/bridge"
@@ -193,6 +194,8 @@ export interface WorkspaceAgentFrontProps<
   workspaceLayout?: WorkspaceAgentLayout
   navEnabled?: boolean
   defaultNavOpen?: boolean
+  /** Initial collapsed state for the plugin-tabs app-left pane. */
+  defaultAppLeftPaneCollapsed?: boolean
   defaultSurfaceOpen?: boolean
   defaultWorkbenchLeftTab?: string
   defaultWorkbenchLeftOpen?: boolean
@@ -458,6 +461,7 @@ export function WorkspaceAgentFront<
   workspaceLayout = "classic",
   navEnabled = true,
   defaultNavOpen = false,
+  defaultAppLeftPaneCollapsed,
   defaultSurfaceOpen,
   defaultWorkbenchLeftTab,
   defaultWorkbenchLeftOpen,
@@ -482,8 +486,11 @@ export function WorkspaceAgentFront<
   onOpenNav,
   onOpenSurface,
   surfaceButtonBottomOffset,
+  mobileShellEnabled = true,
   className,
 }: WorkspaceAgentFrontProps<TSession>) {
+  const viewport = useViewportWidth()
+  const mobileShellActive = mobileShellEnabled && viewport < 640
   const externalPluginsEnabled = externalPlugins !== false
   const resolvedFrontPluginHotReload = externalPluginsEnabled ? frontPluginHotReload : false
   const resolvedHotReloadEnabled = externalPluginsEnabled ? hotReloadEnabled : false
@@ -816,7 +823,7 @@ export function WorkspaceAgentFront<
   )
   const [appLeftPaneCollapsed, setAppLeftPaneCollapsed] = useStoredBooleanState(
     `${shellStorageKey}:appLeftPaneCollapsed`,
-    false,
+    defaultAppLeftPaneCollapsed ?? false,
     shellPersistenceEnabled,
   )
   const [appLeftPaneWidth, setAppLeftPaneWidth] = useStoredNumberState(
@@ -1364,14 +1371,19 @@ export function WorkspaceAgentFront<
     }
   }, [apiBaseUrl, resolvedRequestHeaders])
 
+  const chatRemoteSessionOptions = useMemo(() => {
+    const base = (chatParams?.remoteSessionOptions && typeof chatParams.remoteSessionOptions === "object")
+      ? chatParams.remoteSessionOptions as Record<string, unknown>
+      : undefined
+    if (!apiTimeout) return base
+    return { ...(base ?? {}), requestTimeoutMs: apiTimeout }
+  }, [apiTimeout, chatParams?.remoteSessionOptions])
+
   const makeCenterParams = useCallback(
     (sessionId: string, options: { bridgeEnabled?: boolean } = {}) => {
       const bridgeEnabled = options.bridgeEnabled ?? true
       const chatToolRenderers = (chatParams?.toolRenderers && typeof chatParams.toolRenderers === "object")
         ? chatParams.toolRenderers as ToolRendererOverrides
-        : undefined
-      const chatRemoteSessionOptions = (chatParams?.remoteSessionOptions && typeof chatParams.remoteSessionOptions === "object")
-        ? chatParams.remoteSessionOptions as Record<string, unknown>
         : undefined
       return {
       ...chatParams,
@@ -1381,7 +1393,7 @@ export function WorkspaceAgentFront<
       workspaceId,
       storageScope: workspaceId,
       requestHeaders: resolvedRequestHeaders,
-      remoteSessionOptions: apiTimeout ? { ...(chatRemoteSessionOptions ?? {}), requestTimeoutMs: apiTimeout } : chatRemoteSessionOptions,
+      remoteSessionOptions: chatRemoteSessionOptions,
       showSessions: false,
       onReloadAgentPlugins: chatParams?.onReloadAgentPlugins ?? (() => reloadAgentPluginsForSession(sessionId)),
       toolRenderers: { ...pluginToolRenderers, ...(chatToolRenderers ?? {}) },
@@ -1418,7 +1430,7 @@ export function WorkspaceAgentFront<
       ...(resolvedHotReloadEnabled !== undefined ? { hotReloadEnabled: resolvedHotReloadEnabled } : {}),
     }
     },
-    [apiBaseUrl, apiTimeout, chatParams, delayAutoSubmitDraft, resolvedRequestHeaders, bridgeEndpoint, surfaceDispatch, extraCommands, workspaceWarmupStatus, hydrateMessages, emptySessionIds, resolvedHotReloadEnabled, pluginToolRenderers, reloadAgentPluginsForSession, sessionApi, workspaceId],
+    [apiBaseUrl, chatParams, chatRemoteSessionOptions, delayAutoSubmitDraft, resolvedRequestHeaders, bridgeEndpoint, surfaceDispatch, extraCommands, workspaceWarmupStatus, hydrateMessages, emptySessionIds, resolvedHotReloadEnabled, pluginToolRenderers, reloadAgentPluginsForSession, sessionApi, workspaceId],
   )
   const centerParams = useMemo(
     () => makeCenterParams(chatSessionId),
@@ -1684,6 +1696,7 @@ export function WorkspaceAgentFront<
         onOpenSurface?.()
       }}
       surfaceButtonBottomOffset={surfaceButtonBottomOffset}
+      mobileShellEnabled={mobileShellEnabled}
       onOpenSidebar={hasLeftTabs ? () => {
         surfaceOpenRef.current = true
         setSurfaceOpen(true)
@@ -1701,6 +1714,7 @@ export function WorkspaceAgentFront<
       leftPaneWidth={effectiveAppLeftPaneWidth}
       minLeftPaneWidth={220}
       maxLeftPaneWidth={420}
+      mobileShellEnabled={mobileShellEnabled}
       leftPane={(
         <AppLeftPane
           width={effectiveAppLeftPaneWidth}
@@ -1790,7 +1804,7 @@ export function WorkspaceAgentFront<
         appTitle={appTitle}
         storageKey={resolvedProviderStorageKey}
         persistenceEnabled={persistenceEnabled}
-        debug={debug}
+        debug={mobileShellActive ? false : debug}
         bridgeEndpoint={null}
         onAuthError={onAuthError}
         frontPluginHotReload={resolvedFrontPluginHotReload}

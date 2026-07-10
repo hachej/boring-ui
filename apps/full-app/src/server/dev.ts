@@ -1,9 +1,12 @@
+import path from 'node:path'
 import {
   appRootFromImportMeta,
   createCoreWorkspaceAgentServer,
   startCoreWorkspaceAgentDevServer,
 } from '@hachej/boring-core/app/server'
-import { serverPlugins } from './plugins.js'
+import { loadConfig } from '@hachej/boring-core/server'
+import { createFullAppServerPlugins } from './plugins.js'
+import { createGovernance } from '@hachej/boring-governance/server'
 import { buildCreditsWiring } from './credits.js'
 import {
   createFullAppBoringMcpAgentToolsForRequest,
@@ -79,17 +82,31 @@ startCoreWorkspaceAgentDevServer({
   appRoot,
   ...(frontendPort ? { frontendPort } : {}),
   buildServer: async (options) => {
+    const config = await loadConfig({
+      allowMissingSecrets: process.env.NODE_ENV !== 'production',
+      tomlPath: path.resolve(appRoot, 'boring.app.toml'),
+    })
+    const governance = await createGovernance(config)
     const credits = buildCreditsWiring()
+    let appDb: unknown
     let appRef: Awaited<ReturnType<typeof createCoreWorkspaceAgentServer>> | undefined
     const app = await createCoreWorkspaceAgentServer({
       ...options,
-      plugins: serverPlugins,
+      config,
+      plugins: createFullAppServerPlugins([governance.serverPlugin]),
       externalPlugins: false,
       installPluginAuthoring: pluginAuthoringEnabledFromEnv(),
-      metering: credits.meteringSink,
+      metering: governance.createMeteringSink(credits.meteringSink, () => {
+        if (!appDb) throw new Error('governance metering db is not attached')
+        return appDb as never
+      }),
+      filterModels: governance.filterModels,
+      getFilesystemBindings: governance.getFilesystemBindings(),
+      pi: governance.pi,
       getSessionNamespace: ({ workspaceId, request }) => fullAppAgentSessionNamespace({ workspaceId, request }),
       getExtraTools: (ctx) => appRef ? createFullAppBoringMcpAgentToolsForRequest(appRef, ctx) : [],
     })
+    appDb = app.db
     appRef = app
     credits.attach(app)
     registerFullAppBoringMcpRoutes(app)

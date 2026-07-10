@@ -301,6 +301,7 @@ export function PiChatPanel<
   const selectedPiSession = selectedChatState ? activePiSession : undefined
   const chatStatePending = Boolean(activeSessionId && chatState && chatState.sessionId !== activeSessionId)
   const selectedSessionPending = Boolean(activeSessionId && !selectedChatState)
+  const modelDiscoveryEnabled = serverResourcesEnabled && availableModels === undefined
   const modelDiscovery = useChatModelSelection({
     apiBaseUrl,
     defaultModel,
@@ -308,13 +309,19 @@ export function PiChatPanel<
     requestHeaders: normalizedRequestHeaders,
     storage,
     storageScope,
-    enabled: serverResourcesEnabled && availableModels === undefined,
+    enabled: modelDiscoveryEnabled,
   })
   const selectedModel = model === undefined ? modelDiscovery.model : model
   const modelOptions = useMemo(
     () => modelOptionsForSelection(availableModels ?? modelDiscovery.availableModels, selectedModel),
     [availableModels, modelDiscovery.availableModels, selectedModel],
   )
+  const selectedModelAuthorizedByDiscovery = !modelDiscoveryEnabled || Boolean(selectedModel && modelDiscovery.availableModels.some(
+    (modelOption) => modelOption.available && modelOption.provider === selectedModel.provider && modelOption.id === selectedModel.id,
+  ))
+  const serverModelSelectionPending = modelDiscoveryEnabled && !modelDiscovery.loaded
+  const serverModelSelectionUnavailable = modelDiscoveryEnabled && modelDiscovery.loaded && !selectedModelAuthorizedByDiscovery
+  const serverModelSelectionReady = !serverModelSelectionPending && !serverModelSelectionUnavailable
   const [storedThinkingLevel, setStoredThinkingLevel] = useState<ThinkingLevel>(() =>
     thinkingControl ? readPiComposerSettings({ storageScope, storage }).thinkingLevel : DEFAULT_THINKING,
   )
@@ -686,7 +693,7 @@ export function PiChatPanel<
   }, [dismissSlash, insertSlashCommand, openModelPicker, openThinkingPicker, setComposerDraft])
 
   const policy = useMemo(() => {
-    if (!selectedPiSession || !activeChatSessionId) return undefined
+    if (!selectedPiSession || !activeChatSessionId || !serverModelSelectionReady) return undefined
     const policySession = {
       getState: () => {
         const state = selectedPiSession.getState()
@@ -753,7 +760,7 @@ export function PiChatPanel<
         onMentionedFilesConsumed?.()
       },
     })
-  }, [activeChatSessionId, addLocalNotice, allowPromptDuringInitialHydration, clearMentionedFiles, composerBlocked, composerBlockerLabel, effectiveMentionedFiles, markLocalSubmitted, onBeforeSubmit, onCommandResult, onComposerWarning, onMentionedFilesConsumed, onPromptSubmitStarted, openModelPicker, openThinkingPicker, registry, reloadAgentPlugins, resetSession, runPluginUpdate, selectComposerModel, selectComposerThinking, selectedModel, selectedPiSession, selectedThinking, setComposerDraft, submitThinkingControl, suppressPreSubmitCancelledWarning])
+  }, [activeChatSessionId, addLocalNotice, allowPromptDuringInitialHydration, clearMentionedFiles, composerBlocked, composerBlockerLabel, effectiveMentionedFiles, markLocalSubmitted, onBeforeSubmit, onCommandResult, onComposerWarning, onMentionedFilesConsumed, onPromptSubmitStarted, openModelPicker, openThinkingPicker, registry, reloadAgentPlugins, resetSession, runPluginUpdate, selectComposerModel, selectComposerThinking, selectedModel, selectedPiSession, selectedThinking, serverModelSelectionReady, setComposerDraft, submitThinkingControl, suppressPreSubmitCancelledWarning])
 
   // Turn a rejected send (prompt/follow-up/auto-submit) into the single run-rejected
   // notice, carrying the stable server error code so a host can attach a recovery
@@ -941,10 +948,14 @@ export function PiChatPanel<
       && Object.keys(selectedChatState.optimisticOutbox).length === 0
       && !selectedChatState.streamingMessage,
   )
+  const noDiscoveredModelAvailable = modelDiscoveryEnabled
+    && modelDiscovery.loaded
+    && modelDiscovery.availableModels.every((modelOption) => !modelOption.available)
+  const modelSelectionBlocked = serverModelSelectionPending || serverModelSelectionUnavailable || noDiscoveredModelAvailable
   const disabled = !policy || sessionsLoading || composerBlocked
   const isStreaming = isPiBusyStatus(status)
   const submitStatus = initialHydrationPromptAllowed ? 'ready' : toPromptSubmitStatus(status)
-  const submitDisabled = !policy || sessionsLoading || (composerBlocked && !isStreaming)
+  const submitDisabled = !policy || sessionsLoading || modelSelectionBlocked || (composerBlocked && !isStreaming)
   const mergedToolRenderers = useMemo(() => mergeShadcnToolRenderers(toolRenderers), [toolRenderers])
   const debugMessages = useMemo(() => messages.map(toDebugUiMessage), [messages])
 
@@ -968,15 +979,11 @@ export function PiChatPanel<
     window.dispatchEvent(new CustomEvent('boring:chat-session-status', {
       detail: { sessionId: activeChatSessionId, working: isStreaming },
     }))
-    if (!isStreaming) return
-    const sessionId = activeChatSessionId
-    return () => {
-      // Pane unmounted (or session switched) mid-stream: clear the signal
-      // rather than leaving a stale "working" badge behind.
-      window.dispatchEvent(new CustomEvent('boring:chat-session-status', {
-        detail: { sessionId, working: false },
-      }))
-    }
+    // Do not clear on unmount/session switch. A background session can keep
+    // running after its panel is no longer selected; clearing here makes the
+    // session-list "working" badge disappear while the run is still active.
+    // The selected/running panel emits `working: false` when it observes the
+    // terminal status, and a later remount of an idle session also reconciles it.
   }, [activeChatSessionId, isStreaming])
 
   const onTextareaKeyDown = useCallback((event: ReactKeyboardEvent<HTMLTextAreaElement>) => {

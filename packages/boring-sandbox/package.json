@@ -1,6 +1,6 @@
 {
   "name": "@hachej/boring-sandbox",
-  "version": "0.1.61",
+  "version": "0.1.72",
   "type": "module",
   "license": "MIT",
   "description": "Sandbox provider contracts and implementations for Boring runtimes.",
@@ -36,7 +36,7 @@
   },
   "devDependencies": {
     "tsup": "^8.4.0",
-    "typescript": "^5.8.3",
+    "typescript": "^6.0.3",
     "vitest": "^4.1.9"
   }
 }

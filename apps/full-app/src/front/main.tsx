@@ -9,11 +9,16 @@ import {
   isPaymentRequiredNotice,
   useCreditBalance,
 } from '@hachej/boring-core/app/front'
-import { UserMenu, UserSettingsPage, WorkspaceSwitcher } from '@hachej/boring-core/front'
+import {
+  UserMenu,
+  UserSettingsPage,
+  WorkspaceSwitcher,
+} from '@hachej/boring-core/front'
 import '@hachej/boring-core/app/front/styles.css'
 import './app.css'
+import { createGovernanceCompanyAdmin } from '@hachej/boring-governance/front'
 import { BoringMcpSourcesOverlay } from '@hachej/boring-mcp/front'
-import { PublicHeroDescription, publicLaunchPlugin } from './PublicLaunchPages'
+import { PublicHeroDescription } from './PublicHeroDescription'
 import { fullAppBoringMcpOptions } from './boringMcp'
 
 const PRODUCT_NAME = 'Seneca AI'
@@ -28,6 +33,13 @@ const buyEnabled = import.meta.env.VITE_CREDITS_BUY_ENABLED === '1'
 // default: the left bar shows the workspace-switcher dropdown at the top
 // (single-project). Set VITE_BORING_INLINE_PROJECTS=1 to opt in for dev.
 const inlineProjectsEnabled = import.meta.env.VITE_BORING_INLINE_PROJECTS === '1'
+
+// Keep production deployments focused by default: hide advanced workspace tooling
+// unless explicitly enabled. Dev keeps it visible for local dogfooding.
+const workspaceToolingEnabled = import.meta.env.DEV || import.meta.env.VITE_BORING_WORKSPACE_TOOLING === '1'
+const boringMcpUiEnabled = import.meta.env.PROD
+  ? import.meta.env.VITE_BORING_MCP_PROD_ENABLED === '1'
+  : import.meta.env.VITE_BORING_MCP_ENABLED !== '0'
 
 function McpIcon({ className }: { className?: string }) {
   return (
@@ -73,6 +85,8 @@ const AccountSettingsPage = () => {
 //    run-rejected notice. Wired unconditionally: BuyCreditsNoticeAction self-hides on
 //    the SERVER's checkoutEnabled, so it can't be suppressed by a missing/stale Vite
 //    flag while checkout actually works (the flag only feeds the badge fallback).
+const governanceCompanyAdmin = createGovernanceCompanyAdmin()
+
 const chatParams = {
   thinkingControl: true,
   hideDefaultModelOption: true,
@@ -101,15 +115,16 @@ createRoot(document.getElementById('root')!).render(
       apiBaseUrl=""
       apiTimeout={10_000}
       persistenceEnabled
+      companyAdmin={governanceCompanyAdmin}
       appTitle={PRODUCT_NAME}
       workspaceLayout="plugin-tabs"
       appLeftHeaderMode="workspace"
       topBarLeft={<WorkspaceSwitcher displayMode="workspace" />}
       appLeftLayoutMode={inlineProjectsEnabled ? 'multi-project' : 'single-project'}
       workspaceSectionTitle="Projects"
-      showSkills
-      showPlugins
-      appLeftOverlayActions={[
+      showSkills={workspaceToolingEnabled}
+      showPlugins={workspaceToolingEnabled}
+      appLeftOverlayActions={boringMcpUiEnabled ? [
         {
           id: 'boring-mcp',
           label: 'MCP',
@@ -128,12 +143,12 @@ createRoot(document.getElementById('root')!).render(
             />
           ),
         },
-      ]}
+      ] : []}
       chatEntryMode="chat-first"
       publicPaths={[]}
       chatFirstPublicShell={{
-        showTeachingArrows: true,
-        composerPlaceholder: 'Sign in to chat with the agent — or type a command like /landing-page',
+        showTeachingArrows: false,
+        composerPlaceholder: 'Sign in to chat with the agent',
         emptyState: {
           eyebrow: PRODUCT_NAME,
           title: 'One workspace. Any AI provider',
@@ -151,10 +166,7 @@ createRoot(document.getElementById('root')!).render(
             </div>
           ),
         },
-        suggestions: [
-          { label: '/landing-page', hint: 'Get more details.', prompt: '/landing-page' },
-          { label: '/reach-out', hint: 'Book a 30-minute live walkthrough.', prompt: '/reach-out' },
-        ],
+        suggestions: [],
         models: [
           // European-hosted · Frontier · Local — one per category.
           { provider: 'infomaniak', id: 'minimax-2.5', label: 'MiniMax 2.5 · Infomaniak' },
@@ -164,10 +176,8 @@ createRoot(document.getElementById('root')!).render(
       }}
       chatParams={chatParams}
       chatFirstPublicWorkspaceProps={{
-        surfaceInitialPanels: [
-          { id: 'public-landing-page', component: 'public.launch.landing', title: 'Landing page' },
-        ],
-        plugins: [publicLaunchPlugin],
+        surfaceInitialPanels: [],
+        plugins: [],
       }}
       authPages={{ userSettings: AccountSettingsPage }}
       topBarRight={

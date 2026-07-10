@@ -5,6 +5,8 @@ import { FileTreePane, WorkspaceProvider } from "@hachej/boring-workspace"
 import { WorkspaceAgentFront, WorkspaceFullPagePanel, parseFullPagePanelLocation } from "@hachej/boring-workspace/app/front"
 import { definePlugin, type WorkspaceSourceProps } from "@hachej/boring-workspace/plugin"
 import { createAskUserPlugin } from "@hachej/boring-ask-user/front"
+import { diagramPlugin } from "@hachej/boring-diagram/front"
+import { createTasksPlugin } from "@hachej/boring-tasks/front"
 import { SHOWCASE_SESSION_ID, seedShowcase } from "./showcaseMessages"
 
 function isShowcaseRoute(): boolean {
@@ -88,8 +90,9 @@ const multiFilesystemPlaygroundPlugin = definePlugin({
 })
 
 const askUserPlugin = createAskUserPlugin({ appLeftInbox: true })
-const workspacePlugins = [askUserPlugin, playgroundDeckPlugin]
-const multiFilesystemWorkspacePlugins = [askUserPlugin, playgroundDeckPlugin, multiFilesystemPlaygroundPlugin]
+const tasksPlugin = createTasksPlugin()
+const workspacePlugins = [askUserPlugin, tasksPlugin, playgroundDeckPlugin, diagramPlugin]
+const multiFilesystemWorkspacePlugins = [askUserPlugin, tasksPlugin, playgroundDeckPlugin, diagramPlugin, multiFilesystemPlaygroundPlugin]
 const externalPluginsEnabled = (import.meta as ImportMeta & { env?: Record<string, string> }).env?.VITE_BORING_EXTERNAL_PLUGINS === "1"
 
 function resetPlaygroundStorageIfRequested(): void {

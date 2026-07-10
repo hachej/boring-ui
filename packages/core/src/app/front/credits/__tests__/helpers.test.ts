@@ -16,6 +16,9 @@ describe('formatCreditMicros', () => {
     expect(formatCreditMicros(-5, 'EUR', 'en-IE')).toBe('€0.00')
     expect(formatCreditMicros(Number.NaN, 'EUR', 'en-IE')).toBe('€0.00')
   })
+  it('can show high precision for tiny non-zero usage', () => {
+    expect(formatCreditMicros(123, 'EUR', 'en-IE', { highPrecision: true })).toBe('€0.000123')
+  })
 })
 
 describe('formatSignedCreditMicros', () => {
@@ -23,6 +26,9 @@ describe('formatSignedCreditMicros', () => {
     expect(formatSignedCreditMicros(10_000_000, 'CHF', 'de-CH')).toMatch(/^\+.*CHF/)
     expect(formatSignedCreditMicros(-10_000_000, 'USD', 'en-US')).toBe('−$10.00')
     expect(formatSignedCreditMicros(0, 'EUR', 'en-IE')).toBe('€0.00')
+  })
+  it('can show high precision for tiny signed usage', () => {
+    expect(formatSignedCreditMicros(-123, 'EUR', 'en-IE', { highPrecision: true })).toBe('−€0.000123')
   })
 })
 

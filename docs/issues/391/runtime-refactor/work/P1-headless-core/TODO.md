@@ -1,6 +1,7 @@
 # TODO-P1 — Headless core: `createAgent()`, dependency inversion, pure mode
 
-Handoff: self-contained work order for one autonomous coding agent (pi or gpt-5.5-xhigh). Cite plan files by relative path. No access to prior conversation assumed.
+Coordinator: never assign this whole file. Dispatch one bead/PR with this
+file's context, dependencies, and non-negotiables included in the assignment.
 
 ## Context (read first)
 
@@ -9,9 +10,12 @@ Phase 1 of the #391 runtime refactor (v2) — the critical path. Goal: extract a
 Required reading (relative to repo root):
 
 - `docs/issues/391/runtime-refactor/architecture/00-global-isa.md` — package ownership, non-negotiable invariants 1–14, seams to reuse.
-- `docs/issues/391/runtime-refactor/architecture/01-agent-core-runtime-free.md` — the pure-mode contract, the `AgentEnvironment` shape, and the **no-`AgentFeature`** rule (config uses the existing `tools`/`systemPromptAppend`/`systemPromptDynamic`/readiness seams directly; boring-bash contributes a plain `{ tools, readinessRequirements }` bundle the host spreads in), the pi-harness audit questions, required tests.
+- `architecture/01-agent-core-runtime-free.md` — pure-mode contract and no-feature-registry rule. Environment operations stay host-owned per architecture 09.
 - `docs/issues/391/runtime-refactor/architecture/08-pluggable-agent-surfaces.md` — the `createAgent()` API surface (the **nine** members `start`/`stream`/`send`/`resolveInput`/`interrupt`/`stop`/`sessions`/`readiness`/`dispose`; `start`=accepted-receipt write, `stream`=replay+live-tail read, `send`=convenience over both, `interrupt(sessionId)`=abort current turn, `stop(sessionId)`=end/close session), the two-handles rule, the "façade has no Fastify import / no env reads / no file discovery" rule.
 - `docs/issues/391/runtime-refactor/INDEX.md` — "Phase 1" deliverables + exit criteria (this TODO expands them).
+- `docs/issues/391/runtime-refactor/work/P1-headless-core/RESEARCH.md` — Anthropic/Flue/eve research distilled for this design.
+- `work/P1-headless-core/TARGET_INTERFACE.md` — core façade and methodless facts; its former operation-bearing environment draft is superseded by architecture 09.
+- `docs/issues/391/runtime-refactor/work/P1-headless-core/MIGRATION_FROM_TODAY.md` — current-code mapping, spikes, and RuntimeBundle→environment strangler path.
 
 Repo facts (verified — cite these exact paths/signatures):
 
@@ -42,16 +46,17 @@ Matches `INDEX.md` "Phase 1":
 - `createAgent()` exported from its own **Fastify-free published subpath** `@hachej/boring-agent/core` (a new entry in `packages/agent/package.json` `exports`, following the existing `./shared`/`./server`/`./eval` subpath pattern), returning the **nine** members `{ start, stream, send, resolveInput, interrupt, stop, sessions, readiness, dispose }`. The subpath is the anchor the Fastify-graph invariant (BBP1-006) imports and proves clean. The write primitive is `start(input): Promise<{ sessionId, startIndex }>` (accepted receipt; the turn runs to completion on an independent producer appending to the EventStreamStore regardless of any consumer); the read primitive is `stream(sessionId, { startIndex }): AsyncIterable<AgentEvent>` (replay-from-offset + live tail — it replaces a separate `replay()`); `send(input)` is documented convenience = `start` + `stream`; `interrupt(sessionId)` aborts the current turn and `stop(sessionId)` ends/closes the session (both wrap the existing `HarnessPiChatService` interrupt/stop — see BBP1-002). Producers are never consumer-backpressured; cancelling a stream iterator never cancels the turn; `interrupt()` is the only way to stop a running turn.
 - `createAgentApp()` / `registerAgentRoutes()` are adapters over `createAgent()`; all current HTTP consumers behave identically (cli hub, workspace, core, agent-playground e2e). **This full compatibility promise holds only through P1** — there are **two named composition cutovers after it, and the first break is at P2, not P3**: **P2 is the runtime-mode composition cutover** (`TODO-P2` "This phase is the runtime-mode composition cutover") — `resolveMode` injection replaces the in-repo `resolveMode` imports and the agent bin becomes pure-only, so composers that resolved a mode already break there — and **P3 is the routes/tools composition cutover** (`TODO-P3` "This phase is the host-composition cutover") — each host must then construct `createBashAgentFeature()` + mount `registerBashRoutes` itself. The HTTP *wire* surface (route paths/behavior) stays byte-identical across both cutovers; only the composition API breaks, and each cutover migrates every consumer in its own PR.
 - Typed config object only: **no** `process.env` reads, **no** `process.cwd()` defaults, **no** `.pi/*` discovery, **no** `workspaces.yaml` reads inside `createAgent()`. All such reads move to host/CLI composition and are passed in.
-- A pure agent starts via `createAgent({ runtime: 'none' })` in a plain Node script with no Fastify, no workspace/sandbox/cwd/file routes/bash tools.
+- A pure agent starts via `createAgent()` with no runtime/environment attachment in a plain Node script with no Fastify, no workspace/sandbox/cwd/file routes/bash tools; existing `runtime: 'none'` remains an adapter/host shim input during migration.
 - `sessionStorageRoot` is separated from workspace roots.
+- Minimal `ResolvedAgentCapabilities` projection exists for pure mode and coarse existing coding modes.
 - pi-coding-agent cwd/resource assumptions are audited; findings doc + follow-up seals produced (blocks pure-mode exit).
-- Invariant tests: no agent value import from boring-bash; no Fastify in the façade module graph; smoke test `createAgent({ runtime: 'none' })` runs a turn with a fake harness in plain Node.
+- Invariant tests: no agent value import from boring-bash; no Fastify in the façade module graph; smoke test `createAgent()` with no runtime/environment attachment runs a turn with a fake harness in plain Node.
 
 ## Non-negotiables
 
 - **Zero behavior change** for existing HTTP consumers. The adapters must produce byte-identical route surfaces and readiness semantics. Prove via the existing agent test + e2e suites, unchanged.
 - `createAgent()`'s module graph must not transitively import `fastify`. This is invariant-tested (BBP1-006).
-- No new plugin registry and **no `AgentFeature` abstraction** (single-consumer speculative abstraction — forbidden). `createAgent()` config exposes the existing seams directly — `tools`, `systemPromptAppend`/`systemPromptDynamic`, readiness (`mergeTools({ checkReadiness })`, `registerCapabilitiesContributor`). Boring-bash later contributes a plain `{ tools, readinessRequirements }` bundle (P3's `createBashAgentFeature()`) the host spreads into `tools` — see `01-agent-core-runtime-free.md` "Public core contracts".
+- No new plugin registry and **no `AgentFeature` abstraction** (single-consumer speculative abstraction — forbidden). `createAgent()` config exposes the existing seams directly — `tools`, `systemPromptAppend`/`systemPromptDynamic`, readiness (`mergeTools({ checkReadiness })`, `registerCapabilitiesContributor`). Boring-bash later contributes a plain `{ tools, readinessRequirements, systemPromptFragment }` bundle (P3's `createBashAgentFeature()`) whose fields the host spreads into those existing seams as one activation decision — see `01-agent-core-runtime-free.md` "Public core contracts".
 - Type-only `RuntimeModeAdapter`/`RuntimeBundle` imports may stay in agent during migration; concrete mode adapters (`direct`/`local`/`vercel-sandbox`) and `resolveMode()` stay put in P1 (they move to boring-bash in Phase 2). P1 only inverts *who calls* them: host composition, not `createAgent()` internals.
 - Pure mode must pass **no cwd** or a sealed virtual root with no host files to the harness — stronger than "omit cwd from prompt" (invariant 1, `00-global-isa.md`).
 - Session-history durability is separate from file/workspace durability (invariant 5).
@@ -95,14 +100,17 @@ Matches `INDEX.md` "Phase 1":
 
 ### BBP1-002 — `createAgent()` façade (Fastify-free) — L
 
-- **Description:** Add `createAgent(config): Agent` published from the canonical Fastify-free entry `@hachej/boring-agent/core` (impl file under `src/server/createAgent.ts`, re-exported by the `./core` entry; the `@hachej/boring-agent/server` barrel may re-export it for convenience but carries no contract status), returning the **nine** members `{ start, stream, send, resolveInput, interrupt, stop, sessions, readiness, dispose }`. Fastify-free. Config shape derived from what `createAgentApp` currently reads (BBP1-001), passed in — never read from env inside the façade. `start` is the write primitive (accepted receipt), `stream` the read primitive (replay+live-tail), `send` a convenience over both, `interrupt(sessionId)`/`stop(sessionId)` the turn-abort / session-end control pair — see `08` "Producer/consumer split".
+- **Description:** Add `createAgent(config): Agent` published from the canonical Fastify-free entry `@hachej/boring-agent/core` (implementation under `src/core/`; server adapters import core, never the reverse), returning the **nine** members `{ start, stream, send, resolveInput, interrupt, stop, sessions, readiness, dispose }`. Fastify-free. Config shape derived from what `createAgentApp` currently reads (BBP1-001), passed in — never read from env inside the façade. `start` is the write primitive (accepted receipt), `stream` the read primitive (replay+live-tail), `send` a convenience over both, `interrupt(sessionId)`/`stop(sessionId)` the turn-abort / session-end control pair — see `08` "Producer/consumer split".
 - **Files to touch/create:**
-  - create `packages/agent/src/server/createAgent.ts` (the façade + `AgentConfig` type).
-  - create `packages/agent/src/core/index.ts` (new): the **Fastify-free public entry** that re-exports `createAgent` + `AgentConfig` (+ the public `Agent`/`AgentEvent` types). Add a `./core` subpath to `packages/agent/package.json` `exports` (and a tsup/build entry), following the existing `./shared`/`./server`/`./eval` subpath pattern. This dedicated entry — whose closure imports no adapter — is what makes the Fastify-free guarantee mechanically checkable (BBP1-006 imports this exact published path). `@hachej/boring-agent/server` may still re-export `createAgent` for convenience, but the Fastify-free contract is anchored on `@hachej/boring-agent/core`.
+  - create/move `packages/agent/src/core/createAgent.ts` (the façade + `AgentConfig` type). `packages/agent/src/server/createAgent.ts` may remain only as a compatibility wrapper that injects server defaults; it is not the core implementation.
+  - create/update `packages/agent/src/core/index.ts`: the **Fastify-free public entry** that re-exports `createAgent` + `AgentConfig` (+ the public `Agent`/`AgentEvent` types). Add/keep a `./core` subpath to `packages/agent/package.json` `exports` (and a tsup/build entry), following the existing `./shared`/`./server`/`./eval` subpath pattern. This dedicated entry — whose closure imports no adapter — is what makes the Fastify-free guarantee mechanically checkable (BBP1-006 imports this exact published path). `@hachej/boring-agent/server` may still re-export `createAgent` for convenience, but the Fastify-free contract is anchored on `@hachej/boring-agent/core`.
   - create `packages/agent/src/shared/events.ts` (new): the **single public `AgentEvent` envelope type** (`{ v, eventIndex, timestamp, sessionId, chunk }`) plus the `Agent`/`AgentConfig` public types on the shared (type-only) surface (front-safe: no `node:*`, no `Buffer`, no Fastify). **P1 creates this file** — `createAgent()`'s `stream()` signature returns `AsyncIterable<AgentEvent>` and needs the type to compile. **T1 does not create `events.ts`; it extends/uses this P1 file** (durably persisting the envelope, adding `ResolveInputResponse`, filling in `sessionStreamPath`). Do not leave `AgentEvent` ownership hedged to T1.
 - **Implementation notes:**
-  - Derive `AgentConfig` from `CreateAgentAppOptions` minus HTTP/Fastify concerns. Concretely it carries: `harnessFactory?` (default `createPiCodingAgentHarness`), `runtime: RuntimeModeAdapter | 'none'`, `tools?: AgentTool[]` (extra app-owned tools — the boring-bash bundle's tools are spread in here by the host, there is **no** `features?` member), `readinessRequirements?: string[]` (opaque gates, host-supplied), `sessions?` override, `systemPromptAppend?`, `systemPromptDynamic?`, `telemetry?`, `metering?`, `sessionStorageRoot?` (see BBP1-004), and the resolved non-env values that were previously env-read (template path, workspace/session roots) — all supplied by the caller. Do **not** add an `AgentFeature`/`features` config surface.
-  - **Single send-input type — `AgentSendInput` (shared).** Name the `send` input `AgentSendInput`, reconciled from the existing `packages/agent/src/shared/harness.ts` `SendMessageInput` (extend and rename — **one** type, defined in the shared/type-only surface; do not keep two parallel input types). `SendMessageInput`'s callers migrate to `AgentSendInput` in the same PR. `AgentSendInput` carries the normalized user turn (`{ sessionId?, content, attachments?, actor, ctx?: SessionCtx, originSurface?: string }` — omit `sessionId` to create a new session) and is the type T2's `ChatTransport.sendMessages` and 08's message-in shape both reference. **P1 defines the FULL type here (in shared), including `ctx?` and `originSurface?`:** `ctx?: SessionCtx` is boring's tenancy context resolved by the adapter/host (the `SessionStore` scoping key — see BBP1-004's optional-`workspaceId` rule; **never** surface-native platform addressing); `originSurface?: string` is session-create provenance written by adapters (workspace/Slack/embed) and consumed by S3's origin badge. T2's originSurface bead (`TODO-T2` BBT2-001) **EXTENDS** this type — it specifies the session-create provenance semantics and populates the field, it does **not** redefine the type. All façade calls are single-argument (`start(input)`, `send(input)`; never `send(input, ctx)`).
+  - Derive `AgentConfig` from `CreateAgentAppOptions` minus HTTP/Fastify concerns. Concretely it carries: `harnessFactory` (required at core; server adapters inject `createPiCodingAgentHarness` as their default), `runtime?: RuntimeModeAdapter` (absent means pure; the `'none'` literal is an adapter/host shim option lowered to omitted runtime before core), `tools?: AgentTool[]` (extra app-owned tools — the boring-bash bundle's tools are spread in here by the host, there is **no** `features?` member), `readinessRequirements?: string[]` (opaque gates, host-supplied), `sessions?` override, `systemPromptAppend?`, `systemPromptDynamic?`, `telemetry?`, `metering?`, `sessionStorageRoot?` (see BBP1-004), and the resolved non-env values that were previously env-read (template path, workspace/session roots) — all supplied by the caller. Do **not** add an `AgentFeature`/`features` config surface.
+  - **Single send-input type — `AgentSendInput` (shared).** It carries `{ sessionId?, content, inputAssets?, actor?, ctx?: SessionCtx, originSurface?: string, requestId: string }`. `requestId` is caller-generated write idempotency, not a random core nonce. Actor/origin are persisted attribution, never surface-native addressing. All façade calls are single-argument.
+  - P1 input-asset behavior: `AgentSendInput.inputAssets` is wire ingress, not
+    a scalar capability. With no resolved sink/direct-provider policy, reject
+    with a stable unsupported-input-asset error.
   - `agent.start(input: AgentSendInput): Promise<{ sessionId, startIndex }>` — the write primitive. Admit the turn onto `HarnessPiChatService` (`packages/agent/src/server/pi-chat/harnessPiChatService.ts`): build the service once from `{ harness, sessionStore: harness.sessions, workdir, workspace?, metering }`, drive the prompt on an **independent producer** that runs to completion regardless of any consumer, and return the accepted receipt `{ sessionId, startIndex }` the instant the turn is admitted. Producers are never consumer-backpressured. In P1 the producer's events may be the existing `PiChatEvent`/chunk stream; the live `AgentEvent.eventIndex` is allocated by a **per-session, process-local in-memory** `Map<sessionId, counter>` that starts at `0` for each session. A global/per-process counter is wrong; T1 swaps this source to the per-session SQLite stream seq under the same field. Keep the async-iterable/subscriber shape so T1 can wrap it without an API break.
   - `agent.stream(sessionId, { startIndex }): AsyncIterable<AgentEvent>` — the read primitive (replay-from-offset + live tail; the single read primitive, there is no separate `replay()` method). **Minimal non-durable implementation in P1** — the durable offset-addressed event log is T1, but P1 ships a working *live tail* over the existing `HarnessPiChatService`/`PiChatReplayBuffer` path so `send()` = `start` + `stream` yields events end-to-end and the "send yields at least one event" acceptance is satisfiable. `startIndex` is a per-session `eventIndex`, not a process/global cursor. What is NOT available before T1 is *historical* replay: `stream(sessionId, { startIndex })` with a `startIndex` offset older than that session's live buffer throws a typed `AgentNotImplementedError` with code `ERR_NOT_IMPLEMENTED_UNTIL_T1` (the durable back-log that answers stale offsets does not exist yet). Keep the exact signature so T1 swaps the internals for the durable DS store without an API break. Cancelling the returned iterator must never cancel the turn (document this on the method).
   - `agent.send(input: AgentSendInput): AsyncIterable<AgentEvent>` — documented convenience only: `const { sessionId, startIndex } = await start(input); yield* stream(sessionId, { startIndex })`. Because P1's `stream` provides a working live tail, `send` is functional end-to-end in P1 (it drives one turn and yields its events); keep it defined purely as the composition with no independent semantics, so T1's durable swap flows through unchanged.
@@ -112,8 +120,10 @@ Matches `INDEX.md` "Phase 1":
   - **Typed stub error:** define `AgentNotImplementedError` (code `ERR_NOT_IMPLEMENTED_UNTIL_T1`) in the shared/type-only surface; `resolveInput` throws it unconditionally, and `stream` throws it **only** for a historical `startIndex` older than the live buffer (live-tail streaming works in P1). **Do NOT** ship any downstream pack (T2, S1, P3, …) that depends on durable historical replay or on approvals — they block on T1 filling these in.
   - `agent.interrupt(sessionId)` / `agent.stop(sessionId)` — **real in P1** (not stubs): thin wrappers over the existing `HarnessPiChatService` interrupt/stop the pi-chat routes already call today (`packages/agent/src/server/pi-chat/harnessPiChatService.ts`, reached from `http/routes/piChat.ts`). `interrupt(sessionId)` aborts the current turn (the running producer) without closing the session; `stop(sessionId)` ends/closes the session. Do not invent a new abort path — route both to the service methods `piChatRoutes` already invoke, so the façade and the HTTP routes share one control seam. These mirror today's pi-chat interrupt/stop routes.
   - `agent.dispose()` — dispose the mode adapter (`modeAdapter.dispose?.()`) and any harness/service resources.
-  - When `runtime: 'none'`: build no `RuntimeBundle`, register no file/bash tools/features, and construct the harness with a sealed/absent cwd (see BBP1-004 + BBP1-005).
-- **Tests to add:** unit test that `createAgent({ runtime: 'none', harnessFactory: fakeHarness })` constructs without Fastify and exposes exactly the **nine** members `start`, `stream`, `send`, `resolveInput`, `interrupt`, `stop`, `sessions`, `readiness`, `dispose`; `send` yields at least one event from a fake harness turn via the live tail with monotonic in-memory `eventIndex` values (documented non-durable pre-T1 shim); a `stream(sessionId,{startIndex})` call with an offset older than the live buffer throws `AgentNotImplementedError`/`ERR_NOT_IMPLEMENTED_UNTIL_T1`; `interrupt(sessionId)` on an in-flight fake turn aborts it (the producer stops appending) without closing the session, and `stop(sessionId)` ends the session — both delegating to the fake `HarnessPiChatService` interrupt/stop.
+  - When no runtime/environment attachment is supplied to the core: build no `RuntimeBundle`, register no file/bash tools/features, and construct the harness with a sealed/absent cwd (see BBP1-004 + BBP1-005). Existing `runtime: 'none'` remains an adapter/host shim input that lowers to this pure core path during migration.
+- **Tests to add:** pure nine-member façade smoke; live-tail indexes; unsupported
+  historical offset; `inputAssets` without a sink/direct policy rejects;
+  interrupt and stop delegate correctly. Every write supplies `requestId`.
 - **Acceptance:** `createAgent()` is importable and usable with no Fastify, no env reads; the **nine-member** API (`start`, `stream`, `send`, `resolveInput`, `interrupt`, `stop`, `sessions`, `readiness`, `dispose`) exists; `send` drives one turn through a fake harness; `interrupt`/`stop` route to the existing `HarnessPiChatService` control methods.
 
 ### BBP1-003 — Make `createAgentApp()` + `registerAgentRoutes()` thin adapters — L
@@ -130,8 +140,8 @@ Matches `INDEX.md` "Phase 1":
 
 ### BBP1-004 — `runtime: 'none'` pure path + `sessionStorageRoot` separation — M
 
-- **Description:** Add the pure composition path (`runtime: 'none'`, no bash bundle spread into `tools`) and separate transcript/session storage (`sessionStorageRoot`) from workspace file roots.
-- **Files to touch:** `packages/agent/src/server/createAgent.ts` (pure branch); `packages/agent/src/server/harness/pi-coding-agent/createHarness.ts` / `sessions.ts` (accept an explicit session root distinct from `cwd`); adapters (`createAgentApp.ts`, `registerAgentRoutes.ts`) to expose a way to select pure mode.
+- **Description:** Add the pure core composition path (no runtime/environment attachment, no bash bundle spread into `tools`) and separate transcript/session storage (`sessionStorageRoot`) from workspace file roots. Existing `runtime: 'none'` remains the adapter/host shim selector during migration.
+- **Files to touch:** `packages/agent/src/core/createAgent.ts` (pure branch) plus any server wrapper in `packages/agent/src/server/createAgent.ts`; `packages/agent/src/server/harness/pi-coding-agent/createHarness.ts` / `sessions.ts` (accept an explicit session root distinct from `cwd`); adapters (`createAgentApp.ts`, `registerAgentRoutes.ts`) to expose a way to select pure mode.
 - **Implementation notes:**
   - Pure mode registers only: chat/session/model routes (in the HTTP adapter), host-configured non-bash tools/hooks, app-owned tools. It must NOT register `fileRoutes`/`treeRoutes`/`searchRoutes`/`fsEventsRoutes`/`gitRoutes`, and must NOT include `read/write/edit/find/grep/ls`/`bash`/`execute_isolated_code`/upload tools (per `01-agent-core-runtime-free.md` "Pure runtime mode").
   - No `modeAdapter.create()` call, no `RuntimeBundle`. `HarnessPiChatService` needs a `workdir`/`workspace` today; in pure mode pass a sealed/virtual value with no host authority (coordinate with BBP1-005 audit outcome) or make those fields optional.
@@ -139,7 +149,7 @@ Matches `INDEX.md` "Phase 1":
   - **Optional `workspaceId` (SessionCtx):** make `SessionCtx.workspaceId` optional in `packages/agent/src/shared/session.ts` and in `PiSessionStore`. When `workspaceId` is present the store namespaces by it as today; when it is **absent** (pure/headless session) the store namespaces **solely by `sessionStorageRoot`** — no fabricated workspace id, no `process.cwd()` fallback, no synthetic tenant key. A pure session must `create → persist → list → load → delete` under `sessionStorageRoot` with `workspaceId` undefined throughout. Invariant to preserve: the façade/store never invents a `workspaceId`; surfaces that have no tenancy simply omit it.
   - Skip boot-time plugin discovery (`loadPlugins`) in pure mode — it is already gated behind `workspaceFsCapability === 'strong'`, which `'none'` will not have; verify no other path calls it.
 - **Tests to add:** pure-mode route list excludes file/tree/search/fs-events/git routes; tool catalog excludes the fs/bash/upload tools; a session can be created + listed + deleted from `sessionStorageRoot` with no workspace root; assert no `process.cwd()`/repo-root/`/workspace` path appears in pure config. **Optional-workspaceId test:** a pure session created with `SessionCtx.workspaceId` **undefined** persists under `sessionStorageRoot`, then reloads (list + load) in a fresh store instance pointed at the same `sessionStorageRoot` — round-trips with `workspaceId` still undefined and no synthesized id anywhere in the persisted record.
-- **Acceptance:** `createAgent({ runtime: 'none' })` yields an agent with app-owned tools only, durable sessions under `sessionStorageRoot`, and no file/bash routes or tools anywhere.
+- **Acceptance:** `createAgent()` with no runtime/environment attachment yields an agent with app-owned tools only, durable sessions under `sessionStorageRoot`, and no file/bash routes or tools anywhere.
 
 ### BBP1-005 — pi-coding-agent cwd/resource assumption audit → findings + seals — M
 
@@ -158,15 +168,80 @@ Matches `INDEX.md` "Phase 1":
 
 ### BBP1-006 — Invariant + smoke tests — M
 
-- **Description:** Lock the architecture with executable checks: (a) no agent value import from boring-bash; (b) no Fastify in the `createAgent()` module graph; (c) a plain-Node smoke test that `createAgent({ runtime: 'none' })` runs a turn with a fake harness.
+- **Description:** Lock the architecture with executable checks: (a) no agent value import from boring-bash; (b) no Fastify in the `createAgent()` module graph; (c) a plain-Node smoke test that `createAgent()` with no runtime/environment attachment runs a turn with a fake harness.
 - **Files to touch/create:**
   - extend `packages/boring-bash/scripts/check-invariants.mjs` — its agent→boring-bash value-import scan (lines 63–70) already covers `packages/agent/src/**`; add an assertion that the **`@hachej/boring-agent/core` subpath** (the dedicated Fastify-free entry, BBP1-002) pulls no `fastify` into its module graph. Preferred enforcement: a runtime test that imports `createAgent` from the published `@hachej/boring-agent/core` path in a Fastify-free module and asserts `require.cache`/`import.meta` has no `fastify` specifier; the separable subpath closure makes this exact and cheap.
   - add `packages/agent/src/server/__tests__/createAgent.pure.test.ts` (vitest) — the smoke test.
 - **Implementation notes:**
   - **Fastify-graph check:** `createAgent` ships behind its own **`@hachej/boring-agent/core` published subpath** (BBP1-002) precisely so its closure is separable from the adapters (which legitimately import Fastify in `dist/server/index.js`). Enforce with a built-artifact scan mirroring `check-agent-isolation.ts` (which forbids `@hachej/boring-core` in `dist/`): walk the built `./core` entry and forbid a `fastify` specifier anywhere in its transitive closure — or, equivalently, a runtime import of `@hachej/boring-agent/core` asserting no `fastify` in the resolved module graph. The dedicated subpath is required (do not try to keep `createAgent` inside the adapter barrel and graph-walk around it) — the separable entry is what makes the guarantee mechanical.
-  - **Smoke test:** in plain Node/vitest (no Fastify), build a fake `AgentHarnessFactory` returning a minimal `AgentHarness` (in-memory `SessionStore`, a `getPiSessionAdapter` stub emitting one text event), call `createAgent({ runtime: 'none', harnessFactory: fake, tools: [echoTool] })`, drive `send()`, and assert: one turn completes, no file/bash tool in catalog, no `process.cwd()`/repo path in any config/prompt, session persisted under a temp `sessionStorageRoot`.
+  - **Smoke test:** in plain Node/vitest (no Fastify), build a fake `AgentHarnessFactory` returning a minimal `AgentHarness` (in-memory `SessionStore`, a `getPiSessionAdapter` stub emitting one text event), call `createAgent({ harnessFactory: fake, tools: [echoTool] })` with no runtime/environment attachment, drive `send()`, and assert: one turn completes, no file/bash tool in catalog, no `process.cwd()`/repo path in any config/prompt, session persisted under a temp `sessionStorageRoot`.
 - **Tests to add:** the three checks above.
 - **Acceptance:** all three fail on the pre-refactor tree in the intended way (add a negative fixture/assertion for the boring-bash + Fastify import checks) and pass on the refactored tree; the smoke test proves a pure turn in plain Node.
+
+### BBP1-007 — Minimal `ResolvedAgentCapabilities` projection — M
+
+- **Description:** Add the semantic capability-facts anchor from [TARGET_INTERFACE.md](./TARGET_INTERFACE.md) without implementing the full resolver. P1 exposes honest pure-mode facts plus a coarse compatibility projection for existing coding modes.
+- **Files to touch/create:** shared/wire type location under `packages/agent/src/shared/**` for `ResolvedAgentCapabilities` and `ResolvedEnvironment`; `registerAgentRoutes.ts` / `createAgentApp.ts` capability-profile construction; tests near existing capabilities/register-routes tests.
+- **Implementation notes:**
+  - Pure projection:
+    ```ts
+    {
+      v: 1,
+      runtimeMode: 'none',
+      environments: [],
+      tools: toolNames(actualRegisteredTools),
+      skills: [],
+      mcpServers: [],
+      plugins: [],
+    }
+    ```
+  - **Amendment (2026-07-08):** the projection includes resolved `plugins[]`; after P6, plugin-contributed tools/skills/MCP servers appear in the same facts projection as built-in contributions.
+  - **Amendment (2026-07-08):** the projection includes optional `runtime?: { profileId?; image?: { ref, digest }; provider }`, populated by the host. `profileId` is absent for a provider-default image; `image?` is non-secret identity metadata only. Do not add an agent-side sandbox import to populate this facet.
+  - Coarse direct/local/vercel compatibility projection preserves current behavior:
+    ```ts
+    {
+      v: 1,
+      runtimeMode: resolvedMode,
+      environments: [{
+        id: 'user',
+        filesystem: { access: 'readwrite', acceptsInputAssets: true, defaultInputAssetSink: true },
+        tools: ['read', 'write', 'edit', 'find', 'grep', 'ls', 'bash'],
+        provider: resolvedMode,
+      }],
+      tools: toolNames(actualRegisteredTools),
+      skills: [],
+      mcpServers: [],
+    }
+    ```
+  - Expose via the existing `registerCapabilitiesContributor` / `/api/v1/capabilities` seam where available. Workspace/front consumers must consume the JSON wire schema, not value-import agent runtime code.
+  - Do not implement YAML authoring, full requirement intersection, plugin manifest validation, frontend auto-exclusion, skill filtering, or MCP projection in P1.
+- **Tests to add:** pure/headless capabilities match the target block; direct coding capabilities report a writable `user` environment with input-asset sink and environment-bound file/bash tools plus real registered tool names; runtime projection preserves optional `profileId` and optional non-secret `image` facts; no test branches on `runtimeMode` except the compatibility derivation shim.
+- **Acceptance:** PLAN's pure-mode capability facts exit criterion is executable and green; existing HTTP behavior is unchanged.
+
+### BBP1-008 — Admission, idempotency, attribution, and lifecycle closeout — M
+
+- **Admission:** `start()` owns the per-session gate and `send()` delegates to
+  it. Choose and document queue or stable busy rejection. Concurrent starts
+  cannot overwrite an active run; `interrupt()` targets the admitted run.
+- **Idempotency:** same `requestId` + same normalized payload returns the
+  original receipt and starts no second model run. Same id + different payload
+  fails with a stable conflict code. The in-memory key includes the trusted
+  host-composed agent/admission scope and authenticated subject
+  (`SessionCtx.userId` or an explicit host-configured service/local subject),
+  never `actor` or a caller-supplied header. HTTP/MCP caller nonces map to this
+  field only after adapter authentication. T1 persists the same scope.
+- **Attribution:** propagate `actor` and `originSurface` into runtime context and
+  session/run metadata. Absent values remain valid.
+- **Catalog:** `createAgentApp` and `registerAgentRoutes` use the same duplicate
+  policy. Duplicate tool names fail with a stable code unless an explicit,
+  validated override contract exists; logging plus last-writer-wins is invalid.
+- **Lifecycle:** core owns agent-local resources only. Host/provider-global
+  adapters are disposed at host close. Eviction/recreation/failure/app close
+  dispose bindings exactly once; early session stores and worker runtimes are
+  bounded by the same lifecycle policy.
+- **Acceptance:** two concurrent starts, same-subject duplicate/conflicting
+  retries, cross-subject duplicate-id isolation, M1 actor/origin propagation,
+  duplicate tools, eviction, and host close each have executable regression coverage.
 
 ## Verification
 
@@ -188,4 +263,4 @@ Commands (verified to exist in `packages/agent/package.json` / root `package.jso
 - BBP1-005's pi-harness audit findings must be reviewed and the "sealed pi, not second harness" decision confirmed **before** the pure-mode exit criteria are claimed (BBP1-004 depends on BBP1-005's seals).
 - Behavior-parity gate: the reviewer must confirm the existing agent unit + e2e suites pass unchanged, and that no existing route was added/removed for `direct`/`local`/`vercel-sandbox` modes.
 - The Fastify-graph invariant (BBP1-006) must actually fail when a `fastify` import is introduced into the façade closure — reviewer verifies the negative case.
-- Do not start Track T1 (event envelope / durable `stream` / `resolveInput`) until BBP1-002..006 are merged; T1 depends on the stub seams landing here.
+- Do not start Track T1 (event envelope / durable `stream` / `resolveInput`) until BBP1-002..007 are merged; T1 depends on the stub seams landing here.

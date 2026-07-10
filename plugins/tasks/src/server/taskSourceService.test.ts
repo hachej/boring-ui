@@ -2,7 +2,7 @@ import { describe, expect, test, vi } from "vitest"
 import type { BoringTaskSourceRuntime } from "./sourceRuntime"
 import { createTaskSourceRegistry } from "./sourceRuntime"
 import { createTaskSourceService, TaskSourceServiceError } from "./taskSourceService"
-import { createGitHubTaskSource, type GitHubIssueExecutor } from "./githubSource"
+import { createGitHubTaskSource, createWorkspaceGitHubTaskSource, type GitHubIssueExecutor } from "./githubSource"
 
 function source(overrides: Partial<BoringTaskSourceRuntime> = {}): BoringTaskSourceRuntime {
   return {
@@ -84,5 +84,34 @@ describe("github task source", () => {
 
     await expect(github.moveTask?.({}, { taskId: "123", statusId: "mystery" })).rejects.toBeInstanceOf(TaskSourceServiceError)
     expect(executor.viewIssue).not.toHaveBeenCalled()
+  })
+
+  test("auto workspace GitHub source detects the repo from the workspace root", async () => {
+    const issue = {
+      number: 7,
+      title: "Workspace issue",
+      body: null,
+      url: "https://github.test/acme/project/issues/7",
+      state: "OPEN" as const,
+      labels: [{ name: "state:ready" }],
+    }
+    const executor: GitHubIssueExecutor = {
+      listIssues: vi.fn(async () => [issue]),
+      viewIssue: vi.fn(async () => issue),
+      addLabels: vi.fn(async () => undefined),
+      removeLabels: vi.fn(async () => undefined),
+      closeIssue: vi.fn(async () => undefined),
+      reopenIssue: vi.fn(async () => undefined),
+    }
+    const detector = { detectRepository: vi.fn(async () => ({ owner: "acme", repo: "project" })) }
+    const executorFactory = vi.fn(() => executor)
+    const github = createWorkspaceGitHubTaskSource({ detector, executorFactory })
+
+    await expect(github.listTasks({ workspaceRoot: "/work/project" })).resolves.toMatchObject([
+      { id: "7", adapterId: "github:workspace", statusId: "ready" },
+    ])
+    expect(detector.detectRepository).toHaveBeenCalledWith({ workspaceRoot: "/work/project" })
+    expect(executorFactory).toHaveBeenCalledWith({ workspaceRoot: "/work/project", owner: "acme", repo: "project" })
+    expect(executor.listIssues).toHaveBeenCalledWith({ owner: "acme", repo: "project", limit: 200, state: "open" })
   })
 })

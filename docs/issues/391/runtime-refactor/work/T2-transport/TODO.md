@@ -1,6 +1,7 @@
 # TODO-T2 — Transport adapters (in-process + HTTP) over the public contract
 
-Handoff: self-contained work order for one autonomous coding agent (pi or gpt-5.5-xhigh). Cite plan files by relative path. No prior conversation assumed.
+Coordinator: never assign this whole file. Dispatch one bead/PR with this
+file's context, dependencies, and non-negotiables included in the assignment.
 
 ## Context (read first)
 
@@ -40,7 +41,13 @@ Match `INDEX.md` Phase T2 exit criteria:
 - Do NOT touch the T1-built DS code — the durable event store, the DS `GET`/`HEAD` stream routes, or approvals-on-stream. That is T1. If you find a T1 gap, file a bead, do not patch it here. **Carve-out (BBT2-006):** T2 *does* delete the **LEGACY** server-side `?cursor=` NDJSON replay path in this phase (the old `PiChatReplayBuffer` + `?cursor=` route handling) once the DS transport passes conformance + the workspace playground — that legacy path is T2's to remove, and it is distinct from the T1-built DS store/routes which stay untouched.
 - Do NOT delete `piChatStream.ts`/`remotePiSession.ts` until the refit passes the workspace playground and conformance; land the new transport behind `createRemoteSession` injection first, then remove the old path in the same PR's final commit.
 - Do NOT let `workspaceId`/storage-scope leak into `createAgent()` signatures — resolve them in the HTTP adapter (`getRequestContext`) as today.
-- Do NOT build the Slack/Excel surfaces — those are Phases S1/S2 ([`../S1-slack-channel/TODO.md`](../S1-slack-channel/TODO.md), [`../S2-embed-contract/TODO.md`](../S2-embed-contract/TODO.md)). T2 only proves the contract with in-process + HTTP + a headless Node consumer.
+- A transport instance is always bound by its trusted host to an
+  `AuthenticatedTransportBinding { admissionScopeId, subjectId, ctx, agentId }`.
+  This binding is construction-time server state, never public caller input.
+  Every read or control operation resolves the canonical T1 `SessionKey` and
+  authorizes it against this binding even when the public method accepts only
+  `sessionId`. Knowing a session id is not authority.
+- Do NOT build the Slack/Excel surfaces. **Amendment (2026-07-08):** S1/S2 are relocated out of #391 active scope (Slack via flue channels; pi-for-excel issue #551). T2 only proves the contract with in-process + HTTP + a headless Node consumer.
 - Do NOT touch the render/projection layer (`piChatReducer.ts`, `piChatPartMerging.ts`, `piChatAssistantCommit.ts`, `selectors.ts`, `PiTimelineMessage.tsx`, `toolRenderers.tsx`, `bareToolRenderers/`, `primitives/`, composer components). Decision 8 in `../../architecture/08-pluggable-agent-surfaces.md`: the front chat provider is unchanged — the UI is already an ai-elements/shadcn stack insulated from the wire protocol by the `PiChatEvent → BoringChatMessage` projection. Do not "modernize" it onto AI-SDK `UIMessage.parts` and do not swap primitives; the only sanctioned render-layer follow-up (shadcn `MessageScroller` in `PiConversationSurface`) is a separate post-T2 bead, not part of this work order.
 
 ## Beads
@@ -62,28 +69,42 @@ Match `INDEX.md` Phase T2 exit criteria:
     }
     ```
     Keep it `sessionId`-keyed (two-handles). `AgentSendInput` is the single shared send-input type (defined in shared per TODO-P1/BBP1-002 — do not introduce a second input type here); `ResolveInputResponse` is the union defined in `TODO-T1`/`BBT1-004` (import it, do not redeclare). Document each method + reconnect semantics (at-least-once from `startIndex`, dedupe by `eventIndex`) in the file header.
+    The `sessionId`-keyed surface is an addressing contract, not an
+    authorization contract. `makeTransport` receives a host-created
+    `AuthenticatedTransportBinding`; the adapter must resolve and authorize the
+    canonical `(admissionScopeId, subjectId, agentId, sessionId)` key before
+    every `reconnectToStream`, `resolveInput`, `stop`, and `interrupt` call.
     - **Contract text (not just a bead note):** `sendMessages()` maps **1:1 onto `agent.start(input)`** — it returns the accepted receipt `{ accepted: true, sessionId, startIndex }` the instant the turn is admitted and does **not** wait for the turn to complete or read any event (no "drain to first event"). The `sessionId` is **runtime-owned**: for a NEW session the caller does not know it up front and needs the returned value to `reconnectToStream`; it echoes back an existing `sessionId` for a follow-up turn. The turn runs to completion on the façade's independent producer regardless of any consumer. The turn's events are consumed separately via `reconnectToStream(sessionId, { startIndex })` (which maps onto `agent.stream`). This accepted-then-stream split is part of the transport contract, identical in-process and over HTTP.
-    - **`originSurface?: string` — session-create provenance metadata (the field lives on `AgentSendInput`, defined in P1/BBP1-002; T2 does NOT redefine the type — it specifies the session-create provenance semantics and populates the field here):** the session-create path (`sendMessages` on a NEW session / `POST …/agents/:agentId/sessions`) carries the **optional `originSurface?: string`** (from `AgentSendInput`) written by the calling adapter and stored on the session record at `create()`. **Producers:** the **workspace adapter writes `'workspace'`**, the **S1 Slack adapter writes `'slack'`** (`TODO-S1` BBS1-002), and **embeds write their own** (e.g. `'embed'`). It is display/provenance metadata only — **never an addressing key** (two-handles rule). T2 wires the session-create provenance semantics on top of P1's `AgentSendInput` field; **S3's origin-surface badge + filter (`TODO-S3` BBS3-002) is its consumer**, and `SessionSummary.originSurface` (S3) mirrors it.
+    - **`originSurface?: string` — session-create provenance metadata (the field lives on `AgentSendInput`, defined in P1/BBP1-002; T2 does NOT redefine the type — it specifies the session-create provenance semantics and populates the field here):** the session-create path (`sendMessages` on a NEW session / `POST …/agents/:agentId/sessions`) carries the **optional `originSurface?: string`** (from `AgentSendInput`) written by the calling adapter and stored on the session record at `create()`. **Producers:** the **workspace adapter writes `'workspace'`**; future relocated surfaces write their own values (for example Slack via flue channels may write `'slack'`, and pi-for-excel #551 may write `'embed'`). It is display/provenance metadata only — **never an addressing key** (two-handles rule). T2 wires the session-create provenance semantics on top of P1's `AgentSendInput` field; **S3's origin-surface badge + filter (`TODO-S3` BBS3-002) is its consumer**, and `SessionSummary.originSurface` (S3) mirrors it.
   - `packages/agent/src/shared/__tests__/transport.conformance.ts` (new): `runTransportConformance(makeTransport, driveAgent)` covering:
     - `sendMessages` for a NEW session returns `{ accepted: true, sessionId, startIndex }` with a runtime-owned `sessionId`; passing that `sessionId` back into `reconnectToStream` yields the turn's events in `eventIndex` order.
     - `reconnectToStream` from mid-offset replays exactly the missed events (lossless), no dupes across a simulated drop.
     - approval round-trip: a `data-approval-request` event surfaces, `resolveInput` unblocks the turn.
     - `interrupt`/`stop` terminate the turn.
     - idempotent replay: two overlapping `reconnectToStream` calls dedupe by `eventIndex`.
+    - two authenticated subjects may use the same textual `sessionId` without
+      collision because their canonical keys differ; a binding that learns a
+      foreign known id cannot read, resolve, stop, or interrupt it.
 - **Files to touch**: none in product code yet (adapters in BBT2-002/003 register against this).
 - **Acceptance**: suite compiles and is exported for reuse; documents the contract precisely.
 
 ### BBT2-002 — In-process transport over `createAgent()`  · size M
 - **Title**: `ChatTransport` implemented by calling the façade directly (no HTTP).
 - **Files to create**:
-  - `packages/agent/src/server/transport/inProcessTransport.ts` (new): wraps `createAgent()` — `sendMessages` → `agent.start(input)` (returns the `{ accepted, sessionId, startIndex }` receipt directly, no drain — `agent.start` already yields the runtime-owned `{ sessionId, startIndex }`); `reconnectToStream` → `agent.stream(sessionId, { startIndex })`; `resolveInput`/`stop`/`interrupt` → façade methods.
+  - `packages/agent/src/server/transport/inProcessTransport.ts` (new): wraps
+    `createAgent()` and requires an injected host-created
+    `AuthenticatedTransportBinding` plus the T1 session-access resolver.
+    `sendMessages` → authorized `agent.start(input)` (returns the `{ accepted,
+    sessionId, startIndex }` receipt directly, no drain); each other method
+    resolves and authorizes the canonical `SessionKey` under that binding before
+    delegating to the façade. A raw façade wrapper with no binding is forbidden.
 - **Tests**: `inProcessTransport.test.ts` calling `runTransportConformance(makeInProcess, …)` from BBT2-001.
 - **Acceptance**: in-process transport passes the shared suite; imports only `createAgent`/shared types (no Fastify, no front).
 
 ### BBT2-003 — HTTP transport over DS routes + `@durable-streams/client`  · size L
 - **Title**: Front `ChatTransport` that POSTs turns and reconnects via `@durable-streams/client` against T1's DS `GET`/`HEAD` stream route.
 - **Files to create/touch**:
-  - `packages/agent/src/front/chat/pi/dsHttpTransport.ts` (new): implements `ChatTransport` over **only the locked canonical write-route family** (T1-defined, see `TODO-T1`): `sendMessages` → POST `…/api/v1/agents/:agentId/sessions/:sessionId/prompt` for a follow-up turn, or POST `…/api/v1/agents/:agentId/sessions` (no `sessionId`) to create a session on the first turn (reuse existing receipt shape); `reconnectToStream(sessionId,{startIndex})` → `@durable-streams/client` subscribed to `GET …/agents/:agentId/sessions/:sessionId/events/stream` (T1 route, locked family; `:agentId` canonical `default` until P7) starting at the DS offset for `startIndex`; map each `AgentEvent` back to the pi-chat UI store dispatches (`cursor-sync`, event apply) that `usePiSessions` expects. `resolveInput` → POST `…/api/v1/agents/:agentId/sessions/:sessionId/input`; `interrupt` → POST `…/api/v1/agents/:agentId/sessions/:sessionId/interrupt`; `stop` → POST `…/api/v1/agents/:agentId/sessions/:sessionId/stop`. **Do NOT** target the legacy `…/pi-chat/:sessionId/*` paths — those are deleted at cutover (BBT2-006).
+  - `packages/agent/src/front/chat/pi/dsHttpTransport.ts` (new): implements `ChatTransport` over **only the locked canonical write-route family** (T1-defined, see `TODO-T1`): `sendMessages` → POST `…/api/v1/agents/:agentId/sessions/:sessionId/prompt` for a follow-up turn, or POST `…/api/v1/agents/:agentId/sessions` (no `sessionId`) to create a session on the first turn (reuse existing receipt shape); `reconnectToStream(sessionId,{startIndex})` → `@durable-streams/client` subscribed to `GET …/agents/:agentId/sessions/:sessionId/events/stream` (T1 route, locked family; v1 `:agentId` is the validated literal `default`, with non-default rejected until P7) starting at the DS offset for `startIndex`; map each `AgentEvent` back to the pi-chat UI store dispatches (`cursor-sync`, event apply) that `usePiSessions` expects. `resolveInput` → POST `…/api/v1/agents/:agentId/sessions/:sessionId/input`; `interrupt` → POST `…/api/v1/agents/:agentId/sessions/:sessionId/interrupt`; `stop` → POST `…/api/v1/agents/:agentId/sessions/:sessionId/stop`. Every server route derives `AuthenticatedTransportBinding` from the authenticated request and authorizes the canonical T1 `SessionKey` before lookup or mutation; URL ids are never trusted scope. **Do NOT** target the legacy `…/pi-chat/:sessionId/*` paths — those are deleted at cutover (BBT2-006).
   - `packages/agent/src/front/chat/pi/remotePiSession.ts` (touch): re-express `RemotePiSession` on top of `dsHttpTransport` — replace `runEventStream`/`buildPiChatEventsUrl`/`readPiChatNdjsonStream`/`schedulePiChatReconnect` usage with `reconnectToStream`. `@durable-streams/client` owns backoff + offset checkpointing (delete the bespoke `calculateJitteredBackoffDelayMs`/`schedulePiChatReconnect` reconnect loop, and the `replay_gap`/`cursor_ahead` rehydrate recovery — DS catch-up makes gaps impossible). Keep the class's public methods (`start`, `prompt`, `interrupt`, `stop`, debug state) byte-compatible so `usePiSessions` is untouched.
   - Package: add pinned `@durable-streams/client` to `packages/agent/package.json` deps.
 - **Implementation notes**: `startIndex` (integer `eventIndex`) ↔ DS offset conversion lives behind the transport (T1's `stream`/routes already speak both). The old `start(cursor)` cursor becomes `startIndex`; `store.dispatch({type:'cursor-sync', cursor})` maps to the last-seen `eventIndex`. Heartbeats/`Stream-Up-To-Date` drive the `connection-state` dispatch that today comes from NDJSON heartbeats.
@@ -118,19 +139,24 @@ Match `INDEX.md` Phase T2 exit criteria:
 - **Tests**: existing pi-chat route + reconnect tests updated to the DS path (no `?cursor=` expectations remain); the new grep gate fails on a reintroduced legacy branch and passes on the cutover tree.
 - **Acceptance**: no `?cursor=` NDJSON replay code (route branch, `PiChatReplayBuffer`, or `piChatStream.ts`) remains anywhere in `packages/agent`; no legacy `…/pi-chat/:sessionId/{prompt,interrupt,stop}` write route remains (the canonical `…/api/v1/agents/:agentId/sessions/:sessionId/*` family is the sole write surface); the grep/invariant gate is active in `lint:invariants`; the DS transport is the sole reconnect/replay path; workspace UI runs unmodified.
 
-### BBT2-007 — Split attachment capability: `none | direct | workspace`  · size S
-- **Title**: Replace pure mode's temporary blanket attachment rejection with an environment-scoped attachment capability.
-- **Files to touch**:
-  - `packages/agent/src/shared/events.ts` / transport-facing shared types: declare the attachment capability shape as `none | direct | workspace`.
-  - `packages/agent/src/server/createAgent.ts` and `packages/agent/src/server/pi-chat/harnessPiChatService.ts`: replace the temporary `ERR_NO_FILESYSTEM_FOR_ATTACHMENTS` blanket rejection with capability-specific validation.
-  - Front/transport send path touched by BBT2-003/004: pass the environment's attachment capability instead of inferring from runtime id.
-- **Contract**:
-  - `none`: reject all attachments.
-  - `direct`: accept only data-URL or HTTPS image parts that never touch workspace storage; reject workspace-backed uploads/file refs.
-  - `workspace`: accept both direct image parts and workspace-backed attachments.
-  - Pure/headless environments normally use `direct`; filesystem-backed modes use `workspace`; locked-down embedders may choose `none`.
-- **Tests**: pure direct accepts `data:` and `https:` image parts and rejects workspace-backed attachment payloads; pure none rejects all; direct/local/vercel filesystem modes accept both direct and workspace-backed attachments; capability is supplied per environment, not guessed from `runtime`.
-- **Acceptance**: temporary comments naming BBT2-007 are removed; attachment validation is capability-driven and preserves the no-filesystem side-channel guarantee for `none` while allowing direct image parts that do not write workspace storage.
+### BBT2-007 — Input-asset intake strategy over environment facts  · size S/M
+- **Title**: Replace the old attachment capability axis with input-asset intake derived from resolved environment facts and provider/host policy.
+- **Amendment (2026-07-08):** the old `none | direct | workspace` attachment capability framing is superseded. User-supplied files/images/blobs are **input assets**. Intake is a strategy, not a scalar capability:
+  1. Persist to the single/default writable environment whose resolved filesystem fact has `acceptsInputAssets`.
+  2. Else pass direct to the model if host policy and provider facts allow direct assets.
+  3. Else reject with a stable error.
+- **Files to touch:**
+  - `packages/agent/src/shared/events.ts` / transport-facing shared types: carry input assets without declaring `attachments` as capability truth.
+  - `packages/agent/src/server/createAgent.ts` and `packages/agent/src/server/pi-chat/harnessPiChatService.ts`: validate intake from resolved environment facts and provider/host direct-asset support instead of `runtime` or mode labels.
+  - Front/transport send path touched by BBT2-003/004: submit input assets to the chosen intake path; do not infer acceptance from runtime id.
+- **Rules:**
+  - If exactly one writable environment accepts input assets, persist there.
+  - If multiple writable environments accept input assets, exactly one must have `defaultInputAssetSink`; otherwise resolver error.
+  - Direct-to-model support is a provider/host fact, not an agent capability.
+  - A workspace-backed upload path is unavailable when no accepting environment sink exists.
+  - Rejection uses a stable error code and does not mention `runtimeMode`.
+- **Tests**: writable accepting environment persists an input asset to the default sink; multiple accepting sinks without a default fail closed; provider-direct path accepts only when provider + host policy allow it; no sink and no direct support rejects with a stable error; no test branches on `runtimeMode` except migration shims.
+- **Acceptance**: temporary attachment-mode comments naming BBT2-007 are removed; intake is environment-fact/provider-policy-driven and preserves the no-filesystem side-channel guarantee for pure/headless agents.
 
 ## Verification — exact commands (verified against package.json scripts)
 
@@ -156,6 +182,10 @@ T2 adds `@durable-streams/client` (pinned) to `packages/agent`. Node v22.22.
 - In-process and HTTP transports pass the **same** `runTransportConformance` suite — identical `send`/`reconnect`/approval semantics (08 item 3).
 - Reconnect goes through `@durable-streams/client` + T1's DS offsets; the `?cursor=` NDJSON path and `schedulePiChatReconnect`/`replay_gap` recovery are removed from the front (or fully superseded) by the final commit.
 - `usePiSessions`/`PiChatPanel` external API unchanged; workspace UI runs unmodified (no consumer edits).
-- Public contract keyed by `sessionId` only; the platform-addressing invariant guard is active and tested; `x-boring-workspace-id → SessionCtx` documented as adapter-owned (`transport.md`).
+- Public contract keyed by `sessionId` only; every adapter binds that address to
+  trusted authenticated scope for all reads/control; cross-subject known-id
+  access is rejected; the platform-addressing invariant guard is active and
+  tested; `x-boring-workspace-id → SessionCtx` documented as adapter-owned
+  (`transport.md`).
 - Headless Node consumer interleaves with the UI against one shared `createAgent()` session ([`../../INDEX.md`](../../INDEX.md) Phase T2 exit).
 - No new server-side event/approval logic (T1 owns it); any T1 gap filed as a bead, not patched here.

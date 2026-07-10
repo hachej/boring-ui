@@ -1,8 +1,6 @@
 import { useEffect, useMemo, useState } from "react"
 import { Braces, Database, ExternalLink, LayoutDashboard, RefreshCcw, SlidersHorizontal } from "lucide-react"
 import {
-  Card,
-  CardContent,
   EmptyState,
   IconButton,
   Toolbar,
@@ -158,14 +156,16 @@ export function BiDashboardPane({ params }: PaneProps<BiDashboardPaneParams>) {
         </ToolbarGroup>
       </Toolbar>
 
-      <div className="min-h-0 min-w-0 flex-1 overflow-auto bg-background p-4">
+      <div className="min-h-0 min-w-0 flex-1 overflow-auto bg-muted/20 px-4 py-4">
         {showJsonViewer ? (
           <DashboardJsonViewer draft={jsonDraft} />
         ) : spec ? (
           <>
-            <div className="mb-4">
-              <h1 className="text-2xl font-semibold tracking-tight">{spec.title}</h1>
-              {spec.description ? <p className="mt-1 text-sm text-muted-foreground">{spec.description}</p> : null}
+            <div className="mb-3 min-w-0">
+              <div className="min-w-0">
+                <h1 className="truncate text-2xl font-semibold tracking-tight">{spec.title}</h1>
+                {spec.description ? <p className="mt-1 max-w-4xl text-sm text-muted-foreground">{spec.description}</p> : null}
+              </div>
             </div>
 
             <div className="min-w-0 space-y-4">
@@ -173,7 +173,7 @@ export function BiDashboardPane({ params }: PaneProps<BiDashboardPaneParams>) {
               <BiDashboardRenderProvider value={{ apiBaseUrl, workspaceId: workspaceId ?? undefined, spec, refreshKey, queryData, controllerValues, setControllerValues }}>
                 <GeneratedPaneRenderer spec={spec} profile={biDashboardGeneratedPaneProfile} />
               </BiDashboardRenderProvider>
-              <details className="group rounded-xl border border-border bg-card">
+              <details className="group rounded-lg border border-border/70 bg-card shadow-sm">
                 <summary className="flex cursor-pointer list-none items-center gap-2 px-4 py-3 text-sm font-medium text-foreground marker:hidden">
                   <Database className="h-4 w-4" /> Query manifest
                   <span className="ml-auto text-xs text-muted-foreground">debug</span>
@@ -227,6 +227,7 @@ function jsonQueryIdsForDashboard(spec: BslDashboardSpec | null): string[] {
   for (const element of Object.values(spec.elements)) {
     if (element.type === "BSLMetric") ids.add(String(element.props.queryId))
     if (element.type === "BSLChart") ids.add(String(element.props.queryId))
+    if (element.type === "BSLTable") ids.add(String(element.props.queryId))
     if (element.type === "BSLFilter") {
       for (const queryId of element.props.targetQueries) ids.add(String(queryId))
     }
@@ -248,11 +249,10 @@ function DashboardFiltersBar({
   const filters = Object.values(spec.elements).filter((element) => element.type === "BSLFilter")
   if (filters.length === 0) return null
   return (
-    <Card className="min-w-0 border-primary/20 bg-card/95 shadow-sm">
-      <CardContent className="flex min-w-0 flex-wrap items-end gap-3 p-3">
-        <div className="mr-1 flex min-w-[140px] items-center gap-2 pb-2 text-sm font-medium text-foreground">
-          <SlidersHorizontal className="h-4 w-4 text-primary" /> Controls
-        </div>
+    <div className="flex min-w-0 flex-wrap items-end gap-3 rounded-lg border border-border/70 bg-card/95 px-3 py-2 shadow-sm">
+      <div className="mr-1 flex min-w-[120px] items-center gap-2 pb-1.5 text-sm font-medium text-foreground">
+        <SlidersHorizontal className="h-4 w-4 text-muted-foreground" /> Filters
+      </div>
         {filters.map((element) => {
           const props = element.props
           const id = String(props.id)
@@ -267,13 +267,12 @@ function DashboardFiltersBar({
                 value={controllerValues[id] ?? "__all"}
                 onChange={(event) => setControllerValues((previous) => ({ ...previous, [id]: event.target.value }))}
               >
-                <option value="__all">All {field}</option>
+                <option value="__all">All {String(props.label ?? field)}</option>
                 {options.map((option) => <option key={option} value={option}>{option}</option>)}
               </select>
             </label>
           )
         })}
-      </CardContent>
-    </Card>
+    </div>
   )
 }

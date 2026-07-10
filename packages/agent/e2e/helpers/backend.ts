@@ -189,6 +189,13 @@ export function formatLogs(logs: BackendLogs): string {
   ].join('\n')
 }
 
+const E2E_MODEL_ENV = {
+  BORING_AGENT_INFOMANIAK_PRODUCT_ID: '108321',
+  BORING_AGENT_INFOMANIAK_MODELS: 'e2e-smoke-model',
+  BORING_AGENT_INFOMANIAK_MODEL: 'e2e-smoke-model',
+  INFOMANIAK_API_TOKEN: 'e2e-smoke-token',
+}
+
 export async function spawnBackend(
   options: SpawnBackendOptions,
 ): Promise<SpawnedBackend> {
@@ -222,6 +229,7 @@ export async function spawnBackend(
       cwd: agentPackageDir,
       env: {
         ...process.env,
+        ...E2E_MODEL_ENV,
         ...options.env,
       },
       stdio: ['ignore', 'pipe', 'pipe'],
