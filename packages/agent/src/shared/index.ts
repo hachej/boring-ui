@@ -33,6 +33,11 @@ export {
   AgentNotImplementedError,
   sessionStreamPath,
 } from './events'
+export type {
+  WorkspaceAgentDispatcher,
+  WorkspaceAgentDispatcherContext,
+  WorkspaceAgentDispatcherSendInput,
+} from './workspaceAgentDispatcher'
 export type { WorkspaceRuntimeContext } from './runtime'
 export type { Workspace, Entry, Stat } from './workspace'
 export type {

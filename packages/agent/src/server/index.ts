@@ -138,6 +138,10 @@ export {
 } from './piPackages'
 export { registerAgentRoutes } from './registerAgentRoutes'
 export type { RegisterAgentRoutesOptions } from './registerAgentRoutes'
+export type {
+  WorkspaceAgentDispatcherResolver,
+  WorkspaceAgentDispatcherResolveOptions,
+} from './workspaceAgentDispatcher'
 export type { RuntimeEnvContribution, RuntimeEnvContributionContext } from './runtimeEnvContributions'
 export type {
   AgentMeteringSink,
