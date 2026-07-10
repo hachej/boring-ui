@@ -29,8 +29,10 @@ file's context, dependencies, and non-negotiables included in the assignment.
 - A trusted adapter-created `TenantContext` prototype/proof rejects unknown and
   foreign hosts/principals before any workspace lookup. Caller `SessionCtx` is
   not accepted as authority.
-- P6-D/P6-R `WorkspaceAgentsDeclaration`, separate E1 environment catalog,
-  validator, and project-scoped `ResolvedAgentRegistry` exist.
+- P6-D inputs and stateless P6-R exist. P7's one registry of P6-R outputs and
+  D2's own post-v1 `SharedTenantAgentDeclaration` validator exist; E1 attachment
+  contracts exist. P6 supplies no workspace declaration, environment pool, or
+  resolved registry.
 - P1 supports optional `workspaceId` in `SessionCtx` and `sessionStorageRoot`.
 - P5 provisioning/readiness/secret-brokering seams exist.
 - P7 `agentId` routing and `/info` exist.
@@ -43,9 +45,9 @@ file's context, dependencies, and non-negotiables included in the assignment.
 ## Goal / exit criteria
 
 From one running shared EU deployment, an agent-authored tenant YAML
-(`WorkspaceAgentsDeclaration` + environment pool + seed refs) is validated
+(`SharedTenantAgentDeclaration` + attachment refs + seed refs) is validated
 (dry-run, unknown refs fail closed) and hot-registered so
-`company_a.senecapp.ai` - its own skills/files/context/env-pool - is reachable
+`company_a.senecapp.ai` - its own skills/files/context/attachments - is reachable
 by subdomain in seconds with no redeploy. A cross-tenant isolation conformance
 suite proves tenant A never sees tenant B's sessions, files, pending-inputs,
 search, artifacts, or governance. Unknown subdomain fails closed and never
@@ -62,10 +64,10 @@ tenant boundary.
   binding and principal policy.
 - Tenant YAML is requirements/config only. It never carries executable code or
   raw secrets.
-- One `WorkspaceAgentsDeclaration` definition model feeds D1 and D2; do not
-  fork a shared-tier schema.
-- `ResolvedAgentRegistry` remains project-scoped. `LiveTenantRegistry` is
-  process-level tenant binding state.
+- D2 owns one post-v1 `SharedTenantAgentDeclaration`; D1 keeps its minimal
+  dedicated-site input. Do not place either declaration in P6.
+- P7 owns the single agent registry of stateless P6-R outputs.
+  `LiveTenantRegistry` is D2-owned process-level tenant binding state.
 - Path validation remains in adapters. Tenant roots and session roots must not
   collide.
 - S4 is read-only status. BBD2-006 is the only D2 authoring surface.
@@ -96,12 +98,13 @@ tenant boundary.
 
 - **Files touch/create:** `LiveTenantRegistry`, `TenantSpec` validation entry,
   runtime binding installation path, registry lifecycle tests.
-- **Notes:** `register(spec)` validates the `WorkspaceAgentsDeclaration`
-  through BBP6-009, seeds `sessionStorageRoot` + workspace/env-pool roots +
-  files/skills/context, resolves `runtimeProfileRef` or the provider-default
+- **Notes:** `register(spec)` validates D2's `SharedTenantAgentDeclaration`,
+  resolves each deployment through stateless P6-R, seeds `sessionStorageRoot` +
+  workspace roots + files/skills/context and E1 attachment refs, resolves
+  `runtimeProfileRef` or the provider-default
   image, runs the provider-image-support check, materializes secret refs through
-  P5 broker, and installs a runtime binding plus `ResolvedAgentRegistry` instance for
-  the new `workspaceId`.
+  P5 broker, installs a runtime binding, and registers the resolved entries in
+  the single P7-owned agent registry for the new `workspaceId`.
   Registration is idempotent and does not require redeploy.
 - **Tests:** valid tenant spec installs one binding; rerun is idempotent;
   duplicate host/workspace conflicts fail closed; unknown declaration refs and
@@ -115,7 +118,7 @@ tenant boundary.
 - **Files touch/create:** P5 provisioning entry or adapter mode for in-process
   new-tenant seeding, seed-ref resolver, tests.
 - **Notes:** Extend `provisionWorkspaceRuntime()` with a hot new-tenant mode
-  that seeds a tenant's environment pool, skills, templates, plugins, and
+  that seeds a tenant's attachment refs, skills, templates, plugins, and
   context into the running app. **Amendment (2026-07-08):** hot registration
   resolves and installs the declared agents' plugin refs as part of seeding,
   with unknown refs and unsatisfied plugin requirements failing closed. Do not
@@ -182,7 +185,8 @@ tenant boundary.
 - `HostTenantResolver.resolve(requestHost, authenticatedPrincipal): TenantContext | { rejected }`
 - `TenantContext { tenantId, workspaceId, principal }`
 - `LiveTenantRegistry {register/get/list/suspend/archive/delete}`
-- `TenantSpec {workspaceId,host,tier,declaration:WorkspaceAgentsDeclaration,environments,seedRefs,secretRefs,demo?}`
+- `SharedTenantAgentDeclaration { defaultAgentId, deploymentRefs }` (D2-owned)
+- `TenantSpec {workspaceId,host,tier,agents:SharedTenantAgentDeclaration,attachmentRefs,seedRefs,secretRefs,demo?}`
 - `TenantIsolationConformance` suite
 
 ## Verification
@@ -215,8 +219,8 @@ and `TenantIsolationConformance` suite added by this package.
 - No second agent-definition schema.
 - No raw secrets in tenant YAML, logs, registry snapshots, provisioning output,
   files, transcripts, artifacts, or sandbox env.
-- D2 adds process-level tenant registry only; project-scoped `ResolvedAgentRegistry`
-  remains project-scoped.
+- D2 owns only its declaration and process-level tenant registry; P7 owns the
+  one agent registry and P6-R remains stateless.
 - Cross-tenant isolation conformance is green for two live tenants in one
   process.
 - S4 remains read-only; D2 authoring lives only in BBD2-006.

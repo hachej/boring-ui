@@ -1,11 +1,18 @@
 # 09 — Environments as attachable resources
 
+> **V1 scope amendment.** The generic E1 attachment registry and external
+> projections are post-v1. V1 reuses the current workspace composition and
+> implements only the attachment/runsc changes required by the D1 dedicated
+> workspace path. Every v1 run is workspace-backed and has an approved
+> runtime/environment; a workspace-less zero-environment run is not a v1 mode.
+
 Status: v2 addition. Generalizes the #416 filesystem-binding model: **a filesystem + its sandbox is a resource you attach to an agent, not a feature of the agent.** `company_context` was the first instance; this file makes attachment the only model.
 
 ## Intent
 
 - One environment (fs + optional exec), many consumers: the main agent, subagents, *other* boring agents, and **external agents** (Claude Code, Codex, any MCP client).
-- One agent, many environments: zero (pure mode), its private `user` workspace, readonly `company_context`, a shared team scratch fs, an ephemeral per-task sandbox.
+- One agent, many environments over time. V1 requires at least the approved
+  workspace runtime/environment; zero-environment execution is post-v1.
 - **One workspace/project, many agents (post-v1 P7).** A workspace may hold N
   `AgentDeployment`s referencing versioned `AgentDefinition`s. Environments are
   project-scoped resources with agent-independent ids. Trusted identifiers are
@@ -98,7 +105,7 @@ it is injected, workspace-scoped, and has no lifecycle or global singleton.
 
 | Consumer | How it attaches |
 | --- | --- |
-| Main agent | host resolves attachments per session (today: binding resolver — unchanged) |
+| Main agent | workspace host resolves the approved v1 runtime/environment using the current composer; generic attachment resolution is post-v1 |
 | Subagent | inherits by **explicit attachment**, either the same environment handle (shared workspace) or a `scope.subpath` view; never by cwd inheritance |
 | Another boring agent (multi-agent, Phase 7) | same registry, attachment keyed by `agentId` — binding scope keys already include it |
 | **External agent** | **MCP projection** — see below |
@@ -127,7 +134,12 @@ An external agent can reach an environment two ways, and the choice is a **polic
 2. Scoped views are enforced by the environment host (physical projection or jailed ops), never by consumer-side path filtering. Containment must be **realpath-based with symlink denial** (`lstat` each path component; reject a symlink, or resolve it and re-check the result is still inside the jail) — not lexical `resolve()` alone — and E1 ships an explicit **symlink-escape conformance test**. (The landed `readonlyProjectionOperations.ts` jails lexically via `resolve()` only; E1 hardens it.)
 3. Credential brokering happens at the environment boundary (08 trust rule); MCP clients never receive broker secrets.
 4. Exec against a governed filesystem follows the #416 exec rules unchanged; `execPolicy: 'none'` is the default for any non-`user` attachment.
-5. **Workspace-bound context is required for any environment attachment.** Environment attachments (`company_context`, any governed fs, the E2 MCP projection) REQUIRE a workspace-bound context — `BoundFilesystemContext.workspaceId` is **real** (the locked #416 shape, unchanged). Workspace-less / pure surfaces run with **no environment attachments** until the host binds them to a workspace; surfaces **never synthesize a `workspaceId`**. This is the attachment-side counterpart to 08's optional-`SessionCtx.workspaceId` rule: a session may omit tenancy, but the moment it attaches a governed environment it must be workspace-bound — environment resolution/MCP projection are never invoked to attach governed context for a session that has no `workspaceId`.
+5. **Workspace-bound context is required for v1 execution.** Every v1 run and
+   every environment attachment requires a real authorized
+   `BoundFilesystemContext.workspaceId` (the locked #416 shape, unchanged).
+   Surfaces never synthesize a workspace id. A future workspace-less consumer
+   may run with no attachment only after passing decision 21's reintroduction
+   gate; that future possibility does not weaken v1 authorization.
 
 ## What changes vs 02
 

@@ -1,18 +1,32 @@
 # TODO-P5 — Extend provisioning, readiness, secrets, services (bash track)
 
-## Binding v1 split (2026-07-09)
+## Proposed narrow v1 work order (2026-07-10)
 
-- **P5a v1:** BBP5-001, 002, 003, 004, 007, 008, 009, and the non-dev
-  fail-closed governance-root slice of 011/012.
-- **P5b post-v1:** BBP5-005 SDK archives, BBP5-006 managed services,
-  BBP5-010 remote-worker attachment mount/generalization, and D2 hot-tenant
-  support.
-- Host/core owns provisioning orchestration and prepared-resource lifecycle.
-  BBP5-002 moves the current implementation into boring-bash/server, migrates
-  all callers, and removes the agent origin in the same PR. Do not add new
-  agent-owned runner contracts.
-- Requirements validate active authority per architecture 03; they never grant
-  or narrow it.
+Dispatch only these D1-consumed slices, one per assignment:
+
+1. BBP5-003/004 recut: readiness and health for the selected runsc worker and
+   bound workspace runtime.
+2. BBP5-007 recut: host-side secret refs/status/brokerage required by D1.
+3. BBP5-008: pinned-TLS, nonce-bound authenticated worker facts; unknown fails
+   closed.
+4. BBP5-009 recut: redacted D1 desired/observed fingerprint and idempotent
+   reconciliation without generic attachment machinery.
+5. BBP5-011/012 recut: D1-required non-dev governance/config fails closed.
+
+Prerequisite: narrow P2 runsc/provider boundary plus the concrete D1/workspace
+facts consumed by these slices. P3 and E1 are not gates. BBP5-001/002 generic
+normalizer/engine relocation, BBP5-005/006 services/SDK work, BBP5-010 remote
+mounts, E1 lifetimes, and D2 hot tenancy are post-v1.
+
+Requirements/readiness validate authority selected by host/workspace/D1; they
+never grant or widen it. [`P5A-HANDOFF.md`](./P5A-HANDOFF.md) is the v1 closeout
+authority.
+
+## Historical broad P5 work order — non-dispatchable for v1
+
+The remaining coordinator and beads describe the superseded P3/E1-dependent
+normalizer/engine plan. Retain them only for future re-specification from a
+named consumer.
 
 Coordinator: never assign this whole file. Dispatch one bead/PR with this
 file's context, dependencies, and non-negotiables included in the assignment.

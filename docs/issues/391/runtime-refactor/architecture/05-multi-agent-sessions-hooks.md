@@ -1,5 +1,16 @@
 # 05 — Multi-agent workspaces, sessions, and hooks
 
+> **Workspace-first v1 supersession (2026-07-10).** V1 supports only the
+> workspace's routed `default` agent. P6-D defines minimal behavior-only
+> `AgentDefinition` and identity-only `AgentDeployment` schemas/digests plus
+> immutable definition lookup. P6-R is a stateless function over those verified
+> values, the existing authorized workspace composition manifest/digest, and
+> narrow runtime facts. It creates no E1 catalog, `WorkspaceAgentsDeclaration`,
+> resolved registry, generation store, active pointer, lease, GC, or session-
+> pinning platform. D1 alone stores complete redacted deployment snapshots for
+> apply/rollback. The multi-agent and generation material below is post-v1 and
+> non-dispatchable until a named consumer re-specifies it.
+
 ## Goal
 
 Allow one deployed app/workspace to compose multiple agents with different tools, files, shell access, channels, and durability behavior.
@@ -22,7 +33,7 @@ Defaults:
 - delegation depth is capped;
 - shared-sandbox write access needs stale-write or non-overlapping write scopes.
 
-## Definition, deployment, and resolved registry
+## Historical definition/deployment registry design — post-v1
 
 Reusable behavior is not a tenant deployment. The v1 contracts are separate:
 
