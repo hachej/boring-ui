@@ -4,6 +4,7 @@ import { join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
 
 import { AgentDefinitionValidationError, createAgentAssetDigest } from '../../../shared/agent-definition'
+import { AgentDefinitionErrorCode, ErrorCode } from '../../../shared/error-codes'
 import {
   AgentDirectoryCompilerError,
   compileAgentDirectory,
@@ -109,9 +110,9 @@ describe('compileAgentDirectory', () => {
 
     await expect(compileAgentDirectory(root)).rejects.toMatchObject({
       name: 'AgentDefinitionValidationError',
-      code: 'CONFIG_INVALID',
+      code: ErrorCode.enum.CONFIG_INVALID,
       field,
-      validationCode: 'AGENT_DEFINITION_UNSUPPORTED_FIELD',
+      validationCode: AgentDefinitionErrorCode.enum.AGENT_DEFINITION_UNSUPPORTED_FIELD,
     } satisfies Partial<AgentDefinitionValidationError>)
   })
 
@@ -123,9 +124,9 @@ describe('compileAgentDirectory', () => {
 
     await expect(compileAgentDirectory(root)).rejects.toMatchObject({
       name: 'AgentDefinitionValidationError',
-      code: 'CONFIG_INVALID',
+      code: ErrorCode.enum.CONFIG_INVALID,
       field: 'instructionsRef',
-      validationCode: 'AGENT_DEFINITION_INVALID',
+      validationCode: AgentDefinitionErrorCode.enum.AGENT_DEFINITION_INVALID,
     } satisfies Partial<AgentDefinitionValidationError>)
   })
 
@@ -137,9 +138,9 @@ describe('compileAgentDirectory', () => {
 
     await expect(compileAgentDirectory(root)).rejects.toMatchObject({
       name: 'AgentDefinitionValidationError',
-      code: 'CONFIG_INVALID',
+      code: ErrorCode.enum.CONFIG_INVALID,
       field: 'instructionsRef',
-      validationCode: 'AGENT_DEFINITION_INVALID',
+      validationCode: AgentDefinitionErrorCode.enum.AGENT_DEFINITION_INVALID,
     } satisfies Partial<AgentDefinitionValidationError>)
   })
 
@@ -155,9 +156,9 @@ describe('compileAgentDirectory', () => {
 
     await expect(compileAgentDirectory(root)).rejects.toMatchObject({
       name: 'AgentDefinitionValidationError',
-      code: 'CONFIG_INVALID',
+      code: ErrorCode.enum.CONFIG_INVALID,
       field,
-      validationCode: 'AGENT_DEFINITION_INVALID',
+      validationCode: AgentDefinitionErrorCode.enum.AGENT_DEFINITION_INVALID,
     } satisfies Partial<AgentDefinitionValidationError>)
   })
 
@@ -189,9 +190,9 @@ describe('compileAgentDirectory', () => {
 
     await expect(compileAgentDirectory(root)).rejects.toMatchObject({
       name: 'AgentDefinitionValidationError',
-      code: 'CONFIG_INVALID',
+      code: ErrorCode.enum.CONFIG_INVALID,
       field: 'instructionsRef',
-      validationCode: 'AGENT_DEFINITION_INVALID',
+      validationCode: AgentDefinitionErrorCode.enum.AGENT_DEFINITION_INVALID,
     } satisfies Partial<AgentDefinitionValidationError>)
   })
 
@@ -204,7 +205,7 @@ describe('compileAgentDirectory', () => {
 
     await expect(compileAgentDirectory(root)).rejects.toMatchObject({
       name: 'AgentDirectoryCompilerError',
-      code: 'PATH_SYMLINK_ESCAPE',
+      code: ErrorCode.enum.PATH_SYMLINK_ESCAPE,
       compilerCode: 'AGENT_PATH_SYMLINK_ESCAPE',
       field: 'instructionsRef',
     } satisfies Partial<AgentDirectoryCompilerError>)
@@ -217,7 +218,7 @@ describe('compileAgentDirectory', () => {
     await symlink(join(outside, 'agent.json'), join(root, 'agent.json'))
 
     await expect(compileAgentDirectory(root)).rejects.toMatchObject({
-      code: 'PATH_SYMLINK_ESCAPE',
+      code: ErrorCode.enum.PATH_SYMLINK_ESCAPE,
       compilerCode: 'AGENT_PATH_SYMLINK_ESCAPE',
       field: 'agent.json',
     } satisfies Partial<AgentDirectoryCompilerError>)
@@ -228,7 +229,7 @@ describe('compileAgentDirectory', () => {
     await writeFile(join(root, 'agent.json'), JSON.stringify(definition()), 'utf8')
 
     await expect(compileAgentDirectory(root)).rejects.toMatchObject({
-      code: 'PATH_NOT_FOUND',
+      code: ErrorCode.enum.PATH_NOT_FOUND,
       compilerCode: 'AGENT_ASSET_NOT_FOUND',
       field: 'instructionsRef',
     } satisfies Partial<AgentDirectoryCompilerError>)
@@ -238,7 +239,7 @@ describe('compileAgentDirectory', () => {
     const root = await makeTempDir()
 
     await expect(compileAgentDirectory(root)).rejects.toMatchObject({
-      code: 'PATH_NOT_FOUND',
+      code: ErrorCode.enum.PATH_NOT_FOUND,
       compilerCode: 'AGENT_MANIFEST_NOT_FOUND',
       field: 'agent.json',
     } satisfies Partial<AgentDirectoryCompilerError>)
@@ -249,7 +250,7 @@ describe('compileAgentDirectory', () => {
     await writeFile(join(root, 'agent.json'), '{"schemaVersion": 1,', 'utf8')
 
     await expect(compileAgentDirectory(root)).rejects.toMatchObject({
-      code: 'CONFIG_INVALID',
+      code: ErrorCode.enum.CONFIG_INVALID,
       compilerCode: 'AGENT_MANIFEST_INVALID_JSON',
       field: 'agent.json',
     } satisfies Partial<AgentDirectoryCompilerError>)
@@ -261,7 +262,7 @@ describe('compileAgentDirectory', () => {
     await writeFile(join(root, 'instructions.md'), new Uint8Array([0xc3, 0x28]))
 
     await expect(compileAgentDirectory(root)).rejects.toMatchObject({
-      code: 'CONFIG_INVALID',
+      code: ErrorCode.enum.CONFIG_INVALID,
       compilerCode: 'AGENT_ASSET_INVALID_UTF8',
       field: 'instructionsRef',
     } satisfies Partial<AgentDirectoryCompilerError>)

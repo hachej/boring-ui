@@ -1,5 +1,11 @@
 import { z } from 'zod'
 
+import {
+  AgentDefinitionErrorCode,
+  AgentDeploymentErrorCode,
+  ErrorCode,
+} from './error-codes'
+
 export type Sha256Digest = `sha256:${string}`
 
 export interface AgentDefinition {
@@ -46,15 +52,6 @@ export interface CompiledAgentBundle {
   readonly definitionDigest: Sha256Digest
   readonly assets: readonly Readonly<AgentDefinitionDigestAsset>[]
 }
-
-export type AgentDefinitionErrorCode =
-  | 'AGENT_DEFINITION_INVALID'
-  | 'AGENT_DEFINITION_UNSUPPORTED_FIELD'
-
-export type AgentDeploymentErrorCode =
-  | 'AGENT_DEPLOYMENT_INVALID'
-  | 'AGENT_DEPLOYMENT_UNSUPPORTED_FIELD'
-
 export interface AgentSchemaIssue<Code extends string> {
   code: Code
   field: string
@@ -216,8 +213,8 @@ export function validateAgentDefinition(
       valid: false,
       issues: mapZodIssues(
         result.error.issues,
-        'AGENT_DEFINITION_INVALID',
-        'AGENT_DEFINITION_UNSUPPORTED_FIELD',
+        AgentDefinitionErrorCode.enum.AGENT_DEFINITION_INVALID,
+        AgentDefinitionErrorCode.enum.AGENT_DEFINITION_UNSUPPORTED_FIELD,
       ),
     }
   }
@@ -233,8 +230,8 @@ export function validateAgentDeployment(
       valid: false,
       issues: mapZodIssues(
         result.error.issues,
-        'AGENT_DEPLOYMENT_INVALID',
-        'AGENT_DEPLOYMENT_UNSUPPORTED_FIELD',
+        AgentDeploymentErrorCode.enum.AGENT_DEPLOYMENT_INVALID,
+        AgentDeploymentErrorCode.enum.AGENT_DEPLOYMENT_UNSUPPORTED_FIELD,
       ),
     }
   }
@@ -270,7 +267,7 @@ async function sha256(value: string): Promise<Sha256Digest> {
 export async function createAgentAssetDigest(content: string): Promise<Sha256Digest> {
   if (!hasWellFormedUnicode(content)) {
     throw new AgentDefinitionValidationError({
-      code: 'AGENT_DEFINITION_INVALID',
+      code: AgentDefinitionErrorCode.enum.AGENT_DEFINITION_INVALID,
       field: 'content',
       message: 'content must contain well-formed Unicode',
     })
@@ -279,7 +276,7 @@ export async function createAgentAssetDigest(content: string): Promise<Sha256Dig
 }
 
 export class AgentDefinitionValidationError extends Error {
-  readonly code = 'CONFIG_INVALID' as const
+  readonly code = ErrorCode.enum.CONFIG_INVALID
   readonly field: string
   readonly validationCode: AgentDefinitionErrorCode
 
@@ -292,7 +289,7 @@ export class AgentDefinitionValidationError extends Error {
 }
 
 export class AgentDeploymentValidationError extends Error {
-  readonly code = 'CONFIG_INVALID' as const
+  readonly code = ErrorCode.enum.CONFIG_INVALID
   readonly field: string
   readonly validationCode: AgentDeploymentErrorCode
 
@@ -310,7 +307,7 @@ async function validatedDefinitionAssets(
 ): Promise<AgentDefinitionDigestAsset[]> {
   if (!Array.isArray(assets)) {
     throw new AgentDefinitionValidationError({
-      code: 'AGENT_DEFINITION_INVALID',
+      code: AgentDefinitionErrorCode.enum.AGENT_DEFINITION_INVALID,
       field: 'assets',
       message: 'assets must be an array',
     })
@@ -321,8 +318,8 @@ async function validatedDefinitionAssets(
     if (!result.success) {
       const issue = mapZodIssues(
         result.error.issues,
-        'AGENT_DEFINITION_INVALID',
-        'AGENT_DEFINITION_UNSUPPORTED_FIELD',
+        AgentDefinitionErrorCode.enum.AGENT_DEFINITION_INVALID,
+        AgentDefinitionErrorCode.enum.AGENT_DEFINITION_UNSUPPORTED_FIELD,
       )[0]
       throw new AgentDefinitionValidationError({
         ...issue,
@@ -331,7 +328,7 @@ async function validatedDefinitionAssets(
     }
     if (await createAgentAssetDigest(result.data.content) !== result.data.digest) {
       throw new AgentDefinitionValidationError({
-        code: 'AGENT_DEFINITION_INVALID',
+        code: AgentDefinitionErrorCode.enum.AGENT_DEFINITION_INVALID,
         field: 'assets.digest',
         message: `asset digest does not match UTF-8 content: ${result.data.path}`,
       })
@@ -345,7 +342,7 @@ async function validatedDefinitionAssets(
   for (let index = 1; index < canonicalAssets.length; index += 1) {
     if (canonicalAssets[index - 1].path === canonicalAssets[index].path) {
       throw new AgentDefinitionValidationError({
-        code: 'AGENT_DEFINITION_INVALID',
+        code: AgentDefinitionErrorCode.enum.AGENT_DEFINITION_INVALID,
         field: 'assets.path',
         message: `duplicate asset path: ${canonicalAssets[index].path}`,
       })
@@ -353,7 +350,7 @@ async function validatedDefinitionAssets(
   }
   if (!canonicalAssets.some((asset) => asset.path === definition.instructionsRef)) {
     throw new AgentDefinitionValidationError({
-      code: 'AGENT_DEFINITION_INVALID',
+      code: AgentDefinitionErrorCode.enum.AGENT_DEFINITION_INVALID,
       field: 'instructionsRef',
       message: 'instructionsRef must name an included verified asset',
     })

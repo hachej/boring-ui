@@ -73,6 +73,8 @@ export {
 } from './config-schema'
 export type { RuntimeModeId, AgentConfig, AgentEnv } from './config-schema'
 export {
+  AgentDefinitionErrorCode,
+  AgentDeploymentErrorCode,
   ErrorCode,
   ERROR_CODES,
   ApiErrorPayloadSchema,
@@ -101,12 +103,10 @@ export {
 export type {
   AgentDefinition,
   AgentDefinitionDigestAsset,
-  AgentDefinitionErrorCode,
   AgentDefinitionReference,
   CompiledAgentDefinition,
   CompiledAgentBundle,
   AgentDeployment,
-  AgentDeploymentErrorCode,
   AgentSchemaIssue,
   AgentSchemaValidationResult,
   Sha256Digest,

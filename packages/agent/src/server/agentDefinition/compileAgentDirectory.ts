@@ -12,7 +12,7 @@ import {
   type CompiledAgentBundle,
   type CompiledAgentDefinition,
 } from '../../shared/agent-definition'
-import type { ErrorCode } from '../../shared/error-codes'
+import { AgentDefinitionErrorCode, ErrorCode } from '../../shared/error-codes'
 
 const AGENT_MANIFEST = 'agent.json'
 const AGENT_INSTRUCTIONS = 'instructions.md'
@@ -72,7 +72,7 @@ function isInsideRoot(root: string, target: string): boolean {
 async function resolveAgentRoot(directory: string): Promise<string> {
   if (typeof directory !== 'string' || directory.length === 0) {
     throw new AgentDirectoryCompilerError({
-      code: 'CONFIG_INVALID',
+      code: ErrorCode.enum.CONFIG_INVALID,
       compilerCode: 'AGENT_DIRECTORY_NOT_DIRECTORY',
       field: 'directory',
       message: 'agent directory must be a non-empty path',
@@ -84,7 +84,9 @@ async function resolveAgentRoot(directory: string): Promise<string> {
     root = await realpath(resolve(directory))
   } catch (error) {
     throw new AgentDirectoryCompilerError({
-      code: isNotFound(error) ? 'PATH_NOT_FOUND' : 'CONFIG_INVALID',
+      code: isNotFound(error)
+        ? ErrorCode.enum.PATH_NOT_FOUND
+        : ErrorCode.enum.CONFIG_INVALID,
       compilerCode: isNotFound(error)
         ? 'AGENT_DIRECTORY_NOT_FOUND'
         : 'AGENT_DIRECTORY_IO_FAILED',
@@ -99,7 +101,7 @@ async function resolveAgentRoot(directory: string): Promise<string> {
   try {
     if (!(await stat(root)).isDirectory()) {
       throw new AgentDirectoryCompilerError({
-        code: 'CONFIG_INVALID',
+        code: ErrorCode.enum.CONFIG_INVALID,
         compilerCode: 'AGENT_DIRECTORY_NOT_DIRECTORY',
         field: 'directory',
         message: 'agent directory path must name a directory',
@@ -108,7 +110,9 @@ async function resolveAgentRoot(directory: string): Promise<string> {
   } catch (error) {
     if (error instanceof AgentDirectoryCompilerError) throw error
     throw new AgentDirectoryCompilerError({
-      code: isNotFound(error) ? 'PATH_NOT_FOUND' : 'CONFIG_INVALID',
+      code: isNotFound(error)
+        ? ErrorCode.enum.PATH_NOT_FOUND
+        : ErrorCode.enum.CONFIG_INVALID,
       compilerCode: isNotFound(error)
         ? 'AGENT_DIRECTORY_NOT_FOUND'
         : 'AGENT_DIRECTORY_IO_FAILED',
@@ -137,7 +141,7 @@ async function readContainedFile({
   const candidate = resolve(root, path)
   if (!isInsideRoot(root, candidate)) {
     throw new AgentDirectoryCompilerError({
-      code: 'PATH_SYMLINK_ESCAPE',
+      code: ErrorCode.enum.PATH_SYMLINK_ESCAPE,
       compilerCode: 'AGENT_PATH_SYMLINK_ESCAPE',
       field,
       message: `${field} resolves outside the agent directory`,
@@ -149,7 +153,9 @@ async function readContainedFile({
     handle = await open(candidate, constants.O_RDONLY | constants.O_NONBLOCK)
   } catch (error) {
     throw new AgentDirectoryCompilerError({
-      code: isNotFound(error) ? 'PATH_NOT_FOUND' : 'CONFIG_INVALID',
+      code: isNotFound(error)
+        ? ErrorCode.enum.PATH_NOT_FOUND
+        : ErrorCode.enum.CONFIG_INVALID,
       compilerCode: isNotFound(error)
         ? kind === 'manifest'
           ? 'AGENT_MANIFEST_NOT_FOUND'
@@ -167,7 +173,7 @@ async function readContainedFile({
     const openedStat = await handle.stat()
     if (!openedStat.isFile()) {
       throw new AgentDirectoryCompilerError({
-        code: 'CONFIG_INVALID',
+        code: ErrorCode.enum.CONFIG_INVALID,
         compilerCode: kind === 'manifest'
           ? 'AGENT_MANIFEST_NOT_FILE'
           : 'AGENT_ASSET_NOT_FILE',
@@ -179,7 +185,7 @@ async function readContainedFile({
     const target = await realpath(candidate)
     if (!isInsideRoot(root, target)) {
       throw new AgentDirectoryCompilerError({
-        code: 'PATH_SYMLINK_ESCAPE',
+        code: ErrorCode.enum.PATH_SYMLINK_ESCAPE,
         compilerCode: 'AGENT_PATH_SYMLINK_ESCAPE',
         field,
         message: `${field} resolves outside the agent directory`,
@@ -189,7 +195,7 @@ async function readContainedFile({
     const targetStat = await stat(target)
     if (targetStat.dev !== openedStat.dev || targetStat.ino !== openedStat.ino) {
       throw new AgentDirectoryCompilerError({
-        code: 'CONFIG_INVALID',
+        code: ErrorCode.enum.CONFIG_INVALID,
         compilerCode: 'AGENT_PATH_CHANGED_DURING_READ',
         field,
         message: `${field} changed while it was being resolved`,
@@ -200,7 +206,9 @@ async function readContainedFile({
   } catch (error) {
     if (error instanceof AgentDirectoryCompilerError) throw error
     throw new AgentDirectoryCompilerError({
-      code: isNotFound(error) ? 'PATH_NOT_FOUND' : 'CONFIG_INVALID',
+      code: isNotFound(error)
+        ? ErrorCode.enum.PATH_NOT_FOUND
+        : ErrorCode.enum.CONFIG_INVALID,
       compilerCode: isNotFound(error)
         ? kind === 'manifest'
           ? 'AGENT_MANIFEST_NOT_FOUND'
@@ -223,7 +231,7 @@ function decodeUtf8(
     return new TextDecoder('utf-8', { fatal: true }).decode(bytes)
   } catch (error) {
     throw new AgentDirectoryCompilerError({
-      code: 'CONFIG_INVALID',
+      code: ErrorCode.enum.CONFIG_INVALID,
       compilerCode: field === 'agent.json'
         ? 'AGENT_MANIFEST_INVALID_UTF8'
         : 'AGENT_ASSET_INVALID_UTF8',
@@ -239,7 +247,7 @@ function parseManifest(content: string): unknown {
     return JSON.parse(content) as unknown
   } catch (error) {
     throw new AgentDirectoryCompilerError({
-      code: 'CONFIG_INVALID',
+      code: ErrorCode.enum.CONFIG_INVALID,
       compilerCode: 'AGENT_MANIFEST_INVALID_JSON',
       field: 'agent.json',
       message: 'agent.json must contain valid JSON',
@@ -286,7 +294,7 @@ export async function compileAgentDirectory(directory: string): Promise<Compiled
   if (!validation.valid) throw new AgentDefinitionValidationError(validation.issues[0])
   if (validation.value.instructionsRef !== AGENT_INSTRUCTIONS) {
     throw new AgentDefinitionValidationError({
-      code: 'AGENT_DEFINITION_INVALID',
+      code: AgentDefinitionErrorCode.enum.AGENT_DEFINITION_INVALID,
       field: 'instructionsRef',
       message: `instructionsRef must be ${JSON.stringify(AGENT_INSTRUCTIONS)} in schema version 1`,
     })
