@@ -7,6 +7,7 @@ import { afterEach, describe, expect, test, vi } from 'vitest'
 import type { Workspace } from '../../../../shared/workspace'
 import type { RuntimeFilesystemBindingOperations } from '../../../runtime/mode'
 import { createNodeWorkspace } from '../../../workspace/createNodeWorkspace'
+import { ERROR_CODE_CONFLICT } from '../../middleware'
 import { ERROR_CODE_NOT_FOUND_OR_DENIED, ERROR_CODE_READONLY, fileRoutes } from '../file'
 
 const tempRoots: string[] = []
@@ -166,7 +167,7 @@ describe('file routes (NodeWorkspace integration)', () => {
     const workspaceRoot = await mkdtemp(join(tmpdir(), 'boring-ui-file-routes-'))
     tempRoots.push(workspaceRoot)
     const operations: RuntimeFilesystemBindingOperations = {
-      read: vi.fn(async ({ path }) => ({ content: `company:${path}` })),
+      read: vi.fn(async ({ path }) => ({ content: `company:${path}`, mtimeMs: 456 })),
       list: vi.fn(),
       find: vi.fn(),
       grep: vi.fn(),
@@ -187,7 +188,7 @@ describe('file routes (NodeWorkspace integration)', () => {
     })
 
     expect(res.statusCode).toBe(200)
-    expect(res.json()).toEqual({ content: 'company:/company/curated.md', access: 'readwrite' })
+    expect(res.json()).toEqual({ content: 'company:/company/curated.md', mtimeMs: 456, access: 'readwrite' })
 
     const writeRes = await app.inject({
       method: 'POST',
@@ -197,6 +198,27 @@ describe('file routes (NodeWorkspace integration)', () => {
     expect(writeRes.statusCode).toBe(200)
     expect(writeRes.json()).toEqual({ ok: true, mtimeMs: 789 })
     expect(operations.write).toHaveBeenCalledWith({ filesystem: 'company_context', path: '/company/curated.md', content: 'updated' })
+
+    const conflict = Object.assign(new Error('file has been modified since last read'), {
+      statusCode: 409,
+      code: ERROR_CODE_CONFLICT,
+      details: { currentMtimeMs: 789, expectedMtimeMs: 456 },
+    })
+    vi.mocked(operations.write!).mockRejectedValueOnce(conflict)
+    const conflictRes = await app.inject({
+      method: 'POST',
+      url: '/api/v1/files',
+      payload: { filesystem: 'company_context', path: '/company/curated.md', content: 'stale', expectedMtimeMs: 456 },
+    })
+    expect(conflictRes.statusCode).toBe(409)
+    expect(conflictRes.json()).toEqual({
+      error: {
+        code: ERROR_CODE_CONFLICT,
+        message: 'file has been modified since last read',
+        currentMtimeMs: 789,
+        expectedMtimeMs: 456,
+      },
+    })
 
     const deleteRes = await app.inject({ method: 'DELETE', url: '/api/v1/files?filesystem=company_context&path=%2Fcompany%2Fcurated.md' })
     expect(deleteRes.statusCode).toBe(200)
