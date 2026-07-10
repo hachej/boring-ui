@@ -21,6 +21,9 @@ time.
 - Keep discovery import-free; executable tools/plugins remain host-resolved ids.
 - Reject `pluginRefs` (and any `plugins` alias) in schema v1 with
   `AGENT_DEFINITION_UNSUPPORTED_FIELD`; the field is not reserved as a no-op.
+- Reject generic prompt-fragment reference fields in schema v1. Agent-authored
+  system instructions come only from `instructionsRef`; capability/plugin
+  fragments are resolved with their owning contribution by the host.
 
 **Acceptance:** the same directory produces byte-equivalent bundles and the
 same digest across two runs and checkout roots; changing instructions changes

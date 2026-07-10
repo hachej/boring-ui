@@ -23,12 +23,12 @@ documented before implementation; only rows marked **v1 gate** block v1.
 | T1 — durable events/approvals | [T1](work/T1-durable-events/) | P1 | **v1 gate; partial; #546/#559 need rebase/amendment** | one SQLite authority, authenticated-subject-scoped durable caller receipts, transactional approvals, explicit crash recovery |
 | T2 — transports | [T2](work/T2-transport/) | T1 | **v1 gate; pending** | in-process and HTTP transports share admission, replay, attribution, and approval semantics |
 | P2 — sandbox providers | [P2](work/P2-sandbox-providers/) | P1 | **v1 gate; partial; #548/#557/#558/#564 open** | atomic provider extraction plus one real hardened runsc/systrap provider; no silent direct fallback |
-| P3 — routes/tools | [P3](work/P3-routes-tools/) | P2 | **v1 gate; partial** | optional working environment owns file/bash tools/routes; existing filesystem UI is capability-gated without the P4 move |
+| P3 — routes/tools + contribution residue | [P3](work/P3-routes-tools/) | P2 | **v1 gate; partial** | optional working environment owns file/bash tools/routes; filesystem UI is capability-gated; trusted default-agent plugins project tools/routes/Pi prompt+resources/front atomically without P4/P6 expansion |
 | E1 — environment attachments | [E1](work/E1-environment-attachments/) | P2, P3 | **v1 gate; pending** | stable lifetime key excludes request id; authorized tools/routes/UI share one host-owned prepared view |
 | P5a — minimum provisioning | [P5](work/P5-provisioning-secrets/) | P2, P3, E1 | **v1 gate; pending** | host orchestration/readiness/fingerprint/secret brokerage plus authenticated fail-closed runsc-worker hardening facts |
-| P6-R — definition resolution | [P6](work/P6-plugin-child-app/) | P6-D, E1, P5a | **v1 gate; pending** | host verifies bundle assets and resolves deployment to an immutable snapshot/digest; requirements validate authority |
-| D1 — dedicated EU delivery | [D1](work/D1-tenant-provisioning/) | A1, P2 runsc, P5a, P6-R | **v1 gate; pending** | append-only crash-safe apply on a real EU runsc host; complete desired-state rollback; no M2 dependency |
-| P8 — v1 proof/cleanup | [P8](work/P8-verification/) | all v1 gates above | **pending** | zero removal markers plus the timed 15-minute golden-path proof |
+| P6-R — definition resolution | [P6](work/P6-plugin-child-app/) | P6-D, E1, P5a, P3 BBP3-020 | **v1 gate; pending** | host verifies bundle assets and resolves deployment plus the workspace activated-plugin snapshot to an immutable digest; requirements validate authority |
+| D1 — dedicated EU site delivery | [D1](work/D1-tenant-provisioning/) | A1, P2 runsc, P5a, P6-R | **v1 gate; pending** | exact hostname -> bounded landing -> auth -> authorized workspace -> deployed `default` agent, plus crash-safe EU apply/rollback; no M2 dependency |
+| P8 — v1 proof/cleanup | [P8](work/P8-verification/) | all v1 gates above | **pending** | zero removal markers plus the timed 15-minute user-visible golden-path proof |
 
 ## Post-v1 increments
 
@@ -64,8 +64,30 @@ P4 | E2 | X1 | P5b | P6 plugin/child-app | P7 | M2 | D2 | S3/S4
 P1 precedes both extraction and delivery because it establishes lifecycle,
 admission, attribution, and the real dependency boundary. P6-D moves early
 because A1 and D1 are real consumers; plugin/runtime resolution stays later in
-P6-R. D1 uses the existing HTTP/workspace delivery surface and therefore does
-not wait for M2. Work already landed via #416 is reused and must not be redone.
+P6-R. D1 adds one exact-host landing/auth binding over the existing
+HTTP/workspace delivery surface and therefore does not wait for M2 or D2's
+shared-host router. Work already landed via #416 is reused and must not be
+redone.
+
+## Parallel and background tracks
+
+Parallel work is allowed only when ownership and merge gates stay explicit.
+"Background" never means "merge without its prerequisites" or "invent a
+temporary version of a frozen contract."
+
+| Track | Can run in parallel | Frozen boundary | Merge/integration gate | Action now |
+| --- | --- | --- | --- | --- |
+| R0/M1 tracer | after P1 admission/attribution; beside every v1 lane | additive bearer sidecar only; no canonical definition or exposure-policy ownership | stock-client smoke, bounded output, no v1 dependency | run after P1 PR E |
+| P6-D -> A1 compile | beside T1/T2 and P2/P3 after P1 | definition/compiler only; no E1, plugin resolution, tenant, or runtime lifecycle | deterministic self-contained bundle | run as an isolated critical lane |
+| T1 -> T2 | beside P2/P3 and P6-D/A1 | no provider/filesystem work; one event/approval authority | crash recovery then transport conformance | run as an isolated critical lane |
+| P2 -> P3 -> E1 -> P5a | beside T1/T2 and P6-D/A1 | P1 public boundary and #416 contracts stay frozen | hardened runsc, no-leak attachment, readiness/secret-broker proof | run in dependency order |
+| X1 S3/FUSE | draft/background worktree only until P2 + P5a + E1 + a named native-mount consumer exist | package-local `boring-sandbox/mounts`, MinIO proof, and benchmark only; no D1 storage, E1/P5 contract, agent/workspace API, or `company_context` change | full E1 integration, bash/file visibility parity, credential canary, EU MinIO matrix, numeric benchmark | keep #581 draft/deferred; never gate v1 |
+| E2 environment MCP | after E1 + P6-R; beside later D1/P7 follow-up | reuse attachment/projection authority; no new environment owner | MCP no-leak, identity, and exec gating | later clean leaf |
+| M2 agent MCP | after P7 + T2 | thin surface adapter only; no runtime ownership | exposure/auth/result conformance | later clean leaf |
+
+P4, P5b, P6 expansion/P7, D2, and S3/S4 are not safe background work today:
+they either overlap live v1 ownership seams, lack a real consumer, or depend on
+the dedicated path being proven first. Keep them documented and undispatched.
 
 ## Dispatch protocol
 

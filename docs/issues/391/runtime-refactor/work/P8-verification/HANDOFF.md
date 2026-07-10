@@ -60,11 +60,47 @@ A1, and D1. Post-v1 lanes are tracked but not awaited.
 - [ ] Every delivered P2/P3/T1/T2 relocation import gate present and green; no old-path importer.
 - [ ] P3 BBP3-019 proves pure mode registers no filesystem UI/providers/renderers
       and makes no related API calls; P4 relocation is not required.
+- [ ] P3 BBP3-020 proves trusted v1 plugin tools/routes/Pi prompt+resources/front
+      derive from one verified boot-time record; disabled/scan-only/pre-
+      registration-failed plugins leave no server/prompt residue, while browser
+      failure preserves previous-good UI with diagnostics. P6/D1 retain the
+      immutable host-app/plugin snapshot and P8 proves restart/rollback
+      reproduction. D1 rejects raw plugin routes and scoped-route fixtures reject
+      explicit and indirect foreign ids. Per-agent refs/requirements remain post-v1.
 - [ ] Every deferred/un-beaded plan task filed as a tracked issue/bead; `00` coverage posture reconciled (no overclaim).
 - [ ] Golden-path evidence records <=900 seconds, zero source edits, remote
       materialization, definition/deployment/resolved digests, no-op reapply,
-      desired-state digest, append-only generation/current pointer behavior,
-      complete new-generation rollback, and secret-canary absence.
+      desired-state and static-prompt input/resolved digests, append-only
+      generation/current pointer behavior, complete new-generation rollback,
+      and secret-canary absence.
+- [ ] The real dedicated app is restarted with an unchanged pointer and the
+      completed session continues on the exact pinned host/plugin/prompt
+      identity. A changed apply and rollback each bounded-drain and durably
+      retire the replaced generation's sessions; only one process admits and a
+      fresh session uses the new active identity. Same-desired no-op first
+      reproduces the current resolved digest; changed authenticated facts cannot
+      false-no-op. Old-origin boot-digest mismatch rejects before old routes and
+      the replacement reopens only after the old listener is stopped/unbound.
+- [ ] Golden-path evidence opens the exact HTTPS host, verifies bounded landing
+      content, signs in an existing member, enters only the D1-managed
+      workspace, and records the deployed `default` agent identity.
+- [ ] Fixed-workspace evidence covers list/create/switch/delete plus foreign
+      selectors/claims through core workspace/runtime/agent/session/file/UI,
+      full-app MCP, runtime-plugin/plugin-front, scoped plugin routes, pane-
+      status, and WorkspaceBridge. Raw plugin routes fail D1 readiness; indirect
+      foreign session/project ids reject; non-invite dedicated signup creates no
+      workspace or membership.
+- [ ] Bound creator/last-owner account deletion and owner demotion/removal fail
+      before mutation; non-owner account deletion and generic mode cannot remove
+      the D1-managed workspace.
+- [ ] Missing/stale `DedicatedSiteCapability` causes zero DNS/TLS publication
+      and no complete-pointer advance; the intermediate D1 stack cannot expose
+      the generic multi-workspace app at the dedicated hostname. Cross-target
+      and prior-generation/fence replay plus caller fabrication are rejected
+      with the same zero-effect result. First-apply publication follows pointer
+      CAS; reserved-host/no-pointer direct-origin requests fail inactive across
+      all route families, and a dedicated process rejects missing/non-bound hosts
+      without generic fallback.
 - [ ] The golden path used the real EU runsc/systrap target through pinned-HTTPS
       worker authentication and proved stale-generation provider fencing; fake
       provider evidence is supplemental only.
@@ -79,6 +115,11 @@ A1, and D1. Post-v1 lanes are tracked but not awaited.
       residue; ownership relocation remains post-v1 P4.
 - [ ] Executable v1 product proof is recorded; component/invariant results alone
       do not close P8.
+- [ ] Product proof includes exact host -> landing -> existing-member sign-in ->
+      one managed workspace -> deployed agent as `default`, with selector escape
+      and ordinary workspace lifecycle denied.
+- [ ] D1 uses durable local/provider volume storage; X1 FUSE/S3 remains tracked
+      post-v1 and is not silently required by the proof.
 - [ ] All `00` invariants + package invariant scripts + `audit:imports` green; full build+test green.
 
 ## Closeout

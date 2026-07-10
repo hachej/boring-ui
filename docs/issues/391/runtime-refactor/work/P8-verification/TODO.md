@@ -3,7 +3,8 @@
 ## Binding v1 gate (2026-07-09)
 
 Required: P1, T1/T2, P2/P3, E1, P5a, P6-D/P6-R, A1, D1, zero
-removal markers, and the timed product proof. Not required: P4, E2, X1, P5b,
+removal markers, and the timed exact-URL-to-default-agent product proof. Not
+required: P4, E2, X1, P5b,
 P6 plugin/child-app expansion, P7, M2, D2, S3, or S4.
 
 Coordinator: never assign this whole file. Dispatch one bead/PR with this
@@ -45,6 +46,13 @@ Match [`../../INDEX.md`](../../INDEX.md) Phase 8 (v2):
 3. Remaining plan tasks (anything in `00`–`09` not yet a landed bead, plus the explicitly deferred boundaries) converted into tracked beads/issues — nothing left only in prose.
 4. No code imports old moved paths for delivered P2/P3/T1/T2 relocations.
 5. All `00` invariants + package invariant scripts + `audit:imports` green; full build+test green.
+6. Prompt composition proves that `instructionsRef` is the only agent-authored
+   prompt reference and that disabling a capability/plugin removes its prompt
+   fragment together with its tools and other surfaces.
+7. The dedicated hostname serves its bounded landing page, authenticates an
+   authorized member into the bound workspace, and that workspace selects the
+   deployed definition as agent `default`; forged workspace/agent selection
+   fails closed.
 
 ## Non-negotiables
 
@@ -104,7 +112,9 @@ Match [`../../INDEX.md`](../../INDEX.md) Phase 8 (v2):
   - **governed-context-in-embeds** (injecting a readonly `company_context` binding into a spreadsheet/product embed) — relocated to pi-for-excel issue #551;
   - **P6b — child-app scoping** (BBP6-001 consume `ResolvedChildAppContext`, BBP6-006 Macro scoping) — HARD BLOCKED on the shared child-app platform type (`ResolvedChildAppContext`, #376); a **tracked follow-up OUTSIDE the epic exit**. **P8 files this follow-up issue and confirms it is filed — it does not wait on P6b landing**;
   - **M2 — MCP agent surface** (`work/M2-mcp-agent-surface/`) — committed follow-up that may land after P8; P8 verifies it is tracked with its registry/exposure/conformance scope;
-  - **D1 — dedicated tenant provisioning** is a v1 gate and must include the timed definition-digest/rollback proof;
+  - **D1 — dedicated tenant provisioning** is a v1 gate and must include the
+    timed exact-host landing/auth/workspace/default-agent plus
+    definition-digest/rollback proof;
   - **D2 — shared subdomain tenancy** (`work/D2-shared-tenant-mesh/`) — factory sidecar lane outside the runtime epic exit; P8 verifies it is tracked with P1/P5/P6a/P7/T1/M2 prerequisites;
   - **S4 — agent onboarding status** (`work/S4-agent-onboarding/`) — onboarding/status follow-up outside the runtime epic exit; P8 verifies it is tracked with S3/M2/D1/D2 prerequisites;
   - `00` still-open decisions 5 (provisioning sharing defaults) and 7 (surface addressing store location); decision 3 (providers package location) is already resolved by `08` decision 11 and must not be reopened;
@@ -116,8 +126,9 @@ Match [`../../INDEX.md`](../../INDEX.md) Phase 8 (v2):
 ### BBP8-006 — Execute and record the v1 agent-factory golden path · size M
 
 - **Title:** One executable proof runs scaffold -> validate -> local turn ->
-  dedicated apply -> reapply -> rollback.
-- **Files touch/create:** consume the D1 BBD1-005 smoke as
+  dedicated apply -> exact URL -> landing -> member workspace -> default agent
+  -> reapply -> rollback.
+- **Files touch/create:** consume the D1 BBD1-007 smoke as
   `pnpm --filter @hachej/boring-ui-cli run smoke:agent-factory-v1 -- <host-profile>`
   (or the exact equivalent name landed by D1); add a versioned redacted evidence
   schema/output path under the existing proof-of-work convention. P8 does not
@@ -128,23 +139,82 @@ Match [`../../INDEX.md`](../../INDEX.md) Phase 8 (v2):
   worker handshake; direct/bwrap/Vercel/fake is not accepted. Scaffold into an external temp directory,
   use a deployment bound to `agentId:'default'` (the only v1 route),
   snapshot the repo worktree before/after, compile the bundle, run one local
-  scripted turn, apply to a target with no source-checkout access, run identical
-  reapply, then CAS rollback by appending a new generation from the previous
-  complete immutable desired-state snapshot.
+  scripted turn, apply to a target with no source-checkout access, open the
+  exact HTTPS hostname, verify the landing, authenticate a provisioned member,
+  enter the bound workspace, and complete one turn through its server-selected
+  `default` agent. Restart the real dedicated app process without changing the
+  active pointer, then send a follow-up on that completed session and prove the
+  same resolved, host-app, plugin, static-prompt, route, and default-agent
+  identity. Prove workspace list returns only that workspace and direct
+  create/switch/delete/foreign-workspace requests fail; a non-invite dedicated
+  signup creates no workspace. Exercise foreign selectors/claims through
+  full-app MCP, runtime-plugin/plugin-front, a P3 scoped-route fixture with
+  explicit and indirect foreign session/project ids, pane-status, and
+  WorkspaceBridge; prove a raw-route plugin fails D1 readiness before mount.
+  Prove creator/last-owner account deletion and demotion cannot remove or
+  transfer the managed workspace outside D1.
+  Verify the target loaded the pinned host-app artifact and exact P3 activated-
+  plugin snapshot; disable or alter one plugin contribution and prove it cannot
+  reuse the prior desired/resolved identity.
+  Run identical desired-state reapply and prove the process/session stay
+  untouched only after fresh P6-R reproduction of the resolved digest. Change
+  one authenticated provider/environment/grant fact without changing desired
+  input and prove apply cannot false-no-op: it transitions to the new resolved
+  identity or fails closed. Apply one
+  changed immutable plugin or static-prompt input to create a second complete
+  generation; prove the bounded transition admits from only one process and the
+  old session now rejects follow-up with `SESSION_GENERATION_RETIRED`. Start a
+  new session on generation two, then CAS rollback by appending a new
+  generation from the previous complete immutable desired-state snapshot.
+  Prove generation-two's session is likewise retired and a fresh session uses
+  the restored generation-one identity.
+  Fault a changed-generation transition before pointer/`switch_pending` commit
+  and prove the old process/session resume untouched. Fault after that atomic
+  commit but before ingress switch and prove the site stays gated until recovery
+  completes forward to the new process and only then retires the old session.
+  Probe the old origin directly after pointer/ingress switch; immutable boot-
+  digest mismatch must reject before old plugin routes, and the replacement must
+  not reopen until the old listener is unbound/stopped.
+  Attempt site-capability replay from another target and from the previous
+  generation/fence; both must leave DNS/TLS and the complete pointer unchanged.
+  Attempt to inject a caller-fabricated capability and reject it before side
+  effects. Fault first apply after route preparation and after pointer CAS but
+  before external activation; the former exposes no host, the latter leaves the
+  host unreachable and resumable. Direct-origin requests with the reserved host
+  and no complete pointer fail inactive across every route family. Direct-origin
+  requests to the dedicated process with a missing or non-bound host fail before
+  generic auth/routing and never expose the multi-workspace app.
 - **Evidence:** machine-readable start/end/elapsed seconds; exact CLI/version and
   host-profile id; definition id/version/digest; deployment id/version/digest;
-  resolved-snapshot and desired-state digests; apply generation/current-complete
-  pointer/resource ids (redacted); remote asset
-  verification; identical reapply reports no resource change; rollback target
+  host-app artifact and activated-plugin snapshot digests; resolved-snapshot
+  static-host-prompt input, resolved static-prompt, and desired-state digests;
+  apply generation/current-complete
+  pointer/resource ids (redacted); exact hostname, TLS/route identity, landing
+  content digest, authenticated membership result, bound workspace id
+  (redacted), fixed-workspace API/front/plugin-route-scope results, and proof the turn used
+  agent `default`; remote asset
+  verification; identical desired-state reapply reports no resource change;
+  pre-CAS old-session preservation and post-CAS forward-recovery evidence;
+  rollback target
   and reproduced resolved/desired-state digests; proof that the prior complete
-  pointer survived an injected incomplete generation; changed platform-source
+  host-app/plugin snapshot was reproduced; proof that the prior complete
+  pointer survived an injected incomplete generation; same-generation real-
+  process restart/session-follow-up result; changed-generation transition
+  timing, single-admitter proof, and both durable session-retirement outcomes;
+  changed platform-source
   file list (must be empty); secret-canary scan result.
 - Evidence also records worker TLS identity/pin, authenticated hardening facts,
   runsc version/platform, network/limit probes, and an old-generation takeover
   probe showing `DEPLOYMENT_FENCE_STALE` with zero provider side effects.
 - **Failure conditions:** elapsed >900 seconds, any platform-source edit,
   source-checkout dependency on target, missing/mismatched digest, duplicate
-  resource on reapply, incomplete rollback, or any raw secret fails the bead.
+  resource on reapply, host-app/plugin snapshot drift, mutable plugin source,
+  accepted fabricated/cross-target/generation site-capability, a reachable
+  first-apply host before complete-pointer CAS, generic routing for a reserved
+  host with no pointer, static host prompt drift under an unchanged digest,
+  unknown-host acceptance, landing-based authority grant,
+  workspace creation/switch/deletion, workspace/agent selector escape,
+  incomplete rollback, or any raw secret fails the bead.
 - **Acceptance:** a reviewer runs one command and receives complete product
   evidence; component tests alone cannot satisfy this bead.
 

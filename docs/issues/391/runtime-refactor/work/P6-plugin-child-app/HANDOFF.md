@@ -3,11 +3,15 @@
 This file includes post-v1 plugin and child-app expansion. P8 uses the narrower
 [`P6-V1-HANDOFF.md`](./P6-V1-HANDOFF.md), not this aggregate closeout.
 
-Derived from the binding 2026-07-09 v1 slice in [TODO.md](./TODO.md) and [PLAN.md](./PLAN.md). Plugin/child-app sections are post-v1.
+Derived from the binding 2026-07-09 v1 slice in [TODO.md](./TODO.md) and
+[PLAN.md](./PLAN.md). P3 snapshot consumption is the narrow v1 plugin
+integration; the plugin-policy/child-app sections are post-v1.
 
 ## Prerequisites (packages + gates)
 - [ ] (P6-D) P1 merged.
-- [ ] (P6-R) E1 and P5a merged.
+- [ ] (P6-R) E1, P5a, and P3 BBP3-020 merged; P6-R consumes the workspace-
+      level activation snapshot without owning plugin loading or per-agent
+      selection.
 - [ ] (P6b follow-up only) P6a beads landed (this package's P6a slice complete)
 - [ ] (P6b follow-up only) Shared child-app platform code export landed (expected type name `ResolvedChildAppContext`, #376; `docs/issues/376/plan.md` is only the plan today) — **HARD BLOCKED / STOP-and-report until it exists; no local fallback shape**
 
@@ -90,7 +94,7 @@ Derived from the binding 2026-07-09 v1 slice in [TODO.md](./TODO.md) and [PLAN.m
 - [ ] Child-app policy narrows, never widens; unknown id → stable diagnostic.
 
 ## Exit criteria
-### P6a closeout (epic/P8 gate)
+### Post-v1 P6a closeout (not a P8 gate)
 - [ ] Import-free manifest validation runs **before** any plugin code executes.
 - [ ] Skills with `boring.requires`-style requirements are filtered by resolved environment facts at the loader boundary, and the prompt-visible skills index is generated from that filtered set.
 - [ ] Hosted plugin fails closed in remote mode for unsupported front/server/tool/bash/service/secret requirements.

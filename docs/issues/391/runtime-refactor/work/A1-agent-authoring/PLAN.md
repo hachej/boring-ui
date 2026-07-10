@@ -26,6 +26,11 @@ agents/<name>/
 does not contain tenant roots, hostname, exposure, pricing, runtime image,
 sandbox selection, secrets, or deployment policy.
 
+`instructions.md` is the only agent-authored system-instruction asset in v1.
+There is no `systemPromptFragmentRefs` list. Environment and workspace-plugin
+prompt fragments stay bound to the resolved capability contribution that owns
+them; authors do not copy those fragments into the agent bundle.
+
 ## Deliverables
 
 1. Import-free directory compiler with stable validation errors.

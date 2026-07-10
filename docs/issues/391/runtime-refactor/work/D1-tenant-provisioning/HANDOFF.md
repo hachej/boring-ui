@@ -21,8 +21,15 @@ before calling D1 done. Invent nothing.
 - [ ] BBD1-001 - Provisioning plan schema + CLI/API entry.
 - [ ] BBD1-002 - Tenant/workspace + DB/storage/session roots.
 - [ ] BBD1-003 - Secrets and runtime config materialization.
-- [ ] BBD1-004 - Bundle materialization + endpoint config + deployment manifest.
-- [ ] BBD1-005 - Apply smoke + rollback notes.
+- [ ] BBD1-004a - Bundle materialization + earliest reserved-host inactive
+      guard + unpublished endpoint preparation + prepublication manifest; no
+      fake readiness producer.
+- [ ] BBD1-005 - One managed workspace enforced across server/front selectors.
+- [ ] BBD1-006 - Exact-host landing + sign-in + authorized workspace with
+      deployed agent as `default`.
+- [ ] BBD1-004b - Consume the real BBD1-005/006 capability, append completion,
+      CAS pointer, then activate the exact host.
+- [ ] BBD1-007 - Apply smoke + rollback notes.
 
 ## Verification commands
 
@@ -37,20 +44,81 @@ before calling D1 done. Invent nothing.
 - [ ] `pr1-plan-command-api` completed BBD1-001.
 - [ ] `pr2-tenant-roots` completed BBD1-002.
 - [ ] `pr3-secrets-runtime-config` completed BBD1-003.
-- [ ] `pr4-endpoint-manifest` completed BBD1-004.
-- [ ] `pr5-apply-smoke-runbook` completed BBD1-005.
+- [ ] `pr4-endpoint-preparation` completed BBD1-004a.
+- [ ] `pr5-dedicated-workspace-scope` completed BBD1-005.
+- [ ] `pr6-dedicated-site-journey` completed BBD1-006.
+- [ ] `pr7-publication-integration` completed BBD1-004b.
+- [ ] `pr8-apply-smoke-runbook` completed BBD1-007.
 
 ## Review gates
 
 - [ ] One command/API creates every required provisioning artifact.
+- [ ] Exact hostname and app id bind on first apply and cannot be retargeted in
+      v1; unknown/mismatched hosts and untrusted forwarded-host input fail
+      closed.
+- [ ] The D1 store atomically and uniquely reserves normalized hostname and app
+      id to one target before provider side effects; a cross-target race has one
+      winner and the loser performs no DNS/TLS/provider mutation.
+- [ ] Public landing content is bounded escaped text, grants no authority, and
+      has no arbitrary HTML/JS, secret, internal id, or external redirect.
+- [ ] D1 resolves an opaque workspace-owner principal ref in the trusted host;
+      plan/manifest/log output contains no raw principal/email identity.
+- [ ] CTA signs in an existing member through current same-origin auth. Existing
+      invite links remain the separate onboarding path; D1 adds no signup/auth-
+      policy lifecycle. Post-auth resolution requires membership and ignores/
+      validates caller-supplied workspace or agent selectors against trusted
+      D1 site state.
+- [ ] Dedicated scope intersects every workspace-bearing server route and front
+      selection. List returns only the bound workspace; create/switch/delete are
+      disabled; a foreign id rejects even when the user is its member. Generic
+      behavior exists only on its configured listener; dedicated composition
+      rejects every non-bound host, reserved/no-pointer fails inactive, and a
+      complete reserved host never falls through to the generic app.
+- [ ] Full-app MCP, runtime-plugin/plugin-front, pane-status, and WorkspaceBridge
+      selectors/claims consume the same scope before handler/lookup/token mint.
+      D1 mounts only P3 `scopedRoutes` over bound Workspace/scoped repositories;
+      raw plugin routes fail readiness and indirect foreign session/project ids
+      reject before effects.
+- [ ] Dedicated scope reaches the existing post-signup workspace hook:
+      non-invite signup creates no personal workspace or membership; invite
+      acceptance and generic-mode signup remain unchanged.
+- [ ] Account deletion and member-role/remove paths cannot delete, transfer,
+      demote, or orphan the D1-managed workspace. Bound creator/last-owner
+      deletion fails before mutation; non-owner deletion cannot touch the
+      workspace; generic behavior remains unchanged.
+- [ ] The bound workspace selects the deployment as agent `default`; first chat
+      records the same definition/deployment/resolved identity as the active
+      complete generation.
+- [ ] DNS/TLS publication and complete-pointer CAS require host-produced
+      `DedicatedSiteCapability` readiness for both workspace scope and site
+      journey, bound to current target/fence, staged desired state, exact site/
+      workspace/default-agent binding, and host-app/plugin snapshot. In-process
+      issuance is an unexported opaque mint; remote issuance is consumed
+      directly from P5a's fresh-nonce pinned-TLS worker channel with issuer,
+      audience, expiry, and contract version. Missing, forged, stale, cross-
+      target, or cross-generation readiness replay leaves the endpoint
+      unpublished.
 - [ ] Dry-run and idempotent rerun are tested.
-- [ ] `desiredStateDigest` covers all redacted desired inputs: three identity
-      definition/deployment identity, attachment refs, host/tier, root policy,
-      secret refs/requested grants, endpoint/network, image, and commands; no
-      raw secret and no predicted resolved/readiness observation.
+- [ ] `desiredStateDigest` covers all redacted desired inputs: definition and
+      deployment identity, attachment refs, immutable host-app artifact and
+      activated-plugin snapshot digests, canonical static-host-prompt input,
+      host/tier, root policy,
+      secret refs/requested grants, opaque owner ref, exact hostname/app id,
+      landing/auth origin, endpoint/network, image, and commands;
+      no raw secret/identity and no predicted resolved/readiness observation.
 - [ ] After materialization D1 appends one immutable completion from staged P6-R with
       resolved-snapshot digest, redacted observed state, and completion digest;
       only then does CAS advance the current-complete pointer.
+- [ ] On first apply, route/certificate state is prepared but external exact-
+      host activation occurs only after pointer CAS and a final pointer/fence
+      recheck. Crash after CAS/before publication leaves the host unreachable
+      and resumable. A reserved host without a matching pointer returns
+      `D1_SITE_NOT_ACTIVE` before every generic route family.
+- [ ] The inactive-host guard lands in BBD1-004a before endpoint preparation;
+      BBD1-005 extends that same earliest hook with workspace scope. A partial
+      PR stack cannot expose a reserved host, and a dedicated process rejects
+      every direct-origin missing/non-bound Host instead of falling through to
+      the generic app.
 - [ ] P6-R stages but never publishes. Registry routing reads the D1 complete
       pointer; crash after staging/completion append but before CAS keeps the
       prior generation live.
@@ -59,8 +127,9 @@ before calling D1 done. Invent nothing.
       `currentCompleteGeneration` pointer.
 - [ ] Exactly one route binding/publication/fence chain exists per tenant+agent.
       Deployment id plus resolved worker/endpoint/server-pin/region/account
-      identity digest bind on first apply; replacement/relocation rejects before
-      side effects even if the profile id is unchanged.
+      identity digest plus exact hostname/app id/owner ref bind on first apply;
+      replacement/relocation/retargeting rejects before side effects even if
+      the profile id is unchanged.
 - [ ] Every provider create/update/delete accepts the monotonic target fence and
       stable logical resource key; native conditional mutation or the serialized
       target executor rejects stale tokens before side effects.
@@ -72,23 +141,41 @@ before calling D1 done. Invent nothing.
 - [ ] No raw secrets in generated outputs, logs, or docs.
 - [ ] Session roots are durable host-volume roots, not container home/root.
 - [ ] Deployment manifest follows architecture 10 EU host constraints.
-- [ ] Target materializes and verifies the bundle without source-checkout access.
+- [ ] Target materializes and verifies the bundle, pinned host-app artifact,
+      and activated-plugin snapshot without source-checkout access; mutable
+      directory-only plugin sources reject before apply.
 - [ ] Manifest/status/session identity carries definition, deployment, and
-      resolved-snapshot digests plus desired-state/generation identity; rollback
-      appends a new generation from the complete immutable prior snapshot.
-- [ ] Rollback reproduces prior desired/resolved digests but records current
-      observed versions and a new completion digest; it never copies stale
-      completion observations.
+      resolved-snapshot digests plus desired-state/generation, host-app, and
+      activated-plugin snapshot identity plus desired/resolved static-prompt
+      digests; rollback appends a new generation from the complete immutable
+      prior snapshot.
+- [ ] Rollback reproduces the prior host-app/plugin snapshot and prior desired/
+      resolved digests, while recording current observed versions and a new
+      completion digest; it never copies stale completion observations.
 - [ ] Incomplete generations remain inspectable and never replace the last
       complete pointer; same-state reapply converges on the existing generation.
 - [ ] P6 staging lease transfers atomically to active/rollback refs at completion;
       active, staged, session, and rollback generations cannot be GC'd. Fenced
       terminal abandonment and history pruning release only their own refs.
+- [ ] A different resolved digest prepares a verified inactive app process,
+      gates admission, bounded-drains, atomically commits pointer +
+      `switch_pending`, switches ingress, then terminalizes prior-generation
+      sessions before reopening. Pre-CAS failure preserves old sessions and
+      post-CAS recovery completes forward. The same desired-state digest is a
+      no-op only after fresh P6-R reproduction of the current resolved digest;
+      changed resolved facts transition or fail closed. A desired-only/same-
+      resolved delta publishes without process or session churn. The old
+      listener is unbound/stopped and direct stale-digest admission rejects
+      before `switch_complete` reopens the replacement. V1 has no multi-
+      generation session router.
 
 ## Exit criteria
 
 - [ ] A tenant/workspace can be provisioned from one invocation.
 - [ ] Runtime config, roots, secret refs, existing-surface endpoint binding, and deployment manifest exist.
+- [ ] The dedicated URL serves its landing and an authorized member reaches the
+      bound workspace with the deployed agent selected as default; a non-member
+      learns no workspace or agent detail.
 - [ ] Timed golden path is <=15 minutes with preconfigured infrastructure;
       reapply is idempotent and rollback selects the prior complete deployment
       snapshot and verifies its resolved digest.

@@ -18,6 +18,9 @@ file's context, dependencies, and non-negotiables included in the assignment.
 
 ## Prerequisites - stop if false
 
+- D1's exact-host site journey is complete. Do not treat its one-host/one-
+  workspace binding as evidence that wildcard shared-host tenant routing is
+  safe.
 - D1 has completed on at least two distinct tenant targets using the same
   contract with zero new platform-source edits/contract forks on the second;
   evidence records apply time, operational gaps, and rollback. The owner has

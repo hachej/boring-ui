@@ -9,16 +9,20 @@ Dispatch these first and independently of plugin/child-app work:
 2. **BBP6-003 / P6-D:** minimal Map registry stores immutable verified bundles
    by definition id/version. Duplicate id/version with the same digest is
    idempotent; a different digest fails closed.
-3. **BBP6-011 / P6-R:** after E1/P5a, host-resolve definition + deployment +
-   active authority to `ResolvedAgent`; validate requirements and store
-   definition/deployment/resolved-snapshot identity on new sessions. Keep a
-   current agent pointer separate from durable immutable generations so pinned
-   sessions remain addressable after reload/restart.
+3. **BBP6-011 / P6-R:** after E1/P5a and P3 BBP3-020, host-resolve definition +
+   deployment + workspace activated-plugin snapshot + active authority to
+   `ResolvedAgent`; validate requirements and store definition/deployment/
+   plugin/resolved-snapshot identity on new sessions. Keep a current agent
+   pointer separate from durable immutable generations so sessions remain
+   addressable after a same-generation reload/restart. A pointer change retires
+   sessions on the prior generation; v1 does not route requests across multiple
+   boot-time host/plugin generations.
 
-A1 and D1 justify these abstractions. All plugin runtime, hosted mode, reload,
-remote-worker image, per-agent plugin UI/routes, and child-app beads below are
-post-v1. BBP6-010 cannot implement UI/route gating before P7 supplies trusted
-agent-aware routing.
+A1 and D1 justify these abstractions. Consuming P3's immutable workspace-level
+activation snapshot is the limited v1 plugin integration; P6-R does not load or
+select plugins. Manifest requirements, hosted mode, reload, remote-worker image,
+per-agent plugin UI/routes, and child-app beads below are post-v1. BBP6-010
+cannot implement UI/route gating before P7 supplies trusted agent-aware routing.
 
 Coordinator only. Dispatch exactly one bead/PR per implementation assignment;
 never hand this whole multi-increment TODO to one coding agent. Each assignment
@@ -45,8 +49,9 @@ Consequence, binding:
 
 - **P6-D ← P1:** BBP6-009 and BBP6-003 establish behavior/deployment
   schemas, bundle digest rules, and immutable definition-version lookup.
-- **P6-R ← P6-D + E1 + P5a:** BBP6-011 resolves deployment authority and
-  prepared environment inputs to immutable agents.
+- **P6-R ← P6-D + E1 + P5a + P3 BBP3-020:** BBP6-011 resolves deployment
+  authority, prepared environment inputs, and P3's activated-plugin snapshot to
+  immutable agents. It does not own another plugin loader.
 - **Post-v1 plugin expansion ← P6-R + P5:** BBP6-002/004/005/007/008/010
   extend manifest, hosted-mode, and reload behavior. They are not a P8 gate.
 - **P6b ← P6a + child-app platform type**: P6b (BBP6-001, BBP6-006) additionally requires the shared child-app platform code export (expected `ResolvedChildAppContext`, #376) — HARD BLOCKED / STOP-and-report until it lands (no local fallback shape). Child-app policy may narrow maximum authority; child-app requirements only validate active authority through the P5 normalizer once the resolved context exists.
@@ -100,7 +105,7 @@ child-app-independent, but they do not gate A1, D1, or P8.
 **P6b — child-app scoping (post-v1, blocked on #376).** No provisional local
 type. It gates neither P6-R nor P8.
 
-Dispatch: **P6-D ← P1**; **P6-R ← P6-D + E1 + P5a**; plugin expansion
+Dispatch: **P6-D ← P1**; **P6-R ← P6-D + E1 + P5a + P3 BBP3-020**; plugin expansion
 follows P6-R/P5; **P6b ← plugin expansion + child-app platform type**; **P7 ←
 P6-R + E1 + T2** and does not wait for P6b.
 
@@ -276,7 +281,7 @@ P6-R + E1 + T2** and does not wait for P6b.
 ### BBP6-011 — [P6-R, v1] Resolve immutable agent snapshot
 
 - Resolve a verified `CompiledAgentBundle` plus versioned `AgentDeployment`,
-  provider facts,
+  P3 `ActivatedWorkspacePluginSnapshot`, provider facts,
   host/workspace/agent policy, approved grants, E1 facts, and P5a readiness.
 - Resolve every deployment `environmentAttachmentRef` to an E1 attachment at
   this boundary. Do not accept inline attachment objects and do not add a P6-D
@@ -296,13 +301,29 @@ P6-R + E1 + T2** and does not wait for P6b.
 - Re-verify the bundle at the resolver boundary and load instructions only from
   its immutable assets. Resolution must work after the source checkout is
   unavailable. Compute canonical `deploymentDigest` before policy resolution.
+- Assemble prompt inputs in the architecture-01 order. `instructionsRef` is the
+  only agent-authored prompt asset. A workspace plugin fragment is admitted
+  only with its activated contribution for the v1 `default` agent and is
+  removed with that contribution; discovery/installation alone is insufficient
+  and no independent plugin-prompt append path is allowed. Consume P3
+  BBP3-020's activated loaded-plugin projection; P6-R does not reimplement the
+  plugin loader or add requirement/per-agent filtering in v1.
+- Canonicalize and retain a source-labeled `ResolvedStaticPromptPlan` covering
+  base prompt version/content, immutable instructions, environment/capability
+  and plugin fragments, the generated v1 skill index, and static host
+  `systemPromptAppend`. Include its `staticPromptDigest` in
+  `resolvedSnapshotDigest`. Only explicitly per-turn `systemPromptDynamic`
+  output stays outside identity; it cannot add authority.
 - Compute maximum/active authority using architecture 03, then validate
   requirements. Requirements never grant or narrow authority.
 - Return immutable `ResolvedAgent` with methodless environment facts, bound
   core inputs, and identity containing definition, deployment, and
   `resolvedSnapshotDigest`. Host retains prepared environments/provider
-  lifecycle. The resolved digest covers redacted resolution facts and never raw
-  secret values.
+  lifecycle. The resolved digest covers redacted resolution facts plus the
+  activated-plugin snapshot digest and never raw secret values. Because the P3
+  snapshot binds the host-app artifact and ordered activated contributions,
+  plugin enablement/order/source/manifest/redacted activation-input/prompt/
+  front/server drift changes the resolved digest.
 - `stageResolvedAgent(...)` writes the immutable generation and returns its
   digest; it never changes live routing. Add a host-owned
   `ActiveResolvedGenerationPointer` interface and make `ResolvedAgentRegistry`
@@ -312,30 +333,84 @@ P6-R + E1 + T2** and does not wait for P6b.
 - Add an immutable durable `ResolvedAgentGenerationStore` keyed by
   `resolvedSnapshotDigest`. Each generation contains the verified self-
   contained bundle, immutable deployment snapshot, and complete redacted
-  resolution inputs/catalog versions needed to reproduce the resolved agent.
-  It contains no live prepared attachment/provider handle and no raw secret.
+  resolution inputs/catalog versions needed to reproduce the resolved agent,
+  including the activated-plugin snapshot and immutable host-app/plugin
+  artifact references it names plus the source-labeled static prompt plan. It
+  contains no live prepared attachment/provider handle and no raw secret.
+- Inject the host's content-addressed immutable artifact store into P6-R.
+  `stageResolvedAgent` must durably acquire an all-or-none artifact-set pin for
+  every host-app/plugin digest under `resolvedSnapshotDigest` before it returns.
+  A generation's existing staging/active/session/rollback roots keep that pin
+  alive. Add one durable `ResolvedGenerationMutationJournal` row per digest and
+  derive its sole artifact-store owner key deterministically as
+  `resolved-generation:<digest>`. Staging CASes absent -> `pinning`, acquires
+  that owner idempotently, then commits generation + `live`; concurrent same-
+  digest staging joins/waits on the same row and never acquires another owner.
+  Staging during `deleting` waits for tombstone completion before it may CAS a
+  fresh `pinning` state. Recovery completes or releases any `pinning` entry
+  without a generation. GC atomically CASes `live` + zero roots
+  to a `deleting` tombstone containing the pin owner; root/session/rollback
+  acquisition checks `live` in that same store transaction and cannot attach
+  after deletion starts. GC then deletes the generation, releases the pin
+  idempotently, and removes the tombstone. Recovery resumes
+  every `deleting` entry, including generation-absent/pin-present. Fault every
+  boundary in both directions; deletion-before-release cannot leak an orphan
+  pin. Missing content or a store without owner-keyed durable pin/release and
+  reconciliation semantics fails staging; bare artifact references are not
+  accepted.
 - A new session pins the current digest. Follow-up/restart loads that generation,
   reprepares host resources, re-resolves, and requires the same digest. Missing
   or non-reproducible generations fail `RESOLVED_GENERATION_UNAVAILABLE`; never
   use the current registry entry as fallback. Reauthenticate current grants and
   intersect them with the pinned active-authority ceiling: they may narrow or
   fail, never widen the pinned generation.
+- V1 executes exactly one boot-time host-app/plugin generation per dedicated
+  site. BBP6-011 owns the host-facing generation-transition contract and durable
+  session retirement operation; D1 BBD1-004b owns its process/ingress
+  orchestration. A changed resolved digest prepares and verifies one inactive
+  replacement process, stops admission, and drains in-flight turns to a bounded
+  deadline. Only after D1 durably commits the new pointer plus `switch_pending`
+  record and switches ingress does it call P6's idempotent retirement operation
+  to mark every prior-generation session terminal with
+  `SESSION_GENERATION_RETIRED` and release those refs. The host keeps the gate
+  closed until retirement and `switch_complete`; pre-CAS failure leaves old
+  sessions untouched and post-CAS recovery completes forward. Conversation
+  history remains readable, but follow-up creates a new session. A same-desired-
+  state reapply does none of this. Do not add generation-specific request
+  routing, mutable boot-route reload, or simultaneous admitting generations.
 - New-session admission must call `pinCurrentForSession(agentId, admissionId)`:
-  atomically read the active pointer and acquire a durable temporary generation
-  lease before returning the digest. Persist lease id + digest with the session,
+  atomically read the active pointer plus host transition state and acquire a
+  durable temporary generation lease before returning the digest. While
+  `switch_pending`, every HTTP/in-process admission returns
+  `AGENT_GENERATION_TRANSITIONING`; no internal caller bypasses the gate. The
+  host also supplies its process-owned immutable boot digest outside request
+  data, and admission rejects `AGENT_GENERATION_STALE` unless it equals the
+  active pointer. Direct requests to an old listener therefore fail before any
+  old boot route runs. Persist lease id + digest with the session,
   then `commitSessionPin` transfers the lease to a session retention ref. A
   pointer swap/rollback prune/GC between those steps cannot delete it. Crash
   recovery reconciles by admission id; failed creation releases the lease and
   session deletion releases the ref.
 - `stageResolvedAgent` durably acquires a staging lease before returning the
-  digest. Host pointer publication changes new sessions only and atomically
-  transfers that lease to an active-pointer reference. D1 completion transfers
-  it to active + rollback references; a fenced/terminal abandoned apply releases
-  it explicitly. Retention roots are staging/in-flight leases, active pointers,
-  retained sessions, and rollback-eligible completions. GC runs only when all
-  roots are absent.
-- Tests cover reload and process restart of a pinned session, unavailable
-  generation failure, current-pointer drift rejection, current-grant narrowing,
+  digest. Host pointer publication atomically transfers that lease to an active-
+  pointer reference. A different-digest transition retains prior session refs
+  through pointer commit and ingress switch, then retirement releases them
+  before admission reopens. D1 completion retains active + rollback references.
+  A fenced/terminal abandoned apply releases its lease explicitly. Retention
+  roots are staging/in-flight leases, active pointers, unretired sessions, and
+  rollback-eligible completions. GC runs only when all roots are absent.
+- Tests cover reload and process restart of a session on the unchanged active
+  generation, unavailable generation failure, current-pointer drift rejection,
+  current-grant narrowing, bounded transition drain, durable retirement and
+  ref release, terminal follow-up rejection, identical-reapply no-op, and no
+  interval in which both boot generations accept admission; direct-to-old-
+  listener boot-digest mismatch rejects after pointer switch,
+  missing or mismatched activated-plugin artifacts, plugin snapshot drift,
+  static host-append drift and exact static-prompt reproduction,
+  artifact pin acquisition/deletion journal crash reconciliation, including
+  generation-deleted/pin-present recovery, concurrent same-digest staging,
+  stage-vs-delete, and concurrent artifact GC
+  while staging/active/session/rollback generation roots exist,
   retention/GC reference transfer/release, concurrent GC during staging/
   publication, concurrent session-create/pointer-swap/prune/GC, lease/session
   crash reconciliation, and crash after staging but before host
@@ -359,8 +434,10 @@ Until those prerequisites exist, do not ship `RuntimeImageCapabilityFacts`, `req
   field with `AGENT_DEFINITION_UNSUPPORTED_FIELD`.
   Agent-scoped contributions may resolve without UI routing. Workspace-scoped
   UI/routes require P7's trusted `agentId`. Duplicate names fail closed unless
-  an explicit validated override contract exists.
-- **Tests:** an agent declaring plugins receives those plugins' tools, skills, MCP servers, and renderers in its resolved capabilities; a sibling agent without those refs does not; plugin UI panels/routes are visible/active only in sessions for declaring agents; unknown plugin ref fails closed; unsatisfiable `boring.requires` fails closed for that agent; hosted plugin constraints still fail closed via BBP6-005; duplicate tool/renderer names across environment bundle/plugin/host error unless `overrides: true`; `governancePolicyRef` denial rejects plugin activation with a stable code.
+  an explicit validated override contract exists. Plugin prompt fragments are
+  part of that same scoped contribution, never an independently aggregated
+  string.
+- **Tests:** an agent declaring plugins receives those plugins' tools, skills, MCP servers, renderers, and prompt fragments in its resolved capabilities; a sibling agent without those refs receives none of them; filtering or denying a plugin leaves no prompt residue; plugin UI panels/routes are visible/active only in sessions for declaring agents; unknown plugin ref fails closed; unsatisfiable `boring.requires` fails closed for that agent; hosted plugin constraints still fail closed via BBP6-005; duplicate tool/renderer names across environment bundle/plugin/host error unless `overrides: true`; `governancePolicyRef` denial rejects plugin activation with a stable code.
 - **Acceptance:** per-agent plugin refs produce a resolved plugin set and scoped capabilities without making plugins workspace-global-only; workspace-scoped plugin surfaces are agent-gated; plugin `boring.requires` is resolved through P5; duplicate resolution reuses the environment-bundle -> plugins -> host law. **P6a grep-gate (blocking):** `! rg -n "childAppId|workspaceKind|ChildApp" <BBP6-010-created-or-touched-contract-files>` exits 0.
 
 ## Verification — exact commands verified against package.json scripts

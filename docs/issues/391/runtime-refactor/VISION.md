@@ -28,23 +28,28 @@ increment, not by pretending every future lane is on one critical path.
 | Increment | Ships | Does not wait for |
 | --- | --- | --- |
 | **Release 0 — vertical tracer** | safe headless façade plus one bearer-authenticated managed MCP vertical returning self-contained bounded Markdown to a stock client | durable transports, environment extraction, tenancy automation, public-demo/download delivery |
-| **Version 1 — agent factory** | minimal agent-directory authoring, versioned definition/deployment separation, reliable core transport, optional working environment, and one dedicated EU deployment path | shared tenancy, FUSE/S3, farm UI, hosted child apps, external environment MCP projection |
+| **Version 1 — agent factory** | minimal agent-directory authoring, versioned definition/deployment separation, reliable core transport, optional working environment, and one dedicated EU URL -> landing -> authorized workspace -> deployed default agent path | shared tenancy, FUSE/S3, farm UI, hosted child apps, external environment MCP projection |
 | **Increment 2+ — platform expansion** | additional surfaces, shared tenants, control plane, foreign-agent environment projection, advanced mounts and services | none of these may retroactively block v1 |
 
 The v1 product acceptance is binding:
 
 > With host credentials and infrastructure preconfigured, a developer can
 > scaffold one `agents/<name>/` directory, validate it, run a local turn, and
-> deploy it to one dedicated EU tenant in 15 minutes or less, with zero
-> platform-source edits. The proof records definition, deployment, and resolved
-> snapshot digests. Reapplying is crash/concurrency-safe and creates no duplicate
+> deploy it to one dedicated EU tenant at an exact hostname such as
+> `insurance-comparison.senecapp.ai` in 15 minutes or less, with zero
+> platform-source edits. That URL serves a bounded landing page; its CTA enters
+> existing-member sign-in; an authorized member reaches the provisioned
+> workspace; and that workspace selects the deployed definition as agent
+> `default`. The proof records definition, deployment, and resolved snapshot
+> digests. Reapplying is crash/concurrency-safe and creates no duplicate
 > resource; the remote target materializes without access to the authoring
 > checkout; rollback selects the previous complete deployment snapshot and
 > reproduces its resolved digest.
 
-The proof records elapsed time, platform files changed, manual steps,
-definition digest, deployment id, and rollback result. Passing component tests
-without this golden path does not complete v1.
+The proof records elapsed time, platform files changed, manual steps, hostname,
+landing/auth/workspace/default-agent result, definition digest, deployment id,
+and rollback result. Passing component tests without this golden path does not
+complete v1.
 
 ## Business horizons
 
@@ -61,9 +66,10 @@ deployment, an agent turns a tenant YAML into a live `company.senecapp.ai` - its
 own skills, files, context, and environment pool - hot, with no redeploy: the
 near-zero-marginal-cost outreach engine. This is the **Shared Subdomain tier**.
 The two-tier model is directional: D1 is the **Sovereign / EU Tenant Factory**
-v1 tier, one dedicated deployment per company; D2 is a post-v1 **Shared
-Subdomain** tier. Both may consume the same definition/deployment contracts,
-but v1 does not build shared tenancy.
+v1 tier, one dedicated deployment and exact hostname per company/site; D2 is a
+post-v1 **Shared Subdomain** tier where many tenants share one deployment and
+wildcard application router. Both may consume the same definition/deployment
+contracts, but v1 does not build shared tenancy.
 
 ## Platform / factory boundary
 
@@ -73,10 +79,14 @@ agent endpoints, public demo/share contracts, and telemetry hooks. It also owns
 stable endpoint/result URL shapes so a factory can wire public flows without
 knowing runtime internals.
 
-`boring-ui-factory` owns landing pages, positioning/copy, GTM assets, pricing
-page content, and CTA workflows such as try/book/request. Factory assets may
-consume the platform's demo/share/lead contracts, but they do not define agent
-runtime authority, provisioning, or the canonical agent definition.
+`boring-ui` v1 owns a minimal exact-host landing shell, bounded declarative
+title/summary/CTA text, same-origin member sign-in, membership-gated workspace
+resolution, and the workspace's deployed-default-agent binding.
+`boring-ui-factory` owns bespoke landing design/code, generated
+positioning/copy, GTM assets, pricing content, analytics funnels, and campaign
+workflows. Factory assets may consume the platform's site/demo/share/lead
+contracts, but they do not define agent runtime authority, provisioning, or the
+canonical agent definition.
 
 ## Future-scale checklist (assert, do not build)
 
@@ -101,7 +111,7 @@ Each vision component mapped to what exists today → the delta work orders → 
 | 4 | **External agent access** — any MCP client mounts an environment | None (MCP used client-side only) | [E2](work/E2-mcp-projection/) (MCP projection, token→`BoundFilesystemContext`) | An external MCP client mounts a boring environment; denied files absent over MCP; no-leak suite green on the MCP mount |
 | 5 | **Flue building blocks** — durable replayable streams and surface transport substrate | Bespoke replay (`PiChatReplayBuffer` + `?cursor=` NDJSON); no durable public transport | [T1](work/T1-durable-events/) (DS protocol: SQLite `EventStreamStore` + approvals-on-stream) → [T2](work/T2-transport/) (transport contract, front refit) | SSE drop reconnects losslessly by `offset`; an approval raised in one client is answered from another over the shared public transport |
 | 6 | **eve UX — workspace as control plane** | Partial: `SessionList`/search, `DebugDrawer`, ask-user UI, model pickers. No resolved-agent registry, no cross-surface view, no unified approvals | P6-R `ResolvedAgentRegistry` → [P7](work/P7-multi-agent-inspection/) (agentId routing + public agent list + `/info`) → [S3](work/S3-control-plane-ux/) (inspect + cross-surface sessions + approval inbox) | Workspace lists agents from the scrubbed agent-list endpoint and inspects each through `/info`; external-surface sessions are observable by `sessionId`; a pending approval from any surface is answerable from the workspace inbox |
-| 7 | **Dedicated EU delivery (v1)** | Dedicated/manual tenant provisioning only | [A1](work/A1-agent-authoring/) (directory compiler/validator) + [D1](work/D1-tenant-provisioning/) (dedicated tenant factory) | The timed golden path above deploys a definition-pinned agent and can roll it back without platform-source edits |
+| 7 | **Dedicated EU delivery (v1)** | Dedicated/manual tenant provisioning only | [A1](work/A1-agent-authoring/) (directory compiler/validator) + [D1](work/D1-tenant-provisioning/) (dedicated tenant factory + site journey) | The timed golden path reaches exact URL -> landing -> auth -> authorized workspace -> deployed agent as `default`, and can roll it back without platform-source edits |
 | 8 | **EU-sovereign hosting** | Implicitly true but unstated | Invariant 15 enforced across every work order | Default stack deploys on EU infra with no US-hosted hard dependency; `vercel-sandbox` is optional |
 | — | **Shared tenancy and S3/FUSE mounts (post-v1)** | None | [D2](work/D2-shared-tenant-mesh/) + [X1](work/X1-s3-fuse-mounts/) | Tracked increments with their own security/performance exits; neither gates the dedicated v1 path |
 | 9 | **The farm (next epic — deferred; does NOT gate this epic's exit)** | boring-tasks kanban (#486) + this epic's substrate (runtime-owned `sessionId`, `agentId` scoping, replayable streams, S3/FUSE mounts, reserved `data-artifact` part) | **#397 durable task service** + the **farm epic** (fleet view, artifact shelf, Farm MCP control plane) | A foreign agent creates a task, works it in a mounted env, publishes an artifact, requests approval — all visible in the workspace (this epic guarantees only the substrate) |
@@ -208,7 +218,7 @@ Full text and rationale: [`architecture/08-pluggable-agent-surfaces.md`](archite
 
 ```txt
 R0: P0 -> P1 -> M1. V1: P1 -> P6-D -> A1; P1 -> T1 -> T2;
-P1 -> P2 -> P3 -> E1 -> P5a -> P6-R -> D1; these join at P8.
+P1 -> P2 -> P3 (including BBP3-020) -> E1 -> P5a -> P6-R -> D1; these join at P8.
 All remaining lanes are post-v1.
 ```
 

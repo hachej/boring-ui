@@ -78,13 +78,17 @@ base were already accepted. For every PR:
 Do not approve v1 from component gates alone. Require the recorded golden path:
 
 ```txt
-scaffold directory -> validate -> local turn -> dedicated EU apply -> rerun -> rollback
+scaffold -> validate -> local turn -> dedicated EU apply -> exact HTTPS URL
+-> landing -> member auth -> bound workspace -> deployed default agent
+-> rerun -> rollback
 ```
 
 Owner evidence: elapsed time <=15 minutes with infrastructure preconfigured,
 zero platform-source edits, definition/deployment/resolved digests, remote
 materialization without access to the authoring checkout, fenced crash-safe
-reapply with no duplicate resources, complete-snapshot rollback, and no raw
+reapply with no duplicate resources, exact-host/TLS proof, bounded public
+landing content, membership-gated trusted workspace resolution, forged
+workspace/agent selector rejection, complete-snapshot rollback, and no raw
 secret in output/logs/manifests.
 
 ## Architecture review card
@@ -94,9 +98,44 @@ secret in output/logs/manifests.
   separately keyed by deployment `agentId`.
 - Host owns prepared environment operations/lifecycle; agent core receives
   flattened tools/prompt/readiness/input handling plus methodless facts.
+- Prompt order is base -> immutable agent instructions -> resolved capability
+  and plugin fragments -> active skill index -> static host append -> per-turn
+  dynamic host context. Plugin prompt text is admitted and removed with its
+  contribution, never merely because the package was discovered or installed.
+- P6 retains and digests the source-labeled static prompt plan, including static
+  host append. Only explicitly per-turn dynamic host context is outside static
+  identity and it cannot grant authority.
+- P3 emits one immutable activated-plugin snapshot tied to the host-app
+  artifact and canonical redacted activation inputs. P6 resolution, D1 desired
+  state, restart, and rollback retain that identity; mutable or non-
+  reconstructible plugin sources are not D1 production inputs. Browser-front
+  failure preserves previous-good UI and does not pretend to unregister boot-
+  time routes.
 - Maximum authority comes from provider+host+workspace+deployment policy;
   grants/session scope narrow it; requirements only validate.
 - Filesystem UI remains workspace-owned in v1 but is absent, including API
   calls, when resolved filesystem capability is absent.
+- D1 `DedicatedSiteSpec` is host-owned and binds one exact hostname to one
+  membership-authorized workspace. That workspace selects the deployment as
+  agent `default`; the definition, landing page, and browser cannot choose a
+  different workspace or agent. Dedicated server scope covers every workspace-
+  bearing API. P3's scoped route registrar supplies bound Workspace/scoped
+  repositories; raw arbitrary plugin routes fail D1 readiness. List exposes only
+  the bound workspace and create/switch/delete are disabled. It also suppresses personal default-workspace creation for a
+  non-invite dedicated signup without changing invite acceptance or generic
+  signup. Generic behavior remains only on its configured listener; a dedicated
+  process rejects every non-bound host and reserved/no-pointer hosts fail
+  inactive before routing.
+- Account deletion and member-role mutation cannot delete, transfer, or orphan
+  the managed workspace outside the fenced D1 lifecycle.
+- DNS/TLS publication and the active pointer stay blocked until host-produced
+  readiness proves both fixed-workspace scope and the landing/sign-in/default-
+  agent surface are installed for the current target/fence/staged desired state
+  and exact site/host-app/plugin identity; replayed readiness rejects and an
+  intermediate D1 stack is unreachable.
+- The readiness value is not caller data: use an unexported opaque mint in-
+  process or a fresh nonce-bound response over P5a's pinned-TLS worker channel.
+  First external hostname activation follows complete-pointer CAS; a reserved
+  host without a matching pointer fails inactive before generic routing.
 - MCP exposure and shared-tenant routing are deployment/host authority, never
   fields that reusable agent behavior can grant itself.

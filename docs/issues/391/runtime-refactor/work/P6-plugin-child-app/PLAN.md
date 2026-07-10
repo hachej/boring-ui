@@ -13,14 +13,19 @@
   versioned `AgentDeployment`, canonical definition/deployment digests, and a
   minimal immutable bundle-version Map. Deployment carries only opaque
   `environmentAttachmentRefs`, so this slice has no E1/boring-bash dependency.
-- **P6-R (after E1 + P5a):** pure host resolver to immutable `ResolvedAgent`;
-  session snapshot records definition, deployment, and resolved-snapshot
-  identity; a durable immutable generation store keeps pinned sessions
-  reproducible across reload/restart. Resolution stages only; routing reads a
-  host-owned completed-generation pointer, so D1 has one publication authority.
-- **Post-v1:** manifest/skill filtering, hosted plugins, shared runtime/reload,
-  per-agent plugin composition, and child-app scoping. Plugin UI/routes wait
-  for P7's trusted `agentId` routing.
+- **P6-R (after E1 + P5a + P3 BBP3-020):** pure host resolver to immutable
+  `ResolvedAgent`; it consumes P3's workspace-level activated-plugin snapshot
+  without adding a plugin loader or per-agent policy. Session snapshot records
+  definition, deployment, plugin, and resolved-snapshot identity; a durable
+  immutable generation store keeps sessions reproducible across reload/restart
+  while their generation remains active. V1 runs one boot-time host/plugin
+  generation per dedicated site: a different generation drains and durably
+  retires prior-generation sessions instead of adding multi-generation request
+  routing. Resolution stages only; routing reads a host-owned completed-
+  generation pointer, so D1 has one publication authority.
+- **Post-v1:** manifest requirements/skill filtering, hosted plugins, shared
+  runtime/reload, per-agent plugin composition, and child-app scoping. Plugin
+  UI/routes wait for P7's trusted `agentId` routing.
 
 ## Design context
 
@@ -41,9 +46,13 @@ that resolves those ids to E1 attachments and policy facts.
 
 ### P6-D/P6-R — v1
 Definition/deployment schemas, canonical digests, bundle-version registry,
-immutable resolved snapshot/digest, current pointer registry, durable immutable
-generation store, active-authority requirement validation, and session
-definition/deployment/resolution metadata. A1 and D1 are the concrete consumers.
+immutable resolved snapshot/digest consuming P3's activated-plugin snapshot,
+source-labeled static prompt plan/digest, current pointer registry, durable
+immutable generation store with content-addressed host/plugin artifact pins,
+owner-keyed pin acquisition/deletion recovery journal, active-authority
+requirement validation, one-generation transition/session-retirement contract,
+and session definition/deployment/plugin/resolution metadata. A1 and D1 are the
+concrete consumers.
 
 ### Plugin core expansion — post-v1
 Import-free manifest validation, skill filters, plugin runtime context, hosted
@@ -63,10 +72,11 @@ post-v1 and never gates P8.
 
 ### V1
 Separate versioned schemas and deterministic definition/deployment/resolved
-digests; immutable resolved snapshot; A1 local development and D1 dedicated
-delivery consume the same bundle; no behavior field has a second source of
-truth; a retained session can reconstruct only its pinned generation after
-reload/restart and never drifts to the current agent pointer.
+digests; immutable resolved snapshot and static prompt plan; A1 local
+development and D1 dedicated delivery consume the same bundle; no behavior
+field has a second source of truth; a retained session can reconstruct only its
+pinned generation after reload/restart and never drifts to the current agent
+pointer.
 
 ### Phase 6b (when unblocked)
 Child-app/workspace-kind requirement narrowing; Macro requirements do not leak into a generic workspace.

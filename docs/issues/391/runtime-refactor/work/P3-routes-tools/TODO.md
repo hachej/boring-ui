@@ -92,7 +92,7 @@ P3 therefore **enumerates and migrates EVERY in-repo composition consumer**, eac
 ### BBP3-010 — Add `/agent` subpath + `createBashAgentFeature()` skeleton [size S]
 
 - **Files touch/create:** replace stub `packages/boring-bash/src/agent/index.ts` (currently `export {}`) with real exports; `packages/boring-bash/package.json` (add `"./agent"` export); `packages/boring-bash/tsup.config.ts` (add entry); `packages/boring-bash/scripts/check-invariants.mjs` (`requiredExports` += `"./agent"`).
-  - **Notes:** Define `createBashAgentFeature()` as an **environment bundle factory** returning a plain boring-bash-local bundle `{ tools: AgentTool[]; readinessRequirements: string[]; systemPromptFragment: string }` — **NOT** an `AgentFeature` core contract (there is no such abstraction). The name may survive for source compatibility inside the phase, but reviewers should read it as "create the bash/filesystem capability residue for resolved environments." The bundle contributes tools + readiness gates + the bash/file prompt fragment **only** — NOT routes. `systemPromptFragment` is the file/bash guidance text adapted/split from Pi's default prompt text. In plugin mode, the boring-bash server plugin calls this factory; in library mode, a direct composer spreads its core inputs. Routes are never carried by the bundle or mounted by agent. The bundle is first in the deterministic merge chain and duplicates fail unless the later source explicitly overrides. **After E1, factory internals derive from auth-gated contribution closures plus methodless facts; every operation reauthorizes through `withAuthorizedView` and no raw handle enters the bundle/core.** No behavior yet — wiring lands in BBP3-013/014.
+  - **Notes:** Define `createBashAgentFeature()` as an **environment bundle factory** returning a plain boring-bash-local bundle `{ tools: AgentTool[]; readinessRequirements: string[]; systemPromptFragment: string }` — **NOT** an `AgentFeature` core contract (there is no such abstraction). The name may survive for source compatibility inside the phase, but reviewers should read it as "create the bash/filesystem capability residue for resolved environments." The bundle contributes tools + readiness gates + the bash/file prompt fragment **only** — NOT routes. `systemPromptFragment` is the file/bash guidance text adapted/split from Pi's default prompt text. In plugin mode, the boring-bash server plugin calls this factory; in library mode, a direct composer spreads its core inputs. Routes are never carried by the bundle or mounted by agent. The prompt fragment and capability contribution activate/deactivate together; no host may append the fragment independently after filtering out the bundle. The bundle is first in the deterministic merge chain and duplicates fail unless the later source explicitly overrides. **After E1, factory internals derive from auth-gated contribution closures plus methodless facts; every operation reauthorizes through `withAuthorizedView` and no raw handle enters the bundle/core.** No behavior yet — wiring lands in BBP3-013/014.
 - **Tests:** export-map test imports `/agent`; invariants green.
 - **Acceptance:** `/agent` subpath resolves; feature factory type exists.
 
@@ -185,6 +185,70 @@ P3 therefore **enumerates and migrates EVERY in-repo composition consumer**, eac
 - **Acceptance:** detaching filesystem capability leaves no UI/API residue while
   no files or exports move to boring-bash.
 
+### BBP3-020 — Atomic trusted-plugin contribution for v1 default agent [size M]
+
+- **Scope:** v1 closeout over the existing workspace plugin pipeline. This is
+  not per-agent plugin selection and does not add `pluginRefs`, `boring.requires`,
+  hosted plugins, child-app scoping, hot-route reload, or a new core feature
+  abstraction.
+- **Files touch:** the existing workspace plugin bootstrap/loaded-plugin record,
+  server contribution collector, package-manifest `pi.systemPrompt` aggregation,
+  Pi resource projection, front plugin registration, and an additive
+  `scopedRoutes` contribution/registrar. Extend those seams; do not add a second
+  plugin registry/scanner/id system.
+- **Behavior:** host configuration chooses trusted boot plugins for the sole v1
+  `default` agent. Before Fastify route registration, resolve and validate one
+  server activation record that supplies that package's tools, routes, Pi
+  extensions/skills/packages, system prompt, and versioned front-artifact
+  declaration. Scan/discovery metadata cannot append `pi.systemPrompt`
+  independently. Disabling the plugin removes every contribution. A failed
+  server import/validation or front-artifact integrity check contributes
+  nothing; a required internal plugin blocks readiness and an optional diagnosed
+  exclusion leaves no prompt. Browser front import/register happens later and
+  follows the existing previous-good-UI/diagnostic contract; it cannot roll back
+  already registered Fastify routes or redefine server activation.
+- **Dedicated route scope:** `WorkspaceServerPlugin.routes` remains the trusted
+  generic-host compatibility surface. Add `scopedRoutes` for D1. Its host-owned
+  `ScopedWorkspaceRouteRegistrar` supplies only the resolved bound `Workspace`,
+  `agentId:'default'`, and repositories whose session/project/resource lookups
+  are already constrained to that workspace; it exposes no global registry or
+  raw workspace resolver. Scoped contribution modules have an import invariant
+  against global workspace/session/project registries. Dedicated composition
+  rejects an activated plugin containing raw `routes` with
+  `D1_PLUGIN_ROUTE_SCOPE_UNVERIFIED` before any route mounts; generic composition
+  remains compatible. This is not a promise to infer semantic scope from field
+  names in headers/path/query/body/token claims.
+- **Identity:** emit immutable `ActivatedWorkspacePluginSnapshot` data and
+  digest covering the host-app artifact digest plus the ordered activated
+  records' ids/versions, immutable source+manifest digests, canonical redacted
+  activation-input digests, and canonical server/Pi/prompt/front-artifact
+  contribution metadata, including raw-vs-scoped route mode and scoped-contract
+  version. Canonicalize current `DirPluginEntry.options`; D1
+  prebuilt plugins/factories must declare equivalent reproducible non-secret
+  activation inputs and secret refs/grants. D1 production rejects mutable
+  directory-only sources or contributions that cannot be reconstructed solely
+  from recorded artifacts and inputs. P6-R and D1 consume this snapshot; it is
+  not another registry.
+- **Tests:** one fixture plugin contributes a tool, route, Pi skill/resource,
+  system-prompt canary, and front renderer/panel from one loaded record. Enabled
+  host sees the server contribution and matching front artifact. Disabled host,
+  server activation failure, front-artifact verification failure, and a scan-
+  only manifest see no server contribution or prompt canary. Browser import/
+  register failure emits UI diagnostics and preserves previous-good UI without
+  pretending to unregister server routes. Generic current trusted plugins
+  remain compatible. Enable/disable, order, prompt/tool schema, manifest,
+  source, `DirPluginEntry.options`/prebuilt activation config, or host-app
+  artifact changes the snapshot digest; identical immutable artifacts and
+  redacted inputs reproduce it. Mutable/non-reconstructible deployment source
+  rejects. A raw-route fixture works only in generic composition and fails D1
+  readiness before its handler registers. A scoped fixture resolves bound ids
+  and rejects both an explicit foreign workspace id and indirect foreign
+  `sessionId`/`projectId` without executing its effect. No v1 test declares
+  `pluginRefs` or `boring.requires`.
+- **Acceptance:** v1 has an implementation owner for plugin prompt/capability
+  atomicity, structurally scoped D1 routes, and reproducible contribution
+  identity without pulling post-v1 per-agent plugin policy into the gate.
+
 ## Verification — exact commands verified against package.json scripts
 
 ```bash
@@ -221,6 +285,7 @@ Matches [`../../PR-PLAN.md`](../../PR-PLAN.md) P3 rows exactly:
 - `pr5-wire-composition` → BBP3-015 (server plugin registration for workspace-family hosts; library-mode hand wiring only for direct composers such as the current CLI workspaces path if it is not moved onto the plugin pipeline).
 - `pr6-sot-tests-invariants` → BBP3-016 + BBP3-017 + BBP3-018 (Amendment 2026-07-06: the small `MODEL_NOT_ALLOWED` bead folds into this PR — no new PR row).
 - `pr7-capability-gate-filesystem-ui` → BBP3-019.
+- `pr8-atomic-default-plugin-contribution` → BBP3-020.
 
 ## Review gates
 
@@ -229,6 +294,10 @@ Matches [`../../PR-PLAN.md`](../../PR-PLAN.md) P3 rows exactly:
 - `disableDefaultFileTools` parity test passes; pure mode has zero file routes/tools.
 - Pure mode has no filesystem plugin/providers/renderers/affordances and makes
   no related API requests; capable mode remains unchanged.
+- V1 trusted plugin prompts/resources/tools/routes and front-artifact identity
+  are projected from one verified boot-time record; disable/pre-registration
+  failure leaves zero server/prompt residue, while browser failure preserves
+  previous-good UI and reports diagnostics.
 - `(filesystem, path)` param + spoof guard + readonly `rejectMutation` preserved verbatim; company_context no-leak conformance green.
 - Single source-of-truth regression tests pass; no second storage-root resolver introduced.
 - `pnpm lint:invariants` + `pnpm audit:imports` green; zero agent→bash value imports; workspace-family hosts have no static `packages/workspace/src` import from `@hachej/boring-bash`.

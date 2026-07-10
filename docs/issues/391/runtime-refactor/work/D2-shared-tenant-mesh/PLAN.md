@@ -23,6 +23,9 @@ and a trusted adapter-created tenant authority are proven.
 tenancy model. D1 is the Sovereign / EU Tenant Factory tier: one dedicated
 deployment per company. D2 is the shared tier: one shared EU deployment serves
 many subdomain tenants. Both tiers consume the same `WorkspaceAgentsDeclaration`.
+D1 now proves an exact dedicated hostname plus landing/auth/workspace/default-
+agent journey, but it still has no wildcard application router or live
+multi-tenant registry; those remain D2's distinct security boundary.
 
 D2 is a sidecar factory-lane work package, sibling to D1, and independent of the
 #376 child-app hostname resolver. It turns an agent-authored tenant YAML into a

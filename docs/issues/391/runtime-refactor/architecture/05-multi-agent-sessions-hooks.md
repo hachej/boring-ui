@@ -81,6 +81,16 @@ artifact is the unit used by local dev, P6-R, and D1; v1 does not require an
 artifact service. The P6-D in-process registry stores the whole verified bundle
 by `(definitionId, version)`, not a definition stripped from its assets.
 
+`instructionsRef` is the only agent-authored prompt reference in schema v1.
+Environment and workspace-plugin prompt fragments are not definition assets:
+they remain attached to the resolved contribution that supplies the matching
+capability. The sole v1 `default` agent receives the workspace-enabled plugin
+contributions atomically; installation alone does not append a fragment, and a
+fragment cannot remain when its host-configured contribution is disabled or
+fails activation. A later schema
+adds `pluginRefs` only together with per-agent contribution resolution. Do not
+add a generic prompt-fragment reference list as a shortcut.
+
 P6-D deliberately knows no E1 types. `environmentAttachmentRefs` is a sorted,
 duplicate-free list of validated opaque ids included in `deploymentDigest`.
 P6-R runs after E1 and resolves each id through the host-owned attachment
@@ -93,16 +103,27 @@ E1 and consumed by P6-R; it is not a `WorkspaceAgentsDeclaration` field in
 P6-D. P6-R may expose a host-only resolved wrapper joining the P6-D declaration
 to that catalog without moving E1 types into agent shared.
 
-Pricing,
-host/subdomain, public-demo exposure, tenant roots, runtime selection, and seed
-sources are deployment/factory inputs. `AgentDeployment` is itself versioned.
+Pricing, public-demo exposure, tenant roots, runtime selection, and seed sources
+are deployment/factory inputs. D1's exact hostname and bounded landing config
+live in a separate host-owned `DedicatedSiteSpec`; they are neither reusable
+agent behavior nor an `AgentDefinition` field. `AgentDeployment` is itself versioned.
 Its canonical `deploymentDigest` covers deployment id/version, agent id,
 definition reference, opaque attachment refs, and every runtime/model/sandbox/governance
 policy reference, but never a raw secret. The host resolves the verified bundle
 and deployment to an immutable `ResolvedAgent`. Its
 `resolvedSnapshotDigest` covers both input digests plus the redacted resolved
 authority snapshot: pinned image/model, provider and environment facts,
-authenticated grant identities/status, and final tool/skill/plugin catalogs.
+authenticated grant identities/status, final tool/skill/plugin catalogs, the
+P3 `ActivatedWorkspacePluginSnapshot` digest, and `staticPromptDigest` over the
+source-labeled `ResolvedStaticPromptPlan` from architecture 01. That plan
+retains base prompt version/content, instructions asset, resolved capability/
+plugin fragments, generated v1 skill index, and static `systemPromptAppend`.
+Explicit per-turn `systemPromptDynamic` output is the sole prompt input outside
+static identity and cannot grant authority. The plugin snapshot binds the
+immutable host-app artifact and the ordered activated plugin contributions;
+changing plugin enablement, order, source, manifest, canonical redacted
+activation input, prompt, or front/server contribution therefore creates a
+different resolved generation.
 
 Every new session stores definition id/version/digest, deployment
 id/version/digest, and resolved-snapshot digest. Manifests/status retain the
@@ -115,8 +136,16 @@ pointer only after resolution/readiness succeeds. An immutable,
 durable `ResolvedAgentGenerationStore` is keyed by resolved-snapshot digest and
 stores the self-contained verified bundle, immutable deployment snapshot, and
 the complete redacted resolution inputs/catalog versions needed to reconstruct
-the executable composition. It stores no live provider/attachment handles and
-no raw secrets.
+the executable composition, including the activated-plugin snapshot and
+immutable artifact references it names, plus the source-labeled static prompt
+plan. References alone are insufficient: before staging succeeds, the host's
+content-addressed artifact store durably and atomically pins the complete host-
+app/plugin artifact set under `resolvedSnapshotDigest`. The artifact pin lives
+until the corresponding generation is actually GC'd; staging, active-pointer,
+session, and rollback generation roots therefore retain both metadata and
+content. Crash reconciliation repairs an acquired-pin/no-generation window,
+and generation GC releases the pin only after the generation record is durably
+removed. It stores no live provider/attachment handles and no raw secrets.
 
 Session creation pins atomically with respect to pointer publication and GC.
 `pinCurrentForSession(agentId, admissionId)` atomically reads the active pointer
