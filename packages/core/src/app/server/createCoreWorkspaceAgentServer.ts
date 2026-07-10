@@ -905,6 +905,11 @@ export async function createCoreWorkspaceAgentServer(
     sandboxHandleStore: options.sandboxHandleStore ?? new WorkspaceRuntimeSandboxHandleStore(workspaceStore),
     getWorkspaceId: resolveWorkspaceId,
     getWorkspaceRoot: resolveRoot,
+    getTrustedWorkspaceRoot: options.getTrustedWorkspaceRoot
+      ?? (options.getWorkspaceRoot
+        ? undefined
+        : async ({ workspaceId }) => await resolveWorkspaceRoot(workspaceRoot, workspaceId)),
+    onWorkspaceAgentDispatcher: options.onWorkspaceAgentDispatcher,
     provisionRuntime: async ({ provisioningAdapter, runtimeLayout, workspaceId, request, runtimeMode }) => {
       if (!provisioningAdapter) return undefined
       const runtimePlugins = [

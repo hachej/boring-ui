@@ -83,7 +83,7 @@ Canonical plan: [`plan.md`](./plan.md)
 
 ## Next execution/hosted slices
 
-- [ ] Slice 3A: generic trusted workspace agent dispatcher.
+- [x] Slice 3A: generic trusted workspace agent dispatcher.
 - [ ] Slice 3B: executor-owned manual run with live usage aggregation.
 - [ ] Slice 4: pure due policy and external trigger adapter.
 - [ ] Slice 5: hosted persistence, verified actor composition, and duplicate-run lease after owner decisions.
