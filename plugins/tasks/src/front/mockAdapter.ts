@@ -72,7 +72,7 @@ export function createMockTaskAdapter(initialTasks: readonly BoringTaskCard[] = 
     id: "mock",
     label: "Mock tasks",
     description: "Local demo adapter for the generic Kanban UI",
-    capabilities: { move: true },
+    capabilities: { move: true, delete: true },
     getBoardConfig: () => mockBoardConfig,
     listTasks: () => tasks.map((task) => ({ ...task })),
     moveTask: ({ taskId, statusId }) => {
@@ -81,6 +81,10 @@ export function createMockTaskAdapter(initialTasks: readonly BoringTaskCard[] = 
       if (!moved) throw new Error(`Task not found: ${taskId}`)
       tasks = next
       return { ...moved }
+    },
+    deleteTask: ({ taskId }) => {
+      if (!tasks.some((task) => task.id === taskId)) throw new Error(`Task not found: ${taskId}`)
+      tasks = tasks.filter((task) => task.id !== taskId)
     },
   }
 }

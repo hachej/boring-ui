@@ -10,11 +10,11 @@ function panelInstanceId(prefix: string, id: string): string {
 }
 
 export function useWorkspaceShellCapabilitiesController({
-  setFloatingChatSessionId,
+  setFloatingChatSession,
   openChatPane,
   surfaceDispatch,
 }: {
-  setFloatingChatSessionId: Dispatch<SetStateAction<string | null>>
+  setFloatingChatSession: Dispatch<SetStateAction<{ sessionId: string; title?: string; initialDraft?: string; composingEnabled?: boolean } | null>>
   openChatPane: (sessionId: string) => void
   surfaceDispatch: DispatchContext
 }): WorkspaceShellCapabilities {
@@ -48,10 +48,15 @@ export function useWorkspaceShellCapabilitiesController({
       }, surfaceDispatch)
       return { success: true }
     },
-    openDetachedChat: (sessionId: string) => {
+    openDetachedChat: (sessionId: string, options) => {
       if (!sessionId) return { success: false, reason: "invalid-session", message: "Missing chat session id." }
-      setFloatingChatSessionId(sessionId)
+      setFloatingChatSession({
+        sessionId,
+        title: options?.title,
+        initialDraft: options?.initialDraft,
+        composingEnabled: options?.composingEnabled,
+      })
       return { success: true }
     },
-  }), [openChatPane, setFloatingChatSessionId, surfaceDispatch])
+  }), [openChatPane, setFloatingChatSession, surfaceDispatch])
 }

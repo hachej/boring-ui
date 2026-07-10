@@ -62,7 +62,7 @@
     "@excalidraw/excalidraw": "^0.18.1",
     "@hachej/boring-agent": "workspace:*",
     "@hachej/boring-ui-kit": "workspace:*",
-    "@mariozechner/pi-coding-agent": "npm:@earendil-works/pi-coding-agent@0.75.5"
+    "@mariozechner/pi-coding-agent": "npm:@earendil-works/pi-coding-agent@0.80.6"
   },
   "devDependencies": {
     "@hachej/boring-workspace": "workspace:*",

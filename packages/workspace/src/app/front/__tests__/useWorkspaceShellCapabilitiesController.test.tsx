@@ -6,9 +6,9 @@ import type { SurfaceOpenRequest } from '../../../shared/types/surface'
 import { useWorkspaceShellCapabilitiesController } from '../useWorkspaceShellCapabilitiesController'
 
 function Probe({ openChatPane, openSurface }: { openChatPane: (sessionId: string) => void; openSurface: (request: SurfaceOpenRequest) => void }) {
-  const [, setFloatingChatSessionId] = useState<string | null>(null)
+  const [, setFloatingChatSession] = useState<{ sessionId: string; title?: string; initialDraft?: string; composingEnabled?: boolean } | null>(null)
   const shell = useWorkspaceShellCapabilitiesController({
-    setFloatingChatSessionId,
+    setFloatingChatSession,
     openChatPane,
     surfaceDispatch: {
       surface: () => ({

@@ -18,8 +18,17 @@ interface GitHubIssue {
   milestone?: GitHubMilestone | null
 }
 
+interface GitHubPullRequest {
+  number: number
+  title: string
+  body?: string | null
+  url?: string
+  state?: string
+}
+
 export interface GitHubIssueExecutor {
   listIssues(input: { owner: string; repo: string; limit: number; state: "open" | "closed" | "all" }): Promise<GitHubIssue[]>
+  listPullRequests?(input: { owner: string; repo: string; limit: number; state: "open" | "closed" | "all" }): Promise<GitHubPullRequest[]>
   viewIssue(input: { owner: string; repo: string; issueNumber: number }): Promise<GitHubIssue>
   addLabels(input: { owner: string; repo: string; issueNumber: number; labels: string[] }): Promise<void>
   removeLabels(input: { owner: string; repo: string; issueNumber: number; labels: string[] }): Promise<void>
@@ -56,21 +65,21 @@ interface WorkspaceGitHubTaskSourceOptions {
 }
 
 const GITHUB_COLUMNS = [
-  { id: "needs-triage", title: "Needs triage", description: "Not evaluated yet", color: "#d4c5f9" },
-  { id: "needs-info", title: "Needs info", description: "Waiting on specific answers", color: "#f9d0c4" },
-  { id: "ready-for-agent", title: "Ready for agent", description: "Agent can plan or implement safely", color: "#0e8a16" },
-  { id: "ready-for-human", title: "Ready for human", description: "Human judgment, access, approval, review, or merge needed", color: "#f9a825" },
+  { id: "needs-triage", title: "Needs triage", description: "Fresh issues that need a first pass", color: "#8b5cf6" },
+  { id: "needs-info", title: "Needs info", description: "Blocked on clarification or missing context", color: "#ef4444" },
+  { id: "ready-for-agent", title: "Ready for agent", description: "Clear agent-pickable work", color: "#0ea5e9" },
+  { id: "ready-for-human", title: "Ready for human", description: "Waiting for owner review or human decision", color: "#f59e0b" },
   { id: "done", title: "Done", description: "Closed GitHub issues", color: "#64748b" },
 ]
 
-const BORING_V2_STATE_LABELS = ["needs-triage", "needs-info", "ready-for-agent", "ready-for-human"]
+const WORKFLOW_LABELS = ["needs-triage", "needs-info", "ready-for-agent", "ready-for-human", "done"]
 
 const STATUS_MAPPINGS: Record<string, GitHubStatusMapping> = {
   "needs-triage": { removeStateLabels: true, addLabels: ["needs-triage"], reopen: true },
   "needs-info": { removeStateLabels: true, addLabels: ["needs-info"], reopen: true },
   "ready-for-agent": { removeStateLabels: true, addLabels: ["ready-for-agent"], reopen: true },
   "ready-for-human": { removeStateLabels: true, addLabels: ["ready-for-human"], reopen: true },
-  done: { removeStateLabels: true, close: true },
+  done: { removeStateLabels: true, addLabels: ["done"], close: true },
 }
 
 function defaultWorkspaceRoot(): string {
@@ -112,6 +121,9 @@ export function createGhCliGitHubIssueExecutor(options: { workspaceRoot?: string
     listIssues: ({ owner, repo, limit, state }) => runGhJson<GitHubIssue[]>([
       "issue", "list", "--repo", repoArg(owner, repo), "--state", state, "--limit", String(limit), "--json", jsonFields,
     ], cwd),
+    listPullRequests: ({ owner, repo, limit, state }) => runGhJson<GitHubPullRequest[]>([
+      "pr", "list", "--repo", repoArg(owner, repo), "--state", state, "--limit", String(limit), "--json", "number,title,body,url,state",
+    ], cwd),
     viewIssue: ({ owner, repo, issueNumber }) => runGhJson<GitHubIssue>([
       "issue", "view", String(issueNumber), "--repo", repoArg(owner, repo), "--json", jsonFields,
     ], cwd),
@@ -148,10 +160,7 @@ function issueLabels(issue: GitHubIssue): string[] {
 function issueStatus(issue: GitHubIssue): string {
   if (issue.state.toLowerCase() === "closed") return "done"
   const labels = issueLabels(issue).map((label) => label.toLowerCase())
-  if (labels.includes("needs-info")) return "needs-info"
-  if (labels.includes("ready-for-human")) return "ready-for-human"
-  if (labels.includes("ready-for-agent")) return "ready-for-agent"
-  return "needs-triage"
+  return WORKFLOW_LABELS.find((label) => labels.includes(label)) ?? "needs-triage"
 }
 
 function descriptionFromBody(body: string | null | undefined): string | undefined {
@@ -165,20 +174,37 @@ function descriptionFromBody(body: string | null | undefined): string | undefine
   return compact.length > 180 ? `${compact.slice(0, 177)}…` : compact || undefined
 }
 
-function taskFromIssue(issue: GitHubIssue, adapterId: string): BoringTaskCard {
+function associatedPullRequests(issue: GitHubIssue, pullRequests: readonly GitHubPullRequest[]): GitHubPullRequest[] {
+  const issueRef = `#${issue.number}`
+  const issueUrl = issue.url?.toLowerCase()
+  return pullRequests.filter((pr) => {
+    const haystack = `${pr.title}\n${pr.body ?? ""}\n${pr.url ?? ""}`.toLowerCase()
+    return haystack.includes(issueRef.toLowerCase()) || Boolean(issueUrl && haystack.includes(issueUrl))
+  })
+}
+
+function taskFromIssue(issue: GitHubIssue, adapterId: string, pullRequests: readonly GitHubPullRequest[] = []): BoringTaskCard {
+  const prs = associatedPullRequests(issue, pullRequests)
   return {
     id: String(issue.number),
     number: `#${issue.number}`,
     title: issue.title,
     description: descriptionFromBody(issue.body),
     statusId: issueStatus(issue),
-    tags: issueLabels(issue).filter((label) => !["needs-triage", "needs-info", "ready-for-agent", "ready-for-human"].includes(label.toLowerCase())),
+    tags: issueLabels(issue).filter((label) => !WORKFLOW_LABELS.includes(label.toLowerCase())),
     epic: issue.milestone?.title ? {
       id: String(issue.milestone.id ?? issue.milestone.number ?? issue.milestone.title),
       title: issue.milestone.title,
       url: issue.milestone.url,
     } : undefined,
     adapterId,
+    pullRequests: prs.map((pr) => ({
+      id: String(pr.number),
+      number: `#${pr.number}`,
+      title: pr.title,
+      url: pr.url,
+      state: pr.state,
+    })),
     url: issue.url,
   }
 }
@@ -187,7 +213,7 @@ export function createGitHubTaskSource({ owner, repo, limit = 200, state = "open
   const sourceId = `github:${owner}/${repo}`
   const board: BoringTaskBoardConfig = {
     adapterId: sourceId,
-    defaultColumnId: "queued",
+    defaultColumnId: "needs-triage",
     columns: GITHUB_COLUMNS,
   }
 
@@ -196,12 +222,15 @@ export function createGitHubTaskSource({ owner, repo, limit = 200, state = "open
       id: sourceId,
       label: `GitHub ${owner}/${repo}`,
       description: "GitHub Issues via backend task source",
-      capabilities: { move: true },
+      capabilities: { move: true, delete: true },
     }),
     getBoardConfig: () => board,
     async listTasks(_ctx: BoringTaskSourceContext): Promise<BoringTaskCard[]> {
-      const issues = await executor.listIssues({ owner, repo, limit, state })
-      return issues.map((issue) => taskFromIssue(issue, sourceId))
+      const [issues, pullRequests] = await Promise.all([
+        executor.listIssues({ owner, repo, limit, state }),
+        executor.listPullRequests?.({ owner, repo, limit: 100, state: "open" }) ?? Promise.resolve([]),
+      ])
+      return issues.map((issue) => taskFromIssue(issue, sourceId, pullRequests))
     },
     async moveTask(_ctx, { taskId, statusId }): Promise<BoringTaskCard> {
       const issueNumber = Number(taskId)
@@ -215,12 +244,19 @@ export function createGitHubTaskSource({ owner, repo, limit = 200, state = "open
       if (mapping.close) await executor.closeIssue({ owner, repo, issueNumber })
       if (mapping.reopen && before.state.toLowerCase() === "closed") await executor.reopenIssue({ owner, repo, issueNumber })
       if (mapping.removeStateLabels) {
-        const stateLabels = issueLabels(before).filter((label) => BORING_V2_STATE_LABELS.includes(label.toLowerCase()))
+        const stateLabels = issueLabels(before).filter((label) => WORKFLOW_LABELS.includes(label.toLowerCase()))
         await executor.removeLabels({ owner, repo, issueNumber, labels: stateLabels })
       }
       await executor.addLabels({ owner, repo, issueNumber, labels: mapping.addLabels ?? [] })
       const after = await executor.viewIssue({ owner, repo, issueNumber })
       return taskFromIssue(after, sourceId)
+    },
+    async deleteTask(_ctx, { taskId }): Promise<void> {
+      const issueNumber = Number(taskId)
+      if (!Number.isInteger(issueNumber) || issueNumber <= 0) {
+        throw new TaskSourceServiceError(400, "TASK_INVALID_ID", `Invalid GitHub issue task id: ${taskId}`)
+      }
+      await executor.closeIssue({ owner, repo, issueNumber })
     },
   }
 }
@@ -235,7 +271,7 @@ export function createWorkspaceGitHubTaskSource({
 }: WorkspaceGitHubTaskSourceOptions = {}): BoringTaskSourceRuntime {
   const board: BoringTaskBoardConfig = {
     adapterId: sourceId,
-    defaultColumnId: "queued",
+    defaultColumnId: "needs-triage",
     columns: GITHUB_COLUMNS,
   }
 
@@ -251,14 +287,17 @@ export function createWorkspaceGitHubTaskSource({
       id: sourceId,
       label: "GitHub repository",
       description: "GitHub Issues from the current workspace repository via gh CLI",
-      capabilities: { move: true },
+      capabilities: { move: true, delete: true },
     }),
     getBoardConfig: () => board,
     async listTasks(ctx): Promise<BoringTaskCard[]> {
       const repoInfo = await resolveRepo(ctx)
       const executor = executorFactory(repoInfo)
-      const issues = await executor.listIssues({ owner: repoInfo.owner, repo: repoInfo.repo, limit, state })
-      return issues.map((issue) => taskFromIssue(issue, sourceId))
+      const [issues, pullRequests] = await Promise.all([
+        executor.listIssues({ owner: repoInfo.owner, repo: repoInfo.repo, limit, state }),
+        executor.listPullRequests?.({ owner: repoInfo.owner, repo: repoInfo.repo, limit: 100, state: "open" }) ?? Promise.resolve([]),
+      ])
+      return issues.map((issue) => taskFromIssue(issue, sourceId, pullRequests))
     },
     async moveTask(ctx, { taskId, statusId }): Promise<BoringTaskCard> {
       const issueNumber = Number(taskId)
@@ -275,12 +314,21 @@ export function createWorkspaceGitHubTaskSource({
       if (mapping.close) await executor.closeIssue(input)
       if (mapping.reopen && before.state.toLowerCase() === "closed") await executor.reopenIssue(input)
       if (mapping.removeStateLabels) {
-        const stateLabels = issueLabels(before).filter((label) => BORING_V2_STATE_LABELS.includes(label.toLowerCase()))
+        const stateLabels = issueLabels(before).filter((label) => WORKFLOW_LABELS.includes(label.toLowerCase()))
         await executor.removeLabels({ ...input, labels: stateLabels })
       }
       await executor.addLabels({ ...input, labels: mapping.addLabels ?? [] })
       const after = await executor.viewIssue(input)
       return taskFromIssue(after, sourceId)
+    },
+    async deleteTask(ctx, { taskId }): Promise<void> {
+      const issueNumber = Number(taskId)
+      if (!Number.isInteger(issueNumber) || issueNumber <= 0) {
+        throw new TaskSourceServiceError(400, "TASK_INVALID_ID", `Invalid GitHub issue task id: ${taskId}`)
+      }
+      const repoInfo = await resolveRepo(ctx)
+      const executor = executorFactory(repoInfo)
+      await executor.closeIssue({ owner: repoInfo.owner, repo: repoInfo.repo, issueNumber })
     },
   }
 }

@@ -11,9 +11,10 @@ export function isReadonlySkillFilePath(path: string): boolean {
   if (path.includes('\0')) return false
   if (!path.endsWith('/SKILL.md')) return false
   // Narrow absolute-path exception: discovered pi skills may live outside the
-  // workspace root (for example /root/.pi/agent/skills/... in containers).
-  // Let the editor read those actual skill files, but never write/delete/move.
-  return path.includes('/.pi/agent/') && path.includes('/skills/')
+  // workspace root (for example /root/.pi/agent/skills/... or
+  // /root/.agents/skills/... in containers). Let the editor read those actual
+  // skill files, but never write/delete/move.
+  return (path.includes('/.pi/agent/') || path.includes('/.agents/')) && path.includes('/skills/')
 }
 
 export async function readReadonlySkillFile(path: string): Promise<{ content: string; stat: ReadonlySkillFileStat }> {

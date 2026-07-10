@@ -302,6 +302,51 @@ function useStoredBooleanState(
   return [value, setStoredValue]
 }
 
+function readStoredNullableString(key: string, fallback: string | null, enabled: boolean): string | null {
+  if (!enabled || typeof window === "undefined") return fallback
+  try {
+    const value = window.localStorage.getItem(key)
+    return value === null ? fallback : value || null
+  } catch {
+    return fallback
+  }
+}
+
+function writeStoredNullableString(key: string, value: string | null, enabled: boolean): void {
+  if (!enabled || typeof window === "undefined") return
+  try {
+    if (value) window.localStorage.setItem(key, value)
+    else window.localStorage.removeItem(key)
+  } catch {
+    // Best-effort persistence only.
+  }
+}
+
+function useStoredNullableStringState(
+  key: string,
+  fallback: string | null,
+  enabled: boolean,
+): [string | null, (next: string | null | ((previous: string | null) => string | null)) => void] {
+  const [value, setValue] = useState(() => readStoredNullableString(key, fallback, enabled))
+
+  useEffect(() => {
+    setValue(readStoredNullableString(key, fallback, enabled))
+  }, [enabled, fallback, key])
+
+  const setStoredValue = useCallback(
+    (next: string | null | ((previous: string | null) => string | null)) => {
+      setValue((previous) => {
+        const resolved = typeof next === "function" ? next(previous) : next
+        writeStoredNullableString(key, resolved, enabled)
+        return resolved
+      })
+    },
+    [enabled, key],
+  )
+
+  return [value, setStoredValue]
+}
+
 const EMPTY_HEADERS: Record<string, string> = {}
 const EMPTY_STRING_LIST: string[] = []
 const PREPARING_WARMUP_STATUS: WorkspaceWarmupStatus = { status: "preparing" }
@@ -836,7 +881,11 @@ export function WorkspaceAgentFront<
     plugins,
     excludeDefaults,
   }), [excludeDefaults, plugins])
-  const [leftOverlay, setLeftOverlay] = useState<AppLeftOverlayId>(defaultLeftOverlay)
+  const [leftOverlay, setLeftOverlay] = useStoredNullableStringState(
+    `${shellStorageKey}:appLeftOverlay`,
+    defaultLeftOverlay,
+    shellPersistenceEnabled,
+  ) as [AppLeftOverlayId, (next: AppLeftOverlayId | ((previous: AppLeftOverlayId) => AppLeftOverlayId)) => void]
   const pluginOverlayActionIds = useMemo(() => pluginAppLeftActionIds(capturedPlugins), [capturedPlugins])
   useEffect(() => {
     const customOverlayActive = Boolean(leftOverlay && appLeftOverlayActions?.some((action) => action.id === leftOverlay))
