@@ -1303,7 +1303,10 @@ async function registerPureAgentRoutes(
         : { getService: async (request) => (await createPureBinding(request)).piChatService }),
       defaultWorkspaceId: false,
     },
-    models: { filterModels: opts.filterModels },
+    models: {
+      allowConfiguredDefaultModel: false,
+      filterModels: opts.filterModels,
+    },
     catalog: staticBinding
       ? { tools: staticBinding.tools }
       : { getTools: async (request) => (await createPureBinding(request)).tools },

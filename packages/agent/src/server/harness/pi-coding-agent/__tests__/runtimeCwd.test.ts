@@ -16,6 +16,8 @@ const {
   mockSessionManagerOpen,
   mockResourceLoaderOptions,
   mockInMemorySettingsManager,
+  mockSettingsManagerCreate,
+  mockGetAgentDir,
 } = vi.hoisted(() => ({
   mockSubscribers: [] as Array<(event: any) => void>,
   promptHandle: { resolve: undefined as undefined | (() => void) },
@@ -25,6 +27,13 @@ const {
   mockSessionManagerOpen: vi.fn(() => ({ getSessionFile: () => null })),
   mockResourceLoaderOptions: [] as any[],
   mockInMemorySettingsManager: { kind: "in-memory" },
+  mockSettingsManagerCreate: vi.fn(() => ({
+    getDefaultProvider: () => undefined,
+    getDefaultModel: () => undefined,
+    getResolvedSettings: () => ({}),
+    loadAllSettings: vi.fn(),
+  })),
+  mockGetAgentDir: vi.fn(() => "/tmp/test-agent-dir"),
   mockCurrentModel: {
     value: undefined as undefined | { provider: string; id: string },
   },
@@ -113,9 +122,9 @@ vi.mock("@mariozechner/pi-coding-agent", () => ({
   }),
   SessionManager: { inMemory: () => ({}), create: mockSessionManagerCreate, open: mockSessionManagerOpen },
   AuthStorage: { inMemory: () => ({}), create: () => ({}) },
-  // createHarness always builds a DefaultResourceLoader now so it can inject
-  // the workspace-paths system-prompt guideline. Stub the lookups it needs.
-  getAgentDir: () => "/tmp/test-agent-dir",
+  // Both workspace and headless paths use Pi's DefaultResourceLoader. Stub
+  // its resolved inputs so the tests can inspect discovery and prompt policy.
+  getAgentDir: mockGetAgentDir,
   DefaultResourceLoader: class {
     private opts: any;
     constructor(opts: unknown) {
@@ -154,10 +163,7 @@ vi.mock("@mariozechner/pi-coding-agent", () => ({
   },
   SettingsManager: {
     inMemory: () => mockInMemorySettingsManager,
-    create: () => ({
-      getResolvedSettings: () => ({}),
-      loadAllSettings: vi.fn(),
-    }),
+    create: mockSettingsManagerCreate,
   },
   ModelRegistry: {
     inMemory: () => ({
@@ -224,17 +230,27 @@ describe("runtime cwd separation", () => {
     const bridge = createAgentRuntimeBridge({
       runtime: "none",
       sessionStorageRoot: sessionRoot,
+      systemPromptAppend: "relative/path/to/host-prompt.md",
     });
     try {
       const runtime = await bridge.getRuntime();
       const harness = runtime.harness as AgentCoreHarness;
-      await harness.getPiSessionAdapter({ sessionId: "pure-spy", content: "" }, {
+      await harness.getPiSessionAdapter({
+        sessionId: "pure-spy",
+        content: "",
+        model: { provider: "test-provider", id: "test-model" },
+      }, {
         abortSignal: new AbortController().signal,
         workdir: process.cwd(),
       });
 
       expect(mockSessionManagerCreate).toHaveBeenCalledWith(sealedCwd, sessionRoot);
       expect(mockCreateAgentSessionConfigs[0]?.cwd).toBe(sealedCwd);
+      expect(mockCreateAgentSessionConfigs[0]?.agentDir).toBe(sealedCwd);
+      expect(mockCreateAgentSessionConfigs[0]?.settingsManager).toBe(mockInMemorySettingsManager);
+      expect(mockCreateAgentSessionConfigs[0]?.model).toEqual({ provider: "test-provider", id: "test-model" });
+      expect(mockSettingsManagerCreate).not.toHaveBeenCalled();
+      expect(mockGetAgentDir).not.toHaveBeenCalled();
       expect(mockResourceLoaderOptions).toHaveLength(1);
       expect(mockResourceLoaderOptions[0]).toMatchObject({
         cwd: sealedCwd,
@@ -245,14 +261,18 @@ describe("runtime cwd separation", () => {
         noSkills: true,
         noPromptTemplates: true,
         noThemes: true,
-        systemPrompt: "You are a helpful assistant.",
-        appendSystemPrompt: [],
       });
+      expect(mockResourceLoaderOptions[0]).not.toHaveProperty("systemPrompt");
+      expect(mockResourceLoaderOptions[0]).not.toHaveProperty("appendSystemPrompt");
+      expect(mockResourceLoaderOptions[0]?.systemPromptOverride("ambient path source")).toBe("You are a helpful assistant.");
+      expect(mockResourceLoaderOptions[0]?.appendSystemPromptOverride(["ambient path source"])).toEqual([
+        "relative/path/to/host-prompt.md",
+      ]);
       expect(mockResourceLoaderOptions[0]).not.toHaveProperty("additionalExtensionPaths");
       expect(mockResourceLoaderOptions[0]).not.toHaveProperty("additionalSkillPaths");
       const resourceLoader = mockCreateAgentSessionConfigs[0]?.resourceLoader;
       expect(resourceLoader.getSystemPrompt()).toBe("You are a helpful assistant.");
-      expect(resourceLoader.getAppendSystemPrompt()).toEqual([]);
+      expect(resourceLoader.getAppendSystemPrompt()).toEqual(["relative/path/to/host-prompt.md"]);
       expect(resourceLoader.getSkills()).toEqual({ skills: [], diagnostics: [] });
       expect(resourceLoader.getPrompts()).toEqual({ prompts: [], diagnostics: [] });
       expect(resourceLoader.getThemes()).toEqual({ themes: [], diagnostics: [] });
@@ -293,6 +313,10 @@ describe("runtime cwd separation", () => {
     });
 
     expect(getHotReloadableResources).not.toHaveBeenCalled();
+    expect(mockCreateAgentSessionConfigs[0]?.model).toBeUndefined();
+    expect(mockCreateAgentSessionConfigs[0]?.settingsManager).toBe(mockInMemorySettingsManager);
+    expect(mockSettingsManagerCreate).not.toHaveBeenCalled();
+    expect(mockGetAgentDir).not.toHaveBeenCalled();
     expect(mockResourceLoaderOptions[0]).not.toHaveProperty("additionalExtensionPaths");
     expect(mockResourceLoaderOptions[0]).not.toHaveProperty("additionalSkillPaths");
     expect(JSON.stringify(mockResourceLoaderOptions[0])).not.toContain("/host/");

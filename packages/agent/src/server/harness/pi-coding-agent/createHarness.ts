@@ -114,24 +114,27 @@ function buildHeadlessPromptSealExtension(): ExtensionFactory {
   };
 }
 
-function createHeadlessResourceLoader(options: {
+function createHeadlessResources(options: {
   cwd: string;
   systemPromptAppend: string;
   extensionFactories: ExtensionFactory[];
-}): DefaultResourceLoader {
-  return new DefaultResourceLoader({
+}): { resourceLoader: DefaultResourceLoader; settingsManager: SettingsManager } {
+  const settingsManager = SettingsManager.inMemory();
+  const resourceLoader = new DefaultResourceLoader({
     cwd: options.cwd,
     agentDir: options.cwd,
-    settingsManager: SettingsManager.inMemory(),
+    settingsManager,
     extensionFactories: options.extensionFactories,
     noExtensions: true,
     noContextFiles: true,
     noSkills: true,
     noPromptTemplates: true,
     noThemes: true,
-    systemPrompt: HEADLESS_SYSTEM_PROMPT,
-    appendSystemPrompt: options.systemPromptAppend ? [options.systemPromptAppend] : [],
+    systemPromptOverride: () => HEADLESS_SYSTEM_PROMPT,
+    appendSystemPromptOverride: () =>
+      options.systemPromptAppend ? [options.systemPromptAppend] : [],
   });
+  return { resourceLoader, settingsManager };
 }
 
 export interface PiHarnessOptions {
@@ -692,10 +695,12 @@ export function createPiCodingAgentHarness(opts: {
     }
 
     const resolvedModel = resolveRequestedModel(modelRegistry, input, { strict: pi.strictModelResolution });
-    // Prefer an explicit available UI selection; otherwise use configured
-    // Boring/Pi default if present. Undefined is intentional: Pi/session owns
-    // the final fallback model selection.
-    const model = resolvedModel ?? resolveDefaultModel(modelRegistry);
+    // Prefer an explicit available selection. Workspace mode keeps its
+    // configured default; headless mode leaves fallback to Pi's empty
+    // in-memory settings plus the credential-backed registry.
+    const model = resolvedModel ?? (pi.systemPromptMode === "headless"
+      ? undefined
+      : resolveDefaultModel(modelRegistry));
 
     // Workspace mode keeps Pi's resource composition and Boring's path/Python
     // guidance. Headless mode starts from explicit prompt inputs and trusted
@@ -720,52 +725,53 @@ export function createPiCodingAgentHarness(opts: {
       ...(dynamicPromptExtension ? [dynamicPromptExtension] : []),
       ...(pi.extensionFactories ?? []),
     ]
-    const resourceLoader = pi.systemPromptMode === "headless"
-      ? createHeadlessResourceLoader({
+    const headlessResources = pi.systemPromptMode === "headless"
+      ? createHeadlessResources({
           cwd: opts.cwd,
           systemPromptAppend: composedSystemPromptAppend,
           extensionFactories,
         })
-      : (() => {
-          const agentDir = getAgentDir()
-          const settingsManager = createResourceSettingsManager(
-            opts.cwd,
-            agentDir,
-            effectivePackages,
-          )
-          return new DefaultResourceLoader({
-            cwd: opts.cwd,
-            agentDir,
-            settingsManager,
-            appendSystemPromptOverride,
-            ...(effectiveExtensionPaths.length ? { additionalExtensionPaths: effectiveExtensionPaths } : {}),
-            ...(extensionFactories.length ? { extensionFactories } : {}),
-            ...(pi.noExtensions ? { noExtensions: true } : {}),
-            ...(pi.noContextFiles ? { noContextFiles: true } : {}),
-            ...(pi.noSkills ? { noSkills: true } : {}),
-            ...(pi.noPromptTemplates ? { noPromptTemplates: true } : {}),
-            ...(pi.noThemes ? { noThemes: true } : {}),
-            ...(effectiveSkillPaths.length ? { additionalSkillPaths: effectiveSkillPaths } : {}),
-            // skillsOverride REPLACES Pi's resolved skill set, which includes
-            // skills contributed by host-declared pi packages (e.g.
-            // @hachej/boring-pi → boring-plugin-authoring). Only trigger it for
-            // the explicit `noSkills` opt-out, where the host wants a clean slate.
-            // Passing additionalSkillPaths is not, by itself, a request to throw
-            // away package skills — those should keep flowing through Pi's loader
-            // and merge with the additional paths.
-            ...(pi.noSkills
-              ? {
-                  skillsOverride: () =>
-                    loadSkills({
-                      cwd: opts.cwd,
-                      agentDir,
-                      skillPaths: effectiveSkillPaths,
-                      includeDefaults: false,
-                    }),
-                }
-              : {}),
-          })
-        })()
+      : undefined
+    const resourceLoader = headlessResources?.resourceLoader ?? (() => {
+      const agentDir = getAgentDir()
+      const settingsManager = createResourceSettingsManager(
+        opts.cwd,
+        agentDir,
+        effectivePackages,
+      )
+      return new DefaultResourceLoader({
+        cwd: opts.cwd,
+        agentDir,
+        settingsManager,
+        appendSystemPromptOverride,
+        ...(effectiveExtensionPaths.length ? { additionalExtensionPaths: effectiveExtensionPaths } : {}),
+        ...(extensionFactories.length ? { extensionFactories } : {}),
+        ...(pi.noExtensions ? { noExtensions: true } : {}),
+        ...(pi.noContextFiles ? { noContextFiles: true } : {}),
+        ...(pi.noSkills ? { noSkills: true } : {}),
+        ...(pi.noPromptTemplates ? { noPromptTemplates: true } : {}),
+        ...(pi.noThemes ? { noThemes: true } : {}),
+        ...(effectiveSkillPaths.length ? { additionalSkillPaths: effectiveSkillPaths } : {}),
+        // skillsOverride REPLACES Pi's resolved skill set, which includes
+        // skills contributed by host-declared pi packages (e.g.
+        // @hachej/boring-pi → boring-plugin-authoring). Only trigger it for
+        // the explicit `noSkills` opt-out, where the host wants a clean slate.
+        // Passing additionalSkillPaths is not, by itself, a request to throw
+        // away package skills — those should keep flowing through Pi's loader
+        // and merge with the additional paths.
+        ...(pi.noSkills
+          ? {
+              skillsOverride: () =>
+                loadSkills({
+                  cwd: opts.cwd,
+                  agentDir,
+                  skillPaths: effectiveSkillPaths,
+                  includeDefaults: false,
+                }),
+            }
+          : {}),
+      })
+    })()
 
     await resourceLoader?.reload()
 
@@ -782,6 +788,12 @@ export function createPiCodingAgentHarness(opts: {
       sessionManager,
       authStorage,
       modelRegistry,
+      ...(headlessResources
+        ? {
+            agentDir: opts.cwd,
+            settingsManager: headlessResources.settingsManager,
+          }
+        : {}),
       ...(resourceLoader ? { resourceLoader } : {}),
     });
 

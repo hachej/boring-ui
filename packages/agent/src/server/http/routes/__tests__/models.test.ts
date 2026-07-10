@@ -82,6 +82,25 @@ describe('modelsRoutes', () => {
     }
   })
 
+  it('does not read an ambient configured default when the profile disables it', async () => {
+    configureInfomaniakModels()
+
+    const app = Fastify({ logger: false })
+    await app.register(modelsRoutes, { allowConfiguredDefaultModel: false })
+    await app.ready()
+
+    try {
+      const res = await app.inject({ method: 'GET', url: '/api/v1/agent/models' })
+      expect(res.statusCode).toBe(200)
+      expect(res.json().defaultModel).toEqual({
+        provider: 'infomaniak',
+        id: 'moonshotai/Kimi-K2.6',
+      })
+    } finally {
+      await app.close()
+    }
+  })
+
   it('applies request-aware model filters without mutating cached model summaries', async () => {
     configureInfomaniakModels()
     const seenLengths: number[] = []

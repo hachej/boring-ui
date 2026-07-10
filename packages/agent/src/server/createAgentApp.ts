@@ -169,6 +169,7 @@ async function createPureAgentAppProfile(
     runtimeMode: resolvedMode,
     capabilities: { tools: toolNames(tools) },
     sessionChangesTracker: new InMemorySessionChangesTracker(),
+    models: { allowConfiguredDefaultModel: false },
     health: {
       version: opts.version ?? DEFAULT_VERSION,
       getReadiness: () => ({ sandboxReady: true, harnessReady: true }),
