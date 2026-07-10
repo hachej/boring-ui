@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 
 import {
   AgentDefinitionValidationError,
+  createAgentAssetDigest,
   createAgentDefinitionDigest,
   createAgentDeploymentDigest,
   validateAgentDefinition,
@@ -189,6 +190,12 @@ describe('validateAgentDeployment', () => {
 })
 
 describe('canonical digests', () => {
+  it('creates the canonical UTF-8 asset digest', async () => {
+    await expect(createAgentAssetDigest('Compare insurance policies.')).resolves.toBe(
+      INSTRUCTIONS_DIGEST,
+    )
+  })
+
   it('covers definition data and verified instruction assets independent of asset order', async () => {
     const instructions = {
       path: 'instructions.md',
