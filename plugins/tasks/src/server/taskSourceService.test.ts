@@ -51,7 +51,7 @@ describe("github task source", () => {
       body: null,
       url: "https://github.test/issue/123",
       state: "OPEN" as const,
-      labels: [{ name: "state:queued" }, { name: "bug" }],
+      labels: [{ name: "needs-triage" }, { name: "bug" }],
     }
     const executor: GitHubIssueExecutor = {
       listIssues: vi.fn(async () => [issue]),
@@ -63,12 +63,12 @@ describe("github task source", () => {
     }
     const github = createGitHubTaskSource({ owner: "hachej", repo: "boring-ui", executor })
 
-    await expect(github.moveTask?.({}, { taskId: "123", statusId: "active" })).resolves.toMatchObject({
+    await expect(github.moveTask?.({}, { taskId: "123", statusId: "ready-for-agent" })).resolves.toMatchObject({
       id: "123",
       adapterId: "github:hachej/boring-ui",
     })
-    expect(executor.removeLabels).toHaveBeenCalledWith({ owner: "hachej", repo: "boring-ui", issueNumber: 123, labels: ["state:queued"] })
-    expect(executor.addLabels).toHaveBeenCalledWith({ owner: "hachej", repo: "boring-ui", issueNumber: 123, labels: ["state:active"] })
+    expect(executor.removeLabels).toHaveBeenCalledWith({ owner: "hachej", repo: "boring-ui", issueNumber: 123, labels: ["needs-triage"] })
+    expect(executor.addLabels).toHaveBeenCalledWith({ owner: "hachej", repo: "boring-ui", issueNumber: 123, labels: ["ready-for-agent"] })
   })
 
   test("rejects unknown GitHub status before native mutation", async () => {
@@ -93,7 +93,7 @@ describe("github task source", () => {
       body: null,
       url: "https://github.test/acme/project/issues/7",
       state: "OPEN" as const,
-      labels: [{ name: "state:ready" }],
+      labels: [{ name: "ready-for-human" }],
     }
     const executor: GitHubIssueExecutor = {
       listIssues: vi.fn(async () => [issue]),
@@ -108,7 +108,7 @@ describe("github task source", () => {
     const github = createWorkspaceGitHubTaskSource({ detector, executorFactory })
 
     await expect(github.listTasks({ workspaceRoot: "/work/project" })).resolves.toMatchObject([
-      { id: "7", adapterId: "github:workspace", statusId: "ready" },
+      { id: "7", adapterId: "github:workspace", statusId: "ready-for-human" },
     ])
     expect(detector.detectRepository).toHaveBeenCalledWith({ workspaceRoot: "/work/project" })
     expect(executorFactory).toHaveBeenCalledWith({ workspaceRoot: "/work/project", owner: "acme", repo: "project" })

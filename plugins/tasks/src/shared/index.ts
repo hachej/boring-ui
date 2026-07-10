@@ -24,6 +24,14 @@ export interface BoringTaskEpicRef {
   url?: string
 }
 
+export interface BoringTaskPullRequestRef {
+  id: string
+  number: string
+  title: string
+  url?: string
+  state?: string
+}
+
 export interface BoringTaskCard {
   id: string
   /** Display identifier only, adapter-scoped. `id` is the stable key. */
@@ -36,11 +44,14 @@ export interface BoringTaskCard {
   epic?: BoringTaskEpicRef
   /** Allows card-level actions to route back to the owning adapter. */
   adapterId: string
+  /** Open or otherwise associated pull requests discovered by the adapter. */
+  pullRequests?: BoringTaskPullRequestRef[]
   url?: string
 }
 
 export interface BoringTaskAdapterCapabilities {
   move: boolean
+  delete?: boolean
 }
 
 export interface BoringTaskAdapterSummary {
@@ -55,8 +66,13 @@ export interface BoringTaskMoveInput {
   statusId: BoringTaskStatusId
 }
 
+export interface BoringTaskDeleteInput {
+  taskId: string
+}
+
 export interface BoringTaskAdapter extends BoringTaskAdapterSummary {
   getBoardConfig(): Promise<BoringTaskBoardConfig> | BoringTaskBoardConfig
   listTasks(): Promise<BoringTaskCard[]> | BoringTaskCard[]
   moveTask?(input: BoringTaskMoveInput): Promise<BoringTaskCard> | BoringTaskCard
+  deleteTask?(input: BoringTaskDeleteInput): Promise<void> | void
 }
