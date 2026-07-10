@@ -10,7 +10,7 @@ const packageJsonPath = join(packageRoot, "package.json");
 const packageJson = JSON.parse(readFileSync(packageJsonPath, "utf8"));
 
 const requiredExports = [".", "./shared", "./server"];
-const sourceFilePattern = /\.(ts|tsx|mts|cts|js|mjs|cjs)$/;
+const sourceFilePattern = /\.(ts|tsx|mts|cts|js|jsx|mjs|cjs)$/;
 const negativeFixturesOnly = process.argv.includes("--negative-fixtures-only");
 const pass = (message) => console.log(`[boring-bash invariant] PASS ${message}`);
 const fail = (message) => {
@@ -44,6 +44,7 @@ const walk = (dir) => {
 function scriptKindFor(file) {
   switch (extname(file)) {
     case ".tsx": return ts.ScriptKind.TSX;
+    case ".jsx": return ts.ScriptKind.JSX;
     case ".js":
     case ".mjs":
     case ".cjs": return ts.ScriptKind.JS;
@@ -184,6 +185,25 @@ function assertNegativeFixtures() {
       parseErrors: agentValueFixture.parseErrors,
       violations: agentValueActual,
     })}`);
+  }
+
+  const jsxValueFixture = findAgentBoringBashValueImports(
+    "fixture.jsx",
+    [
+      "import { createBashAgentFeature } from '@hachej/boring-bash/server'",
+      "export const View = () => <div />",
+    ].join("\n"),
+  );
+  const jsxViolation = jsxValueFixture.violations[0];
+  if (jsxValueFixture.parseErrors.length === 0
+    && jsxValueFixture.violations.length === 1
+    && jsxViolation?.file === "fixture.jsx"
+    && jsxViolation?.line === 1
+    && jsxViolation?.kind === "import"
+    && jsxViolation?.specifier === "@hachej/boring-bash/server") {
+    pass("agent import-cycle fixture rejects a JSX file value import");
+  } else {
+    fail(`agent JSX import-cycle fixture mismatch: ${JSON.stringify(jsxValueFixture)}`);
   }
 }
 

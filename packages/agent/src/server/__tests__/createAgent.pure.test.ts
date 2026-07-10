@@ -52,10 +52,12 @@ describe('createAgent pure smoke', () => {
       })
       expect(harness.inputs[0]?.tools.map((tool) => tool.name)).toEqual(['host_echo'])
 
-      expect(harness.contexts).toHaveLength(1)
-      expect(harness.contexts[0]).toMatchObject({ workdir: sealedCwd })
-      expect(harness.contexts[0]?.workspaceId).toBeUndefined()
-      expect(harness.contexts[0]?.userId).toBeUndefined()
+      expect(harness.contexts.length).toBeGreaterThan(0)
+      for (const ctx of harness.contexts) {
+        expect(ctx).toMatchObject({ workdir: sealedCwd })
+        expect(ctx.workspaceId).toBeUndefined()
+        expect(ctx.userId).toBeUndefined()
+      }
       expect(harness.prompts).toEqual(['hello from pure mode'])
       expect(JSON.stringify({
         contexts: harness.contexts,

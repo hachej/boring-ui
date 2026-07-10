@@ -15,9 +15,7 @@ const packageRoot = path.resolve(
 const requiredFiles = [
   'dist/shared/index.js',
   'dist/shared/index.d.ts',
-  'dist/core/index.js',
   'dist/core/index.d.ts',
-  'dist/server/index.js',
   'dist/server/index.d.ts',
   'dist/front/index.js',
   'dist/front/index.d.ts',
@@ -28,6 +26,26 @@ const requiredFiles = [
 
 function resolveFromPackage(relPath) {
   return path.resolve(packageRoot, relPath)
+}
+
+function resolvePublishedJsExport(packageJson, exportName) {
+  const entry = packageJson.exports?.[exportName]?.import
+  if (typeof entry !== 'string' || entry.trim().length === 0) {
+    throw new Error(`package export ${exportName} must define a nonempty import path`)
+  }
+  const distRoot = resolveFromPackage('dist')
+  const absolutePath = resolveFromPackage(entry)
+  const fromDist = path.relative(distRoot, absolutePath)
+  if (fromDist.length === 0
+    || fromDist === '..'
+    || fromDist.startsWith(`..${path.sep}`)
+    || path.isAbsolute(fromDist)) {
+    throw new Error(`package export ${exportName} import must stay under published dist: ${entry}`)
+  }
+  return {
+    absolutePath,
+    displayPath: path.relative(packageRoot, absolutePath),
+  }
 }
 
 async function assertExists(relPath) {
@@ -134,11 +152,11 @@ function assertFastifyDetectorFixture() {
   }
 }
 
-async function assertCoreFastifyFree() {
+async function analyzeFastifyClosure(entryPoint) {
   const result = await esbuild({
     absWorkingDir: packageRoot,
     bundle: true,
-    entryPoints: ['dist/core/index.js'],
+    entryPoints: [entryPoint],
     format: 'esm',
     logLevel: 'silent',
     metafile: true,
@@ -147,20 +165,40 @@ async function assertCoreFastifyFree() {
     target: 'node22',
     write: false,
   })
-  const violations = findFastifyClosureViolations(result.metafile)
+  return findFastifyClosureViolations(result.metafile)
+}
+
+async function assertCoreFastifyFree(entryPoint) {
+  const violations = await analyzeFastifyClosure(entryPoint)
   if (violations.inputPaths.length > 0 || violations.externalSpecifiers.length > 0) {
     throw new Error(`dist/core Fastify closure violation: ${JSON.stringify(violations)}`)
   }
 }
 
+async function assertServerDetectsFastify(entryPoint) {
+  const violations = await analyzeFastifyClosure(entryPoint)
+  if (violations.inputPaths.length === 0 && violations.externalSpecifiers.length === 0) {
+    throw new Error('Fastify closure negative proof did not detect the published server entry')
+  }
+}
+
 async function main() {
+  const packageJson = JSON.parse(readFileSync(resolveFromPackage('package.json'), 'utf8'))
+  if (!packageJson.files?.includes('dist')) {
+    throw new Error('package files must publish dist')
+  }
+  const coreEntry = resolvePublishedJsExport(packageJson, './core')
+  const serverEntry = resolvePublishedJsExport(packageJson, './server')
+
   for (const relPath of requiredFiles) {
     await assertExists(relPath)
   }
+  await assertExists(coreEntry.displayPath)
+  await assertExists(serverEntry.displayPath)
 
   assertNodeParsable('dist/shared/index.js')
-  assertNodeParsable('dist/core/index.js')
-  assertNodeParsable('dist/server/index.js')
+  assertNodeParsable(coreEntry.displayPath)
+  assertNodeParsable(serverEntry.displayPath)
   assertNodeParsable('dist/front/index.js')
   assertNodeParsable('dist/eval/index.js')
 
@@ -171,7 +209,8 @@ async function main() {
   assertTsParsable('dist/eval/index.d.ts')
   assertConsumerSafeCss('dist/front/styles.css')
   assertFastifyDetectorFixture()
-  await assertCoreFastifyFree()
+  await assertCoreFastifyFree(coreEntry.absolutePath)
+  await assertServerDetectsFastify(serverEntry.absolutePath)
 
   process.stdout.write('build-artifacts: OK\n')
 }
