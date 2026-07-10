@@ -1363,8 +1363,33 @@ test('workspace generated plugin skills open readonly and reject file mutations'
         url: '/api/v1/files/move',
         payload: { from: 'workspace-skill', to: generatedDir },
       })
+      const mkdirInside = await app.inject({
+        method: 'POST',
+        url: '/api/v1/dirs',
+        payload: { path: `${generatedDir}/new-dir`, recursive: true },
+      })
+      const uploadInside = await app.inject({
+        method: 'POST',
+        url: '/api/v1/files/upload',
+        payload: {
+          filename: 'image.png',
+          contentBase64: 'eA==',
+          contentType: 'image/png',
+          directory: generatedDir,
+        },
+      })
 
-      for (const response of [save, remove, moveFrom, moveTo, removeDir, moveDirFrom, moveDirTo]) {
+      for (const response of [
+        save,
+        remove,
+        moveFrom,
+        moveTo,
+        removeDir,
+        moveDirFrom,
+        moveDirTo,
+        mkdirInside,
+        uploadInside,
+      ]) {
         expect(response.statusCode).toBe(403)
         expect(response.json()).toEqual({
           error: { code: ERROR_CODE_READONLY, message: 'skill file is readonly' },

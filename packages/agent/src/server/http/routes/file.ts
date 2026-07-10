@@ -564,6 +564,9 @@ const expectedMtimeMs = typeof body.expectedMtimeMs === 'number'
       const dir = isImage
         ? normalizeUploadDir(body.directory) ?? normalizeUploadDir(settings.markdown?.imageUploadDir) ?? DEFAULT_MARKDOWN_IMAGE_UPLOAD_DIR
         : DEFAULT_FILE_UPLOAD_DIR
+      if (isGeneratedReadonlySkillPath(dir)) {
+        return sendReadonlySkillMutationDenied(reply)
+      }
       const ext = extForUpload(filename, contentType)
       const base = basenameForUpload(filename)
       const unique = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`
@@ -733,6 +736,9 @@ if (filesystem !== USER_FILESYSTEM_ID) {
 
     const recursive = body.recursive === true
     const filesystem = requestedFilesystem(body.filesystem)
+    if (filesystem === USER_FILESYSTEM_ID && isGeneratedReadonlySkillPath(path)) {
+      return sendReadonlySkillMutationDenied(reply)
+    }
 if (filesystem !== USER_FILESYSTEM_ID) {
       try {
         const binding = await resolveFilesystemBinding(request, filesystem)
