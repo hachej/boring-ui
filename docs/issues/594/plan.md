@@ -111,10 +111,11 @@ interface TaskSessionBindingStore {
 
 ### Live task activity
 
-- Activity is derived from the authoritative agent runtime; it is not persisted in `TaskSessionBindingStore`.
+- Activity is derived from the authoritative project session runtime/read model; it is not persisted in `TaskSessionBindingStore`.
+- Target behavior: Boring UI lists all authorized native Pi sessions for the project/workspace and exposes a status read model for those sessions, whether or not a chat pane is currently mounted.
 - A task is `working` when at least one authorized linked session is executing, retrying, or processing a queued continuation. Merely having an open chat pane does not make a task active.
 - Add a scoped bulk session-activity read seam so Tasks does not issue one state request per binding. The response maps requested session IDs to a small stable state such as `idle | working | waiting | error` and omits unauthorized sessions.
-- The task panel subscribes to the existing browser session-status signal for immediate updates from mounted chats and uses the bulk backend seam as authority/fallback for linked sessions whose panes are closed.
+- The task panel may subscribe to the existing browser session-status signal for immediate updates from mounted chats, but that event is only an optimization. It is not the authoritative source because it misses unmounted/standalone project sessions.
 - While the Tasks panel is open, refresh bulk activity on a bounded interval and immediately after binding/opening actions. Do not persist polling results.
 - Task cards show a concise `working` badge/spinner. If multiple linked sessions are active, show the active count. Selecting the indicator opens the active linked chat when unambiguous or the linked-session chooser otherwise.
 
@@ -247,6 +248,22 @@ Hosted proof:
 
 ## Slices
 
+### Spike: Project-wide Pi session inventory and status read model
+
+**Delivers:** a short technical spike that proves how Boring UI can list every authorized native Pi session in a project/workspace and derive a status for each one independent of mounted chat panes.
+
+**Questions to answer:**
+
+- What statuses can be known for persisted-only, live-in-Boring, live-standalone-Pi, errored, waiting, and queued sessions?
+- Is status derivable from existing in-process runtime channels/event stores, or do we need a durable sidecar/index for live session status?
+- What is the local-mode story for sessions created or currently running in standalone Pi outside Boring UI? Can they be marked only as `idle/unknown` unless Pi writes a status event Boring can read?
+- How expensive is bulk status for all sessions in a large project, and what cache/poll interval is safe?
+- What authorization boundary owns this read model in hosted mode?
+
+**Proof:** prototype or test fixture demonstrating list-all + bulk status for at least: mounted working session, closed-pane Boring session, persisted idle session, and standalone-Pi-created session. Document any `unknown` limitation explicitly.
+
+**Review budget:** inside as a spike; implementation may split afterward.
+
 ### Slice 1: Shared session rename
 
 **Delivers:** native `SessionStore.rename`, shared service method, authenticated HTTP route, `usePiSessions.rename`, inline left-list rename.
@@ -259,9 +276,9 @@ Hosted proof:
 
 ### Slice 2: Compact agent session management and activity read model
 
-**Delivers:** shared service search semantics, one `manage_sessions` tool for search/rename/guarded delete, and a scoped bulk session-activity read seam.
+**Delivers:** shared service search semantics, one `manage_sessions` tool for search/rename/guarded delete, and a scoped bulk session-activity read seam informed by the project-wide session-status spike.
 
-**Blocked by:** Slice 1 shared rename service.
+**Blocked by:** Slice 1 shared rename service and the project-wide session-status spike for non-mounted session semantics.
 
 **Proof:** tool contract/authorization tests and existing route tests.
 
@@ -271,7 +288,7 @@ Hosted proof:
 
 **Delivers:** binding model/store contract, file adapter, routes, TaskCard create+link/reopen/multiple/unlink flow, task-reference title convention, manual link of an existing session, and live working indicators backed by immediate browser events plus the bulk activity read seam.
 
-**Blocked by:** Slice 1 for title rename only; binding can otherwise be developed independently.
+**Blocked by:** Slice 1 for title rename and the project-wide session-status spike for working indicators; binding CRUD can otherwise be developed independently.
 
 **Proof:** store conformance, routes/UI tests, CLI restart and standalone-Pi manual-link recording.
 
