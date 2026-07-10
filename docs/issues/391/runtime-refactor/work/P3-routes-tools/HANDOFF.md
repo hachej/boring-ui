@@ -16,6 +16,13 @@ Derived strictly from [TODO.md](./TODO.md) and [PLAN.md](./PLAN.md). Tick each b
 - [ ] BBP3-016 — Route + tool source-of-truth regression tests
 - [ ] BBP3-017 — Extend invariants for the routes/tools boundary
 - [ ] BBP3-018 — Dedicated `MODEL_NOT_ALLOWED` 403 error code in agent shared (#550 gap 3; Amendment 2026-07-06)
+- [ ] BBP3-019 — Capability-gate the existing workspace filesystem front plugin
+- [ ] BBP3-020 — Atomically project each trusted v1 default-agent plugin from
+      one verified boot-time server record; disable/pre-registration failure
+      leaves zero server/prompt residue; browser failure preserves prior UI;
+      immutable host-app/plugin activation-input snapshot emitted for D1; D1
+      mounts only `scopedRoutes` over bound Workspace/scoped repositories and
+      rejects raw `routes`, including indirect foreign session/project fixtures
 
 ## Verification commands
 - [ ] `pnpm --filter @hachej/boring-bash run build`
@@ -41,11 +48,22 @@ Derived strictly from [TODO.md](./TODO.md) and [PLAN.md](./PLAN.md). Tick each b
 - [ ] `pr4-move-fs-git-routes` completed BBP3-014
 - [ ] `pr5-wire-composition` completed BBP3-015 (workspace-family hosts through server plugin; direct composers through library mode only where the plugin pipeline is absent)
 - [ ] `pr6-sot-tests-invariants` completed BBP3-016 + BBP3-017 + BBP3-018 (folded; Amendment 2026-07-06)
+- [ ] `pr7-capability-gate-filesystem-ui` completed BBP3-019
+- [ ] `pr8-atomic-default-plugin-contribution` completed BBP3-020
 
 ## Review gates
 - [ ] Phase 1 (`createAgent()` with injected `tools`/runtime — no `features` param) + Phase 2 (providers moved) confirmed present, else STOP+report.
 - [ ] Behavior-freeze verified: tool names/schemas/prompt snippets/readiness tags/error codes unchanged; renderer snapshots unchanged.
 - [ ] `disableDefaultFileTools` parity test passes; pure mode has zero file routes/tools.
+- [ ] Pure mode has zero filesystem plugin/provider/renderer registration and
+      zero file/tree/search/upload UI API calls.
+- [ ] Trusted plugin tool/route/Pi prompt+resources/front contributions come
+      from one verified boot-time server record; scan-only/disabled/pre-
+      registration-failed plugins contribute no server/prompt residue. Browser
+      failure preserves previous-good UI. Snapshot digest covers immutable
+      host-app/source/manifest, canonical redacted activation inputs, and
+      ordered contribution metadata; mutable/non-reconstructible D1 sources
+      reject. No per-agent refs/requirements were pulled into v1.
 - [ ] `(filesystem, path)` param + spoof guard + readonly `rejectMutation` preserved verbatim; company_context no-leak conformance green.
 - [ ] Single source-of-truth regression tests pass; no second storage-root resolver introduced.
 - [ ] `pnpm lint:invariants` + `pnpm audit:imports` green; zero agent→bash value imports; no static `packages/workspace/src` import from `@hachej/boring-bash`.
@@ -55,6 +73,10 @@ Derived strictly from [TODO.md](./TODO.md) and [PLAN.md](./PLAN.md). Tick each b
 - [ ] pure mode (`createAgent({ runtime: 'none' })`) registers none of these routes/tools.
 - [ ] company_context no-leak conformance still green.
 - [ ] `(filesystem, path)` addressing + readonly enforcement identical to #416.
+- [ ] Existing filesystem UI stays workspace-owned and capable workspaces retain
+      behavior; P4 remains a post-v1 relocation.
+- [ ] Trusted workspace plugins activate atomically for the v1 `default` agent;
+      per-agent plugin composition remains post-v1 P6.
 - [ ] **Amendment (2026-07-06) — UI/agent parity:** both surfaces still resolve visibility through the SINGLE `getFilesystemBindings` decision path; grep-gate proves no second "what can this user see" path exists.
 - [ ] **Amendment (2026-07-06) — published package:** moved routes/tools land as ADDITIVE export entries (`./agent`) in the same cohort bump as any governance-consumed `/server` change.
 

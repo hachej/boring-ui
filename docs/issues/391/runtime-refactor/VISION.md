@@ -6,7 +6,11 @@ The entry point to this plan pack. What we are building, why, and the checkable 
 
 The owner's vision, in one sentence: **eve-style DECLARATIVE authoring that ships agents fast, natively integrated into the boring-ui FARM, open to foreign agents.** Land on an **eve-class UX** (`vercel/eve`) — author an agent, deploy it, converse with it from any channel, inspect it — but **steered from the boring-ui workspace** and **hosted in Europe**:
 
-- **eve-style declarative authoring (ship agents fast):** an `agents/<name>/` directory compiles to a `createAgent()` config + an `AgentRegistry` entry — no imperative wiring. **Delivery is deferred post-P7** (the `AgentRegistry` must exist first; no-speculative-abstraction policy). Its v0 is P6a's `agents: [...]` workspace declaration; the directory-compiler is the post-P7 follow-up (P8).
+- **eve-style declarative authoring (ship agents fast):** an `agents/<name>/`
+  directory compiles to a self-contained content-addressed bundle containing a
+  versioned `AgentDefinition` and immutable referenced assets. Local dev and D1
+  consume the same bundle/digest; host resolution creates the immutable runtime
+  snapshot. No platform-source edits or imperative host wiring.
 - **the boring-ui FARM, natively integrated:** the workspace is the **farm control plane** — fleet view (every agent + session across every surface), tasks (work items linked to sessions), artifacts (outputs agents publish — 08 `data-artifact`), approvals (one inbox, `resolveInput`). This epic ships the *substrate*; the farm UI is the next epic.
 - **OPEN integration — foreign agents join the farm:** a non-boring agent (Claude Code, Codex, any MCP client) can attach an environment (E2 MCP projection) and — deferred — create tasks / publish artifacts / request human input over a Farm MCP control plane.
 - **Flue's internals:** durable indexed event streams, channel ingress packages, `SessionEnv`-shaped environments.
@@ -15,6 +19,37 @@ The owner's vision, in one sentence: **eve-style DECLARATIVE authoring that ship
 - **EU-sovereign hosting:** see invariant 15; deployment tiers/providers in [`architecture/10-sandbox-deployment-eu.md`](architecture/10-sandbox-deployment-eu.md).
 
 Grounding: [`architecture/00-global-isa.md`](architecture/00-global-isa.md) "North star" and [`architecture/08-pluggable-agent-surfaces.md`](architecture/08-pluggable-agent-surfaces.md) "The steering surface".
+
+## Delivery increments and product proof
+
+The vision is intentionally wider than the first release. Scope is controlled by
+increment, not by pretending every future lane is on one critical path.
+
+| Increment | Ships | Does not wait for |
+| --- | --- | --- |
+| **Release 0 — vertical tracer** | safe headless façade plus one bearer-authenticated managed MCP vertical returning self-contained bounded Markdown to a stock client | durable transports, environment extraction, tenancy automation, public-demo/download delivery |
+| **Version 1 — agent factory** | minimal agent-directory authoring, versioned definition/deployment separation, reliable core transport, optional working environment, and one dedicated EU URL -> landing -> authorized workspace -> deployed default agent path | shared tenancy, FUSE/S3, farm UI, hosted child apps, external environment MCP projection |
+| **Increment 2+ — platform expansion** | additional surfaces, shared tenants, control plane, foreign-agent environment projection, advanced mounts and services | none of these may retroactively block v1 |
+
+The v1 product acceptance is binding:
+
+> With host credentials and infrastructure preconfigured, a developer can
+> scaffold one `agents/<name>/` directory, validate it, run a local turn, and
+> deploy it to one dedicated EU tenant at an exact hostname such as
+> `insurance-comparison.senecapp.ai` in 15 minutes or less, with zero
+> platform-source edits. That URL serves a bounded landing page; its CTA enters
+> existing-member sign-in; an authorized member reaches the provisioned
+> workspace; and that workspace selects the deployed definition as agent
+> `default`. The proof records definition, deployment, and resolved snapshot
+> digests. Reapplying is crash/concurrency-safe and creates no duplicate
+> resource; the remote target materializes without access to the authoring
+> checkout; rollback selects the previous complete deployment snapshot and
+> reproduces its resolved digest.
+
+The proof records elapsed time, platform files changed, manual steps, hostname,
+landing/auth/workspace/default-agent result, definition digest, deployment id,
+and rollback result. Passing component tests without this golden path does not
+complete v1.
 
 ## Business horizons
 
@@ -30,10 +65,11 @@ The epic builds the shared substrate, not any one commercial topology. **Do not 
 deployment, an agent turns a tenant YAML into a live `company.senecapp.ai` - its
 own skills, files, context, and environment pool - hot, with no redeploy: the
 near-zero-marginal-cost outreach engine. This is the **Shared Subdomain tier**.
-The two-tier model is explicit: D1 is the **Sovereign / EU Tenant Factory**
-tier, one dedicated deployment per company; D2 is the **Shared Subdomain** tier,
-many subdomain tenants in one deployment. Both consume the same
-`WorkspaceAgentsDeclaration`.
+The two-tier model is directional: D1 is the **Sovereign / EU Tenant Factory**
+v1 tier, one dedicated deployment and exact hostname per company/site; D2 is a
+post-v1 **Shared Subdomain** tier where many tenants share one deployment and
+wildcard application router. Both may consume the same definition/deployment
+contracts, but v1 does not build shared tenancy.
 
 ## Platform / factory boundary
 
@@ -43,16 +79,20 @@ agent endpoints, public demo/share contracts, and telemetry hooks. It also owns
 stable endpoint/result URL shapes so a factory can wire public flows without
 knowing runtime internals.
 
-`boring-ui-factory` owns landing pages, positioning/copy, GTM assets, pricing
-page content, and CTA workflows such as try/book/request. Factory assets may
-consume the platform's demo/share/lead contracts, but they do not define agent
-runtime authority, provisioning, or the canonical agent definition.
+`boring-ui` v1 owns a minimal exact-host landing shell, bounded declarative
+title/summary/CTA text, same-origin member sign-in, membership-gated workspace
+resolution, and the workspace's deployed-default-agent binding.
+`boring-ui-factory` owns bespoke landing design/code, generated
+positioning/copy, GTM assets, pricing content, analytics funnels, and campaign
+workflows. Factory assets may consume the platform's site/demo/share/lead
+contracts, but they do not define agent runtime authority, provisioning, or the
+canonical agent definition.
 
 ## Future-scale checklist (assert, do not build)
 
 Nothing merged in this epic may preclude these later scale moves; each becomes build scope only when demand requires the named tenant/sandbox/load trigger:
 
-- **Postgres EventStreamStore/state adapter** — keep the existing interface+conformance seam; build when SQLite/state.db limits block N tenants or audited retention.
+- **Postgres store adapter** — keep interfaces/conformance seams; build when one-file SQLite `agent.db` limits block N tenants or audited retention.
 - **Multi-region tenancy** — keep tenancy explicit in `SessionCtx`/workspace routing and avoid region-global singletons; build when N tenants require residency or latency splits.
 - **Warm sandbox pools** — preserve provider lifecycle hooks for a Firecracker-snapshot tier distinct from X1 mount tiers; build when M sandboxes need sub-cold-start admission.
 - **Model gateway** — keep model selection injectable and policy-visible; build routing/fallback/caching when N tenants or M requests/minute need centralized controls.
@@ -70,10 +110,10 @@ Each vision component mapped to what exists today → the delta work orders → 
 | 3 | **Flexible sandbox** — swappable exec providers, honest capabilities | direct/bwrap/vercel-sandbox behind `Sandbox`/`RuntimeBundle`, inside `packages/agent`, static capability claims | [P2](work/P2-sandbox-providers/) (providers → `@hachej/boring-sandbox`; `resolveMode` → boring-bash; capabilities `reported\|unknown`) → [P5](work/P5-provisioning-secrets/) (provisioning, secret brokering) | Provider swap needs no agent-package change; acyclic layering; a test proves no brokered secret is readable inside a sandbox; remote-worker capabilities only from handshake |
 | 4 | **External agent access** — any MCP client mounts an environment | None (MCP used client-side only) | [E2](work/E2-mcp-projection/) (MCP projection, token→`BoundFilesystemContext`) | An external MCP client mounts a boring environment; denied files absent over MCP; no-leak suite green on the MCP mount |
 | 5 | **Flue building blocks** — durable replayable streams and surface transport substrate | Bespoke replay (`PiChatReplayBuffer` + `?cursor=` NDJSON); no durable public transport | [T1](work/T1-durable-events/) (DS protocol: SQLite `EventStreamStore` + approvals-on-stream) → [T2](work/T2-transport/) (transport contract, front refit) | SSE drop reconnects losslessly by `offset`; an approval raised in one client is answered from another over the shared public transport |
-| 6 | **eve UX — workspace as control plane** | Partial: `SessionList`/search, `DebugDrawer`, ask-user UI, model pickers. No agent registry, no cross-surface view, no unified approvals | [P6](work/P6-plugin-child-app/) (`AgentRegistry`, plugin/child-app scoping) → [P7](work/P7-multi-agent-inspection/) (agentId routing + public agent list + `/info`) → [S3](work/S3-control-plane-ux/) (inspect + cross-surface sessions + approval inbox) | Workspace lists agents from the scrubbed agent-list endpoint and inspects each through `/info`; external-surface sessions are observable by `sessionId`; a pending approval from any surface is answerable from the workspace inbox |
-| 7 | **Instant Subdomain Tenancy** — shared EU deployment, hot subdomain tenants | Dedicated/manual tenant provisioning only | [D1](work/D1-tenant-provisioning/) (dedicated/sovereign tenant factory) + [D2](work/D2-shared-tenant-mesh/) (shared subdomain tenant mesh) | One `WorkspaceAgentsDeclaration` supports both tiers: D1 emits a dedicated deployment manifest; D2 hot-registers `company.senecapp.ai` in one shared EU deployment with cross-tenant isolation conformance |
+| 6 | **eve UX — workspace as control plane** | Partial: `SessionList`/search, `DebugDrawer`, ask-user UI, model pickers. No resolved-agent registry, no cross-surface view, no unified approvals | P6-R `ResolvedAgentRegistry` → [P7](work/P7-multi-agent-inspection/) (agentId routing + public agent list + `/info`) → [S3](work/S3-control-plane-ux/) (inspect + cross-surface sessions + approval inbox) | Workspace lists agents from the scrubbed agent-list endpoint and inspects each through `/info`; external-surface sessions are observable by `sessionId`; a pending approval from any surface is answerable from the workspace inbox |
+| 7 | **Dedicated EU delivery (v1)** | Dedicated/manual tenant provisioning only | [A1](work/A1-agent-authoring/) (directory compiler/validator) + [D1](work/D1-tenant-provisioning/) (dedicated tenant factory + site journey) | The timed golden path reaches exact URL -> landing -> auth -> authorized workspace -> deployed agent as `default`, and can roll it back without platform-source edits |
 | 8 | **EU-sovereign hosting** | Implicitly true but unstated | Invariant 15 enforced across every work order | Default stack deploys on EU infra with no US-hosted hard dependency; `vercel-sandbox` is optional |
-| — | **S3/FUSE mounts** — object-store-backed environments (farm substrate) | None | [X1](work/X1-s3-fuse-mounts/) (S3 prefix as a real directory in a sandbox; needs P2+P5) | A readonly S3 mount passes the no-leak suite; `bash`-visible == file-route-visible over the mount; no credential readable inside the sandbox; EU-endpoint matrix green |
+| — | **Shared tenancy and S3/FUSE mounts (post-v1)** | None | [D2](work/D2-shared-tenant-mesh/) + [X1](work/X1-s3-fuse-mounts/) | Tracked increments with their own security/performance exits; neither gates the dedicated v1 path |
 | 9 | **The farm (next epic — deferred; does NOT gate this epic's exit)** | boring-tasks kanban (#486) + this epic's substrate (runtime-owned `sessionId`, `agentId` scoping, replayable streams, S3/FUSE mounts, reserved `data-artifact` part) | **#397 durable task service** + the **farm epic** (fleet view, artifact shelf, Farm MCP control plane) | A foreign agent creates a task, works it in a mounted env, publishes an artifact, requests approval — all visible in the workspace (this epic guarantees only the substrate) |
 
 > **Business line (farm row):** the farm (row 9) is **Horizon-1 INTERNAL leverage** — the factory that delivers vertical-agent client work, not a product sold yet. It becomes client-facing at Horizon 2 and hub-and-spoke at Horizon 3. One deployable artifact; topology is the product line.
@@ -104,9 +144,9 @@ Each vision component mapped to what exists today → the delta work orders → 
 
 ### State-store reservations (no scope addition)
 
-- #397 task tables target `state.db`; the durable task service remains farm-epic scope.
-- Farm-epic artifact index targets a rebuildable `state.db` table folded from `data-artifact` events.
-- #424 share-records migration targets `state.db`; public Markdown share remains non-artifact.
+- #397 task tables may use later `agent.db`/Postgres state tables; the durable task service remains farm-epic scope.
+- Farm-epic artifact index is a derived table folded from `data-artifact` events.
+- #424 share records remain outside #391; public Markdown share remains non-artifact.
 
 ## Architecture at a glance
 
@@ -132,7 +172,7 @@ Layering edges: `sandbox → agent(types)`; `bash → sandbox(values) + agent(ty
 
 A surface and the agent core exchange exactly four things ([08 "What every framework converges on"](architecture/08-pluggable-agent-surfaces.md)):
 
-1. **Message in** — a normalized user turn `AgentSendInput = { sessionId?, content, inputAssets?, actor, ctx?, originSurface? }` (omit `sessionId` to create a session). `ctx?: SessionCtx` is boring's own tenancy context, never surface-native addressing. **Amendment (2026-07-08):** user files/images/blobs are input assets, not a core `attachments` capability; intake resolves to a writable accepting environment sink, a provider-direct asset path allowed by host policy, or a stable rejection.
+1. **Message in** — `AgentSendInput = { sessionId?, content, inputAssets?, actor?, ctx?, originSurface?, requestId }`. `requestId` is caller-supplied write idempotency; retries never synthesize a new random identity in core. Actor/origin are durable attribution. `ctx` is trusted boring tenancy context, never surface-native addressing.
 2. **Event stream out** — one ordered, indexed, replayable stream of typed events; wire/transport swappable.
 3. **Approvals / HITL** — a request event out + a response call in, on the same channel, declared on the tool — not per-surface special cases.
 4. **Session state** — a runtime-owned `sessionId` + serializable transcript; persistence and addressing are boundary decisions.
@@ -161,7 +201,6 @@ Full text and rationale: [`architecture/08-pluggable-agent-surfaces.md`](archite
 
 ## Explicitly deferred (do not build in this epic)
 
-- **Agent-as-directory authoring** (eve `defineAgent` file conventions) — unblocked after P7's `AgentRegistry`; file a dedicated issue at P8.
 - **`FileTreeDataProvider` boundary** — until #295 is scheduled.
 - **Document-authority write/edit override seam** — zero real consumers; arrives with #367/#226 (filed at P8).
 - **Subagent environment grants** — first consumer lands in P7 (kept minimal there).
@@ -178,7 +217,12 @@ Full text and rationale: [`architecture/08-pluggable-agent-surfaces.md`](archite
 ## Dispatch order (summary)
 
 ```txt
-P0 → P1 → { M1 (v0 after P1 pr2; share-link slice gated on #424/public-share API; sidecar) } ∥ { T1 → T2 → S3 → S4 } ∥ { P2 → P3 → [ P4, E1 → E2, P5 → P6a → P7 → [P8, M2 → {D1, D2} → S4] ] } ∥ { X1 (needs P2+P5+E1) }
+R0: P0 -> P1 -> M1. V1: P1 -> P6-D -> A1; P1 -> T1 -> T2;
+P1 -> P2 -> P3 (including BBP3-020) -> E1 -> P5a -> P6-R -> D1; these join at P8.
+All remaining lanes are post-v1.
 ```
 
-Rows 1→5 are infrastructure; M1 is the outreach-demo sidecar after P1 pr2 for v0, with only the share-link slice gated on #424/public-share API; M2 is the committed MCP agent-surface follow-up after P7+T2; D1/D2/S4 are factory/onboarding follow-ups. Rows 6–7 are product payoff and gate on the runtime lanes; row 8 is a standing constraint, not a phase. P5 dispatches off P3 in parallel with P4 and E1→E2. P8 gates on **all runtime lanes** except P6b, M1, M2, D1, D2, and S4; M2 may ship after P8 if the runtime exit is otherwise green. **Amendment (2026-07-08):** S1/S2 are relocated out of #391 active scope, so this dispatch summary intentionally does not include Slack, spreadsheet, or Office implementation lanes. The authoritative phase table, dependency graph, dispatch protocol, and binding policies are in [`INDEX.md`](INDEX.md).
+Delivery is milestone-based: R0 ships M1 after the safe P1 boundary; v1 joins
+definition/authoring, reliable transport, optional runtime, and D1 dedicated
+delivery at P8. P4, E2, X1, P5b, P6 expansion, P7, M2, D2, S3, and S4 are
+post-v1. The authoritative dependency graph is in [`INDEX.md`](INDEX.md).

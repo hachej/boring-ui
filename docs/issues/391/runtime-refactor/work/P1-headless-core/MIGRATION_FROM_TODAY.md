@@ -72,19 +72,27 @@ The important rule: new consumers should look at semantic facts, not runtime mod
 
 ## Current-to-target mapping
 
-P1/P2 should use a Flue-inspired strangler adapter from today's `RuntimeBundle` to the new environment seam:
+P1/P2 should use a host-side strangler adapter from today's `RuntimeBundle` to
+the new environment seam:
 
 ```ts
-function environmentRuntimeFromBundle(bundle: RuntimeBundle): {
-  environments: readonly AttachedEnvironmentRuntime[]
-  capabilities: readonly ResolvedEnvironment[]
+function prepareEnvironmentInputsFromBundle(bundle: RuntimeBundle): {
+  facts: readonly ResolvedEnvironment[]               // agent core
+  contributions: AuthGatedEnvironmentContributions    // host invokes per operation
+  tools: readonly AgentTool[]
+  readinessRequirements: readonly string[]
+  systemPromptFragments: readonly string[]
+  inputAssetHandler?: InputAssetHandler
 } {
   // user environment from bundle.workspace + bundle.sandbox + bundle.fileSearch
   // additional named environments from bundle.filesystemBindings
 }
 ```
 
-This lets current code keep working while tools/routes/prompt migrate from scattered `RuntimeBundle` fields to named operation-bearing environments.
+This lets current code keep working while tools/routes/prompt migrate from
+scattered `RuntimeBundle` fields to host-owned prepared attachments. Agent core
+receives only the flattened inputs and methodless facts, never an
+operation-bearing environment object.
 
 | Today | Target meaning | P1 handling |
 | --- | --- | --- |
@@ -482,7 +490,10 @@ Agent registry exposes agent/subagent info and versioned/snapshotted definitions
 ## First implementation steps from code review
 
 1. **Relocate core graph:** move/split `server/createAgent.ts` into `src/core/`; server wrapper injects Pi defaults and the sealed pure cwd shim.
-2. **Define/export capability facts:** add `ResolvedAgentCapabilities`, `ResolvedEnvironment`, and `AttachedEnvironmentRuntime` to shared/type surfaces; avoid scalar filesystem/shell/attachment facts.
+2. **Define/export capability facts:** add `ResolvedAgentCapabilities` and
+   methodless `ResolvedEnvironment` to agent shared/type surfaces. Keep
+   prepared handles behind host/boring-bash `withAuthorizedView`; expose only
+   auth-gated contributions and avoid scalar filesystem/shell facts.
 3. **Wire projections:** expose pure-mode facts and coarse direct/local/vercel facts through `registerCapabilitiesContributor` and app/profile composition.
 4. **Run pi-harness residue audit:** assert pure prompt/config has no cwd/workspace/AGENTS.md/file/skill residue; decide whether `createPureRuntimeCwd` is an acceptable sealed shim.
 5. **Fix readiness/lifecycle:** make headless readiness honest via injection/shared tracker; dispose runtime bindings on cache eviction/profile dispose; then unify tool composition on `mergeTools()` across app/plugin paths.

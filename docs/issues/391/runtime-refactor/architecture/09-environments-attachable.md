@@ -6,7 +6,11 @@ Status: v2 addition. Generalizes the #416 filesystem-binding model: **a filesyst
 
 - One environment (fs + optional exec), many consumers: the main agent, subagents, *other* boring agents, and **external agents** (Claude Code, Codex, any MCP client).
 - One agent, many environments: zero (pure mode), its private `user` workspace, readonly `company_context`, a shared team scratch fs, an ephemeral per-task sandbox.
-- **One workspace/project, many agents (Amendment 2026-07-08).** A workspace holds N agents (the per-project `AgentRegistry`, BBP6-009), each with its own `AgentDefinitionDeclaration`. Environments are **project-scoped resources with agent-independent `id`s**, declared once at the workspace level (the environment-pool counterpart of `agents:[]`); each agent's `environmentAttachments` *references* a subset of that pool by id. Two agents that reference the **same** environment id **share** that filesystem; two that reference **different** ids are isolated. Because the #416 runtime scope key already includes `agentId` (`humanUserId\0agentId\0sessionId\0workspaceId\0requestId`), shared attachment yields **per-agent scoped handles over the same underlying bytes** — no new key field is needed.
+- **One workspace/project, many agents (post-v1 P7).** A workspace may hold N
+  `AgentDeployment`s referencing versioned `AgentDefinition`s. Environments are
+  project-scoped resources with agent-independent ids. Trusted identifiers are
+  validated and encoded as a structured scope tuple; delimiter concatenation
+  and UUID uniqueness are not security boundaries.
 - **Sharing semantics.** Shared **readonly** (e.g. `company_context`, a team reference fs) is clean — many agents, no contention. Shared **writable** (e.g. `team_scratch`) is genuine concurrent access: it must be an **explicit authored choice** in both agents' `environmentAttachments` (`access: 'readwrite'`), and v1 provides **no cross-agent locking** — semantics are last-writer-wins at the filesystem layer and readers may observe partial writes. Accidental write-sharing is prevented by the default: any non-`user` attachment defaults to readonly/`execPolicy: 'none'` (security invariant 4). Multi-agent *within one project* is a different axis from multi-**project** navigation (issues #361/#363/#377, the cross-project left bar) — those are separate workspaces each with their own registry and pool; do not conflate.
 - Attachment is the only coupling, in both directions. No implicit cwd inheritance anywhere.
 
@@ -14,7 +18,16 @@ Status: v2 addition. Generalizes the #416 filesystem-binding model: **a filesyst
 
 Builds directly on the landed #416 shapes (`FilesystemId`, `FilesystemBinding`, `FilesystemBindingProvider`, `PreparedFilesystemBinding`, `ScopedFilesystemRuntimeBindingManager`) — generalized, not replaced:
 
-Type ownership: the **rich** `Environment`/`EnvironmentAttachment` types live in `boring-bash/shared`; `Environment.capabilities` is a type-only alias/pick of the authoritative `ProviderCapabilities` from `@hachej/boring-sandbox/shared` (no second capability contract). **Amendment (2026-07-08):** the minimal core-facing bridge is generalized from the E1-era `{ bindings: RuntimeFilesystemBinding[] }` shape to two agent-owned surfaces: `AttachedEnvironmentRuntime[]` for operation-bearing runtime objects consumed by tools/routes/adapters, and `ResolvedEnvironment[]` for methodless public facts consumed by surfaces/catalogs. The old binding array remains the filesystem facet of an attached environment, not the whole core model. boring-bash's `resolveAttachments` imports the agent-defined types type-only and returns the prepared runtime objects plus projections. The agent core imports **nothing** from boring-bash or boring-sandbox.
+Type ownership: the **rich** `Environment`/`EnvironmentAttachment` and
+operation-bearing `PreparedEnvironmentAttachment` types live in `boring-bash`;
+`Environment.capabilities` is a type-only alias/pick of the authoritative
+`ProviderCapabilities` from `@hachej/boring-sandbox/shared` (no second
+capability contract). The agent core owns only methodless `ResolvedEnvironment`
+facts. The host owns preparation and disposal, then flattens prepared
+attachments into the core's existing injected tools, prompt fragments,
+readiness requirements, and input-asset handler. The agent core imports
+**nothing** from boring-bash or boring-sandbox and never receives raw `exec`,
+filesystem handles, or provider lifecycle authority.
 
 ```ts
 // boring-bash/shared — the rich, host-facing environment types
@@ -25,9 +38,9 @@ interface Environment {
   // NO fs/exec ops member and no `lifecycle` member. The Environment carries only identity,
   // provider, and typed capability facts — `Environment = { id, provider, capabilities }`.
   // Operations are NOT a field on the Environment: they are constructed on the PREPARED
-  // bindings by `resolveAttachments` (host-supplied mount facts + the #416 projection ops).
+  // bindings by `prepareAttachmentLifetime` (host-supplied mount facts + the #416 projection ops).
   // Preparation and disposal flow through the existing `ScopedFilesystemRuntimeBindingManager`
-  // via the E1 `resolveAttachments` reduction — the environment carries no prepare/dispose/
+  // via the E1 `prepareAttachmentLifetime` reduction — the environment carries no prepare/dispose/
   // invalidate of its own, and its mount path is host-supplied per attachment entry.
 }
 
@@ -39,24 +52,8 @@ interface EnvironmentAttachment {
   execPolicy: 'none' | 'attached'   // whether bash/exec runs against this env (02/#416 exec rules apply)
 }
 
-// @hachej/boring-agent shared — the minimal core-facing shape the agent OWNS.
-// What an agent/session receives is resolved by the host, never self-served.
-interface AttachedEnvironmentRuntime {
-  id: string
-  filesystem?: {
-    access: 'readonly' | 'readwrite'
-    acceptsInputAssets?: boolean
-    defaultInputAssetSink?: boolean
-    bindings?: RuntimeFilesystemBinding[] // the landed #416 filesystem facet
-  }
-  exec?: unknown
-  tools: string[]
-  provider?: string
-  label?: string
-  dispose?(): Promise<void>
-}
-
-// Public facts only: no methods, handles, cwd, or lifecycle authority.
+// @hachej/boring-agent/shared — public facts only: no methods, handles, cwd,
+// raw exec value, or lifecycle authority.
 interface ResolvedEnvironment {
   id: string
   filesystem?: {
@@ -70,7 +67,32 @@ interface ResolvedEnvironment {
 }
 ```
 
-Resolution (no registry vocabulary in E1): hosts reduce an `EnvironmentAttachment[]` to prepared environment runtimes via a thin `resolveAttachments` adapter in boring-bash/server (E1). For filesystem-backed attachments, that runtime includes the landed #416 `RuntimeFilesystemBinding[]` facet; for exec/tool-bearing attachments, it also carries the attached exec/tool facts. There is **no `EnvironmentRegistry` class** and **no competing prepare/dispose lifecycle** (the existing `ScopedFilesystemRuntimeBindingManager` still owns filesystem preparation and disposal). The agent core only sees agent-owned `AttachedEnvironmentRuntime[]` and `ResolvedEnvironment[]` via injection, importing nothing from boring-bash; boring-bash imports those agent-defined types type-only. The one cross-package type edge is boring-bash → agent (invariant-checked). An **address-by-id lookup (a plain `Map<environmentId, Environment>`) is introduced later in E2**, where the MCP projection actually needs to resolve an environment by id — not in E1.
+Resolution (no registry vocabulary in E1): the host prepares an
+`EnvironmentAttachment[]` through `prepareAttachmentLifetime` in
+boring-bash/server. A stable `AttachmentLifetimeKey` contains trusted storage/
+workspace/subject/agent/runtime-instance identity, optional session identity,
+and `attachmentSetDigest` derived from the canonical selected catalog entries;
+it explicitly excludes per-request ids. `prepareAttachmentLifetime` recomputes
+and verifies that digest before cache lookup. A separate authenticated request
+context authorizes each route/UI/tool access through
+`AttachmentLifetimeOwner.withAuthorizedView(requestContext, lifetimeKey, fn)`.
+The callback receives a short-lived lease; it cannot be retained and becomes
+invalid when the callback settles. `prepareAttachmentLifetime(...)` returns
+only `{ facts, contributions }`: methodless `ResolvedEnvironment[]` plus
+auth-gated tool/route/UI/prompt/input-asset contribution closures. It never
+returns raw `PreparedEnvironmentAttachment[]` to a consumer. Each operation on
+a contribution enters `withAuthorizedView`, so a long-lived route, tool, or UI
+binding cannot bypass a later authorization check. One host-owned lifetime owner
+prepares each attachment once for that stable key; tools, routes, and UI resolve
+through the same view across many authorized operations. The landed
+`ScopedFilesystemRuntimeBindingManager` remains the
+filesystem preparation primitive, but receives a stable preparation context,
+never the current HTTP request id. Eviction, invalidation, failure, and shutdown
+dispose a prepared attachment exactly once. The agent receives only flattened
+capability inputs plus matching `ResolvedEnvironment[]` facts. E1 itself adds no
+registry. P6-R, the first real v1 lookup consumer, owns a minimal host-only
+`DeploymentAttachmentCatalog` from opaque deployment ref to validated E1 entry;
+it is injected, workspace-scoped, and has no lifecycle or global singleton.
 
 ## Consumers
 

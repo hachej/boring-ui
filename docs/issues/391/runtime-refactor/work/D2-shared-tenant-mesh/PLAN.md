@@ -1,4 +1,7 @@
-# D2-shared-tenant-mesh - Plan
+# D2-shared-tenant-mesh — Plan
+
+Status: post-v1; not a #391 v1 exit gate. Start only after repeated D1 delivery
+and a trusted adapter-created tenant authority are proven.
 
 > Phase: Phase D2 - shared-deployment subdomain tenancy · Work order: [TODO.md](./TODO.md) · Handoff: [HANDOFF.md](./HANDOFF.md)
 > Ordering authority: [INDEX.md](../../INDEX.md) · Vision: [VISION.md](../../VISION.md) · PR plan: [PR-PLAN.md](../../PR-PLAN.md)
@@ -6,7 +9,8 @@
 ## Governing architecture
 
 - [10-sandbox-deployment-eu.md](../../architecture/10-sandbox-deployment-eu.md) - EU host topologies: self-host, D1 dedicated/sovereign tenants, and D2 shared subdomain tenants.
-- [P6-plugin-child-app](../P6-plugin-child-app/TODO.md) - BBP6-009 `WorkspaceAgentsDeclaration`, environment pool, and `AgentRegistry`.
+- [P6-plugin-child-app](../P6-plugin-child-app/TODO.md) - BBP6-009
+  `WorkspaceAgentsDeclaration` plus P6-R `ResolvedAgentRegistry`.
 - [P1-headless-core](../P1-headless-core/TODO.md) - optional `workspaceId` in `SessionCtx` and `sessionStorageRoot`.
 - [P5-provisioning-secrets](../P5-provisioning-secrets/TODO.md) - provisioning/readiness/secret brokering.
 - [P7-multi-agent-inspection](../P7-multi-agent-inspection/TODO.md) - `agentId` routing and `/info`.
@@ -19,6 +23,9 @@
 tenancy model. D1 is the Sovereign / EU Tenant Factory tier: one dedicated
 deployment per company. D2 is the shared tier: one shared EU deployment serves
 many subdomain tenants. Both tiers consume the same `WorkspaceAgentsDeclaration`.
+D1 now proves an exact dedicated hostname plus landing/auth/workspace/default-
+agent journey, but it still has no wildcard application router or live
+multi-tenant registry; those remain D2's distinct security boundary.
 
 D2 is a sidecar factory-lane work package, sibling to D1, and independent of the
 #376 child-app hostname resolver. It turns an agent-authored tenant YAML into a
@@ -27,8 +34,8 @@ redeploying the app. Unknown refs and unknown hosts fail closed.
 
 ## Dependencies
 
-D2 depends on P6a (BBP6-009 `WorkspaceAgentsDeclaration` + environment pool +
-`AgentRegistry`), P1 (optional `workspaceId` in `SessionCtx` +
+D2 depends on P6-D/P6-R (`WorkspaceAgentsDeclaration` + environment pool +
+`ResolvedAgentRegistry`), P1 (optional `workspaceId` in `SessionCtx` +
 `sessionStorageRoot`), P5 (provisioning/readiness/secret brokering), P7
 (`agentId` routing and `/info`), T1 (per-`SessionCtx` durable stores +
 cross-context leakage test), and M2 (`public-demo`, `demoPolicy`,
@@ -58,12 +65,13 @@ tenant boundary.
 
 ## Beads
 
-### BBD2-001 - Host→tenant router (L)
+### BBD2-001 - Authenticated host→tenant router (L)
 
-Wildcard DNS + wildcard TLS + `Host:`-header->`workspaceId` resolver seated
-beside the existing `x-boring-workspace-id` adapter (architecture/08:217);
-fail-closed unknown-subdomain, mirroring P7's "absent id = 404, never silently
-mapped to default".
+Wildcard DNS + wildcard TLS plus an adapter that canonicalizes the request host,
+authenticates the principal, verifies host-to-tenant binding and principal
+policy, then creates `TenantContext`. `Host` is routing input, not authority.
+Unknown/malformed/foreign hosts and unauthorized principals fail closed; no
+default tenant and no raw `x-boring-workspace-id` authority.
 
 ### BBD2-002 - Live tenant registry + hot registration (L)
 
@@ -71,8 +79,8 @@ A process-level `LiveTenantRegistry` over the RuntimeBinding LRU:
 `register(spec)` validates the `WorkspaceAgentsDeclaration` (BBP6-009 validator,
 fail-closed), seeds `sessionStorageRoot` + workspace/env-pool roots +
 files/skills/context, materializes secret refs (P5 broker), installs a binding +
-`AgentRegistry` instance for the new `workspaceId` - idempotent, no redeploy.
-Contrast: BBP6-009's `AgentRegistry` stays project-scoped; this is the
+`ResolvedAgentRegistry` instance for the new `workspaceId` - idempotent, no redeploy.
+Contrast: P6-R's resolved registry stays project-scoped; this is the
 process-level tenant registry.
 
 ### BBD2-003 - Hot per-tenant provisioning/seeding (M/L)
@@ -84,8 +92,8 @@ seeds a tenant's env-pool + skills + template/context into the running app
 ### BBD2-004 - Shared-infra tenant isolation model + conformance (M/L)
 
 Fail-closed A-never-sees-B across sessions, `boring_pending_requests`, session
-search (`state.db`), event store, artifacts, governance - all keyed on
-`SessionCtx.workspaceId`; per-tenant governance via `governancePolicyRef`;
+search (`agent.db`), event store, artifacts, governance - all keyed from trusted
+`TenantContext` into structured session scope; per-tenant governance via `governancePolicyRef`;
 noisy-neighbor caps. Suite stands up two live subdomain tenants in one process,
 generalizing T1's cross-context leakage test from the `agentId` axis to the
 tenant axis, plus unknown-subdomain-fails-closed and
@@ -109,7 +117,8 @@ dedicated -> D1 manifest path; end-to-end smoke against a fake provider.
 
 ## Key interfaces
 
-- `HostTenantResolver(host)->SessionCtx|{rejected}`
+- `HostTenantResolver.resolve(requestHost, authenticatedPrincipal): TenantContext | { rejected }`
+- `TenantContext { tenantId, workspaceId, principal }`
 - `LiveTenantRegistry {register/get/list/suspend/archive/delete}`
 - `TenantSpec {workspaceId,host,tier,declaration:WorkspaceAgentsDeclaration,environments,seedRefs,secretRefs,demo?}`
 - `TenantIsolationConformance` suite

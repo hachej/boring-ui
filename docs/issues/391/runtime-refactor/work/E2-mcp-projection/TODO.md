@@ -1,13 +1,14 @@
 # TODO-E2 — MCP environment projection
 
-Handoff: self-contained work order for one autonomous coding agent (pi or gpt-5.5-xhigh). Cite plan files by relative path. No prior conversation assumed.
+Coordinator: never assign this whole file. Dispatch one bead/PR with this
+file's context, dependencies, and non-negotiables included in the assignment.
 
 ## Context (read first)
 
 - Plan: `docs/issues/391/runtime-refactor/architecture/09-environments-attachable.md` § "MCP projection: external reuse for free" and § "Security invariants" (read in full).
-- Plan: `docs/issues/391/runtime-refactor/INDEX.md` § "Phase E2" (deliverables + exit criteria; E2 depends on E1 only).
+- Plan: `docs/issues/391/runtime-refactor/INDEX.md` § "Phase E2" (deliverables + exit criteria; E2 depends on E1 + P6-R lookup).
 - Plan: `docs/issues/391/runtime-refactor/architecture/08-pluggable-agent-surfaces.md` § "Conformance" item 2 (readonly projection no-leak already exists).
-- Depends on **BBE1** ([`../E1-environment-attachments/TODO.md`](../E1-environment-attachments/TODO.md)): `Environment`, `EnvironmentAttachment`, `AttachedEnvironmentRuntime`, `ResolvedEnvironment`, and the `resolveAttachments` reduction in `@hachej/boring-bash`. Do not start until E1's attachment contracts + scoped views land. **E1 deliberately ships no address-by-id store** — E2 introduces the plain `Map<environmentId, Environment>` (this is the first place the projection needs address-by-id), so E2 owns that Map, not E1.
+- Depends on **BBE1** ([`../E1-environment-attachments/TODO.md`](../E1-environment-attachments/TODO.md)) plus P6-R BBP6-011. E1 supplies `prepareAttachmentLifetime`, methodless facts, and auth-gated contribution closures; P6-R supplies the injected workspace-scoped `DeploymentAttachmentCatalog`. E2 creates no Map, retains no raw prepared handle, and never receives long-lived projection operations.
 - Enforcement code you MUST reuse (no parallel policy):
   - `packages/boring-bash/src/server/readonlyProjectionOperations.ts` — `createReadonlyProjectionOperations(handle)`, `ReadonlyProjectionOperations` (`read/list/find/grep/stat/rejectMutation`), error codes `READONLY_PROJECTION_MUTATION_CODE` / `_INVALID_PATH_CODE` / `_BINDING_NOT_FOUND_CODE`.
   - `packages/boring-bash/src/server/managementProjectionOperations.ts` — `createManagementProjectionOperations`, `ManagementProjectionOperations`, `ManagementProjectionHandle`.
@@ -27,12 +28,19 @@ Match `INDEX.md` Phase E2 exit criteria:
 
 ## Non-negotiables
 
-- Enforcement reuses the existing projection operations verbatim. The MCP tool handlers are a **thin adapter**: `read` tool → `operations.read(descriptor)`; a denied path throws the existing `ReadonlyProjectionOperationError` and the MCP handler maps it to an MCP error/`isError` result **without leaking the path** (the projection already replaces leaked paths with `not_found_or_denied`/`readonly`). No new path-filtering, no new policy branch.
+- Enforcement reuses the existing projection operations verbatim **inside E1's
+  authorization-gated contributions**. Each MCP handler authenticates the call,
+  passes its request context to a contribution closure, and that closure enters
+  `withAuthorizedView` before invoking the existing op. The MCP layer never
+  retains an operation object or lease. Denied errors map without leaking paths.
 - Tool surface is capability-gated by the attachment:
   - Always (any access): `fs.read`, `fs.list`, `fs.stat`, `fs.find`, `fs.grep`.
   - `fs.write` / `fs.edit` **iff** `access: 'readwrite'` (route through management projection ops; readonly attachments must not register these tools at all).
   - `exec` **iff** `execPolicy: 'attached'` (default `'none'` → no exec tool). Follows #416 exec rules unchanged.
 - MCP session → `BoundFilesystemContext` identity mapping is mandatory; every tool call carries the same audit identity as an in-process attachment (`09` MCP projection bullet + security invariant 1).
+- Session establishment is not sufficient authorization: token expiry,
+  revocation, subject/workspace mismatch, and lifetime invalidation are checked
+  on every tool call before `withAuthorizedView`.
 - Credential brokering stays at the environment boundary; the MCP client never receives broker secrets (`09` security invariant 3).
 - **Amendment (2026-07-06) — run-context threading guardrail (475 watch-list):** the run-context threading via `createHarness.ts` AsyncLocalStorage is fragile — a run spawned without binding context silently loses identity (fails closed, but a debugging tax). Every new run-spawn path added in E2 (MCP-projection tool sessions) MUST bind `BoundFilesystemContext` and MUST extend the #498 binding test suite with that path.
 
@@ -46,21 +54,51 @@ Match `INDEX.md` Phase E2 exit criteria:
 ## Beads
 
 ### BBE2-001 — MCP server projection factory (M)
-- Description: `createEnvironmentMcpServer(attachment, operations, identity)` returns a configured `McpServer` exposing the capability-gated tool surface.
+- Description: `createEnvironmentMcpServer({ attachmentRef, catalog,
+  lifetimeOwner, trustedLifetimeScope, authenticateCall })` asks the catalog to
+  bind and prepare one
+  attachment internally, then returns a configured `McpServer` exposing
+  the capability-gated tool surface.
 - Files: create `packages/boring-bash/src/server/mcp/environmentMcpServer.ts`; add `@modelcontextprotocol/sdk` pinned exactly to `1.29.0` (no caret) to `packages/boring-bash/package.json` deps; add a `./mcp` export in `package.json` + `packages/boring-bash/src/server/mcp/index.ts`.
-- Notes: Register tools from `@modelcontextprotocol/sdk/server/mcp.js` `McpServer`. Each tool's handler is a one-liner over the injected `ReadonlyProjectionOperations` / `ManagementProjectionOperations` (from E1's `resolveAttachments` reduction). **Address-by-id lands here (not in E1):** introduce a plain `Map<environmentId, Environment>` in `packages/boring-bash/src/server/mcp/` so an MCP mount can resolve an environment by id before projecting it — this is the first real need for id-lookup, which is why E1 ships none. Gate `write`/`edit` on `attachment.access === 'readwrite'`; gate `exec` on `attachment.execPolicy === 'attached'`. Input schemas take `{ path }` (+ `{ content }` for write, `{ pattern, offset?, limit? }` for find/grep) — mirror the projection op signatures. Map thrown `ReadonlyProjectionOperationError`/`ManagementProjectionOperationError` to MCP error results using the error `code`, never the raw path.
-- Tests: `packages/boring-bash/src/server/mcp/__tests__/environmentMcpServer.test.ts` — instantiate against a readonly `company_context` attachment (via E1 `resolveAttachments` + `FixtureCompanyContextBindingProvider`); assert `write`/`edit`/`exec` tools are NOT registered; assert `read` of an allowed path succeeds and denied path returns an error result with no denied-name/sentinel in the payload.
+- Notes: Call `catalog.bindProjection(attachmentRef, trustedLifetimeScope,
+  lifetimeOwner)`. The catalog derives the selected-entry digest/full lifetime
+  key and returns one opaque bound unit. Facts, policy descriptor, and
+  contributions are captured together;
+  the API accepts no caller-supplied facts/contribution pair. Use the derived
+  methodless policy/facts only to select registered tool names.
+  Every handler calls `authenticateCall`, then the matching E1 contribution with
+  the resulting request context; the contribution enters a fresh
+  `withAuthorizedView` callback and invokes readonly/management/exec ops there.
+  No independent contribution injection, second Map, raw handle, projection op,
+  or callback lease is stored by E2. Gate
+  write/edit on readwrite and exec on attached policy. Map stable operation
+  errors without raw paths.
+- Tests: instantiate against a catalog-resolved readonly `company_context`
+  lifetime; write/edit/exec absent; allowed read succeeds; denied read redacts;
+  capturing/reusing the callback lease is impossible/rejects; invalidation and
+  revocation after server/session creation make the next call fail. A fixture
+  attempting to pair attachment A's ref/facts with attachment B's contributions
+  cannot be constructed through the public factory; an internal forged binding
+  is rejected by lifetime/ref identity.
 - Acceptance: readwrite attachment additionally registers `write`/`edit`; exec attachment additionally registers `exec`; readonly does not.
 
 ### BBE2-002 — MCP session → `BoundFilesystemContext` identity (token-per-projection v1) (M)
 - Description: Authenticate the MCP actor and bind each session to one `BoundFilesystemContext`.
 - Files: `packages/boring-bash/src/server/mcp/mcpSessionIdentity.ts`.
-- Notes: v1 model (propose + implement): **token-per-projection**. The host mints an opaque bearer token when it projects an environment for an actor; the token maps 1:1 to a fixed `BoundFilesystemContext`. The MCP transport (`StreamableHTTPServerTransport` from `@modelcontextprotocol/sdk/server/streamableHttp.js`) validates the token on connect and stamps the resolved `BoundFilesystemContext` onto every tool call for that session. Reject connections with a missing/unknown token. Document that finer-grained per-request identity is a later transport concern; v1 pins identity at session establishment. The token is a projection capability, NOT a broker secret — brokered credentials never cross to the client. **Workspace-bound context is required (`09` security invariant 5):** the host only mints a projection token for a **workspace-bound** `BoundFilesystemContext` (`workspaceId` is real — locked #416). An environment (`company_context`, any governed fs) is **never projected for a workspace-less context**; there is no MCP projection until the host has bound the actor to a workspace, and the token never carries a synthesized `workspaceId`.
-- Tests: `.../mcp/__tests__/mcpSessionIdentity.test.ts` — a valid token resolves to the expected `BoundFilesystemContext`; an unknown token is rejected; two tokens for two actors resolve to distinct contexts and cannot cross-read.
+- Notes: token-per-projection maps to a workspace-bound identity, but validation
+  occurs on connect **and every tool call**. Resolve a fresh
+  `AuthenticatedAttachmentRequestContext` carrying the current request id and
+  audit identity; check expiry/revocation and subject/workspace/attachment
+  authorization before entering E1. Never synthesize workspace id.
+- Tests: valid token resolves expected context; missing/unknown/expired/revoked
+  rejects; token revoked after connection fails the next tool call; two actors
+  cannot cross-read; invalidated attachment lifetime rejects.
 - Acceptance: every projected tool call carries the session's `BoundFilesystemContext`; unauthenticated calls rejected.
 
 ### BBE2-003 — No-leak conformance as the MCP mount (M)
-- Description: Run `checkReadonlyProjectionConformance` with `operations`/`projection` driven **through the MCP tool surface** (a client calling the projected server), proving parity with in-process/scoped/remote-worker.
+- Description: Run `checkReadonlyProjectionConformance` through the MCP tool
+  surface, where each operation authenticates and enters a fresh E1 authorized
+  contribution callback.
 - Files: `packages/boring-bash/src/server/mcp/__tests__/mcpProjectionConformance.test.ts`.
 - Notes: Build a `ReadonlyProjectionConformanceSubject` whose `operations.read/list/find/grep` call the MCP client (`@modelcontextprotocol/sdk/client` in-memory transport pair) against the projected server, and whose `projection.listVisiblePaths` enumerates via the `fs.list`/`fs.find` tools. Reuse the same fixture seeds/expected paths the in-process mount uses so the assertion set is identical. The suite's existing checks (denied read rejects, grep sentinel absent, write rejects) then validate over MCP unchanged.
 - Tests: the file is the test; `passed: true`.
@@ -69,7 +107,9 @@ Match `INDEX.md` Phase E2 exit criteria:
 ### BBE2-004 — Exec-over-MCP gating (S)
 - Description: When `execPolicy: 'attached'`, expose an `exec` tool that follows #416 exec rules; otherwise omit it.
 - Files: `packages/boring-bash/src/server/mcp/environmentMcpServer.ts` (exec branch); `.../mcp/__tests__/execGating.test.ts`.
-- Notes: The exec handler delegates to the environment's exec ops (the same seam a real `bwrap`/`direct` provider exposes); for E2 a fixture/no-exec environment simply never registers the tool. Assert secrets injected at the environment boundary are not present in exec output or tool metadata returned to the client (`09` invariant 3).
+- Notes: The exec handler delegates through the auth-gated exec contribution;
+  raw exec ops are callback-local. A fixture/no-exec environment never registers
+  the tool. Assert brokered secrets remain unreachable.
 - Tests: no-exec attachment → tool absent; a fixture exec attachment → tool present, and a brokered-secret sentinel is unreachable from the client-visible result.
 - Acceptance: exec presence tracks `execPolicy`; no broker secret leaks.
 

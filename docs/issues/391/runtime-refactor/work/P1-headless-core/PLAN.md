@@ -70,6 +70,11 @@ Existing direct/local/vercel modes keep behavior unchanged. They may expose a co
 - Preserve/extend invariant tests: no agent value import from boring-bash or boring-sandbox, including the new façade.
 - Separate `sessionStorageRoot` from workspace/environment roots.
 - Audit pi-coding-agent cwd/resource assumptions enough for pure mode.
+- Make `start()` the single per-session admission boundary used by `send()` and
+  every surface. Add caller `requestId` idempotency, actor/origin propagation,
+  and one fail-closed duplicate-tool policy.
+- Separate agent-local cleanup from host/provider-global lifecycle; bound all
+  runtime/session caches.
 
 ## Exit criteria
 
@@ -79,4 +84,8 @@ Existing direct/local/vercel modes keep behavior unchanged. They may expose a co
 - Existing direct/local/vercel modes continue to work through existing server adapters with current HTTP behavior unchanged; adapter relocation to host composition is P2.
 - New code uses semantic capabilities, not `runtimeMode`, for feature gating.
 - `AgentRouteBindingProfile` remains adapter plumbing.
+- Concurrent starts have a documented queue-or-busy rule; retries cannot create
+  a second run; `interrupt()` targets the admitted run.
+- Session/run metadata retains `actor` and `originSurface`.
+- Core does not own or dispose a provider-global runtime adapter.
 - `git diff --check` passes and relevant tests/typechecks run or blockers are recorded.

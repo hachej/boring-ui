@@ -17,8 +17,9 @@ Phase 3 moves the file/tree/search/fs-events/stat/dir/git routes into `boring-ba
 bundle factory despite the legacy "Feature" name. It creates the residue bundle
 for resolved bash/filesystem environments: tools, readiness gates, and prompt
 fragment. It is not a core `AgentFeature` abstraction. After E1, its internals
-derive from `AttachedEnvironmentRuntime[]` / `ResolvedEnvironment[]` facts,
-not from runtime-mode labels, while the public bundle shape stays stable.
+derive from E1 auth-gated environment contributions and methodless
+`ResolvedEnvironment[]` facts, not raw handles or runtime-mode labels, while the public
+bundle shape stays stable.
 
 Tool and renderer resolution follows the owner-ratified source order: environment bundle (the boring-bash bundle in this phase) -> plugins in manifest order -> host config. A duplicate tool name or renderer id is a typed error unless the later source declares `overrides: true`; there is no warning-only replacement. Implement this by extending the existing `mergeTools({ checkReadiness })` seam, not by adding a second catalog.
 
@@ -37,11 +38,35 @@ Tool and renderer resolution follows the owner-ratified source order: environmen
 - preserve readiness tags and `disableDefaultFileTools`;
 - replace hardwired registration with the boring-bash server plugin for workspace-family hosts — `defineServerPlugin({ agentTools, routes, systemPrompt, piPackages, provisioning })` composed from the `createBashAgentFeature()` environment-bundle factory + `registerBashRoutes`. Keep the public library-mode exports (`createBashAgentFeature()` returning `{ tools, readinessRequirements, systemPromptFragment }`, plus `registerBashRoutes`) for direct/headless composers. There is no `features` config member.
 - enforce the deterministic tool/renderer source-order law through the existing merge/readiness seam.
+- capability-gate the existing workspace-owned filesystem front plugin and its
+  composer providers from the same resolved environment facts. This is a
+  non-move v1 closeout; P4 remains the later ownership relocation.
+- make trusted v1 workspace plugin activation atomic for the sole `default`
+  agent: one verified boot-time server activation supplies tools/routes, Pi
+  resources/prompt, and a versioned front-artifact declaration; disabling or
+  failed pre-registration activation leaves no server/prompt residue. Browser
+  front failure remains a separate previous-good-UI diagnostic. Emit a
+  deterministic immutable activated-plugin snapshot/digest tied to host-app,
+  source, and canonical redacted activation inputs for P6-R/D1
+  reproducibility. Add the narrow `scopedRoutes` contribution needed by D1:
+  handlers receive a bound `Workspace` and scoped repositories, while raw
+  arbitrary Fastify `routes` remain generic-only and fail dedicated readiness.
+  Per-agent refs and manifest requirement filtering remain post-v1 P6 work.
 - E1 (which depends on P2 **and** P3) may later re-implement the bundle's **internals** over environment attachments **without changing its public `{ tools, readinessRequirements, systemPromptFragment }` signature**.
 
 ## Exit criteria
 - workspace playground still opens file tree/editor; read/write/edit/find/grep/ls/bash work when boring-bash enabled;
 - pure mode still has none of those routes/tools;
+- pure mode registers no filesystem front plugin, renderers, file/search/upload
+  affordances, or related API requests;
+- a disabled or pre-registration-failed trusted workspace plugin leaves no
+  tools/routes/Pi prompt/resources residue; an activated plugin derives those
+  plus a front artifact from one server record; browser load failure preserves
+  previous-good UI; and immutable source/activation-input/contribution changes
+  change the activated-plugin snapshot digest;
+- dedicated composition mounts only `scopedRoutes`; raw route contributions
+  fail readiness, and indirect session/project lookups cannot escape the bound
+  workspace repositories;
 - company_context no-leak conformance still green.
 
 **Amendment (2026-07-06):**
