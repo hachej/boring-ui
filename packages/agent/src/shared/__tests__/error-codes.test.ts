@@ -1,6 +1,8 @@
 import { readFileSync } from 'node:fs'
 import { describe, expect, test } from 'vitest'
 import {
+  AgentDefinitionErrorCode,
+  AgentDeploymentErrorCode,
   ApiErrorResponseSchema,
   ERROR_CODES,
   ErrorCode,
@@ -91,6 +93,19 @@ describe('error code registry', () => {
 
     expect(() => ErrorCode.parse('path_escape')).toThrow()
     expect(() => ErrorCode.parse('totally_unknown_code')).toThrow()
+  })
+
+  test('keeps agent schema validation codes canonical and outside the API registry', () => {
+    expect(AgentDefinitionErrorCode.options).toEqual([
+      AgentDefinitionErrorCode.enum.AGENT_DEFINITION_INVALID,
+      AgentDefinitionErrorCode.enum.AGENT_DEFINITION_UNSUPPORTED_FIELD,
+    ])
+    expect(AgentDeploymentErrorCode.options).toEqual([
+      AgentDeploymentErrorCode.enum.AGENT_DEPLOYMENT_INVALID,
+      AgentDeploymentErrorCode.enum.AGENT_DEPLOYMENT_UNSUPPORTED_FIELD,
+    ])
+    expect(ERROR_CODES).not.toContain(AgentDefinitionErrorCode.enum.AGENT_DEFINITION_INVALID)
+    expect(ERROR_CODES).not.toContain(AgentDeploymentErrorCode.enum.AGENT_DEPLOYMENT_INVALID)
   })
 })
 

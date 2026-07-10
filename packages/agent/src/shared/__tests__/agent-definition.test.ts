@@ -10,6 +10,11 @@ import {
   type AgentDeployment,
   type Sha256Digest,
 } from '../agent-definition'
+import {
+  AgentDefinitionErrorCode,
+  AgentDeploymentErrorCode,
+  ErrorCode,
+} from '../error-codes'
 
 const INSTRUCTIONS_DIGEST =
   'sha256:b7f7ddeb87b6f58b8144f548b6f84b352e3c3d3119eeae54495b4798ba3871f8' as Sha256Digest
@@ -71,7 +76,7 @@ describe('validateAgentDefinition', () => {
     expect(result.valid).toBe(false)
     if (!result.valid) {
       expect(result.issues[0]).toMatchObject({
-        code: 'AGENT_DEFINITION_INVALID',
+        code: AgentDefinitionErrorCode.enum.AGENT_DEFINITION_INVALID,
         field,
       })
     }
@@ -84,7 +89,7 @@ describe('validateAgentDefinition', () => {
       expect(result).toEqual({
         valid: false,
         issues: [{
-          code: 'AGENT_DEFINITION_UNSUPPORTED_FIELD',
+          code: AgentDefinitionErrorCode.enum.AGENT_DEFINITION_UNSUPPORTED_FIELD,
           field,
           message: `${field} is not supported by schema version 1`,
         }],
@@ -103,10 +108,22 @@ describe('validateAgentDefinition', () => {
     expect(result.valid).toBe(false)
     if (result.valid) return
     expect(result.issues.map(({ code, field }) => ({ code, field }))).toEqual([
-      { code: 'AGENT_DEFINITION_UNSUPPORTED_FIELD', field: 'environmentAttachmentRefs' },
-      { code: 'AGENT_DEFINITION_UNSUPPORTED_FIELD', field: 'governancePolicyRef' },
-      { code: 'AGENT_DEFINITION_UNSUPPORTED_FIELD', field: 'hostname' },
-      { code: 'AGENT_DEFINITION_UNSUPPORTED_FIELD', field: 'runtimeProfileRef' },
+      {
+        code: AgentDefinitionErrorCode.enum.AGENT_DEFINITION_UNSUPPORTED_FIELD,
+        field: 'environmentAttachmentRefs',
+      },
+      {
+        code: AgentDefinitionErrorCode.enum.AGENT_DEFINITION_UNSUPPORTED_FIELD,
+        field: 'governancePolicyRef',
+      },
+      {
+        code: AgentDefinitionErrorCode.enum.AGENT_DEFINITION_UNSUPPORTED_FIELD,
+        field: 'hostname',
+      },
+      {
+        code: AgentDefinitionErrorCode.enum.AGENT_DEFINITION_UNSUPPORTED_FIELD,
+        field: 'runtimeProfileRef',
+      },
     ])
   })
 
@@ -125,7 +142,7 @@ describe('validateAgentDefinition', () => {
     expect(result.valid).toBe(false)
     if (!result.valid) {
       expect(result.issues[0]).toMatchObject({
-        code: 'AGENT_DEFINITION_INVALID',
+        code: AgentDefinitionErrorCode.enum.AGENT_DEFINITION_INVALID,
         field: 'instructionsRef',
       })
     }
@@ -149,7 +166,7 @@ describe('validateAgentDeployment', () => {
     expect(validateAgentDeployment({ ...deployment, [field]: 'unsupported' })).toEqual({
       valid: false,
       issues: [{
-        code: 'AGENT_DEPLOYMENT_UNSUPPORTED_FIELD',
+        code: AgentDeploymentErrorCode.enum.AGENT_DEPLOYMENT_UNSUPPORTED_FIELD,
         field,
         message: `${field} is not supported by schema version 1`,
       }],
@@ -163,7 +180,7 @@ describe('validateAgentDeployment', () => {
     })).toEqual({
       valid: false,
       issues: [{
-        code: 'AGENT_DEPLOYMENT_UNSUPPORTED_FIELD',
+        code: AgentDeploymentErrorCode.enum.AGENT_DEPLOYMENT_UNSUPPORTED_FIELD,
         field: 'definition.runtimeProfileRef',
         message: 'runtimeProfileRef is not supported by schema version 1',
       }],
@@ -181,7 +198,7 @@ describe('validateAgentDeployment', () => {
     expect(result.valid).toBe(false)
     if (!result.valid) {
       expect(result.issues[0]).toMatchObject({
-        code: 'AGENT_DEPLOYMENT_INVALID',
+        code: AgentDeploymentErrorCode.enum.AGENT_DEPLOYMENT_INVALID,
         field: 'definition.version',
       })
     }
@@ -233,9 +250,9 @@ describe('canonical digests', () => {
       definition,
       assets: [assetWithProducerMetadata],
     })).rejects.toMatchObject({
-      code: 'CONFIG_INVALID',
+      code: ErrorCode.enum.CONFIG_INVALID,
       field: 'assets[0].sourcePath',
-      validationCode: 'AGENT_DEFINITION_UNSUPPORTED_FIELD',
+      validationCode: AgentDefinitionErrorCode.enum.AGENT_DEFINITION_UNSUPPORTED_FIELD,
     } satisfies Partial<AgentDefinitionValidationError>)
   })
 
@@ -245,9 +262,9 @@ describe('canonical digests', () => {
       assets: assets as never,
     })).rejects.toMatchObject({
       name: 'AgentDefinitionValidationError',
-      code: 'CONFIG_INVALID',
+      code: ErrorCode.enum.CONFIG_INVALID,
       field: 'assets',
-      validationCode: 'AGENT_DEFINITION_INVALID',
+      validationCode: AgentDefinitionErrorCode.enum.AGENT_DEFINITION_INVALID,
     } satisfies Partial<AgentDefinitionValidationError>)
   })
 
@@ -260,9 +277,9 @@ describe('canonical digests', () => {
         content: `Compare ${String.fromCharCode(0xd800)} policies.`,
       }],
     })).rejects.toMatchObject({
-      code: 'CONFIG_INVALID',
+      code: ErrorCode.enum.CONFIG_INVALID,
       field: 'assets[0].content',
-      validationCode: 'AGENT_DEFINITION_INVALID',
+      validationCode: AgentDefinitionErrorCode.enum.AGENT_DEFINITION_INVALID,
     } satisfies Partial<AgentDefinitionValidationError>)
   })
 
@@ -281,18 +298,18 @@ describe('canonical digests', () => {
         content: 'Compare insurance policies.',
       }],
     })).rejects.toMatchObject({
-      code: 'CONFIG_INVALID',
+      code: ErrorCode.enum.CONFIG_INVALID,
       field: 'assets[0].path',
-      validationCode: 'AGENT_DEFINITION_INVALID',
+      validationCode: AgentDefinitionErrorCode.enum.AGENT_DEFINITION_INVALID,
     } satisfies Partial<AgentDefinitionValidationError>)
   })
 
   it('requires instructionsRef to name an included asset', async () => {
     await expect(createAgentDefinitionDigest({ definition, assets: [] })).rejects.toMatchObject({
       name: 'AgentDefinitionValidationError',
-      code: 'CONFIG_INVALID',
+      code: ErrorCode.enum.CONFIG_INVALID,
       field: 'instructionsRef',
-      validationCode: 'AGENT_DEFINITION_INVALID',
+      validationCode: AgentDefinitionErrorCode.enum.AGENT_DEFINITION_INVALID,
     } satisfies Partial<AgentDefinitionValidationError>)
   })
 
@@ -306,9 +323,9 @@ describe('canonical digests', () => {
       }],
     })).rejects.toMatchObject({
       name: 'AgentDefinitionValidationError',
-      code: 'CONFIG_INVALID',
+      code: ErrorCode.enum.CONFIG_INVALID,
       field: 'assets.digest',
-      validationCode: 'AGENT_DEFINITION_INVALID',
+      validationCode: AgentDefinitionErrorCode.enum.AGENT_DEFINITION_INVALID,
     } satisfies Partial<AgentDefinitionValidationError>)
   })
 
