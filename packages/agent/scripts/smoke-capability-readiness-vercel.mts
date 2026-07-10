@@ -40,7 +40,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "boring-agent-readiness-smoke"
 version = "0.0.0"
-requires-python = ">=3.9"
+requires-python = ">=3.11"
 dependencies = ["pandas"]
 
 [project.scripts]

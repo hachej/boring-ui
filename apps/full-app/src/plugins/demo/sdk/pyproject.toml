@@ -6,7 +6,7 @@ build-backend = "setuptools.build_meta"
 name = "boring-demo-sdk"
 version = "0.1.0"
 description = "Dummy demo CLI for boring-ui full-app provisioning demo/testing"
-requires-python = ">=3.9"
+requires-python = ">=3.11"
 dependencies = []
 
 [project.scripts]
