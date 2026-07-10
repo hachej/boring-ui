@@ -1,5 +1,10 @@
 # T2-transport — Plan
 
+> **Post-v1 work order (2026-07-10).** Transport cutover and multi-surface
+> adapters follow the workspace-backed v1. Headless v1 entry points remain
+> workspace-authorized and use the existing transport; T2 is not a P1/A1/D1
+> gate.
+
 > Phase: Phase T2 — Transport adapters · Work order: [TODO.md](./TODO.md) · Handoff: [HANDOFF.md](./HANDOFF.md)
 > Ordering authority: [INDEX.md](../../INDEX.md) · Vision: [VISION.md](../../VISION.md)
 

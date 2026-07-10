@@ -1,5 +1,12 @@
 # TODO-P3 — Move file/bash server routes + tools into `@hachej/boring-bash`
 
+> **Post-v1, non-dispatchable (2026-07-10).** Do not dispatch this TODO until a
+> named second package consumer and a new decision re-specify the extraction.
+> All `runtime: 'none'`, pure, pure-only-bin, direct/headless-library, and
+> workspace-less acceptance below is void historical text; it cannot be copied
+> into a future work order. V1 reuses the existing authorized workspace
+> composer.
+
 Coordinator: never assign this whole file. Dispatch one bead/PR with this
 file's context, dependencies, and non-negotiables included in the assignment.
 

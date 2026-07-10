@@ -1,9 +1,42 @@
 # P2-sandbox-providers — Plan
 
-> Phase: Phase 2 — `@hachej/boring-bash` package (bash track) · Work order: [TODO.md](./TODO.md) · Handoff: [HANDOFF.md](./HANDOFF.md)
+> **Proposed reduced v1 scope (2026-07-10).** P2 is an isolated runsc/provider track for
+> the D1 dedicated workspace path, not a prerequisite for a public pure mode or
+> a full provider-taxonomy rewrite. #557 is merged evidence that sandbox publish
+> parity has landed. Continue only the smallest provider boundary and runsc
+> behavior D1 consumes; keep speculative relocation and generic provider APIs
+> post-v1.
+
+> Phase: proposed narrow P2 runsc/provider slice · Work order: [TODO.md](./TODO.md) · Handoff: [HANDOFF.md](./HANDOFF.md)
 > Ordering authority: [INDEX.md](../../INDEX.md) · Vision: [VISION.md](../../VISION.md)
 
-## Governing architecture
+## Active current-main reality
+
+`@hachej/boring-sandbox` exists and #557 publish-pipeline parity is merged. Do
+not scaffold or republish it. Current v1 work starts from that package boundary
+and adds/reviews only the hardened EU runsc/systrap path D1 consumes.
+
+## Active deliverables and exit
+
+- one injected workspace runtime path to a real preconfigured EU runsc worker;
+- honest authenticated runsc, network, resource-limit, image, persistence, and
+  cleanup facts, with missing/unknown facts failing closed;
+- no production fallback to direct, bwrap, Vercel, fake, or unverified workers;
+- A1 local development stays on the existing workspace host, preferring bwrap
+  and allowing direct only through explicit trusted-local policy;
+- only imports changed by this narrow runsc slice migrate;
+- #416 contracts and package import invariants remain unchanged.
+
+The full direct/bwrap/Vercel/remote-worker relocation, capability matrix,
+`resolveMode` cutover, pure-only binary, and all-mode composer rewrite are
+post-v1. A real D1 target, not mocks alone, closes this slice.
+
+## Historical full provider/mode plan — non-dispatchable for v1
+
+Everything below records the superseded pre-#557 provider/package migration.
+Do not dispatch it or treat its preflight/current-reality statements as current.
+
+## Historical governing architecture
 - [00-global-isa.md](../../architecture/00-global-isa.md) — the zero agent→bash/sandbox value-import invariant; open decision 3 (RESOLVED → boring-sandbox); provisioning-ownership rule.
 - [02-boring-bash-environment.md](../../architecture/02-boring-bash-environment.md) — package layers, provider capability matrix, mode↔provider mapping, remote-worker split rules.
 - [08-pluggable-agent-surfaces.md](../../architecture/08-pluggable-agent-surfaces.md) — decision 11: the three-package `boring-agent` ← `boring-bash` ← `boring-sandbox` stack and its acyclic import edges.
