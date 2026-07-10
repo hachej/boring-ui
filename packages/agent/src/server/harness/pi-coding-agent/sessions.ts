@@ -55,6 +55,7 @@ const SAFE_ID = /^[a-zA-Z0-9_-]+$/;
 const SAFE_SESSION_NAMESPACE = /^[a-zA-Z0-9_-]+$/;
 const SESSION_ROOT_ENV = "BORING_AGENT_SESSION_ROOT";
 const SUMMARY_PREFIX_BYTES = 64 * 1024;
+const LATEST_SESSION_INFO_SCAN_BYTES = 64 * 1024;
 const DEFAULT_LEGACY_WORKSPACE_ID = "default";
 
 type SessionFileStat = { filepath: string; stat: Awaited<ReturnType<typeof fsStat>> };
@@ -107,6 +108,7 @@ export class PiSessionStore implements SessionStore {
   private allowLegacyUnscopedAccess: boolean;
   private prefixCache = new Map<string, PrefixCacheEntry>();
   private listInFlight = new Map<string, Promise<SessionSummary[]>>();
+  private appendInFlight = new Map<string, Promise<void>>();
 
   constructor(cwd: string, options?: string | PiSessionStoreOptions) {
     this.cwd = cwd;
@@ -253,10 +255,23 @@ export class PiSessionStore implements SessionStore {
       timestamp: now,
       name: normalizedTitle,
     };
-    await appendFile(targetPath, JSON.stringify(infoEntry) + "\n", "utf-8");
+    await this.appendJsonlEntry(targetPath, infoEntry);
     this.prefixCache.delete(filepath);
     this.prefixCache.delete(targetPath);
     return this.load(ctx, sessionId);
+  }
+
+  private async appendJsonlEntry(filepath: string, entry: SessionInfoEntry): Promise<void> {
+    const previous = this.appendInFlight.get(filepath) ?? Promise.resolve();
+    const append = previous.catch(() => undefined).then(async () => {
+      await appendFile(filepath, JSON.stringify(entry) + "\n", "utf-8");
+    });
+    this.appendInFlight.set(filepath, append);
+    try {
+      await append;
+    } finally {
+      if (this.appendInFlight.get(filepath) === append) this.appendInFlight.delete(filepath);
+    }
   }
 
   /**
@@ -569,6 +584,7 @@ export class PiSessionStore implements SessionStore {
       if (!this.storedCtxBelongsToCtx(sessionCtx, ctx)) return null;
 
       const entries = parseJsonlPrefixEntries(content);
+      const latestSessionInfo = await readLatestSessionInfo(filepath, Number(fileStat.size));
       const sessionEntries = entries.filter(
         (e): e is SessionEntry => e.type !== "session",
       );
@@ -581,6 +597,8 @@ export class PiSessionStore implements SessionStore {
       ) ?? [];
 
       const title =
+        linked?.latestSessionInfo?.name ??
+        latestSessionInfo?.name ??
         extractTitle(linkedEntries) ??
         extractTitle(sessionEntries) ??
         firstUserMessage(linkedEntries) ??
@@ -804,13 +822,19 @@ export class PiSessionStore implements SessionStore {
     }
   }
 
-  private async readLinkedPiSessionSummary(filepath: string): Promise<{ entries: (SessionHeader | SessionEntry)[]; mtime: Date; size: number } | null> {
+  private async readLinkedPiSessionSummary(filepath: string): Promise<{ entries: (SessionHeader | SessionEntry)[]; latestSessionInfo?: SessionInfoEntry; mtime: Date; size: number } | null> {
     try {
-      const [fileStat, content] = await Promise.all([
-        fsStat(filepath),
+      const fileStat = await fsStat(filepath);
+      const [content, latestSessionInfo] = await Promise.all([
         readJsonlPrefix(filepath),
+        readLatestSessionInfo(filepath, Number(fileStat.size)),
       ]);
-      return { entries: parseJsonlPrefixEntries(content), mtime: fileStat.mtime, size: Number(fileStat.size) };
+      return {
+        entries: parseJsonlPrefixEntries(content),
+        ...(latestSessionInfo ? { latestSessionInfo } : {}),
+        mtime: fileStat.mtime,
+        size: Number(fileStat.size),
+      };
     } catch {
       return null;
     }
@@ -823,6 +847,62 @@ export class PiSessionStore implements SessionStore {
   private storedCtxBelongsToCtx(storedCtx: StoredSessionCtx, ctx: SessionCtx): boolean {
     if (storedCtx === null) return this.allowLegacyUnscopedAccess && isLegacyUnscopedCtx(ctx);
     return sameSessionCtx(storedCtx, ctx);
+  }
+}
+
+/**
+ * Scans JSONL from EOF in fixed-size chunks, retaining only one partial line.
+ * Session titles are metadata and may follow arbitrarily long transcripts, so a
+ * prefix-only summary cannot establish the latest session_info entry.
+ */
+async function readLatestSessionInfo(filepath: string, size: number): Promise<SessionInfoEntry | undefined> {
+  if (size <= 0) return undefined;
+  const handle = await open(filepath, "r");
+  try {
+    const scanStart = Math.max(0, size - LATEST_SESSION_INFO_SCAN_BYTES);
+    let end = size;
+    let partialFirstLine = Buffer.alloc(0);
+    while (end > scanStart) {
+      const start = Math.max(scanStart, end - SUMMARY_PREFIX_BYTES);
+      const length = end - start;
+      const buffer = Buffer.alloc(length);
+      const { bytesRead } = await handle.read(buffer, 0, length, start);
+      const chunk = Buffer.concat([buffer.subarray(0, bytesRead), partialFirstLine]);
+      const newlineOffsets: number[] = [];
+      for (let index = 0; index < chunk.length; index += 1) {
+        if (chunk[index] === 0x0a) newlineOffsets.push(index);
+      }
+      const lineEndOffsets = [...newlineOffsets];
+      if (end === size && lineEndOffsets[lineEndOffsets.length - 1] !== chunk.length - 1) lineEndOffsets.push(chunk.length);
+      for (let index = lineEndOffsets.length - 1; index >= 0; index -= 1) {
+        const lineStart = index === 0 ? 0 : lineEndOffsets[index - 1] + 1;
+        if (lineStart === 0 && start > 0) continue;
+        const line = chunk.subarray(lineStart, lineEndOffsets[index]).toString("utf-8").trim();
+        if (!line) continue;
+        try {
+          const entry = JSON.parse(line) as SessionEntry;
+          if (entry.type === "session_info" && typeof (entry as SessionInfoEntry).name === "string") {
+            return entry as SessionInfoEntry;
+          }
+        } catch {
+          // Ignore malformed concurrent/truncated tail lines and continue scanning.
+        }
+      }
+      const firstNewline = newlineOffsets[0];
+      partialFirstLine = firstNewline === undefined ? chunk : chunk.subarray(0, firstNewline);
+      end = start;
+    }
+    if (scanStart !== 0 || !partialFirstLine.length) return undefined;
+    try {
+      const entry = JSON.parse(partialFirstLine.toString("utf-8")) as SessionEntry;
+      return entry.type === "session_info" && typeof (entry as SessionInfoEntry).name === "string"
+        ? entry as SessionInfoEntry
+        : undefined;
+    } catch {
+      return undefined;
+    }
+  } finally {
+    await handle.close();
   }
 }
 

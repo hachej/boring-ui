@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
-import { mkdir, mkdtemp, readFile, rm, writeFile, utimes } from "node:fs/promises";
+import { appendFile, mkdir, mkdtemp, readFile, rm, writeFile, utimes } from "node:fs/promises";
 import { DefaultResourceLoader } from "@mariozechner/pi-coding-agent";
 import { join } from "node:path";
 import { homedir, tmpdir } from "node:os";
@@ -530,6 +530,51 @@ describe("PiSessionStore", () => {
     expect(lines.filter((line) => line.type === "session_info").map((line) => line.name)).toEqual(["Original", "Renamed"]);
   });
 
+  it("lists an EOF rename after a transcript exceeds the summary prefix", async () => {
+    const store = new PiSessionStore("/tmp", tmpDir);
+    const session = await store.create(ctx, { title: "Original" });
+    const filepath = join(tmpDir, `${session.id}.jsonl`);
+    await appendFile(filepath, `${JSON.stringify({ type: "message", message: { role: "user", content: "x".repeat(70 * 1024) } })}\n`);
+
+    await store.rename(ctx, session.id, "Renamed after long transcript");
+
+    await expect(store.list(ctx)).resolves.toEqual([
+      expect.objectContaining({ id: session.id, title: "Renamed after long transcript" }),
+    ]);
+  });
+
+  it("keeps concurrent rename appends valid JSONL", async () => {
+    const store = new PiSessionStore("/tmp", tmpDir);
+    const session = await store.create(ctx, { title: "Original" });
+    const titles = Array.from({ length: 20 }, (_, index) => `Rename ${index}`);
+
+    await Promise.all(titles.map((title) => store.rename(ctx, session.id, title)));
+
+    const lines = (await readFile(join(tmpDir, `${session.id}.jsonl`), "utf-8"))
+      .trim()
+      .split("\n")
+      .map((line) => JSON.parse(line));
+    expect(lines.filter((line) => line.type === "session_info").map((line) => line.name)).toHaveLength(21);
+    await expect(store.list(ctx)).resolves.toEqual([
+      expect.objectContaining({ id: session.id, title: expect.stringMatching(/^Rename \d+$/) }),
+    ]);
+  });
+
+  it("lists a standalone Pi session when Pi appends session_info beyond the prefix", async () => {
+    const sessionId = "standalone-appended-title";
+    const filepath = join(tmpDir, `2026-06-04T15-23-19-668Z_${sessionId}.jsonl`);
+    await writeFile(filepath, [
+      { type: "session", version: 1, id: sessionId, timestamp: "2026-06-04T15:23:19.668Z", cwd: "/tmp" },
+      { type: "message", message: { role: "user", content: "x".repeat(70 * 1024) } },
+    ].map((line) => JSON.stringify(line)).join("\n") + "\n");
+    await appendFile(filepath, `${JSON.stringify({ type: "session_info", id: "external-title", parentId: null, timestamp: "2026-06-04T15:24:00.000Z", name: "Pi renamed this" })}\n`);
+
+    const store = new PiSessionStore("/tmp", tmpDir);
+    await expect(store.list({ workspaceId: "default" })).resolves.toEqual([
+      expect.objectContaining({ id: sessionId, title: "Pi renamed this" }),
+    ]);
+  });
+
   it("authorizes rename with the session context", async () => {
     const store = new PiSessionStore("/tmp", tmpDir);
     const session = await store.create(ctx, { title: "Scoped" });
@@ -547,6 +592,7 @@ describe("PiSessionStore", () => {
       nativePath,
       [
         { type: "session", version: 1, id: nativeSessionId, timestamp: "2026-06-04T15:23:19.668Z", cwd: "/tmp" },
+        { type: "message", message: { role: "user", content: "x".repeat(70 * 1024) } },
         { type: "session_info", id: "native-info", parentId: null, timestamp: "2026-06-04T15:23:20.000Z", name: "Native title" },
       ].map((line) => JSON.stringify(line)).join("\n") + "\n",
       "utf-8",
