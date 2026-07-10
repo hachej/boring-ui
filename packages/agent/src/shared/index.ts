@@ -84,6 +84,25 @@ export {
   PI_AGENT_RUNTIME_CAPABILITIES,
 } from './capabilities'
 export type { AgentRuntimeCapabilities } from './capabilities'
+export {
+  AgentDefinitionValidationError,
+  AgentDeploymentValidationError,
+  createAgentDefinitionDigest,
+  createAgentDeploymentDigest,
+  validateAgentDefinition,
+  validateAgentDeployment,
+} from './agent-definition'
+export type {
+  AgentDefinition,
+  AgentDefinitionDigestAsset,
+  AgentDefinitionErrorCode,
+  AgentDefinitionReference,
+  AgentDeployment,
+  AgentDeploymentErrorCode,
+  AgentSchemaIssue,
+  AgentSchemaValidationResult,
+  Sha256Digest,
+} from './agent-definition'
 export { validateTool } from './validateTool'
 export {
   WORKSPACE_AGENT_PLUGINS_RELOADED_EVENT,
