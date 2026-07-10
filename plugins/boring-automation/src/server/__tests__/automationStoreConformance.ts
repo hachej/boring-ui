@@ -47,7 +47,7 @@ export function runFileAutomationStoreBehaviorTests(createStore: () => FileAutom
     await expect(store.getAutomation(automation.id)).resolves.toMatchObject({ id: automation.id, promptRef: automation.promptRef })
   })
 
-  it("creates, updates, lists, and finds run metadata", async () => {
+  it("begins, updates, and lists run metadata", async () => {
     const store = createStore()
     const automation = await store.createAutomation({
       title: "Daily summary",
@@ -57,26 +57,29 @@ export function runFileAutomationStoreBehaviorTests(createStore: () => FileAutom
       prompt: "prompt",
     })
 
-    const run = await store.createRun({
+    const run = await store.beginRun({
       automationId: automation.id,
       trigger: "manual",
-      status: "running",
       promptSnapshot: "prompt",
       modelSnapshot: "model-a",
-      startedAt: "2026-07-09T09:00:00.000Z",
+      createdAt: "2026-07-09T09:00:00.000Z",
     })
 
+    expect(run).toMatchObject({ status: "queued", startedAt: null })
     expect(run).not.toHaveProperty("workspaceId")
     expect(run).not.toHaveProperty("cronSnapshot")
     expect(run).not.toHaveProperty("timezoneSnapshot")
-    await expect(store.findRunningRun(automation.id)).resolves.toMatchObject({ id: run.id, status: "running" })
-    await expect(store.updateRun(run.id, {
+    await expect(store.updateRunLifecycle(run.id, {
+      status: "running",
+      startedAt: "2026-07-09T09:00:01.000Z",
+      sessionId: "session-1",
+    })).resolves.toMatchObject({ status: "running", startedAt: "2026-07-09T09:00:01.000Z", sessionId: "session-1" })
+    await expect(store.updateRunLifecycle(run.id, {
       status: "succeeded",
       completedAt: "2026-07-09T09:01:00.000Z",
-      durationMs: 60_000,
+      durationMs: 59_000,
       totalTokens: 123,
-    })).resolves.toMatchObject({ status: "succeeded", durationMs: 60_000, totalTokens: 123 })
-    await expect(store.findRunningRun(automation.id)).resolves.toBeNull()
+    })).resolves.toMatchObject({ status: "succeeded", durationMs: 59_000, totalTokens: 123 })
     await expect(store.listRuns(automation.id)).resolves.toEqual([expect.objectContaining({ id: run.id })])
   })
 
@@ -88,7 +91,7 @@ export function runFileAutomationStoreBehaviorTests(createStore: () => FileAutom
       timezone: "UTC",
       model: "model-a",
     })
-    const run = await store.createRun({
+    const run = await store.beginRun({
       automationId: automation.id,
       trigger: "manual",
       promptSnapshot: "prompt",
@@ -106,16 +109,68 @@ export function runFileAutomationStoreBehaviorTests(createStore: () => FileAutom
       totalTokens: null,
       error: null,
     })
-    await expect(store.updateRun(run.id, { sessionId: "session-1", totalTokens: 10, error: "failed" })).resolves.toMatchObject({
+    await expect(store.updateRunLifecycle(run.id, { sessionId: "session-1", totalTokens: 10, error: "failed" })).resolves.toMatchObject({
       sessionId: "session-1",
       totalTokens: 10,
       error: "failed",
     })
-    await expect(store.updateRun(run.id, { sessionId: null, totalTokens: null, error: null })).resolves.toMatchObject({
+    await expect(store.updateRunLifecycle(run.id, { sessionId: null, totalTokens: null, error: null })).resolves.toMatchObject({
       sessionId: null,
       totalTokens: null,
       error: null,
     })
+  })
+
+  it("admits one active run per automation atomically", async () => {
+    const store = createStore()
+    const automation = await store.createAutomation({
+      title: "Daily summary",
+      cron: "0 9 * * *",
+      timezone: "UTC",
+      model: "model-a",
+      prompt: "prompt",
+    })
+
+    const attempts = await Promise.allSettled([
+      store.beginRun({ automationId: automation.id, trigger: "manual", promptSnapshot: "prompt-1", modelSnapshot: "model-a" }),
+      store.beginRun({ automationId: automation.id, trigger: "manual", promptSnapshot: "prompt-2", modelSnapshot: "model-a" }),
+    ])
+
+    const fulfilled = attempts.filter((result): result is PromiseFulfilledResult<Awaited<ReturnType<typeof store.beginRun>>> => result.status === "fulfilled")
+    const rejected = attempts.filter((result): result is PromiseRejectedResult => result.status === "rejected")
+    expect(fulfilled).toHaveLength(1)
+    expect(rejected).toHaveLength(1)
+    expect(rejected[0]!.reason).toMatchObject({ code: BORING_AUTOMATION_ERROR_CODES.RUN_ALREADY_ACTIVE })
+    await expect(store.listRuns(automation.id)).resolves.toHaveLength(1)
+  })
+
+  it("allows active runs for different automations and readmits after terminal status", async () => {
+    const store = createStore()
+    const first = await store.createAutomation({
+      title: "Daily summary",
+      cron: "0 9 * * *",
+      timezone: "UTC",
+      model: "model-a",
+      prompt: "prompt",
+    })
+    const second = await store.createAutomation({
+      title: "Weekly summary",
+      cron: "0 9 * * 1",
+      timezone: "UTC",
+      model: "model-a",
+      prompt: "prompt",
+    })
+
+    const [firstRun, secondRun] = await Promise.all([
+      store.beginRun({ automationId: first.id, trigger: "manual", promptSnapshot: "prompt", modelSnapshot: "model-a" }),
+      store.beginRun({ automationId: second.id, trigger: "manual", promptSnapshot: "prompt", modelSnapshot: "model-a" }),
+    ])
+    expect(firstRun.automationId).toBe(first.id)
+    expect(secondRun.automationId).toBe(second.id)
+
+    await store.updateRunLifecycle(firstRun.id, { status: "succeeded", completedAt: "2026-07-09T09:01:00.000Z", durationMs: 60_000 })
+    await expect(store.beginRun({ automationId: first.id, trigger: "manual", promptSnapshot: "again", modelSnapshot: "model-a" }))
+      .resolves.toMatchObject({ automationId: first.id, status: "queued" })
   })
 
   it("deletes automation metadata but leaves run metadata inaccessible through the deleted automation", async () => {
@@ -127,7 +182,7 @@ export function runFileAutomationStoreBehaviorTests(createStore: () => FileAutom
       model: "model-a",
       prompt: "prompt",
     })
-    await store.createRun({
+    await store.beginRun({
       automationId: automation.id,
       trigger: "manual",
       promptSnapshot: "prompt",

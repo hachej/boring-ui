@@ -359,7 +359,7 @@ export async function createFolderModeApp(opts: {
   const runtimeHost = await createPluginFrontRuntimeHost({
     onDiagnostic: (diagnostic) => diagnosticsStore.record(diagnostic),
   })
-  const pluginDirs = pluginDiscovery.resolveCliBoringPluginDirs(workspaceRoot)
+  const pluginDirs = pluginDiscovery.resolveCliBoringPluginDirs(workspaceRoot, { includeFolderModeAutomation: true })
   const runtimeProvisioning = await provisionCliWorkspaceRuntime({
     workspaceRoot,
     mode: opts.mode,
@@ -379,7 +379,7 @@ export async function createFolderModeApp(opts: {
     // CLI-bundled internal plugins, resolved to absolute package dirs. This
     // drives the server-side install array (boot-time routes/agentTools);
     // additionalBoringPluginDirs only feeds the asset-manager scan.
-    defaultPluginPackages: pluginDiscovery.resolveCliDefaultPluginPackagePaths(),
+    defaultPluginPackages: pluginDiscovery.resolveCliDefaultPluginPackagePaths({ includeFolderModeAutomation: true }),
     additionalBoringPluginDirs: pluginDirs,
     workspaceBridge: { allowInsecureLocalCliBrowserAuth: opts.allowInsecureLocalBridgeAuth === true },
     boringPluginFrontTargetResolver: runtimeHost.createFrontTargetResolver(FOLDER_RUNTIME_PLUGIN_WORKSPACE_ID),

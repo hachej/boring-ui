@@ -29,7 +29,7 @@ describe("FileAutomationStore persistence", () => {
       model: "model-a",
       prompt: "# Prompt\n",
     })
-    const run = await store.createRun({
+    const run = await store.beginRun({
       automationId: automation.id,
       trigger: "manual",
       promptSnapshot: "# Prompt\n",
@@ -60,6 +60,38 @@ describe("FileAutomationStore persistence", () => {
     expect(raw.runs[run.id]).not.toHaveProperty("cronSnapshot")
     expect(raw.runs[run.id]).not.toHaveProperty("timezoneSnapshot")
     await expect(readFile(join(dir, "prompts", `${automation.id}.md`), "utf8")).resolves.toBe("# Prompt\n")
+  })
+
+  it("reconciles persisted active runs after host restart before admitting a new run", async () => {
+    const firstStore = new FileAutomationStore(dir, { clock: () => new Date("2026-07-10T00:00:00.000Z") })
+    const automation = await firstStore.createAutomation({
+      title: "Daily summary",
+      cron: "0 9 * * *",
+      timezone: "UTC",
+      model: "test:gpt-5.5",
+    })
+    const orphan = await firstStore.beginRun({
+      automationId: automation.id,
+      trigger: "manual",
+      promptSnapshot: "prompt",
+      modelSnapshot: "test:gpt-5.5",
+    })
+    await firstStore.updateRunLifecycle(orphan.id, { status: "running", startedAt: "2026-07-10T00:00:01.000Z" })
+
+    const restartedStore = new FileAutomationStore(dir, { clock: () => new Date("2026-07-10T00:10:00.000Z") })
+    const replacement = await restartedStore.beginRun({
+      automationId: automation.id,
+      trigger: "manual",
+      promptSnapshot: "prompt",
+      modelSnapshot: "test:gpt-5.5",
+    })
+    const runs = await restartedStore.listRuns(automation.id)
+
+    expect(replacement.status).toBe("queued")
+    expect(runs).toEqual(expect.arrayContaining([
+      expect.objectContaining({ id: orphan.id, status: "failed", completedAt: "2026-07-10T00:10:00.000Z", durationMs: 599_000, error: "Automation host restarted before the run completed" }),
+      expect.objectContaining({ id: replacement.id, status: "queued" }),
+    ]))
   })
 
   it("leaves a recoverable orphan prompt and unchanged live cache when the metadata commit fails", async () => {
