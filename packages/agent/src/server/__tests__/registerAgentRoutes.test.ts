@@ -1423,6 +1423,24 @@ test('workspace generated plugin skills open readonly and reject file mutations'
       }
       await expect(readFile(join(workspaceRoot, generated.path), 'utf-8')).resolves.toContain(`name: ${generated.name}`)
     }
+
+    for (const container of ['.boring-agent', './.boring-agent']) {
+      const removeContainer = await app.inject({
+        method: 'DELETE',
+        url: `/api/v1/files?path=${encodeURIComponent(container)}`,
+      })
+      const moveContainer = await app.inject({
+        method: 'POST',
+        url: '/api/v1/files/move',
+        payload: { from: container, to: 'moved-boring-agent' },
+      })
+      for (const response of [removeContainer, moveContainer]) {
+        expect(response.statusCode).toBe(403)
+        expect(response.json()).toEqual({
+          error: { code: ERROR_CODE_READONLY, message: 'skill file is readonly' },
+        })
+      }
+    }
   } finally {
     await app.close()
   }

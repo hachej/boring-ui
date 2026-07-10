@@ -50,6 +50,11 @@ export function isGeneratedReadonlySkillFilePath(path: string): boolean {
   return basename(normalize(path)) === 'SKILL.md' && isGeneratedReadonlySkillPath(path)
 }
 
+export function isGeneratedReadonlySkillContainerPath(path: string): boolean {
+  if (path.startsWith('/') || path.includes('\0')) return false
+  return normalize(path) === '.boring-agent' || isGeneratedReadonlySkillPath(path)
+}
+
 export function isReadonlySkillFilePath(path: string): boolean {
   if (!path.startsWith('/')) return false
   if (!path.endsWith('/SKILL.md')) return false
