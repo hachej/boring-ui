@@ -7,6 +7,7 @@ type TaskHttpClient = Pick<WorkspacePluginClient, "getJson" | "postJson">
 interface SourcesResponse { ok?: boolean; sources?: BoringTaskAdapterSummary[]; error?: string }
 interface ListResponse { ok?: boolean; configs?: Record<string, BoringTaskBoardConfig>; tasks?: BoringTaskCard[]; error?: string }
 interface MoveResponse { ok?: boolean; task?: BoringTaskCard; error?: string }
+interface DeleteResponse { ok?: boolean; error?: string }
 
 async function readError(response: Response): Promise<string> {
   try {
@@ -63,6 +64,9 @@ export function createHttpTaskAdapter(source: BoringTaskAdapterSummary, client?:
       const body = await postJson<MoveResponse>(client, "/sources/tasks/move", { sourceId: source.id, taskId, statusId })
       if (!body.task) throw new Error(`Task source did not return moved task: ${source.id}`)
       return body.task
+    } : undefined,
+    deleteTask: source.capabilities.delete ? async ({ taskId }) => {
+      await postJson<DeleteResponse>(client, "/sources/tasks/delete", { sourceId: source.id, taskId })
     } : undefined,
   }
 }

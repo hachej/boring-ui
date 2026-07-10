@@ -622,6 +622,37 @@ describe("WorkspaceAgentFront", () => {
     expect(document.querySelector('[data-boring-workspace-part="plugins-overlay"]')).toBeNull()
   })
 
+  it("persists the active app-left overlay across reloads", async () => {
+    const user = userEvent.setup()
+    vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input)
+      if (url.includes("/api/v1/tree")) return new Response(JSON.stringify({ entries: [] }), { status: 200 })
+      if (url.includes("/api/v1/ready-status")) return new Response(null, { status: 200 })
+      if (url.includes("/api/v1/agent/skills")) return new Response(JSON.stringify({ skills: [] }), { status: 200 })
+      if (url.includes("/api/v1/agent-plugins")) return new Response(JSON.stringify([]), { status: 200 })
+      if (url.includes("/api/v1/ui/commands/next")) return new Response(JSON.stringify([]), { status: 200 })
+      return new Response(null, { status: 204 })
+    }))
+
+    const props = {
+      workspaceId: "plugin-tabs-persist-left-overlay",
+      workspaceLayout: "plugin-tabs" as const,
+      chatPanel: SessionIdChatPanel,
+      sessions: [{ id: "s1", title: "First session" }],
+      activeSessionId: "s1",
+      providerStorageKey: "test:persist-left-overlay",
+    }
+    const { unmount } = render(<WorkspaceAgentFront {...props} />)
+
+    await user.click(within(screen.getByLabelText("App navigation")).getByRole("button", { name: "Skills" }))
+    await waitFor(() => expect(document.querySelector('[data-boring-workspace-part="skills-page"]')).not.toBeNull())
+
+    unmount()
+    render(<WorkspaceAgentFront {...props} />)
+
+    await waitFor(() => expect(document.querySelector('[data-boring-workspace-part="skills-page"]')).not.toBeNull())
+  })
+
   it.each([
     { action: "Plugins", part: "plugins-overlay" },
     { action: "Skills", part: "skills-page" },

@@ -4,15 +4,8 @@ import { useWorkspacePluginClient } from "@hachej/boring-workspace"
 import { useAppLeftOverlayChrome, type BoringFrontAppLeftOverlayProps } from "@hachej/boring-workspace/plugin"
 import { X } from "lucide-react"
 import type { BoringTaskAdapter } from "../shared"
-import { createGitHubIssuesAdapter } from "./githubIssuesAdapter"
 import { createHttpTaskAdapter, listHttpTaskSources } from "./httpTaskAdapter"
-import { createMockTaskAdapter } from "./mockAdapter"
 import { TaskKanbanBoard } from "./TaskKanbanBoard"
-
-const demoAdapters = [
-  createMockTaskAdapter(),
-  createGitHubIssuesAdapter({ owner: "hachej", repo: "boring-ui" }),
-]
 
 function TasksGlyph({ className }: { className?: string }) {
   return (
@@ -44,8 +37,7 @@ export function TasksOverlay({ onClose }: BoringFrontAppLeftOverlayProps) {
 
   const adapters = useMemo(() => {
     if (httpAdapters === null) return null
-    if (httpAdapters.length > 0) return httpAdapters
-    return demoAdapters
+    return httpAdapters
   }, [httpAdapters])
 
   return (

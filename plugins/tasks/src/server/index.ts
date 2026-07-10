@@ -119,6 +119,19 @@ export function createTasksServerPlugin(options: TasksServerPluginOptions = {}):
           return reply.status(statusFor(cause)).send(responseError(cause))
         }
       })
+
+      app.post("/api/boring-tasks/sources/tasks/delete", async (request, reply) => {
+        try {
+          const body = bodyObject(request.body)
+          await service.deleteTask({ workspaceId: workspaceIdFromRequest(request), workspaceRoot: options.workspaceRoot }, {
+            sourceId: requiredString(body, "sourceId"),
+            taskId: requiredString(body, "taskId"),
+          })
+          return { ok: true }
+        } catch (cause) {
+          return reply.status(statusFor(cause)).send(responseError(cause))
+        }
+      })
     },
   })
 }

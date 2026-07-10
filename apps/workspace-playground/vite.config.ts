@@ -130,6 +130,7 @@ export default defineConfig({
       // All API traffic goes to the agent server — the agent owns the
       // filesystem and the UI bridge. No vite-side mocks.
       "/api/v1": `http://127.0.0.1:${AGENT_API_PORT}`,
+      "/api/boring-tasks": `http://127.0.0.1:${AGENT_API_PORT}`,
     },
   },
 })

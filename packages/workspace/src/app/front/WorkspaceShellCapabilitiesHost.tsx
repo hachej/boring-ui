@@ -33,17 +33,35 @@ export function useWorkspaceShellCapabilitiesHost({
   surfaceDispatch: DispatchContext
   onDockOverlay?: () => void
 }): WorkspaceShellCapabilitiesHostResult {
-  const [floatingChatSessionId, setFloatingChatSessionId] = useState<string | null>(null)
+  const [floatingChatSession, setFloatingChatSession] = useState<{ sessionId: string; title?: string; initialDraft?: string; composingEnabled?: boolean } | null>(null)
   useEffect(() => {
-    setFloatingChatSessionId(null)
+    setFloatingChatSession(null)
   }, [workspaceId])
-  const shellCapabilities = useWorkspaceShellCapabilitiesController({ setFloatingChatSessionId, openChatPane, surfaceDispatch })
+  const shellCapabilities = useWorkspaceShellCapabilitiesController({ setFloatingChatSession, openChatPane, surfaceDispatch })
 
+  useEffect(() => {
+    const onOpenDetachedChat = (event: Event) => {
+      const detail = (event as CustomEvent<unknown>).detail as { sessionId?: unknown; title?: unknown; initialDraft?: unknown; composingEnabled?: unknown } | undefined
+      if (!detail || typeof detail.sessionId !== "string") return
+      shellCapabilities.openDetachedChat(detail.sessionId, {
+        ...(typeof detail.title === "string" ? { title: detail.title } : {}),
+        ...(typeof detail.initialDraft === "string" ? { initialDraft: detail.initialDraft } : {}),
+        ...(typeof detail.composingEnabled === "boolean" ? { composingEnabled: detail.composingEnabled } : {}),
+      })
+    }
+    window.addEventListener("boring-workspace:open-detached-chat", onOpenDetachedChat)
+    return () => window.removeEventListener("boring-workspace:open-detached-chat", onOpenDetachedChat)
+  }, [shellCapabilities])
+
+  const floatingChatSessionId = floatingChatSession?.sessionId ?? null
   const floatingChatTitle = floatingChatSessionId
-    ? sessionTitleById.get(floatingChatSessionId) ?? (floatingChatSessionId === "default" ? defaultSessionTitle : floatingChatSessionId)
+    ? floatingChatSession?.title ?? sessionTitleById.get(floatingChatSessionId) ?? (floatingChatSessionId === "default" ? defaultSessionTitle : floatingChatSessionId)
     : null
   const floatingChatParams = floatingChatSessionId
-    ? makeCenterParams(floatingChatSessionId, { bridgeEnabled: false }) as ChatPanelHostProps
+    ? {
+        ...makeCenterParams(floatingChatSessionId, { bridgeEnabled: false }) as ChatPanelHostProps,
+        ...(floatingChatSession?.initialDraft !== undefined ? { initialDraft: floatingChatSession.initialDraft } : {}),
+      }
     : null
   const floatingChatNode = floatingChatSessionId && floatingChatParams ? (
     <DetachedChatPopover
@@ -52,11 +70,11 @@ export function useWorkspaceShellCapabilitiesHost({
       title={floatingChatTitle ?? floatingChatSessionId}
       chatParams={floatingChatParams}
       initialPosition={{ left: appLeftPaneCollapsed ? 24 : effectiveAppLeftPaneWidth + 24, top: 72 }}
-      composingEnabled={false}
-      onClose={() => setFloatingChatSessionId(null)}
+      composingEnabled={floatingChatSession?.composingEnabled ?? false}
+      onClose={() => setFloatingChatSession(null)}
       onDock={() => {
         openChatPane(floatingChatSessionId)
-        setFloatingChatSessionId(null)
+        setFloatingChatSession(null)
         onDockOverlay?.()
       }}
     />
