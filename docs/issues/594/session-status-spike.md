@@ -60,12 +60,7 @@ A durable `EventStreamStore` type exists and can record `agent-start`/`agent-end
 
 Standalone Pi shares session JSONL files in CLI mode, but the native session file is a transcript/session-info store, not a heartbeat or process-status store. The spike found no existing reliable native Pi lock/heartbeat/status file that Boring can read to determine whether a standalone Pi process is currently working on a session.
 
-Therefore local standalone Pi sessions should be represented as:
-
-- `idle` when they are persisted and no Boring-owned live runtime channel exists; or
-- `unknown` if the product wants to distinguish "not tracked by Boring" from confirmed idle.
-
-Recommendation: use `unknown` only when evidence suggests an external live process may exist. In the first implementation, persisted sessions without a Boring live channel should be `idle` with `source: 'persisted'`, and the UI copy should avoid claiming Boring can detect external Pi work.
+Therefore, in the first implementation, local standalone Pi sessions should be represented deterministically as `idle` with `source: 'persisted'` when they are visible in the session store and no Boring-owned live runtime channel exists. The UI copy must avoid claiming Boring can detect external Pi work. A future native Pi heartbeat/status integration may add `unknown` or `external-working`, but that is out of scope for #594's first slices.
 
 ### 6. Queued continuation semantics need a distinct state or folded working state
 
@@ -77,7 +72,7 @@ Implementation detail:
 - `followUpMessages.length > 0` means queued but not necessarily actively executing.
 - During auto-post/queued continuation, the runtime will transition back to streaming while processing.
 
-Recommendation: expose `queued` separately in the backend read model, but render it as a non-working `queued` badge unless/until the continuation is actually being consumed/streaming. If product wants queued to count as working, map `queued` to the task-level `working` rollup explicitly and document that behavior.
+Decision: expose `queued` separately in the backend read model and render it as a non-working `queued` badge unless/until the continuation is actually being consumed/streaming or retrying. Task-level `working` rollup must not include merely waiting queued follow-ups.
 
 ## Proposed implementation shape
 
@@ -113,7 +108,7 @@ Rules:
   - any `working` -> `working`;
   - else any `queued` -> `queued`;
   - else any `error` -> `error`/attention if desired;
-  - else idle/unknown.
+  - else idle.
 - Do not persist activity in `TaskSessionBindingStore`.
 
 ## Proof/evidence collected
@@ -139,7 +134,7 @@ No production code was changed for this spike.
 
 A project-wide session inventory is feasible now. A project-wide status read model is feasible for Boring-owned live sessions and persisted idle sessions.
 
-The important limitation: Boring UI cannot currently know that a standalone Pi process is actively working on a shared local session. It can list that session and link it to a task, but active work status for external Pi must be `idle`/`unknown` until a future native Pi heartbeat/status integration exists.
+The important limitation: Boring UI cannot currently know that a standalone Pi process is actively working on a shared local session. It can list that session and link it to a task, but active work status for external Pi is reported as persisted `idle` until a future native Pi heartbeat/status integration exists.
 
 ## Plan impact
 

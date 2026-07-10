@@ -88,7 +88,7 @@ interface TaskSessionBinding {
 - Task identity is `(workspaceId, adapterId, taskId)`, because adapter task IDs are not globally consistent.
 - A task may have multiple linked sessions.
 - Session IDs remain ordinary Pi-native IDs. Do not encode task identity into a session ID and do not infer bindings by parsing IDs or titles.
-- Display-title convention: newly task-created sessions start with the task's human reference, for example `#594 · Unified session management`. This improves search and standalone Pi readability but is not referential data.
+- Display-title convention: newly task-created sessions start with a task display reference, for example `#594 · Unified session management`. The normalized task model must expose an optional `displayRef`; adapters set it from their native human key (`#<issue number>`, `TASK-123`, etc.). If absent, fall back to the adapter-scoped `taskId`. This improves search and standalone Pi readability but is not referential data.
 - Existing standalone Pi sessions can be linked manually by selecting/searching their normal session ID.
 
 ### Task binding persistence
@@ -103,6 +103,14 @@ interface TaskSessionBindingStore {
 }
 ```
 
+Binding invariants:
+
+- `(workspaceId, adapterId, taskId, sessionId)` is unique.
+- `link` is idempotent: linking an existing tuple returns the existing binding instead of creating a duplicate.
+- File and Postgres adapters must serialize concurrent write operations so concurrent link/unlink calls cannot lose unrelated records. The file adapter should use an in-process per-store write queue plus atomic temp-file rename; Postgres should use a unique index and transaction/upsert semantics.
+- The Tasks route/service must authorize the `sessionId` through the shared session service before persisting a binding. Unauthorized or missing session IDs use the same stable not-found/forbidden policy as session routes and must not create dangling bindings at link time.
+- Store-conformance tests must cover idempotent link, unique count, concurrent links, concurrent link+unlink, and route-level authorization failure.
+
 - **CLI adapter:** atomic JSON file under the local workspace app-data tree, initially `.pi/tasks/session-bindings.json`, following the proven first-party automation file-store pattern.
 - **Hosted adapter:** a core-owned Postgres implementation injected by the hosted app composition. It is keyed by workspace and never stored only inside an ephemeral sandbox filesystem.
 - The Tasks plugin remains DB-neutral and imports no core database implementation.
@@ -111,13 +119,15 @@ interface TaskSessionBindingStore {
 
 ### Live task activity
 
-Spike result: see [`session-status-spike.md`](./session-status-spike.md). Project-wide session inventory is feasible through the existing authorized native Pi session store. Project-wide status is feasible for Boring-owned live sessions and persisted idle sessions. Boring UI cannot currently know that a standalone Pi process is actively working on a shared local session; those sessions can be listed and linked, but their active status must be `idle`/`unknown` until a future native Pi heartbeat/status integration exists.
+Spike result: see [`session-status-spike.md`](./session-status-spike.md). Project-wide session inventory is feasible through the existing authorized native Pi session store. Project-wide status is feasible for Boring-owned live sessions and persisted idle sessions. Boring UI cannot currently know that a standalone Pi process is actively working on a shared local session; those sessions can be listed and linked, but their active status is `idle` with `source: 'persisted'` until a future native Pi heartbeat/status integration exists.
 
 - Activity is derived from the authoritative project session runtime/read model; it is not persisted in `TaskSessionBindingStore`.
 - Target behavior: Boring UI lists all authorized native Pi sessions for the project/workspace and exposes a status read model for those sessions, whether or not a chat pane is currently mounted.
-- A task is `working` when at least one authorized linked **Boring-owned live runtime** session is executing, retrying, or actively processing a queued continuation. Merely having an open chat pane does not make a task active.
-- Persisted sessions with no Boring live runtime channel are `idle` or `unknown` and must not be shown as actively working solely because their transcript exists. Standalone Pi live-working detection is out of scope for the first implementation.
-- Add a scoped bulk session-activity read seam so Tasks does not issue one state request per binding. The response maps requested session IDs to a small stable state such as `idle | queued | working | error | unknown`, includes a source such as `live-runtime | persisted`, and omits unauthorized sessions.
+- A task is `working` when at least one authorized linked **Boring-owned live runtime** session is executing, retrying, or actively consuming a queued continuation. Merely having an open chat pane does not make a task active.
+- A queued follow-up that is waiting but not being consumed is `queued`, not `working`. The TaskCard may show a queued badge, but it must not roll queued into the working count until the runtime transitions to streaming/retrying for that continuation.
+- Persisted sessions with no Boring live runtime channel are deterministically `idle` with `source: 'persisted'` and must not be shown as actively working solely because their transcript exists. Standalone Pi live-working detection is out of scope for the first implementation.
+- Add a scoped bulk session-activity read seam so Tasks does not issue one state request per binding. The response maps requested session IDs to a small stable state such as `idle | queued | working | error`, includes a source such as `live-runtime | persisted`, and omits unauthorized sessions.
+- Hosted multi-instance correctness requires the activity request to reach the runtime that owns the live session, or a later shared runtime-status registry. First implementation must either document/enforce session affinity for this endpoint or return persisted `idle` when the owning runtime is not local; do not silently claim cross-instance live status.
 - The task panel may subscribe to the existing browser session-status signal for immediate updates from mounted chats, but that event is only an optimization. It is not the authoritative source because it misses unmounted project sessions.
 - While the Tasks panel is open, refresh bulk activity on a bounded interval and immediately after binding/opening actions. Do not persist polling results.
 - Task cards show a concise `working` badge/spinner. If multiple linked sessions are active, show the active count. Selecting the indicator opens the active linked chat when unambiguous or the linked-session chooser otherwise.
@@ -310,8 +320,8 @@ Hosted proof:
 
 ## Open Questions
 
-1. Confirm the canonical task display reference used in titles (`#594`, `TASK-123`, adapter-provided key) and add it explicitly to the normalized task model if needed. This does not block the binding model because titles are presentation only.
+None blocking. Slice 3 must add optional `displayRef` to the normalized task model and adapter fallbacks before using task-reference session titles.
 
 ## Plan State
 
-`ready-for-agent`. Hosted bindings use Postgres. Agent deletion uses the compact `confirm: true` guard and rejects deletion of the currently executing session; no separate human-confirmation receipt is required.
+`ready-for-agent`. Hosted bindings use Postgres. Agent deletion uses the compact `confirm: true` guard and rejects deletion of the currently executing session; no separate human-confirmation receipt is required. Sol final review findings were accepted and folded into this plan.
