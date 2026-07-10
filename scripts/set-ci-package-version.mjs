@@ -31,6 +31,7 @@ const PUBLISHABLE = [
   "plugins/data-bridge",
   "plugins/bi-dashboard",
   "packages/boring-sandbox",
+  "plugins/boring-mcp",
   "packages/boring-bash",
   "plugins/boring-governance",
 ]
