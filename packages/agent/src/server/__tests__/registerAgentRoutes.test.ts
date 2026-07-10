@@ -1378,6 +1378,28 @@ test('workspace generated plugin skills open readonly and reject file mutations'
           directory: generatedDir,
         },
       })
+      const aliasedSave = await app.inject({
+        method: 'POST',
+        url: '/api/v1/files',
+        payload: { path: `./${generated.path}`, content: '# Aliased mutation\n' },
+      })
+      const aliasedRemoveDir = await app.inject({
+        method: 'DELETE',
+        url: `/api/v1/files?path=${encodeURIComponent(`./${generatedDir}`)}`,
+      })
+      const aliasedMoveDir = await app.inject({
+        method: 'POST',
+        url: '/api/v1/files/move',
+        payload: {
+          from: generatedDir.replace('.boring-agent/', '.boring-agent//'),
+          to: 'aliased-skill',
+        },
+      })
+      const aliasedMkdir = await app.inject({
+        method: 'POST',
+        url: '/api/v1/dirs',
+        payload: { path: `./${generatedDir}/aliased-dir`, recursive: true },
+      })
 
       for (const response of [
         save,
@@ -1389,6 +1411,10 @@ test('workspace generated plugin skills open readonly and reject file mutations'
         moveDirTo,
         mkdirInside,
         uploadInside,
+        aliasedSave,
+        aliasedRemoveDir,
+        aliasedMoveDir,
+        aliasedMkdir,
       ]) {
         expect(response.statusCode).toBe(403)
         expect(response.json()).toEqual({
