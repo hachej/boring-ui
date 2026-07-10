@@ -365,6 +365,9 @@ importers:
       ajv:
         specifier: ^8.20.0
         version: 8.20.0
+      esbuild:
+        specifier: ^0.25.12
+        version: 0.25.12
       postcss:
         specifier: ^8.5.15
         version: 8.5.16

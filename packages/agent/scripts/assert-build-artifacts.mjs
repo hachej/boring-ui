@@ -4,6 +4,7 @@ import { constants } from 'node:fs'
 import path from 'node:path'
 import { spawnSync } from 'node:child_process'
 import { fileURLToPath } from 'node:url'
+import { build as esbuild } from 'esbuild'
 import ts from 'typescript'
 
 const packageRoot = path.resolve(
@@ -81,6 +82,77 @@ function assertConsumerSafeCss(relPath) {
   }
 }
 
+function isFastifySpecifier(specifier) {
+  return specifier === 'fastify'
+    || specifier.startsWith('fastify/')
+    || specifier.startsWith('@fastify/')
+}
+
+function findFastifyClosureViolations(metafile) {
+  const inputPaths = Object.keys(metafile.inputs)
+    .filter((inputPath) => {
+      const normalized = inputPath.replaceAll('\\', '/')
+      return normalized.includes('node_modules/fastify/')
+        || normalized.includes('node_modules/@fastify/')
+    })
+    .sort()
+  const externalSpecifiers = Array.from(new Set(
+    Object.values(metafile.outputs)
+      .flatMap((output) => output.imports)
+      .filter((entry) => entry.external && isFastifySpecifier(entry.path))
+      .map((entry) => entry.path),
+  )).sort()
+  return { externalSpecifiers, inputPaths }
+}
+
+function assertFastifyDetectorFixture() {
+  const fastifyInput = 'node_modules/.pnpm/fastify@5.10.0/node_modules/fastify/fastify.js'
+  const fixture = {
+    inputs: {
+      'dist/core/index.js': { bytes: 1, imports: [] },
+      [fastifyInput]: { bytes: 1, imports: [] },
+    },
+    outputs: {
+      'fixture.js': {
+        bytes: 1,
+        exports: [],
+        imports: [
+          { external: true, kind: 'import-statement', path: '@fastify/static' },
+          { external: true, kind: 'dynamic-import', path: 'fastify' },
+        ],
+        inputs: {},
+      },
+    },
+  }
+  const actual = findFastifyClosureViolations(fixture)
+  const expected = {
+    externalSpecifiers: ['@fastify/static', 'fastify'],
+    inputPaths: [fastifyInput],
+  }
+  if (JSON.stringify(actual) !== JSON.stringify(expected)) {
+    throw new Error(`Fastify closure detector fixture mismatch: ${JSON.stringify(actual)}`)
+  }
+}
+
+async function assertCoreFastifyFree() {
+  const result = await esbuild({
+    absWorkingDir: packageRoot,
+    bundle: true,
+    entryPoints: ['dist/core/index.js'],
+    format: 'esm',
+    logLevel: 'silent',
+    metafile: true,
+    packages: 'bundle',
+    platform: 'node',
+    target: 'node22',
+    write: false,
+  })
+  const violations = findFastifyClosureViolations(result.metafile)
+  if (violations.inputPaths.length > 0 || violations.externalSpecifiers.length > 0) {
+    throw new Error(`dist/core Fastify closure violation: ${JSON.stringify(violations)}`)
+  }
+}
+
 async function main() {
   for (const relPath of requiredFiles) {
     await assertExists(relPath)
@@ -98,6 +170,8 @@ async function main() {
   assertTsParsable('dist/front/index.d.ts')
   assertTsParsable('dist/eval/index.d.ts')
   assertConsumerSafeCss('dist/front/styles.css')
+  assertFastifyDetectorFixture()
+  await assertCoreFastifyFree()
 
   process.stdout.write('build-artifacts: OK\n')
 }

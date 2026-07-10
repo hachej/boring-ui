@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 import { spawnSync } from "node:child_process";
-import { existsSync, readFileSync, readdirSync, realpathSync, statSync } from "node:fs";
-import { dirname, extname, isAbsolute, join, relative, resolve, sep } from "node:path";
+import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
+import { extname, join, relative, resolve } from "node:path";
 import ts from "typescript";
 
 const repoRoot = resolve(import.meta.dirname, "../../..");
@@ -11,7 +11,6 @@ const packageJson = JSON.parse(readFileSync(packageJsonPath, "utf8"));
 
 const requiredExports = [".", "./shared", "./server"];
 const sourceFilePattern = /\.(ts|tsx|mts|cts|js|mjs|cjs)$/;
-const jsFilePattern = /\.(js|mjs|cjs)$/;
 const negativeFixturesOnly = process.argv.includes("--negative-fixtures-only");
 const pass = (message) => console.log(`[boring-bash invariant] PASS ${message}`);
 const fail = (message) => {
@@ -85,7 +84,6 @@ function parseModuleReferences(file, text) {
     };
   });
   const references = [];
-  const unknownLoads = [];
   const add = (node, specifier, kind, typeOnly = false) => {
     const { line } = sourceFile.getLineAndCharacterOfPosition(node.getStart(sourceFile));
     references.push({ file, line: line + 1, kind, specifier, typeOnly });
@@ -112,16 +110,13 @@ function parseModuleReferences(file, text) {
         const specifier = node.arguments[0] ? literalText(node.arguments[0]) : undefined;
         if (specifier) {
           add(node, specifier, kind);
-        } else {
-          const { line } = sourceFile.getLineAndCharacterOfPosition(node.getStart(sourceFile));
-          unknownLoads.push({ file, line: line + 1, kind });
         }
       }
     }
     ts.forEachChild(node, visit);
   };
   visit(sourceFile);
-  return { parseErrors, references, unknownLoads };
+  return { parseErrors, references };
 }
 
 function isBoringBashSpecifier(specifier) {
@@ -137,98 +132,6 @@ function findAgentBoringBashValueImports(file, text) {
   };
 }
 
-function isFastifySpecifier(specifier) {
-  return specifier === "fastify" || specifier.startsWith("fastify/") || specifier.startsWith("@fastify/");
-}
-
-function isAgentSelfSpecifier(specifier) {
-  return specifier === "@hachej/boring-agent" || specifier.startsWith("@hachej/boring-agent/");
-}
-
-function resolveRelativeJsImport(fromFile, specifier, fileExists = (file) =>
-  existsSync(file) && statSync(file).isFile()) {
-  if (!specifier.startsWith(".")) return undefined;
-  const base = resolve(dirname(fromFile), specifier);
-  const candidates = [
-    base,
-    `${base}.js`,
-    `${base}.mjs`,
-    `${base}.cjs`,
-    join(base, "index.js"),
-    join(base, "index.mjs"),
-    join(base, "index.cjs"),
-  ];
-  return candidates.find(fileExists);
-}
-
-function isLocalModuleSpecifier(specifier) {
-  return specifier.startsWith(".") || specifier.startsWith("/") || specifier.startsWith("file:");
-}
-
-function createBoundedDistResolver(distRoot) {
-  const canonicalRoot = realpathSync(distRoot);
-  return (fromFile, specifier) => {
-    const resolved = resolveRelativeJsImport(fromFile, specifier);
-    if (!resolved) return undefined;
-    const canonical = realpathSync(resolved);
-    const fromRoot = relative(canonicalRoot, canonical);
-    if (fromRoot === ".." || fromRoot.startsWith(`..${sep}`) || isAbsolute(fromRoot)) return undefined;
-    return canonical;
-  };
-}
-
-function walkJsImportGraph(entry, options = {}) {
-  const readModule = options.readModule ?? ((file) => readFileSync(file, "utf8"));
-  const resolveImport = options.resolveImport ?? resolveRelativeJsImport;
-  const visited = new Set();
-  const parseErrors = [];
-  const readErrors = [];
-  const unknownLoads = [];
-  const unresolved = [];
-  const fastifyViolations = [];
-  const selfReferenceViolations = [];
-  const stack = [entry];
-
-  while (stack.length > 0) {
-    const file = stack.pop();
-    if (visited.has(file)) continue;
-    visited.add(file);
-
-    let text;
-    try {
-      text = readModule(file);
-    } catch (error) {
-      readErrors.push({ file, message: error instanceof Error ? error.message : String(error) });
-      continue;
-    }
-    const parsed = parseModuleReferences(file, text);
-    parseErrors.push(...parsed.parseErrors);
-    unknownLoads.push(...parsed.unknownLoads);
-    fastifyViolations.push(...parsed.references.filter(({ specifier }) => isFastifySpecifier(specifier)));
-    selfReferenceViolations.push(...parsed.references.filter(({ specifier }) => isAgentSelfSpecifier(specifier)));
-
-    for (const { specifier, line } of parsed.references) {
-      if (!isLocalModuleSpecifier(specifier)) continue;
-      const resolved = resolveImport(file, specifier);
-      if (!resolved || !jsFilePattern.test(resolved)) {
-        unresolved.push({ file, line, specifier });
-        continue;
-      }
-      stack.push(resolved);
-    }
-  }
-
-  return {
-    scannedFiles: visited.size,
-    fastifyViolations,
-    parseErrors,
-    readErrors,
-    selfReferenceViolations,
-    unknownLoads,
-    unresolved,
-  };
-}
-
 function ensureFreshAgentDist() {
   const result = spawnSync("pnpm", ["--filter", "@hachej/boring-agent...", "--workspace-concurrency=4", "run", "build"], {
     cwd: repoRoot,
@@ -239,11 +142,11 @@ function ensureFreshAgentDist() {
   });
 
   if (result.status === 0) {
-    pass("agent dependency-closure build completed for core Fastify graph scan");
+    pass("agent build and build-artifact invariants completed");
     return true;
   }
 
-  fail("agent core Fastify graph scan could not build @hachej/boring-agent");
+  fail("could not build and verify @hachej/boring-agent artifacts");
   if (result.error) console.error(result.error.message);
   if (result.stdout) console.error(result.stdout.trimEnd());
   if (result.stderr) console.error(result.stderr.trimEnd());
@@ -281,59 +184,6 @@ function assertNegativeFixtures() {
       parseErrors: agentValueFixture.parseErrors,
       violations: agentValueActual,
     })}`);
-  }
-
-  const fixtureEntry = resolve("/virtual/core/index.js");
-  const fixtureNested = resolve("/virtual/core/nested.js");
-  const fixtureModules = new Map([
-    [fixtureEntry, "export { nested } from './nested.js'"],
-    [fixtureNested, [
-      "export { createAgentApp } from '@hachej/boring-agent/server'",
-      "export const nested = () => import('@fastify/static', { with: { type: 'json' } })",
-    ].join("\n")],
-  ]);
-  const fixtureGraph = walkJsImportGraph(fixtureEntry, {
-    readModule(file) {
-      const text = fixtureModules.get(file);
-      if (text === undefined) throw new Error(`missing fixture module ${file}`);
-      return text;
-    },
-    resolveImport(fromFile, specifier) {
-      return resolveRelativeJsImport(fromFile, specifier, (file) => fixtureModules.has(file));
-    },
-  });
-  const fastifyViolation = fixtureGraph.fastifyViolations[0];
-  if (fixtureGraph.scannedFiles === 2
-    && fixtureGraph.fastifyViolations.length === 1
-    && fastifyViolation?.file === fixtureNested
-    && fastifyViolation?.kind === "dynamic import"
-    && fastifyViolation?.line === 2
-    && fastifyViolation?.specifier === "@fastify/static"
-    && fixtureGraph.selfReferenceViolations.length === 1
-    && fixtureGraph.selfReferenceViolations[0]?.file === fixtureNested
-    && fixtureGraph.selfReferenceViolations[0]?.line === 1
-    && fixtureGraph.selfReferenceViolations[0]?.specifier === "@hachej/boring-agent/server"
-    && fixtureGraph.parseErrors.length === 0
-    && fixtureGraph.readErrors.length === 0
-    && fixtureGraph.unknownLoads.length === 0
-    && fixtureGraph.unresolved.length === 0) {
-    pass("agent core graph fixture follows a nested chunk and rejects Fastify and package self-references");
-  } else {
-    fail(`agent core graph fixture mismatch: ${JSON.stringify(fixtureGraph)}`);
-  }
-
-  const missingChunkGraph = walkJsImportGraph(fixtureEntry, {
-    readModule: () => "export * from './missing.js'",
-    resolveImport: () => undefined,
-  });
-  if (JSON.stringify(missingChunkGraph.unresolved) === JSON.stringify([{
-    file: fixtureEntry,
-    line: 1,
-    specifier: "./missing.js",
-  }])) {
-    pass("agent core graph fixture fails closed on a missing relative chunk");
-  } else {
-    fail(`agent core graph missing-chunk fixture expected 1 unresolved import, got ${missingChunkGraph.unresolved.length}`);
   }
 }
 
@@ -383,7 +233,6 @@ if (!negativeFixturesOnly) {
 
   {
     const agentPackageRoot = join(repoRoot, "packages", "agent");
-    const agentDistRoot = join(agentPackageRoot, "dist");
     const agentPackageJson = JSON.parse(readFileSync(join(agentPackageRoot, "package.json"), "utf8"));
     const coreExport = agentPackageJson.exports?.["./core"];
     const coreImport = typeof coreExport?.import === "string" ? coreExport.import : undefined;
@@ -395,45 +244,7 @@ if (!negativeFixturesOnly) {
     if (!agentPackageJson.files?.includes("dist")) {
       fail("agent package files must publish dist for the ./core closure proof");
     }
-
-    const buildOk = coreImport ? ensureFreshAgentDist() : false;
-    const coreEntry = coreImport ? resolve(agentPackageRoot, coreImport) : undefined;
-    if (!buildOk) {
-      // Build/config failure already reported above.
-    } else if (!coreEntry || !existsSync(coreEntry) || statSync(coreEntry).size === 0) {
-      fail(`agent core Fastify graph scan: missing or empty ${relative(repoRoot, coreEntry ?? agentPackageRoot)}`);
-    } else {
-      const canonicalEntry = realpathSync(coreEntry);
-      const result = walkJsImportGraph(canonicalEntry, {
-        resolveImport: createBoundedDistResolver(agentDistRoot),
-      });
-      for (const violation of result.fastifyViolations) {
-        fail(`agent core Fastify graph scan: ${relative(repoRoot, violation.file)}:${violation.line} imports ${violation.specifier}`);
-      }
-      for (const violation of result.selfReferenceViolations) {
-        fail(`agent core Fastify graph scan: ${relative(repoRoot, violation.file)}:${violation.line} has package self-reference ${violation.specifier}`);
-      }
-      for (const error of result.parseErrors) {
-        fail(`agent core Fastify graph scan: could not parse ${relative(repoRoot, error.file)}:${error.line}: ${error.message}`);
-      }
-      for (const error of result.readErrors) {
-        fail(`agent core Fastify graph scan: could not read ${relative(repoRoot, error.file)}: ${error.message}`);
-      }
-      for (const load of result.unknownLoads) {
-        fail(`agent core Fastify graph scan: ${relative(repoRoot, load.file)}:${load.line} has non-literal ${load.kind}`);
-      }
-      for (const violation of result.unresolved) {
-        fail(`agent core Fastify graph scan: ${relative(repoRoot, violation.file)}:${violation.line} has unresolved or out-of-dist import ${violation.specifier}`);
-      }
-      if (result.fastifyViolations.length === 0
-        && result.selfReferenceViolations.length === 0
-        && result.parseErrors.length === 0
-        && result.readErrors.length === 0
-        && result.unknownLoads.length === 0
-        && result.unresolved.length === 0) {
-        pass(`agent core Fastify graph scan: no fastify specifiers in ${result.scannedFiles} dist file(s) reachable from @hachej/boring-agent/core`);
-      }
-    }
+    if (coreImport) ensureFreshAgentDist();
   }
 
   const docs = [
