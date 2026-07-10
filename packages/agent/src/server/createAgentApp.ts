@@ -14,30 +14,23 @@ import { loadPlugins } from './harness/pi-coding-agent/pluginLoader'
 import { buildFilesystemAgentTools } from './tools/filesystem'
 import { buildHarnessAgentTools } from './tools/harness'
 import { createAuthMiddleware } from './http/middleware'
-import { healthRoutes } from './http/routes/health'
-import { fileRoutes } from './http/routes/file'
-import { fsEventsRoutes } from './http/routes/fsEvents'
-import { treeRoutes } from './http/routes/tree'
-import { modelsRoutes } from './http/routes/models'
-import { skillsRoutes } from './http/routes/skills'
-import { piChatRoutes, type PiChatSessionService } from './http/routes/piChat'
-import { systemPromptRoutes } from './http/routes/systemPrompt'
-import { sessionChangesRoutes } from './http/routes/sessionChanges'
-import { catalogRoutes } from './http/routes/catalog'
-import { readyStatusRoutes } from './http/routes/readyStatus'
-import { commandsRoutes } from './http/routes/commands'
-import { reloadRoutes } from './http/routes/reload'
-import { searchRoutes } from './http/routes/search'
-import { gitRoutes } from './http/routes/git'
+import type { PiChatSessionService } from './http/routes/piChat'
 import { InMemorySessionChangesTracker } from './http/sessionChangesTracker'
 import { createRuntimeReadyStatusTracker } from './runtime/modeReadiness'
+import { ReadyStatusTracker } from './runtime/readyStatus'
 import type { AgentMeteringSink } from './pi-chat/metering'
 import { createPluginDiagnosticsTool } from './tools/pluginDiagnostics'
 import type { ReloadHookDiagnostic } from './http/routes/reload'
 import { createAgentRuntimeBridge } from './createAgent'
+import {
+  registerAgentRouteBindingProfile,
+  toolNames,
+  type AgentRouteBindingProfile,
+} from './agentRouteBindingProfile'
 
 const DEFAULT_VERSION = '0.1.0-dev'
 const DEFAULT_SESSION_ID = 'default'
+const PURE_RUNTIME_MODE = 'none'
 
 export interface CreateAgentAppOptions {
   workspaceRoot?: string
@@ -85,6 +78,8 @@ export interface CreateAgentAppOptions {
   }) => Promise<void>
   /** Optional explicit file-backed session directory. Mostly for tests/hosts. */
   sessionDir?: string
+  /** Optional explicit root for file-backed session directories. */
+  sessionRoot?: string
   /**
    * Enable user/global Pi extension auto-discovery from .pi/ and ~/.pi.
    * App/internal plugins should be passed through extraTools/pi instead.
@@ -122,12 +117,80 @@ export interface CreateAgentAppOptions {
 export async function createAgentApp(
   opts: CreateAgentAppOptions = {},
 ): Promise<FastifyInstance> {
-  const workspaceRoot = opts.workspaceRoot ?? process.cwd()
   const sessionId = opts.sessionId ?? DEFAULT_SESSION_ID
-  const templatePath = opts.templatePath ?? getEnv('BORING_AGENT_TEMPLATE_PATH')
   const app = Fastify({ logger: opts.logger ?? true, bodyLimit: 16 * 1024 * 1024 })
 
   const resolvedMode = opts.runtimeModeAdapter?.id ?? opts.mode ?? autoDetectMode()
+  const profile = !opts.runtimeModeAdapter && resolvedMode === PURE_RUNTIME_MODE
+    ? await createPureAgentAppProfile(opts, resolvedMode)
+    : await createWorkspaceAgentAppProfile(opts, sessionId, resolvedMode, app)
+
+  app.addHook(
+    'onRequest',
+    createAuthMiddleware({
+      authToken: opts.authToken,
+      publicPaths: ['/health', '/ready', '/api/v1/ready-status'],
+    }),
+  )
+
+  await registerAgentRouteBindingProfile(app, profile)
+  return app
+}
+
+async function createPureAgentAppProfile(
+  opts: CreateAgentAppOptions,
+  resolvedMode: RuntimeModeId,
+): Promise<AgentRouteBindingProfile> {
+  const runtimePi = withPiHarnessDefaults(opts.pi)
+  const baseHarnessFactory = opts.harnessFactory ?? ((input) => createPiCodingAgentHarness({
+    ...input,
+    pi: runtimePi,
+  }))
+  const harnessFactory = ((input) => baseHarnessFactory({
+    ...input,
+    sessionNamespace: opts.sessionNamespace,
+    sessionRoot: opts.sessionRoot,
+    sessionDir: opts.sessionDir ?? input.sessionDir,
+  })) as AgentCoreHarnessFactory
+  const tools = opts.extraTools ?? []
+  const coreAgent = createAgentRuntimeBridge({
+    runtime: 'none',
+    tools,
+    harnessFactory,
+    systemPromptAppend: opts.systemPromptAppend,
+    systemPromptDynamic: opts.systemPromptDynamic,
+    telemetry: opts.telemetry,
+    metering: opts.metering,
+    sessionStorageRoot: opts.sessionRoot,
+  })
+  const agentRuntime = await coreAgent.getRuntime()
+  const readyTracker = new ReadyStatusTracker({ sandboxReady: true, harnessReady: true })
+  return {
+    runtimeMode: resolvedMode,
+    capabilities: { tools: toolNames(tools) },
+    sessionChangesTracker: new InMemorySessionChangesTracker(),
+    health: {
+      version: opts.version ?? DEFAULT_VERSION,
+      getReadiness: () => ({ sandboxReady: true, harnessReady: true }),
+    },
+    chat: {
+      service: agentRuntime.service as PiChatSessionService,
+      defaultWorkspaceId: false,
+    },
+    catalog: { tools },
+    readyStatus: { tracker: readyTracker },
+    dispose: () => coreAgent.agent.dispose(),
+  }
+}
+
+async function createWorkspaceAgentAppProfile(
+  opts: CreateAgentAppOptions,
+  sessionId: string,
+  resolvedMode: RuntimeModeId,
+  app: FastifyInstance,
+): Promise<AgentRouteBindingProfile> {
+  const workspaceRoot = opts.workspaceRoot ?? process.cwd()
+  const templatePath = opts.templatePath ?? getEnv('BORING_AGENT_TEMPLATE_PATH')
   const modeAdapter = opts.runtimeModeAdapter ?? resolveMode(resolvedMode)
   let runtimeBundle = await modeAdapter.create({
     workspaceRoot,
@@ -223,7 +286,8 @@ export async function createAgentApp(
   const harnessFactory = ((input) => baseHarnessFactory({
     ...input,
     sessionNamespace: opts.sessionNamespace,
-    sessionDir: opts.sessionDir,
+    sessionRoot: opts.sessionRoot,
+    sessionDir: opts.sessionDir ?? input.sessionDir,
   })) as AgentCoreHarnessFactory
   const coreAgent = createAgentRuntimeBridge({
     runtime: modeAdapter,
@@ -233,6 +297,7 @@ export async function createAgentApp(
     systemPromptDynamic: opts.systemPromptDynamic,
     telemetry: opts.telemetry,
     metering: opts.metering,
+    sessionStorageRoot: opts.sessionRoot,
     workdir: workspaceRoot,
   }, {
     service: {
@@ -243,23 +308,8 @@ export async function createAgentApp(
   const agentRuntime = await coreAgent.getRuntime()
   const harness = agentRuntime.harness
   harnessRef = harness
-  const sessionChangesTracker = new InMemorySessionChangesTracker()
-
   const readyTracker = createRuntimeReadyStatusTracker(modeAdapter, {
     harnessReady: true,
-  })
-
-  app.addHook(
-    'onRequest',
-    createAuthMiddleware({
-      authToken: opts.authToken,
-      publicPaths: ['/health', '/ready', '/api/v1/ready-status'],
-    }),
-  )
-
-  await app.register(healthRoutes, {
-    version: opts.version ?? DEFAULT_VERSION,
-    getReadiness: () => readyTracker.getReadiness(),
   })
 
   const filesystemBindingsForRequest = opts.getFilesystemBindings
@@ -276,53 +326,64 @@ export async function createAgentApp(
         })
       }
     : undefined
-  await app.register(fileRoutes, { workspace: runtimeBundle.workspace, getFilesystemBindings: filesystemBindingsForRequest, filesystemBindings: runtimeBundle.filesystemBindings })
-  await app.register(fsEventsRoutes, { workspace: runtimeBundle.workspace })
-  await app.register(treeRoutes, { workspace: runtimeBundle.workspace, getFilesystemBindings: filesystemBindingsForRequest, filesystemBindings: runtimeBundle.filesystemBindings })
-  // /api/v1/files/search powers BOTH the cmd-palette / file-tree
-  // search (browser → fetchClient.search) AND shares the same
-  // FileSearch instance the LLM's `find` tool already uses
-  // (runtimeBundle.fileSearch). One impl, one set of glob semantics,
-  // one bound-to-workspace-root guarantee.
-  await app.register(searchRoutes, { fileSearch: runtimeBundle.fileSearch })
-  // Powers the file-tree "Copy Git URL" action. Must use the HOST storage root
-  // (where .git lives), not workspace.root — in sandbox modes the latter is the
-  // in-sandbox cwd (e.g. /workspace) and git would not find the repo.
-  await app.register(gitRoutes, {
-    getWorkspaceRoot: () => getOptionalRuntimeBundleStorageRoot(runtimeBundle),
-  })
-  await app.register(piChatRoutes, {
-    service: agentRuntime.service as PiChatSessionService,
-  })
-  await app.register(systemPromptRoutes, { harness })
-  await app.register(modelsRoutes)
-  await app.register(skillsRoutes, {
-    workspaceRoot,
-    additionalSkillPaths: runtimePi.additionalSkillPaths,
-    piPackages: runtimePi.packages,
-    noSkills: runtimePi.noSkills,
-    getAdditionalSkillPaths: () => [
-      ...(getRuntimeProvisioning()?.skillPaths ?? []),
-      ...(opts.pi?.additionalSkillPaths ?? []),
-      ...(opts.pi?.getHotReloadableResources?.().additionalSkillPaths ?? []),
-    ],
-    getPiPackages: () => [
-      ...(opts.pi?.packages ?? []),
-      ...(opts.pi?.getHotReloadableResources?.().packages ?? []),
-    ],
-  })
-  await app.register(sessionChangesRoutes, { tracker: sessionChangesTracker })
-  await app.register(catalogRoutes, { tools })
-  await app.register(commandsRoutes, { harness, defaultSessionId: sessionId, workdir: runtimeBundle.workspace.root, metering: opts.metering })
-  await app.register(reloadRoutes, {
-    harness,
-    defaultSessionId: sessionId,
-    beforeReload: opts.beforeReload,
-    onDiagnostics: (diagnostics) => {
-      lastReloadDiagnostics = diagnostics
-    },
-  })
-  await app.register(readyStatusRoutes, { tracker: readyTracker })
 
-  return app
+  return {
+    runtimeMode: resolvedMode,
+    capabilities: { tools: toolNames(tools) },
+    sessionChangesTracker: new InMemorySessionChangesTracker(),
+    health: {
+      version: opts.version ?? DEFAULT_VERSION,
+      getReadiness: () => readyTracker.getReadiness(),
+    },
+    filesystem: {
+      file: {
+        workspace: runtimeBundle.workspace,
+        getFilesystemBindings: filesystemBindingsForRequest,
+        filesystemBindings: runtimeBundle.filesystemBindings,
+      },
+      fsEvents: { workspace: runtimeBundle.workspace },
+      tree: {
+        workspace: runtimeBundle.workspace,
+        getFilesystemBindings: filesystemBindingsForRequest,
+        filesystemBindings: runtimeBundle.filesystemBindings,
+      },
+      // File search shares the same bound implementation as the model tool.
+      search: { fileSearch: runtimeBundle.fileSearch },
+      // Git metadata resolves against host storage, not a sandbox-internal cwd.
+      git: { getWorkspaceRoot: () => getOptionalRuntimeBundleStorageRoot(runtimeBundle) },
+    },
+    chat: { service: agentRuntime.service as PiChatSessionService },
+    systemPrompt: { harness },
+    skills: {
+      workspaceRoot,
+      additionalSkillPaths: runtimePi.additionalSkillPaths,
+      piPackages: runtimePi.packages,
+      noSkills: runtimePi.noSkills,
+      getAdditionalSkillPaths: () => [
+        ...(getRuntimeProvisioning()?.skillPaths ?? []),
+        ...(opts.pi?.additionalSkillPaths ?? []),
+        ...(opts.pi?.getHotReloadableResources?.().additionalSkillPaths ?? []),
+      ],
+      getPiPackages: () => [
+        ...(opts.pi?.packages ?? []),
+        ...(opts.pi?.getHotReloadableResources?.().packages ?? []),
+      ],
+    },
+    catalog: { tools },
+    commands: {
+      harness,
+      defaultSessionId: sessionId,
+      workdir: runtimeBundle.workspace.root,
+      metering: opts.metering,
+    },
+    reload: {
+      harness,
+      defaultSessionId: sessionId,
+      beforeReload: opts.beforeReload,
+      onDiagnostics: (diagnostics) => {
+        lastReloadDiagnostics = diagnostics
+      },
+    },
+    readyStatus: { tracker: readyTracker },
+  }
 }

@@ -87,6 +87,8 @@ export interface PiChatRoutesOptions {
   service?: PiChatSessionService
   getService?: (request: FastifyRequest) => PiChatSessionService | Promise<PiChatSessionService>
   heartbeatIntervalMs?: number | false
+  /** Set false for pure/headless surfaces that must not persist workspaceId. */
+  defaultWorkspaceId?: string | false
 }
 
 export interface PiChatRouteErrorOptions {
@@ -131,7 +133,7 @@ export function piChatRoutes(
     try {
       const service = await resolveService(opts, request)
       if (!service.listSessions) throw unsupportedServiceMethod('list Pi chat sessions')
-      return reply.send(await service.listSessions(getRequestContext(request), sessionListOptions(request)))
+      return reply.send(await service.listSessions(getRequestContext(request, opts), sessionListOptions(request)))
     } catch (err) {
       return sendRouteError(reply, err, 'list pi chat sessions failed')
     }
@@ -143,7 +145,7 @@ export function piChatRoutes(
     try {
       const service = await resolveService(opts, request)
       if (!service.createSession) throw unsupportedServiceMethod('create Pi chat session')
-      return reply.code(201).send(await service.createSession(getRequestContext(request), body))
+      return reply.code(201).send(await service.createSession(getRequestContext(request, opts), body))
     } catch (err) {
       return sendRouteError(reply, err, 'create pi chat session failed')
     }
@@ -155,7 +157,7 @@ export function piChatRoutes(
     try {
       const service = await resolveService(opts, request)
       if (!service.deleteSession) throw unsupportedServiceMethod('delete Pi chat session')
-      await service.deleteSession(getRequestContext(request), params.sessionId)
+      await service.deleteSession(getRequestContext(request, opts), params.sessionId)
       return reply.code(204).send()
     } catch (err) {
       return sendRouteError(reply, err, 'delete pi chat session failed')
@@ -168,7 +170,7 @@ export function piChatRoutes(
 
     try {
       const service = await resolveService(opts, request)
-      const snapshot = await service.readState(getRequestContext(request), params.sessionId)
+      const snapshot = await service.readState(getRequestContext(request, opts), params.sessionId)
       return reply.send(PiChatSnapshotSchema.parse(snapshot))
     } catch (err) {
       return sendRouteError(reply, err, 'read pi chat state failed')
@@ -191,7 +193,7 @@ export function piChatRoutes(
 
     try {
       const service = await resolveService(opts, request)
-      const result = await service.subscribe(getRequestContext(request), params.sessionId, query.cursor, writeFrame)
+      const result = await service.subscribe(getRequestContext(request, opts), params.sessionId, query.cursor, writeFrame)
       if (result.type !== 'ok') {
         return sendReplayRangeError(reply, result)
       }
@@ -238,7 +240,7 @@ export function piChatRoutes(
     if (!body) return
     try {
       const service = await resolveService(opts, request)
-      const receipt = await service.prompt(getRequestContext(request), params.sessionId, body)
+      const receipt = await service.prompt(getRequestContext(request, opts), params.sessionId, body)
       return reply.code(202).send(receipt)
     } catch (err) {
       return sendRouteError(reply, err, 'prompt rejected')
@@ -252,7 +254,7 @@ export function piChatRoutes(
     if (!body) return
     try {
       const service = await resolveService(opts, request)
-      const receipt = await service.followUp(getRequestContext(request), params.sessionId, body)
+      const receipt = await service.followUp(getRequestContext(request, opts), params.sessionId, body)
       return reply.code(202).send(receipt)
     } catch (err) {
       return sendRouteError(reply, err, 'follow-up rejected')
@@ -266,7 +268,7 @@ export function piChatRoutes(
     if (!body) return
     try {
       const service = await resolveService(opts, request)
-      const receipt = await service.clearQueue(getRequestContext(request), params.sessionId, body)
+      const receipt = await service.clearQueue(getRequestContext(request, opts), params.sessionId, body)
       return reply.code(202).send(receipt)
     } catch (err) {
       return sendRouteError(reply, err, 'queue clear rejected')
@@ -280,7 +282,7 @@ export function piChatRoutes(
     if (!body) return
     try {
       const service = await resolveService(opts, request)
-      const receipt = await service.interrupt(getRequestContext(request), params.sessionId, body)
+      const receipt = await service.interrupt(getRequestContext(request, opts), params.sessionId, body)
       return reply.code(202).send(receipt)
     } catch (err) {
       return sendRouteError(reply, err, 'interrupt rejected')
@@ -294,7 +296,7 @@ export function piChatRoutes(
     if (!body) return
     try {
       const service = await resolveService(opts, request)
-      const receipt = await service.stop(getRequestContext(request), params.sessionId, body)
+      const receipt = await service.stop(getRequestContext(request, opts), params.sessionId, body)
       return reply.code(202).send(receipt)
     } catch (err) {
       return sendRouteError(reply, err, 'stop rejected')
@@ -363,13 +365,16 @@ async function resolveService(opts: PiChatRoutesOptions, request: FastifyRequest
   return service
 }
 
-function getRequestContext(request: FastifyRequest): PiSessionRequestContext {
+function getRequestContext(request: FastifyRequest, opts: PiChatRoutesOptions): PiSessionRequestContext {
   const storageScopeHeader = request.headers['x-boring-storage-scope']
   const user = (request as FastifyRequest & { user?: { id?: unknown; email?: unknown; emailVerified?: unknown } | null }).user
   const authSubject = user?.id
   const authEmail = user?.email
+  const workspaceId = opts.defaultWorkspaceId === false
+    ? undefined
+    : request.workspaceContext?.workspaceId ?? opts.defaultWorkspaceId ?? DEFAULT_WORKSPACE_ID
   return {
-    workspaceId: request.workspaceContext?.workspaceId ?? DEFAULT_WORKSPACE_ID,
+    workspaceId,
     storageScope: typeof storageScopeHeader === 'string' && storageScopeHeader.length > 0 ? storageScopeHeader : undefined,
     authSubject: typeof authSubject === 'string' && authSubject.length > 0 ? authSubject : undefined,
     authEmail: typeof authEmail === 'string' && authEmail.length > 0 ? authEmail : undefined,

@@ -14,10 +14,11 @@ import type {
   AgentStartReceipt,
   AgentStreamOptions,
 } from '../shared/events'
-import { AgentNotImplementedError } from '../shared/events'
+import { AgentFilesystemRequiredError, AgentNotImplementedError } from '../shared/events'
 import type { SessionCtx, SessionListOptions, SessionStore } from '../shared/session'
 import type { PromptPayload } from '../shared/chat'
 import { ErrorCode } from '../shared/error-codes'
+import { createPureRuntimeCwd } from './runtime/pureRuntime'
 
 const DEFAULT_WORKDIR = ''
 const DEFAULT_LIVE_BUFFER_SIZE = 1_000
@@ -134,6 +135,7 @@ export function createAgentRuntimeBridge(
   }
 
   async function start(input: AgentSendInput): Promise<AgentStartReceipt> {
+    assertFilesystemAttachmentsAllowed(config, input)
     const runtime = await getRuntime()
     const { sessionId, sessionKey, ctx } = await ensureSession(input, runtime)
     startedSessions.set(sessionKey, { sessionId, ctx })
@@ -240,10 +242,14 @@ function createRuntimeLoader(config: AgentConfig, options: CreateAgentRuntimeBri
 
 async function createRuntime(config: AgentConfig, options: CreateAgentRuntimeBridgeOptions): Promise<AgentRuntime> {
   const harnessFactory = config.harnessFactory ?? (await import('./harness/pi-coding-agent/createHarness')).createPiCodingAgentHarness
+  const pureRuntimeCwd = config.runtime === 'none'
+    ? await createPureRuntimeCwd(config.sessionStorageRoot)
+    : undefined
   const harnessInput: AgentHarnessFactoryInput = {
     tools: config.tools ?? [],
-    cwd: config.workdir ?? DEFAULT_WORKDIR,
-    runtimeCwd: options.harness?.runtimeCwd ?? options.service?.workdir ?? config.workdir,
+    cwd: pureRuntimeCwd ?? config.workdir ?? DEFAULT_WORKDIR,
+    runtimeCwd: pureRuntimeCwd ?? options.harness?.runtimeCwd ?? options.service?.workdir ?? config.workdir,
+    sessionStorageCwd: pureRuntimeCwd ? DEFAULT_WORKDIR : undefined,
     systemPromptAppend: config.systemPromptAppend,
     systemPromptDynamic: config.systemPromptDynamic,
     sessionRoot: config.sessionStorageRoot,
@@ -257,12 +263,21 @@ async function createRuntime(config: AgentConfig, options: CreateAgentRuntimeBri
     service: new HarnessPiChatService({
       harness,
       sessionStore,
-      workdir: options.service?.workdir ?? config.workdir ?? DEFAULT_WORKDIR,
+      workdir: pureRuntimeCwd ?? options.service?.workdir ?? config.workdir ?? DEFAULT_WORKDIR,
       workspace: options.service?.workspace,
       eventStore: options.service?.eventStore,
+      allowAttachments: config.runtime !== 'none',
       metering: config.metering as AgentMeteringSink | undefined,
     }),
   }
+}
+
+function assertFilesystemAttachmentsAllowed(config: AgentConfig, input: AgentSendInput): void {
+  if (config.runtime !== 'none' || !input.attachments || input.attachments.length === 0) return
+  // TEMPORARY(BBT2-007): split attachment capability into none|direct|workspace.
+  // Until then pure mode rejects every non-empty attachment, including inline
+  // data URLs, so fs-free mode has no attachment side channel.
+  throw new AgentFilesystemRequiredError()
 }
 
 function createReadiness(config: AgentConfig): AgentReadiness {

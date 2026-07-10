@@ -1,8 +1,13 @@
-import { describe, expect, it } from 'vitest'
+import { mkdtemp, rm } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+import { describe, expect, it, vi } from 'vitest'
 import type { AgentSessionEvent } from '@mariozechner/pi-coding-agent'
 
 import {
+  AGENT_NO_FILESYSTEM_FOR_ATTACHMENTS,
   AGENT_NOT_IMPLEMENTED_UNTIL_T1,
+  AgentFilesystemRequiredError,
   AgentNotImplementedError,
   createAgent,
 } from '@hachej/boring-agent/core'
@@ -118,6 +123,104 @@ describe('createAgent', () => {
     expect(fake.sessions.createContexts[0]).toMatchObject({ userId: undefined })
     expect((fake.sessions.createContexts[0] as { workspaceId?: string }).workspaceId).toBeUndefined()
     await agent.dispose()
+  })
+
+  it('rejects attachments in runtime none before creating sessions or harness adapters', async () => {
+    const fake = createFakeHarnessFactory()
+    const agent = createAgent({
+      runtime: 'none',
+      harnessFactory: fake.factory,
+    })
+    const input = {
+      content: 'look at this',
+      attachments: [{ filename: 'chart.png', mediaType: 'image/png', url: '/api/v1/files/raw?path=chart.png' }],
+    }
+    const inlineInput = {
+      content: 'inline image',
+      attachments: [{ filename: 'inline.png', mediaType: 'image/png', url: 'data:image/png;base64,AAAA' }],
+    }
+
+    await expect(agent.start(input)).rejects.toBeInstanceOf(AgentFilesystemRequiredError)
+    await expect(agent.start(inlineInput)).rejects.toBeInstanceOf(AgentFilesystemRequiredError)
+    await expect(collectEvents(agent.send(input))).rejects.toMatchObject({
+      code: AGENT_NO_FILESYSTEM_FOR_ATTACHMENTS,
+    })
+    expect(fake.sessions.createContexts).toEqual([])
+    expect(fake.contexts('session-1')).toEqual([])
+    await agent.dispose()
+  })
+
+  it('passes a sealed cwd and explicit sessionStorageRoot for runtime none', async () => {
+    const fake = createFakeHarnessFactory()
+    const inputs: AgentHarnessFactoryInput[] = []
+    const sessionStorageRoot = await mkdtemp(join(tmpdir(), 'boring-pure-session-root-'))
+    const pureRuntimeCwd = join(sessionStorageRoot, '.runtime-none')
+    const harnessFactory = vi.fn(async (input: AgentHarnessFactoryInput) => {
+      inputs.push(input)
+      return fake.factory(input)
+    })
+    const agent = createAgent({
+      runtime: 'none',
+      sessionStorageRoot,
+      harnessFactory,
+    })
+
+    try {
+      await agent.start({ content: 'headless' })
+
+      expect(harnessFactory).toHaveBeenCalledTimes(1)
+      expect(inputs[0]).toMatchObject({
+        cwd: pureRuntimeCwd,
+        runtimeCwd: pureRuntimeCwd,
+        sessionStorageCwd: '',
+        sessionRoot: sessionStorageRoot,
+      })
+      expect(inputs[0]?.sessionDir).toBeUndefined()
+      expect(fake.contexts('session-1')[0]?.workdir).toBe(pureRuntimeCwd)
+      expect(JSON.stringify(inputs[0])).not.toContain(process.cwd())
+      expect(JSON.stringify(inputs[0])).not.toContain('/workspace')
+    } finally {
+      await agent.dispose()
+      await rm(sessionStorageRoot, { recursive: true, force: true })
+    }
+  })
+
+  it('uses a bounded sealed temp cwd when runtime none has no sessionStorageRoot', async () => {
+    const firstFake = createFakeHarnessFactory()
+    const secondFake = createFakeHarnessFactory()
+    const inputs: AgentHarnessFactoryInput[] = []
+    const harnessFactory = (fake: ReturnType<typeof createFakeHarnessFactory>) =>
+      vi.fn(async (input: AgentHarnessFactoryInput) => {
+        inputs.push(input)
+        return fake.factory(input)
+      })
+    const first = createAgent({
+      runtime: 'none',
+      harnessFactory: harnessFactory(firstFake),
+    })
+    const second = createAgent({
+      runtime: 'none',
+      harnessFactory: harnessFactory(secondFake),
+    })
+
+    try {
+      await first.start({ content: 'first' })
+      await second.start({ content: 'second' })
+
+      expect(inputs).toHaveLength(2)
+      expect(inputs[0]?.cwd.startsWith(join(tmpdir(), 'boring-agent-pure-'))).toBe(true)
+      expect(inputs[1]?.cwd).toBe(inputs[0]?.cwd)
+      expect(inputs[0]).toMatchObject({
+        runtimeCwd: inputs[0]?.cwd,
+        sessionStorageCwd: '',
+      })
+      expect(inputs[0]?.sessionRoot).toBeUndefined()
+      expect(JSON.stringify(inputs)).not.toContain(process.cwd())
+      expect(JSON.stringify(inputs)).not.toContain('/workspace')
+    } finally {
+      await first.dispose()
+      await second.dispose()
+    }
   })
 
   it('throws the T1 stub error for historical offsets older than the live buffer', async () => {

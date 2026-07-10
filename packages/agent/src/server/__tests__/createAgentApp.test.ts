@@ -8,6 +8,9 @@ import { afterEach, expect, test, vi } from 'vitest'
 import { getEnv, restoreEnvForTest, setEnvForTest } from '../config/env'
 import { createAgentApp } from '../createAgentApp'
 import { loadPlugins, flattenPluginTools } from '../harness/pi-coding-agent/pluginLoader'
+import { AGENT_NO_FILESYSTEM_FOR_ATTACHMENTS } from '../../shared/events'
+import type { AgentHarness, AgentHarnessFactoryInput } from '../../shared/harness'
+import type { SessionCtx, SessionDetail, SessionStore, SessionSummary } from '../../shared/session'
 import { ErrorCode } from '../../shared/error-codes'
 import type { RuntimeFilesystemBindingOperations, RuntimeModeAdapter } from '../runtime/mode'
 
@@ -50,6 +53,55 @@ async function createTemplate(
   return root
 }
 
+class TestSessionStore implements SessionStore {
+  private readonly records = new Map<string, SessionSummary>()
+  private created = 0
+  readonly createContexts: SessionCtx[] = []
+
+  async list(): Promise<SessionSummary[]> {
+    return [...this.records.values()]
+  }
+
+  async create(ctx: SessionCtx, init?: { title?: string }): Promise<SessionSummary> {
+    this.createContexts.push(ctx)
+    this.created += 1
+    const now = new Date().toISOString()
+    const summary = {
+      id: `pure-session-${this.created}`,
+      title: init?.title ?? 'New session',
+      createdAt: now,
+      updatedAt: now,
+      turnCount: 0,
+    }
+    this.records.set(summary.id, summary)
+    return summary
+  }
+
+  async load(_ctx: SessionCtx, sessionId: string): Promise<SessionDetail> {
+    const record = this.records.get(sessionId)
+    if (!record) throw new Error(`missing session ${sessionId}`)
+    return record
+  }
+
+  async delete(_ctx: SessionCtx, sessionId: string): Promise<void> {
+    this.records.delete(sessionId)
+  }
+}
+
+function createNoopHarnessFactory() {
+  const sessions = new TestSessionStore()
+  const inputs: AgentHarnessFactoryInput[] = []
+  const factory = async (input: AgentHarnessFactoryInput): Promise<AgentHarness> => {
+    inputs.push(input)
+    return {
+      id: 'pure-http-test-harness',
+      placement: 'server',
+      sessions,
+    }
+  }
+  return { factory, inputs, sessions }
+}
+
 
 
 test('createAgentApp direct bash receives runtime env contributions without persisting values', async () => {
@@ -84,6 +136,122 @@ test('createAgentApp direct bash receives runtime env contributions without pers
 
   expect(result.content.map((part) => part.text).join('')).toContain('visible')
   await app.close()
+})
+
+test('createAgentApp direct mode forwards sessionRoot to the harness', async () => {
+  const workspaceRoot = await makeTempDir('boring-agent-direct-session-root-workspace-')
+  const sessionRoot = await makeTempDir('boring-agent-direct-session-root-')
+  const harness = createNoopHarnessFactory()
+  const app = await createAgentApp({
+    workspaceRoot,
+    mode: 'direct',
+    logger: false,
+    externalPlugins: false,
+    sessionRoot,
+    harnessFactory: harness.factory,
+  })
+
+  try {
+    expect(harness.inputs[0]).toMatchObject({ cwd: workspaceRoot, sessionRoot })
+    expect(harness.inputs[0]?.sessionDir).toBeUndefined()
+  } finally {
+    await app.close()
+  }
+})
+
+test('createAgentApp mode none excludes filesystem routes/tools and rejects attachments', async () => {
+  const sessionRoot = await makeTempDir('boring-ui-pure-session-root-')
+  const harness = createNoopHarnessFactory()
+  const pureTool = {
+    name: 'pure_echo',
+    description: 'Pure test tool.',
+    parameters: { type: 'object' as const, properties: {} },
+    async execute() {
+      return { content: [{ type: 'text' as const, text: 'ok' }] }
+    },
+  }
+  const app = await createAgentApp({
+    mode: 'none',
+    logger: false,
+    sessionRoot,
+    harnessFactory: harness.factory,
+    extraTools: [pureTool],
+  })
+
+  try {
+    const pureRuntimeCwd = join(sessionRoot, '.runtime-none')
+    expect(harness.inputs[0]).toMatchObject({
+      cwd: pureRuntimeCwd,
+      runtimeCwd: pureRuntimeCwd,
+      sessionStorageCwd: '',
+      sessionRoot,
+    })
+    expect(harness.inputs[0]?.sessionDir).toBeUndefined()
+    expect(JSON.stringify(harness.inputs[0])).not.toContain(process.cwd())
+    expect(JSON.stringify(harness.inputs[0])).not.toContain('/workspace')
+
+    const catalog = await app.inject({ method: 'GET', url: '/api/v1/agent/catalog' })
+    expect(catalog.statusCode).toBe(200)
+    const names: string[] = catalog.json().tools.map((tool: { name: string }) => tool.name)
+    expect(names).toContain('pure_echo')
+    for (const forbidden of [
+      'bash',
+      'execute_isolated_code',
+      'read',
+      'write',
+      'edit',
+      'find',
+      'grep',
+      'ls',
+      'upload_file',
+    ]) {
+      expect(names).not.toContain(forbidden)
+    }
+
+    for (const url of [
+      '/api/v1/files/raw?path=README.md',
+      '/api/v1/tree?path=',
+      '/api/v1/files/search?q=README',
+      '/api/v1/fs/events',
+      '/api/v1/git/file-url?path=README.md',
+    ]) {
+      const response = await app.inject({ method: 'GET', url })
+      expect(response.statusCode).toBe(404)
+    }
+    const upload = await app.inject({ method: 'POST', url: '/api/v1/files/upload', payload: {} })
+    expect(upload.statusCode).toBe(404)
+
+    const ready = await app.inject({ method: 'GET', url: '/api/v1/ready-status' })
+    expect(ready.statusCode).toBe(200)
+    expect(ready.body).toContain('"state":"ready"')
+
+    const created = await app.inject({
+      method: 'POST',
+      url: '/api/v1/agent/pi-chat/sessions',
+      payload: { title: 'Pure' },
+    })
+    expect(created.statusCode).toBe(201)
+    expect(harness.sessions.createContexts[0]?.workspaceId).toBeUndefined()
+
+    for (const attachment of [
+      { filename: 'chart.png', mediaType: 'image/png', url: '/api/v1/files/raw?path=chart.png' },
+      { filename: 'inline.png', mediaType: 'image/png', url: 'data:image/png;base64,AAAA' },
+    ]) {
+      const prompt = await app.inject({
+        method: 'POST',
+        url: `/api/v1/agent/pi-chat/${created.json().id}/prompt`,
+        payload: {
+          message: 'see attached',
+          clientNonce: `pure-attachment-${attachment.filename}`,
+          attachments: [attachment],
+        },
+      })
+      expect(prompt.statusCode).toBe(400)
+      expect(prompt.json().error.code).toBe(AGENT_NO_FILESYSTEM_FOR_ATTACHMENTS)
+    }
+  } finally {
+    await app.close()
+  }
 })
 
 test('createAgentApp provisions from templatePath option', async () => {
