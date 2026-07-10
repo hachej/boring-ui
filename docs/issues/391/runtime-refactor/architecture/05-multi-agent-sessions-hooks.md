@@ -22,51 +22,163 @@ Defaults:
 - delegation depth is capped;
 - shared-sandbox write access needs stale-write or non-overlapping write scopes.
 
-## Workspace agent registry
+## Definition, deployment, and resolved registry
 
-A workspace may declare:
+Reusable behavior is not a tenant deployment. The v1 contracts are separate:
 
 ```ts
-const declaration: WorkspaceAgentsDeclaration = {
-  defaultAgentId: 'concierge',              // who answers when no agent is named
-  environments: [                           // the project's pool of filesystems (declared once)
-    { id: 'user', provider: 'bwrap', access: 'readwrite' },
-    { id: 'company_context', provider: 'fixture', access: 'readonly',
-      governancePolicyRef: 'company-context-readonly' },
-  ],
-  agents: [
-    {
-      agentId: 'concierge',
-      label: 'Concierge',
-      instructionsRef: 'concierge.default',
-      capabilityBundles: ['pure'],          // no files — conversation only
-    },
-    {
-      agentId: 'coding',
-      label: 'Coding',
-      instructionsRef: 'coding.default',
-      capabilityBundles: ['full-bash'],     // files + shell
-      environmentAttachments: ['user'],     // its own private workspace
-      sandboxPolicyRef: 'workspace-default',
-    },
-    {
-      agentId: 'reviewer',
-      label: 'Reviewer',
-      instructionsRef: 'review.readonly',
-      capabilityBundles: ['review-readonly'],
-      environmentAttachments: ['company_context'], // SHARES the company files, read-only
-      governancePolicyRef: 'company-context-readonly',
-      modelPolicyRef: 'eu-sovereign-only',
-    },
-  ],
+interface AgentDefinition {
+  schemaVersion: 1
+  definitionId: string
+  version: string
+  label?: string
+  instructionsRef: string
+  capabilityRequirements?: string[]
+  toolRefs?: string[]
+  skillRefs?: string[]
+  mcpServerRefs?: string[]
 }
-// Every *Ref/*Bundle is a pointer the host resolves; an unknown ref fails closed.
-// Two agents naming the same environment id share that filesystem; different ids are isolated.
+
+interface CompiledAgentBundle {
+  definition: AgentDefinition
+  definitionDigest: `sha256:${string}`
+  assets: Array<{
+    path: string
+    digest: `sha256:${string}`
+    content: string
+  }>
+}
+
+interface AgentDeployment {
+  deploymentId: string
+  version: string
+  agentId: string
+  definition: {
+    definitionId: string
+    version: string
+    digest: `sha256:${string}`
+  }
+  environmentAttachmentRefs?: string[]
+  runtimeProfileRef?: string
+  modelPolicyRef?: string
+  sandboxPolicyRef?: string
+  governancePolicyRef?: string
+}
+
+interface WorkspaceAgentsDeclaration {
+  bundles: CompiledAgentBundle[]
+  agents: AgentDeployment[]
+  defaultAgentId: string
+}
 ```
 
-**Amendment (2026-07-08):** the exact P6a authored wrapper is `WorkspaceAgentsDeclaration { agents: AgentDefinitionDeclaration[]; defaultAgentId }`. Each per-agent `AgentDefinitionDeclaration` replaces the earlier narrow `WorkspaceAgentDeclaration`: it carries `agentId`/display metadata plus refs for instructions/persona, capability bundles/tools/skills/MCP servers, plugins, environment attachments, sandbox/governance/model/demo/pricing policy, and exposure config. Unknown refs fail closed. There is **no `features` config member** and no executable `package`/`bash` contract here. The declaration is requirements-only: the host maps capability/environment/policy/plugin refs to explicit composition, spreading the boring-bash environment bundle into that agent's `createAgent().tools` only when resolved policy and environment facts allow it. Omitting a bash-capable bundle yields a pure agent with no file/bash tools. Child-app defaults can seed this registry in P6b, but workspace/user policy can narrow it.
+`AgentDefinition` contains versioned behavior and requirements only. A1 emits a
+`CompiledAgentBundle`: the validated definition plus sorted, path-contained,
+UTF-8 assets. `instructionsRef` names an asset path inside that bundle, not a
+source-machine path. `definitionDigest` covers canonical definition data and
+the ordered asset path/digest/content tuples. This small content-addressed
+artifact is the unit used by local dev, P6-R, and D1; v1 does not require an
+artifact service. The P6-D in-process registry stores the whole verified bundle
+by `(definitionId, version)`, not a definition stripped from its assets.
 
-**Amendment (2026-07-08):** per-agent plugin composition resolves `AgentDefinitionDeclaration.plugins?: PluginRef[]` after the agent's environment/capability facts are known. Agent-scoped plugin contributions (tools, skills, MCP servers, renderers) compose only into the declaring agent. Workspace-scoped plugin contributions (front panels/routes) mount through the existing workspace plugin runtime but are gated to sessions for agents that declared the plugin. Duplicate tool/renderer names use the existing source order and override law: environment-bundle -> plugins -> host, fail closed unless the later source explicitly sets `overrides: true`.
+`instructionsRef` is the only agent-authored prompt reference in schema v1.
+Environment and workspace-plugin prompt fragments are not definition assets:
+they remain attached to the resolved contribution that supplies the matching
+capability. The sole v1 `default` agent receives the workspace-enabled plugin
+contributions atomically; installation alone does not append a fragment, and a
+fragment cannot remain when its host-configured contribution is disabled or
+fails activation. A later schema
+adds `pluginRefs` only together with per-agent contribution resolution. Do not
+add a generic prompt-fragment reference list as a shortcut.
+
+P6-D deliberately knows no E1 types. `environmentAttachmentRefs` is a sorted,
+duplicate-free list of validated opaque ids included in `deploymentDigest`.
+P6-R runs after E1 and resolves each id through the host-owned attachment
+catalog to an E1 `EnvironmentAttachment`; unknown or unauthorized refs fail
+closed. The resolved attachment policy/facts then contribute to
+`resolvedSnapshotDigest`. P6-D must not invent a second attachment shape or
+import boring-bash.
+The concrete environment pool/catalog is a separate host input introduced by
+E1 and consumed by P6-R; it is not a `WorkspaceAgentsDeclaration` field in
+P6-D. P6-R may expose a host-only resolved wrapper joining the P6-D declaration
+to that catalog without moving E1 types into agent shared.
+
+Pricing, public-demo exposure, tenant roots, runtime selection, and seed sources
+are deployment/factory inputs. D1's exact hostname and bounded landing config
+live in a separate host-owned `DedicatedSiteSpec`; they are neither reusable
+agent behavior nor an `AgentDefinition` field. `AgentDeployment` is itself versioned.
+Its canonical `deploymentDigest` covers deployment id/version, agent id,
+definition reference, opaque attachment refs, and every runtime/model/sandbox/governance
+policy reference, but never a raw secret. The host resolves the verified bundle
+and deployment to an immutable `ResolvedAgent`. Its
+`resolvedSnapshotDigest` covers both input digests plus the redacted resolved
+authority snapshot: pinned image/model, provider and environment facts,
+authenticated grant identities/status, final tool/skill/plugin catalogs, the
+P3 `ActivatedWorkspacePluginSnapshot` digest, and `staticPromptDigest` over the
+source-labeled `ResolvedStaticPromptPlan` from architecture 01. That plan
+retains base prompt version/content, instructions asset, resolved capability/
+plugin fragments, generated v1 skill index, and static `systemPromptAppend`.
+Explicit per-turn `systemPromptDynamic` output is the sole prompt input outside
+static identity and cannot grant authority. The plugin snapshot binds the
+immutable host-app artifact and the ordered activated plugin contributions;
+changing plugin enablement, order, source, manifest, canonical redacted
+activation input, prompt, or front/server contribution therefore creates a
+different resolved generation.
+
+Every new session stores definition id/version/digest, deployment
+id/version/digest, and resolved-snapshot digest. Manifests/status retain the
+redacted snapshot used to compute that digest. P6-R stages immutable generations
+but never publishes one as live. `ResolvedAgentRegistry` is a read view over a
+host-supplied `ActiveResolvedGenerationPointer`, not an independently mutable
+current map. D1 supplies its durable `currentCompleteGeneration` record
+containing `agentId` and `resolvedSnapshotDigest`; A1 dev publishes a local
+pointer only after resolution/readiness succeeds. An immutable,
+durable `ResolvedAgentGenerationStore` is keyed by resolved-snapshot digest and
+stores the self-contained verified bundle, immutable deployment snapshot, and
+the complete redacted resolution inputs/catalog versions needed to reconstruct
+the executable composition, including the activated-plugin snapshot and
+immutable artifact references it names, plus the source-labeled static prompt
+plan. References alone are insufficient: before staging succeeds, the host's
+content-addressed artifact store durably and atomically pins the complete host-
+app/plugin artifact set under `resolvedSnapshotDigest`. The artifact pin lives
+until the corresponding generation is actually GC'd; staging, active-pointer,
+session, and rollback generation roots therefore retain both metadata and
+content. Crash reconciliation repairs an acquired-pin/no-generation window,
+and generation GC releases the pin only after the generation record is durably
+removed. It stores no live provider/attachment handles and no raw secrets.
+
+Session creation pins atomically with respect to pointer publication and GC.
+`pinCurrentForSession(agentId, admissionId)` atomically reads the active pointer
+and creates a durable temporary generation lease before returning the digest;
+session creation persists that lease/digest, then `commitSessionPin` transfers
+it to a session retention reference. Pointer swaps/pruning cannot delete the
+leased generation. Crash recovery reconciles lease↔session by admission id;
+failed creation releases it, and session deletion releases the session ref.
+
+Follow-up turns and restart recovery load the session's pinned generation,
+reprepare its host resources, re-resolve it, and require the same digest. If the
+generation is absent or no longer reproducible they fail with stable
+`RESOLVED_GENERATION_UNAVAILABLE`; they never substitute the current agent
+pointer. Current grants are reauthenticated and intersected with the session's
+pinned active-authority ceiling, so they may narrow or fail the turn but can
+never widen the pinned generation. Host pointer publication changes new
+sessions only; a staged/incomplete generation is never routable.
+
+A generation remains retained by any durable staging/in-flight lease, active
+host pointer, retained session, or D1 completion eligible for rollback.
+Publication/completion atomically transfers the staging reference to the active/
+rollback reference before releasing it. An abandoned in-flight lease releases
+only after the apply is fenced, durably terminal, and cannot resume. GC is legal
+only when every root is absent. Unknown references or an input/snapshot digest
+mismatch fail closed.
+
+V1 reserves no `pluginRefs` field: A1/P6 validators reject it with stable
+`AGENT_DEFINITION_UNSUPPORTED_FIELD`. BBP6-010 introduces per-agent plugin refs
+only with an additive schema-version bump and the resolver that gives the field
+behavior. Host-default plugins may still appear in the v1 resolved catalog;
+they are not definition requests. Workspace-scoped UI/routes wait for P7
+trusted `agentId` routing. Duplicate names fail closed unless a separately
+validated explicit override contract is introduced.
 
 ## Route/session namespace
 
@@ -80,7 +192,7 @@ Required scoping:
 - provisioning is per `(workspaceId, agentId, bashPlanFingerprint)`;
 - UI commands include `agentId` for attribution where useful, while workspace UI state remains shared.
 
-Isolation test: two agents in one workspace do not share bindings, tool catalogs, transcripts, approvals, or provisioning readiness incorrectly. `sessionId` is runtime-owned and globally unique across agents; event-store/replay stays keyed by `sessionId` only. Any same-string collision fixture is only a namespace/scope stress test for JSONL/sessionNamespace and binding caches, not a requirement to support duplicate event-store keys.
+Isolation test: two agents in one workspace do not share bindings, tool catalogs, transcripts, approvals, or provisioning readiness incorrectly. Public APIs retain the runtime-owned `sessionId`, but internal storage and cache boundaries use a validated structured `SessionKey` containing the trusted tenant/workspace scope, `agentId`, and `sessionId`. UUID uniqueness is not the authorization boundary; imported/restored sessions with duplicate public ids cannot collide or cross scope.
 
 ## Session history search (#379)
 

@@ -1,6 +1,14 @@
 # TODO-P8 — Verification and cleanup (zero deferred deletions)
 
-Handoff: self-contained work order for one autonomous coding agent (pi or gpt-5.5-xhigh). Cite plan files by relative path. No prior conversation assumed.
+## Binding v1 gate (2026-07-09)
+
+Required: P1, T1/T2, P2/P3, E1, P5a, P6-D/P6-R, A1, D1, zero
+removal markers, and the timed exact-URL-to-default-agent product proof. Not
+required: P4, E2, X1, P5b,
+P6 plugin/child-app expansion, P7, M2, D2, S3, or S4.
+
+Coordinator: never assign this whole file. Dispatch one bead/PR with this
+file's context, dependencies, and non-negotiables included in the assignment.
 
 ## Context (read first)
 
@@ -11,8 +19,13 @@ Handoff: self-contained work order for one autonomous coding agent (pi or gpt-5.
 
 ### Depends on
 
-- **Every delivered runtime phase** of this pack **except P6b, M1, M2, D1, D2, and S4; M2 may land after P8 as a committed follow-up** (P1–P7, T1–T2, E1–E2, **X1**, S3, Phase 5, **P6a**). S3 is in the epic (VISION row 6 — workspace-as-control-plane — requires it), and X1 is in the epic (mount/farm substrate), so P8 gates on both. **Amendment (2026-07-08):** S1/S2 are relocated out of #391 active scope, so P8 does not gate on Slack or spreadsheet/embed work. P8 is the terminal runtime gate. It **must not** land while any earlier runtime phase's `TODO(remove:*)` marker is still live — that reopens the owning phase (see "The rule", below).
-- **P6b, M1, M2, D1, D2, and S4 are explicitly NOT P8 gates; M2 may land after P8.** P6b (child-app scoping, BBP6-001/BBP6-006) is HARD BLOCKED on the shared child-app platform type (`ResolvedChildAppContext`, #376) and is a **tracked follow-up outside the epic exit** — the epic ships without it. M1 is the outreach-demo sidecar; D1/D2/S4 are factory/onboarding follow-ups; M2 is the committed MCP agent-surface follow-up. **P8 does not wait on those lanes landing**; it only **verifies their follow-up/status tracking is filed** (BBP8-004). This is what prevents a P8 exit deadlock: P8 gating on every lane would otherwise be unsatisfiable while follow-up lanes are intentionally outside the runtime epic exit.
+- **Every v1 gate named above.** P8 must not land while any owning v1
+  phase's removal marker is live. Post-v1 plans do not enter this gate.
+- **R0 M1 is a separate delivery milestone; D1 is a v1 gate.** M2/D2/S3/S4,
+  P6b, and the other post-v1 rows are tracked but never awaited here.
+- **Conditional cleanup:** when M1/R0 code exists on main, A1 BBA1-003 is a v1
+  gate and must remove duplicate behavior config before P8. Only proven absence
+  of M1 removes this check.
 
 ### Current repo reality this bead verifies (verified paths)
 
@@ -20,7 +33,7 @@ Handoff: self-contained work order for one autonomous coding agent (pi or gpt-5.
 - Invariant script wiring to extend (do NOT bypass — `README.md` global non-negotiable): root `pnpm lint:invariants` = `pnpm --dir packages/agent run lint:invariants && pnpm --filter @hachej/boring-bash run check:invariants && pnpm lint:workspace-plugin-invariants` (verified `package.json`). Root `pnpm audit:imports` = `pnpm tsx scripts/audit-imports.ts`. Agent invariants = `bash scripts/check-invariants.sh .` (ripgrep-based `run_check` pattern helper, verified `scripts/check-invariants.sh`). `scripts/audit-imports.ts` holds the `FORBIDDEN_PATTERNS` array (verified) — the natural home for old-path-import gates.
 - **Moved-path gates to assert empty** (each was migrated + deleted in-PR by its phase; P8 proves no straggler importer resurfaced):
   - P2/P3: no `@hachej/boring-agent/server` value import of moved providers (`createDirectSandbox`, `createBwrapSandbox`, `createRemoteWorker*`, `createVercelSandboxWorkspace`) — they live under `@hachej/boring-sandbox/providers` now — nor of `resolveMode`/`autoDetectMode`/`hasBwrap` — those live under `@hachej/boring-bash/modes` now. Also assert agent has zero value import from `@hachej/boring-sandbox`.
-  - P4: no `filesystemPlugin` import from `@hachej/boring-workspace` (moved to `@hachej/boring-bash/plugin`); no `boring-bash/plugin → @hachej/boring-workspace` value import.
+  - P4 is post-v1 and has no v1 relocation gate.
   - T1/T2: no live `ask-user.v1.*` WorkspaceBridge handler (deleted in BBT1-005); no `?cursor=` NDJSON front path / `schedulePiChatReconnect` / `replay_gap` recovery (removed in T2 BBT2-003); `piChatReplayBuffer.ts` gone if T2 removed it.
 - README to update: verified current package reality is that `packages/agent/package.json` has **no** `"readme"` field and ships `files: ["dist", "docs"]`; the canonical package README is therefore `packages/agent/README.md`, with `packages/agent/docs/runtime.md` as the runtime deep-dive. P8 must document the four-part surface contract + `createAgent()` public API in those docs. Do not put contract authority in a front entrypoint header.
 
@@ -31,8 +44,15 @@ Match [`../../INDEX.md`](../../INDEX.md) Phase 8 (v2):
 1. **Zero `TODO(remove:*)` markers repo-wide**, asserted by a check wired into `pnpm lint:invariants` (fails CI if any marker survives).
 2. `@hachej/boring-agent` package docs document the **four-part surface contract** (`08`) + the `createAgent()` public runtime API as the stable public surface.
 3. Remaining plan tasks (anything in `00`–`09` not yet a landed bead, plus the explicitly deferred boundaries) converted into tracked beads/issues — nothing left only in prose.
-4. No code imports old moved paths (grep gates green for every relocation in P2/P3/P4/T1/T2).
+4. No code imports old moved paths for delivered P2/P3/T1/T2 relocations.
 5. All `00` invariants + package invariant scripts + `audit:imports` green; full build+test green.
+6. Prompt composition proves that `instructionsRef` is the only agent-authored
+   prompt reference and that disabling a capability/plugin removes its prompt
+   fragment together with its tools and other surfaces.
+7. The dedicated hostname serves its bounded landing page, authenticates an
+   authorized member into the bound workspace, and that workspace selects the
+   deployed definition as agent `default`; forged workspace/agent selection
+   fails closed.
 
 ## Non-negotiables
 
@@ -61,38 +81,142 @@ Match [`../../INDEX.md`](../../INDEX.md) Phase 8 (v2):
 
 ### BBP8-002 — Document the four-part surface contract as stable public API · size M
 - **Title**: `@hachej/boring-agent` package docs describe the four-part surface contract + `createAgent()` as the stable public API.
-- **Files touch/create**: `packages/agent/README.md` (canonical package README; package.json has no `readme` field) + `packages/agent/docs/runtime.md`. Document, from `08`: (1) message in — `AgentSendInput { sessionId?, content, inputAssets?, actor, ctx?, originSurface? }` (omit `sessionId` to start a session; `inputAssets?` are user-supplied files/images/blobs routed by the T2 intake strategy, not a capability axis); (2) event stream out — the indexed replayable `AgentEvent { v, eventIndex, timestamp, sessionId, chunk }`; (3) approvals — `needsApproval` on the tool → request event → `resolveInput(sessionId, requestId, ResolveInputResponse)`, one channel; (4) two handles — runtime-owned `sessionId`, surface-owned addressing; public APIs accept `sessionId`/`SessionCtx` only. Include the `createAgent()` façade surface — the **nine** members `start`/`stream`/`send`/`resolveInput`/`interrupt`/`stop`/`sessions`/`readiness`/`dispose` (`interrupt(sessionId)` = abort current turn, `stop(sessionId)` = end/close session) — and the surface-adapter three-step (`08` § "Surface adapters"). Link the conformance suites (`08` § "Conformance") as the executable contract.
+- **Files touch/create**: document `AgentSendInput { sessionId?, content,
+  inputAssets?, actor?, ctx?, originSurface?, requestId }`; request idempotency,
+  actor/origin attribution, indexed events, one approval channel, two handles,
+  and the nine-member façade. Link executable conformance suites.
 - **Notes**: This is the [`../../INDEX.md`](../../INDEX.md) Phase 8 additional exit criterion and README Phase 8 delta. Keep it a description of what shipped (P1/T1/T2/S3) — do not spec new API. If the `AGENTS.md`/`DECISIONS.md` ADR from Phase 0 needs a back-reference, add a one-line pointer, do not duplicate.
 - **Tests**: doc build/lint if the repo has one (`pnpm check:generated-artifacts` if docs are generated); otherwise a link-check that the referenced symbols exist (`createAgent`, `AgentEvent`, `AgentSendInput`, `ResolveInputResponse`) as exports.
 - **Acceptance**: the four-part contract + `createAgent()` are documented as stable public API; referenced symbols exist.
 
-### BBP8-003 — Old-moved-path import gates (P2/P3/P4/T1/T2 relocations) · size M
+### BBP8-003 — Old-moved-path import gates (delivered P2/P3/T1/T2 relocations) · size M
 - **Title**: Assert no importer of any relocated symbol/path resurfaced; each relocation gate is green.
 - **Files touch**: `scripts/audit-imports.ts` `FORBIDDEN_PATTERNS` (and/or the package `check-invariants` scripts) — add patterns proving the migrations are complete and no straggler exists:
   - agent old provider exports: `createDirectSandbox`/`createBwrapSandbox`/`createRemoteWorker*`/`createVercelSandboxWorkspace` (now in `@hachej/boring-sandbox/providers`) and `resolveMode`/`autoDetectMode`/`hasBwrap` (now in `@hachej/boring-bash/modes`) are not exported from `@hachej/boring-agent/server` and not imported from there. Agent has zero value import from either `@hachej/boring-bash` or `@hachej/boring-sandbox`; the sandbox→agent edge is type-only.
-  - `filesystemPlugin` is not exported/imported from `@hachej/boring-workspace` (it lives in `@hachej/boring-bash/plugin`).
+  - P3 BBP3-019 keeps `filesystemPlugin` workspace-owned but capability-gated:
+    without resolved filesystem facts there is no plugin/provider/renderer
+    registration and no file/tree/search/upload UI API request; capable
+    workspace behavior remains intact. P4 owns any later relocation.
   - no live `ask-user.v1.*` bridge handler; no `?cursor=` NDJSON front transport / `schedulePiChatReconnect` / `replay_gap` recovery; `piChatReplayBuffer.ts` absent if T2 removed it.
-- **Notes**: Most of these gates were added in-phase (P2 BBP2-008, P4 BBP4-014, T2 BBT2-004). P8 **confirms they are present and green**, and adds any that a phase omitted. A straggler importer here is a **missed in-PR migration** — fix by migrating the importer, never by re-adding a shim (`README.md` rule 1/4).
+- **Notes**: confirm gates from delivered v1 relocation phases. P4 has not moved
+  and therefore contributes no old-path gate.
 - **Tests**: run the gates against the repo; deliberately add a banned import in a scratch file → gate fails; revert. Each relocation has a corresponding passing assertion.
-- **Acceptance**: every P2/P3/P4/T1/T2 relocation gate present and green; no old-path importer anywhere.
+- **Acceptance**: every delivered P2/P3/T1/T2 relocation gate is present and green.
 
 ### BBP8-004 — Convert remaining plan prose into tracked beads/issues · size S
 - **Title**: Nothing actionable left only in `00`–`09` prose; everything is a landed bead or a tracked follow-up issue.
 - **Files touch**: create tracking issues/beads (per the repo's `br`/beads workflow) for the explicitly deferred items and any un-beaded plan task. Known deferrals to file as future issues (do NOT implement here):
-  - agent-as-directory authoring (north star, `00`/`08` — deferred post-P7, its own future issue);
+  - richer executable/file-convention authoring beyond A1's v1 `agent.json` + `instructions.md`;
   - `FileTreeDataProvider` pluggable boundary (deferred to `#295`, P4 BBP4-012);
   - the **document-authority write/edit override seam** (the whole seam — not just a registry — deferred out of this epic; arrives with its first real authority implementation #367/#226, P4 BBP4-013);
   - **governed-context-in-embeds** (injecting a readonly `company_context` binding into a spreadsheet/product embed) — relocated to pi-for-excel issue #551;
   - **P6b — child-app scoping** (BBP6-001 consume `ResolvedChildAppContext`, BBP6-006 Macro scoping) — HARD BLOCKED on the shared child-app platform type (`ResolvedChildAppContext`, #376); a **tracked follow-up OUTSIDE the epic exit**. **P8 files this follow-up issue and confirms it is filed — it does not wait on P6b landing**;
   - **M2 — MCP agent surface** (`work/M2-mcp-agent-surface/`) — committed follow-up that may land after P8; P8 verifies it is tracked with its registry/exposure/conformance scope;
-  - **D1 — tenant provisioning** (`work/D1-tenant-provisioning/`) — factory lane outside the runtime epic exit; P8 verifies it is tracked with M2/P6a/P5 prerequisites;
+  - **D1 — dedicated tenant provisioning** is a v1 gate and must include the
+    timed exact-host landing/auth/workspace/default-agent plus
+    definition-digest/rollback proof;
   - **D2 — shared subdomain tenancy** (`work/D2-shared-tenant-mesh/`) — factory sidecar lane outside the runtime epic exit; P8 verifies it is tracked with P1/P5/P6a/P7/T1/M2 prerequisites;
   - **S4 — agent onboarding status** (`work/S4-agent-onboarding/`) — onboarding/status follow-up outside the runtime epic exit; P8 verifies it is tracked with S3/M2/D1/D2 prerequisites;
   - `00` still-open decisions 5 (provisioning sharing defaults) and 7 (surface addressing store location); decision 3 (providers package location) is already resolved by `08` decision 11 and must not be reopened;
   - any Phase 5 (provisioning/readiness) and Phase 6a task not yet beaded.
 - **Notes**: This bead **catalogs and files**, it does not build. Cross-check each `00` § "Issue coverage posture" item: mark which acceptance actually landed (so the plan does not overclaim) and file the rest. It also runs the plan-pack navigability gate from `07`: canonical files outside legacy `todos/` must not reference old nonexistent TODO filenames or the removed architecture-six file; every cross-work-package pointer should be a real relative link, with `INDEX.md` as the single ordering authority.
 - **Tests**: n/a (tracking artifacts). Acceptance is the filed issue list referenced from the plan or a `docs/issues/391/runtime-refactor/BACKLOG.md`-style index if the repo prefers in-repo tracking.
-- **Acceptance**: every deferred/un-beaded plan task has a tracked issue/bead id; no actionable item lives only in prose. **The P6b, M2, D1, D2, and S4 follow-up/status tracks are filed** (and P8 confirms they are filed, without gating on those lanes landing).
+- **Acceptance**: every post-v1 task has a tracked package/bead and none is silently treated as a v1 gate.
+
+### BBP8-006 — Execute and record the v1 agent-factory golden path · size M
+
+- **Title:** One executable proof runs scaffold -> validate -> local turn ->
+  dedicated apply -> exact URL -> landing -> member workspace -> default agent
+  -> reapply -> rollback.
+- **Files touch/create:** consume the D1 BBD1-007 smoke as
+  `pnpm --filter @hachej/boring-ui-cli run smoke:agent-factory-v1 -- <host-profile>`
+  (or the exact equivalent name landed by D1); add a versioned redacted evidence
+  schema/output path under the existing proof-of-work convention. P8 does not
+  create another deployment harness.
+- **Run conditions:** infrastructure/provider credentials and host profile are
+  preconfigured before the timer. The target is the real EU
+  runsc/systrap provider from BBP2-010 selected only after the pinned-HTTPS P5a
+  worker handshake; direct/bwrap/Vercel/fake is not accepted. Scaffold into an external temp directory,
+  use a deployment bound to `agentId:'default'` (the only v1 route),
+  snapshot the repo worktree before/after, compile the bundle, run one local
+  scripted turn, apply to a target with no source-checkout access, open the
+  exact HTTPS hostname, verify the landing, authenticate a provisioned member,
+  enter the bound workspace, and complete one turn through its server-selected
+  `default` agent. Restart the real dedicated app process without changing the
+  active pointer, then send a follow-up on that completed session and prove the
+  same resolved, host-app, plugin, static-prompt, route, and default-agent
+  identity. Prove workspace list returns only that workspace and direct
+  create/switch/delete/foreign-workspace requests fail; a non-invite dedicated
+  signup creates no workspace. Exercise foreign selectors/claims through
+  full-app MCP, runtime-plugin/plugin-front, a P3 scoped-route fixture with
+  explicit and indirect foreign session/project ids, pane-status, and
+  WorkspaceBridge; prove a raw-route plugin fails D1 readiness before mount.
+  Prove creator/last-owner account deletion and demotion cannot remove or
+  transfer the managed workspace outside D1.
+  Verify the target loaded the pinned host-app artifact and exact P3 activated-
+  plugin snapshot; disable or alter one plugin contribution and prove it cannot
+  reuse the prior desired/resolved identity.
+  Run identical desired-state reapply and prove the process/session stay
+  untouched only after fresh P6-R reproduction of the resolved digest. Change
+  one authenticated provider/environment/grant fact without changing desired
+  input and prove apply cannot false-no-op: it transitions to the new resolved
+  identity or fails closed. Apply one
+  changed immutable plugin or static-prompt input to create a second complete
+  generation; prove the bounded transition admits from only one process and the
+  old session now rejects follow-up with `SESSION_GENERATION_RETIRED`. Start a
+  new session on generation two, then CAS rollback by appending a new
+  generation from the previous complete immutable desired-state snapshot.
+  Prove generation-two's session is likewise retired and a fresh session uses
+  the restored generation-one identity.
+  Fault a changed-generation transition before pointer/`switch_pending` commit
+  and prove the old process/session resume untouched. Fault after that atomic
+  commit but before ingress switch and prove the site stays gated until recovery
+  completes forward to the new process and only then retires the old session.
+  Probe the old origin directly after pointer/ingress switch; immutable boot-
+  digest mismatch must reject before old plugin routes, and the replacement must
+  not reopen until the old listener is unbound/stopped.
+  Attempt site-capability replay from another target and from the previous
+  generation/fence; both must leave DNS/TLS and the complete pointer unchanged.
+  Attempt to inject a caller-fabricated capability and reject it before side
+  effects. Fault first apply after route preparation and after pointer CAS but
+  before external activation; the former exposes no host, the latter leaves the
+  host unreachable and resumable. Direct-origin requests with the reserved host
+  and no complete pointer fail inactive across every route family. Direct-origin
+  requests to the dedicated process with a missing or non-bound host fail before
+  generic auth/routing and never expose the multi-workspace app.
+- **Evidence:** machine-readable start/end/elapsed seconds; exact CLI/version and
+  host-profile id; definition id/version/digest; deployment id/version/digest;
+  host-app artifact and activated-plugin snapshot digests; resolved-snapshot
+  static-host-prompt input, resolved static-prompt, and desired-state digests;
+  apply generation/current-complete
+  pointer/resource ids (redacted); exact hostname, TLS/route identity, landing
+  content digest, authenticated membership result, bound workspace id
+  (redacted), fixed-workspace API/front/plugin-route-scope results, and proof the turn used
+  agent `default`; remote asset
+  verification; identical desired-state reapply reports no resource change;
+  pre-CAS old-session preservation and post-CAS forward-recovery evidence;
+  rollback target
+  and reproduced resolved/desired-state digests; proof that the prior complete
+  host-app/plugin snapshot was reproduced; proof that the prior complete
+  pointer survived an injected incomplete generation; same-generation real-
+  process restart/session-follow-up result; changed-generation transition
+  timing, single-admitter proof, and both durable session-retirement outcomes;
+  changed platform-source
+  file list (must be empty); secret-canary scan result.
+- Evidence also records worker TLS identity/pin, authenticated hardening facts,
+  runsc version/platform, network/limit probes, and an old-generation takeover
+  probe showing `DEPLOYMENT_FENCE_STALE` with zero provider side effects.
+- **Failure conditions:** elapsed >900 seconds, any platform-source edit,
+  source-checkout dependency on target, missing/mismatched digest, duplicate
+  resource on reapply, host-app/plugin snapshot drift, mutable plugin source,
+  accepted fabricated/cross-target/generation site-capability, a reachable
+  first-apply host before complete-pointer CAS, generic routing for a reserved
+  host with no pointer, static host prompt drift under an unchanged digest,
+  unknown-host acceptance, landing-based authority grant,
+  workspace creation/switch/deletion, workspace/agent selector escape,
+  incomplete rollback, or any raw secret fails the bead.
+- **Acceptance:** a reviewer runs one command and receives complete product
+  evidence; component tests alone cannot satisfy this bead.
 
 ### BBP8-005 — Final invariant + build/test sweep · size S
 - **Title**: The whole pack's guarantees hold simultaneously.
@@ -108,6 +232,7 @@ Match [`../../INDEX.md`](../../INDEX.md) Phase 8 (v2):
 pnpm lint:invariants        # agent check-invariants.sh + boring-bash check:invariants + workspace plugin invariants + (new) marker gate
 pnpm audit:imports          # tsx scripts/audit-imports.ts — old-moved-path gates (BBP8-003)
 node scripts/check-no-remove-markers.mjs   # BBP8-001 direct run: expect 0 markers, exit 0
+pnpm --filter @hachej/boring-ui-cli run smoke:agent-factory-v1 -- <preconfigured-host-profile> # BBP8-006
 
 # per-package invariants (confirm each relocation boundary)
 pnpm --filter @hachej/boring-bash run check:invariants
@@ -131,7 +256,7 @@ Matches [`../../PR-PLAN.md`](../../PR-PLAN.md) P8 rows exactly:
 
 - `pr1-marker-import-gates` → BBP8-001 + BBP8-003.
 - `pr2-surface-contract-docs` → BBP8-002.
-- `pr3-track-remaining-prose` → BBP8-004.
+- `pr3-golden-path-and-followups` → BBP8-006 + BBP8-004.
 - BBP8-005 is the final merge gate on the stack, not a separate PR. Any red gate reopens its owning phase; P8 does not absorb it.
 
 ## Review gates
@@ -139,6 +264,9 @@ Matches [`../../PR-PLAN.md`](../../PR-PLAN.md) P8 rows exactly:
 - `pnpm lint:invariants` runs the `TODO(remove:*)` gate; the repo has **zero** markers; a planted marker fails the gate and names its owning bead.
 - No surviving marker was "absorbed" into a P8 cleanup bead — any live marker reopened its owning phase instead.
 - Four-part surface contract + `createAgent()` documented as stable public API; referenced symbols exist.
-- Every P2/P3/P4/T1/T2 relocation import gate present and green; no old-path importer.
+- Every delivered P2/P3/T1/T2 relocation import gate present and green.
 - Every deferred/un-beaded plan task filed as a tracked issue/bead; `00` coverage posture reconciled (no overclaim).
+- BBP8-006 evidence exists and proves timing, zero source edits, remote bundle
+  materialization, all identity digests, no-op reapply, full rollback, and no
+  secret leak.
 - Full `pnpm typecheck` + `pnpm test` + `pnpm audit:imports` green; all `00` invariants hold; #416 contracts + JSONL session compat untouched.

@@ -4,28 +4,29 @@
 
 Make bash/files/service capabilities declarative, scoped, and readiness-gated without replacing the provisioning system that already exists.
 
-## Effective policy stack
+## Authority and requirements
 
-Power is an intersection, not a union:
-
-```txt
-effective = backend capabilities
-          ∩ app defaults
-          ∩ childApp/workspaceKind policy
-          ∩ workspace max policy
-          ∩ agent policy
-          ∩ subagent policy
-          ∩ session/user grants
-          ∩ plugin/tool requirements
-```
-
-Resolution order:
+Authority, grants, and requirements are different inputs. Requirements never
+grant or narrow authority:
 
 ```txt
-app defaults < childApp/workspaceKind < workspace < agent < subagent < session/user grants < plugin/tool requirement
+maximumAuthority = providerFacts
+                 ∩ hostPolicy
+                 ∩ tenantOrWorkspacePolicy
+                 ∩ agentDeploymentPolicy
+
+activeAuthority  = maximumAuthority
+                 ∩ approvedGrantSet
+                 ∩ subagentOrSessionScope
+
+resolution       = validate(agent/plugin/tool requirements, activeAuthority)
 ```
 
-The resolver rejects impossible merges instead of silently widening access.
+Unknown provider facts fail validation. Grants are authenticated, scoped, and
+cannot exceed `maximumAuthority`. A missing optional requirement yields a
+diagnostic and omission; a missing required requirement makes the resolved
+agent unready. Requirements are never included as an operand in the authority
+intersection.
 
 ## Policy inputs
 
@@ -85,7 +86,11 @@ interface BashRequirement {
 }
 ```
 
-The `Bash*` names above are bash-side source requirement shapes. The agent-consumed normalized runner contracts are agent-owned (`ProvisioningHealthCheckSpec`, `ProvisioningSdkArchiveSpec`, `ProvisioningManagedServiceRequirement`) and live with `ProvisionWorkspaceRuntimeOptions`; the boring-bash normalizer maps `BashRequirement` into those contracts via a type-only boring-bash→agent edge. Agent code never imports a `Bash*` shape from boring-bash.
+The `Bash*` names above are bash-side source requirement shapes. Normalized
+runner contracts (`ProvisioningHealthCheckSpec` and later SDK/service specs)
+remain boring-bash/server-owned with `NormalizedProvisioningPlan`. Host
+composition executes them and sends methodless readiness facts to agent. Agent
+code never imports a `Bash*` shape or operational runner.
 
 ## Extend existing provisioning
 
@@ -93,13 +98,19 @@ Do **not** create a parallel provisioning engine.
 
 Package ownership:
 
-- `@hachej/boring-agent` keeps the provisioning engine/types/orchestration (`provisionWorkspaceRuntime()`, `ProvisionWorkspaceRuntimeOptions`) over injected adapters, including the normalized runner input contracts consumed by health-check, SDK-archive, and managed-service runners.
-- `@hachej/boring-bash` owns `BashRequirement` and requirement normalization; it validates requirements against provider capability facts but does not own those facts.
+- host/core/CLI composition owns orchestration, cancellation, and prepared
+  resource lifetime.
+- `@hachej/boring-bash/shared` owns declarative `BashRequirement` data;
+  `@hachej/boring-bash/server` owns normalization, the extracted existing
+  provisioning engine/types/fingerprints/health runner, and later SDK/service
+  environment runners. BBP5-002 moves the current agent implementation,
+  migrates importers, and removes the origin atomically.
 - `@hachej/boring-sandbox` owns the concrete provider adapters and the authoritative `ProviderCapabilities` facts/matrix.
-- host/core/CLI composition calls the boring-bash normalizer, then passes normalized `ProvisionWorkspaceRuntimeOptions` into the agent-owned engine.
-- agent must not value-import boring-bash normalizers/providers.
+- `@hachej/boring-agent` receives only methodless readiness/capability facts;
+  it owns no operational provisioning runner and value-imports no
+  boring-bash/sandbox implementation.
 
-Current seams to extend:
+Current seams to move and extend without reimplementation:
 
 - `provisionWorkspaceRuntime()`;
 - `ProvisionWorkspaceRuntimeOptions`;
@@ -116,7 +127,10 @@ Add a thin normalizer in boring-bash/core composition:
 resolveBashProvisioningRequirements(input) -> ProvisionWorkspaceRuntimeOptions
 ```
 
-It collects app, child-app, workspace-kind, workspace, agent, plugin, and session requirements, validates them against provider capabilities, and feeds the existing provisioning function via host composition.
+It collects app, child-app, workspace-kind, workspace, agent, plugin, and
+session requirements, validates them against provider capabilities, and feeds
+the existing function after BBP5-002 moves that function to boring-bash/server;
+host composition remains the caller.
 
 ## Readiness model
 

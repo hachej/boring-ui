@@ -1,5 +1,11 @@
 # P1 target interface — simple declarative-agent shape
 
+> 2026-07-09 ownership correction: any operation-bearing
+> `AttachedEnvironmentRuntime` sketch below is historical. Host/boring-bash
+> owns prepared operations and lifecycle. Agent core receives existing
+> flattened tools/prompt/readiness/input-asset inputs plus methodless
+> `ResolvedEnvironment[]` facts only. Architecture 09 is authoritative.
+
 > Purpose: define the simplest target interface for #391 pluggable agents. This is the north star P1 must not block; P1 does not implement the whole compiler/resolver.
 
 ## One idea

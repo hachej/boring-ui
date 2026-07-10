@@ -1,7 +1,7 @@
 # TODO-M2 - MCP as an agent surface
 
-Handoff: self-contained work order for one autonomous coding agent. Cite plan
-files by relative path. No prior conversation assumed.
+Coordinator: never assign this whole file. Dispatch one bead/PR with this
+file's context, dependencies, and non-negotiables included in the assignment.
 
 ## Context (read first)
 
@@ -15,7 +15,7 @@ files by relative path. No prior conversation assumed.
 
 ## Prerequisites - stop if false
 
-- P6a `AgentDefinitionDeclaration` and `AgentRegistry` exist.
+- P6-R `ResolvedAgent`, `AgentDeployment`, and resolved-agent lookup exist.
 - P7 `GET /api/v1/agents` and `GET /api/v1/agents/:agentId/info` exist.
 - T1/T2 public transport exists and can create/send/reconnect by `sessionId`.
 - If M1 code exists, any `ManagedAgentVerticalConfig` is treated as a temporary projection, not as source of truth.
@@ -31,8 +31,8 @@ no-secret and policy rules as built-in tools.
 
 ## Non-negotiables
 
-- Do not define a second vertical-agent schema. Config derives from
-  `AgentDefinitionDeclaration` or a lossless projection.
+- Do not define a second vertical-agent schema. Behavior comes from
+  `ResolvedAgent`; exposure comes from `AgentDeployment` plus host policy.
 - Do not expose raw workspace roots, session roots, environment handles, broker
   secrets, model keys, or raw transcripts.
 - Do not expose plugin-contributed tools that are absent from the agent's
@@ -47,18 +47,22 @@ no-secret and policy rules as built-in tools.
 
 ## Beads
 
-### BBM2-001 - Per-agent MCP exposure config from definitions (M)
+### BBM2-001 - Deployment-owned MCP exposure config (M)
 
-- **Files touch/create:** shared/server types for `McpAgentExposureConfig` with
+- **Files touch/create:** host/server types for `McpAgentExposureConfig` with
   `agentId`, `authMode: 'bearer' | 'public-demo'`, `demoPolicy`, `exposureId`,
   endpoint path/URL shape, result/share URL policy, redaction policy, and a
   D2-consumable per-tenant subdomain trial-gate projection.
-- **Notes:** The config is derived from the canonical definition registry. Unknown
-  `agentId`, exposure id, or policy ref fails closed.
-- **Tests:** definition with exposure config resolves to one MCP mount; unknown
-  refs reject with stable errors; fixture-only hardcoded verticals remain
-  isolated from production config.
-- **Acceptance:** per-agent MCP exposure is declarative config, not code wiring.
+- **Notes:** Resolve a validated `AgentDeployment` to its immutable
+  `ResolvedAgent`, then apply the host-owned exposure config. Unknown agent,
+  deployment exposure, exposure id, or policy ref fails closed. Definition data
+  cannot request or enable exposure.
+- **Tests:** deployment+host exposure config resolves to one MCP mount; a
+  definition alone resolves to none; unknown deployment exposure refs reject
+  with stable errors; fixture-only hardcoded verticals remain isolated from
+  production config.
+- **Acceptance:** per-agent MCP exposure is declarative host/deployment config,
+  never reusable behavior.
 
 ### BBM2-002 - MCP surface adapter over T1/T2 transport (M/L)
 
@@ -68,8 +72,22 @@ no-secret and policy rules as built-in tools.
 - **Notes:** `delegate_task` or equivalent calls the public agent transport:
   create/start, stream/reconnect, `resolveInput`, `interrupt`, and `stop`.
   Session tenancy is host-resolved; callers cannot supply raw `SessionCtx`.
-- **Tests:** fake MCP client drives a declared agent; one delegation creates one
-  session; reconnect/progress works via T1/T2; approval request can be answered.
+  Preserve M1's admission contract: input requires caller-stable
+  `idempotencyKey` (<=128 UTF-8 bytes, `[A-Za-z0-9._:-]+`), scoped by the
+  authenticated bearer subject or a host-issued demo principal plus exposure/
+  tenant/agent. Map it deterministically to T1 `requestId`. Existing-key lookup
+  happens before rate/quota/concurrency; same payload returns the original and a
+  mismatch conflicts. JSON-RPC/tool-call ids are never the retry identity.
+- **Payload contract:** preserve M1's byte ceilings: brief 32 KiB; progress item
+  4 KiB; retained progress 128 items/64 KiB; polling payload 96 KiB; final text
+  96 KiB; inline Markdown/artifact payload 256 KiB; complete serialized result
+  384 KiB. A deployment may configure lower limits, never higher without a new
+  versioned surface contract. Use the same stable input/result/artifact errors.
+- **Tests:** fake MCP client drives a declared agent; lost response followed by
+  same key under a new JSON-RPC/tool-call id returns one session; same-key
+  mismatch conflicts; dedupe precedes quota; bearer subjects and demo
+  principals do not share key scope; reconnect/progress/approval works; every
+  exact and over byte boundary is covered.
 - **Acceptance:** MCP is a surface adapter over the public contract.
 
 ### BBM2-003 - Auth modes and demo policy (M)
@@ -90,10 +108,12 @@ no-secret and policy rules as built-in tools.
   references. It never returns absolute paths, internal session ids unless they
   are intended public handles, workspace roots, or broker secrets. Share URLs
   are emitted only through verified platform share contracts.
+- Enforce the BBM2-002 byte budget after assembling URLs/artifacts and before
+  storage/serialization. Share URLs do not exempt the aggregate limit.
 - **Tests:** P7 registry + T1/T2 transport conformance path; secret canary absent;
   URL shape stable; public-demo and bearer mode both covered.
-- **Acceptance:** stock-client smoke proves delegate -> progress -> result/share
-  URL without private data exposure.
+- **Acceptance:** stock-client smoke proves retry-stable delegate -> bounded
+  progress -> bounded result/share URL without duplicate work or private data.
 
 ## Verification
 
@@ -118,7 +138,8 @@ mounts the MCP endpoint.
 
 ## Review gates
 
-- Definition registry is the source of truth; no second vertical schema.
+- `ResolvedAgent` is the behavior source and deployment/host config is the
+  exposure source; no second vertical schema and no definition-owned exposure.
 - P7 registry/info and T1/T2 transport are consumed, not bypassed.
 - Bearer and public-demo auth modes are both covered.
 - Result/share URL payloads contain no raw paths or secrets.

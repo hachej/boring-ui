@@ -5,17 +5,24 @@ before calling D2 done. Invent nothing.
 
 ## Prerequisites
 
-- [ ] P6a/BBP6-009 `WorkspaceAgentsDeclaration`, environment pool, validator, and project-scoped `AgentRegistry` merged.
+- [ ] D1 evidence covers two distinct tenants on one unchanged delivery
+      contract, with the second requiring zero source/contract fork; owner has
+      given written GO for shared tenancy. Otherwise STOP before BBD2-001.
+- [ ] Trusted adapter-created `TenantContext` proof rejects unknown/foreign host
+      and principal before workspace lookup; caller `SessionCtx` grants nothing.
+- [ ] P6-D/P6-R `WorkspaceAgentsDeclaration`, separate E1 environment catalog,
+      validator, and project-scoped `ResolvedAgentRegistry` merged.
 - [ ] P1 optional `workspaceId` in `SessionCtx` and `sessionStorageRoot` merged.
 - [ ] P5 provisioning/readiness/secret-brokering seams merged.
 - [ ] P7 `agentId` routing and `/info` merged.
-- [ ] T1 durable stores are keyed by `SessionCtx` and cross-context leakage tests exist.
+- [ ] T1 durable stores use authenticated structured `SessionKey`; cross-context
+      and duplicate-public-id leakage tests exist.
 - [ ] M2 `public-demo`, `demoPolicy`, and `exposureId` merged.
 - [ ] Wildcard DNS/TLS available in the chosen shared EU host profile or represented by a fake provider in tests.
 
 ## Beads
 
-- [ ] BBD2-001 - Host→tenant router.
+- [ ] BBD2-001 - Authenticated host→tenant router.
 - [ ] BBD2-002 - Live tenant registry + hot registration.
 - [ ] BBD2-003 - Hot per-tenant provisioning/seeding.
 - [ ] BBD2-004 - Shared-infra tenant isolation model + conformance.
@@ -25,7 +32,8 @@ before calling D2 done. Invent nothing.
 
 ## Key interfaces
 
-- [ ] `HostTenantResolver(host)->SessionCtx|{rejected}` exists.
+- [ ] `HostTenantResolver.resolve(requestHost, authenticatedPrincipal): TenantContext | { rejected }` exists.
+- [ ] `TenantContext { tenantId, workspaceId, principal }` is adapter-created only.
 - [ ] `LiveTenantRegistry {register/get/list/suspend/archive/delete}` exists.
 - [ ] `TenantSpec {workspaceId,host,tier,declaration:WorkspaceAgentsDeclaration,environments,seedRefs,secretRefs,demo?}` exists.
 - [ ] `TenantIsolationConformance` suite exists.
@@ -51,10 +59,11 @@ before calling D2 done. Invent nothing.
 
 ## Review gates
 
-- [ ] Unknown host/subdomain fails closed.
+- [ ] Unknown host/subdomain and unauthorized principal fail closed; Host and
+      workspace headers alone grant nothing.
 - [ ] No second agent-definition schema.
 - [ ] No raw secrets in tenant YAML, logs, registry snapshots, provisioning output, files, transcripts, artifacts, or sandbox env.
-- [ ] D2 adds process-level tenant registry only; project-scoped `AgentRegistry` remains project-scoped.
+- [ ] D2 adds process-level tenant registry only; project-scoped `ResolvedAgentRegistry` remains project-scoped.
 - [ ] Cross-tenant isolation conformance is green for two live tenants in one process.
 - [ ] S4 remains read-only; D2 authoring lives only in BBD2-006.
 
@@ -64,6 +73,8 @@ before calling D2 done. Invent nothing.
 - [ ] `company_a.senecapp.ai` is hot-registered and reachable by subdomain in seconds with no redeploy.
 - [ ] Tenant A cannot see tenant B's sessions, files, pending-inputs, search, artifacts, or governance.
 - [ ] Unknown subdomain fails closed and never defaults to a tenant.
+- [ ] Cross-tenant stores/caches use structured keys derived from trusted
+      `TenantContext`, not raw caller headers.
 - [ ] Suspend/archive/delete work.
 - [ ] No broker secret crosses a tenant boundary.
 

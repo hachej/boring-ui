@@ -1,5 +1,9 @@
 # P4-file-ui — Plan
 
+Status: post-v1; not a #391 v1 exit gate. Capability-gate the existing
+workspace-owned presentation first. Reconsider relocation only for a second
+host that needs the complete editor/tree bundle.
+
 > Phase: Phase 4 — Move filesystem front plugin (bash track) · Work order: [TODO.md](./TODO.md) · Handoff: [HANDOFF.md](./HANDOFF.md)
 > Ordering authority: [INDEX.md](../../INDEX.md) · Vision: [VISION.md](../../VISION.md)
 

@@ -4,7 +4,9 @@ Derived strictly from [TODO.md](./TODO.md) and [PLAN.md](./PLAN.md). Tick each b
 
 ## Prerequisites (packages + gates)
 - [ ] E1-environment-attachments merged — [../E1-environment-attachments/HANDOFF.md](../E1-environment-attachments/HANDOFF.md)
-- [ ] E1's attachment contracts + scoped views landed (`Environment`, `EnvironmentAttachment`, `AttachedEnvironmentRuntime`, `ResolvedEnvironment`, `resolveAttachments`) before starting
+- [ ] P6-R injected `DeploymentAttachmentCatalog` merged.
+- [ ] E1 auth-gated contributions + scoped views landed; E2 receives no raw
+      prepared handle or long-lived projection operation.
 
 ## Beads
 - [ ] BBE2-001 — MCP server projection factory
@@ -28,16 +30,27 @@ Derived strictly from [TODO.md](./TODO.md) and [PLAN.md](./PLAN.md). Tick each b
 - [ ] `pr3-mcp-conformance-doc` completed BBE2-003 + BBE2-005
 
 ## Review gates
-- [ ] Grep the new MCP handlers: every fs/exec handler calls an existing projection op — zero new jailing/readonly/traversal logic.
+- [ ] Grep handlers: every fs/exec call authenticates, enters an E1 contribution
+      `withAuthorizedView` callback, and only then reaches existing projection
+      ops; zero raw op/handle/lease retention or new path policy.
 - [ ] Readonly attachment registers exactly the read-family tools; readwrite adds write/edit; exec only under `execPolicy: 'attached'`.
 - [ ] Conformance mount reuses the same expected visible-path set as in-process (diff the subject seeds).
 - [ ] No broker secret is present in any client-reachable MCP payload (assert in BBE2-004).
 - [ ] `@modelcontextprotocol/sdk` pinned to an exact `1.29.0` (no caret), matching the pack's exact-pin discipline.
+- [ ] Expired/revoked/foreign token and invalidated lifetime fail on the next
+      operation even after MCP session establishment.
+- [ ] E2 consumes the injected P6-R lookup and creates no second environment Map.
+- [ ] Factory derives facts/policy/contributions from one catalog-selected entry;
+      no API can pair one attachment ref with another lifetime's contributions.
+- [ ] Caller supplies trusted scope, never a lifetime key; catalog derives and
+      E1 verifies the attachment-set digest before cache reuse.
 
 ## Exit criteria
 - [ ] An external MCP client (e.g. Claude Code) mounts a boring environment and sees exactly what an in-process readonly attachment sees.
 - [ ] Denied files are absent over MCP (no-leak).
 - [ ] No broker secret is reachable from the MCP client.
+- [ ] Every operation gets a fresh authorized callback-scoped lease; none can be
+      reused after settlement.
 - [ ] The existing no-leak conformance suite runs as the MCP mount (alongside in-process and scoped-view; the remote-worker provider mount deferred to BBP5-010).
 - [ ] Remote-worker stays a provider (P2/P5); its transport reclassification is filed as a deferred post-E2 P8 follow-up, not performed (BBE2-005).
 

@@ -1,7 +1,7 @@
 # TODO-S4 - Agent onboarding status
 
-Handoff: self-contained work order for one autonomous coding agent. Cite plan
-files by relative path. No prior conversation assumed.
+Coordinator: never assign this whole file. Dispatch one bead/PR with this
+file's context, dependencies, and non-negotiables included in the assignment.
 
 ## Context (read first)
 
@@ -16,7 +16,7 @@ files by relative path. No prior conversation assumed.
 ## Prerequisites - stop if false
 
 - S3 Fleet/inspection page exists.
-- `AgentDefinitionDeclaration` validation exists.
+- `AgentDefinition`/`AgentDeployment` validation and P6-R resolution exist.
 - M2 exposes demo endpoint status.
 - D1 exposes provisioning status.
 - D2 exposes shared-tier tenant readiness status.

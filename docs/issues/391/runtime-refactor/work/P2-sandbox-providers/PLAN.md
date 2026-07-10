@@ -14,9 +14,12 @@ Phase 2 stands up the three-package stack. Concrete providers do **not** land in
 **Amendment (2026-07-08):** P2's provider matrix is an input to environment
 resolution, not a behavior switch surface. Provider facts (`reported|unknown`
 filesystem/exec/image/mount/network facts) are consumed by hosts and
-boring-bash to resolve `AttachedEnvironmentRuntime[]` plus methodless
-`ResolvedEnvironment[]` projections. Surfaces and later packs consume the
-resolved facts; they do not infer authority from mode/provider labels.
+boring-bash to prepare host-owned attachment lifetimes. Internal prepared
+handles remain behind `withAuthorizedView`; the host consumes auth-gated
+contributions for tools, prompt, readiness, and input assets and
+passes only methodless `ResolvedEnvironment[]` projections. Surfaces and later
+packs consume the resolved facts; they do not infer authority from
+mode/provider labels.
 
 ## Verified current repo reality (pre-P2)
 - `packages/boring-sandbox/` does not exist yet. `pnpm-workspace.yaml` already includes `packages/*`, so BBP2-000 verifies coverage rather than adding a duplicate workspace pattern unless that file changes.
@@ -32,8 +35,20 @@ resolved facts; they do not infer authority from mode/provider labels.
 - move concrete provider implementations (direct, bwrap, vercel-sandbox, remote-worker client) to **`packages/boring-sandbox/src/providers`** (00 open decision 3, RESOLVED; 08 decision 11) — **not** `boring-bash/providers`; this includes provider-bound workspace helpers (`createNodeWorkspace`, `getNodeWorkspaceHostRoot`, remote/vercel workspace factories, path-containment helpers) required by those providers;
 - **runtime-mode resolution (`resolveMode`/`autoDetectMode`/`hasBwrap`) lands in `@hachej/boring-bash`** (THE RUNTIME: the CHOICE of sandbox), resolving a mode id to a `@hachej/boring-sandbox` provider value;
 - mode-private helpers (`createServerFileSearch`, template copy, provider-adapter artifact helpers) move with `boring-bash/modes` or are injected; no moved mode file may value-import `@hachej/boring-agent`;
-- provisioning ownership docs: agent owns engine/types over injected adapters; boring-bash owns requirement normalizer + runtime-mode resolution; **boring-sandbox owns the concrete provider adapters + capability facts**;
+- provisioning transition: P2 may leave the pre-existing central engine in
+  agent temporarily only because P5 BBP5-002 owns its atomic move. P2 adds no
+  new agent provisioning contract/export/dependency. The v1 target is boring-
+  bash/server owning engine/runners/fingerprints, host owning orchestration, and
+  boring-sandbox owning provider adapters/facts;
 - remote-worker split docs: protocol/shared types → `boring-sandbox/shared`, client/provider adapter → `boring-sandbox/providers`, optional server package path;
+- provider selection safety: deployed/core/tenant composers fail closed when no
+  approved provider is available; `direct` is an explicit trusted-local policy
+  choice, never an automatic isolation downgrade;
+- remote-worker relocation is reviewed separately from mode/composer cutover;
+- one v1 production provider: gVisor `runsc --platform=systrap` on a
+  preconfigured worker, with digest-pinned OCI bundle input, per-workspace
+  netns/nftables, cgroup/pid/CPU/memory limits, and no broker-secret injection;
+  D1/P8 prove it on a real EU target;
 - invariant/import boundary: **acyclic** `boring-sandbox → agent(types)`; `boring-bash → boring-sandbox(values) + agent(types)`; agent imports neither;
 - migration strategy (v2, strict): **migrate every importer in the same PR** — no type-only old-path exports, no re-export stubs, no host shims that outlive the phase. Intra-phase transitional code carries `// TODO(remove:<bead-id>)` + a deletion bead.
 - **Amendment (2026-07-06):** publish-pipeline parity for `@hachej/boring-sandbox` (BBP2-009, before BBP2-005): before `@hachej/boring-bash` gains a value dependency on `@hachej/boring-sandbox`, add sandbox to all five publish lists (`scripts/audit-publish-manifests.mjs`, version bump, CI versioning, CI publish, release workflow), ordered before `packages/boring-bash`, and bring it onto the current version cohort (it sits at `0.1.61` vs the `0.1.64` cohort). Until then, the published boring-bash must not depend on sandbox.
@@ -41,3 +56,6 @@ resolved facts; they do not infer authority from mode/provider labels.
 
 ## Exit criteria
 - package builds; no import cycle; current apps still compile after same-PR importer migration (no old-path re-export, no host shim); landed #416 contracts unchanged (governance consumers #476–#501 keep working).
+- hardened runsc provider passes lifecycle/preflight/policy conformance and one
+  preconfigured real EU worker proves systrap, netns/nftables, resource limits,
+  digest-pinned image, and secret absence; mocks alone do not close P2 v1.

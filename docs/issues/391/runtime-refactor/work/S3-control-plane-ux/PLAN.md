@@ -1,5 +1,7 @@
 # S3-control-plane-ux — Plan
 
+Status: post-v1; not a #391 v1 exit gate.
+
 > Phase: Phase S3 — Control-plane UX (also needs Phase 7) · Work order: [TODO.md](./TODO.md) · Handoff: [HANDOFF.md](./HANDOFF.md)
 > Ordering authority: [INDEX.md](../../INDEX.md) · Vision: [VISION.md](../../VISION.md)
 

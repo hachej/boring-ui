@@ -1,6 +1,7 @@
 # TODO-S3 — Control-plane UX: agent inspect, cross-surface sessions, central approvals
 
-Handoff: self-contained work order for one autonomous coding agent (pi or gpt-5.5-xhigh). Cite plan files by relative path. No prior conversation assumed.
+Coordinator: never assign this whole file. Dispatch one bead/PR with this
+file's context, dependencies, and non-negotiables included in the assignment.
 
 **This is a DELTA plan, not greenfield.** The workspace control plane already exists in large part (session list/search/browser, multi-project rail, an event inspector, an approvals inbox, panel/source registries, model pickers, readiness badges). S3 **extends** those surfaces to consume the P7 public contracts. Do not rebuild any of them. Read "What exists today" first and treat every bead as an edit against that inventory.
 
@@ -43,15 +44,15 @@ Transcript viewing / attach-by-sessionId (reuse verbatim — do not rebuild a vi
 ### The plan this delivers
 
 - `docs/issues/391/runtime-refactor/architecture/08-pluggable-agent-surfaces.md` § "The steering surface" — the workspace is the **control plane**; steering = the workspace consuming the same **public contracts, with more of them** (the `/info` endpoint), never private core hooks. Also § "The headless façade: `createAgent()`" (the core public API is `agent.start()` receipt + `agent.stream()` replay/tail + `resolveInput`) and § "Human-in-the-loop" (one approval channel; any surface holding the `sessionId` answers via `resolveInput`).
-- `docs/issues/391/runtime-refactor/architecture/00-global-isa.md` § "North star" — eve-class UX steered from the workspace: author → configure → deploy → converse anywhere → inspect/observe. **Agent-as-directory authoring is explicitly deferred** until `AgentRegistry`/Phase 6–7 (no-speculative-abstraction policy) — see Do NOT.
+- `docs/issues/391/runtime-refactor/architecture/00-global-isa.md` § "North star" — eve-class UX steered from the workspace: author → configure → deploy → converse anywhere → inspect/observe. A1 already owns directory authoring and CLI local dev; S3 adds read-only control-plane inspection, not a second authoring path.
 - `docs/issues/391/runtime-refactor/INDEX.md` § Phase 7 v2 ("agent inspection endpoint … consumed by workspace panels"), § Phase T1 (durable indexed event stream + on-stream approvals + `resolveInput`), § Phase T2 (front transport refit to `sessionId`-only public contract).
-- `docs/issues/391/runtime-refactor/work/P7-multi-agent-inspection/TODO.md` — **BBP7-005 ships `GET /api/v1/agents`** (scrubbed declared-agent list from the Phase 6a registry/declaration) **and `GET /api/v1/agents/:agentId/info`** (`{ agentId, model, tools, readiness, channels, environments }`; public, private-hook-free, no secret leak; modeled on `models.ts`). **These are the entire agent steering endpoints S3 consumes.** BBP7-002 defines the `/api/v1/agents/:agentId/...` path prefix and `AgentRegistry` addressing; BBP7-004 ships the scoped session-search API S3's session filter calls.
+- `docs/issues/391/runtime-refactor/work/P7-multi-agent-inspection/TODO.md` — **BBP7-005 ships `GET /api/v1/agents`** (scrubbed list from P6-R resolved entries) **and `GET /api/v1/agents/:agentId/info`** (`{ agentId, model, tools, readiness, channels, environments }`; public, private-hook-free, no secret leak; modeled on `models.ts`). **These are the entire agent steering endpoints S3 consumes.** BBP7-002 defines the `/api/v1/agents/:agentId/...` path prefix and `ResolvedAgentRegistry` addressing; BBP7-004 ships the scoped session-search API S3's session filter calls.
 - BINDING policy: `docs/issues/391/runtime-refactor/INDEX.md` "Simplicity & no-compat policy" — no shims, no abstraction without two real consumers, `TODO(remove:<bead-id>)` regime, migrate every importer in the same PR. Work-package links use canonical `work/<pkg>/TODO.md` paths from [`../../INDEX.md`](../../INDEX.md).
 
 ### Depends on
 
 - **T2** ([`../T2-transport/TODO.md`](../T2-transport/TODO.md)): the `sessionId`-only public transport (`RemotePiSession`/`usePiSessions`/`PiChatPanel` refit) + DS `startIndex` replay. Cross-surface transcript viewing (BBS3-002) attaches the refit stack by `sessionId`.
-- **P7** ([`../P7-multi-agent-inspection/TODO.md`](../P7-multi-agent-inspection/TODO.md)): `GET /api/v1/agents` + `GET /api/v1/agents/:agentId/info` (BBP7-005), the `/api/v1/agents/:agentId` addressing + `AgentRegistry` (BBP7-002), and the scoped session-search route `GET /api/v1/agents/:agentId/sessions/search` (BBP7-004). **If the agent list, `/info`, and the agent-scoped routes are not present, STOP and report** — S3 consumes them, it does not build them.
+- **P7** ([`../P7-multi-agent-inspection/TODO.md`](../P7-multi-agent-inspection/TODO.md)): `GET /api/v1/agents` + `GET /api/v1/agents/:agentId/info` (BBP7-005), the `/api/v1/agents/:agentId` addressing + `ResolvedAgentRegistry` (BBP7-002), and the scoped session-search route `GET /api/v1/agents/:agentId/sessions/search` (BBP7-004). **If the agent list, `/info`, and the agent-scoped routes are not present, STOP and report** — S3 consumes them, it does not build them.
 - **T1** ([`../T1-durable-events/TODO.md`](../T1-durable-events/TODO.md), via T2/P7): the durable pending-input-request store + `resolveInput` path + the named **`agent.sessions.pendingInputs(ctx, { sessionId? })`** read API (HTTP mirror `GET /api/v1/agents/:agentId/pending-inputs` / `GET …/agents/:agentId/sessions/:sessionId/input`, redacted; locked route family, `:agentId` canonical `default` until P7) that the central inbox (BBS3-003) reads. **T1 (not S3) owns the server-side ask-user migration** — the bridge/store deletion and folding `ask_user` onto the single on-stream channel (BBT1-005). BBS3-003 only consumes the resulting pending-request API from the front; if that API is absent, S3 stops and reports rather than building a server channel.
 
 ## Goal / exit criteria
@@ -76,7 +77,10 @@ The workspace is the eve-class control plane over public contracts only:
 ## Do NOT
 
 - Do NOT touch `/home/ubuntu/projects/boring-ui-v2`. Work on a dedicated branch/worktree per the PR-PLAN branch naming; never commit to main directly; every bead lands as a PR per INDEX.
-- Do NOT build **agent-as-directory authoring** (create/configure agents from `agent.ts`/`instructions.md`/`tools/*` filesystem slots). That is the north-star authoring model, **explicitly deferred until the `AgentRegistry` exists (Phase 6/7), post-P7**, per `00` North star + the no-speculative-abstraction policy. S3 is **observe/inspect/approve only** — the inspect panel is read-only; agent *configuration/wiring* UI is out of scope.
+- Do NOT build a second authoring/configuration UI. A1 owns the v1
+  `agent.json` + `instructions.md` compiler and CLI. S3 is
+  **observe/inspect/approve only**; editing definitions or deployments is out
+  of scope.
 - S4 owns onboarding/readiness status for definitions, demo URLs, provisioning, and missing policy refs; S3 remains observe/inspect/approve only.
 - Do NOT rebuild the session list/search/browser, the transcript viewer, the debug/event inspector, or the approvals UI — extend the existing components named above.
 - Do NOT build the `/info` endpoint, the agent-scoped routes, the session-search API, or the T1 approval store — those are P7/T1/T2. If missing, STOP and report.

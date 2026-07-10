@@ -6,7 +6,7 @@ before calling S4 done. Invent nothing.
 ## Prerequisites
 
 - [ ] S3 Fleet/inspection page merged.
-- [ ] P6a `AgentDefinitionDeclaration` validation merged.
+- [ ] P6-D definition/deployment validation and P6-R resolution merged.
 - [ ] M2 demo endpoint status available.
 - [ ] D1 provisioning status available.
 
