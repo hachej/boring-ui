@@ -67,6 +67,7 @@ export function AutomationPanel() {
   const [deleteId, setDeleteId] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
+  const [runningNowIds, setRunningNowIds] = useState<Set<string>>(() => new Set())
   const [routeError, setRouteError] = useState<string | null>(null)
   const [shellError, setShellError] = useState<string | null>(null)
   const [saveNotice, setSaveNotice] = useState<SaveNoticeState | null>(null)
@@ -218,6 +219,31 @@ export function AutomationPanel() {
     }
   }
 
+  async function runNow(automation: Automation) {
+    if (runningNowIds.has(automation.id)) return
+    setRunningNowIds((current) => new Set(current).add(automation.id))
+    setRouteError(null)
+    setSaveNotice(null)
+    setExpandedId(automation.id)
+    try {
+      const run = await client.runNow(automation.id)
+      setDetails((current) => patchDetail(current, automation.id, {
+        runs: [run, ...(current[automation.id]?.runs ?? []).filter((item) => item.id !== run.id)],
+        runsLoading: false,
+      }))
+      setSaveNotice({ tone: "success", message: run.sessionId ? "Automation finished. Open its session from run history." : "Automation finished." })
+    } catch (error) {
+      setRouteError(errorMessage(error))
+      await loadRuns(automation.id)
+    } finally {
+      setRunningNowIds((current) => {
+        const next = new Set(current)
+        next.delete(automation.id)
+        return next
+      })
+    }
+  }
+
   function openRun(run: AutomationRun) {
     if (!run.sessionId) return
     const result = shell.openDetachedChat(run.sessionId, { title: run.modelSnapshot || "Automation run" })
@@ -276,8 +302,10 @@ export function AutomationPanel() {
                       deleting={deleteId === automation.id}
                       runs={detail?.runs ?? []}
                       runsLoading={detail?.runsLoading === true}
+                      runningNow={runningNowIds.has(automation.id)}
                       onToggle={() => toggleExpanded(automation)}
                       onEdit={() => openEdit(automation)}
+                      onRunNow={() => void runNow(automation)}
                       onDeleteRequest={() => setDeleteId(automation.id)}
                       onDeleteCancel={() => setDeleteId(null)}
                       onDeleteConfirm={() => void deleteAutomation(automation.id)}

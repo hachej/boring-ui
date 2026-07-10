@@ -10,6 +10,7 @@ import {
   type RegisterAgentRoutesOptions,
   type RuntimeEnvContributionContext,
   type RuntimeProvisioningContribution,
+  type WorkspaceAgentDispatcherResolver,
 } from '@hachej/boring-agent/server'
 import {
   assertWorkspaceBridgeHandlersTrusted,
@@ -178,6 +179,8 @@ export interface CreateCoreWorkspaceAgentServerOptions
   serveFrontend?: boolean
   /** Optional best-effort telemetry sink. Defaults to core's DB-backed env helper. */
   telemetry?: TelemetrySink
+  /** Verified actor resolver exposed only to boot-time internal plugins. */
+  trustedPluginActorResolver?: NonNullable<WorkspaceAgentServerPluginContext['trusted']>['actorResolver']
 }
 
 type AgentPiOptions = RegisterAgentRoutesOptions['pi']
@@ -738,15 +741,31 @@ export async function createCoreWorkspaceAgentServer(
     ...defaultPluginDirEntries,
     ...(options.plugins ?? []),
   ]
-  const pluginResolveContext: WorkspaceAgentServerPluginContext = {
+  let workspaceAgentDispatcherResolver: WorkspaceAgentDispatcherResolver | undefined
+  const trustedDispatcherProxy: WorkspaceAgentDispatcherResolver = {
+    async resolve(actor, resolveOptions) {
+      if (!workspaceAgentDispatcherResolver) throw new Error('workspace agent dispatcher is not ready')
+      return await workspaceAgentDispatcherResolver.resolve(actor, resolveOptions)
+    },
+  }
+  const basePluginResolveContext: WorkspaceAgentServerPluginContext = {
     workspaceRoot: pluginWorkspaceRoot,
     bridge: createUnavailableCorePluginBridge(),
   }
+  const trustedPluginResolveContext: WorkspaceAgentServerPluginContext = options.trustedPluginActorResolver
+    ? {
+        ...basePluginResolveContext,
+        trusted: {
+          workspaceAgentDispatcherResolver: trustedDispatcherProxy,
+          actorResolver: options.trustedPluginActorResolver,
+        },
+      }
+    : basePluginResolveContext
   const resolvedPlugins = await Promise.all(
     pluginEntries.map(async (entry) => {
       const plugin = await resolveOnePluginEntry<CoreWorkspaceAgentServerPlugin>(
         entry,
-        pluginResolveContext,
+        'dir' in entry && entry.trust === 'internal' ? trustedPluginResolveContext : basePluginResolveContext,
       )
       assertWorkspaceBridgeHandlersTrusted(plugin, entry)
       return plugin
@@ -909,7 +928,10 @@ export async function createCoreWorkspaceAgentServer(
       ?? (options.getWorkspaceRoot
         ? undefined
         : async ({ workspaceId }) => await resolveWorkspaceRoot(workspaceRoot, workspaceId)),
-    onWorkspaceAgentDispatcher: options.onWorkspaceAgentDispatcher,
+    onWorkspaceAgentDispatcher: (resolver) => {
+      workspaceAgentDispatcherResolver = resolver
+      options.onWorkspaceAgentDispatcher?.(resolver)
+    },
     provisionRuntime: async ({ provisioningAdapter, runtimeLayout, workspaceId, request, runtimeMode }) => {
       if (!provisioningAdapter) return undefined
       const runtimePlugins = [

@@ -21,6 +21,7 @@ export default defineConfig({
       { find: /^@hachej\/boring-ask-user\/front$/, replacement: resolve(__dirname, "../../plugins/ask-user/src/front/index.tsx") },
       { find: /^@hachej\/boring-ask-user\/server$/, replacement: resolve(__dirname, "../../plugins/ask-user/src/server/index.ts") },
       { find: /^@hachej\/boring-ask-user\/shared$/, replacement: resolve(__dirname, "../../plugins/ask-user/src/shared/index.ts") },
+      { find: /^@hachej\/boring-automation\/front$/, replacement: resolve(__dirname, "../../plugins/boring-automation/src/front/index.tsx") },
       { find: /^@hachej\/boring-diagram\/front$/, replacement: resolve(__dirname, "../../plugins/diagram/src/front/index.tsx") },
       { find: /^@hachej\/boring-diagram\/shared$/, replacement: resolve(__dirname, "../../plugins/diagram/src/shared/index.ts") },
       { find: "@hachej/boring-agent/front", replacement: resolve(__dirname, "../agent/src/front/index.ts") },

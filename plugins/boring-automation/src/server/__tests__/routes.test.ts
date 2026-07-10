@@ -2,14 +2,17 @@ import { mkdtemp, rm } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import Fastify from "fastify"
-import { describe, expect, it } from "vitest"
+import { describe, expect, it, vi } from "vitest"
 import { BORING_AUTOMATION_ROUTE_PREFIX } from "../../shared"
 import { FileAutomationStore } from "../fileStore"
 import { automationRoutes } from "../routes"
 
-function appWithStore(store = new FileAutomationStore(`${tmpdir()}/boring-automation-unused`)) {
+function appWithStore(
+  store = new FileAutomationStore(`${tmpdir()}/boring-automation-unused`),
+  manualRunExecutor?: Parameters<typeof automationRoutes>[1]["manualRunExecutor"],
+) {
   const app = Fastify()
-  app.register(async (instance) => automationRoutes(instance, { store }))
+  app.register(async (instance) => automationRoutes(instance, { store, manualRunExecutor }))
   return app
 }
 
@@ -82,7 +85,7 @@ describe("automationRoutes", () => {
     expect(prompt.statusCode).toBe(200)
     await expect(temp.store.getPrompt(automation.id)).resolves.toBe("updated")
 
-    const run = await temp.store.createRun({
+    const run = await temp.store.beginRun({
       automationId: automation.id,
       trigger: "manual",
       promptSnapshot: "updated",
@@ -106,6 +109,53 @@ describe("automationRoutes", () => {
     })
     expect(patchResponse.statusCode).toBe(404)
 
+    await app.close()
+    await temp.cleanup()
+  })
+
+  it("runs through the injected executor without accepting caller-owned run fields", async () => {
+    const temp = await TempStore.create()
+    const automation = await temp.store.createAutomation({
+      title: "Daily summary",
+      cron: "0 9 * * *",
+      timezone: "UTC",
+      model: "test:gpt-5.5",
+      prompt: "canonical",
+    })
+    const run = await temp.store.beginRun({
+      automationId: automation.id,
+      trigger: "manual",
+      promptSnapshot: "canonical",
+      modelSnapshot: "test:gpt-5.5",
+    })
+    await temp.store.updateRunLifecycle(run.id, { status: "succeeded", completedAt: new Date().toISOString() })
+    const execute = vi.fn(async (_input: unknown) => (await temp.store.listRuns(automation.id))[0]!)
+    const app = appWithStore(temp.store, { run: execute })
+
+    const response = await app.inject({
+      method: "POST",
+      url: `${BORING_AUTOMATION_ROUTE_PREFIX}/automations/${automation.id}/run`,
+      payload: { model: "forged:model", sessionId: "forged-session", promptSnapshot: "forged" },
+    })
+
+    expect(response.statusCode).toBe(201)
+    expect(response.json().run).toMatchObject({ automationId: automation.id, modelSnapshot: "test:gpt-5.5" })
+    expect(execute).toHaveBeenCalledWith(expect.objectContaining({ automationId: automation.id, request: expect.any(Object) }))
+    expect(execute.mock.calls[0]?.[0]).not.toHaveProperty("model")
+
+    await app.close()
+    await temp.cleanup()
+  })
+
+  it("fails closed when the manual executor is not composed", async () => {
+    const temp = await TempStore.create()
+    const automation = await temp.store.createAutomation({ title: "Daily", cron: "0 9 * * *", timezone: "UTC", model: "test:gpt-5.5" })
+    const app = appWithStore(temp.store)
+
+    const response = await app.inject({ method: "POST", url: `${BORING_AUTOMATION_ROUTE_PREFIX}/automations/${automation.id}/run` })
+
+    expect(response.statusCode).toBe(503)
+    expect(response.json()).toMatchObject({ code: "BORING_AUTOMATION_RUN_EXECUTOR_UNAVAILABLE" })
     await app.close()
     await temp.cleanup()
   })

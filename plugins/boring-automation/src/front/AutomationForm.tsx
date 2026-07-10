@@ -20,7 +20,7 @@ const DEFAULT_DRAFT: AutomationDraft = {
   enabled: true,
   cron: "0 9 * * *",
   timezone: "UTC",
-  model: "gpt-5.5",
+  model: "",
   prompt: "",
 }
 
@@ -44,7 +44,14 @@ export function validateAutomationDraft(draft: AutomationDraft): AutomationValid
   if (!draft.title.trim()) errors.title = "Title is required."
   if (!draft.cron.trim()) errors.cron = "Cron schedule is required."
   if (!draft.timezone.trim()) errors.timezone = "Timezone is required."
-  if (!draft.model.trim()) errors.model = "Model is required."
+  const model = draft.model.trim()
+  if (!model) errors.model = "Model is required."
+  else {
+    const separator = model.indexOf(":")
+    if (separator <= 0 || !model.slice(0, separator).trim() || !model.slice(separator + 1).trim()) {
+      errors.model = "Use provider:model-id syntax."
+    }
+  }
   return errors
 }
 
@@ -95,6 +102,7 @@ export function AutomationForm({
   const errors = useMemo(() => validateAutomationDraft(draft), [draft])
   const hasErrors = Object.keys(errors).length > 0
   const cronDescriptionIds = submitted && errors.cron ? "automation-cron-description automation-cron-error" : "automation-cron-description"
+  const modelDescriptionIds = submitted && errors.model ? "automation-model-description automation-model-error" : "automation-model-description"
 
   function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
@@ -123,10 +131,12 @@ export function AutomationForm({
           <Input
             id="automation-model"
             value={draft.model}
+            placeholder="provider:model-id"
             onChange={(event) => setDraft((current) => ({ ...current, model: event.target.value }))}
             aria-invalid={submitted && !!errors.model}
-            aria-describedby={submitted && errors.model ? "automation-model-error" : undefined}
+            aria-describedby={modelDescriptionIds}
           />
+          <FieldDescription id="automation-model-description">Explicit provider and model ID, for example anthropic:claude-sonnet-4-5.</FieldDescription>
           {submitted && errors.model ? <FieldError id="automation-model-error">{errors.model}</FieldError> : null}
         </Field>
 
