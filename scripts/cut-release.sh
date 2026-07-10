@@ -51,6 +51,7 @@ release_files=(
   packages/agent/package.json
   packages/ui/package.json
   packages/cli/package.json
+  packages/boring-sandbox/package.json
   packages/boring-bash/package.json
   plugins/boring-governance/package.json
   plugins/deck/package.json
