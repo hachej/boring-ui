@@ -9,8 +9,10 @@ The owner's vision, in one sentence: **eve-style DECLARATIVE authoring that ship
 - **eve-style declarative authoring (ship agents fast):** an `agents/<name>/`
   directory compiles to a self-contained content-addressed bundle containing a
   versioned `AgentDefinition` and immutable referenced assets. Local dev and D1
-  consume the same bundle/digest; host resolution creates the immutable runtime
-  snapshot. No platform-source edits or imperative host wiring.
+  consume the same bundle/digest through an authorized workspace host. The
+  workspace supplies activated plugins, policy, and the approved runtime; host
+  resolution creates the deterministic stateless resolved value. No platform-source edits or
+  imperative per-agent host wiring.
 - **the boring-ui FARM, natively integrated:** the workspace is the **farm control plane** — fleet view (every agent + session across every surface), tasks (work items linked to sessions), artifacts (outputs agents publish — 08 `data-artifact`), approvals (one inbox, `resolveInput`). This epic ships the *substrate*; the farm UI is the next epic.
 - **OPEN integration — foreign agents join the farm:** a non-boring agent (Claude Code, Codex, any MCP client) can attach an environment (E2 MCP projection) and — deferred — create tasks / publish artifacts / request human input over a Farm MCP control plane.
 - **Flue's internals:** durable indexed event streams, channel ingress packages, `SessionEnv`-shaped environments.
@@ -27,29 +29,37 @@ increment, not by pretending every future lane is on one critical path.
 
 | Increment | Ships | Does not wait for |
 | --- | --- | --- |
-| **Release 0 — vertical tracer** | safe headless façade plus one bearer-authenticated managed MCP vertical returning self-contained bounded Markdown to a stock client | durable transports, environment extraction, tenancy automation, public-demo/download delivery |
-| **Version 1 — agent factory** | minimal agent-directory authoring, versioned definition/deployment separation, reliable core transport, optional working environment, and one dedicated EU URL -> landing -> authorized workspace -> deployed default agent path | shared tenancy, FUSE/S3, farm UI, hosted child apps, external environment MCP projection |
+| **Release 0 — vertical tracer** | environment-independent core boundary plus one bearer-authenticated managed MCP adapter addressing a workspace-backed agent and returning bounded Markdown | durable transports, generic environment extraction, tenancy automation, public-demo/download delivery |
+| **Version 1 — agent factory** | minimal agent-directory authoring, versioned definition/deployment separation, explicit local workspace/runtime, and one dedicated EU URL -> landing -> authorized workspace -> deployed default agent path | T1/T2, full P3, E1, true no-environment execution, shared tenancy, FUSE/S3, farm UI, hosted child apps, external environment MCP projection |
 | **Increment 2+ — platform expansion** | additional surfaces, shared tenants, control plane, foreign-agent environment projection, advanced mounts and services | none of these may retroactively block v1 |
 
-The v1 product acceptance is binding:
+The proposed v1 product acceptance becomes binding when decision 21 merges:
 
 > With host credentials and infrastructure preconfigured, a developer can
-> scaffold one `agents/<name>/` directory, validate it, run a local turn, and
+> scaffold one `agents/<name>/` directory, validate it, select or create an
+> authorized local workspace with an approved runtime, run a local turn, and
 > deploy it to one dedicated EU tenant at an exact hostname such as
 > `insurance-comparison.senecapp.ai` in 15 minutes or less, with zero
 > platform-source edits. That URL serves a bounded landing page; its CTA enters
 > existing-member sign-in; an authorized member reaches the provisioned
 > workspace; and that workspace selects the deployed definition as agent
-> `default`. The proof records definition, deployment, and resolved snapshot
-> digests. Reapplying is crash/concurrency-safe and creates no duplicate
+> `default`. The proof records definition/deployment digests and the exact
+> workspace-composition manifest/digest consumed by stateless P6-R. Reapplying
+> is crash/concurrency-safe and creates no duplicate
 > resource; the remote target materializes without access to the authoring
-> checkout; rollback selects the previous complete deployment snapshot and
-> reproduces its resolved digest.
+> checkout. The complete redacted D1 site snapshot/digest covers every desired-
+> state input: hostname, bounded landing, auth/membership/owner and workspace/
+> default bindings, roots/storage/runtime, host artifact, workspace composition,
+> definition/deployment, and secret reference names/status only. The proof
+> changes site-level values, then rollback restores the entire prior snapshot
+> and reproduces its resolved digest without a P6 store or any secret value.
 
-The proof records elapsed time, platform files changed, manual steps, hostname,
-landing/auth/workspace/default-agent result, definition digest, deployment id,
-and rollback result. Passing component tests without this golden path does not
-complete v1.
+The proof records elapsed time, platform files changed, manual steps, local
+workspace/runtime identity, hostname, landing/auth/workspace/default-agent
+result, definition/deployment and workspace-composition digests, pinned host
+artifact, full prior-site restoration, reproduced P6-R digest, and rollback
+result. Passing
+component tests without this golden path does not complete v1.
 
 ## Business horizons
 
@@ -105,12 +115,12 @@ Each vision component mapped to what exists today → the delta work orders → 
 
 | # | Vision component | Exists today | Delta (work orders) | Checkable end-state |
 |---|---|---|---|---|
-| 1 | **Headless agent** — pure config object, no fs/bash/HTTP/React | Transport-agnostic harness seam exists but only via Fastify; config sprawls across env vars + file discovery | [P0](work/P0-adr/) → [P1](work/P1-headless-core/) | `createAgent()` with no environment attachment runs a full turn in a plain Node script, reports `environments: []` facts, imports zero Fastify/boring-bash; all current HTTP consumers unchanged |
+| 1 | **Environment-independent agent core** — injected harness/tools/sessions, no Fastify/runtime-package dependency | Transport-agnostic harness seam exists but server/default composition still leaks into the published core graph | [P0](work/P0-adr/) → [P1](work/P1-headless-core/) | the real `/core` closure is Fastify/runtime-package independent and composes deterministically inside an authorized workspace host; any no-environment smoke is lower-level conformance, not a v1 product mode |
 | 2 | **Multi-fs** — governed named filesystems attached per agent/session | **Landed (#416)**: `FilesystemBinding`, `user` + readonly `company_context`, no-leak conformance | [E1](work/E1-environment-attachments/) (generalized `Environment` attachments/facts, scoped views, symlink hardening) → [P4](work/P4-file-ui/) (file UI move) | An agent holds ≥2 filesystems with distinct identities; a scoped view passes the symlink-escape test; company_context no-leak stays green |
 | 3 | **Flexible sandbox** — swappable exec providers, honest capabilities | direct/bwrap/vercel-sandbox behind `Sandbox`/`RuntimeBundle`, inside `packages/agent`, static capability claims | [P2](work/P2-sandbox-providers/) (providers → `@hachej/boring-sandbox`; `resolveMode` → boring-bash; capabilities `reported\|unknown`) → [P5](work/P5-provisioning-secrets/) (provisioning, secret brokering) | Provider swap needs no agent-package change; acyclic layering; a test proves no brokered secret is readable inside a sandbox; remote-worker capabilities only from handshake |
 | 4 | **External agent access** — any MCP client mounts an environment | None (MCP used client-side only) | [E2](work/E2-mcp-projection/) (MCP projection, token→`BoundFilesystemContext`) | An external MCP client mounts a boring environment; denied files absent over MCP; no-leak suite green on the MCP mount |
 | 5 | **Flue building blocks** — durable replayable streams and surface transport substrate | Bespoke replay (`PiChatReplayBuffer` + `?cursor=` NDJSON); no durable public transport | [T1](work/T1-durable-events/) (DS protocol: SQLite `EventStreamStore` + approvals-on-stream) → [T2](work/T2-transport/) (transport contract, front refit) | SSE drop reconnects losslessly by `offset`; an approval raised in one client is answered from another over the shared public transport |
-| 6 | **eve UX — workspace as control plane** | Partial: `SessionList`/search, `DebugDrawer`, ask-user UI, model pickers. No resolved-agent registry, no cross-surface view, no unified approvals | P6-R `ResolvedAgentRegistry` → [P7](work/P7-multi-agent-inspection/) (agentId routing + public agent list + `/info`) → [S3](work/S3-control-plane-ux/) (inspect + cross-surface sessions + approval inbox) | Workspace lists agents from the scrubbed agent-list endpoint and inspects each through `/info`; external-surface sessions are observable by `sessionId`; a pending approval from any surface is answerable from the workspace inbox |
+| 6 | **eve UX — workspace as control plane** | Partial: `SessionList`/search, `DebugDrawer`, ask-user UI, model pickers. V1 has only stateless default-agent resolution; no resolved-agent registry, cross-surface view, or unified approvals | [P7](work/P7-multi-agent-inspection/) (post-v1 registry-backed agent routing + public list + `/info`) → [S3](work/S3-control-plane-ux/) (inspect + cross-surface sessions + approval inbox) | Workspace lists agents from the scrubbed agent-list endpoint and inspects each through `/info`; external-surface sessions are observable by `sessionId`; a pending approval from any surface is answerable from the workspace inbox |
 | 7 | **Dedicated EU delivery (v1)** | Dedicated/manual tenant provisioning only | [A1](work/A1-agent-authoring/) (directory compiler/validator) + [D1](work/D1-tenant-provisioning/) (dedicated tenant factory + site journey) | The timed golden path reaches exact URL -> landing -> auth -> authorized workspace -> deployed agent as `default`, and can roll it back without platform-source edits |
 | 8 | **EU-sovereign hosting** | Implicitly true but unstated | Invariant 15 enforced across every work order | Default stack deploys on EU infra with no US-hosted hard dependency; `vercel-sandbox` is optional |
 | — | **Shared tenancy and S3/FUSE mounts (post-v1)** | None | [D2](work/D2-shared-tenant-mesh/) + [X1](work/X1-s3-fuse-mounts/) | Tracked increments with their own security/performance exits; neither gates the dedicated v1 path |
@@ -188,7 +198,7 @@ flags.
 Full text and rationale: [`architecture/08-pluggable-agent-surfaces.md`](architecture/08-pluggable-agent-surfaces.md) "Decisions this file locks", ratified in the Phase 0 ADR ([P0](work/P0-adr/)).
 
 1. **Wire protocol** — keep `PiChatEvent` as the v1 payload, add the indexed envelope; no parallel event union.
-2. **Pure mode** — pi-coding-agent with no environment attachment + sealed cwd behind the Phase 1 audit, not a second harness; legacy `runtime: none` is a host/adapter diagnostic during migration.
+2. **No public pure mode in v1** — workspace-backed composition is mandatory; existing sealed/no-environment code is migration/test residue. A true no-environment consumer requires a later decision and explicit contract.
 3. **Surfaces outside the agent package** — per-channel packages (Flue model), not `boring-agent` subpaths.
 4. **Readonly fs is v1** — already shipped via #416.
 5. **One namespace rule** — superseded by named `(filesystem, path)` bindings.
@@ -217,12 +227,16 @@ Full text and rationale: [`architecture/08-pluggable-agent-surfaces.md`](archite
 ## Dispatch order (summary)
 
 ```txt
-R0: P0 -> P1 -> M1. V1: P1 -> P6-D -> A1; P1 -> T1 -> T2;
-P1 -> P2 -> P3 (including BBP3-020) -> E1 -> P5a -> P6-R -> D1; these join at P8.
-All remaining lanes are post-v1.
+P0/proposed decision 21 -> P6-D -> A1-compile -----------┐
+P0 -> P1 boundary -> P2(runsc minimum) -> P5a(minimum) --┼-> P6-R -> A1-dev -> D1 -> P8
+                                                          ┘
 ```
 
-Delivery is milestone-based: R0 ships M1 after the safe P1 boundary; v1 joins
-definition/authoring, reliable transport, optional runtime, and D1 dedicated
-delivery at P8. P4, E2, X1, P5b, P6 expansion, P7, M2, D2, S3, and S4 are
-post-v1. The authoritative dependency graph is in [`INDEX.md`](INDEX.md).
+R0 is an optional workspace-backed leaf after the P1 boundary. T1/T2, full P3,
+E1, no-environment, and all remaining lanes are post-v1.
+
+Delivery is milestone-based: R0 may ship M1 after the safe P1 boundary and a
+workspace binding; v1 joins definition/authoring, the dedicated runsc minimum,
+workspace/deployment resolution, and D1 at P8. T1/T2, full P3, E1, true
+no-environment execution, P4, E2, X1, P5b, P6 expansion, P7, M2, D2, S3, and
+S4 are post-v1. [`INDEX.md`](INDEX.md) is authoritative.

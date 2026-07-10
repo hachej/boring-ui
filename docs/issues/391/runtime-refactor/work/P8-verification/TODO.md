@@ -1,6 +1,34 @@
 # TODO-P8 — Verification and cleanup (zero deferred deletions)
 
-## Binding v1 gate (2026-07-09)
+## Proposed reduced v1 work order (2026-07-10)
+
+Dispatch only these verification slices:
+
+1. **Reduced invariant/marker gate:** zero markers owned by the reduced v1
+   slices; core/package boundary and #416 invariants remain green. Do not add
+   T1/T2/P3/E1 old-path gates for work that did not ship.
+2. **Shipped-contract docs:** document the workspace-backed core boundary,
+   minimal definition/deployment bundle, explicit local workspace/runtime, and
+   D1 exact-host/default-agent path. Do not claim the four-part durable surface
+   contract as v1.
+3. **Golden path:** run the <=900-second proof defined in PLAN.md using real EU
+   runsc and the existing workspace composer; capture selector and secret
+   negatives, no-op reapply, then apply changed site-level values and roll back.
+   Compare every prior redacted site field/digest, including hostname, landing,
+   auth/membership/owner and workspace/default bindings, roots/storage/runtime,
+   host artifact, composition, definition/deployment, and secret ref names/
+   status only; reproduce the P6-R digest and never record secret values.
+4. **Follow-up ledger:** keep T1/T2, full P3, E1, no-environment, M2, X1, and
+   wider P6/D2/S3/S4 work explicitly tracked post-v1.
+
+Prerequisites are P1, P6-D, A1, narrow P2/P5a, stateless P6-R, and D1 only.
+M1 config cleanup gates P8 only if the shipped D1 path actually consumes that
+duplicate behavior source. No generic generation, plugin-snapshot, attachment,
+durable-event, approval, or transport proof belongs here.
+
+## Historical 2026-07-09 work order — non-dispatchable for v1
+
+### Former binding v1 gate
 
 Required: P1, T1/T2, P2/P3, E1, P5a, P6-D/P6-R, A1, D1, zero
 removal markers, and the timed exact-URL-to-default-agent product proof. Not
@@ -23,9 +51,9 @@ file's context, dependencies, and non-negotiables included in the assignment.
   phase's removal marker is live. Post-v1 plans do not enter this gate.
 - **R0 M1 is a separate delivery milestone; D1 is a v1 gate.** M2/D2/S3/S4,
   P6b, and the other post-v1 rows are tracked but never awaited here.
-- **Conditional cleanup:** when M1/R0 code exists on main, A1 BBA1-003 is a v1
-  gate and must remove duplicate behavior config before P8. Only proven absence
-  of M1 removes this check.
+- **Conditional cleanup:** A1 BBA1-003 is a v1 gate only when the shipped D1
+  path actually consumes duplicated M1 behavior configuration. Optional M1's
+  mere existence does not create this gate.
 
 ### Current repo reality this bead verifies (verified paths)
 

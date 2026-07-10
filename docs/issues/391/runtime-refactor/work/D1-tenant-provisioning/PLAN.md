@@ -1,16 +1,16 @@
 # D1-tenant-provisioning — Plan
 
-Status: v1 dedicated-delivery gate.
+Status: proposed v1 dedicated-delivery gate until decision 21 merges.
 
-## V1 dependency correction (2026-07-09)
+## Proposed workspace-first v1 plan (2026-07-10)
 
-D1 depends on A1, P5a, and P6-R. It consumes A1's self-contained
-`CompiledAgentBundle` plus separate `AgentDeployment`. It uses the existing
-HTTP/workspace endpoint surface; M2 is not a prerequisite. Every deployment
-records definition, deployment, and resolved-snapshot digests and supports
-rollback to the prior complete deployment snapshot.
+D1 depends on A1, the narrow P2 runsc provider, narrow P5a facts, and stateless
+P6-R. It consumes A1's self-contained `CompiledAgentBundle`, minimal separate
+`AgentDeployment`, and the existing authorized workspace composition. P3, E1,
+T1/T2, M2, plugin snapshots, attachment catalogs, and P6 generation stores are
+not prerequisites.
 
-**Owner amendment (2026-07-10):** v1 delivery includes one exact dedicated
+V1 delivery includes one exact dedicated
 hostname (for example `insurance-comparison.senecapp.ai`), a minimal
 declarative landing page, and an authenticated handoff into the existing
 workspace app. The hostname selects one dedicated app/tenant/workspace
@@ -18,6 +18,37 @@ deployment. Existing membership/invite authorization decides who may enter
 that workspace; the landing page never grants membership. The workspace routes
 v1 agent traffic to the deployed definition as its sole `default` agent. D1
 does not become D2's many-tenant shared-host router.
+
+### Active deliverables
+
+- Plan/apply one exact-host dedicated site with bounded landing content.
+- Create/bind one managed workspace and use existing membership authorization.
+- Materialize the P6-D bundle/deployment and select it as workspace agent
+  `default` through stateless P6-R.
+- Select only the approved EU runsc runtime after narrow P5a authenticated
+  readiness; no direct/bwrap/Vercel/fake production fallback.
+- Keep session roots and workspace/runtime roots separate and durable.
+- Make apply idempotent and rollback to the prior complete redacted D1 site
+  snapshot/digest. It contains every desired-state input: exact hostname;
+  bounded landing configuration; auth, membership, and owner binding; managed
+  workspace/default-agent binding; root, storage, and runtime desired inputs;
+  immutable host artifact; exact workspace-composition manifest/digest;
+  definition/deployment identity; and secret reference names plus redacted
+  status only. It never contains secret values. Rollback rematerializes the
+  entire prior site state and reproduces the P6-R digest. This is D1 apply
+  history, not a P6 resolved-generation registry.
+- Publish DNS/TLS only after exact-host, workspace-scope, membership, default-
+  agent, runtime-readiness, and secret-canary checks pass.
+
+### Active exit
+
+One timed command proves bundle materialization without checkout access, exact
+hostname -> landing -> existing-member sign-in -> bound workspace -> deployed
+`default` agent on approved EU runsc, plus foreign selector denial, idempotent
+reapply, site-level desired-state mutation followed by exact full-site rollback,
+reproduced P6-R digest, and no raw secrets.
+
+## Historical expanded durability design — non-dispatchable for v1
 
 > Phase: Phase D1 - tenant provisioning command/API · Work order: [TODO.md](./TODO.md) · Handoff: [HANDOFF.md](./HANDOFF.md)
 > Ordering authority: [INDEX.md](../../INDEX.md) · Vision: [VISION.md](../../VISION.md) · PR plan: [PR-PLAN.md](../../PR-PLAN.md)

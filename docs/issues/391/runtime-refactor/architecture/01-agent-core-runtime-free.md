@@ -1,10 +1,22 @@
 # 01 — Runtime-free `@hachej/boring-agent`
 
+> **V1 scope amendment.** "Runtime-free" names a package boundary, not a v1
+> product mode. Decision
+> [21](../../../../DECISIONS.md#21-workspace-first-agent-factory-v1-supersedes-public-pure-mode)
+> requires every v1 run to be authorized and composed by a workspace with an
+> approved runtime/environment. `@hachej/boring-agent` must remain independent
+> of Fastify and concrete environment providers, but v1 does not expose
+> `runtime: 'none'` or a workspace-less adapter. The pure-mode design and audit
+> sections below are retained as post-v1 research, not P1 acceptance.
+
 ## Goal
 
-Make `@hachej/boring-agent` a model/session/tool harness that can run with no filesystem and no sandbox.
+Make `@hachej/boring-agent` an environment- and Fastify-independent
+model/session/tool harness that the v1 workspace host composes with an
+authorized runtime/environment.
 
-A pure agent must be valid for Slack/email/support/concierge/research workflows where the only state is session history plus app-owned tools.
+Headless Slack/email/support/concierge/research surfaces remain workspace-backed
+in v1; headless means presentation-free, not environment-free.
 
 ## Current blocker
 
@@ -13,17 +25,22 @@ The agent server composition still assumes a runtime bundle and imports runtime 
 This creates two bugs in the architecture:
 
 1. `direct` means host filesystem, not no-runtime.
-2. Any app wanting a headless agent has to fake a workspace/cwd or avoid the normal server composition.
+2. Agent-core behavior and HTTP/workspace composition are difficult to change
+   independently even though the v1 product intentionally uses both.
 
 ## Dependency inversion first
 
 Before moving runtime-mode resolution to `@hachej/boring-bash` and concrete providers to `@hachej/boring-sandbox`, invert composition:
 
-- `createAgentApp()` and `registerAgentRoutes()` stop value-importing built-in runtime modes in the pure path.
+- `createAgentApp()` and `registerAgentRoutes()` receive host-composed runtime
+  inputs instead of making built-in runtime choices inside the core boundary.
 - Host/CLI/core passes runtime/features in.
 - `@hachej/boring-agent` exports only type contracts for features/tool registration.
 - A package invariant test fails if agent has value imports from `@hachej/boring-bash` or `@hachej/boring-sandbox`.
-- Existing runtime mode support is migrated to host composition **in the same PR** (no long-lived compatibility wiring); a pure agent must never be forced to build a runtime bundle. Any temporary bridge carries a `// TODO(remove:<bead-id>)` marker naming its deletion-owner bead; a later owner is allowed only when explicitly named per `../INDEX.md`, and no marker outlives its named owner's phase.
+- Existing runtime mode support is migrated to workspace host composition
+  without changing v1 behavior. Any temporary bridge carries a
+  `// TODO(remove:<bead-id>)` marker naming its deletion-owner bead; no marker
+  outlives its named owner's phase.
 
 This prevents the cycle:
 
@@ -34,15 +51,18 @@ bad: boring-agent -> boring-bash -> boring-agent
 Target:
 
 ```txt
-boring-core/full-app/cli compose boring-agent + optional boring-bash
+boring-core/full-app/cli compose boring-agent + authorized workspace runtime
 boring-agent has no bash knowledge except type-level feature hooks
 ```
 
 ## Public core contracts
 
-**No `AgentFeature` abstraction.** There is exactly one prospective contributor (boring-bash), so a `features` registry is a speculative abstraction with a single consumer — forbidden by the no-abstraction-without-two-consumers policy. `createAgent()` config uses the **existing seams directly**: `tools` (extra `AgentTool[]`), `systemPromptAppend` / `systemPromptDynamic`, and readiness gates (`mergeTools({ checkReadiness })` + `registerCapabilitiesContributor`). A pure agent and a non-workspace host use these same seams without importing workspace internals — no new registry, no `AgentFeature`/`AgentFeatureContext` interface, no `features?: AgentFeature[]` config member.
+**No `AgentFeature` abstraction.** There is exactly one prospective contributor (boring-bash), so a `features` registry is a speculative abstraction with a single consumer — forbidden by the no-abstraction-without-two-consumers policy. `createAgent()` config uses the **existing seams directly**: `tools` (extra `AgentTool[]`), `systemPromptAppend` / `systemPromptDynamic`, and readiness gates (`mergeTools({ checkReadiness })` + `registerCapabilitiesContributor`). The workspace host uses these seams without making the core import workspace internals. V1 adds no registry, `AgentFeature`/`AgentFeatureContext` interface, or `features?: AgentFeature[]` config member.
 
-Boring-bash contributes through those seams as a **plain bundle**, not a core contract: `createBashAgentFeature()` (defined in Phase 3, [`../work/P3-routes-tools/TODO.md`](../work/P3-routes-tools/TODO.md)) returns `{ tools, readinessRequirements, systemPromptFragment }` — a boring-bash-local type — that the host **spreads into the `createAgent()` config** (`tools: [...hostTools, ...bashBundle.tools]`, readiness gates plus the prompt fragment). The core never learns the word "feature".
+Boring-bash contributes through those seams as a **plain bundle**, not a core
+contract. V1 reuses the current workspace composer; the full P3 ownership
+extraction is post-v1 and contributes no prerequisite or snapshot. The core
+never learns the word "feature".
 
 ```ts
 interface AgentEnvironment {
@@ -81,10 +101,9 @@ Prompt assembly order is deterministic:
 1. Boring base prompt.
 2. The active definition's immutable `instructionsRef` asset. In A1 v1 this is
    `instructions.md`; it is the sole agent-authored system-instruction source.
-3. Environment/capability fragments. Whoever contributes a capability
-   contributes its prompt words; for P3, the boring-bash bundle contributes
-   `systemPromptFragment` beside its tools, routes, renderers, composer
-   providers, skill filters, and readiness gates.
+3. Environment/capability fragments from the existing authorized workspace
+   composition. Whoever contributes a capability contributes and removes its
+   prompt words with the same activation; no P3 extraction is required in v1.
 4. Prompt fragments from activated workspace plugins through the existing
    plugin prompt seam: `WorkspaceServerPlugin.systemPrompt?: string` in
    `packages/workspace/src/server/plugins/defineServerPlugin.ts`, plus
@@ -95,12 +114,13 @@ Prompt assembly order is deterministic:
 6. Static host `systemPromptAppend`.
 7. `systemPromptDynamic` for explicitly per-turn host context.
 
-P6-R retains a source-labeled `ResolvedStaticPromptPlan` and digest covering
-steps 1-6: base-prompt version/content, instructions asset, environment/
-capability fragments, activated-plugin fragments, the v1 skill index, and the
-static host append. This plan is part of resolved identity and restart/rollback
-reproduction. Only step 7 is outside static identity; dynamic context must not
-register or grant authority and is recomputed for each turn by design.
+In v1 the existing authorized workspace composer owns steps 1-6. P6-R consumes
+that already-resolved composition plus its host-produced manifest/digest; it
+does not build a second `ResolvedStaticPromptPlan`, select fragments, or own a
+prompt registry. D1 pins the immutable host artifact and exact workspace-
+composition manifest/digest in its complete redacted deployment snapshot so
+rollback can rematerialize the same inputs. Per-turn dynamic context remains
+outside static identity and cannot register or grant authority.
 
 Plugin discovery or installation is not sufficient to append prompt text. In
 v1 the workspace host activates trusted boot plugins from host configuration
@@ -117,28 +137,20 @@ does not add plugin requirement-policy filtering or partial per-agent selection.
 `boring.requires`, `pluginRefs`, and independently scoped per-agent plugin
 contributions arrive together in the post-v1 schema/resolver.
 
-P3 emits an immutable `ActivatedWorkspacePluginSnapshot` for that v1 host
-composition. Its digest covers the host-app artifact digest and the ordered
-activated records' plugin ids/versions, immutable source+manifest digests,
-canonical redacted activation-input digests, and canonical server/Pi/prompt/
-front-artifact contribution metadata. Current `DirPluginEntry.options` must be
-captured as deterministic redacted activation input. A prebuilt plugin or
-factory that closes over behavior-affecting host config is accepted by D1 only
-when the host supplies equivalent reproducible non-secret inputs; secret values
-remain refs/grants and never enter the snapshot. D1 accepts only plugin sources
-reproducible from the pinned host-app artifact (or an equivalently immutable
-uploaded plugin artifact). Mutable directory-only sources or contributions that
-cannot be reconstructed from recorded artifacts and inputs fail deployment
-readiness. Plugin enablement, order, source, activation config, content, or
-prompt changes therefore change this digest and cannot hide behind an unchanged
-agent definition/deployment digest.
+V1 adds no P3 `ActivatedWorkspacePluginSnapshot`. The existing workspace host
+must emit one deterministic redacted composition manifest/digest for the
+contributions it actually activates; P6-R consumes that value without loading,
+selecting, or persisting plugins. D1 pins the corresponding immutable host
+artifact plus that manifest/digest in its own rollback snapshot. A future full
+P3 extraction may standardize scoped registrars and plugin snapshot internals
+after a named consumer; it is not P1, P6-R, or P8 acceptance.
 
 There is no generic `systemPromptFragmentRefs` list in `AgentDefinition` v1.
 Reusable agent-authored prose belongs in the referenced instructions asset;
 capability prose stays owned by the contribution that makes the capability
 real. This avoids a second prompt registry and makes removal residue-free.
 
-Pure mode (`runtime: 'none'`) omits the bash bundle and any filesystem
+**Post-v1 only:** a future true no-environment consumer would omit the bash bundle and any filesystem
 capability fragment. Source-labeled base/host/capability-generated prompt
 fragments must contain zero filesystem/bash guidance: no cwd, workspace path,
 file tree, `AGENTS.md`, bash/file tool catalog entry, or upload guidance. Do not
@@ -153,7 +165,7 @@ routes, file UI, bash/file tool renderers, file mention/slash composer providers
 prompt fragment, upload affordances, and skills contributed by that bundle
 together. The same law applies to workspace plugins: their prompt fragments
 cannot be merged independently from their resolved server contribution. The
-pure-mode front/API must therefore have no file-search endpoint dependency, no
+future no-environment front/API must therefore have no file-search endpoint dependency, no
 `@files` composer note, no attachment upload path, no bash/file tool renderer
 registration, and no skills contributed only by a detached capability.
 
@@ -171,9 +183,10 @@ descriptions/locations and the agent reads an individual skill only when needed.
 
 Current repo reality to preserve and filter: the Pi harness merges static and hot-reloadable `additionalSkillPaths`/Pi packages in `packages/agent/src/server/harness/pi-coding-agent/createHarness.ts:373-399`, passes them to `DefaultResourceLoader` and `loadSkills(...)` in `createHarness.ts:502-529`, exposes skill diagnostics from `resourceLoader.getSkills()` in `createHarness.ts:622-629`, and exposes slash commands through `resourceLoader.getExtensions().runtime.getCommands()` in `createHarness.ts:643-645`. The `/api/v1/agent/skills` route resolves package skill paths and calls `loadSkills(...)` in `packages/agent/src/server/http/routes/skills.ts:78-103`. Plugin manifest `pi.skills` entries flow from browser-safe manifest fields (`packages/workspace/src/shared/plugins/manifest.ts:31-39`), to scan-resolved `skillPaths` (`packages/workspace/src/server/agentPlugins/scan.ts:272-284`), to the loaded Pi snapshot (`packages/workspace/src/server/agentPlugins/manager.ts:295-305`), and server-owned plugin skills can be mirrored into `.boring-agent/skills` by `packages/agent/src/server/workspace/provisioning/skills.ts:37-74`. Workspace prompt reality already treats skills as a pointer/index, not inline content: `packages/workspace/src/server/boringSystemPrompt.ts:4-14` says the agent reads `SKILL.md` and references on demand, `boringSystemPrompt.ts:77-80` points at `<available_skills>`, and `packages/workspace/src/server/__tests__/boringSystemPrompt.test.ts:123-139` asserts that fallback. P6a inserts the capability filter before each of those outputs is handed to Pi, HTTP, slash suggestions, or the generated prompt index.
 
-## Pure runtime mode
+## Post-v1 research: true no-environment execution
 
-Add a composition path equivalent to:
+Do not add this path in v1. If a named post-v1 consumer passes the
+reintroduction gate, its explicit composition contract may be equivalent to:
 
 ```ts
 runtime: 'none'
@@ -199,9 +212,10 @@ It must not register:
 - attachment uploads or model-facing attachment metadata that requires workspace file storage;
 - cwd, workspace path, or AGENTS.md context in the system prompt.
 
-## Pi harness audit
+## Post-v1 research: Pi harness audit
 
-`createPiCodingAgentHarness` must be audited before pure mode ships.
+`createPiCodingAgentHarness` must be audited before a future true
+no-environment consumer ships. It is not a v1 gate.
 
 Questions to answer:
 
@@ -237,7 +251,9 @@ Preserve existing `mergeTools({ checkReadiness })` behavior. Do not replace it w
 
 ## Tests
 
-Required tests for this area:
+There is no active no-environment conformance suite in v1. Only if a future
+named consumer passes decision 21's reintroduction gate should the following
+tests return as acceptance for that new explicit contract:
 
 - pure agent starts without workspace/sandbox/runtime bundle;
 - no file/bash/upload routes are registered in pure mode;
@@ -250,4 +266,8 @@ Required tests for this area:
 
 ## Acceptance
 
-This area is done when an app can instantiate a useful conversational agent with app-owned tools, durable sessions, and no host file authority anywhere in the request path.
+The v1 area is done when the workspace host can instantiate a useful deployed
+agent through the core boundary with deterministic tool/prompt composition,
+bounded lifecycle/readiness, actor/origin attribution where required, and no
+Fastify or concrete-provider dependency in the core package. Durable admission
+and idempotency are T1 unless a current v1 consumer proves they are required.

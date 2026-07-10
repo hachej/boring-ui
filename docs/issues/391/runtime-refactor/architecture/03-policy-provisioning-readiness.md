@@ -1,5 +1,13 @@
 # 03 — Policy, provisioning, readiness
 
+> **Workspace-first v1 scope (2026-07-10).** The authority algebra below remains
+> binding. V1 P5a implements only D1-consumed runsc readiness/health,
+> authenticated worker facts, redacted fingerprinting, secret brokerage, and
+> non-dev fail-closed configuration. The generic `BashRequirement` normalizer,
+> provisioning-engine relocation, P3/E1 dependency, services, SDKs, and remote
+> mounts below are post-v1 design and non-dispatchable until a named consumer
+> re-specifies them.
+
 ## Goal
 
 Make bash/files/service capabilities declarative, scoped, and readiness-gated without replacing the provisioning system that already exists.

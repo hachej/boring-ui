@@ -10,8 +10,10 @@ before calling D2 done. Invent nothing.
       given written GO for shared tenancy. Otherwise STOP before BBD2-001.
 - [ ] Trusted adapter-created `TenantContext` proof rejects unknown/foreign host
       and principal before workspace lookup; caller `SessionCtx` grants nothing.
-- [ ] P6-D/P6-R `WorkspaceAgentsDeclaration`, separate E1 environment catalog,
-      validator, and project-scoped `ResolvedAgentRegistry` merged.
+- [ ] P6-D inputs and stateless P6-R merged; P7's one registry of P6-R outputs,
+      D2's own `SharedTenantAgentDeclaration` validator, and E1 attachment
+      contracts merged. P6 supplies no declaration, environment pool, or
+      resolved registry.
 - [ ] P1 optional `workspaceId` in `SessionCtx` and `sessionStorageRoot` merged.
 - [ ] P5 provisioning/readiness/secret-brokering seams merged.
 - [ ] P7 `agentId` routing and `/info` merged.
@@ -35,7 +37,8 @@ before calling D2 done. Invent nothing.
 - [ ] `HostTenantResolver.resolve(requestHost, authenticatedPrincipal): TenantContext | { rejected }` exists.
 - [ ] `TenantContext { tenantId, workspaceId, principal }` is adapter-created only.
 - [ ] `LiveTenantRegistry {register/get/list/suspend/archive/delete}` exists.
-- [ ] `TenantSpec {workspaceId,host,tier,declaration:WorkspaceAgentsDeclaration,environments,seedRefs,secretRefs,demo?}` exists.
+- [ ] D2-owned `SharedTenantAgentDeclaration {defaultAgentId,deploymentRefs}` exists.
+- [ ] `TenantSpec {workspaceId,host,tier,agents:SharedTenantAgentDeclaration,attachmentRefs,seedRefs,secretRefs,demo?}` exists.
 - [ ] `TenantIsolationConformance` suite exists.
 
 ## Verification commands
@@ -63,7 +66,8 @@ before calling D2 done. Invent nothing.
       workspace headers alone grant nothing.
 - [ ] No second agent-definition schema.
 - [ ] No raw secrets in tenant YAML, logs, registry snapshots, provisioning output, files, transcripts, artifacts, or sandbox env.
-- [ ] D2 adds process-level tenant registry only; project-scoped `ResolvedAgentRegistry` remains project-scoped.
+- [ ] D2 owns its declaration and process-level tenant registry; P7 owns the one
+      agent registry of stateless P6-R outputs, and P6 owns neither.
 - [ ] Cross-tenant isolation conformance is green for two live tenants in one process.
 - [ ] S4 remains read-only; D2 authoring lives only in BBD2-006.
 

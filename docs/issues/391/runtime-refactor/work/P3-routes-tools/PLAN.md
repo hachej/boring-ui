@@ -1,5 +1,14 @@
 # P3-routes-tools — Plan
 
+> **Post-v1 extraction note (2026-07-10).** Full routes/tools/package ownership
+> extraction is not a v1 gate. Reuse the current workspace composer and land
+> only the narrow boundary correction required by P1/D1. Do not use this plan to
+> make the agent binary pure-only or to force the stopped PR stack onto main.
+> Every `runtime: 'none'`, pure-mode, pure-only-bin, or workspace-less clause
+> below is void historical text. A future P3 must begin from a named second
+> package consumer and a new decision/re-specification; it must express absence
+> through workspace capability composition, not revive a mode-label fork.
+
 > Phase: Phase 3 — Move server routes and tools (bash track) · Work order: [TODO.md](./TODO.md) · Handoff: [HANDOFF.md](./HANDOFF.md)
 > Ordering authority: [INDEX.md](../../INDEX.md) · Vision: [VISION.md](../../VISION.md)
 
