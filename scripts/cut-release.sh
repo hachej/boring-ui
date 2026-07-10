@@ -52,7 +52,7 @@ release_files=(
   packages/ui/package.json
   packages/cli/package.json
   packages/boring-sandbox/package.json
-  packages/boring-sandbox/package.json
+  plugins/boring-mcp/package.json
   packages/boring-bash/package.json
   plugins/boring-governance/package.json
   plugins/deck/package.json
