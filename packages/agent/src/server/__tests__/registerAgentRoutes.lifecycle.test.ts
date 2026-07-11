@@ -43,8 +43,7 @@ async function makeTempDir(prefix: string): Promise<string> {
 }
 
 async function createDirectRuntimeBundle(workspaceRoot: string, sessionId: string) {
-  const { createNodeWorkspace } = await import('../workspace/createNodeWorkspace')
-  const { createDirectSandbox } = await import('../sandbox/direct/createDirectSandbox')
+  const { createNodeWorkspace, createDirectSandbox } = await import('@hachej/boring-sandbox/providers')
   const { createServerFileSearch } = await import('../runtime/createServerFileSearch')
   const workspace = createNodeWorkspace(workspaceRoot)
   const sandbox = createDirectSandbox()

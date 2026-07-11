@@ -1,5 +1,8 @@
 import type { FastifyReply, FastifyRequest } from 'fastify'
-import { constantTimeTokenEqual, WORKER_INTERNAL_TOKEN_HEADER } from '../index'
+import {
+  WORKER_INTERNAL_TOKEN_HEADER,
+  constantTimeTokenEqual,
+} from '@hachej/boring-sandbox/providers/remote-worker'
 import { WORKER_ERROR_CODES } from './error-codes'
 
 export function verifyInternalToken(

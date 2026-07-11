@@ -3,8 +3,8 @@ import {
   type RemoteWorkerExecRequest,
   type RemoteWorkerExecResponse,
   type RemoteWorkerWorkspaceOp,
-} from '../index'
-import type { ExecResult } from '../../shared/index'
+} from '@hachej/boring-sandbox/providers/remote-worker'
+import type { ExecResult } from '@hachej/boring-sandbox/providers'
 
 import type { WorkerConfig } from '../config/workerConfig'
 import { WORKER_ERROR_CODES } from './error-codes'

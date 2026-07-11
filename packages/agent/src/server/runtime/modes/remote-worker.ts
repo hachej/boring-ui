@@ -1,9 +1,13 @@
 import { createServerFileSearch } from '../createServerFileSearch'
 import type { RuntimeModeAdapter } from '../mode'
-import { createRemoteWorkerSandbox } from '../../sandbox/remote-worker/createRemoteWorkerSandbox'
-import { RemoteWorkerClient, type RemoteWorkerClientOptions } from '../../sandbox/remote-worker/workerClient'
-import { createRemoteWorkerWorkspace } from '../../workspace/createRemoteWorkerWorkspace'
-import { REMOTE_WORKER_PROVIDER, REMOTE_WORKER_RUNTIME_CWD } from '../../sandbox/remote-worker/protocol'
+import {
+  REMOTE_WORKER_PROVIDER,
+  REMOTE_WORKER_RUNTIME_CWD,
+  RemoteWorkerClient,
+  createRemoteWorkerSandbox,
+  createRemoteWorkerWorkspace,
+  type RemoteWorkerClientOptions,
+} from '@hachej/boring-sandbox/providers/remote-worker'
 import { getEnv } from '../../config/env'
 
 export interface RemoteWorkerModeAdapterOptions {

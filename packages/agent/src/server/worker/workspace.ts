@@ -5,14 +5,14 @@ import {
   REMOTE_WORKER_RUNTIME_CWD,
   type RemoteWorkerWorkspaceOp,
   type RemoteWorkerWorkspaceResult,
-} from '../index'
-import type { Sandbox, Workspace } from '../../shared/index'
-import { WORKER_ERROR_CODES } from './error-codes'
+} from '@hachej/boring-sandbox/providers/remote-worker'
 import {
   createBwrapSandbox,
   createNodeWorkspace,
   type BwrapResourceLimits,
 } from '@hachej/boring-sandbox/providers'
+import type { Sandbox, Workspace } from '@hachej/boring-sandbox/providers'
+import { WORKER_ERROR_CODES } from './error-codes'
 
 export interface WorkerRuntime {
   workspace: Workspace

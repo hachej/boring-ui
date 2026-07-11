@@ -7,10 +7,11 @@ import {
   getNodeWorkspaceHostRoot,
   type BoringAgentRuntimePaths,
 } from '@hachej/boring-sandbox/providers/node-workspace'
+import type { BuiltinRuntimeModeId as SandboxBuiltinRuntimeModeId } from '@hachej/boring-sandbox/runtime-mode'
 import type { WorkspaceProvisioningAdapter } from '../workspace/provisioning'
 import type { CapabilityReadinessDetail, ReadyStatusTracker } from './readyStatus'
 
-export type BuiltinRuntimeModeId = 'direct' | 'local' | 'vercel-sandbox'
+export type BuiltinRuntimeModeId = SandboxBuiltinRuntimeModeId
 export type RuntimeModeId = BuiltinRuntimeModeId | (string & {})
 
 export interface RuntimeModeReadinessHooks {
