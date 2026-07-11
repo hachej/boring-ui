@@ -133,6 +133,21 @@ that mean you are over-engineering, and the acceptance that means you are done.
 - **Do NOT build:** a test platform, dashboards, synthetic monitoring.
 - **Accept:** golden-path number exists in-repo and updates per release.
 
+## Vertical-GTM beads (only if Motion 5 is activated)
+
+- **Public agent landing page:** ONE static page per deployed agent rendered
+  from AgentDefinition presentation metadata + a signup link. Do NOT build a
+  CMS, theming, or a page builder. Stop sign: a `templates/` directory with
+  more than one layout.
+- **Template workspaces:** provisioning may seed a new workspace by copying
+  one template directory. Do NOT build a template registry or versioning.
+- **Freemium gating = budget caps only** (the ID1 tripwire machinery). A
+  feature-flag system is the over-engineering trap here — refuse it.
+- **Regulated-domain gate (BLOCKING):** before any insurance/accounting/legal
+  vertical launches publicly: disclaimers in the agent definition,
+  human-in-loop default for advice-shaped outputs, and an owner review of
+  the regulatory exposure. Record the review in DECISIONS.md.
+
 ## Deferred WPs — do not start
 
 BL1 / MK1 / CH1 / M2 / E2 / T2 / X1 / P3 / P4 / P5b / D2 / S3 / S4: demand-

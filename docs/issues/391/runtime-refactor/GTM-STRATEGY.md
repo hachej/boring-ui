@@ -60,6 +60,35 @@ engaged audience, revenue-share deal, their channel (Telegram first — CH1)
 as the distribution. The catalog (MK1) follows the audience, never precedes
 it. Success = first paid consumer conversation, not listings count.
 
+## Motion 5 — Vertical agent products (STRONG candidate; owner-sparked 2026-07-11)
+
+Ship named niche agents as products, not services: e.g. the **accounting
+pre-close agent** (fetch/categorize invoices, prep VAT for expert-comptables)
+or the **insurance-comparison agent**. Decision 23 already gives every
+deployed agent an exact hostname — each vertical agent gets a product
+storefront (`agent-x.domain.eu`) with zero new infrastructure. The factory
+becomes the backend story; the vertical agent is what the market sees and
+searches for. Selection matrix (pick ≤ 2): document-heavy repetitive
+workflow · reachable niche community · EU/French regulatory angle · owner
+domain proximity. Accounting scores highest (data background, reachable
+networks, sovereignty synergy); insurance second (higher search demand,
+sharper regulated-advice liability). Pricing: per-workspace monthly, plus a
+free budget-capped lead-magnet tier (caps only — no feature-flag system).
+
+## Motion 2b — Expert-in-a-box (the realistic creator wedge)
+
+The first creators are not influencers; they are **B2B niche experts** (RGPD
+consultant, tax advisor, HR compliance) with existing paying audiences and
+B2B price tolerance. Their methodology ships as a contracted agent
+(rev-share); the golden path is their onboarding ("your expertise, running
+as an agent, in one afternoon"); their channel is the distribution.
+
+**Convergence law:** every vertical agent (M5) and expert agent (M2b) is
+simultaneously a template in the future MK1 catalog — the marketplace
+cold-start solves itself as a by-product of revenue work. Do not build
+catalog features for this; just keep AgentDefinition presentation metadata
+complete.
+
 ## Pricing placeholder (reversible; owner may override)
 
 - **Setup per agent** (authoring + deployment): fixed fee.
