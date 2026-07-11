@@ -1,6 +1,6 @@
 # A1-agent-authoring — Plan
 
-Status: v1 gate.
+Status: proposed v1 gate until decision 21 merges.
 
 ## Purpose
 
@@ -10,9 +10,13 @@ same immutable definition to dedicated deployment.
 
 ## Depends on
 
-- P1 safe `createAgent()` boundary.
-- P6-D for the compiler/digest and P6-R for `agent dev` through the normal host
-  resolver.
+- **BBA1-001 compiler:** proposed decision 21 plus P6-D only. It may run in
+  parallel with P1/runtime correction work.
+- **BBA1-002 local dev:** P6-R through the normal host resolver. P6-R already
+  joins P6-D with the P1 boundary and narrow runtime/readiness branch.
+- **BBA1-003 R0 migration:** BBA1-002 and proof that the shipped D1 path
+  actually consumes duplicated M1 behavior configuration. Optional M1's mere
+  existence does not create this gate.
 
 ## V1 convention
 
@@ -37,13 +41,18 @@ them; authors do not copy those fragments into the agent bundle.
 2. A deployable `CompiledAgentBundle` containing the definition, immutable
    referenced assets, and a deterministic digest over both.
 3. `boring-ui agent validate <dir>` and `boring-ui agent dev <dir>` using the
-   same compiled bundle later consumed by D1.
-4. R0 hygiene: when M1 exists on main, migrate its behavior config to the
-   canonical bundle before P8. This gate is absent only when M1 is absent.
+   same compiled bundle later consumed by D1. Local dev creates/selects an
+   explicit local workspace, resolves an approved runtime, prefers bwrap when
+   available, and permits direct host execution only under explicit
+   trusted-local policy.
+4. Conditional R0 hygiene: if the shipped D1 path actually consumes duplicated
+   M1 behavior configuration, migrate that behavior to the canonical bundle
+   before P8. Optional M1's mere existence does not gate P8.
 
 ## Exit
 
-A fresh example directory validates and completes one scripted local turn with
-zero platform-source edits. Editing behavior changes the digest. The bundle is
-self-contained and materializes on a different host without source-directory
-access. Deployment fields in `agent.json` fail validation.
+A fresh example directory validates and completes one scripted local
+workspace-backed turn with zero platform-source edits. Editing behavior changes
+the digest. The bundle is self-contained and materializes on a different host
+without source-directory access. Deployment fields in `agent.json` fail
+validation.

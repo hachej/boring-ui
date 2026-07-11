@@ -1,5 +1,9 @@
 # P6-plugin-child-app — Aggregate handoff checklist
 
+> **Superseded for v1 (2026-07-10).** This aggregate checklist is post-v1.
+> P6 v1 uses the corrected [P6-V1-HANDOFF.md](./P6-V1-HANDOFF.md); do not gate it
+> on E1, full P3, generic P5, or durable generation routing.
+
 This file includes post-v1 plugin and child-app expansion. P8 uses the narrower
 [`P6-V1-HANDOFF.md`](./P6-V1-HANDOFF.md), not this aggregate closeout.
 

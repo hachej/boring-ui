@@ -3,8 +3,9 @@
 ## 2026-07-09 execution reset
 
 This file retains post-v1 PR designs, but only the milestone graph in
-[`INDEX.md`](INDEX.md) determines what blocks delivery. The immediate review
-queue is the already-open P1/M1/T1/P2 work; X1 is deferred. New implementation
+[`INDEX.md`](INDEX.md) determines what blocks delivery. That former queue is
+historical; the proposed 2026-07-10 disposition table and open-PR table below
+are the only current execution queue. New implementation
 assignments contain one bead/PR, not an entire package TODO.
 
 Release 0 proves one managed agent through a stock MCP client. Version 1 adds a
@@ -14,6 +15,48 @@ exact hostname -> landing -> authenticated workspace -> deployed default agent.
 Shared tenancy, FUSE, external environment MCP projection, control-plane UX,
 hosted child apps, advanced services, search/hooks, and subagent grants are
 post-v1 increments.
+
+## PROPOSED 2026-07-10 workspace-first v1 supersession
+
+This section supersedes every later table where it conflicts. V1 has no public
+no-environment or `runtime: 'none'` product mode. `headless` means no
+presentation surface; every adapter still resolves an authorized workspace and
+approved runtime. Keep the real `/core` boundary and injected composition, but
+reuse the current workspace transport, boring-bash tools/routes, and workspace
+plugin composition for v1.
+
+Reduced merge path:
+
+```txt
+P0/proposed decision 21 -> P6-D -> A1-compile -----------┐
+P0 -> P1 boundary -> P2(runsc minimum) -> P5a(minimum) --┼-> P6-R -> A1-dev -> D1 -> P8
+                                                          ┘
+```
+
+T1/T2, full P3, E1, and true no-environment work are post-v1. Durable
+admission/request idempotency stays with T1 unless a current v1 consumer proves
+a smaller requirement. Freeze all current downstream stacks until their bases
+are recut against this graph.
+
+| PR | Binding disposition | Salvage boundary |
+| --- | --- | --- |
+| #543 | **merged baseline; do not amend** | create a new corrective PR from current main that removes public/product pure-mode acceptance while preserving accepted core/event work |
+| #545 | **do not merge; close/defer** | Pi no-environment seals are post-v1 research, not a v1 gate |
+| #547 | **superseded/stopped** | do not dispatch; its boundary-only replacement is #616 |
+| #616 (boundary-only recut of #547) | **parallel active leaf** | keep package/Fastify/import invariants; remove pure-product smoke/closure claims |
+| #566 | **defer into actual P6-R** | capability facts come from workspace/deployment resolution, not a standalone pure projection |
+| #568 | **defer** | input-asset strategy follows a real workspace/runtime consumer |
+| #575 | **recut after cleanup** | real `/core` move only, with explicit injected host composition |
+| #576 | **rework** | retain bounded agent-local lifecycle/readiness; remove pure-mode ownership assumptions |
+| #564 | **remove pure-only-bin cutover** | re-evaluate any independent provider move under narrow P2; no v1 pure binary |
+
+**Parallel current-main P1 leaves:** a new corrective PR for the merged #543
+behavior and #616 (boundary-only recut of #547), which proves only the
+package/Fastify boundary. #547 is superseded/stopped. Neither active leaf
+depends on the other; both must land before the recut #575 core move. Recut
+#576 after #575, with lifecycle/disposal first and readiness second. Independently, P6-D schema/digest may proceed under
+proposed decision 21, and the A1 compiler may follow P6-D. Only P6-R and A1 local run
+wait for the P1 correction plus the narrow runtime/readiness work.
 
 Binding execution plan that turns the [`work/`](work/) work orders into reviewable PRs. Derived from [`INDEX.md`](INDEX.md) (dispatch protocol + dependency graph + no-compat policy) and every `work/<pkg>/TODO.md`. Mirrors the #416 stacked convention shipped as `bclaw/416-pr1..pr7`.
 
@@ -89,6 +132,11 @@ Legend — nature: **new** = net-new code · **move** = rename-detected + import
 
 ### P1 — Headless core `createAgent()` (Phase 1)
 
+> **Superseded for v1 by the 2026-07-10 disposition above.** Rows pr4/pr5 and
+> pure portions of pr6/prA are post-v1. prE's durable admission/request
+> idempotency moves to T1. Recut only the workspace-composed core boundary,
+> invariants, real core move, and lifecycle/readiness work described above.
+
 | PR | beads | nature | net-new vs budget | test deliverables | gate |
 | --- | --- | --- | --- | --- | --- |
 | pr1-config-inventory | BBP1-001 | doc | 0 | none (inventory doc); records tool/renderer source provenance needed for environment-bundle -> plugins -> host duplicate checks | grep reproducers resolve |
@@ -96,40 +144,50 @@ Legend — nature: **new** = net-new code · **move** = rename-detected + import
 | pr3-adapters-thin | BBP1-003 | new (refactor) | ~400–800 / 2000 (mostly churn into façade) | parity guarded by existing suites + pr6 | full agent `test` + `test:e2e` (parity) |
 | pr4-pure-runtime-none | BBP1-004 | new | ~300–600 | pure-mode route/tool exclusion; session round-trip under `sessionStorageRoot` w/ `workspaceId` undefined; no cwd leak | `lint:invariants` |
 | pr5-pi-harness-audit | BBP1-005 | doc + new (seals) | ~150 seals | harness-construction spy (no host cwd); system-prompt snapshot (no cwd/AGENTS.md) | `test` |
-| pr6-invariants-smoke | BBP1-006 | test | 0 (tests + script) | Fastify-graph check on `/core`; agent→bash value-import check; plain-Node pure smoke turn | `lint:invariants`; `check:isolation`; `boring-bash check:invariants` |
+| pr6-boundary-invariants | BBP1-006 (recut) | test | 0 (tests + script) | Fastify-graph check on `/core`; agent→bash value-import check; no no-environment execution smoke in v1 | `lint:invariants`; `check:isolation`; `boring-bash check:invariants` |
 | prA-facts-projection | BBP1-007 | new | M | `ResolvedAgentCapabilities` projection through existing capability exposure; pure facts report `environments: []`, actual registered tools, empty skills/MCP; direct/local/vercel get coarse compatibility environment facts | agent `test`; capability route tests |
 | prB-de-mode-gating | reopened-P1 follow-up | new | S/M | remove runtimeMode feature gating; derive input-asset intake from environment sinks/direct-provider policy; no behavior branches on `runtimeMode` except diagnostics/migration shims | agent `test`; T2 BBT2-007 alignment |
 | prC-core-relocation | reopened-P1 follow-up | move + new | M/L | move/split core implementation under `src/core/createAgent.ts`; server wrapper injects Pi/defaults; `/core` graph imports no server/Pi defaults unless injected | `lint:invariants`; `check:isolation` |
 | prD-readiness-honesty | reopened-P1 follow-up | new | S/M | readiness/lifecycle state is honest: no placeholder false-ready state; runtime binding eviction disposes agents or reports tracked lifecycle | agent `test`; readiness smoke |
-| prE-admission-attribution | new P1 reliability closeout | new | M | `start`/`send` share one admission rule; request idempotency keys by trusted scope + authenticated subject; cross-subject ids isolate; actor/origin persist; duplicate tools fail; caches bounded | agent `test`; managed-delegate regression |
+| prE-admission-attribution **post-v1 T1** | former P1 reliability closeout | deferred | M | durable admission/request-idempotency work is not a P1/R0/v1 gate under proposed decision 21 | defer to T1 |
 
-**P1 total: 11 PRs (12 if pr2 splits).** Merge order pr1→pr5→pr2(→a,b)→pr3→pr4→pr6→prA→prB→prC→prD→prE. **Gate to call rewritten P1 complete:** pr2..pr6 plus prA..prE merged. Runtime lanes must not consume capability facts until prA lands; input-asset consumers must not branch on `runtimeMode` after prB. T1/T2 and multi-surface delivery do not proceed until prE fixes admission, retry, attribution, and catalog semantics.
+The legacy P1 table is not the active queue. Proposed v1 P1 is the new #543
+corrective PR, #616 (boundary-only recut of #547), recut core move, and
+reworked bounded lifecycle/readiness. #547 is superseded/stopped. prE and
+durable request-idempotency are post-v1 T1 work.
 
-### M1 — Managed agent via MCP (outreach demo sidecar, after P1 prE)
+### M1 — Managed agent via MCP (optional outreach sidecar, after P1 boundary)
 
 M1 is the Release 0 vertical tracer, not the v1 factory exit. It establishes a measured delivery baseline while the generic authoring path is built. It still follows the outreach-week operating mode: additive/dark until smoke proof, e2e green, review-time estimate + review-focus notes on every PR, and explicit stack order.
 
 | PR | beads | nature | net-new vs budget | test deliverables | gate |
 | --- | --- | --- | --- | --- | --- |
-| pr1-exposed-mcp-delegate | BBM1-001 | new | ~700–1100 | bearer binds subject/tenant/agent; required subject-scoped caller idempotency key dedupes before quota; lost-response/new-tool-call-id retry starts once; bounded progress/polling; auth/quota negatives | chosen host/package `test`; `audit:imports` |
+| pr1-exposed-mcp-delegate | BBM1-001 | new | ~700–1100 | bearer/host policy proves current membership, resolves one concrete workspace, its bound deployment, and explicit `default` agent before start; tool args grant no routing; bounded process-local receipt key is `(subjectId, workspaceId, deploymentId, agentId, idempotencyKey)` and dedupes same-process retries only; foreign-workspace, non-member, and mismatched-binding negatives; explicitly no restart durability | chosen host/package `test`; `audit:imports` |
 | pr2-delivery-v0-demo-composition | BBM1-002 | new | ~300–700 | byte caps: brief 32 KiB, key 128 B, final 96 KiB, Markdown 256 KiB, serialized total 384 KiB; stable rejects/no path; temporary config names A1 owner; actor/origin/request id reach core | host build/typecheck/test |
-| pr3-stock-client-smoke | BBM1-003 | test/doc | 0 | authenticated stock client proof: delegate -> progress -> inline result; same key under new tool-call id returns original; auth/quota/size negatives | documented smoke + affected e2e |
+| pr3-stock-client-smoke | BBM1-003 | test/doc | 0 | authenticated stock client proof: membership -> concrete workspace -> bound deployment -> explicit default agent -> delegate -> progress -> inline result; foreign-workspace/non-member/mismatched-binding, auth/quota/size, and restart-limitation proof | documented smoke + affected e2e |
 | pr2b-share-links (HARD GATED on #424) | BBM1-004 | new | ~150–400 | current-main public-share API cited; returned URL uses verified share route; share opens without exposing internals | host build/typecheck/test; share route smoke |
 
-**M1 total: 3 PRs (v0) + 1 gated follow-up.** Preconditions: P1 through prE admission/idempotency/attribution closeout. R0 is bearer-only and self-contained (final text + bounded inline Markdown); public-demo and general artifact download wait for M2/#424. M1 has no T1 dependency; durable streams upgrade later.
+**M1 total: 3 PRs (v0) + 1 gated follow-up.** The only proposed prerequisite
+is the P1 workspace/Fastify boundary. R0 is bearer-only, workspace-backed, and
+self-contained. Current membership must resolve a concrete workspace plus its
+bound deployment and explicit `default` agent before start. Its bounded
+process-local receipt key is `(subjectId, workspaceId, deploymentId, agentId,
+idempotencyKey)`; foreign-workspace, non-member, and mismatched bindings reject,
+and restart durability is explicitly absent. Durable admission/streams remain
+T1.
 
 ### A1 — Minimal agent-directory authoring (v1, after P6-D)
 
 | PR | beads | nature | net-new vs budget | acceptance | gate |
 | --- | --- | --- | --- | --- | --- |
 | pr1-directory-compiler | BBA1-001 | new | ~300–500 | `agents/<name>/agent.json` + `instructions.md` compile import-free to self-contained `CompiledAgentBundle`; deterministic digest covers canonical definition + immutable assets; unknown keys/refs fail with stable codes | CLI/core typecheck + unit |
-| pr2-validate-dev | BBA1-002 | new | ~250–450 | `boring-ui agent validate <dir>` and `boring-ui agent dev <dir>` use the same compiled bundle later materialized by D1; one local scripted turn; zero platform-source edits | CLI smoke |
-| pr3-migrate-r0-config | BBA1-003 | move/delete | ~150–300 | when M1 exists, it resolves the compiled bundle; temporary `ManagedAgentVerticalConfig` projection is removed or reduced to a documented host-only deployment adapter | M1 stock-client smoke |
+| pr2-validate-dev | BBA1-002 | new | ~250–450 | `agent validate` checks the bundle; `agent dev` creates/selects an authorized local workspace and approved runtime (`bwrap` default when available; direct only by explicit trusted policy), then resolves through P6-R; one local scripted turn; zero platform-source edits | CLI smoke |
+| pr3-migrate-r0-config | BBA1-003 | move/delete | ~150–300 | only when shipped D1 consumes duplicated M1 behavior configuration, resolve it from the compiled bundle; temporary `ManagedAgentVerticalConfig` projection is removed or reduced to a documented host-only deployment adapter | D1 path + M1 stock-client smoke |
 
 **A1 v1 total: 2 PRs, plus one conditional R0 migration PR.** BBA1-001 may
 start after P6-D; BBA1-002 waits for P6-R so it uses the normal host resolver.
-BBA1-003 is a P8 gate when M1/R0 exists on main; only proven absence removes
-that gate. Keep v1 conventions deliberately small: one schema,
+BBA1-003 is a P8 gate only when the shipped D1 path still consumes duplicated
+M1 behavior configuration. Keep v1 conventions deliberately small: one schema,
 one instructions file, reference ids rather than executable discovery, and no
 pricing, hostname, exposure, tenant, or runtime-image fields in the definition.
 
@@ -189,7 +247,7 @@ over MCP; M2 exposes declared agents over MCP.
 | pr2-move-direct-bwrap | BBP2-003 | move | budget-exempt (~1.5k churn) | moved direct/bwrap conformance + snapshot pass under **boring-sandbox**; `createNodeWorkspace`/`getNodeWorkspaceHostRoot`/path helper importers migrated with the slice | `boring-sandbox test` |
 | pr3-move-vercel-sandbox | BBP2-004 | move | budget-exempt (~2.5–3k churn, <4k) | vercel-sandbox unit tests pass under boring-sandbox; `createVercelSandboxWorkspace` owned/exported by boring-sandbox providers; no provider adapter value-imports agent provisioning helpers | `boring-sandbox test` |
 | pr3b-sandbox-publish-parity | BBP2-009 (Amendment 2026-07-06) | chore | ~30–60 (five publish lists + cohort version bump; lands BEFORE pr4's bash→sandbox value edge) | `node scripts/audit-publish-manifests.mjs` passes with sandbox listed; grep gate: sandbox present in all five lists, ordered before `packages/boring-bash` | `audit:imports`; publish-manifest audit |
-| pr4-mode-resolution-to-bash | BBP2-005 | move | budget-exempt (~1k churn) | `resolveMode.test` passes in **boring-bash**; deployed/tenant composers fail closed when no approved provider is available; `direct` requires explicit trusted-local policy; mode-private helpers moved/injected; no agent value import in `boring-bash/modes`; **agent bin becomes pure-only**, bash-enabled bin composition moves to CLI | agent `test` (host repoint); `boring-bash test` |
+| pr4-mode-resolution-to-bash **post-v1** | BBP2-005 | deferred | n/a | former pure-only-bin/mode cutover is void; re-specify from current main only for a named post-v1 consumer | do not dispatch |
 | pr5-split-remote-worker | BBP2-006 | move | budget-exempt (~1k churn) | protocol → `boring-sandbox/shared`, client/adapter/workspace → `boring-sandbox/providers`; bytes round-trip; full-app worker import-graph has no agent-core dep; worker health remains `{ ok: true }`; **worker capabilities stay `'unknown'` — NO handshake here (handshake owned solely by BBP5-008)** | `audit:imports` |
 | pr6-migrate-delete-invariants | BBP2-007 + BBP2-008 | move (delete origin exports) + new (invariant) | ~80 (invariant script) | static: agent old paths have no bash/sandbox value import / no re-export (including moved workspace helpers); boring-bash→sandbox value edge + sandbox→agent types-only edge both asserted; apps compile | `lint:invariants`; `audit:imports` |
 | pr7-hardened-runsc-provider | BBP2-010 | new | ~600–1000 | runsc systrap preflight/lifecycle; OCI digest; netns/nftables metadata/private/cross-workspace denial; cgroup/pid/CPU/memory limits; no broker secret; exact cleanup; real EU worker evidence | `boring-sandbox test`; real-target smoke |
@@ -249,7 +307,7 @@ impossible to enforce.
 
 | PR | beads | nature | net-new vs budget | test deliverables | gate |
 | --- | --- | --- | --- | --- | --- |
-| pr1-mcp-server-exec-gating | BBE2-001 + BBE2-004 | new | ~400–600 (+ pinned SDK, `./mcp`) | factory derives one ref-bound lifetime from P6-R catalog; no mismatched contribution injection; per-call E1 auth; no raw ops/lease/secret | `boring-bash check:invariants`; build |
+| pr1-mcp-server-exec-gating | BBE2-001 + BBE2-004 | new | ~400–600 (+ pinned SDK, `./mcp`) | factory derives one ref-bound lifetime from the future E1 host attachment lookup; no P6-R catalog, mismatched contribution injection, raw ops/lease, or secret; per-call E1 auth | `boring-bash check:invariants`; build |
 | pr2-mcp-session-identity | BBE2-002 | new | ~250 (token-per-projection) | per-call validation; revoked/expired/foreign and invalidated lifetime reject after connect; two actors isolated | `boring-bash test` |
 | pr3-mcp-conformance-doc | BBE2-003 + BBE2-005 | test + doc | 0 | MCP-mount conformance `passed:true`, same visible-path set; remote-worker-as-transport filed as **P8** follow-up (doc); duality note confirms E2 exposes MCP and does not share machinery with boring-mcp consume | `boring-bash test` |
 
@@ -288,18 +346,18 @@ Adds the `@hachej/boring-sandbox/mounts` export (created package from P2) + the 
 
 ### P6 — Definition/resolution v1; plugin + child-app expansion post-v1
 
-**P6-D is dispatchable after P1.** It owns only schemas, digesting, and the Map
-registry. **P6-R follows E1/P5a plus P3 BBP3-020** and resolves a definition,
-deployment, and workspace-level activated-plugin snapshot to one immutable
-`ResolvedAgent`. This snapshot consumption is the narrow v1 plugin exception;
-per-agent plugin UI/routes wait for P7's agent-aware routing and the remaining
-plugin generality below is post-v1.
+**P6-D is dispatchable under proposed decision 21 with no P1 dependency.** It
+owns only the minimal `AgentDefinition` and `AgentDeployment` schemas/digests,
+immutable definition assets, and BBP6-003 lookup. **P6-R waits for P6-D, the P1
+workspace boundary, and narrow P5a**, then resolves statelessly through the
+existing authorized workspace composer. P6-R creates no deployment, registry,
+generation store, plugin snapshot, attachment catalog, or scoped registrar.
 
 | PR | beads | nature | net-new vs budget | test deliverables | gate |
 | --- | --- | --- | --- | --- | --- |
-| pr1-definition-deployment-schema | BBP6-009 | new | ~300–500 | behavior-only definition; deployment has sorted opaque attachment refs and no E1 import; canonical digests; pricing/host/exposure absent; v1 `pluginRefs` rejects | core/cli `test` |
+| pr1-definition-deployment-schema | BBP6-009 | new | ~300–500 | behavior-only definition; minimal deployment identity + pinned definition reference; canonical digests; runtime/environment/plugin/prompt/pricing/host/exposure fields reject | core/cli `test` |
 | pr2-definition-registry | BBP6-003 | new | ~200 (Map-backed) | `(definitionId,version)` verified bundle register/get/list; same digest idempotent, conflicting digest stable error; asset tamper/traversal rejects; works after checkout removal | agent `test` |
-| pr3-resolved-agent | BBP6-011 | new | ~500–800 | consumes P3 activated-plugin snapshot; source-labeled static prompt plan/digest; one deterministic artifact-pin owner and per-digest mutation CAS reconcile pin-before-record, delete-before-release, and concurrent stage/delete; host complete-pointer; boot-digest admission check; atomic session pin; same-generation restart; changed-generation retirement (D1 owns switch) | core/agent `test` |
+| pr3-resolved-agent | BBP6-011 | new | ~250–450 | statelessly combines verified definition/deployment with existing authorized workspace composition and narrow runtime/readiness facts; same inputs return the same digest/result; no persistence or loader | core/agent `test` |
 | pr2b-remote-worker-image-support **post-v1** | BBP6-009b | new | ~60–120 | remote-worker image support follows the P5b handshake and reads deployment/runtime facts, never definition behavior | boring-sandbox/host readiness `test` |
 | pr4-manifest-requires-bash-skill-filters **post-v1** | BBP6-002 | new | ~450–800 | requirements validate against active authority and resolved environment facts; invalid `bash` rejected pre-import; raw-secret reject | `lint:plugin-invariants` |
 | pr4-runtime-plugin-context | BBP6-004 | new | ~300–500 | context derived from policy (unspoofable); status-only secrets; dispatch unchanged | workspace `test` |
@@ -315,9 +373,9 @@ plugin generality below is post-v1.
 | pr9-childapp-context 🚫blocked | BBP6-001 | new | ~300–500 (type-only import of platform type) | generic excludes child-app scope; narrows-never-widens; unknown id → stable error | `test` — **STOP+report if platform type absent** |
 | pr10-macro-scoping 🚫blocked | BBP6-006 | new + fixture | ~250 | Macro context yields Macro reqs; generic excludes; no leakage | `test` |
 
-**P6 v1 total: 3 PRs** (definition/deployment schema, Map registry, resolved
-snapshot). A1 and D1 are the real consumers. P6-R consumes P3 BBP3-020's
-workspace-level snapshot but adds no plugin loader, per-agent refs, or
+**P6 v1 total: 3 PRs** (definition/deployment schema, Map lookup, stateless
+resolution). A1 and D1 are the real consumers. P6-R consumes the existing
+authorized workspace composition and adds no plugin loader, per-agent refs, or
 requirement policy. Manifest requirements/per-agent/hosted/reload/remote-worker-
 image work and P6b child-app scoping are post-v1; P6b remains blocked on #376.
 
@@ -335,23 +393,27 @@ image work and P6b child-app scoping are post-v1; P6b remains blocked on #376.
 | pr8-subagent-grant | BBP7-008 | new (lands E1 BBE1-005) | ~150 (boring-bash) | child lifetime isolated by `agentId`; auth-gated callback per operation; no raw handle/cwd; expired/foreign lease rejects | `boring-bash test` |
 | pr9-two-surface-isolation | BBP7-009 | test | 0 | two-surfaces×two-agents namespace-isolation integration (bindings/catalog/transcript/readiness/approvals; `sessionId` remains runtime-global) | `test` |
 
-**P7 total: 9 PRs (8 if pr7+pr8 combine).** Precondition: P6-R `ResolvedAgentRegistry` + E1 attachments + **T2** (the `sessionId`-only public transport + two-handles guard; the durable approvals/`resolveInput` the external-hook route and `/info` channel facts read arrive via T1→T2) (else STOP+report).
+**P7 total: 9 PRs (8 if pr7+pr8 combine).** Precondition: the stateless P6-R resolved-value contract + E1 attachments + **T2**. P7, not P6-R, owns any registry-backed multi-agent routing/lookup it introduces. The `sessionId`-only public transport + two-handles guard and durable approvals/`resolveInput` arrive via T1→T2; otherwise STOP and re-specify.
 
 ### D1 — Dedicated tenant provisioning (v1, after A1 + P5a + P6-R)
 
+Preconditions are P6-D/A1, the P1 boundary, narrow P2 EU runsc, narrow P5a,
+and stateless P6-R. P3, E1, T1/T2, M2, plugin snapshots, attachment catalogs,
+and P6 generation/session-retirement machinery are not dependencies.
+
 | PR | beads | nature | net-new vs budget | test deliverables | gate |
 | --- | --- | --- | --- | --- | --- |
-| pr1-plan-command-api | BBD1-001 | new | ~550–900 | tenant+agent selector binds deployment + immutable host-app/plugin snapshot + worker/endpoint/TLS-pin/app/hostname identity; atomic cross-target hostname/app uniqueness; bounded landing + opaque owner ref; retarget rejects; desired digest/generation/fence | affected package `test` |
+| pr1-plan-command-api | BBD1-001 | new | ~450–700 | exact hostname, bounded landing, opaque owner ref, minimal deployment, managed-workspace intent, approved runsc profile, secret refs, and deterministic redacted desired digest | affected package `test` |
 | pr2-tenant-roots | BBD1-002 | new | ~400–700 | tenant/single owner-bound workspace created once; owner identity redacted; DB/storage/session roots allocated outside container home/root; rerun idempotent | core/cli/full-app `test` |
 | pr3-secrets-runtime-config | BBD1-003 | new | ~400–700 | raw secret canary absent; runtime config records selected EU host/tier facts and exact auth origin/callback allowlist | `audit:imports`; secret negative tests |
-| pr4-endpoint-preparation | BBD1-004a | new | ~400–700 | install trusted host-mode guard before route work: generic reserved/no-pointer deny and dedicated exact-bound-host-only; materialize/verify bundle + pinned host-app/plugin/static-prompt inputs; prepare route/certificate and verifier consumer; stage P6-R; emit prepublication manifest; no fake readiness, pointer CAS, or external activation | affected host build/typecheck/test |
-| pr5-dedicated-workspace-scope | BBD1-005 | new | ~800–1400 | extend pr4's guard: generic behavior only on its configured listener; dedicated non-bound host rejects; reserved/complete derives fixed scope; D1 mounts only P3 scoped routes and rejects raw routes; cover explicit/indirect selectors, full-app MCP/plugins/UI/Bridge, post-signup provisioning, account deletion and ownership mutation; create/switch/delete disabled | core/workspace/full-app build/typecheck/test |
+| pr4-endpoint-preparation | BBD1-004a | new | ~400–700 | install exact-host inactive guard; materialize/verify bundle; resolve statelessly through existing workspace composition; prepare route/certificate; require real P5a readiness before publication | affected host build/typecheck/test |
+| pr5-dedicated-workspace-scope | BBD1-005 | new | ~600–1000 | bind one managed workspace across existing server/front/plugin/MCP selectors; create/switch/delete disabled; foreign ids reject; no P3 scoped registrar dependency | core/workspace/full-app build/typecheck/test |
 | pr6-dedicated-site-journey | BBD1-006 | new | ~300–600 | exact-host bounded landing; existing-member sign-in; membership-gated trusted workspace handoff; forged workspace/agent selectors reject; first chat uses deployed `default` identity | core/full-app build/typecheck/test + focused e2e |
-| pr7-publication-integration | BBD1-004b | new | ~350–650 | consume real BBD1-005/006 capability; no-op requires same desired + fresh current-resolved reproduction; resolved fact drift transitions/fails closed; desired-only/same-resolved publishes without restart; changed resolved commits pointer+switch_pending, switches, retires, disables old listener, then reopens; pre-CAS preserves old, post-CAS completes forward | affected host build/typecheck/test |
-| pr8-apply-smoke-runbook | BBD1-007 | test/doc | ~300–500 | real URL -> landing -> member workspace -> default agent; same-generation real restart preserves session; changed apply/rollback each retire replaced sessions; staged/pre-CAS crash keeps old routed; stale worker zero effects; rollback reproduces host-app/plugin + desired/resolved identity with new observed completion digest | provisioning smoke |
+| pr7-publication-integration | BBD1-004b | new | ~300–500 | publish only after workspace/default-agent/runsc/secret readiness; idempotent complete D1 snapshot; partial state unreachable; rollback reapplies prior complete redacted deployment snapshot | affected host build/typecheck/test |
+| pr8-apply-smoke-runbook | BBD1-007 | test/doc | ~250–400 | <=15-minute real URL -> landing -> existing member -> managed workspace -> default agent on EU runsc; foreign selector, reapply, rollback, and secret-canary proof | provisioning smoke |
 
-**D1 total: 8 PRs.** Preconditions: A1, P2 hardened runsc,
-P5a authenticated worker facts, and P6-R. M2 is not a dependency. D1 is the
+**D1 total: up to 8 review slices; combine only when the per-PR budget holds.**
+The reduced prerequisites above are exhaustive. D1 is the
 repeatable dedicated factory lane. Its generic landing/auth/workspace handoff is
 v1; bespoke marketing pages, pricing/GTM, and shared tenancy remain outside v1.
 
@@ -379,11 +441,14 @@ independent of #376 child-app hostname resolver.
 
 | PR | beads | nature | net-new vs budget | test deliverables | gate |
 | --- | --- | --- | --- | --- | --- |
-| pr1-marker-import-gates | BBP8-001 + BBP8-003 | new (invariant scripts) | ~150 | planted removal marker fails + names bead; delivered P2/P3/T1/T2 relocation gates green; no P4/X1 gate | `lint:invariants`; `audit:imports` |
-| pr2-surface-contract-docs | BBP8-002 | doc | 0 | referenced symbols (`createAgent`,`AgentEvent`,`AgentSendInput`,`ResolveInputResponse`) exist | doc/link check |
-| pr3-golden-path-and-followups | BBP8-006 + BBP8-004 | test/doc/tracking | ~200–400 | timed A1->D1 on real EU runsc via pinned worker TLS; exact host/landing/member/fixed workspace/default agent; scoped-route/host denials; fresh-resolved no-op and resolved-fact drift; old-origin stale rejection; capability replay rejection; pointer-before-publication; identity/stale-fence/rollback/secret proof | CLI/D1 smoke |
+| pr1-reduced-invariant-gates | BBP8-001 + BBP8-003 recut | new (invariant scripts) | ~100 | v1-owned removal-marker check plus applicable core/package/#416 import boundaries; no T1/T2/P3/E1 relocation gate | `lint:invariants`; `audit:imports` |
+| pr2-shipped-contract-docs | BBP8-002 recut | doc | 0 | document workspace-backed core, minimal definition/deployment bundle, local workspace/runtime, and D1 path only | doc/link check |
+| pr3-golden-path-and-followups | BBP8-006 + BBP8-004 | test/doc/tracking | ~200–400 | timed compile/local/D1 exact-host/member/workspace/default-agent path on real EU runsc; selector/lifecycle denials, no-op reapply, complete-snapshot rollback, secret proof | CLI/D1 smoke |
 
-**P8 total: 3 PRs.** BBP8-005 remains the final sweep rather than a separate PR. A live `TODO(remove:*)` reopens its owner. P8 gates only P1, T1/T2, P2/P3, E1, P5a, P6-D/P6-R, A1, and D1. It explicitly does not wait for P4, E2, X1, P5b, P6 plugin/child-app expansion, P7, M2, D2, S3, or S4.
+**P8 total: 3 PRs.** BBP8-005 remains the final sweep rather than a separate
+PR. P8 gates only P1, P6-D/A1, narrow P2/P5a, stateless P6-R, and D1. T1/T2,
+full P3, E1, and every later lane are tracked but not awaited or documented as
+shipped.
 
 ### S3 — Control-plane UX (Phase S3, off T2 + P7) — **DELTA, extend existing surfaces**
 
@@ -415,23 +480,34 @@ estimated and accepted independently.
 
 | Milestone | Remaining/open program | Exit |
 | --- | --- | --- |
-| **R0 vertical tracer** | finish current P1 stack + P1 prE; rebase #549/#556 | stock MCP client completes one attributed/idempotent vertical run |
-| **V1 definition/authoring** | P6-D (2), A1 (3) | directory validates, runs locally, emits deterministic digest |
-| **V1 reliable transport** | remaining T1 + T1 recovery; T2 | in-process/HTTP parity, transactional approvals, explicit crash recovery |
-| **V1 optional runtime** | remaining P2; P3; E1; P5a | one attached environment, honest provider selection, no secret/scope leak |
-| **V1 dedicated delivery** | P6-R (1), D1 (8), P8 (3) | timed <=15-minute dedicated URL -> landing -> authorized workspace -> default agent, idempotent rerun, digest rollback |
-| **Post-v1** | P4, E2, X1, P5b, P6 expansion, P7, M2, D2, S3/S4 | separately scheduled against their own consumer and risk trigger |
+| **R0 vertical tracer** | optional workspace-backed recut of #549/#556 after P1 boundary | stock MCP client completes one bounded workspace-backed run; no prE/T1 gate |
+| **V1 definition/authoring** | P6-D (2), A1 compiler then workspace-backed dev | directory validates, runs in an explicit workspace/runtime, emits deterministic digest |
+| **V1 runtime minimum** | new/rebased narrow P2 runsc + P5a D1 facts | approved EU runsc path, authenticated readiness, no secret/scope leak |
+| **V1 dedicated delivery** | stateless P6-R, reduced D1, reduced P8 | timed <=15-minute dedicated URL -> landing -> authorized workspace -> default agent, idempotent rerun, rollback |
+| **Post-v1** | T1/T2, full P3, E1, P4, E2, X1, P5b, P6 expansion, P7, M2, D2, S3/S4 | separately scheduled against their own consumer and risk trigger |
 
-There is no truthful single serial PR count because the transport, runtime, and
-definition lanes join at D1/P8 and several current branches must be rebased or
-split. Review and merge the active queue in this order:
+There is no truthful single serial PR count. #543 and #557 are already merged
+baselines. The current open #391 PRs have these dispositions; stack order is
+not execution authority:
 
-1. `#557` publish prerequisite.
-2. P1: `#543 -> #545 -> #547 -> #566 -> #568 -> #575 -> #576`, then P1 prE.
-3. R0 when needed for outreach: `#549 -> #556`.
-4. T1 after P1: `#546`, then split/correct `#559`, then crash recovery.
-5. P2 after P1: `#548 -> #558`, then split/correct `#564`.
-6. Keep `#581` draft/deferred until E1/P5a and a real native-mount consumer.
+| Open PR(s) | Current disposition |
+| --- | --- |
+| #545 | close/defer; no-environment Pi seals are post-v1 |
+| #547 | superseded/stopped; do not dispatch |
+| #616 (boundary-only recut of #547) | boundary invariants only; run in parallel with the new #543 corrective PR |
+| #566 | defer; capability projection belongs only in the actual stateless P6-R consumer |
+| #568 | defer until a named workspace/runtime input-asset consumer exists |
+| #575 | recut after both corrective/boundary leaves; retain only the real injected core move |
+| #576 | rework after #575; lifecycle/disposal first, then honest readiness, with no pure ownership |
+| #546, #559 | freeze post-v1 with all T1/T2 descendants |
+| #548 | do not merge as the old full migration; recut only the D1-consumed runsc/package boundary from current main |
+| #558 | defer the Vercel provider move; it is not in the dedicated EU runsc minimum |
+| #564 | close/defer; no pure-only binary or broad mode/provider cutover in v1 |
+| #549, #556 | optional R0 outreach leaf; rebase/review only as workspace-backed, with no prE/T1 dependency |
+| #581 | keep draft/deferred until E1/P5a and a real native-mount consumer reopen X1 |
+
+Create the #543 corrective PR as a new branch from current main. Do not append
+to, rewrite, or present the merged PR as pending work.
 
 Across moved-code stacks, each vertical PR migrates consumers and removes the
 old origin atomically. A temporary bridge is allowed only with a named deletion

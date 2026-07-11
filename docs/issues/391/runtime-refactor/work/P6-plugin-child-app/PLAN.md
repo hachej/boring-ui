@@ -1,5 +1,15 @@
 # P6-plugin-child-app — Plan
 
+> **Proposed workspace-first v1 amendment (2026-07-10).** The wider plugin/
+> child-app plan below is post-v1. P6-D owns the minimal behavior-only
+> `AgentDefinition` and host-owned `AgentDeployment` schemas, their canonical
+> digests, immutable referenced definition assets, and BBP6-003 lookup required
+> by A1/D1. It has no P1 dependency. P6-R is a small, stateless resolution step over the
+> existing workspace composer. It does not add an environment registry,
+> per-agent plugin selection, an immutable generation store, a new workspace
+> bundle schema, deployment creation, or multi-generation routing. The workspace remains the v1
+> plugin/prompt/skill/tool/runtime composition authority.
+
 > Phase: Phase 6 — Plugin and child-app integration (split into P6a / P6b) · Work order: [TODO.md](./TODO.md) · Handoff: [HANDOFF.md](./HANDOFF.md)
 > Ordering authority: [INDEX.md](../../INDEX.md) · Vision: [VISION.md](../../VISION.md)
 
@@ -7,25 +17,12 @@
 - [04-plugin-child-app-runtime.md](../../architecture/04-plugin-child-app-runtime.md) — child-app target, "consume, do not define" the shared child-app platform, plugin manifest requirements, hosted fail-closed, `RuntimePluginContext`, shared per-workspace runtime, hot reload.
 - [05-multi-agent-sessions-hooks.md](../../architecture/05-multi-agent-sessions-hooks.md) — the workspace agent registry / `agents: [...]` declaration P6a seeds and Phase 7 consumes.
 
-## V1 scope correction (binding, 2026-07-09)
+## Superseded 2026-07-09 scope (historical, non-dispatchable)
 
-- **P6-D (after P1):** behavior-only versioned `AgentDefinition`, separate
-  versioned `AgentDeployment`, canonical definition/deployment digests, and a
-  minimal immutable bundle-version Map. Deployment carries only opaque
-  `environmentAttachmentRefs`, so this slice has no E1/boring-bash dependency.
-- **P6-R (after E1 + P5a + P3 BBP3-020):** pure host resolver to immutable
-  `ResolvedAgent`; it consumes P3's workspace-level activated-plugin snapshot
-  without adding a plugin loader or per-agent policy. Session snapshot records
-  definition, deployment, plugin, and resolved-snapshot identity; a durable
-  immutable generation store keeps sessions reproducible across reload/restart
-  while their generation remains active. V1 runs one boot-time host/plugin
-  generation per dedicated site: a different generation drains and durably
-  retires prior-generation sessions instead of adding multi-generation request
-  routing. Resolution stages only; routing reads a host-owned completed-
-  generation pointer, so D1 has one publication authority.
-- **Post-v1:** manifest requirements/skill filtering, hosted plugins, shared
-  runtime/reload, per-agent plugin composition, and child-app scoping. Plugin
-  UI/routes wait for P7's trusted `agentId` routing.
+The former serialized P6-D/P6-R graph and persistent resolved-generation design
+are removed from v1. Retain only the proposed P6-D and stateless P6-R contract
+above. Wider plugin, child-app, environment, and durable-resolution work must be
+re-specified post-v1 from a named consumer.
 
 ## Design context
 
@@ -39,20 +36,23 @@ sources, and pricing do not belong to `AgentDefinition`. V1 also rejects
 `pluginRefs`; the post-v1 composition bead introduces that field with its
 resolver under an additive schema version.
 
-P6-D validates/digests attachment reference ids only. P6-R is the first layer
-that resolves those ids to E1 attachments and policy facts.
+`AgentDeployment` is an identity pin only: deployment id/version, `agentId`,
+and pinned definition id/version/digest. D1 desired state and the authorized
+workspace host own runtime, environment, model, sandbox, governance, exposure,
+hostname, and tenant inputs. P6-R consumes their already-authorized composition
+statelessly; it does not resolve an E1 attachment catalog.
 
 ## Deliverables
 
 ### P6-D/P6-R — v1
-Definition/deployment schemas, canonical digests, bundle-version registry,
-immutable resolved snapshot/digest consuming P3's activated-plugin snapshot,
-source-labeled static prompt plan/digest, current pointer registry, durable
-immutable generation store with content-addressed host/plugin artifact pins,
-owner-keyed pin acquisition/deletion recovery journal, active-authority
-requirement validation, one-generation transition/session-retirement contract,
-and session definition/deployment/plugin/resolution metadata. A1 and D1 are the
-concrete consumers.
+P6-D delivers minimal definition/deployment identity schemas, canonical
+digests, immutable referenced definition assets, and BBP6-003 lookup. P6-R
+statelessly combines those values with the existing authorized workspace's
+host-produced composition manifest/digest and narrow D1 runtime/readiness
+facts. It does not load/select contributions or create a second prompt/plugin
+resolver. A1 and D1 are the concrete consumers; P6 owns no persistent resolved
+state. D1 alone pins the immutable host artifact and composition manifest in
+its complete redacted apply/rollback snapshot.
 
 ### Plugin core expansion — post-v1
 Import-free manifest validation, skill filters, plugin runtime context, hosted
@@ -71,12 +71,10 @@ post-v1 and never gates P8.
 ## Exit criteria
 
 ### V1
-Separate versioned schemas and deterministic definition/deployment/resolved
-digests; immutable resolved snapshot and static prompt plan; A1 local
-development and D1 dedicated delivery consume the same bundle; no behavior
-field has a second source of truth; a retained session can reconstruct only its
-pinned generation after reload/restart and never drifts to the current agent
-pointer.
+Separate minimal versioned schemas and deterministic definition/deployment
+digests; verified bundle lookup; deterministic stateless resolution through the
+existing workspace composer; A1 local development and D1 consume the same
+bundle; no behavior field has a second source of truth.
 
 ### Phase 6b (when unblocked)
 Child-app/workspace-kind requirement narrowing; Macro requirements do not leak into a generic workspace.

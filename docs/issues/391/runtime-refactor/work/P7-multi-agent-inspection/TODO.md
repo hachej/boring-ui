@@ -14,11 +14,12 @@ file's context, dependencies, and non-negotiables included in the assignment.
 
 ### Depends on
 
-- **P6-R** (`ResolvedAgentRegistry`): [`../../INDEX.md`](../../INDEX.md) Phase 7
-  scopes against the host-owned resolved registry from BBP6-011, not the P6-D
-  definition-version Map. P7 does not depend on P6b child-app scoping. If P6-R
-  lookup by validated deployment `agentId` has not landed, **STOP and report**;
-  do not invent a competing registry here.
+- **P6-R stateless resolved-value contract:** [`../../INDEX.md`](../../INDEX.md)
+  Phase 7 consumes P6-R as a function over verified definition/deployment,
+  authorized workspace-composition manifest/digest, and runtime facts. P7 does
+  not depend on P6b child-app scoping. BBP7-002 is the named first consumer that
+  may introduce one host-owned registry for multi-agent routing; do not add it
+  to P6-R or create competing registries.
 - **T1** supplies `agent.db`, on-stream approvals, pending requests, and `resolveInput`.
 - **T2** ([`../T2-transport/TODO.md`](../T2-transport/TODO.md)): `sessionId`-only public transport; the platform-addressing invariant guard. Surface `agentId` binding (BBP7-007) rides the two-handles boundary T2 formalized.
 - **E1** ([`../E1-environment-attachments/TODO.md`](../E1-environment-attachments/TODO.md)): `prepareAttachmentLifetime` returns methodless facts plus auth-gated contributions; every operation enters `AttachmentLifetimeOwner.withAuthorizedView`. Raw prepared handles never leave that callback. `AttachmentLifetimeKey` is canonically encoded from trusted storage/workspace/subject/agent/runtime/session identity and excludes request id. BBP7-008 lands E1's deferred `BBE1-005` (`SubagentEnvironmentGrant` / `deriveSubagentAttachment`) on that API.
@@ -41,15 +42,17 @@ file's context, dependencies, and non-negotiables included in the assignment.
 
 Make [`../../INDEX.md`](../../INDEX.md) Phase 7 + [`../../architecture/05-multi-agent-sessions-hooks.md`](../../architecture/05-multi-agent-sessions-hooks.md) § "Tests" checkable:
 
-1. Agent addressing resolves an `agentId` per request via the canonical `/api/v1/agents/:agentId/...` path-prefix family (**locked at pass 3 — no header alternative**; BBP7-002 records it) against the P6-R `ResolvedAgentRegistry`; unknown/undeclared `agentId` fails closed.
+1. Agent addressing resolves an `agentId` per request via the canonical
+   `/api/v1/agents/:agentId/...` path-prefix family against the single P7 host
+   registry of stateless P6-R entries; unknown/undeclared `agentId` fails closed.
 2. Trusted structured scope contains workspace/tenant, `agentId`, and public
    `sessionId`; UUID uniqueness is not authorization. Default JSONL namespace
    compatibility remains an adapter concern.
 3. Per-agent tool catalog and per-agent readiness (reviewer readonly/no-exec while coding agent has bash; pure concierge has no boring-bash — `05` Tests).
 4. Later P7 slice: redacted no-filesystem search from a derived `agent.db` table.
 5. External harness hook target resolution: authenticate caller, validate `(workspace, agent, session)`, redact, route to the HITL channel, audit attribution, no boring-bash dep (`#380` / `05`).
-6. `GET /api/v1/agents` returns a scrubbed list sourced from P6-R
-   `ResolvedAgentRegistry`, and `GET /api/v1/agents/:agentId/info` returns
+6. `GET /api/v1/agents` returns a scrubbed list sourced from the P7 host
+   registry, and `GET /api/v1/agents/:agentId/info` returns
    `{ agentId, model, tools, readiness, channels, environments }` per listed id
    — public contracts, no private core hooks (the steering mechanism, `08`/`00`).
 7. Surface adapters (workspace pane, Slack `conversationKey`, Excel workbook) each bind exactly one `agentId` per addressing entry (INDEX Phase 7 addition).
@@ -58,9 +61,10 @@ Make [`../../INDEX.md`](../../INDEX.md) Phase 7 + [`../../architecture/05-multi-
 
 ## Non-negotiables
 
-- Scope against P6-R `ResolvedAgentRegistry` — do NOT build a second registry
-  (`00` invariant 10; [`../P6-plugin-child-app/TODO.md`](../P6-plugin-child-app/TODO.md)).
-- `ResolvedAgentRegistry` stays local/minimal. Do not reserve speculative
+- P7 owns exactly one host registry whose entries are stateless P6-R outputs.
+  Do not add registry/pointer/generation ownership to P6-R or build a second
+  registry (`00` invariant 10).
+- The P7 registry stays local/minimal. Do not reserve speculative
   remote-entry fields (`endpoint`, `auth`, remote client shape, delegation
   channel) until a remote-delegation bead lands with a real consumer.
 - Extend the existing `RuntimeScope.key` array for all agents and `sessionNamespace` for non-default agents — do NOT assume a preexisting composite key already has `agentId` (`05` explicit warning). Legacy fields (root/template/pi/sessionNamespace) stay isolated where they already are, and the default agent keeps its pre-P7 `sessionNamespace` unchanged.
@@ -68,7 +72,7 @@ Make [`../../INDEX.md`](../../INDEX.md) Phase 7 + [`../../architecture/05-multi-
 - Two-handles rule (`08`/T2): public agent APIs stay `sessionId`-keyed; `agentId` is boring's own routing scope (like `workspaceId`/`SessionCtx`), NOT surface-native platform addressing — allowed on the façade/routes, subject to the same rule that surface-native identifiers are not. One addressing entry → one `agentId`; a surface never multiplexes agents on one continuation key.
 - `sessionId` is runtime-owned public identity. Store/cache access always checks
   trusted structured scope including `agentId`; public id alone grants nothing.
-- User is a principal/supervisor/approval channel, NOT a model-callable agent (`00` invariant 9; `05`). Do not add the human as a `ResolvedAgentRegistry` entry.
+- User is a principal/supervisor/approval channel, NOT a model-callable agent (`00` invariant 9; `05`). Do not add the human as a P7 registry entry.
 - Subagent grant is minimal (E1 BBE1-005 shape) — explicit attachment only, `execPolicy: 'none'` default, no cwd inheritance, no lifecycle framework. Abstraction is justified only because P7 is its **first real consumer** (`README.md` rule 3).
 - Session search has no filesystem requirement and uses a derived `agent.db` index.
 - `@hachej/boring-agent` keeps zero value imports from `@hachej/boring-bash`; `#380` hooks and search stay boring-bash-free (`05`).
@@ -77,7 +81,8 @@ Make [`../../INDEX.md`](../../INDEX.md) Phase 7 + [`../../architecture/05-multi-
 ## Do NOT
 
 - Do NOT touch `/home/ubuntu/projects/boring-ui-v2`. Work on a dedicated branch/worktree per the PR-PLAN branch naming; never commit to main directly; every bead lands as a PR per INDEX.
-- Do NOT define a competing agent/child-app registry (Phase 6 owns it).
+- Do NOT add any registry besides the one P7-owned host registry of stateless
+  P6-R outputs; P6 owns no resolved registry.
 - Do NOT put platform-addressing (Slack thread ts, workbook id, pane id) into any core signature — `agentId`/`sessionId`/`SessionCtx` only (T2 guard must stay green).
 - Do NOT build the control-plane UI panels — that is [`../S3-control-plane-ux/TODO.md`](../S3-control-plane-ux/TODO.md) (S3 consumes the `/info` endpoint this bead ships).
 - Do NOT build a full policy/permission engine for subagents; ship the grant contract + reduction only.
@@ -92,12 +97,12 @@ Make [`../../INDEX.md`](../../INDEX.md) Phase 7 + [`../../architecture/05-multi-
 - **Tests**: `registerAgentRoutes.test.ts` — two **non-default** `agentId`s in one `workspaceId` produce distinct `scope.key` and distinct `:agent:`-suffixed `sessionNamespace`; the **default agent yields the pre-P7 namespace unchanged** (no `:agent:` suffix, no session-dir migration). **Explicit compat test:** seed a session-dir with a pre-P7 default-agent JSONL transcript, then load it through the P7 default-agent path and assert it resolves to the SAME `sessionDir` and the existing session loads unchanged (no migration, no new dir). Extend `createHarness.test.ts` namespace cases with an `agentId` axis (default vs non-default).
 - **Acceptance**: binding cache + session namespace include `agentId` (`05` Tests: "session namespace includes agent id", "binding cache includes agent id"); default-agent sessions load unchanged.
 
-### BBP7-002 — `agentId` request addressing against P6-R resolved registry · size M
+### BBP7-002 — `agentId` addressing against the P7-owned registry · size M
 - **Title**: Resolve a validated `agentId` per request from the canonical `/api/v1/agents/:agentId` path prefix; fail closed on unknown agents.
-- **Files touch/create**: `packages/agent/src/server/registerAgentRoutes.ts` — add an `getAgentId(request)` resolver alongside `getRequestWorkspaceId` (L143): read the `/api/v1/agents/:agentId/...` path param (the locked route shape — **no header form**), validate it against injected `ResolvedAgentRegistry`. **There is NO absent-`agentId` fallback: `default` is an explicit path segment (`/api/v1/agents/default/...`) that resolves to the workspace's default agent; an absent/empty `:agentId` is an invalid route → 404, never silently mapped to the default.** Reject both an undeclared `agentId` and an absent `:agentId` with a stable `AGENT_NOT_FOUND`/invalid-route error (mirror `createHttpError`, `error-codes.ts`). Wire the resolved `agentId` into `resolveRuntimeScope` (BBP7-001).
+- **Files touch/create**: create exactly one host-owned `P7AgentRegistry` whose entries are stateless P6-R outputs, then inject it into `packages/agent/src/server/registerAgentRoutes.ts`. Add a `getAgentId(request)` resolver alongside `getRequestWorkspaceId` (L143): read the `/api/v1/agents/:agentId/...` path param (the locked route shape — **no header form**) and validate it against the P7 registry. **There is NO absent-`agentId` fallback: `default` is an explicit path segment (`/api/v1/agents/default/...`) that resolves to the workspace's default agent; an absent/empty `:agentId` is an invalid route → 404, never silently mapped to the default.** Reject both an undeclared `agentId` and an absent `:agentId` with a stable `AGENT_NOT_FOUND`/invalid-route error (mirror `createHttpError`, `error-codes.ts`). Wire the resolved `agentId` into `resolveRuntimeScope` (BBP7-001).
 - **Notes (`00` open decision 4 — resolved/locked at pass 3; record it in the file header)**: the decision is already made — adopt **ONE canonical route family — the path prefix `/api/v1/agents/:agentId/...`** for all agent-**session** routes (explicit, cache-key-friendly, matches the `/info` endpoint and the eve `/eve/v1/*` analog). **No header/request-scope form exists.** **T1 owns and created this canonical family from day one, and T2 already deleted the legacy `…/pi-chat/:sessionId/*` routes** — so **P7 migrates no legacy route paths; it still adds `/info` and `/sessions/search` within the canonical family** (BBP7-005/004): nothing unprefixed is left to move and P7 introduces no bridge, but P7 does grow the already-canonical family with these two agent-session sub-paths. P7 **only adds** `agentId` resolution against the registry, scoping validation, and per-agent catalog/info on top of the already-canonical family (BBP7-003/005). Do not add a header form for any agent-scoped route. **Route-family scope (locked, `08` "Route-family scope"):** this family is agent-**session** routes ONLY (sessions, events/stream, prompt, input, interrupt, stop, pending-inputs, `/info`); file/environment routes (`/api/v1/files/*`, tree/search/fs-events/git) are workspace/environment-scoped and explicitly OUT of the family — `agentId` never prefixes a file route.
 - **Tests**: route test — a request for a declared `agentId` resolves + scopes; an undeclared one 404/`AGENT_NOT_FOUND`; the explicit `default` segment (`/api/v1/agents/default/...`) resolves to the workspace default agent; an **absent/empty** `:agentId` is an invalid route → 404 (NOT mapped to the default).
-- **Acceptance**: `05` "resolved child-app/default agent set can seed the agent registry before plugin/runtime policy uses it"; unknown agent fails closed; decision recorded.
+- **Acceptance**: one P7-owned registry is seeded only with authorized stateless P6-R outputs; unknown agent fails closed; P6 owns no registry.
 
 ### BBP7-003 — Per-agent tool catalog + per-agent readiness · size M
 - **Title**: One tool catalog and one `ReadyStatusTracker` per `(workspaceId, agentId)`.
@@ -118,7 +123,7 @@ Make [`../../INDEX.md`](../../INDEX.md) Phase 7 + [`../../architecture/05-multi-
 
 ### BBP7-005 — Agent list + inspection endpoints (the steering mechanism) · size M
 - **Title**: Public agent-list and per-agent info endpoints — list declared agents, then inspect one agent's model/tools/readiness/channels/environments — modeled on `models.ts`.
-- **Files create/touch**: `packages/agent/src/server/http/routes/agentInfo.ts` (new) — `GET /api/v1/agents` and `GET /api/v1/agents/:agentId/info`. The list route is the public, checkable source for Fleet's agent ids: return a scrubbed `{ defaultAgentId, agents: [{ agentId, label? }] }` payload sourced from P6-R `ResolvedAgentRegistry`; no tool/env/readiness details in the list. The info route composes from public sources already wired: model selection (`models.ts` / `modelConfig`), the per-agent tool catalog names (BBP7-003), readiness snapshot (`ReadyStatusTracker.getReadiness()`), declared channels (from the resolved entry / surface bindings BBP7-007), and attached environments (`ResolvedEnvironment` facts: filesystem ids, access, accepts-input-assets, tools/provider labels — type-only shape from E1, never handles or methods). Register beside `modelsRoutes` in `createAgentApp`.
+- **Files create/touch**: `packages/agent/src/server/http/routes/agentInfo.ts` (new) — `GET /api/v1/agents` and `GET /api/v1/agents/:agentId/info`. The list route is the public, checkable source for Fleet's agent ids: return a scrubbed `{ defaultAgentId, agents: [{ agentId, label? }] }` payload sourced from the P7 host registry of stateless P6-R entries; no tool/env/readiness details in the list. The info route composes from public sources already wired: model selection (`models.ts` / `modelConfig`), the per-agent tool catalog names (BBP7-003), readiness snapshot (`ReadyStatusTracker.getReadiness()`), declared channels (from the resolved entry / surface bindings BBP7-007), and attached environments (`ResolvedEnvironment` facts: filesystem ids, access, accepts-input-assets, tools/provider labels — type-only shape from E1, never handles or methods). Register beside `modelsRoutes` in `createAgentApp`.
 - **Notes**: Info shape (stable public contract, eve `/eve/v1/info` analog):
   ```jsonc
   { "agentId": "coding",
@@ -129,12 +134,12 @@ Make [`../../INDEX.md`](../../INDEX.md) Phase 7 + [`../../architecture/05-multi-
     "environments": [{ "filesystem": "company_context", "access": "readonly", "exec": "none" }] }
   ```
   **Never** emit secrets, broker credentials, provider key material, or environment handles (`00` invariant 14; `models.ts` safety posture). S3 ([`../S3-control-plane-ux/TODO.md`](../S3-control-plane-ux/TODO.md)) is the consumer — these endpoints are the entire private-hook-free steering surface.
-- **Tests**: `agentInfo.route.test.ts` — `GET /api/v1/agents` returns every declared agent id/label and the default id from the registry/declaration with no secret/detail fields; `/agents/:agentId/info` reports that agent's model/tools/readiness/channels/environments; a reviewer agent shows readonly env + no bash tool; a pure concierge shows no environments and no bash; asserts no key/secret field is present in either payload.
+- **Tests**: `agentInfo.route.test.ts` — `GET /api/v1/agents` returns every registered agent id/label and the default id from the single P7 registry with no secret/detail fields; `/agents/:agentId/info` reports that agent's model/tools/readiness/channels/environments; a reviewer agent shows readonly env + no bash tool; a pure concierge shows no environments and no bash; asserts no key/secret field is present in either payload.
 - **Acceptance**: [`../../INDEX.md`](../../INDEX.md) Phase 7 "agent inspection endpoint … consumed by workspace panels"; the Fleet page has a public source for every declared agent id; no private core hooks, no secret leak.
 
 ### BBP7-006 — External harness hook target resolution (#380) · size M
 - **Title**: Resolve `(workspace, agent, session)` for an external review/question/approval hook; authenticate, validate, redact, route to the HITL channel, audit.
-- **Files create**: `packages/agent/src/server/hooks/externalHookTarget.ts` (new) — the external-hook **request/callback/redaction contract** `ExternalAgentHookRequest { source{ harnessId, agentId?, workspaceId?, sessionId?, provider? }; kind: 'review'|'question'|'approval'; body; redactionPolicy?; callback?{ url; authRef? } }` **and** `resolveHookTarget({ authCaller, workspaceId, agentId, sessionId }): Promise<{ ctx; agentId; sessionId } | { rejected, reason }>`: authenticate the caller (host auth seam), validate the workspace/agent (`ResolvedAgentRegistry`) and session (exists + belongs to that agent scope), reject cross-agent/cross-workspace targets. Route the hook onto the **single approval channel** (T1 on-stream request/`resolveInput`) — an external question becomes a `data-approval-request` on that session's stream; no second channel. Redact before writing to history; record audit attribution (caller id).
+- **Files create**: `packages/agent/src/server/hooks/externalHookTarget.ts` (new) — the external-hook **request/callback/redaction contract** `ExternalAgentHookRequest { source{ harnessId, agentId?, workspaceId?, sessionId?, provider? }; kind: 'review'|'question'|'approval'; body; redactionPolicy?; callback?{ url; authRef? } }` **and** `resolveHookTarget({ authCaller, workspaceId, agentId, sessionId }): Promise<{ ctx; agentId; sessionId } | { rejected, reason }>`: authenticate the caller (host auth seam), validate the workspace/agent against the single P7-owned registry and validate that the session belongs to that agent scope; reject cross-agent/cross-workspace targets. Route the hook onto the **single approval channel** (T1 on-stream request/`resolveInput`) — an external question becomes a `data-approval-request` on that session's stream; no second channel. Redact before writing to history; record audit attribution (caller id).
 - **Notes**: boring-bash-free (`05` Requirements: "no boring-bash dependency"). This is target *resolution + routing onto T1*, not a new approval mechanism (`00` invariant 13 — one approval channel). The external-hook contract itself is **P7 scope** — it was **moved out of Phase 1 in pass-4** (it depends on the T1 durable approval channel, so it cannot land before durable approvals); `01-agent-core-runtime-free.md` now de-scopes it from P1 and points here. This bead **owns** the request/callback/redaction contract shape (above) plus the multi-agent routing/validation (`05` § "External harness review/question hooks").
 - **Tests**: `externalHookTarget.test.ts` — a valid caller/workspace/agent/session resolves and emits a request on that session's stream; a foreign agent/session or unauthenticated caller rejects; the written history entry is redacted; audit attribution recorded.
 - **Acceptance**: `05` Tests "external hooks authenticate/redact/route"; routes onto the single T1 approval channel; no boring-bash import.
@@ -176,7 +181,7 @@ pnpm --filter @hachej/boring-bash run test
 pnpm --filter @hachej/boring-bash run typecheck
 pnpm --filter @hachej/boring-bash run check:invariants
 
-# workspace (surface binding / ResolvedAgentRegistry consumers)
+# workspace (surface binding / P7AgentRegistry consumers)
 pnpm --filter @hachej/boring-workspace run typecheck
 pnpm --filter @hachej/boring-workspace run test
 
@@ -205,7 +210,8 @@ Matches [`../../PR-PLAN.md`](../../PR-PLAN.md) P7 rows exactly:
 
 ## Review gates
 
-- P6-R `ResolvedAgentRegistry` present and scoped against (not a competing registry), else STOP+report.
+- The single P7 host registry exists, contains stateless P6-R outputs, and no
+  registry/pointer/generation state was added to P6-R.
 - `agentId` in the `RuntimeScope.key` array for all agents; `sessionNamespace` carries `agentId` only for non-default agents; default-agent sessions load unchanged (on-disk JSONL compat).
 - Per-agent tool catalog + readiness with zero cross-agent bleed (`05` Tests reproduced).
 - Session search scoped by `workspace+agent`, no fs requirement, redaction enforced.
