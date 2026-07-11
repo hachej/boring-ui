@@ -10,6 +10,9 @@ describe("automation schemas", () => {
     expect(() => AutomationCreateSchema.parse({ title: "", cron: "", timezone: "UTC", model: "model-a" })).toThrow()
     expect(() => AutomationPatchSchema.parse({})).toThrow()
     expect(AutomationPatchSchema.parse({ enabled: false })).toEqual({ enabled: false })
+    expect(AutomationPatchSchema.parse({ timezone: "America/New_York" })).toEqual({ timezone: "America/New_York" })
+    expect(() => AutomationCreateSchema.parse({ title: "Bad", cron: "0 0 9 * * *", timezone: "UTC", model: "model-a" })).toThrow("Invalid cron schedule")
+    expect(() => AutomationCreateSchema.parse({ title: "Bad", cron: "0 9 * * *", timezone: "Mars/Base", model: "model-a" })).toThrow("Invalid timezone")
   })
 
   it("validates executor-owned run metadata input", () => {

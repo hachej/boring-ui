@@ -7,6 +7,7 @@ import {
   BORING_AUTOMATION_PLUGIN_ID,
   BORING_AUTOMATION_PLUGIN_LABEL,
 } from "../shared"
+import { DueRunService } from "./dueRunService"
 import { FileAutomationStore } from "./fileStore"
 import { ManualRunExecutor, type VerifiedAutomationActor } from "./manualRunExecutor"
 import { automationRoutes } from "./routes"
@@ -24,11 +25,12 @@ export function createBoringAutomationServerPlugin(options: BoringAutomationServ
   const manualRunExecutor = options.dispatcherResolver && options.actorResolver
     ? new ManualRunExecutor({ store, dispatcherResolver: options.dispatcherResolver, actorResolver: options.actorResolver })
     : undefined
+  const dueRunService = manualRunExecutor ? new DueRunService({ store, executor: manualRunExecutor }) : undefined
   return defineServerPlugin({
     id: BORING_AUTOMATION_PLUGIN_ID,
     label: BORING_AUTOMATION_PLUGIN_LABEL,
     routes: async (app) => {
-      await automationRoutes(app, { store, manualRunExecutor })
+      await automationRoutes(app, { store, manualRunExecutor, dueRunService })
     },
   })
 }
@@ -51,6 +53,7 @@ export default function defaultBoringAutomationServerPlugin(
   })
 }
 
+export * from "./dueRunService"
 export * from "./fileStore"
 export * from "./manualRunExecutor"
 export * from "./routes"

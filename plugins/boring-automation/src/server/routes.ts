@@ -8,12 +8,14 @@ import {
   IdParamsSchema,
   PromptUpdateSchema,
 } from "../shared"
+import type { DueRunService } from "./dueRunService"
 import { ManualRunExecutor } from "./manualRunExecutor"
 import { AutomationStoreError, automationNotFound, type AutomationStore } from "./store"
 
 export interface AutomationRoutesOptions {
   store: AutomationStore
   manualRunExecutor?: Pick<ManualRunExecutor, "run">
+  dueRunService?: Pick<DueRunService, "runDue">
 }
 
 export async function automationRoutes(app: FastifyInstance, opts: AutomationRoutesOptions): Promise<void> {
@@ -85,6 +87,26 @@ export async function automationRoutes(app: FastifyInstance, opts: AutomationRou
     }
   })
 
+  app.post(`${BORING_AUTOMATION_ROUTE_PREFIX}/due`, async (request, reply) => {
+    try {
+      if (!isLoopbackAddress(request.ip)) {
+        throw new AutomationStoreError(
+          BORING_AUTOMATION_ERROR_CODES.TRIGGER_FORBIDDEN,
+          "automation due trigger is limited to loopback callers",
+        )
+      }
+      if (!opts.dueRunService) {
+        throw new AutomationStoreError(
+          BORING_AUTOMATION_ERROR_CODES.RUN_EXECUTOR_UNAVAILABLE,
+          "automation due executor is unavailable",
+        )
+      }
+      return { ok: true, ...(await opts.dueRunService.runDue(request)) }
+    } catch (cause) {
+      return sendError(reply, cause)
+    }
+  })
+
   app.post(`${BORING_AUTOMATION_ROUTE_PREFIX}/automations/:id/run`, async (request, reply) => {
     try {
       const { id } = parseParams(IdParamsSchema, request.params)
@@ -127,10 +149,11 @@ function parse<T>(schema: ZodSchema<T>, value: unknown): T {
 
 function sendError(reply: FastifyReply, cause: unknown) {
   if (cause instanceof ZodError) {
+    const issue = cause.issues[0]
     return reply.status(400).send({
       ok: false,
-      code: BORING_AUTOMATION_ERROR_CODES.INVALID_BODY,
-      error: cause.issues[0]?.message ?? "invalid request",
+      code: zodIssueErrorCode(issue),
+      error: issue?.message ?? "invalid request",
     })
   }
   if (cause instanceof AutomationStoreError) {
@@ -139,17 +162,36 @@ function sendError(reply: FastifyReply, cause: unknown) {
   throw cause
 }
 
+function zodIssueErrorCode(issue: ZodError["issues"][number] | undefined) {
+  const field = issue?.path[0]
+  if (field === "cron") return BORING_AUTOMATION_ERROR_CODES.INVALID_CRON
+  if (field === "timezone") return BORING_AUTOMATION_ERROR_CODES.INVALID_TIMEZONE
+  return BORING_AUTOMATION_ERROR_CODES.INVALID_BODY
+}
+
+function isLoopbackAddress(address: string): boolean {
+  const normalized = address.trim().toLowerCase()
+  return normalized === "127.0.0.1" || normalized === "::1" || normalized.startsWith("::ffff:127.")
+}
+
 function httpStatusForStoreError(error: AutomationStoreError): number {
   switch (error.code) {
     case BORING_AUTOMATION_ERROR_CODES.INVALID_BODY:
+    case BORING_AUTOMATION_ERROR_CODES.INVALID_CRON:
+    case BORING_AUTOMATION_ERROR_CODES.INVALID_TIMEZONE:
     case BORING_AUTOMATION_ERROR_CODES.INVALID_MODEL:
       return 400
     case BORING_AUTOMATION_ERROR_CODES.AUTOMATION_NOT_FOUND:
     case BORING_AUTOMATION_ERROR_CODES.RUN_NOT_FOUND:
       return 404
     case BORING_AUTOMATION_ERROR_CODES.RUN_ALREADY_ACTIVE:
+    case BORING_AUTOMATION_ERROR_CODES.RUN_ALREADY_RECORDED:
       return 409
+    case BORING_AUTOMATION_ERROR_CODES.TRIGGER_FORBIDDEN:
+      return 403
     case BORING_AUTOMATION_ERROR_CODES.RUN_EXECUTOR_UNAVAILABLE:
       return 503
+    case BORING_AUTOMATION_ERROR_CODES.RUN_FAILED:
+      return 500
   }
 }

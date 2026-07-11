@@ -57,6 +57,33 @@ describe("ManualRunExecutor", () => {
     }))
   })
 
+  it("records an executor-owned scheduled occurrence without changing snapshots", async () => {
+    const harness = createHarness({ prompt: "scheduled prompt", model: "test:scheduled-model" })
+    const run = await harness.executor.run({
+      automationId: harness.automation.id,
+      request: harness.request,
+      trigger: "scheduled",
+      scheduledFor: "2026-07-10T09:00:00.000Z",
+    })
+
+    expect(run).toMatchObject({
+      trigger: "scheduled",
+      scheduledFor: "2026-07-10T09:00:00.000Z",
+      promptSnapshot: "scheduled prompt",
+      modelSnapshot: "test:scheduled-model",
+    })
+  })
+
+  it("rejects a scheduled run without an occurrence before creating run metadata", async () => {
+    const harness = createHarness()
+    await expect(harness.executor.run({
+      automationId: harness.automation.id,
+      request: harness.request,
+      trigger: "scheduled",
+    })).rejects.toMatchObject({ code: BORING_AUTOMATION_ERROR_CODES.INVALID_BODY })
+    expect(harness.store.runs.size).toBe(0)
+  })
+
   it("records the first streamed session id and succeeds on an ok terminal event", async () => {
     const harness = createHarness({
       events: [
@@ -352,6 +379,8 @@ class MemoryAutomationStore implements AutomationStore {
     if (!this.automations.has(automationId)) throw automationNotFound(automationId)
     this.prompts.set(automationId, body)
   }
+
+  async reconcileOrphanedRuns(_automationId: string): Promise<void> {}
 
   async beginRun(input: AutomationRunBegin): Promise<AutomationRun> {
     if (!this.automations.has(input.automationId)) throw automationNotFound(input.automationId)
