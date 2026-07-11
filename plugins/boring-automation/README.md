@@ -13,4 +13,6 @@ Current local CLI support includes:
 
 Executable model values use explicit `provider:model-id` syntax. Legacy unqualified values remain editable but fail safely when run until corrected.
 
-Execution is currently composed only for trusted local CLI folder mode. Scheduling has no background timer: user-owned cron/systemd may invoke `POST /api/v1/boring-automation/due` once per minute while the CLI server is running. Missed minutes are not backfilled. Hosted actor policy, hosted persistence, and hosted triggers remain intentionally unavailable pending later issue #590 slices.
+Execution is currently composed for trusted local CLI folder mode. Scheduling has no background timer: user-owned cron/systemd may invoke `POST /api/v1/boring-automation/due` once per minute while the CLI server is running. Missed minutes are not backfilled.
+
+Hosted persistence infrastructure is now available as an explicit deployment migration callback (`runBoringAutomationMigrations`) and an actor-bound `PostgresAutomationStore`. Full-app route/executor composition and authenticated hosted triggers remain separate follow-up work; hosted execution is not activated by this infrastructure alone.

@@ -56,6 +56,8 @@ export default function defaultBoringAutomationServerPlugin(
 export * from "./dueRunService"
 export * from "./fileStore"
 export * from "./manualRunExecutor"
+export * from "./migrations"
+export * from "./postgresStore"
 export * from "./routes"
 export * from "./store"
 export * from "../shared"

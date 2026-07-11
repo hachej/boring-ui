@@ -1,4 +1,4 @@
-import type { FastifyInstance, FastifyReply } from "fastify"
+import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify"
 import { ZodError, type ZodSchema } from "zod"
 import {
   AutomationCreateSchema,
@@ -14,6 +14,7 @@ import { AutomationStoreError, automationNotFound, type AutomationStore } from "
 
 export interface AutomationRoutesOptions {
   store: AutomationStore
+  storeForRequest?: (request: FastifyRequest) => Promise<AutomationStore> | AutomationStore
   manualRunExecutor?: Pick<ManualRunExecutor, "run">
   dueRunService?: Pick<DueRunService, "runDue">
 }
@@ -21,7 +22,7 @@ export interface AutomationRoutesOptions {
 export async function automationRoutes(app: FastifyInstance, opts: AutomationRoutesOptions): Promise<void> {
   app.get(`${BORING_AUTOMATION_ROUTE_PREFIX}/automations`, async (_request, reply) => {
     try {
-      return { ok: true, automations: await opts.store.listAutomations() }
+      return { ok: true, automations: await (await resolveStore(opts, _request)).listAutomations() }
     } catch (cause) {
       return sendError(reply, cause)
     }
@@ -29,7 +30,7 @@ export async function automationRoutes(app: FastifyInstance, opts: AutomationRou
 
   app.post(`${BORING_AUTOMATION_ROUTE_PREFIX}/automations`, async (request, reply) => {
     try {
-      const automation = await opts.store.createAutomation(parseBody(AutomationCreateSchema, request.body))
+      const automation = await (await resolveStore(opts, request)).createAutomation(parseBody(AutomationCreateSchema, request.body))
       return reply.status(201).send({ ok: true, automation })
     } catch (cause) {
       return sendError(reply, cause)
@@ -39,7 +40,7 @@ export async function automationRoutes(app: FastifyInstance, opts: AutomationRou
   app.get(`${BORING_AUTOMATION_ROUTE_PREFIX}/automations/:id`, async (request, reply) => {
     try {
       const { id } = parseParams(IdParamsSchema, request.params)
-      const automation = await opts.store.getAutomation(id)
+      const automation = await (await resolveStore(opts, request)).getAutomation(id)
       if (!automation) throw automationNotFound(id)
       return { ok: true, automation }
     } catch (cause) {
@@ -50,7 +51,7 @@ export async function automationRoutes(app: FastifyInstance, opts: AutomationRou
   app.patch(`${BORING_AUTOMATION_ROUTE_PREFIX}/automations/:id`, async (request, reply) => {
     try {
       const { id } = parseParams(IdParamsSchema, request.params)
-      const automation = await opts.store.updateAutomation(id, parseBody(AutomationPatchSchema, request.body))
+      const automation = await (await resolveStore(opts, request)).updateAutomation(id, parseBody(AutomationPatchSchema, request.body))
       return { ok: true, automation }
     } catch (cause) {
       return sendError(reply, cause)
@@ -60,7 +61,7 @@ export async function automationRoutes(app: FastifyInstance, opts: AutomationRou
   app.delete(`${BORING_AUTOMATION_ROUTE_PREFIX}/automations/:id`, async (request, reply) => {
     try {
       const { id } = parseParams(IdParamsSchema, request.params)
-      await opts.store.deleteAutomation(id)
+      await (await resolveStore(opts, request)).deleteAutomation(id)
       return reply.status(204).send()
     } catch (cause) {
       return sendError(reply, cause)
@@ -70,7 +71,7 @@ export async function automationRoutes(app: FastifyInstance, opts: AutomationRou
   app.get(`${BORING_AUTOMATION_ROUTE_PREFIX}/automations/:id/prompt`, async (request, reply) => {
     try {
       const { id } = parseParams(IdParamsSchema, request.params)
-      return { ok: true, prompt: await opts.store.getPrompt(id) }
+      return { ok: true, prompt: await (await resolveStore(opts, request)).getPrompt(id) }
     } catch (cause) {
       return sendError(reply, cause)
     }
@@ -80,7 +81,7 @@ export async function automationRoutes(app: FastifyInstance, opts: AutomationRou
     try {
       const { id } = parseParams(IdParamsSchema, request.params)
       const { prompt } = parseBody(PromptUpdateSchema, request.body)
-      await opts.store.updatePrompt(id, prompt)
+      await (await resolveStore(opts, request)).updatePrompt(id, prompt)
       return { ok: true }
     } catch (cause) {
       return sendError(reply, cause)
@@ -126,11 +127,15 @@ export async function automationRoutes(app: FastifyInstance, opts: AutomationRou
   app.get(`${BORING_AUTOMATION_ROUTE_PREFIX}/automations/:id/runs`, async (request, reply) => {
     try {
       const { id } = parseParams(IdParamsSchema, request.params)
-      return { ok: true, runs: await opts.store.listRuns(id) }
+      return { ok: true, runs: await (await resolveStore(opts, request)).listRuns(id) }
     } catch (cause) {
       return sendError(reply, cause)
     }
   })
+}
+
+async function resolveStore(opts: AutomationRoutesOptions, request: FastifyRequest): Promise<AutomationStore> {
+  return await opts.storeForRequest?.(request) ?? opts.store
 }
 
 function parseBody<T>(schema: ZodSchema<T>, body: unknown): T {

@@ -326,16 +326,16 @@ Confirmed by Slice 0:
 - hosted orchestration stays on the public host while sandbox/worker executes workspace operations;
 - first-pass token totals come from live usage events, not direct billing-ledger queries.
 
-Owner decisions still required before Slice 5:
+Owner decisions recorded before Slice 5:
 
-1. Should hosted migrations use app-owned explicit registration (recommended first) or a generic trusted-plugin migration contribution?
-2. Is scheduled usage billed to the automation owner (recommended) or a future workspace billing account?
-3. Which roles may create, edit, disable, delete, or reassign hosted automations?
+1. The deployment layer owns explicit app-registered plugin migrations.
+2. Scheduled usage is attributed to the automation creator.
+3. Hosted runs execute as and remain owned by the creator; if creator authorization is unavailable, execution fails closed.
 
 ## Loop Exit
 
 - Slice 0 state: complete; see `docs/issues/590/seam-spike.md`.
 - `ready-for-agent`: Slice 2 UI, Slice 3A generic dispatcher, then Slice 3B local manual executor.
-- `ready-for-human`: Slice 5 hosted migration/billing/role decisions.
-- First hosted blockers: owner decisions on migration registration, scheduled billing identity, and hosted automation role policy.
-- Next recommended work: Slice 2 can proceed independently; execution should start with Slice 3A.
+- `ready-for-human`: hosted actor composition and authenticated platform trigger design.
+- First remaining hosted blocker: compose the verified creator actor/store into full-app routes and executor, then design the service-principal trigger.
+- Next recommended work: finish hosted actor composition, then implement Slice 6 trigger authentication.
