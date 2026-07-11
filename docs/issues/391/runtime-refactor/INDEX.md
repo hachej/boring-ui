@@ -38,6 +38,9 @@ optional side tracer.
 | ID1 — agent-driven identity | [ID1](work/ID1-agent-identity/) | M1 (MCP surface) + existing membership/auth model | **spec settled — not started; gates AR1/priority 2** (owner decision 2026-07-11) | MCP OAuth 2.1 + PKCE (RFC 9728/8707; CIMD primary, RFC 7591 fallback); auto-provisioned account + personal workspace on first token exchange; EU-sovereign auth server |
 | AR1 — shareable artifacts | [AR1](work/AR1-shareable-artifacts/) | ID1 + M1 (MCP surface) + workspace contract | **spec settled 2026-07-11 (owner-grilled) — small; depends on ID1** | workspace-as-is deep links: share entry (stable ID → workspace + path + provenance), live reference semantics, tombstone for broken refs, membership-only auth, MCP resource for machine access |
 | AC1 — agent consumption contract | [AC1](work/AC1-agent-consumption-contract/) | P1/P6-R (types); ID1 (contracted mode) | **decision settled ([#22](../../../DECISIONS.md#22-one-agent-consumption-contract-protocol-bindings-at-the-edges)) — tracked in issue [#636](https://github.com/hachej/boring-ui/issues/636); types land with P6-R** | one A2A-shaped contract; native internal binding; subagent/contracted modes; governed-projection briefs |
+| BL1 — engagement billing | [BL1](work/BL1-engagement-billing/) | AC1 contracted mode; ID1 | **gap identified — marketplace path, phase 4/5** | pricing on contracted agents, invoice generation per engagement/task, payout accounting for creators; decorator on boring-governance's metering seam; carries the deferred workspace token/spend budgets (ID1 tripwire) |
+| MK1 — agent catalog | [MK1](work/MK1-agent-catalog/) | P6-R; AC1 | **gap identified — marketplace path, phase 4/5** | discovery: public profiles for contractable agents, browse/search surface, "contract this agent" entry; v1 = static profile pages from `AgentDefinition` metadata |
+| CH1 — consumer channels | [CH1](work/CH1-consumer-channels/) | T1 completion; T2; arch-08 surfaces | **gap identified — marketplace path, phase 4/5** | Telegram first, WhatsApp Business second (approval/cost spike open); channel adapters bind the same task/contextId/input-required contract; Slack stays out of #391 scope |
 
 **Footnote:** Status entries above must cite merge-commit-ancestry-verified state (`git merge-base --is-ancestor <sha> origin/main`), not GitHub MERGED labels — see the stacked-PR trap note in [`REVIEW-2026-07-11-unknowns.md`](REVIEW-2026-07-11-unknowns.md).
 
@@ -71,6 +74,10 @@ semantics), bindings = UI / MCP (external) / HTTP API / CLI / native internal /
 A2A (future external); internal modes = subagent (caller workspace) |
 contracted (own workspace, governed-projection briefs). See
 [DECISIONS.md #22](../../../DECISIONS.md#22-one-agent-consumption-contract-protocol-bindings-at-the-edges).
+
+**Marketplace path (owner-approved 2026-07-11):** the five-phase roadmap from
+here to the contracting-platform vision — including BL1/MK1/CH1 above — is
+[`MARKETPLACE-PATH.md`](MARKETPLACE-PATH.md).
 
 ## Post-v1 increments
 
