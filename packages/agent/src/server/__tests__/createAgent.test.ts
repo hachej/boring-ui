@@ -468,8 +468,8 @@ describe('createAgent', () => {
   })
 })
 
-function createTestRuntime(): AgentRuntimeAdapter & { dispose: ReturnType<typeof vi.fn> } {
-  return { id: 'test-runtime', dispose: vi.fn() }
+function createTestRuntime() {
+  return { id: 'test-runtime', dispose: vi.fn<() => void>() } satisfies AgentRuntimeAdapter
 }
 
 function createFakeHarnessFactory(options: { autoCompletePrompt?: boolean; eventsPerPrompt?: number; seedSessions?: string[] } = {}) {
