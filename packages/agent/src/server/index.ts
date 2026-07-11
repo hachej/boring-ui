@@ -104,6 +104,10 @@ export type {
   AgentDirectoryCompilerErrorCode,
   AgentDirectoryCompilerPublicErrorCode,
 } from './agentDefinition/compileAgentDirectory'
+export {
+  resolveAgentDeployment,
+  type ResolvedAgent,
+} from './agentDefinition/resolveAgentDeployment'
 export type { AgentConfig } from '../shared/events'
 export {
   createManagedAgentMcpDelegateController,
