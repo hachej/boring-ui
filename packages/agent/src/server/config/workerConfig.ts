@@ -1,4 +1,4 @@
-import type { BwrapResourceLimits } from '@hachej/boring-agent/server'
+import type { BwrapResourceLimits } from '../sandbox/bwrap/createBwrapSandbox'
 
 const FILE_SIZE_BLOCKS_PER_MIB = 2048
 const KIB_PER_MIB = 1024

@@ -3,13 +3,14 @@ import {
   type RemoteWorkerExecRequest,
   type RemoteWorkerExecResponse,
   type RemoteWorkerWorkspaceOp,
-} from '@hachej/boring-agent/server'
-import type { ExecResult } from '@hachej/boring-agent/shared'
+} from '../index'
+import type { ExecResult } from '../../shared/index'
 
-import type { WorkerConfig } from './config.js'
-import { verifyInternalToken } from './auth.js'
-import { buildExecEnv, ExecSemaphore } from './exec.js'
-import { assertSafeWorkspaceId, createWorkerRuntime, runWorkspaceOp, type WorkerRuntime } from './workspace.js'
+import type { WorkerConfig } from '../config/workerConfig'
+import { WORKER_ERROR_CODES } from './error-codes'
+import { verifyInternalToken } from './auth'
+import { buildExecEnv, ExecSemaphore } from './exec'
+import { assertSafeWorkspaceId, createWorkerRuntime, runWorkspaceOp, type WorkerRuntime } from './workspace'
 
 interface WorkspaceParams {
   workspaceId: string
@@ -87,7 +88,7 @@ export async function registerWorkerRoutes(app: FastifyInstance, config: WorkerC
       try {
         const runtime = await getRuntime(request.params.workspaceId)
         if (!request.body || typeof request.body.op !== 'string') {
-          throw Object.assign(new Error('workspace op is required'), { statusCode: 400, code: 'validation_error' })
+          throw Object.assign(new Error('workspace op is required'), { statusCode: 400, code: WORKER_ERROR_CODES.VALIDATION_ERROR })
         }
         return await runWorkspaceOp(runtime.workspace, request.body)
       } catch (error) {
@@ -103,7 +104,7 @@ export async function registerWorkerRoutes(app: FastifyInstance, config: WorkerC
         const runtime = await getRuntime(request.params.workspaceId)
         const body = request.body
         if (!body || typeof body.cmd !== 'string' || body.cmd.length === 0) {
-          throw Object.assign(new Error('cmd is required'), { statusCode: 400, code: 'validation_error' })
+          throw Object.assign(new Error('cmd is required'), { statusCode: 400, code: WORKER_ERROR_CODES.VALIDATION_ERROR })
         }
         const abortController = new AbortController()
         const abort = () => abortController.abort()
@@ -143,7 +144,7 @@ export async function registerWorkerRoutes(app: FastifyInstance, config: WorkerC
           reply.raw.write(`event: change\ndata: ${JSON.stringify(payload)}\n\n`)
         }
         if (!runtime.workspace.watch) {
-          throw Object.assign(new Error('workspace events unsupported'), { statusCode: 501, code: 'not_implemented' })
+          throw Object.assign(new Error('workspace events unsupported'), { statusCode: 501, code: WORKER_ERROR_CODES.NOT_IMPLEMENTED })
         }
         unsubscribe = runtime.workspace.watch().subscribe((event) => send({ event }))
         heartbeat = setInterval(() => reply.raw.write(': heartbeat\n\n'), 15_000)
