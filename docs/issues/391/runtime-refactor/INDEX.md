@@ -65,8 +65,8 @@ P1 recut → P6-R → D1-reframed (+P5a) → M1 recuts
 → ID1 → AR1 → M2/E2 → T1/T2 → P2/X1.
 
 Inter-agent abstraction settled: one consumption contract (A2A-shaped
-semantics), bindings = UI / MCP (external) / native internal / A2A (future
-external). See [DECISIONS.md #22](../../../DECISIONS.md#22-one-agent-consumption-contract-protocol-bindings-at-the-edges).
+semantics), bindings = UI / MCP (external) / HTTP API / CLI / native internal /
+A2A (future external). See [DECISIONS.md #22](../../../DECISIONS.md#22-one-agent-consumption-contract-protocol-bindings-at-the-edges).
 
 ## Post-v1 increments
 
