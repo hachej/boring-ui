@@ -1,9 +1,9 @@
 # D1-tenant-provisioning — Plan
 
-Status: priority-1/v1 multi-agent Docker delivery gate; **needs-spec after
-P6-R**. Only D1-R0 in `TODO.md` is dispatchable until it produces accepted
-micro-beads. The active contract below supersedes the historical dedicated-site
-design.
+Status: priority-1/v1 multi-agent Docker delivery gate; **D1-R0 spec accepted,
+merge pending**. After merge, dispatch only the ordered micro-beads in
+[`D1-R0-SPEC.md`](./D1-R0-SPEC.md) and `TODO.md`. The active contract and R0
+spec supersede the historical dedicated-site design.
 
 ## Active owner-reframed v1 plan (2026-07-11)
 
@@ -30,6 +30,15 @@ apply/redeploy and rollback. D1 adds no wildcard router, runtime tenant CRUD or
 list API, hot tenant lifecycle, cross-tenant administration, billing, or fleet
 control plane. Those are D2/S3 concerns. Adding or changing a binding requires
 a new apply, not an in-process control-plane mutation.
+
+Container granularity is settled by D1-R0: one ingress fronts the current one
+core-app process, which hosts the entire N-binding collection and calls P6-R
+once per binding; agents are not per-container. Because current request leases
+cannot prove disconnected producer completion, the first slice publishes only
+additive/landing-only revisions in that stable process and rejects active
+binding replacement/removal or runtime-input rotation before effects. See
+[`D1-R0-SPEC.md`](./D1-R0-SPEC.md) for the immutable revision, rollback, Compose,
+and session-continuity contracts.
 
 Host mutation is operator-only. V1 exposes no application HTTP management
 endpoint for plan/apply/publish/rollback. A local deployment CLI running with
