@@ -90,6 +90,8 @@ export interface WorkspaceAgentServerPluginContext {
   trusted?: {
     workspaceAgentDispatcherResolver: WorkspaceAgentDispatcherResolver
     actorResolver: (request: FastifyRequest) => Promise<{ workspaceId: string; userId: string }> | { workspaceId: string; userId: string }
+    /** Host-owned database connection exposed only to trusted boot-time plugins. */
+    sql?: unknown
   }
 }
 

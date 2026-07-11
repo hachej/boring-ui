@@ -36,6 +36,7 @@ async function main() {
     config,
     serveFrontend: true,
     plugins: createFullAppServerPlugins([governance.serverPlugin]),
+    defaultPluginPackages: ['@hachej/boring-automation'],
     externalPlugins: false,
     installPluginAuthoring: pluginAuthoringEnabledFromEnv(),
     metering: governance.createMeteringSink(credits.meteringSink, () => {
