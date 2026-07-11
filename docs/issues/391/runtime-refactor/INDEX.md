@@ -18,9 +18,10 @@ documented before implementation; only rows marked **v1 gate** block v1.
 deployed agent selected as that workspace's `default`.
 
 **Build order (owner priorities, 2026-07-11 — see "Owner priorities" below):**
-#631 + P1 recut → P6-R → D1-reframed (+P5a) → M1 recuts (#549/#556) → ID1 →
-AR1 → M2/E2 → T1/T2 → P2/X1. M1 is on this path (after P6-R/D1-reframed,
-before ID1/AR1), no longer a purely optional side tracer.
+#631 + P1 recut → P6-R (+AC1 types) → D1-reframed (+P5a) → M1 recuts
+(#549/#556) → ID1 → AR1 (+AC1 contracted mode) → M2/E2 → T1/T2 → P2/X1. M1 is
+on this path (after P6-R/D1-reframed, before ID1/AR1), no longer a purely
+optional side tracer.
 
 | Milestone | Work package | Depends on | Live status | Exit gist |
 | --- | --- | --- | --- | --- |
@@ -36,6 +37,7 @@ before ID1/AR1), no longer a purely optional side tracer.
 | P8 — v1 proof/cleanup | [P8](work/P8-verification/) | all reduced v1 gates above | **pending** | measured workspace-backed golden path, residual pure-mode grep, rollback, and zero v1-owned removal markers; 15 minutes remains a target until baselined |
 | ID1 — agent-driven identity | [ID1](work/ID1-agent-identity/) | M1 (MCP surface) + existing membership/auth model | **spec settled — not started; gates AR1/priority 2** (owner decision 2026-07-11) | MCP OAuth 2.1 + PKCE (RFC 9728/8707; CIMD primary, RFC 7591 fallback); auto-provisioned account + personal workspace on first token exchange; EU-sovereign auth server |
 | AR1 — shareable artifacts | [AR1](work/AR1-shareable-artifacts/) | ID1 + M1 (MCP surface) + workspace contract | **spec settled 2026-07-11 (owner-grilled) — small; depends on ID1** | workspace-as-is deep links: share entry (stable ID → workspace + path + provenance), live reference semantics, tombstone for broken refs, membership-only auth, MCP resource for machine access |
+| AC1 — agent consumption contract | [AC1](work/AC1-agent-consumption-contract/) | P1/P6-R (types); ID1 (contracted mode) | **decision settled ([#22](../../../DECISIONS.md#22-one-agent-consumption-contract-protocol-bindings-at-the-edges)) — tracked in issue [#636](https://github.com/hachej/boring-ui/issues/636); types land with P6-R** | one A2A-shaped contract; native internal binding; subagent/contracted modes; governed-projection briefs |
 
 **Footnote:** Status entries above must cite merge-commit-ancestry-verified state (`git merge-base --is-ancestor <sha> origin/main`), not GitHub MERGED labels — see the stacked-PR trap note in [`REVIEW-2026-07-11-unknowns.md`](REVIEW-2026-07-11-unknowns.md).
 
@@ -60,9 +62,9 @@ path without changing decision 21's workspace-first acceptance.
    existing in-monolith sandboxing keeps working meanwhile.)
 
 **Derived build order:** [#631](https://github.com/hachej/boring-ui/pull/631) +
-P1 recut → P6-R → D1-reframed (+P5a) → M1 recuts
+P1 recut → P6-R (+AC1 types) → D1-reframed (+P5a) → M1 recuts
 ([#549](https://github.com/hachej/boring-ui/pull/549)/[#556](https://github.com/hachej/boring-ui/pull/556))
-→ ID1 → AR1 → M2/E2 → T1/T2 → P2/X1.
+→ ID1 → AR1 (+AC1 contracted mode) → M2/E2 → T1/T2 → P2/X1.
 
 Inter-agent abstraction settled: one consumption contract (A2A-shaped
 semantics), bindings = UI / MCP (external) / HTTP API / CLI / native internal /
