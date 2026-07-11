@@ -3,6 +3,7 @@ import type { AgentSessionEvent } from '@mariozechner/pi-coding-agent'
 import type { AgentHarness, RunContext, AgentSendInput } from '../../../shared/harness'
 import type { SessionStore } from '../../../shared/session'
 import type { PiChatEvent } from '../../../shared/chat'
+import { ErrorCode } from '../../../shared/error-codes'
 import type { PiAgentSessionAdapter, PiAgentSessionSnapshot } from '../PiAgentSessionAdapter'
 import { HarnessPiChatService } from '../harnessPiChatService'
 import type { PiSessionRequestContext } from '../piSessionIdentity'
@@ -137,5 +138,21 @@ describe('HarnessPiChatService concurrent clients on the same session', () => {
     await releaseNext()
     const snapshot = await statePromise
     expect(snapshot.sessionId).toBe('s1')
+  })
+
+  it('drains an in-flight channel creation without installing a late subscription', async () => {
+    const { service, adapter, harness, releaseNext } = createGatedService()
+    const cleanupError = new Error('late adapter abort failed')
+    adapter.abort = vi.fn(async () => { throw cleanupError })
+    const subscription = service.subscribe(ctx, 's1', 0, () => {})
+    await vi.waitFor(() => expect(harness.getPiSessionAdapter).toHaveBeenCalledOnce())
+
+    const disposal = service.dispose()
+    await releaseNext()
+
+    await expect(subscription).rejects.toMatchObject({ code: ErrorCode.enum.AGENT_BINDING_DISPOSED })
+    await expect(disposal).rejects.toBe(cleanupError)
+    expect(adapter.abort).toHaveBeenCalledOnce()
+    expect(adapter.listenerCount()).toBe(0)
   })
 })

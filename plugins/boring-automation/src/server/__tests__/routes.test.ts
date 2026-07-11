@@ -10,9 +10,10 @@ import { automationRoutes } from "../routes"
 function appWithStore(
   store = new FileAutomationStore(`${tmpdir()}/boring-automation-unused`),
   manualRunExecutor?: Parameters<typeof automationRoutes>[1]["manualRunExecutor"],
+  dueRunService?: Parameters<typeof automationRoutes>[1]["dueRunService"],
 ) {
   const app = Fastify()
-  app.register(async (instance) => automationRoutes(instance, { store, manualRunExecutor }))
+  app.register(async (instance) => automationRoutes(instance, { store, manualRunExecutor, dueRunService }))
   return app
 }
 
@@ -160,6 +161,37 @@ describe("automationRoutes", () => {
     await temp.cleanup()
   })
 
+  it("invokes due work only from loopback and fails closed without composition", async () => {
+    const temp = await TempStore.create()
+    const runDue = vi.fn(async () => ({ now: "2026-07-10T09:00:00.000Z", decisions: [], outcomes: [] }))
+    const app = appWithStore(temp.store, undefined, { runDue })
+
+    const allowed = await app.inject({ method: "POST", url: `${BORING_AUTOMATION_ROUTE_PREFIX}/due`, remoteAddress: "127.0.0.1" })
+    expect(allowed.statusCode).toBe(200)
+    expect(allowed.json()).toMatchObject({ ok: true, now: "2026-07-10T09:00:00.000Z", outcomes: [] })
+    expect(runDue).toHaveBeenCalledTimes(1)
+
+    const mappedLoopback = await app.inject({ method: "POST", url: `${BORING_AUTOMATION_ROUTE_PREFIX}/due`, remoteAddress: "::ffff:127.0.0.1" })
+    expect(mappedLoopback.statusCode).toBe(200)
+
+    const forbidden = await app.inject({
+      method: "POST",
+      url: `${BORING_AUTOMATION_ROUTE_PREFIX}/due`,
+      remoteAddress: "10.0.0.8",
+      headers: { "x-forwarded-for": "127.0.0.1" },
+    })
+    expect(forbidden.statusCode).toBe(403)
+    expect(forbidden.json()).toMatchObject({ code: "BORING_AUTOMATION_TRIGGER_FORBIDDEN" })
+    expect(runDue).toHaveBeenCalledTimes(2)
+    await app.close()
+
+    const unavailableApp = appWithStore(temp.store)
+    const unavailable = await unavailableApp.inject({ method: "POST", url: `${BORING_AUTOMATION_ROUTE_PREFIX}/due`, remoteAddress: "127.0.0.1" })
+    expect(unavailable.statusCode).toBe(503)
+    await unavailableApp.close()
+    await temp.cleanup()
+  })
+
   it("maps validation and domain error codes to HTTP status", async () => {
     const temp = await TempStore.create()
     const app = appWithStore(temp.store)
@@ -167,6 +199,22 @@ describe("automationRoutes", () => {
     const invalid = await app.inject({ method: "POST", url: `${BORING_AUTOMATION_ROUTE_PREFIX}/automations`, payload: { title: "" } })
     expect(invalid.statusCode).toBe(400)
     expect(invalid.json()).toMatchObject({ ok: false, code: "BORING_AUTOMATION_INVALID_BODY" })
+
+    const invalidCron = await app.inject({
+      method: "POST",
+      url: `${BORING_AUTOMATION_ROUTE_PREFIX}/automations`,
+      payload: { title: "Bad cron", cron: "0 0 9 * * *", timezone: "UTC", model: "model-a" },
+    })
+    expect(invalidCron.statusCode).toBe(400)
+    expect(invalidCron.json()).toMatchObject({ ok: false, code: "BORING_AUTOMATION_INVALID_CRON" })
+
+    const invalidTimezone = await app.inject({
+      method: "POST",
+      url: `${BORING_AUTOMATION_ROUTE_PREFIX}/automations`,
+      payload: { title: "Bad timezone", cron: "0 9 * * *", timezone: "Mars/Base", model: "model-a" },
+    })
+    expect(invalidTimezone.statusCode).toBe(400)
+    expect(invalidTimezone.json()).toMatchObject({ ok: false, code: "BORING_AUTOMATION_INVALID_TIMEZONE" })
 
     const missing = await app.inject({ method: "GET", url: `${BORING_AUTOMATION_ROUTE_PREFIX}/automations/missing` })
     expect(missing.statusCode).toBe(404)

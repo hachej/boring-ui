@@ -62,4 +62,5 @@ export interface AgentCoreSessionService extends PiChatSessionService {
   createSession(ctx: PiSessionRequestContext, init?: PiSessionCreateInit): Promise<SessionSummary>
   renameSession(ctx: PiSessionRequestContext, sessionId: string, title: string): Promise<SessionSummary>
   deleteSession(ctx: PiSessionRequestContext, sessionId: string): Promise<void>
+  dispose?(): Promise<void>
 }

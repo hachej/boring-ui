@@ -319,7 +319,7 @@ describe("folder mode runtime plugin wiring", () => {
       const created = await app.inject({
         method: "POST",
         url: "/api/v1/boring-automation/automations",
-        payload: { title: "Manual proof", cron: "0 9 * * *", timezone: "UTC", model: "legacy-model" },
+        payload: { title: "Manual proof", cron: "0 0 1 1 *", timezone: "UTC", model: "legacy-model" },
       })
       const run = await app.inject({
         method: "POST",
@@ -327,6 +327,9 @@ describe("folder mode runtime plugin wiring", () => {
       })
       expect(run.statusCode).toBe(400)
       expect(run.json()).toMatchObject({ code: "BORING_AUTOMATION_INVALID_MODEL" })
+      const due = await app.inject({ method: "POST", url: "/api/v1/boring-automation/due", remoteAddress: "127.0.0.1" })
+      expect(due.statusCode).toBe(200)
+      expect(due.json()).toMatchObject({ ok: true, outcomes: [expect.objectContaining({ automationId: created.json().automation.id, reason: "not-current-minute" })] })
     } finally {
       await app.close()
     }

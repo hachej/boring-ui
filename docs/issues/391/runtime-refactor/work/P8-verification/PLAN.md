@@ -1,6 +1,6 @@
 # P8-verification — Plan
 
-## Proposed reduced v1 verification (2026-07-10)
+## Binding reduced v1 verification (2026-07-11)
 
 P8 gates only the workspace-first delivery set:
 
@@ -17,9 +17,11 @@ contribute no P8 gate, import check, documentation promise, or proof step.
 
 ### Active proof
 
-- One command completes in <=900 seconds: compile -> workspace-backed local
-  turn -> D1 apply -> exact HTTPS landing -> existing-member sign-in -> bound
-  managed workspace -> deployed `default` agent on approved EU runsc.
+- One command records elapsed setup-to-first-run time and a stage breakdown for
+  compile -> workspace-backed local turn -> D1 apply -> exact HTTPS landing ->
+  existing-member sign-in -> bound managed workspace -> deployed `default`
+  agent on approved EU runsc. Compare the result with the provisional
+  15-minute target; do not assert a pass/fail threshold before a baseline exists.
 - The target materializes the verified definition bundle and immutable host
   artifact without source-checkout access, and records definition/deployment
   plus workspace-composition manifest digests.
@@ -35,14 +37,17 @@ contribute no P8 gate, import check, documentation promise, or proof step.
   manifest/digest, definition/deployment, and secret reference names/status.
   No secret value enters the snapshot or evidence, and the prior stateless P6-R
   digest is reproduced.
-- V1-owned removal markers are zero, applicable package/import invariants pass,
-  and no raw secret appears in evidence.
+- V1-owned removal markers are zero. A residual grep rejects public/product
+  `runtime: 'none'` and pure-mode acceptance in product code and non-historical
+  docs; explicit rejection tests and clearly marked historical sections are
+  allowlisted. Applicable package/import invariants pass, and no raw secret
+  appears in evidence.
 
 ## Historical 2026-07-09 verification plan — non-dispatchable for v1
 
 ### Former v1 gate correction
 
-The former broad gate list is void. Use only the proposed reduced gate and proof
+The former broad gate list is void. Use only the binding reduced gate and proof
 above; deferred lanes contribute no v1 acceptance.
 
 > Phase: Phase 8 — Verification + cleanup · Work order: [TODO.md](./TODO.md) · Handoff: [HANDOFF.md](./HANDOFF.md)
@@ -71,7 +76,8 @@ post-v1 work explicitly.
 - Remaining plan tasks converted into tracked beads/issues — nothing left only in prose.
 - No code imports old moved paths for delivered P2/P3/T1/T2 relocations.
 - All `00` invariants + package invariant scripts + `audit:imports` green; full build+test green.
-- Executable A1→D1 proof records <=15 minutes, zero platform-source edits,
+- Executable A1→D1 proof records measured setup-to-first-run time and stage
+  breakdown against the provisional 15-minute target, zero platform-source edits,
   source-checkout-independent materialization, all identity digests, idempotent
   reapply, complete-snapshot rollback, and secret-canary absence.
 - The exact HTTPS hostname serves only bounded landing content. Existing-member

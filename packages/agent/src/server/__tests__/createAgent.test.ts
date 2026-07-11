@@ -483,6 +483,24 @@ describe('createAgent', () => {
     expect(streamError).toMatchObject({ code: ErrorCode.enum.AGENT_BINDING_DISPOSED })
   })
 
+  it('disposes the runtime service once after stop attempts and preserves the stop error', async () => {
+    const sessions = new MemorySessionStore()
+    sessions.seed('service-dispose', CTX)
+    const stopError = new Error('stop failed first')
+    const serviceDisposeError = new Error('service dispose failed second')
+    const unsubscribeError = new Error('bridge unsubscribe failed third')
+    const teardownEvents: string[] = []
+    const service = new InjectedCorePiChatService(sessions, { stopError, disposeError: serviceDisposeError, unsubscribeError, teardownEvents })
+    const agent = createCoreAgent({ runtimeFactory: createCoreRuntimeFactory(sessions, service) })
+    await agent.start({ sessionId: 'service-dispose', content: 'accepted', ctx: CTX })
+
+    await expect(Promise.all([agent.dispose(), agent.dispose()])).rejects.toBe(stopError)
+
+    expect(teardownEvents).toEqual(['stop', 'dispose'])
+    expect(service.disposeCount).toBe(1)
+    expect(service.unsubscribeCount).toBe(1)
+  })
+
   it.each(['stop', 'delete'] as const)('%s failure preserves producer ownership so dispose retries it', async (operation) => {
     const sessionId = `${operation}-retry`
     const fake = createFakeHarnessFactory({ seedSessions: [sessionId], abortFailures: 1 })
@@ -734,10 +752,18 @@ class InjectedCorePiChatService implements AgentCoreSessionService {
   private readonly latestSeq = new Map<string, number>()
   private turns = 0
   unsubscribeCount = 0
+  disposeCount = 0
 
   constructor(
     private readonly sessions: MemorySessionStore,
-    private readonly options: { subscribeGate?: Promise<void>; onSubscribe?: () => void } = {},
+    private readonly options: {
+      subscribeGate?: Promise<void>
+      onSubscribe?: () => void
+      stopError?: Error
+      disposeError?: Error
+      unsubscribeError?: Error
+      teardownEvents?: string[]
+    } = {},
   ) {}
 
   async createSession(ctx: PiSessionRequestContext, init?: PiSessionCreateInit) {
@@ -778,6 +804,7 @@ class InjectedCorePiChatService implements AgentCoreSessionService {
       unsubscribe: () => {
         this.unsubscribeCount += 1
         subscribers.delete(subscriber)
+        if (this.options.unsubscribeError) throw this.options.unsubscribeError
       },
     }
   }
@@ -812,12 +839,20 @@ class InjectedCorePiChatService implements AgentCoreSessionService {
   }
 
   async stop(_ctx: PiSessionRequestContext, sessionId: string) {
+    this.options.teardownEvents?.push('stop')
+    if (this.options.stopError) throw this.options.stopError
     return {
       accepted: true as const,
       cursor: this.latestSeq.get(sessionId) ?? 0,
       stopped: true as const,
       clearedQueue: [],
     }
+  }
+
+  async dispose(): Promise<void> {
+    this.disposeCount += 1
+    this.options.teardownEvents?.push('dispose')
+    if (this.options.disposeError) throw this.options.disposeError
   }
 
   private nextSeq(sessionId: string): number {

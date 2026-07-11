@@ -31,13 +31,17 @@ required now.
 
 ## Active implementation order
 
-- Run two independent leaves from current main in parallel: the #543 production
-  correction and #616 (boundary-only recut of #547). Neither leaf gates the
-  other. #547 itself is superseded/stopped and is not a dispatch target.
-- After both land, recut #575 for the smallest deterministic workspace-composed
-  core move.
-- After #575, rework #576 in two review steps: bounded lifecycle/disposal first,
-  then honest readiness. Do not inherit old pure-mode ownership or acceptance.
+- Landed ancestry is #616 boundary -> #622 workspace-first correction -> #626
+  core relocation -> #627 terminal local binding disposal. The obsolete
+  #543/#547/#575 stacks are historical inputs, not current dispatch targets.
+- Next, finish request-binding and service-teardown lifecycle against current
+  main. Preserve in-flight work, stop new admission during shutdown, retire
+  agent-local resources, and dispose host-global runtime adapters exactly once.
+- Then add fail-closed readiness from the same binding-owned requirement source
+  consumed by tool composition. Unknown or unconfigured requirement facts must
+  not report ready.
+- Keep each slice independently reviewable. Do not cite in-progress work as
+  landed until its merge commit is verified as an ancestor of `origin/main`.
 
 Do not merge or revive the old stack wholesale. PR dispositions are binding in
 [PR-PLAN.md](../../PR-PLAN.md).

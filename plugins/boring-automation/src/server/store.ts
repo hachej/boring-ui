@@ -29,6 +29,7 @@ export interface AutomationStore {
   updatePrompt(automationId: string, body: string): Promise<void>
 
   // Executor-owned operations. Public HTTP routes expose run history read-only.
+  reconcileOrphanedRuns(automationId: string): Promise<void>
   beginRun(input: AutomationRunBegin): Promise<AutomationRun>
   updateRunLifecycle(runId: string, patch: AutomationRunLifecyclePatch): Promise<AutomationRun>
   listRuns(automationId: string): Promise<AutomationRun[]>
@@ -53,4 +54,11 @@ export function runNotFound(id: string): AutomationStoreError {
 
 export function runAlreadyActive(automationId: string): AutomationStoreError {
   return new AutomationStoreError(BORING_AUTOMATION_ERROR_CODES.RUN_ALREADY_ACTIVE, `automation ${automationId} already has an active run`)
+}
+
+export function runAlreadyRecorded(automationId: string, scheduledFor: string): AutomationStoreError {
+  return new AutomationStoreError(
+    BORING_AUTOMATION_ERROR_CODES.RUN_ALREADY_RECORDED,
+    `automation ${automationId} already has a run for ${scheduledFor}`,
+  )
 }

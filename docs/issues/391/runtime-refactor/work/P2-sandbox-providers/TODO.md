@@ -1,22 +1,28 @@
 # TODO-P2 — Scaffold `@hachej/boring-sandbox`, move concrete providers into it, land `resolveMode` in `@hachej/boring-bash`
 
-## Proposed narrow v1 work order (2026-07-10)
+## Binding narrow v1 work order (2026-07-11)
 
 Dispatch only this D1-consumed slice:
 
-1. Treat the `@hachej/boring-sandbox` scaffold and #557 publish-pipeline parity
-   as landed prerequisites; do not redo them.
-2. Add/review the hardened EU runsc/systrap provider boundary used by D1,
+1. Treat the `@hachej/boring-sandbox` scaffold, #557 publish-pipeline parity,
+   and #628 structural runsc preflight as landed prerequisites; do not redo
+   them. #628 reports `productionReady: false` and is not provider parity.
+2. Run a time-boxed validation spike on the intended EU host before D1 locks:
+   record systrap/provider availability, namespace/network enforcement,
+   resource limits, digest-pinned image handling, normal/error/abort cleanup,
+   authenticated capability facts, and every remaining `unknown`.
+3. Add/review only the hardened EU runsc/systrap provider behavior evidenced
+   as required by D1,
    including honest capability facts, isolation/limit/cleanup proof, and no
    silent fallback.
-3. Keep A1 local development on the existing workspace host: prefer bwrap when
+4. Keep A1 local development on the existing workspace host: prefer bwrap when
    available and require explicit trusted-local policy for direct execution.
-4. Migrate only imports that the runsc slice actually changes, in that slice.
+5. Migrate only imports that the runsc slice actually changes, in that slice.
 
 The full direct/bwrap/Vercel/remote-worker provider migration, generic
 capability matrix, `resolveMode` cutover, pure-only agent binary, and all-mode
-composer rewrite below are post-v1. #548 must be recut to the runsc/package
-boundary; #558 is deferred; #564 closes/defers. Do not dispatch the historical
+composer rewrite below are post-v1. #548 is superseded by #628 plus the
+evidence-led follow-up; #558 is deferred; #564 closes/defers. Do not dispatch the historical
 work order below for v1.
 
 ## Historical full provider/mode work order — non-dispatchable for v1

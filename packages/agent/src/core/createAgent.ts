@@ -222,14 +222,16 @@ export function createAgentRuntimeBridge(
 
   async function disposeBinding(): Promise<void> {
     const started = [...startedSessions.entries()]
-    let stopError: unknown
+    let runtime: AgentCoreRuntime | undefined
+    let teardownError: unknown
     try {
-      const runtime = await runtimeLoader.current()
+      runtime = await runtimeLoader.current()
       if (runtime) {
+        const activeRuntime = runtime
         const results = await Promise.allSettled(started.map(([sessionKey, session]) =>
           runProducerTeardown(sessionKey, async () => {
             if (startedSessions.get(sessionKey) !== session) return
-            await runtime.service.stop(toPiRequestContext(session.ctx), session.sessionId, {})
+            await activeRuntime.service.stop(toPiRequestContext(session.ctx), session.sessionId, {})
             startedSessions.delete(sessionKey)
             live.close(sessionKey)
           }),
@@ -238,15 +240,25 @@ export function createAgentRuntimeBridge(
         if (failed) throw failed.reason
       }
     } catch (error) {
-      stopError = error
-    } finally {
-      live.dispose()
-      startedSessions.clear()
-      sessionContexts.clear()
-      sendLocks.clear()
-      producerTeardownLocks.clear()
+      teardownError = error
     }
-    if (stopError) throw stopError
+    try {
+      await runtime?.service.dispose?.()
+    } catch (error) {
+      teardownError ??= error
+    } finally {
+      try {
+        live.dispose()
+      } catch (error) {
+        teardownError ??= error
+      } finally {
+        startedSessions.clear()
+        sessionContexts.clear()
+        sendLocks.clear()
+        producerTeardownLocks.clear()
+      }
+    }
+    if (teardownError) throw teardownError
   }
 
   async function runProducerTeardown<T>(sessionKey: string, teardown: () => Promise<T>): Promise<T> {
@@ -561,17 +573,31 @@ class AgentLiveEventBuffer {
     const state = this.sessions.get(sessionKey)
     if (!state || (expectedState && state !== expectedState)) return
     state.closed = true
-    state.bridge?.unsubscribe()
+    let unsubscribeError: unknown
+    try {
+      state.bridge?.unsubscribe()
+    } catch (error) {
+      unsubscribeError = error
+    }
     for (const subscriber of state.subscribers) subscriber.close()
     state.subscribers.clear()
+    if (unsubscribeError) throw unsubscribeError
   }
 
   dispose(): void {
     if (this.disposed) return
     this.disposed = true
-    for (const [sessionId] of this.sessions) this.close(sessionId)
+    let disposeError: unknown
+    for (const [sessionId] of this.sessions) {
+      try {
+        this.close(sessionId)
+      } catch (error) {
+        disposeError ??= error
+      }
+    }
     this.sessions.clear()
     this.eventIndexes.clear()
+    if (disposeError) throw disposeError
   }
 
   private assertReplayable(state: AgentSessionLiveState, startIndex: number): void {
