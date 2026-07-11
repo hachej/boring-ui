@@ -87,9 +87,6 @@ export function registerFullAppManagedAgentMcpRoutes(
   const controller = createManagedAgentMcpDelegateController({
     redactionCanaries: config.redactionCanaries,
     resolveSessionCtx: () => ({ workspaceId, userId }),
-    resolveWorkspace: () => {
-      throw new ManagedAgentMcpError(ErrorCode.enum.CONFIG_INVALID, 'managed-agent MCP workspace binding is unavailable')
-    },
     resolveRunnerWorkspace: async ({ ctx, actor }): Promise<ManagedAgentBoundRunnerWorkspace> => {
       if (ctx.workspaceId !== workspaceId || ctx.userId !== userId) {
         throw new ManagedAgentMcpError(ErrorCode.enum.UNAUTHORIZED, 'managed-agent MCP target is not authorized')
@@ -110,11 +107,6 @@ export function registerFullAppManagedAgentMcpRoutes(
     controller,
     name: 'boring-full-app-managed-agent',
     version: '0.0.0',
-    redactionCanaries: config.redactionCanaries,
-    resolveSessionCtx: () => ({ workspaceId, userId }),
-    resolveWorkspace: () => {
-      throw new ManagedAgentMcpError(ErrorCode.enum.CONFIG_INVALID, 'managed-agent MCP workspace binding is unavailable')
-    },
   })
 
   app.route({

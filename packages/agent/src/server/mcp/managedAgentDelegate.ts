@@ -115,6 +115,7 @@ export interface ManagedAgentCollectArtifactsInput {
   delegationId: string
   sessionId: string
   ctx: SessionCtx
+  request: ManagedAgentDelegateRequestContext
   finalAssistantText: string
   events: readonly AgentEvent[]
 }
@@ -122,7 +123,7 @@ export interface ManagedAgentCollectArtifactsInput {
 export interface ManagedAgentMcpDelegateOptions {
   agent?: Agent
   resolveSessionCtx(input: { brief: string; request: ManagedAgentDelegateRequestContext }): SessionCtx | Promise<SessionCtx>
-  resolveWorkspace(input: ManagedAgentWorkspaceResolutionInput): Workspace | Promise<Workspace>
+  resolveWorkspace?(input: ManagedAgentWorkspaceResolutionInput): Workspace | Promise<Workspace>
   resolveRunnerWorkspace?(input: ManagedAgentWorkspaceResolutionInput & {
     actor: AgentActor
   }): ManagedAgentBoundRunnerWorkspace | Promise<ManagedAgentBoundRunnerWorkspace>
@@ -391,7 +392,11 @@ export class ManagedAgentMcpDelegateController {
     ctx: SessionCtx,
     request: ManagedAgentDelegateRequestContext,
   ): Promise<Workspace> {
-    const workspace = await this.options.resolveWorkspace({ brief, ctx, request })
+    const resolveWorkspace = this.options.resolveWorkspace
+    if (!resolveWorkspace) {
+      throw new ManagedAgentMcpError(ErrorCode.enum.CONFIG_INVALID, 'MCP delegate requires a host-resolved Workspace')
+    }
+    const workspace = await resolveWorkspace({ brief, ctx, request })
     if (!workspace || typeof workspace.stat !== 'function' || typeof workspace.readFile !== 'function') {
       throw new ManagedAgentMcpError(ErrorCode.enum.CONFIG_INVALID, 'MCP delegate requires a host-resolved Workspace')
     }
@@ -515,7 +520,7 @@ export class ManagedAgentMcpDelegateController {
   }
 
   private async collectArtifacts(
-    input: ManagedAgentCollectArtifactsInput & { request: ManagedAgentDelegateRequestContext },
+    input: ManagedAgentCollectArtifactsInput,
     workspace: Workspace,
   ): Promise<ManagedAgentArtifact[]> {
     const supplied = await this.options.collectArtifacts?.(input)
