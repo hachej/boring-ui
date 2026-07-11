@@ -41,3 +41,7 @@ contracted consumption modes; governed-projection context flow.
   consumers are regular principals + workspaces).
 
 **Layering constraint (Decision 22):** subagent and contracted modes are layers over ONE consumption pipeline (workspace-binding parameter + governance projection + metering) — never forked code paths. MCP is a door, not a distribution vector; external third parties contract agents from their own signed-up workspace.
+
+## Scenario: creator/coach marketplace (canonical worked example, owner 2026-07-11)
+
+A fitness influencer distributes their knowledge as an agent (AgentDefinition; contracted mode; own workspace holds programs/methods, compounding across clients). A consumer signs up via any door (ID1), gets a personal workspace that becomes their persistent fitness journal, and contracts one or more influencer agents from there — via their own ChatGPT (MCP binding), WhatsApp, or Telegram (T2/arch-08 channel bindings; same contract). Each coach receives governed projections of the consumer's data (e.g. training log only), asks follow-ups via input-required, returns plans as artifacts (AR1 links). The influencer invoices through the metering/billing layer. Validates: ID1, AR1, AC1 contracted mode, channels, billing — with zero architecture not already decided. Stress note: for B2C consumers, WhatsApp/Telegram channels and billing are product-critical, not optional.
