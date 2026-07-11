@@ -139,6 +139,17 @@ describe('ManagedAgentMcpDelegateController', () => {
     })
   })
 
+  it('accepts a brief at exactly 32 KiB and rejects one UTF-8 byte over', async () => {
+    const exact = `${'a'.repeat(32 * 1024 - 2)}é`
+    await expect(createManagedAgentMcpDelegateController(options(new FakeAgent()))
+      .delegateTask({ brief: exact })).resolves.toMatchObject({ status: 'completed' })
+
+    await expect(createManagedAgentMcpDelegateController(options(new FakeAgent()))
+      .delegateTask({ brief: `${exact}a` })).rejects.toMatchObject({
+        code: ErrorCode.enum.TOOL_INVALID_INPUT,
+      })
+  })
+
   it('rejects malformed binary artifact content as invalid', async () => {
     const controller = createManagedAgentMcpDelegateController(options(new FakeAgent(), {
       collectArtifacts: async () => [{ path: 'reports/binary.md' }],

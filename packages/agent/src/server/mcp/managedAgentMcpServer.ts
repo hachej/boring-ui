@@ -46,7 +46,7 @@ type ManagedAgentRegisterTool = (
   cb: (input: Record<string, unknown>, extra: unknown) => Promise<CallToolResult>,
 ) => unknown
 
-const DEFAULT_MAX_BRIEF_CHARS = 12_000
+const DEFAULT_MAX_BRIEF_SCHEMA_CHARS = 32 * 1024
 
 const delegateTaskStatusInputSchema: Record<string, unknown> = {
   delegationId: z.string().min(1),
@@ -61,7 +61,7 @@ export function createManagedAgentMcpServer(
     version: options.version ?? '0.0.0',
   })
   const registerTool = server.registerTool.bind(server) as ManagedAgentRegisterTool
-  const delegateTaskInputSchema = createDelegateTaskInputSchema(options.maxBriefChars ?? DEFAULT_MAX_BRIEF_CHARS)
+  const delegateTaskInputSchema = createDelegateTaskInputSchema(options.maxBriefChars ?? DEFAULT_MAX_BRIEF_SCHEMA_CHARS)
 
   registerTool(
     'delegate_task',

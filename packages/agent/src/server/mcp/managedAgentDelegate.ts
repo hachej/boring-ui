@@ -130,6 +130,8 @@ export interface ManagedAgentMcpDelegateOptions {
   collectArtifacts?(input: ManagedAgentCollectArtifactsInput): ManagedAgentArtifactCandidate[] | Promise<ManagedAgentArtifactCandidate[]>
   createDelegationId?: () => string
   now?: () => Date
+  maxBriefBytes?: number
+  /** Optional additional character cap retained for host compatibility. */
   maxBriefChars?: number
   terminalRetentionMs?: number
   maxDelegations?: number
@@ -152,7 +154,7 @@ interface DelegationRecord {
 
 type AgentEndEvent = AgentEvent & { chunk: Extract<AgentEvent['chunk'], { type: 'agent-end' }> }
 
-const DEFAULT_MAX_BRIEF_CHARS = 12_000
+const DEFAULT_MAX_BRIEF_BYTES = 32 * 1024
 const DEFAULT_TERMINAL_RETENTION_MS = 15 * 60_000
 const DEFAULT_MAX_DELEGATIONS = 100
 const MAX_RETAINED_PROGRESS = 100
@@ -173,7 +175,8 @@ export class ManagedAgentMcpDelegateController {
   private readonly delegations = new Map<string, DelegationRecord>()
   private readonly createDelegationId: () => string
   private readonly now: () => Date
-  private readonly maxBriefChars: number
+  private readonly maxBriefBytes: number
+  private readonly maxBriefChars?: number
   private readonly terminalRetentionMs: number
   private readonly maxDelegations: number
   private readonly redactionCanaries: readonly string[]
@@ -181,7 +184,8 @@ export class ManagedAgentMcpDelegateController {
   constructor(private readonly options: ManagedAgentMcpDelegateOptions) {
     this.createDelegationId = options.createDelegationId ?? randomUUID
     this.now = options.now ?? (() => new Date())
-    this.maxBriefChars = options.maxBriefChars ?? DEFAULT_MAX_BRIEF_CHARS
+    this.maxBriefBytes = options.maxBriefBytes ?? DEFAULT_MAX_BRIEF_BYTES
+    this.maxBriefChars = options.maxBriefChars
     this.terminalRetentionMs = Math.max(0, options.terminalRetentionMs ?? DEFAULT_TERMINAL_RETENTION_MS)
     this.maxDelegations = Math.max(1, Math.floor(options.maxDelegations ?? DEFAULT_MAX_DELEGATIONS))
     this.redactionCanaries = options.redactionCanaries ?? []
@@ -362,8 +366,11 @@ export class ManagedAgentMcpDelegateController {
     if (typeof value !== 'string') throw new ManagedAgentMcpError(ErrorCode.enum.TOOL_INVALID_INPUT, 'brief must be a string')
     const brief = value.trim()
     if (!brief) throw new ManagedAgentMcpError(ErrorCode.enum.TOOL_INVALID_INPUT, 'brief is required')
-    if (brief.length > this.maxBriefChars) {
+    if (this.maxBriefChars !== undefined && brief.length > this.maxBriefChars) {
       throw new ManagedAgentMcpError(ErrorCode.enum.TOOL_INVALID_INPUT, `brief must be ${this.maxBriefChars} characters or fewer`)
+    }
+    if (utf8ByteLength(brief) > this.maxBriefBytes) {
+      throw new ManagedAgentMcpError(ErrorCode.enum.TOOL_INVALID_INPUT, `brief must be ${this.maxBriefBytes} UTF-8 bytes or fewer`)
     }
     return brief
   }
