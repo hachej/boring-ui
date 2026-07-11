@@ -464,6 +464,7 @@ export function createPiCodingAgentHarness(opts: {
 }): AgentHarness & {
   getPiSessionAdapter(input: AgentSendInput, ctx: RunContext): Promise<PiAgentSessionAdapter>;
   hasPiSession(sessionId: string, ctx?: SessionCtx): boolean;
+  renameLivePendingPiSession(sessionId: string, ctx: SessionCtx, title: string): boolean;
 } {
   // Normalize at the true boundary: direct callers and custom harnessFactory
   // hosts get the canonical discovery policy even if they never heard of
@@ -756,17 +757,13 @@ export function createPiCodingAgentHarness(opts: {
     disposePiSession(sessionId, ctx);
   };
 
-  const originalRename = sessionStore.rename.bind(sessionStore);
-  sessionStore.rename = async (ctx, sessionId, title) => {
-    const renamed = await originalRename(ctx, sessionId, title);
+  function renameLivePendingPiSession(sessionId: string, ctx: SessionCtx, title: string): boolean {
     const handle = piSessions.get(sessionCacheKey(sessionId, ctx));
     const nativeSessionFile = handle?.sessionManager.getSessionFile();
-    if (handle && nativeSessionFile && !existsSync(nativeSessionFile)) {
-      handle.piSession.setSessionName(renamed.title);
-    }
-    return renamed;
-  };
-
+    if (!handle || !nativeSessionFile || existsSync(nativeSessionFile)) return false;
+    handle.piSession.setSessionName(title);
+    return true;
+  }
 
   return ({
     id: "pi-coding-agent",
@@ -786,6 +783,8 @@ export function createPiCodingAgentHarness(opts: {
     hasPiSession(sessionId: string, ctx?: SessionCtx): boolean {
       return ctx ? piSessions.has(sessionCacheKey(sessionId, ctx)) : piSessionHandlesFor(sessionId).length > 0;
     },
+
+    renameLivePendingPiSession,
 
     /**
      * Surface Pi's skill/extension load diagnostics for a session so silent
@@ -862,5 +861,6 @@ export function createPiCodingAgentHarness(opts: {
   } as AgentHarness & {
     getPiSessionAdapter(input: AgentSendInput, ctx: RunContext): Promise<PiAgentSessionAdapter>;
     hasPiSession(sessionId: string, ctx?: SessionCtx): boolean;
+    renameLivePendingPiSession(sessionId: string, ctx: SessionCtx, title: string): boolean;
   });
 }

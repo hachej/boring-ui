@@ -24,6 +24,7 @@ import { HarnessPiChatServiceLifecycle } from './piChatServiceLifecycle'
 type PiNativeHarness = AgentHarness & {
   getPiSessionAdapter?: (input: AgentSendInput, ctx: RunContext) => Promise<PiAgentSessionAdapter>
   hasPiSession?: (sessionId: string, ctx?: SessionCtx) => boolean
+  renameLivePendingPiSession?: (sessionId: string, ctx: SessionCtx, title: string) => boolean | Promise<boolean>
 }
 
 const MAX_PROMPT_IMAGE_BYTES = 10 * 1024 * 1024
@@ -178,8 +179,11 @@ export class HarnessPiChatService implements PiChatSessionService {
 
   async renameSession(ctx: PiSessionRequestContext, sessionId: string, title: string) {
     return this.lifecycle.run(async () => {
+      const sessionCtx = toSessionCtx(ctx)
       try {
-        return await this.sessionStore.rename(toSessionCtx(ctx), sessionId, title)
+        const renamed = await this.sessionStore.rename(sessionCtx, sessionId, title)
+        await this.harness.renameLivePendingPiSession?.(sessionId, sessionCtx, renamed.title)
+        return renamed
       } catch (error) {
         throw normalizeSessionAccessError(error, sessionId)
       }
