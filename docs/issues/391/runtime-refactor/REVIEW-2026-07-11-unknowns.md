@@ -49,6 +49,13 @@ into this review branch. GitHub PR labels alone are not evidence of ancestry.
    and its breakdown. Fifteen minutes is a target to evaluate, not an asserted
    pre-existing baseline or a pass/fail gate until evidence supports it.
 
+## Resolved owner rulings
+
+- **#545 close intent (raised by the earlier revision of this ledger):**
+  resolved 2026-07-11 (owner) — #545's close was an intentional scope drop,
+  superseded by recuts #566/#568/#575/#576 — nothing to recover; the P1
+  critical path runs through the recuts.
+
 ## Owner decisions still open
 
 - **#380 / BBA-015 and BBA-016:** re-scope hook/command seams as features of a
