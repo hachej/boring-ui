@@ -5,6 +5,7 @@ import Fastify, { type FastifyRequest } from 'fastify'
 import { afterEach, expect, test, vi } from 'vitest'
 
 import { ErrorCode } from '../../shared/error-codes'
+import type { AgentSendInput, RunContext } from '../../shared/harness'
 import { HarnessPiChatService } from '../pi-chat/harnessPiChatService'
 import { ReadyStatusTracker } from '../runtime/readyStatus'
 import type { RuntimeModeAdapter } from '../runtime/mode'
@@ -624,7 +625,7 @@ test('requestless dispatcher send leases its binding until iteration completes',
       const base = await harness.factory(input)
       return {
         ...base,
-        async getPiSessionAdapter(sendInput, ctx) {
+        async getPiSessionAdapter(sendInput: AgentSendInput, ctx: RunContext) {
           const adapter = await base.getPiSessionAdapter(sendInput, ctx)
           if (!patchedAdapter) {
             patchedAdapter = true
