@@ -1,9 +1,15 @@
 # 09 — Environments as attachable resources
 
+> **Binding owner-order supersession (2026-07-11).** D1 reuses the currently
+> approved workspace/runtime composition and does not require new attachment or
+> runsc work. P5a is conditional on a D1-R0-demonstrated gap; P2 provider
+> extraction and X1 mounts merge last. The generic attachment model below stays
+> post-v1 research and cannot gate P6-R, D1, or P8.
+
 > **V1 scope amendment.** The generic E1 attachment registry and external
 > projections are post-v1. V1 reuses the current workspace composition and
-> implements only the attachment/runsc changes required by the D1 dedicated
-> workspace path. Every v1 run is workspace-backed and has an approved
+> introduces no generic attachment work for D1. Every v1 run is
+> workspace-backed and has an approved
 > runtime/environment; a workspace-less zero-environment run is not a v1 mode.
 
 Status: v2 addition. Generalizes the #416 filesystem-binding model: **a filesystem + its sandbox is a resource you attach to an agent, not a feature of the agent.** `company_context` was the first instance; this file makes attachment the only model.

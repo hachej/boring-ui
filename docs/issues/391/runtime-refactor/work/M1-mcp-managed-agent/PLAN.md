@@ -1,5 +1,23 @@
 # M1-mcp-managed-agent - Plan
 
+> **Binding priority-2 supersession (2026-07-11).** M1 follows P6-R and the D1
+> host composition; it is not an optional P1 side tracer. Recut #549/#556 on
+> current main to expose one authenticated subject -> authorized workspace ->
+> deployed `default` agent with bounded self-contained output. BBM1-004 and all
+> #424/public-share coupling are superseded: AR1 owns artifact transfer and
+> destination-local links after the M1 recut. The detailed rows below are
+> historical input until the recut replaces them with exact micro-beads.
+>
+> The recut must close the current byte-source gap in
+> `managedAgentDelegate.ts`: resolve a returned workspace-relative artifact only
+> through the already-authorized bound `Workspace`, read the complete bytes,
+> require one well-formed UTF-8 Markdown payload <=256 KiB, and return content +
+> digest without a path. Replace silent `truncated:true`, path-only output, and
+> `INTERNAL_ERROR` fallbacks with stable `MCP_AGENT_ARTIFACT_INVALID`,
+> `MCP_AGENT_ARTIFACT_TOO_LARGE`, and `MCP_AGENT_ARTIFACT_UNAVAILABLE` errors.
+> Binary, malformed UTF-8, missing, changed-during-read, or oversize artifacts
+> reject; no partial content/path result reaches AR1.
+
 > Phase: Phase M1 - managed agent via MCP (outreach demo sidecar) · Work order: [TODO.md](./TODO.md) · Handoff: [HANDOFF.md](./HANDOFF.md)
 > Ordering authority: [INDEX.md](../../INDEX.md) · Vision: [VISION.md](../../VISION.md) · PR plan: [PR-PLAN.md](../../PR-PLAN.md)
 

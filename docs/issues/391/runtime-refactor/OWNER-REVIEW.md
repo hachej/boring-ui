@@ -1,7 +1,9 @@
 # #391 owner review guide
 
-Status: **accepted workspace-first v1** review guide, reality-synced 2026-07-11.
-`INDEX.md` remains the single-writer ordering and live-status authority.
+Status: **historical, non-dispatchable review card**. Superseded on 2026-07-11
+by [`INDEX.md`](INDEX.md) for ordering and live status and
+[`PR-PLAN.md`](PR-PLAN.md) for current PR disposition. The content below
+records an earlier review pass; it must not override either current authority.
 
 ## Review rule
 

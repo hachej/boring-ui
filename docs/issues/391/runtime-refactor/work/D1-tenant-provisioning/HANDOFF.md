@@ -1,52 +1,88 @@
 # D1-tenant-provisioning - Handoff checklist
 
-## Binding workspace-first v1 handoff (2026-07-11)
+## Binding multi-agent Docker v1 handoff (2026-07-11)
 
 ### Prerequisites
 
 - [ ] P6-D + A1 compile are complete.
-- [ ] P1 boundary, narrow P2 runsc, narrow P5a, and stateless P6-R are complete.
+- [ ] P1 lifecycle/readiness and stateless P6-R are complete.
+- [ ] D1-R0 produced accepted, dispatchable micro-beads with exact files,
+      stable errors, proof, rollback, and review budgets.
+- [ ] D1-R0 identified the current composer inputs and specified a canonical
+      redacted workspace-composition identity/digest producer; the host no
+      longer supplies an unverifiable arbitrary digest.
+- [ ] P2/runsc and X1 mounts are absent from the D1 dependency path.
+- [ ] D1-R0 recorded either no P5a code is needed or the exact demonstrated
+      P5a readiness/secret slice required.
 - [ ] No P3, E1, T1/T2, M2, plugin-snapshot, attachment-catalog, or generation-
       store prerequisite remains.
 
 ### Active proof
 
-- [ ] One command plans/applies one exact hostname, bounded landing, managed
-      workspace, durable workspace/session roots, approved runsc runtime, and
-      minimal deployment.
+- [ ] One command plans/applies one Docker host with at least two exact-host
+      bindings, distinct deployed agents, managed workspaces/defaults, and
+      durable workspace/session roots.
 - [ ] Existing-member auth and membership are the only workspace authority;
       landing content grants none.
+- [ ] On a bound hostname, existing workspace list/create/switch/delete and
+      default auto-provision paths are fenced: members see only the bound
+      workspace, non-members fail before effects, and only D1 operator
+      lifecycle can remove the managed workspace.
+- [ ] Plan/apply/publish/rollback exists only through the OS-authorized local
+      deployment CLI. Ordinary members, app credentials, and hostname holders
+      have no host-mutation route; operator/ref/revision audit is recorded.
 - [ ] The existing authorized workspace composer selects the deployed agent as
       `default`; caller workspace/agent selectors cannot choose another target.
-- [ ] Workspace create/switch/ordinary delete and foreign server/front/plugin/
-      MCP selectors fail before effects.
-- [ ] Narrow P5a authenticates the selected EU runsc worker and brokers secret
-      refs host-side; direct/bwrap/Vercel/fake/unverified production proof fails.
+- [ ] Cross-hostname/workspace server/front/plugin selectors fail before
+      effects; authorized navigation within the selected workspace still works.
+- [ ] Canonical trusted-proxy/Host parsing and uniqueness reject duplicate or
+      ambiguous hostname/workspace/deployment/default bindings and overlapping
+      workspace/session roots before effects.
+- [ ] An isolated runtime profile proves sibling-root/process denial. Trusted-
+      direct is allowed only for local development or a single-workspace
+      dedicated composition; it is never valid for the shared N-workspace
+      host, regardless of operator trust. Otherwise apply fails or uses
+      dedicated-VM variant 2. No silent direct/fake fallback occurs.
+- [ ] Any demonstrated P5a slice proves only its readiness/secret seam; when
+      existing seams suffice, no P5a code is required. P5a never selects or
+      abstracts sandbox providers.
 - [ ] Bundle materialization works without source-checkout access.
-- [ ] Apply is idempotent. The complete redacted D1 site snapshot/digest pins
-      every desired-state input: exact hostname; bounded landing config; auth,
-      membership, and owner binding; workspace/default-agent binding; roots,
-      storage, and runtime desired inputs; immutable host artifact; workspace-
-      composition manifest/digest; definition/deployment; and secret reference
-      names plus redacted status only. It contains no secret values.
-- [ ] After site-level values are changed and applied, rollback rematerializes
-      every prior site value, matches the prior redacted snapshot/digest, and
-      reproduces the P6-R digest without a P6 generation registry.
+- [ ] Final activated capability/tool/skill/MCP inventories satisfy every
+      non-empty definition requirement before composition identity/publication;
+      missing inventory and mismatches fail the one stable composition error.
+- [ ] Apply is idempotent. One redacted host snapshot/digest pins the complete
+      site-binding collection and every binding's hostname, landing, authority,
+      workspace/default, roots/runtime/storage, pinned host artifact,
+      composition, definition/deployment, and secret-reference identities
+      without secret values or volatile status.
+- [ ] Apply/rollback requires the expected host revision; stale writers fail.
+      The active collection advances atomically only after full readiness, and
+      full-snapshot rollback publishes a new revision. A destructive diff that
+      removes/replaces later bindings requires explicit confirmation of the
+      exact ids against the current revision; CAS alone is not preservation.
+- [ ] Fresh observed readiness/secret status gates publication but is not part
+      of desired digest, rollback identity, or P6-R input.
+- [ ] After collection values change, rollback rematerializes every prior
+      binding, matches the prior host snapshot/digest, and reproduces every
+      P6-R digest without a P6 generation registry.
 - [ ] DNS/TLS publication occurs only after workspace/default-agent/runtime/
       secret readiness; partial state is not externally reachable.
 - [ ] Proof records setup-to-first-run time and stage breakdown against the
-      provisional 15-minute target, plus exact host, definition/deployment
-      digests, workspace/default binding, runsc identity, reapply, site-level
-      mutation/full restoration, rollback digests, selector denials, and
-      secret-canary result.
+      provisional 15-minute target, plus both hostnames, definition/deployment
+      digests, workspace/default bindings, reapply, collection mutation/full
+      restoration, rollback digests, selector denials, and secret canary.
 
 ### Exit
 
-- [ ] Exact host -> landing -> existing-member sign-in -> one managed workspace
-      -> deployed `default` agent succeeds on real approved EU runsc.
-- [ ] Reapply, rollback, foreign-selector, no-fallback, and no-secret proofs pass.
+- [ ] Two exact hosts -> landing -> existing-member sign-in -> distinct managed
+      workspaces -> their deployed `default` agents succeed in one EU Docker host.
+- [ ] Reapply, rollback, cross-binding denial, shared-host sibling isolation,
+      and no-secret proofs pass. The dedicated-VM variant has a documented
+      configuration render but does not require a second live host.
 
-## Historical expanded D1 handoff — non-dispatchable for v1
+## Historical dedicated-site D1 handoff — non-dispatchable for v1
+
+The checklist below is design history and cannot close active D1.
 
 Derived strictly from [TODO.md](./TODO.md) and [PLAN.md](./PLAN.md). Tick each
 before calling D1 done. Invent nothing.

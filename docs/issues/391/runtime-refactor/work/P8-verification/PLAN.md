@@ -5,38 +5,45 @@
 P8 gates only the workspace-first delivery set:
 
 - P1 workspace/Fastify boundary and bounded agent-local lifecycle;
-- P6-D minimal definition/deployment schemas, digests, and lookup;
+- P6-D minimal definition/deployment schemas/digests plus A1 compiled bundle;
 - A1 compile plus explicit workspace/runtime local dev;
-- narrow P2 EU runsc and narrow P5a authenticated readiness/secrets;
-- stateless P6-R over the existing authorized workspace composer;
-- D1 exact-host dedicated delivery.
+- any D1-R0-demonstrated P5a seam, if required; zero P5a code is valid when
+  existing host seams suffice; P2 provider extraction is later;
+- stateless P6-R over one host-authorized composition identity, with the
+  canonical redacted producer specified by D1-R0;
+- D1 multi-agent Docker delivery.
 
-T1/T2, full P3, E1, M2, plugin snapshots/scoped registrars, attachment
+M1/AR1/M2/E2, T1/T2, P2/X1, full P3, E1, plugin snapshots/scoped registrars, attachment
 catalogs, and P6 generation/session-retirement machinery are post-v1 and
 contribute no P8 gate, import check, documentation promise, or proof step.
 
 ### Active proof
 
 - One command records elapsed setup-to-first-run time and a stage breakdown for
-  compile -> workspace-backed local turn -> D1 apply -> exact HTTPS landing ->
-  existing-member sign-in -> bound managed workspace -> deployed `default`
-  agent on approved EU runsc. Compare the result with the provisional
+  compile -> workspace-backed local turns -> D1 apply -> at least two exact
+  HTTPS landings -> existing-member sign-in -> distinct authorized workspaces
+  -> their deployed `default` agents in one EU Docker host. Compare the result with the provisional
   15-minute target; do not assert a pass/fail threshold before a baseline exists.
 - The target materializes the verified definition bundle and immutable host
   artifact without source-checkout access, and records definition/deployment
   plus workspace-composition manifest digests.
-- Dedicated mode rejects foreign workspace/agent selectors and ordinary
-  create/switch/delete before effects.
-- P5a proves authenticated runsc facts and host-side secret brokerage; direct,
-  bwrap, Vercel, fake, and unverified workers cannot satisfy production proof.
+- Cross-binding requests reject foreign hostname/workspace/agent selectors
+  before effects; hostname selection itself grants no authority.
+- Any demonstrated P5a slice proves only its readiness/secret seam; otherwise
+  P8 records that existing seams sufficed. P2 provider extraction is not part
+  of v1, but D1 still proves isolated-profile sibling filesystem/process
+  denial for the shared N-workspace host. Trusted-direct can prove only local
+  development or a single-workspace dedicated composition, never shared-host
+  isolation.
 - Identical reapply is a no-op. The proof changes and applies site-level desired
-  values, then rolls back the prior complete redacted D1 site snapshot/digest.
-  It compares restoration of exact hostname, bounded landing config, auth/
-  membership/owner binding, workspace/default-agent binding, roots/storage/
+  values, then rolls back the prior complete redacted D1 host snapshot/digest.
+  It compares restoration of the full site collection: hostnames, bounded
+  landing config, auth/membership/owner bindings, workspace/default-agent bindings, roots/storage/
   runtime desired inputs, immutable host artifact, workspace-composition
-  manifest/digest, definition/deployment, and secret reference names/status.
-  No secret value enters the snapshot or evidence, and the prior stateless P6-R
-  digest is reproduced.
+  manifest/digest, definition/deployment, and secret reference identities.
+  Fresh observed readiness/status is recorded separately and is not rollback
+  identity. No secret value enters the snapshot or evidence, and the prior stateless P6-R
+  digests are reproduced.
 - V1-owned removal markers are zero. A residual grep rejects public/product
   `runtime: 'none'` and pure-mode acceptance in product code and non-historical
   docs; explicit rejection tests and clearly marked historical sections are
@@ -53,11 +60,11 @@ above; deferred lanes contribute no v1 acceptance.
 > Phase: Phase 8 — Verification + cleanup · Work order: [TODO.md](./TODO.md) · Handoff: [HANDOFF.md](./HANDOFF.md)
 > Ordering authority: [INDEX.md](../../INDEX.md) · Vision: [VISION.md](../../VISION.md)
 
-## Governing architecture
+### Governing architecture
 - [07-tests-review-acceptance.md](../../architecture/07-tests-review-acceptance.md) — the tests/review/acceptance regime P8 sweeps to green (invariant scripts, import audits, full build+test).
 - [08-pluggable-agent-surfaces.md](../../architecture/08-pluggable-agent-surfaces.md) — the four-part surface contract + `createAgent()` façade P8 documents as the stable public API.
 
-## Design context
+### Design context
 Phase 8 is terminal v1 verification, not a deferred-deletion dump. Import
 migrations happen in their owner PRs; surviving markers reopen the owner. P8
 documents the public contract and runs the product golden path. It does not
@@ -65,12 +72,12 @@ require post-v1 presentation, mount, shared-tenancy, or control-plane work.
 V1 uses the D1 durable local/provider workspace volume; no FUSE/S3 proof is
 required.
 
-## Deliverables
+### Deliverables
 Assert zero removal markers, update package docs, run the v1 component gates,
-and execute the A1-to-D1 product proof through the real dedicated URL. Track
+and execute the A1-to-D1 product proof through two real URLs on one host. Track
 post-v1 work explicitly.
 
-## Exit criteria
+### Exit criteria
 - Zero `TODO(remove:*)` markers repo-wide, asserted by a check wired into `pnpm lint:invariants`.
 - `@hachej/boring-agent` README documents the four-part surface contract (08) + the `createAgent()` public runtime API as the stable public surface.
 - Remaining plan tasks converted into tracked beads/issues — nothing left only in prose.
@@ -80,9 +87,9 @@ post-v1 work explicitly.
   breakdown against the provisional 15-minute target, zero platform-source edits,
   source-checkout-independent materialization, all identity digests, idempotent
   reapply, complete-snapshot rollback, and secret-canary absence.
-- The exact HTTPS hostname serves only bounded landing content. Existing-member
-  sign-in reaches the one D1-managed workspace, every workspace-bearing server/
-  front selector is fixed to it, and its deployed agent is `default`.
+- Each exact HTTPS hostname serves only its bounded landing content. Existing-
+  member sign-in reaches the configured authorized workspace, cross-binding
+  selectors fail, and each workspace's deployed agent is `default`.
 - Workspace create/switch/delete and foreign selectors/claims fail across core,
   full-app MCP, runtime-plugin/plugin-front, pane-status, WorkspaceBridge,
   agent/session/file/UI paths; non-invite dedicated signup creates no workspace.

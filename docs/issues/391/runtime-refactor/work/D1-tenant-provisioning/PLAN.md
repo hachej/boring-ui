@@ -1,54 +1,132 @@
 # D1-tenant-provisioning — Plan
 
-Status: proposed v1 dedicated-delivery gate until decision 21 merges.
+Status: priority-1/v1 multi-agent Docker delivery gate; **needs-spec after
+P6-R**. Only D1-R0 in `TODO.md` is dispatchable until it produces accepted
+micro-beads. The active contract below supersedes the historical dedicated-site
+design.
 
-## Proposed workspace-first v1 plan (2026-07-10)
+## Active owner-reframed v1 plan (2026-07-11)
 
-D1 depends on A1, the narrow P2 runsc provider, narrow P5a facts, and stateless
-P6-R. It consumes A1's self-contained `CompiledAgentBundle`, minimal separate
-`AgentDeployment`, and the existing authorized workspace composition. P3, E1,
-T1/T2, M2, plugin snapshots, attachment catalogs, and P6 generation stores are
-not prerequisites.
+D1 depends on the landed A1 compiler, stateless P6-R, and only the narrow P5a Docker-host facts it
+actually consumes. It consumes A1's self-contained `CompiledAgentBundle`, the
+minimal separate `AgentDeployment`, and the existing authorized workspace and
+runtime composition. P2 provider extraction, runsc validation, X1 mounts, P3,
+E1, T1/T2, M2, plugin snapshots, attachment catalogs, and P6 generation stores
+are not prerequisites.
 
-V1 delivery includes one exact dedicated
-hostname (for example `insurance-comparison.senecapp.ai`), a minimal
-declarative landing page, and an authenticated handoff into the existing
-workspace app. The hostname selects one dedicated app/tenant/workspace
-deployment. Existing membership/invite authorization decides who may enter
-that workspace; the landing page never grants membership. The workspace routes
-v1 agent traffic to the deployed definition as its sole `default` agent. D1
-does not become D2's many-tenant shared-host router.
+V1 delivery is one Docker image/compose deployment hosting N compiled agent
+bundles and N authorized workspace bindings. Each configured exact hostname
+(for example `insurance-comparison.senecapp.ai`) serves bounded landing content
+and an authenticated handoff to one configured workspace. The hostname selects
+a site binding, never authorization. Existing membership/invite policy decides
+who may enter that workspace, and P6-R resolves the deployed definition selected
+as that workspace's `default` agent. Multiple site/workspace/default bindings
+share the same host process without sharing workspace authority, roots, or
+sessions. A dedicated VM running the same artifact is deployment variant 2,
+not a separate architecture or the v1 default.
+
+The v1 collection is boot-time/deploy-time configuration with idempotent
+apply/redeploy and rollback. D1 adds no wildcard router, runtime tenant CRUD or
+list API, hot tenant lifecycle, cross-tenant administration, billing, or fleet
+control plane. Those are D2/S3 concerns. Adding or changing a binding requires
+a new apply, not an in-process control-plane mutation.
+
+Host mutation is operator-only. V1 exposes no application HTTP management
+endpoint for plan/apply/publish/rollback. A local deployment CLI running with
+OS-level access to the host state/config performs those operations, records the
+requested operator reference and resulting host revision in the audit log, and
+uses the expected-revision/destructive-confirmation rules below. Workspace
+membership, hostname possession, bearer/API credentials, and an operator-ref
+string never grant host-mutation authority.
+
+Shared-host trust is explicit. Each binding uses a currently available
+production-approved runtime profile with proven workspace-root and process
+isolation; there is no direct/fake fallback. A trusted-direct profile is valid
+only for local development or a single-workspace dedicated composition. It is
+never valid for the shared N-workspace host, even when every definition, tool,
+and user belongs to one operator trust domain. If no profile proves sibling
+filesystem and process denial, shared-host apply fails closed or each site uses
+dedicated-VM variant 2. P2 later extracts providers and strengthens conformance
+without changing this D1 policy.
 
 ### Active deliverables
 
-- Plan/apply one exact-host dedicated site with bounded landing content.
-- Create/bind one managed workspace and use existing membership authorization.
-- Materialize the P6-D bundle/deployment and select it as workspace agent
-  `default` through stateless P6-R.
-- Select only the approved EU runsc runtime after narrow P5a authenticated
-  readiness; no direct/bwrap/Vercel/fake production fallback.
+- Plan/apply one Docker host with a collection of exact-host site bindings and
+  bounded landing content.
+- Normalize trusted proxy/Host input once. Reject duplicate hostnames,
+  workspaces, deployment ids, overlapping workspace/session roots, wildcard or
+  ambiguous hosts, and caller-supplied forwarding authority before effects.
+  V1 uses one hostname -> one workspace -> one deployed `default` binding.
+- Bind each site to one existing or managed workspace and use existing
+  membership authorization; hostname possession grants nothing.
+- Fence the existing workspace lifecycle surfaces on a bound hostname. After
+  authentication, workspace list returns only the bound workspace when the
+  principal is a member; create, switch to a foreign workspace, ordinary
+  delete, and personal-default auto-provision are disabled. A non-member fails
+  before list-time auto-creation or any workspace effect. The managed workspace
+  can be removed only by the operator D1 lifecycle.
+- Materialize each P6-D bundle/deployment and select it as that workspace's
+  agent `default` through stateless P6-R.
+- Before producing the canonical composition identity or publishing, validate
+  `capabilityRequirements`, `toolRefs`, `skillRefs`, and `mcpServerRefs`
+  against the actual final authorized workspace activation. Requirements never
+  grant authority. D1-R0 names the exact inventory seams; if a field has no
+  trustworthy inventory yet, non-empty declarations fail closed. Use one
+  stable `AGENT_COMPOSITION_REQUIREMENT_UNSATISFIED` error with redacted
+  `definitionId`, field, and ref details; do not create a requirement registry.
+- Use the existing approved workspace/runtime composition. P2 changes the
+  provider implementation later and cannot introduce a second D1 resolution
+  path or block the Docker host.
 - Keep session roots and workspace/runtime roots separate and durable.
-- Make apply idempotent and rollback to the prior complete redacted D1 site
-  snapshot/digest. It contains every desired-state input: exact hostname;
-  bounded landing configuration; auth, membership, and owner binding; managed
-  workspace/default-agent binding; root, storage, and runtime desired inputs;
-  immutable host artifact; exact workspace-composition manifest/digest;
-  definition/deployment identity; and secret reference names plus redacted
-  status only. It never contains secret values. Rollback rematerializes the
-  entire prior site state and reproduces the P6-R digest. This is D1 apply
-  history, not a P6 resolved-generation registry.
-- Publish DNS/TLS only after exact-host, workspace-scope, membership, default-
-  agent, runtime-readiness, and secret-canary checks pass.
+- Make host apply optimistic-concurrency safe. Input carries
+  `expectedHostRevision`; one atomic active-collection pointer advances only
+  after the entire candidate collection is materialized and ready. Stale apply
+  or rollback fails with a stable conflict code. Full-snapshot rollback creates
+  a new host revision from a prior immutable snapshot. If its diff removes or
+  replaces bindings added since that snapshot, the caller must explicitly
+  confirm the exact destructive binding ids against the current revision;
+  otherwise rollback rejects. CAS prevents unnoticed stale writes, not an
+  explicitly confirmed removal.
+- Compute a deterministic desired-state digest over the pinned host artifact,
+  storage/root inputs, and full site-binding collection. The snapshot contains
+  the full collection and,
+  for each site, hostname, landing config, auth/membership/owner binding,
+  workspace/default-agent binding, roots/runtime desired inputs, exact
+  workspace-composition identity/digest from the D1-R0-specified canonical
+  redacted producer, definition/deployment identity, and
+  secret reference identities only. Fresh redacted readiness/secret status is
+  an observed attestation that gates publication; it is not desired digest,
+  rollback identity, or P6-R input. No secret value is stored. Rollback
+  rematerializes the prior host collection and reproduces all P6-R digests.
+  No implementation bead is dispatchable until D1-R0 closes the current-code
+  gap: there is no canonical workspace-composition digest producer today.
+  This is D1 apply history, not a P6 generation registry.
+- Publish each DNS/TLS binding only after hostname, workspace scope,
+  membership, default-agent, runtime-isolation, host-readiness, and secret-
+  canary checks pass. A partial candidate never becomes externally reachable.
+- Prove that ordinary authenticated members and hostname holders cannot invoke
+  plan/apply/publish/rollback and that no host-mutation app route exists.
 
 ### Active exit
 
-One timed command proves bundle materialization without checkout access, exact
-hostname -> landing -> existing-member sign-in -> bound workspace -> deployed
-`default` agent on approved EU runsc, plus foreign selector denial, idempotent
-reapply, site-level desired-state mutation followed by exact full-site rollback,
-reproduced P6-R digest, and no raw secrets.
+One timed proof deploys at least two distinct agent bundles to one Docker host,
+maps them to distinct authorized workspaces/default bindings, and proves each
+exact hostname -> landing -> existing-member sign-in -> bound workspace ->
+deployed `default` agent. It also proves cross-hostname/workspace selector
+denial, idempotent reapply, collection-level mutation followed by exact host
+rollback, reproduced P6-R digests, and no raw secrets. The same artifact has a
+documented dedicated-VM composition, but v1 does not require a second live host.
+Concurrent stale apply/rollback, duplicate binding, proxy-host confusion, and
+overlapping roots fail before publication. Isolated profiles also prove sibling
+filesystem/process denial. Trusted-direct proves only the single-operator trust
+restriction and never claims tenant/process isolation.
 
-## Historical expanded durability design — non-dispatchable for v1
+## Historical dedicated-site durability design — non-dispatchable for v1
+
+Everything below this heading is retained as design history only. It must not
+reintroduce one-deployment-per-workspace, a P2/runsc gate, or a single-workspace
+host invariant into active D1 work. Dispatch uses the active section above and
+the ordering in `INDEX.md`.
 
 > Phase: Phase D1 - tenant provisioning command/API · Work order: [TODO.md](./TODO.md) · Handoff: [HANDOFF.md](./HANDOFF.md)
 > Ordering authority: [INDEX.md](../../INDEX.md) · Vision: [VISION.md](../../VISION.md) · PR plan: [PR-PLAN.md](../../PR-PLAN.md)

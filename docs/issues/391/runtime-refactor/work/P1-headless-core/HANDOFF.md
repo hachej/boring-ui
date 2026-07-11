@@ -18,11 +18,17 @@
 > - [ ] durable admission/idempotency is left to T1 unless a current named v1
 >       consumer demonstrates the requirement.
 >
-> Use [PR-PLAN.md](../../PR-PLAN.md) for the binding PR dispositions. The #543
-> correction and #616 (boundary-only recut of #547) are parallel current-main
-> leaves; both precede #575, then #576 lands lifecycle first and readiness
-> second. #547 is superseded/stopped. Retain the remaining checklist only as
-> post-v1 research history.
+> Use [PR-PLAN.md](../../PR-PLAN.md) for binding dispositions. #616/#622,
+> #626/#627/#630/#631 are landed. One current-main fail-closed readiness recut
+> follows. Do not dispatch #543, #566,
+> #568, #575, or old #576 lifecycle code. Retain the remaining checklist only
+> as post-v1 research history.
+>
+> P1-R closes only when both adapters inject binding-local readiness derived
+> from the final tool array, every unknown/unconfigured/not-started fact is
+> false, duplicate requirements are ordered-deduped, and disposed-before/during
+> probe tests preserve `AGENT_BINDING_DISPOSED`. Exact files and proof:
+> [`PR-PLAN.md`](../../PR-PLAN.md) "P1-R readiness micro-contract".
 
 ## Historical pure-mode checklist — non-dispatchable for v1
 

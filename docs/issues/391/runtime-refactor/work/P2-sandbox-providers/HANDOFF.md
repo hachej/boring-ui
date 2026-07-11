@@ -1,6 +1,18 @@
 # P2-sandbox-providers — Handoff checklist
 
-## Proposed narrow v1 handoff (2026-07-10)
+## Binding priority-4 handoff (2026-07-11)
+
+- [ ] M2/E2, T1, and T2 are complete before this recut merges.
+- [ ] D1 behavior and public contracts are unchanged; P2 was not added as a
+      D1/P8 prerequisite.
+- [ ] Provider extraction starts from #628 and proves honest EU isolation,
+      lifecycle, network, limit, image, cleanup, and authenticated facts.
+- [ ] Unknown facts fail closed, with no direct fallback and no X1 mount mixed
+      into the provider PR.
+- [ ] The isolated Sol branch was reconciled to current main only at its merge
+      gate; preparation was never recorded as landed state.
+
+## Historical narrow-v1 handoff — non-dispatchable
 
 ### Prerequisites
 

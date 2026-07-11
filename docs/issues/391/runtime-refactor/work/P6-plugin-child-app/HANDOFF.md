@@ -1,6 +1,6 @@
 # P6-plugin-child-app — Aggregate handoff checklist
 
-> **Superseded for v1 (2026-07-10).** This aggregate checklist is post-v1.
+> **Superseded for v1 (updated 2026-07-11).** This aggregate checklist is post-v1.
 > P6 v1 uses the corrected [P6-V1-HANDOFF.md](./P6-V1-HANDOFF.md); do not gate it
 > on E1, full P3, generic P5, or durable generation routing.
 
@@ -12,10 +12,8 @@ Derived from the binding 2026-07-09 v1 slice in [TODO.md](./TODO.md) and
 integration; the plugin-policy/child-app sections are post-v1.
 
 ## Prerequisites (packages + gates)
-- [ ] (P6-D) P1 merged.
-- [ ] (P6-R) E1, P5a, and P3 BBP3-020 merged; P6-R consumes the workspace-
-      level activation snapshot without owning plugin loading or per-agent
-      selection.
+- [ ] (Historical P6-D/P6-R rows only; not v1 authority) Use
+      `P6-V1-HANDOFF.md` for the landed P6-D and next stateless P6-R contract.
 - [ ] (P6b follow-up only) P6a beads landed (this package's P6a slice complete)
 - [ ] (P6b follow-up only) Shared child-app platform code export landed (expected type name `ResolvedChildAppContext`, #376; `docs/issues/376/plan.md` is only the plan today) — **HARD BLOCKED / STOP-and-report until it exists; no local fallback shape**
 
@@ -24,10 +22,8 @@ integration; the plugin-policy/child-app sections are post-v1.
 - GO/NO-GO: GO for P6a after P5; NO-GO for P6b until #376 exports the shared resolved child-app context type. P6b remains outside the #391 epic/P8 gate.
 
 ## Beads
-### V1
-- [ ] BBP6-009 — [P6-D] Separate AgentDefinition/AgentDeployment schemas + digest
-- [ ] BBP6-003 — [P6-D] Minimal immutable verified-bundle Map registry
-- [ ] BBP6-011 — [P6-R] Current pointer + durable immutable resolved generation
+### Historical v1 rows — superseded by `P6-V1-HANDOFF.md`
+- [ ] Do not dispatch or use these rows for closeout.
 
 ### Post-v1 plugin expansion
 - [ ] BBP6-002 — Import-free manifest requirements + skill filters

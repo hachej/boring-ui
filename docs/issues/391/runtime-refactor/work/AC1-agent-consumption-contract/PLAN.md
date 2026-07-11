@@ -5,8 +5,8 @@ Status: decision settled ([DECISIONS.md #22](../../../../DECISIONS.md#22-one-age
 [#636](https://github.com/hachej/boring-ui/issues/636). This stub reserves the
 workpackage; the issue owns scope detail.
 
-> Phase: Phase AC1 — agent consumption contract (types with P6-R; contracted
-> mode after ID1)
+> Phase: Phase AC1 — marketplace consumption contract (separate from P6-R;
+> contracted mode after ID1)
 > Ordering authority: [INDEX.md](../../INDEX.md) · Vision: [VISION.md](../../VISION.md)
 
 ## Goal
@@ -29,14 +29,15 @@ contracted consumption modes; governed-projection context flow.
 
 ## Sequencing
 
-- Contract types land with/before P6-R.
+- P6-R stays frozen and narrow. Issue #636 owns a separate contract-types
+  micro-PR after the cold-start resolver; no AC1 type lands inside BBP6-011.
 - Subagent mode near M1.
 - Contracted mode + projections gated behind ID1.
 
 ## Dependencies
 
-- P1 / P6-R — the contracts layer and deployment resolution the types land
-  beside.
+- P1 / P6-R — stable runtime and deployment seams the later contract binds to,
+  not implementation owners for AC1.
 - [ID1](../ID1-agent-identity/PLAN.md) — gates the contracted mode (external
   consumers are regular principals + workspaces).
 

@@ -2,7 +2,7 @@
 
 ISA here means **Intent, Strategy, Architecture**.
 
-> **Proposed v1 amendment (2026-07-10): workspace-first execution.** Decision
+> **Accepted v1 amendment (2026-07-10): workspace-first execution.** Decision
 > [21](../../../../DECISIONS.md#21-workspace-first-agent-factory-v1-supersedes-public-pure-mode)
 > supersedes the public `pure`, `runtime: 'none'`, and workspace-less v1 path
 > described in older sections of this pack. The long-term core remains
@@ -11,6 +11,16 @@ ISA here means **Intent, Strategy, Architecture**.
 > `headless` means no UI surface; it does not mean no workspace. Historical
 > pure/no-environment contracts below are post-v1 research unless a named
 > consumer and a stronger explicit contract pass the reintroduction gate.
+
+> **Binding topology amendment (2026-07-11).** Decision
+> [23](../../../../DECISIONS.md#23-multi-agent-docker-first-deployment-topology)
+> supersedes dedicated-tenant and runsc-first v1 sequencing below. V1 first
+> applies a finite boot/deploy-time collection of N exact-host -> authorized
+> workspace -> deployed-`default` bindings to one EU Docker image/compose host;
+> a dedicated VM running the same artifact is variant 2. P5a is conditional on
+> a D1-R0-demonstrated missing host seam. P2 provider extraction and X1 mounts
+> merge last. Older dedicated/runsc-first passages are historical context, not
+> dispatch authority.
 
 ## Intent
 
@@ -33,7 +43,7 @@ The owner's vision, in one sentence: **eve-style DECLARATIVE authoring that ship
   directory compiles to a self-contained content-addressed bundle containing a
   versioned behavior-only `AgentDefinition` and immutable referenced assets;
   the host combines it with a separate `AgentDeployment` and records an
-  immutable `ResolvedAgent` digest. Local development and D1 dedicated delivery
+  immutable `ResolvedAgent` digest. Local development and D1 multi-agent Docker delivery
   consume the same authored definition through workspace composition, so the
   minimal compiler is no longer deferred. The compiler does not invent a
   workspace-bundle schema: `agents/<name>/` remains the authoring shape.
@@ -52,7 +62,7 @@ Grounded in the owner's strategy (the boring-ui-factory brain); the epic builds 
 - **Horizon 2 — post 3+ repeats.** After the same SSO/governance/workroom pattern recurs across 3+ deployments, productize a **white-label "AI Analyst Workroom"** for consultancies/fiduciaries to resell; the **farm becomes client-facing**.
 - **Horizon 3 — 2027+.** A **hub-and-spoke** shape: a **free local CLI ⇄ hosted specialist agents** via **MCP delegation**, with **artifacts delivered cross-org**. This is the open-integration end state (foreign agents + the E2 MCP projection + `data-artifact`), not a near-term build.
 
-**Architecture rule: one deployable artifact; topology is the product line.** The same build may eventually run single-tenant self-host, managed sovereign tenant, shared tenant, or hub-and-spoke — the *topology* is the commercial choice, not a code fork. Version 1 proves only the dedicated EU topology. It must not force marketplace, billing, FUSE, or a shared multi-tenant control plane while keeping later adapters possible.
+**Architecture rule: one deployable artifact; topology is the product line.** The same build may eventually run single-tenant self-host, managed sovereign tenant, shared tenant, or hub-and-spoke — the *topology* is the commercial choice, not a code fork. Version 1 proves one EU Docker image/compose host with N exact-host/workspace/default-agent bindings; a dedicated VM is the second composition. It must not force marketplace, billing, FUSE, or a shared multi-tenant control plane while keeping later adapters possible.
 
 **Open tension (verbatim-ish, owner to resolve):** the current STRATEGY.md leans to a **managed retainer** default, while the older decision log has **clients owning ops** (self-hosted handoff). The architecture **supports both** (one artifact, either topology); the **commercial default is TBD by the owner** — the plan pack does not pick one.
 
@@ -70,8 +80,9 @@ Grounded in the owner's strategy (the boring-ui-factory brain); the epic builds 
 Non-negotiable: `@hachej/boring-agent` has **zero value imports** from `@hachej/boring-bash` **or `@hachej/boring-sandbox`** (it defines the contracts both consume, and imports neither). Bash + sandbox are injected by host/CLI/composition. **Acyclic layering (owner-ruled):** `boring-sandbox → boring-agent` (types only); `boring-bash → boring-sandbox` (values) `+ boring-agent` (types). boring-bash is THE RUNTIME (the CHOICE of sandbox, `resolveMode`); boring-sandbox is sandbox management (providers, FUSE-S3 mounts, lifecycle, capability facts).
 
 Provisioning ownership rule: v1 does not move the generic provisioning engine.
-Narrow P5a extends only the existing D1-consumed runsc readiness,
-fingerprinting, authenticated-worker, and secret-brokerage seams. The host owns
+D1-R0 first proves whether the Docker host lacks a readiness or secret-
+brokerage seam; only a demonstrated gap permits a narrow P5a slice. P5a does
+not select a sandbox provider or make runsc a D1 prerequisite. The host owns
 authority, orchestration, prepared resources, and disposal; agent consumes only
 bound tools, prompt/readiness inputs, input handling, and methodless facts.
 Post-v1, a named second consumer may justify moving requirement normalization

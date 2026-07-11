@@ -26,40 +26,45 @@ Decision 21 is now **accepted** (2026-07-11, via #617).
 2026-07-11 plan-review findings/unknowns ledger (reality-sync vs main,
 stacked-PR trap, open questions).
 
-The v1 critical path is now the smallest path to the dedicated proof:
+The owner-approved execution path is:
 
 ```txt
-P0/accepted decision 21 -> P6-D -> A1-compile -----------┐
-P0 -> P1 boundary -> P2(runsc minimum) -> P5a(minimum) --┼-> P6-R -> A1-dev -> D1 -> P8
-                                                          ┘
+P0 -> P1 ----------------------┐
+P0 -> P6-D --------------------┼-> P6-R -> D1-R0 ----------------┐
+          \-> A1-compile ----------------------┬-> D1 beads(+P5a) ┼-> P8
+                                               \-> producer -> A1-dev
+
+D1 -> M1 recuts -> AR1 -> M2/E2 -> T1/T2 -> P2/X1
 ```
 
-T1/T2, full P3 extraction, generic E1 attachments, and true no-environment
-execution remain documented post-v1. [`INDEX.md`](INDEX.md) owns exact ordering;
-[`OWNER-REVIEW.md`](OWNER-REVIEW.md) owns the stopped/reworked PR disposition.
+Full P3 extraction, generic E1 attachments, and true no-environment execution
+remain deferred. P2/X1 is the final ordered infrastructure increment, not a
+v1 prerequisite. [`INDEX.md`](INDEX.md) owns exact ordering;
+[`PR-PLAN.md`](PR-PLAN.md) owns current PR disposition. The former
+[`OWNER-REVIEW.md`](OWNER-REVIEW.md) card is historical review evidence and is
+not dispatch authority.
 
 ## Delivery policy (2026-07-09)
 
 #391 now ships in increments. The broad platform vision remains directional,
-but it is not one merge gate. The dedicated v1 journey is binding; the older
-Release 0 wording names an optional tracer, not a prerequisite:
+but it is not one merge gate. Decision 23 makes the multi-agent Docker journey
+binding and dedicated VM the second deployment composition:
 
-1. **Optional R0/M1 tracer:** after the safe `createAgent()` boundary, a
-   bearer-authenticated managed-MCP path may provide bounded, self-contained
-   stock-client proof. It is an outreach leaf and does not block v1.
-2. **Version 1 agent factory:** compile a small agent directory into a
+1. **Version 1 multi-agent factory host:** compile small agent directories into
    self-contained, content-addressed `CompiledAgentBundle`, run that exact
-   bundle in an explicit local workspace/runtime, and deploy it without platform-source edits to one dedicated
-   EU hostname whose landing/auth flow enters an authorized workspace with that
-   deployment selected as agent `default`.
-3. **Later increments:** durable transports, full runtime-route extraction,
-   generic environment attachments, true no-environment execution, shared
-   tenancy, FUSE/S3, external environment projection, control-plane UX, hosted
-   child apps, and advanced plugin/runtime generality remain documented but do
-   not gate v1.
+   bundle in an explicit local workspace/runtime, and deploy N bundles without
+   platform-source edits to one EU Docker host. Each exact hostname's
+   landing/auth flow enters an authorized workspace with its deployment
+   selected as agent `default`.
+2. **External consumption:** recut M1, specify AR1 shareable artifacts, then
+   graduate M2/E2 without P7/T2/E1 gates.
+3. **Channels, then infrastructure:** recut T1/T2 for multi-channel use; merge
+   P2 provider extraction and X1 mounts last. Full P3, generic E1, D2 control
+   plane, hosted child apps, and advanced plugin/runtime generality remain
+   deferred.
 
 Current verified ancestry: workspace-first boundaries #616/#617/#622, P6-D
-#623, A1 compile #624, P1 core/local lifecycle #626/#627, and structural-only
+#623, A1 compile #624, P1 core/local/Pi/request lifecycle #626/#627/#630/#631, and structural-only
 runsc preflight #628 are on main. #628 reports `productionReady: false`; it is
 not provider-parity evidence. See the dated review ledger for the remaining
 facts, recommendations, and owner decisions.
