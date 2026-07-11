@@ -1387,22 +1387,22 @@
         docs: [["Plan", "work/P5-provisioning-secrets/PLAN.md"], ["TODO", "work/P5-provisioning-secrets/TODO.md"], ["V1 handoff", "work/P5-provisioning-secrets/P5A-HANDOFF.md"]]
       },
       {
-        id: "p6r", phase: "P6-R", title: "Workspace-backed resolution", category: "critical", status: "deferred",
+        id: "p6r", phase: "P6-R", title: "Workspace-backed resolution", category: "critical", status: "merged",
         subtitle: "Bind definition plus host deployment to one authorized host-attested composition identity.",
         starts: "P6-D + P1 lifecycle/readiness",
         outcome: "One immutable resolved value over a verified bundle/deployment plus a host-attested composition digest and explicit default binding.",
         boundary: "No generation store, environment registry, plugin loader, per-agent plugin selection, or new workspace bundle schema.",
-        gate: "P6-R is deterministic over its inputs; D1-R0 must specify the missing canonical redacted composition-digest producer before D1 claims reproducible rollback.",
+        gate: "P6-R is deterministic over its inputs; D1-001 owns the missing canonical redacted composition-digest producer before D1 claims reproducible rollback.",
         docs: [["Plan", "work/P6-plugin-child-app/PLAN.md"], ["TODO", "work/P6-plugin-child-app/TODO.md"], ["V1 handoff", "work/P6-plugin-child-app/P6-V1-HANDOFF.md"]]
       },
       {
-        id: "d1", phase: "D1", title: "Multi-agent EU Docker delivery", category: "critical", status: "needs-spec",
-        subtitle: "Needs-spec after P6-R; only the D1-R0 host-collection tracer is dispatchable.",
-        starts: "D1-R0 needs-spec after the A1 compiler and P6-R; narrow P5a only if demonstrated",
-        outcome: "One Docker host, N exact-host landings, member auth, authorized workspace/default bindings, idempotent collection apply, and complete host rollback.",
+        id: "d1", phase: "D1", title: "Multi-agent EU Docker delivery", category: "critical", status: "active",
+        subtitle: "D1-R0 passed adversarial review; micro-beads dispatch after the spec merges.",
+        starts: "Merge D1-R0-SPEC, then D1-001; P2/runsc and P5a are not gates",
+        outcome: "One Docker host, N exact-host landings, member auth, authorized workspace/default bindings, uninterrupted additive apply, and rollback as a new revision.",
         boundary: "Host mutation is an OS-authorized local CLI only. Bound hostnames fence existing workspace list/create/switch/delete/default-auto-create paths; no app management API.",
-        gate: "Two bindings, final-activation requirement validation, ordinary-member host-mutation denial, workspace lifecycle fences, shared-host sibling isolation, cross-binding denial, reapply/rollback, and no-secret proof. Dedicated VM is documentation/config-render only.",
-        docs: [["Plan", "work/D1-tenant-provisioning/PLAN.md"], ["TODO", "work/D1-tenant-provisioning/TODO.md"], ["Handoff", "work/D1-tenant-provisioning/HANDOFF.md"]]
+        gate: "Three bindings, final-activation requirement validation, ordinary-member host-mutation denial, workspace lifecycle fences, stable-process N+1 continuity, active-replacement refusal, shared-host sibling isolation, cross-binding denial, rollback-as-new-revision, and no-secret proof. Dedicated VM is documentation/config-render only.",
+        docs: [["R0 spec", "work/D1-tenant-provisioning/D1-R0-SPEC.md"], ["Plan", "work/D1-tenant-provisioning/PLAN.md"], ["TODO", "work/D1-tenant-provisioning/TODO.md"], ["Handoff", "work/D1-tenant-provisioning/HANDOFF.md"]]
       },
       {
         id: "p8", phase: "P8", title: "V1 verification", category: "critical", status: "deferred",

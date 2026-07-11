@@ -9,15 +9,14 @@ shims) remains binding.
 
 | Order | Work package | Dispatch state | Exact next slice |
 | --- | --- | --- | --- |
-| 1 | #631 | **merged; ancestry verified** | Request-binding lifecycle is complete; do not replay the discarded recut worktree. |
-| 2 | P1 readiness recut | **ready now** | One current-main fail-closed readiness PR only; exclude #566/#568/#575 and all superseded lifecycle code. |
-| 3 | P6-R / BBP6-011 | ready after P1 | One pure binding resolver per the exact micro-contract below. |
-| 4 | D1-R0 | needs-spec after P6-R | Trace one boot-time Docker collection with two bindings, then write exact D1 implementation beads; do not dispatch historical dedicated/runsc beads. |
-| 5 | D1 composition producer -> A1-dev | blocked on D1-R0 micro-plan | Implement the one canonical redacted producer in its D1-owned bead; then recut A1 local dev against that exact host seam. A1-dev gates P8, not D1. |
-| 6 | P5a | conditional inside D1 | Add only a demonstrated secret-ref or host-readiness seam; D1 owns apply/digest/rollback. |
-| 7 | M1 -> AR1 -> M2/E2 | ordered priority 2 | Recut #549/#556 with authorized complete-byte artifact output and stable no-path rejection, accept AR1-001, then recut canonical MCP/artifact intake. |
-| 8 | T1 -> T2 | ordered priority 3 | Recut after priority-2 consumer proof. |
-| 9 | P2 -> X1 | ordered priority 4 | Sol P2 may prepare in isolation, but provider/mount work merges last. |
+| 1 | #631 + P1 readiness | **merged; ancestry verified** | Request-binding lifecycle and fail-closed readiness are complete; do not replay discarded/superseded stacks. |
+| 2 | P6-R / BBP6-011 | **merged; ancestry verified** | The pure one-binding resolver is complete; D1 obtains N agents through N independent calls. |
+| 3 | D1-R0 | **accepted; merge pending** | Merge [`D1-R0-SPEC.md`](work/D1-tenant-provisioning/D1-R0-SPEC.md), then dispatch D1-001 through D1-006 in order. Historical dedicated/runsc beads remain non-dispatchable. |
+| 4 | D1 composition producer -> A1-dev | D1-001 first | D1-001 implements the canonical redacted producer beside the real full-app composition; then recut A1 local dev against that exact host seam. A1-dev gates P8, not D1. |
+| 5 | P5a | conditional inside D1 | Add only a demonstrated secret-ref or host-readiness seam; D1 owns apply/digest/rollback. |
+| 6 | M1 -> AR1 -> M2/E2 | ordered priority 2 | Recut #549/#556 with authorized complete-byte artifact output and stable no-path rejection, accept AR1-001, then recut canonical MCP/artifact intake. |
+| 7 | T1 -> T2 | ordered priority 3 | Recut after priority-2 consumer proof. |
+| 8 | P2 -> X1 | ordered priority 4 | Sol P2 may prepare in isolation, but provider/mount work merges last. |
 
 ### P1-R readiness micro-contract — current dispatch slice
 
@@ -98,8 +97,12 @@ shims) remains binding.
 
 ### D1-R0 planning tracer
 
-After P6-R, inspect the actual host composition and produce active D1 beads with
-exact files, stable errors, proof, and review budgets. The tracer must lock:
+The accepted output of this tracer is
+[`D1-R0-SPEC.md`](work/D1-tenant-provisioning/D1-R0-SPEC.md). On merge it locks
+exact files, stable errors, proof, and review budgets. Its host-revision design
+keeps the current one-process N-binding composition: the first slice publishes
+only additive/landing-only revisions, rejects active binding replacement, and
+performs N independent P6-R calls; agents are not per-container. It also locks:
 boot-time collection only; canonical host/proxy parsing; unique hostname,
 workspace, deployment, and non-overlapping roots; explicit shared-host trust
 profile; expected host revision; atomic active-collection publication; desired
@@ -110,8 +113,9 @@ auto-provision paths; validation of definition capability/tool/skill/MCP refs
 against the final activation;
 identify the current composer inputs and specify the smallest canonical redacted
 workspace-composition identity/digest producer before claiming reproducible
-apply/rollback; and no wildcard/CRUD/hot-tenant control plane. Until that spec is accepted,
-D1 and P5a are `needs-spec`, not implementation assignments.
+apply/rollback; and no wildcard/CRUD/hot-tenant control plane. Until that spec
+is accepted, D1 implementation remains blocked. P5a remains conditional, not a
+D1 or D1-R0 gate.
 
 ---
 
