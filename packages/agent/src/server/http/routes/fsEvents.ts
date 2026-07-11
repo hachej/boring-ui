@@ -37,6 +37,7 @@ import {
 interface FsEventsRouteOptions {
   workspace?: Workspace
   getWorkspace?: (request: FastifyRequest) => Workspace | Promise<Workspace>
+  deferLeaseRelease?: (request: FastifyRequest) => void
 }
 
 interface BroadcasterEntry {
@@ -54,13 +55,18 @@ export function fsEventsRoutes(
   // request-scoped workspace id.
   const broadcasters = new Map<string, BroadcasterEntry>()
 
-  const ensureBroadcaster = async (request: FastifyRequest): Promise<
+  const ensureBroadcaster = async (
+    request: FastifyRequest,
+    isTransportClosed: () => boolean,
+  ): Promise<
     | { workspaceId: string; entry: BroadcasterEntry }
     | { unsupported: { reason: string; message?: string } }
+    | undefined
   > => {
     const workspace = opts.getWorkspace
       ? await opts.getWorkspace(request)
       : opts.workspace
+    if (isTransportClosed()) return undefined
     if (!workspace) throw new Error('fs event route requires workspace or getWorkspace')
     if (typeof workspace.watch !== 'function') {
       return { unsupported: { reason: 'watch_not_implemented' } }
@@ -73,6 +79,7 @@ export function fsEventsRoutes(
     // observe over-sized trees — relay that to the client as
     // `unsupported` so it falls back instead of waiting forever.
     const readiness: WorkspaceWatcherReadiness = (await watcher.whenReady?.()) ?? { ok: true }
+    if (isTransportClosed()) return undefined
     if (!readiness.ok) {
       return { unsupported: { reason: readiness.reason, ...(readiness.message ? { message: readiness.message } : {}) } }
     }
@@ -102,11 +109,24 @@ export function fsEventsRoutes(
   })
 
   app.get('/api/v1/fs/events', async (request, reply) => {
-    const resolved = await ensureBroadcaster(request)
-    reply.hijack()
-    setupSse(request, reply.raw)
+    let transportClosed = request.raw.aborted
+    let closeStream: (() => void) | undefined
+    const onTransportClose = () => {
+      request.raw.off('aborted', onTransportClose)
+      reply.raw.off('close', onTransportClose)
+      transportClosed = true
+      closeStream?.()
+    }
+    request.raw.once('aborted', onTransportClose)
+    reply.raw.once('close', onTransportClose)
+
+    const resolved = await ensureBroadcaster(request, () => transportClosed)
+    if (!resolved) return
 
     if ('unsupported' in resolved) {
+      if (transportClosed) return
+      reply.hijack()
+      setupSse(request, reply.raw)
       writeSse(reply.raw, 'unsupported', resolved.unsupported)
       reply.raw.end()
       return
@@ -114,9 +134,27 @@ export function fsEventsRoutes(
     const { workspaceId, entry } = resolved
     entry.subscribers += 1
 
+    let sub: ReturnType<FsEventBroadcaster['subscribe']> | undefined
+    let heartbeat: ReturnType<typeof setInterval> | undefined
+    let cleanedUp = false
+    const cleanup = () => {
+      if (cleanedUp) return
+      cleanedUp = true
+      if (heartbeat) clearInterval(heartbeat)
+      sub?.unsubscribe()
+      releaseBroadcaster(workspaceId, entry)
+    }
+    closeStream = cleanup
+    if (transportClosed) {
+      cleanup()
+      return
+    }
+
+    reply.hijack()
+    setupSse(request, reply.raw)
+
     const lastSeenSeq = parseLastEventId(request.headers['last-event-id'])
 
-    let sub: ReturnType<FsEventBroadcaster['subscribe']>
     try {
       sub = entry.broadcaster.subscribe(
         (env) => writeChange(reply.raw, env),
@@ -126,12 +164,21 @@ export function fsEventsRoutes(
         },
       )
     } catch (error) {
-      releaseBroadcaster(workspaceId, entry)
+      cleanup()
       request.log.error({ err: error }, 'fs events subscribe failed')
-      writeSse(reply.raw, 'error', { reason: 'subscribe_failed' })
-      reply.raw.end()
+      if (!transportClosed) {
+        writeSse(reply.raw, 'error', { reason: 'subscribe_failed' })
+        reply.raw.end()
+      }
       return
     }
+
+    if (transportClosed) {
+      cleanup()
+      return
+    }
+
+    opts.deferLeaseRelease?.(request)
 
     if (sub.resyncRequired) {
       writeSse(reply.raw, 'resync-required', {})
@@ -147,15 +194,10 @@ export function fsEventsRoutes(
     // Heartbeat — proxies (Vercel, nginx) idle-close SSE connections
     // after ~30s. A comment line keeps the socket alive without
     // showing up in the EventSource stream.
-    const heartbeat = setInterval(() => {
+    heartbeat = setInterval(() => {
       try { reply.raw.write(': heartbeat\n\n') } catch { /* ignore */ }
     }, 25_000)
-
-    request.raw.on('close', () => {
-      clearInterval(heartbeat)
-      sub.unsubscribe()
-      releaseBroadcaster(workspaceId, entry)
-    })
+    if (transportClosed) cleanup()
   })
 
   done()

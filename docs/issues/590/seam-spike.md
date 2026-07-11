@@ -257,9 +257,11 @@ Build CRUD + read-only history UI against Slice 1 routes. This does not depend o
 
 ### Slice 5 — Hosted persistence and actor composition
 
-**Status:** `ready-for-human`.
+**Status:** owner decisions recorded; implementation is split into hosted persistence infrastructure and actor composition.
 
-**Delivers after decision:** plugin-backed Postgres store, migration registration, verified actor resolver, owner reassignment/fail-closed behavior, and scheduled-occurrence lease.
+**Owner decisions:** deployment-owned explicit migration registration; scheduled usage is attributed to the automation creator; hosted runs execute as and remain owned by the creator and fail closed if creator authorization is unavailable.
+
+**Delivers:** plugin-backed Postgres store, migration registration, verified actor resolver, owner reassignment/fail-closed behavior, and scheduled-occurrence lease.
 
 ### Slice 6 — Hosted platform trigger
 
@@ -292,12 +294,12 @@ Manual validation for the next execution slice:
 - `Agent.send()` currently generates the Pi client nonce internally, so billing-ledger run correlation is not available to the plugin.
 - Live usage aggregation can remain incomplete after host crash.
 - Hosted migration registration has no current plugin precedent.
-- Scheduled-owner billing/reassignment needs owner approval.
+- Creator authorization must be re-checked at execution time; ownership changes must fail closed rather than silently impersonate a new user.
 - External trigger authentication must be designed before public deployment.
 
 ## Loop exit
 
 - `ready-for-agent`: Slice 2 UI, Slice 3A generic dispatcher, and then Slice 3B local manual executor.
-- `ready-for-human`: hosted migration registration choice, scheduled billing principal, and hosted automation role policy.
-- First blockers for hosted work: owner decisions on migration registration, billing identity, and hosted automation role policy.
+- `ready-for-human`: hosted actor composition and authenticated platform trigger design.
+- First remaining hosted blocker: compose the verified creator actor/store into full-app routes and executor, then design the service-principal trigger.
 - Next recommended implementation: Slice 2 UI can proceed independently; for execution, start Slice 3A.

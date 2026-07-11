@@ -67,9 +67,9 @@ Canonical plan: [`plan.md`](./plan.md)
 - [x] Confirm first-pass token attribution from live Pi usage events.
 - [x] Record decisions in `docs/issues/590/seam-spike.md`.
 - [x] Re-plan execution and hosted slices from those findings.
-- [ ] Owner decision: app-owned explicit plugin migration registration vs generic trusted-plugin migrations.
-- [ ] Owner decision: scheduled usage billing owner vs future workspace billing account.
-- [ ] Owner decision: hosted automation role policy and reassignment permissions.
+- [x] Owner decision: deployment-owned explicit plugin migration registration.
+- [x] Owner decision: scheduled usage is attributed to the automation creator.
+- [x] Owner decision: hosted automation executes as and remains owned by the creator; fail closed if creator authorization is unavailable.
 
 ## Slice 2 — front UI
 
@@ -88,6 +88,8 @@ Canonical plan: [`plan.md`](./plan.md)
 - [x] Slice 4: pure five-field cron/IANA timezone due policy with current-minute/no-backfill and DST coverage.
 - [x] Externally invoked loopback-only folder-mode trigger; no hidden timer or hosted scheduling.
 - [x] Atomic scheduled-occurrence deduplication, overlap skips, restart reconciliation, safe result DTOs, and per-item failure isolation.
-- [ ] Slice 5: hosted persistence, verified actor composition, and duplicate-run lease after owner decisions.
+- [ ] Slice 5: hosted persistence, verified actor composition, and duplicate-run lease.
+  - [x] Deployment-owned migration callback and hosted Postgres schema/store with creator ownership columns.
+  - [ ] Compose verified creator actor resolver and hosted store into full-app routes/executor.
 - [ ] Slice 6: authenticated hosted platform trigger.
 - [ ] Final UI polish.

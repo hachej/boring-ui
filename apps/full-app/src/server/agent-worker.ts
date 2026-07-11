@@ -1,13 +1,7 @@
-import Fastify from 'fastify'
-
-import { loadWorkerConfig } from './worker/config.js'
-import { registerWorkerRoutes } from './worker/routes.js'
+import { createWorkerServer } from '@hachej/boring-agent/server/worker'
 
 export async function createAgentWorkerApp() {
-  const config = loadWorkerConfig()
-  const app = Fastify({ logger: true, bodyLimit: 20 * 1024 * 1024 })
-  await registerWorkerRoutes(app, config)
-  return { app, config }
+  return createWorkerServer()
 }
 
 if (import.meta.url === `file://${process.argv[1]}`) {
