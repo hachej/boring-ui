@@ -15,7 +15,7 @@ import { loadPlugins } from './harness/pi-coding-agent/pluginLoader'
 import { buildFilesystemAgentTools } from './tools/filesystem'
 import { buildHarnessAgentTools } from './tools/harness'
 import { createAuthMiddleware } from './http/middleware'
-import type { PiChatSessionService } from './http/routes/piChat'
+import type { PiChatSessionService } from '../core/piChatSessionService'
 import { InMemorySessionChangesTracker } from './http/sessionChangesTracker'
 import { createRuntimeReadyStatusTracker } from './runtime/modeReadiness'
 import type { AgentMeteringSink } from './pi-chat/metering'
@@ -164,12 +164,17 @@ export async function createAgentApp(
       app,
       modeAdapter,
     )
-    const dispose = profile.dispose
-    let disposed = false
-    disposeProfile = async () => {
-      if (disposed) return
-      disposed = true
-      await dispose?.()
+    const disposeBinding = profile.dispose
+    let disposal: Promise<void> | undefined
+    disposeProfile = () => {
+      disposal ??= (async () => {
+        try {
+          await disposeBinding?.()
+        } finally {
+          await modeAdapter?.dispose?.()
+        }
+      })()
+      return disposal
     }
     profile.dispose = disposeProfile
 

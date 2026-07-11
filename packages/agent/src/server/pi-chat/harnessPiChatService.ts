@@ -5,8 +5,13 @@ import type { BoringChatMessage, BoringChatPart, ChatError, FollowUpPayload, Fol
 import { sessionStreamPath, type AgentEvent } from '../../shared/events'
 import { ErrorCode } from '../../shared/error-codes'
 import { formatOffset, parseOffset, type EventStreamStore } from '../events/eventStreamStore'
-import type { PiChatSessionService, PiChatEventSubscriber, PiChatEventStreamResult } from '../http/routes/piChat'
-import type { PiSessionCreateInit, PiSessionRequestContext } from './piSessionIdentity'
+import type {
+  PiChatEventStreamResult,
+  PiChatEventSubscriber,
+  PiChatSessionService,
+  PiSessionCreateInit,
+  PiSessionRequestContext,
+} from '../../core/piChatSessionService'
 import type { PiAgentPromptInput, PiAgentSessionAdapter } from './PiAgentSessionAdapter'
 import { buildPiChatQueuedFollowUps, buildPiChatSnapshot } from './piChatSnapshot'
 import { PiChatEventMapper } from './piChatEvents'
