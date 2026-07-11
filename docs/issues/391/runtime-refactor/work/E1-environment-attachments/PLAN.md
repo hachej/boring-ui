@@ -1,6 +1,15 @@
 # E1-environment-attachments — Plan
 
-## V1 ownership correction (binding, 2026-07-09)
+> **Post-v1 work order (2026-07-10).** Generic attachable environments are not
+> a v1 gate. V1 uses the current authorized workspace/runtime composition and
+> implements only the D1/runsc facts it actually consumes. Retain the contracts
+> below as future design; do not dispatch E1 to unblock A1 or P6-R.
+> Every pure/no-environment, `runtime: 'none'`, or workspace-less clause below
+> is void historical text. Reopening E1 requires a named second attachment
+> consumer and a new decision/re-specification; v1 does not define an empty-
+> attachment mode.
+
+## Historical ownership design (non-dispatchable for v1)
 
 Prepared operation-bearing attachments remain host/boring-bash objects. One
 host-owned `ScopedFilesystemRuntimeBindingManager` prepares each attachment once

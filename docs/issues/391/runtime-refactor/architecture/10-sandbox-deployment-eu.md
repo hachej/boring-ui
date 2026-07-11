@@ -50,10 +50,17 @@ The validator accepts one exact operator-approved hostname and bounded escaped
 landing text. Principal refs resolve only in the trusted host. This spec is
 included in D1 desired-state digesting and rollback, but is not part of
 `AgentDefinition` or `AgentDeployment` and grants no runtime/workspace
-authority. The provisioned workspace plus D1 active-generation pointer remain
-the authority for the selected `default` agent.
+authority. The provisioned workspace plus D1's active complete site record
+remain the authority for the selected `default` agent. This is D1 apply state,
+not a P6 resolved registry or generation pointer.
 
-After apply, the complete generation exposes a server-only
+D1's complete redacted deployment snapshot pins the definition/deployment
+identities, runtime desired inputs, immutable host-app artifact, and exact
+workspace-composition manifest/digest consumed by stateless P6-R. Rollback
+rematerializes those exact inputs and reproduces the resolved digest. P6 owns no
+snapshot store, active pointer, generation lease, or garbage collector.
+
+After apply, the active complete site record exposes a server-only
 `DedicatedWorkspaceScope { appId, workspaceId, agentId: 'default' }`. Dedicated
 app composition intersects every workspace-bearing route and front selection
 with this scope: list returns only the bound member workspace; create/switch/
@@ -73,18 +80,18 @@ emits a non-caller-forgeable `DedicatedSiteCapability` attestation only when the
 fixed-workspace enforcement and landing/sign-in/default-agent surface are both
 installed at named contract versions. The attestation binds target key, fencing
 token, staged desired-state digest, exact app/hostname/workspace/agent binding,
-host-app artifact digest, and activated-plugin snapshot digest. It is never a
+host-app artifact digest, and workspace-composition manifest digest. It is never a
 caller-supplied record: an in-process staged host returns an opaque handle from
 an unexported mint; a remote staged host returns a nonce-, issuer-, audience-,
 expiry-, and contract-version-bound response directly over P5a's pinned-TLS
 authenticated worker channel. Publication and pointer CAS validate provenance
-and every field against the current staged generation; an old generation,
-caller, or another target cannot forge/replay it.
+and every field against the current staged D1 apply; an old apply/fence, caller,
+or another target cannot forge/replay it.
 
 For first apply, the route/certificate may be prepared but external exact-host
 activation happens only after the completion is appended and
-`currentCompleteGeneration` CAS selects the safe scoped generation. A reserved
-D1 host with no matching complete pointer is an explicit inactive state that
+the active complete site-record CAS selects the safe scoped deployment. A reserved
+D1 host with no matching complete record is an explicit inactive state that
 rejects before generic routing. On reapply the prior complete pointer remains
 the scope authority until the replacement CAS. Without a matching attestation,
 apply may stage artifacts but must not advance the pointer or publish DNS/TLS.
@@ -98,8 +105,11 @@ EU runsc host. The fake provider remains only for deterministic fault semantics.
 
 **Amendment (2026-07-08):** name the two factory tiers explicitly:
 **D1 = dedicated/sovereign**, and **D2 = shared subdomain**. They are deployment
-topologies over the same runtime stack and the same `WorkspaceAgentsDeclaration`,
-not separate agent-definition systems.
+topologies over the same runtime stack and definition/deployment contracts, not
+separate agent-definition systems. P6-D owns immutable definition lookup only
+and P6-R remains stateless. P7 owns the first registry of P6-R outputs. D2 alone
+owns `SharedTenantAgentDeclaration`, consumes the P7 registry, and is not a D1
+input. Phase 6 owns no resolved registry or shared-tenant declaration.
 
 | Topology | Shape | Work package | Use for |
 | --- | --- | --- | --- |

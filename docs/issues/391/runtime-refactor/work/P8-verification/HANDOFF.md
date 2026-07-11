@@ -1,5 +1,46 @@
 # P8-verification — Handoff checklist
 
+## Proposed reduced v1 handoff (2026-07-10)
+
+### Prerequisites
+
+- [ ] P1 workspace/Fastify boundary is complete.
+- [ ] P6-D schemas/digests/lookup and A1 compile are complete.
+- [ ] A1 local dev proves an explicit authorized workspace and approved runtime.
+- [ ] Narrow P2 EU runsc, narrow P5a, stateless P6-R, and D1 are complete.
+- [ ] T1/T2, full P3, E1, M2, plugin snapshots/scoped registrars, attachment
+      catalogs, and P6 generation stores are not treated as prerequisites.
+
+### Review/proof
+
+- [ ] V1-owned `TODO(remove:*)` markers are zero; a live marker reopens its
+      reduced-slice owner rather than becoming P8 cleanup.
+- [ ] Applicable core/package/import invariants and #416 contracts are green;
+      no gates are invented for deferred relocations.
+- [ ] Package docs describe only what shipped: workspace-backed core,
+      definition/deployment bundle, explicit local workspace/runtime, and D1.
+- [ ] One <=900-second command proves compile -> local workspace-backed turn ->
+      D1 apply -> exact HTTPS landing -> existing-member sign-in -> managed
+      workspace -> deployed `default` agent on real approved EU runsc.
+- [ ] Evidence records source-independent bundle/host materialization, foreign-
+      selector and workspace-lifecycle denial, and idempotent reapply. It then
+      mutates site-level desired values and proves rollback restores every field
+      in the prior complete redacted D1 site snapshot/digest: hostname, landing,
+      auth/membership/owner and workspace/default bindings, roots/storage/
+      runtime, host artifact, composition, definition/deployment, and secret ref
+      names/status only. The prior P6-R digest is reproduced and no secret value
+      appears.
+- [ ] Direct/bwrap/Vercel/fake/unverified production paths fail the proof.
+- [ ] Post-v1 lanes are tracked and do not block closeout.
+
+### Exit
+
+- [ ] The exact workspace-first product journey succeeds and all reduced
+      negative proofs pass.
+- [ ] No T1/T2/full-P3/E1/generation/plugin-snapshot acceptance is claimed.
+
+## Historical 2026-07-09 handoff — non-dispatchable for v1
+
 Derived strictly from [TODO.md](./TODO.md) and [PLAN.md](./PLAN.md). Tick each before calling this package done. Invent nothing.
 
 ## Prerequisites (packages + gates)
@@ -14,8 +55,9 @@ A1, and D1. Post-v1 lanes are tracked but not awaited.
 - [ ] P5a v1 beads merged — [../P5-provisioning-secrets/P5A-HANDOFF.md](../P5-provisioning-secrets/P5A-HANDOFF.md) (do not wait for P5b)
 - [ ] P6-D/P6-R v1 beads merged — [../P6-plugin-child-app/P6-V1-HANDOFF.md](../P6-plugin-child-app/P6-V1-HANDOFF.md) (do not wait for plugin/P6b expansion)
 - [ ] A1-agent-authoring merged — [../A1-agent-authoring/HANDOFF.md](../A1-agent-authoring/HANDOFF.md)
-- [ ] If M1/R0 exists on main, A1 BBA1-003 removed duplicate behavior config;
-      only proven absence skips this gate.
+- [ ] If the shipped D1 path consumes duplicated M1 behavior configuration,
+      A1 BBA1-003 removed it; optional M1's mere existence does not create this
+      gate.
 - [ ] D1 dedicated delivery merged — [../D1-tenant-provisioning/HANDOFF.md](../D1-tenant-provisioning/HANDOFF.md)
 - [ ] Do NOT land while any earlier phase's `TODO(remove:*)` marker is still live — a surviving marker reopens the phase of its named deletion-bead owner (do not absorb it here)
 - [ ] P4/E2/X1/P5b/P6 expansion/P7/M2/D2/S3/S4 are explicitly post-v1.

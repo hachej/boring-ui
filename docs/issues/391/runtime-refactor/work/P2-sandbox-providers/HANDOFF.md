@@ -1,5 +1,34 @@
 # P2-sandbox-providers — Handoff checklist
 
+## Proposed narrow v1 handoff (2026-07-10)
+
+### Prerequisites
+
+- [ ] The P1 workspace/Fastify boundary is available to D1 composition.
+- [ ] The sandbox package scaffold and #557 publish-pipeline parity are on main.
+
+### Active proof
+
+- [ ] The D1-consumed hardened EU runsc/systrap provider is available behind an
+      injected workspace runtime boundary.
+- [ ] Reported runsc, network, resource-limit, image, persistence, and cleanup
+      facts are honest and fail closed when missing or unknown.
+- [ ] Production D1 cannot silently select direct, bwrap, Vercel, fake, or an
+      unverified worker.
+- [ ] A1 local dev prefers bwrap when available; direct requires explicit
+      trusted-local policy and is never a fallback.
+- [ ] Only importers changed by the narrow runsc slice migrate; no pure-only
+      binary, `resolveMode` cutover, or full provider relocation lands in v1.
+- [ ] #416 contracts remain unchanged and package import invariants hold.
+
+### Exit
+
+- [ ] A real D1 target proves runsc isolation, egress denial, limits, cleanup,
+      and secret-canary absence.
+- [ ] #548 is recut to this boundary; #558 and #564 remain deferred/closed.
+
+## Historical full provider/mode handoff — non-dispatchable for v1
+
 Derived strictly from [TODO.md](./TODO.md) and [PLAN.md](./PLAN.md). Tick each before calling this package done. Invent nothing.
 
 ## Prerequisites (packages + gates)

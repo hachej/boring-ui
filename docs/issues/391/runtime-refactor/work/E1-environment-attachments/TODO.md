@@ -1,6 +1,11 @@
 # TODO-E1 — Environment attachments (generalize the #416 binding model)
 
-## Binding ownership correction (2026-07-09)
+> **Post-v1, non-dispatchable (2026-07-10).** Reopen only when a named second
+> attachment consumer and a new decision re-specify this work. Every pure,
+> no-environment, `runtime: 'none'`, or workspace-less clause below is void
+> historical text. It cannot become a future acceptance test by relabeling.
+
+## Historical ownership correction (2026-07-09)
 
 The detailed `AttachedEnvironmentRuntime` instructions below are superseded.
 Do not move operation-bearing runtime objects into agent shared/core.

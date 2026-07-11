@@ -2,13 +2,24 @@
 
 ISA here means **Intent, Strategy, Architecture**.
 
+> **Proposed v1 amendment (2026-07-10): workspace-first execution.** Decision
+> [21](../../../../DECISIONS.md#21-workspace-first-agent-factory-v1-supersedes-public-pure-mode)
+> supersedes the public `pure`, `runtime: 'none'`, and workspace-less v1 path
+> described in older sections of this pack. The long-term core remains
+> environment- and Fastify-independent, but every v1 local or deployed run is
+> authorized through a workspace and an approved runtime/environment.
+> `headless` means no UI surface; it does not mean no workspace. Historical
+> pure/no-environment contracts below are post-v1 research unless a named
+> consumer and a stronger explicit contract pass the reintroduction gate.
+
 ## Intent
 
-Make boring-ui support true headless agents while preserving the coding-agent workspace experience.
+Make boring-ui an agent factory that preserves a clean agent core while using
+the workspace as the v1 authorization, composition, and execution boundary.
 
 Today `@hachej/boring-agent` is too coupled to `Workspace + Sandbox + FileSearch`. We want:
 
-- pure/headless agents with no filesystem, no sandbox, no cwd, no file routes, no bash tools;
+- headless agents with no UI surface but with an authorized workspace and approved runtime/environment;
 - optional working environments for coding/file tasks through `@hachej/boring-bash`;
 - multiple agent personalities/runtimes inside one deployed app and one workspace;
 - child apps such as Macro hosted inside the same full-app deployment without leaking tools/prompts/provisioning into generic workspaces;
@@ -23,7 +34,9 @@ The owner's vision, in one sentence: **eve-style DECLARATIVE authoring that ship
   versioned behavior-only `AgentDefinition` and immutable referenced assets;
   the host combines it with a separate `AgentDeployment` and records an
   immutable `ResolvedAgent` digest. Local development and D1 dedicated delivery
-  consume the same bundle, so the minimal compiler is no longer deferred.
+  consume the same authored definition through workspace composition, so the
+  minimal compiler is no longer deferred. The compiler does not invent a
+  workspace-bundle schema: `agents/<name>/` remains the authoring shape.
 - **the boring-ui FARM, natively integrated**: the workspace is not just a chat surface — it is the **farm control plane**: **fleet view** (every agent + session across every surface), **tasks** (work items linked to sessions), **artifacts** (outputs agents publish from their environments — 08 `data-artifact`), and **approvals** (one inbox, `resolveInput`). This epic ships the *substrate*; the farm UI is the next epic (VISION farm row).
 - **OPEN integration — foreign agents join the farm**: a non-boring agent (Claude Code, Codex, any MCP client) can attach an environment (E2 MCP projection) and — deferred — create tasks / publish artifacts / request human input over a **Farm MCP** control-plane surface (08 Farm-MCP note). The farm is open, not a walled garden.
 - **Flue's internals**: durable indexed event streams, channel ingress packages, `SessionEnv`-shaped environments (already adopted — 08/09).
@@ -47,7 +60,7 @@ Grounded in the owner's strategy (the boring-ui-factory brain); the epic builds 
 
 | Package | Owns | Must not own |
 | --- | --- | --- |
-| `@hachej/boring-agent` | model loop, sessions, runner API, tool registry, channel-neutral event stream, admission/idempotency, and methodless resolved capability facts — **defines its consumed contracts, imports neither boring-bash nor boring-sandbox** | filesystem, file routes, bash, file UI, concrete sandbox providers, environment preparation, provider lifecycle, provisioning execution |
+| `@hachej/boring-agent` | model loop, sessions, runner API, tool registry, channel-neutral event seam, and methodless resolved capability facts — **defines its consumed contracts, imports neither boring-bash nor boring-sandbox**; durable admission/idempotency remains a later T1 responsibility | filesystem, file routes, bash, file UI, concrete sandbox providers, environment preparation, provider lifecycle, provisioning execution |
 | `@hachej/boring-bash` (THE RUNTIME) | optional fs + exec working environment, path safety, search/watch, file routes/tools/UI, requirement normalizer, extracted environment provisioning engine/runners/fingerprints, **runtime-mode resolution (`resolveMode` = the CHOICE of sandbox)**; imports sandbox **values** + agent **types** | auth, billing, app membership, LLM harness core, host orchestration, concrete sandbox providers/mount/lifecycle |
 | `@hachej/boring-sandbox` (sandbox management) | concrete providers (`direct`, `bwrap`-gVisor, `vercel`-PROXY, `remote-worker`-client), **FUSE-S3 mounts**, sandbox lifecycle, provider **capability facts (`reported \| unknown`)**; imports agent **types only** | model loop, sessions, file routes, bash tools, file UI, runtime-mode resolution (owned by boring-bash), auth/billing |
 | `@hachej/boring-workspace` | UI shell, layout, plugin host, UI bridge/RPC, surface registry | agent model loop, concrete bash providers |
@@ -56,12 +69,14 @@ Grounded in the owner's strategy (the boring-ui-factory brain); the epic builds 
 
 Non-negotiable: `@hachej/boring-agent` has **zero value imports** from `@hachej/boring-bash` **or `@hachej/boring-sandbox`** (it defines the contracts both consume, and imports neither). Bash + sandbox are injected by host/CLI/composition. **Acyclic layering (owner-ruled):** `boring-sandbox → boring-agent` (types only); `boring-bash → boring-sandbox` (values) `+ boring-agent` (types). boring-bash is THE RUNTIME (the CHOICE of sandbox, `resolveMode`); boring-sandbox is sandbox management (providers, FUSE-S3 mounts, lifecycle, capability facts).
 
-Provisioning ownership rule: v1 moves the existing implementation to
-`@hachej/boring-bash/server` without reimplementation. Boring-bash owns
-requirement normalization plus environment provisioning runners/fingerprints;
-**boring-sandbox owns concrete provider adapters + capability facts**; the host
-owns orchestration, prepared resources, and disposal. Agent consumes only bound
-tools, prompt/readiness inputs, input-asset handling, and methodless facts. No
+Provisioning ownership rule: v1 does not move the generic provisioning engine.
+Narrow P5a extends only the existing D1-consumed runsc readiness,
+fingerprinting, authenticated-worker, and secret-brokerage seams. The host owns
+authority, orchestration, prepared resources, and disposal; agent consumes only
+bound tools, prompt/readiness inputs, input handling, and methodless facts.
+Post-v1, a named second consumer may justify moving requirement normalization
+and environment runners/fingerprints to `@hachej/boring-bash/server`, while
+`@hachej/boring-sandbox` continues to own provider adapters/facts. No
 agent-owned provisioning contract or compatibility re-export is introduced.
 
 ## What we learned from Flue
@@ -70,7 +85,9 @@ agent-owned provisioning contract or compatibility re-export is introduced.
 - Conversation/session durability does not imply sandbox/file durability.
 - Durable submissions need stable environment identity and conservative recovery.
 - Subagent profiles are useful for cheap delegation but normally share parent environment; they are not enough for isolated agent sandboxes.
-- Default fs/bash tools are too powerful for our target. Boring-agent must default to none.
+- Default fs/bash tools are too powerful for every agent. The v1 workspace host
+  must resolve the least-capable approved runtime/environment and tool set for
+  the deployed agent; it must not silently expose the full coding workspace.
 - Transcript-visible shell operations and out-of-band host fs plumbing are different contracts.
 
 ## What we learned from eve
@@ -128,7 +145,10 @@ This repo already has real seams. The refactor must extend them:
 
 ## Non-negotiable invariants
 
-1. Pure agents run without `Workspace`, `Sandbox`, cwd, file routes, or bash tools.
+1. **(v1 delivery)** Every local and deployed agent run is authorized through a
+   workspace and an approved runtime/environment. `headless` removes the UI
+   surface only. There is no public/product `runtime: 'none'` or workspace-less
+   v1 mode.
 2. Bash and file APIs are optional and live in `@hachej/boring-bash`.
 3. File routes/search/watch/bash/git/status must use the same source of truth.
 4. Partial file exposure with shell is physical: mount/seed only allowed files for untrusted exec.
@@ -143,12 +163,19 @@ This repo already has real seams. The refactor must extend them:
 13. **(v2)** One approval channel: HITL is declared on the tool and travels as stream events; no per-surface approval side channels.
 14. **(v2)** Secrets stay on the trusted core side; credentials are brokered at the environment boundary and never enter the sandbox process or the model transcript.
 15. **(v2)** EU-sovereign defaults: every default component of the platform (event store, session store, sandbox providers, remote workers, channel egress) is self-hostable on EU infrastructure. US-hosted providers (e.g. `vercel-sandbox`) are strictly optional providers behind the standard capability matrix — never the default path, never a hard dependency.
-16. **(v2)** Capability residue: every capability travels as a complete bundle (tools + routes + UI + renderers + prompt fragment + composer providers + skill filters). Detaching a capability leaves **zero residue** in prompt, UI, or API surface. Pure mode is the test: an agent with no filesystem shows no filesystem vocabulary anywhere.
-17. **(v1 delivery)** Definitions and deployments are separately versioned. A
-    session records definition, deployment, and resolved-snapshot identity/
-    digests; hot registry or policy changes never mutate an existing session's
-    snapshot.
-18. **(v1 reliability)** Core turn admission is per session, retries carry a caller-supplied idempotency key, and actor/origin attribution survives into durable session/event metadata.
+16. **(v2)** Capability residue: every capability travels as a complete bundle (tools + routes + UI + renderers + prompt fragment + composer providers + skill filters). Detaching a capability leaves **zero residue** in prompt, UI, or API surface. In v1, a workspace whose policy excludes filesystem capability shows no filesystem vocabulary anywhere; a future no-environment consumer must pass the same conformance law.
+17. **(v1 delivery)** Definitions and deployments are separately versioned.
+    P6-D owns immutable definition lookup only; P6-R is stateless. D1's complete
+    redacted site snapshot pins every site desired-state input. P7 owns the
+    first registry of stateless P6-R outputs. D2 alone owns
+    `SharedTenantAgentDeclaration` and consumes that P7 registry; no Phase 6
+    resolved registry or shared declaration exists.
+18. **(post-v1 reliability)** T1 owns restart-durable admission, caller request
+    idempotency, and durable actor/origin event metadata. P1 owns only the
+    workspace-composed boundary and bounded agent-local lifecycle. R0/M1 may use
+    a bounded process-local receipt map keyed by subject + `workspaceId` +
+    `deploymentId` + `agentId` + caller idempotency key and must state that
+    restart can lose it.
 
 ## Issue coverage posture
 
@@ -180,7 +207,10 @@ Explicitly not fully solved but must be supported by extension points:
 
 v2 status — resolved (recommendations locked in [`08-pluggable-agent-surfaces.md`](08-pluggable-agent-surfaces.md), to be ratified in the Phase 0 ADR):
 
-1. Pure/headless mode: **pi-coding-agent with cwd disabled/sealed** (behind the Phase 1 audit), not a second, distinct harness. Any alternative harness remains a conformance-suite consumer only (#12), never the pure-mode path.
+1. Pure/headless mode: **superseded for v1 by decision 21.** V1 keeps the
+   existing pi harness behind workspace composition and an approved runtime.
+   A true no-environment consumer is post-v1 and must be named before its
+   harness contract is chosen; it must not be introduced as another mode label.
 2. Multi-mount/overlay: superseded — named `(filesystem, path)` bindings shipped via #416; arbitrary overlays stay deferred.
 3. Providers package location: **RESOLVED** — concrete providers do **not** live under `@hachej/boring-bash/providers`; they live in a dedicated **`@hachej/boring-sandbox`** package (sandbox management: providers, FUSE-S3 mounts, lifecycle, capability facts `reported | unknown`). The three-package stack is: `boring-agent` (contracts, imports neither) ← `boring-bash` (THE RUNTIME: fs/tools/routes/UI + bash + runtime-mode resolution `resolveMode`; imports boring-sandbox values + agent types) ← `boring-sandbox` (imports agent types only). Acyclic. See 08 decision 11; P2 creates the package (PR-PLAN P2).
 4. Multi-agent route shape: **resolved (locked at pass 3)** — one canonical `/api/v1/agents/:agentId` path-prefix family (see `../work/P7-multi-agent-inspection/TODO.md`). There is no header/request-scope alternative.
@@ -188,5 +218,8 @@ v2 status — resolved (recommendations locked in [`08-pluggable-agent-surfaces.
 
 Deferred carryover ratified in [`docs/DECISIONS.md` §19](../../../../DECISIONS.md#19-runtime-free-agent-core-and-pluggable-surfaces):
 
-5. Provisioning sharing defaults — deferred to **P5 provisioning/readiness** and **P6a AgentRegistry requirements**.
+5. Provisioning sharing defaults — deferred to **P5 provisioning/readiness**;
+   P6-D owns immutable definition lookup only, P6-R remains stateless, P7 owns
+   the first registry of P6-R outputs, and D2 alone owns
+   `SharedTenantAgentDeclaration` and consumes the P7 registry.
 7. (v2) Surface `addressing → sessionId` map persistence — deferred to **T2 transport**, **S1/S2 concrete surface stores**, and **P7 agent scoping**.

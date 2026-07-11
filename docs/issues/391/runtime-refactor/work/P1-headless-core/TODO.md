@@ -1,5 +1,25 @@
 # TODO-P1 — Headless core: `createAgent()`, dependency inversion, pure mode
 
+> **Dispatch supersession (2026-07-10).** Do not dispatch the legacy bead list
+> below as written. V1 is workspace-first: every run uses an authorized
+> workspace and approved runtime/environment. Use this active graph:
+>
+> - In parallel from current main: create the #543 corrective PR and dispatch
+>   #616 (boundary-only recut of #547) as the Fastify/package-boundary slice
+>   only. Neither gates the other. #547 is superseded/stopped.
+> - After both leaves: recut #575 for the smallest deterministic
+>   workspace-composed core move.
+> - After #575: rework #576 with lifecycle/disposal first and readiness second.
+>
+> `BBP1-004`, `BBP1-005`, pure-mode parts of `BBP1-006/007`, and the
+> pure/no-environment acceptance are post-v1. Durable admission/idempotency from
+> `BBP1-008` is T1 unless a named current v1 consumer proves it is required.
+> Do not preserve or relabel the existing pure smoke as v1 conformance. A new
+> no-environment suite may return only after decision 21's reintroduction gate.
+> The legacy inventory below remains research, not dispatch authority.
+
+## Historical pure-mode work order — non-dispatchable for v1
+
 Coordinator: never assign this whole file. Dispatch one bead/PR with this
 file's context, dependencies, and non-negotiables included in the assignment.
 

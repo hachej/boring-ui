@@ -1,5 +1,13 @@
 # P1 target interface — simple declarative-agent shape
 
+> **V1 target amendment (2026-07-10).** The authored definition resolves inside
+> an authorized workspace. That workspace selects the deployed default agent,
+> activates its trusted contributions, and supplies an approved
+> runtime/environment. `createAgent()` remains a clean execution primitive, but
+> v1 does not expose it as a workspace-less product mode. Generic environment,
+> plugin, and pure/no-environment sketches below are post-v1 vocabulary, not a
+> schema to implement now.
+
 > 2026-07-09 ownership correction: any operation-bearing
 > `AttachedEnvironmentRuntime` sketch below is historical. Host/boring-bash
 > owns prepared operations and lifecycle. Agent core receives existing

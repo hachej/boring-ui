@@ -1,19 +1,43 @@
 # TODO-D1 - Tenant provisioning command/API
 
-## Binding v1 correction (2026-07-09)
+## Proposed workspace-first v1 work order (2026-07-10)
 
-- Inputs are A1 `CompiledAgentBundle` plus separate `AgentDeployment`.
-- Depends on A1, P5a, and P6-R; M2 is not a prerequisite.
-- Use an existing HTTP/workspace endpoint for v1. Public-demo/bearer MCP
-  exposure is a later M2 binding.
-- Provision one exact dedicated hostname, a bounded declarative landing page,
-  and an authenticated membership-gated handoff to the provisioned workspace.
-  That workspace selects the deployed definition as agent `default`.
-- Plan/journal start with definition, deployment, and desired-state identity;
-  completion/manifest/status/rollback add the post-materialization resolved and
-  observed completion identity.
-- Exit includes the timed <=15-minute scaffold/validate/local/apply/reapply/
-  rollback proof with preconfigured host infrastructure.
+### Prerequisites — stop if false
+
+- A1 compiled bundle and workspace-backed local proof exist.
+- P6-D definition/deployment schemas, digests, and lookup exist.
+- P1 workspace/Fastify boundary, narrow P2 EU runsc, narrow P5a authenticated
+  readiness, and stateless P6-R exist.
+- The chosen EU host profile is supported or explicitly owner-approved.
+
+### Active D1 slices
+
+1. Define the redacted dedicated-site plan/apply input: bundle/deployment refs,
+   exact hostname, bounded landing copy, owner principal ref, workspace/runtime
+   roots, approved runsc profile, and secret refs.
+2. Create or bind one D1-managed workspace using existing auth/membership;
+   disable ordinary create/switch/delete and reject every foreign selector.
+3. Materialize and verify the bundle without checkout access; resolve through
+   the existing authorized workspace composer and bind agent `default`.
+4. Require narrow P5a authenticated runsc readiness and host-side secret
+   brokerage before DNS/TLS publication.
+5. Apply idempotently and persist a complete redacted D1 site snapshot/digest
+   containing every desired-state input: exact hostname; bounded landing
+   configuration; auth, membership, and owner binding; managed workspace/
+   default-agent binding; roots, storage, and runtime desired inputs; immutable
+   host artifact; exact workspace-composition manifest/digest; definition/
+   deployment identity; and secret reference names plus redacted status only.
+   Never persist secret values. Rollback rematerializes the entire prior site
+   state and reproduces the P6-R digest. Do not create a P6 generation store.
+6. Record the <=15-minute exact-host golden path and negative selector/secret
+   proof consumed by P8. The proof applies changed site-level values, rolls back,
+   and compares every restored redacted field and digest with the prior snapshot.
+
+M2, D2, P3 scoped registrars/plugin snapshots, E1 attachment catalogs,
+multi-generation session retirement, and generic provider/mode migration are
+post-v1 and not dispatchable from this work order.
+
+## Historical expanded D1 work order — non-dispatchable for v1
 
 Coordinator: never assign this whole file. Dispatch one bead/PR with this
 file's context, dependencies, and non-negotiables included in the assignment.

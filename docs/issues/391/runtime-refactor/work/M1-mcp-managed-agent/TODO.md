@@ -20,9 +20,9 @@ file's context, dependencies, and non-negotiables included in the assignment.
 
 ## Prerequisites - stop if false
 
-- P1 is merged through BBP1-008 admission/idempotency/attribution closeout.
-  Verify current main, not an old branch. M1 depends on `createAgent().start`,
-  `createAgent().stream`, the P1 live-tail behavior, and stable caller write ids.
+- The P1 workspace/Fastify boundary is merged. Verify current main, not an old
+  branch. M1 depends on `createAgent().start`, `createAgent().stream`, and the
+  existing live-tail behavior. It does not wait for BBP1-008, prE, or T1.
 - **R0 delivery ruling:** #424 is not a prerequisite. To avoid dangling remote
   paths, R0 returns final text plus at most one inline UTF-8 Markdown artifact
   capped at 256 KiB. Large/binary/download handles and share links are later
@@ -39,33 +39,43 @@ Exit criteria:
 
 1. One bearer-authenticated MCP endpoint reachable by URL from a stock client.
 2. `delegate_task({ brief, idempotencyKey })` starts at most one fresh agent
-   session; retry under a new JSON-RPC/tool-call id returns the original.
-3. Verified principal+tenant/agent policy creates real host `SessionCtx` and
-   admission scope; no fake workspace id or caller-supplied tenant authority.
+   session for same-process retries; retry under a new JSON-RPC/tool-call id
+   returns the original while the bounded receipt remains resident.
+3. Verified host policy resolves the principal to a concrete authorized
+   workspace membership, then resolves that workspace's bound deployment and
+   explicit `default` agent before start. `SessionCtx.workspaceId` is mandatory
+   in R0; no fake or caller-supplied routing authority.
 4. Progress is exposed via MCP progress notifications if supported by the SDK/client path; otherwise via an explicit polling tool.
 5. Input/progress/poll/final/artifact/total serialized payloads obey the
    explicit byte budgets below. Oversize uses stable input/result/artifact
    codes without a path. Share/download links are later.
-6. Missing/invalid/expired/foreign credentials and rate/concurrency excess
-   reject before model execution. No secrets, internal file APIs, shell routes,
-   storage paths, or provider credentials reach the caller.
+6. Missing/invalid/expired credentials, foreign-workspace or non-member access,
+   missing/mismatched workspace/deployment/default-agent bindings, and rate/
+   concurrency excess reject before model execution. No secrets, internal file
+   APIs, shell routes, storage paths, or provider credentials reach the caller.
 
 ## Non-negotiables
 
 - This package **exposes** a boring agent over MCP. `plugins/boring-mcp` **consumes** external MCP sources. Use it for SDK transport patterns only; do not inherit its read-only source policy model as the server design.
 - Session-per-delegation. No shared long-running session across independent `delegate_task` calls in M1.
 - Bearer-only R0. Endpoint stays disabled without a configured verifier,
-  principal-to-tenant/agent authorization policy, and rate/concurrency limits.
+  subject-to-workspace-membership plus bound-deployment/default-agent policy,
+  and rate/concurrency limits.
 - No secrets to callers. Return redacted status, final text, and bounded inline
   Markdown only.
 - Behavior freeze for the live demo app. Land additive/dark; flip exposure only after smoke proof.
+- The receipt map is host-owned, process-local, capacity/TTL bounded, and scoped
+  by authenticated subject + resolved `workspaceId` + resolved `deploymentId`/
+  `agentId` + caller idempotency key. It is not a durable admission authority.
+  Restart loss and possible duplicate delegation are an explicit R0 limitation
+  until T1.
 - PR descriptions must include review-time estimate, review-focus notes, and stack merge order.
 
 ## Do NOT
 
 - Do NOT build a farm UI.
-- Do NOT depend on T1 durable events; use the P1 live-tail after BBP1-008 and
-  document the durable-stream upgrade path.
+- Do NOT depend on BBP1-008, prE, or T1 durable events. Use the existing P1 live
+  tail, keep the R0 receipt map process-local, and document the durable upgrade.
 - Do NOT add billing, marketplace, task service, or multi-agent control-plane concepts.
 - Do NOT create a second public Markdown share/download route while #424 is
   unmerged; R0 rejects unsupported artifact delivery instead.
@@ -79,33 +89,46 @@ Exit criteria:
 - Files: choose the smallest additive shape after reading current package layout. Preferred for the outreach demo is an app route in the demo host (`apps/full-app` if that is the running sales demo, otherwise CLI); extract a package only if both full-app and CLI consume it in M1.
 - Implementation notes:
   - Require bearer authentication at MCP connection/request admission. The host
-    verifier returns `AuthenticatedMcpPrincipal { subjectId, tenantId,
-    allowedAgentIds, expiresAt }`; bind it to trusted `SessionCtx` and receipt
-    scope after policy validation. Never accept tenant/workspace/agent authority
-    from tool arguments.
-  - Look up the subject-scoped idempotency key before rate/quota/concurrency
+    verifier returns an authenticated subject, then host policy resolves
+    `AuthorizedM1Target { subjectId, workspaceId, deploymentId, agentId:
+    'default' }` only after proving current workspace membership and the bound
+    deployment/default-agent relationship. Bind that target to mandatory
+    `SessionCtx.workspaceId` and receipt scope. Never accept tenant/workspace/
+    deployment/agent authority from tool arguments.
+  - Look up the fully scoped `(subjectId, workspaceId, deploymentId, agentId,
+    idempotencyKey)` receipt before rate/quota/concurrency
     admission. An existing same-payload record returns its original delegation/
     receipt/result; a different payload conflicts. Only a new key proceeds to
     host-configured limits and `agent.start`.
+  - Use one bounded process-local single-flight/receipt map with explicit
+    capacity and retention. It deduplicates concurrent and later same-process
+    retries only. Do not persist it or claim crash/restart idempotency.
   - Configure one agent via `createAgent(...)` with host-supplied instructions/tools.
   - `delegate_task` validates `{ brief: string, idempotencyKey: string }`.
     `brief` is at most 32 KiB UTF-8. `idempotencyKey` is required, at most 128
     UTF-8 bytes, and matches `[A-Za-z0-9._:-]+`; scope it by authenticated
-    subject/tenant/agent, never by caller routing fields or JSON-RPC request id.
-  - Derive `requestId` from that stable scoped idempotency identity. Do not
-    generate a fresh nonce on retry. Call
+    `(subjectId, workspaceId, deploymentId, agentId)`, never by caller routing
+    fields or JSON-RPC request id.
+  - Derive `requestId` from that stable scoped identity for attribution only;
+    P1 does not provide durable request admission. Call
     `agent.start({ content: brief, actor, ctx, originSurface: 'mcp-managed-agent', requestId })`.
-  - Consume `agent.stream(sessionId, { startIndex })` from the P1 live tail. Do not require T1 replay.
+  - Consume `agent.stream(sessionId, { startIndex })` from the P1 live tail. Do
+    not require T1 replay and do not promise recovery after process restart.
   - Emit MCP progress notifications when the SDK/client path supports it. Each
     notification is <=4 KiB UTF-8. Coalesce/bound retained progress to at most
     128 events and 64 KiB. If notifications are unavailable, expose
     `delegate_task_status({ delegationId })`; its serialized payload is <=96 KiB.
   - Store only server-side delegation/session state. MCP callers never receive internal session paths, raw SessionCtx, or secrets.
-- Tests: valid bearer creates one session; missing, malformed, expired, and
-  foreign tenant/agent tokens reject; rate/concurrency limit rejects before
-  start for new keys; same key retry dedupes before quota and returns the
-  original; same key/different brief conflicts; a lost response followed by a
-  retry with a different JSON-RPC/tool-call id starts no second run; exact and
+- Tests: valid bearer plus current membership and a bound default deployment
+  creates one session with mandatory `workspaceId`; missing, malformed, expired,
+  foreign-workspace, non-member, missing-binding, and mismatched deployment/
+  agent attempts reject before start; tool arguments cannot override routing;
+  rate/concurrency limit rejects before start for new keys; same scoped key
+  retry dedupes before quota and returns the
+  original; same key/different brief conflicts; concurrent requests single-
+  flight; a same-process lost response followed by a retry with a different
+  JSON-RPC/tool-call id starts no second run; capacity/TTL eviction is bounded;
+  restart loss and its possible duplicate are documented; exact and
   over-boundary brief/key/progress/poll sizes; no secret canary appears.
 - Acceptance: authenticated `delegate_task` and progress work without T1; no
   workspace/file/shell route or anonymous/public-demo mode is exposed.
@@ -117,9 +140,10 @@ Exit criteria:
 - Files: demo host config plus the delegation result assembly in the M1 server code.
 - Implementation notes:
   - **R0/v1 rule:** M1 remains dispatchable for R0 with
-    `ManagedAgentVerticalConfig`, but A1 is its named migration owner. BBA1-003
-    moves behavior to canonical `AgentDefinition`; any remaining M1 config is
-    deployment-only and cannot duplicate behavior.
+    `ManagedAgentVerticalConfig`. BBA1-003 becomes a P8 gate only if the shipped
+    D1 path consumes duplicated M1 behavior configuration; then it moves that
+    behavior to canonical `AgentDefinition`. Optional M1's mere existence does
+    not create the gate, and any remaining M1 config is deployment-only.
   - R0 host config is bearer-only and carries verifier/policy/quota refs. It has
     no public-demo policy. Hardcoded demo verticals are fixtures only.
   - The agent may produce one UTF-8 Markdown artifact. Inline it only when <=
@@ -182,12 +206,17 @@ If M1 lands in `apps/full-app`, also run its existing build/typecheck/test/e2e s
 
 ## Review gates
 
-- P1 through BBP1-008 façade/admission API is cited from current main in the PR.
+- The P1 workspace/Fastify boundary is cited from current main; no BBP1-008,
+  prE, or T1 prerequisite is claimed.
 - `plugins/boring-mcp` duality is explicitly noted: consumes MCP there, exposes MCP here.
 - Each authenticated delegation creates exactly one session and does not leak `SessionCtx`.
-- Caller-stable idempotency is subject-scoped and checked before quota; a retry
-  with a new protocol request id returns the original delegation.
-- Missing/invalid/expired/foreign bearer and quota excess reject before model work.
+- The bounded process-local receipt map is keyed by authenticated subject,
+  resolved workspace, resolved deployment/default agent, and caller key, then
+  checked before quota; a same-process retry with a new protocol request id
+  returns the original delegation. Restart durability is explicitly not claimed.
+- Mandatory R0 workspace membership and bound deployment/default-agent resolve
+  before start; foreign-workspace, non-member, missing/mismatched binding,
+  missing/invalid/expired bearer, and quota excess reject before model work.
 - MCP result payloads pass secret-canary and bounded-inline checks; no artifact
   path is returned in R0.
 - Brief/key/progress/retained-progress/poll/final/artifact/total byte bounds and

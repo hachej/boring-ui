@@ -10,7 +10,7 @@ time.
 **Implement:**
 
 - Parse `agents/<name>/agent.json` with a structured JSON parser.
-- Resolve `instructionsRef: "./instructions.md"` inside the agent directory;
+- Resolve canonical `instructionsRef: "instructions.md"` inside the agent directory;
   reject traversal, symlinks outside the directory, missing files, unknown
   fields, and malformed ids with stable codes.
 - Produce one `CompiledAgentBundle { definition, definitionDigest, assets }`.
@@ -44,17 +44,22 @@ fields and `pluginRefs` reject.
   dev defaults (never from `agent.json`) with v1 `agentId: 'default'`, computes its deployment and resolved
   snapshot digests, and prints all three identities. D1 supplies its own
   dedicated deployment for the same bundle.
-- The dev command chooses no runtime by default. Direct host execution requires
-  explicit trusted-local policy.
+- The dev command creates or selects an explicit local workspace and resolves
+  an approved runtime through the normal workspace host. Prefer bwrap when it
+  is available. Direct host execution requires explicit trusted-local policy;
+  missing or unauthorized workspace/runtime selection fails with a stable
+  diagnostic. There is no no-runtime fallback.
 
-**Acceptance:** one scripted turn succeeds from an example directory with zero
-platform-source edits; attempting a non-default v1 route fails with the stable
+**Acceptance:** one scripted workspace-backed turn succeeds from an example
+directory with zero platform-source edits; output names the workspace and
+runtime identities; attempting a non-default v1 route fails with the stable
 unsupported-route code rather than silently selecting another agent.
 
-## BBA1-003 — R0 config migration when M1 exists — S/M, conditional v1 gate
+## BBA1-003 — R0 config migration when D1 consumes duplicate M1 behavior — S/M, conditional v1 gate
 
-**Input:** BBA1-002. Required before P8 when M1/R0 exists on main; skip only
-when repository inspection proves M1 is absent.
+**Input:** BBA1-002. Required before P8 only when the shipped D1 path actually
+consumes duplicated M1 behavior configuration. Optional M1's mere existence
+does not create the gate.
 
 **Implement:**
 
@@ -64,9 +69,11 @@ when repository inspection proves M1 is absent.
   deletion owner.
 - Preserve the stock MCP client result/artifact contract.
 
-**Acceptance:** when M1 exists, its smoke consumes the same definition digest
-printed by `agent validate` and no behavior field has two sources of truth.
-When M1 is absent, record that fact and omit the gate.
+**Acceptance:** when D1 consumes duplicated M1 behavior configuration, its
+shipped path consumes the same definition digest printed by `agent validate`
+and no behavior field has two sources of truth. When D1 does not consume that
+configuration, record that fact and omit the gate regardless of whether
+optional M1 exists.
 
 ## Do not add
 

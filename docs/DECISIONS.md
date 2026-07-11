@@ -326,6 +326,16 @@ Each decision has four fields:
 | **Rationale** | v1 has exactly one consumer (boring-governance), so a multi-surface registry would be designed from a single example — the descriptor shape `{ loadStatus, renderContent, labels }` was instead made self-describing so pluralizing is mechanical. Designing a generic slot from one example risks wrong abstractions (composition order, deep-linking, per-section gating are unknowable without a second consumer). |
 | **Re-evaluate when** | A second plugin needs an admin/workspace-management surface. Planned evolution: `companyAdmin` becomes `adminSections: Section[]` (same descriptor shape, plus an `id` for deep-linking); the admin page hosts one tab per section whose `loadStatus` reports `admin: true`; app array order is authoritative for display order; still no dynamic registration. |
 
+## 21. Workspace-first agent factory v1 supersedes public pure mode
+
+| Field | |
+|---|---|
+| **Status** | **Proposed until this amendment PR merges.** Do not treat it as landed main authority before merge. |
+| **What** | For v1, every local or deployed agent run resolves to an authorized workspace plus an approved runtime/environment. The dedicated journey is exact hostname -> landing -> member auth -> bound workspace -> deployed agent selected as that workspace's `default`. `headless` means only "no UI/presentation surface"; API, MCP, CLI, and future channel adapters still address a workspace-backed agent. There is no public/product no-environment mode and no v1 `runtime: 'none'` contract. |
+| **Why** | The first product proof is a workspace-backed dedicated EU deployment. Treating no-environment execution as a parallel product mode added prompt, session, lifecycle, capability, and routing branches without a named v1 consumer. |
+| **Rationale** | Keep the environment/Fastify-independent `@hachej/boring-agent/core` boundary, injected harness/tools/sessions, workspace/session-root separation, package layering, and optional surfaces. Compose those seams from a workspace host in v1. Local authoring still starts from `agents/<name>/`, but `agent dev` creates or selects an explicit local workspace and approved runtime (`bwrap` when available; trusted direct only by explicit policy). This decision supersedes decision 19's pure-mode choice and decision 19a's wider v1 gate graph where they conflict; their historical text remains unchanged. T1/T2 durability, full P3 extraction, generic E1 attachments, and true no-environment execution move post-v1. |
+| **Re-evaluate when** | A named consumer cannot use a workspace-backed agent and brings an explicit contract for authorization, session/storage identity, tools/prompts/resources, secrets, readiness, and lifecycle. Reintroduction requires a new decision and conformance proof; it must be composition by explicit capabilities, never a new mode-label fork. Rollback likewise requires a new superseding registry entry and a deliberately restored dependency graph; stopped PRs never resume implicitly. |
+
 ## Process
 
 1. Any PR that changes a locked decision **must** update this document.

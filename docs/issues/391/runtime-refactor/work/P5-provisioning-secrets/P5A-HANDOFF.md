@@ -1,8 +1,42 @@
 # P5a minimum provisioning — Handoff checklist
 
-This is the P8 closeout authority. The package `HANDOFF.md` also tracks post-v1
-SDK archives, managed services, and the remote-worker attachment/conformance
-mount.
+This proposed checklist is the P8 closeout authority for the D1-consumed P5a
+minimum. The package `HANDOFF.md` and the historical section below track
+post-v1 provisioning generality.
+
+## Proposed narrow v1 prerequisites
+
+- [ ] The narrow P2 EU runsc/provider boundary is available.
+- [ ] D1 and the existing workspace composer define the exact readiness,
+      fingerprint, and credential facts they consume. P3 and E1 are not gates.
+
+## Proposed narrow v1 beads
+
+- [ ] BBP5-003 + BBP5-004 recut — readiness/health gates only for the D1 runsc
+      worker and bound workspace runtime.
+- [ ] BBP5-007 recut — host-side secret refs/status/brokerage required by D1;
+      raw values never enter workspace, model, sandbox, logs, or digest input.
+- [ ] BBP5-008 — pinned-TLS, nonce-bound authenticated runsc-worker facts;
+      missing/unknown/insufficient facts fail closed.
+- [ ] BBP5-009 recut — deterministic D1 desired/observed fingerprint and
+      idempotent reconciliation, without generic attachment machinery.
+- [ ] BBP5-011 + BBP5-012 recut — non-dev governance/configuration required by
+      D1 fails closed with stable diagnostics.
+
+## Proposed narrow v1 review/exit
+
+- [ ] Host/workspace/D1 policy establishes authority; readiness only validates
+      it and never grants capability.
+- [ ] A real preconfigured EU worker proves authenticated runsc identity,
+      isolation/network/limits, image/persistence facts, cleanup, and no secret
+      leakage before D1 can select it.
+- [ ] Fingerprints contain only redacted desired inputs and authenticated
+      observations consumed by D1.
+- [ ] No generic requirement normalizer migration, engine relocation, E1
+      attachment lifetime, service supervisor, SDK archive, or remote mount is
+      required for v1.
+
+## Historical broad P5a handoff — non-dispatchable for v1
 
 ## Prerequisites
 

@@ -1,5 +1,14 @@
 # P1 migration — from today's code to the target interface
 
+> **V1 migration amendment (2026-07-10).** Migrate by extracting the smallest
+> environment-/Fastify-independent core boundary from the existing
+> workspace-backed path. Do not use the already-present pure implementation as
+> v1 product acceptance and do not make the agent binary pure-only. Workspace
+> activation is the composition authority for plugins, skills, prompt
+> fragments, tools, routes, UI, and runtime. The minimal `agents/<name>/`
+> compiler is A1 v1; generic per-agent plugin/environment resolution and a true
+> no-environment host are post-v1.
+
 > Purpose: connect the ideal capability design to the current boring-ui codebase and define the P1/P2/P3/P4/P6 migration path.
 
 ## Current state

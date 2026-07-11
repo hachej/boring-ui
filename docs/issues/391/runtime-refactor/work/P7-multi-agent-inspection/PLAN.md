@@ -11,8 +11,10 @@ first slice; search, external hooks, and subagent grants are later slices.
 - [08-pluggable-agent-surfaces.md](../../architecture/08-pluggable-agent-surfaces.md) — the steering surface: the workspace consumes the same public contracts (the scrubbed agent-list endpoint plus `/info`), never private core hooks; two-handles rule.
 
 ## Design context
-Phase 7 makes agents individually addressable within one workspace. Routes
-resolve trusted `agentId` against P6-R. Internal stores/caches use a validated
+Phase 7 makes agents individually addressable within one workspace. It owns the
+first registry-backed routing layer, whose entries are stateless P6-R outputs;
+P6-R itself remains registry-free. Routes resolve trusted `agentId` against
+that P7 host registry. Internal stores/caches use a validated
 structured scope containing tenant/workspace, agent, and public session id;
 UUID uniqueness is not authorization. Each agent gets its own catalog and
 readiness. Route/scope/catalog/info form the first P7 slice; derived `agent.db`
@@ -25,7 +27,11 @@ structured trusted scope for authorization and derived `agent.db` indexes.
 
 v2 additions:
 - surface adapters address agents through the same `agentId` scoping; a Slack channel or embed binds to one `agentId` per addressing entry;
-- **agent steering endpoints**: `GET /api/v1/agents` (scrubbed declared-agent list from the Phase 6a registry/declaration) and `GET /api/v1/agents/:agentId/info` (model, tools, readiness, channels, environments — eve `/eve/v1/info` analog) consumed by workspace panels: the steering-surface mechanism (08, 00 "North star").
+- **agent steering endpoints**: `GET /api/v1/agents` (scrubbed declared-agent
+  list from the P7 host registry) and `GET /api/v1/agents/:agentId/info` (model,
+  tools, readiness, channels, environments — eve `/eve/v1/info` analog)
+  consumed by workspace panels. P7 creates this registry only for its named
+  multi-agent routing consumer; it does not move persistence into P6-R.
 
 ## Exit criteria
 As v1, plus: two surfaces bound to two agents in one workspace do not collide by namespace/scope/metadata; no implementation relies on duplicate `sessionId` store keys.

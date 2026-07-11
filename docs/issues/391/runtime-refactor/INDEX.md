@@ -8,27 +8,23 @@ Each `work/<pkg>/` holds three files: **TODO.md** (the package coordinator conta
 
 The running app is the owner's sales demo. Every PR is **behavior-frozen for the live app** unless its work order explicitly changes a documented invariant: existing e2e stays green, risky cutovers land dark/additive, and defaults flip only after conformance proves parity. Merge continuously as small independently-safe PRs; never hold the risk for an end-loaded mega-merge. Every PR description must include a review-time estimate and review-focus notes for the owner's 1-2h/day review budget. Stacked PRs carry labels or title notes that make merge order unambiguous.
 
-## Delivery gates and live status
+## PROPOSED delivery gates and live status
 
-Status reflects `main` plus open PRs as of 2026-07-09. Architecture may remain
+Status reflects `main` plus the **proposed** 2026-07-10 workspace-first amendment. Architecture may remain
 documented before implementation; only rows marked **v1 gate** block v1.
 
 | Milestone | Work package | Depends on | Live status | Exit gist |
 | --- | --- | --- | --- | --- |
-| P0 — decisions | [P0](work/P0-adr/) | — | **merged** (#521/#522) | v2 pack and amended decisions are canonical |
-| P1 — safe headless core | [P1](work/P1-headless-core/) | P0 | **partial; open stack #543/#545/#547/#566/#568/#575/#576 + PR E required** | real `/core` boundary, honest lifecycle/readiness, serialized admission, idempotency, attribution, deterministic tool merge |
-| R0 — managed MCP tracer | [M1](work/M1-mcp-managed-agent/) | P1 admission/attribution gate | **partial; #549/#556 open** | bearer-authenticated stock client ships one configured vertical agent with bounded self-contained output |
-| P6-D — minimal definition | [P6](work/P6-plugin-child-app/) | P1 | **v1 gate; pending** | verified bundle registry plus separately versioned behavior definition and deployment digest rules |
-| A1 — agent-directory authoring | [A1](work/A1-agent-authoring/) | P6-D for compile; P6-R for local run | **v1 gate; pending** | `agents/<name>/` emits one self-contained content-addressed bundle used by local dev and D1 without platform-source edits |
-| T1 — durable events/approvals | [T1](work/T1-durable-events/) | P1 | **v1 gate; partial; #546/#559 need rebase/amendment** | one SQLite authority, authenticated-subject-scoped durable caller receipts, transactional approvals, explicit crash recovery |
-| T2 — transports | [T2](work/T2-transport/) | T1 | **v1 gate; pending** | in-process and HTTP transports share admission, replay, attribution, and approval semantics |
-| P2 — sandbox providers | [P2](work/P2-sandbox-providers/) | P1 | **v1 gate; partial; #548/#557/#558/#564 open** | atomic provider extraction plus one real hardened runsc/systrap provider; no silent direct fallback |
-| P3 — routes/tools + contribution residue | [P3](work/P3-routes-tools/) | P2 | **v1 gate; partial** | optional working environment owns file/bash tools/routes; filesystem UI is capability-gated; trusted default-agent plugins project tools/routes/Pi prompt+resources/front atomically without P4/P6 expansion |
-| E1 — environment attachments | [E1](work/E1-environment-attachments/) | P2, P3 | **v1 gate; pending** | stable lifetime key excludes request id; authorized tools/routes/UI share one host-owned prepared view |
-| P5a — minimum provisioning | [P5](work/P5-provisioning-secrets/) | P2, P3, E1 | **v1 gate; pending** | host orchestration/readiness/fingerprint/secret brokerage plus authenticated fail-closed runsc-worker hardening facts |
-| P6-R — definition resolution | [P6](work/P6-plugin-child-app/) | P6-D, E1, P5a, P3 BBP3-020 | **v1 gate; pending** | host verifies bundle assets and resolves deployment plus the workspace activated-plugin snapshot to an immutable digest; requirements validate authority |
-| D1 — dedicated EU site delivery | [D1](work/D1-tenant-provisioning/) | A1, P2 runsc, P5a, P6-R | **v1 gate; pending** | exact hostname -> bounded landing -> auth -> authorized workspace -> deployed `default` agent, plus crash-safe EU apply/rollback; no M2 dependency |
-| P8 — v1 proof/cleanup | [P8](work/P8-verification/) | all v1 gates above | **pending** | zero removal markers plus the timed 15-minute user-visible golden-path proof |
+| P0 — decisions | [P0](work/P0-adr/) | — | **base merged** (#521/#522); decision 21 proposed | existing v2 pack remains main authority until the workspace-first amendment merges |
+| P1 — workspace-composed agent core | [P1](work/P1-headless-core/) | P0 | **proposed v1 gate; new corrective PR + recuts** | real `/core` and Fastify/package boundary; workspace-scoped composition; bounded agent-local lifecycle; deterministic tool merge; actor/origin where a current v1 surface requires them |
+| R0 — managed MCP tracer | [M1](work/M1-mcp-managed-agent/) | P1 boundary + workspace binding | **optional tracer; partial** | bearer-authenticated stock client addresses one workspace-backed configured agent with bounded self-contained output |
+| P6-D — minimal definition | [P6](work/P6-plugin-child-app/) | proposed decision 21 | **proposed v1 gate; executing independently** | minimal `AgentDefinition` + `AgentDeployment` schemas/digests and verified bundle lookup |
+| A1 — agent-directory authoring | [A1](work/A1-agent-authoring/) | P6-D for compile; P6-R for local run | **proposed v1 gate; pending** | `agents/<name>/` emits one content-addressed bundle; local dev creates/selects an explicit workspace and approved runtime |
+| P2 — dedicated runtime minimum | [P2](work/P2-sandbox-providers/) | P1 | **proposed v1 gate; narrow/rework** | only the package boundary and hardened runsc/systrap path consumed by D1; no silent direct fallback; broad provider/mode cutovers deferred |
+| P5a — dedicated provisioning minimum | [P5](work/P5-provisioning-secrets/) | narrow P2 | **proposed v1 gate; narrow/rework** | only D1-consumed orchestration, readiness, fingerprint, secret brokerage, and authenticated fail-closed runsc-worker facts |
+| P6-R — workspace/deployment resolution | [P6](work/P6-plugin-child-app/) | P6-D, P1, narrow P5a | **proposed v1 gate; narrow/rework** | host verifies bundle assets and resolves deployment, workspace-owned composition, approved runtime, and `default` binding to one immutable digest |
+| D1 — dedicated EU site delivery | [D1](work/D1-tenant-provisioning/) | A1, P2 runsc, P5a, P6-R | **proposed v1 gate; pending** | exact hostname -> bounded landing -> auth -> authorized workspace -> deployed `default` agent, plus idempotent apply/rollback; no M2 dependency |
+| P8 — v1 proof/cleanup | [P8](work/P8-verification/) | all reduced v1 gates above | **proposed; pending** | timed 15-minute workspace-backed golden path, rollback, and zero v1-owned removal markers |
 
 ## Post-v1 increments
 
@@ -36,6 +32,10 @@ These plans are retained, but they do not block R0 or v1.
 
 | Increment | Work package | Earliest dependency | Reason deferred |
 | --- | --- | --- | --- |
+| T1/T2 durability and transport replacement | [T1](work/T1-durable-events/), [T2](work/T2-transport/) | workspace-first v1 proof or a named reliability consumer | existing workspace transport is sufficient for the dedicated v1 path; durable admission/request idempotency belongs here |
+| P3 full route/tool extraction | [P3](work/P3-routes-tools/) | narrow P2 plus a second package consumer | v1 reuses current boring-bash/workspace composition; broad relocation adds cutover risk without changing the dedicated journey |
+| E1 generic environment attachments | [E1](work/E1-environment-attachments/) | P3 plus a second attachment consumer | v1 has one authorized workspace/runtime composition; generic N-environment lifetime machinery is not required |
+| True no-environment execution | [P1 historical pure beads](work/P1-headless-core/TODO.md) | named non-workspace consumer + new decision | no public/product consumer in v1; may return only as explicit composition, never a `runtimeMode` fork |
 | P4 presentation extraction | [P4](work/P4-file-ui/) | P3 | moving workspace editors into a runtime package is disproportionate; capability-gate the existing plugin first |
 | E2 foreign-agent environment projection | [E2](work/E2-mcp-projection/) | E1, P6-R | consumes injected deployment attachment lookup; second environment consumer after v1 |
 | X1 S3/FUSE | [X1](work/X1-s3-fuse-mounts/) | P2, P5a, E1 | no current native-mount consumer; performance and operations risk |
@@ -53,18 +53,22 @@ Release 0:
 P0 -> P1 -> M1 stock-client tracer
 
 Version 1:
-P0 -> P1 -> P6-D -> A1-compile --------------------------┐
-         ├-> T1 -> T2 -----------------------------------┤
-         └-> P2 -> P3 -> E1 -> P5a -> P6-R -> A1-dev -> D1 -> P8
+P0/proposed decision 21 -> P6-D -> A1-compile -----------┐
+P0 -> P1 boundary -> P2(runsc minimum) -> P5a(minimum) --┼-> P6-R -> A1-dev -> D1 -> P8
+                                                          ┘
 
 Post-v1:
-P4 | E2 | X1 | P5b | P6 plugin/child-app | P7 | M2 | D2 | S3/S4
+T1/T2 | full P3 | E1 | no-environment | P4 | E2 | X1 | P5b |
+P6 plugin/child-app | P7 | M2 | D2 | S3/S4
 ```
 
-P1 precedes both extraction and delivery because it establishes lifecycle,
-admission, attribution, and the real dependency boundary. P6-D moves early
-because A1 and D1 are real consumers; plugin/runtime resolution stays later in
-P6-R. D1 adds one exact-host landing/auth binding over the existing
+P1 precedes runtime resolution and delivery because it establishes workspace composition, lifecycle,
+attribution where required, deterministic tool merge, and the real dependency
+boundary. Durable admission and caller request idempotency are T1-owned unless
+a current v1 consumer proves a smaller requirement. P6-D does not depend on
+the P1 production correction: decision 21 fixes its behavior-only schema, so it
+and A1 compile run in parallel with P1. Those branches join before P6-R and A1
+local dev. Plugin/runtime resolution stays later in P6-R. D1 adds one exact-host landing/auth binding over the existing
 HTTP/workspace delivery surface and therefore does not wait for M2 or D2's
 shared-host router. Work already landed via #416 is reused and must not be
 redone.
@@ -77,10 +81,10 @@ temporary version of a frozen contract."
 
 | Track | Can run in parallel | Frozen boundary | Merge/integration gate | Action now |
 | --- | --- | --- | --- | --- |
-| R0/M1 tracer | after P1 admission/attribution; beside every v1 lane | additive bearer sidecar only; no canonical definition or exposure-policy ownership | stock-client smoke, bounded output, no v1 dependency | run after P1 PR E |
-| P6-D -> A1 compile | beside T1/T2 and P2/P3 after P1 | definition/compiler only; no E1, plugin resolution, tenant, or runtime lifecycle | deterministic self-contained bundle | run as an isolated critical lane |
-| T1 -> T2 | beside P2/P3 and P6-D/A1 | no provider/filesystem work; one event/approval authority | crash recovery then transport conformance | run as an isolated critical lane |
-| P2 -> P3 -> E1 -> P5a | beside T1/T2 and P6-D/A1 | P1 public boundary and #416 contracts stay frozen | hardened runsc, no-leak attachment, readiness/secret-broker proof | run in dependency order |
+| R0/M1 tracer | after the P1 workspace/Fastify boundary; beside every v1 lane | additive workspace-backed bearer sidecar only; no durable admission/idempotency gate | stock-client smoke, bounded output, no v1 dependency | optional outreach leaf; no P1 prE dependency |
+| P6-D -> A1 compile | under proposed decision 21; beside P1 and narrow P2/P5a | minimal definition/deployment schemas, digests, lookup, and compiler only; no generic environment or tenant lifecycle | deterministic self-contained bundle | executing as an independent critical lane |
+| P1 -> P2 -> P5a -> P6-R | beside P6-D/A1 compile; P6-R waits for both branches | only dedicated runsc, existing workspace composition, readiness, and secret brokerage consumed by D1 | real EU runsc + stateless resolved/default binding | run in dependency order |
+| T1/T2, full P3, E1 | post-v1 only | retain documented contracts; do not merge current downstream stacks into v1 | named consumer + revalidated bases | freeze |
 | X1 S3/FUSE | draft/background worktree only until P2 + P5a + E1 + a named native-mount consumer exist | package-local `boring-sandbox/mounts`, MinIO proof, and benchmark only; no D1 storage, E1/P5 contract, agent/workspace API, or `company_context` change | full E1 integration, bash/file visibility parity, credential canary, EU MinIO matrix, numeric benchmark | keep #581 draft/deferred; never gate v1 |
 | E2 environment MCP | after E1 + P6-R; beside later D1/P7 follow-up | reuse attachment/projection authority; no new environment owner | MCP no-leak, identity, and exec gating | later clean leaf |
 | M2 agent MCP | after P7 + T2 | thin surface adapter only; no runtime ownership | exposure/auth/result conformance | later clean leaf |
@@ -101,7 +105,7 @@ the dedicated path being proven first. Keep them documented and undispatched.
    **Amendment (2026-07-06):** since #552, `@hachej/boring-bash` and `@hachej/boring-governance` are published to npm (cohort-versioned) with an external consumer (Constellation). The frozen surface is therefore not only `packages/boring-bash/src/shared` but every `@hachej/boring-bash/server` export that `@hachej/boring-governance` imports (`COMPANY_CONTEXT_FILESYSTEM_ID`, `ScopedFilesystemRuntimeBindingManager`, `createReadonlyProjectionOperations`, the projection error codes/types). In-repo same-PR importer migration remains the rule, but changes to these exports must keep the bash+governance pair compatible at equal cohort versions; a breaking change requires a coordinated cohort bump with both packages migrated in the same PR.
 7. **A bead is done when Verification commands AND Review gates pass**, not when code compiles. Each TODO ends with both; the package HANDOFF.md is the tickable closeout.
 
-**Review rule (thermo, before coding each file).** A clean review means: no package import cycle; no duplicated provisioning/readiness system; no filesystem/bash split brain; no hidden cwd/filesystem leak in pure agent mode; no child-app or multi-agent scope leak; no claim that unrelated backlog issues are solved by this abstraction.
+**Review rule (thermo, before coding each file).** A clean review means: no package import cycle; no duplicated provisioning/readiness system; no filesystem/bash split brain; no workspace/runtime authorization bypass; no public `runtime: 'none'` or mode-label fork; no child-app or multi-agent scope leak; no claim that unrelated backlog issues are solved by this abstraction.
 
 ## Binding policies
 
@@ -124,6 +128,9 @@ The only legitimate compat surfaces (do NOT break): on-disk pi session JSONL (ex
 ### Versioning & flagging (how cutovers ship)
 
 No feature-flag framework. Version is carried where it already exists:
+
+T1/T2 and the full P3 cutover are post-v1 under decision 21. The bullets below
+remain their future cutover rules, not v1 gates.
 
 - **Wire:** `AgentEvent.v` is the protocol version (starts at 1); DS stream routes are **new paths** added in T1 alongside the old `?cursor=` route, so old front + new server coexist during development. That additive window *is* the flag — T2 flips the front, then deletes the old route in the same phase (rule 2).
 - **Dark-launch seam:** the front transport is injectable (`usePiSessions({ createRemoteSession })`). T2 may land the DS transport dark behind that injection for at most one PR, then flip the default and delete the legacy path. No user-facing toggle.

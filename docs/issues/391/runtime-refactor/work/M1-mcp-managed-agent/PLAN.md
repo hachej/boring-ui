@@ -6,7 +6,7 @@
 ## Governing architecture
 
 - [00-global-isa.md](../../architecture/00-global-isa.md) - package ownership, behavior-freeze discipline, `SessionCtx` tenancy, and no-secrets invariants.
-- [01-agent-core-runtime-free.md](../../architecture/01-agent-core-runtime-free.md) - `createAgent()` facade, pure/core API, host-owned config, and no ambient reads.
+- [01-agent-core-runtime-free.md](../../architecture/01-agent-core-runtime-free.md) - `createAgent()` environment-independent boundary, workspace host composition, and no ambient reads.
 - [08-pluggable-agent-surfaces.md](../../architecture/08-pluggable-agent-surfaces.md) - four-part surface contract: message in, event stream out, approvals, session state.
 - [07-tests-review-acceptance.md](../../architecture/07-tests-review-acceptance.md) - acceptance proof and review gates.
 
@@ -33,12 +33,17 @@ This package **exposes** boring agents over MCP. That is the inverse of `plugins
 ## Deliverables
 
 - Thin MCP server package or app route that exposes a configured agent as MCP tools:
-  - Host verifies a bearer credential, authorizes one tenant/agent, applies
-    principal rate/concurrency limits, and creates trusted session/admission
-    scope. Caller routing fields grant nothing.
-  - `delegate_task({ brief, idempotencyKey })` requires a caller-stable key,
-    scoped by authenticated subject, and creates at most one session via
-    `createAgent().start` across retries.
+  - Host verifies a bearer credential, resolves the subject through host policy
+    to one concrete authorized workspace membership, and resolves that
+    workspace's bound deployment and explicit `default` agent before
+    `agent.start`. `workspaceId` is mandatory in R0. Caller/tool routing fields
+    grant nothing.
+  - `delegate_task({ brief, idempotencyKey })` requires a caller-stable key and
+    uses a bounded process-local receipt map keyed by authenticated subject,
+    resolved `workspaceId`, resolved `deploymentId`/`agentId`, and the caller
+    key. It creates at most one session for same-process retries. This R0 map is
+    not restart-durable; a retry after host restart may start a second
+    delegation.
   - Progress is emitted through MCP progress notifications if the SDK and stock client path support them; otherwise a polling tool (for example `delegate_task_status`) is the explicit fallback.
   - Completion returns final assistant text plus at most one inline UTF-8
     Markdown artifact within the explicit payload budget. Brief, key, progress,
@@ -52,8 +57,9 @@ This package **exposes** boring agents over MCP. That is the inverse of `plugins
 ## Non-goals
 
 - No farm UI.
-- No T1 dependency: M1 works on the P1 façade live-tail after prE closes
-  admission/idempotency/attribution; durable streams upgrade later.
+- No BBP1-008, prE, or T1 dependency: M1 works on the workspace-composed P1
+  façade and its existing live tail. M1 owns only the bounded process-local
+  receipt map above; T1 owns restart-durable admission and idempotency.
 - No billing.
 - No multi-agent control plane, marketplace, or task service.
 - No anonymous/public-demo R0 access; M2 owns later public-demo policy.
@@ -65,10 +71,17 @@ This package **exposes** boring agents over MCP. That is the inverse of `plugins
 - A stock MCP client connects with an authorized bearer credential and calls
   `delegate_task`; invalid/expired/foreign credentials and quota excess reject
   before model work.
-- The server starts exactly one agent session per delegation and scopes it with a real `SessionCtx`; no synthesized tenancy.
+- Before starting, host policy proves the subject is a member of one concrete
+  workspace and resolves its bound deployment and explicit `default` agent.
+  The server starts exactly one agent session per delegation with mandatory
+  `SessionCtx.workspaceId`; no synthesized or caller-selected tenancy.
+- Foreign-workspace, non-member, missing-workspace-binding, and mismatched
+  deployment/default-agent attempts reject before model work.
 - The caller supplies a stable idempotency key; dedupe happens before quota/rate/
-  concurrency checks, so a retry after a lost response returns the original
-  delegation even when its JSON-RPC/tool-call id changes.
+  concurrency checks, so a same-process retry after a lost response returns the
+  original delegation even when its JSON-RPC/tool-call id changes. Receipt-map
+  capacity and retention are bounded and tested. Restart clears the map; R0
+  documents that a post-restart retry may start a second delegation.
 - Progress is available either through MCP progress notifications or the documented polling fallback.
 - The final result includes final assistant text plus bounded inline Markdown;
   no artifact path or private retrieval dependency is returned.

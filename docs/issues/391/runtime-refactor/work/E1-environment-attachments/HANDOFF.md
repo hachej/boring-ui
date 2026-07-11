@@ -1,5 +1,10 @@
 # E1-environment-attachments — Handoff checklist
 
+> **Post-v1 historical checklist (2026-07-10).** This file is non-dispatchable
+> and does not gate P8. Every pure/no-environment, `runtime: 'none'`, or
+> workspace-less clause below is void. A named second attachment consumer and a
+> new decision must produce a rewritten handoff before E1 restarts.
+
 Derived strictly from [TODO.md](./TODO.md) and [PLAN.md](./PLAN.md). Tick each before calling this package done. Invent nothing.
 
 ## Prerequisites (packages + gates)

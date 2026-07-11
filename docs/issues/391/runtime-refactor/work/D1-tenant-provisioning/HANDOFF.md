@@ -1,5 +1,52 @@
 # D1-tenant-provisioning - Handoff checklist
 
+## Proposed workspace-first v1 handoff (2026-07-10)
+
+### Prerequisites
+
+- [ ] P6-D + A1 compile are complete.
+- [ ] P1 boundary, narrow P2 runsc, narrow P5a, and stateless P6-R are complete.
+- [ ] No P3, E1, T1/T2, M2, plugin-snapshot, attachment-catalog, or generation-
+      store prerequisite remains.
+
+### Active proof
+
+- [ ] One command plans/applies one exact hostname, bounded landing, managed
+      workspace, durable workspace/session roots, approved runsc runtime, and
+      minimal deployment.
+- [ ] Existing-member auth and membership are the only workspace authority;
+      landing content grants none.
+- [ ] The existing authorized workspace composer selects the deployed agent as
+      `default`; caller workspace/agent selectors cannot choose another target.
+- [ ] Workspace create/switch/ordinary delete and foreign server/front/plugin/
+      MCP selectors fail before effects.
+- [ ] Narrow P5a authenticates the selected EU runsc worker and brokers secret
+      refs host-side; direct/bwrap/Vercel/fake/unverified production proof fails.
+- [ ] Bundle materialization works without source-checkout access.
+- [ ] Apply is idempotent. The complete redacted D1 site snapshot/digest pins
+      every desired-state input: exact hostname; bounded landing config; auth,
+      membership, and owner binding; workspace/default-agent binding; roots,
+      storage, and runtime desired inputs; immutable host artifact; workspace-
+      composition manifest/digest; definition/deployment; and secret reference
+      names plus redacted status only. It contains no secret values.
+- [ ] After site-level values are changed and applied, rollback rematerializes
+      every prior site value, matches the prior redacted snapshot/digest, and
+      reproduces the P6-R digest without a P6 generation registry.
+- [ ] DNS/TLS publication occurs only after workspace/default-agent/runtime/
+      secret readiness; partial state is not externally reachable.
+- [ ] Timed proof is <=900 seconds and records exact host, definition/deployment
+      digests, workspace/default binding, runsc identity, reapply, site-level
+      mutation/full restoration, rollback digests, selector denials, and secret-
+      canary result.
+
+### Exit
+
+- [ ] Exact host -> landing -> existing-member sign-in -> one managed workspace
+      -> deployed `default` agent succeeds on real approved EU runsc.
+- [ ] Reapply, rollback, foreign-selector, no-fallback, and no-secret proofs pass.
+
+## Historical expanded D1 handoff — non-dispatchable for v1
+
 Derived strictly from [TODO.md](./TODO.md) and [PLAN.md](./PLAN.md). Tick each
 before calling D1 done. Invent nothing.
 

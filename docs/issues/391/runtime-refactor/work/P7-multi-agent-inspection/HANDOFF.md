@@ -3,20 +3,21 @@
 Derived strictly from [TODO.md](./TODO.md) and [PLAN.md](./PLAN.md). Tick each before calling this package done. Invent nothing.
 
 ## Prerequisites (packages + gates)
-- [ ] P6-R `ResolvedAgentRegistry` merged — [../P6-plugin-child-app/P6-V1-HANDOFF.md](../P6-plugin-child-app/P6-V1-HANDOFF.md)
+- [ ] P6-R stateless resolved-value contract merged — [../P6-plugin-child-app/P6-V1-HANDOFF.md](../P6-plugin-child-app/P6-V1-HANDOFF.md)
 - [ ] E1-environment-attachments merged — [../E1-environment-attachments/HANDOFF.md](../E1-environment-attachments/HANDOFF.md)
 - [ ] T2-transport merged — [../T2-transport/HANDOFF.md](../T2-transport/HANDOFF.md)
-- [ ] STOP+report if P6-R resolved lookup by deployment `agentId` has not landed;
-      do NOT invent a competing registry here.
+- [ ] P7 BBP7-002 is explicitly authorized as the first named consumer to add
+      one host-owned multi-agent registry; it must not move registry ownership
+      into P6-R or create competing registries.
 
 ## Owner questions / verdict
 - OWNER-QUESTIONS: none.
-- GO/NO-GO: GO after P6-R, E1, and T2 are merged; NO-GO/STOP if
-  `ResolvedAgentRegistry` is missing.
+- GO/NO-GO: GO after stateless P6-R, E1, and T2 are merged; BBP7-002 then creates
+  the single minimal P7 host registry.
 
 ## Beads
 - [ ] BBP7-001 — Thread `agentId` through `RuntimeScope`, the scope key, and `sessionNamespace`
-- [ ] BBP7-002 — `agentId` request addressing against P6-R `ResolvedAgentRegistry`
+- [ ] BBP7-002 — P7 host registry of stateless P6-R entries + `agentId` request addressing
 - [ ] BBP7-003 — Per-agent tool catalog + per-agent readiness
 - [ ] BBP7-004 — Derived `agent.db` session index/search scoped by workspace + agent (#379)
 - [ ] BBP7-005 — Agent list + inspection endpoints (the steering mechanism)
@@ -51,7 +52,8 @@ Derived strictly from [TODO.md](./TODO.md) and [PLAN.md](./PLAN.md). Tick each b
 - [ ] `pr9-two-surface-isolation` completed BBP7-009
 
 ## Review gates
-- [ ] P6-R `ResolvedAgentRegistry` present and scoped against (not a competing registry), else STOP+report.
+- [ ] Exactly one P7 host registry exists; its entries are stateless P6-R
+      outputs, and P6-R owns no registry/pointer/generation state.
 - [ ] `agentId` in the `RuntimeScope.key` array for all agents; `sessionNamespace` carries `agentId` only for non-default agents, and default-agent sessions load unchanged (on-disk JSONL compat).
 - [ ] Per-agent tool catalog + readiness with zero cross-agent bleed (`05` Tests reproduced).
 - [ ] Session search scoped by trusted workspace+agent, served from a rebuildable derived `agent.db` table, no fs requirement, redaction enforced.
@@ -63,7 +65,9 @@ Derived strictly from [TODO.md](./TODO.md) and [PLAN.md](./PLAN.md). Tick each b
 - [ ] Any transitional code carries `TODO(remove:<bead-id>)` naming its deletion-owner bead; a later owner is allowed only when explicitly named per [INDEX.md](../../INDEX.md), and no marker outlives its named owner's phase.
 
 ## Exit criteria
-- [ ] Agent addressing resolves an `agentId` per request via the canonical `/api/v1/agents/:agentId/...` path prefix against P6-R `ResolvedAgentRegistry`; unknown/undeclared `agentId` fails closed.
+- [ ] Agent addressing resolves an `agentId` per request via the canonical
+      `/api/v1/agents/:agentId/...` path prefix against the P7 host registry;
+      unknown/undeclared `agentId` fails closed.
 - [ ] `agentId` is in the binding scope `key` for all agents; `sessionNamespace`
       carries it only for non-default agents. `sessionId` remains the public
       runtime-owned handle, while event/replay access uses T1's server-only

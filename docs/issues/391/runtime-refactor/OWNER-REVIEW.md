@@ -1,7 +1,8 @@
 # #391 owner review guide
 
-Status: current-main/open-PR guide as of 2026-07-09. `INDEX.md` remains the
-ordering authority.
+Status: **proposed** workspace-first v1 review guide as of 2026-07-10. It
+becomes main authority only when the amendment PR merges. `INDEX.md` remains
+the ordering authority inside this proposal.
 
 ## Review rule
 
@@ -16,43 +17,41 @@ base were already accepted. For every PR:
 5. Record one decision: merge, amend, split, or defer. Do not leave an implicit
    partial approval.
 
-## Active queue
+## Stopped-stack disposition
 
-| Order | PR | Decision before review | Primary owner check |
-| --- | --- | --- | --- |
-| 1 | #557 | rebase/amend, then merge independently | current release cohort and publish ordering only |
-| 2 | #543 | rebase/amend | pure mode preserves landed event work; no core completion claim |
-| 3 | #545 | restack/amend | Pi audit seals all cwd/workspace assumptions used by pure mode |
-| 4 | #547 | restack/rename | remove `[closes P1]`; invariant actually closes only baseline P1 |
-| 5 | #566 | restack/amend | compatibility facts are diagnostic, never authority |
-| 6 | #568 | restack/amend | no `runtimeMode` feature gating; E1 sink resolution still remains |
-| 7 | #575 | restack | `/core` transitive graph is server/Pi-default free |
-| 8 | #576 | restack/amend | exact-once per-agent disposal; shared provider disposed only by host; caches bounded |
-| 9 | P1 prE | new | admission, request idempotency, attribution, and duplicate-tool policy |
-| 10 | #549 | rebase if R0 remains urgent | bearer auth/quota plus attributed/idempotent M1 delivery; temporary config names A1 owner |
-| 11 | #556 | restack after #549 | authenticated stock client gets bounded self-contained output; no dangling path |
-| 12 | #546 | rebase after P1 | post-relocation durable routes; trusted structured stream/session scope |
-| 13 | #559 | split/amend | approval authority separate from ask-user migration; no delete-before-outcome window |
-| 14 | T1 recovery | new | Pi JSONL committed but stream append failed is deterministic after restart |
-| 15 | T1 request receipts | new | request idempotency survives restart and admission crash never duplicates a run |
-| 16 | #548 | rebase after P1 | direct+bwrap move is atomic with consumers/origin removal |
-| 17 | #558 | restack after #548 | Vercel move is atomic and preserves provider-only ownership |
-| 18 | #564 | split/restack | remote-worker move separate from mode/composer cutover; no silent direct fallback |
-| deferred | #581 | mark draft | no merge before E1/P5a, native-mount consumer, no-leak and credential proof |
+| PR | Decision | Primary owner check |
+| --- | --- | --- |
+| #543 | **merged baseline; new corrective leaf from current main** | v1 adapters always bind an authorized workspace/runtime; preserve accepted boundary/event work |
+| #545 | **do not merge; close/defer** | no-environment Pi seals are post-v1 research |
+| #547 | **superseded/stopped** | do not dispatch; replaced by #616 |
+| #616 (boundary-only recut of #547) | **parallel current-main boundary leaf** | package/Fastify/import invariant only; no pure-product acceptance; does not wait for the #543 correction |
+| #566 | **defer into P6-R** | capability truth is resolved from workspace/deployment composition |
+| #568 | **defer** | wait for a real workspace/runtime input-asset consumer |
+| #575 | **recut after both current-main leaves** | move the real injected core boundary; no default/pure host fork |
+| #576 | **rework after #575** | lifecycle/disposal first, readiness second; bounded caches; workspace-owned providers remain host-owned |
+| #564 | **drop pure-only-bin cutover** | reconsider independent runsc/provider work only under narrow P2 |
+| frozen | #546/#559 and all T1/T2/P3/E1 descendants | **post-v1** | do not restack until a named consumer reopens the lane |
+| deferred | #581 | **keep deferred** | native-mount consumer, no-leak, credential, and performance proof required |
 
 ## P1 acceptance card
 
-- Public `start()` owns per-session admission; callers cannot bypass it.
-- Same `requestId` + same payload returns the original receipt; a conflicting
-  payload fails with a stable code.
-- `actor` and `originSurface` survive into session/run metadata.
+- Published `/core` is a real Fastify/runtime-package-independent boundary and
+  receives harness, tools, sessions, and host composition explicitly.
+- Every v1 adapter resolves an authorized workspace and approved runtime before
+  constructing the agent; no definition/bundle executes directly.
+- `actor` and `originSurface` survive where a current v1 surface requires them.
 - Duplicate tool names follow one deterministic fail-closed policy in every
   composer.
 - Core receives no host/provider-global lifecycle authority.
 - Eviction, recreation, failure, and app close dispose each agent-local resource
   exactly once; early stores and worker runtimes are bounded.
+- Durable admission and caller request idempotency remain T1-owned unless a
+  current v1 consumer supplies a narrower accepted requirement.
 
 ## T1 acceptance card
+
+Post-v1 under decision 21. Retain this card for its future reintroduction; it
+does not block the dedicated v1 path.
 
 - Events, pending approvals, waiting state, Pi re-tap keys, and caller request receipts share
   `agent.db` where atomicity crosses tables.
@@ -68,7 +67,8 @@ base were already accepted. For every PR:
 
 ## P2 acceptance card
 
-- Each provider move migrates consumers and removes the origin in the same PR.
+- V1 accepts only the package boundary and hardened runsc/systrap path consumed
+  by D1; broad provider/mode relocation is post-v1.
 - `direct` is explicit trusted-local policy, never automatic deployed fallback.
 - Provider facts are reported or unknown; unknown never silently grants.
 - Remote-worker relocation and mode/composer rewiring are separately reviewable.
@@ -78,39 +78,48 @@ base were already accepted. For every PR:
 Do not approve v1 from component gates alone. Require the recorded golden path:
 
 ```txt
-scaffold -> validate -> local turn -> dedicated EU apply -> exact HTTPS URL
+scaffold -> validate -> authorized local workspace + approved runtime -> local turn
+-> dedicated EU apply -> exact HTTPS URL
 -> landing -> member auth -> bound workspace -> deployed default agent
 -> rerun -> rollback
 ```
 
 Owner evidence: elapsed time <=15 minutes with infrastructure preconfigured,
-zero platform-source edits, definition/deployment/resolved digests, remote
+zero platform-source edits, local workspace/runtime identity,
+definition/deployment/resolved digests, remote
 materialization without access to the authoring checkout, fenced crash-safe
 reapply with no duplicate resources, exact-host/TLS proof, bounded public
 landing content, membership-gated trusted workspace resolution, forged
-workspace/agent selector rejection, complete-snapshot rollback, and no raw
-secret in output/logs/manifests.
+workspace/agent selector rejection, and complete-snapshot rollback that
+rematerializes the pinned immutable host artifact plus workspace-composition
+manifest/digest and reproduces stateless P6-R output, with no raw secret in
+output/logs/manifests.
 
 ## Architecture review card
 
-- P6-D bundle registry is keyed by `(definitionId, version)` and stores a
-  verified immutable definition+assets+digest; P6-R resolved registry is
-  separately keyed by deployment `agentId`.
+- No v1 CLI, API, MCP, or channel adapter executes a bundle directly through a
+  workspace-less `createAgent()` path. `headless` means no presentation UI,
+  never no workspace/runtime authority.
+
+- P6-D bundle lookup is keyed by `(definitionId, version)` and stores a verified
+  immutable definition+assets+digest. P6-R is a stateless resolver over that
+  bundle, a host-owned deployment, the existing authorized workspace
+  composition manifest/digest, and narrow runtime facts; v1 adds no resolved
+  registry or generation store. D1 alone pins host/composition inputs for
+  rollback.
 - Host owns prepared environment operations/lifecycle; agent core receives
   flattened tools/prompt/readiness/input handling plus methodless facts.
 - Prompt order is base -> immutable agent instructions -> resolved capability
   and plugin fragments -> active skill index -> static host append -> per-turn
   dynamic host context. Plugin prompt text is admitted and removed with its
   contribution, never merely because the package was discovered or installed.
-- P6 retains and digests the source-labeled static prompt plan, including static
-  host append. Only explicitly per-turn dynamic host context is outside static
-  identity and it cannot grant authority.
-- P3 emits one immutable activated-plugin snapshot tied to the host-app
-  artifact and canonical redacted activation inputs. P6 resolution, D1 desired
-  state, restart, and rollback retain that identity; mutable or non-
-  reconstructible plugin sources are not D1 production inputs. Browser-front
-  failure preserves previous-good UI and does not pretend to unregister boot-
-  time routes.
+- The existing authorized workspace composer remains the v1 authority for
+  plugins, prompts, skills, tools, routes, UI, readiness, and runtime. P6-R does
+  not select those contributions, and full P3 snapshot/scoped-registrar work is
+  post-v1.
+- D1 consumes that authorized workspace composition and binds its deployed
+  agent as the workspace `default`; it does not require a new P3 activation
+  snapshot or P6 generation registry.
 - Maximum authority comes from provider+host+workspace+deployment policy;
   grants/session scope narrow it; requirements only validate.
 - Filesystem UI remains workspace-owned in v1 but is absent, including API
@@ -119,8 +128,9 @@ secret in output/logs/manifests.
   membership-authorized workspace. That workspace selects the deployment as
   agent `default`; the definition, landing page, and browser cannot choose a
   different workspace or agent. Dedicated server scope covers every workspace-
-  bearing API. P3's scoped route registrar supplies bound Workspace/scoped
-  repositories; raw arbitrary plugin routes fail D1 readiness. List exposes only
+  bearing API through the existing host/bridge composition before lookup; this
+  is not a P3 extraction dependency. Any plugin route that cannot consume the
+  trusted bound scope fails D1 readiness. List exposes only
   the bound workspace and create/switch/delete are disabled. It also suppresses personal default-workspace creation for a
   non-invite dedicated signup without changing invite acceptance or generic
   signup. Generic behavior remains only on its configured listener; a dedicated

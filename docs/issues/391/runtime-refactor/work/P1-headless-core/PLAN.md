@@ -1,5 +1,66 @@
 # P1-headless-core — Plan
 
+> **Proposed revised v1 plan (2026-07-10).** The directory name is historical.
+> P1 delivers an environment- and Fastify-independent core boundary that is
+> composed by an authorized workspace and approved runtime. It does **not**
+> deliver a public pure/no-workspace mode. The older pure-mode targets retained
+> below are post-v1 research and are not dispatch or acceptance authority.
+
+## Active v1 outcome
+
+P1 makes the current workspace-backed execution path easier to compose and
+reuse without changing the product authorization boundary:
+
+- keep `@hachej/boring-agent/core` independent of Fastify and concrete runtime
+  providers;
+- make workspace-scoped host composition explicit at the package boundary;
+- keep the existing pi harness, session implementation, routes, and workspace
+  behavior unless a smaller extraction is required by that boundary;
+- make tool and static-prompt merge order deterministic and duplicate handling
+  fail closed;
+- bound agent-local caches and lifecycle without giving the core ownership of
+  host/provider-global resources;
+- preserve actor/origin attribution where the current v1 call path requires it;
+- keep session storage and workspace/runtime storage as distinct roots.
+
+V1 adds no `runtime: 'none'` product path, workspace-less session adapter,
+`AgentFeature` registry, second harness, generic environment registry, or new
+workspace bundle schema. Durable admission/idempotency and the replayable event
+protocol move to T1 unless a named current v1 consumer proves a smaller piece is
+required now.
+
+## Active implementation order
+
+- Run two independent leaves from current main in parallel: the #543 production
+  correction and #616 (boundary-only recut of #547). Neither leaf gates the
+  other. #547 itself is superseded/stopped and is not a dispatch target.
+- After both land, recut #575 for the smallest deterministic workspace-composed
+  core move.
+- After #575, rework #576 in two review steps: bounded lifecycle/disposal first,
+  then honest readiness. Do not inherit old pure-mode ownership or acceptance.
+
+Do not merge or revive the old stack wholesale. PR dispositions are binding in
+[PR-PLAN.md](../../PR-PLAN.md).
+
+## Active exit criteria
+
+- Existing workspace/core/CLI HTTP behavior remains unchanged.
+- Every v1 local and deployed run still has an authorized workspace and
+  approved runtime/environment.
+- The core boundary has no Fastify or concrete-provider dependency.
+- Tool/prompt composition is deterministic and residue is removed as one
+  workspace contribution.
+- Agent-local lifecycle is bounded and does not dispose host-global resources.
+- Session and workspace/runtime roots remain separate.
+- No new public mode label, generic registry, or compatibility abstraction is
+  introduced.
+
+## Superseded research below
+
+The remaining sections document the earlier pure-mode design. They are useful
+only for a future named no-environment consumer that passes decision 21's
+reintroduction gate.
+
 > Phase: Phase 1 — Headless core: dependency inversion, pure mode, `createAgent()` · Work order: [TODO.md](./TODO.md) · Handoff: [HANDOFF.md](./HANDOFF.md)
 > Ordering authority: [INDEX.md](../../INDEX.md) · Vision: [VISION.md](../../VISION.md)
 

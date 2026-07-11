@@ -1,5 +1,31 @@
 # P1-headless-core — Handoff checklist
 
+> **Revised v1 handoff (2026-07-10).** The checklist below is the legacy
+> pure-mode handoff and is not v1 authority. Review the recut P1 slices against
+> these binding gates instead:
+>
+> - [ ] every product adapter supplies an authorized workspace and approved
+>       runtime/environment;
+> - [ ] the core boundary imports neither Fastify nor concrete providers;
+> - [ ] existing workspace/core/CLI behavior and authorization are preserved;
+> - [ ] tool/static-prompt merge is deterministic and duplicate names fail
+>       closed;
+> - [ ] agent-local lifecycle/readiness is bounded without disposing
+>       host/provider-global resources;
+> - [ ] session storage and workspace/runtime storage roots stay separate;
+> - [ ] no public `runtime: 'none'`, workspace-less adapter, generic feature
+>       registry, or second harness is introduced;
+> - [ ] durable admission/idempotency is left to T1 unless a current named v1
+>       consumer demonstrates the requirement.
+>
+> Use [PR-PLAN.md](../../PR-PLAN.md) for the binding PR dispositions. The #543
+> correction and #616 (boundary-only recut of #547) are parallel current-main
+> leaves; both precede #575, then #576 lands lifecycle first and readiness
+> second. #547 is superseded/stopped. Retain the remaining checklist only as
+> post-v1 research history.
+
+## Historical pure-mode checklist — non-dispatchable for v1
+
 Derived strictly from [TODO.md](./TODO.md) and [PLAN.md](./PLAN.md). Tick each before calling this package done. Invent nothing.
 
 ## Prerequisites (packages + gates)

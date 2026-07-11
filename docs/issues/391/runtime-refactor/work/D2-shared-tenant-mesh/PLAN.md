@@ -9,8 +9,8 @@ and a trusted adapter-created tenant authority are proven.
 ## Governing architecture
 
 - [10-sandbox-deployment-eu.md](../../architecture/10-sandbox-deployment-eu.md) - EU host topologies: self-host, D1 dedicated/sovereign tenants, and D2 shared subdomain tenants.
-- [P6-plugin-child-app](../P6-plugin-child-app/TODO.md) - BBP6-009
-  `WorkspaceAgentsDeclaration` plus P6-R `ResolvedAgentRegistry`.
+- [P6-plugin-child-app](../P6-plugin-child-app/TODO.md) - minimal P6-D contracts
+  plus stateless P6-R resolved values; P7/D2 own later registry/declaration work.
 - [P1-headless-core](../P1-headless-core/TODO.md) - optional `workspaceId` in `SessionCtx` and `sessionStorageRoot`.
 - [P5-provisioning-secrets](../P5-provisioning-secrets/TODO.md) - provisioning/readiness/secret brokering.
 - [P7-multi-agent-inspection](../P7-multi-agent-inspection/TODO.md) - `agentId` routing and `/info`.
@@ -22,8 +22,9 @@ and a trusted adapter-created tenant authority are proven.
 **Amendment (2026-07-08):** D2 is the Shared Subdomain tier of the two-tier
 tenancy model. D1 is the Sovereign / EU Tenant Factory tier: one dedicated
 deployment per company. D2 is the shared tier: one shared EU deployment serves
-many subdomain tenants. Both tiers consume the same `WorkspaceAgentsDeclaration`.
-D1 now proves an exact dedicated hostname plus landing/auth/workspace/default-
+many subdomain tenants. Both tiers consume the same definition/deployment
+contracts; only post-v1 P7/D2 may add a multi-agent/tenant declaration. D1 now
+proves an exact dedicated hostname plus landing/auth/workspace/default-
 agent journey, but it still has no wildcard application router or live
 multi-tenant registry; those remain D2's distinct security boundary.
 
@@ -34,12 +35,14 @@ redeploying the app. Unknown refs and unknown hosts fail closed.
 
 ## Dependencies
 
-D2 depends on P6-D/P6-R (`WorkspaceAgentsDeclaration` + environment pool +
-`ResolvedAgentRegistry`), P1 (optional `workspaceId` in `SessionCtx` +
-`sessionStorageRoot`), P5 (provisioning/readiness/secret brokering), P7
-(`agentId` routing and `/info`), T1 (per-`SessionCtx` durable stores +
+D2 depends on P6-D inputs plus stateless P6-R, P1 (optional `workspaceId` in
+`SessionCtx` + `sessionStorageRoot`), P5 (provisioning/readiness/secret
+brokering), P7 (`agentId` routing, `/info`, and the one P7-owned registry of
+P6-R outputs), E1 attachment contracts, T1 (per-`SessionCtx` durable stores +
 cross-context leakage test), and M2 (`public-demo`, `demoPolicy`,
 `exposureId`). It is independent of #376 child-app hostname resolver.
+D2 owns its post-v1 `SharedTenantAgentDeclaration` and process-level
+`LiveTenantRegistry`; neither contract comes from P6.
 
 ## Deliverables
 
@@ -54,9 +57,9 @@ cross-context leakage test), and M2 (`public-demo`, `demoPolicy`,
 ## Exit criteria
 
 From one running shared EU deployment, an agent-authored tenant YAML
-(`WorkspaceAgentsDeclaration` + environment pool + seed refs) is validated
+(`SharedTenantAgentDeclaration` + attachment refs + seed refs) is validated
 (dry-run, unknown refs fail closed) and hot-registered so
-`company_a.senecapp.ai` - its own skills/files/context/env-pool - is reachable
+`company_a.senecapp.ai` - its own skills/files/context/attachments - is reachable
 by subdomain in seconds with no redeploy; a cross-tenant isolation conformance
 suite proves tenant A never sees tenant B's sessions, files, pending-inputs,
 search, artifacts, or governance; unknown subdomain fails closed and never
@@ -75,18 +78,18 @@ default tenant and no raw `x-boring-workspace-id` authority.
 
 ### BBD2-002 - Live tenant registry + hot registration (L)
 
-A process-level `LiveTenantRegistry` over the RuntimeBinding LRU:
-`register(spec)` validates the `WorkspaceAgentsDeclaration` (BBP6-009 validator,
-fail-closed), seeds `sessionStorageRoot` + workspace/env-pool roots +
-files/skills/context, materializes secret refs (P5 broker), installs a binding +
-`ResolvedAgentRegistry` instance for the new `workspaceId` - idempotent, no redeploy.
-Contrast: P6-R's resolved registry stays project-scoped; this is the
-process-level tenant registry.
+A process-level D2-owned `LiveTenantRegistry` over the RuntimeBinding LRU:
+`register(spec)` validates D2's `SharedTenantAgentDeclaration`, resolves each
+declared deployment through stateless P6-R, seeds session/workspace roots plus
+files/skills/context and E1 attachment refs, materializes secret refs through
+P5, installs the tenant binding, and registers the resolved entries in the
+single P7-owned agent registry for the new `workspaceId`. Idempotent, no
+redeploy; P6 owns no declaration or resolved registry.
 
 ### BBD2-003 - Hot per-tenant provisioning/seeding (M/L)
 
 Extend P5 `provisionWorkspaceRuntime()` with an in-process, new-tenant mode that
-seeds a tenant's env-pool + skills + template/context into the running app
+seeds a tenant's attachment refs + skills + template/context into the running app
 (today P5 seeds only existing workspaces at startup).
 
 ### BBD2-004 - Shared-infra tenant isolation model + conformance (M/L)
@@ -120,5 +123,6 @@ dedicated -> D1 manifest path; end-to-end smoke against a fake provider.
 - `HostTenantResolver.resolve(requestHost, authenticatedPrincipal): TenantContext | { rejected }`
 - `TenantContext { tenantId, workspaceId, principal }`
 - `LiveTenantRegistry {register/get/list/suspend/archive/delete}`
-- `TenantSpec {workspaceId,host,tier,declaration:WorkspaceAgentsDeclaration,environments,seedRefs,secretRefs,demo?}`
+- `SharedTenantAgentDeclaration { defaultAgentId, deploymentRefs }` (D2-owned)
+- `TenantSpec {workspaceId,host,tier,agents:SharedTenantAgentDeclaration,attachmentRefs,seedRefs,secretRefs,demo?}`
 - `TenantIsolationConformance` suite

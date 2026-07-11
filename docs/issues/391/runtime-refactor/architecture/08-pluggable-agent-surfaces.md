@@ -1,5 +1,12 @@
 # 08 — Pluggable agent surfaces: transport, event stream, channels
 
+> **V1 scope amendment.** Surfaces remain a valid long-term boundary, but every
+> v1 surface resolves to an authorized workspace and that workspace's deployed
+> default agent. `headless` means no workspace UI is rendered; API, MCP, CLI,
+> and channel surfaces are still workspace-backed. T1/T2 and concrete external
+> surfaces are post-v1. Older workspace-optional and `runtime: none` examples in
+> this file are retained only as future contract research.
+
 Status: v2 broadening of the plan pack. This file adds the layer the original pack stopped short of: `@hachej/boring-agent` as a **surface-agnostic agent** that mounts behind the boring-ui workspace (first-class UI), Slack, a spreadsheet add-in (pi-excel), the CLI, or any future interface — with `@hachej/boring-bash` as one optional, injected environment.
 
 Inputs: current couplings audit (agent stack architecture map), #391 plan pack 00–07, shipped #416 filesystem-binding work, and framework analysis of Flue (`withastro/flue`), eve (`vercel/eve`), Vercel AI SDK v5/v6 transport + approvals, Claude Agent SDK, OpenAI Agents SDK, Slack Bolt AI apps.
@@ -12,14 +19,16 @@ Target mounts, in order of delivery:
 
 1. **boring-ui workspace** — the existing first-class UI, refitted to consume only the public contract.
 2. **Slack channel** — reference proof that a non-HTTP-UI, non-filesystem surface works.
-3. **pi-excel / spreadsheet add-in** — reference proof that the agent embeds inside another product surface, with `runtime: none` or readonly `company_context` only.
+3. **pi-excel / spreadsheet add-in** — post-v1 reference proof that the agent embeds inside another product surface through an authorized workspace and its allowed environment set.
 4. CLI / cron / API — headless invocations of the same contract.
 
 ### The steering surface
 
 Surfaces are peers on the event contract, but they are not peers in the product (00 "North star"): the **boring-ui workspace is the control plane**. Concretely, the workspace is where you:
 
-- author and configure agents (north star: eve-style agent-as-directory, deferred until `AgentRegistry` — Phase 6/7);
+- author agents through A1 over P6-D immutable definition lookup; post-v1 P7,
+  not Phase 6, owns the first registry of stateless P6-R outputs; D2 alone owns
+  `SharedTenantAgentDeclaration` and consumes that P7 registry;
 - wire channels and attach environments;
 - observe any session regardless of which surface it runs on — the replayable event log (T1) makes cross-surface observation free: the workspace attaches to a Slack-born session by `sessionId` like any other;
 - answer approvals centrally (same `resolveInput` path as every surface).
@@ -96,7 +105,7 @@ Runtime     providers: direct | bwrap | vercel-sandbox |           (@hachej/bori
 
 This preserves the 00-global-isa three-layer model and adds the two layers above it that make "pluggable" real. The three-package stack under Features/Runtime (00 open decision 3, RESOLVED; decision 11 below): `boring-agent` (contracts, imports neither) ← `boring-bash` (THE RUNTIME: fs/tools/routes/UI + bash + `resolveMode`; imports boring-sandbox values + agent types) ← `boring-sandbox` (providers/mounts/lifecycle/capability facts; imports agent types only). Acyclic.
 
-## The headless façade: `createAgent()`
+## The surface-neutral core primitive: `createAgent()`
 
 Today the only delivery of the harness is Fastify (`createAgentApp` / `registerAgentRoutes`). The real loop — the harness chat service (`HarnessPiChatService`, reached via `harness.getPiSessionAdapter`, streaming `PiChatEvent`s) — is already transport-agnostic; `agent.send()` wraps that verified seam (see `../work/P1-headless-core/TODO.md` for the grounded signatures). We export it properly instead of making every consumer mount routes:
 
@@ -105,7 +114,7 @@ import { createAgent } from '@hachej/boring-agent/core'
 
 const agent = createAgent({
   harnessFactory,            // optional; default = pi-coding-agent harness
-  runtime,                   // RuntimeModeAdapter | 'none'  (pure mode)
+  runtime,                   // host-injected approved runtime adapter in v1
   tools,                     // AgentTool[] — host spreads the boring-bash bundle in here:
                              //   tools: [...appTools, ...createBashAgentFeature(env).tools]
   readinessRequirements,     // opaque readiness gates (e.g. from the bash bundle)
@@ -246,7 +255,12 @@ Postgres adapter is deferred until multi-instance demand proves it necessary.
 - `sessionId` — runtime-owned. Attaches to the stream, resumes, inspects, forks.
 - Continuation/addressing — surface-owned. Slack thread `ts`, workbook id, workspace pane binding. Each surface maintains its own `addressing → sessionId` map (its own store or the host DB). Public agent APIs never accept platform addressing; they accept `sessionId` (or create one).
 
-This keeps multi-tenant routing out of the core: `x-boring-workspace-id` is an HTTP-adapter concern that resolves to a `SessionCtx`, exactly as a Slack adapter resolves team+channel+thread to one. `SessionCtx.workspaceId` is **optional**: a workspace adapter fills it, but pure/headless surfaces (Slack-only, embeds, plain Node) omit it and the session store namespaces by the host-composed `sessionStorageRoot` — a surface must never synthesize a fake `workspaceId`.
+This keeps multi-tenant routing out of the core: `x-boring-workspace-id` is an
+HTTP-adapter concern that resolves to a `SessionCtx`, exactly as a Slack adapter
+resolves team+channel+thread to one. The type may keep `workspaceId` optional
+for core isolation tests and a future named no-environment consumer, but every
+v1 product adapter must supply an authorized workspace id. A surface must never
+synthesize a fake `workspaceId`.
 
 ### Route-family scope (locked — what `/api/v1/agents/:agentId/...` covers)
 
@@ -306,7 +320,10 @@ Executable contract suites, in-repo, run against every implementation:
 ## Decisions this file locks (recommendations)
 
 1. **Wire protocol**: keep the existing harness stream unit (`PiChatEvent`) as the v1 event payload, add the indexed envelope. Do not invent a parallel event union. The repo already depends on `ai ^6`; the deferred work is not an AI-SDK version bump but migrating the `PiChatEvent` reducer/view-model to native `UIMessage`/tool-approval parts (decision 8).
-2. **Pure mode** (#391 open decision 1): pi-coding-agent with `runtime: none` and sealed cwd, behind the Phase 1 audit — not a second harness. Epic #12 keeps pi as the batteries-included default; any alternative harness remains a conformance-suite consumer only, never a Phase 1 prerequisite or the pure-mode path.
+2. **Pure mode** (#391 open decision 1): superseded for v1 by decision 21.
+   Every v1 adapter is workspace-backed. A true no-environment consumer is
+   post-v1 and must pass the reintroduction gate before its harness contract is
+   selected; it must not arrive as another runtime mode label.
 3. **Surfaces live outside the agent package**: per-channel packages (Flue model), not subpaths of `boring-agent` (eve model) — matches the existing monorepo layout and keeps the core dependency-free.
 4. **Readonly fs is v1**: already true — shipped via #416. The 00-global-isa open decision 6 is resolved.
 5. **One namespace rule**: superseded by named `(filesystem, path)` bindings, as already reflected in the pack's V1 caveat.

@@ -1,5 +1,10 @@
 # P3-routes-tools — Handoff checklist
 
+> **Post-v1 historical checklist (2026-07-10).** This file is non-dispatchable
+> and does not gate P8. Every `runtime: 'none'`, pure, pure-only-bin, or
+> workspace-less clause below is void. Reopen P3 only for a named second package
+> consumer through a new decision and rewritten handoff.
+
 Derived strictly from [TODO.md](./TODO.md) and [PLAN.md](./PLAN.md). Tick each before calling this package done. Invent nothing.
 
 ## Prerequisites (packages + gates)

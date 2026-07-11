@@ -1,13 +1,49 @@
 # P8-verification — Plan
 
-## V1 gate correction (binding, 2026-07-09)
+## Proposed reduced v1 verification (2026-07-10)
 
-P8 gates P1, T1/T2, P2/P3, E1, P5a, P6-D/P6-R, A1, and D1.
-It executes and records the <=15-minute golden path, crash-safe idempotent
-reapply, definition/deployment/resolved digests, exact-host landing/member/
-fixed-workspace/default-agent journey, and complete-snapshot rollback proof.
-P4, E2, X1, P5b, P6 plugin/child-app expansion, P7, M2,
-D2, S3, and S4 are explicitly post-v1 and do not gate P8.
+P8 gates only the workspace-first delivery set:
+
+- P1 workspace/Fastify boundary and bounded agent-local lifecycle;
+- P6-D minimal definition/deployment schemas, digests, and lookup;
+- A1 compile plus explicit workspace/runtime local dev;
+- narrow P2 EU runsc and narrow P5a authenticated readiness/secrets;
+- stateless P6-R over the existing authorized workspace composer;
+- D1 exact-host dedicated delivery.
+
+T1/T2, full P3, E1, M2, plugin snapshots/scoped registrars, attachment
+catalogs, and P6 generation/session-retirement machinery are post-v1 and
+contribute no P8 gate, import check, documentation promise, or proof step.
+
+### Active proof
+
+- One command completes in <=900 seconds: compile -> workspace-backed local
+  turn -> D1 apply -> exact HTTPS landing -> existing-member sign-in -> bound
+  managed workspace -> deployed `default` agent on approved EU runsc.
+- The target materializes the verified definition bundle and immutable host
+  artifact without source-checkout access, and records definition/deployment
+  plus workspace-composition manifest digests.
+- Dedicated mode rejects foreign workspace/agent selectors and ordinary
+  create/switch/delete before effects.
+- P5a proves authenticated runsc facts and host-side secret brokerage; direct,
+  bwrap, Vercel, fake, and unverified workers cannot satisfy production proof.
+- Identical reapply is a no-op. The proof changes and applies site-level desired
+  values, then rolls back the prior complete redacted D1 site snapshot/digest.
+  It compares restoration of exact hostname, bounded landing config, auth/
+  membership/owner binding, workspace/default-agent binding, roots/storage/
+  runtime desired inputs, immutable host artifact, workspace-composition
+  manifest/digest, definition/deployment, and secret reference names/status.
+  No secret value enters the snapshot or evidence, and the prior stateless P6-R
+  digest is reproduced.
+- V1-owned removal markers are zero, applicable package/import invariants pass,
+  and no raw secret appears in evidence.
+
+## Historical 2026-07-09 verification plan — non-dispatchable for v1
+
+### Former v1 gate correction
+
+The former broad gate list is void. Use only the proposed reduced gate and proof
+above; deferred lanes contribute no v1 acceptance.
 
 > Phase: Phase 8 — Verification + cleanup · Work order: [TODO.md](./TODO.md) · Handoff: [HANDOFF.md](./HANDOFF.md)
 > Ordering authority: [INDEX.md](../../INDEX.md) · Vision: [VISION.md](../../VISION.md)

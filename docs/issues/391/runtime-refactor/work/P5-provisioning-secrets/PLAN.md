@@ -1,12 +1,49 @@
 # P5-provisioning-secrets — Plan
 
-> Phase: Phase 5 — Extend provisioning/readiness (bash track; hard dependency P3, parallel to P4) · Work order: [TODO.md](./TODO.md) · Handoff: [HANDOFF.md](./HANDOFF.md)
+> **Proposed reduced v1 scope (2026-07-10).** Only P5a policy/readiness/credential work
+> required by the D1 dedicated workspace and the approved runsc path is a v1
+> gate. Generic provisioning engines, managed-service lifecycle, and broad
+> secrets/provider abstractions remain post-v1.
+
+> Phase: proposed narrow P5a — D1 runsc readiness/secrets after narrow P2; full
+> provisioning expansion is post-v1 · Work order: [TODO.md](./TODO.md) · V1 handoff: [P5A-HANDOFF.md](./P5A-HANDOFF.md)
 > Ordering authority: [INDEX.md](../../INDEX.md) · Vision: [VISION.md](../../VISION.md)
 
-## Governing architecture
+## Active v1 prerequisites and work
+
+P5a depends only on the narrow P2 EU runsc/provider boundary and the exact
+D1/workspace facts it must validate. P3 and E1 are not gates.
+
+The sole active order is the reduced set in
+[`P5A-HANDOFF.md`](./P5A-HANDOFF.md):
+
+1. recut BBP5-003/004 for D1 runsc and bound-workspace readiness/health;
+2. recut BBP5-007 for host-side secret refs/status/brokerage consumed by D1;
+3. BBP5-008 for pinned-TLS, nonce-bound authenticated runsc-worker facts;
+4. recut BBP5-009 for the redacted D1 desired/observed fingerprint and
+   idempotent reconciliation;
+5. recut BBP5-011/012 for D1-required non-dev fail-closed governance/config.
+
+V1 does not move the generic requirement normalizer or provisioning engine,
+create an E1 attachment lifetime, or add SDK archives, services, or remote
+mounts. Requirements/readiness validate host/workspace/D1 authority; they do
+not grant it.
+
+## Active v1 exit
+
+A real preconfigured EU worker proves authenticated runsc identity,
+isolation/network/limits, image/persistence facts, cleanup, redacted
+fingerprinting, and no secret leakage. Missing or unknown facts fail closed.
+
+## Historical broad P5 plan — non-dispatchable for v1
+
+Everything below records the superseded 2026-07-09 P3/E1-dependent engine
+extraction. Do not dispatch it or use it as P8 acceptance.
+
+## Historical governing architecture
 - [03-policy-provisioning-readiness.md](../../architecture/03-policy-provisioning-readiness.md) — requirement shape, provisioning-ownership rules, readiness model, secrets, managed services, remote-worker hardening, two-phase lifecycle, fingerprint key composition.
 
-## V1 scope correction (binding, 2026-07-09)
+## Former v1 scope correction (superseded)
 
 **P5a v1:** requirement normalization, caller migration, per-requirement
 readiness/health, host-side secret brokerage, deterministic fingerprinting, and
