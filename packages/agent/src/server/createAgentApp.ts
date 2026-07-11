@@ -18,7 +18,6 @@ import { createAuthMiddleware } from './http/middleware'
 import type { PiChatSessionService } from './http/routes/piChat'
 import { InMemorySessionChangesTracker } from './http/sessionChangesTracker'
 import { createRuntimeReadyStatusTracker } from './runtime/modeReadiness'
-import { ReadyStatusTracker } from './runtime/readyStatus'
 import type { AgentMeteringSink } from './pi-chat/metering'
 import { createPluginDiagnosticsTool } from './tools/pluginDiagnostics'
 import type { ReloadHookDiagnostic } from './http/routes/reload'
@@ -39,7 +38,6 @@ import { ErrorCode } from '../shared/error-codes'
 
 const DEFAULT_VERSION = '0.1.0-dev'
 const DEFAULT_SESSION_ID = 'default'
-const PURE_RUNTIME_MODE = 'none'
 
 export interface CreateAgentAppOptions {
   workspaceRoot?: string
@@ -153,69 +151,51 @@ export async function createAgentApp(
 ): Promise<FastifyInstance> {
   const sessionId = opts.sessionId ?? DEFAULT_SESSION_ID
   const app = Fastify({ logger: opts.logger ?? true, bodyLimit: 16 * 1024 * 1024 })
+  let modeAdapter: RuntimeModeAdapter | undefined
+  let disposeProfile: (() => Promise<void>) | undefined
 
-  const resolvedMode = opts.runtimeModeAdapter?.id ?? opts.mode ?? autoDetectMode()
-  const profile = !opts.runtimeModeAdapter && resolvedMode === PURE_RUNTIME_MODE
-    ? await createPureAgentAppProfile(opts, sessionId, resolvedMode)
-    : await createWorkspaceAgentAppProfile(opts, sessionId, resolvedMode, app)
+  try {
+    const resolvedMode = opts.runtimeModeAdapter?.id ?? opts.mode ?? autoDetectMode()
+    modeAdapter = opts.runtimeModeAdapter ?? resolveMode(resolvedMode)
+    const profile = await createWorkspaceAgentAppProfile(
+      opts,
+      sessionId,
+      resolvedMode,
+      app,
+      modeAdapter,
+    )
+    const dispose = profile.dispose
+    let disposed = false
+    disposeProfile = async () => {
+      if (disposed) return
+      disposed = true
+      await dispose?.()
+    }
+    profile.dispose = disposeProfile
 
-  app.addHook(
-    'onRequest',
-    createAuthMiddleware({
-      authToken: opts.authToken,
-      publicPaths: ['/health', '/ready', '/api/v1/ready-status'],
-    }),
-  )
+    app.addHook(
+      'onRequest',
+      createAuthMiddleware({
+        authToken: opts.authToken,
+        publicPaths: ['/health', '/ready', '/api/v1/ready-status'],
+      }),
+    )
 
-  await registerAgentRouteBindingProfile(app, profile)
-  return app
-}
-
-async function createPureAgentAppProfile(
-  opts: CreateAgentAppOptions,
-  sessionId: string,
-  resolvedMode: RuntimeModeId,
-): Promise<AgentRouteBindingProfile> {
-  const runtimePi = withPiHarnessDefaults(opts.pi)
-  const baseHarnessFactory = opts.harnessFactory ?? ((input) => createPiCodingAgentHarness({
-    ...input,
-    pi: runtimePi,
-  }))
-  const harnessFactory = ((input) => baseHarnessFactory({
-    ...input,
-    sessionNamespace: opts.sessionNamespace,
-    sessionRoot: opts.sessionRoot,
-    sessionDir: opts.sessionDir ?? input.sessionDir,
-  })) as AgentCoreHarnessFactory
-  const tools = opts.extraTools ?? []
-  const coreAgent = createAgentRuntimeBridge({
-    runtime: 'none',
-    tools,
-    harnessFactory,
-    systemPromptAppend: opts.systemPromptAppend,
-    systemPromptDynamic: opts.systemPromptDynamic,
-    telemetry: opts.telemetry,
-    metering: opts.metering,
-    sessionStorageRoot: opts.sessionRoot,
-  })
-  const agentRuntime = await coreAgent.getRuntime()
-  opts.onWorkspaceAgentDispatcher?.(createStaticWorkspaceAgentDispatcherResolver(coreAgent.agent, sessionId))
-  const readyTracker = new ReadyStatusTracker({ sandboxReady: true, harnessReady: true })
-  return {
-    runtimeMode: resolvedMode,
-    capabilities: { tools: toolNames(tools) },
-    sessionChangesTracker: new InMemorySessionChangesTracker(),
-    health: {
-      version: opts.version ?? DEFAULT_VERSION,
-      getReadiness: () => ({ sandboxReady: true, harnessReady: true }),
-    },
-    chat: {
-      service: agentRuntime.service as PiChatSessionService,
-      defaultWorkspaceId: false,
-    },
-    catalog: { tools },
-    readyStatus: { tracker: readyTracker },
-    dispose: () => coreAgent.agent.dispose(),
+    await registerAgentRouteBindingProfile(app, profile)
+    return app
+  } catch (error) {
+    try {
+      await app.close()
+    } catch {
+      // Construction failure remains the actionable error; close is best effort.
+    }
+    try {
+      if (disposeProfile) await disposeProfile()
+      else await modeAdapter?.dispose?.()
+    } catch {
+      // Initialization failure remains the actionable error; cleanup is best effort.
+    }
+    throw error
   }
 }
 
@@ -224,10 +204,10 @@ async function createWorkspaceAgentAppProfile(
   sessionId: string,
   resolvedMode: RuntimeModeId,
   app: FastifyInstance,
+  modeAdapter: RuntimeModeAdapter,
 ): Promise<AgentRouteBindingProfile> {
   const workspaceRoot = opts.workspaceRoot ?? process.cwd()
   const templatePath = opts.templatePath ?? getEnv('BORING_AGENT_TEMPLATE_PATH')
-  const modeAdapter = opts.runtimeModeAdapter ?? resolveMode(resolvedMode)
   let runtimeBundle = await modeAdapter.create({
     workspaceRoot,
     sessionId,
@@ -250,8 +230,8 @@ async function createWorkspaceAgentAppProfile(
   // UI-aware tools (get_ui_state, exec_ui) and the /api/v1/ui/* routes
   // are now owned by @hachej/boring-workspace. Hosts that want them call
   // @hachej/boring-workspace/app's createWorkspaceAgentApp() instead of
-  // createAgentApp() directly. Standalone agent (CLI, no workspace)
-  // ships zero UI surface — smaller bundle, honest contract.
+  // createAgentApp() directly. A standalone agent with no workspace
+  // UI/presentation ships zero UI surface — smaller bundle, honest contract.
   const pluginTools: AgentTool[] = []
   const externalPluginsEnabled = opts.externalPlugins !== false
   if (externalPluginsEnabled && modeAdapter.workspaceFsCapability === 'strong') {
@@ -422,5 +402,6 @@ async function createWorkspaceAgentAppProfile(
       },
     },
     readyStatus: { tracker: readyTracker },
+    dispose: () => coreAgent.agent.dispose(),
   }
 }
