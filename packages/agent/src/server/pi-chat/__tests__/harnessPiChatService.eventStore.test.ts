@@ -29,10 +29,14 @@ const sessionStore: SessionStore = {
   delete: vi.fn(async () => {}),
 }
 
-type FakeAdapter = PiAgentSessionAdapter & { emit(event: AgentSessionEvent): void }
+type FakeAdapter = PiAgentSessionAdapter & {
+  emit(event: AgentSessionEvent): void
+  emitOnUnsubscribe(event: AgentSessionEvent): void
+}
 
 function createAdapter(): FakeAdapter {
   const listeners = new Set<(event: AgentSessionEvent) => void>()
+  let unsubscribeEvent: AgentSessionEvent | undefined
   const snapshot: PiAgentSessionSnapshot = {
     state: {},
     messages: [],
@@ -49,7 +53,10 @@ function createAdapter(): FakeAdapter {
     readSnapshot: vi.fn(() => snapshot),
     subscribe: vi.fn((listener: (event: AgentSessionEvent) => void) => {
       listeners.add(listener)
-      return () => listeners.delete(listener)
+      return () => {
+        if (unsubscribeEvent) listener(unsubscribeEvent)
+        listeners.delete(listener)
+      }
     }),
     prompt: vi.fn(async () => {}),
     followUp: vi.fn(async () => {}),
@@ -58,6 +65,9 @@ function createAdapter(): FakeAdapter {
     abortRetry: vi.fn(),
     emit(event: AgentSessionEvent) {
       for (const listener of listeners) listener(event)
+    },
+    emitOnUnsubscribe(event: AgentSessionEvent) {
+      unsubscribeEvent = event
     },
   }
 }
@@ -86,6 +96,63 @@ function createService(eventStore: EventStreamStore, adapter = createAdapter(), 
 }
 
 describe('HarnessPiChatService event store tap', () => {
+  it.each(['dispose', 'delete'] as const)('awaits the final native event published during %s unsubscribe', async (operation) => {
+    const db = openDatabase(':memory:')
+    try {
+      const inner = new SqliteEventStreamStore(db.sql, db.runTransaction)
+      const appendGate = deferred<void>()
+      const store = new DelayedEventStreamStore(inner, new Map([[1, appendGate.promise]]))
+      const { service, adapter } = createService(store)
+      await service.subscribe(ctx, 's1', 0, () => {})
+      adapter.emitOnUnsubscribe({ type: 'agent_start', turnId: 'late-turn' } as unknown as AgentSessionEvent)
+
+      let settled = false
+      const terminal = (operation === 'dispose' ? service.dispose() : service.deleteSession(ctx, 's1'))
+        .then(() => { settled = true })
+      await waitFor(() => expect(store.appendStarted).toEqual([1]))
+      expect(settled).toBe(false)
+
+      appendGate.resolve()
+      await terminal
+      const result = await inner.readEvents(streamPathFor(ctx, 's1'), { offset: '-1' })
+      expect((result.events[0]?.data as AgentEvent).chunk).toMatchObject({ type: 'agent-start', turnId: 'late-turn' })
+    } finally {
+      db.db.close()
+    }
+  })
+
+  it('preserves durable construction failure and reports late-adapter cleanup failure during disposal', async () => {
+    const db = openDatabase(':memory:')
+    try {
+      const createStarted = deferred<void>()
+      const createGate = deferred<void>()
+      const primaryError = new Error('stream creation failed')
+      const cleanupError = new Error('late adapter abort failed')
+      const inner = new SqliteEventStreamStore(db.sql, db.runTransaction)
+      const store = new DelayedEventStreamStore(inner, new Map(), new Set(), {
+        started: createStarted.resolve,
+        gate: createGate.promise,
+        error: primaryError,
+      })
+      const adapter = createAdapter()
+      adapter.abort = vi.fn(async () => { throw cleanupError })
+      const { service } = createService(store, adapter)
+
+      const subscription = service.subscribe(ctx, 's1', 0, () => {})
+      await createStarted.promise
+      const disposal = service.dispose()
+      createGate.resolve()
+
+      await expect(subscription).rejects.toBe(primaryError)
+      await expect(disposal).rejects.toBe(cleanupError)
+      expect(adapter.abortRetry).toHaveBeenCalledOnce()
+      expect(adapter.clearFollowUp).toHaveBeenCalledOnce()
+      expect(adapter.abort).toHaveBeenCalledOnce()
+    } finally {
+      db.db.close()
+    }
+  })
+
   it('appends AgentEvent envelopes before live delivery and preserves contiguous eventIndex order', async () => {
     const db = openDatabase(':memory:')
     try {
@@ -324,9 +391,15 @@ class DelayedEventStreamStore implements EventStreamStore {
     private readonly inner: EventStreamStore,
     private readonly gates: Map<number, Promise<void>>,
     private readonly failingSeqs = new Set<number>(),
+    private readonly creationFailure?: { started: () => void; gate: Promise<void>; error: Error },
   ) {}
 
-  createStream(path: string): Promise<void> {
+  async createStream(path: string): Promise<void> {
+    if (this.creationFailure) {
+      this.creationFailure.started()
+      await this.creationFailure.gate
+      throw this.creationFailure.error
+    }
     return this.inner.createStream(path)
   }
 

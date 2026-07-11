@@ -137,4 +137,20 @@ describe('HarnessPiChatService concurrent clients on the same session', () => {
     const snapshot = await statePromise
     expect(snapshot.sessionId).toBe('s1')
   })
+
+  it('drains an in-flight channel creation without installing a late subscription', async () => {
+    const { service, adapter, harness, releaseNext } = createGatedService()
+    const cleanupError = new Error('late adapter abort failed')
+    adapter.abort = vi.fn(async () => { throw cleanupError })
+    const subscription = service.subscribe(ctx, 's1', 0, () => {})
+    await vi.waitFor(() => expect(harness.getPiSessionAdapter).toHaveBeenCalledOnce())
+
+    const disposal = service.dispose()
+    await releaseNext()
+
+    await expect(subscription).rejects.toMatchObject({ code: 'AGENT_BINDING_DISPOSED' })
+    await expect(disposal).rejects.toBe(cleanupError)
+    expect(adapter.abort).toHaveBeenCalledOnce()
+    expect(adapter.listenerCount()).toBe(0)
+  })
 })

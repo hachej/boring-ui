@@ -19,6 +19,7 @@ import { PiChatReplayBuffer } from './piChatReplayBuffer'
 import { followUpSelector, hasFollowUpSelector, PiChatMessageMetadataReconciler } from './piChatMessageMetadataReconciler'
 import { buildPiChatHistory } from './piChatHistory'
 import { PiChatMeteringCoordinator, type AgentMeteringSink, type MeteringErrorLogger } from './metering'
+import { HarnessPiChatServiceLifecycle } from './piChatServiceLifecycle'
 
 type PiNativeHarness = AgentHarness & {
   getPiSessionAdapter?: (input: AgentSendInput, ctx: RunContext) => Promise<PiAgentSessionAdapter>
@@ -44,6 +45,7 @@ interface LiveSessionChannel {
   mapper: PiChatEventMapper
   publishQueue: Promise<void>
   closed: Promise<void>
+  resolveClosed: () => void
   rejectClosed: (error: unknown) => void
   activeTurnId?: string
   messageTurnIds: Map<string, string>
@@ -78,16 +80,15 @@ export class HarnessPiChatService implements PiChatSessionService {
   private readonly workspace?: Workspace
   private readonly eventStore?: EventStreamStore
   private readonly channels = new Map<string, LiveSessionChannel>()
-  // Single-flight guard so concurrent cold callers (e.g. two browser tabs each
-  // opening /events while the session is still being created) converge on one
-  // LiveSessionChannel instead of racing through ensureChannel and orphaning
-  // the loser's adapter subscription.
+  // Coalesce cold callers so only one adapter subscription owns the channel.
   private readonly channelCreations = new Map<string, Promise<LiveSessionChannel>>()
   private readonly messageMetadata = new PiChatMessageMetadataReconciler()
   private readonly activePromptRuns = new Map<string, Promise<void>>()
   private readonly syntheticPromptFailures = new Map<string, SyntheticPromptFailure[]>()
   private readonly activeSyntheticPromptErrors = new Map<string, ChatError>()
+  private readonly lifecycle = new HarnessPiChatServiceLifecycle()
   private readonly metering?: PiChatMeteringCoordinator
+  private disposePromise?: Promise<void>
 
   constructor(options: HarnessPiChatServiceOptions) {
     this.harness = options.harness as PiNativeHarness
@@ -102,18 +103,84 @@ export class HarnessPiChatService implements PiChatSessionService {
 
   /** Test/diagnostic hook: resolves once queued metering sink calls settle. */
   async flushMetering(): Promise<void> {
-    await this.metering?.flush()
+    return this.lifecycle.run(async () => this.metering?.flush())
+  }
+
+  dispose(): Promise<void> {
+    this.lifecycle.beginClosing()
+    this.disposePromise ??= this.disposeService()
+    return this.disposePromise
+  }
+
+  private async disposeService(): Promise<void> {
+    await this.lifecycle.drain()
+    await Promise.allSettled([...this.channelCreations.values()])
+    const errors: unknown[] = []
+    errors.push(...this.lifecycle.takeCleanupErrors())
+    const channels = [...this.channels.values()]
+    const abortChannels: LiveSessionChannel[] = []
+    for (const channel of channels) {
+      for (const cleanup of [() => channel.adapter.abortRetry?.(), () => channel.adapter.clearFollowUp()]) {
+        try { cleanup() } catch (error) { errors.push(error) }
+      }
+      try {
+        const snapshot = channel.adapter.readSnapshot()
+        if (snapshot.isStreaming || snapshot.isRetrying || this.activePromptRuns.has(channel.sessionKey)) {
+          abortChannels.push(channel)
+        }
+      } catch (error) {
+        errors.push(error)
+        abortChannels.push(channel)
+      }
+    }
+    const aborts = await Promise.allSettled(abortChannels.map(async (channel) => channel.adapter.abort()))
+    errors.push(...rejectedReasons(aborts))
+    await Promise.allSettled([...this.activePromptRuns.values()])
+    for (const channel of channels) {
+      try {
+        channel.unsubscribe()
+      } catch (error) {
+        errors.push(error)
+      }
+    }
+    const publishes = await Promise.allSettled(channels.map((channel) => channel.publishQueue))
+    errors.push(...rejectedReasons(publishes))
+    for (const channel of channels) {
+      channel.buffer.clearSubscribers()
+      channel.resolveClosed()
+      this.messageMetadata.clearSession(channel.sessionKey)
+      try {
+        this.metering?.releaseSession(channel.sessionKey)
+      } catch (error) {
+        errors.push(error)
+      }
+    }
+    try {
+      await this.metering?.flush()
+    } catch (error) {
+      errors.push(error)
+    }
+    this.channels.clear()
+    this.channelCreations.clear()
+    this.activePromptRuns.clear()
+    this.syntheticPromptFailures.clear()
+    this.activeSyntheticPromptErrors.clear()
+    if (errors.length > 0) throw errors[0]
   }
 
   async listSessions(ctx: PiSessionRequestContext, options?: SessionListOptions) {
-    return this.sessionStore.list(toSessionCtx(ctx), options)
+    return this.lifecycle.run(() => this.sessionStore.list(toSessionCtx(ctx), options))
   }
 
   async createSession(ctx: PiSessionRequestContext, init?: PiSessionCreateInit) {
-    return this.sessionStore.create(toSessionCtx(ctx), init)
+    return this.lifecycle.run(() => this.sessionStore.create(toSessionCtx(ctx), init))
   }
 
-  async deleteSession(ctx: PiSessionRequestContext, sessionId: string) {
+  async deleteSession(ctx: PiSessionRequestContext, sessionId: string): Promise<void> {
+    return this.lifecycle.run(() => this.deleteSessionBeforeDispose(ctx, sessionId))
+  }
+
+  private async deleteSessionBeforeDispose(ctx: PiSessionRequestContext, sessionId: string): Promise<void> {
     const sessionCtx = toSessionCtx(ctx)
     const sessionKey = sessionCacheKey(sessionId, sessionCtx)
     try {
@@ -123,25 +190,32 @@ export class HarnessPiChatService implements PiChatSessionService {
     }
     const channel = this.channels.get(sessionKey)
     if (channel) {
-      // sessionStore.delete only disposes the Pi listener; it does not abort the
-      // underlying Agent run. Abort it first (so it stops generating billable
-      // usage) and await the in-flight run while the subscription is still live,
-      // so the native aborted agent-end finalizes the active metering run with
-      // its observed usage before we tear the channel down.
+      // Keep the native listener through abort/run drain so terminal usage is metered.
       const activeRun = this.activePromptRuns.get(sessionKey)
       await channel.adapter.abort()
       await activeRun?.catch(() => {})
     }
-    channel?.unsubscribe()
+    let teardownError: unknown
+    if (channel) {
+      try { channel.unsubscribe() } catch (error) { teardownError = error }
+      try { await channel.publishQueue } catch (error) { teardownError ??= error }
+      channel.buffer.clearSubscribers()
+      channel.resolveClosed()
+    }
     this.channels.delete(sessionKey)
-    this.metering?.releaseSession(sessionKey)
+    try { this.metering?.releaseSession(sessionKey) } catch (error) { teardownError ??= error }
     this.messageMetadata.clearSession(sessionKey)
     this.syntheticPromptFailures.delete(sessionKey)
     this.activeSyntheticPromptErrors.delete(sessionKey)
-    await this.sessionStore.delete(sessionCtx, sessionId)
+    try { await this.sessionStore.delete(sessionCtx, sessionId) } catch (error) { teardownError ??= error }
+    if (teardownError) throw teardownError
   }
 
-  async readState(ctx: PiSessionRequestContext, sessionId: string) {
+  async readState(ctx: PiSessionRequestContext, sessionId: string): Promise<PiChatSnapshot> {
+    return this.lifecycle.run(() => this.readStateBeforeDispose(ctx, sessionId))
+  }
+
+  private async readStateBeforeDispose(ctx: PiSessionRequestContext, sessionId: string): Promise<PiChatSnapshot> {
     const sessionKey = this.sessionKey(ctx, sessionId)
     const channel = this.channels.get(sessionKey)
     if (!channel && !this.harnessMayHaveLiveSession(ctx, sessionId)) {
@@ -184,23 +258,26 @@ export class HarnessPiChatService implements PiChatSessionService {
   }
 
   async subscribe(ctx: PiSessionRequestContext, sessionId: string, cursor: number, subscriber: PiChatEventSubscriber): Promise<PiChatEventStreamResult> {
+    return this.lifecycle.run(() => this.subscribeBeforeDispose(ctx, sessionId, cursor, subscriber))
+  }
+
+  private async subscribeBeforeDispose(ctx: PiSessionRequestContext, sessionId: string, cursor: number, subscriber: PiChatEventSubscriber): Promise<PiChatEventStreamResult> {
     const channel = await this.getChannel(ctx, sessionId)
+    this.lifecycle.assertOpen()
     const result = channel.buffer.subscribe(cursor, subscriber)
     if (result.type !== 'ok') return result
     return { type: 'ok', unsubscribe: result.unsubscribe, closed: channel.closed }
   }
 
   async prompt(ctx: PiSessionRequestContext, sessionId: string, payload: PromptPayload): Promise<PromptReceipt> {
+    return this.lifecycle.run(() => this.promptBeforeDispose(ctx, sessionId, payload))
+  }
+
+  private async promptBeforeDispose(ctx: PiSessionRequestContext, sessionId: string, payload: PromptPayload): Promise<PromptReceipt> {
     const sessionKey = this.sessionKey(ctx, sessionId)
     const adapter = await this.getAdapter(ctx, sessionId, payload)
     const channel = await this.ensureChannel(ctx, sessionId, adapter)
-    // Reserve before execution. The coordinator is the single source of dedup
-    // truth: it awaits the owning run's reservation, so a concurrent duplicate
-    // sees the same accept/reject (a rejecting sink — e.g. credits exhausted —
-    // re-throws here and fails the request closed before any model call).
-    //   - 'duplicate'  another run owns this nonce → acknowledge, don't execute.
-    //   - 'cancelled'  a concurrent stop/interrupt terminated the run mid-reserve
-    //                  → surface as aborted rather than a fake accepted run.
+    // Reservation is the dedup authority and must settle before model execution.
     const outcome = (await this.metering?.reservePrompt({
       workspaceId: ctx.workspaceId,
       userId: ctx.authSubject,
@@ -225,6 +302,7 @@ export class HarnessPiChatService implements PiChatSessionService {
     const receiptCursor = nextPromptReceiptCursor(channel)
     try {
       const input = await toPiPromptInput(payload, this.workspace)
+      this.lifecycle.assertOpen()
       const run = this.trackActiveRun(sessionKey, this.runAndDrainPublishQueue(channel, adapter.prompt(input)))
       run.catch((error) => {
         this.metering?.failPromptRun(sessionId, payload.clientNonce, sessionKey)
@@ -240,12 +318,14 @@ export class HarnessPiChatService implements PiChatSessionService {
   }
 
   async followUp(ctx: PiSessionRequestContext, sessionId: string, payload: FollowUpPayload): Promise<FollowUpReceipt> {
+    return this.lifecycle.run(() => this.followUpBeforeDispose(ctx, sessionId, payload))
+  }
+
+  private async followUpBeforeDispose(ctx: PiSessionRequestContext, sessionId: string, payload: FollowUpPayload): Promise<FollowUpReceipt> {
     const sessionKey = this.sessionKey(ctx, sessionId)
     const adapter = await this.getAdapter(ctx, sessionId, payload.message)
     const channel = await this.ensureChannel(ctx, sessionId, adapter)
-    // Reserve before enqueuing; the coordinator awaits the owner's reservation
-    // and dedups concurrent/consumed retries (so a duplicate doesn't take a
-    // second hold or queue a second native follow-up).
+    // Reserve before enqueueing so duplicates cannot take a second hold.
     const outcome = (await this.metering?.reserveFollowUp({
       workspaceId: ctx.workspaceId,
       userId: ctx.authSubject,
@@ -271,6 +351,7 @@ export class HarnessPiChatService implements PiChatSessionService {
     if (outcome === 'cancelled') throw promptCancelledError()
     this.messageMetadata.recordFollowUp(sessionKey, payload)
     try {
+      this.lifecycle.assertOpen()
       await adapter.followUp(payload.message, {
         displayText: payload.displayMessage ?? payload.message,
         clientNonce: payload.clientNonce,
@@ -286,6 +367,10 @@ export class HarnessPiChatService implements PiChatSessionService {
   }
 
   async clearQueue(ctx: PiSessionRequestContext, sessionId: string, payload: QueueClearPayload): Promise<QueueClearReceipt> {
+    return this.lifecycle.run(() => this.clearQueueBeforeDispose(ctx, sessionId, payload))
+  }
+
+  private async clearQueueBeforeDispose(ctx: PiSessionRequestContext, sessionId: string, payload: QueueClearPayload): Promise<QueueClearReceipt> {
     const sessionKey = this.sessionKey(ctx, sessionId)
     const adapter = await this.getAdapter(ctx, sessionId, '')
     if (hasFollowUpSelector(payload)) {
@@ -306,6 +391,10 @@ export class HarnessPiChatService implements PiChatSessionService {
   }
 
   async interrupt(ctx: PiSessionRequestContext, sessionId: string, _payload: InterruptPayload): Promise<{ accepted: true; cursor: number }> {
+    return this.lifecycle.run(() => this.interruptBeforeDispose(ctx, sessionId))
+  }
+
+  private async interruptBeforeDispose(ctx: PiSessionRequestContext, sessionId: string): Promise<{ accepted: true; cursor: number }> {
     const sessionKey = this.sessionKey(ctx, sessionId)
     const adapter = await this.getAdapter(ctx, sessionId, '')
     const snapshot = adapter.readSnapshot()
@@ -316,15 +405,20 @@ export class HarnessPiChatService implements PiChatSessionService {
     if (wasActive) await adapter.abort()
     await this.drainPublishQueue(this.channels.get(sessionKey))
     await activeRun?.catch(() => {})
-    // Release prompt reservations stranded before agent-start. Safe before
-    // auto-post: the next follow-up is still in the queue (released only when
-    // promoted), not in pendingPrompts.
+    // Release prompt reservations stranded before agent-start.
     this.metering?.releasePending(sessionKey)
-    if (nextFollowUp) await this.autoPostInterruptedFollowUp(sessionId, sessionKey, adapter, nextFollowUp)
+    if (nextFollowUp) {
+      this.lifecycle.assertOpen()
+      await this.autoPostInterruptedFollowUp(sessionId, sessionKey, adapter, nextFollowUp)
+    }
     return { accepted: true, cursor: this.channels.get(sessionKey)?.buffer.latestSeq ?? 0 }
   }
 
   async stop(ctx: PiSessionRequestContext, sessionId: string, _payload: StopPayload): Promise<StopReceipt> {
+    return this.lifecycle.run(() => this.stopBeforeDispose(ctx, sessionId))
+  }
+
+  private async stopBeforeDispose(ctx: PiSessionRequestContext, sessionId: string): Promise<StopReceipt> {
     const sessionKey = this.sessionKey(ctx, sessionId)
     const adapter = await this.getAdapter(ctx, sessionId, '')
     const clearedQueue = this.clearAllFollowUps(adapter, sessionId, sessionKey)
@@ -364,7 +458,10 @@ export class HarnessPiChatService implements PiChatSessionService {
     this.messageMetadata.recordConsumingFollowUp(sessionKey, followUp, metadata?.serverText)
     if (adapter.continueQueuedFollowUp) {
       try {
-        await this.trackActiveRun(sessionKey, this.runAndDrainPublishQueue(this.channels.get(sessionKey), adapter.continueQueuedFollowUp()))
+        await Promise.race([
+          this.trackActiveRun(sessionKey, this.runAndDrainPublishQueue(this.channels.get(sessionKey), adapter.continueQueuedFollowUp())),
+          this.lifecycle.closingPromise,
+        ])
       } catch (err) {
         // Rejected before Pi consumed the follow-up; release its reservation.
         // A no-op if it was already consumed (the run left the queue).
@@ -389,6 +486,7 @@ export class HarnessPiChatService implements PiChatSessionService {
       // it doesn't strand in pendingPrompts and misattribute later usage, then
       // restore the queue item because fallback reposting never consumed it.
       this.metering?.failPromotedFollowUp(sessionId, followUp, sessionKey)
+      this.lifecycle.assertOpen()
       await adapter.followUp(metadata?.serverText ?? followUp.displayText, {
         displayText: followUp.displayText,
         clientNonce: followUp.clientNonce,
@@ -407,7 +505,10 @@ export class HarnessPiChatService implements PiChatSessionService {
   }
 
   private async runPrompt(sessionKey: string, adapter: PiAgentSessionAdapter, input: PiAgentPromptInput): Promise<void> {
-    await this.trackActiveRun(sessionKey, this.runAndDrainPublishQueue(this.channels.get(sessionKey), adapter.prompt(input)))
+    await Promise.race([
+      this.trackActiveRun(sessionKey, this.runAndDrainPublishQueue(this.channels.get(sessionKey), adapter.prompt(input))),
+      this.lifecycle.closingPromise,
+    ])
   }
 
   private async trackActiveRun(sessionKey: string, run: Promise<void>): Promise<void> {
@@ -568,8 +669,10 @@ export class HarnessPiChatService implements PiChatSessionService {
     input: string | PromptPayload,
     options?: { authorize?: boolean },
   ): Promise<PiAgentSessionAdapter> {
+    this.lifecycle.assertOpen()
     if (!this.harness.getPiSessionAdapter) throw new Error('pi-native harness adapter unavailable')
     if (options?.authorize !== false) await this.assertCanAccessSession(ctx, sessionId)
+    this.lifecycle.assertOpen()
     const message = typeof input === 'string' ? input : input.message
     const sendInput: AgentSendInput = {
       sessionId,
@@ -580,7 +683,7 @@ export class HarnessPiChatService implements PiChatSessionService {
       ...(typeof input !== 'string' && input.thinkingLevel ? { thinkingLevel: input.thinkingLevel } : {}),
       ...(typeof input !== 'string' && input.attachments ? { attachments: input.attachments } : {}),
     }
-    return this.harness.getPiSessionAdapter(sendInput, {
+    const adapter = await this.harness.getPiSessionAdapter(sendInput, {
       abortSignal: new AbortController().signal,
       workdir: this.workdir,
       workspaceId: ctx.workspaceId,
@@ -589,6 +692,8 @@ export class HarnessPiChatService implements PiChatSessionService {
       userEmail: ctx.authEmail,
       userEmailVerified: ctx.authEmailVerified,
     })
+    await this.lifecycle.assertAdapterOwned(adapter)
+    return adapter
   }
 
   private async getChannel(ctx: PiSessionRequestContext, sessionId: string): Promise<LiveSessionChannel> {
@@ -606,14 +711,7 @@ export class HarnessPiChatService implements PiChatSessionService {
     return this.createChannelOnce(sessionKey, sessionId, async () => adapter)
   }
 
-  /**
-   * Resolve (or create) the single LiveSessionChannel for a session, coalescing
-   * concurrent cold callers onto one in-flight creation. Without this guard two
-   * tabs opening /events on a not-yet-live session both fall through the channel
-   * cache miss, build separate channels + adapter subscriptions, and the second
-   * `this.channels.set` orphans the first — so the first tab's stream silently
-   * stops receiving events.
-   */
+  /** Coalesce concurrent cold callers so only one adapter subscription wins. */
   private async createChannelOnce(sessionKey: string, sessionId: string, resolveAdapter: () => Promise<PiAgentSessionAdapter>): Promise<LiveSessionChannel> {
     const inFlight = this.channelCreations.get(sessionKey)
     if (inFlight) return inFlight
@@ -621,6 +719,7 @@ export class HarnessPiChatService implements PiChatSessionService {
       const existing = this.channels.get(sessionKey)
       if (existing) return existing
       const adapter = await resolveAdapter()
+      await this.lifecycle.assertAdapterOwned(adapter)
       return this.buildChannel(sessionKey, sessionId, adapter)
     })()
     this.channelCreations.set(sessionKey, creation)
@@ -635,8 +734,15 @@ export class HarnessPiChatService implements PiChatSessionService {
     const existing = this.channels.get(sessionKey)
     if (existing) return existing
     const streamPath = sessionStreamPath(sessionKey)
-    await this.eventStore?.createStream(streamPath)
-    const initialSeq = await this.readDurableLatestPiChatSeq(streamPath)
+    let initialSeq: number
+    try {
+      await this.eventStore?.createStream(streamPath)
+      initialSeq = await this.readDurableLatestPiChatSeq(streamPath)
+    } catch (error) {
+      if (this.lifecycle.isClosing) await this.lifecycle.rejectLateAdapter(adapter, error)
+      throw error
+    }
+    await this.lifecycle.assertAdapterOwned(adapter)
     const buffer = new PiChatReplayBuffer({ initialLatestSeq: initialSeq })
     const mapper = new PiChatEventMapper({ sessionId, initialSeq: buffer.latestSeq })
     const closed = deferred<void>()
@@ -650,6 +756,7 @@ export class HarnessPiChatService implements PiChatSessionService {
       mapper,
       publishQueue: Promise.resolve(),
       closed: closed.promise,
+      resolveClosed: () => closed.resolve(),
       rejectClosed: closed.reject,
       messageTurnIds: new Map(),
     }
@@ -718,6 +825,10 @@ function deferred<T>(): { promise: Promise<T>; resolve: (value: T) => void; reje
     reject = nextReject
   })
   return { promise, resolve, reject }
+}
+
+function rejectedReasons(results: PromiseSettledResult<unknown>[]): unknown[] {
+  return results.flatMap((result) => result.status === 'rejected' ? [result.reason] : [])
 }
 
 function normalizeSessionAccessError(error: unknown, sessionId: string): unknown {
