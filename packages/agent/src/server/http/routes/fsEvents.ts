@@ -55,13 +55,18 @@ export function fsEventsRoutes(
   // request-scoped workspace id.
   const broadcasters = new Map<string, BroadcasterEntry>()
 
-  const ensureBroadcaster = async (request: FastifyRequest): Promise<
+  const ensureBroadcaster = async (
+    request: FastifyRequest,
+    isTransportClosed: () => boolean,
+  ): Promise<
     | { workspaceId: string; entry: BroadcasterEntry }
     | { unsupported: { reason: string; message?: string } }
+    | undefined
   > => {
     const workspace = opts.getWorkspace
       ? await opts.getWorkspace(request)
       : opts.workspace
+    if (isTransportClosed()) return undefined
     if (!workspace) throw new Error('fs event route requires workspace or getWorkspace')
     if (typeof workspace.watch !== 'function') {
       return { unsupported: { reason: 'watch_not_implemented' } }
@@ -74,6 +79,7 @@ export function fsEventsRoutes(
     // observe over-sized trees — relay that to the client as
     // `unsupported` so it falls back instead of waiting forever.
     const readiness: WorkspaceWatcherReadiness = (await watcher.whenReady?.()) ?? { ok: true }
+    if (isTransportClosed()) return undefined
     if (!readiness.ok) {
       return { unsupported: { reason: readiness.reason, ...(readiness.message ? { message: readiness.message } : {}) } }
     }
@@ -114,7 +120,8 @@ export function fsEventsRoutes(
     request.raw.once('aborted', onTransportClose)
     reply.raw.once('close', onTransportClose)
 
-    const resolved = await ensureBroadcaster(request)
+    const resolved = await ensureBroadcaster(request, () => transportClosed)
+    if (!resolved) return
 
     if ('unsupported' in resolved) {
       if (transportClosed) return

@@ -284,10 +284,9 @@ test('hijacked stream close before binding resolution does not leak a late lease
   await requestAborted
   releaseCreate()
   await response
-  await eventually(() => expect(watcherUnsubscribe).toHaveBeenCalledOnce())
-  expect(watcherSubscribe).toHaveBeenCalledOnce()
-
   await app.close()
+  expect(watcherSubscribe).not.toHaveBeenCalled()
+  expect(watcherUnsubscribe).not.toHaveBeenCalled()
   expect(evictCachedRuntime).toHaveBeenCalledWith({ workspaceId: 'workspace-fs-events-late' })
   expect(disposeAdapter).toHaveBeenCalledOnce()
 }, 15_000)
@@ -735,11 +734,9 @@ test('shutdown rejects new dispatcher work while an admitted HTTP request drains
     getTrustedWorkspaceRoot: async () => workspaceRoot,
     onWorkspaceAgentDispatcher: (value) => { resolver = value },
   })
-  await app.listen({ port: 0, host: '127.0.0.1' })
-  const address = app.server.address()
-  if (typeof address !== 'object' || !address) throw new Error('no server address')
+  await app.ready()
   const retained = await resolver!.resolve({ workspaceId: 'workspace-drain', userId: 'user-drain' })
-  const search = fetch(`http://127.0.0.1:${address.port}/api/v1/files/search?q=held`)
+  const search = app.inject({ method: 'GET', url: '/api/v1/files/search?q=held' })
   await searchStarted
 
   let closeSettled = false
@@ -755,7 +752,7 @@ test('shutdown rejects new dispatcher work while an admitted HTTP request drains
   expect(closeSettled).toBe(false)
 
   releaseSearch()
-  expect((await search).status).toBe(200)
+  expect((await search).statusCode).toBe(200)
   await close
 })
 
