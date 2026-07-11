@@ -956,7 +956,7 @@ export const registerAgentRoutes: FastifyPluginAsync<RegisterAgentRoutesOptions>
     request?: FastifyRequest,
     trustedCtx?: WorkspaceAgentDispatcherContext,
   ): Promise<RuntimeBinding> {
-    if (entry.state === 'retiring' || !bindingLifecycle.isCurrentEntry(scope.key, entry)) {
+    if (entry.retirementPromise !== undefined || !bindingLifecycle.isCurrentEntry(scope.key, entry)) {
       await entry.retirementPromise
       return getOrCreateRuntimeBinding(workspaceId, request, { trustedCtx })
     }
