@@ -63,9 +63,11 @@ that mean you are over-engineering, and the acceptance that means you are done.
 - **Accept:** 3 distinct agents on 1 EU host, each bound to its workspace;
   golden-path timing recorded; rollback = reapply a prior COMPLETE immutable
   revision snapshot (never just an old compose file over new volumes/secrets),
-  published only after all bindings report ready; **adding agent N+1 does not
-  restart or interrupt agents 1..N** (per-service compose granularity — so
-  onboarding a client never bounces existing clients). (This IS phase-2 exit.)
+  published only after all bindings report ready; **applying revision N+1
+  must not interrupt in-flight sessions of agents 1..N** — via D1-R0's atomic
+  immutable-revision apply with graceful cutover. The mechanism (in-process
+  rebind vs process granularity) is D1-R0's decision, NOT this file's; do not
+  assume one-container-per-agent. (This IS phase-2 exit.)
 
 ## P5a — provisioning/secrets (narrow)
 
@@ -120,9 +122,13 @@ that mean you are over-engineering, and the acceptance that means you are done.
   until the first contracted-mode engagement exists (#640 spec is ready when
   needed); expiry/revocation machinery (membership IS revocation); preview
   renderers per file type.
-- **Accept:** agent returns a link; owner opens it logged-in and lands
-  focused on the file; deleted file shows provenance tombstone, never a bare
-  404; non-member gets a clean denial.
+- **Accept (same-workspace lane):** agent returns a link; owner opens it
+  logged-in and lands focused on the file; deleted file shows provenance
+  tombstone, never a bare 404; non-member gets a clean denial.
+- **Accept (workpackage exit):** AR1 as a whole is done only when INDEX.md's
+  authoritative cross-workspace exit also holds — a consumer materializes a
+  pinned immutable copy in its authorized destination workspace per the
+  AR1-001 spec. The deferral above delays that lane's build, not the exit.
 
 ## AC1 — agent consumption contract (issue #636)
 
@@ -148,17 +154,20 @@ that mean you are over-engineering, and the acceptance that means you are done.
   wall-clock, recorded in repo); CI greps for `runtime:'none'` residue and
   the standing invariants.
 - **Do NOT build:** a test platform, dashboards, synthetic monitoring.
-- **Accept:** a named script (e.g. `scripts/golden-path-timing`) writes
+- **Accept:** `scripts/golden-path-timing.mjs` (this exact path) writes
   `docs/issues/391/runtime-refactor/golden-path.json` {version, seconds, date};
-  CI fails when the recorded version differs from the released version —
+  version source of truth = root `package.json` version at the release tag;
+  a CI job fails when golden-path.json's version differs from it —
   staleness is machine-detected, not remembered.
 
 ## Ops beads (paper-first; the vault claim demands them)
 
-- **Backup/restore:** nightly workspace-volume snapshot (borgmatic/rsync
-  level — NOT a backup platform) + a restore runbook that has been executed
-  once for real. "Your data is backed up and restorable" is B2B table stakes
-  if the workspace vault is the moat.
+- **Backup/restore:** nightly encrypted OFF-HOST snapshot of ONE defined
+  consistent set: workspace volumes + `BORING_AGENT_SESSION_ROOT` +
+  membership/app state (`agent.db`) + D1 revision store + config/secret refs
+  (borgmatic-level — NOT a backup platform), plus a restore runbook executed
+  for real on a recurring schedule. A workspace-volumes-only backup is a
+  false sense of safety — sessions and membership are part of the vault.
 - **Support playbook (doc only):** log locations, event-store query
   one-liners, per-agent restart, compose rollback. The 2am answer sheet.
   Do NOT build dashboards for this (P8 guardrail stands).
@@ -171,10 +180,16 @@ that mean you are over-engineering, and the acceptance that means you are done.
   from AgentDefinition presentation metadata + a signup link. Do NOT build a
   CMS, theming, or a page builder. Stop sign: a `templates/` directory with
   more than one layout.
-- **Template workspaces:** provisioning may seed a new workspace by copying
-  one template directory. Do NOT build a template registry or versioning.
-- **Freemium gating = budget caps only** (the ID1 tripwire machinery). A
-  feature-flag system is the over-engineering trap here — refuse it.
+- **Template workspaces:** provisioning may seed a new workspace from ONE
+  sanitized, immutable template (digest + provenance + licensing note
+  recorded — a frozen snapshot, never a live directory that can drift or
+  leak customer material). Do NOT build a template registry.
+- **Freemium gating = budget caps only** for features (no feature-flag
+  system) — but PUBLIC exposure additionally requires authenticated
+  abuse/rate admission controls (per-principal request limits at the door;
+  caps alone do not stop abuse), and regulated-domain launches require a
+  VERSIONED legal/risk sign-off document (kept outside DECISIONS.md — it is
+  a compliance record, not an architecture decision).
 - **Regulated-domain gate (BLOCKING):** before any insurance/accounting/legal
   vertical launches publicly: disclaimers in the agent definition,
   human-in-loop default for advice-shaped outputs, and an owner review of

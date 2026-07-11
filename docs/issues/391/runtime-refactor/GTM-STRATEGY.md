@@ -32,8 +32,9 @@ Compliance sensitivity is a qualifier, not a blocker.
    P8's recorded evidence — until golden-path.json exists, demos show a
    pre-built agent walkthrough and make no live-build promise. The P8 timing
    bead is therefore GTM-critical, not engineering vanity.
-2. Offer: free 30-min call where THEIR workflow becomes a running agent in
-   their own workspace before the call ends.
+2. Offer: free 30-min call walking THEIR workflow through a pre-built
+   agent in a demo workspace. The "running agent before the call ends"
+   promise activates only after P8's golden-path evidence exists.
 3. Convert to a 4–6 week paid pilot (fixed fee) → managed retainer.
 4. Cap: 3 concurrent lighthouse clients. Each phase of the build plan must
    have a named lighthouse consumer; no client, no phase.
@@ -67,9 +68,11 @@ it. Success = first paid consumer conversation, not listings count.
 
 Ship named niche agents as products, not services: e.g. the **accounting
 pre-close agent** (fetch/categorize invoices, prep VAT for expert-comptables)
-or the **insurance-comparison agent**. Decision 23 already gives every
-deployed agent an exact hostname — each vertical agent gets a product
-storefront (`agent-x.domain.eu`) with zero new infrastructure. The factory
+or the **insurance-comparison agent**. Decision 23's exact-hostname landing (once D1 lands) gives each vertical
+agent a product entry point — but a storefront still means real work: DNS/
+TLS, signup wiring, and landing content, which stays HOST-OWNED config
+unless the AgentDefinition schema is deliberately amended (owner decision;
+the schema has no presentation fields today). The factory
 becomes the backend story; the vertical agent is what the market sees and
 searches for. Selection matrix (pick ≤ 2): document-heavy repetitive
 workflow · reachable niche community · EU/French regulatory angle · owner
@@ -88,6 +91,10 @@ B2B price tolerance. Their methodology ships as a contracted agent
 (rev-share); the golden path is their onboarding ("your expertise, running
 as an agent, in one afternoon"); their channel is the distribution.
 
+**Gates (LATER):** Motion 2b delivery to third parties requires ID1 + AC1
+contracted mode + BL1 billing + Decision 22's contractor-data-hygiene policy
+— it is sequenced behind them, not beside them.
+
 **Convergence law:** every vertical agent (M5) and expert agent (M2b) is
 simultaneously a template in the future MK1 catalog — the marketplace
 cold-start solves itself as a by-product of revenue work. Do not build
@@ -98,9 +105,12 @@ complete.
 
 Stock-client connector directories (Claude, ChatGPT) are opening. Each
 vertical agent listed there is free niche distribution with a first-mover
-window ("the accounting agent" in the directory before anyone else). The
-MCP-first architecture makes listing nearly free once ID1 exists. Zero build
-beyond ID1; pure packaging + submission work.
+window ("the accounting agent" in the directory before anyone else). The MCP-first
+architecture keeps the integration side cheap once ID1 exists — but listing
+is NOT zero work: directories require metadata, testing, privacy/support
+docs, safety review, tool annotations, and ongoing per-listing maintenance
+(OpenAI and Anthropic directory policies), and serving directory users needs
+the AC1 consumption path. Cheap versus building distribution; not free.
 
 ## Motion 7 — The audit trojan (zero build)
 
@@ -108,6 +118,8 @@ Paid "where do agents fit in your company" discovery engagements, delivered
 AS a boring workspace: findings, transcripts, and prototype agents live in
 the client's workspace from day one. The deliverable onboards the client
 into the product; the upsell is turning one finding into a running agent.
+(If transcripts/findings are promised as living in the client workspace,
+they must be covered by the backup set and exportable.)
 
 **Demo-door note (Motion 1 correction):** lead lighthouse demos with the web
 UI — MCP connector setup is still fiddly for non-technical buyers. "It's
