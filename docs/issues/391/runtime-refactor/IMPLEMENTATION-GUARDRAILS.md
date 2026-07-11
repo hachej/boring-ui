@@ -56,8 +56,10 @@ that mean you are over-engineering, and the acceptance that means you are done.
 - **Stop signs:** helm charts; a "provisioner" process; templating engines
   beyond envsubst-level.
 - **Accept:** 3 distinct agents on 1 EU host, each bound to its workspace;
-  golden-path timing recorded; rollback = previous compose file boots green.
-  (This IS phase-2 exit.)
+  golden-path timing recorded; rollback = previous compose file boots green;
+  **adding agent N+1 does not restart or interrupt agents 1..N** (per-service
+  compose granularity — this criterion exists so onboarding a client never
+  bounces existing clients). (This IS phase-2 exit.)
 
 ## P5a — provisioning/secrets (narrow)
 
@@ -132,6 +134,18 @@ that mean you are over-engineering, and the acceptance that means you are done.
   the standing invariants.
 - **Do NOT build:** a test platform, dashboards, synthetic monitoring.
 - **Accept:** golden-path number exists in-repo and updates per release.
+
+## Ops beads (paper-first; the vault claim demands them)
+
+- **Backup/restore:** nightly workspace-volume snapshot (borgmatic/rsync
+  level — NOT a backup platform) + a restore runbook that has been executed
+  once for real. "Your data is backed up and restorable" is B2B table stakes
+  if the workspace vault is the moat.
+- **Support playbook (doc only):** log locations, event-store query
+  one-liners, per-agent restart, compose rollback. The 2am answer sheet.
+  Do NOT build dashboards for this (P8 guardrail stands).
+- **Upgrade discipline:** backward-compatible migrations rule for the core
+  app while tenant workspaces are live + an upgrade/rollback runbook.
 
 ## Vertical-GTM beads (only if Motion 5 is activated)
 

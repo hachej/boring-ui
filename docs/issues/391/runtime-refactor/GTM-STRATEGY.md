@@ -71,8 +71,10 @@ becomes the backend story; the vertical agent is what the market sees and
 searches for. Selection matrix (pick ≤ 2): document-heavy repetitive
 workflow · reachable niche community · EU/French regulatory angle · owner
 domain proximity. Accounting scores highest (data background, reachable
-networks, sovereignty synergy); insurance second (higher search demand,
-sharper regulated-advice liability). Pricing: per-workspace monthly, plus a
+networks, sovereignty synergy); the **analytics agent** (on the client's
+existing warehouse/dbt stack — the owner's unfair-authority vertical) is a
+strong second; insurance third (higher search demand, sharper
+regulated-advice liability). Pricing: per-workspace monthly, plus a
 free budget-capped lead-magnet tier (caps only — no feature-flag system).
 
 ## Motion 2b — Expert-in-a-box (the realistic creator wedge)
@@ -88,6 +90,25 @@ simultaneously a template in the future MK1 catalog — the marketplace
 cold-start solves itself as a by-product of revenue work. Do not build
 catalog features for this; just keep AgentDefinition presentation metadata
 complete.
+
+## Motion 6 — MCP connector directories as app stores (post-ID1)
+
+Stock-client connector directories (Claude, ChatGPT) are opening. Each
+vertical agent listed there is free niche distribution with a first-mover
+window ("the accounting agent" in the directory before anyone else). The
+MCP-first architecture makes listing nearly free once ID1 exists. Zero build
+beyond ID1; pure packaging + submission work.
+
+## Motion 7 — The audit trojan (zero build)
+
+Paid "where do agents fit in your company" discovery engagements, delivered
+AS a boring workspace: findings, transcripts, and prototype agents live in
+the client's workspace from day one. The deliverable onboards the client
+into the product; the upsell is turning one finding into a running agent.
+
+**Demo-door note (Motion 1 correction):** lead lighthouse demos with the web
+UI — MCP connector setup is still fiddly for non-technical buyers. "It's
+also in your ChatGPT" is the closer, not the opener.
 
 ## Pricing placeholder (reversible; owner may override)
 
