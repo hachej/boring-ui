@@ -68,14 +68,35 @@ export function createAgentRuntimeBridge(
   config: AgentCoreConfig,
 ): AgentRuntimeBridge {
   const runtimeLoader = createRuntimeLoader(config.runtimeFactory)
-  const getRuntime = runtimeLoader.get
   const live = new AgentLiveEventBuffer(DEFAULT_LIVE_BUFFER_SIZE)
   const sessionContexts = new Map<string, SessionCtx | undefined>()
   const startedSessions = new Map<string, { sessionId: string; ctx: SessionCtx | undefined }>()
   const sendLocks = new Map<string, Promise<void>>()
+  const producerTeardownLocks = new Map<string, Promise<void>>()
+  let disposed = false
+  let disposePromise: Promise<void> | undefined
 
-  const sessions = createFacadeSessionStore(getRuntime, live, sessionContexts, startedSessions)
-  const readiness = createReadiness(config)
+  const assertActive = () => {
+    if (disposed) {
+      throw stableAgentError(ErrorCode.enum.AGENT_BINDING_DISPOSED, 'agent binding has been disposed')
+    }
+  }
+  const getRuntime = async () => {
+    assertActive()
+    const runtime = await runtimeLoader.get()
+    assertActive()
+    return runtime
+  }
+
+  const sessions = createFacadeSessionStore(
+    getRuntime,
+    assertActive,
+    live,
+    sessionContexts,
+    startedSessions,
+    runProducerTeardown,
+  )
+  const readiness = createReadiness(config, assertActive)
 
   async function ensureSession(input: AgentSendInput, runtime: AgentCoreRuntime): Promise<{ sessionId: string; sessionKey: string; ctx: SessionCtx | undefined }> {
     if (input.sessionId) {
@@ -96,16 +117,23 @@ export function createAgentRuntimeBridge(
     state.bridgePromise ??= (async () => {
       const subscribeFrom = state.latestIndex === 0 ? 0 : Number.MAX_SAFE_INTEGER
       let result = await service.subscribe(toPiRequestContext(ctx), sessionId, subscribeFrom, (chunk) => {
-        live.publish(sessionKey, sessionId, chunk)
+        if (!state.closed) live.publish(sessionKey, sessionId, chunk)
       })
       if (result.type !== 'ok') {
         result = await service.subscribe(toPiRequestContext(ctx), sessionId, result.latestSeq, (chunk) => {
-          live.publish(sessionKey, sessionId, chunk)
+          if (!state.closed) live.publish(sessionKey, sessionId, chunk)
         })
       }
       if (result.type !== 'ok') throw new AgentNotImplementedError('Historical pi-chat replay is not implemented until T1.')
+      if (disposed || state.closed) {
+        result.unsubscribe()
+        if (disposed) assertActive()
+        throw stableAgentError(ErrorCode.enum.ABORTED, 'session stopped while start was pending')
+      }
       state.bridge = result
-      result.closed?.finally(() => live.close(sessionKey)).catch(() => live.close(sessionKey))
+      result.closed
+        ?.finally(() => live.close(sessionKey, state))
+        .catch(() => live.close(sessionKey, state))
       return state
     })()
     try {
@@ -116,12 +144,16 @@ export function createAgentRuntimeBridge(
   }
 
   async function start(input: AgentSendInput): Promise<AgentStartReceipt> {
+    assertActive()
     const runtime = await getRuntime()
     const { sessionId, sessionKey, ctx } = await ensureSession(input, runtime)
+    assertActive()
     startedSessions.set(sessionKey, { sessionId, ctx })
     await ensureBridge(sessionKey, sessionId, ctx, runtime.service)
+    assertActive()
     const startIndex = live.latestIndex(sessionKey)
     await runtime.service.prompt(toPiRequestContext(ctx), sessionId, toPromptPayload(input))
+    assertActive()
     return { sessionId, startIndex }
   }
 
@@ -132,12 +164,15 @@ export function createAgentRuntimeBridge(
     start,
 
     stream(sessionId: string, options: AgentStreamOptions): AsyncIterable<AgentEvent> {
+      assertActive()
       return authorizedStream(sessionId, options)
     },
 
     async *send(input: AgentSendInput): AsyncIterable<AgentEvent> {
+      assertActive()
       const release = input.sessionId ? await acquireSessionLock(sendLocks, sessionCacheKey(input.sessionId, input.ctx)) : undefined
       try {
+        assertActive()
         const receipt = await start(input)
         let turnId: string | undefined
         for await (const event of authorizedStream(receipt.sessionId, { startIndex: receipt.startIndex, ctx: input.ctx })) {
@@ -151,54 +186,92 @@ export function createAgentRuntimeBridge(
     },
 
     async resolveInput(_sessionId: string, _requestId: string, _response: AgentResolveInputResponse): Promise<never> {
+      assertActive()
       throw new AgentNotImplementedError('resolveInput is not implemented until T1.')
     },
 
     async interrupt(sessionId: string, ctx?: SessionCtx): Promise<unknown> {
+      assertActive()
       const runtime = await getRuntime()
       const accessCtx = await authorizeSessionAccess(runtime, sessionId, ctx, sessionContexts)
+      assertActive()
       return runtime.service.interrupt(toPiRequestContext(accessCtx), sessionId, {})
     },
 
     async stop(sessionId: string, ctx?: SessionCtx): Promise<unknown> {
+      assertActive()
       const runtime = await getRuntime()
       const accessCtx = await authorizeSessionAccess(runtime, sessionId, ctx, sessionContexts)
-      const receipt = await runtime.service.stop(toPiRequestContext(accessCtx), sessionId, {})
+      assertActive()
       const sessionKey = sessionCacheKey(sessionId, accessCtx)
-      live.close(sessionKey)
-      startedSessions.delete(sessionKey)
-      return receipt
+      return runProducerTeardown(sessionKey, async () => {
+        assertActive()
+        const receipt = await runtime.service.stop(toPiRequestContext(accessCtx), sessionId, {})
+        startedSessions.delete(sessionKey)
+        live.close(sessionKey)
+        return receipt
+      })
     },
 
-    async dispose(): Promise<void> {
-      let stopError: unknown
-      try {
-        const runtime = await runtimeLoader.current()
-        if (runtime) {
-          await Promise.all([...startedSessions.values()].map((started) =>
-            runtime.service.stop(toPiRequestContext(started.ctx), started.sessionId, {}),
-          ))
-        }
-      } catch (error) {
-        stopError = error
-      } finally {
-        live.dispose()
-        startedSessions.clear()
-        sessionContexts.clear()
-      }
-      if (stopError) throw stopError
+    dispose(): Promise<void> {
+      disposed = true
+      disposePromise ??= disposeBinding()
+      return disposePromise
     },
+  }
+
+  async function disposeBinding(): Promise<void> {
+    const started = [...startedSessions.entries()]
+    let stopError: unknown
+    try {
+      const runtime = await runtimeLoader.current()
+      if (runtime) {
+        const results = await Promise.allSettled(started.map(([sessionKey, session]) =>
+          runProducerTeardown(sessionKey, async () => {
+            if (startedSessions.get(sessionKey) !== session) return
+            await runtime.service.stop(toPiRequestContext(session.ctx), session.sessionId, {})
+            startedSessions.delete(sessionKey)
+            live.close(sessionKey)
+          }),
+        ))
+        const failed = results.find((result): result is PromiseRejectedResult => result.status === 'rejected')
+        if (failed) throw failed.reason
+      }
+    } catch (error) {
+      stopError = error
+    } finally {
+      live.dispose()
+      startedSessions.clear()
+      sessionContexts.clear()
+      sendLocks.clear()
+      producerTeardownLocks.clear()
+    }
+    if (stopError) throw stopError
+  }
+
+  async function runProducerTeardown<T>(sessionKey: string, teardown: () => Promise<T>): Promise<T> {
+    const release = await acquireSessionLock(producerTeardownLocks, sessionKey)
+    try {
+      return await teardown()
+    } finally {
+      release()
+    }
   }
 
   return {
     agent,
     getRuntime,
-    currentRuntime: runtimeLoader.current,
+    currentRuntime() {
+      assertActive()
+      return runtimeLoader.current()
+    },
   }
 
   async function* authorizedStream(sessionId: string, options: AgentStreamOptions): AsyncIterable<AgentEvent> {
+    assertActive()
     const runtime = await getRuntime()
     const accessCtx = await authorizeSessionAccess(runtime, sessionId, options.ctx, sessionContexts)
+    assertActive()
     yield* live.stream(sessionCacheKey(sessionId, accessCtx), options.startIndex)
   }
 }
@@ -219,11 +292,12 @@ function createRuntimeLoader(runtimeFactory: AgentCoreRuntimeFactory): {
   }
 }
 
-function createReadiness(config: AgentCoreConfig): AgentReadiness {
+function createReadiness(config: AgentCoreConfig, assertActive: () => void): AgentReadiness {
   const requirements = [...(config.readinessRequirements ?? [])]
   return {
     requirements,
     async status() {
+      assertActive()
       return requirements.map((key) => ({
         key,
         ready: false,
@@ -235,34 +309,49 @@ function createReadiness(config: AgentCoreConfig): AgentReadiness {
 
 function createFacadeSessionStore(
   getRuntime: () => Promise<AgentCoreRuntime>,
+  assertActive: () => void,
   live: AgentLiveEventBuffer,
   sessionContexts: Map<string, SessionCtx | undefined>,
   startedSessions: Map<string, { sessionId: string; ctx: SessionCtx | undefined }>,
+  runProducerTeardown: <T>(sessionKey: string, teardown: () => Promise<T>) => Promise<T>,
 ): SessionStore {
   const store = async () => (await getRuntime()).sessionStore
   return {
     async list(ctx: SessionCtx, options?: SessionListOptions) {
+      assertActive()
       const summaries = await (await store()).list(ctx, options)
+      assertActive()
       return summaries.filter((summary) => canAccessStoredSessionCtx(summary.id, ctx, sessionContexts))
     },
     async create(ctx: SessionCtx, init?: { title?: string }) {
+      assertActive()
       const created = await (await store()).create(ctx, init)
+      assertActive()
       rememberSessionCtx(sessionContexts, created.id, ctx)
       return created
     },
     async load(ctx: SessionCtx, sessionId: string) {
+      assertActive()
       const runtime = await getRuntime()
       const accessCtx = await authorizeSessionAccess(runtime, sessionId, ctx, sessionContexts)
-      return (await store()).load(accessCtx ?? {}, sessionId)
+      assertActive()
+      const loaded = await (await store()).load(accessCtx ?? {}, sessionId)
+      assertActive()
+      return loaded
     },
     async delete(ctx: SessionCtx, sessionId: string) {
+      assertActive()
       const runtime = await getRuntime()
       const accessCtx = await authorizeSessionAccess(runtime, sessionId, ctx, sessionContexts)
-      await runtime.service.deleteSession(toPiRequestContext(accessCtx), sessionId)
+      assertActive()
       const sessionKey = sessionCacheKey(sessionId, accessCtx)
-      live.close(sessionKey)
-      sessionContexts.delete(sessionKey)
-      startedSessions.delete(sessionKey)
+      await runProducerTeardown(sessionKey, async () => {
+        assertActive()
+        await runtime.service.deleteSession(toPiRequestContext(accessCtx), sessionId)
+        startedSessions.delete(sessionKey)
+        live.close(sessionKey)
+        sessionContexts.delete(sessionKey)
+      })
     },
   }
 }
@@ -402,6 +491,7 @@ function isSendTerminalEvent(event: AgentEvent, turnId: string | undefined): boo
 class AgentLiveEventBuffer {
   private readonly sessions = new Map<string, AgentSessionLiveState>()
   private readonly eventIndexes = new Map<string, number>()
+  private disposed = false
 
   constructor(private readonly maxEvents: number) {}
 
@@ -426,6 +516,7 @@ class AgentLiveEventBuffer {
   }
 
   publish(sessionKey: string, sessionId: string, chunk: AgentEvent['chunk']): void {
+    if (this.disposed) return
     const state = this.ensure(sessionKey)
     if (state.closed) return
     const eventIndex = this.latestIndex(sessionKey)
@@ -457,9 +548,9 @@ class AgentLiveEventBuffer {
     }
   }
 
-  close(sessionKey: string): void {
+  close(sessionKey: string, expectedState?: AgentSessionLiveState): void {
     const state = this.sessions.get(sessionKey)
-    if (!state) return
+    if (!state || (expectedState && state !== expectedState)) return
     state.closed = true
     state.bridge?.unsubscribe()
     for (const subscriber of state.subscribers) subscriber.close()
@@ -467,8 +558,11 @@ class AgentLiveEventBuffer {
   }
 
   dispose(): void {
+    if (this.disposed) return
+    this.disposed = true
     for (const [sessionId] of this.sessions) this.close(sessionId)
     this.sessions.clear()
+    this.eventIndexes.clear()
   }
 
   private assertReplayable(state: AgentSessionLiveState, startIndex: number): void {

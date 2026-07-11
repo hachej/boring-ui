@@ -164,12 +164,17 @@ export async function createAgentApp(
       app,
       modeAdapter,
     )
-    const dispose = profile.dispose
-    let disposed = false
-    disposeProfile = async () => {
-      if (disposed) return
-      disposed = true
-      await dispose?.()
+    const disposeBinding = profile.dispose
+    let disposal: Promise<void> | undefined
+    disposeProfile = () => {
+      disposal ??= (async () => {
+        try {
+          await disposeBinding?.()
+        } finally {
+          await modeAdapter?.dispose?.()
+        }
+      })()
+      return disposal
     }
     profile.dispose = disposeProfile
 

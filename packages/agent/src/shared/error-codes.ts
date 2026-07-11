@@ -21,6 +21,7 @@ export const ErrorCode = z.enum([
 
   // Agent runtime / provisioning
   'AGENT_RUNTIME_NOT_READY',
+  'AGENT_BINDING_DISPOSED',
   'AGENT_CONTROL_RECEIPT_INVALID',
   'RUNTIME_PROVISIONING_FAILED',
   'RUNTIME_PROVISIONING_LOCKED',
