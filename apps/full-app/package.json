@@ -27,6 +27,7 @@
     "@hachej/boring-mcp": "workspace:*",
     "@hachej/boring-ui-kit": "workspace:*",
     "@hachej/boring-workspace": "workspace:*",
+    "@modelcontextprotocol/sdk": "1.29.0",
     "@vercel/sandbox": "2.3.0",
     "fastify": "^5.9.0",
     "react": "^19.2.7",

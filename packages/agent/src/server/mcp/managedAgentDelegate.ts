@@ -43,6 +43,25 @@ export interface ManagedAgentWorkspaceResolutionInput {
   request: ManagedAgentDelegateRequestContext
 }
 
+export interface ManagedAgentDelegateRunInput {
+  brief: string
+  ctx: SessionCtx
+  request: ManagedAgentDelegateRequestContext
+  actor: AgentActor
+  signal?: AbortSignal
+  onSessionStarted?: (sessionId: string) => void
+}
+
+export interface ManagedAgentDelegateRunner {
+  run(input: ManagedAgentDelegateRunInput): AsyncIterable<AgentEvent>
+  stop?(sessionId: string, ctx: SessionCtx): Promise<void> | void
+}
+
+export interface ManagedAgentBoundRunnerWorkspace {
+  runner: ManagedAgentDelegateRunner
+  workspace: Workspace
+}
+
 interface ResolvedArtifactBytes {
   content: string
   bytes: Uint8Array
@@ -101,9 +120,12 @@ export interface ManagedAgentCollectArtifactsInput {
 }
 
 export interface ManagedAgentMcpDelegateOptions {
-  agent: Agent
+  agent?: Agent
   resolveSessionCtx(input: { brief: string; request: ManagedAgentDelegateRequestContext }): SessionCtx | Promise<SessionCtx>
   resolveWorkspace(input: ManagedAgentWorkspaceResolutionInput): Workspace | Promise<Workspace>
+  resolveRunnerWorkspace?(input: ManagedAgentWorkspaceResolutionInput & {
+    actor: AgentActor
+  }): ManagedAgentBoundRunnerWorkspace | Promise<ManagedAgentBoundRunnerWorkspace>
   resolveActor?(input: { brief: string; ctx: SessionCtx; request: ManagedAgentDelegateRequestContext }): AgentActor | Promise<AgentActor>
   collectArtifacts?(input: ManagedAgentCollectArtifactsInput): ManagedAgentArtifactCandidate[] | Promise<ManagedAgentArtifactCandidate[]>
   createDelegationId?: () => string
@@ -182,19 +204,13 @@ export class ManagedAgentMcpDelegateController {
       await input.onDelegationCreated?.(this.getStatus(delegationId, ctx))
       this.assertNotAborted(input.signal)
       const actor = await this.resolveActor(brief, ctx, request)
-      const receipt = await this.options.agent.start({
-        content: brief,
-        actor,
-        ctx,
-        originSurface: MANAGED_AGENT_MCP_ORIGIN_SURFACE,
-      })
-      if (input.signal?.aborted) {
-        await this.stopDelegatedSession(receipt.sessionId, ctx)
-        throw new ManagedAgentMcpError(ErrorCode.enum.ABORTED, 'delegation was cancelled')
-      }
+      const bound = await this.resolveRunnerWorkspace(brief, ctx, request, actor)
+      this.assertNotAborted(input.signal)
+      let activeSessionId: string | undefined
       let abortStopPromise: Promise<void> | undefined
       const abortListener = () => {
-        abortStopPromise ??= this.stopDelegatedSession(receipt.sessionId, ctx)
+        if (!activeSessionId) return
+        abortStopPromise ??= this.stopDelegatedSession(bound.runner, activeSessionId, ctx)
       }
       input.signal?.addEventListener('abort', abortListener, { once: true })
       await this.pushProgress(record, 'agent-started', 'Agent session accepted for delegated task.', input.onProgress)
@@ -203,11 +219,21 @@ export class ManagedAgentMcpDelegateController {
       let terminal = false
       let terminalStatus: 'ok' | 'aborted' | 'error' | undefined
       try {
-        for await (const event of this.options.agent.stream(receipt.sessionId, { startIndex: receipt.startIndex, ctx })) {
+        for await (const event of bound.runner.run({
+          brief,
+          ctx,
+          request,
+          actor,
+          signal: input.signal,
+          onSessionStarted: (sessionId) => {
+            activeSessionId = sessionId
+          },
+        })) {
           if (input.signal?.aborted) {
             await abortStopPromise
             throw new ManagedAgentMcpError(ErrorCode.enum.ABORTED, 'delegation was cancelled')
           }
+          activeSessionId = event.sessionId
           events.push(event)
           await this.observeEvent(record, event, input.onProgress)
           if (isTerminalAgentEvent(event)) {
@@ -232,15 +258,14 @@ export class ManagedAgentMcpDelegateController {
       }
 
       const finalAssistantText = this.validateFinalAssistantText(extractFinalAssistantText(events))
-      const workspace = await this.resolveWorkspace(brief, ctx, request)
       const artifacts = await this.collectArtifacts({
         delegationId,
-        sessionId: receipt.sessionId,
+        sessionId: activeSessionId ?? '',
         ctx,
         request,
         finalAssistantText,
         events,
-      }, workspace)
+      }, bound.workspace)
       const result: ManagedAgentDelegateResult = {
         delegationId,
         status: 'completed',
@@ -366,12 +391,59 @@ export class ManagedAgentMcpDelegateController {
     return workspace
   }
 
+  private async resolveRunnerWorkspace(
+    brief: string,
+    ctx: SessionCtx,
+    request: ManagedAgentDelegateRequestContext,
+    actor: AgentActor,
+  ): Promise<ManagedAgentBoundRunnerWorkspace> {
+    const resolved = this.options.resolveRunnerWorkspace
+      ? await this.options.resolveRunnerWorkspace({ brief, ctx, request, actor })
+      : {
+          runner: this.createAgentDelegateRunner(),
+          workspace: await this.resolveWorkspace(brief, ctx, request),
+        }
+    if (!resolved || !resolved.runner || typeof resolved.runner.run !== 'function') {
+      throw new ManagedAgentMcpError(ErrorCode.enum.CONFIG_INVALID, 'MCP delegate requires a host-resolved runner')
+    }
+    if (!resolved.workspace || typeof resolved.workspace.stat !== 'function' || typeof resolved.workspace.readFile !== 'function') {
+      throw new ManagedAgentMcpError(ErrorCode.enum.CONFIG_INVALID, 'MCP delegate requires a host-resolved Workspace')
+    }
+    return resolved
+  }
+
+  private createAgentDelegateRunner(): ManagedAgentDelegateRunner {
+    const agent = this.options.agent
+    if (!agent) {
+      throw new ManagedAgentMcpError(ErrorCode.enum.CONFIG_INVALID, 'MCP delegate requires a host-resolved runner')
+    }
+    return {
+      async *run(input) {
+        const receipt = await agent.start({
+          content: input.brief,
+          actor: input.actor,
+          ctx: input.ctx,
+          originSurface: MANAGED_AGENT_MCP_ORIGIN_SURFACE,
+        })
+        input.onSessionStarted?.(receipt.sessionId)
+        yield* agent.stream(receipt.sessionId, { startIndex: receipt.startIndex, ctx: input.ctx })
+      },
+      async stop(sessionId, ctx) {
+        await agent.stop(sessionId, ctx)
+      },
+    }
+  }
+
   private assertNotAborted(signal: AbortSignal | undefined): void {
     if (signal?.aborted) throw new ManagedAgentMcpError(ErrorCode.enum.ABORTED, 'delegation was cancelled')
   }
 
-  private async stopDelegatedSession(sessionId: string, ctx: SessionCtx): Promise<void> {
-    await this.options.agent.stop(sessionId, ctx).catch(() => undefined)
+  private async stopDelegatedSession(
+    runner: ManagedAgentDelegateRunner,
+    sessionId: string,
+    ctx: SessionCtx,
+  ): Promise<void> {
+    await Promise.resolve(runner.stop?.(sessionId, ctx)).catch(() => undefined)
   }
 
   private async resolveActor(

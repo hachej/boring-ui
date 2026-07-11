@@ -122,11 +122,14 @@ export type {
   ManagedAgentArtifact,
   ManagedAgentArtifactCandidate,
   ManagedAgentArtifactRef,
+  ManagedAgentBoundRunnerWorkspace,
   ManagedAgentCollectArtifactsInput,
   ManagedAgentDelegateInput,
   ManagedAgentDelegateProgress,
   ManagedAgentDelegateRequestContext,
   ManagedAgentDelegateResult,
+  ManagedAgentDelegateRunner,
+  ManagedAgentDelegateRunInput,
   ManagedAgentDelegateStatus,
   ManagedAgentDelegateStatusResult,
   ManagedAgentMcpDelegateOptions,
@@ -154,6 +157,7 @@ export {
 export { registerAgentRoutes } from './registerAgentRoutes'
 export type { RegisterAgentRoutesOptions } from './registerAgentRoutes'
 export type {
+  WorkspaceAgentDispatcherBinding,
   WorkspaceAgentDispatcherResolver,
   WorkspaceAgentDispatcherResolveOptions,
 } from './workspaceAgentDispatcher'

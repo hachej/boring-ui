@@ -3,6 +3,7 @@ import type { InterruptReceipt, StopReceipt } from '../shared/chat'
 import { CommandReceiptSchema, StopReceiptSchema } from '../shared/chat'
 import type { Agent } from '../shared/events'
 import { ErrorCode } from '../shared/error-codes'
+import type { Workspace } from '../shared/workspace'
 import type {
   WorkspaceAgentDispatcher,
   WorkspaceAgentDispatcherContext,
@@ -12,11 +13,20 @@ export interface WorkspaceAgentDispatcherResolveOptions {
   request?: FastifyRequest
 }
 
+export interface WorkspaceAgentDispatcherBinding {
+  dispatcher: WorkspaceAgentDispatcher
+  workspace: Workspace
+}
+
 export interface WorkspaceAgentDispatcherResolver {
   resolve(
     ctx: WorkspaceAgentDispatcherContext,
     options?: WorkspaceAgentDispatcherResolveOptions,
   ): Promise<WorkspaceAgentDispatcher>
+  resolveWithWorkspace?(
+    ctx: WorkspaceAgentDispatcherContext,
+    options?: WorkspaceAgentDispatcherResolveOptions,
+  ): Promise<WorkspaceAgentDispatcherBinding>
 }
 
 export function createBoundWorkspaceAgentDispatcher(

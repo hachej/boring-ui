@@ -1078,6 +1078,9 @@ export const registerAgentRoutes: FastifyPluginAsync<RegisterAgentRoutesOptions>
 
   opts.onWorkspaceAgentDispatcher?.({
     async resolve(ctx, options) {
+      return (await this.resolveWithWorkspace!(ctx, options)).dispatcher
+    },
+    async resolveWithWorkspace(ctx, options) {
       const boundCtx = normalizeWorkspaceAgentDispatcherContext(ctx)
       assertWorkspaceAgentDispatcherRequestContext(boundCtx, options?.request)
       bindingLifecycle.assertAdmission(boundCtx.workspaceId, options?.request)
@@ -1089,11 +1092,17 @@ export const registerAgentRoutes: FastifyPluginAsync<RegisterAgentRoutesOptions>
             401,
           )
         }
-        return createLeasedWorkspaceAgentDispatcher(staticBinding, boundCtx, options?.request)
+        return {
+          dispatcher: createLeasedWorkspaceAgentDispatcher(staticBinding, boundCtx, options?.request),
+          workspace: staticBinding.runtimeBundle.workspace,
+        }
       }
       const binding = await getOrCreateRuntimeBinding(boundCtx.workspaceId, options?.request, { trustedCtx: boundCtx })
       bindingLifecycle.assertAdmission(boundCtx.workspaceId, options?.request)
-      return createLeasedWorkspaceAgentDispatcher(binding, boundCtx, options?.request)
+      return {
+        dispatcher: createLeasedWorkspaceAgentDispatcher(binding, boundCtx, options?.request),
+        workspace: binding.runtimeBundle.workspace,
+      }
     },
   })
 

@@ -12,7 +12,11 @@ import {
   fullAppAgentSessionNamespace,
   registerFullAppBoringMcpRoutes,
 } from './boringMcp.js'
+import {
+  registerFullAppManagedAgentMcpRoutes,
+} from './managedAgentMcp.js'
 import { assertProductionAgentModeIsSafe } from './productionSafety.js'
+import type { WorkspaceAgentDispatcherResolver } from '@hachej/boring-agent/server'
 
 function pluginAuthoringEnabledFromEnv(): boolean {
   return process.env.BORING_PLUGIN_AUTHORING === '1'
@@ -31,6 +35,7 @@ async function main() {
   const credits = buildCreditsWiring()
   let appDb: unknown
   let appRef: Awaited<ReturnType<typeof createCoreWorkspaceAgentServer>> | undefined
+  let managedAgentDispatcherResolver: WorkspaceAgentDispatcherResolver | undefined
   const app = await createCoreWorkspaceAgentServer({
     appRoot,
     config,
@@ -48,11 +53,15 @@ async function main() {
     pi: governance.pi,
     getSessionNamespace: ({ workspaceId, request, userId }) => fullAppAgentSessionNamespace({ workspaceId, request, userId }),
     getExtraTools: (ctx) => appRef ? createFullAppBoringMcpAgentToolsForRequest(appRef, ctx) : [],
+    onWorkspaceAgentDispatcher: (resolver) => {
+      managedAgentDispatcherResolver = resolver
+    },
   })
   appDb = app.db
   appRef = app
   credits.attach(app)
   registerFullAppBoringMcpRoutes(app)
+  registerFullAppManagedAgentMcpRoutes(app, { dispatcherResolver: managedAgentDispatcherResolver })
   const address = await app.listen({ host: app.config.host, port: app.config.port })
   app.log.info({ event: 'core.server.ready', address }, 'core.server.ready')
 }
