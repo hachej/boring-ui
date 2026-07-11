@@ -3,19 +3,7 @@ import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify'
 import { z } from 'zod'
 import { ErrorCode, type ErrorCode as StableErrorCode } from '../../../shared/error-codes'
 import type {
-  CommandReceipt,
-  FollowUpPayload,
-  FollowUpReceipt,
-  InterruptPayload,
-  PiChatEvent,
-  PiChatSnapshot,
   PiChatStreamFrame,
-  PromptPayload,
-  PromptReceipt,
-  QueueClearPayload,
-  QueueClearReceipt,
-  StopPayload,
-  StopReceipt,
 } from '../../../shared/chat'
 import {
   FollowUpPayloadSchema,
@@ -25,10 +13,13 @@ import {
   QueueClearPayloadSchema,
   StopPayloadSchema,
 } from '../../../shared/chat'
-import type { PiChatReplayRangeError } from '../../pi-chat/piChatReplayBuffer'
 import { PI_CHAT_CURSOR_AHEAD, PI_CHAT_REPLAY_GAP } from '../../pi-chat/piChatReplayBuffer'
-import type { PiSessionCreateInit, PiSessionRequestContext } from '../../pi-chat/piSessionIdentity'
-import type { SessionListOptions, SessionSummary } from '../../../shared/session'
+import type { SessionListOptions } from '../../../shared/session'
+import type {
+  PiChatReplayRangeError,
+  PiChatSessionService,
+  PiSessionRequestContext,
+} from '../../../core/piChatSessionService'
 
 const DEFAULT_WORKSPACE_ID = 'default'
 const DEFAULT_HEARTBEAT_INTERVAL_MS = 25_000
@@ -59,29 +50,12 @@ const CreateSessionBodySchema = z.preprocess((value) => value ?? {}, z.object({
   title: z.string().min(1).max(200).optional(),
 }).strict())
 
-export interface PiChatEventStreamSubscription {
-  type: 'ok'
-  unsubscribe: () => void
-  /** Optional test/service completion hook. Real live streams normally omit it. */
-  closed?: Promise<void>
-}
-
-export type PiChatEventStreamResult = PiChatEventStreamSubscription | PiChatReplayRangeError
-
-export type PiChatEventSubscriber = (event: PiChatEvent) => void
-
-export interface PiChatSessionService {
-  listSessions?(ctx: PiSessionRequestContext, options?: SessionListOptions): Promise<SessionSummary[]>
-  createSession?(ctx: PiSessionRequestContext, init?: PiSessionCreateInit): Promise<SessionSummary>
-  deleteSession?(ctx: PiSessionRequestContext, sessionId: string): Promise<void>
-  readState(ctx: PiSessionRequestContext, sessionId: string): Promise<PiChatSnapshot>
-  subscribe(ctx: PiSessionRequestContext, sessionId: string, cursor: number, subscriber: PiChatEventSubscriber): Promise<PiChatEventStreamResult>
-  prompt(ctx: PiSessionRequestContext, sessionId: string, payload: PromptPayload): Promise<PromptReceipt>
-  followUp(ctx: PiSessionRequestContext, sessionId: string, payload: FollowUpPayload): Promise<FollowUpReceipt>
-  clearQueue(ctx: PiSessionRequestContext, sessionId: string, payload: QueueClearPayload): Promise<QueueClearReceipt>
-  interrupt(ctx: PiSessionRequestContext, sessionId: string, payload: InterruptPayload): Promise<CommandReceipt>
-  stop(ctx: PiSessionRequestContext, sessionId: string, payload: StopPayload): Promise<StopReceipt>
-}
+export type {
+  PiChatEventStreamResult,
+  PiChatEventStreamSubscription,
+  PiChatEventSubscriber,
+  PiChatSessionService,
+} from '../../../core/piChatSessionService'
 
 export interface PiChatRoutesOptions {
   service?: PiChatSessionService
