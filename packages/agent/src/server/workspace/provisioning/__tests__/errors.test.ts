@@ -1,11 +1,11 @@
-import { mkdtemp, readFile, rm } from 'node:fs/promises'
+import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { expect, test } from 'vitest'
 
 import { ErrorCode } from '../../../../shared/error-codes'
 import { getBoringAgentRuntimePaths } from '@hachej/boring-sandbox/providers/node-workspace'
-import { createVercelProvisioningAdapter } from '../../../sandbox/vercel-sandbox/provisioningAdapter'
+import { createVercelProvisioningAdapter } from '@hachej/boring-sandbox/providers/vercel-sandbox'
 import { ProvisioningError } from '../errors'
 import { provisionWorkspaceRuntime } from '../provisionWorkspaceRuntime'
 import type { WorkspaceProvisioningAdapter } from '../types'
@@ -106,6 +106,49 @@ test('Vercel artifact failures use stable provisioning artifact code', async () 
   })).rejects.toMatchObject({
     code: ErrorCode.enum.PROVISIONING_ARTIFACT_FAILED,
     details: { phase: 'adapter-artifact', runtime: 'node', id: 'cli' },
+  })
+})
+
+test('provisioning engine preserves Vercel artifact failures before npm install', async () => {
+  const packageRoot = await mkdtemp(join(tmpdir(), 'boring-provision-artifact-package-'))
+  await writeFile(join(packageRoot, 'package.json'), '{"name":"artifact-package"}\n')
+  const files = new Map<string, string>()
+  const adapter = createVercelProvisioningAdapter({
+    runtimeLayout: getBoringAgentRuntimePaths('/workspace'),
+    workspaceFs: {
+      async exists(rel) { return files.has(rel) },
+      async rm(rel) { files.delete(rel) },
+      async mkdir(rel) { files.set(`${rel}/.dir`, '') },
+      async writeText(rel, content) { files.set(rel, content) },
+      async readText(rel) { return files.get(rel) ?? null },
+      async copyFromHost() {},
+    },
+    async exec(command, args) {
+      if (command === 'node' && args[0] === '--version') return { stdout: 'v22.0.0\n' }
+      if (command === 'npm' && args[0] === '--version') return { stdout: '10.0.0\n' }
+      throw new Error(`unexpected exec ${command}`)
+    },
+    async prepareArtifact() {
+      throw new Error('artifact pack failed')
+    },
+  })
+
+  await expect(provisionWorkspaceRuntime({
+    adapter,
+    runtimeLayout: getBoringAgentRuntimePaths('/workspace'),
+    plugins: [{
+      id: 'artifact-plugin',
+      provisioning: {
+        nodePackages: [{
+          id: 'artifact-package',
+          packageName: 'artifact-package',
+          packageRoot,
+        }],
+      },
+    }],
+  })).rejects.toMatchObject({
+    code: ErrorCode.enum.PROVISIONING_ARTIFACT_FAILED,
+    details: { phase: 'adapter-artifact', runtime: 'node', id: 'artifact-package' },
   })
 })
 

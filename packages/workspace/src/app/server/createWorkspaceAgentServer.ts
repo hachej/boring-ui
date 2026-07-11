@@ -10,13 +10,13 @@ import {
   provisionRuntimeWorkspace,
   provisionWorkspaceRuntime,
   resolveMode,
-  VERCEL_SANDBOX_WORKSPACE_ROOT,
   type CreateAgentAppOptions,
   type PiExtensionFactory,
   type ProvisionWorkspaceRuntimeOptions,
   type WorkspaceAgentDispatcherResolver,
 } from "@hachej/boring-agent/server"
 import { getBoringAgentRuntimePaths } from "@hachej/boring-sandbox/providers/node-workspace"
+import { VERCEL_SANDBOX_WORKSPACE_ROOT } from "@hachej/boring-sandbox/providers/vercel-sandbox"
 import type { FastifyInstance, FastifyRequest } from "fastify"
 import { existsSync, mkdirSync, readFileSync } from "node:fs"
 import { dirname, isAbsolute, join, resolve } from "node:path"

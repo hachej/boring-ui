@@ -292,12 +292,6 @@ importers:
       '@tanstack/react-query':
         specifier: ^5.101.1
         version: 5.101.2(react@19.2.7)
-      '@vercel/blob':
-        specifier: ^2.5.0
-        version: 2.6.1
-      '@vercel/sandbox':
-        specifier: 2.3.0
-        version: 2.3.0
       ai:
         specifier: ^7.0.9
         version: 7.0.18(zod@3.25.76)
@@ -437,6 +431,12 @@ importers:
 
   packages/boring-sandbox:
     dependencies:
+      '@vercel/blob':
+        specifier: ^2.5.0
+        version: 2.6.1
+      '@vercel/sandbox':
+        specifier: 2.3.0
+        version: 2.3.0
       chokidar:
         specifier: ^5.0.0
         version: 5.0.0

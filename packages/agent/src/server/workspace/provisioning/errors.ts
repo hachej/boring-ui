@@ -32,6 +32,15 @@ export function toProvisioningError(
   details: Record<string, unknown> = {},
 ): ProvisioningError {
   if (error instanceof ProvisioningError) return error
+  const structural = error as { code?: unknown; details?: unknown; message?: unknown } | null
+  const structuralCode = ErrorCode.safeParse(structural?.code)
+  if (structuralCode.success) {
+    const structuralDetails = typeof structural?.details === 'object' && structural.details !== null && !Array.isArray(structural.details)
+      ? structural.details as Record<string, unknown>
+      : { phase, ...details }
+    const message = typeof structural?.message === 'string' ? structural.message : String(error)
+    return new ProvisioningError(structuralCode.data, message, structuralDetails, error)
+  }
   const message = error instanceof Error ? error.message : String(error)
   return new ProvisioningError(
     code,

@@ -1,7 +1,7 @@
 import { spawnSync } from 'node:child_process'
 
 import { getEnv } from '../config/env'
-import type { SandboxHandleStore } from '../../shared/sandbox-handle-store'
+import type { SandboxHandleStore } from '@hachej/boring-sandbox/providers/vercel-sandbox'
 import type { BuiltinRuntimeModeId, RuntimeModeAdapter, RuntimeModeId } from './mode'
 import { directModeAdapter } from './modes/direct'
 import { localModeAdapter } from './modes/local'

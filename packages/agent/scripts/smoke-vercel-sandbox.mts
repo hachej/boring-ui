@@ -1,10 +1,12 @@
 import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
-import { Sandbox } from '@vercel/sandbox'
 import { getBoringAgentRuntimePaths } from '@hachej/boring-sandbox/providers/node-workspace'
+import {
+  createDefaultVercelClient,
+  FileHandleStore,
+} from '@hachej/boring-sandbox/providers/vercel-sandbox'
 
-import { FileHandleStore } from '../src/server/sandbox/vercel-sandbox/FileHandleStore'
 import { createVercelSandboxModeAdapter } from '../src/server/runtime/modes/vercel-sandbox'
 import { provisionWorkspaceRuntime } from '../src/server/workspace/provisioning'
 
@@ -81,16 +83,16 @@ async function main() {
     }, null, 2))
   } finally {
     const records = await store.list().catch(() => [])
+    const client = createDefaultVercelClient({
+      token,
+      teamId: process.env.VERCEL_TEAM_ID!,
+      projectId: process.env.VERCEL_PROJECT_ID!,
+    })
     await Promise.all(records.map(async (record) => {
       try {
-        const sandbox = await Sandbox.get({
-          token,
-          teamId: process.env.VERCEL_TEAM_ID!,
-          projectId: process.env.VERCEL_PROJECT_ID!,
-          name: record.sandboxId,
-          resume: true,
-        } as Parameters<typeof Sandbox.get>[0] & { name?: string })
-        await sandbox.delete()
+        const sandbox = await client.get({ name: record.sandboxId, sandboxId: record.sandboxId, resume: true })
+        const deleteSandbox = (sandbox as unknown as { delete?: () => Promise<void> }).delete
+        await deleteSandbox?.call(sandbox)
       } catch (error) {
         console.warn(`Failed to delete smoke sandbox ${record.sandboxId}: ${error instanceof Error ? error.message : String(error)}`)
       }

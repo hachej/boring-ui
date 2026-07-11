@@ -2,35 +2,34 @@ import { mkdir, readFile, readdir, stat } from 'node:fs/promises'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
-import { Sandbox as VercelSandbox } from '@vercel/sandbox'
-
-import { type SandboxHandleStore } from '../../../shared/sandbox-handle-store'
-import { ErrorCode } from '../../../shared/error-codes'
-import { safeCapture, type TelemetrySink } from '../../../shared/telemetry'
-import { getEnv, setEnvDefault } from '../../config/env'
-import { createVercelSandboxExec } from '../../sandbox/vercel-sandbox/createVercelSandboxExec'
-import { createVercelProvisioningAdapter } from '../../sandbox/vercel-sandbox/provisioningAdapter'
-import { packProvisioningArtifact } from '../../workspace/provisioning/packArtifact'
-import { isNodeFamilyRuntime, uvSetupCommandsForRuntime, VERCEL_UV_BIN } from '../../sandbox/snapshots/deploymentSnapshot'
-import { FileHandleStore } from '../../sandbox/vercel-sandbox/FileHandleStore'
 import {
   collectFiles,
   computeTemplateHash,
-  packageTemplate,
-  type PackageTemplateOptions,
-} from '../../sandbox/vercel-sandbox/packageTemplate'
-import {
-  type ExpiredSandboxPolicy,
-  type VercelSandboxClient,
-  evictSandboxHandleCacheForWorkspace,
-  resolveSandboxHandle,
-} from '../../sandbox/vercel-sandbox/resolveSandboxHandle'
-import type { PeriodicSnapshotScheduler } from '../../sandbox/vercel-sandbox/periodicSnapshot'
-import {
+  createDefaultVercelClient,
+  createVercelProvisioningAdapter,
+  createVercelSandboxExec,
   createVercelSandboxWorkspace,
+  evictSandboxHandleCacheForWorkspace,
+  FileHandleStore,
+  isNodeFamilyRuntime,
+  packageTemplate,
+  resolveSandboxHandle,
+  uvSetupCommandsForRuntime,
   VERCEL_SANDBOX_REMOTE_ROOT,
   VERCEL_SANDBOX_WORKSPACE_ROOT,
-} from '../../workspace/createVercelSandboxWorkspace'
+  VERCEL_UV_BIN,
+  type ExpiredSandboxPolicy,
+  type PackageTemplateOptions,
+  type PeriodicSnapshotScheduler,
+  type SandboxHandleStore,
+  type VercelSandboxClient,
+  type VercelSandboxHandle,
+} from '@hachej/boring-sandbox/providers/vercel-sandbox'
+
+import { ErrorCode } from '../../../shared/error-codes'
+import { safeCapture, type TelemetrySink } from '../../../shared/telemetry'
+import { getEnv, setEnvDefault } from '../../config/env'
+import { packProvisioningArtifact } from '../../workspace/provisioning/packArtifact'
 import { createServerFileSearch } from '../createServerFileSearch'
 import type { ModeContext, RuntimeModeAdapter, RuntimeRemoteWorkspacePathOptions } from '../mode'
 import type { BoringAgentRuntimePaths } from '@hachej/boring-sandbox/providers/node-workspace'
@@ -58,12 +57,6 @@ export interface VercelSandboxModeAdapterOptions {
   expiredSandboxPolicy?: ExpiredSandboxPolicy
   orphanGuardMaxIdleMs?: number | null
   snapshotScheduler?: PeriodicSnapshotScheduler | null
-}
-
-interface VercelAuthConfig {
-  token: string
-  teamId: string
-  projectId?: string
 }
 
 type SandboxSetupStatus = 'started' | 'ok' | 'error'
@@ -152,55 +145,7 @@ async function runSandboxSetupStep<T>(options: {
   }
 }
 
-function createDefaultVercelClient(
-  auth: VercelAuthConfig,
-  opts: { timeoutMs?: number; runtime?: string } = {},
-): VercelSandboxClient {
-  const credentials = {
-    token: auth.token,
-    teamId: auth.teamId,
-    ...(auth.projectId ? { projectId: auth.projectId } : {}),
-  }
-  const createOptions = opts.timeoutMs
-    ? { ...credentials, timeout: opts.timeoutMs }
-    : credentials
-
-  return {
-    async create(params) {
-      const base = {
-        ...createOptions,
-        ...(params?.name ? { name: params.name } : {}),
-        ...(opts.runtime ? { runtime: opts.runtime } : {}),
-        persistent: params?.persistent ?? true,
-        snapshotExpiration: params?.snapshotExpiration ?? 0,
-      }
-      if (params?.source?.type === 'snapshot') {
-        const { runtime: _runtime, ...snapshotBase } = base
-        return await VercelSandbox.create({
-          ...snapshotBase,
-          source: { type: 'snapshot', snapshotId: params.source.snapshotId },
-        })
-      }
-      if (params?.source?.type === 'tarball') {
-        return await VercelSandbox.create({
-          ...base,
-          source: { type: 'tarball', url: params.source.url },
-        })
-      }
-      return await VercelSandbox.create(base)
-    },
-    async get(params) {
-      const getParams = {
-        ...credentials,
-        name: params.name ?? params.sandboxId ?? '',
-        resume: params.resume ?? true,
-      } as unknown as Parameters<typeof VercelSandbox.get>[0] & { name?: string }
-      return await VercelSandbox.get(getParams)
-    },
-  }
-}
-
-type VercelSandboxWithRunCommand = VercelSandbox & {
+type VercelSandboxWithRunCommand = VercelSandboxHandle & {
   fs?: { mkdir(path: string, opts?: { recursive?: boolean }): Promise<unknown> }
   mkDir?: (path: string) => Promise<void>
   runCommand?: (params: { cmd: string; args?: string[] }) => Promise<{ exitCode?: number }>

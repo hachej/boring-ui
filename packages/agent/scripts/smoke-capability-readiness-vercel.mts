@@ -1,14 +1,16 @@
 #!/usr/bin/env tsx
 import Fastify from 'fastify'
-import { Sandbox } from '@vercel/sandbox'
 import { mkdtemp, rm, writeFile, mkdir } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import {
+  createDefaultVercelClient,
+  FileHandleStore,
+} from '@hachej/boring-sandbox/providers/vercel-sandbox'
 import type { AgentHarness } from '../src/shared/harness'
 import type { AgentTool } from '../src/shared/tool'
 import { ErrorCode } from '../src/shared/error-codes'
 import { registerAgentRoutes } from '../src/server/registerAgentRoutes'
-import { FileHandleStore } from '../src/server/sandbox/vercel-sandbox/FileHandleStore'
 import { provisionWorkspaceRuntime } from '../src/server/workspace/provisioning'
 
 const SAFE_TIMEOUT_MS = 10 * 60_000
@@ -146,17 +148,17 @@ async function watchReadyStatus(url: string, startedAt: number): Promise<{ works
 async function cleanupSandboxes(store: FileHandleStore): Promise<void> {
   const token = process.env.VERCEL_TOKEN ?? process.env.VERCEL_ACCESS_TOKEN ?? process.env.VERCEL_OIDC_TOKEN
   if (!token) return
+  const client = createDefaultVercelClient({
+    token,
+    teamId: process.env.VERCEL_TEAM_ID!,
+    projectId: process.env.VERCEL_PROJECT_ID!,
+  })
   const records = await store.list().catch(() => [])
   await Promise.all(records.map(async (record) => {
     try {
-      const sandbox = await Sandbox.get({
-        token,
-        teamId: process.env.VERCEL_TEAM_ID!,
-        projectId: process.env.VERCEL_PROJECT_ID!,
-        name: record.sandboxId,
-        resume: true,
-      } as Parameters<typeof Sandbox.get>[0] & { name?: string })
-      await sandbox.delete()
+      const sandbox = await client.get({ name: record.sandboxId, sandboxId: record.sandboxId, resume: true })
+      const deleteSandbox = (sandbox as unknown as { delete?: () => Promise<void> }).delete
+      await deleteSandbox?.call(sandbox)
     } catch (error) {
       console.warn(`[readiness] cleanup_warning sandboxId=${record.sandboxId} message=${error instanceof Error ? error.message : String(error)}`)
     }
