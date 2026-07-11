@@ -39,3 +39,5 @@ contracted consumption modes; governed-projection context flow.
   beside.
 - [ID1](../ID1-agent-identity/PLAN.md) — gates the contracted mode (external
   consumers are regular principals + workspaces).
+
+**Layering constraint (Decision 22):** subagent and contracted modes are layers over ONE consumption pipeline (workspace-binding parameter + governance projection + metering) — never forked code paths. MCP is a door, not a distribution vector; external third parties contract agents from their own signed-up workspace.
