@@ -4,21 +4,29 @@ import type { AgentSessionEvent } from '@mariozechner/pi-coding-agent'
 import {
   AGENT_NOT_IMPLEMENTED_UNTIL_T1,
   AgentNotImplementedError,
-  createAgent,
+  createAgent as createCoreAgent,
+} from '@hachej/boring-agent/core'
+import type {
+  AgentCoreRuntimeFactory,
+  AgentCoreSessionService,
+  PiChatEventSubscriber,
+  PiSessionCreateInit,
+  PiSessionRequestContext,
 } from '@hachej/boring-agent/core'
 import type { AgentHarness, AgentHarnessFactoryInput, AgentSendInput, RunContext } from '../../shared/harness'
 import type { AgentRuntimeAdapter } from '../../shared/events'
 import type { SessionCtx, SessionDetail, SessionStore, SessionSummary } from '../../shared/session'
+import type { FollowUpPayload, PiChatEvent, PromptPayload } from '../../shared/chat'
 import type { PiAgentPromptInput, PiAgentSessionAdapter, PiAgentSessionSnapshot } from '../pi-chat/PiAgentSessionAdapter'
 import { ErrorCode } from '../../shared/error-codes'
+import { createAgent } from '../createAgent'
 
 const CTX: SessionCtx = { workspaceId: 'workspace-test', userId: 'user-test' }
 
 describe('createAgent', () => {
   it('exposes exactly the nine-member facade without Fastify', () => {
-    const agent = createAgent({
-      runtime: createTestRuntime(),
-      harnessFactory: createFakeHarnessFactory(),
+    const agent = createCoreAgent({
+      runtimeFactory: createCoreRuntimeFactory(),
     })
 
     expect(Object.keys(agent).sort()).toEqual([
@@ -32,6 +40,24 @@ describe('createAgent', () => {
       'stop',
       'stream',
     ])
+  })
+
+  it('runs through the injected core runtime without the server wrapper', async () => {
+    const sessions = new MemorySessionStore()
+    const agent = createCoreAgent({
+      runtimeFactory: createCoreRuntimeFactory(sessions),
+    })
+
+    const seeded = sessions.seed('runtime-seeded', CTX)
+    await expect(agent.sessions.list(CTX)).resolves.toContainEqual(seeded)
+    const created = await agent.sessions.create(CTX, { title: 'injected store' })
+    await expect(sessions.list(CTX)).resolves.toContainEqual(created)
+    await agent.sessions.delete(CTX, created.id)
+    expect(sessions.deleted).toContain(created.id)
+    const events = await collectEvents(agent.send({ content: 'hello from core', ctx: CTX }))
+
+    expect(events.map((event) => event.chunk.type)).toEqual(['agent-start', 'agent-end'])
+    await agent.dispose()
   })
 
   it('rejects sessions override with the default harness to avoid split persistence', () => {
@@ -472,6 +498,19 @@ function createTestRuntime() {
   return { id: 'test-runtime', dispose: vi.fn<() => void>() } satisfies AgentRuntimeAdapter
 }
 
+function createCoreRuntimeFactory(sessions = new MemorySessionStore()): AgentCoreRuntimeFactory {
+  const service = new InjectedCorePiChatService(sessions)
+  return async () => ({
+    harness: {
+      id: 'core-injected',
+      placement: 'server',
+      sessions,
+    },
+    sessionStore: sessions,
+    service,
+  })
+}
+
 function createFakeHarnessFactory(options: { autoCompletePrompt?: boolean; eventsPerPrompt?: number; seedSessions?: string[] } = {}) {
   const sessions = new MemorySessionStore()
   for (const sessionId of options.seedSessions ?? []) sessions.seed(sessionId, CTX)
@@ -619,8 +658,104 @@ class ScopedSessionStore extends MemorySessionStore {
   }
 }
 
+class InjectedCorePiChatService implements AgentCoreSessionService {
+  private readonly subscribers = new Map<string, Set<PiChatEventSubscriber>>()
+  private readonly latestSeq = new Map<string, number>()
+  private turns = 0
+
+  constructor(private readonly sessions: MemorySessionStore) {}
+
+  async createSession(ctx: PiSessionRequestContext, init?: PiSessionCreateInit) {
+    return this.sessions.create(toTestSessionCtx(ctx), init)
+  }
+
+  async deleteSession(ctx: PiSessionRequestContext, sessionId: string): Promise<void> {
+    await this.sessions.delete(toTestSessionCtx(ctx), sessionId)
+    this.subscribers.delete(sessionId)
+    this.latestSeq.delete(sessionId)
+  }
+
+  async readState(_ctx: PiSessionRequestContext, sessionId: string) {
+    return {
+      protocolVersion: 1 as const,
+      sessionId,
+      seq: this.latestSeq.get(sessionId) ?? 0,
+      status: 'idle' as const,
+      messages: [],
+      queue: { followUps: [] },
+      followUpMode: 'one-at-a-time' as const,
+    }
+  }
+
+  async subscribe(ctx: PiSessionRequestContext, sessionId: string, _cursor: number, subscriber: PiChatEventSubscriber) {
+    await this.sessions.load(toTestSessionCtx(ctx), sessionId)
+    const subscribers = this.subscribers.get(sessionId) ?? new Set<PiChatEventSubscriber>()
+    subscribers.add(subscriber)
+    this.subscribers.set(sessionId, subscribers)
+    return {
+      type: 'ok' as const,
+      unsubscribe: () => subscribers.delete(subscriber),
+    }
+  }
+
+  async prompt(_ctx: PiSessionRequestContext, sessionId: string, payload: PromptPayload) {
+    const turnId = `core-turn-${++this.turns}`
+    this.publish(sessionId, { type: 'agent-start', seq: this.nextSeq(sessionId), turnId })
+    this.publish(sessionId, { type: 'agent-end', seq: this.nextSeq(sessionId), turnId, status: 'ok' })
+    return {
+      accepted: true as const,
+      cursor: this.latestSeq.get(sessionId) ?? 0,
+      clientNonce: payload.clientNonce,
+    }
+  }
+
+  async followUp(_ctx: PiSessionRequestContext, sessionId: string, payload: FollowUpPayload) {
+    return {
+      accepted: true as const,
+      cursor: this.latestSeq.get(sessionId) ?? 0,
+      clientNonce: payload.clientNonce,
+      clientSeq: payload.clientSeq,
+      queued: true as const,
+    }
+  }
+
+  async clearQueue(_ctx: PiSessionRequestContext, sessionId: string) {
+    return { accepted: true as const, cursor: this.latestSeq.get(sessionId) ?? 0, cleared: 0 }
+  }
+
+  async interrupt(_ctx: PiSessionRequestContext, sessionId: string) {
+    return { accepted: true as const, cursor: this.latestSeq.get(sessionId) ?? 0 }
+  }
+
+  async stop(_ctx: PiSessionRequestContext, sessionId: string) {
+    return {
+      accepted: true as const,
+      cursor: this.latestSeq.get(sessionId) ?? 0,
+      stopped: true as const,
+      clearedQueue: [],
+    }
+  }
+
+  private nextSeq(sessionId: string): number {
+    const next = (this.latestSeq.get(sessionId) ?? 0) + 1
+    this.latestSeq.set(sessionId, next)
+    return next
+  }
+
+  private publish(sessionId: string, event: PiChatEvent): void {
+    for (const subscriber of this.subscribers.get(sessionId) ?? []) subscriber(event)
+  }
+}
+
 function normalizeTestCtx(ctx: SessionCtx | undefined): SessionCtx | undefined {
   return !ctx?.workspaceId && !ctx?.userId ? undefined : { workspaceId: ctx.workspaceId, userId: ctx.userId }
+}
+
+function toTestSessionCtx(ctx: PiSessionRequestContext): SessionCtx {
+  return {
+    workspaceId: ctx.workspaceId,
+    userId: ctx.authSubject,
+  }
 }
 
 function sameTestCtx(a: SessionCtx | undefined, b: SessionCtx | undefined): boolean {
