@@ -16,6 +16,7 @@ import {
 import { PI_CHAT_CURSOR_AHEAD, PI_CHAT_REPLAY_GAP } from '../../pi-chat/piChatReplayBuffer'
 import type { SessionListOptions } from '../../../shared/session'
 import type {
+  PiChatEventStreamSubscription,
   PiChatReplayRangeError,
   PiChatSessionService,
   PiSessionRequestContext,
