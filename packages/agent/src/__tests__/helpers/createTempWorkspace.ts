@@ -2,7 +2,7 @@ import { rm, mkdtemp } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
-import { createNodeWorkspace } from '../../server/workspace/createNodeWorkspace'
+import { createNodeWorkspace } from '@hachej/boring-sandbox/providers'
 import type { Workspace } from '../../shared/workspace'
 
 export interface TempWorkspaceHandle {

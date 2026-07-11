@@ -2,10 +2,10 @@ import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { Sandbox } from '@vercel/sandbox'
+import { getBoringAgentRuntimePaths } from '@hachej/boring-sandbox/providers/node-workspace'
 
 import { FileHandleStore } from '../src/server/sandbox/vercel-sandbox/FileHandleStore'
 import { createVercelSandboxModeAdapter } from '../src/server/runtime/modes/vercel-sandbox'
-import { getBoringAgentRuntimePaths } from '../src/server/workspace/runtimeLayout'
 import { provisionWorkspaceRuntime } from '../src/server/workspace/provisioning'
 
 function requireEnv(name: string): string {

@@ -3,7 +3,7 @@ import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { expect, test } from 'vitest'
 
-import { getBoringAgentRuntimePaths } from '../../runtimeLayout'
+import { getBoringAgentRuntimePaths } from '@hachej/boring-sandbox/providers/node-workspace'
 import { readFingerprint } from '../fingerprint'
 import { ensureNodeRuntime } from '../node'
 import type { WorkspaceProvisioningAdapter, WorkspaceProvisioningExecResult } from '../types'

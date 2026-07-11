@@ -1,7 +1,4 @@
 // @hachej/boring-agent — server (Node-only) public API
-export { createDirectSandbox } from './sandbox/direct/createDirectSandbox'
-export { createBwrapSandbox } from './sandbox/bwrap/createBwrapSandbox'
-export type { BwrapResourceLimits, CreateBwrapSandboxOptions } from './sandbox/bwrap/createBwrapSandbox'
 export { FileHandleStore } from './sandbox/vercel-sandbox/FileHandleStore'
 export { resolveSandboxHandle } from './sandbox/vercel-sandbox/resolveSandboxHandle'
 export { bakeSnapshotIfNeeded, buildPackageHash, buildSnapshotRecipeHash } from './sandbox/vercel-sandbox/bake'
@@ -28,7 +25,6 @@ export {
   VERCEL_UV_SETUP_COMMANDS,
 } from './sandbox/vercel-sandbox/deploymentSnapshot'
 export type { VercelDeploymentSnapshotOptions } from './sandbox/vercel-sandbox/deploymentSnapshot'
-export { createNodeWorkspace } from './workspace/createNodeWorkspace'
 export { createRemoteWorkerModeAdapter } from './runtime/modes/remote-worker'
 export type { RemoteWorkerModeAdapterOptions } from './runtime/modes/remote-worker'
 export { createRemoteWorkerWorkspace } from './workspace/createRemoteWorkerWorkspace'
@@ -66,12 +62,6 @@ export {
   type ProvisionRuntimeWorkspaceOptions,
   type RuntimeWorkspaceProvisioningResult,
 } from './workspace/provisionRuntime'
-export {
-  getBoringAgentRuntimePaths,
-  getBoringAgentRuntimeEnv,
-  getBoringAgentPathEntries,
-} from './workspace/runtimeLayout'
-export type { BoringAgentRuntimePaths } from './workspace/runtimeLayout'
 export {
   createVercelSandboxWorkspace,
   VERCEL_SANDBOX_WORKSPACE_ROOT,

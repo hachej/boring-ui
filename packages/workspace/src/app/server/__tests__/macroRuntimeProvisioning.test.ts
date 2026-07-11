@@ -3,12 +3,12 @@ import { dirname, join } from "node:path"
 import { tmpdir } from "node:os"
 import { afterEach, describe, expect, test, vi } from "vitest"
 import {
-  getBoringAgentRuntimePaths,
   provisionWorkspaceRuntime,
   type ProvisionWorkspaceRuntimeOptions,
   type WorkspaceProvisioningAdapter,
   type WorkspaceProvisioningExecResult,
 } from "@hachej/boring-agent/server"
+import { getBoringAgentRuntimePaths } from "@hachej/boring-sandbox/providers/node-workspace"
 
 import {
   readWorkspacePluginPackagePiSnapshot,

@@ -1,12 +1,15 @@
 import type { FastifyInstance } from "fastify"
 import type {
-  BoringAgentRuntimePaths,
   ProvisionWorkspaceRuntimeOptions,
   RuntimeModeAdapter,
   RuntimeModeId,
   WorkspaceProvisioningAdapter,
   WorkspaceProvisioningResult,
 } from "@hachej/boring-agent/server"
+import {
+  getBoringAgentRuntimePaths,
+  type BoringAgentRuntimePaths,
+} from "@hachej/boring-sandbox/providers/node-workspace"
 import { existsSync, readFileSync } from "node:fs"
 import { createRequire } from "node:module"
 import { basename, isAbsolute, join, resolve } from "node:path"
@@ -129,7 +132,7 @@ export async function provisionCliWorkspaceRuntime(opts: {
 }): Promise<WorkspaceProvisioningResult | undefined> {
   if (opts.provisionWorkspace === false) return undefined
   const agent = await import("@hachej/boring-agent/server")
-  const runtimeLayout = opts.runtimeLayout ?? agent.getBoringAgentRuntimePaths(opts.workspaceRoot)
+  const runtimeLayout = opts.runtimeLayout ?? getBoringAgentRuntimePaths(opts.workspaceRoot)
   const adapter = opts.adapter
     ?? opts.modeAdapter?.createProvisioningAdapter?.(runtimeLayout)
     ?? agent.resolveMode(opts.mode).createProvisioningAdapter?.(runtimeLayout)

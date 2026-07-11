@@ -113,6 +113,9 @@ importers:
       '@hachej/boring-mcp':
         specifier: workspace:*
         version: link:../../plugins/boring-mcp
+      '@hachej/boring-sandbox':
+        specifier: workspace:*
+        version: link:../../packages/boring-sandbox
       '@hachej/boring-ui-kit':
         specifier: workspace:*
         version: link:../../packages/ui
@@ -235,6 +238,9 @@ importers:
 
   packages/agent:
     dependencies:
+      '@hachej/boring-sandbox':
+        specifier: workspace:*
+        version: link:../boring-sandbox
       '@hachej/boring-ui-kit':
         specifier: workspace:*
         version: link:../ui
@@ -431,6 +437,9 @@ importers:
 
   packages/boring-sandbox:
     dependencies:
+      chokidar:
+        specifier: ^5.0.0
+        version: 5.0.0
       zod:
         specifier: ^3.25.76
         version: 3.25.76
@@ -468,6 +477,9 @@ importers:
       '@hachej/boring-diagram':
         specifier: workspace:*
         version: link:../../plugins/diagram
+      '@hachej/boring-sandbox':
+        specifier: workspace:*
+        version: link:../boring-sandbox
       '@hachej/boring-tasks':
         specifier: workspace:*
         version: link:../../plugins/tasks
@@ -806,6 +818,9 @@ importers:
       '@hachej/boring-agent':
         specifier: workspace:*
         version: link:../agent
+      '@hachej/boring-sandbox':
+        specifier: workspace:*
+        version: link:../boring-sandbox
       '@hachej/boring-ui-kit':
         specifier: workspace:*
         version: link:../ui

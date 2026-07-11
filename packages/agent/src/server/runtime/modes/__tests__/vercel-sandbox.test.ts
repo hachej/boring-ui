@@ -16,7 +16,7 @@ import {
 } from '../../../sandbox/vercel-sandbox/resolveSandboxHandle'
 import type { PeriodicSnapshotScheduler } from '../../../sandbox/vercel-sandbox/periodicSnapshot'
 import { createMockVercelSandboxHarness } from '../../../workspace/__tests__/helpers/mockVercelSandbox'
-import { getBoringAgentRuntimePaths } from '../../../workspace/runtimeLayout'
+import { getBoringAgentRuntimePaths } from '@hachej/boring-sandbox/providers/node-workspace'
 import { buildWorkspaceRootSetupScript, createVercelSandboxModeAdapter } from '../vercel-sandbox'
 
 const decoder = new TextDecoder()

@@ -2,15 +2,17 @@ import { mkdir } from 'node:fs/promises'
 import { join } from 'node:path'
 
 import {
-  createBwrapSandbox,
-  createNodeWorkspace,
   REMOTE_WORKER_RUNTIME_CWD,
-  type BwrapResourceLimits,
   type RemoteWorkerWorkspaceOp,
   type RemoteWorkerWorkspaceResult,
 } from '../index'
 import type { Sandbox, Workspace } from '../../shared/index'
 import { WORKER_ERROR_CODES } from './error-codes'
+import {
+  createBwrapSandbox,
+  createNodeWorkspace,
+  type BwrapResourceLimits,
+} from '@hachej/boring-sandbox/providers'
 
 export interface WorkerRuntime {
   workspace: Workspace

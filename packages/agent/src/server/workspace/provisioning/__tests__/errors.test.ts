@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os'
 import { expect, test } from 'vitest'
 
 import { ErrorCode } from '../../../../shared/error-codes'
-import { getBoringAgentRuntimePaths } from '../../runtimeLayout'
+import { getBoringAgentRuntimePaths } from '@hachej/boring-sandbox/providers/node-workspace'
 import { createVercelProvisioningAdapter } from '../../../sandbox/vercel-sandbox/provisioningAdapter'
 import { ProvisioningError } from '../errors'
 import { provisionWorkspaceRuntime } from '../provisionWorkspaceRuntime'

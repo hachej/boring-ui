@@ -1,7 +1,7 @@
 import type { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify'
 import type { RuntimeFilesystemBinding } from '../../runtime/mode'
 import type { Workspace, Entry } from '../../../shared/workspace'
-import { isIgnoredDirName } from '../../workspace/ignore'
+import { isIgnoredDirName } from '@hachej/boring-sandbox/providers/node-workspace'
 import {
   ERROR_CODE_INVALID_PATH,
   ERROR_CODE_PATH_REJECTED,

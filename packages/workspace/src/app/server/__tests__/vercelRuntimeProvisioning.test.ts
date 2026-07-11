@@ -4,11 +4,11 @@ import { tmpdir } from "node:os"
 import { afterEach, expect, test } from "vitest"
 import {
   createVercelProvisioningAdapter,
-  getBoringAgentRuntimePaths,
   type RuntimeModeAdapter,
   type WorkspaceProvisioningAdapter,
   type WorkspaceProvisioningExecResult,
 } from "@hachej/boring-agent/server"
+import { getBoringAgentRuntimePaths } from "@hachej/boring-sandbox/providers/node-workspace"
 import type { Workspace, Sandbox } from "@hachej/boring-agent/shared"
 
 import { createWorkspaceAgentServer } from "../createWorkspaceAgentServer"

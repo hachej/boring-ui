@@ -1,5 +1,5 @@
 import type { TelemetrySink } from '../../../shared/telemetry'
-import type { BoringAgentRuntimePaths } from '../runtimeLayout'
+import type { BoringAgentRuntimePaths } from '@hachej/boring-sandbox/providers/node-workspace'
 import type { ProvisioningLogger } from './errors'
 
 export interface PluginSkillSource {

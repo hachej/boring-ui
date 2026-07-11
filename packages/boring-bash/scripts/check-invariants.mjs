@@ -137,11 +137,27 @@ function parseModuleReferences(file, text) {
   return { parseErrors, references };
 }
 
-function isForbiddenAgentRuntimeSpecifier(specifier) {
+function isSandboxProviderSpecifier(specifier) {
+  return specifier === "@hachej/boring-sandbox/providers"
+    || specifier.startsWith("@hachej/boring-sandbox/providers/");
+}
+
+function isAllowedAgentSandboxProviderFile(file) {
+  const normalized = file.replaceAll("\\", "/");
+  return normalized.includes("/packages/agent/src/server/")
+    || normalized.endsWith("/packages/agent/src/server")
+    || normalized.includes("/packages/agent/src/__tests__/")
+    || normalized.startsWith("src/server/")
+    || normalized.startsWith("src/__tests__/");
+}
+
+function isForbiddenAgentRuntimeSpecifier(specifier, file) {
   return specifier === "@hachej/boring-bash"
     || specifier.startsWith("@hachej/boring-bash/")
     || specifier === "@hachej/boring-sandbox"
-    || specifier.startsWith("@hachej/boring-sandbox/");
+    || specifier === "@hachej/boring-sandbox/shared"
+    || specifier.startsWith("@hachej/boring-sandbox/shared/")
+    || (isSandboxProviderSpecifier(specifier) && !isAllowedAgentSandboxProviderFile(file));
 }
 
 function findAgentRuntimeValueImports(file, text) {
@@ -149,7 +165,7 @@ function findAgentRuntimeValueImports(file, text) {
   return {
     parseErrors: parsed.parseErrors,
     violations: parsed.references.filter(({ specifier, typeOnly }) =>
-      !typeOnly && isForbiddenAgentRuntimeSpecifier(specifier)),
+      !typeOnly && isForbiddenAgentRuntimeSpecifier(specifier, file)),
   };
 }
 
@@ -212,7 +228,7 @@ function assertNegativeFixtures() {
   ];
   if (agentValueFixture.parseErrors.length === 0
     && JSON.stringify(agentValueActual) === JSON.stringify(agentValueExpected)) {
-    pass("agent runtime-package fixture rejects bash/sandbox static/dynamic/require values and allows type-only imports");
+    pass("agent runtime-package fixture rejects bash/root-sandbox/provider imports outside approved server/test paths and allows type-only imports");
   } else {
     fail(`agent runtime-package fixture mismatch: ${JSON.stringify({
       parseErrors: agentValueFixture.parseErrors,
@@ -236,7 +252,7 @@ function assertNegativeFixtures() {
   ];
   if (jsxValueFixture.parseErrors.length === 0
     && JSON.stringify(jsxViolations) === JSON.stringify(jsxExpected)) {
-    pass("agent runtime-package fixture rejects bash and sandbox JSX value imports");
+    pass("agent runtime-package fixture rejects bash and sandbox provider JSX value imports");
   } else {
     fail(`agent runtime-package JSX fixture mismatch: ${JSON.stringify(jsxValueFixture)}`);
   }
@@ -314,7 +330,7 @@ if (!negativeFixturesOnly) {
       fail(`agent runtime-package scan: ${violation.kind} ${violation.specifier} found in ${relative(repoRoot, violation.file)}:${violation.line}`);
     }
     if (parseErrors.length === 0 && violations.length === 0) {
-      pass(`agent runtime-package scan: no boring-bash or boring-sandbox value imports in ${agentFiles.length} file(s)`);
+      pass(`agent runtime-package scan: no forbidden boring-bash or root/shared boring-sandbox value imports in ${agentFiles.length} file(s)`);
     }
   }
 

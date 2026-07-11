@@ -1,12 +1,12 @@
 import type { FastifyInstance } from "fastify"
 import type {
-  BoringAgentRuntimePaths,
   ProvisionWorkspaceRuntimeOptions,
   RuntimeModeAdapter,
   RuntimeModeId,
   WorkspaceProvisioningAdapter,
   WorkspaceProvisioningResult,
 } from "@hachej/boring-agent/server"
+import type { BoringAgentRuntimePaths } from "@hachej/boring-sandbox/providers/node-workspace"
 import { execSync } from "node:child_process"
 import {
   existsSync,

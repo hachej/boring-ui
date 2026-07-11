@@ -4,8 +4,8 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "pnpm --filter @hachej/boring-ui-kit build && pnpm --filter @hachej/boring-agent build && pnpm --filter @hachej/boring-bash build && pnpm --filter @hachej/boring-workspace build && pnpm --filter @hachej/boring-core build && pnpm --filter @hachej/boring-mcp build && pnpm --filter @hachej/boring-governance build && NODE_ENV=development tsx src/server/dev.ts",
-    "build": "pnpm --filter @hachej/boring-ui-kit build && pnpm --filter @hachej/boring-agent build && pnpm --filter @hachej/boring-bash build && pnpm --filter @hachej/boring-workspace build && pnpm --filter @hachej/boring-core build && pnpm --filter @hachej/boring-mcp build && pnpm --filter @hachej/boring-governance build && tsx ../../packages/workspace/scripts/build-app.mts",
+    "dev": "pnpm --filter @hachej/boring-ui-kit build && pnpm --filter @hachej/boring-sandbox build && pnpm --filter @hachej/boring-agent build && pnpm --filter @hachej/boring-bash build && pnpm --filter @hachej/boring-workspace build && pnpm --filter @hachej/boring-core build && pnpm --filter @hachej/boring-mcp build && pnpm --filter @hachej/boring-governance build && NODE_ENV=development tsx src/server/dev.ts",
+    "build": "pnpm --filter @hachej/boring-ui-kit build && pnpm --filter @hachej/boring-sandbox build && pnpm --filter @hachej/boring-agent build && pnpm --filter @hachej/boring-bash build && pnpm --filter @hachej/boring-workspace build && pnpm --filter @hachej/boring-core build && pnpm --filter @hachej/boring-mcp build && pnpm --filter @hachej/boring-governance build && tsx ../../packages/workspace/scripts/build-app.mts",
     "start": "NODE_ENV=production node dist/server/main.js",
     "start:worker": "NODE_ENV=production node dist/server/agent-worker.js",
     "migrate": "tsx src/server/migrate.ts",
@@ -25,6 +25,7 @@
     "@hachej/boring-core": "workspace:*",
     "@hachej/boring-governance": "workspace:*",
     "@hachej/boring-mcp": "workspace:*",
+    "@hachej/boring-sandbox": "workspace:*",
     "@hachej/boring-ui-kit": "workspace:*",
     "@hachej/boring-workspace": "workspace:*",
     "@vercel/sandbox": "2.3.0",

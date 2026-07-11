@@ -925,8 +925,7 @@ test('registerAgentRoutes accepts a custom runtime adapter for pluggable sandbox
   const customAdapter: RuntimeModeAdapter = {
     id: 'custom-sandbox',
     async create(ctx) {
-      const { createNodeWorkspace } = await import('../workspace/createNodeWorkspace')
-      const { createDirectSandbox } = await import('../sandbox/direct/createDirectSandbox')
+      const { createNodeWorkspace, createDirectSandbox } = await import('@hachej/boring-sandbox/providers')
       const { createServerFileSearch } = await import('../runtime/createServerFileSearch')
       const workspace = createNodeWorkspace(ctx.workspaceRoot)
       const sandbox = createDirectSandbox()
@@ -1432,7 +1431,7 @@ test('runtimeEnvContributions merge generic host env into sandbox exec without w
     id: 'custom-env-sandbox',
     workspaceFsCapability: 'strong',
     async create(ctx) {
-      const { createNodeWorkspace } = await import('../workspace/createNodeWorkspace')
+      const { createNodeWorkspace } = await import('@hachej/boring-sandbox/providers')
       const { createServerFileSearch } = await import('../runtime/createServerFileSearch')
       const runtimeContext = { runtimeCwd: '/workspace' }
       const workspace = createNodeWorkspace(ctx.workspaceRoot)

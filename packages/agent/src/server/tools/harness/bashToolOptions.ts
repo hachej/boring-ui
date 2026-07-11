@@ -4,9 +4,10 @@ import {
   type BashToolOptions,
   createLocalBashOperations,
 } from '@mariozechner/pi-coding-agent'
-
-import { buildBwrapArgs } from '../../sandbox/bwrap/buildBwrapArgs'
-import { withWorkspacePythonEnv } from '../../sandbox/workspacePythonEnv'
+import {
+  buildBwrapArgs,
+  withWorkspacePythonEnv,
+} from '@hachej/boring-sandbox/providers'
 import { remoteSandboxBashOps } from '../operations/remoteSandbox'
 import { mergeRuntimeProvisioningEnv, type RuntimeProvisioningOptions } from '../../runtime/env'
 import { getRuntimeBundleStorageRoot, type RuntimeBashStrategy, type RuntimeBundle } from '../../runtime/mode'

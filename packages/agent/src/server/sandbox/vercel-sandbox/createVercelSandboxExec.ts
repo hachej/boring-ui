@@ -8,7 +8,7 @@ import {
   VERCEL_SANDBOX_RUNTIME_CONTEXT,
   VERCEL_SANDBOX_WORKSPACE_ROOT,
 } from '../../workspace/createVercelSandboxWorkspace'
-import { withWorkspacePythonEnv } from '../workspacePythonEnv'
+import { withWorkspacePythonEnv } from '@hachej/boring-sandbox/providers/node-workspace'
 
 const DEFAULT_TIMEOUT_MS = 30_000
 const DEFAULT_MAX_OUTPUT_BYTES = 1_048_576

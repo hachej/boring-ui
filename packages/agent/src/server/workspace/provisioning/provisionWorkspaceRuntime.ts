@@ -4,7 +4,7 @@ import {
   BORING_AGENT_RUNTIME_DIR_NAMES,
   getBoringAgentPathEntries,
   getBoringAgentRuntimeEnv,
-} from '../runtimeLayout'
+} from '@hachej/boring-sandbox/providers/node-workspace'
 import { getEnv } from '../../config/env'
 import { ErrorCode, logProvisioning, toProvisioningError, type ProvisioningLogger } from './errors'
 import type { ErrorCode as ErrorCodeValue } from '../../../shared/error-codes'

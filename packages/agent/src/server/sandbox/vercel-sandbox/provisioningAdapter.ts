@@ -1,4 +1,4 @@
-import type { BoringAgentRuntimePaths } from '../../workspace/runtimeLayout'
+import type { BoringAgentRuntimePaths } from '@hachej/boring-sandbox/providers/node-workspace'
 import type {
   WorkspaceProvisioningAdapter,
   WorkspaceProvisioningExecResult,

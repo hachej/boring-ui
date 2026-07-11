@@ -6,7 +6,7 @@ import { afterEach, describe, expect, test, vi } from 'vitest'
 
 import type { Workspace } from '../../../../shared/workspace'
 import type { RuntimeFilesystemBindingOperations } from '../../../runtime/mode'
-import { createNodeWorkspace } from '../../../workspace/createNodeWorkspace'
+import { createNodeWorkspace } from '@hachej/boring-sandbox/providers'
 import { ERROR_CODE_CONFLICT } from '../../middleware'
 import { ERROR_CODE_NOT_FOUND_OR_DENIED, ERROR_CODE_READONLY, fileRoutes } from '../file'
 

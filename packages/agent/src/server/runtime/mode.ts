@@ -3,8 +3,10 @@ import type { WorkspaceRuntimeContext } from '../../shared/runtime'
 import type { Sandbox } from '../../shared/sandbox'
 import type { TelemetrySink } from '../../shared/telemetry'
 import type { Workspace } from '../../shared/workspace'
-import { getNodeWorkspaceHostRoot } from '../workspace/createNodeWorkspace'
-import type { BoringAgentRuntimePaths } from '../workspace/runtimeLayout'
+import {
+  getNodeWorkspaceHostRoot,
+  type BoringAgentRuntimePaths,
+} from '@hachej/boring-sandbox/providers/node-workspace'
 import type { WorkspaceProvisioningAdapter } from '../workspace/provisioning'
 import type { CapabilityReadinessDetail, ReadyStatusTracker } from './readyStatus'
 
