@@ -1,7 +1,7 @@
 import { spawnSync } from 'node:child_process'
 
-import { sandboxConformance } from '../../../../__tests__/conformance/sandbox'
-import { createTempWorkspace } from '../../../../__tests__/helpers'
+import { sandboxConformance } from '../../__tests__/conformance/sandbox'
+import { createTempWorkspace } from '../../__tests__/helpers'
 import { createBwrapSandbox } from '../createBwrapSandbox'
 
 const HAS_BWRAP = (() => {

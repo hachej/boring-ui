@@ -1,8 +1,7 @@
 import { lstat, mkdir, readdir, readFile, rename, rm, stat, unlink, writeFile } from 'node:fs/promises'
 import { dirname, resolve } from 'node:path'
 
-import type { WorkspaceRuntimeContext } from '../../shared/runtime'
-import type { Workspace } from '../../shared/workspace'
+import type { Workspace, WorkspaceRuntimeContext } from '../contracts'
 import {
   assertRealPathWithinWorkspace,
   ensureExistingWorkspacePath,

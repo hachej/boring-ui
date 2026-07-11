@@ -1,9 +1,8 @@
 import { join } from 'node:path'
-import { getEnvSnapshot } from '../config/env'
 import {
   getBoringAgentPathEntries,
   getBoringAgentRuntimePaths,
-} from '../workspace/runtimeLayout'
+} from './runtimeLayout'
 
 interface WorkspacePythonEnvOptions {
   workspaceRoot: string
@@ -27,7 +26,7 @@ export function withWorkspacePythonEnv(
   const { workspaceRoot, env, sandboxRoot, preserveHostHome } = opts
   const runtimeRoot = sandboxRoot ?? workspaceRoot
   const paths = getBoringAgentRuntimePaths(runtimeRoot)
-  const baseEnv = env ?? getEnvSnapshot()
+  const baseEnv = env ?? { ...process.env }
   const pathParts = getBoringAgentPathEntries(paths)
   const existingPath = baseEnv.PATH
   if (existingPath) pathParts.push(existingPath)

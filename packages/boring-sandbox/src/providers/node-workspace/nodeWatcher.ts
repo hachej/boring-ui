@@ -6,17 +6,78 @@ import type {
   WorkspaceChangeEvent,
   WorkspaceWatcher,
   WorkspaceWatcherReadiness,
-} from '../../shared/workspace'
+} from '../contracts'
 import { isIgnoredDirName } from './ignore'
-import { getEnv } from '../config/env'
-import { createLogger } from '../logging'
 
-const log = createLogger('workspace-watch')
+interface LogFields {
+  [key: string]: unknown
+}
+
+const SENSITIVE_KEYS = new Set([
+  'apiKey',
+  'api_key',
+  'token',
+  'secret',
+  'password',
+  'authorization',
+  'cookie',
+  'oidcToken',
+  'accessToken',
+  'refreshToken',
+  'ANTHROPIC_API_KEY',
+  'OPENAI_API_KEY',
+  'VERCEL_OIDC_TOKEN',
+  'VERCEL_TEAM_ID',
+].map((key) => key.toLowerCase()))
+
+function isSensitiveKey(key: string): boolean {
+  return SENSITIVE_KEYS.has(key.toLowerCase())
+}
+
+function redactValue(key: string | undefined, value: unknown, seen: WeakSet<object>): unknown {
+  if (key && isSensitiveKey(key) && value != null) return '***'
+  if (value == null || typeof value !== 'object') return value
+  if (value instanceof Date) return value
+  if (seen.has(value)) return '[Circular]'
+  seen.add(value)
+
+  if (Array.isArray(value)) {
+    const out = value.map((item) => redactValue(undefined, item, seen))
+    seen.delete(value)
+    return out
+  }
+
+  const out: LogFields = {}
+  for (const [childKey, childValue] of Object.entries(value)) {
+    out[childKey] = redactValue(childKey, childValue, seen)
+  }
+  seen.delete(value)
+  return out
+}
+
+function redact(fields: LogFields): LogFields {
+  const out: LogFields = {}
+  const seen = new WeakSet<object>()
+  for (const [key, value] of Object.entries(fields)) {
+    out[key] = redactValue(key, value, seen)
+  }
+  return out
+}
 
 function shouldIgnoreWatchPath(root: string, path: string): boolean {
   const relPath = relative(root, path)
   const parts = relPath.split(sep)
   return parts.some((part) => isIgnoredDirName(part))
+}
+
+function logWatcherError(msg: string, fields?: LogFields): void {
+  console.error(JSON.stringify({
+    level: 'error',
+    prefix: 'workspace-watch',
+    msg,
+    ...(fields ? redact(fields) : {}),
+    t: new Date().toISOString(),
+  }))
 }
 
 /** Workspace-relative path with POSIX separators — the wire format for
@@ -74,7 +135,7 @@ const RENAME_ECHO_TO_KINDS: ReadonlySet<ChokidarEventKind> = new Set(['add', 'ad
 const DEFAULT_MAX_WATCHED_ENTRIES = 50_000
 
 function maxWatchedEntries(): number {
-  const raw = getEnv('BORING_MAX_WATCHED_ENTRIES')
+  const raw = process.env.BORING_MAX_WATCHED_ENTRIES
   if (!raw) return DEFAULT_MAX_WATCHED_ENTRIES
   const n = Number.parseInt(raw, 10)
   return Number.isFinite(n) && n > 0 ? n : DEFAULT_MAX_WATCHED_ENTRIES
@@ -150,7 +211,7 @@ export function createNodeWatcher(root: string): NodeWorkspaceWatcher {
       // first one so there's a trail.
       if (loggedError) return
       loggedError = true
-      log.error('file watcher error — live file events may be incomplete', {
+      logWatcherError('file watcher error — live file events may be incomplete', {
         root,
         error: err instanceof Error ? err.message : String(err),
       })
@@ -171,7 +232,7 @@ export function createNodeWatcher(root: string): NodeWorkspaceWatcher {
           `workspace at ${root} has more than ${cap} entries — file watching disabled. `
           + `Start boring-ui in a smaller subfolder for live file updates, `
           + `or raise BORING_MAX_WATCHED_ENTRIES.`
-        log.error(message, { root, cap })
+        logWatcherError(message, { root, cap })
         return { ok: false, reason: 'workspace_too_large', message }
       }
       startFsw()
