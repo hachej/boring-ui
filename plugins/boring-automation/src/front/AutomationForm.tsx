@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState, type FormEvent } from "react"
 import { Button, Checkbox, Field, FieldDescription, FieldError, FieldLabel, Input, Textarea } from "@hachej/boring-ui-kit"
-import type { Automation, AutomationCreate, AutomationPatch } from "../shared"
+import { validateAutomationSchedule, type Automation, type AutomationCreate, type AutomationPatch } from "../shared"
 
 export interface AutomationDraft {
   title: string
@@ -42,8 +42,9 @@ export function emptyAutomationDraft(): AutomationDraft {
 export function validateAutomationDraft(draft: AutomationDraft): AutomationValidationErrors {
   const errors: AutomationValidationErrors = {}
   if (!draft.title.trim()) errors.title = "Title is required."
-  if (!draft.cron.trim()) errors.cron = "Cron schedule is required."
-  if (!draft.timezone.trim()) errors.timezone = "Timezone is required."
+  const schedule = validateAutomationSchedule(draft.cron, draft.timezone)
+  if (schedule.errors.cron) errors.cron = schedule.errors.cron
+  if (schedule.errors.timezone) errors.timezone = schedule.errors.timezone
   const model = draft.model.trim()
   if (!model) errors.model = "Model is required."
   else {
@@ -102,6 +103,7 @@ export function AutomationForm({
   const errors = useMemo(() => validateAutomationDraft(draft), [draft])
   const hasErrors = Object.keys(errors).length > 0
   const cronDescriptionIds = submitted && errors.cron ? "automation-cron-description automation-cron-error" : "automation-cron-description"
+  const timezoneDescriptionIds = submitted && errors.timezone ? "automation-timezone-description automation-timezone-error" : "automation-timezone-description"
   const modelDescriptionIds = submitted && errors.model ? "automation-model-description automation-model-error" : "automation-model-description"
 
   function submit(event: FormEvent<HTMLFormElement>) {
@@ -149,7 +151,7 @@ export function AutomationForm({
             aria-invalid={submitted && !!errors.cron}
             aria-describedby={cronDescriptionIds}
           />
-          <FieldDescription id="automation-cron-description">Example: 0 9 * * *</FieldDescription>
+          <FieldDescription id="automation-cron-description">Five-field cron, for example 0 9 * * *</FieldDescription>
           {submitted && errors.cron ? <FieldError id="automation-cron-error">{errors.cron}</FieldError> : null}
         </Field>
 
@@ -160,8 +162,9 @@ export function AutomationForm({
             value={draft.timezone}
             onChange={(event) => setDraft((current) => ({ ...current, timezone: event.target.value }))}
             aria-invalid={submitted && !!errors.timezone}
-            aria-describedby={submitted && errors.timezone ? "automation-timezone-error" : undefined}
+            aria-describedby={timezoneDescriptionIds}
           />
+          <FieldDescription id="automation-timezone-description">IANA timezone, for example UTC or America/New_York.</FieldDescription>
           {submitted && errors.timezone ? <FieldError id="automation-timezone-error">{errors.timezone}</FieldError> : null}
         </Field>
       </div>

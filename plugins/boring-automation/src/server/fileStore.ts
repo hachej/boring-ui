@@ -10,7 +10,7 @@ import type {
   AutomationRunLifecyclePatch,
 } from "../shared/types"
 import type { AutomationStore } from "./store"
-import { automationNotFound, runAlreadyActive, runNotFound } from "./store"
+import { automationNotFound, runAlreadyActive, runAlreadyRecorded, runNotFound } from "./store"
 
 type StoredAutomationState = {
   automations: Record<string, Automation>
@@ -137,12 +137,28 @@ export class FileAutomationStore implements AutomationStore {
     })
   }
 
+  async reconcileOrphanedRuns(automationId: string): Promise<void> {
+    const now = this.nowIso()
+    await this.mutate((state) => {
+      if (!state.automations[automationId]) throw automationNotFound(automationId)
+      reconcileOrphanedRuns(state, automationId, this.activeRunIds, now)
+    })
+  }
+
   async beginRun(input: AutomationRunBegin): Promise<AutomationRun> {
     const now = input.createdAt ?? this.nowIso()
     let run: AutomationRun | undefined
     await this.mutate((state) => {
       if (!state.automations[input.automationId]) throw automationNotFound(input.automationId)
       reconcileOrphanedRuns(state, input.automationId, this.activeRunIds, now)
+      if (input.trigger === "scheduled" && input.scheduledFor) {
+        const duplicate = Object.values(state.runs).some((candidate) => (
+          candidate.automationId === input.automationId
+          && candidate.trigger === "scheduled"
+          && candidate.scheduledFor === input.scheduledFor
+        ))
+        if (duplicate) throw runAlreadyRecorded(input.automationId, input.scheduledFor)
+      }
       const active = Object.values(state.runs).find((candidate) => (
         candidate.automationId === input.automationId
         && (candidate.status === "queued" || candidate.status === "running")

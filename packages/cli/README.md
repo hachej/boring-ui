@@ -39,6 +39,20 @@ configured it prints a guide: in another terminal run `pi` (or
 sign in to a subscription (Claude Pro/Max, ChatGPT Plus, Copilot). Credentials
 are saved at `~/.pi/agent/auth.json`; refresh the browser afterward.
 
+### Invoke scheduled automations
+
+Folder mode exposes a loopback-only due-operation endpoint. It evaluates only
+the current cron minute and never starts a background timer or daemon:
+
+```bash
+curl --fail --silent --show-error -X POST \
+  http://127.0.0.1:5200/api/v1/boring-automation/due
+```
+
+Configure that command in user-owned cron/systemd while `boring-ui` is already
+running. Missed minutes are intentionally not backfilled. The endpoint is
+unavailable in workspaces mode and hosted deployments.
+
 ---
 
 ## Commands
