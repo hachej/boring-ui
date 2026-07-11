@@ -3,6 +3,7 @@ import type { AgentSessionEvent } from '@mariozechner/pi-coding-agent'
 import type { AgentHarness, RunContext, AgentSendInput } from '../../../shared/harness'
 import type { SessionStore } from '../../../shared/session'
 import type { PiChatEvent } from '../../../shared/chat'
+import { ErrorCode } from '../../../shared/error-codes'
 import type { PiAgentSessionAdapter, PiAgentSessionSnapshot } from '../PiAgentSessionAdapter'
 import { HarnessPiChatService } from '../harnessPiChatService'
 import type { PiSessionRequestContext } from '../piSessionIdentity'
@@ -148,7 +149,7 @@ describe('HarnessPiChatService concurrent clients on the same session', () => {
     const disposal = service.dispose()
     await releaseNext()
 
-    await expect(subscription).rejects.toMatchObject({ code: 'AGENT_BINDING_DISPOSED' })
+    await expect(subscription).rejects.toMatchObject({ code: ErrorCode.enum.AGENT_BINDING_DISPOSED })
     await expect(disposal).rejects.toBe(cleanupError)
     expect(adapter.abort).toHaveBeenCalledOnce()
     expect(adapter.listenerCount()).toBe(0)

@@ -227,10 +227,11 @@ export function createAgentRuntimeBridge(
     try {
       runtime = await runtimeLoader.current()
       if (runtime) {
+        const activeRuntime = runtime
         const results = await Promise.allSettled(started.map(([sessionKey, session]) =>
           runProducerTeardown(sessionKey, async () => {
             if (startedSessions.get(sessionKey) !== session) return
-            await runtime.service.stop(toPiRequestContext(session.ctx), session.sessionId, {})
+            await activeRuntime.service.stop(toPiRequestContext(session.ctx), session.sessionId, {})
             startedSessions.delete(sessionKey)
             live.close(sessionKey)
           }),
