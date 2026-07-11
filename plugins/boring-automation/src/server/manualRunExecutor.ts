@@ -21,6 +21,8 @@ export interface ManualRunExecutorOptions {
 export interface ManualRunInput {
   automationId: string
   request: FastifyRequest
+  trigger?: "manual" | "scheduled"
+  scheduledFor?: string | null
 }
 
 interface UsageTotals {
@@ -51,10 +53,15 @@ export class ManualRunExecutor {
     const modelSnapshot = automation.model
     const model = parseAutomationModel(modelSnapshot)
     const createdAt = this.nowIso()
+    const trigger = input.trigger ?? "manual"
+    const scheduledFor = trigger === "scheduled" ? input.scheduledFor ?? null : null
+    if (trigger === "scheduled" && !scheduledFor) {
+      throw new AutomationStoreError(BORING_AUTOMATION_ERROR_CODES.INVALID_BODY, "scheduled runs require scheduledFor")
+    }
     const run = await this.options.store.beginRun({
       automationId: automation.id,
-      trigger: "manual",
-      scheduledFor: null,
+      trigger,
+      scheduledFor,
       promptSnapshot,
       modelSnapshot,
       createdAt,
