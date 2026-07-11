@@ -28,6 +28,21 @@ deployment.
 - **EU hosting:** the identity/auth server must be EU-sovereign
   (00 invariant 15).
 
+## Owner rulings (2026-07-11)
+
+- **Principle: MCP consumers are REGULAR USERS.** No special class anywhere
+  in the design.
+- **Signup:** open, same as any user signup — no invite gate or manual
+  activation for MCP-originated accounts.
+- **Isolation:** existing app-level workspace isolation applies unchanged;
+  no new isolation tier for external consumers.
+- **Cost/credits:** LLM token/spend budgeting is a regular per-workspace
+  concern, deliberately deferred — NOT part of ID1 scope.
+- **Recorded risk (known-unknown with trigger):** open signup +
+  operator-funded keys + no workspace budget = unbounded spend exposure the
+  day ID1 ships to the public internet. The deferred workspace-budget work
+  must land BEFORE or WITH ID1's public exposure; revisit at ID1 build start.
+
 ## Dependencies
 
 - M1 (MCP surface) — the ingress the identity flow authenticates.

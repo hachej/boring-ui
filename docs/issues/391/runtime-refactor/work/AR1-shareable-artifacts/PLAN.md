@@ -26,6 +26,8 @@ route + share entries + tombstone rendering. Depends on
   revocation = membership removal; no expiry machinery.
 - **Machine access:** the same file is readable via an MCP resource so
   consumer agents read content directly; humans get the URL.
+- **Consumer class (owner ruling 2026-07-11, see ID1):** MCP consumers are
+  regular users — membership/auth semantics identical to regular users.
 
 ## Dependencies
 
