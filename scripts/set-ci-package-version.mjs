@@ -25,6 +25,7 @@ const PUBLISHABLE = [
   "plugins/ask-user",
   "plugins/diagram",
   "plugins/tasks",
+  "plugins/boring-automation",
   "plugins/data-explorer",
   "plugins/data-catalog",
   "plugins/generated-pane",

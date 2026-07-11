@@ -25,6 +25,7 @@ const PUBLISHABLE_PACKAGES = [
   "plugins/ask-user",
   "plugins/diagram",
   "plugins/tasks",
+  "plugins/boring-automation",
   "packages/cli",
   "plugins/data-explorer",
   "plugins/data-catalog",
