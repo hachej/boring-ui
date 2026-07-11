@@ -75,6 +75,11 @@ must yield a purely-Docker deployable artifact (one image/compose) runnable in
 the owner's own prod or in a dedicated tenant VM; D1/provisioning choices must
 not lock out either path.
 
+Owner priority (2026-07-11): D1 v1 scope is ONE docker deployment hosting N
+agent bundles mapped to workspaces (multi-agent single-host).
+Dedicated-VM/hostname-per-tenant is the second deployment variant, not the v1
+default.
+
 ## Deliverables
 
 - One command/API that plans and applies tenant provisioning.

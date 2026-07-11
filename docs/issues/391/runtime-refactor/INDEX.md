@@ -15,8 +15,13 @@ Status reflects `main` plus the workspace-first amendment, **Decision 21, accept
 documented before implementation; only rows marked **v1 gate** block v1.
 
 **V1 product path:** exact hostname -> landing/auth -> authorized workspace ->
-deployed agent selected as that workspace's `default`. R0/M1 is an optional
-tracer beside this path; it is not a release gate or the business critical path.
+deployed agent selected as that workspace's `default`.
+
+**Build order (owner priorities, 2026-07-11 — see "Owner priorities" below):**
+#631 + P1 recut → P6-R (+AC1 types) → D1-reframed (+P5a) → M1 recuts
+(#549/#556) → ID1 → AR1 (+AC1 contracted mode) → M2/E2 → T1/T2 → P2/X1. M1 is
+on this path (after P6-R/D1-reframed, before ID1/AR1), no longer a purely
+optional side tracer.
 
 | Milestone | Work package | Depends on | Live status | Exit gist |
 | --- | --- | --- | --- | --- |
@@ -30,8 +35,49 @@ tracer beside this path; it is not a release gate or the business critical path.
 | P6-R — workspace/deployment resolution | [P6](work/P6-plugin-child-app/) | P6-D, P1, narrow P5a | **v1 gate; narrow/rework** | host verifies bundle assets and resolves deployment, workspace-owned composition, approved runtime, and `default` binding to one immutable digest |
 | D1 — dedicated EU site delivery | [D1](work/D1-tenant-provisioning/) | A1, P2 runsc, P5a, P6-R | **v1 gate; pending** | exact hostname -> bounded landing -> auth -> authorized workspace -> deployed `default` agent, plus idempotent apply/rollback; no M2 dependency |
 | P8 — v1 proof/cleanup | [P8](work/P8-verification/) | all reduced v1 gates above | **pending** | measured workspace-backed golden path, residual pure-mode grep, rollback, and zero v1-owned removal markers; 15 minutes remains a target until baselined |
+| ID1 — agent-driven identity | [ID1](work/ID1-agent-identity/) | M1 (MCP surface) + existing membership/auth model | **spec settled — not started; gates AR1/priority 2** (owner decision 2026-07-11) | MCP OAuth 2.1 + PKCE (RFC 9728/8707; CIMD primary, RFC 7591 fallback); auto-provisioned account + personal workspace on first token exchange; EU-sovereign auth server |
+| AR1 — shareable artifacts | [AR1](work/AR1-shareable-artifacts/) | ID1 + M1 (MCP surface) + workspace contract | **spec settled 2026-07-11 (owner-grilled) — small; depends on ID1** | workspace-as-is deep links: share entry (stable ID → workspace + path + provenance), live reference semantics, tombstone for broken refs, membership-only auth, MCP resource for machine access |
+| AC1 — agent consumption contract | [AC1](work/AC1-agent-consumption-contract/) | P1/P6-R (types); ID1 (contracted mode) | **decision settled ([#22](../../../DECISIONS.md#22-one-agent-consumption-contract-protocol-bindings-at-the-edges)) — tracked in issue [#636](https://github.com/hachej/boring-ui/issues/636); types land with P6-R** | one A2A-shaped contract; native internal binding; subagent/contracted modes; governed-projection briefs |
+| BL1 — engagement billing | [BL1](work/BL1-engagement-billing/) | AC1 contracted mode; ID1 | **gap identified — marketplace path, phase 4/5** | pricing on contracted agents, invoice generation per engagement/task, payout accounting for creators; decorator on boring-governance's metering seam; carries the deferred workspace token/spend budgets (ID1 tripwire) |
+| MK1 — agent catalog | [MK1](work/MK1-agent-catalog/) | P6-R; AC1 | **gap identified — marketplace path, phase 4/5** | discovery: public profiles for contractable agents, browse/search surface, "contract this agent" entry; v1 = static profile pages from `AgentDefinition` metadata |
+| CH1 — consumer channels | [CH1](work/CH1-consumer-channels/) | T1 completion; T2; arch-08 surfaces | **gap identified — marketplace path, phase 4/5** | Telegram first, WhatsApp Business second (approval/cost spike open); channel adapters bind the same task/contextId/input-required contract; Slack stays out of #391 scope |
 
 **Footnote:** Status entries above must cite merge-commit-ancestry-verified state (`git merge-base --is-ancestor <sha> origin/main`), not GitHub MERGED labels — see the stacked-PR trap note in [`REVIEW-2026-07-11-unknowns.md`](REVIEW-2026-07-11-unknowns.md).
+
+## Owner priorities (2026-07-11)
+
+Explicit product priorities set by the owner; ordering below refines the v1
+path without changing decision 21's workspace-first acceptance.
+
+1. **Multi-agent prod hosting** — run MANY distinct agents in ONE prod
+   deployment, each mapped to workspaces. (P1 + A1 + P6-R + D1-reframed; see
+   the D1 reframing note in
+   [`work/D1-tenant-provisioning/PLAN.md`](work/D1-tenant-provisioning/PLAN.md).)
+2. **External agent consumption via MCP + shareable artifacts** — a consumer
+   agent receives an artifact link, opens it, lands in its workspace.
+   (M1 → M2/E2 promoted from post-v1; NEW workpackages
+   [ID1](work/ID1-agent-identity/PLAN.md) agent-driven identity (spec settled,
+   gates this priority) and [AR1](work/AR1-shareable-artifacts/PLAN.md)
+   shareable artifact links — spec settled 2026-07-11, owner-grilled.)
+3. **Multi-channel consumption of the same agent.** (arch-08 surfaces + T1
+   completion + T2; stays behind priorities 1–2.)
+4. **Sandbox proper** — provider extraction + S3/FUSE mounts. (P2 + X1; last —
+   existing in-monolith sandboxing keeps working meanwhile.)
+
+**Derived build order:** [#631](https://github.com/hachej/boring-ui/pull/631) +
+P1 recut → P6-R (+AC1 types) → D1-reframed (+P5a) → M1 recuts
+([#549](https://github.com/hachej/boring-ui/pull/549)/[#556](https://github.com/hachej/boring-ui/pull/556))
+→ ID1 → AR1 (+AC1 contracted mode) → M2/E2 → T1/T2 → P2/X1.
+
+Inter-agent abstraction settled: one consumption contract (A2A-shaped
+semantics), bindings = UI / MCP (external) / HTTP API / CLI / native internal /
+A2A (future external); internal modes = subagent (caller workspace) |
+contracted (own workspace, governed-projection briefs). See
+[DECISIONS.md #22](../../../DECISIONS.md#22-one-agent-consumption-contract-protocol-bindings-at-the-edges).
+
+**Marketplace path (owner-approved 2026-07-11):** the five-phase roadmap from
+here to the contracting-platform vision — including BL1/MK1/CH1 above — is
+[`MARKETPLACE-PATH.md`](MARKETPLACE-PATH.md).
 
 ## Post-v1 increments
 
