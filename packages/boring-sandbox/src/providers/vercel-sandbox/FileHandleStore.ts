@@ -4,7 +4,7 @@ import path from 'node:path'
 import type {
   SandboxHandleRecord,
   SandboxHandleStore,
-} from '../../../shared/sandbox-handle-store'
+} from './sandboxHandleStore'
 
 const DEFAULT_STORE_PATH = path.join(
   homedir(),

@@ -15,6 +15,7 @@ export const requiredExports = [
   "./providers/bwrap",
   "./providers/node-workspace",
   "./providers/runsc",
+  "./providers/vercel-sandbox",
 ];
 
 const sourceFilePattern = /\.(ts|tsx|mts|cts|js|mjs|cjs)$/;

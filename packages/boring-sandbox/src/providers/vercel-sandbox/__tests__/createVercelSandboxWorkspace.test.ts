@@ -1,9 +1,9 @@
 import { expect, test, vi } from 'vitest'
 
-import type { WorkspaceChangeEvent } from '../../../shared/workspace'
-import { createVercelSandboxExec } from '../../sandbox/vercel-sandbox/createVercelSandboxExec'
+import type { WorkspaceChangeEvent } from '../../contracts'
+import { createVercelSandboxExec } from '../createVercelSandboxExec'
 import { createVercelSandboxWorkspace } from '../createVercelSandboxWorkspace'
-import { createMockVercelSandboxHarness } from './helpers/mockVercelSandbox'
+import { createMockVercelSandboxHarness } from './mockVercelSandbox'
 
 const EPERM_CODE = 'EPERM'
 

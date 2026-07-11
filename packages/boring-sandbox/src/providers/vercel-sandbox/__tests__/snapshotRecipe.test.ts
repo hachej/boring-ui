@@ -8,7 +8,7 @@ import {
   UV_SETUP_COMMANDS,
   VERCEL_UV_BIN,
   type DeploymentSnapshotProvider,
-} from '../deploymentSnapshot'
+} from '../snapshotRecipe'
 
 test('buildDeploymentSnapshotRecipe is provider-neutral and includes uv by default', () => {
   expect(buildDeploymentSnapshotRecipe({ setupCommands: ['echo extra'] })).toEqual({

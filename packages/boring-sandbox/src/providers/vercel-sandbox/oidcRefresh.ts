@@ -1,7 +1,21 @@
-import { createLogger, type Logger } from '../../logging'
-
 const DEFAULT_MIN_TTL_MS = 30_000
 const OIDC_AUTH_ERROR_STATUSES = new Set([401, 403])
+
+interface Logger {
+  info(message: string, metadata?: Record<string, unknown>): void
+  warn(message: string, metadata?: Record<string, unknown>): void
+}
+
+function createDefaultLogger(prefix: string): Logger {
+  return {
+    info(message, metadata) {
+      console.log(JSON.stringify({ level: 'info', prefix, msg: message, ...(metadata ?? {}), t: new Date().toISOString() }))
+    },
+    warn(message, metadata) {
+      console.warn(JSON.stringify({ level: 'warn', prefix, msg: message, ...(metadata ?? {}), t: new Date().toISOString() }))
+    },
+  }
+}
 
 export interface OidcTokenPayload {
   token: string
@@ -56,7 +70,7 @@ export class OidcTokenRefresher {
     this.applyToken = opts.applyToken ?? (() => {})
     this.now = opts.now ?? Date.now
     this.minTtlMs = opts.minTtlMs ?? DEFAULT_MIN_TTL_MS
-    this.logger = opts.logger ?? createLogger('[oidc]')
+    this.logger = opts.logger ?? createDefaultLogger('[oidc]')
   }
 
   async getValidToken(): Promise<OidcTokenPayload> {

@@ -1,7 +1,7 @@
 import type {
   DeploymentSnapshotProvider,
   DeploymentSnapshotRecipe,
-} from '../snapshots/deploymentSnapshot'
+} from './snapshotRecipe'
 import {
   bakeSnapshotIfNeeded,
   type BakeLogger,
@@ -9,7 +9,7 @@ import {
   type VercelBakeClient,
 } from './bake'
 
-export { UV_SETUP_COMMANDS as VERCEL_UV_SETUP_COMMANDS } from '../snapshots/deploymentSnapshot'
+export { UV_SETUP_COMMANDS as VERCEL_UV_SETUP_COMMANDS } from './snapshotRecipe'
 
 export interface VercelDeploymentSnapshotOptions {
   client: VercelBakeClient

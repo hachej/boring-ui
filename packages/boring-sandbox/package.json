@@ -40,6 +40,10 @@
     "./providers/runsc": {
       "types": "./dist/providers/runsc/index.d.ts",
       "import": "./dist/providers/runsc/index.js"
+    },
+    "./providers/vercel-sandbox": {
+      "types": "./dist/providers/vercel-sandbox/index.d.ts",
+      "import": "./dist/providers/vercel-sandbox/index.js"
     }
   },
   "scripts": {
@@ -51,6 +55,8 @@
     "clean": "rm -rf dist .tsbuildinfo"
   },
   "dependencies": {
+    "@vercel/blob": "^2.5.0",
+    "@vercel/sandbox": "2.3.0",
     "chokidar": "^5.0.0",
     "zod": "^3.25.76"
   },

@@ -2,13 +2,13 @@ import { posix } from 'node:path'
 import { Writable } from 'node:stream'
 import type { Sandbox as VercelSandbox } from '@vercel/sandbox'
 
-import type { ExecResult, Sandbox } from '../../../shared/sandbox'
+import type { ExecResult, Sandbox } from '../contracts'
 import {
   invalidateVercelSandboxWorkspaceMetadataCache,
   VERCEL_SANDBOX_RUNTIME_CONTEXT,
   VERCEL_SANDBOX_WORKSPACE_ROOT,
-} from '../../workspace/createVercelSandboxWorkspace'
-import { withWorkspacePythonEnv } from '@hachej/boring-sandbox/providers/node-workspace'
+} from './createVercelSandboxWorkspace'
+import { withWorkspacePythonEnv } from '../node-workspace/workspacePythonEnv'
 
 const DEFAULT_TIMEOUT_MS = 30_000
 const DEFAULT_MAX_OUTPUT_BYTES = 1_048_576

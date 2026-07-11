@@ -3,16 +3,20 @@ import { dirname, join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { expect, test } from 'vitest'
 
-import { getBoringAgentRuntimePaths } from '@hachej/boring-sandbox/providers/node-workspace'
 import { createVercelProvisioningAdapter, VERCEL_PROVISIONING_CACHE_ROOT } from '../provisioningAdapter'
-import type { WorkspaceProvisioningAdapter } from '../../../workspace/provisioning'
+import type { VercelProvisioningWorkspaceFs } from '../provisioningAdapter'
+
+const runtimeLayout = {
+  workspaceRoot: '/workspace',
+  tmp: '/workspace/.boring-agent/tmp',
+}
 
 interface FakeWorkspaceState {
   files: Map<string, string>
   copied: Array<{ source: string | URL; target: string }>
 }
 
-function createWorkspaceFs(state: FakeWorkspaceState): WorkspaceProvisioningAdapter['workspaceFs'] {
+function createWorkspaceFs(state: FakeWorkspaceState): VercelProvisioningWorkspaceFs {
   return {
     async exists(rel) {
       return state.files.has(rel)
@@ -50,7 +54,7 @@ test('node and python install sources become workspace-visible artifacts without
   const state: FakeWorkspaceState = { files: new Map(), copied: [] }
   const prepared: Array<{ source: string | URL; outputPath: string; kind: string }> = []
   const adapter = createVercelProvisioningAdapter({
-    runtimeLayout: getBoringAgentRuntimePaths('/workspace'),
+    runtimeLayout,
     workspaceFs: createWorkspaceFs(state),
     async exec() {},
     async prepareArtifact(request) {
@@ -86,7 +90,7 @@ test('unchanged artifact fingerprint avoids repack and reupload', async () => {
   }
   let prepareCount = 0
   const adapter = createVercelProvisioningAdapter({
-    runtimeLayout: getBoringAgentRuntimePaths('/workspace'),
+    runtimeLayout,
     workspaceFs: createWorkspaceFs(state),
     async exec() {},
     async prepareArtifact(request) {
@@ -112,7 +116,7 @@ test('generated skills land in workspace-visible /workspace paths through worksp
   await writeFile(skill, '# Skill\n')
   const state: FakeWorkspaceState = { files: new Map(), copied: [] }
   const adapter = createVercelProvisioningAdapter({
-    runtimeLayout: getBoringAgentRuntimePaths('/workspace'),
+    runtimeLayout,
     workspaceFs: createWorkspaceFs(state),
     async exec() {},
     async prepareArtifact() {},
@@ -121,12 +125,12 @@ test('generated skills land in workspace-visible /workspace paths through worksp
   await adapter.workspaceFs.copyFromHost(skill, '.boring-agent/skills/plugin/skill/SKILL.md')
 
   expect(state.files.get('.boring-agent/skills/plugin/skill/SKILL.md')).toBe('# Skill\n')
-  expect(getBoringAgentRuntimePaths('/workspace').skills).toBe('/workspace/.boring-agent/skills')
+  expect(`${runtimeLayout.workspaceRoot}/.boring-agent/skills`).toBe('/workspace/.boring-agent/skills')
 })
 
 test('uses ephemeral cache root outside synced workspace caches', async () => {
   const adapter = createVercelProvisioningAdapter({
-    runtimeLayout: getBoringAgentRuntimePaths('/workspace'),
+    runtimeLayout,
     workspaceFs: createWorkspaceFs({ files: new Map(), copied: [] }),
     async exec() {},
     async prepareArtifact() {},
@@ -137,7 +141,10 @@ test('uses ephemeral cache root outside synced workspace caches', async () => {
 })
 
 test('shared provisioning engine stays mode-agnostic and does not pack/upload artifacts directly', async () => {
-  const source = await readFile('src/server/workspace/provisioning/provisionWorkspaceRuntime.ts', 'utf8')
+  const source = await readFile(
+    new URL('../../../../../agent/src/server/workspace/provisioning/provisionWorkspaceRuntime.ts', import.meta.url),
+    'utf8',
+  )
   expect(source).not.toContain('@vercel/sandbox')
   expect(source).not.toContain('npm pack')
   expect(source).not.toContain('uv build')
@@ -149,7 +156,7 @@ test('artifact preparation receives non-source temp output path for useful failu
   const state: FakeWorkspaceState = { files: new Map(), copied: [] }
   let outputPath = ''
   const adapter = createVercelProvisioningAdapter({
-    runtimeLayout: getBoringAgentRuntimePaths('/workspace'),
+    runtimeLayout,
     workspaceFs: createWorkspaceFs(state),
     async exec() {},
     async prepareArtifact(request) {

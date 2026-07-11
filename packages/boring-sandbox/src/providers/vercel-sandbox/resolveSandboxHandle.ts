@@ -4,8 +4,7 @@ import type { Sandbox as VercelSandbox } from '@vercel/sandbox'
 import type {
   SandboxHandleRecord,
   SandboxHandleStore,
-} from '../../../shared/sandbox-handle-store'
-import { ErrorCode } from '../../../shared/error-codes'
+} from './sandboxHandleStore'
 
 type VercelSandboxStatus =
   | 'aborted'
@@ -45,7 +44,7 @@ interface SandboxLifecycleLogger {
 export type ExpiredSandboxPolicy = 'recreate' | 'error'
 
 export class SandboxHandleUnavailableError extends Error {
-  readonly code = ErrorCode.enum.SANDBOX_EXPIRED
+  readonly code = 'SANDBOX_EXPIRED' as const
   readonly statusCode = 410
   readonly workspaceId: string
   readonly sandboxId: string | null

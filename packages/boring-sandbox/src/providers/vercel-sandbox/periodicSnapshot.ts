@@ -1,5 +1,4 @@
-import { getEnv } from '../../config/env'
-import type { SandboxHandleStore } from '../../../shared/sandbox-handle-store'
+import type { SandboxHandleStore } from './sandboxHandleStore'
 
 const SNAPSHOT_KEEP_ENV_VAR = 'BORING_AGENT_SNAPSHOT_KEEP'
 const DEFAULT_SNAPSHOT_KEEP = 2
@@ -55,6 +54,10 @@ function resolveSnapshotKeepCount(getEnvVar: EnvGetter): number {
     return DEFAULT_SNAPSHOT_KEEP
   }
   return parsed
+}
+
+function getEnv(name: string): string | undefined {
+  return process.env[name]
 }
 
 export async function applySnapshotRetention(

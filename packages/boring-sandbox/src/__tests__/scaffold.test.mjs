@@ -24,11 +24,13 @@ describe("@hachej/boring-sandbox scaffold", () => {
     const shared = await import("@hachej/boring-sandbox/shared");
     const providers = await import("@hachej/boring-sandbox/providers");
     const runsc = await import("@hachej/boring-sandbox/providers/runsc");
+    const vercel = await import("@hachej/boring-sandbox/providers/vercel-sandbox");
 
     expect(shared.PROVIDER_CAPABILITIES.direct.fs).toBe("readwrite");
     expect(shared.MODE_TO_PROVIDER.local).toBe("bwrap");
     expect(providers).toBeDefined();
     expect(runsc.preflightRunsc).toBeTypeOf("function");
+    expect(vercel.createVercelSandboxExec).toBeTypeOf("function");
   });
 
 
