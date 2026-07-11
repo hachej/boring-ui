@@ -1,8 +1,7 @@
 # #391 owner review guide
 
-Status: **proposed** workspace-first v1 review guide as of 2026-07-10. It
-becomes main authority only when the amendment PR merges. `INDEX.md` remains
-the ordering authority inside this proposal.
+Status: **accepted workspace-first v1** review guide, reality-synced 2026-07-11.
+`INDEX.md` remains the single-writer ordering and live-status authority.
 
 ## Review rule
 
@@ -11,27 +10,31 @@ base were already accepted. For every PR:
 
 1. Confirm the base is the immediately preceding accepted branch or current
    `main` for an independent PR.
-2. Read only the PR's own commits/diff against that base.
-3. Reject stale proof labels such as "all pass" after any rebase.
-4. Check the named acceptance and ownership boundary before code style.
-5. Record one decision: merge, amend, split, or defer. Do not leave an implicit
+2. Verify landed status with `git merge-base --is-ancestor <sha> origin/main`;
+   a GitHub MERGED label on a stale base is insufficient.
+3. Read only the PR's own commits/diff against that base.
+4. Reject stale proof labels such as "all pass" after any rebase.
+5. Check the named acceptance and ownership boundary before code style.
+6. Record one decision: merge, amend, split, or defer. Do not leave an implicit
    partial approval.
 
 ## Stopped-stack disposition
 
 | PR | Decision | Primary owner check |
 | --- | --- | --- |
-| #543 | **merged baseline; new corrective leaf from current main** | v1 adapters always bind an authorized workspace/runtime; preserve accepted boundary/event work |
-| #545 | **do not merge; close/defer** | no-environment Pi seals are post-v1 research |
-| #547 | **superseded/stopped** | do not dispatch; replaced by #616 |
-| #616 (boundary-only recut of #547) | **parallel current-main boundary leaf** | package/Fastify/import invariant only; no pure-product acceptance; does not wait for the #543 correction |
+| #543/#545/#547 | **historical/superseded** | do not revive public pure/no-environment work |
+| #616/#617/#622 | **landed** | package boundary and workspace-first correction |
+| #623/#624 | **landed** | minimal definition identities and deterministic compiler |
+| #626/#627 | **landed** | core relocation and terminal local binding disposal |
+| next P1 lifecycle | **review next** | request binding, service teardown, close admission, drain in-flight work, dispose host adapter once |
+| next P1 readiness | **after lifecycle** | fail closed from one binding-owned requirement source |
+| #628 | **landed structural only** | `productionReady: false`; require real EU validation before D1 lock |
 | #566 | **defer into P6-R** | capability truth is resolved from workspace/deployment composition |
 | #568 | **defer** | wait for a real workspace/runtime input-asset consumer |
-| #575 | **recut after both current-main leaves** | move the real injected core boundary; no default/pure host fork |
-| #576 | **rework after #575** | lifecycle/disposal first, readiness second; bounded caches; workspace-owned providers remain host-owned |
+| #575/#576 | **superseded by current-main slices** | use #626/#627 ancestry and new focused lifecycle/readiness PRs |
 | #564 | **drop pure-only-bin cutover** | reconsider independent runsc/provider work only under narrow P2 |
-| frozen | #546/#559 and all T1/T2/P3/E1 descendants | **post-v1** | do not restack until a named consumer reopens the lane |
-| deferred | #581 | **keep deferred** | native-mount consumer, no-leak, credential, and performance proof required |
+| #546/#559 and all T1/T2/P3/E1 descendants | **post-v1/frozen** | do not restack until a named consumer reopens the lane |
+| #581 | **keep deferred** | native-mount consumer, no-leak, credential, corrected benchmark, and performance proof required |
 
 ## P1 acceptance card
 
@@ -45,6 +48,9 @@ base were already accepted. For every PR:
 - Core receives no host/provider-global lifecycle authority.
 - Eviction, recreation, failure, and app close dispose each agent-local resource
   exactly once; early stores and worker runtimes are bounded.
+- Close stops new requestless admission before Fastify drains, lets accepted
+  work settle, tears down background Pi services, and disposes each shared
+  host runtime adapter exactly once.
 - Durable admission and caller request idempotency remain T1-owned unless a
   current v1 consumer supplies a narrower accepted requirement.
 
@@ -72,6 +78,10 @@ does not block the dedicated v1 path.
 - `direct` is explicit trusted-local policy, never automatic deployed fallback.
 - Provider facts are reported or unknown; unknown never silently grants.
 - Remote-worker relocation and mode/composer rewiring are separately reviewable.
+- #628 is a structural preflight with `productionReady: false`, not provider
+  parity. Before D1 locks, require a real-EU spike covering systrap availability,
+  network/isolation policy, limits, image handling, lifecycle cleanup, and
+  authenticated facts.
 
 ## Product review card
 
@@ -84,7 +94,8 @@ scaffold -> validate -> authorized local workspace + approved runtime -> local t
 -> rerun -> rollback
 ```
 
-Owner evidence: elapsed time <=15 minutes with infrastructure preconfigured,
+Owner evidence: measured setup-to-first-run time and breakdown, compared with
+the provisional 15-minute target rather than assumed as a gate,
 zero platform-source edits, local workspace/runtime identity,
 definition/deployment/resolved digests, remote
 materialization without access to the authoring checkout, fenced crash-safe

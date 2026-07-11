@@ -2,6 +2,8 @@
 
 Status: first generated TODO pass. Must pass thermo review before creating real `br` beads or implementation PRs.
 
+TODO-01's pure-mode beads (BBA-012/013/014) are superseded by [Decision 21](../../../../DECISIONS.md#21-workspace-first-agent-factory-v1-supersedes-public-pure-mode) — do not implement; see the banner in [`TODO-01-agent-core-pure-mode.md`](TODO-01-agent-core-pure-mode.md).
+
 These TODO files plus this README are intentionally self-contained. A future implementer should not need to read the markdown architecture plan first, but every future real `br` bead should copy the relevant excerpts from this TODO pack into its own description and cite the source TODO id.
 
 ## Source plan pack

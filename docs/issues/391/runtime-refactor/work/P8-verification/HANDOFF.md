@@ -1,6 +1,6 @@
 # P8-verification — Handoff checklist
 
-## Proposed reduced v1 handoff (2026-07-10)
+## Binding reduced v1 handoff (2026-07-11)
 
 ### Prerequisites
 
@@ -17,11 +17,15 @@
       reduced-slice owner rather than becoming P8 cleanup.
 - [ ] Applicable core/package/import invariants and #416 contracts are green;
       no gates are invented for deferred relocations.
+- [ ] Residual `runtime.*none|pure.*mode` grep rejects public/product pure-mode
+      acceptance in code and non-historical docs; explicit rejection tests and
+      marked historical sections are the only allowlist.
 - [ ] Package docs describe only what shipped: workspace-backed core,
       definition/deployment bundle, explicit local workspace/runtime, and D1.
-- [ ] One <=900-second command proves compile -> local workspace-backed turn ->
+- [ ] One command measures compile -> local workspace-backed turn ->
       D1 apply -> exact HTTPS landing -> existing-member sign-in -> managed
-      workspace -> deployed `default` agent on real approved EU runsc.
+      workspace -> deployed `default` agent on real approved EU runsc, records
+      stage timings, and compares them with the provisional 15-minute target.
 - [ ] Evidence records source-independent bundle/host materialization, foreign-
       selector and workspace-lifecycle denial, and idempotent reapply. It then
       mutates site-level desired values and proves rollback restores every field

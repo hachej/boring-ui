@@ -7,14 +7,17 @@
 > behavior D1 consumes; keep speculative relocation and generic provider APIs
 > post-v1.
 
-> Phase: proposed narrow P2 runsc/provider slice · Work order: [TODO.md](./TODO.md) · Handoff: [HANDOFF.md](./HANDOFF.md)
+> Phase: binding narrow P2 runsc/provider slice · Work order: [TODO.md](./TODO.md) · Handoff: [HANDOFF.md](./HANDOFF.md)
 > Ordering authority: [INDEX.md](../../INDEX.md) · Vision: [VISION.md](../../VISION.md)
 
 ## Active current-main reality
 
 `@hachej/boring-sandbox` exists and #557 publish-pipeline parity is merged. Do
-not scaffold or republish it. Current v1 work starts from that package boundary
-and adds/reviews only the hardened EU runsc/systrap path D1 consumes.
+not scaffold or republish it. #628 adds a structural runsc config/preflight
+surface and deliberately reports `productionReady: false`. It proves neither
+provider parity nor lifecycle/security readiness. Current v1 work starts from
+that narrow boundary and validates only the hardened EU runsc/systrap path D1
+consumes.
 
 ## Active deliverables and exit
 
@@ -26,6 +29,13 @@ and adds/reviews only the hardened EU runsc/systrap path D1 consumes.
   and allowing direct only through explicit trusted-local policy;
 - only imports changed by this narrow runsc slice migrate;
 - #416 contracts and package import invariants remain unchanged.
+
+Before D1 planning locks, run a time-boxed validation spike on the intended EU
+host. Record systrap/provider availability, namespace/network enforcement,
+resource limits, digest-pinned image handling, cleanup after normal/error/abort,
+and authenticated capability facts. Any unproved fact remains `unknown` and
+fails closed; the spike may reject the proposed provider instead of forcing a
+false parity claim.
 
 The full direct/bwrap/Vercel/remote-worker relocation, capability matrix,
 `resolveMode` cutover, pure-only binary, and all-mode composer rewrite are

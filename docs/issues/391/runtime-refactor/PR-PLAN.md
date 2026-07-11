@@ -4,11 +4,12 @@
 
 This file retains post-v1 PR designs, but only the milestone graph in
 [`INDEX.md`](INDEX.md) determines what blocks delivery. That former queue is
-historical; the proposed 2026-07-10 disposition table and open-PR table below
+historical; the binding workspace-first disposition and reality-synced table below
 are the only current execution queue. New implementation
 assignments contain one bead/PR, not an entire package TODO.
 
-Release 0 proves one managed agent through a stock MCP client. Version 1 adds a
+R0/M1 may prove one managed agent through a stock MCP client as an optional,
+non-blocking outreach tracer. Version 1 adds a
 minimal agent-directory compiler, separates reusable `AgentDefinition` from
 tenant-specific `AgentDeployment`, and proves one dedicated EU deployment from
 exact hostname -> landing -> authenticated workspace -> deployed default agent.
@@ -16,7 +17,7 @@ Shared tenancy, FUSE, external environment MCP projection, control-plane UX,
 hosted child apps, advanced services, search/hooks, and subagent grants are
 post-v1 increments.
 
-## PROPOSED 2026-07-10 workspace-first v1 supersession
+## Binding 2026-07-10 workspace-first v1 supersession
 
 This section supersedes every later table where it conflicts. V1 has no public
 no-environment or `runtime: 'none'` product mode. `headless` means no
@@ -28,7 +29,7 @@ plugin composition for v1.
 Reduced merge path:
 
 ```txt
-P0/proposed decision 21 -> P6-D -> A1-compile -----------┐
+P0/accepted decision 21 -> P6-D -> A1-compile -----------┐
 P0 -> P1 boundary -> P2(runsc minimum) -> P5a(minimum) --┼-> P6-R -> A1-dev -> D1 -> P8
                                                           ┘
 ```
@@ -40,23 +41,19 @@ are recut against this graph.
 
 | PR | Binding disposition | Salvage boundary |
 | --- | --- | --- |
-| #543 | **merged baseline; do not amend** | create a new corrective PR from current main that removes public/product pure-mode acceptance while preserving accepted core/event work |
-| #545 | **do not merge; close/defer** | Pi no-environment seals are post-v1 research, not a v1 gate |
-| #547 | **superseded/stopped** | do not dispatch; its boundary-only replacement is #616 |
-| #616 (boundary-only recut of #547) | **parallel active leaf** | keep package/Fastify/import invariants; remove pure-product smoke/closure claims |
-| #566 | **defer into actual P6-R** | capability facts come from workspace/deployment resolution, not a standalone pure projection |
-| #568 | **defer** | input-asset strategy follows a real workspace/runtime consumer |
-| #575 | **recut after cleanup** | real `/core` move only, with explicit injected host composition |
-| #576 | **rework** | retain bounded agent-local lifecycle/readiness; remove pure-mode ownership assumptions |
-| #564 | **remove pure-only-bin cutover** | re-evaluate any independent provider move under narrow P2; no v1 pure binary |
+| #543/#545/#547 | **historical/superseded** | do not revive the pure/no-environment stack |
+| #616/#617/#622 | **landed** | workspace-first boundary and product correction; verified on main |
+| #623/#624 | **landed** | minimal definition identities and deterministic A1 compiler |
+| #626/#627 | **landed** | real `/core` move and terminal local binding disposal |
+| next P1 lifecycle | **current-main slice** | request-binding/service teardown; no host-global ownership in core |
+| next P1 readiness | **follows lifecycle** | fail closed from the binding-owned requirements source |
+| #628 | **landed structural preflight** | `productionReady: false`; requires real EU lifecycle/security validation before D1 lock |
+| #566/#568/#564 | **deferred/re-scope only** | revive only for a named workspace/environment-full consumer; no pure-mode contract |
 
-**Parallel current-main P1 leaves:** a new corrective PR for the merged #543
-behavior and #616 (boundary-only recut of #547), which proves only the
-package/Fastify boundary. #547 is superseded/stopped. Neither active leaf
-depends on the other; both must land before the recut #575 core move. Recut
-#576 after #575, with lifecycle/disposal first and readiness second. Independently, P6-D schema/digest may proceed under
-proposed decision 21, and the A1 compiler may follow P6-D. Only P6-R and A1 local run
-wait for the P1 correction plus the narrow runtime/readiness work.
+The recovery leaves have landed. P1 now finishes lifecycle/teardown and then
+fail-closed readiness. P6-D and A1 compile are already on main; P6-R and A1
+local run wait for the remaining P1/runtime/readiness work. R0/M1 may proceed
+only as an independently valuable current-main tracer and never blocks v1.
 
 Binding execution plan that turns the [`work/`](work/) work orders into reviewable PRs. Derived from [`INDEX.md`](INDEX.md) (dispatch protocol + dependency graph + no-compat policy) and every `work/<pkg>/TODO.md`. Mirrors the #416 stacked convention shipped as `bclaw/416-pr1..pr7`.
 
@@ -149,16 +146,20 @@ Legend — nature: **new** = net-new code · **move** = rename-detected + import
 | prB-de-mode-gating | reopened-P1 follow-up | new | S/M | remove runtimeMode feature gating; derive input-asset intake from environment sinks/direct-provider policy; no behavior branches on `runtimeMode` except diagnostics/migration shims | agent `test`; T2 BBT2-007 alignment |
 | prC-core-relocation | reopened-P1 follow-up | move + new | M/L | move/split core implementation under `src/core/createAgent.ts`; server wrapper injects Pi/defaults; `/core` graph imports no server/Pi defaults unless injected | `lint:invariants`; `check:isolation` |
 | prD-readiness-honesty | reopened-P1 follow-up | new | S/M | readiness/lifecycle state is honest: no placeholder false-ready state; runtime binding eviction disposes agents or reports tracked lifecycle | agent `test`; readiness smoke |
-| prE-admission-attribution **post-v1 T1** | former P1 reliability closeout | deferred | M | durable admission/request-idempotency work is not a P1/R0/v1 gate under proposed decision 21 | defer to T1 |
+| prE-admission-attribution **post-v1 T1** | former P1 reliability closeout | deferred | M | durable admission/request-idempotency work is not a P1/R0/v1 gate under accepted decision 21 | defer to T1 |
 
-The legacy P1 table is not the active queue. Proposed v1 P1 is the new #543
-corrective PR, #616 (boundary-only recut of #547), recut core move, and
-reworked bounded lifecycle/readiness. #547 is superseded/stopped. prE and
-durable request-idempotency are post-v1 T1 work.
+The legacy P1 table is not the active queue. #616/#622/#626/#627 have landed.
+The active P1 queue is request-binding/service teardown lifecycle followed by
+fail-closed readiness. prE and durable request idempotency remain post-v1 T1
+work. No legacy pure-mode row is dispatchable.
 
 ### M1 — Managed agent via MCP (optional outreach sidecar, after P1 boundary)
 
-M1 is the Release 0 vertical tracer, not the v1 factory exit. It establishes a measured delivery baseline while the generic authoring path is built. It still follows the outreach-week operating mode: additive/dark until smoke proof, e2e green, review-time estimate + review-focus notes on every PR, and explicit stack order.
+M1 is an optional R0 tracer, not the v1 factory exit or business critical path.
+Execute it only when its outreach value justifies a current-main recut. It
+follows the outreach-week operating mode: additive/dark until smoke proof, e2e
+green, review-time estimate + review-focus notes on every PR, and explicit
+stack order.
 
 | PR | beads | nature | net-new vs budget | test deliverables | gate |
 | --- | --- | --- | --- | --- | --- |
@@ -167,7 +168,7 @@ M1 is the Release 0 vertical tracer, not the v1 factory exit. It establishes a m
 | pr3-stock-client-smoke | BBM1-003 | test/doc | 0 | authenticated stock client proof: membership -> concrete workspace -> bound deployment -> explicit default agent -> delegate -> progress -> inline result; foreign-workspace/non-member/mismatched-binding, auth/quota/size, and restart-limitation proof | documented smoke + affected e2e |
 | pr2b-share-links (HARD GATED on #424) | BBM1-004 | new | ~150–400 | current-main public-share API cited; returned URL uses verified share route; share opens without exposing internals | host build/typecheck/test; share route smoke |
 
-**M1 total: 3 PRs (v0) + 1 gated follow-up.** The only proposed prerequisite
+**M1 total: 3 PRs (v0) + 1 gated follow-up.** The only prerequisite
 is the P1 workspace/Fastify boundary. R0 is bearer-only, workspace-backed, and
 self-contained. Current membership must resolve a concrete workspace plus its
 bound deployment and explicit `default` agent before start. Its bounded
@@ -184,8 +185,8 @@ T1.
 | pr2-validate-dev | BBA1-002 | new | ~250–450 | `agent validate` checks the bundle; `agent dev` creates/selects an authorized local workspace and approved runtime (`bwrap` default when available; direct only by explicit trusted policy), then resolves through P6-R; one local scripted turn; zero platform-source edits | CLI smoke |
 | pr3-migrate-r0-config | BBA1-003 | move/delete | ~150–300 | only when shipped D1 consumes duplicated M1 behavior configuration, resolve it from the compiled bundle; temporary `ManagedAgentVerticalConfig` projection is removed or reduced to a documented host-only deployment adapter | D1 path + M1 stock-client smoke |
 
-**A1 v1 total: 2 PRs, plus one conditional R0 migration PR.** BBA1-001 may
-start after P6-D; BBA1-002 waits for P6-R so it uses the normal host resolver.
+**A1 v1 total: 2 PRs, plus one conditional R0 migration PR.** BBA1-001 and its
+P6-D prerequisite have landed via #624/#623. BBA1-002 waits for P6-R so it uses the normal host resolver.
 BBA1-003 is a P8 gate only when the shipped D1 path still consumes duplicated
 M1 behavior configuration. Keep v1 conventions deliberately small: one schema,
 one instructions file, reference ids rather than executable discovery, and no
@@ -236,7 +237,13 @@ over MCP; M2 exposes declared agents over MCP.
 
 **T2 total: 7 PRs.** pr6 lands **last** for the legacy cursor deletion (after DS conformance + playground green); pr7 may land after the shared input-asset type exists and before P4 composer/upload consumers rely on it. Bumps `@hachej/boring-agent` minor (protocol change).
 
-### P2 — Scaffold `@hachej/boring-sandbox` + move providers into it; `resolveMode` → boring-bash (Phase 2, off P1)
+### P2 — Dedicated runsc minimum (Phase 2, off P1)
+
+Active queue: #628 has landed the structural runsc config/preflight seam with
+`productionReady: false`. Next is a time-boxed real-EU validation spike, then
+only the lifecycle/security/provider work that its evidence shows D1 needs.
+Unknown facts fail closed. The broad relocation table below is historical and
+non-dispatchable unless a named post-v1 consumer reopens a row.
 
 **Package re-target (00 open decision 3 RESOLVED; 08 decision 11):** concrete providers move to the **new `@hachej/boring-sandbox`** package (`packages/boring-sandbox/src/providers`), **not** `boring-bash/providers`; runtime-mode resolution (`resolveMode`) lands in `@hachej/boring-bash`. Acyclic: `boring-sandbox → agent(types)`; `boring-bash → boring-sandbox(values) + agent(types)`.
 
@@ -250,12 +257,12 @@ over MCP; M2 exposes declared agents over MCP.
 | pr4-mode-resolution-to-bash **post-v1** | BBP2-005 | deferred | n/a | former pure-only-bin/mode cutover is void; re-specify from current main only for a named post-v1 consumer | do not dispatch |
 | pr5-split-remote-worker | BBP2-006 | move | budget-exempt (~1k churn) | protocol → `boring-sandbox/shared`, client/adapter/workspace → `boring-sandbox/providers`; bytes round-trip; full-app worker import-graph has no agent-core dep; worker health remains `{ ok: true }`; **worker capabilities stay `'unknown'` — NO handshake here (handshake owned solely by BBP5-008)** | `audit:imports` |
 | pr6-migrate-delete-invariants | BBP2-007 + BBP2-008 | move (delete origin exports) + new (invariant) | ~80 (invariant script) | static: agent old paths have no bash/sandbox value import / no re-export (including moved workspace helpers); boring-bash→sandbox value edge + sandbox→agent types-only edge both asserted; apps compile | `lint:invariants`; `audit:imports` |
-| pr7-hardened-runsc-provider | BBP2-010 | new | ~600–1000 | runsc systrap preflight/lifecycle; OCI digest; netns/nftables metadata/private/cross-workspace denial; cgroup/pid/CPU/memory limits; no broker secret; exact cleanup; real EU worker evidence | `boring-sandbox test`; real-target smoke |
+| pr7-hardened-runsc-provider | BBP2-010 | new | ~600–1000 | #628 landed structural preflight only; remaining slice requires runsc systrap lifecycle, OCI digest, netns/nftables metadata/private/cross-workspace denial, cgroup/pid/CPU/memory limits, no broker secret, exact cleanup, and real EU evidence | time-boxed EU spike first; then `boring-sandbox test` + real-target smoke |
 
-**P2 total: 9 PRs** (adds pr0 scaffold, pr3b publish parity, and the v1
-hardened runsc provider). BBP2-009 must merge before pr4. Precondition: P1
-injection seam present (else STOP+report). No `@hachej/boring-agent` minor bump
-here; the relocation minor bump is P3 per `INDEX.md`/`08`.
+The nine-row table records the old full migration, not the active v1 count.
+Current v1 planning begins at #628 plus the evidence-led EU spike and smallest
+D1-consumed follow-up. No `@hachej/boring-agent` minor bump occurs here; the
+broader relocation remains P3/post-v1.
 
 ### P3 — Move file/bash routes + tools → boring-bash (Phase 3, off P2)
 
@@ -340,15 +347,15 @@ Adds the `@hachej/boring-sandbox/mounts` export (created package from P2) + the 
 | pr2-bind-capability | BBX1-003 + BBX1-004 | new | ~300–500 (bwrap bind + `mounts.fuseS3` fact) | host-mount→`--(ro-)bind`, no `/dev/fuse`/`fusermount3`/cred in arg set; un-ready bind refused; `vercel`/`unknown` fail closed | `boring-sandbox test`; `audit:imports` |
 | pr3-cred-broker-env | BBX1-005 + BBX1-006 | new | ~700–1000 (STS broker + S3 `Environment` + no-leak mount) | prefix-scoped STS (sibling-prefix denied, MinIO); cred in mount-process env only + absent everywhere else; readonly-S3 no-leak conformance mount `passed:true`; `bash-sees-mount == file-routes-see-mount` | `check:isolation`; `boring-bash test` |
 | pr4-eu-matrix | BBX1-007 | test + new | ~150–250 (EU matrix) | MinIO round-trip (adds `test:mounts:eu` script); secrets negative test; endpoint-config parity OVH/Scaleway/MinIO; fuse-overlayfs variant deferred, not built | `boring-sandbox run test:mounts:eu` (new script); `boring-sandbox test` |
-| pr5-rclone-fuse-benchmark | BBX1-009 | test/bench | 0 code beyond bench harness | repeatable rclone-FUSE-vs-local edit/build benchmark over MinIO; locked thresholds encoded from `/home/ubuntu/projects/x1-bench/report.md` (`2026-07-05 12:22 UTC`): warm `rg <= 0.18s`, append-100 `<= 0.05s`, `git init+commit <= 4.7x local`, seq-write-50M `<= 4.40s`; caches-on-local-NVMe variant measured; readonly/backend-down semantics stay in BBX1-007 smoke tests | `boring-sandbox run bench:mounts` (new script); encoded numeric thresholds |
+| pr5-rclone-fuse-benchmark | BBX1-009 | test/bench | 0 code beyond bench harness | rerun the rclone-FUSE-vs-local benchmark after correcting the recorded PATH/ordering defects; existing numeric thresholds are provisional evidence only and must not be locked until the corrected readonly/backend-down and performance runs agree | `boring-sandbox run bench:mounts` (new script); publish corrected raw results before thresholds |
 
 **X1 total: 5 post-v1 PRs.** Preconditions remain P2, P5a, E1, and a named native-mount consumer. X1 does not gate P8/v1. Open PR #581 remains draft/deferred until attachment integration, secret brokering, identical bash/file visibility, no-leak proof, and credential canaries are present.
 
 ### P6 — Definition/resolution v1; plugin + child-app expansion post-v1
 
-**P6-D is dispatchable under proposed decision 21 with no P1 dependency.** It
-owns only the minimal `AgentDefinition` and `AgentDeployment` schemas/digests,
-immutable definition assets, and BBP6-003 lookup. **P6-R waits for P6-D, the P1
+**P6-D identities are landed via #623 under accepted decision 21.** The v1
+surface owns only the minimal `AgentDefinition` and `AgentDeployment`
+schemas/digests and immutable definition assets. **P6-R waits for P6-D, the P1
 workspace boundary, and narrow P5a**, then resolves statelessly through the
 existing authorized workspace composer. P6-R creates no deployment, registry,
 generation store, plugin snapshot, attachment catalog, or scoped registrar.
@@ -410,7 +417,7 @@ and P6 generation/session-retirement machinery are not dependencies.
 | pr5-dedicated-workspace-scope | BBD1-005 | new | ~600–1000 | bind one managed workspace across existing server/front/plugin/MCP selectors; create/switch/delete disabled; foreign ids reject; no P3 scoped registrar dependency | core/workspace/full-app build/typecheck/test |
 | pr6-dedicated-site-journey | BBD1-006 | new | ~300–600 | exact-host bounded landing; existing-member sign-in; membership-gated trusted workspace handoff; forged workspace/agent selectors reject; first chat uses deployed `default` identity | core/full-app build/typecheck/test + focused e2e |
 | pr7-publication-integration | BBD1-004b | new | ~300–500 | publish only after workspace/default-agent/runsc/secret readiness; idempotent complete D1 snapshot; partial state unreachable; rollback reapplies prior complete redacted deployment snapshot | affected host build/typecheck/test |
-| pr8-apply-smoke-runbook | BBD1-007 | test/doc | ~250–400 | <=15-minute real URL -> landing -> existing member -> managed workspace -> default agent on EU runsc; foreign selector, reapply, rollback, and secret-canary proof | provisioning smoke |
+| pr8-apply-smoke-runbook | BBD1-007 | test/doc | ~250–400 | measure setup-to-first-run for real URL -> landing -> existing member -> managed workspace -> default agent on EU runsc; report the breakdown against the 15-minute target plus foreign selector, reapply, rollback, and secret-canary proof | provisioning smoke + elapsed-time evidence |
 
 **D1 total: up to 8 review slices; combine only when the per-PR budget holds.**
 The reduced prerequisites above are exhaustive. D1 is the
@@ -441,9 +448,9 @@ independent of #376 child-app hostname resolver.
 
 | PR | beads | nature | net-new vs budget | test deliverables | gate |
 | --- | --- | --- | --- | --- | --- |
-| pr1-reduced-invariant-gates | BBP8-001 + BBP8-003 recut | new (invariant scripts) | ~100 | v1-owned removal-marker check plus applicable core/package/#416 import boundaries; no T1/T2/P3/E1 relocation gate | `lint:invariants`; `audit:imports` |
+| pr1-reduced-invariant-gates | BBP8-001 + BBP8-003 recut | new (invariant scripts) | ~100 | v1-owned removal-marker check plus applicable core/package/#416 import boundaries; residual grep for `runtime.*none|pure.*mode` across product code and non-historical docs with explicit rejection/history allowlist; no T1/T2/P3/E1 relocation gate | `lint:invariants`; `audit:imports` |
 | pr2-shipped-contract-docs | BBP8-002 recut | doc | 0 | document workspace-backed core, minimal definition/deployment bundle, local workspace/runtime, and D1 path only | doc/link check |
-| pr3-golden-path-and-followups | BBP8-006 + BBP8-004 | test/doc/tracking | ~200–400 | timed compile/local/D1 exact-host/member/workspace/default-agent path on real EU runsc; selector/lifecycle denials, no-op reapply, complete-snapshot rollback, secret proof | CLI/D1 smoke |
+| pr3-golden-path-and-followups | BBP8-006 + BBP8-004 | test/doc/tracking | ~200–400 | measure and break down compile/local/D1 exact-host/member/workspace/default-agent setup-to-first-run on real EU runsc; compare with the provisional 15-minute target; selector/lifecycle denials, no-op reapply, complete-snapshot rollback, secret proof | CLI/D1 smoke + elapsed-time report |
 
 **P8 total: 3 PRs.** BBP8-005 remains the final sweep rather than a separate
 PR. P8 gates only P1, P6-D/A1, narrow P2/P5a, stateless P6-R, and D1. T1/T2,
@@ -481,33 +488,34 @@ estimated and accepted independently.
 | Milestone | Remaining/open program | Exit |
 | --- | --- | --- |
 | **R0 vertical tracer** | optional workspace-backed recut of #549/#556 after P1 boundary | stock MCP client completes one bounded workspace-backed run; no prE/T1 gate |
-| **V1 definition/authoring** | P6-D (2), A1 compiler then workspace-backed dev | directory validates, runs in an explicit workspace/runtime, emits deterministic digest |
-| **V1 runtime minimum** | new/rebased narrow P2 runsc + P5a D1 facts | approved EU runsc path, authenticated readiness, no secret/scope leak |
-| **V1 dedicated delivery** | stateless P6-R, reduced D1, reduced P8 | timed <=15-minute dedicated URL -> landing -> authorized workspace -> default agent, idempotent rerun, rollback |
+| **V1 definition/authoring** | P6-D and A1 compiler landed; workspace-backed dev remains | directory validates, runs in an explicit workspace/runtime, emits deterministic digest |
+| **V1 runtime minimum** | #628 structural preflight landed; P1 lifecycle/readiness, EU spike, and P5a D1 facts remain | approved EU runsc path, authenticated readiness, no secret/scope leak |
+| **V1 dedicated delivery** | stateless P6-R, reduced D1, reduced P8 | measured dedicated URL -> landing -> authorized workspace -> default agent, idempotent rerun, rollback; evaluate the 15-minute target from evidence |
 | **Post-v1** | T1/T2, full P3, E1, P4, E2, X1, P5b, P6 expansion, P7, M2, D2, S3/S4 | separately scheduled against their own consumer and risk trigger |
 
-There is no truthful single serial PR count. #543 and #557 are already merged
-baselines. The current open #391 PRs have these dispositions; stack order is
-not execution authority:
+There is no truthful single serial PR count. The current ancestry and remaining
+legacy PR dispositions are below; stack order is not execution authority:
 
 | Open PR(s) | Current disposition |
 | --- | --- |
-| #545 | close/defer; no-environment Pi seals are post-v1 |
-| #547 | superseded/stopped; do not dispatch |
-| #616 (boundary-only recut of #547) | boundary invariants only; run in parallel with the new #543 corrective PR |
+| #543/#545/#547 | historical/superseded; do not revive no-environment work |
+| #616/#617/#622 | landed workspace-first boundary and correction |
+| #623/#624 | landed minimal identities and deterministic compiler |
+| #626/#627 | landed core relocation and terminal local binding disposal |
+| #628 | landed structural preflight only; `productionReady: false` |
 | #566 | defer; capability projection belongs only in the actual stateless P6-R consumer |
 | #568 | defer until a named workspace/runtime input-asset consumer exists |
-| #575 | recut after both corrective/boundary leaves; retain only the real injected core move |
-| #576 | rework after #575; lifecycle/disposal first, then honest readiness, with no pure ownership |
+| #575/#576 | superseded by focused current-main lifecycle and readiness slices |
 | #546, #559 | freeze post-v1 with all T1/T2 descendants |
-| #548 | do not merge as the old full migration; recut only the D1-consumed runsc/package boundary from current main |
+| #548 | superseded by #628 structural seam; add only evidence-led D1 follow-ups |
 | #558 | defer the Vercel provider move; it is not in the dedicated EU runsc minimum |
 | #564 | close/defer; no pure-only binary or broad mode/provider cutover in v1 |
 | #549, #556 | optional R0 outreach leaf; rebase/review only as workspace-backed, with no prE/T1 dependency |
 | #581 | keep draft/deferred until E1/P5a and a real native-mount consumer reopen X1 |
 
-Create the #543 corrective PR as a new branch from current main. Do not append
-to, rewrite, or present the merged PR as pending work.
+Next P1 work is request-binding/service teardown lifecycle, followed by
+fail-closed readiness. Next P2 evidence is the real-EU validation spike. Do not
+append to or revive superseded stacks.
 
 Across moved-code stacks, each vertical PR migrates consumers and removes the
 old origin atomically. A temporary bridge is allowed only with a named deletion

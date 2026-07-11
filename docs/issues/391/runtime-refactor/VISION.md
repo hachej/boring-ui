@@ -227,7 +227,7 @@ Full text and rationale: [`architecture/08-pluggable-agent-surfaces.md`](archite
 ## Dispatch order (summary)
 
 ```txt
-P0/proposed decision 21 -> P6-D -> A1-compile -----------┐
+P0/accepted decision 21 -> P6-D -> A1-compile -----------┐
 P0 -> P1 boundary -> P2(runsc minimum) -> P5a(minimum) --┼-> P6-R -> A1-dev -> D1 -> P8
                                                           ┘
 ```

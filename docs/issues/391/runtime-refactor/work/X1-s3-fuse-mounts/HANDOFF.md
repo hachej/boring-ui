@@ -50,7 +50,7 @@ Derived strictly from [TODO.md](./TODO.md) and [PLAN.md](./PLAN.md). Tick each b
 - [ ] X1 mounts are `user`-fs-only; governed filesystems are never raw-mounted (#416); no bead raw-mounts `company_context`.
 - [ ] Mount-type facts declared + no-inotify contract enforced; stable error codes present; egress enforced via #307 netns/nftables.
 - [ ] The six Decision-12 smoke tests pass in BBX1-007; readonly/backend-down semantics are re-verified there because `/home/ubuntu/projects/x1-bench/report.md` had PATH/ordering harness bugs for those semantic rows.
-- [ ] BBX1-009 `bench:mounts` exists and encodes the locked baseline thresholds from `/home/ubuntu/projects/x1-bench/report.md` (`2026-07-05 12:22 UTC`): warm `rg <= 0.18s`, append-100 `<= 0.05s`, `git init+commit <= 4.7x local`, sequential write 50 MiB `<= 4.40s`; threshold widening requires raw run output plus reviewer approval.
+- [ ] BBX1-009 `bench:mounts` publishes corrected methodology and raw results. The flawed baseline numbers remain provisional; a reviewed follow-up locks any numeric thresholds.
 - [ ] boring-sandbox imports agent types only; mounts code never in `shared`; agent imports neither package; `pnpm audit:imports`/`pnpm lint:invariants` green.
 - [ ] Any transitional code carries `TODO(remove:<bead-id>)` naming its deletion-owner bead; a later owner is allowed only when explicitly named per [INDEX.md](../../INDEX.md), and no marker outlives its named owner's phase.
 
@@ -69,7 +69,7 @@ Derived strictly from [TODO.md](./TODO.md) and [PLAN.md](./PLAN.md). Tick each b
 - [ ] Mount-type capability facts (`mountType`, `noInotify`, `pollRequired`, `cachePolicy`) are reported; the no-inotify contract holds.
 - [ ] Stable error codes exist (`mount-unavailable`, `mount-stale`, `writeback-failed`, `path-outside-prefix`, `egress-denied`, `unsupported-mount-mode`).
 - [ ] The six Decision-12 smoke tests pass in BBX1-007, including readonly rejection, backend-down errno/recovery, and the Decision-12 smoke semantics; do not accept the baseline report's semantic rows without this re-verification.
-- [ ] The rclone-FUSE-vs-local benchmark (BBX1-009) exists with encoded numeric thresholds: warm `rg <= 0.18s`, append-100 `<= 0.05s`, `git init+commit <= 4.7x local`, sequential write 50 MiB `<= 4.40s`.
+- [ ] The rclone-FUSE-vs-local benchmark (BBX1-009) publishes corrected raw results; no provisional numeric threshold is treated as binding.
 - [ ] Egress policy is enforced as part of the sandbox contract via the hardened tier's per-workspace netns/nftables (#307).
 
 ## Closeout
