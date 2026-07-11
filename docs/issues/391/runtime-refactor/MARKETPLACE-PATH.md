@@ -6,6 +6,23 @@ ChatGPT (MCP), WhatsApp, or Telegram; projections go in, artifacts come back,
 invoices go out. Full worked example: see the
 [AC1 PLAN.md scenario section](work/AC1-agent-consumption-contract/PLAN.md#scenario-creatorcoach-marketplace-canonical-worked-example-owner-2026-07-11).
 
+## Owner ruling (2026-07-11)
+
+- **Revenue path now: B2B** — managed agents + custom workspaces for clients.
+  Phases 1–3 serve this directly; phase 3 doubles as the client demo.
+- **Marketplace is LATER and demand-gated:** phases 4–5 stay sequenced but
+  unstaffed until factory revenue or a flagship creator forces them.
+- **Build discipline: get the FUNDAMENTALS marketplace-ready in phases 1–3**
+  so adding the marketplace later is only adding discoverability (MK1) —
+  concretely: engagement/task records keep actor + provenance + metering
+  identity (Decision 22 spec items); `AgentDefinition` keeps presentation
+  metadata (name/creator/description); bundles stay digest-pinned so creator
+  updates flow via deployment promotion; contracted mode stays a layered
+  decorator (no fork).
+- **Consequence:** BL1 pricing/merchant-of-record, MK1 catalog shape, and CH1
+  channel order are deferred DECISIONS, not deferred fundamentals — no
+  further owner input needed until their phase opens.
+
 This is the phase roadmap from where #391 stands today to that scenario
 working end-to-end. It does not change ordering inside any phase already
 sequenced in [INDEX.md](INDEX.md) — it only names the phases and slots the
