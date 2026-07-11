@@ -5,13 +5,16 @@ import type {
   WorkspaceChangeEvent,
   WorkspaceWatcher,
   WorkspaceWatchSubscribeOptions,
-} from '../../shared/workspace'
-import { REMOTE_WORKER_RUNTIME_CWD, type RemoteWorkerWorkspaceResult } from '../sandbox/remote-worker/protocol'
+} from '../contracts'
+import {
+  REMOTE_WORKER_RUNTIME_CWD,
+  type RemoteWorkerWorkspaceResult,
+} from '../../shared/remoteWorkerProtocol'
 import {
   decodeBytesFromWorker,
   encodeBytesForWorker,
   type RemoteWorkerClient,
-} from '../sandbox/remote-worker/workerClient'
+} from './workerClient'
 
 function expectContent(result: RemoteWorkerWorkspaceResult): string {
   if ('content' in result && typeof result.content === 'string') return result.content

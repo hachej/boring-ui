@@ -1,13 +1,14 @@
 import { afterEach, describe, expect, test, vi } from 'vitest'
 
-import { ErrorCode } from '../../../../shared/error-codes'
-import { ERROR_CODE_AUTH_INVALID } from '../../../http/middleware'
 import { RemoteWorkerClient, constantTimeTokenEqual } from '../workerClient'
 import {
+  REMOTE_WORKER_ERROR_CODES,
   WORKER_INTERNAL_TOKEN_HEADER,
   WORKER_WORKSPACE_ID_HEADER,
   type RemoteWorkerExecResponse,
-} from '../protocol'
+} from '../../../shared/remoteWorkerProtocol'
+
+const ERROR_CODE_AUTH_INVALID = 'auth_invalid'
 
 describe('RemoteWorkerClient', () => {
   afterEach(() => {
@@ -82,7 +83,7 @@ describe('RemoteWorkerClient', () => {
     })
 
     const pending = expect(client.workspace({ op: 'readFile', path: 'README.md' })).rejects.toMatchObject({
-      code: ErrorCode.enum.REMOTE_WORKER_TIMEOUT,
+      code: REMOTE_WORKER_ERROR_CODES.TIMEOUT,
       statusCode: 504,
       details: { timeoutMs: 25, retryable: true },
     })

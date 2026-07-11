@@ -1,9 +1,8 @@
 import { timingSafeEqual } from 'node:crypto'
 
-import { ErrorCode } from '../../../shared/error-codes'
-import type { ExecOptions, ExecResult } from '../../../shared/sandbox'
-import type { Entry, Stat, WorkspaceChangeEvent } from '../../../shared/workspace'
+import type { ExecOptions, ExecResult, WorkspaceChangeEvent } from '../contracts'
 import {
+  REMOTE_WORKER_ERROR_CODES,
   REMOTE_WORKER_PROVIDER,
   WORKER_INTERNAL_TOKEN_HEADER,
   WORKER_REQUEST_ID_HEADER,
@@ -14,7 +13,7 @@ import {
   type RemoteWorkerFsEventEnvelope,
   type RemoteWorkerWorkspaceOp,
   type RemoteWorkerWorkspaceResult,
-} from './protocol'
+} from '../../shared/remoteWorkerProtocol'
 
 const DEFAULT_REQUEST_TIMEOUT_MS = 15_000
 const DEFAULT_EXEC_TIMEOUT_MS = 30_000
@@ -123,7 +122,7 @@ export class RemoteWorkerClient {
   private timeoutError(timeoutMs: number): RemoteWorkerClientError {
     return new RemoteWorkerClientError('remote worker request timed out', {
       statusCode: 504,
-      code: ErrorCode.enum.REMOTE_WORKER_TIMEOUT,
+      code: REMOTE_WORKER_ERROR_CODES.TIMEOUT,
       details: { timeoutMs, retryable: true },
     })
   }
@@ -131,7 +130,7 @@ export class RemoteWorkerClient {
   private abortedError(): RemoteWorkerClientError {
     return new RemoteWorkerClientError('remote worker request aborted', {
       statusCode: 499,
-      code: ErrorCode.enum.ABORTED,
+      code: REMOTE_WORKER_ERROR_CODES.ABORTED,
     })
   }
 
@@ -231,7 +230,7 @@ export class RemoteWorkerClient {
           if (signal.aborted) return
           throw new RemoteWorkerClientError('remote worker event stream closed', {
             statusCode: 502,
-            code: ErrorCode.enum.REMOTE_WORKER_STREAM_CLOSED,
+            code: REMOTE_WORKER_ERROR_CODES.STREAM_CLOSED,
           })
         }
         buffer += decoder.decode(value, { stream: true })

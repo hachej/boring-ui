@@ -21,6 +21,10 @@
       "types": "./dist/shared/index.d.ts",
       "import": "./dist/shared/index.js"
     },
+    "./runtime-mode": {
+      "types": "./dist/runtime-mode.d.ts",
+      "import": "./dist/runtime-mode.js"
+    },
     "./providers": {
       "types": "./dist/providers/index.d.ts",
       "import": "./dist/providers/index.js"
@@ -36,6 +40,10 @@
     "./providers/node-workspace": {
       "types": "./dist/providers/node-workspace/index.d.ts",
       "import": "./dist/providers/node-workspace/index.js"
+    },
+    "./providers/remote-worker": {
+      "types": "./dist/providers/remote-worker/index.d.ts",
+      "import": "./dist/providers/remote-worker/index.js"
     },
     "./providers/runsc": {
       "types": "./dist/providers/runsc/index.d.ts",

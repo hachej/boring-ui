@@ -1,8 +1,8 @@
 import { afterEach, expect, test, vi } from 'vitest'
 
-import type { WorkspaceChangeEvent, WorkspaceWatchControlEvent } from '../../../shared/workspace'
+import type { WorkspaceChangeEvent, WorkspaceWatchControlEvent } from '../../contracts'
 import { createRemoteWorkerWorkspace } from '../createRemoteWorkerWorkspace'
-import type { RemoteWorkerClient } from '../../sandbox/remote-worker/workerClient'
+import type { RemoteWorkerClient } from '../workerClient'
 
 afterEach(() => {
   vi.useRealTimers()

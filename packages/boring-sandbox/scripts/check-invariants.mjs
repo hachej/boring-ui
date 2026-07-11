@@ -10,10 +10,12 @@ const packageJsonPath = join(packageRoot, "package.json");
 export const requiredExports = [
   ".",
   "./shared",
+  "./runtime-mode",
   "./providers",
   "./providers/direct",
   "./providers/bwrap",
   "./providers/node-workspace",
+  "./providers/remote-worker",
   "./providers/runsc",
   "./providers/vercel-sandbox",
 ];

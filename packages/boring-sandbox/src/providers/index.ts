@@ -72,4 +72,5 @@ export {
   isIgnoredDirName,
 } from './node-workspace/ignore'
 export { withWorkspacePythonEnv } from './node-workspace/workspacePythonEnv'
+export * from './remote-worker/index'
 export * from './vercel-sandbox/index'

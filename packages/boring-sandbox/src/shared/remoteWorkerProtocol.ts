@@ -1,5 +1,4 @@
-import type { Entry, Stat, WorkspaceChangeEvent } from '../../../shared/workspace'
-import type { ExecResult } from '../../../shared/sandbox'
+import type { Entry, ExecResult, Stat, WorkspaceChangeEvent } from './contracts'
 
 export const REMOTE_WORKER_RUNTIME_CWD = '/workspace'
 export const REMOTE_WORKER_PROVIDER = 'remote-worker'
@@ -7,6 +6,12 @@ export const REMOTE_WORKER_PROVIDER = 'remote-worker'
 export const WORKER_INTERNAL_TOKEN_HEADER = 'x-boring-internal-token'
 export const WORKER_WORKSPACE_ID_HEADER = 'x-boring-workspace-id'
 export const WORKER_REQUEST_ID_HEADER = 'x-boring-request-id'
+
+export const REMOTE_WORKER_ERROR_CODES = {
+  ABORTED: 'ABORTED',
+  STREAM_CLOSED: 'REMOTE_WORKER_STREAM_CLOSED',
+  TIMEOUT: 'REMOTE_WORKER_TIMEOUT',
+} as const
 
 export type RemoteWorkerWorkspaceOp =
   | { op: 'readFile'; path: string }
