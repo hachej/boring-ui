@@ -11,14 +11,19 @@ Runtime-free, surface-agnostic agents + the `@hachej/boring-bash` / `@hachej/bor
 5. [`architecture/`](architecture/) — the binding design (global ISA `00`, area subplans `01`–`05` and `07`–`10`; `legacy-monolith-source.md` is a non-canonical historical snapshot, not implementation input; there is no canonical `06` file — ordering lives in [`INDEX.md`](INDEX.md) and [`work/`](work/)).
 6. [`PR-PLAN.md`](PR-PLAN.md) — the stacked-PR execution plan.
 
-## PROPOSED workspace-first v1 amendment (2026-07-10)
+## Workspace-first v1 amendment (2026-07-10, accepted 2026-07-11)
 
-Proposed decision [21](../../../DECISIONS.md#21-workspace-first-agent-factory-v1-supersedes-public-pure-mode)
+Decision [21](../../../DECISIONS.md#21-workspace-first-agent-factory-v1-supersedes-public-pure-mode)
 supersedes the earlier v1 pure/no-environment direction. Every v1 run is bound
 to an authorized workspace and an approved runtime/environment. `headless`
 describes presentation only: an API, MCP, CLI, or channel adapter may have no UI
 while still addressing a workspace-backed agent. Existing `runtime: 'none'`
 code is migration/test residue, not a public product mode or v1 acceptance.
+Decision 21 is now **accepted** (2026-07-11, via #617).
+
+[`REVIEW-2026-07-11-unknowns.md`](REVIEW-2026-07-11-unknowns.md) is the
+2026-07-11 plan-review findings/unknowns ledger (reality-sync vs main,
+stacked-PR trap, open questions).
 
 The v1 critical path is now the smallest path to the dedicated proof:
 

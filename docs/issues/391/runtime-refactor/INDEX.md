@@ -10,21 +10,26 @@ The running app is the owner's sales demo. Every PR is **behavior-frozen for the
 
 ## PROPOSED delivery gates and live status
 
-Status reflects `main` plus the **proposed** 2026-07-10 workspace-first amendment. Architecture may remain
+Status reflects `main` plus the workspace-first amendment, **Decision 21, accepted 2026-07-11** (landed via
+[#617](https://github.com/hachej/boring-ui/pull/617)). Architecture may remain
 documented before implementation; only rows marked **v1 gate** block v1.
+
+**Critical path to MVP-M1 (MCP demo):** P1 BBP1-005→BBP1-008 → M1 BBM1-002/003. Everything else below is off the demo path.
 
 | Milestone | Work package | Depends on | Live status | Exit gist |
 | --- | --- | --- | --- | --- |
-| P0 — decisions | [P0](work/P0-adr/) | — | **base merged** (#521/#522); decision 21 proposed | existing v2 pack remains main authority until the workspace-first amendment merges |
-| P1 — workspace-composed agent core | [P1](work/P1-headless-core/) | P0 | **proposed v1 gate; new corrective PR + recuts** | real `/core` and Fastify/package boundary; workspace-scoped composition; bounded agent-local lifecycle; deterministic tool merge; actor/origin where a current v1 surface requires them |
-| R0 — managed MCP tracer | [M1](work/M1-mcp-managed-agent/) | P1 boundary + workspace binding | **optional tracer; partial** | bearer-authenticated stock client addresses one workspace-backed configured agent with bounded self-contained output |
-| P6-D — minimal definition | [P6](work/P6-plugin-child-app/) | proposed decision 21 | **proposed v1 gate; executing independently** | minimal `AgentDefinition` + `AgentDeployment` schemas/digests and verified bundle lookup |
-| A1 — agent-directory authoring | [A1](work/A1-agent-authoring/) | P6-D for compile; P6-R for local run | **proposed v1 gate; pending** | `agents/<name>/` emits one content-addressed bundle; local dev creates/selects an explicit workspace and approved runtime |
-| P2 — dedicated runtime minimum | [P2](work/P2-sandbox-providers/) | P1 | **proposed v1 gate; narrow/rework** | only the package boundary and hardened runsc/systrap path consumed by D1; no silent direct fallback; broad provider/mode cutovers deferred |
-| P5a — dedicated provisioning minimum | [P5](work/P5-provisioning-secrets/) | narrow P2 | **proposed v1 gate; narrow/rework** | only D1-consumed orchestration, readiness, fingerprint, secret brokerage, and authenticated fail-closed runsc-worker facts |
-| P6-R — workspace/deployment resolution | [P6](work/P6-plugin-child-app/) | P6-D, P1, narrow P5a | **proposed v1 gate; narrow/rework** | host verifies bundle assets and resolves deployment, workspace-owned composition, approved runtime, and `default` binding to one immutable digest |
-| D1 — dedicated EU site delivery | [D1](work/D1-tenant-provisioning/) | A1, P2 runsc, P5a, P6-R | **proposed v1 gate; pending** | exact hostname -> bounded landing -> auth -> authorized workspace -> deployed `default` agent, plus idempotent apply/rollback; no M2 dependency |
-| P8 — v1 proof/cleanup | [P8](work/P8-verification/) | all reduced v1 gates above | **proposed; pending** | timed 15-minute workspace-backed golden path, rollback, and zero v1-owned removal markers |
+| P0 — decisions | [P0](work/P0-adr/) | — | **base merged** (#521/#522); decision 21 **accepted** (#617) | existing v2 pack remains main authority; workspace-first amendment has landed |
+| P1 — workspace-composed agent core | [P1](work/P1-headless-core/) | P0 | **facade + config-inventory on main; recuts open** — `createAgent` facade and config-surface inventory landed; recuts A–D ([#566](https://github.com/hachej/boring-ui/pull/566)/[#568](https://github.com/hachej/boring-ui/pull/568)/[#575](https://github.com/hachej/boring-ui/pull/575)/[#576](https://github.com/hachej/boring-ui/pull/576)) OPEN | real `/core` and Fastify/package boundary; workspace-scoped composition; bounded agent-local lifecycle; deterministic tool merge; actor/origin where a current v1 surface requires them |
+| R0 — managed MCP tracer | [M1](work/M1-mcp-managed-agent/) | P1 boundary + workspace binding | **partial; not further dispatchable yet** — BBM1-001 MCP delegate server ([#538](https://github.com/hachej/boring-ui/pull/538)) merged on main; BBM1-002/003 ([#549](https://github.com/hachej/boring-ui/pull/549)/[#556](https://github.com/hachej/boring-ui/pull/556)) OPEN and flagged do-not-rebase (conflict with main); blocked until P1 BBP1-005→BBP1-008 land; [#545](https://github.com/hachej/boring-ui/pull/545) (BBP1-005) closed unmerged | bearer-authenticated stock client addresses one workspace-backed configured agent with bounded self-contained output |
+| P6-D — minimal definition | [P6](work/P6-plugin-child-app/) | Decision 21 (accepted) | **not on main despite MERGED labels** — schema ([#618](https://github.com/hachej/boring-ui/pull/618)) and [#620](https://github.com/hachej/boring-ui/pull/620) merged into stale base `plan/391-workspace-first-v1`, which never reached main; #620 recovered via reland [#622](https://github.com/hachej/boring-ui/pull/622) (merged, verified ancestor of `origin/main`); #618 reland ([#623](https://github.com/hachej/boring-ui/pull/623)) and A1 compiler ([#624](https://github.com/hachej/boring-ui/pull/624)) still OPEN; `AgentDefinition` has zero grep hits under `packages/` on main | minimal `AgentDefinition` + `AgentDeployment` schemas/digests and verified bundle lookup |
+| A1 — agent-directory authoring | [A1](work/A1-agent-authoring/) | P6-D for compile; P6-R for local run | **v1 gate; pending** — blocked on P6-D reland (#623) and compiler (#624) | `agents/<name>/` emits one content-addressed bundle; local dev creates/selects an explicit workspace and approved runtime |
+| P2 — dedicated runtime minimum | [P2](work/P2-sandbox-providers/) | P1 | **mostly not started** — scaffold + providerMatrix/capability only (~8 files) on main; provider moves ([#548](https://github.com/hachej/boring-ui/pull/548)/[#558](https://github.com/hachej/boring-ui/pull/558)/[#564](https://github.com/hachej/boring-ui/pull/564)) all OPEN | only the package boundary and hardened runsc/systrap path consumed by D1; no silent direct fallback; broad provider/mode cutovers deferred |
+| P5a — dedicated provisioning minimum | [P5](work/P5-provisioning-secrets/) | narrow P2 | **v1 gate; narrow/rework** | only D1-consumed orchestration, readiness, fingerprint, secret brokerage, and authenticated fail-closed runsc-worker facts |
+| P6-R — workspace/deployment resolution | [P6](work/P6-plugin-child-app/) | P6-D, P1, narrow P5a | **v1 gate; narrow/rework** | host verifies bundle assets and resolves deployment, workspace-owned composition, approved runtime, and `default` binding to one immutable digest |
+| D1 — dedicated EU site delivery | [D1](work/D1-tenant-provisioning/) | A1, P2 runsc, P5a, P6-R | **v1 gate; pending** | exact hostname -> bounded landing -> auth -> authorized workspace -> deployed `default` agent, plus idempotent apply/rollback; no M2 dependency |
+| P8 — v1 proof/cleanup | [P8](work/P8-verification/) | all reduced v1 gates above | **pending** | timed 15-minute workspace-backed golden path, rollback, and zero v1-owned removal markers |
+
+**Footnote:** Status entries above must cite merge-commit-ancestry-verified state (`git merge-base --is-ancestor <sha> origin/main`), not GitHub MERGED labels — see the stacked-PR trap note in [`REVIEW-2026-07-11-unknowns.md`](REVIEW-2026-07-11-unknowns.md).
 
 ## Post-v1 increments
 

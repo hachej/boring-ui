@@ -70,6 +70,16 @@ No `@hachej/boring-agent` value import cycle is allowed (boring-sandbox imports 
 
 ## Runtime mode vs provider names
 
+> **Supersession note (Decision 21, accepted 2026-07-11):**
+> [Decision 21](../../../../DECISIONS.md#21-workspace-first-agent-factory-v1-supersedes-public-pure-mode)
+> supersedes the public "pure/headless" runtime mode and the `none` provider
+> as a v1 product path. Every v1 local or deployed run resolves to an
+> authorized workspace plus an approved runtime/environment; there is no
+> v1 no-environment mode. The `pure/headless` mode row and `none` provider
+> row below are retained as historical/post-v1 research — a true
+> no-environment consumer must be named and pass decision 21's
+> reintroduction gate before either row becomes live product surface again.
+
 Do not collapse current runtime modes into provider names. Mode resolution (`resolveMode`) is boring-bash's; the provider a mode resolves to is `@hachej/boring-sandbox`'s.
 
 | Current mode | Current sandbox provider | boring-sandbox provider | Notes |
@@ -78,7 +88,7 @@ Do not collapse current runtime modes into provider names. Mode resolution (`res
 | `local` | `bwrap` | `bwrap` | Linux bubblewrap. Mode id differs from provider id. |
 | `vercel-sandbox` | `vercel-sandbox` | `vercel-sandbox` | Remote sandbox. |
 | remote-worker adapter | `remote-worker` | `remote-worker` | Client/mode and worker server split must stay explicit; worker handshake must declare capabilities. |
-| pure/headless | none | none | No boring-bash. |
+| pure/headless | none | none | **Post-v1 / superseded for v1 by Decision 21** — no boring-bash; not a v1 product mode. |
 | readonly files | provider-specific | `readonly` facade | fs/search/watch without exec. |
 
 ## Provider capability matrix
@@ -87,7 +97,7 @@ Provider labels lie unless backed by capability facts. The authoritative `Provid
 
 | Provider | FS | Exec | Real Bash | Real binaries | Network isolation | Notes |
 | --- | --- | --- | --- | --- | --- | --- |
-| `none` | none | no | no | no | n/a | Pure agent. |
+| `none` | none | no | no | no | n/a | **Post-v1 / superseded for v1 by Decision 21.** Pure agent — retained as historical/post-v1 research, not a v1 product mode. |
 | `readonly` | readonly | no | no | no | n/a | File UI/search only. |
 | `direct` | readwrite | yes | host-dependent | host-dependent | none | Trusted dev/CI only. |
 | `bwrap` | readwrite | yes | host-dependent | host-dependent | process/container-ish | Linux-only. |

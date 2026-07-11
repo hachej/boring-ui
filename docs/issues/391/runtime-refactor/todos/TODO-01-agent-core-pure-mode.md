@@ -1,5 +1,28 @@
 # TODO-01 — Agent core dependency inversion and pure mode
 
+> **Supersession note (Decision 21, accepted 2026-07-11):**
+> [Decision 21](../../../../DECISIONS.md#21-workspace-first-agent-factory-v1-supersedes-public-pure-mode)
+> supersedes the public no-environment path this TODO describes. Every v1 run
+> is authorized through a workspace and an approved runtime/environment;
+> there is no v1 `runtime: 'none'` product mode.
+>
+> - **BBA-012, BBA-013, BBA-014** (pure composition seam, no-filesystem mode,
+>   pi cwd audit for pure mode) are **SUPERSEDED — do not implement.** A true
+>   no-environment consumer is post-v1 and must be named, with an explicit
+>   contract, before its harness work is chosen; see decision 21's
+>   reintroduction gate.
+> - **BBA-015, BBA-016** (non-bash external hook ingestion and non-bash
+>   operational command/event seams, written for #380 external harnesses) are
+>   **not automatically dead.** They depend on BBA-013 (superseded), and #380's
+>   need for a no-boring-bash hook/command surface is unresolved under decision
+>   21. **Open question, flagged for owner ruling:** re-scope BBA-015/016 as
+>   environment-full features (host/workspace-backed, no pure-mode
+>   dependency), or explicitly retire them with #380 impact noted. Do not
+>   implement either bead until this is decided.
+>
+> Historical content below is preserved for rationale; it is not current
+> implementation authority.
+
 ## Purpose
 
 Make `@hachej/boring-agent` usable without any filesystem, sandbox, cwd, or bash capability, while preserving existing coding workspace behavior through host-injected features.
