@@ -238,23 +238,37 @@ export class PiSessionStore implements SessionStore {
   }
 
   async rename(ctx: SessionCtx, sessionId: string, title: string): Promise<SessionSummary> {
-    return this.renameInternal(ctx, sessionId, title, false);
+    return this.renameInternal(ctx, sessionId, title);
   }
 
   /**
-   * Completes a rename after the live Pi session has already queued its title
-   * while its native transcript was still deferred. If Pi materializes during
-   * wrapper persistence, avoid appending the same title twice to native JSONL.
+   * Records the restart-pending wrapper title after a live, unmaterialized Pi
+   * SessionManager has accepted setSessionName. This deliberately never
+   * targets native JSONL: that live SessionManager is its sole future writer.
    */
-  async renameAfterLivePendingTitleHandoff(ctx: SessionCtx, sessionId: string, title: string): Promise<SessionSummary> {
-    return this.renameInternal(ctx, sessionId, title, true);
+  async recordLivePendingTitle(ctx: SessionCtx, sessionId: string, title: string): Promise<SessionSummary> {
+    const normalizedTitle = normalizeSessionTitle(title);
+    const filepath = await this.resolveSessionFile(sessionId, ctx);
+    const fileSessionId = await this.readSessionFileId(filepath);
+    if (fileSessionId && fileSessionId !== sessionId) throw new Error(`Session not found: ${sessionId}`);
+
+    const now = new Date().toISOString();
+    const infoEntry: SessionInfoEntry = {
+      type: "session_info",
+      id: randomUUID(),
+      parentId: null,
+      timestamp: now,
+      name: normalizedTitle,
+    };
+    await this.appendJsonlEntry(filepath, infoEntry);
+    this.prefixCache.delete(filepath);
+    return this.load(ctx, sessionId);
   }
 
   private async renameInternal(
     ctx: SessionCtx,
     sessionId: string,
     title: string,
-    titleAlreadyQueuedInLivePi: boolean,
   ): Promise<SessionSummary> {
     const normalizedTitle = normalizeSessionTitle(title);
     const filepath = await this.resolveSessionFile(sessionId, ctx);
@@ -265,32 +279,18 @@ export class PiSessionStore implements SessionStore {
     const targetPath = linkedPiFile && resolve(linkedPiFile) !== resolve(filepath) && await fileExists(linkedPiFile)
       ? linkedPiFile
       : filepath;
-    const nativeTitleAlreadyPersisted = titleAlreadyQueuedInLivePi
-      && targetPath !== filepath
-      && await this.lastSessionTitle(targetPath) === normalizedTitle;
-    if (!nativeTitleAlreadyPersisted) {
-      const now = new Date().toISOString();
-      const infoEntry: SessionInfoEntry = {
-        type: "session_info",
-        id: randomUUID(),
-        parentId: null,
-        timestamp: now,
-        name: normalizedTitle,
-      };
-      await this.appendJsonlEntry(targetPath, infoEntry);
-    }
+    const now = new Date().toISOString();
+    const infoEntry: SessionInfoEntry = {
+      type: "session_info",
+      id: randomUUID(),
+      parentId: null,
+      timestamp: now,
+      name: normalizedTitle,
+    };
+    await this.appendJsonlEntry(targetPath, infoEntry);
     this.prefixCache.delete(filepath);
     this.prefixCache.delete(targetPath);
     return this.load(ctx, sessionId);
-  }
-
-  private async lastSessionTitle(filepath: string): Promise<string | null> {
-    try {
-      return extractTitle(safeParseEntries(await readFile(filepath, "utf-8"))
-        .filter((entry): entry is SessionEntry => entry.type !== "session")) ?? null;
-    } catch {
-      return null;
-    }
   }
 
   private async appendJsonlEntry(filepath: string, entry: SessionInfoEntry): Promise<void> {

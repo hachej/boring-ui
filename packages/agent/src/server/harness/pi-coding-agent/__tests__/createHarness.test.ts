@@ -10,6 +10,7 @@ import {
 } from "../createHarness.js";
 import { adaptToolsForPi } from "../tool-adapter.js";
 import { PiSessionStore } from "../sessions.js";
+import { HarnessPiChatService } from "../../../pi-chat/harnessPiChatService.js";
 import { ErrorCode } from "../../../../shared/error-codes.js";
 import type { AgentTool } from "../../../../shared/tool.js";
 
@@ -35,6 +36,42 @@ describe("createPiCodingAgentHarness", () => {
     expect(harness.sessions).toBeInstanceOf(PiSessionStore);
     expect(typeof harness.getPiSessionAdapter).toBe("function");
     expect(typeof harness.reloadSession).toBe("function");
+  });
+
+  it("writes one native title when a live pending session materializes after route rename", async () => {
+    const sessionDir = await mkdtemp(join(tmpdir(), "pi-live-title-materialize-"));
+    const sessionCtx = { workspaceId: "default" };
+    let liveManager: SessionManager | undefined;
+    const originalAppend = SessionManager.prototype.appendSessionInfo;
+    const captureAppend = vi.spyOn(SessionManager.prototype, "appendSessionInfo").mockImplementation(function (this: SessionManager, name: string) {
+      liveManager = this;
+      return originalAppend.call(this, name);
+    });
+    try {
+      const harness = createPiCodingAgentHarness({ tools: [noopTool], cwd: "/tmp/live-title", sessionDir });
+      const session = await harness.sessions.create(sessionCtx);
+      const service = new HarnessPiChatService({ harness, sessionStore: harness.sessions, workdir: "/tmp/live-title" });
+      await harness.getPiSessionAdapter({ sessionId: session.id, content: "", ctx: sessionCtx }, {
+        abortSignal: new AbortController().signal,
+        workdir: "/tmp/live-title",
+        workspaceId: "default",
+      });
+      await service.renameSession({ workspaceId: "default", requestId: "rename" }, session.id, "New sessionsss");
+      expect(liveManager).toBeDefined();
+      expect(captureAppend.mock.calls.map(([title]) => title)).toEqual(["New sessionsss"]);
+      const nativePath = liveManager?.getSessionFile();
+      expect(nativePath).toBeTruthy();
+      await expect(readFile(nativePath!, "utf-8")).rejects.toMatchObject({ code: ENOENT_CODE });
+
+      liveManager!.appendMessage({ role: "user", content: [{ type: "text", text: "hello" }] } as any);
+      liveManager!.appendMessage({ role: "assistant", content: [{ type: "text", text: "hi" }] } as any);
+      const nativeEntries = (await readFile(nativePath!, "utf-8")).trim().split("\n").map((line) => JSON.parse(line));
+      expect(nativeEntries.filter((entry) => entry.type === "session_info").map((entry) => entry.name)).toEqual(["New sessionsss"]);
+      expect(nativeEntries.filter((entry) => entry.type === "session_info" && entry.name === "New sessionsss")).toHaveLength(1);
+    } finally {
+      captureAppend.mockRestore();
+      await rm(sessionDir, { recursive: true, force: true });
+    }
   });
 
   it("rejects unavailable requested models when strict model resolution is enabled", async () => {
@@ -576,11 +613,6 @@ describe("PiSessionStore", () => {
     await expect(store.load({ workspaceId: "default" }, boringSessionId)).resolves.toEqual(expect.objectContaining({ title: "Native title" }));
     await expect(store.list({ workspaceId: "default" })).resolves.toEqual([expect.objectContaining({ id: boringSessionId, title: "Native title" })]);
     await store.rename({ workspaceId: "default" }, boringSessionId, "Linked rename");
-    // A live Pi handle may materialize between handoff and wrapper persistence.
-    // The specialized completion path must preserve that native title without
-    // appending the same session_info entry a second time.
-    await store.renameAfterLivePendingTitleHandoff({ workspaceId: "default" }, boringSessionId, "Linked rename");
-
     const nativeLines = (await readFile(nativePath, "utf-8")).trim().split("\n").map((line) => JSON.parse(line));
     const wrapperLines = (await readFile(boringPath, "utf-8")).trim().split("\n").map((line) => JSON.parse(line));
     expect(nativeLines.filter((line) => line.type === "session_info").map((line) => line.name)).toEqual(["Native title", "Linked rename"]);

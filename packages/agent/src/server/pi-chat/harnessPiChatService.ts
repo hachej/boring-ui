@@ -35,7 +35,7 @@ const PROMPT_IMAGE_EXTENSIONS = new Set(['.avif', '.gif', '.jpg', '.jpeg', '.png
  * as the live event path. */
 type PiSessionStoreLike = SessionStore & {
   loadEntries?: (ctx: { workspaceId?: string; userId?: string }, sessionId: string) => Promise<{ id: string; messages: unknown[] }>
-  renameAfterLivePendingTitleHandoff?: (ctx: SessionCtx, sessionId: string, title: string) => Promise<SessionSummary>
+  recordLivePendingTitle?: (ctx: SessionCtx, sessionId: string, title: string) => Promise<SessionSummary>
 }
 
 interface LiveSessionChannel {
@@ -186,8 +186,8 @@ export class HarnessPiChatService implements PiChatSessionService {
         // message. Queue its title synchronously before the async wrapper
         // append so a materializing first turn cannot miss this rename.
         const queuedInLivePi = await this.harness.renameLivePendingPiSession?.(sessionId, sessionCtx, title) === true
-        return queuedInLivePi && this.sessionStore.renameAfterLivePendingTitleHandoff
-          ? await this.sessionStore.renameAfterLivePendingTitleHandoff(sessionCtx, sessionId, title)
+        return queuedInLivePi && this.sessionStore.recordLivePendingTitle
+          ? await this.sessionStore.recordLivePendingTitle(sessionCtx, sessionId, title)
           : await this.sessionStore.rename(sessionCtx, sessionId, title)
       } catch (error) {
         throw normalizeSessionAccessError(error, sessionId)
