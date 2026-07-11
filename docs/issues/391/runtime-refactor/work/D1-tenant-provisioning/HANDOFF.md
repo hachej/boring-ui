@@ -6,8 +6,10 @@
 
 - [ ] P6-D + A1 compile are complete.
 - [ ] P1 lifecycle/readiness and stateless P6-R are complete.
-- [ ] D1-R0 produced accepted, dispatchable micro-beads with exact files,
-      stable errors, proof, rollback, and review budgets.
+- [ ] [`D1-R0-SPEC.md`](./D1-R0-SPEC.md) is accepted; dispatch uses D1-001
+      through D1-006 and not the historical dedicated/runsc beads.
+- [ ] One ingress plus one stable full-collection core process is implemented;
+      it performs N independent P6-R calls and agents are not containers.
 - [ ] D1-R0 identified the current composer inputs and specified a canonical
       redacted workspace-composition identity/digest producer; the host no
       longer supplies an unverifiable arbitrary digest.
@@ -19,9 +21,19 @@
 
 ### Active proof
 
-- [ ] One command plans/applies one Docker host with at least two exact-host
+- [ ] One command plans/applies one Docker host with at least three exact-host
       bindings, distinct deployed agents, managed workspaces/defaults, and
       durable workspace/session roots.
+- [ ] Applying additive N+1 leaves retained bindings byte-identical while an
+      in-flight request and reconnect complete in the same process. Active
+      binding replacement/removal and runtime-input rotation fail before effects.
+- [ ] The root-owned pending-pointer/signal preload verifies every candidate
+      binding and returns all-ready before the active pointer changes; app HTTP
+      credentials cannot trigger candidate activation.
+- [ ] Compose uses one file, idempotent `up -d`, service-specific `--no-deps`,
+      an external database ref, per-binding env plus external tmpfs secret
+      inputs, and never `--force-recreate` or blanket old-file rollback.
+      Additive publication does not invoke Compose.
 - [ ] Existing-member auth and membership are the only workspace authority;
       landing content grants none.
 - [ ] On a bound hostname, existing workspace list/create/switch/delete and
@@ -38,7 +50,8 @@
 - [ ] Canonical trusted-proxy/Host parsing and uniqueness reject duplicate or
       ambiguous hostname/workspace/deployment/default bindings and overlapping
       workspace/session roots before effects.
-- [ ] An isolated runtime profile proves sibling-root/process denial. Trusted-
+- [ ] A host-resolved immutable runtime-profile ref/content/attestation digest
+      proves sibling-root/process denial; plan input cannot self-assert it. Trusted-
       direct is allowed only for local development or a single-workspace
       dedicated composition; it is never valid for the shared N-workspace
       host, regardless of operator trust. Otherwise apply fails or uses
@@ -62,20 +75,25 @@
       exact ids against the current revision; CAS alone is not preservation.
 - [ ] Fresh observed readiness/secret status gates publication but is not part
       of desired digest, rollback identity, or P6-R input.
-- [ ] After collection values change, rollback rematerializes every prior
-      binding, matches the prior host snapshot/digest, and reproduces every
-      P6-R digest without a P6 generation registry.
+- [ ] Online rollback removes only an added binding with no durable admission
+      row, matches the prior host snapshot/digest, and reproduces every P6-R
+      digest without a P6 generation registry. Other runtime rollback is an
+      explicit maintenance stop/reapply, never an online continuity claim.
+- [ ] The external database stores the insert/read-only admission ledger; its
+      transaction commits before first agent effect, survives process/revision
+      cleanup, and is reloaded before destructive diff or restart recovery.
 - [ ] DNS/TLS publication occurs only after workspace/default-agent/runtime/
       secret readiness; partial state is not externally reachable.
 - [ ] Proof records setup-to-first-run time and stage breakdown against the
-      provisional 15-minute target, plus both hostnames, definition/deployment
+      provisional 15-minute target, plus all three hostnames, definition/deployment
       digests, workspace/default bindings, reapply, collection mutation/full
       restoration, rollback digests, selector denials, and secret canary.
 
 ### Exit
 
-- [ ] Two exact hosts -> landing -> existing-member sign-in -> distinct managed
-      workspaces -> their deployed `default` agents succeed in one EU Docker host.
+- [ ] Three exact hosts -> landing -> existing-member sign-in -> distinct
+      managed workspaces -> their deployed `default` agents succeed in one EU
+      Docker host.
 - [ ] Reapply, rollback, cross-binding denial, shared-host sibling isolation,
       and no-secret proofs pass. The dedicated-VM variant has a documented
       configuration render but does not require a second live host.
