@@ -1,7 +1,13 @@
 # M2-mcp-agent-surface — Plan
 
-Status: post-v1; not a #391 v1 exit gate. D1 uses the existing HTTP/workspace
-surface and does not depend on M2.
+Status: priority-2 recut required after M1 + AR1. D1 uses the existing
+HTTP/workspace surface and does not depend on M2.
+
+> **Dispatch supersession (2026-07-11).** The registry/P7/T1/T2 design below is
+> non-dispatchable history. Recut the smallest canonical MCP surface that
+> consumes the M1 ingress and AR1 destination-local artifact contract without
+> waiting for P7, T2, generic E1 attachments, or a control plane. Preserve
+> bearer/workspace authority, bounded payloads, idempotency, and stable errors.
 
 > Phase: Phase M2 - MCP as an agent surface · Work order: [TODO.md](./TODO.md) · Handoff: [HANDOFF.md](./HANDOFF.md)
 > Ordering authority: [INDEX.md](../../INDEX.md) · Vision: [VISION.md](../../VISION.md) · PR plan: [PR-PLAN.md](../../PR-PLAN.md)

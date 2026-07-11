@@ -5,10 +5,13 @@
 ### Prerequisites
 
 - [ ] P1 workspace/Fastify boundary is complete.
-- [ ] P6-D schemas/digests/lookup and A1 compile are complete.
+- [ ] P6-D schemas/digests and A1 compile are complete; no false BBP6-003
+      lookup prerequisite remains.
 - [ ] A1 local dev proves an explicit authorized workspace and approved runtime.
-- [ ] Narrow P2 EU runsc, narrow P5a, stateless P6-R, and D1 are complete.
-- [ ] T1/T2, full P3, E1, M2, plugin snapshots/scoped registrars, attachment
+- [ ] Stateless P6-R and multi-agent D1 are complete. Any D1-R0-demonstrated
+      P5a slice is complete, or explicit evidence records no P5a code was
+      needed. P2 is not a gate.
+- [ ] M1/AR1/M2/E2, T1/T2, P2/X1, full P3, E1, plugin snapshots/scoped registrars, attachment
       catalogs, and P6 generation stores are not treated as prerequisites.
 
 ### Review/proof
@@ -23,18 +26,23 @@
 - [ ] Package docs describe only what shipped: workspace-backed core,
       definition/deployment bundle, explicit local workspace/runtime, and D1.
 - [ ] One command measures compile -> local workspace-backed turn ->
-      D1 apply -> exact HTTPS landing -> existing-member sign-in -> managed
-      workspace -> deployed `default` agent on real approved EU runsc, records
+      D1 apply -> at least two exact HTTPS landings -> existing-member sign-in
+      -> distinct authorized workspaces -> their deployed `default` agents in
+      one real EU Docker host, records
       stage timings, and compares them with the provisional 15-minute target.
 - [ ] Evidence records source-independent bundle/host materialization, foreign-
       selector and workspace-lifecycle denial, and idempotent reapply. It then
-      mutates site-level desired values and proves rollback restores every field
-      in the prior complete redacted D1 site snapshot/digest: hostname, landing,
-      auth/membership/owner and workspace/default bindings, roots/storage/
-      runtime, host artifact, composition, definition/deployment, and secret ref
-      names/status only. The prior P6-R digest is reproduced and no secret value
-      appears.
-- [ ] Direct/bwrap/Vercel/fake/unverified production paths fail the proof.
+      mutates collection-level desired values and proves rollback restores every
+      field in the prior complete redacted D1 host snapshot/digest: hostnames,
+      landings, auth/membership/owner and workspace/default bindings, roots/storage/
+      runtime, host artifact, composition, definition/deployment, and secret
+      reference identities only. Fresh observed status is recorded separately;
+      the prior P6-R digests are reproduced and no secret value appears.
+- [ ] The shared N-workspace D1 trust path proves isolated-profile sibling
+      filesystem/process denial. Trusted-direct is accepted only for local
+      development or a single-workspace dedicated composition, never as the
+      shared-host proof.
+- [ ] P2 provider selection and X1 mounts are absent from the v1 proof.
 - [ ] Post-v1 lanes are tracked and do not block closeout.
 
 ### Exit

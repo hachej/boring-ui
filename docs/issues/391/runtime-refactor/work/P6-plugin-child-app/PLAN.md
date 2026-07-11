@@ -3,12 +3,18 @@
 > **Proposed workspace-first v1 amendment (2026-07-10).** The wider plugin/
 > child-app plan below is post-v1. P6-D owns the minimal behavior-only
 > `AgentDefinition` and host-owned `AgentDeployment` schemas, their canonical
-> digests, immutable referenced definition assets, and BBP6-003 lookup required
-> by A1/D1. It has no P1 dependency. P6-R is a small, stateless resolution step over the
-> existing workspace composer. It does not add an environment registry,
+> digests and immutable referenced definition assets. #623 landed those
+> identities and #624 landed the A1 compiler; BBP6-003 lookup is not a P6-R
+> prerequisite because the resolver accepts one verified bundle directly. P6-D
+> has no P1 dependency. P6-R is a small, stateless resolution step over the
+> host-authorized workspace composition attestation. It does not add an environment registry,
 > per-agent plugin selection, an immutable generation store, a new workspace
 > bundle schema, deployment creation, or multi-generation routing. The workspace remains the v1
-> plugin/prompt/skill/tool/runtime composition authority.
+> plugin/prompt/skill/tool/runtime composition authority. P6-R depends on P6-D
+> and the P1 lifecycle/readiness boundary only. Its composition digest input is
+> a host attestation, not something P6-R can currently reproduce; D1-R0 owns
+> specifying the missing canonical producer. D1/P5a consume its output and
+> P2 provider extraction is not on this path.
 
 > Phase: Phase 6 — Plugin and child-app integration (split into P6a / P6b) · Work order: [TODO.md](./TODO.md) · Handoff: [HANDOFF.md](./HANDOFF.md)
 > Ordering authority: [INDEX.md](../../INDEX.md) · Vision: [VISION.md](../../VISION.md)
@@ -46,13 +52,17 @@ statelessly; it does not resolve an E1 attachment catalog.
 
 ### P6-D/P6-R — v1
 P6-D delivers minimal definition/deployment identity schemas, canonical
-digests, immutable referenced definition assets, and BBP6-003 lookup. P6-R
-statelessly combines those values with the existing authorized workspace's
-host-produced composition manifest/digest and narrow D1 runtime/readiness
-facts. It does not load/select contributions or create a second prompt/plugin
-resolver. A1 and D1 are the concrete consumers; P6 owns no persistent resolved
-state. D1 alone pins the immutable host artifact and composition manifest in
-its complete redacted apply/rollback snapshot.
+digests, and immutable referenced definition assets. A1 supplies one compiled
+bundle directly; BBP6-003 lookup remains deferred until a host demonstrates it
+needs a reusable lookup owner. P6-R
+resolves one verified bundle/deployment against one host-authorized workspace
+composition attestation and its explicit `default` binding. It
+returns immutable identities, loaded instructions, and one deterministic
+digest. A host gets N bindings through N independent pure calls; P6-R owns no
+batch API, router, current pointer, operational readiness, or registry. A1 and
+D1 are the concrete consumers. D1/P5a evaluate operational readiness
+separately, and D1 alone pins the immutable host artifact and composition
+manifests in its complete redacted apply/rollback snapshot.
 
 ### Plugin core expansion — post-v1
 Import-free manifest validation, skill filters, plugin runtime context, hosted
@@ -72,8 +82,8 @@ post-v1 and never gates P8.
 
 ### V1
 Separate minimal versioned schemas and deterministic definition/deployment
-digests; verified bundle lookup; deterministic stateless resolution through the
-existing workspace composer; A1 local development and D1 consume the same
+digests; verified bundle input; deterministic stateless binding of one
+host-attested composition identity; A1 local development and D1 consume the same
 bundle; no behavior field has a second source of truth.
 
 ### Phase 6b (when unblocked)

@@ -1,5 +1,13 @@
 # M1-mcp-managed-agent - Handoff checklist
 
+> **Binding supersession (2026-07-11).** This checklist is historical until the
+> current-main #549/#556 recut replaces it. M1 now follows D1 and proves only
+> authenticated workspace/default-agent MCP ingress plus bounded result
+> delivery. AR1, not BBM1-004 or #424, owns sharing.
+> M1 nevertheless owns producing AR1's byte source: one complete authorized
+> UTF-8 Markdown artifact <=256 KiB plus digest, never path-only or truncated,
+> with the three stable invalid/too-large/unavailable errors from `PLAN.md`.
+
 Derived strictly from [TODO.md](./TODO.md) and [PLAN.md](./PLAN.md). Tick each before calling M1 done. Invent nothing.
 
 ## Prerequisites

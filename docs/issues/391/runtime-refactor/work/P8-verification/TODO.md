@@ -11,20 +11,27 @@ Dispatch only these verification slices:
    old-path gates for work that did not ship.
 2. **Shipped-contract docs:** document the workspace-backed core boundary,
    minimal definition/deployment bundle, explicit local workspace/runtime, and
-   D1 exact-host/default-agent path. Do not claim the four-part durable surface
+   D1 multi-agent-host/default-agent paths. Do not claim the four-part durable surface
    contract as v1.
-3. **Golden path:** measure the proof defined in PLAN.md using real EU runsc
-   and the existing workspace composer; record stage timing and compare it with
-   the provisional 15-minute target; capture selector and secret
-   negatives, no-op reapply, then apply changed site-level values and roll back.
-   Compare every prior redacted site field/digest, including hostname, landing,
-   auth/membership/owner and workspace/default bindings, roots/storage/runtime,
-   host artifact, composition, definition/deployment, and secret ref names/
-   status only; reproduce the P6-R digest and never record secret values.
-4. **Follow-up ledger:** keep T1/T2, full P3, E1, no-environment, M2, X1, and
+3. **Golden path:** measure the proof defined in PLAN.md on one EU Docker host
+   using the D1-R0-specified canonical workspace-composition identity producer;
+   record stage timing and compare it
+   with the provisional 15-minute target; capture two-binding selector/root and
+   secret negatives, no-op reapply, then apply changed collection values and
+   roll back. Compare every prior redacted host field/digest, including pinned
+   host artifact/storage inputs, hostnames, landings, auth/membership/owner and
+   workspace/default bindings, roots/runtime, composition, definition/
+   deployment, and secret ref identities only; reproduce all P6-R digests and
+   never record secret values or volatile readiness in desired identity.
+   The same proof records isolated-profile sibling filesystem/process denial
+   for the shared N-workspace host. Trusted-direct is accepted only for local
+   development or a single-workspace dedicated composition and never as this
+   shared-host proof.
+4. **Follow-up ledger:** keep M1/AR1/M2/E2, T1/T2, P2/X1, full P3, E1, no-environment, and
    wider P6/D2/S3/S4 work explicitly tracked post-v1.
 
-Prerequisites are P1, P6-D, A1, narrow P2/P5a, stateless P6-R, and D1 only.
+Prerequisites are P1, P6-D, A1, stateless P6-R, D1, and any P5a slice D1-R0
+actually demonstrated. Zero P5a code is a valid recorded outcome.
 M1 config cleanup gates P8 only if the shipped D1 path actually consumes that
 duplicate behavior source. No generic generation, plugin-snapshot, attachment,
 durable-event, approval, or transport proof belongs here.

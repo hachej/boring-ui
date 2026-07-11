@@ -1,7 +1,14 @@
 # 03 — Policy, provisioning, readiness
 
+> **Binding owner-order supersession (2026-07-11).** P5a is conditional support
+> discovered by D1-R0, not a P6-R or D1 prerequisite. Add only an exact missing
+> host-readiness or secret-reference seam; zero P5a code is valid. P2 provider
+> extraction/runsc proof and X1 mounts merge last. The authority algebra below
+> remains binding, but runsc-first/P5a-v1 statements are non-dispatchable where
+> they conflict with [`INDEX.md`](../INDEX.md).
+
 > **Workspace-first v1 scope (2026-07-10).** The authority algebra below remains
-> binding. V1 P5a implements only D1-consumed runsc readiness/health,
+> binding. Historical P5a scope described D1-consumed runsc readiness/health,
 > authenticated worker facts, redacted fingerprinting, secret brokerage, and
 > non-dev fail-closed configuration. The generic `BashRequirement` normalizer,
 > provisioning-engine relocation, P3/E1 dependency, services, SDKs, and remote

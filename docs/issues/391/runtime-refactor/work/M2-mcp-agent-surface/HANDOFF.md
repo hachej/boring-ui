@@ -1,5 +1,9 @@
 # M2-mcp-agent-surface - Handoff checklist
 
+Status: **historical, non-dispatchable checklist**. M2 must be recut after M1
+and AR1 per [`PLAN.md`](./PLAN.md) and [`../../INDEX.md`](../../INDEX.md); the
+P7 and T1/T2 gates below are superseded.
+
 Derived strictly from [TODO.md](./TODO.md) and [PLAN.md](./PLAN.md). Tick each
 before calling M2 done. Invent nothing.
 

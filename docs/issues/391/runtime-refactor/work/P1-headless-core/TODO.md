@@ -1,15 +1,22 @@
 # TODO-P1 — Headless core: `createAgent()`, dependency inversion, pure mode
 
-> **Dispatch supersession (2026-07-10).** Do not dispatch the legacy bead list
+> **Dispatch supersession (updated 2026-07-11).** Do not dispatch the legacy bead list
 > below as written. V1 is workspace-first: every run uses an authorized
 > workspace and approved runtime/environment. Use this active graph:
 >
-> - In parallel from current main: create the #543 corrective PR and dispatch
->   #616 (boundary-only recut of #547) as the Fastify/package-boundary slice
->   only. Neither gates the other. #547 is superseded/stopped.
-> - After both leaves: recut #575 for the smallest deterministic
->   workspace-composed core move.
-> - After #575: rework #576 with lifecycle/disposal first and readiness second.
+> - Landed: #616/#622 boundary, #626 core move, #627 local disposal, #630
+>   Pi terminal teardown, and #631 request-binding lifecycle. Do not replay
+>   #543/#575 or their pure-mode changes.
+> - Create one current-main readiness PR containing only live fail-closed
+>   requirement/readiness semantics from #576. #566/#568/#575 and #576's
+>   lifecycle code are superseded or deferred.
+>
+> **Current assignment: P1-R only.** Use the exact readiness micro-contract in
+> [`PR-PLAN.md`](../../PR-PLAN.md): six narrow production files plus two focused
+> tests, both adapters wired, ordered tool-requirement dedupe, fail-closed
+> workspace/sandbox/runtime/unknown truth table, and core disposal assertions
+> before and after an awaited probe. Do not cherry-pick #576 or touch binding
+> caches, eviction, provisioning ownership, lifecycle, or HTTP readiness routes.
 >
 > `BBP1-004`, `BBP1-005`, pure-mode parts of `BBP1-006/007`, and the
 > pure/no-environment acceptance are post-v1. Durable admission/idempotency from

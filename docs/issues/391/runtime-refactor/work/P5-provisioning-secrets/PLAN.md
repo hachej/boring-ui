@@ -1,28 +1,31 @@
 # P5-provisioning-secrets — Plan
 
-> **Proposed reduced v1 scope (2026-07-10).** Only P5a policy/readiness/credential work
-> required by the D1 dedicated workspace and the approved runsc path is a v1
-> gate. Generic provisioning engines, managed-service lifecycle, and broad
-> secrets/provider abstractions remain post-v1.
+> **Owner-reframed v1 scope (2026-07-11).** Only P5a host-readiness,
+> fingerprint, and credential work required by the D1 multi-agent Docker host
+> is a v1 support slice. P2/runsc provider validation, generic provisioning
+> engines, managed-service lifecycle, and broad secrets/provider abstractions
+> remain later work.
 
-> Phase: proposed narrow P5a — D1 runsc readiness/secrets after narrow P2; full
+> Phase: narrow P5a — D1 Docker-host readiness/secrets alongside D1; full
 > provisioning expansion is post-v1 · Work order: [TODO.md](./TODO.md) · V1 handoff: [P5A-HANDOFF.md](./P5A-HANDOFF.md)
 > Ordering authority: [INDEX.md](../../INDEX.md) · Vision: [VISION.md](../../VISION.md)
 
 ## Active v1 prerequisites and work
 
-P5a depends only on the narrow P2 EU runsc/provider boundary and the exact
-D1/workspace facts it must validate. P3 and E1 are not gates.
+P5a depends only on the exact D1/workspace/host facts its named consumers must
+validate. P2, P3, and E1 are not gates.
 
-The sole active order is the reduced set in
+The sole active order is tracer-led and recorded in
 [`P5A-HANDOFF.md`](./P5A-HANDOFF.md):
 
-1. recut BBP5-003/004 for D1 runsc and bound-workspace readiness/health;
-2. recut BBP5-007 for host-side secret refs/status/brokerage consumed by D1;
-3. BBP5-008 for pinned-TLS, nonce-bound authenticated runsc-worker facts;
-4. recut BBP5-009 for the redacted D1 desired/observed fingerprint and
-   idempotent reconciliation;
-5. recut BBP5-011/012 for D1-required non-dev fail-closed governance/config.
+1. build the D1 tracer with the existing host/workspace composition;
+2. recut BBP5-007 only if D1 needs a host-side secret-reference/status broker;
+3. recut the smallest BBP5-003/004 readiness projection only if existing host
+   readiness cannot express a fact D1 demonstrably consumes.
+
+D1 owns its redacted desired-state digest, apply reconciliation, and rollback.
+BBP5-008 remote-worker/runsc facts stay with P2. BBP5-009 and BBP5-011/012 are
+not preselected v1 work; dispatch them only from a new named product gap.
 
 V1 does not move the generic requirement normalizer or provisioning engine,
 create an E1 attachment lifetime, or add SDK archives, services, or remote
@@ -31,9 +34,11 @@ not grant it.
 
 ## Active v1 exit
 
-A real preconfigured EU worker proves authenticated runsc identity,
-isolation/network/limits, image/persistence facts, cleanup, redacted
-fingerprinting, and no secret leakage. Missing or unknown facts fail closed.
+D1-R0 records either (a) existing seams are sufficient and P5a ships no code,
+or (b) one demonstrated missing seam. In case (b), its focused proof covers
+only that secret-reference or readiness seam and no leakage. D1 owns the host,
+N bindings, desired digest, and rollback proof. Provider-specific isolation/
+network/image facts belong to P2 and do not gate this exit.
 
 ## Historical broad P5 plan — non-dispatchable for v1
 

@@ -1,9 +1,8 @@
 # ID1-agent-identity — Plan
 
 Status: spec settled — not started. Owner decision 2026-07-11,
-research-backed. Gates [AR1](../AR1-shareable-artifacts/PLAN.md) and owner
-priority 2 (external agent consumption) generally; pulls part of S4
-(onboarding) forward.
+research-backed. Gates public self-service and AC1 contracted marketplace mode,
+not the M1-authenticated AR1 tracer; pulls part of S4 (onboarding) forward.
 
 > Phase: Phase ID1 — agent-driven identity (signup/signin via MCP)
 > Ordering authority: [INDEX.md](../../INDEX.md) · Vision: [VISION.md](../../VISION.md)

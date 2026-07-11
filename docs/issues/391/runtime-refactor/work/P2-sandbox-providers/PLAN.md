@@ -1,6 +1,16 @@
 # P2-sandbox-providers — Plan
 
-> **Proposed reduced v1 scope (2026-07-10).** P2 is an isolated runsc/provider track for
+> **Binding priority-4 supersession (2026-07-11).** P2 provider extraction and
+> EU conformance merge only after the priority-3 T1/T2 proof. The isolated Sol
+> recut may prepare against current main, but it cannot merge, change D1 APIs,
+> or claim a D1 prerequisite before that gate. D1 uses the existing approved
+> workspace/runtime composition and explicit trust profile. When P2 opens, it
+> extracts providers and validates isolation/EU facts without changing the
+> already-proven D1 behavior. #628 remains structural `productionReady:false`
+> evidence. Every runsc-before-D1 statement below is historical and
+> non-dispatchable where it conflicts with [`INDEX.md`](../../INDEX.md).
+
+> **Historical reduced-v1 proposal (2026-07-10; non-dispatchable).** P2 was an isolated runsc/provider track for
 > the D1 dedicated workspace path, not a prerequisite for a public pure mode or
 > a full provider-taxonomy rewrite. #557 is merged evidence that sandbox publish
 > parity has landed. Continue only the smallest provider boundary and runsc
@@ -10,16 +20,16 @@
 > Phase: binding narrow P2 runsc/provider slice · Work order: [TODO.md](./TODO.md) · Handoff: [HANDOFF.md](./HANDOFF.md)
 > Ordering authority: [INDEX.md](../../INDEX.md) · Vision: [VISION.md](../../VISION.md)
 
-## Active current-main reality
+## Current-main evidence for the later priority-4 recut
 
 `@hachej/boring-sandbox` exists and #557 publish-pipeline parity is merged. Do
 not scaffold or republish it. #628 adds a structural runsc config/preflight
 surface and deliberately reports `productionReady: false`. It proves neither
-provider parity nor lifecycle/security readiness. Current v1 work starts from
-that narrow boundary and validates only the hardened EU runsc/systrap path D1
-consumes.
+provider parity nor lifecycle/security readiness. Priority-4 work starts from
+that narrow boundary after priorities 1-3; D1 does not consume or wait for this
+recut.
 
-## Active deliverables and exit
+## Historical runsc-first deliverables — non-dispatchable
 
 - one injected workspace runtime path to a real preconfigured EU runsc worker;
 - honest authenticated runsc, network, resource-limit, image, persistence, and

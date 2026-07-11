@@ -1,6 +1,12 @@
 # E2-mcp-projection — Plan
 
-Status: post-v1; not a #391 v1 exit gate.
+Status: priority-2 recut required after M1 + AR1, alongside M2.
+
+> **Dispatch supersession (2026-07-11).** The generic E1 attachment-catalog
+> projection below is non-dispatchable history. Recut only the consumer-intake
+> seam required by the accepted AR1 contract; it must reuse existing workspace
+> authorization and operations and must not wait for E1, P7, or T2. If no E2
+> code is needed beyond M2 + AR1, a zero-code recut is valid.
 
 > Phase: Phase E2 — MCP environment projection (after E1) · Work order: [TODO.md](./TODO.md) · Handoff: [HANDOFF.md](./HANDOFF.md)
 > Ordering authority: [INDEX.md](../../INDEX.md) · Vision: [VISION.md](../../VISION.md)
