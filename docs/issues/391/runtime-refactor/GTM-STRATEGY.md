@@ -28,9 +28,10 @@ Compliance sensitivity is a qualifier, not a blocker.
 ## Motion 1 — Lighthouse retainers (NOW; fits the 1–2h/day operating mode)
 
 1. Outreach (existing LGM machinery) with ONE artifact: a recorded
-   **golden-path demo** — a real agent for a recognizable workflow, built and
-   deployed in ≤ 15 minutes. The P8 timing bead is therefore GTM-critical,
-   not engineering vanity.
+   **golden-path demo**. The ≤ 15-minute build-and-deploy claim is GATED on
+   P8's recorded evidence — until golden-path.json exists, demos show a
+   pre-built agent walkthrough and make no live-build promise. The P8 timing
+   bead is therefore GTM-critical, not engineering vanity.
 2. Offer: free 30-min call where THEIR workflow becomes a running agent in
    their own workspace before the call ends.
 3. Convert to a 4–6 week paid pilot (fixed fee) → managed retainer.
@@ -43,7 +44,9 @@ Target sectors where "EU-only processing" shortcuts procurement: legal,
 health-adjacent admin, public-sector suppliers. Content: one page per
 sector — "what an EU-sovereign agent setup looks like", the dedicated-VM
 variant (Decision 23 variant 2) as the premium tier. No code work required;
-this is packaging of what exists.
+this is FUTURE packaging, conditional on D1 landing and the runsc EU
+validation spike proving the isolation claims (#628 is not productionReady
+yet) — write the one-pagers, date the availability honestly.
 
 ## Motion 3 — Demo-as-content flywheel (cheap, compounding)
 

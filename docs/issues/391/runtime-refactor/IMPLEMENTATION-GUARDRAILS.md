@@ -33,16 +33,19 @@ that mean you are over-engineering, and the acceptance that means you are done.
 
 ## P6-R — deployment resolver
 
-- **Build:** a pure, deterministic function: deployment record (digest-pinned
-  `AgentDeployment`) → composed runtime configuration, consumed in-process at
-  server boot and workspace binding. Digest verification; refusal on mismatch.
+- **Build:** a pure, deterministic function per BBP6-011 (PR-PLAN.md is the
+  binding contract): input = bundle + deployment + authorized binding; output
+  = composed runtime configuration with NO runtime handles. One call resolves
+  ONE binding; D1 gets N agents by N independent calls. Digest verification;
+  refusal on mismatch.
 - **Do NOT build:** a resolver service, a registry daemon, hot-reload
   watchers, bundle caches, remote fetch. Bundles are local files in v1.
 - **Stop signs:** adding a network listener; adding a watch loop; "registry"
   appearing in a type name.
-- **Accept:** boot resolves 3 distinct bundles; unknown/invalid/mismatched
-  digest fails with a stable code before any workspace mutation; same input →
-  byte-identical resolution (golden test).
+- **Accept:** one call resolves one authorized binding; unknown/invalid/
+  mismatched digest fails with a stable code before any workspace mutation;
+  same input → deep-equal output (golden test). The 3-bundle/boot proof
+  belongs to D1, not here.
 
 ## D1 — multi-agent Docker host (Decision 23)
 
@@ -55,11 +58,14 @@ that mean you are over-engineering, and the acceptance that means you are done.
   explicitly post-v1).
 - **Stop signs:** helm charts; a "provisioner" process; templating engines
   beyond envsubst-level.
+- **Gate:** D1 is non-dispatchable until D1-R0 (atomic active-collection
+  publication, immutable rollback-as-new-revision) is accepted in PR-PLAN.md.
 - **Accept:** 3 distinct agents on 1 EU host, each bound to its workspace;
-  golden-path timing recorded; rollback = previous compose file boots green;
-  **adding agent N+1 does not restart or interrupt agents 1..N** (per-service
-  compose granularity — this criterion exists so onboarding a client never
-  bounces existing clients). (This IS phase-2 exit.)
+  golden-path timing recorded; rollback = reapply a prior COMPLETE immutable
+  revision snapshot (never just an old compose file over new volumes/secrets),
+  published only after all bindings report ready; **adding agent N+1 does not
+  restart or interrupt agents 1..N** (per-service compose granularity — so
+  onboarding a client never bounces existing clients). (This IS phase-2 exit.)
 
 ## P5a — provisioning/secrets (narrow)
 
@@ -77,7 +83,10 @@ that mean you are over-engineering, and the acceptance that means you are done.
 - **Do NOT build:** new MCP tools "while we're here", resources beyond the
   agreed payload, sampling/elicitation features.
 - **Accept:** an unmodified stock MCP client (Claude/ChatGPT) completes one
-  task against a hosted agent, artifacts included.
+  task against a hosted agent, receiving COMPLETE authorized artifact bytes
+  (no host paths, no truncation) within the documented size caps, with stable
+  rejection codes for path-shaped and oversize outputs (per PR-PLAN's M1
+  contract).
 
 ## ID1 — agent-driven identity
 
@@ -99,10 +108,14 @@ that mean you are over-engineering, and the acceptance that means you are done.
 
 ## AR1 — shareable artifacts (v1 lane, post-#640 lane split)
 
-- **Build (4 beads, in order):** (1) share-entry store
+- **Spec gate:** AR1 stays spec-blocked until AR1-001 is accepted
+  (PR-PLAN.md). The beads below are the SAME-WORKSPACE lane sketch as input
+  to that spec — not a dispatch contract. The cross-workspace pinned-copy
+  exit in INDEX.md remains the authoritative AR1 exit criterion.
+- **Same-workspace lane beads (post-AR1-001):** (1) share-entry store
   `{id, workspaceId, path, provenance}`; (2) deep-link route `/a/<id>` with
   membership auth + tombstone rendering; (3) MCP resource exposing the same
-  entry; (4) NOTHING ELSE.
+  entry; (4) nothing else in this lane.
 - **Do NOT build:** the cross-workspace `ArtifactTransferHandle` blob lane
   until the first contracted-mode engagement exists (#640 spec is ready when
   needed); expiry/revocation machinery (membership IS revocation); preview
@@ -117,15 +130,17 @@ that mean you are over-engineering, and the acceptance that means you are done.
   versioned schema — sketch in FABLE-FINAL-REVIEW Part 2) in the contracts
   layer; an in-process dispatcher for SUBAGENT mode reusing pi session
   machinery for the loop and T1's event store if durability is needed.
-  Guards: depth ≤ 3, same-pair cycle refusal, 24h input-required timeout →
-  canceled (resumable context).
+  Guards REQUIRED, values NOT frozen here: consumption depth limit,
+  same-pair cycle refusal, input-required timeout → canceled (resumable
+  context). Concrete numbers (suggested: depth 3, 24h) are ratified in the
+  AC1 consumer-backed spec, not in this file.
 - **Do NOT build:** a task queue/broker, contracted mode before a real
   contracting consumer exists, A2A wire transport, persistence beyond
   existing stores.
 - **Stop signs:** a `TaskScheduler`; a state machine library; retry policies.
 - **Accept:** agent A delegates to subagent B in A's workspace; B asks back
-  via input-required; A answers; task completes with artifacts; depth-4
-  attempt refused with stable code.
+  via input-required; A answers; task completes with artifacts; exceeding
+  the ratified depth limit is refused with a stable code.
 
 ## P8 — verification (pull-forward slice)
 
@@ -133,7 +148,10 @@ that mean you are over-engineering, and the acceptance that means you are done.
   wall-clock, recorded in repo); CI greps for `runtime:'none'` residue and
   the standing invariants.
 - **Do NOT build:** a test platform, dashboards, synthetic monitoring.
-- **Accept:** golden-path number exists in-repo and updates per release.
+- **Accept:** a named script (e.g. `scripts/golden-path-timing`) writes
+  `docs/issues/391/runtime-refactor/golden-path.json` {version, seconds, date};
+  CI fails when the recorded version differs from the released version —
+  staleness is machine-detected, not remembered.
 
 ## Ops beads (paper-first; the vault claim demands them)
 
@@ -166,5 +184,6 @@ that mean you are over-engineering, and the acceptance that means you are done.
 
 BL1 / MK1 / CH1 / M2 / E2 / T2 / X1 / P3 / P4 / P5b / D2 / S3 / S4: demand-
 gated or post-v1. Starting any of these without a named consumer recorded in
-INDEX.md is itself an over-engineering failure. P2 (#641) finishes review
-then merges after P1-era conflicts resolve — no scope growth during rebase.
+INDEX.md is itself an over-engineering failure. P2 (#641) may finish
+review and stay rebased in isolation, but per INDEX.md it merges LAST — after
+the priority-1..3 proofs — and grows no scope during rebases.
