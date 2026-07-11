@@ -752,15 +752,20 @@ export async function createCoreWorkspaceAgentServer(
     workspaceRoot: pluginWorkspaceRoot,
     bridge: createUnavailableCorePluginBridge(),
   }
-  const trustedPluginResolveContext: WorkspaceAgentServerPluginContext = options.trustedPluginActorResolver
-    ? {
-        ...basePluginResolveContext,
-        trusted: {
-          workspaceAgentDispatcherResolver: trustedDispatcherProxy,
-          actorResolver: options.trustedPluginActorResolver,
-        },
-      }
-    : basePluginResolveContext
+  const trustedPluginActorResolver = options.trustedPluginActorResolver ?? (async (request: FastifyRequest) => {
+    const workspaceId = await resolveAuthorizedWorkspaceId(request, workspaceStore)
+    const userId = request.user?.id
+    if (!userId) throw httpError('authentication required', 401)
+    return { workspaceId, userId }
+  })
+  const trustedPluginResolveContext: WorkspaceAgentServerPluginContext = {
+    ...basePluginResolveContext,
+    trusted: {
+      workspaceAgentDispatcherResolver: trustedDispatcherProxy,
+      actorResolver: trustedPluginActorResolver,
+      sql,
+    },
+  }
   const resolvedPlugins = await Promise.all(
     pluginEntries.map(async (entry) => {
       const plugin = await resolveOnePluginEntry<CoreWorkspaceAgentServerPlugin>(
