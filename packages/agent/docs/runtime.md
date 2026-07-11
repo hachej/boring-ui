@@ -2,27 +2,10 @@
 
 # Runtime Modes and Provisioning
 
-When a boring-bash filesystem/exec environment is attached, the agent supports
-three execution modes controlling how `bash` and filesystem tools run.
-
-Pure/headless agents use `runtime: 'none'` instead. That mode has no
-`Workspace`, no `Sandbox`, no cwd, no file routes, no file tools, and no bash
-tools. It is not selected with `BORING_AGENT_MODE`; the host composes a
-runtime-free agent and supplies only non-bash tools plus session/model
-configuration. If the host later attaches a filesystem/exec environment, that
-attachment enters the boring-bash runtime contract below.
-
-If a host renders the workspace frontend against `runtime: 'none'`, it must also
-exclude the default filesystem frontend plugin today: pass
-`excludeDefaults: ['filesystem']` through `WorkspaceAgentFront`/`WorkspaceProvider`
-(or the equivalent core workspace props). The frontend default is still
-`filesystemPlugin`, whose plugin id is `"filesystem"`; without that exclusion the
-file tree/editor contributions render and call file routes that pure mode does
-not register. `ChatFirstAuthenticatedShell` already supplies this exclusion by
-default. The planned end state is capability-driven auto-exclusion from an
-environment filesystem capability of `none`, owned by the P3/P4 route/tool and
-file-UI plugin move and the #391 zero-residue invariant 16; this PR does not add
-frontend gating.
+Every v1 agent is bound to an authorized workspace and an approved runtime
+adapter. The agent supports three built-in execution modes controlling how
+`bash` and filesystem tools run. A headless host may omit its UI/presentation
+surface, but it still supplies the same workspace-backed runtime contract.
 
 ## Modes
 
@@ -256,9 +239,8 @@ as the `runtimeModeAdapter` option to `createAgentApp(opts)` or
 `resolveMode()` only knows the three built-ins and throws for unknown ids,
 telling you to pass `runtimeModeAdapter`.
 
-This interface is for environments that intentionally provide a workspace,
-filesystem/search, and sandbox/execution substrate. Pure `runtime: 'none'`
-agents do not construct a `RuntimeBundle`.
+Each adapter provides a workspace, filesystem/search, and sandbox/execution
+substrate as one runtime bundle.
 
 ```ts
 interface RuntimeModeAdapter {

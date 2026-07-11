@@ -79,7 +79,6 @@ export const ErrorCode = z.enum([
 
   // Internal
   'ERR_NOT_IMPLEMENTED_UNTIL_T1',
-  'ERR_NO_FILESYSTEM_FOR_ATTACHMENTS',
   'INTERNAL_ERROR',
 ])
 

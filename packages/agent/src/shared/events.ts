@@ -6,7 +6,6 @@ import type { TelemetrySink } from './telemetry'
 import type { AgentTool } from './tool'
 
 export const AGENT_NOT_IMPLEMENTED_UNTIL_T1 = 'ERR_NOT_IMPLEMENTED_UNTIL_T1' as const satisfies ErrorCode
-export const AGENT_NO_FILESYSTEM_FOR_ATTACHMENTS = 'ERR_NO_FILESYSTEM_FOR_ATTACHMENTS' as const satisfies ErrorCode
 
 export interface MessageAttachment {
   filename?: string
@@ -90,7 +89,7 @@ export interface AgentReadiness {
 
 export interface AgentConfig {
   harnessFactory?: AgentCoreHarnessFactory
-  runtime: AgentRuntimeAdapter | 'none'
+  runtime: AgentRuntimeAdapter
   tools?: AgentTool[]
   readinessRequirements?: string[]
   sessions?: SessionStore
@@ -120,15 +119,5 @@ export class AgentNotImplementedError extends Error {
   constructor(message = 'This agent capability is not implemented until T1.') {
     super(message)
     this.name = 'AgentNotImplementedError'
-  }
-}
-
-export class AgentFilesystemRequiredError extends Error {
-  readonly code = AGENT_NO_FILESYSTEM_FOR_ATTACHMENTS
-  readonly statusCode = 400
-
-  constructor(message = 'Attachments require a filesystem-backed agent runtime.') {
-    super(message)
-    this.name = 'AgentFilesystemRequiredError'
   }
 }
