@@ -1,6 +1,7 @@
 # A1-agent-authoring — Plan
 
-Status: proposed v1 gate until decision 21 merges.
+Status: decision 21 accepted; deterministic compiler landed via #624;
+workspace-backed validate/dev remains a v1 gate after P6-R.
 
 ## Purpose
 
@@ -10,8 +11,8 @@ same immutable definition to dedicated deployment.
 
 ## Depends on
 
-- **BBA1-001 compiler:** proposed decision 21 plus P6-D only. It may run in
-  parallel with P1/runtime correction work.
+- **BBA1-001 compiler:** landed via #624 after P6-D #623 under accepted decision
+  21; preserve its deterministic, import-free boundary.
 - **BBA1-002 local dev:** P6-R through the normal host resolver. P6-R already
   joins P6-D with the P1 boundary and narrow runtime/readiness branch.
 - **BBA1-003 R0 migration:** BBA1-002 and proof that the shipped D1 path

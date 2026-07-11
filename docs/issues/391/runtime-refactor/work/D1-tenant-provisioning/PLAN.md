@@ -69,6 +69,12 @@ default. D1 owns the generic dedicated-site delivery mechanism and a bounded
 landing configuration; bespoke LP design, copy generation, GTM campaigns, and
 pricing still belong to `boring-ui-factory`.
 
+Constraint (owner ruling 2026-07-11, see
+[`REVIEW-2026-07-11-unknowns.md`](../../REVIEW-2026-07-11-unknowns.md)): v1
+must yield a purely-Docker deployable artifact (one image/compose) runnable in
+the owner's own prod or in a dedicated tenant VM; D1/provisioning choices must
+not lock out either path.
+
 ## Deliverables
 
 - One command/API that plans and applies tenant provisioning.
