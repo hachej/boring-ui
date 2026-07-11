@@ -64,6 +64,10 @@ P1 recut → P6-R → D1-reframed (+P5a) → M1 recuts
 ([#549](https://github.com/hachej/boring-ui/pull/549)/[#556](https://github.com/hachej/boring-ui/pull/556))
 → ID1 → AR1 → M2/E2 → T1/T2 → P2/X1.
 
+Inter-agent abstraction settled: one consumption contract (A2A-shaped
+semantics), bindings = UI / MCP (external) / native internal / A2A (future
+external). See [DECISIONS.md #22](../../../DECISIONS.md#22-one-agent-consumption-contract-protocol-bindings-at-the-edges).
+
 ## Post-v1 increments
 
 These plans are retained, but they do not block v1. R0 is itself an optional
