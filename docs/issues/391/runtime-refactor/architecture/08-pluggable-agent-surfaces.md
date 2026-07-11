@@ -1,5 +1,11 @@
 # 08 — Pluggable agent surfaces: transport, event stream, channels
 
+> **Framing note (2026-07-11):** pluggable surfaces are now framed by
+> [DECISIONS.md #22](../../../../DECISIONS.md#22-one-agent-consumption-contract-protocol-bindings-at-the-edges)
+> — one agent-consumption contract, protocol bindings at the edges (UI / MCP
+> external / native internal / A2A future external). This file is not
+> rewritten; read it through that frame.
+
 > **V1 scope amendment.** Surfaces remain a valid long-term boundary, but every
 > v1 surface resolves to an authorized workspace and that workspace's deployed
 > default agent. `headless` means no workspace UI is rendered; API, MCP, CLI,

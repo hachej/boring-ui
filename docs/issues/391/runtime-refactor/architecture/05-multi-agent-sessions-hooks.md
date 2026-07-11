@@ -1,5 +1,11 @@
 # 05 — Multi-agent workspaces, sessions, and hooks
 
+> **Framing note (2026-07-11):** internal agent-to-agent consumption is now
+> framed by [DECISIONS.md #22](../../../../DECISIONS.md#22-one-agent-consumption-contract-protocol-bindings-at-the-edges)
+> — one consumption contract, many bindings (UI / MCP external / native
+> internal / A2A future external). This file is not rewritten; read it through
+> that frame.
+
 > **Workspace-first v1 supersession (2026-07-10).** V1 supports only the
 > workspace's routed `default` agent. P6-D defines minimal behavior-only
 > `AgentDefinition` and identity-only `AgentDeployment` schemas/digests plus
