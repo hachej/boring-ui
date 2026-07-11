@@ -30,6 +30,7 @@ export type AgentCoreRuntimeFactory = () => AgentCoreRuntime | Promise<AgentCore
 
 export interface AgentCoreConfig {
   runtimeFactory: AgentCoreRuntimeFactory
+  readiness?: AgentReadiness
   readinessRequirements?: string[]
 }
 
@@ -305,16 +306,22 @@ function createRuntimeLoader(runtimeFactory: AgentCoreRuntimeFactory): {
 }
 
 function createReadiness(config: AgentCoreConfig, assertActive: () => void): AgentReadiness {
-  const requirements = [...(config.readinessRequirements ?? [])]
+  const reporter = config.readiness
+  const requirements = [...(reporter?.requirements ?? config.readinessRequirements ?? [])]
   return {
     requirements,
     async status() {
       assertActive()
-      return requirements.map((key) => ({
-        key,
-        ready: false,
-        message: 'readiness status is not available in the core facade',
-      }))
+      if (!reporter) {
+        return requirements.map((key) => ({
+          key,
+          ready: false,
+          message: 'readiness status is not available in the core facade',
+        }))
+      }
+      const statuses = await reporter.status()
+      assertActive()
+      return statuses
     },
   }
 }

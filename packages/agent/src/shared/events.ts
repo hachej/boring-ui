@@ -79,6 +79,11 @@ export interface AgentRuntimeAdapter {
 export interface AgentReadinessStatus {
   key: string
   ready: boolean
+  state?: 'not-started' | 'preparing' | 'ready' | 'failed'
+  errorCode?: string
+  causeCode?: string
+  retryable?: boolean
+  workspaceId?: string
   message?: string
 }
 
@@ -91,6 +96,7 @@ export interface AgentConfig {
   harnessFactory?: AgentCoreHarnessFactory
   runtime: AgentRuntimeAdapter
   tools?: AgentTool[]
+  readiness?: AgentReadiness
   readinessRequirements?: string[]
   sessions?: SessionStore
   systemPromptAppend?: string

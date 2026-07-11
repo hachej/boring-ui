@@ -35,6 +35,7 @@ import {
   type WorkspaceAgentDispatcherResolver,
 } from './workspaceAgentDispatcher'
 import { ErrorCode } from '../shared/error-codes'
+import { collectToolReadinessRequirements, createAgentReadinessFromTracker } from './agentReadiness'
 
 const DEFAULT_VERSION = '0.1.0-dev'
 const DEFAULT_SESSION_ID = 'default'
@@ -310,9 +311,16 @@ async function createWorkspaceAgentAppProfile(
     sessionRoot: opts.sessionRoot,
     sessionDir: opts.sessionDir ?? input.sessionDir,
   })) as AgentCoreHarnessFactory
+  const readyTracker = createRuntimeReadyStatusTracker(modeAdapter, {
+    harnessReady: true,
+  })
   const coreAgent = createAgentRuntimeBridge({
     runtime: modeAdapter,
     tools,
+    readiness: createAgentReadinessFromTracker({
+      requirements: collectToolReadinessRequirements(tools),
+      tracker: readyTracker,
+    }),
     harnessFactory,
     systemPromptAppend: opts.systemPromptAppend,
     systemPromptDynamic: opts.systemPromptDynamic,
@@ -330,9 +338,6 @@ async function createWorkspaceAgentAppProfile(
   opts.onWorkspaceAgentDispatcher?.(createStaticWorkspaceAgentDispatcherResolver(coreAgent.agent, sessionId))
   const harness = agentRuntime.harness
   harnessRef = harness
-  const readyTracker = createRuntimeReadyStatusTracker(modeAdapter, {
-    harnessReady: true,
-  })
 
   const filesystemBindingsForRequest = opts.getFilesystemBindings
     ? (request: FastifyRequest) => {
