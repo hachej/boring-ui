@@ -24,6 +24,10 @@
     "./providers": {
       "types": "./dist/providers/index.d.ts",
       "import": "./dist/providers/index.js"
+    },
+    "./providers/runsc": {
+      "types": "./dist/providers/runsc/index.d.ts",
+      "import": "./dist/providers/runsc/index.js"
     }
   },
   "scripts": {
@@ -33,6 +37,9 @@
     "lint": "pnpm run typecheck && pnpm run check:invariants",
     "test": "vitest run --passWithNoTests",
     "clean": "rm -rf dist .tsbuildinfo"
+  },
+  "dependencies": {
+    "zod": "^3.25.76"
   },
   "devDependencies": {
     "tsup": "^8.4.0",
