@@ -51,6 +51,7 @@ export interface RuntimeBindingLifecycle<Binding extends ManagedRuntimeBinding> 
     options: AdmitRuntimeBindingOptions<Binding>,
   ) => Promise<{ entry: RuntimeBindingEntry<Binding>; created: boolean }>
   retire: (key: string, entry: RuntimeBindingEntry<Binding>) => Promise<void>
+  tracksRequestLifetime: (request: FastifyRequest) => boolean
   leaseRequestBinding: (request: FastifyRequest, binding: Binding) => boolean
   requestLeasesEntry: (request: FastifyRequest | undefined, entry: RuntimeBindingEntry<Binding>) => boolean
   tryLeaseOperation: (binding: Binding) => (() => void) | undefined
@@ -142,16 +143,22 @@ export function createRuntimeBindingLifecycle<Binding extends ManagedRuntimeBind
     routeOptions.handler = async function runtimeBindingLeaseHandler(request, reply) {
       const lifetime = getRequestLifetime(request)
       const onTransportClose = () => {
+        request.raw.off('aborted', onTransportClose)
+        reply.raw.off('close', onTransportClose)
         lifetime.transportClosed = true
         maybeReleaseRequestLeases(request, lifetime)
       }
+      request.raw.once('aborted', onTransportClose)
       reply.raw.once('close', onTransportClose)
       try {
         return await handler.call(this, request, reply)
       } finally {
         lifetime.handlerSettled = true
         maybeReleaseRequestLeases(request, lifetime)
-        if (!lifetime.deferUntilTransportClose) reply.raw.off('close', onTransportClose)
+        if (!lifetime.deferUntilTransportClose) {
+          request.raw.off('aborted', onTransportClose)
+          reply.raw.off('close', onTransportClose)
+        }
       }
     }
   })
@@ -339,6 +346,7 @@ export function createRuntimeBindingLifecycle<Binding extends ManagedRuntimeBind
     },
     admit,
     retire: async (key, entry) => await beginRetirement(key, entry),
+    tracksRequestLifetime: (request) => requestLeaseLifetimes.has(request),
     leaseRequestBinding,
     requestLeasesEntry: (request, entry) =>
       request ? requestBindingLeases.get(request)?.has(entry) === true : false,

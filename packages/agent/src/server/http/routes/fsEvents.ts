@@ -103,12 +103,16 @@ export function fsEventsRoutes(
   })
 
   app.get('/api/v1/fs/events', async (request, reply) => {
-    let transportClosed = false
+    let transportClosed = request.raw.aborted
     let closeStream: (() => void) | undefined
-    reply.raw.once('close', () => {
+    const onTransportClose = () => {
+      request.raw.off('aborted', onTransportClose)
+      reply.raw.off('close', onTransportClose)
       transportClosed = true
       closeStream?.()
-    })
+    }
+    request.raw.once('aborted', onTransportClose)
+    reply.raw.once('close', onTransportClose)
 
     const resolved = await ensureBroadcaster(request)
 

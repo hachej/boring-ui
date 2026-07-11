@@ -13,12 +13,16 @@ export function readyStatusRoutes(
   done: (err?: Error) => void,
 ): void {
   app.get('/api/v1/ready-status', async (request, reply) => {
-    let transportClosed = false
+    let transportClosed = request.raw.aborted
     let cleanupStream: (() => void) | undefined
-    reply.raw.once('close', () => {
+    const onTransportClose = () => {
+      request.raw.off('aborted', onTransportClose)
+      reply.raw.off('close', onTransportClose)
       transportClosed = true
       cleanupStream?.()
-    })
+    }
+    request.raw.once('aborted', onTransportClose)
+    reply.raw.once('close', onTransportClose)
 
     const tracker = opts.getTracker ? await opts.getTracker(request) : opts.tracker
     if (!tracker) throw new Error('ready-status route requires tracker or getTracker')

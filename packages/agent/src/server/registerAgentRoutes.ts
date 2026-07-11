@@ -861,6 +861,7 @@ export const registerAgentRoutes: FastifyPluginAsync<RegisterAgentRoutesOptions>
     while (true) {
       const binding = await resolveRuntimeBinding(workspaceId, request, options)
       if (!requestScopedRuntime || !request) return binding
+      if (!bindingLifecycle.tracksRequestLifetime(request)) return binding
       if (bindingLifecycle.leaseRequestBinding(request, binding)) return binding
     }
   }

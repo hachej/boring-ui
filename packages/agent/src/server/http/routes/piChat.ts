@@ -161,8 +161,10 @@ export function piChatRoutes(
     let subscriptionReleased = false
     let heartbeat: ReturnType<typeof setInterval> | undefined
     const stream = new PassThrough()
-    let transportClosed = false
+    let transportClosed = request.raw.aborted
     const close = () => {
+      request.raw.off('aborted', close)
+      reply.raw.off('close', close)
       transportClosed = true
       if (heartbeat) {
         clearInterval(heartbeat)
@@ -177,6 +179,7 @@ export function piChatRoutes(
       if (transportClosed) return
       stream.write(`${JSON.stringify(frame)}\n`)
     }
+    request.raw.once('aborted', close)
     reply.raw.once('close', close)
 
     try {

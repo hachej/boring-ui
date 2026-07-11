@@ -241,6 +241,8 @@ test('hijacked stream close before binding resolution does not leak a late lease
   const createGate = new Promise<void>((resolve) => { releaseCreate = resolve })
   let markCreateStarted!: () => void
   const createStarted = new Promise<void>((resolve) => { markCreateStarted = resolve })
+  let markRequestAborted!: () => void
+  const requestAborted = new Promise<void>((resolve) => { markRequestAborted = resolve })
   const watcherUnsubscribe = vi.fn()
   const watcherSubscribe = vi.fn(() => watcherUnsubscribe)
   const runtimeModeAdapter: RuntimeModeAdapter = {
@@ -266,7 +268,10 @@ test('hijacked stream close before binding resolution does not leak a late lease
     workspaceRoot,
     runtimeModeAdapter,
     externalPlugins: false,
-    getWorkspaceId: () => 'workspace-fs-events-late',
+    getWorkspaceId: (request) => {
+      request.raw.once('aborted', markRequestAborted)
+      return 'workspace-fs-events-late'
+    },
     getWorkspaceRoot: async () => workspaceRoot,
   })
   await app.listen({ port: 0, host: '127.0.0.1' })
@@ -276,6 +281,7 @@ test('hijacked stream close before binding resolution does not leak a late lease
   const response = fetch(`http://127.0.0.1:${address.port}/api/v1/fs/events`, { signal: abort.signal }).catch(() => undefined)
   await createStarted
   abort.abort()
+  await requestAborted
   releaseCreate()
   await response
   await eventually(() => expect(watcherUnsubscribe).toHaveBeenCalledOnce())
@@ -295,6 +301,8 @@ test('ready-status socket close before tracker resolution does not subscribe or 
   const createGate = new Promise<void>((resolve) => { releaseCreate = resolve })
   let markCreateStarted!: () => void
   const createStarted = new Promise<void>((resolve) => { markCreateStarted = resolve })
+  let markRequestAborted!: () => void
+  const requestAborted = new Promise<void>((resolve) => { markRequestAborted = resolve })
   let releaseProvisioning!: () => void
   const provisioningGate = new Promise<void>((resolve) => { releaseProvisioning = resolve })
   let markProvisioningStarted!: () => void
@@ -316,7 +324,10 @@ test('ready-status socket close before tracker resolution does not subscribe or 
     workspaceRoot,
     runtimeModeAdapter,
     externalPlugins: false,
-    getWorkspaceId: () => 'workspace-ready-status-late',
+    getWorkspaceId: (request) => {
+      request.raw.once('aborted', markRequestAborted)
+      return 'workspace-ready-status-late'
+    },
     getWorkspaceRoot: async () => workspaceRoot,
     provisionRuntime: async () => {
       markProvisioningStarted()
@@ -331,6 +342,7 @@ test('ready-status socket close before tracker resolution does not subscribe or 
   const response = fetch(`http://127.0.0.1:${address.port}/api/v1/ready-status`, { signal: abort.signal }).catch(() => undefined)
   await createStarted
   abort.abort()
+  await requestAborted
   releaseCreate()
   await provisioningStarted
   await response
@@ -353,6 +365,8 @@ test('pi-chat socket close before service resolution does not subscribe or leak 
   const createGate = new Promise<void>((resolve) => { releaseCreate = resolve })
   let markCreateStarted!: () => void
   const createStarted = new Promise<void>((resolve) => { markCreateStarted = resolve })
+  let markRequestAborted!: () => void
+  const requestAborted = new Promise<void>((resolve) => { markRequestAborted = resolve })
   const serviceSubscribe = vi.spyOn(HarnessPiChatService.prototype, 'subscribe')
   const runtimeModeAdapter: RuntimeModeAdapter = {
     id: 'pi-chat-late-close-test',
@@ -371,7 +385,10 @@ test('pi-chat socket close before service resolution does not subscribe or leak 
     runtimeModeAdapter,
     externalPlugins: false,
     harnessFactory: harness.factory,
-    getWorkspaceId: () => 'workspace-pi-chat-late',
+    getWorkspaceId: (request) => {
+      request.raw.once('aborted', markRequestAborted)
+      return 'workspace-pi-chat-late'
+    },
     getWorkspaceRoot: async () => workspaceRoot,
   })
   await app.listen({ port: 0, host: '127.0.0.1' })
@@ -384,6 +401,7 @@ test('pi-chat socket close before service resolution does not subscribe or leak 
   ).catch(() => undefined)
   await createStarted
   abort.abort()
+  await requestAborted
   releaseCreate()
   await response
 
