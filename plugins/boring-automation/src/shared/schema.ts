@@ -1,4 +1,5 @@
 import { z } from "zod"
+import { AUTOMATION_SCHEDULE_ERRORS, isValidFiveFieldCron, isValidIanaTimeZone } from "./schedule"
 
 const nonEmptyString = z.string().trim().min(1)
 const isoString = z.string().datetime({ offset: true })
@@ -14,7 +15,9 @@ export const AutomationCreateSchema = z.object({
   timezone: nonEmptyString,
   model: nonEmptyString,
   prompt: z.string().optional(),
-}).strict()
+}).strict().superRefine((value, ctx) => {
+  addScheduleIssues(ctx, value)
+})
 
 export const AutomationPatchSchema = z.object({
   title: nonEmptyString.optional(),
@@ -22,7 +25,11 @@ export const AutomationPatchSchema = z.object({
   cron: nonEmptyString.optional(),
   timezone: nonEmptyString.optional(),
   model: nonEmptyString.optional(),
-}).strict().refine((value) => Object.keys(value).length > 0, "at least one field must be provided")
+}).strict()
+  .refine((value) => Object.keys(value).length > 0, "at least one field must be provided")
+  .superRefine((value, ctx) => {
+    addScheduleIssues(ctx, value)
+  })
 
 export const PromptUpdateSchema = z.object({
   prompt: z.string(),
@@ -50,6 +57,18 @@ export const AutomationRunLifecyclePatchSchema = z.object({
 }).strict().refine((value) => Object.keys(value).length > 0, "at least one field must be provided")
 
 export const IdParamsSchema = z.object({ id: nonEmptyString })
+
+function addScheduleIssues(
+  ctx: z.RefinementCtx,
+  value: { cron?: string; timezone?: string },
+): void {
+  if (value.cron !== undefined && !isValidFiveFieldCron(value.cron)) {
+    ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["cron"], message: AUTOMATION_SCHEDULE_ERRORS.INVALID_CRON })
+  }
+  if (value.timezone !== undefined && !isValidIanaTimeZone(value.timezone)) {
+    ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["timezone"], message: AUTOMATION_SCHEDULE_ERRORS.INVALID_TIMEZONE })
+  }
+}
 
 export type AutomationCreateInput = z.infer<typeof AutomationCreateSchema>
 export type AutomationPatchInput = z.infer<typeof AutomationPatchSchema>
