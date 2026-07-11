@@ -94,6 +94,7 @@ startCoreWorkspaceAgentDevServer({
       ...options,
       config,
       plugins: createFullAppServerPlugins([governance.serverPlugin]),
+      defaultPluginPackages: ['@hachej/boring-automation'],
       externalPlugins: false,
       installPluginAuthoring: pluginAuthoringEnabledFromEnv(),
       metering: governance.createMeteringSink(credits.meteringSink, () => {
