@@ -585,6 +585,7 @@ export function createPiCodingAgentHarness(opts: {
     // Synchronous read keeps this function free of async I/O before
     // createAgentSession (required for test-timer compatibility).
     const savedPiFile = sessionStore.loadPiSessionFileSync(sessionCtx, sessionId);
+    const savedPiFileExists = savedPiFile ? existsSync(savedPiFile) : false;
     let sessionManager: SessionManager;
     let isNewPiSession = false;
     const runtimeCwd = opts.runtimeCwd ?? ctx.workdir;
@@ -599,6 +600,11 @@ export function createPiCodingAgentHarness(opts: {
     } else {
       sessionManager = SessionManager.create(runtimeCwd, nativeSessionDir);
       isNewPiSession = true;
+    }
+
+    if (isNewPiSession || !savedPiFileExists) {
+      const pendingTitle = sessionStore.loadPendingPiSessionTitleSync(sessionCtx, sessionId);
+      if (pendingTitle) sessionManager.appendSessionInfo(pendingTitle);
     }
 
     const resolvedModel = resolveRequestedModel(modelRegistry, input, { strict: pi.strictModelResolution });
@@ -748,6 +754,17 @@ export function createPiCodingAgentHarness(opts: {
   sessionStore.delete = async (ctx, sessionId) => {
     await originalDelete(ctx, sessionId);
     disposePiSession(sessionId, ctx);
+  };
+
+  const originalRename = sessionStore.rename.bind(sessionStore);
+  sessionStore.rename = async (ctx, sessionId, title) => {
+    const renamed = await originalRename(ctx, sessionId, title);
+    const handle = piSessions.get(sessionCacheKey(sessionId, ctx));
+    const nativeSessionFile = handle?.sessionManager.getSessionFile();
+    if (handle && nativeSessionFile && !existsSync(nativeSessionFile)) {
+      handle.piSession.setSessionName(renamed.title);
+    }
+    return renamed;
   };
 
 

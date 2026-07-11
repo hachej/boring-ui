@@ -10,7 +10,7 @@ import {
   rename,
   open,
 } from "node:fs/promises";
-import { closeSync, openSync, readFileSync, readSync, readdirSync, writeFileSync } from "node:fs";
+import { closeSync, existsSync, openSync, readFileSync, readSync, readdirSync, writeFileSync } from "node:fs";
 import { join, basename, resolve } from "node:path";
 import { homedir } from "node:os";
 import { getEnv } from "../../config/env.js";
@@ -365,6 +365,38 @@ export class PiSessionStore implements SessionStore {
   // Synchronous variant used during session initialization so that no async
   // I/O hop is introduced before createAgentSession (which would break test
   // timing when fake timers are in use). The file is tiny (metadata only).
+  loadPendingPiSessionTitleSync(ctx: SessionCtx, sessionId: string): string | null {
+    if (!SAFE_ID.test(sessionId)) return null;
+    try {
+      const direct = join(this.sessionDir, `${sessionId}.jsonl`);
+      let filepath = direct;
+      let content: string;
+      try {
+        content = readFileSync(direct, "utf-8");
+      } catch {
+        const files = readdirSync(this.sessionDir).filter((f) =>
+          f.endsWith(`_${sessionId}.jsonl`) || f === `${sessionId}.jsonl`,
+        );
+        if (files.length === 0) return null;
+        filepath = join(this.sessionDir, files[0]);
+        content = readFileSync(filepath, "utf-8");
+      }
+      const entries = safeParseEntries(content);
+      const header = entries.find((entry): entry is SessionHeader => entry.type === "session");
+      if (extractSessionHeaderId(entries) !== sessionId) return null;
+      if (!this.headerBelongsToCtx(header, ctx)) return null;
+
+      const linkedPiFile = extractPiSessionFilePath(entries);
+      if (linkedPiFile && existsSync(linkedPiFile)) return null;
+      if (!linkedPiFile && isTimestampNamedPiSessionFile(filepath, sessionId)) return null;
+
+      const sessionEntries = entries.filter((entry): entry is SessionEntry => entry.type !== "session");
+      return extractTitle(sessionEntries) ?? null;
+    } catch {
+      return null;
+    }
+  }
+
   loadPiSessionFileSync(ctx: SessionCtx, sessionId: string): string | null {
     if (!SAFE_ID.test(sessionId)) return null;
     try {

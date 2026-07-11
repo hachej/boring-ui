@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import { appendFile, mkdir, mkdtemp, readFile, rm, writeFile, utimes } from "node:fs/promises";
-import { DefaultResourceLoader } from "@mariozechner/pi-coding-agent";
+import { DefaultResourceLoader, SessionManager } from "@mariozechner/pi-coding-agent";
 import { join } from "node:path";
 import { homedir, tmpdir } from "node:os";
 import {
@@ -518,6 +518,33 @@ describe("PiSessionStore", () => {
 
     await expect(store.rename({ workspaceId: "other-ws" }, session.id, "Attack")).rejects.toThrow("Session not found");
     await expect(store.load(ctx, session.id)).resolves.toEqual(expect.objectContaining({ title: "Scoped" }));
+  });
+
+  it("hydrates a pending wrapper rename into the first native Pi transcript after restart", async () => {
+    const store = new PiSessionStore("/tmp", tmpDir);
+    const session = await store.create(ctx, { title: "New chat" });
+    const nativePath = join(tmpDir, "2026-07-11T13-18-16-715Z_pending-native.jsonl");
+    await store.savePiSessionFile(ctx, session.id, nativePath);
+    await store.rename(ctx, session.id, "new chatssss");
+
+    await expect(readFile(nativePath, "utf-8")).rejects.toMatchObject({ code: ENOENT_CODE });
+
+    const restartedStore = new PiSessionStore("/tmp", tmpDir);
+    const pendingTitle = restartedStore.loadPendingPiSessionTitleSync(ctx, session.id);
+    expect(pendingTitle).toBe("new chatssss");
+
+    const sessionManager = SessionManager.open(nativePath, undefined, "/tmp");
+    sessionManager.appendSessionInfo(pendingTitle!);
+    await expect(readFile(nativePath, "utf-8")).rejects.toMatchObject({ code: ENOENT_CODE });
+
+    sessionManager.appendMessage({ role: "user", content: [{ type: "text", text: "hello" }] } as any);
+    await expect(readFile(nativePath, "utf-8")).rejects.toMatchObject({ code: ENOENT_CODE });
+
+    sessionManager.appendMessage({ role: "assistant", content: [{ type: "text", text: "hi" }] } as any);
+    const nativeLines = (await readFile(nativePath, "utf-8")).trim().split("\n").map((line) => JSON.parse(line));
+    expect(nativeLines.filter((line) => line.type === "session_info").map((line) => line.name)).toEqual(["new chatssss"]);
+    await expect(restartedStore.load(ctx, session.id)).resolves.toEqual(expect.objectContaining({ title: "new chatssss", turnCount: 1 }));
+    expect(restartedStore.loadPendingPiSessionTitleSync(ctx, session.id)).toBeNull();
   });
 
   it("renames linked native Pi transcripts instead of the Boring wrapper", async () => {
