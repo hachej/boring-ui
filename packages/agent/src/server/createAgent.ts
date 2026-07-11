@@ -55,6 +55,7 @@ export function createAgentRuntimeBridge(
 
   return createCoreAgentRuntimeBridge({
     runtimeFactory: () => createRuntime(config, options),
+    readiness: config.readiness,
     readinessRequirements: config.readinessRequirements,
   })
 }

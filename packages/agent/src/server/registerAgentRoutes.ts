@@ -13,6 +13,7 @@ import { getBoringAgentRuntimePaths, type BoringAgentRuntimePaths } from './work
 import type { WorkspaceProvisioningAdapter, WorkspaceProvisioningResult } from './workspace/provisioning'
 import type { Workspace } from '../shared/workspace'
 import { ErrorCode } from '../shared/error-codes'
+import { collectToolReadinessRequirements, createAgentReadinessFromTracker } from './agentReadiness'
 import { resolveMode, autoDetectMode } from './runtime/resolveMode'
 import { createPiCodingAgentHarness, withPiHarnessDefaults } from './harness/pi-coding-agent/createHarness'
 import type { PiHarnessOptions, ResolvedPiHarnessOptions } from './harness/pi-coding-agent/createHarness'
@@ -802,6 +803,11 @@ export const registerAgentRoutes: FastifyPluginAsync<RegisterAgentRoutesOptions>
     const coreAgent = createAgentRuntimeBridge({
       runtime: modeAdapter,
       tools,
+      readiness: createAgentReadinessFromTracker({
+        requirements: collectToolReadinessRequirements(tools),
+        tracker: readyTracker,
+        checkReadiness,
+      }),
       harnessFactory,
       systemPromptAppend: opts.systemPromptAppend,
       systemPromptDynamic,
