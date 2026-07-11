@@ -44,3 +44,30 @@ expected**: protected-resource metadata is served by the RESOURCE server
 (boring's MCP endpoint), not the auth server. **Verdict: VIABLE for ID1;**
 selection bead must still compare Keycloak on 8707 semantics + DCR, and
 boring owns the 9728 endpoint either way.
+
+## 4. REAL preflightRunsc run (follow-up to §1 — evidence obtained)
+
+The non-mocked run happened same day: `preflightRunsc` from the built
+package, real `RunscHostCommandRunner` (child_process, sudo only for
+ip/nft), against this EU host configured to satisfy the config (ephemeral
+netns, inert nft table with the 7 blocked-CIDR rules, delegated cgroup v2
+leaf with matching limits). **All 7 probes passed genuinely**, and the
+output matches the mocked happy-path contract byte-for-byte — the mocks
+hide no divergence from real command behavior. `productionReady` stays
+`false` by design: the preflight is structural-only; the 16 `unproven`
+security facts (systrap workload, egress denial, cgroup membership, etc.)
+are D1/P8-era proofs. Remaining before full provider lock: those security
+proofs + the privileged-execution-model decision (rootless runsc fails on
+veth creation; sudo path proven).
+
+## 5. ID1 identity-server selection (research completes the spike)
+
+Verdict: **Ory Hydra + boring-owned adapter layer.** Keycloak's only edge
+is CIMD (feature flag); it lacks RFC 8707 entirely (issue #41526) and costs
+~750MB–2GB JVM vs Hydra's ~5MB binary. Hydra: PKCE proven live (§3),
+partial 8707 via `aud` binding, DCR present (default state disputed:
+research says on, our live spike found the endpoint disabled — verify at
+build). Boring must implement REGARDLESS of server: the RFC 9728
+protected-resource-metadata endpoint, resource-vs-audience validation
+(reject cross-resource token reuse), and CIMD fetch/validation. Those are
+ID1 beads, not server config.
