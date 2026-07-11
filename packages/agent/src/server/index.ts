@@ -96,6 +96,14 @@ export type {
 } from './workspace/provisioning'
 export { autoDetectMode, hasBwrap, resolveMode } from './runtime/resolveMode'
 export { createAgent } from './createAgent'
+export {
+  AgentDirectoryCompilerError,
+  compileAgentDirectory,
+} from './agentDefinition/compileAgentDirectory'
+export type {
+  AgentDirectoryCompilerErrorCode,
+  AgentDirectoryCompilerPublicErrorCode,
+} from './agentDefinition/compileAgentDirectory'
 export type { AgentConfig } from '../shared/events'
 export {
   createManagedAgentMcpDelegateController,

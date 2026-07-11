@@ -39,6 +39,19 @@ export interface AgentDefinitionDigestAsset {
   content: string
 }
 
+export type CompiledAgentDefinition = {
+  readonly [Key in keyof AgentDefinition]: AgentDefinition[Key] extends
+    | readonly string[]
+    | undefined
+    ? readonly string[] | undefined
+    : AgentDefinition[Key]
+}
+
+export interface CompiledAgentBundle {
+  readonly definition: CompiledAgentDefinition
+  readonly definitionDigest: Sha256Digest
+  readonly assets: readonly Readonly<AgentDefinitionDigestAsset>[]
+}
 export interface AgentSchemaIssue<Code extends string> {
   code: Code
   field: string
@@ -251,6 +264,17 @@ async function sha256(value: string): Promise<Sha256Digest> {
   return `sha256:${hex}`
 }
 
+export async function createAgentAssetDigest(content: string): Promise<Sha256Digest> {
+  if (!hasWellFormedUnicode(content)) {
+    throw new AgentDefinitionValidationError({
+      code: AgentDefinitionErrorCode.enum.AGENT_DEFINITION_INVALID,
+      field: 'content',
+      message: 'content must contain well-formed Unicode',
+    })
+  }
+  return sha256(content)
+}
+
 export class AgentDefinitionValidationError extends Error {
   readonly code = ErrorCode.enum.CONFIG_INVALID
   readonly field: string
@@ -278,7 +302,7 @@ export class AgentDeploymentValidationError extends Error {
 }
 
 async function validatedDefinitionAssets(
-  definition: AgentDefinition,
+  definition: CompiledAgentDefinition,
   assets: readonly AgentDefinitionDigestAsset[],
 ): Promise<AgentDefinitionDigestAsset[]> {
   if (!Array.isArray(assets)) {
@@ -302,7 +326,7 @@ async function validatedDefinitionAssets(
         field: `assets[${index}].${issue.field}`,
       })
     }
-    if (await sha256(result.data.content) !== result.data.digest) {
+    if (await createAgentAssetDigest(result.data.content) !== result.data.digest) {
       throw new AgentDefinitionValidationError({
         code: AgentDefinitionErrorCode.enum.AGENT_DEFINITION_INVALID,
         field: 'assets.digest',
@@ -335,7 +359,7 @@ async function validatedDefinitionAssets(
 }
 
 export async function createAgentDefinitionDigest(input: {
-  definition: AgentDefinition
+  definition: CompiledAgentDefinition
   assets: readonly AgentDefinitionDigestAsset[]
 }): Promise<Sha256Digest> {
   const validated = validateAgentDefinition(input.definition)
