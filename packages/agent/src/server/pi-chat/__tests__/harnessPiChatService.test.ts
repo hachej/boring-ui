@@ -31,6 +31,7 @@ const sessionStore: SessionStore = {
 
 type FakeAdapter = PiAgentSessionAdapter & {
   emit(event: AgentSessionEvent): void
+  listenerCount(): number
 }
 
 function createAdapter(followUps: string[] = []): FakeAdapter {
@@ -79,6 +80,7 @@ function createAdapter(followUps: string[] = []): FakeAdapter {
     emit(event: AgentSessionEvent) {
       for (const listener of listeners) listener(event)
     },
+    listenerCount: () => listeners.size,
   }
 }
 
@@ -131,6 +133,115 @@ function renderMessagesFromEvents(events: PiChatEvent[]) {
 }
 
 describe('HarnessPiChatService', () => {
+  it('disposes a receipt-only prompt, native channel, and metering exactly once', async () => {
+    const adapter = createAdapter()
+    const run = deferred<void>()
+    const release = deferred<void>()
+    adapter.prompt = vi.fn(() => run.promise)
+    adapter.abort = vi.fn(async () => run.resolve())
+    const releaseRun = vi.fn(() => release.promise)
+    const service = new HarnessPiChatService({
+      harness: createHarness(adapter),
+      sessionStore,
+      workdir: '/workspace',
+      metering: {
+        reserveRun: vi.fn(async () => ({})),
+        recordUsage: vi.fn(async () => ({ billedMicros: 0 })),
+        settleRun: vi.fn(async () => {}),
+        releaseRun,
+      },
+    })
+
+    await expect(service.prompt(ctx, 's1', { message: 'receipt only', clientNonce: 'nonce-dispose' })).resolves.toMatchObject({ accepted: true })
+    expect(adapter.listenerCount()).toBe(1)
+    let disposed = false
+    const disposal = service.dispose().then(() => { disposed = true })
+    await vi.waitFor(() => expect(releaseRun).toHaveBeenCalledOnce())
+    expect(disposed).toBe(false)
+
+    release.resolve()
+    await Promise.all([disposal, service.dispose()])
+    expect(adapter.abort).toHaveBeenCalledOnce()
+    expect(adapter.abortRetry).toHaveBeenCalledOnce()
+    expect(adapter.clearFollowUp).toHaveBeenCalledOnce()
+    expect(adapter.listenerCount()).toBe(0)
+    await expect(service.prompt(ctx, 's1', { message: 'late', clientNonce: 'nonce-late' })).rejects.toMatchObject({
+      code: ErrorCode.enum.AGENT_BINDING_DISPOSED,
+    })
+    const lateState = service.readState(ctx, 's1')
+    expect(lateState).toBeInstanceOf(Promise)
+    await expect(lateState).rejects.toMatchObject({ code: ErrorCode.enum.AGENT_BINDING_DISPOSED })
+  })
+
+  it('closes live channel subscriptions when disposed', async () => {
+    const { service, adapter } = createService()
+    const subscription = await service.subscribe(ctx, 's1', 0, () => {})
+    expect(subscription.type).toBe('ok')
+    if (subscription.type !== 'ok') throw new Error('expected live subscription')
+    const closed = subscription.closed
+    if (!closed) throw new Error('expected channel completion hook')
+
+    await service.dispose()
+
+    await expect(closed).resolves.toBeUndefined()
+    expect(adapter.listenerCount()).toBe(0)
+  })
+
+  it('drains an in-flight session deletion before disposing its channel', async () => {
+    const adapter = createAdapter()
+    const loadGate = deferred<void>()
+    const deleteSession = vi.fn(async () => {})
+    const load = vi.fn()
+      .mockResolvedValueOnce({ id: 's1' })
+      .mockImplementationOnce(async () => {
+        await loadGate.promise
+        return { id: 's1' }
+      })
+    const service = new HarnessPiChatService({
+      harness: createHarness(adapter),
+      sessionStore: { ...sessionStore, load, delete: deleteSession },
+      workdir: '/workspace',
+    })
+    const subscription = await service.subscribe(ctx, 's1', 0, () => {})
+    expect(subscription.type).toBe('ok')
+    if (subscription.type !== 'ok') throw new Error('expected live subscription')
+    const closed = subscription.closed
+    if (!closed) throw new Error('expected channel completion hook')
+
+    const deletion = service.deleteSession(ctx, 's1')
+    const disposal = service.dispose()
+    loadGate.resolve()
+    await Promise.all([deletion, disposal])
+
+    expect(adapter.abort).toHaveBeenCalledOnce()
+    expect(deleteSession).toHaveBeenCalledOnce()
+    expect(adapter.listenerCount()).toBe(0)
+    await expect(closed).resolves.toBeUndefined()
+  })
+
+  it('aborts an interrupt-triggered replacement run before draining the interrupt', async () => {
+    const adapter = createAdapter(['queued follow-up'])
+    const replacement = deferred<void>()
+    let replacementStarted = false
+    adapter.continueQueuedFollowUp = vi.fn(() => {
+      replacementStarted = true
+      return replacement.promise
+    })
+    adapter.abort = vi.fn(async () => {
+      if (replacementStarted) replacement.resolve()
+    })
+    const { service } = createService(adapter)
+    await service.subscribe(ctx, 's1', 0, () => {})
+    const interrupt = service.interrupt(ctx, 's1', {})
+    await vi.waitFor(() => expect(adapter.continueQueuedFollowUp).toHaveBeenCalledOnce())
+
+    const disposal = service.dispose()
+    await Promise.all([interrupt, disposal])
+
+    expect(adapter.abort).toHaveBeenCalledTimes(2)
+    expect(adapter.listenerCount()).toBe(0)
+  })
+
   it('normalizes missing-session delete preflight without aborting a live adapter', async () => {
     const adapter = createAdapter()
     const load = vi.fn()
