@@ -17,6 +17,7 @@ import {
 } from "../../app/server/createWorkspaceAgentServer"
 import * as appServerApi from "../../app/server"
 import * as serverApi from "../index"
+import type { SessionCtx } from "@hachej/boring-agent/shared"
 
 // Note: vercel-sandbox mode UI bridge tests live in
 // createWorkspaceAgentServer.vercel-sandbox.test.ts — they require a
@@ -129,6 +130,10 @@ describe("createWorkspaceAgentServer — runtime provisioning reload", () => {
         async load() {
           const now = new Date().toISOString()
           return { id: "default", title: "Default", createdAt: now, updatedAt: now, turnCount: 0, messages: [] }
+        },
+        async rename(_ctx: SessionCtx, _sessionId: string, title: string) {
+          const now = new Date().toISOString()
+          return { id: "default", title, createdAt: now, updatedAt: now, turnCount: 0 }
         },
         async delete() {},
       },
