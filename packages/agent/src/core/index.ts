@@ -1,15 +1,29 @@
-export { createAgent } from '../server/createAgent'
+export { createAgent } from './createAgent'
+export type {
+  AgentCoreConfig,
+  AgentCoreRuntime,
+  AgentCoreRuntimeFactory,
+  AgentCoreRuntimeView,
+} from './createAgent'
+export type {
+  AgentCoreSessionService,
+  PiChatEventStreamResult,
+  PiChatEventStreamSubscription,
+  PiChatEventSubscriber,
+  PiChatReplayRangeError,
+  PiChatSessionService,
+  PiSessionCreateInit,
+  PiSessionRequestContext,
+} from './piChatSessionService'
 export type {
   Agent,
   AgentActor,
-  AgentConfig,
   AgentEvent,
   AgentMessageContent,
   AgentMessagePart,
   AgentReadiness,
   AgentReadinessStatus,
   AgentResolveInputResponse,
-  AgentRuntimeAdapter,
   AgentSendInput,
   AgentStartReceipt,
   AgentStreamOptions,
@@ -22,8 +36,6 @@ export type {
   AgentCoreSessionSnapshot,
 } from '../shared/harness'
 export {
-  AGENT_NO_FILESYSTEM_FOR_ATTACHMENTS,
   AGENT_NOT_IMPLEMENTED_UNTIL_T1,
-  AgentFilesystemRequiredError,
   AgentNotImplementedError,
 } from '../shared/events'

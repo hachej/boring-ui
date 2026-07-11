@@ -1,6 +1,6 @@
 {
   "name": "@hachej/boring-sandbox",
-  "version": "0.1.76",
+  "version": "0.1.78",
   "type": "module",
   "license": "MIT",
   "description": "Sandbox provider contracts and implementations for Boring runtimes.",
@@ -24,6 +24,10 @@
     "./providers": {
       "types": "./dist/providers/index.d.ts",
       "import": "./dist/providers/index.js"
+    },
+    "./providers/runsc": {
+      "types": "./dist/providers/runsc/index.d.ts",
+      "import": "./dist/providers/runsc/index.js"
     }
   },
   "scripts": {
@@ -34,7 +38,11 @@
     "test": "vitest run --passWithNoTests",
     "clean": "rm -rf dist .tsbuildinfo"
   },
+  "dependencies": {
+    "zod": "^3.25.76"
+  },
   "devDependencies": {
+    "@types/node": "^22.20.0",
     "tsup": "^8.4.0",
     "typescript": "^6.0.3",
     "vitest": "^4.1.9"

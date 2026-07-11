@@ -4,10 +4,12 @@ Derived strictly from [TODO.md](./TODO.md) and [PLAN.md](./PLAN.md). Tick each b
 
 ## Prerequisites
 
-- [ ] P1 through BBP1-008 admission/idempotency/attribution is merged on current main.
+- [ ] The P1 workspace/Fastify boundary is merged on current main; BBP1-008,
+      prE, and T1 are not prerequisites.
 - [ ] Delivery v0 ruling honored: no share dependency in BBM1-001..003; share-link work exists only as BBM1-004, hard-gated on #424 merging.
-- [ ] Bearer verifier, principal-to-tenant/agent policy, and rate/concurrency
-      limits are configured before the endpoint is enabled.
+- [ ] Bearer verifier, subject-to-workspace-membership policy, bound-deployment/
+      default-agent resolver, and rate/concurrency limits are configured before
+      the endpoint is enabled. `workspaceId` is mandatory for R0.
 
 ## Beads
 
@@ -36,14 +38,22 @@ Derived strictly from [TODO.md](./TODO.md) and [PLAN.md](./PLAN.md). Tick each b
 
 - [ ] Every PR description includes review-time estimate, review-focus notes, and stack merge order.
 - [ ] `delegate_task` requires caller `idempotencyKey` (<=128 UTF-8 bytes),
-      scopes it by authenticated subject/tenant/agent, and derives stable
-      `requestId`; changing JSON-RPC/tool-call id never starts a second session.
+      scopes it by authenticated subject + resolved workspace + resolved
+      deployment/default agent, and derives stable `requestId`; changing JSON-
+      RPC/tool-call id never starts a second session.
 - [ ] Existing-key dedupe runs before rate/quota/concurrency admission; same
       payload returns the original and a different payload conflicts.
+- [ ] Receipt state is process-local, single-flight, bounded by explicit
+      capacity/retention, and keyed by subject + `workspaceId` + `deploymentId`/
+      `agentId` + caller key. Same-process retries dedupe; restart may lose the
+      receipt and start a second delegation. No durable claim is made.
 - [ ] `plugins/boring-mcp` duality documented: it consumes MCP; M1 exposes a boring agent over MCP.
 - [ ] One session per delegation; no cross-delegation session reuse.
-- [ ] `SessionCtx` is host-chosen and real; MCP caller cannot spoof tenancy.
-- [ ] Missing/invalid/expired/foreign bearer and quota excess reject before
+- [ ] Host policy proves current membership and resolves the workspace's bound
+      deployment and explicit `default` agent before `agent.start`;
+      `SessionCtx.workspaceId` is mandatory and tool arguments grant no routing.
+- [ ] Missing/invalid/expired bearer, foreign-workspace/non-member access,
+      missing or mismatched bindings, and quota excess reject before
       `agent.start`.
 - [ ] No secret canary appears in MCP tool results or logs.
 - [ ] Progress uses MCP progress notifications or polling and enforces 4 KiB per

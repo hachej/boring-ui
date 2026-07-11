@@ -96,6 +96,14 @@ export type {
 } from './workspace/provisioning'
 export { autoDetectMode, hasBwrap, resolveMode } from './runtime/resolveMode'
 export { createAgent } from './createAgent'
+export {
+  AgentDirectoryCompilerError,
+  compileAgentDirectory,
+} from './agentDefinition/compileAgentDirectory'
+export type {
+  AgentDirectoryCompilerErrorCode,
+  AgentDirectoryCompilerPublicErrorCode,
+} from './agentDefinition/compileAgentDirectory'
 export type { AgentConfig } from '../shared/events'
 export {
   createManagedAgentMcpDelegateController,
@@ -138,6 +146,10 @@ export {
 } from './piPackages'
 export { registerAgentRoutes } from './registerAgentRoutes'
 export type { RegisterAgentRoutesOptions } from './registerAgentRoutes'
+export type {
+  WorkspaceAgentDispatcherResolver,
+  WorkspaceAgentDispatcherResolveOptions,
+} from './workspaceAgentDispatcher'
 export type { RuntimeEnvContribution, RuntimeEnvContributionContext } from './runtimeEnvContributions'
 export type {
   AgentMeteringSink,

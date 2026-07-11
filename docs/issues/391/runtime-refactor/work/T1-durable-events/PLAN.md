@@ -1,5 +1,10 @@
 # T1-durable-events — Plan
 
+> **Post-v1 work order (2026-07-10).** Durable event admission, replay, and
+> request idempotency remain valuable but are not part of the first dedicated
+> workspace-backed release. Dispatch only after a named consumer requires the
+> durable contract; P1 must not prebuild it.
+
 > Phase: Phase T1 — Event envelope and replay (after Phase 1) · Work order: [TODO.md](./TODO.md) · Handoff: [HANDOFF.md](./HANDOFF.md)
 > Ordering authority: [INDEX.md](../../INDEX.md) · Vision: [VISION.md](../../VISION.md)
 

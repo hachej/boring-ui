@@ -1,6 +1,6 @@
 "use client"
 
-import { ChevronDown, Trash2 } from "lucide-react"
+import { ChevronDown, Play, Trash2 } from "lucide-react"
 import { Button, cn } from "@hachej/boring-ui-kit"
 import type { Automation, AutomationRun } from "../shared"
 import { formatDateTime } from "./format"
@@ -12,8 +12,10 @@ export function AutomationCard({
   deleting,
   runs,
   runsLoading,
+  runningNow,
   onToggle,
   onEdit,
+  onRunNow,
   onDeleteRequest,
   onDeleteCancel,
   onDeleteConfirm,
@@ -24,8 +26,10 @@ export function AutomationCard({
   deleting: boolean
   runs: AutomationRun[]
   runsLoading: boolean
+  runningNow: boolean
   onToggle: () => void
   onEdit: () => void
+  onRunNow: () => void
   onDeleteRequest: () => void
   onDeleteCancel: () => void
   onDeleteConfirm: () => void
@@ -51,6 +55,10 @@ export function AutomationCard({
           </span>
           <span className="hidden shrink-0 text-xs text-muted-foreground sm:block">Updated {formatDateTime(automation.updatedAt)}</span>
         </button>
+        <Button type="button" variant="ghost" size="sm" onClick={onRunNow} disabled={runningNow} aria-label={`Run ${automation.title} now`}>
+          <Play className="size-3.5" aria-hidden="true" />
+          {runningNow ? "Running…" : "Run now"}
+        </Button>
         <Button type="button" variant="ghost" size="sm" onClick={onEdit}>Edit</Button>
         <Button type="button" variant="ghost" size="icon-sm" aria-label={`Delete ${automation.title}`} title="Delete" onClick={onDeleteRequest}>
           <Trash2 className="size-4" aria-hidden="true" />

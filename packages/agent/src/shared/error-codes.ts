@@ -21,6 +21,8 @@ export const ErrorCode = z.enum([
 
   // Agent runtime / provisioning
   'AGENT_RUNTIME_NOT_READY',
+  'AGENT_BINDING_DISPOSED',
+  'AGENT_CONTROL_RECEIPT_INVALID',
   'RUNTIME_PROVISIONING_FAILED',
   'RUNTIME_PROVISIONING_LOCKED',
 
@@ -78,13 +80,26 @@ export const ErrorCode = z.enum([
 
   // Internal
   'ERR_NOT_IMPLEMENTED_UNTIL_T1',
-  'ERR_NO_FILESYSTEM_FOR_ATTACHMENTS',
   'INTERNAL_ERROR',
 ])
 
 export type ErrorCode = z.infer<typeof ErrorCode>
 
 export const ERROR_CODES = ErrorCode.options
+
+export const AgentDefinitionErrorCode = z.enum([
+  'AGENT_DEFINITION_INVALID',
+  'AGENT_DEFINITION_UNSUPPORTED_FIELD',
+])
+
+export type AgentDefinitionErrorCode = z.infer<typeof AgentDefinitionErrorCode>
+
+export const AgentDeploymentErrorCode = z.enum([
+  'AGENT_DEPLOYMENT_INVALID',
+  'AGENT_DEPLOYMENT_UNSUPPORTED_FIELD',
+])
+
+export type AgentDeploymentErrorCode = z.infer<typeof AgentDeploymentErrorCode>
 
 export const ApiErrorPayloadSchema = z.object({
   code: ErrorCode,

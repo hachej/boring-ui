@@ -58,6 +58,33 @@ The Node runtime. Key exports:
 - Harness: `createResourceSettingsManager` and the Pi harness option types.
 - `createLogger`.
 
+### Trusted workspace agent dispatch
+
+`registerAgentRoutes` (and standalone `createAgentApp`) can publish a
+`WorkspaceAgentDispatcherResolver` through the explicit
+`onWorkspaceAgentDispatcher` composition callback. This is a trusted,
+in-process host capability—not an HTTP endpoint—and resolves the same
+workspace-scoped `Agent` and runtime binding used by the normal agent routes.
+It does not expose runtime bindings, services, or filesystem paths.
+
+The resolver and bound dispatcher do **no authorization**. A verified host
+caller must authorize membership or service-principal access first, then pass
+the verified `{ workspaceId, userId }`. Resolution fails closed when context is
+missing, conflicts with an already-resolved request workspace, or cannot resolve
+that workspace through the host's explicit `getTrustedWorkspaceRoot` callback.
+Hosts with request-scoped root resolution must provide that separate requestless
+callback for verified background callers; the dispatcher never falls back to a
+raw workspace header.
+
+The bound dispatcher injects its trusted context into `Agent.send()`,
+`interrupt()`, and `stop()`. `send()` keeps normal session creation when no
+`sessionId` is supplied, forwards model selection, and yields the full stream
+through usage and terminal events. Control methods validate the legacy agent's
+interrupt/stop receipts before returning the typed dispatcher contract and fail
+with `AGENT_CONTROL_RECEIPT_INVALID` if the runtime violates it.
+Runtime/generated plugins do not receive this
+capability; app-owned composition may inject it only into trusted integrations.
+
 ## `@hachej/boring-agent/shared`
 
 Platform-agnostic contracts (types + zod schemas). Source of truth for the

@@ -36,6 +36,8 @@ All API failures must use the response envelope:
 | `WORKSPACE_UNINITIALIZED` | Workspace adapter/store not initialized yet | 503 | retry | warn | stable (public API) |
 | `WORKSPACE_NOT_READY` | Workspace substrate (`workspace-fs`, `sandbox-exec`, or `ui-bridge`) is still preparing | 503 | retry | warn | stable (public API) |
 | `AGENT_RUNTIME_NOT_READY` | Selected workspace runtime dependencies (`runtime-dependencies` or `runtime:<name>`, e.g. `runtime:python`/`runtime:node`) are still preparing | 503 | retry | warn | stable (public API) |
+| `AGENT_BINDING_DISPOSED` | A caller retained an agent binding after its host retired it | 410 | resolve a fresh binding | warn | stable (trusted API) |
+| `AGENT_CONTROL_RECEIPT_INVALID` | The existing agent runtime returned a malformed interrupt/stop receipt through the trusted dispatcher | 500 | report-bug | error | stable (trusted API) |
 | `RUNTIME_PROVISIONING_FAILED` | Agent runtime dependency provisioning failed before Level 3 runtime dependencies became ready | 503 | retry/report | error | stable (public API) |
 | `RUNTIME_PROVISIONING_LOCKED` | Agent runtime provisioning is locked by another reconciler | 423 | retry | warn | stable (public API) |
 | `BWRAP_UNAVAILABLE` | `bwrap` binary not found | 500 | report-bug | error | stable (public API) |
@@ -79,7 +81,6 @@ All API failures must use the response envelope:
 | `PROVISIONING_UV_INSTALL_FAILED` | uv venv or uv pip install failed | 500 | user-fix | error | stable (public API) |
 | `PROVISIONING_ARTIFACT_FAILED` | Runtime-mode adapter failed to prepare/upload install artifact | 500 | retry | error | stable (public API) |
 | `ERR_NOT_IMPLEMENTED_UNTIL_T1` | Headless core method exists but the durable T1 implementation has not landed yet | 501 | retry-after-upgrade | warn | stable (public API) |
-| `ERR_NO_FILESYSTEM_FOR_ATTACHMENTS` | Pure/headless agent received attachments that require workspace file storage; temporary blanket rejection until BBT2-007 splits attachment capability into `none | direct | workspace` | 400 | user-fix | warn | stable (public API) |
 | `INTERNAL_ERROR` | Catch-all internal failure | 500 | report-bug | error | internal (may change) |
 
 ## Readiness error details

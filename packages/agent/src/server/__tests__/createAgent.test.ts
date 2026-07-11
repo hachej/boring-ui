@@ -1,28 +1,32 @@
-import { mkdtemp, rm } from 'node:fs/promises'
-import { tmpdir } from 'node:os'
-import { join } from 'node:path'
 import { describe, expect, it, vi } from 'vitest'
 import type { AgentSessionEvent } from '@mariozechner/pi-coding-agent'
 
 import {
-  AGENT_NO_FILESYSTEM_FOR_ATTACHMENTS,
   AGENT_NOT_IMPLEMENTED_UNTIL_T1,
-  AgentFilesystemRequiredError,
   AgentNotImplementedError,
-  createAgent,
+  createAgent as createCoreAgent,
+} from '@hachej/boring-agent/core'
+import type {
+  AgentCoreRuntimeFactory,
+  AgentCoreSessionService,
+  PiChatEventSubscriber,
+  PiSessionCreateInit,
+  PiSessionRequestContext,
 } from '@hachej/boring-agent/core'
 import type { AgentHarness, AgentHarnessFactoryInput, AgentSendInput, RunContext } from '../../shared/harness'
+import type { AgentRuntimeAdapter } from '../../shared/events'
 import type { SessionCtx, SessionDetail, SessionStore, SessionSummary } from '../../shared/session'
+import type { FollowUpPayload, PiChatEvent, PromptPayload } from '../../shared/chat'
 import type { PiAgentPromptInput, PiAgentSessionAdapter, PiAgentSessionSnapshot } from '../pi-chat/PiAgentSessionAdapter'
 import { ErrorCode } from '../../shared/error-codes'
+import { createAgent } from '../createAgent'
 
 const CTX: SessionCtx = { workspaceId: 'workspace-test', userId: 'user-test' }
 
 describe('createAgent', () => {
   it('exposes exactly the nine-member facade without Fastify', () => {
-    const agent = createAgent({
-      runtime: 'none',
-      harnessFactory: createFakeHarnessFactory(),
+    const agent = createCoreAgent({
+      runtimeFactory: createCoreRuntimeFactory(),
     })
 
     expect(Object.keys(agent).sort()).toEqual([
@@ -38,6 +42,24 @@ describe('createAgent', () => {
     ])
   })
 
+  it('runs through the injected core runtime without the server wrapper', async () => {
+    const sessions = new MemorySessionStore()
+    const agent = createCoreAgent({
+      runtimeFactory: createCoreRuntimeFactory(sessions),
+    })
+
+    const seeded = sessions.seed('runtime-seeded', CTX)
+    await expect(agent.sessions.list(CTX)).resolves.toContainEqual(seeded)
+    const created = await agent.sessions.create(CTX, { title: 'injected store' })
+    await expect(sessions.list(CTX)).resolves.toContainEqual(created)
+    await agent.sessions.delete(CTX, created.id)
+    expect(sessions.deleted).toContain(created.id)
+    const events = await collectEvents(agent.send({ content: 'hello from core', ctx: CTX }))
+
+    expect(events.map((event) => event.chunk.type)).toEqual(['agent-start', 'agent-end'])
+    await agent.dispose()
+  })
+
   it('rejects sessions override with the default harness to avoid split persistence', () => {
     expect(() => createAgent({
       runtime: { id: 'test-runtime' },
@@ -45,9 +67,30 @@ describe('createAgent', () => {
     })).toThrow('sessions override requires a harnessFactory')
   })
 
-  it('constructs runtime none lazily with the default harness', () => {
+  it('rejects a missing or non-adapter runtime with a stable config error', () => {
+    const invalidConfigs = [
+      {},
+      { runtime: 'none' },
+      { runtime: { id: '' } },
+      { runtime: { id: 'test-runtime', dispose: true } },
+    ]
+
+    for (const config of invalidConfigs) {
+      let error: unknown
+      try {
+        createAgent(config as unknown as Parameters<typeof createAgent>[0])
+      } catch (cause) {
+        error = cause
+      }
+      expect(error).toMatchObject({
+        code: ErrorCode.enum.CONFIG_INVALID,
+      })
+    }
+  })
+
+  it('constructs the supplied runtime lazily with the default harness', () => {
     const agent = createAgent({
-      runtime: 'none',
+      runtime: createTestRuntime(),
     })
 
     expect(agent.readiness.requirements).toEqual([])
@@ -55,7 +98,7 @@ describe('createAgent', () => {
 
   it('does not report configured readiness requirements as ready without a tracker', async () => {
     const agent = createAgent({
-      runtime: 'none',
+      runtime: createTestRuntime(),
       harnessFactory: createFakeHarnessFactory(),
       readinessRequirements: ['workspace-fs'],
     })
@@ -69,7 +112,7 @@ describe('createAgent', () => {
 
   it('start returns an accepted receipt and send live-tails a harness turn', async () => {
     const agent = createAgent({
-      runtime: 'none',
+      runtime: createTestRuntime(),
       harnessFactory: createFakeHarnessFactory({ autoCompletePrompt: true }),
     })
 
@@ -99,7 +142,7 @@ describe('createAgent', () => {
   it('authorizes explicit session ids through the session store before starting', async () => {
     const fake = createFakeHarnessFactory()
     const agent = createAgent({
-      runtime: 'none',
+      runtime: createTestRuntime(),
       harnessFactory: fake.factory,
     })
 
@@ -113,7 +156,7 @@ describe('createAgent', () => {
   it('does not synthesize a workspace id when input ctx is omitted', async () => {
     const fake = createFakeHarnessFactory()
     const agent = createAgent({
-      runtime: 'none',
+      runtime: createTestRuntime(),
       harnessFactory: fake.factory,
     })
 
@@ -125,107 +168,10 @@ describe('createAgent', () => {
     await agent.dispose()
   })
 
-  it('rejects attachments in runtime none before creating sessions or harness adapters', async () => {
-    const fake = createFakeHarnessFactory()
-    const agent = createAgent({
-      runtime: 'none',
-      harnessFactory: fake.factory,
-    })
-    const input = {
-      content: 'look at this',
-      attachments: [{ filename: 'chart.png', mediaType: 'image/png', url: '/api/v1/files/raw?path=chart.png' }],
-    }
-    const inlineInput = {
-      content: 'inline image',
-      attachments: [{ filename: 'inline.png', mediaType: 'image/png', url: 'data:image/png;base64,AAAA' }],
-    }
-
-    await expect(agent.start(input)).rejects.toBeInstanceOf(AgentFilesystemRequiredError)
-    await expect(agent.start(inlineInput)).rejects.toBeInstanceOf(AgentFilesystemRequiredError)
-    await expect(collectEvents(agent.send(input))).rejects.toMatchObject({
-      code: AGENT_NO_FILESYSTEM_FOR_ATTACHMENTS,
-    })
-    expect(fake.sessions.createContexts).toEqual([])
-    expect(fake.contexts('session-1')).toEqual([])
-    await agent.dispose()
-  })
-
-  it('passes a sealed cwd and explicit sessionStorageRoot for runtime none', async () => {
-    const fake = createFakeHarnessFactory()
-    const inputs: AgentHarnessFactoryInput[] = []
-    const sessionStorageRoot = await mkdtemp(join(tmpdir(), 'boring-pure-session-root-'))
-    const pureRuntimeCwd = join(sessionStorageRoot, '.runtime-none')
-    const harnessFactory = vi.fn(async (input: AgentHarnessFactoryInput) => {
-      inputs.push(input)
-      return fake.factory(input)
-    })
-    const agent = createAgent({
-      runtime: 'none',
-      sessionStorageRoot,
-      harnessFactory,
-    })
-
-    try {
-      await agent.start({ content: 'headless' })
-
-      expect(harnessFactory).toHaveBeenCalledTimes(1)
-      expect(inputs[0]).toMatchObject({
-        cwd: pureRuntimeCwd,
-        runtimeCwd: pureRuntimeCwd,
-        sessionStorageCwd: '',
-        sessionRoot: sessionStorageRoot,
-      })
-      expect(inputs[0]?.sessionDir).toBeUndefined()
-      expect(fake.contexts('session-1')[0]?.workdir).toBe(pureRuntimeCwd)
-      expect(JSON.stringify(inputs[0])).not.toContain(process.cwd())
-      expect(JSON.stringify(inputs[0])).not.toContain('/workspace')
-    } finally {
-      await agent.dispose()
-      await rm(sessionStorageRoot, { recursive: true, force: true })
-    }
-  })
-
-  it('uses a bounded sealed temp cwd when runtime none has no sessionStorageRoot', async () => {
-    const firstFake = createFakeHarnessFactory()
-    const secondFake = createFakeHarnessFactory()
-    const inputs: AgentHarnessFactoryInput[] = []
-    const harnessFactory = (fake: ReturnType<typeof createFakeHarnessFactory>) =>
-      vi.fn(async (input: AgentHarnessFactoryInput) => {
-        inputs.push(input)
-        return fake.factory(input)
-      })
-    const first = createAgent({
-      runtime: 'none',
-      harnessFactory: harnessFactory(firstFake),
-    })
-    const second = createAgent({
-      runtime: 'none',
-      harnessFactory: harnessFactory(secondFake),
-    })
-
-    try {
-      await first.start({ content: 'first' })
-      await second.start({ content: 'second' })
-
-      expect(inputs).toHaveLength(2)
-      expect(inputs[0]?.cwd.startsWith(join(tmpdir(), 'boring-agent-pure-'))).toBe(true)
-      expect(inputs[1]?.cwd).toBe(inputs[0]?.cwd)
-      expect(inputs[0]).toMatchObject({
-        runtimeCwd: inputs[0]?.cwd,
-        sessionStorageCwd: '',
-      })
-      expect(inputs[0]?.sessionRoot).toBeUndefined()
-      expect(JSON.stringify(inputs)).not.toContain(process.cwd())
-      expect(JSON.stringify(inputs)).not.toContain('/workspace')
-    } finally {
-      await first.dispose()
-      await second.dispose()
-    }
-  })
 
   it('throws the T1 stub error for historical offsets older than the live buffer', async () => {
     const agent = createAgent({
-      runtime: 'none',
+      runtime: createTestRuntime(),
       harnessFactory: createFakeHarnessFactory({ eventsPerPrompt: 1_002, seedSessions: ['historical'] }),
     })
     const receipt = await agent.start({ sessionId: 'historical', content: 'fill buffer', ctx: CTX })
@@ -238,7 +184,7 @@ describe('createAgent', () => {
 
   it('throws stable cursor errors for invalid live stream offsets', async () => {
     const agent = createAgent({
-      runtime: 'none',
+      runtime: createTestRuntime(),
       harnessFactory: createFakeHarnessFactory({ seedSessions: ['cursor'] }),
     })
 
@@ -254,7 +200,7 @@ describe('createAgent', () => {
 
   it('assigns live event indexes per session', async () => {
     const agent = createAgent({
-      runtime: 'none',
+      runtime: createTestRuntime(),
       harnessFactory: createFakeHarnessFactory({ autoCompletePrompt: true, seedSessions: ['other', 'sparse'] }),
     })
 
@@ -268,7 +214,7 @@ describe('createAgent', () => {
 
   it('single-flights bridge subscription for concurrent starts on a cold session', async () => {
     const agent = createAgent({
-      runtime: 'none',
+      runtime: createTestRuntime(),
       harnessFactory: createFakeHarnessFactory({ autoCompletePrompt: true, seedSessions: ['race'] }),
     })
 
@@ -299,7 +245,7 @@ describe('createAgent', () => {
 
   it('allows quiet sessions to live-tail from their own current cursor', async () => {
     const agent = createAgent({
-      runtime: 'none',
+      runtime: createTestRuntime(),
       harnessFactory: createFakeHarnessFactory({ autoCompletePrompt: true, seedSessions: ['other', 'quiet'] }),
     })
 
@@ -319,7 +265,7 @@ describe('createAgent', () => {
 
   it('resolveInput is a typed T1 stub', async () => {
     const agent = createAgent({
-      runtime: 'none',
+      runtime: createTestRuntime(),
       harnessFactory: createFakeHarnessFactory(),
     })
 
@@ -331,7 +277,7 @@ describe('createAgent', () => {
   it('interrupt and stop abort through the pi-chat service control methods', async () => {
     const fake = createFakeHarnessFactory({ seedSessions: ['control', 'control-stop'] })
     const agent = createAgent({
-      runtime: 'none',
+      runtime: createTestRuntime(),
       harnessFactory: fake.factory,
     })
 
@@ -356,7 +302,7 @@ describe('createAgent', () => {
   it('stream, interrupt, and stop reject scoped sessions without caller ctx', async () => {
     const fake = createFakeHarnessFactory({ seedSessions: ['scoped'] })
     const agent = createAgent({
-      runtime: 'none',
+      runtime: createTestRuntime(),
       harnessFactory: fake.factory,
     })
 
@@ -389,7 +335,7 @@ describe('createAgent', () => {
 
   it('serializes concurrent send calls on the same explicit session', async () => {
     const agent = createAgent({
-      runtime: 'none',
+      runtime: createTestRuntime(),
       harnessFactory: createFakeHarnessFactory({ autoCompletePrompt: true, seedSessions: ['send-lock'] }),
     })
 
@@ -409,7 +355,7 @@ describe('createAgent', () => {
     const fake = createFakeHarnessFactory()
     fake.sessions.seed('unscoped')
     const agent = createAgent({
-      runtime: 'none',
+      runtime: createTestRuntime(),
       harnessFactory: fake.factory,
     })
 
@@ -428,7 +374,7 @@ describe('createAgent', () => {
   it('interrupt and stop reject missing sessions without creating adapters', async () => {
     const fake = createFakeHarnessFactory()
     const agent = createAgent({
-      runtime: 'none',
+      runtime: createTestRuntime(),
       harnessFactory: fake.factory,
     })
 
@@ -445,7 +391,7 @@ describe('createAgent', () => {
   it('sessions.delete cleans up the live pi-chat session', async () => {
     const fake = createFakeHarnessFactory({ seedSessions: ['delete-me'] })
     const agent = createAgent({
-      runtime: 'none',
+      runtime: createTestRuntime(),
       harnessFactory: fake.factory,
     })
 
@@ -464,7 +410,7 @@ describe('createAgent', () => {
     const sessions = new MemorySessionStore()
     sessions.seed('custom-delete', CTX)
     const agent = createAgent({
-      runtime: 'none',
+      runtime: createTestRuntime(),
       harnessFactory: fake.factory,
       sessions,
     })
@@ -484,7 +430,7 @@ describe('createAgent', () => {
     const sessions = new ScopedSessionStore()
     sessions.seedOwned('owned', CTX)
     const agent = createAgent({
-      runtime: 'none',
+      runtime: createTestRuntime(),
       harnessFactory: fake.factory,
       sessions,
     })
@@ -504,25 +450,82 @@ describe('createAgent', () => {
     await agent.dispose()
   })
 
-  it('dispose stops active producers before closing buffers', async () => {
+  it('dispose is terminal, idempotent, and stops active producers without disposing the host adapter', async () => {
     const fake = createFakeHarnessFactory({ seedSessions: ['dispose-me'] })
+    const runtime = createTestRuntime()
     const agent = createAgent({
-      runtime: 'none',
+      runtime,
       harnessFactory: fake.factory,
     })
 
     await agent.start({ sessionId: 'dispose-me', content: 'long running', ctx: CTX })
     const adapter = fake.adapter('dispose-me')
 
-    await agent.dispose()
+    await Promise.all([agent.dispose(), agent.dispose()])
 
     expect(adapter.abortCount).toBe(1)
+    expect(runtime.dispose).not.toHaveBeenCalled()
+    await expect(agent.start({ sessionId: 'dispose-me', content: 'retained', ctx: CTX })).rejects.toMatchObject({
+      code: ErrorCode.enum.AGENT_BINDING_DISPOSED,
+    })
+    await expect(agent.sessions.list(CTX)).rejects.toMatchObject({
+      code: ErrorCode.enum.AGENT_BINDING_DISPOSED,
+    })
+    await expect(agent.readiness.status()).rejects.toMatchObject({
+      code: ErrorCode.enum.AGENT_BINDING_DISPOSED,
+    })
+    let streamError: unknown
+    try {
+      agent.stream('dispose-me', { startIndex: 0, ctx: CTX })
+    } catch (error) {
+      streamError = error
+    }
+    expect(streamError).toMatchObject({ code: ErrorCode.enum.AGENT_BINDING_DISPOSED })
+  })
+
+  it.each(['stop', 'delete'] as const)('%s failure preserves producer ownership so dispose retries it', async (operation) => {
+    const sessionId = `${operation}-retry`
+    const fake = createFakeHarnessFactory({ seedSessions: [sessionId], abortFailures: 1 })
+    const agent = createAgent({ runtime: createTestRuntime(), harnessFactory: fake.factory })
+
+    await agent.start({ sessionId, content: 'long running', ctx: CTX })
+    if (operation === 'stop') {
+      await expect(agent.stop(sessionId, CTX)).rejects.toThrow('abort failed')
+    } else {
+      await expect(agent.sessions.delete(CTX, sessionId)).rejects.toThrow('abort failed')
+    }
+    await agent.dispose()
+
+    expect(fake.adapter(sessionId).abortCount).toBe(2)
+  })
+
+  it.each(['stop', 'delete'] as const)('%s closes a session whose subscription resolves late', async (operation) => {
+    const sessions = new MemorySessionStore()
+    sessions.seed('deferred-subscribe', CTX)
+    let releaseSubscribe!: () => void
+    const subscribeGate = new Promise<void>((resolve) => { releaseSubscribe = resolve })
+    let markSubscribeStarted!: () => void
+    const subscribeStarted = new Promise<void>((resolve) => { markSubscribeStarted = resolve })
+    const service = new InjectedCorePiChatService(sessions, { subscribeGate, onSubscribe: markSubscribeStarted })
+    const agent = createCoreAgent({ runtimeFactory: createCoreRuntimeFactory(sessions, service) })
+
+    const start = agent.start({ sessionId: 'deferred-subscribe', content: 'pending', ctx: CTX })
+    await subscribeStarted
+    const teardown = operation === 'stop'
+      ? agent.stop('deferred-subscribe', CTX)
+      : agent.sessions.delete(CTX, 'deferred-subscribe')
+    await teardown
+    releaseSubscribe()
+
+    await expect(start).rejects.toMatchObject({ code: ErrorCode.enum.ABORTED })
+    expect(service.unsubscribeCount).toBe(1)
+    await agent.dispose()
   })
 
   it('reopens the live stream when a stopped session is started again', async () => {
     const fake = createFakeHarnessFactory({ seedSessions: ['restart'] })
     const agent = createAgent({
-      runtime: 'none',
+      runtime: createTestRuntime(),
       harnessFactory: fake.factory,
     })
 
@@ -546,7 +549,26 @@ describe('createAgent', () => {
   })
 })
 
-function createFakeHarnessFactory(options: { autoCompletePrompt?: boolean; eventsPerPrompt?: number; seedSessions?: string[] } = {}) {
+function createTestRuntime() {
+  return { id: 'test-runtime', dispose: vi.fn<() => void>() } satisfies AgentRuntimeAdapter
+}
+
+function createCoreRuntimeFactory(
+  sessions = new MemorySessionStore(),
+  service = new InjectedCorePiChatService(sessions),
+): AgentCoreRuntimeFactory {
+  return async () => ({
+    harness: {
+      id: 'core-injected',
+      placement: 'server',
+      sessions,
+    },
+    sessionStore: sessions,
+    service,
+  })
+}
+
+function createFakeHarnessFactory(options: { autoCompletePrompt?: boolean; eventsPerPrompt?: number; seedSessions?: string[]; abortFailures?: number } = {}) {
   const sessions = new MemorySessionStore()
   for (const sessionId of options.seedSessions ?? []) sessions.seed(sessionId, CTX)
   const adapters = new Map<string, FakePiSessionAdapter>()
@@ -554,7 +576,12 @@ function createFakeHarnessFactory(options: { autoCompletePrompt?: boolean; event
   const adapter = (sessionId: string) => {
     let existing = adapters.get(sessionId)
     if (!existing) {
-      existing = new FakePiSessionAdapter(sessionId, options.eventsPerPrompt ?? 1, options.autoCompletePrompt === true)
+      existing = new FakePiSessionAdapter(
+        sessionId,
+        options.eventsPerPrompt ?? 1,
+        options.autoCompletePrompt === true,
+        options.abortFailures ?? 0,
+      )
       adapters.set(sessionId, existing)
     }
     return existing
@@ -702,8 +729,117 @@ class ScopedSessionStore extends MemorySessionStore {
   }
 }
 
+class InjectedCorePiChatService implements AgentCoreSessionService {
+  private readonly subscribers = new Map<string, Set<PiChatEventSubscriber>>()
+  private readonly latestSeq = new Map<string, number>()
+  private turns = 0
+  unsubscribeCount = 0
+
+  constructor(
+    private readonly sessions: MemorySessionStore,
+    private readonly options: { subscribeGate?: Promise<void>; onSubscribe?: () => void } = {},
+  ) {}
+
+  async createSession(ctx: PiSessionRequestContext, init?: PiSessionCreateInit) {
+    return this.sessions.create(toTestSessionCtx(ctx), init)
+  }
+
+  async renameSession(ctx: PiSessionRequestContext, sessionId: string, title: string) {
+    return this.sessions.rename(toTestSessionCtx(ctx), sessionId, title)
+  }
+
+  async deleteSession(ctx: PiSessionRequestContext, sessionId: string): Promise<void> {
+    await this.sessions.delete(toTestSessionCtx(ctx), sessionId)
+    this.subscribers.delete(sessionId)
+    this.latestSeq.delete(sessionId)
+  }
+
+  async readState(_ctx: PiSessionRequestContext, sessionId: string) {
+    return {
+      protocolVersion: 1 as const,
+      sessionId,
+      seq: this.latestSeq.get(sessionId) ?? 0,
+      status: 'idle' as const,
+      messages: [],
+      queue: { followUps: [] },
+      followUpMode: 'one-at-a-time' as const,
+    }
+  }
+
+  async subscribe(ctx: PiSessionRequestContext, sessionId: string, _cursor: number, subscriber: PiChatEventSubscriber) {
+    await this.sessions.load(toTestSessionCtx(ctx), sessionId)
+    this.options.onSubscribe?.()
+    await this.options.subscribeGate
+    const subscribers = this.subscribers.get(sessionId) ?? new Set<PiChatEventSubscriber>()
+    subscribers.add(subscriber)
+    this.subscribers.set(sessionId, subscribers)
+    return {
+      type: 'ok' as const,
+      unsubscribe: () => {
+        this.unsubscribeCount += 1
+        subscribers.delete(subscriber)
+      },
+    }
+  }
+
+  async prompt(_ctx: PiSessionRequestContext, sessionId: string, payload: PromptPayload) {
+    const turnId = `core-turn-${++this.turns}`
+    this.publish(sessionId, { type: 'agent-start', seq: this.nextSeq(sessionId), turnId })
+    this.publish(sessionId, { type: 'agent-end', seq: this.nextSeq(sessionId), turnId, status: 'ok' })
+    return {
+      accepted: true as const,
+      cursor: this.latestSeq.get(sessionId) ?? 0,
+      clientNonce: payload.clientNonce,
+    }
+  }
+
+  async followUp(_ctx: PiSessionRequestContext, sessionId: string, payload: FollowUpPayload) {
+    return {
+      accepted: true as const,
+      cursor: this.latestSeq.get(sessionId) ?? 0,
+      clientNonce: payload.clientNonce,
+      clientSeq: payload.clientSeq,
+      queued: true as const,
+    }
+  }
+
+  async clearQueue(_ctx: PiSessionRequestContext, sessionId: string) {
+    return { accepted: true as const, cursor: this.latestSeq.get(sessionId) ?? 0, cleared: 0 }
+  }
+
+  async interrupt(_ctx: PiSessionRequestContext, sessionId: string) {
+    return { accepted: true as const, cursor: this.latestSeq.get(sessionId) ?? 0 }
+  }
+
+  async stop(_ctx: PiSessionRequestContext, sessionId: string) {
+    return {
+      accepted: true as const,
+      cursor: this.latestSeq.get(sessionId) ?? 0,
+      stopped: true as const,
+      clearedQueue: [],
+    }
+  }
+
+  private nextSeq(sessionId: string): number {
+    const next = (this.latestSeq.get(sessionId) ?? 0) + 1
+    this.latestSeq.set(sessionId, next)
+    return next
+  }
+
+  private publish(sessionId: string, event: PiChatEvent): void {
+    for (const subscriber of this.subscribers.get(sessionId) ?? []) subscriber(event)
+  }
+}
+
 function normalizeTestCtx(ctx: SessionCtx | undefined): SessionCtx | undefined {
   return !ctx?.workspaceId && !ctx?.userId ? undefined : { workspaceId: ctx.workspaceId, userId: ctx.userId }
+}
+
+function toTestSessionCtx(ctx: PiSessionRequestContext): SessionCtx {
+  return {
+    workspaceId: ctx.workspaceId,
+    userId: ctx.authSubject,
+  }
 }
 
 function sameTestCtx(a: SessionCtx | undefined, b: SessionCtx | undefined): boolean {
@@ -722,6 +858,7 @@ class FakePiSessionAdapter implements PiAgentSessionAdapter {
     private readonly sessionId: string,
     private readonly eventsPerPrompt: number,
     private readonly autoCompletePrompt: boolean,
+    private abortFailures: number,
   ) {}
 
   readSnapshot(): PiAgentSessionSnapshot {
@@ -767,6 +904,10 @@ class FakePiSessionAdapter implements PiAgentSessionAdapter {
 
   async abort(): Promise<void> {
     this.abortCount += 1
+    if (this.abortFailures > 0) {
+      this.abortFailures -= 1
+      throw new Error('abort failed')
+    }
     this.resolveActivePrompts()
   }
 

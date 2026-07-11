@@ -8,11 +8,12 @@ import { afterEach, expect, test, vi } from 'vitest'
 import { getEnv, restoreEnvForTest, setEnvForTest } from '../config/env'
 import { createAgentApp } from '../createAgentApp'
 import { loadPlugins, flattenPluginTools } from '../harness/pi-coding-agent/pluginLoader'
-import { AGENT_NO_FILESYSTEM_FOR_ATTACHMENTS } from '../../shared/events'
 import type { AgentHarness, AgentHarnessFactoryInput } from '../../shared/harness'
 import type { SessionCtx, SessionDetail, SessionStore, SessionSummary } from '../../shared/session'
 import { ErrorCode } from '../../shared/error-codes'
 import type { RuntimeFilesystemBindingOperations, RuntimeModeAdapter } from '../runtime/mode'
+import type { WorkspaceAgentDispatcherResolver } from '../workspaceAgentDispatcher'
+import { createDispatcherTestHarness } from './workspaceAgentDispatcherTestHarness'
 
 const tempDirs: string[] = []
 const ORIGINAL_TEMPLATE_PATH = getEnv('BORING_AGENT_TEMPLATE_PATH')
@@ -67,7 +68,7 @@ class TestSessionStore implements SessionStore {
     this.created += 1
     const now = new Date().toISOString()
     const summary = {
-      id: `pure-session-${this.created}`,
+      id: `test-session-${this.created}`,
       title: init?.title ?? 'New session',
       createdAt: now,
       updatedAt: now,
@@ -102,7 +103,7 @@ function createNoopHarnessFactory() {
   const factory = async (input: AgentHarnessFactoryInput): Promise<AgentHarness> => {
     inputs.push(input)
     return {
-      id: 'pure-http-test-harness',
+      id: 'test-http-harness',
       placement: 'server',
       sessions,
     }
@@ -110,7 +111,79 @@ function createNoopHarnessFactory() {
   return { factory, inputs, sessions }
 }
 
+test('createAgentApp composes its trusted dispatcher over the standalone runtime', async () => {
+  const harness = createDispatcherTestHarness()
+  const workspaceRoot = await makeTempDir('boring-agent-app-dispatcher-workspace-')
+  let resolver: WorkspaceAgentDispatcherResolver | undefined
+  const app = await createAgentApp({
+    workspaceRoot,
+    mode: 'direct',
+    sessionId: 'standalone-dispatcher',
+    sessionRoot: await makeTempDir('boring-agent-app-dispatcher-sessions-'),
+    logger: false,
+    harnessFactory: harness.factory,
+    onWorkspaceAgentDispatcher: (value) => { resolver = value },
+  })
 
+  try {
+    const dispatcher = await resolver!.resolve({ workspaceId: 'standalone-dispatcher', userId: 'standalone-user' })
+    const events = []
+    for await (const event of dispatcher.send({
+      content: 'standalone prompt',
+      model: { provider: 'test', id: 'gpt-5.5' },
+    })) events.push(event)
+
+    expect(harness.factoryInputs).toHaveLength(1)
+    expect(harness.sessions.createContexts).toEqual([{ workspaceId: 'standalone-dispatcher', userId: 'standalone-user' }])
+    expect(harness.sendInputs.find((input) => input.model)).toMatchObject({
+      model: { provider: 'test', id: 'gpt-5.5' },
+      ctx: { workspaceId: 'standalone-dispatcher', userId: 'standalone-user' },
+    })
+    expect(events.some((event) => event.chunk.type === 'usage')).toBe(true)
+    expect(events.at(-1)?.chunk.type).toBe('agent-end')
+    await expect(resolver!.resolve({ workspaceId: 'other-workspace', userId: 'standalone-user' })).rejects.toMatchObject({
+      code: ErrorCode.enum.UNAUTHORIZED,
+    })
+  } finally {
+    await app.close()
+  }
+})
+
+test('createAgentApp retires its local binding before disposing the host adapter once', async () => {
+  const harness = createDispatcherTestHarness()
+  const workspaceRoot = await makeTempDir('boring-agent-app-lifecycle-')
+  let resolver: WorkspaceAgentDispatcherResolver | undefined
+  let activeSessionId: string | undefined
+  const disposeRuntime = vi.fn(async () => {
+    expect(harness.adapters.get(activeSessionId!)?.abortCount).toBe(1)
+  })
+  const runtimeModeAdapter: RuntimeModeAdapter = {
+    id: 'standalone-lifecycle-test',
+    workspaceFsCapability: 'strong',
+    dispose: disposeRuntime,
+    async create(ctx) {
+      const { directModeAdapter } = await import('../runtime/modes/direct')
+      return directModeAdapter.create(ctx)
+    },
+  }
+  const app = await createAgentApp({
+    workspaceRoot,
+    runtimeModeAdapter,
+    sessionId: 'standalone-lifecycle',
+    logger: false,
+    harnessFactory: harness.factory,
+    onWorkspaceAgentDispatcher: (value) => { resolver = value },
+  })
+
+  const dispatcher = await resolver!.resolve({ workspaceId: 'standalone-lifecycle', userId: 'user-lifecycle' })
+  const events = []
+  for await (const event of dispatcher.send({ content: 'active standalone binding' })) events.push(event)
+  activeSessionId = events[0]?.sessionId
+  expect(activeSessionId).toBeDefined()
+
+  await app.close()
+  expect(disposeRuntime).toHaveBeenCalledOnce()
+})
 
 test('createAgentApp direct bash receives runtime env contributions without persisting values', async () => {
   const workspaceRoot = await makeTempDir('boring-agent-direct-runtime-env-')
@@ -171,99 +244,37 @@ test('createAgentApp direct mode forwards sessionRoot to the harness', async () 
   }
 })
 
-test('createAgentApp mode none excludes filesystem routes/tools and rejects attachments', async () => {
-  const sessionRoot = await makeTempDir('boring-ui-pure-session-root-')
-  const harness = createNoopHarnessFactory()
-  const pureTool = {
-    name: 'pure_echo',
-    description: 'Pure test tool.',
-    parameters: { type: 'object' as const, properties: {} },
-    async execute() {
-      return { content: [{ type: 'text' as const, text: 'ok' }] }
-    },
-  }
-  const app = await createAgentApp({
-    mode: 'none',
-    logger: false,
-    sessionRoot,
-    harnessFactory: harness.factory,
-    extraTools: [pureTool],
+test('createAgentApp rejects mode none without a workspace runtime adapter', async () => {
+  await expect(createAgentApp({ mode: 'none', logger: false })).rejects.toThrow(
+    'Runtime mode "none" has no built-in adapter',
+  )
+})
+
+test('createAgentApp disposes its runtime once when profile initialization fails', async () => {
+  const workspaceRoot = await makeTempDir('boring-agent-init-failure-')
+  const initializationError = new Error('runtime provisioning rejected')
+  const disposeRuntime = vi.fn(async () => {
+    throw new Error('cleanup also failed')
   })
-
-  try {
-    const pureRuntimeCwd = join(sessionRoot, '.runtime-none')
-    expect(harness.inputs[0]).toMatchObject({
-      cwd: pureRuntimeCwd,
-      runtimeCwd: pureRuntimeCwd,
-      sessionStorageCwd: '',
-      sessionRoot,
-    })
-    expect(harness.inputs[0]?.sessionDir).toBeUndefined()
-    expect(JSON.stringify(harness.inputs[0])).not.toContain(process.cwd())
-    expect(JSON.stringify(harness.inputs[0])).not.toContain('/workspace')
-
-    const catalog = await app.inject({ method: 'GET', url: '/api/v1/agent/catalog' })
-    expect(catalog.statusCode).toBe(200)
-    const names: string[] = catalog.json().tools.map((tool: { name: string }) => tool.name)
-    expect(names).toContain('pure_echo')
-    for (const forbidden of [
-      'bash',
-      'execute_isolated_code',
-      'read',
-      'write',
-      'edit',
-      'find',
-      'grep',
-      'ls',
-      'upload_file',
-    ]) {
-      expect(names).not.toContain(forbidden)
-    }
-
-    for (const url of [
-      '/api/v1/files/raw?path=README.md',
-      '/api/v1/tree?path=',
-      '/api/v1/files/search?q=README',
-      '/api/v1/fs/events',
-      '/api/v1/git/file-url?path=README.md',
-    ]) {
-      const response = await app.inject({ method: 'GET', url })
-      expect(response.statusCode).toBe(404)
-    }
-    const upload = await app.inject({ method: 'POST', url: '/api/v1/files/upload', payload: {} })
-    expect(upload.statusCode).toBe(404)
-
-    const ready = await app.inject({ method: 'GET', url: '/api/v1/ready-status' })
-    expect(ready.statusCode).toBe(200)
-    expect(ready.body).toContain('"state":"ready"')
-
-    const created = await app.inject({
-      method: 'POST',
-      url: '/api/v1/agent/pi-chat/sessions',
-      payload: { title: 'Pure' },
-    })
-    expect(created.statusCode).toBe(201)
-    expect(harness.sessions.createContexts[0]?.workspaceId).toBeUndefined()
-
-    for (const attachment of [
-      { filename: 'chart.png', mediaType: 'image/png', url: '/api/v1/files/raw?path=chart.png' },
-      { filename: 'inline.png', mediaType: 'image/png', url: 'data:image/png;base64,AAAA' },
-    ]) {
-      const prompt = await app.inject({
-        method: 'POST',
-        url: `/api/v1/agent/pi-chat/${created.json().id}/prompt`,
-        payload: {
-          message: 'see attached',
-          clientNonce: `pure-attachment-${attachment.filename}`,
-          attachments: [attachment],
-        },
-      })
-      expect(prompt.statusCode).toBe(400)
-      expect(prompt.json().error.code).toBe(AGENT_NO_FILESYSTEM_FOR_ATTACHMENTS)
-    }
-  } finally {
-    await app.close()
+  const runtimeModeAdapter: RuntimeModeAdapter = {
+    id: 'init-failure-test',
+    workspaceFsCapability: 'strong',
+    async create(ctx) {
+      const { directModeAdapter } = await import('../runtime/modes/direct')
+      return directModeAdapter.create(ctx)
+    },
+    dispose: disposeRuntime,
   }
+
+  await expect(createAgentApp({
+    workspaceRoot,
+    runtimeModeAdapter,
+    logger: false,
+    runtimeProvisioner: async () => {
+      throw initializationError
+    },
+  })).rejects.toBe(initializationError)
+  expect(disposeRuntime).toHaveBeenCalledOnce()
 })
 
 test('createAgentApp provisions from templatePath option', async () => {
@@ -426,6 +437,7 @@ test('createAgentApp can use a custom harness factory for non-pi runtimes', asyn
 
 test('createAgentApp exposes static filesystem bindings on files and tree routes', async () => {
   const workspaceRoot = await makeTempDir('boring-ui-static-bindings-')
+  const disposeRuntime = vi.fn()
   const operations: RuntimeFilesystemBindingOperations = {
     read: vi.fn(async ({ path }) => ({ content: `company:${path}` })),
     list: vi.fn(async ({ path }) => ({ entries: path === '/' ? ['company'] : ['policy.md'], metadata: {} })),
@@ -437,6 +449,7 @@ test('createAgentApp exposes static filesystem bindings on files and tree routes
   const runtimeModeAdapter: RuntimeModeAdapter = {
     id: 'static-bindings-test',
     workspaceFsCapability: 'strong' as const,
+    dispose: disposeRuntime,
     async create(ctx) {
       const { createNodeWorkspace } = await import('../workspace/createNodeWorkspace')
       const { createDirectSandbox } = await import('../sandbox/direct/createDirectSandbox')
@@ -496,6 +509,7 @@ test('createAgentApp exposes static filesystem bindings on files and tree routes
   } finally {
     await app.close()
   }
+  expect(disposeRuntime).toHaveBeenCalledOnce()
 })
 
 test('createAgentApp rejects command execution when metering is configured', async () => {

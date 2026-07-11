@@ -28,27 +28,18 @@ export const PromptUpdateSchema = z.object({
   prompt: z.string(),
 }).strict()
 
-export const AutomationRunCreateSchema = z.object({
+export const AutomationRunBeginSchema = z.object({
   automationId: nonEmptyString,
-  sessionId: nonEmptyString.nullable().optional(),
-  status: AutomationRunStatusSchema.optional(),
   trigger: AutomationRunTriggerSchema,
   scheduledFor: isoString.nullable().optional(),
-  startedAt: isoString.nullable().optional(),
-  completedAt: isoString.nullable().optional(),
-  durationMs: nonNegativeInteger.nullable().optional(),
-  inputTokens: nonNegativeInteger.nullable().optional(),
-  outputTokens: nonNegativeInteger.nullable().optional(),
-  totalTokens: nonNegativeInteger.nullable().optional(),
   promptSnapshot: z.string(),
   modelSnapshot: nonEmptyString,
-  error: z.string().nullable().optional(),
+  createdAt: isoString.optional(),
 }).strict()
 
-export const AutomationRunPatchSchema = z.object({
+export const AutomationRunLifecyclePatchSchema = z.object({
   sessionId: nonEmptyString.nullable().optional(),
   status: AutomationRunStatusSchema.optional(),
-  scheduledFor: isoString.nullable().optional(),
   startedAt: isoString.nullable().optional(),
   completedAt: isoString.nullable().optional(),
   durationMs: nonNegativeInteger.nullable().optional(),
@@ -62,5 +53,5 @@ export const IdParamsSchema = z.object({ id: nonEmptyString })
 
 export type AutomationCreateInput = z.infer<typeof AutomationCreateSchema>
 export type AutomationPatchInput = z.infer<typeof AutomationPatchSchema>
-export type AutomationRunCreateInput = z.infer<typeof AutomationRunCreateSchema>
-export type AutomationRunPatchInput = z.infer<typeof AutomationRunPatchSchema>
+export type AutomationRunBeginInput = z.infer<typeof AutomationRunBeginSchema>
+export type AutomationRunLifecyclePatchInput = z.infer<typeof AutomationRunLifecyclePatchSchema>

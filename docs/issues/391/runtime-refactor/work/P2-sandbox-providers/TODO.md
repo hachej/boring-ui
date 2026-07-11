@@ -1,5 +1,26 @@
 # TODO-P2 — Scaffold `@hachej/boring-sandbox`, move concrete providers into it, land `resolveMode` in `@hachej/boring-bash`
 
+## Proposed narrow v1 work order (2026-07-10)
+
+Dispatch only this D1-consumed slice:
+
+1. Treat the `@hachej/boring-sandbox` scaffold and #557 publish-pipeline parity
+   as landed prerequisites; do not redo them.
+2. Add/review the hardened EU runsc/systrap provider boundary used by D1,
+   including honest capability facts, isolation/limit/cleanup proof, and no
+   silent fallback.
+3. Keep A1 local development on the existing workspace host: prefer bwrap when
+   available and require explicit trusted-local policy for direct execution.
+4. Migrate only imports that the runsc slice actually changes, in that slice.
+
+The full direct/bwrap/Vercel/remote-worker provider migration, generic
+capability matrix, `resolveMode` cutover, pure-only agent binary, and all-mode
+composer rewrite below are post-v1. #548 must be recut to the runsc/package
+boundary; #558 is deferred; #564 closes/defers. Do not dispatch the historical
+work order below for v1.
+
+## Historical full provider/mode work order — non-dispatchable for v1
+
 Coordinator: never assign this whole file. Dispatch one bead/PR with this
 file's context, dependencies, and non-negotiables included in the assignment.
 
@@ -100,19 +121,12 @@ Concrete non-agent-loop providers (direct, bwrap, vercel-sandbox, remote-worker 
   composers fail closed when no approved provider is available, and `direct`
   requires explicit trusted-local policy.
 
-### This phase is the runtime-mode composition cutover (API-breaking for in-repo composers — the FIRST break)
+### Post-v1 only: runtime-mode composition cutover
 
-P2 is where composition **first breaks and gets rewired** — it is the earlier of the two named cutovers (P2 = runtime-mode; P3 = routes/tools). P1 held an end-to-end compatibility promise ("all current HTTP consumers unchanged"), but **that promise ends at P2**: moving the concrete mode adapters + `resolveMode()` out of `packages/agent` means every in-repo composer that resolved a runtime mode must now **inject the resolved runtime adapter** (host-side) instead of importing `resolveMode`, and the agent bin becomes pure-only. External HTTP *callers* still see byte-identical route paths/behavior; the break is in the **composition API**, not the wire surface. **No text may claim the first composition break waits until P3.**
-
-P2 therefore **enumerates and migrates EVERY in-repo composition consumer** — **each relocation slice migrates ALL importers for that slice, deletes the origin exports, and merges atomically after its gates pass** (a slice = one provider family; there are **no shims between slices**) — re-verifying behavior parity after each slice:
-
-- `packages/agent/src/server/createAgentApp.ts` + `registerAgentRoutes.ts` — the Fastify adapter layer takes the resolved runtime adapter **by injection** (Phase-1 seam) instead of importing `resolveMode`; if that seam is not threaded, STOP and report the missing P1 deliverable (do not shim).
-- `packages/cli/src/server/modeApps.ts` — imports `@hachej/boring-bash/modes` (mode resolution, which pulls `@hachej/boring-sandbox/providers` values) and resolves the mode host-side (and **now owns the bash-enabled dev-server bin composition** moved from the agent bin — see BBP2-005 / fix 6).
-- `packages/workspace/src/app/server/createWorkspaceAgentServer.ts` — same host-side `@hachej/boring-bash/modes` resolution.
-- `packages/agent/src/bin/boring-agent.ts` — becomes **pure-only** (`runtime: 'none'`, no `--mode`, no provider, no `resolveMode`); its bash-enabled composition moves to `packages/cli` in this same PR.
-- `packages/agent/src/server/index.ts` — origin value exports of the moved providers/`resolveMode` are **deleted** (BBP2-007), no old-path re-export.
-
-**Exit re-verifies parity post-migration:** after each consumer is migrated, its previously-green behavior (dev server, workspace/CLI/full-app boot, `direct`/`local`/`vercel-sandbox` modes, existing tests + e2e) must pass unchanged. A consumer is "done" only when its migration PR is merged AND its parity checks are re-run green post-cutover.
+The former all-provider/mode cutover is deferred and has no executable v1
+instructions. A future named consumer must re-specify composer migration and
+binary ownership from then-current main. It must not revive the pure-only agent
+binary or `runtime: 'none'` product path implicitly.
 
 ## Non-negotiables
 
@@ -196,19 +210,9 @@ P2 therefore **enumerates and migrates EVERY in-repo composition consumer** — 
 
 ### BBP2-005 — Land runtime-mode resolution (`resolveMode()` + mode adapters) in `@hachej/boring-bash` [size M]
 
-- **Files move:** `packages/agent/src/server/runtime/modes/{direct,local,vercel-sandbox,remote-worker,provisioningAdapter}.ts` and `runtime/resolveMode.ts` → **`packages/boring-bash/src/modes/*`** (keep filenames) — this is the CHOICE-of-sandbox layer and it lives in **boring-bash (THE RUNTIME)**, not boring-sandbox and not `boring-bash/providers`. Add a `@hachej/boring-bash` `"./modes"` export. Move `runtime/modes/__tests__/*` and `runtime/__tests__/resolveMode.test.ts` with them. The mode adapters **import the concrete provider values from `@hachej/boring-sandbox/providers`** (this is the single legitimate `boring-bash → boring-sandbox` value edge) and resolve a mode id → a boring-sandbox provider.
-- **Mode-private helper moves required by the current import graph:** move `packages/agent/src/server/runtime/createServerFileSearch.ts` → `packages/boring-bash/src/modes/createServerFileSearch.ts`; move `packages/agent/src/server/workspace/provision.ts` (`copyTemplate`) → `packages/boring-bash/src/modes/copyTemplate.ts` or inject an equivalent template copier into the mode; move adapter-local provisioning artifact helpers currently pulled from `workspace/provisioning/packArtifact.ts` into `boring-bash/src/modes/provisioningArtifacts.ts` or inject through a host seam compatible with the P5 target. Never add a new dependency on the transitional agent engine. The end state is mandatory: `rg "from '@hachej/boring-agent" packages/boring-bash/src/modes` shows only `import type` lines.
-- **Files keep (agent, type-only):** `packages/agent/src/server/runtime/mode.ts` stays — it is type-only contracts (`RuntimeModeAdapter`, `RuntimeBundle`). boring-bash mode adapters import these **type-only** from `@hachej/boring-agent/server` (allowed).
-- **Files touch (repoint `resolveMode`/`autoDetectMode` value imports):** `packages/agent/src/server/createAgentApp.ts`, `registerAgentRoutes.ts`, `index.ts`, `packages/workspace/src/app/server/createWorkspaceAgentServer.ts`, `packages/core/src/app/server/createCoreWorkspaceAgentServer.ts`, `packages/cli/src/server/modeApps.ts`, `packages/agent/scripts/eval-provisioning-agent-vercel.mts`, plus any test/helper import found by `rg "resolveMode|autoDetectMode|hasBwrap" packages apps plugins`. These are host/composition/CLI layers → they may import `@hachej/boring-bash/modes` directly (which in turn pulls `@hachej/boring-sandbox` provider values). For `packages/agent/*` callers that must stay bash-free (createAgentApp/registerAgentRoutes are the Fastify adapter layer): inject the resolved adapter from the host instead of importing `resolveMode` — confirm against the Phase-1 injection seam; if injection is not yet threaded there, **STOP and report the missing P1 seam** (do not leave a shim — the seam is a P1 deliverable, not something P2 patches around).
-- **Agent bin decision (resolved in THIS same P2 PR — the bin cannot survive P2 unchanged):** the `packages/agent` bin (`packages/agent/src/bin/boring-agent.ts`) today composes a bash-enabled dev server via `createAgentApp({ mode: 'direct', ... })`, which after this move would force the agent bin to resolve a mode → pull `@hachej/boring-bash/modes` (an agent→bash value import — forbidden). Resolution: **the agent bin becomes PURE-ONLY — it composes `runtime: 'none'` (no `mode`, no provider, no `resolveMode`)**, keeping agent value-import-free. Its **bash-enabled composition (the `--mode`/`direct` dev-server + provider wiring) MOVES to `packages/cli`** (the CLI is a host/composition layer allowed to import `@hachej/boring-bash/modes` + `@hachej/boring-sandbox/providers`) in this same PR. Any E2E helper that needs a bash-backed backend targets the CLI-owned entry point, not the agent bin. Remove the `RuntimeModeId`/`--mode` handling from the agent bin.
-- **Fail-closed selection correction:** auto-detection may choose `direct` only
-  when an explicit trusted-local policy is present. Deployed/core/tenant hosts
-  with no acceptable provider return a stable unsafe-fallback error. Log the
-  trusted-local choice; never silently reduce isolation because `bwrap` is
-  unavailable.
-- **Notes:** `none`/`readonly` must short-circuit the closed provisioning-adapter mode union rather than throw (02 remote-worker split note). Replace agent value imports used by the current mode files (`ErrorCode`, `safeCapture`, `getEnv`/env defaults) with boring-bash-local helpers or host-injected functions before moving; do not import those values from agent.
-- **Tests:** moved `resolveMode.test.ts` passes in boring-bash; `pnpm --filter @hachej/boring-agent run test` green; mode/provider mapping test (BBP2-002) covers every current pair; the agent bin composes `runtime: 'none'` and has zero `@hachej/boring-bash`/`@hachej/boring-sandbox` import (invariant scan); the migrated CLI-owned bash dev-server entry starts a `direct`-mode backend for E2E; static grep proves `packages/boring-bash/src/modes/**` has no agent value import.
-- **Acceptance:** `resolveMode()` + mode adapters live in **boring-bash** (`boring-bash/modes`), resolving to `@hachej/boring-sandbox` provider values; agent keeps only type-only mode contracts; the agent bin is pure-only (`runtime: 'none'`) and its bash-enabled composition now lives in `packages/cli`.
+**Deferred history — do not dispatch.** The old mode relocation and pure-only
+binary cutover are removed from v1. Reopen only through a new post-v1 work order
+based on a named consumer and then-current import graph.
 
 ### BBP2-006 — Split remote-worker: shared protocol → shared, client → providers, server path decision [size M]
 

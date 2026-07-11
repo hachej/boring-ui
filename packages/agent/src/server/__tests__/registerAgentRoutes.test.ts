@@ -2,15 +2,15 @@ import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { homedir, tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { afterEach, expect, test, vi } from 'vitest'
-import Fastify from 'fastify'
+import Fastify, { type FastifyRequest } from 'fastify'
 
 import { registerAgentRoutes } from '../registerAgentRoutes'
 import { provisionWorkspaceRuntime } from '../workspace/provisioning'
 import { ErrorCode } from '../../shared/error-codes'
+import type { SessionCtx } from '../../shared/session'
 import type { RuntimeModeAdapter } from '../runtime/mode'
-import { AGENT_NO_FILESYSTEM_FOR_ATTACHMENTS } from '../../shared/events'
-import type { AgentHarness, AgentHarnessFactoryInput } from '../../shared/harness'
-import type { SessionCtx, SessionDetail, SessionStore, SessionSummary } from '../../shared/session'
+import type { WorkspaceAgentDispatcherResolver } from '../workspaceAgentDispatcher'
+import { createDispatcherTestHarness } from './workspaceAgentDispatcherTestHarness'
 
 const tempDirs: string[] = []
 
@@ -43,82 +43,6 @@ async function makeTempDir(prefix: string): Promise<string> {
   return dir
 }
 
-class TestSessionStore implements SessionStore {
-  private readonly records = new Map<string, SessionSummary>()
-  private created = 0
-  readonly createContexts: SessionCtx[] = []
-
-  async list(): Promise<SessionSummary[]> {
-    return [...this.records.values()]
-  }
-
-  async create(ctx: SessionCtx, init?: { title?: string }): Promise<SessionSummary> {
-    this.createContexts.push(ctx)
-    this.created += 1
-    const now = new Date().toISOString()
-    const summary = {
-      id: `pure-session-${this.created}`,
-      title: init?.title ?? 'New session',
-      createdAt: now,
-      updatedAt: now,
-      turnCount: 0,
-    }
-    this.records.set(summary.id, summary)
-    return summary
-  }
-
-  async load(_ctx: SessionCtx, sessionId: string): Promise<SessionDetail> {
-    const record = this.records.get(sessionId)
-    if (!record) throw new Error(`missing session ${sessionId}`)
-    return record
-  }
-
-  async rename(_ctx: SessionCtx, sessionId: string, title: string): Promise<SessionSummary> {
-    const record = this.records.get(sessionId)
-    if (!record) throw new Error(`missing session ${sessionId}`)
-    const updated = { ...record, title, updatedAt: new Date().toISOString() }
-    this.records.set(sessionId, updated)
-    return updated
-  }
-
-  async delete(_ctx: SessionCtx, sessionId: string): Promise<void> {
-    this.records.delete(sessionId)
-  }
-}
-
-function createNoopHarnessFactory() {
-  const sessions = new TestSessionStore()
-  const inputs: AgentHarnessFactoryInput[] = []
-  const factory = async (input: AgentHarnessFactoryInput): Promise<AgentHarness> => {
-    inputs.push(input)
-    return {
-      id: 'pure-routes-test-harness',
-      placement: 'server',
-      sessions,
-    }
-  }
-  return { factory, inputs, sessions }
-}
-
-function createNamespacedHarnessFactory() {
-  const inputs: AgentHarnessFactoryInput[] = []
-  const stores = new Map<string, TestSessionStore>()
-  const factory = async (input: AgentHarnessFactoryInput): Promise<AgentHarness> => {
-    inputs.push(input)
-    const key = input.sessionNamespace ?? ''
-    let sessions = stores.get(key)
-    if (!sessions) {
-      sessions = new TestSessionStore()
-      stores.set(key, sessions)
-    }
-    return {
-      id: 'pure-routes-namespaced-test-harness',
-      placement: 'server',
-      sessions,
-    }
-  }
-  return { factory, inputs, stores }
-}
 
 async function eventually(assertion: () => Promise<void> | void, timeoutMs = 5000): Promise<void> {
   const startedAt = Date.now()
@@ -152,6 +76,50 @@ async function createDummySkill(): Promise<string> {
   await writeFile(join(root, 'SKILL.md'), '---\nname: dummy-sdk-skill\ndescription: Dummy SDK skill\n---\n# Dummy SDK\n')
   return root
 }
+
+test('registerAgentRoutes composes a trusted dispatcher over the workspace runtime', async () => {
+  const harness = createDispatcherTestHarness()
+  const workspaceRoot = await makeTempDir('boring-agent-dispatcher-workspace-')
+  let resolver: WorkspaceAgentDispatcherResolver | undefined
+  const app = Fastify({ logger: false })
+  await app.register(registerAgentRoutes, {
+    workspaceRoot,
+    mode: 'direct',
+    sessionId: 'workspace-dispatcher',
+    sessionRoot: await makeTempDir('boring-agent-dispatcher-sessions-'),
+    harnessFactory: harness.factory,
+    onWorkspaceAgentDispatcher: (value) => { resolver = value },
+  })
+
+  try {
+    expect(resolver).toBeDefined()
+    const dispatcher = await resolver!.resolve({ workspaceId: 'workspace-dispatcher', userId: 'user-dispatcher' })
+    const events = []
+    for await (const event of dispatcher.send({
+      content: 'workspace prompt',
+      model: { provider: 'test', id: 'gpt-5.5' },
+    })) events.push(event)
+
+    expect(harness.factoryInputs).toHaveLength(1)
+    expect(harness.sessions.createContexts).toEqual([{ workspaceId: 'workspace-dispatcher', userId: 'user-dispatcher' }])
+    expect(harness.sendInputs.find((input) => input.model)).toMatchObject({
+      ctx: { workspaceId: 'workspace-dispatcher', userId: 'user-dispatcher' },
+      model: { provider: 'test', id: 'gpt-5.5' },
+    })
+    expect(events.some((event) => event.chunk.type === 'usage')).toBe(true)
+    expect(events.at(-1)?.chunk).toMatchObject({ type: 'agent-end', status: 'ok' })
+    const sessionId = events[0]?.sessionId
+    expect(sessionId).toBe('dispatcher-session-1')
+    await expect(dispatcher.interrupt(sessionId!)).resolves.toMatchObject({ accepted: true })
+    await expect(dispatcher.stop(sessionId!)).resolves.toMatchObject({ accepted: true, stopped: true })
+    expect(harness.factoryInputs).toHaveLength(1)
+    await expect(resolver!.resolve({ workspaceId: 'wrong-workspace', userId: 'user-dispatcher' })).rejects.toMatchObject({
+      code: ErrorCode.enum.UNAUTHORIZED,
+    })
+  } finally {
+    await app.close()
+  }
+})
 
 test('registerAgentRoutes externalPlugins=false keeps local plugin files out of catalog', async () => {
   const workspaceRoot = await makeTempDir('boring-agent-embed-plugin-disabled-')
@@ -188,6 +156,80 @@ test('registerAgentRoutes externalPlugins=false keeps local plugin files out of 
     expect(catalogText).not.toContain('boring-plugin-authoring')
     expect(catalogText).not.toContain('plugin-owned')
     expect(catalogText).not.toContain('my-plugin')
+  } finally {
+    await app.close()
+  }
+})
+
+test('registerAgentRoutes dispatcher fails closed when dynamic workspace resolution lacks request context', async () => {
+  let resolver: WorkspaceAgentDispatcherResolver | undefined
+  const app = Fastify({ logger: false })
+  await app.register(registerAgentRoutes, {
+    mode: 'direct',
+    workspaceRoot: await makeTempDir('boring-agent-dispatcher-base-'),
+    getWorkspaceId: async (request) => String(request.headers['x-boring-workspace-id'] ?? ''),
+    getWorkspaceRoot: async () => await makeTempDir('boring-agent-dispatcher-workspace-'),
+    harnessFactory: createDispatcherTestHarness().factory,
+    onWorkspaceAgentDispatcher: (value) => { resolver = value },
+  })
+
+  try {
+    await expect(resolver!.resolve({ workspaceId: 'workspace-dynamic', userId: 'user-dynamic' })).rejects.toMatchObject({
+      code: ErrorCode.enum.WORKSPACE_UNINITIALIZED,
+    })
+  } finally {
+    await app.close()
+  }
+})
+
+test('registerAgentRoutes dispatcher reuses a dynamic runtime with trusted requestless scope', async () => {
+  const workspaceRoot = await makeTempDir('boring-agent-dispatcher-dynamic-')
+  const harness = createDispatcherTestHarness()
+  const getTrustedWorkspaceRoot = vi.fn(async () => workspaceRoot)
+  let resolver: WorkspaceAgentDispatcherResolver | undefined
+  const app = Fastify({ logger: false })
+  app.addHook('onRequest', async (request) => {
+    ;(request as FastifyRequest & { user?: { id: string } }).user = { id: 'user-dynamic' }
+  })
+  await app.register(registerAgentRoutes, {
+    mode: 'direct',
+    externalPlugins: false,
+    workspaceRoot: await makeTempDir('boring-agent-dispatcher-dynamic-base-'),
+    sessionRoot: await makeTempDir('boring-agent-dispatcher-dynamic-sessions-'),
+    getWorkspaceId: async (request) => String(request.headers['x-boring-workspace-id'] ?? ''),
+    getWorkspaceRoot: async () => workspaceRoot,
+    getTrustedWorkspaceRoot,
+    getSessionNamespace: ({ request, userId }) => {
+      const requestUser = (request as FastifyRequest & { user?: { id: string } } | undefined)?.user?.id
+      return `actor-${userId ?? requestUser ?? 'anonymous'}`
+    },
+    harnessFactory: harness.factory,
+    onWorkspaceAgentDispatcher: (value) => { resolver = value },
+  })
+
+  try {
+    const catalog = await app.inject({
+      method: 'GET',
+      url: '/api/v1/agent/catalog',
+      headers: { 'x-boring-workspace-id': 'workspace-dynamic' },
+    })
+    expect(catalog.statusCode).toBe(200)
+    expect(harness.factoryInputs).toHaveLength(1)
+
+    await resolver!.resolve({ workspaceId: 'workspace-dynamic', userId: 'user-dynamic' })
+    expect(getTrustedWorkspaceRoot).toHaveBeenCalledWith({ workspaceId: 'workspace-dynamic', userId: 'user-dynamic' })
+    expect(harness.factoryInputs).toHaveLength(1)
+
+    await expect(resolver!.resolve(
+      { workspaceId: 'workspace-dynamic', userId: 'user-dynamic' },
+      { request: {} as FastifyRequest },
+    )).resolves.toBeDefined()
+    expect(harness.factoryInputs).toHaveLength(1)
+
+    await expect(resolver!.resolve(
+      { workspaceId: 'workspace-dynamic', userId: 'user-dynamic' },
+      { request: { workspaceContext: { workspaceId: 'other-workspace' } } as FastifyRequest },
+    )).rejects.toMatchObject({ code: ErrorCode.enum.UNAUTHORIZED })
   } finally {
     await app.close()
   }
@@ -447,392 +489,12 @@ test('registerAgentRoutes mounts catalog endpoint on host app', async () => {
   await app.close()
 })
 
-test('registerAgentRoutes mode none excludes filesystem routes/tools and keeps workspaceId undefined', async () => {
-  const sessionRoot = await makeTempDir('boring-agent-routes-pure-session-root-')
-  const harness = createNoopHarnessFactory()
+test('registerAgentRoutes rejects mode none without a workspace runtime adapter', async () => {
   const app = Fastify({ logger: false })
-  const pureTool = {
-    name: 'pure_routes_echo',
-    description: 'Pure route test tool.',
-    parameters: { type: 'object' as const, properties: {} },
-    async execute() {
-      return { content: [{ type: 'text' as const, text: 'ok' }] }
-    },
-  }
-  const scopedTool = {
-    name: 'pure_routes_scoped_echo',
-    description: 'Pure scoped route test tool.',
-    parameters: { type: 'object' as const, properties: {} },
-    async execute() {
-      return { content: [{ type: 'text' as const, text: 'scoped' }] }
-    },
-  }
-  const seenExtraToolContexts: Array<{
-    workspaceId: string
-    runtimeMode: string
-    workspaceFsCapability: string | undefined
-  }> = []
-  const scopedHeaders = { 'x-boring-workspace-id': 'workspace-scoped' }
-
-  await app.register(registerAgentRoutes, {
-    mode: 'none',
-    sessionRoot,
-    harnessFactory: harness.factory,
-    extraTools: [pureTool],
-    getWorkspaceId: async (request) => String(request.headers['x-boring-workspace-id'] ?? 'default'),
-    getExtraTools: async ({ workspaceId, runtimeMode, workspaceFsCapability }) => {
-      seenExtraToolContexts.push({ workspaceId, runtimeMode, workspaceFsCapability })
-      return [scopedTool]
-    },
-  })
-  await app.ready()
-
-  try {
-    const pureRuntimeCwd = join(sessionRoot, '.runtime-none')
-    const catalog = await app.inject({ method: 'GET', url: '/api/v1/agent/catalog', headers: scopedHeaders })
-    expect(catalog.statusCode).toBe(200)
-    expect(harness.inputs[0]).toMatchObject({
-      cwd: pureRuntimeCwd,
-      runtimeCwd: pureRuntimeCwd,
-      sessionStorageCwd: '',
-      sessionRoot,
-    })
-    expect(harness.inputs[0]?.sessionNamespace).toMatch(/^workspace-[0-9a-f]{16}$/)
-    expect(harness.inputs[0]?.sessionDir).toBeUndefined()
-    expect(JSON.stringify(harness.inputs[0])).not.toContain(process.cwd())
-    expect(JSON.stringify(harness.inputs[0])).not.toContain('/workspace')
-    const names: string[] = catalog.json().tools.map((tool: { name: string }) => tool.name)
-    expect(names).toContain('pure_routes_echo')
-    expect(names).toContain('pure_routes_scoped_echo')
-    expect(seenExtraToolContexts[0]).toEqual({
-      workspaceId: 'workspace-scoped',
-      runtimeMode: 'none',
-      workspaceFsCapability: 'none',
-    })
-    expect(harness.inputs[0]?.tools.map((tool) => tool.name)).toEqual([
-      'pure_routes_echo',
-      'pure_routes_scoped_echo',
-    ])
-    for (const forbidden of [
-      'bash',
-      'execute_isolated_code',
-      'read',
-      'write',
-      'edit',
-      'find',
-      'grep',
-      'ls',
-      'upload_file',
-    ]) {
-      expect(names).not.toContain(forbidden)
-    }
-
-    for (const url of [
-      '/api/v1/files/raw?path=README.md',
-      '/api/v1/tree?path=',
-      '/api/v1/files/search?q=README',
-      '/api/v1/fs/events',
-      '/api/v1/git/file-url?path=README.md',
-    ]) {
-      const res = await app.inject({ method: 'GET', url })
-      expect(res.statusCode).toBe(404)
-    }
-    const upload = await app.inject({ method: 'POST', url: '/api/v1/files/upload', payload: {} })
-    expect(upload.statusCode).toBe(404)
-
-    const ready = await app.inject({ method: 'GET', url: '/api/v1/ready-status', headers: scopedHeaders })
-    expect(ready.statusCode).toBe(200)
-    expect(ready.body).toContain('"state":"ready"')
-
-    const created = await app.inject({
-      method: 'POST',
-      url: '/api/v1/agent/pi-chat/sessions',
-      headers: scopedHeaders,
-      payload: { title: 'Pure' },
-    })
-    expect(created.statusCode).toBe(201)
-    expect(harness.sessions.createContexts[0]?.workspaceId).toBeUndefined()
-
-    const prompt = await app.inject({
-      method: 'POST',
-      url: `/api/v1/agent/pi-chat/${created.json().id}/prompt`,
-      headers: scopedHeaders,
-      payload: {
-        message: 'see attached',
-        clientNonce: 'pure-routes-attachment',
-        attachments: [{ filename: 'chart.png', mediaType: 'image/png', url: '/api/v1/files/raw?path=chart.png' }],
-      },
-    })
-    expect(prompt.statusCode).toBe(400)
-    expect(prompt.json().error.code).toBe(AGENT_NO_FILESYSTEM_FOR_ATTACHMENTS)
-
-    const inlinePrompt = await app.inject({
-      method: 'POST',
-      url: `/api/v1/agent/pi-chat/${created.json().id}/prompt`,
-      headers: scopedHeaders,
-      payload: {
-        message: 'see inline',
-        clientNonce: 'pure-routes-inline-attachment',
-        attachments: [{ filename: 'inline.png', mediaType: 'image/png', url: 'data:image/png;base64,AAAA' }],
-      },
-    })
-    expect(inlinePrompt.statusCode).toBe(400)
-    expect(inlinePrompt.json().error.code).toBe(AGENT_NO_FILESYSTEM_FOR_ATTACHMENTS)
-  } finally {
-    await app.close()
-  }
-})
-
-test('registerAgentRoutes mode none scopes storage when only getWorkspaceId varies', async () => {
-  const sessionRoot = await makeTempDir('boring-agent-routes-pure-workspace-scope-')
-  const harness = createNamespacedHarnessFactory()
-  const app = Fastify({ logger: false })
-  const headersA = { 'x-boring-workspace-id': 'workspace-a' }
-  const headersB = { 'x-boring-workspace-id': 'workspace-b' }
-
-  await app.register(registerAgentRoutes, {
-    mode: 'none',
-    sessionRoot,
-    harnessFactory: harness.factory,
-    getWorkspaceId: async (request) => String(request.headers['x-boring-workspace-id'] ?? 'default'),
-  })
-  await app.ready()
-
-  try {
-    const createdA = await app.inject({
-      method: 'POST',
-      url: '/api/v1/agent/pi-chat/sessions',
-      headers: headersA,
-      payload: { title: 'Workspace A' },
-    })
-    expect(createdA.statusCode).toBe(201)
-
-    const listB = await app.inject({
-      method: 'GET',
-      url: '/api/v1/agent/pi-chat/sessions',
-      headers: headersB,
-    })
-    expect(listB.statusCode).toBe(200)
-    expect(listB.json()).toEqual([])
-
-    const listA = await app.inject({
-      method: 'GET',
-      url: '/api/v1/agent/pi-chat/sessions',
-      headers: headersA,
-    })
-    expect(listA.statusCode).toBe(200)
-    expect(listA.json()).toEqual([expect.objectContaining({
-      id: createdA.json().id,
-      title: 'Workspace A',
-    })])
-
-    expect(harness.inputs).toHaveLength(2)
-    expect(new Set(harness.inputs.map((input) => input.sessionNamespace)).size).toBe(2)
-    for (const input of harness.inputs) {
-      expect(input.sessionNamespace).toMatch(/^workspace-[0-9a-f]{16}$/)
-    }
-    for (const store of harness.stores.values()) {
-      for (const ctx of store.createContexts) {
-        expect(ctx.workspaceId).toBeUndefined()
-      }
-    }
-  } finally {
-    await app.close()
-  }
-})
-
-test('registerAgentRoutes mode none folds workspace scope into configured sessionNamespace', async () => {
-  const sessionRoot = await makeTempDir('boring-agent-routes-pure-configured-scope-')
-  const harness = createNamespacedHarnessFactory()
-  const app = Fastify({ logger: false })
-  const headersA = { 'x-boring-workspace-id': 'workspace-a' }
-  const headersB = { 'x-boring-workspace-id': 'workspace-b' }
-
-  await app.register(registerAgentRoutes, {
-    mode: 'none',
-    sessionRoot,
-    sessionNamespace: 'shared',
-    harnessFactory: harness.factory,
-    getWorkspaceId: async (request) => String(request.headers['x-boring-workspace-id'] ?? 'default'),
-  })
-  await app.ready()
-
-  try {
-    const createdA = await app.inject({
-      method: 'POST',
-      url: '/api/v1/agent/pi-chat/sessions',
-      headers: headersA,
-      payload: { title: 'Workspace A' },
-    })
-    expect(createdA.statusCode).toBe(201)
-
-    const listB = await app.inject({
-      method: 'GET',
-      url: '/api/v1/agent/pi-chat/sessions',
-      headers: headersB,
-    })
-    expect(listB.statusCode).toBe(200)
-    expect(listB.json()).toEqual([])
-
-    const listA = await app.inject({
-      method: 'GET',
-      url: '/api/v1/agent/pi-chat/sessions',
-      headers: headersA,
-    })
-    expect(listA.statusCode).toBe(200)
-    expect(listA.json()).toEqual([expect.objectContaining({
-      id: createdA.json().id,
-      title: 'Workspace A',
-    })])
-
-    expect(harness.inputs).toHaveLength(2)
-    expect(new Set(harness.inputs.map((input) => input.sessionNamespace)).size).toBe(2)
-    for (const input of harness.inputs) {
-      expect(input.sessionNamespace).toMatch(/^shared-workspace-[0-9a-f]{16}$/)
-    }
-    for (const store of harness.stores.values()) {
-      for (const ctx of store.createContexts) {
-        expect(ctx.workspaceId).toBeUndefined()
-      }
-    }
-  } finally {
-    await app.close()
-  }
-})
-
-test('registerAgentRoutes mode none scopes storage when only getWorkspaceRoot varies', async () => {
-  const sessionRoot = await makeTempDir('boring-agent-routes-pure-root-scope-')
-  const rootA = await makeTempDir('boring-agent-routes-pure-root-a-')
-  const rootB = await makeTempDir('boring-agent-routes-pure-root-b-')
-  const harness = createNamespacedHarnessFactory()
-  const app = Fastify({ logger: false })
-  const headersA = { 'x-pure-root': 'a' }
-  const headersB = { 'x-pure-root': 'b' }
-
-  await app.register(registerAgentRoutes, {
-    mode: 'none',
-    sessionRoot,
-    harnessFactory: harness.factory,
-    getWorkspaceRoot: async (_workspaceId, request) => request.headers['x-pure-root'] === 'b' ? rootB : rootA,
-  })
-  await app.ready()
-
-  try {
-    const createdA = await app.inject({
-      method: 'POST',
-      url: '/api/v1/agent/pi-chat/sessions',
-      headers: headersA,
-      payload: { title: 'Root A' },
-    })
-    expect(createdA.statusCode).toBe(201)
-
-    const listB = await app.inject({
-      method: 'GET',
-      url: '/api/v1/agent/pi-chat/sessions',
-      headers: headersB,
-    })
-    expect(listB.statusCode).toBe(200)
-    expect(listB.json()).toEqual([])
-
-    const listA = await app.inject({
-      method: 'GET',
-      url: '/api/v1/agent/pi-chat/sessions',
-      headers: headersA,
-    })
-    expect(listA.statusCode).toBe(200)
-    expect(listA.json()).toEqual([expect.objectContaining({
-      id: createdA.json().id,
-      title: 'Root A',
-    })])
-
-    expect(harness.inputs).toHaveLength(2)
-    expect(new Set(harness.inputs.map((input) => input.sessionNamespace)).size).toBe(2)
-    for (const input of harness.inputs) {
-      expect(input.sessionNamespace).toMatch(/^scope-[0-9a-f]{16}$/)
-    }
-    for (const store of harness.stores.values()) {
-      for (const ctx of store.createContexts) {
-        expect(ctx.workspaceId).toBeUndefined()
-      }
-    }
-  } finally {
-    await app.close()
-  }
-})
-
-test('registerAgentRoutes mode none evicts old request-scoped pure bindings', async () => {
-  const sessionRoot = await makeTempDir('boring-agent-routes-pure-evict-scope-')
-  const harness = createNamespacedHarnessFactory()
-  const app = Fastify({ logger: false })
-
-  await app.register(registerAgentRoutes, {
-    mode: 'none',
-    sessionRoot,
-    harnessFactory: harness.factory,
-    getWorkspaceId: async (request) => String(request.headers['x-boring-workspace-id'] ?? 'default'),
-  })
-  await app.ready()
-
-  try {
-    for (let i = 0; i < 257; i += 1) {
-      const res = await app.inject({
-        method: 'GET',
-        url: '/api/v1/agent/catalog',
-        headers: { 'x-boring-workspace-id': `workspace-${i}` },
-      })
-      expect(res.statusCode).toBe(200)
-    }
-    expect(harness.inputs).toHaveLength(257)
-
-    const repeated = await app.inject({
-      method: 'GET',
-      url: '/api/v1/agent/catalog',
-      headers: { 'x-boring-workspace-id': 'workspace-0' },
-    })
-    expect(repeated.statusCode).toBe(200)
-    expect(harness.inputs).toHaveLength(258)
-  } finally {
-    await app.close()
-  }
-})
-
-test('registerAgentRoutes mode none retries after scoped binding creation fails', async () => {
-  const sessionRoot = await makeTempDir('boring-agent-routes-pure-retry-session-root-')
-  const harness = createNoopHarnessFactory()
-  const app = Fastify({ logger: false })
-  const scopedTool = {
-    name: 'pure_retry_echo',
-    description: 'Pure retry route test tool.',
-    parameters: { type: 'object' as const, properties: {} },
-    async execute() {
-      return { content: [{ type: 'text' as const, text: 'retry' }] }
-    },
-  }
-  let calls = 0
-
-  await app.register(registerAgentRoutes, {
-    mode: 'none',
-    sessionRoot,
-    harnessFactory: harness.factory,
-    getExtraTools: async () => {
-      calls += 1
-      if (calls === 1) throw new Error('transient pure binding failure')
-      return [scopedTool]
-    },
-  })
-  await app.ready()
-
-  try {
-    const failed = await app.inject({ method: 'GET', url: '/api/v1/agent/catalog' })
-    expect(failed.statusCode).toBe(500)
-
-    const recovered = await app.inject({ method: 'GET', url: '/api/v1/agent/catalog' })
-    expect(recovered.statusCode).toBe(200)
-    expect(recovered.json().tools.map((tool: { name: string }) => tool.name)).toContain('pure_retry_echo')
-    expect(calls).toBe(2)
-  } finally {
-    await app.close()
-  }
+  await expect(app.register(registerAgentRoutes, { mode: 'none' })).rejects.toThrow(
+    'Runtime mode "none" has no built-in adapter',
+  )
+  await app.close()
 })
 
 test('registerAgentRoutes mounts health endpoint', async () => {
