@@ -101,7 +101,7 @@ function isSafeAssetPath(value: string): boolean {
   )
 }
 
-const OpaqueRefSchema = z
+export const OpaqueRefSchema = z
   .string()
   .min(1, 'must be a non-empty reference')
   .max(256, 'must be at most 256 characters')
@@ -126,7 +126,7 @@ const SafeAssetPathSchema = z
   .min(1)
   .refine(isSafeAssetPath, 'must be a safe relative asset path')
 
-const Sha256DigestSchema = z
+export const Sha256DigestSchema = z
   .string()
   .regex(SHA256_DIGEST_RE, 'must be a lowercase sha256 digest')
   .transform((value) => value as Sha256Digest)
