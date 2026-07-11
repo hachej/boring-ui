@@ -20,6 +20,7 @@ import { followUpSelector, hasFollowUpSelector, PiChatMessageMetadataReconciler 
 import { buildPiChatHistory } from './piChatHistory'
 import { PiChatMeteringCoordinator, type AgentMeteringSink, type MeteringErrorLogger } from './metering'
 import { HarnessPiChatServiceLifecycle } from './piChatServiceLifecycle'
+import { normalizeSessionTitle } from '../sessionTitle'
 
 type PiNativeHarness = AgentHarness & {
   getPiSessionAdapter?: (input: AgentSendInput, ctx: RunContext) => Promise<PiAgentSessionAdapter>
@@ -182,13 +183,17 @@ export class HarnessPiChatService implements PiChatSessionService {
     return this.lifecycle.run(async () => {
       const sessionCtx = toSessionCtx(ctx)
       try {
+        // Normalize before either writer observes the title: Pi's live
+        // SessionManager and the restart-pending wrapper must receive the
+        // exact same validated value.
+        const normalizedTitle = normalizeSessionTitle(title)
         // Pi postpones creating its native JSONL until the first assistant
         // message. Queue its title synchronously before the async wrapper
         // append so a materializing first turn cannot miss this rename.
-        const queuedInLivePi = await this.harness.renameLivePendingPiSession?.(sessionId, sessionCtx, title) === true
+        const queuedInLivePi = await this.harness.renameLivePendingPiSession?.(sessionId, sessionCtx, normalizedTitle) === true
         return queuedInLivePi && this.sessionStore.recordLivePendingTitle
-          ? await this.sessionStore.recordLivePendingTitle(sessionCtx, sessionId, title)
-          : await this.sessionStore.rename(sessionCtx, sessionId, title)
+          ? await this.sessionStore.recordLivePendingTitle(sessionCtx, sessionId, normalizedTitle)
+          : await this.sessionStore.rename(sessionCtx, sessionId, normalizedTitle)
       } catch (error) {
         throw normalizeSessionAccessError(error, sessionId)
       }

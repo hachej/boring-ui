@@ -56,7 +56,13 @@ describe("createPiCodingAgentHarness", () => {
         workdir: "/tmp/live-title",
         workspaceId: "default",
       });
-      await service.renameSession({ workspaceId: "default", requestId: "rename" }, session.id, "New sessionsss");
+      await expect(service.renameSession({ workspaceId: "default", requestId: "rename-invalid" }, session.id, " \r\n "))
+        .rejects.toThrow("session title is required");
+      await expect(service.renameSession({ workspaceId: "default", requestId: "rename-long" }, session.id, "x".repeat(201)))
+        .rejects.toThrow("session title must be at most 200 characters");
+      expect(captureAppend).not.toHaveBeenCalled();
+
+      await service.renameSession({ workspaceId: "default", requestId: "rename" }, session.id, "  New\r\nsessionsss  ");
       expect(liveManager).toBeDefined();
       expect(captureAppend.mock.calls.map(([title]) => title)).toEqual(["New sessionsss"]);
       const nativePath = liveManager?.getSessionFile();
@@ -68,6 +74,7 @@ describe("createPiCodingAgentHarness", () => {
       const nativeEntries = (await readFile(nativePath!, "utf-8")).trim().split("\n").map((line) => JSON.parse(line));
       expect(nativeEntries.filter((entry) => entry.type === "session_info").map((entry) => entry.name)).toEqual(["New sessionsss"]);
       expect(nativeEntries.filter((entry) => entry.type === "session_info" && entry.name === "New sessionsss")).toHaveLength(1);
+      await expect(harness.sessions.load(sessionCtx, session.id)).resolves.toEqual(expect.objectContaining({ title: "New sessionsss" }));
     } finally {
       captureAppend.mockRestore();
       await rm(sessionDir, { recursive: true, force: true });

@@ -14,6 +14,7 @@ import { closeSync, existsSync, openSync, readFileSync, readSync, readdirSync, w
 import { join, basename, resolve } from "node:path";
 import { homedir } from "node:os";
 import { getEnv } from "../../config/env.js";
+import { normalizeSessionTitle } from "../../sessionTitle.js";
 import {
   parseSessionEntries,
   type SessionEntry,
@@ -1031,13 +1032,6 @@ function normalizeSessionCtx(ctx: SessionCtx | undefined): SessionCtx | undefine
     ...(ctx.workspaceId ? { workspaceId: ctx.workspaceId } : {}),
     ...(ctx.userId ? { userId: ctx.userId } : {}),
   };
-}
-
-function normalizeSessionTitle(title: string): string {
-  const normalized = title.replace(/[\r\n]+/g, " ").trim();
-  if (!normalized) throw new Error("session title is required");
-  if (normalized.length > 200) throw new Error("session title must be at most 200 characters");
-  return normalized;
 }
 
 async function fileExists(filepath: string): Promise<boolean> {
