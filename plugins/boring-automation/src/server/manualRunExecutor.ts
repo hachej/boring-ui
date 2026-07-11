@@ -13,6 +13,7 @@ export interface VerifiedAutomationActor {
 
 export interface ManualRunExecutorOptions {
   store: AutomationStore
+  storeForRequest?: (request: FastifyRequest, actor: VerifiedAutomationActor) => Promise<AutomationStore> | AutomationStore
   dispatcherResolver: WorkspaceAgentDispatcherResolver
   actorResolver: (request: FastifyRequest) => Promise<VerifiedAutomationActor> | VerifiedAutomationActor
   clock?: () => Date
@@ -45,11 +46,12 @@ export class ManualRunExecutor {
 
   async run(input: ManualRunInput): Promise<AutomationRun> {
     const actor = await this.options.actorResolver(input.request)
-    const automation = await this.options.store.getAutomation(input.automationId)
+    const store = await this.options.storeForRequest?.(input.request, actor) ?? this.options.store
+    const automation = await store.getAutomation(input.automationId)
     if (!automation) {
       throw new AutomationStoreError(BORING_AUTOMATION_ERROR_CODES.AUTOMATION_NOT_FOUND, `automation ${input.automationId} not found`)
     }
-    const promptSnapshot = await this.options.store.getPrompt(input.automationId)
+    const promptSnapshot = await store.getPrompt(input.automationId)
     const modelSnapshot = automation.model
     const model = parseAutomationModel(modelSnapshot)
     const createdAt = this.nowIso()
@@ -58,7 +60,7 @@ export class ManualRunExecutor {
     if (trigger === "scheduled" && !scheduledFor) {
       throw new AutomationStoreError(BORING_AUTOMATION_ERROR_CODES.INVALID_BODY, "scheduled runs require scheduledFor")
     }
-    const run = await this.options.store.beginRun({
+    const run = await store.beginRun({
       automationId: automation.id,
       trigger,
       scheduledFor,
@@ -77,7 +79,7 @@ export class ManualRunExecutor {
     try {
       const dispatcher = await this.options.dispatcherResolver.resolve(actor, { request: input.request })
       startedAt = this.nowIso()
-      current = await this.options.store.updateRunLifecycle(run.id, {
+      current = await store.updateRunLifecycle(run.id, {
         status: "running",
         startedAt,
         sessionId: null,
@@ -92,7 +94,7 @@ export class ManualRunExecutor {
         const eventSessionId = sessionIdFromEvent(event)
         if (!sessionId && eventSessionId) {
           sessionId = eventSessionId
-          current = await this.options.store.updateRunLifecycle(run.id, { sessionId })
+          current = await store.updateRunLifecycle(run.id, { sessionId })
         }
         aggregateUsage(usage, event)
         const outcome = terminalOutcomeFromEvent(event)
@@ -103,7 +105,7 @@ export class ManualRunExecutor {
       }
 
       const completedAt = this.nowIso()
-      return await this.finalizeRun(run.id, {
+      return await this.finalizeRun(store, run.id, {
         current,
         sessionId,
         startedAt,
@@ -116,7 +118,7 @@ export class ManualRunExecutor {
       const completedAt = this.nowIso()
       const cancelled = isCancellationError(error)
       const status = terminalStatus ?? (cancelled ? "cancelled" : "failed")
-      return await this.finalizeRun(run.id, {
+      return await this.finalizeRun(store, run.id, {
         current,
         sessionId,
         startedAt,
@@ -128,7 +130,7 @@ export class ManualRunExecutor {
     }
   }
 
-  private async finalizeRun(runId: string, input: {
+  private async finalizeRun(store: AutomationStore, runId: string, input: {
     current: AutomationRun
     sessionId: string | null
     startedAt: string | null
@@ -137,7 +139,7 @@ export class ManualRunExecutor {
     error: string | null
     usage: UsageAccumulator
   }): Promise<AutomationRun> {
-    return await this.options.store.updateRunLifecycle(runId, {
+    return await store.updateRunLifecycle(runId, {
       status: input.status,
       completedAt: input.completedAt,
       durationMs: durationMs(input.startedAt ?? input.current.createdAt, input.completedAt),
