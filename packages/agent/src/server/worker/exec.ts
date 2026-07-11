@@ -1,3 +1,5 @@
+import { WORKER_ERROR_CODES } from './error-codes'
+
 export class ExecSemaphore {
   private active = 0
 
@@ -7,7 +9,7 @@ export class ExecSemaphore {
     if (this.active >= this.limit) {
       throw Object.assign(new Error('worker exec concurrency limit reached'), {
         statusCode: 429,
-        code: 'exec_concurrency_limit',
+        code: WORKER_ERROR_CODES.EXEC_CONCURRENCY_LIMIT,
       })
     }
     this.active += 1
