@@ -1,8 +1,7 @@
 import type { FastifyInstance, FastifyPluginAsync, FastifyRequest } from 'fastify'
 import { basename } from 'node:path'
 import type { AgentTool, ToolReadinessRequirement } from '../shared/tool'
-import type { AgentCoreHarnessFactory, AgentHarnessFactory } from '../shared/harness'
-import type { SessionStore } from '../shared/session'
+import type { AgentCoreHarnessFactory, AgentHarness, AgentHarnessFactory } from '../shared/harness'
 import type { Agent } from '../shared/events'
 import type { SandboxHandleStore } from '../shared/sandbox-handle-store'
 import type { TelemetrySink } from '../shared/telemetry'
@@ -16,7 +15,6 @@ import type { Workspace } from '../shared/workspace'
 import { ErrorCode } from '../shared/error-codes'
 import { resolveMode, autoDetectMode } from './runtime/resolveMode'
 import { createPiCodingAgentHarness, withPiHarnessDefaults } from './harness/pi-coding-agent/createHarness'
-import { PiSessionStore } from './harness/pi-coding-agent/sessions'
 import type { PiHarnessOptions, ResolvedPiHarnessOptions } from './harness/pi-coding-agent/createHarness'
 import { loadPlugins } from './harness/pi-coding-agent/pluginLoader'
 import { registerConfiguredModelProviders } from './models/modelConfig'
@@ -45,7 +43,6 @@ import { InMemorySessionChangesTracker } from './http/sessionChangesTracker'
 import { ReadyStatusTracker } from './runtime/readyStatus'
 import { createRuntimeReadyStatusTracker } from './runtime/modeReadiness'
 import { withRuntimeEnvContributions, type RuntimeEnvContribution } from './runtimeEnvContributions'
-import type { AgentHarness } from '../shared/harness'
 import type { AgentMeteringSink } from './pi-chat/metering'
 import { createPluginDiagnosticsTool } from './tools/pluginDiagnostics'
 import { createAgentRuntimeBridge } from './createAgent'
@@ -61,7 +58,11 @@ import {
   normalizeWorkspaceAgentDispatcherContext,
   type WorkspaceAgentDispatcherResolver,
 } from './workspaceAgentDispatcher'
-import type { WorkspaceAgentDispatcherContext } from '../shared/workspaceAgentDispatcher'
+import type { WorkspaceAgentDispatcher, WorkspaceAgentDispatcherContext } from '../shared/workspaceAgentDispatcher'
+import {
+  createRuntimeBindingLifecycle,
+  type RuntimeBindingEntry as ManagedRuntimeBindingEntry,
+} from './runtime/runtimeBindingLifecycle'
 
 const DEFAULT_VERSION = '0.1.0-dev'
 const DEFAULT_WORKSPACE_ID = 'default'
@@ -141,6 +142,8 @@ interface RuntimeBinding {
   runtimeProvisioning?: WorkspaceProvisioningResult
   runtimeDependencies: RuntimeDependencyReadiness
   runtimeProvisioningTask?: Promise<WorkspaceProvisioningResult | undefined>
+  assertActive: () => void
+  retire: () => Promise<void>
   reprovision: (request?: FastifyRequest) => Promise<WorkspaceProvisioningResult | undefined>
   agent: Agent
   harness: AgentHarness
@@ -148,19 +151,11 @@ interface RuntimeBinding {
   readyTracker: ReadyStatusTracker
   piChatService: PiChatSessionService
   lastHealthCheckMs?: number
-  /**
-   * Diagnostics from the most recent /api/v1/agent/reload (merged hook +
-   * harness resource diagnostics). Stashed so the `plugin_diagnostics` tool
-   * can replay them to the agent.
-   */
+  /** Latest reload diagnostics retained for the plugin_diagnostics agent tool. */
   lastReloadDiagnostics?: Array<{ source: string; message: string; pluginId?: string }>
 }
 
-interface RuntimeBindingEntry {
-  promise: Promise<RuntimeBinding>
-  state: 'pending' | 'ready' | 'failed'
-  error?: unknown
-}
+type RuntimeBindingEntry = ManagedRuntimeBindingEntry<RuntimeBinding>
 
 interface RuntimeScope {
   root: string
@@ -236,6 +231,23 @@ function createAgentRuntimeNotReadyError(workspaceId: string): Error {
     'Agent runtime is still preparing. Try again in a moment.',
     { workspaceId, retryable: true },
   )
+}
+
+function createAgentBindingDisposedError(workspaceId: string): Error {
+  const error = createHttpError(
+    ErrorCode.enum.AGENT_BINDING_DISPOSED,
+    'Agent runtime host is closing.',
+    { workspaceId, retryable: false },
+  )
+  error.statusCode = 410
+  return error
+}
+
+async function drainRuntimeProvisioning(
+  task: Promise<WorkspaceProvisioningResult | undefined> | undefined,
+): Promise<void> {
+  if (!task) return
+  await task.then(() => undefined, () => undefined)
 }
 
 function createRuntimeProvisioningFailedError(workspaceId: string, cause: unknown): Error {
@@ -374,6 +386,8 @@ export interface RegisterAgentRoutesOptions {
     runtimeLayout: BoringAgentRuntimePaths
     provisioningAdapter?: WorkspaceProvisioningAdapter
     request?: FastifyRequest
+    /** Aborted when this binding retires; retirement still drains the task before provider disposal. */
+    signal: AbortSignal
   }) => WorkspaceProvisioningResult | undefined | Promise<WorkspaceProvisioningResult | undefined>
   provisionWorkspace?: boolean
   /** Optional hook called before /api/v1/agent/reload reloads the harness. */
@@ -411,8 +425,23 @@ export const registerAgentRoutes: FastifyPluginAsync<RegisterAgentRoutesOptions>
   const workspaceRoot = opts.workspaceRoot ?? process.cwd()
   const templatePath = opts.templatePath ?? getEnv('BORING_AGENT_TEMPLATE_PATH')
   const modeAdapter = opts.runtimeModeAdapter ?? resolveMode(resolvedMode, { sandboxHandleStore: opts.sandboxHandleStore })
+  const bindingLifecycle = createRuntimeBindingLifecycle<RuntimeBinding>({
+    app,
+    capacity: 256,
+    createDisposedError: createAgentBindingDisposedError,
+    ...(modeAdapter.evictCachedRuntime
+      ? { evictCachedRuntime: (ctx: { workspaceId: string }) => modeAdapter.evictCachedRuntime?.(ctx) }
+      : {}),
+  })
+  app.addHook('preClose', async () => {
+    bindingLifecycle.startDraining()
+  })
   app.addHook('onClose', async () => {
-    await modeAdapter.dispose?.()
+    try {
+      await bindingLifecycle.close()
+    } finally {
+      await modeAdapter.dispose?.()
+    }
   })
   const modelsWorkspaceScoped = Boolean(opts.filterModels)
   const requestScopedRuntime =
@@ -426,15 +455,6 @@ export const registerAgentRoutes: FastifyPluginAsync<RegisterAgentRoutesOptions>
     typeof opts.getTrustedWorkspaceRoot === 'function'
   const sessionChangesTracker = new InMemorySessionChangesTracker()
   const externalPluginsEnabled = opts.externalPlugins !== false
-  const runtimeBindings = new Map<string, RuntimeBindingEntry>()
-  const MAX_RUNTIME_BINDINGS = 256
-  function evictRuntimeBindings(): void {
-    if (runtimeBindings.size <= MAX_RUNTIME_BINDINGS) return
-    const keys = Array.from(runtimeBindings.keys())
-    for (let i = 0; i < keys.length - MAX_RUNTIME_BINDINGS; i++) {
-      runtimeBindings.delete(keys[i])
-    }
-  }
 
   // Chokepoint where a scope's pi options are born: resolve the host's
   // static/dynamic pi config and apply boring's canonical harness defaults,
@@ -524,7 +544,8 @@ export const registerAgentRoutes: FastifyPluginAsync<RegisterAgentRoutesOptions>
   async function runRuntimeProvisioning(
     workspaceId: string,
     scope: RuntimeScope,
-    request?: FastifyRequest,
+    request: FastifyRequest | undefined,
+    signal: AbortSignal,
   ): Promise<WorkspaceProvisioningResult | undefined> {
     if (opts.provisionWorkspace === false || !opts.provisionRuntime) return undefined
     const modeCtx = {
@@ -543,6 +564,7 @@ export const registerAgentRoutes: FastifyPluginAsync<RegisterAgentRoutesOptions>
       runtimeLayout,
       provisioningAdapter: modeAdapter.createProvisioningAdapter?.(runtimeLayout, modeCtx),
       request,
+      signal,
     })
   }
 
@@ -561,7 +583,7 @@ export const registerAgentRoutes: FastifyPluginAsync<RegisterAgentRoutesOptions>
       requestId: request?.id,
       telemetry: opts.telemetry,
     }
-let runtimeProvisioning: WorkspaceProvisioningResult | undefined
+    let runtimeProvisioning: WorkspaceProvisioningResult | undefined
     let runtimeDependencies: RuntimeDependencyReadiness = hasRuntimeProvisioningInput
       ? {
           state: 'preparing',
@@ -571,6 +593,9 @@ let runtimeProvisioning: WorkspaceProvisioningResult | undefined
         }
       : { state: 'ready' }
     let provisioningGeneration = 0
+    let retired = false
+    const provisioningAbort = new AbortController()
+    let retirePromise: Promise<void> | undefined
 
     let runtimeBundle = await modeAdapter.create(modeCtx)
     if (opts.runtimeEnvContributions && opts.runtimeEnvContributions.length > 0) {
@@ -597,6 +622,7 @@ let runtimeProvisioning: WorkspaceProvisioningResult | undefined
     }
 
     const startRuntimeProvisioning = (provisionRequest?: FastifyRequest) => {
+      if (retired) throw createAgentBindingDisposedError(workspaceId)
       if (!hasRuntimeProvisioningInput) return undefined
       if (binding?.runtimeProvisioningTask && runtimeDependencies.state === 'preparing') {
         return binding.runtimeProvisioningTask
@@ -609,18 +635,32 @@ let runtimeProvisioning: WorkspaceProvisioningResult | undefined
         startedAt: new Date().toISOString(),
         retryable: true,
       })
-      const task = runRuntimeProvisioning(workspaceId, scope, provisionRequest).then(
+      const task = runRuntimeProvisioning(
+        workspaceId,
+        scope,
+        provisionRequest,
+        provisioningAbort.signal,
+      ).then(
         async (result) => {
-          if (generation !== provisioningGeneration) return result
+          if (retired || generation !== provisioningGeneration) {
+            throw createAgentBindingDisposedError(workspaceId)
+          }
           runtimeProvisioning = result
           if (binding) binding.runtimeProvisioning = result
           if (binding?.harness.reloadSession) {
             try {
               const sessions = await binding.harness.sessions.list({ workspaceId })
+              if (retired || generation !== provisioningGeneration) {
+                throw createAgentBindingDisposedError(workspaceId)
+              }
               await Promise.allSettled(
                 sessions.map((session) => binding?.harness.reloadSession?.(session.id)),
               )
+              if (retired || generation !== provisioningGeneration) {
+                throw createAgentBindingDisposedError(workspaceId)
+              }
             } catch (error) {
+              if (retired || generation !== provisioningGeneration) throw error
               app.log.warn({ err: error, workspaceId }, '[agent] failed to refresh harness sessions after runtime provisioning')
             }
           }
@@ -633,7 +673,9 @@ let runtimeProvisioning: WorkspaceProvisioningResult | undefined
           return result
         },
         (error) => {
-          if (generation !== provisioningGeneration) throw error
+          if (retired || generation !== provisioningGeneration) {
+            throw createAgentBindingDisposedError(workspaceId)
+          }
           const causeCode = causeCodeFrom(error)
           updateRuntimeDependencies({
             state: 'failed',
@@ -783,6 +825,20 @@ let runtimeProvisioning: WorkspaceProvisioningResult | undefined
       runtimeProvisioning,
       runtimeDependencies,
       runtimeProvisioningTask: undefined,
+      assertActive: () => {
+        if (retired) throw createAgentBindingDisposedError(workspaceId)
+      },
+      retire: () => {
+        retirePromise ??= (async () => {
+          retired = true
+          provisioningAbort.abort()
+          provisioningGeneration += 1
+          const task = binding?.runtimeProvisioningTask
+          if (binding) binding.runtimeProvisioningTask = undefined
+          await drainRuntimeProvisioning(task)
+        })()
+        return retirePromise
+      },
       reprovision: async (reloadRequest?: FastifyRequest) => {
         const result = await startRuntimeProvisioning(reloadRequest)
         return await result
@@ -797,58 +853,66 @@ let runtimeProvisioning: WorkspaceProvisioningResult | undefined
     return binding
   }
 
-  function createRuntimeBindingEntry(
-    workspaceId: string,
-    scope: RuntimeScope,
-    request?: FastifyRequest,
-    trustedCtx?: WorkspaceAgentDispatcherContext,
-  ): RuntimeBindingEntry {
-    const entry: RuntimeBindingEntry = {
-      state: 'pending',
-      promise: Promise.resolve(null as unknown as RuntimeBinding),
-    }
-    entry.promise = createRuntimeBinding(workspaceId, scope, request, trustedCtx).then(
-      (binding) => {
-        entry.state = 'ready'
-        return binding
-      },
-      (error) => {
-        entry.state = 'failed'
-        entry.error = error
-        throw error
-      },
-    )
-    entry.promise.catch(() => {})
-    return entry
-  }
-
   async function getOrCreateRuntimeBinding(
     workspaceId: string,
     request?: FastifyRequest,
     options: { failIfPending?: boolean; trustedCtx?: WorkspaceAgentDispatcherContext } = {},
   ): Promise<RuntimeBinding> {
+    while (true) {
+      const binding = await resolveRuntimeBinding(workspaceId, request, options)
+      if (!requestScopedRuntime || !request) return binding
+      if (!bindingLifecycle.tracksRequestLifetime(request)) return binding
+      if (bindingLifecycle.leaseRequestBinding(request, binding)) return binding
+    }
+  }
+
+  async function resolveRuntimeBinding(
+    workspaceId: string,
+    request?: FastifyRequest,
+    options: { failIfPending?: boolean; trustedCtx?: WorkspaceAgentDispatcherContext } = {},
+  ): Promise<RuntimeBinding> {
+    bindingLifecycle.assertAdmission(workspaceId, request)
     const scope = await resolveRuntimeScope(workspaceId, request, options.trustedCtx)
-    const existing = runtimeBindings.get(scope.key)
+    bindingLifecycle.assertAdmission(workspaceId, request)
+    const existing = bindingLifecycle.getEntry(scope.key)
     if (existing) {
+      if (bindingLifecycle.requestLeasesEntry(request, existing)) return await existing.promise
+      if (existing.state === 'retiring') {
+        await existing.retirementPromise
+        return getOrCreateRuntimeBinding(workspaceId, request, options)
+      }
+      bindingLifecycle.touchEntry(scope.key, existing)
       if (options.failIfPending && existing.state === 'pending') {
         throw createAgentRuntimeNotReadyError(workspaceId)
       }
       if (existing.state === 'failed') {
-        if (options.failIfPending) throw createRuntimeProvisioningFailedError(workspaceId, existing.error)
-        runtimeBindings.delete(scope.key)
+        const failure = createRuntimeProvisioningFailedError(workspaceId, existing.error)
+        try {
+          await bindingLifecycle.retire(scope.key, existing)
+        } catch {
+          // The cached creation error remains the actionable failure.
+        }
+        if (options.failIfPending) throw failure
       } else {
         return await ensureRuntimeBindingReady(
           workspaceId,
           scope,
+          existing,
           await existing.promise,
           request,
+          options.trustedCtx,
         )
       }
     }
 
-    const created = createRuntimeBindingEntry(workspaceId, scope, request, options.trustedCtx)
-    runtimeBindings.set(scope.key, created)
-    evictRuntimeBindings()
+    const admitted = await bindingLifecycle.admit({
+      key: scope.key,
+      workspaceId,
+      request,
+      create: () => createRuntimeBinding(workspaceId, scope, request, options.trustedCtx),
+    })
+    if (!admitted.created) return getOrCreateRuntimeBinding(workspaceId, request, options)
+    const created = admitted.entry
     if (options.failIfPending) {
       throw createAgentRuntimeNotReadyError(workspaceId)
     }
@@ -856,11 +920,17 @@ let runtimeProvisioning: WorkspaceProvisioningResult | undefined
       return await ensureRuntimeBindingReady(
         workspaceId,
         scope,
+        created,
         await created.promise,
         request,
+        options.trustedCtx,
       )
     } catch (error) {
-      if (runtimeBindings.get(scope.key) === created) runtimeBindings.delete(scope.key)
+      try {
+        await bindingLifecycle.retire(scope.key, created)
+      } catch {
+        // Binding creation failure remains the actionable error.
+      }
       throw error
     }
   }
@@ -868,30 +938,29 @@ let runtimeProvisioning: WorkspaceProvisioningResult | undefined
   async function recreateRuntimeBinding(
     workspaceId: string,
     scope: RuntimeScope,
+    staleEntry: RuntimeBindingEntry,
     request?: FastifyRequest,
+    trustedCtx?: WorkspaceAgentDispatcherContext,
   ): Promise<RuntimeBinding> {
-    runtimeBindings.delete(scope.key)
-    modeAdapter.evictCachedRuntime?.({ workspaceId })
-
-    const created = createRuntimeBindingEntry(workspaceId, scope, request)
-    runtimeBindings.set(scope.key, created)
-    evictRuntimeBindings()
-    try {
-      const binding = await created.promise
-      binding.lastHealthCheckMs = Date.now()
-      return binding
-    } catch (error) {
-      if (runtimeBindings.get(scope.key) === created) runtimeBindings.delete(scope.key)
-      throw error
+    if (!bindingLifecycle.isCurrentEntry(scope.key, staleEntry)) {
+      return await getOrCreateRuntimeBinding(workspaceId, request, { trustedCtx })
     }
+    await bindingLifecycle.retire(scope.key, staleEntry)
+    return await getOrCreateRuntimeBinding(workspaceId, request, { trustedCtx })
   }
 
   async function ensureRuntimeBindingReady(
     workspaceId: string,
     scope: RuntimeScope,
+    entry: RuntimeBindingEntry,
     binding: RuntimeBinding,
     request?: FastifyRequest,
+    trustedCtx?: WorkspaceAgentDispatcherContext,
   ): Promise<RuntimeBinding> {
+    if (entry.retirementPromise !== undefined || !bindingLifecycle.isCurrentEntry(scope.key, entry)) {
+      await entry.retirementPromise
+      return getOrCreateRuntimeBinding(workspaceId, request, { trustedCtx })
+    }
     const healthCheck = modeAdapter.cachedBindingHealthCheck
     if (!healthCheck) return binding
 
@@ -904,7 +973,21 @@ let runtimeProvisioning: WorkspaceProvisioningResult | undefined
       return binding
     }
 
-    const result = await healthCheck.check({ runtimeBundle: binding.runtimeBundle, workspaceId })
+    const releaseHealthLease = bindingLifecycle.tryLeaseEntryOperation(entry)
+    if (!releaseHealthLease) {
+      await entry.retirementPromise
+      return getOrCreateRuntimeBinding(workspaceId, request, { trustedCtx })
+    }
+    let result: Awaited<ReturnType<typeof healthCheck.check>>
+    try {
+      result = await healthCheck.check({ runtimeBundle: binding.runtimeBundle, workspaceId })
+    } finally {
+      releaseHealthLease()
+    }
+    if (entry.state === 'retiring' || !bindingLifecycle.isCurrentEntry(scope.key, entry)) {
+      await entry.retirementPromise
+      return getOrCreateRuntimeBinding(workspaceId, request, { trustedCtx })
+    }
     if (result.state === 'ok') {
       binding.lastHealthCheckMs = now
       return binding
@@ -915,7 +998,7 @@ let runtimeProvisioning: WorkspaceProvisioningResult | undefined
       workspaceId,
     }, result.message ?? '[runtime] cached runtime invalid; recreating')
 
-    return await recreateRuntimeBinding(workspaceId, scope, request)
+    return await recreateRuntimeBinding(workspaceId, scope, entry, request, trustedCtx)
   }
 
   const hasRuntimeProvisioningInput = opts.provisionWorkspace !== false && Boolean(opts.provisionRuntime)
@@ -923,12 +1006,75 @@ let runtimeProvisioning: WorkspaceProvisioningResult | undefined
     ? null
     : await getOrCreateRuntimeBinding(sessionId)
   const skillsScopeByRequest = new WeakMap<FastifyRequest, Promise<SkillScope>>()
-  const earlySessionStores = new Map<string, SessionStore>()
+
+  async function acquireDispatcherOperation(
+    initialBinding: RuntimeBinding,
+    boundCtx: WorkspaceAgentDispatcherContext,
+    request?: FastifyRequest,
+  ): Promise<{ dispatcher: WorkspaceAgentDispatcher; release: () => void }> {
+    let binding = initialBinding
+    while (true) {
+      bindingLifecycle.assertAdmission(boundCtx.workspaceId, request)
+      const release = bindingLifecycle.tryLeaseOperation(binding)
+      if (release) {
+        try {
+          bindingLifecycle.assertAdmission(boundCtx.workspaceId, request)
+        } catch (error) {
+          release()
+          throw error
+        }
+        return {
+          dispatcher: createBoundWorkspaceAgentDispatcher(binding.agent, boundCtx),
+          release,
+        }
+      }
+      if (staticBinding) throw createAgentBindingDisposedError(boundCtx.workspaceId)
+      binding = await getOrCreateRuntimeBinding(boundCtx.workspaceId, undefined, { trustedCtx: boundCtx })
+    }
+  }
+
+  function createLeasedWorkspaceAgentDispatcher(
+    initialBinding: RuntimeBinding,
+    boundCtx: WorkspaceAgentDispatcherContext,
+    request?: FastifyRequest,
+  ): WorkspaceAgentDispatcher {
+    return {
+      send(input) {
+        return {
+          async *[Symbol.asyncIterator]() {
+            const operation = await acquireDispatcherOperation(initialBinding, boundCtx, request)
+            try {
+              yield* operation.dispatcher.send(input)
+            } finally {
+              operation.release()
+            }
+          },
+        }
+      },
+      async interrupt(sessionId) {
+        const operation = await acquireDispatcherOperation(initialBinding, boundCtx, request)
+        try {
+          return await operation.dispatcher.interrupt(sessionId)
+        } finally {
+          operation.release()
+        }
+      },
+      async stop(sessionId) {
+        const operation = await acquireDispatcherOperation(initialBinding, boundCtx, request)
+        try {
+          return await operation.dispatcher.stop(sessionId)
+        } finally {
+          operation.release()
+        }
+      },
+    }
+  }
 
   opts.onWorkspaceAgentDispatcher?.({
     async resolve(ctx, options) {
       const boundCtx = normalizeWorkspaceAgentDispatcherContext(ctx)
       assertWorkspaceAgentDispatcherRequestContext(boundCtx, options?.request)
+      bindingLifecycle.assertAdmission(boundCtx.workspaceId, options?.request)
       if (staticBinding) {
         if (boundCtx.workspaceId !== sessionId) {
           throw createWorkspaceAgentDispatcherError(
@@ -937,10 +1083,11 @@ let runtimeProvisioning: WorkspaceProvisioningResult | undefined
             401,
           )
         }
-        return createBoundWorkspaceAgentDispatcher(staticBinding.agent, boundCtx)
+        return createLeasedWorkspaceAgentDispatcher(staticBinding, boundCtx, options?.request)
       }
       const binding = await getOrCreateRuntimeBinding(boundCtx.workspaceId, options?.request, { trustedCtx: boundCtx })
-      return createBoundWorkspaceAgentDispatcher(binding.agent, boundCtx)
+      bindingLifecycle.assertAdmission(boundCtx.workspaceId, options?.request)
+      return createLeasedWorkspaceAgentDispatcher(binding, boundCtx, options?.request)
     },
   })
 
@@ -974,20 +1121,6 @@ let runtimeProvisioning: WorkspaceProvisioningResult | undefined
       userEmailVerified: user?.emailVerified === true,
       requestId: request.id,
     })
-  }
-
-  async function getSessionStoreForRequest(request: FastifyRequest): Promise<SessionStore> {
-    if (staticBinding) return staticBinding.harness.sessions
-    const scope = await resolveRuntimeScope(getRequestWorkspaceId(request), request)
-    const cached = earlySessionStores.get(scope.key)
-    if (cached) return cached
-    const store = new PiSessionStore(scope.root, {
-      sessionNamespace: scope.sessionNamespace,
-      sessionRoot: opts.sessionRoot,
-      storageCwd: scope.root,
-    })
-    earlySessionStores.set(scope.key, store)
-    return store
   }
 
   const agentToolNames = staticBinding
@@ -1070,6 +1203,7 @@ let runtimeProvisioning: WorkspaceProvisioningResult | undefined
   })
   await app.register(fsEventsRoutes, {
     getWorkspace: async (request) => (await getBindingForRequest(request)).runtimeBundle.workspace,
+    deferLeaseRelease: bindingLifecycle.deferRequestUntilTransportClose,
   })
   await app.register(treeRoutes, {
     getWorkspace: async (request) => (await getBindingForRequest(request)).runtimeBundle.workspace,
@@ -1086,6 +1220,7 @@ let runtimeProvisioning: WorkspaceProvisioningResult | undefined
       const binding = await getBindingForRequest(request)
       return binding.piChatService
     },
+    deferLeaseRelease: bindingLifecycle.deferRequestUntilTransportClose,
   })
   await app.register(systemPromptRoutes, {
     getHarness: async (request) => (await getBindingForRequest(request)).harness,
@@ -1133,14 +1268,17 @@ let runtimeProvisioning: WorkspaceProvisioningResult | undefined
     }
 
     try {
-      binding.runtimeProvisioning = await binding.reprovision(request)
+      await binding.reprovision(request)
+      binding.assertActive()
       const hookResult = await opts.beforeReload?.({
         workspaceId,
         workspaceRoot: binding.workspaceRoot,
         request,
       })
+      binding.assertActive()
       const reloadSessionId = request.body?.sessionId || sessionId
       const reloaded = await binding.harness.reloadSession(reloadSessionId)
+      binding.assertActive()
       const restart_warnings = hookResult?.restart_warnings
       const diagnostics: Array<{ source: string; message: string; pluginId?: string }> = [
         ...(hookResult?.diagnostics ?? []),
@@ -1192,7 +1330,10 @@ let runtimeProvisioning: WorkspaceProvisioningResult | undefined
       },
   )
   await app.register(readyStatusRoutes, staticBinding
-    ? { tracker: staticBinding.readyTracker }
-    : { getTracker: async (request) => (await getBindingForRequest(request)).readyTracker },
+    ? { tracker: staticBinding.readyTracker, deferLeaseRelease: bindingLifecycle.deferRequestUntilTransportClose }
+    : {
+        getTracker: async (request) => (await getBindingForRequest(request)).readyTracker,
+        deferLeaseRelease: bindingLifecycle.deferRequestUntilTransportClose,
+      },
   )
 }

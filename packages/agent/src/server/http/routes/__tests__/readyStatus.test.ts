@@ -70,4 +70,37 @@ describe('GET /api/v1/ready-status', () => {
     expect(res.body).toContain('"requirement":"runtime:python"')
     await app.close()
   })
+
+  test('unsubscribes a pending status stream when its socket closes', async () => {
+    const tracker = new ReadyStatusTracker({
+      sandboxReady: true,
+      harnessReady: true,
+      capabilities: { runtimeDependencies: { state: 'preparing' } },
+    })
+    const subscribe = tracker.subscribe.bind(tracker)
+    const unsubscribe = vi.fn()
+    vi.spyOn(tracker, 'subscribe').mockImplementation((handler) => {
+      const release = subscribe(handler)
+      return () => {
+        unsubscribe()
+        release()
+      }
+    })
+    const app = await buildApp(tracker)
+    await app.listen({ port: 0, host: '127.0.0.1' })
+    const address = app.server.address()
+    if (typeof address !== 'object' || !address) throw new Error('no server address')
+    const abort = new AbortController()
+    const response = await fetch(`http://127.0.0.1:${address.port}/api/v1/ready-status`, { signal: abort.signal })
+    expect(response.status).toBe(200)
+
+    abort.abort()
+    await response.body?.cancel().catch(() => {})
+    for (let index = 0; index < 20 && unsubscribe.mock.calls.length === 0; index += 1) {
+      await new Promise((resolve) => setTimeout(resolve, 10))
+    }
+
+    expect(unsubscribe).toHaveBeenCalledOnce()
+    await app.close()
+  }, 15_000)
 })
