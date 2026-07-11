@@ -535,8 +535,11 @@ describe("PiSessionStore", () => {
     const session = await store.create(ctx, { title: "Original" });
     const filepath = join(tmpDir, `${session.id}.jsonl`);
     await appendFile(filepath, `${JSON.stringify({ type: "message", message: { role: "user", content: "x".repeat(70 * 1024) } })}\n`);
-
     await store.rename(ctx, session.id, "Renamed after long transcript");
+    // Native Pi may append more transcript after /name, moving the title out
+    // of both the prefix and the final 64KiB summary windows.
+    await appendFile(filepath, `${JSON.stringify({ type: "message", message: { role: "assistant", content: "y".repeat(70 * 1024) } })}\n`);
+    await appendFile(filepath, "{malformed-tail}\n");
 
     await expect(store.list(ctx)).resolves.toEqual([
       expect.objectContaining({ id: session.id, title: "Renamed after long transcript" }),
@@ -594,6 +597,7 @@ describe("PiSessionStore", () => {
         { type: "session", version: 1, id: nativeSessionId, timestamp: "2026-06-04T15:23:19.668Z", cwd: "/tmp" },
         { type: "message", message: { role: "user", content: "x".repeat(70 * 1024) } },
         { type: "session_info", id: "native-info", parentId: null, timestamp: "2026-06-04T15:23:20.000Z", name: "Native title" },
+        { type: "message", message: { role: "assistant", content: "y".repeat(70 * 1024) } },
       ].map((line) => JSON.stringify(line)).join("\n") + "\n",
       "utf-8",
     );
@@ -609,6 +613,7 @@ describe("PiSessionStore", () => {
 
     const store = new PiSessionStore("/tmp", tmpDir);
     await expect(store.load({ workspaceId: "default" }, boringSessionId)).resolves.toEqual(expect.objectContaining({ title: "Native title" }));
+    await expect(store.list({ workspaceId: "default" })).resolves.toEqual([expect.objectContaining({ id: boringSessionId, title: "Native title" })]);
     await store.rename({ workspaceId: "default" }, boringSessionId, "Linked rename");
 
     const nativeLines = (await readFile(nativePath, "utf-8")).trim().split("\n").map((line) => JSON.parse(line));

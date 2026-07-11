@@ -55,7 +55,7 @@ const SAFE_ID = /^[a-zA-Z0-9_-]+$/;
 const SAFE_SESSION_NAMESPACE = /^[a-zA-Z0-9_-]+$/;
 const SESSION_ROOT_ENV = "BORING_AGENT_SESSION_ROOT";
 const SUMMARY_PREFIX_BYTES = 64 * 1024;
-const LATEST_SESSION_INFO_SCAN_BYTES = 64 * 1024;
+const MAX_SESSION_INFO_LINE_BYTES = 64 * 1024;
 const DEFAULT_LEGACY_WORKSPACE_ID = "default";
 
 type SessionFileStat = { filepath: string; stat: Awaited<ReturnType<typeof fsStat>> };
@@ -851,23 +851,25 @@ export class PiSessionStore implements SessionStore {
 }
 
 /**
- * Scans JSONL from EOF in fixed-size chunks, retaining only one partial line.
- * Session titles are metadata and may follow arbitrarily long transcripts, so a
- * prefix-only summary cannot establish the latest session_info entry.
+ * Scans JSONL from EOF to header in fixed-size chunks. Memory remains bounded
+ * even when a transcript contains huge message records; session_info records
+ * are small metadata lines (the Boring API limits titles to 200 characters).
  */
 async function readLatestSessionInfo(filepath: string, size: number): Promise<SessionInfoEntry | undefined> {
   if (size <= 0) return undefined;
   const handle = await open(filepath, "r");
   try {
-    const scanStart = Math.max(0, size - LATEST_SESSION_INFO_SCAN_BYTES);
     let end = size;
     let partialFirstLine = Buffer.alloc(0);
-    while (end > scanStart) {
-      const start = Math.max(scanStart, end - SUMMARY_PREFIX_BYTES);
+    let discardPartialFirstLine = false;
+    while (end > 0) {
+      const start = Math.max(0, end - SUMMARY_PREFIX_BYTES);
       const length = end - start;
       const buffer = Buffer.alloc(length);
       const { bytesRead } = await handle.read(buffer, 0, length, start);
-      const chunk = Buffer.concat([buffer.subarray(0, bytesRead), partialFirstLine]);
+      const chunk = discardPartialFirstLine
+        ? buffer.subarray(0, bytesRead)
+        : Buffer.concat([buffer.subarray(0, bytesRead), partialFirstLine]);
       const newlineOffsets: number[] = [];
       for (let index = 0; index < chunk.length; index += 1) {
         if (chunk[index] === 0x0a) newlineOffsets.push(index);
@@ -877,6 +879,7 @@ async function readLatestSessionInfo(filepath: string, size: number): Promise<Se
       for (let index = lineEndOffsets.length - 1; index >= 0; index -= 1) {
         const lineStart = index === 0 ? 0 : lineEndOffsets[index - 1] + 1;
         if (lineStart === 0 && start > 0) continue;
+        if (discardPartialFirstLine && lineEndOffsets[index] === chunk.length) continue;
         const line = chunk.subarray(lineStart, lineEndOffsets[index]).toString("utf-8").trim();
         if (!line) continue;
         try {
@@ -890,9 +893,11 @@ async function readLatestSessionInfo(filepath: string, size: number): Promise<Se
       }
       const firstNewline = newlineOffsets[0];
       partialFirstLine = firstNewline === undefined ? chunk : chunk.subarray(0, firstNewline);
+      discardPartialFirstLine = partialFirstLine.length > MAX_SESSION_INFO_LINE_BYTES;
+      if (discardPartialFirstLine) partialFirstLine = Buffer.alloc(0);
       end = start;
     }
-    if (scanStart !== 0 || !partialFirstLine.length) return undefined;
+    if (!partialFirstLine.length || discardPartialFirstLine) return undefined;
     try {
       const entry = JSON.parse(partialFirstLine.toString("utf-8")) as SessionEntry;
       return entry.type === "session_info" && typeof (entry as SessionInfoEntry).name === "string"
