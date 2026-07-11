@@ -1,18 +1,21 @@
 # TODO-P8 — Verification and cleanup (zero deferred deletions)
 
-## Proposed reduced v1 work order (2026-07-10)
+## Binding reduced v1 work order (2026-07-11)
 
 Dispatch only these verification slices:
 
 1. **Reduced invariant/marker gate:** zero markers owned by the reduced v1
-   slices; core/package boundary and #416 invariants remain green. Do not add
-   T1/T2/P3/E1 old-path gates for work that did not ship.
+   slices; core/package boundary and #416 invariants remain green. Add a
+   residual `runtime.*none|pure.*mode` grep for product code and non-historical
+   docs, with explicit rejection/history allowlists. Do not add T1/T2/P3/E1
+   old-path gates for work that did not ship.
 2. **Shipped-contract docs:** document the workspace-backed core boundary,
    minimal definition/deployment bundle, explicit local workspace/runtime, and
    D1 exact-host/default-agent path. Do not claim the four-part durable surface
    contract as v1.
-3. **Golden path:** run the <=900-second proof defined in PLAN.md using real EU
-   runsc and the existing workspace composer; capture selector and secret
+3. **Golden path:** measure the proof defined in PLAN.md using real EU runsc
+   and the existing workspace composer; record stage timing and compare it with
+   the provisional 15-minute target; capture selector and secret
    negatives, no-op reapply, then apply changed site-level values and roll back.
    Compare every prior redacted site field/digest, including hostname, landing,
    auth/membership/owner and workspace/default bindings, roots/storage/runtime,

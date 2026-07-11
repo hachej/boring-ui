@@ -1,57 +1,81 @@
-# 391 Runtime Refactor — Plan Review & Unknowns Ledger (2026-07-11)
+# 391 Runtime Refactor - Plan Review & Unknowns Ledger (2026-07-11)
 
-Method: full plan-pack synthesis + implementation audit vs origin/main + parallel-agent session recon; blindspot lenses per grill-for-unknowns (scale, security, failure modes, edge cases, concurrency, migration, rollback).
+Method: full plan-pack synthesis, implementation audit against `origin/main`,
+and the scale, security, failure, edge-case, concurrency, migration, and
+rollback lenses. Live status below was reverified after merging current main
+into this review branch. GitHub PR labels alone are not evidence of ancestry.
 
-## Reality check (evidence-backed)
+## Verified facts
 
-- On main: P0 (docs); P1 partial (createAgent facade + config-surface inventory; recuts A–D #566/#568/#575/#576 open); M1 partial (MCP delegate server #538); T1 partial (event-stream store #537).
-- NOT on main despite MERGED labels: P6-D schema (#618) and #620 merged into stale base `plan/391-workspace-first-v1`; #620 recovered via reland #622; #618 reland (#623) + A1 compiler (#624) still open. `AgentDefinition`/`AgentDeployment` absent from packages/ on main.
-- P2 essentially not started (scaffold + provider matrix; #548/#558/#564 open). Three of five v1 gates (P2-narrow, P5a, P6-R) have zero landed code.
-- M1 (= MVP-M1 MCP demo) not dispatchable: blocked on P1 BBP1-005→008; #545 closed unmerged; #549/#556 flagged do-not-rebase.
+- Decision 21 and the workspace-first correction are on main through
+  [#617](https://github.com/hachej/boring-ui/pull/617),
+  [#616](https://github.com/hachej/boring-ui/pull/616), and
+  [#622](https://github.com/hachej/boring-ui/pull/622).
+- P6-D identities and the deterministic A1 directory compiler are on main via
+  [#623](https://github.com/hachej/boring-ui/pull/623) and
+  [#624](https://github.com/hachej/boring-ui/pull/624).
+- P1 has the real `/core` relocation and terminal local binding disposal on
+  main via [#626](https://github.com/hachej/boring-ui/pull/626) and
+  [#627](https://github.com/hachej/boring-ui/pull/627). The next P1 slices are
+  request-binding/service teardown lifecycle and fail-closed readiness; they
+  are not recorded as landed until their own PRs are ancestors of main.
+- P2 has one structural runsc preflight on main via
+  [#628](https://github.com/hachej/boring-ui/pull/628). It explicitly reports
+  `productionReady: false`; it does not prove lifecycle, security policy,
+  provider availability, or EU parity.
+- M1 has a partial delegate-server tracer on main via #538. It is an optional,
+  non-blocking outreach leaf. It is not the v1 product acceptance path.
+- The binding v1 acceptance is exact hostname -> landing/auth -> authorized
+  workspace -> deployed agent selected as that workspace's `default`.
 
-## Material findings (ranked)
+## Accepted actions
 
-1. **Stacked-PR merge trap is a process gap, not an incident** (migration/rollback lens). Bit twice in 24h (#618/#620). Rule adopted: when a base branch is superseded, immediately retarget descendants to main; verify merge-commit ancestry before recording "merged" anywhere in this pack.
-2. **Critical path to MVP-M1 understated** (failure lens). INDEX framed M1 as "optional tracer" while the near-term business milestone is the MCP demo. Explicit chain: P1 BBP1-005→BBP1-008 → M1 BBM1-002/003. Open question: was #545's close intentional scope-drop or lost work? Owner should rule.
-3. **Decision 21 residue — #380 tension unresolved** (edge-case lens). TODO-01 BBA-015/016 (non-bash hook/command seams) exist for #380 external harnesses; Decision 21 asserts no consumer needs no-environment execution. These can't both stand. Needs an explicit ruling: re-scope as environment-full features, or retire with #380 impact noted.
-4. **runtime:'none' rollback surface** (rollback lens). #622 removed the runtime:'none' fork. Residual references in configs/docs/tests should fail loudly. Recommendation: add a grep gate to P8 verification (`runtime.*none|pure.*mode` across packages/ + docs outside this pack).
-5. **Plan-doc write concurrency** (concurrency lens). Two agent sessions rewrote this pack within 24h with no single-writer convention. Recommendation: INDEX.md is single-writer (owner/orchestrator); all other docs take append-only banners.
-6. **EU provider parity unvalidated** (scale/security lens). v1 gate depends on the runsc/systrap narrow path; zero landed provider code proves capability-matrix parity on EU infra. Recommendation: 1-day spike bead before D1 planning locks.
-7. **X1 thresholds locked on a known-flawed benchmark.** x1-bench/report.md self-reports PATH/ordering bugs invalidating readonly/backend-down checks. Mark thresholds provisional until rerun.
-8. **15-minute golden path has no baseline** (scale lens). Add a measurement bead to P8 instead of asserting the number.
+1. **Verify ancestry before status changes.** When a stacked base is superseded,
+   retarget descendants to main immediately. Record `landed` only after
+   `git merge-base --is-ancestor <merge-sha> origin/main` succeeds.
+2. **Keep INDEX single-writer.** The owner/orchestrator is the only writer for
+   ordering and live status in `INDEX.md`. Other plan files link to it and add
+   scoped amendment banners instead of redefining the queue.
+3. **Keep pure/no-environment out of v1.** Add a P8 residual grep covering
+   `runtime.*none|pure.*mode` in product code and non-historical docs. Explicit
+   historical and rejection tests are allowlisted, not silently deleted.
+4. **Run a real EU validation spike before D1 locks.** #628 is structural only.
+   A time-boxed spike must validate systrap availability, isolation/network
+   policy, limits, image handling, lifecycle cleanup, and authenticated facts
+   on the intended EU host. Unknown facts fail closed.
+5. **Treat X1 thresholds as provisional.** The current benchmark report records
+   PATH/ordering defects. Rerun before any threshold becomes an acceptance gate.
+6. **Measure the shipping baseline.** P8 records elapsed setup-to-first-run time
+   and its breakdown. Fifteen minutes is a target to evaluate, not an asserted
+   pre-existing baseline or a pass/fail gate until evidence supports it.
 
-## Quadrant ledger (condensed)
+## Owner decisions still open
 
-- Known-knowns: P0 merged; M1 delegate server on main; T1 event store on main.
-- Known-unknowns: commercial default (managed retainer vs self-host) TBD; Decision 21 re-evaluate clause; #545 scope intent.
-- Unknown-knowns: stacked-PR retarget discipline existed as team memory but was absent from the plan (now finding 1).
-- Unknown-unknowns surfaced this pass: findings 3, 4, 6.
+- **#380 / BBA-015 and BBA-016:** re-scope hook/command seams as features of a
+  fully authorized workspace/environment, or explicitly retire them with #380
+  impact recorded. They cannot reintroduce public `runtime: 'none'`.
+- **Commercial/operational default:** managed retainer versus self-host remains
+  outside this architecture decision until product ownership chooses it.
+- **Runsc EU provider:** D1 cannot lock its provider/profile until the validation
+  spike produces evidence; #628 deliberately leaves those facts unknown.
 
-## Appendix — full workstream audit (plan vs reality, verified 2026-07-11)
+## Corrected workstream audit
 
-| WS | Plan-claimed (INDEX.md) | Evidence-backed actual |
+| Workstream | Evidence-backed state on main | Next plan action |
 | --- | --- | --- |
-| P0 ADR | base merged (#521/522) | Done. Docs-only, matches. |
-| P1 headless core | corrective PR + recuts in flight | Partial/unstable. `createAgent.ts`/`createAgentApp.ts` + config-surface inventory on main; `runtime:'none'` pure path added (#543) then removed (#620/#622). Recuts A–D #566/#568/#575/#576 all OPEN. |
-| P2 sandbox providers | narrow/rework | Mostly not started. boring-sandbox = 8 files (scaffold + providerMatrix/capability). Provider moves #548/#558/#564 OPEN. |
-| P3 routes/tools | post-v1, non-dispatchable | Matches — not started. boring-bash = pre-391 company_context code only. |
-| P4 file UI | post-v1 | Matches — not started. |
-| P5 provisioning/secrets | proposed v1 gate; narrow/rework | Not started. No `BashRequirement` normalizer, no PRs. |
-| P6 definition/deployment | "executing independently" | NOT on main despite MERGED labels. #618/#620 merged into stale branch `plan/391-workspace-first-v1`; #620 relanded via #622; relands #623 (P6-D) + #624 (A1) OPEN. `grep AgentDefinition` on main = 0 hits. |
-| A1 agent authoring | pending | Not on main. #619 DRAFT, reland #624 OPEN. |
-| D1 tenant provisioning | pending | Not started, zero implementation PRs. |
-| D2 shared tenant mesh | post-v1 | Matches — not started. |
-| E1 env attachments | post-v1, non-dispatchable | Matches — not started. |
-| E2 MCP projection | post-v1 | Matches — not started. |
-| M1 MCP managed agent | optional tracer; partial | Matches. BBM1-001 (MCP delegate server, #538) on main; BBM1-002/003 (#549/#556) OPEN, flagged do-not-rebase. Not dispatchable until P1 BBP1-005→008; #545 closed unmerged. |
-| M2 MCP agent surface | post-v1 | Matches — not started. |
-| S1 Slack / S2 embed | relocated out of #391 (S2 → #551) | Matches — stubs only. |
-| S3/S4 control-plane UX/onboarding | post-v1 | Matches — not started. |
-| T1 durable events | post-v1, partially landed early | Partial. eventStreamStore + envelope append (#537) on main; #546 (durable routes), #559 (approvals) OPEN. |
-| T2 transport | post-v1 | Matches — not started, zero PRs. |
-| X1 S3/FUSE mounts | draft/background only | Matches. Real code on DRAFT #581, unmerged, out of v1 gate. |
+| P0 / Decision 21 | Landed through #617 | Keep workspace-first acceptance binding. |
+| P1 core/lifecycle | Core/local lifecycle landed through #627 | Finish request-binding/service teardown, then fail-closed readiness. |
+| P2 runsc | #628 structural preflight only; `productionReady: false` | Validate lifecycle/security/provider facts on a real EU target before D1 lock. |
+| P6-D | Minimal identities/digests landed in #623 | Consume from P6-R; do not widen schema speculatively. |
+| A1 compile | Deterministic compiler landed in #624 | Add workspace-backed local validate/dev after P6-R. |
+| P5a / P6-R / D1 | Not landed | Execute narrowly in dependency order against the dedicated-site acceptance. |
+| R0/M1 | Partial optional tracer (#538) | Recut only if outreach value justifies it; never block v1. |
+| T1/T2, full P3, E1 | Deferred/post-v1 | Keep frozen until a named consumer reopens them. |
+| X1 S3/FUSE | Draft isolated research (#581) | Rerun flawed benchmark; no v1 dependency. |
+| P8 | Pending | Add residue grep and measured setup-to-first-run evidence. |
 
-Notes:
-
-- 23 PRs open under `391-*`/`agent/391-*`/`plan/391-*` prefixes (P1 recuts A–D, P2 pr2-5, T1 pr3-4, M1 pr2-3, P6-D/A1 relands, X1 draft). Two reland PRs (#622 merged; #623/#624 open) exist specifically to recover code stranded on a stale non-main base.
-- Bottom line: of ~22 workstreams, only P0 (docs), M1 partial, T1 partial, and P1's early beads have real code on main. P6-D/A1 appeared merged but are not. Everything else is either explicitly deferred post-v1 (matches plan) or has zero implementation PRs.
+The earlier audit correctly exposed the stacked-PR trap and several operational
+unknowns. Its claims that #623/#624 were not on main, that P2 had no landed
+implementation, and that P1 -> M1 was the business critical path became stale
+or were unsupported by the binding product acceptance; this revision corrects
+those claims without weakening the accepted controls.

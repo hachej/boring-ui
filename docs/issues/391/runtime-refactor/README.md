@@ -1,6 +1,7 @@
 # #391 runtime refactor (v2) — plan pack
 
-Runtime-free, surface-agnostic agents + the `@hachej/boring-bash` / `@hachej/boring-sandbox` split. Read in this order:
+Runtime-package-free, surface-agnostic agent core with workspace-backed v1
+composition + the `@hachej/boring-bash` / `@hachej/boring-sandbox` split. Read in this order:
 
 1. [`plan-navigator.html`](plan-navigator.html) — interactive overview for
    navigating the critical path, isolated parallel tracks, risks, review order,
@@ -28,7 +29,7 @@ stacked-PR trap, open questions).
 The v1 critical path is now the smallest path to the dedicated proof:
 
 ```txt
-P0/proposed decision 21 -> P6-D -> A1-compile -----------┐
+P0/accepted decision 21 -> P6-D -> A1-compile -----------┐
 P0 -> P1 boundary -> P2(runsc minimum) -> P5a(minimum) --┼-> P6-R -> A1-dev -> D1 -> P8
                                                           ┘
 ```
@@ -40,12 +41,12 @@ execution remain documented post-v1. [`INDEX.md`](INDEX.md) owns exact ordering;
 ## Delivery policy (2026-07-09)
 
 #391 now ships in increments. The broad platform vision remains directional,
-but it is not one merge gate:
+but it is not one merge gate. The dedicated v1 journey is binding; the older
+Release 0 wording names an optional tracer, not a prerequisite:
 
-1. **Release 0 vertical tracer:** finish the safe `createAgent()` boundary and
-   ship the bearer-authenticated managed-MCP agent path with bounded,
-   self-contained output and a stock-client smoke, backed by an authorized
-   workspace rather than a no-environment runtime.
+1. **Optional R0/M1 tracer:** after the safe `createAgent()` boundary, a
+   bearer-authenticated managed-MCP path may provide bounded, self-contained
+   stock-client proof. It is an outreach leaf and does not block v1.
 2. **Version 1 agent factory:** compile a small agent directory into a
    self-contained, content-addressed `CompiledAgentBundle`, run that exact
    bundle in an explicit local workspace/runtime, and deploy it without platform-source edits to one dedicated
@@ -56,6 +57,12 @@ but it is not one merge gate:
    tenancy, FUSE/S3, external environment projection, control-plane UX, hosted
    child apps, and advanced plugin/runtime generality remain documented but do
    not gate v1.
+
+Current verified ancestry: workspace-first boundaries #616/#617/#622, P6-D
+#623, A1 compile #624, P1 core/local lifecycle #626/#627, and structural-only
+runsc preflight #628 are on main. #628 reports `productionReady: false`; it is
+not provider-parity evidence. See the dated review ledger for the remaining
+facts, recommendations, and owner decisions.
 
 [`INDEX.md`](INDEX.md) is authoritative for the exact v1 gate and post-v1
 status. A package `TODO.md` coordinates its beads; **one bead/PR, not one whole

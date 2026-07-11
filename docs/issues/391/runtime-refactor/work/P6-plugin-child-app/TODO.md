@@ -1,12 +1,13 @@
 # TODO-P6 — Plugin and child-app integration
 
-> **Dispatch supersession (2026-07-10).** Do not dispatch the 2026-07-09
+> **Dispatch supersession (reality-synced 2026-07-11).** Do not dispatch the 2026-07-09
 > P6-R/generation design below. Active v1 work is limited to:
 >
 > 1. P6-D: minimal behavior-only `AgentDefinition` plus host-owned
 >    `AgentDeployment` schemas, their canonical digests, referenced definition
->    assets, and BBP6-003 immutable definition lookup for A1/D1. P6-D depends on
->    proposed decision 21, not the P1 production correction.
+>    assets, and BBP6-003 immutable definition lookup for A1/D1. P6-D identities
+>    landed via #623 under accepted decision 21; they did not depend on the P1
+>    production correction.
 > 2. P6-R: a stateless resolver that combines the definition with a host-owned
 >    deployment, the already-authorized workspace composition manifest/digest,
 >    and narrow runtime facts needed by D1. It does not select contributions.
@@ -66,8 +67,9 @@ Consequence, binding:
 
 ### Dependencies (phase order)
 
-- **P6-D ← proposed decision 21 (no P1 dependency):** BBP6-009 and BBP6-003 establish behavior/deployment
-  schemas, bundle digest rules, and immutable definition-version lookup.
+- **P6-D ← accepted decision 21 (landed via #623; no P1 dependency):** BBP6-009
+  establishes behavior/deployment identities and digest rules. Any remaining
+  lookup work stays narrow and evidence-backed.
 - **P6-R ← P6-D + P1 boundary + narrow P5a:** BBP6-011 statelessly combines
   the verified definition/deployment with the existing authorized workspace
   composition and D1-required runtime/readiness facts. It creates no deployment,

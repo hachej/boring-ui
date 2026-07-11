@@ -29,8 +29,9 @@
    deployment identity; and secret reference names plus redacted status only.
    Never persist secret values. Rollback rematerializes the entire prior site
    state and reproduces the P6-R digest. Do not create a P6 generation store.
-6. Record the <=15-minute exact-host golden path and negative selector/secret
-   proof consumed by P8. The proof applies changed site-level values, rolls back,
+6. Record exact-host setup-to-first-run time and stage breakdown plus negative
+   selector/secret proof consumed by P8. Compare the result with the provisional
+   15-minute target. The proof applies changed site-level values, rolls back,
    and compares every restored redacted field and digest with the prior snapshot.
 
 M2, D2, P3 scoped registrars/plugin snapshots, E1 attachment catalogs,

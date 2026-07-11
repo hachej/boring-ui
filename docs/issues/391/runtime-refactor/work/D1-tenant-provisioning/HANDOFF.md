@@ -1,6 +1,6 @@
 # D1-tenant-provisioning - Handoff checklist
 
-## Proposed workspace-first v1 handoff (2026-07-10)
+## Binding workspace-first v1 handoff (2026-07-11)
 
 ### Prerequisites
 
@@ -34,10 +34,11 @@
       reproduces the P6-R digest without a P6 generation registry.
 - [ ] DNS/TLS publication occurs only after workspace/default-agent/runtime/
       secret readiness; partial state is not externally reachable.
-- [ ] Timed proof is <=900 seconds and records exact host, definition/deployment
+- [ ] Proof records setup-to-first-run time and stage breakdown against the
+      provisional 15-minute target, plus exact host, definition/deployment
       digests, workspace/default binding, runsc identity, reapply, site-level
-      mutation/full restoration, rollback digests, selector denials, and secret-
-      canary result.
+      mutation/full restoration, rollback digests, selector denials, and
+      secret-canary result.
 
 ### Exit
 

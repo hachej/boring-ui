@@ -17,7 +17,7 @@ Phase X1 is the mount subsystem of `@hachej/boring-sandbox` (created by P2): S3-
 
 Verified current repo reality: this prep worktree does not yet contain `packages/boring-sandbox` (P2 creates it). Existing bwrap code is still at `packages/agent/src/server/sandbox/bwrap/buildBwrapArgs.ts`; after P2 BBP2-003 it must live under `packages/boring-sandbox/src/providers/bwrap/*`, and X1 must reuse that moved arg builder rather than forking another bwrap path. Current #416 shapes already have `FilesystemBinding.mountPath`, and the existing no-leak suite is `checkReadonlyProjectionConformance`; E1 generalizes those into attachments, auth-gated contributions, and methodless facts. X1 never receives raw prepared handles.
 
-Benchmark baseline: `/home/ubuntu/projects/x1-bench/report.md` (`2026-07-05 12:22 UTC`) recorded rclone-FUSE-over-MinIO numbers: warm `rg` `0.18s`, append-100 `0.05s`, `git init+commit` `5.51s` vs local `1.17s` (`4.7x local`), and sequential write 50 MiB `4.40s`. BBX1-009 must encode these as the initial locked thresholds. The same report explicitly says readonly/backend-down semantic checks need re-verification because the harness had PATH/ordering bugs; those semantic checks stay owned by BBX1-007's smoke tests, not by the benchmark bead.
+Benchmark evidence: `/home/ubuntu/projects/x1-bench/report.md` (`2026-07-05 12:22 UTC`) recorded rclone-FUSE-over-MinIO numbers, but also records PATH/ordering defects affecting semantic checks. Its numeric results are provisional comparison data, not locked acceptance thresholds. BBX1-007 must first re-verify readonly/backend-down semantics and BBX1-009 must publish a corrected repeatable run before reviewers lock any numeric threshold.
 
 ## Deliverables
 - concrete **rclone** mount module (`--vfs-cache-mode full`, EU-endpoint-first OVH/Scaleway/MinIO); no generic driver interface until a second real mount implementation lands; mountpoint-s3 deferred (AWS-only/RO);
@@ -26,7 +26,7 @@ Benchmark baseline: `/home/ubuntu/projects/x1-bench/report.md` (`2026-07-05 12:2
 - capability fact `mounts.fuseS3: reported | unknown` (fail closed; `vercel`-PROXY reports unsupported);
 - credential broker: short-lived prefix-scoped STS (AWS session policy `s3:prefix`; Scaleway/MinIO STS; OVH per-container) injected into the mount-process env only, refreshed via `credential_process`; the sandbox receives a directory handle, never a secret (invariant 14);
 - S3-backed `Environment` integration + a readonly-S3 no-leak conformance mount + a `bash-sees-mount == file-routes-see-mount` source-of-truth test; default write-back = rclone VFS-full; fuse-overlayfs publish-on-save variant deferred (never kernel overlayfs over FUSE);
-- BBX1-009 benchmark harness with locked thresholds from the `2026-07-05 12:22 UTC` baseline: warm `rg <= 0.18s`, append-100 `<= 0.05s`, `git init+commit <= 4.7x local`, sequential write 50 MiB `<= 4.40s`; readonly/backend-down semantics are excluded from this benchmark acceptance and re-verified by BBX1-007.
+- BBX1-009 corrected benchmark harness and raw results; the existing warm `rg`, append, git, and sequential-write numbers remain provisional until the corrected BBX1-007 semantics and repeatable performance run pass review.
 
 ## Exit criteria
 - a readonly S3 mount passes the no-leak suite;
@@ -34,4 +34,4 @@ Benchmark baseline: `/home/ubuntu/projects/x1-bench/report.md` (`2026-07-05 12:2
 - no credential is readable inside the sandbox;
 - the EU-endpoint matrix (MinIO in CI) is green with no US-hosted default (invariant 15);
 - `mounts.fuseS3: unknown`/`vercel` fail closed;
-- `bench:mounts` encodes the baseline thresholds: warm `rg <= 0.18s`, append-100 `<= 0.05s`, `git init+commit <= 4.7x local`, sequential write 50 MiB `<= 4.40s`; threshold widening requires raw run output plus reviewer approval, not silent drift.
+- `bench:mounts` publishes corrected raw results and methodology; numeric thresholds become binding only in a reviewed follow-up after the flawed baseline is rerun.
