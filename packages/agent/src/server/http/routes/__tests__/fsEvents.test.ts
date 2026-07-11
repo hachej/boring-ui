@@ -1,5 +1,5 @@
 import Fastify, { type FastifyInstance } from 'fastify'
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import type {
   Workspace,
@@ -53,10 +53,11 @@ describe('fsEventsRoutes', () => {
 
   it('streams subscribed change events as SSE messages', async () => {
     let captured: ((e: WorkspaceChangeEvent) => void) | null = null
+    const unsubscribe = vi.fn(() => { captured = null })
     const stubWatcher: WorkspaceWatcher = {
       subscribe(listener) {
         captured = listener
-        return () => { captured = null }
+        return unsubscribe
       },
       close() { captured = null },
     }
@@ -116,11 +117,16 @@ describe('fsEventsRoutes', () => {
     }
     ac.abort()
     await reader.cancel().catch(() => {})
+    for (let i = 0; i < 20 && unsubscribe.mock.calls.length === 0; i++) {
+      await new Promise((r) => setTimeout(r, 10))
+    }
 
     expect(collected).toContainEqual({ op: 'write', path: 'a.ts', mtimeMs: 1234 })
     expect(collected).toContainEqual({ op: 'unlink', path: 'b.ts' })
     // Reliability invariants: sequence is monotonic, eventIds are unique.
     expect(seqs).toEqual([...seqs].sort((a, b) => a - b))
     expect(new Set(collectedIds).size).toBe(collectedIds.length)
+    expect(unsubscribe).toHaveBeenCalledOnce()
+    expect(captured).toBeNull()
   }, 15_000)
 })

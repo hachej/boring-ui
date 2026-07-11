@@ -4,6 +4,7 @@ import type { ReadyStatusTracker } from '../../runtime/readyStatus'
 export interface ReadyStatusRouteOptions {
   tracker?: ReadyStatusTracker
   getTracker?: (request: FastifyRequest) => ReadyStatusTracker | Promise<ReadyStatusTracker>
+  deferLeaseRelease?: (request: FastifyRequest) => void
 }
 
 export function readyStatusRoutes(
@@ -12,8 +13,16 @@ export function readyStatusRoutes(
   done: (err?: Error) => void,
 ): void {
   app.get('/api/v1/ready-status', async (request, reply) => {
+    let transportClosed = false
+    let cleanupStream: (() => void) | undefined
+    reply.raw.once('close', () => {
+      transportClosed = true
+      cleanupStream?.()
+    })
+
     const tracker = opts.getTracker ? await opts.getTracker(request) : opts.tracker
     if (!tracker) throw new Error('ready-status route requires tracker or getTracker')
+    if (transportClosed) return reply
 
     const initial = tracker.getReadiness()
     const initialEvent = {
@@ -32,6 +41,16 @@ export function readyStatusRoutes(
         .send(`:\n\nevent: status\ndata: ${JSON.stringify(initialEvent)}\n\n`)
     }
 
+    let closed = false
+    let unsubscribe: (() => void) | null = null
+    const closeStream = () => {
+      if (closed) return
+      closed = true
+      unsubscribe?.()
+      if (!reply.raw.destroyed && !reply.raw.writableEnded) reply.raw.end()
+    }
+    cleanupStream = closeStream
+
     reply.raw.writeHead(200, {
       'Content-Type': 'text/event-stream',
       'Cache-Control': 'no-cache',
@@ -39,17 +58,12 @@ export function readyStatusRoutes(
     })
     reply.raw.write(`:\n\nevent: status\ndata: ${JSON.stringify(initialEvent)}\n\n`)
 
-    let closed = false
-    let unsubscribe: (() => void) | null = null
-    const closeStream = () => {
-      if (closed) return
-      closed = true
-      unsubscribe?.()
-      reply.raw.end()
+    if (transportClosed) {
+      closeStream()
+      return reply
     }
-
-    request.raw.on('close', closeStream)
     reply.hijack()
+    opts.deferLeaseRelease?.(request)
 
     unsubscribe = tracker.subscribe((event) => {
       if (closed) return
@@ -59,6 +73,7 @@ export function readyStatusRoutes(
         queueMicrotask(closeStream)
       }
     })
+    if (transportClosed) closeStream()
 
     return reply
   })

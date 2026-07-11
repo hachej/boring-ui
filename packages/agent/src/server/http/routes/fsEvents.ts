@@ -37,6 +37,7 @@ import {
 interface FsEventsRouteOptions {
   workspace?: Workspace
   getWorkspace?: (request: FastifyRequest) => Workspace | Promise<Workspace>
+  deferLeaseRelease?: (request: FastifyRequest) => void
 }
 
 interface BroadcasterEntry {
@@ -102,11 +103,19 @@ export function fsEventsRoutes(
   })
 
   app.get('/api/v1/fs/events', async (request, reply) => {
+    let transportClosed = false
+    let closeStream: (() => void) | undefined
+    reply.raw.once('close', () => {
+      transportClosed = true
+      closeStream?.()
+    })
+
     const resolved = await ensureBroadcaster(request)
-    reply.hijack()
-    setupSse(request, reply.raw)
 
     if ('unsupported' in resolved) {
+      if (transportClosed) return
+      reply.hijack()
+      setupSse(request, reply.raw)
       writeSse(reply.raw, 'unsupported', resolved.unsupported)
       reply.raw.end()
       return
@@ -114,9 +123,27 @@ export function fsEventsRoutes(
     const { workspaceId, entry } = resolved
     entry.subscribers += 1
 
+    let sub: ReturnType<FsEventBroadcaster['subscribe']> | undefined
+    let heartbeat: ReturnType<typeof setInterval> | undefined
+    let cleanedUp = false
+    const cleanup = () => {
+      if (cleanedUp) return
+      cleanedUp = true
+      if (heartbeat) clearInterval(heartbeat)
+      sub?.unsubscribe()
+      releaseBroadcaster(workspaceId, entry)
+    }
+    closeStream = cleanup
+    if (transportClosed) {
+      cleanup()
+      return
+    }
+
+    reply.hijack()
+    setupSse(request, reply.raw)
+
     const lastSeenSeq = parseLastEventId(request.headers['last-event-id'])
 
-    let sub: ReturnType<FsEventBroadcaster['subscribe']>
     try {
       sub = entry.broadcaster.subscribe(
         (env) => writeChange(reply.raw, env),
@@ -126,12 +153,21 @@ export function fsEventsRoutes(
         },
       )
     } catch (error) {
-      releaseBroadcaster(workspaceId, entry)
+      cleanup()
       request.log.error({ err: error }, 'fs events subscribe failed')
-      writeSse(reply.raw, 'error', { reason: 'subscribe_failed' })
-      reply.raw.end()
+      if (!transportClosed) {
+        writeSse(reply.raw, 'error', { reason: 'subscribe_failed' })
+        reply.raw.end()
+      }
       return
     }
+
+    if (transportClosed) {
+      cleanup()
+      return
+    }
+
+    opts.deferLeaseRelease?.(request)
 
     if (sub.resyncRequired) {
       writeSse(reply.raw, 'resync-required', {})
@@ -147,15 +183,10 @@ export function fsEventsRoutes(
     // Heartbeat — proxies (Vercel, nginx) idle-close SSE connections
     // after ~30s. A comment line keeps the socket alive without
     // showing up in the EventSource stream.
-    const heartbeat = setInterval(() => {
+    heartbeat = setInterval(() => {
       try { reply.raw.write(': heartbeat\n\n') } catch { /* ignore */ }
     }, 25_000)
-
-    request.raw.on('close', () => {
-      clearInterval(heartbeat)
-      sub.unsubscribe()
-      releaseBroadcaster(workspaceId, entry)
-    })
+    if (transportClosed) cleanup()
   })
 
   done()

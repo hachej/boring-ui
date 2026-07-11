@@ -251,6 +251,34 @@ describe('piChatRoutes', () => {
     await app.close()
   })
 
+  test('GET /events releases its subscription when the response socket closes', async () => {
+    const service = new FakePiChatService()
+    service.subscriptionResult = {
+      type: 'ok',
+      unsubscribe: service.unsubscribe,
+      closed: new Promise<void>(() => {}),
+    }
+    const { app } = await buildApp(service, { heartbeatIntervalMs: 10 })
+    await app.listen({ port: 0, host: '127.0.0.1' })
+    const address = app.server.address()
+    if (typeof address !== 'object' || !address) throw new Error('no server address')
+    const abort = new AbortController()
+    const response = await fetch(
+      `http://127.0.0.1:${address.port}/api/v1/agent/pi-chat/pi-1/events?cursor=0`,
+      { signal: abort.signal },
+    )
+    expect(response.status).toBe(200)
+
+    abort.abort()
+    await response.body?.cancel().catch(() => {})
+    for (let index = 0; index < 20 && service.unsubscribe.mock.calls.length === 0; index += 1) {
+      await new Promise((resolve) => setTimeout(resolve, 10))
+    }
+
+    expect(service.unsubscribe).toHaveBeenCalledOnce()
+    await app.close()
+  }, 15_000)
+
   test('GET /events maps replay range errors to stable retryable HTTP errors', async () => {
     const service = new FakePiChatService()
     service.subscriptionResult = { type: PI_CHAT_REPLAY_GAP, latestSeq: 25, minReplaySeq: 20 }
