@@ -4,21 +4,29 @@ import type { AgentSessionEvent } from '@mariozechner/pi-coding-agent'
 import {
   AGENT_NOT_IMPLEMENTED_UNTIL_T1,
   AgentNotImplementedError,
-  createAgent,
+  createAgent as createCoreAgent,
+} from '@hachej/boring-agent/core'
+import type {
+  AgentCoreRuntimeFactory,
+  AgentCoreSessionService,
+  PiChatEventSubscriber,
+  PiSessionCreateInit,
+  PiSessionRequestContext,
 } from '@hachej/boring-agent/core'
 import type { AgentHarness, AgentHarnessFactoryInput, AgentSendInput, RunContext } from '../../shared/harness'
 import type { AgentRuntimeAdapter } from '../../shared/events'
 import type { SessionCtx, SessionDetail, SessionStore, SessionSummary } from '../../shared/session'
+import type { FollowUpPayload, PiChatEvent, PromptPayload } from '../../shared/chat'
 import type { PiAgentPromptInput, PiAgentSessionAdapter, PiAgentSessionSnapshot } from '../pi-chat/PiAgentSessionAdapter'
 import { ErrorCode } from '../../shared/error-codes'
+import { createAgent } from '../createAgent'
 
 const CTX: SessionCtx = { workspaceId: 'workspace-test', userId: 'user-test' }
 
 describe('createAgent', () => {
   it('exposes exactly the nine-member facade without Fastify', () => {
-    const agent = createAgent({
-      runtime: createTestRuntime(),
-      harnessFactory: createFakeHarnessFactory(),
+    const agent = createCoreAgent({
+      runtimeFactory: createCoreRuntimeFactory(),
     })
 
     expect(Object.keys(agent).sort()).toEqual([
@@ -32,6 +40,24 @@ describe('createAgent', () => {
       'stop',
       'stream',
     ])
+  })
+
+  it('runs through the injected core runtime without the server wrapper', async () => {
+    const sessions = new MemorySessionStore()
+    const agent = createCoreAgent({
+      runtimeFactory: createCoreRuntimeFactory(sessions),
+    })
+
+    const seeded = sessions.seed('runtime-seeded', CTX)
+    await expect(agent.sessions.list(CTX)).resolves.toContainEqual(seeded)
+    const created = await agent.sessions.create(CTX, { title: 'injected store' })
+    await expect(sessions.list(CTX)).resolves.toContainEqual(created)
+    await agent.sessions.delete(CTX, created.id)
+    expect(sessions.deleted).toContain(created.id)
+    const events = await collectEvents(agent.send({ content: 'hello from core', ctx: CTX }))
+
+    expect(events.map((event) => event.chunk.type)).toEqual(['agent-start', 'agent-end'])
+    await agent.dispose()
   })
 
   it('rejects sessions override with the default harness to avoid split persistence', () => {
@@ -424,7 +450,7 @@ describe('createAgent', () => {
     await agent.dispose()
   })
 
-  it('dispose stops active producers before closing buffers', async () => {
+  it('dispose is terminal, idempotent, and stops active producers without disposing the host adapter', async () => {
     const fake = createFakeHarnessFactory({ seedSessions: ['dispose-me'] })
     const runtime = createTestRuntime()
     const agent = createAgent({
@@ -435,10 +461,65 @@ describe('createAgent', () => {
     await agent.start({ sessionId: 'dispose-me', content: 'long running', ctx: CTX })
     const adapter = fake.adapter('dispose-me')
 
-    await agent.dispose()
+    await Promise.all([agent.dispose(), agent.dispose()])
 
     expect(adapter.abortCount).toBe(1)
-    expect(runtime.dispose).toHaveBeenCalledOnce()
+    expect(runtime.dispose).not.toHaveBeenCalled()
+    await expect(agent.start({ sessionId: 'dispose-me', content: 'retained', ctx: CTX })).rejects.toMatchObject({
+      code: ErrorCode.enum.AGENT_BINDING_DISPOSED,
+    })
+    await expect(agent.sessions.list(CTX)).rejects.toMatchObject({
+      code: ErrorCode.enum.AGENT_BINDING_DISPOSED,
+    })
+    await expect(agent.readiness.status()).rejects.toMatchObject({
+      code: ErrorCode.enum.AGENT_BINDING_DISPOSED,
+    })
+    let streamError: unknown
+    try {
+      agent.stream('dispose-me', { startIndex: 0, ctx: CTX })
+    } catch (error) {
+      streamError = error
+    }
+    expect(streamError).toMatchObject({ code: ErrorCode.enum.AGENT_BINDING_DISPOSED })
+  })
+
+  it.each(['stop', 'delete'] as const)('%s failure preserves producer ownership so dispose retries it', async (operation) => {
+    const sessionId = `${operation}-retry`
+    const fake = createFakeHarnessFactory({ seedSessions: [sessionId], abortFailures: 1 })
+    const agent = createAgent({ runtime: createTestRuntime(), harnessFactory: fake.factory })
+
+    await agent.start({ sessionId, content: 'long running', ctx: CTX })
+    if (operation === 'stop') {
+      await expect(agent.stop(sessionId, CTX)).rejects.toThrow('abort failed')
+    } else {
+      await expect(agent.sessions.delete(CTX, sessionId)).rejects.toThrow('abort failed')
+    }
+    await agent.dispose()
+
+    expect(fake.adapter(sessionId).abortCount).toBe(2)
+  })
+
+  it.each(['stop', 'delete'] as const)('%s closes a session whose subscription resolves late', async (operation) => {
+    const sessions = new MemorySessionStore()
+    sessions.seed('deferred-subscribe', CTX)
+    let releaseSubscribe!: () => void
+    const subscribeGate = new Promise<void>((resolve) => { releaseSubscribe = resolve })
+    let markSubscribeStarted!: () => void
+    const subscribeStarted = new Promise<void>((resolve) => { markSubscribeStarted = resolve })
+    const service = new InjectedCorePiChatService(sessions, { subscribeGate, onSubscribe: markSubscribeStarted })
+    const agent = createCoreAgent({ runtimeFactory: createCoreRuntimeFactory(sessions, service) })
+
+    const start = agent.start({ sessionId: 'deferred-subscribe', content: 'pending', ctx: CTX })
+    await subscribeStarted
+    const teardown = operation === 'stop'
+      ? agent.stop('deferred-subscribe', CTX)
+      : agent.sessions.delete(CTX, 'deferred-subscribe')
+    await teardown
+    releaseSubscribe()
+
+    await expect(start).rejects.toMatchObject({ code: ErrorCode.enum.ABORTED })
+    expect(service.unsubscribeCount).toBe(1)
+    await agent.dispose()
   })
 
   it('reopens the live stream when a stopped session is started again', async () => {
@@ -472,7 +553,22 @@ function createTestRuntime() {
   return { id: 'test-runtime', dispose: vi.fn<() => void>() } satisfies AgentRuntimeAdapter
 }
 
-function createFakeHarnessFactory(options: { autoCompletePrompt?: boolean; eventsPerPrompt?: number; seedSessions?: string[] } = {}) {
+function createCoreRuntimeFactory(
+  sessions = new MemorySessionStore(),
+  service = new InjectedCorePiChatService(sessions),
+): AgentCoreRuntimeFactory {
+  return async () => ({
+    harness: {
+      id: 'core-injected',
+      placement: 'server',
+      sessions,
+    },
+    sessionStore: sessions,
+    service,
+  })
+}
+
+function createFakeHarnessFactory(options: { autoCompletePrompt?: boolean; eventsPerPrompt?: number; seedSessions?: string[]; abortFailures?: number } = {}) {
   const sessions = new MemorySessionStore()
   for (const sessionId of options.seedSessions ?? []) sessions.seed(sessionId, CTX)
   const adapters = new Map<string, FakePiSessionAdapter>()
@@ -480,7 +576,12 @@ function createFakeHarnessFactory(options: { autoCompletePrompt?: boolean; event
   const adapter = (sessionId: string) => {
     let existing = adapters.get(sessionId)
     if (!existing) {
-      existing = new FakePiSessionAdapter(sessionId, options.eventsPerPrompt ?? 1, options.autoCompletePrompt === true)
+      existing = new FakePiSessionAdapter(
+        sessionId,
+        options.eventsPerPrompt ?? 1,
+        options.autoCompletePrompt === true,
+        options.abortFailures ?? 0,
+      )
       adapters.set(sessionId, existing)
     }
     return existing
@@ -619,8 +720,113 @@ class ScopedSessionStore extends MemorySessionStore {
   }
 }
 
+class InjectedCorePiChatService implements AgentCoreSessionService {
+  private readonly subscribers = new Map<string, Set<PiChatEventSubscriber>>()
+  private readonly latestSeq = new Map<string, number>()
+  private turns = 0
+  unsubscribeCount = 0
+
+  constructor(
+    private readonly sessions: MemorySessionStore,
+    private readonly options: { subscribeGate?: Promise<void>; onSubscribe?: () => void } = {},
+  ) {}
+
+  async createSession(ctx: PiSessionRequestContext, init?: PiSessionCreateInit) {
+    return this.sessions.create(toTestSessionCtx(ctx), init)
+  }
+
+  async deleteSession(ctx: PiSessionRequestContext, sessionId: string): Promise<void> {
+    await this.sessions.delete(toTestSessionCtx(ctx), sessionId)
+    this.subscribers.delete(sessionId)
+    this.latestSeq.delete(sessionId)
+  }
+
+  async readState(_ctx: PiSessionRequestContext, sessionId: string) {
+    return {
+      protocolVersion: 1 as const,
+      sessionId,
+      seq: this.latestSeq.get(sessionId) ?? 0,
+      status: 'idle' as const,
+      messages: [],
+      queue: { followUps: [] },
+      followUpMode: 'one-at-a-time' as const,
+    }
+  }
+
+  async subscribe(ctx: PiSessionRequestContext, sessionId: string, _cursor: number, subscriber: PiChatEventSubscriber) {
+    await this.sessions.load(toTestSessionCtx(ctx), sessionId)
+    this.options.onSubscribe?.()
+    await this.options.subscribeGate
+    const subscribers = this.subscribers.get(sessionId) ?? new Set<PiChatEventSubscriber>()
+    subscribers.add(subscriber)
+    this.subscribers.set(sessionId, subscribers)
+    return {
+      type: 'ok' as const,
+      unsubscribe: () => {
+        this.unsubscribeCount += 1
+        subscribers.delete(subscriber)
+      },
+    }
+  }
+
+  async prompt(_ctx: PiSessionRequestContext, sessionId: string, payload: PromptPayload) {
+    const turnId = `core-turn-${++this.turns}`
+    this.publish(sessionId, { type: 'agent-start', seq: this.nextSeq(sessionId), turnId })
+    this.publish(sessionId, { type: 'agent-end', seq: this.nextSeq(sessionId), turnId, status: 'ok' })
+    return {
+      accepted: true as const,
+      cursor: this.latestSeq.get(sessionId) ?? 0,
+      clientNonce: payload.clientNonce,
+    }
+  }
+
+  async followUp(_ctx: PiSessionRequestContext, sessionId: string, payload: FollowUpPayload) {
+    return {
+      accepted: true as const,
+      cursor: this.latestSeq.get(sessionId) ?? 0,
+      clientNonce: payload.clientNonce,
+      clientSeq: payload.clientSeq,
+      queued: true as const,
+    }
+  }
+
+  async clearQueue(_ctx: PiSessionRequestContext, sessionId: string) {
+    return { accepted: true as const, cursor: this.latestSeq.get(sessionId) ?? 0, cleared: 0 }
+  }
+
+  async interrupt(_ctx: PiSessionRequestContext, sessionId: string) {
+    return { accepted: true as const, cursor: this.latestSeq.get(sessionId) ?? 0 }
+  }
+
+  async stop(_ctx: PiSessionRequestContext, sessionId: string) {
+    return {
+      accepted: true as const,
+      cursor: this.latestSeq.get(sessionId) ?? 0,
+      stopped: true as const,
+      clearedQueue: [],
+    }
+  }
+
+  private nextSeq(sessionId: string): number {
+    const next = (this.latestSeq.get(sessionId) ?? 0) + 1
+    this.latestSeq.set(sessionId, next)
+    return next
+  }
+
+  private publish(sessionId: string, event: PiChatEvent): void {
+    for (const subscriber of this.subscribers.get(sessionId) ?? []) subscriber(event)
+  }
+}
+
 function normalizeTestCtx(ctx: SessionCtx | undefined): SessionCtx | undefined {
   return !ctx?.workspaceId && !ctx?.userId ? undefined : { workspaceId: ctx.workspaceId, userId: ctx.userId }
+}
+
+function toTestSessionCtx(ctx: PiSessionRequestContext): SessionCtx {
+  return {
+    workspaceId: ctx.workspaceId,
+    userId: ctx.authSubject,
+  }
 }
 
 function sameTestCtx(a: SessionCtx | undefined, b: SessionCtx | undefined): boolean {
@@ -639,6 +845,7 @@ class FakePiSessionAdapter implements PiAgentSessionAdapter {
     private readonly sessionId: string,
     private readonly eventsPerPrompt: number,
     private readonly autoCompletePrompt: boolean,
+    private abortFailures: number,
   ) {}
 
   readSnapshot(): PiAgentSessionSnapshot {
@@ -684,6 +891,10 @@ class FakePiSessionAdapter implements PiAgentSessionAdapter {
 
   async abort(): Promise<void> {
     this.abortCount += 1
+    if (this.abortFailures > 0) {
+      this.abortFailures -= 1
+      throw new Error('abort failed')
+    }
     this.resolveActivePrompts()
   }
 

@@ -71,6 +71,8 @@ export {
 } from './config-schema'
 export type { RuntimeModeId, AgentConfig, AgentEnv } from './config-schema'
 export {
+  AgentDefinitionErrorCode,
+  AgentDeploymentErrorCode,
   ErrorCode,
   ERROR_CODES,
   ApiErrorPayloadSchema,
@@ -87,6 +89,26 @@ export {
   PI_AGENT_RUNTIME_CAPABILITIES,
 } from './capabilities'
 export type { AgentRuntimeCapabilities } from './capabilities'
+export {
+  AgentDefinitionValidationError,
+  AgentDeploymentValidationError,
+  createAgentAssetDigest,
+  createAgentDefinitionDigest,
+  createAgentDeploymentDigest,
+  validateAgentDefinition,
+  validateAgentDeployment,
+} from './agent-definition'
+export type {
+  AgentDefinition,
+  AgentDefinitionDigestAsset,
+  AgentDefinitionReference,
+  CompiledAgentDefinition,
+  CompiledAgentBundle,
+  AgentDeployment,
+  AgentSchemaIssue,
+  AgentSchemaValidationResult,
+  Sha256Digest,
+} from './agent-definition'
 export { validateTool } from './validateTool'
 export {
   WORKSPACE_AGENT_PLUGINS_RELOADED_EVENT,

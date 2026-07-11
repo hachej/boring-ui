@@ -20,13 +20,15 @@ describe("@hachej/boring-sandbox scaffold", () => {
     }
   });
 
-  it("resolves public shared and providers subpaths", async () => {
+  it("resolves public shared and provider subpaths", async () => {
     const shared = await import("@hachej/boring-sandbox/shared");
     const providers = await import("@hachej/boring-sandbox/providers");
+    const runsc = await import("@hachej/boring-sandbox/providers/runsc");
 
     expect(shared.PROVIDER_CAPABILITIES.direct.fs).toBe("readwrite");
     expect(shared.MODE_TO_PROVIDER.local).toBe("bwrap");
     expect(providers).toBeDefined();
+    expect(runsc.preflightRunsc).toBeTypeOf("function");
   });
 
 
