@@ -60,17 +60,59 @@ export function AppSessionRow({
   const [editingTitle, setEditingTitle] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const rowRef = useRef<HTMLDivElement | null>(null)
   const inputRef = useRef<HTMLInputElement | null>(null)
+  const savingRef = useRef(false)
+  const cancelledRef = useRef(false)
   const isEditing = editingTitle !== null
   useEffect(() => {
     if (isEditing) inputRef.current?.focus()
   }, [isEditing])
+  const cancelRename = () => {
+    cancelledRef.current = true
+    setEditingTitle(null)
+    setError(null)
+  }
+  const commitRename = () => {
+    if (cancelledRef.current || savingRef.current) return
+    const next = (editingTitle ?? "").trim()
+    if (!next) {
+      setError("Session title is required")
+      return
+    }
+    if (!onRename) return
+    savingRef.current = true
+    setSaving(true)
+    setError(null)
+    void Promise.resolve(onRename(session.id, next)).then(() => {
+      setEditingTitle(null)
+    }).catch((err) => {
+      setError(err instanceof Error ? err.message : "Rename failed")
+    }).finally(() => {
+      savingRef.current = false
+      setSaving(false)
+    })
+  }
   const activate = () => {
     if (state !== "active") onSwitch(session.id)
   }
+  useEffect(() => {
+    if (!isEditing) return
+    const onPointerDown = (event: PointerEvent) => {
+      const target = event.target
+      if (!(target instanceof Node) || inputRef.current?.contains(target)) return
+      // In-row actions own their clicks; only interactions outside the row
+      // commit the active edit.
+      if (rowRef.current?.contains(target)) return
+      commitRename()
+    }
+    document.addEventListener("pointerdown", onPointerDown)
+    return () => document.removeEventListener("pointerdown", onPointerDown)
+  }, [isEditing, commitRename])
 
   return (
     <div
+      ref={rowRef}
       data-boring-workspace-part="app-session-row"
       data-boring-session-state={state}
       // Drag a session onto the chat stage to open it as a split pane (the
@@ -113,25 +155,19 @@ export function AppSessionRow({
             disabled={saving}
             onChange={(event) => setEditingTitle(event.currentTarget.value)}
             onClick={(event) => event.stopPropagation()}
+            onBlur={(event) => {
+              // Moving to an in-row action (pin, split, delete) must not
+              // accidentally commit before that action handles the click.
+              if (event.currentTarget.closest('[data-boring-workspace-part="app-session-row"]')?.contains(event.relatedTarget)) return
+              commitRename()
+            }}
             onKeyDown={(event) => {
               if (event.key === "Enter") {
                 event.preventDefault()
-                const next = (editingTitle ?? "").trim()
-                if (!next) {
-                  setError("Session title is required")
-                  return
-                }
-                setSaving(true)
-                setError(null)
-                void Promise.resolve(onRename?.(session.id, next)).then(() => {
-                  setEditingTitle(null)
-                }).catch((err) => {
-                  setError(err instanceof Error ? err.message : "Rename failed")
-                }).finally(() => setSaving(false))
+                commitRename()
               } else if (event.key === "Escape") {
                 event.preventDefault()
-                setEditingTitle(null)
-                setError(null)
+                cancelRename()
               }
             }}
             aria-label={`Rename ${title}`}
@@ -214,6 +250,7 @@ export function AppSessionRow({
               title="Rename"
               onClick={(event) => {
                 event.stopPropagation()
+                cancelledRef.current = false
                 setEditingTitle(title)
                 setError(null)
               }}

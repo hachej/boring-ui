@@ -1,5 +1,5 @@
 import type { AgentHarness, RunContext, AgentSendInput } from '../../shared/harness'
-import type { SessionCtx, SessionListOptions, SessionStore } from '../../shared/session'
+import type { SessionCtx, SessionListOptions, SessionStore, SessionSummary } from '../../shared/session'
 import type { Workspace } from '../../shared/workspace'
 import type { BoringChatMessage, BoringChatPart, ChatError, FollowUpPayload, FollowUpReceipt, InterruptPayload, PiChatEvent, PiChatSnapshot, PromptPayload, PromptReceipt, QueuedUserMessage, QueueClearPayload, QueueClearReceipt, StopPayload, StopReceipt } from '../../shared/chat'
 import { sessionStreamPath, type AgentEvent } from '../../shared/events'
@@ -35,6 +35,7 @@ const PROMPT_IMAGE_EXTENSIONS = new Set(['.avif', '.gif', '.jpg', '.jpeg', '.png
  * as the live event path. */
 type PiSessionStoreLike = SessionStore & {
   loadEntries?: (ctx: { workspaceId?: string; userId?: string }, sessionId: string) => Promise<{ id: string; messages: unknown[] }>
+  renameAfterLivePendingTitleHandoff?: (ctx: SessionCtx, sessionId: string, title: string) => Promise<SessionSummary>
 }
 
 interface LiveSessionChannel {
@@ -181,9 +182,13 @@ export class HarnessPiChatService implements PiChatSessionService {
     return this.lifecycle.run(async () => {
       const sessionCtx = toSessionCtx(ctx)
       try {
-        const renamed = await this.sessionStore.rename(sessionCtx, sessionId, title)
-        await this.harness.renameLivePendingPiSession?.(sessionId, sessionCtx, renamed.title)
-        return renamed
+        // Pi postpones creating its native JSONL until the first assistant
+        // message. Queue its title synchronously before the async wrapper
+        // append so a materializing first turn cannot miss this rename.
+        const queuedInLivePi = await this.harness.renameLivePendingPiSession?.(sessionId, sessionCtx, title) === true
+        return queuedInLivePi && this.sessionStore.renameAfterLivePendingTitleHandoff
+          ? await this.sessionStore.renameAfterLivePendingTitleHandoff(sessionCtx, sessionId, title)
+          : await this.sessionStore.rename(sessionCtx, sessionId, title)
       } catch (error) {
         throw normalizeSessionAccessError(error, sessionId)
       }

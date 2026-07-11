@@ -1,9 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
-import { existsSync } from 'node:fs'
-import { mkdtemp, readFile, rm } from 'node:fs/promises'
-import { tmpdir } from 'node:os'
-import { join } from 'node:path'
-import { SessionManager, type AgentSessionEvent } from '@mariozechner/pi-coding-agent'
+import type { AgentSessionEvent } from '@mariozechner/pi-coding-agent'
 import type { AgentHarness, RunContext, AgentSendInput } from '../../../shared/harness'
 import type { SessionStore } from '../../../shared/session'
 import type { PiChatEvent } from '../../../shared/chat'
@@ -14,8 +10,6 @@ import { selectMessagesForRender } from '../../../front/chat/pi/selectors'
 import type { PiAgentSessionAdapter, PiAgentSessionSnapshot } from '../PiAgentSessionAdapter'
 import { HarnessPiChatService } from '../harnessPiChatService'
 import type { PiSessionRequestContext } from '../piSessionIdentity'
-import { PiSessionStore } from '../../harness/pi-coding-agent/sessions'
-
 const ctx: PiSessionRequestContext = {
   workspaceId: 'workspace-a',
   storageScope: 'scope-a',
@@ -139,61 +133,6 @@ function renderMessagesFromEvents(events: PiChatEvent[]) {
 }
 
 describe('HarnessPiChatService', () => {
-  it('hydrates a route rename into an already-live but unmaterialized native Pi session', async () => {
-    const tmpDir = await mkdtemp(join(tmpdir(), 'pi-service-pending-title-'))
-    try {
-      const sessionCtx = { workspaceId: ctx.workspaceId, userId: ctx.authSubject }
-      const store = new PiSessionStore('/workspace', tmpDir)
-      const session = await store.create(sessionCtx, { title: 'New chat' })
-      const sessionManager = SessionManager.create('/workspace', tmpDir)
-      const nativePath = sessionManager.getSessionFile()
-      if (!nativePath) throw new Error('expected file-backed native Pi session')
-      await expect(readFile(nativePath, 'utf8')).rejects.toMatchObject({ code: 'ENOENT' })
-
-      const adapter = createAdapter()
-      const renameLivePendingPiSession = vi.fn((sessionId: string, liveCtx: { workspaceId?: string; userId?: string }, title: string) => {
-        if (sessionId !== session.id) return false
-        if (liveCtx.workspaceId !== sessionCtx.workspaceId || liveCtx.userId !== sessionCtx.userId) return false
-        if (existsSync(nativePath)) return false
-        sessionManager.appendSessionInfo(title)
-        return true
-      })
-      const harness = {
-        id: 'real-pi-title-handoff',
-        placement: 'server' as const,
-        sessions: store,
-        hasPiSession: vi.fn(() => true),
-        getPiSessionAdapter: vi.fn(async () => {
-          await store.savePiSessionFile(sessionCtx, session.id, nativePath)
-          return adapter
-        }),
-        renameLivePendingPiSession,
-      }
-      const service = new HarnessPiChatService({ harness, sessionStore: store, workdir: '/workspace' })
-
-      await service.readState(ctx, session.id)
-      expect(harness.getPiSessionAdapter).toHaveBeenCalledOnce()
-
-      await expect(service.renameSession(ctx, session.id, 'New sessionsss'))
-        .resolves.toEqual(expect.objectContaining({ id: session.id, title: 'New sessionsss' }))
-      expect(renameLivePendingPiSession).toHaveBeenCalledWith(session.id, sessionCtx, 'New sessionsss')
-      await expect(readFile(nativePath, 'utf8')).rejects.toMatchObject({ code: 'ENOENT' })
-
-      sessionManager.appendMessage({ role: 'user', content: [{ type: 'text', text: 'hello' }] } as any)
-      await expect(readFile(nativePath, 'utf8')).rejects.toMatchObject({ code: 'ENOENT' })
-      sessionManager.appendMessage({ role: 'assistant', content: [{ type: 'text', text: 'hi' }] } as any)
-
-      let nativeLines = (await readFile(nativePath, 'utf8')).trim().split('\n').map((line) => JSON.parse(line))
-      expect(nativeLines.filter((line) => line.type === 'session_info').map((line) => line.name)).toEqual(['New sessionsss'])
-
-      await expect(service.renameSession(ctx, session.id, 'Native rename')).resolves.toEqual(expect.objectContaining({ title: 'Native rename' }))
-      nativeLines = (await readFile(nativePath, 'utf8')).trim().split('\n').map((line) => JSON.parse(line))
-      expect(nativeLines.filter((line) => line.type === 'session_info').map((line) => line.name)).toEqual(['New sessionsss', 'Native rename'])
-    } finally {
-      await rm(tmpDir, { recursive: true, force: true })
-    }
-  })
-
   it('disposes a receipt-only prompt, native channel, and metering exactly once', async () => {
     const adapter = createAdapter()
     const run = deferred<void>()

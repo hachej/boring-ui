@@ -15,8 +15,8 @@ const {
   mockSubscribers: [] as Array<(event: any) => void>,
   promptHandle: { resolve: undefined as undefined | (() => void) },
   mockCreateAgentSessionConfigs: [] as any[],
-  mockSessionManagerCreate: vi.fn(() => ({ getSessionFile: () => null })),
-  mockSessionManagerOpen: vi.fn(() => ({ getSessionFile: () => null })),
+  mockSessionManagerCreate: vi.fn<() => any>(() => ({ getSessionFile: () => null, appendSessionInfo: (_title: string) => {} })),
+  mockSessionManagerOpen: vi.fn<() => any>(() => ({ getSessionFile: () => null, appendSessionInfo: (_title: string) => {} })),
   mockResourceLoaderOptions: [] as any[],
   mockCurrentModel: {
     value: undefined as undefined | { provider: string; id: string },
@@ -52,6 +52,18 @@ vi.mock("@mariozechner/pi-coding-agent", () => ({
         ),
         abort: vi.fn().mockResolvedValue(undefined),
         dispose: vi.fn(),
+        setSessionName: vi.fn((name: string) => config.sessionManager.appendSessionInfo(name)),
+        get state() { return {}; },
+        get messages() { return []; },
+        get isStreaming() { return false; },
+        get isRetrying() { return false; },
+        get retryAttempt() { return 0; },
+        get pendingMessageCount() { return 0; },
+        get followUpMode() { return 'one-at-a-time' as const; },
+        get sessionId() { return config.sessionManager.getSessionId?.() ?? 'mock-native-session'; },
+        getSteeringMessages: () => [],
+        getFollowUpMessages: () => [],
+        followUp: vi.fn().mockResolvedValue(undefined),
         setModel: mockSetModel,
         setThinkingLevel: mockSetThinkingLevel,
         get model() {
@@ -73,6 +85,8 @@ vi.mock("@mariozechner/pi-coding-agent", () => ({
     };
   }),
   SessionManager: { inMemory: () => ({}), create: mockSessionManagerCreate, open: mockSessionManagerOpen },
+  CURRENT_SESSION_VERSION: 1,
+  parseSessionEntries: (content: string) => content.split("\n").filter(Boolean).map((line) => JSON.parse(line)),
   AuthStorage: { inMemory: () => ({}), create: () => ({}) },
   // createHarness always builds a DefaultResourceLoader now so it can inject
   // the workspace-paths system-prompt guideline. Stub the lookups it needs.
@@ -108,7 +122,12 @@ vi.mock("@mariozechner/pi-coding-agent", () => ({
   },
 }));
 
+import { existsSync } from "node:fs";
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { createPiCodingAgentHarness } from "../createHarness.js";
+import { HarnessPiChatService } from "../../../pi-chat/harnessPiChatService.js";
 import type { RunContext } from "../../../../shared/harness.js";
 
 function emitPiEvent(event: any): void {
@@ -149,5 +168,51 @@ describe("runtime cwd separation", () => {
       "Current working directory: /workspace",
     ]);
     expect(systemPrompt).not.toContain("/tmp/host-storage-root");
+  });
+
+  it("hands a route rename to the live Pi handle before deferred native persistence", async () => {
+    const sessionDir = await mkdtemp(join(tmpdir(), "pi-live-rename-"));
+    const nativePath = join(sessionDir, "native-pending.jsonl");
+    const queuedTitles: string[] = [];
+    mockSessionManagerCreate.mockImplementationOnce(() => ({
+      getSessionFile: () => nativePath,
+      getSessionId: () => "native-pending",
+      appendSessionInfo: (title: string) => queuedTitles.push(title),
+    }));
+
+    try {
+      const harness = createPiCodingAgentHarness({ tools: [], cwd: "/workspace", sessionDir });
+      const store = harness.sessions;
+      const sessionCtx = { workspaceId: "workspace-a", userId: "user-a" };
+      const session = await store.create(sessionCtx, { title: "New chat" });
+      const service = new HarnessPiChatService({ harness, sessionStore: store, workdir: "/workspace" });
+      const requestCtx = { workspaceId: "workspace-a", authSubject: "user-a", requestId: "request-a" };
+
+      await harness.getPiSessionAdapter({ sessionId: session.id, content: "", ctx: sessionCtx }, {
+        abortSignal: new AbortController().signal,
+        workdir: "/workspace",
+        workspaceId: sessionCtx.workspaceId,
+        userId: sessionCtx.userId,
+      });
+      expect(existsSync(nativePath)).toBe(false);
+
+      await expect(service.renameSession(requestCtx, session.id, "New sessionsss"))
+        .resolves.toEqual(expect.objectContaining({ title: "New sessionsss" }));
+      expect(queuedTitles).toEqual(["New chat", "New sessionsss"]);
+
+      // Pi owns the eventual write; model its first assistant materialization
+      // after the route has returned, using the title queued on the live handle.
+      await writeFile(nativePath, [
+        { type: "session", version: 1, id: "native-pending", timestamp: new Date().toISOString(), cwd: "/workspace" },
+        ...queuedTitles.map((name) => ({ type: "session_info", id: `title-${name}`, parentId: null, timestamp: new Date().toISOString(), name })),
+        { type: "message", id: "user", parentId: null, timestamp: new Date().toISOString(), message: { role: "user", content: [{ type: "text", text: "hello" }] } },
+        { type: "message", id: "assistant", parentId: "user", timestamp: new Date().toISOString(), message: { role: "assistant", content: [{ type: "text", text: "hi" }] } },
+      ].map((entry) => JSON.stringify(entry)).join("\n") + "\n");
+
+      const nativeEntries = (await readFile(nativePath, "utf8")).trim().split("\n").map((line) => JSON.parse(line));
+      expect(nativeEntries.filter((entry) => entry.type === "session_info").map((entry) => entry.name)).toEqual(["New chat", "New sessionsss"]);
+    } finally {
+      await rm(sessionDir, { recursive: true, force: true });
+    }
   });
 });

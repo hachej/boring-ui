@@ -576,6 +576,10 @@ describe("PiSessionStore", () => {
     await expect(store.load({ workspaceId: "default" }, boringSessionId)).resolves.toEqual(expect.objectContaining({ title: "Native title" }));
     await expect(store.list({ workspaceId: "default" })).resolves.toEqual([expect.objectContaining({ id: boringSessionId, title: "Native title" })]);
     await store.rename({ workspaceId: "default" }, boringSessionId, "Linked rename");
+    // A live Pi handle may materialize between handoff and wrapper persistence.
+    // The specialized completion path must preserve that native title without
+    // appending the same session_info entry a second time.
+    await store.renameAfterLivePendingTitleHandoff({ workspaceId: "default" }, boringSessionId, "Linked rename");
 
     const nativeLines = (await readFile(nativePath, "utf-8")).trim().split("\n").map((line) => JSON.parse(line));
     const wrapperLines = (await readFile(boringPath, "utf-8")).trim().split("\n").map((line) => JSON.parse(line));
