@@ -28,9 +28,14 @@ contract before implementation beads exist.
 - Agent and MCP adapters accept no arbitrary URL, redirect, internal-network
   fetch, absolute path, or workspace-relative path. Rejection happens before
   destination mutation.
-- Live/re-pointable cross-workspace references are deferred. This supersedes
-  #632's live-source-reference wording where it conflicts with the owner's
-  explicit "artifact lands in its workspace" acceptance.
+- Lane split (owner-reconciled 2026-07-11): this immutable-copy contract
+  governs the CROSS-WORKSPACE deliverable lane (e.g. a contracted agent
+  returning artifacts to a customer workspace, per Decision 22's projection
+  boundary). WITHIN a single workspace, #632's owner-ruled model stands
+  unchanged: share entry (stable ID + provenance), live reference to current
+  file state, membership-auth deep link, tombstone on missing files — no blob
+  capture, because nothing crosses a workspace boundary. Live/re-pointable
+  CROSS-workspace references remain deferred.
 
 ## Dependencies
 
