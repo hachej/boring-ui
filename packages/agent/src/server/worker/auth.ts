@@ -1,5 +1,6 @@
 import type { FastifyReply, FastifyRequest } from 'fastify'
-import { constantTimeTokenEqual, WORKER_INTERNAL_TOKEN_HEADER } from '@hachej/boring-agent/server'
+import { constantTimeTokenEqual, WORKER_INTERNAL_TOKEN_HEADER } from '../index'
+import { WORKER_ERROR_CODES } from './error-codes'
 
 export function verifyInternalToken(
   request: FastifyRequest,
@@ -11,7 +12,7 @@ export function verifyInternalToken(
   if (typeof token !== 'string' || !constantTimeTokenEqual(token, expectedToken)) {
     reply.code(401).send({
       error: {
-        code: 'auth_invalid',
+        code: WORKER_ERROR_CODES.AUTH_INVALID,
         message: 'invalid internal token',
         statusCode: 401,
       },
