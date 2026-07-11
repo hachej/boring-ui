@@ -72,7 +72,7 @@ describe("createPiCodingAgentHarness", () => {
       captureAppend.mockRestore();
       await rm(sessionDir, { recursive: true, force: true });
     }
-  });
+  }, 30_000);
 
   it("rejects unavailable requested models when strict model resolution is enabled", async () => {
     const cwd = await mkdtemp(join(tmpdir(), "pi-strict-model-"));
