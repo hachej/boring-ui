@@ -55,14 +55,19 @@ into this review branch. GitHub PR labels alone are not evidence of ancestry.
   resolved 2026-07-11 (owner) — #545's close was an intentional scope drop,
   superseded by recuts #566/#568/#575/#576 — nothing to recover; the P1
   critical path runs through the recuts.
+- **#380 / BBA-015 and BBA-016: RETIRED (owner, 2026-07-11).** Their only
+  named consumer was issue #380 ("Allow external harnesses to create
+  review/question hooks"), which is CLOSED. Per decision 21's re-evaluate
+  clause, the beads are retired; revive only if a live, named consumer issue
+  reappears. They cannot reintroduce public `runtime: 'none'`.
+- **Commercial/operational default: Deferred (owner, 2026-07-11).** Near-term
+  requirement instead: v1 must produce a clean, purely-Docker deployable
+  state — one image/compose artifact the owner can run in his own prod OR in
+  a dedicated tenant VM. D1/provisioning choices must not lock out either
+  path; retainer-vs-self-host business model decided later.
 
 ## Owner decisions still open
 
-- **#380 / BBA-015 and BBA-016:** re-scope hook/command seams as features of a
-  fully authorized workspace/environment, or explicitly retire them with #380
-  impact recorded. They cannot reintroduce public `runtime: 'none'`.
-- **Commercial/operational default:** managed retainer versus self-host remains
-  outside this architecture decision until product ownership chooses it.
 - **Runsc EU provider:** D1 cannot lock its provider/profile until the validation
   spike produces evidence; #628 deliberately leaves those facts unknown.
 

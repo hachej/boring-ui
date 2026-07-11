@@ -13,12 +13,12 @@
 >   reintroduction gate.
 > - **BBA-015, BBA-016** (non-bash external hook ingestion and non-bash
 >   operational command/event seams, written for #380 external harnesses) are
->   **not automatically dead.** They depend on BBA-013 (superseded), and #380's
->   need for a no-boring-bash hook/command surface is unresolved under decision
->   21. **Open question, flagged for owner ruling:** re-scope BBA-015/016 as
->   environment-full features (host/workspace-backed, no pure-mode
->   dependency), or explicitly retire them with #380 impact noted. Do not
->   implement either bead until this is decided.
+>   **RETIRED (owner ruling 2026-07-11) — do not implement.** Their only named
+>   consumer was issue #380 ("Allow external harnesses to create
+>   review/question hooks"), which is CLOSED; per decision 21's re-evaluate
+>   clause there is no live consumer. Revive only if a live, named consumer
+>   issue reappears, and then as environment-full composition — never a
+>   pure-mode dependency.
 >
 > Historical content below is preserved for rationale; it is not current
 > implementation authority.
