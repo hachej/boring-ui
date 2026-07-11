@@ -53,26 +53,10 @@ export function createAgentRuntimeBridge(
     throw new Error('createAgent sessions override requires a harnessFactory that uses the same SessionStore')
   }
 
-  const bridge = createCoreAgentRuntimeBridge({
+  return createCoreAgentRuntimeBridge({
     runtimeFactory: () => createRuntime(config, options),
     readinessRequirements: config.readinessRequirements,
   })
-  const coreAgent = bridge.agent
-
-  return {
-    ...bridge,
-    agent: {
-      ...coreAgent,
-      async dispose() {
-        try {
-          await coreAgent.dispose()
-        } finally {
-          // The host adapter stays outside /core and remains server-owned.
-          await config.runtime.dispose?.()
-        }
-      },
-    },
-  }
 }
 
 async function createRuntime(

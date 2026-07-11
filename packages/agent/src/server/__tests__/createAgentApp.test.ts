@@ -141,6 +141,42 @@ test('createAgentApp composes its trusted dispatcher over the standalone runtime
   }
 })
 
+test('createAgentApp retires its local binding before disposing the host adapter once', async () => {
+  const harness = createDispatcherTestHarness()
+  const workspaceRoot = await makeTempDir('boring-agent-app-lifecycle-')
+  let resolver: WorkspaceAgentDispatcherResolver | undefined
+  let activeSessionId: string | undefined
+  const disposeRuntime = vi.fn(async () => {
+    expect(harness.adapters.get(activeSessionId!)?.abortCount).toBe(1)
+  })
+  const runtimeModeAdapter: RuntimeModeAdapter = {
+    id: 'standalone-lifecycle-test',
+    workspaceFsCapability: 'strong',
+    dispose: disposeRuntime,
+    async create(ctx) {
+      const { directModeAdapter } = await import('../runtime/modes/direct')
+      return directModeAdapter.create(ctx)
+    },
+  }
+  const app = await createAgentApp({
+    workspaceRoot,
+    runtimeModeAdapter,
+    sessionId: 'standalone-lifecycle',
+    logger: false,
+    harnessFactory: harness.factory,
+    onWorkspaceAgentDispatcher: (value) => { resolver = value },
+  })
+
+  const dispatcher = await resolver!.resolve({ workspaceId: 'standalone-lifecycle', userId: 'user-lifecycle' })
+  const events = []
+  for await (const event of dispatcher.send({ content: 'active standalone binding' })) events.push(event)
+  activeSessionId = events[0]?.sessionId
+  expect(activeSessionId).toBeDefined()
+
+  await app.close()
+  expect(disposeRuntime).toHaveBeenCalledOnce()
+})
+
 test('createAgentApp direct bash receives runtime env contributions without persisting values', async () => {
   const workspaceRoot = await makeTempDir('boring-agent-direct-runtime-env-')
   let capturedTools: import('../../shared/tool').AgentTool[] = []
