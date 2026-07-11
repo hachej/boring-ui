@@ -28,8 +28,12 @@ function defaultMigrationsFolder(): string {
   return candidates[0]
 }
 
+export type CoreMigrationSql = postgres.Sql
+
 export interface RunMigrationsOptions {
   migrationsFolder?: string
+  /** Explicit app-owned migrations run under the same deployment lock. */
+  additionalMigrations?: Array<(sql: CoreMigrationSql) => Promise<void>>
 }
 
 export async function runMigrations(
@@ -51,6 +55,9 @@ export async function runMigrations(
 
       const migrationsFolder = options?.migrationsFolder ?? defaultMigrationsFolder()
       await migrate(db, { migrationsFolder })
+      for (const migration of options?.additionalMigrations ?? []) {
+        await migration(migrationClient)
+      }
     } finally {
       await db.execute(sql.raw(`SELECT pg_advisory_unlock(${ADVISORY_LOCK_ID})`))
     }
