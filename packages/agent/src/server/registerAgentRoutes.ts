@@ -31,7 +31,8 @@ import { fsEventsRoutes } from './http/routes/fsEvents'
 import { treeRoutes } from './http/routes/tree'
 import { modelsRoutes, type ModelsRoutesOptions } from './http/routes/models'
 import { skillsRoutes } from './http/routes/skills'
-import { piChatRoutes, type PiChatSessionService } from './http/routes/piChat'
+import { piChatRoutes } from './http/routes/piChat'
+import type { PiChatSessionService } from '../core/piChatSessionService'
 import { systemPromptRoutes } from './http/routes/systemPrompt'
 import { sessionChangesRoutes } from './http/routes/sessionChanges'
 import { catalogRoutes } from './http/routes/catalog'
@@ -1195,4 +1196,3 @@ let runtimeProvisioning: WorkspaceProvisioningResult | undefined
     : { getTracker: async (request) => (await getBindingForRequest(request)).readyTracker },
   )
 }
-

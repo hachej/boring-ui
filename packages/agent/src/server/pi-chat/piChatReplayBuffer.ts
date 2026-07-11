@@ -1,11 +1,10 @@
 import type { PiChatEvent } from '../../shared/chat'
+import type { PiChatReplayRangeError } from '../../core/piChatSessionService'
+
+export type { PiChatReplayRangeError } from '../../core/piChatSessionService'
 
 export const PI_CHAT_REPLAY_GAP = 'replay_gap'
 export const PI_CHAT_CURSOR_AHEAD = 'cursor_ahead'
-
-export type PiChatReplayRangeError =
-  | { type: typeof PI_CHAT_REPLAY_GAP; latestSeq: number; minReplaySeq: number }
-  | { type: typeof PI_CHAT_CURSOR_AHEAD; latestSeq: number; minReplaySeq: number }
 
 export type PiChatReplayRangeResult =
   | { type: 'ok'; events: PiChatEvent[]; latestSeq: number; minReplaySeq: number }
