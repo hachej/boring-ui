@@ -92,6 +92,7 @@ export type { AgentRuntimeCapabilities } from './capabilities'
 export {
   AgentDefinitionValidationError,
   AgentDeploymentValidationError,
+  createAgentAssetDigest,
   createAgentDefinitionDigest,
   createAgentDeploymentDigest,
   validateAgentDefinition,
@@ -101,6 +102,8 @@ export type {
   AgentDefinition,
   AgentDefinitionDigestAsset,
   AgentDefinitionReference,
+  CompiledAgentDefinition,
+  CompiledAgentBundle,
   AgentDeployment,
   AgentSchemaIssue,
   AgentSchemaValidationResult,
