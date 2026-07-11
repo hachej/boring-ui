@@ -110,6 +110,76 @@ describe('createAgent', () => {
     }])
   })
 
+  it('snapshots and delegates an injected readiness reporter', async () => {
+    const reporterRequirements = ['runtime:python']
+    const agent = createCoreAgent({
+      runtimeFactory: createCoreRuntimeFactory(),
+      readiness: {
+        requirements: reporterRequirements,
+        async status() {
+          return [{
+            key: 'runtime:python',
+            ready: false,
+            state: 'preparing',
+            errorCode: ErrorCode.enum.AGENT_RUNTIME_NOT_READY,
+            retryable: true,
+          }]
+        },
+      },
+    })
+    reporterRequirements.push('workspace-fs')
+
+    expect(agent.readiness.requirements).toEqual(['runtime:python'])
+    await expect(agent.readiness.status()).resolves.toEqual([{
+      key: 'runtime:python',
+      ready: false,
+      state: 'preparing',
+      errorCode: ErrorCode.enum.AGENT_RUNTIME_NOT_READY,
+      retryable: true,
+    }])
+    await agent.dispose()
+  })
+
+  it('does not invoke an injected readiness probe after binding disposal', async () => {
+    const status = vi.fn(async () => [{ key: 'workspace-fs', ready: true }])
+    const agent = createCoreAgent({
+      runtimeFactory: createCoreRuntimeFactory(),
+      readiness: { requirements: ['workspace-fs'], status },
+    })
+
+    await agent.dispose()
+
+    await expect(agent.readiness.status()).rejects.toMatchObject({
+      code: ErrorCode.enum.AGENT_BINDING_DISPOSED,
+    })
+    expect(status).not.toHaveBeenCalled()
+  })
+
+  it('rejects an injected readiness result when disposal wins the awaited probe', async () => {
+    let markProbeStarted!: () => void
+    const probeStarted = new Promise<void>((resolve) => { markProbeStarted = resolve })
+    let resolveProbe!: (statuses: Array<{ key: string; ready: boolean }>) => void
+    const agent = createCoreAgent({
+      runtimeFactory: createCoreRuntimeFactory(),
+      readiness: {
+        requirements: ['workspace-fs'],
+        status() {
+          markProbeStarted()
+          return new Promise<Array<{ key: string; ready: boolean }>>((resolve) => { resolveProbe = resolve })
+        },
+      },
+    })
+
+    const pendingStatus = agent.readiness.status()
+    await probeStarted
+    await agent.dispose()
+    resolveProbe([{ key: 'workspace-fs', ready: true }])
+
+    await expect(pendingStatus).rejects.toMatchObject({
+      code: ErrorCode.enum.AGENT_BINDING_DISPOSED,
+    })
+  })
+
   it('start returns an accepted receipt and send live-tails a harness turn', async () => {
     const agent = createAgent({
       runtime: createTestRuntime(),
