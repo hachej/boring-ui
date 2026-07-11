@@ -66,7 +66,9 @@ P1 recut → P6-R → D1-reframed (+P5a) → M1 recuts
 
 Inter-agent abstraction settled: one consumption contract (A2A-shaped
 semantics), bindings = UI / MCP (external) / HTTP API / CLI / native internal /
-A2A (future external). See [DECISIONS.md #22](../../../DECISIONS.md#22-one-agent-consumption-contract-protocol-bindings-at-the-edges).
+A2A (future external); internal modes = subagent (caller workspace) |
+contracted (own workspace, governed-projection briefs). See
+[DECISIONS.md #22](../../../DECISIONS.md#22-one-agent-consumption-contract-protocol-bindings-at-the-edges).
 
 ## Post-v1 increments
 
