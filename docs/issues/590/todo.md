@@ -85,7 +85,9 @@ Canonical plan: [`plan.md`](./plan.md)
 
 - [x] Slice 3A: generic trusted workspace agent dispatcher.
 - [x] Slice 3B: executor-owned manual run with live usage aggregation.
-- [ ] Slice 4: pure due policy and external trigger adapter.
+- [x] Slice 4: pure five-field cron/IANA timezone due policy with current-minute/no-backfill and DST coverage.
+- [x] Externally invoked loopback-only folder-mode trigger; no hidden timer or hosted scheduling.
+- [x] Atomic scheduled-occurrence deduplication, overlap skips, restart reconciliation, safe result DTOs, and per-item failure isolation.
 - [ ] Slice 5: hosted persistence, verified actor composition, and duplicate-run lease after owner decisions.
 - [ ] Slice 6: authenticated hosted platform trigger.
 - [ ] Final UI polish.

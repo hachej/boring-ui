@@ -144,6 +144,35 @@ export function runFileAutomationStoreBehaviorTests(createStore: () => FileAutom
     await expect(store.listRuns(automation.id)).resolves.toHaveLength(1)
   })
 
+  it("atomically records each scheduled occurrence at most once", async () => {
+    const store = createStore()
+    const automation = await store.createAutomation({ title: "Daily", cron: "0 9 * * *", timezone: "UTC", model: "test:model" })
+    const scheduledFor = "2026-07-10T09:00:00.000Z"
+    const first = await store.beginRun({
+      automationId: automation.id,
+      trigger: "scheduled",
+      scheduledFor,
+      promptSnapshot: "prompt",
+      modelSnapshot: "test:model",
+    })
+    await store.updateRunLifecycle(first.id, { status: "succeeded", completedAt: "2026-07-10T09:01:00.000Z" })
+
+    await expect(store.beginRun({
+      automationId: automation.id,
+      trigger: "scheduled",
+      scheduledFor,
+      promptSnapshot: "prompt",
+      modelSnapshot: "test:model",
+    })).rejects.toMatchObject({ code: BORING_AUTOMATION_ERROR_CODES.RUN_ALREADY_RECORDED })
+    await expect(store.beginRun({
+      automationId: automation.id,
+      trigger: "scheduled",
+      scheduledFor: "2026-07-11T09:00:00.000Z",
+      promptSnapshot: "prompt",
+      modelSnapshot: "test:model",
+    })).resolves.toMatchObject({ trigger: "scheduled", scheduledFor: "2026-07-11T09:00:00.000Z" })
+  })
+
   it("allows active runs for different automations and readmits after terminal status", async () => {
     const store = createStore()
     const first = await store.createAutomation({
