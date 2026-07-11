@@ -34,6 +34,7 @@ export function createBoringMcpServerPlugin(options: CreateBoringMcpServerPlugin
 }
 
 export default createBoringMcpServerPlugin()
+export * from "./appServerBinding"
 export * from "./agentBridge"
 export * from "./agentTools"
 export * from "./composioManagedConnector"

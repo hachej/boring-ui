@@ -155,7 +155,6 @@ COPY --from=build /app/packages/agent/dist/ packages/agent/dist/
 COPY --from=build /app/packages/agent/package.json packages/agent/package.json
 COPY --from=build /app/packages/agent/node_modules/ packages/agent/node_modules/
 COPY --from=build /app/apps/full-app/dist/server/agent-worker.js worker/agent-worker.js
-COPY --from=build /app/apps/full-app/dist/server/worker/ worker/worker/
 COPY apps/full-app/docker/worker-entrypoint.sh /usr/local/bin/worker-entrypoint
 RUN chmod 0755 /usr/local/bin/worker-entrypoint
 

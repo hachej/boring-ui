@@ -27,6 +27,11 @@
       "import": "./dist/server/index.js",
       "default": "./dist/server/index.js"
     },
+    "./server/worker": {
+      "types": "./dist/server/worker/index.d.ts",
+      "import": "./dist/server/worker/index.js",
+      "default": "./dist/server/worker/index.js"
+    },
     "./front": {
       "types": "./dist/front/index.d.ts",
       "import": "./dist/front/index.js"

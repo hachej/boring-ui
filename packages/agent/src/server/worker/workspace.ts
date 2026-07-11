@@ -8,9 +8,9 @@ import {
   type BwrapResourceLimits,
   type RemoteWorkerWorkspaceOp,
   type RemoteWorkerWorkspaceResult,
-} from '@hachej/boring-agent/server'
-import type { Sandbox } from '@hachej/boring-agent/shared'
-import type { Workspace } from '@hachej/boring-agent/shared'
+} from '../index'
+import type { Sandbox, Workspace } from '../../shared/index'
+import { WORKER_ERROR_CODES } from './error-codes'
 
 export interface WorkerRuntime {
   workspace: Workspace
@@ -22,7 +22,7 @@ const WORKSPACE_UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]
 export function assertSafeWorkspaceId(workspaceId: string): string {
   const normalized = workspaceId.trim().toLowerCase()
   if (!WORKSPACE_UUID.test(normalized)) {
-    throw Object.assign(new Error('workspace id must be a uuid'), { statusCode: 400, code: 'invalid_workspace_id' })
+    throw Object.assign(new Error('workspace id must be a uuid'), { statusCode: 400, code: WORKER_ERROR_CODES.INVALID_WORKSPACE_ID })
   }
   return normalized
 }
@@ -52,13 +52,13 @@ export async function runWorkspaceOp(workspace: Workspace, op: RemoteWorkerWorks
     case 'readFile':
       return { content: await workspace.readFile(op.path) }
     case 'readBinaryFile':
-      if (!workspace.readBinaryFile) throw Object.assign(new Error('binary read unsupported'), { statusCode: 501, code: 'not_implemented' })
+      if (!workspace.readBinaryFile) throw Object.assign(new Error('binary read unsupported'), { statusCode: 501, code: WORKER_ERROR_CODES.NOT_IMPLEMENTED })
       return { dataBase64: Buffer.from(await workspace.readBinaryFile(op.path)).toString('base64') }
     case 'writeFile':
       await workspace.writeFile(op.path, op.data)
       return { ok: true }
     case 'writeBinaryFile':
-      if (!workspace.writeBinaryFile) throw Object.assign(new Error('binary write unsupported'), { statusCode: 501, code: 'not_implemented' })
+      if (!workspace.writeBinaryFile) throw Object.assign(new Error('binary write unsupported'), { statusCode: 501, code: WORKER_ERROR_CODES.NOT_IMPLEMENTED })
       await workspace.writeBinaryFile(op.path, new Uint8Array(Buffer.from(op.dataBase64, 'base64')))
       return { ok: true }
     case 'readFileWithStat':
@@ -73,7 +73,7 @@ export async function runWorkspaceOp(workspace: Workspace, op: RemoteWorkerWorks
       }
       return { stat: await workspace.writeFileWithStat(op.path, op.data) }
     case 'writeBinaryFileWithStat':
-      if (!workspace.writeBinaryFile) throw Object.assign(new Error('binary write unsupported'), { statusCode: 501, code: 'not_implemented' })
+      if (!workspace.writeBinaryFile) throw Object.assign(new Error('binary write unsupported'), { statusCode: 501, code: WORKER_ERROR_CODES.NOT_IMPLEMENTED })
       if (!workspace.writeBinaryFileWithStat) {
         await workspace.writeBinaryFile(op.path, new Uint8Array(Buffer.from(op.dataBase64, 'base64')))
         return { stat: await workspace.stat(op.path) }
@@ -96,7 +96,7 @@ export async function runWorkspaceOp(workspace: Workspace, op: RemoteWorkerWorks
       const _never: never = op
       throw Object.assign(new Error(`unsupported workspace op ${(op as { op?: string }).op ?? 'unknown'}`), {
         statusCode: 400,
-        code: 'unsupported_workspace_op',
+        code: WORKER_ERROR_CODES.UNSUPPORTED_WORKSPACE_OP,
         details: _never,
       })
     }

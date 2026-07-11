@@ -17,6 +17,8 @@ const requiredFiles = [
   'dist/shared/index.d.ts',
   'dist/core/index.d.ts',
   'dist/server/index.d.ts',
+  'dist/server/worker/index.js',
+  'dist/server/worker/index.d.ts',
   'dist/front/index.js',
   'dist/front/index.d.ts',
   'dist/front/styles.css',
