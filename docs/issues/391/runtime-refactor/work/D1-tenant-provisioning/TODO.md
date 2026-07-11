@@ -1,44 +1,97 @@
 # TODO-D1 - Tenant provisioning command/API
 
-## Proposed workspace-first v1 work order (2026-07-10)
+## Active multi-agent Docker v1 work order (2026-07-11)
+
+**Dispatch state: needs-spec after P6-R.** The numbered outcomes below are not
+implementation beads. Dispatch only D1-R0, then replace them with exact
+implementation beads before code work begins.
+
+### D1-R0 — Host collection tracer and micro-plan (spec, S)
+
+- Inspect the actual post-P6-R host composition and identify exact files/owners;
+  do not create a parallel host or provisioning framework.
+- Trace two compiled bundles through two independent P6-R calls into one
+  boot-time Docker configuration, two exact-host landings, and two authorized
+  workspace/default bindings using current seams.
+- Inventory the real composer inputs and specify the smallest canonical,
+  redacted workspace-composition identity/digest producer. Current code has no
+  such producer; until this closes, P6-R's composition digest is only a host
+  attestation and D1 cannot claim reproducible apply/rollback.
+- Specify stable errors and public proof for canonical trusted-proxy/Host
+  parsing; duplicate hostname/workspace/deployment/default; overlapping roots;
+  stale revision/apply/rollback; unapproved runtime profile; cross-binding
+  selector and sibling-root/process access; partial publication; and secrets.
+- Identify the existing workspace list/create/switch/delete and default-
+  workspace auto-provision seams. Specify the exact bound-host fence so only a
+  member can see the configured workspace and no user action can create,
+  switch to, or delete a sibling/unbound workspace.
+- Fix host mutation at an OS-authorized local deployment CLI: no application
+  management endpoint. Specify operator audit identity and ordinary-member/
+  bearer/hostname-holder denial proof for plan/apply/publish/rollback.
+- Split implementation into PRs with exact files, <=25 minute review budgets,
+  rollback, and CI proof. Lock `expectedHostRevision`, atomic active-collection
+  publication, rollback-as-new-revision, desired digest vs observed readiness,
+  destructive-diff confirmation, and the operator-trusted/direct vs isolated-
+  profile boundary.
+- Acceptance: an adversarial plan review can dispatch each resulting bead
+  without consulting the historical dedicated/runsc section below.
 
 ### Prerequisites — stop if false
 
-- A1 compiled bundle and workspace-backed local proof exist.
-- P6-D definition/deployment schemas, digests, and lookup exist.
-- P1 workspace/Fastify boundary, narrow P2 EU runsc, narrow P5a authenticated
-  readiness, and stateless P6-R exist.
-- The chosen EU host profile is supported or explicitly owner-approved.
+- The landed A1 compiler produces the compiled bundle. A1 local dev is not a
+  D1 prerequisite; it is recut after this tracer's composition producer lands
+  and gates the P8 developer journey.
+- P6-D definition/deployment schemas/digests and the verified A1 compiled bundle
+  exist; BBP6-003 lookup is not a prerequisite.
+- P1 lifecycle/readiness and stateless P6-R exist.
+- The Docker host uses the existing approved workspace/runtime composition;
+  P2 provider extraction and runsc validation are not prerequisites.
+- The shared N-workspace host has an existing production-approved profile that
+  proves sibling filesystem and process denial. Trusted-direct is only a local
+  development or single-workspace dedicated composition; it cannot satisfy
+  this shared-host prerequisite regardless of operator trust.
+- P5a is optional until D1-R0 demonstrates a missing host-readiness or secret-
+  reference seam; D1 owns apply, digest, and rollback.
 
-### Active D1 slices
+### Required D1 outcomes for D1-R0 to slice
 
-1. Define the redacted dedicated-site plan/apply input: bundle/deployment refs,
-   exact hostname, bounded landing copy, owner principal ref, workspace/runtime
-   roots, approved runsc profile, and secret refs.
-2. Create or bind one D1-managed workspace using existing auth/membership;
-   disable ordinary create/switch/delete and reject every foreign selector.
-3. Materialize and verify the bundle without checkout access; resolve through
-   the existing authorized workspace composer and bind agent `default`.
-4. Require narrow P5a authenticated runsc readiness and host-side secret
-   brokerage before DNS/TLS publication.
-5. Apply idempotently and persist a complete redacted D1 site snapshot/digest
-   containing every desired-state input: exact hostname; bounded landing
-   configuration; auth, membership, and owner binding; managed workspace/
-   default-agent binding; roots, storage, and runtime desired inputs; immutable
-   host artifact; exact workspace-composition manifest/digest; definition/
-   deployment identity; and secret reference names plus redacted status only.
-   Never persist secret values. Rollback rematerializes the entire prior site
-   state and reproduces the P6-R digest. Do not create a P6 generation store.
-6. Record exact-host setup-to-first-run time and stage breakdown plus negative
-   selector/secret proof consumed by P8. Compare the result with the provisional
-   15-minute target. The proof applies changed site-level values, rolls back,
-   and compares every restored redacted field and digest with the prior snapshot.
+1. Define one redacted Docker-host plan/apply input containing a collection of
+   site bindings. Each binding carries bundle/deployment refs, exact hostname,
+   bounded landing copy, owner principal ref, workspace/runtime roots, and
+   secret refs.
+2. Create or bind each managed workspace using existing auth/membership;
+   enforce cross-workspace denial while allowing the host to serve N bindings.
+   Fence existing workspace list/create/switch/delete and default auto-create
+   behavior on the bound hostname; fail non-members before any auto-provision.
+3. Materialize and verify every bundle without checkout access; authorize each
+   workspace composition through the current host seam, produce its canonical
+   redacted identity/digest as specified by D1-R0, and bind its deployed
+   agent as that workspace's `default`.
+   Validate every declared capability/tool/skill/MCP requirement against the
+   final activation before emitting the composition digest. Missing inventory
+   or an unsatisfied ref fails `AGENT_COMPOSITION_REQUIREMENT_UNSATISFIED`;
+   requirements never activate contributions.
+4. Add only P5a host readiness and secret brokerage required before a site
+   binding is published. Do not add a provider registry or runsc gate.
+5. Apply idempotently and persist one complete redacted host snapshot/digest
+   over the full site-binding collection. Never persist secret values.
+   Rollback rematerializes the prior collection and reproduces every P6-R
+   digest. Do not create a P6 generation store.
+6. Prove at least two agents/workspaces/hostnames in one deployment, including
+   sibling filesystem/process denial, cross-binding selector denial,
+   setup-to-first-run timing, changed collection values, complete rollback,
+   and secret canary. Document dedicated VM as a second composition of the
+   same artifact, not another implementation.
 
-M2, D2, P3 scoped registrars/plugin snapshots, E1 attachment catalogs,
-multi-generation session retirement, and generic provider/mode migration are
-post-v1 and not dispatchable from this work order.
+M1/M2, AR1, D2, P3 scoped registrars/plugin snapshots, E1 attachment catalogs,
+multi-generation session retirement, and P2/X1 provider/mount migration are not
+dispatchable from this work order.
 
-## Historical expanded D1 work order — non-dispatchable for v1
+## Historical dedicated-site D1 work order — non-dispatchable for v1
+
+The historical beads below require a fresh recut before dispatch. Any bead that
+assumes one host-owned workspace, `agentId === 'default'` as the only host agent,
+or mandatory P2/runsc is superseded by the active work order above.
 
 Coordinator: never assign this whole file. Dispatch one bead/PR with this
 file's context, dependencies, and non-negotiables included in the assignment.

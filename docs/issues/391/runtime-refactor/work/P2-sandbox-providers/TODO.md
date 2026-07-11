@@ -1,8 +1,20 @@
 # TODO-P2 — Scaffold `@hachej/boring-sandbox`, move concrete providers into it, land `resolveMode` in `@hachej/boring-bash`
 
-## Binding narrow v1 work order (2026-07-11)
+## Binding priority-4 work order (2026-07-11)
 
-Dispatch only this D1-consumed slice:
+- The isolated Sol recut may prepare provider extraction on its own branch.
+- Do not merge it before M2/E2 -> T1 -> T2 completes, and do not change D1,
+  workspace, or agent contracts to accommodate it.
+- Start from #628's structural `productionReady:false` seam. At priority 4,
+  extract the provider owner, run the EU isolation/lifecycle/network/limit/
+  image/cleanup fact proof, and preserve the already-proven D1 behavior.
+- Unknown facts fail closed inside the provider/conformance boundary. There is
+  no silent direct fallback and no X1 mount in the provider PR.
+- Split X1 mounts after P2 and only for a named native-mount consumer.
+
+## Historical runsc-before-D1 work order — non-dispatchable
+
+The former D1-consumed slice is retained for evidence only:
 
 1. Treat the `@hachej/boring-sandbox` scaffold, #557 publish-pipeline parity,
    and #628 structural runsc preflight as landed prerequisites; do not redo

@@ -31,11 +31,12 @@ into where they land.
 
 ## Phase 1 — Now
 
-[#631](https://github.com/hachej/boring-ui/pull/631) + P1 recut (running).
+[#631](https://github.com/hachej/boring-ui/pull/631) is landed; the P1 readiness
+recut is next.
 
 ## Phase 2 — Factory v1
 
-[P6-R](work/P6-plugin-child-app/PLAN.md) (+ AC1 types) → [D1](work/D1-tenant-provisioning/PLAN.md)
+[P6-R](work/P6-plugin-child-app/PLAN.md) → [D1](work/D1-tenant-provisioning/PLAN.md)
 docker multi-agent host (+ P5a slices) → [P8](work/P8-verification/PLAN.md) slice.
 
 **Outcome:** N agents hosted in owner prod, mapped to workspaces.
@@ -44,12 +45,18 @@ docker multi-agent host (+ P5a slices) → [P8](work/P8-verification/PLAN.md) sl
 
 [M1](work/M1-mcp-managed-agent/PLAN.md) recuts
 ([#549](https://github.com/hachej/boring-ui/pull/549)/[#556](https://github.com/hachej/boring-ui/pull/556))
-→ [ID1](work/ID1-agent-identity/PLAN.md) → [AR1](work/AR1-shareable-artifacts/PLAN.md)
-+ [AC1](work/AC1-agent-consumption-contract/PLAN.md) contracted mode/projections.
+→ [AR1](work/AR1-shareable-artifacts/PLAN.md) → M2/E2 recuts. This first
+authenticated tracer uses M1's existing bearer/membership seam.
 
-**Outcome:** an external user signs up via their own ChatGPT (MCP), contracts
-an agent, receives artifacts. The fitness story works end-to-end, MCP-only,
-unbilled.
+Public marketplace promotion then adds
+[ID1](work/ID1-agent-identity/PLAN.md) +
+[AC1](work/AC1-agent-consumption-contract/PLAN.md) contracted mode/projections;
+neither widens or gates the cold-start P6-R slice.
+
+**Outcome:** first, an authenticated external consumer receives an artifact in
+its authorized workspace. With ID1 + AC1 promoted, a new user signs up via its
+own ChatGPT, contracts an agent, and runs the fitness story end-to-end,
+MCP-only and unbilled.
 
 ## Phase 4 — Marketplace mechanics
 
@@ -75,9 +82,9 @@ against hosted agents).
 
 ## Delta honesty
 
-Phases 1–3 are entirely existing sequenced workpackages — nothing new. The
-marketplace vision added only three workpackages (BL1, MK1, CH1) plus an S4
-revival. No architectural changes: Decision 22 held under the grill (see
+Phases 1–3 use the existing sequenced workpackages and reserved AC1/ID1/AR1
+packages. The marketplace review added only BL1, MK1, CH1 plus an S4 revival.
+No new cold-start architecture: Decision 22 held under the grill (see
 [REVIEW-2026-07-11-unknowns.md](REVIEW-2026-07-11-unknowns.md) for the
 grilling record). BL1 is a decorator on the existing metering seam, MK1 is
 static profile pages over existing `AgentDefinition` metadata, CH1 is two

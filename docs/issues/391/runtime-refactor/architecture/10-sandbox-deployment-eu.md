@@ -2,6 +2,24 @@
 
 Status: v2 architecture doc. Grounds the sandbox/mount work (`TODO-X1`, `TODO-P2`, `TODO-P5`) and invariant 15 (00) in a verified July-2026 provider scan. This file answers "where and how do we actually run untrusted exec with a host-mounted S3 filesystem, in the EU, without putting credentials in the sandbox." It is the deployment counterpart to the package/contract work in [`02-boring-bash-environment.md`](02-boring-bash-environment.md) and [`09-environments-attachable.md`](09-environments-attachable.md), and it is canonical-with issue #307 (gVisor + per-workspace netns/nftables).
 
+## Binding topology supersession (2026-07-11)
+
+Decision 23 and [`INDEX.md`](../INDEX.md) supersede dedicated/runsc-first text
+below wherever it conflicts. D1 first applies one finite boot/deploy-time
+collection of N exact-host -> authorized-workspace -> deployed-`default`
+bindings to one EU Docker image/compose host. The same artifact on a dedicated
+VM is variant 2. D1 has no wildcard routing, hot tenant CRUD, tenant list API,
+or fleet/control-plane lifecycle; those remain D2/S3.
+
+P2 provider extraction and X1 mounts merge last and do not gate P6-R or D1.
+D1 uses an existing approved host runtime composition with an explicit trust
+profile: isolated profiles prove sibling filesystem/process denial;
+trusted-direct is limited to local development or a single-workspace dedicated
+composition and is never valid for the shared N-workspace host. The detailed
+provider matrix remains research for P2/X1. Historical
+single-site schemas, mandatory runsc gates, and D1/D2 topology labels below are
+non-dispatchable.
+
 ## Verdict (GO / NO-GO)
 
 **NO-GO** for an exact *managed* EU offering of "microVM + host-side rclone/FUSE bind mount + no guest credentials." As of July 2026 no vendor proves all of: microVM-grade isolation, host-side FUSE mount bound into the sandbox, no cloud credentials inside the sandbox, and a contractually EU-resident control plane + data plane + logs + support access.

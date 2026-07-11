@@ -3,6 +3,12 @@
 This file coordinates three independent PR assignments. Dispatch one bead at a
 time.
 
+> **Dispatch correction (2026-07-11).** BBA1-001 landed via #624. BBA1-002 is
+> not a D1 prerequisite and is not dispatchable from P6-R alone. Wait for D1-R0
+> to specify and a D1 bead to implement the canonical redacted composition-
+> identity producer, then recut BBA1-002 against that exact current-main host
+> seam. P6-R remains a pure binding function.
+
 ## BBA1-001 — Directory compiler and deterministic digest — M
 
 **Input:** P6-D `AgentDefinition` schema and digest rules.
@@ -32,18 +38,22 @@ fields and `pluginRefs` reject.
 
 ## BBA1-002 — Validate and local-dev commands — M
 
-**Input:** merged BBA1-001 and P6-R.
+**Input:** merged BBA1-001 and P6-R, plus the D1-R0-specified canonical
+composition-identity producer implemented on current main.
 
 **Implement:**
 
 - `boring-ui agent validate <dir>` prints definition id/version/digest and
   redacted requirement diagnostics.
-- `boring-ui agent dev <dir>` resolves the compiled bundle through the normal host
-  seam and runs one local agent; it does not invent a second composer.
+- `boring-ui agent dev <dir>` asks the existing CLI/workspace host to create or
+  select the authorized local workspace/runtime, create its local-only
+  deployment, select it as that workspace's `default`, and obtain the canonical
+  redacted composition identity. It then calls P6-R and runs one local agent;
+  it does not invent a second composer or digest algorithm.
 - The CLI supplies an explicit local-only versioned `AgentDeployment` from host
   dev defaults (never from `agent.json`) with v1 `agentId: 'default'`, computes its deployment and resolved
-  snapshot digests, and prints all three identities. D1 supplies its own
-  dedicated deployment for the same bundle.
+  digests, and prints definition, deployment, composition, and resolved
+  identities. D1 supplies its own production deployment for the same bundle.
 - The dev command creates or selects an explicit local workspace and resolves
   an approved runtime through the normal workspace host. Prefer bwrap when it
   is available. Direct host execution requires explicit trusted-local policy;
@@ -52,7 +62,8 @@ fields and `pluginRefs` reject.
 
 **Acceptance:** one scripted workspace-backed turn succeeds from an example
 directory with zero platform-source edits; output names the workspace and
-runtime identities; attempting a non-default v1 route fails with the stable
+runtime identities; the reported composition digest equals the host producer's
+value; attempting a non-default v1 route fails with the stable
 unsupported-route code rather than silently selecting another agent.
 
 ## BBA1-003 — R0 config migration when D1 consumes duplicate M1 behavior — S/M, conditional v1 gate

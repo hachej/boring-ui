@@ -1,5 +1,15 @@
 # TODO-M1 - MVP-M1: managed agent via MCP
 
+> **Dispatch supersession (2026-07-11).** Do not dispatch the legacy bead list
+> below. After D1, recut #549/#556 into current-main M1 beads for authenticated
+> workspace/default-agent ingress and bounded result delivery. Do not revive
+> BBM1-004 or depend on #424; AR1 is the sole owner of share/intake behavior.
+> The M1 result bead must use the authorized bound `Workspace` to replace
+> current path-only/truncated artifact refs with one complete UTF-8 Markdown
+> payload <=256 KiB plus digest. Add the three stable artifact errors named in
+> `PLAN.md`; reject binary, malformed, missing, changed-during-read, truncated,
+> and oversize sources with no path fallback. AR1 starts only after this proof.
+
 Coordinator: never assign this whole file. Dispatch one bead/PR with this
 file's context, dependencies, and non-negotiables included in the assignment.
 

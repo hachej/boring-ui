@@ -1,5 +1,10 @@
 # E2-mcp-projection — Handoff checklist
 
+Status: **historical, non-dispatchable checklist**. E2 must be recut after M1,
+AR1, and the M2 recut per [`PLAN.md`](./PLAN.md) and
+[`../../INDEX.md`](../../INDEX.md); the generic E1/catalog gates below are
+superseded.
+
 Derived strictly from [TODO.md](./TODO.md) and [PLAN.md](./PLAN.md). Tick each before calling this package done. Invent nothing.
 
 ## Prerequisites (packages + gates)

@@ -32,14 +32,14 @@ required now.
 ## Active implementation order
 
 - Landed ancestry is #616 boundary -> #622 workspace-first correction -> #626
-  core relocation -> #627 terminal local binding disposal. The obsolete
+  core relocation -> #627 terminal local binding disposal -> #630 Pi terminal
+  teardown -> #631 request-binding/service teardown. The obsolete
   #543/#547/#575 stacks are historical inputs, not current dispatch targets.
-- Next, finish request-binding and service-teardown lifecycle against current
-  main. Preserve in-flight work, stop new admission during shutdown, retire
-  agent-local resources, and dispose host-global runtime adapters exactly once.
-- Then add fail-closed readiness from the same binding-owned requirement source
+- Next, add only fail-closed readiness from the same binding-owned requirement source
   consumed by tool composition. Unknown or unconfigured requirement facts must
-  not report ready.
+  not report ready. The exact P1-R files, truth table, disposal race proof, and
+  30-40 minute budget are binding in [`PR-PLAN.md`](../../PR-PLAN.md); #576 is
+  research only and must not be cherry-picked.
 - Keep each slice independently reviewable. Do not cite in-progress work as
   landed until its merge commit is verified as an ancestor of `origin/main`.
 

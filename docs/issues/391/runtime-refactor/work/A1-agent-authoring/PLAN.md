@@ -1,7 +1,9 @@
 # A1-agent-authoring — Plan
 
-Status: decision 21 accepted; deterministic compiler landed via #624;
-workspace-backed validate/dev remains a v1 gate after P6-R.
+Status: deterministic compiler landed via #624. Workspace-backed validate/dev
+requires a current-main recut after D1-R0 specifies and a D1 bead implements
+the canonical composition-identity producer. D1 depends only on the compiler;
+local dev gates the P8 developer journey, not D1 dispatch.
 
 ## Purpose
 
@@ -13,8 +15,11 @@ same immutable definition to dedicated deployment.
 
 - **BBA1-001 compiler:** landed via #624 after P6-D #623 under accepted decision
   21; preserve its deterministic, import-free boundary.
-- **BBA1-002 local dev:** P6-R through the normal host resolver. P6-R already
-  joins P6-D with the P1 boundary and narrow runtime/readiness branch.
+- **BBA1-002 local dev:** stateless P6-R plus the same host-authorized
+  workspace/default binding and canonical redacted composition identity used by
+  D1. P6-R does not create the deployment, authorize the workspace, choose a
+  runtime, or emit the composition digest. D1-R0 must name that real host seam
+  and its implementation bead before BBA1-002 is dispatchable.
 - **BBA1-003 R0 migration:** BBA1-002 and proof that the shipped D1 path
   actually consumes duplicated M1 behavior configuration. Optional M1's mere
   existence does not create this gate.
@@ -45,7 +50,10 @@ them; authors do not copy those fragments into the agent bundle.
    same compiled bundle later consumed by D1. Local dev creates/selects an
    explicit local workspace, resolves an approved runtime, prefers bwrap when
    available, and permits direct host execution only under explicit
-   trusted-local policy.
+   trusted-local policy. The existing CLI/workspace host creates the local-only
+   deployment and authorizes the workspace/default binding; the D1-R0-defined
+   producer emits its canonical composition identity; only then does the CLI
+   call P6-R. No second composer or local digest algorithm is allowed.
 4. Conditional R0 hygiene: if the shipped D1 path actually consumes duplicated
    M1 behavior configuration, migrate that behavior to the canonical bundle
    before P8. Optional M1's mere existence does not gate P8.

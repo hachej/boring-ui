@@ -1,5 +1,10 @@
 # TODO-E2 — MCP environment projection
 
+Status: **historical, non-dispatchable work order**. Recut after M1, AR1, and
+the M2 recut per [`PLAN.md`](./PLAN.md) and [`../../INDEX.md`](../../INDEX.md).
+The generic E1 and `DeploymentAttachmentCatalog` prerequisites below are
+superseded and must not be dispatched as written.
+
 Coordinator: never assign this whole file. Dispatch one bead/PR with this
 file's context, dependencies, and non-negotiables included in the assignment.
 

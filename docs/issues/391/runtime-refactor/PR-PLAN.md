@@ -1,12 +1,125 @@
 # PR-PLAN — #391 runtime refactor, implementation as a stacked PR series
 
-## 2026-07-09 execution reset
+## Binding owner queue (2026-07-11)
 
-This file retains post-v1 PR designs, but only the milestone graph in
-[`INDEX.md`](INDEX.md) determines what blocks delivery. That former queue is
-historical; the binding workspace-first disposition and reality-synced table below
-are the only current execution queue. New implementation
-assignments contain one bead/PR, not an entire package TODO.
+This is the only current dispatch queue. Package tables later in this file are
+historical estimates until this section or `INDEX.md` explicitly promotes a
+recut. Shared policy below (one bead/PR, review budget, proof, no compatibility
+shims) remains binding.
+
+| Order | Work package | Dispatch state | Exact next slice |
+| --- | --- | --- | --- |
+| 1 | #631 | **merged; ancestry verified** | Request-binding lifecycle is complete; do not replay the discarded recut worktree. |
+| 2 | P1 readiness recut | **ready now** | One current-main fail-closed readiness PR only; exclude #566/#568/#575 and all superseded lifecycle code. |
+| 3 | P6-R / BBP6-011 | ready after P1 | One pure binding resolver per the exact micro-contract below. |
+| 4 | D1-R0 | needs-spec after P6-R | Trace one boot-time Docker collection with two bindings, then write exact D1 implementation beads; do not dispatch historical dedicated/runsc beads. |
+| 5 | D1 composition producer -> A1-dev | blocked on D1-R0 micro-plan | Implement the one canonical redacted producer in its D1-owned bead; then recut A1 local dev against that exact host seam. A1-dev gates P8, not D1. |
+| 6 | P5a | conditional inside D1 | Add only a demonstrated secret-ref or host-readiness seam; D1 owns apply/digest/rollback. |
+| 7 | M1 -> AR1 -> M2/E2 | ordered priority 2 | Recut #549/#556 with authorized complete-byte artifact output and stable no-path rejection, accept AR1-001, then recut canonical MCP/artifact intake. |
+| 8 | T1 -> T2 | ordered priority 3 | Recut after priority-2 consumer proof. |
+| 9 | P2 -> X1 | ordered priority 4 | Sol P2 may prepare in isolation, but provider/mount work merges last. |
+
+### P1-R readiness micro-contract — current dispatch slice
+
+- **Never cherry-pick #576.** Salvage readiness reporting only; all eviction,
+  disposal, pure-mode, and lifecycle code is superseded by #627/#630/#631.
+- **Files:** update `shared/events.ts`, `core/createAgent.ts`,
+  `server/createAgent.ts`, `server/registerAgentRoutes.ts`, and
+  `server/createAgentApp.ts`; add `server/agentReadiness.ts`; add its focused
+  test and extend `server/__tests__/createAgent.test.ts`. No cache, lifecycle,
+  provisioning, route, or HTTP-ready-status behavior changes.
+- **Core seam:** `AgentConfig`/`AgentCoreConfig` accept an optional concrete
+  `AgentReadiness`. Core snapshots the requirement keys and wraps delegated
+  `status()` with the existing active/disposed assertion both before and after
+  the await. A missing reporter retains today's conservative false row for
+  every configured key; it never becomes an empty optimistic result.
+- **Adapter seam:** both static `createAgentApp` and request-scoped
+  `registerAgentRoutes` derive readiness from their own final post-merge tool
+  array and binding-local `ReadyStatusTracker`; Shape A must not stay empty
+  while Shape B becomes honest. Request-scoped runtime checks reuse the current
+  runtime-dependency state. Do not add a reporter registry or provider model.
+- **Truth table:** preserve first-surviving order and dedupe requirements.
+  `workspace-fs` is ready only when workspace capability is `ready`;
+  `sandbox-exec` only when `sandboxReady`; `runtime-dependencies`/`runtime:*`
+  only when runtime dependencies are `ready` (`not-started`, `preparing`, and
+  `failed` are false); `ui-bridge` or any requirement without an owned fact is
+  false. Requirements absent from surviving tools are absent, not invented.
+- **Stable data/errors:** project existing readiness state, error/cause,
+  retryability, workspace id, and messages through additive
+  `AgentReadinessStatus` fields. Reuse `WORKSPACE_NOT_READY`,
+  `SANDBOX_NOT_READY`, `AGENT_RUNTIME_NOT_READY`,
+  `RUNTIME_PROVISIONING_FAILED`, and `AGENT_BINDING_DISPOSED`; add no new
+  error code.
+- **Proof:** helper truth-table, ordered-dedupe, unknown false, and two-binding
+  no-bleed tests; core injected/fallback tests; disposed-before-probe and
+  dispose-during-awaited-probe tests. Both adapters must typecheck with the
+  reporter wired; add no production inspection callback solely for a test.
+- **Review budget:** 30-40 minutes: 10m lifecycle wrapper, 10m truth table,
+  10m adapter wiring, 5-10m focused tests/diff.
+
+### BBP6-011 micro-contract — next cold-start package
+
+- **Files:** add
+  `packages/agent/src/server/agentDefinition/resolveAgentDeployment.ts` and its
+  focused test; export from `packages/agent/src/server/index.ts`. Export the
+  existing value-level `OpaqueRefSchema` and `Sha256DigestSchema` from
+  `shared/agent-definition.ts` + `shared/index.ts`, with focused coverage in the
+  existing agent-definition test. Do not modify runtime binding lifecycle,
+  routes, workspace packages, or add a registry.
+- **Input:** one verified `CompiledAgentBundle`, one validated
+  `AgentDeployment`, and one unknown-at-runtime host-supplied authorized binding.
+  A module-local `AuthorizedAgentDeploymentBindingSchema` composes the exported
+  existing validators for opaque `workspaceId`/`defaultDeploymentId` and a canonical SHA-256
+  `workspaceCompositionDigest`. No canonical producer exists in current code;
+  P6-R binds this opaque attestation but does not claim to reproduce or verify
+  workspace composition.
+- **Validation:** recompute/verify the definition digest; validate the
+  deployment and compute its digest; require the
+  deployment definition tuple/digest to match the bundle, require
+  `agentId === 'default'`, require the binding's default deployment id to match,
+  and load exactly `instructionsRef` from the immutable assets. Use existing
+  definition/deployment/binding validation reuses the fixed class/code/field matrix
+  in BBP6-011; do not invent a resolution, readiness, policy, plugin,
+  environment, or routing error taxonomy.
+- **Output:** deeply immutable workspace/deployment/definition identities,
+  instructions content, definition/deployment/composition digests, and one
+  canonical resolved digest. No runtime handles, readiness, hostnames, roots,
+  policies, catalogs, or mutable values.
+- **Multiplicity:** one call resolves one already-authorized binding. D1 gets N
+  bindings by N independent calls; P6-R owns no batch API, lookup, router,
+  pointer, cache, persistence, lifecycle, or authorization decision.
+- **Proof:** deterministic same-input result; changed composition changes the
+  returned composition and resolved digests while definition/deployment/
+  instructions remain unchanged; tampered bundle/ref/default mismatch rejects; two independent
+  bindings have no shared state; shared/server import invariants remain clean.
+- **Review budget:** 25-30 minutes; reject expansion beyond the resolver/test,
+  two public entry exports, and the value-level validator export + focused
+  shared test named above.
+
+### D1-R0 planning tracer
+
+After P6-R, inspect the actual host composition and produce active D1 beads with
+exact files, stable errors, proof, and review budgets. The tracer must lock:
+boot-time collection only; canonical host/proxy parsing; unique hostname,
+workspace, deployment, and non-overlapping roots; explicit shared-host trust
+profile; expected host revision; atomic active-collection publication; desired
+digest separate from observed readiness; immutable rollback-as-new-revision;
+OS-authorized local deployment CLI as the only host mutation boundary;
+bound-host fencing for existing workspace list/create/switch/delete/default-
+auto-provision paths; validation of definition capability/tool/skill/MCP refs
+against the final activation;
+identify the current composer inputs and specify the smallest canonical redacted
+workspace-composition identity/digest producer before claiming reproducible
+apply/rollback; and no wildcard/CRUD/hot-tenant control plane. Until that spec is accepted,
+D1 and P5a are `needs-spec`, not implementation assignments.
+
+---
+
+## Historical 2026-07-09 execution reset — non-dispatchable
+
+The sections below retain earlier PR designs for provenance and rough sizing.
+They are not a queue and cannot be dispatched without a current recut in the
+binding owner queue above.
 
 R0/M1 may prove one managed agent through a stock MCP client as an optional,
 non-blocking outreach tracer. Version 1 adds a
@@ -17,7 +130,7 @@ Shared tenancy, FUSE, external environment MCP projection, control-plane UX,
 hosted child apps, advanced services, search/hooks, and subagent grants are
 post-v1 increments.
 
-## Binding 2026-07-10 workspace-first v1 supersession
+## Historical 2026-07-10 workspace-first supersession — non-dispatchable
 
 This section supersedes every later table where it conflicts. V1 has no public
 no-environment or `runtime: 'none'` product mode. `headless` means no
@@ -45,12 +158,12 @@ are recut against this graph.
 | #616/#617/#622 | **landed** | workspace-first boundary and product correction; verified on main |
 | #623/#624 | **landed** | minimal definition identities and deterministic A1 compiler |
 | #626/#627 | **landed** | real `/core` move and terminal local binding disposal |
-| next P1 lifecycle | **current-main slice** | request-binding/service teardown; no host-global ownership in core |
-| next P1 readiness | **follows lifecycle** | fail closed from the binding-owned requirements source |
+| next P1 lifecycle | **landed via #631** | request-binding/service teardown; no host-global ownership in core |
+| next P1 readiness | **current-main slice** | fail closed from the binding-owned requirements source |
 | #628 | **landed structural preflight** | `productionReady: false`; requires real EU lifecycle/security validation before D1 lock |
 | #566/#568/#564 | **deferred/re-scope only** | revive only for a named workspace/environment-full consumer; no pure-mode contract |
 
-The recovery leaves have landed. P1 now finishes lifecycle/teardown and then
+The recovery leaves and lifecycle/teardown have landed. P1 now finishes only
 fail-closed readiness. P6-D and A1 compile are already on main; P6-R and A1
 local run wait for the remaining P1/runtime/readiness work. R0/M1 may proceed
 only as an independently valuable current-main tracer and never blocks v1.

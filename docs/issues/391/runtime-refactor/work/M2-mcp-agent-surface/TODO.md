@@ -1,5 +1,9 @@
 # TODO-M2 - MCP as an agent surface
 
+Status: **historical, non-dispatchable work order**. Recut after M1 and AR1 per
+[`PLAN.md`](./PLAN.md) and [`../../INDEX.md`](../../INDEX.md). The P7 and T1/T2
+prerequisites below are superseded and must not be dispatched as written.
+
 Coordinator: never assign this whole file. Dispatch one bead/PR with this
 file's context, dependencies, and non-negotiables included in the assignment.
 

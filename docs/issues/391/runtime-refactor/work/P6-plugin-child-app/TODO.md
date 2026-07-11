@@ -5,12 +5,14 @@
 >
 > 1. P6-D: minimal behavior-only `AgentDefinition` plus host-owned
 >    `AgentDeployment` schemas, their canonical digests, referenced definition
->    assets, and BBP6-003 immutable definition lookup for A1/D1. P6-D identities
->    landed via #623 under accepted decision 21; they did not depend on the P1
->    production correction.
+>    assets. P6-D identities landed via #623 and A1 compile via #624 under
+>    accepted decision 21. BBP6-003 lookup is not a P6-R prerequisite; the next
+>    resolver accepts one verified compiled bundle directly.
 > 2. P6-R: a stateless resolver that combines the definition with a host-owned
->    deployment, the already-authorized workspace composition manifest/digest,
->    and narrow runtime facts needed by D1. It does not select contributions.
+>    deployment, one host-authorized composition identity/digest attestation,
+>    and that workspace's explicit `default` deployment binding. It does not
+>    select contributions and does not depend on P5a or P2; D1 consumes its
+>    output and evaluates operational readiness separately.
 >
 > V1 rejects `pluginRefs`, generic prompt-fragment refs, per-agent runtime
 > profiles, and per-agent environment/plugin catalogs. Do not implement
@@ -70,15 +72,15 @@ Consequence, binding:
 - **P6-D ← accepted decision 21 (landed via #623; no P1 dependency):** BBP6-009
   establishes behavior/deployment identities and digest rules. Any remaining
   lookup work stays narrow and evidence-backed.
-- **P6-R ← P6-D + P1 boundary + narrow P5a:** BBP6-011 statelessly combines
-  the verified definition/deployment with the existing authorized workspace
-  composition and D1-required runtime/readiness facts. It creates no deployment,
+- **P6-R ← P6-D + P1 lifecycle/readiness boundary:** BBP6-011 statelessly combines
+  the verified definition/deployment with one host-authorized workspace
+  composition attestation. It creates no deployment,
   registry, generation store, plugin snapshot, attachment catalog, or loader.
 - **Post-v1 plugin expansion ← P6-R + P5:** BBP6-002/004/005/007/008/010
   extend manifest, hosted-mode, and reload behavior. They are not a P8 gate.
 - **P6b ← P6a + child-app platform type**: P6b (BBP6-001, BBP6-006) additionally requires the shared child-app platform code export (expected `ResolvedChildAppContext`, #376) — HARD BLOCKED / STOP-and-report until it lands (no local fallback shape). Child-app policy may narrow maximum authority; child-app requirements only validate active authority through the P5 normalizer once the resolved context exists.
 - **Consumers:** A1 compilation consumes P6-D immediately; A1 local development
-  and D1 dedicated delivery consume stateless P6-R after the branches join.
+  and D1 multi-agent delivery consume stateless P6-R after the branches join.
   Post-v1 P7 may introduce durable resolved lookup; it is not the
   reason to delay the definition boundary.
 
@@ -131,7 +133,7 @@ child-app-independent, but they do not gate A1, D1, or P8.
 type. It gates neither P6-R nor P8.
 
 Proposed v1 dispatch: **P6-D ← decision 21, with no P1 dependency**;
-**P6-R ← P6-D + P1 boundary + narrow P5a**, using the existing workspace
+**P6-R ← P6-D + P1 lifecycle/readiness**, using the existing workspace
 composer statelessly. Plugin expansion, E1, T2, P7, and P6b are post-v1.
 
 ## Non-negotiables
@@ -299,21 +301,70 @@ composer statelessly. Plugin expansion, E1, T2, P7, and P6b are post-v1.
 - **Tests:** mock handshake reports `runtimeImage:true` and an image-pinning remote-worker agent readies; reports `false` or `'unknown'` and the agent fails closed with the existing code and `requirement:'runtimeImage'`; both `source:'profile'` and `source:'provider-default'` selection records are read and support-checked post-handshake; the stashed image is read from `AgentRegistry`, with no route-binding / P7 dependency.
 - **Acceptance:** a remote-worker agent pinning an image through either `runtimeProfileRef` or provider default is validated after handshake, never prematurely at pr2, using the unified `SelectedRuntimeImage`.
 
-### BBP6-011 — [P6-R, proposed v1] Stateless workspace resolution
+### BBP6-011 — [P6-R, next after P1] Stateless workspace resolution (S)
 
-- Input: verified P6-D definition/deployment values, the existing authorized
-  workspace composition, and only the runtime/readiness facts required by D1.
-- Re-verify the bundle and load `instructionsRef` from immutable assets.
-- Validate requirements against authority already selected by the workspace;
-  requirements never grant or widen authority.
-- Return a deterministic resolved value/digest for A1 local dev and D1. Same
-  inputs produce the same result.
+- Files: add
+  `packages/agent/src/server/agentDefinition/resolveAgentDeployment.ts` and
+  `packages/agent/src/server/agentDefinition/__tests__/resolveAgentDeployment.test.ts`;
+  export it from `packages/agent/src/server/index.ts`. Export the existing
+  value-level `OpaqueRefSchema` and `Sha256DigestSchema` from
+  `packages/agent/src/shared/agent-definition.ts` and `shared/index.ts`, adding
+  focused max-length/Unicode/digest-shape coverage to the existing shared
+  agent-definition test. Do not touch routes, runtime binding lifecycle,
+  workspace packages, or create a registry.
+- Input: one verified `CompiledAgentBundle`, one validated `AgentDeployment`,
+  and one unknown-at-runtime host-supplied authorized binding. A module-local
+  `AuthorizedAgentDeploymentBindingSchema` composes the exported existing
+  `OpaqueRefSchema`/`Sha256DigestSchema` to parse `workspaceId`,
+  `defaultDeploymentId`, and
+  `workspaceCompositionDigest`. P6-R binds this opaque identity but cannot
+  reproduce or verify the composition because current code has no canonical
+  producer.
+- The binding schema requires `workspaceId` and `defaultDeploymentId` to use
+  the existing opaque-ref rules (non-empty, trimmed, well-formed Unicode, no
+  control characters, maximum 256 characters) and `workspaceCompositionDigest` to match
+  `^sha256:[a-f0-9]{64}$`. Parse failures reuse
+  `AgentDeploymentValidationError` / `AGENT_DEPLOYMENT_INVALID` with exact
+  fields `workspaceId`, `defaultDeploymentId`, or
+  `workspaceCompositionDigest`. This validates identity shape only;
+  authorization remains the host's prerequisite decision.
+- Recompute/verify the definition digest; validate the deployment and compute
+  its digest; require the deployment's
+  definition tuple/digest to match the bundle, `agentId === 'default'`, and the
+  binding's default deployment id to match. Load exactly `instructionsRef` from
+  immutable assets.
+- Error ownership stays deliberately small: bundle digest mismatch uses
+  `AgentDefinitionValidationError` / `AGENT_DEFINITION_INVALID` / field
+  `definitionDigest`; missing referenced instructions uses the same error/code
+  with field `instructionsRef`. Definition-id/version/digest mismatch uses
+  `AgentDeploymentValidationError` / `AGENT_DEPLOYMENT_INVALID` and the exact
+  nested field (`definition.definitionId`, `definition.version`, or
+  `definition.digest`); non-default agent uses field `agentId`; binding mismatch
+  uses field `defaultDeploymentId`. Add no resolution error taxonomy or
+  policy/readiness/plugin/environment error model.
+- Return immutable definition/deployment/workspace-composition identities,
+  loaded instructions content, definition/deployment/composition digests, and a
+  canonical resolved digest. Same inputs produce the same result.
+- D1-R0 must inventory the real composer inputs and specify the smallest
+  canonical redacted composition-identity producer before D1 implementation
+  claims reproducible apply/rollback. That producer does not belong in P6-R.
+- Resolve one binding per call. A host obtains N bindings by N independent pure
+  calls; P6-R owns no batch API, lookup, router, cache, current pointer,
+  authorization decision, or registry.
 - Add no deployment creation, mutable/current registry, durable generation
   store, plugin snapshot, prompt registry, attachment catalog, lifecycle/GC,
   session pinning/retirement, or multi-generation routing.
-- Tests cover deterministic output, bundle tamper rejection, unknown/default
-  deployment binding, missing workspace/runtime readiness, and proof that no
-  second composition or persistence authority is introduced.
+- Tests: deterministic same input; changed composition changes the returned
+  composition and resolved digests while definition/deployment/instructions
+  stay unchanged; every rejection above asserts the exact class, validation
+  code, and field; empty/over-256/whitespace/control-character/malformed-Unicode
+  binding ids and malformed
+  composition digests reject before result construction; two independent calls
+  share no state; shared/server import
+  invariants remain valid.
+- Review budget: 25-30 minutes. Any expansion beyond the resolver/test, public
+  entry exports, and the existing value-level validator export/shared test
+  named above requires re-planning.
 
 ### §3 Deferred / follow-up — runtime-image requirements vs facts optimization
 

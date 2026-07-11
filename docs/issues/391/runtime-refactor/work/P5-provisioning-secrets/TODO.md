@@ -1,20 +1,20 @@
 # TODO-P5 — Extend provisioning, readiness, secrets, services (bash track)
 
-## Proposed narrow v1 work order (2026-07-10)
+## Active Docker-host v1 work order (2026-07-11)
 
-Dispatch only these D1-consumed slices, one per assignment:
+Do not dispatch P5a before the D1 tracer demonstrates a missing seam. Then
+dispatch at most one of these narrow slices per assignment:
 
-1. BBP5-003/004 recut: readiness and health for the selected runsc worker and
-   bound workspace runtime.
-2. BBP5-007 recut: host-side secret refs/status/brokerage required by D1.
-3. BBP5-008: pinned-TLS, nonce-bound authenticated worker facts; unknown fails
-   closed.
-4. BBP5-009 recut: redacted D1 desired/observed fingerprint and idempotent
-   reconciliation without generic attachment machinery.
-5. BBP5-011/012 recut: D1-required non-dev governance/config fails closed.
+1. BBP5-007 recut: host-side secret refs/status/brokerage required by D1.
+2. BBP5-003/004 recut: only a host-readiness fact D1 consumes and the existing
+   composition cannot already provide.
 
-Prerequisite: narrow P2 runsc/provider boundary plus the concrete D1/workspace
-facts consumed by these slices. P3 and E1 are not gates. BBP5-001/002 generic
+BBP5-008 remote-worker/runsc stays with P2. D1 owns its desired-state digest,
+reconciliation, and rollback; do not dispatch BBP5-009 or BBP5-011/012 merely
+because they existed in the old stack.
+
+Prerequisite: only the concrete D1/workspace/host facts consumed by these
+slices. P2, P3, and E1 are not gates. BBP5-001/002 generic
 normalizer/engine relocation, BBP5-005/006 services/SDK work, BBP5-010 remote
 mounts, E1 lifetimes, and D2 hot tenancy are post-v1.
 
