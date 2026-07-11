@@ -62,6 +62,7 @@ export interface PiChatRoutesOptions {
   service?: PiChatSessionService
   getService?: (request: FastifyRequest) => PiChatSessionService | Promise<PiChatSessionService>
   heartbeatIntervalMs?: number | false
+  deferLeaseRelease?: (request: FastifyRequest) => void
 }
 
 export interface PiChatRouteErrorOptions {
@@ -157,53 +158,79 @@ export function piChatRoutes(
     if (!query) return
 
     let subscription: PiChatEventStreamSubscription | undefined
+    let subscriptionReleased = false
+    let heartbeat: ReturnType<typeof setInterval> | undefined
     const stream = new PassThrough()
-    let closed = false
+    let transportClosed = request.raw.aborted
+    const close = () => {
+      request.raw.off('aborted', close)
+      reply.raw.off('close', close)
+      transportClosed = true
+      if (heartbeat) {
+        clearInterval(heartbeat)
+        heartbeat = undefined
+      }
+      if (subscription && !subscriptionReleased) {
+        subscriptionReleased = true
+        subscription.unsubscribe()
+      }
+    }
     const writeFrame = (frame: PiChatStreamFrame) => {
-      if (closed) return
+      if (transportClosed) return
       stream.write(`${JSON.stringify(frame)}\n`)
     }
+    request.raw.once('aborted', close)
+    reply.raw.once('close', close)
 
     try {
       const service = await resolveService(opts, request)
+      if (transportClosed) return reply
       const result = await service.subscribe(getRequestContext(request), params.sessionId, query.cursor, writeFrame)
       if (result.type !== 'ok') {
+        if (transportClosed) return reply
         return sendReplayRangeError(reply, result)
       }
       subscription = result
     } catch (err) {
+      if (transportClosed) return reply
       return sendRouteError(reply, err, 'open pi chat event stream failed')
+    }
+
+    if (transportClosed) {
+      close()
+      stream.destroy()
+      return reply
     }
 
     const heartbeatIntervalMs = opts.heartbeatIntervalMs === undefined
       ? DEFAULT_HEARTBEAT_INTERVAL_MS
       : opts.heartbeatIntervalMs
     const writeHeartbeat = () => writeFrame({ type: 'heartbeat', now: new Date().toISOString() })
-    const heartbeat = heartbeatIntervalMs === false
+    heartbeat = heartbeatIntervalMs === false
       ? undefined
       : setInterval(writeHeartbeat, heartbeatIntervalMs)
     if (heartbeatIntervalMs !== false) writeHeartbeat()
 
-    const close = () => {
-      if (closed) return
-      closed = true
-      if (heartbeat) clearInterval(heartbeat)
-      subscription?.unsubscribe()
-    }
-
     stream.on('close', close)
-    reply.raw.on('close', close)
     subscription.closed?.finally(() => {
-      if (!closed) stream.end()
+      if (!transportClosed) stream.end()
     }).catch(() => {
-      if (!closed) stream.end()
+      if (!transportClosed) stream.end()
     })
 
-    return reply
+    if (transportClosed) {
+      close()
+      stream.destroy()
+      return reply
+    }
+
+    const streamedReply = reply
       .header('Content-Type', 'application/x-ndjson')
       .header('Cache-Control', 'no-cache, no-transform')
       .header('X-Accel-Buffering', 'no')
       .send(stream)
+    opts.deferLeaseRelease?.(request)
+    return streamedReply
   })
 
   app.post('/api/v1/agent/pi-chat/:sessionId/prompt', async (request, reply) => {
