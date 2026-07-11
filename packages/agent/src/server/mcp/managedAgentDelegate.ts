@@ -1,23 +1,52 @@
-import { randomUUID } from 'node:crypto'
+import { createHash, randomUUID } from 'node:crypto'
 
 import type { Agent, AgentActor, AgentEvent } from '../../shared/events'
 import { ErrorCode, type ErrorCode as StableErrorCode } from '../../shared/error-codes'
 import type { BoringChatMessage, BoringChatPart } from '../../shared/chat'
 import type { SessionCtx } from '../../shared/session'
+import type { Stat, Workspace } from '../../shared/workspace'
 
 export const MANAGED_AGENT_MCP_ORIGIN_SURFACE = 'mcp-managed-agent'
 export const MANAGED_AGENT_MCP_DELIVERY_RULE =
-  'M1-pr1 DELIVERY v0: delegate_task returns final assistant text and artifact file references only; share-link delivery is gated on PR #424.'
+  'M1 DELIVERY v0: delegate_task returns bounded final assistant text and at most one complete authorized inline Markdown artifact; no artifact paths, truncation, or share-link delivery.'
+
+const MAX_FINAL_ASSISTANT_TEXT_BYTES = 96 * 1024
+const MAX_ARTIFACT_BYTES = 256 * 1024
+const MAX_SERIALIZED_RESULT_BYTES = 384 * 1024
+const MARKDOWN_MEDIA_TYPE = 'text/markdown'
 
 export type ManagedAgentDelegationStatus = 'running' | 'completed' | 'error'
 export type ManagedAgentDelegateStatus = ManagedAgentDelegationStatus
 
-export interface ManagedAgentArtifactRef {
+export interface ManagedAgentArtifactCandidate {
   path: string
   mediaType?: string
   title?: string
-  content?: string
-  truncated?: boolean
+  content?: unknown
+  truncated?: unknown
+}
+
+/** @deprecated Use ManagedAgentArtifactCandidate for internal artifact path candidates. */
+export type ManagedAgentArtifactRef = ManagedAgentArtifactCandidate
+
+export interface ManagedAgentArtifact {
+  content: string
+  sha256: `sha256:${string}`
+  byteSize: number
+  mediaType?: string
+  title?: string
+}
+
+export interface ManagedAgentWorkspaceResolutionInput {
+  brief: string
+  ctx: SessionCtx
+  request: ManagedAgentDelegateRequestContext
+}
+
+interface ResolvedArtifactBytes {
+  content: string
+  bytes: Uint8Array
+  byteSize: number
 }
 
 export interface ManagedAgentDelegateProgress {
@@ -31,7 +60,7 @@ export interface ManagedAgentDelegateResult {
   delegationId: string
   status: 'completed'
   finalAssistantText: string
-  artifacts: ManagedAgentArtifactRef[]
+  artifact?: ManagedAgentArtifact
   deliveryRule: typeof MANAGED_AGENT_MCP_DELIVERY_RULE
 }
 
@@ -74,12 +103,12 @@ export interface ManagedAgentCollectArtifactsInput {
 export interface ManagedAgentMcpDelegateOptions {
   agent: Agent
   resolveSessionCtx(input: { brief: string; request: ManagedAgentDelegateRequestContext }): SessionCtx | Promise<SessionCtx>
+  resolveWorkspace(input: ManagedAgentWorkspaceResolutionInput): Workspace | Promise<Workspace>
   resolveActor?(input: { brief: string; ctx: SessionCtx; request: ManagedAgentDelegateRequestContext }): AgentActor | Promise<AgentActor>
-  collectArtifacts?(input: ManagedAgentCollectArtifactsInput): ManagedAgentArtifactRef[] | Promise<ManagedAgentArtifactRef[]>
+  collectArtifacts?(input: ManagedAgentCollectArtifactsInput): ManagedAgentArtifactCandidate[] | Promise<ManagedAgentArtifactCandidate[]>
   createDelegationId?: () => string
   now?: () => Date
   maxBriefChars?: number
-  maxInlineArtifactContentChars?: number
   terminalRetentionMs?: number
   maxDelegations?: number
   redactionCanaries?: readonly string[]
@@ -102,10 +131,11 @@ interface DelegationRecord {
 type AgentEndEvent = AgentEvent & { chunk: Extract<AgentEvent['chunk'], { type: 'agent-end' }> }
 
 const DEFAULT_MAX_BRIEF_CHARS = 12_000
-const DEFAULT_MAX_INLINE_ARTIFACT_CONTENT_CHARS = 8_000
 const DEFAULT_TERMINAL_RETENTION_MS = 15 * 60_000
 const DEFAULT_MAX_DELEGATIONS = 100
 const MAX_RETAINED_PROGRESS = 100
+const utf8Encoder = new TextEncoder()
+const strictUtf8Decoder = new TextDecoder('utf-8', { fatal: true })
 
 export class ManagedAgentMcpError extends Error {
   readonly code: StableErrorCode
@@ -122,7 +152,6 @@ export class ManagedAgentMcpDelegateController {
   private readonly createDelegationId: () => string
   private readonly now: () => Date
   private readonly maxBriefChars: number
-  private readonly maxInlineArtifactContentChars: number
   private readonly terminalRetentionMs: number
   private readonly maxDelegations: number
   private readonly redactionCanaries: readonly string[]
@@ -131,8 +160,6 @@ export class ManagedAgentMcpDelegateController {
     this.createDelegationId = options.createDelegationId ?? randomUUID
     this.now = options.now ?? (() => new Date())
     this.maxBriefChars = options.maxBriefChars ?? DEFAULT_MAX_BRIEF_CHARS
-    this.maxInlineArtifactContentChars =
-      options.maxInlineArtifactContentChars ?? DEFAULT_MAX_INLINE_ARTIFACT_CONTENT_CHARS
     this.terminalRetentionMs = Math.max(0, options.terminalRetentionMs ?? DEFAULT_TERMINAL_RETENTION_MS)
     this.maxDelegations = Math.max(1, Math.floor(options.maxDelegations ?? DEFAULT_MAX_DELEGATIONS))
     this.redactionCanaries = options.redactionCanaries ?? []
@@ -204,20 +231,22 @@ export class ManagedAgentMcpDelegateController {
         throw terminalError(terminalStatus, events)
       }
 
-      const finalAssistantText = extractFinalAssistantText(events)
+      const finalAssistantText = this.validateFinalAssistantText(extractFinalAssistantText(events))
+      const workspace = await this.resolveWorkspace(brief, ctx, request)
       const artifacts = await this.collectArtifacts({
         delegationId,
         sessionId: receipt.sessionId,
         ctx,
+        request,
         finalAssistantText,
         events,
-      })
+      }, workspace)
       const result: ManagedAgentDelegateResult = {
         delegationId,
         status: 'completed',
         finalAssistantText,
-        artifacts,
         deliveryRule: MANAGED_AGENT_MCP_DELIVERY_RULE,
+        ...(artifacts[0] ? { artifact: artifacts[0] } : {}),
       }
       this.assertPublicPayloadSafe(result)
       record.result = result
@@ -325,6 +354,18 @@ export class ManagedAgentMcpDelegateController {
     return { workspaceId: ctx.workspaceId, userId: ctx.userId }
   }
 
+  private async resolveWorkspace(
+    brief: string,
+    ctx: SessionCtx,
+    request: ManagedAgentDelegateRequestContext,
+  ): Promise<Workspace> {
+    const workspace = await this.options.resolveWorkspace({ brief, ctx, request })
+    if (!workspace || typeof workspace.stat !== 'function' || typeof workspace.readFile !== 'function') {
+      throw new ManagedAgentMcpError(ErrorCode.enum.CONFIG_INVALID, 'MCP delegate requires a host-resolved Workspace')
+    }
+    return workspace
+  }
+
   private assertNotAborted(signal: AbortSignal | undefined): void {
     if (signal?.aborted) throw new ManagedAgentMcpError(ErrorCode.enum.ABORTED, 'delegation was cancelled')
   }
@@ -377,13 +418,44 @@ export class ManagedAgentMcpDelegateController {
     }
   }
 
-  private async collectArtifacts(input: ManagedAgentCollectArtifactsInput): Promise<ManagedAgentArtifactRef[]> {
+  private validateFinalAssistantText(value: string): string {
+    const byteSize = utf8ByteLength(value)
+    if (byteSize > MAX_FINAL_ASSISTANT_TEXT_BYTES) {
+      throw new ManagedAgentMcpError(
+        ErrorCode.enum.MCP_AGENT_ARTIFACT_TOO_LARGE,
+        `final assistant text must be ${MAX_FINAL_ASSISTANT_TEXT_BYTES} bytes or fewer`,
+      )
+    }
+    if (looksLikeSinglePath(value)) {
+      throw new ManagedAgentMcpError(
+        ErrorCode.enum.MCP_AGENT_ARTIFACT_INVALID,
+        'final assistant text must not be only an artifact path',
+      )
+    }
+    return value
+  }
+
+  private async collectArtifacts(
+    input: ManagedAgentCollectArtifactsInput & { request: ManagedAgentDelegateRequestContext },
+    workspace: Workspace,
+  ): Promise<ManagedAgentArtifact[]> {
     const supplied = await this.options.collectArtifacts?.(input)
-    const artifacts = (supplied ?? extractArtifactRefs(input.events)).map((artifact) =>
-      normalizeArtifactRef(artifact, this.maxInlineArtifactContentChars),
-    )
-    this.assertPublicPayloadSafe(artifacts)
-    return artifacts
+    const rawCandidates = supplied ?? extractArtifactRefs(input.events)
+    if (!Array.isArray(rawCandidates)) {
+      throw new ManagedAgentMcpError(ErrorCode.enum.MCP_AGENT_ARTIFACT_INVALID, 'artifact references must be an array')
+    }
+    const candidates = rawCandidates.map((artifact: unknown) => normalizeArtifactCandidate(artifact))
+    this.assertPublicPayloadSafe(candidates)
+    if (candidates.length === 0) return []
+    if (candidates.length > 1) {
+      throw new ManagedAgentMcpError(
+        ErrorCode.enum.MCP_AGENT_ARTIFACT_INVALID,
+        'MCP delegate delivery supports at most one artifact',
+      )
+    }
+    const artifact = await resolveMarkdownArtifact(candidates[0]!, workspace)
+    this.assertPublicPayloadSafe(artifact)
+    return [artifact]
   }
 
   private toSafeError(error: unknown): ManagedAgentSafeError {
@@ -398,6 +470,12 @@ export class ManagedAgentMcpDelegateController {
 
   private assertPublicPayloadSafe(payload: unknown): void {
     const serialized = JSON.stringify(payload)
+    if (utf8ByteLength(serialized) > MAX_SERIALIZED_RESULT_BYTES) {
+      throw new ManagedAgentMcpError(
+        ErrorCode.enum.MCP_AGENT_ARTIFACT_TOO_LARGE,
+        `MCP delegate result must be ${MAX_SERIALIZED_RESULT_BYTES} bytes or fewer`,
+      )
+    }
     if (this.containsSecret(serialized)) {
       throw new ManagedAgentMcpError(ErrorCode.enum.INTERNAL_ERROR, 'MCP delegate payload failed secret redaction guard')
     }
@@ -492,8 +570,8 @@ function textFromMessage(message: BoringChatMessage): string {
     .join('\n')
 }
 
-function extractArtifactRefs(events: readonly AgentEvent[]): ManagedAgentArtifactRef[] {
-  const artifacts: ManagedAgentArtifactRef[] = []
+function extractArtifactRefs(events: readonly AgentEvent[]): ManagedAgentArtifactCandidate[] {
+  const artifacts: ManagedAgentArtifactCandidate[] = []
   const seen = new Set<string>()
   for (const event of events) {
     if (event.chunk.type !== 'message-end') continue
@@ -512,46 +590,222 @@ function extractArtifactRefs(events: readonly AgentEvent[]): ManagedAgentArtifac
   return artifacts
 }
 
-function normalizeArtifactRef(
-  artifact: ManagedAgentArtifactRef,
-  maxInlineArtifactContentChars: number,
-): ManagedAgentArtifactRef {
-  const path = normalizeArtifactPath(artifact.path)
-  const normalized: ManagedAgentArtifactRef = {
+function normalizeArtifactCandidate(artifact: unknown): ManagedAgentArtifactCandidate {
+  if (!artifact || typeof artifact !== 'object') {
+    throw new ManagedAgentMcpError(ErrorCode.enum.MCP_AGENT_ARTIFACT_INVALID, 'artifact reference is invalid')
+  }
+  const record = artifact as Record<string, unknown>
+  if (record.content !== undefined) {
+    throw new ManagedAgentMcpError(
+      ErrorCode.enum.MCP_AGENT_ARTIFACT_INVALID,
+      'artifact content must be resolved through the authorized workspace',
+    )
+  }
+  if (record.truncated !== undefined) {
+    throw new ManagedAgentMcpError(
+      ErrorCode.enum.MCP_AGENT_ARTIFACT_INVALID,
+      'artifact content must be complete and untruncated',
+    )
+  }
+  const path = normalizeArtifactPath(record.path)
+  const mediaType = optionalNonEmptyString(record.mediaType)
+  if (mediaType !== undefined && mediaType.toLowerCase().split(';', 1)[0]?.trim() !== MARKDOWN_MEDIA_TYPE) {
+    throw new ManagedAgentMcpError(ErrorCode.enum.MCP_AGENT_ARTIFACT_INVALID, 'artifact must be Markdown')
+  }
+  if (mediaType === undefined && !isMarkdownPath(path)) {
+    throw new ManagedAgentMcpError(ErrorCode.enum.MCP_AGENT_ARTIFACT_INVALID, 'artifact must be Markdown')
+  }
+  const candidate: ManagedAgentArtifactCandidate = {
     path,
-    mediaType: optionalNonEmptyString(artifact.mediaType),
-    title: optionalNonEmptyString(artifact.title),
+    mediaType: MARKDOWN_MEDIA_TYPE,
   }
-  if (artifact.content !== undefined) {
-    if (typeof artifact.content !== 'string') {
-      throw new ManagedAgentMcpError(ErrorCode.enum.INTERNAL_ERROR, 'artifact content must be text')
-    }
-    if (artifact.content.length <= maxInlineArtifactContentChars) {
-      normalized.content = artifact.content
-    } else {
-      normalized.truncated = true
-    }
+  const title = optionalNonEmptyString(record.title)
+  if (title !== undefined) candidate.title = title
+  return candidate
+}
+
+function normalizeArtifactPath(path: unknown): string {
+  if (typeof path !== 'string') throw new ManagedAgentMcpError(ErrorCode.enum.MCP_AGENT_ARTIFACT_INVALID, 'artifact path must be a string')
+  const trimmed = path.trim()
+  if (!trimmed) throw new ManagedAgentMcpError(ErrorCode.enum.MCP_AGENT_ARTIFACT_INVALID, 'artifact path is required')
+  if (trimmed.includes('\0')) throw new ManagedAgentMcpError(ErrorCode.enum.MCP_AGENT_ARTIFACT_INVALID, 'artifact path is invalid')
+  const decoded = safeDecodeArtifactPath(trimmed)
+  const traversalCandidate = decoded.replace(/\\/g, '/')
+  if (
+    trimmed.startsWith('/') ||
+    traversalCandidate.startsWith('/') ||
+    /^[A-Za-z]:[\\/]/.test(trimmed) ||
+    /^[A-Za-z]:[\\/]/.test(traversalCandidate) ||
+    /^[A-Za-z][A-Za-z0-9+.-]*:/.test(trimmed)
+  ) {
+    throw new ManagedAgentMcpError(ErrorCode.enum.MCP_AGENT_ARTIFACT_INVALID, 'artifact path must be workspace-relative')
   }
-  if (artifact.truncated === true) normalized.truncated = true
+  const parts = traversalCandidate.split('/')
+  if (
+    traversalCandidate.startsWith('~') ||
+    traversalCandidate.startsWith('$') ||
+    /[\r\n]/.test(traversalCandidate) ||
+    parts.some((part) => part === '..' || part.startsWith('..'))
+  ) {
+    throw new ManagedAgentMcpError(ErrorCode.enum.MCP_AGENT_ARTIFACT_INVALID, 'artifact path must stay within the workspace')
+  }
+  const normalized = parts.filter((part) => part && part !== '.').join('/')
+  if (!normalized) throw new ManagedAgentMcpError(ErrorCode.enum.MCP_AGENT_ARTIFACT_INVALID, 'artifact path is required')
   return normalized
 }
 
-function normalizeArtifactPath(path: string): string {
-  if (typeof path !== 'string') throw new ManagedAgentMcpError(ErrorCode.enum.INTERNAL_ERROR, 'artifact path must be a string')
-  const trimmed = path.trim()
-  if (!trimmed) throw new ManagedAgentMcpError(ErrorCode.enum.INTERNAL_ERROR, 'artifact path is required')
-  if (trimmed.includes('\0')) throw new ManagedAgentMcpError(ErrorCode.enum.INTERNAL_ERROR, 'artifact path is invalid')
-  if (trimmed.startsWith('/') || /^[A-Za-z]:[\\/]/.test(trimmed)) {
-    throw new ManagedAgentMcpError(ErrorCode.enum.INTERNAL_ERROR, 'artifact path must be workspace-relative')
+async function resolveMarkdownArtifact(
+  candidate: ManagedAgentArtifactCandidate,
+  workspace: Workspace,
+): Promise<ManagedAgentArtifact> {
+  const { content, bytes, byteSize } = await readStableArtifact(candidate.path, workspace)
+  validateMarkdownContent(content)
+  const artifact: ManagedAgentArtifact = {
+    content,
+    sha256: sha256(bytes),
+    byteSize,
+    mediaType: MARKDOWN_MEDIA_TYPE,
+    ...(candidate.title ? { title: candidate.title } : {}),
   }
-  const parts = trimmed.split(/[\\/]+/)
-  if (parts.some((part) => part === '..')) {
-    throw new ManagedAgentMcpError(ErrorCode.enum.INTERNAL_ERROR, 'artifact path must stay within the workspace')
-  }
-  return parts.filter((part) => part && part !== '.').join('/')
+  return artifact
 }
 
-function optionalNonEmptyString(value: string | undefined): string | undefined {
+async function readStableArtifact(path: string, workspace: Workspace): Promise<ResolvedArtifactBytes> {
+  const before = await statArtifact(workspace, path)
+  assertArtifactStat(before)
+  if (before.size > MAX_ARTIFACT_BYTES) {
+    throw new ManagedAgentMcpError(
+      ErrorCode.enum.MCP_AGENT_ARTIFACT_TOO_LARGE,
+      `artifact must be ${MAX_ARTIFACT_BYTES} bytes or fewer`,
+    )
+  }
+  const read = await readArtifactContent(workspace, path)
+  const after = await statArtifact(workspace, path)
+  assertArtifactStat(after)
+  if (!sameStat(before, after) || read.byteSize !== before.size) {
+    throw new ManagedAgentMcpError(
+      ErrorCode.enum.MCP_AGENT_ARTIFACT_UNAVAILABLE,
+      'artifact changed while it was being read',
+    )
+  }
+  if (read.byteSize > MAX_ARTIFACT_BYTES) {
+    throw new ManagedAgentMcpError(
+      ErrorCode.enum.MCP_AGENT_ARTIFACT_TOO_LARGE,
+      `artifact must be ${MAX_ARTIFACT_BYTES} bytes or fewer`,
+    )
+  }
+  return read
+}
+
+async function statArtifact(workspace: Workspace, path: string): Promise<Stat> {
+  try {
+    return await workspace.stat(path)
+  } catch (error) {
+    throw artifactReadError(error)
+  }
+}
+
+function assertArtifactStat(stat: Stat): void {
+  if (stat.kind !== 'file') {
+    throw new ManagedAgentMcpError(ErrorCode.enum.MCP_AGENT_ARTIFACT_INVALID, 'artifact must be a file')
+  }
+  if (!Number.isFinite(stat.size) || stat.size < 0) {
+    throw new ManagedAgentMcpError(ErrorCode.enum.MCP_AGENT_ARTIFACT_INVALID, 'artifact size is invalid')
+  }
+}
+
+async function readArtifactContent(
+  workspace: Workspace,
+  path: string,
+): Promise<{ content: string; bytes: Uint8Array; byteSize: number }> {
+  try {
+    if (!workspace.readBinaryFile) {
+      throw new ManagedAgentMcpError(
+        ErrorCode.enum.MCP_AGENT_ARTIFACT_UNAVAILABLE,
+        'artifact bytes are unavailable through the authorized workspace',
+      )
+    }
+    const bytes = await workspace.readBinaryFile(path)
+    const content = decodeUtf8(bytes)
+    return { content, bytes, byteSize: bytes.byteLength }
+  } catch (error) {
+    if (error instanceof ManagedAgentMcpError) throw error
+    throw artifactReadError(error)
+  }
+}
+
+function artifactReadError(error: unknown): ManagedAgentMcpError {
+  const code = (error as { code?: unknown; reason?: unknown } | undefined)?.code
+  const reason = (error as { code?: unknown; reason?: unknown } | undefined)?.reason
+  if (
+    code === ErrorCode.enum.PATH_ESCAPE ||
+    code === ErrorCode.enum.PATH_ABSOLUTE ||
+    code === ErrorCode.enum.PATH_NULL_BYTE ||
+    code === ErrorCode.enum.PATH_SYMLINK_ESCAPE ||
+    reason === 'path-escape' ||
+    reason === 'absolute-path' ||
+    reason === 'null-byte' ||
+    reason === 'symlink-escape'
+  ) {
+    return new ManagedAgentMcpError(ErrorCode.enum.MCP_AGENT_ARTIFACT_INVALID, 'artifact path is invalid')
+  }
+  return new ManagedAgentMcpError(ErrorCode.enum.MCP_AGENT_ARTIFACT_UNAVAILABLE, 'artifact is unavailable')
+}
+
+function decodeUtf8(bytes: Uint8Array): string {
+  try {
+    return strictUtf8Decoder.decode(bytes)
+  } catch {
+    throw new ManagedAgentMcpError(ErrorCode.enum.MCP_AGENT_ARTIFACT_INVALID, 'artifact must be well-formed UTF-8')
+  }
+}
+
+function validateMarkdownContent(content: string): void {
+  if (!content.trim()) {
+    throw new ManagedAgentMcpError(ErrorCode.enum.MCP_AGENT_ARTIFACT_INVALID, 'artifact Markdown must not be empty')
+  }
+  for (let index = 0; index < content.length; index += 1) {
+    const code = content.charCodeAt(index)
+    if (code === 0 || (code < 32 && code !== 9 && code !== 10 && code !== 13)) {
+      throw new ManagedAgentMcpError(ErrorCode.enum.MCP_AGENT_ARTIFACT_INVALID, 'artifact must be text Markdown')
+    }
+  }
+}
+
+function sameStat(left: Stat, right: Stat): boolean {
+  return left.kind === right.kind && left.size === right.size && left.mtimeMs === right.mtimeMs
+}
+
+function sha256(bytes: Uint8Array): `sha256:${string}` {
+  return `sha256:${createHash('sha256').update(bytes).digest('hex')}`
+}
+
+function safeDecodeArtifactPath(path: string): string {
+  try {
+    return decodeURIComponent(path)
+  } catch {
+    return path
+  }
+}
+
+function utf8ByteLength(value: string): number {
+  return utf8Encoder.encode(value).byteLength
+}
+
+function isMarkdownPath(path: string): boolean {
+  return /\.(md|markdown)$/i.test(path)
+}
+
+function looksLikeSinglePath(value: string): boolean {
+  const trimmed = value.trim()
+  if (!trimmed || /\s/.test(trimmed)) return false
+  if (!isMarkdownPath(trimmed)) return false
+  if (/^[A-Za-z][A-Za-z0-9+.-]*:\/\//.test(trimmed)) return true
+  if (trimmed.startsWith('/') || /^[A-Za-z]:[\\/]/.test(trimmed)) return true
+  return trimmed.includes('/') || trimmed.includes('\\')
+}
+
+function optionalNonEmptyString(value: unknown): string | undefined {
   if (value === undefined) return undefined
   if (typeof value !== 'string') return undefined
   const trimmed = value.trim()

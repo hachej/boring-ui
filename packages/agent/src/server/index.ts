@@ -119,6 +119,8 @@ export {
   ManagedAgentMcpError,
 } from './mcp'
 export type {
+  ManagedAgentArtifact,
+  ManagedAgentArtifactCandidate,
   ManagedAgentArtifactRef,
   ManagedAgentCollectArtifactsInput,
   ManagedAgentDelegateInput,
@@ -131,6 +133,7 @@ export type {
   ManagedAgentMcpHttpHandlerOptions,
   ManagedAgentMcpServerOptions,
   ManagedAgentSafeError,
+  ManagedAgentWorkspaceResolutionInput,
 } from './mcp'
 export { createAgentApp } from './createAgentApp'
 export type { CreateAgentAppOptions } from './createAgentApp'

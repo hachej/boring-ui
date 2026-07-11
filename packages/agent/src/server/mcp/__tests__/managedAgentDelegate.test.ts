@@ -1,4 +1,5 @@
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http'
+import { createHash } from 'node:crypto'
 import type { AddressInfo } from 'node:net'
 
 import { Client } from '@modelcontextprotocol/sdk/client/index.js'
@@ -24,8 +25,13 @@ import type {
 } from '../../../shared/events'
 import { ErrorCode, type ErrorCode as StableErrorCode } from '../../../shared/error-codes'
 import type { SessionCtx, SessionDetail, SessionListOptions, SessionStore, SessionSummary } from '../../../shared/session'
+import type { Stat, Workspace } from '../../../shared/workspace'
 
 const CTX: SessionCtx = { workspaceId: 'workspace-1', userId: 'user-1' }
+const utf8Encoder = new TextEncoder()
+const utf8Decoder = new TextDecoder('utf-8')
+const FINAL_TEXT_CAP_BYTES = 96 * 1024
+const ARTIFACT_CAP_BYTES = 256 * 1024
 
 const servers: Array<{ close: () => Promise<void> }> = []
 
@@ -37,13 +43,14 @@ describe('ManagedAgentMcpDelegateController', () => {
   it('starts one host-tenanted agent session per delegation and returns the amended delivery payload', async () => {
     const agent = new FakeAgent()
     const progressMessages: string[] = []
+    const content = '# Final report\nDone.'
     const controller = createManagedAgentMcpDelegateController(options(agent, {
       collectArtifacts: async () => [{
         path: 'reports/final.md',
         mediaType: 'text/markdown',
         title: 'Final report',
-        content: '# Final report\nDone.',
       }],
+      resolveWorkspace: () => fakeWorkspace({ 'reports/final.md': content }),
     }))
 
     const first = await controller.delegateTask({
@@ -65,19 +72,170 @@ describe('ManagedAgentMcpDelegateController', () => {
       delegationId: 'delegation-1',
       status: 'completed',
       finalAssistantText: 'Final answer',
-      artifacts: [{
-        path: 'reports/final.md',
+      artifact: {
+        content,
+        sha256: sha256(content),
+        byteSize: byteSize(content),
         mediaType: 'text/markdown',
         title: 'Final report',
-        content: '# Final report\nDone.',
-      }],
+      },
       deliveryRule: MANAGED_AGENT_MCP_DELIVERY_RULE,
     })
+    expect(JSON.stringify(first)).not.toMatch(/"path"|"truncated"/)
+    expect(JSON.stringify(first)).not.toContain('/srv/private/workspaces/workspace-1')
     expect(second.delegationId).toBe('delegation-2')
     expect(first).not.toHaveProperty('shareUrl')
     expect(first).not.toHaveProperty('shareLink')
     expect(JSON.stringify(first)).not.toMatch(/\/share\//i)
     expect(progressMessages).toContain('Agent turn started.')
+  })
+
+  it('accepts a Markdown artifact at exactly 256 KiB and reports byte digest metadata', async () => {
+    const content = 'a'.repeat(ARTIFACT_CAP_BYTES)
+    const workspace = fakeWorkspace({ 'reports/exact.md': content })
+    const controller = createManagedAgentMcpDelegateController(options(new FakeAgent(), {
+      collectArtifacts: async () => [{ path: 'reports/exact.md', title: 'Exact' }],
+      resolveWorkspace: () => workspace,
+    }))
+
+    const result = await controller.delegateTask({ brief: 'exact artifact' })
+
+    expect(result.artifact).toEqual({
+      content,
+      sha256: sha256(content),
+      byteSize: ARTIFACT_CAP_BYTES,
+      mediaType: 'text/markdown',
+      title: 'Exact',
+    })
+    expect(JSON.stringify(result.artifact)).not.toMatch(/"path"|"truncated"/)
+    expect(workspace.reads).toEqual(['reports/exact.md'])
+  })
+
+  it('rejects a Markdown artifact over 256 KiB before reading it', async () => {
+    const workspace = fakeWorkspace({ 'reports/over.md': 'a'.repeat(ARTIFACT_CAP_BYTES + 1) })
+    const controller = createManagedAgentMcpDelegateController(options(new FakeAgent(), {
+      collectArtifacts: async () => [{ path: 'reports/over.md' }],
+      resolveWorkspace: () => workspace,
+    }))
+
+    await expect(controller.delegateTask({ brief: 'over artifact' })).rejects.toMatchObject({
+      code: ErrorCode.enum.MCP_AGENT_ARTIFACT_TOO_LARGE,
+    })
+    expect(workspace.reads).toEqual([])
+  })
+
+  it('accepts final assistant text at exactly 96 KiB and rejects one byte over', async () => {
+    const exact = 'a'.repeat(FINAL_TEXT_CAP_BYTES)
+    await expect(createManagedAgentMcpDelegateController(options(new FakeAgent({
+      finalText: exact,
+    }))).delegateTask({ brief: 'exact text' })).resolves.toMatchObject({
+      finalAssistantText: exact,
+    })
+
+    await expect(createManagedAgentMcpDelegateController(options(new FakeAgent({
+      finalText: 'a'.repeat(FINAL_TEXT_CAP_BYTES + 1),
+    }))).delegateTask({ brief: 'over text' })).rejects.toMatchObject({
+      code: ErrorCode.enum.MCP_AGENT_ARTIFACT_TOO_LARGE,
+    })
+  })
+
+  it('rejects malformed binary artifact content as invalid', async () => {
+    const controller = createManagedAgentMcpDelegateController(options(new FakeAgent(), {
+      collectArtifacts: async () => [{ path: 'reports/binary.md' }],
+      resolveWorkspace: () => fakeWorkspace({ 'reports/binary.md': new Uint8Array([0xff, 0xfe, 0xfd]) }),
+    }))
+
+    await expect(controller.delegateTask({ brief: 'binary artifact' })).rejects.toMatchObject({
+      code: ErrorCode.enum.MCP_AGENT_ARTIFACT_INVALID,
+    })
+  })
+
+  it('rejects non-Markdown artifact candidates as invalid', async () => {
+    const controller = createManagedAgentMcpDelegateController(options(new FakeAgent(), {
+      collectArtifacts: async () => [{ path: 'reports/final.txt', mediaType: 'text/plain' }],
+      resolveWorkspace: () => fakeWorkspace({ 'reports/final.txt': '# Final' }),
+    }))
+
+    await expect(controller.delegateTask({ brief: 'non markdown artifact' })).rejects.toMatchObject({
+      code: ErrorCode.enum.MCP_AGENT_ARTIFACT_INVALID,
+    })
+  })
+
+  it('reports missing artifacts as unavailable', async () => {
+    const controller = createManagedAgentMcpDelegateController(options(new FakeAgent(), {
+      collectArtifacts: async () => [{ path: 'reports/missing.md' }],
+      resolveWorkspace: () => fakeWorkspace({}),
+    }))
+
+    await expect(controller.delegateTask({ brief: 'missing artifact' })).rejects.toMatchObject({
+      code: ErrorCode.enum.MCP_AGENT_ARTIFACT_UNAVAILABLE,
+    })
+  })
+
+  it('reports artifacts changed between stat and read as unavailable', async () => {
+    const controller = createManagedAgentMcpDelegateController(options(new FakeAgent(), {
+      collectArtifacts: async () => [{ path: 'reports/changed.md' }],
+      resolveWorkspace: () => fakeWorkspace({ 'reports/changed.md': '# Before' }, { changeAfterRead: 'reports/changed.md' }),
+    }))
+
+    await expect(controller.delegateTask({ brief: 'changed artifact' })).rejects.toMatchObject({
+      code: ErrorCode.enum.MCP_AGENT_ARTIFACT_UNAVAILABLE,
+    })
+  })
+
+  it('rejects supplied direct artifact content, including path-shaped content', async () => {
+    const controller = createManagedAgentMcpDelegateController(options(new FakeAgent(), {
+      collectArtifacts: async () => [{
+        path: 'reports/final.md',
+        content: 'reports/final.md',
+      }],
+      resolveWorkspace: () => fakeWorkspace({ 'reports/final.md': '# Final' }),
+    }))
+
+    await expect(controller.delegateTask({ brief: 'direct content artifact' })).rejects.toMatchObject({
+      code: ErrorCode.enum.MCP_AGENT_ARTIFACT_INVALID,
+    })
+  })
+
+  it('rejects more than one artifact candidate', async () => {
+    const controller = createManagedAgentMcpDelegateController(options(new FakeAgent(), {
+      collectArtifacts: async () => [
+        { path: 'reports/one.md' },
+        { path: 'reports/two.md' },
+      ],
+      resolveWorkspace: () => fakeWorkspace({
+        'reports/one.md': '# One',
+        'reports/two.md': '# Two',
+      }),
+    }))
+
+    await expect(controller.delegateTask({ brief: 'multiple artifacts' })).rejects.toMatchObject({
+      code: ErrorCode.enum.MCP_AGENT_ARTIFACT_INVALID,
+    })
+  })
+
+  it('rejects a serialized result over 384 KiB', async () => {
+    const controller = createManagedAgentMcpDelegateController(options(new FakeAgent(), {
+      collectArtifacts: async () => [{
+        path: 'reports/final.md',
+        title: 't'.repeat(384 * 1024),
+      }],
+      resolveWorkspace: () => fakeWorkspace({ 'reports/final.md': '# Final' }),
+    }))
+
+    await expect(controller.delegateTask({ brief: 'oversize result' })).rejects.toMatchObject({
+      code: ErrorCode.enum.MCP_AGENT_ARTIFACT_TOO_LARGE,
+    })
+  })
+
+  it('rejects path-shaped final output', async () => {
+    const controller = createManagedAgentMcpDelegateController(options(new FakeAgent({
+      finalText: 'reports/final.md',
+    })))
+
+    await expect(controller.delegateTask({ brief: 'path-shaped output' })).rejects.toMatchObject({
+      code: ErrorCode.enum.MCP_AGENT_ARTIFACT_INVALID,
+    })
   })
 
   it('exposes redacted polling status while a delegation is running', async () => {
@@ -317,8 +475,10 @@ describe('ManagedAgentMcpDelegateController', () => {
 describe('createManagedAgentMcpHttpHandler', () => {
   it('serves delegate_task to a stock MCP Streamable HTTP client', async () => {
     const agent = new FakeAgent()
+    const content = '# Final artifact'
     const handler = createManagedAgentMcpHttpHandler(options(agent, {
-      collectArtifacts: async () => [{ path: 'out/result.md', content: 'Final artifact' }],
+      collectArtifacts: async () => [{ path: 'out/result.md' }],
+      resolveWorkspace: () => fakeWorkspace({ 'out/result.md': content }),
     }))
     const endpoint = await listen(handler)
     const client = new Client({ name: 'managed-agent-test-client', version: '0.0.0-test' })
@@ -332,10 +492,15 @@ describe('createManagedAgentMcpHttpHandler', () => {
       delegationId: 'delegation-1',
       status: 'completed',
       finalAssistantText: 'Final answer',
-      artifacts: [{ path: 'out/result.md', content: 'Final artifact' }],
+      artifact: {
+        content,
+        sha256: sha256(content),
+        byteSize: byteSize(content),
+        mediaType: 'text/markdown',
+      },
       deliveryRule: MANAGED_AGENT_MCP_DELIVERY_RULE,
     })
-    expect(JSON.stringify(result.structuredContent)).not.toMatch(/shareUrl|shareLink|\/share\//i)
+    expect(JSON.stringify(result.structuredContent)).not.toMatch(/shareUrl|shareLink|\/share\/|"path"|"truncated"/i)
   })
 
   it('serves delegate_task_start and delegate_task_status to a stock MCP Streamable HTTP client', async () => {
@@ -409,8 +574,82 @@ function options(
     },
     now: () => new Date('2026-07-06T00:00:00.000Z'),
     resolveSessionCtx: () => CTX,
+    resolveWorkspace: () => fakeWorkspace({}),
     ...overrides,
   }
+}
+
+interface FakeWorkspace extends Workspace {
+  readonly stats: string[]
+  readonly reads: string[]
+}
+
+function fakeWorkspace(
+  files: Record<string, string | Uint8Array>,
+  options: { changeAfterRead?: string; throwOnRead?: string } = {},
+): FakeWorkspace {
+  const entries = new Map(Object.entries(files).map(([path, content]) => [
+    path,
+    {
+      bytes: typeof content === 'string' ? utf8Encoder.encode(content) : content,
+      mtimeMs: Date.parse('2026-07-06T00:00:00.000Z'),
+    },
+  ]))
+  const stats: string[] = []
+  const reads: string[] = []
+  const readBytes = (path: string): Uint8Array => {
+    reads.push(path)
+    if (options.throwOnRead === path) throw new Error(`unreadable ${path}`)
+    const entry = entries.get(path)
+    if (!entry) throw new Error(`missing ${path}`)
+    const bytes = entry.bytes.slice()
+    if (options.changeAfterRead === path) {
+      entry.bytes = utf8Encoder.encode('# Changed')
+      entry.mtimeMs += 1
+    }
+    return bytes
+  }
+  return {
+    root: '/srv/private/workspaces/workspace-1',
+    runtimeContext: { runtimeCwd: '/workspace' },
+    stats,
+    reads,
+    async stat(path: string): Promise<Stat> {
+      stats.push(path)
+      const entry = entries.get(path)
+      if (!entry) throw new Error(`missing ${path}`)
+      return { kind: 'file', size: entry.bytes.byteLength, mtimeMs: entry.mtimeMs }
+    },
+    async readBinaryFile(path: string): Promise<Uint8Array> {
+      return readBytes(path)
+    },
+    async readFile(path: string): Promise<string> {
+      return utf8Decoder.decode(readBytes(path))
+    },
+    async writeFile(): Promise<void> {
+      throw new Error('not implemented')
+    },
+    async unlink(): Promise<void> {
+      throw new Error('not implemented')
+    },
+    async readdir(): Promise<never[]> {
+      return []
+    },
+    async mkdir(): Promise<void> {
+      throw new Error('not implemented')
+    },
+    async rename(): Promise<void> {
+      throw new Error('not implemented')
+    },
+  }
+}
+
+function sha256(content: string): string {
+  return `sha256:${createHash('sha256').update(utf8Encoder.encode(content)).digest('hex')}`
+}
+
+function byteSize(content: string): number {
+  return utf8Encoder.encode(content).byteLength
 }
 
 async function listen(

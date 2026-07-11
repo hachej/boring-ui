@@ -6,6 +6,8 @@ export {
   createManagedAgentMcpDelegateController,
 } from './managedAgentDelegate'
 export type {
+  ManagedAgentArtifact,
+  ManagedAgentArtifactCandidate,
   ManagedAgentArtifactRef,
   ManagedAgentCollectArtifactsInput,
   ManagedAgentDelegateInput,
@@ -16,6 +18,7 @@ export type {
   ManagedAgentDelegateStatusResult,
   ManagedAgentMcpDelegateOptions,
   ManagedAgentSafeError,
+  ManagedAgentWorkspaceResolutionInput,
 } from './managedAgentDelegate'
 export {
   createManagedAgentMcpHttpHandler,

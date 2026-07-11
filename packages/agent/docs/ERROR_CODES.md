@@ -61,6 +61,9 @@ All API failures must use the response envelope:
 | `TOOL_NOT_FOUND` | Requested tool name not present in catalog | 404 | user-fix | warn | stable (public API) |
 | `TOOL_INVALID_INPUT` | Tool input fails schema validation | 400 | user-fix | warn | stable (public API) |
 | `TOOL_EXECUTION_ERROR` | Tool threw or returned execution failure | 500 | report-bug | error | stable (public API) |
+| `MCP_AGENT_ARTIFACT_INVALID` | Managed MCP delivery artifact is path-shaped, non-Markdown, binary, malformed UTF-8, or otherwise invalid | 400 | user-fix | warn | stable (public API) |
+| `MCP_AGENT_ARTIFACT_TOO_LARGE` | Managed MCP final text, inline Markdown artifact, or serialized result exceeds the delivery v0 byte cap | 413 | user-fix | warn | stable (public API) |
+| `MCP_AGENT_ARTIFACT_UNAVAILABLE` | Managed MCP artifact is missing, unreadable through the authorized workspace, or changed during read | 409 | retry | warn | stable (public API) |
 | `PLUGIN_LOAD_FAILED` | Plugin failed to load/register | 500 | report-bug | error | stable (public API) |
 | `PLUGIN_NAME_COLLISION` | Plugin name collides with existing tool/plugin | 409 | user-fix | warn | stable (public API) |
 | `PLUGIN_RUNTIME_REVISION_MISMATCH` | Browser requested a stale plugin runtime revision after reload | 409 | retry | warn | stable (public API) |
