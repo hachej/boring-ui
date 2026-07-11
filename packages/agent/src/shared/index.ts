@@ -92,6 +92,8 @@ export type { AgentRuntimeCapabilities } from './capabilities'
 export {
   AgentDefinitionValidationError,
   AgentDeploymentValidationError,
+  OpaqueRefSchema,
+  Sha256DigestSchema,
   createAgentAssetDigest,
   createAgentDefinitionDigest,
   createAgentDeploymentDigest,

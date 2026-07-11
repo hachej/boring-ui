@@ -2,6 +2,8 @@ import { describe, expect, it } from 'vitest'
 
 import {
   AgentDefinitionValidationError,
+  OpaqueRefSchema,
+  Sha256DigestSchema,
   createAgentAssetDigest,
   createAgentDefinitionDigest,
   createAgentDeploymentDigest,
@@ -46,6 +48,24 @@ const deployment: AgentDeployment = {
     digest: `sha256:${'2'.repeat(64)}`,
   },
 }
+
+describe('exported identity validators', () => {
+  it('preserves opaque reference length and Unicode rules', () => {
+    expect(OpaqueRefSchema.safeParse('a'.repeat(256)).success).toBe(true)
+    expect(OpaqueRefSchema.safeParse('a'.repeat(257)).success).toBe(false)
+    expect(OpaqueRefSchema.safeParse('agent-🛡️').success).toBe(true)
+    expect(OpaqueRefSchema.safeParse(`agent-${String.fromCharCode(0xd800)}`).success).toBe(false)
+    expect(OpaqueRefSchema.safeParse(' agent').success).toBe(false)
+    expect(OpaqueRefSchema.safeParse('agent\u0000').success).toBe(false)
+  })
+
+  it('accepts only canonical lowercase SHA-256 digests', () => {
+    expect(Sha256DigestSchema.safeParse(`sha256:${'a'.repeat(64)}`).success).toBe(true)
+    expect(Sha256DigestSchema.safeParse(`sha256:${'A'.repeat(64)}`).success).toBe(false)
+    expect(Sha256DigestSchema.safeParse(`sha256:${'a'.repeat(63)}`).success).toBe(false)
+    expect(Sha256DigestSchema.safeParse(`sha512:${'a'.repeat(64)}`).success).toBe(false)
+  })
+})
 
 describe('validateAgentDefinition', () => {
   it('accepts the behavior-only v1 definition', () => {
