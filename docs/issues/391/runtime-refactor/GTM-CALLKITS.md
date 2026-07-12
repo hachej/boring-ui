@@ -7,6 +7,11 @@ pricing sanity check for the placeholder in GTM-STRATEGY.md's "Pricing
 placeholder" section. Drafted 2026-07-12. Treat every script/question below
 as a hypothesis to be killed by the first 5 real calls, not a final asset.
 
+**Prerequisites:** the two demo agents referenced below (customs pre-filing
+walkthrough, analytics agent) must be BUILT in a demo workspace before any
+call goes out — the owner builds them via the golden path (dogfooding). No
+call goes out while they don't exist.
+
 ---
 
 ## 1. Customs pre-filing wedge — buyer validation kit

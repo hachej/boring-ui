@@ -119,9 +119,11 @@ that mean you are over-engineering, and the acceptance that means you are done.
   membership auth + tombstone rendering; (3) MCP resource exposing the same
   entry; (4) nothing else in this lane.
 - **Do NOT build:** the cross-workspace `ArtifactTransferHandle` blob lane
-  until the first contracted-mode engagement exists (#640 spec is ready when
-  needed); expiry/revocation machinery (membership IS revocation); preview
-  renderers per file type.
+  until a real third-party consumer contracts an agent for a cross-workspace
+  deliverable (owner-confirmed in INDEX or DECISIONS — the trigger is an
+  owner announcement, not an inferred event; #640 spec is ready when needed);
+  expiry/revocation machinery (membership IS revocation); preview renderers
+  per file type.
 - **Accept (same-workspace lane):** agent returns a link; owner opens it
   logged-in and lands focused on the file; deleted file shows provenance
   tombstone, never a bare 404; non-member gets a clean denial.

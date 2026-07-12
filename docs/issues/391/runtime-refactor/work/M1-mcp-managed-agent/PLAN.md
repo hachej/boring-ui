@@ -104,7 +104,8 @@ This package **exposes** boring agents over MCP. That is the inverse of `plugins
 - The final result includes final assistant text plus bounded inline Markdown;
   no artifact path or private retrieval dependency is returned.
 - Byte limits are enforced before storage/notification/serialization: brief 32
-  KiB, idempotency key 128 bytes, progress item 4 KiB, retained progress 128
-  items/64 KiB, polling payload 96 KiB, final text 96 KiB, artifact 256 KiB,
-  and complete serialized result 384 KiB.
+  KiB, retained progress 100 items (code: `MAX_RETAINED_PROGRESS=100`), final
+  text 96 KiB, artifact 256 KiB, and complete serialized result 384 KiB. Four
+  caps are declared, enforcement pending — recut target: idempotency-key 128
+  bytes, progress-item 4 KiB, retained-bytes, and polling-payload 96 KiB.
 - (Post-#424, BBM1-004) The result additionally includes a public Markdown share URL that renders the artifact without exposing workspace file APIs, shell, tokens, model keys, or session internals.

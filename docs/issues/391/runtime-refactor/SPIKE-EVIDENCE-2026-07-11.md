@@ -12,7 +12,8 @@ controller delegation; `unprivileged_userns_clone=1`; netns and nftables
 operations work (root); `runsc` release-20260706.0 installs user-scope and
 **runs sandboxes successfully with sudo** (`runsc do echo ok`); rootless
 fails on veth creation (CAP_NET_ADMIN); /dev/kvm present. Repo preflight
-tests (28) pass but are 100% mocked. **Verdict: MORE NEEDED before lock —**
+tests (28) pass but are 100% mocked (pre-#628 snapshot; count differs on
+current main). **Verdict: MORE NEEDED before lock —**
 (a) one real, non-mocked `preflightRunsc` run against this host,
 (b) an explicit privileged-execution-model decision (rootless is not
 currently viable), (c) Docker daemon runtime registration untested by
@@ -64,7 +65,8 @@ veth creation; sudo path proven).
 
 Verdict: **Ory Hydra + boring-owned adapter layer.** Keycloak's only edge
 is CIMD (feature flag); it lacks RFC 8707 entirely (issue #41526) and costs
-~750MB–2GB JVM vs Hydra's ~5MB binary. Hydra: PKCE proven live (§3),
+~750MB–2GB JVM vs Hydra's ~42MB image (Go vs JVM footprint, not a binary-size
+comparison). Hydra: PKCE proven live (§3),
 partial 8707 via `aud` binding, DCR present (default state disputed:
 research says on, our live spike found the endpoint disabled — verify at
 build). Boring must implement REGARDLESS of server: the RFC 9728

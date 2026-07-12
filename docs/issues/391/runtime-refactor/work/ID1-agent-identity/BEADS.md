@@ -35,6 +35,7 @@ boring beads, not server config.
 
 ### ID1-001 — Hydra compose service + migrate init + Postgres
 
+- **Depends on:** D1-003 (`deploy/d1/compose.yml` exists).
 - **Scope:** Add Ory Hydra as one service in the D1 compose (per D1-R0 /
   Decision 23 conventions), backed by **Postgres, not sqlite** (D1 uses an
   external already-provisioned database; Hydra gets a Postgres backing per its
@@ -44,8 +45,9 @@ boring beads, not server config.
 - **Acceptance:** Hydra boots in the D1 compose against Postgres; the migrate
   job is one-shot and idempotent on re-apply; admin API is unreachable from
   outside the internal network; footprint matches the spike (~42 MB image).
-- **Do NOT:** use sqlite; expose the admin API through ingress; add a second
-  database service if D1's external database can host the Hydra schema.
+- **Do NOT:** use sqlite; expose the admin API through ingress. **Default:**
+  dedicated Hydra Postgres service; reuse D1's external DB only if its
+  credentials provably allow a separate Hydra schema.
 
 ### ID1-002 — login/consent UI (minimal, reuse app auth)
 
