@@ -6,6 +6,11 @@ export interface TaskSessionActivity { status: TaskSessionActivityStatus; source
 export type TaskSessionActivityRefreshResult =
   | { status: "fresh"; activities: Record<string, TaskSessionActivity> }
   | { status: "stale" }
+export type TaskSessionActivityRefreshPriority = "poll" | "action"
+export interface TaskSessionActivityRefreshOptions {
+  pollingGeneration?: number
+  priority?: TaskSessionActivityRefreshPriority
+}
 
 interface SessionActivityResponse {
   activities?: Array<{ sessionId: string; status: "idle" | "queued" | "working" | "error"; source: "live-runtime" | "persisted"; updatedAt?: string }>
@@ -21,7 +26,7 @@ const TASK_SESSION_ACTIVITY_REGISTER_DEBOUNCE_MS = 25
 export interface TaskSessionActivityController {
   activities: Record<string, TaskSessionActivity>
   registerSessionIds(sessionIds: readonly string[]): () => void
-  refreshSessionIds(sessionIds: readonly string[]): Promise<TaskSessionActivityRefreshResult>
+  refreshSessionIds(sessionIds: readonly string[], options?: TaskSessionActivityRefreshOptions): Promise<TaskSessionActivityRefreshResult>
   setOptimisticActivity(sessionId: string, activity: TaskSessionActivity): void
   clearSessionActivity(sessionId: string): void
   isLoading(sessionIds: readonly string[]): boolean
@@ -40,6 +45,16 @@ function chunkSessionIds(sessionIds: readonly string[]): string[][] {
     chunks.push(sessionIds.slice(index, index + TASK_SESSION_ACTIVITY_MAX_IDS))
   }
   return chunks
+}
+
+function priorityRank(priority: TaskSessionActivityRefreshPriority): number {
+  return priority === "action" ? 1 : 0
+}
+
+interface LatestActivityRequest {
+  requestId: number
+  priority: TaskSessionActivityRefreshPriority
+  inFlight: boolean
 }
 
 async function fetchSessionActivities(pluginClient: WorkspacePluginClient, sessionIds: readonly string[]): Promise<Record<string, TaskSessionActivity>> {
@@ -64,7 +79,7 @@ function useTaskSessionActivityController(enabled: boolean): TaskSessionActivity
   const registrationsRef = useRef(new Map<number, string[]>())
   const nextRegistrationIdRef = useRef(0)
   const requestSeqRef = useRef(0)
-  const latestRequestBySessionIdRef = useRef(new Map<string, number>())
+  const latestRequestBySessionIdRef = useRef(new Map<string, LatestActivityRequest>())
   const pollingGenerationRef = useRef(0)
   const pollingInFlightRef = useRef<Promise<void> | null>(null)
   const mountedRef = useRef(false)
@@ -119,15 +134,20 @@ function useTaskSessionActivityController(enabled: boolean): TaskSessionActivity
 
   const refreshSessionIds = useCallback(async (
     rawSessionIds: readonly string[],
-    options: { pollingGeneration?: number } = {},
+    options: TaskSessionActivityRefreshOptions = {},
   ): Promise<TaskSessionActivityRefreshResult> => {
     const sessionIds = uniqueSessionIds(rawSessionIds)
     if (sessionIds.length === 0) return { status: "fresh", activities: {} }
+    const priority = options.priority ?? "action"
     const requestId = requestSeqRef.current + 1
     requestSeqRef.current = requestId
-    for (const sessionId of sessionIds) latestRequestBySessionIdRef.current.set(sessionId, requestId)
+    for (const sessionId of sessionIds) {
+      const current = latestRequestBySessionIdRef.current.get(sessionId)
+      if (current?.inFlight && priorityRank(current.priority) > priorityRank(priority)) continue
+      latestRequestBySessionIdRef.current.set(sessionId, { requestId, priority, inFlight: true })
+    }
     const isGenerationCurrent = () => options.pollingGeneration === undefined || pollingGenerationRef.current === options.pollingGeneration
-    const currentSessionIdsForRequest = () => sessionIds.filter((sessionId) => latestRequestBySessionIdRef.current.get(sessionId) === requestId)
+    const currentSessionIdsForRequest = () => sessionIds.filter((sessionId) => latestRequestBySessionIdRef.current.get(sessionId)?.requestId === requestId)
     addLoading(sessionIds)
     try {
       const next = await fetchSessionActivities(pluginClient, sessionIds)
@@ -165,6 +185,10 @@ function useTaskSessionActivityController(enabled: boolean): TaskSessionActivity
       })
       throw cause
     } finally {
+      for (const sessionId of sessionIds) {
+        const current = latestRequestBySessionIdRef.current.get(sessionId)
+        if (current?.requestId === requestId) latestRequestBySessionIdRef.current.set(sessionId, { ...current, inFlight: false })
+      }
       removeLoading(sessionIds)
     }
   }, [addLoading, pluginClient, removeLoading])
@@ -187,7 +211,7 @@ function useTaskSessionActivityController(enabled: boolean): TaskSessionActivity
           })
           return
         }
-        const polling = refreshSessionIds(registeredIdList, { pollingGeneration })
+        const polling = refreshSessionIds(registeredIdList, { pollingGeneration, priority: "poll" })
           .then(() => undefined, () => undefined)
           .finally(() => {
             if (pollingInFlightRef.current === polling) pollingInFlightRef.current = null
@@ -211,7 +235,7 @@ function useTaskSessionActivityController(enabled: boolean): TaskSessionActivity
   const clearSessionActivity = useCallback((sessionId: string) => {
     const requestId = requestSeqRef.current + 1
     requestSeqRef.current = requestId
-    latestRequestBySessionIdRef.current.set(sessionId, requestId)
+    latestRequestBySessionIdRef.current.set(sessionId, { requestId, priority: "action", inFlight: false })
     setActivities((current) => {
       if (!(sessionId in current)) return current
       const next = { ...current }

@@ -322,7 +322,7 @@ describe("TaskCard task chat sessions", () => {
     expect(openDetachedChat).not.toHaveBeenCalled()
   })
 
-  it("does not open a chat or render an obsolete error from superseded activity returned to openTaskChat", async () => {
+  it("opens from an action refresh even when a later board poll overlaps", async () => {
     vi.useFakeTimers()
     const working = link({ id: "working", sessionId: "pi-working", title: "Working chat" })
     const activityRequests: Array<{ sessionIds: string[]; request: ReturnType<typeof deferred<{ activities?: Array<{ sessionId: string; status: "idle" | "queued" | "working" | "error"; source: "live-runtime" | "persisted" }>; omittedSessionIds?: string[] }>> }> = []
@@ -361,19 +361,80 @@ describe("TaskCard task chat sessions", () => {
         await Promise.resolve()
       })
 
-      expect(openDetachedChat).not.toHaveBeenCalled()
+      await act(async () => { await Promise.resolve(); await Promise.resolve() })
+      expect(openDetachedChat).toHaveBeenCalledWith("pi-working", expect.objectContaining({ title: "Working chat" }))
       expect(screen.queryByRole("alert")).not.toBeInTheDocument()
-      expect(screen.getByRole("region", { name: /linked chat sessions/i })).toBeInTheDocument()
 
       await act(async () => {
         activityRequests[2].request.resolve({ activities: [{ sessionId: "pi-working", status: "idle", source: "persisted" }], omittedSessionIds: [] })
         await activityRequests[2].request.promise
         await Promise.resolve()
       })
-      expect(openDetachedChat).not.toHaveBeenCalled()
+      expect(openDetachedChat).toHaveBeenCalledTimes(1)
     } finally {
       vi.useRealTimers()
     }
+  })
+
+  it("keeps session-list failure visible and blocks creating duplicate chats until retry succeeds", async () => {
+    let listMode: "fail" | "empty" = "fail"
+    postJson.mockImplementation(async (path: string) => {
+      if (path === "/api/boring-tasks/sessions/list") {
+        if (listMode === "fail") throw new Error("session list down")
+        return { links: [] }
+      }
+      if (path === "/api/v1/agent/pi-chat/sessions") return { id: "pi-new" }
+      if (path === "/api/boring-tasks/sessions/link") return { link: link({ id: "link-new", sessionId: "pi-new" }) }
+      if (path === "/api/v1/agent/pi-chat/sessions/activity") return { activities: [{ sessionId: "pi-new", status: "idle", source: "persisted" }], omittedSessionIds: [] }
+      throw new Error(`unexpected post ${path}`)
+    })
+
+    renderCard()
+    fireEvent.click(await screen.findByRole("button", { name: /chat links unavailable/i }))
+
+    expect(await screen.findByRole("region", { name: /linked chat sessions/i })).toBeInTheDocument()
+    expect(screen.getByRole("alert")).toHaveTextContent("Linked chat sessions failed to load.")
+    expect(screen.queryByText("No linked chats yet.")).not.toBeInTheDocument()
+    const startNew = screen.getByRole("button", { name: "Start new chat" })
+    expect(startNew).toBeDisabled()
+    fireEvent.click(startNew)
+    expect(postJson.mock.calls.filter(([path]) => path === "/api/v1/agent/pi-chat/sessions")).toHaveLength(0)
+
+    listMode = "empty"
+    fireEvent.click(screen.getByRole("button", { name: "Retry" }))
+    await waitFor(() => expect(screen.queryByRole("alert")).not.toBeInTheDocument())
+    expect(screen.getByText("No linked chats yet.")).toBeInTheDocument()
+    expect(startNew).not.toBeDisabled()
+    fireEvent.click(startNew)
+
+    await waitFor(() => expect(postJson).toHaveBeenCalledWith("/api/v1/agent/pi-chat/sessions", { title: "#612: Wire sessions" }))
+  })
+
+  it("does not reopen the session panel when a retry fails after close", async () => {
+    const retryList = deferred<TaskSessionListResponse>()
+    let listCalls = 0
+    postJson.mockImplementation((path: string) => {
+      if (path === "/api/boring-tasks/sessions/list") {
+        listCalls += 1
+        if (listCalls <= 2) return Promise.reject(new Error("session list down"))
+        return retryList.promise
+      }
+      throw new Error(`unexpected post ${path}`)
+    })
+
+    renderCard()
+    fireEvent.click(await screen.findByRole("button", { name: /chat links unavailable/i }))
+    expect(await screen.findByRole("region", { name: /linked chat sessions/i })).toBeInTheDocument()
+    fireEvent.click(screen.getByRole("button", { name: "Retry" }))
+    fireEvent.click(screen.getByRole("button", { name: "Close task chats" }))
+
+    await act(async () => {
+      retryList.reject(new Error("retry failed late"))
+      await retryList.promise.catch(() => undefined)
+      await Promise.resolve()
+    })
+
+    expect(screen.queryByRole("region", { name: /linked chat sessions/i })).not.toBeInTheDocument()
   })
 
   it("keeps the disclosure open on activity failure, supports retry, and shows missing activity", async () => {

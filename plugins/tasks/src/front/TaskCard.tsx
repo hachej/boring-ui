@@ -104,6 +104,8 @@ export function TaskCard({ task, draggable, unmapped = false, deleteEnabled = fa
   const [sessionPanelOpen, setSessionPanelOpen] = useState(false)
   const [sessionLinkState, setSessionLinkState] = useState<TaskSessionLinkState>(() => ({ taskScopeKey, links: [], loaded: false }))
   const [sessionError, setSessionError] = useState<string | null>(null)
+  const [sessionListError, setSessionListError] = useState<string | null>(null)
+  const [sessionListLoading, setSessionListLoading] = useState(false)
   const [linkQuery, setLinkQuery] = useState("")
   const [linkSearchResults, setLinkSearchResults] = useState<PiSessionSummary[]>([])
   const [linkSearchLoading, setLinkSearchLoading] = useState(false)
@@ -133,7 +135,9 @@ export function TaskCard({ task, draggable, unmapped = false, deleteEnabled = fa
   const sessionActivities = sessionActivity.activities
   const activityError = sessionActivity.getError(linkedSessionIdList)
   const activityLoading = sessionActivity.isLoading(linkedSessionIdList)
-  const chatActivityPending = checkingChatActivity || activityLoading || !sessionLinksLoaded
+  const sessionListPending = !sessionLinksLoaded && !sessionListError
+  const sessionListBlocked = sessionListLoading || !sessionLinksLoaded || Boolean(sessionListError)
+  const chatActivityPending = checkingChatActivity || activityLoading || sessionListLoading || sessionListPending
   const sortedSessionLinks = useMemo(() => {
     return [...sessionLinks].sort((a, b) => {
       const aActivity = sessionActivities[a.sessionId]
@@ -160,7 +164,7 @@ export function TaskCard({ task, draggable, unmapped = false, deleteEnabled = fa
   const workingCount = workingLinks.length
   const activeNavigationCount = activeNavigationLinks.length
   const errorCount = sessionLinks.filter((link) => sessionActivities[link.sessionId]?.status === "error").length
-  const rollupText = checkingChatActivity || !sessionLinksLoaded ? "Checking activity" : sessionLinks.length === 0 ? "No linked chats" : activityLabel(rollupActivity, activityLoading)
+  const rollupText = sessionListError ? "Chat links unavailable" : checkingChatActivity || sessionListLoading || sessionListPending ? "Checking activity" : sessionLinks.length === 0 ? "No linked chats" : activityLabel(rollupActivity, activityLoading)
 
   const stopCardAction = (event: MouseEvent<HTMLElement>) => event.stopPropagation()
 
@@ -225,6 +229,8 @@ export function TaskCard({ task, draggable, unmapped = false, deleteEnabled = fa
     setCheckingChatActivity(false)
     setSessionPanelOpen(false)
     setSessionError(null)
+    setSessionListError(null)
+    setSessionListLoading(false)
     setLinkQuery("")
     setLinkSearchResults([])
     setLinkSearchLoading(false)
@@ -235,16 +241,33 @@ export function TaskCard({ task, draggable, unmapped = false, deleteEnabled = fa
   }, [invalidatePendingNavigation, invalidatePendingSessionLists, invalidatePendingTaskAsync, taskScopeKey])
 
   const refreshSessionActivity = useCallback(async (links: BoringTaskSessionBinding[]): Promise<TaskSessionActivityRefreshResult> => {
-    return await sessionActivity.refreshSessionIds(links.map((link) => link.sessionId))
+    return await sessionActivity.refreshSessionIds(links.map((link) => link.sessionId), { priority: "action" })
   }, [sessionActivity.refreshSessionIds])
 
-  const loadSessionLinks = useCallback(async (shouldApply: () => boolean = () => mountedRef.current): Promise<BoringTaskSessionBinding[] | null> => {
+  const loadSessionLinks = useCallback(async (
+    shouldApply: () => boolean = () => mountedRef.current,
+    options: { showPanelOnError?: boolean } = {},
+  ): Promise<BoringTaskSessionBinding[] | null> => {
     const shouldApplyList = beginSessionListRequest()
-    const body = await pluginClient.postJson<TaskSessionListResponse>("/api/boring-tasks/sessions/list", { adapterId: task.adapterId, taskId: task.id })
-    const links = body.links ?? []
-    if (!shouldApply() || !shouldApplyList()) return null
-    setSessionLinkState({ taskScopeKey, links, loaded: true })
-    return links
+    setSessionListLoading(true)
+    setSessionListError(null)
+    try {
+      const body = await pluginClient.postJson<TaskSessionListResponse>("/api/boring-tasks/sessions/list", { adapterId: task.adapterId, taskId: task.id })
+      const links = body.links ?? []
+      if (!shouldApply() || !shouldApplyList()) return null
+      setSessionLinkState({ taskScopeKey, links, loaded: true })
+      setSessionListError(null)
+      return links
+    } catch (error) {
+      if (shouldApply() && shouldApplyList()) {
+        setSessionLinkState((current) => current.taskScopeKey === taskScopeKey ? { ...current, loaded: false } : current)
+        setSessionListError(error instanceof Error ? error.message : "Failed to load linked chat sessions")
+        if (options.showPanelOnError) setSessionPanelOpen(true)
+      }
+      return null
+    } finally {
+      if (mountedRef.current && shouldApplyList()) setSessionListLoading(false)
+    }
   }, [beginSessionListRequest, pluginClient, task.adapterId, task.id, taskScopeKey])
 
   useEffect(() => {
@@ -253,14 +276,23 @@ export function TaskCard({ task, draggable, unmapped = false, deleteEnabled = fa
       ? current
       : { taskScopeKey, links: [], loaded: false })
     const shouldApplyList = beginSessionListRequest()
+    setSessionListLoading(true)
+    setSessionListError(null)
     void pluginClient.postJson<TaskSessionListResponse>("/api/boring-tasks/sessions/list", { adapterId: task.adapterId, taskId: task.id })
       .then((body) => {
         if (cancelled || !shouldApplyList()) return
         const links = body.links ?? []
         setSessionLinkState({ taskScopeKey, links, loaded: true })
+        setSessionListError(null)
       })
-      .catch(() => {
-        if (!cancelled && shouldApplyList()) setSessionLinkState({ taskScopeKey, links: [], loaded: true })
+      .catch((error) => {
+        if (!cancelled && shouldApplyList()) {
+          setSessionLinkState((current) => current.taskScopeKey === taskScopeKey ? { ...current, loaded: false } : current)
+          setSessionListError(error instanceof Error ? error.message : "Failed to load linked chat sessions")
+        }
+      })
+      .finally(() => {
+        if (!cancelled && shouldApplyList()) setSessionListLoading(false)
       })
     return () => { cancelled = true }
   }, [beginSessionListRequest, pluginClient, task.adapterId, task.id, taskScopeKey])
@@ -299,7 +331,16 @@ export function TaskCard({ task, draggable, unmapped = false, deleteEnabled = fa
     return true
   }
 
-  const createAndLinkChat = async (anchor?: WorkspaceShellAnchorRect, shouldContinue: () => boolean = beginNavigation()) => {
+  const createAndLinkChat = async (
+    anchor?: WorkspaceShellAnchorRect,
+    shouldContinue: () => boolean = beginNavigation(),
+    options: { sessionListResolved?: boolean } = {},
+  ) => {
+    if (!options.sessionListResolved && sessionListBlocked) {
+      setSessionPanelOpen(true)
+      setSessionError("Retry linked chat sessions before starting a new chat.")
+      return
+    }
     setOpeningChat(true)
     setSessionError(null)
     try {
@@ -347,10 +388,10 @@ export function TaskCard({ task, draggable, unmapped = false, deleteEnabled = fa
     setSessionError(null)
     setCheckingChatActivity(true)
     void (async () => {
-      const links = sessionLinksLoaded ? sessionLinks : await loadSessionLinks(shouldContinue)
+      const links = sessionLinksLoaded ? sessionLinks : await loadSessionLinks(shouldContinue, { showPanelOnError: true })
       if (!shouldContinue() || links === null) return
       if (links.length === 0) {
-        await createAndLinkChat(anchor, shouldContinue)
+        await createAndLinkChat(anchor, shouldContinue, { sessionListResolved: true })
         return
       }
       setSessionPanelOpen(true)
@@ -403,6 +444,11 @@ export function TaskCard({ task, draggable, unmapped = false, deleteEnabled = fa
 
   const searchExistingSessions = (event: MouseEvent<HTMLButtonElement>) => {
     stopCardAction(event)
+    if (sessionListBlocked) {
+      setSessionPanelOpen(true)
+      setSessionError("Retry linked chat sessions before linking another chat.")
+      return
+    }
     const shouldApply = beginTaskAsync()
     setLinkSearchLoading(true)
     setSessionError(null)
@@ -420,6 +466,11 @@ export function TaskCard({ task, draggable, unmapped = false, deleteEnabled = fa
 
   const linkExistingSession = (event: MouseEvent<HTMLButtonElement>, session: PiSessionSummary) => {
     stopCardAction(event)
+    if (sessionListBlocked) {
+      setSessionPanelOpen(true)
+      setSessionError("Retry linked chat sessions before linking another chat.")
+      return
+    }
     const shouldApply = beginTaskAsync()
     setSessionError(null)
     void pluginClient.postJson<TaskSessionLinkResponse>("/api/boring-tasks/sessions/link", {
@@ -445,10 +496,17 @@ export function TaskCard({ task, draggable, unmapped = false, deleteEnabled = fa
 
   const closeSessionPanel = () => {
     invalidatePendingNavigation()
+    invalidatePendingSessionLists()
     setOpeningChat(false)
     setCheckingChatActivity(false)
+    setSessionListLoading(false)
     setSessionPanelOpen(false)
     chatButtonRef.current?.focus()
+  }
+
+  const retrySessionLinks = (event: MouseEvent<HTMLButtonElement>) => {
+    stopCardAction(event)
+    void loadSessionLinks(() => mountedRef.current, { showPanelOnError: true })
   }
 
   const badgeLabel = workingCount > 0
@@ -480,6 +538,12 @@ export function TaskCard({ task, draggable, unmapped = false, deleteEnabled = fa
         <button type="button" className="rounded-md p-1 text-muted-foreground hover:bg-muted hover:text-foreground" aria-label="Close task chats" onClick={closeSessionPanel}><X className="size-3" /></button>
       </div>
       {sessionError ? <p className="mb-2 rounded-lg border border-destructive/30 bg-destructive/10 px-2 py-1 text-destructive" role="alert">{sessionError}</p> : null}
+      {sessionListError ? (
+        <div className="mb-2 flex items-center justify-between gap-2 rounded-lg border border-destructive/30 bg-destructive/10 px-2 py-1 text-destructive" role="alert">
+          <span className="inline-flex min-w-0 items-center gap-1"><AlertCircle className="size-3 shrink-0" /> Linked chat sessions failed to load.</span>
+          <button type="button" className="rounded-md px-2 py-0.5 font-medium hover:bg-destructive/15" onClick={retrySessionLinks}>Retry</button>
+        </div>
+      ) : null}
       {activityError ? (
         <div className="mb-2 flex items-center justify-between gap-2 rounded-lg border border-amber-500/30 bg-amber-500/10 px-2 py-1 text-amber-700 dark:text-amber-200" role="status">
           <span className="inline-flex min-w-0 items-center gap-1"><AlertCircle className="size-3 shrink-0" /> Activity refresh failed.</span>
@@ -487,6 +551,7 @@ export function TaskCard({ task, draggable, unmapped = false, deleteEnabled = fa
         </div>
       ) : null}
       {activityLoading && sessionLinks.length > 0 ? <p className="mb-2 text-[10px] text-muted-foreground" role="status">Checking chat activity…</p> : null}
+      {sessionListLoading ? <p className="mb-2 text-[10px] text-muted-foreground" role="status">Loading linked chats…</p> : null}
       {sessionLinks.length > 0 ? (
         <ul className="space-y-1">
           {sortedSessionLinks.map((link) => {
@@ -515,21 +580,21 @@ export function TaskCard({ task, draggable, unmapped = false, deleteEnabled = fa
             )
           })}
         </ul>
-      ) : <p className="text-muted-foreground">No linked chats yet.</p>}
+      ) : sessionLinksLoaded && !sessionListLoading && !sessionListError ? <p className="text-muted-foreground">No linked chats yet.</p> : null}
       <div className="mt-2 flex flex-wrap items-center gap-2">
-        <button type="button" className="rounded-lg border border-border bg-background px-2 py-1 font-medium hover:bg-muted" disabled={openingChat} onClick={(event) => { stopCardAction(event); void createAndLinkChat(rectFromElement(event.currentTarget)) }}>Start new chat</button>
+        <button type="button" className="rounded-lg border border-border bg-background px-2 py-1 font-medium hover:bg-muted disabled:cursor-not-allowed disabled:opacity-50" disabled={openingChat || sessionListBlocked} onClick={(event) => { stopCardAction(event); void createAndLinkChat(rectFromElement(event.currentTarget)) }}>Start new chat</button>
         <label className="flex min-w-0 flex-1 items-center gap-1">
           <span className="sr-only">Search existing chats</span>
-          <input className="min-w-24 flex-1 rounded-lg border border-border bg-background px-2 py-1 text-foreground" value={linkQuery} onChange={(event) => setLinkQuery(event.target.value)} placeholder="Search chats" />
+          <input className="min-w-24 flex-1 rounded-lg border border-border bg-background px-2 py-1 text-foreground disabled:cursor-not-allowed disabled:opacity-50" value={linkQuery} onChange={(event) => setLinkQuery(event.target.value)} placeholder="Search chats" disabled={sessionListBlocked} />
         </label>
-        <button type="button" className="inline-flex items-center gap-1 rounded-lg border border-border bg-background px-2 py-1 font-medium hover:bg-muted" disabled={linkSearchLoading} onClick={searchExistingSessions}><Link2 className="size-3" /> Link existing</button>
+        <button type="button" className="inline-flex items-center gap-1 rounded-lg border border-border bg-background px-2 py-1 font-medium hover:bg-muted disabled:cursor-not-allowed disabled:opacity-50" disabled={linkSearchLoading || sessionListBlocked} onClick={searchExistingSessions}><Link2 className="size-3" /> Link existing</button>
       </div>
       {linkSearchResults.length > 0 ? (
         <ul className="mt-2 space-y-1" aria-label="Session search results">
           {linkSearchResults.map((session) => (
             <li key={session.id} className="flex items-center gap-2 rounded-lg bg-background/70 px-2 py-1.5">
               <span className="min-w-0 flex-1 truncate">{session.title ?? session.id}</span>
-              <button type="button" className="rounded-md px-2 py-1 font-medium text-primary hover:bg-primary/10" disabled={sessionLinks.some((link) => link.sessionId === session.id)} onClick={(event) => linkExistingSession(event, session)}>Link</button>
+              <button type="button" className="rounded-md px-2 py-1 font-medium text-primary hover:bg-primary/10 disabled:cursor-not-allowed disabled:opacity-50" disabled={sessionListBlocked || sessionLinks.some((link) => link.sessionId === session.id)} onClick={(event) => linkExistingSession(event, session)}>Link</button>
             </li>
           ))}
         </ul>
