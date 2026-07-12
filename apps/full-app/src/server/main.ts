@@ -18,6 +18,7 @@ import {
 } from './managedAgentMcp.js'
 import { assertProductionAgentModeIsSafe } from './productionSafety.js'
 import type { WorkspaceAgentDispatcherResolver } from '@hachej/boring-agent/server'
+import { createD1ServerWiring } from './deployment/d1ServerWiring.js'
 
 function pluginAuthoringEnabledFromEnv(): boolean {
   return process.env.BORING_PLUGIN_AUTHORING === '1'
@@ -30,6 +31,7 @@ async function main() {
     allowMissingSecrets: process.env.NODE_ENV !== 'production',
     tomlPath: path.resolve(appRoot, 'boring.app.toml'),
   })
+  const d1 = createD1ServerWiring(config)
   const { governance, ...pluginComposition } = await createFullAppHostPluginComposition(config)
   // Build the metering sink up-front; the credit service attaches after the
   // server (and its db) exists.
@@ -57,10 +59,15 @@ async function main() {
     onWorkspaceAgentDispatcher: (resolver) => {
       managedAgentDispatcherResolver = resolver
     },
+    ...(d1 ? {
+      requestScopeResolver: d1.requestScopeResolver,
+      frontendRootHandler: d1.frontendRootHandler,
+    } : {}),
   })
   appDb = app.db
   appRef = app
   credits.attach(app)
+  d1?.registerReadiness(app)
   registerFullAppBoringMcpRoutes(app)
   registerFullAppManagedAgentMcpRoutes(app, { dispatcherResolver: managedAgentDispatcherResolver })
   const address = await app.listen({ host: app.config.host, port: app.config.port })

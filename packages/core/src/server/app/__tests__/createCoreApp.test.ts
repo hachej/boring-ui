@@ -54,6 +54,13 @@ describe('createCoreApp', () => {
     expect(app.config.appId).toBe('test-app')
   })
 
+  it('leaves request scope unset when the optional resolver declines', async () => {
+    app = await createCoreApp(TEST_CONFIG, { manageShutdown: false, requestScopeResolver: async () => undefined })
+    app.get('/scope', async (request) => ({ hasScope: request.requestScope !== undefined }))
+    await app.ready()
+    expect((await app.inject({ method: 'GET', url: '/scope' })).body).toBe('{"hasScope":false}')
+  })
+
   it('echoes x-request-id from incoming request', async () => {
     app = await createCoreApp(TEST_CONFIG, { manageShutdown: false })
     app.get('/test', async () => ({ ok: true }))

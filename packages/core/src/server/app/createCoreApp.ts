@@ -313,6 +313,7 @@ export async function createCoreApp(
         }
         throw error
       }
+      if (scope === undefined) return
       request.requestScope = Object.freeze({
         bindingId: scope.bindingId,
         workspaceId: scope.workspaceId,
