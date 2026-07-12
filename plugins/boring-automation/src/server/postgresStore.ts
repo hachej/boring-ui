@@ -8,6 +8,12 @@ export interface HostedAutomationActor {
   userId: string
 }
 
+export interface HostedAutomationCandidate {
+  automation: Automation
+  actor: HostedAutomationActor
+  runs: AutomationRun[]
+}
+
 type Sql = postgres.Sql
 
 type AutomationRow = {
@@ -157,6 +163,28 @@ export class PostgresAutomationStore implements AutomationStore {
     `
     return rows[0] ? toRun(rows[0]) : null
   }
+}
+
+export async function listHostedAutomationCandidates(sql: Sql): Promise<HostedAutomationCandidate[]> {
+  const automationRows = await sql<(AutomationRow & { workspace_id: string; owner_user_id: string })[]>`
+    SELECT id, workspace_id, owner_user_id, title, enabled, cron, timezone, model, prompt, created_at, updated_at
+    FROM boring_automation_automations
+    ORDER BY id
+  `
+  const runRows = await sql<(RunRow & { workspace_id: string; owner_user_id: string })[]>`
+    SELECT * FROM boring_automation_runs ORDER BY automation_id, created_at DESC, id DESC
+  `
+  const runsByAutomation = new Map<string, AutomationRun[]>()
+  for (const row of runRows) {
+    const list = runsByAutomation.get(row.automation_id) ?? []
+    list.push(toRun(row))
+    runsByAutomation.set(row.automation_id, list)
+  }
+  return automationRows.map((row) => ({
+    automation: toAutomation(row),
+    actor: { workspaceId: row.workspace_id, userId: row.owner_user_id },
+    runs: runsByAutomation.get(row.id) ?? [],
+  }))
 }
 
 function toAutomation(row: AutomationRow): Automation {

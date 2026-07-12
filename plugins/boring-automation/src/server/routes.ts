@@ -8,7 +8,9 @@ import {
   IdParamsSchema,
   PromptUpdateSchema,
 } from "../shared"
+import type { HostedDueRunService } from "./hostedDueRunService"
 import type { DueRunService } from "./dueRunService"
+import { timingSafeEqual } from "node:crypto"
 import { ManualRunExecutor } from "./manualRunExecutor"
 import { AutomationStoreError, automationNotFound, type AutomationStore } from "./store"
 
@@ -17,6 +19,8 @@ export interface AutomationRoutesOptions {
   storeForRequest?: (request: FastifyRequest) => Promise<AutomationStore> | AutomationStore
   manualRunExecutor?: Pick<ManualRunExecutor, "run">
   dueRunService?: Pick<DueRunService, "runDue">
+  hostedDueRunService?: Pick<HostedDueRunService, "runDue">
+  hostedTriggerToken?: string
 }
 
 export async function automationRoutes(app: FastifyInstance, opts: AutomationRoutesOptions): Promise<void> {
@@ -83,6 +87,17 @@ export async function automationRoutes(app: FastifyInstance, opts: AutomationRou
       const { prompt } = parseBody(PromptUpdateSchema, request.body)
       await (await resolveStore(opts, request)).updatePrompt(id, prompt)
       return { ok: true }
+    } catch (cause) {
+      return sendError(reply, cause)
+    }
+  })
+
+  app.post(`${BORING_AUTOMATION_ROUTE_PREFIX}/due/hosted`, async (request, reply) => {
+    try {
+      if (!opts.hostedDueRunService || !opts.hostedTriggerToken || !hasBearerToken(request.headers.authorization, opts.hostedTriggerToken)) {
+        throw new AutomationStoreError(BORING_AUTOMATION_ERROR_CODES.TRIGGER_UNAUTHORIZED, "hosted automation trigger is unauthorized")
+      }
+      return { ok: true, ...(await opts.hostedDueRunService.runDue(request)) }
     } catch (cause) {
       return sendError(reply, cause)
     }
@@ -174,6 +189,13 @@ function zodIssueErrorCode(issue: ZodError["issues"][number] | undefined) {
   return BORING_AUTOMATION_ERROR_CODES.INVALID_BODY
 }
 
+function hasBearerToken(header: string | undefined, expected: string): boolean {
+  if (!header?.startsWith("Bearer ")) return false
+  const actual = Buffer.from(header.slice(7), "utf8")
+  const target = Buffer.from(expected, "utf8")
+  return actual.length === target.length && timingSafeEqual(actual, target)
+}
+
 function isLoopbackAddress(address: string): boolean {
   const normalized = address.trim().toLowerCase()
   return normalized === "127.0.0.1" || normalized === "::1" || normalized.startsWith("::ffff:127.")
@@ -193,6 +215,10 @@ function httpStatusForStoreError(error: AutomationStoreError): number {
     case BORING_AUTOMATION_ERROR_CODES.RUN_ALREADY_RECORDED:
       return 409
     case BORING_AUTOMATION_ERROR_CODES.TRIGGER_FORBIDDEN:
+      return 403
+    case BORING_AUTOMATION_ERROR_CODES.TRIGGER_UNAUTHORIZED:
+      return 401
+    case BORING_AUTOMATION_ERROR_CODES.OWNER_UNAUTHORIZED:
       return 403
     case BORING_AUTOMATION_ERROR_CODES.RUN_EXECUTOR_UNAVAILABLE:
       return 503

@@ -90,6 +90,8 @@ Canonical plan: [`plan.md`](./plan.md)
 - [x] Atomic scheduled-occurrence deduplication, overlap skips, restart reconciliation, safe result DTOs, and per-item failure isolation.
 - [ ] Slice 5: hosted persistence, verified actor composition, and duplicate-run lease.
   - [x] Deployment-owned migration callback and hosted Postgres schema/store with creator ownership columns.
-  - [ ] Compose verified creator actor resolver and hosted store into full-app routes/executor.
-- [ ] Slice 6: authenticated hosted platform trigger.
+  - [x] Compose verified creator actor resolver and hosted store into full-app routes/executor.
+- [x] Slice 6: authenticated hosted platform trigger.
+  - [x] Bearer-token service-principal route with constant-time token comparison.
+  - [x] Creator authorization re-check, creator-scoped dispatcher execution, and duplicate-safe hosted due runs.
 - [ ] Final UI polish.
