@@ -58,12 +58,15 @@ function validTask(overrides: Partial<AgentTask> = {}): AgentTask {
 describe('task lifecycle transitions', () => {
   const LEGAL_PAIRS = new Set([
     'submitted->working',
+    'submitted->rejected',
+    'submitted->canceled',
     'working->input-required',
     'working->completed',
     'working->failed',
     'working->canceled',
     'working->rejected',
     'input-required->working',
+    'input-required->canceled',
   ])
 
   for (const from of TASK_STATES) {
@@ -91,9 +94,19 @@ describe('task lifecycle transitions', () => {
     }
   }
 
-  it('covers exactly the documented legal-pair count (7 legal edges over 49 pairs)', () => {
-    expect(LEGAL_PAIRS.size).toBe(7)
+  it('covers exactly the documented legal-pair count (10 legal edges over 49 pairs)', () => {
+    expect(LEGAL_PAIRS.size).toBe(10)
     expect(TASK_STATES.length).toBe(7)
+  })
+
+  it('permits intake-stage refusal/withdrawal before work starts (A2A v1.0)', () => {
+    expect(isValidTaskTransition('submitted', 'rejected')).toBe(true)
+    expect(isValidTaskTransition('submitted', 'canceled')).toBe(true)
+  })
+
+  it('permits input-required to settle into canceled (inputRequiredTimeoutMs outcome)', () => {
+    expect(isValidTaskTransition('input-required', 'canceled')).toBe(true)
+    expect(() => assertValidTransition('input-required', 'canceled')).not.toThrow()
   })
 
   it('treats every terminal state as final (no outgoing edges)', () => {

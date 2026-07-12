@@ -40,15 +40,17 @@ export const TaskStateSchema = z.enum(TASK_STATES)
 
 /**
  * Legal task-state transitions. Mirrors A2A v1.0 task lifecycle semantics:
- * `submitted` starts work; `working` is the only state that can settle into
- * a terminal outcome or pause for input; `input-required` always resumes
- * back into `working`; every terminal state (`completed`/`failed`/
+ * `submitted` starts work, or is refused/withdrawn at intake (`rejected`/
+ * `canceled`) before work begins; `working` settles into a terminal outcome
+ * or pauses for input; `input-required` resumes into `working`, or is
+ * `canceled` — the outcome the `inputRequiredTimeoutMs` guard drives when
+ * the consumer never answers; every terminal state (`completed`/`failed`/
  * `canceled`/`rejected`) is final.
  */
 const TASK_TRANSITIONS: Readonly<Record<TaskState, readonly TaskState[]>> = {
-  submitted: ['working'],
+  submitted: ['working', 'rejected', 'canceled'],
   working: ['input-required', 'completed', 'failed', 'canceled', 'rejected'],
-  'input-required': ['working'],
+  'input-required': ['working', 'canceled'],
   completed: [],
   failed: [],
   canceled: [],
