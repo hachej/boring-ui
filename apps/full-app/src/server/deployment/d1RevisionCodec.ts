@@ -19,6 +19,7 @@ import {
   canonicalizeWorkspaceCompositionSnapshot,
   type WorkspaceCompositionSnapshotV1,
 } from './workspaceComposition.js'
+import { canonicalizeD1RuntimeInputsIdentity, type D1RuntimeInputsIdentityV1 } from './d1RuntimeInputs.js'
 
 export type D1PersistedPlanV1 = Omit<D1HostPlanV1, 'expectedHostRevision'>
 
@@ -45,10 +46,16 @@ export interface D1SecretRefsEnvelopeV1 {
   readonly bindings: readonly Readonly<{ bindingId: string; secretRefs: readonly string[] }>[]
 }
 
+// D1 is pre-production with no persisted v1 state; runtime identity is intentionally required.
 export interface D1ObservationV1 {
   readonly schemaVersion: 1
   readonly domain: 'boring-d1-observed:v1'
-  readonly bindings: readonly Readonly<{ bindingId: string; ready: boolean; resolvedDigest: Sha256Digest }>[]
+  readonly bindings: readonly Readonly<{
+    bindingId: string
+    ready: boolean
+    resolvedDigest: Sha256Digest
+    runtimeInputs: D1RuntimeInputsIdentityV1
+  }>[]
 }
 
 export interface D1CompleteEnvelopeV1 {
@@ -253,18 +260,23 @@ export function canonicalizeD1SecretRefsEnvelope(raw: unknown, desired: D1Desire
   return canonical
 }
 
-export function canonicalizeD1Observation(raw: unknown, desired: D1DesiredSnapshotV1): D1ObservationV1 {
+export async function canonicalizeD1Observation(raw: unknown, desired: D1DesiredSnapshotV1): Promise<D1ObservationV1> {
   exactKeys(raw, ['schemaVersion', 'domain', 'bindings'], 'observation')
   if (raw.schemaVersion !== 1 || raw.domain !== OBSERVED_DOMAIN || !Array.isArray(raw.bindings)) fail('observation')
-  const bindings = sortUnique(raw.bindings.map((binding, index) => {
-    exactKeys(binding, ['bindingId', 'ready', 'resolvedDigest'], `observation.bindings[${index}]`)
+  const bindings = sortUnique(await Promise.all(raw.bindings.map(async (binding, index) => {
+    const field = `observation.bindings[${index}]`
+    exactKeys(binding, ['bindingId', 'ready', 'resolvedDigest', 'runtimeInputs'], field)
     if (typeof binding.ready !== 'boolean') fail(`observation.bindings[${index}].ready`)
+    const bindingId = ref(binding.bindingId, `${field}.bindingId`)
+    const planned = desired.plan.bindings.find((entry) => entry.bindingId === bindingId)
+    if (!planned) fail('observation.bindings')
     return Object.freeze({
-      bindingId: ref(binding.bindingId, `observation.bindings[${index}].bindingId`),
+      bindingId,
       ready: binding.ready,
       resolvedDigest: digest(binding.resolvedDigest, `observation.bindings[${index}].resolvedDigest`),
+      runtimeInputs: await canonicalizeD1RuntimeInputsIdentity(binding.runtimeInputs, planned),
     })
-  }), (binding) => binding.bindingId, 'observation.bindings')
+  })), (binding) => binding.bindingId, 'observation.bindings')
   if (JSON.stringify(bindings.map((binding) => binding.bindingId)) !== JSON.stringify(desired.resolvedBindings.map((binding) => binding.bindingId))) fail('observation.bindings')
   for (const binding of bindings) {
     if (binding.resolvedDigest !== desired.resolvedBindings.find((entry) => entry.bindingId === binding.bindingId)!.resolvedDigest) fail(`observation.bindings.${binding.bindingId}.resolvedDigest`)
@@ -273,7 +285,7 @@ export function canonicalizeD1Observation(raw: unknown, desired: D1DesiredSnapsh
 }
 
 export async function digestD1Observation(raw: unknown, desired: D1DesiredSnapshotV1): Promise<Sha256Digest> {
-  return createAgentAssetDigest(JSON.stringify(canonicalizeD1Observation(raw, desired)))
+  return createAgentAssetDigest(JSON.stringify(await canonicalizeD1Observation(raw, desired)))
 }
 
 export async function createD1CompleteEnvelope(
@@ -281,7 +293,7 @@ export async function createD1CompleteEnvelope(
   desired: D1DesiredSnapshotV1,
   observed: D1ObservationV1,
 ): Promise<D1CompleteEnvelopeV1> {
-  const observation = canonicalizeD1Observation(observed, desired)
+  const observation = await canonicalizeD1Observation(observed, desired)
   if (observation.bindings.some((binding) => !binding.ready)) fail('completion.observation.ready')
   const desiredStateDigest = await digestD1Desired(desired)
   const observationDigest = await digestD1Observation(observation, desired)
