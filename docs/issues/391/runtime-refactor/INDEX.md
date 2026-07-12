@@ -19,23 +19,23 @@ bindings; each exact hostname -> landing/auth -> authorized workspace ->
 deployed agent selected as that workspace's `default`.
 
 **Build order (owner priorities, 2026-07-11 — see "Owner priorities" below):**
-#631 + P1 recut → P6-R → D1-reframed (+conditional P5a) → M1 recuts
-(#549/#556) → AR1 → M2/E2 → T1/T2 → P2/X1. M1 is
+#631 + P1 recut (landed #642) → P6-R (landed #647) → D1-reframed (+conditional P5a) → M1 recuts
+(landed #650) → AR1 → M2/E2 → T1/T2 → P2/X1. M1 is
 on this path (after P6-R/D1-reframed and before AR1), no longer a purely
 optional side tracer. ID1 remains in the later public self-service/marketplace lane.
 
 | Milestone | Work package | Depends on | Live status | Exit gist |
 | --- | --- | --- | --- | --- |
 | P0 — decisions | [P0](work/P0-adr/) | — | decisions 21 and 22 accepted via #617/#632; topology Decision 23 is in this follow-up | workspace authority, one consumption contract, and multi-agent Docker-first topology are explicit |
-| P1 — workspace-composed agent core | [P1](work/P1-headless-core/) | P0 | **request-binding lifecycle landed through [#631](https://github.com/hachej/boring-ui/pull/631)**; one narrow fail-closed readiness recut remains | land readiness only; no replay of superseded pure mode, capability snapshot, input-asset registry, or lifecycle stacks |
+| P1 — workspace-composed agent core | [P1](work/P1-headless-core/) | P0 | **landed** — request-binding lifecycle through [#631](https://github.com/hachej/boring-ui/pull/631); fail-closed readiness recut landed via [#642](https://github.com/hachej/boring-ui/pull/642) | land readiness only; no replay of superseded pure mode, capability snapshot, input-asset registry, or lifecycle stacks |
 | P6-D — minimal definition | [P6](work/P6-plugin-child-app/) | Decision 21 (accepted) | **landed** — minimal identities/digests relanded via [#623](https://github.com/hachej/boring-ui/pull/623), verified on main | minimal `AgentDefinition` + `AgentDeployment` schemas/digests; A1 compiler supplies the verified bundle directly to P6-R |
 | A1 — agent-directory authoring | [A1](work/A1-agent-authoring/) | P6-D for compile; P6-R + D1-R0 composition producer for local run | **compiler landed** via [#624](https://github.com/hachej/boring-ui/pull/624); local dev needs a current-main recut after the producer lands and gates P8, not D1 | `agents/<name>/` emits one content-addressed bundle; local dev reuses the host's authorized binding/composition identity with no second composer |
-| P6-R — workspace/deployment resolution | [P6](work/P6-plugin-child-app/) | P6-D, P1 | **priority-1 gate; next after P1** | one pure call resolves one already-authorized deployment + workspace-composition + workspace-`default` binding; D1 obtains N bindings through N calls; no batch owner or P2/P5a dependency |
+| P6-R — workspace/deployment resolution | [P6](work/P6-plugin-child-app/) | P6-D, P1 | **landed** — stateless deployment resolver via [#647](https://github.com/hachej/boring-ui/pull/647) | one pure call resolves one already-authorized deployment + workspace-composition + workspace-`default` binding; D1 obtains N bindings through N calls; no batch owner or P2/P5a dependency |
 | P5a — Docker-host provisioning minimum | [P5](work/P5-provisioning-secrets/) | demonstrated D1 gap | **conditional priority-1 support** | after the D1 tracer, add only a missing secret-ref or host-readiness seam; D1 owns desired digest/apply/rollback and no sandbox-provider abstraction is added |
-| D1 — multi-agent Docker delivery | [D1](work/D1-tenant-provisioning/) | A1 compiler, P6-R; conditional P5a alongside | **priority-1/v1 gate; D1-R0 needs-spec after P6-R** | one Docker deployment hosts N deployed agents mapped through authorized workspaces; each exact hostname lands in a workspace whose deployed agent is `default`; dedicated VM is variant 2 |
-| P8 — v1 proof/cleanup | [P8](work/P8-verification/) | D1 priority-1 path | **pending** | measured multi-agent Docker golden path, residual pure-mode grep, rollback, and zero v1-owned removal markers; 15 minutes remains a target until baselined |
-| M1 — managed MCP ingress | [M1](work/M1-mcp-managed-agent/) | P6-R, D1 host composition | **priority-2; partial tracer #538, #549/#556 need current-main recuts** | bearer-authenticated stock client resolves an authorized workspace/default agent and receives bounded self-contained output |
-| AR1 — shareable artifacts | [AR1](work/AR1-shareable-artifacts/) | M1 + workspace contract | **priority-2 spec package; AR1-001 required before implementation** | canonical pinned handle materializes an immutable copy in the authorized destination workspace, then returns a destination-local deep link; no arbitrary URL/path fetch |
+| D1 — multi-agent Docker delivery | [D1](work/D1-tenant-provisioning/) | A1 compiler, P6-R; conditional P5a alongside | **priority-1/v1 gate; D1-R0-SPEC.md merged ([#649](https://github.com/hachej/boring-ui/pull/649)); D1-001…006 dispatched** | one Docker deployment hosts N deployed agents mapped through authorized workspaces; each exact hostname lands in a workspace whose deployed agent is `default`; dedicated VM is variant 2 |
+| P8 — v1 proof/cleanup | [P8](work/P8-verification/) | D1 priority-1 path | **pull-forward slice landed** — golden-path script+json+CI gates via [#664](https://github.com/hachej/boring-ui/pull/664) | measured multi-agent Docker golden path, residual pure-mode grep, rollback, and zero v1-owned removal markers; 15 minutes remains a target until baselined |
+| M1 — managed MCP ingress | [M1](work/M1-mcp-managed-agent/) | P1 workspace/Fastify boundary (+P6-R) | **landed** — recut #650 MERGED (delivery v0 + composition + stock-client smoke; acceptance passed) | bearer-authenticated stock client resolves an authorized workspace/default agent and receives bounded self-contained output |
+| AR1 — shareable artifacts | [AR1](work/AR1-shareable-artifacts/) | M1 + workspace contract | **priority-2 spec package; AR1-001 drafted ([#656](https://github.com/hachej/boring-ui/pull/656)), amended+owner-ratified ([#668](https://github.com/hachej/boring-ui/pull/668)) — READY FOR DISPATCH (Lane W)** | canonical pinned handle materializes an immutable copy in the authorized destination workspace, then returns a destination-local deep link; no arbitrary URL/path fetch |
 | M2/E2 — canonical MCP + consumer intake | [M2](work/M2-mcp-agent-surface/), [E2](work/E2-mcp-projection/) | M1, AR1, P6-R | **priority-2; recut required** | graduate the tracer and artifact intake without waiting for P7, T2, or generic E1 attachments |
 | T1/T2 — durable multi-channel transport | [T1](work/T1-durable-events/), [T2](work/T2-transport/) | priority-2 MCP/artifact proof | **priority-3; recut required** | consume the same workspace-backed agent from multiple channels with one durable event/approval contract |
 | AC1 — agent consumption contract | [AC1](work/AC1-agent-consumption-contract/) | P1/P6-R behavior; ID1 for public contracted mode | **marketplace roadmap; decision settled ([#22](../../../DECISIONS.md#22-one-agent-consumption-contract-protocol-bindings-at-the-edges)), tracked in [#636](https://github.com/hachej/boring-ui/issues/636)** | one A2A-shaped contract; native internal binding; subagent/contracted modes; does not widen P6-R or v1 `AgentDefinition` |
@@ -46,6 +46,8 @@ optional side tracer. ID1 remains in the later public self-service/marketplace l
 | P2/X1 — sandbox providers and S3/FUSE | [P2](work/P2-sandbox-providers/), [X1](work/X1-s3-fuse-mounts/) | priorities 1-3 | **priority-4/last; isolated Sol P2 recut in progress** | extract providers, prove isolation/EU facts, then add mounts; neither gates P6-R or D1 |
 
 **Footnote:** Status entries above must cite merge-commit-ancestry-verified state (`git merge-base --is-ancestor <sha> origin/main`), not GitHub MERGED labels — see the stacked-PR trap note in [`REVIEW-2026-07-11-unknowns.md`](REVIEW-2026-07-11-unknowns.md).
+
+**Reconciliation note (fresh-eyes round 1):** the M2/E2-before-T1/T2 ordering above is the owner-ruled priority and stands as-is; PR-PLAN.md's M2 section carried a stale "after P7 + T2" precondition that created an apparent ordering cycle against this INDEX — that file, not this one, has been corrected to match this table.
 
 ## Owner priorities (2026-07-11)
 
@@ -67,8 +69,8 @@ path without changing decision 21's workspace-first acceptance.
    existing in-monolith sandboxing keeps working meanwhile.)
 
 **Derived build order:** [#631](https://github.com/hachej/boring-ui/pull/631) +
-P1 recut → P6-R → D1-reframed (+conditional P5a) → M1 recuts
-([#549](https://github.com/hachej/boring-ui/pull/549)/[#556](https://github.com/hachej/boring-ui/pull/556))
+P1 recut (landed [#642](https://github.com/hachej/boring-ui/pull/642)) → P6-R (landed [#647](https://github.com/hachej/boring-ui/pull/647)) → D1-reframed (+conditional P5a) → M1 recuts
+(landed [#650](https://github.com/hachej/boring-ui/pull/650))
 → AR1 → M2/E2 → T1/T2 → P2/X1.
 
 Inter-agent abstraction settled: one consumption contract (A2A-shaped

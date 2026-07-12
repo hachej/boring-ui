@@ -2,8 +2,30 @@
 
 Status: decision settled ([DECISIONS.md #22](../../../../DECISIONS.md#22-one-agent-consumption-contract-protocol-bindings-at-the-edges))
 — canonical tracker is issue
-[#636](https://github.com/hachej/boring-ui/issues/636). This stub reserves the
-workpackage; the issue owns scope detail.
+[#636](https://github.com/hachej/boring-ui/issues/636). Bead enumeration
+(guardrails + build pointers in
+[IMPLEMENTATION-GUARDRAILS.md](../../IMPLEMENTATION-GUARDRAILS.md) AC1 section):
+
+- **AC1-T — contract types.** Task/Message/Part, `contextId`,
+  `input-required`, versioned schema in the contracts layer. **LANDED
+  ([#657](https://github.com/hachej/boring-ui/pull/657), types-only slice).**
+- **AC1-D — in-process subagent dispatcher.** Reuses pi session machinery for
+  the loop and T1's event store if durability is needed; guards REQUIRED
+  (values ratified in the AC1 consumer-backed spec, not here): consumption
+  depth limit, same-pair cycle refusal, input-required timeout → canceled
+  (resumable context).
+- **AC1-M — consumption modes.** `AgentDefinition` workspace-binding
+  parameter (subagent = caller workspace); contracted mode is a layered
+  decorator over the same pipeline, never a forked code path (Decision 22
+  layering constraint) — gated behind ID1, not built before a real
+  contracting consumer exists.
+- **AC1-P — governed-projection brief.** Generalize boring-governance's
+  existing `filesystemBindings` readonly-projection mechanism (today
+  hardcoded to `company_context`) to arbitrary source workspaces.
+
+The issue owns further scope detail; do not build a task queue/broker, A2A
+wire transport, or persistence beyond existing stores (guardrails "Do NOT
+build").
 
 > Phase: Phase AC1 — marketplace consumption contract (separate from P6-R;
 > contracted mode after ID1)

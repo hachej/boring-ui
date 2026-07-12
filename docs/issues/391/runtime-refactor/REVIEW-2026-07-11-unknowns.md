@@ -1,5 +1,8 @@
 # 391 Runtime Refactor - Plan Review & Unknowns Ledger (2026-07-11)
 
+**Dated snapshot (2026-07-11, pre-#642/#647/#649/#650/#657/#664). INDEX.md is
+the live status authority.**
+
 Method: full plan-pack synthesis, implementation audit against `origin/main`,
 and the scale, security, failure, edge-case, concurrency, migration, and
 rollback lenses. Live status below was reverified after merging current main

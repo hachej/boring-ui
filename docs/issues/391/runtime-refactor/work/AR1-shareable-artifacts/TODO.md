@@ -57,6 +57,43 @@ accepted; implementation beads are created from that accepted contract.
   attempts fail before workspace mutation.
 - Produce implementation beads only after adversarial review accepts the spec.
 
+### AR1-002 - Lane W share-entry store (new, S)
+
+- Dispatch now (AR1-001-SPEC.md §8: Lane W beads dispatch on acceptance; Lane X
+  stays build-gated on the first contracted-mode engagement).
+- File area: new `ShareEntryV1` persistence (§3.1) — `id`, `workspaceId`,
+  server-internal `path` (never emitted), `provenance { producerPrincipalRef,
+  createdAt }`. No blob capture, no expiry/revocation fields (Lane W has none).
+- Proof requirement: create/get by opaque `id`; `path` never appears in any
+  returned payload, log, or audit record; a deleted target's entry still reads
+  back with tombstone metadata (feeds AR1-003's tombstone rendering).
+- Review budget: small — one store module + focused tests, no route/UI wiring.
+
+### AR1-003 - `/a/<id>` deep-link route, membership auth, tombstone (new, S-M)
+
+- Dispatch now (spec §8 Lane W).
+- File area: new deep-link route family (`/a/<id>`) reusing the existing
+  workspace membership-denial path (§3.2); no new ACL. Renders live-reference
+  resolution to the current file state, not a snapshot.
+- Proof requirement (spec §6.2 items 1-3): a member opens `/a/<id>` and lands
+  focused on the file; a deleted target renders provenance + last-known
+  metadata (`AR1_SHARE_TOMBSTONED`), never a bare 404; a non-member gets a
+  clean membership denial. No secret or workspace path in the URL — only the
+  opaque `id`.
+- Review budget: small-medium — route + tombstone rendering + membership-gate
+  tests; no expiry/token machinery (explicitly out of scope, spec §4).
+
+### AR1-004 - MCP resource for same-workspace share (new, S)
+
+- Dispatch now (spec §8 Lane W).
+- File area: expose the AR1-002 share entry as an MCP resource through the
+  existing M1/M2 resource seam (§3.2) — reuse, not a second MCP runtime owner.
+- Proof requirement (spec §6.2 item 4): a machine consumer reads the same
+  current file state through the MCP resource contract, membership-gated
+  identically to the `/a/<id>` route.
+- Review budget: small — resource handler + one integration test against the
+  AR1-003 route's membership/tombstone behavior for parity.
+
 ## Exit
 
 - AR1-001 is accepted and `HANDOFF.md` is complete for the spec stage.
