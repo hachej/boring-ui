@@ -108,6 +108,8 @@ export function TaskCard({ task, draggable, unmapped = false, deleteEnabled = fa
   const [linkSearchLoading, setLinkSearchLoading] = useState(false)
   const [optimisticSessionIds, setOptimisticSessionIds] = useState<ReadonlySet<string>>(new Set())
   const chatButtonRef = useRef<HTMLButtonElement>(null)
+  const mountedRef = useRef(false)
+  const openChatRequestSeqRef = useRef(0)
   const shell = useWorkspaceShellCapabilities()
   const pluginClient = useWorkspacePluginClient()
   const sessionActivity = useTaskSessionActivity()
@@ -120,7 +122,7 @@ export function TaskCard({ task, draggable, unmapped = false, deleteEnabled = fa
   const linkedSessionIdKey = linkedSessionIdList.join("\u0000")
   const linkedSessionIds = useMemo(() => new Set(linkedSessionIdList), [linkedSessionIdKey])
   const sessionActivities = sessionActivity.activities
-  const activityError = sessionActivity.error
+  const activityError = sessionActivity.getError(linkedSessionIdList)
   const activityLoading = sessionActivity.isLoading(linkedSessionIdList)
   const chatActivityPending = checkingChatActivity || activityLoading
   const sortedSessionLinks = useMemo(() => {
@@ -153,15 +155,29 @@ export function TaskCard({ task, draggable, unmapped = false, deleteEnabled = fa
 
   const stopCardAction = (event: MouseEvent<HTMLElement>) => event.stopPropagation()
 
+  useEffect(() => {
+    mountedRef.current = true
+    return () => {
+      mountedRef.current = false
+      openChatRequestSeqRef.current += 1
+    }
+  }, [])
+
+  useEffect(() => {
+    openChatRequestSeqRef.current += 1
+  }, [task.adapterId, task.id])
+
   const refreshSessionActivity = useCallback(async (links: BoringTaskSessionBinding[]): Promise<TaskSessionActivityRefreshResult> => {
     return await sessionActivity.refreshSessionIds(links.map((link) => link.sessionId))
   }, [sessionActivity.refreshSessionIds])
 
-  const loadSessionLinks = useCallback(async (): Promise<BoringTaskSessionBinding[]> => {
+  const loadSessionLinks = useCallback(async (shouldApply: () => boolean = () => mountedRef.current): Promise<BoringTaskSessionBinding[]> => {
     const body = await pluginClient.postJson<TaskSessionListResponse>("/api/boring-tasks/sessions/list", { adapterId: task.adapterId, taskId: task.id })
     const links = body.links ?? []
-    setSessionLinks(links)
-    setSessionLinksLoaded(true)
+    if (shouldApply()) {
+      setSessionLinks(links)
+      setSessionLinksLoaded(true)
+    }
     return links
   }, [pluginClient, task.adapterId, task.id])
 
@@ -197,8 +213,9 @@ export function TaskCard({ task, draggable, unmapped = false, deleteEnabled = fa
     return () => window.removeEventListener("boring:chat-session-status", onSessionStatus)
   }, [linkedSessionIds, optimisticSessionIds, sessionActivity.setOptimisticActivity])
 
-  const openLinkedChat = async (link: BoringTaskSessionBinding, anchor?: WorkspaceShellAnchorRect): Promise<boolean> => {
+  const openLinkedChat = async (link: BoringTaskSessionBinding, anchor?: WorkspaceShellAnchorRect, shouldContinue: () => boolean = () => mountedRef.current): Promise<boolean> => {
     const sessions = await pluginClient.getJson<PiSessionSummary[]>(`/api/v1/agent/pi-chat/sessions?limit=1&activeSessionId=${encodeURIComponent(link.sessionId)}`)
+    if (!shouldContinue()) return false
     const session = sessions.find((candidate) => candidate.id === link.sessionId)
     if (!session) {
       setSessionPanelOpen(true)
@@ -213,11 +230,12 @@ export function TaskCard({ task, draggable, unmapped = false, deleteEnabled = fa
     return true
   }
 
-  const createAndLinkChat = async (anchor?: WorkspaceShellAnchorRect) => {
+  const createAndLinkChat = async (anchor?: WorkspaceShellAnchorRect, shouldContinue: () => boolean = () => mountedRef.current) => {
     setOpeningChat(true)
     setSessionError(null)
     try {
       const session = await pluginClient.postJson<CreatedPiChatSession>("/api/v1/agent/pi-chat/sessions", { title: chatTitle })
+      if (!shouldContinue()) return
       if (typeof session.id !== "string" || session.id.length === 0) throw new Error("Chat session was not created.")
       const sessionId = session.id
       let linked: BoringTaskSessionBinding
@@ -228,13 +246,16 @@ export function TaskCard({ task, draggable, unmapped = false, deleteEnabled = fa
           sessionId,
           title: chatTitle,
         })
+        if (!shouldContinue()) return
         if (!response.link) throw new Error("Task session binding was not created.")
         linked = response.link
       } catch (error) {
+        if (!shouldContinue()) return
         setSessionPanelOpen(true)
         setSessionError(`Created chat ${sessionId}, but failed to bind it to this task. Use Link existing to attach it before opening. ${error instanceof Error ? error.message : ""}`.trim())
         return
       }
+      if (!shouldContinue()) return
       setSessionLinks((current) => current.some((candidate) => candidate.id === linked.id) ? current : [linked, ...current])
       setSessionLinksLoaded(true)
       void refreshSessionActivity([linked]).catch(() => undefined)
@@ -243,9 +264,9 @@ export function TaskCard({ task, draggable, unmapped = false, deleteEnabled = fa
       shell.openDetachedChat(sessionId, { anchor, title: chatTitle, initialDraft, composingEnabled: true })
       window.dispatchEvent(new CustomEvent("boring-workspace:open-detached-chat", { detail: { sessionId, title: chatTitle, initialDraft, composingEnabled: true } }))
     } catch (error) {
-      setSessionError(error instanceof Error ? error.message : "Failed to open task chat")
+      if (shouldContinue()) setSessionError(error instanceof Error ? error.message : "Failed to open task chat")
     } finally {
-      setOpeningChat(false)
+      if (shouldContinue()) setOpeningChat(false)
     }
   }
 
@@ -254,12 +275,16 @@ export function TaskCard({ task, draggable, unmapped = false, deleteEnabled = fa
     if (checkingChatActivity) return
     const anchor = rectFromElement(event.currentTarget)
     const panelWasOpen = sessionPanelOpen
+    const requestId = openChatRequestSeqRef.current + 1
+    openChatRequestSeqRef.current = requestId
+    const shouldContinue = () => mountedRef.current && openChatRequestSeqRef.current === requestId
     setSessionError(null)
     setCheckingChatActivity(true)
     void (async () => {
-      const links = sessionLinksLoaded ? sessionLinks : await loadSessionLinks()
+      const links = sessionLinksLoaded ? sessionLinks : await loadSessionLinks(shouldContinue)
+      if (!shouldContinue()) return
       if (links.length === 0) {
-        await createAndLinkChat(anchor)
+        await createAndLinkChat(anchor, shouldContinue)
         return
       }
       setSessionPanelOpen(true)
@@ -267,9 +292,10 @@ export function TaskCard({ task, draggable, unmapped = false, deleteEnabled = fa
       try {
         refreshResult = await refreshSessionActivity(links)
       } catch (error) {
-        setSessionError(error instanceof Error ? error.message : "Activity refresh failed")
+        if (shouldContinue()) setSessionError(error instanceof Error ? error.message : "Activity refresh failed")
         return
       }
+      if (!shouldContinue()) return
       if (refreshResult.status === "stale") {
         setSessionError("Chat activity changed while opening. Try again.")
         return
@@ -279,13 +305,16 @@ export function TaskCard({ task, draggable, unmapped = false, deleteEnabled = fa
         return status === "working" || status === "queued"
       })
       if (active.length === 1) {
-        const opened = await openLinkedChat(active[0], anchor)
-        if (opened && !panelWasOpen) setSessionPanelOpen(false)
+        const opened = await openLinkedChat(active[0], anchor, shouldContinue)
+        if (opened && shouldContinue() && !panelWasOpen) setSessionPanelOpen(false)
         return
       }
-      setSessionPanelOpen(true)
-    })().catch((error) => setSessionError(error instanceof Error ? error.message : "Failed to open task chat"))
-      .finally(() => setCheckingChatActivity(false))
+      if (shouldContinue()) setSessionPanelOpen(true)
+    })().catch((error) => {
+      if (shouldContinue()) setSessionError(error instanceof Error ? error.message : "Failed to open task chat")
+    }).finally(() => {
+      if (shouldContinue()) setCheckingChatActivity(false)
+    })
   }
 
   const unlinkSession = (event: MouseEvent<HTMLButtonElement>, link: BoringTaskSessionBinding) => {
@@ -337,6 +366,8 @@ export function TaskCard({ task, draggable, unmapped = false, deleteEnabled = fa
   }
 
   const closeSessionPanel = () => {
+    openChatRequestSeqRef.current += 1
+    setCheckingChatActivity(false)
     setSessionPanelOpen(false)
     chatButtonRef.current?.focus()
   }

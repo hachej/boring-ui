@@ -269,6 +269,57 @@ describe("TaskCard task chat sessions", () => {
     })
   })
 
+  it("does not navigate when open activity resolves after the session panel closes", async () => {
+    const working = link({ id: "working", sessionId: "pi-working", title: "Working chat" })
+    const pendingActivity = deferred<{ activities?: Array<{ sessionId: string; status: "idle" | "queued" | "working" | "error"; source: "live-runtime" | "persisted" }>; omittedSessionIds?: string[] }>()
+    postJson.mockImplementation(async (path: string) => {
+      if (path === "/api/boring-tasks/sessions/list") return { links: [working] }
+      if (path === "/api/v1/agent/pi-chat/sessions/activity") return pendingActivity.promise
+      throw new Error(`unexpected post ${path}`)
+    })
+    getJson.mockResolvedValue([{ id: "pi-working", title: "Working chat" }])
+
+    renderCard()
+    fireEvent.click(await screen.findByRole("button", { name: /open chat/i }))
+    expect(await screen.findByRole("region", { name: /linked chat sessions/i })).toBeInTheDocument()
+    fireEvent.click(screen.getByRole("button", { name: "Close task chats" }))
+
+    await act(async () => {
+      pendingActivity.resolve({ activities: [{ sessionId: "pi-working", status: "working", source: "live-runtime" }], omittedSessionIds: [] })
+      await pendingActivity.promise
+      await Promise.resolve()
+    })
+
+    expect(getJson).not.toHaveBeenCalled()
+    expect(openDetachedChat).not.toHaveBeenCalled()
+    expect(screen.queryByRole("region", { name: /linked chat sessions/i })).not.toBeInTheDocument()
+  })
+
+  it("does not navigate when open activity resolves after the card unmounts", async () => {
+    const working = link({ id: "working", sessionId: "pi-working", title: "Working chat" })
+    const pendingActivity = deferred<{ activities?: Array<{ sessionId: string; status: "idle" | "queued" | "working" | "error"; source: "live-runtime" | "persisted" }>; omittedSessionIds?: string[] }>()
+    postJson.mockImplementation(async (path: string) => {
+      if (path === "/api/boring-tasks/sessions/list") return { links: [working] }
+      if (path === "/api/v1/agent/pi-chat/sessions/activity") return pendingActivity.promise
+      throw new Error(`unexpected post ${path}`)
+    })
+    getJson.mockResolvedValue([{ id: "pi-working", title: "Working chat" }])
+
+    const { unmount } = renderCard()
+    fireEvent.click(await screen.findByRole("button", { name: /open chat/i }))
+    expect(await screen.findByRole("region", { name: /linked chat sessions/i })).toBeInTheDocument()
+    unmount()
+
+    await act(async () => {
+      pendingActivity.resolve({ activities: [{ sessionId: "pi-working", status: "working", source: "live-runtime" }], omittedSessionIds: [] })
+      await pendingActivity.promise
+      await Promise.resolve()
+    })
+
+    expect(getJson).not.toHaveBeenCalled()
+    expect(openDetachedChat).not.toHaveBeenCalled()
+  })
+
   it("does not open a chat from superseded activity returned to openTaskChat", async () => {
     vi.useFakeTimers()
     const working = link({ id: "working", sessionId: "pi-working", title: "Working chat" })
@@ -343,6 +394,39 @@ describe("TaskCard task chat sessions", () => {
     mode = "missing"
     fireEvent.click(screen.getByRole("button", { name: "Retry" }))
     expect(await screen.findByText("Activity unavailable")).toBeInTheDocument()
+  })
+
+  it("keeps activity retry errors scoped to the task sessions that failed", async () => {
+    const taskA = { ...task, id: "task-a", number: "#613A", title: "Task A" }
+    const taskB = { ...task, id: "task-b", number: "#613B", title: "Task B" }
+    const linkA = link({ id: "link-a", taskId: "task-a", sessionId: "pi-a", title: "Chat A" })
+    const linkB = link({ id: "link-b", taskId: "task-b", sessionId: "pi-b", title: "Chat B" })
+    postJson.mockImplementation(async (path: string, body: { taskId?: string; sessionIds?: string[] }) => {
+      if (path === "/api/boring-tasks/sessions/list") return { links: body.taskId === "task-b" ? [linkB] : [linkA] }
+      if (path === "/api/v1/agent/pi-chat/sessions/activity") {
+        const ids = body.sessionIds ?? []
+        if (ids.includes("pi-a")) throw new Error("A activity down")
+        return { activities: ids.map((sessionId) => ({ sessionId, status: "idle", source: "persisted" })), omittedSessionIds: [] }
+      }
+      throw new Error(`unexpected post ${path}`)
+    })
+
+    render(
+      <TaskSessionActivityProvider>
+        <TaskCard task={taskA} draggable={false} onDragStart={vi.fn()} onDragEnd={vi.fn()} />
+        <TaskCard task={taskB} draggable={false} onDragStart={vi.fn()} onDragEnd={vi.fn()} />
+      </TaskSessionActivityProvider>,
+    )
+
+    const triggers = await screen.findAllByRole("button", { name: /open chat/i })
+    fireEvent.click(triggers[0])
+    expect(await screen.findByText("Activity refresh failed.")).toBeInTheDocument()
+
+    fireEvent.click(triggers[1])
+    await waitFor(() => expect(screen.getAllByRole("region", { name: /linked chat sessions/i })).toHaveLength(2))
+    expect(screen.getAllByText("Activity refresh failed.")).toHaveLength(1)
+    expect(screen.getByText("Chat A").closest("section")).toHaveTextContent("Activity refresh failed.")
+    expect(screen.getByText("Chat B").closest("section")).not.toHaveTextContent("Activity refresh failed.")
   })
 
   it("rolls up authoritative idle ahead of unavailable activity", async () => {

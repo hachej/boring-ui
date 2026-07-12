@@ -20,12 +20,12 @@ const TASK_SESSION_ACTIVITY_REGISTER_DEBOUNCE_MS = 25
 
 export interface TaskSessionActivityController {
   activities: Record<string, TaskSessionActivity>
-  error: string | null
   registerSessionIds(sessionIds: readonly string[]): () => void
   refreshSessionIds(sessionIds: readonly string[]): Promise<TaskSessionActivityRefreshResult>
   setOptimisticActivity(sessionId: string, activity: TaskSessionActivity): void
   clearSessionActivity(sessionId: string): void
   isLoading(sessionIds: readonly string[]): boolean
+  getError(sessionIds: readonly string[]): string | null
 }
 
 const TaskSessionActivityContext = createContext<TaskSessionActivityController | null>(null)
@@ -58,7 +58,7 @@ async function fetchSessionActivities(pluginClient: WorkspacePluginClient, sessi
 function useTaskSessionActivityController(enabled: boolean): TaskSessionActivityController {
   const pluginClient = useWorkspacePluginClient()
   const [activities, setActivities] = useState<Record<string, TaskSessionActivity>>({})
-  const [error, setError] = useState<string | null>(null)
+  const [errorsBySessionId, setErrorsBySessionId] = useState<Record<string, string>>({})
   const [registeredSessionIds, setRegisteredSessionIds] = useState<ReadonlySet<string>>(new Set())
   const [loadingSessionIds, setLoadingSessionIds] = useState<ReadonlySet<string>>(new Set())
   const registrationsRef = useRef(new Map<number, string[]>())
@@ -141,12 +141,28 @@ function useTaskSessionActivityController(enabled: boolean): TaskSessionActivity
           }
           return merged
         })
-        setError(null)
+        setErrorsBySessionId((current) => {
+          let changed = false
+          const merged = { ...current }
+          for (const sessionId of currentSessionIds) {
+            if (sessionId in merged) {
+              delete merged[sessionId]
+              changed = true
+            }
+          }
+          return changed ? merged : current
+        })
       }
       return currentSessionIds.length === sessionIds.length ? { status: "fresh", activities: next } : { status: "stale" }
     } catch (cause) {
-      if (mountedRef.current && isGenerationCurrent() && currentSessionIdsForRequest().length > 0) {
-        setError(cause instanceof Error ? cause.message : "Failed to load chat activity")
+      const currentSessionIds = mountedRef.current && isGenerationCurrent() ? currentSessionIdsForRequest() : []
+      if (currentSessionIds.length > 0) {
+        const message = cause instanceof Error ? cause.message : "Failed to load chat activity"
+        setErrorsBySessionId((current) => {
+          const merged = { ...current }
+          for (const sessionId of currentSessionIds) merged[sessionId] = message
+          return merged
+        })
       }
       throw cause
     } finally {
@@ -203,21 +219,35 @@ function useTaskSessionActivityController(enabled: boolean): TaskSessionActivity
       delete next[sessionId]
       return next
     })
+    setErrorsBySessionId((current) => {
+      if (!(sessionId in current)) return current
+      const next = { ...current }
+      delete next[sessionId]
+      return next
+    })
   }, [])
 
   const isLoading = useCallback((sessionIds: readonly string[]) => {
     return uniqueSessionIds(sessionIds).some((sessionId) => loadingSessionIds.has(sessionId))
   }, [loadingSessionIds])
 
+  const getError = useCallback((sessionIds: readonly string[]) => {
+    for (const sessionId of uniqueSessionIds(sessionIds)) {
+      const message = errorsBySessionId[sessionId]
+      if (message) return message
+    }
+    return null
+  }, [errorsBySessionId])
+
   return useMemo(() => ({
     activities,
-    error,
     registerSessionIds,
     refreshSessionIds,
     setOptimisticActivity,
     clearSessionActivity,
     isLoading,
-  }), [activities, clearSessionActivity, error, isLoading, refreshSessionIds, registerSessionIds, setOptimisticActivity])
+    getError,
+  }), [activities, clearSessionActivity, getError, isLoading, refreshSessionIds, registerSessionIds, setOptimisticActivity])
 }
 
 export function TaskSessionActivityProvider({ children }: { children: ReactNode }) {

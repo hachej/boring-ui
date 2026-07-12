@@ -35,10 +35,13 @@ function Probe() {
 
   return (
     <div>
-      <button type="button" onClick={() => { void activity.refreshSessionIds(["board-a"]) }}>Refresh A</button>
+      <button type="button" onClick={() => { void activity.refreshSessionIds(["board-a"]).catch(() => undefined) }}>Refresh A</button>
+      <button type="button" onClick={() => { void activity.refreshSessionIds(["board-b"]).catch(() => undefined) }}>Refresh B</button>
       <button type="button" onClick={() => activity.setOptimisticActivity("board-a", { status: "working", source: "live-runtime" })}>Optimistic A working</button>
       <span data-testid="activity-a">{activity.activities["board-a"]?.status ?? "none"}</span>
       <span data-testid="activity-b">{activity.activities["board-b"]?.status ?? "none"}</span>
+      <span data-testid="error-a">{activity.getError(["board-a"]) ?? "none"}</span>
+      <span data-testid="error-b">{activity.getError(["board-b"]) ?? "none"}</span>
     </div>
   )
 }
@@ -95,6 +98,51 @@ describe("TaskSessionActivityProvider request scoping", () => {
       await Promise.resolve()
     })
     expect(screen.getByTestId("fast-status")).toHaveTextContent("fresh")
+  })
+
+  it("scopes refresh errors to requested sessions and clears only successful sessions", async () => {
+    const pending: Array<{ sessionIds: string[]; request: ReturnType<typeof deferred<ActivityResponse>> }> = []
+    postJson.mockImplementation((path: string, body: { sessionIds?: string[] }) => {
+      if (path !== "/api/v1/agent/pi-chat/sessions/activity") throw new Error(`unexpected post ${path}`)
+      const request = deferred<ActivityResponse>()
+      pending.push({ sessionIds: body.sessionIds ?? [], request })
+      return request.promise
+    })
+
+    render(<TaskSessionActivityProvider><Probe /></TaskSessionActivityProvider>)
+
+    await act(async () => { await Promise.resolve() })
+    await act(async () => { await vi.advanceTimersByTimeAsync(25) })
+    expect(pending.map((entry) => entry.sessionIds)).toEqual([["board-a", "board-b"]])
+
+    fireEvent.click(screen.getByRole("button", { name: "Refresh A" }))
+    fireEvent.click(screen.getByRole("button", { name: "Refresh B" }))
+    expect(pending.map((entry) => entry.sessionIds)).toEqual([["board-a", "board-b"], ["board-a"], ["board-b"]])
+
+    await act(async () => {
+      pending[1].request.reject(new Error("A activity down"))
+      await pending[1].request.promise.catch(() => undefined)
+      await Promise.resolve()
+    })
+    expect(screen.getByTestId("error-a")).toHaveTextContent("A activity down")
+    expect(screen.getByTestId("error-b")).toHaveTextContent("none")
+
+    await act(async () => {
+      pending[2].request.resolve({ activities: [{ sessionId: "board-b", status: "idle", source: "persisted" }], omittedSessionIds: [] })
+      await pending[2].request.promise
+      await Promise.resolve()
+    })
+    expect(screen.getByTestId("error-a")).toHaveTextContent("A activity down")
+    expect(screen.getByTestId("error-b")).toHaveTextContent("none")
+
+    fireEvent.click(screen.getByRole("button", { name: "Refresh A" }))
+    expect(pending.map((entry) => entry.sessionIds)).toEqual([["board-a", "board-b"], ["board-a"], ["board-b"], ["board-a"]])
+    await act(async () => {
+      pending[3].request.resolve({ activities: [{ sessionId: "board-a", status: "idle", source: "persisted" }], omittedSessionIds: [] })
+      await pending[3].request.promise
+      await Promise.resolve()
+    })
+    expect(screen.getByTestId("error-a")).toHaveTextContent("none")
   })
 
   it("keeps unrelated board poll results when a single-session refresh supersedes one session", async () => {
