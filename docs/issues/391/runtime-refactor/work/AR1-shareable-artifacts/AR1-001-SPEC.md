@@ -1,12 +1,17 @@
 # AR1-001 — shareable artifact transfer and same-workspace share contract
 
-Status: **spec draft — awaits adversarial review before AR1 implementation
-beads are created**. This specification is the dispatch gate named by
+Status: **Amended per adversarial review + owner ratification — READY FOR
+DISPATCH (Lane W)**. The 2026-07-12 adversarial review (PR #656) raised five
+blocking findings; all five are resolved by amendment below (§2.3, §2.7, §5,
+§8). The owner ratified the three §2.12 open items on 2026-07-12 (see
+"Owner ratification" note in §2.12). Lane W implementation beads dispatch now.
+Lane X (`ArtifactTransferHandle` blob transfer) remains spec-ready but
+build-gated on the first contracted-mode engagement per
+[IMPLEMENTATION-GUARDRAILS.md](../../IMPLEMENTATION-GUARDRAILS.md) AR1 section
+— see §8. This specification is the dispatch gate named by
 [PLAN.md](./PLAN.md), [TODO.md](./TODO.md), [HANDOFF.md](./HANDOFF.md),
 [PR-PLAN.md](../../PR-PLAN.md) row 6, and
 [IMPLEMENTATION-GUARDRAILS.md](../../IMPLEMENTATION-GUARDRAILS.md) AR1 section.
-No implementation bead exists until this spec is accepted with no unresolved
-adversarial finding.
 
 > Phase: Phase AR1 — shareable artifacts (after M1 recuts, before M2/E2)
 > Ordering authority: [INDEX.md](../../INDEX.md) · Vision: [VISION.md](../../VISION.md)
@@ -54,7 +59,9 @@ rules, limits, audit events, rollback, error codes, and the deep-link +
 tombstone behavior. It does **not** write implementation code. Per TODO.md and
 Guardrails, implementation beads (share-entry store, deep-link route, MCP
 resource, and the cross-workspace copy path) are created only after this spec is
-adversarially accepted.
+adversarially accepted — see §8 for the per-lane dispatch gating (Lane W
+dispatches on acceptance; Lane X remains build-gated on the first
+contracted-mode engagement).
 
 ## 2. Lane X — cross-workspace deliverable
 
@@ -87,11 +94,18 @@ interface ArtifactBlobV1 {
 }
 ```
 
-The blob is keyed by `blobId`; `digest` is a verification and dedupe field, not
-the primary key. Two captures of identical bytes MAY share one stored blob by
-digest, but each capture allocates its own `blobId`/handle so retention is not
-entangled across handles (a revocation of one handle must not delete bytes a
-second live handle still pins — see 2.7).
+**Ownership is strictly 1:1: one handle, one blob.** The blob is keyed by
+`blobId`; `digest` is a verification field only, never a dedupe key. Every
+capture — even of byte-identical content — allocates its own `blobId` and its
+own `ArtifactBlob` row, and `retention.ownerHandleId` names exactly the one
+handle that governs its lifecycle (Adversarial review finding 2, 2026-07-12:
+dedup-by-digest was dropped because it made `ownerHandleId`'s singular
+ownership untestable against AC 6.1.9 — a shared blob has no single owner to
+name). **Future alternative:** if storage pressure from duplicate captures
+becomes a real cost, a later bead may introduce a refcounted blob store
+(`retention.ownerHandleIds: string[]` or a separate refcount table); that is
+explicitly out of scope for this spec and MUST NOT be built speculatively
+(Guardrails "boring by default").
 
 **`ArtifactTransferHandle` (the transfer authority — signed, expiring,
 revocable).** The only object a producer returns and the only thing a consumer
@@ -118,9 +132,12 @@ interface ArtifactTransferHandleV1 {
     digest: `sha256:${string}` // == blob digest, restated for tamper-evidence
   }
   issuedAt: string
-  expiresAt: string         // REQUIRED; see 2.4 for default open item
+  expiresAt: string         // REQUIRED; default 7 days from mint (owner-ratified, 2.12)
   revoked: boolean
-  maxRedemptions: number | null // null = unbounded within expiry; default 1 (open item)
+  maxRedemptions: number | null // null = unbounded within expiry; default 1 (owner-ratified, 2.12)
+  redemptionCount: number   // authoritative counter; mutated only by the 2.3.4
+                             // atomic compare-and-increment inside the
+                             // serializable reservation transaction
 }
 ```
 
@@ -167,8 +184,8 @@ call. Order of operations is mandatory and fails closed at each step:
    does not read a workspace file. A later file-backed mint (separate bead) may
    read through an authorized source `Workspace` adapter, but the source path
    stays server-internal and never enters the handle. Oversize, binary, or
-   truncated payloads reject with `AR1_PAYLOAD_REJECTED` (see 2.6); there is no
-   path fallback.
+   truncated payloads reject with one of the three stable codes reused from M1
+   (see 2.6); there is no path fallback.
 3. **Content validation** (2.6): media-type allowlist, size cap, secret scan,
    path-shaped-content rejection.
 4. **Digest + persist.** Compute `sha256` over the exact captured bytes, persist
@@ -185,25 +202,59 @@ no handle. This is the load-bearing immutability guarantee (PLAN lines 19-21).
 ### 2.3 Redemption
 
 Redemption is the destination-side operation. It authorizes the handle and the
-destination workspace **separately** (PLAN line 22; HANDOFF line 17):
+destination workspace **separately** (PLAN line 22; HANDOFF line 17). Steps 1-2
+are a fast, non-authoritative pre-check; step 4 is the single authoritative
+transaction boundary that resolves both the `maxRedemptions` race (Adversarial
+review finding 1) and the revoke-vs-redeem race (Adversarial review finding 4)
+in one place.
 
-1. **Handle authorization.** Verify signature, `expiresAt > now`,
-   `revoked == false`, and `redemptionCount < maxRedemptions` (if bounded).
-   Verify the redeeming principal satisfies `audience` (workspace/principal
-   match, or `open-authenticated` = any authenticated principal). Any failure →
-   `AR1_HANDLE_EXPIRED`, `AR1_HANDLE_REVOKED`, `AR1_HANDLE_AUDIENCE_MISMATCH`, or
-   `AR1_HANDLE_INVALID` **before any destination mutation**.
+1. **Handle pre-check (non-authoritative).** Verify signature,
+   `expiresAt > now`, `revoked == false`, and `redemptionCount < maxRedemptions`
+   (if bounded) against the last-read state. Verify the redeeming principal
+   satisfies `audience` (workspace/principal match, or `open-authenticated` =
+   any authenticated principal). Any failure → `AR1_HANDLE_EXPIRED`,
+   `AR1_HANDLE_REVOKED`, `AR1_HANDLE_AUDIENCE_MISMATCH`, or `AR1_HANDLE_INVALID`
+   **before any destination mutation**. This step is an optimization only — it
+   MUST NOT be treated as authorization to copy; step 4 re-derives every one of
+   these facts from authoritative state inside the transaction.
 2. **Destination authorization.** The redeeming principal must be an authorized
    member of the destination workspace (separate membership check).
    Failure → `AR1_DESTINATION_UNAUTHORIZED` before mutation.
 3. **Byte re-verification.** Load the `ArtifactBlob`, re-hash, and compare to the
    handle's pinned `digest`. Mismatch → `AR1_DIGEST_MISMATCH`, no copy.
-4. **Idempotent copy.** Materialize an immutable copy into the destination
-   workspace and mint a `WorkspaceFileLink`. Redemption is **idempotent** keyed
-   by `(handleId, destinationWorkspaceId)`: a retry after a completed copy
-   returns the *same* `linkId` and does not create a second copy or consume a
-   second redemption. A retry after a *failed partial* copy rolls the partial
-   back (2.10) and retries cleanly.
+4. **Atomic reservation + idempotent copy (single serializable transaction).**
+   Open one serializable transaction that performs, as a single commit/abort
+   unit:
+   1. Reload the handle's authoritative state (`revoked`, `expiresAt`,
+      `redemptionCount`) inside the transaction.
+   2. If `revoked == true` or `expiresAt <= now` → abort, no mutation,
+      `AR1_HANDLE_REVOKED` / `AR1_HANDLE_EXPIRED`. This is the revocation check
+      referenced in 2.4: **revoke wins iff the revoke transaction commits
+      first** — serializable isolation guarantees redemption either sees the
+      committed revoke (and aborts) or the revoke sees a redemption that
+      already committed (and revocation still succeeds, but stops only
+      *future* redemptions, 2.4).
+   3. **Compare-and-increment.** If bounded, check
+      `redemptionCount < maxRedemptions` against the just-reloaded value and,
+      in the same statement/transaction, increment `redemptionCount`. If the
+      check fails → abort, no mutation, `AR1_REDEMPTION_EXHAUSTED`. This
+      reservation is what makes single-delivery correct across concurrent
+      redeemers targeting *different* destination workspaces — the
+      `(handleId, destinationWorkspaceId)` idempotency key alone is
+      insufficient because it does not serialize across distinct destinations.
+   4. Materialize the immutable copy into the destination workspace and mint
+      the `WorkspaceFileLink` (or, for the idempotent-retry case in the
+      paragraph below, return the existing one).
+   5. Commit. Any failure at any point aborts the whole transaction: the
+      reservation is released, no partial copy, no partial `WorkspaceFileLink`
+      (2.10).
+
+   Redemption is **idempotent** keyed by `(handleId, destinationWorkspaceId)`:
+   before opening the reservation transaction, check for an existing committed
+   copy for this key and short-circuit to step 5 with the *same* `linkId`,
+   consuming no additional redemption. A retry after a *failed partial* copy
+   sees no committed copy, so it re-enters the reservation transaction cleanly
+   (2.10).
 5. **Return.** Emit `artifact.handle.redeemed`, return the destination-local
    `linkId` and its deep link (2.11). No source state, no path, no capability
    secret is returned.
@@ -216,11 +267,18 @@ internal-network address, or accepts an absolute/workspace-relative path
 
 - **Expiry is mandatory.** Every handle has `expiresAt`. After expiry the handle
   is unredeemable (`AR1_HANDLE_EXPIRED`) and the blob becomes GC-eligible (2.7).
-- **Revocation** flips `revoked = true` on the handle. It is authorized to the
-  handle issuer's principal or a source-workspace owner. Post-revocation
-  redemption fails `AR1_HANDLE_REVOKED`. Revocation is durable and MUST survive
-  process restart; a cached "not revoked" view must reload authoritative state
-  before the copy commits.
+- **Revocation** flips `revoked = true` on the handle in its own transaction.
+  It is authorized to the handle issuer's principal or a source-workspace
+  owner. Post-revocation redemption fails `AR1_HANDLE_REVOKED`. Revocation is
+  durable and MUST survive process restart. **Revoke-vs-redeem boundary
+  (Adversarial review finding 4, 2026-07-12):** a cached "not revoked" view is
+  never authoritative for the copy decision — the redemption's step 2.3.4
+  serializable transaction reloads `revoked` from authoritative state and
+  aborts before any mutation if it is `true`. Revoke wins iff its transaction
+  commits before redemption's reservation transaction commits; there is no
+  window between "reload" and "commit" because both facts are read and acted
+  on inside the same transaction (this replaces the earlier looser "reload
+  before the copy commits" wording, which left that window open).
 - **Already-materialized copies are unaffected by later expiry/revocation.**
   Once a `WorkspaceFileLink` exists, it is a normal destination-local file
   governed by destination membership — expiring or revoking the transfer handle
@@ -239,7 +297,8 @@ holder cannot rewrite provenance.
 ### 2.6 Payload, type, and size limits; content validation
 
 The first tracer inherits M1's already-ratified caps (PR-PLAN.md M1 row
-BBM1-002) as the AR1 starting proposal — reuse, do not reinvent:
+BBM1-002) **exactly** — one limit family, reuse not reinvent. **Owner-ratified
+2026-07-12 (closes 2.12 open item 1):**
 
 | Field | M1-inherited cap | Notes |
 | --- | --- | --- |
@@ -247,13 +306,33 @@ BBM1-002) as the AR1 starting proposal — reuse, do not reinvent:
 | Markdown artifact | 256 KiB | Markdown content kind |
 | serialized total | 384 KiB | full transfer payload ceiling |
 
-- **Exact caps for AR1 are an open item (2.12)** — the above are the proposed
-  defaults, to be ratified in review. Oversize → `AR1_PAYLOAD_REJECTED`.
+- **Rejection codes reuse M1's three codes as-is (Adversarial review finding
+  3, 2026-07-12).** M1 already ships `M1_INPUT_TOO_LARGE`,
+  `M1_RESULT_TOO_LARGE`, and `M1_ARTIFACT_UNSUPPORTED` for this exact object
+  (see M1 TODO.md BBM1-002); AR1 re-validates the same in-process payload at
+  its own boundary and MUST NOT collapse the three into one coarser code. AR1
+  uses the AR1-prefixed equivalents, mapped 1:1 so the failure space stays
+  total and every acceptance criterion can distinguish cause:
+
+  | AR1 code | Mirrors | Triggers on |
+  | --- | --- | --- |
+  | `AR1_INPUT_TOO_LARGE` | `M1_INPUT_TOO_LARGE` | final artifact bytes exceed 96 KiB |
+  | `AR1_RESULT_TOO_LARGE` | `M1_RESULT_TOO_LARGE` | serialized total exceeds 384 KiB |
+  | `AR1_ARTIFACT_UNSUPPORTED` | `M1_ARTIFACT_UNSUPPORTED` | Markdown artifact exceeds 256 KiB, binary/disallowed content type, or a truncated/malformed capture |
+
+  This replaces the single `AR1_PAYLOAD_REJECTED` code from the pre-review
+  draft; `AR1_PAYLOAD_REJECTED` is retired and MUST NOT be emitted (see §5).
 - **Content-type allowlist.** Only explicitly allowed media types (text/plain,
   text/markdown, application/json, and the M1-agreed self-contained kinds).
-  Binary/unknown types reject; no path fallback.
-- **Secret scan.** Captured bytes are scanned for secret-shaped content; a hit
-  fails `AR1_PAYLOAD_REJECTED` (no secret ever enters a durable blob or audit).
+  Binary/unknown types reject with `AR1_ARTIFACT_UNSUPPORTED`; no path
+  fallback.
+- **Secret scan.** The secret-shaped-content check is M1's own no-secrets
+  invariant (M1 TODO.md "no secret canary appears"), not a reinvented AR1
+  scanner (Adversarial review finding 3 minor note) — M1 never hands AR1 bytes
+  that failed its own scan. Any AR1-side defense-in-depth check that still
+  flags secret-shaped content fails closed under `AR1_ARTIFACT_UNSUPPORTED`
+  (no secret ever enters a durable blob or audit); it does not mint a fourth
+  code.
 - **No-path-fetch invariant (SSRF/path guard).** The mint/redeem adapters reject
   every arbitrary caller URL, redirect, internal-network address, absolute path,
   and workspace-relative path *before* any capture or destination mutation
@@ -262,18 +341,19 @@ BBM1-002) as the AR1 starting proposal — reuse, do not reinvent:
 
 ### 2.7 Durable blob ownership, retention, and GC
 
-- The `ArtifactBlob` is host-owned and lifecycle-tied to its owning handle via
-  `retention.ownerHandleId`.
-- A blob is **GC-eligible** when its owning handle is expired *or* revoked *and*
-  no other live handle pins the same `blobId`. GC never deletes bytes a live
-  handle still references.
+- The `ArtifactBlob` is host-owned and lifecycle-tied 1:1 to its owning handle
+  via `retention.ownerHandleId` (2.1: no dedup, no shared blobs).
+- A blob is **GC-eligible** as soon as its one owning handle is expired *or*
+  revoked. There is no second-handle-pins-this-blob case to check (2.1).
 - **A materialized destination copy does not depend on the blob.** Once
   redemption copies bytes into the destination workspace, that copy is
   independent; blob GC after expiry does not affect delivered `WorkspaceFileLink`
   files.
 - GC is a bounded sweep (or reference-count on state transition) — **not** a
   background reconciler/daemon (Guardrails: boring by default). Retention
-  duration default is an open item (2.12).
+  duration default is owner-ratified: `expiresAt` defaults to 7 days from
+  mint; blob GC runs on a bounded sweep 72 hours past expiry or revocation
+  (2.12).
 - Retention/GC state transitions emit audit events (2.8).
 
 ### 2.8 Audit events
@@ -305,10 +385,13 @@ producer, digest, `copiedAt`), never a bare 404 and never source state
 
 - **Mint rollback:** a failed capture/persist leaves no handle and no partial
   blob.
-- **Redemption rollback:** a copy that fails partway leaves no `WorkspaceFileLink`
-  and no partial destination file; the redemption count is not consumed; a retry
-  starts clean. Rollback is per-`(handleId, destinationWorkspaceId)` and never
-  mutates the source workspace or the blob.
+- **Redemption rollback:** an abort of the 2.3.4 reservation transaction (copy
+  failure, digest mismatch discovered mid-transaction, or any other error)
+  rolls back atomically: no `WorkspaceFileLink`, no partial destination file,
+  and the `redemptionCount` compare-and-increment is rolled back with it — the
+  reservation is released, not consumed. A retry starts clean. Rollback is
+  per-`(handleId, destinationWorkspaceId)` and never mutates the source
+  workspace or the blob.
 - Rollback never moves an already-committed delivery backward (delivery is
   final, 2.4).
 
@@ -321,15 +404,27 @@ producer, digest, `copiedAt`), never a bare 404 and never source state
 - A member lands on the copy; a non-member gets a clean denial (not a 404 that
   leaks existence differently); a missing copy renders the tombstone (2.9).
 
-### 2.12 Lane X open items (require ratification)
+### 2.12 Lane X open items — OWNER RATIFICATION (2026-07-12)
 
-- **Exact size caps.** Proposed = M1-inherited (2.6 table). Ratify or override in
-  review.
-- **Retention duration defaults.** How long a blob persists past
-  expiry/revocation before GC, and the default `expiresAt` window at mint.
-  Proposed defaults to be set in review; marked here as unresolved.
-- **`maxRedemptions` default.** Proposed = 1 (single-delivery). Ratify whether
-  the tracer default is single-use or bounded-multi.
+All three items below are **ratified, closed, no longer open.** Ratified by
+the owner on 2026-07-12 following the adversarial review (PR #656):
+
+- **Exact size caps — RATIFIED: M1-inherited, exactly, one limit family.**
+  96 KiB final artifact bytes / 256 KiB Markdown artifact / 384 KiB serialized
+  total (2.6 table). No AR1-specific cap is introduced; a second limit set
+  would guarantee drift from M1.
+- **Retention duration — RATIFIED: 7-day default expiry + 72h GC grace.**
+  `expiresAt` defaults to 7 days from mint (covers human pickup window); blob
+  GC runs 72 hours past expiry or revocation (bounded sweep, not a daemon —
+  2.7). Both figures are defaults; a mint caller may set a shorter
+  `expiresAt` but not a longer one without a later-named override mechanism
+  (none exists yet — out of scope here).
+- **`maxRedemptions` default — RATIFIED: 1 (single-use).**
+  `open-authenticated` audience combined with unbounded (`null`)
+  `maxRedemptions` is deferred (broadcast delivery is not named by Decision
+  22 and is out of scope for the tracer). Single-use-to-one-destination
+  matches Decision 22's one-consumer model and is enforced by the 2.3.4
+  atomic reservation.
 
 ## 3. Lane W — same-workspace share
 
@@ -399,17 +494,21 @@ foreign workspace/deployment id.
 | --- | --- | --- |
 | `AR1_SOURCE_UNAUTHORIZED` | X | mint caller lacks source-workspace authorization |
 | `AR1_SOURCE_INPUT_REJECTED` | X | arbitrary URL/redirect/internal-net/absolute/relative path source rejected before capture |
-| `AR1_PAYLOAD_REJECTED` | X | oversize, binary, disallowed type, truncated, or secret-shaped payload |
+| `AR1_INPUT_TOO_LARGE` | X | final artifact bytes exceed the 96 KiB cap (mirrors `M1_INPUT_TOO_LARGE`, 2.6) |
+| `AR1_RESULT_TOO_LARGE` | X | serialized total exceeds the 384 KiB cap (mirrors `M1_RESULT_TOO_LARGE`, 2.6) |
+| `AR1_ARTIFACT_UNSUPPORTED` | X | Markdown artifact exceeds 256 KiB, binary/disallowed content type, truncated/malformed capture, or secret-shaped content (mirrors `M1_ARTIFACT_UNSUPPORTED`, 2.6) |
 | `AR1_CAPTURE_FAILED` | X | byte capture/persist failed; no handle issued, no partial blob |
 | `AR1_HANDLE_INVALID` | X | signature/shape invalid or tampered |
 | `AR1_HANDLE_EXPIRED` | X | `expiresAt` passed |
-| `AR1_HANDLE_REVOKED` | X | handle revoked |
+| `AR1_HANDLE_REVOKED` | X | handle revoked (includes losing a concurrent revoke-vs-redeem race, 2.3/2.4) |
 | `AR1_HANDLE_AUDIENCE_MISMATCH` | X | redeeming principal outside handle audience |
 | `AR1_DESTINATION_UNAUTHORIZED` | X | redeeming principal not a member of destination workspace |
 | `AR1_DIGEST_MISMATCH` | X | blob bytes do not match pinned digest at redemption |
-| `AR1_REDEMPTION_EXHAUSTED` | X | `maxRedemptions` reached |
+| `AR1_REDEMPTION_EXHAUSTED` | X | `maxRedemptions` reached, including losing a concurrent cross-destination reservation race (2.3) |
 | `AR1_SHARE_NOT_FOUND` | W | no such share entry |
 | `AR1_SHARE_TOMBSTONED` | W | entry exists but target file is gone (render provenance) |
+
+`AR1_PAYLOAD_REJECTED` (pre-review draft) is retired; see 2.6.
 
 ## 6. Acceptance criteria
 
@@ -441,10 +540,26 @@ Machine-checkable where marked (CI or integration-provable).
 8. **[machine]** Revocation and expiry are durable across process restart (a
    restart between revoke and redeem still fails `AR1_HANDLE_REVOKED`).
 9. **[machine]** Blob GC after expiry/revocation does not affect an
-   already-materialized destination copy; a second live handle pinning the same
-   blob prevents GC.
+   already-materialized destination copy (per the 1:1 handle↔blob ownership
+   ruling, 2.1/2.7, GC eligibility depends only on that blob's one owning
+   handle — there is no shared-blob case to test).
 10. **[review]** No secret value or raw path appears in any handle, link, URL,
     audit record, error, or MCP identifier.
+11. **[machine]** **Concurrency — `maxRedemptions` (Adversarial review finding
+    1).** A handle with `maxRedemptions: 1` is redeemed concurrently by two
+    authorized principals in two *different* destination workspaces (C and D).
+    Exactly one redemption succeeds and returns a `linkId`; the other fails
+    `AR1_REDEMPTION_EXHAUSTED` before any destination mutation. Exactly one
+    `WorkspaceFileLink` is created across both workspaces combined.
+12. **[machine]** **Concurrency — revoke vs. redeem (Adversarial review
+    finding 4).** A revoke request and a redeem request for the same handle
+    are issued concurrently. Exactly one of the following holds: (a) revoke
+    commits first → redemption fails `AR1_HANDLE_REVOKED` and no
+    `WorkspaceFileLink` is created; or (b) redemption's reservation
+    transaction (2.3.4) commits first → redemption succeeds and the
+    already-delivered copy is unaffected by the revoke that follows (2.4).
+    There is no interleaving in which both a committed copy exists and the
+    handle was revoked before that commit.
 
 ### 6.2 Lane W (same-workspace)
 
@@ -469,11 +584,39 @@ named triggers (Decision 22).
 
 ## 8. Review closeout
 
-This spec is accepted only when adversarial review confirms: both lanes' record
-shapes, the mint→capture→persist→issue ordering, the separate handle vs
-destination authorization, expiry/revocation/GC durability, idempotent copy +
-rollback, the SSRF/path guard, the no-secret/no-path invariant across both
-lanes, the stable error set, and the three open items (2.12) are ratified.
-Implementation beads (share-entry store, `/a/<id>` route + tombstone, MCP
-resource, and the cross-workspace copy path) are created **only** after that
-acceptance, each with its own proof and review budget (TODO.md exit).
+**Acceptance confirmed (2026-07-12).** Adversarial review (PR #656) raised
+five blocking findings, all resolved by amendment: (1) atomic
+compare-and-increment reservation for `maxRedemptions`, §2.3.4, with AC 6.1.11;
+(2) blob dedup dropped, 1:1 handle↔blob ownership, §2.1/§2.7, with refcounting
+noted as a future alternative only; (3) `AR1_PAYLOAD_REJECTED` retired in
+favor of M1's three reused codes (`AR1_INPUT_TOO_LARGE` /
+`AR1_RESULT_TOO_LARGE` / `AR1_ARTIFACT_UNSUPPORTED`), §2.6/§5; (4) the
+revoke-vs-redeem boundary is now the single serializable transaction in
+§2.3.4, with AC 6.1.12; (5) this section now carries the build-dispatch gate
+(below). The three §2.12 open items are owner-ratified (2026-07-12): size caps
+inherit M1's exactly (96/256/384 KiB), retention is 7-day default expiry +
+72h GC grace, and `maxRedemptions` defaults to 1 with `open-authenticated` +
+unbounded deferred.
+
+Both lanes' record shapes, the mint→capture→persist→issue ordering, the
+separate handle vs destination authorization, expiry/revocation/GC
+durability, idempotent copy + rollback, the SSRF/path guard, the
+no-secret/no-path invariant across both lanes, and the stable error set are
+confirmed against this amended text.
+
+**Dispatch gating (Adversarial review finding 5).** Acceptance does not mean
+"build everything now." Per
+[IMPLEMENTATION-GUARDRAILS.md](../../IMPLEMENTATION-GUARDRAILS.md) AR1
+section ("Do NOT build the cross-workspace `ArtifactTransferHandle` blob lane
+until the first contracted-mode engagement exists"):
+
+- **Lane W beads dispatch now.** The share-entry store, `/a/<id>` route +
+  tombstone, and MCP resource for same-workspace share are spec-ready and
+  unblocked — create their implementation beads immediately with their own
+  proof and review budget (TODO.md exit).
+- **Lane X beads are spec-ready but build-gated.** The `ArtifactTransferHandle`
+  + `ArtifactBlob` cross-workspace copy path MUST NOT be built until the first
+  contracted-mode engagement exists (Guardrails AR1). This spec's acceptance
+  removes the *spec* gate for Lane X; it does not remove the *build* gate. A
+  dispatcher reading "accepted" MUST NOT start Lane X implementation on that
+  basis alone — confirm the guardrail trigger first.
