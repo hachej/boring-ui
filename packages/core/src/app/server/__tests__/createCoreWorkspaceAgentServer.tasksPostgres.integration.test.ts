@@ -5,7 +5,6 @@ import { afterAll, describe, expect, it } from 'vitest'
 import postgres from 'postgres'
 
 import { createTasksServerPlugin } from '../../../../../../plugins/tasks/src/server/index'
-import { PiSessionStore } from '../../../../../../packages/agent/src/server/harness/pi-coding-agent/sessions'
 import { runMigrations } from '../../../server/db/migrate'
 import { resolveCoreTestDatabase, type CoreTestDatabase } from '../../../server/db/__tests__/testDatabase'
 import type { CoreConfig } from '../../../shared/types'
@@ -75,6 +74,10 @@ async function signUp(app: CoreWorkspaceAgentServer, email: string): Promise<str
   return cookies.map((cookie) => cookie.split(';')[0]).join('; ')
 }
 
+function workspaceQuery(workspaceId?: string): string {
+  return workspaceId ? `?workspaceId=${encodeURIComponent(workspaceId)}` : ''
+}
+
 async function createPiSession(app: CoreWorkspaceAgentServer, input: {
   workspaceId?: string
   title: string
@@ -82,12 +85,52 @@ async function createPiSession(app: CoreWorkspaceAgentServer, input: {
 }): Promise<{ id: string; title: string }> {
   const response = await app.inject({
     method: 'POST',
-    url: `/api/v1/agent/pi-chat/sessions${input.workspaceId ? `?workspaceId=${encodeURIComponent(input.workspaceId)}` : ''}`,
+    url: `/api/v1/agent/pi-chat/sessions${workspaceQuery(input.workspaceId)}`,
     headers: { cookie: input.cookie },
     payload: { title: input.title },
   })
-  expect(response.statusCode).toBe(201)
+  expect(response.statusCode, response.body).toBe(201)
   return response.json()
+}
+
+async function renamePiSession(app: CoreWorkspaceAgentServer, input: {
+  workspaceId: string
+  sessionId: string
+  title: string
+  cookie: string
+}): Promise<{ id: string; title: string }> {
+  const response = await app.inject({
+    method: 'PATCH',
+    url: `/api/v1/agent/pi-chat/sessions/${encodeURIComponent(input.sessionId)}${workspaceQuery(input.workspaceId)}`,
+    headers: { cookie: input.cookie },
+    payload: { title: input.title },
+  })
+  expect(response.statusCode, response.body).toBe(200)
+  return response.json()
+}
+
+async function listPiSessions(app: CoreWorkspaceAgentServer, input: {
+  workspaceId: string
+  activeSessionId: string
+  cookie: string
+}) {
+  return await app.inject({
+    method: 'GET',
+    url: `/api/v1/agent/pi-chat/sessions?workspaceId=${encodeURIComponent(input.workspaceId)}&activeSessionId=${encodeURIComponent(input.activeSessionId)}`,
+    headers: { cookie: input.cookie },
+  })
+}
+
+async function readPiSessionState(app: CoreWorkspaceAgentServer, input: {
+  workspaceId: string
+  sessionId: string
+  cookie: string
+}) {
+  return await app.inject({
+    method: 'GET',
+    url: `/api/v1/agent/pi-chat/${encodeURIComponent(input.sessionId)}/state${workspaceQuery(input.workspaceId)}`,
+    headers: { cookie: input.cookie },
+  })
 }
 
 afterAll(async () => {
@@ -113,33 +156,49 @@ describe.runIf(TEST_DB)('hosted Tasks Postgres composition', () => {
       authHeaders.set('cookie', cookie)
       const authSession = await firstApp.auth.api.getSession({ headers: authHeaders })
       expect(authSession?.user?.id).toEqual(expect.any(String))
-      const routedSession = await createPiSession(firstApp, { workspaceId: 'workspace-a', title: 'Workspace A routed session', cookie })
-      const workspaceSessions = await firstApp.inject({
-        method: 'GET',
-        url: `/api/v1/agent/pi-chat/sessions?workspaceId=workspace-a&activeSessionId=${encodeURIComponent(routedSession.id)}`,
-        headers: { cookie },
+      const defaultSession = await createPiSession(firstApp, { title: 'Default routed session', cookie })
+      const createdSession = await createPiSession(firstApp, { workspaceId: 'workspace-a', title: 'Workspace A routed session', cookie })
+      const workspaceSession = await renamePiSession(firstApp, {
+        workspaceId: 'workspace-a',
+        sessionId: createdSession.id,
+        title: 'Workspace A routed session renamed',
+        cookie,
+      })
+      expect(workspaceSession).toMatchObject({ id: createdSession.id, title: 'Workspace A routed session renamed' })
+
+      const workspaceSessions = await listPiSessions(firstApp, {
+        workspaceId: 'workspace-a',
+        activeSessionId: workspaceSession.id,
+        cookie,
       })
       expect(workspaceSessions.statusCode, workspaceSessions.body).toBe(200)
-      expect(workspaceSessions.json()).toEqual(expect.arrayContaining([expect.objectContaining({ id: routedSession.id })]))
+      expect(workspaceSessions.json()).toEqual(expect.arrayContaining([
+        expect.objectContaining({ id: workspaceSession.id, title: 'Workspace A routed session renamed' }),
+      ]))
 
-      const defaultSession = await new PiSessionStore('', { sessionRoot, sessionNamespace: 'default' })
-        .create({ workspaceId: 'default' }, { title: 'Default runtime session' })
-      const workspaceSeedStore = new PiSessionStore('', { sessionRoot, sessionNamespace: 'workspace-a' })
-      const workspaceSession = await workspaceSeedStore.create({ workspaceId: 'workspace-a' }, { title: 'Workspace A session' })
-      await expect(workspaceSeedStore.list({ workspaceId: 'workspace-a' }, { includeId: workspaceSession.id })).resolves.toEqual(
-        expect.arrayContaining([expect.objectContaining({ id: workspaceSession.id })]),
-      )
       const taskSearch = await firstApp.inject({
         method: 'POST',
         url: '/api/boring-tasks/sessions/search?workspaceId=workspace-a',
-        payload: { query: 'Workspace A' },
+        headers: { cookie },
+        payload: { query: 'renamed' },
       })
       expect(taskSearch.statusCode, taskSearch.body).toBe(200)
-      expect(taskSearch.json().sessions).toEqual(expect.arrayContaining([expect.objectContaining({ id: workspaceSession.id })]))
+      expect(taskSearch.json().sessions).toEqual(expect.arrayContaining([
+        expect.objectContaining({ id: workspaceSession.id, title: 'Workspace A routed session renamed' }),
+      ]))
+
+      const unauthenticatedLink = await firstApp.inject({
+        method: 'POST',
+        url: '/api/boring-tasks/sessions/link?workspaceId=workspace-a',
+        payload: { adapterId: 'github', taskId: '614', sessionId: workspaceSession.id },
+      })
+      expect(unauthenticatedLink.statusCode).toBe(404)
+      expect(unauthenticatedLink.json()).toMatchObject({ code: 'TASK_SESSION_NOT_FOUND' })
 
       const wrongRuntimeLink = await firstApp.inject({
         method: 'POST',
         url: '/api/boring-tasks/sessions/link?workspaceId=workspace-a',
+        headers: { cookie },
         payload: { adapterId: 'github', taskId: '614', sessionId: defaultSession.id },
       })
       expect(wrongRuntimeLink.statusCode).toBe(404)
@@ -148,22 +207,24 @@ describe.runIf(TEST_DB)('hosted Tasks Postgres composition', () => {
       const linked = await firstApp.inject({
         method: 'POST',
         url: '/api/boring-tasks/sessions/link?workspaceId=workspace-a',
+        headers: { cookie },
         payload: { workspaceId: 'workspace-b', adapterId: 'github', taskId: '614', sessionId: workspaceSession.id },
       })
       expect(linked.statusCode, linked.body).toBe(200)
       const link = linked.json().link
-      expect(link).toMatchObject({ workspaceId: 'workspace-a', sessionId: workspaceSession.id, title: 'Workspace A session' })
+      expect(link).toMatchObject({ workspaceId: 'workspace-a', sessionId: workspaceSession.id, title: 'Workspace A routed session renamed' })
 
       const persistedRows = await sql`
         SELECT workspace_id, adapter_id, task_id, session_id, title
         FROM boring_task_session_bindings
         WHERE id = ${link.id}
       `
-      expect(persistedRows).toEqual([{ workspace_id: 'workspace-a', adapter_id: 'github', task_id: '614', session_id: workspaceSession.id, title: 'Workspace A session' }])
+      expect(persistedRows).toEqual([{ workspace_id: 'workspace-a', adapter_id: 'github', task_id: '614', session_id: workspaceSession.id, title: 'Workspace A routed session renamed' }])
 
       const workspaceBList = await firstApp.inject({
         method: 'POST',
         url: '/api/boring-tasks/sessions/list?workspaceId=workspace-b',
+        headers: { cookie },
         payload: { adapterId: 'github', taskId: '614' },
       })
       expect(workspaceBList.statusCode).toBe(200)
@@ -176,14 +237,36 @@ describe.runIf(TEST_DB)('hosted Tasks Postgres composition', () => {
       const listedAfterRestart = await secondApp.inject({
         method: 'POST',
         url: '/api/boring-tasks/sessions/list?workspaceId=workspace-a',
+        headers: { cookie },
         payload: { adapterId: 'github', taskId: '614' },
       })
-      expect(listedAfterRestart.statusCode).toBe(200)
-      expect(listedAfterRestart.json().links).toEqual([expect.objectContaining({ id: link.id, sessionId: workspaceSession.id })])
+      expect(listedAfterRestart.statusCode, listedAfterRestart.body).toBe(200)
+      expect(listedAfterRestart.json().links).toEqual([
+        expect.objectContaining({ id: link.id, sessionId: workspaceSession.id, title: 'Workspace A routed session renamed' }),
+      ])
+
+      const listedSessionsAfterRestart = await listPiSessions(secondApp, {
+        workspaceId: 'workspace-a',
+        activeSessionId: workspaceSession.id,
+        cookie,
+      })
+      expect(listedSessionsAfterRestart.statusCode, listedSessionsAfterRestart.body).toBe(200)
+      expect(listedSessionsAfterRestart.json()).toEqual(expect.arrayContaining([
+        expect.objectContaining({ id: workspaceSession.id, title: 'Workspace A routed session renamed' }),
+      ]))
+
+      const reopenedState = await readPiSessionState(secondApp, {
+        workspaceId: 'workspace-a',
+        sessionId: workspaceSession.id,
+        cookie,
+      })
+      expect(reopenedState.statusCode, reopenedState.body).toBe(200)
+      expect(reopenedState.json()).toMatchObject({ sessionId: workspaceSession.id, status: 'idle' })
 
       const reopened = await secondApp.inject({
         method: 'POST',
         url: '/api/boring-tasks/sessions/link?workspaceId=workspace-a',
+        headers: { cookie },
         payload: { adapterId: 'github', taskId: '614', sessionId: workspaceSession.id },
       })
       expect(reopened.statusCode).toBe(200)
