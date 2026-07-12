@@ -25,9 +25,11 @@ import { PiChatMeteringCoordinator, type AgentMeteringSink, type MeteringErrorLo
 import { HarnessPiChatServiceLifecycle } from './piChatServiceLifecycle'
 import { normalizeSessionTitle } from '../sessionTitle'
 import {
+  MANAGE_SESSIONS_MAX_SEARCH_SCAN,
   normalizeManageSessionsLimit,
   normalizeManageSessionsOffset,
   normalizeManageSessionsQuery,
+  parseManageSessionsInput,
   sessionManagementInvalidError,
 } from '../sessionManagement'
 
@@ -219,13 +221,19 @@ export class HarnessPiChatService implements PiChatSessionService {
     options: ManageSessionsOptions = {},
   ): Promise<ManageSessionsResult> {
     return this.lifecycle.run(async () => {
-      switch (input.action) {
+      // Tool and HTTP callers parse this schema too, but service callers are a
+      // public seam as well. Keep title normalization and validation stable
+      // even when a typed internal caller bypasses those adapters.
+      const parsedInput = parseManageSessionsInput(input)
+      switch (parsedInput.action) {
         case 'search': {
-          const limit = normalizeManageSessionsLimit(input.limit)
-          const offset = normalizeManageSessionsOffset(input.offset)
-          const query = normalizeManageSessionsQuery(input.query)
-          const sessions = await this.sessionStore.list(toSessionCtx(ctx), { limit, offset })
-          const filtered = query
+          const limit = normalizeManageSessionsLimit(parsedInput.limit)
+          const offset = normalizeManageSessionsOffset(parsedInput.offset)
+          const query = normalizeManageSessionsQuery(parsedInput.query)
+          const sessions = await this.sessionStore.list(toSessionCtx(ctx), query
+            ? { limit: MANAGE_SESSIONS_MAX_SEARCH_SCAN, offset: 0 }
+            : { limit, offset })
+          const matches = query
             ? sessions.filter((session) =>
                 session.id.toLowerCase().includes(query) ||
                 session.title.toLowerCase().includes(query),
@@ -233,28 +241,28 @@ export class HarnessPiChatService implements PiChatSessionService {
             : sessions
           return {
             action: 'search',
-            sessions: filtered,
+            sessions: query ? matches.slice(offset, offset + limit) : matches,
             limit,
             offset,
-            count: filtered.length,
+            count: matches.length,
           }
         }
         case 'rename': {
-          const sessionId = input.sessionId ?? options.executingSessionId
+          const sessionId = parsedInput.sessionId ?? options.executingSessionId
           if (!sessionId) {
             throw sessionManagementInvalidError('sessionId is required when no executing session is available', 'sessionId')
           }
-          return { action: 'rename', session: await this.renameSession(ctx, sessionId, input.title) }
+          return { action: 'rename', session: await this.renameSession(ctx, sessionId, parsedInput.title) }
         }
         case 'delete': {
-          if (input.confirm !== true) {
+          if (parsedInput.confirm !== true) {
             throw sessionManagementInvalidError('confirm must be true to delete a session', 'confirm')
           }
-          if (input.sessionId === options.executingSessionId) {
+          if (parsedInput.sessionId === options.executingSessionId) {
             throw sessionManagementInvalidError('manage_sessions cannot delete the session that is currently executing', 'sessionId')
           }
-          await this.deleteSession(ctx, input.sessionId)
-          return { action: 'delete', sessionId: input.sessionId, deleted: true }
+          await this.deleteSession(ctx, parsedInput.sessionId)
+          return { action: 'delete', sessionId: parsedInput.sessionId, deleted: true }
         }
       }
     })

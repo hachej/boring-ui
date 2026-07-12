@@ -73,6 +73,18 @@ describe('manage_sessions tool', () => {
     expect(result.details).toMatchObject({ code: ErrorCode.enum.BRIDGE_COMMAND_INVALID })
   })
 
+  test('rejects whitespace-only rename title with a stable validation error before reaching the service', async () => {
+    const service = new FakeManageService()
+    const manageSessions = vi.spyOn(service, 'manageSessions')
+    const tool = createManageSessionsTool({ getService: () => service as unknown as PiChatSessionService })
+
+    const result = await tool.execute({ action: 'rename', title: ' \r\n ' }, toolCtx())
+
+    expect(result.isError).toBe(true)
+    expect(manageSessions).not.toHaveBeenCalled()
+    expect(result.details).toMatchObject({ code: ErrorCode.enum.BRIDGE_COMMAND_INVALID })
+  })
+
   test('returns stable service errors without using loopback HTTP', async () => {
     const service = new FakeManageService()
     vi.spyOn(service, 'manageSessions').mockRejectedValue(Object.assign(new Error('session not found'), {

@@ -243,6 +243,15 @@ describe('piChatRoutes', () => {
     expect(invalid.json().error).toMatchObject({ code: ErrorCode.enum.BRIDGE_COMMAND_INVALID })
     expect(manageSessions).not.toHaveBeenCalled()
 
+    const whitespaceTitle = await app.inject({
+      method: 'POST',
+      url: '/api/v1/agent/pi-chat/sessions/manage',
+      payload: { action: 'rename', title: ' \r\n ' },
+    })
+    expect(whitespaceTitle.statusCode).toBe(400)
+    expect(whitespaceTitle.json().error).toMatchObject({ code: ErrorCode.enum.BRIDGE_COMMAND_INVALID })
+    expect(manageSessions).not.toHaveBeenCalled()
+
     const missing = await app.inject({
       method: 'POST',
       url: '/api/v1/agent/pi-chat/sessions/manage',

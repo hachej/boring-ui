@@ -4,7 +4,13 @@ import type { ManageSessionsInput } from '../core/piChatSessionService'
 
 export const MANAGE_SESSIONS_DEFAULT_LIMIT = 10
 export const MANAGE_SESSIONS_MAX_LIMIT = 20
+/** Maximum authorized records inspected for one text search; never unbounded. */
+export const MANAGE_SESSIONS_MAX_SEARCH_SCAN = 100
 export const MANAGE_SESSIONS_MAX_QUERY_LENGTH = 200
+
+const ManageSessionTitleSchema = z.string()
+  .transform((title) => title.replace(/[\r\n]+/g, ' ').trim())
+  .pipe(z.string().min(1).max(200))
 
 export const ManageSessionsInputSchema: z.ZodType<ManageSessionsInput, z.ZodTypeDef, unknown> = z.discriminatedUnion('action', [
   z.object({
@@ -16,7 +22,7 @@ export const ManageSessionsInputSchema: z.ZodType<ManageSessionsInput, z.ZodType
   z.object({
     action: z.literal('rename'),
     sessionId: z.string().min(1).max(128).optional(),
-    title: z.string().min(1).max(200),
+    title: ManageSessionTitleSchema,
   }).strict(),
   z.object({
     action: z.literal('delete'),
