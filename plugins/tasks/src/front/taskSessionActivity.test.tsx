@@ -100,6 +100,35 @@ describe("TaskSessionActivityProvider request scoping", () => {
     expect(screen.getByTestId("fast-status")).toHaveTextContent("fresh")
   })
 
+  it("returns stale instead of throwing when a superseded refresh fails", async () => {
+    const pending: Array<{ sessionIds: string[]; request: ReturnType<typeof deferred<ActivityResponse>> }> = []
+    postJson.mockImplementation((path: string, body: { sessionIds?: string[] }) => {
+      if (path !== "/api/v1/agent/pi-chat/sessions/activity") throw new Error(`unexpected post ${path}`)
+      const request = deferred<ActivityResponse>()
+      pending.push({ sessionIds: body.sessionIds ?? [], request })
+      return request.promise
+    })
+
+    render(<TaskSessionActivityProvider><ResultProbe /></TaskSessionActivityProvider>)
+    fireEvent.click(screen.getByRole("button", { name: "Slow refresh" }))
+    fireEvent.click(screen.getByRole("button", { name: "Fast refresh" }))
+    expect(pending.map((entry) => entry.sessionIds)).toEqual([["board-a"], ["board-a"]])
+
+    await act(async () => {
+      pending[0].request.reject(new Error("obsolete activity failure"))
+      await pending[0].request.promise.catch(() => undefined)
+      await Promise.resolve()
+    })
+    expect(screen.getByTestId("slow-status")).toHaveTextContent("stale")
+
+    await act(async () => {
+      pending[1].request.resolve({ activities: [{ sessionId: "board-a", status: "idle", source: "persisted" }], omittedSessionIds: [] })
+      await pending[1].request.promise
+      await Promise.resolve()
+    })
+    expect(screen.getByTestId("fast-status")).toHaveTextContent("fresh")
+  })
+
   it("scopes refresh errors to requested sessions and clears only successful sessions", async () => {
     const pending: Array<{ sessionIds: string[]; request: ReturnType<typeof deferred<ActivityResponse>> }> = []
     postJson.mockImplementation((path: string, body: { sessionIds?: string[] }) => {

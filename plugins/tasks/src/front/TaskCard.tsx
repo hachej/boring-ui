@@ -111,6 +111,7 @@ export function TaskCard({ task, draggable, unmapped = false, deleteEnabled = fa
   const chatButtonRef = useRef<HTMLButtonElement>(null)
   const mountedRef = useRef(false)
   const navigationGenerationRef = useRef(0)
+  const taskAsyncGenerationRef = useRef(0)
   const taskScopeKeyRef = useRef(taskScopeKey)
   const shell = useWorkspaceShellCapabilities()
   const pluginClient = useWorkspacePluginClient()
@@ -165,6 +166,16 @@ export function TaskCard({ task, draggable, unmapped = false, deleteEnabled = fa
     navigationGenerationRef.current += 1
   }, [])
 
+  const invalidatePendingTaskAsync = useCallback(() => {
+    taskAsyncGenerationRef.current += 1
+  }, [])
+
+  const beginTaskAsync = useCallback(() => {
+    const generation = taskAsyncGenerationRef.current
+    const expectedTaskScopeKey = taskScopeKeyRef.current
+    return () => mountedRef.current && taskAsyncGenerationRef.current === generation && taskScopeKeyRef.current === expectedTaskScopeKey
+  }, [])
+
   const beginNavigation = useCallback(() => {
     const generation = navigationGenerationRef.current + 1
     navigationGenerationRef.current = generation
@@ -181,12 +192,14 @@ export function TaskCard({ task, draggable, unmapped = false, deleteEnabled = fa
     return () => {
       mountedRef.current = false
       invalidatePendingNavigation()
+      invalidatePendingTaskAsync()
     }
-  }, [invalidatePendingNavigation])
+  }, [invalidatePendingNavigation, invalidatePendingTaskAsync])
 
   useLayoutEffect(() => {
     taskScopeKeyRef.current = taskScopeKey
     invalidatePendingNavigation()
+    invalidatePendingTaskAsync()
     setMenuOpen(false)
     setOpeningChat(false)
     setCheckingChatActivity(false)
@@ -199,7 +212,7 @@ export function TaskCard({ task, draggable, unmapped = false, deleteEnabled = fa
     setSessionLinkState((current) => current.taskScopeKey === taskScopeKey && current.links.length === 0 && !current.loaded
       ? current
       : { taskScopeKey, links: [], loaded: false })
-  }, [invalidatePendingNavigation, taskScopeKey])
+  }, [invalidatePendingNavigation, invalidatePendingTaskAsync, taskScopeKey])
 
   const refreshSessionActivity = useCallback(async (links: BoringTaskSessionBinding[]): Promise<TaskSessionActivityRefreshResult> => {
     return await sessionActivity.refreshSessionIds(links.map((link) => link.sessionId))
@@ -326,10 +339,7 @@ export function TaskCard({ task, draggable, unmapped = false, deleteEnabled = fa
         return
       }
       if (!shouldContinue()) return
-      if (refreshResult.status === "stale") {
-        setSessionError("Chat activity changed while opening. Try again.")
-        return
-      }
+      if (refreshResult.status === "stale") return
       const active = links.filter((link) => {
         const status = refreshResult.activities[link.sessionId]?.status
         return status === "working" || status === "queued"
@@ -359,8 +369,10 @@ export function TaskCard({ task, draggable, unmapped = false, deleteEnabled = fa
       next.delete(link.sessionId)
       return next
     })
+    const shouldApply = beginTaskAsync()
     void pluginClient.postJson("/api/boring-tasks/sessions/unlink", { bindingId: link.id })
       .catch((error) => {
+        if (!shouldApply()) return
         updateCurrentSessionLinks((current) => current.some((candidate) => candidate.id === link.id) ? current : [link, ...current])
         setSessionError(error instanceof Error ? error.message : "Failed to unlink session")
       })
@@ -368,16 +380,24 @@ export function TaskCard({ task, draggable, unmapped = false, deleteEnabled = fa
 
   const searchExistingSessions = (event: MouseEvent<HTMLButtonElement>) => {
     stopCardAction(event)
+    const shouldApply = beginTaskAsync()
     setLinkSearchLoading(true)
     setSessionError(null)
     void pluginClient.postJson<ManageSessionsSearchResponse>("/api/boring-tasks/sessions/search", { query: linkQuery })
-      .then((body) => setLinkSearchResults(body.sessions ?? []))
-      .catch((error) => setSessionError(error instanceof Error ? error.message : "Failed to search sessions"))
-      .finally(() => setLinkSearchLoading(false))
+      .then((body) => {
+        if (shouldApply()) setLinkSearchResults(body.sessions ?? [])
+      })
+      .catch((error) => {
+        if (shouldApply()) setSessionError(error instanceof Error ? error.message : "Failed to search sessions")
+      })
+      .finally(() => {
+        if (shouldApply()) setLinkSearchLoading(false)
+      })
   }
 
   const linkExistingSession = (event: MouseEvent<HTMLButtonElement>, session: PiSessionSummary) => {
     stopCardAction(event)
+    const shouldApply = beginTaskAsync()
     setSessionError(null)
     void pluginClient.postJson<TaskSessionLinkResponse>("/api/boring-tasks/sessions/link", {
       adapterId: task.adapterId,
@@ -385,10 +405,13 @@ export function TaskCard({ task, draggable, unmapped = false, deleteEnabled = fa
       sessionId: session.id,
       title: session.title ?? chatTitle,
     }).then((body) => {
+      if (!shouldApply()) return
       if (!body.link) throw new Error("Task session binding was not created.")
       updateCurrentSessionLinks((current) => current.some((candidate) => candidate.id === body.link!.id) ? current : [body.link!, ...current])
       void refreshSessionActivity([body.link!]).catch(() => undefined)
-    }).catch((error) => setSessionError(error instanceof Error ? error.message : "Failed to link session"))
+    }).catch((error) => {
+      if (shouldApply()) setSessionError(error instanceof Error ? error.message : "Failed to link session")
+    })
   }
 
   const deleteTask = (event: MouseEvent<HTMLButtonElement>) => {

@@ -156,14 +156,13 @@ function useTaskSessionActivityController(enabled: boolean): TaskSessionActivity
       return currentSessionIds.length === sessionIds.length ? { status: "fresh", activities: next } : { status: "stale" }
     } catch (cause) {
       const currentSessionIds = mountedRef.current && isGenerationCurrent() ? currentSessionIdsForRequest() : []
-      if (currentSessionIds.length > 0) {
-        const message = cause instanceof Error ? cause.message : "Failed to load chat activity"
-        setErrorsBySessionId((current) => {
-          const merged = { ...current }
-          for (const sessionId of currentSessionIds) merged[sessionId] = message
-          return merged
-        })
-      }
+      if (currentSessionIds.length === 0) return { status: "stale" }
+      const message = cause instanceof Error ? cause.message : "Failed to load chat activity"
+      setErrorsBySessionId((current) => {
+        const merged = { ...current }
+        for (const sessionId of currentSessionIds) merged[sessionId] = message
+        return merged
+      })
       throw cause
     } finally {
       removeLoading(sessionIds)

@@ -322,7 +322,7 @@ describe("TaskCard task chat sessions", () => {
     expect(openDetachedChat).not.toHaveBeenCalled()
   })
 
-  it("does not open a chat from superseded activity returned to openTaskChat", async () => {
+  it("does not open a chat or render an obsolete error from superseded activity returned to openTaskChat", async () => {
     vi.useFakeTimers()
     const working = link({ id: "working", sessionId: "pi-working", title: "Working chat" })
     const activityRequests: Array<{ sessionIds: string[]; request: ReturnType<typeof deferred<{ activities?: Array<{ sessionId: string; status: "idle" | "queued" | "working" | "error"; source: "live-runtime" | "persisted" }>; omittedSessionIds?: string[] }>> }> = []
@@ -362,7 +362,7 @@ describe("TaskCard task chat sessions", () => {
       })
 
       expect(openDetachedChat).not.toHaveBeenCalled()
-      expect(screen.getByRole("alert")).toHaveTextContent("changed while opening")
+      expect(screen.queryByRole("alert")).not.toBeInTheDocument()
       expect(screen.getByRole("region", { name: /linked chat sessions/i })).toBeInTheDocument()
 
       await act(async () => {
@@ -767,6 +767,108 @@ describe("TaskCard task chat sessions", () => {
       sessionId: "pi-standalone",
       title: "Standalone",
     }))
+  })
+
+  it("ignores stale search results after the card rerenders for another task", async () => {
+    const taskB = { ...task, id: "task-b", number: "#613", title: "Replacement" }
+    const linkA = link({ id: "link-a", title: "Task A chat" })
+    const linkB = link({ id: "link-b", taskId: "task-b", sessionId: "pi-b", title: "Task B chat" })
+    const pendingSearch = deferred<{ sessions?: Array<{ id: string; title?: string }> }>()
+    postJson.mockImplementation((path: string, body: { taskId?: string; sessionIds?: string[] } = {}) => {
+      if (path === "/api/boring-tasks/sessions/list") return Promise.resolve({ links: body.taskId === "task-b" ? [linkB] : [linkA] })
+      if (path === "/api/v1/agent/pi-chat/sessions/activity") return Promise.resolve({ activities: (body.sessionIds ?? []).map((sessionId) => ({ sessionId, status: "idle", source: "persisted" })), omittedSessionIds: [] })
+      if (path === "/api/boring-tasks/sessions/search") return pendingSearch.promise
+      throw new Error(`unexpected post ${path}`)
+    })
+
+    const { rerender } = render(<TaskCard task={task} draggable={false} onDragStart={vi.fn()} onDragEnd={vi.fn()} />)
+    fireEvent.click(await screen.findByRole("button", { name: /open chat/i }))
+    fireEvent.change(await screen.findByPlaceholderText("Search chats"), { target: { value: "stale" } })
+    fireEvent.click(screen.getByRole("button", { name: /link existing/i }))
+    await waitFor(() => expect(postJson).toHaveBeenCalledWith("/api/boring-tasks/sessions/search", { query: "stale" }))
+
+    await act(async () => {
+      rerender(<TaskCard task={taskB} draggable={false} onDragStart={vi.fn()} onDragEnd={vi.fn()} />)
+      await Promise.resolve()
+    })
+    await act(async () => {
+      pendingSearch.resolve({ sessions: [{ id: "pi-stale", title: "Stale search result" }] })
+      await pendingSearch.promise
+      await Promise.resolve()
+    })
+
+    fireEvent.click(await screen.findByRole("button", { name: /open chat for #613/i }))
+    expect(await screen.findByText("Task B chat")).toBeInTheDocument()
+    expect(screen.queryByText("Stale search result")).not.toBeInTheDocument()
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument()
+  })
+
+  it("ignores stale link errors after the card rerenders for another task", async () => {
+    const taskB = { ...task, id: "task-b", number: "#613", title: "Replacement" }
+    const linkA = link({ id: "link-a", title: "Task A chat" })
+    const linkB = link({ id: "link-b", taskId: "task-b", sessionId: "pi-b", title: "Task B chat" })
+    const pendingLink = deferred<{ link?: BoringTaskSessionBinding }>()
+    postJson.mockImplementation((path: string, body: { taskId?: string; sessionIds?: string[]; sessionId?: string } = {}) => {
+      if (path === "/api/boring-tasks/sessions/list") return Promise.resolve({ links: body.taskId === "task-b" ? [linkB] : [linkA] })
+      if (path === "/api/v1/agent/pi-chat/sessions/activity") return Promise.resolve({ activities: (body.sessionIds ?? []).map((sessionId) => ({ sessionId, status: "idle", source: "persisted" })), omittedSessionIds: [] })
+      if (path === "/api/boring-tasks/sessions/search") return Promise.resolve({ sessions: [{ id: "pi-stale", title: "Stale standalone" }] })
+      if (path === "/api/boring-tasks/sessions/link" && body.sessionId === "pi-stale") return pendingLink.promise
+      throw new Error(`unexpected post ${path}`)
+    })
+
+    const { rerender } = render(<TaskCard task={task} draggable={false} onDragStart={vi.fn()} onDragEnd={vi.fn()} />)
+    fireEvent.click(await screen.findByRole("button", { name: /open chat/i }))
+    fireEvent.click(await screen.findByRole("button", { name: /link existing/i }))
+    fireEvent.click(await screen.findByRole("button", { name: "Link" }))
+    await waitFor(() => expect(postJson).toHaveBeenCalledWith("/api/boring-tasks/sessions/link", expect.objectContaining({ taskId: "task-1", sessionId: "pi-stale" })))
+
+    await act(async () => {
+      rerender(<TaskCard task={taskB} draggable={false} onDragStart={vi.fn()} onDragEnd={vi.fn()} />)
+      await Promise.resolve()
+    })
+    await act(async () => {
+      pendingLink.reject(new Error("stale link failed"))
+      await pendingLink.promise.catch(() => undefined)
+      await Promise.resolve()
+    })
+
+    fireEvent.click(await screen.findByRole("button", { name: /open chat for #613/i }))
+    expect(await screen.findByText("Task B chat")).toBeInTheDocument()
+    expect(screen.queryByText("stale link failed")).not.toBeInTheDocument()
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument()
+  })
+
+  it("ignores stale unlink errors after the card rerenders for another task", async () => {
+    const taskB = { ...task, id: "task-b", number: "#613", title: "Replacement" }
+    const linkA = link({ id: "link-a", title: "Task A chat" })
+    const linkB = link({ id: "link-b", taskId: "task-b", sessionId: "pi-b", title: "Task B chat" })
+    const pendingUnlink = deferred<{ ok: boolean }>()
+    postJson.mockImplementation((path: string, body: { taskId?: string; sessionIds?: string[]; bindingId?: string } = {}) => {
+      if (path === "/api/boring-tasks/sessions/list") return Promise.resolve({ links: body.taskId === "task-b" ? [linkB] : [linkA] })
+      if (path === "/api/v1/agent/pi-chat/sessions/activity") return Promise.resolve({ activities: (body.sessionIds ?? []).map((sessionId) => ({ sessionId, status: "idle", source: "persisted" })), omittedSessionIds: [] })
+      if (path === "/api/boring-tasks/sessions/unlink" && body.bindingId === "link-a") return pendingUnlink.promise
+      throw new Error(`unexpected post ${path}`)
+    })
+
+    const { rerender } = render(<TaskCard task={task} draggable={false} onDragStart={vi.fn()} onDragEnd={vi.fn()} />)
+    fireEvent.click(await screen.findByRole("button", { name: /open chat/i }))
+    fireEvent.click(await screen.findByRole("button", { name: "Unlink" }))
+    await waitFor(() => expect(postJson).toHaveBeenCalledWith("/api/boring-tasks/sessions/unlink", { bindingId: "link-a" }))
+
+    await act(async () => {
+      rerender(<TaskCard task={taskB} draggable={false} onDragStart={vi.fn()} onDragEnd={vi.fn()} />)
+      await Promise.resolve()
+    })
+    await act(async () => {
+      pendingUnlink.reject(new Error("stale unlink failed"))
+      await pendingUnlink.promise.catch(() => undefined)
+      await Promise.resolve()
+    })
+
+    fireEvent.click(await screen.findByRole("button", { name: /open chat for #613/i }))
+    expect(await screen.findByText("Task B chat")).toBeInTheDocument()
+    expect(screen.queryByText("stale unlink failed")).not.toBeInTheDocument()
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument()
   })
 
   it("renders the linked-session disclosure and actions in compact cards", async () => {
