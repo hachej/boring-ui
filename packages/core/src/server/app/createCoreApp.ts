@@ -176,13 +176,13 @@ export async function createCoreApp(
 ) {
   const redactionKeywords = [...DEFAULT_REDACTION_KEYWORDS]
   const proxyPolicy = config.security?.trustedProxy
-  const trustedProxy = proxyPolicy
+  const trustedProxy = proxyPolicy && proxyPolicy !== 'legacy-unsafe'
     ? { hops: proxyPolicy.hops, matches: proxyAddr.compile([...proxyPolicy.cidrs]) }
     : null
 
   const app = Fastify({
-    // Undefined temporarily preserves generic hosts; D1 loadConfig forbids it.
-    trustProxy: proxyPolicy === undefined
+    // Temporary compatibility is deliberately impossible to enable by omission.
+    trustProxy: proxyPolicy === 'legacy-unsafe'
       ? true
       : trustedProxy
       ? (address, index) => index < trustedProxy.hops && trustedProxy.matches(address, index)

@@ -149,6 +149,18 @@ describe('loadConfig', () => {
     ]) await expect(loadConfig({ tomlPath: TOML_PATH, env: { ...VALID_ENV, ...proxyEnv } })).rejects.toBeInstanceOf(ConfigValidationError)
   })
 
+  it('requires an explicit non-D1-only opt-in for legacy unsafe proxy trust', async () => {
+    const legacy = await loadConfig({ tomlPath: TOML_PATH, env: { ...VALID_ENV, TRUST_PROXY_LEGACY_UNSAFE: '1' } })
+    expect(legacy.security?.trustedProxy).toBe('legacy-unsafe')
+
+    for (const proxyEnv of [
+      { TRUST_PROXY_LEGACY_UNSAFE: '0' },
+      { TRUST_PROXY_LEGACY_UNSAFE: 'true' },
+      { TRUST_PROXY_LEGACY_UNSAFE: '1', TRUST_PROXY_CIDRS: '192.168.255.250/32', TRUST_PROXY_HOPS: '1' },
+      { TRUST_PROXY_LEGACY_UNSAFE: '1', BORING_D1_HOST_ID: 'eu-host-1' },
+    ]) await expect(loadConfig({ tomlPath: TOML_PATH, env: { ...VALID_ENV, ...proxyEnv } })).rejects.toBeInstanceOf(ConfigValidationError)
+  })
+
   it('loads all three supported secrets from strict files without mutating env', async () => {
     const env: Record<string, string | undefined> = {
       ...VALID_ENV,

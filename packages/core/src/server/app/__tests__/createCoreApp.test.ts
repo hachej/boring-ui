@@ -82,7 +82,7 @@ describe('createCoreApp', () => {
     )
   })
 
-  it('temporarily preserves generic proxy compatibility when policy is undefined', async () => {
+  it('ignores spoofed proxy headers when policy is undefined', async () => {
     app = await createCoreApp(TEST_CONFIG, { manageShutdown: false })
     app.get('/ip', async (req) => ({ ip: req.ip }))
     await app.ready()
@@ -94,7 +94,7 @@ describe('createCoreApp', () => {
       remoteAddress: '192.168.255.250',
     })
 
-    expect(JSON.parse(res.body).ip).toBe('1.2.3.4')
+    expect(JSON.parse(res.body).ip).toBe('192.168.255.250')
   })
 
   it('ignores spoofed proxy headers when policy is explicitly null', async () => {
@@ -104,6 +104,15 @@ describe('createCoreApp', () => {
     await app.ready()
     const response = await app.inject({ method: 'GET', url: '/ip', remoteAddress: '192.168.255.250', headers: { 'x-forwarded-for': '1.2.3.4' } })
     expect(JSON.parse(response.body).ip).toBe('192.168.255.250')
+  })
+
+  it('preserves forwarded IP only through the explicit legacy-unsafe sentinel', async () => {
+    const config: CoreConfig = { ...TEST_CONFIG, security: { ...TEST_CONFIG.security!, trustedProxy: 'legacy-unsafe' } }
+    app = await createCoreApp(config, { manageShutdown: false })
+    app.get('/ip', async (req) => ({ ip: req.ip }))
+    await app.ready()
+    const response = await app.inject({ method: 'GET', url: '/ip', remoteAddress: '192.168.255.250', headers: { 'x-forwarded-for': '1.2.3.4' } })
+    expect(JSON.parse(response.body).ip).toBe('1.2.3.4')
   })
 
   it('trusts only configured ingress CIDRs within the exact hop budget', async () => {

@@ -161,7 +161,7 @@ export interface CoreConfig {
       enabled: boolean
       upgradeInsecureRequests?: boolean
     }
-    trustedProxy?: TrustedProxyPolicy | null
+    trustedProxy?: TrustedProxyPolicy | 'legacy-unsafe' | null
   }
 
   encryption: {

@@ -64,7 +64,7 @@ export const coreConfigSchema = z.object({
         enabled: z.boolean(),
         upgradeInsecureRequests: z.boolean().optional(),
       }),
-      trustedProxy: trustedProxyPolicySchema.nullable().optional(),
+      trustedProxy: z.union([trustedProxyPolicySchema, z.literal('legacy-unsafe')]).nullable().optional(),
     })
     .optional(),
 
