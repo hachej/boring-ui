@@ -449,6 +449,27 @@ export const usageLedger = pgTable(
   ],
 )
 
+export const taskSessionBindings = pgTable(
+  'boring_task_session_bindings',
+  {
+    id: uuid('id')
+      .default(sql`gen_random_uuid()`)
+      .primaryKey(),
+    workspaceId: text('workspace_id').notNull(),
+    adapterId: text('adapter_id').notNull(),
+    taskId: text('task_id').notNull(),
+    sessionId: text('session_id').notNull(),
+    title: text('title'),
+    createdAt: timestamp('created_at').defaultNow().notNull(),
+  },
+  (table) => [
+    uniqueIndex('boring_task_session_bindings_tuple_idx')
+      .on(table.workspaceId, table.adapterId, table.taskId, table.sessionId),
+    index('boring_task_session_bindings_task_idx')
+      .on(table.workspaceId, table.adapterId, table.taskId, table.createdAt),
+  ],
+)
+
 export const telemetryEvents = pgTable(
   'telemetry_events',
   {

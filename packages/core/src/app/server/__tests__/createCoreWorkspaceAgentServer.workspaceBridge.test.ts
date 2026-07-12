@@ -18,6 +18,15 @@ vi.mock('@hachej/boring-agent/server', () => ({
   compactPiPackages: (packages: unknown[]) => packages,
   registerAgentRoutes: async (app: any, opts: Record<string, unknown>) => {
     agentServerMock.registerOpts.push(opts)
+    ;(opts.onPiChatSessionServiceResolver as ((resolver: unknown) => void) | undefined)?.(async () => ({
+      listSessions: async (_ctx: unknown, listOptions: { includeId?: string } = {}) => listOptions.includeId === 'session-a'
+        ? [{ id: 'session-a', title: 'Hosted session', createdAt: '2026-07-01T00:00:00.000Z', updatedAt: '2026-07-01T00:00:00.000Z' }]
+        : [],
+      manageSessions: async () => ({
+        action: 'search',
+        sessions: [{ id: 'session-a', title: 'Hosted session', createdAt: '2026-07-01T00:00:00.000Z', updatedAt: '2026-07-01T00:00:00.000Z' }],
+      }),
+    }))
     app.post('/api/v1/agent/chat', async () => ({ ok: true }))
     app.get('/api/v1/agent/chat/:sessionId/messages', async () => ({ ok: true }))
     app.get('/__bridge-owner/:sessionId', async (request: any) => {
@@ -39,7 +48,8 @@ vi.mock('@hachej/boring-agent/server', () => ({
 }))
 
 vi.mock('@hachej/boring-workspace/app/server', () => ({
-  collectWorkspaceAgentServerPlugins: () => ({
+  assertWorkspaceBridgeHandlersTrusted: vi.fn(),
+  collectWorkspaceAgentServerPlugins: (opts?: { plugins?: Array<{ routes?: unknown }> }) => ({
     agentOptions: {
       extraTools: [],
       pi: undefined,
@@ -47,7 +57,7 @@ vi.mock('@hachej/boring-workspace/app/server', () => ({
     },
     preservedUiStateKeys: [],
     provisioningContributions: [],
-    routeContributions: [],
+    routeContributions: (opts?.plugins ?? []).filter((plugin) => typeof plugin.routes === 'function'),
   }),
   hasDirServerPlugin: () => false,
   provisionWorkspaceAgentServer: vi.fn(),
@@ -84,6 +94,7 @@ vi.mock('@hachej/boring-workspace/server', () => {
     }
   }
   return {
+  defineServerPlugin: (plugin: unknown) => plugin,
   createBrowserBridgeAuthPolicy: vi.fn((opts: Record<string, unknown>) => {
     workspaceServerMock.browserAuthPolicyOptions.push(opts)
     return vi.fn()
@@ -178,6 +189,24 @@ vi.mock('../../../server/db/index.js', () => ({
     db: {},
     sql: { end: vi.fn() },
   }),
+  PostgresTaskSessionBindingStore: class PostgresTaskSessionBindingStore {
+    bindings = new Map<string, Record<string, unknown>>()
+    async listBindings(input: { workspaceId: string; adapterId: string; taskId: string }) {
+      return Array.from(this.bindings.values()).filter((binding) => binding.workspaceId === input.workspaceId && binding.adapterId === input.adapterId && binding.taskId === input.taskId)
+    }
+    async createBinding(input: { workspaceId: string; adapterId: string; taskId: string; sessionId: string; title?: string }) {
+      const existing = Array.from(this.bindings.values()).find((binding) => binding.workspaceId === input.workspaceId && binding.adapterId === input.adapterId && binding.taskId === input.taskId && binding.sessionId === input.sessionId)
+      if (existing) return existing
+      const binding = { id: `binding-${this.bindings.size + 1}`, createdAt: '2026-07-01T00:00:00.000Z', ...input }
+      this.bindings.set(binding.id, binding)
+      return binding
+    }
+    async deleteBinding(input: { workspaceId: string; bindingId: string }) {
+      const existing = this.bindings.get(input.bindingId)
+      if (!existing || existing.workspaceId !== input.workspaceId) throw Object.assign(new Error(`Task session binding not found: ${input.bindingId}`), { status: 404, code: 'TASK_SESSION_BINDING_NOT_FOUND' })
+      this.bindings.delete(input.bindingId)
+    }
+  },
   PostgresUserStore: class PostgresUserStore {},
   PostgresWorkspaceStore: class PostgresWorkspaceStore {
     async isMember() {
@@ -294,6 +323,52 @@ describe('createCoreWorkspaceAgentServer workspace bridge wiring', () => {
     expect(storeOne).not.toBe(storeTwo)
     // ...and the same workspace reuses one store (revoke/rate-limit state persists).
     expect(storeOne).toBe(storeOneAgain)
+
+    await app.close()
+  })
+
+  it('wires hosted Tasks to the core Postgres binding store and authorized Pi session port', async () => {
+    const { createTasksServerPlugin } = await import('../../../../../../plugins/tasks/src/server/index.js')
+    const app = await createCoreWorkspaceAgentServer({
+      serveFrontend: false,
+      plugins: [createTasksServerPlugin({ sources: [] })],
+    })
+
+    const linked = await app.inject({
+      method: 'POST',
+      url: '/api/boring-tasks/sessions/link?workspaceId=workspace-1',
+      headers: { 'x-test-user-id': 'user-1' },
+      payload: { workspaceId: 'workspace-2', adapterId: 'github', taskId: '614', sessionId: 'session-a' },
+    })
+    expect(linked.statusCode).toBe(200)
+    expect(linked.json().link).toMatchObject({ workspaceId: 'workspace-1', sessionId: 'session-a', title: 'Hosted session' })
+
+    const listed = await app.inject({
+      method: 'POST',
+      url: '/api/boring-tasks/sessions/list?workspaceId=workspace-1',
+      headers: { 'x-test-user-id': 'user-1' },
+      payload: { adapterId: 'github', taskId: '614' },
+    })
+    expect(listed.statusCode).toBe(200)
+    expect(listed.json().links).toEqual([expect.objectContaining({ workspaceId: 'workspace-1', sessionId: 'session-a' })])
+
+    const isolated = await app.inject({
+      method: 'POST',
+      url: '/api/boring-tasks/sessions/list?workspaceId=workspace-2',
+      headers: { 'x-test-user-id': 'user-1' },
+      payload: { adapterId: 'github', taskId: '614' },
+    })
+    expect(isolated.statusCode).toBe(200)
+    expect(isolated.json().links).toEqual([])
+
+    const search = await app.inject({
+      method: 'POST',
+      url: '/api/boring-tasks/sessions/search?workspaceId=workspace-1',
+      headers: { 'x-test-user-id': 'user-1' },
+      payload: { query: 'Hosted' },
+    })
+    expect(search.statusCode).toBe(200)
+    expect(search.json().sessions).toEqual([expect.objectContaining({ id: 'session-a', title: 'Hosted session' })])
 
     await app.close()
   })

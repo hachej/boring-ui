@@ -4,15 +4,23 @@ import type { TaskSessionPortProvider } from "./sessionPort"
 import { TaskSourceServiceError } from "./taskSourceService"
 import { TaskSessionBindingStoreError, type TaskSessionBindingStore } from "./sessionBindingStore"
 
+function isRouteError(cause: unknown): cause is { status: number; code: string; message: string } {
+  return cause instanceof TaskSourceServiceError
+    || cause instanceof TaskSessionBindingStoreError
+    || (cause instanceof Error
+      && typeof (cause as { status?: unknown }).status === "number"
+      && typeof (cause as { code?: unknown }).code === "string")
+}
+
 function responseError(cause: unknown) {
-  if (cause instanceof TaskSourceServiceError || cause instanceof TaskSessionBindingStoreError) {
+  if (isRouteError(cause)) {
     return { ok: false, code: cause.code, error: cause.message }
   }
   return { ok: false, code: TASK_ERROR_CODES.TASK_SOURCE_ERROR, error: "Task source request failed." }
 }
 
 function statusFor(cause: unknown): number {
-  if (cause instanceof TaskSourceServiceError || cause instanceof TaskSessionBindingStoreError) return cause.status
+  if (isRouteError(cause)) return cause.status
   return 500
 }
 
@@ -47,7 +55,7 @@ export function registerTaskSessionBindingRoutes(app: FastifyInstance, options: 
   app.post("/api/boring-tasks/sessions/list", async (request, reply) => {
     try {
       const body = bodyObject(request.body)
-      const { context } = options.sessionPortProvider.resolve(request)
+      const { context } = await options.sessionPortProvider.resolve(request)
       const links = await options.store.listBindings({
         workspaceId: context.workspaceId,
         adapterId: requiredString(body, "adapterId"),
@@ -63,7 +71,7 @@ export function registerTaskSessionBindingRoutes(app: FastifyInstance, options: 
     try {
       const body = bodyObject(request.body)
       const sessionId = requiredString(body, "sessionId")
-      const { context, port } = options.sessionPortProvider.resolve(request)
+      const { context, port } = await options.sessionPortProvider.resolve(request)
       const session = await port.findAuthorizedSession(context, sessionId)
       if (!session) throw new TaskSourceServiceError(404, "TASK_SESSION_NOT_FOUND", `Task session not found: ${sessionId}`)
       const link = await options.store.createBinding({
@@ -82,7 +90,7 @@ export function registerTaskSessionBindingRoutes(app: FastifyInstance, options: 
   app.post("/api/boring-tasks/sessions/unlink", async (request, reply) => {
     try {
       const body = bodyObject(request.body)
-      const { context } = options.sessionPortProvider.resolve(request)
+      const { context } = await options.sessionPortProvider.resolve(request)
       await options.store.deleteBinding({
         workspaceId: context.workspaceId,
         bindingId: requiredString(body, "bindingId"),
@@ -96,7 +104,7 @@ export function registerTaskSessionBindingRoutes(app: FastifyInstance, options: 
   app.post("/api/boring-tasks/sessions/search", async (request, reply) => {
     try {
       const body = bodyObject(request.body)
-      const { context, port } = options.sessionPortProvider.resolve(request)
+      const { context, port } = await options.sessionPortProvider.resolve(request)
       return { ok: true, sessions: await port.searchAuthorizedSessions(context, optionalString(body, "query") ?? "") }
     } catch (cause) {
       return reply.status(statusFor(cause)).send(responseError(cause))

@@ -20,7 +20,7 @@ export interface TaskSessionPort {
 }
 
 export interface TaskSessionPortProvider {
-  resolve(request: FastifyRequest): { context: TaskSessionHostContext; port: TaskSessionPort }
+  resolve(request: FastifyRequest): { context: TaskSessionHostContext; port: TaskSessionPort } | Promise<{ context: TaskSessionHostContext; port: TaskSessionPort }>
 }
 
 export interface TaskSessionPortHost {

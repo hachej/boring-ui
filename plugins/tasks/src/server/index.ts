@@ -66,6 +66,10 @@ interface TaskProviderConfig {
   repo?: unknown
 }
 
+interface TaskSessionBindingStoreHost {
+  boringTaskSessionBindingStore?: TaskSessionBindingStore
+}
+
 function bindingStoreForWorkspaceRoot(workspaceRoot: string | undefined): TaskSessionBindingStore {
   return new FileTaskSessionBindingStore(join(workspaceRoot ?? process.cwd(), ".pi", "tasks"))
 }
@@ -104,7 +108,6 @@ export function createTasksServerPlugin(options: TasksServerPluginOptions = {}):
     ? createTaskSourceRegistry(options.sources)
     : createTaskSourceRegistryFromConfig(options.config, { workspaceRoot: options.workspaceRoot })
   const service = createTaskSourceService(registry)
-  const sessionBindings = options.sessionBindingStore ?? bindingStoreForWorkspaceRoot(options.workspaceRoot)
 
   return defineServerPlugin({
     id: TASKS_PLUGIN_ID,
@@ -148,6 +151,9 @@ export function createTasksServerPlugin(options: TasksServerPluginOptions = {}):
         }
       })
 
+      const sessionBindings = options.sessionBindingStore
+        ?? (app as typeof app & TaskSessionBindingStoreHost).boringTaskSessionBindingStore
+        ?? bindingStoreForWorkspaceRoot(options.workspaceRoot)
       const sessionPortProvider = options.sessionPortProvider ?? (app as typeof app & TaskSessionPortHost).boringTaskSessionPortProvider
       if (!sessionPortProvider) throw new Error("tasks session binding routes require a host session port")
       registerTaskSessionBindingRoutes(app, { store: sessionBindings, sessionPortProvider })

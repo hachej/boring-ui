@@ -397,6 +397,8 @@ export interface RegisterAgentRoutesOptions {
    * workspace/user context; callers must authorize that context before resolving.
    */
   onWorkspaceAgentDispatcher?: (resolver: WorkspaceAgentDispatcherResolver) => void
+  /** Trusted host composition seam for request-scoped Pi session access. */
+  onPiChatSessionServiceResolver?: (resolver: (request: FastifyRequest) => Promise<PiChatSessionService>) => void
 }
 
 /**
@@ -962,6 +964,11 @@ let runtimeProvisioning: WorkspaceProvisioningResult | undefined
     if (staticBinding) return staticBinding
     return await getOrCreateRuntimeBinding(getRequestWorkspaceId(request), request, options)
   }
+
+  opts.onPiChatSessionServiceResolver?.(async (request) => {
+    const binding = await getBindingForRequest(request)
+    return binding.piChatService
+  })
 
   async function getFilesystemBindingsForRequest(request: FastifyRequest): Promise<RuntimeFilesystemBinding[] | undefined> {
     const binding = await getBindingForRequest(request)

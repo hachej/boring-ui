@@ -7,6 +7,8 @@ import {
   createRemoteWorkerModeAdapter,
   provisionWorkspaceRuntime,
   registerAgentRoutes,
+  type PiChatSessionService,
+  type PiSessionRequestContext,
   type RegisterAgentRoutesOptions,
   type RuntimeEnvContributionContext,
   type RuntimeProvisioningContribution,
@@ -61,6 +63,7 @@ import {
 } from '../../server/routes/index.js'
 import {
   createDatabase,
+  PostgresTaskSessionBindingStore,
   PostgresUserStore,
   PostgresWorkspaceStore,
   type Database,
@@ -742,6 +745,7 @@ export async function createCoreWorkspaceAgentServer(
     ...(options.plugins ?? []),
   ]
   let workspaceAgentDispatcherResolver: WorkspaceAgentDispatcherResolver | undefined
+  let piChatSessionServiceResolver: ((request: FastifyRequest) => Promise<PiChatSessionService>) | undefined
   const trustedDispatcherProxy: WorkspaceAgentDispatcherResolver = {
     async resolve(actor, resolveOptions) {
       if (!workspaceAgentDispatcherResolver) throw new Error('workspace agent dispatcher is not ready')
@@ -932,6 +936,9 @@ export async function createCoreWorkspaceAgentServer(
       workspaceAgentDispatcherResolver = resolver
       options.onWorkspaceAgentDispatcher?.(resolver)
     },
+    onPiChatSessionServiceResolver: (resolver) => {
+      piChatSessionServiceResolver = resolver
+    },
     provisionRuntime: async ({ provisioningAdapter, runtimeLayout, workspaceId, request, runtimeMode }) => {
       if (!provisioningAdapter) return undefined
       const runtimePlugins = [
@@ -971,6 +978,44 @@ export async function createCoreWorkspaceAgentServer(
   })
 
   await coreBridge.registerHttpRoutes(app)
+
+  app.decorate('boringTaskSessionBindingStore', new PostgresTaskSessionBindingStore(db))
+  app.decorate('boringTaskSessionPortProvider', {
+    async resolve(request: FastifyRequest) {
+      const workspaceId = await resolveWorkspaceId(request)
+      const user = (request as FastifyRequest & { user?: { id?: string } | null }).user
+      const authSubject = typeof user?.id === 'string' ? user.id : undefined
+      const context = {
+        workspaceId,
+        ...(authSubject ? { authSubject } : {}),
+      }
+      const serviceContext = (): PiSessionRequestContext => ({
+        workspaceId: context.workspaceId,
+        ...(context.authSubject ? { authSubject: context.authSubject } : {}),
+        requestId: request.id,
+      })
+      return {
+        context,
+        port: {
+          async findAuthorizedSession(_context: typeof context, sessionId: string) {
+            const service = await piChatSessionServiceResolver?.(request)
+            if (!service?.listSessions) return null
+            const sessions = await service.listSessions(serviceContext(), { limit: 1, includeId: sessionId })
+            const session = sessions.find((candidate) => candidate.id === sessionId)
+            return session ? { id: session.id, title: session.title, createdAt: session.createdAt, updatedAt: session.updatedAt } : null
+          },
+          async searchAuthorizedSessions(_context: typeof context, query: string) {
+            const service = await piChatSessionServiceResolver?.(request)
+            if (!service?.manageSessions) return []
+            const result = await service.manageSessions(serviceContext(), { action: 'search', query, limit: 20 })
+            return result.action === 'search'
+              ? result.sessions.map((session) => ({ id: session.id, title: session.title, createdAt: session.createdAt, updatedAt: session.updatedAt }))
+              : []
+          },
+        },
+      }
+    },
+  })
 
   for (const { routes } of pluginCollection.routeContributions) {
     await app.register(routes)

@@ -127,6 +127,13 @@
       "when": 1783497600000,
       "tag": "0017_user_budget_reservations",
       "breakpoints": true
+    },
+    {
+      "idx": 18,
+      "version": "7",
+      "when": 1783813200000,
+      "tag": "0018_task_session_bindings",
+      "breakpoints": true
     }
   ]
 }

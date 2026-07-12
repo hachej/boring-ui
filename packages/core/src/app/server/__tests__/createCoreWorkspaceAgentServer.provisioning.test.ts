@@ -69,6 +69,7 @@ vi.mock('../../../server/routes/index.js', () => ({
 
 vi.mock('../../../server/db/index.js', () => ({
   createDatabase: () => ({ db: {}, sql: { end: vi.fn(async () => {}) } }),
+  PostgresTaskSessionBindingStore: class {},
   PostgresUserStore: class {},
   PostgresWorkspaceStore: class {
     async isMember() { return true }

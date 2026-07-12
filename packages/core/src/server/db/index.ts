@@ -8,7 +8,9 @@ export { PostgresWorkspaceStore } from './stores/index.js'
 export { PostgresUserStore } from './stores/index.js'
 export { PostgresMeteringStore, InsufficientCreditError } from './stores/index.js'
 export { PostgresBudgetReservationStore, PostgresModelBudgetStore, ModelBudgetExceededError, UserBudgetExceededError } from './stores/index.js'
+export { PostgresTaskSessionBindingStore, PostgresTaskSessionBindingStoreError } from './stores/index.js'
 export type { BudgetReservationAdmission, BudgetReservationAdmissionInput, ReserveBudgetInput, ReserveBudgetResult, FinishBudgetReservationInput, BudgetReservationScope } from './stores/index.js'
+export type { TaskSessionBindingRecord, TaskSessionBindingCreateInput, TaskSessionBindingListInput, TaskSessionBindingDeleteInput } from './stores/index.js'
 export type {
   MeteringBalance,
   GrantOnceInput,

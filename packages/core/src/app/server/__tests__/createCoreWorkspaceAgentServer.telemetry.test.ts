@@ -109,6 +109,7 @@ vi.mock('../../../server/db/index.js', () => ({
     db: dbMock,
     sql: { end: vi.fn() },
   }),
+  PostgresTaskSessionBindingStore: class PostgresTaskSessionBindingStore {},
   PostgresUserStore: class PostgresUserStore {},
   PostgresWorkspaceStore: class PostgresWorkspaceStore {},
 }))
