@@ -1,0 +1,49 @@
+services:
+  ingress:
+    image: "${D1_INGRESS_IMAGE:?D1_INGRESS_IMAGE is required}"
+    command: ["reverse-proxy", "--from", ":8080", "--to", "core-app:3000"]
+    ports:
+      - "80:8080"
+    depends_on:
+      core-app:
+        condition: service_healthy
+    restart: unless-stopped
+
+  core-app:
+    image: "${D1_CORE_APP_IMAGE:?D1_CORE_APP_IMAGE is required}"
+    # D1-003b must prove this process file is nonsecret before activation.
+    env_file:
+      - /etc/boring/d1/core.env
+    environment:
+      HOST: "0.0.0.0"
+      PORT: "3000"
+      BORING_AGENT_WORKSPACE_ROOT: "/data/workspaces"
+      BORING_AGENT_SESSION_ROOT: "/data/pi-sessions"
+    expose:
+      - "3000"
+    volumes:
+      - type: volume
+        source: d1-workspaces
+        target: /data/workspaces
+      - type: volume
+        source: d1-sessions
+        target: /data/pi-sessions
+      - type: bind
+        source: "${D1_STATE_ROOT:?D1_STATE_ROOT is required}"
+        target: "/var/lib/boring/d1/${D1_HOST_ID:?D1_HOST_ID is required}"
+        read_only: true
+      - type: bind
+        source: /run/boring/d1
+        target: /run/boring/d1
+        read_only: true
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://localhost:3000/health').then(r=>{if(!r.ok)throw r.status}).catch(()=>process.exit(1))"]
+      interval: 30s
+      timeout: 5s
+      start_period: 10s
+      retries: 3
+    restart: unless-stopped
+
+volumes:
+  d1-workspaces:
+  d1-sessions:

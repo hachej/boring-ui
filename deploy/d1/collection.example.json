@@ -1,0 +1,64 @@
+{
+  "schemaVersion": 1,
+  "hostId": "eu-host-1",
+  "expectedHostRevision": null,
+  "hostAppImageDigest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "runtimeProfileRef": "runsc-eu-1",
+  "databaseRef": "postgres-eu-1",
+  "workspaceRootPolicyRef": "workspace-roots-eu-1",
+  "sessionRootPolicyRef": "session-roots-eu-1",
+  "bindings": [
+    {
+      "bindingId": "claims",
+      "hostname": "claims.example.test",
+      "workspaceId": "workspace:claims",
+      "defaultDeploymentId": "deployment:claims",
+      "bundleRef": "bundle-claims-v1",
+      "deploymentRef": "deployment-claims-v1",
+      "workspaceAllocationRef": "workspace-allocation-claims",
+      "sessionAllocationRef": "session-allocation-claims",
+      "ownerPrincipalRef": "owner-claims",
+      "landing": {
+        "title": "Claims assistant",
+        "summary": "Review and organize an insurance claim."
+      },
+      "environmentRef": "environment-claims-v1",
+      "secretRefs": ["model-credential-claims"]
+    },
+    {
+      "bindingId": "insurance",
+      "hostname": "insurance.example.test",
+      "workspaceId": "workspace:insurance",
+      "defaultDeploymentId": "deployment:insurance",
+      "bundleRef": "bundle-insurance-v1",
+      "deploymentRef": "deployment-insurance-v1",
+      "workspaceAllocationRef": "workspace-allocation-insurance",
+      "sessionAllocationRef": "session-allocation-insurance",
+      "ownerPrincipalRef": "owner-insurance",
+      "landing": {
+        "title": "Insurance comparison",
+        "summary": "Compare insurance options in a dedicated workspace.",
+        "ctaLabel": "Start comparison"
+      },
+      "environmentRef": "environment-insurance-v1",
+      "secretRefs": ["model-credential-insurance"]
+    },
+    {
+      "bindingId": "travel",
+      "hostname": "travel.example.test",
+      "workspaceId": "workspace:travel",
+      "defaultDeploymentId": "deployment:travel",
+      "bundleRef": "bundle-travel-v1",
+      "deploymentRef": "deployment-travel-v1",
+      "workspaceAllocationRef": "workspace-allocation-travel",
+      "sessionAllocationRef": "session-allocation-travel",
+      "ownerPrincipalRef": "owner-travel",
+      "landing": {
+        "title": "Travel planner",
+        "summary": "Plan travel with a workspace-specific agent."
+      },
+      "environmentRef": "environment-travel-v1",
+      "secretRefs": ["model-credential-travel"]
+    }
+  ]
+}
