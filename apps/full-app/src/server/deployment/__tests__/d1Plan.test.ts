@@ -68,4 +68,11 @@ describe('parseD1HostPlan', () => {
       expect(JSON.stringify(error)).not.toContain('/srv/postgres')
     }
   })
+
+  it('admits only binding ids whose .env filename fits NAME_MAX', () => {
+    const longest = 'a'.repeat(251)
+    expect(parseD1HostPlan(plan({ bindings: [{ ...binding('a'), bindingId: longest }] })).bindings[0].bindingId).toBe(longest)
+    expect(() => parseD1HostPlan(plan({ bindings: [{ ...binding('a'), bindingId: `${longest}a` }] })))
+      .toThrow(expect.objectContaining({ code: D1HostErrorCode.PLAN_INVALID, details: { field: 'bindings[0].bindingId' } }))
+  })
 })

@@ -1,9 +1,10 @@
 import { randomUUID } from 'node:crypto'
 import { constants } from 'node:fs'
-import { lstat, mkdir, open, realpath, rename } from 'node:fs/promises'
+import { lstat, mkdir, open, readdir, realpath, rename } from 'node:fs/promises'
 import path from 'node:path'
 import type { Sha256Digest } from '@hachej/boring-agent/shared'
 
+import { renderD1BindingEnv, validateD1BindingEnv } from './d1BindingEnv.js'
 import { assertD1ExactKeys as exactKeys, D1HostError, D1HostErrorCode, strictD1Ref } from './d1Plan.js'
 import {
   canonicalizeD1ActiveEnvelope,
@@ -104,7 +105,7 @@ async function readRegular(file: string, ownerUid: number, optional = false, mod
   }
   try {
     const info = await handle.stat()
-    if (!info.isFile() || info.uid !== ownerUid || (info.mode & 0o777) !== mode) throw new Error('not regular')
+    if (!info.isFile() || info.nlink !== 1 || info.uid !== ownerUid || (info.mode & 0o777) !== mode) throw new Error('not regular')
     return await handle.readFile('utf8')
   } finally { await handle.close() }
 }
@@ -172,6 +173,15 @@ export function createHostRevisionStore(options: D1HostRevisionStoreOptions): D1
     if (resolvedRaw.schemaVersion !== 1 || resolvedRaw.domain !== RESOLVED_DOMAIN) mapped(D1HostErrorCode.PLAN_INVALID, 'resolvedFile')
     const desired = await canonicalizeD1DesiredSnapshot({ schemaVersion: 1, domain: 'boring-d1-desired:v1', plan: desiredRaw.plan, resolvedBindings: resolvedRaw.bindings })
     if (desired.plan.hostId !== hostId(host)) mapped(D1HostErrorCode.PLAN_INVALID, 'desired.plan.hostId')
+    const bindingsDirectory = path.join(target, 'bindings')
+    await directory(bindingsDirectory, 'bindings', ownerUid)
+    const expectedBindingFiles = desired.plan.bindings.map((binding) => `${binding.bindingId}.env`).sort()
+    const actualBindingFiles = (await readdir(bindingsDirectory)).sort()
+    if (JSON.stringify(actualBindingFiles) !== JSON.stringify(expectedBindingFiles)) mapped(D1HostErrorCode.PLAN_INVALID, 'bindings')
+    for (const binding of desired.plan.bindings) {
+      const content = await readRegular(path.join(bindingsDirectory, `${binding.bindingId}.env`), ownerUid)
+      validateD1BindingEnv(content!, binding)
+    }
     const secretRefs = canonicalizeD1SecretRefsEnvelope(json((await readRegular(path.join(target, 'secret-refs.json'), ownerUid))!), desired)
     const desiredStateDigest = await digestD1Desired(desired)
     if ((await readRegular(path.join(target, 'desired.sha256'), ownerUid))!.trim() !== desiredStateDigest) mapped(D1HostErrorCode.PLAN_INVALID, 'desiredDigest')
@@ -256,6 +266,13 @@ export function createHostRevisionStore(options: D1HostRevisionStoreOptions): D1
         await createDurable(path.join(temporary, 'resolved.json'), JSON.stringify({ schemaVersion: 1, domain: RESOLVED_DOMAIN, bindings: desired.resolvedBindings }), ownerUid)
         await createDurable(path.join(temporary, 'secret-refs.json'), JSON.stringify(secretRefs), ownerUid)
         await createDurable(path.join(temporary, 'desired.sha256'), `${desiredStateDigest}\n`, ownerUid)
+        const bindingsDirectory = path.join(temporary, 'bindings')
+        await mkdir(bindingsDirectory, { mode: 0o700 })
+        await directory(bindingsDirectory, 'bindings', ownerUid)
+        for (const binding of desired.plan.bindings) {
+          await createDurable(path.join(bindingsDirectory, `${binding.bindingId}.env`), renderD1BindingEnv(binding), ownerUid)
+        }
+        await syncDirectory(bindingsDirectory, 'bindings', ownerUid)
         await syncDirectory(temporary, 'candidate', ownerUid)
         await rename(temporary, target)
         await syncDirectory(revisions, 'revisions', ownerUid)

@@ -1,4 +1,4 @@
-import { access, appendFile, chmod, cp, mkdtemp, mkdir, readFile, rename, stat, symlink, writeFile } from 'node:fs/promises'
+import { access, appendFile, chmod, cp, link, mkdtemp, mkdir, readFile, readdir, rename, stat, symlink, writeFile } from 'node:fs/promises'
 import os from 'node:os'
 import path from 'node:path'
 import { createAgentAssetDigest, createAgentDeploymentDigest, type Sha256Digest } from '@hachej/boring-agent/shared'
@@ -8,6 +8,7 @@ import { describe, expect, it } from 'vitest'
 import { D1HostErrorCode } from '../d1Plan.js'
 import {
   canonicalizeD1AuditRecord,
+  canonicalizeD1DesiredSnapshot,
   createD1DesiredSnapshot,
   type D1AuditRecordV1,
   type D1DesiredSnapshotV1,
@@ -19,11 +20,12 @@ import { createD1RuntimeInputsIdentity } from '../d1RuntimeInputs.js'
 const digest = (value: string): Sha256Digest => `sha256:${value.repeat(64).slice(0, 64)}`
 const OWNER_UID = process.geteuid!()
 
-async function desired(): Promise<D1DesiredSnapshotV1> {
+async function desired(id = 'insurance'): Promise<D1DesiredSnapshotV1> {
+  const refSuffix = id === 'insurance' ? '' : `-${id}`
   const snapshot = canonicalizeWorkspaceCompositionSnapshot({
     schemaVersion: 1,
     domain: 'boring-workspace-composition:v1',
-    workspaceId: 'workspace:eclair',
+    workspaceId: `workspace:${id}`,
     runtimeProfile: {
       ref: 'runsc-eu', id: 'runsc', version: '2026.07.12', contentDigest: digest('b'),
       isolationAttestationDigest: digest('c'), workspaceRootPolicyRef: 'workspace-roots',
@@ -36,9 +38,9 @@ async function desired(): Promise<D1DesiredSnapshotV1> {
     provisioning: [], filesystemBindings: [], policies: { externalPlugins: false, pluginAuthoring: false },
   })
   const compositionDigest = await createAgentAssetDigest(JSON.stringify(snapshot))
-  const definition = { definitionId: 'definition:eclair', version: '1.0.0', digest: digest('f'), instructionsRef: 'instructions.md' }
+  const definition = { definitionId: `definition:${id}`, version: '1.0.0', digest: digest('f'), instructionsRef: 'instructions.md' }
   const deploymentInput = {
-    deploymentId: 'deployment:eclair', version: '2026.07.12', agentId: 'default',
+    deploymentId: `deployment:${id}`, version: '2026.07.12', agentId: 'default',
     definition: { definitionId: definition.definitionId, version: definition.version, digest: definition.digest },
   }
   const deploymentDigest = await createAgentDeploymentDigest(deploymentInput)
@@ -50,14 +52,14 @@ async function desired(): Promise<D1DesiredSnapshotV1> {
     schemaVersion: 1, hostId: 'host-1', expectedHostRevision: 'r0000000042', hostAppImageDigest: digest('a'),
     runtimeProfileRef: 'runsc-eu', databaseRef: 'postgres-eu', workspaceRootPolicyRef: 'workspace-roots',
     sessionRootPolicyRef: 'session-roots', bindings: [{
-      bindingId: 'insurance', hostname: 'insurance.example.test', workspaceId: snapshot.workspaceId,
+      bindingId: id, hostname: `${id}.example.test`, workspaceId: snapshot.workspaceId,
       defaultDeploymentId: deploymentInput.deploymentId, bundleRef: 'bundle', deploymentRef: 'deployment',
-      workspaceAllocationRef: 'workspace-allocation', sessionAllocationRef: 'session-allocation',
+      workspaceAllocationRef: `workspace-allocation${refSuffix}`, sessionAllocationRef: `session-allocation${refSuffix}`,
       ownerPrincipalRef: 'owner', landing: { title: 'Insurance', summary: 'Compare policies.' },
       environmentRef: 'production', secretRefs: ['credential-ref'],
     }],
   }, [{
-    schemaVersion: 1, bindingId: 'insurance', composition: { snapshot, digest: compositionDigest },
+    schemaVersion: 1, bindingId: id, composition: { snapshot, digest: compositionDigest },
     workspace: { workspaceId: snapshot.workspaceId, defaultDeploymentId: deploymentInput.deploymentId, compositionDigest },
     deployment: { deploymentId: deploymentInput.deploymentId, version: deploymentInput.version, agentId: 'default', digest: deploymentDigest },
     definition, resolvedDigest,
@@ -119,11 +121,59 @@ describe('D1 host revision store', () => {
     expect(JSON.parse(files[0])).toMatchObject({ schemaVersion: 1, domain: 'boring-d1-plan:v1' })
     expect(JSON.parse(files[1])).toMatchObject({ schemaVersion: 1, domain: 'boring-d1-resolved:v1' })
     expect(JSON.parse(files[2])).toMatchObject({ bindings: [{ secretRefs: ['credential-ref'] }] })
+    const bindingsDirectory = path.join(directory, 'bindings')
+    const bindingFile = path.join(bindingsDirectory, 'insurance.env')
+    expect(await readFile(bindingFile, 'utf8')).toBe([
+      'BORING_D1_BINDING_ENV_SCHEMA=1', 'BORING_D1_BINDING_ID=insurance',
+      'BORING_D1_ENVIRONMENT_REF=production', 'BORING_D1_WORKSPACE_ALLOCATION_REF=workspace-allocation',
+      'BORING_D1_SESSION_ALLOCATION_REF=session-allocation',
+    ].join('\n') + '\n')
+    expect(await readFile(bindingFile, 'utf8')).not.toMatch(/credential-ref|secret-value|\/srv\/|prompt/)
     for (const managed of [h.root, path.join(h.root, 'host-1'), path.join(h.root, 'host-1', 'revisions'), directory]) {
       expect((await stat(managed)).mode & 0o777).toBe(0o700)
     }
+    expect((await stat(bindingsDirectory)).mode & 0o777).toBe(0o700)
     for (const artifact of ['desired.json', 'resolved.json', 'secret-refs.json', 'desired.sha256']) {
       expect((await stat(path.join(directory, artifact))).mode & 0o777).toBe(0o400)
+    }
+    expect((await stat(bindingFile)).mode & 0o777).toBe(0o400)
+  })
+
+  it('writes the exact lexical filename set from out-of-order bindings', async () => {
+    const insurance = await desired('insurance'); const claims = await desired('claims')
+    const shuffled = await canonicalizeD1DesiredSnapshot({
+      schemaVersion: 1, domain: 'boring-d1-desired:v1',
+      plan: { ...insurance.plan, bindings: [insurance.plan.bindings[0], claims.plan.bindings[0]] },
+      resolvedBindings: [insurance.resolvedBindings[0], claims.resolvedBindings[0]],
+    })
+    const h = await harness(); const revisionId = await h.store.reserveRevisionId('host-1')
+    await h.store.writeCandidate('host-1', revisionId, shuffled)
+    const files = (await readdir(path.join(h.root, 'host-1', 'revisions', revisionId, 'bindings'))).sort()
+    expect(files).toEqual(['claims.env', 'insurance.env'])
+    expect((await h.store.readCandidate('host-1', revisionId))?.desired.plan.bindings.map((entry) => entry.bindingId))
+      .toEqual(['claims', 'insurance'])
+  })
+
+  it('rejects missing, extra, linked, non-private, and noncanonical binding artifacts', async () => {
+    async function written() {
+      const h = await harness(); const value = await desired(); const revisionId = await h.store.reserveRevisionId('host-1')
+      await h.store.writeCandidate('host-1', revisionId, value)
+      const directory = path.join(h.root, 'host-1', 'revisions', revisionId, 'bindings')
+      return { h, revisionId, directory, file: path.join(directory, 'insurance.env') }
+    }
+    for (const mutate of [
+      async ({ file }: Awaited<ReturnType<typeof written>>) => { await rename(file, `${file}.missing`) },
+      async ({ directory }: Awaited<ReturnType<typeof written>>) => { await writeFile(path.join(directory, 'extra.env'), 'EXTRA=1\n', { mode: 0o400 }) },
+      async ({ h, file }: Awaited<ReturnType<typeof written>>) => { const backing = path.join(h.root, 'binding.backing'); await rename(file, backing); await symlink(backing, file) },
+      async ({ h, file }: Awaited<ReturnType<typeof written>>) => { await link(file, path.join(h.root, 'binding.hardlink')) },
+      async ({ file }: Awaited<ReturnType<typeof written>>) => { await chmod(file, 0o600) },
+      async ({ directory }: Awaited<ReturnType<typeof written>>) => { await chmod(directory, 0o755) },
+      async ({ file }: Awaited<ReturnType<typeof written>>) => { const content = await readFile(file, 'utf8'); await chmod(file, 0o600); await writeFile(file, `# noncanonical\n${content}`); await chmod(file, 0o400) },
+    ]) {
+      const target = await written(); await mutate(target)
+      const error = await target.h.store.readCandidate('host-1', target.revisionId).catch((caught) => caught)
+      expect(error).toMatchObject({ code: D1HostErrorCode.ROLLBACK_TARGET_INVALID, details: { field: 'targetRevision' } })
+      expect(JSON.stringify(error)).not.toMatch(/binding\.backing|noncanonical|EXTRA/)
     }
   })
 

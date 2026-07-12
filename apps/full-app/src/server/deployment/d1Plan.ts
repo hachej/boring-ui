@@ -113,9 +113,11 @@ function parseBinding(value: unknown, index: number): D1SiteBindingV1 {
   const secretRefs = input.secretRefs.map((value, secretIndex) => strictD1Ref(value, `${field}.secretRefs[${secretIndex}]`)).sort()
   unique(secretRefs, `${field}.secretRefs`)
   if (typeof input.hostname !== 'string' || !HOST_RE.test(input.hostname)) invalidD1Field(`${field}.hostname`)
+  const bindingId = strictD1Ref(input.bindingId, `${field}.bindingId`)
+  if (bindingId.length > 251) invalidD1Field(`${field}.bindingId`)
 
   return Object.freeze({
-    bindingId: strictD1Ref(input.bindingId, `${field}.bindingId`),
+    bindingId,
     hostname: input.hostname,
     workspaceId: agentRef(input.workspaceId, `${field}.workspaceId`),
     defaultDeploymentId: agentRef(input.defaultDeploymentId, `${field}.defaultDeploymentId`),
