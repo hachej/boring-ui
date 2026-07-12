@@ -27,6 +27,32 @@ const AuthorizedAgentDeploymentBindingSchema = z
 
 const RESOLVED_AGENT_DIGEST_DOMAIN = 'boring-agent/resolved-agent:v1'
 
+const ResolvedAgentDigestInputSchema = z.object({
+  workspaceId: OpaqueRefSchema,
+  defaultDeploymentId: OpaqueRefSchema,
+  workspaceCompositionDigest: Sha256DigestSchema,
+  definitionDigest: Sha256DigestSchema,
+  deploymentDigest: Sha256DigestSchema,
+}).strict()
+
+export interface ResolvedAgentDigestInput {
+  readonly workspaceId: string
+  readonly defaultDeploymentId: string
+  readonly workspaceCompositionDigest: Sha256Digest
+  readonly definitionDigest: Sha256Digest
+  readonly deploymentDigest: Sha256Digest
+}
+
+export async function createResolvedAgentDigest(input: ResolvedAgentDigestInput): Promise<Sha256Digest> {
+  const parsed = ResolvedAgentDigestInputSchema.safeParse(input)
+  if (!parsed.success) {
+    const field = parsed.error.issues[0]?.path[0]
+    const digestField = typeof field === 'string' ? field : 'workspaceId'
+    throw invalidDeployment(digestField, `${digestField} is invalid`)
+  }
+  return createAgentAssetDigest(JSON.stringify({ domain: RESOLVED_AGENT_DIGEST_DOMAIN, ...parsed.data }))
+}
+
 export interface ResolvedAgent {
   readonly workspace: Readonly<{
     workspaceId: string
@@ -142,14 +168,13 @@ export async function resolveAgentDeployment(
     )
   }
 
-  const resolvedDigest = await createAgentAssetDigest(JSON.stringify({
-    domain: RESOLVED_AGENT_DIGEST_DOMAIN,
+  const resolvedDigest = await createResolvedAgentDigest({
     workspaceId: binding.workspaceId,
     defaultDeploymentId: binding.defaultDeploymentId,
     workspaceCompositionDigest: binding.workspaceCompositionDigest,
     definitionDigest,
     deploymentDigest,
-  }))
+  })
 
   const workspace = Object.freeze({
     workspaceId: binding.workspaceId,

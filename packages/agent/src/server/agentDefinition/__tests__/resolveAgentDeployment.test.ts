@@ -15,7 +15,7 @@ import {
   AgentDeploymentErrorCode,
   ErrorCode,
 } from '../../../shared/error-codes'
-import { resolveAgentDeployment } from '../resolveAgentDeployment'
+import { createResolvedAgentDigest, resolveAgentDeployment } from '../resolveAgentDeployment'
 
 const COMPOSITION_DIGEST = `sha256:${'c'.repeat(64)}` as Sha256Digest
 const CHANGED_COMPOSITION_DIGEST = `sha256:${'d'.repeat(64)}` as Sha256Digest
@@ -117,6 +117,13 @@ describe('resolveAgentDeployment', () => {
       },
     })
     expect(first.resolvedDigest).toMatch(/^sha256:[a-f0-9]{64}$/)
+    expect(first.resolvedDigest).toBe(await createResolvedAgentDigest({
+      workspaceId: first.workspace.workspaceId,
+      defaultDeploymentId: first.workspace.defaultDeploymentId,
+      workspaceCompositionDigest: first.workspace.compositionDigest,
+      definitionDigest: first.definition.digest,
+      deploymentDigest: first.deployment.digest,
+    }))
     expect(first.deployment.digest).toMatch(/^sha256:[a-f0-9]{64}$/)
     expect(Object.isFrozen(first)).toBe(true)
     expect(Object.isFrozen(first.workspace)).toBe(true)

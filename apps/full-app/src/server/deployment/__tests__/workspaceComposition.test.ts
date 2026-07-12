@@ -20,6 +20,7 @@ import {
   FULL_APP_GOVERNANCE_PLUGIN_DESCRIPTOR,
 } from '../../plugins.js'
 import {
+  canonicalizeWorkspaceCompositionSnapshot,
   createWorkspaceCompositionSnapshot,
   resolveWorkspaceAgentDeployment,
   type StableContributionDescriptor,
@@ -174,6 +175,10 @@ describe('createWorkspaceCompositionSnapshot', () => {
     const second = await createWorkspaceCompositionSnapshot(reversed)
 
     expect(second).toEqual(first)
+    expect(canonicalizeWorkspaceCompositionSnapshot({
+      ...first.snapshot,
+      serverPlugins: [...first.snapshot.serverPlugins].reverse(),
+    })).toEqual(first.snapshot)
     expect(first.digest).toMatch(/^sha256:[a-f0-9]{64}$/)
     expect(Object.isFrozen(first.snapshot)).toBe(true)
     expect(Object.isFrozen(first.snapshot.runtimeProfile)).toBe(true)

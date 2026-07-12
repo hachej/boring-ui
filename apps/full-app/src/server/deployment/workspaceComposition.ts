@@ -76,6 +76,7 @@ type BundleDefinitionIdentity = Readonly<{ definitionId: string; version: string
 const issuedCompositionIdentities = new WeakMap<WorkspaceCompositionIdentityV1, BundleDefinitionIdentity>()
 
 const INPUT_KEYS = ['workspaceId', 'bundle', 'runtimeProfile', 'hostAppImageDigest', 'serverPlugins', 'defaultPluginPackages', 'staticSystemPromptDigest', 'inventories', 'provisioning', 'filesystemBindings', 'externalPlugins', 'pluginAuthoring'] as const
+const SNAPSHOT_KEYS = ['schemaVersion', 'domain', 'workspaceId', 'runtimeProfile', 'hostAppImageDigest', 'serverPlugins', 'defaultPluginPackages', 'staticSystemPromptDigest', 'inventories', 'provisioning', 'filesystemBindings', 'policies'] as const
 const PROFILE_KEYS = ['ref', 'id', 'version', 'contentDigest', 'isolationAttestationDigest', 'workspaceRootPolicyRef', 'sessionRootPolicyRef'] as const
 const INVENTORY_KEYS = ['capabilities', 'tools', 'skills', 'mcpServers'] as const
 
@@ -96,7 +97,7 @@ function sortedUnique(values: unknown, field: string): readonly string[] {
   return Object.freeze(sorted)
 }
 
-function descriptors(values: readonly StableContributionDescriptor[], field: string): readonly StableContributionDescriptor[] {
+function descriptors(values: unknown, field: string): readonly StableContributionDescriptor[] {
   if (!Array.isArray(values)) fail(field)
   const sorted = values.map((value, index) => {
     exactKeys(value, ['id', 'version', 'contentDigest'], `${field}[${index}]`)
@@ -112,6 +113,55 @@ function descriptors(values: readonly StableContributionDescriptor[], field: str
 
 function inventory(values: readonly string[] | null, field: string): readonly string[] | null {
   return values === null ? null : sortedUnique(values, field)
+}
+
+export function canonicalizeWorkspaceCompositionSnapshot(raw: unknown): WorkspaceCompositionSnapshotV1 {
+  exactKeys(raw, SNAPSHOT_KEYS, 'compositionSnapshot')
+  if (raw.schemaVersion !== 1 || raw.domain !== 'boring-workspace-composition:v1') fail('compositionSnapshot')
+  exactKeys(raw.runtimeProfile, PROFILE_KEYS, 'compositionSnapshot.runtimeProfile')
+  exactKeys(raw.inventories, INVENTORY_KEYS, 'compositionSnapshot.inventories')
+  exactKeys(raw.policies, ['externalPlugins', 'pluginAuthoring'], 'compositionSnapshot.policies')
+  if (typeof raw.policies.externalPlugins !== 'boolean') fail('compositionSnapshot.policies.externalPlugins')
+  if (typeof raw.policies.pluginAuthoring !== 'boolean') fail('compositionSnapshot.policies.pluginAuthoring')
+  if (!Array.isArray(raw.filesystemBindings)) fail('compositionSnapshot.filesystemBindings')
+  const filesystemBindings = raw.filesystemBindings.map((binding, index) => {
+    exactKeys(binding, ['id', 'access', 'policy'], `compositionSnapshot.filesystemBindings[${index}]`)
+    return Object.freeze({
+      id: checkedRef(binding.id, `compositionSnapshot.filesystemBindings[${index}].id`),
+      access: checkedRef(binding.access, `compositionSnapshot.filesystemBindings[${index}].access`),
+      policy: checkedRef(binding.policy, `compositionSnapshot.filesystemBindings[${index}].policy`),
+    })
+  }).sort(compareId)
+  if (new Set(filesystemBindings.map((binding) => binding.id)).size !== filesystemBindings.length) fail('compositionSnapshot.filesystemBindings')
+  const profile = raw.runtimeProfile
+  const inventories = raw.inventories
+  return Object.freeze({
+    schemaVersion: 1,
+    domain: 'boring-workspace-composition:v1',
+    workspaceId: opaqueRef(raw.workspaceId, 'compositionSnapshot.workspaceId'),
+    runtimeProfile: Object.freeze({
+      ref: checkedRef(profile.ref, 'compositionSnapshot.runtimeProfile.ref'),
+      id: checkedRef(profile.id, 'compositionSnapshot.runtimeProfile.id'),
+      version: checkedRef(profile.version, 'compositionSnapshot.runtimeProfile.version'),
+      contentDigest: checkedDigest(profile.contentDigest, 'compositionSnapshot.runtimeProfile.contentDigest'),
+      isolationAttestationDigest: checkedDigest(profile.isolationAttestationDigest, 'compositionSnapshot.runtimeProfile.isolationAttestationDigest'),
+      workspaceRootPolicyRef: checkedRef(profile.workspaceRootPolicyRef, 'compositionSnapshot.runtimeProfile.workspaceRootPolicyRef'),
+      sessionRootPolicyRef: checkedRef(profile.sessionRootPolicyRef, 'compositionSnapshot.runtimeProfile.sessionRootPolicyRef'),
+    }),
+    hostAppImageDigest: checkedDigest(raw.hostAppImageDigest, 'compositionSnapshot.hostAppImageDigest'),
+    serverPlugins: descriptors(raw.serverPlugins, 'compositionSnapshot.serverPlugins'),
+    defaultPluginPackages: descriptors(raw.defaultPluginPackages, 'compositionSnapshot.defaultPluginPackages'),
+    staticSystemPromptDigest: checkedDigest(raw.staticSystemPromptDigest, 'compositionSnapshot.staticSystemPromptDigest'),
+    inventories: Object.freeze({
+      capabilities: inventory(inventories.capabilities as readonly string[] | null, 'compositionSnapshot.inventories.capabilities'),
+      tools: inventory(inventories.tools as readonly string[] | null, 'compositionSnapshot.inventories.tools'),
+      skills: inventory(inventories.skills as readonly string[] | null, 'compositionSnapshot.inventories.skills'),
+      mcpServers: inventory(inventories.mcpServers as readonly string[] | null, 'compositionSnapshot.inventories.mcpServers'),
+    }),
+    provisioning: descriptors(raw.provisioning, 'compositionSnapshot.provisioning'),
+    filesystemBindings: Object.freeze(filesystemBindings),
+    policies: Object.freeze({ externalPlugins: raw.policies.externalPlugins, pluginAuthoring: raw.policies.pluginAuthoring }),
+  })
 }
 
 function verifyRequirements(
@@ -163,37 +213,19 @@ export async function createWorkspaceCompositionSnapshot(
     mcpServers: inventory(input.inventories.mcpServers, 'inventories.mcpServers'),
   })
   verifyRequirements(input.bundle, inventories)
-  const filesystemBindings = input.filesystemBindings.map((binding, index) => {
-    exactKeys(binding, ['id', 'access', 'policy'], `filesystemBindings[${index}]`)
-    return Object.freeze({
-      id: checkedRef(binding.id, `filesystemBindings[${index}].id`),
-      access: checkedRef(binding.access, `filesystemBindings[${index}].access`),
-      policy: checkedRef(binding.policy, `filesystemBindings[${index}].policy`),
-    })
-  }).sort(compareId)
-  if (new Set(filesystemBindings.map((binding) => binding.id)).size !== filesystemBindings.length) fail('filesystemBindings')
-
-  const snapshot: WorkspaceCompositionSnapshotV1 = Object.freeze({
+  const snapshot = canonicalizeWorkspaceCompositionSnapshot({
     schemaVersion: 1,
     domain: 'boring-workspace-composition:v1',
-    workspaceId: opaqueRef(input.workspaceId, 'workspaceId'),
-    runtimeProfile: Object.freeze({
-      ref: checkedRef(input.runtimeProfile.ref, 'runtimeProfile.ref'),
-      id: checkedRef(input.runtimeProfile.id, 'runtimeProfile.id'),
-      version: checkedRef(input.runtimeProfile.version, 'runtimeProfile.version'),
-      contentDigest: checkedDigest(input.runtimeProfile.contentDigest, 'runtimeProfile.contentDigest'),
-      isolationAttestationDigest: checkedDigest(input.runtimeProfile.isolationAttestationDigest, 'runtimeProfile.isolationAttestationDigest'),
-      workspaceRootPolicyRef: checkedRef(input.runtimeProfile.workspaceRootPolicyRef, 'runtimeProfile.workspaceRootPolicyRef'),
-      sessionRootPolicyRef: checkedRef(input.runtimeProfile.sessionRootPolicyRef, 'runtimeProfile.sessionRootPolicyRef'),
-    }),
-    hostAppImageDigest: checkedDigest(input.hostAppImageDigest, 'hostAppImageDigest'),
-    serverPlugins: descriptors(input.serverPlugins, 'serverPlugins'),
-    defaultPluginPackages: descriptors(input.defaultPluginPackages, 'defaultPluginPackages'),
-    staticSystemPromptDigest: checkedDigest(input.staticSystemPromptDigest, 'staticSystemPromptDigest'),
+    workspaceId: input.workspaceId,
+    runtimeProfile: input.runtimeProfile,
+    hostAppImageDigest: input.hostAppImageDigest,
+    serverPlugins: input.serverPlugins,
+    defaultPluginPackages: input.defaultPluginPackages,
+    staticSystemPromptDigest: input.staticSystemPromptDigest,
     inventories,
-    provisioning: descriptors(input.provisioning, 'provisioning'),
-    filesystemBindings: Object.freeze(filesystemBindings),
-    policies: Object.freeze({ externalPlugins: input.externalPlugins, pluginAuthoring: input.pluginAuthoring }),
+    provisioning: input.provisioning,
+    filesystemBindings: input.filesystemBindings,
+    policies: { externalPlugins: input.externalPlugins, pluginAuthoring: input.pluginAuthoring },
   })
   const identity = Object.freeze({ snapshot, digest: await createAgentAssetDigest(JSON.stringify(snapshot)) })
   issuedCompositionIdentities.set(identity, Object.freeze({
