@@ -69,6 +69,40 @@ import {
 
 type HostExtensionFactory = PiExtensionFactory
 
+type WorkspaceTaskSessionHostContext = {
+  workspaceId: string
+  authSubject?: string
+}
+
+type WorkspaceTaskSessionSummary = {
+  id: string
+  title: string
+  createdAt: string
+  updatedAt: string
+}
+
+type WorkspaceTaskSessionPortResolveResult = {
+  context: WorkspaceTaskSessionHostContext
+  port: {
+    findAuthorizedSession(context: WorkspaceTaskSessionHostContext, sessionId: string): Promise<WorkspaceTaskSessionSummary | null>
+    searchAuthorizedSessions(context: WorkspaceTaskSessionHostContext, query: string): Promise<WorkspaceTaskSessionSummary[]>
+  }
+}
+
+type WorkspaceTaskSessionPortProvider = {
+  resolve(request: FastifyRequest): WorkspaceTaskSessionPortResolveResult | Promise<WorkspaceTaskSessionPortResolveResult>
+}
+
+function decorateTaskSessionPortProvider(app: FastifyInstance, provider: WorkspaceTaskSessionPortProvider): void {
+  const maybeDecoratable = app as {
+    decorate?: FastifyInstance["decorate"]
+    hasDecorator?: FastifyInstance["hasDecorator"]
+  }
+  if (typeof maybeDecoratable.decorate !== "function") return
+  if (typeof maybeDecoratable.hasDecorator === "function" && maybeDecoratable.hasDecorator("boringTaskSessionPortProvider")) return
+  maybeDecoratable.decorate("boringTaskSessionPortProvider", provider)
+}
+
 export interface WorkspaceAgentPiOptions {
   noContextFiles?: boolean
   noSkills?: boolean
@@ -967,7 +1001,7 @@ export async function createWorkspaceAgentServer(
       }
     })
   }
-  app.decorate("boringTaskSessionPortProvider", {
+  decorateTaskSessionPortProvider(app, {
     resolve(request: FastifyRequest) {
       const workspaceId = (request as WorkspaceScopedRequest).workspaceContext.workspaceId
       if (!workspaceId) throw new Error("workspace session scope is unavailable")
