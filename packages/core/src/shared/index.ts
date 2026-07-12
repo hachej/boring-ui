@@ -10,6 +10,7 @@ export type {
   SessionPayload,
   SessionState,
   RateLimitEndpointOverride,
+  TrustedProxyPolicy,
   JsonValue,
   CoreCapabilities,
   CapabilitiesResponse,

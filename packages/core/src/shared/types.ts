@@ -131,6 +131,11 @@ export type RateLimitEndpointOverride = {
   window: string
 }
 
+export interface TrustedProxyPolicy {
+  cidrs: readonly string[]
+  hops: number
+}
+
 export interface CoreConfig {
   appId: string
   appName: string
@@ -156,6 +161,7 @@ export interface CoreConfig {
       enabled: boolean
       upgradeInsecureRequests?: boolean
     }
+    trustedProxy?: TrustedProxyPolicy | 'legacy-unsafe' | null
   }
 
   encryption: {

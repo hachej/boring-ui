@@ -82,7 +82,7 @@ describe('createCoreApp', () => {
     )
   })
 
-  it('respects trustProxy — reads X-Forwarded-For', async () => {
+  it('ignores spoofed proxy headers when policy is undefined', async () => {
     app = await createCoreApp(TEST_CONFIG, { manageShutdown: false })
     app.get('/ip', async (req) => ({ ip: req.ip }))
     await app.ready()
@@ -91,10 +91,48 @@ describe('createCoreApp', () => {
       method: 'GET',
       url: '/ip',
       headers: { 'x-forwarded-for': '1.2.3.4, 10.0.0.1' },
+      remoteAddress: '192.168.255.250',
     })
 
-    const body = JSON.parse(res.body)
-    expect(body.ip).toBe('1.2.3.4')
+    expect(JSON.parse(res.body).ip).toBe('192.168.255.250')
+  })
+
+  it('ignores spoofed proxy headers when policy is explicitly null', async () => {
+    const config: CoreConfig = { ...TEST_CONFIG, security: { ...TEST_CONFIG.security!, trustedProxy: null } }
+    app = await createCoreApp(config, { manageShutdown: false })
+    app.get('/ip', async (req) => ({ ip: req.ip }))
+    await app.ready()
+    const response = await app.inject({ method: 'GET', url: '/ip', remoteAddress: '192.168.255.250', headers: { 'x-forwarded-for': '1.2.3.4' } })
+    expect(JSON.parse(response.body).ip).toBe('192.168.255.250')
+  })
+
+  it('preserves forwarded IP only through the explicit legacy-unsafe sentinel', async () => {
+    const config: CoreConfig = { ...TEST_CONFIG, security: { ...TEST_CONFIG.security!, trustedProxy: 'legacy-unsafe' } }
+    app = await createCoreApp(config, { manageShutdown: false })
+    app.get('/ip', async (req) => ({ ip: req.ip }))
+    await app.ready()
+    const response = await app.inject({ method: 'GET', url: '/ip', remoteAddress: '192.168.255.250', headers: { 'x-forwarded-for': '1.2.3.4' } })
+    expect(JSON.parse(response.body).ip).toBe('1.2.3.4')
+  })
+
+  it('trusts only configured ingress CIDRs within the exact hop budget', async () => {
+    const config: CoreConfig = {
+      ...TEST_CONFIG,
+      security: { ...TEST_CONFIG.security!, trustedProxy: { cidrs: ['192.168.255.250/32'], hops: 1 } },
+    }
+    app = await createCoreApp(config, { manageShutdown: false })
+    app.get('/ip', async (req) => ({ ip: req.ip }))
+    await app.ready()
+
+    const cases = [
+      { remoteAddress: '192.168.255.250', forwarded: '198.51.100.7', expected: '198.51.100.7' },
+      { remoteAddress: '192.168.255.251', forwarded: '198.51.100.7', expected: '192.168.255.251' },
+      { remoteAddress: '192.168.255.250', forwarded: '192.0.2.200, 198.51.100.7', expected: '198.51.100.7' },
+    ]
+    for (const testCase of cases) {
+      const response = await app.inject({ method: 'GET', url: '/ip', remoteAddress: testCase.remoteAddress, headers: { 'x-forwarded-for': testCase.forwarded } })
+      expect(JSON.parse(response.body).ip).toBe(testCase.expected)
+    }
   })
 
   it('applies CORS headers for allowed origins', async () => {
