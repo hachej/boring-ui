@@ -63,13 +63,15 @@ veth creation; sudo path proven).
 
 ## 5. ID1 identity-server selection (research completes the spike)
 
-Verdict: **Ory Hydra + boring-owned adapter layer.** Keycloak's only edge
-is CIMD (feature flag); it lacks RFC 8707 entirely (issue #41526) and costs
-~750MB–2GB JVM vs Hydra's ~42MB image (Go vs JVM footprint, not a binary-size
-comparison). Hydra: PKCE proven live (§3),
+Verdict: **Ory Hydra + boring-owned adapter layer.** Keycloak merged initial
+experimental RFC 8707 support on 2026-03-17 (PR #46763); #41526 is closed and
+follow-up #47117 remains open. The decisive factors remain footprint (Ory's
+documented 5–15 MB Go binary range versus a 750 MB+ JVM footprint) and our live
+Hydra PKCE spike (§3). Hydra has
 partial 8707 via `aud` binding, DCR present (default state disputed:
 research says on, our live spike found the endpoint disabled — verify at
 build). Boring must implement REGARDLESS of server: the RFC 9728
 protected-resource-metadata endpoint, resource-vs-audience validation
 (reject cross-resource token reuse), and CIMD fetch/validation. Those are
-ID1 beads, not server config.
+ID1 beads, not server config. Keep Hydra selected; re-evaluate only if
+Keycloak's RFC 8707 support becomes stable **and** CIMD becomes required.
