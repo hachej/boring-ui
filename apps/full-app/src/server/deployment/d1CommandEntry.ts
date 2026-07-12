@@ -13,6 +13,7 @@ import { D1HostError, D1HostErrorCode } from './d1Plan.js'
 import { createHostRevisionStore } from './hostRevisionStore.js'
 
 const MAX_BYTES = 1024 * 1024
+const D1_APP_GID = 10001
 export type D1EntryMode = '--read-only' | '--locked'
 export interface D1EntryContext { readonly ownerUid: number; readonly stateRoot: string; readonly mutationGuard: D1MutationGuard }
 export type D1DependencyFactory = (context: D1EntryContext) => D1CommandEngineOptions
@@ -82,7 +83,7 @@ function assertInheritedLock(lockRoot: string, hostId: string, uid: number): voi
 function unavailable(field: string): never { throw new D1HostError(D1HostErrorCode.COLLECTION_NOT_READY, { field }) }
 
 export const createProductionD1Dependencies: D1DependencyFactory = ({ ownerUid, stateRoot, mutationGuard }) => ({
-  store: createHostRevisionStore({ root: stateRoot, ownerUid }),
+  store: createHostRevisionStore({ root: stateRoot, ownerUid, appGid: D1_APP_GID }),
   resolver: { resolvePlan: async () => unavailable('resolver'), reproduce: async () => unavailable('resolver') },
   effects: {
     loadAdmittedBindingIds: async () => unavailable('admissions'),
