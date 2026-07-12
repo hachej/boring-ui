@@ -52,6 +52,20 @@ pnpm --filter full-app dev
 
 Open `http://localhost:5173`.
 
+### Hosted automation trigger
+
+Set `BORING_AUTOMATION_TRIGGER_TOKEN` to a deployment secret. The platform
+scheduler invokes:
+
+```bash
+curl --fail --silent --show-error -X POST \
+  -H "Authorization: Bearer $BORING_AUTOMATION_TRIGGER_TOKEN" \
+  http://localhost:5173/api/v1/boring-automation/due/hosted
+```
+
+The token is service-principal authentication only; each automation creator is
+re-authorized before execution. The plugin does not start a timer.
+
 ## Scripts
 
 | Script | What it does |
