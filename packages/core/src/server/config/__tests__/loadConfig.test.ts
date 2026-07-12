@@ -256,7 +256,7 @@ describe('loadConfig', () => {
       wrongMode,
     ])
       expectFileSecretFailure(file)
-    expectFileSecretFailure(wrongOwner, process.geteuid() + 1)
+    expectFileSecretFailure(wrongOwner, process.geteuid!() + 1)
   })
 
   it.each([
