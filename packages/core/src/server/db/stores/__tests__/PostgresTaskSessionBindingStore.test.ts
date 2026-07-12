@@ -99,6 +99,30 @@ describe.runIf(TEST_DB)('PostgresTaskSessionBindingStore', () => {
     createReopenedStore: () => new PostgresTaskSessionBindingStore(drizzle(sqlClient)),
   })
 
+  it('does not report a conflict when a duplicate link races an unlink', async () => {
+    for (let index = 0; index < 25; index += 1) {
+      const taskId = `race-${index}`
+      const input = { workspaceId: 'workspace-a', adapterId: 'github', taskId, sessionId: 'pi-race', title: 'Race' }
+      const existing = await store.createBinding(input)
+
+      const results = await Promise.allSettled([
+        store.createBinding(input),
+        store.deleteBinding({ workspaceId: 'workspace-a', bindingId: existing.id }),
+      ])
+      expect(results).toEqual([
+        expect.objectContaining({ status: 'fulfilled' }),
+        expect.objectContaining({ status: 'fulfilled' }),
+      ])
+
+      const remaining = await store.listBindings({ workspaceId: 'workspace-a', adapterId: 'github', taskId })
+      expect(remaining).toEqual(
+        remaining.length === 0
+          ? []
+          : [expect.objectContaining({ workspaceId: 'workspace-a', adapterId: 'github', taskId, sessionId: 'pi-race' })],
+      )
+    }
+  })
+
   it('is backed by the real migrated Postgres table and unique index', async () => {
     const binding = await store.createBinding({ workspaceId: 'workspace-a', adapterId: 'github', taskId: '614', sessionId: 'pi-a', title: 'Hosted A' })
     const rows = await sqlClient`

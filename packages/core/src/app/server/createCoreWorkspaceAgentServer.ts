@@ -42,7 +42,7 @@ import { createCoreWorkspaceBridge } from './coreWorkspaceBridge.js'
 import type { FastifyInstance, FastifyRequest } from 'fastify'
 import type postgres from 'postgres'
 import type { CoreConfig } from '../../shared/types.js'
-import { ERROR_CODES } from '../../shared/errors.js'
+import { ERROR_CODES, type ErrorCode } from '../../shared/errors.js'
 import { safeCapture, type TelemetrySink } from '../../shared/telemetry.js'
 import {
   authHook,
@@ -384,9 +384,11 @@ function encodeAuthRequestBody(
   return JSON.stringify(bodyValue)
 }
 
-function httpError(message: string, statusCode: number): Error & { statusCode: number } {
-  const error = new Error(message) as Error & { statusCode: number }
+function httpError(message: string, statusCode: number, code: ErrorCode = ERROR_CODES.INTERNAL_ERROR): Error & { statusCode: number; status: number; code: ErrorCode } {
+  const error = new Error(message) as Error & { statusCode: number; status: number; code: ErrorCode }
   error.statusCode = statusCode
+  error.status = statusCode
+  error.code = code
   return error
 }
 
@@ -398,7 +400,7 @@ function firstString(value: unknown): string | undefined {
 
 function validateWorkspaceIdSegment(value: string): string {
   const workspaceId = value.trim()
-  if (!workspaceId) throw httpError('workspace id is required', 400)
+  if (!workspaceId) throw httpError('workspace id is required', 400, ERROR_CODES.VALIDATION_FAILED)
   if (
     workspaceId.includes('\0') ||
     workspaceId.includes('/') ||
@@ -406,7 +408,7 @@ function validateWorkspaceIdSegment(value: string): string {
     workspaceId.includes('..') ||
     path.isAbsolute(workspaceId)
   ) {
-    throw httpError('invalid workspace id', 400)
+    throw httpError('invalid workspace id', 400, ERROR_CODES.VALIDATION_FAILED)
   }
   return workspaceId
 }
@@ -425,16 +427,16 @@ async function resolveAuthorizedWorkspaceId(
 ): Promise<string> {
   const normalizedWorkspaceId = resolveWorkspaceIdFromRequest(request)
   const user = request.user
-  if (!user?.id) throw httpError('authentication required', 401)
+  if (!user?.id) throw httpError('authentication required', 401, ERROR_CODES.UNAUTHORIZED)
 
   let member = false
   try {
     member = await workspaceStore.isMember(normalizedWorkspaceId, user.id)
   } catch (error) {
     request.log?.error({ err: error, workspaceId: normalizedWorkspaceId }, 'workspace access check failed')
-    throw httpError('workspace access check failed', 500)
+    throw httpError('workspace access check failed', 500, ERROR_CODES.INTERNAL_ERROR)
   }
-  if (!member) throw httpError('workspace access denied', 403)
+  if (!member) throw httpError('workspace access denied', 403, ERROR_CODES.FORBIDDEN)
   return normalizedWorkspaceId
 }
 
@@ -442,7 +444,7 @@ async function resolveWorkspaceRoot(baseRoot: string, workspaceId: string): Prom
   const base = path.resolve(baseRoot)
   const scopedRoot = path.resolve(base, workspaceId)
   if (scopedRoot === base || !scopedRoot.startsWith(`${base}${path.sep}`)) {
-    throw httpError('invalid workspace id', 400)
+    throw httpError('invalid workspace id', 400, ERROR_CODES.VALIDATION_FAILED)
   }
   await mkdir(scopedRoot, { recursive: true })
   return scopedRoot

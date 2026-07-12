@@ -1,14 +1,35 @@
+// @vitest-environment jsdom
 import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { afterAll, describe, expect, it } from 'vitest'
+import { createElement } from 'react'
+import { fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { afterAll, describe, expect, it, vi } from 'vitest'
 import postgres from 'postgres'
 
 import { createTasksServerPlugin } from '../../../../../../plugins/tasks/src/server/index'
+import { TaskCard } from '../../../../../../plugins/tasks/src/front/TaskCard'
+import type { BoringTaskCard } from '../../../../../../plugins/tasks/src/shared'
 import { runMigrations } from '../../../server/db/migrate'
 import { resolveCoreTestDatabase, type CoreTestDatabase } from '../../../server/db/__tests__/testDatabase'
 import type { CoreConfig } from '../../../shared/types'
 import { createCoreWorkspaceAgentServer, type CoreWorkspaceAgentServer } from '../createCoreWorkspaceAgentServer'
+
+const taskCardUi = vi.hoisted(() => ({
+  openDetachedChat: vi.fn(),
+  pluginClient: {
+    postJson: vi.fn(),
+    getJson: vi.fn(),
+  },
+}))
+
+vi.mock('@hachej/boring-workspace', () => ({
+  useWorkspacePluginClient: () => taskCardUi.pluginClient,
+}))
+
+vi.mock('@hachej/boring-workspace/plugin', () => ({
+  useWorkspaceShellCapabilities: () => ({ openArtifact: vi.fn(), openDetachedChat: taskCardUi.openDetachedChat }),
+}))
 
 const TEST_DB: CoreTestDatabase | undefined = await resolveCoreTestDatabase('hosted_tasks')
 
@@ -36,15 +57,6 @@ function baseConfig(databaseUrl: string): CoreConfig {
   }
 }
 
-function requestWorkspaceId(request: { headers?: Record<string, unknown>; query?: unknown }): string {
-  const headers = request.headers ?? {}
-  const header = headers['x-boring-workspace-id']
-    ?? Object.entries(headers).find(([key]) => key.toLowerCase() === 'x-boring-workspace-id')?.[1]
-  if (typeof header === 'string' && header.trim()) return header.trim()
-  const query = request.query as { workspaceId?: unknown } | undefined
-  return typeof query?.workspaceId === 'string' && query.workspaceId.trim() ? query.workspaceId.trim() : 'default'
-}
-
 async function createHostedApp(options: {
   databaseUrl: string
   workspaceRoot: string
@@ -56,7 +68,6 @@ async function createHostedApp(options: {
     mode: 'direct',
     workspaceRoot: options.workspaceRoot,
     sessionRoot: options.sessionRoot,
-    getWorkspaceId: async (request) => requestWorkspaceId(request),
     plugins: [createTasksServerPlugin({ sources: [] })],
   })
 }
@@ -74,8 +85,48 @@ async function signUp(app: CoreWorkspaceAgentServer, email: string): Promise<str
   return cookies.map((cookie) => cookie.split(';')[0]).join('; ')
 }
 
+async function defaultWorkspaceId(app: CoreWorkspaceAgentServer, cookie: string): Promise<string> {
+  const response = await app.inject({
+    method: 'GET',
+    url: '/api/v1/workspaces',
+    headers: { cookie },
+  })
+  expect(response.statusCode, response.body).toBe(200)
+  const body = response.json() as { workspaces?: Array<{ id?: unknown }> }
+  const workspaceId = body.workspaces?.[0]?.id
+  expect(workspaceId).toEqual(expect.any(String))
+  return workspaceId as string
+}
+
 function workspaceQuery(workspaceId?: string): string {
   return workspaceId ? `?workspaceId=${encodeURIComponent(workspaceId)}` : ''
+}
+
+function appendWorkspaceQuery(path: string, workspaceId: string): string {
+  const separator = path.includes('?') ? '&' : '?'
+  return `${path}${separator}workspaceId=${encodeURIComponent(workspaceId)}`
+}
+
+function useHostedTaskCardClient(app: CoreWorkspaceAgentServer, input: { cookie: string; workspaceId: string }): void {
+  taskCardUi.pluginClient.postJson.mockImplementation(async (path: string, payload: unknown) => {
+    const response = await app.inject({
+      method: 'POST',
+      url: appendWorkspaceQuery(path, input.workspaceId),
+      headers: { cookie: input.cookie },
+      payload: payload as Record<string, unknown>,
+    })
+    if (response.statusCode >= 400) throw new Error(response.body)
+    return response.json()
+  })
+  taskCardUi.pluginClient.getJson.mockImplementation(async (path: string) => {
+    const response = await app.inject({
+      method: 'GET',
+      url: appendWorkspaceQuery(path, input.workspaceId),
+      headers: { cookie: input.cookie },
+    })
+    if (response.statusCode >= 400) throw new Error(response.body)
+    return response.json()
+  })
 }
 
 async function createPiSession(app: CoreWorkspaceAgentServer, input: {
@@ -150,24 +201,34 @@ describe.runIf(TEST_DB)('hosted Tasks Postgres composition', () => {
     let firstApp: CoreWorkspaceAgentServer | undefined
     let secondApp: CoreWorkspaceAgentServer | undefined
     try {
+      taskCardUi.openDetachedChat.mockReset()
+      taskCardUi.pluginClient.postJson.mockReset()
+      taskCardUi.pluginClient.getJson.mockReset()
+
       firstApp = await createHostedApp({ databaseUrl, workspaceRoot: firstWorkspaceRoot, sessionRoot })
       const cookie = await signUp(firstApp, `hosted-tasks-${Date.now()}@example.test`)
+      const outsiderCookie = await signUp(firstApp, `hosted-tasks-outsider-${Date.now()}@example.test`)
       const authHeaders = new Headers()
       authHeaders.set('cookie', cookie)
       const authSession = await firstApp.auth.api.getSession({ headers: authHeaders })
       expect(authSession?.user?.id).toEqual(expect.any(String))
-      const defaultSession = await createPiSession(firstApp, { title: 'Default routed session', cookie })
-      const createdSession = await createPiSession(firstApp, { workspaceId: 'workspace-a', title: 'Workspace A routed session', cookie })
+      const workspaceA = await defaultWorkspaceId(firstApp, cookie)
+      const workspaceB = await defaultWorkspaceId(firstApp, outsiderCookie)
+      expect(workspaceB).not.toBe(workspaceA)
+
+      const createdSession = await createPiSession(firstApp, { workspaceId: workspaceA, title: 'Workspace A routed session', cookie })
       const workspaceSession = await renamePiSession(firstApp, {
-        workspaceId: 'workspace-a',
+        workspaceId: workspaceA,
         sessionId: createdSession.id,
         title: 'Workspace A routed session renamed',
         cookie,
       })
       expect(workspaceSession).toMatchObject({ id: createdSession.id, title: 'Workspace A routed session renamed' })
+      const workspaceBSession = await createPiSession(firstApp, { workspaceId: workspaceB, title: 'Workspace B session', cookie: outsiderCookie })
+      const unlinkProofSession = await createPiSession(firstApp, { workspaceId: workspaceA, title: 'Workspace A unlink proof', cookie })
 
       const workspaceSessions = await listPiSessions(firstApp, {
-        workspaceId: 'workspace-a',
+        workspaceId: workspaceA,
         activeSessionId: workspaceSession.id,
         cookie,
       })
@@ -178,7 +239,7 @@ describe.runIf(TEST_DB)('hosted Tasks Postgres composition', () => {
 
       const taskSearch = await firstApp.inject({
         method: 'POST',
-        url: '/api/boring-tasks/sessions/search?workspaceId=workspace-a',
+        url: `/api/boring-tasks/sessions/search?workspaceId=${encodeURIComponent(workspaceA)}`,
         headers: { cookie },
         payload: { query: 'renamed' },
       })
@@ -187,44 +248,79 @@ describe.runIf(TEST_DB)('hosted Tasks Postgres composition', () => {
         expect.objectContaining({ id: workspaceSession.id, title: 'Workspace A routed session renamed' }),
       ]))
 
-      const unauthenticatedLink = await firstApp.inject({
+      const unauthenticatedList = await firstApp.inject({
         method: 'POST',
-        url: '/api/boring-tasks/sessions/link?workspaceId=workspace-a',
-        payload: { adapterId: 'github', taskId: '614', sessionId: workspaceSession.id },
+        url: `/api/boring-tasks/sessions/list?workspaceId=${encodeURIComponent(workspaceA)}`,
+        payload: { adapterId: 'github', taskId: '614' },
       })
-      expect(unauthenticatedLink.statusCode).toBe(404)
-      expect(unauthenticatedLink.json()).toMatchObject({ code: 'TASK_SESSION_NOT_FOUND' })
+      expect(unauthenticatedList.statusCode).toBe(401)
+      expect(unauthenticatedList.json()).toMatchObject({ code: 'unauthorized' })
+
+      const crossMemberList = await firstApp.inject({
+        method: 'POST',
+        url: `/api/boring-tasks/sessions/list?workspaceId=${encodeURIComponent(workspaceA)}`,
+        headers: { cookie: outsiderCookie },
+        payload: { adapterId: 'github', taskId: '614' },
+      })
+      expect(crossMemberList.statusCode).toBe(403)
+      expect(crossMemberList.json()).toMatchObject({ code: 'forbidden' })
 
       const wrongRuntimeLink = await firstApp.inject({
         method: 'POST',
-        url: '/api/boring-tasks/sessions/link?workspaceId=workspace-a',
+        url: `/api/boring-tasks/sessions/link?workspaceId=${encodeURIComponent(workspaceA)}`,
         headers: { cookie },
-        payload: { adapterId: 'github', taskId: '614', sessionId: defaultSession.id },
+        payload: { adapterId: 'github', taskId: '614', sessionId: workspaceBSession.id },
       })
       expect(wrongRuntimeLink.statusCode).toBe(404)
       expect(wrongRuntimeLink.json()).toMatchObject({ code: 'TASK_SESSION_NOT_FOUND' })
 
       const linked = await firstApp.inject({
         method: 'POST',
-        url: '/api/boring-tasks/sessions/link?workspaceId=workspace-a',
+        url: `/api/boring-tasks/sessions/link?workspaceId=${encodeURIComponent(workspaceA)}`,
         headers: { cookie },
-        payload: { workspaceId: 'workspace-b', adapterId: 'github', taskId: '614', sessionId: workspaceSession.id },
+        payload: { workspaceId: workspaceB, adapterId: 'github', taskId: '614', sessionId: workspaceSession.id },
       })
       expect(linked.statusCode, linked.body).toBe(200)
       const link = linked.json().link
-      expect(link).toMatchObject({ workspaceId: 'workspace-a', sessionId: workspaceSession.id, title: 'Workspace A routed session renamed' })
+      expect(link).toMatchObject({ workspaceId: workspaceA, sessionId: workspaceSession.id, title: 'Workspace A routed session renamed' })
+
+      const unlinkProofLinkResponse = await firstApp.inject({
+        method: 'POST',
+        url: `/api/boring-tasks/sessions/link?workspaceId=${encodeURIComponent(workspaceA)}`,
+        headers: { cookie },
+        payload: { adapterId: 'github', taskId: '614-unlink', sessionId: unlinkProofSession.id },
+      })
+      expect(unlinkProofLinkResponse.statusCode, unlinkProofLinkResponse.body).toBe(200)
+      const unlinkProofLink = unlinkProofLinkResponse.json().link
+
+      const crossMemberUnlink = await firstApp.inject({
+        method: 'POST',
+        url: `/api/boring-tasks/sessions/unlink?workspaceId=${encodeURIComponent(workspaceA)}`,
+        headers: { cookie: outsiderCookie },
+        payload: { bindingId: unlinkProofLink.id },
+      })
+      expect(crossMemberUnlink.statusCode).toBe(403)
+      expect(crossMemberUnlink.json()).toMatchObject({ code: 'forbidden' })
+
+      const authorizedUnlink = await firstApp.inject({
+        method: 'POST',
+        url: `/api/boring-tasks/sessions/unlink?workspaceId=${encodeURIComponent(workspaceA)}`,
+        headers: { cookie },
+        payload: { bindingId: unlinkProofLink.id },
+      })
+      expect(authorizedUnlink.statusCode, authorizedUnlink.body).toBe(200)
 
       const persistedRows = await sql`
         SELECT workspace_id, adapter_id, task_id, session_id, title
         FROM boring_task_session_bindings
         WHERE id = ${link.id}
       `
-      expect(persistedRows).toEqual([{ workspace_id: 'workspace-a', adapter_id: 'github', task_id: '614', session_id: workspaceSession.id, title: 'Workspace A routed session renamed' }])
+      expect(persistedRows).toEqual([{ workspace_id: workspaceA, adapter_id: 'github', task_id: '614', session_id: workspaceSession.id, title: 'Workspace A routed session renamed' }])
 
       const workspaceBList = await firstApp.inject({
         method: 'POST',
-        url: '/api/boring-tasks/sessions/list?workspaceId=workspace-b',
-        headers: { cookie },
+        url: `/api/boring-tasks/sessions/list?workspaceId=${encodeURIComponent(workspaceB)}`,
+        headers: { cookie: outsiderCookie },
         payload: { adapterId: 'github', taskId: '614' },
       })
       expect(workspaceBList.statusCode).toBe(200)
@@ -236,7 +332,7 @@ describe.runIf(TEST_DB)('hosted Tasks Postgres composition', () => {
       secondApp = await createHostedApp({ databaseUrl, workspaceRoot: secondWorkspaceRoot, sessionRoot })
       const listedAfterRestart = await secondApp.inject({
         method: 'POST',
-        url: '/api/boring-tasks/sessions/list?workspaceId=workspace-a',
+        url: `/api/boring-tasks/sessions/list?workspaceId=${encodeURIComponent(workspaceA)}`,
         headers: { cookie },
         payload: { adapterId: 'github', taskId: '614' },
       })
@@ -246,7 +342,7 @@ describe.runIf(TEST_DB)('hosted Tasks Postgres composition', () => {
       ])
 
       const listedSessionsAfterRestart = await listPiSessions(secondApp, {
-        workspaceId: 'workspace-a',
+        workspaceId: workspaceA,
         activeSessionId: workspaceSession.id,
         cookie,
       })
@@ -256,7 +352,7 @@ describe.runIf(TEST_DB)('hosted Tasks Postgres composition', () => {
       ]))
 
       const reopenedState = await readPiSessionState(secondApp, {
-        workspaceId: 'workspace-a',
+        workspaceId: workspaceA,
         sessionId: workspaceSession.id,
         cookie,
       })
@@ -265,12 +361,39 @@ describe.runIf(TEST_DB)('hosted Tasks Postgres composition', () => {
 
       const reopened = await secondApp.inject({
         method: 'POST',
-        url: '/api/boring-tasks/sessions/link?workspaceId=workspace-a',
+        url: `/api/boring-tasks/sessions/link?workspaceId=${encodeURIComponent(workspaceA)}`,
         headers: { cookie },
         payload: { adapterId: 'github', taskId: '614', sessionId: workspaceSession.id },
       })
       expect(reopened.statusCode).toBe(200)
       expect(reopened.json().link.id).toBe(link.id)
+
+      useHostedTaskCardClient(secondApp, { cookie, workspaceId: workspaceA })
+      const task: BoringTaskCard = {
+        id: '614',
+        number: '#614',
+        title: 'Hosted task session binding',
+        statusId: 'ready',
+        adapterId: 'github',
+      }
+      const ui = render(createElement(TaskCard, {
+        task,
+        draggable: false,
+        onDragStart: vi.fn(),
+        onDragEnd: vi.fn(),
+      }))
+      try {
+        expect(await screen.findByLabelText('1 linked chats')).toBeInTheDocument()
+        fireEvent.click(screen.getByRole('button', { name: /open chat/i }))
+        expect(await screen.findByRole('region', { name: /linked chat sessions/i })).toBeInTheDocument()
+        fireEvent.click(screen.getByRole('button', { name: 'Open' }))
+        await waitFor(() => expect(taskCardUi.openDetachedChat).toHaveBeenCalledWith(
+          workspaceSession.id,
+          expect.objectContaining({ title: 'Workspace A routed session renamed', composingEnabled: true }),
+        ))
+      } finally {
+        ui.unmount()
+      }
     } finally {
       await secondApp?.close()
       await firstApp?.close()

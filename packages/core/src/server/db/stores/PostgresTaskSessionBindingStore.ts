@@ -1,4 +1,4 @@
-import { and, desc, eq } from 'drizzle-orm'
+import { and, desc, eq, sql } from 'drizzle-orm'
 import type { PostgresJsDatabase } from 'drizzle-orm/postgres-js'
 
 import { taskSessionBindings } from '../schema.js'
@@ -88,33 +88,26 @@ export class PostgresTaskSessionBindingStore {
         sessionId: input.sessionId,
         title: input.title ?? null,
       })
-      .onConflictDoNothing({
+      .onConflictDoUpdate({
         target: [
           taskSessionBindings.workspaceId,
           taskSessionBindings.adapterId,
           taskSessionBindings.taskId,
           taskSessionBindings.sessionId,
         ],
+        // No-op update: PostgreSQL locks the conflicting row and RETURNING yields
+        // the canonical binding in the same statement. This avoids the
+        // INSERT DO NOTHING + SELECT race where a concurrent unlink can delete
+        // the row between the conflict and follow-up read.
+        set: { title: sql`${taskSessionBindings.title}` },
       })
       .returning()
 
-    if (inserted[0]) return toBinding(inserted[0])
-
-    const existing = await this.db
-      .select()
-      .from(taskSessionBindings)
-      .where(and(
-        eq(taskSessionBindings.workspaceId, input.workspaceId),
-        eq(taskSessionBindings.adapterId, input.adapterId),
-        eq(taskSessionBindings.taskId, input.taskId),
-        eq(taskSessionBindings.sessionId, input.sessionId),
-      ))
-      .limit(1)
-
-    if (!existing[0]) {
-      throw new PostgresTaskSessionBindingStoreError(500, 'TASK_SESSION_BINDING_CONFLICT', 'Task session binding conflict could not be resolved')
+    const row = inserted[0]
+    if (!row) {
+      throw new PostgresTaskSessionBindingStoreError(500, 'TASK_SESSION_BINDING_CONFLICT', 'Task session binding upsert returned no row')
     }
-    return toBinding(existing[0])
+    return toBinding(row)
   }
 
   async deleteBinding(input: TaskSessionBindingDeleteInput): Promise<void> {
