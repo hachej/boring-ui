@@ -24,6 +24,7 @@ export interface ManualRunInput {
   request: FastifyRequest
   trigger?: "manual" | "scheduled"
   scheduledFor?: string | null
+  actor?: VerifiedAutomationActor
 }
 
 interface UsageTotals {
@@ -45,7 +46,7 @@ export class ManualRunExecutor {
   }
 
   async run(input: ManualRunInput): Promise<AutomationRun> {
-    const actor = await this.options.actorResolver(input.request)
+    const actor = input.actor ?? await this.options.actorResolver(input.request)
     const store = await this.options.storeForRequest?.(input.request, actor) ?? this.options.store
     const automation = await store.getAutomation(input.automationId)
     if (!automation) {

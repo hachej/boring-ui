@@ -92,6 +92,8 @@ export interface WorkspaceAgentServerPluginContext {
     actorResolver: (request: FastifyRequest) => Promise<{ workspaceId: string; userId: string }> | { workspaceId: string; userId: string }
     /** Host-owned database connection exposed only to trusted boot-time plugins. */
     sql?: unknown
+    actorVerifier?: (actor: { workspaceId: string; userId: string }) => Promise<boolean> | boolean
+    hostedAutomationTriggerToken?: string
   }
 }
 

@@ -15,4 +15,4 @@ Executable model values use explicit `provider:model-id` syntax. Legacy unqualif
 
 Execution is currently composed for trusted local CLI folder mode. Scheduling has no background timer: user-owned cron/systemd may invoke `POST /api/v1/boring-automation/due` once per minute while the CLI server is running. Missed minutes are not backfilled.
 
-Hosted persistence infrastructure is now available as an explicit deployment migration callback (`runBoringAutomationMigrations`) and an actor-bound `PostgresAutomationStore`. Full-app route/executor composition and authenticated hosted triggers remain separate follow-up work; hosted execution is not activated by this infrastructure alone.
+Hosted persistence and creator-scoped execution are available in full-app. The deployment migration callback is `runBoringAutomationMigrations`; configure `BORING_AUTOMATION_TRIGGER_TOKEN` and have the platform scheduler invoke `POST /api/v1/boring-automation/due/hosted` with `Authorization: Bearer <token>`. The endpoint re-checks each creator and fails closed when authorization is lost. It has no hidden timer.

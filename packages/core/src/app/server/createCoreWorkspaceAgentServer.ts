@@ -770,6 +770,12 @@ export async function createCoreWorkspaceAgentServer(
       workspaceAgentDispatcherResolver: trustedDispatcherProxy,
       actorResolver: trustedPluginActorResolver,
       sql,
+      actorVerifier: async (actor) => Boolean(
+        await workspaceStore.get(actor.workspaceId)
+        && await workspaceStore.isMember(actor.workspaceId, actor.userId)
+        && await userStore.getById(actor.userId),
+      ),
+      hostedAutomationTriggerToken: process.env.BORING_AUTOMATION_TRIGGER_TOKEN,
     },
   }
   const resolvedPlugins = await Promise.all(

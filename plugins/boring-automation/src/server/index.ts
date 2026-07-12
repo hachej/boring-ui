@@ -10,6 +10,7 @@ import {
 } from "../shared"
 import { DueRunService } from "./dueRunService"
 import { FileAutomationStore } from "./fileStore"
+import { HostedDueRunService } from "./hostedDueRunService"
 import { PostgresAutomationStore } from "./postgresStore"
 import { ManualRunExecutor, type VerifiedAutomationActor } from "./manualRunExecutor"
 import { automationRoutes } from "./routes"
@@ -21,6 +22,9 @@ export interface BoringAutomationServerPluginOptions {
   dispatcherResolver?: WorkspaceAgentDispatcherResolver
   actorResolver?: (request: FastifyRequest) => Promise<VerifiedAutomationActor> | VerifiedAutomationActor
   storeForRequest?: (request: FastifyRequest, actor: VerifiedAutomationActor) => Promise<AutomationStore> | AutomationStore
+  actorVerifier?: (actor: VerifiedAutomationActor) => Promise<boolean> | boolean
+  hostedTriggerToken?: string
+  hostedDueRunService?: Pick<HostedDueRunService, "runDue">
 }
 
 export function createBoringAutomationServerPlugin(options: BoringAutomationServerPluginOptions = {}): WorkspaceServerPlugin {
@@ -40,11 +44,18 @@ export function createBoringAutomationServerPlugin(options: BoringAutomationServ
     id: BORING_AUTOMATION_PLUGIN_ID,
     label: BORING_AUTOMATION_PLUGIN_LABEL,
     routes: async (app) => {
-      await automationRoutes(app, { store, storeForRequest: options.storeForRequest ? async (request) => {
-        const actor = options.actorResolver ? await options.actorResolver(request) : undefined
-        if (!actor) throw new Error("automation actor resolver is unavailable")
-        return await options.storeForRequest!(request, actor)
-      } : undefined, manualRunExecutor, dueRunService })
+      await automationRoutes(app, {
+        store,
+        storeForRequest: options.storeForRequest ? async (request) => {
+          const actor = options.actorResolver ? await options.actorResolver(request) : undefined
+          if (!actor) throw new Error("automation actor resolver is unavailable")
+          return await options.storeForRequest!(request, actor)
+        } : undefined,
+        manualRunExecutor,
+        dueRunService,
+        hostedDueRunService: options.hostedDueRunService,
+        hostedTriggerToken: options.hostedTriggerToken,
+      })
     },
   })
 }
@@ -68,6 +79,13 @@ export default function defaultBoringAutomationServerPlugin(
       storeForRequest: async (_request, actor) => new PostgresAutomationStore(sql, actor),
       dispatcherResolver: options?.dispatcherResolver ?? trusted.workspaceAgentDispatcherResolver,
       actorResolver: options?.actorResolver ?? trusted.actorResolver,
+      actorVerifier: options?.actorVerifier ?? trusted.actorVerifier,
+      hostedTriggerToken: options?.hostedTriggerToken ?? trusted.hostedAutomationTriggerToken,
+      hostedDueRunService: options?.hostedDueRunService ?? new HostedDueRunService({
+        sql,
+        dispatcherResolver: options?.dispatcherResolver ?? trusted.workspaceAgentDispatcherResolver,
+        verifyActor: options?.actorVerifier ?? trusted.actorVerifier!,
+      }),
     })
   }
   return createBoringAutomationServerPlugin({
@@ -80,6 +98,7 @@ export default function defaultBoringAutomationServerPlugin(
 
 export * from "./dueRunService"
 export * from "./fileStore"
+export * from "./hostedDueRunService"
 export * from "./manualRunExecutor"
 export * from "./migrations"
 export * from "./postgresStore"

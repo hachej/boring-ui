@@ -13,7 +13,7 @@ const FULL_APP_DEFAULT_PLUGIN_PACKAGE_COMPOSITION = Object.freeze([{
   descriptor: Object.freeze({
     id: 'boring-automation',
     version: '0.1.80',
-    contentDigest: 'sha256:7945996f13db2da138909c651755bf5daf950630096e9337dbd3611ea4fca854',
+    contentDigest: 'sha256:2b6bdeed9be3f17123ff144bee127fe680d0805ba410aab86cf4f4bb653106ff',
   } satisfies StableContributionDescriptor),
 }])
 
