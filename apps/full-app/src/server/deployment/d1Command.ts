@@ -5,6 +5,7 @@ import {
   D1HostError,
   D1HostErrorCode,
   parseD1HostPlan,
+  strictD1HostId,
   strictD1Ref,
   type D1HostPlanV1,
 } from './d1Plan.js'
@@ -100,7 +101,7 @@ function parse(raw: unknown): D1Command {
   }
   if (kind === 'rollback') {
     assertD1ExactKeys(raw, ROLLBACK_KEYS, 'command', ['confirmRemove'])
-    return Object.freeze({ kind, hostId: strictD1Ref(value.hostId, 'hostId'), expectedHostRevision: expected(value.expectedHostRevision), targetRevision: revision(value.targetRevision, 'targetRevision'), confirmRemove: confirmations(value.confirmRemove) })
+    return Object.freeze({ kind, hostId: strictD1HostId(value.hostId, 'hostId'), expectedHostRevision: expected(value.expectedHostRevision), targetRevision: revision(value.targetRevision, 'targetRevision'), confirmRemove: confirmations(value.confirmRemove) })
   }
   invalid('kind')
 }

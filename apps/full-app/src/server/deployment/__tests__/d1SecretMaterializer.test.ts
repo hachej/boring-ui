@@ -26,7 +26,7 @@ const APP_UID = OWNER_UID
 const APP_GID = OWNER_GID
 const TMPFS_PARENT = process.env.XDG_RUNTIME_DIR ?? `/run/user/${OWNER_UID}`
 
-async function desired(secretRefs: readonly string[] = ['credential-ref', 'secondary-ref'], ids: readonly string[] = ['insurance']): Promise<D1DesiredSnapshotV1> {
+async function desired(secretRefs: readonly string[] = ['credential-ref', 'secondary-ref'], ids: readonly string[] = ['insurance'], hostId = 'host-1'): Promise<D1DesiredSnapshotV1> {
   const bindings = []; const resolvedBindings = []
   for (const id of ids) {
     const snapshot = canonicalizeWorkspaceCompositionSnapshot({
@@ -64,7 +64,7 @@ async function desired(secretRefs: readonly string[] = ['credential-ref', 'secon
     })
   }
   return createD1DesiredSnapshot({
-    schemaVersion: 1, hostId: 'host-1', expectedHostRevision: null, hostAppImageDigest: sha('a'),
+    schemaVersion: 1, hostId, expectedHostRevision: null, hostAppImageDigest: sha('a'),
     runtimeProfileRef: 'runsc-eu', databaseRef: 'postgres-eu', workspaceRootPolicyRef: 'workspace-roots',
     sessionRootPolicyRef: 'session-roots', bindings,
   }, resolvedBindings)
@@ -77,8 +77,8 @@ function attestation(secretRefs: readonly string[], secretFingerprint = sha('4')
     secrets: secretRefs.map((secretRef) => ({ secretRef, providerVersionFingerprint: secretFingerprint })),
   }
 }
-async function fixture(secretRefs: readonly string[] = ['credential-ref', 'secondary-ref'], ids: readonly string[] = ['insurance']) {
-  const snapshot = await desired(secretRefs, ids)
+async function fixture(secretRefs: readonly string[] = ['credential-ref', 'secondary-ref'], ids: readonly string[] = ['insurance'], hostId = 'host-1') {
+  const snapshot = await desired(secretRefs, ids, hostId)
   const candidate: D1StoredCandidateV1 = {
     revisionId: 'r0000000001', desired: snapshot, desiredStateDigest: await digestD1Desired(snapshot),
     secretRefs: deriveD1SecretRefsEnvelope(snapshot),
@@ -316,6 +316,14 @@ describe('D1 binding secret materializer', () => {
     for (const value of values) expect([...value]).toEqual([0])
   })
 
+  it('materializes a maximum-length host id without exceeding stage NAME_MAX', async () => {
+    const hostId = 'h'.repeat(250); const root = await tmpfsRoot(); const f = await fixture(['credential-ref'], ['insurance'], hostId)
+    const p = provided(['credential-ref'])
+    await materializer(root, provider(p))(f.candidate, f.expected)
+    const manifest = JSON.parse(await readFile(path.join(root, hostId, 'revisions/r0000000001/manifest.json'), 'utf8'))
+    expect(manifest.hostId).toBe(hostId)
+  })
+
   it('leaves a hidden stage on pre-rename failure and adopts an exact post-rename retry', async () => {
     const beforeRoot = await tmpfsRoot(); const f = await fixture(); const before = provided(f.snapshot.plan.bindings[0]!.secretRefs)
     const beforeError = await materializer(beforeRoot, provider(before), (point) => {
@@ -324,7 +332,7 @@ describe('D1 binding secret materializer', () => {
     expect(beforeError).toMatchObject({ code: D1HostErrorCode.COLLECTION_NOT_READY })
     const revisions = path.join(beforeRoot, 'host-1/revisions')
     expect(await readdir(revisions)).toEqual([])
-    const stages = (await readdir(beforeRoot)).filter((entry) => entry.startsWith('.host-1.r0000000001.'))
+    const stages = (await readdir(beforeRoot)).filter((entry) => entry.startsWith('.r0000000001.'))
     expect(stages).toHaveLength(1)
     expect(path.dirname(path.join(beforeRoot, stages[0]!))).toBe(beforeRoot)
     expect((await stat(beforeRoot)).mode & 0o7777).toBe(0o700)
@@ -346,17 +354,17 @@ describe('D1 binding secret materializer', () => {
     const exactRoot = await tmpfsRoot(); const f = await fixture(); const exact = provided(f.snapshot.plan.bindings[0]!.secretRefs)
     const exactTarget = path.join(exactRoot, 'host-1/revisions/r0000000001')
     await expect(materializer(exactRoot, provider(exact), async () => {
-      const stage = (await readdir(exactRoot)).find((entry) => entry.startsWith('.host-1.r0000000001.'))!
+      const stage = (await readdir(exactRoot)).find((entry) => entry.startsWith('.r0000000001.'))!
       await cp(path.join(exactRoot, stage), exactTarget, { recursive: true })
     })(f.candidate, f.expected)).resolves.toHaveLength(1)
-    expect((await readdir(exactRoot)).some((entry) => entry.startsWith('.host-1.r0000000001.'))).toBe(true)
+    expect((await readdir(exactRoot)).some((entry) => entry.startsWith('.r0000000001.'))).toBe(true)
 
     const emptyRoot = await tmpfsRoot(); const empty = provided(f.snapshot.plan.bindings[0]!.secretRefs)
     const emptyTarget = path.join(emptyRoot, 'host-1/revisions/r0000000001')
     await expect(materializer(emptyRoot, provider(empty), async () => { await mkdir(emptyTarget, { mode: 0o710 }) })(f.candidate, f.expected))
       .rejects.toMatchObject({ code: D1HostErrorCode.COLLECTION_NOT_READY })
     expect(await readdir(emptyTarget)).toEqual([])
-    expect((await readdir(emptyRoot)).some((entry) => entry.startsWith('.host-1.r0000000001.'))).toBe(true)
+    expect((await readdir(emptyRoot)).some((entry) => entry.startsWith('.r0000000001.'))).toBe(true)
   })
 
   it('never overwrites or adopts a mismatched existing revision', async () => {

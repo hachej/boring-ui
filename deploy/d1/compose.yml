@@ -36,9 +36,11 @@ services:
         bind:
           create_host_path: false
       - type: bind
-        source: /run/boring/d1
+        source: "${D1_MATERIALIZED_HOST_ROOT:?D1_MATERIALIZED_HOST_ROOT is required}"
         target: /run/boring/d1
         read_only: true
+        bind:
+          create_host_path: false
     healthcheck:
       test: ["CMD", "node", "-e", "fetch('http://localhost:3000/health').then(r=>{if(!r.ok)throw r.status}).catch(()=>process.exit(1))"]
       interval: 30s

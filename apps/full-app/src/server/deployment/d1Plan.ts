@@ -83,6 +83,12 @@ export function strictD1Ref(value: unknown, field: string): string {
   return value
 }
 
+export function strictD1HostId(value: unknown, field: string): string {
+  const hostId = strictD1Ref(value, field)
+  if (hostId.length > 250) invalidD1Field(field)
+  return hostId
+}
+
 function agentRef(value: unknown, field: string): string {
   const parsed = OpaqueRefSchema.safeParse(value)
   if (!parsed.success) invalidD1Field(field)
@@ -155,7 +161,7 @@ export function parseD1HostPlan(raw: unknown): D1HostPlanV1 {
 
   return Object.freeze({
     schemaVersion: 1,
-    hostId: strictD1Ref(input.hostId, 'hostId'),
+    hostId: strictD1HostId(input.hostId, 'hostId'),
     expectedHostRevision: input.expectedHostRevision as string | null,
     hostAppImageDigest,
     runtimeProfileRef: strictD1Ref(input.runtimeProfileRef, 'runtimeProfileRef'),
