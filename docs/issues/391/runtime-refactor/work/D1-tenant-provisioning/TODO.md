@@ -37,16 +37,19 @@ section below.
    secret mounts, durable roots, maintenance-only service-specific `--no-deps`,
    and no force-recreate.
 4. **ACTIVE — D1-004a1, then a2/a3/a4, b/c/d: host surface, authority fences,
-   and admission.** Trusted
-   exact-host landing grants nothing; member-only bound workspace and all
-   selectors fail closed; the database admission row commits before first
+   and admission.** D1-004a1 also rejects edge-subnet overlap before its first
+   Compose apply and permits only an exact owned-network match on reapply.
+   Trusted exact-host landing grants nothing; member-only bound workspace and
+   all selectors fail closed; the database admission row commits before first
    agent effect and survives process/revision cleanup.
 5. **D1-005 — N-binding boot/additive publication.** N independent P6-R calls,
    root-owned pending-pointer/signal preload, all-ready ack, atomic active
    pointer, stable-process continuity, and fail-closed active replacement/removal.
-6. **D1-006 — runbook and EU proof.** Three agents/workspaces/hostnames, timing,
-   idempotence, N+1 continuity, rollback reproduction, isolation and secret
-   canary. Dedicated VM is configuration render only.
+6. **D1-006 — runbook and EU proof.** Reproduce the landed edge-network overlap
+   guard and exact owned-network reuse on the EU host. Then prove three
+   agents/workspaces/hostnames, timing, idempotence, N+1 continuity, rollback
+   reproduction, isolation and secret canary. Dedicated VM is configuration
+   render only.
 
 ### Prerequisites — stop if false
 
