@@ -171,6 +171,11 @@ interface RuntimeScope {
   sessionNamespace?: string
 }
 
+interface PiChatSessionServiceResolveContext {
+  workspaceId: string
+  userId?: string
+}
+
 interface SkillScope {
   root: string
   pi: ResolvedPiHarnessOptions
@@ -398,7 +403,7 @@ export interface RegisterAgentRoutesOptions {
    */
   onWorkspaceAgentDispatcher?: (resolver: WorkspaceAgentDispatcherResolver) => void
   /** Trusted host composition seam for request-scoped Pi session access. */
-  onPiChatSessionServiceResolver?: (resolver: (request: FastifyRequest) => Promise<PiChatSessionService>) => void
+  onPiChatSessionServiceResolver?: (resolver: (request: FastifyRequest, trustedCtx?: PiChatSessionServiceResolveContext) => Promise<PiChatSessionService>) => void
 }
 
 /**
@@ -965,8 +970,13 @@ let runtimeProvisioning: WorkspaceProvisioningResult | undefined
     return await getOrCreateRuntimeBinding(getRequestWorkspaceId(request), request, options)
   }
 
-  opts.onPiChatSessionServiceResolver?.(async (request) => {
-    const binding = await getBindingForRequest(request)
+  opts.onPiChatSessionServiceResolver?.(async (request, trustedCtx) => {
+    const trustedDispatcherCtx = trustedCtx?.userId
+      ? { workspaceId: trustedCtx.workspaceId, userId: trustedCtx.userId }
+      : undefined
+    const binding = trustedCtx
+      ? await getOrCreateRuntimeBinding(trustedCtx.workspaceId, request, { trustedCtx: trustedDispatcherCtx })
+      : await getBindingForRequest(request)
     return binding.piChatService
   })
 

@@ -745,7 +745,7 @@ export async function createCoreWorkspaceAgentServer(
     ...(options.plugins ?? []),
   ]
   let workspaceAgentDispatcherResolver: WorkspaceAgentDispatcherResolver | undefined
-  let piChatSessionServiceResolver: ((request: FastifyRequest) => Promise<PiChatSessionService>) | undefined
+  let piChatSessionServiceResolver: ((request: FastifyRequest, trustedCtx?: { workspaceId: string; userId?: string }) => Promise<PiChatSessionService>) | undefined
   const trustedDispatcherProxy: WorkspaceAgentDispatcherResolver = {
     async resolve(actor, resolveOptions) {
       if (!workspaceAgentDispatcherResolver) throw new Error('workspace agent dispatcher is not ready')
@@ -989,6 +989,10 @@ export async function createCoreWorkspaceAgentServer(
         workspaceId,
         ...(authSubject ? { authSubject } : {}),
       }
+      const trustedAgentContext = {
+        workspaceId,
+        ...(authSubject ? { userId: authSubject } : {}),
+      }
       const serviceContext = (): PiSessionRequestContext => ({
         workspaceId: context.workspaceId,
         ...(context.authSubject ? { authSubject: context.authSubject } : {}),
@@ -998,14 +1002,14 @@ export async function createCoreWorkspaceAgentServer(
         context,
         port: {
           async findAuthorizedSession(_context: typeof context, sessionId: string) {
-            const service = await piChatSessionServiceResolver?.(request)
+            const service = await piChatSessionServiceResolver?.(request, trustedAgentContext)
             if (!service?.listSessions) return null
             const sessions = await service.listSessions(serviceContext(), { limit: 1, includeId: sessionId })
             const session = sessions.find((candidate) => candidate.id === sessionId)
             return session ? { id: session.id, title: session.title, createdAt: session.createdAt, updatedAt: session.updatedAt } : null
           },
           async searchAuthorizedSessions(_context: typeof context, query: string) {
-            const service = await piChatSessionServiceResolver?.(request)
+            const service = await piChatSessionServiceResolver?.(request, trustedAgentContext)
             if (!service?.manageSessions) return []
             const result = await service.manageSessions(serviceContext(), { action: 'search', query, limit: 20 })
             return result.action === 'search'

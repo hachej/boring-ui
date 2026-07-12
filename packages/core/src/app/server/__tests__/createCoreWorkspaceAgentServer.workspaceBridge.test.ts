@@ -4,6 +4,11 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 
 const agentServerMock = vi.hoisted(() => ({
   registerOpts: [] as Array<Record<string, unknown>>,
+  sessionServiceResolutions: [] as Array<{ workspaceId: string; userId?: string; fallbackSource: 'trusted' | 'request-default' }>,
+}))
+
+const coreDbMock = vi.hoisted(() => ({
+  taskSessionBindings: new Map<string, Record<string, unknown>>(),
 }))
 
 const workspaceServerMock = vi.hoisted(() => ({
@@ -14,19 +19,31 @@ const workspaceServerMock = vi.hoisted(() => ({
   idempotencyCalls: [] as Array<Record<string, unknown>>,
 }))
 
-vi.mock('@hachej/boring-agent/server', () => ({
+vi.mock('@hachej/boring-agent/server', () => {
+  const sessionsByWorkspace = new Map([
+    ['workspace-1', [{ id: 'session-a', title: 'Hosted session A', createdAt: '2026-07-01T00:00:00.000Z', updatedAt: '2026-07-01T00:00:00.000Z' }]],
+    ['default', [{ id: 'default-session', title: 'Default session', createdAt: '2026-07-02T00:00:00.000Z', updatedAt: '2026-07-02T00:00:00.000Z' }]],
+  ])
+  return {
   compactPiPackages: (packages: unknown[]) => packages,
   registerAgentRoutes: async (app: any, opts: Record<string, unknown>) => {
     agentServerMock.registerOpts.push(opts)
-    ;(opts.onPiChatSessionServiceResolver as ((resolver: unknown) => void) | undefined)?.(async () => ({
-      listSessions: async (_ctx: unknown, listOptions: { includeId?: string } = {}) => listOptions.includeId === 'session-a'
-        ? [{ id: 'session-a', title: 'Hosted session', createdAt: '2026-07-01T00:00:00.000Z', updatedAt: '2026-07-01T00:00:00.000Z' }]
-        : [],
-      manageSessions: async () => ({
-        action: 'search',
-        sessions: [{ id: 'session-a', title: 'Hosted session', createdAt: '2026-07-01T00:00:00.000Z', updatedAt: '2026-07-01T00:00:00.000Z' }],
-      }),
-    }))
+    ;(opts.onPiChatSessionServiceResolver as ((resolver: unknown) => void) | undefined)?.(async (request: any, trustedCtx?: { workspaceId?: string; userId?: string }) => {
+      const workspaceId = trustedCtx?.workspaceId ?? request.workspaceContext?.workspaceId ?? 'default'
+      agentServerMock.sessionServiceResolutions.push({
+        workspaceId,
+        ...(trustedCtx?.userId ? { userId: trustedCtx.userId } : {}),
+        fallbackSource: trustedCtx?.workspaceId ? 'trusted' : 'request-default',
+      })
+      return {
+        listSessions: async (_ctx: unknown, listOptions: { includeId?: string } = {}) => (sessionsByWorkspace.get(workspaceId) ?? [])
+          .filter((session) => !listOptions.includeId || session.id === listOptions.includeId),
+        manageSessions: async () => ({
+          action: 'search',
+          sessions: sessionsByWorkspace.get(workspaceId) ?? [],
+        }),
+      }
+    })
     app.post('/api/v1/agent/chat', async () => ({ ok: true }))
     app.get('/api/v1/agent/chat/:sessionId/messages', async () => ({ ok: true }))
     app.get('/__bridge-owner/:sessionId', async (request: any) => {
@@ -45,7 +62,8 @@ vi.mock('@hachej/boring-agent/server', () => ({
       })
     })
   },
-}))
+  }
+})
 
 vi.mock('@hachej/boring-workspace/app/server', () => ({
   assertWorkspaceBridgeHandlersTrusted: vi.fn(),
@@ -190,21 +208,20 @@ vi.mock('../../../server/db/index.js', () => ({
     sql: { end: vi.fn() },
   }),
   PostgresTaskSessionBindingStore: class PostgresTaskSessionBindingStore {
-    bindings = new Map<string, Record<string, unknown>>()
     async listBindings(input: { workspaceId: string; adapterId: string; taskId: string }) {
-      return Array.from(this.bindings.values()).filter((binding) => binding.workspaceId === input.workspaceId && binding.adapterId === input.adapterId && binding.taskId === input.taskId)
+      return Array.from(coreDbMock.taskSessionBindings.values()).filter((binding) => binding.workspaceId === input.workspaceId && binding.adapterId === input.adapterId && binding.taskId === input.taskId)
     }
     async createBinding(input: { workspaceId: string; adapterId: string; taskId: string; sessionId: string; title?: string }) {
-      const existing = Array.from(this.bindings.values()).find((binding) => binding.workspaceId === input.workspaceId && binding.adapterId === input.adapterId && binding.taskId === input.taskId && binding.sessionId === input.sessionId)
+      const existing = Array.from(coreDbMock.taskSessionBindings.values()).find((binding) => binding.workspaceId === input.workspaceId && binding.adapterId === input.adapterId && binding.taskId === input.taskId && binding.sessionId === input.sessionId)
       if (existing) return existing
-      const binding = { id: `binding-${this.bindings.size + 1}`, createdAt: '2026-07-01T00:00:00.000Z', ...input }
-      this.bindings.set(binding.id, binding)
+      const binding = { id: `binding-${coreDbMock.taskSessionBindings.size + 1}`, createdAt: '2026-07-01T00:00:00.000Z', ...input }
+      coreDbMock.taskSessionBindings.set(binding.id, binding)
       return binding
     }
     async deleteBinding(input: { workspaceId: string; bindingId: string }) {
-      const existing = this.bindings.get(input.bindingId)
+      const existing = coreDbMock.taskSessionBindings.get(input.bindingId)
       if (!existing || existing.workspaceId !== input.workspaceId) throw Object.assign(new Error(`Task session binding not found: ${input.bindingId}`), { status: 404, code: 'TASK_SESSION_BINDING_NOT_FOUND' })
-      this.bindings.delete(input.bindingId)
+      coreDbMock.taskSessionBindings.delete(input.bindingId)
     }
   },
   PostgresUserStore: class PostgresUserStore {},
@@ -232,6 +249,8 @@ const { createCoreWorkspaceAgentServer } = await import('../createCoreWorkspaceA
 
 afterEach(() => {
   agentServerMock.registerOpts.length = 0
+  agentServerMock.sessionServiceResolutions.length = 0
+  coreDbMock.taskSessionBindings.clear()
   workspaceServerMock.browserAuthPolicyOptions.length = 0
   workspaceServerMock.runtimeEnvCalls.length = 0
   workspaceServerMock.httpRouteOpts.length = 0
@@ -327,12 +346,20 @@ describe('createCoreWorkspaceAgentServer workspace bridge wiring', () => {
     await app.close()
   })
 
-  it('wires hosted Tasks to the core Postgres binding store and authorized Pi session port', async () => {
+  it('wires hosted Tasks to the core binding store and same-workspace Pi session port', async () => {
     const { createTasksServerPlugin } = await import('../../../../../../plugins/tasks/src/server/index.js')
     const app = await createCoreWorkspaceAgentServer({
       serveFrontend: false,
       plugins: [createTasksServerPlugin({ sources: [] })],
     })
+
+    const defaultRuntimeSession = await app.inject({
+      method: 'POST',
+      url: '/api/boring-tasks/sessions/link?workspaceId=workspace-1',
+      headers: { 'x-test-user-id': 'user-1' },
+      payload: { adapterId: 'github', taskId: '614', sessionId: 'default-session' },
+    })
+    expect(defaultRuntimeSession.statusCode).toBe(404)
 
     const linked = await app.inject({
       method: 'POST',
@@ -341,7 +368,16 @@ describe('createCoreWorkspaceAgentServer workspace bridge wiring', () => {
       payload: { workspaceId: 'workspace-2', adapterId: 'github', taskId: '614', sessionId: 'session-a' },
     })
     expect(linked.statusCode).toBe(200)
-    expect(linked.json().link).toMatchObject({ workspaceId: 'workspace-1', sessionId: 'session-a', title: 'Hosted session' })
+    expect(linked.json().link).toMatchObject({ workspaceId: 'workspace-1', sessionId: 'session-a', title: 'Hosted session A' })
+    expect(agentServerMock.sessionServiceResolutions).toContainEqual({
+      workspaceId: 'workspace-1',
+      userId: 'user-1',
+      fallbackSource: 'trusted',
+    })
+    expect(agentServerMock.sessionServiceResolutions).not.toContainEqual(expect.objectContaining({
+      workspaceId: 'default',
+      fallbackSource: 'request-default',
+    }))
 
     const listed = await app.inject({
       method: 'POST',
@@ -368,9 +404,50 @@ describe('createCoreWorkspaceAgentServer workspace bridge wiring', () => {
       payload: { query: 'Hosted' },
     })
     expect(search.statusCode).toBe(200)
-    expect(search.json().sessions).toEqual([expect.objectContaining({ id: 'session-a', title: 'Hosted session' })])
+    expect(search.json().sessions).toEqual([expect.objectContaining({ id: 'session-a', title: 'Hosted session A' })])
 
     await app.close()
+  })
+
+  it('rebinds hosted Tasks to durable bindings after recreating the hosted runtime boundary', async () => {
+    const { createTasksServerPlugin } = await import('../../../../../../plugins/tasks/src/server/index.js')
+    const firstApp = await createCoreWorkspaceAgentServer({
+      serveFrontend: false,
+      plugins: [createTasksServerPlugin({ sources: [] })],
+    })
+
+    const created = await firstApp.inject({
+      method: 'POST',
+      url: '/api/boring-tasks/sessions/link?workspaceId=workspace-1',
+      headers: { 'x-test-user-id': 'user-1' },
+      payload: { adapterId: 'github', taskId: '614', sessionId: 'session-a' },
+    })
+    expect(created.statusCode).toBe(200)
+    const bindingId = created.json().link.id
+    await firstApp.close()
+
+    const secondApp = await createCoreWorkspaceAgentServer({
+      serveFrontend: false,
+      plugins: [createTasksServerPlugin({ sources: [] })],
+    })
+    const listed = await secondApp.inject({
+      method: 'POST',
+      url: '/api/boring-tasks/sessions/list?workspaceId=workspace-1',
+      headers: { 'x-test-user-id': 'user-1' },
+      payload: { adapterId: 'github', taskId: '614' },
+    })
+    expect(listed.statusCode).toBe(200)
+    expect(listed.json().links).toEqual([expect.objectContaining({ id: bindingId, sessionId: 'session-a' })])
+
+    const reopened = await secondApp.inject({
+      method: 'POST',
+      url: '/api/boring-tasks/sessions/link?workspaceId=workspace-1',
+      headers: { 'x-test-user-id': 'user-1' },
+      payload: { adapterId: 'github', taskId: '614', sessionId: 'session-a' },
+    })
+    expect(reopened.statusCode).toBe(200)
+    expect(reopened.json().link.id).toBe(bindingId)
+    await secondApp.close()
   })
 
   it('exposes bridge-aware Pi context so app shells do not need adapter tools', async () => {

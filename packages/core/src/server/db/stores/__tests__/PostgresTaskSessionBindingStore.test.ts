@@ -1,15 +1,19 @@
 import { randomUUID } from 'node:crypto'
+import { readFile } from 'node:fs/promises'
+import { resolve } from 'node:path'
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest'
 import postgres from 'postgres'
 import { drizzle } from 'drizzle-orm/postgres-js'
 
 import { runMigrations } from '../../migrate'
 import { PostgresTaskSessionBindingStore } from '../PostgresTaskSessionBindingStore'
+import { taskSessionBindings } from '../../schema'
 import type { CoreConfig } from '../../../../shared/types'
 
 const TEST_DB_URL = process.env.DATABASE_URL
+const LOCAL_SOCKET_DATABASE = process.env.PGDATABASE ?? 'boring_ui_test'
+const LOCAL_SOCKET_USER = process.env.PGUSER ?? process.env.USER ?? 'ubuntu'
 const TEST_WORKSPACE_PREFIX = 'task-bindings-test-'
-const describePostgres = TEST_DB_URL ? describe : describe.skip
 
 const BASE_CONFIG: CoreConfig = {
   appId: 'task-session-bindings-test',
@@ -40,10 +44,61 @@ function workspaceId(suffix: string = randomUUID()): string {
   return `${TEST_WORKSPACE_PREFIX}${suffix}`
 }
 
-describePostgres('PostgresTaskSessionBindingStore', () => {
+async function readTaskBindingMigration(): Promise<string> {
+  return await readFile(resolve(__dirname, '../../../../../drizzle/0018_task_session_bindings.sql'), 'utf-8')
+}
+
+async function applyTaskBindingMigrationForLocalSocket(sqlClient: postgres.Sql): Promise<void> {
+  await sqlClient`CREATE EXTENSION IF NOT EXISTS pgcrypto`
+  const migration = await readTaskBindingMigration()
+  const compatibleMigration = migration
+    .replace('CREATE TABLE "boring_task_session_bindings"', 'CREATE TABLE IF NOT EXISTS "boring_task_session_bindings"')
+    .replace('CREATE UNIQUE INDEX "boring_task_session_bindings_tuple_idx"', 'CREATE UNIQUE INDEX IF NOT EXISTS "boring_task_session_bindings_tuple_idx"')
+    .replace('CREATE INDEX "boring_task_session_bindings_task_idx"', 'CREATE INDEX IF NOT EXISTS "boring_task_session_bindings_task_idx"')
+  for (const statement of compatibleMigration.split('--> statement-breakpoint')) {
+    const trimmed = statement.trim()
+    if (trimmed) await sqlClient.unsafe(trimmed)
+  }
+}
+
+describe('PostgresTaskSessionBindingStore schema contract', () => {
+  it('keeps the migration and Drizzle schema aligned on tuple uniqueness and task lookup indexes', async () => {
+    const migration = await readTaskBindingMigration()
+    const table = taskSessionBindings as unknown as {
+      [key: string]: unknown
+      workspaceId: unknown
+      adapterId: unknown
+      taskId: unknown
+      sessionId: unknown
+      createdAt: unknown
+    }
+
+    expect(table.workspaceId).toBeTruthy()
+    expect(table.adapterId).toBeTruthy()
+    expect(table.taskId).toBeTruthy()
+    expect(table.sessionId).toBeTruthy()
+    expect(table.createdAt).toBeTruthy()
+    expect(migration).toContain('CREATE TABLE "boring_task_session_bindings"')
+    expect(migration).toContain('"workspace_id" text NOT NULL')
+    expect(migration).toContain('"adapter_id" text NOT NULL')
+    expect(migration).toContain('"task_id" text NOT NULL')
+    expect(migration).toContain('"session_id" text NOT NULL')
+    expect(migration).toContain('CREATE UNIQUE INDEX "boring_task_session_bindings_tuple_idx"')
+    expect(migration).toContain('("workspace_id","adapter_id","task_id","session_id")')
+    expect(migration).toContain('CREATE INDEX "boring_task_session_bindings_task_idx"')
+    expect(migration).toContain('("workspace_id","adapter_id","task_id","created_at")')
+  })
+})
+
+describe('PostgresTaskSessionBindingStore', () => {
   beforeAll(async () => {
-    await runMigrations(BASE_CONFIG)
-    sqlClient = postgres(TEST_DB_URL!, { max: 4 })
+    if (TEST_DB_URL) {
+      await runMigrations(BASE_CONFIG)
+      sqlClient = postgres(TEST_DB_URL, { max: 4 })
+    } else {
+      sqlClient = postgres({ host: '/var/run/postgresql', database: LOCAL_SOCKET_DATABASE, username: LOCAL_SOCKET_USER, max: 4 })
+      await applyTaskBindingMigrationForLocalSocket(sqlClient)
+    }
     store = new PostgresTaskSessionBindingStore(drizzle(sqlClient))
   })
 

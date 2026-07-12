@@ -128,7 +128,7 @@ export interface CreateAgentAppOptions {
    */
   onWorkspaceAgentDispatcher?: (resolver: WorkspaceAgentDispatcherResolver) => void
   /** Trusted host composition seam for request-scoped Pi session access. */
-  onPiChatSessionServiceResolver?: (resolver: (request: FastifyRequest) => Promise<PiChatSessionService>) => void
+  onPiChatSessionServiceResolver?: (resolver: (request: FastifyRequest, trustedCtx?: { workspaceId: string; userId?: string }) => Promise<PiChatSessionService>) => void
 }
 
 function createStaticWorkspaceAgentDispatcherResolver(
