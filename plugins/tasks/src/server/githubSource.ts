@@ -2,6 +2,7 @@ import { execFile } from "node:child_process"
 import { promisify } from "node:util"
 import type { BoringTaskBoardConfig, BoringTaskCard } from "../shared"
 import type { BoringTaskSourceContext, BoringTaskSourceRuntime } from "./sourceRuntime"
+import { getDefaultTasksWorkspaceRoot, getGitHubCliEnv } from "./config/env"
 import { TaskSourceServiceError } from "./taskSourceService"
 
 const execFileAsync = promisify(execFile)
@@ -83,14 +84,14 @@ const STATUS_MAPPINGS: Record<string, GitHubStatusMapping> = {
 }
 
 function defaultWorkspaceRoot(): string {
-  return process.env.BORING_AGENT_WORKSPACE_ROOT || process.cwd()
+  return getDefaultTasksWorkspaceRoot() || process.cwd()
 }
 
 async function runGhJson<T>(args: string[], cwd = defaultWorkspaceRoot()): Promise<T> {
   try {
     const { stdout } = await execFileAsync("gh", args, {
       cwd,
-      env: { ...process.env, GH_PROMPT_DISABLED: "1" },
+      env: getGitHubCliEnv(),
       maxBuffer: 1024 * 1024 * 8,
       timeout: 30_000,
     })
@@ -104,7 +105,7 @@ async function runGh(args: string[], cwd = defaultWorkspaceRoot()): Promise<void
   try {
     await execFileAsync("gh", args, {
       cwd,
-      env: { ...process.env, GH_PROMPT_DISABLED: "1" },
+      env: getGitHubCliEnv(),
       maxBuffer: 1024 * 1024,
       timeout: 30_000,
     })

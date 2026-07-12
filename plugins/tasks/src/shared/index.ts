@@ -2,6 +2,19 @@ export const TASKS_PLUGIN_ID = "tasks"
 export const TASKS_PLUGIN_LABEL = "Tasks"
 export const TASKS_ROUTE_PREFIX = "/api/boring-tasks"
 
+export interface BoringTaskSessionBinding {
+  id: string
+  workspaceId: string
+  /** Opaque, adapter-scoped — task.id means different things per adapter. */
+  adapterId: string
+  taskId: string
+  sessionId: string
+  title?: string
+  createdAt: string
+}
+
+export type BoringTaskSessionLink = BoringTaskSessionBinding
+
 export type BoringTaskStatusId = string
 
 export interface BoringTaskColumn {

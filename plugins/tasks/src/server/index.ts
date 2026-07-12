@@ -1,6 +1,10 @@
+import { join } from "node:path"
 import { defineServerPlugin, type WorkspaceServerPlugin } from "@hachej/boring-workspace/server"
 import { TASKS_PLUGIN_ID, TASKS_PLUGIN_LABEL } from "../shared"
+import { TASK_ERROR_CODES } from "../shared/error-codes"
 import { createGitHubTaskSource, createGhCliGitHubIssueExecutor, createWorkspaceGitHubTaskSource } from "./githubSource"
+import { registerTaskSessionBindingRoutes } from "./sessionBindingRoutes"
+import { FileTaskSessionBindingStore, type TaskSessionBindingStore, TaskSessionBindingStoreError } from "./sessionBindingStore"
 import { createTaskSourceRegistry, type BoringTaskSourceRegistry, type BoringTaskSourceRuntime } from "./sourceRuntime"
 import { createTaskSourceService, TaskSourceServiceError } from "./taskSourceService"
 
@@ -12,14 +16,15 @@ function workspaceIdFromRequest(request: { headers: Record<string, string | stri
 }
 
 function responseError(cause: unknown) {
-  if (cause instanceof TaskSourceServiceError) {
+  if (cause instanceof TaskSourceServiceError || cause instanceof TaskSessionBindingStoreError) {
     return { ok: false, code: cause.code, error: cause.message }
   }
-  return { ok: false, code: "TASK_SOURCE_ERROR", error: "Task source request failed." }
+  return { ok: false, code: TASK_ERROR_CODES.TASK_SOURCE_ERROR, error: "Task source request failed." }
 }
 
 function statusFor(cause: unknown): number {
-  return cause instanceof TaskSourceServiceError ? cause.status : 500
+  if (cause instanceof TaskSourceServiceError || cause instanceof TaskSessionBindingStoreError) return cause.status
+  return 500
 }
 
 function stringArray(value: unknown): string[] | undefined {
@@ -38,6 +43,15 @@ function requiredString(body: Record<string, unknown>, key: string): string {
   return value
 }
 
+function optionalString(body: Record<string, unknown>, key: string): string | undefined {
+  const value = body[key]
+  if (value === undefined) return undefined
+  if (typeof value !== "string" || value.length === 0) {
+    throw new TaskSourceServiceError(400, "TASK_INVALID_BODY", `${key} must be a non-empty string when provided`)
+  }
+  return value
+}
+
 function bodyObject(body: unknown): Record<string, unknown> {
   if (!body || typeof body !== "object" || Array.isArray(body)) {
     throw new TaskSourceServiceError(400, "TASK_INVALID_BODY", "request body must be an object")
@@ -49,11 +63,42 @@ export interface TasksServerPluginOptions {
   config?: unknown
   sources?: BoringTaskSourceRuntime[]
   workspaceRoot?: string
+  sessionBindingStore?: TaskSessionBindingStore
 }
 
 interface TaskProviderConfig {
   provider?: unknown
   repo?: unknown
+}
+
+const DEFAULT_WORKSPACE_ID = "default"
+
+function bindingStoreForWorkspaceRoot(workspaceRoot: string | undefined): TaskSessionBindingStore {
+  return new FileTaskSessionBindingStore(join(workspaceRoot ?? process.cwd(), ".pi", "tasks"))
+}
+
+function requestWorkspaceId(request: { headers: Record<string, string | string[] | undefined>; query?: unknown }): string {
+  return workspaceIdFromRequest(request) ?? DEFAULT_WORKSPACE_ID
+}
+
+async function authorizeSessionForLink(
+  app: { inject: (opts: { method: string; url: string; headers?: Record<string, string | string[] | undefined> }) => Promise<{ statusCode: number; json: () => unknown }> },
+  request: { headers: Record<string, string | string[] | undefined> },
+  sessionId: string,
+): Promise<{ id: string; title?: string }> {
+  const response = await app.inject({
+    method: "GET",
+    url: `/api/v1/agent/pi-chat/sessions?limit=1&activeSessionId=${encodeURIComponent(sessionId)}`,
+    headers: request.headers,
+  })
+  if (response.statusCode >= 400) {
+    throw new TaskSourceServiceError(response.statusCode, "TASK_SESSION_AUTHORIZATION_FAILED", "Unable to authorize task session.")
+  }
+  const body = response.json()
+  const sessions = Array.isArray(body) ? body : []
+  const session = sessions.find((entry): entry is { id: string; title?: string } => Boolean(entry) && typeof entry === "object" && (entry as { id?: unknown }).id === sessionId)
+  if (!session) throw new TaskSourceServiceError(404, "TASK_SESSION_NOT_FOUND", `Task session not found: ${sessionId}`)
+  return session
 }
 
 function taskProvidersFromConfig(config: unknown): TaskProviderConfig[] {
@@ -90,6 +135,7 @@ export function createTasksServerPlugin(options: TasksServerPluginOptions = {}):
     ? createTaskSourceRegistry(options.sources)
     : createTaskSourceRegistryFromConfig(options.config, { workspaceRoot: options.workspaceRoot })
   const service = createTaskSourceService(registry)
+  const sessionBindings = options.sessionBindingStore ?? bindingStoreForWorkspaceRoot(options.workspaceRoot)
 
   return defineServerPlugin({
     id: TASKS_PLUGIN_ID,
@@ -132,6 +178,8 @@ export function createTasksServerPlugin(options: TasksServerPluginOptions = {}):
           return reply.status(statusFor(cause)).send(responseError(cause))
         }
       })
+
+      registerTaskSessionBindingRoutes(app, { store: sessionBindings })
     },
   })
 }
@@ -143,3 +191,5 @@ export default function defaultTasksServerPlugin(options?: TasksServerPluginOpti
 export { createGitHubTaskSource, createWorkspaceGitHubTaskSource, createGhCliGitHubIssueExecutor, createGhCliGitHubRepositoryDetector } from "./githubSource"
 export { createTaskSourceRegistry } from "./sourceRuntime"
 export { createTaskSourceService, TaskSourceServiceError } from "./taskSourceService"
+export { FileTaskSessionBindingStore, TaskSessionBindingStoreError } from "./sessionBindingStore"
+export type { TaskSessionBindingStore } from "./sessionBindingStore"

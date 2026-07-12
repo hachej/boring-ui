@@ -1,8 +1,8 @@
-import { useState, type DragEvent, type MouseEvent } from "react"
-import { MessageSquare, MoreHorizontal, Trash2 } from "lucide-react"
+import { useEffect, useState, type DragEvent, type MouseEvent } from "react"
+import { Link2, MessageSquare, MoreHorizontal, Trash2, X } from "lucide-react"
 import { useWorkspacePluginClient } from "@hachej/boring-workspace"
 import { useWorkspaceShellCapabilities, type WorkspaceShellAnchorRect } from "@hachej/boring-workspace/plugin"
-import type { BoringTaskCard } from "../shared"
+import type { BoringTaskCard, BoringTaskSessionBinding } from "../shared"
 
 interface TaskCardProps {
   task: BoringTaskCard
@@ -29,44 +29,178 @@ function rectFromElement(element: HTMLElement): WorkspaceShellAnchorRect {
   return { x: rect.x, y: rect.y, width: rect.width, height: rect.height, top: rect.top, right: rect.right, bottom: rect.bottom, left: rect.left }
 }
 
-interface CreatedPiChatSession { id?: unknown }
+interface CreatedPiChatSession { id?: unknown; title?: unknown }
+interface TaskSessionListResponse { links?: BoringTaskSessionBinding[] }
+interface TaskSessionLinkResponse { link?: BoringTaskSessionBinding }
+interface PiSessionSummary { id: string; title?: string; updatedAt?: string; createdAt?: string }
+interface ManageSessionsSearchResponse { action?: string; sessions?: PiSessionSummary[] }
+
+function taskDisplayRef(task: BoringTaskCard): string {
+  return task.number || task.id
+}
+
+function taskChatTitle(task: BoringTaskCard): string {
+  return `${taskDisplayRef(task)}: ${task.title}`
+}
 
 function taskChatDraft(task: BoringTaskCard): string {
   return [
-    `Let's work on ${task.number}: ${task.title}`,
+    `Let's work on ${taskDisplayRef(task)}: ${task.title}`,
     "",
-    `Task ID: ${task.number}`,
+    `Task ID: ${task.id}`,
+    `Display ref: ${taskDisplayRef(task)}`,
     `Status: ${task.statusId}`,
     task.url ? `URL: ${task.url}` : null,
   ].filter(Boolean).join("\n")
 }
 
+function relativeTime(iso: string): string {
+  const ms = Date.now() - new Date(iso).getTime()
+  if (!Number.isFinite(ms) || ms < 60_000) return "just now"
+  const minutes = Math.round(ms / 60_000)
+  if (minutes < 60) return `${minutes}m ago`
+  const hours = Math.round(minutes / 60)
+  if (hours < 24) return `${hours}h ago`
+  const days = Math.round(hours / 24)
+  return `${days}d ago`
+}
+
 export function TaskCard({ task, draggable, unmapped = false, deleteEnabled = false, compact = false, onDelete, onDragStart, onDragEnd }: TaskCardProps) {
   const [menuOpen, setMenuOpen] = useState(false)
   const [openingChat, setOpeningChat] = useState(false)
+  const [sessionPanelOpen, setSessionPanelOpen] = useState(false)
+  const [sessionLinks, setSessionLinks] = useState<BoringTaskSessionBinding[]>([])
+  const [sessionLinksLoaded, setSessionLinksLoaded] = useState(false)
+  const [sessionError, setSessionError] = useState<string | null>(null)
+  const [linkQuery, setLinkQuery] = useState("")
+  const [linkSearchResults, setLinkSearchResults] = useState<PiSessionSummary[]>([])
+  const [linkSearchLoading, setLinkSearchLoading] = useState(false)
   const shell = useWorkspaceShellCapabilities()
   const pluginClient = useWorkspacePluginClient()
   const tags = task.tags?.slice(0, 4) ?? []
   const hiddenTagCount = Math.max((task.tags?.length ?? 0) - tags.length, 0)
   const pullRequests = task.pullRequests?.slice(0, 2) ?? []
   const hiddenPullRequestCount = Math.max((task.pullRequests?.length ?? 0) - pullRequests.length, 0)
+  const chatTitle = taskChatTitle(task)
 
   const stopCardAction = (event: MouseEvent<HTMLElement>) => event.stopPropagation()
+
+  const loadSessionLinks = async (): Promise<BoringTaskSessionBinding[]> => {
+    const body = await pluginClient.postJson<TaskSessionListResponse>("/api/boring-tasks/sessions/list", { adapterId: task.adapterId, taskId: task.id })
+    const links = body.links ?? []
+    setSessionLinks(links)
+    setSessionLinksLoaded(true)
+    return links
+  }
+
+  useEffect(() => {
+    let cancelled = false
+    void pluginClient.postJson<TaskSessionListResponse>("/api/boring-tasks/sessions/list", { adapterId: task.adapterId, taskId: task.id })
+      .then((body) => {
+        if (cancelled) return
+        setSessionLinks(body.links ?? [])
+        setSessionLinksLoaded(true)
+      })
+      .catch(() => {
+        if (!cancelled) setSessionLinksLoaded(true)
+      })
+    return () => { cancelled = true }
+  }, [pluginClient, task.adapterId, task.id])
+
+  const openLinkedChat = async (link: BoringTaskSessionBinding, anchor?: WorkspaceShellAnchorRect) => {
+    const sessions = await pluginClient.getJson<PiSessionSummary[]>(`/api/v1/agent/pi-chat/sessions?limit=1&activeSessionId=${encodeURIComponent(link.sessionId)}`)
+    const session = sessions.find((candidate) => candidate.id === link.sessionId)
+    if (!session) {
+      setSessionPanelOpen(true)
+      setSessionError("That linked chat session is no longer available. You can unlink it or link another session.")
+      return
+    }
+    const title = session.title ?? link.title ?? chatTitle
+    shell.openDetachedChat(link.sessionId, { anchor, title, composingEnabled: true })
+    window.dispatchEvent(new CustomEvent("boring-workspace:open-detached-chat", { detail: { sessionId: link.sessionId, title, composingEnabled: true } }))
+  }
+
+  const createAndLinkChat = async (anchor?: WorkspaceShellAnchorRect) => {
+    setOpeningChat(true)
+    setSessionError(null)
+    try {
+      const session = await pluginClient.postJson<CreatedPiChatSession>("/api/v1/agent/pi-chat/sessions", { title: chatTitle })
+      if (typeof session.id !== "string" || session.id.length === 0) throw new Error("Chat session was not created.")
+      let linked: BoringTaskSessionBinding
+      try {
+        const response = await pluginClient.postJson<TaskSessionLinkResponse>("/api/boring-tasks/sessions/link", {
+          adapterId: task.adapterId,
+          taskId: task.id,
+          sessionId: session.id,
+          title: chatTitle,
+        })
+        if (!response.link) throw new Error("Task session binding was not created.")
+        linked = response.link
+      } catch (error) {
+        setSessionPanelOpen(true)
+        setSessionError(`Created chat ${session.id}, but failed to bind it to this task. Use Link existing to attach it before opening. ${error instanceof Error ? error.message : ""}`.trim())
+        return
+      }
+      setSessionLinks((current) => current.some((candidate) => candidate.id === linked.id) ? current : [linked, ...current])
+      setSessionLinksLoaded(true)
+      const initialDraft = taskChatDraft(task)
+      shell.openDetachedChat(session.id, { anchor, title: chatTitle, initialDraft, composingEnabled: true })
+      window.dispatchEvent(new CustomEvent("boring-workspace:open-detached-chat", { detail: { sessionId: session.id, title: chatTitle, initialDraft, composingEnabled: true } }))
+    } catch (error) {
+      setSessionError(error instanceof Error ? error.message : "Failed to open task chat")
+    } finally {
+      setOpeningChat(false)
+    }
+  }
 
   const openTaskChat = (event: MouseEvent<HTMLButtonElement>) => {
     stopCardAction(event)
     const anchor = rectFromElement(event.currentTarget)
-    const title = `${task.number}: ${task.title}`
-    setOpeningChat(true)
-    void pluginClient.postJson<CreatedPiChatSession>("/api/v1/agent/pi-chat/sessions", { title })
-      .then((session) => {
-        if (typeof session.id !== "string" || session.id.length === 0) throw new Error("Chat session was not created.")
-        const initialDraft = taskChatDraft(task)
-        shell.openDetachedChat(session.id, { anchor, title, initialDraft, composingEnabled: true })
-        window.dispatchEvent(new CustomEvent("boring-workspace:open-detached-chat", { detail: { sessionId: session.id, title, initialDraft, composingEnabled: true } }))
+    setSessionError(null)
+    void (async () => {
+      const links = sessionLinksLoaded ? sessionLinks : await loadSessionLinks()
+      if (links.length === 0) {
+        await createAndLinkChat(anchor)
+        return
+      }
+      setSessionPanelOpen((current) => !current)
+    })().catch((error) => setSessionError(error instanceof Error ? error.message : "Failed to open task chat"))
+  }
+
+  const unlinkSession = (event: MouseEvent<HTMLButtonElement>, link: BoringTaskSessionBinding) => {
+    stopCardAction(event)
+    setSessionError(null)
+    setSessionLinks((current) => current.filter((candidate) => candidate.id !== link.id))
+    void pluginClient.postJson("/api/boring-tasks/sessions/unlink", { bindingId: link.id })
+      .catch((error) => {
+        setSessionLinks((current) => current.some((candidate) => candidate.id === link.id) ? current : [link, ...current])
+        setSessionError(error instanceof Error ? error.message : "Failed to unlink session")
       })
-      .catch((error) => console.error("Failed to open task chat", error))
-      .finally(() => setOpeningChat(false))
+  }
+
+  const searchExistingSessions = (event: MouseEvent<HTMLButtonElement>) => {
+    stopCardAction(event)
+    setLinkSearchLoading(true)
+    setSessionError(null)
+    void pluginClient.postJson<ManageSessionsSearchResponse>("/api/v1/agent/pi-chat/sessions/manage", { action: "search", query: linkQuery, limit: 10 })
+      .then((body) => setLinkSearchResults(body.sessions ?? []))
+      .catch((error) => setSessionError(error instanceof Error ? error.message : "Failed to search sessions"))
+      .finally(() => setLinkSearchLoading(false))
+  }
+
+  const linkExistingSession = (event: MouseEvent<HTMLButtonElement>, session: PiSessionSummary) => {
+    stopCardAction(event)
+    setSessionError(null)
+    void pluginClient.postJson<TaskSessionLinkResponse>("/api/boring-tasks/sessions/link", {
+      adapterId: task.adapterId,
+      taskId: task.id,
+      sessionId: session.id,
+      title: session.title ?? chatTitle,
+    }).then((body) => {
+      if (!body.link) throw new Error("Task session binding was not created.")
+      setSessionLinks((current) => current.some((candidate) => candidate.id === body.link!.id) ? current : [body.link!, ...current])
+      setSessionLinksLoaded(true)
+    }).catch((error) => setSessionError(error instanceof Error ? error.message : "Failed to link session"))
   }
 
   const deleteTask = (event: MouseEvent<HTMLButtonElement>) => {
@@ -74,6 +208,55 @@ export function TaskCard({ task, draggable, unmapped = false, deleteEnabled = fa
     setMenuOpen(false)
     onDelete?.(task)
   }
+
+  const chatButton = (
+    <button type="button" draggable={false} onClick={openTaskChat} className="relative grid size-7 place-items-center rounded-lg text-muted-foreground opacity-80 hover:bg-muted hover:text-foreground group-hover:opacity-100" aria-label={`Open chat for ${taskDisplayRef(task)}`} title="Open task chat" disabled={openingChat} aria-expanded={sessionPanelOpen}>
+      <MessageSquare className={["size-3.5", openingChat ? "animate-pulse" : ""].join(" ")} strokeWidth={1.75} />
+      {sessionLinks.length > 0 ? <span className="absolute -right-1 -top-1 grid min-w-4 place-items-center rounded-full bg-primary px-1 text-[9px] font-bold leading-4 text-primary-foreground" aria-label={`${sessionLinks.length} linked chats`}>{sessionLinks.length}</span> : null}
+    </button>
+  )
+
+  const taskSessionPanel = sessionPanelOpen ? (
+    <section className="mt-3 rounded-xl border border-border bg-muted/20 p-2 text-xs" aria-label={`Linked chat sessions for ${taskDisplayRef(task)}`} onClick={(event) => event.stopPropagation()}>
+      <div className="mb-2 flex items-center justify-between gap-2">
+        <span className="font-semibold text-foreground">Task chats</span>
+        <button type="button" className="rounded-md p-1 text-muted-foreground hover:bg-muted hover:text-foreground" aria-label="Close task chats" onClick={() => setSessionPanelOpen(false)}><X className="size-3" /></button>
+      </div>
+      {sessionError ? <p className="mb-2 rounded-lg border border-destructive/30 bg-destructive/10 px-2 py-1 text-destructive" role="alert">{sessionError}</p> : null}
+      {sessionLinks.length > 0 ? (
+        <ul className="space-y-1">
+          {sessionLinks.map((link) => (
+            <li key={link.id} className="flex items-center gap-2 rounded-lg bg-background/70 px-2 py-1.5">
+              <div className="min-w-0 flex-1">
+                <div className="truncate font-medium text-foreground">{link.title ?? link.sessionId}</div>
+                <div className="text-[10px] text-muted-foreground">{relativeTime(link.createdAt)}</div>
+              </div>
+              <button type="button" className="rounded-md px-2 py-1 font-medium text-primary hover:bg-primary/10" onClick={(event) => { stopCardAction(event); void openLinkedChat(link, rectFromElement(event.currentTarget)) }}>Open</button>
+              <button type="button" className="rounded-md px-2 py-1 text-muted-foreground hover:bg-muted hover:text-destructive" onClick={(event) => unlinkSession(event, link)}>Unlink</button>
+            </li>
+          ))}
+        </ul>
+      ) : <p className="text-muted-foreground">No linked chats yet.</p>}
+      <div className="mt-2 flex flex-wrap items-center gap-2">
+        <button type="button" className="rounded-lg border border-border bg-background px-2 py-1 font-medium hover:bg-muted" disabled={openingChat} onClick={(event) => { stopCardAction(event); void createAndLinkChat(rectFromElement(event.currentTarget)) }}>Start new chat</button>
+        <label className="flex min-w-0 flex-1 items-center gap-1">
+          <span className="sr-only">Search existing chats</span>
+          <input className="min-w-24 flex-1 rounded-lg border border-border bg-background px-2 py-1 text-foreground" value={linkQuery} onChange={(event) => setLinkQuery(event.target.value)} placeholder="Search chats" />
+        </label>
+        <button type="button" className="inline-flex items-center gap-1 rounded-lg border border-border bg-background px-2 py-1 font-medium hover:bg-muted" disabled={linkSearchLoading} onClick={searchExistingSessions}><Link2 className="size-3" /> Link existing</button>
+      </div>
+      {linkSearchResults.length > 0 ? (
+        <ul className="mt-2 space-y-1" aria-label="Session search results">
+          {linkSearchResults.map((session) => (
+            <li key={session.id} className="flex items-center gap-2 rounded-lg bg-background/70 px-2 py-1.5">
+              <span className="min-w-0 flex-1 truncate">{session.title ?? session.id}</span>
+              <button type="button" className="rounded-md px-2 py-1 font-medium text-primary hover:bg-primary/10" disabled={sessionLinks.some((link) => link.sessionId === session.id)} onClick={(event) => linkExistingSession(event, session)}>Link</button>
+            </li>
+          ))}
+        </ul>
+      ) : null}
+    </section>
+  ) : null
 
   if (compact) {
     return (
@@ -100,9 +283,7 @@ export function TaskCard({ task, draggable, unmapped = false, deleteEnabled = fa
           <span key={pr.id} className="hidden max-w-64 shrink-0 truncate rounded-full border border-emerald-500/30 bg-emerald-500/10 px-2 py-0.5 text-[10px] font-semibold text-emerald-700 dark:text-emerald-300 lg:inline-block" title={pr.title}>PR {pr.number} <span className="font-medium">{pr.title}</span></span>
         ))}
         <div className="flex shrink-0 items-center gap-0.5">
-          <button type="button" draggable={false} onClick={openTaskChat} className="grid size-7 place-items-center rounded-lg text-muted-foreground opacity-80 hover:bg-muted hover:text-foreground group-hover:opacity-100" aria-label={`Open chat for ${task.number}`} title="Open task chat" disabled={openingChat}>
-            <MessageSquare className={["size-3.5", openingChat ? "animate-pulse" : ""].join(" ")} strokeWidth={1.75} />
-          </button>
+          {chatButton}
           {task.url ? (
             <a href={task.url} target="_blank" rel="noreferrer" draggable={false} onClick={(event) => event.stopPropagation()} className="grid size-7 place-items-center rounded-lg text-muted-foreground opacity-80 hover:bg-muted hover:text-foreground group-hover:opacity-100" aria-label={`Open ${task.number} in native task system`} title="Open in native task system">
               <ExternalLinkGlyph className="size-3.5" />
@@ -142,9 +323,7 @@ export function TaskCard({ task, draggable, unmapped = false, deleteEnabled = fa
         <span className="mt-0.5 shrink-0 rounded-full border border-border bg-muted/50 px-2 py-0.5 font-mono text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">{task.number}</span>
         <h3 className="min-w-0 flex-1 truncate text-sm font-semibold leading-snug text-foreground" title={task.title}>{task.title}</h3>
         <div className="flex shrink-0 items-center gap-0.5">
-          <button type="button" draggable={false} onClick={openTaskChat} className="grid size-7 place-items-center rounded-lg text-muted-foreground opacity-80 hover:bg-muted hover:text-foreground group-hover:opacity-100" aria-label={`Open chat for ${task.number}`} title="Open task chat" disabled={openingChat}>
-            <MessageSquare className={["size-3.5", openingChat ? "animate-pulse" : ""].join(" ")} strokeWidth={1.75} />
-          </button>
+          {chatButton}
           {task.url ? (
             <a href={task.url} target="_blank" rel="noreferrer" draggable={false} onClick={(event) => event.stopPropagation()} className="grid size-7 place-items-center rounded-lg text-muted-foreground opacity-80 hover:bg-muted hover:text-foreground group-hover:opacity-100" aria-label={`Open ${task.number} in native task system`} title="Open in native task system">
               <ExternalLinkGlyph className="size-3.5" />
@@ -165,6 +344,7 @@ export function TaskCard({ task, draggable, unmapped = false, deleteEnabled = fa
           </div>
         </div>
       </div>
+      {taskSessionPanel}
       <div className="mt-3 flex flex-wrap gap-1.5">
         {unmapped ? <span className="rounded-full border border-amber-400/50 px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide text-amber-600 dark:text-amber-300">Unmapped</span> : null}
         {task.epic ? <span className="rounded-full border border-primary/20 bg-primary/10 px-2 py-0.5 text-[10px] font-medium text-primary">{task.epic.title}</span> : null}

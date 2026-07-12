@@ -1,4 +1,5 @@
 import { describe, expect, test, vi } from "vitest"
+import { TASK_ERROR_CODES } from "../shared/error-codes"
 import type { BoringTaskSourceRuntime } from "./sourceRuntime"
 import { createTaskSourceRegistry } from "./sourceRuntime"
 import { createTaskSourceService, TaskSourceServiceError } from "./taskSourceService"
@@ -27,7 +28,7 @@ describe("task source service", () => {
     const service = createTaskSourceService(createTaskSourceRegistry([]))
     await expect(service.moveTask({}, { sourceId: "missing", taskId: "1", statusId: "todo" })).rejects.toMatchObject({
       status: 404,
-      code: "TASK_SOURCE_NOT_FOUND",
+      code: TASK_ERROR_CODES.TASK_SOURCE_NOT_FOUND,
     })
   })
 
@@ -38,7 +39,7 @@ describe("task source service", () => {
     })]))
     await expect(service.moveTask({}, { sourceId: "source-a", taskId: "1", statusId: "todo" })).rejects.toMatchObject({
       status: 409,
-      code: "TASK_SOURCE_MOVE_UNSUPPORTED",
+      code: TASK_ERROR_CODES.TASK_SOURCE_MOVE_UNSUPPORTED,
     })
   })
 })
