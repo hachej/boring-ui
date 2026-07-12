@@ -4,6 +4,7 @@ import { parse } from 'yaml'
 import { describe, expect, it, vi } from 'vitest'
 
 import {
+  D1_CADDY_IMAGE,
   renderD1ComposeCommands,
   runD1ComposeAction,
   type D1ComposeEffect,
@@ -13,13 +14,12 @@ import {
 import { D1HostErrorCode, parseD1HostPlan } from '../d1Plan.js'
 
 const digest = `sha256:${'a'.repeat(64)}`
-const ingressDigest = `sha256:${'b'.repeat(64)}`
 const composeUrl = new URL('../../../../../../deploy/d1/compose.yml', import.meta.url)
 const collectionUrl = new URL('../../../../../../deploy/d1/collection.example.json', import.meta.url)
 
 const images = {
   schemaVersion: 1,
-  ingressImage: `caddy@${ingressDigest}`,
+  ingressImage: D1_CADDY_IMAGE,
   coreAppImage: `ghcr.io/hachej/boring-ui@${digest}`,
 } as const
 
@@ -62,8 +62,11 @@ describe('D1 Compose topology', () => {
     expect(Object.keys(document.services)).toEqual(['ingress', 'core-app'])
     expect(Object.keys(document.volumes)).toEqual(['d1-workspaces', 'd1-sessions'])
     expect(ingress.image).toBe('${D1_INGRESS_IMAGE:?D1_INGRESS_IMAGE is required}')
-    expect(ingress.command).toEqual(['reverse-proxy', '--from', ':8080', '--to', 'core-app:3000'])
-    expect(JSON.stringify(ingress.command)).not.toMatch(/\$\{|forwarded|header/i)
+    expect(ingress.command).toEqual(['caddy', 'run', '--config', '/etc/caddy/Caddyfile', '--adapter', 'caddyfile'])
+    expect(ingress.volumes).toEqual([{
+      type: 'bind', source: './Caddyfile', target: '/etc/caddy/Caddyfile', read_only: true, bind: { create_host_path: false },
+    }])
+    expect(JSON.stringify(ingress.command)).not.toMatch(/\$\{|forwarded|header|\/bin\/sh/i)
     expect(ingress).not.toHaveProperty('environment')
     expect(core.image).toBe('${D1_CORE_APP_IMAGE:?D1_CORE_APP_IMAGE is required}')
     expect(ingress.ports).toEqual(['80:8080'])
@@ -134,6 +137,8 @@ describe('D1 Compose command policy', () => {
     ['core digest mismatch', { ...images, coreAppImage: `ghcr.io/hachej/boring-ui@sha256:${'c'.repeat(64)}` }],
     ['tagged core image', { ...images, coreAppImage: 'ghcr.io/hachej/boring-ui:latest' }],
     ['tagged ingress image', { ...images, ingressImage: 'caddy:2' }],
+    ['other pinned ingress image', { ...images, ingressImage: `caddy@sha256:${'b'.repeat(64)}` }],
+    ['other ingress repository', { ...images, ingressImage: D1_CADDY_IMAGE.replace('caddy@', 'registry.example/caddy@') }],
     ['caller-supplied project drift', { ...images, projectName: 'old-project' }],
     ['caller-supplied compose drift', { ...images, composeFile: '/old/compose.yml' }],
     ['caller-supplied state drift', { ...images, stateRoot: '/old/state' }],
