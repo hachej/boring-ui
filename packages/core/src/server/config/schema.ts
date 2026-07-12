@@ -1,4 +1,6 @@
 import { z } from 'zod'
+import proxyAddr from '@fastify/proxy-addr'
+import { isIP } from 'node:net'
 
 const VALID_MAIL_SCHEMES = ['resend://', 'smtp://', 'smtps://', 'console://', 'console-capture://']
 
@@ -14,6 +16,19 @@ const logLevelSchema = z.enum([
 const rateLimitEndpointOverrideSchema = z.object({
   max: z.number().int().positive(),
   window: z.string().min(1),
+})
+
+const proxyCidrSchema = z.string().refine((value) => {
+  const parts = value.split('/')
+  if (parts.length !== 2 || isIP(parts[0]!) === 0 || !/^\d+$/.test(parts[1]!)) return false
+  try { proxyAddr.compile(value); return true } catch { return false }
+}, 'Expected an IPv4 or IPv6 CIDR')
+
+const trustedProxyPolicySchema = z.object({
+  cidrs: z.array(proxyCidrSchema).min(1).superRefine((cidrs, context) => {
+    if (new Set(cidrs).size !== cidrs.length) context.addIssue({ code: z.ZodIssueCode.custom, message: 'Duplicate proxy CIDR' })
+  }),
+  hops: z.number().int().min(1).max(8),
 })
 
 const mailTransportUrlSchema = z.string().refine(
@@ -49,6 +64,7 @@ export const coreConfigSchema = z.object({
         enabled: z.boolean(),
         upgradeInsecureRequests: z.boolean().optional(),
       }),
+      trustedProxy: trustedProxyPolicySchema.nullable().optional(),
     })
     .optional(),
 

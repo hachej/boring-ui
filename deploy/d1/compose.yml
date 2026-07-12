@@ -7,6 +7,9 @@ services:
     depends_on:
       core-app:
         condition: service_healthy
+    networks:
+      d1-edge:
+        ipv4_address: 192.168.255.250
     restart: unless-stopped
 
   core-app:
@@ -20,6 +23,8 @@ services:
       BORING_D1_HOST_ID: "${D1_HOST_ID:?D1_HOST_ID is required}"
       BORING_AGENT_WORKSPACE_ROOT: "/data/workspaces"
       BORING_AGENT_SESSION_ROOT: "/data/pi-sessions"
+      TRUST_PROXY_CIDRS: "192.168.255.250/32"
+      TRUST_PROXY_HOPS: "1"
     expose:
       - "3000"
     volumes:
@@ -48,7 +53,17 @@ services:
       start_period: 10s
       retries: 3
     restart: unless-stopped
+    networks:
+      - d1-edge
 
 volumes:
   d1-workspaces:
   d1-sessions:
+
+networks:
+  d1-edge:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 192.168.255.248/29
+          gateway: 192.168.255.249

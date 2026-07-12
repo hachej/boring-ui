@@ -114,7 +114,39 @@ describe('loadConfig', () => {
     expect(config.cors.credentials).toBe(true)
     expect(config.security?.csp.enabled).toBe(true)
     expect(config.security?.csp.upgradeInsecureRequests).toBe(false)
+    expect(config.security?.trustedProxy).toBeUndefined()
     expect(config.encryption.workspaceSettingsKey).toBe('b'.repeat(64))
+  })
+
+  it('loads only a paired, bounded CIDR proxy policy', async () => {
+    const config = await loadConfig({ tomlPath: TOML_PATH, env: {
+      ...VALID_ENV,
+      BORING_D1_HOST_ID: 'eu-host-1',
+      TRUST_PROXY_CIDRS: '192.168.255.250/32',
+      TRUST_PROXY_HOPS: '1',
+    } })
+    expect(config.security?.trustedProxy).toEqual({ cidrs: ['192.168.255.250/32'], hops: 1 })
+
+    await expect(loadConfig({ tomlPath: TOML_PATH, env: { ...VALID_ENV, BORING_D1_HOST_ID: 'eu-host-1' } }))
+      .rejects.toBeInstanceOf(ConfigValidationError)
+    for (const partial of [{ TRUST_PROXY_CIDRS: '192.168.255.250/32' }, { TRUST_PROXY_HOPS: '1' }]) {
+      await expect(loadConfig({ tomlPath: TOML_PATH, env: { ...VALID_ENV, BORING_D1_HOST_ID: 'eu-host-1', ...partial } }))
+        .rejects.toBeInstanceOf(ConfigValidationError)
+    }
+
+    for (const proxyEnv of [
+      { TRUST_PROXY_CIDRS: '172.31.255.249/32' },
+      { TRUST_PROXY_HOPS: '1' },
+      { TRUST_PROXY_CIDRS: '', TRUST_PROXY_HOPS: '1' },
+      { TRUST_PROXY_CIDRS: '172.31.255.249/32,172.31.255.249/32', TRUST_PROXY_HOPS: '1' },
+      { TRUST_PROXY_CIDRS: '172.31.255.249', TRUST_PROXY_HOPS: '1' },
+      { TRUST_PROXY_CIDRS: 'invalid/32', TRUST_PROXY_HOPS: '1' },
+      { TRUST_PROXY_CIDRS: '172.31.255.249/32', TRUST_PROXY_HOPS: '0' },
+      { TRUST_PROXY_CIDRS: '172.31.255.249/32', TRUST_PROXY_HOPS: '9' },
+      { TRUST_PROXY_CIDRS: '172.31.255.249/32', TRUST_PROXY_HOPS: '1.5' },
+      { TRUST_PROXY_CIDRS: '172.31.255.249/32', TRUST_PROXY_HOPS: '1e0' },
+      { TRUST_PROXY_CIDRS: '172.31.255.249/32', TRUST_PROXY_HOPS: ' 1 ' },
+    ]) await expect(loadConfig({ tomlPath: TOML_PATH, env: { ...VALID_ENV, ...proxyEnv } })).rejects.toBeInstanceOf(ConfigValidationError)
   })
 
   it('loads all three supported secrets from strict files without mutating env', async () => {

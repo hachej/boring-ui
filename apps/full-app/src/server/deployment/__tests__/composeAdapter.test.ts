@@ -44,6 +44,7 @@ describe('D1 Compose topology', () => {
     const document = parse(await readFile(composeUrl, 'utf8')) as {
       services: Record<string, Record<string, unknown>>
       volumes: Record<string, unknown>
+      networks: Record<string, Record<string, unknown>>
     }
     const ingress = document.services.ingress
     const core = document.services['core-app']
@@ -52,13 +53,23 @@ describe('D1 Compose topology', () => {
     expect(Object.keys(document.services)).toEqual(['ingress', 'core-app'])
     expect(Object.keys(document.volumes)).toEqual(['d1-workspaces', 'd1-sessions'])
     expect(ingress.image).toBe('${D1_INGRESS_IMAGE:?D1_INGRESS_IMAGE is required}')
+    expect(ingress.command).toEqual(['reverse-proxy', '--from', ':8080', '--to', 'core-app:3000'])
+    expect(JSON.stringify(ingress.command)).not.toMatch(/\$\{|forwarded|header/i)
+    expect(ingress).not.toHaveProperty('environment')
     expect(core.image).toBe('${D1_CORE_APP_IMAGE:?D1_CORE_APP_IMAGE is required}')
     expect(ingress.ports).toEqual(['80:8080'])
     expect(core).not.toHaveProperty('ports')
     expect(ingress.restart).toBe('unless-stopped')
     expect(core.restart).toBe('unless-stopped')
     expect(core.env_file).toEqual(['/etc/boring/d1/core.env'])
-    expect(core.environment).toMatchObject({ BORING_D1_HOST_ID: '${D1_HOST_ID:?D1_HOST_ID is required}' })
+    expect(core.environment).toMatchObject({
+      BORING_D1_HOST_ID: '${D1_HOST_ID:?D1_HOST_ID is required}',
+      TRUST_PROXY_CIDRS: '192.168.255.250/32',
+      TRUST_PROXY_HOPS: '1',
+    })
+    expect(ingress.networks).toEqual({ 'd1-edge': { ipv4_address: '192.168.255.250' } })
+    expect(core.networks).toEqual(['d1-edge'])
+    expect(document.networks).toEqual({ 'd1-edge': { driver: 'bridge', ipam: { config: [{ subnet: '192.168.255.248/29', gateway: '192.168.255.249' }] } } })
     expect(mounts).toEqual([
       { type: 'volume', source: 'd1-workspaces', target: '/data/workspaces' },
       { type: 'volume', source: 'd1-sessions', target: '/data/pi-sessions' },
