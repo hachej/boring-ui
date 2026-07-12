@@ -1,4 +1,4 @@
-import type { FastifyInstance } from 'fastify'
+import type { FastifyInstance, FastifyRequest } from 'fastify'
 import type {
   CoreConfig,
   CapabilitiesResponse,
@@ -94,12 +94,22 @@ export type CapabilitiesContributor = (ctx: {
   config: CoreConfig
 }) => Partial<CapabilitiesResponse> | Promise<Partial<CapabilitiesResponse>>
 
+export interface CoreRequestScope {
+  readonly bindingId: string
+  readonly workspaceId: string
+  readonly defaultDeploymentId: string
+  readonly activeRevision: string
+}
+
+export type CoreRequestScopeResolver = (request: FastifyRequest) => CoreRequestScope | Promise<CoreRequestScope>
+
 export interface CreateCoreAppOptions {
   authProvider?: AuthProvider
   userStore?: UserStore
   workspaceStore?: WorkspaceStore
   provisioner?: WorkspaceProvisioner
   manageShutdown?: boolean
+  requestScopeResolver?: CoreRequestScopeResolver
 }
 
 declare module 'fastify' {
@@ -117,5 +127,6 @@ declare module 'fastify' {
   interface FastifyRequest {
     user?: { id: string; email: string; name: string | null; emailVerified: boolean } | null
     cspNonce?: string
+    requestScope?: CoreRequestScope
   }
 }

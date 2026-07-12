@@ -1,3 +1,4 @@
+import { isIP } from 'node:net'
 import { OpaqueRefSchema, type Sha256Digest } from '@hachej/boring-agent/shared'
 
 export const D1HostErrorCode = {
@@ -11,6 +12,7 @@ export const D1HostErrorCode = {
   COLLECTION_NOT_READY: 'D1_COLLECTION_NOT_READY',
   PUBLICATION_FAILED: 'D1_PUBLICATION_FAILED',
   ROLLBACK_TARGET_INVALID: 'D1_ROLLBACK_TARGET_INVALID',
+  HOST_SCOPE_VIOLATION: 'D1_HOST_SCOPE_VIOLATION',
 } as const
 
 export type D1HostErrorCode = typeof D1HostErrorCode[keyof typeof D1HostErrorCode]
@@ -58,6 +60,7 @@ const LANDING_KEYS = ['title', 'summary', 'ctaLabel'] as const
 const REF_RE = /^[A-Za-z0-9][A-Za-z0-9._@-]{0,255}$/
 const DIGEST_RE = /^sha256:[a-f0-9]{64}$/
 const HOST_RE = /^(?=.{1,253}$)(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/
+const LEGACY_IPV4_COMPONENT_RE = /^(?:0x[0-9a-f]+|0[0-7]*|[1-9][0-9]*)$/
 
 export function invalidD1Field(field: string): never {
   throw new D1HostError(D1HostErrorCode.PLAN_INVALID, { field })
@@ -89,6 +92,14 @@ export function strictD1HostId(value: unknown, field: string): string {
   return hostId
 }
 
+export function strictD1Hostname(value: unknown, field: string): string {
+  if (typeof value !== 'string' || !HOST_RE.test(value)) invalidD1Field(field)
+  const parts = value.split('.')
+  const isLegacyIpv4 = parts.length <= 4 && parts.every((part) => LEGACY_IPV4_COMPONENT_RE.test(part))
+  if (isIP(value) !== 0 || isLegacyIpv4) invalidD1Field(field)
+  return value
+}
+
 function agentRef(value: unknown, field: string): string {
   const parsed = OpaqueRefSchema.safeParse(value)
   if (!parsed.success) invalidD1Field(field)
@@ -118,13 +129,13 @@ function parseBinding(value: unknown, index: number): D1SiteBindingV1 {
   if (!Array.isArray(input.secretRefs)) invalidD1Field(`${field}.secretRefs`)
   const secretRefs = input.secretRefs.map((value, secretIndex) => strictD1Ref(value, `${field}.secretRefs[${secretIndex}]`)).sort()
   unique(secretRefs, `${field}.secretRefs`)
-  if (typeof input.hostname !== 'string' || !HOST_RE.test(input.hostname)) invalidD1Field(`${field}.hostname`)
+  const hostname = strictD1Hostname(input.hostname, `${field}.hostname`)
   const bindingId = strictD1Ref(input.bindingId, `${field}.bindingId`)
   if (bindingId.length > 251) invalidD1Field(`${field}.bindingId`)
 
   return Object.freeze({
     bindingId,
-    hostname: input.hostname,
+    hostname,
     workspaceId: agentRef(input.workspaceId, `${field}.workspaceId`),
     defaultDeploymentId: agentRef(input.defaultDeploymentId, `${field}.defaultDeploymentId`),
     bundleRef: strictD1Ref(input.bundleRef, `${field}.bundleRef`),

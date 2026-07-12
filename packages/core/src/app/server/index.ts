@@ -4,6 +4,7 @@ export {
   type CoreWorkspaceAgentServerPlugin,
   type CreateCoreWorkspaceAgentServerOptions,
 } from './createCoreWorkspaceAgentServer.js'
+export type { CoreRequestScope, CoreRequestScopeResolver } from '../../server/app/index.js'
 export {
   startCoreWorkspaceAgentDevServer,
   startCoreWorkspaceAgentDevServerFromMeta,

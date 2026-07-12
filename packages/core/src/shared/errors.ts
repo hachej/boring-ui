@@ -32,6 +32,7 @@ export const ERROR_CODES = {
   MAIL_DISABLED: 'mail_disabled',
   DB_UNAVAILABLE: 'db_unavailable',
   INTERNAL_ERROR: 'internal_error',
+  D1_HOST_SCOPE_VIOLATION: 'D1_HOST_SCOPE_VIOLATION',
 
   // Credits + purchases
   PAYMENT_REQUIRED: 'payment_required',

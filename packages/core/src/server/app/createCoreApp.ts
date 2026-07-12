@@ -5,6 +5,7 @@ import helmet from '@fastify/helmet'
 import proxyAddr from '@fastify/proxy-addr'
 import type { IncomingMessage } from 'node:http'
 import { randomBytes, randomUUID } from 'node:crypto'
+import { ERROR_CODES, HttpError } from '../../shared/errors.js'
 import type { CoreConfig } from '../../shared/types.js'
 import type { CreateCoreAppOptions } from './types.js'
 import { registerErrorHandler } from './errorHandler.js'
@@ -290,6 +291,36 @@ export async function createCoreApp(
   })
 
   registerErrorHandler(app)
+  if (options?.requestScopeResolver) {
+    const resolveRequestScope = options.requestScopeResolver
+    app.decorateRequest('requestScope')
+    app.addHook('onRequest', async (request) => {
+      let scope
+      try {
+        scope = await resolveRequestScope(request)
+      } catch (error) {
+        if (
+          typeof error === 'object'
+          && error !== null
+          && 'code' in error
+          && error.code === ERROR_CODES.D1_HOST_SCOPE_VIOLATION
+        ) {
+          throw new HttpError({
+            status: 421,
+            code: ERROR_CODES.D1_HOST_SCOPE_VIOLATION,
+            message: ERROR_CODES.D1_HOST_SCOPE_VIOLATION,
+          })
+        }
+        throw error
+      }
+      request.requestScope = Object.freeze({
+        bindingId: scope.bindingId,
+        workspaceId: scope.workspaceId,
+        defaultDeploymentId: scope.defaultDeploymentId,
+        activeRevision: scope.activeRevision,
+      })
+    })
+  }
   registerCapabilities(app)
   await registerRateLimits(app)
 
