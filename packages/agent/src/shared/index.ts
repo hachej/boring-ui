@@ -71,6 +71,7 @@ export {
 } from './config-schema'
 export type { RuntimeModeId, AgentConfig, AgentEnv } from './config-schema'
 export {
+  AgentConsumptionErrorCode,
   AgentDefinitionErrorCode,
   AgentDeploymentErrorCode,
   ErrorCode,
@@ -112,6 +113,40 @@ export type {
   Sha256Digest,
 } from './agent-definition'
 export { validateTool } from './validateTool'
+export {
+  TASK_STATES,
+  TaskStateSchema,
+  PrincipalRefSchema,
+  AgentRefSchema,
+  ArtifactRefSchema,
+  PartSchema,
+  AgentMessageSchema,
+  AgentTaskSchema,
+  ConsumptionGuardsSchema,
+  AgentConsumptionValidationError,
+  agentRefEquals,
+  isValidTaskTransition,
+  assertValidTransition,
+  validateAgentTask,
+  validateConsumptionGuards,
+  detectConsumptionCycle,
+  assertNoConsumptionCycle,
+  isWithinConsumptionDepth,
+  assertWithinConsumptionDepth,
+} from './agent-consumption'
+export type {
+  TaskState,
+  PrincipalRef,
+  AgentRef,
+  ArtifactRef,
+  TextPart,
+  FilePart,
+  DataPart,
+  Part,
+  AgentMessage,
+  AgentTask,
+  ConsumptionGuards,
+} from './agent-consumption'
 export {
   WORKSPACE_AGENT_PLUGINS_RELOADED_EVENT,
   WORKSPACE_COMMAND_NOTIFY_EVENT,

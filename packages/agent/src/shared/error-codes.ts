@@ -104,6 +104,22 @@ export const AgentDeploymentErrorCode = z.enum([
 
 export type AgentDeploymentErrorCode = z.infer<typeof AgentDeploymentErrorCode>
 
+/**
+ * Refusal codes for the agent-consumption contract (AC1, Decision 22,
+ * issue #636). Scoped like {@link AgentDeploymentErrorCode} — canonical,
+ * but intentionally outside the public {@link ErrorCode} / {@link
+ * ERROR_CODES} registry (and `docs/ERROR_CODES.md`) until a runtime
+ * dispatcher actually surfaces these over an API boundary.
+ */
+export const AgentConsumptionErrorCode = z.enum([
+  'AGENT_CONSUMPTION_INVALID_TRANSITION',
+  'AGENT_CONSUMPTION_CYCLE_DETECTED',
+  'AGENT_CONSUMPTION_DEPTH_EXCEEDED',
+  'AGENT_CONSUMPTION_SCHEMA_MISMATCH',
+])
+
+export type AgentConsumptionErrorCode = z.infer<typeof AgentConsumptionErrorCode>
+
 export const ApiErrorPayloadSchema = z.object({
   code: ErrorCode,
   message: z.string().min(1),
