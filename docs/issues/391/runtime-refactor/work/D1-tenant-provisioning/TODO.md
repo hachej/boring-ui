@@ -1,5 +1,10 @@
 # TODO-D1 - Tenant provisioning command/API
 
+**HISTORICAL — this TODO describes the superseded dedicated-site model
+(`currentCompleteGeneration`, per-site DNS/TLS cutover). The binding
+execution contract is [D1-R0-SPEC.md §8](./D1-R0-SPEC.md). Do not implement
+from this file.**
+
 ## Active multi-agent Docker v1 work order (2026-07-11)
 
 **Dispatch state: D1-R0 spec accepted, merge pending.** After merge, the exact
