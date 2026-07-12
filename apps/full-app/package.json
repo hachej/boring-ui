@@ -18,6 +18,7 @@
     "smoke:mcp-managed-agent": "node --import tsx scripts/managed-agent-mcp-smoke.ts",
     "smoke:post-deploy": "tsx scripts/post-deploy-smoke.ts",
     "smoke:remote-worker": "node scripts/remote-worker-smoke.mjs",
+    "proof:d1-docker-boundary": "node --import tsx scripts/d1-docker-boundary-proof.ts",
     "backup:fly-worker-volume": "node scripts/fly-worker-volume-backup.mjs"
   },
   "dependencies": {
