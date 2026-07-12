@@ -8,6 +8,7 @@ import {
   runD1ComposeAction,
   type D1ComposeEffect,
   type D1ComposeProcess,
+  type D1ComposeResult,
 } from '../composeAdapter.js'
 import { D1HostErrorCode, parseD1HostPlan } from '../d1Plan.js'
 
@@ -39,11 +40,20 @@ const expectedEnv = {
   D1_STATE_ROOT: '/var/lib/boring/d1/eu-host-1',
 }
 
+function runnerWithFreshNetwork(composeResult: D1ComposeResult = { exitCode: 0 }) {
+  return vi.fn(async (process: D1ComposeProcess): Promise<D1ComposeResult> => {
+    if (process.command === 'docker' && process.args[0] === 'network') return { exitCode: 0, stdout: '' }
+    if (process.command === 'ip') return { exitCode: 0, stdout: '[]' }
+    return composeResult
+  })
+}
+
 describe('D1 Compose topology', () => {
   it('contains only ingress and one full-collection core service', async () => {
     const document = parse(await readFile(composeUrl, 'utf8')) as {
       services: Record<string, Record<string, unknown>>
       volumes: Record<string, unknown>
+      networks: Record<string, Record<string, unknown>>
     }
     const ingress = document.services.ingress
     const core = document.services['core-app']
@@ -52,13 +62,23 @@ describe('D1 Compose topology', () => {
     expect(Object.keys(document.services)).toEqual(['ingress', 'core-app'])
     expect(Object.keys(document.volumes)).toEqual(['d1-workspaces', 'd1-sessions'])
     expect(ingress.image).toBe('${D1_INGRESS_IMAGE:?D1_INGRESS_IMAGE is required}')
+    expect(ingress.command).toEqual(['reverse-proxy', '--from', ':8080', '--to', 'core-app:3000'])
+    expect(JSON.stringify(ingress.command)).not.toMatch(/\$\{|forwarded|header/i)
+    expect(ingress).not.toHaveProperty('environment')
     expect(core.image).toBe('${D1_CORE_APP_IMAGE:?D1_CORE_APP_IMAGE is required}')
     expect(ingress.ports).toEqual(['80:8080'])
     expect(core).not.toHaveProperty('ports')
     expect(ingress.restart).toBe('unless-stopped')
     expect(core.restart).toBe('unless-stopped')
     expect(core.env_file).toEqual(['/etc/boring/d1/core.env'])
-    expect(core.environment).toMatchObject({ BORING_D1_HOST_ID: '${D1_HOST_ID:?D1_HOST_ID is required}' })
+    expect(core.environment).toMatchObject({
+      BORING_D1_HOST_ID: '${D1_HOST_ID:?D1_HOST_ID is required}',
+      TRUST_PROXY_CIDRS: '192.168.255.250/32',
+      TRUST_PROXY_HOPS: '1',
+    })
+    expect(ingress.networks).toEqual({ 'd1-edge': { ipv4_address: '192.168.255.250' } })
+    expect(core.networks).toEqual(['d1-edge'])
+    expect(document.networks).toEqual({ 'd1-edge': { driver: 'bridge', ipam: { config: [{ subnet: '192.168.255.248/29', gateway: '192.168.255.249' }] } } })
     expect(mounts).toEqual([
       { type: 'volume', source: 'd1-workspaces', target: '/data/workspaces' },
       { type: 'volume', source: 'd1-sessions', target: '/data/pi-sessions' },
@@ -128,20 +148,23 @@ describe('D1 Compose command policy', () => {
   })
 
   it('stops initial boot when migration fails', async () => {
-    const runner = vi.fn(async (_process: D1ComposeProcess) => ({ exitCode: 17 }))
+    const runner = runnerWithFreshNetwork({ exitCode: 17 })
 
     await expect(runD1ComposeAction('initial', await examplePlan(), images, runner)).rejects.toMatchObject({
       code: D1HostErrorCode.COLLECTION_NOT_READY,
       details: { field: 'compose' },
     })
-    expect(runner).toHaveBeenCalledTimes(1)
-    expect(runner.mock.calls[0][0].args.at(-1)).toBe('apps/full-app/dist/server/migrate.js')
+    expect(runner).toHaveBeenCalledTimes(3)
+    expect(runner.mock.calls[2]?.[0].args.at(-1)).toBe('apps/full-app/dist/server/migrate.js')
   })
 
   it.each([
-    ['spawn', async () => { throw new Error('spawn /private/canary TOKEN=secret') }],
-    ['nonzero', async () => ({ exitCode: 17 })],
-  ])('maps %s failure to one redacted collection error', async (_name, runner) => {
+    ['spawn', runnerWithFreshNetwork({ exitCode: 0 }), true],
+    ['nonzero', runnerWithFreshNetwork({ exitCode: 17 }), false],
+  ])('maps %s failure to one redacted collection error', async (_name, runner, spawn) => {
+    if (spawn) runner.mockImplementationOnce(async () => ({ exitCode: 0, stdout: '' }))
+      .mockImplementationOnce(async () => ({ exitCode: 0, stdout: '[]' }))
+      .mockImplementationOnce(async () => { throw new Error('spawn /private/canary TOKEN=secret') })
     let failure: unknown
     try {
       await runD1ComposeAction('initial', await examplePlan(), images, runner)

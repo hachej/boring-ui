@@ -83,6 +83,31 @@ function parseRateLimitOverrides(
   }
 }
 
+function parseTrustedProxyPolicy(env: Record<string, string | undefined>): unknown {
+  const cidrs = env.TRUST_PROXY_CIDRS
+  const hops = env.TRUST_PROXY_HOPS
+  const legacy = env.TRUST_PROXY_LEGACY_UNSAFE
+  if (legacy !== undefined && legacy !== '1') {
+    throw new ConfigValidationError([{ message: 'TRUST_PROXY_LEGACY_UNSAFE must be exactly 1', path: ['security', 'trustedProxy'] }])
+  }
+  if (legacy === '1') {
+    if (env.BORING_D1_HOST_ID !== undefined || cidrs !== undefined || hops !== undefined) {
+      throw new ConfigValidationError([{ message: 'Legacy proxy trust cannot be combined with D1 or an exact policy', path: ['security', 'trustedProxy'] }])
+    }
+    return 'legacy-unsafe'
+  }
+  if (cidrs === undefined && hops === undefined) {
+    if (env.BORING_D1_HOST_ID !== undefined) {
+      throw new ConfigValidationError([{ message: 'D1 requires an explicit trusted proxy policy', path: ['security', 'trustedProxy'] }])
+    }
+    return undefined
+  }
+  return {
+    cidrs: (cidrs ?? '').split(',').map((value) => value.trim()),
+    hops: hops !== undefined && /^[1-8]$/.test(hops) ? Number(hops) : Number.NaN,
+  }
+}
+
 export async function loadConfig(
   options?: LoadConfigOptions,
 ): Promise<CoreConfig> {
@@ -213,6 +238,7 @@ export async function loadConfig(
         enabled: cspEnabled,
         upgradeInsecureRequests: cspUpgradeInsecureRequests,
       },
+      trustedProxy: parseTrustedProxyPolicy(env),
     },
 
     encryption: {

@@ -5,6 +5,12 @@ import {
   parseD1HostPlan,
   type D1HostPlanV1,
 } from './d1Plan.js'
+import {
+  preflightD1EdgeNetwork,
+  type D1HostProcess,
+  type D1HostResult,
+  type D1HostRunner,
+} from './edgeNetworkPreflight.js'
 
 const CONTROL_KEYS = ['schemaVersion', 'ingressImage', 'coreAppImage'] as const
 const IMAGE_RE = /^(?:[a-z0-9]+(?:[._-][a-z0-9]+)*\/)*[a-z0-9]+(?:[._-][a-z0-9]+)*@sha256:[a-f0-9]{64}$/
@@ -22,16 +28,9 @@ export interface D1ComposeImagesV1 {
   readonly coreAppImage: string
 }
 
-export interface D1ComposeProcess {
-  readonly command: 'docker'
-  readonly args: readonly string[]
-  readonly cwd: typeof COMPOSE_DIRECTORY
-  readonly env: Readonly<Record<string, string>>
-  readonly shell: false
-}
-
-export interface D1ComposeResult { readonly exitCode: number | null }
-export type D1ComposeRunner = (process: D1ComposeProcess) => Promise<D1ComposeResult>
+export type D1ComposeProcess = D1HostProcess
+export type D1ComposeResult = D1HostResult
+export type D1ComposeRunner = D1HostRunner
 
 function invalid(field: string): never {
   throw new D1HostError(D1HostErrorCode.PLAN_INVALID, { field })
@@ -94,6 +93,8 @@ export async function runD1ComposeAction(
   runner: D1ComposeRunner,
 ): Promise<void> {
   const commands = renderD1ComposeCommands(effect, rawPlan, rawImages)
+  if (commands.length === 0) return
+  await preflightD1EdgeNetwork(runner)
   try {
     for (const command of commands) {
       const result = await runner(command)

@@ -2,6 +2,7 @@ import Fastify from 'fastify'
 import type { FastifyInstance } from 'fastify'
 import cors from '@fastify/cors'
 import helmet from '@fastify/helmet'
+import proxyAddr from '@fastify/proxy-addr'
 import type { IncomingMessage } from 'node:http'
 import { randomBytes, randomUUID } from 'node:crypto'
 import type { CoreConfig } from '../../shared/types.js'
@@ -174,9 +175,18 @@ export async function createCoreApp(
   options?: CreateCoreAppOptions,
 ) {
   const redactionKeywords = [...DEFAULT_REDACTION_KEYWORDS]
+  const proxyPolicy = config.security?.trustedProxy
+  const trustedProxy = proxyPolicy && proxyPolicy !== 'legacy-unsafe'
+    ? { hops: proxyPolicy.hops, matches: proxyAddr.compile([...proxyPolicy.cidrs]) }
+    : null
 
   const app = Fastify({
-    trustProxy: true,
+    // Temporary compatibility is deliberately impossible to enable by omission.
+    trustProxy: proxyPolicy === 'legacy-unsafe'
+      ? true
+      : trustedProxy
+      ? (address, index) => index < trustedProxy.hops && trustedProxy.matches(address, index)
+      : false,
     bodyLimit: config.bodyLimit,
     genReqId: (req) => {
       const incoming = req.headers['x-request-id']

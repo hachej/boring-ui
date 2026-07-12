@@ -44,6 +44,8 @@ env:
     NODE_ENV: production
     HOST: 0.0.0.0
     PORT: "3000"
+    # TODO(proxy-migration): replace after measuring the nginx peer and proving header overwrite.
+    TRUST_PROXY_LEGACY_UNSAFE: "1"
     BORING_AGENT_MODE: vercel-sandbox
     BORING_AGENT_WORKSPACE_ROOT: /data/workspaces
     BORING_AGENT_SESSION_ROOT: /data/pi-sessions

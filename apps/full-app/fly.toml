@@ -10,6 +10,10 @@ primary_region = "cdg"
 [deploy]
   release_command = "node apps/full-app/dist/server/migrate.js"
 
+[env]
+  # TODO(proxy-migration): replace after measuring Fly's immediate peer and forwarded chain.
+  TRUST_PROXY_LEGACY_UNSAFE = "1"
+
 [[mounts]]
   source = "workspace_data"
   destination = "/data"
