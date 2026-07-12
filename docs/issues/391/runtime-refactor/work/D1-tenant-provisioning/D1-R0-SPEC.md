@@ -415,8 +415,10 @@ pre-effect overlap guard
 mounted exact-DAC active-collection reader
 ([#685](https://github.com/hachej/boring-ui/pull/685)). D1-004a3a landed the
 canonical ingress artifact and real-Docker header proof
-([#690](https://github.com/hachej/boring-ui/pull/690)). D1-004a3b is active;
-D1-004a4 through D1-006 remain un-landed.
+([#690](https://github.com/hachej/boring-ui/pull/690)). D1-004a3b landed exact
+raw-header authority and trusted-hop scope enforcement
+([#692](https://github.com/hachej/boring-ui/pull/692)). D1-004a4a is active;
+D1-004a4b through D1-006 remain un-landed.
 
 ### D1-001 — plan and composition identity (<= 400 net lines; 25 minutes)
 
@@ -523,14 +525,41 @@ from the exact trusted peer/chain against the active site map and attach
 ambiguous forwarded-host values, and every untrusted forwarded host; hostname
 grants nothing. Membership/CRUD enforcement remains D1-004b.
 
-### D1-004a4 — landing and readiness wiring (<= 400 net lines; 25 minutes)
+### D1-004a4a — landing and root seam (<= 400 net lines; 25 minutes)
 
-Files: bounded landing renderer, loopback readiness, minimal `main.ts` wiring,
-and a narrow optional core root-handler seam.
+Files: bounded landing renderer, focused tests, and a narrow optional core
+root-handler seam. No production activation in this bead.
 
-Deliver: escaped landing copy, fixed same-origin auth return, and redacted
-loopback-only readiness. No membership handoff, arbitrary HTML, open redirect,
-or workspace/deployment identifiers in public output.
+Deliver: known bound unauthenticated `GET /` renders only revalidated and
+escaped landing title/summary/optional CTA, with a fixed same-origin
+`/auth/signin?redirect=%2F` target and `cache-control: no-store`. Authenticated
+root delegates byte-for-byte to the existing SPA shell. Re-read the active
+collection and require the request scope revision plus binding/workspace/default
+deployment tuple to match before rendering. Drift/read failure returns only
+redacted `D1_COLLECTION_NOT_READY`. No arbitrary HTML, request-derived URL,
+membership handoff, or public internal identifier.
+
+### D1-004a4b — readiness and production activation (<= 400 net lines; 25 minutes)
+
+Files: D1 server wiring/readiness modules, small host-scope/core type changes,
+literal-IPv4 health probe in `deploy/d1/compose.yml` plus topology proof,
+minimal `main.ts` wiring, and focused tests.
+
+Deliver: when `BORING_D1_HOST_ID` is present, fail before other effects unless
+`BORING_D1_OWNER_UID`, process identity `10001:10001`, and the exact D1 proxy
+policy are valid; require the publication owner UID to differ from the app UID;
+read `BORING_D1_OWNER_UID` from the existing process-level
+`/etc/boring/d1/core.env` handoff;
+construct one reader rooted at fixed
+`/var/lib/boring/d1/<hostId>` using the owner UID and effective app GID; reuse it
+for host scope, landing, and readiness. Only raw socket `127.0.0.1` may bypass
+scope for exact `GET /health` and `GET /internal/d1/readiness`; query/encoded/
+other-method/remote/forwarded variants fail closed. Readiness returns only
+active revision, desired digest, and sorted binding-id readiness, or redacted
+`D1_COLLECTION_NOT_READY`. Compose must probe literal
+`http://127.0.0.1:3000/health`; prove it succeeds before an active collection
+while readiness remains redacted 503. Generic mode stays byte-for-byte
+unchanged. No membership handoff, Compose publication, or runsc decision.
 
 ### D1-004b — workspace authority fences (<= 400 net lines; 30 minutes)
 

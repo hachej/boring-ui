@@ -810,8 +810,8 @@
             <h3>Reduced critical path</h3>
             <ul class="scope-list">
               <li><code>Decision 21</code>, <code>P6-D</code>, and <code>A1 compile</code> are landed through #617/#623/#624.</li>
-              <li><code>P1</code> lifecycle/readiness (#642), <code>P6-R</code> (#647), and <code>D1-001…004a2</code> are landed.</li>
-              <li><code>D1-004a1/a2</code> are landed; a3a is active, then a3b/a4 establish Host scope, landing, and readiness.</li>
+              <li><code>P1</code> lifecycle/readiness (#642), <code>P6-R</code> (#647), and <code>D1-001…004a3b</code> are landed.</li>
+              <li><code>D1-004a3a/a3b</code> landed via #690/#692; a4a adds bounded landing, then a4b activates exact readiness and production wiring.</li>
               <li><code>D1-004b/c/d</code>, <code>D1-005</code>, and <code>D1-006</code> finish authority/admission, atomic N-binding boot, and the three-agent EU proof.</li>
               <li><code>M1 &rarr; AR1 &rarr; M2/E2</code> is priority 2, then <code>T1/T2</code>; <code>P2/X1</code> is last.</li>
               <li><code>P8</code> proves the complete journey and rollback.</li>
@@ -1084,7 +1084,7 @@
                 <td>P1</td>
                 <td>Existing workspace composer and #416 contracts stay frozen.</td>
                 <td>Lifecycle/readiness, stateless N-binding resolution, Docker host and secret brokerage.</td>
-                <td>P1/P6-R and D1-001…004a2 landed; D1-004a3a is active.</td>
+                <td>P1/P6-R and D1-001…004a3b landed; D1-004a4a is active, then a4b.</td>
               </tr>
               <tr>
                 <td><div class="track-name"><strong>X1 S3/FUSE</strong><span class="status deferred">draft only</span></div></td>
@@ -1399,8 +1399,8 @@
       },
       {
         id: "d1", phase: "D1", title: "Multi-agent EU Docker delivery", category: "critical", status: "active",
-        subtitle: "D1-R0 and D1-001…004a2 are landed; canonical ingress proof and trusted host surface work are active.",
-        starts: "D1-004a3a canonical ingress proof, then Host scope, landing/readiness, authority fences, atomic boot, and EU proof",
+        subtitle: "D1-R0 and D1-001…004a3b are landed; bounded landing is active, followed by production activation/readiness.",
+        starts: "D1-004a4a bounded landing, then a4b activation/readiness, authority fences, atomic boot, and EU proof",
         outcome: "One Docker host, N exact-host landings, member auth, authorized workspace/default bindings, uninterrupted additive apply, and rollback as a new revision.",
         boundary: "Host mutation is an OS-authorized local CLI only. Bound hostnames fence existing workspace list/create/switch/delete/default-auto-create paths; no app management API.",
         gate: "Three bindings, final-activation requirement validation, ordinary-member host-mutation denial, workspace lifecycle fences, stable-process N+1 continuity, active-replacement refusal, shared-host sibling isolation, cross-binding denial, rollback-as-new-revision, and no-secret proof. Dedicated VM is documentation/config-render only.",
