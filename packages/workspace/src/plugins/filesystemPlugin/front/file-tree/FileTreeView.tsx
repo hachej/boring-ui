@@ -1058,17 +1058,63 @@ export function FileTreePane({
       : debouncedQuery || undefined
 
   if (effectiveChromeless) {
+    // Single-root chromeless hosts (the common case: a plain "Files" tab with
+    // no alternate filesystem) render exactly as before — no wrapper, no
+    // switcher. Multi-root hosts still need a way to pick the active
+    // filesystem even though the pane itself owns no title/search chrome —
+    // that's the shell's job here. Render just the root switcher (no title,
+    // no per-root filter input — the shell's own search box covers that, see
+    // `effectiveSearchQuery` above) above the tree.
+    if (rootOptions.length <= 1) {
+      return (
+        <FileTreeView
+          key={`${activeFilesystem}:${activeRootDir}`}
+          rootDir={activeRootDir}
+          searchQuery={effectiveSearchQuery}
+          bridge={effectiveBridge}
+          filesystem={activeFilesystem}
+          access={activeAccess}
+          revealFileTreeRequest={effectiveRevealRequest}
+          className={cn("px-1 pt-1 [&_[role=treeitem]]:!indent-0", className)}
+        />
+      )
+    }
     return (
-      <FileTreeView
-        key={`${activeFilesystem}:${activeRootDir}`}
-        rootDir={activeRootDir}
-        searchQuery={effectiveSearchQuery}
-        bridge={effectiveBridge}
-        filesystem={activeFilesystem}
-        access={activeAccess}
-        revealFileTreeRequest={effectiveRevealRequest}
-        className={cn("px-1 pt-1 [&_[role=treeitem]]:!indent-0", className)}
-      />
+      <div className="flex h-full min-h-0 flex-col">
+        <div className="shrink-0 px-1 pt-1">
+          <Select
+            value={activeFilesystem}
+            onValueChange={(value) => setSelectedFilesystem(value as FilesystemId)}
+          >
+            <SelectTrigger
+              size="sm"
+              className="h-7 w-full text-xs"
+              aria-label="File root"
+            >
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {rootOptions.map((root) => (
+                <SelectItem key={root.filesystem} value={root.filesystem} className="text-xs">
+                  {root.label}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+        <div className="min-h-0 flex-1">
+          <FileTreeView
+            key={`${activeFilesystem}:${activeRootDir}`}
+            rootDir={activeRootDir}
+            searchQuery={effectiveSearchQuery}
+            bridge={effectiveBridge}
+            filesystem={activeFilesystem}
+            access={activeAccess}
+            revealFileTreeRequest={effectiveRevealRequest}
+            className={cn("px-1 pt-1 [&_[role=treeitem]]:!indent-0", className)}
+          />
+        </div>
+      </div>
     )
   }
 
