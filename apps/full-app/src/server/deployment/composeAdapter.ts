@@ -14,6 +14,7 @@ import {
 
 const CONTROL_KEYS = ['schemaVersion', 'ingressImage', 'coreAppImage'] as const
 const IMAGE_RE = /^(?:[a-z0-9]+(?:[._-][a-z0-9]+)*\/)*[a-z0-9]+(?:[._-][a-z0-9]+)*@sha256:[a-f0-9]{64}$/
+export const D1_CADDY_IMAGE = 'caddy@sha256:af5fdcd76f2db5e4e974ee92f96ee8c0fc3edb55bd4ba5032547cbf3f65e486d'
 const COMPOSE_DIRECTORY = '/opt/boring/d1'
 const COMPOSE_FILE = `${COMPOSE_DIRECTORY}/compose.yml`
 const PROJECT_NAME = 'boring-d1'
@@ -49,7 +50,7 @@ function parseImages(raw: unknown, plan: D1HostPlanV1): D1ComposeImagesV1 {
 
   return Object.freeze({
     schemaVersion: 1,
-    ingressImage: pinnedImage(raw.ingressImage, 'compose.ingressImage'),
+    ingressImage: raw.ingressImage === D1_CADDY_IMAGE ? D1_CADDY_IMAGE : invalid('compose.ingressImage'),
     coreAppImage,
   })
 }

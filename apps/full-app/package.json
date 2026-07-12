@@ -19,6 +19,7 @@
     "smoke:post-deploy": "tsx scripts/post-deploy-smoke.ts",
     "smoke:remote-worker": "node scripts/remote-worker-smoke.mjs",
     "proof:d1-docker-boundary": "node --import tsx scripts/d1-docker-boundary-proof.ts",
+    "proof:d1-ingress-headers": "node --import tsx scripts/d1-ingress-header-proof.ts",
     "backup:fly-worker-volume": "node scripts/fly-worker-volume-backup.mjs"
   },
   "dependencies": {

@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest'
 
-import { runD1ComposeAction, type D1ComposeProcess, type D1ComposeResult } from '../composeAdapter.js'
+import { D1_CADDY_IMAGE, runD1ComposeAction, type D1ComposeProcess, type D1ComposeResult } from '../composeAdapter.js'
 import { preflightD1EdgeNetwork } from '../edgeNetworkPreflight.js'
 import { D1HostErrorCode } from '../d1Plan.js'
 
@@ -128,7 +128,7 @@ describe('D1 edge-network command ordering', () => {
       environmentRef: 'environment@1', secretRefs: [],
     }],
   }
-  const images = { schemaVersion: 1, ingressImage: `caddy@sha256:${'b'.repeat(64)}`, coreAppImage: `ghcr.io/hachej/boring-ui@${digest}` }
+  const images = { schemaVersion: 1, ingressImage: D1_CADDY_IMAGE, coreAppImage: `ghcr.io/hachej/boring-ui@${digest}` }
 
   it.each(['initial', 'restart-core'] as const)('runs preflight before the %s Compose effect', async (effect) => {
     const runner = preflightRunner()

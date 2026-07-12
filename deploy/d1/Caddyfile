@@ -1,0 +1,7 @@
+:8080 {
+	reverse_proxy core-app:3000 {
+		header_up -Forwarded
+		header_up Host {hostport}
+		header_up X-Forwarded-Host {hostport}
+	}
+}

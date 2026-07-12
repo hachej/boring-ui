@@ -1,7 +1,7 @@
 services:
   ingress:
     image: "${D1_INGRESS_IMAGE:?D1_INGRESS_IMAGE is required}"
-    command: ["reverse-proxy", "--from", ":8080", "--to", "core-app:3000"]
+    command: ["caddy", "run", "--config", "/etc/caddy/Caddyfile", "--adapter", "caddyfile"]
     ports:
       - "80:8080"
     depends_on:
@@ -10,6 +10,13 @@ services:
     networks:
       d1-edge:
         ipv4_address: 192.168.255.250
+    volumes:
+      - type: bind
+        source: ./Caddyfile
+        target: /etc/caddy/Caddyfile
+        read_only: true
+        bind:
+          create_host_path: false
     restart: unless-stopped
 
   core-app:
