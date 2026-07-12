@@ -288,9 +288,10 @@ Execution slice:
 **Delivers:**
 - authenticated internal service-principal invocation;
 - duplicate-safe hosted due runs;
-- operational proof across restart/multiple invocations.
+- creator authorization re-check and creator-scoped execution;
+- operational proof across multiple invocations.
 
-**Blocked by:** Slice 5.
+**Status:** implemented. The platform invokes `POST /api/v1/boring-automation/due/hosted` with `Authorization: Bearer $BORING_AUTOMATION_TRIGGER_TOKEN`. There is no plugin-owned timer.
 
 **Review budget:** high.
 
@@ -336,6 +337,5 @@ Owner decisions recorded before Slice 5:
 
 - Slice 0 state: complete; see `docs/issues/590/seam-spike.md`.
 - `ready-for-agent`: Slice 2 UI, Slice 3A generic dispatcher, then Slice 3B local manual executor.
-- `ready-for-human`: hosted actor composition and authenticated platform trigger design.
-- First remaining hosted blocker: compose the verified creator actor/store into full-app routes and executor, then design the service-principal trigger.
-- Next recommended work: finish hosted actor composition, then implement Slice 6 trigger authentication.
+- `ready-for-human`: final end-to-end hosted smoke and production scheduler wiring.
+- The implementation is complete; deployment must configure `BORING_AUTOMATION_TRIGGER_TOKEN` and invoke the hosted endpoint from its scheduler.

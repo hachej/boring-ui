@@ -11,9 +11,11 @@ function appWithStore(
   store = new FileAutomationStore(`${tmpdir()}/boring-automation-unused`),
   manualRunExecutor?: Parameters<typeof automationRoutes>[1]["manualRunExecutor"],
   dueRunService?: Parameters<typeof automationRoutes>[1]["dueRunService"],
+  hostedDueRunService?: Parameters<typeof automationRoutes>[1]["hostedDueRunService"],
+  hostedTriggerToken?: string,
 ) {
   const app = Fastify()
-  app.register(async (instance) => automationRoutes(instance, { store, manualRunExecutor, dueRunService }))
+  app.register(async (instance) => automationRoutes(instance, { store, manualRunExecutor, dueRunService, hostedDueRunService, hostedTriggerToken }))
   return app
 }
 
@@ -157,6 +159,23 @@ describe("automationRoutes", () => {
 
     expect(response.statusCode).toBe(503)
     expect(response.json()).toMatchObject({ code: "BORING_AUTOMATION_RUN_EXECUTOR_UNAVAILABLE" })
+    await app.close()
+    await temp.cleanup()
+  })
+
+  it("requires the hosted service-principal bearer token and invokes the hosted due service", async () => {
+    const temp = await TempStore.create()
+    const runDue = vi.fn(async () => ({ now: "2026-07-10T09:00:00.000Z", outcomes: [] }))
+    const app = appWithStore(temp.store, undefined, undefined, { runDue }, "trigger-secret")
+
+    const missing = await app.inject({ method: "POST", url: `${BORING_AUTOMATION_ROUTE_PREFIX}/due/hosted` })
+    expect(missing.statusCode).toBe(401)
+    const wrong = await app.inject({ method: "POST", url: `${BORING_AUTOMATION_ROUTE_PREFIX}/due/hosted`, headers: { authorization: "Bearer wrong" } })
+    expect(wrong.statusCode).toBe(401)
+    const allowed = await app.inject({ method: "POST", url: `${BORING_AUTOMATION_ROUTE_PREFIX}/due/hosted`, headers: { authorization: "Bearer trigger-secret" } })
+    expect(allowed.statusCode).toBe(200)
+    expect(allowed.json()).toMatchObject({ ok: true, outcomes: [] })
+    expect(runDue).toHaveBeenCalledOnce()
     await app.close()
     await temp.cleanup()
   })
