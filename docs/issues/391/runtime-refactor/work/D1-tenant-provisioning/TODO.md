@@ -7,7 +7,7 @@ from this file.**
 
 ## Active multi-agent Docker v1 work order (2026-07-11)
 
-**Dispatch state: D1-R0 and D1-001 through D1-004a1 are landed.** D1-004a2 is
+**Dispatch state: D1-R0 and D1-001 through D1-004a2 are landed.** D1-004a3a is
 active; dispatch the remaining exact implementation beads in
 [`D1-R0-SPEC.md`](./D1-R0-SPEC.md) in order. Never dispatch the historical
 section below.
@@ -39,19 +39,20 @@ section below.
 4. **LANDED — D1-004a1: explicit proxy and edge policy (#684).** Secure generic
    default, exact D1 proxy peer/hop count, deterministic edge network, and the
    pre-effect overlap guard are complete.
-5. **ACTIVE — D1-004a2, then a3a/a3b/a4, b/c/d: mounted reader, host surface,
+5. **LANDED — D1-004a2: mounted active reader (#685).** Exact-DAC read-only
+   active-to-COMPLETE validation is complete without mutation-store reuse,
+   directory enumeration, providers, or secret-value reads.
+6. **ACTIVE — D1-004a3a, then a3b/a4, b/c/d: canonical ingress, host surface,
    authority fences, and admission.** A read-only repo-owned ingress artifact,
-   exact Docker-proven Caddy digest, and real echo proof must canonicalize
-   forwarding before the trusted host scope accepts `X-Forwarded-Host`.
-   Present RFC Forwarded fails with stable `D1_HOST_SCOPE_VIOLATION`; no D1
-   scope consumes forwarded authority before that proof. Trusted exact-host
-   landing grants nothing;
+   exact Docker-proven Caddy digest, and real echo proof must strip RFC
+   Forwarded and canonicalize `X-Forwarded-Host` before trusted host scope can
+   consume it. Trusted exact-host landing grants nothing;
    member-only bound workspace and all selectors fail closed; the database
    admission row commits before first agent effect and survives cleanup.
-6. **D1-005 — N-binding boot/additive publication.** N independent P6-R calls,
+7. **D1-005 — N-binding boot/additive publication.** N independent P6-R calls,
    root-owned pending-pointer/signal preload, all-ready ack, atomic active
    pointer, stable-process continuity, and fail-closed active replacement/removal.
-7. **D1-006 — runbook and EU proof.** Reproduce the landed edge-network overlap
+8. **D1-006 — runbook and EU proof.** Reproduce the landed edge-network overlap
    guard and exact owned-network reuse on the EU host. Then prove three
    agents/workspaces/hostnames, timing, idempotence, N+1 continuity, rollback
    reproduction, isolation and secret canary. Dedicated VM is configuration
