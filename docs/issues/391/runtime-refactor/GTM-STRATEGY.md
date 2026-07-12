@@ -29,7 +29,8 @@ Compliance sensitivity is a qualifier, not a blocker.
 
 1. Outreach (existing LGM machinery) with ONE artifact: a recorded
    **golden-path demo**. The ≤ 15-minute build-and-deploy claim is GATED on
-   P8's recorded evidence — until golden-path.json exists, demos show a
+   P8's recorded evidence — until golden-path.json reports `stagesPending: []`
+   (full idea→deployed measurement including host publication), demos show a
    pre-built agent walkthrough and make no live-build promise. The P8 timing
    bead is therefore GTM-critical, not engineering vanity.
 2. Offer: free 30-min call walking THEIR workflow through a pre-built

@@ -11,7 +11,7 @@ shims) remains binding.
 | --- | --- | --- | --- |
 | 1 | #631 + P1 readiness | **merged; ancestry verified** | Request-binding lifecycle and fail-closed readiness are complete; do not replay discarded/superseded stacks. |
 | 2 | P6-R / BBP6-011 | **merged; ancestry verified** | The pure one-binding resolver is complete; D1 obtains N agents through N independent calls. |
-| 3 | D1-R0 | **accepted; merge pending** | Merge [`D1-R0-SPEC.md`](work/D1-tenant-provisioning/D1-R0-SPEC.md), then dispatch D1-001 through D1-006 in order. Historical dedicated/runsc beads remain non-dispatchable. |
+| 3 | D1-R0 | **merged ([#649](https://github.com/hachej/boring-ui/pull/649)); dispatch D1-001…006** | [`D1-R0-SPEC.md`](work/D1-tenant-provisioning/D1-R0-SPEC.md) is merged; dispatch D1-001 through D1-006 in order. Historical dedicated/runsc beads remain non-dispatchable. |
 | 4 | D1 composition producer -> A1-dev | D1-001 first | D1-001 implements the canonical redacted producer beside the real full-app composition; then recut A1 local dev against that exact host seam. A1-dev gates P8, not D1. |
 | 5 | P5a | conditional inside D1 | Add only a demonstrated secret-ref or host-readiness seam; D1 owns apply/digest/rollback. |
 | 6 | M1 -> AR1 -> M2/E2 | ordered priority 2 | Recut #549/#556 with authorized complete-byte artifact output and stable no-path rejection, accept AR1-001, then recut canonical MCP/artifact intake. |
@@ -309,7 +309,7 @@ M1 behavior configuration. Keep v1 conventions deliberately small: one schema,
 one instructions file, reference ids rather than executable discovery, and no
 pricing, hostname, exposure, tenant, or runtime-image fields in the definition.
 
-### M2 — MCP as an agent surface (registry-driven, after P7 + T2)
+### M2 — MCP as an agent surface (registry-driven)
 
 M2 turns M1's sidecar shape into a committed surface backed by immutable
 `ResolvedAgent` behavior plus deployment/host-owned exposure config. It is the ingress dual of E2: E2 exposes environments
@@ -322,7 +322,7 @@ over MCP; M2 exposes declared agents over MCP.
 | pr3-auth-demo-policy | BBM2-003 | new | ~300–600 | bearer invalid/foreign rejects; public-demo obeys demo policy and never widens environment facts | host `test`; secret canary |
 | pr4-result-share-conformance | BBM2-004 | test + new | ~200–400 | bounded aggregate result/share shape stable; exact size boundaries; retry proof; no raw paths/secrets | documented smoke + affected e2e |
 
-**M2 total: 4 PRs.** Preconditions: P7 registry/info endpoints and T1/T2 transport. M2 is a committed surface follow-up; it does not retroactively make M1 a runtime-exit gate.
+**M2 total: 4 PRs.** Preconditions: M1 (landed #650) + ID1 identity + AC1 contracted-mode where farm actions require it; P7 inspection is optional post-v1, not a gate. M2 is a committed surface follow-up; it does not retroactively make M1 a runtime-exit gate.
 
 ### T1 — Durable event stream + on-stream approvals (Phase T1, off P1)
 
@@ -519,26 +519,30 @@ image work and P6b child-app scoping are post-v1; P6b remains blocked on #376.
 
 **P7 total: 9 PRs (8 if pr7+pr8 combine).** Precondition: the stateless P6-R resolved-value contract + E1 attachments + **T2**. P7, not P6-R, owns any registry-backed multi-agent routing/lookup it introduces. The `sessionId`-only public transport + two-handles guard and durable approvals/`resolveInput` arrive via T1→T2; otherwise STOP and re-specify.
 
-### D1 — Dedicated tenant provisioning (v1, after A1 + P5a + P6-R)
+### D1 — Multi-agent Docker host revisions (v1, after A1 + P6-R; D1-R0-SPEC.md merged #649)
 
-Preconditions are P6-D/A1, the P1 boundary, narrow P2 EU runsc, narrow P5a,
-and stateless P6-R. P3, E1, T1/T2, M2, plugin snapshots, attachment catalogs,
-and P6 generation/session-retirement machinery are not dependencies.
+Preconditions are P6-D/A1, the P1 boundary, and stateless P6-R. **P2/runsc and
+P5a are not D1 gates (D1-R0 §1).** P3, E1, T1/T2, M2, plugin snapshots,
+attachment catalogs, and P6 generation/session-retirement machinery are not
+dependencies. The table below is the D1-S1 vertical slice exactly as specified
+in [D1-R0-SPEC.md §8](work/D1-tenant-provisioning/D1-R0-SPEC.md); it replaces
+the earlier pr1…pr8/BBD1-001…007 tracer table.
 
-| PR | beads | nature | net-new vs budget | test deliverables | gate |
-| --- | --- | --- | --- | --- | --- |
-| pr1-plan-command-api | BBD1-001 | new | ~450–700 | exact hostname, bounded landing, opaque owner ref, minimal deployment, managed-workspace intent, approved runsc profile, secret refs, and deterministic redacted desired digest | affected package `test` |
-| pr2-tenant-roots | BBD1-002 | new | ~400–700 | tenant/single owner-bound workspace created once; owner identity redacted; DB/storage/session roots allocated outside container home/root; rerun idempotent | core/cli/full-app `test` |
-| pr3-secrets-runtime-config | BBD1-003 | new | ~400–700 | raw secret canary absent; runtime config records selected EU host/tier facts and exact auth origin/callback allowlist | `audit:imports`; secret negative tests |
-| pr4-endpoint-preparation | BBD1-004a | new | ~400–700 | install exact-host inactive guard; materialize/verify bundle; resolve statelessly through existing workspace composition; prepare route/certificate; require real P5a readiness before publication | affected host build/typecheck/test |
-| pr5-dedicated-workspace-scope | BBD1-005 | new | ~600–1000 | bind one managed workspace across existing server/front/plugin/MCP selectors; create/switch/delete disabled; foreign ids reject; no P3 scoped registrar dependency | core/workspace/full-app build/typecheck/test |
-| pr6-dedicated-site-journey | BBD1-006 | new | ~300–600 | exact-host bounded landing; existing-member sign-in; membership-gated trusted workspace handoff; forged workspace/agent selectors reject; first chat uses deployed `default` identity | core/full-app build/typecheck/test + focused e2e |
-| pr7-publication-integration | BBD1-004b | new | ~300–500 | publish only after workspace/default-agent/runsc/secret readiness; idempotent complete D1 snapshot; partial state unreachable; rollback reapplies prior complete redacted deployment snapshot | affected host build/typecheck/test |
-| pr8-apply-smoke-runbook | BBD1-007 | test/doc | ~250–400 | measure setup-to-first-run for real URL -> landing -> existing member -> managed workspace -> default agent on EU runsc; report the breakdown against the 15-minute target plus foreign selector, reapply, rollback, and secret-canary proof | provisioning smoke + elapsed-time evidence |
+| Bead | Files | Budget | Deliver |
+| --- | --- | --- | --- |
+| D1-001 — plan and composition identity | new `apps/full-app/src/server/deployment/d1Plan.ts`, `workspaceComposition.ts`, focused tests; minimal descriptor exports from `plugins.ts` and host composition wiring only | <= 400 net lines; 25 min | strict plan validation, canonical redacted composition snapshot/digest, final requirement inventory validation, exact stable errors; no filesystem mutation, Compose, routing, or CLI yet |
+| D1-002 — immutable revision store and local CLI | new `apps/full-app/src/server/deployment/hostRevisionStore.ts`, `deployment/cli.ts`, tests, one private script entry in `apps/full-app/package.json` | <= 400 net lines; 25 min | plan/apply dry-run, OS lock, expected-revision CAS, immutable candidate/COMPLETE records, atomic pointer, audit, destructive confirmation, rollback-as-new-revision; no HTTP management route |
+| D1-003 — stable-process Compose adapter | new `deploy/d1/compose.yml`, `deploy/d1/collection.example.json`, `apps/full-app/src/server/deployment/composeAdapter.ts`, focused tests | <= 400 net lines; 25 min | one ingress plus one full-collection core process; pinned image, external `databaseRef`, durable workspace/session roots, per-binding env plus external tmpfs secret inputs; no `--force-recreate`, blanket rollback, secret values, or source-checkout mounts |
+| D1-004a — trusted host surface | new `deployment/hostSurface.ts`, landing handler, focused tests, minimal `main.ts` wiring, trusted-proxy config in `createCoreApp.ts`/config schema | <= 400 net lines; 25 min | explicit proxy CIDR/hop parsing (never generic `trustProxy: true`), active-revision site map, bounded escaped landing, fixed same-origin auth return, scope derivation, internal readiness |
+| D1-004b — workspace authority fences | shared optional scope contract in core app server types; surgical updates/tests in `workspaces.ts`, `postSignupHook.ts`, managed-workspace membership/account-deletion paths | <= 400 net lines; 30 min | member-only bound list; create/foreign switch/delete/default auto-provision denial; operator-owned managed lifecycle; generic-host behavior preserved byte-for-byte |
+| D1-004c — remaining selector conformance | inventory full-app agent/MCP/plugin/pane/WorkspaceBridge selectors first; split one PR per route family if over budget | <= 400 net lines per PR; 25 min | every selector rejects a foreign caller value before lookup/effects and derives default deployment from scope; no generic policy framework |
+| D1-004d — durable admission ledger | one Drizzle migration + schema export; new `deployment/admissionLedger.ts`; focused tests; narrow first-effect hook through D1 host scope | <= 300 net lines; 20 min | insert/read-only `(hostId, bindingId)` admission rows with DB-allocated monotonic sequence; transaction commit before first agent effect; idempotent concurrent admission; restart recovery; no update/delete API |
+| D1-005 — collection boot and atomic publication | new `deployment/{bootCollection,preloadSignal}.ts`; integrate D1-001/002/003/004 seams in `main.ts`; focused integration tests | <= 400 net lines; 30 min | read one immutable revision, perform N independent P6-R calls, preload all bindings through root-owned pending pointer/signal, wait for all-ready ack, atomically publish additive/landing-only pointer; invalid pending state and one failed binding leave old collection active |
+| D1-006 — EU-host proof and runbook | `work/D1-tenant-provisioning/RUNBOOK.md`, narrow proof script under `scripts/`, `golden-path.json` evidence path (owned by P8) | <= 300 net lines; 20 min | boot/add-agent/apply/rollback/cleanup commands; three distinct agents/workspaces/hostnames in one EU deployment; three independent P6-R digests; setup-to-first-success timing; idempotent additive apply; N+1 continuity; exact rollback as a new revision; secret canary |
 
-**D1 total: up to 8 review slices; combine only when the per-PR budget holds.**
-The reduced prerequisites above are exhaustive. D1 is the
-repeatable dedicated factory lane. Its generic landing/auth/workspace handoff is
+**D1 total: 9 beads (D1-001…006, with D1-004 split a–d) per D1-R0-SPEC.md §8.**
+D1-001…006 are dispatched. D1 is the
+repeatable multi-agent Docker host lane. Its generic landing/auth/workspace handoff is
 v1; bespoke marketing pages, pricing/GTM, and shared tenancy remain outside v1.
 
 ### D2 — Shared-deployment subdomain tenancy (post-v1)
@@ -567,7 +571,7 @@ independent of #376 child-app hostname resolver.
 | --- | --- | --- | --- | --- | --- |
 | pr1-reduced-invariant-gates | BBP8-001 + BBP8-003 recut | new (invariant scripts) | ~100 | v1-owned removal-marker check plus applicable core/package/#416 import boundaries; residual grep for `runtime.*none|pure.*mode` across product code and non-historical docs with explicit rejection/history allowlist; no T1/T2/P3/E1 relocation gate | `lint:invariants`; `audit:imports` |
 | pr2-shipped-contract-docs | BBP8-002 recut | doc | 0 | document workspace-backed core, minimal definition/deployment bundle, local workspace/runtime, and D1 path only | doc/link check |
-| pr3-golden-path-and-followups | BBP8-006 + BBP8-004 | test/doc/tracking | ~200–400 | measure and break down compile/local/D1 exact-host/member/workspace/default-agent setup-to-first-run on real EU runsc; compare with the provisional 15-minute target; selector/lifecycle denials, no-op reapply, complete-snapshot rollback, secret proof | CLI/D1 smoke + elapsed-time report |
+| pr3-golden-path-and-followups | BBP8-006 + BBP8-004 | test/doc/tracking | ~200–400 | measure and break down compile/local/D1 exact-host/member/workspace/default-agent setup-to-first-run on real EU runsc; compare with the provisional 15-minute target; selector/lifecycle denials, no-op reapply, complete-snapshot rollback, secret proof | CLI/D1 smoke + elapsed-time report — **pull-forward slice landed via [#664](https://github.com/hachej/boring-ui/pull/664): golden-path script+json+CI gates** |
 
 **P8 total: 3 PRs.** BBP8-005 remains the final sweep rather than a separate
 PR. P8 gates only P1, P6-D/A1, narrow P2/P5a, stateless P6-R, and D1. T1/T2,
