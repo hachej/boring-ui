@@ -1,5 +1,7 @@
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify'
+import type { Workspace } from '../../../shared/workspace'
 import { resolveGitFileUrl } from '../../git/gitFileUrl'
+import { getNodeWorkspaceHostRoot } from '../../workspace/createNodeWorkspace'
 import {
   ERROR_CODE_INTERNAL,
   ERROR_CODE_INVALID_PATH,
@@ -7,9 +9,10 @@ import {
 } from '../middleware'
 
 export interface GitRouteOptions {
-  // Resolve the workspace root per-request. Called lazily inside the handler so
+  workspace?: Workspace
+  // Resolve the workspace per-request. Called lazily inside the handler so
   // unrelated routes don't pay the cost of provisioning the runtime binding.
-  getWorkspaceRoot?: (request: FastifyRequest) => string | undefined | Promise<string | undefined>
+  getWorkspace?: (request: FastifyRequest) => Workspace | Promise<Workspace>
 }
 
 function requirePath(value: unknown, reply: FastifyReply): string | null {
@@ -34,8 +37,10 @@ export function gitRoutes(
   done: (err?: Error) => void,
 ): void {
   async function resolveWorkspaceRoot(request: FastifyRequest): Promise<string | undefined> {
-    if (opts.getWorkspaceRoot) return await opts.getWorkspaceRoot(request)
-    return (request as { workspaceRoot?: string }).workspaceRoot
+    const workspace = opts.getWorkspace
+      ? await opts.getWorkspace(request)
+      : opts.workspace
+    return workspace === undefined ? undefined : getNodeWorkspaceHostRoot(workspace)
   }
 
   app.get('/api/v1/git/file-url', async (request, reply) => {

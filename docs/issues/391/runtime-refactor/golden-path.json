@@ -1,0 +1,17 @@
+{
+  "version": "0.1.80",
+  "date": "2026-07-12T11:15:19.117Z",
+  "seconds": {
+    "compileAgentDirectory": 0.017525,
+    "resolveAgentDeployment": 0.003937,
+    "total": 0.021486
+  },
+  "stagesCovered": [
+    "A1 compileAgentDirectory (#624)",
+    "P6-R resolveAgentDeployment (#647)"
+  ],
+  "stagesPending": [
+    "host-publication (D1)",
+    "live-binding"
+  ]
+}

@@ -7,9 +7,15 @@ import type { SandboxHandleStore } from '../shared/sandbox-handle-store'
 import type { TelemetrySink } from '../shared/telemetry'
 import { AuthStorage, ModelRegistry } from '@mariozechner/pi-coding-agent'
 import { getEnv } from './config/env'
-import type { RuntimeBundle, RuntimeFilesystemBinding, RuntimeModeAdapter, RuntimeModeId } from './runtime/mode'
-import { getOptionalRuntimeBundleStorageRoot } from './runtime/mode'
+import {
+  getOptionalRuntimeBundleStorageRoot,
+  type RuntimeBundle,
+  type RuntimeFilesystemBinding,
+  type RuntimeModeAdapter,
+  type RuntimeModeId,
+} from './runtime/mode'
 import { getBoringAgentRuntimePaths, type BoringAgentRuntimePaths } from './workspace/runtimeLayout'
+import { createNodeWorkspace } from './workspace/createNodeWorkspace'
 import type { WorkspaceProvisioningAdapter, WorkspaceProvisioningResult } from './workspace/provisioning'
 import type { Workspace } from '../shared/workspace'
 import { ErrorCode } from '../shared/error-codes'
@@ -1228,7 +1234,13 @@ export const registerAgentRoutes: FastifyPluginAsync<RegisterAgentRoutesOptions>
     getFileSearch: async (request) => (await getBindingForRequest(request)).runtimeBundle.fileSearch,
   })
   await app.register(gitRoutes, {
-    getWorkspaceRoot: async (request) => getOptionalRuntimeBundleStorageRoot((await getBindingForRequest(request)).runtimeBundle),
+    getWorkspace: async (request) => {
+      const runtimeBundle = (await getBindingForRequest(request)).runtimeBundle
+      const storageRoot = getOptionalRuntimeBundleStorageRoot(runtimeBundle)
+      return storageRoot === undefined
+        ? runtimeBundle.workspace
+        : createNodeWorkspace(storageRoot)
+    },
   })
   await app.register(piChatRoutes, {
     getService: async (request) => {
@@ -1244,7 +1256,7 @@ export const registerAgentRoutes: FastifyPluginAsync<RegisterAgentRoutesOptions>
     filterModels: opts.filterModels,
   })
   await app.register(skillsRoutes, {
-    workspaceRoot,
+    workspace: staticBinding ? createNodeWorkspace(workspaceRoot) : undefined,
     additionalSkillPaths: [
       ...(staticBinding?.runtimeProvisioning?.skillPaths ?? []),
       ...(opts.pi?.additionalSkillPaths ?? []),
@@ -1253,9 +1265,9 @@ export const registerAgentRoutes: FastifyPluginAsync<RegisterAgentRoutesOptions>
     // Undefined is fine: skillsRoutes resolves it through the canonical
     // harness policy (withPiHarnessDefaults), same as the factory above.
     noSkills: opts.pi?.noSkills,
-    getWorkspaceRoot: staticBinding
+    getWorkspace: staticBinding
       ? undefined
-      : async (request) => (await getSkillsScopeForRequest(request)).root,
+      : async (request) => createNodeWorkspace((await getSkillsScopeForRequest(request)).root),
     getAdditionalSkillPaths: staticBinding && !hasRuntimeProvisioningInput
       ? undefined
       : async (request) => {

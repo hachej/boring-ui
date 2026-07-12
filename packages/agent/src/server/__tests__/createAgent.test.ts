@@ -70,7 +70,7 @@ describe('createAgent', () => {
   it('rejects a missing or non-adapter runtime with a stable config error', () => {
     const invalidConfigs = [
       {},
-      { runtime: 'none' },
+      { runtime: 'invalid-runtime' },
       { runtime: { id: '' } },
       { runtime: { id: 'test-runtime', dispose: true } },
     ]

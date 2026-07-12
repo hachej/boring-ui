@@ -2,6 +2,8 @@
 import { execFileSync } from "node:child_process"
 
 const allowed = new Set([
+  "package.json",
+  "docs/issues/391/runtime-refactor/golden-path.json",
   "packages/core/package.json",
   "packages/plugin-cli/package.json",
   "packages/workspace/package.json",

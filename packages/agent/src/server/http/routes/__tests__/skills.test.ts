@@ -1,6 +1,7 @@
 import Fastify from 'fastify'
 import { describe, test, expect } from 'vitest'
 import { skillsRoutes } from '../skills'
+import { createNodeWorkspace } from '../../../workspace/createNodeWorkspace'
 
 function buildApp(opts: Parameters<typeof skillsRoutes>[1]) {
   const app = Fastify({ logger: false })
@@ -10,7 +11,7 @@ function buildApp(opts: Parameters<typeof skillsRoutes>[1]) {
 
 describe('GET /api/v1/agent/skills', () => {
   test('returns skills array (possibly empty) for a workspace root', async () => {
-    const app = await buildApp({ workspaceRoot: process.cwd(), noSkills: true })
+    const app = await buildApp({ workspace: createNodeWorkspace(process.cwd()), noSkills: true })
 
     const res = await app.inject({ method: 'GET', url: '/api/v1/agent/skills' })
 
@@ -26,8 +27,8 @@ describe('GET /api/v1/agent/skills', () => {
 
   test('surfaces an error field instead of silently swallowing failures', async () => {
     const app = await buildApp({
-      workspaceRoot: process.cwd(),
-      getWorkspaceRoot: () => {
+      workspace: createNodeWorkspace(process.cwd()),
+      getWorkspace: () => {
         throw new Error('boom resolving workspace root')
       },
     })

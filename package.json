@@ -1,6 +1,7 @@
 {
   "private": true,
   "name": "boring-ui-v2",
+  "version": "0.1.80",
   "type": "module",
   "scripts": {
     "build": "pnpm -r --workspace-concurrency=4 run build",
@@ -13,6 +14,8 @@
     "lint": "pnpm check:generated-artifacts && pnpm audit:imports",
     "lint:invariants": "pnpm --dir packages/agent run lint:invariants && pnpm --filter @hachej/boring-bash run check:invariants && pnpm --filter @hachej/boring-sandbox run check:invariants && pnpm lint:workspace-plugin-invariants",
     "lint:workspace-plugin-invariants": "pnpm --filter @hachej/boring-workspace run lint:plugin-invariants",
+    "golden-path:timing": "pnpm --filter @hachej/boring-agent exec tsx ../../scripts/golden-path-timing.mjs",
+    "check:golden-path": "node scripts/check-golden-path-invariants.mjs",
     "audit:imports": "pnpm tsx scripts/audit-imports.ts",
     "audit:publish-manifests": "node scripts/audit-publish-manifests.mjs",
     "audit:release-staging": "node scripts/check-release-staging.mjs",

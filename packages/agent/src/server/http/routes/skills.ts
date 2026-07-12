@@ -17,6 +17,7 @@ import {
   loadSkills,
 } from '@mariozechner/pi-coding-agent'
 import type { PiPackageSource } from '../../piPackages'
+import type { Workspace } from '../../../shared/workspace'
 import { createResourceSettingsManager, withPiHarnessDefaults } from '../../harness/pi-coding-agent/createHarness'
 
 export interface SkillSummary {
@@ -43,11 +44,11 @@ function pathForWorkspaceEditor(workspaceRoot: string, filePath: string): string
 }
 
 export interface SkillsRoutesOptions {
-  workspaceRoot: string
+  workspace?: Workspace
   additionalSkillPaths?: string[]
   piPackages?: PiPackageSource[]
   noSkills?: boolean
-  getWorkspaceRoot?: (request: FastifyRequest) => string | Promise<string>
+  getWorkspace?: (request: FastifyRequest) => Workspace | Promise<Workspace>
   getAdditionalSkillPaths?: (request: FastifyRequest) => string[] | undefined | Promise<string[] | undefined>
   getPiPackages?: (request: FastifyRequest) => PiPackageSource[] | undefined | Promise<PiPackageSource[] | undefined>
   getNoSkills?: (request: FastifyRequest) => boolean | undefined | Promise<boolean | undefined>
@@ -61,9 +62,11 @@ export function skillsRoutes(
   const cached = new Map<string, { skills: SkillSummary[]; expiresAt: number }>()
 
   async function resolveSkillsForRequest(request: FastifyRequest, refresh = false) {
-    const workspaceRoot = opts.getWorkspaceRoot
-      ? await opts.getWorkspaceRoot(request)
-      : opts.workspaceRoot
+    const workspace = opts.getWorkspace
+      ? await opts.getWorkspace(request)
+      : opts.workspace
+    if (!workspace) throw new Error('skills route requires workspace or getWorkspace')
+    const workspaceRoot = workspace.root
     const additionalSkillPaths = opts.getAdditionalSkillPaths
       ? await opts.getAdditionalSkillPaths(request)
       : opts.additionalSkillPaths

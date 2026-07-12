@@ -1,5 +1,5 @@
 /**
- * Bump version across all publishable packages.
+ * Bump version across the root release marker and all publishable packages.
  * Usage: node scripts/version.mjs [patch|minor|major]
  */
 import { readFileSync, writeFileSync } from "node:fs"
@@ -33,6 +33,11 @@ const PUBLISHABLE = [
   "plugins/boring-governance",
 ]
 
+const VERSIONED_PACKAGES = [
+  ".",
+  ...PUBLISHABLE,
+]
+
 function readJson(path) {
   return JSON.parse(readFileSync(path, "utf8"))
 }
@@ -48,26 +53,26 @@ function bumpVersion(version, type) {
   return `${major}.${minor}.${patch + 1}`
 }
 
-function readPublishableVersions() {
-  return PUBLISHABLE.map((pkg) => {
+function readVersionedPackages() {
+  return VERSIONED_PACKAGES.map((pkg) => {
     const json = readJson(resolve(root, pkg, "package.json"))
     return { dir: pkg, name: json.name, version: json.version }
   })
 }
 
 function assertAlignedVersions() {
-  const versions = readPublishableVersions()
+  const versions = readVersionedPackages()
   const unique = new Set(versions.map((pkg) => pkg.version))
   if (unique.size === 1) return versions[0].version
 
-  console.error("Publishable package versions are not aligned:")
+  console.error("Root and publishable package versions are not aligned:")
   for (const pkg of versions) console.error(`  ${pkg.name} (${pkg.dir}) ${pkg.version}`)
   process.exit(1)
 }
 
 if (process.argv[2] === "--check") {
   const current = assertAlignedVersions()
-  console.log(`Publishable package versions are aligned at ${current}`)
+  console.log(`Root and publishable package versions are aligned at ${current}`)
   process.exit(0)
 }
 
@@ -82,7 +87,7 @@ const next = bumpVersion(current, type)
 
 console.log(`${current} → ${next} (${type})`)
 
-for (const pkg of PUBLISHABLE) {
+for (const pkg of VERSIONED_PACKAGES) {
   const path = resolve(root, pkg, "package.json")
   const json = readJson(path)
   json.version = next

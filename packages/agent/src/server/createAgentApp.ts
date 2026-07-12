@@ -4,13 +4,19 @@ import type { AgentTool } from '../shared/tool'
 import type { AgentCoreHarnessFactory, AgentHarness, AgentHarnessFactory } from '../shared/harness'
 import type { TelemetrySink } from '../shared/telemetry'
 import { getEnv } from './config/env'
-import type { RuntimeBundle, RuntimeFilesystemBinding, RuntimeModeAdapter, RuntimeModeId } from './runtime/mode'
-import { getOptionalRuntimeBundleStorageRoot } from './runtime/mode'
+import {
+  getOptionalRuntimeBundleStorageRoot,
+  type RuntimeBundle,
+  type RuntimeFilesystemBinding,
+  type RuntimeModeAdapter,
+  type RuntimeModeId,
+} from './runtime/mode'
 import { withRuntimeEnvContributions, type RuntimeEnvContribution } from './runtimeEnvContributions'
 import { resolveMode, autoDetectMode } from './runtime/resolveMode'
 import { createPiCodingAgentHarness, withPiHarnessDefaults } from './harness/pi-coding-agent/createHarness'
 import type { PiHarnessOptions } from './harness/pi-coding-agent/createHarness'
 import type { WorkspaceProvisioningResult } from './workspace/provisioning'
+import { createNodeWorkspace } from './workspace/createNodeWorkspace'
 import { loadPlugins } from './harness/pi-coding-agent/pluginLoader'
 import { buildFilesystemAgentTools } from './tools/filesystem'
 import { buildHarnessAgentTools } from './tools/harness'
@@ -353,6 +359,10 @@ async function createWorkspaceAgentAppProfile(
         })
       }
     : undefined
+  const gitStorageRoot = getOptionalRuntimeBundleStorageRoot(runtimeBundle)
+  const gitWorkspace = gitStorageRoot === undefined
+    ? runtimeBundle.workspace
+    : createNodeWorkspace(gitStorageRoot)
 
   return {
     runtimeMode: resolvedMode,
@@ -377,12 +387,12 @@ async function createWorkspaceAgentAppProfile(
       // File search shares the same bound implementation as the model tool.
       search: { fileSearch: runtimeBundle.fileSearch },
       // Git metadata resolves against host storage, not a sandbox-internal cwd.
-      git: { getWorkspaceRoot: () => getOptionalRuntimeBundleStorageRoot(runtimeBundle) },
+      git: { workspace: gitWorkspace },
     },
     chat: { service: agentRuntime.service as PiChatSessionService },
     systemPrompt: { harness },
     skills: {
-      workspaceRoot,
+      workspace: createNodeWorkspace(workspaceRoot),
       additionalSkillPaths: runtimePi.additionalSkillPaths,
       piPackages: runtimePi.packages,
       noSkills: runtimePi.noSkills,
