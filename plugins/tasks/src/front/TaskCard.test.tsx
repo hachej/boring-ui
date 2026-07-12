@@ -532,6 +532,38 @@ describe("TaskCard task chat sessions", () => {
     expect(await screen.findByLabelText("2 working linked chats")).toBeInTheDocument()
   })
 
+  it("ignores a stale mount-time list after creating and binding a chat", async () => {
+    const mountList = deferred<TaskSessionListResponse>()
+    const created = link({ id: "link-new", sessionId: "pi-new" })
+    let listCalls = 0
+    postJson.mockImplementation((path: string) => {
+      if (path === "/api/boring-tasks/sessions/list") {
+        listCalls += 1
+        return listCalls === 1 ? mountList.promise : Promise.resolve({ links: [] })
+      }
+      if (path === "/api/v1/agent/pi-chat/sessions") return Promise.resolve({ id: "pi-new" })
+      if (path === "/api/boring-tasks/sessions/link") return Promise.resolve({ link: created })
+      if (path === "/api/v1/agent/pi-chat/sessions/activity") return Promise.resolve({ activities: [{ sessionId: "pi-new", status: "idle", source: "persisted" }], omittedSessionIds: [] })
+      throw new Error(`unexpected post ${path}`)
+    })
+
+    renderCard()
+    await waitFor(() => expect(postJson).toHaveBeenCalledWith("/api/boring-tasks/sessions/list", { adapterId: "github", taskId: "task-1" }))
+    fireEvent.click(screen.getByRole("button", { name: /open chat/i }))
+
+    await waitFor(() => expect(openDetachedChat).toHaveBeenCalledWith("pi-new", expect.objectContaining({ title: "#612: Wire sessions" })))
+    await act(async () => {
+      mountList.resolve({ links: [] })
+      await mountList.promise
+      await Promise.resolve()
+    })
+
+    expect(await screen.findByLabelText("1 linked chats")).toBeInTheDocument()
+    fireEvent.click(screen.getByRole("button", { name: /open chat for #612/i }))
+    expect(await screen.findByRole("region", { name: /linked chat sessions/i })).toHaveTextContent("#612: Wire sessions")
+    expect(postJson.mock.calls.filter(([path]) => path === "/api/v1/agent/pi-chat/sessions")).toHaveLength(1)
+  })
+
   it("creates, binds, and opens a chat when the task has no prior session", async () => {
     postJson.mockImplementation(async (path: string, body: unknown) => {
       if (path === "/api/boring-tasks/sessions/list") return { links: [] }

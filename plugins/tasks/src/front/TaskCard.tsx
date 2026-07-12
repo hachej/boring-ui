@@ -112,6 +112,8 @@ export function TaskCard({ task, draggable, unmapped = false, deleteEnabled = fa
   const mountedRef = useRef(false)
   const navigationGenerationRef = useRef(0)
   const taskAsyncGenerationRef = useRef(0)
+  const sessionListRequestGenerationRef = useRef(0)
+  const sessionLinkMutationGenerationRef = useRef(0)
   const taskScopeKeyRef = useRef(taskScopeKey)
   const shell = useWorkspaceShellCapabilities()
   const pluginClient = useWorkspacePluginClient()
@@ -183,9 +185,25 @@ export function TaskCard({ task, draggable, unmapped = false, deleteEnabled = fa
     return () => mountedRef.current && navigationGenerationRef.current === generation && taskScopeKeyRef.current === expectedTaskScopeKey
   }, [])
 
+  const beginSessionListRequest = useCallback(() => {
+    const requestGeneration = sessionListRequestGenerationRef.current + 1
+    sessionListRequestGenerationRef.current = requestGeneration
+    const mutationGeneration = sessionLinkMutationGenerationRef.current
+    const expectedTaskScopeKey = taskScopeKeyRef.current
+    return () => mountedRef.current
+      && taskScopeKeyRef.current === expectedTaskScopeKey
+      && sessionListRequestGenerationRef.current === requestGeneration
+      && sessionLinkMutationGenerationRef.current === mutationGeneration
+  }, [])
+
+  const invalidatePendingSessionLists = useCallback(() => {
+    sessionLinkMutationGenerationRef.current += 1
+  }, [])
+
   const updateCurrentSessionLinks = useCallback((updater: (current: BoringTaskSessionBinding[]) => BoringTaskSessionBinding[], loaded = true) => {
+    invalidatePendingSessionLists()
     setSessionLinkState((current) => current.taskScopeKey === taskScopeKey ? { taskScopeKey, links: updater(current.links), loaded } : current)
-  }, [taskScopeKey])
+  }, [invalidatePendingSessionLists, taskScopeKey])
 
   useEffect(() => {
     mountedRef.current = true
@@ -193,13 +211,15 @@ export function TaskCard({ task, draggable, unmapped = false, deleteEnabled = fa
       mountedRef.current = false
       invalidatePendingNavigation()
       invalidatePendingTaskAsync()
+      invalidatePendingSessionLists()
     }
-  }, [invalidatePendingNavigation, invalidatePendingTaskAsync])
+  }, [invalidatePendingNavigation, invalidatePendingSessionLists, invalidatePendingTaskAsync])
 
   useLayoutEffect(() => {
     taskScopeKeyRef.current = taskScopeKey
     invalidatePendingNavigation()
     invalidatePendingTaskAsync()
+    invalidatePendingSessionLists()
     setMenuOpen(false)
     setOpeningChat(false)
     setCheckingChatActivity(false)
@@ -212,35 +232,38 @@ export function TaskCard({ task, draggable, unmapped = false, deleteEnabled = fa
     setSessionLinkState((current) => current.taskScopeKey === taskScopeKey && current.links.length === 0 && !current.loaded
       ? current
       : { taskScopeKey, links: [], loaded: false })
-  }, [invalidatePendingNavigation, invalidatePendingTaskAsync, taskScopeKey])
+  }, [invalidatePendingNavigation, invalidatePendingSessionLists, invalidatePendingTaskAsync, taskScopeKey])
 
   const refreshSessionActivity = useCallback(async (links: BoringTaskSessionBinding[]): Promise<TaskSessionActivityRefreshResult> => {
     return await sessionActivity.refreshSessionIds(links.map((link) => link.sessionId))
   }, [sessionActivity.refreshSessionIds])
 
-  const loadSessionLinks = useCallback(async (shouldApply: () => boolean = () => mountedRef.current): Promise<BoringTaskSessionBinding[]> => {
+  const loadSessionLinks = useCallback(async (shouldApply: () => boolean = () => mountedRef.current): Promise<BoringTaskSessionBinding[] | null> => {
+    const shouldApplyList = beginSessionListRequest()
     const body = await pluginClient.postJson<TaskSessionListResponse>("/api/boring-tasks/sessions/list", { adapterId: task.adapterId, taskId: task.id })
     const links = body.links ?? []
-    if (shouldApply()) setSessionLinkState({ taskScopeKey, links, loaded: true })
+    if (!shouldApply() || !shouldApplyList()) return null
+    setSessionLinkState({ taskScopeKey, links, loaded: true })
     return links
-  }, [pluginClient, task.adapterId, task.id, taskScopeKey])
+  }, [beginSessionListRequest, pluginClient, task.adapterId, task.id, taskScopeKey])
 
   useEffect(() => {
     let cancelled = false
     setSessionLinkState((current) => current.taskScopeKey === taskScopeKey && current.links.length === 0 && !current.loaded
       ? current
       : { taskScopeKey, links: [], loaded: false })
+    const shouldApplyList = beginSessionListRequest()
     void pluginClient.postJson<TaskSessionListResponse>("/api/boring-tasks/sessions/list", { adapterId: task.adapterId, taskId: task.id })
       .then((body) => {
-        if (cancelled) return
+        if (cancelled || !shouldApplyList()) return
         const links = body.links ?? []
         setSessionLinkState({ taskScopeKey, links, loaded: true })
       })
       .catch(() => {
-        if (!cancelled) setSessionLinkState({ taskScopeKey, links: [], loaded: true })
+        if (!cancelled && shouldApplyList()) setSessionLinkState({ taskScopeKey, links: [], loaded: true })
       })
     return () => { cancelled = true }
-  }, [pluginClient, task.adapterId, task.id, taskScopeKey])
+  }, [beginSessionListRequest, pluginClient, task.adapterId, task.id, taskScopeKey])
 
   useEffect(() => {
     if (!sessionLinksLoaded || linkedSessionIdList.length === 0) return
@@ -325,7 +348,7 @@ export function TaskCard({ task, draggable, unmapped = false, deleteEnabled = fa
     setCheckingChatActivity(true)
     void (async () => {
       const links = sessionLinksLoaded ? sessionLinks : await loadSessionLinks(shouldContinue)
-      if (!shouldContinue()) return
+      if (!shouldContinue() || links === null) return
       if (links.length === 0) {
         await createAndLinkChat(anchor, shouldContinue)
         return
