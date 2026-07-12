@@ -57,10 +57,15 @@ describe('D1 Compose topology', () => {
     expect(ingress.restart).toBe('unless-stopped')
     expect(core.restart).toBe('unless-stopped')
     expect(core.env_file).toEqual(['/etc/boring/d1/core.env'])
+    expect(core.environment).toMatchObject({ BORING_D1_HOST_ID: '${D1_HOST_ID:?D1_HOST_ID is required}' })
     expect(mounts).toEqual([
       { type: 'volume', source: 'd1-workspaces', target: '/data/workspaces' },
       { type: 'volume', source: 'd1-sessions', target: '/data/pi-sessions' },
-      { type: 'bind', source: '${D1_STATE_ROOT:?D1_STATE_ROOT is required}', target: '/var/lib/boring/d1/${D1_HOST_ID:?D1_HOST_ID is required}', read_only: true },
+      {
+        type: 'bind', source: '${D1_STATE_ROOT:?D1_STATE_ROOT is required}',
+        target: '/var/lib/boring/d1/${D1_HOST_ID:?D1_HOST_ID is required}', read_only: true,
+        bind: { create_host_path: false },
+      },
       { type: 'bind', source: '/run/boring/d1', target: '/run/boring/d1', read_only: true },
     ])
 

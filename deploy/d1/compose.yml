@@ -17,6 +17,7 @@ services:
     environment:
       HOST: "0.0.0.0"
       PORT: "3000"
+      BORING_D1_HOST_ID: "${D1_HOST_ID:?D1_HOST_ID is required}"
       BORING_AGENT_WORKSPACE_ROOT: "/data/workspaces"
       BORING_AGENT_SESSION_ROOT: "/data/pi-sessions"
     expose:
@@ -32,6 +33,8 @@ services:
         source: "${D1_STATE_ROOT:?D1_STATE_ROOT is required}"
         target: "/var/lib/boring/d1/${D1_HOST_ID:?D1_HOST_ID is required}"
         read_only: true
+        bind:
+          create_host_path: false
       - type: bind
         source: /run/boring/d1
         target: /run/boring/d1

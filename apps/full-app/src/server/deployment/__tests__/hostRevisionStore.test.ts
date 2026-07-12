@@ -19,6 +19,8 @@ import { createD1RuntimeInputsIdentity } from '../d1RuntimeInputs.js'
 
 const digest = (value: string): Sha256Digest => `sha256:${value.repeat(64).slice(0, 64)}`
 const OWNER_UID = process.geteuid!()
+const OWNER_GID = process.getegid!()
+const APP_GID = OWNER_GID || 10001
 
 async function desired(id = 'insurance'): Promise<D1DesiredSnapshotV1> {
   const refSuffix = id === 'insurance' ? '' : `-${id}`
@@ -69,7 +71,7 @@ async function desired(id = 'insurance'): Promise<D1DesiredSnapshotV1> {
 async function harness(fault?: () => void) {
   const parent = await mkdtemp(path.join(os.tmpdir(), 'boring-d1-store-'))
   const root = path.join(parent, 'state')
-  return { parent, root, store: createHostRevisionStore({ root, ownerUid: OWNER_UID, fault }) }
+  return { parent, root, store: createHostRevisionStore({ root, ownerUid: OWNER_UID, appGid: APP_GID, fault }) }
 }
 async function observation(value: D1DesiredSnapshotV1, ready = true) {
   return {
@@ -129,14 +131,19 @@ describe('D1 host revision store', () => {
       'BORING_D1_SESSION_ALLOCATION_REF=session-allocation',
     ].join('\n') + '\n')
     expect(await readFile(bindingFile, 'utf8')).not.toMatch(/credential-ref|secret-value|\/srv\/|prompt/)
-    for (const managed of [h.root, path.join(h.root, 'host-1'), path.join(h.root, 'host-1', 'revisions'), directory]) {
-      expect((await stat(managed)).mode & 0o777).toBe(0o700)
+    expect(await stat(h.root)).toMatchObject({ uid: OWNER_UID, gid: OWNER_GID })
+    expect((await stat(h.root)).mode & 0o777).toBe(0o700)
+    for (const managed of [path.join(h.root, 'host-1'), path.join(h.root, 'host-1', 'revisions'), directory, bindingsDirectory]) {
+      expect(await stat(managed)).toMatchObject({ uid: OWNER_UID, gid: APP_GID })
+      expect((await stat(managed)).mode & 0o777).toBe(0o710)
     }
-    expect((await stat(bindingsDirectory)).mode & 0o777).toBe(0o700)
-    for (const artifact of ['desired.json', 'resolved.json', 'secret-refs.json', 'desired.sha256']) {
-      expect((await stat(path.join(directory, artifact))).mode & 0o777).toBe(0o400)
+    for (const artifact of ['desired.json', 'resolved.json', 'secret-refs.json', 'desired.sha256', 'bindings/insurance.env']) {
+      expect(await stat(path.join(directory, artifact))).toMatchObject({ uid: OWNER_UID, gid: APP_GID, nlink: 1 })
+      expect((await stat(path.join(directory, artifact))).mode & 0o777).toBe(0o440)
     }
-    expect((await stat(bindingFile)).mode & 0o777).toBe(0o400)
+    const sequence = await stat(path.join(h.root, 'host-1', 'sequence'))
+    expect(sequence).toMatchObject({ uid: OWNER_UID, gid: OWNER_GID, nlink: 1 })
+    expect(sequence.mode & 0o777).toBe(0o400)
   })
 
   it('writes the exact lexical filename set from out-of-order bindings', async () => {
@@ -163,12 +170,13 @@ describe('D1 host revision store', () => {
     }
     for (const mutate of [
       async ({ file }: Awaited<ReturnType<typeof written>>) => { await rename(file, `${file}.missing`) },
-      async ({ directory }: Awaited<ReturnType<typeof written>>) => { await writeFile(path.join(directory, 'extra.env'), 'EXTRA=1\n', { mode: 0o400 }) },
+      async ({ directory }: Awaited<ReturnType<typeof written>>) => { await writeFile(path.join(directory, 'extra.env'), 'EXTRA=1\n', { mode: 0o440 }) },
       async ({ h, file }: Awaited<ReturnType<typeof written>>) => { const backing = path.join(h.root, 'binding.backing'); await rename(file, backing); await symlink(backing, file) },
       async ({ h, file }: Awaited<ReturnType<typeof written>>) => { await link(file, path.join(h.root, 'binding.hardlink')) },
       async ({ file }: Awaited<ReturnType<typeof written>>) => { await chmod(file, 0o600) },
+      async ({ file }: Awaited<ReturnType<typeof written>>) => { await chmod(file, 0o2440) },
       async ({ directory }: Awaited<ReturnType<typeof written>>) => { await chmod(directory, 0o755) },
-      async ({ file }: Awaited<ReturnType<typeof written>>) => { const content = await readFile(file, 'utf8'); await chmod(file, 0o600); await writeFile(file, `# noncanonical\n${content}`); await chmod(file, 0o400) },
+      async ({ file }: Awaited<ReturnType<typeof written>>) => { const content = await readFile(file, 'utf8'); await chmod(file, 0o600); await writeFile(file, `# noncanonical\n${content}`); await chmod(file, 0o440) },
     ]) {
       const target = await written(); await mutate(target)
       const error = await target.h.store.readCandidate('host-1', target.revisionId).catch((caught) => caught)
@@ -202,22 +210,22 @@ describe('D1 host revision store', () => {
     const target = await mkdtemp(path.join(os.tmpdir(), 'boring-d1-target-'))
     const parent = await mkdtemp(path.join(os.tmpdir(), 'boring-d1-parent-'))
     const rootLink = path.join(parent, 'root-link'); await symlink(target, rootLink)
-    await expect(createHostRevisionStore({ root: rootLink, ownerUid: OWNER_UID }).reserveRevisionId('host-1')).rejects.toMatchObject({ code: D1HostErrorCode.REVISION_CONFLICT })
+    await expect(createHostRevisionStore({ root: rootLink, ownerUid: OWNER_UID, appGid: APP_GID }).reserveRevisionId('host-1')).rejects.toMatchObject({ code: D1HostErrorCode.REVISION_CONFLICT })
     const parentLink = path.join(parent, 'parent-link'); await symlink(target, parentLink)
-    await expect(createHostRevisionStore({ root: path.join(parentLink, 'root'), ownerUid: OWNER_UID }).reserveRevisionId('host-1')).rejects.toMatchObject({ code: D1HostErrorCode.REVISION_CONFLICT })
+    await expect(createHostRevisionStore({ root: path.join(parentLink, 'root'), ownerUid: OWNER_UID, appGid: APP_GID }).reserveRevisionId('host-1')).rejects.toMatchObject({ code: D1HostErrorCode.REVISION_CONFLICT })
     await expect(access(path.join(target, 'root'))).rejects.toMatchObject({ code: 'ENOENT' })
     const ancestorTarget = await mkdtemp(path.join(os.tmpdir(), 'boring-d1-ancestor-target-'))
     const ancestorParent = await mkdtemp(path.join(os.tmpdir(), 'boring-d1-ancestor-parent-'))
     await mkdir(path.join(ancestorTarget, 'nested'), { mode: 0o700 })
     await symlink(ancestorTarget, path.join(ancestorParent, 'alias'))
-    await expect(createHostRevisionStore({ root: path.join(ancestorParent, 'alias', 'nested', 'root'), ownerUid: OWNER_UID }).reserveRevisionId('host-1'))
+    await expect(createHostRevisionStore({ root: path.join(ancestorParent, 'alias', 'nested', 'root'), ownerUid: OWNER_UID, appGid: APP_GID }).reserveRevisionId('host-1'))
       .rejects.toMatchObject({ code: D1HostErrorCode.REVISION_CONFLICT })
     await expect(access(path.join(ancestorTarget, 'nested', 'root'))).rejects.toMatchObject({ code: 'ENOENT' })
 
     const host = await harness(); await mkdir(host.root, { mode: 0o700 }); await symlink(target, path.join(host.root, 'host-1'))
     await expect(host.store.reserveRevisionId('host-1')).rejects.toMatchObject({ code: D1HostErrorCode.REVISION_CONFLICT })
     await expect(host.store.readActive('host-1')).rejects.toMatchObject({ code: D1HostErrorCode.PUBLICATION_FAILED })
-    const revisionsLink = await harness(); await mkdir(revisionsLink.root, { mode: 0o700 }); await mkdir(path.join(revisionsLink.root, 'host-1'), { mode: 0o700 })
+    const revisionsLink = await harness(); await mkdir(revisionsLink.root, { mode: 0o700 }); await mkdir(path.join(revisionsLink.root, 'host-1'), { mode: 0o710 })
     await symlink(target, path.join(revisionsLink.root, 'host-1', 'revisions'))
     await expect(revisionsLink.store.readCandidate('host-1', 'r0000000001')).rejects.toMatchObject({ code: D1HostErrorCode.ROLLBACK_TARGET_INVALID })
     const revision = await harness(); const value = await desired(); await revision.store.reserveRevisionId('host-1')
@@ -249,7 +257,7 @@ describe('D1 host revision store', () => {
 
   it('rejects a valid revision tree copied under a different host identity', async () => {
     const h = await harness(); const done = await complete(h.store)
-    const host2 = path.join(h.root, 'host-2'); await mkdir(host2, { mode: 0o700 }); await mkdir(path.join(host2, 'revisions'), { mode: 0o700 })
+    const host2 = path.join(h.root, 'host-2'); await mkdir(host2, { mode: 0o710 }); await mkdir(path.join(host2, 'revisions'), { mode: 0o710 })
     await cp(path.join(h.root, 'host-1', 'revisions', done.revisionId), path.join(host2, 'revisions', done.revisionId), { recursive: true })
     await expect(h.store.readCandidate('host-2', done.revisionId)).rejects.toMatchObject({
       code: D1HostErrorCode.ROLLBACK_TARGET_INVALID, details: { field: 'targetRevision' },
@@ -273,7 +281,9 @@ describe('D1 host revision store', () => {
     const observedFile = path.join(h.root, 'host-1', 'revisions', done.revisionId, 'observed.json')
     expect(await readFile(observedFile, 'utf8')).not.toMatch(/secret-value|\/srv\/private|raw-version|runtimeHandle/)
     for (const artifact of ['observed.json', 'completion.json']) {
-      expect((await stat(path.join(h.root, 'host-1', 'revisions', done.revisionId, artifact))).mode & 0o777).toBe(0o400)
+      const info = await stat(path.join(h.root, 'host-1', 'revisions', done.revisionId, artifact))
+      expect(info).toMatchObject({ uid: OWNER_UID, gid: APP_GID, nlink: 1 })
+      expect(info.mode & 0o777).toBe(0o440)
     }
     type MutableObservation = { bindings: Array<{ runtimeInputs: { environment: { versionFingerprint: string }; secrets: Array<{ providerVersionFingerprint: string }> } }> }
     for (const mutate of [
@@ -283,11 +293,11 @@ describe('D1 host revision store', () => {
       const tampered = await harness(); const tamperedDone = await complete(tampered.store)
       const file = path.join(tampered.root, 'host-1', 'revisions', tamperedDone.revisionId, 'observed.json')
       const raw = JSON.parse(await readFile(file, 'utf8')) as MutableObservation; mutate(raw)
-      await chmod(file, 0o600); await writeFile(file, JSON.stringify(raw)); await chmod(file, 0o400)
+      await chmod(file, 0o600); await writeFile(file, JSON.stringify(raw)); await chmod(file, 0o440)
       await expect(tampered.store.readComplete('host-1', tamperedDone.revisionId)).rejects.toMatchObject({ code: D1HostErrorCode.ROLLBACK_TARGET_INVALID })
     }
     const digestFile = path.join(h.root, 'host-1', 'revisions', done.revisionId, 'desired.sha256')
-    await chmod(digestFile, 0o600); await writeFile(digestFile, `${digest('0')}\n`)
+    await chmod(digestFile, 0o600); await writeFile(digestFile, `${digest('0')}\n`); await chmod(digestFile, 0o440)
     await expect(h.store.readComplete('host-1', done.revisionId)).rejects.toMatchObject({ code: D1HostErrorCode.ROLLBACK_TARGET_INVALID })
     const missing = await harness(); const missingDone = await complete(missing.store)
     const resolved = path.join(missing.root, 'host-1', 'revisions', missingDone.revisionId, 'resolved.json')
@@ -304,7 +314,7 @@ describe('D1 host revision store', () => {
     const mismatch = await harness(); const mismatchDone = await complete(mismatch.store)
     const completionFile = path.join(mismatch.root, 'host-1', 'revisions', mismatchDone.revisionId, 'completion.json')
     const completionJson = JSON.parse(await readFile(completionFile, 'utf8'))
-    await chmod(completionFile, 0o600); await writeFile(completionFile, JSON.stringify({ ...completionJson, desiredStateDigest: digest('0') }))
+    await chmod(completionFile, 0o600); await writeFile(completionFile, JSON.stringify({ ...completionJson, desiredStateDigest: digest('0') })); await chmod(completionFile, 0o440)
     await expect(mismatch.store.publishActive('host-1', mismatchDone.revisionId)).rejects.toMatchObject({ committed: false })
     expect(await mismatch.store.readActive('host-1')).toBeNull()
 
@@ -314,7 +324,9 @@ describe('D1 host revision store', () => {
     expect(error).toMatchObject({ code: D1HostErrorCode.PUBLICATION_FAILED, committed: true, details: { field: 'active' } })
     expect(JSON.stringify(error)).not.toMatch(/private|secret-value/)
     expect(await after.store.readActive('host-1')).toEqual({ schemaVersion: 1, revisionId: done.revisionId, desiredStateDigest: done.completed.desiredStateDigest })
-    expect((await stat(path.join(after.root, 'host-1', 'active'))).mode & 0o777).toBe(0o400)
+    const activeInfo = await stat(path.join(after.root, 'host-1', 'active'))
+    expect(activeInfo).toMatchObject({ uid: OWNER_UID, gid: APP_GID, nlink: 1 })
+    expect(activeInfo.mode & 0o777).toBe(0o440)
     expect(Object.keys(JSON.parse(await readFile(path.join(after.root, 'host-1', 'active'), 'utf8'))).sort())
       .toEqual(['desiredStateDigest', 'revisionId', 'schemaVersion'])
   })
@@ -336,12 +348,12 @@ describe('D1 host revision store', () => {
     const orphan = await harness(); await orphan.store.reserveRevisionId('host-1')
     const file = path.join(orphan.root, 'host-1', 'active')
     await writeFile(file, JSON.stringify({ schemaVersion: 1, revisionId: 'r0000000001', desiredStateDigest: digest('a') }))
-    await chmod(file, 0o400)
+    await chmod(file, 0o440)
     await expect(orphan.store.readActive('host-1')).rejects.toMatchObject({ code: D1HostErrorCode.PUBLICATION_FAILED })
     const extra = await harness(); await extra.store.reserveRevisionId('host-1')
     const extraFile = path.join(extra.root, 'host-1', 'active')
     await writeFile(extraFile, JSON.stringify({ schemaVersion: 1, revisionId: 'r0000000001', desiredStateDigest: digest('a'), extra: true }))
-    await chmod(extraFile, 0o400)
+    await chmod(extraFile, 0o440)
     await expect(extra.store.readActive('host-1')).rejects.toMatchObject({ code: D1HostErrorCode.PUBLICATION_FAILED })
   })
 
@@ -367,7 +379,9 @@ describe('D1 host revision store', () => {
     expect(await readFile(auditFile, 'utf8')).toBe(tornBytes)
     await h.store.appendAudit('host-1', audit(done.completed))
     expect(await readFile(auditFile, 'utf8')).not.toContain('"torn"')
-    expect((await stat(auditFile)).mode & 0o777).toBe(0o600)
+    const auditInfo = await stat(auditFile)
+    expect(auditInfo).toMatchObject({ uid: OWNER_UID, gid: OWNER_GID, nlink: 1 })
+    expect(auditInfo.mode & 0o777).toBe(0o600)
     expect(await h.store.hasTerminalAudit('host-1', active)).toBe(true)
 
     const corrupt = await harness(); await corrupt.store.reserveRevisionId('host-1')
@@ -397,30 +411,43 @@ describe('D1 host revision store', () => {
   })
 
   it('requires an explicit safe owner policy before filesystem side effects', async () => {
-    expect(() => createHostRevisionStore({ root: '/unused', ownerUid: -1 })).toThrow(expect.objectContaining({ code: D1HostErrorCode.PLAN_INVALID }))
+    expect(() => createHostRevisionStore({ root: '/unused', ownerUid: -1, appGid: APP_GID })).toThrow(expect.objectContaining({ code: D1HostErrorCode.PLAN_INVALID }))
+    expect(() => createHostRevisionStore({ root: '/unused', ownerUid: OWNER_UID, appGid: 0 })).toThrow(expect.objectContaining({ code: D1HostErrorCode.PLAN_INVALID }))
     const wrongParent = await mkdtemp(path.join(os.tmpdir(), 'boring-d1-wrong-owner-'))
     const wrongRoot = path.join(wrongParent, 'state')
-    const wrongOwner = createHostRevisionStore({ root: wrongRoot, ownerUid: OWNER_UID + 1 })
+    const wrongOwner = createHostRevisionStore({ root: wrongRoot, ownerUid: OWNER_UID + 1, appGid: APP_GID })
     await expect(wrongOwner.reserveRevisionId('host-1')).rejects.toMatchObject({ code: D1HostErrorCode.REVISION_CONFLICT })
     await expect(access(wrongRoot)).rejects.toMatchObject({ code: 'ENOENT' })
 
     const writableParent = await mkdtemp(path.join(os.tmpdir(), 'boring-d1-writable-parent-'))
     await chmod(writableParent, 0o770)
     const writableRoot = path.join(writableParent, 'state')
-    await expect(createHostRevisionStore({ root: writableRoot, ownerUid: OWNER_UID }).reserveRevisionId('host-1'))
+    await expect(createHostRevisionStore({ root: writableRoot, ownerUid: OWNER_UID, appGid: APP_GID }).reserveRevisionId('host-1'))
       .rejects.toMatchObject({ code: D1HostErrorCode.REVISION_CONFLICT })
     await expect(access(writableRoot)).rejects.toMatchObject({ code: 'ENOENT' })
 
     const h = await harness(); const done = await complete(h.store)
-    const wrongReader = createHostRevisionStore({ root: h.root, ownerUid: OWNER_UID + 1 })
+    const wrongReader = createHostRevisionStore({ root: h.root, ownerUid: OWNER_UID + 1, appGid: APP_GID })
     await expect(wrongReader.readCandidate('host-1', done.revisionId)).rejects.toMatchObject({ code: D1HostErrorCode.ROLLBACK_TARGET_INVALID })
     await expect(wrongReader.readActive('host-1')).rejects.toMatchObject({ code: D1HostErrorCode.PUBLICATION_FAILED })
+
+    const hostRoot = path.join(h.root, 'host-1'); const before = await stat(hostRoot)
+    const wrongAppReader = createHostRevisionStore({ root: h.root, ownerUid: OWNER_UID, appGid: APP_GID + 1 })
+    await expect(wrongAppReader.readCandidate('host-1', done.revisionId)).rejects.toMatchObject({ code: D1HostErrorCode.ROLLBACK_TARGET_INVALID })
+    expect(await stat(hostRoot)).toMatchObject({ uid: before.uid, gid: before.gid, mode: before.mode })
+
+    const oldParent = await mkdtemp(path.join(os.tmpdir(), 'boring-d1-old-tree-')); const oldRoot = path.join(oldParent, 'state')
+    await mkdir(oldRoot, { mode: 0o700 }); await mkdir(path.join(oldRoot, 'host-1'), { mode: 0o700 }); await mkdir(path.join(oldRoot, 'host-1', 'revisions'), { mode: 0o700 })
+    const oldStore = createHostRevisionStore({ root: oldRoot, ownerUid: OWNER_UID, appGid: APP_GID })
+    await expect(oldStore.reserveRevisionId('host-1')).rejects.toMatchObject({ code: D1HostErrorCode.REVISION_CONFLICT })
+    expect((await stat(path.join(oldRoot, 'host-1'))).mode & 0o777).toBe(0o700)
+    await expect(access(path.join(oldRoot, 'host-1', 'sequence'))).rejects.toMatchObject({ code: 'ENOENT' })
   })
 
   it('redacts OS failures even when configured paths contain secret-like text', async () => {
     const parent = await mkdtemp(path.join(os.tmpdir(), 'secret-value-root-'))
     const root = path.join(parent, 'private-root'); await writeFile(root, 'not-a-directory')
-    const error = await createHostRevisionStore({ root, ownerUid: OWNER_UID }).reserveRevisionId('host-1').catch((caught) => caught)
+    const error = await createHostRevisionStore({ root, ownerUid: OWNER_UID, appGid: APP_GID }).reserveRevisionId('host-1').catch((caught) => caught)
     expect(error).toMatchObject({ code: D1HostErrorCode.REVISION_CONFLICT })
     expect(JSON.stringify(error)).not.toMatch(/secret-value|private-root|ENOTDIR/)
   })
