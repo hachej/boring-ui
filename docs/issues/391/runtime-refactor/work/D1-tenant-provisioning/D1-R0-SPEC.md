@@ -411,8 +411,10 @@ and the real Docker UID/DAC proof
 ([#680](https://github.com/hachej/boring-ui/pull/680)). D1-004a1 shipped the
 explicit proxy policy, secure generic default, deterministic edge network, and
 pre-effect overlap guard
-([#684](https://github.com/hachej/boring-ui/pull/684)). D1-004a2 is active;
-D1-004a3a through D1-006 remain un-landed.
+([#684](https://github.com/hachej/boring-ui/pull/684)). D1-004a2 shipped the
+mounted exact-DAC active-collection reader
+([#685](https://github.com/hachej/boring-ui/pull/685)). D1-004a3a is active;
+D1-004a3b through D1-006 remain un-landed.
 
 ### D1-001 — plan and composition identity (<= 400 net lines; 25 minutes)
 
@@ -471,8 +473,8 @@ the first Compose apply, reject overlap between the fixed D1 edge subnet and
 non-default host routes or foreign Docker networks; reuse an exact existing D1
 project network only when its subnet, gateway, and ownership match. Map any
 conflict to `D1_COLLECTION_NOT_READY` with redacted `field: edgeNetwork`. RFC
-`Forwarded` remains ineligible as D1 authority; D1-004a3a adds the transport
-rejection. A later
+`Forwarded` remains ineligible as D1 authority; D1-004a3a adds transport
+stripping and canonical XFH emission. A later
 `X-Forwarded-Host` value is usable only from this exact trusted peer/chain after
 the ingress replacement behavior is proven.
 
@@ -493,18 +495,20 @@ Files: repo-owned `deploy/d1/Caddyfile`; its read-only mount and exact command i
 tests; and a narrow real-Docker echo proof under `apps/full-app/scripts/` that
 imports the same approved image identity.
 
-Deliver: reject any present RFC `Forwarded` value at the edge with exact HTTP
-400, `text/plain; charset=utf-8`, and redacted body
-`D1_HOST_SCOPE_VIOLATION`; replace every absent, hostile, repeated, or
-comma-joined inbound `X-Forwarded-Host` with exactly one raw header value derived
-from the original direct authority before proxying. The production image must
-equal the exact approved Caddy digest exercised by the Docker proof; another
-repository or digest fails before effects. Prove Forwarded absent/single/empty/
-repeated/comma cases and backend raw XFH cardinality/value for absent/hostile/
-repeated/comma cases through the mounted config and approved image. Until this
-proof lands, no D1 host scope may consume forwarded authority; direct authority
-is the only eligible future D1 input. Direct-only mode does not complete
-D1-004a3.
+Deliver: the exact approved production image is
+`caddy@sha256:af5fdcd76f2db5e4e974ee92f96ee8c0fc3edb55bd4ba5032547cbf3f65e486d`;
+another repository or digest fails before effects. Compose executes
+`["caddy","run","--config","/etc/caddy/Caddyfile","--adapter","caddyfile"]`
+explicitly because that image has no entrypoint. Strip every RFC `Forwarded`
+value and replace every absent, hostile, repeated, or comma-joined inbound
+`X-Forwarded-Host` with exactly one raw header value derived from the original
+direct authority before proxying. Prove Forwarded absent/single/empty/repeated/
+comma cases all produce backend absence, and prove backend raw XFH cardinality/
+value for absent/hostile/repeated/comma cases through the read-only mounted
+config and exact image. Until this proof lands, no D1 host scope may consume
+forwarded authority; direct authority is the only eligible future D1 input.
+Direct-only mode does not complete D1-004a3. `D1_HOST_SCOPE_VIOLATION` remains
+owned by D1-004a3b, not the ingress artifact.
 
 ### D1-004a3b — trusted host scope (<= 400 net lines; 25 minutes)
 
