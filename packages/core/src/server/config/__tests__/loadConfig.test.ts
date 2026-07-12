@@ -1,11 +1,29 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
+import { spawnSync } from 'node:child_process'
 import { resolve } from 'node:path'
-import { writeFileSync, mkdirSync, rmSync } from 'node:fs'
-import { loadConfig, validateConfig, buildRuntimeConfigPayload } from '../loadConfig'
+import { pathToFileURL } from 'node:url'
+import {
+  chmodSync,
+  linkSync,
+  mkdirSync,
+  rmSync,
+  symlinkSync,
+  writeFileSync,
+} from 'node:fs'
+import {
+  loadConfig,
+  validateConfig,
+  buildRuntimeConfigPayload,
+} from '../loadConfig'
+import { readConfigFileSecret } from '../fileSecrets'
 import { ConfigValidationError } from '../../../shared/errors'
 
 const FIXTURES_DIR = resolve(__dirname, '__fixtures__')
 const TOML_PATH = resolve(FIXTURES_DIR, 'boring.app.toml')
+const SECRETS_DIR = resolve(FIXTURES_DIR, 'secrets')
+const FILE_SECRETS_MODULE = pathToFileURL(
+  resolve(__dirname, '../fileSecrets.ts'),
+).href
 
 const VALID_ENV: Record<string, string> = {
   DATABASE_URL: 'postgres://user:pass@localhost:5432/testdb',
@@ -32,6 +50,35 @@ invites_enabled = true
 function writeToml(content: string) {
   mkdirSync(FIXTURES_DIR, { recursive: true })
   writeFileSync(TOML_PATH, content, 'utf-8')
+}
+
+function writeSecret(
+  name: string,
+  content: string | Uint8Array,
+  mode = 0o400,
+): string {
+  mkdirSync(SECRETS_DIR, { recursive: true })
+  const file = resolve(SECRETS_DIR, name)
+  writeFileSync(file, content, { mode })
+  chmodSync(file, mode)
+  return file
+}
+
+function expectFileSecretFailure(
+  file: string,
+  expectedOwnerUid?: number,
+): void {
+  let failure: unknown
+  try {
+    readConfigFileSecret('DATABASE_URL_FILE', file, { expectedOwnerUid })
+  } catch (error) {
+    failure = error
+  }
+  expect(failure).toBeInstanceOf(ConfigValidationError)
+  const exposed = `${String(failure)} ${JSON.stringify(failure)}`
+  expect(exposed).toContain('DATABASE_URL_FILE')
+  expect(exposed).not.toContain(FIXTURES_DIR)
+  expect(exposed).not.toMatch(/secret-canary|ENOENT|ELOOP|EISDIR|errno/i)
 }
 
 describe('loadConfig', () => {
@@ -68,6 +115,162 @@ describe('loadConfig', () => {
     expect(config.security?.csp.enabled).toBe(true)
     expect(config.security?.csp.upgradeInsecureRequests).toBe(false)
     expect(config.encryption.workspaceSettingsKey).toBe('b'.repeat(64))
+  })
+
+  it('loads all three supported secrets from strict files without mutating env', async () => {
+    const env: Record<string, string | undefined> = {
+      ...VALID_ENV,
+      DATABASE_URL: undefined,
+      BETTER_AUTH_SECRET: undefined,
+      WORKSPACE_SETTINGS_ENCRYPTION_KEY: undefined,
+      DATABASE_URL_FILE: writeSecret('database-url', VALID_ENV.DATABASE_URL),
+      BETTER_AUTH_SECRET_FILE: writeSecret(
+        'auth-secret',
+        VALID_ENV.BETTER_AUTH_SECRET,
+      ),
+      WORKSPACE_SETTINGS_ENCRYPTION_KEY_FILE: writeSecret(
+        'encryption-key',
+        VALID_ENV.WORKSPACE_SETTINGS_ENCRYPTION_KEY,
+      ),
+    }
+    const original = { ...env }
+
+    const config = await loadConfig({ tomlPath: TOML_PATH, env })
+
+    expect(config.databaseUrl).toBe(VALID_ENV.DATABASE_URL)
+    expect(config.auth.secret).toBe(VALID_ENV.BETTER_AUTH_SECRET)
+    expect(config.encryption.workspaceSettingsKey).toBe(
+      VALID_ENV.WORKSPACE_SETTINGS_ENCRYPTION_KEY,
+    )
+    expect(env).toEqual(original)
+  })
+
+  it('does not generically expand unsupported _FILE variables', async () => {
+    const config = await loadConfig({
+      tomlPath: TOML_PATH,
+      env: {
+        ...VALID_ENV,
+        GITHUB_CLIENT_ID: 'github-client',
+        GITHUB_CLIENT_SECRET_FILE: writeSecret('unsupported', 'secret-canary'),
+      },
+    })
+
+    expect(config.auth.github).toBeUndefined()
+  })
+
+  it.each([
+    ['DATABASE_URL', 'DATABASE_URL_FILE'],
+    ['BETTER_AUTH_SECRET', 'BETTER_AUTH_SECRET_FILE'],
+    [
+      'WORKSPACE_SETTINGS_ENCRYPTION_KEY',
+      'WORKSPACE_SETTINGS_ENCRYPTION_KEY_FILE',
+    ],
+  ] as const)(
+    'rejects simultaneous %s and %s without exposing either value',
+    async (variable, fileVariable) => {
+      const file = writeSecret(fileVariable, 'file-secret-canary')
+      let failure: unknown
+      try {
+        await loadConfig({
+          tomlPath: TOML_PATH,
+          env: {
+            ...VALID_ENV,
+            [variable]: 'env-secret-canary',
+            [fileVariable]: file,
+          },
+        })
+      } catch (error) {
+        failure = error
+      }
+
+      expect(failure).toBeInstanceOf(ConfigValidationError)
+      const exposed = `${String(failure)} ${JSON.stringify(failure)}`
+      expect(exposed).toContain(fileVariable)
+      expect(exposed).not.toMatch(/env-secret-canary|file-secret-canary/)
+      expect(exposed).not.toContain(file)
+    },
+  )
+
+  it('accepts exactly one terminal LF', () => {
+    const file = writeSecret('terminal-lf', 'secret-canary\n')
+    expect(readConfigFileSecret('DATABASE_URL_FILE', file)).toBe(
+      'secret-canary',
+    )
+  })
+
+  it('accepts the exact 64 KiB size boundary', () => {
+    const file = writeSecret('max-size', 'x'.repeat(64 * 1024))
+    expect(readConfigFileSecret('DATABASE_URL_FILE', file)).toHaveLength(
+      64 * 1024,
+    )
+  })
+
+  it.skipIf(process.platform !== 'linux')(
+    'rejects a FIFO without blocking before fstat',
+    () => {
+      mkdirSync(SECRETS_DIR, { recursive: true })
+      const fifo = resolve(SECRETS_DIR, 'secret-fifo')
+      const created = spawnSync('mkfifo', [fifo], { timeout: 1_000 })
+      expect(created).toMatchObject({ status: 0, signal: null })
+
+      const script = `
+        import { readConfigFileSecret } from ${JSON.stringify(FILE_SECRETS_MODULE)}
+        try {
+          readConfigFileSecret('DATABASE_URL_FILE', ${JSON.stringify(fifo)})
+          process.exit(2)
+        } catch (error) {
+          const exposed = String(error) + JSON.stringify(error)
+          if (!exposed.includes('DATABASE_URL_FILE') || exposed.includes(${JSON.stringify(fifo)})) process.exit(3)
+        }
+      `
+      const read = spawnSync(
+        process.execPath,
+        ['--import', 'tsx', '--input-type=module', '-e', script],
+        { timeout: 2_000 },
+      )
+
+      expect(read.error).toBeUndefined()
+      expect(read).toMatchObject({ status: 0, signal: null })
+    },
+  )
+
+  it('rejects unsafe paths and filesystem identities with redacted errors', () => {
+    const target = writeSecret('target', 'secret-canary')
+    const symlink = resolve(SECRETS_DIR, 'symlink')
+    symlinkSync(target, symlink)
+    const hardlink = resolve(SECRETS_DIR, 'hardlink')
+    linkSync(target, hardlink)
+    const directory = resolve(SECRETS_DIR, 'directory')
+    mkdirSync(directory, { mode: 0o700 })
+    chmodSync(directory, 0o400)
+    const wrongMode = writeSecret('wrong-mode', 'secret-canary', 0o600)
+    const wrongOwner = writeSecret('wrong-owner', 'secret-canary')
+
+    for (const file of [
+      'relative-secret',
+      `${SECRETS_DIR}/../secrets/target`,
+      resolve(SECRETS_DIR, 'missing'),
+      symlink,
+      hardlink,
+      directory,
+      wrongMode,
+    ])
+      expectFileSecretFailure(file)
+    expectFileSecretFailure(wrongOwner, process.geteuid!() + 1)
+  })
+
+  it.each([
+    ['oversize', 'x'.repeat(64 * 1024 + 1)],
+    ['invalid UTF-8', new Uint8Array([0xc3, 0x28])],
+    ['empty', ''],
+    ['NUL', 'secret-canary\0suffix'],
+    ['embedded LF', 'secret-canary\nsuffix'],
+    ['embedded CR', 'secret-canary\rsuffix'],
+    ['multiple terminal LF', 'secret-canary\n\n'],
+  ])('rejects %s file content without exposing it', (_name, content) => {
+    expectFileSecretFailure(
+      writeSecret(`invalid-${_name.replace(/\s+/g, '-')}`, content),
+    )
   })
 
   it('allows disabling CSP with CSP_ENABLED=false', async () => {

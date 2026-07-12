@@ -4,6 +4,7 @@ import { parse as parseTOML } from 'smol-toml'
 import { isCoreEmailVerificationEnabled } from '../../shared/authPolicy.js'
 import type { CoreConfig, RuntimeConfig } from '../../shared/types.js'
 import { ConfigValidationError } from '../../shared/errors.js'
+import { resolveConfigFileSecrets } from './fileSecrets.js'
 import { coreConfigSchema } from './schema.js'
 
 const THIRTY_DAYS_SECONDS = 60 * 60 * 24 * 30
@@ -97,6 +98,7 @@ export async function loadConfig(
       },
     ])
   }
+  const fileSecrets = resolveConfigFileSecrets(env)
 
   let toml: TomlAppConfig = {}
   if (existsSync(tomlPath)) {
@@ -111,9 +113,13 @@ export async function loadConfig(
   const storesRaw = env.CORE_STORES ?? 'postgres'
   const stores = storesRaw === 'local' ? 'local' : 'postgres'
 
-  let databaseUrl = env.DATABASE_URL ?? null
-  let authSecret = env.BETTER_AUTH_SECRET ?? ''
-  let encryptionKey = env.WORKSPACE_SETTINGS_ENCRYPTION_KEY ?? ''
+  let databaseUrl = fileSecrets.DATABASE_URL ?? env.DATABASE_URL ?? null
+  let authSecret =
+    fileSecrets.BETTER_AUTH_SECRET ?? env.BETTER_AUTH_SECRET ?? ''
+  let encryptionKey =
+    fileSecrets.WORKSPACE_SETTINGS_ENCRYPTION_KEY ??
+    env.WORKSPACE_SETTINGS_ENCRYPTION_KEY ??
+    ''
 
   const insecureDefaults: string[] = []
 
