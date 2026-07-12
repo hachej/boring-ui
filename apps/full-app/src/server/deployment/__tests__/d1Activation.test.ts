@@ -1,10 +1,10 @@
 import { readFile } from 'node:fs/promises'
 
+import { createCoreApp } from '@hachej/boring-core/server'
 import type { CoreConfig } from '@hachej/boring-core/shared'
 import Fastify from 'fastify'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
-import { createCoreApp } from '../../../../../../packages/core/src/server/app/createCoreApp.js'
 import type { D1ActiveCollection, D1ActiveCollectionReader } from '../activeCollectionReader.js'
 import { registerD1ReadinessRoute } from '../d1Readiness.js'
 import { createD1ServerWiring } from '../d1ServerWiring.js'
