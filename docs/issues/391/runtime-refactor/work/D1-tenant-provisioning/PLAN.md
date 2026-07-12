@@ -1,9 +1,10 @@
 # D1-tenant-provisioning — Plan
 
-Status: priority-1/v1 multi-agent Docker delivery gate; **D1-R0 spec accepted,
-merge pending**. After merge, dispatch only the ordered micro-beads in
-[`D1-R0-SPEC.md`](./D1-R0-SPEC.md) and `TODO.md`. The active contract and R0
-spec supersede the historical dedicated-site design.
+Status: priority-1/v1 multi-agent Docker delivery gate; **D1-R0 and D1-001
+through D1-003 are landed and ancestry-verified**. D1-004a1 (explicit proxy
+policy) is the active micro-bead; D1-004a2 through D1-006 remain ordered behind
+it in [`D1-R0-SPEC.md`](./D1-R0-SPEC.md) and `TODO.md`. The active contract and
+R0 spec supersede the historical dedicated-site design.
 
 ## Active owner-reframed v1 plan (2026-07-11)
 
@@ -107,9 +108,9 @@ without changing this D1 policy.
   an observed attestation that gates publication; it is not desired digest,
   rollback identity, or P6-R input. No secret value is stored. Rollback
   rematerializes the prior host collection and reproduces all P6-R digests.
-  No implementation bead is dispatchable until D1-R0 closes the current-code
-  gap: there is no canonical workspace-composition digest producer today.
-  This is D1 apply history, not a P6 generation registry.
+  D1-001 landed the canonical workspace-composition digest producer; D1-002
+  and D1-003 now persist and materialize that identity. This is D1 apply
+  history, not a P6 generation registry.
 - Publish each DNS/TLS binding only after hostname, workspace scope,
   membership, default-agent, runtime-isolation, host-readiness, and secret-
   canary checks pass. A partial candidate never becomes externally reachable.
@@ -118,7 +119,7 @@ without changing this D1 policy.
 
 ### Active exit
 
-One timed proof deploys at least two distinct agent bundles to one Docker host,
+One timed proof deploys three distinct agent bundles to one Docker host,
 maps them to distinct authorized workspaces/default bindings, and proves each
 exact hostname -> landing -> existing-member sign-in -> bound workspace ->
 deployed `default` agent. It also proves cross-hostname/workspace selector

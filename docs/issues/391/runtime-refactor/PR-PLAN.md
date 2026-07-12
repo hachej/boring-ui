@@ -11,10 +11,10 @@ shims) remains binding.
 | --- | --- | --- | --- |
 | 1 | #631 + P1 readiness | **merged; ancestry verified** | Request-binding lifecycle and fail-closed readiness are complete; do not replay discarded/superseded stacks. |
 | 2 | P6-R / BBP6-011 | **merged; ancestry verified** | The pure one-binding resolver is complete; D1 obtains N agents through N independent calls. |
-| 3 | D1-R0 | **merged ([#649](https://github.com/hachej/boring-ui/pull/649)); dispatch D1-001…006** | [`D1-R0-SPEC.md`](work/D1-tenant-provisioning/D1-R0-SPEC.md) is merged; dispatch D1-001 through D1-006 in order. Historical dedicated/runsc beads remain non-dispatchable. |
-| 4 | D1 composition producer -> A1-dev | D1-001 first | D1-001 implements the canonical redacted producer beside the real full-app composition; then recut A1 local dev against that exact host seam. A1-dev gates P8, not D1. |
-| 5 | P5a | conditional inside D1 | Add only a demonstrated secret-ref or host-readiness seam; D1 owns apply/digest/rollback. |
-| 6 | M1 -> AR1 -> M2/E2 | ordered priority 2 | Recut #549/#556 with authorized complete-byte artifact output and stable no-path rejection, accept AR1-001, then recut canonical MCP/artifact intake. |
+| 3 | D1-R0 + D1-001…003 | **merged; ancestry verified through [#680](https://github.com/hachej/boring-ui/pull/680)** | Exact D1 PRs: #649, #652–#654, #660, #662, #665, #667, #672, and #675–#680. Plan/identity, revision lifecycle, stable Compose, secure runtime inputs, exact-host mount, and real Docker boundary proof are complete. |
+| 4 | D1-004a1…a4 -> b/c/d -> D1-005 -> D1-006 | **priority 1; D1-004a1 active** | Land proxy trust, active reader, Host scope, landing/readiness, authority/admission fences, atomic N-binding boot, then the three-agent EU proof. A1-dev still gates P8, not D1. |
+| 5 | P5a | conditional inside D1 | No separate P5a code was needed through D1-003; add only a future demonstrated host gap. D1 owns apply/digest/rollback. |
+| 6 | M1 -> AR1 -> M2/E2 | **M1 landed #650; AR1 next after priority 1** | Consume the landed authenticated delivery-v0 seam, dispatch the owner-ratified AR1 lane, then recut canonical MCP/artifact intake. |
 | 7 | T1 -> T2 | ordered priority 3 | Recut after priority-2 consumer proof. |
 | 8 | P2 -> X1 | ordered priority 4 | Sol P2 may prepare in isolation, but provider/mount work merges last. |
 
@@ -532,20 +532,25 @@ the earlier pr1…pr8/BBD1-001…007 tracer table.
 
 | Bead | Files | Budget | Deliver |
 | --- | --- | --- | --- |
-| D1-001 — plan and composition identity | new `apps/full-app/src/server/deployment/d1Plan.ts`, `workspaceComposition.ts`, focused tests; minimal descriptor exports from `plugins.ts` and host composition wiring only | <= 400 net lines; 25 min | strict plan validation, canonical redacted composition snapshot/digest, final requirement inventory validation, exact stable errors; no filesystem mutation, Compose, routing, or CLI yet |
-| D1-002 — immutable revision store and local CLI | new `apps/full-app/src/server/deployment/hostRevisionStore.ts`, `deployment/cli.ts`, tests, one private script entry in `apps/full-app/package.json` | <= 400 net lines; 25 min | plan/apply dry-run, OS lock, expected-revision CAS, immutable candidate/COMPLETE records, atomic pointer, audit, destructive confirmation, rollback-as-new-revision; no HTTP management route |
-| D1-003 — stable-process Compose adapter | new `deploy/d1/compose.yml`, `deploy/d1/collection.example.json`, `apps/full-app/src/server/deployment/composeAdapter.ts`, focused tests | <= 400 net lines; 25 min | one ingress plus one full-collection core process; pinned image, external `databaseRef`, durable workspace/session roots, per-binding env plus external tmpfs secret inputs; no `--force-recreate`, blanket rollback, secret values, or source-checkout mounts |
-| D1-004a — trusted host surface | new `deployment/hostSurface.ts`, landing handler, focused tests, minimal `main.ts` wiring, trusted-proxy config in `createCoreApp.ts`/config schema | <= 400 net lines; 25 min | explicit proxy CIDR/hop parsing (never generic `trustProxy: true`), active-revision site map, bounded escaped landing, fixed same-origin auth return, scope derivation, internal readiness |
+| D1-001 — plan and composition identity — **LANDED #652** | `deployment/d1Plan.ts`, `workspaceComposition.ts`, focused tests, descriptor exports and host composition wiring | landed | strict plan validation, canonical redacted composition snapshot/digest, final requirement inventory validation, exact stable errors; no filesystem mutation, Compose, routing, or CLI |
+| D1-002 — immutable revision store and local CLI — **LANDED #653, #654, #660, #662, #665** | `deployment/d1RevisionCodec.ts`, `hostRevisionStore.ts`, `d1Command.ts`, `d1CommandCliProtocol.ts`, `d1CommandEntry.ts`, wrapper/lock policy, focused tests | landed as reviewed micro-PRs | OS lock, expected-revision CAS, immutable candidate/COMPLETE records, atomic pointer, audit, destructive confirmation, rollback-as-new-revision; no HTTP management route |
+| D1-003 — stable-process Compose and runtime-input boundary — **LANDED #667, #672, #675–#680** | `deploy/d1/compose.yml`, binding env/revision store, secure tmpfs materializer, fixed file provider, production composition, Docker proof | landed as reviewed micro-PRs | one ingress plus one full-collection core process; external `databaseRef`; durable roots; deterministic per-binding env; generation-addressed tmpfs values; exact-host RO mount; no force-recreate, raw-secret config, sibling-host mount, or source-checkout mount |
+| D1-004a1 — explicit proxy policy — **ACTIVE** | core config/schema/shared types + `createCoreApp.ts`; deterministic D1 edge network; focused tests | <= 400 net lines; 25 min | default proxy trust off; exact ingress CIDR and bounded hop count; no broad private trust; forwarded host remains unusable until exact-peer/chain replacement proof |
+| D1-004a2 — mounted active reader | new `deployment/activeCollectionReader.ts`; focused tests | <= 400 net lines; 25 min | exact-DAC read-only active→COMPLETE validation through existing codecs; no mutation store, cache, watcher, P6-R, or secret read |
+| D1-004a3 — trusted host scope | new `deployment/hostSurface.ts`; optional core request scope; minimal pre-auth wiring; focused tests | <= 400 net lines; 25 min | direct authority or one canonical trusted-peer forwarded host→active binding scope before auth; unknown, ambiguous, or untrusted input fails closed; hostname grants nothing |
+| D1-004a4 — landing/readiness wiring | bounded renderer, loopback readiness, narrow root-handler seam, `main.ts`, focused tests | <= 400 net lines; 25 min | escaped landing, fixed same-origin auth return, redacted readiness; no membership handoff or public internal ids |
 | D1-004b — workspace authority fences | shared optional scope contract in core app server types; surgical updates/tests in `workspaces.ts`, `postSignupHook.ts`, managed-workspace membership/account-deletion paths | <= 400 net lines; 30 min | member-only bound list; create/foreign switch/delete/default auto-provision denial; operator-owned managed lifecycle; generic-host behavior preserved byte-for-byte |
 | D1-004c — remaining selector conformance | inventory full-app agent/MCP/plugin/pane/WorkspaceBridge selectors first; split one PR per route family if over budget | <= 400 net lines per PR; 25 min | every selector rejects a foreign caller value before lookup/effects and derives default deployment from scope; no generic policy framework |
 | D1-004d — durable admission ledger | one Drizzle migration + schema export; new `deployment/admissionLedger.ts`; focused tests; narrow first-effect hook through D1 host scope | <= 300 net lines; 20 min | insert/read-only `(hostId, bindingId)` admission rows with DB-allocated monotonic sequence; transaction commit before first agent effect; idempotent concurrent admission; restart recovery; no update/delete API |
 | D1-005 — collection boot and atomic publication | new `deployment/{bootCollection,preloadSignal}.ts`; integrate D1-001/002/003/004 seams in `main.ts`; focused integration tests | <= 400 net lines; 30 min | read one immutable revision, perform N independent P6-R calls, preload all bindings through root-owned pending pointer/signal, wait for all-ready ack, atomically publish additive/landing-only pointer; invalid pending state and one failed binding leave old collection active |
 | D1-006 — EU-host proof and runbook | `work/D1-tenant-provisioning/RUNBOOK.md`, narrow proof script under `scripts/`, `golden-path.json` evidence path (owned by P8) | <= 300 net lines; 20 min | boot/add-agent/apply/rollback/cleanup commands; three distinct agents/workspaces/hostnames in one EU deployment; three independent P6-R digests; setup-to-first-success timing; idempotent additive apply; N+1 continuity; exact rollback as a new revision; secret canary |
 
-**D1 total: 9 beads (D1-001…006, with D1-004 split a–d) per D1-R0-SPEC.md §8.**
-D1-001…006 are dispatched. D1 is the
-repeatable multi-agent Docker host lane. Its generic landing/auth/workspace handoff is
-v1; bespoke marketing pages, pricing/GTM, and shared tenancy remain outside v1.
+**D1 total: 12 dispatch units (D1-001…003; D1-004a1…a4, b, c, d;
+D1-005; D1-006) per the accepted D1-R0 contract and its reality recut.**
+D1-001…003 are landed, D1-004a1 is active, and the remaining units are ordered.
+D1 is the repeatable multi-agent Docker host lane. Its generic
+landing/auth/workspace handoff is v1; bespoke marketing pages, pricing/GTM, and
+shared tenancy remain outside v1.
 
 ### D2 — Shared-deployment subdomain tenancy (post-v1)
 
@@ -633,12 +638,13 @@ legacy PR dispositions are below; stack order is not execution authority:
 | #548 | superseded by #628 structural seam; add only evidence-led D1 follow-ups |
 | #558 | defer the Vercel provider move; it is not in the dedicated EU runsc minimum |
 | #564 | close/defer; no pure-only binary or broad mode/provider cutover in v1 |
-| #549, #556 | optional R0 outreach leaf; rebase/review only as workspace-backed, with no prE/T1 dependency |
+| #549, #556 | closed as superseded by landed current-main M1 recut #650 |
 | #581 | keep draft/deferred until E1/P5a and a real native-mount consumer reopen X1 |
 
-Next P1 work is request-binding/service teardown lifecycle, followed by
-fail-closed readiness. Next P2 evidence is the real-EU validation spike. Do not
-append to or revive superseded stacks.
+P1 readiness (#642), P6-R (#647), D1-R0 (#649), and D1-001 through D1-003
+(#652–#654, #660, #662, #665, #667, #672, #675–#680) are landed. D1-004a1 is the active priority-1 slice. P2 recut #641
+remains parked behind the priority path; do not append to or revive superseded
+stacks.
 
 Across moved-code stacks, each vertical PR migrates consumers and removes the
 old origin atomically. A temporary bridge is allowed only with a named deletion

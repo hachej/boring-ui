@@ -7,33 +7,37 @@ from this file.**
 
 ## Active multi-agent Docker v1 work order (2026-07-11)
 
-**Dispatch state: D1-R0 spec accepted, merge pending.** After merge, the exact
-implementation beads in [`D1-R0-SPEC.md`](./D1-R0-SPEC.md) are dispatchable in
-order. Never dispatch the historical section below.
+**Dispatch state: D1-R0 and D1-001 through D1-003 are landed.** D1-004a1 is
+active; dispatch the remaining exact implementation beads in
+[`D1-R0-SPEC.md`](./D1-R0-SPEC.md) in order. Never dispatch the historical
+section below.
 
 ### D1-R0 — Host collection tracer and micro-plan (spec, S)
 
-- [ ] Accept [`D1-R0-SPEC.md`](./D1-R0-SPEC.md).
-- [ ] Confirm the stable one-process N-binding composition preserves in-flight
+- [x] Accept [`D1-R0-SPEC.md`](./D1-R0-SPEC.md) via #649.
+- [x] Confirm the stable one-process N-binding composition preserves in-flight
       work by allowing only additive/landing-only online revisions and rejecting
       active binding replacement/removal.
-- [ ] Confirm agents are not per-container and no P2/runsc or P5a gate remains.
-- [ ] Confirm D1-001 through D1-006 name exact files, stable errors, proof,
+- [x] Confirm agents are not per-container and no P2/runsc or P5a gate remains.
+- [x] Confirm D1-001 through D1-006 name exact files, stable errors, proof,
       rollback behavior, <=400-line PR budgets, and current-code owners.
 
 ### Active implementation order after D1-R0 acceptance
 
-1. **D1-001 — plan and canonical composition identity.** Strict host plan,
+1. **LANDED — D1-001: plan and canonical composition identity (#652).** Strict host plan,
    trustworthy final inventories, redacted canonical digest, requirement
    refusal, independent P6-R inputs. No mutation or routing.
-2. **D1-002 — revision store and OS-local CLI.** Lock/CAS, immutable candidate
+2. **LANDED — D1-002: revision store and OS-local CLI (#653, #654, #660,
+   #662, #665).** Lock/CAS, immutable candidate
    and COMPLETE records, atomic pointer, exact destructive confirmation,
    rollback-as-new-revision. No app management API.
-3. **D1-003 — one stable-process Compose file.** Ingress, one full-collection
+3. **LANDED — D1-003: stable-process Compose, runtime inputs, and Docker
+   boundary proof (#667, #672, #675–#680).** Ingress, one full-collection
    core process, external `databaseRef`, per-binding env plus external tmpfs
    secret mounts, durable roots, maintenance-only service-specific `--no-deps`,
    and no force-recreate.
-4. **D1-004a/b/c/d — host surface, authority fences, and admission.** Trusted
+4. **ACTIVE — D1-004a1, then a2/a3/a4, b/c/d: host surface, authority fences,
+   and admission.** Trusted
    exact-host landing grants nothing; member-only bound workspace and all
    selectors fail closed; the database admission row commits before first
    agent effect and survives process/revision cleanup.

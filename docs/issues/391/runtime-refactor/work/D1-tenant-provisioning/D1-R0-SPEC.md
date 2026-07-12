@@ -391,9 +391,17 @@ D1-002 shipped as multiple PRs — codec
 revision command boundary/CLI
 ([#665](https://github.com/hachej/boring-ui/pull/665)) — with the CLI files
 named `d1Command.ts`, `d1CommandCliProtocol.ts`, and `d1CommandEntry.ts` (not
-`cli.ts` as originally specced below); D1-003a shipped as
-[#667](https://github.com/hachej/boring-ui/pull/667). D1-004 through D1-006
-remain un-landed; their rows below are unchanged planning estimates.
+`cli.ts` as originally specced below). D1-003 shipped as the Compose topology
+([#667](https://github.com/hachej/boring-ui/pull/667)), core file-secret input
+([#672](https://github.com/hachej/boring-ui/pull/672)), deterministic binding
+environment and permissions ([#675](https://github.com/hachej/boring-ui/pull/675),
+[#676](https://github.com/hachej/boring-ui/pull/676)), secure tmpfs
+materialization ([#677](https://github.com/hachej/boring-ui/pull/677)), fixed
+file runtime-input provider ([#678](https://github.com/hachej/boring-ui/pull/678)),
+production/Compose wiring ([#679](https://github.com/hachej/boring-ui/pull/679)),
+and the real Docker UID/DAC proof
+([#680](https://github.com/hachej/boring-ui/pull/680)). D1-004a1 is active;
+D1-004a2 through D1-006 remain un-landed.
 
 ### D1-001 — plan and composition identity (<= 400 net lines; 25 minutes)
 
@@ -433,17 +441,46 @@ external tmpfs secret inputs; `up -d` and maintenance-only service-specific
 service is created, and generated commands never contain `--force-recreate`,
 blanket rollback, secret values, or source-checkout mounts.
 
-### D1-004a — trusted host surface (<= 400 net lines; 25 minutes)
+### D1-004a1 — explicit proxy policy (<= 400 net lines; 25 minutes)
 
-Files: new `apps/full-app/src/server/deployment/hostSurface.ts`, landing handler,
-focused tests, minimal `apps/full-app/src/server/main.ts` wiring, and surgical
-trusted-proxy configuration in `packages/core/src/server/app/createCoreApp.ts`,
-`packages/core/src/server/config/{schema,loadConfig}.ts`, and shared config types.
+Files: surgical trusted-proxy configuration in
+`packages/core/src/server/app/createCoreApp.ts`, config schema/load/shared types,
+focused tests, and deterministic D1 edge-network wiring in `deploy/d1/compose.yml`.
 
-Deliver: explicit proxy CIDR/hop parsing (never generic `trustProxy: true`),
-active-revision site map, bounded escaped landing, fixed same-origin auth return,
-scope derivation, and internal readiness. Hostname grants nothing; ambiguous,
-unknown, or untrusted forwarded hosts fail before auth.
+Deliver: secure-by-default proxy handling, an exact ingress CIDR plus bounded
+hop count (never `trustProxy: true` or broad private ranges), and a deterministic
+one-ingress network. RFC `Forwarded` remains rejected; a later
+`X-Forwarded-Host` value is usable only from this exact trusted peer/chain after
+the ingress replacement behavior is proven.
+
+### D1-004a2 — mounted active-collection reader (<= 400 net lines; 25 minutes)
+
+Files: new `apps/full-app/src/server/deployment/activeCollectionReader.ts` and
+focused tests.
+
+Deliver: read-only, exact-DAC validation of the mounted host `active` pointer
+and COMPLETE revision through existing codecs. No mutation-store reuse, cache,
+watcher, P6-R call, or secret-value read.
+
+### D1-004a3 — trusted host scope (<= 400 net lines; 25 minutes)
+
+Files: new `deployment/hostSurface.ts`, one optional core request-scope contract,
+focused tests, and minimal pre-auth server wiring.
+
+Deliver: normalize one direct authority or one canonical `X-Forwarded-Host`
+from the exact trusted peer/chain against the active site map and attach
+`D1WorkspaceScope` before authentication. Reject RFC `Forwarded`, duplicate or
+ambiguous forwarded-host values, and every untrusted forwarded host; hostname
+grants nothing. Membership/CRUD enforcement remains D1-004b.
+
+### D1-004a4 — landing and readiness wiring (<= 400 net lines; 25 minutes)
+
+Files: bounded landing renderer, loopback readiness, minimal `main.ts` wiring,
+and a narrow optional core root-handler seam.
+
+Deliver: escaped landing copy, fixed same-origin auth return, and redacted
+loopback-only readiness. No membership handoff, arbitrary HTML, open redirect,
+or workspace/deployment identifiers in public output.
 
 ### D1-004b — workspace authority fences (<= 400 net lines; 30 minutes)
 

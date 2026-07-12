@@ -810,9 +810,9 @@
             <h3>Reduced critical path</h3>
             <ul class="scope-list">
               <li><code>Decision 21</code>, <code>P6-D</code>, and <code>A1 compile</code> are landed through #617/#623/#624.</li>
-              <li><code>P1</code> core/local/Pi/request lifecycle is landed through #631; one fail-closed readiness recut closes it.</li>
-              <li><code>P6-R</code> follows P1 and resolves one authorized deployment/workspace/default binding per pure call; D1 iterates N calls.</li>
-              <li><code>D1</code> runs those bindings in one Docker host; each exact hostname still lands through auth into an authorized workspace/default agent.</li>
+              <li><code>P1</code> lifecycle/readiness (#642), <code>P6-R</code> (#647), and <code>D1-001…003</code> are landed.</li>
+              <li><code>D1-004a1</code> is active; a2/a3/a4 then establish the active reader, canonical Host scope, landing, and readiness.</li>
+              <li><code>D1-004b/c/d</code>, <code>D1-005</code>, and <code>D1-006</code> finish authority/admission, atomic N-binding boot, and the three-agent EU proof.</li>
               <li><code>M1 &rarr; AR1 &rarr; M2/E2</code> is priority 2, then <code>T1/T2</code>; <code>P2/X1</code> is last.</li>
               <li><code>P8</code> proves the complete journey and rollback.</li>
             </ul>
@@ -820,7 +820,7 @@
           <div class="scope-column out">
             <h3>Ordered after v1</h3>
             <ul class="scope-list">
-              <li>MCP ingress and shareable-artifact intake, then canonical M2/E2.</li>
+              <li>Owner-ratified AR1 shareable-artifact intake, then canonical M2/E2; M1 ingress is already landed.</li>
               <li>T1 durable events and T2 multi-channel transport.</li>
               <li>Full P3 ownership extraction and generic E1 attachments.</li>
               <li>True no-environment execution and a workspace-less adapter.</li>
@@ -833,20 +833,20 @@
 
         <div class="section-heading">
           <p class="kicker">Immediate orchestration</p>
-          <h2>Close P1, resolve deployments, then prove one multi-agent host.</h2>
+          <h2>D1-003 is landed. Build the trusted host surface next.</h2>
         </div>
         <div class="review-path">
           <article class="review-step">
-            <div><h3>Landed foundation: P6-D and A1 compile</h3><p>#623 and #624 are verified on main. Keep their schema/compiler narrow; workspace-backed local run still waits for P6-R.</p></div>
-            <a href="work/P6-plugin-child-app/PLAN.md">P6-D plan</a>
+            <div><h3>Landed foundation: P1, P6-R, and D1-001…003</h3><p>#642, #647, #649, #652–#654, #660, #662, #665, #667, #672, and #675–#680 are verified on main. The host revision store, runtime-input boundary, exact-host read-only mount, and real Docker UID/DAC proof are complete.</p></div>
+            <a href="work/D1-tenant-provisioning/D1-R0-SPEC.md">D1 contract</a>
           </article>
           <article class="review-step">
-            <div><h3>Next P1: readiness only</h3><p>Build on #626/#627/#630/#631. Wire both adapters to one binding-local reporter over the final tool requirements; unknown and not-started stay false, including disposal races. Never replay #576 lifecycle code.</p></div>
-            <a href="work/P1-headless-core/PLAN.md">P1 plan</a>
+            <div><h3>Active D1-004a: four security boundaries</h3><p>Land explicit proxy trust, then the mounted active reader, canonical direct/trusted-forwarded Host scope, and bounded landing/readiness. RFC Forwarded and untrusted forwarded hosts fail closed; hostname possession grants nothing.</p></div>
+            <a href="work/D1-tenant-provisioning/PLAN.md">D1 plan</a>
           </article>
           <article class="review-step">
-            <div><h3>Next P6-R, then D1-R0</h3><p>Bind one host-attested workspace/default identity per pure P6-R call. D1-R0 then specifies the missing canonical composition-digest producer and how one Docker host applies at least two site bindings. Dedicated VM is variant 2.</p></div>
-            <a href="work/D1-tenant-provisioning/PLAN.md">D1 gate</a>
+            <div><h3>Then authority, admission, and atomic boot</h3><p>D1-004b/c/d fence workspace lifecycle and selectors and commit admission before effects. D1-005 performs N independent P6-R calls and stable-process additive publication. D1-006 records the three-agent EU proof.</p></div>
+            <a href="work/D1-tenant-provisioning/TODO.md">D1 work order</a>
           </article>
         </div>
 
@@ -863,6 +863,8 @@
               <tr><td>#623 / #624</td><td><span class="status merged">landed</span></td><td>Minimal definition identities and deterministic compiler.</td></tr>
               <tr><td>#626 / #627 / #630</td><td><span class="status merged">landed</span></td><td>Core relocation and terminal local/Pi binding disposal.</td></tr>
               <tr><td>#631</td><td><span class="status merged">landed</span></td><td>Request-binding lifecycle closeout; merge ancestry verified.</td></tr>
+              <tr><td>#642 / #647 / #649</td><td><span class="status merged">landed</span></td><td>P1 readiness recut, stateless P6-R, and accepted D1-R0 contract.</td></tr>
+              <tr><td>#652–#654, #660, #662, #665, #667, #672, #675–#680</td><td><span class="status merged">D1-001…003 landed</span></td><td>Canonical plan/identity, revision lifecycle, stable Compose, secure runtime inputs, exact-host mount, and real Docker boundary proof.</td></tr>
               <tr><td>#628</td><td><span class="status merged">structural only</span></td><td>Runsc preflight; <code>productionReady: false</code>, not provider parity.</td></tr>
               <tr><td>#564</td><td><span class="status deferred">remove cutover</span></td><td>Do not make the agent binary pure-only.</td></tr>
               <tr><td>#566</td><td><span class="status deferred">superseded</span></td><td>Host-global capability snapshots cannot represent N bindings; P6-R remains facts-free.</td></tr>
@@ -870,7 +872,7 @@
               <tr><td>#575 / #576</td><td><span class="status deferred">recut narrowly</span></td><td>#575 is superseded; retain only fail-closed live readiness from #576.</td></tr>
               <tr><td>#546 / #559</td><td><span class="status deferred">priority 3</span></td><td>Recut T1/T2 after the priority-2 MCP/artifact proof.</td></tr>
               <tr><td>#548 / #558 / #564</td><td><span class="status deferred">priority 4</span></td><td>Sol owns the P2 recut; provider extraction merges after priorities 1-3.</td></tr>
-              <tr><td>#549 / #556</td><td><span class="status deferred">priority 2 recut</span></td><td>Rebase after D1 as authenticated MCP ingress for AR1.</td></tr>
+              <tr><td>#549 / #556</td><td><span class="status merged">superseded by #650</span></td><td>Current-main M1 recut landed with delivery-v0 and stock-client proof.</td></tr>
               <tr><td>#581</td><td><span class="status deferred">draft only</span></td><td>No native-mount consumer; X1 stays post-v1.</td></tr>
             </tbody>
           </table>
@@ -889,8 +891,8 @@
               <tr><td>Workspace composition authority</td><td><span class="status active">keep</span></td><td>Plugins, prompts, skills, tools, routes, UI, and runtime come from one authorized workspace activation.</td></tr>
               <tr><td>Public pure/no-environment mode</td><td><span class="status deferred">remove from v1</span></td><td>Reintroduce only for a named consumer with a stronger explicit contract, never a mode-label fork.</td></tr>
               <tr><td>Durable event/admission platform</td><td><span class="status deferred">move to T1</span></td><td>No P1 implementation without a current durability consumer.</td></tr>
-              <tr><td>P6 resolved generations and per-agent catalogs</td><td><span class="status active">simplify</span></td><td>P6-R is stateless over host deployment plus a host-attested composition identity; D1-R0 owns the missing canonical producer.</td></tr>
-              <tr><td>Local agent development</td><td><span class="status deferred">rework after producer</span></td><td>Explicit workspace/runtime; bwrap preferred; direct only under trusted-local policy.</td></tr>
+              <tr><td>P6 resolved generations and per-agent catalogs</td><td><span class="status merged">simplified</span></td><td>P6-R is stateless; landed D1-001 owns the canonical redacted composition producer and D1 alone owns revisions.</td></tr>
+              <tr><td>Local agent development</td><td><span class="status deferred">recut after D1</span></td><td>Explicit workspace/runtime; bwrap preferred; direct only under trusted-local policy.</td></tr>
             </tbody>
           </table>
         </div>
@@ -1013,19 +1015,19 @@
               <span class="arrow">&rarr;</span>
               <a class="node join" href="#pkg-p6r"><b>P6-R</b><span>resolve join</span></a>
               <span class="arrow">&rarr;</span>
-              <a class="node" href="#pkg-d1"><b>D1-R0</b><span>micro-plan</span></a>
+              <a class="node" href="#pkg-d1"><b>D1-001…003</b><span>landed host base</span></a>
               <span class="arrow">&rarr;</span>
-              <a class="node" href="#pkg-p5a"><b>D1 + P5a</b><span>Docker host</span></a>
+              <a class="node" href="#pkg-d1"><b>D1-004…006</b><span>surface to proof</span></a>
             </div>
           </div>
           <div class="lane">
             <div class="lane-name">Delivery</div>
             <div class="lane-flow">
-              <a class="node join" href="#pkg-d1"><b>D1-R0</b><span>producer spec</span></a>
+              <a class="node join" href="#pkg-d1"><b>D1-004</b><span>scope + authority</span></a>
               <span class="arrow">&rarr;</span>
-              <a class="node" href="#pkg-d1"><b>Producer</b><span>D1-owned bead</span></a>
+              <a class="node" href="#pkg-d1"><b>D1-005</b><span>atomic boot</span></a>
               <span class="arrow">&rarr;</span>
-              <a class="node" href="#pkg-a1"><b>A1-D</b><span>local dev recut</span></a>
+              <a class="node" href="#pkg-d1"><b>D1-006</b><span>EU host proof</span></a>
               <span class="arrow">&rarr;</span>
               <a class="node proof" href="#pkg-p8"><b>P8</b><span>proof</span></a>
             </div>
@@ -1057,11 +1059,11 @@
             </thead>
             <tbody>
               <tr>
-                <td><div class="track-name"><strong>M1 tracer/recuts</strong><span class="status deferred">priority 2</span></div></td>
-                <td>D1 host composition</td>
+                <td><div class="track-name"><strong>M1 managed ingress</strong><span class="status merged">landed #650</span></div></td>
+                <td>P1 workspace/Fastify boundary</td>
                 <td>Additive workspace-backed bearer sidecar. No durable admission gate.</td>
                 <td>Stock-client smoke and bounded self-contained result.</td>
-                <td>Recut #549/#556 after D1; feeds AR1.</td>
+                <td>Delivery-v0 and stock-client proof landed; feeds AR1.</td>
               </tr>
               <tr>
                 <td><div class="track-name"><strong>P6-D / A1 compile</strong><span class="status merged">landed</span></div></td>
@@ -1082,7 +1084,7 @@
                 <td>P1</td>
                 <td>Existing workspace composer and #416 contracts stay frozen.</td>
                 <td>Lifecycle/readiness, stateless N-binding resolution, Docker host and secret brokerage.</td>
-                <td>Readiness recut, P6-R, then D1-reframed.</td>
+                <td>P1/P6-R and D1-001…003 landed; D1-004a1 is active.</td>
               </tr>
               <tr>
                 <td><div class="track-name"><strong>X1 S3/FUSE</strong><span class="status deferred">draft only</span></div></td>
@@ -1188,7 +1190,7 @@
           <article class="risk">
             <div class="risk-head"><h3>Static behavior drift</h3><span class="severity">P1</span></div>
             <p>Plugin options or static host prompt input could change behavior while artifact ids remain stable.</p>
-            <p><strong>Control:</strong> current code has no canonical composition-digest producer. P6-R binds a host attestation only; D1-R0 must specify the smallest redacted producer before rollback reproducibility is claimed.</p>
+            <p><strong>Control:</strong> D1-001 landed the canonical redacted composition producer; every apply binds its exact digest and revalidates runtime inputs before materialization/publication.</p>
           </article>
           <article class="risk">
             <div class="risk-head"><h3>FUSE operational drag</h3><span class="severity">P2</span></div>
@@ -1211,7 +1213,7 @@
 
         <div class="review-path">
           <article class="review-step">
-            <div><h3>Validate the v1 product contract</h3><p>Confirm one Docker host, at least two exact-host landings, current member auth, distinct authorized workspaces, and each deployed agent as workspace <code>default</code>.</p></div>
+            <div><h3>Validate the v1 product contract</h3><p>Confirm one Docker host, three exact-host landings, current member auth, three distinct authorized workspaces, and each deployed agent as workspace <code>default</code>.</p></div>
             <a href="VISION.md">VISION</a>
           </article>
           <article class="review-step">
@@ -1279,35 +1281,35 @@
   <script>
     const packages = [
       {
-        id: "p0", phase: "P0", title: "Decisions", category: "critical", status: "active",
-        subtitle: "Workspace-first decision 21 and consumption decision 22 are merged; topology decision 23 is the binding follow-up.",
+        id: "p0", phase: "P0", title: "Decisions", category: "critical", status: "merged",
+        subtitle: "Workspace authority, consumption, and Docker topology decisions 21–23 are accepted.",
         starts: "None",
         outcome: "Workspace authority plus one Docker host with N site/workspace/default bindings; dedicated VM is variant 2.",
         boundary: "No implementation. Later packages consume these rulings instead of reopening them.",
-        gate: "Decisions 21/22 landed via #617/#632. Decision 23 must land in this follow-up before P6-R or D1 dispatch.",
+        gate: "Decisions 21–23 are accepted and consumed by landed P6-R, D1-R0, and D1-001…003.",
         docs: [["Plan", "work/P0-adr/PLAN.md"], ["TODO", "work/P0-adr/TODO.md"], ["Handoff", "work/P0-adr/HANDOFF.md"]]
       },
       {
-        id: "p1", phase: "P1", title: "Core boundary correction", category: "critical", status: "active",
-        subtitle: "Separate core from Fastify/providers while preserving workspace-backed execution.",
+        id: "p1", phase: "P1", title: "Core boundary correction", category: "critical", status: "merged",
+        subtitle: "Core relocation, request-binding lifecycle, and fail-closed readiness are landed.",
         starts: "P0",
         outcome: "A narrow core facade, deterministic workspace composition, and bounded agent-local lifecycle/readiness.",
         boundary: "Workspace remains the v1 authorization/composition authority; no public pure mode or T1 durability work.",
-        gate: "#616/#622/#626/#627/#630/#631 are landed. P1-R is the exact six-production-file/two-test micro-contract in PR-PLAN; verify ancestry before status changes.",
+        gate: "#616/#622/#626/#627/#630/#631 and readiness recut #642 are ancestry-verified on main.",
         docs: [["Plan", "work/P1-headless-core/PLAN.md"], ["TODO", "work/P1-headless-core/TODO.md"], ["Handoff", "work/P1-headless-core/HANDOFF.md"]]
       },
       {
-        id: "m1", phase: "M1", title: "Managed MCP ingress", category: "leaf", status: "deferred",
-        subtitle: "Priority-2 consumer ingress after the multi-agent Docker host.",
-        starts: "P6-R and D1 host composition",
+        id: "m1", phase: "M1", title: "Managed MCP ingress", category: "leaf", status: "merged",
+        subtitle: "Delivery-v0, full-app composition, and stock-client proof landed via #650.",
+        starts: "Landed #650; feeds AR1",
         outcome: "Bearer/host policy proves current membership, resolves one concrete workspace, its bound deployment, and explicit default agent before returning bounded self-contained output.",
         boundary: "Tool args grant no routing. The bounded process-local receipt key is subjectId + workspaceId + deploymentId + agentId + idempotencyKey; there is no restart durability, canonical-definition, public-demo, or exposure-policy ownership.",
-        gate: "Recut #549/#556 on current main. Stock-client smoke proves auth denials/retry dedupe plus one authorized complete UTF-8 Markdown artifact <=256 KiB with digest; path-only, truncated, binary, malformed, missing, changed, and oversize output fails stably.",
+        gate: "#650 supersedes #549/#556 and proves the bounded authenticated stock-client delivery-v0 path.",
         docs: [["Plan", "work/M1-mcp-managed-agent/PLAN.md"], ["TODO", "work/M1-mcp-managed-agent/TODO.md"], ["Handoff", "work/M1-mcp-managed-agent/HANDOFF.md"]]
       },
       {
-        id: "ar1", phase: "AR1", title: "Shareable artifacts", category: "leaf", status: "needs-spec",
-        subtitle: "Specify immutable share links and authorized consumer-workspace intake.",
+        id: "ar1", phase: "AR1", title: "Shareable artifacts", category: "leaf", status: "ready",
+        subtitle: "Owner-ratified lane split is ready for dispatch after the D1 priority path.",
         starts: "M1 authenticated consumer ingress shape",
         outcome: "A producer publishes one pinned artifact link; an authorized consumer opens it and lands the artifact in its own workspace.",
         boundary: "Link capability authorizes one artifact; destination-workspace membership separately authorizes materialization. No E1/P2/X1 dependency.",
@@ -1379,11 +1381,11 @@
       },
       {
         id: "p5a", phase: "P5a", title: "Conditional host support", category: "critical", status: "deferred",
-        subtitle: "Add only a secret-ref or readiness seam demonstrated by D1-R0.",
-        starts: "D1 named Docker-host needs",
+        subtitle: "No separate P5a package code was needed through landed D1-003.",
+        starts: "Only a future named D1 host gap",
         outcome: "Only a D1-demonstrated host-readiness or secret-reference seam; D1 owns desired digest, apply, and rollback.",
         boundary: "No advanced SDK archive, managed-service, or remote-mount generality without a consumer.",
-        gate: "D1-R0 records no P5a code is needed or names one missing seam; any slice proves only that seam and no leakage.",
+        gate: "D1 owns the landed file runtime-input adapter. Add P5a code only for a new demonstrated host gap and prove no leakage.",
         docs: [["Plan", "work/P5-provisioning-secrets/PLAN.md"], ["TODO", "work/P5-provisioning-secrets/TODO.md"], ["V1 handoff", "work/P5-provisioning-secrets/P5A-HANDOFF.md"]]
       },
       {
@@ -1392,13 +1394,13 @@
         starts: "P6-D + P1 lifecycle/readiness",
         outcome: "One immutable resolved value over a verified bundle/deployment plus a host-attested composition digest and explicit default binding.",
         boundary: "No generation store, environment registry, plugin loader, per-agent plugin selection, or new workspace bundle schema.",
-        gate: "P6-R is deterministic over its inputs; D1-001 owns the missing canonical redacted composition-digest producer before D1 claims reproducible rollback.",
+        gate: "P6-R is deterministic over its inputs; landed D1-001 supplies the canonical redacted composition digest consumed by revision apply and rollback.",
         docs: [["Plan", "work/P6-plugin-child-app/PLAN.md"], ["TODO", "work/P6-plugin-child-app/TODO.md"], ["V1 handoff", "work/P6-plugin-child-app/P6-V1-HANDOFF.md"]]
       },
       {
         id: "d1", phase: "D1", title: "Multi-agent EU Docker delivery", category: "critical", status: "active",
-        subtitle: "D1-R0 passed adversarial review; micro-beads dispatch after the spec merges.",
-        starts: "Merge D1-R0-SPEC, then D1-001; P2/runsc and P5a are not gates",
+        subtitle: "D1-R0 and D1-001…003 are landed; trusted host surface work is active.",
+        starts: "D1-004a1 proxy policy, then active reader, Host scope, landing/readiness, authority fences, atomic boot, and EU proof",
         outcome: "One Docker host, N exact-host landings, member auth, authorized workspace/default bindings, uninterrupted additive apply, and rollback as a new revision.",
         boundary: "Host mutation is an OS-authorized local CLI only. Bound hostnames fence existing workspace list/create/switch/delete/default-auto-create paths; no app management API.",
         gate: "Three bindings, final-activation requirement validation, ordinary-member host-mutation denial, workspace lifecycle fences, stable-process N+1 continuity, active-replacement refusal, shared-host sibling isolation, cross-binding denial, rollback-as-new-revision, and no-secret proof. Dedicated VM is documentation/config-render only.",
