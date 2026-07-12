@@ -1,6 +1,7 @@
 import type { preHandlerHookHandler } from 'fastify'
 import type { MemberRole } from '../../shared/types.js'
 import { HttpError, ERROR_CODES } from '../../shared/errors.js'
+import { authorizeRequestScopedWorkspace } from './requestWorkspaceScope.js'
 
 const ROLE_LEVELS: Record<MemberRole, number> = {
   viewer: 0,
@@ -27,6 +28,8 @@ export function requireWorkspaceMember(
         'requireWorkspaceMember: missing :id param — route must include :id',
       )
     }
+
+    if (await authorizeRequestScopedWorkspace(request, workspaceId, minimumRole) !== null) return
 
     if (!WORKSPACE_ID_RE.test(workspaceId)) {
       throw new HttpError({

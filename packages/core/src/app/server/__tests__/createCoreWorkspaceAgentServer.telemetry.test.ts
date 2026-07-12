@@ -86,9 +86,14 @@ vi.mock('../../../server/auth/index.js', () => ({
 }))
 
 vi.mock('../../../server/app/index.js', () => ({
-  createCoreApp: async (config: CoreConfig) => {
+  createCoreApp: async (config: CoreConfig, options?: { requestScopeResolver?: (request: unknown) => Promise<unknown> }) => {
     const app = Fastify({ logger: false })
     app.decorate('config', config)
+    if (options?.requestScopeResolver) {
+      app.addHook('onRequest', async (request) => {
+        request.requestScope = await options.requestScopeResolver!(request) as never
+      })
+    }
     app.log.debug = (...args: unknown[]) => {
       coreAppMock.debugLogs.push(args)
     }
@@ -304,6 +309,35 @@ describe('createCoreWorkspaceAgentServer telemetry wiring', () => {
       }
 
       expect(handler).toHaveBeenCalledTimes(2)
+    } finally {
+      await app.close()
+    }
+  })
+
+  it('overwrites the private auth scope header from trusted request scope', async () => {
+    const app = await createCoreWorkspaceAgentServer({
+      serveFrontend: false,
+      telemetry: { capture: vi.fn() },
+      requestScopeResolver: async () => ({
+        bindingId: 'binding-bound',
+        workspaceId: 'workspace-保险',
+        defaultDeploymentId: 'deployment-bound',
+        activeRevision: 'revision-bound',
+      }),
+    })
+    const handler = vi.fn(async () => new Response('ok'))
+    app.auth.handler = handler as typeof app.auth.handler
+
+    try {
+      await app.inject({
+        method: 'POST',
+        url: '/auth/test',
+        headers: { 'x-boring-internal-request-workspace': 'workspace-attacker' },
+        payload: {},
+      })
+
+      const forwarded = handler.mock.calls[0]?.[0] as Request
+      expect(forwarded.headers.get('x-boring-internal-request-workspace')).toBe(encodeURIComponent('workspace-保险'))
     } finally {
       await app.close()
     }
