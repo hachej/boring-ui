@@ -9,4 +9,6 @@ export type {
   WorkspaceStore,
   AuthProvider,
   CapabilitiesContributor,
+  CoreRequestScope,
+  CoreRequestScopeResolver,
 } from './types.js'

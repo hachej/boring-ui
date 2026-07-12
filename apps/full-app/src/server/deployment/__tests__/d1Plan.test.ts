@@ -69,6 +69,17 @@ describe('parseD1HostPlan', () => {
     }
   })
 
+  it.each(['192.168.1.1', '127.1', '127.0.0.01', '0127.0.0.1', '0x7f.0.0.1'])(
+    'rejects IP-like hostname %s',
+    (hostname) => {
+      expect(() => parseD1HostPlan(plan({ bindings: [binding('a', { hostname })] })))
+        .toThrow(expect.objectContaining({
+          code: D1HostErrorCode.PLAN_INVALID,
+          details: { field: 'bindings[0].hostname' },
+        }))
+    },
+  )
+
   it('admits only binding ids whose .env filename fits NAME_MAX', () => {
     const longest = 'a'.repeat(251)
     expect(parseD1HostPlan(plan({ bindings: [{ ...binding('a'), bindingId: longest }] })).bindings[0].bindingId).toBe(longest)

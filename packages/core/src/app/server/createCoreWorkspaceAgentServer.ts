@@ -52,6 +52,7 @@ import {
   registerRoutes,
   type UserStore,
   type WorkspaceStore,
+  type CoreRequestScopeResolver,
 } from '../../server/app/index.js'
 import {
   registerInviteRoutes,
@@ -181,6 +182,7 @@ export interface CreateCoreWorkspaceAgentServerOptions
   telemetry?: TelemetrySink
   /** Verified actor resolver exposed only to boot-time internal plugins. */
   trustedPluginActorResolver?: NonNullable<WorkspaceAgentServerPluginContext['trusted']>['actorResolver']
+  requestScopeResolver?: CoreRequestScopeResolver
 }
 
 type AgentPiOptions = RegisterAgentRoutesOptions['pi']
@@ -617,7 +619,7 @@ async function registerFrontendFallback(
   })
 }
 
-async function createCoreRuntime(config: CoreConfig, customTelemetry?: TelemetrySink): Promise<{
+async function createCoreRuntime(config: CoreConfig, customTelemetry?: TelemetrySink, requestScopeResolver?: CoreRequestScopeResolver): Promise<{
   app: CoreWorkspaceAgentServer
   sql: postgres.Sql
   db: Database
@@ -637,7 +639,7 @@ async function createCoreRuntime(config: CoreConfig, customTelemetry?: Telemetry
     config.encryption.workspaceSettingsKey,
   )
 
-  const app = await createCoreApp(config) as CoreWorkspaceAgentServer
+  const app = await createCoreApp(config, { requestScopeResolver }) as CoreWorkspaceAgentServer
   // Resolve the telemetry sink here (db exists now) so the auth hooks get a plain sink.
   const telemetry = customTelemetry ?? createDatabaseTelemetryFromEnv(db, { appId: config.appId }, process.env)
   const telemetrySource = customTelemetry
@@ -699,7 +701,7 @@ export async function createCoreWorkspaceAgentServer(
   assertCoreStaticPluginEntries(options.plugins)
 
   const config = options.config ?? (await loadConfig(resolveCoreLoadConfigOptions(options)))
-  const { app, sql, db, userStore, workspaceStore, telemetry } = await createCoreRuntime(config, options.telemetry)
+  const { app, sql, db, userStore, workspaceStore, telemetry } = await createCoreRuntime(config, options.telemetry, options.requestScopeResolver)
   const appRoot = options.appRoot
   const serveFrontend =
     options.serveFrontend ?? (process.env.NODE_ENV !== 'development' && Boolean(appRoot))
