@@ -109,7 +109,7 @@ export function TaskCard({ task, draggable, unmapped = false, deleteEnabled = fa
   const [optimisticSessionIds, setOptimisticSessionIds] = useState<ReadonlySet<string>>(new Set())
   const chatButtonRef = useRef<HTMLButtonElement>(null)
   const mountedRef = useRef(false)
-  const openChatRequestSeqRef = useRef(0)
+  const navigationGenerationRef = useRef(0)
   const shell = useWorkspaceShellCapabilities()
   const pluginClient = useWorkspacePluginClient()
   const sessionActivity = useTaskSessionActivity()
@@ -155,17 +155,29 @@ export function TaskCard({ task, draggable, unmapped = false, deleteEnabled = fa
 
   const stopCardAction = (event: MouseEvent<HTMLElement>) => event.stopPropagation()
 
+  const invalidatePendingNavigation = useCallback(() => {
+    navigationGenerationRef.current += 1
+  }, [])
+
+  const beginNavigation = useCallback(() => {
+    const generation = navigationGenerationRef.current + 1
+    navigationGenerationRef.current = generation
+    return () => mountedRef.current && navigationGenerationRef.current === generation
+  }, [])
+
   useEffect(() => {
     mountedRef.current = true
     return () => {
       mountedRef.current = false
-      openChatRequestSeqRef.current += 1
+      invalidatePendingNavigation()
     }
-  }, [])
+  }, [invalidatePendingNavigation])
 
   useEffect(() => {
-    openChatRequestSeqRef.current += 1
-  }, [task.adapterId, task.id])
+    invalidatePendingNavigation()
+    setOpeningChat(false)
+    setCheckingChatActivity(false)
+  }, [invalidatePendingNavigation, task.adapterId, task.id])
 
   const refreshSessionActivity = useCallback(async (links: BoringTaskSessionBinding[]): Promise<TaskSessionActivityRefreshResult> => {
     return await sessionActivity.refreshSessionIds(links.map((link) => link.sessionId))
@@ -213,7 +225,7 @@ export function TaskCard({ task, draggable, unmapped = false, deleteEnabled = fa
     return () => window.removeEventListener("boring:chat-session-status", onSessionStatus)
   }, [linkedSessionIds, optimisticSessionIds, sessionActivity.setOptimisticActivity])
 
-  const openLinkedChat = async (link: BoringTaskSessionBinding, anchor?: WorkspaceShellAnchorRect, shouldContinue: () => boolean = () => mountedRef.current): Promise<boolean> => {
+  const openLinkedChat = async (link: BoringTaskSessionBinding, anchor?: WorkspaceShellAnchorRect, shouldContinue: () => boolean = beginNavigation()): Promise<boolean> => {
     const sessions = await pluginClient.getJson<PiSessionSummary[]>(`/api/v1/agent/pi-chat/sessions?limit=1&activeSessionId=${encodeURIComponent(link.sessionId)}`)
     if (!shouldContinue()) return false
     const session = sessions.find((candidate) => candidate.id === link.sessionId)
@@ -230,7 +242,7 @@ export function TaskCard({ task, draggable, unmapped = false, deleteEnabled = fa
     return true
   }
 
-  const createAndLinkChat = async (anchor?: WorkspaceShellAnchorRect, shouldContinue: () => boolean = () => mountedRef.current) => {
+  const createAndLinkChat = async (anchor?: WorkspaceShellAnchorRect, shouldContinue: () => boolean = beginNavigation()) => {
     setOpeningChat(true)
     setSessionError(null)
     try {
@@ -275,9 +287,7 @@ export function TaskCard({ task, draggable, unmapped = false, deleteEnabled = fa
     if (checkingChatActivity) return
     const anchor = rectFromElement(event.currentTarget)
     const panelWasOpen = sessionPanelOpen
-    const requestId = openChatRequestSeqRef.current + 1
-    openChatRequestSeqRef.current = requestId
-    const shouldContinue = () => mountedRef.current && openChatRequestSeqRef.current === requestId
+    const shouldContinue = beginNavigation()
     setSessionError(null)
     setCheckingChatActivity(true)
     void (async () => {
@@ -319,6 +329,9 @@ export function TaskCard({ task, draggable, unmapped = false, deleteEnabled = fa
 
   const unlinkSession = (event: MouseEvent<HTMLButtonElement>, link: BoringTaskSessionBinding) => {
     stopCardAction(event)
+    invalidatePendingNavigation()
+    setOpeningChat(false)
+    setCheckingChatActivity(false)
     setSessionError(null)
     setSessionLinks((current) => current.filter((candidate) => candidate.id !== link.id))
     setOptimisticSessionIds((current) => {
@@ -366,7 +379,8 @@ export function TaskCard({ task, draggable, unmapped = false, deleteEnabled = fa
   }
 
   const closeSessionPanel = () => {
-    openChatRequestSeqRef.current += 1
+    invalidatePendingNavigation()
+    setOpeningChat(false)
     setCheckingChatActivity(false)
     setSessionPanelOpen(false)
     chatButtonRef.current?.focus()

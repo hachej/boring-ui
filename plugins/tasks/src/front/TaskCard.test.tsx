@@ -547,6 +547,120 @@ describe("TaskCard task chat sessions", () => {
     expect(openDetachedChat).toHaveBeenCalledWith("pi-new", expect.objectContaining({ title: "#612: Wire sessions", initialDraft: expect.stringContaining("Task ID: task-1") }))
   })
 
+  it("does not navigate when a linked-row Open resolves after the panel closes", async () => {
+    const existing = link()
+    const pendingSessionLookup = deferred<Array<{ id: string; title: string }>>()
+    postJson.mockImplementation(async (path: string) => {
+      if (path === "/api/boring-tasks/sessions/list") return { links: [existing] }
+      if (path === "/api/v1/agent/pi-chat/sessions/activity") return { activities: [{ sessionId: "pi-1", status: "idle", source: "persisted" }], omittedSessionIds: [] }
+      throw new Error(`unexpected post ${path}`)
+    })
+    getJson.mockReturnValue(pendingSessionLookup.promise)
+
+    renderCard()
+    fireEvent.click(await screen.findByRole("button", { name: /open chat/i }))
+    fireEvent.click(await screen.findByRole("button", { name: "Open" }))
+    fireEvent.click(screen.getByRole("button", { name: "Close task chats" }))
+
+    await act(async () => {
+      pendingSessionLookup.resolve([{ id: "pi-1", title: "#612: Wire sessions" }])
+      await pendingSessionLookup.promise
+      await Promise.resolve()
+    })
+
+    expect(openDetachedChat).not.toHaveBeenCalled()
+    expect(screen.queryByRole("region", { name: /linked chat sessions/i })).not.toBeInTheDocument()
+  })
+
+  it("does not navigate when a linked-row Open resolves after unlink", async () => {
+    const existing = link()
+    const pendingSessionLookup = deferred<Array<{ id: string; title: string }>>()
+    postJson.mockImplementation(async (path: string, body: { bindingId?: string }) => {
+      if (path === "/api/boring-tasks/sessions/list") return { links: [existing] }
+      if (path === "/api/v1/agent/pi-chat/sessions/activity") return { activities: [{ sessionId: "pi-1", status: "idle", source: "persisted" }], omittedSessionIds: [] }
+      if (path === "/api/boring-tasks/sessions/unlink") {
+        expect(body.bindingId).toBe("link-1")
+        return { ok: true }
+      }
+      throw new Error(`unexpected post ${path}`)
+    })
+    getJson.mockReturnValue(pendingSessionLookup.promise)
+
+    renderCard()
+    fireEvent.click(await screen.findByRole("button", { name: /open chat/i }))
+    fireEvent.click(await screen.findByRole("button", { name: "Open" }))
+    fireEvent.click(screen.getByRole("button", { name: "Unlink" }))
+
+    await act(async () => {
+      pendingSessionLookup.resolve([{ id: "pi-1", title: "#612: Wire sessions" }])
+      await pendingSessionLookup.promise
+      await Promise.resolve()
+    })
+
+    expect(openDetachedChat).not.toHaveBeenCalled()
+    expect(await screen.findByText("No linked chats yet.")).toBeInTheDocument()
+  })
+
+  it("does not open a Start new chat navigation after the panel closes", async () => {
+    const existing = link()
+    const pendingCreate = deferred<{ id: string }>()
+    postJson.mockImplementation(async (path: string) => {
+      if (path === "/api/boring-tasks/sessions/list") return { links: [existing] }
+      if (path === "/api/v1/agent/pi-chat/sessions/activity") return { activities: [{ sessionId: "pi-1", status: "idle", source: "persisted" }], omittedSessionIds: [] }
+      if (path === "/api/v1/agent/pi-chat/sessions") return pendingCreate.promise
+      if (path === "/api/boring-tasks/sessions/link") return { link: link({ id: "link-new", sessionId: "pi-new" }) }
+      throw new Error(`unexpected post ${path}`)
+    })
+
+    renderCard()
+    fireEvent.click(await screen.findByRole("button", { name: /open chat/i }))
+    fireEvent.click(await screen.findByRole("button", { name: "Start new chat" }))
+    await waitFor(() => expect(postJson).toHaveBeenCalledWith("/api/v1/agent/pi-chat/sessions", { title: "#612: Wire sessions" }))
+    fireEvent.click(screen.getByRole("button", { name: "Close task chats" }))
+
+    await act(async () => {
+      pendingCreate.resolve({ id: "pi-new" })
+      await pendingCreate.promise
+      await Promise.resolve()
+    })
+
+    expect(postJson).not.toHaveBeenCalledWith("/api/boring-tasks/sessions/link", expect.anything())
+    expect(openDetachedChat).not.toHaveBeenCalled()
+  })
+
+  it("does not open a Start new chat navigation after the task is removed from the card", async () => {
+    const existing = link()
+    const replacementTask = { ...task, id: "task-removed", number: "#613", title: "Replacement" }
+    const pendingCreate = deferred<{ id: string }>()
+    const onDragStart = vi.fn()
+    const onDragEnd = vi.fn()
+    postJson.mockImplementation(async (path: string, body: { taskId?: string } = {}) => {
+      if (path === "/api/boring-tasks/sessions/list") return { links: body.taskId === "task-removed" ? [] : [existing] }
+      if (path === "/api/v1/agent/pi-chat/sessions/activity") return { activities: [{ sessionId: "pi-1", status: "idle", source: "persisted" }], omittedSessionIds: [] }
+      if (path === "/api/v1/agent/pi-chat/sessions") return pendingCreate.promise
+      if (path === "/api/boring-tasks/sessions/link") return { link: link({ id: "link-new", sessionId: "pi-new" }) }
+      throw new Error(`unexpected post ${path}`)
+    })
+
+    const { rerender } = render(<TaskCard task={task} draggable={false} onDragStart={onDragStart} onDragEnd={onDragEnd} />)
+    fireEvent.click(await screen.findByRole("button", { name: /open chat/i }))
+    fireEvent.click(await screen.findByRole("button", { name: "Start new chat" }))
+    await waitFor(() => expect(postJson).toHaveBeenCalledWith("/api/v1/agent/pi-chat/sessions", { title: "#612: Wire sessions" }))
+    await act(async () => {
+      rerender(<TaskCard task={replacementTask} draggable={false} onDragStart={onDragStart} onDragEnd={onDragEnd} />)
+      await Promise.resolve()
+    })
+
+    await act(async () => {
+      pendingCreate.resolve({ id: "pi-new" })
+      await pendingCreate.promise
+      await Promise.resolve()
+    })
+
+    expect(postJson).not.toHaveBeenCalledWith("/api/boring-tasks/sessions/link", expect.anything())
+    expect(openDetachedChat).not.toHaveBeenCalled()
+  })
+
   it("shows linked sessions, reopens an available session, and unlinks", async () => {
     const existing = link()
     postJson.mockImplementation(async (path: string, body: { bindingId?: string }) => {
