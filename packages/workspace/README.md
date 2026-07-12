@@ -71,6 +71,51 @@ do not set `lazy: true`.
 | `@hachej/boring-workspace/app/server` | Node | App composition: `createWorkspaceAgentServer` |
 | `@hachej/boring-workspace/globals.css` | Browser | Global CSS for the workspace chrome |
 
+## Files panel: multi-root filesystems
+
+The built-in `FileTreePane` shows a single filesystem root by default (today's
+behavior — no dropdown, no extra chrome). Host apps that expose additional
+governed filesystems (e.g. a shared `company_context`) can pass a `roots` list;
+the panel then renders a **dropdown** at the top to switch the active filesystem
+and shows one root's tree at a time.
+
+```tsx
+import { FileTreePane, type FileTreeRootConfig } from "@hachej/boring-workspace"
+
+const roots: FileTreeRootConfig[] = [
+  { filesystem: "user", label: "Workspace", rootDir: ".", access: "readwrite" },
+  { filesystem: "company_context", label: "Company", rootDir: "/", access: "readonly" },
+]
+
+<FileTreePane roots={roots} />
+```
+
+`FileTreeRootConfig`:
+
+| Field | Required | Meaning |
+| --- | --- | --- |
+| `filesystem` | yes | Filesystem id threaded to the file routes (`?filesystem=…`). `"user"` is the default workspace root. |
+| `label` | yes | Text shown in the switcher dropdown. |
+| `rootDir` | no | Root directory for the tree (defaults to `.` for `user`, `/` otherwise). |
+| `access` | no | `"readonly"` hides all mutating affordances (new/rename/delete/drag) for that root; defaults to `"readwrite"`. |
+| `searchPlaceholder` | no | Per-root placeholder for the search input. |
+
+Notes:
+
+- **Additive & backward-compatible.** Omitting `roots` (or passing a single
+  entry) preserves the exact single-root UI — the switcher is hidden.
+- **Governance-agnostic.** The workspace package never imports governance. The
+  host supplies the roots list — a governed app (e.g. via
+  `boring-governance` bindings or a tenant `…/governance/usage` response) maps
+  its per-user filesystem access into `FileTreeRootConfig[]`.
+- **Isolated errors.** A `403`/`404` on one root renders an inline "Failed to
+  load files" state inside the pane while the dropdown stays usable to switch
+  to another root — it never blanks the whole panel.
+
+See the multi-filesystem playground fixture in
+`apps/workspace-playground/src/front/App.tsx` (guarded by
+`VITE_PLAYGROUND_MULTI_FS=1`) for a working consumer.
+
 ## Documentation
 
 See [`docs/README.md`](./docs/README.md) for the architecture overview, key
