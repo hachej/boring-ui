@@ -8,6 +8,7 @@
     "build": "pnpm --filter @hachej/boring-ui-kit build && pnpm --filter @hachej/boring-agent build && pnpm --filter @hachej/boring-bash build && pnpm --filter @hachej/boring-workspace build && pnpm --filter @hachej/boring-core build && pnpm --filter @hachej/boring-mcp build && pnpm --filter @hachej/boring-governance build && tsx ../../packages/workspace/scripts/build-app.mts",
     "start": "NODE_ENV=production node dist/server/main.js",
     "start:worker": "NODE_ENV=production node dist/server/agent-worker.js",
+    "d1:revision": "node dist/server/deployment/d1CommandWrapper.js",
     "migrate": "tsx src/server/migrate.ts",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
