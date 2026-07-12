@@ -2,6 +2,7 @@ import Fastify from 'fastify'
 import { afterEach, expect, test, vi } from 'vitest'
 import { gitRoutes } from '../git'
 import { __gitTestUtils } from '../../../git/gitFileUrl'
+import { createNodeWorkspace } from '../../../workspace/createNodeWorkspace'
 
 afterEach(() => {
   vi.restoreAllMocks()
@@ -10,7 +11,7 @@ afterEach(() => {
 function buildApp(workspaceRoot?: string) {
   const app = Fastify({ logger: false })
   app.register(gitRoutes, {
-    getWorkspaceRoot: workspaceRoot === undefined ? undefined : () => workspaceRoot,
+    workspace: workspaceRoot === undefined ? undefined : createNodeWorkspace(workspaceRoot),
   })
   return app
 }

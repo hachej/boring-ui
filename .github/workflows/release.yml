@@ -32,9 +32,9 @@ jobs:
         run: |
           tag="${{ github.event.release.tag_name }}"
           expected="${tag#v}"
-          actual=$(node -p "require('./packages/cli/package.json').version")
+          actual=$(node -p "require('./package.json').version")
           if [ "$expected" != "$actual" ]; then
-            echo "Tag $tag (=> $expected) does not match package version $actual"
+            echo "Tag $tag (=> $expected) does not match root package version $actual"
             echo "Bump packages with: node scripts/version.mjs <patch|minor|major>"
             exit 1
           fi

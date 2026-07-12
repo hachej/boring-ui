@@ -19,7 +19,7 @@ case "$bump" in patch|minor|major) ;; *)
 esac
 
 # Refuse to bump from a dirty tree — the release commit must contain only
-# the version bumps so the tag points at a known state.
+# version markers and required generated release evidence.
 if ! git diff --quiet || ! git diff --cached --quiet; then
   echo "Working tree is dirty. Commit or stash first." >&2
   exit 1
@@ -38,13 +38,17 @@ if [ "$(git rev-parse HEAD)" != "$(git rev-parse origin/main)" ]; then
   exit 1
 fi
 
-before=$(node -p "require('./packages/cli/package.json').version")
+before=$(node -p "require('./package.json').version")
 node scripts/version.mjs "$bump"
-after=$(node -p "require('./packages/cli/package.json').version")
+after=$(node -p "require('./package.json').version")
 node scripts/version.mjs --check
+pnpm golden-path:timing
+pnpm check:golden-path
 pnpm audit:publish-manifests
 
 release_files=(
+  package.json
+  docs/issues/391/runtime-refactor/golden-path.json
   packages/core/package.json
   packages/plugin-cli/package.json
   packages/workspace/package.json
