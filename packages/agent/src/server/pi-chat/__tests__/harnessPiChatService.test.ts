@@ -219,6 +219,76 @@ describe('HarnessPiChatService', () => {
     await expect(closed).resolves.toBeUndefined()
   })
 
+  it('manageSessions caps authorized search and filters compact results without opening a Pi adapter', async () => {
+    const adapter = createAdapter()
+    const sessions = [
+      { id: 's1', title: 'Feature work', createdAt: '2026-07-01T00:00:00.000Z', updatedAt: '2026-07-01T00:10:00.000Z', turnCount: 1 },
+      { id: 's2', title: 'Bug triage', createdAt: '2026-07-01T00:00:00.000Z', updatedAt: '2026-07-01T00:09:00.000Z', turnCount: 2 },
+    ]
+    const list = vi.fn(async () => sessions)
+    const harness = createHarness(adapter)
+    const service = new HarnessPiChatService({
+      harness,
+      sessionStore: { ...sessionStore, list },
+      workdir: '/workspace',
+    })
+
+    const result = await service.manageSessions(ctx, { action: 'search', query: 'feature', limit: 500, offset: 2 })
+
+    expect(result).toEqual({
+      action: 'search',
+      sessions: [sessions[0]],
+      limit: 20,
+      offset: 2,
+      count: 1,
+    })
+    expect(list).toHaveBeenCalledWith({ workspaceId: 'workspace-a', userId: 'user-a' }, { limit: 20, offset: 2 })
+    expect(harness.getPiSessionAdapter).not.toHaveBeenCalled()
+  })
+
+  it('manageSessions defaults rename to the executing session and authorizes explicit IDs through rename', async () => {
+    const rename = vi.fn(async (_ctx, sessionId: string, title: string) => ({
+      id: sessionId,
+      title,
+      createdAt: '2026-07-01T00:00:00.000Z',
+      updatedAt: '2026-07-01T00:11:00.000Z',
+      turnCount: 0,
+    }))
+    const service = new HarnessPiChatService({
+      harness: createHarness(createAdapter()),
+      sessionStore: { ...sessionStore, rename },
+      workdir: '/workspace',
+    })
+
+    await expect(service.manageSessions(ctx, { action: 'rename', title: 'Current title' }, { executingSessionId: 'current-session' }))
+      .resolves.toMatchObject({ action: 'rename', session: { id: 'current-session', title: 'Current title' } })
+    await expect(service.manageSessions(ctx, { action: 'rename', sessionId: 'explicit-session', title: 'Explicit title' }, { executingSessionId: 'current-session' }))
+      .resolves.toMatchObject({ action: 'rename', session: { id: 'explicit-session', title: 'Explicit title' } })
+
+    expect(rename).toHaveBeenNthCalledWith(1, { workspaceId: 'workspace-a', userId: 'user-a' }, 'current-session', 'Current title')
+    expect(rename).toHaveBeenNthCalledWith(2, { workspaceId: 'workspace-a', userId: 'user-a' }, 'explicit-session', 'Explicit title')
+  })
+
+  it('manageSessions delete requires a non-current explicit session and preserves live delete cleanup', async () => {
+    const adapter = createAdapter()
+    const deleteSession = vi.fn(async () => {})
+    const service = new HarnessPiChatService({
+      harness: createHarness(adapter),
+      sessionStore: { ...sessionStore, delete: deleteSession },
+      workdir: '/workspace',
+    })
+    const subscription = await service.subscribe(ctx, 'other-session', 0, () => {})
+    expect(subscription.type).toBe('ok')
+
+    await expect(service.manageSessions(ctx, { action: 'delete', sessionId: 'current-session', confirm: true }, { executingSessionId: 'current-session' }))
+      .rejects.toMatchObject({ code: ErrorCode.enum.BRIDGE_COMMAND_INVALID })
+    await expect(service.manageSessions(ctx, { action: 'delete', sessionId: 'other-session', confirm: true }, { executingSessionId: 'current-session' }))
+      .resolves.toEqual({ action: 'delete', sessionId: 'other-session', deleted: true })
+
+    expect(adapter.abort).toHaveBeenCalledOnce()
+    expect(deleteSession).toHaveBeenCalledWith({ workspaceId: 'workspace-a', userId: 'user-a' }, 'other-session')
+  })
+
   it('aborts an interrupt-triggered replacement run before draining the interrupt', async () => {
     const adapter = createAdapter(['queued follow-up'])
     const replacement = deferred<void>()

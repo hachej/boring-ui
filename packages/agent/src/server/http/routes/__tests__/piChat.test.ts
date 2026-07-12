@@ -13,6 +13,7 @@ import type {
   QueueClearReceipt,
   StopReceipt,
 } from '../../../../shared/chat'
+import type { ManageSessionsInput, ManageSessionsOptions, ManageSessionsResult } from '../../../../core/piChatSessionService'
 import type { PiSessionRequestContext } from '../../../pi-chat/piSessionIdentity'
 import { PI_CHAT_CURSOR_AHEAD, PI_CHAT_REPLAY_GAP } from '../../../pi-chat/piChatReplayBuffer'
 import type { SessionListOptions } from '../../../../shared/session'
@@ -50,7 +51,7 @@ class FakePiChatService implements PiChatSessionService {
   events: PiChatEvent[] = []
   subscriptionResult: Awaited<ReturnType<PiChatSessionService['subscribe']>> | undefined
   readonly unsubscribe = vi.fn()
-  readonly calls: Array<{ method: string; ctx: PiSessionRequestContext; sessionId?: string; payload?: unknown; cursor?: number; options?: SessionListOptions }> = []
+  readonly calls: Array<{ method: string; ctx: PiSessionRequestContext; sessionId?: string; payload?: unknown; cursor?: number; options?: SessionListOptions | ManageSessionsOptions }> = []
 
   async listSessions(ctx: PiSessionRequestContext, options?: SessionListOptions) {
     this.calls.push({ method: 'listSessions', ctx, options })
@@ -76,6 +77,21 @@ class FakePiChatService implements PiChatSessionService {
   async deleteSession(ctx: PiSessionRequestContext, sessionId: string) {
     this.calls.push({ method: 'deleteSession', ctx, sessionId })
     this.sessions = this.sessions.filter((session) => session.id !== sessionId)
+  }
+
+  async manageSessions(ctx: PiSessionRequestContext, input: ManageSessionsInput, options?: ManageSessionsOptions): Promise<ManageSessionsResult> {
+    this.calls.push({ method: 'manageSessions', ctx, payload: input, options })
+    if (input.action === 'search') {
+      return { action: 'search', sessions: this.sessions, limit: input.limit ?? 10, offset: input.offset ?? 0, count: this.sessions.length }
+    }
+    if (input.action === 'rename') {
+      const sessionId = input.sessionId ?? options?.executingSessionId
+      if (!sessionId) throw Object.assign(new Error('sessionId is required'), { code: ErrorCode.enum.BRIDGE_COMMAND_INVALID, statusCode: 400 })
+      const session = await this.renameSession(ctx, sessionId, input.title)
+      return { action: 'rename', session }
+    }
+    await this.deleteSession(ctx, input.sessionId)
+    return { action: 'delete', sessionId: input.sessionId, deleted: true }
   }
 
   async readState(ctx: PiSessionRequestContext, sessionId: string): Promise<PiChatSnapshot> {
@@ -186,6 +202,54 @@ describe('piChatRoutes', () => {
       method: 'listSessions',
       options: { limit: 100, offset: 25, includeId: 'pi-older' },
     })
+
+    await app.close()
+  })
+
+  test('POST /sessions/manage forwards authenticated context and bounded input to the service', async () => {
+    const { app, service } = await buildApp()
+
+    const res = await app.inject({
+      method: 'POST',
+      url: '/api/v1/agent/pi-chat/sessions/manage',
+      headers: { 'x-boring-storage-scope': 'scope-a' },
+      payload: { action: 'search', query: 'running', limit: 20, offset: 1 },
+    })
+
+    expect(res.statusCode).toBe(200)
+    expect(res.json()).toMatchObject({ action: 'search', limit: 20, offset: 1 })
+    expect(service.calls[0]).toMatchObject({
+      method: 'manageSessions',
+      ctx: { workspaceId: 'workspace-a', storageScope: 'scope-a', authSubject: 'user-a', requestId: expect.any(String) },
+      payload: { action: 'search', query: 'running', limit: 20, offset: 1 },
+    })
+
+    await app.close()
+  })
+
+  test('POST /sessions/manage rejects invalid schema and maps stable service errors', async () => {
+    const service = new FakePiChatService()
+    const manageSessions = vi.spyOn(service, 'manageSessions').mockRejectedValue(Object.assign(new Error('session not found'), {
+      code: ErrorCode.enum.SESSION_NOT_FOUND,
+    }))
+    const { app } = await buildApp(service)
+
+    const invalid = await app.inject({
+      method: 'POST',
+      url: '/api/v1/agent/pi-chat/sessions/manage',
+      payload: { action: 'delete', sessionId: 'pi-1', confirm: false },
+    })
+    expect(invalid.statusCode).toBe(400)
+    expect(invalid.json().error).toMatchObject({ code: ErrorCode.enum.BRIDGE_COMMAND_INVALID })
+    expect(manageSessions).not.toHaveBeenCalled()
+
+    const missing = await app.inject({
+      method: 'POST',
+      url: '/api/v1/agent/pi-chat/sessions/manage',
+      payload: { action: 'rename', sessionId: 'missing', title: 'New title' },
+    })
+    expect(missing.statusCode).toBe(404)
+    expect(missing.json().error).toMatchObject({ code: ErrorCode.enum.SESSION_NOT_FOUND, message: 'session not found' })
 
     await app.close()
   })

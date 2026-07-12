@@ -48,6 +48,7 @@ import { withRuntimeEnvContributions, type RuntimeEnvContribution } from './runt
 import type { AgentHarness } from '../shared/harness'
 import type { AgentMeteringSink } from './pi-chat/metering'
 import { createPluginDiagnosticsTool } from './tools/pluginDiagnostics'
+import { createManageSessionsTool } from './tools/manageSessions'
 import { createAgentRuntimeBridge } from './createAgent'
 import {
   registerAgentRouteBindingProfile,
@@ -65,7 +66,7 @@ import type { WorkspaceAgentDispatcherContext } from '../shared/workspaceAgentDi
 
 const DEFAULT_VERSION = '0.1.0-dev'
 const DEFAULT_WORKSPACE_ID = 'default'
-const STANDARD_AGENT_TOOL_NAMES = ['bash', 'read', 'write', 'edit', 'find', 'grep', 'ls']
+const STANDARD_AGENT_TOOL_NAMES = ['bash', 'read', 'write', 'edit', 'find', 'grep', 'ls', 'manage_sessions']
 
 type AgentCapabilities = {
   agent: {
@@ -681,6 +682,7 @@ let runtimeProvisioning: WorkspaceProvisioningResult | undefined
           : undefined,
       }),
       ...buildUploadAgentTools(runtimeBundle),
+      createManageSessionsTool({ getService: () => binding?.piChatService }),
       ...(externalPluginsEnabled ? [createPluginDiagnosticsTool({
         // `binding` is assigned later in this function; read through thunks.
         getLastReloadDiagnostics: () => binding?.lastReloadDiagnostics ?? [],

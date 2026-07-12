@@ -26,6 +26,7 @@ selected runtime mode (see [runtime.md](./runtime.md)):
 | `execute_isolated_code` | Run code in an isolated sandbox capability |
 | `upload_file` | Upload a workspace file to blob storage |
 | `plugin_diagnostics` | Report loaded plugins and any load errors |
+| `manage_sessions` | Search authorized sessions, rename the current/authorized session, or delete another session with explicit confirmation |
 
 ## UI-bridge tools (workspace-owned)
 

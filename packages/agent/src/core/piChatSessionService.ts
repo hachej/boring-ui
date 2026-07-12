@@ -33,6 +33,26 @@ export type PiChatReplayRangeError =
   | { type: 'replay_gap'; latestSeq: number; minReplaySeq: number }
   | { type: 'cursor_ahead'; latestSeq: number; minReplaySeq: number }
 
+export type ManageSessionsInput =
+  | { action: 'search'; query?: string; limit?: number; offset?: number }
+  | { action: 'rename'; sessionId?: string; title: string }
+  | { action: 'delete'; sessionId: string; confirm: true }
+
+export type ManageSessionsResult =
+  | {
+      action: 'search'
+      sessions: SessionSummary[]
+      limit: number
+      offset: number
+      count: number
+    }
+  | { action: 'rename'; session: SessionSummary }
+  | { action: 'delete'; sessionId: string; deleted: true }
+
+export interface ManageSessionsOptions {
+  executingSessionId?: string
+}
+
 export interface PiChatEventStreamSubscription {
   type: 'ok'
   unsubscribe: () => void
@@ -49,6 +69,7 @@ export interface PiChatSessionService {
   createSession?(ctx: PiSessionRequestContext, init?: PiSessionCreateInit): Promise<SessionSummary>
   renameSession?(ctx: PiSessionRequestContext, sessionId: string, title: string): Promise<SessionSummary>
   deleteSession?(ctx: PiSessionRequestContext, sessionId: string): Promise<void>
+  manageSessions?(ctx: PiSessionRequestContext, input: ManageSessionsInput, options?: ManageSessionsOptions): Promise<ManageSessionsResult>
   readState(ctx: PiSessionRequestContext, sessionId: string): Promise<PiChatSnapshot>
   subscribe(ctx: PiSessionRequestContext, sessionId: string, cursor: number, subscriber: PiChatEventSubscriber): Promise<PiChatEventStreamResult>
   prompt(ctx: PiSessionRequestContext, sessionId: string, payload: PromptPayload): Promise<PromptReceipt>

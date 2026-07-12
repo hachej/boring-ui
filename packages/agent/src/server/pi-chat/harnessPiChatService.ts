@@ -6,6 +6,9 @@ import { sessionStreamPath, type AgentEvent } from '../../shared/events'
 import { ErrorCode } from '../../shared/error-codes'
 import { formatOffset, parseOffset, type EventStreamStore } from '../events/eventStreamStore'
 import type {
+  ManageSessionsInput,
+  ManageSessionsOptions,
+  ManageSessionsResult,
   PiChatEventStreamResult,
   PiChatEventSubscriber,
   PiChatSessionService,
@@ -21,6 +24,12 @@ import { buildPiChatHistory } from './piChatHistory'
 import { PiChatMeteringCoordinator, type AgentMeteringSink, type MeteringErrorLogger } from './metering'
 import { HarnessPiChatServiceLifecycle } from './piChatServiceLifecycle'
 import { normalizeSessionTitle } from '../sessionTitle'
+import {
+  normalizeManageSessionsLimit,
+  normalizeManageSessionsOffset,
+  normalizeManageSessionsQuery,
+  sessionManagementInvalidError,
+} from '../sessionManagement'
 
 type PiNativeHarness = AgentHarness & {
   getPiSessionAdapter?: (input: AgentSendInput, ctx: RunContext) => Promise<PiAgentSessionAdapter>
@@ -202,6 +211,53 @@ export class HarnessPiChatService implements PiChatSessionService {
 
   async deleteSession(ctx: PiSessionRequestContext, sessionId: string): Promise<void> {
     return this.lifecycle.run(() => this.deleteSessionBeforeDispose(ctx, sessionId))
+  }
+
+  async manageSessions(
+    ctx: PiSessionRequestContext,
+    input: ManageSessionsInput,
+    options: ManageSessionsOptions = {},
+  ): Promise<ManageSessionsResult> {
+    return this.lifecycle.run(async () => {
+      switch (input.action) {
+        case 'search': {
+          const limit = normalizeManageSessionsLimit(input.limit)
+          const offset = normalizeManageSessionsOffset(input.offset)
+          const query = normalizeManageSessionsQuery(input.query)
+          const sessions = await this.sessionStore.list(toSessionCtx(ctx), { limit, offset })
+          const filtered = query
+            ? sessions.filter((session) =>
+                session.id.toLowerCase().includes(query) ||
+                session.title.toLowerCase().includes(query),
+              )
+            : sessions
+          return {
+            action: 'search',
+            sessions: filtered,
+            limit,
+            offset,
+            count: filtered.length,
+          }
+        }
+        case 'rename': {
+          const sessionId = input.sessionId ?? options.executingSessionId
+          if (!sessionId) {
+            throw sessionManagementInvalidError('sessionId is required when no executing session is available', 'sessionId')
+          }
+          return { action: 'rename', session: await this.renameSession(ctx, sessionId, input.title) }
+        }
+        case 'delete': {
+          if (input.confirm !== true) {
+            throw sessionManagementInvalidError('confirm must be true to delete a session', 'confirm')
+          }
+          if (input.sessionId === options.executingSessionId) {
+            throw sessionManagementInvalidError('manage_sessions cannot delete the session that is currently executing', 'sessionId')
+          }
+          await this.deleteSession(ctx, input.sessionId)
+          return { action: 'delete', sessionId: input.sessionId, deleted: true }
+        }
+      }
+    })
   }
 
   private async deleteSessionBeforeDispose(ctx: PiSessionRequestContext, sessionId: string): Promise<void> {

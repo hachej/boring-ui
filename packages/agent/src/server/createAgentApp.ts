@@ -20,6 +20,7 @@ import { InMemorySessionChangesTracker } from './http/sessionChangesTracker'
 import { createRuntimeReadyStatusTracker } from './runtime/modeReadiness'
 import type { AgentMeteringSink } from './pi-chat/metering'
 import { createPluginDiagnosticsTool } from './tools/pluginDiagnostics'
+import { createManageSessionsTool } from './tools/manageSessions'
 import type { ReloadHookDiagnostic } from './http/routes/reload'
 import { createAgentRuntimeBridge } from './createAgent'
 import {
@@ -264,6 +265,7 @@ async function createWorkspaceAgentAppProfile(
   // plugin_diagnostics tool is added to the tool catalog before the harness
   // exists, and diagnostics accumulate on each /reload.
   let harnessRef: AgentHarness | undefined
+  let piChatServiceRef: PiChatSessionService | undefined
   let lastReloadDiagnostics: ReloadHookDiagnostic[] = []
 
   const tools: AgentTool[] = [
@@ -286,6 +288,7 @@ async function createWorkspaceAgentAppProfile(
           })
         : undefined,
     })),
+    createManageSessionsTool({ getService: () => piChatServiceRef }),
     ...(opts.extraTools ?? []),
     ...pluginTools,
     ...(externalPluginsEnabled ? [createPluginDiagnosticsTool({
@@ -330,6 +333,7 @@ async function createWorkspaceAgentAppProfile(
   opts.onWorkspaceAgentDispatcher?.(createStaticWorkspaceAgentDispatcherResolver(coreAgent.agent, sessionId))
   const harness = agentRuntime.harness
   harnessRef = harness
+  piChatServiceRef = agentRuntime.service as PiChatSessionService
   const readyTracker = createRuntimeReadyStatusTracker(modeAdapter, {
     harnessReady: true,
   })
