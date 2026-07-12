@@ -380,6 +380,21 @@ The user-facing D1-S1 vertical slice is the ordered stack D1-001 through
 D1-006. Each PR stays dark/additive until its own acceptance; no PR claims the
 three-agent exit early. P2/P5a do not gate any bead.
 
+**§8 budgets are planning estimates; landed beads supersede their rows.**
+D1-001 through D1-003 are LANDED (ancestry-verified against `origin/main`):
+D1-001 shipped as [#652](https://github.com/hachej/boring-ui/pull/652);
+D1-002 shipped as multiple PRs — codec
+([#653](https://github.com/hachej/boring-ui/pull/653)), store
+([#654](https://github.com/hachej/boring-ui/pull/654)), persistence
+([#660](https://github.com/hachej/boring-ui/pull/660)), command-engine
+([#662](https://github.com/hachej/boring-ui/pull/662)), and the locked
+revision command boundary/CLI
+([#665](https://github.com/hachej/boring-ui/pull/665)) — with the CLI files
+named `d1Command.ts`, `d1CommandCliProtocol.ts`, and `d1CommandEntry.ts` (not
+`cli.ts` as originally specced below); D1-003a shipped as
+[#667](https://github.com/hachej/boring-ui/pull/667). D1-004 through D1-006
+remain un-landed; their rows below are unchanged planning estimates.
+
 ### D1-001 — plan and composition identity (<= 400 net lines; 25 minutes)
 
 Files: new `apps/full-app/src/server/deployment/d1Plan.ts`,

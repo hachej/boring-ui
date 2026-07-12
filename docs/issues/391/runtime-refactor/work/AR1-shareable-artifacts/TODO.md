@@ -86,13 +86,19 @@ accepted; implementation beads are created from that accepted contract.
 ### AR1-004 - MCP resource for same-workspace share (new, S)
 
 - Dispatch now (spec §8 Lane W).
-- File area: expose the AR1-002 share entry as an MCP resource through the
-  existing M1/M2 resource seam (§3.2) — reuse, not a second MCP runtime owner.
+- File area: current M1/M2 servers expose MCP tools only — no MCP RESOURCE
+  (`listResources`/`readResource`) support exists yet. This bead BUILDS
+  minimal MCP resource support scoped to share entries; it does not reuse an
+  existing resource seam. Expose the AR1-002 share entry as that resource,
+  through the same server process as the M1/M2 tool surface (reuse of the
+  server/transport, not of resource machinery).
 - Proof requirement (spec §6.2 item 4): a machine consumer reads the same
   current file state through the MCP resource contract, membership-gated
   identically to the `/a/<id>` route.
-- Review budget: small — resource handler + one integration test against the
-  AR1-003 route's membership/tombstone behavior for parity.
+- Review budget: small-medium — new minimal MCP resource handler
+  (`listResources`/`readResource`) + resource-scoping to share entries + one
+  integration test against the AR1-003 route's membership/tombstone behavior
+  for parity.
 
 ## Exit
 

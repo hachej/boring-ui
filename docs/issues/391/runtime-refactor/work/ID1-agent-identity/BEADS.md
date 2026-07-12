@@ -45,9 +45,14 @@ boring beads, not server config.
 - **Acceptance:** Hydra boots in the D1 compose against Postgres; the migrate
   job is one-shot and idempotent on re-apply; admin API is unreachable from
   outside the internal network; footprint matches the spike (~42 MB image).
-- **Do NOT:** use sqlite; expose the admin API through ingress. **Default:**
-  dedicated Hydra Postgres service; reuse D1's external DB only if its
-  credentials provably allow a separate Hydra schema.
+- **Do NOT:** use sqlite; expose the admin API through ingress; add a
+  dedicated Hydra Postgres compose service. **Ruling (Fable, 2026-07-12,
+  owner-overridable):** Hydra's schema lives in the same EXTERNAL database D1
+  already requires — no compose DB service. A separate external instance is
+  used only if schema isolation is demanded. This conflicted with D1-003's
+  acceptance ("no database service is created") and D1-R0 §2/§10; the
+  dedicated-Hydra-Postgres-service default above is superseded by this
+  ruling. D1-003's no-compose-DB acceptance is unaffected.
 
 ### ID1-002 — login/consent UI (minimal, reuse app auth)
 
