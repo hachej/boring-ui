@@ -37,7 +37,7 @@ import {
   type WorkspaceServerPlugin,
 } from '@hachej/boring-workspace/server'
 import { createCoreWorkspaceBridge } from './coreWorkspaceBridge.js'
-import type { FastifyInstance, FastifyRequest } from 'fastify'
+import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify'
 import type postgres from 'postgres'
 import type { CoreConfig } from '../../shared/types.js'
 import { ERROR_CODES } from '../../shared/errors.js'
@@ -183,7 +183,13 @@ export interface CreateCoreWorkspaceAgentServerOptions
   /** Verified actor resolver exposed only to boot-time internal plugins. */
   trustedPluginActorResolver?: NonNullable<WorkspaceAgentServerPluginContext['trusted']>['actorResolver']
   requestScopeResolver?: CoreRequestScopeResolver
+  frontendRootHandler?: CoreFrontendRootHandler
 }
+
+export type CoreFrontendRootHandler = (
+  request: FastifyRequest,
+  reply: FastifyReply,
+) => boolean | Promise<boolean>
 
 type AgentPiOptions = RegisterAgentRoutesOptions['pi']
 
@@ -578,15 +584,23 @@ async function registerFrontendAuthPages(
   }
 }
 
-async function registerFrontendFallback(
-  app: CoreWorkspaceAgentServer,
+export async function registerFrontendFallback(
+  app: FastifyInstance,
   appRoot: string,
   telemetry: TelemetrySink,
+  rootHandler?: CoreFrontendRootHandler,
 ) {
   const frontDistDir = path.resolve(appRoot, 'dist/front')
   const indexPath = path.resolve(frontDistDir, 'index.html')
 
-  app.get('/', async (request, reply) => serveFrontendShell(request, reply, indexPath, telemetry))
+  if (rootHandler) {
+    app.get('/', async (request, reply) => {
+      if (await rootHandler(request, reply)) return reply
+      return serveFrontendShell(request, reply, indexPath, telemetry)
+    })
+  } else {
+    app.get('/', async (request, reply) => serveFrontendShell(request, reply, indexPath, telemetry))
+  }
 
   app.get('/*', async (request, reply) => {
     const pathname = request.url.split('?')[0] ?? '/'
@@ -996,7 +1010,7 @@ export async function createCoreWorkspaceAgentServer(
   }
 
   if (serveFrontend && appRoot) {
-    await registerFrontendFallback(app, appRoot, telemetry)
+    await registerFrontendFallback(app, appRoot, telemetry, options.frontendRootHandler)
   }
 
   return app
