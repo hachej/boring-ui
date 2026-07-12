@@ -27,6 +27,10 @@ The issue owns further scope detail; do not build a task queue/broker, A2A
 wire transport, or persistence beyond existing stores (guardrails "Do NOT
 build").
 
+**Ratified guard defaults (2026-07-12, platform defaults — owner-overridable;
+consumers may tighten):** consumption depth limit = 3; input-required timeout
+= 24h → canceled (resumable context).
+
 > Phase: Phase AC1 — marketplace consumption contract (separate from P6-R;
 > contracted mode after ID1)
 > Ordering authority: [INDEX.md](../../INDEX.md) · Vision: [VISION.md](../../VISION.md)

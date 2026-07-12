@@ -175,7 +175,7 @@ Exit criteria:
 ### BBM1-004 - Share-link delivery slice (S) — HARD GATED on PR #424 merging
 
 - Description: Once #424 is merged on main, upgrade the delivery payload with a public Markdown share URL created through the verified public-share API.
-- Implementation notes: re-check current main and cite the actual public-share symbols/routes in the PR (expected provenance: `createMarkdownReviewShare`, `registerPublicShareRoutes`, `PublicShareRecord`, routes under `/share/:token/`). Do not start this bead while #424 is unmerged.
+- Implementation notes: re-check current main and cite the actual public-share symbols/routes in the PR (expected provenance: `createMarkdownReviewShare`, `registerPublicShareRoutes`, `PublicShareRecord`, routes under `/share/:token/`) — **unconfirmed — pending #424; these symbols do not exist on current main (only referenced in this package's own docs); re-derive at dispatch.** Do not start this bead while #424 is unmerged.
 - Tests: share creation uses the verified API; returned share URL points at the mounted public route; caller-visible result contains no raw workspace path beyond the public share URL.
 - Acceptance: a delegated brief completes with a share link that opens the rendered Markdown artifact.
 

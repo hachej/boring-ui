@@ -11,7 +11,9 @@ The running app is the owner's sales demo. Every PR is **behavior-frozen for the
 ## Binding delivery gates and live status
 
 Status reflects `main` plus the workspace-first amendment, **Decision 21, accepted 2026-07-11** (landed via
-[#617](https://github.com/hachej/boring-ui/pull/617)). Architecture may remain
+[#617](https://github.com/hachej/boring-ui/pull/617)), plus **Decisions 22 and 23 (Accepted)** (landed via
+[#632](https://github.com/hachej/boring-ui/pull/632) and the reconciled pack; 23 accepted 2026-07-12).
+**Decision 24** (identity server selection) is **Proposed**, pending merge. Architecture may remain
 documented before implementation; only rows marked **v1 gate** block v1.
 
 **V1 product path:** one Docker host carries N site/workspace/deployment
@@ -26,20 +28,20 @@ optional side tracer. ID1 remains in the later public self-service/marketplace l
 
 | Milestone | Work package | Depends on | Live status | Exit gist |
 | --- | --- | --- | --- | --- |
-| P0 — decisions | [P0](work/P0-adr/) | — | decisions 21 and 22 accepted via #617/#632; topology Decision 23 is in this follow-up | workspace authority, one consumption contract, and multi-agent Docker-first topology are explicit |
+| P0 — decisions | [P0](work/P0-adr/) | — | decisions 21, 22, and 23 Accepted via #617/#632 (23 accepted 2026-07-12); Decision 24 (identity server) Proposed, pending merge | workspace authority, one consumption contract, and multi-agent Docker-first topology are explicit |
 | P1 — workspace-composed agent core | [P1](work/P1-headless-core/) | P0 | **landed** — request-binding lifecycle through [#631](https://github.com/hachej/boring-ui/pull/631); fail-closed readiness recut landed via [#642](https://github.com/hachej/boring-ui/pull/642) | land readiness only; no replay of superseded pure mode, capability snapshot, input-asset registry, or lifecycle stacks |
 | P6-D — minimal definition | [P6](work/P6-plugin-child-app/) | Decision 21 (accepted) | **landed** — minimal identities/digests relanded via [#623](https://github.com/hachej/boring-ui/pull/623), verified on main | minimal `AgentDefinition` + `AgentDeployment` schemas/digests; A1 compiler supplies the verified bundle directly to P6-R |
 | A1 — agent-directory authoring | [A1](work/A1-agent-authoring/) | P6-D for compile; P6-R + D1-R0 composition producer for local run | **compiler landed** via [#624](https://github.com/hachej/boring-ui/pull/624); local dev needs a current-main recut after the producer lands and gates P8, not D1 | `agents/<name>/` emits one content-addressed bundle; local dev reuses the host's authorized binding/composition identity with no second composer |
 | P6-R — workspace/deployment resolution | [P6](work/P6-plugin-child-app/) | P6-D, P1 | **landed** — stateless deployment resolver via [#647](https://github.com/hachej/boring-ui/pull/647) | one pure call resolves one already-authorized deployment + workspace-composition + workspace-`default` binding; D1 obtains N bindings through N calls; no batch owner or P2/P5a dependency |
 | P5a — Docker-host provisioning minimum | [P5](work/P5-provisioning-secrets/) | demonstrated D1 gap | **conditional priority-1 support** | after the D1 tracer, add only a missing secret-ref or host-readiness seam; D1 owns desired digest/apply/rollback and no sandbox-provider abstraction is added |
-| D1 — multi-agent Docker delivery | [D1](work/D1-tenant-provisioning/) | A1 compiler, P6-R; conditional P5a alongside | **priority-1/v1 gate; D1-R0-SPEC.md merged ([#649](https://github.com/hachej/boring-ui/pull/649)); D1-001…006 dispatched** | one Docker deployment hosts N deployed agents mapped through authorized workspaces; each exact hostname lands in a workspace whose deployed agent is `default`; dedicated VM is variant 2 |
+| D1 — multi-agent Docker delivery | [D1](work/D1-tenant-provisioning/) | A1 compiler, P6-R; conditional P5a alongside | **priority-1/v1 gate; D1-R0-SPEC.md merged ([#649](https://github.com/hachej/boring-ui/pull/649)); D1-001…003 LANDED (ancestry-verified: [#652](https://github.com/hachej/boring-ui/pull/652), [#653](https://github.com/hachej/boring-ui/pull/653), [#654](https://github.com/hachej/boring-ui/pull/654), [#660](https://github.com/hachej/boring-ui/pull/660), [#662](https://github.com/hachej/boring-ui/pull/662), [#665](https://github.com/hachej/boring-ui/pull/665), [#667](https://github.com/hachej/boring-ui/pull/667)); D1-004…006 remaining** | one Docker deployment hosts N deployed agents mapped through authorized workspaces; each exact hostname lands in a workspace whose deployed agent is `default`; dedicated VM is variant 2 |
 | P8 — v1 proof/cleanup | [P8](work/P8-verification/) | D1 priority-1 path | **pull-forward slice landed** — golden-path script+json+CI gates via [#664](https://github.com/hachej/boring-ui/pull/664) | measured multi-agent Docker golden path, residual pure-mode grep, rollback, and zero v1-owned removal markers; 15 minutes remains a target until baselined |
 | M1 — managed MCP ingress | [M1](work/M1-mcp-managed-agent/) | P1 workspace/Fastify boundary (+P6-R) | **landed** — recut #650 MERGED (delivery v0 + composition + stock-client smoke; acceptance passed) | bearer-authenticated stock client resolves an authorized workspace/default agent and receives bounded self-contained output |
 | AR1 — shareable artifacts | [AR1](work/AR1-shareable-artifacts/) | M1 + workspace contract | **priority-2 spec package; AR1-001 drafted ([#656](https://github.com/hachej/boring-ui/pull/656)), amended+owner-ratified ([#668](https://github.com/hachej/boring-ui/pull/668)) — READY FOR DISPATCH (Lane W)** | canonical pinned handle materializes an immutable copy in the authorized destination workspace, then returns a destination-local deep link; no arbitrary URL/path fetch |
 | M2/E2 — canonical MCP + consumer intake | [M2](work/M2-mcp-agent-surface/), [E2](work/E2-mcp-projection/) | M1, AR1, P6-R | **priority-2; recut required** | graduate the tracer and artifact intake without waiting for P7, T2, or generic E1 attachments |
 | T1/T2 — durable multi-channel transport | [T1](work/T1-durable-events/), [T2](work/T2-transport/) | priority-2 MCP/artifact proof | **priority-3; recut required** | consume the same workspace-backed agent from multiple channels with one durable event/approval contract |
 | AC1 — agent consumption contract | [AC1](work/AC1-agent-consumption-contract/) | P1/P6-R behavior; ID1 for public contracted mode | **marketplace roadmap; decision settled ([#22](../../../DECISIONS.md#22-one-agent-consumption-contract-protocol-bindings-at-the-edges)), tracked in [#636](https://github.com/hachej/boring-ui/issues/636)** | one A2A-shaped contract; native internal binding; subagent/contracted modes; does not widen P6-R or v1 `AgentDefinition` |
-| ID1 — agent-driven identity | [ID1](work/ID1-agent-identity/) | M1 + existing membership/auth model | **marketplace self-service; spec settled, not a cold-start or AR1 tracer gate** | MCP OAuth 2.1 + PKCE; auto-provisioned account + personal workspace; EU-sovereign auth server |
+| ID1 — agent-driven identity | [ID1](work/ID1-agent-identity/) | M1 + existing membership/auth model | **marketplace self-service; spec settled, not a cold-start or AR1 tracer gate; identity server selection is [Decision 24](../../../DECISIONS.md#24-identity-server-ory-hydra--boring-owned-adapter-layer) (Proposed)** | MCP OAuth 2.1 + PKCE; auto-provisioned account + personal workspace; EU-sovereign auth server |
 | BL1 — engagement billing | [BL1](work/BL1-engagement-billing/) | AC1 contracted mode; ID1 | **gap identified — marketplace path, phase 4/5** | price contracted agents, invoice engagements/tasks, and account for creator payouts by decorating boring-governance's metering seam |
 | MK1 — agent catalog | [MK1](work/MK1-agent-catalog/) | P6-R; AC1 | **gap identified — marketplace path, phase 4/5** | public profiles, browse/search, and "contract this agent" entry; v1 profiles derive from `AgentDefinition` metadata |
 | CH1 — consumer channels | [CH1](work/CH1-consumer-channels/) | T1/T2; arch-08 surfaces | **gap identified — marketplace path, phase 4/5** | Telegram first, WhatsApp Business second; bind the same task/contextId/input-required contract; Slack stays outside #391 |
@@ -112,7 +114,7 @@ P0 -> P6-D --------------------┼-> P6-R -> D1-R0 ----------------┐
                                                \-> producer -> A1-dev
 
 Priority 2:
-D1 -> M1 recuts -> AR1 -> M2/E2 recuts
+M1 (landed #650) -> AR1 -> M2/E2 recuts
 
 Priority 3:
 M2/E2 -> T1 -> T2
@@ -148,7 +150,7 @@ temporary version of a frozen contract."
 
 | Track | Can run in parallel | Frozen boundary | Merge/integration gate | Action now |
 | --- | --- | --- | --- | --- |
-| M1 tracer/recuts | analysis may run after P1; merge after D1 host composition | additive workspace-backed bearer ingress only; no parallel runtime owner | stock-client smoke, bounded output, authorized workspace/default resolution | recut #549/#556 after D1 |
+| M1 tracer/recuts | landed via [#650](https://github.com/hachej/boring-ui/pull/650), before D1 implementation | additive workspace-backed bearer ingress only; no parallel runtime owner | stock-client smoke, bounded output, authorized workspace/default resolution | landed; AR1 is next in the priority-2 lane |
 | P6-D -> A1 compile | landed through #623/#624 | minimal definition/deployment identities and deterministic compiler only; no generic environment or tenant lifecycle | verified main ancestry | consume from P6-R/A1 dev without widening |
 | P1 -> P6-R -> D1(+P5a) | P6-D/A1 compile and #631 lifecycle landed; readiness closes P1 | host-attested workspace composition plus stateless N-binding resolution; D1-R0 specifies the missing canonical digest producer; no provider extraction | N agents/workspaces in one Docker host, exact-host auth/default binding, rollback | readiness recut, P6-R, then D1-reframed |
 | AR1 -> M2/E2 | spec can run after M1 shape stabilizes | links address immutable artifact/version/capability; intake authorizes destination workspace; no generic E1 registry | link auth/revocation, no-leak, copy/reference decision, stock-client proof | dispatch after M1 recuts |

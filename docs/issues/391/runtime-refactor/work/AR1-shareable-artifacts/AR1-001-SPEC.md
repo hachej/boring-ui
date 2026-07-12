@@ -316,9 +316,14 @@ BBM1-002) **exactly** — one limit family, reuse not reinvent. **Owner-ratified
 
   | AR1 code | Mirrors | Triggers on |
   | --- | --- | --- |
-  | `AR1_INPUT_TOO_LARGE` | `M1_INPUT_TOO_LARGE` | final artifact bytes exceed 96 KiB |
+  | `AR1_INPUT_TOO_LARGE` | `M1_RESULT_TOO_LARGE` | final artifact bytes exceed 96 KiB |
   | `AR1_RESULT_TOO_LARGE` | `M1_RESULT_TOO_LARGE` | serialized total exceeds 384 KiB |
   | `AR1_ARTIFACT_UNSUPPORTED` | `M1_ARTIFACT_UNSUPPORTED` | Markdown artifact exceeds 256 KiB, binary/disallowed content type, or a truncated/malformed capture |
+
+  M1's own split is brief/key overflow = `M1_INPUT_TOO_LARGE`, final/total
+  overflow = `M1_RESULT_TOO_LARGE` (M1 TODO.md BBM1-002). AR1 has no
+  brief-input analog (it captures an already-produced artifact, not a
+  delegate brief), so no AR1 code maps to `M1_INPUT_TOO_LARGE`.
 
   This replaces the single `AR1_PAYLOAD_REJECTED` code from the pre-review
   draft; `AR1_PAYLOAD_REJECTED` is retired and MUST NOT be emitted (see §5).
@@ -494,7 +499,7 @@ foreign workspace/deployment id.
 | --- | --- | --- |
 | `AR1_SOURCE_UNAUTHORIZED` | X | mint caller lacks source-workspace authorization |
 | `AR1_SOURCE_INPUT_REJECTED` | X | arbitrary URL/redirect/internal-net/absolute/relative path source rejected before capture |
-| `AR1_INPUT_TOO_LARGE` | X | final artifact bytes exceed the 96 KiB cap (mirrors `M1_INPUT_TOO_LARGE`, 2.6) |
+| `AR1_INPUT_TOO_LARGE` | X | final artifact bytes exceed the 96 KiB cap (mirrors `M1_RESULT_TOO_LARGE`, 2.6 — AR1 has no brief-input analog, so no AR1 code maps to `M1_INPUT_TOO_LARGE`) |
 | `AR1_RESULT_TOO_LARGE` | X | serialized total exceeds the 384 KiB cap (mirrors `M1_RESULT_TOO_LARGE`, 2.6) |
 | `AR1_ARTIFACT_UNSUPPORTED` | X | Markdown artifact exceeds 256 KiB, binary/disallowed content type, truncated/malformed capture, or secret-shaped content (mirrors `M1_ARTIFACT_UNSUPPORTED`, 2.6) |
 | `AR1_CAPTURE_FAILED` | X | byte capture/persist failed; no handle issued, no partial blob |
