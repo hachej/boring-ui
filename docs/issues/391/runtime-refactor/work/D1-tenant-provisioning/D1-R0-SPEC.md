@@ -413,8 +413,10 @@ explicit proxy policy, secure generic default, deterministic edge network, and
 pre-effect overlap guard
 ([#684](https://github.com/hachej/boring-ui/pull/684)). D1-004a2 shipped the
 mounted exact-DAC active-collection reader
-([#685](https://github.com/hachej/boring-ui/pull/685)). D1-004a3a is active;
-D1-004a3b through D1-006 remain un-landed.
+([#685](https://github.com/hachej/boring-ui/pull/685)). D1-004a3a landed the
+canonical ingress artifact and real-Docker header proof
+([#690](https://github.com/hachej/boring-ui/pull/690)). D1-004a3b is active;
+D1-004a4 through D1-006 remain un-landed.
 
 ### D1-001 — plan and composition identity (<= 400 net lines; 25 minutes)
 
