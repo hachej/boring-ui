@@ -810,8 +810,8 @@
             <h3>Reduced critical path</h3>
             <ul class="scope-list">
               <li><code>Decision 21</code>, <code>P6-D</code>, and <code>A1 compile</code> are landed through #617/#623/#624.</li>
-              <li><code>P1</code> lifecycle/readiness (#642), <code>P6-R</code> (#647), and <code>D1-001…004a1</code> are landed.</li>
-              <li><code>D1-004a1</code> is landed; a2 establishes the active reader, then a3a/a3b/a4 prove canonical ingress and establish Host scope, landing, and readiness.</li>
+              <li><code>P1</code> lifecycle/readiness (#642), <code>P6-R</code> (#647), and <code>D1-001…004a2</code> are landed.</li>
+              <li><code>D1-004a1/a2</code> are landed; a3a is active, then a3b/a4 establish Host scope, landing, and readiness.</li>
               <li><code>D1-004b/c/d</code>, <code>D1-005</code>, and <code>D1-006</code> finish authority/admission, atomic N-binding boot, and the three-agent EU proof.</li>
               <li><code>M1 &rarr; AR1 &rarr; M2/E2</code> is priority 2, then <code>T1/T2</code>; <code>P2/X1</code> is last.</li>
               <li><code>P8</code> proves the complete journey and rollback.</li>
@@ -833,15 +833,15 @@
 
         <div class="section-heading">
           <p class="kicker">Immediate orchestration</p>
-          <h2>D1-004a1 is landed. Read the active collection, then prove ingress.</h2>
+          <h2>D1-004a2 is landed. Prove canonical ingress next.</h2>
         </div>
         <div class="review-path">
           <article class="review-step">
-            <div><h3>Landed foundation: P1, P6-R, and D1-001…004a1</h3><p>#642, #647, #649, #652–#654, #660, #662, #665, #667, #672, #675–#680, and #684 are verified on main. The host revision store, runtime-input boundary, Docker UID/DAC proof, exact proxy policy, and pre-effect edge-network guard are complete.</p></div>
+            <div><h3>Landed foundation: P1, P6-R, and D1-001…004a2</h3><p>#642, #647, #649, #652–#654, #660, #662, #665, #667, #672, #675–#680, #684, and #685 are verified on main. The host revision store, runtime-input boundary, Docker UID/DAC proof, exact proxy/edge policy, and mounted active reader are complete.</p></div>
             <a href="work/D1-tenant-provisioning/D1-R0-SPEC.md">D1 contract</a>
           </article>
           <article class="review-step">
-            <div><h3>Active D1-004a: reader, ingress proof, Host scope</h3><p>The exact proxy and edge policy is landed. Next land the mounted active reader, then a read-only repo-owned ingress artifact whose approved Caddy digest is the exact image exercised by a real Docker proof. Present RFC Forwarded must return stable <code>D1_HOST_SCOPE_VIOLATION</code>; hostile or ambiguous XFH must reach the backend as one raw original-authority value. Only then may the pre-auth Host scope trust it; hostname possession grants nothing.</p></div>
+            <div><h3>Active D1-004a: ingress proof, then Host scope</h3><p>The exact proxy/edge policy and mounted active reader are landed. Next prove a read-only repo-owned ingress artifact against exact Caddy digest <code>af5fdcd7…</code>. Every RFC Forwarded form must be absent at the backend; hostile or ambiguous XFH must arrive as one raw original-authority value. Only then may the pre-auth Host scope trust it; hostname possession grants nothing.</p></div>
             <a href="work/D1-tenant-provisioning/PLAN.md">D1 plan</a>
           </article>
           <article class="review-step">
@@ -864,7 +864,7 @@
               <tr><td>#626 / #627 / #630</td><td><span class="status merged">landed</span></td><td>Core relocation and terminal local/Pi binding disposal.</td></tr>
               <tr><td>#631</td><td><span class="status merged">landed</span></td><td>Request-binding lifecycle closeout; merge ancestry verified.</td></tr>
               <tr><td>#642 / #647 / #649</td><td><span class="status merged">landed</span></td><td>P1 readiness recut, stateless P6-R, and accepted D1-R0 contract.</td></tr>
-              <tr><td>#652–#654, #660, #662, #665, #667, #672, #675–#680, #684</td><td><span class="status merged">D1-001…004a1 landed</span></td><td>Canonical plan/identity, revision lifecycle, stable Compose, secure runtime inputs, Docker boundary proof, exact proxy policy, and edge-network guard.</td></tr>
+              <tr><td>#652–#654, #660, #662, #665, #667, #672, #675–#680, #684, #685</td><td><span class="status merged">D1-001…004a2 landed</span></td><td>Canonical plan/identity, revision lifecycle, stable Compose, secure runtime inputs, Docker boundary proof, exact proxy/edge policy, and mounted active reader.</td></tr>
               <tr><td>#628</td><td><span class="status merged">structural only</span></td><td>Runsc preflight; <code>productionReady: false</code>, not provider parity.</td></tr>
               <tr><td>#564</td><td><span class="status deferred">remove cutover</span></td><td>Do not make the agent binary pure-only.</td></tr>
               <tr><td>#566</td><td><span class="status deferred">superseded</span></td><td>Host-global capability snapshots cannot represent N bindings; P6-R remains facts-free.</td></tr>
@@ -1015,7 +1015,7 @@
               <span class="arrow">&rarr;</span>
               <a class="node join" href="#pkg-p6r"><b>P6-R</b><span>resolve join</span></a>
               <span class="arrow">&rarr;</span>
-              <a class="node" href="#pkg-d1"><b>D1-001…004a1</b><span>landed host base</span></a>
+              <a class="node" href="#pkg-d1"><b>D1-001…004a2</b><span>landed host base</span></a>
               <span class="arrow">&rarr;</span>
               <a class="node" href="#pkg-d1"><b>D1-004…006</b><span>surface to proof</span></a>
             </div>
@@ -1084,7 +1084,7 @@
                 <td>P1</td>
                 <td>Existing workspace composer and #416 contracts stay frozen.</td>
                 <td>Lifecycle/readiness, stateless N-binding resolution, Docker host and secret brokerage.</td>
-                <td>P1/P6-R and D1-001…004a1 landed; D1-004a2 is active.</td>
+                <td>P1/P6-R and D1-001…004a2 landed; D1-004a3a is active.</td>
               </tr>
               <tr>
                 <td><div class="track-name"><strong>X1 S3/FUSE</strong><span class="status deferred">draft only</span></div></td>
@@ -1286,7 +1286,7 @@
         starts: "None",
         outcome: "Workspace authority plus one Docker host with N site/workspace/default bindings; dedicated VM is variant 2.",
         boundary: "No implementation. Later packages consume these rulings instead of reopening them.",
-        gate: "Decisions 21–23 are accepted and consumed by landed P6-R, D1-R0, and D1-001…004a1.",
+        gate: "Decisions 21–23 are accepted and consumed by landed P6-R, D1-R0, and D1-001…004a2.",
         docs: [["Plan", "work/P0-adr/PLAN.md"], ["TODO", "work/P0-adr/TODO.md"], ["Handoff", "work/P0-adr/HANDOFF.md"]]
       },
       {
@@ -1399,8 +1399,8 @@
       },
       {
         id: "d1", phase: "D1", title: "Multi-agent EU Docker delivery", category: "critical", status: "active",
-        subtitle: "D1-R0 and D1-001…004a1 are landed; the mounted reader and trusted host surface work are active.",
-        starts: "D1-004a2 active reader, then canonical ingress proof, Host scope, landing/readiness, authority fences, atomic boot, and EU proof",
+        subtitle: "D1-R0 and D1-001…004a2 are landed; canonical ingress proof and trusted host surface work are active.",
+        starts: "D1-004a3a canonical ingress proof, then Host scope, landing/readiness, authority fences, atomic boot, and EU proof",
         outcome: "One Docker host, N exact-host landings, member auth, authorized workspace/default bindings, uninterrupted additive apply, and rollback as a new revision.",
         boundary: "Host mutation is an OS-authorized local CLI only. Bound hostnames fence existing workspace list/create/switch/delete/default-auto-create paths; no app management API.",
         gate: "Three bindings, final-activation requirement validation, ordinary-member host-mutation denial, workspace lifecycle fences, stable-process N+1 continuity, active-replacement refusal, shared-host sibling isolation, cross-binding denial, rollback-as-new-revision, and no-secret proof. Dedicated VM is documentation/config-render only.",
