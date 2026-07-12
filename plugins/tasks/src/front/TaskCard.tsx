@@ -74,6 +74,12 @@ function activityRank(status: TaskSessionActivityStatus): number {
   return 0
 }
 
+function activitySortRank(status: TaskSessionActivityStatus): number {
+  if (status === "working") return 2
+  if (status === "queued") return 1
+  return 0
+}
+
 function activityLabel(activity: TaskSessionActivity | undefined, loading: boolean): string {
   if (!activity) return loading ? "Checking activity" : "Activity pending"
   if (activity.status === "working") return "Working"
@@ -119,7 +125,7 @@ export function TaskCard({ task, draggable, unmapped = false, deleteEnabled = fa
     return [...sessionLinks].sort((a, b) => {
       const aActivity = sessionActivities[a.sessionId]
       const bActivity = sessionActivities[b.sessionId]
-      const rankDelta = activityRank(bActivity?.status ?? "idle") - activityRank(aActivity?.status ?? "idle")
+      const rankDelta = activitySortRank(bActivity?.status ?? "idle") - activitySortRank(aActivity?.status ?? "idle")
       if (rankDelta !== 0) return rankDelta
       return newestTimestampMs(b, bActivity) - newestTimestampMs(a, aActivity)
     })
@@ -272,7 +278,6 @@ export function TaskCard({ task, draggable, unmapped = false, deleteEnabled = fa
       next.delete(link.sessionId)
       return next
     })
-    sessionActivity.clearSessionActivity(link.sessionId)
     void pluginClient.postJson("/api/boring-tasks/sessions/unlink", { bindingId: link.id })
       .catch((error) => {
         setSessionLinks((current) => current.some((candidate) => candidate.id === link.id) ? current : [link, ...current])

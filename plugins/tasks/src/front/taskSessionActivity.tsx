@@ -189,9 +189,6 @@ function useTaskSessionActivityController(enabled: boolean): TaskSessionActivity
   }, [enabled, refreshSessionIds, registeredIdKey]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const setOptimisticActivity = useCallback((sessionId: string, activity: TaskSessionActivity) => {
-    const requestId = requestSeqRef.current + 1
-    requestSeqRef.current = requestId
-    latestRequestBySessionIdRef.current.set(sessionId, requestId)
     setActivities((current) => ({ ...current, [sessionId]: activity }))
   }, [])
 

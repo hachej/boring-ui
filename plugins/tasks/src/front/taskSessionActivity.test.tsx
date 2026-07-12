@@ -36,6 +36,7 @@ function Probe() {
   return (
     <div>
       <button type="button" onClick={() => { void activity.refreshSessionIds(["board-a"]) }}>Refresh A</button>
+      <button type="button" onClick={() => activity.setOptimisticActivity("board-a", { status: "working", source: "live-runtime" })}>Optimistic A working</button>
       <span data-testid="activity-a">{activity.activities["board-a"]?.status ?? "none"}</span>
       <span data-testid="activity-b">{activity.activities["board-b"]?.status ?? "none"}</span>
     </div>
@@ -92,5 +93,39 @@ describe("TaskSessionActivityProvider request scoping", () => {
 
     expect(screen.getByTestId("activity-a")).toHaveTextContent("idle")
     expect(screen.getByTestId("activity-b")).toHaveTextContent("working")
+  })
+
+  it("lets an in-flight authoritative poll reconcile after an optimistic browser update", async () => {
+    const pending: Array<{ sessionIds: string[]; request: ReturnType<typeof deferred<ActivityResponse>> }> = []
+    postJson.mockImplementation((path: string, body: { sessionIds?: string[] }) => {
+      if (path !== "/api/v1/agent/pi-chat/sessions/activity") throw new Error(`unexpected post ${path}`)
+      const request = deferred<ActivityResponse>()
+      pending.push({ sessionIds: body.sessionIds ?? [], request })
+      return request.promise
+    })
+
+    render(<TaskSessionActivityProvider><Probe /></TaskSessionActivityProvider>)
+
+    await act(async () => { await Promise.resolve() })
+    await act(async () => { await vi.advanceTimersByTimeAsync(25) })
+    expect(pending.map((entry) => entry.sessionIds)).toEqual([["board-a", "board-b"]])
+
+    fireEvent.click(screen.getByRole("button", { name: "Optimistic A working" }))
+    expect(screen.getByTestId("activity-a")).toHaveTextContent("working")
+
+    await act(async () => {
+      pending[0].request.resolve({
+        activities: [
+          { sessionId: "board-a", status: "idle", source: "persisted" },
+          { sessionId: "board-b", status: "queued", source: "live-runtime" },
+        ],
+        omittedSessionIds: [],
+      })
+      await pending[0].request.promise
+      await Promise.resolve()
+    })
+
+    expect(screen.getByTestId("activity-a")).toHaveTextContent("idle")
+    expect(screen.getByTestId("activity-b")).toHaveTextContent("queued")
   })
 })
