@@ -80,7 +80,7 @@ describe('agent model env config', () => {
     expect(registered[0]?.provider).toBe('infomaniak')
     expect(registered[0]?.config).toMatchObject({
       baseUrl: 'https://api.infomaniak.com/2/ai/108321/openai/v1',
-      apiKey: '$INFOMANIAK_API_TOKEN',
+      apiKey: 'INFOMANIAK_API_TOKEN',
       api: 'openai-completions',
       models: [
         {
@@ -108,6 +108,37 @@ describe('agent model env config', () => {
       provider: 'infomaniak',
       id: 'Qwen/Qwen3.5-122B-A10B-FP8',
     })
+  })
+
+  it('registers provider apiKey values that resolve from env under pi-coding-agent\'s contract', () => {
+    // Mirrors @mariozechner/pi-coding-agent@0.75.5's resolveConfigValue:
+    // `config.startsWith('!') ? runCommand(config) : (process.env[config] ?? config)`.
+    // It does NOT strip a leading "$" — a `$`-prefixed apiKey value resolves
+    // to nothing and falls back to being sent as the literal Bearer token.
+    // This test would have caught the INFOMANIAK_API_TOKEN 401 regression.
+    function resolveLikePiCodingAgent(config: string, env: NodeJS.ProcessEnv): string {
+      if (config.startsWith('!')) throw new Error('command-form apiKey not exercised by this test')
+      return env[config] ?? config
+    }
+
+    process.env.BORING_AGENT_INFOMANIAK_PRODUCT_ID = '108321'
+    process.env.BORING_AGENT_INFOMANIAK_MODEL = 'Qwen/Qwen3.5-122B-A10B-FP8'
+    process.env.INFOMANIAK_API_TOKEN = 'super-secret-token'
+
+    const registered: Array<{ provider: string; config: { apiKey?: string } }> = []
+    const registry = {
+      registerProvider(provider: string, config: unknown) {
+        registered.push({ provider, config: config as { apiKey?: string } })
+      },
+    }
+
+    registerConfiguredModelProviders(registry as never)
+
+    const apiKeyConfig = registered[0]?.config.apiKey
+    expect(apiKeyConfig).toBeDefined()
+    const resolved = resolveLikePiCodingAgent(apiKeyConfig!, process.env)
+    expect(resolved).toBe('super-secret-token')
+    expect(resolved).not.toBe(apiKeyConfig) // sanity: value actually came from env, not passed through
   })
 
   it('supports encoded default model ids that contain colons', () => {
