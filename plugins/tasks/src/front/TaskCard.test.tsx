@@ -18,6 +18,8 @@ vi.mock("@hachej/boring-workspace/plugin", () => ({
   useWorkspaceShellCapabilities: () => ({ openArtifact: vi.fn(), openDetachedChat }),
 }))
 
+interface TaskSessionListResponse { links?: BoringTaskSessionBinding[] }
+
 const task: BoringTaskCard = {
   id: "task-1",
   number: "#612",
@@ -658,6 +660,63 @@ describe("TaskCard task chat sessions", () => {
     })
 
     expect(postJson).not.toHaveBeenCalledWith("/api/boring-tasks/sessions/link", expect.anything())
+    expect(openDetachedChat).not.toHaveBeenCalled()
+  })
+
+  it("clears stale active top-level chat action while replacement links load", async () => {
+    const working = link({ id: "working", sessionId: "pi-working", title: "Working chat" })
+    const replacementTask = { ...task, id: "task-replacement", number: "#613", title: "Replacement" }
+    const replacementList = deferred<TaskSessionListResponse>()
+    postJson.mockImplementation((path: string, body: { taskId?: string; sessionIds?: string[] } = {}) => {
+      if (path === "/api/boring-tasks/sessions/list") return body.taskId === "task-replacement" ? replacementList.promise : Promise.resolve({ links: [working] })
+      if (path === "/api/v1/agent/pi-chat/sessions/activity") return Promise.resolve({ activities: [{ sessionId: "pi-working", status: "working", source: "live-runtime" }], omittedSessionIds: [] })
+      throw new Error(`unexpected post ${path}`)
+    })
+    getJson.mockResolvedValue([{ id: "pi-working", title: "Working chat" }])
+
+    const { rerender } = render(<TaskCard task={task} draggable={false} onDragStart={vi.fn()} onDragEnd={vi.fn()} />)
+    expect(await screen.findByLabelText("1 working linked chats")).toBeInTheDocument()
+
+    await act(async () => {
+      rerender(<TaskCard task={replacementTask} draggable={false} onDragStart={vi.fn()} onDragEnd={vi.fn()} />)
+      await Promise.resolve()
+    })
+
+    expect(screen.queryByLabelText("1 working linked chats")).not.toBeInTheDocument()
+    const replacementChatButton = screen.getByRole("button", { name: /open chat for #613\. checking activity/i })
+    expect(replacementChatButton).toHaveAttribute("aria-busy", "true")
+    fireEvent.click(replacementChatButton)
+    await act(async () => { await Promise.resolve(); await Promise.resolve() })
+
+    expect(getJson).not.toHaveBeenCalled()
+    expect(openDetachedChat).not.toHaveBeenCalled()
+  })
+
+  it("clears stale linked-row chat actions while replacement links load", async () => {
+    const existing = link({ title: "Old row chat" })
+    const replacementTask = { ...task, id: "task-replacement", number: "#613", title: "Replacement" }
+    const replacementList = deferred<TaskSessionListResponse>()
+    postJson.mockImplementation((path: string, body: { taskId?: string; sessionIds?: string[] } = {}) => {
+      if (path === "/api/boring-tasks/sessions/list") return body.taskId === "task-replacement" ? replacementList.promise : Promise.resolve({ links: [existing] })
+      if (path === "/api/v1/agent/pi-chat/sessions/activity") return Promise.resolve({ activities: (body.sessionIds ?? []).map((sessionId) => ({ sessionId, status: "idle", source: "persisted" })), omittedSessionIds: [] })
+      throw new Error(`unexpected post ${path}`)
+    })
+    getJson.mockResolvedValue([{ id: "pi-1", title: "Old row chat" }])
+
+    const { rerender } = render(<TaskCard task={task} draggable={false} onDragStart={vi.fn()} onDragEnd={vi.fn()} />)
+    fireEvent.click(await screen.findByRole("button", { name: /open chat/i }))
+    expect(await screen.findByRole("region", { name: /linked chat sessions/i })).toBeInTheDocument()
+    expect(screen.getByRole("button", { name: "Open" })).toBeInTheDocument()
+
+    await act(async () => {
+      rerender(<TaskCard task={replacementTask} draggable={false} onDragStart={vi.fn()} onDragEnd={vi.fn()} />)
+      await Promise.resolve()
+    })
+
+    expect(screen.queryByRole("region", { name: /linked chat sessions/i })).not.toBeInTheDocument()
+    expect(screen.queryByRole("button", { name: "Open" })).not.toBeInTheDocument()
+    expect(screen.getByRole("button", { name: /open chat for #613\. checking activity/i })).toHaveAttribute("aria-busy", "true")
+    expect(getJson).not.toHaveBeenCalled()
     expect(openDetachedChat).not.toHaveBeenCalled()
   })
 

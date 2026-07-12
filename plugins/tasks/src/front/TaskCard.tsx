@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type DragEvent, type MouseEvent } from "react"
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type DragEvent, type MouseEvent } from "react"
 import { AlertCircle, CircleDot, Link2, MessageSquare, MoreHorizontal, Trash2, X } from "lucide-react"
 import { useWorkspacePluginClient } from "@hachej/boring-workspace"
 import { useWorkspaceShellCapabilities, type WorkspaceShellAnchorRect } from "@hachej/boring-workspace/plugin"
@@ -35,6 +35,7 @@ interface TaskSessionListResponse { links?: BoringTaskSessionBinding[] }
 interface TaskSessionLinkResponse { link?: BoringTaskSessionBinding }
 interface PiSessionSummary { id: string; title?: string; updatedAt?: string; createdAt?: string }
 interface ManageSessionsSearchResponse { action?: string; sessions?: PiSessionSummary[] }
+interface TaskSessionLinkState { taskScopeKey: string; links: BoringTaskSessionBinding[]; loaded: boolean }
 
 function taskDisplayRef(task: BoringTaskCard): string {
   return task.number || task.id
@@ -96,12 +97,12 @@ function newestTimestampMs(link: BoringTaskSessionBinding, activity: TaskSession
 }
 
 export function TaskCard({ task, draggable, unmapped = false, deleteEnabled = false, compact = false, onDelete, onDragStart, onDragEnd }: TaskCardProps) {
+  const taskScopeKey = `${task.adapterId}\u0000${task.id}`
   const [menuOpen, setMenuOpen] = useState(false)
   const [openingChat, setOpeningChat] = useState(false)
   const [checkingChatActivity, setCheckingChatActivity] = useState(false)
   const [sessionPanelOpen, setSessionPanelOpen] = useState(false)
-  const [sessionLinks, setSessionLinks] = useState<BoringTaskSessionBinding[]>([])
-  const [sessionLinksLoaded, setSessionLinksLoaded] = useState(false)
+  const [sessionLinkState, setSessionLinkState] = useState<TaskSessionLinkState>(() => ({ taskScopeKey, links: [], loaded: false }))
   const [sessionError, setSessionError] = useState<string | null>(null)
   const [linkQuery, setLinkQuery] = useState("")
   const [linkSearchResults, setLinkSearchResults] = useState<PiSessionSummary[]>([])
@@ -110,9 +111,14 @@ export function TaskCard({ task, draggable, unmapped = false, deleteEnabled = fa
   const chatButtonRef = useRef<HTMLButtonElement>(null)
   const mountedRef = useRef(false)
   const navigationGenerationRef = useRef(0)
+  const taskScopeKeyRef = useRef(taskScopeKey)
   const shell = useWorkspaceShellCapabilities()
   const pluginClient = useWorkspacePluginClient()
   const sessionActivity = useTaskSessionActivity()
+  const sessionLinkStateMatchesTask = sessionLinkState.taskScopeKey === taskScopeKey
+  const sessionLinks = sessionLinkStateMatchesTask ? sessionLinkState.links : []
+  const sessionLinksLoaded = sessionLinkStateMatchesTask ? sessionLinkState.loaded : false
+  const visibleSessionPanelOpen = sessionPanelOpen && sessionLinkStateMatchesTask
   const tags = task.tags?.slice(0, 4) ?? []
   const hiddenTagCount = Math.max((task.tags?.length ?? 0) - tags.length, 0)
   const pullRequests = task.pullRequests?.slice(0, 2) ?? []
@@ -124,7 +130,7 @@ export function TaskCard({ task, draggable, unmapped = false, deleteEnabled = fa
   const sessionActivities = sessionActivity.activities
   const activityError = sessionActivity.getError(linkedSessionIdList)
   const activityLoading = sessionActivity.isLoading(linkedSessionIdList)
-  const chatActivityPending = checkingChatActivity || activityLoading
+  const chatActivityPending = checkingChatActivity || activityLoading || !sessionLinksLoaded
   const sortedSessionLinks = useMemo(() => {
     return [...sessionLinks].sort((a, b) => {
       const aActivity = sessionActivities[a.sessionId]
@@ -151,7 +157,7 @@ export function TaskCard({ task, draggable, unmapped = false, deleteEnabled = fa
   const workingCount = workingLinks.length
   const activeNavigationCount = activeNavigationLinks.length
   const errorCount = sessionLinks.filter((link) => sessionActivities[link.sessionId]?.status === "error").length
-  const rollupText = checkingChatActivity ? "Checking activity" : sessionLinks.length === 0 && sessionLinksLoaded ? "No linked chats" : activityLabel(rollupActivity, activityLoading)
+  const rollupText = checkingChatActivity || !sessionLinksLoaded ? "Checking activity" : sessionLinks.length === 0 ? "No linked chats" : activityLabel(rollupActivity, activityLoading)
 
   const stopCardAction = (event: MouseEvent<HTMLElement>) => event.stopPropagation()
 
@@ -162,8 +168,13 @@ export function TaskCard({ task, draggable, unmapped = false, deleteEnabled = fa
   const beginNavigation = useCallback(() => {
     const generation = navigationGenerationRef.current + 1
     navigationGenerationRef.current = generation
-    return () => mountedRef.current && navigationGenerationRef.current === generation
+    const expectedTaskScopeKey = taskScopeKeyRef.current
+    return () => mountedRef.current && navigationGenerationRef.current === generation && taskScopeKeyRef.current === expectedTaskScopeKey
   }, [])
+
+  const updateCurrentSessionLinks = useCallback((updater: (current: BoringTaskSessionBinding[]) => BoringTaskSessionBinding[], loaded = true) => {
+    setSessionLinkState((current) => current.taskScopeKey === taskScopeKey ? { taskScopeKey, links: updater(current.links), loaded } : current)
+  }, [taskScopeKey])
 
   useEffect(() => {
     mountedRef.current = true
@@ -173,11 +184,22 @@ export function TaskCard({ task, draggable, unmapped = false, deleteEnabled = fa
     }
   }, [invalidatePendingNavigation])
 
-  useEffect(() => {
+  useLayoutEffect(() => {
+    taskScopeKeyRef.current = taskScopeKey
     invalidatePendingNavigation()
+    setMenuOpen(false)
     setOpeningChat(false)
     setCheckingChatActivity(false)
-  }, [invalidatePendingNavigation, task.adapterId, task.id])
+    setSessionPanelOpen(false)
+    setSessionError(null)
+    setLinkQuery("")
+    setLinkSearchResults([])
+    setLinkSearchLoading(false)
+    setOptimisticSessionIds(new Set())
+    setSessionLinkState((current) => current.taskScopeKey === taskScopeKey && current.links.length === 0 && !current.loaded
+      ? current
+      : { taskScopeKey, links: [], loaded: false })
+  }, [invalidatePendingNavigation, taskScopeKey])
 
   const refreshSessionActivity = useCallback(async (links: BoringTaskSessionBinding[]): Promise<TaskSessionActivityRefreshResult> => {
     return await sessionActivity.refreshSessionIds(links.map((link) => link.sessionId))
@@ -186,27 +208,26 @@ export function TaskCard({ task, draggable, unmapped = false, deleteEnabled = fa
   const loadSessionLinks = useCallback(async (shouldApply: () => boolean = () => mountedRef.current): Promise<BoringTaskSessionBinding[]> => {
     const body = await pluginClient.postJson<TaskSessionListResponse>("/api/boring-tasks/sessions/list", { adapterId: task.adapterId, taskId: task.id })
     const links = body.links ?? []
-    if (shouldApply()) {
-      setSessionLinks(links)
-      setSessionLinksLoaded(true)
-    }
+    if (shouldApply()) setSessionLinkState({ taskScopeKey, links, loaded: true })
     return links
-  }, [pluginClient, task.adapterId, task.id])
+  }, [pluginClient, task.adapterId, task.id, taskScopeKey])
 
   useEffect(() => {
     let cancelled = false
+    setSessionLinkState((current) => current.taskScopeKey === taskScopeKey && current.links.length === 0 && !current.loaded
+      ? current
+      : { taskScopeKey, links: [], loaded: false })
     void pluginClient.postJson<TaskSessionListResponse>("/api/boring-tasks/sessions/list", { adapterId: task.adapterId, taskId: task.id })
       .then((body) => {
         if (cancelled) return
         const links = body.links ?? []
-        setSessionLinks(links)
-        setSessionLinksLoaded(true)
+        setSessionLinkState({ taskScopeKey, links, loaded: true })
       })
       .catch(() => {
-        if (!cancelled) setSessionLinksLoaded(true)
+        if (!cancelled) setSessionLinkState({ taskScopeKey, links: [], loaded: true })
       })
     return () => { cancelled = true }
-  }, [pluginClient, task.adapterId, task.id])
+  }, [pluginClient, task.adapterId, task.id, taskScopeKey])
 
   useEffect(() => {
     if (!sessionLinksLoaded || linkedSessionIdList.length === 0) return
@@ -268,8 +289,7 @@ export function TaskCard({ task, draggable, unmapped = false, deleteEnabled = fa
         return
       }
       if (!shouldContinue()) return
-      setSessionLinks((current) => current.some((candidate) => candidate.id === linked.id) ? current : [linked, ...current])
-      setSessionLinksLoaded(true)
+      updateCurrentSessionLinks((current) => current.some((candidate) => candidate.id === linked.id) ? current : [linked, ...current])
       void refreshSessionActivity([linked]).catch(() => undefined)
       const initialDraft = taskChatDraft(task)
       setOptimisticSessionIds((current) => new Set(current).add(sessionId))
@@ -286,7 +306,7 @@ export function TaskCard({ task, draggable, unmapped = false, deleteEnabled = fa
     stopCardAction(event)
     if (checkingChatActivity) return
     const anchor = rectFromElement(event.currentTarget)
-    const panelWasOpen = sessionPanelOpen
+    const panelWasOpen = visibleSessionPanelOpen
     const shouldContinue = beginNavigation()
     setSessionError(null)
     setCheckingChatActivity(true)
@@ -333,7 +353,7 @@ export function TaskCard({ task, draggable, unmapped = false, deleteEnabled = fa
     setOpeningChat(false)
     setCheckingChatActivity(false)
     setSessionError(null)
-    setSessionLinks((current) => current.filter((candidate) => candidate.id !== link.id))
+    updateCurrentSessionLinks((current) => current.filter((candidate) => candidate.id !== link.id))
     setOptimisticSessionIds((current) => {
       const next = new Set(current)
       next.delete(link.sessionId)
@@ -341,7 +361,7 @@ export function TaskCard({ task, draggable, unmapped = false, deleteEnabled = fa
     })
     void pluginClient.postJson("/api/boring-tasks/sessions/unlink", { bindingId: link.id })
       .catch((error) => {
-        setSessionLinks((current) => current.some((candidate) => candidate.id === link.id) ? current : [link, ...current])
+        updateCurrentSessionLinks((current) => current.some((candidate) => candidate.id === link.id) ? current : [link, ...current])
         setSessionError(error instanceof Error ? error.message : "Failed to unlink session")
       })
   }
@@ -366,8 +386,7 @@ export function TaskCard({ task, draggable, unmapped = false, deleteEnabled = fa
       title: session.title ?? chatTitle,
     }).then((body) => {
       if (!body.link) throw new Error("Task session binding was not created.")
-      setSessionLinks((current) => current.some((candidate) => candidate.id === body.link!.id) ? current : [body.link!, ...current])
-      setSessionLinksLoaded(true)
+      updateCurrentSessionLinks((current) => current.some((candidate) => candidate.id === body.link!.id) ? current : [body.link!, ...current])
       void refreshSessionActivity([body.link!]).catch(() => undefined)
     }).catch((error) => setSessionError(error instanceof Error ? error.message : "Failed to link session"))
   }
@@ -400,7 +419,7 @@ export function TaskCard({ task, draggable, unmapped = false, deleteEnabled = fa
       ? "bg-destructive text-destructive-foreground"
       : "bg-primary text-primary-foreground"
   const chatButton = (
-    <button ref={chatButtonRef} type="button" draggable={false} onClick={openTaskChat} className="relative grid size-7 place-items-center rounded-lg text-muted-foreground opacity-80 hover:bg-muted hover:text-foreground group-hover:opacity-100" aria-label={`Open chat for ${taskDisplayRef(task)}. ${rollupText}${workingCount > 0 ? `, ${workingCount} working` : errorCount > 0 ? `, ${errorCount} need attention` : ""}.`} title={activeNavigationCount === 1 ? "Open active task chat" : "Open task chats"} disabled={openingChat} aria-expanded={sessionPanelOpen} aria-busy={chatActivityPending || undefined}>
+    <button ref={chatButtonRef} type="button" draggable={false} onClick={openTaskChat} className="relative grid size-7 place-items-center rounded-lg text-muted-foreground opacity-80 hover:bg-muted hover:text-foreground group-hover:opacity-100" aria-label={`Open chat for ${taskDisplayRef(task)}. ${rollupText}${workingCount > 0 ? `, ${workingCount} working` : errorCount > 0 ? `, ${errorCount} need attention` : ""}.`} title={activeNavigationCount === 1 ? "Open active task chat" : "Open task chats"} disabled={openingChat} aria-expanded={visibleSessionPanelOpen} aria-busy={chatActivityPending || undefined}>
       <MessageSquare className={["size-3.5", openingChat || checkingChatActivity ? "motion-safe:animate-pulse" : ""].join(" ")} strokeWidth={1.75} />
       {checkingChatActivity ? <CircleDot className="absolute -bottom-0.5 -right-0.5 size-2.5 text-primary motion-safe:animate-pulse" aria-hidden="true" /> : activeNavigationCount > 0 ? <CircleDot className="absolute -bottom-0.5 -right-0.5 size-2.5 text-emerald-500 motion-safe:animate-pulse" aria-hidden="true" /> : errorCount > 0 ? <AlertCircle className="absolute -bottom-0.5 -right-0.5 size-2.5 text-destructive" aria-hidden="true" /> : null}
       {sessionLinks.length > 0 ? <span className={["absolute -right-1 -top-1 grid min-w-4 place-items-center rounded-full px-1 text-[9px] font-bold leading-4", badgeClass].join(" ")} aria-label={badgeLabel}>{badgeText}</span> : null}
@@ -408,7 +427,7 @@ export function TaskCard({ task, draggable, unmapped = false, deleteEnabled = fa
     </button>
   )
 
-  const taskSessionPanel = sessionPanelOpen ? (
+  const taskSessionPanel = visibleSessionPanelOpen ? (
     <section className="mt-3 w-full rounded-xl border border-border bg-muted/20 p-2 text-xs" aria-label={`Linked chat sessions for ${taskDisplayRef(task)}`} onClick={(event) => event.stopPropagation()}>
       <div className="mb-2 flex items-center justify-between gap-2">
         <span className="font-semibold text-foreground">Task chats</span>
