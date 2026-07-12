@@ -97,7 +97,14 @@ function buildOpenAICompatibleProviderConfig(opts: {
 }): ProviderConfigInput {
   return {
     baseUrl: opts.baseUrl,
-    apiKey: `$${opts.apiKeyEnv}`,
+    // pi-coding-agent's resolveConfigValue (packages/agent's pinned
+    // @mariozechner/pi-coding-agent@0.75.5) resolves a provider apiKey by
+    // looking up `process.env[config]` directly — it does NOT strip a `$`
+    // prefix. A `$`-prefixed value (e.g. "$INFOMANIAK_API_TOKEN") misses the
+    // env lookup and falls back to sending the literal string as the Bearer
+    // token, causing provider 401s. The supported syntax is the bare env var
+    // name.
+    apiKey: opts.apiKeyEnv,
     api: 'openai-completions',
     models: opts.models.map((model) => ({
       id: model.id,
