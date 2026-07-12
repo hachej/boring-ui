@@ -12,7 +12,7 @@ shims) remains binding.
 | 1 | #631 + P1 readiness | **merged; ancestry verified** | Request-binding lifecycle and fail-closed readiness are complete; do not replay discarded/superseded stacks. |
 | 2 | P6-R / BBP6-011 | **merged; ancestry verified** | The pure one-binding resolver is complete; D1 obtains N agents through N independent calls. |
 | 3 | D1-R0 + D1-001…004a2 | **merged; ancestry verified through [#685](https://github.com/hachej/boring-ui/pull/685)** | Exact D1 PRs: #649, #652–#654, #660, #662, #665, #667, #672, #675–#680, #684, and #685. Plan/identity, revision lifecycle, stable Compose, secure runtime inputs, Docker boundary proof, exact proxy/edge policy, and mounted active reader are complete. |
-| 4 | D1-004a3a -> a3b/a4 -> b/c/d -> D1-005 -> D1-006 | **priority 1; D1-004a3a active** | Land the canonical ingress proof, Host scope, landing/readiness, authority/admission fences, atomic N-binding boot, then the three-agent EU proof. |
+| 4 | D1-004a3a -> a3b/a4 -> b/c/d -> D1-005 -> D1-006 | **priority 1; D1-004a3a landed #690; D1-004a3b active** | Land Host scope, landing/readiness, authority/admission fences, atomic N-binding boot, then the three-agent EU proof. |
 | 5 | A1-dev / BBA1-002 | **recut-dispatchable; D1-001 producer landed #652** | Queue after D1-004 and before P8 golden-path completion. Recut against the landed canonical composition-identity producer; A1-dev gates P8, not D1. |
 | 6 | P5a | conditional inside D1 | No separate P5a code was needed through D1-003; add only a future demonstrated host gap. D1 owns apply/digest/rollback. |
 | 7 | M1 -> AR1 -> M2/E2 | **M1 landed #650; AR1 next after priority 1** | Consume the landed authenticated delivery-v0 seam, dispatch the owner-ratified AR1 Lane W, then recut canonical MCP/artifact intake. |
@@ -541,8 +541,8 @@ the earlier pr1…pr8/BBD1-001…007 tracer table.
 | D1-003 — stable-process Compose and runtime-input boundary — **LANDED #667, #672, #675–#680** | `deploy/d1/compose.yml`, binding env/revision store, secure tmpfs materializer, fixed file provider, production composition, Docker proof | landed as reviewed micro-PRs | one ingress plus one full-collection core process; external `databaseRef`; durable roots; deterministic per-binding env; generation-addressed tmpfs values; exact-host RO mount; no force-recreate, raw-secret config, sibling-host mount, or source-checkout mount |
 | D1-004a1 — explicit proxy policy — **LANDED #684** | core config/schema/shared types + `createCoreApp.ts`; Fly + self-host legacy opt-ins; deterministic D1 edge network; new `edgeNetworkPreflight.ts` wired before `composeAdapter.ts` effects; focused tests | landed as three reviewed commits | absent/null proxy policy disables trust; only `apps/full-app/fly.toml` and the self-host deploy/env templates get a conspicuous temporary `legacy-unsafe` opt-in; D1 requires an exact ingress CIDR and bounded hop count; pre-apply rejects non-default host-route or foreign-Docker-network overlap as redacted `D1_COLLECTION_NOT_READY/edgeNetwork` while allowing an exact owned D1-network match; forwarded host remains unusable until exact-peer/chain replacement proof |
 | D1-004a2 — mounted active reader — **LANDED #685** | new `deployment/activeCollectionReader.ts`; focused tests | landed | exact-DAC read-only active→COMPLETE validation through existing codecs; no mutation store, cache, watcher, P6-R, or secret read |
-| D1-004a3a — canonical ingress artifact/proof — **ACTIVE** | `deploy/d1/{Caddyfile,compose.yml}`; exact approved Caddy digest in `composeAdapter.ts`; `apps/full-app/package.json`; proof script + adapter/topology/proof tests | <= 400 net lines; 25 min target | read-only config; production image must equal `caddy@sha256:af5fdcd76f2db5e4e974ee92f96ee8c0fc3edb55bd4ba5032547cbf3f65e486d`; command begins `caddy`; all RFC Forwarded forms are absent at backend; absent/hostile/repeated/comma XFH becomes one raw original-authority value; until then no D1 scope consumes forwarded authority and direct-only mode does not complete a3 |
-| D1-004a3b — trusted host scope | new `deployment/hostSurface.ts`; optional core request scope; minimal pre-auth wiring; focused tests | <= 400 net lines; 25 min | direct authority or one canonical trusted-peer forwarded host→active binding scope before auth; unknown, ambiguous, or untrusted input fails closed; hostname grants nothing |
+| D1-004a3a — canonical ingress artifact/proof — **LANDED #690** | `deploy/d1/{Caddyfile,compose.yml}`; exact approved Caddy digest in `composeAdapter.ts`; `apps/full-app/package.json`; proof script + adapter/topology/proof tests | landed | read-only config; production image equals `caddy@sha256:af5fdcd76f2db5e4e974ee92f96ee8c0fc3edb55bd4ba5032547cbf3f65e486d`; exact `caddy run` command; all RFC Forwarded forms absent at backend; absent/hostile/repeated/comma XFH becomes one raw original-authority value |
+| D1-004a3b — trusted host scope — **ACTIVE** | new `deployment/hostSurface.ts`; optional core request scope; minimal pre-auth wiring; focused tests | <= 400 net lines; 25 min | direct authority or one canonical trusted-peer forwarded host→active binding scope before auth; unknown, ambiguous, or untrusted input fails closed; hostname grants nothing |
 | D1-004a4 — landing/readiness wiring | bounded renderer, loopback readiness, narrow root-handler seam, `main.ts`, focused tests | <= 400 net lines; 25 min | escaped landing, fixed same-origin auth return, redacted readiness; no membership handoff or public internal ids |
 | D1-004b — workspace authority fences | shared optional scope contract in core app server types; surgical updates/tests in `workspaces.ts`, `postSignupHook.ts`, managed-workspace membership/account-deletion paths | <= 400 net lines; 30 min | member-only bound list; create/foreign switch/delete/default auto-provision denial; operator-owned managed lifecycle; generic-host behavior preserved byte-for-byte |
 | D1-004c — remaining selector conformance | inventory full-app agent/MCP/plugin/pane/WorkspaceBridge selectors first; split one PR per route family if over budget | <= 400 net lines per PR; 25 min | every selector rejects a foreign caller value before lookup/effects and derives default deployment from scope; no generic policy framework |
@@ -552,7 +552,7 @@ the earlier pr1…pr8/BBD1-001…007 tracer table.
 
 **D1 total: 13 dispatch units (D1-001…003; D1-004a1, a2, a3a, a3b, a4, b, c, d;
 D1-005; D1-006) per the accepted D1-R0 contract and its reality recut.**
-D1-001…004a2 are landed, D1-004a3a is active, and the remaining units are ordered.
+D1-001…004a3a are landed, D1-004a3b is active, and the remaining units are ordered.
 D1 is the repeatable multi-agent Docker host lane. Its generic
 landing/auth/workspace handoff is v1; bespoke marketing pages, pricing/GTM, and
 shared tenancy remain outside v1.
@@ -646,8 +646,8 @@ legacy PR dispositions are below; stack order is not execution authority:
 | #549, #556 | closed as superseded by landed current-main M1 recut #650 |
 | #581 | keep draft/deferred until E1/P5a and a real native-mount consumer reopen X1 |
 
-P1 readiness (#642), P6-R (#647), D1-R0 (#649), and D1-001 through D1-004a2
-(#652–#654, #660, #662, #665, #667, #672, #675–#680, #684, #685) are landed. D1-004a3a is the active priority-1 slice. P2 recut #641
+P1 readiness (#642), P6-R (#647), D1-R0 (#649), and D1-001 through D1-004a3a
+(#652–#654, #660, #662, #665, #667, #672, #675–#680, #684, #685, #690) are landed. D1-004a3b is the active priority-1 slice. P2 recut #641
 remains parked behind the priority path; do not append to or revive superseded
 stacks.
 
