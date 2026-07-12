@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { fireEvent, render, screen, waitFor } from "@testing-library/react"
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react"
 import { beforeEach, describe, expect, it, vi } from "vitest"
 import type { BoringTaskCard, BoringTaskSessionBinding } from "../shared"
 import { TaskCard } from "./TaskCard"
@@ -49,15 +49,21 @@ beforeEach(() => {
 })
 
 describe("TaskCard task chat sessions", () => {
-  it("sorts active linked sessions before idle sessions and shows queued rollup accessibly", async () => {
-    const queued = link({ id: "link-queued", sessionId: "pi-queued", title: "Queued chat", createdAt: "2026-07-01T00:00:00.000Z" })
-    const idle = link({ id: "link-idle", sessionId: "pi-idle", title: "Idle chat", createdAt: "2026-07-02T00:00:00.000Z" })
+  it("orders all activity priorities before idle and applies recency within a priority", async () => {
+    const workingOld = link({ id: "working-old", sessionId: "pi-working-old", title: "Working old", createdAt: "2026-07-01T00:00:00.000Z" })
+    const workingNew = link({ id: "working-new", sessionId: "pi-working-new", title: "Working new", createdAt: "2026-07-01T00:00:00.000Z" })
+    const queued = link({ id: "queued", sessionId: "pi-queued", title: "Queued", createdAt: "2026-07-04T00:00:00.000Z" })
+    const errored = link({ id: "error", sessionId: "pi-error", title: "Errored", createdAt: "2026-07-05T00:00:00.000Z" })
+    const idle = link({ id: "idle", sessionId: "pi-idle", title: "Idle", createdAt: "2026-07-06T00:00:00.000Z" })
     postJson.mockImplementation(async (path: string) => {
-      if (path === "/api/boring-tasks/sessions/list") return { links: [idle, queued] }
+      if (path === "/api/boring-tasks/sessions/list") return { links: [idle, errored, queued, workingOld, workingNew] }
       if (path === "/api/v1/agent/pi-chat/sessions/activity") return {
         activities: [
-          { sessionId: "pi-idle", status: "idle", source: "persisted", updatedAt: "2026-07-02T00:00:00.000Z" },
-          { sessionId: "pi-queued", status: "queued", source: "live-runtime", updatedAt: "2026-07-01T00:00:00.000Z" },
+          { sessionId: "pi-working-old", status: "working", source: "live-runtime", updatedAt: "2026-07-02T00:00:00.000Z" },
+          { sessionId: "pi-working-new", status: "working", source: "live-runtime", updatedAt: "2026-07-03T00:00:00.000Z" },
+          { sessionId: "pi-queued", status: "queued", source: "live-runtime", updatedAt: "2026-07-07T00:00:00.000Z" },
+          { sessionId: "pi-error", status: "error", source: "live-runtime", updatedAt: "2026-07-08T00:00:00.000Z" },
+          { sessionId: "pi-idle", status: "idle", source: "persisted", updatedAt: "2026-07-09T00:00:00.000Z" },
         ],
         omittedSessionIds: [],
       }
@@ -65,15 +71,16 @@ describe("TaskCard task chat sessions", () => {
     })
 
     renderCard()
-    expect(await screen.findByRole("button", { name: /queued/i })).toBeInTheDocument()
+    expect(await screen.findByLabelText("2 working linked chats")).toBeInTheDocument()
     fireEvent.click(screen.getByRole("button", { name: /open chat/i }))
 
     const rows = await screen.findAllByRole("listitem")
-    expect(rows[0]).toHaveTextContent("Queued chat")
-    expect(rows[0]).toHaveTextContent("Queued")
-    expect(rows[1]).toHaveTextContent("Idle chat")
-    expect(rows[1]).toHaveTextContent("Idle")
-    expect(openDetachedChat).not.toHaveBeenCalled()
+    expect(rows.map((row) => row.textContent)).toEqual(expect.arrayContaining([expect.stringContaining("Working new"), expect.stringContaining("Working old"), expect.stringContaining("Queued"), expect.stringContaining("Errored"), expect.stringContaining("Idle")]))
+    expect(rows[0]).toHaveTextContent("Working new")
+    expect(rows[1]).toHaveTextContent("Working old")
+    expect(rows[2]).toHaveTextContent("Queued")
+    expect(rows[3]).toHaveTextContent("Errored")
+    expect(rows[4]).toHaveTextContent("Idle")
   })
 
   it("opens the one working linked session directly and keeps persisted standalone sessions idle", async () => {
@@ -100,33 +107,75 @@ describe("TaskCard task chat sessions", () => {
     expect(screen.queryByRole("region", { name: /linked chat sessions/i })).not.toBeInTheDocument()
   })
 
-  it("treats browser status events as optimistic until polling reconciles activity", async () => {
-    const existing = link()
+  it("keeps native keyboard focus on the disclosure trigger and uses motion-safe activity animation", async () => {
+    const working = link({ id: "working", sessionId: "pi-working", title: "Working" })
+    const workingSecond = link({ id: "working-second", sessionId: "pi-working-second", title: "Working second" })
+    const queued = link({ id: "queued", sessionId: "pi-queued", title: "Queued" })
     postJson.mockImplementation(async (path: string) => {
-      if (path === "/api/boring-tasks/sessions/list") return { links: [existing] }
-      if (path === "/api/v1/agent/pi-chat/sessions/activity") return { activities: [{ sessionId: "pi-1", status: "idle", source: "persisted" }], omittedSessionIds: [] }
+      if (path === "/api/boring-tasks/sessions/list") return { links: [working, workingSecond, queued] }
+      if (path === "/api/v1/agent/pi-chat/sessions/activity") return {
+        activities: [
+          { sessionId: "pi-working", status: "working", source: "live-runtime" },
+          { sessionId: "pi-working-second", status: "working", source: "live-runtime" },
+          { sessionId: "pi-queued", status: "queued", source: "live-runtime" },
+        ],
+        omittedSessionIds: [],
+      }
       throw new Error(`unexpected post ${path}`)
     })
 
-    renderCard()
-    expect(await screen.findByLabelText("1 linked chats")).toBeInTheDocument()
-    window.dispatchEvent(new CustomEvent("boring:chat-session-status", { detail: { sessionId: "pi-1", working: true } }))
-    expect(await screen.findByLabelText("1 working linked chats")).toBeInTheDocument()
+    const { container } = renderCard()
+    const trigger = await screen.findByRole("button", { name: /open chat.*working/i })
+    expect(trigger).toHaveAttribute("type", "button")
+    trigger.focus()
+    expect(trigger).toHaveFocus()
+    fireEvent.click(trigger)
+    const close = await screen.findByRole("button", { name: "Close task chats" })
+    expect(container.querySelector("[class*='motion-safe:animate-pulse']")).toBeInTheDocument()
+    expect(container.querySelector("[class*='motion-safe:animate-pulse']")?.classList.contains("animate-pulse")).toBe(false)
+    close.focus()
+    fireEvent.click(close)
+    expect(trigger).toHaveFocus()
+  })
 
-    fireEvent.click(screen.getByRole("button", { name: /1 working/i }))
-    expect(await screen.findByRole("region", { name: /linked chat sessions/i })).toBeInTheDocument()
-    expect(screen.getByText("persisted")).toBeInTheDocument()
-    expect(openDetachedChat).not.toHaveBeenCalled()
+  it("uses optimistic status events only until fake-timer polling reconciles a standalone session as persisted idle", async () => {
+    vi.useFakeTimers()
+    const standalone = link({ id: "standalone", sessionId: "pi-standalone", title: "Standalone Pi" })
+    let activityCalls = 0
+    postJson.mockImplementation(async (path: string) => {
+      if (path === "/api/boring-tasks/sessions/list") return { links: [standalone] }
+      if (path === "/api/v1/agent/pi-chat/sessions/activity") {
+        activityCalls += 1
+        return { activities: [{ sessionId: "pi-standalone", status: "idle", source: "persisted" }], omittedSessionIds: [] }
+      }
+      throw new Error(`unexpected post ${path}`)
+    })
+
+    try {
+      renderCard()
+      await act(async () => { await Promise.resolve(); await Promise.resolve() })
+      expect(screen.getByLabelText("1 linked chats")).toBeInTheDocument()
+      await act(async () => {
+        window.dispatchEvent(new CustomEvent("boring:chat-session-status", { detail: { sessionId: "pi-standalone", working: true } }))
+      })
+      expect(screen.getByLabelText("1 working linked chats")).toBeInTheDocument()
+
+      await act(async () => { await vi.advanceTimersByTimeAsync(15_000) })
+      expect(activityCalls).toBeGreaterThanOrEqual(2)
+      expect(screen.getByLabelText("1 linked chats")).toBeInTheDocument()
+      expect(screen.queryByLabelText("1 working linked chats")).not.toBeInTheDocument()
+    } finally {
+      vi.useRealTimers()
+    }
   })
 
   it("keeps the disclosure open on activity failure, supports retry, and shows missing activity", async () => {
     const existing = link()
-    let activityCalls = 0
+    let mode: "fail" | "missing" = "fail"
     postJson.mockImplementation(async (path: string) => {
       if (path === "/api/boring-tasks/sessions/list") return { links: [existing] }
       if (path === "/api/v1/agent/pi-chat/sessions/activity") {
-        activityCalls += 1
-        if (activityCalls <= 2) throw new Error("activity down")
+        if (mode === "fail") throw new Error("activity down")
         return { activities: [], omittedSessionIds: ["pi-1"] }
       }
       throw new Error(`unexpected post ${path}`)
@@ -137,24 +186,29 @@ describe("TaskCard task chat sessions", () => {
     expect(await screen.findByRole("region", { name: /linked chat sessions/i })).toBeInTheDocument()
     expect(screen.getByText("Activity refresh failed.")).toBeInTheDocument()
 
+    mode = "missing"
     fireEvent.click(screen.getByRole("button", { name: "Retry" }))
     expect(await screen.findByText("Activity unavailable")).toBeInTheDocument()
   })
 
-  it("caps activity polling requests to the bounded session-id contract", async () => {
-    const manyLinks = Array.from({ length: 101 }, (_, index) => link({ id: `link-${index}`, sessionId: `pi-${index}` }))
+  it("covers every linked session through bounded chunks and rolls up activity beyond the first chunk", async () => {
+    const manyLinks = Array.from({ length: 101 }, (_, index) => link({ id: `link-${index}`, sessionId: `pi-${index}`, title: `Chat ${index}` }))
+    const activityRequests: string[][] = []
     postJson.mockImplementation(async (path: string, body: { sessionIds?: string[] }) => {
       if (path === "/api/boring-tasks/sessions/list") return { links: manyLinks }
       if (path === "/api/v1/agent/pi-chat/sessions/activity") {
-        expect(body.sessionIds).toHaveLength(100)
-        expect(body.sessionIds).not.toContain("pi-100")
-        return { activities: [], omittedSessionIds: [] }
+        const ids = body.sessionIds ?? []
+        activityRequests.push(ids)
+        return { activities: ids.includes("pi-100") ? [{ sessionId: "pi-100", status: "working", source: "live-runtime" }] : [], omittedSessionIds: [] }
       }
       throw new Error(`unexpected post ${path}`)
     })
 
     renderCard()
-    await waitFor(() => expect(postJson).toHaveBeenCalledWith("/api/v1/agent/pi-chat/sessions/activity", expect.objectContaining({ sessionIds: expect.any(Array) })))
+    expect(await screen.findByLabelText("1 working linked chats")).toBeInTheDocument()
+    expect(activityRequests).toHaveLength(2)
+    expect(activityRequests.map((ids) => ids.length)).toEqual([100, 1])
+    expect(activityRequests[1]).toEqual(["pi-100"])
   })
 
   it("creates, binds, and opens a chat when the task has no prior session", async () => {
