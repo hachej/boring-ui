@@ -105,7 +105,9 @@ export type {
   AgentDirectoryCompilerPublicErrorCode,
 } from './agentDefinition/compileAgentDirectory'
 export {
+  createResolvedAgentDigest,
   resolveAgentDeployment,
+  type ResolvedAgentDigestInput,
   type ResolvedAgent,
 } from './agentDefinition/resolveAgentDeployment'
 export type { AgentConfig } from '../shared/events'
