@@ -3,11 +3,11 @@
 This file coordinates three independent PR assignments. Dispatch one bead at a
 time.
 
-> **Dispatch correction (2026-07-11).** BBA1-001 landed via #624. BBA1-002 is
-> not a D1 prerequisite and is not dispatchable from P6-R alone. Wait for D1-R0
-> to specify and a D1 bead to implement the canonical redacted composition-
-> identity producer, then recut BBA1-002 against that exact current-main host
-> seam. P6-R remains a pure binding function.
+> **Dispatch correction (2026-07-12).** BBA1-001 landed via #624 and D1-001's
+> canonical redacted composition-identity producer landed via #652. BBA1-002 is
+> now recut-dispatchable against that current-main seam. Queue it after D1-004
+> and before P8 golden-path completion: A1-dev gates P8, not D1. P6-R remains a
+> pure binding function.
 
 ## BBA1-001 — Directory compiler and deterministic digest — M
 
@@ -38,8 +38,8 @@ fields and `pluginRefs` reject.
 
 ## BBA1-002 — Validate and local-dev commands — M
 
-**Input:** merged BBA1-001 and P6-R, plus the D1-R0-specified canonical
-composition-identity producer implemented on current main.
+**Input:** merged BBA1-001 and P6-R, plus the D1-001 canonical
+composition-identity producer landed on current main via #652.
 
 **Implement:**
 

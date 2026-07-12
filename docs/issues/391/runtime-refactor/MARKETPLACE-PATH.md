@@ -23,16 +23,19 @@ invoices go out. Full worked example: see the
   channel order are deferred DECISIONS, not deferred fundamentals — no
   further owner input needed until their phase opens.
 
-This is the phase roadmap from where #391 stands today to that scenario
+This is the phase roadmap from the verified 2026-07-12 baseline to that scenario
 working end-to-end. It does not change ordering inside any phase already
 sequenced in [INDEX.md](INDEX.md) — it only names the phases and slots the
 three new gap-identified workpackages (BL1, MK1, CH1) plus the S4 revival
 into where they land.
 
-## Phase 1 — Now
+## Current execution baseline (2026-07-12)
 
-[#631](https://github.com/hachej/boring-ui/pull/631) is landed; the P1 readiness
-recut is next.
+P1 readiness landed via [#642](https://github.com/hachej/boring-ui/pull/642).
+M1 landed via [#650](https://github.com/hachej/boring-ui/pull/650), superseding
+the closed [#549](https://github.com/hachej/boring-ui/pull/549)/
+[#556](https://github.com/hachej/boring-ui/pull/556) stack. D1-004a1 is active;
+the AR1 Lane W share-entry/deep-link/resource slices are next after priority 1.
 
 ## Phase 2 — Factory v1
 
@@ -43,9 +46,10 @@ docker multi-agent host (+ P5a slices) → [P8](work/P8-verification/PLAN.md) sl
 
 ## Phase 3 — External consumption = marketplace MVP
 
-[M1](work/M1-mcp-managed-agent/PLAN.md) recuts
-([#549](https://github.com/hachej/boring-ui/pull/549)/[#556](https://github.com/hachej/boring-ui/pull/556))
-→ [AR1](work/AR1-shareable-artifacts/PLAN.md) → M2/E2 recuts. This first
+[M1](work/M1-mcp-managed-agent/PLAN.md) landed via
+[#650](https://github.com/hachej/boring-ui/pull/650) (superseding the closed
+#549/#556 stack) → [AR1](work/AR1-shareable-artifacts/PLAN.md) Lane W next
+after priority 1 → M2/E2 recuts. This first
 authenticated tracer uses M1's existing bearer/membership seam.
 
 Public marketplace promotion then adds

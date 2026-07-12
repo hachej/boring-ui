@@ -14,6 +14,12 @@ Status: decision settled ([DECISIONS.md #22](../../../../DECISIONS.md#22-one-age
   (values ratified in the AC1 consumer-backed spec, not here): consumption
   depth limit, same-pair cycle refusal, input-required timeout → canceled
   (resumable context).
+- **BLOCKING: AC1-D-SPEC is required before dispatcher implementation.** It must
+  settle the dispatcher API surface; task↔pi-session ownership/mapping;
+  `input-required` response correlation; restart/timeout persistence (decide:
+  T1 event store **YES/NO**); audit events; stable public error codes; target
+  files; and the proof matrix. AC1-D is not dispatchable until that micro-spec
+  is accepted.
 - **AC1-M — consumption modes.** `AgentDefinition` workspace-binding
   parameter (subagent = caller workspace); contracted mode is a layered
   decorator over the same pipeline, never a forked code path (Decision 22
