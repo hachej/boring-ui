@@ -54,6 +54,11 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
   Input,
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
 } from "@hachej/boring-ui-kit"
 import { cn } from "../../../../front/lib/utils"
 import { toast } from "../../../../front/toast"
@@ -1072,13 +1077,25 @@ export function FileTreePane({
       <div className="flex h-full flex-col">
         <div className="space-y-1.5 border-b border-border px-2 py-1.5">
           {rootOptions.length > 1 && (
-            <div className="grid gap-1 rounded-md bg-muted/45 p-0.5" style={{ gridTemplateColumns: `repeat(${rootOptions.length}, minmax(0, 1fr))` }} role="tablist" aria-label="File roots">
-              {rootOptions.map((root) => (
-                <Button key={root.filesystem} type="button" role="tab" aria-selected={activeFilesystem === root.filesystem} variant={activeFilesystem === root.filesystem ? "secondary" : "ghost"} size="sm" className="h-6 text-xs" onClick={() => setSelectedFilesystem(root.filesystem)}>
-                  {root.label}
-                </Button>
-              ))}
-            </div>
+            <Select
+              value={activeFilesystem}
+              onValueChange={(value) => setSelectedFilesystem(value as FilesystemId)}
+            >
+              <SelectTrigger
+                size="sm"
+                className="h-7 w-full text-xs"
+                aria-label="File root"
+              >
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {rootOptions.map((root) => (
+                  <SelectItem key={root.filesystem} value={root.filesystem} className="text-xs">
+                    {root.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
           )}
           <Input
             placeholder={activeRoot?.searchPlaceholder ?? "Search files..."}

@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach, beforeAll, afterAll } from "vitest"
 import { render, screen, fireEvent, waitFor, act } from "@testing-library/react"
+import userEvent from "@testing-library/user-event"
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
 import type React from "react"
 import { Toaster, clearToasts } from "../../../../../front/toast"
@@ -179,7 +180,21 @@ function wrapper({ children }: { children: React.ReactNode }) {
 const originalInnerWidth = window.innerWidth
 const originalInnerHeight = window.innerHeight
 
+// Radix Select drives its trigger through pointer-capture + scrollIntoView,
+// neither of which jsdom implements. Stub them so the root switcher opens.
 beforeAll(() => {
+  if (!Element.prototype.hasPointerCapture) {
+    Element.prototype.hasPointerCapture = () => false
+  }
+  if (!Element.prototype.setPointerCapture) {
+    Element.prototype.setPointerCapture = () => undefined
+  }
+  if (!Element.prototype.releasePointerCapture) {
+    Element.prototype.releasePointerCapture = () => undefined
+  }
+  if (!Element.prototype.scrollIntoView) {
+    Element.prototype.scrollIntoView = () => undefined
+  }
   Object.defineProperty(window, "innerWidth", {
     configurable: true,
     writable: true,
@@ -191,6 +206,13 @@ beforeAll(() => {
     value: 420,
   })
 })
+
+/** Open the file-root dropdown and pick a root by its visible label. */
+async function selectRoot(label: string): Promise<void> {
+  const user = userEvent.setup()
+  await user.click(screen.getByRole("combobox", { name: "File root" }))
+  await user.click(await screen.findByRole("option", { name: label }))
+}
 
 afterAll(() => {
   Object.defineProperty(window, "innerWidth", {
@@ -272,8 +294,8 @@ describe("FileTreePane", () => {
       ]}
     />, { wrapper })
 
-    expect(await screen.findByRole("tab", { name: "Workspace" })).toBeInTheDocument()
-    fireEvent.click(screen.getByRole("tab", { name: "Project" }))
+    expect(await screen.findByRole("combobox", { name: "File root" })).toBeInTheDocument()
+    await selectRoot("Project")
 
     await waitFor(() => expect(screen.getByText("handbook.md")).toBeInTheDocument())
     fireEvent.click(screen.getByText("handbook.md"))
@@ -311,7 +333,7 @@ describe("FileTreePane", () => {
     fireEvent.click(screen.getByTestId("trigger-expand-src"))
     await waitFor(() => expect(screen.getByText("user-only.ts")).toBeInTheDocument())
 
-    fireEvent.click(screen.getByRole("tab", { name: "Project" }))
+    await selectRoot("Project")
     await waitFor(() => expect(screen.getByTestId("file-tree")).toBeInTheDocument())
     expect(screen.queryByText("user-only.ts")).not.toBeInTheDocument()
     fireEvent.click(screen.getByTestId("trigger-expand-src"))
@@ -329,8 +351,36 @@ describe("FileTreePane", () => {
     render(<FileTreePane />, { wrapper })
 
     await waitFor(() => expect(screen.getByTestId("file-tree")).toBeInTheDocument())
-    expect(screen.queryByRole("tab", { name: "Workspace" })).not.toBeInTheDocument()
-    expect(screen.queryByRole("tab", { name: "Project" })).not.toBeInTheDocument()
+    expect(screen.queryByRole("combobox", { name: "File root" })).not.toBeInTheDocument()
+  })
+
+  it("isolates a load failure to the selected root and recovers on switch", async () => {
+    mockFileList.mockImplementation((_dir: string, filesystem?: string) => (
+      filesystem === "project_alpha"
+        ? { data: undefined, isLoading: false, error: new Error("Forbidden") }
+        : { data: sampleFiles, isLoading: false, error: undefined }
+    ))
+
+    render(<FileTreePane
+      roots={[
+        { filesystem: "user", label: "Workspace", rootDir: ".", access: "readwrite" },
+        { filesystem: "project_alpha", label: "Project", rootDir: "/", access: "readonly" },
+      ]}
+    />, { wrapper })
+
+    // Healthy default root renders its tree.
+    await waitFor(() => expect(screen.getByTestId("file-tree")).toBeInTheDocument())
+
+    // Switching to the failing root shows an inline error, not a blank pane,
+    // and the switcher stays available to move away.
+    await selectRoot("Project")
+    await waitFor(() => expect(screen.getByText(/Failed to load files/)).toBeInTheDocument())
+    expect(screen.getByRole("combobox", { name: "File root" })).toBeInTheDocument()
+
+    // Switching back to the healthy root recovers the tree.
+    await selectRoot("Workspace")
+    await waitFor(() => expect(screen.getByTestId("file-tree")).toBeInTheDocument())
+    expect(screen.queryByText(/Failed to load files/)).not.toBeInTheDocument()
   })
 
   it("hides .boring-agent from the default tree view", async () => {
