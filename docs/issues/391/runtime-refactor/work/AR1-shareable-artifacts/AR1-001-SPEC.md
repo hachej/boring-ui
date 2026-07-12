@@ -5,8 +5,8 @@ DISPATCH (Lane W)**. The 2026-07-12 adversarial review (PR #656) raised five
 blocking findings; all five are resolved by amendment below (§2.3, §2.7, §5,
 §8). The owner ratified the three §2.12 open items on 2026-07-12 (see
 "Owner ratification" note in §2.12). Lane W implementation beads dispatch now.
-Lane X (`ArtifactTransferHandle` blob transfer) remains spec-ready but
-build-gated on the first contracted-mode engagement per
+Lane X (`ArtifactTransferHandle` blob transfer) remains build-gated on the
+first contracted-mode engagement and **requires protocol review before build** per
 [IMPLEMENTATION-GUARDRAILS.md](../../IMPLEMENTATION-GUARDRAILS.md) AR1 section
 — see §8. This specification is the dispatch gate named by
 [PLAN.md](./PLAN.md), [TODO.md](./TODO.md), [HANDOFF.md](./HANDOFF.md),
@@ -22,7 +22,9 @@ build-gated on the first contracted-mode engagement per
 AR1 delivers two distinct sharing lanes that were reconciled into one spec by
 the owner lane split of 2026-07-11 (PLAN "Binding v1 direction"). They share
 neither storage nor authority model and MUST NOT share code beyond the deep-link
-route family and the MCP resource seam:
+route family and the existing MCP server/transport owner. No MCP resource seam
+exists today; Lane W's AR1-004 creates the first minimal server-side resource
+support:
 
 - **Lane X — cross-workspace deliverable.** A producer agent in one authorized
   workspace hands an immutable, digest-pinned artifact to a *different*
@@ -136,8 +138,7 @@ interface ArtifactTransferHandleV1 {
   revoked: boolean
   maxRedemptions: number | null // null = unbounded within expiry; default 1 (owner-ratified, 2.12)
   redemptionCount: number   // authoritative counter; mutated only by the 2.3.4
-                             // atomic compare-and-increment inside the
-                             // serializable reservation transaction
+                             // durable reservation transition
 }
 ```
 
@@ -203,10 +204,10 @@ no handle. This is the load-bearing immutability guarantee (PLAN lines 19-21).
 
 Redemption is the destination-side operation. It authorizes the handle and the
 destination workspace **separately** (PLAN line 22; HANDOFF line 17). Steps 1-2
-are a fast, non-authoritative pre-check; step 4 is the single authoritative
-transaction boundary that resolves both the `maxRedemptions` race (Adversarial
-review finding 1) and the revoke-vs-redeem race (Adversarial review finding 4)
-in one place.
+are a fast, non-authoritative pre-check; step 4 uses durable database state plus
+a staged workspace write. The database reservation resolves the
+`maxRedemptions` and revoke-vs-redeem races; it does **not** pretend the database
+and workspace filesystem share one serializable transaction.
 
 1. **Handle pre-check (non-authoritative).** Verify signature,
    `expiresAt > now`, `revoked == false`, and `redemptionCount < maxRedemptions`
@@ -222,39 +223,36 @@ in one place.
    Failure → `AR1_DESTINATION_UNAUTHORIZED` before mutation.
 3. **Byte re-verification.** Load the `ArtifactBlob`, re-hash, and compare to the
    handle's pinned `digest`. Mismatch → `AR1_DIGEST_MISMATCH`, no copy.
-4. **Atomic reservation + idempotent copy (single serializable transaction).**
-   Open one serializable transaction that performs, as a single commit/abort
-   unit:
-   1. Reload the handle's authoritative state (`revoked`, `expiresAt`,
-      `redemptionCount`) inside the transaction.
-   2. If `revoked == true` or `expiresAt <= now` → abort, no mutation,
-      `AR1_HANDLE_REVOKED` / `AR1_HANDLE_EXPIRED`. This is the revocation check
-      referenced in 2.4: **revoke wins iff the revoke transaction commits
-      first** — serializable isolation guarantees redemption either sees the
-      committed revoke (and aborts) or the revoke sees a redemption that
-      already committed (and revocation still succeeds, but stops only
-      *future* redemptions, 2.4).
-   3. **Compare-and-increment.** If bounded, check
-      `redemptionCount < maxRedemptions` against the just-reloaded value and,
-      in the same statement/transaction, increment `redemptionCount`. If the
-      check fails → abort, no mutation, `AR1_REDEMPTION_EXHAUSTED`. This
-      reservation is what makes single-delivery correct across concurrent
-      redeemers targeting *different* destination workspaces — the
-      `(handleId, destinationWorkspaceId)` idempotency key alone is
-      insufficient because it does not serialize across distinct destinations.
-   4. Materialize the immutable copy into the destination workspace and mint
-      the `WorkspaceFileLink` (or, for the idempotent-retry case in the
-      paragraph below, return the existing one).
-   5. Commit. Any failure at any point aborts the whole transaction: the
-      reservation is released, no partial copy, no partial `WorkspaceFileLink`
-      (2.10).
-
-   Redemption is **idempotent** keyed by `(handleId, destinationWorkspaceId)`:
-   before opening the reservation transaction, check for an existing committed
-   copy for this key and short-circuit to step 5 with the *same* `linkId`,
-   consuming no additional redemption. A retry after a *failed partial* copy
-   sees no committed copy, so it re-enters the reservation transaction cleanly
-   (2.10).
+4. **Durable reservation + staged-write protocol (protocol review required).**
+   Redemption is **idempotent** by `(handleId, destinationWorkspaceId)` and uses
+   a durable database redemption row with transitions
+   `reserved -> materializing -> committed` (or `cleanup-required` on a
+   non-recoverable failure):
+   1. Check for an existing `committed` row and return its same `linkId` without
+      consuming another redemption. A nonterminal row is recovery work, not a
+      second reservation.
+   2. In one serializable **database** transaction, reload `revoked`,
+      `expiresAt`, and `redemptionCount`; reject revoked/expired/exhausted
+      handles; compare-and-increment the bounded count; and create the
+      `reserved` row. This database commit is the revoke-vs-redeem ordering
+      boundary: revoke wins if it commits first; a reservation that commits
+      first is durably entitled to finish materialization or recovery.
+   3. Transition to `materializing`, write the bytes to an adapter-private,
+      non-visible staging location, re-hash them, then atomically rename the
+      complete staged file into its destination path. The destination exposes
+      either no file or the complete file: **no partial copy is visible**.
+   4. In a second database transaction, mint the `WorkspaceFileLink` and
+      transition the redemption row to `committed`. Only `committed` rows may
+      be returned to the caller or emit `artifact.handle.redeemed`.
+   5. On restart, scan nonterminal rows. If the complete renamed file exists
+      with the pinned digest, idempotently finish the link/`committed`
+      transition; otherwise re-materialize from the immutable blob or remove
+      abandoned staged files and release the reservation through a guarded
+      database transition. Recovery never increments the count twice.
+   6. A non-recoverable write failure transitions to `cleanup-required`;
+      cleanup removes staged material and releases the reservation in the
+      database. The protocol never claims that database and filesystem changes
+      commit or roll back together.
 5. **Return.** Emit `artifact.handle.redeemed`, return the destination-local
    `linkId` and its deep link (2.11). No source state, no path, no capability
    secret is returned.
@@ -273,12 +271,11 @@ internal-network address, or accepts an absolute/workspace-relative path
   durable and MUST survive process restart. **Revoke-vs-redeem boundary
   (Adversarial review finding 4, 2026-07-12):** a cached "not revoked" view is
   never authoritative for the copy decision — the redemption's step 2.3.4
-  serializable transaction reloads `revoked` from authoritative state and
-  aborts before any mutation if it is `true`. Revoke wins iff its transaction
-  commits before redemption's reservation transaction commits; there is no
-  window between "reload" and "commit" because both facts are read and acted
-  on inside the same transaction (this replaces the earlier looser "reload
-  before the copy commits" wording, which left that window open).
+  database reservation transaction reloads `revoked` from authoritative state
+  and aborts before reserving if it is `true`. Revoke wins iff its transaction
+  commits before the redemption reservation commits. If the reservation commits
+  first, recovery may finish that already-authorized delivery; revocation still
+  stops all later reservations.
 - **Already-materialized copies are unaffected by later expiry/revocation.**
   Once a `WorkspaceFileLink` exists, it is a normal destination-local file
   governed by destination membership — expiring or revoking the transfer handle
@@ -302,28 +299,26 @@ BBM1-002) **exactly** — one limit family, reuse not reinvent. **Owner-ratified
 
 | Field | M1-inherited cap | Notes |
 | --- | --- | --- |
-| final artifact bytes | 96 KiB | self-contained inline artifact |
+| final assistant text | 96 KiB | bounded final assistant response text |
 | Markdown artifact | 256 KiB | Markdown content kind |
 | serialized total | 384 KiB | full transfer payload ceiling |
 
-- **Rejection codes reuse M1's three codes as-is (Adversarial review finding
-  3, 2026-07-12).** M1 already ships `M1_INPUT_TOO_LARGE`,
-  `M1_RESULT_TOO_LARGE`, and `M1_ARTIFACT_UNSUPPORTED` for this exact object
-  (see M1 TODO.md BBM1-002); AR1 re-validates the same in-process payload at
-  its own boundary and MUST NOT collapse the three into one coarser code. AR1
-  uses the AR1-prefixed equivalents, mapped 1:1 so the failure space stays
-  total and every acceptance criterion can distinguish cause:
+- **Rejection mappings use M1's real public taxonomy (code-verified
+  2026-07-12).** `packages/agent/src/shared/error-codes.ts` defines
+  `MCP_AGENT_ARTIFACT_INVALID`, `MCP_AGENT_ARTIFACT_TOO_LARGE`, and
+  `MCP_AGENT_ARTIFACT_UNAVAILABLE`; brief overflow is `TOOL_INVALID_INPUT`.
+  AR1 keeps its own boundary-specific names but maps them to those actual M1
+  analogs:
 
-  | AR1 code | Mirrors | Triggers on |
+  | AR1 code | M1 analog | Triggers on |
   | --- | --- | --- |
-  | `AR1_INPUT_TOO_LARGE` | `M1_RESULT_TOO_LARGE` | final artifact bytes exceed 96 KiB |
-  | `AR1_RESULT_TOO_LARGE` | `M1_RESULT_TOO_LARGE` | serialized total exceeds 384 KiB |
-  | `AR1_ARTIFACT_UNSUPPORTED` | `M1_ARTIFACT_UNSUPPORTED` | Markdown artifact exceeds 256 KiB, binary/disallowed content type, or a truncated/malformed capture |
+  | `AR1_INPUT_TOO_LARGE` | `MCP_AGENT_ARTIFACT_TOO_LARGE` | final assistant text exceeds 96 KiB |
+  | `AR1_RESULT_TOO_LARGE` | `MCP_AGENT_ARTIFACT_TOO_LARGE` | serialized total exceeds 384 KiB |
+  | `AR1_ARTIFACT_UNSUPPORTED` | `MCP_AGENT_ARTIFACT_TOO_LARGE` for a Markdown artifact over 256 KiB; `MCP_AGENT_ARTIFACT_INVALID` for binary/disallowed/truncated/malformed content; `MCP_AGENT_ARTIFACT_UNAVAILABLE` when bytes cannot be read stably | artifact validation or availability fails |
 
-  M1's own split is brief/key overflow = `M1_INPUT_TOO_LARGE`, final/total
-  overflow = `M1_RESULT_TOO_LARGE` (M1 TODO.md BBM1-002). AR1 has no
-  brief-input analog (it captures an already-produced artifact, not a
-  delegate brief), so no AR1 code maps to `M1_INPUT_TOO_LARGE`.
+  AR1 has no brief-input analog (it captures an already-produced artifact,
+  not a delegate brief), so no AR1 code maps to M1's `TOOL_INVALID_INPUT`
+  brief-overflow case.
 
   This replaces the single `AR1_PAYLOAD_REJECTED` code from the pre-review
   draft; `AR1_PAYLOAD_REJECTED` is retired and MUST NOT be emitted (see §5).
@@ -390,13 +385,16 @@ producer, digest, `copiedAt`), never a bare 404 and never source state
 
 - **Mint rollback:** a failed capture/persist leaves no handle and no partial
   blob.
-- **Redemption rollback:** an abort of the 2.3.4 reservation transaction (copy
-  failure, digest mismatch discovered mid-transaction, or any other error)
-  rolls back atomically: no `WorkspaceFileLink`, no partial destination file,
-  and the `redemptionCount` compare-and-increment is rolled back with it — the
-  reservation is released, not consumed. A retry starts clean. Rollback is
-  per-`(handleId, destinationWorkspaceId)` and never mutates the source
-  workspace or the blob.
+- **Redemption rollback/recovery:** the database and workspace filesystem do
+  not roll back atomically. A failed materialization leaves no partial copy
+  **visible**: bytes remain only in the adapter-private staging location until
+  atomic rename. Durable nonterminal redemption state lets restart recovery
+  idempotently finish a complete renamed copy, re-materialize it from the
+  immutable blob, or clean staged files and release the reservation through a
+  guarded database transition. No `WorkspaceFileLink` is returned before the
+  `committed` transition. Recovery is per
+  `(handleId, destinationWorkspaceId)` and never mutates the source workspace
+  or blob.
 - Rollback never moves an already-committed delivery backward (delivery is
   final, 2.4).
 
@@ -415,7 +413,7 @@ All three items below are **ratified, closed, no longer open.** Ratified by
 the owner on 2026-07-12 following the adversarial review (PR #656):
 
 - **Exact size caps — RATIFIED: M1-inherited, exactly, one limit family.**
-  96 KiB final artifact bytes / 256 KiB Markdown artifact / 384 KiB serialized
+  96 KiB final assistant text / 256 KiB Markdown artifact / 384 KiB serialized
   total (2.6 table). No AR1-specific cap is introduced; a second limit set
   would guarantee drift from M1.
 - **Retention duration — RATIFIED: 7-day default expiry + 72h GC grace.**
@@ -463,8 +461,10 @@ interface ShareEntryV1 {
   known metadata, never a bare 404 (Guardrails accept criteria).
 - **MCP resource exposure.** The same share entry is exposed as an MCP resource
   so a machine consumer reads the same current file through the MCP resource
-  contract, membership-gated identically. This reuses the M1/M2 resource seam;
-  it does not introduce a second MCP runtime owner (TODO.md prerequisite).
+  contract, membership-gated identically. AR1-004 creates the first minimal MCP
+  server-side resource support (`listResources`/`readResource`) within the
+  existing MCP server/transport owner — no resource seam exists today. It does
+  not introduce a second MCP runtime owner (TODO.md prerequisite).
 - **Revocation = membership.** There is no separate revoke operation, no expiry,
   and no capability token to leak. Removing membership removes access; deleting
   the entry removes the link.
@@ -499,9 +499,9 @@ foreign workspace/deployment id.
 | --- | --- | --- |
 | `AR1_SOURCE_UNAUTHORIZED` | X | mint caller lacks source-workspace authorization |
 | `AR1_SOURCE_INPUT_REJECTED` | X | arbitrary URL/redirect/internal-net/absolute/relative path source rejected before capture |
-| `AR1_INPUT_TOO_LARGE` | X | final artifact bytes exceed the 96 KiB cap (mirrors `M1_RESULT_TOO_LARGE`, 2.6 — AR1 has no brief-input analog, so no AR1 code maps to `M1_INPUT_TOO_LARGE`) |
-| `AR1_RESULT_TOO_LARGE` | X | serialized total exceeds the 384 KiB cap (mirrors `M1_RESULT_TOO_LARGE`, 2.6) |
-| `AR1_ARTIFACT_UNSUPPORTED` | X | Markdown artifact exceeds 256 KiB, binary/disallowed content type, truncated/malformed capture, or secret-shaped content (mirrors `M1_ARTIFACT_UNSUPPORTED`, 2.6) |
+| `AR1_INPUT_TOO_LARGE` | X | final assistant text exceeds the 96 KiB cap (M1 analog: `MCP_AGENT_ARTIFACT_TOO_LARGE`; AR1 has no brief-input analog for `TOOL_INVALID_INPUT`) |
+| `AR1_RESULT_TOO_LARGE` | X | serialized total exceeds the 384 KiB cap (M1 analog: `MCP_AGENT_ARTIFACT_TOO_LARGE`) |
+| `AR1_ARTIFACT_UNSUPPORTED` | X | Markdown artifact exceeds 256 KiB, binary/disallowed content type, truncated/malformed/unavailable capture, or secret-shaped content (M1 analogs by cause: `MCP_AGENT_ARTIFACT_TOO_LARGE`, `MCP_AGENT_ARTIFACT_INVALID`, or `MCP_AGENT_ARTIFACT_UNAVAILABLE`) |
 | `AR1_CAPTURE_FAILED` | X | byte capture/persist failed; no handle issued, no partial blob |
 | `AR1_HANDLE_INVALID` | X | signature/shape invalid or tampered |
 | `AR1_HANDLE_EXPIRED` | X | `expiresAt` passed |
@@ -559,12 +559,11 @@ Machine-checkable where marked (CI or integration-provable).
 12. **[machine]** **Concurrency — revoke vs. redeem (Adversarial review
     finding 4).** A revoke request and a redeem request for the same handle
     are issued concurrently. Exactly one of the following holds: (a) revoke
-    commits first → redemption fails `AR1_HANDLE_REVOKED` and no
-    `WorkspaceFileLink` is created; or (b) redemption's reservation
-    transaction (2.3.4) commits first → redemption succeeds and the
-    already-delivered copy is unaffected by the revoke that follows (2.4).
-    There is no interleaving in which both a committed copy exists and the
-    handle was revoked before that commit.
+    commits first → redemption fails `AR1_HANDLE_REVOKED` and no reservation is
+    created; or (b) redemption's database reservation (2.3.4) commits first →
+    the staged-write protocol or restart recovery completes that already-
+    authorized delivery, and the copy is unaffected by the revoke that follows
+    (2.4). No later redemption can reserve after revocation.
 
 ### 6.2 Lane W (same-workspace)
 
@@ -589,25 +588,30 @@ named triggers (Decision 22).
 
 ## 8. Review closeout
 
-**Acceptance confirmed (2026-07-12).** Adversarial review (PR #656) raised
-five blocking findings, all resolved by amendment: (1) atomic
-compare-and-increment reservation for `maxRedemptions`, §2.3.4, with AC 6.1.11;
+**Lane W acceptance confirmed; Lane X requires protocol review before build
+(2026-07-12).** Adversarial review (PR #656) raised five blocking findings,
+resolved for Lane W dispatch and amended for Lane X: (1) durable database
+compare-and-increment reservation plus staged workspace materialization for
+`maxRedemptions`, §2.3.4, with AC 6.1.11;
 (2) blob dedup dropped, 1:1 handle↔blob ownership, §2.1/§2.7, with refcounting
 noted as a future alternative only; (3) `AR1_PAYLOAD_REJECTED` retired in
-favor of M1's three reused codes (`AR1_INPUT_TOO_LARGE` /
-`AR1_RESULT_TOO_LARGE` / `AR1_ARTIFACT_UNSUPPORTED`), §2.6/§5; (4) the
-revoke-vs-redeem boundary is now the single serializable transaction in
-§2.3.4, with AC 6.1.12; (5) this section now carries the build-dispatch gate
-(below). The three §2.12 open items are owner-ratified (2026-07-12): size caps
-inherit M1's exactly (96/256/384 KiB), retention is 7-day default expiry +
-72h GC grace, and `maxRedemptions` defaults to 1 with `open-authenticated` +
-unbounded deferred.
+favor of AR1 boundary codes mapped to M1's real
+`MCP_AGENT_ARTIFACT_INVALID` / `MCP_AGENT_ARTIFACT_TOO_LARGE` /
+`MCP_AGENT_ARTIFACT_UNAVAILABLE` taxonomy, §2.6/§5; (4) the
+revoke-vs-redeem boundary is the durable database reservation, followed by a
+staged write + atomic rename and restart recovery, §2.3.4/§2.10, with AC
+6.1.12; (5) this section carries the build-dispatch gate below. The three §2.12
+open items are owner-ratified (2026-07-12): size caps inherit M1's exactly
+(96 KiB final assistant text / 256 KiB Markdown / 384 KiB serialized),
+retention is 7-day default expiry + 72h GC grace, and `maxRedemptions`
+defaults to 1 with `open-authenticated` + unbounded deferred.
 
-Both lanes' record shapes, the mint→capture→persist→issue ordering, the
-separate handle vs destination authorization, expiry/revocation/GC
-durability, idempotent copy + rollback, the SSRF/path guard, the
-no-secret/no-path invariant across both lanes, and the stable error set are
-confirmed against this amended text.
+Lane W's record shape, membership authorization, tombstone behavior, and MCP
+resource requirements are confirmed for dispatch. Lane X's record shapes,
+mint→capture→persist→issue ordering, separate handle/destination authorization,
+expiry/revocation/GC durability, staged-write recovery protocol, SSRF/path
+guard, no-secret/no-path invariant, and stable error set are documented here
+but require a focused protocol review before implementation.
 
 **Dispatch gating (Adversarial review finding 5).** Acceptance does not mean
 "build everything now." Per
@@ -616,12 +620,13 @@ section ("Do NOT build the cross-workspace `ArtifactTransferHandle` blob lane
 until the first contracted-mode engagement exists"):
 
 - **Lane W beads dispatch now.** The share-entry store, `/a/<id>` route +
-  tombstone, and MCP resource for same-workspace share are spec-ready and
-  unblocked — create their implementation beads immediately with their own
-  proof and review budget (TODO.md exit).
-- **Lane X beads are spec-ready but build-gated.** The `ArtifactTransferHandle`
-  + `ArtifactBlob` cross-workspace copy path MUST NOT be built until the first
-  contracted-mode engagement exists (Guardrails AR1). This spec's acceptance
-  removes the *spec* gate for Lane X; it does not remove the *build* gate. A
-  dispatcher reading "accepted" MUST NOT start Lane X implementation on that
-  basis alone — confirm the guardrail trigger first.
+  tombstone, and AR1-004's first minimal MCP server-side resource support
+  (`listResources`/`readResource`) within the existing MCP server/transport
+  owner are spec-ready and unblocked — create their implementation beads with
+  their own proof and review budget (TODO.md exit).
+- **Lane X requires protocol review before build and remains build-gated.** The
+  `ArtifactTransferHandle` + `ArtifactBlob` cross-workspace copy path MUST NOT
+  be built until the first contracted-mode engagement exists (Guardrails AR1)
+  **and** a focused review accepts the staged-write, atomic-rename, durable
+  redemption-state, and crash-recovery protocol in §2.3.4/§2.10. A dispatcher
+  reading "accepted" MUST NOT start Lane X implementation on that basis alone.

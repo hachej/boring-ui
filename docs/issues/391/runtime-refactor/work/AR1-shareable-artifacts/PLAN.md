@@ -1,7 +1,8 @@
 # AR1-shareable-artifacts — Plan
 
-Status: priority-2 spec package. AR1-001 must settle the transfer security
-contract before implementation beads exist.
+Status: priority-2 spec package. AR1-001 accepts Lane W for dispatch;
+AR1-002…004 queue after priority 1. Lane X remains build-gated and requires a
+focused staged-write/recovery protocol review before implementation.
 
 > Phase: Phase AR1 — shareable artifacts (after M1 recuts, before M2/E2)
 > Ordering authority: [INDEX.md](../../INDEX.md) · Vision: [VISION.md](../../VISION.md)

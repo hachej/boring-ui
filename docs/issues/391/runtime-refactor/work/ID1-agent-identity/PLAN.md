@@ -17,7 +17,7 @@ deployment.
 
 - **Identity server:** Ory Hydra + a boring-owned adapter layer
   ([DECISIONS.md #24](../../../../DECISIONS.md#24-identity-server-ory-hydra--boring-owned-adapter-layer),
-  Proposed, accepted on merge).
+  Accepted 2026-07-12 via #670).
 - **Protocol:** MCP OAuth 2.1 + PKCE per the June-2025+ MCP authorization
   spec — Protected Resource Metadata (RFC 9728) and Resource Indicators
   (RFC 8707).

@@ -157,13 +157,16 @@ Exit criteria:
   - R0 host config is bearer-only and carries verifier/policy/quota refs. It has
     no public-demo policy. Hardcoded demo verticals are fixtures only.
   - The agent may produce one UTF-8 Markdown artifact. Inline it only when <=
-    256 KiB; reject larger or binary output with `M1_ARTIFACT_UNSUPPORTED`.
-    Never include a workspace-relative or absolute path in the MCP result.
+    256 KiB; reject larger output with `MCP_AGENT_ARTIFACT_TOO_LARGE` and
+    binary/disallowed output with `MCP_AGENT_ARTIFACT_INVALID`. Never include a
+    workspace-relative or absolute path in the MCP result.
   - Final assistant text is <=96 KiB UTF-8 and the complete serialized MCP
     result is <=384 KiB. Configure model maximum output consistently, then
     enforce bytes again at the host boundary. Oversized brief/key uses
-    `M1_INPUT_TOO_LARGE`; oversized final/total uses `M1_RESULT_TOO_LARGE`;
-    binary or oversized artifact uses `M1_ARTIFACT_UNSUPPORTED`.
+    `TOOL_INVALID_INPUT`; oversized final/total/artifact uses
+    `MCP_AGENT_ARTIFACT_TOO_LARGE`; binary/disallowed/truncated/malformed
+    artifact content uses `MCP_AGENT_ARTIFACT_INVALID`; and bytes that cannot
+    be read stably use `MCP_AGENT_ARTIFACT_UNAVAILABLE`.
   - Host one vertical-agent config (instructions + tools) in full-app or CLI. Pick one host for M1; do not build two compositions unless the second is only a smoke fixture.
   - The endpoint URL must be usable by any stock MCP client that supports Streamable HTTP or the repo's chosen MCP transport.
 - Tests: exact/over boundaries for final text (96 KiB), artifact (256 KiB), and

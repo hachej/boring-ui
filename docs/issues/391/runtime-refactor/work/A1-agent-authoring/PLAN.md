@@ -1,9 +1,9 @@
 # A1-agent-authoring — Plan
 
-Status: deterministic compiler landed via #624. Workspace-backed validate/dev
-requires a current-main recut after D1-R0 specifies and a D1 bead implements
-the canonical composition-identity producer. D1 depends only on the compiler;
-local dev gates the P8 developer journey, not D1 dispatch.
+Status: deterministic compiler landed via #624 and D1-001's canonical
+composition-identity producer landed via #652. Workspace-backed validate/dev is
+recut-dispatchable after D1-004 and before P8 golden-path completion. D1 depends
+only on the compiler; local dev gates the P8 developer journey, not D1 dispatch.
 
 ## Purpose
 
@@ -18,8 +18,8 @@ same immutable definition to dedicated deployment.
 - **BBA1-002 local dev:** stateless P6-R plus the same host-authorized
   workspace/default binding and canonical redacted composition identity used by
   D1. P6-R does not create the deployment, authorize the workspace, choose a
-  runtime, or emit the composition digest. D1-R0 must name that real host seam
-  and its implementation bead before BBA1-002 is dispatchable.
+  runtime, or emit the composition digest. D1-001 landed that real host seam via
+  #652; BBA1-002 is now dispatchable for a current-main recut in its queue slot.
 - **BBA1-003 R0 migration:** BBA1-002 and proof that the shipped D1 path
   actually consumes duplicated M1 behavior configuration. Optional M1's mere
   existence does not create this gate.

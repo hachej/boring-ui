@@ -12,11 +12,12 @@ shims) remains binding.
 | 1 | #631 + P1 readiness | **merged; ancestry verified** | Request-binding lifecycle and fail-closed readiness are complete; do not replay discarded/superseded stacks. |
 | 2 | P6-R / BBP6-011 | **merged; ancestry verified** | The pure one-binding resolver is complete; D1 obtains N agents through N independent calls. |
 | 3 | D1-R0 + D1-001…003 | **merged; ancestry verified through [#680](https://github.com/hachej/boring-ui/pull/680)** | Exact D1 PRs: #649, #652–#654, #660, #662, #665, #667, #672, and #675–#680. Plan/identity, revision lifecycle, stable Compose, secure runtime inputs, exact-host mount, and real Docker boundary proof are complete. |
-| 4 | D1-004a1…a4 -> b/c/d -> D1-005 -> D1-006 | **priority 1; D1-004a1 active** | Land proxy trust, active reader, Host scope, landing/readiness, authority/admission fences, atomic N-binding boot, then the three-agent EU proof. A1-dev still gates P8, not D1. |
-| 5 | P5a | conditional inside D1 | No separate P5a code was needed through D1-003; add only a future demonstrated host gap. D1 owns apply/digest/rollback. |
-| 6 | M1 -> AR1 -> M2/E2 | **M1 landed #650; AR1 next after priority 1** | Consume the landed authenticated delivery-v0 seam, dispatch the owner-ratified AR1 lane, then recut canonical MCP/artifact intake. |
-| 7 | T1 -> T2 | ordered priority 3 | Recut after priority-2 consumer proof. |
-| 8 | P2 -> X1 | ordered priority 4 | Sol P2 may prepare in isolation, but provider/mount work merges last. |
+| 4 | D1-004a1…a4 -> b/c/d -> D1-005 -> D1-006 | **priority 1; D1-004a1 active** | Land proxy trust, active reader, Host scope, landing/readiness, authority/admission fences, atomic N-binding boot, then the three-agent EU proof. |
+| 5 | A1-dev / BBA1-002 | **recut-dispatchable; D1-001 producer landed #652** | Queue after D1-004 and before P8 golden-path completion. Recut against the landed canonical composition-identity producer; A1-dev gates P8, not D1. |
+| 6 | P5a | conditional inside D1 | No separate P5a code was needed through D1-003; add only a future demonstrated host gap. D1 owns apply/digest/rollback. |
+| 7 | M1 -> AR1 -> M2/E2 | **M1 landed #650; AR1 next after priority 1** | Consume the landed authenticated delivery-v0 seam, dispatch the owner-ratified AR1 Lane W, then recut canonical MCP/artifact intake. |
+| 8 | T1 -> T2 | ordered priority 3 | Recut after priority-2 consumer proof. |
+| 9 | P2 -> X1 | ordered priority 4 | Sol P2 may prepare in isolation, but provider/mount work merges last. |
 
 ### P1-R readiness micro-contract — current dispatch slice
 
@@ -303,7 +304,10 @@ T1.
 | pr3-migrate-r0-config | BBA1-003 | move/delete | ~150–300 | only when shipped D1 consumes duplicated M1 behavior configuration, resolve it from the compiled bundle; temporary `ManagedAgentVerticalConfig` projection is removed or reduced to a documented host-only deployment adapter | D1 path + M1 stock-client smoke |
 
 **A1 v1 total: 2 PRs, plus one conditional R0 migration PR.** BBA1-001 and its
-P6-D prerequisite have landed via #624/#623. BBA1-002 waits for P6-R so it uses the normal host resolver.
+P6-D prerequisite landed via #624/#623; P6-R and D1-001's canonical
+composition-identity producer also landed (#647/#652). BBA1-002 is
+recut-dispatchable after D1-004 and before P8 golden-path completion, using the
+normal host resolver and landed composition seam.
 BBA1-003 is a P8 gate only when the shipped D1 path still consumes duplicated
 M1 behavior configuration. Keep v1 conventions deliberately small: one schema,
 one instructions file, reference ids rather than executable discovery, and no

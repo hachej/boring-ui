@@ -14,10 +14,14 @@ identity-server selection (Ory Hydra selected), and the
 
 Ory Hydra + a boring-owned adapter layer is selected (SPIKE-EVIDENCE §5). Hydra
 proved auth-code + PKCE live (§3: 41.8 MB image, ~21 MiB idle RSS, trivially
-hostable in the D1 compose). Keycloak is rejected (lacks RFC 8707 entirely,
-~750 MB–2 GB JVM). Boring implements the RFC 9728 endpoint,
-resource-vs-audience validation, and CIMD **regardless of server** — those are
-boring beads, not server config.
+hostable in the D1 compose). Keycloak merged initial experimental RFC 8707
+support on 2026-03-17 (#46763); #41526 is closed and follow-up #47117 remains
+open. Hydra remains selected on the verified PKCE spike and footprint (Ory's
+documented 5–15 MB Go binary range versus a 750 MB+ JVM footprint). Boring
+implements the RFC 9728 endpoint, resource-vs-audience validation, and CIMD
+**regardless of server** — those are boring beads, not server config.
+Re-evaluate only if Keycloak's RFC 8707 support becomes stable **and** CIMD
+becomes required.
 
 ## Global do-NOT-build (Guardrails ID1)
 
