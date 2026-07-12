@@ -14,6 +14,7 @@ import {
 } from '../d1RevisionCodec.js'
 import { D1ActivePublishError, createHostRevisionStore, type D1HostRevisionStore } from '../hostRevisionStore.js'
 import { canonicalizeWorkspaceCompositionSnapshot } from '../workspaceComposition.js'
+import { createD1RuntimeInputsIdentity } from '../d1RuntimeInputs.js'
 
 const digest = (value: string): Sha256Digest => `sha256:${value.repeat(64).slice(0, 64)}`
 const OWNER_UID = process.geteuid!()
@@ -68,17 +69,27 @@ async function harness(fault?: () => void) {
   const root = path.join(parent, 'state')
   return { parent, root, store: createHostRevisionStore({ root, ownerUid: OWNER_UID, fault }) }
 }
-function observation(value: D1DesiredSnapshotV1, ready = true) {
+async function observation(value: D1DesiredSnapshotV1, ready = true) {
   return {
     schemaVersion: 1 as const, domain: 'boring-d1-observed:v1' as const,
-    bindings: value.resolvedBindings.map((binding) => ({ bindingId: binding.bindingId, ready, resolvedDigest: binding.resolvedDigest })),
+    bindings: await Promise.all(value.resolvedBindings.map(async (binding) => {
+      const planned = value.plan.bindings.find((entry) => entry.bindingId === binding.bindingId)!
+      return {
+        bindingId: binding.bindingId, ready, resolvedDigest: binding.resolvedDigest,
+        runtimeInputs: await createD1RuntimeInputsIdentity(planned, {
+          environment: { versionFingerprint: digest('6') }, workspaceAllocation: { versionFingerprint: digest('7') },
+          sessionAllocation: { versionFingerprint: digest('8') },
+          secrets: planned.secretRefs.map((secretRef) => ({ secretRef, providerVersionFingerprint: digest('9') })),
+        }),
+      }
+    })),
   }
 }
 async function complete(store: D1HostRevisionStore) {
   const value = await desired()
   const revisionId = await store.reserveRevisionId('host-1')
   await store.writeCandidate('host-1', revisionId, value)
-  await store.writeObservation('host-1', revisionId, observation(value))
+  await store.writeObservation('host-1', revisionId, await observation(value))
   const completed = await store.writeComplete('host-1', revisionId)
   return { value, revisionId, completed }
 }
@@ -183,7 +194,7 @@ describe('D1 host revision store', () => {
     const artifact = await harness(); const revisionId = await artifact.store.reserveRevisionId('host-1')
     await artifact.store.writeCandidate('host-1', revisionId, value)
     await writeFile(path.join(artifact.root, 'host-1', 'revisions', revisionId, 'observed.json'), 'occupied')
-    await expect(artifact.store.writeObservation('host-1', revisionId, observation(value))).rejects.toMatchObject({ code: D1HostErrorCode.COLLECTION_NOT_READY })
+    await expect(artifact.store.writeObservation('host-1', revisionId, await observation(value))).rejects.toMatchObject({ code: D1HostErrorCode.COLLECTION_NOT_READY })
   })
 
   it('rejects a valid revision tree copied under a different host identity', async () => {
@@ -198,18 +209,32 @@ describe('D1 host revision store', () => {
   it('rejects cross-binding observations and incomplete readiness', async () => {
     const h = await harness(); const value = await desired(); const revisionId = await h.store.reserveRevisionId('host-1')
     await h.store.writeCandidate('host-1', revisionId, value)
+    const observed = await observation(value)
     await expect(h.store.writeObservation('host-1', revisionId, {
-      ...observation(value), bindings: [{ ...observation(value).bindings[0], bindingId: 'other' }],
+      ...observed, bindings: [{ ...observed.bindings[0], bindingId: 'other' }],
     })).rejects.toMatchObject({ code: D1HostErrorCode.PLAN_INVALID })
-    await h.store.writeObservation('host-1', revisionId, observation(value, false))
+    await h.store.writeObservation('host-1', revisionId, await observation(value, false))
     await expect(h.store.writeComplete('host-1', revisionId)).rejects.toMatchObject({ code: D1HostErrorCode.COLLECTION_NOT_READY })
   })
 
   it('recomputes COMPLETE and rejects tampered or missing immutable artifacts', async () => {
     const h = await harness(); const done = await complete(h.store)
     expect(await h.store.readComplete('host-1', done.revisionId)).toEqual(done.completed)
+    const observedFile = path.join(h.root, 'host-1', 'revisions', done.revisionId, 'observed.json')
+    expect(await readFile(observedFile, 'utf8')).not.toMatch(/secret-value|\/srv\/private|raw-version|runtimeHandle/)
     for (const artifact of ['observed.json', 'completion.json']) {
       expect((await stat(path.join(h.root, 'host-1', 'revisions', done.revisionId, artifact))).mode & 0o777).toBe(0o400)
+    }
+    type MutableObservation = { bindings: Array<{ runtimeInputs: { environment: { versionFingerprint: string }; secrets: Array<{ providerVersionFingerprint: string }> } }> }
+    for (const mutate of [
+      (raw: MutableObservation) => { raw.bindings[0].runtimeInputs.environment.versionFingerprint = digest('0') },
+      (raw: MutableObservation) => { raw.bindings[0].runtimeInputs.secrets[0].providerVersionFingerprint = digest('0') },
+    ]) {
+      const tampered = await harness(); const tamperedDone = await complete(tampered.store)
+      const file = path.join(tampered.root, 'host-1', 'revisions', tamperedDone.revisionId, 'observed.json')
+      const raw = JSON.parse(await readFile(file, 'utf8')) as MutableObservation; mutate(raw)
+      await chmod(file, 0o600); await writeFile(file, JSON.stringify(raw)); await chmod(file, 0o400)
+      await expect(tampered.store.readComplete('host-1', tamperedDone.revisionId)).rejects.toMatchObject({ code: D1HostErrorCode.ROLLBACK_TARGET_INVALID })
     }
     const digestFile = path.join(h.root, 'host-1', 'revisions', done.revisionId, 'desired.sha256')
     await chmod(digestFile, 0o600); await writeFile(digestFile, `${digest('0')}\n`)

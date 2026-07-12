@@ -184,7 +184,7 @@ export function createHostRevisionStore(options: D1HostRevisionStoreOptions): D1
     if (rawCompletion === null) return null
     const candidate = await loadCandidate(host, revision)
     if (!candidate) mapped(D1HostErrorCode.PLAN_INVALID, 'candidate')
-    const observation = canonicalizeD1Observation(json((await readRegular(path.join(target, 'observed.json'), ownerUid))!), candidate.desired)
+    const observation = await canonicalizeD1Observation(json((await readRegular(path.join(target, 'observed.json'), ownerUid))!), candidate.desired)
     const completion = await canonicalizeD1CompleteEnvelope(json(rawCompletion), candidate.desired, observation)
     return Object.freeze({ ...candidate, observation, completion })
   }
@@ -275,7 +275,7 @@ export function createHostRevisionStore(options: D1HostRevisionStoreOptions): D1
       let candidate
       try { candidate = await loadCandidate(host, revision) } catch { mapped(D1HostErrorCode.ROLLBACK_TARGET_INVALID, 'targetRevision') }
       if (!candidate) mapped(D1HostErrorCode.ROLLBACK_TARGET_INVALID, 'targetRevision')
-      const observation = canonicalizeD1Observation(rawObservation, candidate.desired)
+      const observation = await canonicalizeD1Observation(rawObservation, candidate.desired)
       try {
         const target = revisionRoot(host, revision)
         await createDurable(path.join(target, 'observed.json'), JSON.stringify(observation), ownerUid)
@@ -291,7 +291,7 @@ export function createHostRevisionStore(options: D1HostRevisionStoreOptions): D1
       if (!candidate) mapped(D1HostErrorCode.ROLLBACK_TARGET_INVALID, 'targetRevision')
       try {
         const target = revisionRoot(host, revision)
-        const observation = canonicalizeD1Observation(json((await readRegular(path.join(target, 'observed.json'), ownerUid))!), candidate.desired)
+        const observation = await canonicalizeD1Observation(json((await readRegular(path.join(target, 'observed.json'), ownerUid))!), candidate.desired)
         const completion = await createD1CompleteEnvelope(revision, candidate.desired, observation)
         await createDurable(path.join(target, 'completion.json'), JSON.stringify(completion), ownerUid)
         await syncDirectory(target, 'revision', ownerUid)
