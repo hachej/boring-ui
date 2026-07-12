@@ -43,6 +43,16 @@ function link(overrides: Partial<BoringTaskSessionBinding> = {}): BoringTaskSess
   }
 }
 
+function deferred<T>() {
+  let resolve!: (value: T) => void
+  let reject!: (error: unknown) => void
+  const promise = new Promise<T>((promiseResolve, promiseReject) => {
+    resolve = promiseResolve
+    reject = promiseReject
+  })
+  return { promise, resolve, reject }
+}
+
 beforeEach(() => {
   postJson.mockReset()
   getJson.mockReset()
@@ -232,6 +242,82 @@ describe("TaskCard task chat sessions", () => {
       })
       expect(screen.getByLabelText("1 linked chats")).toBeInTheDocument()
       expect(screen.queryByLabelText("1 working linked chats")).not.toBeInTheDocument()
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it("opens the linked-session panel immediately with pending feedback while activity refresh is in flight", async () => {
+    const existing = link()
+    const pendingActivity = deferred<{ activities?: []; omittedSessionIds?: string[] }>()
+    postJson.mockImplementation(async (path: string) => {
+      if (path === "/api/boring-tasks/sessions/list") return { links: [existing] }
+      if (path === "/api/v1/agent/pi-chat/sessions/activity") return pendingActivity.promise
+      throw new Error(`unexpected post ${path}`)
+    })
+
+    renderCard()
+    fireEvent.click(screen.getByRole("button", { name: /open chat/i }))
+
+    expect(await screen.findByRole("region", { name: /linked chat sessions/i })).toBeInTheDocument()
+    expect(await screen.findByText("Checking chat activity…")).toBeInTheDocument()
+    await waitFor(() => expect(screen.getByRole("button", { name: /checking activity/i })).toHaveAttribute("aria-busy", "true"))
+
+    await act(async () => {
+      pendingActivity.resolve({ activities: [], omittedSessionIds: ["pi-1"] })
+      await pendingActivity.promise
+    })
+  })
+
+  it("does not open a chat from superseded activity returned to openTaskChat", async () => {
+    vi.useFakeTimers()
+    const working = link({ id: "working", sessionId: "pi-working", title: "Working chat" })
+    const activityRequests: Array<{ sessionIds: string[]; request: ReturnType<typeof deferred<{ activities?: Array<{ sessionId: string; status: "idle" | "queued" | "working" | "error"; source: "live-runtime" | "persisted" }>; omittedSessionIds?: string[] }>> }> = []
+    postJson.mockImplementation((path: string, body: { sessionIds?: string[] }) => {
+      if (path === "/api/boring-tasks/sessions/list") return Promise.resolve({ links: [working] })
+      if (path === "/api/v1/agent/pi-chat/sessions/activity") {
+        const request = deferred<{ activities?: Array<{ sessionId: string; status: "idle" | "queued" | "working" | "error"; source: "live-runtime" | "persisted" }>; omittedSessionIds?: string[] }>()
+        activityRequests.push({ sessionIds: body.sessionIds ?? [], request })
+        return request.promise
+      }
+      throw new Error(`unexpected post ${path}`)
+    })
+    getJson.mockResolvedValue([{ id: "pi-working", title: "Working chat" }])
+
+    try {
+      renderCard()
+      await act(async () => { await Promise.resolve(); await Promise.resolve() })
+      await act(async () => { vi.advanceTimersByTime(25); await Promise.resolve() })
+      expect(activityRequests.map((entry) => entry.sessionIds)).toEqual([["pi-working"]])
+      await act(async () => {
+        activityRequests[0].request.resolve({ activities: [{ sessionId: "pi-working", status: "working", source: "live-runtime" }], omittedSessionIds: [] })
+        await activityRequests[0].request.promise
+        await Promise.resolve()
+      })
+      expect(screen.getByLabelText("1 working linked chats")).toBeInTheDocument()
+
+      fireEvent.click(screen.getByRole("button", { name: /1 working/i }))
+      await act(async () => { await Promise.resolve(); await Promise.resolve() })
+      expect(activityRequests).toHaveLength(2)
+      await act(async () => { vi.advanceTimersByTime(15_000); await Promise.resolve() })
+      expect(activityRequests).toHaveLength(3)
+
+      await act(async () => {
+        activityRequests[1].request.resolve({ activities: [{ sessionId: "pi-working", status: "working", source: "live-runtime" }], omittedSessionIds: [] })
+        await activityRequests[1].request.promise
+        await Promise.resolve()
+      })
+
+      expect(openDetachedChat).not.toHaveBeenCalled()
+      expect(screen.getByRole("alert")).toHaveTextContent("changed while opening")
+      expect(screen.getByRole("region", { name: /linked chat sessions/i })).toBeInTheDocument()
+
+      await act(async () => {
+        activityRequests[2].request.resolve({ activities: [{ sessionId: "pi-working", status: "idle", source: "persisted" }], omittedSessionIds: [] })
+        await activityRequests[2].request.promise
+        await Promise.resolve()
+      })
+      expect(openDetachedChat).not.toHaveBeenCalled()
     } finally {
       vi.useRealTimers()
     }

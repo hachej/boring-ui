@@ -3,6 +3,9 @@ import { useWorkspacePluginClient } from "@hachej/boring-workspace"
 
 export type TaskSessionActivityStatus = "idle" | "queued" | "working" | "error" | "missing"
 export interface TaskSessionActivity { status: TaskSessionActivityStatus; source?: "live-runtime" | "persisted"; updatedAt?: string }
+export type TaskSessionActivityRefreshResult =
+  | { status: "fresh"; activities: Record<string, TaskSessionActivity> }
+  | { status: "stale" }
 
 interface SessionActivityResponse {
   activities?: Array<{ sessionId: string; status: "idle" | "queued" | "working" | "error"; source: "live-runtime" | "persisted"; updatedAt?: string }>
@@ -19,7 +22,7 @@ export interface TaskSessionActivityController {
   activities: Record<string, TaskSessionActivity>
   error: string | null
   registerSessionIds(sessionIds: readonly string[]): () => void
-  refreshSessionIds(sessionIds: readonly string[]): Promise<Record<string, TaskSessionActivity>>
+  refreshSessionIds(sessionIds: readonly string[]): Promise<TaskSessionActivityRefreshResult>
   setOptimisticActivity(sessionId: string, activity: TaskSessionActivity): void
   clearSessionActivity(sessionId: string): void
   isLoading(sessionIds: readonly string[]): boolean
@@ -117,9 +120,9 @@ function useTaskSessionActivityController(enabled: boolean): TaskSessionActivity
   const refreshSessionIds = useCallback(async (
     rawSessionIds: readonly string[],
     options: { pollingGeneration?: number } = {},
-  ): Promise<Record<string, TaskSessionActivity>> => {
+  ): Promise<TaskSessionActivityRefreshResult> => {
     const sessionIds = uniqueSessionIds(rawSessionIds)
-    if (sessionIds.length === 0) return {}
+    if (sessionIds.length === 0) return { status: "fresh", activities: {} }
     const requestId = requestSeqRef.current + 1
     requestSeqRef.current = requestId
     for (const sessionId of sessionIds) latestRequestBySessionIdRef.current.set(sessionId, requestId)
@@ -128,21 +131,19 @@ function useTaskSessionActivityController(enabled: boolean): TaskSessionActivity
     addLoading(sessionIds)
     try {
       const next = await fetchSessionActivities(pluginClient, sessionIds)
-      if (mountedRef.current && isGenerationCurrent()) {
-        const currentSessionIds = currentSessionIdsForRequest()
-        if (currentSessionIds.length > 0) {
-          setActivities((current) => {
-            const merged = { ...current }
-            for (const sessionId of currentSessionIds) {
-              const activity = next[sessionId]
-              if (activity) merged[sessionId] = activity
-            }
-            return merged
-          })
-          setError(null)
-        }
+      const currentSessionIds = mountedRef.current && isGenerationCurrent() ? currentSessionIdsForRequest() : []
+      if (currentSessionIds.length > 0) {
+        setActivities((current) => {
+          const merged = { ...current }
+          for (const sessionId of currentSessionIds) {
+            const activity = next[sessionId]
+            if (activity) merged[sessionId] = activity
+          }
+          return merged
+        })
+        setError(null)
       }
-      return next
+      return currentSessionIds.length === sessionIds.length ? { status: "fresh", activities: next } : { status: "stale" }
     } catch (cause) {
       if (mountedRef.current && isGenerationCurrent() && currentSessionIdsForRequest().length > 0) {
         setError(cause instanceof Error ? cause.message : "Failed to load chat activity")

@@ -3,7 +3,7 @@ import { AlertCircle, CircleDot, Link2, MessageSquare, MoreHorizontal, Trash2, X
 import { useWorkspacePluginClient } from "@hachej/boring-workspace"
 import { useWorkspaceShellCapabilities, type WorkspaceShellAnchorRect } from "@hachej/boring-workspace/plugin"
 import type { BoringTaskCard, BoringTaskSessionBinding } from "../shared"
-import { useTaskSessionActivity, type TaskSessionActivity, type TaskSessionActivityStatus } from "./taskSessionActivity"
+import { useTaskSessionActivity, type TaskSessionActivity, type TaskSessionActivityRefreshResult, type TaskSessionActivityStatus } from "./taskSessionActivity"
 
 interface TaskCardProps {
   task: BoringTaskCard
@@ -98,6 +98,7 @@ function newestTimestampMs(link: BoringTaskSessionBinding, activity: TaskSession
 export function TaskCard({ task, draggable, unmapped = false, deleteEnabled = false, compact = false, onDelete, onDragStart, onDragEnd }: TaskCardProps) {
   const [menuOpen, setMenuOpen] = useState(false)
   const [openingChat, setOpeningChat] = useState(false)
+  const [checkingChatActivity, setCheckingChatActivity] = useState(false)
   const [sessionPanelOpen, setSessionPanelOpen] = useState(false)
   const [sessionLinks, setSessionLinks] = useState<BoringTaskSessionBinding[]>([])
   const [sessionLinksLoaded, setSessionLinksLoaded] = useState(false)
@@ -121,6 +122,7 @@ export function TaskCard({ task, draggable, unmapped = false, deleteEnabled = fa
   const sessionActivities = sessionActivity.activities
   const activityError = sessionActivity.error
   const activityLoading = sessionActivity.isLoading(linkedSessionIdList)
+  const chatActivityPending = checkingChatActivity || activityLoading
   const sortedSessionLinks = useMemo(() => {
     return [...sessionLinks].sort((a, b) => {
       const aActivity = sessionActivities[a.sessionId]
@@ -147,11 +149,11 @@ export function TaskCard({ task, draggable, unmapped = false, deleteEnabled = fa
   const workingCount = workingLinks.length
   const activeNavigationCount = activeNavigationLinks.length
   const errorCount = sessionLinks.filter((link) => sessionActivities[link.sessionId]?.status === "error").length
-  const rollupText = sessionLinks.length === 0 && sessionLinksLoaded ? "No linked chats" : activityLabel(rollupActivity, activityLoading)
+  const rollupText = checkingChatActivity ? "Checking activity" : sessionLinks.length === 0 && sessionLinksLoaded ? "No linked chats" : activityLabel(rollupActivity, activityLoading)
 
   const stopCardAction = (event: MouseEvent<HTMLElement>) => event.stopPropagation()
 
-  const refreshSessionActivity = useCallback(async (links: BoringTaskSessionBinding[]): Promise<Record<string, TaskSessionActivity>> => {
+  const refreshSessionActivity = useCallback(async (links: BoringTaskSessionBinding[]): Promise<TaskSessionActivityRefreshResult> => {
     return await sessionActivity.refreshSessionIds(links.map((link) => link.sessionId))
   }, [sessionActivity.refreshSessionIds])
 
@@ -195,19 +197,20 @@ export function TaskCard({ task, draggable, unmapped = false, deleteEnabled = fa
     return () => window.removeEventListener("boring:chat-session-status", onSessionStatus)
   }, [linkedSessionIds, optimisticSessionIds, sessionActivity.setOptimisticActivity])
 
-  const openLinkedChat = async (link: BoringTaskSessionBinding, anchor?: WorkspaceShellAnchorRect) => {
+  const openLinkedChat = async (link: BoringTaskSessionBinding, anchor?: WorkspaceShellAnchorRect): Promise<boolean> => {
     const sessions = await pluginClient.getJson<PiSessionSummary[]>(`/api/v1/agent/pi-chat/sessions?limit=1&activeSessionId=${encodeURIComponent(link.sessionId)}`)
     const session = sessions.find((candidate) => candidate.id === link.sessionId)
     if (!session) {
       setSessionPanelOpen(true)
       setSessionError("That linked chat session is no longer available. You can unlink it or link another session.")
-      return
+      return false
     }
     const title = session.title ?? link.title ?? chatTitle
     setOptimisticSessionIds((current) => new Set(current).add(link.sessionId))
     shell.openDetachedChat(link.sessionId, { anchor, title, composingEnabled: true })
     window.dispatchEvent(new CustomEvent("boring-workspace:open-detached-chat", { detail: { sessionId: link.sessionId, title, composingEnabled: true } }))
     void refreshSessionActivity([link]).catch(() => undefined)
+    return true
   }
 
   const createAndLinkChat = async (anchor?: WorkspaceShellAnchorRect) => {
@@ -248,25 +251,41 @@ export function TaskCard({ task, draggable, unmapped = false, deleteEnabled = fa
 
   const openTaskChat = (event: MouseEvent<HTMLButtonElement>) => {
     stopCardAction(event)
+    if (checkingChatActivity) return
     const anchor = rectFromElement(event.currentTarget)
+    const panelWasOpen = sessionPanelOpen
     setSessionError(null)
+    setCheckingChatActivity(true)
     void (async () => {
       const links = sessionLinksLoaded ? sessionLinks : await loadSessionLinks()
       if (links.length === 0) {
         await createAndLinkChat(anchor)
         return
       }
-      const activity = await refreshSessionActivity(links).catch(() => sessionActivities)
+      setSessionPanelOpen(true)
+      let refreshResult: TaskSessionActivityRefreshResult
+      try {
+        refreshResult = await refreshSessionActivity(links)
+      } catch (error) {
+        setSessionError(error instanceof Error ? error.message : "Activity refresh failed")
+        return
+      }
+      if (refreshResult.status === "stale") {
+        setSessionError("Chat activity changed while opening. Try again.")
+        return
+      }
       const active = links.filter((link) => {
-        const status = activity[link.sessionId]?.status
+        const status = refreshResult.activities[link.sessionId]?.status
         return status === "working" || status === "queued"
       })
       if (active.length === 1) {
-        await openLinkedChat(active[0], anchor)
+        const opened = await openLinkedChat(active[0], anchor)
+        if (opened && !panelWasOpen) setSessionPanelOpen(false)
         return
       }
-      setSessionPanelOpen((current) => active.length > 1 ? true : !current)
+      setSessionPanelOpen(true)
     })().catch((error) => setSessionError(error instanceof Error ? error.message : "Failed to open task chat"))
+      .finally(() => setCheckingChatActivity(false))
   }
 
   const unlinkSession = (event: MouseEvent<HTMLButtonElement>, link: BoringTaskSessionBinding) => {
@@ -336,9 +355,9 @@ export function TaskCard({ task, draggable, unmapped = false, deleteEnabled = fa
       ? "bg-destructive text-destructive-foreground"
       : "bg-primary text-primary-foreground"
   const chatButton = (
-    <button ref={chatButtonRef} type="button" draggable={false} onClick={openTaskChat} className="relative grid size-7 place-items-center rounded-lg text-muted-foreground opacity-80 hover:bg-muted hover:text-foreground group-hover:opacity-100" aria-label={`Open chat for ${taskDisplayRef(task)}. ${rollupText}${workingCount > 0 ? `, ${workingCount} working` : errorCount > 0 ? `, ${errorCount} need attention` : ""}.`} title={activeNavigationCount === 1 ? "Open active task chat" : "Open task chats"} disabled={openingChat} aria-expanded={sessionPanelOpen}>
-      <MessageSquare className={["size-3.5", openingChat ? "motion-safe:animate-pulse" : ""].join(" ")} strokeWidth={1.75} />
-      {activeNavigationCount > 0 ? <CircleDot className="absolute -bottom-0.5 -right-0.5 size-2.5 text-emerald-500 motion-safe:animate-pulse" aria-hidden="true" /> : errorCount > 0 ? <AlertCircle className="absolute -bottom-0.5 -right-0.5 size-2.5 text-destructive" aria-hidden="true" /> : null}
+    <button ref={chatButtonRef} type="button" draggable={false} onClick={openTaskChat} className="relative grid size-7 place-items-center rounded-lg text-muted-foreground opacity-80 hover:bg-muted hover:text-foreground group-hover:opacity-100" aria-label={`Open chat for ${taskDisplayRef(task)}. ${rollupText}${workingCount > 0 ? `, ${workingCount} working` : errorCount > 0 ? `, ${errorCount} need attention` : ""}.`} title={activeNavigationCount === 1 ? "Open active task chat" : "Open task chats"} disabled={openingChat} aria-expanded={sessionPanelOpen} aria-busy={chatActivityPending || undefined}>
+      <MessageSquare className={["size-3.5", openingChat || checkingChatActivity ? "motion-safe:animate-pulse" : ""].join(" ")} strokeWidth={1.75} />
+      {checkingChatActivity ? <CircleDot className="absolute -bottom-0.5 -right-0.5 size-2.5 text-primary motion-safe:animate-pulse" aria-hidden="true" /> : activeNavigationCount > 0 ? <CircleDot className="absolute -bottom-0.5 -right-0.5 size-2.5 text-emerald-500 motion-safe:animate-pulse" aria-hidden="true" /> : errorCount > 0 ? <AlertCircle className="absolute -bottom-0.5 -right-0.5 size-2.5 text-destructive" aria-hidden="true" /> : null}
       {sessionLinks.length > 0 ? <span className={["absolute -right-1 -top-1 grid min-w-4 place-items-center rounded-full px-1 text-[9px] font-bold leading-4", badgeClass].join(" ")} aria-label={badgeLabel}>{badgeText}</span> : null}
       <span className="sr-only" aria-live="polite">Task chat activity: {rollupText}</span>
     </button>

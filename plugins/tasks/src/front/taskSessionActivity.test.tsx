@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { useEffect } from "react"
+import { useEffect, useState } from "react"
 import { act, fireEvent, render, screen } from "@testing-library/react"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 import { TaskSessionActivityProvider, useTaskSessionActivity } from "./taskSessionActivity"
@@ -43,6 +43,21 @@ function Probe() {
   )
 }
 
+function ResultProbe() {
+  const activity = useTaskSessionActivity()
+  const [slowStatus, setSlowStatus] = useState("none")
+  const [fastStatus, setFastStatus] = useState("none")
+
+  return (
+    <div>
+      <button type="button" onClick={() => { void activity.refreshSessionIds(["board-a"]).then((result) => setSlowStatus(result.status)) }}>Slow refresh</button>
+      <button type="button" onClick={() => { void activity.refreshSessionIds(["board-a"]).then((result) => setFastStatus(result.status)) }}>Fast refresh</button>
+      <span data-testid="slow-status">{slowStatus}</span>
+      <span data-testid="fast-status">{fastStatus}</span>
+    </div>
+  )
+}
+
 beforeEach(() => {
   vi.useFakeTimers()
   postJson.mockReset()
@@ -53,6 +68,35 @@ afterEach(() => {
 })
 
 describe("TaskSessionActivityProvider request scoping", () => {
+  it("returns an explicit stale result when a refresh is superseded", async () => {
+    const pending: Array<{ sessionIds: string[]; request: ReturnType<typeof deferred<ActivityResponse>> }> = []
+    postJson.mockImplementation((path: string, body: { sessionIds?: string[] }) => {
+      if (path !== "/api/v1/agent/pi-chat/sessions/activity") throw new Error(`unexpected post ${path}`)
+      const request = deferred<ActivityResponse>()
+      pending.push({ sessionIds: body.sessionIds ?? [], request })
+      return request.promise
+    })
+
+    render(<TaskSessionActivityProvider><ResultProbe /></TaskSessionActivityProvider>)
+    fireEvent.click(screen.getByRole("button", { name: "Slow refresh" }))
+    fireEvent.click(screen.getByRole("button", { name: "Fast refresh" }))
+    expect(pending.map((entry) => entry.sessionIds)).toEqual([["board-a"], ["board-a"]])
+
+    await act(async () => {
+      pending[0].request.resolve({ activities: [{ sessionId: "board-a", status: "working", source: "live-runtime" }], omittedSessionIds: [] })
+      await pending[0].request.promise
+      await Promise.resolve()
+    })
+    expect(screen.getByTestId("slow-status")).toHaveTextContent("stale")
+
+    await act(async () => {
+      pending[1].request.resolve({ activities: [{ sessionId: "board-a", status: "idle", source: "persisted" }], omittedSessionIds: [] })
+      await pending[1].request.promise
+      await Promise.resolve()
+    })
+    expect(screen.getByTestId("fast-status")).toHaveTextContent("fresh")
+  })
+
   it("keeps unrelated board poll results when a single-session refresh supersedes one session", async () => {
     const pending: Array<{ sessionIds: string[]; request: ReturnType<typeof deferred<ActivityResponse>> }> = []
     postJson.mockImplementation((path: string, body: { sessionIds?: string[] }) => {
