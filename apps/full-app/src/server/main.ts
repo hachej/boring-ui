@@ -3,9 +3,10 @@ import {
   appRootFromImportMeta,
   createCoreWorkspaceAgentServer,
 } from '@hachej/boring-core/app/server'
-import { createGovernance } from '@hachej/boring-governance/server'
 import { loadConfig } from '@hachej/boring-core/server'
-import { createFullAppServerPlugins } from './plugins.js'
+import {
+  createFullAppHostPluginComposition,
+} from './plugins.js'
 import { buildCreditsWiring } from './credits.js'
 import {
   createFullAppBoringMcpAgentToolsForRequest,
@@ -29,7 +30,7 @@ async function main() {
     allowMissingSecrets: process.env.NODE_ENV !== 'production',
     tomlPath: path.resolve(appRoot, 'boring.app.toml'),
   })
-  const governance = await createGovernance(config)
+  const { governance, ...pluginComposition } = await createFullAppHostPluginComposition(config)
   // Build the metering sink up-front; the credit service attaches after the
   // server (and its db) exists.
   const credits = buildCreditsWiring()
@@ -40,8 +41,8 @@ async function main() {
     appRoot,
     config,
     serveFrontend: true,
-    plugins: createFullAppServerPlugins([governance.serverPlugin]),
-    defaultPluginPackages: ['@hachej/boring-automation'],
+    plugins: [...pluginComposition.plugins],
+    defaultPluginPackages: [...pluginComposition.defaultPluginPackages],
     externalPlugins: false,
     installPluginAuthoring: pluginAuthoringEnabledFromEnv(),
     metering: governance.createMeteringSink(credits.meteringSink, () => {

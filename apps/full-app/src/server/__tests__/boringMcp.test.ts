@@ -29,7 +29,7 @@ import {
   readFullAppBoringMcpServerConfig,
   registerFullAppBoringMcpRoutes,
 } from '../boringMcp'
-import { serverPlugins } from '../plugins'
+import { createFullAppServerPluginComposition } from '../plugins'
 import type { CoreWorkspaceAgentServer } from '@hachej/boring-core/app/server'
 
 const actor: McpActor = { workspaceId: 'workspace-1', userId: 'user-1' }
@@ -168,7 +168,7 @@ function evaluateTestBoringMcpLaunchGate() {
 describe('full-app boring-mcp binding', () => {
   it('registers the boring-mcp server plugin in app composition', () => {
     expect(boringMcpServerPlugins.map((plugin) => plugin.id)).toContain(BORING_MCP_PLUGIN_ID)
-    expect(serverPlugins.map((plugin) => plugin.id)).toContain(BORING_MCP_PLUGIN_ID)
+    expect(createFullAppServerPluginComposition().plugins.map((plugin) => plugin.id)).toContain(BORING_MCP_PLUGIN_ID)
   })
 
   it('uses a pure server plugin factory for enabled/disabled config', () => {
