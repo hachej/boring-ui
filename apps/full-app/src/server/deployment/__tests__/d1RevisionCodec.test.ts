@@ -24,6 +24,7 @@ import {
   type D1DesiredSnapshotV1,
 } from '../d1RevisionCodec.js'
 import { canonicalizeWorkspaceCompositionSnapshot } from '../workspaceComposition.js'
+import { createD1RuntimeInputsIdentity } from '../d1RuntimeInputs.js'
 
 const digest = (value: string): Sha256Digest => `sha256:${value.repeat(64).slice(0, 64)}`
 
@@ -49,7 +50,7 @@ function plan(ids: string[], expectedHostRevision: string | null = null) {
       ownerPrincipalRef: `owner-${bindingId}`,
       landing: { title: `Agent ${bindingId}`, summary: `Summary ${bindingId}` },
       environmentRef: `environment-${bindingId}`,
-      secretRefs: [`credential-${bindingId}`],
+      secretRefs: [`credential-z-${bindingId}`, `credential-a-${bindingId}`],
     })),
   }
 }
@@ -125,8 +126,21 @@ async function desired(ids = ['a', 'b'], expected: string | null = null, reverse
   return createD1DesiredSnapshot(plan(ids, expected), await Promise.all(ids.map((id) => resolved(id, reverse))))
 }
 
-function observed(value: D1DesiredSnapshotV1, reverse = false, ready = true) {
-  const bindings = value.resolvedBindings.map((binding) => ({ bindingId: binding.bindingId, ready, resolvedDigest: binding.resolvedDigest }))
+async function observed(value: D1DesiredSnapshotV1, reverse = false, ready = true) {
+  const bindings = await Promise.all(value.resolvedBindings.map(async (binding) => {
+    const planned = value.plan.bindings.find((entry) => entry.bindingId === binding.bindingId)!
+    return {
+      bindingId: binding.bindingId,
+      ready,
+      resolvedDigest: binding.resolvedDigest,
+      runtimeInputs: await createD1RuntimeInputsIdentity(planned, {
+        environment: { versionFingerprint: digest(binding.bindingId) },
+        workspaceAllocation: { versionFingerprint: digest('6') },
+        sessionAllocation: { versionFingerprint: digest('7') },
+        secrets: planned.secretRefs.map((secretRef, index) => ({ secretRef, providerVersionFingerprint: digest(String(index + 4)) })).reverse(),
+      }),
+    }
+  }))
   return { schemaVersion: 1, domain: 'boring-d1-observed:v1', bindings: reverse ? bindings.reverse() : bindings }
 }
 
@@ -213,17 +227,34 @@ describe('D1 revision codec', () => {
       .rejects.toMatchObject({ details: { field: 'desired.sourcePath' } })
     expect(() => canonicalizeD1ActiveEnvelope({ schemaVersion: 1, revisionId: 'r0000000001', desiredStateDigest: digest('a'), completionDigest: digest('b') }))
       .toThrow(expect.objectContaining({ details: { field: 'active.completionDigest' } }))
-    expect(canonicalizeD1Observation(observed(value, true), value).bindings.map((binding) => binding.bindingId)).toEqual(['a', 'b'])
-    const duplicate = observed(value)
+    const reordered = await observed(value, true)
+    expect(await canonicalizeD1Observation(reordered, value)).toEqual(await canonicalizeD1Observation(await observed(value), value))
+    const duplicate = await observed(value)
     duplicate.bindings = [duplicate.bindings[0], duplicate.bindings[0]]
-    expect(() => canonicalizeD1Observation(duplicate, value)).toThrow(expect.objectContaining({ details: { field: 'observation.bindings' } }))
-    await expect(createD1CompleteEnvelope('r0000000001', value, canonicalizeD1Observation(observed(value, false, false), value)))
+    await expect(canonicalizeD1Observation(duplicate, value)).rejects.toMatchObject({ details: { field: 'observation.bindings' } })
+    await expect(createD1CompleteEnvelope('r0000000001', value, await canonicalizeD1Observation(await observed(value, false, false), value)))
       .rejects.toMatchObject({ details: { field: 'completion.observation.ready' } })
+  })
+
+  it('binds canonical runtime input identity into observation and completion digests', async () => {
+    const value = await desired(['a'])
+    const raw = await observed(value)
+    const canonical = await canonicalizeD1Observation(raw, value)
+    const planned = value.plan.bindings[0]
+    const runtimeInputs = await createD1RuntimeInputsIdentity(planned, {
+      environment: { versionFingerprint: digest('9') }, workspaceAllocation: { versionFingerprint: digest('6') },
+      sessionAllocation: { versionFingerprint: digest('7') },
+      secrets: planned.secretRefs.map((secretRef, index) => ({ secretRef, providerVersionFingerprint: digest(String(index + 4)) })),
+    })
+    const changed = await canonicalizeD1Observation({ ...raw, bindings: [{ ...raw.bindings[0], runtimeInputs }] }, value)
+    expect(await digestD1Observation(canonical, value)).not.toBe(await digestD1Observation(changed, value))
+    expect((await createD1CompleteEnvelope('r0000000001', value, canonical)).completionDigest)
+      .not.toBe((await createD1CompleteEnvelope('r0000000001', value, changed)).completionDigest)
   })
 
   it('recomputes completion digests and deeply freezes every resulting envelope', async () => {
     const value = await desired(['a'])
-    const observation = canonicalizeD1Observation(observed(value), value)
+    const observation = await canonicalizeD1Observation(await observed(value), value)
     const complete = await createD1CompleteEnvelope('r0000000001', value, observation)
     expect(complete.completionDigest).toMatch(/^sha256:[a-f0-9]{64}$/)
     expect(await digestD1Observation(observation, value)).toBe(complete.observationDigest)
@@ -235,7 +266,7 @@ describe('D1 revision codec', () => {
 
   it('accepts FAILED before completion and requires the actual completion for terminal audit matching', async () => {
     const value = await desired(['a'])
-    const observation = canonicalizeD1Observation(observed(value), value)
+    const observation = await canonicalizeD1Observation(await observed(value), value)
     const complete = await createD1CompleteEnvelope('r0000000001', value, observation)
     const active = canonicalizeD1ActiveEnvelope({ schemaVersion: 1, revisionId: complete.revisionId, desiredStateDigest: complete.desiredStateDigest })
     const failed = canonicalizeD1AuditRecord({
