@@ -74,6 +74,11 @@ describe('D1 Compose topology', () => {
     expect(ingress.restart).toBe('unless-stopped')
     expect(core.restart).toBe('unless-stopped')
     expect(core.env_file).toEqual(['/etc/boring/d1/core.env'])
+    expect(core.environment).not.toHaveProperty('BORING_D1_OWNER_UID')
+    expect(core.healthcheck).toEqual({
+      test: ['CMD', 'node', '-e', "fetch('http://127.0.0.1:3000/health').then(r=>{if(!r.ok)throw r.status}).catch(()=>process.exit(1))"],
+      interval: '30s', timeout: '5s', start_period: '10s', retries: 3,
+    })
     expect(core.environment).toMatchObject({
       BORING_D1_HOST_ID: '${D1_HOST_ID:?D1_HOST_ID is required}',
       TRUST_PROXY_CIDRS: '192.168.255.250/32',

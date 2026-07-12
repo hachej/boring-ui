@@ -7,6 +7,8 @@ import type { D1ActiveCollectionReader } from './activeCollectionReader.js'
 import { D1HostErrorCode, invalidD1Field, strictD1Hostname } from './d1Plan.js'
 
 export const D1_TRUSTED_CADDY_PEER = '192.168.255.250'
+const LOOPBACK = '127.0.0.1'
+const LOCAL_PATHS = new Set(['/health', '/internal/d1/readiness'])
 
 export interface D1HostSurfaceOptions {
   readonly activeReader: D1ActiveCollectionReader
@@ -30,9 +32,46 @@ function rawValues(rawHeaders: readonly string[], name: string): readonly string
   return values
 }
 
+function hasForwardingHeader(rawHeaders: readonly string[]): boolean {
+  if (rawHeaders.length % 2 !== 0) violation()
+  for (let index = 0; index < rawHeaders.length; index += 2) {
+    const name = rawHeaders[index]!.toLowerCase()
+    if (name === 'forwarded' || name.startsWith('x-forwarded-')) return true
+  }
+  return false
+}
+
+function isLocalSurfaceAttempt(rawUrl: string | undefined): boolean {
+  if (rawUrl === undefined) return false
+  let decoded = rawUrl.split('?', 1)[0]!
+  const matches = (value: string) => [...LOCAL_PATHS]
+    .some((pathname) => value.startsWith(pathname) || value.endsWith(pathname))
+  for (let depth = 0; depth < 4; depth += 1) {
+    if (matches(decoded)) return true
+    if (!decoded.includes('%')) return false
+    try {
+      const next = decodeURIComponent(decoded)
+      if (next === decoded) return true
+      decoded = next
+    } catch { return true }
+  }
+  return decoded.includes('%') || matches(decoded)
+}
+
 export function createD1HostSurfaceResolver(options: D1HostSurfaceOptions): CoreRequestScopeResolver {
   if (options.trustedPeer !== D1_TRUSTED_CADDY_PEER) invalidD1Field('trustedPeer')
   return async (request) => {
+    const rawUrl = request.raw.url
+    if (
+      request.raw.socket.remoteAddress === LOOPBACK
+      && request.raw.method === 'GET'
+      && rawUrl !== undefined
+      && LOCAL_PATHS.has(rawUrl)
+    ) {
+      if (hasForwardingHeader(request.raw.rawHeaders)) violation()
+      return undefined
+    }
+    if (isLocalSurfaceAttempt(rawUrl)) violation()
     const forwarded = rawValues(request.raw.rawHeaders, 'forwarded')
     const hosts = rawValues(request.raw.rawHeaders, 'host')
     const forwardedFor = rawValues(request.raw.rawHeaders, 'x-forwarded-for')

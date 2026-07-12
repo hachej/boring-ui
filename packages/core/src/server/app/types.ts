@@ -101,7 +101,7 @@ export interface CoreRequestScope {
   readonly activeRevision: string
 }
 
-export type CoreRequestScopeResolver = (request: FastifyRequest) => CoreRequestScope | Promise<CoreRequestScope>
+export type CoreRequestScopeResolver = (request: FastifyRequest) => CoreRequestScope | undefined | Promise<CoreRequestScope | undefined>
 
 export interface CreateCoreAppOptions {
   authProvider?: AuthProvider
