@@ -413,6 +413,8 @@ describe('D1 host revision store', () => {
   it('requires an explicit safe owner policy before filesystem side effects', async () => {
     expect(() => createHostRevisionStore({ root: '/unused', ownerUid: -1, appGid: APP_GID })).toThrow(expect.objectContaining({ code: D1HostErrorCode.PLAN_INVALID }))
     expect(() => createHostRevisionStore({ root: '/unused', ownerUid: OWNER_UID, appGid: 0 })).toThrow(expect.objectContaining({ code: D1HostErrorCode.PLAN_INVALID }))
+    await expect(createHostRevisionStore({ root: '/unused', ownerUid: OWNER_UID, appGid: APP_GID }).readActive('a'.repeat(251)))
+      .rejects.toMatchObject({ code: D1HostErrorCode.PLAN_INVALID, details: { field: 'hostId' } })
     const wrongParent = await mkdtemp(path.join(os.tmpdir(), 'boring-d1-wrong-owner-'))
     const wrongRoot = path.join(wrongParent, 'state')
     const wrongOwner = createHostRevisionStore({ root: wrongRoot, ownerUid: OWNER_UID + 1, appGid: APP_GID })

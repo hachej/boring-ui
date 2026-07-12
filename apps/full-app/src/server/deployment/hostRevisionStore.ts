@@ -5,7 +5,7 @@ import path from 'node:path'
 import type { Sha256Digest } from '@hachej/boring-agent/shared'
 
 import { renderD1BindingEnv, validateD1BindingEnv } from './d1BindingEnv.js'
-import { assertD1ExactKeys as exactKeys, D1HostError, D1HostErrorCode, strictD1Ref } from './d1Plan.js'
+import { assertD1ExactKeys as exactKeys, D1HostError, D1HostErrorCode, strictD1HostId } from './d1Plan.js'
 import {
   canonicalizeD1ActiveEnvelope,
   canonicalizeD1AuditRecord,
@@ -67,7 +67,7 @@ const RESOLVED_DOMAIN = 'boring-d1-resolved:v1'
 const NOFOLLOW_READ = constants.O_RDONLY | constants.O_NOFOLLOW
 interface ExactFsPolicy { readonly uid: number; readonly gid: number; readonly mode: number }
 
-function hostId(value: string): string { return strictD1Ref(value, 'hostId') }
+function hostId(value: string): string { return strictD1HostId(value, 'hostId') }
 function revisionId(value: string): string {
   if (!REVISION_RE.test(value)) throw new D1HostError(D1HostErrorCode.PLAN_INVALID, { field: 'revisionId' })
   return value

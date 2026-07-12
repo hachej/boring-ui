@@ -181,6 +181,13 @@ const plan = (value: D1DesiredSnapshotV1, expectedHostRevision: string | null) =
 const apply = (value: D1DesiredSnapshotV1, expectedHostRevision: string | null, extra: Record<string, unknown> = {}) => ({ kind: 'apply', plan: plan(value, expectedHostRevision), ...extra })
 
 describe('D1 command engine', () => {
+  it('rejects an overlong rollback host before mutation or store access', async () => {
+    const next = await desired(); const store = new FakeStore(); const h = harness(store, next)
+    await expect(h.engine.execute({ kind: 'rollback', hostId: 'a'.repeat(251), expectedHostRevision: null, targetRevision: 'r0000000001' }))
+      .rejects.toMatchObject({ code: D1HostErrorCode.PLAN_INVALID, details: { field: 'hostId' } })
+    expect(h.calls).toEqual([]); expect(store.calls).toEqual([])
+  })
+
   it('keeps plan read-only and rejects a CAS loser before resolve, recovery, reservation, or effects', async () => {
     const next = await desired(); const planStore = new FakeStore(); const planned = harness(planStore, next)
     await planned.engine.execute({ ...apply(next, null), kind: 'plan' })

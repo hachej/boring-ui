@@ -12,6 +12,7 @@ const COMPOSE_DIRECTORY = '/opt/boring/d1'
 const COMPOSE_FILE = `${COMPOSE_DIRECTORY}/compose.yml`
 const PROJECT_NAME = 'boring-d1'
 const STATE_ROOT = '/var/lib/boring/d1'
+const MATERIALIZED_ROOT = '/run/boring/d1'
 
 export type D1ComposeEffect = 'initial' | 'no-compose' | 'restart-core'
 
@@ -64,6 +65,7 @@ function process(args: readonly string[], plan: D1HostPlanV1, images: D1ComposeI
       D1_CORE_APP_IMAGE: images.coreAppImage,
       D1_HOST_ID: plan.hostId,
       D1_INGRESS_IMAGE: images.ingressImage,
+      D1_MATERIALIZED_HOST_ROOT: `${MATERIALIZED_ROOT}/${plan.hostId}`,
       D1_STATE_ROOT: `${STATE_ROOT}/${plan.hostId}`,
     }),
     shell: false,

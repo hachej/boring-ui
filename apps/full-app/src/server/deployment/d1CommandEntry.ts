@@ -9,13 +9,16 @@ import type { Readable } from 'node:stream'
 import { createD1CommandEngine, type D1CommandEngineOptions, type D1MutationGuard } from './d1Command.js'
 import { parseD1CliInput } from './d1CommandCliProtocol.js'
 import { isSupportedLocalD1LockFilesystem } from './d1CommandLockPolicy.js'
+import { createD1FileRuntimeInputsProvider } from './d1FileRuntimeInputsProvider.js'
 import { D1HostError, D1HostErrorCode } from './d1Plan.js'
+import { createD1BindingSecretMaterializer, createD1RuntimeInputsInspector } from './d1SecretMaterializer.js'
 import { createHostRevisionStore } from './hostRevisionStore.js'
 
 const MAX_BYTES = 1024 * 1024
+const D1_APP_UID = 10001
 const D1_APP_GID = 10001
 export type D1EntryMode = '--read-only' | '--locked'
-export interface D1EntryContext { readonly ownerUid: number; readonly stateRoot: string; readonly mutationGuard: D1MutationGuard }
+export interface D1EntryContext { readonly hostId: string; readonly ownerUid: number; readonly stateRoot: string; readonly mutationGuard: D1MutationGuard }
 export type D1DependencyFactory = (context: D1EntryContext) => D1CommandEngineOptions
 export interface D1EntryOptions { readonly stdin?: Readable; readonly mode: D1EntryMode; readonly dependencyFactory?: D1DependencyFactory }
 export interface D1EntryOutput { readonly line: string; readonly exitCode: number }
@@ -82,20 +85,23 @@ function assertInheritedLock(lockRoot: string, hostId: string, uid: number): voi
 }
 function unavailable(field: string): never { throw new D1HostError(D1HostErrorCode.COLLECTION_NOT_READY, { field }) }
 
-export const createProductionD1Dependencies: D1DependencyFactory = ({ ownerUid, stateRoot, mutationGuard }) => ({
-  store: createHostRevisionStore({ root: stateRoot, ownerUid, appGid: D1_APP_GID }),
-  resolver: { resolvePlan: async () => unavailable('resolver'), reproduce: async () => unavailable('resolver') },
-  effects: {
-    loadAdmittedBindingIds: async () => unavailable('admissions'),
-    materialize: async () => unavailable('materialize'),
-    preload: async () => unavailable('preload'),
-    verifyActive: async () => unavailable('active'),
-  },
-  inspectRuntimeInputs: async () => unavailable('runtimeInputs'),
-  mutationGuard,
-  operator: { uid: ownerUid, effectiveUser: os.userInfo().username, invocationId: randomUUID() },
-  clock: () => new Date().toISOString(),
-})
+export const createProductionD1Dependencies: D1DependencyFactory = ({ hostId, ownerUid, stateRoot, mutationGuard }) => {
+  const provider = createD1FileRuntimeInputsProvider({ hostId, ownerUid })
+  return {
+    store: createHostRevisionStore({ root: stateRoot, ownerUid, appGid: D1_APP_GID }),
+    resolver: { resolvePlan: async () => unavailable('resolver'), reproduce: async () => unavailable('resolver') },
+    effects: {
+      loadAdmittedBindingIds: async () => unavailable('admissions'),
+      materialize: createD1BindingSecretMaterializer({ root: '/run/boring/d1', ownerUid, appUid: D1_APP_UID, appGid: D1_APP_GID, provider }),
+      preload: async () => unavailable('preload'),
+      verifyActive: async () => unavailable('active'),
+    },
+    inspectRuntimeInputs: createD1RuntimeInputsInspector(provider),
+    mutationGuard,
+    operator: { uid: ownerUid, effectiveUser: os.userInfo().username, invocationId: randomUUID() },
+    clock: () => new Date().toISOString(),
+  }
+}
 
 export async function runD1CommandEntry(options: D1EntryOptions): Promise<D1EntryOutput> {
   let locked = false
@@ -117,7 +123,7 @@ export async function runD1CommandEntry(options: D1EntryOptions): Promise<D1Entr
       }
     }
     const engine = createD1CommandEngine((options.dependencyFactory ?? createProductionD1Dependencies)({
-      ownerUid, stateRoot, mutationGuard: { assertHeld },
+      hostId: command.hostId, ownerUid, stateRoot, mutationGuard: { assertHeld },
     }))
     const result = await engine.execute(raw)
     return { line: `${JSON.stringify({ ok: true, result })}\n`, exitCode: 0 }

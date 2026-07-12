@@ -35,6 +35,7 @@ const expectedEnv = {
   D1_CORE_APP_IMAGE: images.coreAppImage,
   D1_HOST_ID: 'eu-host-1',
   D1_INGRESS_IMAGE: images.ingressImage,
+  D1_MATERIALIZED_HOST_ROOT: '/run/boring/d1/eu-host-1',
   D1_STATE_ROOT: '/var/lib/boring/d1/eu-host-1',
 }
 
@@ -66,11 +67,14 @@ describe('D1 Compose topology', () => {
         target: '/var/lib/boring/d1/${D1_HOST_ID:?D1_HOST_ID is required}', read_only: true,
         bind: { create_host_path: false },
       },
-      { type: 'bind', source: '/run/boring/d1', target: '/run/boring/d1', read_only: true },
+      {
+        type: 'bind', source: '${D1_MATERIALIZED_HOST_ROOT:?D1_MATERIALIZED_HOST_ROOT is required}',
+        target: '/run/boring/d1', read_only: true, bind: { create_host_path: false },
+      },
     ])
 
     const serialized = JSON.stringify(document)
-    expect(serialized).not.toMatch(/database:|postgres|checkout|bindingId|secretRefs|--force-recreate|\bdown\b/)
+    expect(serialized).not.toMatch(/database:|postgres|checkout|bindingId|secretRefs|revision|active|current|--force-recreate|\bdown\b/)
   })
 
   it('ships a valid three-binding host plan without secret values', async () => {
@@ -96,7 +100,7 @@ describe('D1 Compose command policy', () => {
     expect(commands.map((command) => command.args)).toEqual(expected)
     for (const command of commands) {
       expect(command).toEqual({ command: 'docker', args: command.args, cwd: '/opt/boring/d1', env: expectedEnv, shell: false })
-      expect(JSON.stringify(command)).not.toMatch(/--force-recreate|\bdown\b|restart|database|postgres|model-credential|workspace:insurance/)
+      expect(JSON.stringify(command)).not.toMatch(/--force-recreate|\bdown\b|restart|database|postgres|revision|desiredStateDigest|secretRefs|manifest|canary|model-credential|workspace:insurance/)
     }
   })
 
@@ -113,6 +117,7 @@ describe('D1 Compose command policy', () => {
     ['caller-supplied project drift', { ...images, projectName: 'old-project' }],
     ['caller-supplied compose drift', { ...images, composeFile: '/old/compose.yml' }],
     ['caller-supplied state drift', { ...images, stateRoot: '/old/state' }],
+    ['caller-supplied materialized-root drift', { ...images, materializedHostRoot: '/run/boring/d1/other-host' }],
   ])('rejects %s before invoking the runner', async (_name, invalidImages) => {
     const runner = vi.fn(async (_process: D1ComposeProcess) => ({ exitCode: 0 }))
 

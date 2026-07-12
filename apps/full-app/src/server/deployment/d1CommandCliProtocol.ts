@@ -1,4 +1,4 @@
-import { D1HostError, D1HostErrorCode, strictD1Ref } from './d1Plan.js'
+import { D1HostError, D1HostErrorCode, strictD1HostId } from './d1Plan.js'
 
 export interface D1CliCommandIdentity { readonly kind: 'plan' | 'apply' | 'rollback'; readonly hostId: string }
 
@@ -9,8 +9,8 @@ export function parseD1CliInput(bytes: Uint8Array): { readonly raw: unknown; rea
   try { raw = JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(bytes)) as unknown } catch { invalid('command') }
   if (typeof raw !== 'object' || raw === null || Array.isArray(raw)) invalid('command')
   const command = raw as Record<string, unknown>
-  if (command.kind === 'rollback') return { raw, identity: { kind: command.kind, hostId: strictD1Ref(command.hostId, 'hostId') } }
+  if (command.kind === 'rollback') return { raw, identity: { kind: command.kind, hostId: strictD1HostId(command.hostId, 'hostId') } }
   if (command.kind !== 'plan' && command.kind !== 'apply') invalid('kind')
   if (typeof command.plan !== 'object' || command.plan === null || Array.isArray(command.plan)) invalid('plan')
-  return { raw, identity: { kind: command.kind, hostId: strictD1Ref((command.plan as Record<string, unknown>).hostId, 'plan.hostId') } }
+  return { raw, identity: { kind: command.kind, hostId: strictD1HostId((command.plan as Record<string, unknown>).hostId, 'plan.hostId') } }
 }

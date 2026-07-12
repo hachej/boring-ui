@@ -360,7 +360,7 @@ export function createD1BindingSecretMaterializer(options: D1SecretMaterializerO
       } catch (error) {
         if ((error as NodeJS.ErrnoException).code !== 'ENOENT') providerFailure(error)
       }
-      const stage = path.join(anchoredRoot, `.${desired.plan.hostId}.${candidate.revisionId}.${randomUUID()}`)
+      const stage = path.join(anchoredRoot, `.${candidate.revisionId}.${randomUUID()}`)
       await mkdir(stage, { mode: 0o700 }); await (await directory(stage, fsPrivate)).close(); await rootHandle.sync()
       const bindingsRoot = path.join(stage, 'bindings')
       await mkdir(bindingsRoot, { mode: 0o700 }); await (await directory(bindingsRoot, fsPrivate)).close()
