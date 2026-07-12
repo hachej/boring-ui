@@ -9,6 +9,9 @@ import type {
   ManageSessionsInput,
   ManageSessionsOptions,
   ManageSessionsResult,
+  SessionActivityEntry,
+  SessionActivityInput,
+  SessionActivityResult,
   PiChatEventStreamResult,
   PiChatEventSubscriber,
   PiChatSessionService,
@@ -32,6 +35,7 @@ import {
   parseManageSessionsInput,
   sessionManagementInvalidError,
 } from '../sessionManagement'
+import { normalizeSessionActivityInput } from '../sessionActivity'
 
 type PiNativeHarness = AgentHarness & {
   getPiSessionAdapter?: (input: AgentSendInput, ctx: RunContext) => Promise<PiAgentSessionAdapter>
@@ -215,6 +219,30 @@ export class HarnessPiChatService implements PiChatSessionService {
     return this.lifecycle.run(() => this.deleteSessionBeforeDispose(ctx, sessionId))
   }
 
+  async readSessionActivity(
+    ctx: PiSessionRequestContext,
+    input: SessionActivityInput = {},
+  ): Promise<SessionActivityResult> {
+    return this.lifecycle.run(async () => {
+      const normalized = normalizeSessionActivityInput(input)
+      const sessionCtx = toSessionCtx(ctx)
+      const activityScope = normalized.sessionIds
+        ? await this.loadRequestedActivitySessions(sessionCtx, normalized.sessionIds)
+        : {
+            sessions: await this.sessionStore.list(sessionCtx, { limit: normalized.limit, offset: normalized.offset }),
+            omittedSessionIds: [],
+          }
+
+      return {
+        activities: activityScope.sessions.map((session) => this.activityForSession(ctx, session)),
+        omittedSessionIds: activityScope.omittedSessionIds,
+        limit: normalized.limit,
+        offset: normalized.offset,
+        count: activityScope.sessions.length,
+      }
+    })
+  }
+
   async manageSessions(
     ctx: PiSessionRequestContext,
     input: ManageSessionsInput,
@@ -301,6 +329,57 @@ export class HarnessPiChatService implements PiChatSessionService {
 
   async readState(ctx: PiSessionRequestContext, sessionId: string): Promise<PiChatSnapshot> {
     return this.lifecycle.run(() => this.readStateBeforeDispose(ctx, sessionId))
+  }
+
+  private async loadRequestedActivitySessions(
+    ctx: SessionCtx,
+    sessionIds: string[],
+  ): Promise<{ sessions: SessionSummary[]; omittedSessionIds: string[] }> {
+    const loaded = await Promise.all(sessionIds.map(async (sessionId) => {
+      try {
+        return { session: await this.sessionStore.load(ctx, sessionId) }
+      } catch (error) {
+        if (isSessionAccessDeniedOrMissing(error, sessionId)) return { omittedSessionId: sessionId }
+        throw error
+      }
+    }))
+    return {
+      sessions: loaded.flatMap((entry) => entry.session ? [entry.session] : []),
+      omittedSessionIds: loaded.flatMap((entry) => entry.omittedSessionId ? [entry.omittedSessionId] : []),
+    }
+  }
+
+  private activityForSession(ctx: PiSessionRequestContext, session: SessionSummary): SessionActivityEntry {
+    const sessionKey = this.sessionKey(ctx, session.id)
+    const channel = this.channels.get(sessionKey)
+    if (!channel) {
+      // In hosted/multi-runtime deployments there is no shared live registry in
+      // this service. A session not owned by this process is therefore reported
+      // as persisted idle instead of claiming to detect standalone Pi activity.
+      return { sessionId: session.id, status: 'idle', source: 'persisted', updatedAt: session.updatedAt }
+    }
+    return {
+      sessionId: session.id,
+      status: this.activityStatusForLiveChannel(sessionKey, channel),
+      source: 'live-runtime',
+      updatedAt: session.updatedAt,
+    }
+  }
+
+  private activityStatusForLiveChannel(sessionKey: string, channel: LiveSessionChannel): SessionActivityEntry['status'] {
+    if (this.activeSyntheticPromptErrors.has(sessionKey)) return 'error'
+    const snapshot = channel.adapter.readSnapshot()
+    const state = snapshot.state
+    if (
+      typeof state === 'object' &&
+      state !== null &&
+      'errorMessage' in state &&
+      typeof (state as { errorMessage?: unknown }).errorMessage === 'string' &&
+      (state as { errorMessage?: string }).errorMessage!.length > 0
+    ) return 'error'
+    if (snapshot.isStreaming || snapshot.isRetrying) return 'working'
+    if (this.activePromptRuns.has(sessionKey) || snapshot.pendingMessageCount > 0 || snapshot.followUpMessages.length > 0) return 'queued'
+    return 'idle'
   }
 
   private async readStateBeforeDispose(ctx: PiSessionRequestContext, sessionId: string): Promise<PiChatSnapshot> {
@@ -920,12 +999,16 @@ function rejectedReasons(results: PromiseSettledResult<unknown>[]): unknown[] {
 }
 
 function normalizeSessionAccessError(error: unknown, sessionId: string): unknown {
-  if ((error as { code?: unknown })?.code === ErrorCode.enum.SESSION_NOT_FOUND || isPlainSessionNotFound(error, sessionId)) {
+  if (isSessionAccessDeniedOrMissing(error, sessionId)) {
     return Object.assign(new Error('session not found'), {
       code: ErrorCode.enum.SESSION_NOT_FOUND,
     })
   }
   return error
+}
+
+function isSessionAccessDeniedOrMissing(error: unknown, sessionId: string): boolean {
+  return (error as { code?: unknown })?.code === ErrorCode.enum.SESSION_NOT_FOUND || isPlainSessionNotFound(error, sessionId)
 }
 
 function isPlainSessionNotFound(error: unknown, sessionId: string): boolean {

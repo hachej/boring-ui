@@ -253,6 +253,113 @@ describe('HarnessPiChatService', () => {
     expect(harness.getPiSessionAdapter).not.toHaveBeenCalled()
   })
 
+  it('readSessionActivity reports persisted idle without cold-starting an adapter, even when a nonlocal Pi session may exist', async () => {
+    const adapter = createAdapter()
+    const harness = createHarness(adapter)
+    harness.hasPiSession = vi.fn(() => true)
+    const sessions = [{ id: 's1', title: 'Persisted', createdAt: '2026-07-01T00:00:00.000Z', updatedAt: '2026-07-01T00:10:00.000Z', turnCount: 1 }]
+    const list = vi.fn(async () => sessions)
+    const service = new HarnessPiChatService({
+      harness,
+      sessionStore: { ...sessionStore, list },
+      workdir: '/workspace',
+    })
+
+    const result = await service.readSessionActivity(ctx, { limit: 25, offset: 2 })
+
+    expect(result).toEqual({
+      activities: [{ sessionId: 's1', status: 'idle', source: 'persisted', updatedAt: '2026-07-01T00:10:00.000Z' }],
+      omittedSessionIds: [],
+      limit: 25,
+      offset: 2,
+      count: 1,
+    })
+    expect(list).toHaveBeenCalledWith({ workspaceId: 'workspace-a', userId: 'user-a' }, { limit: 25, offset: 2 })
+    expect(harness.getPiSessionAdapter).not.toHaveBeenCalled()
+  })
+
+  it('readSessionActivity omits unauthorized or missing requested sessions with stable IDs', async () => {
+    const load = vi.fn(async (_ctx: { workspaceId?: string; userId?: string }, sessionId: string) => {
+      if (sessionId === 'missing') throw Object.assign(new Error('session not found'), { code: ErrorCode.enum.SESSION_NOT_FOUND })
+      return { id: sessionId, title: sessionId, createdAt: '2026-07-01T00:00:00.000Z', updatedAt: '2026-07-01T00:10:00.000Z', turnCount: 1 }
+    })
+    const adapter = createAdapter()
+    const harness = createHarness(adapter)
+    const service = new HarnessPiChatService({
+      harness,
+      sessionStore: { ...sessionStore, load },
+      workdir: '/workspace',
+    })
+
+    const result = await service.readSessionActivity(ctx, { sessionIds: ['s1', 'missing', 's1'] })
+
+    expect(result).toEqual({
+      activities: [{ sessionId: 's1', status: 'idle', source: 'persisted', updatedAt: '2026-07-01T00:10:00.000Z' }],
+      omittedSessionIds: ['missing'],
+      limit: 50,
+      offset: 0,
+      count: 1,
+    })
+    expect(load).toHaveBeenCalledTimes(2)
+    expect(load).toHaveBeenCalledWith({ workspaceId: 'workspace-a', userId: 'user-a' }, 's1')
+    expect(harness.getPiSessionAdapter).not.toHaveBeenCalled()
+  })
+
+  it('readSessionActivity reports mounted and closed-pane Boring live sessions as working', async () => {
+    const { service, adapter } = createService()
+    const subscription = await service.subscribe(ctx, 's1', 0, () => {})
+    expect(subscription.type).toBe('ok')
+
+    await expect(service.readSessionActivity(ctx, { sessionIds: ['s1'] })).resolves.toMatchObject({
+      activities: [{ sessionId: 's1', status: 'working', source: 'live-runtime' }],
+    })
+
+    if (subscription.type === 'ok') subscription.unsubscribe()
+    await expect(service.readSessionActivity(ctx, { sessionIds: ['s1'] })).resolves.toMatchObject({
+      activities: [{ sessionId: 's1', status: 'working', source: 'live-runtime' }],
+    })
+    expect(adapter.listenerCount()).toBe(1)
+  })
+
+  it('readSessionActivity reports queued waiting work before a run becomes working', async () => {
+    const adapter = createAdapter()
+    const run = deferred<void>()
+    adapter.readSnapshot().isStreaming = false
+    adapter.prompt = vi.fn(() => run.promise)
+    const { service } = createService(adapter)
+
+    await expect(service.prompt(ctx, 's1', { message: 'wait', clientNonce: 'nonce-wait' })).resolves.toMatchObject({ accepted: true })
+    await expect(service.readSessionActivity(ctx, { sessionIds: ['s1'] })).resolves.toMatchObject({
+      activities: [{ sessionId: 's1', status: 'queued', source: 'live-runtime' }],
+    })
+
+    adapter.readSnapshot().isStreaming = true
+    await expect(service.readSessionActivity(ctx, { sessionIds: ['s1'] })).resolves.toMatchObject({
+      activities: [{ sessionId: 's1', status: 'working', source: 'live-runtime' }],
+    })
+    run.resolve()
+  })
+
+  it('readSessionActivity reports live retrying and error states', async () => {
+    const retrying = createAdapter()
+    retrying.readSnapshot().isStreaming = false
+    retrying.readSnapshot().isRetrying = true
+    const retryService = createService(retrying).service
+    await retryService.subscribe(ctx, 's1', 0, () => {})
+    await expect(retryService.readSessionActivity(ctx, { sessionIds: ['s1'] })).resolves.toMatchObject({
+      activities: [{ sessionId: 's1', status: 'working', source: 'live-runtime' }],
+    })
+
+    const errored = createAdapter()
+    errored.readSnapshot().isStreaming = false
+    errored.readSnapshot().state = { errorMessage: 'model failed' }
+    const errorService = createService(errored).service
+    await errorService.subscribe(ctx, 's1', 0, () => {})
+    await expect(errorService.readSessionActivity(ctx, { sessionIds: ['s1'] })).resolves.toMatchObject({
+      activities: [{ sessionId: 's1', status: 'error', source: 'live-runtime' }],
+    })
+  })
+
   it('manageSessions defaults rename to the executing session and authorizes explicit IDs through rename', async () => {
     const rename = vi.fn(async (_ctx, sessionId: string, title: string) => ({
       id: sessionId,

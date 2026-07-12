@@ -13,7 +13,7 @@ import type {
   QueueClearReceipt,
   StopReceipt,
 } from '../../../../shared/chat'
-import type { ManageSessionsInput, ManageSessionsOptions, ManageSessionsResult } from '../../../../core/piChatSessionService'
+import type { ManageSessionsInput, ManageSessionsOptions, ManageSessionsResult, SessionActivityInput, SessionActivityResult } from '../../../../core/piChatSessionService'
 import type { PiSessionRequestContext } from '../../../pi-chat/piSessionIdentity'
 import { PI_CHAT_CURSOR_AHEAD, PI_CHAT_REPLAY_GAP } from '../../../pi-chat/piChatReplayBuffer'
 import type { SessionListOptions } from '../../../../shared/session'
@@ -77,6 +77,17 @@ class FakePiChatService implements PiChatSessionService {
   async deleteSession(ctx: PiSessionRequestContext, sessionId: string) {
     this.calls.push({ method: 'deleteSession', ctx, sessionId })
     this.sessions = this.sessions.filter((session) => session.id !== sessionId)
+  }
+
+  async readSessionActivity(ctx: PiSessionRequestContext, input: SessionActivityInput): Promise<SessionActivityResult> {
+    this.calls.push({ method: 'readSessionActivity', ctx, payload: input })
+    return {
+      activities: this.sessions.map((session) => ({ sessionId: session.id, status: 'idle' as const, source: 'persisted' as const, updatedAt: session.updatedAt })),
+      omittedSessionIds: [],
+      limit: input.limit ?? 50,
+      offset: input.offset ?? 0,
+      count: this.sessions.length,
+    }
   }
 
   async manageSessions(ctx: PiSessionRequestContext, input: ManageSessionsInput, options?: ManageSessionsOptions): Promise<ManageSessionsResult> {
@@ -202,6 +213,47 @@ describe('piChatRoutes', () => {
       method: 'listSessions',
       options: { limit: 100, offset: 25, includeId: 'pi-older' },
     })
+
+    await app.close()
+  })
+
+  test('POST /sessions/activity forwards authenticated context and bounded activity input to the service', async () => {
+    const { app, service } = await buildApp()
+
+    const res = await app.inject({
+      method: 'POST',
+      url: '/api/v1/agent/pi-chat/sessions/activity',
+      headers: { 'x-boring-storage-scope': 'scope-a' },
+      payload: { sessionIds: ['pi-1'] },
+    })
+
+    expect(res.statusCode).toBe(200)
+    expect(res.json()).toMatchObject({
+      activities: [{ sessionId: 'pi-1', status: 'idle', source: 'persisted' }],
+      omittedSessionIds: [],
+    })
+    expect(service.calls[0]).toMatchObject({
+      method: 'readSessionActivity',
+      ctx: { workspaceId: 'workspace-a', storageScope: 'scope-a', authSubject: 'user-a', requestId: expect.any(String) },
+      payload: { sessionIds: ['pi-1'] },
+    })
+
+    await app.close()
+  })
+
+  test('POST /sessions/activity rejects invalid mixed modes before service invocation', async () => {
+    const { app, service } = await buildApp()
+    const readSessionActivity = vi.spyOn(service, 'readSessionActivity')
+
+    const res = await app.inject({
+      method: 'POST',
+      url: '/api/v1/agent/pi-chat/sessions/activity',
+      payload: { sessionIds: ['pi-1'], limit: 10 },
+    })
+
+    expect(res.statusCode).toBe(400)
+    expect(res.json().error).toMatchObject({ code: ErrorCode.enum.BRIDGE_COMMAND_INVALID })
+    expect(readSessionActivity).not.toHaveBeenCalled()
 
     await app.close()
   })

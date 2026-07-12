@@ -53,6 +53,32 @@ export interface ManageSessionsOptions {
   executingSessionId?: string
 }
 
+export type SessionActivityStatus = 'idle' | 'queued' | 'working' | 'error'
+export type SessionActivitySource = 'live-runtime' | 'persisted'
+
+export interface SessionActivityInput {
+  /** Context-authorized explicit session IDs. Missing/unauthorized IDs are omitted and reported. */
+  sessionIds?: string[]
+  /** Inventory-page mode when sessionIds is omitted. */
+  limit?: number
+  offset?: number
+}
+
+export interface SessionActivityEntry {
+  sessionId: string
+  status: SessionActivityStatus
+  source: SessionActivitySource
+  updatedAt?: string
+}
+
+export interface SessionActivityResult {
+  activities: SessionActivityEntry[]
+  omittedSessionIds: string[]
+  limit: number
+  offset: number
+  count: number
+}
+
 export interface PiChatEventStreamSubscription {
   type: 'ok'
   unsubscribe: () => void
@@ -70,6 +96,7 @@ export interface PiChatSessionService {
   renameSession?(ctx: PiSessionRequestContext, sessionId: string, title: string): Promise<SessionSummary>
   deleteSession?(ctx: PiSessionRequestContext, sessionId: string): Promise<void>
   manageSessions?(ctx: PiSessionRequestContext, input: ManageSessionsInput, options?: ManageSessionsOptions): Promise<ManageSessionsResult>
+  readSessionActivity?(ctx: PiSessionRequestContext, input: SessionActivityInput): Promise<SessionActivityResult>
   readState(ctx: PiSessionRequestContext, sessionId: string): Promise<PiChatSnapshot>
   subscribe(ctx: PiSessionRequestContext, sessionId: string, cursor: number, subscriber: PiChatEventSubscriber): Promise<PiChatEventStreamResult>
   prompt(ctx: PiSessionRequestContext, sessionId: string, payload: PromptPayload): Promise<PromptReceipt>

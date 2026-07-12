@@ -16,8 +16,10 @@ import {
 import { PI_CHAT_CURSOR_AHEAD, PI_CHAT_REPLAY_GAP } from '../../pi-chat/piChatReplayBuffer'
 import type { SessionListOptions } from '../../../shared/session'
 import { ManageSessionsInputSchema } from '../../sessionManagement'
+import { SessionActivityInputSchema } from '../../sessionActivity'
 import type {
   ManageSessionsInput,
+  SessionActivityInput,
   PiChatEventStreamSubscription,
   PiChatReplayRangeError,
   PiChatSessionService,
@@ -153,6 +155,18 @@ export function piChatRoutes(
       return reply.code(204).send()
     } catch (err) {
       return sendRouteError(reply, err, 'delete pi chat session failed')
+    }
+  })
+
+  app.post('/api/v1/agent/pi-chat/sessions/activity', async (request, reply) => {
+    const body = parseWithSchema<SessionActivityInput>(SessionActivityInputSchema, request.body ?? {}, reply, 'body')
+    if (!body) return
+    try {
+      const service = await resolveService(opts, request)
+      if (!service.readSessionActivity) throw unsupportedServiceMethod('read Pi chat session activity')
+      return reply.send(await service.readSessionActivity(getRequestContext(request), body))
+    } catch (err) {
+      return sendRouteError(reply, err, 'read pi chat session activity failed')
     }
   })
 
