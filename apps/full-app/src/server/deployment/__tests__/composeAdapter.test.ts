@@ -8,6 +8,7 @@ import {
   runD1ComposeAction,
   type D1ComposeEffect,
   type D1ComposeProcess,
+  type D1ComposeResult,
 } from '../composeAdapter.js'
 import { D1HostErrorCode, parseD1HostPlan } from '../d1Plan.js'
 
@@ -37,6 +38,14 @@ const expectedEnv = {
   D1_INGRESS_IMAGE: images.ingressImage,
   D1_MATERIALIZED_HOST_ROOT: '/run/boring/d1/eu-host-1',
   D1_STATE_ROOT: '/var/lib/boring/d1/eu-host-1',
+}
+
+function runnerWithFreshNetwork(composeResult: D1ComposeResult = { exitCode: 0 }) {
+  return vi.fn(async (process: D1ComposeProcess): Promise<D1ComposeResult> => {
+    if (process.command === 'docker' && process.args[0] === 'network') return { exitCode: 0, stdout: '' }
+    if (process.command === 'ip') return { exitCode: 0, stdout: '[]' }
+    return composeResult
+  })
 }
 
 describe('D1 Compose topology', () => {
@@ -139,20 +148,23 @@ describe('D1 Compose command policy', () => {
   })
 
   it('stops initial boot when migration fails', async () => {
-    const runner = vi.fn(async (_process: D1ComposeProcess) => ({ exitCode: 17 }))
+    const runner = runnerWithFreshNetwork({ exitCode: 17 })
 
     await expect(runD1ComposeAction('initial', await examplePlan(), images, runner)).rejects.toMatchObject({
       code: D1HostErrorCode.COLLECTION_NOT_READY,
       details: { field: 'compose' },
     })
-    expect(runner).toHaveBeenCalledTimes(1)
-    expect(runner.mock.calls[0][0].args.at(-1)).toBe('apps/full-app/dist/server/migrate.js')
+    expect(runner).toHaveBeenCalledTimes(3)
+    expect(runner.mock.calls[2]?.[0].args.at(-1)).toBe('apps/full-app/dist/server/migrate.js')
   })
 
   it.each([
-    ['spawn', async () => { throw new Error('spawn /private/canary TOKEN=secret') }],
-    ['nonzero', async () => ({ exitCode: 17 })],
-  ])('maps %s failure to one redacted collection error', async (_name, runner) => {
+    ['spawn', runnerWithFreshNetwork({ exitCode: 0 }), true],
+    ['nonzero', runnerWithFreshNetwork({ exitCode: 17 }), false],
+  ])('maps %s failure to one redacted collection error', async (_name, runner, spawn) => {
+    if (spawn) runner.mockImplementationOnce(async () => ({ exitCode: 0, stdout: '' }))
+      .mockImplementationOnce(async () => ({ exitCode: 0, stdout: '[]' }))
+      .mockImplementationOnce(async () => { throw new Error('spawn /private/canary TOKEN=secret') })
     let failure: unknown
     try {
       await runD1ComposeAction('initial', await examplePlan(), images, runner)
