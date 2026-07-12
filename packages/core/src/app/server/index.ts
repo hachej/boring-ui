@@ -2,6 +2,7 @@ export {
   createCoreWorkspaceAgentServer,
   type CoreWorkspaceAgentServer,
   type CoreWorkspaceAgentServerPlugin,
+  type CoreFrontendRootHandler,
   type CreateCoreWorkspaceAgentServerOptions,
 } from './createCoreWorkspaceAgentServer.js'
 export type { CoreRequestScope, CoreRequestScopeResolver } from '../../server/app/index.js'
