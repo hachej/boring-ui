@@ -7,7 +7,7 @@ from this file.**
 
 ## Active multi-agent Docker v1 work order (2026-07-11)
 
-**Dispatch state: D1-R0 and D1-001 through D1-003 are landed.** D1-004a1 is
+**Dispatch state: D1-R0 and D1-001 through D1-004a1 are landed.** D1-004a2 is
 active; dispatch the remaining exact implementation beads in
 [`D1-R0-SPEC.md`](./D1-R0-SPEC.md) in order. Never dispatch the historical
 section below.
@@ -36,16 +36,22 @@ section below.
    core process, external `databaseRef`, per-binding env plus external tmpfs
    secret mounts, durable roots, maintenance-only service-specific `--no-deps`,
    and no force-recreate.
-4. **ACTIVE — D1-004a1, then a2/a3/a4, b/c/d: host surface, authority fences,
-   and admission.** D1-004a1 also rejects edge-subnet overlap before its first
-   Compose apply and permits only an exact owned-network match on reapply.
-   Trusted exact-host landing grants nothing; member-only bound workspace and
-   all selectors fail closed; the database admission row commits before first
-   agent effect and survives process/revision cleanup.
-5. **D1-005 — N-binding boot/additive publication.** N independent P6-R calls,
+4. **LANDED — D1-004a1: explicit proxy and edge policy (#684).** Secure generic
+   default, exact D1 proxy peer/hop count, deterministic edge network, and the
+   pre-effect overlap guard are complete.
+5. **ACTIVE — D1-004a2, then a3a/a3b/a4, b/c/d: mounted reader, host surface,
+   authority fences, and admission.** A read-only repo-owned ingress artifact,
+   exact Docker-proven Caddy digest, and real echo proof must canonicalize
+   forwarding before the trusted host scope accepts `X-Forwarded-Host`.
+   Present RFC Forwarded fails with stable `D1_HOST_SCOPE_VIOLATION`; no D1
+   scope consumes forwarded authority before that proof. Trusted exact-host
+   landing grants nothing;
+   member-only bound workspace and all selectors fail closed; the database
+   admission row commits before first agent effect and survives cleanup.
+6. **D1-005 — N-binding boot/additive publication.** N independent P6-R calls,
    root-owned pending-pointer/signal preload, all-ready ack, atomic active
    pointer, stable-process continuity, and fail-closed active replacement/removal.
-6. **D1-006 — runbook and EU proof.** Reproduce the landed edge-network overlap
+7. **D1-006 — runbook and EU proof.** Reproduce the landed edge-network overlap
    guard and exact owned-network reuse on the EU host. Then prove three
    agents/workspaces/hostnames, timing, idempotence, N+1 continuity, rollback
    reproduction, isolation and secret canary. Dedicated VM is configuration

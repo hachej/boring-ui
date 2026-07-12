@@ -1,10 +1,11 @@
 # D1-tenant-provisioning — Plan
 
 Status: priority-1/v1 multi-agent Docker delivery gate; **D1-R0 and D1-001
-through D1-003 are landed and ancestry-verified**. D1-004a1 (explicit proxy
-policy) is the active micro-bead; D1-004a2 through D1-006 remain ordered behind
-it in [`D1-R0-SPEC.md`](./D1-R0-SPEC.md) and `TODO.md`. The active contract and
-R0 spec supersede the historical dedicated-site design.
+through D1-004a1 are landed and ancestry-verified**. D1-004a2 (mounted active
+reader) is the active micro-bead; D1-004a3a ingress proof, D1-004a3b host scope,
+and D1-004a4 through D1-006 remain ordered behind it in
+[`D1-R0-SPEC.md`](./D1-R0-SPEC.md) and `TODO.md`. The active contract and R0
+spec supersede the historical dedicated-site design.
 
 ## Active owner-reframed v1 plan (2026-07-11)
 
