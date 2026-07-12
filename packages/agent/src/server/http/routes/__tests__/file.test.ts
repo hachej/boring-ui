@@ -1033,4 +1033,58 @@ describe('file routes (NodeWorkspace integration)', () => {
     expect(res.statusCode).toBe(403)
     expect(res.json().error.code).toBe('path_rejected')
   })
+
+  test('reads an in-workspace read-only skill file matching the SKILL.md pattern', async () => {
+    const workspaceRoot = await mkdtemp(join(tmpdir(), 'boring-ui-skill-in-'))
+    tempRoots.push(workspaceRoot)
+    const skillDir = join(workspaceRoot, '.pi', 'agent', 'skills', 'demo')
+    await mkdir(skillDir, { recursive: true })
+    await writeFile(join(skillDir, 'SKILL.md'), '# demo skill', 'utf-8')
+
+    const app = await createTestAppWithWorkspace(createNodeWorkspace(workspaceRoot))
+    const abs = join(skillDir, 'SKILL.md')
+
+    const readRes = await app.inject({
+      method: 'GET',
+      url: `/api/v1/files?path=${encodeURIComponent(abs)}`,
+    })
+    expect(readRes.statusCode).toBe(200)
+    expect(readRes.json().content).toBe('# demo skill')
+
+    const statRes = await app.inject({
+      method: 'GET',
+      url: `/api/v1/stat?path=${encodeURIComponent(abs)}`,
+    })
+    expect(statRes.statusCode).toBe(200)
+    expect(statRes.json().kind).toBe('file')
+  })
+
+  test('rejects a SKILL.md path resolving outside the caller workspace root', async () => {
+    const workspaceRoot = await mkdtemp(join(tmpdir(), 'boring-ui-skill-caller-'))
+    const otherRoot = await mkdtemp(join(tmpdir(), 'boring-ui-skill-other-'))
+    tempRoots.push(workspaceRoot, otherRoot)
+
+    // A cross-tenant skill file: matches the read-only SKILL.md pattern but
+    // lives under a different workspace root. Must never be readable.
+    const otherSkillDir = join(otherRoot, '.pi', 'agent', 'skills', 'secret')
+    await mkdir(otherSkillDir, { recursive: true })
+    await writeFile(join(otherSkillDir, 'SKILL.md'), 'TENANT_B_SECRET_123', 'utf-8')
+
+    const app = await createTestAppWithWorkspace(createNodeWorkspace(workspaceRoot))
+    const abs = join(otherSkillDir, 'SKILL.md')
+
+    const readRes = await app.inject({
+      method: 'GET',
+      url: `/api/v1/files?path=${encodeURIComponent(abs)}`,
+    })
+    expect([403, 404]).toContain(readRes.statusCode)
+    expect(readRes.body).not.toContain('TENANT_B_SECRET_123')
+
+    const statRes = await app.inject({
+      method: 'GET',
+      url: `/api/v1/stat?path=${encodeURIComponent(abs)}`,
+    })
+    expect([403, 404]).toContain(statRes.statusCode)
+    expect(statRes.body).not.toContain('TENANT_B_SECRET_123')
+  })
 })
