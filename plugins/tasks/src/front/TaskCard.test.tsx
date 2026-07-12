@@ -95,7 +95,7 @@ describe("TaskCard task chat sessions", () => {
   it("links an existing standalone Pi session through search", async () => {
     postJson.mockImplementation(async (path: string) => {
       if (path === "/api/boring-tasks/sessions/list") return { links: [link()] }
-      if (path === "/api/v1/agent/pi-chat/sessions/manage") return { action: "search", sessions: [{ id: "pi-standalone", title: "Standalone" }] }
+      if (path === "/api/boring-tasks/sessions/search") return { sessions: [{ id: "pi-standalone", title: "Standalone" }] }
       if (path === "/api/boring-tasks/sessions/link") return { link: link({ id: "link-standalone", sessionId: "pi-standalone", title: "Standalone" }) }
       throw new Error(`unexpected post ${path}`)
     })
@@ -113,6 +113,18 @@ describe("TaskCard task chat sessions", () => {
       sessionId: "pi-standalone",
       title: "Standalone",
     }))
+  })
+
+  it("renders the linked-session disclosure and actions in compact cards", async () => {
+    postJson.mockResolvedValue({ links: [link()] })
+    getJson.mockResolvedValue([{ id: "pi-1", title: "#612: Wire sessions" }])
+
+    render(<TaskCard task={task} compact draggable={false} onDragStart={vi.fn()} onDragEnd={vi.fn()} />)
+    fireEvent.click(await screen.findByRole("button", { name: /open chat/i }))
+    expect(await screen.findByRole("region", { name: /linked chat sessions/i })).toBeInTheDocument()
+    expect(screen.getByRole("button", { name: "Open" })).toBeInTheDocument()
+    expect(screen.getByRole("button", { name: "Unlink" })).toBeInTheDocument()
+    expect(screen.getByRole("button", { name: /link existing/i })).toBeInTheDocument()
   })
 
   it("surfaces unavailable linked sessions without opening them", async () => {

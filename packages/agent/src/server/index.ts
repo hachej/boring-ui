@@ -130,6 +130,7 @@ export type {
 } from './mcp'
 export { createAgentApp } from './createAgentApp'
 export type { CreateAgentAppOptions } from './createAgentApp'
+export type { PiChatSessionService, PiSessionRequestContext } from '../core/piChatSessionService'
 export type { AgentHarnessFactory, AgentHarnessFactoryInput } from '../shared/harness'
 export { applyCspHeaders } from './http/csp'
 export type {

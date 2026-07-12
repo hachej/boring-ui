@@ -13,7 +13,9 @@ import {
   resolveMode,
   VERCEL_SANDBOX_WORKSPACE_ROOT,
   type CreateAgentAppOptions,
+  type PiChatSessionService,
   type PiExtensionFactory,
+  type PiSessionRequestContext,
   type ProvisionWorkspaceRuntimeOptions,
   type WorkspaceAgentDispatcherResolver,
 } from "@hachej/boring-agent/server"
@@ -701,6 +703,7 @@ export async function createWorkspaceAgentServer(
     && (opts.installPluginAuthoring ?? workspaceFsCapability === "strong")
     && !(opts.excludeDefaults ?? []).includes("boring-ui-plugin-cli-package")
   let workspaceAgentDispatcherResolver: WorkspaceAgentDispatcherResolver | undefined
+  let piChatSessionServiceResolver: ((request: FastifyRequest) => Promise<PiChatSessionService>) | undefined
   const trustedDispatcherProxy: WorkspaceAgentDispatcherResolver = {
     async resolve(actor, options) {
       if (!workspaceAgentDispatcherResolver) throw new Error("workspace agent dispatcher is not ready")
@@ -852,6 +855,9 @@ export async function createWorkspaceAgentServer(
       workspaceAgentDispatcherResolver = resolver
       opts.onWorkspaceAgentDispatcher?.(resolver)
     },
+    onPiChatSessionServiceResolver: (resolver) => {
+      piChatSessionServiceResolver = resolver
+    },
     mode: resolvedMode,
     workspaceRoot,
     externalPlugins: externalPluginsEnabled,
@@ -945,6 +951,58 @@ export async function createWorkspaceAgentServer(
       getHotReloadableResources: getHotReloadablePiResources,
     },
     systemPromptDynamic: () => aggregatePluginPrompts(boringAssetManager),
+  })
+  // Plugin routes share the same host-authorized workspace scope as agent routes.
+  // The resolver owns membership/identity validation; request headers and query
+  // parameters are never treated as workspace authority here.
+  type WorkspaceScopedRequest = FastifyRequest & { workspaceContext: { workspaceId: string; authenticated: boolean } }
+  if (opts.getWorkspaceId) {
+    app.addHook("onRequest", async (request) => {
+      const workspaceId = (await opts.getWorkspaceId!(request)).trim()
+      if (!workspaceId) throw new Error("workspace id is required")
+      const scoped = request as WorkspaceScopedRequest
+      scoped.workspaceContext = {
+        ...scoped.workspaceContext,
+        workspaceId,
+      }
+    })
+  }
+  app.decorate("boringTaskSessionPortProvider", {
+    resolve(request: FastifyRequest) {
+      const workspaceId = (request as WorkspaceScopedRequest).workspaceContext.workspaceId
+      if (!workspaceId) throw new Error("workspace session scope is unavailable")
+      const context = {
+        workspaceId,
+        ...(typeof (request as FastifyRequest & { user?: { id?: unknown } }).user?.id === "string"
+          ? { authSubject: (request as FastifyRequest & { user?: { id: string } }).user!.id }
+          : {}),
+      }
+      const serviceContext = (): PiSessionRequestContext => ({
+        workspaceId: context.workspaceId,
+        ...(context.authSubject ? { authSubject: context.authSubject } : {}),
+        requestId: request.id,
+      })
+      return {
+        context,
+        port: {
+          async findAuthorizedSession(_context: typeof context, sessionId: string) {
+            const service = await piChatSessionServiceResolver?.(request)
+            if (!service?.listSessions) return null
+            const sessions = await service.listSessions(serviceContext(), { limit: 1, includeId: sessionId })
+            const session = sessions.find((candidate) => candidate.id === sessionId)
+            return session ? { id: session.id, title: session.title, createdAt: session.createdAt, updatedAt: session.updatedAt } : null
+          },
+          async searchAuthorizedSessions(_context: typeof context, query: string) {
+            const service = await piChatSessionServiceResolver?.(request)
+            if (!service?.manageSessions) return []
+            const result = await service.manageSessions(serviceContext(), { action: "search", query, limit: 20 })
+            return result.action === "search"
+              ? result.sessions.map((session) => ({ id: session.id, title: session.title, createdAt: session.createdAt, updatedAt: session.updatedAt }))
+              : []
+          },
+        },
+      }
+    },
   })
   refreshBoringPluginDirs()
   await boringAssetManager.load()

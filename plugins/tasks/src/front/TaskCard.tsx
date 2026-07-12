@@ -182,7 +182,7 @@ export function TaskCard({ task, draggable, unmapped = false, deleteEnabled = fa
     stopCardAction(event)
     setLinkSearchLoading(true)
     setSessionError(null)
-    void pluginClient.postJson<ManageSessionsSearchResponse>("/api/v1/agent/pi-chat/sessions/manage", { action: "search", query: linkQuery, limit: 10 })
+    void pluginClient.postJson<ManageSessionsSearchResponse>("/api/boring-tasks/sessions/search", { query: linkQuery })
       .then((body) => setLinkSearchResults(body.sessions ?? []))
       .catch((error) => setSessionError(error instanceof Error ? error.message : "Failed to search sessions"))
       .finally(() => setLinkSearchLoading(false))
@@ -217,7 +217,7 @@ export function TaskCard({ task, draggable, unmapped = false, deleteEnabled = fa
   )
 
   const taskSessionPanel = sessionPanelOpen ? (
-    <section className="mt-3 rounded-xl border border-border bg-muted/20 p-2 text-xs" aria-label={`Linked chat sessions for ${taskDisplayRef(task)}`} onClick={(event) => event.stopPropagation()}>
+    <section className="mt-3 w-full rounded-xl border border-border bg-muted/20 p-2 text-xs" aria-label={`Linked chat sessions for ${taskDisplayRef(task)}`} onClick={(event) => event.stopPropagation()}>
       <div className="mb-2 flex items-center justify-between gap-2">
         <span className="font-semibold text-foreground">Task chats</span>
         <button type="button" className="rounded-md p-1 text-muted-foreground hover:bg-muted hover:text-foreground" aria-label="Close task chats" onClick={() => setSessionPanelOpen(false)}><X className="size-3" /></button>
@@ -265,7 +265,7 @@ export function TaskCard({ task, draggable, unmapped = false, deleteEnabled = fa
         onDragStart={(event) => onDragStart(event, task)}
         onDragEnd={onDragEnd}
         className={[
-          "group flex min-w-0 items-center gap-2 rounded-xl border bg-background px-3 py-2 shadow-sm transition",
+          "group flex min-w-0 flex-wrap items-center gap-2 rounded-xl border bg-background px-3 py-2 shadow-sm transition",
           draggable ? "cursor-grab hover:border-foreground/30 hover:shadow-md active:cursor-grabbing" : "cursor-default",
           unmapped ? "border-dashed border-amber-400/60 bg-amber-500/5" : "border-border",
         ].join(" ")}
@@ -303,6 +303,7 @@ export function TaskCard({ task, draggable, unmapped = false, deleteEnabled = fa
             ) : null}
           </div>
         </div>
+        {taskSessionPanel}
       </article>
     )
   }

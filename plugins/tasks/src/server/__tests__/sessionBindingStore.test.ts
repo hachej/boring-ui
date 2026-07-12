@@ -59,6 +59,22 @@ function runBindingStoreConformance(createStore: () => TaskSessionBindingStore) 
 describe("FileTaskSessionBindingStore", () => {
   runBindingStoreConformance(() => new FileTaskSessionBindingStore(dir))
 
+  it("serializes two independent store instances against the same file", async () => {
+    const first = new FileTaskSessionBindingStore(dir)
+    const second = new FileTaskSessionBindingStore(dir)
+    const [a, b, duplicate] = await Promise.all([
+      first.createBinding({ workspaceId: "workspace-a", adapterId: "github", taskId: "1", sessionId: "pi-1" }),
+      second.createBinding({ workspaceId: "workspace-a", adapterId: "github", taskId: "1", sessionId: "pi-2" }),
+      second.createBinding({ workspaceId: "workspace-a", adapterId: "github", taskId: "1", sessionId: "pi-1" }),
+    ])
+
+    const reloaded = new FileTaskSessionBindingStore(dir)
+    const bindings = await reloaded.listBindings({ workspaceId: "workspace-a", adapterId: "github", taskId: "1" })
+    expect(bindings.map((binding) => binding.sessionId).sort()).toEqual(["pi-1", "pi-2"])
+    expect(duplicate.id).toBe(a.id)
+    expect(b.id).not.toBe(a.id)
+  })
+
   it("persists bindings across process restart in the .pi/tasks layout", async () => {
     const store = new FileTaskSessionBindingStore(dir)
     const binding = await store.createBinding({ workspaceId: "workspace-a", adapterId: "github", taskId: "1", sessionId: "pi-1", title: "One" })

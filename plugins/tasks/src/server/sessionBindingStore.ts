@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto"
 import { mkdir, readFile, rename, writeFile } from "node:fs/promises"
 import { dirname, join } from "node:path"
+import lockfile from "proper-lockfile"
 import type { BoringTaskSessionBinding } from "../shared"
 
 export interface TaskSessionBindingCreateInput {
@@ -39,10 +40,7 @@ export function taskSessionBindingNotFound(id: string): TaskSessionBindingStoreE
   return new TaskSessionBindingStoreError(404, "TASK_SESSION_BINDING_NOT_FOUND", `Task session binding not found: ${id}`)
 }
 
-type StoredTaskSessionBindingState = {
-  bindings: Record<string, BoringTaskSessionBinding>
-}
-
+type StoredTaskSessionBindingState = { bindings: Record<string, BoringTaskSessionBinding> }
 type AtomicWriter = (path: string, content: string) => Promise<void>
 
 export interface FileTaskSessionBindingStoreOptions {
@@ -51,11 +49,9 @@ export interface FileTaskSessionBindingStoreOptions {
 }
 
 const EMPTY_STATE: StoredTaskSessionBindingState = { bindings: {} }
+const mutationQueues = new Map<string, Promise<void>>()
 
 export class FileTaskSessionBindingStore implements TaskSessionBindingStore {
-  private state: StoredTaskSessionBindingState | null = null
-  private loadInFlight: Promise<StoredTaskSessionBindingState> | null = null
-  private writeChain = Promise.resolve()
   private readonly writer: AtomicWriter
   private readonly clock: () => Date
 
@@ -68,7 +64,7 @@ export class FileTaskSessionBindingStore implements TaskSessionBindingStore {
   }
 
   async listBindings(input: TaskSessionBindingListInput): Promise<BoringTaskSessionBinding[]> {
-    const state = await this.load()
+    const state = await this.readState()
     return Object.values(state.bindings)
       .filter((binding) => binding.workspaceId === input.workspaceId && binding.adapterId === input.adapterId && binding.taskId === input.taskId)
       .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
@@ -76,14 +72,10 @@ export class FileTaskSessionBindingStore implements TaskSessionBindingStore {
   }
 
   async createBinding(input: TaskSessionBindingCreateInput): Promise<BoringTaskSessionBinding> {
-    let binding: BoringTaskSessionBinding | undefined
-    await this.mutate((state) => {
+    return await this.mutate((state) => {
       const existing = Object.values(state.bindings).find((candidate) => sameTuple(candidate, input))
-      if (existing) {
-        binding = existing
-        return
-      }
-      binding = {
+      if (existing) return clone(existing)
+      const binding: BoringTaskSessionBinding = {
         id: randomUUID(),
         workspaceId: input.workspaceId,
         adapterId: input.adapterId,
@@ -93,8 +85,8 @@ export class FileTaskSessionBindingStore implements TaskSessionBindingStore {
         createdAt: this.clock().toISOString(),
       }
       state.bindings[binding.id] = clone(binding)
+      return binding
     })
-    return clone(requireValue(binding))
   }
 
   async deleteBinding(input: TaskSessionBindingDeleteInput): Promise<void> {
@@ -109,37 +101,53 @@ export class FileTaskSessionBindingStore implements TaskSessionBindingStore {
     return join(this.rootDir, "session-links.json")
   }
 
-  private async mutate(fn: (state: StoredTaskSessionBindingState) => Promise<void> | void): Promise<void> {
-    const run = this.writeChain.then(async () => {
-      const state = clone(await this.load())
-      await fn(state)
+  private async mutate<T>(operation: (state: StoredTaskSessionBindingState) => T): Promise<T> {
+    return await withMutationLock(this.rootDir, async () => {
+      // Always re-read after obtaining the filesystem lock. A different process
+      // may have committed a binding since this store last read the file.
+      const state = await this.readState()
+      const result = operation(state)
       await this.writer(this.statePath(), `${JSON.stringify(state, null, 2)}\n`)
-      this.state = state
+      return result === undefined ? result : clone(result)
     })
-    this.writeChain = run.catch(() => undefined)
-    return run
   }
 
-  private async load(): Promise<StoredTaskSessionBindingState> {
-    if (this.state) return this.state
-    if (!this.loadInFlight) {
-      this.loadInFlight = (async () => {
-        try {
-          const raw = await readFile(this.statePath(), "utf8")
-          const parsed = JSON.parse(raw) as Partial<StoredTaskSessionBindingState>
-          this.state = {
-            bindings: parsed.bindings && typeof parsed.bindings === "object" ? parsed.bindings : {},
-          }
-        } catch (error) {
-          if ((error as { code?: string }).code !== "ENOENT") throw error
-          this.state = clone(EMPTY_STATE)
-        }
-        return this.state
-      })().finally(() => {
-        this.loadInFlight = null
-      })
+  private async readState(): Promise<StoredTaskSessionBindingState> {
+    try {
+      const raw = await readFile(this.statePath(), "utf8")
+      const parsed = JSON.parse(raw) as Partial<StoredTaskSessionBindingState>
+      return {
+        bindings: parsed.bindings && typeof parsed.bindings === "object" ? clone(parsed.bindings) : {},
+      }
+    } catch (error) {
+      if ((error as { code?: string }).code !== "ENOENT") throw error
+      return clone(EMPTY_STATE)
     }
-    return this.loadInFlight
+  }
+}
+
+async function withMutationLock<T>(rootDir: string, operation: () => Promise<T>): Promise<T> {
+  const previous = mutationQueues.get(rootDir) ?? Promise.resolve()
+  let releaseQueue!: () => void
+  const current = new Promise<void>((resolve) => { releaseQueue = resolve })
+  const queued = previous.then(() => current)
+  mutationQueues.set(rootDir, queued)
+  await previous
+  let releaseFilesystemLock: (() => Promise<void>) | undefined
+  try {
+    await mkdir(rootDir, { recursive: true, mode: 0o700 })
+    releaseFilesystemLock = await lockfile.lock(rootDir, {
+      lockfilePath: join(rootDir, "session-links.lock"),
+      realpath: false,
+      stale: 30_000,
+      update: 5_000,
+      retries: { retries: 100, minTimeout: 25, maxTimeout: 100 },
+    })
+    return await operation()
+  } finally {
+    await releaseFilesystemLock?.().catch(() => {})
+    releaseQueue()
+    if (mutationQueues.get(rootDir) === queued) mutationQueues.delete(rootDir)
   }
 }
 
@@ -155,11 +163,6 @@ async function writeAtomic(path: string, content: string): Promise<void> {
   const tmp = join(dirname(path), `.${randomUUID()}.tmp`)
   await writeFile(tmp, content, "utf8")
   await rename(tmp, path)
-}
-
-function requireValue<T>(value: T | undefined): T {
-  if (value === undefined) throw new Error("expected task session binding store mutation to produce a value")
-  return value
 }
 
 function clone<T>(value: T): T {

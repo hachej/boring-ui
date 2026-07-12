@@ -1,20 +1,8 @@
 import type { FastifyInstance } from "fastify"
 import { TASK_ERROR_CODES } from "../shared/error-codes"
+import type { TaskSessionPortProvider } from "./sessionPort"
 import { TaskSourceServiceError } from "./taskSourceService"
 import { TaskSessionBindingStoreError, type TaskSessionBindingStore } from "./sessionBindingStore"
-
-const DEFAULT_WORKSPACE_ID = "default"
-
-function workspaceIdFromRequest(request: { headers: Record<string, string | string[] | undefined>; query?: unknown }): string | undefined {
-  const header = request.headers["x-boring-workspace-id"]
-  if (typeof header === "string" && header.length > 0) return header
-  const query = request.query as { workspaceId?: unknown } | undefined
-  return typeof query?.workspaceId === "string" && query.workspaceId.length > 0 ? query.workspaceId : undefined
-}
-
-function requestWorkspaceId(request: { headers: Record<string, string | string[] | undefined>; query?: unknown }): string {
-  return workspaceIdFromRequest(request) ?? DEFAULT_WORKSPACE_ID
-}
 
 function responseError(cause: unknown) {
   if (cause instanceof TaskSourceServiceError || cause instanceof TaskSessionBindingStoreError) {
@@ -52,32 +40,16 @@ function optionalString(body: Record<string, unknown>, key: string): string | un
   return value
 }
 
-async function authorizeSessionForLink(
-  app: FastifyInstance,
-  request: { headers: Record<string, string | string[] | undefined> },
-  sessionId: string,
-): Promise<{ id: string; title?: string }> {
-  const response = await app.inject({
-    method: "GET",
-    url: `/api/v1/agent/pi-chat/sessions?limit=1&activeSessionId=${encodeURIComponent(sessionId)}`,
-    headers: request.headers,
-  })
-  if (response.statusCode >= 400) {
-    throw new TaskSourceServiceError(response.statusCode, "TASK_SESSION_AUTHORIZATION_FAILED", "Unable to authorize task session.")
-  }
-  const body = response.json()
-  const sessions = Array.isArray(body) ? body : []
-  const session = sessions.find((entry): entry is { id: string; title?: string } => Boolean(entry) && typeof entry === "object" && (entry as { id?: unknown }).id === sessionId)
-  if (!session) throw new TaskSourceServiceError(404, "TASK_SESSION_NOT_FOUND", `Task session not found: ${sessionId}`)
-  return session
-}
-
-export function registerTaskSessionBindingRoutes(app: FastifyInstance, options: { store: TaskSessionBindingStore }): void {
+export function registerTaskSessionBindingRoutes(app: FastifyInstance, options: {
+  store: TaskSessionBindingStore
+  sessionPortProvider: TaskSessionPortProvider
+}): void {
   app.post("/api/boring-tasks/sessions/list", async (request, reply) => {
     try {
       const body = bodyObject(request.body)
+      const { context } = options.sessionPortProvider.resolve(request)
       const links = await options.store.listBindings({
-        workspaceId: requestWorkspaceId(request),
+        workspaceId: context.workspaceId,
         adapterId: requiredString(body, "adapterId"),
         taskId: requiredString(body, "taskId"),
       })
@@ -91,9 +63,11 @@ export function registerTaskSessionBindingRoutes(app: FastifyInstance, options: 
     try {
       const body = bodyObject(request.body)
       const sessionId = requiredString(body, "sessionId")
-      const session = await authorizeSessionForLink(app, request, sessionId)
+      const { context, port } = options.sessionPortProvider.resolve(request)
+      const session = await port.findAuthorizedSession(context, sessionId)
+      if (!session) throw new TaskSourceServiceError(404, "TASK_SESSION_NOT_FOUND", `Task session not found: ${sessionId}`)
       const link = await options.store.createBinding({
-        workspaceId: requestWorkspaceId(request),
+        workspaceId: context.workspaceId,
         adapterId: requiredString(body, "adapterId"),
         taskId: requiredString(body, "taskId"),
         sessionId,
@@ -108,11 +82,22 @@ export function registerTaskSessionBindingRoutes(app: FastifyInstance, options: 
   app.post("/api/boring-tasks/sessions/unlink", async (request, reply) => {
     try {
       const body = bodyObject(request.body)
+      const { context } = options.sessionPortProvider.resolve(request)
       await options.store.deleteBinding({
-        workspaceId: requestWorkspaceId(request),
+        workspaceId: context.workspaceId,
         bindingId: requiredString(body, "bindingId"),
       })
       return { ok: true }
+    } catch (cause) {
+      return reply.status(statusFor(cause)).send(responseError(cause))
+    }
+  })
+
+  app.post("/api/boring-tasks/sessions/search", async (request, reply) => {
+    try {
+      const body = bodyObject(request.body)
+      const { context, port } = options.sessionPortProvider.resolve(request)
+      return { ok: true, sessions: await port.searchAuthorizedSessions(context, optionalString(body, "query") ?? "") }
     } catch (cause) {
       return reply.status(statusFor(cause)).send(responseError(cause))
     }

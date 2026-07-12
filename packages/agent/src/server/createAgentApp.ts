@@ -48,6 +48,8 @@ export interface CreateAgentAppOptions {
   /** Supply a custom runtime adapter to plug in non-built-in sandbox/workspace modes. */
   runtimeModeAdapter?: RuntimeModeAdapter
   authToken?: string
+  /** Trusted host resolver for an already-authorized workspace request scope. */
+  getWorkspaceId?: (request: FastifyRequest) => Promise<string> | string
   version?: string
   logger?: boolean
   extraTools?: AgentTool[]
@@ -125,6 +127,8 @@ export interface CreateAgentAppOptions {
    * workspace/user context; callers must authorize that context before resolving.
    */
   onWorkspaceAgentDispatcher?: (resolver: WorkspaceAgentDispatcherResolver) => void
+  /** Trusted host composition seam for request-scoped Pi session access. */
+  onPiChatSessionServiceResolver?: (resolver: (request: FastifyRequest) => Promise<PiChatSessionService>) => void
 }
 
 function createStaticWorkspaceAgentDispatcherResolver(
@@ -178,6 +182,13 @@ export async function createAgentApp(
       return disposal
     }
     profile.dispose = disposeProfile
+    const getPiChatSessionService = profile.chat.getService
+      ? async (request: FastifyRequest) => await profile.chat.getService!(request)
+      : async () => {
+          if (!profile.chat.service) throw new Error('Pi chat session service is unavailable')
+          return profile.chat.service
+        }
+    opts.onPiChatSessionServiceResolver?.(getPiChatSessionService)
 
     app.addHook(
       'onRequest',
