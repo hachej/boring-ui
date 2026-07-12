@@ -389,7 +389,7 @@ D1-006. Each PR stays dark/additive until its own acceptance; no PR claims the
 three-agent exit early. P2/P5a do not gate any bead.
 
 **§8 budgets are planning estimates; landed beads supersede their rows.**
-D1-001 through D1-003 are LANDED (ancestry-verified against `origin/main`):
+D1-001 through D1-004a1 are LANDED (ancestry-verified against `origin/main`):
 D1-001 shipped as [#652](https://github.com/hachej/boring-ui/pull/652);
 D1-002 shipped as multiple PRs — codec
 ([#653](https://github.com/hachej/boring-ui/pull/653)), store
@@ -408,8 +408,11 @@ materialization ([#677](https://github.com/hachej/boring-ui/pull/677)), fixed
 file runtime-input provider ([#678](https://github.com/hachej/boring-ui/pull/678)),
 production/Compose wiring ([#679](https://github.com/hachej/boring-ui/pull/679)),
 and the real Docker UID/DAC proof
-([#680](https://github.com/hachej/boring-ui/pull/680)). D1-004a1 is active;
-D1-004a2 through D1-006 remain un-landed.
+([#680](https://github.com/hachej/boring-ui/pull/680)). D1-004a1 shipped the
+explicit proxy policy, secure generic default, deterministic edge network, and
+pre-effect overlap guard
+([#684](https://github.com/hachej/boring-ui/pull/684)). D1-004a2 is active;
+D1-004a3a through D1-006 remain un-landed.
 
 ### D1-001 — plan and composition identity (<= 400 net lines; 25 minutes)
 
@@ -468,7 +471,8 @@ the first Compose apply, reject overlap between the fixed D1 edge subnet and
 non-default host routes or foreign Docker networks; reuse an exact existing D1
 project network only when its subnet, gateway, and ownership match. Map any
 conflict to `D1_COLLECTION_NOT_READY` with redacted `field: edgeNetwork`. RFC
-`Forwarded` remains rejected; a later
+`Forwarded` remains ineligible as D1 authority; D1-004a3a adds the transport
+rejection. A later
 `X-Forwarded-Host` value is usable only from this exact trusted peer/chain after
 the ingress replacement behavior is proven.
 
@@ -481,7 +485,28 @@ Deliver: read-only, exact-DAC validation of the mounted host `active` pointer
 and COMPLETE revision through existing codecs. No mutation-store reuse, cache,
 watcher, P6-R call, or secret-value read.
 
-### D1-004a3 — trusted host scope (<= 400 net lines; 25 minutes)
+### D1-004a3a — canonical ingress artifact and proof (<= 400 net lines; 25 minutes)
+
+Files: repo-owned `deploy/d1/Caddyfile`; its read-only mount and exact command in
+`deploy/d1/compose.yml`; one approved `caddy@sha256:...` constant enforced by
+`composeAdapter.ts`; `apps/full-app/package.json`; focused adapter/topology/proof
+tests; and a narrow real-Docker echo proof under `apps/full-app/scripts/` that
+imports the same approved image identity.
+
+Deliver: reject any present RFC `Forwarded` value at the edge with exact HTTP
+400, `text/plain; charset=utf-8`, and redacted body
+`D1_HOST_SCOPE_VIOLATION`; replace every absent, hostile, repeated, or
+comma-joined inbound `X-Forwarded-Host` with exactly one raw header value derived
+from the original direct authority before proxying. The production image must
+equal the exact approved Caddy digest exercised by the Docker proof; another
+repository or digest fails before effects. Prove Forwarded absent/single/empty/
+repeated/comma cases and backend raw XFH cardinality/value for absent/hostile/
+repeated/comma cases through the mounted config and approved image. Until this
+proof lands, no D1 host scope may consume forwarded authority; direct authority
+is the only eligible future D1 input. Direct-only mode does not complete
+D1-004a3.
+
+### D1-004a3b — trusted host scope (<= 400 net lines; 25 minutes)
 
 Files: new `deployment/hostSurface.ts`, one optional core request-scope contract,
 focused tests, and minimal pre-auth server wiring.

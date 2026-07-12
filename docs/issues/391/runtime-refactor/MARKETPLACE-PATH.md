@@ -34,7 +34,8 @@ into where they land.
 P1 readiness landed via [#642](https://github.com/hachej/boring-ui/pull/642).
 M1 landed via [#650](https://github.com/hachej/boring-ui/pull/650), superseding
 the closed [#549](https://github.com/hachej/boring-ui/pull/549)/
-[#556](https://github.com/hachej/boring-ui/pull/556) stack. D1-004a1 is active;
+[#556](https://github.com/hachej/boring-ui/pull/556) stack. D1-004a1 landed via
+[#684](https://github.com/hachej/boring-ui/pull/684), and D1-004a2 is active;
 the AR1 Lane W share-entry/deep-link/resource slices are next after priority 1.
 
 ## Phase 2 — Factory v1
