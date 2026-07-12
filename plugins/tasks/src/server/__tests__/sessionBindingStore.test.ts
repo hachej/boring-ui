@@ -2,62 +2,33 @@ import { mkdtemp, readFile, rm } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { afterEach, beforeEach, describe, expect, it } from "vitest"
-import { FileTaskSessionBindingStore, type TaskSessionBindingStore } from "../sessionBindingStore"
+import { FileTaskSessionBindingStore } from "../sessionBindingStore"
+import { runTaskSessionBindingStoreConformance } from "./sessionBindingStore.conformance"
 
 let dir: string
+let clockMs = 0
 
 beforeEach(async () => {
   dir = await mkdtemp(join(tmpdir(), "boring-task-session-bindings-"))
+  clockMs = 0
 })
 
 afterEach(async () => {
   await rm(dir, { recursive: true, force: true })
 })
 
-function runBindingStoreConformance(createStore: () => TaskSessionBindingStore) {
-  it("creates idempotent unique workspace/adapter/task/session bindings and lists newest first", async () => {
-    const store = createStore()
-    const first = await store.createBinding({ workspaceId: "workspace-a", adapterId: "github", taskId: "1", sessionId: "pi-1", title: "One" })
-    const duplicate = await store.createBinding({ workspaceId: "workspace-a", adapterId: "github", taskId: "1", sessionId: "pi-1", title: "Changed" })
-    const second = await store.createBinding({ workspaceId: "workspace-a", adapterId: "github", taskId: "1", sessionId: "pi-2", title: "Two" })
-    await store.createBinding({ workspaceId: "workspace-b", adapterId: "github", taskId: "1", sessionId: "pi-1" })
-    await store.createBinding({ workspaceId: "workspace-a", adapterId: "github", taskId: "2", sessionId: "pi-1" })
-
-    expect(duplicate).toEqual(first)
-    await expect(store.listBindings({ workspaceId: "workspace-a", adapterId: "github", taskId: "1" })).resolves.toEqual([second, first])
-  })
-
-  it("serializes concurrent links for the same tuple", async () => {
-    const store = createStore()
-    const created = await Promise.all(Array.from({ length: 10 }, () => store.createBinding({
-      workspaceId: "workspace-a",
-      adapterId: "github",
-      taskId: "1",
-      sessionId: "pi-1",
-      title: "One",
-    })))
-
-    expect(new Set(created.map((binding) => binding.id)).size).toBe(1)
-    await expect(store.listBindings({ workspaceId: "workspace-a", adapterId: "github", taskId: "1" })).resolves.toHaveLength(1)
-  })
-
-  it("handles concurrent link and unlink deterministically", async () => {
-    const store = createStore()
-    const existing = await store.createBinding({ workspaceId: "workspace-a", adapterId: "github", taskId: "1", sessionId: "pi-1" })
-
-    await Promise.all([
-      store.deleteBinding({ workspaceId: "workspace-a", bindingId: existing.id }),
-      store.createBinding({ workspaceId: "workspace-a", adapterId: "github", taskId: "1", sessionId: "pi-2" }),
-    ])
-
-    await expect(store.listBindings({ workspaceId: "workspace-a", adapterId: "github", taskId: "1" })).resolves.toEqual([
-      expect.objectContaining({ sessionId: "pi-2" }),
-    ])
+function createFileStore(): FileTaskSessionBindingStore {
+  return new FileTaskSessionBindingStore(dir, {
+    clock: () => new Date(Date.UTC(2026, 6, 1, 0, 0, 0, clockMs++)),
   })
 }
 
 describe("FileTaskSessionBindingStore", () => {
-  runBindingStoreConformance(() => new FileTaskSessionBindingStore(dir))
+  runTaskSessionBindingStoreConformance({
+    name: "FileTaskSessionBindingStore",
+    createStore: createFileStore,
+    createReopenedStore: createFileStore,
+  })
 
   it("serializes two independent store instances against the same file", async () => {
     const first = new FileTaskSessionBindingStore(dir)

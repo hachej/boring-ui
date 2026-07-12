@@ -9,8 +9,9 @@ import type { CoreConfig } from '../../../shared/types'
 import type { Database } from '../../db/connection'
 import { registerErrorHandler } from '../../app/errorHandler'
 import postgres from 'postgres'
+import { resolveCoreTestDatabase, type CoreTestDatabase } from '../../db/__tests__/testDatabase'
 
-const TEST_DB_URL = process.env.DATABASE_URL ?? 'postgres://ubuntu:test@localhost/boring_ui_test'
+const TEST_DB: CoreTestDatabase | undefined = await resolveCoreTestDatabase('auth_hook')
 const MAIL_CAPTURE_PATH = `/tmp/auth-hook-test-mail-${process.pid}.log`
 
 function makeConfig(): CoreConfig {
@@ -21,7 +22,7 @@ function makeConfig(): CoreConfig {
     port: 0,
     host: '127.0.0.1',
     staticDir: null,
-    databaseUrl: TEST_DB_URL,
+    databaseUrl: TEST_DB?.databaseUrl ?? 'postgres://unused.invalid/unused',
     stores: 'postgres',
     cors: { origins: ['http://localhost:3000'], credentials: true },
     bodyLimit: 16 * 1024 * 1024,
@@ -64,6 +65,7 @@ async function signUpAndReadCookie(email: string): Promise<string> {
 }
 
 beforeAll(async () => {
+  if (!TEST_DB) return
   const config = makeConfig()
   await runMigrations(config)
   const conn = createDatabase(config)
@@ -105,15 +107,18 @@ beforeAll(async () => {
 })
 
 afterAll(async () => {
-  await app.close()
-  await rawSql`DELETE FROM sessions WHERE user_id IN (SELECT id FROM users WHERE email LIKE '%@auth-test.dev')`
-  await rawSql`DELETE FROM accounts WHERE user_id IN (SELECT id FROM users WHERE email LIKE '%@auth-test.dev')`
-  await rawSql`DELETE FROM verification_tokens WHERE 1=1`
-  await rawSql`DELETE FROM users WHERE email LIKE '%@auth-test.dev'`
-  await rawSql.end()
+  await app?.close()
+  if (rawSql) {
+    await rawSql`DELETE FROM sessions WHERE user_id IN (SELECT id FROM users WHERE email LIKE '%@auth-test.dev')`
+    await rawSql`DELETE FROM accounts WHERE user_id IN (SELECT id FROM users WHERE email LIKE '%@auth-test.dev')`
+    await rawSql`DELETE FROM verification_tokens WHERE 1=1`
+    await rawSql`DELETE FROM users WHERE email LIKE '%@auth-test.dev'`
+    await rawSql.end()
+  }
+  await TEST_DB?.cleanup()
 })
 
-describe('authHook', () => {
+describe.runIf(TEST_DB)('authHook', () => {
   it('public path /health returns 200 without session', async () => {
     const res = await app.inject({ method: 'GET', url: '/health' })
     expect(res.statusCode).toBe(200)

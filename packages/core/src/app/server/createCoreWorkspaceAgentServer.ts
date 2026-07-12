@@ -979,12 +979,27 @@ export async function createCoreWorkspaceAgentServer(
 
   await coreBridge.registerHttpRoutes(app)
 
+  async function resolveRequestAuthSubject(request: FastifyRequest): Promise<string | undefined> {
+    const user = (request as FastifyRequest & { user?: { id?: string } | null }).user
+    if (typeof user?.id === 'string' && user.id.trim()) return user.id.trim()
+    try {
+      const headers = new Headers()
+      for (const [key, value] of Object.entries(request.headers)) {
+        if (value) headers.set(key, Array.isArray(value) ? value[0] : value)
+      }
+      const session = await app.auth.api.getSession({ headers })
+      const sessionUserId = session?.user?.id
+      return typeof sessionUserId === 'string' && sessionUserId.trim() ? sessionUserId : undefined
+    } catch {
+      return undefined
+    }
+  }
+
   app.decorate('boringTaskSessionBindingStore', new PostgresTaskSessionBindingStore(db))
   app.decorate('boringTaskSessionPortProvider', {
     async resolve(request: FastifyRequest) {
       const workspaceId = await resolveWorkspaceId(request)
-      const user = (request as FastifyRequest & { user?: { id?: string } | null }).user
-      const authSubject = typeof user?.id === 'string' ? user.id : undefined
+      const authSubject = await resolveRequestAuthSubject(request)
       const context = {
         workspaceId,
         ...(authSubject ? { authSubject } : {}),
