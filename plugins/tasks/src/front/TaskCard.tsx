@@ -1,5 +1,5 @@
-import { useEffect, useState, type DragEvent, type MouseEvent } from "react"
-import { Link2, MessageSquare, MoreHorizontal, Trash2, X } from "lucide-react"
+import { useCallback, useEffect, useMemo, useState, type DragEvent, type MouseEvent } from "react"
+import { AlertCircle, CircleDot, Link2, MessageSquare, MoreHorizontal, Trash2, X } from "lucide-react"
 import { useWorkspacePluginClient } from "@hachej/boring-workspace"
 import { useWorkspaceShellCapabilities, type WorkspaceShellAnchorRect } from "@hachej/boring-workspace/plugin"
 import type { BoringTaskCard, BoringTaskSessionBinding } from "../shared"
@@ -35,6 +35,16 @@ interface TaskSessionLinkResponse { link?: BoringTaskSessionBinding }
 interface PiSessionSummary { id: string; title?: string; updatedAt?: string; createdAt?: string }
 interface ManageSessionsSearchResponse { action?: string; sessions?: PiSessionSummary[] }
 
+type TaskSessionActivityStatus = "idle" | "queued" | "working" | "error" | "missing"
+interface TaskSessionActivity { status: TaskSessionActivityStatus; source?: "live-runtime" | "persisted"; updatedAt?: string }
+interface SessionActivityResponse {
+  activities?: Array<{ sessionId: string; status: "idle" | "queued" | "working" | "error"; source: "live-runtime" | "persisted"; updatedAt?: string }>
+  omittedSessionIds?: string[]
+}
+
+const TASK_SESSION_ACTIVITY_POLL_MS = 15_000
+const TASK_SESSION_ACTIVITY_MAX_IDS = 100
+
 function taskDisplayRef(task: BoringTaskCard): string {
   return task.number || task.id
 }
@@ -65,6 +75,28 @@ function relativeTime(iso: string): string {
   return `${days}d ago`
 }
 
+function activityRank(status: TaskSessionActivityStatus): number {
+  if (status === "working") return 4
+  if (status === "queued") return 3
+  if (status === "error") return 2
+  return 1
+}
+
+function activityLabel(activity: TaskSessionActivity | undefined, loading: boolean): string {
+  if (!activity) return loading ? "Checking activity" : "Activity pending"
+  if (activity.status === "working") return "Working"
+  if (activity.status === "queued") return "Queued"
+  if (activity.status === "error") return "Needs attention"
+  if (activity.status === "missing") return "Activity unavailable"
+  return "Idle"
+}
+
+function newestTimestampMs(link: BoringTaskSessionBinding, activity: TaskSessionActivity | undefined): number {
+  const activityMs = activity?.updatedAt ? new Date(activity.updatedAt).getTime() : Number.NaN
+  const linkMs = new Date(link.createdAt).getTime()
+  return Math.max(Number.isFinite(activityMs) ? activityMs : 0, Number.isFinite(linkMs) ? linkMs : 0)
+}
+
 export function TaskCard({ task, draggable, unmapped = false, deleteEnabled = false, compact = false, onDelete, onDragStart, onDragEnd }: TaskCardProps) {
   const [menuOpen, setMenuOpen] = useState(false)
   const [openingChat, setOpeningChat] = useState(false)
@@ -75,6 +107,9 @@ export function TaskCard({ task, draggable, unmapped = false, deleteEnabled = fa
   const [linkQuery, setLinkQuery] = useState("")
   const [linkSearchResults, setLinkSearchResults] = useState<PiSessionSummary[]>([])
   const [linkSearchLoading, setLinkSearchLoading] = useState(false)
+  const [sessionActivities, setSessionActivities] = useState<Record<string, TaskSessionActivity>>({})
+  const [activityLoading, setActivityLoading] = useState(false)
+  const [activityError, setActivityError] = useState<string | null>(null)
   const shell = useWorkspaceShellCapabilities()
   const pluginClient = useWorkspacePluginClient()
   const tags = task.tags?.slice(0, 4) ?? []
@@ -82,30 +117,102 @@ export function TaskCard({ task, draggable, unmapped = false, deleteEnabled = fa
   const pullRequests = task.pullRequests?.slice(0, 2) ?? []
   const hiddenPullRequestCount = Math.max((task.pullRequests?.length ?? 0) - pullRequests.length, 0)
   const chatTitle = taskChatTitle(task)
+  const linkedSessionIds = useMemo(() => new Set(sessionLinks.map((link) => link.sessionId)), [sessionLinks])
+  const visibleActivityLinks = useMemo(() => sessionLinks.slice(0, TASK_SESSION_ACTIVITY_MAX_IDS), [sessionLinks])
+  const sortedSessionLinks = useMemo(() => {
+    return [...sessionLinks].sort((a, b) => {
+      const aActivity = sessionActivities[a.sessionId]
+      const bActivity = sessionActivities[b.sessionId]
+      const rankDelta = activityRank(bActivity?.status ?? "idle") - activityRank(aActivity?.status ?? "idle")
+      if (rankDelta !== 0) return rankDelta
+      return newestTimestampMs(b, bActivity) - newestTimestampMs(a, aActivity)
+    })
+  }, [sessionActivities, sessionLinks])
+  const rollupStatus = useMemo<TaskSessionActivityStatus>(() => sortedSessionLinks.reduce<TaskSessionActivityStatus>((status, link) => {
+    const candidate = sessionActivities[link.sessionId]?.status ?? "idle"
+    return activityRank(candidate) > activityRank(status) ? candidate : status
+  }, "idle"), [sessionActivities, sortedSessionLinks])
+  const workingLinks = useMemo(() => sessionLinks.filter((link) => sessionActivities[link.sessionId]?.status === "working"), [sessionActivities, sessionLinks])
+  const workingCount = workingLinks.length
+  const activeCount = sessionLinks.filter((link) => {
+    const status = sessionActivities[link.sessionId]?.status
+    return status === "working" || status === "queued" || status === "error"
+  }).length
+  const rollupText = activityLabel({ status: rollupStatus }, activityLoading)
 
   const stopCardAction = (event: MouseEvent<HTMLElement>) => event.stopPropagation()
 
-  const loadSessionLinks = async (): Promise<BoringTaskSessionBinding[]> => {
+  const refreshSessionActivity = useCallback(async (links: BoringTaskSessionBinding[]): Promise<Record<string, TaskSessionActivity>> => {
+    const sessionIds = [...new Set(links.map((link) => link.sessionId))].slice(0, TASK_SESSION_ACTIVITY_MAX_IDS)
+    if (sessionIds.length === 0) {
+      setSessionActivities({})
+      setActivityError(null)
+      return {}
+    }
+    setActivityLoading(true)
+    try {
+      const body = await pluginClient.postJson<SessionActivityResponse>("/api/v1/agent/pi-chat/sessions/activity", { sessionIds })
+      const next: Record<string, TaskSessionActivity> = {}
+      for (const entry of body.activities ?? []) {
+        next[entry.sessionId] = { status: entry.status, source: entry.source, updatedAt: entry.updatedAt }
+      }
+      for (const sessionId of body.omittedSessionIds ?? []) next[sessionId] = { status: "missing" }
+      setSessionActivities((current) => ({ ...current, ...next }))
+      setActivityError(null)
+      return next
+    } catch (error) {
+      setActivityError(error instanceof Error ? error.message : "Failed to load chat activity")
+      throw error
+    } finally {
+      setActivityLoading(false)
+    }
+  }, [pluginClient])
+
+  const loadSessionLinks = useCallback(async (): Promise<BoringTaskSessionBinding[]> => {
     const body = await pluginClient.postJson<TaskSessionListResponse>("/api/boring-tasks/sessions/list", { adapterId: task.adapterId, taskId: task.id })
     const links = body.links ?? []
     setSessionLinks(links)
     setSessionLinksLoaded(true)
+    if (links.length > 0) void refreshSessionActivity(links).catch(() => undefined)
     return links
-  }
+  }, [pluginClient, refreshSessionActivity, task.adapterId, task.id])
 
   useEffect(() => {
     let cancelled = false
     void pluginClient.postJson<TaskSessionListResponse>("/api/boring-tasks/sessions/list", { adapterId: task.adapterId, taskId: task.id })
       .then((body) => {
         if (cancelled) return
-        setSessionLinks(body.links ?? [])
+        const links = body.links ?? []
+        setSessionLinks(links)
         setSessionLinksLoaded(true)
+        if (links.length > 0) void refreshSessionActivity(links).catch(() => undefined)
       })
       .catch(() => {
         if (!cancelled) setSessionLinksLoaded(true)
       })
     return () => { cancelled = true }
-  }, [pluginClient, task.adapterId, task.id])
+  }, [pluginClient, refreshSessionActivity, task.adapterId, task.id])
+
+  useEffect(() => {
+    if (!sessionLinksLoaded || visibleActivityLinks.length === 0) return
+    const interval = window.setInterval(() => { void refreshSessionActivity(visibleActivityLinks).catch(() => undefined) }, TASK_SESSION_ACTIVITY_POLL_MS)
+    return () => window.clearInterval(interval)
+  }, [refreshSessionActivity, sessionLinksLoaded, visibleActivityLinks])
+
+  useEffect(() => {
+    if (typeof window === "undefined") return
+    const onSessionStatus = (event: Event) => {
+      const detail = (event as CustomEvent<{ sessionId?: unknown; working?: unknown }>).detail
+      const sessionId = typeof detail?.sessionId === "string" ? detail.sessionId : null
+      if (!sessionId || !linkedSessionIds.has(sessionId)) return
+      setSessionActivities((current) => ({
+        ...current,
+        [sessionId]: { status: detail.working ? "working" : "idle", source: "live-runtime", updatedAt: new Date().toISOString() },
+      }))
+    }
+    window.addEventListener("boring:chat-session-status", onSessionStatus)
+    return () => window.removeEventListener("boring:chat-session-status", onSessionStatus)
+  }, [linkedSessionIds])
 
   const openLinkedChat = async (link: BoringTaskSessionBinding, anchor?: WorkspaceShellAnchorRect) => {
     const sessions = await pluginClient.getJson<PiSessionSummary[]>(`/api/v1/agent/pi-chat/sessions?limit=1&activeSessionId=${encodeURIComponent(link.sessionId)}`)
@@ -118,6 +225,7 @@ export function TaskCard({ task, draggable, unmapped = false, deleteEnabled = fa
     const title = session.title ?? link.title ?? chatTitle
     shell.openDetachedChat(link.sessionId, { anchor, title, composingEnabled: true })
     window.dispatchEvent(new CustomEvent("boring-workspace:open-detached-chat", { detail: { sessionId: link.sessionId, title, composingEnabled: true } }))
+    void refreshSessionActivity([link]).catch(() => undefined)
   }
 
   const createAndLinkChat = async (anchor?: WorkspaceShellAnchorRect) => {
@@ -143,6 +251,7 @@ export function TaskCard({ task, draggable, unmapped = false, deleteEnabled = fa
       }
       setSessionLinks((current) => current.some((candidate) => candidate.id === linked.id) ? current : [linked, ...current])
       setSessionLinksLoaded(true)
+      void refreshSessionActivity([linked]).catch(() => undefined)
       const initialDraft = taskChatDraft(task)
       shell.openDetachedChat(session.id, { anchor, title: chatTitle, initialDraft, composingEnabled: true })
       window.dispatchEvent(new CustomEvent("boring-workspace:open-detached-chat", { detail: { sessionId: session.id, title: chatTitle, initialDraft, composingEnabled: true } }))
@@ -163,7 +272,13 @@ export function TaskCard({ task, draggable, unmapped = false, deleteEnabled = fa
         await createAndLinkChat(anchor)
         return
       }
-      setSessionPanelOpen((current) => !current)
+      const activity = await refreshSessionActivity(links).catch(() => sessionActivities)
+      const working = links.filter((link) => activity[link.sessionId]?.status === "working")
+      if (working.length === 1) {
+        await openLinkedChat(working[0], anchor)
+        return
+      }
+      setSessionPanelOpen((current) => working.length > 1 ? true : !current)
     })().catch((error) => setSessionError(error instanceof Error ? error.message : "Failed to open task chat"))
   }
 
@@ -171,6 +286,11 @@ export function TaskCard({ task, draggable, unmapped = false, deleteEnabled = fa
     stopCardAction(event)
     setSessionError(null)
     setSessionLinks((current) => current.filter((candidate) => candidate.id !== link.id))
+    setSessionActivities((current) => {
+      const next = { ...current }
+      delete next[link.sessionId]
+      return next
+    })
     void pluginClient.postJson("/api/boring-tasks/sessions/unlink", { bindingId: link.id })
       .catch((error) => {
         setSessionLinks((current) => current.some((candidate) => candidate.id === link.id) ? current : [link, ...current])
@@ -200,6 +320,7 @@ export function TaskCard({ task, draggable, unmapped = false, deleteEnabled = fa
       if (!body.link) throw new Error("Task session binding was not created.")
       setSessionLinks((current) => current.some((candidate) => candidate.id === body.link!.id) ? current : [body.link!, ...current])
       setSessionLinksLoaded(true)
+      void refreshSessionActivity([body.link!]).catch(() => undefined)
     }).catch((error) => setSessionError(error instanceof Error ? error.message : "Failed to link session"))
   }
 
@@ -210,9 +331,11 @@ export function TaskCard({ task, draggable, unmapped = false, deleteEnabled = fa
   }
 
   const chatButton = (
-    <button type="button" draggable={false} onClick={openTaskChat} className="relative grid size-7 place-items-center rounded-lg text-muted-foreground opacity-80 hover:bg-muted hover:text-foreground group-hover:opacity-100" aria-label={`Open chat for ${taskDisplayRef(task)}`} title="Open task chat" disabled={openingChat} aria-expanded={sessionPanelOpen}>
-      <MessageSquare className={["size-3.5", openingChat ? "animate-pulse" : ""].join(" ")} strokeWidth={1.75} />
-      {sessionLinks.length > 0 ? <span className="absolute -right-1 -top-1 grid min-w-4 place-items-center rounded-full bg-primary px-1 text-[9px] font-bold leading-4 text-primary-foreground" aria-label={`${sessionLinks.length} linked chats`}>{sessionLinks.length}</span> : null}
+    <button type="button" draggable={false} onClick={openTaskChat} className="relative grid size-7 place-items-center rounded-lg text-muted-foreground opacity-80 hover:bg-muted hover:text-foreground group-hover:opacity-100" aria-label={`Open chat for ${taskDisplayRef(task)}. ${rollupText}${workingCount > 0 ? `, ${workingCount} working` : ""}.`} title={workingCount === 1 ? "Open working task chat" : "Open task chats"} disabled={openingChat} aria-expanded={sessionPanelOpen}>
+      <MessageSquare className={["size-3.5", openingChat ? "motion-safe:animate-pulse" : ""].join(" ")} strokeWidth={1.75} />
+      {activeCount > 0 ? <CircleDot className="absolute -bottom-0.5 -right-0.5 size-2.5 text-emerald-500 motion-safe:animate-pulse" aria-hidden="true" /> : null}
+      {sessionLinks.length > 0 ? <span className={["absolute -right-1 -top-1 grid min-w-4 place-items-center rounded-full px-1 text-[9px] font-bold leading-4", workingCount > 0 ? "bg-emerald-500 text-white" : "bg-primary text-primary-foreground"].join(" ")} aria-label={workingCount > 0 ? `${workingCount} working linked chats` : `${sessionLinks.length} linked chats`}>{workingCount > 0 ? workingCount : sessionLinks.length}</span> : null}
+      <span className="sr-only" aria-live="polite">Task chat activity: {rollupText}</span>
     </button>
   )
 
@@ -223,18 +346,38 @@ export function TaskCard({ task, draggable, unmapped = false, deleteEnabled = fa
         <button type="button" className="rounded-md p-1 text-muted-foreground hover:bg-muted hover:text-foreground" aria-label="Close task chats" onClick={() => setSessionPanelOpen(false)}><X className="size-3" /></button>
       </div>
       {sessionError ? <p className="mb-2 rounded-lg border border-destructive/30 bg-destructive/10 px-2 py-1 text-destructive" role="alert">{sessionError}</p> : null}
+      {activityError ? (
+        <div className="mb-2 flex items-center justify-between gap-2 rounded-lg border border-amber-500/30 bg-amber-500/10 px-2 py-1 text-amber-700 dark:text-amber-200" role="status">
+          <span className="inline-flex min-w-0 items-center gap-1"><AlertCircle className="size-3 shrink-0" /> Activity refresh failed.</span>
+          <button type="button" className="rounded-md px-2 py-0.5 font-medium hover:bg-amber-500/15" onClick={(event) => { stopCardAction(event); void refreshSessionActivity(visibleActivityLinks).catch(() => undefined) }}>Retry</button>
+        </div>
+      ) : null}
+      {activityLoading && sessionLinks.length > 0 ? <p className="mb-2 text-[10px] text-muted-foreground" role="status">Checking chat activity…</p> : null}
+      {sessionLinks.length > TASK_SESSION_ACTIVITY_MAX_IDS ? <p className="mb-2 text-[10px] text-muted-foreground">Activity is shown for the first {TASK_SESSION_ACTIVITY_MAX_IDS} linked chats.</p> : null}
       {sessionLinks.length > 0 ? (
         <ul className="space-y-1">
-          {sessionLinks.map((link) => (
-            <li key={link.id} className="flex items-center gap-2 rounded-lg bg-background/70 px-2 py-1.5">
-              <div className="min-w-0 flex-1">
-                <div className="truncate font-medium text-foreground">{link.title ?? link.sessionId}</div>
-                <div className="text-[10px] text-muted-foreground">{relativeTime(link.createdAt)}</div>
-              </div>
-              <button type="button" className="rounded-md px-2 py-1 font-medium text-primary hover:bg-primary/10" onClick={(event) => { stopCardAction(event); void openLinkedChat(link, rectFromElement(event.currentTarget)) }}>Open</button>
-              <button type="button" className="rounded-md px-2 py-1 text-muted-foreground hover:bg-muted hover:text-destructive" onClick={(event) => unlinkSession(event, link)}>Unlink</button>
-            </li>
-          ))}
+          {sortedSessionLinks.map((link) => {
+            const activity = sessionActivities[link.sessionId]
+            const statusText = activityLabel(activity, activityLoading)
+            const isWorking = activity?.status === "working"
+            return (
+              <li key={link.id} className="flex items-center gap-2 rounded-lg bg-background/70 px-2 py-1.5">
+                <div className="min-w-0 flex-1">
+                  <div className="truncate font-medium text-foreground">{link.title ?? link.sessionId}</div>
+                  <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[10px] text-muted-foreground">
+                    <span>{relativeTime(activity?.updatedAt ?? link.createdAt)}</span>
+                    <span className={["inline-flex items-center gap-1 font-medium", isWorking ? "text-emerald-600 dark:text-emerald-300" : activity?.status === "error" ? "text-destructive" : ""].join(" ")}>
+                      <CircleDot className={["size-2", isWorking ? "motion-safe:animate-pulse" : ""].join(" ")} aria-hidden="true" />
+                      {statusText}
+                    </span>
+                    {activity?.source === "persisted" ? <span>persisted</span> : null}
+                  </div>
+                </div>
+                <button type="button" className="rounded-md px-2 py-1 font-medium text-primary hover:bg-primary/10" onClick={(event) => { stopCardAction(event); void openLinkedChat(link, rectFromElement(event.currentTarget)) }}>Open</button>
+                <button type="button" className="rounded-md px-2 py-1 text-muted-foreground hover:bg-muted hover:text-destructive" onClick={(event) => unlinkSession(event, link)}>Unlink</button>
+              </li>
+            )
+          })}
         </ul>
       ) : <p className="text-muted-foreground">No linked chats yet.</p>}
       <div className="mt-2 flex flex-wrap items-center gap-2">
