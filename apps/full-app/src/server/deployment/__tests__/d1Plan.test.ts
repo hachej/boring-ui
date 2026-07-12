@@ -75,4 +75,10 @@ describe('parseD1HostPlan', () => {
     expect(() => parseD1HostPlan(plan({ bindings: [{ ...binding('a'), bindingId: `${longest}a` }] })))
       .toThrow(expect.objectContaining({ code: D1HostErrorCode.PLAN_INVALID, details: { field: 'bindings[0].bindingId' } }))
   })
+
+  it('admits only host ids that fit one filesystem path component', () => {
+    expect(parseD1HostPlan(plan({ hostId: 'a'.repeat(250) })).hostId).toBe('a'.repeat(250))
+    expect(() => parseD1HostPlan(plan({ hostId: 'a'.repeat(251) })))
+      .toThrow(expect.objectContaining({ code: D1HostErrorCode.PLAN_INVALID, details: { field: 'hostId' } }))
+  })
 })

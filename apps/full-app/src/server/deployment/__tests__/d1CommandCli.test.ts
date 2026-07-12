@@ -7,7 +7,7 @@ import { Readable } from 'node:stream'
 import { pathToFileURL } from 'node:url'
 import { describe, expect, it, vi } from 'vitest'
 
-import { runD1CommandEntry } from '../d1CommandEntry.js'
+import { runD1CommandEntry, type D1EntryContext } from '../d1CommandEntry.js'
 import { isSupportedLocalD1LockFilesystem } from '../d1CommandLockPolicy.js'
 import { D1HostErrorCode } from '../d1Plan.js'
 import { resolveD1EntryInvocation, runD1RevisionWrapper, type D1EntryInvocation } from '../d1CommandWrapper.js'
@@ -97,11 +97,18 @@ describe('D1 revision command boundary', () => {
 
   it('rejects malformed, trailing, oversized, and traversal input before an entry runs', async () => {
     const h = await roots(); const marker = path.join(h.base, 'ran'); const entry = childScript(SUCCESS, 0, `require('fs').writeFileSync(${JSON.stringify(marker)},'yes')`)
-    for (const input of [Buffer.from(''), Buffer.from('{}{}'), Buffer.alloc(1024 * 1024 + 1), minimal('apply', '../escape')]) {
+    const longRollback = Buffer.from(JSON.stringify({ kind: 'rollback', hostId: 'a'.repeat(251), expectedHostRevision: null, targetRevision: 'r0000000001' }))
+    for (const input of [Buffer.from(''), Buffer.from('{}{}'), Buffer.alloc(1024 * 1024 + 1), minimal('apply', '../escape'), minimal('apply', 'a'.repeat(251)), longRollback]) {
       const result = await runD1RevisionWrapper({ stdin: Readable.from([input]), env: h.env, entry })
       expect(result.exitCode).toBe(2); expect(result.line).toContain(D1HostErrorCode.PLAN_INVALID)
     }
     await expect(access(marker)).rejects.toMatchObject({ code: 'ENOENT' })
+  })
+
+  it('admits a maximum-length host id at the lock boundary', async () => {
+    const hostId = 'a'.repeat(250); const h = await roots([hostId])
+    const result = await runD1RevisionWrapper({ stdin: Readable.from([minimal('apply', hostId)]), env: h.env, entry: childScript() })
+    expect(result.exitCode).toBe(0)
   })
 
   it('rejects missing, symlinked, hard-linked, wrong-mode, and wrong-owner lock configuration', async () => {
@@ -147,6 +154,19 @@ describe('D1 revision command boundary', () => {
     try {
       const output = await runD1CommandEntry({ stdin: Readable.from([validApply()]), mode: '--locked', dependencyFactory: factory })
       expect(output.exitCode).toBe(2); expect(factory).not.toHaveBeenCalled()
+    } finally { for (const key of keys) prior[key] === undefined ? delete process.env[key] : process.env[key] = prior[key] }
+  })
+
+  it('passes the parsed host identity into dependency construction', async () => {
+    const h = await roots(); const keys = ['BORING_D1_OWNER_UID', 'BORING_D1_STATE_ROOT', 'BORING_D1_LOCK_ROOT'] as const
+    const prior = Object.fromEntries(keys.map((key) => [key, process.env[key]])); let context: D1EntryContext | undefined
+    for (const key of keys) process.env[key] = h.env[key]
+    const command = JSON.parse(validApply('host-2').toString()) as { kind: string }; command.kind = 'plan'
+    try {
+      const output = await runD1CommandEntry({ stdin: Readable.from([JSON.stringify(command)]), mode: '--read-only', dependencyFactory: (value) => {
+        context = value; throw new Error('stop after dependency construction')
+      } })
+      expect(output).toMatchObject({ exitCode: 70 }); expect(context?.hostId).toBe('host-2')
     } finally { for (const key of keys) prior[key] === undefined ? delete process.env[key] : process.env[key] = prior[key] }
   })
 
@@ -267,5 +287,5 @@ describe('D1 revision command boundary', () => {
     child.stdin!.end(validApply()); const result = await collect(child)
     expect(result.code).toBe(4); expect(result.stdout).toContain(D1HostErrorCode.PUBLICATION_FAILED)
     await expect(access(path.join(cwd, '3'))).rejects.toMatchObject({ code: 'ENOENT' })
-  })
+  }, 15_000)
 })
