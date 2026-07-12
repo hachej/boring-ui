@@ -286,7 +286,7 @@ stack order.
 | pr2b-share-links (HARD GATED on #424) | BBM1-004 | new | ~150–400 | current-main public-share API cited; returned URL uses verified share route; share opens without exposing internals | host build/typecheck/test; share route smoke |
 
 **M1 total: 3 PRs (v0) + 1 gated follow-up.** The only prerequisite
-is the P1 workspace/Fastify boundary. R0 is bearer-only, workspace-backed, and
+is the P1 workspace/Fastify boundary + P6-R. R0 is bearer-only, workspace-backed, and
 self-contained. Current membership must resolve a concrete workspace plus its
 bound deployment and explicit `default` agent before start. Its bounded
 process-local receipt key is `(subjectId, workspaceId, deploymentId, agentId,
@@ -322,7 +322,7 @@ over MCP; M2 exposes declared agents over MCP.
 | pr3-auth-demo-policy | BBM2-003 | new | ~300–600 | bearer invalid/foreign rejects; public-demo obeys demo policy and never widens environment facts | host `test`; secret canary |
 | pr4-result-share-conformance | BBM2-004 | test + new | ~200–400 | bounded aggregate result/share shape stable; exact size boundaries; retry proof; no raw paths/secrets | documented smoke + affected e2e |
 
-**M2 total: 4 PRs.** Preconditions: M1 (landed #650) + ID1 identity + AC1 contracted-mode where farm actions require it; P7 inspection is optional post-v1, not a gate. M2 is a committed surface follow-up; it does not retroactively make M1 a runtime-exit gate.
+**M2 total: 4 PRs.** Preconditions: M1 (landed #650) + AR1 Lane W. A tracer/demo M2 slice (authMode: public-demo behind existing membership auth) may precede ID1; PUBLIC/open M2 requires ID1 (Decision 22). AC1 contracted-mode only where farm actions need it. P7 inspection is optional post-v1, not a gate. M2 is a committed surface follow-up; it does not retroactively make M1 a runtime-exit gate.
 
 ### T1 — Durable event stream + on-stream approvals (Phase T1, off P1)
 
@@ -435,7 +435,9 @@ impossible to enforce.
 | pr2-mcp-session-identity | BBE2-002 | new | ~250 (token-per-projection) | per-call validation; revoked/expired/foreign and invalidated lifetime reject after connect; two actors isolated | `boring-bash test` |
 | pr3-mcp-conformance-doc | BBE2-003 + BBE2-005 | test + doc | 0 | MCP-mount conformance `passed:true`, same visible-path set; remote-worker-as-transport filed as **P8** follow-up (doc); duality note confirms E2 exposes MCP and does not share machinery with boring-mcp consume | `boring-bash test` |
 
-**E2 total: 3 PRs.** SDK pinned exact `1.29.0` (no caret).
+**E2 total: 3 PRs.** SDK pinned exact `1.29.0` (no caret). E1 dependency dropped
+in the recut (INDEX: graduate M2/E2 without generic E1); the E1-derived
+lifetime lookup will be replaced by a direct binding-scoped lookup.
 
 ### P5 — Provisioning / readiness / secrets (P5a v1 core; P5b post-v1)
 

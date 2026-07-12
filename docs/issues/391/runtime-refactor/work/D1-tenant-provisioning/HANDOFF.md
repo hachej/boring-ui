@@ -278,7 +278,8 @@ before calling D1 done. Invent nothing.
 - [ ] The dedicated URL serves its landing and an authorized member reaches the
       bound workspace with the deployed agent selected as default; a non-member
       learns no workspace or agent detail.
-- [ ] Timed golden path is <=15 minutes with preconfigured infrastructure;
+- [ ] Timed golden path RECORDS timing vs the provisional 15-minute target
+      (target, not gate — D1-R0 §9.10) with preconfigured infrastructure;
       reapply is idempotent and rollback selects the prior complete deployment
       snapshot and verifies its resolved digest.
 - [ ] Smoke proof confirms the provisioned shape is usable.
