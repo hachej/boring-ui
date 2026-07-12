@@ -67,6 +67,12 @@ export function createFullAppServerPluginComposition() {
   return composeServerPlugins(createBoringMcpContributions())
 }
 
+// Build tooling discovers static plugin assets through this named export.
+export const serverPlugins: CoreWorkspaceAgentServerPlugin[] = [
+  ...createFullAppServerPluginComposition().plugins,
+]
+Object.freeze(serverPlugins)
+
 export async function createFullAppHostPluginComposition(config: CoreConfig) {
   const governance = await createGovernance(config)
   const composition = composeServerPlugins([
