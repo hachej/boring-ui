@@ -130,13 +130,21 @@ versions, and health are not desired inputs. The CLI records the OS principal
 audit record; neither is accepted as authorization material.
 
 Hostname parsing accepts a lower-case ASCII exact DNS name with no wildcard,
-scheme, path, userinfo, port, trailing dot, or ambiguous Unicode. Generic
-`trustProxy: true` is forbidden. Configuration names an exact trusted proxy CIDR
-and hop count; the server accepts a forwarded host only when the direct peer and
-chain length match, rejects multiple/ambiguous forwarded-host values, and
-otherwise uses the direct authority. Ingress strips inbound forwarding headers
-before emitting one canonical value. The app still matches it to the active
-revision map. Unknown, duplicate, or mismatched hosts fail before auth.
+scheme, path, userinfo, port, trailing dot, or ambiguous Unicode. D1 must never
+use `trustProxy: true`: its startup configuration names an exact trusted proxy
+CIDR and bounded hop count. An absent policy disables proxy trust. Only the Fly
+configuration in `apps/full-app/fly.toml` and the self-host configuration in
+`config/self-host/deploy.full-app.yml.template` (mirrored by
+`config/self-host/full-app.env.template`) may use the explicit temporary
+`legacy-unsafe` compatibility sentinel until their adjacent peer and forwarded
+chain are measured. Every other path remains absent/null and therefore false;
+the sentinel is not available when `BORING_D1_HOST_ID` is set. The server accepts
+a forwarded host only when the
+direct peer and chain length match, rejects multiple/ambiguous forwarded-host
+values, and otherwise uses the direct authority. Ingress strips inbound
+forwarding headers before emitting one canonical value. The app still matches
+it to the active revision map. Unknown, duplicate, or mismatched hosts fail
+before auth.
 
 `workspaceRootPolicyRef` and `sessionRootPolicyRef` identify host-approved base
 root policies: each resolves to one canonical parent path plus its ownership and
@@ -363,7 +371,7 @@ The D1 implementation adds one typed host error carrying these stable codes:
 | `D1_DESTRUCTIVE_CONFIRMATION_REQUIRED` | exact removal set was not confirmed |
 | `D1_SECRET_UNAVAILABLE` | a named secret ref cannot be securely materialized |
 | `AGENT_COMPOSITION_REQUIREMENT_UNSATISFIED` | final activation lacks a declared ref |
-| `D1_COLLECTION_NOT_READY` | any binding/host readiness check failed |
+| `D1_COLLECTION_NOT_READY` | any binding/host readiness check failed, including a conflicting D1 edge network (`field: edgeNetwork`) |
 | `D1_PUBLICATION_FAILED` | atomic ingress/pointer publication failed |
 | `D1_ROLLBACK_TARGET_INVALID` | target is absent, incomplete, or fails reproduction |
 | `D1_MANAGED_WORKSPACE_MUTATION_FORBIDDEN` | app/user lifecycle tried to mutate a managed binding |
@@ -445,11 +453,22 @@ blanket rollback, secret values, or source-checkout mounts.
 
 Files: surgical trusted-proxy configuration in
 `packages/core/src/server/app/createCoreApp.ts`, config schema/load/shared types,
-focused tests, and deterministic D1 edge-network wiring in `deploy/d1/compose.yml`.
+the two named legacy production configurations, deterministic D1 edge-network
+wiring in `deploy/d1/compose.yml`, a narrow
+`apps/full-app/src/server/deployment/edgeNetworkPreflight.ts` module wired before
+the first command in `composeAdapter.ts`, and focused tests.
 
-Deliver: secure-by-default proxy handling, an exact ingress CIDR plus bounded
-hop count (never `trustProxy: true` or broad private ranges), and a deterministic
-one-ingress network. RFC `Forwarded` remains rejected; a later
+Deliver: D1 startup fails closed without an exact ingress CIDR plus bounded hop
+count (never `trustProxy: true` or broad private ranges), and a deterministic
+one-ingress network. An absent or explicit null policy disables proxy trust.
+Only the two inventoried non-D1 production configurations receive a conspicuous
+temporary `legacy-unsafe` opt-in pending a measured peer-chain migration. Every
+other path keeps proxy trust disabled. Before
+the first Compose apply, reject overlap between the fixed D1 edge subnet and
+non-default host routes or foreign Docker networks; reuse an exact existing D1
+project network only when its subnet, gateway, and ownership match. Map any
+conflict to `D1_COLLECTION_NOT_READY` with redacted `field: edgeNetwork`. RFC
+`Forwarded` remains rejected; a later
 `X-Forwarded-Host` value is usable only from this exact trusted peer/chain after
 the ingress replacement behavior is proven.
 
@@ -534,7 +553,9 @@ a narrow proof script under `scripts/`, and the generated `golden-path.json`
 evidence path already assigned to P8 (do not duplicate its version contract).
 
 Deliver: boot/add-agent/apply/rollback/cleanup commands and a documented
-maintenance-restart boundary for every runtime/secret replacement;
+maintenance-restart boundary for every runtime/secret replacement. Reproduce
+the landed pre-apply edge-network overlap guard on the EU host, including
+idempotent reuse of the exact owned D1 project network;
 three distinct agents/workspaces/hostnames in one EU deployment; three
 independent P6-R digests; setup-to-first-success timing and per-stage breakdown;
 idempotent additive apply; N+1 continuity; exact rollback as a new revision;
