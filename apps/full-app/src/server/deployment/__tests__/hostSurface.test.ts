@@ -39,8 +39,8 @@ function reader(value: D1ActiveCollection | null = collection(), failure = false
   return { activeReader, calls: () => calls }
 }
 
-function request(rawHeaders: string[], peer: string | undefined, ips: string[]): FastifyRequest {
-  return { raw: { rawHeaders, socket: { remoteAddress: peer } }, ips } as unknown as FastifyRequest
+function request(rawHeaders: string[], peer: string | undefined, ips: string[], method = 'GET', url = '/'): FastifyRequest {
+  return { raw: { rawHeaders, socket: { remoteAddress: peer }, method, url }, ips } as unknown as FastifyRequest
 }
 
 function resolver(activeReader: D1ActiveCollectionReader) {
@@ -66,6 +66,32 @@ let app: Awaited<ReturnType<typeof createCoreApp>> | undefined
 afterEach(async () => { await app?.close(); app = undefined })
 
 describe('D1 host surface resolver', () => {
+  it('bypasses scope only for exact unforwarded loopback bootstrap requests', async () => {
+    const state = reader(null); const resolve = resolver(state.activeReader)
+    for (const url of ['/health', '/internal/d1/readiness']) {
+      expect(await resolve(request(['Host', 'ignored'], '127.0.0.1', ['127.0.0.1'], 'GET', url))).toBeUndefined()
+    }
+    expect(state.calls()).toBe(0)
+  })
+
+  it.each([
+    ['query', '127.0.0.1', 'GET', '/health?probe=1', ['Host', HOST]],
+    ['encoded', '127.0.0.1', 'GET', '/he%61lth', ['Host', HOST]],
+    ['double encoded', '127.0.0.1', 'GET', '/internal/d1/read%2569ness', ['Host', HOST]],
+    ['deep encoded', '127.0.0.1', 'GET', '/he%252525252561lth', ['Host', HOST]],
+    ['malformed encoded', '127.0.0.1', 'GET', '/health%ZZ', ['Host', HOST]],
+    ['suffix', '127.0.0.1', 'GET', '/health/more', ['Host', HOST]],
+    ['prefix', '127.0.0.1', 'GET', '/private/health', ['Host', HOST]],
+    ['HEAD', '127.0.0.1', 'HEAD', '/health', ['Host', HOST]],
+    ['POST', '127.0.0.1', 'POST', '/internal/d1/readiness', ['Host', HOST]],
+    ['IPv6', '::1', 'GET', '/health', ['Host', HOST]],
+    ['mapped IPv6', '::ffff:127.0.0.1', 'GET', '/health', ['Host', HOST]],
+    ['Caddy', D1_TRUSTED_CADDY_PEER, 'GET', '/health', ['Host', HOST]],
+    ['forwarding spoof', '127.0.0.1', 'GET', '/health', ['Host', HOST, 'X-Forwarded-Proto', 'https']],
+  ])('rejects non-exact local bootstrap variant %s', async (_name, peer, method, url, headers) => {
+    await violation(Promise.resolve(resolver(reader().activeReader)(request(headers, peer, [peer], method, url))))
+  })
+
   it('resolves direct and exact-Caddy authorities per request as frozen four-key scopes', async () => {
     const state = reader(); const resolve = resolver(state.activeReader)
     const direct = await resolve(request(['Host', HOST], CLIENT, [CLIENT]))
