@@ -7,7 +7,7 @@ from this file.**
 
 ## Active multi-agent Docker v1 work order (2026-07-11)
 
-**Dispatch state: D1-R0 and D1-001 through D1-004a3a are landed.** D1-004a3b is
+**Dispatch state: D1-R0 and D1-001 through D1-004a3b are landed.** D1-004a4a is
 active; dispatch the remaining exact implementation beads in
 [`D1-R0-SPEC.md`](./D1-R0-SPEC.md) in order. Never dispatch the historical
 section below.
@@ -42,14 +42,14 @@ section below.
 5. **LANDED — D1-004a2: mounted active reader (#685).** Exact-DAC read-only
    active-to-COMPLETE validation is complete without mutation-store reuse,
    directory enumeration, providers, or secret-value reads.
-6. **ACTIVE — D1-004a3b, then a4, b/c/d: host surface, authority fences, and
-   admission.** D1-004a3a landed the read-only repo-owned ingress artifact,
-   exact Docker-proven Caddy digest, and real echo proof that strips RFC
-   Forwarded and canonicalizes `X-Forwarded-Host` (#690). Trusted host scope
-   may now consume that exact peer/chain. Trusted exact-host landing grants
-   nothing; member-only bound workspace and all selectors fail closed; the
-   database admission row commits before first agent effect and survives
-   cleanup.
+6. **ACTIVE — D1-004a4a, then a4b, b/c/d: landing, activation, authority
+   fences, and admission.** D1-004a3b landed exact raw authority/proxy checks
+   and the optional pre-auth scope seam (#692). D1-004a4a adds only the bounded
+   landing/root seam; D1-004a4b atomically adds loopback readiness, exact
+   owner/process identity checks, active-reader construction, and production
+   wiring. Trusted hostname selection grants nothing; member-only bound
+   workspace and all selectors fail closed; the database admission row commits
+   before first agent effect and survives cleanup.
 7. **D1-005 — N-binding boot/additive publication.** N independent P6-R calls,
    root-owned pending-pointer/signal preload, all-ready ack, atomic active
    pointer, stable-process continuity, and fail-closed active replacement/removal.
