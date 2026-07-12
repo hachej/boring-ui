@@ -119,18 +119,24 @@ export {
   ManagedAgentMcpError,
 } from './mcp'
 export type {
+  ManagedAgentArtifact,
+  ManagedAgentArtifactCandidate,
   ManagedAgentArtifactRef,
+  ManagedAgentBoundRunnerWorkspace,
   ManagedAgentCollectArtifactsInput,
   ManagedAgentDelegateInput,
   ManagedAgentDelegateProgress,
   ManagedAgentDelegateRequestContext,
   ManagedAgentDelegateResult,
+  ManagedAgentDelegateRunner,
+  ManagedAgentDelegateRunInput,
   ManagedAgentDelegateStatus,
   ManagedAgentDelegateStatusResult,
   ManagedAgentMcpDelegateOptions,
   ManagedAgentMcpHttpHandlerOptions,
   ManagedAgentMcpServerOptions,
   ManagedAgentSafeError,
+  ManagedAgentWorkspaceResolutionInput,
 } from './mcp'
 export { createAgentApp } from './createAgentApp'
 export type { CreateAgentAppOptions } from './createAgentApp'
@@ -151,6 +157,7 @@ export {
 export { registerAgentRoutes } from './registerAgentRoutes'
 export type { RegisterAgentRoutesOptions } from './registerAgentRoutes'
 export type {
+  WorkspaceAgentDispatcherBinding,
   WorkspaceAgentDispatcherResolver,
   WorkspaceAgentDispatcherResolveOptions,
 } from './workspaceAgentDispatcher'

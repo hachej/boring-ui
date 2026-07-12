@@ -13,6 +13,33 @@ The server is built by `createCoreWorkspaceAgentServer` (from `@hachej/boring-co
 
 App-specific server plugins live in `src/server/plugins.ts`. The generic `boring-mcp` Sources plugin is statically composed for this app; set `BORING_MCP_ENABLED=0` to disable its server prompt/plugin registration. Set `BORING_PLUGIN_AUTHORING=1` to install the in-app plugin-authoring surface (dev and prod).
 
+## Managed Agent MCP Endpoint
+
+`full-app` can expose its configured default boring agent over MCP at `GET|POST|DELETE /mcp/managed-agent`. This endpoint is dark by default and is enabled only when all of these server-only env vars are present:
+
+```txt
+BORING_MANAGED_AGENT_MCP_ENABLED=1
+BORING_MANAGED_AGENT_MCP_BEARER_TOKEN=<opaque bearer token>
+BORING_MANAGED_AGENT_MCP_WORKSPACE_ID=<authorized workspace id>
+BORING_MANAGED_AGENT_MCP_USER_ID=<authorized user id>
+```
+
+Clients connect with `Authorization: Bearer <token>` using the MCP Streamable HTTP transport. The configured user/workspace pair is resolved by the host, checked against the full-app workspace store, and bound to the existing `WorkspaceAgentDispatcher` for that workspace. Tool arguments grant no routing authority: callers cannot select another workspace, user, deployment, agent, runtime, filesystem path, or model key.
+
+This endpoint **exposes** a boring agent to MCP clients. `plugins/boring-mcp` is the inverse: it **consumes** external MCP sources and contributes governed tools to a boring agent.
+
+Delivery v0 returns final assistant text plus at most one complete UTF-8 Markdown artifact. Binding-level caps are brief 32 KiB, final text 96 KiB, one Markdown artifact 256 KiB, and complete serialized result 384 KiB. The artifact payload includes `content`, `sha256`, `byteSize`, and `mediaType`; it must not include a workspace path, host root, truncation flag, token, or model credential. Stable artifact rejection codes are `MCP_AGENT_ARTIFACT_INVALID`, `MCP_AGENT_ARTIFACT_TOO_LARGE`, and `MCP_AGENT_ARTIFACT_UNAVAILABLE`.
+
+The M1 receipt/status state is process-local. It is suitable for same-process polling and retained terminal status, but it is not restart-durable and is not a cross-replica admission authority. A host restart can lose in-flight delegation state.
+
+Run the deterministic stock-client smoke with:
+
+```bash
+pnpm --filter full-app smoke:mcp-managed-agent
+```
+
+The smoke boots a local ephemeral `127.0.0.1` Fastify listener, registers `registerFullAppManagedAgentMcpRoutes`, injects a deterministic fake existing dispatcher/workspace binding, and connects with the unmodified `@modelcontextprotocol/sdk` `Client` plus `StreamableHTTPClientTransport`. It proves bearer rejection, `delegate_task_start` polling progress, completed inline Markdown delivery, and `MODEL_BUDGET_EXCEEDED` error shape without a live model call. It is proof of the route/protocol/binding contract, not proof of a live provider/model configuration.
+
 ## Run (local dev)
 
 ```bash
@@ -35,6 +62,7 @@ Open `http://localhost:5173`.
 | `migrate` | `tsx src/server/migrate.ts` — apply DB migrations |
 | `typecheck` / `lint` | `tsc --noEmit` (`lint` is an alias of `typecheck`) |
 | `e2e` / `e2e:smoke` | Playwright against `e2e/playwright.config.ts` (the two scripts are identical) |
+| `smoke:mcp-managed-agent` | `node --import tsx scripts/managed-agent-mcp-smoke.ts` — local stock MCP client smoke for `/mcp/managed-agent` |
 | `smoke:post-deploy` | `tsx scripts/post-deploy-smoke.ts` — post-deploy smoke against a live `DEPLOY_URL` |
 
 ## Env vars
@@ -63,6 +91,10 @@ Common optional:
 | `BORING_AGENT_DEFAULT_MODEL_PROVIDER`, `BORING_AGENT_DEFAULT_MODEL_ID`, `INFOMANIAK_API_TOKEN`, `BORING_AGENT_INFOMANIAK_PRODUCT_ID`, `BORING_AGENT_INFOMANIAK_MODEL` | — | Default chat model, incl. OpenAI-compatible Infomaniak endpoint |
 | `BORING_AGENT_MODE` | `local` | Set `vercel-sandbox` to run the agent in a Vercel Firecracker microVM. Also configure Vercel credentials such as `VERCEL_TEAM_ID`, `VERCEL_PROJECT_ID`, and local/dev auth via `VERCEL_TOKEN` when OIDC is not available. |
 | `BORING_MCP_ENABLED` | `1` | Enables the generic boring-mcp server plugin/prompt for app-owned Sources wiring. |
+| `BORING_MANAGED_AGENT_MCP_ENABLED` | `0` | Set `1` to expose `GET|POST|DELETE /mcp/managed-agent`. Requires the bearer, workspace, and user vars below. |
+| `BORING_MANAGED_AGENT_MCP_BEARER_TOKEN` | — | Server-only bearer token required by MCP clients via `Authorization: Bearer ...`. |
+| `BORING_MANAGED_AGENT_MCP_WORKSPACE_ID` | — | Host-configured authorized workspace. Caller tool arguments cannot override it. |
+| `BORING_MANAGED_AGENT_MCP_USER_ID` | — | Host-configured authorized subject checked against workspace membership. |
 | `COMPOSIO_API_KEY` | — | Optional server-only managed connector credential resolved by the app's boring-mcp managed connector secret resolver. Do not create a `VITE_*` mirror. |
 | `BORING_MCP_MAX_READONLY_INPUT_BYTES` | `65536` | Governed read-only MCP call input limit. |
 

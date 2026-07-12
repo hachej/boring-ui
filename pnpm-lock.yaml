@@ -119,6 +119,9 @@ importers:
       '@hachej/boring-workspace':
         specifier: workspace:*
         version: link:../../packages/workspace
+      '@modelcontextprotocol/sdk':
+        specifier: 1.29.0
+        version: 1.29.0(zod@4.4.3)
       '@vercel/sandbox':
         specifier: 2.3.0
         version: 2.3.0
