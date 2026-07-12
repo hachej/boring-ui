@@ -824,6 +824,7 @@ export async function createCoreWorkspaceAgentServer(
   const remoteWorkerModeAdapter = workerBaseUrl
     ? createRemoteWorkerModeAdapter({ baseUrl: workerBaseUrl })
     : undefined
+  const selectedRuntimeModeAdapter = options.runtimeModeAdapter ?? remoteWorkerModeAdapter
   const piOptionsByRoot = new Map<string, AgentPiOptions>()
   const getPluginPiOptions = (root: string): AgentPiOptions => {
     const resolvedRoot = path.resolve(root)
@@ -849,7 +850,7 @@ export async function createCoreWorkspaceAgentServer(
     // not scan per-workspace Pi skills/plugins from the public host path — it
     // can be stale after volume cutover and would reintroduce split-brain. Keep
     // only static app/plugin Pi config plus explicit caller overrides.
-    const pluginOptions = remoteWorkerModeAdapter
+    const pluginOptions = selectedRuntimeModeAdapter?.id === 'remote-worker'
       ? pluginCollection.agentOptions.pi
       : getPluginPiOptions(ctx.workspaceRoot)
     const bridgePiOptions = options.getWorkspaceBridgePi
@@ -899,7 +900,7 @@ export async function createCoreWorkspaceAgentServer(
     getTemplatePath: options.getTemplatePath,
     mode: options.mode,
     externalPlugins: externalPluginsEnabled,
-    runtimeModeAdapter: remoteWorkerModeAdapter,
+    runtimeModeAdapter: selectedRuntimeModeAdapter,
     version: options.version,
     extraTools: [
       ...(options.extraTools ?? []),

@@ -7,12 +7,16 @@ import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterAll, describe, expect, it, vi } from 'vitest'
 import postgres from 'postgres'
 
+import { type RuntimeModeAdapter } from '@hachej/boring-agent/server'
 import { createTasksServerPlugin } from '../../../../../../plugins/tasks/src/server/index'
 import { TaskCard } from '../../../../../../plugins/tasks/src/front/TaskCard'
 import type { BoringTaskCard } from '../../../../../../plugins/tasks/src/shared'
+import { createMockVercelSandboxHarness } from '../../../../../../packages/agent/src/server/workspace/__tests__/helpers/mockVercelSandbox'
+import { createVercelSandboxModeAdapter } from '../../../../../../packages/agent/src/server/runtime/modes/vercel-sandbox'
 import { runMigrations } from '../../../server/db/migrate'
 import { resolveCoreTestDatabase, type CoreTestDatabase } from '../../../server/db/__tests__/testDatabase'
 import type { CoreConfig } from '../../../shared/types'
+import { WorkspaceRuntimeSandboxHandleStore } from '../../../server/runtime'
 import { createCoreWorkspaceAgentServer, type CoreWorkspaceAgentServer } from '../createCoreWorkspaceAgentServer'
 
 const taskCardUi = vi.hoisted(() => ({
@@ -57,15 +61,154 @@ function baseConfig(databaseUrl: string): CoreConfig {
   }
 }
 
+type VercelSandboxModeOptions = Parameters<typeof createVercelSandboxModeAdapter>[0]
+type SandboxHandleStore = NonNullable<NonNullable<VercelSandboxModeOptions>['store']>
+type SandboxHandleRecord = NonNullable<Awaited<ReturnType<SandboxHandleStore['get']>>>
+type MockHostedSandbox = Awaited<ReturnType<typeof createMockVercelSandboxHarness>> & {
+  sandboxId: string
+  snapshotId: string
+  expireRuntimeStat(): void
+}
+
+function createDeferredSandboxHandleStore(): {
+  store: SandboxHandleStore
+  bind(store: SandboxHandleStore): void
+} {
+  let delegate: SandboxHandleStore | undefined
+  const requireDelegate = () => {
+    if (!delegate) throw new Error('sandbox handle store is not bound to Core workspace store')
+    return delegate
+  }
+  return {
+    bind(store) { delegate = store },
+    store: {
+      async get(workspaceId) { return await requireDelegate().get(workspaceId) },
+      async put(record) { await requireDelegate().put(record) },
+      async delete(workspaceId) { await requireDelegate().delete(workspaceId) },
+      async list() { return await requireDelegate().list() },
+    },
+  }
+}
+
+async function createHostedVercelRuntimeFixture(): Promise<{
+  adapter: RuntimeModeAdapter
+  bindTo(app: CoreWorkspaceAgentServer): void
+  expirePrimaryRuntime(): MockHostedSandbox
+  getStoredHandle(workspaceId: string): Promise<SandboxHandleRecord | null>
+  createCalls: ReturnType<typeof vi.fn>
+  getCalls: ReturnType<typeof vi.fn>
+  cleanup(): Promise<void>
+}> {
+  const deferredStore = createDeferredSandboxHandleStore()
+  const hostedSandboxes: MockHostedSandbox[] = []
+  const hostedSandboxesById = new Map<string, MockHostedSandbox>()
+  let primaryRuntime: MockHostedSandbox | undefined
+  let sandboxSeq = 0
+
+  const makeSandbox = async (snapshotId?: string): Promise<MockHostedSandbox> => {
+    const harness = await createMockVercelSandboxHarness()
+    const sandboxId = `sb-hosted-${++sandboxSeq}`
+    const resolvedSnapshotId = snapshotId ?? `snap-hosted-${sandboxSeq}`
+    let expired = false
+    const sandbox = harness.sandbox as typeof harness.sandbox & {
+      sandboxId: string
+      name: string
+      status: string
+      sourceSnapshotId: string
+      persistent: boolean
+      fs: typeof harness.sandbox.fs & { stat: typeof harness.sandbox.fs.stat }
+    }
+    const stat = sandbox.fs.stat.bind(sandbox.fs)
+    sandbox.sandboxId = sandboxId
+    sandbox.name = sandboxId
+    sandbox.status = 'running'
+    sandbox.sourceSnapshotId = resolvedSnapshotId
+    sandbox.persistent = true
+    sandbox.fs.stat = (async (...args: Parameters<typeof sandbox.fs.stat>) => {
+      if (expired) {
+        const error = new Error('sandbox expired') as Error & { code: string }
+        error.code = 'SANDBOX_EXPIRED'
+        throw error
+      }
+      return await stat(...args)
+    }) as typeof sandbox.fs.stat
+
+    const hosted = Object.assign(harness, {
+      sandboxId,
+      snapshotId: resolvedSnapshotId,
+      expireRuntimeStat() {
+        expired = true
+        sandbox.status = 'stopped'
+      },
+    })
+    hostedSandboxes.push(hosted)
+    hostedSandboxesById.set(sandboxId, hosted)
+    if (!primaryRuntime) primaryRuntime = hosted
+    return hosted
+  }
+
+  // Test seam: Core's hosted app owns the production Postgres-backed workspace
+  // store, so the sandbox handle store is bound after boot. The runtime/sandbox
+  // itself is the existing Vercel mode adapter plus its mock Vercel sandbox
+  // fixture from agent tests; replacement still flows through the real adapter
+  // health-check, eviction, resolve-handle, and bundle recreation hooks.
+  const createCalls = vi.fn(async (params?: { source?: { type?: string; snapshotId?: string } }) => {
+    const hosted = await makeSandbox(params?.source?.snapshotId)
+    return hosted.sandbox
+  })
+  const getCalls = vi.fn(async (params: { sandboxId?: string; name?: string }) => {
+    const sandboxId = params.sandboxId ?? params.name
+    const hosted = sandboxId ? hostedSandboxesById.get(sandboxId) : undefined
+    if (!hosted) {
+      const error = new Error(`unknown sandbox: ${sandboxId ?? 'missing'}`) as Error & { status: number }
+      error.status = 404
+      throw error
+    }
+    return hosted.sandbox
+  })
+  const adapter = createVercelSandboxModeAdapter({
+    store: deferredStore.store,
+    vercelClient: { create: createCalls, get: getCalls },
+    orphanGuardMaxIdleMs: null,
+    getEnvVar(name) {
+      if (name === 'VERCEL_TOKEN') return 'token-1'
+      if (name === 'VERCEL_TEAM_ID') return 'team-1'
+      return undefined
+    },
+    logger: { info: vi.fn(), warn: vi.fn() },
+  })
+
+  return {
+    adapter,
+    bindTo(app) {
+      deferredStore.bind(new WorkspaceRuntimeSandboxHandleStore(app.workspaceStore))
+    },
+    expirePrimaryRuntime() {
+      if (!primaryRuntime) throw new Error('primary hosted runtime was not created')
+      primaryRuntime.expireRuntimeStat()
+      return primaryRuntime
+    },
+    async getStoredHandle(workspaceId) {
+      return await deferredStore.store.get(workspaceId)
+    },
+    createCalls,
+    getCalls,
+    async cleanup() {
+      await Promise.all(hostedSandboxes.map((hosted) => hosted.cleanup()))
+    },
+  }
+}
+
 async function createHostedApp(options: {
   databaseUrl: string
   workspaceRoot: string
   sessionRoot: string
+  runtimeModeAdapter: RuntimeModeAdapter
 }): Promise<CoreWorkspaceAgentServer> {
   return await createCoreWorkspaceAgentServer({
     config: baseConfig(options.databaseUrl),
     serveFrontend: false,
-    mode: 'direct',
+    runtimeModeAdapter: options.runtimeModeAdapter,
     workspaceRoot: options.workspaceRoot,
     sessionRoot: options.sessionRoot,
     plugins: [createTasksServerPlugin({ sources: [] })],
@@ -200,12 +343,20 @@ describe.runIf(TEST_DB)('hosted Tasks Postgres composition', () => {
 
     let firstApp: CoreWorkspaceAgentServer | undefined
     let secondApp: CoreWorkspaceAgentServer | undefined
+    let runtimeFixture: Awaited<ReturnType<typeof createHostedVercelRuntimeFixture>> | undefined
     try {
       taskCardUi.openDetachedChat.mockReset()
       taskCardUi.pluginClient.postJson.mockReset()
       taskCardUi.pluginClient.getJson.mockReset()
 
-      firstApp = await createHostedApp({ databaseUrl, workspaceRoot: firstWorkspaceRoot, sessionRoot })
+      runtimeFixture = await createHostedVercelRuntimeFixture()
+      firstApp = await createHostedApp({
+        databaseUrl,
+        workspaceRoot: firstWorkspaceRoot,
+        sessionRoot,
+        runtimeModeAdapter: runtimeFixture.adapter,
+      })
+      runtimeFixture.bindTo(firstApp)
       const cookie = await signUp(firstApp, `hosted-tasks-${Date.now()}@example.test`)
       const outsiderCookie = await signUp(firstApp, `hosted-tasks-outsider-${Date.now()}@example.test`)
       const authHeaders = new Headers()
@@ -326,10 +477,83 @@ describe.runIf(TEST_DB)('hosted Tasks Postgres composition', () => {
       expect(workspaceBList.statusCode).toBe(200)
       expect(workspaceBList.json().links).toEqual([])
 
+      const storedSandboxBeforeReplacement = await runtimeFixture.getStoredHandle(workspaceA)
+      expect(storedSandboxBeforeReplacement).toMatchObject({ workspaceId: workspaceA, sandboxId: expect.stringMatching(/^sb-hosted-/) })
+      const expiredSandbox = runtimeFixture.expirePrimaryRuntime()
+      const replacementNow = Date.now() + 20_000
+      const replacementClock = vi.spyOn(Date, 'now').mockReturnValue(replacementNow)
+      try {
+        const searchAfterSandboxReplacement = await firstApp.inject({
+          method: 'POST',
+          url: `/api/boring-tasks/sessions/search?workspaceId=${encodeURIComponent(workspaceA)}`,
+          headers: { cookie },
+          payload: { query: 'renamed' },
+        })
+        expect(searchAfterSandboxReplacement.statusCode, searchAfterSandboxReplacement.body).toBe(200)
+        expect(searchAfterSandboxReplacement.json().sessions).toEqual(expect.arrayContaining([
+          expect.objectContaining({ id: workspaceSession.id, title: 'Workspace A routed session renamed' }),
+        ]))
+      } finally {
+        replacementClock.mockRestore()
+      }
+      const storedSandboxAfterReplacement = await runtimeFixture.getStoredHandle(workspaceA)
+      expect(storedSandboxAfterReplacement).toMatchObject({ workspaceId: workspaceA, snapshotId: expiredSandbox.snapshotId })
+      expect(storedSandboxAfterReplacement?.sandboxId).not.toBe(expiredSandbox.sandboxId)
+      expect(runtimeFixture.getCalls).toHaveBeenCalledWith(expect.objectContaining({ sandboxId: expiredSandbox.sandboxId, resume: true }))
+      expect(runtimeFixture.createCalls).toHaveBeenCalledWith(expect.objectContaining({
+        name: expiredSandbox.sandboxId,
+        persistent: true,
+        snapshotExpiration: 0,
+        source: { type: 'snapshot', snapshotId: expiredSandbox.snapshotId },
+      }))
+
+      const reopenedThroughTaskPort = await firstApp.inject({
+        method: 'POST',
+        url: `/api/boring-tasks/sessions/link?workspaceId=${encodeURIComponent(workspaceA)}`,
+        headers: { cookie },
+        payload: { adapterId: 'github', taskId: '614', sessionId: workspaceSession.id },
+      })
+      expect(reopenedThroughTaskPort.statusCode, reopenedThroughTaskPort.body).toBe(200)
+      expect(reopenedThroughTaskPort.json().link.id).toBe(link.id)
+
+      useHostedTaskCardClient(firstApp, { cookie, workspaceId: workspaceA })
+      const task: BoringTaskCard = {
+        id: '614',
+        number: '#614',
+        title: 'Hosted task session binding',
+        statusId: 'ready',
+        adapterId: 'github',
+      }
+      const ui = render(createElement(TaskCard, {
+        task,
+        draggable: false,
+        onDragStart: vi.fn(),
+        onDragEnd: vi.fn(),
+      }))
+      try {
+        expect(await screen.findByLabelText('1 linked chats')).toBeInTheDocument()
+        fireEvent.click(screen.getByRole('button', { name: /open chat/i }))
+        expect(await screen.findByRole('region', { name: /linked chat sessions/i })).toBeInTheDocument()
+        fireEvent.click(screen.getByRole('button', { name: 'Open' }))
+        await waitFor(() => expect(taskCardUi.openDetachedChat).toHaveBeenCalledWith(
+          workspaceSession.id,
+          expect.objectContaining({ title: 'Workspace A routed session renamed', composingEnabled: true }),
+        ))
+      } finally {
+        ui.unmount()
+      }
+
+      runtimeFixture.adapter.evictCachedRuntime?.({ workspaceId: workspaceA })
       await firstApp.close()
       firstApp = undefined
 
-      secondApp = await createHostedApp({ databaseUrl, workspaceRoot: secondWorkspaceRoot, sessionRoot })
+      secondApp = await createHostedApp({
+        databaseUrl,
+        workspaceRoot: secondWorkspaceRoot,
+        sessionRoot,
+        runtimeModeAdapter: runtimeFixture.adapter,
+      })
+      runtimeFixture.bindTo(secondApp)
       const listedAfterRestart = await secondApp.inject({
         method: 'POST',
         url: `/api/boring-tasks/sessions/list?workspaceId=${encodeURIComponent(workspaceA)}`,
@@ -368,35 +592,10 @@ describe.runIf(TEST_DB)('hosted Tasks Postgres composition', () => {
       expect(reopened.statusCode).toBe(200)
       expect(reopened.json().link.id).toBe(link.id)
 
-      useHostedTaskCardClient(secondApp, { cookie, workspaceId: workspaceA })
-      const task: BoringTaskCard = {
-        id: '614',
-        number: '#614',
-        title: 'Hosted task session binding',
-        statusId: 'ready',
-        adapterId: 'github',
-      }
-      const ui = render(createElement(TaskCard, {
-        task,
-        draggable: false,
-        onDragStart: vi.fn(),
-        onDragEnd: vi.fn(),
-      }))
-      try {
-        expect(await screen.findByLabelText('1 linked chats')).toBeInTheDocument()
-        fireEvent.click(screen.getByRole('button', { name: /open chat/i }))
-        expect(await screen.findByRole('region', { name: /linked chat sessions/i })).toBeInTheDocument()
-        fireEvent.click(screen.getByRole('button', { name: 'Open' }))
-        await waitFor(() => expect(taskCardUi.openDetachedChat).toHaveBeenCalledWith(
-          workspaceSession.id,
-          expect.objectContaining({ title: 'Workspace A routed session renamed', composingEnabled: true }),
-        ))
-      } finally {
-        ui.unmount()
-      }
     } finally {
       await secondApp?.close()
       await firstApp?.close()
+      await runtimeFixture?.cleanup()
       await sql.end()
       await rm(tempRoot, { recursive: true, force: true })
     }
