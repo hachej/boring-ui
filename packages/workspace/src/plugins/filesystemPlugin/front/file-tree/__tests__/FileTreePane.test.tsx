@@ -383,6 +383,86 @@ describe("FileTreePane", () => {
     expect(screen.queryByText(/Failed to load files/)).not.toBeInTheDocument()
   })
 
+  describe("chromeless mode", () => {
+    it("single-root chromeless renders only the tree — no switcher, no title, no filter input", async () => {
+      render(<FileTreePane chromeless />, { wrapper })
+
+      await waitFor(() => expect(screen.getByTestId("file-tree")).toBeInTheDocument())
+      expect(screen.queryByTestId("panel-chrome")).not.toBeInTheDocument()
+      expect(screen.queryByRole("combobox", { name: "File root" })).not.toBeInTheDocument()
+      expect(screen.queryByLabelText("Search files")).not.toBeInTheDocument()
+    })
+
+    it("multi-root chromeless renders the fs root dropdown without a duplicate title or per-root filter input", async () => {
+      mockFileList.mockImplementation((_dir: string, filesystem?: string) => ({
+        data: filesystem === "project_alpha"
+          ? [{ name: "handbook.md", kind: "file" as const, path: "handbook.md" }]
+          : sampleFiles,
+        isLoading: false,
+        isSuccess: true,
+        error: undefined,
+      }))
+
+      render(
+        <FileTreePane
+          chromeless
+          roots={[
+            { filesystem: "user", label: "Workspace", rootDir: ".", access: "readwrite" },
+            { filesystem: "project_alpha", label: "Project", rootDir: "/", access: "readonly", searchPlaceholder: "Filter project files..." },
+          ]}
+        />,
+        { wrapper },
+      )
+
+      expect(await screen.findByRole("combobox", { name: "File root" })).toBeInTheDocument()
+      expect(screen.queryByTestId("panel-chrome")).not.toBeInTheDocument()
+      expect(screen.queryByLabelText("Search files")).not.toBeInTheDocument()
+      expect(screen.queryByPlaceholderText("Filter project files...")).not.toBeInTheDocument()
+
+      await selectRoot("Project")
+      await waitFor(() => expect(screen.getByText("handbook.md")).toBeInTheDocument())
+    })
+
+    it("forwards the chrome search query to whichever root is active, including after switching roots", async () => {
+      mockFileList.mockImplementation((_dir: string, filesystem?: string) => ({
+        data: filesystem === "project_alpha"
+          ? [{ name: "handbook.md", kind: "file" as const, path: "handbook.md" }]
+          : sampleFiles,
+        isLoading: false,
+        isSuccess: true,
+        error: undefined,
+      }))
+
+      render(
+        <FileTreePane
+          chromeless
+          searchQuery="index"
+          roots={[
+            { filesystem: "user", label: "Workspace", rootDir: ".", access: "readwrite" },
+            { filesystem: "project_alpha", label: "Project", rootDir: "/", access: "readonly" },
+          ]}
+        />,
+        { wrapper },
+      )
+
+      // Default active root is "user" — the chrome query drives server search there.
+      await waitFor(() =>
+        expect(mockFileSearch).toHaveBeenCalledWith("*[Ii][Nn][Dd][Ee][Xx]*", 50),
+      )
+
+      // Switch to the "project_alpha" root while the same chrome search text stays set —
+      // this is the shell's own search box, which lives above the pane and is
+      // untouched by which root is selected inside it.
+      await selectRoot("Project")
+      await waitFor(() => expect(screen.getByText("handbook.md")).toBeInTheDocument())
+
+      // Non-"user" filesystems have no server search — the chrome query is forwarded
+      // straight to the tree's client-side filter, proving it targets whichever root
+      // is now active rather than staying stuck on the default root.
+      expect(screen.getByTestId("file-tree").getAttribute("data-search")).toBe("index")
+    })
+  })
+
   it("hides .boring-agent from the default tree view", async () => {
     mockFileList.mockReturnValue({
       data: [
