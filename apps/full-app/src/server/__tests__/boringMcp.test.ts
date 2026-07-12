@@ -169,6 +169,7 @@ describe('full-app boring-mcp binding', () => {
   it('registers the boring-mcp server plugin in app composition', () => {
     expect(boringMcpServerPlugins.map((plugin) => plugin.id)).toContain(BORING_MCP_PLUGIN_ID)
     expect(serverPlugins.map((plugin) => plugin.id)).toContain(BORING_MCP_PLUGIN_ID)
+    expect(Object.isFrozen(serverPlugins)).toBe(true)
   })
 
   it('uses a pure server plugin factory for enabled/disabled config', () => {

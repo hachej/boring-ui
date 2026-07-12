@@ -5,8 +5,9 @@ import {
   startCoreWorkspaceAgentDevServer,
 } from '@hachej/boring-core/app/server'
 import { loadConfig } from '@hachej/boring-core/server'
-import { createFullAppServerPlugins } from './plugins.js'
-import { createGovernance } from '@hachej/boring-governance/server'
+import {
+  createFullAppHostPluginComposition,
+} from './plugins.js'
 import { buildCreditsWiring } from './credits.js'
 import {
   createFullAppBoringMcpAgentToolsForRequest,
@@ -90,7 +91,7 @@ startCoreWorkspaceAgentDevServer({
       allowMissingSecrets: process.env.NODE_ENV !== 'production',
       tomlPath: path.resolve(appRoot, 'boring.app.toml'),
     })
-    const governance = await createGovernance(config)
+    const { governance, ...pluginComposition } = await createFullAppHostPluginComposition(config)
     const credits = buildCreditsWiring()
     let appDb: unknown
     let appRef: Awaited<ReturnType<typeof createCoreWorkspaceAgentServer>> | undefined
@@ -98,8 +99,8 @@ startCoreWorkspaceAgentDevServer({
     const app = await createCoreWorkspaceAgentServer({
       ...options,
       config,
-      plugins: createFullAppServerPlugins([governance.serverPlugin]),
-      defaultPluginPackages: ['@hachej/boring-automation'],
+      plugins: [...pluginComposition.plugins],
+      defaultPluginPackages: [...pluginComposition.defaultPluginPackages],
       externalPlugins: false,
       installPluginAuthoring: pluginAuthoringEnabledFromEnv(),
       metering: governance.createMeteringSink(credits.meteringSink, () => {
