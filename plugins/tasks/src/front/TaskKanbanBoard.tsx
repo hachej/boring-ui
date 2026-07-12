@@ -4,6 +4,7 @@ import type { BoringTaskAdapter, BoringTaskBoardConfig, BoringTaskCard, BoringTa
 import { groupTasksByColumn } from "./taskBoardModel"
 import { TaskCard } from "./TaskCard"
 import { TaskKanbanColumn } from "./TaskKanbanColumn"
+import { TaskSessionActivityProvider } from "./taskSessionActivity"
 
 interface TaskKanbanBoardProps {
   adapters: readonly BoringTaskAdapter[]
@@ -352,7 +353,8 @@ export function TaskKanbanBoard({ adapters }: TaskKanbanBoardProps) {
   const totalCount = allColumns.length
 
   return (
-    <div className="flex h-full min-h-0 flex-col gap-3 p-3">
+    <TaskSessionActivityProvider>
+      <div className="flex h-full min-h-0 flex-col gap-3 p-3">
       <div ref={toolbarRef} className="flex flex-wrap items-center gap-2 rounded-xl border border-border bg-card/70 p-2 shadow-sm">
         <div className="relative">
           <button
@@ -546,6 +548,7 @@ export function TaskKanbanBoard({ adapters }: TaskKanbanBoardProps) {
           </div>
         )}
       </div>
-    </div>
+      </div>
+    </TaskSessionActivityProvider>
   )
 }

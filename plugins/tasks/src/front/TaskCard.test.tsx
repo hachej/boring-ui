@@ -107,6 +107,73 @@ describe("TaskCard task chat sessions", () => {
     expect(screen.queryByRole("region", { name: /linked chat sessions/i })).not.toBeInTheDocument()
   })
 
+  it("merges action refreshes without erasing other linked activity statuses", async () => {
+    const workingA = link({ id: "working-a", sessionId: "pi-working-a", title: "Working A" })
+    const workingB = link({ id: "working-b", sessionId: "pi-working-b", title: "Working B" })
+    postJson.mockImplementation(async (path: string, body: { sessionIds?: string[] }) => {
+      if (path === "/api/boring-tasks/sessions/list") return { links: [workingA, workingB] }
+      if (path === "/api/v1/agent/pi-chat/sessions/activity") {
+        const ids = body.sessionIds ?? []
+        if (ids.length === 1) return { activities: [{ sessionId: ids[0], status: "idle", source: "persisted" }], omittedSessionIds: [] }
+        return {
+          activities: ids.map((sessionId) => ({ sessionId, status: "working", source: "live-runtime" })),
+          omittedSessionIds: [],
+        }
+      }
+      throw new Error(`unexpected post ${path}`)
+    })
+    getJson.mockResolvedValue([{ id: "pi-working-a", title: "Working A" }, { id: "pi-working-b", title: "Working B" }])
+
+    renderCard()
+    expect(await screen.findByLabelText("2 working linked chats")).toBeInTheDocument()
+    fireEvent.click(screen.getByRole("button", { name: /2 working/i }))
+    expect(await screen.findByRole("region", { name: /linked chat sessions/i })).toBeInTheDocument()
+    fireEvent.click(screen.getAllByRole("button", { name: "Open" })[0])
+
+    await waitFor(() => expect(openDetachedChat).toHaveBeenCalled())
+    expect(await screen.findByLabelText("1 working linked chats")).toBeInTheDocument()
+  })
+
+  it("uses error semantics without emerald active styling and opens one queued session as active", async () => {
+    const errored = link({ id: "errored", sessionId: "pi-error", title: "Errored" })
+    const queued = link({ id: "queued", sessionId: "pi-queued", title: "Queued" })
+    postJson.mockImplementation(async (path: string, body: { sessionIds?: string[] }) => {
+      if (path === "/api/boring-tasks/sessions/list") return { links: [errored, queued] }
+      if (path === "/api/v1/agent/pi-chat/sessions/activity") return {
+        activities: (body.sessionIds ?? []).map((sessionId) => ({
+          sessionId,
+          status: sessionId === "pi-error" ? "error" : "queued",
+          source: "live-runtime",
+        })),
+        omittedSessionIds: [],
+      }
+      throw new Error(`unexpected post ${path}`)
+    })
+    getJson.mockResolvedValue([{ id: "pi-queued", title: "Queued" }])
+
+    const firstRender = renderCard()
+    const activeBadge = await screen.findByLabelText("1 active linked chats")
+    expect(activeBadge).toHaveClass("bg-emerald-500")
+    expect(screen.queryByLabelText("2 active linked chats")).not.toBeInTheDocument()
+    fireEvent.click(screen.getByRole("button", { name: /queued/i }))
+    await waitFor(() => expect(openDetachedChat).toHaveBeenCalledWith("pi-queued", expect.objectContaining({ title: "Queued" })))
+
+    firstRender.unmount()
+    postJson.mockImplementation(async (path: string) => {
+      if (path === "/api/boring-tasks/sessions/list") return { links: [errored] }
+      if (path === "/api/v1/agent/pi-chat/sessions/activity") return { activities: [{ sessionId: "pi-error", status: "error", source: "live-runtime" }], omittedSessionIds: [] }
+      throw new Error(`unexpected post ${path}`)
+    })
+    openDetachedChat.mockReset()
+    renderCard()
+    const errorBadge = await screen.findByLabelText("1 linked chats need attention")
+    expect(errorBadge).toHaveClass("bg-destructive")
+    expect(screen.queryByLabelText("1 active linked chats")).not.toBeInTheDocument()
+    fireEvent.click(screen.getByRole("button", { name: /need attention/i }))
+    expect(await screen.findByRole("region", { name: /linked chat sessions/i })).toBeInTheDocument()
+    expect(openDetachedChat).not.toHaveBeenCalled()
+  })
+
   it("keeps native keyboard focus on the disclosure trigger and uses motion-safe activity animation", async () => {
     const working = link({ id: "working", sessionId: "pi-working", title: "Working" })
     const workingSecond = link({ id: "working-second", sessionId: "pi-working-second", title: "Working second" })
@@ -138,7 +205,7 @@ describe("TaskCard task chat sessions", () => {
     expect(trigger).toHaveFocus()
   })
 
-  it("uses optimistic status events only until fake-timer polling reconciles a standalone session as persisted idle", async () => {
+  it("ignores arbitrary standalone status events and waits for authoritative activity", async () => {
     vi.useFakeTimers()
     const standalone = link({ id: "standalone", sessionId: "pi-standalone", title: "Standalone Pi" })
     let activityCalls = 0
@@ -154,14 +221,12 @@ describe("TaskCard task chat sessions", () => {
     try {
       renderCard()
       await act(async () => { await Promise.resolve(); await Promise.resolve() })
+      await act(async () => { await vi.advanceTimersByTimeAsync(25) })
+      expect(activityCalls).toBe(1)
       expect(screen.getByLabelText("1 linked chats")).toBeInTheDocument()
       await act(async () => {
         window.dispatchEvent(new CustomEvent("boring:chat-session-status", { detail: { sessionId: "pi-standalone", working: true } }))
       })
-      expect(screen.getByLabelText("1 working linked chats")).toBeInTheDocument()
-
-      await act(async () => { await vi.advanceTimersByTimeAsync(15_000) })
-      expect(activityCalls).toBeGreaterThanOrEqual(2)
       expect(screen.getByLabelText("1 linked chats")).toBeInTheDocument()
       expect(screen.queryByLabelText("1 working linked chats")).not.toBeInTheDocument()
     } finally {
