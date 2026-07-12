@@ -102,6 +102,7 @@ describe('D1 host surface resolver', () => {
     ))
     for (const result of [direct, caddy]) {
       expect(result).toEqual(scope)
+      if (result === undefined) throw new Error('expected resolved D1 request scope')
       expect(Object.keys(result)).toEqual(['bindingId', 'workspaceId', 'defaultDeploymentId', 'activeRevision'])
       expect(Object.isFrozen(result)).toBe(true)
     }
