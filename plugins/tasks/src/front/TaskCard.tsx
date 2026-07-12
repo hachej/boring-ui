@@ -70,7 +70,8 @@ function activityRank(status: TaskSessionActivityStatus): number {
   if (status === "working") return 4
   if (status === "queued") return 3
   if (status === "error") return 2
-  return 1
+  if (status === "idle") return 1
+  return 0
 }
 
 function activityLabel(activity: TaskSessionActivity | undefined, loading: boolean): string {
@@ -127,8 +128,9 @@ export function TaskCard({ task, draggable, unmapped = false, deleteEnabled = fa
     if (sessionLinks.length === 0) return undefined
     const knownActivities = sessionLinks.map((link) => sessionActivities[link.sessionId]).filter((activity): activity is TaskSessionActivity => Boolean(activity))
     if (knownActivities.length === 0) return undefined
-    if (knownActivities.length === sessionLinks.length && knownActivities.every((activity) => activity.status === "missing")) return { status: "missing" }
-    return knownActivities.reduce<TaskSessionActivity>((best, candidate) => activityRank(candidate.status) > activityRank(best.status) ? candidate : best, { status: "missing" })
+    const nonMissingActivities = knownActivities.filter((activity) => activity.status !== "missing")
+    if (nonMissingActivities.length === 0) return knownActivities.length === sessionLinks.length ? { status: "missing" } : undefined
+    return nonMissingActivities.slice(1).reduce<TaskSessionActivity>((best, candidate) => activityRank(candidate.status) > activityRank(best.status) ? candidate : best, nonMissingActivities[0])
   }, [sessionActivities, sessionLinks])
   const rollupStatus = rollupActivity?.status
   const workingLinks = useMemo(() => sessionLinks.filter((link) => sessionActivities[link.sessionId]?.status === "working"), [sessionActivities, sessionLinks])

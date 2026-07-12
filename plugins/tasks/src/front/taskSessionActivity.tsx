@@ -61,6 +61,7 @@ function useTaskSessionActivityController(enabled: boolean): TaskSessionActivity
   const registrationsRef = useRef(new Map<number, string[]>())
   const nextRegistrationIdRef = useRef(0)
   const requestSeqRef = useRef(0)
+  const latestRequestBySessionIdRef = useRef(new Map<string, number>())
   const pollingGenerationRef = useRef(0)
   const pollingInFlightRef = useRef<Promise<void> | null>(null)
   const mountedRef = useRef(false)
@@ -71,6 +72,7 @@ function useTaskSessionActivityController(enabled: boolean): TaskSessionActivity
     return () => {
       mountedRef.current = false
       requestSeqRef.current += 1
+      latestRequestBySessionIdRef.current.clear()
       pollingGenerationRef.current += 1
       registrationsRef.current.clear()
       loadingCountsRef.current.clear()
@@ -120,24 +122,29 @@ function useTaskSessionActivityController(enabled: boolean): TaskSessionActivity
     if (sessionIds.length === 0) return {}
     const requestId = requestSeqRef.current + 1
     requestSeqRef.current = requestId
+    for (const sessionId of sessionIds) latestRequestBySessionIdRef.current.set(sessionId, requestId)
+    const isGenerationCurrent = () => options.pollingGeneration === undefined || pollingGenerationRef.current === options.pollingGeneration
+    const currentSessionIdsForRequest = () => sessionIds.filter((sessionId) => latestRequestBySessionIdRef.current.get(sessionId) === requestId)
     addLoading(sessionIds)
     try {
       const next = await fetchSessionActivities(pluginClient, sessionIds)
-      if (
-        mountedRef.current
-        && requestSeqRef.current === requestId
-        && (options.pollingGeneration === undefined || pollingGenerationRef.current === options.pollingGeneration)
-      ) {
-        setActivities((current) => ({ ...current, ...next }))
-        setError(null)
+      if (mountedRef.current && isGenerationCurrent()) {
+        const currentSessionIds = currentSessionIdsForRequest()
+        if (currentSessionIds.length > 0) {
+          setActivities((current) => {
+            const merged = { ...current }
+            for (const sessionId of currentSessionIds) {
+              const activity = next[sessionId]
+              if (activity) merged[sessionId] = activity
+            }
+            return merged
+          })
+          setError(null)
+        }
       }
       return next
     } catch (cause) {
-      if (
-        mountedRef.current
-        && requestSeqRef.current === requestId
-        && (options.pollingGeneration === undefined || pollingGenerationRef.current === options.pollingGeneration)
-      ) {
+      if (mountedRef.current && isGenerationCurrent() && currentSessionIdsForRequest().length > 0) {
         setError(cause instanceof Error ? cause.message : "Failed to load chat activity")
       }
       throw cause
@@ -182,10 +189,16 @@ function useTaskSessionActivityController(enabled: boolean): TaskSessionActivity
   }, [enabled, refreshSessionIds, registeredIdKey]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const setOptimisticActivity = useCallback((sessionId: string, activity: TaskSessionActivity) => {
+    const requestId = requestSeqRef.current + 1
+    requestSeqRef.current = requestId
+    latestRequestBySessionIdRef.current.set(sessionId, requestId)
     setActivities((current) => ({ ...current, [sessionId]: activity }))
   }, [])
 
   const clearSessionActivity = useCallback((sessionId: string) => {
+    const requestId = requestSeqRef.current + 1
+    requestSeqRef.current = requestId
+    latestRequestBySessionIdRef.current.set(sessionId, requestId)
     setActivities((current) => {
       if (!(sessionId in current)) return current
       const next = { ...current }

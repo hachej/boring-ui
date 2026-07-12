@@ -256,6 +256,28 @@ describe("TaskCard task chat sessions", () => {
     expect(await screen.findByText("Activity unavailable")).toBeInTheDocument()
   })
 
+  it("rolls up authoritative idle ahead of unavailable activity", async () => {
+    const idle = link({ id: "idle", sessionId: "pi-idle", title: "Idle chat" })
+    const missing = link({ id: "missing", sessionId: "pi-missing", title: "Missing chat" })
+    postJson.mockImplementation(async (path: string) => {
+      if (path === "/api/boring-tasks/sessions/list") return { links: [missing, idle] }
+      if (path === "/api/v1/agent/pi-chat/sessions/activity") return {
+        activities: [{ sessionId: "pi-idle", status: "idle", source: "persisted" }],
+        omittedSessionIds: ["pi-missing"],
+      }
+      throw new Error(`unexpected post ${path}`)
+    })
+
+    renderCard()
+    const trigger = await screen.findByRole("button", { name: /Idle/i })
+    expect(trigger).toBeInTheDocument()
+    expect(screen.queryByText("Activity unavailable")).not.toBeInTheDocument()
+
+    fireEvent.click(trigger)
+    expect(await screen.findByText("Idle")).toBeInTheDocument()
+    expect(await screen.findByText("Activity unavailable")).toBeInTheDocument()
+  })
+
   it("covers every linked session through bounded chunks and rolls up activity beyond the first chunk", async () => {
     const manyLinks = Array.from({ length: 101 }, (_, index) => link({ id: `link-${index}`, sessionId: `pi-${index}`, title: `Chat ${index}` }))
     const activityRequests: string[][] = []
