@@ -14,6 +14,7 @@
     "lint": "pnpm run typecheck",
     "e2e": "playwright test --config e2e/playwright.config.ts",
     "e2e:smoke": "playwright test --config e2e/playwright.config.ts",
+    "smoke:mcp-managed-agent": "node --import tsx scripts/managed-agent-mcp-smoke.ts",
     "smoke:post-deploy": "tsx scripts/post-deploy-smoke.ts",
     "smoke:remote-worker": "node scripts/remote-worker-smoke.mjs",
     "backup:fly-worker-volume": "node scripts/fly-worker-volume-backup.mjs"
@@ -27,6 +28,7 @@
     "@hachej/boring-mcp": "workspace:*",
     "@hachej/boring-ui-kit": "workspace:*",
     "@hachej/boring-workspace": "workspace:*",
+    "@modelcontextprotocol/sdk": "1.29.0",
     "@vercel/sandbox": "2.3.0",
     "fastify": "^5.9.0",
     "react": "^19.2.7",

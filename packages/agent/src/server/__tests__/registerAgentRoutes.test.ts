@@ -92,7 +92,9 @@ test('registerAgentRoutes composes a trusted dispatcher over the workspace runti
 
   try {
     expect(resolver).toBeDefined()
-    const dispatcher = await resolver!.resolve({ workspaceId: 'workspace-dispatcher', userId: 'user-dispatcher' })
+    const binding = await resolver!.resolveWithWorkspace!({ workspaceId: 'workspace-dispatcher', userId: 'user-dispatcher' })
+    expect(binding.workspace.root).toBe(workspaceRoot)
+    const dispatcher = binding.dispatcher
     const events = []
     for await (const event of dispatcher.send({
       content: 'workspace prompt',

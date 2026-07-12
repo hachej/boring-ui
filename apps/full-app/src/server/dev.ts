@@ -13,6 +13,10 @@ import {
   fullAppAgentSessionNamespace,
   registerFullAppBoringMcpRoutes,
 } from './boringMcp.js'
+import {
+  registerFullAppManagedAgentMcpRoutes,
+} from './managedAgentMcp.js'
+import type { WorkspaceAgentDispatcherResolver } from '@hachej/boring-agent/server'
 
 const appRoot = appRootFromImportMeta(import.meta.url, 2)
 
@@ -90,6 +94,7 @@ startCoreWorkspaceAgentDevServer({
     const credits = buildCreditsWiring()
     let appDb: unknown
     let appRef: Awaited<ReturnType<typeof createCoreWorkspaceAgentServer>> | undefined
+    let managedAgentDispatcherResolver: WorkspaceAgentDispatcherResolver | undefined
     const app = await createCoreWorkspaceAgentServer({
       ...options,
       config,
@@ -106,11 +111,15 @@ startCoreWorkspaceAgentDevServer({
       pi: governance.pi,
       getSessionNamespace: ({ workspaceId, request, userId }) => fullAppAgentSessionNamespace({ workspaceId, request, userId }),
       getExtraTools: (ctx) => appRef ? createFullAppBoringMcpAgentToolsForRequest(appRef, ctx) : [],
+      onWorkspaceAgentDispatcher: (resolver) => {
+        managedAgentDispatcherResolver = resolver
+      },
     })
     appDb = app.db
     appRef = app
     credits.attach(app)
     registerFullAppBoringMcpRoutes(app)
+    registerFullAppManagedAgentMcpRoutes(app, { dispatcherResolver: managedAgentDispatcherResolver })
     await registerDevLoginRoute(app)
     return app
   },

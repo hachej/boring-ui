@@ -6,16 +6,22 @@ export {
   createManagedAgentMcpDelegateController,
 } from './managedAgentDelegate'
 export type {
+  ManagedAgentArtifact,
+  ManagedAgentArtifactCandidate,
   ManagedAgentArtifactRef,
+  ManagedAgentBoundRunnerWorkspace,
   ManagedAgentCollectArtifactsInput,
   ManagedAgentDelegateInput,
   ManagedAgentDelegateProgress,
   ManagedAgentDelegateRequestContext,
   ManagedAgentDelegateResult,
+  ManagedAgentDelegateRunner,
+  ManagedAgentDelegateRunInput,
   ManagedAgentDelegateStatus,
   ManagedAgentDelegateStatusResult,
   ManagedAgentMcpDelegateOptions,
   ManagedAgentSafeError,
+  ManagedAgentWorkspaceResolutionInput,
 } from './managedAgentDelegate'
 export {
   createManagedAgentMcpHttpHandler,

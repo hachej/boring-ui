@@ -17,14 +17,17 @@ import {
 } from './managedAgentDelegate'
 import { ErrorCode, type ErrorCode as StableErrorCode } from '../../shared/error-codes'
 
-export interface ManagedAgentMcpServerOptions extends ManagedAgentMcpDelegateOptions {
+interface ManagedAgentMcpPresentationOptions {
   name?: string
   version?: string
+  maxBriefChars?: number
 }
 
-export interface ManagedAgentMcpHttpHandlerOptions extends ManagedAgentMcpServerOptions {
-  controller?: ManagedAgentMcpDelegateController
-}
+export interface ManagedAgentMcpServerOptions extends ManagedAgentMcpDelegateOptions, ManagedAgentMcpPresentationOptions {}
+
+export type ManagedAgentMcpHttpHandlerOptions =
+  | (ManagedAgentMcpPresentationOptions & { controller: ManagedAgentMcpDelegateController })
+  | (ManagedAgentMcpServerOptions & { controller?: undefined })
 
 type McpToolExtra = {
   _meta?: {
@@ -46,7 +49,7 @@ type ManagedAgentRegisterTool = (
   cb: (input: Record<string, unknown>, extra: unknown) => Promise<CallToolResult>,
 ) => unknown
 
-const DEFAULT_MAX_BRIEF_CHARS = 12_000
+const DEFAULT_MAX_BRIEF_SCHEMA_CHARS = 32 * 1024
 
 const delegateTaskStatusInputSchema: Record<string, unknown> = {
   delegationId: z.string().min(1),
@@ -54,14 +57,20 @@ const delegateTaskStatusInputSchema: Record<string, unknown> = {
 
 export function createManagedAgentMcpServer(
   options: ManagedAgentMcpServerOptions,
-  controller = createManagedAgentMcpDelegateController(options),
+): McpServer {
+  return createManagedAgentMcpServerWithController(options, createManagedAgentMcpDelegateController(options))
+}
+
+function createManagedAgentMcpServerWithController(
+  options: ManagedAgentMcpPresentationOptions,
+  controller: ManagedAgentMcpDelegateController,
 ): McpServer {
   const server = new McpServer({
     name: options.name ?? 'boring-managed-agent',
     version: options.version ?? '0.0.0',
   })
   const registerTool = server.registerTool.bind(server) as ManagedAgentRegisterTool
-  const delegateTaskInputSchema = createDelegateTaskInputSchema(options.maxBriefChars ?? DEFAULT_MAX_BRIEF_CHARS)
+  const delegateTaskInputSchema = createDelegateTaskInputSchema(options.maxBriefChars ?? DEFAULT_MAX_BRIEF_SCHEMA_CHARS)
 
   registerTool(
     'delegate_task',
@@ -146,7 +155,7 @@ export function createManagedAgentMcpHttpHandler(options: ManagedAgentMcpHttpHan
 ) => Promise<void> {
   const controller = options.controller ?? createManagedAgentMcpDelegateController(options)
   return async (req, res, parsedBody) => {
-    const server = createManagedAgentMcpServer(options, controller)
+    const server = createManagedAgentMcpServerWithController(options, controller)
     const transport = new StreamableHTTPServerTransport({
       sessionIdGenerator: undefined,
       enableJsonResponse: false,
