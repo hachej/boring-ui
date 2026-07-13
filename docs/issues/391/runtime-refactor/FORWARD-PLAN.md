@@ -70,7 +70,7 @@ Set 2026-07-11; INDEX.md "Owner priorities" is the authoritative statement.
    the existing in-monolith sandbox keeps working meanwhile.)
 
 **Derived build order:** #631 + P1 recut (landed #642) → P6-R (landed #647) →
-D1 (+conditional P5a) → M1 recuts (landed #650) → AR1 → M2/E2 → T1/T2 → P2/X1.
+D1 → M1 recuts (landed #650) → AR1 → M2/E2 → T1/T2 → P2/X1. Conditional P5a follows D1-006 evidence only when that evidence identifies a consumed secret/readiness gap; it does not gate D1 or precede landed M1.
 
 ### 1.3 The B2B-now ruling (MARKETPLACE-PATH.md, owner)
 
