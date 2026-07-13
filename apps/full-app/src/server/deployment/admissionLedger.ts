@@ -5,6 +5,9 @@ import { D1HostError, D1HostErrorCode, strictD1HostId, strictD1Ref } from './d1P
 
 const attestedBrand: unique symbol = Symbol('AttestedD1DatabaseConnection')
 const liveConnections = new WeakMap<AttestedD1DatabaseConnection, LiveConnection>()
+interface ReservedConnectionState { connectionId: number | null; lost: boolean }
+const reservedConnectionStates = new WeakMap<postgres.ReservedSql, ReservedConnectionState>()
+let nextReservationClaim = 0
 const REVISION_RE = /^r\d{10}$/
 interface LiveConnection {
   readonly databaseRef: string
@@ -89,6 +92,10 @@ function take(connection: AttestedD1DatabaseConnection): LiveConnection {
   return live
 }
 
+export function isD1ReservedConnectionLost(sql: postgres.ReservedSql): boolean {
+  return reservedConnectionStates.get(sql)?.lost ?? false
+}
+
 /** D1-005c is the sole production caller after it proves this client. */
 export function mintAttestedD1DatabaseConnection(
   databaseRef: string,
@@ -110,7 +117,22 @@ export async function closeAttestedD1DatabaseConnection(connection: AttestedD1Da
 async function insertOrRead(sql: postgres.ReservedSql, target: D1AdmissionTarget, activeRevision: string): Promise<D1BindingAdmission> {
   let transaction = false
   try {
+    if (isD1ReservedConnectionLost(sql)) throw failed()
     await sql`BEGIN`; transaction = true
+    const [pendingRemoval] = await sql<{ pending: boolean }[]>`
+      SELECT EXISTS (
+        SELECT 1 FROM d1_destructive_publication_events AS prepared
+        WHERE prepared.host_id = ${target.hostId}
+          AND prepared.state = 'prepared'
+          AND ${target.bindingId} = ANY(prepared.removal_binding_ids)
+          AND NOT EXISTS (
+            SELECT 1 FROM d1_destructive_publication_events AS terminal
+            WHERE terminal.operation_id = prepared.operation_id
+              AND terminal.state IN ('committed', 'aborted')
+          )
+      ) AS pending
+    `
+    if (!pendingRemoval || typeof pendingRemoval.pending !== 'boolean' || pendingRemoval.pending) throw failed()
     const inserted = await sql<AdmissionRow[]>`
       INSERT INTO d1_binding_admissions (host_id, binding_id, active_revision)
       VALUES (${target.hostId}, ${target.bindingId}, ${activeRevision})
@@ -137,9 +159,33 @@ export function createD1AdmissionLedger(
   connection: AttestedD1DatabaseConnection,
 ): D1AdmissionLedger {
   const live = take(connection)
-  let closed = false
+  let closed = false; let closing = false
+  const claims = new Map<string, ReservedConnectionState>(); const reservations = new Map<number, Set<ReservedConnectionState>>()
+  const previousOnClose = live.sql.options.onclose; const previousDebug = live.sql.options.debug
+  const debug = (connectionId: number, query: string, parameters: unknown[], types: unknown[]) => {
+    if (typeof previousDebug === 'function') previousDebug(connectionId, query, parameters, types); const state = parameters.map(String).map((value) => claims.get(value)).find(Boolean)
+    if (state) { state.connectionId = connectionId; const active = reservations.get(connectionId) ?? new Set(); active.add(state); reservations.set(connectionId, active) }
+  }
+  const onclose = (connectionId: number) => {
+    try { if (typeof previousOnClose === 'function') previousOnClose(connectionId) } finally {
+      if (!closing) for (const state of reservations.get(connectionId) ?? []) state.lost = true; reservations.delete(connectionId)
+    }
+  }
+  live.sql.options.debug = debug; live.sql.options.onclose = onclose
+  const restoreHooks = () => {
+    if (live.sql.options.debug === debug) live.sql.options.debug = previousDebug; if (live.sql.options.onclose === onclose) live.sql.options.onclose = previousOnClose
+  }
   const available = () => { if (closed) throw failed() }
-  const abandon = async () => { closed = true; await live.sql.end({ timeout: 0 }).catch(() => {}) }
+  const abandon = async () => {
+    closed = true; closing = true; restoreHooks(); await live.sql.end({ timeout: 0 }).catch(() => {})
+  }
+  const claim = async (sql: postgres.ReservedSql) => {
+    const state: ReservedConnectionState = { connectionId: null, lost: false }; const token = `boring-d1-reservation:${++nextReservationClaim}`
+    reservedConnectionStates.set(sql, state); claims.set(token, state); try { const [row] = await sql<{ token: string }[]>`SELECT ${token}::text AS token`; if (row?.token !== token || state.connectionId === null) throw failed() } finally { claims.delete(token) }
+  }
+  const releaseState = (sql: postgres.ReservedSql) => {
+    const state = reservedConnectionStates.get(sql); if (state?.connectionId === null || state?.connectionId === undefined) return; const active = reservations.get(state.connectionId); active?.delete(state); if (active?.size === 0) reservations.delete(state.connectionId)
+  }
   const key = (raw: D1AdmissionFenceKey): D1AdmissionFenceKey => Object.freeze({
     hostId: strictD1HostId(raw.hostId, 'hostId'), bindingId: strictD1Ref(raw.bindingId, 'bindingId'),
   })
@@ -152,22 +198,24 @@ export function createD1AdmissionLedger(
     const sql = await live.sql.reserve().catch(() => { throw failed() })
     const locked: string[] = []; let result: T | undefined; let complete = false; let operationStarted = false; let unsafe = false; let error: unknown
     try {
+      await claim(sql)
       for (const name of keys.map(lockName)) {
+        if (isD1ReservedConnectionLost(sql)) throw failed()
         await sql`SELECT pg_advisory_lock(hashtextextended(${name}, 0::bigint))`; locked.push(name)
       }
       operationStarted = true; result = await operation(sql); complete = true
-    } catch (caught) { unsafe = connectionLost(caught); error = operationStarted ? caught : failed() }
+    } catch (caught) { unsafe = isD1ReservedConnectionLost(sql) || connectionLost(caught); error = operationStarted ? caught : failed() }
     finally {
-      let lost = unsafe || connectionLost(error)
+      let connectionUnsafe = isD1ReservedConnectionLost(sql) || unsafe || connectionLost(error)
       for (const name of locked.reverse()) try {
-        if (lost) break
+        if (connectionUnsafe) break
         const unlocked = await bounded(sql<{ unlocked: boolean }[]>`SELECT pg_advisory_unlock(hashtextextended(${name}, 0::bigint)) AS unlocked`)
-        if (!unlocked) { lost = true; break }
+        if (!unlocked) { connectionUnsafe = true; break }
         const [unlock] = unlocked
-        if (unlock?.unlocked !== true) { lost = true; error ??= failed() }
-      } catch { lost = true; error ??= failed() }
-      if (!lost) try { sql.release() } catch { lost = true; error ??= failed() }
-      if (lost) { await abandon(); error = failed() }
+        if (unlock?.unlocked !== true) { connectionUnsafe = true; error ??= failed() }
+      } catch { connectionUnsafe = true; error ??= failed() }
+      if (!connectionUnsafe) try { releaseState(sql); sql.release() } catch { connectionUnsafe = true; error ??= failed() }
+      if (connectionUnsafe) { await abandon(); error = failed() }
     }
     if (error || !complete) throw error ?? failed()
     return result as T
@@ -179,12 +227,13 @@ export function createD1AdmissionLedger(
     if (strictD1Ref(databaseRef, 'databaseRef') !== live.databaseRef) throw failed()
     const sql = await live.sql.reserve().catch(() => { throw failed() })
     try {
+      await claim(sql)
       const rows = await sql<{ bindingId: string }[]>`
         SELECT binding_id AS "bindingId" FROM d1_binding_admissions
         WHERE host_id = ${expectedHost} ORDER BY binding_id
       `
       return Object.freeze(rows.map((entry) => strictD1Ref(entry.bindingId, 'admission.bindingId')))
-    } catch (caught) { if (connectionLost(caught)) await abandon(); throw failed() } finally { if (!closed) try { sql.release() } catch { await abandon(); throw failed() } }
+    } catch (caught) { if (isD1ReservedConnectionLost(sql) || connectionLost(caught)) await abandon(); throw failed() } finally { if (!closed) try { releaseState(sql); sql.release() } catch { await abandon(); throw failed() } }
   }
 
   const admit = async (activeReader: D1ActiveCollectionReader, rawTarget: D1AdmissionTarget): Promise<D1BindingAdmission> => {
@@ -207,6 +256,10 @@ export function createD1AdmissionLedger(
 
   return Object.freeze({
     databaseRef: live.databaseRef, listBindingIds, admit, withBindingFences,
-    async close() { if (closed) return; closed = true; if (live.ownsClient) await live.sql.end() },
+    async close() {
+      if (closed) return
+      closed = true; closing = true; restoreHooks()
+      if (live.ownsClient) await live.sql.end()
+    },
   })
 }

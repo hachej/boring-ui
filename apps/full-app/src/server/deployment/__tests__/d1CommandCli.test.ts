@@ -175,8 +175,9 @@ describe('D1 revision command boundary', () => {
   it('uses and closes an injected attested database connection', async () => {
     const h = await roots(); const keys = ['BORING_D1_OWNER_UID', 'BORING_D1_STATE_ROOT', 'BORING_D1_LOCK_ROOT'] as const
     const prior = Object.fromEntries(keys.map((key) => [key, process.env[key]])); const release = vi.fn(); const end = vi.fn(async () => {})
-    const reserved = Object.assign(vi.fn(async () => []), { release }) as unknown as postgres.ReservedSql
-    const reserve = vi.fn(async () => reserved); const sql = { reserve, end } as unknown as postgres.Sql
+    const options = { debug: false as boolean | ((connectionId: number, query: string, parameters: unknown[], types: unknown[]) => void), onclose: undefined as undefined | ((connectionId: number) => void) }
+    const reserved = Object.assign(vi.fn(async (strings: TemplateStringsArray, ...values: unknown[]) => { const query = strings.join('$'); if (typeof options.debug === 'function') options.debug(7, query, values, []); return query.includes('::text AS token') ? [{ token: values[0] }] : [] }), { release }) as unknown as postgres.ReservedSql
+    const reserve = vi.fn(async () => reserved); const sql = { reserve, end, options } as unknown as postgres.Sql
     const databaseConnection = mintAttestedD1DatabaseConnection('postgres-eu', sql, { ownsClient: true })
     const command = JSON.parse(validApply().toString()) as { kind: string }; command.kind = 'plan'
     for (const key of keys) process.env[key] = h.env[key]
