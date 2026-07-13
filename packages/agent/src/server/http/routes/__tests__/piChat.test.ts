@@ -1,5 +1,6 @@
 import Fastify from 'fastify'
 import { describe, expect, test, vi } from 'vitest'
+import { AgentEffectAdmissionError } from '../../../../core/piChatSessionService'
 import { ErrorCode } from '../../../../shared/error-codes'
 import type {
   CommandReceipt,
@@ -17,6 +18,8 @@ import type { PiSessionRequestContext } from '../../../pi-chat/piSessionIdentity
 import { PI_CHAT_CURSOR_AHEAD, PI_CHAT_REPLAY_GAP } from '../../../pi-chat/piChatReplayBuffer'
 import type { SessionListOptions } from '../../../../shared/session'
 import { piChatBusyError, piChatRoutes, PiChatRouteError, type PiChatRoutesOptions, type PiChatSessionService } from '../piChat'
+
+const ADMISSION_ERROR_CODE = 'D1_ADMISSION_RECORD_FAILED'
 
 function activeSnapshot(overrides: Partial<PiChatSnapshot> = {}): PiChatSnapshot {
   return {
@@ -452,6 +455,23 @@ describe('piChatRoutes', () => {
     expect(res.statusCode).toBe(404)
     expect(res.json()).toEqual({ error: { code: ErrorCode.enum.SESSION_NOT_FOUND, message: 'session not found' } })
 
+    await app.close()
+  })
+
+  test('effect admission errors preserve their host-owned stable code', async () => {
+    const service = new FakePiChatService()
+    service.createSession = vi.fn(async () => {
+      throw new AgentEffectAdmissionError(ADMISSION_ERROR_CODE, { field: 'admission' })
+    })
+    const { app } = await buildApp(service)
+
+    const res = await app.inject({ method: 'POST', url: '/api/v1/agent/pi-chat/sessions', payload: {} })
+
+    expect(res.statusCode).toBe(500)
+    expect(res.json()).toEqual({
+      error: { code: ADMISSION_ERROR_CODE, message: ADMISSION_ERROR_CODE, details: { field: 'admission' } },
+    })
+    expect(ErrorCode.safeParse(ADMISSION_ERROR_CODE).success).toBe(false)
     await app.close()
   })
 })

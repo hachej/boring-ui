@@ -67,6 +67,18 @@ export type AgentEffectAdmission = (
   ctx: Pick<PiSessionRequestContext, 'workspaceId' | 'requestId'>,
 ) => Promise<void>
 
+export class AgentEffectAdmissionError extends Error {
+  readonly statusCode = 500
+
+  constructor(
+    readonly code: string,
+    readonly details?: unknown,
+  ) {
+    super(code)
+    this.name = 'AgentEffectAdmissionError'
+  }
+}
+
 type AgentEffectMethod = Exclude<keyof AgentCoreSessionService, 'listSessions' | 'readState' | 'subscribe' | 'dispose'>
 
 export const AGENT_EFFECT_METHODS = {

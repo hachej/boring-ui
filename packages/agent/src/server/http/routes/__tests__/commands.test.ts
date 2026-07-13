@@ -1,8 +1,11 @@
 import Fastify from 'fastify'
 import { describe, expect, it, vi } from 'vitest'
+import { AgentEffectAdmissionError } from '../../../../core/piChatSessionService'
 import type { AgentHarness } from '../../../../shared/harness'
 import { ErrorCode } from '../../../../shared/error-codes'
 import { commandsRoutes } from '../commands'
+
+const ADMISSION_ERROR_CODE = 'D1_ADMISSION_RECORD_FAILED'
 
 function fakeHarness(overrides: Partial<AgentHarness>): AgentHarness {
   return {
@@ -66,7 +69,7 @@ describe('commandsRoutes', () => {
       defaultSessionId: 'default',
       workdir: '/tmp/commands-test',
       admitEffect: async () => {
-        throw Object.assign(new Error('D1_ADMISSION_RECORD_FAILED'), { code: ErrorCode.enum.D1_ADMISSION_RECORD_FAILED })
+        throw new AgentEffectAdmissionError(ADMISSION_ERROR_CODE)
       },
     })
     try {
@@ -74,7 +77,7 @@ describe('commandsRoutes', () => {
         method: 'POST', url: '/api/v1/agent/commands/execute', payload: { name: 'plan' },
       })
       expect(response.statusCode).toBe(500)
-      expect(response.json()).toMatchObject({ error: { code: ErrorCode.enum.D1_ADMISSION_RECORD_FAILED } })
+      expect(response.json()).toMatchObject({ error: { code: ADMISSION_ERROR_CODE } })
       expect(executeSlashCommand).not.toHaveBeenCalled()
     } finally {
       await app.close()

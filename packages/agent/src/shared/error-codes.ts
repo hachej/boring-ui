@@ -19,7 +19,6 @@ export const ErrorCode = z.enum([
   'WORKSPACE_UNINITIALIZED',
   'WORKSPACE_NOT_READY',
   'D1_HOST_SCOPE_VIOLATION',
-  'D1_ADMISSION_RECORD_FAILED',
 
   // Agent runtime / provisioning
   'AGENT_RUNTIME_NOT_READY',

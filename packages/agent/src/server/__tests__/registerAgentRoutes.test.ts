@@ -4,6 +4,7 @@ import { dirname, join } from 'node:path'
 import { afterEach, expect, test, vi } from 'vitest'
 import Fastify, { type FastifyRequest } from 'fastify'
 
+import { AgentEffectAdmissionError } from '../../core/piChatSessionService'
 import { registerAgentRoutes } from '../registerAgentRoutes'
 import { provisionWorkspaceRuntime } from '../workspace/provisioning'
 import { ErrorCode } from '../../shared/error-codes'
@@ -12,6 +13,7 @@ import type { WorkspaceAgentDispatcherResolver } from '../workspaceAgentDispatch
 import { createDispatcherTestHarness } from './workspaceAgentDispatcherTestHarness'
 
 const tempDirs: string[] = []
+const ADMISSION_ERROR_CODE = 'D1_ADMISSION_RECORD_FAILED'
 
 async function removeDirEventually(dir: string, timeoutMs = 5000): Promise<void> {
   const startedAt = Date.now()
@@ -426,7 +428,7 @@ test('registerAgentRoutes reload reruns provisioning and refreshes skills scope'
     admitEffect: async () => {
       events.push('admit')
       if (blockAdmission) {
-        throw Object.assign(new Error('D1_ADMISSION_RECORD_FAILED'), { code: ErrorCode.enum.D1_ADMISSION_RECORD_FAILED })
+        throw new AgentEffectAdmissionError(ADMISSION_ERROR_CODE)
       }
     },
     beforeReload: async () => { events.push('beforeReload') },
@@ -470,7 +472,7 @@ test('registerAgentRoutes reload reruns provisioning and refreshes skills scope'
     blockAdmission = true
     const rejected = await app.inject({ method: 'POST', url: '/api/v1/agent/reload', payload: {} })
     expect(rejected.statusCode).toBe(500)
-    expect(rejected.json()).toMatchObject({ error: { code: ErrorCode.enum.D1_ADMISSION_RECORD_FAILED } })
+    expect(rejected.json()).toMatchObject({ error: { code: ADMISSION_ERROR_CODE } })
     expect(events).toEqual(['admit'])
     expect(provisionCalls).toBe(2)
     expect(reloadSession).toHaveBeenCalledOnce()

@@ -1,7 +1,7 @@
 import type { FastifyInstance, FastifyRequest } from 'fastify'
 import type { AgentHarness, AgentSlashCommandSummary, RunContext } from '../../../shared/harness'
 import type { AgentMeteringSink } from '../../pi-chat/metering'
-import type { AgentEffectAdmission } from '../../../core/piChatSessionService'
+import { AgentEffectAdmissionError, type AgentEffectAdmission } from '../../../core/piChatSessionService'
 import { ErrorCode, type ErrorCode as ErrorCodeValue } from '../../../shared/error-codes'
 
 const DEFAULT_WORKSPACE_ID = 'default'
@@ -91,7 +91,7 @@ function meteredCommandBlocked(command: string) {
 
 function stableErrorPayload(error: unknown, message: string) {
   const code = (error as { code?: unknown } | null)?.code
-  if (!isErrorCode(code)) return undefined
+  if (!isErrorCode(code) && !(error instanceof AgentEffectAdmissionError)) return undefined
   const details = (error as { details?: unknown } | null)?.details
   return {
     error: {

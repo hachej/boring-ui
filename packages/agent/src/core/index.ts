@@ -16,7 +16,7 @@ export type {
   PiSessionCreateInit,
   PiSessionRequestContext,
 } from './piChatSessionService'
-export { AGENT_EFFECT_METHODS, withAgentEffectAdmission } from './piChatSessionService'
+export { AgentEffectAdmissionError, AGENT_EFFECT_METHODS, withAgentEffectAdmission } from './piChatSessionService'
 export type {
   Agent,
   AgentActor,

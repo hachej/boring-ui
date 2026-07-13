@@ -37,7 +37,7 @@ import { treeRoutes } from './http/routes/tree'
 import { modelsRoutes, type ModelsRoutesOptions } from './http/routes/models'
 import { skillsRoutes } from './http/routes/skills'
 import { piChatRoutes } from './http/routes/piChat'
-import type { AgentEffectAdmission, PiChatSessionService } from '../core/piChatSessionService'
+import { AgentEffectAdmissionError, type AgentEffectAdmission, type PiChatSessionService } from '../core/piChatSessionService'
 import { systemPromptRoutes } from './http/routes/systemPrompt'
 import { sessionChangesRoutes } from './http/routes/sessionChanges'
 import { catalogRoutes } from './http/routes/catalog'
@@ -1349,8 +1349,8 @@ export const registerAgentRoutes: FastifyPluginAsync<RegisterAgentRoutesOptions>
       }
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error)
-      if ((error as { code?: unknown } | null)?.code === ErrorCode.enum.D1_ADMISSION_RECORD_FAILED) {
-        return reply.status(500).send({ ok: false, error: { code: ErrorCode.enum.D1_ADMISSION_RECORD_FAILED, message } })
+      if (error instanceof AgentEffectAdmissionError) {
+        return reply.status(error.statusCode).send({ ok: false, error: { code: error.code, message } })
       }
       return reply.status(422).send({ ok: false, error: message })
     }

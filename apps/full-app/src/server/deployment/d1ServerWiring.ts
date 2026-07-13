@@ -1,6 +1,6 @@
 import path from 'node:path'
 
-import type { AgentEffectAdmission } from '@hachej/boring-agent/core'
+import { AgentEffectAdmissionError, type AgentEffectAdmission } from '@hachej/boring-agent/core'
 import type { CoreFrontendRootHandler } from '@hachej/boring-core/app/server'
 import type { CoreConfig } from '@hachej/boring-core/shared'
 import type { CoreRequestScopeResolver } from '@hachej/boring-core/server'
@@ -9,7 +9,7 @@ import type { FastifyInstance } from 'fastify'
 import { createD1ActiveCollectionReader, type D1ActiveCollectionReader } from './activeCollectionReader.js'
 import type { D1AdmissionLedger } from './admissionLedger.js'
 import { createD1LandingRootHandler } from './d1Landing.js'
-import { D1HostError, D1HostErrorCode, invalidD1Field, strictD1HostId } from './d1Plan.js'
+import { D1HostErrorCode, invalidD1Field, strictD1HostId } from './d1Plan.js'
 import { registerD1ReadinessRoute } from './d1Readiness.js'
 import { createD1HostSurfaceResolver, D1_TRUSTED_CADDY_PEER } from './hostSurface.js'
 
@@ -29,8 +29,8 @@ export interface D1ServerWiringDependencies {
   readonly admissionLedger?: Pick<D1AdmissionLedger, 'admit'>
 }
 
-function admissionFailed(): D1HostError {
-  return new D1HostError(D1HostErrorCode.ADMISSION_RECORD_FAILED, { field: 'admission' })
+function admissionFailed(): AgentEffectAdmissionError {
+  return new AgentEffectAdmissionError(D1HostErrorCode.ADMISSION_RECORD_FAILED, { field: 'admission' })
 }
 
 export function createD1AgentEffectAdmission(options: {

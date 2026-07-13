@@ -15,11 +15,12 @@ import {
 } from '../../../shared/chat'
 import { PI_CHAT_CURSOR_AHEAD, PI_CHAT_REPLAY_GAP } from '../../pi-chat/piChatReplayBuffer'
 import type { SessionListOptions } from '../../../shared/session'
-import type {
-  PiChatEventStreamSubscription,
-  PiChatReplayRangeError,
-  PiChatSessionService,
-  PiSessionRequestContext,
+import {
+  AgentEffectAdmissionError,
+  type PiChatEventStreamSubscription,
+  type PiChatReplayRangeError,
+  type PiChatSessionService,
+  type PiSessionRequestContext,
 } from '../../../core/piChatSessionService'
 
 const DEFAULT_WORKSPACE_ID = 'default'
@@ -399,7 +400,9 @@ function sendReplayRangeError(reply: FastifyReply, error: PiChatReplayRangeError
 function sendRouteError(reply: FastifyReply, err: unknown, fallbackMessage: string): FastifyReply {
   const statusCode = statusCodeFromError(err)
   const parsedCode = ErrorCode.safeParse((err as { code?: unknown })?.code)
-  const code = parsedCode.success ? parsedCode.data : ErrorCode.enum.INTERNAL_ERROR
+  const code = err instanceof AgentEffectAdmissionError
+    ? err.code
+    : parsedCode.success ? parsedCode.data : ErrorCode.enum.INTERNAL_ERROR
   const message = err instanceof Error ? err.message : fallbackMessage
   return reply.code(statusCode).send({
     error: {
