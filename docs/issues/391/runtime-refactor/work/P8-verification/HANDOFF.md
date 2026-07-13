@@ -38,6 +38,19 @@
       runtime, host artifact, composition, definition/deployment, and secret
       reference identities only. Fresh observed status is recorded separately;
       the prior P6-R digests are reproduced and no secret value appears.
+- [ ] The active D1 binding proof strips spoofed and direct-auth scope; foreign/
+      malformed workspace paths return generic 421 before store access;
+      membership precedes lookup; and a member list contains exactly the bound
+      workspace. Post-signup accepts only an exact-bound invite. Scoped foreign/
+      invalid invites set `boring_invite_failed=invite_not_found` and create no
+      default workspace; generic invalid invites keep the existing failure
+      cookie plus default creation. Bound rename and generic workspace behavior
+      remain unchanged; public invite resolve/accept rejects foreign scope before
+      lookup or mutation.
+- [ ] Every scoped existing-owner demotion/removal/account deletion fails before
+      mutation with `D1_MANAGED_WORKSPACE_MUTATION_FORBIDDEN`. Non-owner account
+      deletion removes only that member's data/membership; editor/viewer removal,
+      owner add/promotion, and generic ownership/account behavior remain available.
 - [ ] The shared N-workspace D1 trust path proves isolated-profile sibling
       filesystem/process denial. Trusted-direct is accepted only for local
       development or a single-workspace dedicated composition, never as the
@@ -144,7 +157,7 @@ A1, and D1. Post-v1 lanes are tracked but not awaited.
       status, and WorkspaceBridge. Raw plugin routes fail D1 readiness; indirect
       foreign session/project ids reject; non-invite dedicated signup creates no
       workspace or membership.
-- [ ] Bound creator/last-owner account deletion and owner demotion/removal fail
+- [ ] Every existing-owner account deletion and owner demotion/removal fail
       before mutation; non-owner account deletion and generic mode cannot remove
       the D1-managed workspace.
 - [ ] Missing/stale `DedicatedSiteCapability` causes zero DNS/TLS publication

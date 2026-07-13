@@ -7,7 +7,7 @@ from this file.**
 
 ## Active multi-agent Docker v1 work order (2026-07-11)
 
-**Dispatch state: D1-R0 and D1-001 through D1-004a3b are landed.** D1-004a4a is
+**Dispatch state: D1-R0 and D1-001 through D1-004a4b are landed.** D1-004b1 is
 active; dispatch the remaining exact implementation beads in
 [`D1-R0-SPEC.md`](./D1-R0-SPEC.md) in order. Never dispatch the historical
 section below.
@@ -42,13 +42,14 @@ section below.
 5. **LANDED — D1-004a2: mounted active reader (#685).** Exact-DAC read-only
    active-to-COMPLETE validation is complete without mutation-store reuse,
    directory enumeration, providers, or secret-value reads.
-6. **ACTIVE — D1-004a4a, then a4b, b/c/d: landing, activation, authority
-   fences, and admission.** D1-004a3b landed exact raw authority/proxy checks
-   and the optional pre-auth scope seam (#692). D1-004a4a adds only the bounded
-   landing/root seam; D1-004a4b atomically adds loopback readiness, exact
-   owner/process identity checks, active-reader construction, and production
-   wiring. Trusted hostname selection grants nothing; member-only bound
-   workspace and all selectors fail closed; the database admission row commits
+6. **ACTIVE — D1-004b1, then b2, c/d: authority fences and admission.**
+   D1-004a4a landed the bounded landing/root seam (#694); D1-004a4b landed
+   loopback readiness, exact owner/process identity checks, active-reader
+   construction, and production wiring (#695). D1-004b1 fences workspace
+   list/create/detail/delete and signup/default provisioning; D1-004b2 protects
+   the managed workspace from destructive owner/account mutations while
+   preserving ordinary-member account deletion. Trusted hostname selection grants
+   nothing; later selectors fail closed; the database admission row commits
    before first agent effect and survives cleanup.
 7. **D1-005 — N-binding boot/additive publication.** N independent P6-R calls,
    root-owned pending-pointer/signal preload, all-ready ack, atomic active
@@ -188,12 +189,12 @@ manifest for the chosen EU host.
   security boundary. Thread the same optional scope into the existing
   post-signup workspace-provisioning hook: when dedicated scope is active and
   no invite was accepted, create no personal default workspace and grant no
-  membership. Existing invite acceptance and generic-mode signup behavior stay
-  unchanged. Apply the managed-workspace guard inside account deletion and
+  membership. Scoped invite acceptance is limited to the exact bound workspace;
+  generic-mode signup behavior stays unchanged. Apply the managed-workspace guard inside account deletion and
   ownership mutation too: `deleteUserCompletely` and member-role/remove paths
   cannot delete, transfer, demote, or orphan the D1 workspace outside the
-  fenced D1 lifecycle. V1 blocks deletion of the bound creator/last managed
-  owner with a stable code before any account/workspace mutation; ordinary
+  fenced D1 lifecycle. V1 blocks deletion of every existing managed owner with
+  a stable code before any account/workspace mutation; ordinary
   member account deletion may remove only that member's own data/membership.
 - The D1 durable apply store enforces global uniqueness for normalized exact
   hostname and `appId`. First apply atomically reserves both to the
@@ -490,8 +491,9 @@ manifest for the chosen EU host.
   importing global registries/resolvers, and the activated-plugin snapshot binds
   raw-vs-scoped route mode plus contract version.
   Pass the optional scope to the existing post-signup hook. A non-invite signup
-  in dedicated mode creates no personal workspace and receives no access; a
-  valid invite keeps the existing acceptance path. Do not introduce a D1 auth
+  in dedicated mode creates no personal workspace and receives no access; only
+  an invite for the exact bound workspace keeps the existing acceptance path.
+  Do not introduce a D1 auth
   policy or change generic signup behavior. Before account deletion or member
   ownership mutation, detect the managed D1 workspace. Block any operation that
   would delete/transfer/orphan it with `D1_MANAGED_WORKSPACE_OWNER_REQUIRED`
@@ -504,7 +506,7 @@ manifest for the chosen EU host.
   runtime/agent/file/session selector reject a second workspace; managed delete
   rejects; non-invite dedicated signup creates no workspace/membership; invite
   acceptance joins only the bound workspace; invite/member operations work only
-  for the bound workspace. Bound creator/last-owner account deletion and owner
+  for the bound workspace. Every existing-owner account deletion and owner
   demotion/removal fail atomically; a non-owner member account deletion removes
   no workspace and generic-mode account deletion remains unchanged. Full-app
   MCP, runtime-plugin RPC, plugin-front asset/

@@ -40,6 +40,19 @@
       default auto-provision paths are fenced: members see only the bound
       workspace, non-members fail before effects, and only D1 operator
       lifecycle can remove the managed workspace.
+- [ ] The auth proxy strips caller-supplied workspace scope and installs only
+      the canonical host-resolved scope. Spoofed/direct-auth variants cannot
+      synthesize it. Post-signup accepts only an exact-bound invite; scoped
+      foreign/invalid invites set the existing non-enumerating failure cookie
+      and create no default workspace, while generic invalid-invite behavior
+      remains unchanged. Public invite resolve/accept routes reject a foreign
+      workspace before lookup or mutation. Bound workspace rename and all
+      generic-host workspace behavior remain unchanged.
+- [ ] Every scoped existing-owner demotion/removal fails before mutation, even
+      when another owner remains. Every scoped existing-owner account deletion
+      also fails before mutation. Non-owner account deletion removes only that
+      member's data/membership; editor/viewer removal and owner addition/
+      promotion still work; generic ownership/account behavior remains unchanged.
 - [ ] Plan/apply/publish/rollback exists only through the OS-authorized local
       deployment CLI. Ordinary members, app credentials, and hostname holders
       have no host-mutation route; operator/ref/revision audit is recorded.
@@ -182,10 +195,14 @@ before calling D1 done. Invent nothing.
       raw plugin routes fail readiness and indirect foreign session/project ids
       reject before effects.
 - [ ] Dedicated scope reaches the existing post-signup workspace hook:
-      non-invite signup creates no personal workspace or membership; invite
-      acceptance and generic-mode signup remain unchanged.
+      non-invite signup creates no personal workspace or membership; only an
+      invite for the exact bound workspace is accepted. A scoped foreign or
+      invalid invite sets the existing non-enumerating failure cookie and
+      creates no default workspace; generic invalid-invite signup keeps its
+      existing failure cookie plus default creation. Public invite resolve/
+      accept selectors are fenced in D1-004c.
 - [ ] Account deletion and member-role/remove paths cannot delete, transfer,
-      demote, or orphan the D1-managed workspace. Bound creator/last-owner
+      demote, or orphan the D1-managed workspace. Every existing-owner account
       deletion fails before mutation; non-owner deletion cannot touch the
       workspace; generic behavior remains unchanged.
 - [ ] The bound workspace selects the deployment as agent `default`; first chat
