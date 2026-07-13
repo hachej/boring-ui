@@ -305,8 +305,13 @@ describe("FileTreePane", () => {
     })
 
     fireEvent.contextMenu(screen.getByText("handbook.md"))
+    // Mutating actions are gated by read-only access...
+    expect(screen.queryByRole("menuitem", { name: "New file" })).not.toBeInTheDocument()
+    expect(screen.queryByRole("menuitem", { name: "New folder" })).not.toBeInTheDocument()
     expect(screen.queryByRole("menuitem", { name: "Rename" })).not.toBeInTheDocument()
     expect(screen.queryByRole("menuitem", { name: "Delete" })).not.toBeInTheDocument()
+    // ...but read actions remain available so the menu is still useful.
+    expect(screen.getByRole("menuitem", { name: "Copy path" })).toBeInTheDocument()
   })
 
   it("remounts the tree when switching configured filesystems so expanded path state cannot leak", async () => {
@@ -950,6 +955,81 @@ describe("FileTreePane", () => {
     expect(screen.queryByRole("menuitem", { name: "Rename" })).not.toBeInTheDocument()
     expect(screen.queryByRole("menuitem", { name: "Delete" })).not.toBeInTheDocument()
     expect(screen.queryByRole("menuitem", { name: "Copy path" })).not.toBeInTheDocument()
+  })
+
+  describe("Read-only root context menu", () => {
+    it("background right-click on a read-only root does not open an empty menu", async () => {
+      render(
+        <FileTreePane
+          roots={[
+            { filesystem: "user", label: "Workspace", rootDir: ".", access: "readwrite" },
+            { filesystem: "project_alpha", label: "Project", rootDir: "/", access: "readonly" },
+          ]}
+        />,
+        { wrapper },
+      )
+
+      expect(await screen.findByRole("combobox", { name: "File root" })).toBeInTheDocument()
+      await selectRoot("Project")
+      await waitFor(() => expect(screen.getByTestId("file-tree")).toBeInTheDocument())
+
+      // Background right-click on a read-only root has zero applicable
+      // items (New file/New folder are mutating actions) — the menu must
+      // not render at all, not render as an empty box.
+      const container = screen.getByTestId("file-tree").parentElement!
+      fireEvent.contextMenu(container)
+
+      expect(screen.queryByRole("menu")).not.toBeInTheDocument()
+      expect(screen.queryByRole("menuitem", { name: "New file" })).not.toBeInTheDocument()
+      expect(screen.queryByRole("menuitem", { name: "New folder" })).not.toBeInTheDocument()
+    })
+
+    it("right-click on a read-only root's file still opens a menu with read actions", async () => {
+      mockFileList.mockImplementation((_dir: string, filesystem?: string) => ({
+        data: filesystem === "project_alpha"
+          ? [{ name: "handbook.md", kind: "file" as const, path: "handbook.md" }]
+          : sampleFiles,
+        isLoading: false,
+        isSuccess: true,
+        error: undefined,
+      }))
+
+      render(
+        <FileTreePane
+          roots={[
+            { filesystem: "user", label: "Workspace", rootDir: ".", access: "readwrite" },
+            { filesystem: "project_alpha", label: "Project", rootDir: "/", access: "readonly" },
+          ]}
+        />,
+        { wrapper },
+      )
+
+      expect(await screen.findByRole("combobox", { name: "File root" })).toBeInTheDocument()
+      await selectRoot("Project")
+      await waitFor(() => expect(screen.getByText("handbook.md")).toBeInTheDocument())
+
+      fireEvent.contextMenu(screen.getByText("handbook.md"))
+
+      expect(screen.getByRole("menu")).toBeInTheDocument()
+      expect(screen.getByRole("menuitem", { name: "Copy path" })).toBeInTheDocument()
+      expect(screen.queryByRole("menuitem", { name: "New file" })).not.toBeInTheDocument()
+      expect(screen.queryByRole("menuitem", { name: "Rename" })).not.toBeInTheDocument()
+      expect(screen.queryByRole("menuitem", { name: "Delete" })).not.toBeInTheDocument()
+    })
+
+    it("leaves the default read-write root's background menu unchanged", async () => {
+      render(<FileTreePane />, { wrapper })
+
+      await waitFor(() => expect(screen.getByTestId("file-tree")).toBeInTheDocument())
+
+      const container = screen.getByTestId("file-tree").parentElement!
+      fireEvent.contextMenu(container)
+
+      await waitFor(() => {
+        expect(screen.getByRole("menuitem", { name: "New file" })).toBeInTheDocument()
+      })
+      expect(screen.getByRole("menuitem", { name: "New folder" })).toBeInTheDocument()
+    })
   })
 
   describe("Inline edit", () => {
