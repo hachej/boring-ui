@@ -117,6 +117,7 @@ export const AgentConsumptionErrorCode = z.enum([
   'AGENT_CONSUMPTION_CYCLE_DETECTED',
   'AGENT_CONSUMPTION_DEPTH_EXCEEDED',
   'AGENT_CONSUMPTION_SCHEMA_MISMATCH',
+  'AGENT_CONSUMPTION_LEGACY_ARTIFACT_REJECTED',
 ])
 
 export type AgentConsumptionErrorCode = z.infer<typeof AgentConsumptionErrorCode>
