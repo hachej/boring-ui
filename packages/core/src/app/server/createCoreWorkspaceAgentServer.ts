@@ -924,6 +924,19 @@ export async function createCoreWorkspaceAgentServer(
           if (request.requestScope?.workspaceId !== workspaceId) d1HostScopeViolation(request)
         }
       : undefined,
+    admitRuntimeOperation: options.admitEffect
+      ? async (workspaceId) => {
+          try {
+            await options.admitEffect!({ workspaceId, requestId: 'workspace-bridge-runtime' })
+          } catch {
+            throw new HttpError({
+              status: 500,
+              code: ERROR_CODES.D1_ADMISSION_RECORD_FAILED,
+              message: ERROR_CODES.D1_ADMISSION_RECORD_FAILED,
+            })
+          }
+        }
+      : undefined,
   })
   app.addHook('preHandler', async (request) => {
     await coreBridge.rememberSessionOwner(request)
