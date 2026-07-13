@@ -465,9 +465,11 @@ bead below:
   a secret-bearing env key past review.
 - **Build.** `approvedHostRelease.ts` + `hostSecurityConfig.ts`; reuse landed
   core/ingress identity constants. The release record lives at
-  `<host-state>/approved-host-release.json` **outside** immutable revision
-  directories, installed only by the maintenance release procedure — the app
-  cannot write it and the apply command exposes no mutation for it. It binds
+  `/etc/boring/d1/approved-host-releases/<hostId>.json`, outside D1 host-state
+  and immutable revision mounts, installed only by the root maintenance release
+  procedure — it is not mounted into the app, the app cannot write it, and the
+  apply command exposes no mutation for it. The authority directory is
+  root:root `0755`; each exact `<hostId>.json` record is root:root `0444`. It binds
   `{ hostAppImageDigest, coreCommand, migrationProcess, ingressImageDigest,
   ingressCommand, caddyfileDigest, hostSecurityConfigDigest,
   selectorInventoryRevision, executionPolicyRevision,
