@@ -5,10 +5,14 @@ import { request } from 'node:http'
 import path from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 
-import { D1_CADDY_IMAGE } from '../src/server/deployment/composeAdapter.js'
+import {
+  D1_CADDY_AMD64_ID,
+  D1_CADDY_COMMAND,
+  D1_CADDY_IMAGE,
+  D1_CADDY_IMAGE_DEFAULTS,
+  D1_CADDYFILE_DIGEST,
+} from '../src/server/deployment/d1IngressArtifacts.js'
 
-export const D1_CADDY_AMD64_ID = 'sha256:af555904a0961945f16bb323a501457b13a4f7e9bde969b145b97da80b38ecbe'
-export const D1_CADDYFILE_DIGEST = 'sha256:a391f757bc9398e0dbd279e6a503fe608e6571f29c166164ff36552afd0f72c8'
 export const D1_INGRESS_PROOF_HELPER_IMAGE = 'node@sha256:c601a46abb4d2ab80a9dc3da208d50d1122642d53f17a101926ace71e5a9bf1c'
 const REPOSITORY_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../..')
 const CADDYFILE = path.join(REPOSITORY_ROOT, 'deploy/d1/Caddyfile')
@@ -52,15 +56,16 @@ function records(raw: string): Record<string, any>[] {
 export function validateD1CaddyImageInspect(raw: string): void {
   const image = records(raw)[0]
   if (!image || image.Id !== D1_CADDY_AMD64_ID || !Array.isArray(image.RepoDigests) || !image.RepoDigests.includes(D1_CADDY_IMAGE)
-    || image.Config?.Entrypoint != null || JSON.stringify(image.Config?.Cmd) !== JSON.stringify(['caddy', 'run', '--config', CADDYFILE_TARGET, '--adapter', 'caddyfile'])
-    || !Array.isArray(image.Config?.Env) || !image.Config.Env.includes('CADDY_VERSION=v2.11.4')) throw new Error('image')
+    || image.Config?.Entrypoint != null || JSON.stringify(image.Config?.Cmd) !== JSON.stringify(D1_CADDY_COMMAND)
+    || !Array.isArray(image.Config?.Env) || Object.entries(D1_CADDY_IMAGE_DEFAULTS)
+      .some(([key, value]) => !image.Config.Env.includes(`${key}=${value}`))) throw new Error('image')
 }
 
 export function validateD1IngressContainerInspect(raw: string, source: string): void {
   const container = records(raw)[0]
   const mount = container?.Mounts?.filter((entry: Record<string, unknown>) => entry.Destination === CADDYFILE_TARGET)
   if (!container || container.Config?.Image !== D1_CADDY_IMAGE
-    || JSON.stringify(container.Config?.Cmd) !== JSON.stringify(['caddy', 'run', '--config', CADDYFILE_TARGET, '--adapter', 'caddyfile'])
+    || JSON.stringify(container.Config?.Cmd) !== JSON.stringify(D1_CADDY_COMMAND)
     || !Array.isArray(mount) || mount.length !== 1 || mount[0].Type !== 'bind' || mount[0].Source !== source || mount[0].RW !== false) throw new Error('container')
 }
 
@@ -134,7 +139,7 @@ async function proof(): Promise<void> {
     requireDocker(['run', '-d', '--rm', '--name', backend, '--label', label, '--network', network, '--network-alias', 'core-app',
       '--entrypoint', 'node', D1_INGRESS_PROOF_HELPER_IMAGE, '-e', ECHO])
     requireDocker(['run', '-d', '--rm', '--name', ingress, '--label', label, '--network', network, '--publish', '127.0.0.1::8080',
-      '--mount', mount, D1_CADDY_IMAGE, 'caddy', 'run', '--config', CADDYFILE_TARGET, '--adapter', 'caddyfile'])
+      '--mount', mount, D1_CADDY_IMAGE, ...D1_CADDY_COMMAND])
     validateD1IngressContainerInspect(requireDocker(['inspect', ingress]), CADDYFILE)
     const published = requireDocker(['port', ingress, '8080/tcp']).trim().match(/^127\.0\.0\.1:(\d+)$/)
     if (!published) throw new Error('port')
