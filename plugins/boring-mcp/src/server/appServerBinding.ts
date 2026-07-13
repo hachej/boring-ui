@@ -39,6 +39,7 @@ import { createComposioManagedConnectorProvider, createComposioMcpTransport } fr
 import { createMcpSourceStatusPayload } from './sourceAccess'
 import { createBoringMcpSourceHandlers } from './sourceHandlers'
 import { createBoringMcpAgentTools } from './agentTools'
+import { createBoringMcpServerPlugin } from './serverPlugin'
 
 const DEFAULT_MAX_READONLY_INPUT_BYTES = 64 * 1024
 const MAX_READONLY_INPUT_BYTES = 1024 * 1024
@@ -638,4 +639,103 @@ export function registerBoringMcpRoutes(app: BoringMcpAppServer, options: Regist
     }))
     return { tools: result.tools }
   })
+}
+
+/**
+ * Full per-app configuration for {@link createBoringMcpAppBindings}. Extends the
+ * connector/secret binding config with the two remaining knobs a host used to
+ * hardcode: how routes behave while disabled, and the agent system prompt.
+ */
+export interface BoringMcpAppBindingsConfig extends BoringMcpBindingConfig {
+  /**
+   * Behavior when boring-mcp is disabled for this deployment. Forwarded to
+   * {@link registerBoringMcpRoutes}. Defaults to `skip`.
+   */
+  whenDisabled?: 'skip' | 'serve-503'
+  /** System prompt applied to the boring-mcp server plugin this host contributes. */
+  systemPrompt?: string
+  /**
+   * Default trusted-workspace resolver applied to every route registration for
+   * this deployment (e.g. D1 host request scoping). A per-call
+   * `resolveTrustedWorkspaceId` passed to `registerRoutes` overrides it.
+   */
+  resolveTrustedWorkspaceId?: (request: FastifyRequest) => string | undefined
+}
+
+export interface BoringMcpAppBindingsAgentToolsOptions {
+  env?: NodeJS.ProcessEnv
+  transport?: McpTransportClient
+}
+
+export interface BoringMcpAppBindingsRoutesOptions {
+  provider?: ManagedConnectorProvider
+  env?: NodeJS.ProcessEnv
+  transport?: McpTransportClient
+  resolveTrustedWorkspaceId?: (request: FastifyRequest) => string | undefined
+}
+
+/**
+ * The complete set of per-app boring-mcp bindings, each pre-bound to a single
+ * {@link BoringMcpAppBindingsConfig}. Host apps expose these members instead of
+ * copying the ~110 lines of forwarding glue they used to hand-write.
+ */
+export interface BoringMcpAppBindings {
+  readConfig(env?: NodeJS.ProcessEnv): BoringMcpServerRuntimeConfig
+  createSecretResolver(env?: NodeJS.ProcessEnv): ManagedConnectorSecretResolver
+  createConnectorAdapter(options: {
+    registry: ManagedConnectorSourceRegistry
+    env?: NodeJS.ProcessEnv
+    provider?: ManagedConnectorProvider
+  }): ManagedConnectorAdapter
+  agentSessionNamespace(ctx: { workspaceId: string; request?: FastifyRequest; userId?: string }): string
+  createMcpSourceRegistry(
+    app: Pick<BoringMcpAppServer, 'userStore' | 'config'>,
+    actorScope: McpActor,
+  ): ManagedConnectorSourceRegistry
+  createAgentTools(
+    app: Pick<BoringMcpAppServer, 'userStore' | 'config'>,
+    actor: McpActor,
+    options?: BoringMcpAppBindingsAgentToolsOptions,
+  ): AgentTool[]
+  createAgentToolsForRequest(
+    app: Pick<BoringMcpAppServer, 'userStore' | 'config'>,
+    ctx: { workspaceId: string; authSubject?: string },
+    options?: BoringMcpAppBindingsAgentToolsOptions,
+  ): AgentTool[]
+  registerRoutes(app: BoringMcpAppServer, options?: BoringMcpAppBindingsRoutesOptions): void
+  createServerPlugins(env?: NodeJS.ProcessEnv): ReturnType<typeof createBoringMcpServerPlugin>[]
+}
+
+/**
+ * Build the full set of boring-mcp server bindings for a host app from a single
+ * config object. Every member is pre-bound to `config`, so a host wires MCP with
+ * ~15 lines of configuration instead of re-copying the forwarding glue.
+ */
+export function createBoringMcpAppBindings(config: BoringMcpAppBindingsConfig): BoringMcpAppBindings {
+  return {
+    readConfig: (env) => readBoringMcpServerConfig(env, { secretEnvVars: config.secretEnvVars }),
+    createSecretResolver: (env) =>
+      createManagedConnectorSecretResolver({ env, configs: config.connectorConfigs, secretEnvVars: config.secretEnvVars }),
+    createConnectorAdapter: (options) =>
+      createBoringMcpManagedConnectorAdapter({ config, registry: options.registry, env: options.env, provider: options.provider }),
+    agentSessionNamespace: boringMcpAgentSessionNamespace,
+    createMcpSourceRegistry: createUserSettingsMcpSourceRegistry,
+    createAgentTools: (app, actor, options = {}) =>
+      createBoringMcpAppAgentTools(app, actor, { config, env: options.env, transport: options.transport }),
+    createAgentToolsForRequest: (app, ctx, options = {}) =>
+      createBoringMcpAppAgentToolsForRequest(app, ctx, { config, env: options.env, transport: options.transport }),
+    registerRoutes: (app, options = {}) =>
+      registerBoringMcpRoutes(app, {
+        config,
+        whenDisabled: config.whenDisabled,
+        provider: options.provider,
+        env: options.env,
+        transport: options.transport,
+        resolveTrustedWorkspaceId: options.resolveTrustedWorkspaceId ?? config.resolveTrustedWorkspaceId,
+      }),
+    createServerPlugins: (env = process.env) => {
+      if (!readBoringMcpServerConfig(env, { secretEnvVars: config.secretEnvVars }).enabled) return []
+      return [createBoringMcpServerPlugin({ systemPrompt: config.systemPrompt })]
+    },
+  }
 }
