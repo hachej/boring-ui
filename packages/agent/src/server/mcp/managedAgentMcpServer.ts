@@ -15,12 +15,29 @@ import {
   type ManagedAgentDelegateStatusResult,
   type ManagedAgentMcpDelegateOptions,
 } from './managedAgentDelegate'
+import { registerShareEntryResources } from './shareEntryResources'
 import { ErrorCode, type ErrorCode as StableErrorCode } from '../../shared/error-codes'
+import type { ShareEntryStore } from '../../shared/share-entry'
+import type { SessionCtx } from '../../shared/session'
+import type { Workspace } from '../../shared/workspace'
 
 interface ManagedAgentMcpPresentationOptions {
   name?: string
   version?: string
   maxBriefChars?: number
+  /**
+   * Optional Lane W (AR1-002/AR1-004) share-entry store. When supplied
+   * together with `resolveShareSessionCtx`/`resolveShareWorkspace`, the
+   * server exposes `listResources`/`readResource` scoped to the
+   * authenticated workspace's share entries, on this SAME MCP server
+   * process (no second MCP runtime owner). Hosts that omit any of the
+   * three leave Lane W unmounted — no widening.
+   */
+  shareEntryStore?: ShareEntryStore
+  /** Resolves the authenticated SessionCtx for a share resource request. */
+  resolveShareSessionCtx?: (request: ManagedAgentDelegateRequestContext) => SessionCtx | Promise<SessionCtx>
+  /** Resolves the authorized Workspace to read share targets from, for a given SessionCtx. */
+  resolveShareWorkspace?: (ctx: SessionCtx) => Workspace | Promise<Workspace>
 }
 
 export interface ManagedAgentMcpServerOptions extends ManagedAgentMcpDelegateOptions, ManagedAgentMcpPresentationOptions {}
@@ -69,6 +86,14 @@ function createManagedAgentMcpServerWithController(
     name: options.name ?? 'boring-managed-agent',
     version: options.version ?? '0.0.0',
   })
+
+  if (options.shareEntryStore && options.resolveShareSessionCtx && options.resolveShareWorkspace) {
+    registerShareEntryResources(server, {
+      store: options.shareEntryStore,
+      resolveSessionCtx: options.resolveShareSessionCtx,
+      resolveWorkspace: options.resolveShareWorkspace,
+    })
+  }
   const registerTool = server.registerTool.bind(server) as ManagedAgentRegisterTool
   const delegateTaskInputSchema = createDelegateTaskInputSchema(options.maxBriefChars ?? DEFAULT_MAX_BRIEF_SCHEMA_CHARS)
 
