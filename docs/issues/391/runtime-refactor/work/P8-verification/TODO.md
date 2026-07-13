@@ -38,8 +38,10 @@ Dispatch only these verification slices:
    removes only that member's data/membership and editor/viewer removal, owner
    add/promotion, and generic ownership/account behavior still work.
    Exercise all c1-c5 boundaries: invite's sole read-only hash lookup, embedded/
-   pane selector conflicts, generic-exact Boring MCP limiting plus scoped
-   user/IP+trusted-workspace charging of every invalid request before admission,
+   pane selector conflicts, Boring MCP global auth and unauthenticated 401 before
+   the route limiter, generic-exact limiting, and scoped `request.user.id` + frozen
+   `requestScope.workspaceId` charging of every authenticated valid/invalid/
+   foreign/nonmember request before admission with no raw-selector key or bypass;
    signed Bridge claims scope-
    asserted before registry/definition with HTTP 421 before runtime/refresh
    effects, and managed-agent MCP trusted scope/default dispatch. Prove any
