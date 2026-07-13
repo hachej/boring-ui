@@ -110,11 +110,22 @@ Not "component tests pass" — the golden path:
   revision store or a secret value; sibling filesystem/process denial; secret
   canary.
 
-**Phase 3 — external consumption (marketplace MVP).** An authenticated external
-consumer receives an artifact in an authorized workspace (M1 bearer + AR1 Lane
-W + M2/E2). Public promotion later adds ID1 + AC1 contracted mode so a new user
-signs up via their own ChatGPT, contracts an agent, and runs the fitness story
-end-to-end — MCP-only, unbilled.
+**Phase 3A — managed B2B external delivery.** A pre-provisioned regular
+principal connects with a stock MCP client, reaches only the authorized client
+workspace, submits a brief, and receives a provenance-bearing artifact through
+M1 + AR1 Lane W + M2/E2. This is the first client-demo exit and requires no
+public signup or catalog.
+
+**Phase 3B — managed B2B contracting.** For one owner-recorded design partner,
+AC1 contracted mode + governed projection + AR1 Lane X deliver an immutable
+digest-pinned artifact from the contractor workspace into the client's
+workspace, with no live cross-workspace access. Existing managed identity is
+sufficient.
+
+**Public self-service promotion.** ID1 plus spend/rate controls later lets a new
+user sign up from a stock client and enter the same managed flow (the fitness
+story — MCP-only, unbilled). This is a promotion gate, not the phase-3
+architecture prerequisite and not yet a marketplace.
 
 **Phases 4–5 — demand-gated** (creators earn; coach-in-your-pocket). Exit prose
 only; bead-level acceptance is written when the phase opens.
@@ -197,6 +208,15 @@ issue #636 — types landed #657; dispatcher/modes/projection not built).**
 - **Known-unknown (trigger: third parties contracting):** contractor data
   hygiene across customers — a persistent contractor workspace mixes learnings
   from customer A into work for B; policy needed when external contracting opens.
+  **Sequencing note (plan-level, does not pre-settle the owner decision):** the
+  policy must land **before the first third-party engagement writes durable
+  state** (once A's data is in unscoped durable state, later separation cannot
+  prove non-leak), so it is the FIRST contracting bead (**AC1-H**, §4.4), not a
+  parallel afterthought. Its proposed default reuses this decision's own
+  mechanism — engagement-scoped mutable work + readonly caller projection, no
+  customer-derived bytes into contractor-global durable knowledge without
+  explicit approval + provenance — which the owner confirms when contracting
+  opens.
 
 ### Decision 23 — Multi-agent Docker host is the first deployment topology
 
@@ -331,7 +351,7 @@ one ingress + one stable full-collection core process; agents are **not**
 per-container; additive/landing-only online revisions preserve in-flight work).
 The remaining ordered stack after the landed set is:
 **D1-004c3 → c4 → c5 → D1-004d → D1-004e → D1-005a → D1-005b → D1-005c →
-D1-006.** Each PR stays dark/additive until its own acceptance; no PR claims the
+D1-006a → D1-006.** Each PR stays dark/additive until its own acceptance; no PR claims the
 three-agent exit early. **P2/P5a do not gate any bead.**
 
 Global D1 constraints (Guardrails "D1" + D1-R0 §10 stop-signs), apply to every
@@ -425,31 +445,47 @@ bead below:
 
 #### D1-004d — Durable admission ledger
 
-- **Goal.** A durable, insert/read-only `(hostId, bindingId)` admission ledger
-  committed **before** the first agent effect, so a **binding** that has ever run
-  cannot later be silently removed.
+- **Goal.** A durable, insert/read-only
+  `(hostId, bindingId, executionIdentityDigest)` admission fence committed
+  **before** the first agent effect, so a binding that may have crossed the
+  effect boundary can never later be silently removed or confused with a
+  different execution identity.
 - **Why / workflow.** Additive N+1 revision publication and unused-binding
-  rollback both need a crash-safe truth of which bindings have admitted real
-  work; a used binding must reject removal even after process restart + revision
-  cleanup.
+  rollback need a crash-safe conservative boundary. A commit followed by a
+  process crash before the effect is intentionally treated as "effect may have
+  started" and remains non-removable; the ledger is not a successful-effect
+  audit log.
 - **Build.** One new core Drizzle migration + schema export;
   `admissionLedger.ts`; a first-effect hook through the D1 host scope. Rows carry
-  a DB-allocated monotonic sequence; the transaction commits before the first
-  effect; concurrent admission is idempotent; restart recovery + CLI
-  destructive-diff read from the DB; **no update/delete API.** Export one
-  session-level Postgres advisory fence keyed by `(hostId, bindingId)` on a
-  dedicated connection: first use holds it while re-reading the active
-  collection, inserting/idempotently reading admission in a transaction, and
-  committing before the effect, then releases in `finally`; connection loss
-  releases the lock. A failed lock/commit → **`D1_ADMISSION_RECORD_FAILED`** and
-  no agent effect.
+  `{hostId,bindingId,executionIdentityDigest,firstRevisionId,
+  firstDesiredStateDigest,sequence,admittedAt}`. The execution digest covers the
+  resolved composition and execution-affecting binding facts but excludes
+  landing-only fields (so landing-only revisions retain one identity). An
+  existing row must match the active binding's digest byte-for-byte or fail
+  **`D1_ADMISSION_IDENTITY_MISMATCH`** before any effect. The DB-allocated
+  sequence transaction commits before the first effect; concurrent admission is
+  idempotent; restart recovery + CLI destructive-diff read from the DB; **no
+  update/delete API.** Export one session-level Postgres advisory fence keyed by
+  `(hostId, bindingId)` on a dedicated connection: first use holds it while
+  re-reading the active collection **and the durable rollback journal**,
+  inserting/idempotently reading admission in a transaction, and committing
+  before the effect, then releases in `finally`. A durable `prepared` rollback
+  event naming this binding is itself an admission fence even if the rollback
+  command's session lock was released by process/connection loss; first use fails
+  closed until recovery commits or aborts that operation. Connection loss alone
+  never erases removal intent. A failed lock/commit →
+  **`D1_ADMISSION_RECORD_FAILED`** and no agent effect.
 - **Do NOT / stop-signs.** No update/delete; no route pre-read/process mutex/SQL
-  as authority.
+  as authority; no "false-positive cleanup" for commit-before-effect crashes.
 - **Dependencies.** External Postgres (D1-003); D1-005c installs the first-effect
   hook consumer.
 - **Acceptance.** Admitted binding stays non-removable after process restart +
-  revision-directory cleanup; concurrent admission idempotent; failure path
-  admits no effect.
+  revision-directory cleanup; landing-only revisions retain the same execution
+  identity; binding-id reuse with different execution facts fails closed;
+  concurrent admission is idempotent; kill-after-commit-before-effect leaves a
+  deliberate permanent fence; a prepared removal survives root-command/
+  DB-connection death and admits no row/effect until recovery resolves it;
+  pre-commit failure admits no effect.
 
 #### D1-004e — Recoverable unused-binding rollback fence
 
@@ -467,17 +503,28 @@ bead below:
   order on one dedicated connection; while all held, re-reads active state + all
   admission rows and appends a durable `prepared` event (operation id,
   expected/target revision+digest, removal set); after commit, publishes one
-  atomic pointer, appends `committed`, releases. No row is updated/deleted.
-  Recovery reacquires the same sorted lock set and finalizes/resumes/aborts per
-  pointer+journal state; any inconsistent state → **`D1_ROLLBACK_JOURNAL_FAILED`**
-  closed.
+  durable active pointer, asks the already-preloaded stable core to atomically
+  swap to that exact revision, and waits for an exact
+  `{operationId,revisionId,desiredDigest,priorRevisionId}` served-collection
+  acknowledgement. Only then may it append `committed` and release the live
+  locks. The durable `prepared` event continues to fence first use if those
+  session locks disappear. No row is updated/deleted. Recovery reacquires the
+  same sorted lock set and resolves the tuple `(journal state, durable active
+  revision, core served revision)`: abort when neither publication occurred,
+  retry activation when only the durable pointer advanced, and finalize when the
+  core already serves the target. Any other combination fails closed as
+  **`D1_ROLLBACK_JOURNAL_FAILED`**. Authority is the fixed validated revision +
+  operation record, never the wake-up signal, and no reconciler daemon is
+  introduced.
 - **Do NOT / stop-signs.** No deletion/update of journal rows; no background GC
   reconciler.
 - **Dependencies.** D1-004d.
 - **Acceptance.** Real-Postgres races on first/last removal keys and overlapping
-  sets with no deadlock; crash at every phase boundary recoverable; if rollback
+  sets with no deadlock; fault injection covers root death, DB-connection loss,
+  core death, and lost acknowledgement at every phase boundary; if rollback
   wins, first use on a removed key creates no row/effect; if any admission wins,
-  the whole rollback rejects.
+  the whole rollback rejects; command success is impossible while durable and
+  served revisions differ.
 
 #### D1-005a — Approved host release and intended policy
 
@@ -496,20 +543,31 @@ bead below:
   cannot write it and the apply command exposes no mutation for it. It binds
   `{ hostAppImageDigest, coreCommand, migrationProcess, ingressImageDigest,
   ingressCommand, caddyfileDigest, hostSecurityConfigDigest,
-  selectorInventoryRevision, executionPolicyRevision }` (both revisions =
+  selectorInventoryRevision, executionPolicyRevision,
+  databaseSchemaCompatibility:{migrationSetDigest,currentEpoch,
+  readableByPreviousRelease} }` (both revisions =
   immutable merged commit/content identities, not mutable labels). Before any
-  Compose mutation: validate desired digest == approved digest and intended
+  Compose mutation: validate desired digest == approved digest, validate the
+  current database schema epoch against the release's declared readable range,
+  and intended
   image/Entrypoint/Cmd == approved. Parse Compose + `core.env` through one
   strict versioned production-env schema without logging values: allowed keys =
-  approved image defaults + fixed Compose keys + schema-declared app keys; each
-  classified as fixed-exact or redacted-nonsecret; **unknown or secret-bearing
-  env keys reject.** Require `NODE_ENV=production`; reject `NODE_OPTIONS`,
+  approved image defaults + fixed Compose keys + schema-declared app keys. Every
+  allowed value is integrity-bound as either **fixed-exact** or
+  **canonical-digest-only** when its raw representation (for example a host path)
+  must stay out of output. `redacted` is an output classification, never an
+  unpinned integrity class; the `hostSecurityConfigDigest` covers the complete
+  canonical value map, and D1-005b recomputes the same identity from Docker's
+  observed configuration. **Unknown keys, unbound values, and secret-bearing env
+  keys reject; secrets are file-mounted only.** Require `NODE_ENV=production`; reject `NODE_OPTIONS`,
   `NODE_PATH`, `LD_PRELOAD`, `LD_AUDIT`, `LD_LIBRARY_PATH` regardless of class.
   The nonsecret identity pins at least `{ d1HostId, publicationOwnerUid,
   agentMode, workspaceRoot:"/data/workspaces", sessionRoot:"/data/pi-sessions",
   trustedProxy:{cidrs:["192.168.255.250/32"],hops:1}, externalPlugins:false,
   pluginAuthoring:false, betterAuthUrl, corsOrigins, cspEnabled, ...,
-  managedAgentMcp:{enabled,workspaceId?,userId?} }`.
+  managedAgentMcp:{enabled,workspaceId?,userId?},
+  collectionPolicy:{maxBindings,maxBundleBytes,maxTotalBundleBytes,
+  maxConcurrentPreloads} }` (the policy is part of the approved digest).
 - **Do NOT / stop-signs.** No container create/start, P6-R, admission, preload,
   pointer, or ingress op in this bead; the release record is never caller-
   supplied, persisted-by-app, mounted, or reconstructed from app self-report.
@@ -517,8 +575,10 @@ bead below:
   D1-003a ingress constants.
 - **Acceptance.** Unknown/secret-bearing keys and drift in owner UID, mode,
   roots, proxy, auth URL, CORS, CSP, cookie security, MCP enablement, or managed
-  target all reject; a materialized secret canary proves no secret bytes enter
-  Docker config/identity/failure output.
+  target all reject; changing any allowed behavior-bearing value changes the
+  approved digest and rejects even when the value is output-redacted; a
+  materialized secret canary proves no secret bytes enter Docker
+  config/identity/failure output.
 
 #### D1-005b — Observed host execution attestation
 
@@ -539,7 +599,12 @@ bead below:
   approved nonsecret env, file-mounted same-attempt DB secret readable only by
   that identity, read-only root, DB access only, **no workspace/session/state
   mounts, no added capabilities, no privileged mode**; inspect before start;
-  reject the inherited web-entrypoint and root user; run to zero exit. Bind the
+  reject the inherited web-entrypoint and root user; run to zero exit. Migrations
+  in a rollback-capable release are **expand-only**: every intermediate and final
+  schema must remain readable/writable by the immediately prior approved core; a
+  contracting migration is a separate later maintenance release after the prior
+  core is removed as a rollback target. Refuse migration before execution when
+  the compatibility declaration or migration-set digest does not match. Bind the
   stopped core id, start only that exact id, wait for health; the core joins
   `d1-edge` but ingress stays stopped and the request-scope guard rejects direct
   non-Caddy traffic (no public port). For ingress: require approved
@@ -556,8 +621,10 @@ bead below:
 - **Dependencies.** D1-005a; D1-003a ingress artifact.
 - **Acceptance.** Migration container has DB-only access, no state mounts, no
   privileged mode, non-root uid, zero exit; secret canary absent from full Docker
-  inspect/config; drift stops/quarantines the unexposed core with ingress still
-  stopped.
+  inspect/config; an isolated-copy rehearsal proves both the new and immediately
+  prior approved core can boot and execute a read/write smoke after migration; an
+  incompatible/contracting migration rejects before changing the live DB; drift
+  stops/quarantines the unexposed core with ingress still stopped.
 
 #### D1-005c — Collection preload and atomic publication
 
@@ -571,13 +638,25 @@ bead below:
 - **Build.** `bootCollection.ts` + `preloadSignal.ts`; integrate D1-001/002/003/
   004 seams through the root command wrapper + `main.ts`. Require D1-005b's live
   `VerifiedD1HostExecution`; read one immutable **revision**; perform N
-  independent P6-R calls; require each candidate composition digest == that
+  independent P6-R calls. Before secret materialization or runtime creation,
+  reject a collection exceeding the approved binding/count/byte ceilings with
+  **`D1_COLLECTION_LIMIT_EXCEEDED`**; stream bundle reads under the per-bundle
+  limit and preload through a simple bounded worker loop capped by
+  `maxConcurrentPreloads` (a safety bound, not a scheduler); canonical results
+  remain sorted by binding id. Require each candidate composition digest == that
   binding's resolved/preloaded composition (sibling digests may differ). Install
   the D1-004d lazy admission hook; preload all logical bindings through the
   root-owned pending pointer/signal; wait all-ready; atomically publish the
-  additive/landing-only pointer in the stable process (preload is not an agent
-  effect — creates no admission row). Only after publication may first boot
-  revalidate + start the exact stopped ingress id from the D1-005b capability
+  durable additive/landing-only pointer, then atomically swap the stable
+  process's immutable collection and receive the exact served-revision
+  acknowledgement (preload is not an agent effect — creates no admission row).
+  The signal is only a wake-up mechanism, never authority; the fixed revision
+  root, expected prior revision, operation id, and digest are revalidated by the
+  core. Expose a local-only redacted status tuple
+  `{durableRevision,servedRevision,pendingOperation}` for root-command recovery
+  and the runbook. Candidate failure cancels/disposes every candidate-only
+  preload while leaving retained active bindings untouched. Only after
+  publication may first boot revalidate + start the exact stopped ingress id from the D1-005b capability
   (Caddyfile digest must still match) — that start is initial public
   publication. First actual agent effect: the hook takes D1-004d's fence,
   revalidates the binding is still active, commits the idempotent row before the
@@ -590,8 +669,41 @@ bead below:
 - **Dependencies.** D1-005b, D1-004d, D1-004e, P6-R.
 - **Acceptance.** A running request + reconnect survive N+1 publication in the
   same stable process with no core recreate; unused published addition rolls
-  back cleanly; a used addition rejects removal; other rotation rejects before
-  effects.
+  back cleanly; a used addition rejects removal; lost-signal/lost-ack/core-crash
+  recovery converges without dual authority; cap and cap+1 tests prove
+  deterministic rejection before effects; a failed concurrent preload leaks no
+  runtime/provider handle; other rotation rejects before effects.
+
+#### D1-006a — EU runtime-profile qualification
+
+- **Goal.** Qualify one exact EU-host runtime profile for D1's shared
+  multi-workspace topology and emit a content-addressed
+  `RuntimeIsolationEvidenceV1` consumed by D1-006.
+- **Why / workflow.** D1-006 is a priority-1 production gate, while P2's package
+  extraction merges only after priority 3 (Decision 23). Security evidence must
+  therefore be produced independently of that relocation, against the provider
+  where it currently lives, without pretending structural preflight proves
+  runtime isolation.
+- **Build.** Run the real provider on the selected EU host and record the exact
+  kernel, container-engine, runtime-binary digest/version, platform mode,
+  privilege/capability set, cgroup/network policy, uid/gid mapping, and provider
+  configuration. Probe sibling filesystem traversal, `/proc` and PID enumeration,
+  signals/ptrace, mount/device access, process escape, cross-workspace network
+  reachability, resource ceilings, teardown, and secret absence. Produce a
+  redacted evidence envelope and digest; D1 startup must reject material
+  runtime-profile drift until the proof is rerun.
+- **Do NOT / stop-signs.** No package relocation (that is P2), provider
+  abstraction, fallback to `direct`, capability self-report as authority, or
+  forced runsc approval. The spike may reject the candidate profile.
+- **Dependencies.** D1-005c may proceed independently; D1-006 consumes the
+  accepted evidence. P2 later reuses the probe suite and evidence schema.
+- **Acceptance.** Real hostile probes pass on the exact EU profile; a changed
+  runtime binary, privilege model, platform mode, or material host policy
+  invalidates the evidence; a rejected profile leaves D1-006 blocked with no
+  downgrade.
+- **Open questions.** **OWNER:** accept the evidenced privilege boundary or select
+  another profile. **ENGINEER:** choose and execute the probes; rejection is an
+  acceptable result.
 
 #### D1-006 — EU-host proof and runbook (incl. the open runsc privileged-model decision)
 
@@ -609,7 +721,16 @@ bead below:
   additive apply; N+1 continuity; exact rollback as a **new revision**;
   cross-host/workspace + sibling filesystem/process denial; secret canary;
   dedicated-VM configuration render (variant 2 — config render only, no second
-  live host required).
+  live host required). Add a distinct **offline disaster-recovery** procedure
+  (separate from revision rollback): stop new ingress, drain accepted effects,
+  quiesce the core, then capture one manifest covering external PostgreSQL,
+  `/data/workspaces`, `/data/pi-sessions` (Pi JSONL + `agent.db`), D1 host
+  state/revisions/sequence, approved-release identity, and any enabled host-owned
+  artifact-blob root. Secret values are backed up through a separate encrypted
+  operator channel; the redacted manifest contains only refs/digests. Restore
+  into an isolated network, preserving logical `d1HostId` and admission/journal
+  history, verify all digests and authorization denials, then make publication a
+  separate explicit step. Measured RPO/RTO are recorded as evidence, not a gate.
 - **THE OPEN runsc / privileged-model decision (D1-R0 §9.9, `[resolved per
   D1-R0 as OPEN]`).** D1-001…005c do **not** wait for a provider lock. But
   **D1-006 cannot claim the EU production exit** until one host-approved EU
@@ -630,7 +751,8 @@ bead below:
   - **ENGINEER decision:** the P2 EU-host provider viability spike (may reject
     the proposed provider rather than force a false parity claim); which real
     lifecycle/security probes close the lock.
-- **Dependencies.** D1-005c; one host-approved EU profile.
+- **Dependencies.** D1-005c; accepted D1-006a evidence for one exact
+  host-approved EU profile.
 - **Acceptance (D1-R0 §9, CI- or EU-host-provable).** Three bundles via three
   independent P6-R calls in one core process/revision, each its workspace
   default; three exact hostnames serve distinct bounded landings (hostname grants
@@ -645,7 +767,11 @@ bead below:
   / unavailable secret / unsatisfied requirement / partial readiness fail with
   stable codes; no secret/raw-path in any output; **the shared runtime profile
   proves sibling filesystem + process denial** (the runsc gate above); golden
-  path records wall-clock vs the 15-minute target.
+  path records wall-clock vs the 15-minute target. As DR evidence (not a gate on
+  the golden path), a real backup is restored on an isolated host: admitted
+  bindings remain admitted, membership/ownership is unchanged, revision and
+  composition digests reproduce, sessions remain readable, no DNS/ingress starts
+  during restore, and measured RPO/RTO are recorded.
 
 **Conditional P5a (narrow).** After D1-006 demonstrates a gap, add **only** what
 the D1 slice consumes: a missing secret-ref-from-env/file seam or a boot-time
@@ -655,7 +781,7 @@ P5a never selects or abstracts sandbox providers.
 
 ---
 
-### 4.2 ID1 — agent-driven identity (marketplace self-service; Hydra per D24)
+### 4.2 ID1 — public self-service promotion (Hydra per D24; not a managed-B2B gate)
 
 Phase-3-public / marketplace lane. Nine beads; **not** a cold-start or AR1
 tracer gate (the M1-backed tracer uses a pre-provisioned bearer). Selection is
@@ -674,19 +800,20 @@ no second infra pattern.
 | Bead | Goal | Build | Acceptance | Depends |
 | --- | --- | --- | --- | --- |
 | **ID1-001** | Hydra service + migrate init + Postgres | Add Hydra as one D1-compose service backed by **Postgres** (the external DB D1 already requires — **no compose DB service** `[resolved per Fable ruling 2026-07-12, owner-overridable: this supersedes the BEADS default of a dedicated Hydra Postgres service; D1-003's "no database service is created" is unaffected]`); one-shot idempotent `hydra migrate sql` init before boot; pin image digest; admin API internal-network only. | Hydra boots against Postgres; migrate job one-shot + idempotent on re-apply; admin API unreachable from outside; ~42 MB image. | D1-003 (`compose.yml`). |
-| **ID1-002** | Login/consent UI (minimal) | The two screens Hydra delegates to (authenticate, grant consent), reusing existing app auth — no parallel login stack, no new user store. | Browser completes Hydra login+consent with the existing account; accept/deny works; no new user store. | ID1-001. |
-| **ID1-003** | Auto-provision hook | On first token exchange, create account + personal workspace, idempotent by subject claim, on the same authorization path as any regular signup (no invite gate, no special class). | First connect creates account + personal workspace; **second connect is a no-op**; provisioned account is an ordinary member. | ID1-001/002. |
-| **ID1-004** | RFC 9728 metadata endpoint | Serve protected-resource-metadata from the **MCP resource server** (boring-owned; Hydra does not serve 9728 by design). | Stock MCP client discovers the auth server via boring's 9728 doc pointing at the Hydra issuer + correct resource id. | ID1-001. |
-| **ID1-005** | Resource-vs-audience validation | Validate the RFC 8707 resource indicator against token `audience` on **every** MCP request; reject cross-resource reuse; use introspection/standard middleware. | Audience-mismatch token rejected with a stable code; matching accepted; check runs on every call, not just issuance. | ID1-004. |
+| **ID1-002** | Login/consent UI (minimal) | Hydra delegates authenticate/consent to existing app auth, including the normal signup path for a new email. Account creation stays owned by existing auth — no token-endpoint hook, parallel login stack, or new user store. | Existing user and new-signup flows complete accept/deny; both yield ordinary accounts. | ID1-001. |
+| **ID1-003** | OIDC identity link + personal-workspace ensure | Store a unique `(issuer,subject)` link to the existing account; never auto-link by email. After issuer/resource/token validation, transactionally ensure the ordinary personal workspace during consent or first resource use. Concurrent retries converge; disabled/deleted principals fail closed. | Two concurrent first connects create one identity link and one personal workspace; later connects are no-ops; issuer A's `sub=x` cannot collide with issuer B; email changes do not relink. | ID1-001/002/005. |
+| **ID1-004** | RFC 9728 metadata endpoint | Serve protected-resource-metadata from the **MCP resource server** (boring-owned) using the canonical resource URI from approved exposure config, never reconstructed from `Host`/forwarded headers. | Stock client discovers the Hydra issuer + exact configured resource id; hostile Host/proxy input cannot change it. | ID1-001. |
+| **ID1-005** | Complete resource-token validation | On **every** MCP request, standard middleware/introspection validates `active`, issuer, expiry, configured RFC 8707 resource vs audience, required scope, current principal status, and current membership. | Cross-resource, wrong-issuer, expired, disabled-principal, removed-member, and insufficient-scope tokens reject before effects; matching token succeeds. | ID1-004. |
 | **ID1-006** | DCR enablement + verification | Enable Dynamic Client Registration (RFC 7591) as CIMD fallback; **verify Hydra's DCR default state** (research says on; live spike found it disabled) and set deliberately; scope/bound registration. | DCR endpoint registers a client; default state verified + documented; registration bounded (not an open relay). | ID1-001. |
-| **ID1-007** | API-key issuance | Issue API keys from the same identity layer; keys map to the same regular principal + membership; no separate key ACL. | An API key authorizes the same workspace access as its OAuth token; revoking one does not affect the other; keys carry no elevated role. | ID1-003. |
+| **ID1-007** | Boring-owned API-key credentials | Issue ≥256 bits of CSPRNG entropy; reveal plaintext once; store only a keyed digest + nonsecret lookup prefix, label, principal id, created/expiry/revoked timestamps, and bounded last-used metadata. Hydra does not store or validate API keys. A key resolves to an ordinary principal, then reuses the exact resource, account-status, membership, rate, and budget admission path; no key ACL or embedded workspace id. | Raw keys never appear in DB/log/audit; rotation supports overlap; expiry/revocation is immediate; revoking one key does not revoke OAuth or sibling keys, while account disablement/membership removal denies all credentials; keys grant no elevated role. | ID1-003/005/008. |
 | **ID1-008** | **Per-workspace budget caps — BLOCKING tripwire** | Decorate `createMeteringSink` with a per-workspace hard spend cap + stable refusal code. **Must land BEFORE or WITH ID1 public exposure.** | Capped workspace refuses over-budget calls with a stable code; cap is per-workspace; reuses the metering seam (no new billing system). | governance metering seam. |
 | **ID1-009** | CIMD fetch/validation (later) | Implement Client ID Metadata Documents fetch+validate as the primary registration path, pulled in only when a stock client requires CIMD; SSRF guard / allowlist. | A CIMD client-id URL is fetched, validated, and authorizes the flow; malformed/untrusted rejected with a stable code. | ID1-004; a stock client requiring CIMD. |
 
-**Why / workflow.** A stock MCP client (ChatGPT/Cursor) OAuths against a fresh
-email, gets an auto-provisioned account + personal workspace, and drives an
-agent — the marketplace signup door. That personal workspace becomes the
-consumer's persistent journal (the fitness scenario).
+**Why / workflow.** A stock MCP client (ChatGPT/Cursor) OAuths through the
+existing signup/auth flow; boring links the validated issuer/subject and
+transactionally ensures one personal workspace, and drives an agent — the
+public self-service door. That personal workspace becomes the consumer's
+persistent journal (the fitness scenario).
 
 **Sequencing.** ID1-001..003 = boot spine; ID1-004..005 = boring-owned protocol
 conformance Hydra does not supply; **ID1-008 is a blocking gate on public
@@ -730,7 +857,10 @@ neither waits for M2, E2, T1/T2, P2, X1, or ID1.
     path (no new ACL); renders live resolution to current file state. Proof
     (§6.2 1–3): member lands on the file; deleted → provenance tombstone
     (**`AR1_SHARE_TOMBSTONED`**), not a 404; non-member → clean denial; no
-    secret/path in the URL.
+    secret/path in the URL. Unknown ids and existing ids belonging to a workspace
+    the principal cannot access produce the **same outward status/code/body** and
+    do not reveal tombstone/provenance; only an authorized member may distinguish
+    a live target from a tombstone.
   - **AR1-004** — the **first minimal MCP server-side resource** support
     (`listResources`/`readResource`) scoped to share entries, through the same
     M1/M2 server process (reuse of transport, not of resource machinery — no MCP
@@ -755,10 +885,14 @@ neither waits for M2, E2, T1/T2, P2, X1, or ID1.
   contracted agent returns artifacts across the projection boundary to a
   customer's workspace, with no live cross-workspace reference permitted.
 - **Build gate (do NOT start on "accepted" alone, spec §8 finding 5).** Lane X
-  MUST NOT be built until **(a)** the first contracted-mode **engagement** exists
-  (Guardrails AR1 — the trigger is an OWNER announcement, not an inferred event)
-  **AND (b)** a focused protocol review accepts the staged-write / atomic-rename
-  / durable redemption-state / crash-recovery protocol (§2.3.4 / §2.10).
+  MUST NOT be built until **(a)** the owner records a named design-partner
+  engagement brief that identifies distinct producer/destination workspaces and
+  requires an immutable cross-workspace deliverable (still an explicit
+  owner-recorded trigger, not an inferred event; the engagement need not already
+  be runnable — this removes the circular "need Lane X to run the engagement that
+  authorizes Lane X" reading) **AND (b)** a focused protocol review accepts the
+  staged-write / atomic-rename / durable redemption-state / crash-recovery
+  protocol (§2.3.4 / §2.10).
 - **Design (settled in spec, ready for that review).** Mint authorizes source →
   captures complete bounded bytes → verifies digest → persists blob → only then
   issues a handle carrying an opaque blob ref/digest (never a source path).
@@ -769,7 +903,14 @@ neither waits for M2, E2, T1/T2, P2, X1, or ID1.
   staged write + atomic rename + restart recovery (finding 4). 1:1 handle↔blob
   ownership (blob dedup dropped; refcounting is a future alternative, finding 2).
   Size caps inherit M1 exactly (96 KiB final assistant text / 256 KiB Markdown /
-  384 KiB serialized); retention = 7-day default expiry + 72h GC grace;
+  384 KiB serialized). Per-artifact caps do not bound aggregate disk, so add
+  approved `maxActiveHandlesPerWorkspace`, `maxActiveBlobBytesPerWorkspace`, and
+  `maxActiveBlobBytesPerHost` limits: reserve count/declared bytes transactionally
+  before durable capture; persist the blob under an opaque exact-DAC host-owned
+  root that is never web-served; re-hash/length-check on every redemption; failed
+  capture and restart recovery release reservations idempotently; quota
+  exhaustion returns **`AR1_ARTIFACT_QUOTA_EXCEEDED`** before issuing a handle.
+  Retention = 7-day default expiry + 72h GC grace;
   `maxRedemptions` defaults to 1 with `open-authenticated` + unbounded deferred
   (§2.12 owner ratification). Boundary codes map to M1's real
   `MCP_AGENT_ARTIFACT_INVALID` / `_TOO_LARGE` / `_UNAVAILABLE` (finding 3;
@@ -777,8 +918,10 @@ neither waits for M2, E2, T1/T2, P2, X1, or ID1.
   arbitrary caller URL, follows redirects, or accepts a path — accept only the
   platform's canonical signed handle.
 - **Do NOT / stop-signs.** No live cross-workspace reference; no background GC
-  reconciler/daemon; no second MCP runtime owner; no generic attachment
-  registry; no capability secret in any URL; no workspace path in any
+  reconciler/daemon (GC is one bounded idempotent root/operator command,
+  optionally invoked by an external systemd timer/cron, never an
+  application-owned scheduler); no second MCP runtime owner; no generic
+  attachment registry; no capability secret in any URL; no workspace path in any
   handle/link/audit.
 - **Acceptance (§6.1, the AR1 exit).** Handle carries no path/secret; source
   edit/delete after issuance does not change redemption (byte-identical to pinned
@@ -789,12 +932,16 @@ neither waits for M2, E2, T1/T2, P2, X1, or ID1.
   lands on the local copy, non-member denied, deleted copy → provenance
   tombstone; a machine consumer reads the copy via MCP resource; revoke/expiry
   durable across restart; blob GC after expiry does not affect an
-  already-materialized copy; the two concurrency ACs (6.1.11 `maxRedemptions`
-  across two destinations → exactly one succeeds; 6.1.12 revoke-vs-redeem → one
-  clean outcome).
+  already-materialized copy; cap and cap+1 races cannot exceed workspace/host
+  active-byte limits; a crash during reservation/capture leaves neither leaked
+  quota nor an unaccounted blob; the bounded sweep removes eligible/orphaned
+  blobs without touching active reservations; the two concurrency ACs (6.1.11
+  `maxRedemptions` across two destinations → exactly one succeeds; 6.1.12
+  revoke-vs-redeem → one clean outcome).
 - **Open questions.**
-  - **OWNER:** announce the first contracted-mode engagement that unblocks Lane X
-    build. (This is the gate trigger.)
+  - **OWNER:** record the first qualifying design-partner brief (distinct
+    producer/destination workspaces + immutable deliverable). This unblocks Lane X
+    without presupposing that contracted mode already runs.
 
 **AR1 whole-workpackage exit** = Lane X §6.1 holds (the cross-workspace pinned
 copy). Lane W dispatching now delays Lane X's *build*, not the exit.
@@ -803,14 +950,44 @@ copy). Lane W dispatching now delays Lane X's *build*, not the exit.
 
 ### 4.4 AC1 — agent consumption contract (issue #636; the AC1-D micro-spec block)
 
-Implements Decision 22 in code. AC1-T (types) landed #657. The near-term body is
-**AC1-D**, which is **blocked on a micro-spec** (the honest open item).
+Implements Decision 22 in code. AC1-T (types) landed #657, but one corrective
+types slice must land before any dispatcher or external binding (repo-verified:
+the landed `ArtifactRef` carries a generic `uri: string` and `AgentTask` pins
+`schemaVersion: '1'`):
+
+- **AC1-T2 — typed artifact authority.**
+  - Replace generic internal `ArtifactRef.uri` authority with a discriminated
+    `ArtifactLocator` containing only platform-owned opaque ids, media metadata,
+    and a required digest where bytes are immutable. V1 supports only the concrete
+    locators actually owned by AR1; **do not add a generic URL variant.**
+  - A destination-local `WorkspaceFileLink` is resolved to an HTTP deep link or
+    MCP resource only by the authorized edge adapter. An `ArtifactTransferHandle`
+    is a separate typed part carried in protocol data, never embedded in a URL or
+    dereferenced as an arbitrary URI.
+  - Since the published strict task schema already calls itself version 1,
+    publish this correction as `AgentTask` schema version **2**; a compatibility
+    parser for version 1 may exist only at an edge and must reject/non-dereference
+    arbitrary schemes before translating (Decision 22 permits schema versioning
+    once external bindings exist — M2 is the first).
+  - **Acceptance.** `file:`, `http(s):`, absolute paths, workspace-relative paths,
+    and unknown locator kinds fail before storage/network effects; UI, HTTP, and
+    MCP render the same authorized locator without exposing its server-internal
+    path.
+
+The near-term implementation body is **AC1-D**, which remains blocked on its
+micro-spec and AC1-T2 (the honest open item).
 
 - **AC1-D — in-process subagent dispatcher.**
   - **Goal.** An in-process dispatcher for **subagent** mode reusing pi session
-    machinery for the loop and (if durability is needed) T1's event store. Guards
-    REQUIRED: consumption depth limit, same-pair cycle refusal, `input-required`
-    timeout → canceled (resumable context).
+    machinery for the loop and a **durable** task-state seam (a 24h
+    `input-required` deadline cannot survive a deploy/crash on an in-memory timer;
+    the T1 landed event-store foundation is the reuse-first candidate — the
+    micro-spec settles whether it reuses the full `AgentEvent` envelope or a
+    narrow dedicated task-state table). Guards REQUIRED: consumption depth limit,
+    refusal of any repeated resolved agent in the **full invocation ancestry**
+    (A→B→C→A, not just the immediate pair), and durable
+    `input-required` deadline/correlation state with timeout → terminal `canceled`
+    (the context is reusable only by a new task).
   - **Why / workflow.** Agent A delegates to subagent B in A's workspace; B asks
     back via `input-required`; A answers; the task completes with artifacts — the
     native two-way in-process binding (no MCP loopback, no serialization).
@@ -818,7 +995,13 @@ Implements Decision 22 in code. AC1-T (types) landed #657. The near-term body is
     NOT be dispatched until an accepted micro-spec settles: **(1)** the
     dispatcher API surface; **(2)** task ↔ pi-session ownership/mapping;
     **(3)** `input-required` response correlation; **(4)** restart/timeout
-    persistence — **decide: T1 event store YES/NO** (the load-bearing unknown);
+    persistence through a narrow **durable task-state slice** (authoritative task
+    state, pending input request, response receipt, and event append committed in
+    one SQLite transaction) — the persistence *question* is resolved toward
+    durable because a 24h deadline demands it; the reuse-first candidate is T1's
+    landed event-store foundation and the spec settles only whether it reuses the
+    full `AgentEvent` envelope or a narrow dedicated task-state table (in-memory
+    is not an option for deployed hosts);
     **(5)** audit events (principal = originating user/workspace; acting agent
     recorded as **actor**); **(6)** stable public error codes; **(7)** target
     files; **(8)** the proof matrix.
@@ -826,27 +1009,66 @@ Implements Decision 22 in code. AC1-T (types) landed #657. The near-term body is
     consumers may tighten): **consumption depth = 3**; **input-required timeout =
     24h → canceled** (resumable context). `[resolved per AC1 PLAN: concrete
     numbers live here, not in Guardrails]`.
+  - **Build.** Store an absolute deadline and stable `inputRequestId`; answer
+    idempotency is keyed by `(taskId,inputRequestId,responseId)`. A bounded boot
+    recovery scan and every read/answer evaluate expired deadlines — no background
+    scheduler is required. Deployed hosts require the file-backed store under
+    `BORING_AGENT_SESSION_ROOT`; in-memory storage is explicit local-dev/test
+    only. Check depth and full-chain cycle guards before session allocation,
+    projection, metering, or agent effect.
   - **Do NOT / stop-signs.** No task queue/broker; no `TaskScheduler`; no state
     machine library; no retry policies; no A2A wire transport; no persistence
-    beyond existing stores; **contracted mode not built here** (see AC1-M).
-  - **Dependencies.** AC1-T (landed); pi session machinery; optionally T1 (the
-    spec decides); P1/P6-R behavior (bind targets, not owners).
+    system beyond the existing event-store SQLite unit; **contracted mode not
+    built here** (see AC1-M).
+  - **Dependencies.** AC1-T (landed) + AC1-T2; pi session machinery; the narrow
+    T1-AC1 task-state slice (not full T1 transport); P1/P6-R behavior (bind
+    targets, not owners).
   - **Acceptance.** A delegates to B in A's workspace; B asks back; A answers;
-    task completes with artifacts; exceeding the ratified depth is refused with a
-    stable code.
+    task completes with artifacts; A→B→C→A and depth overflow reject before target
+    effects; kill/restart during `input-required` preserves one answerable request
+    and deadline; duplicate answers converge; timeout commits one terminal
+    cancellation and cannot resurrect the task.
   - **Open questions.**
-    - **ENGINEER (in the micro-spec):** T1 event store YES/NO for
-      restart/timeout persistence; task↔pi-session mapping; error taxonomy.
+    - **ENGINEER (in the micro-spec):** which durable seam shape (T1 `AgentEvent`
+      envelope vs dedicated task-state table); task↔pi-session mapping; error
+      taxonomy.
     - **OWNER:** whether to tighten depth/timeout defaults for the first
       consumer.
 
 - **AC1-M — consumption modes** (deferred). Workspace-binding parameter in
   `AgentDefinition` (subagent = caller workspace). Contracted mode = a **layered
-  decorator over the same pipeline, never a fork** (Decision 22) — **gated behind
-  ID1**, not built before a real contracting consumer exists.
+  decorator over the same pipeline, never a fork** (Decision 22). It is gated by
+  an accepted AC1-D pipeline plus the named managed-B2B engagement brief, **not
+  by ID1** — contracted execution needs an authenticated principal, membership, a
+  workspace-binding parameter, governed projection, and metering, none of which
+  requires Hydra or public signup (M1 already proves a pre-provisioned bearer
+  flow). Managed deployments use existing regular principals and membership.
+  Public/self-service contracted exposure remains gated by ID1-008, request/rate
+  admission, and the AC1-H data-hygiene policy.
+  - **Dependencies.** AC1-D + AC1-H + a named managed-B2B engagement. ID1 is
+    required only for public self-service exposure.
 - **AC1-P — governed-projection brief** (deferred with AC1-M). Generalize
   governance `filesystemBindings` readonly projection (today hardcoded to
   `company_context`) to arbitrary source workspaces.
+- **AC1-H — contractor engagement data boundary** (must precede AC1-M for an
+  external customer; sequenced with the contracting work, not built early).
+  - **Goal.** Prevent customer A's projected inputs, scratch work, sessions, and
+    artifacts from becoming readable in customer B's engagement while allowing the
+    contractor to retain explicitly approved global knowledge.
+  - **Build.** Reuse governance filesystem bindings to compose three explicit
+    scopes: contractor-global assets, the caller's readonly projection, and one
+    engagement-local writable scratch namespace. Pi sessions, tool state, and
+    artifact provenance carry `engagementId`. Other engagement namespaces are
+    absent from resolution, not merely hidden by UI. Promotion from engagement
+    scratch to contractor-global state is an explicit principal-approved action
+    with provenance and a retention decision.
+  - **Do NOT / stop-signs.** No new workspace type, live cross-workspace grant,
+    vector-memory platform, policy DSL, or automatic "learning" promotion.
+  - **Acceptance.** Seed a unique canary through customer A's projection, scratch,
+    session, and artifact paths; customer B cannot discover it through files,
+    tools, session recovery, logs, or artifact listing. Explicit approved
+    promotion is visible to both provenance and audit.
+  - **Dependencies.** AC1-D pipeline; existing governance projection seam.
 
 **Layering constraint (Decision 22, load-bearing).** Subagent and contracted are
 layers over ONE pipeline: workspace-binding parameter + governance projection +
@@ -865,35 +1087,57 @@ E1, or a control plane.]`
 #### M2 — canonical MCP agent surface
 
 - **Goal.** Recut the **smallest canonical MCP surface** that exposes a boring
-  agent as a first-class per-agent MCP endpoint, mounted from host/deployment
-  exposure config, delegating to an immutable `ResolvedAgent` via the same public
-  agent contract as every other surface — consuming M1 ingress + AR1
-  destination-local artifact contract.
-- **Why / workflow.** A stock MCP client connects to a per-agent endpoint by
-  `agentId` and drives it — the "consumer contracts an agent from their own
-  ChatGPT" scenario (ingress dual of E2: M2 exposes an agent, E2 an environment).
+  agent as a first-class MCP exposure addressed by a host-owned opaque
+  `exposureId` (`agentId` is descriptive metadata, never routing authority),
+  mounted from host/deployment exposure config, delegating to an immutable
+  `ResolvedAgent` via the same public agent contract as every other surface and
+  projecting AC1 `AgentTask` schema version 2 — never inventing an MCP-specific
+  lifecycle — consuming M1 ingress + AR1 destination-local artifact contract.
+- **Why / workflow.** A stock MCP client connects to a per-agent exposure by its
+  canonical exposure URL and drives it — the "consumer contracts an agent from
+  their own ChatGPT" scenario (ingress dual of E2: M2 exposes an agent, E2 an
+  environment).
 - **Build.** Per-agent MCP mount from `AgentDeployment` + host-owned
   `McpAgentExposureConfig` bound to a `ResolvedAgent`; auth modes `bearer` +
   `public-demo`; `demoPolicy`/`exposureId`/URL shape carried only by
-  deployment/host config; reuse M1's caller-stable subject-scoped idempotency,
+  deployment/host config. The route accepts **no caller `agentId`,
+  `deploymentId`, or workspace selector**; exact host + `exposureId` maps to one
+  immutable resolved deployment, intersected with D1 trusted scope. Public-demo
+  issues a short-lived exposure-scoped demo principal/session and enforces
+  approved request, concurrency, token/spend, and wall-time ceilings plus a host
+  kill switch **before model effects**; global exhaustion fails closed even when
+  per-session limits remain. Advertise the literal external contract identity
+  `boring.agent-consumption/v2`, reject unsupported versions with a stable code,
+  and map submit/status/cancel/input-response/artifact operations to the same
+  AC1 transition validators. Reuse M1's caller-stable subject-scoped idempotency,
   dedupe-before-quota, and explicit byte budgets (input/progress/poll/final/
-  artifact/aggregate). Amendment 2026-07-08: `demoPolicy`/`exposureId` must also
-  be reusable as the future **D2 per-tenant subdomain trial gate**.
+  artifact/aggregate), keying idempotency by trusted principal + exposure +
+  contract version + request id and persisting the canonical payload digest so a
+  reused key with a different payload/version conflicts. Reuse one set of golden
+  task fixtures for MCP and the future HTTP/CLI/native bindings. Amendment
+  2026-07-08: `demoPolicy`/`exposureId` must also be reusable as the future **D2
+  per-tenant subdomain trial gate**.
 - **Do NOT / stop-signs.** Exposure is **NOT agent behavior** — absent from
   `AgentDefinition` (host/deployment authority; this is the Architecture review
   card's explicit stop-sign); never expose raw environment tools unless the
   definition + resolved facts grant them; public-demo uses a host-issued demo
   principal, never an unscoped global key; result URLs expose no absolute paths,
   raw roots, or secrets; no hardcoded production demo verticals outside fixtures.
-- **Dependencies.** M1 (ingress) + AR1 (artifact contract) — hard; P6 canonical
-  definition/deployment. **D1 does not depend on M2.**
-- **Acceptance.** Stock MCP client connects by `agentId`; bearer requires valid
-  tenant/workspace authority; public-demo obeys `demoPolicy`; delegation creates
-  sessions through the public transport + streams/replays; a lost-response retry
-  under a new protocol request id returns the **original** delegation with every
-  payload class bounded; result payloads = final text + safe artifact/share URLs
-  only; behavior derives from `ResolvedAgent`, exposure from validated
-  `AgentDeployment`/`McpAgentExposureConfig`.
+- **Dependencies.** M1 ingress + AR1 artifact contract + AC1-T2 versioned task
+  contract — hard; AC1-D native dispatch is **not** required for an edge binding;
+  P6 canonical definition/deployment. **D1 does not depend on M2.**
+- **Acceptance.** Stock MCP client connects by canonical exposure URL;
+  guessing/submitting an `agentId` cannot select a target; bearer requires valid
+  tenant/workspace authority; public-demo obeys `demoPolicy` and
+  cap+1/concurrency/kill-switch tests prove no uncapped model effect; delegation
+  creates sessions through the public transport + streams/replays; a lost-response
+  retry under a new protocol request id returns the **original** delegation with
+  every payload class bounded; MCP lifecycle traces validate byte-for-byte against
+  the shared AC1 v2 golden fixtures and unsupported versions/conflicting
+  idempotency payloads reject before agent effects; internal result payloads =
+  final text + typed artifact locators (only the MCP edge renders authorized safe
+  share URLs/resources); behavior derives from `ResolvedAgent`, exposure from
+  validated `AgentDeployment`/`McpAgentExposureConfig`.
 - **Open questions.**
   - **ENGINEER:** recut sizing against INDEX (how much of the superseded registry
     design survives — target: the minimum canonical surface).
@@ -957,8 +1201,19 @@ legacy pi-chat `?cursor=` NDJSON route it will supersede.]`
   admission scope + `requestId`; `agent.stream(sessionId,{startIndex})`
   replay-from-offset + live tail; DS-compliant `GET`/`HEAD` SSE + long-poll
   routes; `needsApproval` + request event + pending row in one transition +
-  `resolveInput()`. Production hosts open/migrate one file-backed `agent.db` and
-  inject it as a required owned unit.
+  `resolveInput()`. Production hosts open/migrate exactly one file-backed
+  `agent.db` under `BORING_AGENT_SESSION_ROOT` and inject it as a required owned
+  unit. Assert the D1 single-core writer topology; a second writer process fails
+  startup. Pin and test SQLite WAL, busy-timeout, foreign-key, and durability
+  settings. Enforce per-event, per-session, per-workspace, and host active-byte
+  ceilings; reserve disk headroom for failure/terminal events and refuse new
+  turns before the low-watermark is crossed. Live fan-out has a bounded subscriber
+  buffer; slow consumers disconnect and replay from their durable offset rather
+  than growing process memory. Define a versioned retention policy before public
+  dispatch: a bounded operator command may prune only whole terminal sessions
+  after their retention window, and a request for a pruned offset returns stable
+  **`AGENT_EVENT_OFFSET_EXPIRED`** with the earliest available offset/session
+  status — never a silent replay gap.
 - **Do NOT / stop-signs.** T1 route hosts REJECT missing/in-memory storage
   (in-memory only for explicit transport-less headless/dev); access/caches use
   trusted structured session scope, NOT UUID uniqueness as authorization; across
@@ -966,7 +1221,9 @@ legacy pi-chat `?cursor=` NDJSON route it will supersede.]`
   `recovery`/`expiry`/durable continuation; a request event cannot exist without
   an answerable/expired pending record; legacy `?cursor=` route stays only until
   the T2 cutover; Pi JSONL remains the conversation-state compatibility authority
-  with an explicit reconciler/terminal-failure rule.
+  with an explicit reconciler/terminal-failure rule; no automatic vacuum/retention
+  daemon, unbounded subscriber queue, or continued model admission after
+  durable-event capacity is unavailable.
 - **Dependencies.** P1 seams (`createAgent.ts`, `shared/events.ts` must exist —
   T1 extends, does not fork); Node `node:sqlite` preflight; a named
   durable-contract consumer to trigger dispatch (CH1/T2).
@@ -974,7 +1231,10 @@ legacy pi-chat `?cursor=` NDJSON route it will supersede.]`
   client answers an approval; standalone `createAgentApp()` + CLI/core/workspace/
   full-app restart prove file-backed recovery; restart leaves no unanswerable or
   silently-resumed request; JSONL/event divergence reconciled or represented by
-  explicit durable terminal state.
+  explicit durable terminal state; concurrent-stream and 24h soak tests stay
+  within bounded memory; disk-full/low-watermark tests preserve terminal-event
+  headroom and start no unrecordable turn; slow-subscriber tests reconnect without
+  loss; prune tests return an explicit expired-offset boundary.
 - **Open questions.** **ENGINEER:** restart recovery policy (expire/cancel vs
   named recovery) within the "no transparent resume" rule.
 
@@ -1054,8 +1314,9 @@ the trigger, the shape, and who decides.
   (resolves the ID1-008 tripwire — see the ownership open question in §4.2).
   **Do NOT:** fork the billing path; ship public contracted-mode exposure without
   the workspace budget (hard gate — open signup + no budget = unbounded spend).
-- **Dependencies.** AC1 contracted mode (the invocation shape BL1 bills); ID1
-  (the identity layer invoices attach to + the budget tripwire it resolves).
+- **Dependencies.** AC1 contracted mode (the invocation shape BL1 bills). Public
+  billing additionally depends on ID1, but managed B2B contracting itself does not
+  wait for public identity or merchant-of-record work.
 - **Acceptance (exit prose).** Contracted agent has a pricing ref; completing an
   engagement/task produces an invoice traceable to metered usage; the payout
   ledger reflects it; workspace spend budgets enforced before any public
@@ -1144,13 +1405,26 @@ the trigger, the shape, and who decides.
   (gVisor-portable); per-session lifecycle (own process/VFS cache/scoped
   creds/isolated teardown; readiness via `/proc/self/mountinfo` + stat/readdir
   probe; lazy-unmount + reap; `ENOTCONN`/`ESTALE` remount vs transient `EIO`
-  retry); capability fact `mounts.fuseS3: reported|unknown` (fail closed;
+  retry). Define **`S3MountConsistencyV1`**: readonly mounts may share a prefix;
+  readwrite mounts require a single-writer lease per `(endpoint,bucket,prefix)` on
+  one host, and multi-host readwrite is rejected until a named consumer supplies a
+  real distributed lease. Expose observed facts for read-after-write, atomic
+  rename, advisory locking, and durable flush rather than implying POSIX support.
+  A successful close/teardown waits for bounded VFS write-back and verifies the
+  backend object length/digest; timeout returns a stable failure and preserves the
+  protected cache for recovery rather than claiming success. Cap cache
+  bytes/inodes; keep it root-owned/exact-DAC; disable `allow_other` unless the
+  selected uid-mapping profile explicitly proves it safe. Capability fact
+  `mounts.fuseS3: reported|unknown` (fail closed;
   `vercel` reports unsupported); short-lived prefix-scoped STS injected into the
   mount-process env only; reuse the P2-moved bwrap arg builder, not a fork.
 - **Do NOT / stop-signs.** Never expose `/dev/fuse`/`fusermount3`/creds to the
   sandbox (the sandbox gets a directory handle, never a secret — invariant 14);
   mounts scoped to the `user` filesystem only (governed `company_context` NEVER
-  raw-mounted); no generic driver interface until a second real mount lands;
+  raw-mounted); no generic driver interface until a second real mount lands; no
+  concurrent readwrite mounts of one prefix, silent last-writer-wins claim,
+  teardown-before-flush success, or assertion that object storage supplies local
+  POSIX rename/locking semantics;
   mountpoint-s3 + fuse-overlayfs variants deferred (never kernel overlayfs over
   FUSE); no US-hosted default (invariant 15). The 2026-07-05 benchmark
   (`~/projects/x1-bench/report.md`) is **PROVISIONAL** — BBX1-007 must re-verify
@@ -1165,7 +1439,11 @@ the trigger, the shape, and who decides.
   inside the sandbox; EU-endpoint matrix (MinIO in CI) green, no US-hosted
   default; `mounts.fuseS3: unknown`/`vercel` fail closed; `bench:mounts`
   publishes corrected raw results + methodology (numeric thresholds binding only
-  in a reviewed follow-up after the flawed baseline reruns).
+  in a reviewed follow-up after the flawed baseline reruns), including
+  close-to-backend-visible latency, flush failure/recovery, cache saturation, and
+  competing-writer rejection; a successful teardown is followed by a backend-side
+  length/digest verification, and an injected upload failure cannot report
+  success.
 - **Open questions.** **ENGINEER:** numeric perf thresholds (blocked on the
   corrected benchmark). **OWNER:** the named native-mount consumer trigger
   (demand-gated).
@@ -1187,15 +1465,17 @@ PRIORITY 1 / v1 (phase 2 — factory host):
                                                D1-004c3 → c4 → c5
                                                → D1-004d → D1-004e
                                                → D1-005a → D1-005b → D1-005c
-                                               → D1-006  [runsc lock: OPEN]
+                                               → D1-006a [profile qualification]
+                                               → D1-006  [owner acceptance: OPEN]
                                                (+conditional narrow P5a)
         A1-dev recut ──────────────────────────────────────────────────> P8 (dev journey)
 
-PRIORITY 2 (phase 3 — external consumption / marketplace MVP):
-  M1 (LANDED #650) ─> AR1 Lane W (AR1-002/003/004, DISPATCH NOW)
-                   ─> M2 recut ─> E2 recut (zero-code allowed)
-  [public promotion later adds: ID1-001..008 + AC1-D + AC1-M/AC1-P(gated)]
-  AR1 Lane X: BUILD-GATED on first contracted-mode engagement + protocol review
+PRIORITY 2 (phase 3 — managed B2B external delivery):
+  Phase 3A: M1 (LANDED #650) ─> AR1 Lane W (AR1-002/003/004, DISPATCH NOW)
+                             ─> M2 recut ─> E2 recut (zero-code allowed)
+  Phase 3B (named design partner): AC1-D (after AC1-D-SPEC + AC1-T2)
+                             ─> AC1-M / AC1-P / AC1-H + AR1 Lane X
+  [public self-service later adds ID1-001..008 + public abuse controls]
 
 PRIORITY 3 (phase 5 spine):
   M2/E2 proof ─> T1 completion ─> T2
@@ -1218,12 +1498,16 @@ DEFERRED LEAVES (documented, undispatched):
 3. **D1-004c5** (managed-agent MCP configured-target admission).
 4. **D1-004d** (durable admission ledger) → **D1-004e** (rollback fence).
 5. **D1-005a** → **D1-005b** → **D1-005c** (approve → attest → publish).
-6. **D1-006** (EU-host proof + runbook) — blocked on the runsc privileged-model
-   decision for the *EU production exit only*; 001–005c do not wait.
+6. **D1-006a** qualifies one exact EU runtime profile without performing P2's
+   package extraction; then **D1-006** (EU-host proof + runbook) runs, blocked on
+   the runsc privileged-model owner decision for the *EU production exit only*.
+   D1-001–005c do not wait for either bead.
 7. In parallel (priority-2 lane, safe now): **AR1-002/003/004** (Lane W).
 8. After M1/AR1 stabilize: **M2 recut** → **E2 recut**.
-9. ID1-001..008 + AC1-D (after the AC1-D-SPEC lands) when phase 3 public
-   promotion opens; **ID1-008 blocks public exposure.**
+9. Phase 3B (managed B2B contracting, on a named design-partner brief): AC1-T2
+   then **AC1-D** (after AC1-D-SPEC) → AC1-H → AC1-M/AC1-P + AR1 Lane X. ID1 is
+   NOT a gate here. Public self-service promotion later: ID1-001..008 + public
+   abuse controls; **ID1-008 blocks public exposure.**
 10. T1 completion → T2 (priority 3); then P2 (#641, merges last) → X1.
 
 **Cross-lane rules.** D1 does not wait for M2/P2/X1. M2/E2 do not wait for
@@ -1236,20 +1520,20 @@ rebases. Lane X and all demand-gated WPs need an explicit owner trigger.
 
 | # | Risk | Owner-relevant tripwire / mitigation | Source |
 | --- | --- | --- | --- |
-| R1 | **runsc production lock (D1-006)** — the shared EU host must prove sibling filesystem + process denial; the privileged execution model is undecided. | D1-001..005c proceed; D1-006 EU exit blocks until an approved EU profile supplies real lifecycle/security evidence, OR the owner approves the privileged model. A plan cannot self-assert isolation; trusted-`direct` is never valid for the shared host. | D1-R0 §9.9 |
+| R1 | **runsc production lock (D1-006)** — the shared EU host must prove sibling filesystem + process denial; the privileged execution model is undecided. | D1-001..005c proceed; D1-006a produces the content-addressed `RuntimeIsolationEvidenceV1` (no P2 extraction), and the D1-006 EU exit blocks until that evidence exists, OR the owner approves the privileged model. A plan cannot self-assert isolation; trusted-`direct` is never valid for the shared host. | D1-R0 §9.9 |
 | R2 | **Unbounded spend the day ID1 opens** — open signup + operator-funded keys + no budget. | **ID1-008 per-workspace budget cap is BLOCKING**: lands before/with any public exposure. Decorate `createMeteringSink`; a hard cap + stable refusal code suffices — no billing system. | Guardrails ID1 tripwire |
-| R3 | **Public exposure abuse** beyond spend (budget caps alone do not stop abuse). | Public exposure additionally requires **authenticated per-principal request/rate admission controls at the door**. | Guardrails vertical-GTM |
-| R4 | **Contractor data hygiene** — a persistent contractor workspace mixes customer A's learnings into work for B. | Known-unknown; **policy required when external contracting opens** (trigger: third parties contracting). Do not build early. | Decision 22 |
+| R3 | **Public exposure abuse** beyond spend. | Every bearer exposure requires per-principal request/rate admission. `public-demo` additionally requires short-lived exposure-scoped principals, global + per-session request/concurrency/token/spend caps, and an operator kill switch before any model effect. | Guardrails vertical-GTM / M2 |
+| R4 | **Contractor data hygiene** — a persistent contractor workspace can mix customer A's state into work for B. | AC1-H is the first contracting bead (before AC1-M writes durable state): readonly caller projection, engagement-local scratch/session scope, deny-by-absence across engagements, explicit approved promotion into contractor-global state. Still owner-triggered when contracting opens; not built early. | Decision 22 / AC1-H |
 | R5 | **Workspace-budget ownership ambiguity** — both ID1-008 and BL1 claim "workspace spend budgets." | Resolve which WP owns the durable cap before ID1 public exposure; the ID1-008 hard cap must exist regardless of BL1's schedule. | §4.2 / §4.7 |
 | R6 | **Stacked-PR merge trap** — a MERGED label on a stale base ≠ on main. | Every status cites `git merge-base --is-ancestor <sha> origin/main`; retarget stacked PRs to main the moment their base merges; verify mergeCommit ancestry. | INDEX footnote / OWNER-REVIEW |
 | R7 | **Over-engineering under a departed strategic holder** — schedulers, registries, managers, config DSLs. | The universal stop sign (Guardrails §6); the thermo review rule; "ship the dumb version." | Guardrails |
 | R8 | **Lane X built on "accepted"** — a dispatcher reads AR1-001 "accepted" and starts the cross-workspace blob lane. | Lane X is DOUBLE-gated: first contracted-mode engagement (owner announcement) AND a focused protocol review of the staged-write/recovery protocol. "Accepted" ≠ "build now." | AR1-001 §8 |
 | R9 | **AC1-D built without its micro-spec** — dispatcher API/session-mapping/persistence undecided (esp. T1 YES/NO). | AC1-D is NOT dispatchable until AC1-D-SPEC is accepted. | AC1 PLAN |
-| R10 | **Secret/path leakage in D1 outputs** — the vault claim. | No secret value / raw path in git, JSON, Compose render, logs, errors, audit; secret canary in the D1 proof; roots are durable siblings, not container home/root. Backup/restore covers workspace volumes + session root + `agent.db` + revision store + config refs (the whole vault, not just volumes). | D1-R0 §9.8 / Guardrails ops |
+| R10 | **Secret/path leakage or incomplete disaster restore.** | Redacted outputs contain no secret/raw path; secret canary in the D1 proof; roots are durable siblings, not container home/root. A quiesced backup manifest covers **external PostgreSQL authorities** (auth/membership/admission/journals), workspace/session roots, `agent.db`, D1 revision/sequence state, and enabled blob state; encrypted secret backup is separate. Restore preserves `d1HostId`, admissions, membership, and digests and is proven in an isolated network before publication. | D1-R0 §9.8 / Guardrails ops |
 | R11 | **P2 false parity** — forcing a "production-ready" claim the EU host can't back. | The EU-host viability spike may reject the provider; unproved facts stay `unknown`/fail closed; P2 merges last and grows no scope. | P2 PLAN / OWNER-REVIEW |
 | R12 | **X1 benchmark regressions** — the provisional 2026-07-05 numbers are flawed. | No numeric threshold locks until BBX1-009 republishes a corrected repeatable run; readonly/backend-down semantics re-verified. | X1 PLAN |
 | R13 | **Regulated-domain launch** (insurance/accounting/legal) without sign-off. | BLOCKING: disclaimers in the agent definition, human-in-loop default for advice-shaped outputs, an owner regulatory-exposure review recorded in DECISIONS.md; a versioned legal/risk sign-off doc kept outside DECISIONS.md. | Guardrails vertical-GTM |
-| R14 | **Ops/upgrade gaps while tenant workspaces are live.** | Paper-first: backup/restore runbook executed for real on a schedule; a support playbook (log locations, event-store query one-liners, per-agent restart, compose rollback); backward-compatible migrations + upgrade/rollback runbook. No dashboards (P8 guardrail). | Guardrails ops |
+| R14 | **Ops/upgrade gaps while tenant workspaces are live.** | Approved releases carry a schema-compatibility envelope; rollback-capable releases are **expand-only** and rehearse the prior core against the migrated schema. Contracting migrations wait until the prior release leaves the rollback window. Keep the backup/restore + support runbooks (log locations, event-store query one-liners, per-agent restart, compose rollback); no dashboard (P8 guardrail). | Guardrails ops |
 | R15 | **INDEX status drift** — INDEX text lags the daily D1 merges (reads "c1 ACTIVE" while c1/c2 landed). | Re-verify the freshest D1 landed bead via gh/git ancestry before each dispatch; INDEX has one writer (owner/orchestrator). | §"Freshness" / INDEX plan-write rule |
 
 ---
@@ -1309,3 +1593,94 @@ are review cards, so the owner's 4 product priorities were `[resolved per INDEX
 `work/AC1-agent-consumption-contract/PLAN`; `work/ID1-agent-identity/{BEADS,PLAN}`;
 `work/{M2,E2,T1,T2,CH1,BL1,MK1,P2,X1}/PLAN`. Landed set ancestry-verified against
 `origin/main` (HEAD `26bd895a9`, #705) on 2026-07-13.
+
+---
+
+## Review round log
+
+Accumulates across adversarial review rounds; feeds the final arbiter. Each
+round: what the integrator applied wholeheartedly, applied with a trim, rejected
+(with reason), or escalated to the owner.
+
+### R1 (Sol / gpt-5.6-sol) — 17 applied, 2 somewhat, 0 rejected, 0 escalated
+
+**Applied wholeheartedly (17):**
+
+1. **D1-006a EU runtime-profile qualification bead** — extracts the isolation
+   evidence (`RuntimeIsolationEvidenceV1`) into a dispatchable predecessor of
+   D1-006 without doing P2's package extraction; adds fail-closed-on-drift.
+2. **Crash-recoverable publication/rollback commit protocol** — durable
+   `prepared` journal event is an admission fence even if the session lock dies;
+   served-revision acknowledgement + recovery tuple; no reconciler daemon.
+3. **Admission rows bound to `executionIdentityDigest`** + honest
+   commit-before-effect "effect may have started" semantics; `D1_ADMISSION_
+   IDENTITY_MISMATCH`; no false-positive cleanup.
+4. **Separate redaction from integrity** in the approved-release env schema —
+   fixed-exact vs canonical-digest-only; `redacted` is output-only.
+5. **Collection-capacity + bounded-preload policy** (`collectionPolicy`,
+   `D1_COLLECTION_LIMIT_EXCEEDED`, bounded worker loop — a bound, not a scheduler).
+6. **DB-schema compatibility in release approval** — expand-only rule +
+   prior-core rehearsal; rewrites R14.
+7. **Real disaster-recovery proof covering external PostgreSQL** + all authority
+   roots; rewrites R10 (PostgreSQL was missing from the vault list).
+8. **Reframe phase 3 as managed B2B external delivery (3A/3B)**, not a
+   marketplace MVP; ID1 becomes public self-service promotion. (Graph line adapted
+   so AC1-D stays gated by its micro-spec, not by the design partner.)
+9. **Remove ID1 as a prerequisite for managed contracted mode** + eliminate the
+   Lane X trigger cycle (owner-recorded design-partner brief with distinct
+   producer/destination workspaces).
+12. **Remove generic artifact URIs (AC1-T2 typed `ArtifactLocator`)** —
+    repo-verified: landed `ArtifactRef.uri: string` + `AgentTask schemaVersion:'1'`;
+    publish `AgentTask` v2; the cheapest correction point before any dispatcher.
+13. **M2 as an explicit versioned projection** of the one contract
+    (`boring.agent-consumption/v2`, shared golden fixtures, version-keyed idempotency).
+14. **Transactionally safe issuer/subject linking** (`(issuer,subject)`, no email
+    auto-link, canonical resource from config not `Host`, complete per-request
+    token validation) — reworks ID1-002/003/004/005.
+15. **API keys as first-class high-entropy credentials** (≥256-bit CSPRNG, hash +
+    prefix, Hydra stores nothing) — reworks ID1-007.
+16. **Host-owned `exposureId` not `agentId` as M2 routing authority** + mandatory
+    public-demo abuse controls (kill switch, global+per-session caps); rewrites R3.
+17. **Bound AR1 aggregate storage** (per-workspace/host active-byte quotas,
+    private non-web-served blob root, re-hash on redemption) + non-enumerating
+    Lane W denials (unknown/foreign ids share one outward response).
+18. **T1 single-writer/storage-budget/backpressure/retention contract**
+    (`agent.db` under session root, low-watermark refusal, bounded subscriber
+    buffer, `AGENT_EVENT_OFFSET_EXPIRED`; GC/prune as bounded operator command).
+19. **X1 `S3MountConsistencyV1`** — single-writer lease per prefix, observed
+    facts over POSIX-parity claims, teardown verifies backend length/digest.
+
+**Applied somewhat (2):**
+
+10. **Contractor data hygiene as a fundamental (AC1-H bead).** Integrated the
+    AC1-H workpackage (three governed scopes, `engagementId`, canary non-leak
+    acceptance), the AC1-M dependency, and the R4 rewrite. **Trimmed:** the
+    proposal rewrote the Decision 22 digest to convert the locked *known-unknown*
+    into a settled "pre-engagement decision" with a stated default policy — that
+    would silently change a locked decision's status. Kept the known-unknown +
+    owner-trigger framing; added a sequencing note naming AC1-H as the workpackage
+    that settles it *when contracting opens* and presenting the reuse-based default
+    as *proposed*, not decided. AC1-H is thus sequenced-with-contracting (gated by
+    the named design partner), not built early — consistent with the guardrail.
+11. **Durable `input-required` + full-chain cycle detection in AC1-D.** Integrated
+    the durability requirement (a 24h deadline cannot survive on an in-memory
+    timer), full invocation-ancestry cycle guard (A→B→C→A), durable idempotency
+    `(taskId,inputRequestId,responseId)`, and terminal-cancel-then-new-task
+    semantics. **Trimmed:** the proposal hard-committed the AC1-D-SPEC's
+    load-bearing "(4) T1 event store YES/NO" to *the T1 event store specifically*.
+    Kept the persistence answer resolved toward *durable* (forced by the 24h
+    requirement) while leaving the micro-spec to settle the exact seam shape (full
+    `AgentEvent` envelope vs a narrow dedicated task-state table) — preserving the
+    SPEC's engineering latitude rather than rubber-stamping the coupling.
+
+**Rejected (0).** No proposal contradicted a locked DECISION #21–24, an owner
+ruling, or a do-NOT-build list on its merits. The one status-changing edit (the
+Decision 22 digest rewrite inside #10) was handled by trimming rather than
+whole-proposal rejection, since its substantive core (sequence hygiene before the
+first durable write) is guardrail-consistent.
+
+**Escalated to owner (0 formal).** Flag for the arbiter: #10's default hygiene
+policy (engagement-scoped mutable + readonly caller projection) is stated as the
+*proposed* default; it reuses Decision 22's own projection mechanism, so it is a
+low-stakes owner confirmation rather than a new decision — but the owner still
+formally confirms it when contracting opens.
