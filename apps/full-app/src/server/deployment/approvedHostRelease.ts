@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto'
 import { createAgentAssetDigest, type Sha256Digest } from '@hachej/boring-agent/shared'
 
 import { D1HostError, D1HostErrorCode } from './d1Plan.js'
@@ -149,9 +150,8 @@ function snapshotBytes(value: unknown): Uint8Array {
   return copy
 }
 
-async function rawDigest(bytes: Uint8Array): Promise<Sha256Digest> {
-  const result = await globalThis.crypto.subtle.digest('SHA-256', bytes)
-  return `sha256:${Array.from(new Uint8Array(result), (byte) => byte.toString(16).padStart(2, '0')).join('')}`
+function rawDigest(bytes: Uint8Array): Sha256Digest {
+  return `sha256:${createHash('sha256').update(bytes).digest('hex')}`
 }
 
 async function migrationEvidence(journalValue: unknown, sqlValue: unknown, sourceValue: unknown): Promise<D1MigrationSetEvidenceV1> {

@@ -257,7 +257,8 @@ describe('approved release matching', () => {
     const forged = { ...evidence, migrations: [], currentEpoch: 2 }
     await expect(validateApprovedD1HostRelease(value, { ...identity, migrationEvidence: forged }))
       .rejects.toMatchObject({ details: { field: 'databaseSchemaCompatibility' } })
-    const inconsistent = structuredClone(evidence); inconsistent.migrations[0]!.sqlDigest = digest('f') as never
+    const inconsistent = { ...evidence, migrations: evidence.migrations.map((migration, index) => index === 0
+      ? { ...migration, sqlDigest: digest('f') } : migration) }
     await expect(validateApprovedD1HostRelease(value, { ...identity, migrationEvidence: inconsistent }))
       .rejects.toMatchObject({ details: { field: 'databaseSchemaCompatibility' } })
   })
