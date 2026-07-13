@@ -51,6 +51,10 @@
       mutation with `D1_MANAGED_WORKSPACE_MUTATION_FORBIDDEN`. Non-owner account
       deletion removes only that member's data/membership; editor/viewer removal,
       owner add/promotion, and generic ownership/account behavior remain available.
+- [ ] Controlled real-Postgres interleavings prove concurrent scoped owner
+      create/promotion cannot be overwritten by member add, demotion, removal,
+      or account deletion in either lock order. The member-store mutation and
+      serializable account-deletion transaction, not route reads, are authority.
 - [ ] The shared N-workspace D1 trust path proves isolated-profile sibling
       filesystem/process denial. Trusted-direct is accepted only for local
       development or a single-workspace dedicated composition, never as the

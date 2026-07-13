@@ -91,7 +91,10 @@ creation and grants no membership unless the invite names the exact bound
 workspace. A scoped foreign or invalid invite fails without default creation;
 generic invite behavior remains unchanged. The same managed-workspace guard
 blocks every existing-owner account deletion or owner-role removal outside the
-fenced D1 lifecycle, while non-owner account deletion remains available. This is workspace provisioning/lifecycle scope, not a
+fenced D1 lifecycle, while non-owner account deletion remains available. The
+current committed role is evaluated under the same workspace-store mutation
+transaction or serializable account-deletion transaction; a route pre-read is
+never ownership authority. This is workspace provisioning/lifecycle scope, not a
 second auth policy.
 
 D1 endpoint publication is ordered after the isolation surface. The staged host

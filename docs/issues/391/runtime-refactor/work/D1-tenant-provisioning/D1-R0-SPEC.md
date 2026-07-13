@@ -420,8 +420,9 @@ raw-header authority and trusted-hop scope enforcement
 ([#692](https://github.com/hachej/boring-ui/pull/692)). D1-004a4a landed the
 bounded landing/root seam ([#694](https://github.com/hachej/boring-ui/pull/694));
 D1-004a4b landed readiness and production activation
-([#695](https://github.com/hachej/boring-ui/pull/695)). D1-004b1 is active;
-D1-004b2 through D1-006 remain un-landed.
+([#695](https://github.com/hachej/boring-ui/pull/695)). D1-004b1 landed the
+workspace/signup authority fences ([#698](https://github.com/hachej/boring-ui/pull/698)).
+D1-004b2a is active; D1-004b2b through D1-006 remain un-landed.
 
 ### D1-001 — plan and composition identity (<= 400 net lines; 25 minutes)
 
@@ -527,7 +528,7 @@ from the exact trusted peer/chain against the active site map and attach
 `D1WorkspaceScope` before authentication. Reject RFC `Forwarded`, duplicate or
 ambiguous forwarded-host values, and every untrusted forwarded host; hostname
 grants nothing. Membership and workspace CRUD enforcement remain D1-004b1;
-destructive ownership and account guards remain D1-004b2.
+atomic member and account guards remain D1-004b2a/b2b.
 
 ### D1-004a4a — landing and root seam (<= 400 net lines; 25 minutes)
 
@@ -587,17 +588,39 @@ creates no default workspace; generic invalid-invite behavior remains the
 existing failure cookie plus default creation. PUT rename and generic-host
 behavior remain unchanged. No schema/store change or policy framework.
 
-### D1-004b2 — destructive ownership and account guards (<= 250 net lines; 25 minutes)
+### D1-004b2a — atomic managed-member mutations (<= 300 net lines; 30 minutes)
 
-Files: surgical updates/tests in `members.ts` and core account routes.
+Files: `packages/core/src/server/app/types.ts`; Local/Postgres workspace stores;
+`members.ts`; focused route/store/conformance tests.
 
-Deliver: on a scoped workspace, deny demotion/removal of an existing owner
-before update/removal; preserve editor/viewer removal and owner addition/
-promotion. Deny account deletion for every existing scoped owner before
-mutation, even when another owner remains; preserve non-owner account deletion
-that removes only that member's data/membership. Use only generic
-`D1_MANAGED_WORKSPACE_MUTATION_FORBIDDEN`; preserve generic-host ownership and
-account-deletion behavior. Operator lifecycle remains the local OS-authorized
+Deliver: under trusted request scope, add a member through an atomic create-if-
+absent operation, never a read-then-upsert that can overwrite a concurrently
+created owner. Scoped role update and removal pass one explicit store precondition
+evaluated under the same target-membership lock/transaction as the mutation. If
+the target's current committed role at the mutation linearization point is
+`owner`, demotion/removal returns
+`D1_MANAGED_WORKSPACE_MUTATION_FORBIDDEN` with zero mutation. Do not use a route
+pre-read as authority. Preserve owner addition/promotion, editor/viewer role
+changes/removal, and generic-host store/route behavior when the precondition is
+absent. Prove controlled PostgreSQL interleavings in both orders plus Local-store
+sequential conformance. No mutex, route SQL, schema/migration, fault hook, or
+policy framework.
+
+### D1-004b2b — atomic managed-owner account deletion guard (<= 250 net lines; 25 minutes)
+
+Files: `deleteUserCompletely.ts`, the core account route, and their focused
+transaction/route tests.
+
+Deliver: pass only the trusted scoped workspace id into `deleteUserCompletely`.
+Inside its existing serializable retry transaction and before deletion/transfer,
+lock the user and scoped membership rows, then evaluate the current committed
+role. If it is `owner`, abort with
+`D1_MANAGED_WORKSPACE_MUTATION_FORBIDDEN`; perform no user/member/workspace/ledger
+mutation and no sign-out. Preserve scoped non-owner deletion of only that
+member's data/membership and generic deletion exactly. Prove controlled owner-
+insert/promotion versus deletion interleavings in both lock orders and existing
+serializable retry behavior. No mutex, route SQL, schema/migration, or generic
+lifecycle/policy abstraction. Operator lifecycle remains the local OS-authorized
 D1 command path.
 
 ### D1-004c — remaining selector conformance (<= 400 net lines per PR; 25 minutes)

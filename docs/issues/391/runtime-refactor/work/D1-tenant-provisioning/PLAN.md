@@ -1,9 +1,9 @@
 # D1-tenant-provisioning — Plan
 
 Status: priority-1/v1 multi-agent Docker delivery gate; **D1-R0 and D1-001
-through D1-004a4b are landed and ancestry-verified**. D1-004b1 (workspace
-authority and signup fences) is the active micro-bead; D1-004b2 through D1-006
-remain ordered behind it in
+through D1-004b1 are landed and ancestry-verified**. D1-004b2a (atomic managed-
+member mutations) is the active micro-bead; D1-004b2b through D1-006 remain
+ordered behind it in
 [`D1-R0-SPEC.md`](./D1-R0-SPEC.md) and `TODO.md`. The active contract and R0
 spec supersede the historical dedicated-site design.
 
@@ -243,7 +243,9 @@ default.
 - Direct API calls cannot list, create, switch to, delete, or route agent/file/
   session traffic through another workspace from the dedicated host.
 - Account deletion and member ownership mutation cannot delete, transfer, or
-  orphan the managed workspace outside the fenced D1 lifecycle.
+  orphan the managed workspace outside the fenced D1 lifecycle. Owner status is
+  evaluated atomically inside the member mutation or serializable account-
+  deletion transaction, never by a route-level pre-read.
 - Missing, forged, stale, or replayed dedicated-site capability readiness
   produces no hostname publication and no active-pointer change.
 - The generated manifest is sufficient for deployment/review and contains no raw secrets.
