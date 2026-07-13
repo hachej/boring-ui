@@ -3,11 +3,12 @@ import type { FastifyRequest } from 'fastify'
 import type { AgentMeteringSink, RegisterAgentRoutesOptions } from '@hachej/boring-agent/server'
 import type { CoreConfig } from '@hachej/boring-core/shared'
 import type { CoreWorkspaceAgentServerPlugin } from '@hachej/boring-core/app/server'
+import { PostgresBudgetReservationStore } from '@hachej/boring-core/server'
 import { loadGovernancePolicy, type LoadGovernancePolicyOptions } from './loadPolicy.js'
-import { createGovernanceService, type GovernanceService } from './governanceService.js'
+import { createGovernanceService, type GovernanceService, type GovernanceUsageSpendReader } from './governanceService.js'
 import { governanceRoutes } from './routes.js'
 import { reconcileCompanyContextWorkspace } from './companyContextBootstrap.js'
-import { createGovernanceMeteringSink } from './metering.js'
+import { createGovernanceMeteringSink, GOVERNANCE_ELIGIBLE_LEGACY_SOURCES } from './metering.js'
 import {
   createDefaultCompanyContextRootResolver,
   createGovernanceFilesystemBindings,
@@ -15,7 +16,8 @@ import {
 } from './filesystemBindings.js'
 
 export { GovernancePolicyError, GovernanceService } from './governanceService.js'
-export type { GovernanceMeResponse, GovernancePolicyErrorCode } from './governanceService.js'
+export type { GovernanceMeResponse, GovernancePolicyErrorCode, GovernanceUsageSpendReader } from './governanceService.js'
+export type { GovernanceUsageEntry, GovernanceUsageSummary } from '../usageContract.js'
 export type {
   GovernanceLoadResult,
   GovernanceModelGrant,
@@ -71,14 +73,28 @@ function defaultAdminMutationsAllowed(options: CreateGovernanceFilesystemBinding
   return relative.startsWith('..') || path.isAbsolute(relative)
 }
 
+type BudgetDb = ReturnType<GovernanceMeteringOptions['getDb']>
+
 export async function createGovernance(config: CoreConfig): Promise<CreateGovernanceResult> {
   const service = await buildGovernanceService({ config })
+  // The database only exists after the host builds its server, so capture the
+  // metering getDb closure and reuse it to serve the read-only usage route.
+  // Any host that wires governance metering gets the usage-summary route for free.
+  let usageDb: (() => BudgetDb) | undefined
+  const getUsageReader = (): GovernanceUsageSpendReader | undefined => (
+    usageDb
+      ? new PostgresBudgetReservationStore(usageDb(), { eligibleLegacySources: GOVERNANCE_ELIGIBLE_LEGACY_SOURCES })
+      : undefined
+  )
   return {
     service,
     status: service.policyStatus(),
-    serverPlugin: createGovernanceServerPlugin(service),
+    serverPlugin: createGovernanceServerPlugin(service, { getUsageReader }),
     filterModels: createGovernanceModelFilter(service),
-    createMeteringSink: (delegate, getDb) => createGovernanceMeteringSink({ service, delegate, getDb }),
+    createMeteringSink: (delegate, getDb) => {
+      usageDb = getDb
+      return createGovernanceMeteringSink({ service, delegate, getDb })
+    },
     getFilesystemBindings: (options = {}) => createGovernanceFilesystemBindings(service, {
       ...options,
       resolveCompanyContextRoot: options.resolveCompanyContextRoot ?? createDefaultCompanyContextRootResolver(),
@@ -112,12 +128,15 @@ export function createGovernanceModelFilter(service: GovernanceService): Registe
   }
 }
 
-export function createGovernanceServerPlugin(service: GovernanceService): CoreWorkspaceAgentServerPlugin {
+export function createGovernanceServerPlugin(
+  service: GovernanceService,
+  options: { getUsageReader?: () => GovernanceUsageSpendReader | undefined } = {},
+): CoreWorkspaceAgentServerPlugin {
   return {
     id: 'full-app-governance',
     label: 'Full-app governance',
     routes: async (app) => {
-      await app.register(governanceRoutes(service))
+      await app.register(governanceRoutes(service, { getUsageReader: options.getUsageReader }))
       app.addHook('onReady', async () => {
         await reconcileCompanyContextWorkspace(app, service)
       })
