@@ -290,6 +290,198 @@ describe("workspaceBridgeHttpRoutes", () => {
     expect(capRes.json()).toMatchObject({ error: { code: WorkspaceBridgeErrorCode.CapabilityDenied } })
   })
 
+  it("asserts D1 runtime claims before registry, authorization, stores, and handlers", async () => {
+    const events: string[] = []
+    const registry = createWorkspaceBridgeRegistry({ ownerWorkspaceId: "workspace-1" })
+    registry.registerHandler(createTestBridgeOperationDefinition({
+      op: "runtime.v1.effect",
+      callerClassesAllowed: ["runtime"],
+      requiredCapabilities: ["runtime:effect"],
+    }), () => {
+      events.push("handler")
+      return { ok: true }
+    })
+    registry.registerHandler(createTestBridgeOperationDefinition({
+      op: "browser.v1.echo",
+      callerClassesAllowed: ["browser"],
+      requiredCapabilities: ["browser:echo"],
+    }), ({ input }) => input)
+    const originalGetDefinition = registry.getDefinition.bind(registry)
+    vi.spyOn(registry, "getDefinition").mockImplementation((op) => {
+      events.push("definition")
+      return originalGetDefinition(op)
+    })
+    const assertion = vi.fn((_request, claims: { workspaceId: string }) => {
+      events.push("assert")
+      if (claims.workspaceId !== "workspace-1") {
+        throw Object.assign(new Error("D1_HOST_SCOPE_VIOLATION"), {
+          code: "D1_HOST_SCOPE_VIOLATION",
+          statusCode: 421,
+        })
+      }
+    })
+    const app = Fastify()
+    await app.register(workspaceBridgeHttpRoutes, {
+      getRegistry: () => {
+        events.push("registry")
+        return registry
+      },
+      getIdempotencyStore: () => {
+        events.push("idempotency")
+        return new InMemoryWorkspaceBridgeIdempotencyStore()
+      },
+      getOwnerWorkspaceId: () => {
+        events.push("owner")
+        return "workspace-1"
+      },
+      runtimeTokenSecret: SECRET,
+      assertRuntimeWorkspaceScope: assertion,
+      browserAuthPolicy: createBrowserBridgeAuthPolicy({
+        getPrincipal: () => ({ userId: "user-1" }),
+        authorizeWorkspace: () => ({ allowed: true, capabilities: ["browser:echo"] }),
+      }),
+    })
+
+    const token = (workspaceId: string, capabilities = ["runtime:effect"]) => mintWorkspaceBridgeRuntimeToken({
+      secret: SECRET,
+      workspaceId,
+      capabilities,
+    })
+    const call = (authorization: string, op = "runtime.v1.effect") => app.inject({
+      method: "POST",
+      url: "/api/v1/workspace-bridge/call",
+      headers: { "content-type": "application/json", authorization },
+      payload: { op, input: {} },
+    })
+
+    const bound = await call(`Bearer ${token("workspace-1")}`)
+    expect(bound.statusCode).toBe(200)
+    expect(events).toEqual(["assert", "registry", "definition", "idempotency", "owner", "handler"])
+
+    for (const [op, capabilities] of [
+      ["runtime.v1.effect", ["runtime:effect"]],
+      ["runtime.v1.missing", ["runtime:effect"]],
+      ["runtime.v1.effect", []],
+    ] as const) {
+      events.length = 0
+      const foreign = await call(`Bearer ${token("workspace-2", [...capabilities])}`, op)
+      expect(foreign.statusCode).toBe(421)
+      expect(foreign.json()).toMatchObject({ code: "D1_HOST_SCOPE_VIOLATION" })
+      expect(events).toEqual(["assert"])
+    }
+
+    events.length = 0
+    const missingCapability = await call(`Bearer ${token("workspace-1", [])}`)
+    expect(missingCapability.statusCode).toBe(403)
+    expect(missingCapability.json()).toMatchObject({ error: { code: WorkspaceBridgeErrorCode.CapabilityDenied } })
+    expect(events).toEqual(["assert", "registry", "definition"])
+
+    events.length = 0
+    const malformed = await call("Bearer malformed")
+    expect(malformed.statusCode).toBe(401)
+    expect(events).toEqual([])
+
+    const emptyBearer = await call("Bearer ")
+    expect(emptyBearer.statusCode).toBe(401)
+    expect(emptyBearer.json()).toMatchObject({ error: { code: WorkspaceBridgeErrorCode.InvalidToken } })
+    expect(events).toEqual([])
+
+    const expiredToken = mintWorkspaceBridgeRuntimeToken({
+      secret: SECRET,
+      workspaceId: "workspace-1",
+      capabilities: ["runtime:effect"],
+      ttlMs: -1,
+    })
+    const expired = await call(`Bearer ${expiredToken}`)
+    expect(expired.statusCode).toBe(401)
+    expect(events).toEqual([])
+
+    events.length = 0
+    const browser = await app.inject({
+      method: "POST",
+      url: "/api/v1/workspace-bridge/call",
+      headers: { "content-type": "application/json", "x-boring-workspace-id": "workspace-1" },
+      payload: { op: "browser.v1.echo", input: {} },
+    })
+    expect(browser.statusCode).toBe(200)
+    expect(assertion).toHaveBeenCalledTimes(5)
+    expect(events[0]).toBe("registry")
+    await app.close()
+  })
+
+  it("asserts D1 refresh claims before refresh accounting and mint", async () => {
+    const recordUse = vi.fn(() => ({ allowed: true as const }))
+    const getStore = vi.fn(() => ({ revoke: vi.fn(), recordUse }))
+    const app = Fastify()
+    await app.register(workspaceBridgeHttpRoutes, {
+      runtimeTokenSecret: SECRET,
+      runtimeRefreshTokenSecret: REFRESH_SECRET,
+      getRuntimeRefreshTokenStore: getStore,
+      assertRuntimeWorkspaceScope: (_request, claims) => {
+        if (claims.workspaceId !== "workspace-1") {
+          throw Object.assign(new Error("D1_HOST_SCOPE_VIOLATION"), {
+            code: "D1_HOST_SCOPE_VIOLATION",
+            statusCode: 421,
+          })
+        }
+      },
+    })
+    const refresh = (workspaceId: string) => mintWorkspaceBridgeRuntimeRefreshToken({
+      secret: REFRESH_SECRET,
+      workspaceId,
+      capabilities: ["runtime:echo"],
+    })
+
+    const foreign = await app.inject({
+      method: "POST",
+      url: "/api/v1/workspace-bridge/token",
+      headers: { authorization: `Bearer ${refresh("workspace-2")}` },
+    })
+    expect(foreign.statusCode).toBe(421)
+    expect(getStore).not.toHaveBeenCalled()
+    expect(recordUse).not.toHaveBeenCalled()
+
+    const bound = await app.inject({
+      method: "POST",
+      url: "/api/v1/workspace-bridge/token",
+      headers: { authorization: `Bearer ${refresh("workspace-1")}` },
+    })
+    expect(bound.statusCode).toBe(200)
+    expect(bound.json()).toMatchObject({ ok: true, token: expect.any(String) })
+    expect(getStore).toHaveBeenCalledOnce()
+    expect(recordUse).toHaveBeenCalledOnce()
+    await app.close()
+  })
+
+  it("preserves generic registry-first runtime-token precedence without a host assertion", async () => {
+    const registry = createWorkspaceBridgeRegistry()
+    registry.registerHandler(createTestBridgeOperationDefinition({
+      op: "runtime.v1.echo",
+      callerClassesAllowed: ["runtime"],
+      requiredCapabilities: [],
+    }), ({ input }) => input)
+    const app = Fastify()
+    await app.register(workspaceBridgeHttpRoutes, { registry, runtimeTokenSecret: SECRET })
+    const response = await app.inject({
+      method: "POST",
+      url: "/api/v1/workspace-bridge/call",
+      headers: { "content-type": "application/json", authorization: "Bearer malformed" },
+      payload: { op: "runtime.v1.missing", input: {} },
+    })
+    expect(response.statusCode).toBe(404)
+    expect(response.json()).toMatchObject({ error: { code: WorkspaceBridgeErrorCode.OpNotFound } })
+
+    const emptyBearer = await app.inject({
+      method: "POST",
+      url: "/api/v1/workspace-bridge/call",
+      headers: { "content-type": "application/json", authorization: "Bearer " },
+      payload: { op: "runtime.v1.echo", input: {} },
+    })
+    expect(emptyBearer.statusCode).toBe(401)
+    expect(emptyBearer.json()).toMatchObject({ error: { code: WorkspaceBridgeErrorCode.InvalidToken } })
+    await app.close()
+  })
+
   it("covers content-type, CSRF/origin, idempotency, and redacted errors", async () => {
     const app = await makeApp()
     const badType = await app.inject({ method: "POST", url: "/api/v1/workspace-bridge/call", headers: { "content-type": "text/plain" }, payload: "x" })

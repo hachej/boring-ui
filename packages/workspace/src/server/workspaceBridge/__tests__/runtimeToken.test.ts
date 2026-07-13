@@ -6,10 +6,12 @@ import {
   MAX_WORKSPACE_BRIDGE_RUNTIME_TOKEN_TTL_MS,
   WORKSPACE_BRIDGE_REFRESH_TOKEN_AUDIENCE,
   WORKSPACE_BRIDGE_TOKEN_AUDIENCE,
+  authorizeWorkspaceBridgeRuntimeToken,
   mintWorkspaceBridgeRuntimeRefreshToken,
   mintWorkspaceBridgeRuntimeToken,
   verifyWorkspaceBridgeRuntimeRefreshToken,
   verifyWorkspaceBridgeRuntimeToken,
+  verifyWorkspaceBridgeRuntimeTokenClaims,
 } from "../runtimeToken"
 import { assertNoSensitiveBridgeLeaks } from "../testing/harness"
 
@@ -103,12 +105,14 @@ describe("WorkspaceBridge runtime token primitives", () => {
     expect((verified.claims.exp - verified.claims.iat) * 1000).toBe(DEFAULT_WORKSPACE_BRIDGE_RUNTIME_REFRESH_TOKEN_TTL_MS)
   })
 
-  it("rejects missing capabilities", () => {
-    expect(() => verifyWorkspaceBridgeRuntimeToken(mint(), {
+  it("separates live claims verification from capability authorization", () => {
+    const verifiedClaims = verifyWorkspaceBridgeRuntimeTokenClaims(mint(), {
       secret: SECRET,
       nowMs: NOW,
-      requiredCapabilities: ["example:query"],
-    })).toThrow(expect.objectContaining({ code: WorkspaceBridgeErrorCode.CapabilityDenied }))
+    })
+    expect(verifiedClaims.claims.workspaceId).toBe("workspace-1")
+    expect(() => authorizeWorkspaceBridgeRuntimeToken(verifiedClaims, ["example:query"]))
+      .toThrow(expect.objectContaining({ code: WorkspaceBridgeErrorCode.CapabilityDenied }))
   })
 
   it("derives actor attribution from token claims, not request bodies", () => {
