@@ -424,7 +424,11 @@ export class HarnessPiChatService implements PiChatSessionService {
     const clearedQueue = this.clearAllFollowUps(adapter, sessionId, sessionKey)
     // The active run settles/releases via the native aborted agent-end; queued
     // and not-yet-started prompt reservations are released here so they don't
-    // hold the user's balance until TTL.
+    // hold the user's balance until TTL. Mark the active run user-stopped BEFORE
+    // the abort so its terminal accounting releases the hold (voluntary cancel is
+    // never charged the fallback), even if pi reports the aborted run as a no-usage
+    // success. Real usage recorded before the stop is still settled.
+    this.metering?.markActiveStopped(sessionKey)
     this.metering?.releaseQueued(sessionKey)
     this.metering?.releasePending(sessionKey)
     await adapter.abort()
