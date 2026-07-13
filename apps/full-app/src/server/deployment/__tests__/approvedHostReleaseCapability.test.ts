@@ -20,7 +20,7 @@ vi.mock('../d1CaddyfileAuthority.js', () => ({
   readD1CaddyfileAuthority: mocks.caddyfile,
 }))
 
-import { approveD1HostRelease, isApprovedD1HostRelease } from '../approvedHostReleaseCapability.js'
+import { approveD1HostRelease, isApprovedD1HostRelease, revalidateApprovedD1HostReleaseDatabase } from '../approvedHostReleaseCapability.js'
 
 const CANARY = 'approval-canary-never-leaks'
 const digest = (character: string) => `sha256:${character.repeat(64)}`
@@ -140,12 +140,14 @@ const ingressImage = () => [
 ]
 const ledger = (epoch = 1, events?: string[]) =>
   ({
+    databaseRef: 'postgres-eu',
     withBindingFences: async (keys: unknown, operation: (sql: unknown) => Promise<unknown>) => {
       events?.push('database')
       expect(keys).toEqual([{ hostId: HOST, bindingId: 'd1-host-release-approval' }])
       return operation((() => Promise.resolve([{ epoch }])) as unknown)
     },
   }) as never
+const reservedSql = (epoch: number) => vi.fn(() => Promise.resolve([{ epoch }])) as never
 let record: Record<string, unknown>
 
 describe('D1 approved host release capability', () => {
@@ -221,8 +223,19 @@ describe('D1 approved host release capability', () => {
     expect(capability.record.selectorInventoryRevision).not.toBe(capability.record.executionPolicyRevision)
     expect(runner.mock.calls.flatMap(([process]) => process.args)).not.toEqual(expect.arrayContaining(['compose', 'create', 'start', 'run']))
     expect(isApprovedD1HostRelease(capability)).toBe(true)
+    expect(capability).toMatchObject({ databaseRef: 'postgres-eu', observedDatabaseEpoch: 1 })
     expect(isApprovedD1HostRelease(JSON.parse(JSON.stringify(capability)))).toBe(false)
     expect(Object.isFrozen(capability)).toBe(true)
+    await expect(revalidateApprovedD1HostReleaseDatabase(capability, ledger(), reservedSql(1))).resolves.toBe(capability)
+    await expect(revalidateApprovedD1HostReleaseDatabase(capability, ledger(), reservedSql(2))).rejects.toMatchObject({
+      code: D1HostErrorCode.COLLECTION_NOT_READY,
+      details: { field: 'databaseSchemaCompatibility' },
+    })
+    const forgedSql = reservedSql(1)
+    await expect(revalidateApprovedD1HostReleaseDatabase(JSON.parse(JSON.stringify(capability)), ledger(), forgedSql)).rejects.toMatchObject({
+      code: D1HostErrorCode.COLLECTION_NOT_READY,
+    })
+    expect(forgedSql).not.toHaveBeenCalled()
   })
 
   it('fails closed on approved digest drift and runner output without leaking hostile values', async () => {
@@ -258,17 +271,24 @@ describe('D1 approved host release capability', () => {
   })
 
   it('rejects an unauthenticated selector revision and a live database epoch outside the approved range', async () => {
-    const runner = async (process: { args: readonly string[] }) => ({
+    const validRunner = async (process: { args: readonly string[] }) => ({
       exitCode: 0,
       stdout: JSON.stringify(process.args.at(-1) === CORE_REF ? coreImage() : ingressImage()),
     })
     mocks.release.mockResolvedValue({ ...record, selectorInventoryRevision: revision('a') })
-    await expect(approveD1HostRelease({ hostId: HOST, ownerUid: OWNER, coreImageRef: CORE_REF, runner, admissionLedger: ledger() })).rejects.toMatchObject({
+    const runner = vi.fn(validRunner)
+    const databaseEvents: string[] = []
+    const database = ledger(1, databaseEvents)
+    await expect(approveD1HostRelease({ hostId: HOST, ownerUid: OWNER, coreImageRef: CORE_REF, runner, admissionLedger: database })).rejects.toMatchObject({
       code: D1HostErrorCode.COLLECTION_NOT_READY,
       details: { field: 'approvedHostRelease' },
     })
+    expect(databaseEvents).toEqual([])
+    expect(runner).not.toHaveBeenCalled()
     mocks.release.mockResolvedValue(record)
-    await expect(approveD1HostRelease({ hostId: HOST, ownerUid: OWNER, coreImageRef: CORE_REF, runner, admissionLedger: ledger(0) })).rejects.toMatchObject({
+    await expect(
+      approveD1HostRelease({ hostId: HOST, ownerUid: OWNER, coreImageRef: CORE_REF, runner: validRunner, admissionLedger: ledger(0) }),
+    ).rejects.toMatchObject({
       code: D1HostErrorCode.COLLECTION_NOT_READY,
       details: { field: 'databaseSchemaCompatibility' },
     })

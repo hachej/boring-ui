@@ -1,4 +1,5 @@
 import { readCoreSecurityConfigProjection } from '@hachej/boring-core/server'
+import type postgres from 'postgres'
 
 import { createD1ApprovedHostArtifactEvidence, type D1ApprovedHostArtifactEvidenceV1 } from './approvedHostArtifactEvidence.js'
 import { D1_SELECTOR_INVENTORY_REVISION, type ApprovedD1HostReleaseRecordV1 } from './approvedHostRelease.js'
@@ -18,6 +19,8 @@ const approvedCapabilities = new WeakSet<object>()
 
 export interface ApprovedD1HostRelease {
   readonly hostId: string
+  readonly databaseRef: string
+  readonly observedDatabaseEpoch: number
   readonly record: ApprovedD1HostReleaseRecordV1
   readonly artifacts: D1ApprovedHostArtifactEvidenceV1
   readonly security: D1HostSecurityConfigV1
@@ -63,14 +66,16 @@ async function inspectImage(runner: D1HostRunner, imageRef: string, field: Appro
   }
 }
 
+async function databaseEpoch(sql: postgres.ReservedSql): Promise<number> {
+  const rows = await sql<{ epoch: number }[]>`SELECT count(*)::int AS epoch FROM drizzle.__drizzle_migrations`
+  const epoch = rows.length === 1 ? rows[0]?.epoch : undefined
+  if (!Number.isSafeInteger(epoch) || (epoch as number) < 0) throw new Error()
+  return epoch as number
+}
+
 async function liveDatabaseEpoch(ledger: D1AdmissionLedger, hostId: string): Promise<number> {
   try {
-    return await ledger.withBindingFences([{ hostId, bindingId: 'd1-host-release-approval' }], async (sql) => {
-      const rows = await sql<{ epoch: number }[]>`SELECT count(*)::int AS epoch FROM drizzle.__drizzle_migrations`
-      const epoch = rows.length === 1 ? rows[0]?.epoch : undefined
-      if (!Number.isSafeInteger(epoch) || (epoch as number) < 0) throw new Error()
-      return epoch as number
-    })
+    return await ledger.withBindingFences([{ hostId, bindingId: 'd1-host-release-approval' }], databaseEpoch)
   } catch {
     return unavailable('databaseSchemaCompatibility')
   }
@@ -147,6 +152,7 @@ export function isApprovedD1HostRelease(value: unknown): value is ApprovedD1Host
 export async function approveD1HostRelease(input: D1HostReleaseApprovalInput): Promise<ApprovedD1HostRelease> {
   const hostId = strictD1HostId(input.hostId, 'hostId')
   const record = await readApprovedD1HostReleaseFile(hostId)
+  if (record.selectorInventoryRevision !== D1_SELECTOR_INVENTORY_REVISION) unavailable('approvedHostRelease')
   const coreImageRef = intendedCoreImageRef(input.coreImageRef, record)
   const coreEnv = await readD1CoreEnvAuthority()
   const caddyfile = await readD1CaddyfileAuthority()
@@ -156,10 +162,33 @@ export async function approveD1HostRelease(input: D1HostReleaseApprovalInput): P
   const coreInspect = await inspectImage(input.runner, coreImageRef, 'coreImage')
   const ingressInspect = await inspectImage(input.runner, D1_CADDY_IMAGE, 'ingressImage')
   const artifacts = createD1ApprovedHostArtifactEvidence(record, coreImageRef, coreInspect, ingressInspect, caddyfile)
-  if (record.selectorInventoryRevision !== D1_SELECTOR_INVENTORY_REVISION) unavailable('approvedHostRelease')
   const security = await securityIdentity(hostId, input.ownerUid, coreEnv, artifacts)
   if (security.digest !== record.hostSecurityConfigDigest) unavailable('hostSecurityConfig')
-  const capability = Object.freeze({ hostId, record, artifacts, security })
+  const capability = Object.freeze({
+    hostId,
+    databaseRef: input.admissionLedger.databaseRef,
+    observedDatabaseEpoch: databaseEpoch,
+    record,
+    artifacts,
+    security,
+  })
   approvedCapabilities.add(capability)
   return capability
+}
+
+/** D1-005b passes the reserved SQL handle from its operation-fence callback immediately before host mutation. */
+export async function revalidateApprovedD1HostReleaseDatabase(
+  value: unknown,
+  admissionLedger: D1AdmissionLedger,
+  sql: postgres.ReservedSql,
+): Promise<ApprovedD1HostRelease> {
+  if (!isApprovedD1HostRelease(value) || admissionLedger.databaseRef !== value.databaseRef) unavailable('databaseSchemaCompatibility')
+  let epoch: number
+  try {
+    epoch = await databaseEpoch(sql)
+  } catch {
+    return unavailable('databaseSchemaCompatibility')
+  }
+  if (epoch !== value.observedDatabaseEpoch) unavailable('databaseSchemaCompatibility')
+  return value
 }
