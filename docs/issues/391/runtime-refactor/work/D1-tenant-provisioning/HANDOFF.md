@@ -124,7 +124,7 @@
       at every boundary. Create core stopped, inspect observed ==
       approved artifact/command, `ReadonlyRootfs: true`, and exactly the two data
       volumes plus read-only host-state and host-tmpfs input binds before
-      preload/pointer/ingress or lazy first-effect admission. Observed env and
+      preload/pointer/ingress or lazy mutation/direct-operation admission. Observed env and
       redacted host-security-config digest satisfy the same policy without logging
       values. A materialized canary is absent from full Docker inspect/config;
       bytes never leave the read-only tmpfs file-provider mount or enter metadata/
@@ -171,18 +171,37 @@
       digest without a P6 generation registry. Other runtime rollback is an
       explicit maintenance stop/reapply, never an online continuity claim.
 - [ ] The external database stores the insert/read-only admission ledger; its
-      transaction commits before first agent effect, survives process/revision
-      cleanup, and is reloaded before destructive diff or restart recovery. One
-      session advisory fences keyed by host/binding serialize first-use active
-      recheck+admission commit against rollback. D1-004e locks the exact sorted
+      transaction commits before the first D1-004d2 mutation or D1-004d3 direct
+      operation, survives process/revision cleanup, and is reloaded before
+      destructive diff or restart recovery. All operations require injected
+      nonserializable `AttestedD1DatabaseConnection`; ref equality never opens
+      production. D1-005c alone mints it after comparing one root-owned expected
+      `{ databaseRef, databaseName, serverAddress, serverPort }` with values
+      queried on the reserved live handle. No provider registry or database-
+      identity table substitutes. Production core boot and every production CLI
+      destructive-diff read obtain a fresh capability; connection options,
+      caller/ref labels, and an old result are rejected. One reserved postgres.js
+      physical handle runs
+      every transaction and advisory lock/unlock command. While locked, recheck
+      the exact binding/workspace/default-deployment triple; only an additive
+      revision with that triple unchanged may advance. D1-004e locks the exact sorted
       removal set, appends durable `prepared`, publishes the pointer, appends
       `committed`, then releases. Append-only recovery finalizes/resumes/aborts
       every crash phase. Real-Postgres tests race first/last removal keys and
       overlapping sets without deadlock.
 - [ ] Preload/all-ready is non-effectful and creates no admission row; failed
       preload leaves zero new rows. An unused published addition rolls back; the
-      first actual agent effect commits admission before executing, and a used
-      addition thereafter rejects removal. If rollback wins the full fence set,
+      first D1-004d2 mutation or D1-004d3 direct operation commits admission
+      before executing, and a used addition thereafter rejects removal. D1-004d2
+      covers durable session create/delete, prompt/followup/clearQueue/interrupt/
+      stop, slash execution, and reload. `Agent.sessions.create()` delegates
+      through admitted `runtime.service.createSession` before the store write;
+      delete remains service-delegated. Reload admits before reprovision,
+      `beforeReload`, `reloadSession`, or any other route effect. Its completeness
+      proof enumerates every current service/facade mutation. D1-004d2 service/
+      facade reads/list/subscribe and cache population, D1-004d3 token refresh,
+      and D1-005c preload/all-ready do not admit; every D1-004d3 direct operation
+      does, including a read-like operation. If rollback wins the full fence set,
       first use on every removed key observes removal and creates no row/effect;
       if any admission wins, the whole rollback rejects.
 - [ ] DNS/TLS publication occurs only after workspace/default-agent/runtime/

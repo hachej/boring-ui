@@ -95,7 +95,7 @@
       Create core stopped and prove observed
       == approved, read-only root, and exactly the two data volumes plus read-only
       host-state/host-tmpfs input binds before preload/pointer/ingress or lazy
-      first-effect admission; observed env and redacted host-security-config digest
+      mutation/direct-operation admission; observed env and redacted host-security-config digest
       pass the same policy without logging values. Prove a materialized canary is
       absent from complete Docker inspect/config and raw bytes remain only in the
       read-only tmpfs file-provider mount; rotation requires maintenance restart.
@@ -120,12 +120,24 @@
       selector-bearing, command, startup-env, or execution-policy change requires renewed inventory, a
       new root-approved release, and restart.
 - [ ] Preload/all-ready creates no admission row; failed preload leaves zero new
-      rows. First actual agent effect commits admission before executing. Prove
+      rows. A D1-004d2 mutation or any D1-004d3 direct operation, including a
+      read-like operation, commits admission before executing. D1-004d2 service/
+      facade reads/list/subscribe and cache population, D1-004d3 token refresh,
+      and D1-005c preload/all-ready do not admit. Prove
       unused-add rollback succeeds and used-add removal rejects. First use locks
       one host/binding session key; rollback locks the exact sorted removal set,
       writes append-only prepared -> pointer -> committed, then releases. Prove
       recovery finalize/resume/abort at every crash boundary plus real-Postgres
-      first/last-key and overlapping-set/no-deadlock races.
+      first/last-key and overlapping-set/no-deadlock races. Require a fresh
+      `AttestedD1DatabaseConnection` minted by D1-005c for production core boot
+      and each CLI destructive-diff read by comparing the one root-owned expected
+      identity with values queried on the live handle; no registry/table
+      substitutes. All transaction/advisory commands use its one
+      reserved physical handle. Under that fence, recheck the exact binding/
+      workspace/default-deployment triple while allowing an unchanged triple in
+      an additive revision. Enumerate every D1-004d2 facade/service/slash/reload
+      mutation and prove reload admission precedes reprovision, `beforeReload`,
+      and `reloadSession`. D1-004e runs only after d1/d2/d3 are complete.
 - [ ] P2 provider selection and X1 mounts are absent from the v1 proof.
 - [ ] Post-v1 lanes are tracked and do not block closeout.
 

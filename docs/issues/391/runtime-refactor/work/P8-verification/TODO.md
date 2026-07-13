@@ -68,7 +68,7 @@ Dispatch only these verification slices:
    before exact-id cleanup, and survives every crash boundary. Create core
    stopped; then prove observed == approved, read-only root,
    exact four mounts, and matching env/config before preload/pointer/ingress or
-   lazy first-effect admission. Prove a materialized canary is absent from full
+   lazy mutation/direct-operation admission. Prove a materialized canary is absent from full
    Docker inspect/config, raw bytes remain only in the read-only tmpfs file-
    provider mount, and maintenance restart plus fresh attestation follows
    rotation. Bind the stopped
@@ -81,13 +81,26 @@ Dispatch only these verification slices:
    Compose-added env, and no command drift; bind verified core and stopped ingress
    ids and prove publication starts only that exact ingress id. Running-host drift
    rejects before N+1 candidate effects. Preload/all-ready creates no admission
-   row; failed preload leaves zero new rows. First actual agent effect commits
-   admission before execution. First use locks one host/binding; rollback locks
+   row; failed preload leaves zero new rows. A D1-004d2 mutation or any D1-004d3
+   direct operation, including a read-like operation, commits admission before
+   execution. D1-004d2 service/facade reads/list/subscribe and cache population,
+   D1-004d3 token refresh, and D1-005c preload/all-ready do not admit. First use
+   locks one host/binding; rollback locks
    the exact sorted removal set with session locks, appends prepared, publishes
    the pointer, appends committed, then releases. Prove finalize/resume/abort at
    every crash boundary plus real-Postgres first/last-key and overlapping-set/no-
    deadlock races. This proof is independent of generic core launchers/app self-
-   report and separate from per-binding candidate/preload equality; siblings may differ.
+   report and separate from per-binding candidate/preload equality; siblings may
+   differ. Prove a fresh D1-005c-minted `AttestedD1DatabaseConnection` for
+   production core boot and each CLI destructive-diff read by comparing the one
+   root-owned expected identity with values queried on the live handle; no
+   registry/table substitutes. All transaction/
+   advisory commands use its one reserved physical handle. Under that fence,
+   recheck the exact binding/workspace/default-deployment triple while allowing
+   an unchanged triple in an additive revision. Enumerate every D1-004d2 facade/
+   service/slash/reload mutation and prove reload admission precedes reprovision,
+   `beforeReload`, and `reloadSession`. D1-004e runs only after d1/d2/d3 are
+   complete.
    Use controlled real-Postgres interleavings in both lock orders to prove a
    concurrent scoped owner create/promotion cannot be overwritten by member
    add/demote/remove or account deletion; route pre-reads are not proof.
