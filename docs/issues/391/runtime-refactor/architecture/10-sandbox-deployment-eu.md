@@ -94,15 +94,59 @@ blocks every existing-owner account deletion or owner-role removal outside the
 fenced D1 lifecycle, while non-owner account deletion remains available. The
 current committed role is evaluated under the same workspace-store mutation
 transaction or serializable account-deletion transaction; a route pre-read is
-never ownership authority. This is workspace provisioning/lifecycle scope, not a
-second auth policy.
+never ownership authority. Invite, embedded/browser, Boring MCP, signed
+WorkspaceBridge, and managed-agent MCP selectors each intersect this same scope
+at their existing choke point before application effects. There is no caller-
+controlled agent/deployment selector: the authorized workspace keeps selecting
+`default`. This is workspace provisioning/lifecycle scope, not a second auth
+policy.
 
 D1 endpoint publication is ordered after the isolation surface. The staged host
 emits a non-caller-forgeable `DedicatedSiteCapability` attestation only when the
 fixed-workspace enforcement and landing/sign-in/default-agent surface are both
 installed at named contract versions. The attestation binds target key, fencing
 token, staged desired-state digest, exact app/hostname/workspace/agent binding,
-host-app artifact digest, and workspace-composition manifest digest. It is never a
+host-app artifact digest and workspace-composition manifest digest. Root-owned
+inspection independently attests the actual running artifact and the unoverridden
+full-app Docker web command (`apps/full-app/dist/server/main.js`); generic core
+launchers are not D1 entrypoints, and app env/self-report is insufficient. The
+root-owned approved-release record binds core and ingress images/commands, the
+Caddyfile digest, redacted host-security-config digest, and c1-c5 inventory/
+execution-policy revisions. Before Compose mutation D1 validates desired ==
+approved intended image/command and the strict exact environment key schema.
+Each key is fixed or a redacted nonsecret value in the digest; unknown or secret-
+bearing env keys reject. Secret refs remain approved state and raw values stay
+only in the read-only tmpfs file-provider mount. The schema pins
+`NODE_ENV=production`, forbids the five loader keys, and covers D1 owner/mode/
+roots/proxy, auth URL, CORS, CSP, cookie security, effective external/plugin-
+authoring flags, Boring MCP enablement, and managed-agent MCP target. First boot
+requires core/ingress absent or stopped. It creates/inspects an exact DB-only
+migration container with file-mounted DB secret, exact Node migration process,
+`User=10001:10001`, and no web entrypoint/root/privilege before running it; deterministic
+host/revision identity plus durable redacted completion resumes every crash
+boundary and cleans only the exact verified id. It then creates
+core stopped, validates image/command, read-only root, exact mounts, nonsecret env
+plus canary absence from Docker metadata, and host-
+security policy, binds its id, and starts only that verified id. Direct non-Caddy
+application traffic remains scope-rejected. This all precedes preload/pointer/
+ingress or lazy first-effect admission; mismatch stops/
+quarantines core while ingress stays
+stopped. Running hosts keep the stable core and validate observed state before
+N+1 candidate effects.
+Initial ingress is created but not started, then inspected against the landed
+D1-003a image/command/Caddyfile contract with read-only root and its sole read-
+only config mount. The verified capability binds that stopped container id;
+only atomic pointer publication may start that exact id and expose port 80.
+The exact approved artifact, command, and host-security config freeze the
+complete potential c1-c5 workspace-selector-bearing production route set because
+that full-app entrypoint hard-pins `externalPlugins: false`
+(rendering `BORING_PLUGIN_AUTHORING` inert), and external/raw/runtime plugin
+gateways and hot reload are unavailable. Conditional static MCP families remain
+inside the c3/c5 inventory. An artifact/command/startup-env/execution-policy or
+workspace-selector-bearing
+change requires renewed inventory, a new root-approved release, and a maintenance
+restart. Composition identity remains per
+binding and sibling composition digests may differ. The attestation is never a
 caller-supplied record: an in-process staged host returns an opaque handle from
 an unexported mint; a remote staged host returns a nonce-, issuer-, audience-,
 expiry-, and contract-version-bound response directly over P5a's pinned-TLS

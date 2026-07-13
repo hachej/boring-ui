@@ -72,8 +72,10 @@ Compose operations obey the verified EU-host spike rules:
 
 - use one compose file for plan/apply/rollback;
 - run idempotent `docker compose up -d`, never `--force-recreate`;
-- use service-specific `up -d --no-deps core-app` only for initial boot or an
-  explicit maintenance-window restart; additive revisions do not invoke Compose;
+- initial boot is the D1-005b stopped create/inspect then exact-id start protocol
+  for migration, core, and ingress; additive revisions do not invoke Compose;
+- use service-specific `up -d --no-deps` only for an explicit maintenance-window
+  restart after fresh attestation;
 - change or roll back only the named service with `--no-deps`; never run a
   blanket old compose file over newer volumes, secrets, or services;
 - keep process-level Compose environment in one core env file;
@@ -378,6 +380,7 @@ The D1 implementation adds one typed host error carrying these stable codes:
 | `D1_ACTIVE_BINDING_RESTART_REQUIRED` | an online revision replaces/removes an admitted runtime binding or rotates its runtime inputs |
 | `D1_BINDING_ADMITTED` | rollback tried to remove a binding with a durable admission row |
 | `D1_ADMISSION_RECORD_FAILED` | the durable admission row did not commit before the first agent effect |
+| `D1_ROLLBACK_JOURNAL_FAILED` | rollback journal/pointer state is invalid or cannot be recovered/finalized |
 
 Errors expose no raw paths, secret values, landing-private metadata, or foreign
 workspace/deployment ids. Tests assert codes, not messages.
@@ -422,7 +425,10 @@ bounded landing/root seam ([#694](https://github.com/hachej/boring-ui/pull/694))
 D1-004a4b landed readiness and production activation
 ([#695](https://github.com/hachej/boring-ui/pull/695)). D1-004b1 landed the
 workspace/signup authority fences ([#698](https://github.com/hachej/boring-ui/pull/698)).
-D1-004b2a is active; D1-004b2b through D1-006 remain un-landed.
+D1-004b2a/b2b landed the atomic owner guards
+([#700](https://github.com/hachej/boring-ui/pull/700),
+[#701](https://github.com/hachej/boring-ui/pull/701)). D1-004c1 is active;
+D1-004c2 through D1-004c5, D1-004d/004e, D1-005a/005b/005c, and D1-006 remain un-landed.
 
 ### D1-001 — plan and composition identity (<= 400 net lines; 25 minutes)
 
@@ -581,7 +587,7 @@ through one reserved internal header: delete every caller-supplied value at the
 auth proxy boundary, then install only a canonical encoding of the trusted
 scope. Prove spoofed and direct-auth variants cannot synthesize scope. This
 bead changes post-signup invite handling only; public invite resolve/accept
-selectors remain in the D1-004c inventory. Post-signup accepts an invite only
+selectors remain D1-004c1-owned. Post-signup accepts an invite only
 for the exact bound workspace. A scoped foreign or invalid invite sets the
 existing non-enumerating `boring_invite_failed=invite_not_found` cookie and
 creates no default workspace; generic invalid-invite behavior remains the
@@ -623,13 +629,77 @@ serializable retry behavior. No mutex, route SQL, schema/migration, or generic
 lifecycle/policy abstraction. Operator lifecycle remains the local OS-authorized
 D1 command path.
 
-### D1-004c — remaining selector conformance (<= 400 net lines per PR; 25 minutes)
+### D1-004c1 — public invite scope (<= 220 net lines; 20 minutes)
 
-Inventory public invite resolve/accept plus full-app agent/MCP/plugin/pane/
-WorkspaceBridge selectors first. Split one PR per route family if the diff
-exceeds the budget. Every selector rejects a foreign workspace before lookup/
-effects; only agent/deployment-bearing selectors derive the default deployment
-from scope. Do not introduce a generic policy framework.
+Files: core legacy/public invite routes and focused tests.
+
+Deliver: legacy workspace-id accept paths compare the path workspace with trusted
+request scope before token lookup. Public token-only resolve/accept may perform
+exactly one read-only token-hash lookup because workspace scope is otherwise
+unknowable; compare the resolved invite workspace immediately. A foreign invite
+returns the same non-enumerating `404/invite_not_found` response as an unknown
+token, not a distinguishable D1 421, before locked/expired/accepted checks,
+failed-attempt/reset counters, workspace/member reads, acceptance mutation, or
+success/audit log. Existing IP/principal transport rate accounting may precede the
+lookup, but is outside D1 application effects and never keys on or reveals the
+discovered workspace. Preserve generic behavior and prove zero foreign invite/
+workspace/member mutation.
+
+### D1-004c2 — embedded/browser selector convergence (<= 380 net lines; 30 minutes)
+
+Files: the existing core `resolveAuthorizedWorkspaceId` choke point, pane status
+route, and focused agent/UI/automation/browser-WorkspaceBridge tests.
+
+Deliver: under trusted scope, collect every presented header/query workspace
+selector before precedence. Absent derives the scope; malformed, conflicting,
+or foreign values return stable 421 before membership, root/runtime/store,
+dispatcher, bridge, or status effects. Pane body workspace must match and is
+never silently overwritten. Preserve generic header/query precedence exactly.
+This bead owns only browser/header WorkspaceBridge traffic.
+
+### D1-004c3 — Boring MCP scope admission (<= 280 net lines; 25 minutes)
+
+Files: Boring MCP binding, full-app wrapper, and focused route tests.
+
+Deliver: preserve the existing limiter key/status behavior exactly when trusted
+D1 scope is absent. With trusted scope, the same route `onRequest` limiter runs
+before selector admission and keys only on authenticated user (or transport IP)
+plus frozen `requestScope.workspaceId`; it ignores every raw caller selector and
+charges valid, malformed, conflicting, foreign, and unauthorized requests. Scope
+admission is the first route `preHandler` after that limiter. Under D1, inspect
+every header/body/query workspace selector: absent derives scope; malformed,
+conflicting, or foreign returns stable 421 after transport-budget consumption but
+before workspace/member/source/connector/tool lookup or mutation. Never key a
+limiter on raw caller scope. Prove invalid D1 traffic is bounded and generic
+malformed/unauthorized requests consume/reject exactly as before.
+
+### D1-004c4 — WorkspaceBridge runtime-claim admission (<= 400 net lines; 30 minutes)
+
+Files: a two-phase runtime-token verification seam plus one narrow host-supplied
+scope-assertion callback in core Bridge options, workspace HTTP runtime/refresh
+routes, and focused tests.
+
+Deliver: split runtime-token verification into read-only signature/claims checks
+and later registry-definition/capability authorization. Assert host scope on the
+verified claims between those phases, before `getRuntime`, registry/idempotency/
+refresh-store selection, `recordUse`, handler execution, or mint; only then load
+the operation definition and validate required capabilities. Apply the same
+claim-first assertion to refresh. Let branded D1 scope errors escape the Bridge
+protocol catch so core returns stable HTTP
+`421/D1_HOST_SCOPE_VIOLATION`; do not add a Bridge error code or translate to
+403. Foreign refresh consumes no refresh-use/rate bucket. Browser/header flow
+remains D1-004c2-owned; generic standalone behavior remains exact.
+
+### D1-004c5 — managed-agent MCP configured-target admission (<= 220 net lines; 20 minutes)
+
+Files: full-app managed-agent MCP route and focused tests.
+
+Deliver: after bearer authentication but before request storage, controller/app
+store, dispatcher, or stream effects, require trusted request scope to equal the
+configured workspace or return stable 421. Dispatcher receives the trusted
+scope including `defaultDeploymentId`; payload/header cannot retarget workspace,
+agent, or deployment. Preserve generic absent-scope deployment exactly. There is
+no current caller-controlled `agentId`/`deploymentId` parser; do not invent one.
 
 ### D1-004d — durable admission ledger (<= 300 net lines; 20 minutes)
 
@@ -641,23 +711,218 @@ tests; and a narrow first-effect hook through the D1 host scope.
 Deliver: insert/read-only `(hostId, bindingId)` admission rows with a database-
 allocated monotonic sequence; transaction commit before the first agent effect;
 idempotent concurrent admission; restart recovery and CLI destructive-diff
-reads from the database; no update/delete API. Prove a failed commit produces
+reads from the database; no update/delete API. Export one session-level Postgres
+advisory fence keyed by `(hostId, bindingId)` on a dedicated connection. First
+use holds it while re-reading the active collection, inserting/idempotently
+reading admission in a transaction, and committing before the effect, then
+releases in `finally`; connection loss releases the lock. A failed lock/commit produces
 `D1_ADMISSION_RECORD_FAILED` and no agent effect, and an admitted binding remains
 non-removable after process restart and revision-directory cleanup.
 
-### D1-005 — collection boot and atomic publication (<= 400 net lines; 30 minutes)
+### D1-004e — recoverable unused-binding rollback fence (<= 350 net lines; 30 minutes)
+
+Files: one append-only rollback-journal migration plus schema export; the stable
+error enum/type in `apps/full-app/src/server/deployment/d1Plan.ts`; new
+`apps/full-app/src/server/deployment/admissionRollbackJournal.ts`; narrow root-
+command integration; focused real-Postgres and pointer-recovery tests.
+
+Deliver: rollback derives the exact sorted removal set and acquires every D1-004d
+session advisory lock in that order on one dedicated connection. While all are
+held, re-read active state/all admission rows and append a durable `prepared`
+event containing operation id, expected/target revision+digest, and removal set.
+After that transaction commits, publish one atomic pointer, append a `committed`
+terminal event, then release locks. No journal row is updated or deleted.
+
+Recovery reacquires the same sorted lock set. If the target pointer is active,
+append `committed`; if the expected pointer remains and all rows are absent,
+resume publication then append `committed`; if the expected pointer remains and
+any row exists, append `aborted` with no pointer change; any other pointer/journal
+state fails `D1_ROLLBACK_JOURNAL_FAILED` closed. Thus a DB failure cannot make an
+unjournaled removal, and a crash between durable prepare, pointer publication,
+and finalization is recoverable. If rollback wins, later first use sees the
+binding absent and creates no row/effect; if any admission wins, the whole
+rollback rejects. Prove real-Postgres races on first/last keys of a two-binding
+removal, overlapping sets/no deadlock, and crashes at every phase boundary.
+
+### D1-005a — approved host release and intended policy (<= 300 net lines; 25 minutes)
+
+Files: new
+`apps/full-app/src/server/deployment/{approvedHostRelease,hostSecurityConfig}.ts`,
+reuse of landed core/ingress identity constants, and focused codec/policy tests.
+
+Deliver: mint one non-serializable root-owned `ApprovedD1HostRelease` capability
+only after the approved release and intended host execution checks below
+succeed. D1-005b consumes it in the same apply attempt; it is never caller
+supplied, persisted, mounted, or reconstructed from app self-report.
+V1 selector closure is the reviewed exact host release. Its complete potential
+workspace-selector-bearing production route set is static and covered by
+D1-004c1-c5. The production entrypoint hard-pins `externalPlugins: false`, which
+makes `BORING_PLUGIN_AUTHORING`/`installPluginAuthoring` inert; hot reload rejects, no
+runtime/plugin-front/raw-route gateway is mounted, and per-binding composition
+descriptors cannot register startup routes. Conditionally enabled static Boring
+MCP and managed-agent MCP families remain inside c3/c5 respectively.
+The sole D1 web entrypoint is the approved full-app Docker web runtime invoking
+`apps/full-app/dist/server/main.js`; generic `runCoreWorkspaceAgentServer` and
+command overrides are not D1 launchers. A root-owned approved-host-release
+record at `<host-state>/approved-host-release.json`, outside immutable revision
+directories, is installed only by the maintenance release procedure. The app
+cannot write it and the D1 apply command exposes no mutation for it. It binds
+`{ hostAppImageDigest, coreCommand, migrationProcess, ingressImageDigest, ingressCommand,
+caddyfileDigest, hostSecurityConfigDigest,
+selectorInventoryRevision, executionPolicyRevision }`; both revisions are
+immutable merged commit/content
+identities for the reviewed c1-c5 plan, execution policy, and release evidence,
+not mutable labels. Before any Compose mutation, validate desired digest ==
+approved digest and the intended image reference/Entrypoint/Cmd == the approved
+release. Parse intended Compose plus `core.env` through one strict, versioned
+production environment schema without logging values. The exact allowed key set
+is the approved image defaults plus fixed Compose keys plus schema-declared app
+keys; every key is classified as a fixed exact or redacted nonsecret value in
+`hostSecurityConfigDigest`. Unknown or secret-bearing environment keys reject.
+Secret-ref identities remain in the approved plan/revision, while raw values
+remain only in the external tmpfs file-provider mount. Require
+`NODE_ENV=production` and reject any of `NODE_OPTIONS`, `NODE_PATH`,
+`LD_PRELOAD`, `LD_AUDIT`, or `LD_LIBRARY_PATH` regardless of classification.
+
+The nonsecret identity includes at least `{ d1HostId, publicationOwnerUid,
+agentMode, workspaceRoot: "/data/workspaces", sessionRoot: "/data/pi-sessions",
+trustedProxy: { cidrs: ["192.168.255.250/32"], hops: 1 }, externalPlugins: false,
+pluginAuthoring: false, betterAuthUrl, corsOrigins, cspEnabled,
+cspUpgradeInsecureRequests, sessionCookieSecure, boringMcpEnabled,
+managedAgentMcp: { enabled, workspaceId?, userId? } }`. Effective values come
+from the same production readers used by the app. Bearer/API/auth/database/model
+secret refs bind through the existing approved plan identity, never env. Any new environment
+key or route/auth/browser/trust-boundary config reader requires a schema/policy
+revision, renewed review, and new approved record before production use. Prove
+unknown/secret-bearing keys and drift in owner UID, mode, roots, proxy, auth URL,
+CORS, CSP, cookie security, MCP enablement, or managed target reject. A
+materialized canary proves no secret bytes enter Docker config, identity, or
+failure output.
+
+Before mutation, also inspect the local approved core/ingress image objects and
+hash the root-owned Caddyfile bytes against the approved identities. No Docker
+container create/start, P6-R, admission, preload, pointer, or ingress operation
+belongs to D1-005a.
+
+### D1-005b — observed host execution attestation (<= 400 net lines; 30 minutes)
+
+Files: new
+`apps/full-app/src/server/deployment/{verifyRunningHostArtifact,migrationRunner}.ts`, the
+unexposed-first-core/stopped-ingress orchestration seam, reuse of landed D1-003a
+ingress validators/constants, fixed read-only-root/mount policies in
+`deploy/d1/compose.yml`, the initial migration command path in `composeAdapter.ts`,
+their tests, and focused integration tests.
+
+Deliver: consume D1-005a's live `ApprovedD1HostRelease`. On first boot, require
+core and ingress absent/stopped. Replace the uninspected `compose run` migration:
+create a stopped one-shot container from the approved core image with exact
+Entrypoint/Cmd `node apps/full-app/dist/server/migrate.js`, container
+`User=10001:10001`, strict approved nonsecret env, file-mounted same-attempt DB
+secret input readable only by that identity, read-only root, DB access only, no
+workspace/session/state mounts, no added capabilities, and no privileged mode;
+inspect it before start. The inherited `/usr/local/bin/web-entrypoint` is invalid
+for migration because it performs root-owned data-root mutation, and direct
+root-user `node` execution is forbidden. Add negative proofs for both.
+then start/attach and require zero exit. Its name/idempotency key is the exact
+bounded `(hostId, desiredDigest)` identity. Persist a root-owned redacted
+completion record containing operation identity, verified container id, image/
+command identity, and exit status before cleanup. Retry behavior is exact:
+created/stopped -> inspect then start that id; running -> attach/wait that id;
+exited zero -> durably record/accept; exited nonzero or any identity drift ->
+quarantine and fail `D1_COLLECTION_NOT_READY` with redacted `field: migration`;
+completion record with no container -> accept only when every identity matches.
+After durable completion, remove only the exact verified container id. Prove
+crashes after create, inspect, start, exit, completion write, and cleanup, plus
+idempotent/backward-compatible migration behavior and no raw log/secret evidence.
+
+Next run `docker compose create --no-deps core-app` (create, do not start).
+`verifyRunningHostArtifact` inspects the stopped container and requires observed
+digest/command == approved. It also
+requires `ReadonlyRootfs: true` and exactly four D1 mounts: writable named
+volumes at `/data/workspaces` and `/data/pi-sessions`, the read-only host-state
+bind at `/var/lib/boring/d1/<hostId>`, and the read-only host-tmpfs secret/input
+bind at `/run/boring/d1`; no other mount is allowed and none may cover
+`/app`, `/usr/local/bin`, package/code paths, or another executable location.
+Inspect the effective container environment with the same redaction-safe policy:
+`NODE_ENV` must equal `production`, all five code-loader variables must be absent,
+the observed exact environment key set/classifications must match the approved
+schema, and the redacted host-security-config digest must equal approved. Reject
+all secret-bearing env keys and prove a materialized canary is absent from the
+complete Docker inspect/config serialization. Raw bytes remain only in the read-
+only tmpfs file-provider mount and never enter image/container metadata, logs,
+digests, capabilities, errors, or evidence. A changed secret ref/value remains an
+active replacement and requires the existing maintenance restart plus a fresh
+005a/005b attestation.
+Bind the stopped core container id, then start only that exact verified id and
+wait for its Docker health/readiness; do not re-resolve/recreate the service.
+After start, only approved code executes. Although the core joins `d1-edge`,
+ingress remains stopped and the landed request-scope guard rejects direct non-
+Caddy application traffic; no public host port is published.
+The public ingress is part of the same approval boundary. Before any public port
+can listen, require the approved exact `D1_CADDY_IMAGE`, landed selected image
+identity, exact Caddy command, and landed `D1_CADDYFILE_DIGEST`. On first boot,
+after core verification, run `docker compose create --no-deps ingress` (create,
+do not start), then inspect the stopped container: approved image/command,
+`ReadonlyRootfs: true`, exact `80:8080` mapping and D1 edge identity, exactly one
+read-only Caddyfile mount with approved bytes, and no extra mount/env/command.
+"No extra env" means no Compose-added environment and exact approved image
+defaults; the image environment need not be empty.
+Bind that stopped ingress id alongside the verified core id in
+`VerifiedD1HostExecution`. Drift leaves it
+stopped/quarantined. On a running host, verify the existing ingress container
+against the same identity before D1-005c candidate work. This extends the landed
+D1-003a proof; it does not create a second ingress abstraction. Mint the non-
+serializable capability only after both core and ingress checks; D1-005c consumes
+it in the same apply attempt.
+Missing/unapproved/mismatched initial state stops or quarantines the unexposed
+core and fails `D1_ACTIVE_BINDING_RESTART_REQUIRED`; ingress remains stopped.
+An already-running host does not recreate the stable core and validates its
+observed state before D1-005c candidate effects. Never trust app env,
+plan echo, app self-report, or image reference without the execution-policy
+inspection. Command identity matters because
+`main.ts` pins `externalPlugins: false`; image identity alone is insufficient if
+an operator overrides the command. A changed artifact/command/startup-env/
+execution policy or any workspace-selector-bearing code, config, or plugin
+activation outside the reviewed static set fails
+`D1_ACTIVE_BINDING_RESTART_REQUIRED` before candidate/effects and requires a
+renewed c1-c5 inventory plus a new root-approved release during maintenance. The
+approval evidence identity is not a runtime route registry or route digest. No
+hot plugin reload or plugin-snapshot contract is introduced.
+
+No P6-R call, admission, preload, active-pointer mutation, or ingress start
+belongs to D1-005b.
+
+### D1-005c — collection preload and atomic publication (<= 400 net lines; 30 minutes)
 
 Files: new `apps/full-app/src/server/deployment/{bootCollection,preloadSignal}.ts`,
-integrate the D1-001/002/003/004 seams in `main.ts`, and focused integration
-tests. The fixed pending-pointer/signal handler is the only local candidate-
-activation seam.
+integration of the D1-001/002/003/004 seams through the root command wrapper and
+`main.ts`, and focused integration tests. The fixed pending-pointer/signal
+handler is the only local candidate-activation seam.
 
-Deliver: read one immutable revision, perform N independent P6-R calls, preload
-all logical bindings through the root-owned pending pointer and signal, wait for
-its all-ready ack, and atomically publish an additive/landing-only pointer in the stable
-process. Prove invalid pending payload/path/digest and one failed binding leave the old
-collection active, a running request and reconnect survive N+1 publication in
-the same process, and replacement/removal/secret rotation rejects before effects.
+Deliver: require D1-005b's live `VerifiedD1HostExecution`, read one immutable
+revision, perform N independent P6-R calls, and require each candidate
+composition digest to equal that binding's resolved/preloaded composition;
+sibling digests may differ. Install the D1-004d lazy admission hook, then preload
+all logical bindings through the root-owned pending pointer/signal, wait for all-
+ready, and atomically publish the additive/landing-only pointer in the stable
+process. Preload/all-ready is not an agent effect and creates no admission row.
+Only after atomic pointer publication may first boot revalidate and start the
+exact stopped ingress container id from the live D1-005b capability; it must not
+recreate or re-resolve the service, and the root-owned Caddyfile digest must still
+match. That start is initial public publication.
+Start failure leaves ingress stopped/unreachable and the ready internal pointer
+retryable; it never exposes a different container. On the first actual agent
+effect, the hook takes D1-004d's shared fence, revalidates that the binding is
+still active, and commits the idempotent row before the effect. Unused-binding
+rollback uses D1-004e's sorted session fences and durable prepare/publish/
+finalize journal; deterministic orders yield either recoverable removal with no
+later row/effect or rejection of the whole rollback after any admission. Invalid pending payload/path/digest or one failed binding
+leaves the old collection active and creates no new admission row; on first boot it also leaves
+ingress stopped and stops/quarantines the unexposed core. A running request and
+reconnect survive N+1 publication in the same stable process with no core
+recreate. Online rollback may remove a newly published but unused/unadmitted
+binding; once its first effect admits it, removal rejects. Other active
+replacement/removal/secret rotation rejects before effects.
 
 ### D1-006 — EU-host proof and runbook (<= 300 net lines; 20 minutes)
 
@@ -702,7 +967,7 @@ D1-S1 is complete only when all of the following are CI- or EU-host-provable:
    rendering, logs, errors, or audit. Workspace and session roots are durable
    siblings, not container home/root.
 9. The shared runtime profile proves sibling filesystem and process denial.
-   D1-001 through D1-005 do not wait for a provider lock, but D1-006 cannot
+   D1-001 through D1-005c do not wait for a provider lock, but D1-006 cannot
    claim the EU production exit until one host-approved EU profile supplies
    the required real lifecycle/security evidence. The real runsc structural
    preflight passed; the privileged execution decision and remaining security

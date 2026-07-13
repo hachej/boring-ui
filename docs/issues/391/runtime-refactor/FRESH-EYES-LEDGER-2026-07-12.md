@@ -51,7 +51,7 @@ marks that lane for protocol review before build.
 Finding count stayed roughly flat at first and then declined
 (24 → 21 → approximately 14), while severity shifted from staleness, to factual
 errors, to specification-capability gaps. The plan is dispatch-ready for the
-D1-004 lane. After this PR, D1-005, AR1 Lane W, and ID1 boot are dispatch-ready
+D1-004 lane. After this PR, D1-005a/005b/005c, AR1 Lane W, and ID1 boot are dispatch-ready
 when their queue gates open; AC1-D is the exception and still awaits its
 required AC1-D-SPEC micro-spec before dispatcher implementation.
 

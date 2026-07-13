@@ -7,7 +7,7 @@ from this file.**
 
 ## Active multi-agent Docker v1 work order (2026-07-11)
 
-**Dispatch state: D1-R0 and D1-001 through D1-004b1 are landed.** D1-004b2a is
+**Dispatch state: D1-R0 and D1-001 through D1-004b2b are landed.** D1-004c1 is
 active; dispatch the remaining exact implementation beads in
 [`D1-R0-SPEC.md`](./D1-R0-SPEC.md) in order. Never dispatch the historical
 section below.
@@ -42,19 +42,25 @@ section below.
 5. **LANDED — D1-004a2: mounted active reader (#685).** Exact-DAC read-only
    active-to-COMPLETE validation is complete without mutation-store reuse,
    directory enumeration, providers, or secret-value reads.
-6. **ACTIVE — D1-004b2a, then b2b, c/d: atomic authority and admission.**
+6. **ACTIVE — D1-004c1, then c2-c5/d/e: selector authority and admission.**
    D1-004a4a landed the bounded landing/root seam (#694); D1-004a4b landed
    loopback readiness, exact owner/process identity checks, active-reader
    construction, and production wiring (#695). D1-004b1 landed workspace and
-   signup/default-provisioning fences (#698). D1-004b2a makes scoped member add/
-   demote/remove authority atomic in the workspace stores; D1-004b2b protects
-   scoped owner account deletion inside the serializable deletion transaction
-   while preserving ordinary-member account deletion. Trusted hostname selection grants
-   nothing; later selectors fail closed; the database admission row commits
-   before first agent effect and survives cleanup.
-7. **D1-005 — N-binding boot/additive publication.** N independent P6-R calls,
-   root-owned pending-pointer/signal preload, all-ready ack, atomic active
-   pointer, stable-process continuity, and fail-closed active replacement/removal.
+   signup/default-provisioning fences (#698); D1-004b2a/b2b landed atomic member/
+   account owner guards (#700/#701). D1-004c1-c5 fence invites, embedded/browser,
+   Boring MCP, WorkspaceBridge claims, and managed-agent MCP. The root-approved
+   exact artifact/command binds this static workspace-selector-bearing route set
+   to its inventory revision before admission.
+   Trusted hostname selection grants nothing; D1-004d commits admission before
+   first agent effect, and D1-004e journals recoverable unused-binding rollback
+   under sorted session fences.
+7. **D1-005a/005b/005c — approve, attest, then publish.** First approve the strict
+   host environment/security policy; attest the unexposed core and stopped
+   ingress; then run N independent P6-R calls, non-effectful preload/all-
+   ready, atomic active publication, ingress-last first boot, lazy first-effect
+   admission versus unused-add rollback under D1-004d/e session fences and an
+   append-only prepare/publish/finalize journal,
+   stable-process N+1 continuity, and fail-closed used-binding removal.
 8. **D1-006 — runbook and EU proof.** Reproduce the landed edge-network overlap
    guard and exact owned-network reuse on the EU host. Then prove three
    agents/workspaces/hostnames, timing, idempotence, N+1 continuity, rollback

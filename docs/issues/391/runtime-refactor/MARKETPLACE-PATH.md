@@ -41,8 +41,10 @@ via [#690](https://github.com/hachej/boring-ui/pull/690), and trusted host scope
 landed via [#692](https://github.com/hachej/boring-ui/pull/692). D1-004a4a is
 landed via [#694](https://github.com/hachej/boring-ui/pull/694), and D1-004a4b
 landed via [#695](https://github.com/hachej/boring-ui/pull/695), and D1-004b1
-landed via [#698](https://github.com/hachej/boring-ui/pull/698). D1-004b2a is
-active, followed by D1-004b2b;
+landed via [#698](https://github.com/hachej/boring-ui/pull/698), and the atomic
+owner guards landed via [#700](https://github.com/hachej/boring-ui/pull/700)/
+[#701](https://github.com/hachej/boring-ui/pull/701). D1-004c1 is active,
+followed by D1-004c2-c5;
 the AR1 Lane W share-entry/deep-link/resource slices are next after priority 1.
 
 ## Phase 2 — Factory v1

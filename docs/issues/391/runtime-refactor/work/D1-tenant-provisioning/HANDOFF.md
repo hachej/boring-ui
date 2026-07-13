@@ -45,8 +45,10 @@
       synthesize it. Post-signup accepts only an exact-bound invite; scoped
       foreign/invalid invites set the existing non-enumerating failure cookie
       and create no default workspace, while generic invalid-invite behavior
-      remains unchanged. Public invite resolve/accept routes reject a foreign
-      workspace before lookup or mutation. Bound workspace rename and all
+      remains unchanged. Legacy invite paths reject a foreign workspace before
+      token lookup; public token-only routes allow one read-only hash lookup,
+      then return the same non-enumerating 404 as an unknown token before
+      application effects. Bound workspace rename and all
       generic-host workspace behavior remain unchanged.
 - [ ] Every scoped existing-owner demotion/removal fails before mutation, even
       when another owner remains. Every scoped existing-owner account deletion
@@ -66,6 +68,17 @@
       `default`; caller workspace/agent selectors cannot choose another target.
 - [ ] Cross-hostname/workspace server/front/plugin selectors fail before
       effects; authorized navigation within the selected workspace still works.
+- [ ] Invite, embedded/browser, Boring MCP, signed WorkspaceBridge runtime/
+      refresh, and managed-agent MCP selectors each enforce trusted scope at the
+      named c1-c5 choke point. Public token-only invites perform only the one
+      read-only hash lookup needed to discover workspace before a foreign invite
+      receives the existing non-enumerating `invite_not_found` denial;
+      Boring MCP keeps generic limiting exact when unscoped, while scoped
+      onRequest limiting charges every request using only user/IP plus trusted
+      workspace before admission; Bridge verifies signature/
+      claims, asserts host scope, then loads definition/capabilities, and D1
+      mismatch escapes as HTTP 421 rather than RPC error. No caller agent/deployment selector or
+      generic selector framework was added.
 - [ ] Canonical trusted-proxy/Host parsing and uniqueness reject duplicate or
       ambiguous hostname/workspace/deployment/default bindings and overlapping
       workspace/session roots before effects.
@@ -82,6 +95,58 @@
 - [ ] Final activated capability/tool/skill/MCP inventories satisfy every
       non-empty definition requirement before composition identity/publication;
       missing inventory and mismatches fail the one stable composition error.
+- [ ] Before candidate/all-ready, a root-owned approved-release record binds
+      core/ingress artifacts and commands, Caddyfile digest, redacted host-
+      security-config digest, and the immutable merged
+      c1-c5 plan/evidence plus execution-policy revisions; the app/apply command
+      cannot write it.
+      Before Compose mutation, intended desired == approved artifact/command.
+      The strict env schema requires the exact approved key set and classifies
+      each key as fixed or redacted nonsecret; unknown or secret-bearing env keys
+      reject. Secret-ref identities stay in approved state and values stay only
+      in the tmpfs file-provider mount. It pins
+      `NODE_ENV=production`, forbids five loader keys, and binds owner/mode/roots/
+      proxy, auth URL, CORS, CSP, cookie security, and D1/MCP route identity.
+      First boot proves core/ingress absent or stopped. Create and inspect the
+      exact one-shot migration container with DB-only access and no data/state
+      mounts, exact `node .../migrate.js`, `User=10001:10001`, and no web
+      entrypoint/capabilities/privileged mode before running it to zero exit.
+      Reject inherited web entrypoint and root user. Its deterministic host/revision id
+      resumes created/running/exited-zero states, quarantines nonzero/drift, writes
+      durable redacted completion before exact-id cleanup, and survives crashes
+      at every boundary. Create core stopped, inspect observed ==
+      approved artifact/command, `ReadonlyRootfs: true`, and exactly the two data
+      volumes plus read-only host-state and host-tmpfs input binds before
+      preload/pointer/ingress or lazy first-effect admission. Observed env and
+      redacted host-security-config digest satisfy the same policy without logging
+      values. A materialized canary is absent from full Docker inspect/config;
+      bytes never leave the read-only tmpfs file-provider mount or enter metadata/
+      digest/capability/error/evidence. Rotation requires maintenance restart.
+      Bind the stopped
+      core id, start only that exact id, and wait for health; direct non-Caddy
+      application traffic remains scope-rejected. Security/config drift rejects;
+      mismatch stops/quarantines core
+      while ingress stays stopped. Only verified all-ready/published initial state
+      starts ingress. Before that, create ingress stopped and inspect the landed
+      D1-003a image/command/Caddyfile contract, read-only root, sole read-only
+      config mount, edge/port identity, exact approved image env with no Compose-
+      added env, and no command drift. The capability binds verified core and
+      stopped ingress ids; publication starts only the exact ingress id.
+      Running hosts keep the stable core/ingress and validate observed
+      state before N+1 candidate effects.
+      The effective process command is the unoverridden full-app Docker web command
+      for `apps/full-app/dist/server/main.js`; generic core launchers and app env/
+      self-report are not evidence. That approved artifact/command pair freezes
+      the complete static c1-c5 workspace-selector-bearing route set:
+      `externalPlugins: false` makes plugin-authoring env inert;
+      external/raw/runtime plugin gateways and hot reload remain unavailable;
+      conditional static MCP families stay in c3/c5; and composition descriptors
+      cannot register routes. Each
+      candidate composition separately equals its own resolved/preloaded
+      composition; sibling digests may differ. Workspace-selector-bearing change requires a
+      renewed c1-c5 inventory, a new root-approved release, and maintenance restart.
+      Writable code/package roots, mounts over executable paths, or code-loader
+      env injection reject.
 - [ ] Apply is idempotent. One redacted host snapshot/digest pins the complete
       site-binding collection and every binding's hostname, landing, authority,
       workspace/default, roots/runtime/storage, pinned host artifact,
@@ -100,7 +165,19 @@
       explicit maintenance stop/reapply, never an online continuity claim.
 - [ ] The external database stores the insert/read-only admission ledger; its
       transaction commits before first agent effect, survives process/revision
-      cleanup, and is reloaded before destructive diff or restart recovery.
+      cleanup, and is reloaded before destructive diff or restart recovery. One
+      session advisory fences keyed by host/binding serialize first-use active
+      recheck+admission commit against rollback. D1-004e locks the exact sorted
+      removal set, appends durable `prepared`, publishes the pointer, appends
+      `committed`, then releases. Append-only recovery finalizes/resumes/aborts
+      every crash phase. Real-Postgres tests race first/last removal keys and
+      overlapping sets without deadlock.
+- [ ] Preload/all-ready is non-effectful and creates no admission row; failed
+      preload leaves zero new rows. An unused published addition rolls back; the
+      first actual agent effect commits admission before executing, and a used
+      addition thereafter rejects removal. If rollback wins the full fence set,
+      first use on every removed key observes removal and creates no row/effect;
+      if any admission wins, the whole rollback rejects.
 - [ ] DNS/TLS publication occurs only after workspace/default-agent/runtime/
       secret readiness; partial state is not externally reachable.
 - [ ] Proof records setup-to-first-run time and stage breakdown against the
@@ -206,7 +283,7 @@ before calling D1 done. Invent nothing.
       invalid invite sets the existing non-enumerating failure cookie and
       creates no default workspace; generic invalid-invite signup keeps its
       existing failure cookie plus default creation. Public invite resolve/
-      accept selectors are fenced in D1-004c.
+      accept selectors are fenced in D1-004c1.
 - [ ] Account deletion and member-role/remove paths cannot delete, transfer,
       demote, or orphan the D1-managed workspace. Every existing-owner account
       deletion fails before mutation; non-owner deletion cannot touch the

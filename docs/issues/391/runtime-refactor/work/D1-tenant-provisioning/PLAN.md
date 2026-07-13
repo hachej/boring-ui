@@ -1,9 +1,9 @@
 # D1-tenant-provisioning — Plan
 
 Status: priority-1/v1 multi-agent Docker delivery gate; **D1-R0 and D1-001
-through D1-004b1 are landed and ancestry-verified**. D1-004b2a (atomic managed-
-member mutations) is the active micro-bead; D1-004b2b through D1-006 remain
-ordered behind it in
+through D1-004b2b are landed and ancestry-verified**. D1-004c1 (public invite
+scope) is the active micro-bead; D1-004c2 through D1-004c5, D1-004d/004e, D1-005a/005b/005c,
+and D1-006 remain ordered behind it in
 [`D1-R0-SPEC.md`](./D1-R0-SPEC.md) and `TODO.md`. The active contract and R0
 spec supersede the historical dedicated-site design.
 
