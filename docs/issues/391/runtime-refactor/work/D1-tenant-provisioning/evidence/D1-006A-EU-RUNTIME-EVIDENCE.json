@@ -1,0 +1,56 @@
+{
+  "schemaVersion": 1,
+  "domain": "boring-runtime-isolation-evidence:v1",
+  "profile": {
+    "schemaVersion": 1,
+    "provider": "runsc",
+    "kernelRelease": "6.14.0-37-generic",
+    "runtimeVersion": "release-20260706.0",
+    "runtimeBinaryDigest": "sha256:8fba09b71c8971d01940b9223fcfa5ebeb37e2b021ae334ca591a70c3c85c037",
+    "rootfsBinaryDigest": "sha256:6c4a39ad9ab7071e4c0bdc3f61546b1526507e30a8f24886e4ef353d66e7398d",
+    "platformMode": "systrap",
+    "privilegeModel": "sudo-root",
+    "containerCapabilities": [],
+    "workloadIdentity": "uid-65532-gid-65532",
+    "networkPolicy": "isolated-veth-no-default-route",
+    "cgroupPolicy": {
+      "version": 2,
+      "cpuQuotaMicros": 50000,
+      "cpuPeriodMicros": 100000,
+      "memoryBytes": 134217728,
+      "pidsMax": 64
+    },
+    "providerConfigDigest": "sha256:770f646f3a112000c5ed3dfd4bcf0a0ddaf9096443ebdae3fe058e93cfbe4dcc",
+    "hostPolicyDigest": "sha256:c5f4594c652d87bc41cd9245f810e1c47fa152b1bd7e89fa3bec88a4942f90e5"
+  },
+  "profileDigest": "sha256:8833d69812d36e693eaa9cb12cb2d4b0f8091be9cf166979737fa4b091f29692",
+  "testSuiteDigest": "sha256:3e415af8594d0b8fb93439b65a6cddb1dd51234da1eaf2695f8348cc466f716f",
+  "probes": {
+    "sibling-filesystem-traversal": "passed",
+    "proc-pid-enumeration": "passed",
+    "cross-sandbox-signal": "passed",
+    "cross-sandbox-ptrace": "passed",
+    "mount-access": "passed",
+    "device-access": "passed",
+    "process-escape": "passed",
+    "cross-workspace-network": "passed",
+    "secret-access": "passed",
+    "resource-ceilings": "passed",
+    "teardown": "passed"
+  },
+  "positiveControls": {
+    "ownMarkerReadable": true,
+    "attackerEndpointReachableBeforeHostileCalls": true,
+    "attackerEndpointReachableAfterHostileCalls": true,
+    "siblingEndpointReachableFromSibling": true,
+    "siblingCanaryReadableFromSibling": true,
+    "siblingAliveBeforeHostileCalls": true,
+    "siblingAliveAfterHostileCalls": true
+  },
+  "redaction": {
+    "containsHostPaths": false,
+    "containsSecrets": false,
+    "containsHostPids": false
+  },
+  "evidenceDigest": "sha256:f67c2cf1848f1304adfd4ee34c76961762cdc505f2971ce2b849de5b2765d1a6"
+}
