@@ -32,8 +32,11 @@ const memberRoutesPlugin: FastifyPluginAsync = async (app) => {
         })
       }
 
-      const existing = await store.getMemberRole(id, parsed.data.userId)
-      if (existing) {
+      const existing = request.requestScope ? null : await store.getMemberRole(id, parsed.data.userId)
+      const member = request.requestScope
+        ? await store.createMemberIfAbsent(id, parsed.data.userId, parsed.data.role)
+        : existing ? null : await store.upsertMember(id, parsed.data.userId, parsed.data.role)
+      if (!member) {
         throw new HttpError({
           status: 409,
           code: ERROR_CODES.VALIDATION_FAILED,
@@ -42,7 +45,6 @@ const memberRoutesPlugin: FastifyPluginAsync = async (app) => {
         })
       }
 
-      const member = await store.upsertMember(id, parsed.data.userId, parsed.data.role)
       reply.status(201)
       return { member }
     },
@@ -63,7 +65,9 @@ const memberRoutesPlugin: FastifyPluginAsync = async (app) => {
         })
       }
 
-      const result = await store.updateMemberRole(id, userId, parsed.data.role)
+      const result = await store.updateMemberRole(id, userId, parsed.data.role, request.requestScope
+        ? { forbidExistingOwnerMutation: true }
+        : undefined)
 
       if (result.member) {
         return { member: result.member }
@@ -83,6 +87,15 @@ const memberRoutesPlugin: FastifyPluginAsync = async (app) => {
           status: 404,
           code: ERROR_CODES.NOT_MEMBER,
           message: 'User is not a member of this workspace',
+          requestId: request.id,
+        })
+      }
+
+      if (result.code === ERROR_CODES.D1_MANAGED_WORKSPACE_MUTATION_FORBIDDEN) {
+        throw new HttpError({
+          status: 403,
+          code: result.code,
+          message: result.code,
           requestId: request.id,
         })
       }
@@ -115,7 +128,9 @@ const memberRoutesPlugin: FastifyPluginAsync = async (app) => {
         }
       }
 
-      const result = await store.removeMember(id, userId)
+      const result = await store.removeMember(id, userId, request.requestScope
+        ? { forbidExistingOwnerMutation: true }
+        : undefined)
 
       if (result.removed) {
         return { removed: true }
@@ -135,6 +150,15 @@ const memberRoutesPlugin: FastifyPluginAsync = async (app) => {
           status: 404,
           code: ERROR_CODES.NOT_MEMBER,
           message: 'User is not a member of this workspace',
+          requestId: request.id,
+        })
+      }
+
+      if (result.code === ERROR_CODES.D1_MANAGED_WORKSPACE_MUTATION_FORBIDDEN) {
+        throw new HttpError({
+          status: 403,
+          code: result.code,
+          message: result.code,
           requestId: request.id,
         })
       }

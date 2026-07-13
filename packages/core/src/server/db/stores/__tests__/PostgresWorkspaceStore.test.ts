@@ -62,6 +62,54 @@ async function seedWorkspace(appId = 'orm1-app') {
   }
 }
 
+async function waitForMemberLockWaiters(blockerPid: number, expected: number): Promise<void> {
+  for (let attempt = 0; attempt < 300; attempt += 1) {
+    const [row] = await sqlClient`
+      SELECT COUNT(*)::int AS count FROM pg_stat_activity
+      WHERE datname = current_database() AND wait_event_type = 'Lock'
+        AND query ILIKE '%workspace_members%'
+        AND ${blockerPid} = ANY(pg_blocking_pids(pid))
+    `
+    if (Number(row.count) >= expected) return
+    await new Promise((resolve) => setTimeout(resolve, 20))
+  }
+  throw new Error(`Timed out waiting for ${expected} membership lock waiters`)
+}
+
+async function runQueuedMemberOperations(
+  workspaceId: string,
+  userId: string,
+  first: () => Promise<unknown>,
+  second: () => Promise<unknown>,
+): Promise<[unknown, unknown]> {
+  let locked!: (pid: number) => void
+  let release!: () => void
+  const lockedPromise = new Promise<number>((resolve) => { locked = resolve })
+  const releasePromise = new Promise<void>((resolve) => { release = resolve })
+  const blocker = sqlClient.begin(async (tx) => {
+    await tx`SELECT user_id FROM workspace_members WHERE workspace_id = ${workspaceId} AND user_id = ${userId} FOR UPDATE`
+    const [connection] = await tx`SELECT pg_backend_pid()::int AS pid`
+    locked(Number(connection.pid))
+    await releasePromise
+  })
+  try {
+    const blockerPid = await Promise.race([
+      lockedPromise,
+      blocker.then(() => { throw new Error('Membership lock blocker exited early') }),
+      new Promise<never>((_, reject) => setTimeout(() => reject(new Error('Membership lock blocker timed out')), 6_000)),
+    ])
+    const firstResult = first()
+    await waitForMemberLockWaiters(blockerPid, 1)
+    const secondResult = second()
+    await waitForMemberLockWaiters(blockerPid, 2)
+    release()
+    return await Promise.all([firstResult, secondResult])
+  } finally {
+    release()
+    await blocker
+  }
+}
+
 beforeAll(async () => {
   await runMigrations(BASE_CONFIG)
   sqlClient = postgres(TEST_DB_URL, { max: 4 })
@@ -106,6 +154,31 @@ beforeEach(async () => {
 })
 
 describe('PostgresWorkspaceStore Sub-PR3', () => {
+  it.each(['update', 'remove'] as const)('serializes managed %s against owner promotion in both orders', async (operation) => {
+    const { workspaceId } = await seedWorkspace()
+    const [target] = await sqlClient`
+      INSERT INTO users (name, email, email_verified)
+      VALUES ('Race Target', ${`race-${randomUUID()}@orm1-test.dev`}, true) RETURNING id
+    `
+    const userId = target.id as string
+    const protect = () => operation === 'update'
+      ? store.updateMemberRole(workspaceId, userId, 'viewer', { forbidExistingOwnerMutation: true })
+      : store.removeMember(workspaceId, userId, { forbidExistingOwnerMutation: true })
+    const promote = () => store.upsertMember(workspaceId, userId, 'owner')
+
+    await store.upsertMember(workspaceId, userId, 'editor')
+    const [, protectedAfterPromotion] = await runQueuedMemberOperations(workspaceId, userId, promote, protect)
+    expect(protectedAfterPromotion).toMatchObject({ code: ERROR_CODES.D1_MANAGED_WORKSPACE_MUTATION_FORBIDDEN })
+    expect(await store.getMemberRole(workspaceId, userId)).toBe('owner')
+
+    await store.upsertMember(workspaceId, userId, 'editor')
+    const [protectedBeforePromotion] = await runQueuedMemberOperations(workspaceId, userId, protect, promote)
+    expect(protectedBeforePromotion).toMatchObject(operation === 'update'
+      ? { member: { role: 'viewer' } }
+      : { removed: true })
+    expect(await store.getMemberRole(workspaceId, userId)).toBe('owner')
+  })
+
   describe('workspace settings', () => {
     it('putWorkspaceSettings stores encrypted values and getWorkspaceSettings returns metadata only', async () => {
       const { workspaceId } = await seedWorkspace()
