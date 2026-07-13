@@ -264,6 +264,57 @@ describe('resolveAgentDeployment', () => {
     expect(withHostname.resolvedDigest).toBe(resolved.resolvedDigest)
   })
 
+  it('pins resolvedDigest to a golden vector for a fully-fixed fixture (canonicalStringify determinism)', async () => {
+    const goldenDefinition: AgentDefinition = {
+      schemaVersion: 1,
+      definitionId: 'golden-definition',
+      version: '1.0.0',
+      instructionsRef: 'instructions.md',
+    }
+    const asset = Object.freeze({
+      path: 'instructions.md',
+      digest: await createAgentAssetDigest('Golden fixture instructions.'),
+      content: 'Golden fixture instructions.',
+    })
+    const assets = Object.freeze([asset])
+    const goldenDefinitionDigest = await createAgentDefinitionDigest({
+      definition: goldenDefinition,
+      assets,
+    })
+    const goldenBundle: CompiledAgentBundle = Object.freeze({
+      definition: goldenDefinition,
+      definitionDigest: goldenDefinitionDigest,
+      assets,
+    })
+    const goldenDeployment: AgentDeployment = {
+      deploymentId: 'golden-deployment',
+      version: '1.0.0',
+      agentId: 'default',
+      definition: {
+        definitionId: goldenDefinition.definitionId,
+        version: goldenDefinition.version,
+        digest: goldenDefinitionDigest,
+      },
+    }
+    const goldenBinding = {
+      workspaceId: 'golden-workspace',
+      defaultDeploymentId: 'golden-deployment',
+      workspaceCompositionDigest: `sha256:${'a'.repeat(64)}` as Sha256Digest,
+    }
+
+    const resolved = await resolveAgentDeployment(goldenBundle, goldenDeployment, goldenBinding)
+
+    expect(goldenDefinitionDigest).toBe(
+      'sha256:f950bf76817802ef360873cac765adb649fb428be432fec601891b620b9593ed',
+    )
+    expect(resolved.deployment.digest).toBe(
+      'sha256:7bdfffa06038715e5a72ee2a2d5407ea75189213c2b59f090cca5c874e852c18',
+    )
+    expect(resolved.resolvedDigest).toBe(
+      'sha256:fac5e93763fadc3a69d8bd53bb84dff2fe975484662cf711b08bc65d0cefa4ce',
+    )
+  })
+
   it.each([
     ['workspaceId', ''],
     ['workspaceId', 'a'.repeat(257)],

@@ -1,8 +1,9 @@
-import { createHash, randomUUID } from 'node:crypto'
+import { randomUUID } from 'node:crypto'
 
 import type { Agent, AgentActor, AgentEvent } from '../../shared/events'
 import { ErrorCode, type ErrorCode as StableErrorCode } from '../../shared/error-codes'
 import type { BoringChatMessage, BoringChatPart } from '../../shared/chat'
+import { sha256Bytes } from '../../shared/digest'
 import type { SessionCtx } from '../../shared/session'
 import type { Stat, Workspace } from '../../shared/workspace'
 
@@ -746,7 +747,7 @@ async function resolveMarkdownArtifact(
   validateMarkdownContent(content)
   const artifact: ManagedAgentArtifact = {
     content,
-    sha256: sha256(bytes),
+    sha256: await sha256Bytes(bytes),
     byteSize,
     mediaType: MARKDOWN_MEDIA_TYPE,
     ...(candidate.title ? { title: candidate.title } : {}),
@@ -858,10 +859,6 @@ function validateMarkdownContent(content: string): void {
 
 function sameStat(left: Stat, right: Stat): boolean {
   return left.kind === right.kind && left.size === right.size && left.mtimeMs === right.mtimeMs
-}
-
-function sha256(bytes: Uint8Array): `sha256:${string}` {
-  return `sha256:${createHash('sha256').update(bytes).digest('hex')}`
 }
 
 function safeDecodeArtifactPath(path: string): string {

@@ -1,12 +1,20 @@
 import { z } from 'zod'
 
+import { canonicalStringify, sha256, type Sha256Digest } from './digest'
 import {
   AgentDefinitionErrorCode,
   AgentDeploymentErrorCode,
-  ErrorCode,
 } from './error-codes'
+import {
+  SchemaValidationError,
+  formatPath,
+  mapZodIssues,
+  type AgentSchemaIssue,
+  type AgentSchemaValidationResult,
+} from './schema-issue'
 
-export type Sha256Digest = `sha256:${string}`
+export type { Sha256Digest }
+export type { AgentSchemaIssue, AgentSchemaValidationResult }
 
 export interface AgentDefinition {
   schemaVersion: 1
@@ -52,15 +60,6 @@ export interface CompiledAgentBundle {
   readonly definitionDigest: Sha256Digest
   readonly assets: readonly Readonly<AgentDefinitionDigestAsset>[]
 }
-export interface AgentSchemaIssue<Code extends string> {
-  code: Code
-  field: string
-  message: string
-}
-
-export type AgentSchemaValidationResult<T, Code extends string> =
-  | { valid: true; value: T }
-  | { valid: false; issues: AgentSchemaIssue<Code>[] }
 
 const SHA256_DIGEST_RE = /^sha256:[a-f0-9]{64}$/
 
@@ -168,42 +167,6 @@ const AgentDefinitionDigestAssetSchema = z.object({
   content: z.string().refine(hasWellFormedUnicode, 'must contain well-formed Unicode'),
 }).strict()
 
-function formatPath(path: PropertyKey[]): string {
-  if (path.length === 0) return '<root>'
-  return path.reduce<string>(
-    (result, part) =>
-      typeof part === 'number'
-        ? `${result}[${part}]`
-        : result.length === 0
-          ? String(part)
-          : `${result}.${String(part)}`,
-    '',
-  )
-}
-
-function mapZodIssues<Code extends string>(
-  issues: z.ZodIssue[],
-  invalidCode: Code,
-  unsupportedCode: Code,
-): AgentSchemaIssue<Code>[] {
-  return issues.flatMap((issue) => {
-    if (issue.code === z.ZodIssueCode.unrecognized_keys) {
-      const parent = formatPath(issue.path)
-      return [...issue.keys].sort().map((key) => ({
-        code: unsupportedCode,
-        field: parent === '<root>' ? key : `${parent}.${key}`,
-        message: `${key} is not supported by schema version 1`,
-      }))
-    }
-    const field = formatPath(issue.path)
-    return [{
-      code: invalidCode,
-      field,
-      message: field === '<root>' ? issue.message : `${field} ${issue.message}`,
-    }]
-  })
-}
-
 export function validateAgentDefinition(
   raw: unknown,
 ): AgentSchemaValidationResult<AgentDefinition, AgentDefinitionErrorCode> {
@@ -238,32 +201,6 @@ export function validateAgentDeployment(
   return { valid: true, value: result.data }
 }
 
-function canonicalStringify(value: unknown): string {
-  if (value === null || typeof value !== 'object') {
-    const encoded = JSON.stringify(value)
-    if (encoded === undefined) throw new TypeError('Cannot canonicalize undefined')
-    return encoded
-  }
-  if (Array.isArray(value)) return `[${value.map(canonicalStringify).join(',')}]`
-  const record = value as Record<string, unknown>
-  return `{${Object.keys(record)
-    .filter((key) => record[key] !== undefined)
-    .sort()
-    .map((key) => `${JSON.stringify(key)}:${canonicalStringify(record[key])}`)
-    .join(',')}}`
-}
-
-async function sha256(value: string): Promise<Sha256Digest> {
-  const hash = await globalThis.crypto.subtle.digest(
-    'SHA-256',
-    new TextEncoder().encode(value),
-  )
-  const hex = Array.from(new Uint8Array(hash), (byte) =>
-    byte.toString(16).padStart(2, '0'),
-  ).join('')
-  return `sha256:${hex}`
-}
-
 export async function createAgentAssetDigest(content: string): Promise<Sha256Digest> {
   if (!hasWellFormedUnicode(content)) {
     throw new AgentDefinitionValidationError({
@@ -275,29 +212,17 @@ export async function createAgentAssetDigest(content: string): Promise<Sha256Dig
   return sha256(content)
 }
 
-export class AgentDefinitionValidationError extends Error {
-  readonly code = ErrorCode.enum.CONFIG_INVALID
-  readonly field: string
-  readonly validationCode: AgentDefinitionErrorCode
-
+export class AgentDefinitionValidationError extends SchemaValidationError<AgentDefinitionErrorCode> {
   constructor(issue: AgentSchemaIssue<AgentDefinitionErrorCode>) {
-    super(issue.message)
+    super(issue)
     this.name = 'AgentDefinitionValidationError'
-    this.field = issue.field
-    this.validationCode = issue.code
   }
 }
 
-export class AgentDeploymentValidationError extends Error {
-  readonly code = ErrorCode.enum.CONFIG_INVALID
-  readonly field: string
-  readonly validationCode: AgentDeploymentErrorCode
-
+export class AgentDeploymentValidationError extends SchemaValidationError<AgentDeploymentErrorCode> {
   constructor(issue: AgentSchemaIssue<AgentDeploymentErrorCode>) {
-    super(issue.message)
+    super(issue)
     this.name = 'AgentDeploymentValidationError'
-    this.field = issue.field
-    this.validationCode = issue.code
   }
 }
 

@@ -15,8 +15,8 @@
 
 import { z } from 'zod'
 
-import type { AgentSchemaIssue, AgentSchemaValidationResult } from './agent-definition'
-import { AgentConsumptionErrorCode, ErrorCode } from './error-codes'
+import { AgentConsumptionErrorCode } from './error-codes'
+import { SchemaValidationError, formatPath, type AgentSchemaIssue, type AgentSchemaValidationResult } from './schema-issue'
 
 const nonEmptyString = z.string().min(1)
 
@@ -201,22 +201,9 @@ export const AgentTaskSchema = z
   })
   .strict() satisfies z.ZodType<AgentTask, z.ZodTypeDef, unknown>
 
-function formatIssuePath(path: PropertyKey[]): string {
-  if (path.length === 0) return '<root>'
-  return path.reduce<string>(
-    (result, part) =>
-      typeof part === 'number'
-        ? `${result}[${part}]`
-        : result.length === 0
-          ? String(part)
-          : `${result}.${String(part)}`,
-    '',
-  )
-}
-
 function schemaMismatchIssues(issues: z.ZodIssue[]): AgentSchemaIssue<AgentConsumptionErrorCode>[] {
   return issues.map((issue) => {
-    const field = formatIssuePath(issue.path)
+    const field = formatPath(issue.path)
     return {
       code: AgentConsumptionErrorCode.enum.AGENT_CONSUMPTION_SCHEMA_MISMATCH,
       field,
@@ -235,16 +222,10 @@ export function validateAgentTask(
   return { valid: true, value: result.data }
 }
 
-export class AgentConsumptionValidationError extends Error {
-  readonly code = ErrorCode.enum.CONFIG_INVALID
-  readonly field: string
-  readonly validationCode: AgentConsumptionErrorCode
-
+export class AgentConsumptionValidationError extends SchemaValidationError<AgentConsumptionErrorCode> {
   constructor(issue: AgentSchemaIssue<AgentConsumptionErrorCode>) {
-    super(issue.message)
+    super(issue)
     this.name = 'AgentConsumptionValidationError'
-    this.field = issue.field
-    this.validationCode = issue.code
   }
 }
 
