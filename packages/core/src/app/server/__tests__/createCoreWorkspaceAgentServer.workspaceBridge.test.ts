@@ -335,9 +335,9 @@ describe('createCoreWorkspaceAgentServer workspace bridge wiring', () => {
 
   it('keeps browser scope admission exact and admits only authorized runtime Bridge calls', async () => {
     const getWorkspaceRoot = vi.fn(async () => '/tmp/workspace')
-    let failAdmission = false
+    let admissionError: string | null = null
     const admitEffect = vi.fn(async () => {
-      if (failAdmission) throw new Error('private admission failure')
+      if (admissionError) throw Object.assign(new Error('private admission failure'), { code: admissionError })
     })
     const app = await createCoreWorkspaceAgentServer({
       serveFrontend: false,
@@ -411,7 +411,7 @@ describe('createCoreWorkspaceAgentServer workspace bridge wiring', () => {
     expect(workspaceServerMock.registryCreations).toBe(0)
     expect(admitEffect).toHaveBeenCalledTimes(1)
 
-    failAdmission = true
+    admissionError = 'private'
     const blocked = await app.inject({
       method: 'POST',
       url: '/api/v1/workspace-bridge/call',
@@ -422,6 +422,18 @@ describe('createCoreWorkspaceAgentServer workspace bridge wiring', () => {
     expect(blocked.json()).toMatchObject({
       code: 'D1_ADMISSION_RECORD_FAILED',
       message: 'D1_ADMISSION_RECORD_FAILED',
+    })
+    admissionError = 'D1_ADMISSION_IDENTITY_MISMATCH'
+    const mismatched = await app.inject({
+      method: 'POST',
+      url: '/api/v1/workspace-bridge/call',
+      headers: { authorization: 'Bearer runtime-token' },
+      payload: {},
+    })
+    expect(mismatched.statusCode).toBe(500)
+    expect(mismatched.json()).toMatchObject({
+      code: 'D1_ADMISSION_IDENTITY_MISMATCH',
+      message: 'D1_ADMISSION_IDENTITY_MISMATCH',
     })
     await app.close()
   })

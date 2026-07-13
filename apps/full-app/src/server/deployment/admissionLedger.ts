@@ -1,7 +1,7 @@
 import type postgres from 'postgres'
-import { OpaqueRefSchema } from '@hachej/boring-agent/shared'
+import { createAgentAssetDigest, OpaqueRefSchema, type Sha256Digest } from '@hachej/boring-agent/shared'
 import type { D1ActiveCollectionReader } from './activeCollectionReader.js'
-import { D1HostError, D1HostErrorCode, strictD1HostId, strictD1Ref } from './d1Plan.js'
+import { d1Digest, D1HostError, D1HostErrorCode, strictD1HostId, strictD1Ref } from './d1Plan.js'
 
 const attestedBrand: unique symbol = Symbol('AttestedD1DatabaseConnection')
 const liveConnections = new WeakMap<AttestedD1DatabaseConnection, LiveConnection>()
@@ -27,7 +27,9 @@ export interface D1BindingAdmission {
   readonly sequence: bigint
   readonly hostId: string
   readonly bindingId: string
-  readonly activeRevision: string
+  readonly executionIdentityDigest: Sha256Digest
+  readonly firstRevisionId: string
+  readonly firstDesiredStateDigest: Sha256Digest
   readonly admittedAt: Date
 }
 export interface D1AdmissionFenceKey {
@@ -45,12 +47,27 @@ interface AdmissionRow {
   sequence: string | number | bigint
   hostId: string
   bindingId: string
-  activeRevision: string
+  executionIdentityDigest: string | null
+  firstRevisionId: string
+  firstDesiredStateDigest: string | null
   admittedAt: Date
+}
+
+interface AdmissionIdentity {
+  readonly executionIdentityDigest: Sha256Digest
+  readonly firstRevisionId: string
+  readonly firstDesiredStateDigest: Sha256Digest
 }
 
 function failed(): D1HostError {
   return new D1HostError(D1HostErrorCode.ADMISSION_RECORD_FAILED, { field: 'admission' })
+}
+function mismatch(): D1HostError {
+  return new D1HostError(D1HostErrorCode.ADMISSION_IDENTITY_MISMATCH, { field: 'executionIdentityDigest' })
+}
+function preserveMismatch(error: unknown): never {
+  if (error instanceof D1HostError && error.code === D1HostErrorCode.ADMISSION_IDENTITY_MISMATCH) throw error
+  throw failed()
 }
 function connectionLost(error: unknown): boolean {
   const code = error instanceof Error ? (error as Error & { code?: unknown }).code : undefined
@@ -80,7 +97,9 @@ function row(value: AdmissionRow | undefined): D1BindingAdmission {
     sequence,
     hostId: strictD1HostId(value.hostId, 'admission.hostId'),
     bindingId: strictD1Ref(value.bindingId, 'admission.bindingId'),
-    activeRevision: revision(value.activeRevision),
+    executionIdentityDigest: d1Digest(value.executionIdentityDigest, 'admission.executionIdentityDigest'),
+    firstRevisionId: revision(value.firstRevisionId),
+    firstDesiredStateDigest: d1Digest(value.firstDesiredStateDigest, 'admission.firstDesiredStateDigest'),
     admittedAt: new Date(value.admittedAt),
   })
 }
@@ -114,7 +133,7 @@ export async function closeAttestedD1DatabaseConnection(connection: AttestedD1Da
   if (live.ownsClient) await live.sql.end()
 }
 
-async function insertOrRead(sql: postgres.ReservedSql, target: D1AdmissionTarget, activeRevision: string): Promise<D1BindingAdmission> {
+async function insertOrRead(sql: postgres.ReservedSql, target: D1AdmissionTarget, identity: AdmissionIdentity): Promise<D1BindingAdmission> {
   let transaction = false
   try {
     if (isD1ReservedConnectionLost(sql)) throw failed()
@@ -134,25 +153,56 @@ async function insertOrRead(sql: postgres.ReservedSql, target: D1AdmissionTarget
     `
     if (!pendingRemoval || typeof pendingRemoval.pending !== 'boolean' || pendingRemoval.pending) throw failed()
     const inserted = await sql<AdmissionRow[]>`
-      INSERT INTO d1_binding_admissions (host_id, binding_id, active_revision)
-      VALUES (${target.hostId}, ${target.bindingId}, ${activeRevision})
+      INSERT INTO d1_binding_admissions (
+        host_id, binding_id, active_revision, execution_identity_digest, first_desired_state_digest
+      ) VALUES (
+        ${target.hostId}, ${target.bindingId}, ${identity.firstRevisionId},
+        ${identity.executionIdentityDigest}, ${identity.firstDesiredStateDigest}
+      )
       ON CONFLICT (host_id, binding_id) DO NOTHING
       RETURNING sequence, host_id AS "hostId", binding_id AS "bindingId",
-        active_revision AS "activeRevision", admitted_at AS "admittedAt"
+        execution_identity_digest AS "executionIdentityDigest", active_revision AS "firstRevisionId",
+        first_desired_state_digest AS "firstDesiredStateDigest", admitted_at AS "admittedAt"
     `
     const existing = inserted[0] ?? (await sql<AdmissionRow[]>`
       SELECT sequence, host_id AS "hostId", binding_id AS "bindingId",
-        active_revision AS "activeRevision", admitted_at AS "admittedAt"
+        execution_identity_digest AS "executionIdentityDigest", active_revision AS "firstRevisionId",
+        first_desired_state_digest AS "firstDesiredStateDigest", admitted_at AS "admittedAt"
       FROM d1_binding_admissions
       WHERE host_id = ${target.hostId} AND binding_id = ${target.bindingId}
     `)[0]
+    if (existing?.executionIdentityDigest === null || existing?.firstDesiredStateDigest === null) throw mismatch()
     const admission = row(existing)
+    if (admission.executionIdentityDigest !== identity.executionIdentityDigest) throw mismatch()
     await sql`COMMIT`; transaction = false
     return admission
-  } catch {
+  } catch (error) {
     if (transaction) try { await bounded(sql`ROLLBACK`) } catch {}
-    throw failed()
+    preserveMismatch(error)
   }
+}
+
+async function admissionIdentity(
+  active: NonNullable<Awaited<ReturnType<D1ActiveCollectionReader['read']>>>,
+  bindingId: string,
+): Promise<AdmissionIdentity> {
+  const binding = active.desired.plan.bindings.find((entry) => entry.bindingId === bindingId)
+  const resolved = active.desired.resolvedBindings.find((entry) => entry.bindingId === bindingId)
+  const observed = active.observation.bindings.find((entry) => entry.bindingId === bindingId)
+  if (!binding || !resolved || !observed) throw failed()
+  const { hostname: _hostname, landing: _landing, ...executionBinding } = binding
+  const executionIdentityDigest = await createAgentAssetDigest(JSON.stringify({
+    schemaVersion: 1,
+    domain: 'boring-d1-admission-execution:v1',
+    binding: executionBinding,
+    resolved,
+    runtimeInputs: observed.runtimeInputs,
+  }))
+  return Object.freeze({
+    executionIdentityDigest,
+    firstRevisionId: revision(active.active.revisionId),
+    firstDesiredStateDigest: d1Digest(active.active.desiredStateDigest, 'active.desiredStateDigest'),
+  })
 }
 
 export function createD1AdmissionLedger(
@@ -249,9 +299,9 @@ export function createD1AdmissionLedger(
         if (!active || active.desired.plan.hostId !== target.hostId || active.desired.plan.databaseRef !== live.databaseRef
           || binding?.workspaceId !== target.workspaceId || binding.defaultDeploymentId !== target.defaultDeploymentId
           || resolved?.workspace.workspaceId !== target.workspaceId || resolved.workspace.defaultDeploymentId !== target.defaultDeploymentId) throw failed()
-        return insertOrRead(sql, target, revision(active.active.revisionId))
+        return insertOrRead(sql, target, await admissionIdentity(active, target.bindingId))
       })
-    } catch { throw failed() }
+    } catch (error) { preserveMismatch(error) }
   }
 
   return Object.freeze({
