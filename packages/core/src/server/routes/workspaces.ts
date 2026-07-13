@@ -2,6 +2,7 @@ import type { FastifyPluginAsync, FastifyRequest } from 'fastify'
 import fp from 'fastify-plugin'
 import { HttpError, ERROR_CODES } from '../../shared/errors.js'
 import { requireWorkspaceMember } from '../auth/requireWorkspaceMember.js'
+import { authorizeRequestScopedWorkspace } from '../auth/requestWorkspaceScope.js'
 import { createWorkspaceBody, updateWorkspaceBody } from './__schemas__/workspaces.js'
 
 const DEFAULT_WORKSPACE_NAME = 'Default workspace'
@@ -87,6 +88,14 @@ const workspaceRoutesPlugin: FastifyPluginAsync = async (app) => {
   }
 
   app.post('/api/v1/workspaces', async (request, reply) => {
+    if (request.requestScope) {
+      throw new HttpError({
+        status: 403,
+        code: ERROR_CODES.D1_MANAGED_WORKSPACE_MUTATION_FORBIDDEN,
+        message: ERROR_CODES.D1_MANAGED_WORKSPACE_MUTATION_FORBIDDEN,
+        requestId: request.id,
+      })
+    }
     const parsed = createWorkspaceBody.safeParse(request.body)
     if (!parsed.success) {
       throw new HttpError({
@@ -109,6 +118,8 @@ const workspaceRoutesPlugin: FastifyPluginAsync = async (app) => {
   })
 
   app.get('/api/v1/workspaces', async (request) => {
+    const requestScopedWorkspace = await authorizeRequestScopedWorkspace(request, request.requestScope?.workspaceId)
+    if (requestScopedWorkspace) return { workspaces: [requestScopedWorkspace] }
     const workspaces = await listOrCreateDefaultWorkspace(request.user!.id, request)
     return { workspaces }
   })
@@ -176,6 +187,15 @@ const workspaceRoutesPlugin: FastifyPluginAsync = async (app) => {
     { preHandler: requireWorkspaceMember('owner') },
     async (request) => {
       const { id } = request.params as { id: string }
+
+      if (request.requestScope) {
+        throw new HttpError({
+          status: 403,
+          code: ERROR_CODES.D1_MANAGED_WORKSPACE_MUTATION_FORBIDDEN,
+          message: ERROR_CODES.D1_MANAGED_WORKSPACE_MUTATION_FORBIDDEN,
+          requestId: request.id,
+        })
+      }
 
       request.log.info({ workspaceId: id }, 'workspace.delete.start')
 
