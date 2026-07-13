@@ -32,6 +32,23 @@ export function dirKey(dir: string): string {
   return dir && dir !== '' ? dir : '.'
 }
 
+/**
+ * Join a directory and a leaf name into a path, the same way every path in
+ * this module is shaped: no leading "./", no doubled or trailing slashes.
+ * `dir` is normally "." (root) or a bare relative path like "src/lib" — but
+ * some hosts configure a filesystem root as "/" (see company_context in
+ * `FileTreeRootConfig`), and naively doing `${dir}/${name}` there produced
+ * "//name": a path string that doesn't match what the server round-trips
+ * back, so the optimistic entry and the server-confirmed entry never
+ * deduped by path and the row rendered twice. Stripping trailing slashes
+ * from `dir` first keeps every root shape converging on the same string.
+ */
+export function joinPath(dir: string, name: string): string {
+  const trimmedDir = dir.replace(/\/+$/, '')
+  if (trimmedDir === '' || trimmedDir === '.') return name
+  return `${trimmedDir}/${name}`
+}
+
 export function mergeEntries(
   base: FileEntry[] | undefined,
   optimistic: FileEntry[] | undefined,

@@ -6,6 +6,7 @@ import type React from "react"
 import { Toaster, clearToasts } from "../../../../../front/toast"
 
 const mockFileList = vi.fn()
+const mockFileListRefetch = vi.fn()
 const mockFileWrite = vi.fn()
 const mockCreateDir = vi.fn()
 const mockMoveFile = vi.fn()
@@ -229,11 +230,13 @@ afterAll(() => {
 
 beforeEach(() => {
   vi.clearAllMocks()
+  mockFileListRefetch.mockResolvedValue(undefined)
   mockFileSearch.mockReturnValue({ data: undefined })
   mockFileList.mockReturnValue({
     data: sampleFiles,
     isLoading: false,
     error: undefined,
+    refetch: mockFileListRefetch,
   })
   mockGetGitUrlMetadata.mockImplementation(() => ({ data: { enabled: false } }))
 })
@@ -1724,6 +1727,186 @@ describe("FileTreePane", () => {
       await waitFor(() => expect(mockDeleteFile).toHaveBeenCalled())
       await waitFor(() => expect(mockGetTree).toHaveBeenCalledWith("src"))
       expect(mockGetTree).toHaveBeenCalledTimes(1)
+    })
+  })
+
+  describe("Create de-dup", () => {
+    it("creating a file at the root renders exactly one matching node", async () => {
+      mockFileWrite.mockResolvedValue(undefined)
+      render(<FileTreePane />, { wrapper })
+      await waitFor(() => expect(screen.getByTestId("file-tree")).toBeInTheDocument())
+
+      const container = screen.getByTestId("file-tree").parentElement!
+      fireEvent.contextMenu(container)
+      fireEvent.click(screen.getByRole("menuitem", { name: "New file" }))
+
+      const input = await screen.findByTestId("file-tree-edit-input")
+      fireEvent.change(input, { target: { value: "notes.md" } })
+      fireEvent.keyDown(input, { key: "Enter" })
+
+      await waitFor(() => expect(screen.getByText("notes.md")).toBeInTheDocument())
+      // Give any further optimistic-entry / refetch bookkeeping a chance to
+      // settle before asserting the node count — a regression here would
+      // show a second "notes.md" row once the confirm-and-clear machinery
+      // (or a later unrelated re-render) runs.
+      await new Promise((r) => setTimeout(r, 50))
+      expect(screen.getAllByText("notes.md")).toHaveLength(1)
+    })
+
+    it("creating a file inside a folder with a non-dot root path renders exactly one matching node", async () => {
+      // Regression guard for the "//name" double-slash join bug: a
+      // filesystem root configured as "/" (e.g. company_context) used to
+      // build a create path that didn't match what the confirmed listing
+      // would use, so the optimistic entry and the real entry never
+      // deduped by path and the row rendered twice.
+      mockFileWrite.mockResolvedValue(undefined)
+      mockFileList.mockImplementation((_dir: string, filesystem?: string) => ({
+        data: filesystem === "project_alpha" ? sampleFiles : [],
+        isLoading: false,
+        isSuccess: true,
+        error: undefined,
+        refetch: mockFileListRefetch,
+      }))
+
+      render(
+        <FileTreePane
+          roots={[
+            { filesystem: "project_alpha", label: "Project", rootDir: "/", access: "readwrite" },
+          ]}
+        />,
+        { wrapper },
+      )
+      await waitFor(() => expect(screen.getByTestId("file-tree")).toBeInTheDocument())
+
+      const container = screen.getByTestId("file-tree").parentElement!
+      fireEvent.contextMenu(container)
+      fireEvent.click(screen.getByRole("menuitem", { name: "New file" }))
+
+      const input = await screen.findByTestId("file-tree-edit-input")
+      fireEvent.change(input, { target: { value: "root-notes.md" } })
+      fireEvent.keyDown(input, { key: "Enter" })
+
+      await waitFor(() =>
+        expect(mockFileWrite).toHaveBeenCalledWith({
+          path: "root-notes.md",
+          content: "",
+          returnMtimeMs: false,
+          filesystem: "project_alpha",
+        }),
+      )
+      await waitFor(() => expect(screen.getByText("root-notes.md")).toBeInTheDocument())
+      await new Promise((r) => setTimeout(r, 50))
+      expect(screen.getAllByText("root-notes.md")).toHaveLength(1)
+    })
+  })
+
+  describe("Refresh button", () => {
+    it("shows a Refresh files button next to the search input and refetches the active root on click", async () => {
+      render(<FileTreePane />, { wrapper })
+      await waitFor(() => expect(screen.getByTestId("file-tree")).toBeInTheDocument())
+
+      const button = screen.getByRole("button", { name: "Refresh files" })
+      expect(button).toBeInTheDocument()
+
+      fireEvent.click(button)
+      await waitFor(() => expect(mockFileListRefetch).toHaveBeenCalled())
+    })
+
+    it("shows the Refresh button in single-root chromeless mode", async () => {
+      render(<FileTreePane chromeless />, { wrapper })
+      await waitFor(() => expect(screen.getByTestId("file-tree")).toBeInTheDocument())
+
+      const button = screen.getByRole("button", { name: "Refresh files" })
+      fireEvent.click(button)
+      await waitFor(() => expect(mockFileListRefetch).toHaveBeenCalled())
+    })
+
+    it("shows the Refresh button in multi-root chromeless mode and refetches whichever root is active", async () => {
+      mockFileList.mockImplementation((_dir: string, filesystem?: string) => ({
+        data: filesystem === "project_alpha"
+          ? [{ name: "handbook.md", kind: "file" as const, path: "handbook.md" }]
+          : sampleFiles,
+        isLoading: false,
+        isSuccess: true,
+        error: undefined,
+        refetch: mockFileListRefetch,
+      }))
+
+      render(
+        <FileTreePane
+          chromeless
+          roots={[
+            { filesystem: "user", label: "Workspace", rootDir: ".", access: "readwrite" },
+            { filesystem: "project_alpha", label: "Project", rootDir: "/", access: "readonly" },
+          ]}
+        />,
+        { wrapper },
+      )
+
+      expect(await screen.findByRole("combobox", { name: "File root" })).toBeInTheDocument()
+      await selectRoot("Project")
+      await waitFor(() => expect(screen.getByText("handbook.md")).toBeInTheDocument())
+
+      mockFileListRefetch.mockClear()
+      fireEvent.click(screen.getByRole("button", { name: "Refresh files" }))
+      await waitFor(() => expect(mockFileListRefetch).toHaveBeenCalled())
+    })
+
+    it("disables the button and shows a busy state while the refetch is in flight", async () => {
+      let resolveRefetch!: () => void
+      mockFileListRefetch.mockImplementation(
+        () => new Promise<void>((resolve) => { resolveRefetch = resolve }),
+      )
+      render(<FileTreePane />, { wrapper })
+      await waitFor(() => expect(screen.getByTestId("file-tree")).toBeInTheDocument())
+
+      const button = screen.getByRole("button", { name: "Refresh files" })
+      fireEvent.click(button)
+
+      await waitFor(() => expect(button).toBeDisabled())
+
+      await act(async () => {
+        resolveRefetch()
+      })
+      await waitFor(() => expect(button).not.toBeDisabled())
+    })
+  })
+
+  describe("Auto-refresh on agent/remote file changes", () => {
+    it("a file created out-of-band by the agent (remote SSE cause) appears at the root without user action", async () => {
+      render(<FileTreePane />, { wrapper })
+      await waitFor(() => expect(screen.getByTestId("file-tree")).toBeInTheDocument())
+
+      expect(screen.queryByText("agent-created.md")).not.toBeInTheDocument()
+
+      // This is the same bus event `useFileEventStream` relays from the
+      // server's `/api/v1/fs/events` SSE stream when the *agent* (not this
+      // browser tab) writes a file — the existing signal this pane already
+      // listens on, wired well before this PR.
+      act(() => {
+        events.emit(filesystemEvents.created, { ...remoteMeta(), path: "agent-created.md", kind: "file" })
+      })
+
+      await waitFor(() => expect(screen.getByText("agent-created.md")).toBeInTheDocument())
+    })
+
+    it("a file the agent creates inside an already-expanded folder appears without the user re-expanding it", async () => {
+      mockGetTree.mockResolvedValue([{ name: "old.ts", kind: "file", path: "src/old.ts" }])
+      render(<FileTreePane />, { wrapper })
+      await waitFor(() => expect(screen.getByText("src")).toBeInTheDocument())
+
+      fireEvent.click(screen.getByTestId("trigger-expand-src"))
+      await screen.findByText("old.ts")
+
+      mockGetTree.mockResolvedValue([
+        { name: "old.ts", kind: "file", path: "src/old.ts" },
+        { name: "agent-new.ts", kind: "file", path: "src/agent-new.ts" },
+      ])
+      act(() => {
+        events.emit(filesystemEvents.created, { ...remoteMeta(), path: "src/agent-new.ts", kind: "file" })
+      })
+
+      await waitFor(() => expect(screen.getByText("agent-new.ts")).toBeInTheDocument())
     })
   })
 })
