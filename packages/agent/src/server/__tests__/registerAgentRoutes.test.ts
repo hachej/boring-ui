@@ -1000,9 +1000,9 @@ test('request-scoped routes preserve branded D1 scope errors before runtime reso
     mode: 'direct',
     externalPlugins: false,
     getWorkspaceId: () => {
-      throw Object.assign(new Error('D1_HOST_SCOPE_VIOLATION'), {
+      throw Object.assign(new Error(ErrorCode.enum.D1_HOST_SCOPE_VIOLATION), {
         status: 421,
-        code: 'D1_HOST_SCOPE_VIOLATION',
+        code: ErrorCode.enum.D1_HOST_SCOPE_VIOLATION,
       })
     },
     getWorkspaceRoot,
@@ -1011,7 +1011,7 @@ test('request-scoped routes preserve branded D1 scope errors before runtime reso
 
   const response = await app.inject({ method: 'GET', url: '/api/v1/agent/catalog' })
   expect(response.statusCode).toBe(421)
-  expect(response.json()).toEqual({ code: 'D1_HOST_SCOPE_VIOLATION' })
+  expect(response.json()).toEqual({ code: ErrorCode.enum.D1_HOST_SCOPE_VIOLATION })
   expect(getWorkspaceRoot).not.toHaveBeenCalled()
   expect(harness.factoryInputs).toEqual([])
   await app.close()
