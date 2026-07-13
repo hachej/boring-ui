@@ -12,7 +12,7 @@ import { assertNoSensitiveBridgeLeaks, createTestBridgeOperationDefinition } fro
 const SECRET = "workspace-bridge-runtime-token-secret-32bytes"
 const REFRESH_SECRET = "workspace-bridge-runtime-refresh-secret-32bytes"
 
-async function makeApp() {
+async function makeApp(admitRuntimeOperation?: (workspaceId: string) => void | Promise<void>) {
   const registry = createWorkspaceBridgeRegistry()
   registry.registerHandler(createTestBridgeOperationDefinition({
     op: "browser.v1.echo",
@@ -38,6 +38,7 @@ async function makeApp() {
     registry,
     runtimeTokenSecret: SECRET,
     runtimeRefreshTokenSecret: REFRESH_SECRET,
+    admitRuntimeOperation,
     ownerWorkspaceId: "workspace-1",
     idempotencyStore: new InMemoryWorkspaceBridgeIdempotencyStore(),
     browserAuthPolicy: createBrowserBridgeAuthPolicy({
@@ -53,7 +54,8 @@ async function makeApp() {
 
 describe("workspaceBridgeHttpRoutes", () => {
   it("handles browser-allowed calls and rejects browser runtime-only calls", async () => {
-    const app = await makeApp()
+    const admit = vi.fn()
+    const app = await makeApp(admit)
     const ok = await app.inject({
       method: "POST",
       url: "/api/v1/workspace-bridge/call",
@@ -78,10 +80,12 @@ describe("workspaceBridgeHttpRoutes", () => {
     })
     expect(denied.statusCode).toBe(403)
     expect(denied.json()).toMatchObject({ ok: false, error: { code: WorkspaceBridgeErrorCode.CallerNotAllowed } })
+    expect(admit).not.toHaveBeenCalled()
   })
 
-  it("handles runtime scoped token calls and rejects browser-only ops", async () => {
-    const app = await makeApp()
+  it("admits read-like runtime calls and rejects browser-only ops before admission", async () => {
+    const admit = vi.fn()
+    const app = await makeApp(admit)
     const token = mintWorkspaceBridgeRuntimeToken({
       secret: SECRET,
       workspaceId: "workspace-1",
@@ -96,6 +100,7 @@ describe("workspaceBridgeHttpRoutes", () => {
     })
     expect(ok.statusCode).toBe(200)
     expect(ok.json()).toMatchObject({ ok: true, output: { value: 2 } })
+    expect(admit).toHaveBeenCalledExactlyOnceWith("workspace-1")
 
     const browserCapToken = mintWorkspaceBridgeRuntimeToken({
       secret: SECRET,
@@ -111,6 +116,7 @@ describe("workspaceBridgeHttpRoutes", () => {
     })
     expect(denied.statusCode).toBe(403)
     expect(denied.json()).toMatchObject({ ok: false, error: { code: WorkspaceBridgeErrorCode.CallerNotAllowed } })
+    expect(admit).toHaveBeenCalledTimes(1)
   })
 
   it("rejects runtime tokens scoped to another workspace", async () => {
@@ -321,6 +327,10 @@ describe("workspaceBridgeHttpRoutes", () => {
       }
     })
     const app = Fastify()
+    app.setErrorHandler((error, _request, reply) => reply
+      .code((error as { statusCode?: number }).statusCode ?? 500)
+      .send({ code: (error as { code?: unknown }).code }))
+    let failAdmission = false
     await app.register(workspaceBridgeHttpRoutes, {
       getRegistry: () => {
         events.push("registry")
@@ -336,6 +346,10 @@ describe("workspaceBridgeHttpRoutes", () => {
       },
       runtimeTokenSecret: SECRET,
       assertRuntimeWorkspaceScope: assertion,
+      admitRuntimeOperation: async () => {
+        events.push("admit")
+        if (failAdmission) throw Object.assign(new Error("redacted"), { code: "D1_ADMISSION_RECORD_FAILED" })
+      },
       browserAuthPolicy: createBrowserBridgeAuthPolicy({
         getPrincipal: () => ({ userId: "user-1" }),
         authorizeWorkspace: () => ({ allowed: true, capabilities: ["browser:echo"] }),
@@ -356,7 +370,7 @@ describe("workspaceBridgeHttpRoutes", () => {
 
     const bound = await call(`Bearer ${token("workspace-1")}`)
     expect(bound.statusCode).toBe(200)
-    expect(events).toEqual(["assert", "registry", "definition", "idempotency", "owner", "handler"])
+    expect(events).toEqual(["assert", "registry", "definition", "admit", "idempotency", "owner", "handler"])
 
     for (const [op, capabilities] of [
       ["runtime.v1.effect", ["runtime:effect"]],
@@ -406,6 +420,13 @@ describe("workspaceBridgeHttpRoutes", () => {
     expect(browser.statusCode).toBe(200)
     expect(assertion).toHaveBeenCalledTimes(5)
     expect(events[0]).toBe("registry")
+
+    events.length = 0
+    failAdmission = true
+    const blocked = await call(`Bearer ${token("workspace-1")}`)
+    expect(blocked.statusCode).toBe(500)
+    expect(blocked.json()).toEqual({ code: "D1_ADMISSION_RECORD_FAILED" })
+    expect(events).toEqual(["assert", "registry", "definition", "admit"])
     await app.close()
   })
 
@@ -413,10 +434,12 @@ describe("workspaceBridgeHttpRoutes", () => {
     const recordUse = vi.fn(() => ({ allowed: true as const }))
     const getStore = vi.fn(() => ({ revoke: vi.fn(), recordUse }))
     const app = Fastify()
+    const admit = vi.fn()
     await app.register(workspaceBridgeHttpRoutes, {
       runtimeTokenSecret: SECRET,
       runtimeRefreshTokenSecret: REFRESH_SECRET,
       getRuntimeRefreshTokenStore: getStore,
+      admitRuntimeOperation: admit,
       assertRuntimeWorkspaceScope: (_request, claims) => {
         if (claims.workspaceId !== "workspace-1") {
           throw Object.assign(new Error("D1_HOST_SCOPE_VIOLATION"), {
@@ -450,6 +473,7 @@ describe("workspaceBridgeHttpRoutes", () => {
     expect(bound.json()).toMatchObject({ ok: true, token: expect.any(String) })
     expect(getStore).toHaveBeenCalledOnce()
     expect(recordUse).toHaveBeenCalledOnce()
+    expect(admit).not.toHaveBeenCalled()
     await app.close()
   })
 
@@ -459,6 +483,12 @@ describe("workspaceBridgeHttpRoutes", () => {
       op: "runtime.v1.echo",
       callerClassesAllowed: ["runtime"],
       requiredCapabilities: [],
+    }), ({ input }) => input)
+    registry.registerHandler(createTestBridgeOperationDefinition({
+      op: "browser.v1.required",
+      callerClassesAllowed: ["browser"],
+      requiredCapabilities: ["browser:required"],
+      idempotencyPolicy: "required",
     }), ({ input }) => input)
     const app = Fastify()
     await app.register(workspaceBridgeHttpRoutes, { registry, runtimeTokenSecret: SECRET })
@@ -479,11 +509,21 @@ describe("workspaceBridgeHttpRoutes", () => {
     })
     expect(emptyBearer.statusCode).toBe(401)
     expect(emptyBearer.json()).toMatchObject({ error: { code: WorkspaceBridgeErrorCode.InvalidToken } })
+
+    const browserOnly = await app.inject({
+      method: "POST",
+      url: "/api/v1/workspace-bridge/call",
+      headers: { "content-type": "application/json", authorization: `Bearer ${mintWorkspaceBridgeRuntimeToken({ secret: SECRET, workspaceId: "workspace-1", capabilities: ["browser:required"] })}` },
+      payload: { op: "browser.v1.required", input: {} },
+    })
+    expect(browserOnly.statusCode).toBe(400)
+    expect(browserOnly.json()).toMatchObject({ error: { code: WorkspaceBridgeErrorCode.UnsupportedRuntime } })
     await app.close()
   })
 
   it("covers content-type, CSRF/origin, idempotency, and redacted errors", async () => {
-    const app = await makeApp()
+    const admit = vi.fn()
+    const app = await makeApp(admit)
     const badType = await app.inject({ method: "POST", url: "/api/v1/workspace-bridge/call", headers: { "content-type": "text/plain" }, payload: "x" })
     expect(badType.statusCode).toBe(415)
 
@@ -517,6 +557,10 @@ describe("workspaceBridgeHttpRoutes", () => {
     expect(first.json()).toMatchObject({ ok: true })
     expect(replay.json()).toMatchObject({ ok: true })
     expect(conflict.json()).toMatchObject({ ok: false, error: { code: WorkspaceBridgeErrorCode.ReplayRejected } })
+    expect(admit).toHaveBeenCalledTimes(3)
+    expect(admit).toHaveBeenNthCalledWith(1, "workspace-1")
+    expect(admit).toHaveBeenNthCalledWith(2, "workspace-1")
+    expect(admit).toHaveBeenNthCalledWith(3, "workspace-1")
     assertNoSensitiveBridgeLeaks(JSON.stringify(conflict.json()), { tokens: [token], hostPaths: ["/home/ubuntu/private"] })
   })
 
