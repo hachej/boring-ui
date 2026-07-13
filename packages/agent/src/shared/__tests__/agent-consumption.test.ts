@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 
 import {
+  ArtifactLocatorSchema,
   AgentConsumptionValidationError,
   AgentMessageSchema,
   AgentRefSchema,
@@ -11,6 +12,7 @@ import {
   PrincipalRefSchema,
   TASK_STATES,
   TaskStateSchema,
+  WorkspaceFileLocatorSchema,
   agentRefEquals,
   assertNoConsumptionCycle,
   assertValidTransition,
@@ -18,10 +20,12 @@ import {
   detectConsumptionCycle,
   isValidTaskTransition,
   isWithinConsumptionDepth,
+  parseAgentTaskEdgeCompat,
   validateAgentTask,
   validateConsumptionGuards,
   type AgentRef,
   type AgentTask,
+  type ArtifactLocator,
   type ConsumptionGuards,
 } from '../agent-consumption'
 import { AgentConsumptionErrorCode, ERROR_CODES } from '../error-codes'
@@ -29,6 +33,18 @@ import { AgentConsumptionErrorCode, ERROR_CODES } from '../error-codes'
 const AGENT_A: AgentRef = { agentId: 'agent-a', deploymentId: 'deploy-1' }
 const AGENT_B: AgentRef = { agentId: 'agent-b', deploymentId: 'deploy-1' }
 const AGENT_C: AgentRef = { agentId: 'agent-c' }
+
+const VALID_DIGEST = 'sha256:' + 'a'.repeat(64)
+
+function workspaceFileLocator(overrides: Partial<ArtifactLocator> = {}): ArtifactLocator {
+  return {
+    kind: 'workspace-file',
+    workspaceId: 'workspace-1',
+    fileId: 'file-1',
+    digest: VALID_DIGEST as ArtifactLocator['digest'],
+    ...overrides,
+  }
+}
 
 function validTask(overrides: Partial<AgentTask> = {}): AgentTask {
   return {
@@ -44,7 +60,7 @@ function validTask(overrides: Partial<AgentTask> = {}): AgentTask {
     ],
     artifacts: [],
     principal: { userId: 'user-1', workspaceId: 'workspace-1' },
-    schemaVersion: '1',
+    schemaVersion: '2',
     createdAt: '2026-07-12T00:00:00.000Z',
     updatedAt: '2026-07-12T00:00:00.000Z',
     ...overrides,
@@ -249,17 +265,23 @@ describe('schema round-trips', () => {
     expect(AgentRefSchema.safeParse({}).success).toBe(false)
   })
 
-  it('ArtifactRefSchema round-trips', () => {
-    const artifact = { artifactId: 'artifact-1', mimeType: 'text/markdown', uri: 'artifact://artifact-1' }
+  it('ArtifactRefSchema round-trips with a typed locator', () => {
+    const artifact = { artifactId: 'artifact-1', mimeType: 'text/markdown', locator: workspaceFileLocator() }
     expect(ArtifactRefSchema.parse(artifact)).toEqual(artifact)
     expect(ArtifactRefSchema.safeParse({ ...artifact, mimeType: '' }).success).toBe(false)
+  })
+
+  it('ArtifactRefSchema rejects the retired generic uri field (strict schema)', () => {
+    expect(
+      ArtifactRefSchema.safeParse({ artifactId: 'a1', mimeType: 'text/plain', uri: 'artifact://a1' }).success,
+    ).toBe(false)
   })
 
   it('PartSchema round-trips text, file, and data parts', () => {
     const text = { type: 'text', text: 'hi' } as const
     const file = {
       type: 'file',
-      file: { artifactId: 'a1', mimeType: 'image/png', uri: 'artifact://a1' },
+      file: { artifactId: 'a1', mimeType: 'image/png', locator: workspaceFileLocator() },
     } as const
     const data = { type: 'data', mimeType: 'application/json', data: { foo: 'bar' } } as const
 
@@ -289,19 +311,19 @@ describe('schema round-trips', () => {
     const task = validTask({
       state: 'completed',
       actor: AGENT_A,
-      artifacts: [{ artifactId: 'a1', mimeType: 'text/plain', uri: 'artifact://a1' }],
+      artifacts: [{ artifactId: 'a1', mimeType: 'text/plain', locator: workspaceFileLocator({ fileId: 'file-a1' }) }],
     })
     expect(AgentTaskSchema.parse(task)).toEqual(task)
   })
 
-  it('requires schemaVersion and rejects any value other than the literal "1"', () => {
+  it('requires schemaVersion and rejects any value other than the literal "2"', () => {
     const { schemaVersion: _drop, ...withoutVersion } = validTask()
     expect(AgentTaskSchema.safeParse(withoutVersion).success).toBe(false)
 
-    const withWrongVersion = { ...validTask(), schemaVersion: '2' }
+    const withWrongVersion = { ...validTask(), schemaVersion: '1' }
     expect(AgentTaskSchema.safeParse(withWrongVersion).success).toBe(false)
 
-    const withNumericVersion = { ...validTask(), schemaVersion: 1 }
+    const withNumericVersion = { ...validTask(), schemaVersion: 2 }
     expect(AgentTaskSchema.safeParse(withNumericVersion).success).toBe(false)
   })
 
@@ -311,6 +333,122 @@ describe('schema round-trips', () => {
 
   it('validateAgentTask reports the stable schema-mismatch code on invalid input', () => {
     const result = validateAgentTask({ ...validTask(), state: 'bogus-state' })
+    expect(result.valid).toBe(false)
+    if (!result.valid) {
+      expect(result.issues.length).toBeGreaterThan(0)
+      for (const issue of result.issues) {
+        expect(issue.code).toBe(AgentConsumptionErrorCode.enum.AGENT_CONSUMPTION_SCHEMA_MISMATCH)
+      }
+    }
+  })
+})
+
+// ---------------------------------------------------------------------------
+// ArtifactLocator authority (AC1-T2) — no generic uri/path/scheme accepted
+// ---------------------------------------------------------------------------
+
+describe('ArtifactLocatorSchema', () => {
+  it('accepts a well-formed workspace-file locator', () => {
+    const locator = workspaceFileLocator()
+    expect(ArtifactLocatorSchema.parse(locator)).toEqual(locator)
+    expect(WorkspaceFileLocatorSchema.parse(locator)).toEqual(locator)
+  })
+
+  it('rejects a locator missing the required digest', () => {
+    const { digest: _drop, ...withoutDigest } = workspaceFileLocator()
+    expect(ArtifactLocatorSchema.safeParse(withoutDigest).success).toBe(false)
+  })
+
+  it('rejects a malformed (non-sha256) digest', () => {
+    expect(ArtifactLocatorSchema.safeParse(workspaceFileLocator({ digest: 'not-a-digest' as never })).success).toBe(
+      false,
+    )
+  })
+
+  it.each([
+    ['a file: scheme', { kind: 'file', path: '/etc/passwd' }],
+    ['an http scheme', { kind: 'http', uri: 'http://internal.example/secret' }],
+    ['an https scheme', { kind: 'https', uri: 'https://internal.example/secret' }],
+    ['an absolute path', { kind: 'workspace-file', workspaceId: 'w1', fileId: '/etc/passwd', digest: VALID_DIGEST }],
+    [
+      'a workspace-relative path',
+      { kind: 'workspace-file', workspaceId: 'w1', fileId: '../../secret', digest: VALID_DIGEST },
+    ],
+    ['an unknown locator kind', { kind: 'signed-url', uri: 'https://example.com/x' }],
+  ])('refuses %s before any storage/network effect', (_label, raw) => {
+    expect(ArtifactLocatorSchema.safeParse(raw).success).toBe(false)
+  })
+
+  it('rejects a bare generic uri (the retired v1 shape) outright', () => {
+    expect(ArtifactLocatorSchema.safeParse({ uri: 'artifact://artifact-1' }).success).toBe(false)
+  })
+})
+
+// ---------------------------------------------------------------------------
+// schemaVersion '1' vs '2' acceptance at the edge (AC1-T2)
+// ---------------------------------------------------------------------------
+
+describe('parseAgentTaskEdgeCompat', () => {
+  it('accepts a well-formed schemaVersion "2" task with a typed locator', () => {
+    const task = validTask({
+      artifacts: [{ artifactId: 'a1', mimeType: 'text/plain', locator: workspaceFileLocator() }],
+    })
+    expect(parseAgentTaskEdgeCompat(task)).toEqual({ valid: true, value: task })
+  })
+
+  it.each([
+    ['file:', 'file:///etc/passwd'],
+    ['http:', 'http://internal.example/secret'],
+    ['https:', 'https://internal.example/secret'],
+    ['an absolute path', '/etc/passwd'],
+    ['a workspace-relative path', './secret.txt'],
+    ['an opaque artifact scheme', 'artifact://artifact-1'],
+  ])(
+    'refuses a schemaVersion "1" task whose artifact uri uses %s, before any dereference',
+    (_label, uri) => {
+      const legacyTask = {
+        id: 'task-1',
+        contextId: 'ctx-1',
+        state: 'submitted',
+        messages: [],
+        artifacts: [{ artifactId: 'a1', mimeType: 'text/plain', uri }],
+        principal: { userId: 'user-1', workspaceId: 'workspace-1' },
+        schemaVersion: '1',
+        createdAt: '2026-07-12T00:00:00.000Z',
+        updatedAt: '2026-07-12T00:00:00.000Z',
+      }
+      const result = parseAgentTaskEdgeCompat(legacyTask)
+      expect(result.valid).toBe(false)
+      if (!result.valid) {
+        expect(result.issues.length).toBeGreaterThan(0)
+        for (const issue of result.issues) {
+          expect(issue.code).toBe(AgentConsumptionErrorCode.enum.AGENT_CONSUMPTION_LEGACY_ARTIFACT_REJECTED)
+        }
+      }
+    },
+  )
+
+  it('refuses a schemaVersion "1" task with no artifacts using the same stable code', () => {
+    const legacyTask = {
+      id: 'task-1',
+      contextId: 'ctx-1',
+      state: 'submitted',
+      messages: [],
+      artifacts: [],
+      principal: { userId: 'user-1', workspaceId: 'workspace-1' },
+      schemaVersion: '1',
+      createdAt: '2026-07-12T00:00:00.000Z',
+      updatedAt: '2026-07-12T00:00:00.000Z',
+    }
+    const result = parseAgentTaskEdgeCompat(legacyTask)
+    expect(result.valid).toBe(false)
+    if (!result.valid) {
+      expect(result.issues[0]?.code).toBe(AgentConsumptionErrorCode.enum.AGENT_CONSUMPTION_LEGACY_ARTIFACT_REJECTED)
+    }
+  })
+
+  it('falls back to schema-mismatch issues for input that is neither valid v1 nor v2', () => {
+    const result = parseAgentTaskEdgeCompat({ ...validTask(), state: 'bogus-state' })
     expect(result.valid).toBe(false)
     if (!result.valid) {
       expect(result.issues.length).toBeGreaterThan(0)
@@ -332,6 +470,7 @@ describe('AgentConsumptionErrorCode', () => {
       'AGENT_CONSUMPTION_CYCLE_DETECTED',
       'AGENT_CONSUMPTION_DEPTH_EXCEEDED',
       'AGENT_CONSUMPTION_SCHEMA_MISMATCH',
+      'AGENT_CONSUMPTION_LEGACY_ARTIFACT_REJECTED',
     ])
     for (const code of AgentConsumptionErrorCode.options) {
       expect(ERROR_CODES).not.toContain(code)
