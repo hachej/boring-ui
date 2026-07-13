@@ -40,7 +40,7 @@ import { createCoreWorkspaceBridge } from './coreWorkspaceBridge.js'
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify'
 import type postgres from 'postgres'
 import type { CoreConfig } from '../../shared/types.js'
-import { ERROR_CODES } from '../../shared/errors.js'
+import { ERROR_CODES, HttpError } from '../../shared/errors.js'
 import { safeCapture, type TelemetrySink } from '../../shared/telemetry.js'
 import {
   authHook,
@@ -425,11 +425,66 @@ function resolveWorkspaceIdFromRequest(request: { headers?: Record<string, unkno
   return validateWorkspaceIdSegment(firstString(headerValue) ?? firstString(query?.workspaceId) ?? '')
 }
 
+function d1HostScopeViolation(request: FastifyRequest): never {
+  throw new HttpError({
+    status: 421,
+    code: ERROR_CODES.D1_HOST_SCOPE_VIOLATION,
+    message: ERROR_CODES.D1_HOST_SCOPE_VIOLATION,
+    requestId: request.id,
+  })
+}
+
+function resolveRequestScopedWorkspaceId(
+  request: FastifyRequest,
+  presentedWorkspaceId?: unknown,
+): string {
+  const scope = request.requestScope
+  if (!scope) return resolveWorkspaceIdFromRequest(request)
+
+  const presented: unknown[] = []
+  const rawHeaders = request.raw?.rawHeaders
+  if (rawHeaders) {
+    for (let index = 0; index < rawHeaders.length; index += 2) {
+      if (rawHeaders[index]?.toLowerCase() === 'x-boring-workspace-id') presented.push(...(rawHeaders[index + 1]?.split(',') ?? [undefined]))
+    }
+  }
+  if (!presented.length) {
+    for (const [key, value] of Object.entries(request.headers)) {
+      if (key.toLowerCase() !== 'x-boring-workspace-id') continue
+      if (Array.isArray(value) && value.length === 0) d1HostScopeViolation(request)
+      presented.push(...(Array.isArray(value) ? value : [value]))
+    }
+  }
+  const query = request.query as Record<string, unknown> | undefined
+  if (query && Object.prototype.hasOwnProperty.call(query, 'workspaceId')) {
+    const value = query.workspaceId
+    const values = Array.isArray(value) ? value : [value]
+    if (values.length === 0) d1HostScopeViolation(request)
+    presented.push(...values)
+  }
+  if (presentedWorkspaceId !== undefined) presented.push(presentedWorkspaceId)
+
+  for (const value of presented) {
+    if (typeof value !== 'string') d1HostScopeViolation(request)
+    let normalized: string
+    try {
+      normalized = validateWorkspaceIdSegment(value)
+    } catch {
+      d1HostScopeViolation(request)
+    }
+    if (normalized !== scope.workspaceId) d1HostScopeViolation(request)
+  }
+
+  request.headers['x-boring-workspace-id'] = scope.workspaceId
+  return scope.workspaceId
+}
+
 async function resolveAuthorizedWorkspaceId(
-  request: { headers?: Record<string, unknown>; query?: unknown; user?: { id?: string } | null; log?: { error: (obj: Record<string, unknown>, msg: string) => void } },
+  request: FastifyRequest,
   workspaceStore: WorkspaceStore,
+  presentedWorkspaceId?: unknown,
 ): Promise<string> {
-  const normalizedWorkspaceId = resolveWorkspaceIdFromRequest(request)
+  const normalizedWorkspaceId = resolveRequestScopedWorkspaceId(request, presentedWorkspaceId)
   const user = request.user
   if (!user?.id) throw httpError('authentication required', 401)
 
@@ -786,12 +841,20 @@ export async function createCoreWorkspaceAgentServer(
     workspaceRoot: pluginWorkspaceRoot,
     bridge: createUnavailableCorePluginBridge(),
   }
-  const trustedPluginActorResolver = options.trustedPluginActorResolver ?? (async (request: FastifyRequest) => {
+  const defaultPluginActorResolver = async (request: FastifyRequest) => {
     const workspaceId = await resolveAuthorizedWorkspaceId(request, workspaceStore)
     const userId = request.user?.id
     if (!userId) throw httpError('authentication required', 401)
     return { workspaceId, userId }
-  })
+  }
+  const trustedPluginActorResolver = async (request: FastifyRequest) => {
+    if (!options.trustedPluginActorResolver) return await defaultPluginActorResolver(request)
+    if (!request.requestScope) return await options.trustedPluginActorResolver(request)
+    const workspaceId = await resolveAuthorizedWorkspaceId(request, workspaceStore)
+    const actor = await options.trustedPluginActorResolver(request)
+    if (actor.workspaceId !== workspaceId) d1HostScopeViolation(request)
+    return actor
+  }
   const trustedPluginResolveContext: WorkspaceAgentServerPluginContext = {
     ...basePluginResolveContext,
     trusted: {
@@ -828,10 +891,12 @@ export async function createCoreWorkspaceAgentServer(
     installPluginAuthoring,
   })
 
-  const resolveWorkspaceId = async (request: Parameters<NonNullable<RegisterAgentRoutesOptions['getWorkspaceId']>>[0]) =>
-    options.getWorkspaceId
+  const resolveWorkspaceId = async (request: FastifyRequest, presentedWorkspaceId?: unknown) =>
+    request.requestScope
+      ? await resolveAuthorizedWorkspaceId(request, workspaceStore, presentedWorkspaceId)
+      : options.getWorkspaceId
       ? await options.getWorkspaceId(request)
-      : await resolveAuthorizedWorkspaceId(request, workspaceStore)
+      : await resolveAuthorizedWorkspaceId(request, workspaceStore, presentedWorkspaceId)
   const resolveRoot = async (
     workspaceId: string,
     request: Parameters<NonNullable<RegisterAgentRoutesOptions['getWorkspaceRoot']>>[1],
@@ -917,6 +982,12 @@ export async function createCoreWorkspaceAgentServer(
         projectName: workspace?.name ?? 'Workspace',
       }
     } catch (error) {
+      if (
+        (error as { status?: unknown })?.status === 421
+        && (error as { code?: unknown })?.code === ERROR_CODES.D1_HOST_SCOPE_VIOLATION
+      ) {
+        throw error
+      }
       const statusCode = typeof (error as { statusCode?: unknown })?.statusCode === 'number'
         ? (error as { statusCode: number }).statusCode
         : 500
