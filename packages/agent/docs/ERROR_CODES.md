@@ -86,6 +86,8 @@ All API failures must use the response envelope:
 | `PROVISIONING_ARTIFACT_FAILED` | Runtime-mode adapter failed to prepare/upload install artifact | 500 | retry | error | stable (public API) |
 | `ERR_NOT_IMPLEMENTED_UNTIL_T1` | Headless core method exists but the durable T1 implementation has not landed yet | 501 | retry-after-upgrade | warn | stable (public API) |
 | `INTERNAL_ERROR` | Catch-all internal failure | 500 | report-bug | error | internal (may change) |
+| `AR1_SHARE_NOT_FOUND` | `GET /a/:id` deep link: no such Lane W share entry, or the entry belongs to a workspace the requester is not authorized/scoped to (identical response either way — no existence oracle) | 404 | user-fix | warn | stable (public API) |
+| `AR1_SHARE_TOMBSTONED` | `GET /a/:id` deep link: share entry exists but its target file is gone; response renders provenance + last-known metadata, never a bare 404 | 200 | user-fix | warn | stable (public API) |
 
 ## Readiness error details
 

@@ -82,6 +82,10 @@ export const ErrorCode = z.enum([
   'PROVISIONING_UV_INSTALL_FAILED',
   'PROVISIONING_ARTIFACT_FAILED',
 
+  // Lane W same-workspace share deep-link (AR1-003)
+  'AR1_SHARE_NOT_FOUND',
+  'AR1_SHARE_TOMBSTONED',
+
   // Internal
   'ERR_NOT_IMPLEMENTED_UNTIL_T1',
   'INTERNAL_ERROR',

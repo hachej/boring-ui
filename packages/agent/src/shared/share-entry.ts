@@ -109,13 +109,15 @@ export const ShareEntryV1Schema = z
 // ---------------------------------------------------------------------------
 
 /**
- * Refusal codes for Lane W share resolution (AR1-001-SPEC.md §3.3/§5). Scoped
- * like `AgentConsumptionErrorCode` — canonical, but intentionally outside the
- * public {@link ErrorCode}/`ERROR_CODES` registry until a runtime route/MCP
- * resource actually surfaces these over an API boundary (AR1-003/AR1-004).
- * These are the ONLY two AR1-specific codes for Lane W: "Access denial is
- * the existing generic membership denial, not an AR1 code" (spec §3.3) —
- * this module does not invent a third.
+ * Refusal codes for Lane W share resolution (AR1-001-SPEC.md §3.3/§5).
+ * Graduated into the public {@link ErrorCode}/`ERROR_CODES` registry (and
+ * `docs/ERROR_CODES.md`) by AR1-003, the first runtime route
+ * (`GET /a/:id`, `server/http/routes/deepLink.ts`) that surfaces these over
+ * an API boundary — following the same registry precedent used for
+ * `MCP_AGENT_ARTIFACT_*` (graduated when `managedAgentDelegate.ts` started
+ * surfacing them). These are the ONLY two AR1-specific codes for Lane W:
+ * "Access denial is the existing generic membership denial, not an AR1
+ * code" (spec §3.3) — this module does not invent a third.
  */
 export const ShareEntryErrorCode = z.enum(['AR1_SHARE_NOT_FOUND', 'AR1_SHARE_TOMBSTONED'])
 

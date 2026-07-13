@@ -46,6 +46,8 @@ import { commandsRoutes } from './http/routes/commands'
 import type { ReloadHookResult } from './http/routes/reload'
 import { searchRoutes } from './http/routes/search'
 import { gitRoutes } from './http/routes/git'
+import { deepLinkRoutes } from './http/routes/deepLink'
+import type { ShareEntryStore } from '../shared/share-entry'
 import { InMemorySessionChangesTracker } from './http/sessionChangesTracker'
 import { ReadyStatusTracker } from './runtime/readyStatus'
 import { createRuntimeReadyStatusTracker } from './runtime/modeReadiness'
@@ -378,6 +380,14 @@ export interface RegisterAgentRoutesOptions {
   }) => string | undefined | Promise<string | undefined>
   registerHealthRoute?: boolean
   sandboxHandleStore?: SandboxHandleStore
+  /**
+   * Optional Lane W share-entry store (AR1-002/AR1-003, same-workspace
+   * shareable links, `docs/issues/391/runtime-refactor/work/
+   * AR1-shareable-artifacts/AR1-001-SPEC.md` §3). When supplied, mounts the
+   * membership-gated `GET /a/:id` deep-link route. Omit to leave Lane W
+   * entirely unmounted (no widening for hosts that don't use it yet).
+   */
+  shareEntryStore?: ShareEntryStore
   getWorkspaceId?: (request: FastifyRequest) => string | Promise<string>
   getWorkspaceRoot?: (workspaceId: string, request: FastifyRequest) => string | Promise<string>
   getTrustedWorkspaceRoot?: (ctx: WorkspaceAgentDispatcherContext) => string | Promise<string>
@@ -1246,6 +1256,12 @@ export const registerAgentRoutes: FastifyPluginAsync<RegisterAgentRoutesOptions>
   await app.register(searchRoutes, {
     getFileSearch: async (request) => (await getBindingForRequest(request)).runtimeBundle.fileSearch,
   })
+  if (opts.shareEntryStore) {
+    await app.register(deepLinkRoutes, {
+      store: opts.shareEntryStore,
+      getWorkspace: async (request) => (await getBindingForRequest(request)).runtimeBundle.workspace,
+    })
+  }
   await app.register(gitRoutes, {
     getWorkspace: async (request) => {
       const runtimeBundle = (await getBindingForRequest(request)).runtimeBundle
