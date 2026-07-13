@@ -466,3 +466,19 @@ export const telemetryEvents = pgTable(
     index('telemetry_events_event_name_idx').on(table.eventName),
   ],
 )
+
+export const d1BindingAdmissions = pgTable(
+  'd1_binding_admissions',
+  {
+    sequence: bigint('sequence', { mode: 'bigint' }).generatedAlwaysAsIdentity(),
+    hostId: text('host_id').notNull(),
+    bindingId: text('binding_id').notNull(),
+    activeRevision: text('active_revision').notNull(),
+    admittedAt: timestamp('admitted_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    primaryKey({ name: 'd1_binding_admissions_pk', columns: [table.hostId, table.bindingId] }),
+    uniqueIndex('d1_binding_admissions_sequence_unique').on(table.sequence),
+    check('d1_binding_admissions_revision_check', sql`${table.activeRevision} ~ '^r[0-9]{10}$'`),
+  ],
+)

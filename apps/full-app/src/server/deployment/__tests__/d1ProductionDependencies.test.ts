@@ -70,7 +70,7 @@ describe('D1 production dependency composition', () => {
     await expect(dependencies.resolver.reproduce({} as never)).rejects.toMatchObject({
       code: D1HostErrorCode.COLLECTION_NOT_READY, details: { field: 'resolver' },
     })
-    await expect(dependencies.effects.loadAdmittedBindingIds('host-1')).rejects.toMatchObject({
+    await expect(dependencies.effects.loadAdmittedBindingIds('host-1', 'postgres-eu')).rejects.toMatchObject({
       code: D1HostErrorCode.COLLECTION_NOT_READY, details: { field: 'admissions' },
     })
     await expect(dependencies.effects.preload(candidate, [])).rejects.toMatchObject({
