@@ -31,6 +31,7 @@ const release = () => ({
   schemaVersion: 1,
   domain: 'boring-d1-approved-host-release:v1',
   hostAppImageDigest: digest('a'),
+  previousCoreImageRef: `ghcr.io/hachej/boring-ui@${digest('f')}`,
   coreCommand: { entrypoint: ['/usr/local/bin/web-entrypoint'], cmd: ['node', 'apps/full-app/dist/server/main.js'] },
   migrationProcess: { entrypoint: ['node'], cmd: ['apps/full-app/dist/server/migrate.js'], user: '10001:10001',
     readonlyRootfs: true, privileged: false, noNewPrivileges: true, addedCapabilities: [] },
@@ -39,7 +40,7 @@ const release = () => ({
   caddyfileDigest: digest('c'), hostSecurityConfigDigest: digest('d'),
   selectorInventoryRevision: revision('a'), executionPolicyRevision: revision('b'),
   databaseSchemaCompatibility: { migrationSetDigest: digest('e'), currentEpoch: 2,
-    readableEpochRange: { min: 1, max: 2 }, readableByPreviousRelease: true },
+    readableEpochRange: { min: 1, max: 2 }, readableByPreviousRelease: true, rehearsalEvidenceDigest: digest('9') },
 })
 const frozen = (value: unknown): boolean => !value || typeof value !== 'object'
   || (Object.isFrozen(value) && Object.values(value).every(frozen))
@@ -60,6 +61,8 @@ describe('approved D1 host release', () => {
     ['schema version', (value: ReturnType<typeof release>) => { value.schemaVersion = 2 }],
     ['domain', (value: ReturnType<typeof release>) => { value.domain = 'other' }],
     ['host digest', (value: ReturnType<typeof release>) => { value.hostAppImageDigest = digest('A') }],
+    ['previous image', (value: ReturnType<typeof release>) => { value.previousCoreImageRef = 'image:latest' }],
+    ['same previous image', (value: ReturnType<typeof release>) => { value.previousCoreImageRef = `other@${digest('a')}` }],
     ['core entrypoint', (value: ReturnType<typeof release>) => { value.coreCommand.entrypoint[0] = '/bin/sh' }],
     ['core command', (value: ReturnType<typeof release>) => { value.coreCommand.cmd[1] = 'other.js' }],
     ['migration entrypoint', (value: ReturnType<typeof release>) => { value.migrationProcess.entrypoint[0] = '/bin/sh' }],
@@ -81,7 +84,14 @@ describe('approved D1 host release', () => {
     ['range minimum', (value: ReturnType<typeof release>) => { value.databaseSchemaCompatibility.readableEpochRange.min = 3 }],
     ['range maximum', (value: ReturnType<typeof release>) => { value.databaseSchemaCompatibility.readableEpochRange.max = 1 }],
     ['previous-release policy', (value: ReturnType<typeof release>) => { value.databaseSchemaCompatibility.readableByPreviousRelease = 1 as never }],
+    ['rehearsal digest', (value: ReturnType<typeof release>) => { value.databaseSchemaCompatibility.rehearsalEvidenceDigest = digest('z') }],
   ])('rejects %s drift', (_label, mutate) => { const value = release(); mutate(value); rejectsRelease(value) })
+
+  it('accepts a first boot only when no previous release is declared', () => {
+    const value = release(); value.previousCoreImageRef = null as never
+    value.databaseSchemaCompatibility.readableByPreviousRelease = false
+    expect(decodeApprovedD1HostReleaseRecord(value).previousCoreImageRef).toBeNull()
+  })
 
   it('rejects extras, hidden keys, symbols, accessors, prototypes, holes, and custom array properties', () => {
     rejectsRelease({ ...release(), extra: true })

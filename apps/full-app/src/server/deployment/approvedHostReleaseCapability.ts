@@ -19,6 +19,7 @@ const approvedCapabilities = new WeakSet<object>()
 
 export interface ApprovedD1HostRelease {
   readonly hostId: string
+  readonly coreImageRef: string
   readonly databaseRef: string
   readonly observedDatabaseEpoch: number
   readonly record: ApprovedD1HostReleaseRecordV1
@@ -166,6 +167,7 @@ export async function approveD1HostRelease(input: D1HostReleaseApprovalInput): P
   if (security.digest !== record.hostSecurityConfigDigest) unavailable('hostSecurityConfig')
   const capability = Object.freeze({
     hostId,
+    coreImageRef,
     databaseRef: input.admissionLedger.databaseRef,
     observedDatabaseEpoch: databaseEpoch,
     record,

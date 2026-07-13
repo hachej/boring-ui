@@ -27,6 +27,7 @@ const release = () => ({
   schemaVersion: 1,
   domain: 'boring-d1-approved-host-release:v1',
   hostAppImageDigest: digest('a'),
+  previousCoreImageRef: `ghcr.io/hachej/boring-ui@${digest('f')}`,
   coreCommand: { entrypoint: ['/usr/local/bin/web-entrypoint'], cmd: ['node', 'apps/full-app/dist/server/main.js'] },
   migrationProcess: { entrypoint: ['node'], cmd: ['apps/full-app/dist/server/migrate.js'], user: '10001:10001',
     readonlyRootfs: true, privileged: false, noNewPrivileges: true, addedCapabilities: [] },
@@ -37,7 +38,7 @@ const release = () => ({
   selectorInventoryRevision: revision('a'),
   executionPolicyRevision: revision('b'),
   databaseSchemaCompatibility: { migrationSetDigest: digest('e'), currentEpoch: 2,
-    readableEpochRange: { min: 1, max: 2 }, readableByPreviousRelease: true },
+    readableEpochRange: { min: 1, max: 2 }, readableByPreviousRelease: true, rehearsalEvidenceDigest: digest('9') },
 })
 
 async function fixture() {

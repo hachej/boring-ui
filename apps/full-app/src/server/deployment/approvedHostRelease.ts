@@ -8,12 +8,13 @@ const MIGRATION_DOMAIN = 'boring-d1-migration-set:v1' as const
 // Complete reviewed c1-c5 selector closure landed in #713 (squash e45df544).
 export const D1_SELECTOR_INVENTORY_REVISION = 'e45df54400a4f4dd2db561f11c5a9cc38698ed7d'
 const SHA256 = /^sha256:[a-f0-9]{64}$/
+const PINNED_IMAGE = /^(?:[a-z0-9]+(?:[._-][a-z0-9]+)*\/)*[a-z0-9]+(?:[._-][a-z0-9]+)*@sha256:[a-f0-9]{64}$/
 const REVISION = /^[a-f0-9]{40}$/
 const MIGRATION_TAG = /^[a-z0-9][a-z0-9_]{0,127}$/
 const DEPLOYMENT_MIGRATION_SOURCES = ['apps/full-app/src/server/migrate.ts', 'packages/core/src/server/migrations.ts',
   'packages/core/src/server/db/migrate.ts', 'plugins/boring-automation/src/server/migrations.ts'] as const
 
-const RELEASE_KEYS = ['schemaVersion', 'domain', 'hostAppImageDigest', 'coreCommand', 'migrationProcess',
+const RELEASE_KEYS = ['schemaVersion', 'domain', 'hostAppImageDigest', 'previousCoreImageRef', 'coreCommand', 'migrationProcess',
   'ingressImageDigest', 'ingressCommand', 'caddyfileDigest', 'hostSecurityConfigDigest',
   'selectorInventoryRevision', 'executionPolicyRevision', 'databaseSchemaCompatibility'] as const
 const EXPECTED_KEYS = ['hostAppImageDigest', 'ingressImageDigest', 'caddyfileDigest', 'hostSecurityConfigDigest',
@@ -23,6 +24,7 @@ export interface ApprovedD1HostReleaseRecordV1 {
   readonly schemaVersion: 1
   readonly domain: typeof RELEASE_DOMAIN
   readonly hostAppImageDigest: Sha256Digest
+  readonly previousCoreImageRef: string | null
   readonly coreCommand: Readonly<{ entrypoint: readonly ['/usr/local/bin/web-entrypoint']; cmd: readonly ['node', 'apps/full-app/dist/server/main.js'] }>
   readonly migrationProcess: Readonly<{ entrypoint: readonly ['node']; cmd: readonly ['apps/full-app/dist/server/migrate.js']; user: '10001:10001'; readonlyRootfs: true; privileged: false; noNewPrivileges: true; addedCapabilities: readonly [] }>
   readonly ingressImageDigest: Sha256Digest
@@ -31,7 +33,7 @@ export interface ApprovedD1HostReleaseRecordV1 {
   readonly hostSecurityConfigDigest: Sha256Digest
   readonly selectorInventoryRevision: string
   readonly executionPolicyRevision: string
-  readonly databaseSchemaCompatibility: Readonly<{ migrationSetDigest: Sha256Digest; currentEpoch: number; readableEpochRange: Readonly<{ min: number; max: number }>; readableByPreviousRelease: boolean }>
+  readonly databaseSchemaCompatibility: Readonly<{ migrationSetDigest: Sha256Digest; currentEpoch: number; readableEpochRange: Readonly<{ min: number; max: number }>; readableByPreviousRelease: boolean; rehearsalEvidenceDigest: Sha256Digest }>
 }
 
 export interface D1MigrationSetEvidenceV1 {
@@ -112,15 +114,18 @@ function parseRelease(value: unknown): ApprovedD1HostReleaseRecordV1 {
   const core = dataRecord(input.coreCommand, ['entrypoint', 'cmd'])
   const migration = dataRecord(input.migrationProcess, ['entrypoint', 'cmd', 'user', 'readonlyRootfs', 'privileged', 'noNewPrivileges', 'addedCapabilities'])
   const ingress = dataRecord(input.ingressCommand, ['entrypoint', 'cmd'])
-  const compatibility = dataRecord(input.databaseSchemaCompatibility, ['migrationSetDigest', 'currentEpoch', 'readableEpochRange', 'readableByPreviousRelease'])
+  const compatibility = dataRecord(input.databaseSchemaCompatibility, ['migrationSetDigest', 'currentEpoch', 'readableEpochRange', 'readableByPreviousRelease', 'rehearsalEvidenceDigest'])
   const range = dataRecord(compatibility.readableEpochRange, ['min', 'max'])
   if (input.schemaVersion !== 1 || input.domain !== RELEASE_DOMAIN || migration.user !== '10001:10001'
     || migration.readonlyRootfs !== true || migration.privileged !== false || migration.noNewPrivileges !== true
     || ingress.entrypoint !== null || typeof compatibility.readableByPreviousRelease !== 'boolean') throw new Error()
   const currentEpoch = epoch(compatibility.currentEpoch); const min = epoch(range.min); const max = epoch(range.max)
-  if (min > max || max !== currentEpoch) throw new Error()
+  const hostAppImageDigest = digest(input.hostAppImageDigest); const previousCoreImageRef = input.previousCoreImageRef
+  if (min > max || max !== currentEpoch || (previousCoreImageRef !== null && (typeof previousCoreImageRef !== 'string'
+    || !PINNED_IMAGE.test(previousCoreImageRef) || previousCoreImageRef.endsWith(`@${hostAppImageDigest}`)))
+    || (previousCoreImageRef !== null) !== compatibility.readableByPreviousRelease) throw new Error()
   return Object.freeze({
-    schemaVersion: 1, domain: RELEASE_DOMAIN, hostAppImageDigest: digest(input.hostAppImageDigest),
+    schemaVersion: 1, domain: RELEASE_DOMAIN, hostAppImageDigest, previousCoreImageRef,
     coreCommand: Object.freeze({ entrypoint: exactArray(core.entrypoint, ['/usr/local/bin/web-entrypoint']) as ['/usr/local/bin/web-entrypoint'],
       cmd: exactArray(core.cmd, ['node', 'apps/full-app/dist/server/main.js']) as ['node', 'apps/full-app/dist/server/main.js'] }),
     migrationProcess: Object.freeze({ entrypoint: exactArray(migration.entrypoint, ['node']) as ['node'],
@@ -131,7 +136,8 @@ function parseRelease(value: unknown): ApprovedD1HostReleaseRecordV1 {
     caddyfileDigest: digest(input.caddyfileDigest), hostSecurityConfigDigest: digest(input.hostSecurityConfigDigest),
     selectorInventoryRevision: revision(input.selectorInventoryRevision), executionPolicyRevision: revision(input.executionPolicyRevision),
     databaseSchemaCompatibility: Object.freeze({ migrationSetDigest: digest(compatibility.migrationSetDigest), currentEpoch,
-      readableEpochRange: Object.freeze({ min, max }), readableByPreviousRelease: compatibility.readableByPreviousRelease }),
+      readableEpochRange: Object.freeze({ min, max }), readableByPreviousRelease: compatibility.readableByPreviousRelease,
+      rehearsalEvidenceDigest: digest(compatibility.rehearsalEvidenceDigest) }),
   })
 }
 
