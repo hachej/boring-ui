@@ -919,6 +919,11 @@ export async function createCoreWorkspaceAgentServer(
     corsOrigins: app.config.cors.origins,
     validateWorkspaceId: validateWorkspaceIdSegment,
     agentSessionId: agentSessionIdFromRequest,
+    assertRuntimeWorkspaceScope: options.requestScopeResolver
+      ? (request, workspaceId) => {
+          if (request.requestScope?.workspaceId !== workspaceId) d1HostScopeViolation(request)
+        }
+      : undefined,
   })
   app.addHook('preHandler', async (request) => {
     await coreBridge.rememberSessionOwner(request)

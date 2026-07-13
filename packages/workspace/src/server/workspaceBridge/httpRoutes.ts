@@ -14,11 +14,16 @@ import type { WorkspaceBridgeRegistry } from "./registry"
 import { measureJsonBytes } from "./json"
 import {
   DEFAULT_WORKSPACE_BRIDGE_RUNTIME_TOKEN_TTL_MS,
+  authorizeWorkspaceBridgeRuntimeToken,
   clampWorkspaceBridgeRuntimeTokenTtlMs,
   mintWorkspaceBridgeRuntimeToken,
   verifyWorkspaceBridgeRuntimeRefreshToken,
   verifyWorkspaceBridgeRuntimeToken,
+  verifyWorkspaceBridgeRuntimeTokenClaims,
+  type VerifiedWorkspaceBridgeRuntimeRefreshToken,
+  type VerifiedWorkspaceBridgeRuntimeTokenClaims,
   type WorkspaceBridgeRuntimeRefreshTokenClaims,
+  type WorkspaceBridgeRuntimeTokenClaims,
 } from "./runtimeToken"
 import {
   InMemoryWorkspaceBridgeRuntimeRefreshTokenStore,
@@ -40,6 +45,10 @@ export interface WorkspaceBridgeHttpRoutesOptions {
   runtimeRefreshTokenSecret?: string
   runtimeRefreshTokenStore?: WorkspaceBridgeRuntimeRefreshTokenStore
   getRuntimeRefreshTokenStore?: (request: FastifyRequest, claims: WorkspaceBridgeRuntimeRefreshTokenClaims) => WorkspaceBridgeRuntimeRefreshTokenStore | undefined | Promise<WorkspaceBridgeRuntimeRefreshTokenStore | undefined>
+  assertRuntimeWorkspaceScope?: (
+    request: FastifyRequest,
+    claims: WorkspaceBridgeRuntimeTokenClaims | WorkspaceBridgeRuntimeRefreshTokenClaims,
+  ) => void | Promise<void>
   refreshTokenRateLimit?: { maxUses?: number; windowMs?: number }
   ownerWorkspaceId?: string
   getOwnerWorkspaceId?: (request: FastifyRequest, body: WorkspaceBridgeCallRequest, auth: BridgeAuthContext) => string | undefined | Promise<string | undefined>
@@ -75,6 +84,23 @@ export function workspaceBridgeHttpRoutes(
       return sendBridgeError(reply, 400, undefined, WorkspaceBridgeErrorCode.SchemaInvalid, "WorkspaceBridge request body is invalid")
     }
     const body: WorkspaceBridgeCallRequest = { ...parsed.data, input: parsed.data.input ?? {} }
+    const authHeader = firstHeader(request.headers.authorization)
+    const runtimeToken = authHeader?.startsWith("Bearer ")
+      ? authHeader.slice("Bearer ".length)
+      : undefined
+    let verifiedRuntimeToken: VerifiedWorkspaceBridgeRuntimeTokenClaims | undefined
+
+    if (runtimeToken !== undefined && opts.assertRuntimeWorkspaceScope) {
+      try {
+        verifiedRuntimeToken = resolveRuntimeClaims(runtimeToken, opts)
+      } catch (err) {
+        const bridgeError = isBridgeError(err)
+          ? err
+          : createWorkspaceBridgeError(WorkspaceBridgeErrorCode.HandlerFailed, "WorkspaceBridge transport failed")
+        return sendBridgeError(reply, statusForBridgeError(bridgeError.code), body.requestId, bridgeError.code, bridgeError.message)
+      }
+      await opts.assertRuntimeWorkspaceScope(request, verifiedRuntimeToken.claims)
+    }
 
     try {
       const registry = await resolveRegistry(request, body, opts)
@@ -83,9 +109,8 @@ export function workspaceBridgeHttpRoutes(
         return sendBridgeError(reply, statusForBridgeError(WorkspaceBridgeErrorCode.OpNotFound), body.requestId, WorkspaceBridgeErrorCode.OpNotFound, "WorkspaceBridge operation is not registered")
       }
 
-      const authHeader = firstHeader(request.headers.authorization)
-      const authContext = authHeader?.startsWith("Bearer ")
-        ? resolveRuntimeContext(authHeader.slice("Bearer ".length), opts, definition)
+      const authContext = runtimeToken !== undefined
+        ? resolveRuntimeContext(runtimeToken, opts, definition, verifiedRuntimeToken)
         : await resolveBrowserContext(request, opts, definition, body)
       const idempotencyStore = opts.getIdempotencyStore
         ? await opts.getIdempotencyStore(request, body)
@@ -119,12 +144,24 @@ export function workspaceBridgeHttpRoutes(
       return sendBridgeError(reply, 401, undefined, WorkspaceBridgeErrorCode.AuthRequired, "WorkspaceBridge token refresh is not configured")
     }
 
+    const nowMs = Date.now()
+    let verified: VerifiedWorkspaceBridgeRuntimeRefreshToken
     try {
-      const nowMs = Date.now()
-      const verified = verifyWorkspaceBridgeRuntimeRefreshToken(authHeader.slice("Bearer ".length), {
+      verified = verifyWorkspaceBridgeRuntimeRefreshToken(authHeader.slice("Bearer ".length), {
         secret: opts.runtimeRefreshTokenSecret,
         nowMs,
       })
+    } catch (err) {
+      const bridgeError = isBridgeError(err)
+        ? err
+        : createWorkspaceBridgeError(WorkspaceBridgeErrorCode.InvalidToken, "WorkspaceBridge refresh token is invalid")
+      return sendBridgeError(reply, statusForBridgeError(bridgeError.code), undefined, bridgeError.code, bridgeError.message)
+    }
+    if (opts.assertRuntimeWorkspaceScope) {
+      await opts.assertRuntimeWorkspaceScope(request, verified.claims)
+    }
+
+    try {
       const store = opts.getRuntimeRefreshTokenStore
         ? await opts.getRuntimeRefreshTokenStore(request, verified.claims) ?? defaultRefreshTokenStore
         : defaultRefreshTokenStore
@@ -181,7 +218,11 @@ function resolveRuntimeContext(
   token: string,
   opts: WorkspaceBridgeHttpRoutesOptions,
   definition: NonNullable<ReturnType<WorkspaceBridgeRegistry["getDefinition"]>>,
+  verified?: VerifiedWorkspaceBridgeRuntimeTokenClaims,
 ) {
+  if (verified) {
+    return authorizeWorkspaceBridgeRuntimeToken(verified, definition.requiredCapabilities).authContext
+  }
   if (!opts.runtimeTokenSecret) {
     throw createWorkspaceBridgeError(WorkspaceBridgeErrorCode.AuthRequired, "Runtime bridge token auth is not configured")
   }
@@ -189,6 +230,16 @@ function resolveRuntimeContext(
     secret: opts.runtimeTokenSecret,
     requiredCapabilities: definition.requiredCapabilities,
   }).authContext
+}
+
+function resolveRuntimeClaims(
+  token: string,
+  opts: WorkspaceBridgeHttpRoutesOptions,
+): VerifiedWorkspaceBridgeRuntimeTokenClaims {
+  if (!opts.runtimeTokenSecret) {
+    throw createWorkspaceBridgeError(WorkspaceBridgeErrorCode.AuthRequired, "Runtime bridge token auth is not configured")
+  }
+  return verifyWorkspaceBridgeRuntimeTokenClaims(token, { secret: opts.runtimeTokenSecret })
 }
 
 async function resolveBrowserContext(

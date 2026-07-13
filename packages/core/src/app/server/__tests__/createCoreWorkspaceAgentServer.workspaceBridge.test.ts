@@ -90,6 +90,11 @@ vi.mock('@hachej/boring-workspace/server', () => {
       }),
     }
   }
+  const verifyRuntimeToken = vi.fn((token: string) => {
+    workspaceServerMock.runtimeTokenVerifications.push(token)
+    const workspaceId = token === 'foreign-runtime-token' ? 'workspace-2' : 'workspace-1'
+    return { claims: { workspaceId }, authContext: { workspaceId } }
+  })
   return {
   createBrowserBridgeAuthPolicy: vi.fn((opts: Record<string, unknown>) => {
     workspaceServerMock.browserAuthPolicyOptions.push(opts)
@@ -137,13 +142,15 @@ vi.mock('@hachej/boring-workspace/server', () => {
   InMemoryWorkspaceBridgeIdempotencyStore: class InMemoryWorkspaceBridgeIdempotencyStore {},
   InMemoryWorkspaceBridgeRuntimeRefreshTokenStore: class InMemoryWorkspaceBridgeRuntimeRefreshTokenStore {},
   uiRoutes: async () => {},
-  verifyWorkspaceBridgeRuntimeToken: vi.fn((token: string) => {
-    workspaceServerMock.runtimeTokenVerifications.push(token)
-    return { authContext: { workspaceId: 'workspace-1' } }
-  }),
+  verifyWorkspaceBridgeRuntimeToken: verifyRuntimeToken,
   workspaceBridgeHttpRoutes: async (app: any, opts: Record<string, unknown>) => {
     workspaceServerMock.httpRouteOpts.push(opts)
     app.post('/api/v1/workspace-bridge/call', async (request: any, reply: any) => {
+      const authHeader = request.headers.authorization
+      if (typeof authHeader === 'string' && authHeader.startsWith('Bearer ') && opts.assertRuntimeWorkspaceScope) {
+        const verified = verifyRuntimeToken(authHeader.slice('Bearer '.length))
+        await (opts.assertRuntimeWorkspaceScope as Function)(request, verified.claims)
+      }
       try {
         await (opts.getRegistry as Function)(request, { op: 'test.v1.call', input: {} })
       } catch {
@@ -373,7 +380,20 @@ describe('createCoreWorkspaceAgentServer workspace bridge wiring', () => {
     })
     expect(runtime.statusCode).toBe(200)
     expect(workspaceServerMock.memberChecks).toEqual([])
-    expect(workspaceServerMock.runtimeTokenVerifications).toContain('runtime-token')
+    expect(workspaceServerMock.runtimeTokenVerifications).toEqual(['runtime-token'])
+
+    workspaceServerMock.runtimeTokenVerifications.length = 0
+    workspaceServerMock.registryCreations = 0
+    const foreignRuntime = await app.inject({
+      method: 'POST',
+      url: '/api/v1/workspace-bridge/call',
+      headers: { authorization: 'Bearer foreign-runtime-token' },
+      payload: {},
+    })
+    expect(foreignRuntime.statusCode).toBe(421)
+    expect(foreignRuntime.json()).toMatchObject({ code: 'D1_HOST_SCOPE_VIOLATION' })
+    expect(workspaceServerMock.runtimeTokenVerifications).toEqual(['foreign-runtime-token'])
+    expect(workspaceServerMock.registryCreations).toBe(0)
     await app.close()
   })
 
@@ -415,6 +435,7 @@ describe('createCoreWorkspaceAgentServer workspace bridge wiring', () => {
     expect(workspaceServerMock.httpRouteOpts.at(-1)).toMatchObject({
       runtimeTokenSecret: '12345678901234567890123456789012',
     })
+    expect(workspaceServerMock.httpRouteOpts.at(-1)?.assertRuntimeWorkspaceScope).toBeUndefined()
     expect(workspaceServerMock.browserAuthPolicyOptions.at(-1)).toMatchObject({
       allowedOrigins: ['https://app.example.test'],
       requireCsrfHeader: true,
