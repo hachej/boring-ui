@@ -33,7 +33,7 @@ export interface D1DesiredResolver {
   reproduce(target: D1StoredCompleteV1): Promise<D1DesiredSnapshotV1>
 }
 export interface D1ApplyEffects {
-  loadAdmittedBindingIds(hostId: string): Promise<readonly string[]>
+  loadAdmittedBindingIds(hostId: string, databaseRef: string): Promise<readonly string[]>
   /** Must attest the actual provider versions consumed while materializing the expected identities. */
   materialize(candidate: D1StoredCandidateV1, expected: readonly D1RuntimeInputsIdentityV1[]): Promise<readonly D1RuntimeInputsInspectionV1[]>
   preload(candidate: D1StoredCandidateV1, runtimeInputs: readonly D1RuntimeInputsIdentityV1[]): Promise<D1ObservationV1>
@@ -177,10 +177,12 @@ export function createD1CommandEngine(options: D1CommandEngineOptions) {
     const removals = Object.freeze([...oldPlan.keys()].filter((id) => !nextPlan.has(id)).sort())
     if (enforceConfirmation && (new Set(confirmed).size !== confirmed.length || !equal(removals, confirmed))) throw new D1HostError(D1HostErrorCode.DESTRUCTIVE_CONFIRMATION_REQUIRED, { field: 'confirmRemove' })
     let admitted: readonly string[]
-    try { admitted = await options.effects.loadAdmittedBindingIds(hostId) } catch {
+    const databaseRef = current?.desired.plan.databaseRef ?? next.databaseRef
+    try { admitted = await options.effects.loadAdmittedBindingIds(hostId, databaseRef) } catch {
       throw new D1HostError(D1HostErrorCode.PUBLICATION_FAILED, { field: 'admissions' })
     }
     const admittedSet = new Set(admitted.map((id, index) => strictD1Ref(id, `admissions[${index}]`)))
+    if ([...admittedSet].some((id) => !oldPlan.has(id))) throw new D1HostError(D1HostErrorCode.BINDING_ADMITTED, { field: 'bindingId' })
     const admittedRemoval = removals.find((id) => admittedSet.has(id))
     if (admittedRemoval) throw new D1HostError(D1HostErrorCode.BINDING_ADMITTED, { field: 'bindingId' })
     if (!current) return removals
