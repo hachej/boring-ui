@@ -37,7 +37,7 @@ export function validateDeployManifest(manifest, options) {
   if (errors.length > 0) return { ok: false, errors }
 
   check(() => {
-    if (manifest.schemaVersion !== 1) fail('schemaVersion must be 1')
+    if (manifest.schemaVersion !== 1 && manifest.schemaVersion !== 2) fail('schemaVersion must be 1 or 2')
   })
 
   const fields = ['repository', 'ref', 'tag', 'commit', 'workflow', 'workflowRunId', 'image', 'digest', 'target', 'role']
@@ -108,10 +108,24 @@ export function validateDeployManifest(manifest, options) {
       fail('migration.classification must be a non-empty string')
     }
   })
+  if (manifest.schemaVersion === 2) {
+    check(() => {
+      if (!DIGEST_RE.test(manifest.migration?.migrationSetDigest)) {
+        fail('migration.migrationSetDigest must be a sha256 digest')
+      }
+    })
+    check(() => {
+      if (!Number.isSafeInteger(manifest.migration?.currentEpoch) || manifest.migration.currentEpoch < 0) {
+        fail('migration.currentEpoch must be a non-negative safe integer')
+      }
+    })
+  }
 
-  return errors.length === 0
-    ? { ok: true, image, digest, tag, commit, repository, workflow, workflowRunId }
-    : { ok: false, errors }
+  if (errors.length > 0) return { ok: false, errors }
+  const result = { ok: true, image, digest, tag, commit, repository, workflow, workflowRunId }
+  return manifest.schemaVersion === 2
+    ? { ...result, migrationSetDigest: manifest.migration.migrationSetDigest, currentEpoch: manifest.migration.currentEpoch }
+    : result
 }
 
 function parseArgs(argv) {

@@ -61,9 +61,13 @@ FROM node:22-slim AS runtime
 WORKDIR /app
 ARG REVISION=unknown
 ARG SOURCE=https://github.com/hachej/boring-ui-v2
+ARG D1_MIGRATION_SET_DIGEST=unapproved
+ARG D1_DATABASE_CURRENT_EPOCH=unapproved
 LABEL org.opencontainers.image.source=$SOURCE \
   org.opencontainers.image.revision=$REVISION \
   org.opencontainers.image.title="boring-ui full-app" \
+  ai.senecapp.d1.migration-set-digest=$D1_MIGRATION_SET_DIGEST \
+  ai.senecapp.d1.database-current-epoch=$D1_DATABASE_CURRENT_EPOCH \
   boring.role="web"
 RUN apt-get update \
   && apt-get install -y --no-install-recommends bubblewrap ca-certificates util-linux \
