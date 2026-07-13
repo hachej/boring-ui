@@ -115,9 +115,13 @@ export type {
 export { validateTool } from './validateTool'
 export {
   TASK_STATES,
+  ARTIFACT_LOCATOR_KINDS,
+  AGENT_TASK_SCHEMA_VERSION,
   TaskStateSchema,
   PrincipalRefSchema,
   AgentRefSchema,
+  WorkspaceFileLocatorSchema,
+  ArtifactLocatorSchema,
   ArtifactRefSchema,
   PartSchema,
   AgentMessageSchema,
@@ -128,6 +132,7 @@ export {
   isValidTaskTransition,
   assertValidTransition,
   validateAgentTask,
+  parseAgentTaskEdgeCompat,
   validateConsumptionGuards,
   detectConsumptionCycle,
   assertNoConsumptionCycle,
@@ -138,6 +143,9 @@ export type {
   TaskState,
   PrincipalRef,
   AgentRef,
+  ArtifactLocatorKind,
+  WorkspaceFileLocator,
+  ArtifactLocator,
   ArtifactRef,
   TextPart,
   FilePart,
@@ -152,6 +160,23 @@ export {
   WORKSPACE_COMMAND_NOTIFY_EVENT,
 } from './agentPluginEvents'
 export type { CommandNotifyPayload } from './agentPluginEvents'
+export {
+  OpaqueShareLocatorIdSchema,
+  ShareEntryProvenanceSchema,
+  ShareEntryV1Schema,
+  ShareEntryErrorCode,
+  ShareEntryValidationError,
+  InMemoryShareEntryStore,
+  resolveShareEntry,
+} from './share-entry'
+export type {
+  ShareEntryProvenance,
+  ShareEntryV1,
+  CreateShareEntryInput,
+  ShareEntryStore,
+  ShareEntryTombstone,
+  ShareEntryResolution,
+} from './share-entry'
 
 export type {
   BoringChatMessage,

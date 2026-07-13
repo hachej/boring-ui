@@ -11,10 +11,12 @@ import {
   type D1HostResult,
   type D1HostRunner,
 } from './edgeNetworkPreflight.js'
+import { D1_CADDY_IMAGE } from './d1IngressArtifacts.js'
+
+export { D1_CADDY_IMAGE } from './d1IngressArtifacts.js'
 
 const CONTROL_KEYS = ['schemaVersion', 'ingressImage', 'coreAppImage'] as const
 const IMAGE_RE = /^(?:[a-z0-9]+(?:[._-][a-z0-9]+)*\/)*[a-z0-9]+(?:[._-][a-z0-9]+)*@sha256:[a-f0-9]{64}$/
-export const D1_CADDY_IMAGE = 'caddy@sha256:af5fdcd76f2db5e4e974ee92f96ee8c0fc3edb55bd4ba5032547cbf3f65e486d'
 const COMPOSE_DIRECTORY = '/opt/boring/d1'
 const COMPOSE_FILE = `${COMPOSE_DIRECTORY}/compose.yml`
 const PROJECT_NAME = 'boring-d1'

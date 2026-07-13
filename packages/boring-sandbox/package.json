@@ -1,6 +1,6 @@
 {
   "name": "@hachej/boring-sandbox",
-  "version": "0.1.83",
+  "version": "0.1.84",
   "type": "module",
   "license": "MIT",
   "description": "Sandbox provider contracts and implementations for Boring runtimes.",
@@ -35,6 +35,7 @@
     "typecheck": "tsc --noEmit",
     "check:invariants": "node ./scripts/check-invariants.mjs",
     "lint": "pnpm run typecheck && pnpm run check:invariants",
+    "qualify:runsc:isolation": "node ./scripts/qualify-runsc-isolation.mjs",
     "test": "vitest run --passWithNoTests",
     "clean": "rm -rf dist .tsbuildinfo"
   },

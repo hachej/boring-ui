@@ -21,3 +21,20 @@ export type {
 export {
   preflightRunsc,
 } from "./preflight";
+export type {
+  RuntimeIsolationDigest,
+  RuntimeIsolationErrorCode,
+  RuntimeIsolationEvidenceV1,
+  RuntimeIsolationEvidenceVerification,
+  RuntimeIsolationProbeId,
+  RuntimeIsolationProfileV1,
+} from "../../shared/runtimeIsolation";
+export {
+  RUNTIME_ISOLATION_ERROR_CODES,
+  RUNTIME_ISOLATION_PROBE_IDS,
+} from "../../shared/runtimeIsolation";
+export {
+  createRuntimeIsolationEvidence,
+  digestRuntimeIsolationValue,
+  verifyRuntimeIsolationEvidence,
+} from "./isolationEvidence";

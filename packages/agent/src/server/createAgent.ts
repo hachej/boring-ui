@@ -1,5 +1,6 @@
 import { createAgentRuntimeBridge as createCoreAgentRuntimeBridge } from '../core/createAgent'
 import type { AgentCoreRuntime } from '../core/createAgent'
+import type { AgentEffectAdmission } from '../core/piChatSessionService'
 import { ErrorCode } from '../shared/error-codes'
 import type { Agent, AgentConfig } from '../shared/events'
 import type { AgentHarness, AgentHarnessFactoryInput } from '../shared/harness'
@@ -28,6 +29,7 @@ export interface CreateAgentRuntimeBridgeOptions {
     runtimeCwd?: string
   }
   service?: {
+    admitEffect?: AgentEffectAdmission
     workdir?: string
     workspace?: Workspace
     eventStore?: EventStreamStore
@@ -55,6 +57,7 @@ export function createAgentRuntimeBridge(
 
   return createCoreAgentRuntimeBridge({
     runtimeFactory: () => createRuntime(config, options),
+    admitEffect: options.service?.admitEffect,
     readiness: config.readiness,
     readinessRequirements: config.readinessRequirements,
   })

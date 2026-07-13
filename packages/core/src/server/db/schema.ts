@@ -466,3 +466,50 @@ export const telemetryEvents = pgTable(
     index('telemetry_events_event_name_idx').on(table.eventName),
   ],
 )
+
+export const d1BindingAdmissions = pgTable(
+  'd1_binding_admissions',
+  {
+    sequence: bigint('sequence', { mode: 'bigint' }).generatedAlwaysAsIdentity(),
+    hostId: text('host_id').notNull(),
+    bindingId: text('binding_id').notNull(),
+    firstRevisionId: text('active_revision').notNull(),
+    // Nullable only for immutable rows created before migration 0020; runtime admission rejects those rows as mismatches.
+    executionIdentityDigest: text('execution_identity_digest'),
+    firstDesiredStateDigest: text('first_desired_state_digest'),
+    admittedAt: timestamp('admitted_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    primaryKey({ name: 'd1_binding_admissions_pk', columns: [table.hostId, table.bindingId] }),
+    uniqueIndex('d1_binding_admissions_sequence_unique').on(table.sequence),
+    check('d1_binding_admissions_revision_check', sql`${table.firstRevisionId} ~ '^r[0-9]{10}$'`),
+    check('d1_binding_admissions_execution_digest_check', sql`${table.executionIdentityDigest} ~ '^sha256:[a-f0-9]{64}$'`),
+    check('d1_binding_admissions_desired_digest_check', sql`${table.firstDesiredStateDigest} ~ '^sha256:[a-f0-9]{64}$'`),
+  ],
+)
+
+export const d1DestructivePublicationEvents = pgTable(
+  'd1_destructive_publication_events',
+  {
+    sequence: bigint('sequence', { mode: 'bigint' }).generatedAlwaysAsIdentity().primaryKey(),
+    operationId: text('operation_id').notNull(),
+    state: text('state').notNull(),
+    hostId: text('host_id').notNull(),
+    expectedRevision: text('expected_revision').notNull(),
+    expectedDigest: text('expected_digest').notNull(),
+    targetRevision: text('target_revision').notNull(),
+    targetDigest: text('target_digest').notNull(),
+    removalBindingIds: text('removal_binding_ids').array().notNull(),
+    recordedAt: timestamp('recorded_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    uniqueIndex('d1_destructive_publication_prepared_unique').on(table.operationId).where(sql`${table.state} = 'prepared'`),
+    uniqueIndex('d1_destructive_publication_terminal_unique').on(table.operationId).where(sql`${table.state} IN ('committed', 'aborted')`),
+    check('d1_destructive_publication_state_check', sql`${table.state} IN ('prepared', 'committed', 'aborted')`),
+    check('d1_destructive_publication_expected_revision_check', sql`${table.expectedRevision} ~ '^r[0-9]{10}$'`),
+    check('d1_destructive_publication_target_revision_check', sql`${table.targetRevision} ~ '^r[0-9]{10}$'`),
+    check('d1_destructive_publication_expected_digest_check', sql`${table.expectedDigest} ~ '^sha256:[a-f0-9]{64}$'`),
+    check('d1_destructive_publication_target_digest_check', sql`${table.targetDigest} ~ '^sha256:[a-f0-9]{64}$'`),
+    check('d1_destructive_publication_removals_check', sql`cardinality(${table.removalBindingIds}) > 0`),
+  ],
+)

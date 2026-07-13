@@ -147,14 +147,19 @@ vi.mock('@hachej/boring-workspace/server', () => {
     workspaceServerMock.httpRouteOpts.push(opts)
     app.post('/api/v1/workspace-bridge/call', async (request: any, reply: any) => {
       const authHeader = request.headers.authorization
+      let runtimeWorkspaceId: string | undefined
       if (typeof authHeader === 'string' && authHeader.startsWith('Bearer ') && opts.assertRuntimeWorkspaceScope) {
         const verified = verifyRuntimeToken(authHeader.slice('Bearer '.length))
         await (opts.assertRuntimeWorkspaceScope as Function)(request, verified.claims)
+        runtimeWorkspaceId = verified.claims.workspaceId
       }
       try {
         await (opts.getRegistry as Function)(request, { op: 'test.v1.call', input: {} })
       } catch {
         return reply.code(400).send({ caughtByBridge: true })
+      }
+      if (runtimeWorkspaceId && opts.admitRuntimeOperation) {
+        await (opts.admitRuntimeOperation as Function)(runtimeWorkspaceId)
       }
       return { ok: true, workspaceId: request.headers['x-boring-workspace-id'] }
     })
@@ -328,11 +333,16 @@ describe('createCoreWorkspaceAgentServer workspace bridge wiring', () => {
     await app.close()
   })
 
-  it('admits scoped browser WorkspaceBridge calls before the RPC catch without touching runtime-token traffic', async () => {
+  it('keeps browser scope admission exact and admits only authorized runtime Bridge calls', async () => {
     const getWorkspaceRoot = vi.fn(async () => '/tmp/workspace')
+    let admissionError: string | null = null
+    const admitEffect = vi.fn(async () => {
+      if (admissionError) throw Object.assign(new Error('private admission failure'), { code: admissionError })
+    })
     const app = await createCoreWorkspaceAgentServer({
       serveFrontend: false,
       getWorkspaceRoot,
+      admitEffect,
       requestScopeResolver: async () => ({
         bindingId: 'binding-1',
         workspaceId: 'workspace-1',
@@ -369,6 +379,7 @@ describe('createCoreWorkspaceAgentServer workspace bridge wiring', () => {
     expect(derived.json()).toMatchObject({ workspaceId: 'workspace-1' })
     expect(workspaceServerMock.memberChecks).toEqual([['workspace-1', 'user-1']])
     expect(workspaceServerMock.registryCreations).toBe(1)
+    expect(admitEffect).not.toHaveBeenCalled()
 
     workspaceServerMock.memberChecks.length = 0
     workspaceServerMock.registryCreations = 0
@@ -381,6 +392,10 @@ describe('createCoreWorkspaceAgentServer workspace bridge wiring', () => {
     expect(runtime.statusCode).toBe(200)
     expect(workspaceServerMock.memberChecks).toEqual([])
     expect(workspaceServerMock.runtimeTokenVerifications).toEqual(['runtime-token'])
+    expect(admitEffect).toHaveBeenCalledExactlyOnceWith({
+      workspaceId: 'workspace-1',
+      requestId: 'workspace-bridge-runtime',
+    })
 
     workspaceServerMock.runtimeTokenVerifications.length = 0
     workspaceServerMock.registryCreations = 0
@@ -394,6 +409,32 @@ describe('createCoreWorkspaceAgentServer workspace bridge wiring', () => {
     expect(foreignRuntime.json()).toMatchObject({ code: 'D1_HOST_SCOPE_VIOLATION' })
     expect(workspaceServerMock.runtimeTokenVerifications).toEqual(['foreign-runtime-token'])
     expect(workspaceServerMock.registryCreations).toBe(0)
+    expect(admitEffect).toHaveBeenCalledTimes(1)
+
+    admissionError = 'private'
+    const blocked = await app.inject({
+      method: 'POST',
+      url: '/api/v1/workspace-bridge/call',
+      headers: { authorization: 'Bearer runtime-token' },
+      payload: {},
+    })
+    expect(blocked.statusCode).toBe(500)
+    expect(blocked.json()).toMatchObject({
+      code: 'D1_ADMISSION_RECORD_FAILED',
+      message: 'D1_ADMISSION_RECORD_FAILED',
+    })
+    admissionError = 'D1_ADMISSION_IDENTITY_MISMATCH'
+    const mismatched = await app.inject({
+      method: 'POST',
+      url: '/api/v1/workspace-bridge/call',
+      headers: { authorization: 'Bearer runtime-token' },
+      payload: {},
+    })
+    expect(mismatched.statusCode).toBe(500)
+    expect(mismatched.json()).toMatchObject({
+      code: 'D1_ADMISSION_IDENTITY_MISMATCH',
+      message: 'D1_ADMISSION_IDENTITY_MISMATCH',
+    })
     await app.close()
   })
 

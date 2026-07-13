@@ -836,9 +836,12 @@ MCP and managed-agent MCP families remain inside c3/c5 respectively.
 The sole D1 web entrypoint is the approved full-app Docker web runtime invoking
 `apps/full-app/dist/server/main.js`; generic `runCoreWorkspaceAgentServer` and
 command overrides are not D1 launchers. A root-owned approved-host-release
-record at `<host-state>/approved-host-release.json`, outside immutable revision
-directories, is installed only by the maintenance release procedure. The app
-cannot write it and the D1 apply command exposes no mutation for it. It binds
+record at `/etc/boring/d1/approved-host-releases/<hostId>.json`, outside D1
+host-state and immutable revision mounts, is installed only by the root
+maintenance release procedure and is not mounted into the app. The app cannot
+write it and the D1 apply command exposes no mutation for it. The authority
+directory is root:root `0755`; each exact `<hostId>.json` record is root:root
+`0444`, regular, singly linked, and at most 64 KiB. It binds
 `{ hostAppImageDigest, coreCommand, migrationProcess, ingressImageDigest, ingressCommand,
 caddyfileDigest, hostSecurityConfigDigest,
 selectorInventoryRevision, executionPolicyRevision }`; both revisions are
@@ -861,13 +864,20 @@ agentMode, workspaceRoot: "/data/workspaces", sessionRoot: "/data/pi-sessions",
 trustedProxy: { cidrs: ["192.168.255.250/32"], hops: 1 }, externalPlugins: false,
 pluginAuthoring: false, betterAuthUrl, corsOrigins, cspEnabled,
 cspUpgradeInsecureRequests, sessionCookieSecure, boringMcpEnabled,
-managedAgentMcp: { enabled, workspaceId?, userId? } }`. Effective values come
+managedAgentMcp: { enabled: false } }`. D1 R0 hard-pins managed-agent MCP
+disabled and intentionally cannot serve managed MCP. A named post-R0
+**M1-D1H managed-MCP deployment-hardening** bead, owned by M1, must add bearer
+`*_FILE` resolution/materialization/rotation/restart plus conditional
+workspace/user target enablement. P5a participates only if shared secret
+brokerage is required; this host-approval slice does not.
+Effective values come
 from the same production readers used by the app. Bearer/API/auth/database/model
 secret refs bind through the existing approved plan identity, never env. Any new environment
 key or route/auth/browser/trust-boundary config reader requires a schema/policy
 revision, renewed review, and new approved record before production use. Prove
 unknown/secret-bearing keys and drift in owner UID, mode, roots, proxy, auth URL,
-CORS, CSP, cookie security, MCP enablement, or managed target reject. A
+CORS, CSP, cookie security, or MCP enablement reject. Managed-agent MCP
+enablement or target keys also reject in D1 R0. A
 materialized canary proves no secret bytes enter Docker config, identity, or
 failure output.
 

@@ -7,8 +7,8 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import type { D1ActiveCollection, D1ActiveCollectionReader } from '../activeCollectionReader.js'
 import { registerD1ReadinessRoute } from '../d1Readiness.js'
-import { createD1ServerWiring } from '../d1ServerWiring.js'
-import { D1HostErrorCode } from '../d1Plan.js'
+import { createD1AgentEffectAdmission, createD1ServerWiring } from '../d1ServerWiring.js'
+import { D1HostError, D1HostErrorCode } from '../d1Plan.js'
 import { createD1HostSurfaceResolver, D1_TRUSTED_CADDY_PEER } from '../hostSurface.js'
 
 const HOST = 'insurance.example.test'
@@ -97,7 +97,7 @@ describe('D1 readiness and activation wiring', () => {
     expect(euid).not.toHaveBeenCalled()
     const wiring = createD1ServerWiring(CONFIG, { BORING_D1_HOST_ID: 'eu-host-1', BORING_D1_OWNER_UID: '0' })!
     expect(Object.isFrozen(wiring)).toBe(true)
-    expect(Object.keys(wiring)).toEqual(['requestScopeResolver', 'frontendRootHandler', 'registerReadiness'])
+    expect(Object.keys(wiring)).toEqual(['requestScopeResolver', 'frontendRootHandler', 'admitAgentEffect', 'registerReadiness'])
     expect(createD1ServerWiring(CONFIG, { BORING_D1_HOST_ID: 'eu-host-1', BORING_D1_OWNER_UID: '4294967294' })).toBeDefined()
 
     const source = await readFile(new URL('../d1ServerWiring.ts', import.meta.url), 'utf8')
@@ -106,8 +106,52 @@ describe('D1 readiness and activation wiring', () => {
     expect(source).toContain("path.join('/var/lib/boring/d1', hostId)")
     expect(source).not.toMatch(/BORING_D1_(?:STATE_ROOT|APP_GID|ROOT)/)
     expect(main.indexOf('createD1ServerWiring(config)')).toBeLessThan(main.indexOf('createFullAppHostPluginComposition(config)'))
+    expect(main).toContain('admitEffect: d1.admitAgentEffect')
     expect(main.indexOf('d1?.registerReadiness(app)')).toBeLessThan(main.indexOf('registerFullAppBoringMcpRoutes(app)'))
     expect(main.indexOf('registerFullAppBoringMcpRoutes(app)')).toBeLessThan(main.indexOf('app.listen('))
+  })
+
+  it('derives the unique current binding for each effect and fails closed without the one ledger', async () => {
+    const current = collection()
+    const activeReader = reader({
+      ...current,
+      desired: {
+        ...current.desired,
+        plan: {
+          ...current.desired.plan,
+          hostId: 'eu-host-1',
+          bindings: current.desired.plan.bindings.map((binding) => binding.bindingId === 'a-binding'
+            ? { ...binding, workspaceId: 'workspace:a', defaultDeploymentId: 'deployment:a' }
+            : binding),
+        },
+      },
+    } as D1ActiveCollection)
+    const admit = vi.fn(async () => ({}) as never)
+    const admitEffect = createD1AgentEffectAdmission({
+      hostId: 'eu-host-1', activeReader, admissionLedger: { admit },
+    })
+
+    await admitEffect({ workspaceId: 'workspace:z', requestId: 'request-1' })
+    expect(admit).toHaveBeenCalledWith(activeReader, {
+      hostId: 'eu-host-1', bindingId: 'z-binding', workspaceId: 'workspace:z', defaultDeploymentId: 'deployment:z',
+    })
+    admit.mockRejectedValueOnce(new D1HostError(D1HostErrorCode.ADMISSION_IDENTITY_MISMATCH, { field: 'executionIdentityDigest' }))
+    await expect(admitEffect({ workspaceId: 'workspace:z', requestId: 'identity-mismatch' })).rejects.toMatchObject({
+      code: D1HostErrorCode.ADMISSION_IDENTITY_MISMATCH,
+      details: { field: 'executionIdentityDigest' },
+    })
+    await expect(createD1AgentEffectAdmission({ hostId: 'eu-host-1', activeReader })({
+      workspaceId: 'workspace:z', requestId: 'request-2',
+    })).rejects.toMatchObject({ code: D1HostErrorCode.ADMISSION_RECORD_FAILED, details: { field: 'admission' } })
+    const duplicateReader = reader({
+      ...current,
+      desired: { ...current.desired, plan: { ...current.desired.plan, hostId: 'eu-host-1' } },
+    } as D1ActiveCollection)
+    await expect(createD1AgentEffectAdmission({
+      hostId: 'eu-host-1', activeReader: duplicateReader, admissionLedger: { admit },
+    })({ workspaceId: 'workspace:z', requestId: 'request-3' }))
+      .rejects.toMatchObject({ code: D1HostErrorCode.ADMISSION_RECORD_FAILED })
+    expect(admit).toHaveBeenCalledTimes(2)
   })
 
   it('rejects noncanonical owner, identity, and proxy inputs with field-only errors', () => {

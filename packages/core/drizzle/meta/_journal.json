@@ -127,6 +127,27 @@
       "when": 1783497600000,
       "tag": "0017_user_budget_reservations",
       "breakpoints": true
+    },
+    {
+      "idx": 18,
+      "version": "7",
+      "when": 1783900800000,
+      "tag": "0018_d1_binding_admissions",
+      "breakpoints": true
+    },
+    {
+      "idx": 19,
+      "version": "7",
+      "when": 1783987200000,
+      "tag": "0019_d1_destructive_publication_events",
+      "breakpoints": true
+    },
+    {
+      "idx": 20,
+      "version": "7",
+      "when": 1784073600000,
+      "tag": "0020_d1_admission_execution_identity",
+      "breakpoints": true
     }
   ]
 }

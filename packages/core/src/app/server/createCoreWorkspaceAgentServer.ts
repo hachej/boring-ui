@@ -924,6 +924,23 @@ export async function createCoreWorkspaceAgentServer(
           if (request.requestScope?.workspaceId !== workspaceId) d1HostScopeViolation(request)
         }
       : undefined,
+    admitRuntimeOperation: options.admitEffect
+      ? async (workspaceId) => {
+          try {
+            await options.admitEffect!({ workspaceId, requestId: 'workspace-bridge-runtime' })
+          } catch (error) {
+            const code = typeof error === 'object' && error !== null && 'code' in error
+              && error.code === ERROR_CODES.D1_ADMISSION_IDENTITY_MISMATCH
+              ? ERROR_CODES.D1_ADMISSION_IDENTITY_MISMATCH
+              : ERROR_CODES.D1_ADMISSION_RECORD_FAILED
+            throw new HttpError({
+              status: 500,
+              code,
+              message: code,
+            })
+          }
+        }
+      : undefined,
   })
   app.addHook('preHandler', async (request) => {
     await coreBridge.rememberSessionOwner(request)
@@ -1016,6 +1033,7 @@ export async function createCoreWorkspaceAgentServer(
     externalPlugins: externalPluginsEnabled,
     runtimeModeAdapter: remoteWorkerModeAdapter,
     version: options.version,
+    admitEffect: options.admitEffect,
     extraTools: [
       ...(options.extraTools ?? []),
       ...(pluginCollection.agentOptions.extraTools ?? []),
