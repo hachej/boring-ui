@@ -29,12 +29,58 @@ Dispatch only these verification slices:
    bound post-signup invite succeeds; scoped foreign/invalid invites set
    `boring_invite_failed=invite_not_found` and create no default workspace;
    generic invalid invites retain the failure cookie plus default creation.
-   Public invite resolve/accept rejects foreign scope; bound rename and generic
-   workspace behavior remain unchanged. Prove every scoped existing-owner
-   demotion/removal/account deletion fails before mutation with
+   Legacy invite paths reject foreign scope before token lookup; public token-
+   only routes allow one read-only hash lookup, then return the same non-
+   enumerating 404 as an unknown token before application effects. Bound rename
+   and generic workspace behavior remain unchanged. Prove
+   every scoped existing-owner demotion/removal/account deletion fails before mutation with
    `D1_MANAGED_WORKSPACE_MUTATION_FORBIDDEN`, while non-owner account deletion
    removes only that member's data/membership and editor/viewer removal, owner
    add/promotion, and generic ownership/account behavior still work.
+   Exercise all c1-c5 boundaries: invite's sole read-only hash lookup, embedded/
+   pane selector conflicts, generic-exact Boring MCP limiting plus scoped
+   user/IP+trusted-workspace charging of every invalid request before admission,
+   signed Bridge claims scope-
+   asserted before registry/definition with HTTP 421 before runtime/refresh
+   effects, and managed-agent MCP trusted scope/default dispatch. Prove any
+   workspace-selector-bearing change requires renewed inventory, a new root-
+   approved release, and maintenance restart. Prove the root-owned release record
+   binds core/ingress artifacts, commands, and Caddyfile digest to the immutable
+   merged c1-c5 plan/evidence and
+   execution-policy revisions plus redacted route/trust-boundary config digest.
+   Prove the strict intended/observed env schema has the exact approved nonsecret
+   key set; unknown or secret-bearing env keys reject. Secret-ref identities stay
+   in approved state and raw values stay in tmpfs file inputs. Pin
+   `NODE_ENV=production`, forbid the five loader keys, and prove owner/mode/roots/
+   proxy, auth URL, CORS, CSP, cookie security, MCP enablement, and managed-target
+   drift reject. Prove core/ingress absent or stopped. Create/inspect the exact
+   DB-only one-shot migration container without data/state mounts, exact Node
+   migration process, `User=10001:10001`, and no web entrypoint/root/capabilities/
+   privileged mode, then run it to zero exit. Prove deterministic host/revision identity resumes created/running/
+   exited-zero, quarantines nonzero/drift, writes durable redacted completion
+   before exact-id cleanup, and survives every crash boundary. Create core
+   stopped; then prove observed == approved, read-only root,
+   exact four mounts, and matching env/config before preload/pointer/ingress or
+   lazy first-effect admission. Prove a materialized canary is absent from full
+   Docker inspect/config, raw bytes remain only in the read-only tmpfs file-
+   provider mount, and maintenance restart plus fresh attestation follows
+   rotation. Bind the stopped
+   core id, start only that exact id, wait for health, and prove direct non-Caddy
+   app traffic remains scope-rejected. Unapproved digest, command override, code-loader env, writable root, or
+   executable-path mount stops/quarantines core while ingress stays stopped;
+   only verified all-ready/published state starts ingress. Create ingress stopped,
+   inspect the landed D1-003a image/command/config identity, read-only root, sole
+   read-only config mount, edge/port mapping, exact approved image env with no
+   Compose-added env, and no command drift; bind verified core and stopped ingress
+   ids and prove publication starts only that exact ingress id. Running-host drift
+   rejects before N+1 candidate effects. Preload/all-ready creates no admission
+   row; failed preload leaves zero new rows. First actual agent effect commits
+   admission before execution. First use locks one host/binding; rollback locks
+   the exact sorted removal set with session locks, appends prepared, publishes
+   the pointer, appends committed, then releases. Prove finalize/resume/abort at
+   every crash boundary plus real-Postgres first/last-key and overlapping-set/no-
+   deadlock races. This proof is independent of generic core launchers/app self-
+   report and separate from per-binding candidate/preload equality; siblings may differ.
    Use controlled real-Postgres interleavings in both lock orders to prove a
    concurrent scoped owner create/promotion cannot be overwritten by member
    add/demote/remove or account deletion; route pre-reads are not proof.
@@ -48,7 +94,8 @@ Dispatch only these verification slices:
 Prerequisites are P1, P6-D, A1, stateless P6-R, D1, and any P5a slice D1-R0
 actually demonstrated. Zero P5a code is a valid recorded outcome.
 M1 config cleanup gates P8 only if the shipped D1 path actually consumes that
-duplicate behavior source. No generic generation, plugin-snapshot, attachment,
+duplicate behavior source. No generic generation, generic/per-agent plugin-
+snapshot, attachment,
 durable-event, approval, or transport proof belongs here.
 
 ## Historical 2026-07-09 work order — non-dispatchable for v1

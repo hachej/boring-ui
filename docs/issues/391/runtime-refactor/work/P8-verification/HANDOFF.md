@@ -11,8 +11,10 @@
 - [ ] Stateless P6-R and multi-agent D1 are complete. Any D1-R0-demonstrated
       P5a slice is complete, or explicit evidence records no P5a code was
       needed. P2 is not a gate.
-- [ ] M1/AR1/M2/E2, T1/T2, P2/X1, full P3, E1, plugin snapshots/scoped registrars, attachment
-      catalogs, and P6 generation stores are not treated as prerequisites.
+- [ ] M1/AR1/M2/E2, T1/T2, P2/X1, full P3, E1, generic/per-agent plugin
+      snapshots/scoped registrars, attachment catalogs, and P6 generation stores
+      are not treated as prerequisites. D1 still proves desired, a root-owned
+      approved release, and the actual running core artifact/command all agree.
 
 ### Review/proof
 
@@ -45,8 +47,17 @@
       invalid invites set `boring_invite_failed=invite_not_found` and create no
       default workspace; generic invalid invites keep the existing failure
       cookie plus default creation. Bound rename and generic workspace behavior
-      remain unchanged; public invite resolve/accept rejects foreign scope before
-      lookup or mutation.
+      remain unchanged. Legacy invite paths reject before token lookup; public
+      token-only routes allow one read-only hash lookup, then return the same
+      non-enumerating 404 as an unknown token before application effects.
+- [ ] Selector proof covers c1-c5: the one allowed invite hash lookup precedes
+      no application effect; Boring MCP generic limiting remains exact while
+      scoped limiting charges valid/invalid traffic by user/IP plus trusted
+      workspace before admission and never keys raw selectors;
+      embedded/pane conflicts reject rather than hide; signed Bridge claims are
+      scope-asserted before registry/definition and mismatch is HTTP 421 before
+      runtime/refresh effects; managed-agent MCP dispatch receives
+      trusted scope/default deployment. Generic behavior remains unchanged.
 - [ ] Every scoped existing-owner demotion/removal/account deletion fails before
       mutation with `D1_MANAGED_WORKSPACE_MUTATION_FORBIDDEN`. Non-owner account
       deletion removes only that member's data/membership; editor/viewer removal,
@@ -59,6 +70,56 @@
       filesystem/process denial. Trusted-direct is accepted only for local
       development or a single-workspace dedicated composition, never as the
       shared-host proof.
+- [ ] A root-owned record binds approved core/ingress artifacts, commands, and
+      Caddyfile digest to the immutable merged
+      c1-c5 plan/evidence and execution-policy revisions plus the redacted route-
+      and trust-boundary config digest. Prove the strict intended/observed env
+      schema has the exact approved nonsecret key set; unknown or secret-bearing
+      env keys reject. Secret-ref identities remain in approved state and raw
+      values stay in tmpfs file inputs. Pin `NODE_ENV=production`, forbid the
+      five loader keys, and prove owner/mode/roots/proxy, auth URL, CORS, CSP,
+      cookie security, MCP enablement, and managed-target drift reject. Prove
+      core/ingress absent or stopped. Create/inspect the exact DB-only one-shot
+      migration container without data/state mounts, pin exact Node migration
+      process and `User=10001:10001`, reject web entrypoint/root/privilege, then
+      run it to zero exit.
+      Its deterministic host/revision id resumes create/run/zero-exit, quarantines
+      nonzero/drift, writes durable redacted completion before exact-id cleanup,
+      and passes crash tests at every lifecycle boundary.
+      Create core stopped and prove observed
+      == approved, read-only root, and exactly the two data volumes plus read-only
+      host-state/host-tmpfs input binds before preload/pointer/ingress or lazy
+      first-effect admission; observed env and redacted host-security-config digest
+      pass the same policy without logging values. Prove a materialized canary is
+      absent from complete Docker inspect/config and raw bytes remain only in the
+      read-only tmpfs file-provider mount; rotation requires maintenance restart.
+      Bind the stopped core id, start only
+      that exact id, wait for health, and prove direct non-Caddy app traffic stays
+      scope-rejected. An
+      unapproved digest, command override, code-loader env, writable root, or executable-
+      path mount stops/quarantines core while ingress stays stopped. Only verified
+      all-ready/published state starts ingress. Before that, create ingress
+      stopped; inspect the landed D1-003a image/command/config identity, read-only
+      root, sole read-only config mount, edge/port mapping, exact approved image
+      env with no Compose-added env, and no command drift. Bind verified core and
+      stopped ingress ids in the capability and prove pointer
+      publication starts only that exact id. Running-host drift rejects before
+      N+1 candidate effects. Generic core launchers and app self-
+      report are rejected.
+      The approved artifact/command pair's static c1-c5 workspace-selector-
+      bearing route set hard-pins `externalPlugins: false`, proving plugin-authoring
+      env is inert, and has no external/raw/runtime gateway or hot reload;
+      conditional static MCP families remain covered by c3/c5. Each
+      binding candidate equals its own preload; siblings may differ. Workspace-
+      selector-bearing, command, startup-env, or execution-policy change requires renewed inventory, a
+      new root-approved release, and restart.
+- [ ] Preload/all-ready creates no admission row; failed preload leaves zero new
+      rows. First actual agent effect commits admission before executing. Prove
+      unused-add rollback succeeds and used-add removal rejects. First use locks
+      one host/binding session key; rollback locks the exact sorted removal set,
+      writes append-only prepared -> pointer -> committed, then releases. Prove
+      recovery finalize/resume/abort at every crash boundary plus real-Postgres
+      first/last-key and overlapping-set/no-deadlock races.
 - [ ] P2 provider selection and X1 mounts are absent from the v1 proof.
 - [ ] Post-v1 lanes are tracked and do not block closeout.
 
@@ -66,7 +127,9 @@
 
 - [ ] The exact workspace-first product journey succeeds and all reduced
       negative proofs pass.
-- [ ] No T1/T2/full-P3/E1/generation/plugin-snapshot acceptance is claimed.
+- [ ] No T1/T2/full-P3/E1/generation or generic/per-agent plugin-snapshot
+      acceptance is claimed; D1 pins and independently attests its approved host
+      artifact, command, and execution policy.
 
 ## Historical 2026-07-09 handoff — non-dispatchable for v1
 
