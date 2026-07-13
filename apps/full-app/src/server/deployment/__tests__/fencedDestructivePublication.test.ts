@@ -69,7 +69,7 @@ const reader = (revisions: Revisions): { read(): Promise<D1ActiveCollection | nu
       bindingId: binding.bindingId, workspaceId: `workspace:${binding.bindingId}`, defaultDeploymentId: `deployment:${binding.bindingId}`,
     }))
     return { active: revisions.active, desired: { plan: { ...complete.desired.plan, bindings },
-      resolvedBindings: bindings.map((binding) => ({ bindingId: binding.bindingId, workspace: binding })) } } as D1ActiveCollection
+      resolvedBindings: bindings.map((binding) => ({ bindingId: binding.bindingId, workspace: binding })) } } as unknown as D1ActiveCollection
   },
 })
 const target = (hostId: string, bindingId: string) => ({ hostId, bindingId, workspaceId: `workspace:${bindingId}`, defaultDeploymentId: `deployment:${bindingId}` })
