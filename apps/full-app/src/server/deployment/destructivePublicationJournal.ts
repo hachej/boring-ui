@@ -52,7 +52,7 @@ function revision(value: unknown): string {
   if (typeof value !== 'string' || !REVISION_RE.test(value)) throw failed()
   return value
 }
-function normalize(raw: D1DestructivePublicationIdentity): D1DestructivePublicationIdentity {
+export function normalizeD1DestructivePublicationIdentity(raw: D1DestructivePublicationIdentity): D1DestructivePublicationIdentity {
   try {
     const expectedRevision = revision(raw.expectedRevision)
     const targetRevision = revision(raw.targetRevision)
@@ -75,7 +75,7 @@ function parseRow(raw: JournalRow | undefined): D1DestructivePublicationEvent {
   let sequence: bigint
   try { sequence = BigInt(raw.sequence) } catch { throw failed() }
   if (sequence <= 0n) throw failed()
-  const value = normalize(raw as D1DestructivePublicationIdentity)
+  const value = normalizeD1DestructivePublicationIdentity(raw as D1DestructivePublicationIdentity)
   return Object.freeze({ ...value, sequence, state: raw.state as D1DestructivePublicationState, recordedAt: new Date(raw.recordedAt) })
 }
 function same(left: D1DestructivePublicationIdentity, right: D1DestructivePublicationIdentity): boolean {
@@ -117,7 +117,7 @@ export function createD1DestructivePublicationJournalStore(): D1DestructivePubli
   }
   const appendPrepared = async (sql: postgres.ReservedSql, raw: D1DestructivePublicationIdentity) => {
     try {
-      const value = normalize(raw); await append(sql, value, 'prepared')
+      const value = normalizeD1DestructivePublicationIdentity(raw); await append(sql, value, 'prepared')
       const existing = await readOperation(sql, value.operationId)
       if (!existing || !same(existing.prepared, value)) throw failed()
       return existing.prepared
@@ -125,7 +125,7 @@ export function createD1DestructivePublicationJournalStore(): D1DestructivePubli
   }
   const appendTerminal = async (sql: postgres.ReservedSql, raw: D1DestructivePublicationIdentity, state: 'committed' | 'aborted') => {
     try {
-      const value = normalize(raw); const before = await readOperation(sql, value.operationId)
+      const value = normalizeD1DestructivePublicationIdentity(raw); const before = await readOperation(sql, value.operationId)
       if (!before || !same(before.prepared, value)) throw failed()
       if (before.terminal) {
         if (before.terminal.state !== state) throw failed()
