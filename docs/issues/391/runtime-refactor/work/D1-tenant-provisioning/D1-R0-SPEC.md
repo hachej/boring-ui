@@ -662,20 +662,23 @@ This bead owns only browser/header WorkspaceBridge traffic.
 Files: Boring MCP binding, full-app wrapper, and focused route tests.
 
 Deliver: preserve the existing global-auth ordering and unauthenticated 401
-behavior, plus the existing limiter key/status behavior exactly when trusted D1
-scope is absent. With trusted scope, the same route `onRequest` limiter runs after
-successful global auth and before selector admission. It keys only on
-`request.user.id` plus frozen `requestScope.workspaceId`, with no D1 transport-IP
-fallback; it ignores every raw caller selector and charges every authenticated
-request that reaches the route, including valid, malformed, conflicting, foreign,
-and authenticated unauthorized/nonmember traffic. Scope admission is the first
-route `preHandler` after that limiter. Under D1, inspect every header/body/query
-workspace selector: absent derives scope; malformed, conflicting, or foreign
-returns stable 421 after transport-budget consumption but before workspace/member/
-source/connector/tool lookup or mutation. Never key a limiter on raw caller scope
-or let a raw selector bypass the budget. Prove invalid authenticated D1 traffic is
-bounded, unauthenticated D1 traffic retains the existing 401 before the route
-limiter, and generic malformed/unauthenticated/unauthorized behavior remains exact.
+behavior, plus generic limiter behavior exactly when trusted D1 scope is absent.
+On the four POST action routes that already have route limiters (`connect`,
+`refresh`, `disconnect`, and `tools`), the same `onRequest` limiter runs after
+successful global auth and before selector admission. Under D1 it keys only on
+`request.user.id` plus frozen `requestScope.workspaceId`, ignores every raw caller
+selector, and charges every authenticated valid, malformed, conflicting, foreign,
+unauthorized, or nonmember request that reaches it. `GET /sources` retains its
+existing no-route-limiter behavior to preserve generic exactness; add no separate
+D1 limiter. Scope admission is the first route `preHandler` on the GET route and
+the first route `preHandler` after the existing limiter on each POST route. Inspect
+every header/body/query workspace selector: absent derives scope; malformed,
+conflicting, or foreign returns stable 421 before workspace/member/user-store/
+source/provider/transport lookup or mutation. POST denials occur after existing
+transport-budget consumption; GET denials consume no route budget. Raw selectors
+never key or bypass a budget. Prove invalid authenticated POST traffic is bounded,
+GET remains unmetered, unauthenticated D1 traffic retains the existing 401, and
+generic malformed/unauthenticated/unauthorized behavior remains exact.
 
 ### D1-004c4 — WorkspaceBridge runtime-claim admission (<= 400 net lines; 30 minutes)
 

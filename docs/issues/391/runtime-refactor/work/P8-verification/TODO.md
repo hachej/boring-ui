@@ -39,9 +39,13 @@ Dispatch only these verification slices:
    add/promotion, and generic ownership/account behavior still work.
    Exercise all c1-c5 boundaries: invite's sole read-only hash lookup, embedded/
    pane selector conflicts, Boring MCP global auth and unauthenticated 401 before
-   the route limiter, generic-exact limiting, and scoped `request.user.id` + frozen
-   `requestScope.workspaceId` charging of every authenticated valid/invalid/
-   foreign/nonmember request before admission with no raw-selector key or bypass;
+   route admission, generic-exact limiting, and the four already-limited POST
+   actions charging every authenticated valid/malformed/conflicting/foreign/
+   nonmember request by `request.user.id` + frozen `requestScope.workspaceId`
+   before admission. Prove `GET /sources` stays unmetered but admits first before
+   workspace/member/
+   user-store/provider/transport effects, with no D1 limiter and no raw-selector
+   key or bypass;
    signed Bridge claims scope-
    asserted before registry/definition with HTTP 421 before runtime/refresh
    effects, and managed-agent MCP trusted scope/default dispatch. Prove any
