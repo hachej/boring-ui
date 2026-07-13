@@ -3,6 +3,8 @@ import { createResolvedAgentDigest } from '@hachej/boring-agent/server'
 import { describe, expect, it } from 'vitest'
 
 import { createD1CommandEngine, type D1CommandEngineOptions, type D1RuntimeInputsInspectionV1 } from '../d1Command.js'
+import type { D1DestructivePublicationIdentity } from '../destructivePublicationJournal.js'
+import type { D1FencedDestructivePublication } from '../fencedDestructivePublication.js'
 import { D1HostError, D1HostErrorCode } from '../d1Plan.js'
 import {
   canonicalizeD1AuditRecord,
@@ -157,9 +159,21 @@ function harness(
   admitted: readonly string[] = [],
   inspect: (value: D1DesiredSnapshotV1) => Promise<readonly D1RuntimeInputsInspectionV1[]> = async () => attestations(next),
   preload?: (candidate: D1StoredCandidateV1, identities: readonly D1RuntimeInputsIdentityV1[]) => Promise<D1ObservationV1>,
+  publication?: D1FencedDestructivePublication | null,
 ) {
   const calls: string[] = []
   const admissionDatabaseRefs: string[] = []
+  const publicationCalls: string[] = []
+  const published: D1DestructivePublicationIdentity[] = []
+  const defaultPublication: D1FencedDestructivePublication = {
+    async recoverPending() { publicationCalls.push(`recover:${calls.join(',')}:${store.calls.join(',')}`) },
+    async publish(identity) {
+      publicationCalls.push(`publish:${store.completes.has(identity.targetRevision)}`); published.push(identity)
+      const complete = store.completes.get(identity.targetRevision)
+      if (!complete) throw new Error('missing COMPLETE')
+      store.active = Object.freeze({ schemaVersion: 1, revisionId: identity.targetRevision, desiredStateDigest: complete.desiredStateDigest })
+    },
+  }
   const options: D1CommandEngineOptions = {
     store,
     resolver: { async resolvePlan() { calls.push('resolve'); return next }, async reproduce() { calls.push('reproduce'); return next } },
@@ -175,8 +189,9 @@ function harness(
       async verifyActive() { calls.push('verify'); if (store.fault === 'verify') throw new Error('/secret/verify') },
     },
     mutationGuard: { assertHeld() { calls.push('guard') } }, operator: { uid: 1000, effectiveUser: 'julien', invocationId: 'deploy-1' }, clock: () => '2026-07-12T00:00:00.000Z',
+    ...(publication === null ? {} : { fencedPublication: publication ?? defaultPublication }),
   }
-  return { engine: createD1CommandEngine(options), calls, admissionDatabaseRefs }
+  return { engine: createD1CommandEngine(options), calls, admissionDatabaseRefs, publicationCalls, published }
 }
 const plan = (value: D1DesiredSnapshotV1, expectedHostRevision: string | null) => ({ ...value.plan, expectedHostRevision })
 const apply = (value: D1DesiredSnapshotV1, expectedHostRevision: string | null, extra: Record<string, unknown> = {}) => ({ kind: 'apply', plan: plan(value, expectedHostRevision), ...extra })
@@ -190,12 +205,41 @@ describe('D1 command engine', () => {
   })
 
   it('keeps plan read-only and rejects a CAS loser before resolve, recovery, reservation, or effects', async () => {
-    const next = await desired(); const planStore = new FakeStore(); const planned = harness(planStore, next)
+    const next = await desired(); const planStore = new FakeStore(); const planned = harness(planStore, next, [], undefined, undefined, null)
     await planned.engine.execute({ ...apply(next, null), kind: 'plan' })
-    expect(planned.calls).toEqual(['admissions', 'resolve', 'inspect']); expect(planStore.calls).toEqual(['readActive'])
+    expect(planned.calls).toEqual(['admissions', 'resolve', 'inspect']); expect(planStore.calls).toEqual(['readActive']); expect(planned.publicationCalls).toEqual([])
     const store = new FakeStore(); await store.seed(next); store.calls = []; const lost = harness(store, next)
     await expect(lost.engine.execute(apply(next, 'r0000000009'))).rejects.toMatchObject({ code: D1HostErrorCode.REVISION_CONFLICT })
     expect(lost.calls).toEqual(['guard']); expect(store.calls).toEqual(['readActive', 'read:r0000000001'])
+  })
+
+  it('requires and recovers the journal immediately after the mutation guard', async () => {
+    const next = await desired(); const store = new FakeStore(); const h = harness(store, next)
+    await h.engine.execute(apply(next, null))
+    expect(h.publicationCalls[0]).toBe('recover:guard:'); expect(store.calls[0]).toBe('readActive')
+
+    const missingStore = new FakeStore(); const missing = harness(missingStore, next, [], undefined, undefined, null)
+    await expect(missing.engine.execute(apply(next, null))).rejects.toMatchObject({ code: D1HostErrorCode.ROLLBACK_JOURNAL_FAILED, details: { field: 'rollbackJournal' } })
+    expect(missing.calls).toEqual(['guard']); expect(missingStore.calls).toEqual([])
+
+    const rollbackStore = new FakeStore(); await rollbackStore.seed(next)
+    const missingRollback = harness(rollbackStore, next, [], undefined, undefined, null); rollbackStore.calls = []
+    await expect(missingRollback.engine.execute({ kind: 'rollback', hostId: 'host-1', expectedHostRevision: 'r0000000001', targetRevision: 'r0000000001' }))
+      .rejects.toMatchObject({ code: D1HostErrorCode.ROLLBACK_JOURNAL_FAILED })
+    expect(missingRollback.calls).toEqual(['guard']); expect(rollbackStore.calls).toEqual([])
+  })
+
+  it('fails closed on recovery and rechecks CAS against any recovered pointer', async () => {
+    const next = await desired(); const failedStore = new FakeStore()
+    const failed = harness(failedStore, next, [], undefined, undefined, { recoverPending: async () => { throw new Error('/secret') }, publish: async () => {} })
+    await expect(failed.engine.execute(apply(next, null))).rejects.toMatchObject({ code: D1HostErrorCode.ROLLBACK_JOURNAL_FAILED, details: { field: 'rollbackJournal' } })
+    expect(failed.calls).toEqual(['guard']); expect(failedStore.calls).toEqual([])
+
+    const current = await desired(); const advanced = await desired([{ id: 'insurance', landing: 'advanced' }]); const store = new FakeStore()
+    await store.seed(current, 'r0000000001'); await store.seed(advanced, 'r0000000002'); store.active = { schemaVersion: 1, revisionId: 'r0000000001', desiredStateDigest: await digestD1Desired(current) }; store.calls = []
+    const recovered = harness(store, current, [], undefined, undefined, { recoverPending: async () => { store.active = { schemaVersion: 1, revisionId: 'r0000000002', desiredStateDigest: await digestD1Desired(advanced) } }, publish: async () => {} })
+    await expect(recovered.engine.execute(apply(current, 'r0000000001'))).rejects.toMatchObject({ code: D1HostErrorCode.REVISION_CONFLICT })
+    expect(recovered.calls).toEqual(['guard']); expect(store.calls).toEqual(['readActive', 'read:r0000000002'])
   })
 
   it('requires duplicate-free exact sorted removal confirmations and blocks admitted removals', async () => {
@@ -242,16 +286,19 @@ describe('D1 command engine', () => {
     expect(result).toMatchObject({ kind: 'PLAN', removals: ['travel'] }); expect(h.calls).not.toContain('guard'); expect(store.calls).not.toContain('reserve')
   })
 
-  it('permits additive, landing-only, and confirmed non-admitted removal changes', async () => {
+  it('recovers every mutation, directly publishes zero-removal changes, and fences removals', async () => {
     const cases = [
+      { current: null, next: await desired(), confirmRemove: undefined },
       { current: await desired(), next: await desired([{ id: 'insurance' }, { id: 'travel' }]), confirmRemove: undefined },
       { current: await desired(), next: await desired([{ id: 'insurance', landing: 'New title' }]), confirmRemove: undefined },
       { current: await desired([{ id: 'insurance' }, { id: 'travel' }]), next: await desired(), confirmRemove: ['travel'] },
     ]
     for (const { current, next, confirmRemove } of cases) {
-      const store = new FakeStore(); await store.seed(current); const h = harness(store, next)
-      const result = await h.engine.execute(apply(next, 'r0000000001', confirmRemove ? { confirmRemove } : {}))
-      expect(result.action).toBe('CREATE')
+      const store = new FakeStore(); if (current) await store.seed(current); const h = harness(store, next)
+      const result = await h.engine.execute(apply(next, current ? 'r0000000001' : null, confirmRemove ? { confirmRemove } : {}))
+      expect(result.action).toBe('CREATE'); expect(h.publicationCalls[0]).toMatch(/^recover:/)
+      if (confirmRemove) { expect(h.published).toHaveLength(1); expect(store.calls).not.toContain(`publish:${result.revisionId}`) }
+      else { expect(h.published).toEqual([]); expect(store.calls).toContain(`publish:${result.revisionId}`) }
     }
   })
 
@@ -462,6 +509,32 @@ describe('D1 command engine', () => {
     await expect(store.publishActive('host-1', firstResult.revisionId!)).rejects.toMatchObject({ committed: false })
     expect(await store.hasTerminalAudit('host-1', { ...firstActive, desiredStateDigest: sha('9') })).toBe(false)
     await expect(store.appendAudit('host-1', store.record(store.completes.get(firstResult.revisionId!)!))).rejects.toMatchObject({ code: D1HostErrorCode.PUBLICATION_FAILED })
+  })
+
+  it('publishes exact APPLY and ROLLBACK removal identities only after the new COMPLETE exists', async () => {
+    const retained = await desired(); const expanded = await desired([{ id: 'insurance' }, { id: 'travel' }])
+    const applyStore = new FakeStore(); const prior = await applyStore.seed(expanded); applyStore.calls = []; const applying = harness(applyStore, retained)
+    const applied = await applying.engine.execute(apply(retained, 'r0000000001', { confirmRemove: ['travel'] }))
+    expect(applying.published).toEqual([{ operationId: 'deploy-1', hostId: 'host-1', expectedRevision: 'r0000000001', expectedDigest: prior.desiredStateDigest, targetRevision: 'r0000000002', targetDigest: await digestD1Desired(retained), removalBindingIds: ['travel'] }])
+    expect(applying.publicationCalls.at(-1)).toBe('publish:true'); expect(applyStore.calls).not.toContain(`publish:${applied.revisionId}`)
+
+    const rollbackStore = new FakeStore(); await rollbackStore.seed(retained, 'r0000000001'); const active = await rollbackStore.seed(expanded, 'r0000000002'); rollbackStore.calls = []
+    const rollingBack = harness(rollbackStore, retained)
+    const rolledBack = await rollingBack.engine.execute({ kind: 'rollback', hostId: 'host-1', expectedHostRevision: 'r0000000002', targetRevision: 'r0000000001', confirmRemove: ['travel'] })
+    expect(rollingBack.published[0]).toMatchObject({ operationId: 'deploy-1', expectedRevision: 'r0000000002', expectedDigest: active.desiredStateDigest, targetRevision: 'r0000000003', removalBindingIds: ['travel'] })
+    expect(rollbackStore.calls).not.toContain('publish:r0000000001'); expect(rollbackStore.calls).not.toContain(`publish:${rolledBack.revisionId}`)
+  })
+
+  it.each([
+    ['unknown', new Error('/secret/publish'), D1HostErrorCode.ROLLBACK_JOURNAL_FAILED],
+    ['admitted', new D1HostError(D1HostErrorCode.BINDING_ADMITTED, { bindingId: 'travel' }), D1HostErrorCode.BINDING_ADMITTED],
+    ['journal', new D1HostError(D1HostErrorCode.ROLLBACK_JOURNAL_FAILED, { field: 'rollbackJournal' }), D1HostErrorCode.ROLLBACK_JOURNAL_FAILED],
+  ])('maps or preserves fenced publication failure: %s, with no fallback or success', async (_label, failure, code) => {
+    const retained = await desired(); const expanded = await desired([{ id: 'insurance' }, { id: 'travel' }]); const store = new FakeStore(); await store.seed(expanded); store.calls = []
+    const h = harness(store, retained, [], undefined, undefined, { recoverPending: async () => {}, publish: async () => { throw failure } })
+    const error = await h.engine.execute(apply(retained, 'r0000000001', { confirmRemove: ['travel'] })).catch((caught) => caught)
+    expect(error).toMatchObject({ code }); expect(JSON.stringify(error)).not.toMatch(/secret/)
+    expect(store.active?.revisionId).toBe('r0000000001'); expect(store.calls).not.toContain('publish:r0000000002'); expect(h.calls).not.toContain('verify'); expect(store.calls).not.toContain('audit:COMPLETE:AUDIT')
   })
 
   it('rolls back from a freshly reproduced target into a new higher revision, never the old revision', async () => {

@@ -8,11 +8,14 @@ import { pathToFileURL } from 'node:url'
 import type postgres from 'postgres'
 import { describe, expect, it, vi } from 'vitest'
 
-import { mintAttestedD1DatabaseConnection } from '../admissionLedger.js'
-import { runD1CommandEntry, type D1EntryContext } from '../d1CommandEntry.js'
+import { mintAttestedD1DatabaseConnection, type D1AdmissionLedger } from '../admissionLedger.js'
+import { createProductionD1Dependencies, runD1CommandEntry, type D1EntryContext } from '../d1CommandEntry.js'
 import { isSupportedLocalD1LockFilesystem } from '../d1CommandLockPolicy.js'
 import { D1HostErrorCode } from '../d1Plan.js'
 import { resolveD1EntryInvocation, runD1RevisionWrapper, type D1EntryInvocation } from '../d1CommandWrapper.js'
+import * as journals from '../destructivePublicationJournal.js'
+import * as publications from '../fencedDestructivePublication.js'
+import * as revisions from '../hostRevisionStore.js'
 
 const UID = process.geteuid!()
 const DIGEST = `sha256:${'a'.repeat(64)}`
@@ -141,10 +144,10 @@ describe('D1 revision command boundary', () => {
     expect(externallyLocked(path.join(h.lockRoot, 'host-1.lock'))).toBe(false)
   })
 
-  it('uses the real entry lock proof and fails closed adapters before creating revision state', async () => {
+  it('uses the real entry lock proof and fails closed without a publication ledger before creating revision state', async () => {
     const h = await roots(); const output = await runD1RevisionWrapper({ stdin: Readable.from([validApply()]), env: h.env, entry: SOURCE_ENTRY })
     expect(output.exitCode).toBe(4)
-    expect(JSON.parse(output.line)).toEqual({ ok: false, error: { code: D1HostErrorCode.PUBLICATION_FAILED, details: { field: 'admissions' } } })
+    expect(JSON.parse(output.line)).toEqual({ ok: false, error: { code: D1HostErrorCode.ROLLBACK_JOURNAL_FAILED, details: { field: 'rollbackJournal' } } })
     await expect(access(h.stateRoot)).rejects.toMatchObject({ code: 'ENOENT' })
   })
 
@@ -170,6 +173,26 @@ describe('D1 revision command boundary', () => {
       } })
       expect(output).toMatchObject({ exitCode: 70 }); expect(context?.hostId).toBe('host-2')
     } finally { for (const key of keys) prior[key] === undefined ? delete process.env[key] : process.env[key] = prior[key] }
+  })
+
+  it('constructs fenced publication only from an injected ledger and shares one revision store', () => {
+    const revisionStore = {} as ReturnType<typeof revisions.createHostRevisionStore>
+    const fencedPublication = { recoverPending: vi.fn(async () => {}), publish: vi.fn(async () => {}) }
+    const createStore = vi.spyOn(revisions, 'createHostRevisionStore').mockReturnValue(revisionStore)
+    const createJournal = vi.spyOn(journals, 'createD1DestructivePublicationJournalStore').mockReturnValue({} as ReturnType<typeof journals.createD1DestructivePublicationJournalStore>)
+    const createPublication = vi.spyOn(publications, 'createD1FencedDestructivePublication').mockReturnValue(fencedPublication)
+    const context = { hostId: 'host-1', ownerUid: UID, stateRoot: '/d1-state', mutationGuard: { assertHeld: vi.fn() } }
+    try {
+      const absent = createProductionD1Dependencies(context)
+      expect(absent.store).toBe(revisionStore); expect(absent.fencedPublication).toBeUndefined()
+      expect(createStore).toHaveBeenCalledOnce(); expect(createJournal).not.toHaveBeenCalled(); expect(createPublication).not.toHaveBeenCalled()
+
+      createStore.mockClear()
+      const admissionLedger = { databaseRef: 'postgres-eu' } as D1AdmissionLedger
+      const present = createProductionD1Dependencies({ ...context, admissionLedger })
+      expect(present.store).toBe(revisionStore); expect(present.fencedPublication).toBe(fencedPublication); expect(createStore).toHaveBeenCalledOnce()
+      expect(createPublication).toHaveBeenCalledWith({ admissionLedger, journalStore: expect.anything(), revisionStore })
+    } finally { createStore.mockRestore(); createJournal.mockRestore(); createPublication.mockRestore() }
   })
 
   it('uses and closes an injected attested database connection', async () => {
@@ -302,7 +325,7 @@ describe('D1 revision command boundary', () => {
     const wrapper = path.resolve('src/server/deployment/d1CommandWrapper.ts')
     const child = spawn(path.resolve('../../node_modules/.bin/tsx'), [wrapper], { cwd, env: h.env, stdio: ['pipe', 'pipe', 'pipe'] })
     child.stdin!.end(validApply()); const result = await collect(child)
-    expect(result.code).toBe(4); expect(result.stdout).toContain(D1HostErrorCode.PUBLICATION_FAILED)
+    expect(result.code).toBe(4); expect(result.stdout).toContain(D1HostErrorCode.ROLLBACK_JOURNAL_FAILED)
     await expect(access(path.join(cwd, '3'))).rejects.toMatchObject({ code: 'ENOENT' })
   }, 15_000)
 })
