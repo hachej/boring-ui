@@ -590,6 +590,11 @@ export function FileTreeView({
       if (target.closest("[role=treeitem]") || target.closest("[data-path]"))
         return
       event.preventDefault()
+      // The background menu only ever offers New file / New folder, both
+      // mutating actions gated by canMutate. On a read-only root there is
+      // nothing to show — opening it would render an empty menu shell.
+      // Suppress the trigger entirely rather than pop an empty box.
+      if (!canMutate) return
       setCtxMenu({
         node: { name: rootDir, kind: "dir", path: rootDir },
         x: event.clientX,
@@ -597,7 +602,7 @@ export function FileTreeView({
         isBackground: true,
       })
     },
-    [rootDir],
+    [rootDir, canMutate],
   )
 
   const handleDragDrop = useCallback(
@@ -808,6 +813,13 @@ export function FileTreeView({
   const effectiveQuery =
     (!useServerSearch || filesystem !== "user") && (searchQuery?.length ?? 0) > 0 ? searchQuery : undefined
 
+  // Mirrors the item-visibility rules rendered below: the background menu
+  // only offers mutating actions (New file/folder), while a node menu always
+  // has at least "Copy path". Used as a belt-and-suspenders guard so an
+  // empty item set never renders as a blank menu shell, even if a future
+  // change to the rules above misses a trigger-side check.
+  const ctxMenuHasItems = ctxMenu ? canMutate || !ctxMenu.isBackground : false
+
   return (
     <div className="flex h-full min-h-0 flex-col">
       {error && (
@@ -874,7 +886,7 @@ export function FileTreeView({
         )}
       </div>
 
-      {ctxMenu && createPortal(
+      {ctxMenu && ctxMenuHasItems && createPortal(
         <div
           ref={menuRef}
           role="menu"
