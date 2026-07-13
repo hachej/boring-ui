@@ -27,6 +27,7 @@ import {
   type D1StoredCandidateV1,
   type D1StoredCompleteV1,
 } from './hostRevisionStore.js'
+import type { D1FencedDestructivePublication } from './fencedDestructivePublication.js'
 
 export interface D1DesiredResolver {
   resolvePlan(plan: D1HostPlanV1): Promise<D1DesiredSnapshotV1>
@@ -48,6 +49,7 @@ export interface D1CommandEngineOptions {
   readonly effects: D1ApplyEffects
   readonly inspectRuntimeInputs: (desired: D1DesiredSnapshotV1) => Promise<readonly D1RuntimeInputsInspectionV1[]>
   readonly mutationGuard: D1MutationGuard
+  readonly fencedPublication?: D1FencedDestructivePublication
   readonly operator: D1CommandOperator
   readonly clock: () => string
 }
@@ -122,6 +124,10 @@ function byBinding<T extends { readonly bindingId: string }>(values: readonly T[
   return new Map(values.map((value) => [value.bindingId, value]))
 }
 const ADAPTER_CODES = new Set<string>([D1HostErrorCode.SECRET_UNAVAILABLE, D1HostErrorCode.ACTIVE_BINDING_RESTART_REQUIRED, D1HostErrorCode.COLLECTION_NOT_READY])
+const FENCED_PUBLICATION_CODES = new Set<D1HostErrorCode>([
+  D1HostErrorCode.REVISION_CONFLICT, D1HostErrorCode.ROLLBACK_TARGET_INVALID, D1HostErrorCode.BINDING_ADMITTED,
+  D1HostErrorCode.ADMISSION_RECORD_FAILED, D1HostErrorCode.ROLLBACK_JOURNAL_FAILED,
+])
 function adapterError(error: unknown, field: string): D1HostError {
   const code = error instanceof D1HostError && ADAPTER_CODES.has(error.code) ? error.code : D1HostErrorCode.COLLECTION_NOT_READY
   const safeField = code === D1HostErrorCode.SECRET_UNAVAILABLE ? 'secret' : code === D1HostErrorCode.ACTIVE_BINDING_RESTART_REQUIRED ? 'runtimeInputs' : field
@@ -248,6 +254,15 @@ export function createD1CommandEngine(options: D1CommandEngineOptions) {
   const appendBestEffort = async (hostId: string, revisionId: string, desiredStateDigest: string, outcome: string, phase: string, completionDigest?: string) => {
     try { await options.store.appendAudit(hostId, audit(revisionId, desiredStateDigest, outcome, phase, completionDigest)) } catch {}
   }
+  const requireFencedPublication = (): D1FencedDestructivePublication => {
+    if (!options.fencedPublication) throw new D1HostError(D1HostErrorCode.ROLLBACK_JOURNAL_FAILED, { field: 'rollbackJournal' })
+    return options.fencedPublication
+  }
+  const recoverPublications = async (publication: D1FencedDestructivePublication, hostId: string) => {
+    try { await publication.recoverPending(hostId) } catch {
+      throw new D1HostError(D1HostErrorCode.ROLLBACK_JOURNAL_FAILED, { field: 'rollbackJournal' })
+    }
+  }
   const recover = async (hostId: string, active: D1ActiveEnvelopeV1 | null, complete: D1StoredCompleteV1 | null) => {
     if (!active || !complete) return
     let terminal: boolean
@@ -258,7 +273,14 @@ export function createD1CommandEngine(options: D1CommandEngineOptions) {
       }
     }
   }
-  const create = async (hostId: string, desired: D1DesiredSnapshotV1, inspected: readonly D1RuntimeInputsIdentityV1[]): Promise<D1ActiveEnvelopeV1> => {
+  const create = async (
+    hostId: string,
+    desired: D1DesiredSnapshotV1,
+    inspected: readonly D1RuntimeInputsIdentityV1[],
+    prior: D1ActiveEnvelopeV1 | null,
+    removals: readonly string[],
+    publication: D1FencedDestructivePublication,
+  ): Promise<D1ActiveEnvelopeV1> => {
     const desiredStateDigest = await digestD1Desired(desired)
     let revisionId: string
     try { revisionId = await options.store.reserveRevisionId(hostId) } catch (error) {
@@ -298,7 +320,21 @@ export function createD1CommandEngine(options: D1CommandEngineOptions) {
       throw new D1HostError(D1HostErrorCode.COLLECTION_NOT_READY, { field: 'completion' })
     }
     let active: D1ActiveEnvelopeV1
-    try { active = await options.store.publishActive(hostId, revisionId) } catch (error) {
+    if (removals.length > 0) {
+      if (!prior) throw new D1HostError(D1HostErrorCode.ROLLBACK_JOURNAL_FAILED, { field: 'rollbackJournal' })
+      try {
+        await publication.publish({
+          operationId: options.operator.invocationId, hostId,
+          expectedRevision: prior.revisionId, expectedDigest: prior.desiredStateDigest,
+          targetRevision: revisionId, targetDigest: complete.desiredStateDigest,
+          removalBindingIds: removals,
+        })
+      } catch (error) {
+        if (error instanceof D1HostError && FENCED_PUBLICATION_CODES.has(error.code)) throw error
+        throw new D1HostError(D1HostErrorCode.ROLLBACK_JOURNAL_FAILED, { field: 'rollbackJournal' })
+      }
+      active = Object.freeze({ schemaVersion: 1, revisionId, desiredStateDigest: complete.desiredStateDigest })
+    } else try { active = await options.store.publishActive(hostId, revisionId) } catch (error) {
       let committed = error instanceof D1ActivePublishError && error.committed
       if (!(error instanceof D1ActivePublishError)) {
         try { committed = (await options.store.readActive(hostId))?.revisionId === revisionId } catch { committed = true }
@@ -326,6 +362,8 @@ export function createD1CommandEngine(options: D1CommandEngineOptions) {
       if (command.kind === 'rollback') {
         hostId = command.hostId; expectedHostRevision = command.expectedHostRevision
         try { options.mutationGuard.assertHeld(hostId) } catch { throw new D1HostError(D1HostErrorCode.REVISION_CONFLICT, { field: 'hostLock' }) }
+        const publication = requireFencedPublication()
+        await recoverPublications(publication, hostId)
         const state = await loadActive(hostId); assertCas(state.active, expectedHostRevision)
         let target: D1StoredCompleteV1 | null
         try { target = await options.store.readComplete(hostId, command.targetRevision) } catch { target = null }
@@ -338,13 +376,16 @@ export function createD1CommandEngine(options: D1CommandEngineOptions) {
         const desiredStateDigest = await digestD1Desired(desired)
         await recover(hostId, state.active, state.complete)
         if (desiredStateDigest === state.active?.desiredStateDigest) return Object.freeze({ kind: 'ROLLBACK', action: 'NOOP', activeRevision: state.active?.revisionId ?? null, desiredStateDigest, removals })
-        const active = await create(hostId, desired, inspected)
+        const active = await create(hostId, desired, inspected, state.active, removals, publication)
         return Object.freeze({ kind: 'ROLLBACK', action: 'CREATE', activeRevision: active.revisionId, revisionId: active.revisionId, desiredStateDigest, removals })
       }
       const parsedPlan = parseD1HostPlan(command.plan)
       hostId = parsedPlan.hostId; expectedHostRevision = parsedPlan.expectedHostRevision
+      let publication: D1FencedDestructivePublication | undefined
       if (command.kind === 'apply') {
         try { options.mutationGuard.assertHeld(hostId) } catch { throw new D1HostError(D1HostErrorCode.REVISION_CONFLICT, { field: 'hostLock' }) }
+        publication = requireFencedPublication()
+        await recoverPublications(publication, hostId)
       }
       const state = await loadActive(hostId); assertCas(state.active, expectedHostRevision)
       const removals = await preflightPlan(hostId, state.complete, persistedPlan(parsedPlan), command.confirmRemove ?? [], command.kind === 'apply')
@@ -356,7 +397,7 @@ export function createD1CommandEngine(options: D1CommandEngineOptions) {
       if (command.kind === 'plan') return Object.freeze({ kind: 'PLAN', action: desiredStateDigest === state.active?.desiredStateDigest ? 'NOOP' : 'CREATE', activeRevision: state.active?.revisionId ?? null, desiredStateDigest, removals })
       await recover(hostId, state.active, state.complete)
       if (desiredStateDigest === state.active?.desiredStateDigest) return Object.freeze({ kind: 'APPLY', action: 'NOOP', activeRevision: state.active?.revisionId ?? null, desiredStateDigest, removals })
-      const active = await create(hostId, desired, inspected)
+      const active = await create(hostId, desired, inspected, state.active, removals, publication!)
       return Object.freeze({ kind: 'APPLY', action: 'CREATE', activeRevision: active.revisionId, revisionId: active.revisionId, desiredStateDigest, removals })
     },
   })
