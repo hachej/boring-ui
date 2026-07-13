@@ -161,6 +161,11 @@ interface MeteringRun {
   /** Set when a recordUsage sink call rejected — at least one ledger row for
    * this run is missing, so the run must not falsely settle. */
   usageWriteFailed: boolean
+  /** Set when the user voluntarily stopped this run (the /stop button). A stop
+   * is not paid work: even if pi reports the aborted run as a no-usage success
+   * (agent-end status 'ok'), the hold must be RELEASED, never charged via the
+   * fallback. Real usage recorded before the stop is still settled. */
+  userStopped: boolean
   /** Present on queued follow-up runs; matched against clear/consume selectors. */
   followUp?: FollowUpSelector
   /** Resolves/rejects when the host reservation settles. Awaited by concurrent
@@ -437,6 +442,20 @@ export class PiChatMeteringCoordinator {
   }
 
   /**
+   * Mark the currently-active run as voluntarily user-stopped (the /stop button),
+   * so its terminal accounting RELEASES the hold instead of charging the fallback.
+   * Must be called before the abort so the flag is set when the native aborted
+   * agent-end is observed. Runs with real usage recorded before the stop still
+   * settle that usage; only the unused remainder of the hold is released. No-op if
+   * there is no active run (e.g. the stop landed before agent-start — releasePending
+   * handles that case).
+   */
+  markActiveStopped(sessionId: string): void {
+    const active = this.sessions.get(sessionId)?.active
+    if (active && !active.terminal) active.userStopped = true
+  }
+
+  /**
    * Release prompt runs reserved but not yet bound to an agent-start —
    * e.g. a stop/interrupt landing in the window between acceptance and the
    * native agent_start. Without this they would sit `active` in the store
@@ -685,6 +704,7 @@ export class PiChatMeteringCoordinator {
       recordedMessageIds: new Set(),
       lastIdlessUsageKey: undefined,
       usageWriteFailed: false,
+      userStopped: false,
       reservation: Promise.resolve(),
       terminal: false,
       ops: Promise.resolve(),
@@ -755,7 +775,11 @@ export class PiChatMeteringCoordinator {
       // over-charge a failed run that consumed nothing. (Residual: a provider that
       // billed for a failed call whose usage Pi never reported at all goes free — a
       // narrow under-charge, the symmetric cost of not over-charging config failures.)
-      const didPaidWork = status === 'ok'
+      // A VOLUNTARY user stop is never charged the fallback hold: the user cancelled
+      // before any billable usage, so the worst-case hold must be released, not billed.
+      // This holds even if pi reports the aborted run as a no-usage success (status
+      // 'ok') instead of 'aborted' — the explicit stop signal is authoritative.
+      const didPaidWork = status === 'ok' && !run.userStopped
       if (didPaidWork) {
         return this.sink.releaseRun({ ...run.scope, reservationId: run.reservationId, reason: 'fallback-hold-charge' })
       }
