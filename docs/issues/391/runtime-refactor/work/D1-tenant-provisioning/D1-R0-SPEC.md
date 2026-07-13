@@ -661,17 +661,21 @@ This bead owns only browser/header WorkspaceBridge traffic.
 
 Files: Boring MCP binding, full-app wrapper, and focused route tests.
 
-Deliver: preserve the existing limiter key/status behavior exactly when trusted
-D1 scope is absent. With trusted scope, the same route `onRequest` limiter runs
-before selector admission and keys only on authenticated user (or transport IP)
-plus frozen `requestScope.workspaceId`; it ignores every raw caller selector and
-charges valid, malformed, conflicting, foreign, and unauthorized requests. Scope
-admission is the first route `preHandler` after that limiter. Under D1, inspect
-every header/body/query workspace selector: absent derives scope; malformed,
-conflicting, or foreign returns stable 421 after transport-budget consumption but
-before workspace/member/source/connector/tool lookup or mutation. Never key a
-limiter on raw caller scope. Prove invalid D1 traffic is bounded and generic
-malformed/unauthorized requests consume/reject exactly as before.
+Deliver: preserve the existing global-auth ordering and unauthenticated 401
+behavior, plus the existing limiter key/status behavior exactly when trusted D1
+scope is absent. With trusted scope, the same route `onRequest` limiter runs after
+successful global auth and before selector admission. It keys only on
+`request.user.id` plus frozen `requestScope.workspaceId`, with no D1 transport-IP
+fallback; it ignores every raw caller selector and charges every authenticated
+request that reaches the route, including valid, malformed, conflicting, foreign,
+and authenticated unauthorized/nonmember traffic. Scope admission is the first
+route `preHandler` after that limiter. Under D1, inspect every header/body/query
+workspace selector: absent derives scope; malformed, conflicting, or foreign
+returns stable 421 after transport-budget consumption but before workspace/member/
+source/connector/tool lookup or mutation. Never key a limiter on raw caller scope
+or let a raw selector bypass the budget. Prove invalid authenticated D1 traffic is
+bounded, unauthenticated D1 traffic retains the existing 401 before the route
+limiter, and generic malformed/unauthenticated/unauthorized behavior remains exact.
 
 ### D1-004c4 — WorkspaceBridge runtime-claim admission (<= 400 net lines; 30 minutes)
 
