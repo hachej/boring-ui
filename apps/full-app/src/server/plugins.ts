@@ -29,7 +29,7 @@ export const FULL_APP_GOVERNANCE_PLUGIN_DESCRIPTOR = Object.freeze({
 export const FULL_APP_BORING_MCP_PLUGIN_DESCRIPTOR = Object.freeze({
   id: 'boring-mcp',
   version: '0.1.84',
-  contentDigest: 'sha256:7474a07cfc8368b7ab558f36f981a708c71caef5291ae2dc32a9b400613ad704',
+  contentDigest: 'sha256:ec866b7c39a657ffd860e58ad759abf5a572cbed0e532eb8a60e179bb4bf2426',
 } satisfies StableContributionDescriptor)
 
 // Freshness test: lexical tracked files -> SHA-256(bytes) per file ->
