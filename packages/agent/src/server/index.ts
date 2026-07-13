@@ -119,6 +119,8 @@ export {
   MANAGED_AGENT_MCP_ORIGIN_SURFACE,
   ManagedAgentMcpDelegateController,
   ManagedAgentMcpError,
+  registerShareEntryResources,
+  shareResourceUri,
 } from './mcp'
 export type {
   ManagedAgentArtifact,
@@ -139,6 +141,7 @@ export type {
   ManagedAgentMcpServerOptions,
   ManagedAgentSafeError,
   ManagedAgentWorkspaceResolutionInput,
+  ShareEntryMcpResourceOptions,
 } from './mcp'
 export { createAgentApp } from './createAgentApp'
 export type { CreateAgentAppOptions } from './createAgentApp'

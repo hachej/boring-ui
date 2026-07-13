@@ -31,3 +31,5 @@ export type {
   ManagedAgentMcpHttpHandlerOptions,
   ManagedAgentMcpServerOptions,
 } from './managedAgentMcpServer'
+export { registerShareEntryResources, shareResourceUri } from './shareEntryResources'
+export type { ShareEntryMcpResourceOptions } from './shareEntryResources'
