@@ -21,10 +21,11 @@ and file names, which are preserved verbatim.
 
 **Freshness.** D1 is moving daily. This file's landed set was ancestry-verified
 against `origin/main` on **2026-07-13**; `origin/main` HEAD was
-`26bd895a9` (#705, D1-004c2). Verified freshest D1 landed FEAT bead:
-**D1-004c2** — INDEX.md still reads "D1-004c1 ACTIVE", which is now stale
-`[resolved per gh ancestry 2026-07-13: D1-004c1 (#704) and D1-004c2 (#705) are
-both landed; #706 is docs-only]`.
+`e45df5440` (#713, D1-004c5). Verified freshest D1 landed FEAT bead:
+**D1-004c5** — INDEX.md still reads "D1-004c1 ACTIVE", which is stale
+`[resolved per gh ancestry 2026-07-13: D1-004c1 (#704), D1-004c2 (#705),
+D1-004c3 (#708), D1-004c4 (#711), and D1-004c5 (#713) are landed; #703/#706
+are docs-only]`.
 
 ---
 
@@ -328,10 +329,12 @@ MERGED labels (the stacked-PR trap). One line each.
 | **D1-004b1** | #698, #699 | Workspace + signup/default-provisioning authority fences; owner-authority transaction made atomic. |
 | **D1-004b2a/b2b** | #700, #701 | Atomic managed-member mutations → atomic managed-owner account-deletion guard. |
 | **D1-004c1** | #704 | Public invite scope fence (foreign invite → non-enumerating `invite_not_found`). |
-| **D1-004c2** | #705 | Embedded/browser workspace-selector convergence (foreign/malformed → stable 421). **← origin/main HEAD 2026-07-13.** |
-| **D1-004c3 (docs)** | #703, #706 | Boring MCP limiter ordering + read-rate-limit binding documented. **FEAT not yet landed** — see §4 D1-004c3. |
+| **D1-004c2** | #705 | Embedded/browser workspace-selector convergence (foreign/malformed → stable 421). |
+| **D1-004c3** | #708 | Boring MCP trusted-binding scope admission; invalid authenticated selectors are bounded and reject before effects. |
+| **D1-004c4** | #711 | WorkspaceBridge verified runtime/refresh claims reject foreign host scope before runtime effects. |
+| **D1-004c5** | #713 | Managed-agent MCP route admits only the trusted configured workspace before dispatch. **← origin/main HEAD 2026-07-13.** |
 
-**Freshest D1 landed FEAT bead: D1-004c2 (#705).** Remaining D1 body →§4.
+**Freshest D1 landed FEAT bead: D1-004c5 (#713).** Remaining D1 body →§4.
 
 ---
 
@@ -350,8 +353,7 @@ D1's sole v1 mechanism is **D1-R0-SPEC** (atomic multi-agent host **revisions**;
 one ingress + one stable full-collection core process; agents are **not**
 per-container; additive/landing-only online revisions preserve in-flight work).
 The remaining ordered stack after the landed set is:
-**D1-004c3 → c4 → c5 → D1-004d → D1-004e → D1-005a → D1-005b → D1-005c →
-D1-006a → D1-006.** Each PR stays dark/additive until its own acceptance; no PR claims the
+**D1-004d → D1-004e → D1-005a → D1-005b → D1-005c → D1-006a → D1-006.** Each PR stays dark/additive until its own acceptance; no PR claims the
 three-agent exit early. **P2/P5a do not gate any bead.**
 
 Global D1 constraints (Guardrails "D1" + D1-R0 §10 stop-signs), apply to every
@@ -370,78 +372,6 @@ bead below:
 - No secret value / raw host path in git, JSON snapshots, Compose rendering,
   logs, errors, or audit. Workspace + session roots are durable siblings
   (`/data/workspaces`, `/data/pi-sessions`), never container home/root.
-
-#### D1-004c3 — Boring MCP scope admission
-
-- **Goal.** Fence the Boring MCP surface (four POST actions `connect`/`refresh`/
-  `disconnect`/`tools` + `GET /sources`) to the trusted host **binding**'s
-  workspace, without adding a manual limiter or a second budget store.
-- **Why / workflow.** On a dedicated host, an external MCP caller must never
-  reach a workspace other than the one bound to that hostname; malformed/foreign
-  selectors must be rejected and rate-charged before they can probe.
-- **Build.** Preserve existing global-auth ordering + the unauthenticated 401 +
-  exact generic behavior when trusted scope is absent. The four POST routes keep
-  their `@fastify/rate-limit` limiters; give `GET /sources` the same mechanism
-  with unscoped requests allowlisted/skipped. Under trusted scope, all five
-  limiters run **after** global auth and **before** selector admission, share one
-  key helper keyed on `request.user.id` + frozen `requestScope.workspaceId`
-  (never a raw caller selector), and charge every authenticated
-  valid/malformed/conflicting/foreign/nonmember request. Scope admission is the
-  first `preHandler` after the limiter, using the shared admission helper on all
-  five routes: absent selector derives scope; malformed/conflicting/foreign →
-  stable **421** after budget consumption but before workspace/member/store/
-  provider/transport effects.
-- **Do NOT / stop-signs.** No independent/manual D1 limiter; no second budget
-  store; raw selectors never key or bypass a budget.
-- **Dependencies.** D1-004a3b (trusted host scope), D1-004b1/b2 (workspace
-  authority). The docs half (#703/#706) already landed.
-- **Acceptance.** All invalid authenticated D1 traffic is bounded;
-  unauthenticated D1 traffic keeps the existing 401; unscoped `GET` is skipped by
-  the limiter; generic malformed/unauthenticated/unauthorized behavior stays
-  exact.
-- **Open questions.** None material; docs already ratified the ordering.
-
-#### D1-004c4 — WorkspaceBridge runtime-claim admission
-
-- **Goal.** Assert host scope on a verified WorkspaceBridge runtime token
-  **between** its read-only signature/claims check and its
-  registry-definition/capability authorization.
-- **Why / workflow.** A signed Bridge runtime/refresh token must not act on a
-  foreign workspace even when its signature is valid; a D1 mismatch must surface
-  as a transport-level rejection, not a swallowed RPC error.
-- **Build.** Split runtime-token verification into (a) read-only signature/claims
-  and (b) registry-definition/capability authorization. Assert host scope on the
-  verified claims **between** the phases, before `getRuntime`,
-  registry/idempotency/refresh-store selection, `recordUse`, handler execution,
-  or mint; apply the same claim-first assertion to refresh. Let branded D1 scope
-  errors escape the Bridge protocol catch so core returns HTTP
-  **421/`D1_HOST_SCOPE_VIOLATION`** — **do not** add a Bridge error code or
-  translate to 403. Foreign refresh consumes no refresh-use/rate bucket.
-- **Do NOT / stop-signs.** No caller agent/deployment selector; no generic
-  selector framework; browser/header flow stays D1-004c2-owned; generic
-  standalone behavior stays exact.
-- **Dependencies.** D1-004c2 (owns browser/header Bridge traffic).
-- **Acceptance.** Foreign signed-runtime/refresh claims reject at the choke point
-  before runtime load/mint; D1 mismatch escapes as HTTP 421 not RPC error;
-  generic standalone Bridge behavior unchanged.
-
-#### D1-004c5 — Managed-agent MCP configured-target admission
-
-- **Goal.** Require, after bearer auth but before any effect, that the trusted
-  request scope equals the configured workspace on the managed-agent MCP route.
-- **Why / workflow.** The M1/M2 managed-agent MCP endpoint on a dedicated host
-  must dispatch only to the configured workspace/agent/deployment; payload or
-  header cannot retarget.
-- **Build.** After bearer auth, before request storage/controller/app-store/
-  dispatcher/stream effects, require trusted request scope == configured
-  workspace or return stable **421**. The dispatcher receives the trusted scope
-  including `defaultDeploymentId`; payload/header cannot retarget workspace,
-  agent, or deployment. Preserve generic absent-scope deployment exactly.
-- **Do NOT / stop-signs.** No caller-controlled `agentId`/`deploymentId` parser
-  exists — do not invent one.
-- **Dependencies.** D1-004c3 pattern; M1 managed-agent route.
-- **Acceptance.** Payload/header retarget attempts → 421 before dispatch; generic
-  absent-scope deployment unchanged.
 
 #### D1-004d — Durable admission ledger
 
@@ -1480,9 +1410,8 @@ PRIORITY 1 / v1 (phase 2 — factory host):
   P0 decisions (LANDED: #617/#632/#649/#670)
   P1 (LANDED #642) ─┐
   P6-D (LANDED #623)├─> P6-R (LANDED #647) ─> D1 revision stack ─────────> P8 exit
-  A1 compile (#624)─┘                          (LANDED: D1-001..004c2)      (slice #664)
-                                               D1-004c3 → c4 → c5
-                                               → D1-004d → D1-004e
+  A1 compile (#624)─┘                          (LANDED: D1-001..004c5)      (slice #664)
+                                               D1-004d → D1-004e
                                                → D1-005a → D1-005b → D1-005c
                                                → D1-006a [profile qualification]
                                                → D1-006  [owner acceptance: OPEN]
@@ -1512,18 +1441,15 @@ DEFERRED LEAVES (documented, undispatched):
 
 **Authoritative near-term order (what to dispatch next):**
 
-1. **D1-004c3** (Boring MCP scope admission) — FEAT; docs already landed.
-2. **D1-004c4** (WorkspaceBridge runtime-claim admission).
-3. **D1-004c5** (managed-agent MCP configured-target admission).
-4. **D1-004d** (durable admission ledger) → **D1-004e** (rollback fence).
-5. **D1-005a** → **D1-005b** → **D1-005c** (approve → attest → publish).
-6. **D1-006a** qualifies one exact EU runtime profile without performing P2's
+1. **D1-004d** (durable admission ledger) → **D1-004e** (rollback fence).
+2. **D1-005a** → **D1-005b** → **D1-005c** (approve → attest → publish).
+3. **D1-006a** qualifies one exact EU runtime profile without performing P2's
    package extraction; then **D1-006** (EU-host proof + runbook) runs, blocked on
    the runsc privileged-model owner decision for the *EU production exit only*.
-   D1-001–005c do not wait for either bead.
-7. In parallel (priority-2 lane, safe now): **AR1-002/003/004** (Lane W).
-8. After M1/AR1 stabilize: **M2 recut** → **E2 recut**.
-9. Phase 3B (managed B2B contracting, on a named design-partner brief): AC1-T2
+   D1-001–005c are landed or do not wait for either bead.
+4. In parallel (priority-2 lane, safe now): **AR1-002/003/004** (Lane W).
+5. After M1/AR1 stabilize: **M2 recut** → **E2 recut**.
+6. Phase 3B (managed B2B contracting, on a named design-partner brief): AC1-T2
    then **AC1-D** (after AC1-D-SPEC) → AC1-H → AC1-M/AC1-P + AR1 Lane X. ID1 is
    NOT a gate here. Public self-service promotion later: ID1-001..008 + public
    abuse controls; **ID1-008 blocks public exposure.**
@@ -1553,7 +1479,7 @@ rebases. Lane X and all demand-gated WPs need an explicit owner trigger.
 | R12 | **X1 benchmark regressions** — the provisional 2026-07-05 numbers are flawed. | No numeric threshold locks until BBX1-009 republishes a corrected repeatable run; readonly/backend-down semantics re-verified. | X1 PLAN |
 | R13 | **Regulated-domain launch** (insurance/accounting/legal) without sign-off. | BLOCKING: disclaimers in the agent definition, human-in-loop default for advice-shaped outputs, an owner regulatory-exposure review recorded in DECISIONS.md; a versioned legal/risk sign-off doc kept outside DECISIONS.md. | Guardrails vertical-GTM |
 | R14 | **Ops/upgrade gaps while tenant workspaces are live.** | Approved releases carry a schema-compatibility envelope; rollback-capable releases are **expand-only** and rehearse the prior core against the migrated schema. Contracting migrations wait until the prior release leaves the rollback window. Keep the backup/restore + support runbooks (log locations, event-store query one-liners, per-agent restart, compose rollback); no dashboard (P8 guardrail). | Guardrails ops |
-| R15 | **INDEX status drift** — INDEX text lags the daily D1 merges (reads "c1 ACTIVE" while c1/c2 landed). | Re-verify the freshest D1 landed bead via gh/git ancestry before each dispatch; INDEX has one writer (owner/orchestrator). | §"Freshness" / INDEX plan-write rule |
+| R15 | **INDEX status drift** — INDEX text lags daily D1 merges (reads "c1 ACTIVE" while c1–c5 landed). | Re-verify the freshest D1 landed bead via gh/git ancestry before each dispatch; INDEX has one writer (owner/orchestrator). | §"Freshness" / INDEX plan-write rule |
 
 ---
 
@@ -1611,7 +1537,7 @@ are review cards, so the owner's 4 product priorities were `[resolved per INDEX
 `work/AR1-shareable-artifacts/{AR1-001-SPEC,PLAN,TODO}`;
 `work/AC1-agent-consumption-contract/PLAN`; `work/ID1-agent-identity/{BEADS,PLAN}`;
 `work/{M2,E2,T1,T2,CH1,BL1,MK1,P2,X1}/PLAN`. Landed set ancestry-verified against
-`origin/main` (HEAD `26bd895a9`, #705) on 2026-07-13.
+`origin/main` (HEAD `e45df5440`, #713) on 2026-07-13.
 
 ---
 
@@ -1804,3 +1730,20 @@ locked AC1-D-SPEC latitude.
 choice. The other proposals either require new unproven authority or conflict
 with fail-closed/boring-by-default constraints, so no owner ruling is needed to
 continue the current plan.
+
+### R4 (Opus) — not run
+
+Anthropic's rate limit ended the session before the scheduled Opus review. No
+unreviewed proposal was treated as accepted; the completed Sol, Grok, and Gemini
+rounds remain the multi-model evidence for this version.
+
+### Final arbiter — NO-GO resolved, then GO for bead conversion
+
+**NO-GO:** the plan still offered D1-004c3–c5 as dispatchable although
+`origin/main` had already landed #708/#711/#713. This correction moves those
+beads into §3 context and makes **D1-004d** the next D1 dispatch.
+
+**GO:** conversion may proceed without changing locked decisions or owner
+rulings. Residual blockers are explicit: **D1-006** cannot claim the EU
+production exit until the owner makes the privileged-`runsc` decision from real
+D1-006a evidence, and **AC1-D** remains blocked on its AC1-D-SPEC micro-spec.
