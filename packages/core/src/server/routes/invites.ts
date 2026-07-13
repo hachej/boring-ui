@@ -120,6 +120,14 @@ const inviteRoutesPlugin: FastifyPluginAsync<InviteRoutesOptions> = async (app, 
           requestId: request.id,
         })
       }
+      if (request.requestScope && id !== request.requestScope.workspaceId) {
+        throw new HttpError({
+          status: 421,
+          code: ERROR_CODES.D1_HOST_SCOPE_VIOLATION,
+          message: ERROR_CODES.D1_HOST_SCOPE_VIOLATION,
+          requestId: request.id,
+        })
+      }
 
       const parsed = acceptInviteQuery.safeParse(request.query)
       if (!parsed.success) {
@@ -223,7 +231,7 @@ const inviteRoutesPlugin: FastifyPluginAsync<InviteRoutesOptions> = async (app, 
     const tokenHash = createHash('sha256').update(parsed.data.token).digest('hex')
     const invite = await store.getInviteByTokenHash(tokenHash)
 
-    if (!invite) {
+    if (!invite || (request.requestScope && invite.workspaceId !== request.requestScope.workspaceId)) {
       throw new HttpError({
         status: 404,
         code: ERROR_CODES.INVITE_NOT_FOUND,
@@ -283,7 +291,7 @@ const inviteRoutesPlugin: FastifyPluginAsync<InviteRoutesOptions> = async (app, 
     const tokenHash = createHash('sha256').update(parsed.data.token).digest('hex')
     const invite = await store.getInviteByTokenHash(tokenHash)
 
-    if (!invite) {
+    if (!invite || (request.requestScope && invite.workspaceId !== request.requestScope.workspaceId)) {
       throw new HttpError({
         status: 404,
         code: ERROR_CODES.INVITE_NOT_FOUND,
