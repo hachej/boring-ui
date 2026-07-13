@@ -689,9 +689,14 @@ bead below:
   privilege/capability set, cgroup/network policy, uid/gid mapping, and provider
   configuration. Probe sibling filesystem traversal, `/proc` and PID enumeration,
   signals/ptrace, mount/device access, process escape, cross-workspace network
-  reachability, resource ceilings, teardown, and secret absence. Produce a
-  redacted evidence envelope and digest; D1 startup must reject material
-  runtime-profile drift until the proof is rerun.
+  reachability, resource ceilings, teardown, and secret absence. Automate these
+  probes as a narrow reusable test suite (two test agents: one attempts the
+  attacks, the other asserts denial + secret absence) so the sibling
+  filesystem/process-denial proof is machine-checkable and regression-safe as the
+  host evolves. Produce a redacted evidence envelope and digest — the envelope
+  gains a `testSuiteDigest` binding that automated probe suite (reused by D1-006's
+  proof script); D1 startup must reject material runtime-profile drift until the
+  proof is rerun.
 - **Do NOT / stop-signs.** No package relocation (that is P2), provider
   abstraction, fallback to `direct`, capability self-report as authority, or
   forced runsc approval. The spike may reject the candidate profile.
@@ -713,7 +718,9 @@ bead below:
 - **Why / workflow.** This is the phase-2 product exit; component tests do not
   complete v1 (VISION + OWNER product review card).
 - **Build.** `work/D1-tenant-provisioning/RUNBOOK.md`; a narrow proof script
-  under `scripts/`; reuse P8's `golden-path.json` (do not duplicate its version
+  under `scripts/` (reusing the D1-006a automated isolation test suite so the
+  sibling filesystem/process-denial proof is machine-checkable, not a hand-run
+  probe); reuse P8's `golden-path.json` (do not duplicate its version
   contract). Reproduce the landed pre-apply edge-network overlap guard on the EU
   host (incl. idempotent reuse of the exact owned D1 project network); three
   distinct agents/workspaces/hostnames in one EU deployment; three independent
@@ -766,7 +773,8 @@ bead below:
   prior digests; stale CAS / duplicate bindings / root overlap / proxy confusion
   / unavailable secret / unsatisfied requirement / partial readiness fail with
   stable codes; no secret/raw-path in any output; **the shared runtime profile
-  proves sibling filesystem + process denial** (the runsc gate above); golden
+  proves sibling filesystem + process denial** (the runsc gate above,
+  machine-checked by the D1-006a automated isolation suite); golden
   path records wall-clock vs the 15-minute target. As DR evidence (not a gate on
   the golden path), a real backup is restored on an isolated host: admitted
   bindings remain admitted, membership/ownership is unchanged, revision and
@@ -1030,8 +1038,16 @@ micro-spec and AC1-T2 (the honest open item).
     cancellation and cannot resurrect the task.
   - **Open questions.**
     - **ENGINEER (in the micro-spec):** which durable seam shape (T1 `AgentEvent`
-      envelope vs dedicated task-state table); task↔pi-session mapping; error
-      taxonomy.
+      envelope vs a dedicated narrow `task_state` table). Consideration for that
+      choice: reusing the full envelope for task metadata/deadlines/idempotency
+      receipts adds write amplification, WAL pressure, and broader transaction
+      scope on the single-core D1 writer under fan-out, so a dedicated append/
+      upsert `task_state` table (authoritative task record + pending
+      `inputRequestId` + absolute deadline + idempotency receipts, with a
+      foreign-key reference to the event stream, appended in the same SQLite
+      transaction) biases the evaluation — but the micro-spec settles it and
+      either shape reuses the landed T1 SQLite unit and recovery-scan pattern.
+      Also settle task↔pi-session mapping and error taxonomy.
     - **OWNER:** whether to tighten depth/timeout defaults for the first
       consumer.
 
@@ -1684,3 +1700,66 @@ policy (engagement-scoped mutable + readonly caller projection) is stated as the
 *proposed* default; it reuses Decision 22's own projection mechanism, so it is a
 low-stakes owner confirmation rather than a new decision — but the owner still
 formally confirms it when contracting opens.
+
+### R2 (Grok 4.20-reasoning) — 1 applied, 1 somewhat, 2 rejected, 0 escalated
+
+Four proposals (the reviewer's own close says "these four changes").
+
+**Applied wholeheartedly (1):**
+
+- **P2 — automated isolation test suite for the EU host proof.** Added a narrow
+  reusable two-agent probe suite (attacker attempts sibling filesystem traversal,
+  `/proc`/PID enumeration, cross-binding network reach, secret exfiltration; the
+  other asserts denial + secret absence) to D1-006a, made the D1-006 proof script
+  reuse it, and gave `RuntimeIsolationEvidenceV1` a `testSuiteDigest`. Makes the
+  sibling filesystem/process-denial proof machine-checkable and regression-safe;
+  strengthens R1/R11; adds no runtime code and respects every D1 stop-sign.
+  Adapted from the reviewer's placement: the `testSuiteDigest` field lands in
+  D1-006a (which owns the evidence envelope), not dangling at the end of D1-006.
+
+**Applied somewhat (1):**
+
+- **P1 — resolve AC1-D persistence to a dedicated narrow `task_state` table.**
+  The reviewer's WAL-pressure/write-amplification/transaction-scope rationale is
+  legitimate and was recorded as an ENGINEER consideration biasing evaluation
+  toward a dedicated `task_state` table (foreign-key to the event stream, same
+  SQLite transaction). **Trimmed:** did NOT close the seam decision. R1 (item #11)
+  deliberately kept the exact durable seam shape open for the BLOCKING
+  AC1-D-SPEC — the micro-spec exists precisely to let the ENGINEER settle "(4)"
+  with real repo knowledge. Hard-committing the table in this plan would reverse
+  that trim and make the plan self-contradictory (require a micro-spec to settle
+  a question the plan already answered). Persistence stays resolved toward
+  *durable* (forced by the 24h deadline); the seam shape stays with the spec.
+
+**Rejected (2):**
+
+- **P3 — Prometheus `/metrics` seam in D1-005c.** Conflicts with the "Boring by
+  default" guardrail (no new operational/observability infra until a measured
+  problem is recorded in DECISIONS.md *first*), the P8 "no dashboard" guardrail
+  (R14), and the universal stop sign (R7). D1-005c already ships the boring
+  version — a local redacted status tuple + runbook. Bolting ~12
+  counters/gauges/histograms onto a priority-1 v1-gate bead for observability no
+  measured problem demands (the reviewer's own justification cites *future*
+  autoscaling, which is on the D1 do-NOT-build list) is exactly the
+  over-engineering the discipline forbids. When a real observability gap is
+  measured, it gets recorded in DECISIONS.md, then a narrow follow-on bead — not
+  the v1 exit.
+
+- **P4 — mandatory versioned `capabilities` set on `AgentDefinition` as a
+  Global non-negotiable.** Rejected as presented. (1) Adds a second tool-authority
+  source that can drift from the plan's existing model — M2/E2 already gate tools
+  on "the definition + resolved facts" and E2's do-NOT explicitly forbids a
+  "second enforcement path"; a declared capability set used to gate projection is
+  that split-brain hazard. (2) No named current consumer — the cited consumers
+  (M2/E2 projection gating, AC1 pre-filter, marketplace) are priority-2+/demand-
+  gated; Guardrails forbid new mechanism without a second consumer and "ship the
+  dumb version." (3) It injects a schema change to landed P6-D "before D1-005a,"
+  loading critical-path scope for a non-critical feature. (4) A hard non-negotiable
+  should originate from a DECISION/owner ruling, not a reviewer preference —
+  Decision 22 already declares *modes* in `AgentDefinition`, and MK1 already
+  anticipates capabilities *metadata* deriving from `AgentDefinition` at phase 4.
+  The idea can land with its first real consumer; not as a pre-D1 invariant.
+
+**Escalated to owner (0).** No proposal argued to change a locked DECISION; none
+needed escalation. P1's engineering signal is captured without disturbing the
+locked AC1-D-SPEC latitude.
