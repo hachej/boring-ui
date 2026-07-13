@@ -15,7 +15,9 @@ import {
 import { createD1CommandEngine, type D1CommandEngineOptions, type D1MutationGuard } from './d1Command.js'
 import { parseD1CliInput } from './d1CommandCliProtocol.js'
 import { isSupportedLocalD1LockFilesystem } from './d1CommandLockPolicy.js'
+import { createD1DestructivePublicationJournalStore } from './destructivePublicationJournal.js'
 import { createD1FileRuntimeInputsProvider } from './d1FileRuntimeInputsProvider.js'
+import { createD1FencedDestructivePublication } from './fencedDestructivePublication.js'
 import { D1HostError, D1HostErrorCode } from './d1Plan.js'
 import { createD1BindingSecretMaterializer, createD1RuntimeInputsInspector } from './d1SecretMaterializer.js'
 import { createHostRevisionStore } from './hostRevisionStore.js'
@@ -93,8 +95,12 @@ function unavailable(field: string): never { throw new D1HostError(D1HostErrorCo
 
 export const createProductionD1Dependencies: D1DependencyFactory = ({ hostId, ownerUid, stateRoot, mutationGuard, admissionLedger }) => {
   const provider = createD1FileRuntimeInputsProvider({ hostId, ownerUid })
+  const store = createHostRevisionStore({ root: stateRoot, ownerUid, appGid: D1_APP_GID })
+  const fencedPublication = admissionLedger
+    ? createD1FencedDestructivePublication({ admissionLedger, journalStore: createD1DestructivePublicationJournalStore(), revisionStore: store })
+    : undefined
   return {
-    store: createHostRevisionStore({ root: stateRoot, ownerUid, appGid: D1_APP_GID }),
+    store,
     resolver: { resolvePlan: async () => unavailable('resolver'), reproduce: async () => unavailable('resolver') },
     effects: {
       loadAdmittedBindingIds: admissionLedger
@@ -106,6 +112,7 @@ export const createProductionD1Dependencies: D1DependencyFactory = ({ hostId, ow
     },
     inspectRuntimeInputs: createD1RuntimeInputsInspector(provider),
     mutationGuard,
+    ...(fencedPublication ? { fencedPublication } : {}),
     operator: { uid: ownerUid, effectiveUser: os.userInfo().username, invocationId: randomUUID() },
     clock: () => new Date().toISOString(),
   }
