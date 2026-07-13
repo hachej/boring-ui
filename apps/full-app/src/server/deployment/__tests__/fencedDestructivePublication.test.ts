@@ -156,12 +156,15 @@ describe('D1 fenced destructive publication', () => {
   })
 
   it('leaves no false terminal across prepare, publication, terminal, and connection failures', async () => {
-    for (const fault of ['prepare', 'prepare-commit', 'publish-before', 'publish-after', 'terminal', 'connection'] as const) {
-      const h = await harness(); const value = identity(h.hostId); let reserved: postgres.ReservedSql | undefined
+    for (const fault of ['prepare', 'prepare-rollback', 'prepare-commit', 'publish-before', 'publish-after', 'terminal', 'connection'] as const) {
+      const h = await harness(); const value = identity(h.hostId); let reserved: postgres.ReservedSql | undefined; let internalError: unknown
       const ledger = { ...h.ledger, withBindingFences: <T>(keys: Parameters<D1AdmissionLedger['withBindingFences']>[0], run: (sql: postgres.ReservedSql) => Promise<T>) =>
         h.ledger.withBindingFences(keys, async (sql) => {
           reserved = sql
-          if (fault !== 'prepare-commit') return run(sql)
+          const invoke = async (connection: postgres.ReservedSql) => {
+            try { return await run(connection) } catch (error) { internalError = error; throw error }
+          }
+          if (fault !== 'prepare-commit') return invoke(sql)
           const [backend] = await sql<{ pid: number }[]>`SELECT pg_backend_pid() AS pid`
           const interrupted = new Proxy(sql, { async apply(target, thisArg, args: [TemplateStringsArray, ...unknown[]]) {
             const result = await Reflect.apply(target, thisArg, args)
@@ -171,11 +174,16 @@ describe('D1 fenced destructive publication', () => {
             }
             return result
           } }) as postgres.ReservedSql
-          return run(interrupted)
+          return invoke(interrupted)
         }) } as D1AdmissionLedger
       const journal = {
         ...h.journal,
-        appendPrepared: fault === 'prepare' ? async () => { throw new Error('private prepare') } : h.journal.appendPrepared,
+        appendPrepared: fault === 'prepare' ? async () => { throw new Error('private prepare') }
+          : fault === 'prepare-rollback' ? async (sql: postgres.ReservedSql) => {
+            const [backend] = await sql<{ pid: number }[]>`SELECT pg_backend_pid() AS pid`
+            await admin`SELECT pg_terminate_backend(${backend!.pid})`
+            throw new Error('private prepare rollback')
+          } : h.journal.appendPrepared,
         appendTerminal: fault === 'terminal' ? async () => { throw new Error('private terminal') } : h.journal.appendTerminal,
       } as D1DestructivePublicationJournalStore
       h.revisions.onPublish = async () => {
@@ -190,8 +198,11 @@ describe('D1 fenced destructive publication', () => {
       const error = await createD1FencedDestructivePublication({ admissionLedger: ledger, journalStore: journal, revisionStore: h.revisions.store }).publish(value).catch((caught) => caught)
       expect(error).toMatchObject({ code: D1HostErrorCode.ROLLBACK_JOURNAL_FAILED, details: { field: 'rollbackJournal' } })
       expect(JSON.stringify(error)).not.toMatch(/private|postgres:|CONNECTION_/)
+      if (fault === 'prepare-rollback' || fault === 'prepare-commit' || fault === 'connection') {
+        expect(internalError).toMatchObject({ code: 'CONNECTION_CLOSED', message: 'D1_RESERVED_CONNECTION_LOST' })
+      }
       const recorded = await operation(h.journal, value)
-      expect(recorded?.prepared.state).toBe(fault === 'prepare' ? undefined : 'prepared')
+      expect(recorded?.prepared.state).toBe(fault === 'prepare' || fault === 'prepare-rollback' ? undefined : 'prepared')
       expect(recorded?.terminal).toBeUndefined()
       expect(h.revisions.active.revisionId).toBe(fault === 'publish-after' || fault === 'terminal' || fault === 'connection' ? 'r0000000002' : 'r0000000001')
       await h.close().catch(() => {})

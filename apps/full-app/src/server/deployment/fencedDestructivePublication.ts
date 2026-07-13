@@ -26,12 +26,17 @@ function failed(field = 'rollbackJournal'): D1HostError {
 function targetInvalid(field: string): D1HostError {
   return new D1HostError(D1HostErrorCode.ROLLBACK_TARGET_INVALID, { field })
 }
-async function bounded(value: PromiseLike<unknown>): Promise<void> {
+function connectionLost(error: unknown): boolean {
+  const code = error instanceof Error ? (error as Error & { code?: unknown }).code : undefined
+  return code === 'CONNECTION_CLOSED' || code === 'CONNECTION_DESTROYED' || code === 'CONNECTION_ENDED' || code === 'ECONNRESET' || code === 'EPIPE'
+}
+function internalConnectionLost(): Error {
+  return Object.assign(new Error('D1_RESERVED_CONNECTION_LOST'), { code: 'CONNECTION_CLOSED' })
+}
+async function bounded(value: PromiseLike<unknown>): Promise<boolean> {
   const pending = Promise.resolve(value); let timer: ReturnType<typeof setTimeout> | undefined
-  try {
-    const result = await Promise.race([pending.then(() => true), new Promise<false>((resolve) => { timer = setTimeout(() => resolve(false), 5_000) })])
-    if (!result) throw failed()
-  } finally { if (timer) clearTimeout(timer); void pending.catch(() => {}) }
+  try { return await Promise.race([pending.then(() => true), new Promise<false>((resolve) => { timer = setTimeout(() => resolve(false), 5_000) })]) }
+  finally { if (timer) clearTimeout(timer); void pending.catch(() => {}) }
 }
 async function transaction(sql: postgres.ReservedSql, operation: () => Promise<unknown>): Promise<void> {
   let open = false
@@ -39,8 +44,9 @@ async function transaction(sql: postgres.ReservedSql, operation: () => Promise<u
     await sql`BEGIN`; open = true
     await operation()
     await sql`COMMIT`; open = false
-  } catch {
-    if (open) try { await bounded(sql`ROLLBACK`) } catch {}
+  } catch (error) {
+    if (connectionLost(error)) throw internalConnectionLost()
+    if (open) try { if (!await bounded(sql`ROLLBACK`)) throw internalConnectionLost() } catch { throw internalConnectionLost() }
     throw failed()
   }
 }
