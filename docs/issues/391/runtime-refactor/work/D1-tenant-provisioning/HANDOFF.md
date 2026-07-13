@@ -74,10 +74,14 @@
       read-only hash lookup needed to discover workspace before a foreign invite
       receives the existing non-enumerating `invite_not_found` denial;
       Boring MCP keeps global auth, its unauthenticated 401, and generic limiting
-      exact, while scoped onRequest limiting charges every authenticated request
-      reaching the route using only `request.user.id` plus frozen
-      `requestScope.workspaceId`; raw selectors never key or bypass the budget,
-      and selector admission is the first route preHandler after that limiter.
+      exact. The four POST actions keep their existing route limiters;
+      `GET /sources` uses the same Fastify route mechanism but skips unscoped
+      requests. Under trusted scope all five charge every authenticated valid/
+      malformed/conflicting/foreign/nonmember request using only `request.user.id`
+      plus frozen `requestScope.workspaceId` before the shared admission helper,
+      which is the first route preHandler after limiting and precedes workspace/
+      member/user-store/provider/transport effects. No manual D1 limiter or second
+      budget store is added, and raw selectors never key or bypass a budget.
       Bridge verifies signature/
       claims, asserts host scope, then loads definition/capabilities, and D1
       mismatch escapes as HTTP 421 rather than RPC error. No caller agent/deployment selector or
