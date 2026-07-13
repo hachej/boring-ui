@@ -129,10 +129,15 @@ core stopped, validates image/command, read-only root, exact mounts, nonsecret e
 plus canary absence from Docker metadata, and host-
 security policy, binds its id, and starts only that verified id. Direct non-Caddy
 application traffic remains scope-rejected. This all precedes preload/pointer/
-ingress or lazy first-effect admission; mismatch stops/
+ingress or lazy mutation/direct-operation admission; mismatch stops/
 quarantines core while ingress stays
 stopped. Running hosts keep the stable core and validate observed state before
 N+1 candidate effects.
+
+Admission is binding use, not a generic request counter. D1-004d2 service/facade
+read/list/subscribe and cache population, D1-004d3 token refresh, and D1-005c
+preload/all-ready do not admit. Every actual D1-004d3 direct operation does,
+including a read-like operation.
 Initial ingress is created but not started, then inspected against the landed
 D1-003a image/command/Caddyfile contract with read-only root and its sole read-
 only config mount. The verified capability binds that stopped container id;

@@ -43,8 +43,12 @@ landed via [#694](https://github.com/hachej/boring-ui/pull/694), and D1-004a4b
 landed via [#695](https://github.com/hachej/boring-ui/pull/695), and D1-004b1
 landed via [#698](https://github.com/hachej/boring-ui/pull/698), and the atomic
 owner guards landed via [#700](https://github.com/hachej/boring-ui/pull/700)/
-[#701](https://github.com/hachej/boring-ui/pull/701). D1-004c1 is active,
-followed by D1-004c2-c5;
+[#701](https://github.com/hachej/boring-ui/pull/701). D1-004c1-c5 landed via
+[#704](https://github.com/hachej/boring-ui/pull/704),
+[#705](https://github.com/hachej/boring-ui/pull/705),
+[#708](https://github.com/hachej/boring-ui/pull/708),
+[#711](https://github.com/hachej/boring-ui/pull/711), and
+[#713](https://github.com/hachej/boring-ui/pull/713); D1-004d1 is active;
 the AR1 Lane W share-entry/deep-link/resource slices are next after priority 1.
 
 ## Phase 2 — Factory v1

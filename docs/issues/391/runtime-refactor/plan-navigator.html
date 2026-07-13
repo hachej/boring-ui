@@ -810,9 +810,9 @@
             <h3>Reduced critical path</h3>
             <ul class="scope-list">
               <li><code>Decision 21</code>, <code>P6-D</code>, and <code>A1 compile</code> are landed through #617/#623/#624.</li>
-              <li><code>P1</code> lifecycle/readiness (#642), <code>P6-R</code> (#647), and <code>D1-001…004b2b</code> are landed.</li>
+              <li><code>P1</code> lifecycle/readiness (#642), <code>P6-R</code> (#647), and <code>D1-001…004c5</code> are landed.</li>
               <li><code>D1-004a3a/a3b/a4a/a4b</code> landed via #690/#692/#694/#695, including bounded landing and exact production activation/readiness.</li>
-              <li><code>D1-004b2a/b2b</code> landed atomic owner authority via #700/#701; c1-c5 fence the complete static workspace-selector set bound to a root-approved host release.</li>
+              <li><code>D1-004b2a/b2b</code> landed atomic owner authority via #700/#701; c1-c5 landed the complete static workspace-selector set via #704/#705/#708/#711/#713.</li>
               <li><code>M1 &rarr; AR1 &rarr; M2/E2</code> is priority 2, then <code>T1/T2</code>; <code>P2/X1</code> is last.</li>
               <li><code>P8</code> proves the complete journey and rollback.</li>
             </ul>
@@ -833,19 +833,19 @@
 
         <div class="section-heading">
           <p class="kicker">Immediate orchestration</p>
-          <h2>D1-004b2b is landed. Close selector authority next.</h2>
+          <h2>D1-004c5 is landed. Commit first-use admission next.</h2>
         </div>
         <div class="review-path">
           <article class="review-step">
-            <div><h3>Landed foundation: P1, P6-R, and D1-001…004b2b</h3><p>#642, #647, #649, #652–#654, #660, #662, #665, #667, #672, #675–#680, #684, #685, #690, #692, #694, #695, #698, #700, and #701 are verified on main. Bound workspace plus atomic owner authority are complete.</p></div>
+            <div><h3>Landed foundation: P1, P6-R, and D1-001…004c5</h3><p>#642, #647, #649, #652–#654, #660, #662, #665, #667, #672, #675–#680, #684, #685, #690, #692, #694, #695, #698, #700, #701, #704, #705, #708, #711, and #713 are verified on main. The static selector boundary is complete.</p></div>
             <a href="work/D1-tenant-provisioning/D1-R0-SPEC.md">D1 contract</a>
           </article>
           <article class="review-step">
-            <div><h3>Active D1-004c1: public invite scope</h3><p>Legacy invite paths reject foreign scope before token lookup. Token-only public routes may perform one read-only hash lookup, then return the same non-enumerating 404 as an unknown token before counters, workspace/member reads, mutation, or success audit.</p></div>
+            <div><h3>Active D1-004d1: durable admission fence</h3><p>Add the insert/read-only ledger and dedicated-connection advisory fence behind injected AttestedD1DatabaseConnection. Recheck the exact binding/workspace/default deployment before commit; an additive revision may advance only when that triple is unchanged. Missing capability or configured databaseRef mismatch fails core/CLI closed; ref equality never opens production.</p></div>
             <a href="work/D1-tenant-provisioning/PLAN.md">D1 plan</a>
           </article>
           <article class="review-step">
-            <div><h3>Then four selectors, admission, and atomic boot</h3><p>D1-004c2-c5 fence embedded/browser, Boring MCP, Bridge claims, and managed-agent MCP. D1-004d/e commit admission and journal recoverable rollback; D1-005a approves policy, 005b attests stopped containers, and 005c publishes N bindings before ingress; D1-006 records the EU-host proof.</p></div>
+            <div><h3>Then effect coverage, rollback, and atomic boot</h3><p>D1-004d2 covers durable session create/delete, Pi prompt/followup/control, slash/reload, and every AgentCoreRuntime facade mutation; service/facade reads/list/subscribe stay excluded and reload admits before reprovision or hooks. d3 covers every direct WorkspaceBridge operation after scope/op/capability, including read-like operations, with token refresh excluded. D1-004e follows all three admission beads. D1-005a approves policy, 005b attests stopped containers, and 005c compares root-owned expected database identity to the reserved live handle before publication. D1-006 records the EU-host proof.</p></div>
             <a href="work/D1-tenant-provisioning/TODO.md">D1 work order</a>
           </article>
         </div>
@@ -864,7 +864,7 @@
               <tr><td>#626 / #627 / #630</td><td><span class="status merged">landed</span></td><td>Core relocation and terminal local/Pi binding disposal.</td></tr>
               <tr><td>#631</td><td><span class="status merged">landed</span></td><td>Request-binding lifecycle closeout; merge ancestry verified.</td></tr>
               <tr><td>#642 / #647 / #649</td><td><span class="status merged">landed</span></td><td>P1 readiness recut, stateless P6-R, and accepted D1-R0 contract.</td></tr>
-              <tr><td>#652–#654, #660, #662, #665, #667, #672, #675–#680, #684, #685, #690, #692, #694, #695, #698, #700, #701</td><td><span class="status merged">D1-001…004b2b landed</span></td><td>Canonical plan/identity through production activation, bound workspace/signup authority, and atomic owner lifecycle.</td></tr>
+              <tr><td>#652–#654, #660, #662, #665, #667, #672, #675–#680, #684, #685, #690, #692, #694, #695, #698, #700, #701, #704, #705, #708, #711, #713</td><td><span class="status merged">D1-001…004c5 landed</span></td><td>Canonical plan/identity through production activation, bound workspace/owner authority, and the complete static selector fence.</td></tr>
               <tr><td>#628</td><td><span class="status merged">structural only</span></td><td>Runsc preflight; <code>productionReady: false</code>, not provider parity.</td></tr>
               <tr><td>#564</td><td><span class="status deferred">remove cutover</span></td><td>Do not make the agent binary pure-only.</td></tr>
               <tr><td>#566</td><td><span class="status deferred">superseded</span></td><td>Host-global capability snapshots cannot represent N bindings; P6-R remains facts-free.</td></tr>
@@ -1015,15 +1015,15 @@
               <span class="arrow">&rarr;</span>
               <a class="node join" href="#pkg-p6r"><b>P6-R</b><span>resolve join</span></a>
               <span class="arrow">&rarr;</span>
-              <a class="node" href="#pkg-d1"><b>D1-001…004a2</b><span>landed host base</span></a>
+              <a class="node" href="#pkg-d1"><b>D1-001…004c5</b><span>landed scoped host</span></a>
               <span class="arrow">&rarr;</span>
-              <a class="node" href="#pkg-d1"><b>D1-004…006</b><span>surface to proof</span></a>
+              <a class="node" href="#pkg-d1"><b>D1-004d1…006</b><span>admission to proof</span></a>
             </div>
           </div>
           <div class="lane">
             <div class="lane-name">Delivery</div>
             <div class="lane-flow">
-              <a class="node join" href="#pkg-d1"><b>D1-004</b><span>scope + authority</span></a>
+              <a class="node join" href="#pkg-d1"><b>D1-004d1/d2/d3/e</b><span>admit + rollback</span></a>
               <span class="arrow">&rarr;</span>
               <a class="node" href="#pkg-d1"><b>D1-005a/b/c</b><span>approve + attest + boot</span></a>
               <span class="arrow">&rarr;</span>
@@ -1084,7 +1084,7 @@
                 <td>P1</td>
                 <td>Existing workspace composer and #416 contracts stay frozen.</td>
                 <td>Lifecycle/readiness, stateless N-binding resolution, Docker host and secret brokerage.</td>
-                <td>P1/P6-R and D1-001…004b2b landed; D1-004c1 is active, then c2-c5.</td>
+                <td>P1/P6-R and D1-001…004c5 landed; D1-004d1 is active, then d2/d3/e.</td>
               </tr>
               <tr>
                 <td><div class="track-name"><strong>X1 S3/FUSE</strong><span class="status deferred">draft only</span></div></td>
@@ -1399,8 +1399,8 @@
       },
       {
         id: "d1", phase: "D1", title: "Multi-agent EU Docker delivery", category: "critical", status: "active",
-        subtitle: "D1-R0 and D1-001…004b2b are landed; public invite scope is active, followed by four bounded selectors and root-approved/observed boot.",
-        starts: "D1-004c1 invites, then c2-c5 selectors, admission, root-approved/observed atomic boot, and EU proof",
+        subtitle: "D1-R0 and D1-001…004c5 are landed; durable admission is active, followed by real first-effect coverage, rollback fencing, and root-approved/observed boot.",
+        starts: "D1-004d1 ledger, then d2/d3 effect coverage, e rollback, root-approved/observed atomic boot, and EU proof",
         outcome: "One Docker host, N exact-host landings, member auth, authorized workspace/default bindings, uninterrupted additive apply, and rollback as a new revision.",
         boundary: "Host mutation is an OS-authorized local CLI only. Bound hostnames fence existing workspace list/create/switch/delete/default-auto-create paths; no app management API.",
         gate: "Three bindings, final-activation requirement validation, ordinary-member host-mutation denial, workspace lifecycle fences, stable-process N+1 continuity, active-replacement refusal, shared-host sibling isolation, cross-binding denial, rollback-as-new-revision, and no-secret proof. Dedicated VM is documentation/config-render only.",

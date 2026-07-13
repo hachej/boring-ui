@@ -271,15 +271,18 @@ materializes it as a **new** monotonically allocated revision. It never changes
 the active pointer to the old revision id and never replays old observations.
 An online rollback may remove only bindings introduced after the target for
 which no durable admission row exists; it may also restore landing-only fields.
-Before the first agent effect for a binding, the core commits an idempotent
-insert into `d1_binding_admissions`; the unique key makes concurrent first
-requests converge on one database-allocated sequence. The effect proceeds only
+Before the first effect-bearing operation for a binding, the core commits an
+idempotent insert into `d1_binding_admissions`; the unique key makes concurrent
+first-effect admissions converge on one database-allocated sequence. The effect proceeds only
 after that transaction commits. A database error fails closed. The row is never
 updated or cleared. At boot and before every destructive diff, the core/CLI
 reloads the ledger from the database rather than trusting cached readiness or
-revision files. A single accepted request therefore makes the binding
-non-removable online forever, even if its connection closed. Other runtime/
-composition/root/deployment/secret
+revision files. A single accepted D1-004d2 mutation or D1-004d3 direct operation
+therefore makes the binding non-removable online forever, even if its connection
+closed. D1-004d2 service/facade read/list/subscribe and cache population,
+D1-004d3 token refresh, and D1-005c preload/all-ready do not admit; every
+D1-004d3 direct operation still admits, including a read-like operation. Other
+runtime/composition/root/deployment/secret
 replacement fails `D1_ACTIVE_BINDING_RESTART_REQUIRED`. A full runtime rollback
 therefore requires an explicit maintenance-window stop and reapply in D1-S1.
 
@@ -327,7 +330,8 @@ contains no deployment mutation endpoint.
 
 The loopback/internal readiness surface reports active revision id, desired
 digest, and binding readiness only. The separate durable admission row commits
-before the first agent effect and is used only to forbid online removal; it is
+before a D1-004d2 mutation or any D1-004d3 direct operation and is used only to
+forbid online removal; it is
 not an in-flight/producer lease. Neither surface contains secrets, raw paths,
 owner identities, instructions, or tool content.
 
@@ -379,7 +383,7 @@ The D1 implementation adds one typed host error carrying these stable codes:
 | `D1_MANAGED_WORKSPACE_MUTATION_FORBIDDEN` | app/user lifecycle tried to mutate a managed binding |
 | `D1_ACTIVE_BINDING_RESTART_REQUIRED` | an online revision replaces/removes an admitted runtime binding or rotates its runtime inputs |
 | `D1_BINDING_ADMITTED` | rollback tried to remove a binding with a durable admission row |
-| `D1_ADMISSION_RECORD_FAILED` | the durable admission row did not commit before the first agent effect |
+| `D1_ADMISSION_RECORD_FAILED` | the durable admission row did not commit before a D1-004d2 mutation or D1-004d3 direct operation |
 | `D1_ROLLBACK_JOURNAL_FAILED` | rollback journal/pointer state is invalid or cannot be recovered/finalized |
 
 Errors expose no raw paths, secret values, landing-private metadata, or foreign
@@ -427,8 +431,14 @@ D1-004a4b landed readiness and production activation
 workspace/signup authority fences ([#698](https://github.com/hachej/boring-ui/pull/698)).
 D1-004b2a/b2b landed the atomic owner guards
 ([#700](https://github.com/hachej/boring-ui/pull/700),
-[#701](https://github.com/hachej/boring-ui/pull/701)). D1-004c1 is active;
-D1-004c2 through D1-004c5, D1-004d/004e, D1-005a/005b/005c, and D1-006 remain un-landed.
+[#701](https://github.com/hachej/boring-ui/pull/701)). D1-004c1-c5 landed the
+complete static selector fence
+([#704](https://github.com/hachej/boring-ui/pull/704),
+[#705](https://github.com/hachej/boring-ui/pull/705),
+[#708](https://github.com/hachej/boring-ui/pull/708),
+[#711](https://github.com/hachej/boring-ui/pull/711),
+[#713](https://github.com/hachej/boring-ui/pull/713)). D1-004d1/d2/d3,
+D1-004e, D1-005a/005b/005c, and D1-006 remain un-landed.
 
 ### D1-001 — plan and composition identity (<= 400 net lines; 25 minutes)
 
@@ -629,7 +639,7 @@ serializable retry behavior. No mutex, route SQL, schema/migration, or generic
 lifecycle/policy abstraction. Operator lifecycle remains the local OS-authorized
 D1 command path.
 
-### D1-004c1 — public invite scope (<= 220 net lines; 20 minutes)
+### D1-004c1 — public invite scope — LANDED #704
 
 Files: core legacy/public invite routes and focused tests.
 
@@ -645,7 +655,7 @@ lookup, but is outside D1 application effects and never keys on or reveals the
 discovered workspace. Preserve generic behavior and prove zero foreign invite/
 workspace/member mutation.
 
-### D1-004c2 — embedded/browser selector convergence (<= 380 net lines; 30 minutes)
+### D1-004c2 — embedded/browser selector convergence — LANDED #705
 
 Files: the existing core `resolveAuthorizedWorkspaceId` choke point, pane status
 route, and focused agent/UI/automation/browser-WorkspaceBridge tests.
@@ -657,7 +667,7 @@ dispatcher, bridge, or status effects. Pane body workspace must match and is
 never silently overwritten. Preserve generic header/query precedence exactly.
 This bead owns only browser/header WorkspaceBridge traffic.
 
-### D1-004c3 — Boring MCP scope admission (<= 280 net lines; 25 minutes)
+### D1-004c3 — Boring MCP scope admission — LANDED #708
 
 Files: Boring MCP binding, full-app wrapper, and focused route tests.
 
@@ -681,7 +691,7 @@ is bounded, unauthenticated D1 traffic retains the existing 401, unscoped GET
 requests are skipped by the limiter, and generic malformed/unauthenticated/
 unauthorized behavior remains exact.
 
-### D1-004c4 — WorkspaceBridge runtime-claim admission (<= 400 net lines; 30 minutes)
+### D1-004c4 — WorkspaceBridge runtime-claim admission — LANDED #711
 
 Files: a two-phase runtime-token verification seam plus one narrow host-supplied
 scope-assertion callback in core Bridge options, workspace HTTP runtime/refresh
@@ -698,7 +708,7 @@ protocol catch so core returns stable HTTP
 403. Foreign refresh consumes no refresh-use/rate bucket. Browser/header flow
 remains D1-004c2-owned; generic standalone behavior remains exact.
 
-### D1-004c5 — managed-agent MCP configured-target admission (<= 220 net lines; 20 minutes)
+### D1-004c5 — managed-agent MCP configured-target admission — LANDED #713
 
 Files: full-app managed-agent MCP route and focused tests.
 
@@ -709,23 +719,76 @@ scope including `defaultDeploymentId`; payload/header cannot retarget workspace,
 agent, or deployment. Preserve generic absent-scope deployment exactly. There is
 no current caller-controlled `agentId`/`deploymentId` parser; do not invent one.
 
-### D1-004d — durable admission ledger (<= 300 net lines; 20 minutes)
+### D1-004d1 — durable admission ledger and session fence (<= 400 net lines; 30 minutes)
 
 Files: one new core Drizzle migration plus the matching export in
 `packages/core/src/server/db/schema.ts`; new
-`apps/full-app/src/server/deployment/admissionLedger.ts`; focused schema/store
-tests; and a narrow first-effect hook through the D1 host scope.
+`apps/full-app/src/server/deployment/admissionLedger.ts`; narrow root-CLI
+destructive-diff read integration; and focused schema/store/real-Postgres tests.
 
 Deliver: insert/read-only `(hostId, bindingId)` admission rows with a database-
-allocated monotonic sequence; transaction commit before the first agent effect;
-idempotent concurrent admission; restart recovery and CLI destructive-diff
-reads from the database; no update/delete API. Export one session-level Postgres
-advisory fence keyed by `(hostId, bindingId)` on a dedicated connection. First
-use holds it while re-reading the active collection, inserting/idempotently
-reading admission in a transaction, and committing before the effect, then
-releases in `finally`; connection loss releases the lock. A failed lock/commit produces
-`D1_ADMISSION_RECORD_FAILED` and no agent effect, and an admitted binding remains
-non-removable after process restart and revision-directory cleanup.
+allocated monotonic sequence; idempotent concurrent admission; restart recovery;
+and no update/delete API. Export one session-level Postgres advisory fence keyed
+by `(hostId, bindingId)` and held on a dedicated physical connection. While the
+fence is held, re-read the active collection and require the exact binding,
+workspace, and default deployment; the active revision may advance only when
+that binding triple remains byte-identical in an additive revision. Then insert
+or idempotently read admission in a transaction and commit before returning the
+fence result; always release in `finally`, and rely on connection loss to release
+an orphaned lock. Every `BEGIN`/`COMMIT`/`ROLLBACK` and advisory lock/unlock
+command executes on that same reserved postgres.js handle; do not use pooled
+Drizzle or a reserved `.begin()` abstraction that can escape the physical
+handle. Failed lock, active recheck, or commit produces
+`D1_ADMISSION_RECORD_FAILED` and no caller effect.
+
+D1-004d1 exposes ledger/core/CLI operations only through an injected,
+nonserializable `AttestedD1DatabaseConnection`. The production CLI requires that
+capability and exact equality between its bound `databaseRef` and the active
+plan; absence or mismatch fails closed. Ref-label equality never opens or
+attests a production connection. D1-005c is the sole production minter, so core
+and CLI remain fail-closed until it lands. This bead adds no provider registry.
+An admitted binding remains non-removable after process restart and revision-
+directory cleanup.
+
+### D1-004d2 — real agent first-effect admission (<= 400 net lines; 30 minutes)
+
+Files: one shared Pi session-service admission decorator; a surgical
+`packages/agent/src/core/createAgent.ts` session-facade delegation; D1 full-app
+composition wiring; explicit slash-command and reload admission hooks; and
+focused route/composition tests.
+
+Deliver: D1 production wiring invokes D1-004d1 once immediately before real
+effect-bearing Pi `createSession`, `deleteSession`, `prompt`, `followUp`,
+`clearQueue`, `interrupt`, and `stop` operations, including the agent session-
+facade paths, plus slash-command execution and agent reload. Session creation
+must admit before any durable session record exists. Slash execution and reload
+count as use even if the
+underlying handler performs no later model call. The effect proceeds only after
+the fence recheck and durable transaction commit. For reload, trusted scope/
+binding authorization may run first, but admission must commit before binding
+reprovision, `beforeReload`, `reloadSession`, or any other reload-route effect.
+Read/list/subscribe paths,
+candidate preload/all-ready, and cache population never admit a binding.
+Admission results are never cached. Generic composition without trusted D1
+scope remains exact. Completeness tests enumerate every current service/facade
+mutation so a newly added effect cannot silently bypass the decorator. In
+particular, `Agent.sessions.create()` must delegate through the admitted
+`runtime.service.createSession` path rather than calling `sessionStore.create`
+directly; prove admission commits before the underlying store write. Facade
+deletion continues through the admitted service path.
+
+### D1-004d3 — direct WorkspaceBridge operation admission (<= 220 net lines; 20 minutes)
+
+Files: the workspace runtime-operation route's existing two-phase authorization
+flow, D1 full-app host callback wiring, and focused completeness/order tests.
+
+Deliver: every direct runtime WorkspaceBridge operation conservatively counts
+as use. After verified claims pass host scope and the operation definition passes
+capability authorization, but before idempotency, runtime/store selection, or
+handler execution, invoke D1-004d1 and require durable commit. Token refresh is
+not an operation and creates no admission row. Prove every current direct
+operation passes this one hook, failures have zero downstream effects, and no
+second route-local ledger/cache exists.
 
 ### D1-004e — recoverable unused-binding rollback fence (<= 350 net lines; 30 minutes)
 
@@ -734,8 +797,9 @@ error enum/type in `apps/full-app/src/server/deployment/d1Plan.ts`; new
 `apps/full-app/src/server/deployment/admissionRollbackJournal.ts`; narrow root-
 command integration; focused real-Postgres and pointer-recovery tests.
 
-Deliver: rollback derives the exact sorted removal set and acquires every D1-004d
-session advisory lock in that order on one dedicated connection. While all are
+Deliver: after D1-004d1/d2/d3, rollback derives the exact sorted removal set and
+acquires every D1-004d1 session advisory lock in that order on one dedicated
+connection. While all are
 held, re-read active state/all admission rows and append a durable `prepared`
 event containing operation id, expected/target revision+digest, and removal set.
 After that transaction commits, publish one atomic pointer, append a `committed`
@@ -908,9 +972,20 @@ integration of the D1-001/002/003/004 seams through the root command wrapper and
 handler is the only local candidate-activation seam.
 
 Deliver: require D1-005b's live `VerifiedD1HostExecution`, read one immutable
-revision, perform N independent P6-R calls, and require each candidate
+revision, and attest its opaque `databaseRef` against the live connection. The
+operator installs one root-owned nonsecret expected identity
+`{ databaseRef, databaseName, serverAddress, serverPort }` for this host, not a
+provider registry. On the same reserved postgres.js handle used for admission,
+query `current_database()`, `inet_server_addr()`, and `inet_server_port()` and
+require an exact match before minting the nonserializable
+`AttestedD1DatabaseConnection` consumed by core and CLI. Production core boot and
+every production CLI destructive-diff read must obtain that capability freshly;
+connection options, caller labels, ref-label equality, or an old result are
+insufficient. Add no provider registry or database-identity table. Then perform
+N independent P6-R calls and require each candidate
 composition digest to equal that binding's resolved/preloaded composition;
-sibling digests may differ. Install the D1-004d lazy admission hook, then preload
+sibling digests may differ. Install the D1-004d1 fence through the complete
+D1-004d2/d3 effect coverage, then preload
 all logical bindings through the root-owned pending pointer/signal, wait for all-
 ready, and atomically publish the additive/landing-only pointer in the stable
 process. Preload/all-ready is not an agent effect and creates no admission row.
@@ -919,9 +994,10 @@ exact stopped ingress container id from the live D1-005b capability; it must not
 recreate or re-resolve the service, and the root-owned Caddyfile digest must still
 match. That start is initial public publication.
 Start failure leaves ingress stopped/unreachable and the ready internal pointer
-retryable; it never exposes a different container. On the first actual agent
-effect, the hook takes D1-004d's shared fence, revalidates that the binding is
-still active, and commits the idempotent row before the effect. Unused-binding
+retryable; it never exposes a different container. On the first D1-004d2 mutation
+or D1-004d3 direct operation, the hook takes D1-004d1's shared fence, revalidates
+that the binding is still active, and commits the idempotent row before the
+operation. Unused-binding
 rollback uses D1-004e's sorted session fences and durable prepare/publish/
 finalize journal; deterministic orders yield either recoverable removal with no
 later row/effect or rejection of the whole rollback after any admission. Invalid pending payload/path/digest or one failed binding

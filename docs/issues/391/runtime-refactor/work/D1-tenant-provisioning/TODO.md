@@ -7,7 +7,7 @@ from this file.**
 
 ## Active multi-agent Docker v1 work order (2026-07-11)
 
-**Dispatch state: D1-R0 and D1-001 through D1-004b2b are landed.** D1-004c1 is
+**Dispatch state: D1-R0 and D1-001 through D1-004c5 are landed.** D1-004d1 is
 active; dispatch the remaining exact implementation beads in
 [`D1-R0-SPEC.md`](./D1-R0-SPEC.md) in order. Never dispatch the historical
 section below.
@@ -42,26 +42,52 @@ section below.
 5. **LANDED — D1-004a2: mounted active reader (#685).** Exact-DAC read-only
    active-to-COMPLETE validation is complete without mutation-store reuse,
    directory enumeration, providers, or secret-value reads.
-6. **ACTIVE — D1-004c1, then c2-c5/d/e: selector authority and admission.**
+6. **LANDED — D1-004c1-c5: complete static selector authority.**
    D1-004a4a landed the bounded landing/root seam (#694); D1-004a4b landed
    loopback readiness, exact owner/process identity checks, active-reader
    construction, and production wiring (#695). D1-004b1 landed workspace and
    signup/default-provisioning fences (#698); D1-004b2a/b2b landed atomic member/
-   account owner guards (#700/#701). D1-004c1-c5 fence invites, embedded/browser,
-   Boring MCP, WorkspaceBridge claims, and managed-agent MCP. The root-approved
+   account owner guards (#700/#701). D1-004c1-c5 landed invites, embedded/browser,
+   Boring MCP, WorkspaceBridge claims, and managed-agent MCP via
+   #704/#705/#708/#711/#713. The root-approved
    exact artifact/command binds this static workspace-selector-bearing route set
    to its inventory revision before admission.
-   Trusted hostname selection grants nothing; D1-004d commits admission before
-   first agent effect, and D1-004e journals recoverable unused-binding rollback
-   under sorted session fences.
-7. **D1-005a/005b/005c — approve, attest, then publish.** First approve the strict
+7. **ACTIVE — D1-004d1/d2/d3, then D1-004e: admission and rollback fences.**
+   D1-004d1 adds the insert/read-only durable ledger, dedicated-connection
+   session fence, exact active binding/workspace/default-deployment recheck, and
+   ledger/core/CLI operations behind injected nonserializable
+   `AttestedD1DatabaseConnection`. A missing capability or configured-
+   `databaseRef` mismatch fails closed, and ref equality never opens production.
+   An additive revision may advance
+   while the exact binding triple stays unchanged. All transaction and advisory
+   lock/unlock commands stay on one reserved postgres.js handle; pooled Drizzle
+   and reserved `.begin()` cannot escape that physical handle. D1-004d2 wires
+   durable session create/delete, including AgentCoreRuntime facade paths, plus
+   Pi prompt/followup/control, slash execution, and reload; D1-004d2 service/
+   facade reads/list/subscribe, preload, and caches do not admit. Its completeness proof enumerates every
+   current mutation. `Agent.sessions.create()` delegates through admitted
+   `runtime.service.createSession` and proves commit before the store write;
+   delete remains service-delegated. Reload admission precedes reprovision,
+   `beforeReload`, `reloadSession`, and every other route effect. D1-004d3 admits every direct WorkspaceBridge
+   operation after scope/operation/capability authorization and before effects;
+   read-like direct operations still admit, while token refresh does not.
+   D1-004e follows all three and journals recoverable
+   unused-binding rollback under sorted session fences. Admission results are
+   never cached, and the ledger has no update/delete API.
+8. **D1-005a/005b/005c — approve, attest, then publish.** First approve the strict
    host environment/security policy; attest the unexposed core and stopped
    ingress; then run N independent P6-R calls, non-effectful preload/all-
-   ready, atomic active publication, ingress-last first boot, lazy first-effect
-   admission versus unused-add rollback under D1-004d/e session fences and an
+   ready, atomic active publication, ingress-last first boot, lazy mutation/direct-operation
+   admission versus unused-add rollback under D1-004d1/d2/d3/e session fences and an
    append-only prepare/publish/finalize journal,
    stable-process N+1 continuity, and fail-closed used-binding removal.
-8. **D1-006 — runbook and EU proof.** Reproduce the landed edge-network overlap
+   D1-005c owns attestation that the production connection matches one root-owned
+   expected `{ databaseRef, databaseName, serverAddress, serverPort }`, using
+   values queried on the reserved live handle. It alone mints fresh
+   `AttestedD1DatabaseConnection` for production core/CLI use; both remain
+   fail-closed until then. No provider registry or database-identity table is
+   introduced.
+9. **D1-006 — runbook and EU proof.** Reproduce the landed edge-network overlap
    guard and exact owned-network reuse on the EU host. Then prove three
    agents/workspaces/hostnames, timing, idempotence, N+1 continuity, rollback
    reproduction, isolation and secret canary. Dedicated VM is configuration
