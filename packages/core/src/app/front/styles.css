@@ -9,6 +9,23 @@
    its plain rules sit after Tailwind's utilities in the cascade. */
 @import "./chatFirst/chatFirstPublicShell.css";
 
+/* Styling for PublicLaunchPages (artifact/calendly/HTML demo tabs on the
+   public launch screen). Imported last for the same cascade-ordering reason
+   as chatFirstPublicShell.css above. */
+@import "./publicLaunchPages.css";
+
+/* Full-bleed app shell: the React root fills the viewport with no scroll
+   chrome of its own (panes manage their own overflow). Every app-shell
+   consumer needs this, so it ships from the package instead of being
+   copy-pasted per app. */
+html,
+body,
+#root {
+  height: 100%;
+  margin: 0;
+  overflow: hidden;
+}
+
 /* Credit notice CTA renders inside the agent subtree. Keep this selector after
    Tailwind + agent globals so it beats both the Button variant colors and
    [data-boring-agent] button color reset. */
