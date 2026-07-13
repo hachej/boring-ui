@@ -61,6 +61,7 @@ export interface CreateAuthOptions {
   logger?: { warn: (obj: Record<string, unknown>, msg: string) => void }
   /** Telemetry sink for auth.signed_up / auth.session_started (defaults to noop). */
   telemetry?: TelemetrySink
+  disableDefaultWorkspaceCreation?: boolean
 }
 
 async function createReplayableRequest(request: Request): Promise<Request> {
@@ -143,6 +144,7 @@ export function createAuth(config: CoreConfig, db: Database, opts?: CreateAuthOp
         workspaceStore: opts.workspaceStore,
         transport,
         logger: opts.logger,
+        disableDefaultWorkspaceCreation: opts.disableDefaultWorkspaceCreation,
       })
     : undefined
 

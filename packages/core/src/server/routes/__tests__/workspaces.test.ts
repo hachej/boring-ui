@@ -17,16 +17,19 @@ const APP_ID = 'test-app'
 let nextWsId = 1
 const workspaces = new Map<string, Workspace>()
 const members = new Map<string, Map<string, MemberRole>>()
+const storeCalls: string[] = []
 
 function resetState() {
   nextWsId = 1
   workspaces.clear()
   members.clear()
+  storeCalls.length = 0
 }
 
 function mockWorkspaceStore(): WorkspaceStore {
   return {
     create: async (userId: string, name: string, appId: string, opts?: { isDefault?: boolean }) => {
+      storeCalls.push('create')
       const id = `ws-${nextWsId++}`
       const ws: Workspace = {
         id,
@@ -44,27 +47,32 @@ function mockWorkspaceStore(): WorkspaceStore {
       return ws
     },
     list: async (userId: string, appId: string) => {
+      storeCalls.push('list')
       return [...workspaces.values()].filter(
         (ws) => ws.appId === appId && !ws.deletedAt && members.get(ws.id)?.has(userId),
       )
     },
     get: async (id: string) => {
+      storeCalls.push(`get:${id}`)
       const ws = workspaces.get(id)
       return ws && !ws.deletedAt ? ws : null
     },
     update: async (id: string, updates: Partial<Pick<Workspace, 'name'>>) => {
+      storeCalls.push(`update:${id}`)
       const ws = workspaces.get(id)
       if (!ws || ws.deletedAt) return null
       if (updates.name) ws.name = updates.name
       return ws
     },
     delete: async (id: string) => {
+      storeCalls.push(`delete:${id}`)
       const ws = workspaces.get(id)
       if (!ws || ws.deletedAt) return { removed: false, code: ERROR_CODES.NOT_FOUND }
       ws.deletedAt = new Date().toISOString()
       return { removed: true }
     },
     getMemberRole: async (wsId: string, userId: string) => {
+      storeCalls.push(`role:${wsId}:${userId}`)
       return members.get(wsId)?.get(userId) ?? null
     },
     isMember: async (wsId: string, userId: string) => {
@@ -90,6 +98,15 @@ beforeAll(async () => {
     } else {
       request.user = null
     }
+    const workspaceId = request.headers['x-test-scope']
+    if (typeof workspaceId === 'string') {
+      request.requestScope = Object.freeze({
+        bindingId: 'binding-test',
+        workspaceId,
+        defaultDeploymentId: 'deployment-test',
+        activeRevision: 'revision-test',
+      })
+    }
   })
 
   await app.register(registerWorkspaceRoutes)
@@ -104,12 +121,13 @@ beforeEach(() => {
   resetState()
 })
 
-function inject(method: string, url: string, userId?: string, payload?: unknown) {
+function inject(method: string, url: string, userId?: string, payload?: unknown, scopeWorkspaceId?: string) {
   const req: { method: string; url: string; headers?: Record<string, string>; payload?: unknown } = {
     method,
     url,
   }
   if (userId) req.headers = { 'x-test-user': userId }
+  if (scopeWorkspaceId) req.headers = { ...req.headers, 'x-test-scope': scopeWorkspaceId }
   if (payload !== undefined) req.payload = payload
   return app.inject(req as any)
 }
@@ -338,6 +356,93 @@ describe('DELETE /api/v1/workspaces/:id', () => {
     expect(res.statusCode).toBe(403)
     expect(res.json().code).toBe(ERROR_CODES.FORBIDDEN)
     expect(workspaces.get(ws.id)?.deletedAt).toBeNull()
+  })
+})
+
+describe('request-scoped workspace authority', () => {
+  it('lists only the bound workspace after membership, without list or create', async () => {
+    const bound = seedWorkspaceWithMembers('Bound', OWNER_ID)
+    seedWorkspaceWithMembers('Other', OWNER_ID)
+
+    const res = await inject('GET', '/api/v1/workspaces', OWNER_ID, undefined, bound.id)
+
+    expect(res.statusCode).toBe(200)
+    expect(res.json().workspaces.map((workspace: Workspace) => workspace.id)).toEqual([bound.id])
+    expect(storeCalls).toEqual([`role:${bound.id}:${OWNER_ID}`, `get:${bound.id}`])
+  })
+
+  it('denies a non-member list before any workspace lookup', async () => {
+    const bound = seedWorkspaceWithMembers('Bound', OWNER_ID)
+
+    const res = await inject('GET', '/api/v1/workspaces', NON_MEMBER_ID, undefined, bound.id)
+
+    expect(res.statusCode).toBe(403)
+    expect(res.json().code).toBe(ERROR_CODES.NOT_MEMBER)
+    expect(storeCalls).toEqual([`role:${bound.id}:${NON_MEMBER_ID}`])
+  })
+
+  it.each(['ws-foreign', 'bad!'])('rejects foreign or malformed id %s before store calls', async (id) => {
+    const bound = seedWorkspaceWithMembers('Bound', OWNER_ID)
+
+    for (const method of ['GET', 'PUT', 'DELETE']) {
+      storeCalls.length = 0
+      const res = await inject(method, `/api/v1/workspaces/${id}`, OWNER_ID, method === 'PUT' ? { name: 'Nope' } : undefined, bound.id)
+      expect(res.statusCode).toBe(421)
+      expect(res.json()).toMatchObject({
+        error: ERROR_CODES.D1_HOST_SCOPE_VIOLATION,
+        code: ERROR_CODES.D1_HOST_SCOPE_VIOLATION,
+        message: ERROR_CODES.D1_HOST_SCOPE_VIOLATION,
+      })
+      expect(storeCalls).toEqual([])
+    }
+  })
+
+  it('rejects create before body validation or store calls', async () => {
+    const bound = seedWorkspaceWithMembers('Bound', OWNER_ID)
+
+    const res = await inject('POST', '/api/v1/workspaces', OWNER_ID, { invalid: true }, bound.id)
+
+    expect(res.statusCode).toBe(403)
+    expect(res.json().code).toBe(ERROR_CODES.D1_MANAGED_WORKSPACE_MUTATION_FORBIDDEN)
+    expect(storeCalls).toEqual([])
+  })
+
+  it('rejects a misbound workspace from another app after membership', async () => {
+    const bound = seedWorkspaceWithMembers('Bound', OWNER_ID)
+    bound.appId = 'other-app'
+
+    const res = await inject('PUT', `/api/v1/workspaces/${bound.id}`, OWNER_ID, { name: 'Nope' }, bound.id)
+
+    expect(res.statusCode).toBe(421)
+    expect(res.json().code).toBe(ERROR_CODES.D1_HOST_SCOPE_VIOLATION)
+    expect(storeCalls).toEqual([`role:${bound.id}:${OWNER_ID}`, `get:${bound.id}`])
+  })
+
+  it('rejects bound delete after owner membership and before delete effects', async () => {
+    const bound = seedWorkspaceWithMembers('Bound', OWNER_ID)
+
+    const res = await inject('DELETE', `/api/v1/workspaces/${bound.id}`, OWNER_ID, undefined, bound.id)
+
+    expect(res.statusCode).toBe(403)
+    expect(res.json().code).toBe(ERROR_CODES.D1_MANAGED_WORKSPACE_MUTATION_FORBIDDEN)
+    expect(storeCalls).toEqual([`role:${bound.id}:${OWNER_ID}`, `get:${bound.id}`])
+  })
+
+  it('keeps bound rename and generic lookup order unchanged', async () => {
+    const bound = seedWorkspaceWithMembers('Bound', OWNER_ID)
+    const scoped = await inject('PUT', `/api/v1/workspaces/${bound.id}`, OWNER_ID, { name: 'Renamed' }, bound.id)
+    expect(scoped.statusCode).toBe(200)
+    expect(storeCalls).toEqual([`role:${bound.id}:${OWNER_ID}`, `get:${bound.id}`, `update:${bound.id}`])
+
+    storeCalls.length = 0
+    const generic = await inject('GET', `/api/v1/workspaces/${bound.id}`, OWNER_ID)
+    expect(generic.statusCode).toBe(200)
+    expect(storeCalls).toEqual([
+      `get:${bound.id}`,
+      `role:${bound.id}:${OWNER_ID}`,
+      `get:${bound.id}`,
+      `role:${bound.id}:${OWNER_ID}`,
+    ])
   })
 })
 

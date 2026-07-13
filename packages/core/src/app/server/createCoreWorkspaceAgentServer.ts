@@ -47,6 +47,7 @@ import {
   createAuth,
   type BetterAuthInstance,
 } from '../../server/auth/index.js'
+import { REQUEST_SCOPE_WORKSPACE_HEADER } from '../../server/auth/requestWorkspaceScope.js'
 import {
   createCoreApp,
   registerRoutes,
@@ -513,10 +514,16 @@ async function registerAuthProxy(
     const body = encodeAuthRequestBody(request)
     const targetUrl = new URL(request.url, app.config.auth.url).toString()
 
+    const authHeaders = toHeaders(request.headers)
+    authHeaders.delete(REQUEST_SCOPE_WORKSPACE_HEADER)
+    if (request.requestScope) {
+      authHeaders.set(REQUEST_SCOPE_WORKSPACE_HEADER, encodeURIComponent(request.requestScope.workspaceId))
+    }
+
     const response = await app.auth.handler(
       new Request(targetUrl, {
         method: request.method,
-        headers: toHeaders(request.headers),
+        headers: authHeaders,
         body: body as BodyInit | undefined,
       }),
     )
@@ -662,7 +669,12 @@ async function createCoreRuntime(config: CoreConfig, customTelemetry?: Telemetry
       ? 'db-env'
       : 'noop-env'
   app.log.debug({ telemetry: { source: telemetrySource } }, 'resolved telemetry sink')
-  const auth = createAuth(config, db, { workspaceStore, logger: app.log, telemetry })
+  const auth = createAuth(config, db, {
+    workspaceStore,
+    logger: app.log,
+    telemetry,
+    disableDefaultWorkspaceCreation: requestScopeResolver !== undefined,
+  })
 
   app.decorate('db', db)
   app.decorate('auth', auth)

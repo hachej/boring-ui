@@ -3,6 +3,7 @@ import type { CoreConfig } from '../../shared/types.js'
 import type { WorkspaceStore } from '../app/types.js'
 import type { MailTransport } from '../mail/transport.js'
 import { renderWelcome } from '../mail/templates/index.js'
+import { REQUEST_SCOPE_WORKSPACE_HEADER } from './requestWorkspaceScope.js'
 
 export interface PostSignupUser {
   id: string
@@ -32,6 +33,7 @@ export interface PostSignupHookDeps {
   workspaceStore: WorkspaceStore
   transport: MailTransport | null
   logger?: { warn: (obj: Record<string, unknown>, msg: string) => void }
+  disableDefaultWorkspaceCreation?: boolean
 }
 
 function readHeader(ctx: PostSignupContext | null, name: string): string | null {
@@ -43,8 +45,19 @@ function readHeader(ctx: PostSignupContext | null, name: string): string | null 
   return req?.headers?.get?.(name) ?? null
 }
 
+function readRequestWorkspaceId(ctx: PostSignupContext | null): string | null {
+  const encoded = readHeader(ctx, REQUEST_SCOPE_WORKSPACE_HEADER)
+  if (!encoded) return null
+  try {
+    const decoded = decodeURIComponent(encoded)
+    return decoded && encodeURIComponent(decoded) === encoded ? decoded : null
+  } catch {
+    return null
+  }
+}
+
 export function createPostSignupHook(deps: PostSignupHookDeps) {
-  const { config, workspaceStore, transport, logger } = deps
+  const { config, workspaceStore, transport, logger, disableDefaultWorkspaceCreation } = deps
 
   return async function postSignupHook(
     user: PostSignupUser & Record<string, unknown>,
@@ -52,11 +65,14 @@ export function createPostSignupHook(deps: PostSignupHookDeps) {
   ): Promise<void> {
     const ctx = rawCtx as PostSignupContext | null
     const inviteToken = readHeader(ctx, 'x-invite-token')
+    const requestWorkspaceId = disableDefaultWorkspaceCreation
+      ? readRequestWorkspaceId(ctx)
+      : null
     let inviteAccepted = false
 
     if (inviteToken) {
       try {
-        const failureCode = await tryAcceptInvite(user, inviteToken)
+        const failureCode = await tryAcceptInvite(user, inviteToken, requestWorkspaceId)
         if (failureCode) {
           logger?.warn(
             { userId: user.id, email: user.email, code: failureCode },
@@ -79,7 +95,7 @@ export function createPostSignupHook(deps: PostSignupHookDeps) {
       }
     }
 
-    if (!inviteAccepted) {
+    if (!inviteAccepted && !disableDefaultWorkspaceCreation) {
       await workspaceStore.create(user.id, 'Default workspace', config.appId, { isDefault: true })
     }
 
@@ -108,11 +124,13 @@ export function createPostSignupHook(deps: PostSignupHookDeps) {
   async function tryAcceptInvite(
     user: PostSignupUser,
     rawToken: string,
+    requestWorkspaceId: string | null,
   ): Promise<InviteFailureCode | null> {
     const tokenHash = createHash('sha256').update(rawToken).digest('hex')
     const invite = await workspaceStore.getInviteByTokenHash(tokenHash)
 
     if (!invite) return 'invite_not_found'
+    if (disableDefaultWorkspaceCreation && invite.workspaceId !== requestWorkspaceId) return 'invite_not_found'
     if (invite.lockedUntil && new Date(invite.lockedUntil) > new Date()) return 'invite_not_found'
     if (invite.acceptedAt) return 'invite_already_accepted'
     if (new Date(invite.expiresAt) <= new Date()) return 'invite_expired'
