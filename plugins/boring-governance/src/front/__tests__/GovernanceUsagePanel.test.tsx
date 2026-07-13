@@ -30,7 +30,10 @@ describe('GovernanceUsagePanel', () => {
   it('renders role, aggregate cap, context access, embedded meters, and context path chips', async () => {
     render(<GovernanceUsagePanel fetchUsageSummary={async () => summary()} />)
 
-    await waitFor(() => expect(screen.getByText('Usage limits')).toBeInTheDocument())
+    // Panel header renders immediately; the embedded meters resolve async, so
+    // wait on their content (qwen) to guarantee the whole panel has settled.
+    await waitFor(() => expect(screen.getByText('qwen')).toBeInTheDocument())
+    expect(screen.getByText('Usage limits')).toBeInTheDocument()
 
     // Role + aggregate cap stat cards.
     expect(screen.getByText('Role')).toBeInTheDocument()
@@ -43,8 +46,8 @@ describe('GovernanceUsagePanel', () => {
 
     // Embedded meters reused from GovernanceUsageMeters.
     expect(screen.getByText('Model usage')).toBeInTheDocument()
-    expect(screen.getByText('qwen')).toBeInTheDocument()
-    expect(screen.getByRole('progressbar')).toBeInTheDocument()
+    // Aggregate + per-model meter rows each render a progressbar.
+    expect(screen.getAllByRole('progressbar').length).toBeGreaterThan(0)
 
     // Context-path chips.
     expect(screen.getByText('company/**')).toBeInTheDocument()
