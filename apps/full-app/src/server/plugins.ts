@@ -23,7 +23,7 @@ export const FULL_APP_DEFAULT_PLUGIN_PACKAGE_DESCRIPTORS = Object.freeze(FULL_AP
 export const FULL_APP_GOVERNANCE_PLUGIN_DESCRIPTOR = Object.freeze({
   id: 'full-app-governance',
   version: '0.1.81',
-  contentDigest: 'sha256:1320434bc428d5f7f987a555e274d48e35ba6127e2f9ea6f353af04b4b1f7ccf',
+  contentDigest: 'sha256:ebc7e5b2cb8d83b158b8bed4ed8a118368765ff68817c81b5f98463a72e19f7f',
 } satisfies StableContributionDescriptor)
 
 export const FULL_APP_BORING_MCP_PLUGIN_DESCRIPTOR = Object.freeze({
