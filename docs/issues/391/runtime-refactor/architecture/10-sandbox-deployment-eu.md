@@ -87,10 +87,11 @@ principal belongs to another workspace. The D1 workspace is marked managed and
 only the fenced D1 lifecycle may remove it. This optional scope must not change
 generic multi-workspace hosts when absent. The same optional scope reaches the
 existing post-signup hook: dedicated mode skips personal default-workspace
-creation and grants no membership, while existing invite acceptance is
-unchanged. The same managed-workspace guard blocks account deletion or member
-ownership mutation that would delete, transfer, or orphan the workspace outside
-the fenced D1 lifecycle. This is workspace provisioning/lifecycle scope, not a
+creation and grants no membership unless the invite names the exact bound
+workspace. A scoped foreign or invalid invite fails without default creation;
+generic invite behavior remains unchanged. The same managed-workspace guard
+blocks every existing-owner account deletion or owner-role removal outside the
+fenced D1 lifecycle, while non-owner account deletion remains available. This is workspace provisioning/lifecycle scope, not a
 second auth policy.
 
 D1 endpoint publication is ordered after the isolation surface. The staged host

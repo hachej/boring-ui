@@ -23,6 +23,18 @@ Dispatch only these verification slices:
    workspace/default bindings, roots/runtime, composition, definition/
    deployment, and secret ref identities only; reproduce all P6-R digests and
    never record secret values or volatile readiness in desired identity.
+   Prove spoofed and direct-auth scope cannot reach signup; foreign/malformed
+   workspace paths return generic 421 before store access; membership precedes
+   lookup; and the bound member list has exactly one workspace. Only an exact-
+   bound post-signup invite succeeds; scoped foreign/invalid invites set
+   `boring_invite_failed=invite_not_found` and create no default workspace;
+   generic invalid invites retain the failure cookie plus default creation.
+   Public invite resolve/accept rejects foreign scope; bound rename and generic
+   workspace behavior remain unchanged. Prove every scoped existing-owner
+   demotion/removal/account deletion fails before mutation with
+   `D1_MANAGED_WORKSPACE_MUTATION_FORBIDDEN`, while non-owner account deletion
+   removes only that member's data/membership and editor/viewer removal, owner
+   add/promotion, and generic ownership/account behavior still work.
    The same proof records isolated-profile sibling filesystem/process denial
    for the shared N-workspace host. Trusted-direct is accepted only for local
    development or a single-workspace dedicated composition and never as this
@@ -189,8 +201,8 @@ Match [`../../INDEX.md`](../../INDEX.md) Phase 8 (v2):
   full-app MCP, runtime-plugin/plugin-front, a P3 scoped-route fixture with
   explicit and indirect foreign session/project ids, pane-status, and
   WorkspaceBridge; prove a raw-route plugin fails D1 readiness before mount.
-  Prove creator/last-owner account deletion and demotion cannot remove or
-  transfer the managed workspace outside D1.
+  Prove every existing-owner account deletion and owner demotion/removal fails
+  before mutation; non-owner account deletion removes no managed workspace.
   Verify the target loaded the pinned host-app artifact and exact P3 activated-
   plugin snapshot; disable or alter one plugin contribution and prove it cannot
   reuse the prior desired/resolved identity.

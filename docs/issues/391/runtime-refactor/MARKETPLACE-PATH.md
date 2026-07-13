@@ -39,7 +39,9 @@ the closed [#549](https://github.com/hachej/boring-ui/pull/549)/
 [#685](https://github.com/hachej/boring-ui/pull/685), canonical ingress landed
 via [#690](https://github.com/hachej/boring-ui/pull/690), and trusted host scope
 landed via [#692](https://github.com/hachej/boring-ui/pull/692). D1-004a4a is
-active, followed by D1-004a4b;
+landed via [#694](https://github.com/hachej/boring-ui/pull/694), and D1-004a4b
+landed via [#695](https://github.com/hachej/boring-ui/pull/695). D1-004b1 is
+active, followed by D1-004b2;
 the AR1 Lane W share-entry/deep-link/resource slices are next after priority 1.
 
 ## Phase 2 — Factory v1

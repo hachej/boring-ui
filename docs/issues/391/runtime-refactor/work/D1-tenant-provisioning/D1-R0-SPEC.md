@@ -417,8 +417,11 @@ mounted exact-DAC active-collection reader
 canonical ingress artifact and real-Docker header proof
 ([#690](https://github.com/hachej/boring-ui/pull/690)). D1-004a3b landed exact
 raw-header authority and trusted-hop scope enforcement
-([#692](https://github.com/hachej/boring-ui/pull/692)). D1-004a4a is active;
-D1-004a4b through D1-006 remain un-landed.
+([#692](https://github.com/hachej/boring-ui/pull/692)). D1-004a4a landed the
+bounded landing/root seam ([#694](https://github.com/hachej/boring-ui/pull/694));
+D1-004a4b landed readiness and production activation
+([#695](https://github.com/hachej/boring-ui/pull/695)). D1-004b1 is active;
+D1-004b2 through D1-006 remain un-landed.
 
 ### D1-001 — plan and composition identity (<= 400 net lines; 25 minutes)
 
@@ -523,7 +526,8 @@ Deliver: normalize one direct authority or one canonical `X-Forwarded-Host`
 from the exact trusted peer/chain against the active site map and attach
 `D1WorkspaceScope` before authentication. Reject RFC `Forwarded`, duplicate or
 ambiguous forwarded-host values, and every untrusted forwarded host; hostname
-grants nothing. Membership/CRUD enforcement remains D1-004b.
+grants nothing. Membership and workspace CRUD enforcement remain D1-004b1;
+destructive ownership and account guards remain D1-004b2.
 
 ### D1-004a4a — landing and root seam (<= 400 net lines; 25 minutes)
 
@@ -561,21 +565,47 @@ active revision, desired digest, and sorted binding-id readiness, or redacted
 while readiness remains redacted 503. Generic mode stays byte-for-byte
 unchanged. No membership handoff, Compose publication, or runsc decision.
 
-### D1-004b — workspace authority fences (<= 400 net lines; 30 minutes)
+### D1-004b1 — workspace authority and signup fences (<= 400 net lines; 30 minutes)
 
-Files: one shared optional scope contract in core app server types; surgical
-updates/tests in `workspaces.ts`, `postSignupHook.ts`, managed-workspace
-membership/account-deletion paths.
+Files: one narrow request-workspace helper; surgical updates/tests in
+`workspaces.ts`, `requireWorkspaceMember.ts`, `postSignupHook.ts`, auth proxy/
+composition, and stable errors.
 
-Deliver: member-only bound list; create/foreign switch/delete/default auto-
-provision denial; operator-owned managed lifecycle. Preserve generic-host
-behavior byte-for-byte at the public contract.
+Deliver: under optional trusted request scope, reject a foreign or malformed
+workspace path as generic 421 before store/effects; authorize membership before
+workspace lookup; list exactly the one bound workspace; deny create and bound
+delete before validation/effects; never auto-provision a default workspace.
+Propagate the already-resolved request workspace into Better Auth/post-signup
+through one reserved internal header: delete every caller-supplied value at the
+auth proxy boundary, then install only a canonical encoding of the trusted
+scope. Prove spoofed and direct-auth variants cannot synthesize scope. This
+bead changes post-signup invite handling only; public invite resolve/accept
+selectors remain in the D1-004c inventory. Post-signup accepts an invite only
+for the exact bound workspace. A scoped foreign or invalid invite sets the
+existing non-enumerating `boring_invite_failed=invite_not_found` cookie and
+creates no default workspace; generic invalid-invite behavior remains the
+existing failure cookie plus default creation. PUT rename and generic-host
+behavior remain unchanged. No schema/store change or policy framework.
+
+### D1-004b2 — destructive ownership and account guards (<= 250 net lines; 25 minutes)
+
+Files: surgical updates/tests in `members.ts` and core account routes.
+
+Deliver: on a scoped workspace, deny demotion/removal of an existing owner
+before update/removal; preserve editor/viewer removal and owner addition/
+promotion. Deny account deletion for every existing scoped owner before
+mutation, even when another owner remains; preserve non-owner account deletion
+that removes only that member's data/membership. Use only generic
+`D1_MANAGED_WORKSPACE_MUTATION_FORBIDDEN`; preserve generic-host ownership and
+account-deletion behavior. Operator lifecycle remains the local OS-authorized
+D1 command path.
 
 ### D1-004c — remaining selector conformance (<= 400 net lines per PR; 25 minutes)
 
-Inventory full-app agent/MCP/plugin/pane/WorkspaceBridge selectors first. Split
-one PR per route family if the diff exceeds the budget. Every selector rejects
-a foreign caller value before lookup/effects and derives default deployment
+Inventory public invite resolve/accept plus full-app agent/MCP/plugin/pane/
+WorkspaceBridge selectors first. Split one PR per route family if the diff
+exceeds the budget. Every selector rejects a foreign workspace before lookup/
+effects; only agent/deployment-bearing selectors derive the default deployment
 from scope. Do not introduce a generic policy framework.
 
 ### D1-004d — durable admission ledger (<= 300 net lines; 20 minutes)
