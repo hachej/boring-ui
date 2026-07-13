@@ -1020,7 +1020,10 @@ micro-spec and AC1-T2 (the honest open item).
   - **Build.** Store an absolute deadline and stable `inputRequestId`; answer
     idempotency is keyed by `(taskId,inputRequestId,responseId)`. A bounded boot
     recovery scan and every read/answer evaluate expired deadlines — no background
-    scheduler is required. Deployed hosts require the file-backed store under
+    scheduler is required. While an in-process parent is actively awaiting input,
+    its ephemeral timer may reject that waiting promise at the same durable
+    deadline; it is an optimization only, and restart/recovery remains governed by
+    the durable record. Deployed hosts require the file-backed store under
     `BORING_AGENT_SESSION_ROOT`; in-memory storage is explicit local-dev/test
     only. Check depth and full-chain cycle guards before session allocation,
     projection, metering, or agent effect.
@@ -1763,3 +1766,41 @@ Four proposals (the reviewer's own close says "these four changes").
 **Escalated to owner (0).** No proposal argued to change a locked DECISION; none
 needed escalation. P1's engineering signal is captured without disturbing the
 locked AC1-D-SPEC latitude.
+
+### R3 (Gemini 3.5 Flash) — 1 applied, 0 somewhat, 3 rejected, 0 escalated
+
+**Applied wholeheartedly (1):**
+
+- **Active in-process deadline wake-up for AC1-D.** While a live parent is
+  awaiting an `input-required` response, an ephemeral timer may reject that
+  waiting promise at the already-durable absolute deadline. This closes an active
+  process-resource leak without adding a persistent scheduler: the durable task
+  record remains authoritative, and boot/read/answer recovery still performs the
+  terminal transition after any restart.
+
+**Rejected (3):**
+
+- **POSIX `flock` as the T1 single-writer mechanism.** The requirement to reject
+  a second writer already stands, but prescribing `flock` introduces an
+  unverified platform/native-dependency choice and a new error-code/API surface
+  before the host lifecycle seam selects it. SQLite configuration and the D1
+  single-core deployment topology remain the current contract; an implementation
+  may propose a portable startup fence with evidence rather than silently making
+  POSIX locking normative.
+- **`d1Command --force-clear-journal <op-id>`.** An operator command that marks a
+  poisoned rollback operation `aborted` or `committed` would bypass the plan's
+  fixed recovery tuple and append-only admission/rollback authority. It risks
+  converting a fail-closed publication mismatch into an unsafe manual assertion.
+  The runbook may diagnose and execute the defined recovery protocol, but an
+  exception path needs a separately reviewed owner/DECISION-level operational
+  design, not a priority-1 escape hatch.
+- **AR1 destination MIME/extension ingress filter.** This invents a generic
+  workspace policy/inspection enforcement path with no named authority, consumer,
+  policy source, or acceptance evidence. AR1's present cryptographic, quota, and
+  destination-local authorization contract is intentional; a concrete product
+  policy may later introduce a narrow consumer-backed validation bead.
+
+**Escalated to owner (0).** The active-wait optimization does not alter a locked
+choice. The other proposals either require new unproven authority or conflict
+with fail-closed/boring-by-default constraints, so no owner ruling is needed to
+continue the current plan.
