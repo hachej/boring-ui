@@ -325,7 +325,7 @@ describe('createCoreWorkspaceAgentServer telemetry wiring', () => {
         activeRevision: 'revision-bound',
       }),
     })
-    const handler = vi.fn(async () => new Response('ok'))
+    const handler = vi.fn(async (_request: Request) => new Response('ok'))
     app.auth.handler = handler as typeof app.auth.handler
 
     try {
@@ -336,8 +336,9 @@ describe('createCoreWorkspaceAgentServer telemetry wiring', () => {
         payload: {},
       })
 
-      const forwarded = handler.mock.calls[0]?.[0] as Request
-      expect(forwarded.headers.get('x-boring-internal-request-workspace')).toBe(encodeURIComponent('workspace-保险'))
+      const forwarded = handler.mock.calls[0]?.[0]
+      expect(forwarded).toBeInstanceOf(Request)
+      expect(forwarded?.headers.get('x-boring-internal-request-workspace')).toBe(encodeURIComponent('workspace-保险'))
     } finally {
       await app.close()
     }
