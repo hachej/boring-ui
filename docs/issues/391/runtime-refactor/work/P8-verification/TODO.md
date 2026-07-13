@@ -39,9 +39,14 @@ Dispatch only these verification slices:
    add/promotion, and generic ownership/account behavior still work.
    Exercise all c1-c5 boundaries: invite's sole read-only hash lookup, embedded/
    pane selector conflicts, Boring MCP global auth and unauthenticated 401 before
-   the route limiter, generic-exact limiting, and scoped `request.user.id` + frozen
-   `requestScope.workspaceId` charging of every authenticated valid/invalid/
-   foreign/nonmember request before admission with no raw-selector key or bypass;
+   route admission and generic-exact behavior. Prove the four POSTs keep their
+   existing limiters, while `GET /sources` uses the same Fastify route mechanism
+   and skips unscoped requests. All five scoped routes must charge every
+   authenticated valid/malformed/conflicting/foreign/nonmember request by
+   `request.user.id` + frozen `requestScope.workspaceId` before the shared first-
+   preHandler admission and any workspace/member/user-store/provider/transport
+   effect, with no manual D1 limiter, second budget store, or raw-selector key/
+   bypass;
    signed Bridge claims scope-
    asserted before registry/definition with HTTP 421 before runtime/refresh
    effects, and managed-agent MCP trusted scope/default dispatch. Prove any
