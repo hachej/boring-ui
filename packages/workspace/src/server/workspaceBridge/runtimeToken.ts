@@ -56,6 +56,11 @@ export interface VerifyWorkspaceBridgeRuntimeTokenOptions {
   requiredCapabilities?: readonly string[]
 }
 
+export type VerifyWorkspaceBridgeRuntimeTokenClaimsOptions = Omit<
+  VerifyWorkspaceBridgeRuntimeTokenOptions,
+  "requiredCapabilities"
+>
+
 export interface VerifyWorkspaceBridgeRuntimeRefreshTokenOptions {
   secret: string
   nowMs?: number
@@ -64,6 +69,10 @@ export interface VerifyWorkspaceBridgeRuntimeRefreshTokenOptions {
 export interface VerifiedWorkspaceBridgeRuntimeToken {
   claims: WorkspaceBridgeRuntimeTokenClaims
   authContext: BridgeAuthContext
+}
+
+export interface VerifiedWorkspaceBridgeRuntimeTokenClaims {
+  claims: WorkspaceBridgeRuntimeTokenClaims
 }
 
 export interface VerifiedWorkspaceBridgeRuntimeRefreshToken {
@@ -97,22 +106,38 @@ export function verifyWorkspaceBridgeRuntimeToken(
   token: string,
   options: VerifyWorkspaceBridgeRuntimeTokenOptions,
 ): VerifiedWorkspaceBridgeRuntimeToken {
+  return authorizeWorkspaceBridgeRuntimeToken(
+    verifyWorkspaceBridgeRuntimeTokenClaims(token, options),
+    options.requiredCapabilities,
+  )
+}
+
+export function verifyWorkspaceBridgeRuntimeTokenClaims(
+  token: string,
+  options: VerifyWorkspaceBridgeRuntimeTokenClaimsOptions,
+): VerifiedWorkspaceBridgeRuntimeTokenClaims {
   assertUsableSecret(options.secret)
   const claims = parseAndVerifyToken(token, options.secret)
   const now = Math.floor((options.nowMs ?? Date.now()) / 1000)
   ensureLiveTokenClaims(claims, now, WORKSPACE_BRIDGE_TOKEN_AUDIENCE, "Runtime bridge token")
 
-  const missingCapability = (options.requiredCapabilities ?? []).find(
-    (capability) => !claims.capabilities.includes(capability),
+  return { claims: claims as WorkspaceBridgeRuntimeTokenClaims }
+}
+
+export function authorizeWorkspaceBridgeRuntimeToken(
+  verified: VerifiedWorkspaceBridgeRuntimeTokenClaims,
+  requiredCapabilities: readonly string[] = [],
+): VerifiedWorkspaceBridgeRuntimeToken {
+  const missingCapability = requiredCapabilities.find(
+    (capability) => !verified.claims.capabilities.includes(capability),
   )
   if (missingCapability) {
     throw bridgeTokenError(WorkspaceBridgeErrorCode.CapabilityDenied, "Runtime bridge token is missing a required capability")
   }
 
-  const runtimeClaims = claims as WorkspaceBridgeRuntimeTokenClaims
   return {
-    claims: runtimeClaims,
-    authContext: runtimeClaimsToBridgeAuthContext(runtimeClaims),
+    claims: verified.claims,
+    authContext: runtimeClaimsToBridgeAuthContext(verified.claims),
   }
 }
 

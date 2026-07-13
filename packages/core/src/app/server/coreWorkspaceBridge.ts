@@ -43,6 +43,7 @@ export interface CoreWorkspaceBridgeOptions {
   corsOrigins: readonly string[]
   validateWorkspaceId: (value: string) => string
   agentSessionId: (request: FastifyRequest) => string | undefined
+  assertRuntimeWorkspaceScope?: (request: FastifyRequest, workspaceId: string) => void | Promise<void>
 }
 
 export interface CoreWorkspaceBridge {
@@ -72,6 +73,7 @@ export interface CoreWorkspaceBridge {
 export function createCoreWorkspaceBridge(options: CoreWorkspaceBridgeOptions): CoreWorkspaceBridge {
   const { resolveWorkspaceId, workspaceStore, validateWorkspaceId, agentSessionId } = options
   const admittedBrowserWorkspaces = new WeakMap<FastifyRequest, string>()
+  const admittedRuntimeWorkspaces = new WeakMap<FastifyRequest, string>()
 
   const bridges = new Map<string, WorkspaceBridge>()
   const getBridge = (workspaceId: string): WorkspaceBridge => {
@@ -106,6 +108,8 @@ export function createCoreWorkspaceBridge(options: CoreWorkspaceBridgeOptions): 
   }
 
   const resolveBridgeWorkspaceId = async (request: FastifyRequest): Promise<string> => {
+    const admittedRuntimeWorkspace = admittedRuntimeWorkspaces.get(request)
+    if (admittedRuntimeWorkspace) return admittedRuntimeWorkspace
     const authHeader = request.headers.authorization
     if (options.workspaceBridge?.runtimeTokenSecret && typeof authHeader === 'string' && authHeader.startsWith('Bearer ')) {
       return verifyWorkspaceBridgeRuntimeToken(authHeader.slice('Bearer '.length), {
@@ -203,6 +207,7 @@ export function createCoreWorkspaceBridge(options: CoreWorkspaceBridgeOptions): 
       : undefined
 
   const registerHttpRoutes = async (app: FastifyInstance): Promise<void> => {
+    const assertRuntimeWorkspaceScope = options.assertRuntimeWorkspaceScope
     await app.register(async (bridgeApp) => {
       bridgeApp.addHook('preHandler', async (request) => {
         const pathname = request.url.split('?')[0]
@@ -220,6 +225,12 @@ export function createCoreWorkspaceBridge(options: CoreWorkspaceBridgeOptions): 
         getIdempotencyStore: async (request) => getRuntime(await resolveBridgeWorkspaceId(request)).idempotencyStore,
         runtimeTokenSecret: options.workspaceBridge?.runtimeTokenSecret,
         runtimeRefreshTokenSecret: options.workspaceBridge?.runtimeRefreshTokenSecret,
+        assertRuntimeWorkspaceScope: assertRuntimeWorkspaceScope
+          ? async (request, claims) => {
+              await assertRuntimeWorkspaceScope(request, claims.workspaceId)
+              admittedRuntimeWorkspaces.set(request, claims.workspaceId)
+            }
+          : undefined,
         getRuntimeRefreshTokenStore: (_request, claims) => getRuntime(claims.workspaceId).refreshTokenStore,
         getOwnerWorkspaceId: async (request) => await resolveBridgeWorkspaceId(request),
         browserAuthPolicy: createBrowserBridgeAuthPolicy({
