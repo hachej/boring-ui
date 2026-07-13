@@ -152,6 +152,23 @@ export {
   WORKSPACE_COMMAND_NOTIFY_EVENT,
 } from './agentPluginEvents'
 export type { CommandNotifyPayload } from './agentPluginEvents'
+export {
+  OpaqueShareLocatorIdSchema,
+  ShareEntryProvenanceSchema,
+  ShareEntryV1Schema,
+  ShareEntryErrorCode,
+  ShareEntryValidationError,
+  InMemoryShareEntryStore,
+  resolveShareEntry,
+} from './share-entry'
+export type {
+  ShareEntryProvenance,
+  ShareEntryV1,
+  CreateShareEntryInput,
+  ShareEntryStore,
+  ShareEntryTombstone,
+  ShareEntryResolution,
+} from './share-entry'
 
 export type {
   BoringChatMessage,
