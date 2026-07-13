@@ -13,6 +13,7 @@ import {
   type CompiledAgentBundle,
   type Sha256Digest,
 } from '../../shared/agent-definition'
+import { canonicalStringify } from '../../shared/digest'
 import {
   AgentDefinitionErrorCode,
   AgentDeploymentErrorCode,
@@ -50,7 +51,7 @@ export async function createResolvedAgentDigest(input: ResolvedAgentDigestInput)
     const digestField = typeof field === 'string' ? field : 'workspaceId'
     throw invalidDeployment(digestField, `${digestField} is invalid`)
   }
-  return createAgentAssetDigest(JSON.stringify({ domain: RESOLVED_AGENT_DIGEST_DOMAIN, ...parsed.data }))
+  return createAgentAssetDigest(canonicalStringify({ domain: RESOLVED_AGENT_DIGEST_DOMAIN, ...parsed.data }))
 }
 
 export interface ResolvedAgent {
