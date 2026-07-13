@@ -107,12 +107,35 @@ describe('GovernanceService.getUsageSummary', () => {
 
   it('returns an empty summary when governance is disabled', async () => {
     const summary = await service(userPolicy(), false).getUsageSummary(user, reader({}))
-    expect(summary).toEqual({ enabled: false, currency: 'EUR', models: [], aggregate: null })
+    expect(summary).toEqual({
+      enabled: false, currency: 'EUR', models: [], aggregate: null,
+      role: null, aggregateCapMicros: null, companyContextAccess: 'none', companyContextRules: [],
+    })
   })
 
   it('returns an empty enabled summary for an unknown / unverified caller', async () => {
     const summary = await service().getUsageSummary({ id: 'x', email: 'nobody@example.com', emailVerified: true }, reader({}))
-    expect(summary).toEqual({ enabled: true, currency: 'EUR', models: [], aggregate: null })
+    expect(summary).toEqual({
+      enabled: true, currency: 'EUR', models: [], aggregate: null,
+      role: null, aggregateCapMicros: null, companyContextAccess: 'none', companyContextRules: [],
+    })
+  })
+
+  it('includes role, aggregate cap, and context access + rules for a governed user', async () => {
+    const policy = userPolicy({ companyContext: { allow: ['company/**', 'shared/handbook.md'] } })
+    const summary = await service(policy).getUsageSummary(user, reader({}))
+    expect(summary.role).toBe('user')
+    expect(summary.aggregateCapMicros).toBe(20_000_000)
+    expect(summary.companyContextAccess).toBe('readonly')
+    expect(summary.companyContextRules).toEqual(['company/**', 'shared/handbook.md'])
+  })
+
+  it('reports readwrite context access for an admin and null aggregate cap when unset', async () => {
+    const policy = userPolicy({ role: 'admin', budgets: { monthlyEur: null, monthlyMicros: null } })
+    const summary = await service(policy).getUsageSummary(user, reader({}))
+    expect(summary.role).toBe('admin')
+    expect(summary.aggregateCapMicros).toBeNull()
+    expect(summary.companyContextAccess).toBe('readwrite')
   })
 
   it('derives resetsAt from the reader period boundary (not hardcoded)', async () => {

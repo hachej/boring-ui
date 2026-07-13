@@ -16,7 +16,7 @@ import {
 } from '@hachej/boring-core/front'
 import '@hachej/boring-core/app/front/styles.css'
 import './app.css'
-import { GovernanceUsageMeters, createGovernanceCompanyAdmin } from '@hachej/boring-governance/front'
+import { GovernanceUsagePanel, createGovernanceCompanyAdmin } from '@hachej/boring-governance/front'
 import { BoringMcpSourcesOverlay } from '@hachej/boring-mcp/front'
 import { PublicHeroDescription } from './PublicHeroDescription'
 import { fullAppBoringMcpOptions } from './boringMcp'
@@ -61,14 +61,15 @@ const AccountSettingsPage = () => {
   return (
     <UserSettingsPage
       extraSections={[
-        // Governed model-usage meters. The component self-fetches from the
+        // Full governed-usage panel (role + aggregate cap + company-context
+        // access + per-model usage meters + context paths). Self-fetches from the
         // governance usage-summary route and renders nothing when governance is
         // disabled, so this section is inert on non-governed deployments.
         {
           id: 'usage',
-          navLabel: 'Model usage',
-          navDescription: 'Consumption vs. caps',
-          content: <GovernanceUsageMeters className="max-w-xl" />,
+          navLabel: 'Usage limits',
+          navDescription: 'Role, caps, and consumption',
+          content: <GovernanceUsagePanel className="max-w-xl" />,
         },
         ...(hidden
           ? []

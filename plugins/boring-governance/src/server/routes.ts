@@ -20,7 +20,7 @@ export function governanceRoutes(service: GovernanceService, options: Governance
       const user = request.user ?? null
       const reader = options.getUsageReader?.()
       if (!user || !reader) {
-        return { enabled: service.isEnabled(), currency: 'EUR' as const, models: [], aggregate: null }
+        return { ...service.usageSummaryMeta(user), currency: 'EUR' as const, models: [], aggregate: null }
       }
       return service.getUsageSummary({ id: user.id, email: user.email, emailVerified: user.emailVerified }, reader)
     })

@@ -144,10 +144,10 @@ export class GovernanceService {
     user: GovernanceUserLike | null | undefined,
     reader: GovernanceUsageSpendReader,
   ): Promise<GovernanceUsageSummary> {
-    if (!this.loaded.enabled) return { enabled: false, currency: 'EUR', models: [], aggregate: null }
+    if (!this.loaded.enabled) return { ...this.usageSummaryMeta(user), currency: 'EUR', models: [], aggregate: null }
     const userPolicy = this.userPolicy(user)
     const userId = user?.id
-    if (!userPolicy || !userId) return { enabled: true, currency: 'EUR', models: [], aggregate: null }
+    if (!userPolicy || !userId) return { ...this.usageSummaryMeta(user), currency: 'EUR', models: [], aggregate: null }
 
     const models: GovernanceUsageEntry[] = []
     for (const grant of userPolicy.models) {
@@ -174,7 +174,29 @@ export class GovernanceService {
       })
     }
 
-    return { enabled: true, currency: 'EUR', models, aggregate }
+    return { ...this.usageSummaryMeta(user), currency: 'EUR', models, aggregate }
+  }
+
+  /**
+   * Non per-model summary fields (role, aggregate cap, company-context access +
+   * rules) shared by every getUsageSummary return path and by the plugin route's
+   * empty fallback. Reuses the existing policy accessors so the panel and the
+   * admission path can never disagree.
+   */
+  usageSummaryMeta(user: GovernanceUserLike | null | undefined): {
+    enabled: boolean
+    role: TenantRole | null
+    aggregateCapMicros: number | null
+    companyContextAccess: CompanyContextAccess
+    companyContextRules: string[]
+  } {
+    return {
+      enabled: this.loaded.enabled,
+      role: this.roleForUser(user),
+      aggregateCapMicros: user ? this.userMonthlyBudgetMicros(user) : null,
+      companyContextAccess: this.companyContextAccessForUser(user),
+      companyContextRules: user ? this.companyContextRules(user) : [],
+    }
   }
 
   me(user: GovernanceUserLike | null | undefined): GovernanceMeResponse {
