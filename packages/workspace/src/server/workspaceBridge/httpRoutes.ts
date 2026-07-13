@@ -49,6 +49,7 @@ export interface WorkspaceBridgeHttpRoutesOptions {
     request: FastifyRequest,
     claims: WorkspaceBridgeRuntimeTokenClaims | WorkspaceBridgeRuntimeRefreshTokenClaims,
   ) => void | Promise<void>
+  admitRuntimeOperation?: (workspaceId: string) => void | Promise<void>
   refreshTokenRateLimit?: { maxUses?: number; windowMs?: number }
   ownerWorkspaceId?: string
   getOwnerWorkspaceId?: (request: FastifyRequest, body: WorkspaceBridgeCallRequest, auth: BridgeAuthContext) => string | undefined | Promise<string | undefined>
@@ -102,6 +103,11 @@ export function workspaceBridgeHttpRoutes(
       await opts.assertRuntimeWorkspaceScope(request, verifiedRuntimeToken.claims)
     }
 
+    let authorized: {
+      registry: WorkspaceBridgeRegistry
+      definition: NonNullable<ReturnType<WorkspaceBridgeRegistry["getDefinition"]>>
+      authContext: BridgeAuthContext
+    } | undefined
     try {
       const registry = await resolveRegistry(request, body, opts)
       const definition = registry.getDefinition(body.op)
@@ -112,18 +118,31 @@ export function workspaceBridgeHttpRoutes(
       const authContext = runtimeToken !== undefined
         ? resolveRuntimeContext(runtimeToken, opts, definition, verifiedRuntimeToken)
         : await resolveBrowserContext(request, opts, definition, body)
+      authorized = { registry, definition, authContext }
+    } catch (err) {
+      const bridgeError = isBridgeError(err)
+        ? err
+        : createWorkspaceBridgeError(WorkspaceBridgeErrorCode.HandlerFailed, "WorkspaceBridge transport failed")
+      return sendBridgeError(reply, statusForBridgeError(bridgeError.code), body.requestId, bridgeError.code, bridgeError.message)
+    }
+
+    if (runtimeToken !== undefined && opts.admitRuntimeOperation) {
+      await opts.admitRuntimeOperation(authorized.authContext.workspaceId)
+    }
+
+    try {
       const idempotencyStore = opts.getIdempotencyStore
         ? await opts.getIdempotencyStore(request, body)
         : opts.idempotencyStore
       const expectedWorkspaceId = opts.getOwnerWorkspaceId
-        ? await opts.getOwnerWorkspaceId(request, body, authContext)
+        ? await opts.getOwnerWorkspaceId(request, body, authorized.authContext)
         : opts.ownerWorkspaceId
 
       const response = await runWithWorkspaceBridgeIdempotency(idempotencyStore, {
-        definition,
+        definition: authorized.definition,
         request: body,
-        auth: authContext,
-      }, async () => await registry.call(body, authContext, { expectedWorkspaceId }))
+        auth: authorized.authContext,
+      }, async () => await authorized.registry.call(body, authorized.authContext, { expectedWorkspaceId }))
       return await sendResponse(reply, response)
     } catch (err) {
       const bridgeError = isBridgeError(err)
@@ -220,16 +239,22 @@ function resolveRuntimeContext(
   definition: NonNullable<ReturnType<WorkspaceBridgeRegistry["getDefinition"]>>,
   verified?: VerifiedWorkspaceBridgeRuntimeTokenClaims,
 ) {
+  let authorized: ReturnType<typeof authorizeWorkspaceBridgeRuntimeToken>
   if (verified) {
-    return authorizeWorkspaceBridgeRuntimeToken(verified, definition.requiredCapabilities).authContext
+    authorized = authorizeWorkspaceBridgeRuntimeToken(verified, definition.requiredCapabilities)
+  } else {
+    if (!opts.runtimeTokenSecret) {
+      throw createWorkspaceBridgeError(WorkspaceBridgeErrorCode.AuthRequired, "Runtime bridge token auth is not configured")
+    }
+    authorized = verifyWorkspaceBridgeRuntimeToken(token, {
+      secret: opts.runtimeTokenSecret,
+      requiredCapabilities: definition.requiredCapabilities,
+    })
   }
-  if (!opts.runtimeTokenSecret) {
-    throw createWorkspaceBridgeError(WorkspaceBridgeErrorCode.AuthRequired, "Runtime bridge token auth is not configured")
+  if (opts.admitRuntimeOperation && !definition.callerClassesAllowed.includes("runtime")) {
+    throw createWorkspaceBridgeError(WorkspaceBridgeErrorCode.CallerNotAllowed, "Caller class is not allowed for operation")
   }
-  return verifyWorkspaceBridgeRuntimeToken(token, {
-    secret: opts.runtimeTokenSecret,
-    requiredCapabilities: definition.requiredCapabilities,
-  }).authContext
+  return authorized.authContext
 }
 
 function resolveRuntimeClaims(

@@ -44,6 +44,7 @@ export interface CoreWorkspaceBridgeOptions {
   validateWorkspaceId: (value: string) => string
   agentSessionId: (request: FastifyRequest) => string | undefined
   assertRuntimeWorkspaceScope?: (request: FastifyRequest, workspaceId: string) => void | Promise<void>
+  admitRuntimeOperation?: (workspaceId: string) => void | Promise<void>
 }
 
 export interface CoreWorkspaceBridge {
@@ -231,6 +232,7 @@ export function createCoreWorkspaceBridge(options: CoreWorkspaceBridgeOptions): 
               admittedRuntimeWorkspaces.set(request, claims.workspaceId)
             }
           : undefined,
+        admitRuntimeOperation: options.admitRuntimeOperation,
         getRuntimeRefreshTokenStore: (_request, claims) => getRuntime(claims.workspaceId).refreshTokenStore,
         getOwnerWorkspaceId: async (request) => await resolveBridgeWorkspaceId(request),
         browserAuthPolicy: createBrowserBridgeAuthPolicy({
