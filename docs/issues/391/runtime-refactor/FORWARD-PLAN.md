@@ -465,11 +465,9 @@ bead below:
   a secret-bearing env key past review.
 - **Build.** `approvedHostRelease.ts` + `hostSecurityConfig.ts`; reuse landed
   core/ingress identity constants. The release record lives at
-  `/etc/boring/d1/approved-host-releases/<hostId>.json`, outside D1 host-state
-  and immutable revision mounts, installed only by the root maintenance release
-  procedure — it is not mounted into the app, the app cannot write it, and the
-  apply command exposes no mutation for it. The authority directory is
-  root:root `0755`; each exact `<hostId>.json` record is root:root `0444`. It binds
+  `<host-state>/approved-host-release.json` **outside** immutable revision
+  directories, installed only by the maintenance release procedure — the app
+  cannot write it and the apply command exposes no mutation for it. It binds
   `{ hostAppImageDigest, coreCommand, migrationProcess, ingressImageDigest,
   ingressCommand, caddyfileDigest, hostSecurityConfigDigest,
   selectorInventoryRevision, executionPolicyRevision,
@@ -494,23 +492,17 @@ bead below:
   agentMode, workspaceRoot:"/data/workspaces", sessionRoot:"/data/pi-sessions",
   trustedProxy:{cidrs:["192.168.255.250/32"],hops:1}, externalPlugins:false,
   pluginAuthoring:false, betterAuthUrl, corsOrigins, cspEnabled, ...,
-  managedAgentMcp:{enabled:false},
+  managedAgentMcp:{enabled,workspaceId?,userId?},
   collectionPolicy:{maxBindings,maxBundleBytes,maxTotalBundleBytes,
-  maxConcurrentPreloads} }` (the policy is part of the approved digest). D1 R0
-  hard-pins managed-agent MCP disabled and intentionally cannot serve managed
-  MCP. A named post-R0 **M1-D1H managed-MCP deployment-hardening** bead, owned
-  by M1, must add bearer `*_FILE` resolution/materialization/rotation/restart
-  plus conditional workspace/user target enablement. P5a participates only if
-  shared secret brokerage is required; this host-approval slice does not.
+  maxConcurrentPreloads} }` (the policy is part of the approved digest).
 - **Do NOT / stop-signs.** No container create/start, P6-R, admission, preload,
   pointer, or ingress op in this bead; the release record is never caller-
   supplied, persisted-by-app, mounted, or reconstructed from app self-report.
 - **Dependencies.** D1-004c1–c5 (the static selector inventory it freezes),
   D1-003a ingress constants.
 - **Acceptance.** Unknown/secret-bearing keys and drift in owner UID, mode,
-  roots, proxy, auth URL, CORS, CSP, cookie security, or MCP enablement all
-  reject; managed-agent MCP enablement or target keys also reject in D1 R0.
-  Changing any allowed behavior-bearing value changes the
+  roots, proxy, auth URL, CORS, CSP, cookie security, MCP enablement, or managed
+  target all reject; changing any allowed behavior-bearing value changes the
   approved digest and rejects even when the value is output-redacted; a
   materialized secret canary proves no secret bytes enter Docker
   config/identity/failure output.
