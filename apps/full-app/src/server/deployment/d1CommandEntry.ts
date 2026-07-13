@@ -6,6 +6,12 @@ import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import type { Readable } from 'node:stream'
 
+import {
+  closeAttestedD1DatabaseConnection,
+  createD1AdmissionLedger,
+  type AttestedD1DatabaseConnection,
+  type D1AdmissionLedger,
+} from './admissionLedger.js'
 import { createD1CommandEngine, type D1CommandEngineOptions, type D1MutationGuard } from './d1Command.js'
 import { parseD1CliInput } from './d1CommandCliProtocol.js'
 import { isSupportedLocalD1LockFilesystem } from './d1CommandLockPolicy.js'
@@ -18,9 +24,9 @@ const MAX_BYTES = 1024 * 1024
 const D1_APP_UID = 10001
 const D1_APP_GID = 10001
 export type D1EntryMode = '--read-only' | '--locked'
-export interface D1EntryContext { readonly hostId: string; readonly ownerUid: number; readonly stateRoot: string; readonly mutationGuard: D1MutationGuard }
+export interface D1EntryContext { readonly hostId: string; readonly ownerUid: number; readonly stateRoot: string; readonly mutationGuard: D1MutationGuard; readonly admissionLedger?: D1AdmissionLedger }
 export type D1DependencyFactory = (context: D1EntryContext) => D1CommandEngineOptions
-export interface D1EntryOptions { readonly stdin?: Readable; readonly mode: D1EntryMode; readonly dependencyFactory?: D1DependencyFactory }
+export interface D1EntryOptions { readonly stdin?: Readable; readonly mode: D1EntryMode; readonly dependencyFactory?: D1DependencyFactory; readonly databaseConnection?: AttestedD1DatabaseConnection }
 export interface D1EntryOutput { readonly line: string; readonly exitCode: number }
 
 function invalid(field: string): never { throw new D1HostError(D1HostErrorCode.PLAN_INVALID, { field }) }
@@ -85,13 +91,15 @@ function assertInheritedLock(lockRoot: string, hostId: string, uid: number): voi
 }
 function unavailable(field: string): never { throw new D1HostError(D1HostErrorCode.COLLECTION_NOT_READY, { field }) }
 
-export const createProductionD1Dependencies: D1DependencyFactory = ({ hostId, ownerUid, stateRoot, mutationGuard }) => {
+export const createProductionD1Dependencies: D1DependencyFactory = ({ hostId, ownerUid, stateRoot, mutationGuard, admissionLedger }) => {
   const provider = createD1FileRuntimeInputsProvider({ hostId, ownerUid })
   return {
     store: createHostRevisionStore({ root: stateRoot, ownerUid, appGid: D1_APP_GID }),
     resolver: { resolvePlan: async () => unavailable('resolver'), reproduce: async () => unavailable('resolver') },
     effects: {
-      loadAdmittedBindingIds: async () => unavailable('admissions'),
+      loadAdmittedBindingIds: admissionLedger
+        ? (requestedHostId, databaseRef) => admissionLedger.listBindingIds(requestedHostId, databaseRef)
+        : async () => unavailable('admissions'),
       materialize: createD1BindingSecretMaterializer({ root: '/run/boring/d1', ownerUid, appUid: D1_APP_UID, appGid: D1_APP_GID, provider }),
       preload: async () => unavailable('preload'),
       verifyActive: async () => unavailable('active'),
@@ -105,6 +113,7 @@ export const createProductionD1Dependencies: D1DependencyFactory = ({ hostId, ow
 
 export async function runD1CommandEntry(options: D1EntryOptions): Promise<D1EntryOutput> {
   let locked = false
+  let admissionLedger: D1AdmissionLedger | undefined
   try {
     if (options.mode !== '--read-only' && options.mode !== '--locked') invalid('mode')
     if (process.platform !== 'linux') invalid('platform')
@@ -122,8 +131,9 @@ export async function runD1CommandEntry(options: D1EntryOptions): Promise<D1Entr
         assertInheritedLock(lockRoot, hostId, ownerUid)
       }
     }
+    admissionLedger = options.databaseConnection ? createD1AdmissionLedger(options.databaseConnection) : undefined
     const engine = createD1CommandEngine((options.dependencyFactory ?? createProductionD1Dependencies)({
-      hostId: command.hostId, ownerUid, stateRoot, mutationGuard: { assertHeld },
+      hostId: command.hostId, ownerUid, stateRoot, mutationGuard: { assertHeld }, admissionLedger,
     }))
     const result = await engine.execute(raw)
     return { line: `${JSON.stringify({ ok: true, result })}\n`, exitCode: 0 }
@@ -134,7 +144,11 @@ export async function runD1CommandEntry(options: D1EntryOptions): Promise<D1Entr
       return failure(error.code, field, exitCode)
     }
     return failure(D1HostErrorCode.PUBLICATION_FAILED, 'command', 70)
-  } finally { if (locked) closeSync(3) }
+  } finally {
+    if (admissionLedger) await admissionLedger.close().catch(() => {})
+    else if (options.databaseConnection) await closeAttestedD1DatabaseConnection(options.databaseConnection).catch(() => {})
+    if (locked) closeSync(3)
+  }
 }
 
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {

@@ -159,12 +159,13 @@ function harness(
   preload?: (candidate: D1StoredCandidateV1, identities: readonly D1RuntimeInputsIdentityV1[]) => Promise<D1ObservationV1>,
 ) {
   const calls: string[] = []
+  const admissionDatabaseRefs: string[] = []
   const options: D1CommandEngineOptions = {
     store,
     resolver: { async resolvePlan() { calls.push('resolve'); return next }, async reproduce() { calls.push('reproduce'); return next } },
     async inspectRuntimeInputs(value) { calls.push('inspect'); if (store.adapterErrors.inspect) throw store.adapterErrors.inspect; return inspect(value) },
     effects: {
-      async loadAdmittedBindingIds() { calls.push('admissions'); return admitted },
+      async loadAdmittedBindingIds(_hostId, databaseRef) { calls.push('admissions'); admissionDatabaseRefs.push(databaseRef); return admitted },
       async materialize(candidate) {
         calls.push('materialize'); if (store.adapterErrors.materialize) throw store.adapterErrors.materialize
         if (store.fault === 'materialize') throw new Error('/secret/materialize')
@@ -175,7 +176,7 @@ function harness(
     },
     mutationGuard: { assertHeld() { calls.push('guard') } }, operator: { uid: 1000, effectiveUser: 'julien', invocationId: 'deploy-1' }, clock: () => '2026-07-12T00:00:00.000Z',
   }
-  return { engine: createD1CommandEngine(options), calls }
+  return { engine: createD1CommandEngine(options), calls, admissionDatabaseRefs }
 }
 const plan = (value: D1DesiredSnapshotV1, expectedHostRevision: string | null) => ({ ...value.plan, expectedHostRevision })
 const apply = (value: D1DesiredSnapshotV1, expectedHostRevision: string | null, extra: Record<string, unknown> = {}) => ({ kind: 'apply', plan: plan(value, expectedHostRevision), ...extra })
@@ -208,6 +209,17 @@ describe('D1 command engine', () => {
     const blocked = harness(admitted, retained, ['travel'])
     await expect(blocked.engine.execute(apply(retained, 'r0000000001', { confirmRemove: ['travel'] }))).rejects.toMatchObject({ code: D1HostErrorCode.BINDING_ADMITTED })
     expect(blocked.calls).toEqual(['guard', 'admissions']); expect(admitted.calls).not.toContain('reserve')
+    const lost = harness(new FakeStore(), retained, ['insurance'])
+    await expect(lost.engine.execute(apply(retained, null))).rejects.toMatchObject({ code: D1HostErrorCode.BINDING_ADMITTED })
+    const stale = harness(admitted, current, ['stale'])
+    await expect(stale.engine.execute(apply(current, 'r0000000001'))).rejects.toMatchObject({ code: D1HostErrorCode.BINDING_ADMITTED })
+  })
+
+  it('reads admissions from the active database before rejecting candidate database drift', async () => {
+    const current = await desired(); const next = await desired(undefined, { database: 'postgres-next' })
+    const store = new FakeStore(); await store.seed(current); const h = harness(store, next)
+    await expect(h.engine.execute(apply(next, 'r0000000001'))).rejects.toMatchObject({ code: D1HostErrorCode.ACTIVE_BINDING_RESTART_REQUIRED })
+    expect(h.admissionDatabaseRefs).toEqual(['postgres-eu'])
   })
 
   it('rejects rollback removal gates before reproduce or runtime inspection', async () => {

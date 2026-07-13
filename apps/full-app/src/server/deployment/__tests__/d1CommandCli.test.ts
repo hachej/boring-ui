@@ -5,8 +5,10 @@ import os from 'node:os'
 import path from 'node:path'
 import { Readable } from 'node:stream'
 import { pathToFileURL } from 'node:url'
+import type postgres from 'postgres'
 import { describe, expect, it, vi } from 'vitest'
 
+import { mintAttestedD1DatabaseConnection } from '../admissionLedger.js'
 import { runD1CommandEntry, type D1EntryContext } from '../d1CommandEntry.js'
 import { isSupportedLocalD1LockFilesystem } from '../d1CommandLockPolicy.js'
 import { D1HostErrorCode } from '../d1Plan.js'
@@ -167,6 +169,20 @@ describe('D1 revision command boundary', () => {
         context = value; throw new Error('stop after dependency construction')
       } })
       expect(output).toMatchObject({ exitCode: 70 }); expect(context?.hostId).toBe('host-2')
+    } finally { for (const key of keys) prior[key] === undefined ? delete process.env[key] : process.env[key] = prior[key] }
+  })
+
+  it('uses and closes an injected attested database connection', async () => {
+    const h = await roots(); const keys = ['BORING_D1_OWNER_UID', 'BORING_D1_STATE_ROOT', 'BORING_D1_LOCK_ROOT'] as const
+    const prior = Object.fromEntries(keys.map((key) => [key, process.env[key]])); const release = vi.fn(); const end = vi.fn(async () => {})
+    const reserved = Object.assign(vi.fn(async () => []), { release }) as unknown as postgres.ReservedSql
+    const reserve = vi.fn(async () => reserved); const sql = { reserve, end } as unknown as postgres.Sql
+    const databaseConnection = mintAttestedD1DatabaseConnection('postgres-eu', sql, { ownsClient: true })
+    const command = JSON.parse(validApply().toString()) as { kind: string }; command.kind = 'plan'
+    for (const key of keys) process.env[key] = h.env[key]
+    try {
+      const output = await runD1CommandEntry({ stdin: Readable.from([JSON.stringify(command)]), mode: '--read-only', databaseConnection })
+      expect(output).toMatchObject({ exitCode: 4 }); expect(reserve).toHaveBeenCalledOnce(); expect(release).toHaveBeenCalledOnce(); expect(end).toHaveBeenCalledOnce()
     } finally { for (const key of keys) prior[key] === undefined ? delete process.env[key] : process.env[key] = prior[key] }
   })
 

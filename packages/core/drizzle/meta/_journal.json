@@ -127,6 +127,13 @@
       "when": 1783497600000,
       "tag": "0017_user_budget_reservations",
       "breakpoints": true
+    },
+    {
+      "idx": 18,
+      "version": "7",
+      "when": 1783900800000,
+      "tag": "0018_d1_binding_admissions",
+      "breakpoints": true
     }
   ]
 }
